@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -572,6 +579,13 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // treble sparks orbiting the circumference, bassImpact breathing the whole ring.
 // param0 Trace Amp ; param1 Echo Reach ; param2 Spark Density
 
+// Lift G+B to at least 0.55 R (linear) so no ring segment, echo or trail tail is
+// saturated red: the source flash budget allows no large-area red transition.
+vec3 ringDeRed(vec3 c) {
+    float need = max(0.55 * c.r - c.g - c.b, 0.0);
+    return c + need * vec3(0.0, 0.30, 0.70);
+}
+
 float ringTrace(float ang, float a01, float t, VisualUniforms u) {
     float bA = bandAtWrapped(u, a01 + t * 0.021);
     float bB = bandAtWrapped(u, a01 * 0.5 + 0.31 - t * 0.013);
@@ -656,7 +670,9 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     col = feedbackTrail(col, uv, min(u.trailDecay, 0.80),
                         0.0035 + 0.005 * u.bassImpact, 0.0012);
-    return col; // LINEAR HDR
+    // dim tails round their G and B to zero first; a faint cool floor under any red keeps them
+    // off pure red, while true black stays black
+    return ringDeRed(col) + smoothstep(0.0, 0.0015, col.r) * vec3(0.0, 0.0016, 0.0032); // LINEAR HDR
 }
 
 in vec2 vUV;

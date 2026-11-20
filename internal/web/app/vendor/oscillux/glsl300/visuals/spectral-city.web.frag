@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -600,7 +607,11 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float z = 1.0 / max(0.045, uv.y - floorY + 0.05);
         float lane = (uv.x - 0.5) * z;
         float grid = aaLineCyclic(lane * 0.34, 0.018) + aaLineCyclic(z * 0.10 - u.time * 0.22, 0.018);
-        col += palVisual(fract(lane * 0.04 + z * 0.02), u) * grid * road * 0.26 * smoothstep(13.0, 1.2, z);
+        // lift green under the warm end so the red-orange lane lines never
+        // read as saturated red
+        vec3 rc = palVisual(fract(lane * 0.04 + z * 0.02), u);
+        rc.g = max(rc.g, 0.6 * rc.r - rc.b);
+        col += rc * grid * road * 0.26 * smoothstep(13.0, 1.2, z);
     }
 
     // Towers sit on a 72-cell grid with half-width <= 0.014 (~1 cell),
@@ -628,8 +639,14 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         vec2 bp = vec2((uv.x - x) * sx, uv.y - (base - h * 0.5));
         float tower = boxFillW(bp, vec2(w, h * 0.5), px);
         float edge = aaLineW(abs(bp.x) - w, 0.0014, px.x) * step(abs(bp.y), h * 0.52);
-        float rows = aaLineCyclicW((uv.y - base + h) * 42.0, 0.03, px.y * 42.0) * tower;
+        // window rows are anchored to the base, not the roof: tied to the
+        // band-driven height, every sub-pixel row line in the tower slid and
+        // aliased each time the band moved, relighting the skyline (18 luma/s)
+        float rows = aaLineCyclicW((uv.y - base) * 42.0, 0.03, px.y * 42.0) * tower;
         vec3 c = palVisual(x + u.time * 0.018, u);
+        // keep G+B >= 0.6 R: the warm end of the palette drifting across a
+        // tower made a large saturated-red area
+        c.g = max(c.g, 0.6 * c.r - c.b);
         col += c * tower * (0.12 + bandv * 0.65);
         col += peakWhite(c, rows * u.treble * 0.08) * rows * (0.7 + bandv * 3.0);
         // edges glint with the kick rather than flare: 72 lit outlines at once

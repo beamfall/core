@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -569,67 +576,108 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // SPDX-License-Identifier: AGPL-3.0-only
 // Waveform / prismatic oscilloscope threads.
 // param0 Thickness ; param1 Trail Length ; param2 Trace Stack
+//
+// Flash budget: a stack of bright threads covers much of the band it sits in, so anything that
+// moves or brightens every thread at once in a few frames is a large-area flash. The music drives
+// the threads through a beat envelope with a ~170 ms attack and a long release, slow drift and the
+// spectrum's shape; per-frame levels (kick, onset, flux) and beatPhase's wrap drive nothing.
+
+// Smooth beat swell: 0 at the beat wrap, rising over ~0.35 beat to its peak just after the beat,
+// releasing over the rest. Continuous across beatPhase's 1 -> 0 wrap.
+float waveformSwell(float beatPhase) {
+    float t = fract(beatPhase + 0.30);
+    return smoothstep(0.0, 0.35, t) * (1.0 - smoothstep(0.35, 1.0, t));
+}
 
 vec3 visual(vec2 uv, VisualUniforms u) {
     vec2 p = motionCentered(uv, u);
 
     float thickness = mix(0.0015, 0.0050, u.param0);
     int traces = int(mix(7.0, 17.0, u.param2) + 0.5);
-    float trailDec = clamp(mix(0.64, 0.86, u.param1), 0.0, 0.88);
+    float trailDec = clamp(mix(0.70, 0.88, u.param1), 0.0, 0.88);
+    float swell = waveformSwell(u.beatPhase);
+    float level = saturate(u.level);
 
     vec3 glow = vec3(0.0);
-    float baseY = 0.0;
 
     for (int ti = 0; ti < 17; ti++) {
         if (ti >= traces) break;
         float fi = float(ti);
         float layer = (fi - float(traces - 1) * 0.5) / max(float(traces), 1.0);
-        float yOff = layer * mix(0.18, 0.62, u.param2);
+        float yOff = layer * mix(0.30, 0.70, u.param2);
 
         float x01 = uv.x;
         float bandA = bandAt(u, fract(x01 * 0.78 + fi * 0.037));
         float bandB = bandAt(u, fract(x01 * 0.33 + 0.22 + fi * 0.051));
-        float amp = (0.11 + 0.34 * u.amplitude) * (0.45 + 0.75 * bandA);
+        // Loudness sets the swing; the beat swell adds a gentle breath on top. The spectrum only
+        // shapes the swing along x, at a weight that keeps a kick's jump under a pixel or two.
+        float amp = (0.10 + 0.22 * level) * (0.88 + 0.12 * bandA) * (0.96 + 0.06 * swell);
 
-        float wave = sin(x01 * (7.0 + fi * 0.9) + u.time * (0.75 + fi * 0.04)) * 0.36;
-        wave += sin(x01 * (19.0 + fi * 0.6) - u.time * 1.7 + bandB * 2.0) * 0.16;
-        wave += sin(x01 * 47.0 + u.time * 4.8) * 0.035 * u.treble;
+        float wave = sin(x01 * (7.0 + fi * 0.9) + u.time * (0.22 + fi * 0.014)) * 0.36;
+        wave += sin(x01 * (19.0 + fi * 0.6) - u.time * 0.40 + bandB * 0.6) * 0.16;
+        wave += sin(x01 * 31.0 + u.time * 0.8) * 0.025 * u.treble;
 
-        float y = baseY + yOff + wave * amp;
+        float y = yOff + wave * amp;
         float d = p.y - y;
-        float line = aaLine(d, thickness * (1.0 + 0.7 * ((ti == traces / 2) ? 1.0 : 0.0)));
+        bool centre = ti == traces / 2;
+        float line = aaLine(d, thickness * (centre ? 1.7 : 1.0));
         float halo = aaLine(d, thickness * 5.5) * 0.18;
 
-        float hue = fract(x01 * 0.86 + fi / 17.0 * 0.35 + 0.12 * u.spectralCentroid);
-        vec3 c = palRoleTrace(hue, u);
+        // The beat travels as colour: hue drifts with the spectrum and the swell, at one brightness.
+        float hue = fract(x01 * 0.86 + fi / 17.0 * 0.35 + 0.12 * u.spectralCentroid + 0.03 * swell);
+        // palVisual, not palRoleTrace: its beatPhase hue offset snaps back at every beat.
+        vec3 c = palVisual(hue, u);
         c = accentize(c, u.accent, 0.08);
 
         float focus = 1.0 - min(1.0, abs(layer) * 1.9);
-        glow += c * (line * (1.3 + bandA * 2.5) + halo * (0.4 + bandA)) * (0.28 + 0.72 * focus);
+        float bright = 1.5 + 0.6 * level;
+        glow += c * (line * bright + halo * (0.45 + 0.4 * level)) * (0.28 + 0.72 * focus);
+
+        // Beat pulse: a short bright bead riding the centre thread, fading in and out with the swell.
+        if (centre) {
+            float bx = uv.x - u.beatPhase;
+            float bead = exp(-bx * bx * 260.0) * sin(3.14159265 * u.beatPhase);
+            glow += palVisual(0.12, u) * bead * (line * 1.6 + halo * 2.0) * (0.5 + 0.5 * level);
+        }
     }
 
-    // Beat pulse travels along the waveform as white-hot short segments.
-    float pulseX = u.beatPhase;
-    float pulse = exp(-(uv.x - pulseX)*(uv.x - pulseX) * 90.0);
-    glow += palRoleBass(0.10, u) * pulse * u.bassImpact * aaLine(p.y, 0.055) * 2.2;
-
-    // Sparse vertical transient pins.
-    for (int i = 0; i < 22; i++) {
+    // Spectral needles: slim vertical pins that live a few seconds each, fade in and out, drift,
+    // and stretch with the treble and the beat swell. Each has its own phase, so they never pop
+    // together, and a pin only moves its tip from frame to frame.
+    for (int i = 0; i < 14; i++) {
         float fi = float(i);
-        vec2 h = hash22(vec2(fi, floor(u.beatCount) + 3.0));
-        float x = h.x;
-        float len = (0.05 + 0.18 * h.y) * (u.flux + 0.35 * u.treble);
+        float life = u.time / 3.2 + hash11(fi * 7.13);
+        float cycle = floor(life);
+        float age = life - cycle;
+        float fade = sin(3.14159265 * age);
+        fade *= fade;
+        vec2 h = hash22(vec2(fi, cycle + 3.0));
+        float x = fract(h.x + 0.015 * age);
         float dx = abs(uv.x - x);
-        float y0 = 0.5 + 0.18 * sin(x * 8.0 + u.time);
-        float inY = step(y0 - len, uv.y) * step(uv.y, y0 + len * 0.2);
-        float pin = (1.0 - smoothstep(0.0015, 0.006, dx)) * inY;
-        glow += palRoleTreble(x + 0.18 * u.spectralCentroid, u) * pin * (u.flux + u.onset) * 2.8;
+        float stretch = 0.65 + 0.35 * waveformSwell(u.beatPhase + 0.18 * h.y);
+        float len = (0.04 + 0.12 * h.y) * (0.55 + 0.45 * u.treble) * stretch;
+        float y0 = 0.5 + 0.12 * sin(x * 8.0 + u.time * 0.4);
+        float inY = smoothstep(y0 - len - 0.01, y0 - len, uv.y) * (1.0 - smoothstep(y0 + len * 0.2, y0 + len * 0.2 + 0.01, uv.y));
+        float pin = (1.0 - smoothstep(0.0008, 0.0035, dx)) * inY;
+        glow += palVisual(x + 0.62 + 0.18 * u.spectralCentroid, u) * pin * fade * (0.55 + 0.35 * level);
     }
 
     vec3 col = feedbackTrail(glow, uv,
                              trailDec,
-                             0.002 + 0.004 * u.bassImpact,
+                             0.0025 + 0.0015 * swell,
                              0.0);
+
+    // The palette's warm end reaches orange-red, which reads as saturated red (linear R > 4 (G + B))
+    // as a thread sweeps across black, and a fading trail drops its green before its red, leaving a
+    // dim red residue that turns the next gold or pink thread over it into a red transition. Lift
+    // green under red, after the trail so the residue is caught too, until linear G + B is at least
+    // 0.65 R: warm threads read gold, and the limiter sees no red to track.
+    vec3 lin = pow(max(col, vec3(0.0)), vec3(2.2));
+    float need = 0.65 * lin.r - lin.g - lin.b;
+    if (need > 0.0) col.g = pow(lin.g + need, 1.0 / 2.2);
+    // Below a few codes the 8-bit frame rounds green to zero before red, so the last of a trail is
+    // pure dim red; end trails at black instead.
+    col *= smoothstep(0.012, 0.035, max(col.r, max(col.g, col.b)));
     return col;
 }
 

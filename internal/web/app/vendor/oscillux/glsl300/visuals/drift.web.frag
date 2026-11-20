@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -571,14 +578,29 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // Layered caustic ribbons drifting at three depths behind dark glass; a lens
 // ring floats in the middle, refracting and pulsing with bass. Amplitude
 // swells the whole light field; the artwork remains a low-frequency tint.
+// Beat response is one smooth swell on beatPhase (~180 ms attack, zero at the
+// wrap) instead of instant-attack kick/bassImpact/flux, and every colour keeps
+// G+B a fair share of R, so the visual stays within the source flash budget
+// (no saturated-red area, <= 6 large-area luma transitions a second).
 // param0 Defocus/Flow ; param1 Lens Pulse ; param2 Edge Spectra
 
 vec3 visual(vec2 uv, VisualUniforms u) {
     vec2 p = motionCentered(uv, u);
     float ar = u.resolution.x / max(u.resolution.y, 1.0);
 
+    // Continuous beat swell: rises over ~180 ms at 120 bpm, releases slowly,
+    // and is zero on both sides of the beat wrap.
+    float bp = u.beatPhase;
+    float sw = smoothstep(0.0, 0.36, bp) * (1.0 - smoothstep(0.40, 1.0, bp));
+    float bassSw = sw * (0.45 + 0.55 * u.bass);
+    // Light swell centred on the hit: rises over ~150 ms into the beat and
+    // eases off over the same, smooth through the wrap. Scaled by the slow
+    // level only, so the kick's instant jumps never step it.
+    float hitDist = min(bp, 1.0 - bp);
+    float pk = (1.0 - smoothstep(0.0, 0.30, hitDist)) * (0.55 + 0.45 * u.level);
+
     float flowAmt = mix(0.05, 0.24, u.param0);
-    float lensPulse = mix(0.00, 0.09, u.param1) * u.bassImpact;
+    float lensPulse = mix(0.00, 0.09, u.param1) * bassSw;
     float spectra = mix(0.15, 1.0, u.param2);
 
     vec2 flow = p;
@@ -597,7 +619,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float vignette = 1.0 - mix(0.60, 0.80, u.param2) * smoothstep(0.42, 1.35, r);
     base *= centralShadow * max(vignette, 0.0) * (0.75 + 0.45 * u.level);
 
-    float swell = 0.55 + 1.05 * u.amplitude; // whole light field breathes
+    float swell = 0.95 + 0.45 * u.level + 0.32 * pk; // whole light field breathes
 
     vec3 glow = vec3(0.0);
 
@@ -626,26 +648,26 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
         float window = smoothstep(1.35, 0.25, abs(q.x) * 0.7);
 
-        float energy = bandAt(u, fract(fi / 18.0 + 0.10 * u.beatPhase));
+        float energy = bandAt(u, fract(fi / 18.0 + 0.04 * sin(u.time * 0.13 + fi)));
         vec3 lineCol = palVisual(fract(fi / 18.0 + 0.30 * fl + 0.12 * u.spectralCentroid
                                        + 0.015 * u.time), u);
         lineCol = accentize(lineCol, u.accent, 0.12);
         glow += lineCol * (line + halo) * window
-              * (0.10 + energy * 1.35) * depth * swell * 0.55;
+              * (0.35 + energy * 1.05) * depth * swell * 0.55;
     }
 
     // Lens ring: thin bright rim + faint refracted inner sheen.
-    float rimR = 0.34 + 0.045 * u.bassImpact;
+    float rimR = 0.34 + 0.045 * bassSw;
     float rim = aaLine(r - rimR, 0.0035);
     float rimHalo = exp(-abs(r - rimR) * 26.0) * 0.30;
     vec3 rimCol = palVisual(0.55 + 0.12 * u.spectralCentroid, u);
-    glow += rimCol * (rim + rimHalo) * (0.45 + 1.3 * u.bassImpact) * swell;
+    glow += rimCol * (rim + rimHalo) * (0.90 + 0.50 * pk) * swell;
     // interior sheen — the lens gathers the caustic light
     float inner = smoothstep(rimR, rimR * 0.25, r);
     glow += palRoleFog(0.45 + 0.1 * u.spectralCentroid, u)
-          * inner * (0.05 + 0.16 * u.amplitude + 0.10 * u.bassImpact);
+          * inner * (0.06 + 0.14 * u.level + 0.08 * bassSw);
 
-    // Tiny onset/flux glints on the lens edge.
+    // Tiny glints on the lens edge; they reseed each beat while the swell is zero.
     for (int i = 0; i < 10; i++) {
         float fi = float(i);
         float a = fi / 10.0 * 6.2831853 + hash11(fi * 0.57) * 0.4;
@@ -654,14 +676,18 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float d = length(p - sp);
         float spark = min(2.2, 0.00030 / (d * d + 0.00040));
         glow += palHeatIce(fi / 10.0 + 0.1 * u.spectralCentroid) * spark
-              * (u.flux + 0.4 * u.treble) * spectra;
+              * sw * (0.35 + 0.4 * u.treble) * spectra;
     }
 
     vec3 trailedGlow = feedbackTrail(glow, uv,
                                      min(u.trailDecay, 0.50),
-                                     0.0015 + 0.004 * u.bassImpact,
+                                     0.0015 + 0.004 * bassSw,
                                      0.0015 * sin(u.time * 0.2));
-    return base + trailedGlow;
+    vec3 col = base + trailedGlow;
+    // Colour floor: reds lean crimson (blue, a touch of green), so dim red
+    // tails never round to pure saturated red yet keep their saturation.
+    col.gb = max(col.gb, col.r * vec2(0.08, 0.42));
+    return col;
 }
 
 in vec2 vUV;

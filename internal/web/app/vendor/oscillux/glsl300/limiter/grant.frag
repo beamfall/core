@@ -170,6 +170,124 @@ uint limiterFires(uvec4 t, ivec3 c) {
     int fr = limiterRedStep(t, limiterRed(c), limiterSat(c)).y;
     return (fl > 0 ? 1u : 0u) | (fl < 0 ? 2u : 0u) | (fr > 0 ? 4u : 0u) | (fr < 0 ? 8u : 0u);
 }
+
+// Whether tracker t fires on display values c in no direction outside `allowed`.
+bool limiterSafe(uvec4 t, uint allowed, ivec3 c) {
+    return (limiterFires(t, c) & ~allowed & 15u) == 0u;
+}
+
+// Display values a mixed k / 256 of the way to b.
+ivec3 limiterMix(ivec3 a, ivec3 b, int k) {
+    return (a * (256 - k) + b * k + 128) >> 8;
+}
+
+// The steps a held pixel's searches try along a mix, counted from the input (1 is one step from
+// it, 256 the other end): the 16 nearest, then every 16th (n from 1 to NEAR_STEPS), then the
+// NEAR_FILL between the first of those that qualifies and the one tried before it. No order is
+// assumed along the mix: the luma and the trackers of rounded mixes cross a threshold more than
+// once (Codex review of limiter-dim-hold).
+const int NEAR_STEPS = 30;
+const int NEAR_FILL = 15;
+
+int limiterNearStep(int n) {
+    return n <= 16 ? n : 16 * (n - 15);
+}
+
+// The step nearest b, of those searched (limiterNearStep) along the mix from a, at which tracker
+// t is safe. a is safe (step 0), so the result always is.
+ivec3 limiterToward(uvec4 t, uint allowed, ivec3 a, ivec3 b) {
+    int at = 256;
+    for (int n = 1; n <= NEAR_STEPS; n++) {
+        int s = limiterNearStep(n);
+        if (limiterSafe(t, allowed, limiterMix(a, b, 256 - s))) { at = s; break; }
+    }
+    int far = at;
+    for (int n = NEAR_FILL; n >= 1; n--) {
+        if (far > 16 && limiterSafe(t, allowed, limiterMix(a, b, 256 - (far - n)))) { at = far - n; break; }
+    }
+    return limiterMix(a, b, 256 - at);
+}
+
+// Whether luma code v is at most lim (atMost) or at least lim.
+bool limiterLumaOk(int v, int lim, bool atMost) {
+    return atMost ? v <= lim : v >= lim;
+}
+
+// How many steps from b the nearest mix from a is, of those searched (limiterNearStep), whose
+// luma is at most lim (atMost) or at least lim; 256, a itself, when none is.
+int limiterLumaToward(ivec3 a, ivec3 b, int lim, bool atMost) {
+    int at = 256;
+    for (int n = 1; n <= NEAR_STEPS; n++) {
+        int s = limiterNearStep(n);
+        if (limiterLumaOk(limiterLuma(limiterMix(a, b, 256 - s)), lim, atMost)) { at = s; break; }
+    }
+    int far = at;
+    for (int n = NEAR_FILL; n >= 1; n--) {
+        if (far > 16 && limiterLumaOk(limiterLuma(limiterMix(a, b, 256 - (far - n))), lim, atMost)) { at = far - n; break; }
+    }
+    return at;
+}
+
+// How far (of 256) a pixel denied a rise moves each frame from the previous output's hue toward
+// the input's (limiterDim).
+const int CHROMA_K = 32;
+
+// The colour a held pixel shows (output.glsl): the input c with its luma moved into the band the
+// luma tracker does not fire in; then, if a tracker would still fire outside `allowed` (the
+// directions the input fires and the grant admitted), the furthest safe step from the grey of that
+// luma toward it, or else from the previous output h, which fires nothing, toward the input. To
+// raise the luma the input is mixed with the least of the previous output that reaches the band
+// (the light a pixel may not yet lose is the light it showed). To lower it the previous output is
+// mixed toward the input as far as the band allows, then CHROMA_K / 256 of the way toward the
+// input scaled toward black to the band's top (that scaled input alone if the mix is over the
+// band): over black this is the input dimmed, and over lit content the pixel keeps its hue on the
+// first frame and takes the input's over the next few, so a white line crossing a coloured glow
+// does not show as a grey one beside it. Both stop at `top`, the band's ceiling less the room
+// above what the pixel showed times (input - ceiling) / input and three times the shown luma over
+// the ceiling (at most one): a lit pixel whose input is far over the band stays near what it
+// showed, so a bright ring crossing a lit fill leaves no second ring where it now is, and a pixel
+// that was black still goes to the ceiling. The band, from limiterTrackStep: a fall fires from a
+// step below the tracker's high (its peak when rising, its reference when falling) if that is
+// below the dark threshold, and a rise from a step above its low unless the low is at or above
+// the dark threshold. Every step is integer, as in the model.
+ivec3 limiterDim(uvec4 t, uint allowed, ivec3 c, ivec3 h) {
+    int ext = int(t.x & LUMA_MASK);
+    int dist = int(t.y & 4095u);
+    bool up = (t.y & LUMA_UP) != 0u;
+    int high = up ? ext : ext + dist;
+    int low = up ? ext - dist : ext;
+    int lowest = (allowed & 2u) != 0u ? 0 : min(high - LUMA_STEP + 1, LUMA_DARK);
+    int highest = (allowed & 1u) != 0u || low >= LUMA_DARK ? LUMA_MAX : low + LUMA_STEP - 1;
+    int v = limiterLuma(c);
+    ivec3 d = c;
+    if (v > highest) {
+        int was = limiterLuma(h);
+        int top = highest;
+        if (was < highest) top = highest - (((highest - was) * (min(256, 768 * was / highest) * (v - highest) / v)) >> 8);
+        int lo = 0;
+        int hi = 255;
+        for (int n = 0; n < 8; n++) {
+            int mid = (lo + hi) >> 1;
+            if (limiterLuma((c * mid + 127) / 255) <= top) lo = mid; else hi = mid;
+        }
+        d = (c * lo + 127) / 255;
+        ivec3 e = limiterMix(limiterMix(h, c, 256 - limiterLumaToward(h, c, top, true)), d, CHROMA_K);
+        if (limiterLuma(e) <= top) d = e;
+    } else if (v < lowest) {
+        d = limiterMix(h, c, 256 - limiterLumaToward(h, c, lowest, false));
+    }
+    if (limiterSafe(t, allowed, d)) return d;
+    int w = limiterLuma(d);
+    int lo = 0;
+    int hi = 256;
+    for (int n = 0; n < 8; n++) {
+        int mid = (lo + hi) >> 1;
+        if (limiterLuma(ivec3(mid)) <= w) lo = mid; else hi = mid;
+    }
+    if (limiterLuma(ivec3(lo)) < lowest) lo++;
+    if (limiterSafe(t, allowed, ivec3(lo))) return limiterToward(t, allowed, ivec3(lo), d);
+    return limiterToward(t, allowed, h, c);
+}
 #endif
 
 

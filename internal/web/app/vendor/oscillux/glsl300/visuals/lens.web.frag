@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -572,15 +579,24 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // procedural nebula + starfield (album artwork blended in when it has detail).
 // Iterative 2D geodesic deflection with three gravity constants = chromatic
 // dispersion. Sustained level drives inspiral/merge: event horizon, photon
-// ring, redshifted afterglow. bassImpact = accretion flares.
+// ring, redshifted afterglow. Each beat sends an accretion ripple out from each
+// free mass. Flash budget (CORE-2659): instant band levels never drive large-area
+// brightness or the lens geometry; the beat arrives as a ~150 ms swell from
+// beatPhase and as motion, and red-dominant colours keep a green/blue floor.
 // param0 = Gravity ; param1 = Merge Eagerness ; param2 = Background Richness
 
-vec3 lensNebula(vec2 q, VisualUniforms u, float rich, float starDamp) {
+// Red-dominant colours round to saturated red in 8 bit; keep G + B >= 0.5 R.
+vec3 lensNoRed(vec3 c) {
+    float lift = max(0.0, c.r * 0.5 - c.g - c.b);
+    return c + vec3(0.0, 0.65, 0.35) * lift;
+}
+
+vec3 lensNebula(vec2 q, VisualUniforms u, float rich, float starDamp, float hi) {
     // dim wispy nebula: deep space stays black, filaments carry the color
     float n = fbm(q * 1.5 + vec2(3.1, 7.2));
     float n2 = fbm(q * 2.9 - vec2(1.7, 2.2) + n * 1.2);
     float wisp = pow(saturate(n2), 5.0);
-    vec3 neb = palVisual(n2 * 0.85 + u.spectralCentroid * 0.25, u)
+    vec3 neb = palVisual(n2 * 0.85 + 0.12 + u.spectralCentroid * 0.08, u)
              * wisp * (0.35 + rich * 0.95);
 
     // sparse jittered pin stars (HDR points, tiny coverage)
@@ -592,7 +608,7 @@ vec3 lensNebula(vec2 q, VisualUniforms u, float rich, float starDamp) {
     float star = smoothstep(0.962, 1.0, s) * exp(-d * d * 700.0);
     float tw = 0.65 + 0.35 * sin(u.time * 3.0 + s * 40.0);
     vec3 sc = mix(vec3(1.1, 1.05, 1.0), palVisual(s * 3.0, u), 0.5);
-    return neb + sc * star * tw * (1.6 + u.treble * 2.6) * (0.4 + rich) * starDamp;
+    return neb + sc * star * tw * (1.6 + hi * 2.0) * (0.4 + rich) * starDamp;
 }
 
 vec3 visual(vec2 uv, VisualUniforms u) {
@@ -601,8 +617,18 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float eager = mix(-0.06, 0.10, u.param1);
     float rich = mix(0.2, 1.0, u.param2);
 
+    // Music drive without strobing: band levels lean on the sustained level
+    // (instant bands only nudge), and the beat is a swell that rises over
+    // ~150 ms (0.3 beat at 120 bpm) and falls back to zero before the wrap.
+    float lvl = saturate(u.level);
+    float bp = u.beatPhase;
+    float swell = smoothstep(0.0, 0.30, bp) * (1.0 - smoothstep(0.30, 1.0, bp)) * saturate(lvl * 1.4);
+    float lo = mix(lvl, u.bass, 0.25);
+    float md = mix(lvl, u.mid, 0.25);
+    float hi = mix(lvl, u.treble, 0.25);
+
     // merge state: sustained level approximated with a slow accumulator fake
-    float sustain = u.level * (0.55 + 0.45 * sin(u.time * 0.045)) + u.bass * 0.08;
+    float sustain = lvl * (0.55 + 0.45 * sin(u.time * 0.045)) + 0.06;
     float merge = smoothstep(0.50 - eager, 0.68 - eager, sustain);
 
     // masses on Lissajous orbits, spiraling in as merge rises
@@ -610,12 +636,12 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     vec2 M0 = vec2(sin(u.time * 0.40) * 0.65,        cos(u.time * 0.31) * 0.39) * shrink;
     vec2 M1 = vec2(sin(u.time * 0.40 + 2.4) * 0.80,  cos(u.time * 0.31 + 2.4) * 0.48) * shrink;
     vec2 M2 = vec2(sin(u.time * 0.40 + 4.6) * 0.50,  cos(u.time * 0.31 + 4.6) * 0.30) * shrink;
-    float S0 = (0.05 + u.bass * 0.32) * gravity;
-    float S1 = (0.02 + u.mid * 0.13) * gravity;
-    float S2 = (0.008 + u.treble * 0.06) * gravity;
+    float S0 = (0.05 + lo * 0.30 + swell * 0.04) * gravity;
+    float S1 = (0.02 + md * 0.13) * gravity;
+    float S2 = (0.008 + hi * 0.06) * gravity;
 
     vec2 bh = (M0 + M1 + M2) / 3.0;
-    float bhS = merge * (0.35 + u.bass * 0.30) * gravity;
+    float bhS = merge * (0.35 + lo * 0.30 + swell * 0.025) * gravity;
 
     // artwork detail estimate (blend art into the nebula only if it has detail)
     vec3 imA = IMG(photoCover(vec2(0.25, 0.30), u.resolution, IMGSIZE)).rgb;
@@ -659,7 +685,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     for (int ch = 0; ch < 3; ++ch) {
         float G = 1.0 + (float(ch) - 1.0) * 0.045; // chromatic gravity dispersion
         vec2 qc = p + defl * G;
-        vec3 b = lensNebula(qc, u, rich, starDamp);
+        vec3 b = lensNebula(qc, u, rich, starDamp, hi);
         // deep lens interior demagnifies: light bends away, the core darkens;
         // and where the nebula's own detail passes the pixel rate it fades
         // instead of aliasing into dust
@@ -672,38 +698,46 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // gravitational magnification: a gentle lift right at the onset of
     // deflection (the arc annulus), fading again inside the lens
     float crit = exp(-((stretch - 0.055) * 26.0)*((stretch - 0.055) * 26.0));
-    col *= 1.0 + crit * (0.5 + u.bass * 0.7);
+    col *= 1.0 + crit * (0.5 + lo * 0.5 + swell * 0.2);
 
     // photon rings hugging each free mass — the lens made visible
     float pr0 = exp(-abs(length(p - M0) - (0.050 + S0 * 0.55)) * 90.0);
     float pr1 = exp(-abs(length(p - M1) - (0.040 + S1 * 0.75)) * 110.0);
     float pr2 = exp(-abs(length(p - M2) - (0.032 + S2 * 0.95)) * 130.0);
+    // dim neon halo under each thin ring (well under a flash step)
+    pr0 += 0.14 * exp(-abs(length(p - M0) - (0.050 + S0 * 0.55)) * 24.0);
+    pr1 += 0.14 * exp(-abs(length(p - M1) - (0.040 + S1 * 0.75)) * 28.0);
+    pr2 += 0.16 * exp(-abs(length(p - M2) - (0.032 + S2 * 0.95)) * 32.0);
     float free = 1.0 - merge;
-    col += palRoleBass(0.08, u)   * pr0 * free * (0.8 + u.bass * 2.4);
-    col += palVisual(0.42 + 0.2 * u.spectralCentroid, u) * pr1 * free * (0.5 + u.mid * 1.8);
-    col += palRoleTreble(0.70, u) * pr2 * free * (0.35 + u.treble * 1.6);
+    // (soft, below clip: thin rings driven past white pop on and off)
+    col += palVisual(0.20, u) * pr0 * free * (0.7 + lo * 0.6 + swell * 0.35);
+    col += palVisual(0.42 + 0.08 * u.spectralCentroid, u) * pr1 * free * (0.5 + md * 0.6);
+    col += palVisual(0.70, u) * pr2 * free * (0.6 + hi * 0.6);
 
     // event horizon swallows light; photon ring blazes just outside it
     float rb = length(p - bh);
     float horizon = bhS * 0.55;
     col *= smoothstep(horizon * 0.85, horizon * 1.05, rb);
     float ring = exp(-abs(rb - horizon * 1.35) * 60.0) * merge;
-    col += vec3(2.2, 1.7, 1.0) * ring * (2.5 + u.bass * 4.5);
+    col += vec3(2.2, 1.7, 1.0) * ring * (2.6 + lo * 0.8 + swell * 0.9);
 
-    // accretion flares on bassImpact around each free mass
-    float fl0 = exp(-abs(length(p - M0) - (0.06 + u.bassImpact * 0.12)) * 40.0);
-    float fl1 = exp(-abs(length(p - M1) - (0.06 + u.bassImpact * 0.12)) * 40.0);
-    float fl2 = exp(-abs(length(p - M2) - (0.06 + u.bassImpact * 0.12)) * 40.0);
-    float flAmt = u.bassImpact * u.bassImpact * free * 2.2;
-    col += palVisual(0.05 + u.spectralCentroid * 0.4, u) * fl0 * flAmt;
-    col += palVisual(0.35 + u.spectralCentroid * 0.4, u) * fl1 * flAmt * 0.7;
-    col += palVisual(0.65 + u.spectralCentroid * 0.4, u) * fl2 * flAmt * 0.5;
+    // accretion ripples: each beat a soft ring leaves each free mass and fades
+    // out as it expands (attack ~150 ms, gone before the next beat)
+    float rr = 0.06 + 0.14 * bp;
+    float fl0 = exp(-abs(length(p - M0) - rr) * 45.0);
+    float fl1 = exp(-abs(length(p - M1) - rr) * 45.0);
+    float fl2 = exp(-abs(length(p - M2) - rr) * 45.0);
+    float flAmt = smoothstep(0.0, 0.30, bp) * (1.0 - bp) * (1.0 - bp) * lvl * free * 0.9;
+    col += palVisual(0.20, u) * fl0 * flAmt;
+    col += palVisual(0.45, u) * fl1 * flAmt * 0.7;
+    col += palVisual(0.68, u) * fl2 * flAmt * 0.5;
 
     // merge flash lifts toward peak white, gently
     col = peakWhite(col, ring * 0.10);
 
     // deep-space vignette: the frame edge falls to true black
     col *= exp(-dot(p, p) * 0.85);
+    col = lensNoRed(max(col, vec3(0.0)));
 
     // faint afterglow trail: redshifted persistence
     col = feedbackTrail(col, uv, min(u.trailDecay, 0.62) * 0.72, 0.004, 0.0);

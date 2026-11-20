@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -573,16 +580,15 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // param0 = Floor Speed ; param1 = Skyline Height ; param2 = Floor/Grid Visibility
 
 vec3 visual(vec2 uv, VisualUniforms u) {
-    vec2 uv0 = uv; // unshaken coords for the feedback trail
-
-    // Small: a kick shake moves every thin grid and edge line at once.
-    float shake = u.bassImpact * 0.0012;
-    vec2 cameraNoise = vec2(
-        sin(u.time * 15.0 + 1.9 * sin(u.time * 2.5)),
-        sin(u.time * 11.0 + 1.4 * cos(u.time * 2.1) + 5.0)
-    );
-    uv += shake * vec2(cameraNoise.x, cameraNoise.y * 0.55);
-    uv = clamp(uv, 0.001, 0.999);
+    // Beat swell: about 180 ms attack after the beat, eased release, zero at
+    // the beat wrap, so every beat-driven size and brightness term is
+    // continuous. The instant kick/onset/flux signals and a kick camera shake
+    // jolted every thin edge, cap and shaft at once under loud audio.
+    float swell = smoothstep(0.0, 0.36, u.beatPhase)
+                * (1.0 - smoothstep(0.36, 1.0, u.beatPhase));
+    // Slow hue drift in place of the beat-phase palette nudges, which jumped
+    // at the wrap.
+    float hueDrift = 0.04 * sin(u.time * 0.21);
 
     float horizon = 0.64;
     float heightScale = mix(0.85, 1.85, u.param1);
@@ -615,8 +621,8 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float farFade = exp(-ft * 3.8);
         float sideFade = smoothstep(0.78, 0.18, abs(uv.x - 0.5));
         float floorFade = nearHorizonFade * farFade * sideFade * floorVis;
-        vec3 floorCol = mix(palRoleFog(0.56 + 0.08 * u.spectralCentroid, u),
-                            palRoleTrace(uv.x + 0.08 * u.spectralCentroid, u),
+        vec3 floorCol = mix(palRoleFog(0.56 + hueDrift, u),
+                            palVisual(uv.x + hueDrift, u),
                             0.45);
         glow += floorCol * grid * floorFade * (0.32 + 0.24 * u.mid);
 
@@ -625,7 +631,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float tick = smoothstep(0.08, 0.18, tickCell) * smoothstep(0.92, 0.82, tickCell);
         float b = bandAt(u, uv.x);
         float tickY = step(ft, b * 0.26);
-        glow += palRoleTrace(uv.x + 0.05 * u.spectralCentroid, u) * tick * tickY * floorFade * b * 0.25;
+        glow += palVisual(uv.x + hueDrift, u) * tick * tickY * floorFade * b * 0.25;
     }
 
     // ---------------------------------------------------------------------
@@ -649,14 +655,16 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float group = hash11(floor(fi / 3.0) * 2.3);
         float peak = pow(seed, 5.0) * 0.36;
         float h = pow(b, 0.68) * heightScale * (0.16 + 0.34 * group) + peak;
-        h *= (1.0 + 0.06 * u.bassImpact + phaseLift * 0.075);
+        h *= (1.0 + 0.06 * swell + phaseLift * 0.075);
         h = clamp(h, 0.045, 0.60);
         float yTop = horizon - h;
 
-        float colW = mix(0.0028, 0.0070, smoothstep(0.05, 1.0, b));
+        // Width fixed per column: a band-driven width slid every edge line
+        // sideways by sub-pixel steps on each kick.
+        float colW = mix(0.0034, 0.0062, seed);
         float insideX = 1.0 - smoothstep(colW, colW + 0.002, lane);
         float insideY = step(yTop, uv.y) * step(uv.y, horizon);
-        vec3 c = palRoleTrace(x + 0.06 * u.spectralCentroid, u);
+        vec3 c = palVisual(x + hueDrift, u);
         c = accentize(c, u.accent, 0.08);
 
         float body = insideX * insideY * b * 0.035;
@@ -665,23 +673,25 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
         base += c * body;
         glow += c * edge * (0.85 + 1.75 * b);
-        glow += mix(c, vec3(1.0), 0.45) * cap * (1.2 + 2.9 * u.treble + 1.1 * b);
+        glow += mix(c, vec3(1.0), 0.45) * cap * (1.6 + 1.6 * u.treble + 0.8 * b + 0.8 * swell);
 
         // Tall particle shafts above active towers, like the city reference.
         float shaft = exp(-lane * lane * 22000.0)
                     * smoothstep(yTop - 0.28, yTop, uv.y)
                     * (1.0 - smoothstep(yTop, yTop + 0.05, uv.y));
         float shaftMask = step(0.72, seed) * (0.2 + 0.8 * b);
-        glow += c * shaft * shaftMask * (0.35 + 0.65 * u.flux + phaseLift * 0.22);
+        glow += c * shaft * shaftMask * (0.45 + 0.35 * swell + phaseLift * 0.22);
 
-        // Sparse upward sparks on transient flux.
+        // Sparse upward sparks, one set per beat.
         float sparkSeed = hash11(fi * 5.19 + floor(u.beatCount));
         if (sparkSeed > 0.72) {
             float life = fract(sparkSeed + u.time * (0.55 + sparkSeed) + u.beatPhase * 0.14);
             float sparkY = horizon - h * life;
             float sparkD = length(vec2((uv.x - x) * sx * 1.8, uv.y - sparkY));
             float spark = min(1.2, 0.00018 / (sparkD * sparkD + 0.00045));
-            glow += palRoleTreble(x + 0.06 * u.spectralCentroid, u) * spark * u.flux * (1.0 - life);
+            // Faded in and out across the beat: the spark set re-seeds at the wrap.
+            float sparkEnv = sin(3.14159265 * u.beatPhase);
+            glow += palVisual(0.62 + x * 0.28 + hueDrift, u) * spark * sparkEnv * 0.8 * (1.0 - life);
         }
     }
 
@@ -693,23 +703,28 @@ vec3 visual(vec2 uv, VisualUniforms u) {
                  + 0.028 * (riverBand - 0.5)
                  + 0.012 * sin(uv.x * 12.0 + u.time * 1.4 + beatRadians(u, 0.0) * 0.16)
                  + 0.006 * sin(uv.x * 31.0 - u.time * 2.7 - beatRadians(u, 0.25) * 0.14);
-    float riverW = 0.0038 + 0.0030 * u.bassImpact;
+    float riverW = 0.0042 + 0.0018 * swell;
     float river = aaLine(uv.y - riverY, riverW);
     float riverHalo = aaLine(uv.y - riverY, riverW * 4.5) * 0.22;
     float riverWindow = smoothstep(horizon + 0.02, horizon + 0.09, riverY)
                       * smoothstep(0.96, 0.72, uv.y);
-    vec3 riverCol = palRoleBass(0.08, u);
-    glow += riverCol * (river + riverHalo) * riverWindow * (1.8 + 2.3 * riverBand + 2.2 * u.bassImpact);
+    vec3 riverCol = mix(palVisual(0.18, u), palVisual(0.044, u), 0.7);
+    glow += riverCol * (river + riverHalo) * riverWindow * (2.5 + 2.0 * riverBand + 0.8 * swell);
 
     // Thin horizon separator: narrow, not a fog bar.
     float hLine = aaLine(uv.y - horizon, 0.0018);
-    glow += palRoleFog(0.60 + 0.08 * u.spectralCentroid, u) * hLine * 0.20;
+    glow += palRoleFog(0.60 + hueDrift, u) * hLine * 0.20;
 
-    vec3 trailedGlow = feedbackTrail(glow, uv0,
+    vec3 trailedGlow = feedbackTrail(glow, uv,
                                      min(u.trailDecay, 0.56),
-                                     0.0015 + 0.001 * u.bassImpact,
+                                     0.0015 + 0.001 * swell,
                                      0.0);
-    return base + trailedGlow; // LINEAR HDR — post chain tonemaps
+    vec3 col = base + trailedGlow;
+    // Colour floor: keep G and B a fair share of R so dim copper tails and the
+    // river halo stay amber and never round to saturated red.
+    col.g = max(col.g, col.r * 0.40);
+    col.b = max(col.b, col.r * 0.20);
+    return col; // LINEAR HDR — post chain tonemaps
 }
 
 in vec2 vUV;

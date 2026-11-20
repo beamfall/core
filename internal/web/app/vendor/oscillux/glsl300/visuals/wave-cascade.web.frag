@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -569,8 +576,16 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // SPDX-License-Identifier: AGPL-3.0-only
 // Wave Cascade — a live master trace at the top; on each beat a
 // slice of the trace detaches and falls as a fading sheet (gravity + shear),
-// stacking into a luminous waterfall pool; onsets add spray; trail afterglow.
+// stacking into a luminous waterfall pool; each beat flings spray; trail afterglow.
 // param0 Fall Speed ; param1 Sheet Life ; param2 Spray
+// Flash budget (Makefile visual-flash-check): every beat response is a swell on
+// the beat clock with a ~150 ms attack, never a per-frame kick step, and the
+// master trace drifts slowly, so no large area changes brightness fast.
+
+// smooth per-beat swell: 0 on the beat, ~0.32 beat attack, long release
+float beatSwell(float p) {
+    return smoothstep(0.0, 0.32, p) * (1.0 - smoothstep(0.32, 1.0, p));
+}
 
 float cascadeShape(float x, float seed, float live, VisualUniforms u) {
     // frozen sheets read a noise pseudo-spectrum keyed by seed; the live master
@@ -578,10 +593,12 @@ float cascadeShape(float x, float seed, float live, VisualUniforms u) {
     float frozen = vnoise(vec2(x * 6.5, seed * 17.31)) * 1.3;
     float liveB = bandAt(u, fract(x * 0.82 + 0.03 * sin(u.time * 0.31)));
     float b = mix(frozen, liveB * 1.6, live);
-    float w = sin(x * 9.0 + seed * 2.7) * 0.42
-            + sin(x * 23.0 - seed * 5.1) * 0.22
-            + sin(x * 57.0 + seed * 9.3) * 0.08 * (0.4 + live * u.treble * 1.6);
-    return w * (0.28 + 0.85 * b);
+    // slow phase drift: the trace glides instead of sweeping the frame
+    float w = sin(x * 9.0 + seed * 0.70) * 0.42
+            + sin(x * 23.0 - seed * 1.15) * 0.22
+            + sin(x * 57.0 + seed * 1.90) * 0.06 * (0.6 + live * u.treble * 0.8);
+    // the spectrum shapes the trace, damped so a kick only nudges it
+    return w * (0.55 + 0.45 * b);
 }
 
 vec3 visual(vec2 uv, VisualUniforms u) {
@@ -595,6 +612,8 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float aspect = u.resolution.x / max(u.resolution.y, 1.0);
 
     vec3 col = vec3(0.0);
+    float swell = beatSwell(u.beatPhase);
+    float lvl = clamp(u.level, 0.0, 1.0);
 
     // ---- background: dim spectral columns hanging below the master trace ----
     float cb = bandAt(u, uv.x);
@@ -605,7 +624,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // ---- luminous pool at the bottom of the falls ----
     float poolMist = fbm(vec2(uv.x * 5.0, uv.y * 9.0 - u.time * 0.7));
     float pool = exp(-((uv.y - floorY) * 9.0)*((uv.y - floorY) * 9.0));
-    col += palRoleBass(0.12, u) * pool * (0.12 + 0.22 * u.amplitude + 0.12 * u.bassImpact)
+    col += palRoleBass(0.12, u) * pool * (0.12 + 0.20 * lvl + 0.10 * swell)
          * (0.55 + 0.6 * poolMist);
 
     // ---- falling sheets (one detaches per beat) ----
@@ -624,10 +643,13 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         // slight shear: sheet skews sideways as it falls
         float xq = uv.x + age * 0.030 * (uv.x - 0.5) + age * 0.012;
 
-        float shapeAmp = 0.085 * exp(-age * 0.30) * (0.6 + 0.6 * u.amplitude);
+        float shapeAmp = 0.085 * exp(-age * 0.30) * (0.6 + 0.5 * lvl);
         float ys = yj + cascadeShape(xq, seed, 0.0, u) * shapeAmp;
         float d = uv.y - ys;
-        float fade = exp(-age * life) * (1.0 - 0.60 * settled);
+        // a new sheet eases in off the master over its first beat and a half,
+        // and sheets stay a soft echo of the trace: bright sheets sweeping
+        // down the frame were the strobe
+        float fade = exp(-age * life) * (1.0 - 0.60 * settled) * smoothstep(0.0, 1.5, age);
         float halfW = 0.0022 + 0.0010 * age;
         // motion blur: a fast-falling sheet spreads its light, so a thin
         // bright line never sweeps the frame as a strobe edge
@@ -638,22 +660,22 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float above = step(d, 0.0);
         vec3 sc = palVisual(fract(0.30 + seed * 0.043), u);
         sc = accentize(sc, u.accent, 0.08);
-        col += sc * (line * 1.0 + veil * above) * fade * (0.45 + 0.55 * cb);
+        col += 0.6 * sc * (line + veil * above) * fade * (0.45 + 0.55 * cb);
     }
 
     // ---- live master trace on top (drawn last: hottest layer) ----
     float mShape = cascadeShape(uv.x, seedBase, 1.0, u);
-    float mAmp = 0.10 * (0.55 + 0.75 * u.amplitude) * (1.0 + 0.25 * u.bassImpact);
+    float mAmp = 0.10 * (0.55 + 0.65 * lvl) * (1.0 + 0.12 * swell);
     float yM = topY + mShape * mAmp;
     float dM = uv.y - yM;
     vec3 mc = palRoleTrace(fract(uv.x * 0.7 + 0.10 * u.spectralCentroid), u);
-    col += mc * aaLine(dM, 0.0035) * (2.0 + 2.6 * bandAt(u, uv.x));
-    col += mc * exp(-abs(dM) * 45.0) * (0.25 + 0.25 * u.amplitude);
+    col += mc * aaLine(dM, 0.0035) * (2.0 + 1.0 * bandAt(u, uv.x) + 0.6 * swell);
+    col += mc * exp(-abs(dM) * 45.0) * (0.22 + 0.18 * lvl + 0.06 * swell);
     // white-hot crest pulse sliding along with the beat
     float crest = exp(-(uv.x - u.beatPhase)*(uv.x - u.beatPhase) * 70.0);
-    col += palRolePeak(0.10, u) * crest * aaLine(dM, 0.010) * u.bassImpact * 2.6;
+    col += palRolePeak(0.10, u) * crest * aaLine(dM, 0.008) * swell * 1.6;
 
-    // ---- onset spray: droplets flung off the newest detachment ----
+    // ---- beat spray: droplets flung off the newest detachment ----
     for (int i = 0; i < 24; ++i) {
         float fi = float(i);
         vec2 h = hash22(vec2(fi * 1.91, u.beatCount * 3.7));
@@ -666,7 +688,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float d2 = dot(dv, dv);
         float spark = 1.6e-5 / (d2 + 2.2e-5);
         col += palRoleTreble(fract(fi * 0.083), u) * spark
-             * (u.onset * 1.6 + u.flux * 0.5) * sprayAmt * exp(-sAge * 2.2);
+             * (0.5 + 0.7 * u.treble) * swell * sprayAmt;
     }
 
     // frame falloff
