@@ -11,11 +11,11 @@ has no Home hero, and landscape art is clipped in portrait card frames.
 
 - Keep the manifest's Continue Watching shelf and show recent additions under
   their library names. Fetch each shelf through its own library-scoped Home
-  source. Until CORE-1496 supplies scoped Home visibility, use an item in
-  common with the aggregate Home feed as evidence that a library can appear.
-  Omit libraries whose visibility cannot be confirmed within that window.
+  source for libraries whose GraphQL `showOnHome` is anything other than
+  `false`. Viewer sessions currently lack access to the `libraries` resolver.
+  In that case, retain the server-filtered Recently Added shelf while the
+  scoped visibility read is pending a server change.
 - Use the existing hero for a recent, playable item with artwork. Collapse it
-  when no eligible image loads. Consider artwork from both the aggregate feed
-  and the visible library shelves.
+  when no eligible image loads. Consider artwork from the shelves shown on Home.
 - Fit Home card frames to loaded artwork and keep the existing fallback frame
   for missing artwork.
