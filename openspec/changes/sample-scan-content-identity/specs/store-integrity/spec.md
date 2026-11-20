@@ -46,9 +46,11 @@ and its Media SHALL remain unchanged.
 #### Scenario: Managed reimport at an existing legacy path
 
 - **WHEN** managed admission replaces a file removed outside Beamfall and the staged full digest
-  matches a non-trashed legacy row at the same path in the same library, whether live or marked missing
+  matches a legacy row at the same path in the same library, including a missing file or a
+  soft-trashed Media
 - **THEN** the admission preserves the legacy fingerprint and Media ID, including watch state
-  and match pins, and clears the old mtime so the next scan verifies the replacement once
+  and match pins, and clears the old mtime so the next scan of the live row verifies the replacement once
+- **AND** a soft-trashed Media retains its original trash timestamp and remains restorable
 
 ## ADDED Requirements
 
