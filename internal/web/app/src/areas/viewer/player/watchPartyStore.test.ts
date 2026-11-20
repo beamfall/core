@@ -680,7 +680,7 @@ describe("races", () => {
     }
   });
 
-  it("drops stale host controls and reloads the roster after a missed handoff", async () => {
+  it.each(["seek", "auto-skip"])("recovers after host wake on %s", async (action) => {
     vi.mocked(createWatchParty).mockResolvedValue({
       partyID: "p1",
       content: "m1",
@@ -688,7 +688,10 @@ describe("races", () => {
       members: [{ displayName: "Host", present: true }],
     });
     expect(await startWatchParty("m1")).toBe(true);
-    vi.mocked(watchPartyTransport).mockRejectedValue(new ApiError("not the party host", 403));
+    const autoSkip = action === "auto-skip";
+    const mutation = vi.mocked(autoSkip ? watchPartyAutoSkip : watchPartyTransport);
+    const reason = autoSkip ? "not a member of this party" : "not the party host";
+    mutation.mockRejectedValueOnce(new ApiError(reason, 403));
     const anchor = { item: "m2", positionMS: 14_000, presentAtMS: 10_000 };
     vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
       deliver({
@@ -704,16 +707,19 @@ describe("races", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       // The host wakes after grace. No handoff frame reached the disconnected tab.
-      const refused = sendPartyTransport("m1", { positionMS: 30_000, playing: false });
+      const refused = autoSkip
+        ? sendPartyAutoSkip("m1", 30_000)
+        : sendPartyTransport("m1", { positionMS: 30_000, playing: false });
       const queued = sendPartyTransport("m1", { positionMS: 60_000, playing: false });
       await vi.advanceTimersByTimeAsync(5000);
-      expect(watchPartyTransport).toHaveBeenCalledTimes(1);
+      expect(mutation).toHaveBeenCalledTimes(1);
+      if (autoSkip) expect(watchPartyTransport).not.toHaveBeenCalled();
       expect(acceptWatchParty).toHaveBeenCalledExactlyOnceWith({
         partyID: "p1",
         clockOffsetMS: 25,
         renderLatencyMS: 0,
       });
-      await expect(refused).resolves.toBe(false);
+      await expect(refused).resolves.toBe(autoSkip ? "unconfirmed" : false);
       await expect(queued).resolves.toBe(false);
       expect(pendingPartyTransport("m1")).toBeUndefined();
       expect(getWatchParty()).toMatchObject({
@@ -735,7 +741,7 @@ describe("races", () => {
         paused: false,
       });
     } finally {
-      vi.mocked(watchPartyTransport).mockReset();
+      mutation.mockReset();
       vi.useRealTimers();
     }
   });

@@ -292,11 +292,12 @@ function enqueueTransport(
             settleTransport(work, result, queue.pending);
             return;
           } catch (err) {
+            const refusal = err instanceof ApiError ? err.message : undefined;
+            const notMember = refusal === "not a member of this party";
             if (
               sentAsHost &&
               gen === generation &&
-              err instanceof ApiError &&
-              err.message === "not the party host"
+              (refusal === "not the party host" || notMember)
             ) {
               // The handoff may have happened while this tab's stream was closed.
               // Drop controls from the old role before requesting the live roster.
@@ -309,11 +310,7 @@ function enqueueTransport(
               await refreshPartyAfterHandoff(partyID, gen);
               return;
             }
-            if (
-              gen === generation &&
-              err instanceof ApiError &&
-              (err.message === "unknown party" || err.message === "not a member of this party")
-            ) {
+            if (gen === generation && (refusal === "unknown party" || notMember)) {
               if (state.lead) declinedParties.add(partyID);
               forgetFollowing();
               reset();
@@ -1076,7 +1073,9 @@ async function applyPartyAutoSkip(
   }
   const result = await watchPartyAutoSkip({ partyID, item, positionMS: target });
   const latest = state.timeline;
-  if (!work.isCurrent() || latest?.item !== item) return "unconfirmed";
+  // A stale-item reply can arrive before the title change on the stream. Do
+  // not let the caller fall back to a scrub that would restore the old title.
+  if (!work.isCurrent() || latest?.item !== item || result.item !== item) return "unconfirmed";
   if (!result.applied) return isLatest() && latest === timeline ? "denied" : "unconfirmed";
   const relevant = isLatest() || pauseRetainsLeadSkip(work, latestTransport);
   if (work.confirmed) return relevant ? "applied" : "unconfirmed";

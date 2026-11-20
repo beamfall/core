@@ -213,8 +213,13 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
     const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
     vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 0, roundTripMS: 1 });
     const partyID = member ? "member-play-party" : "p1";
-    const publish = (paused: boolean, positionMS = 0, signal = "transition") => {
-      const anchor = { item: "media-alpha", positionMS, presentAtMS: Date.now() };
+    const publish = (
+      paused: boolean,
+      positionMS = 0,
+      signal = "transition",
+      item = "media-alpha",
+    ) => {
+      const anchor = { item, positionMS, presentAtMS: Date.now() };
       stream.mock.lastCall?.[0](
         new MessageEvent("group.sync", {
           data: JSON.stringify({ payload: { ...anchor, groupID: partyID, signal, paused, lead } }),
@@ -746,6 +751,30 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
       positionMS: 10_000,
       paused: true,
     });
+  });
+
+  it("drops a member's scrub when the skip reply reveals a title change before sync", async () => {
+    const { video, publish, partyID } = await mountPartyPlayer(true);
+    const nextAnchor = { item: "media-beta", positionMS: 12_000, presentAtMS: Date.now() };
+    vi.mocked(watchPartyAutoSkip).mockResolvedValueOnce({ partyID, applied: false, ...nextAnchor });
+    vi.mocked(requestWatchPartyTransport).mockResolvedValueOnce({ partyID, approved: true });
+
+    fireEvent.pointerDown(video);
+    video.currentTime = 10;
+    fireEvent.seeking(video);
+    await act(async () => fireEvent.seeked(video));
+
+    expect(watchPartyAutoSkip).toHaveBeenCalledExactlyOnceWith({
+      partyID,
+      item: "media-alpha",
+      positionMS: 30_000,
+    });
+    expect(getWatchParty().timeline?.item).toBe("media-alpha");
+    expect(requestWatchPartyTransport).not.toHaveBeenCalled();
+
+    await act(async () => publish(true, nextAnchor.positionMS, "transition", nextAnchor.item));
+    expect(getWatchParty().timeline).toMatchObject(nextAnchor);
+    expect(requestWatchPartyTransport).not.toHaveBeenCalled();
   });
 
   it.each([1000, 20_000])(
