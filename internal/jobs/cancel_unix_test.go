@@ -3,8 +3,10 @@
 package jobs
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"syscall"
 	"testing"
@@ -23,8 +25,9 @@ import (
 func TestCancelRunningStopsHandlerAndItsChildProcessGroup(t *testing.T) {
 	for _, withRenewal := range []bool{true, false} {
 		t.Run(map[bool]string{true: "renewing store", false: "store without renewal"}[withRenewal], func(t *testing.T) {
-			ctx := context.Background()
+			ctx, cancel := context.WithCancel(context.Background())
 			st := storetest.Open(t)
+			t.Cleanup(cancel)
 			now := time.Now().UTC()
 			if _, err := st.EnqueueJob(ctx, store.Job{ID: "job-cancel", Kind: "asset-sweep", CreatedAt: now}); err != nil {
 				t.Fatal(err)
@@ -33,25 +36,52 @@ func TestCancelRunningStopsHandlerAndItsChildProcessGroup(t *testing.T) {
 			if !withRenewal {
 				registry.renewInterval = 0
 			}
+			// The background subshell blocks reading fd 3 until the test
+			// closes this pipe, so a member the cancel misses exits at
+			// cleanup instead of outliving the test.
+			hold, release, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = hold.Close() })
 			started := make(chan int, 1)
 			registry.Register("asset-sweep", func(handlerCtx context.Context, _ store.Job) (Result, error) {
 				// The same lifecycle the ffmpeg supervisor gives a child: its
 				// own process group, killed whole when the context ends.
-				cmd := exec.CommandContext(handlerCtx, "sh", "-c", "sleep 60 & sleep 60")
+				// The background subshell reports ready itself, after its fork
+				// has completed, and neither shell forks or execs again. Under
+				// load on macOS a group SIGKILL sent while a member is still
+				// forking or exec'ing can miss it, leaving an orphan that
+				// outlives the bound; cancelling earlier tested that race, not
+				// the cancel path (CORE-2710).
+				cmd := exec.CommandContext(handlerCtx, "sh", "-c", `(echo ready; read -r _ <&3) & wait`)
+				cmd.ExtraFiles = []*os.File{hold}
 				cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 				cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+				stdout, err := cmd.StdoutPipe()
+				if err != nil {
+					return Result{}, err
+				}
 				if err := cmd.Start(); err != nil {
 					return Result{}, err
+				}
+				if _, err := bufio.NewReader(stdout).ReadString('\n'); err != nil {
+					return Result{}, errors.Join(err, cmd.Wait())
 				}
 				started <- cmd.Process.Pid
 				return Result{Checkpoint: []byte(`{"cursor":"partial"}`)}, cmd.Wait()
 			})
 
 			returned := make(chan error, 1)
+			workerDone := make(chan struct{})
 			go func() {
+				defer close(workerDone)
 				_, err := registry.RunOne(ctx, nil, now)
 				returned <- err
 			}()
+			// Before the store closes, stop the worker, release any member
+			// the cancel missed, and wait for its bookkeeping to finish.
+			t.Cleanup(func() { cancel(); _ = release.Close(); <-workerDone })
 			var pgid int
 			select {
 			case pgid = <-started:
