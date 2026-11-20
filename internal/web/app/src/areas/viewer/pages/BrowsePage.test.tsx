@@ -95,7 +95,7 @@ function renderAt(path: string, session: object = { manifest, loading: false }) 
       <MemoryRouter initialEntries={[path]}>
         <Path />
         <Routes>
-          <Route path="/" element={<BrowsePage home />} />
+          <Route path="/" element={<BrowsePage />} />
           <Route path="/n/:nodeId" element={<BrowsePage />} />
         </Routes>
       </MemoryRouter>

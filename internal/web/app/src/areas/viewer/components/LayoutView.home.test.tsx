@@ -1,14 +1,16 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LibrarySidebar } from "@/components/chrome/LibrarySidebar";
 import { ApiError } from "@/lib/api";
-import type { Layout, SourceItem } from "@/lib/graphql/types";
+import type { Layout, LibrarySummary, SourceItem } from "@/lib/graphql/types";
 import { fetchHomeLibraries } from "@/lib/graphql/viewer";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache } from "@/lib/viewerCache";
 import { notifyEngagementChanged } from "../actions/engagementSync";
 import { fetchSectionItems, MAX_RENDERED_SECTIONS } from "../lib/sections";
+import { BrowsePage } from "../pages/BrowsePage";
 import { LayoutView } from "./LayoutView";
 
 const libraries = [
@@ -25,7 +27,27 @@ vi.mock("@/lib/graphql/viewer", async (importOriginal) => ({
 }));
 vi.mock("@/lib/session", () => ({
   useViewerIdentity: () => identity,
-  useSession: () => session,
+  useSession: () => activeSession,
+}));
+vi.mock("@/components/chrome/AppShell", () => ({
+  AppShell: ({ children }: { children: React.ReactNode }) => {
+    const { pathname } = useLocation();
+    const { navigation, libraries } = activeSession.manifest;
+    return (
+      <>
+        <LibrarySidebar
+          id="sidebar"
+          navigation={navigation}
+          libraries={libraries}
+          activeNodeId={pathname.split("/").at(-1) ?? ""}
+          collapsed={false}
+          drawer={false}
+          onNavigate={() => {}}
+        />
+        {children}
+      </>
+    );
+  },
 }));
 vi.mock("../lib/sections", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/sections")>()),
@@ -40,13 +62,27 @@ vi.mock("@/lib/viewerCache", async (importOriginal) => {
 let identity = "viewer";
 const session = {
   manifest: {
-    libraries,
+    libraries: libraries.map(
+      (library): LibrarySummary => ({
+        ...library,
+        pluginID: null,
+        previewClips: false,
+      }),
+    ),
     navigation: libraries
       .filter(({ id }) => id !== "quiet")
-      .map(({ id }) => ({ libraryID: id, view: "layout" })),
+      .map(({ id, title }) => ({
+        id: `library-${id}`,
+        libraryID: id,
+        title,
+        view: "layout",
+        layoutID: `layout-${id}`,
+      })),
+    layouts: [] as Layout[],
   },
   isManager: false,
 };
+let activeSession = session;
 const layout: Layout = {
   id: "layout-home",
   sections: [
@@ -85,6 +121,7 @@ function renderHome(homeLayout = layout) {
 
 beforeEach(() => {
   identity = "viewer";
+  activeSession = session;
   clearViewerCache();
   vi.mocked(clearViewerCache).mockClear();
   vi.mocked(fetchHomeLibraries).mockResolvedValue(libraries);
@@ -98,6 +135,58 @@ afterEach(() => {
 });
 
 describe("Viewer Home", () => {
+  it("keeps Home visibility and artwork when opening Home from the sidebar", async () => {
+    activeSession = {
+      ...session,
+      manifest: {
+        ...session.manifest,
+        navigation: [
+          { id: "home", libraryID: "", title: "Home", view: "layout", layoutID: layout.id },
+          ...session.manifest.navigation,
+        ],
+        layouts: [layout],
+      },
+    };
+    const visible = newItem("Visible item", { artwork: { poster: "/visible" } });
+    const hidden = newItem("Hidden item");
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, { libraryID, home }) => {
+      if (section.id === "continue") return home ? [visible] : [visible, hidden];
+      if (libraryID === "one") return [visible];
+      if (libraryID === "hidden" || (!libraryID && !home)) return [hidden];
+      return [];
+    });
+    const { container } = render(
+      <I18nProvider>
+        <MemoryRouter basename="/web" initialEntries={["/web/n/library-one"]}>
+          <Routes>
+            <Route path="/" element={<BrowsePage />} />
+            <Route path="/n/:nodeId" element={<BrowsePage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Library One", level: 1 })).toBeVisible();
+    const homeLink = screen.getByRole("link", { name: "Home" });
+    expect(homeLink).toHaveAttribute("href", "/web/n/home");
+    fireEvent.click(homeLink);
+
+    const shelf = await screen.findByRole("list", { name: "Library One" });
+    expect(shelf.querySelector(".bf-poster-intrinsic img")).toBeVisible();
+    expect(screen.getByRole("list", { name: "Continue Watching" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: hidden.title })).toBeNull();
+    expect(fetchSectionItems).toHaveBeenCalledWith(
+      layout.sections[0],
+      expect.objectContaining({ libraryID: "", home: true }),
+      expect.anything(),
+    );
+    const heroArt = container.querySelector(".bf-hero img");
+    expect(heroArt).toHaveAttribute("src", "/visible?bucket=w1280");
+    if (!heroArt) throw new Error("Expected hero artwork");
+    fireEvent.load(heroArt);
+    expect(screen.getByRole("heading", { name: visible.title })).toBeVisible();
+  });
+
   it("does not hydrate a Recent shelf beyond the layout's Section limit", () => {
     const [keepWatching, recent] = layout.sections;
     const sections = Array.from({ length: MAX_RENDERED_SECTIONS }, (_, index) => ({
@@ -546,5 +635,20 @@ describe("Viewer Home", () => {
     expect(await screen.findByRole("list", { name: "Library One" })).toBeVisible();
     expect(container.querySelector(".bf-hero")).toBeNull();
     expect(container.querySelector(".bf-poster-glyph")).toBeVisible();
+  });
+
+  it("features a recent item whose only artwork is a banner", async () => {
+    const feature = newItem("Banner item", { artworkSlots: { banner: "/banner" } });
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, { libraryID }) =>
+      section.id === "recent" && libraryID === "one" ? [feature] : [],
+    );
+    const { container } = renderHome();
+    await screen.findByRole("list", { name: "Library One" });
+
+    const heroArt = container.querySelector(".bf-hero img");
+    expect(heroArt).toHaveAttribute("src", "/banner?bucket=w1280");
+    if (!heroArt) throw new Error("Expected hero banner");
+    fireEvent.load(heroArt);
+    expect(screen.getByRole("heading", { name: feature.title })).toBeVisible();
   });
 });

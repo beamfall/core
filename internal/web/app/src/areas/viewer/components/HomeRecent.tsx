@@ -270,7 +270,7 @@ export function HomeRecentShelves({
 }
 
 const HOME_ARTWORK_TIMEOUT_MS = 3000;
-const HERO_SLOTS = ["backdrop", "poster", "thumb"] as const;
+const HERO_SLOTS = ["backdrop", "poster", "thumb", "banner"] as const;
 
 interface ArtworkAttempt {
   itemID: string;

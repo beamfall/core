@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { SECTION_GRID_CAP } from "../lib/sections";
@@ -38,7 +38,11 @@ function renderGrid(count: number) {
   );
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 // CORE-1213: a grid hydrates a bounded first page, so one that fills it must
 // lead to the paged See All grid instead of silently stopping.
@@ -52,6 +56,56 @@ describe("SectionView grid See All", () => {
     renderGrid(SECTION_GRID_CAP - 1);
     expect(screen.queryByRole("button", { name: "See all" })).toBeNull();
   });
+});
+
+it("keeps short rows in view when scrolling a mixed-art Home grid", async () => {
+  const columns = 4;
+  const gap = 20;
+  const viewport = 240;
+  const heights = Array.from({ length: 16 }, (_, row) => (row < 4 ? 240 : 80));
+  const offsets = [0];
+  for (const height of heights) offsets.push((offsets.at(-1) ?? 0) + height + gap);
+  const mixed = items(heights.length * columns).map((item, index) => ({
+    ...item,
+    artwork: { poster: index < 4 * columns ? "/portrait.png" : "/landscape.png" },
+  }));
+  let scroll = 0;
+  vi.stubGlobal("innerHeight", viewport);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    if (this.classList.contains("bf-grid")) return { top: -scroll } as DOMRect;
+    const index = Number(this.getAttribute("aria-posinset")) - 1;
+    return { height: heights[Math.floor(index / columns)] ?? 0 } as DOMRect;
+  });
+
+  render(
+    <I18nProvider>
+      <MemoryRouter>
+        <SectionView section={grid} items={mixed} intrinsicArtwork />
+      </MemoryRouter>
+    </I18nProvider>,
+  );
+  const list = screen.getByRole("list", { name: "All" });
+  list.style.gridTemplateColumns = "150px ".repeat(columns).trim();
+  list.style.rowGap = `${gap}px`;
+  fireEvent.resize(window);
+
+  for (const row of [3, 6, 9, 12]) {
+    scroll = offsets[row] + 5;
+    fireEvent.scroll(window);
+    await waitFor(() => {
+      const cards = within(list).getAllByRole("listitem");
+      expect(cards[0]).toHaveAttribute("aria-posinset", String((row - 2) * columns + 1));
+      expect(list.firstElementChild).toHaveStyle({ height: `${offsets[row - 2] - gap}px` });
+      // A 240px viewport at these short rows also intersects the third row.
+      if (row >= 6) {
+        expect(
+          within(list).getByRole("link", { name: `Item ${(row + 2) * columns}` }),
+        ).toBeVisible();
+      }
+    });
+  }
 });
 
 // CORE-2320: two cards with the same title read as one; each shows its year.

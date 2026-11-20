@@ -21,7 +21,7 @@ import { type HomeLibrarySeeAllState, seeAllTargetFor } from "../lib/seeall";
 // layout node (the manifest's "ambient" entry, which carries no Layout, or a
 // library that is gone or hidden from this Profile) redirects to Home rather
 // than drawing Home's shelves under another node's address.
-export function BrowsePage({ home = false }: { home?: boolean }) {
+export function BrowsePage() {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const { nodeId } = useParams();
@@ -45,15 +45,17 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
   const layoutNodes: NavigationNode[] = (manifest?.navigation || []).filter(
     (entry) => entry.view === "layout",
   );
-  const node = home ? layoutNodes[0] : findNodeBySlug(layoutNodes, nodeId);
-  if (!home && !node && layoutNodes.length > 0) {
+  const homeNode = layoutNodes[0];
+  const node = nodeId === undefined ? homeNode : findNodeBySlug(layoutNodes, nodeId);
+  if (!node && homeNode) {
     return <Navigate to="/" replace />;
   }
   // An old link names the node by its raw ID; move it to the readable address
   // (CORE-2322).
-  if (!home && node && nodeId !== nodeSlug(node.id)) {
+  if (nodeId !== undefined && node && nodeId !== nodeSlug(node.id)) {
     return <Navigate to={nodePath(node.id)} replace />;
   }
+  const home = node !== undefined && node === homeNode;
   const layout = (manifest?.layouts || []).find((l) => l.id === node?.layoutID) || null;
   const libraryID = node?.libraryID || "";
 

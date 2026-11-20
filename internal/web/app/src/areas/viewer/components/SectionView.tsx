@@ -76,6 +76,7 @@ export function SectionView({
     gridRef,
     itemCount: items.length,
     enabled: virtualize,
+    variableRows: intrinsicArtwork ? items : undefined,
   });
 
   // The visible slice: the whole set unless windowing produced a range.
