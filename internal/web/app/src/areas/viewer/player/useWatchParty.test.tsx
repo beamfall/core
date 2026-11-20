@@ -21,7 +21,7 @@ let party: WatchPartyState;
 vi.mock("./watchPartyStore", () => ({
   getWatchParty: () => party,
   useWatchPartyState: () => party,
-  sendPartyTransport: vi.fn(async () => {}),
+  sendPartyTransport: vi.fn(async () => true),
   startWatchParty: vi.fn(async () => true),
   leaveParty: vi.fn(async () => {}),
   leavePartyOnPageHide: vi.fn(),
@@ -89,6 +89,7 @@ describe("useWatchParty local transport", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -144,6 +145,54 @@ describe("useWatchParty local transport", () => {
     video.dispatchEvent(new Event("seeked"));
     expect(sendPartyTransport).toHaveBeenCalledWith("m1", 45_000, true);
     view.unmount();
+  });
+
+  it("keeps a seek taking over three seconds until the party acknowledges it (CORE-1805)", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+    const timeline = { item: "m1", positionMS: 0, presentAtMS: 0, paused: true };
+    party = { ...activeParty(timeline), isHost: true };
+    const video = new FakeVideo();
+    const view = mount(video);
+    let finish!: (applied: boolean) => void;
+    vi.mocked(sendPartyTransport).mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    vi.advanceTimersByTime(1);
+    markViewerIntent();
+    video.currentTime = 45;
+    video.seeking = true;
+    video.dispatchEvent(new Event("seeking"));
+    act(() => vi.advanceTimersByTime(3100));
+    expect(sendPartyTransport).not.toHaveBeenCalled();
+
+    video.seeking = false;
+    video.dispatchEvent(new Event("seeked"));
+    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith("m1", 45_000, true);
+    act(() => vi.advanceTimersByTime(500));
+    expect(video.currentTime).toBe(45);
+
+    await act(async () => {
+      party = { ...party, timeline: { ...timeline, positionMS: 45_000 } };
+      finish(true);
+      view.rerender();
+    });
+    act(() => vi.advanceTimersByTime(500));
+    expect(video.currentTime).toBe(45);
+  });
+
+  it("resumes drift correction when a seek receives no new anchor (CORE-1805)", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
+    const video = new FakeVideo();
+    mount(video);
+    vi.advanceTimersByTime(1);
+    markViewerIntent();
+    video.currentTime = 45;
+    video.dispatchEvent(new Event("seeking"));
+    await act(async () => video.dispatchEvent(new Event("seeked")));
+    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith("m1", 45_000, true);
+    act(() => vi.advanceTimersByTime(500));
+    expect(video.currentTime).toBe(45);
+    act(() => vi.advanceTimersByTime(15_000));
+    expect(video.currentTime).toBe(0);
   });
 
   it("ignores autoplay after an unrelated long touch gesture", () => {

@@ -58,6 +58,16 @@ const FOLLOW_READOUT_INTERVAL_MS = 500;
  * input, and only if no correction came after that input.
  */
 const INTENT_WINDOW_MS = 1500;
+/** Fallback if the browser never completes the seek or its transition never arrives. */
+const SEEK_INTENT_TIMEOUT_MS = 15_000;
+
+interface LocalSeek {
+  partyID: string;
+  item: string;
+  expiresAt: number;
+  /** The old anchor when seeked submitted the new position. */
+  sentFrom: PartyTimeline | null;
+}
 
 export type WatchPartyPlayback = "off" | "waiting" | "paused" | "playing";
 
@@ -123,6 +133,7 @@ export function useWatchParty({
   const mountedAt = useRef(performance.now());
   const lastCorrection = useRef(Number.NEGATIVE_INFINITY);
   const leadAutoSkip = useRef<number | null>(null);
+  const localSeek = useRef<LocalSeek | null>(null);
   const mediaIdRef = useRef(mediaId);
   mediaIdRef.current = mediaId;
   // The element a follower muted, and the listener's own mute to give back.
@@ -233,6 +244,17 @@ export function useWatchParty({
     if (s.lead) {
       follow(video, tl);
       return;
+    }
+    const pending = localSeek.current;
+    if (pending) {
+      if (
+        pending.partyID === s.partyID &&
+        pending.item === tl.item &&
+        performance.now() < pending.expiresAt &&
+        (pending.sentFrom === null || pending.sentFrom === tl)
+      )
+        return;
+      localSeek.current = null;
     }
     if (video.readyState < 1 || video.seeking) return;
     const now = partyNowMS();
@@ -417,12 +439,30 @@ export function useWatchParty({
     };
   }, []);
 
-  // The viewer's own play, pause and seek become party transport. A media
-  // event with no recent input behind it, or that agrees with the timeline, is
-  // ignored.
+  // Recognize a viewer seek when it starts, then hold off drift correction
+  // through seeked and until the server publishes the new anchor.
   useEffect(() => {
     const video = videoRef.current;
     if (!active || !attached || !video) return;
+    const hasRecentInput = () => {
+      const input = lastViewerIntent();
+      return (
+        input >= mountedAt.current &&
+        input >= lastCorrection.current &&
+        performance.now() - input <= INTENT_WINDOW_MS
+      );
+    };
+    const onSeeking = () => {
+      const s = getWatchParty();
+      if (s.status !== "active" || s.lead || s.timeline?.item !== mediaIdRef.current) return;
+      if (!hasRecentInput()) return;
+      localSeek.current = {
+        partyID: s.partyID,
+        item: s.timeline.item,
+        expiresAt: performance.now() + SEEK_INTENT_TIMEOUT_MS,
+        sentFrom: null,
+      };
+    };
     const onLocal = (event: Event) => {
       const s = getWatchParty();
       const tl = s.timeline;
@@ -434,17 +474,25 @@ export function useWatchParty({
       }
       // The lead's player is the timeline however it was moved (a remote
       // control, a relock): nothing corrects it, so every event is its own.
-      const input = lastViewerIntent();
+      // A follower screen has no transport: the next beat puts it back.
+      if (s.lead && !s.isHost) return;
+      const isSeek = event.type === "seeked";
+      const pending = localSeek.current;
       if (
-        !(s.lead && s.isHost) &&
-        (input < mountedAt.current ||
-          performance.now() - input > INTENT_WINDOW_MS ||
-          input < lastCorrection.current)
+        isSeek &&
+        pending?.sentFrom &&
+        pending.partyID === s.partyID &&
+        pending.item === tl.item
       ) {
         return;
       }
-      // A follower screen has no transport: the next beat puts it back.
-      if (s.lead && !s.isHost) return;
+      const matchesSeek =
+        isSeek &&
+        pending?.sentFrom === null &&
+        pending.partyID === s.partyID &&
+        pending.item === tl.item &&
+        performance.now() < pending.expiresAt;
+      if (!s.lead && !matchesSeek && !hasRecentInput()) return;
       const now = partyNowMS();
       const local = video.currentTime * positionScale;
       const agrees =
@@ -453,15 +501,36 @@ export function useWatchParty({
           : event.type === "play"
             ? !tl.paused
             : Math.abs(local - expectedPositionMS(tl, now)) <= SEEK_THRESHOLD_MS;
-      if (agrees) return;
-      void sendPartyTransport(tl.item, local, video.paused);
+      if (agrees) {
+        if (matchesSeek) localSeek.current = null;
+        return;
+      }
+      if (!isSeek || s.lead) {
+        void sendPartyTransport(tl.item, local, video.paused);
+        return;
+      }
+      const submitted = {
+        partyID: s.partyID,
+        item: tl.item,
+        expiresAt: matchesSeek ? pending.expiresAt : performance.now() + SEEK_INTENT_TIMEOUT_MS,
+        sentFrom: tl,
+      };
+      localSeek.current = submitted;
+      void sendPartyTransport(tl.item, local, video.paused).then((applied) => {
+        // A host-only request may still await approval. The local player
+        // follows the current anchor in the meantime.
+        if (!applied && localSeek.current === submitted) localSeek.current = null;
+      });
     };
     video.addEventListener("play", onLocal);
     video.addEventListener("pause", onLocal);
+    video.addEventListener("seeking", onSeeking);
     video.addEventListener("seeked", onLocal);
     return () => {
+      localSeek.current = null;
       video.removeEventListener("play", onLocal);
       video.removeEventListener("pause", onLocal);
+      video.removeEventListener("seeking", onSeeking);
       video.removeEventListener("seeked", onLocal);
     };
   }, [active, attached, videoRef, positionScale]);

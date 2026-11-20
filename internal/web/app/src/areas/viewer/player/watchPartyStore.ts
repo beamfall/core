@@ -620,10 +620,10 @@ export async function sendPartyTransport(
   item: string,
   positionMS: number,
   paused: boolean,
-): Promise<void> {
-  if (state.status !== "active") return;
+): Promise<boolean> {
+  if (state.status !== "active") return false;
   // A follower screen has no transport: the server refuses it.
-  if (state.lead && !state.isHost) return;
+  if (state.lead && !state.isHost) return false;
   const partyID = state.partyID;
   const vars = { partyID, item, positionMS: Math.max(0, Math.round(positionMS)), paused };
   const gen = generation;
@@ -643,11 +643,13 @@ export async function sendPartyTransport(
           },
         });
       }
-    } else {
-      await requestWatchPartyTransport(vars);
+      return gen === generation;
     }
+    const request = await requestWatchPartyTransport(vars);
+    return gen === generation && request.approved;
   } catch (err) {
     if (gen === generation) set(failure(err));
+    return false;
   }
 }
 
