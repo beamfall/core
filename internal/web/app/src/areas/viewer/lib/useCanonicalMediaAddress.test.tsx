@@ -1,6 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/api";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
 import { fetchMedia } from "./mediaDetail";
 import { useCanonicalMediaAddress, useMediaAddressID } from "./useCanonicalMediaAddress";
@@ -32,14 +33,18 @@ function Harness({ route, enabled }: { route: "watch" | "media"; enabled?: boole
 }
 
 function WatchAddress() {
-  return <div>{useMediaAddressID()}</div>;
+  const id = useMediaAddressID();
+  return <div>{id === "" ? "unavailable" : id}</div>;
 }
 
 describe("legacy watch bookmark resolution", () => {
   const bookmark = "/watch/media-sample1-a371bff46385f7ded";
   const sampledID = "media-sample1-a371bff46385f7ded";
 
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.mocked(fetchMedia).mockReset();
+    vi.useRealTimers();
+  });
 
   it.each([null, { ...media, id: sampledID }])(
     "resolves the literal bookmark when the sampled lookup returns %j",
@@ -62,7 +67,7 @@ describe("legacy watch bookmark resolution", () => {
     vi.useFakeTimers();
     vi.mocked(fetchMedia)
       .mockClear()
-      .mockRejectedValueOnce(new Error("network unavailable"))
+      .mockRejectedValueOnce(new TypeError("network unavailable"))
       .mockResolvedValueOnce(null);
     render(
       <MemoryRouter initialEntries={[bookmark]}>
@@ -81,6 +86,22 @@ describe("legacy watch bookmark resolution", () => {
     expect(screen.getByText(ID).textContent).toBe(ID);
     expect(fetchMedia).toHaveBeenCalledTimes(2);
     expect(fetchMedia).toHaveBeenLastCalledWith(sampledID, expect.any(AbortSignal));
+  });
+
+  it.each([401, 403, 410])("shows unavailable without retrying an HTTP %s", async (status) => {
+    vi.useFakeTimers();
+    vi.mocked(fetchMedia).mockRejectedValue(new ApiError("lookup denied", status));
+    render(
+      <MemoryRouter initialEntries={[bookmark]}>
+        <Routes>
+          <Route path="/watch/*" element={<WatchAddress />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await act(() => vi.advanceTimersByTimeAsync(31_000));
+    expect(screen.getByText("unavailable")).toBeDefined();
+    expect(fetchMedia).toHaveBeenCalledExactlyOnceWith(sampledID, expect.any(AbortSignal));
   });
 });
 

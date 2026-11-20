@@ -230,7 +230,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 	}
 	// Recovery treats a live row at the journaled destination as proof of
 	// admission. Reject duplicates before that row can look like our output.
-	if err := s.CheckPublicContentDuplicate(ctx, fingerprint, legacyFingerprint); err != nil {
+	if err := s.checkPublicContentDuplicate(ctx, fingerprint, legacyFingerprint); err != nil {
 		_ = os.Remove(tmpOut)
 		return ConvertResult{}, err
 	}

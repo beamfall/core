@@ -308,14 +308,13 @@ func (s *Store) createProvisionalMediaSQL(ctx context.Context, mediaID MediaID, 
 // An abandoned partial is NEVER promoted: the proxy-tee only calls this on a full,
 // verified body.
 func (s *Store) PromoteProvisionalMedia(ctx context.Context, mediaID MediaID, contentFingerprint, finalPath string) error {
-	_, err := s.PromoteProvisionalMediaGeneration(ctx, mediaID, "", contentFingerprint, "", finalPath)
+	_, err := s.PromoteProvisionalMediaGeneration(ctx, mediaID, "", contentFingerprint, finalPath)
 	return err
 }
 
 // PromoteProvisionalMediaGeneration promotes only the live provisional path
-// observed by the caller. For sampled promotion, legacyFingerprint supplies the
-// old scheme's digest and the same write guards against both identities.
-func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID MediaID, expectedTeePath, contentFingerprint, legacyFingerprint, finalPath string) (bool, error) {
+// observed by the caller. expectedTeePath empty preserves the legacy API.
+func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID MediaID, expectedTeePath, contentFingerprint, finalPath string) (bool, error) {
 	if mediaID == "" {
 		return false, ValidationError("media ID is required")
 	}
@@ -340,16 +339,13 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 		query += " AND path = ?"
 		args = append(args, expectedTeePath)
 	}
-	if legacyFingerprint != "" {
-		query += " AND NOT EXISTS (SELECT 1 FROM media_file WHERE content_fingerprint IN (?, ?))"
-		args = append(args, contentFingerprint, legacyFingerprint)
-	}
 	res, err := s.catalogW.ExecContext(ctx, query, args...)
 	if err != nil {
 		return false, err
 	}
 	if rows, _ := res.RowsAffected(); rows == 0 {
-		// The generation no longer matches or a duplicate owns the content.
+		// No provisional file for this Media (already promoted, or never
+		// provisional): nothing to do, not an error.
 		return false, nil
 	}
 	if eventErr := s.appendMediaEventLocked(ctx, MediaEventUpdated, mediaID, nil, time.Now().UTC()); eventErr != nil {

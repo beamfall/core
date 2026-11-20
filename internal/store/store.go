@@ -2535,9 +2535,9 @@ func (s *Store) MediaLibraryID(ctx context.Context, id MediaID) (LibraryID, erro
 	return libraryID, err
 }
 
-// CheckPublicContentDuplicate rejects either digest if it belongs to an
+// checkPublicContentDuplicate rejects either digest if it belongs to an
 // existing public catalog row, including retained rows.
-func (s *Store) CheckPublicContentDuplicate(ctx context.Context, fingerprint, legacyFingerprint string) error {
+func (s *Store) checkPublicContentDuplicate(ctx context.Context, fingerprint, legacyFingerprint string) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
@@ -2936,9 +2936,33 @@ func (s *Store) mediaFileFingerprintByPath(ctx context.Context, libraryID Librar
 	if err != nil {
 		return StoredFingerprint{}, err
 	}
-	fp.ModTime = millisToTime(mtimeMS)
+	fp.ModTime = mediaFileMillisToTime(mtimeMS)
 	fp.OK = true
 	return fp, nil
+}
+
+// The media_file column uses zero for unknown mtimes. Reserve an otherwise
+// unused value for the epoch so a verified timestamp survives a reopen.
+const mediaFileEpochMillis int64 = -1 << 63
+
+func mediaFileTimeToMillis(value time.Time) int64 {
+	if value.IsZero() {
+		return 0
+	}
+	if value.UnixMilli() == 0 {
+		return mediaFileEpochMillis
+	}
+	return value.UnixMilli()
+}
+
+func mediaFileMillisToTime(value int64) time.Time {
+	if value == 0 {
+		return time.Time{}
+	}
+	if value == mediaFileEpochMillis {
+		value = 0
+	}
+	return time.UnixMilli(value).UTC()
 }
 
 // PrimaryMediaFile returns the file backing a visible Media item. With 1:N

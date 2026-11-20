@@ -1,12 +1,22 @@
 import { useEffect, useState } from "react";
 import { useHref, useLocation, useParams } from "react-router";
-import { getIdentityEpochSignal } from "@/lib/api";
+import { ApiDeadlineError, ApiError, getIdentityEpochSignal, isAuthRejection } from "@/lib/api";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { clearViewerCache } from "@/lib/viewerCache";
 import { canonicalMediaPath, type MediaRoute, mediaAddressIDs, mediaPath } from "./mediaAddress";
 import { fetchMedia } from "./mediaDetail";
 
-/** Resolves an ambiguous bare address in the current viewer's catalog. */
+function isTransientLookupFailure(error: unknown): boolean {
+  if (error instanceof ApiError) {
+    return (
+      error.status === 408 || error.status === 429 || (error.status >= 500 && error.status < 600)
+    );
+  }
+  return error instanceof TypeError || error instanceof ApiDeadlineError;
+}
+
+/** Resolves a bare address. Null means pending and an empty ID means unavailable. */
 export function useMediaAddressID(): string | null {
   const [preferred, legacy] = mediaAddressIDs(useParams()["*"]);
   const identity = useViewerIdentity();
@@ -30,8 +40,13 @@ export function useMediaAddressID(): string | null {
         (media) => {
           if (current()) setResolution({ scope, epoch, id: media ? preferred : legacy });
         },
-        () => {
+        (error: unknown) => {
           if (!current()) return;
+          if (!isTransientLookupFailure(error)) {
+            if (isAuthRejection(error)) clearViewerCache();
+            setResolution({ scope, epoch, id: "" });
+            return;
+          }
           retry = setTimeout(resolve, delay);
           delay = Math.min(delay * 2, 30_000);
         },

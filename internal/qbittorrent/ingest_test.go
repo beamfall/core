@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/beamfall/core/internal/store"
-	"github.com/beamfall/core/internal/store/storetest"
 )
 
 // fakeSource is an in-memory Source.
@@ -175,73 +174,76 @@ func TestIngestCopyFallbackRecordsCopyMode(t *testing.T) {
 }
 
 func TestIngestSkipsExactDuplicate(t *testing.T) {
-	for _, name := range []string{"sampled", "legacy"} {
-		t.Run(name, func(t *testing.T) {
-			ctx := context.Background()
-			libRoot := t.TempDir()
-			downloads := t.TempDir()
-			download := filepath.Join(downloads, "dup.mkv")
-			original := filepath.Join(libRoot, "original.mkv")
-			writePayload(t, download)
-			writePayload(t, original)
+	tmp := t.TempDir()
+	libRoot := filepath.Join(tmp, "library")
+	download := filepath.Join(tmp, "downloads", "dup.mkv")
+	writePayload(t, download)
 
-			cat := storetest.Open(t)
-			lib, err := cat.CreateLibraryWithRoots(ctx, "Library", false, "", "profile-default", []string{libRoot}, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			var fingerprint string
-			if name == "sampled" {
-				fingerprint, err = store.SampleMediaFileContent(ctx, original)
-			} else {
-				fingerprint, err = store.HashMediaFileContent(original)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			existing, _, err := cat.ImportMediaFile(ctx, store.ImportMediaFile{
-				LibraryID: lib.ID, Path: original, ContentFingerprint: fingerprint,
-				Title: "Original", Container: "mkv", Codec: "h264",
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			src := &fakeSource{items: []Item{{ID: "hash-dup", ReleaseName: "dup", Category: "films", ContentPath: download}}}
-			scan := &fakeScan{}
-			ledger, err := OpenLedger(filepath.Join(t.TempDir(), "ledger.json"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			ing, err := NewIngestor(Config{
-				Source: src, Catalog: cat, Scan: scan, Ledger: ledger,
-				Routing: map[string]store.LibraryID{"films": lib.ID}, ApprovedRoots: []string{downloads},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
+	src := &fakeSource{items: []Item{{ID: "hash-dup", ReleaseName: "dup", Category: "films", ContentPath: download}}}
+	cat := &fakeCatalog{
+		roots:        map[store.LibraryID][]string{"lib-films": {libRoot}},
+		fingerprints: map[string]store.MediaID{"fp:dup.mkv": "media-existing"},
+	}
+	scan := &fakeScan{}
+	ing, ledger := newTestIngestor(t, src, cat, scan, map[string]store.LibraryID{"films": "lib-films"}, filepath.Join(tmp, "downloads"))
 
-			result, err := ing.Run(ctx)
-			if err != nil || result.Skipped != 1 || result.Imported != 0 {
-				t.Fatalf("expected one skip, got %+v, %v", result, err)
-			}
-			if _, err := os.Stat(filepath.Join(libRoot, IncomingFolderName, "dup.mkv")); !os.IsNotExist(err) {
-				t.Errorf("duplicate must not be linked: %v", err)
-			}
-			if _, err := os.Stat(download); err != nil {
-				t.Errorf("download no longer exists: %v", err)
-			}
-			if len(scan.scans) != 0 {
-				t.Errorf("no scan should be armed for a pure-duplicate pass, got %v", scan.scans)
-			}
-			status := ledger.Status()
-			if len(status) != 1 || status[0].Outcome != OutcomeAlreadyInCatalog || status[0].MediaPointer != string(existing.ID) {
-				t.Errorf("unexpected status: %+v", status)
-			}
-			got, err := cat.PrimaryMediaFile(ctx, existing.ID, store.LibraryFilter{AllowedIDs: []store.LibraryID{lib.ID}})
-			if err != nil || got.Path != original || got.ContentFingerprint != fingerprint {
-				t.Fatalf("existing file = %+v, %v", got, err)
-			}
-		})
+	result, err := ing.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Skipped != 1 || result.Imported != 0 {
+		t.Fatalf("expected one skip, got %+v", result)
+	}
+	// Nothing linked.
+	if _, err := os.Stat(filepath.Join(libRoot, IncomingFolderName, "dup.mkv")); !os.IsNotExist(err) {
+		t.Errorf("duplicate must not be linked")
+	}
+	if len(scan.scans) != 0 {
+		t.Errorf("no scan should be armed for a pure-duplicate pass, got %v", scan.scans)
+	}
+	status := ledger.Status()
+	if len(status) != 1 || status[0].Outcome != OutcomeAlreadyInCatalog || status[0].MediaPointer != "media-existing" {
+		t.Errorf("unexpected status: %+v", status)
+	}
+}
+
+func TestIngestRelocatesDespiteSampleOnlyMatch(t *testing.T) {
+	tmp := t.TempDir()
+	libRoot := filepath.Join(tmp, "library")
+	downloads := filepath.Join(tmp, "downloads")
+	download := filepath.Join(downloads, "download.mkv")
+	writePayload(t, download)
+	content := make([]byte, 2<<20)
+	if err := os.WriteFile(download, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cataloged := filepath.Join(tmp, "cataloged.mkv")
+	content[64<<10] = 1 // Between the first two sample chunks.
+	if err := os.WriteFile(cataloged, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	sample, err := store.SampleMediaFileContent(ctx, cataloged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := store.SampleMediaFileContent(ctx, download); err != nil || got != sample {
+		t.Fatalf("download sample = %q, err = %v, want %q", got, err, sample)
+	}
+	cat := &fakeCatalog{
+		roots:        map[store.LibraryID][]string{"lib-films": {libRoot}},
+		fingerprints: map[string]store.MediaID{sample: "media-existing"},
+	}
+	src := &fakeSource{items: []Item{{ID: "hash-sample", Category: "films", ContentPath: download}}}
+	scan := &fakeScan{}
+	ing, _ := newTestIngestor(t, src, cat, scan, map[string]store.LibraryID{"films": "lib-films"}, downloads)
+	ing.fingerprint = store.HashMediaFileContent
+	result, err := ing.Run(ctx)
+	if err != nil || result.Imported != 1 || result.Skipped != 0 || len(scan.scans) != 1 {
+		t.Fatalf("sample-only match: result = %+v, scans = %v, err = %v", result, scan.scans, err)
+	}
+	if _, err := os.Stat(filepath.Join(libRoot, IncomingFolderName, "download.mkv")); err != nil {
+		t.Fatal(err)
 	}
 }
 

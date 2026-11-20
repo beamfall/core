@@ -114,7 +114,7 @@ export function MediaDetailPage() {
     () => readViewerCache<MediaDetail>(identity, cacheKey) ?? null,
   );
   const [detailStatus, setStatus] = useState<Status>(detail ? "ready" : "loading");
-  const status = addressID === null ? "loading" : detailStatus;
+  const status = addressID === null ? "loading" : addressID === "" ? "missing" : detailStatus;
   const [attempt, setAttempt] = useState(0);
 
   const preview = readMediaPreview(location.state, identity, mediaId);

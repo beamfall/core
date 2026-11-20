@@ -348,7 +348,7 @@ func mergeKeepAsVersionSQL(ctx context.Context, plane catalogPlane, mediaID Medi
 		  missing_at_ms = NULL,
 		  last_seen_at_ms = excluded.last_seen_at_ms
 	`, candidate.ContentFingerprint, candidate.ContentFingerprint, mediaID, candidate.Path, label,
-		candidate.OSHash, candidate.PHash, candidate.SizeBytes, timeToMillis(candidate.ModTime), timeToMillis(now)); err != nil {
+		candidate.OSHash, candidate.PHash, candidate.SizeBytes, mediaFileTimeToMillis(candidate.ModTime), timeToMillis(now)); err != nil {
 		return err
 	}
 	if candidate.Streams != nil {

@@ -1986,7 +1986,7 @@ func (s *Store) forEachMediaFileForLibrarySQL(ctx context.Context, db *sql.DB, l
 			return err
 		}
 		file.LastSeenAt = millisToTime(lastSeen)
-		file.ModTime = millisToTime(mtimeMS)
+		file.ModTime = mediaFileMillisToTime(mtimeMS)
 		if err := yield(file); err != nil {
 			return err
 		}
@@ -2690,7 +2690,7 @@ func upsertMediaFileTx(ctx context.Context, tx *sql.Tx, file MediaFile, now time
 		  mtime_ms = CASE WHEN excluded.mtime_ms = 0 THEN media_file.mtime_ms ELSE excluded.mtime_ms END,
 		  missing_at_ms = NULL,
 		  last_seen_at_ms = excluded.last_seen_at_ms
-	`, file.ContentFingerprint, file.ContentFingerprint, file.MediaID, file.Path, file.OSHash, file.PHash, file.SizeBytes, timeToMillis(file.ModTime), timeToMillis(now)); err != nil {
+	`, file.ContentFingerprint, file.ContentFingerprint, file.MediaID, file.Path, file.OSHash, file.PHash, file.SizeBytes, mediaFileTimeToMillis(file.ModTime), timeToMillis(now)); err != nil {
 		return err
 	}
 	return nil
@@ -3215,7 +3215,7 @@ func upsertMediaFilePartTx(ctx context.Context, tx *sql.Tx, file MediaFile, now 
 		  mtime_ms = CASE WHEN excluded.mtime_ms = 0 THEN media_file.mtime_ms ELSE excluded.mtime_ms END,
 		  missing_at_ms = NULL,
 		  last_seen_at_ms = excluded.last_seen_at_ms
-	`, file.ContentFingerprint, file.ContentFingerprint, file.MediaID, file.Path, file.VersionLabel, file.PartOrdinal, file.OSHash, file.PHash, file.SizeBytes, timeToMillis(file.ModTime), timeToMillis(file.LastSeenAt)); err != nil {
+	`, file.ContentFingerprint, file.ContentFingerprint, file.MediaID, file.Path, file.VersionLabel, file.PartOrdinal, file.OSHash, file.PHash, file.SizeBytes, mediaFileTimeToMillis(file.ModTime), timeToMillis(file.LastSeenAt)); err != nil {
 		return err
 	}
 	return nil
@@ -3262,7 +3262,7 @@ func (s *Store) addMediaFileVersionSQL(ctx context.Context, file MediaFile, stre
 		  missing_at_ms = NULL,
 		  last_seen_at_ms = excluded.last_seen_at_ms
 	`, file.ContentFingerprint, file.ContentFingerprint, file.MediaID, file.Path, file.VersionLabel, file.PartOrdinal,
-		file.OSHash, file.PHash, file.SizeBytes, timeToMillis(file.ModTime), timeToMillis(file.LastSeenAt)); err != nil {
+		file.OSHash, file.PHash, file.SizeBytes, mediaFileTimeToMillis(file.ModTime), timeToMillis(file.LastSeenAt)); err != nil {
 		return err
 	}
 	if streams != nil {

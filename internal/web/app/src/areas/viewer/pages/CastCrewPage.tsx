@@ -34,7 +34,7 @@ export function CastCrewPage() {
     () => readViewerCache<MediaDetail>(identity, mediaDetailCacheKey(mediaId))?.media ?? null,
   );
   const [detailStatus, setStatus] = useState<Status>(media ? "ready" : "loading");
-  const status = addressID === null ? "loading" : detailStatus;
+  const status = addressID === null ? "loading" : addressID === "" ? "missing" : detailStatus;
 
   useEffect(() => {
     if (!mediaId) return;

@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, type NavigateFunction, Route, Routes, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setIdentityEpochSignal } from "@/lib/api";
+import { ApiError, setIdentityEpochSignal } from "@/lib/api";
 import {
   fetchClientPrefs,
   fetchMedia,
@@ -1267,6 +1267,20 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     });
     expect(miniPlayer()).toBeNull();
     expect(stageVideo()).toBe(video);
+  });
+
+  it("shows unavailable when a bare sampled address is forbidden", async () => {
+    const sampledID = "media-sample1-a371bff46385f7ded";
+    vi.mocked(fetchAddressMedia).mockClear().mockRejectedValueOnce(new ApiError("forbidden", 403));
+    vi.mocked(fetchPrePlayQueue).mockClear();
+    renderHosted({ mediaClass: "audio" }, {}, `/watch/${sampledID}`);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      STRINGS.en.playbackMediaNotAvailable,
+    );
+    expect(screen.getByRole("button", { name: "Back to Browse" })).toBeInTheDocument();
+    expect(vi.mocked(fetchAddressMedia).mock.calls).toEqual([[sampledID, expect.any(AbortSignal)]]);
+    expect(fetchPrePlayQueue).not.toHaveBeenCalled();
   });
 
   // Codex round 2, P2-2: the in-player Version pick belongs to the playback

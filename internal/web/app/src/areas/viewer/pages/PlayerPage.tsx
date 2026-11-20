@@ -99,6 +99,7 @@ import { watchPartyDefersUpNext } from "../player/watchPartyStore";
 export function PlayerPage() {
   const t = useT();
   const location = useLocation();
+  const navigate = useNavigate();
   // A readable address (CORE-2329) or a bare ID: the token names the item.
   const mediaId = useMediaAddressID();
   const host = usePlayerHost();
@@ -125,14 +126,24 @@ export function PlayerPage() {
   }, [mediaId]);
 
   const current = decided && decided.mediaId === mediaId ? decided : null;
-  const feature = mediaId !== null && (bypass || (current && current.items.length === 0));
+  const feature = !!mediaId && (bypass || (current && current.items.length === 0));
   // Once the address resolves, a pre-play queue (or the wait for one) ends
   // whatever the host plays. The address may resolve to the docked player.
   useLayoutEffect(() => {
     if (host && mediaId !== null && !feature) host.stop();
   }, [host, mediaId, feature]);
-  if (feature) {
-    const entry = { mediaId: mediaId || "", state: location.state, search: location.search };
+  if (mediaId === "") {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-3 bf-media bg-scrim">
+        <p className="text-on-scrim/75" role="alert">
+          {t("playbackMediaNotAvailable")}
+        </p>
+        <Button onClick={() => navigate("/", { replace: true })}>{t("backToBrowse")}</Button>
+      </main>
+    );
+  }
+  if (mediaId && feature) {
+    const entry = { mediaId, state: location.state, search: location.search };
     return host ? <AttachToHost host={host} entry={entry} /> : <FeaturePlayer entry={entry} />;
   }
   if (current) {

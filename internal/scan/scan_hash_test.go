@@ -39,9 +39,32 @@ func (r *countingSampleReader) ReadAt(p []byte, offset int64) (int, error) {
 
 func TestScanBoundsFingerprintReadsOnSparseFile(t *testing.T) {
 	root := t.TempDir()
-	path := writeScanFile(t, root, "large.mp4", []byte("head"))
+	path := writeScanFile(t, root, "large.mp4", nil)
 	const size = 8 << 30
 	if err := os.Truncate(path, size); err != nil {
+		t.Fatal(err)
+	}
+	// Put one distinct marker at the first byte of each sample1 chunk.
+	offsets := []int64{
+		0, 660759158, 1321518316, 1982277474, 2643036632, 3303795790, 3964554948,
+		4625314107, 5286073265, 5946832423, 6607591581, 7268350739, 7929109897, 8589869056,
+	}
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	sparse, err := dir.OpenFile(filepath.Base(path), os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, offset := range offsets {
+		if _, err := sparse.WriteAt([]byte{byte(i + 1)}, offset); err != nil {
+			_ = sparse.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := sparse.Close(); err != nil {
 		t.Fatal(err)
 	}
 	settled := time.Now().Add(-time.Minute)
@@ -71,8 +94,9 @@ func TestScanBoundsFingerprintReadsOnSparseFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Files) != 1 || !strings.HasPrefix(result.Files[0].ContentFingerprint, "sample1:") {
-		t.Fatalf("scan files = %+v, want one sampled identity", result.Files)
+	const expected = "sample1:e0b5702a0c3922674d841f1e0deafa34a20df3bb35d051d35f11e6357db220cd"
+	if len(result.Files) != 1 || result.Files[0].ContentFingerprint != expected {
+		t.Fatalf("scan files = %+v, want one file with fingerprint %s", result.Files, expected)
 	}
 	file := result.Files[0]
 	wantID := store.MediaID("media-sample1-" + strings.TrimPrefix(file.ContentFingerprint, "sample1:")[:17])
@@ -81,6 +105,64 @@ func TestScanBoundsFingerprintReadsOnSparseFile(t *testing.T) {
 	}
 	if bytesRead != 14*64*1024 || fullReads != 0 {
 		t.Fatalf("sample bytes = %d, full reads = %d", bytesRead, fullReads)
+	}
+}
+
+func TestScanLegacyEpochMtimePersistsAcrossReopen(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeScanFile(t, root, "epoch.mp4", []byte("legacy epoch fixture"))
+	epoch := time.Unix(0, 0).UTC()
+	if err := os.Chtimes(path, epoch, epoch); err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	dir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dir)
+	req := Request{LibraryID: "library-local", Root: root}
+	full, err := store.HashMediaFileContent(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: req.LibraryID, Path: path, Title: "Epoch", Container: "mp4", Codec: "h264", ContentFingerprint: full,
+		SizeBytes: int64(len("legacy epoch fixture")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fullReads int
+	saved := legacyFileContent
+	t.Cleanup(func() { legacyFileContent = saved })
+	legacyFileContent = func(ctx context.Context, path string) (string, error) {
+		fullReads++
+		return saved(ctx, path)
+	}
+	if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, req); err != nil {
+		t.Fatal(err)
+	}
+	if fullReads != 1 {
+		t.Fatalf("first scan read full content %d times, want one", fullReads)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st = storetest.OpenAt(t, dir)
+	if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, req); err != nil {
+		t.Fatal(err)
+	}
+	if fullReads != 1 {
+		t.Fatalf("both scans read full content %d times, want one", fullReads)
+	}
+	stored, err := st.LibraryMediaFileFingerprintByPath(ctx, req.LibraryID, path)
+	if err != nil || !stored.OK || !stored.ModTime.Equal(epoch) {
+		t.Fatalf("stats after reopen and rescan = %+v, err = %v", stored, err)
+	}
+	file, err := st.PrimaryMediaFile(ctx, media.ID, store.LibraryFilter{AllLibraries: true})
+	if err != nil || file.ContentFingerprint != full || file.Path != path {
+		t.Fatalf("file after reopen and rescan = %+v, err = %v", file, err)
 	}
 }
 

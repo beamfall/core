@@ -469,7 +469,7 @@ func insertMediaFileVersionTx(ctx context.Context, tx *sql.Tx, file MediaFile, n
 		INSERT INTO media_file(id, content_fingerprint, media_id, path, version_label, part_ordinal, oshash, phash, size_bytes, mtime_ms, missing_at_ms, last_seen_at_ms)
 		VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, ?)
 	`, file.ContentFingerprint, file.ContentFingerprint, file.MediaID, file.Path, file.VersionLabel,
-		file.OSHash, file.PHash, file.SizeBytes, timeToMillis(file.ModTime), timeToMillis(now))
+		file.OSHash, file.PHash, file.SizeBytes, mediaFileTimeToMillis(file.ModTime), timeToMillis(now))
 	return err
 }
 
