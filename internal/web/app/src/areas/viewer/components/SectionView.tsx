@@ -35,6 +35,8 @@ export function SectionView({
   playOnActivate = section.kind === "list",
   showPlayButton = false,
   nameContainer = true,
+  intrinsicArtwork = false,
+  headingLevel = "h2",
 }: {
   section: Section;
   items: SourceItem[];
@@ -47,8 +49,9 @@ export function SectionView({
   showPlayButton?: boolean;
   /** Cards name the container holding their item; false inside a container's page (CORE-2524). */
   nameContainer?: boolean;
+  intrinsicArtwork?: boolean;
+  headingLevel?: "h2" | "h3";
 }) {
-  const t = useT();
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
   const gridRef = useRef<HTMLUListElement | null>(null);
@@ -81,27 +84,20 @@ export function SectionView({
   const visible = window ? items.slice(start, end) : items;
   const queue = useMemo(() => playQueueOf(items), [items]);
   const repeated = useMemo(() => repeatedTitles(items), [items]);
+  const title = displayString(section.title, displayLocale);
 
   return (
     <section className="bf-section flex flex-col gap-3">
-      <h2 className="bf-section-title">
-        <span>{displayString(section.title, displayLocale)}</span>
-        {seeAll && (section.kind === "shelf" || items.length >= SECTION_GRID_CAP) && (
-          <button
-            type="button"
-            onClick={() => navigate(seeAll.href, { state: seeAll.state })}
-            className="bf-see-all"
-          >
-            {t("seeAll")}
-            <ChevronRight aria-hidden className="size-4" />
-          </button>
-        )}
-      </h2>
-      <ul
-        ref={gridRef}
-        className={containerClass}
-        aria-label={displayString(section.title, displayLocale)}
-      >
+      <SectionHeading
+        title={title}
+        level={headingLevel}
+        onSeeAll={
+          seeAll && (section.kind === "shelf" || items.length >= SECTION_GRID_CAP)
+            ? () => navigate(seeAll.href, { state: seeAll.state })
+            : undefined
+        }
+      />
+      <ul ref={gridRef} className={containerClass} aria-label={title}>
         {window && window.topPad > 0 && (
           <li
             aria-hidden
@@ -123,6 +119,7 @@ export function SectionView({
               showPlayButton={showPlayButton}
               showYear={showsYear(item, repeated)}
               nameContainer={nameContainer}
+              intrinsicArtwork={intrinsicArtwork}
               focusAnchor={
                 navigationID
                   ? {
@@ -145,5 +142,28 @@ export function SectionView({
         )}
       </ul>
     </section>
+  );
+}
+
+export function SectionHeading({
+  title,
+  level: Heading = "h2",
+  onSeeAll,
+}: {
+  title: string;
+  level?: "h2" | "h3";
+  onSeeAll?: () => void;
+}) {
+  const t = useT();
+  return (
+    <Heading className="bf-section-title">
+      <span>{title}</span>
+      {onSeeAll && (
+        <button type="button" onClick={onSeeAll} className="bf-see-all">
+          {t("seeAll")}
+          <ChevronRight aria-hidden className="size-4" />
+        </button>
+      )}
+    </Heading>
   );
 }

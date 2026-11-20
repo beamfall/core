@@ -84,6 +84,7 @@ import { trackMenuStrings } from "./track-menu";
 import { viewerAccountStrings } from "./viewer-account";
 import { viewerAccountMyDataStrings } from "./viewer-account-mydata";
 import { viewerCollectionStrings } from "./viewer-collections";
+import { viewerHomeStrings } from "./viewer-home";
 import { watchPartyStrings } from "./watch-party";
 import { webhookStrings } from "./webhooks";
 import { whosWatchingStrings } from "./whos-watching";
@@ -165,6 +166,7 @@ export const en = {
   ...remoteControlStrings.en,
   ...webhookStrings.en,
   ...viewerCollectionStrings.en,
+  ...viewerHomeStrings.en,
   ...libraryPivotStrings.en,
   ...castStrings.en,
   ...itemMetadataStrings.en,
@@ -258,6 +260,7 @@ export const fr = {
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
   ...viewerCollectionStrings.fr,
+  ...viewerHomeStrings.fr,
   ...libraryPivotStrings.fr,
   ...castStrings.fr,
   ...itemMetadataStrings.fr,
@@ -351,6 +354,7 @@ export const de = {
   ...remoteControlStrings.de,
   ...webhookStrings.de,
   ...viewerCollectionStrings.de,
+  ...viewerHomeStrings.de,
   ...libraryPivotStrings.de,
   ...castStrings.de,
   ...itemMetadataStrings.de,
@@ -444,6 +448,7 @@ export const es = {
   ...remoteControlStrings.es,
   ...webhookStrings.es,
   ...viewerCollectionStrings.es,
+  ...viewerHomeStrings.es,
   ...libraryPivotStrings.es,
   ...castStrings.es,
   ...itemMetadataStrings.es,
@@ -537,6 +542,7 @@ export const pt = {
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,
   ...viewerCollectionStrings.pt,
+  ...viewerHomeStrings.pt,
   ...libraryPivotStrings.pt,
   ...castStrings.pt,
   ...itemMetadataStrings.pt,

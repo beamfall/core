@@ -12,6 +12,8 @@ has no Home hero, and landscape art is clipped in portrait card frames.
 - Keep the manifest's Continue Watching shelf and show recent additions under
   their library names. Confirm each item's Home visibility with the aggregate
   Home source until the server honors the Home flag on library-scoped feeds.
+  A library needs at least one item in the aggregate feed's first 200 rows to
+  appear in this version of Home.
 - Use the existing hero for a recent, playable item with artwork. Collapse it
   when no eligible image loads.
 - Fit Home card frames to loaded artwork and keep the existing fallback frame

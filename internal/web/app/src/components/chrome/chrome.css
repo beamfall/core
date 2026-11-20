@@ -1007,6 +1007,22 @@
   transition: transform var(--duration-normal) var(--ease-standard);
 }
 
+[data-register="viewer"] .bf-poster.bf-poster-intrinsic {
+  aspect-ratio: auto;
+}
+
+[data-register="viewer"] .bf-poster.bf-poster-intrinsic img {
+  position: static;
+  display: block;
+  height: auto;
+  aspect-ratio: auto 2 / 3;
+  object-fit: contain;
+}
+
+[data-register="viewer"] .bf-poster.bf-poster-intrinsic.bf-poster-square img {
+  aspect-ratio: auto 1 / 1;
+}
+
 [data-register="viewer"] .bf-preview-clip {
   position: absolute;
   inset: 0;
@@ -1020,6 +1036,10 @@
 
 [data-register="viewer"] .bf-card:hover .bf-poster img {
   transform: scale(1.04);
+}
+
+[data-register="viewer"] .bf-card:hover .bf-poster.bf-poster-intrinsic img {
+  transform: none;
 }
 
 [data-register="viewer"] .bf-card-copy {

@@ -74,9 +74,38 @@ export function LayoutView({
     return known.slice(0, MAX_RENDERED_SECTIONS);
   }, [layout]);
 
+  const homeLibraries = useMemo(() => {
+    if (!home || libraryID || !manifest) return undefined;
+    const libraryIDs = new Set(
+      manifest.navigation.filter((node) => node.view === "layout").map((node) => node.libraryID),
+    );
+    return manifest.libraries.filter((library) => libraryIDs.has(library.id));
+  }, [home, libraryID, manifest]);
+
+  const homeHero = useMemo<Section | undefined>(() => {
+    if (!home || libraryID || renderable.some((section) => section.kind === "hero")) {
+      return undefined;
+    }
+    const recent = renderable.find(
+      (section) => section.kind === "shelf" && section.source?.kind === "recently-added",
+    );
+    if (!recent) return undefined;
+    return {
+      ...recent,
+      id: `${recent.id}:featured`,
+      kind: "hero",
+      title: t("homeFeatured"),
+    };
+  }, [home, libraryID, renderable, t]);
+
+  const sections = useMemo(
+    () => (homeHero ? [homeHero, ...renderable] : renderable),
+    [homeHero, renderable],
+  );
+
   const hydratable = useMemo(
-    () => renderable.filter((section) => section.kind !== "filter-bar"),
-    [renderable],
+    () => sections.filter((section) => section.kind !== "filter-bar"),
+    [sections],
   );
   const hydrationStates = hydration.layout === layout ? hydration.states : {};
   const allHydrated = hydratable.every((section) => {
@@ -148,10 +177,10 @@ export function LayoutView({
   // item-bearing section that is neither a filter-bar nor a hero (buildFilterBar).
   const filterTargets = useMemo<Map<number, number>>(() => {
     const map = new Map<number, number>();
-    renderable.forEach((section, index) => {
+    sections.forEach((section, index) => {
       if (section.kind !== "filter-bar") return;
-      for (let i = index + 1; i < renderable.length; i++) {
-        const kind = renderable[i].kind;
+      for (let i = index + 1; i < sections.length; i++) {
+        const kind = sections[i].kind;
         if (kind !== "filter-bar" && kind !== "hero") {
           map.set(index, i);
           return;
@@ -159,7 +188,7 @@ export function LayoutView({
       }
     });
     return map;
-  }, [renderable]);
+  }, [sections]);
 
   // The library accent (validated literal #RRGGBB) tints the fallback gradients.
   const accentVar = useMemo<Record<string, string>>(() => {
@@ -225,7 +254,7 @@ export function LayoutView({
           <LibraryEmpty />
         )
       ) : (
-        renderable.map((section, index) => {
+        sections.map((section, index) => {
           if (section.kind === "filter-bar") {
             // A filter-bar with no options or no adjacent target collapses (ADR-0014).
             if (!(section.filters || []).length || !filterTargets.has(index)) {
@@ -247,6 +276,11 @@ export function LayoutView({
               libraryID={libraryID}
               entityID={entityID}
               home={home}
+              homeLibraries={
+                section.kind === "shelf" && section.source?.kind === "recently-added"
+                  ? homeLibraries
+                  : undefined
+              }
               extraFilters={extraFiltersForIndex(index)}
               seeAll={section.kind === "hero" ? undefined : buildSeeAll?.(section)}
               onConnectionLost={() => setConnectionLost(true)}

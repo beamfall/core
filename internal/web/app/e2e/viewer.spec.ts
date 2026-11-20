@@ -37,6 +37,56 @@ test.describe("viewer", () => {
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
+  test("Home features artwork and fits square, landscape and portrait cards", async ({ page }) => {
+    const artwork = [
+      { id: "square", width: 320, height: 320 },
+      { id: "landscape", width: 320, height: 180 },
+      { id: "portrait", width: 320, height: 480 },
+    ];
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.route("**/core-1154-art/**", async (route) => {
+      const id = new URL(route.request().url()).pathname.split("/").at(-1);
+      const image = artwork.find((entry) => entry.id === id);
+      if (!image) return route.abort();
+      await route.fulfill({
+        contentType: "image/svg+xml",
+        body: `<svg xmlns="http://www.w3.org/2000/svg" width="${image.width}" height="${image.height}"><rect width="100%" height="100%" fill="navy"/></svg>`,
+      });
+    });
+    await page.route("**/api/graphql", async (route) => {
+      const { query, variables } = route.request().postDataJSON();
+      if (!query.startsWith("query SourceItems(")) return route.fallback();
+      if (variables.kind !== "recently-added") return route.fallback();
+      const items =
+        !variables.libraryID || variables.libraryID === "library-local"
+          ? artwork.map(({ id }) => ({
+              id,
+              kind: "media",
+              title: id,
+              artwork: { poster: `/core-1154-art/${id}` },
+            }))
+          : [];
+      await route.fulfill({ json: { data: { sourceItems: items } } });
+    });
+
+    await page.goto("/web/");
+    await expect(page.locator(".bf-hero")).toBeVisible();
+    const shelf = page
+      .getByRole("list")
+      .filter({ has: page.getByRole("link", { name: "square" }) });
+    await expect(shelf).toBeVisible();
+    for (const { id, width, height } of artwork) {
+      const frame = shelf.getByRole("link", { name: id }).locator(".bf-poster");
+      await frame.scrollIntoViewIfNeeded();
+      await expect
+        .poll(() => frame.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth))
+        .toBeGreaterThan(0);
+      const bounds = await frame.boundingBox();
+      expect(bounds?.width).toBeGreaterThan(0);
+      expect((bounds?.width ?? 0) / (bounds?.height ?? 1)).toBeCloseTo(width / height, 2);
+    }
+  });
+
   test("accessibility variant: Viewer supports large text", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await page.goto("/web/");

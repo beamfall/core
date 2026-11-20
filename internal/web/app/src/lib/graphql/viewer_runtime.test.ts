@@ -3,7 +3,7 @@ import { fetchSourceItems } from "./viewer";
 
 afterEach(() => vi.unstubAllGlobals());
 
-it("requests card runtime outside playback engagement (CORE-2320)", async () => {
+it("requests stored card runtime and playback eligibility", async () => {
   let query = "";
   vi.stubGlobal(
     "fetch",
@@ -28,4 +28,5 @@ it("requests card runtime outside playback engagement (CORE-2320)", async () => 
   });
   // An unplayed item has no engagement runtime; the stored card field must be selected.
   expect(query.replace(/engagement\s*\{[^}]*\}/g, "")).toMatch(/\bdurationSeconds\b/);
+  expect(query).toMatch(/\blocked\b/);
 });
