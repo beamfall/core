@@ -81,15 +81,13 @@ func (a *LiveArtifact) validateVersion(version uint64, delivered bool) error {
 
 func (a *LiveArtifact) resolve(retry bool) (artifactObservation, error) {
 	ctx := a.ctx
-	var cancel context.CancelFunc
-	defer func() {
-		if cancel != nil {
-			cancel()
-		}
-	}()
+	stop, limited := context.CancelFunc(func() {}), false
+	defer func() { stop() }()
 	for {
-		if retry && cancel == nil {
+		if retry && !limited {
+			var cancel context.CancelFunc
 			ctx, cancel = context.WithDeadline(ctx, a.deadline)
+			stop, limited = cancel, true
 		}
 		if err := ctx.Err(); err != nil {
 			if validateErr := a.validateVersion(a.version, false); errors.Is(validateErr, ErrSessionEvicted) {
