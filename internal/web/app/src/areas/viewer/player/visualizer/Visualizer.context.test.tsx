@@ -483,7 +483,7 @@ describe("Visualizer resize before paint", () => {
       reportCss(400, 300);
       step(16);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
       renderer.shown = { width: 800, height: 600, texel: 1, visibleWidth: 800, visibleHeight: 600 };
       const asked = observes;
 
@@ -505,7 +505,7 @@ describe("Visualizer resize before paint", () => {
       expect(renderer.draw).toHaveBeenCalledTimes(2);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
       expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
     } finally {
       setRatio(ratio);
     }
@@ -526,7 +526,7 @@ describe("Visualizer resize before paint", () => {
       step(16);
       paint([400, 300], [800, 600]);
       expect(renderer.draw).toHaveBeenCalledOnce();
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
 
       setRatio(1);
       step(32);
@@ -537,7 +537,7 @@ describe("Visualizer resize before paint", () => {
       expect(renderer.draw).toHaveBeenCalledTimes(2);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
       expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
     } finally {
       setRatio(ratio);
     }
@@ -569,7 +569,7 @@ describe("Visualizer resize before paint", () => {
       expect(renderer.draw).toHaveBeenCalledTimes(2);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
       expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
       // It goes on drawing: the ratio counts as reported.
       step(96);
       expect(renderer.draw).toHaveBeenCalledTimes(3);
@@ -677,7 +677,7 @@ describe("Visualizer resize before paint", () => {
       step(144);
       expect(renderer.draw).toHaveBeenCalledOnce();
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
 
       // A ratio left before its report and come back to is asked for again, from the start.
       setRatio(1);
@@ -840,7 +840,7 @@ describe("Visualizer resize before paint", () => {
       step(32);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([1, 120]);
       expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([1, 120]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([1, 120]);
     } finally {
       Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: ratio });
     }
@@ -880,6 +880,8 @@ describe("Visualizer resize before paint", () => {
     const elapsed = 599 * tick;
     expect(credited / elapsed).toBeGreaterThan(0.95);
     expect(credited / elapsed).toBeLessThan(1.05);
+    // The paint-lag bound passed with it is the display's refresh, not the draw interval.
+    expect(calls.at(-1)?.[10]).toBeCloseTo(tick, 6);
     clock.mockRestore();
   });
 
@@ -893,6 +895,7 @@ describe("Visualizer resize before paint", () => {
     step(100);
     expect(renderer.draw.mock.lastCall?.[5]).toBe(100);
     expect(renderer.draw.mock.lastCall?.[7]).toBe(100);
+    expect(renderer.draw.mock.lastCall?.[10]).toBe(100);
     clock.mockRestore();
   });
 });
