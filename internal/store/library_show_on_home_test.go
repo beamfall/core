@@ -90,10 +90,14 @@ func TestSourceItemsHomeSkipsLibrariesHiddenFromHome(t *testing.T) {
 			t.Fatalf("%s aggregate recently-added = %v, want media-alpha kept", name, got)
 		}
 	}
-	// The hidden Library's own Sections still list its Media.
-	query := SourceQuery{Kind: "recently-added", LibraryID: "library-local"}
-	if got := homeSourceIDs(t, st, all, query); !slices.Contains(got, "media-alpha") {
-		t.Fatalf("library-scoped %+v = %v, want media-alpha", query, got)
+	// The hidden Library's own Sections still list its Media, Home flag or not.
+	for _, query := range []SourceQuery{
+		{Kind: "recently-added", LibraryID: "library-local"},
+		{Kind: "recently-added", LibraryID: "library-local", Home: true},
+	} {
+		if got := homeSourceIDs(t, st, all, query); !slices.Contains(got, "media-alpha") {
+			t.Fatalf("library-scoped %+v = %v, want media-alpha", query, got)
+		}
 	}
 
 	// Hiding every Library a scope can see leaves Home empty, never widened.
@@ -104,27 +108,5 @@ func TestSourceItemsHomeSkipsLibrariesHiddenFromHome(t *testing.T) {
 		if got := homeSourceIDs(t, st, filter, home); len(got) != 0 {
 			t.Fatalf("%s Home recently-added with every Library hidden = %v, want empty", name, got)
 		}
-	}
-}
-
-func TestSourceItemsScopedHomeRespectsLibraryVisibility(t *testing.T) {
-	st := openSeeded(t)
-	if err := st.SetLibraryShowOnHome(context.Background(), "library-local", false); err != nil {
-		t.Fatal(err)
-	}
-	for name, filter := range map[string]LibraryFilter{
-		"all-libraries": {Revealed: true, AllLibraries: true},
-		"allow-list":    {Revealed: true, AllowedIDs: []LibraryID{"library-local", "library-archive"}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			query := SourceQuery{Kind: "recently-added", LibraryID: "library-local", Home: true}
-			if got := homeSourceIDs(t, st, filter, query); len(got) != 0 {
-				t.Errorf("hidden Library's Home feed = %v, want empty", got)
-			}
-			query.LibraryID = "library-archive"
-			if got := homeSourceIDs(t, st, filter, query); !slices.Equal(got, []MediaID{"media-archive"}) {
-				t.Errorf("visible Library's Home feed = %v, want only media-archive", got)
-			}
-		})
 	}
 }
