@@ -34,6 +34,7 @@ type scanWalkState struct {
 	// legacyParserPaths are the unchanged files probed on the fast path so
 	// their parse settles legacy parser fields (CORE-2554).
 	legacyParserPaths map[string]struct{}
+	retainedLegacy    map[string]store.StoredFingerprint
 	req               Request
 	checkpoint        jobCheckpoint
 	scanStarted       time.Time
@@ -190,7 +191,7 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 		return
 	}
 	defer s.releaseBudget()
-	task.fill(ctx, s.st, s.prober, s.grabber)
+	task.fill(ctx, s)
 	if task.err == nil && task.fastPath {
 		// An unchanged file whose Media still holds legacy parser fields is
 		// probed once, so its parse can settle them (CORE-2554).

@@ -93,6 +93,22 @@ describe("readable media addresses (CORE-2329)", () => {
     expect(mediaIdFromAddress("old-library/old-title-sample1.a371bff46385f7ded")).toBe(sampleID);
     expect(mediaIdFromAddress(sampleID)).toBe(sampleID);
     expect(mediaIdFromAddress("old-library/old-title-sample1-a371bff46385f7ded")).toBe(ID);
+    const unlettered = mediaPath("watch", sampleID, { library: "music", words: "千と千尋" });
+    expect(unlettered).toBe("/watch/music/sample1.a371bff46385f7ded");
+    expect(mediaIdFromAddress(unlettered.slice("/watch/".length))).toBe(sampleID);
+  });
+
+  it("round-trips a legacy item titled Media Sample1", () => {
+    const address = canonicalMediaPath(
+      "watch",
+      { id: ID, title: "Media Sample1", libraryID: "library-music" },
+      libraries,
+    );
+    expect(address).toBe("/watch/music/media-sample1-a371bff46385f7ded");
+    expect(mediaIdFromAddress(address.slice("/watch/".length))).toBe(ID);
+    const unqualified = mediaPath("watch", ID, { words: "Media Sample1" });
+    expect(unqualified).toBe(`/watch/${ID}`);
+    expect(mediaIdFromAddress(unqualified.slice("/watch/".length))).toBe(ID);
   });
 
   it("resolves readable, stale and bare addresses to the same item", () => {

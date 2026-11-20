@@ -2878,16 +2878,12 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	}
 	defer tx.Rollback()
 
-	var mediaID MediaID
-	err = tx.QueryRowContext(ctx,
-		"SELECT media_id FROM media_file WHERE content_fingerprint = ? AND missing_at_ms IS NULL",
-		imported.ContentFingerprint,
-	).Scan(&mediaID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	mediaID, _, err := existingMediaIDForImportTx(ctx, tx, imported)
+	if err != nil {
 		return Media{}, MediaFile{}, false, err
 	}
 	if imported.managedAdmission {
-		if err := refuseCatalogedDuplicateTx(ctx, tx, imported); err != nil {
+		if err := refuseCatalogedDuplicate(ctx, tx, "", imported.ContentFingerprint, imported.legacyFingerprint); err != nil {
 			return Media{}, MediaFile{}, false, err
 		}
 	}
@@ -2980,6 +2976,24 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	return media, file, created, nil
 }
 
+// existingMediaIDForImportTx keeps a returning legacy file attached to its
+// original Media, including an opaque encrypted ID or a grouped Part/Version.
+func existingMediaIDForImportTx(ctx context.Context, tx *sql.Tx, imported ImportMediaFile) (MediaID, bool, error) {
+	var id MediaID
+	var missing bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT media_id, missing_at_ms IS NOT NULL FROM media_file
+		WHERE content_fingerprint = ? AND (
+		  missing_at_ms IS NULL OR (? AND path = ? AND content_fingerprint GLOB 'sha256:*'
+		    AND media_id IN (SELECT id FROM media WHERE library_id = ? AND trashed_at_ms IS NULL))
+		)
+	`, imported.ContentFingerprint, imported.RestoreMissingLegacy, imported.Path, imported.LibraryID).Scan(&id, &missing)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	return id, missing, err
+}
+
 // mediaHoldsOtherFilesInAnotherLibraryTx reports whether mediaID belongs to a
 // Library other than imported's and holds a live file other than imported's.
 func mediaHoldsOtherFilesInAnotherLibraryTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile) (bool, error) {
@@ -2996,15 +3010,19 @@ func mediaHoldsOtherFilesInAnotherLibraryTx(ctx context.Context, tx *sql.Tx, med
 	return err == nil, err
 }
 
-// refuseCatalogedDuplicateTx checks both schemes in the admission transaction.
-// Missing or trashed rows still own their fingerprint.
-func refuseCatalogedDuplicateTx(ctx context.Context, tx *sql.Tx, imported ImportMediaFile) error {
+// refuseCatalogedDuplicate checks both schemes. Missing and trashed rows still
+// own their fingerprint. Before publishing an import, restrict the check to
+// live cataloged targets whose row would prevent cleanup after a refusal.
+func refuseCatalogedDuplicate(ctx context.Context, db interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, target, fingerprint, legacyFingerprint string) error {
 	var missingAt sql.NullInt64
-	err := tx.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 		SELECT missing_at_ms FROM media_file
 		WHERE content_fingerprint IN (?, ?)
+		  AND (? = '' OR EXISTS (SELECT 1 FROM media_file WHERE path = ? AND missing_at_ms IS NULL))
 		ORDER BY missing_at_ms
-		LIMIT 1`, imported.ContentFingerprint, imported.legacyFingerprint,
+		LIMIT 1`, fingerprint, legacyFingerprint, target, target,
 	).Scan(&missingAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
@@ -3117,21 +3135,22 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 	}
 	defer tx.Rollback()
 
-	var mediaID MediaID
+	var mediaID, retainedMediaID MediaID
 	for _, part := range ordered {
-		err = tx.QueryRowContext(ctx,
-			"SELECT media_id FROM media_file WHERE content_fingerprint = ? AND missing_at_ms IS NULL",
-			part.File.ContentFingerprint,
-		).Scan(&mediaID)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
+		id, missing, err := existingMediaIDForImportTx(ctx, tx, part.File)
 		if err != nil {
 			return Media{}, nil, false, err
 		}
-		if mediaID != "" {
+		if id != "" && !missing {
+			mediaID = id
 			break
 		}
+		if retainedMediaID == "" {
+			retainedMediaID = id
+		}
+	}
+	if mediaID == "" {
+		mediaID = retainedMediaID
 	}
 	if mediaID == "" {
 		if plane.encrypted {

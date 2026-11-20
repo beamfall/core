@@ -66,8 +66,12 @@ func SampleMediaFileContentAt(ctx context.Context, file io.ReaderAt, size int64)
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		if _, err := file.ReadAt(buffer[:length], offset); err != nil {
+		n, err := file.ReadAt(buffer[:length], offset)
+		if err != nil && (err != io.EOF || int64(n) != length) {
 			return "", err
+		}
+		if int64(n) != length {
+			return "", io.ErrUnexpectedEOF
 		}
 		_, _ = hash.Write(buffer[:length])
 	}

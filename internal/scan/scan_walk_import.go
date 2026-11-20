@@ -49,11 +49,12 @@ func (s *scanWalkState) refreshMovedRow(task *workerTask) error {
 		return nil
 	}
 	fastPath := task.fastPath
-	stored, err := s.st.MediaFileFingerprintByPath(s.ctx, task.path)
+	stored, err := s.st.MediaFileFingerprintByPath(s.ctx, s.req.LibraryID, task.path)
 	if err != nil {
 		return err
 	}
 	task.stored = stored
+	task.retained = false
 	if !fastPath || stored.OK {
 		return nil
 	}
@@ -67,17 +68,18 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	path := task.path
 	stored := task.stored
 	imported := store.ImportMediaFile{
-		LibraryID:          s.req.LibraryID,
-		Path:               path,
-		Title:              titleFromPath(path),
-		Container:          containerFromPath(path),
-		Codec:              "h264",
-		ContentFingerprint: stored.ContentFingerprint,
-		SizeBytes:          task.info.size,
-		ModTime:            task.info.modTime.UTC(),
-		Extra:              isExtraPath(s.extrasRoot, path),
-		ExtraFromPath:      true,
-		Sidecars:           s.sidecars.discover(path),
+		LibraryID:            s.req.LibraryID,
+		Path:                 path,
+		Title:                titleFromPath(path),
+		Container:            containerFromPath(path),
+		Codec:                "h264",
+		ContentFingerprint:   stored.ContentFingerprint,
+		RestoreMissingLegacy: task.retained,
+		SizeBytes:            task.info.size,
+		ModTime:              task.info.modTime.UTC(),
+		Extra:                isExtraPath(s.extrasRoot, path),
+		ExtraFromPath:        true,
+		Sidecars:             s.sidecars.discover(path),
 	}
 	if imageClassForPath(path) {
 		imported.Class = store.MediaClassImage
@@ -204,18 +206,19 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	path := task.path
 	fingerprint := task.fingerprint
 	imported := store.ImportMediaFile{
-		LibraryID:          s.req.LibraryID,
-		Path:               path,
-		Title:              titleFromPath(path),
-		Container:          containerFromPath(path),
-		Codec:              "h264",
-		ContentFingerprint: fingerprint,
-		OSHash:             task.oshash,
-		SizeBytes:          task.info.size,
-		ModTime:            task.info.modTime.UTC(),
-		Extra:              isExtraPath(s.extrasRoot, path),
-		ExtraFromPath:      true,
-		Sidecars:           s.sidecars.discover(path),
+		LibraryID:            s.req.LibraryID,
+		Path:                 path,
+		Title:                titleFromPath(path),
+		Container:            containerFromPath(path),
+		Codec:                "h264",
+		ContentFingerprint:   fingerprint,
+		RestoreMissingLegacy: task.retained && fingerprint == task.stored.ContentFingerprint,
+		OSHash:               task.oshash,
+		SizeBytes:            task.info.size,
+		ModTime:              task.info.modTime.UTC(),
+		Extra:                isExtraPath(s.extrasRoot, path),
+		ExtraFromPath:        true,
+		Sidecars:             s.sidecars.discover(path),
 	}
 	isImage := imageClassForPath(path)
 	if isImage {

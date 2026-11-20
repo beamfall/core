@@ -419,6 +419,13 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		return ManagedPath{}, err
 	}
 	defer release()
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return ManagedPath{}, err
+	}
+	if err := refuseCatalogedDuplicate(ctx, plane.reader, target, fingerprint, legacyFingerprint); err != nil {
+		return ManagedPath{}, err
+	}
 	if err := admitStagedFileNoReplace(stagingPath, target); err != nil {
 		return ManagedPath{}, err
 	}

@@ -57,7 +57,10 @@ export function mediaIdFromAddress(rest: string | undefined): string {
   } catch {
     // A malformed escape is read as typed.
   }
-  if (CONTENT_ID.test(segment)) return segment;
+  // A library-qualified, hyphenated sample ID is also a legacy readable
+  // address for the title "Media Sample1". Sampled addresses use the dotted
+  // token under a library, leaving raw sampled IDs for unqualified links.
+  if (segments.length === 1 && CONTENT_ID.test(segment)) return segment;
   const token = TOKEN.exec(segment);
   return token ? `media-${token[1] ? "sample1" : "sha256"}-${token[2]}` : segment;
 }
@@ -95,8 +98,10 @@ export function mediaPath(
   if (!content) return `/${route}/${encodeURIComponent(id)}`;
   const slug = slugify(readable?.words ?? "");
   const token = content[1] === "sample1" ? `sample1.${content[2]}` : content[2];
-  const tail = slug ? `${slug}-${token}` : id;
   const library = readable?.library ? `${readable.library}/` : "";
+  const qualifiedSample = content[1] === "sample1" && library;
+  const ambiguousLegacy = content[1] === "sha256" && !library && slug === "media-sample1";
+  const tail = slug && !ambiguousLegacy ? `${slug}-${token}` : qualifiedSample ? token : id;
   return `/${route}/${library}${tail}`;
 }
 

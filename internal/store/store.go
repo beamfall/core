@@ -668,6 +668,9 @@ type ImportMediaFile struct {
 	// legacyFingerprint is the full staging digest used for duplicate checks
 	// during managed admission. Only ContentFingerprint is persisted.
 	legacyFingerprint string
+	// RestoreMissingLegacy permits a scan to reuse a retained legacy owner
+	// after verifying the file at its original path.
+	RestoreMissingLegacy bool
 }
 
 // ImportMediaFilePart is one file in a parser-confirmed Parts group. The scan
@@ -2888,7 +2891,7 @@ type StoredFingerprint struct {
 // fast path). The scan reuses the fingerprint when the recorded stats match
 // and reads the file again when they differ. Like other file-plane reads,
 // this is server-internal.
-func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (StoredFingerprint, error) {
+func (s *Store) MediaFileFingerprintByPath(ctx context.Context, libraryID LibraryID, path string) (StoredFingerprint, error) {
 	if path == "" {
 		return StoredFingerprint{}, errors.New("path is required")
 	}
@@ -2897,9 +2900,13 @@ func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (St
 	if err := s.guardLocked(); err != nil {
 		return StoredFingerprint{}, err
 	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return StoredFingerprint{}, err
+	}
 	var fp StoredFingerprint
 	var mtimeMS int64
-	err := s.catalogR.QueryRowContext(ctx, `
+	err = plane.reader.QueryRowContext(ctx, `
 		SELECT content_fingerprint, size_bytes, mtime_ms
 		FROM media_file
 		WHERE path = ? AND missing_at_ms IS NULL

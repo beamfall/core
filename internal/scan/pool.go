@@ -63,6 +63,7 @@ type workerTask struct {
 
 	// Filled by the worker; the consumer must not read them before done closes.
 	stored      store.StoredFingerprint
+	retained    bool
 	fastPath    bool
 	fingerprint string
 	oshash      string
@@ -98,11 +99,16 @@ type probeOutcome struct {
 // hash. Store access here is read-only; the store serializes it internally
 // (one write connection, ADR-0011 §1), so concurrent fills are safe alongside
 // the consumer's ordered writes.
-func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, grabber FrameGrabber) {
-	stored, err := st.MediaFileFingerprintByPath(ctx, t.path)
+func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
+	stored, err := s.st.MediaFileFingerprintByPath(ctx, s.req.LibraryID, t.path)
 	if err != nil {
 		t.err = err
 		return
+	}
+	t.retained = false
+	if !stored.OK {
+		stored = s.retainedLegacy[t.path]
+		t.retained = stored.OK
 	}
 	t.stored = stored
 	// The stored mtime is millisecond-resolution (the store truncates on
@@ -129,12 +135,12 @@ func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, g
 		return
 	}
 	t.oshash = oshash
-	t.probeFile(ctx, prober)
-	if grabber != nil && t.probe.hasVideo {
+	t.probeFile(ctx, s.prober)
+	if s.grabber != nil && t.probe.hasVideo {
 		// Best-effort, like the probe fallback: a failed grab (no FFmpeg,
 		// corrupt frame) leaves phash empty for a later scan — the store never
 		// overwrites a stored phash with "".
-		if phash, phashErr := PHash(ctx, grabber, t.path, t.probe.value.DurationSeconds); phashErr == nil {
+		if phash, phashErr := PHash(ctx, s.grabber, t.path, t.probe.value.DurationSeconds); phashErr == nil {
 			t.phash = phash
 		} else {
 			slog.Debug("scan: perceptual hash failed", "path", t.path, "error", phashErr.Error())

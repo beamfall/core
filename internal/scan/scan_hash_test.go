@@ -86,9 +86,15 @@ func TestScanBoundsFingerprintReadsOnSparseFile(t *testing.T) {
 
 func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 	ctx := t.Context()
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	st := storetest.Open(t)
 	req := Request{LibraryID: "library-local", Root: root}
+	if err := st.SetLibraryRoots(ctx, req.LibraryID, []string{root}); err != nil {
+		t.Fatal(err)
+	}
 	legacyCalls, sampleCalls := make(map[string]int), make(map[string]int)
 	savedLegacy, savedSample := legacyFileContent, sampleFileContent
 	t.Cleanup(func() { legacyFileContent, sampleFileContent = savedLegacy, savedSample })
@@ -106,9 +112,16 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 		change       bool
 		sameSize     bool
 		move         bool
+		missing      bool
+		trashed      bool
+		ambiguous    bool
 		wantFullRead bool
 	}{
 		{name: "recorded"},
+		{name: "returning", missing: true},
+		{name: "returning-statless", missing: true, missingMtime: true, wantFullRead: true},
+		{name: "managed-trash", trashed: true},
+		{name: "ambiguous", missing: true, ambiguous: true},
 		{name: "statless", missingMtime: true, wantFullRead: true},
 		{name: "moved", move: true},
 		{name: "known-size-changed", missingMtime: true, change: true},
@@ -116,7 +129,8 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			path := writeScanFile(t, root, tc.name+".mp4", []byte(tc.name))
+			payload := []byte(tc.name)
+			path := writeScanFile(t, root, tc.name+".mp4", payload)
 			info, err := os.Stat(path)
 			if err != nil {
 				t.Fatal(err)
@@ -160,6 +174,38 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 				}
 				writeScanFile(t, root, tc.name+".mp4", []byte(strings.Repeat("x", size)))
 			}
+			if tc.missing || tc.trashed {
+				if tc.trashed {
+					if _, err := st.DeleteManagedPath(ctx, req.LibraryID, path, store.LibraryFilter{AllLibraries: true}, time.Now()); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					if err := os.Remove(path); err != nil {
+						t.Fatal(err)
+					}
+					if err := st.MarkMediaFileMissing(ctx, req.LibraryID, path); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if _, live, err := st.MediaFileExistsByFingerprint(ctx, full); err != nil || live {
+					t.Fatalf("missing fixture still live: %t, %v", live, err)
+				}
+				if tc.ambiguous {
+					if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+						LibraryID: req.LibraryID, Path: path, Title: "older", Container: "mp4", Codec: "h264",
+						ContentFingerprint: store.HashMediaFilePath(path + "-older"), SizeBytes: info.Size(), ModTime: info.ModTime(),
+					}); err != nil {
+						t.Fatal(err)
+					}
+					if err := st.MarkMediaFileMissing(ctx, req.LibraryID, path); err != nil {
+						t.Fatal(err)
+					}
+				}
+				writeScanFile(t, root, filepath.Base(path), payload)
+				if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil {
+					t.Fatal(err)
+				}
+			}
 			for range 2 {
 				if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, req); err != nil {
 					t.Fatal(err)
@@ -173,7 +219,7 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 				t.Fatalf("legacy hash calls = %v, want %d for %q", legacyCalls, wantFullReads, path)
 			}
 
-			stored, err := st.MediaFileFingerprintByPath(ctx, scanPath)
+			stored, err := st.MediaFileFingerprintByPath(ctx, req.LibraryID, scanPath)
 			if err != nil || !stored.OK || stored.SizeBytes == 0 || stored.ModTime.IsZero() {
 				t.Fatalf("stored fingerprint = %+v, err = %v", stored, err)
 			}
@@ -181,7 +227,7 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 			if err != nil || !found {
 				t.Fatalf("lookup by %q: found = %t, err = %v", stored.ContentFingerprint, found, err)
 			}
-			if tc.move || tc.change {
+			if tc.move || tc.change || tc.trashed || tc.ambiguous {
 				if !strings.HasPrefix(stored.ContentFingerprint, "sample1:") || id == media.ID {
 					t.Fatalf("replacement = %q, %s, want a new sampled identity", stored.ContentFingerprint, id)
 				}
@@ -202,6 +248,102 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 				t.Fatalf("match pin = %t, found = %t, err = %v", pinned, found, err)
 			}
 		})
+	}
+}
+
+// Keep the catalog snapshot in memory during seal, so no plaintext is written
+// outside the store's working area by this lifecycle fixture.
+type scanCatalogCipher struct {
+	snapshot []byte
+}
+
+func (c *scanCatalogCipher) SealDBFile(_ context.Context, _ store.LibraryID, workingPath, _ string) error {
+	root, err := os.OpenRoot(filepath.Dir(workingPath))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	c.snapshot, err = root.ReadFile(filepath.Base(workingPath))
+	return err
+}
+
+func (c *scanCatalogCipher) UnsealDBFile(_ context.Context, _ store.LibraryID, _, workingPath string) error {
+	if c.snapshot == nil {
+		return nil
+	}
+	return os.WriteFile(workingPath, c.snapshot, 0o600)
+}
+
+func TestScanPreservesEncryptedLegacyMediaAfterSeal(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, storetest.MigratedDataDir(t), store.Options{
+		SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	req := Request{LibraryID: "library-local", Root: t.TempDir()}
+	if err := st.SetLibraryBacking(ctx, req.LibraryID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	var cipher scanCatalogCipher
+	if err := st.UnsealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
+		t.Fatal(err)
+	}
+	want := make(map[string]store.MediaFile)
+	for _, name := range []string{"unchanged.mp4", "returning.mp4"} {
+		path := writeScanFile(t, req.Root, name, []byte(name))
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fingerprint, err := store.HashMediaFileContent(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, file, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: req.LibraryID, Path: path, Title: name, Container: "mp4", Codec: "h264",
+			ContentFingerprint: fingerprint, SizeBytes: info.Size(), ModTime: info.ModTime(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name == "returning.mp4" {
+			if err := st.MarkMediaFileMissing(ctx, req.LibraryID, path); err != nil {
+				t.Fatal(err)
+			}
+		}
+		want[path] = file
+	}
+	if err := st.SealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
+		t.Fatal(err)
+	}
+	if st.EncryptedLibraryDBRegistered(req.LibraryID) {
+		t.Fatal("catalog stayed open after seal")
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
+		t.Fatal(err)
+	}
+	savedLegacy, savedSample := legacyFileContent, sampleFileContent
+	t.Cleanup(func() { legacyFileContent, sampleFileContent = savedLegacy, savedSample })
+	rejectHash := func(_ context.Context, path string) (string, error) {
+		t.Errorf("unchanged encrypted file was hashed: %s", path)
+		return "", os.ErrInvalid
+	}
+	sampleFileContent, legacyFileContent = rejectHash, rejectHash
+	if _, err := ScanWithWorkerGovernor(ctx, st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(4), req); err != nil {
+		t.Fatal(err)
+	}
+	files, err := st.MediaFilesForLibrary(ctx, req.LibraryID)
+	if err != nil || len(files) != len(want) {
+		t.Fatalf("encrypted files after rescan = %+v, err = %v", files, err)
+	}
+	for _, file := range files {
+		before := want[file.Path]
+		if before.MediaID != file.MediaID || before.ContentFingerprint != file.ContentFingerprint {
+			t.Fatalf("encrypted file after rescan = %+v, want identity from %+v", file, before)
+		}
 	}
 }
 
@@ -245,7 +387,7 @@ func TestScanAndManagedImportShareSampleIdentity(t *testing.T) {
 	if err := os.Chtimes(imported.Path, settled, settled); err != nil {
 		t.Fatal(err)
 	}
-	before, err := st.MediaFileFingerprintByPath(ctx, imported.Path)
+	before, err := st.MediaFileFingerprintByPath(ctx, req.LibraryID, imported.Path)
 	if err != nil || !before.OK || !strings.HasPrefix(before.ContentFingerprint, "sample1:") {
 		t.Fatalf("managed identity = %+v, err = %v", before, err)
 	}
