@@ -45,6 +45,13 @@ type scratchPath struct {
 	writerDir string
 }
 
+// scratchAllocation is the unpublished setup owner while mkdir runs off-lock.
+// setupMu admits a single owner and mu protects its revocation.
+type scratchAllocation struct {
+	key     SessionKey
+	revoked bool
+}
+
 // SessionsOption configures a session manager before its startup sweep.
 type SessionsOption func(*Sessions)
 
@@ -128,8 +135,11 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 
 // allocateScratchLocked drops mu for exclusive mkdir. setupMu keeps the
 // existing single setup owner while the registry exposes the unresolved claim.
-func (s *Sessions) allocateScratchLocked(ctx context.Context, library store.LibraryID) (*scratchPath, error) {
-	for !s.closed && ctx.Err() == nil {
+func (s *Sessions) allocateScratchLocked(ctx context.Context, key SessionKey, library store.LibraryID) (*scratchPath, error) {
+	allocation := &scratchAllocation{key: key}
+	s.allocation = allocation
+	defer func() { s.allocation = nil }()
+	for !s.closed && !allocation.revoked && ctx.Err() == nil {
 		s.nextID++
 		name := fmt.Sprintf("session-%s-%d", s.bootNonce, s.nextID)
 		if s.paths[name] != nil {
@@ -166,13 +176,22 @@ func (s *Sessions) allocateScratchLocked(ctx context.Context, library store.Libr
 		if !created {
 			delete(s.paths, name)
 			s.wakeCloseLocked()
+			if allocation.revoked {
+				return nil, ErrSessionEvicted
+			}
 			return nil, err
 		}
 		// Close continues to count this claim through unpublished setup. Its
 		// caller publishes or assigns the initial remover under mu.
 		p.library, p.root, p.dir, p.writerDir = library, root, dir, writerDir
 		p.state, p.users = scratchLive, 1
+		if allocation.revoked {
+			err = ErrSessionEvicted
+		}
 		return p, err
+	}
+	if allocation.revoked {
+		return nil, ErrSessionEvicted
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

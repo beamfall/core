@@ -350,7 +350,7 @@ func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *tes
 	// Model the state after exclusive mkdir and before publication.
 	s.mkdirDir = nil
 	s.mu.Lock()
-	unpublished, err := s.allocateScratchLocked(t.Context(), "library")
+	unpublished, err := s.allocateScratchLocked(t.Context(), SessionKey{}, "library")
 	s.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -668,6 +668,67 @@ func TestScratchCleanupOwnsLateMkdirAfterCancellation(t *testing.T) {
 	}
 }
 
+func TestTerminationRevokesScratchAllocation(t *testing.T) {
+	cases := []struct {
+		name      string
+		terminate func(*Sessions, SessionKey) int
+	}{
+		{"session", func(s *Sessions, key SessionKey) int { return s.TerminateSession(key.SessionID) }},
+		{"playback", func(s *Sessions, key SessionKey) int { return s.TerminatePlayback(key.SessionID, key.MediaID) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			transcoder := &fakeTranscoder{}
+			s := newTestSessions(t, transcoder, t.TempDir(), nil)
+			entered, release := scratchLatch(t)
+			s.mkdirDir = func(name string, mode fs.FileMode) error {
+				close(entered)
+				<-release.ch
+				return s.root.Mkdir(name, mode)
+			}
+			key := SessionKey{SessionID: "viewer", MediaID: "item", ProfileCapability: "receiver"}
+			request := make(chan error, 1)
+			go func() {
+				_, err := filePath720(s, key, "720p/seg00000.m4s")
+				request <- err
+			}()
+			waitScratchSignal(t, entered)
+			terminated := make(chan error, 1)
+			go func() {
+				if count := s.TerminatePlayback(key.SessionID, "other"); count != 0 {
+					terminated <- fmt.Errorf("unrelated playback revoked %d sessions", count)
+					return
+				}
+				if count := tc.terminate(s, key); count != 1 {
+					terminated <- fmt.Errorf("termination revoked %d sessions, want 1", count)
+					return
+				}
+				if count := tc.terminate(s, key); count != 0 {
+					terminated <- fmt.Errorf("repeated termination revoked %d sessions", count)
+					return
+				}
+				terminated <- nil
+			}()
+			if err := waitScratchResult(t, terminated); err != nil {
+				t.Fatal(err)
+			}
+			release.open()
+			if err := waitScratchResult(t, request); !errors.Is(err, ErrSessionEvicted) {
+				t.Fatalf("revoked creator returned %v", err)
+			}
+			requireScratchMissing(t, filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce)))
+			if got := len(transcoder.starts); got != 0 {
+				t.Fatalf("revoked creator started %d encoders", got)
+			}
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if s.allocation != nil || len(s.sessions) != 0 || len(s.paths) != 0 {
+				t.Fatal("revoked creator retained a scratch claim or published a session")
+			}
+		})
+	}
+}
+
 func TestCloseWaitsForRemovalAfterLateScratchMkdir(t *testing.T) {
 	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	mkdirEntered, mkdirRelease := scratchLatch(t)
@@ -783,6 +844,87 @@ func TestScratchWritersStayInHeldRootAfterReplacement(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPlainScratchWriterRefusesSymlinkedRung(t *testing.T) {
+	transcoder := &fakeTranscoder{}
+	s := newTestSessions(t, transcoder, t.TempDir(), nil)
+	key := SessionKey{SessionID: "symlinked-rung"}
+	master, err := filePath720(s, key, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rungDir := filepath.Join(filepath.Dir(master), "720p")
+	if err := os.Rename(rungDir, rungDir+"-original"); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, rungDir); err != nil {
+		t.Fatal(err)
+	}
+	_, err = filePath720(s, key, "720p/seg00000.m4s")
+	if !errors.Is(err, unix.ENOTDIR) && !errors.Is(err, unix.ELOOP) {
+		t.Fatalf("start with symlinked rung returned %v", err)
+	}
+	if len(transcoder.starts) != 0 {
+		t.Fatal("encoder was invoked with a symlinked output directory")
+	}
+	if entries, err := os.ReadDir(outside); err != nil || len(entries) != 0 {
+		t.Fatalf("outside directory changed: %v, %v", entries, err)
+	}
+}
+
+func TestShapeReplacementServesBeforePredecessorReaderReleases(t *testing.T) {
+	transcoder := &fakeTranscoder{}
+	s := newTestSessions(t, transcoder, t.TempDir(), nil)
+	s.SetTranscodeCap(1)
+	slow := newSlowStop(s)
+	defer slow.unblock()
+	key := SessionKey{SessionID: "replace-with-open-reader"}
+	oldPath, err := filePath720(s, key, "720p/seg00000.m4s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := testArtifactForPath(s, key, oldPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+	reader, _, err := held.OpenPlain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	slow.armed.Store(true)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	replaced := make(chan error, 1)
+	go func() {
+		_, err := s.FilePath(ctx, key, "/src/movie.mkv", 60, 1280, 720, false, masterPlaylistName)
+		replaced <- err
+	}()
+	slow.waitEntered(t)
+	select {
+	case err := <-replaced:
+		t.Fatalf("replacement served before stopping predecessor: %v", err)
+	default:
+	}
+	slow.unblock()
+	if err := waitScratchResult(t, replaced); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.FilePath(ctx, key, "/src/movie.mkv", 60, 1280, 720, false, "720p/seg00000.m4s"); err != nil {
+		t.Fatalf("successor could not use the freed encoder slot: %v", err)
+	}
+	if got := string(mustRead(t, oldPath)); got != "m4s" {
+		t.Fatalf("predecessor artifact while retained = %q", got)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	held.Release()
+	requireScratchMissing(t, held.session.dir)
 }
 
 func TestScratchReaperRetriesDebtWhileIdleReaderIsHeld(t *testing.T) {

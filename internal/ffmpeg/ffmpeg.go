@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -1562,6 +1563,24 @@ type Rendition struct {
 	// adjust is the pitch shift and tempo change applied to the audio (see
 	// WithAudioAdjust). The zero value changes nothing.
 	adjust AudioAdjust
+	// hlsOutputDir pins a live HLS rung through the child process lifetime.
+	hlsOutputDir *os.File
+}
+
+// WithHLSOutputDirectory pins the live HLS output directory. The supplied
+// path passed to StartHLS or a segment starter must address this directory.
+// The caller keeps dir open until the starter returns.
+func (r Rendition) WithHLSOutputDirectory(dir *os.File) Rendition {
+	r.hlsOutputDir = dir
+	return r
+}
+
+func (r Rendition) hlsOutputPath(dir string) string {
+	if r.hlsOutputDir != nil && runtime.GOOS == "linux" {
+		// The shim and FFmpeg both use the first inherited descriptor.
+		return "/proc/self/fd/3"
+	}
+	return dir
 }
 
 // WithAudioAdjust returns a copy whose audio is pitch shifted and tempo
@@ -2728,6 +2747,9 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
+	if !background {
+		dir = rendition.hlsOutputPath(dir)
+	}
 	args := hlsArgs(src, dir, rendition)
 	// Confine to the source file's directory (read-only) and the segment output
 	// directory (read-write), plus the GPU when the rendition runs on one.
@@ -2736,7 +2758,7 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	if background {
 		cmd = r.generationCommand(ctx, conf, ffmpegPath, args...)
 	} else {
-		cmd = r.confinedCommand(ctx, ffmpegPath, conf, args)
+		cmd = r.liveHLSCommand(ctx, ffmpegPath, conf, rendition, args)
 	}
 	process, err := startHLSProcess(cmd)
 	if err != nil {
@@ -2839,7 +2861,7 @@ func (r *Runner) StartHLSSegments(ctx context.Context, src, dir string, startSeg
 		}
 		return r.startComposedHLSSegments(ctx, src, dir, picture, startSegment, segmentSeconds, rendition)
 	}
-	return r.startHLSSegmentProcess(ctx, src, dir, rendition, func(rendition Rendition) []string {
+	return r.startHLSSegmentProcess(ctx, src, dir, rendition, func(dir string, rendition Rendition) []string {
 		return hlsSegmentArgs(src, dir, startSegment, segmentSeconds, rendition)
 	})
 }
@@ -2869,7 +2891,7 @@ func (r *Runner) StartHLSKeyframeSegments(ctx context.Context, src, dir string, 
 	if startSegment < 0 || start < 0 {
 		return nil, fmt.Errorf("ffmpeg: invalid keyframe segment start %d at %v", startSegment, start)
 	}
-	return r.startHLSSegmentProcess(ctx, src, dir, rendition, func(rendition Rendition) []string {
+	return r.startHLSSegmentProcess(ctx, src, dir, rendition, func(dir string, rendition Rendition) []string {
 		return keyframeSegmentArgs(src, dir, startSegment, start, rendition)
 	})
 }
@@ -2877,7 +2899,7 @@ func (r *Runner) StartHLSKeyframeSegments(ctx context.Context, src, dir string, 
 // startHLSSegmentProcess starts a segmenting encode for a rendition without a
 // composed picture. buildArgs receives the rendition after hardware decode and
 // tone-map backend selection.
-func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, rendition Rendition, buildArgs func(Rendition) []string) (*HLSProcess, error) {
+func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, rendition Rendition, buildArgs func(string, Rendition) []string) (*HLSProcess, error) {
 	if err := checkPath(src); err != nil {
 		return nil, err
 	}
@@ -2897,9 +2919,10 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
-	args := buildArgs(rendition)
+	dir = rendition.hlsOutputPath(dir)
+	args := buildArgs(dir, rendition)
 	conf := dirConfinement(src, dir).withGPU(rendition.hwAccel, rendition.toneMapAccel)
-	cmd := r.confinedCommand(ctx, ffmpegPath, conf, args)
+	cmd := r.liveHLSCommand(ctx, ffmpegPath, conf, rendition, args)
 	process, err := startHLSProcess(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("starting ffmpeg transcode: %w", err)

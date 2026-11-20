@@ -29,6 +29,7 @@ type recordSourceEnd struct {
 	segment int
 }
 type detachSession struct{ cleanupOnRelease bool }
+type stoppedDetachedEncoder struct{ teardown *sessionTeardown }
 type takeEncoderRestart struct{}
 
 // encoderStart is the claim held across the existing off-lock start path.
@@ -136,12 +137,16 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 		session.state = sessionRevoking
 		session.teardown = t
 		return transitionResult{accepted: true, teardown: t}
-	case *sessionTeardown:
-		if session.state != sessionRevoking || session.teardown != change {
+	case stoppedDetachedEncoder:
+		if session.state != sessionRevoking || change.teardown == nil || session.teardown != change.teardown || !change.teardown.counted {
 			return transitionResult{}
 		}
-		if change.counted {
-			s.stopping--
+		s.stopping--
+		change.teardown.counted = false
+		return transitionResult{accepted: true}
+	case *sessionTeardown:
+		if session.state != sessionRevoking || session.teardown != change || change.counted {
+			return transitionResult{}
 		}
 		s.detached--
 		session.teardown = nil

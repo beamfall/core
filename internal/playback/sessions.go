@@ -462,6 +462,7 @@ type Sessions struct {
 	root          *os.Root
 	rootLock      *os.File
 	setupMu       sync.Mutex
+	allocation    *scratchAllocation
 	paths         map[string]*scratchPath
 	removing      int
 	sweeping      bool
@@ -539,7 +540,8 @@ type sessionTeardown struct {
 	lease *governor.TranscodeLease
 	// counted means detachment added this teardown to s.stopping.
 	counted bool
-	// Late starts and the idle reaper leave removal to the last user if busy.
+	// Late starts, shape replacement and the idle reaper leave removal to
+	// the last user if busy.
 	cleanupOnRelease bool
 	// End access before waiting for directory owners to exit.
 	liveRun *encderiv.LiveRun
@@ -556,6 +558,11 @@ func (s *Sessions) runTeardowns(teardowns []*sessionTeardown) {
 		s.stop(t.proc)
 		if t.lease != nil {
 			t.lease.Release()
+		}
+		if t.proc != nil {
+			s.mu.Lock()
+			s.transitionLocked(t.session, stoppedDetachedEncoder{teardown: t})
+			s.mu.Unlock()
 		}
 	}
 	for _, t := range teardowns {
@@ -855,16 +862,7 @@ func (s *Sessions) admitLocked(key SessionKey, priority Priority, degraded bool)
 // blocked future auth; this closes the live transport that revocation alone
 // leaves running until idle reap.
 func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
-	s.mu.Lock()
-	var teardowns []*sessionTeardown
-	for key, session := range s.sessions {
-		if key.SessionID == sessionID {
-			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
-		}
-	}
-	s.mu.Unlock()
-	s.runTeardowns(teardowns)
-	return len(teardowns)
+	return s.terminate(func(key SessionKey) bool { return key.SessionID == sessionID })
 }
 
 // TerminatePlayback aborts the in-flight transcodes one auth Session holds for
@@ -875,16 +873,25 @@ func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
 // TerminateSession, and leaves the Session's other Media alone. Ending a
 // playback with no live transcode (direct play) is a zero-stop no-op.
 func (s *Sessions) TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int {
+	return s.terminate(func(key SessionKey) bool { return key.SessionID == sessionID && key.MediaID == mediaID })
+}
+
+func (s *Sessions) terminate(matches func(SessionKey) bool) int {
 	s.mu.Lock()
+	revoked := 0
+	if a := s.allocation; a != nil && !s.closed && !a.revoked && matches(a.key) {
+		a.revoked = true
+		revoked++
+	}
 	var teardowns []*sessionTeardown
 	for key, session := range s.sessions {
-		if key.SessionID == sessionID && key.MediaID == mediaID {
+		if matches(key) {
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
 		}
 	}
 	s.mu.Unlock()
 	s.runTeardowns(teardowns)
-	return len(teardowns)
+	return revoked + len(teardowns)
 }
 
 // newBootNonce mints an 8-byte crypto-random hex tag, ignoring the
@@ -1352,7 +1359,7 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	}
 	if hasExisting {
 		if existing.scratch.library != library || existing.sourceGeneration != sourceGeneration || (existing.sourceInfo != nil && !sameSourceFile(existing.sourceInfo, sourceInfo)) || existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
-			teardowns = append(teardowns, s.transitionLocked(existing, detachSession{}).teardown) // mode-shaping changed; old artifacts are incompatible
+			teardowns = append(teardowns, s.transitionLocked(existing, detachSession{cleanupOnRelease: true}).teardown)
 		} else {
 			// A position noted while this session ran was kept only for a
 			// reshaped replacement; the unchanged session ignores it.
@@ -1361,7 +1368,7 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 			return existing, nil
 		}
 	}
-	scratch, err := s.allocateScratchLocked(ctx, library)
+	scratch, err := s.allocateScratchLocked(ctx, key, library)
 	if scratch == nil {
 		return nil, err
 	}
@@ -1528,7 +1535,6 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	if session.artifactReady(path) {
 		return nil, nil
 	}
-	rungDir := filepath.Join(session.scratch.writerDir, rung.ID)
 	if segment == initRequest {
 		if session.proc != nil && session.currentRung == rung.ID {
 			return session.run, nil // every encoder writes init.mp4 when it starts
@@ -1587,23 +1593,18 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	}
 	s.stop(start.replaced)
 	procCtx := context.WithoutCancel(ctx)
+	if session.secure != nil || (session.durationSeconds > 0 && session.keyframeTimeline(rung) == nil) {
+		segment = session.primed.restartSegment(segment)
+	}
 	var proc *ffmpeg.HLSProcess
 	var liveRun *encderiv.LiveRun
 	var err error
 	if session.secure != nil {
 		// The encrypted encode shares the primed grid; segments the earlier
 		// start rewrites are refused as existing and the first copy stays.
-		segment = session.primed.restartSegment(segment)
 		proc, liveRun, err = s.startEncryptedRung(procCtx, session, rung, segment)
-	} else if t := session.keyframeTimeline(rung); t != nil && session.durationSeconds > 0 {
-		// Copied video restarts at segment's keyframe, stamped with that
-		// keyframe's real time, so the media matches the playlist (CORE-0021).
-		proc, err = s.transcoder.(keyframeTranscoder).StartHLSKeyframeSegments(procCtx, session.src, rungDir, segment, t.segmentStart(segment), session.rendition(rung))
-	} else if session.durationSeconds > 0 {
-		segment = session.primed.restartSegment(segment)
-		proc, err = s.transcoder.StartHLSSegments(procCtx, session.src, rungDir, segment, rungSegmentSeconds(rung), session.rendition(rung))
 	} else {
-		proc, err = s.transcoder.StartHLS(procCtx, session.src, rungDir, session.rendition(rung))
+		proc, err = s.startPlainRung(procCtx, session, rung, segment)
 	}
 	s.mu.Lock()
 	var run *encoderRun
