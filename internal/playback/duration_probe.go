@@ -69,7 +69,7 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	}
 	now := s.now()
 	s.mu.Lock()
-	if binding != nil && !binding.validLocked() {
+	if ctx.Err() != nil || s.closed || binding != nil && !binding.validLocked() {
 		s.mu.Unlock()
 		return 0
 	}

@@ -38,13 +38,20 @@ func (c *incompleteSourceCache) rememberVerified(path string, observed os.FileIn
 }
 
 func (c *incompleteSourceCache) contains(path string) bool {
+	return c.containsWithStat(path, os.Stat)
+}
+
+func (c *incompleteSourceCache) containsWithStat(path string, stat func(string) (os.FileInfo, error)) bool {
+	if stat == nil {
+		stat = os.Stat
+	}
 	c.mu.Lock()
 	observed := c.files[path]
 	c.mu.Unlock()
 	if observed == nil {
 		return false
 	}
-	current, err := os.Stat(path)
+	current, err := stat(path)
 	if err == nil && sameSourceFile(observed, current) {
 		return true
 	}
@@ -150,8 +157,11 @@ var ErrArtifactChanged = errors.New("playback artifact run changed")
 // nonblocking lock attempts so their caller can retry outside Store.
 func (s *Sessions) observeIncompleteSource(ctx context.Context, key SessionKey, session *hlsSession, artifact artifactObservation, reaping bool, observe func() (time.Duration, bool)) (time.Duration, bool, error) {
 	run := artifact.run
-	valid := func() error {
-		if session.state != sessionRunning {
+	valid := func(staging bool) error {
+		// An inspection already held can stage its result through library
+		// drain. The exact run and generation still have to match.
+		draining := staging && session.teardown != nil && session.teardown.libraryDrain
+		if session.state != sessionRunning && !draining {
 			return ErrSessionEvicted
 		}
 		if !session.currentSourceLocked() {
@@ -173,7 +183,7 @@ func (s *Sessions) observeIncompleteSource(ctx context.Context, key SessionKey, 
 				busy = true
 				return 0, false
 			}
-			claimErr = valid()
+			claimErr = valid(false)
 			if claimErr == nil {
 				claimErr = ctx.Err()
 			}
@@ -203,7 +213,7 @@ func (s *Sessions) observeIncompleteSource(ctx context.Context, key SessionKey, 
 				busy = true
 				return 0, false
 			}
-			claimErr = valid()
+			claimErr = valid(true)
 			if claimErr == nil {
 				claimErr = ctx.Err()
 			}
@@ -225,7 +235,7 @@ func (s *Sessions) observeIncompleteSource(ctx context.Context, key SessionKey, 
 		if held {
 			s.releaseInspectionLocked(session)
 		}
-		currentErr := valid()
+		currentErr := valid(false)
 		if currentErr == nil && claimErr == nil && !busy && observed && session.sourceInfo != nil {
 			s.incompleteSources.rememberVerified(session.src, session.sourceInfo)
 		}

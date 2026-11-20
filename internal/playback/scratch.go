@@ -29,9 +29,10 @@ const (
 
 // Sessions.mu protects the path registry and every claim's mutable state.
 type scratchPath struct {
-	name    string
-	library store.LibraryID
-	state   scratchState
+	name         string
+	library      store.LibraryID
+	libraryOwned bool
+	state        scratchState
 	// Set from name reservation through publication or the setup owner's cleanup.
 	allocating bool
 	users      int
@@ -48,6 +49,7 @@ type scratchPath struct {
 // Sessions.mu protects its revocation.
 type scratchAllocation struct {
 	key     SessionKey
+	library store.LibraryID
 	revoked bool
 }
 
@@ -244,7 +246,7 @@ func (s *Sessions) allocateScratchLocked(allocation *scratchAllocation, library 
 			}
 			return nil, err
 		}
-		p.library, p.users = library, 1
+		p.library, p.libraryOwned, p.users = library, true, 1
 		return p, nil
 	}
 	return nil, ErrSessionEvicted
@@ -297,6 +299,14 @@ func (s *Sessions) removeScratch(p *scratchPath) error {
 		p.state, p.allocating = scratchDebt, false
 		p.backoff = min(max(time.Second, 2*p.backoff), time.Minute)
 		p.retryAt = now.Add(p.backoff)
+		if admission := s.admission[p.library]; p.libraryOwned && admission != nil && admission.attempt != nil {
+			attempt := admission.attempt
+			if attempt.failed == nil {
+				attempt.failed = make(map[*scratchPath]struct{})
+			}
+			attempt.failed[p] = struct{}{}
+			attempt.cleanupErr = errors.Join(attempt.cleanupErr, err)
+		}
 	}
 	s.removing--
 	s.wakeCloseLocked()

@@ -74,8 +74,8 @@ func (r cutoffCompatResolver) Resolve(context.Context, string, streamtoken.Decis
 	return "", false, nil
 }
 
-func TestT3HLSCutoffDuringVerificationOrDurationProbe(t *testing.T) {
-	for _, stage := range []string{"verification", "duration", "duration permit"} {
+func TestHLSCutoffDuringVerificationOrDurationProbe(t *testing.T) {
+	for _, stage := range []string{"verification", "duration", "duration permit", "library drain across verification"} {
 		t.Run(stage, func(t *testing.T) {
 			h, tokens, scope, now := castTrustBoundaryFixture(t)
 			src := filepath.Join(t.TempDir(), "source")
@@ -94,7 +94,7 @@ func TestT3HLSCutoffDuringVerificationOrDurationProbe(t *testing.T) {
 			var releaseOnce sync.Once
 			unblock := func() { releaseOnce.Do(func() { close(release) }) }
 			defer unblock()
-			latch := func() { close(entered); <-release }
+			latch := sync.OnceFunc(func() { close(entered); <-release })
 			var runner *ffmpeg.Runner
 			var marker string
 			if stage == "duration permit" {
@@ -117,7 +117,9 @@ printf '%s\n' '{"format":{"duration":"120"}}'
 					t.Fatal(err)
 				}
 			}
+			var probes atomic.Int32
 			encoder := &cutoffTranscoder{probe: func(ctx context.Context, path string) (ffmpeg.Probe, error) {
+				probes.Add(1)
 				if runner != nil {
 					latch()
 					// Preserve the binding's permit while bypassing the supervisor's
@@ -138,7 +140,7 @@ printf '%s\n' '{"format":{"duration":"120"}}'
 			if err != nil {
 				t.Fatal(err)
 			}
-			if stage == "verification" {
+			if stage == "verification" || stage == "library drain across verification" {
 				h.SetCompatDecisionResolver(cutoffCompatResolver(latch))
 			}
 			result := make(chan *httptest.ResponseRecorder, 1)
@@ -148,12 +150,24 @@ printf '%s\n' '{"format":{"duration":"120"}}'
 			case <-time.After(5 * time.Second):
 				t.Fatal("HLS did not reach the latch")
 			}
-			wantRevoked := 0
-			if stage != "verification" {
-				wantRevoked = 1
-			}
-			if got := h.hls.TerminateSession(scope.SessionID); got != wantRevoked {
-				t.Fatalf("terminated %d instances, want %d", got, wantRevoked)
+			if stage == "library drain across verification" {
+				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+				defer cancel()
+				fence, err := h.hls.Drain(ctx, media.LibraryID, 0)
+				if err != nil {
+					t.Fatalf("verification-only binding held drain: %v", err)
+				}
+				if err := h.hls.Reopen(media.LibraryID, fence); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				wantRevoked := 0
+				if stage != "verification" {
+					wantRevoked = 1
+				}
+				if got := h.hls.TerminateSession(scope.SessionID); got != wantRevoked {
+					t.Fatalf("terminated %d instances, want %d", got, wantRevoked)
+				}
 			}
 			unblock()
 			select {
@@ -163,6 +177,15 @@ printf '%s\n' '{"format":{"duration":"120"}}'
 				}
 			case <-time.After(5 * time.Second):
 				t.Fatal("HLS did not return after cutoff")
+			}
+			if stage == "library drain across verification" {
+				if probes.Load() != 0 {
+					t.Fatalf("stale scope lookup started %d probes", probes.Load())
+				}
+				rec := fetchCastHLS(h, token, "master.m3u8")
+				if rec.Code != http.StatusOK || probes.Load() != 1 {
+					t.Fatalf("fresh request status = %d, probes = %d, body = %q", rec.Code, probes.Load(), rec.Body.String())
+				}
 			}
 			if marker != "" {
 				if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {

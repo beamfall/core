@@ -86,7 +86,7 @@ func grantAudioAdjust(grant streamtoken.Grant) ffmpeg.AudioAdjust {
 func (s *Service) adjustedAudioChoice(ctx context.Context, grant streamtoken.Grant, suffix string, audio ffmpeg.AudioProfile, audioSource store.MediaFileStream, expiresAt time.Time) (StreamChoice, error) {
 	grant.Target = streamtoken.TargetMediaHLS
 	grant = withHLSAudioGrant(grant, audio)
-	token, err := s.tokens.Issue(ctx, grant)
+	token, err := s.issueDecisionGrant(ctx, grant)
 	if err != nil {
 		return StreamChoice{}, err
 	}

@@ -581,6 +581,8 @@ type Service struct {
 	composer      PictureComposer
 	composedCache string
 	observed      observations
+
+	decisionLookup decisionLookup
 }
 
 // SealedPredicate reports whether a Library is currently Sealed (ADR-0098 area
@@ -713,17 +715,20 @@ func NewService(st *store.Store, tokens *streamtoken.Service, now func() time.Ti
 	if err != nil {
 		panic("playback: embedded quirks baseline is invalid: " + err.Error())
 	}
-	return &Service{store: st, tokens: tokens, now: now, quirks: quirks}
+	return &Service{store: st, decisionLookup: st, tokens: tokens, now: now, quirks: quirks}
 }
 
 // decision is the resolved ladder outcome for one media ID.
 type decision struct {
-	media    store.Media
-	verdict  string // direct-play | transcode | unavailable
-	reason   string
-	streams  []StreamChoice
-	timeline Timeline
-	assets   *AssetsInfo
+	media            store.Media
+	restrictedOrigin bool
+	loudnessInfo     *LoudnessInfo
+	subtitles        subtitleResolution
+	verdict          string // direct-play | transcode | unavailable
+	reason           string
+	streams          []StreamChoice
+	timeline         Timeline
+	assets           *AssetsInfo
 	// parts is the chosen Version's ordered Parts. A single-file
 	// Version yields one Part; multi-Part Versions present back-to-back as one
 	// timeline. Empty for unavailable items.
@@ -812,6 +817,7 @@ func (s *Service) mintSelectors(parts []PartInfo, mediaID store.MediaID, profile
 
 // Info validates the request and returns the current playback decision.
 func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (InfoResponse, error) {
+	stamp := s.sessions.admissionStamp()
 	mediaID := strings.TrimSpace(req.MediaID)
 	if mediaID == "" {
 		return InfoResponse{}, ErrInvalidRequest
@@ -826,7 +832,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	ctx = s.compatDecisionContext(ctx, scope)
 	// The session Profile's playback policy (transcode gate + stream cap)
 	// applies to every rung decision below.
-	policy, err := s.store.Profile(ctx, scope.ProfileID)
+	policy, err := s.decisionLookup.Profile(ctx, scope.ProfileID)
 	if err != nil {
 		return InfoResponse{}, err
 	}
@@ -857,7 +863,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		return InfoResponse{}, err
 	}
 	ov := s.quirks.Resolve(capability).withClientCeiling(req.CapabilityProfile.MaxStreamingBitrate).withPolicyCeiling(policyCap)
-	main, err := s.decide(ctx, scope, mediaID, mainSuffix, capability, policy, priority, req.SelectedSubtitleIndex, req.SelectedAudioIndex, strings.TrimSpace(req.SelectedVersion), ov, adjust)
+	main, err := s.decide(ctx, stamp, scope, mediaID, mainSuffix, capability, policy, priority, req.SelectedSubtitleIndex, req.SelectedAudioIndex, strings.TrimSpace(req.SelectedVersion), ov, adjust)
 	if err != nil {
 		return InfoResponse{}, err
 	}
@@ -888,27 +894,16 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	if main.media.ID != "" {
 		resp.MediaID = string(main.media.ID)
 		resp.MediaClass = string(main.media.Class)
-		restrictedOrigin, err := s.store.LibraryRestricted(ctx, main.media.LibraryID)
-		if err != nil {
-			return InfoResponse{}, err
-		}
-		resp.RestrictedOrigin = restrictedOrigin
+		resp.RestrictedOrigin = main.restrictedOrigin
 	}
-	// Loudness/normalization state (ADR-0098 area 3): assembled here, the one site
-	// that holds both the rung verdict and the assets token base. Capability-
-	// derived (declared NormalizationModes), never client-name inferred.
-	resp.Loudness = s.loudnessInfo(main, capability)
-	// Server subtitle pre-selection: authoritative at playback
-	// START only. Resolved here, the one site holding the item's caption tracks,
-	// the Profile policy, and the audio language together.
-	subtitles := s.resolveSubtitles(ctx, scope, main, resp.TrackPreferences)
-	resp.SelectedSubtitleTrack = subtitles.selection
-	resp.SubtitlesUnavailableReason = subtitles.unavailableReason
+	resp.Loudness = main.loudnessInfo
+	resp.SelectedSubtitleTrack = main.subtitles.selection
+	resp.SubtitlesUnavailableReason = main.subtitles.unavailableReason
 	if nextID := strings.TrimSpace(req.NextMediaID); nextID != "" {
 		// Best-effort: any next item that cannot be served — unknown,
 		// outside the session scope, or with no playable file — is silently
 		// omitted; current playback is never affected.
-		next, nextErr := s.decide(ctx, scope, nextID, "next", capability, policy, priority, nil, nil, "", ov, ffmpeg.AudioAdjust{})
+		next, nextErr := s.decide(ctx, stamp, scope, nextID, "next", capability, policy, priority, nil, nil, "", ov, ffmpeg.AudioAdjust{})
 		if nextErr == nil && next.verdict != "unavailable" {
 			// Attribution tracks what the response actually carries: a next
 			// decision the payload drops would put override IDs on a body whose
@@ -925,7 +920,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 				Parts:         next.parts,
 				Assets:        next.assets,
 				CaptionTracks: next.captionTracks,
-				Loudness:      s.loudnessInfo(next, capability),
+				Loudness:      next.loudnessInfo,
 				AudioQuality:  next.audioQuality,
 			}
 		}
@@ -1017,20 +1012,70 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 // receives matches what the byte layer would actually start at that rank.
 // adjust is the requested pitch shift and tempo change; it applies only to an
 // audio Media served through a transcode, which it then forces.
-func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
-	media, err := s.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
+func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
+	media, err := s.decisionLookup.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
 	if err != nil {
 		var validation store.ValidationError
 		if errors.As(err, &validation) {
-			return decision{verdict: "unavailable", reason: "media-unavailable", streams: []StreamChoice{}}, nil
+			return unavailableDecision(), nil
 		}
 		return decision{}, err
 	}
+	parent := ctx
+	var op *libraryOperation
+	if s.sessions != nil {
+		op, err = s.sessions.claimLibrary(ctx, media.LibraryID, stamp)
+		if errors.Is(err, ErrSessionEvicted) {
+			return unavailableDecision(), nil
+		}
+		if err != nil {
+			return decision{}, err
+		}
+		defer s.sessions.releaseLibrary(op)
+		ctx = s.sessions.libraryProbeContext(op)
+	}
+	batch := &decisionGrants{}
+	ctx = context.WithValue(ctx, decisionGrantsKey{}, batch)
+	dec, err = s.decideMedia(ctx, batch, scope, media, suffix, profile, policy, priority, selectedSubtitleIndex, selectedAudioIndex, selectedVersion, ov, adjust)
+	if err == nil {
+		dec.loudnessInfo = s.loudnessInfo(dec, profile)
+		if suffix == mainSuffix && dec.media.ID != "" {
+			dec.restrictedOrigin, err = s.decisionRestricted(ctx, dec.media.LibraryID)
+			if err == nil {
+				dec.subtitles = s.resolveSubtitles(ctx, scope, dec, trackPreferences(policy))
+			}
+		}
+	}
+	if op != nil {
+		// The locked check is the publication point for the entire batch.
+		// Once it wins, Drain waits for recording before the claim can leave.
+		if claimErr := s.sessions.libraryOperationError(op); errors.Is(claimErr, ErrSessionEvicted) {
+			return unavailableDecision(), nil
+		} else if claimErr != nil {
+			return decision{}, claimErr
+		}
+	}
+	if err != nil {
+		return decision{}, err
+	}
+	if suffix != mainSuffix && dec.verdict == "unavailable" {
+		return dec, nil
+	}
+	for _, record := range batch.records {
+		record(parent)
+	}
+	if batch.observe != nil {
+		batch.observe(dec)
+	}
+	return dec, nil
+}
+
+func (s *Service) decideMedia(ctx context.Context, batch *decisionGrants, scope auth.Scope, media store.Media, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
 	// A Sealed Library gets no stream, no selector-bearing Parts, and no asset
 	// advertisement (ADR-0098 area 2). Indistinguishable from unavailable on the
 	// wire, exactly like a Library the scope cannot see (Reveal contract).
 	if s.sealed != nil && s.sealed(media.LibraryID) {
-		return decision{verdict: "unavailable", reason: "media-unavailable", streams: []StreamChoice{}}, nil
+		return unavailableDecision(), nil
 	}
 	timeline := Timeline{DurationSeconds: media.DurationSeconds}
 	if progress, ok, err := s.store.PlaybackProgressFor(ctx, scope.ProfileID, media.ID); err == nil && ok && !progress.Watched {
@@ -1073,7 +1118,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		if err != nil {
 			return decision{}, err
 		}
-		if incomplete || (s.sessions != nil && s.sessions.incompleteSources.contains(part.Path)) {
+		if incomplete || (s.sessions != nil && s.sessions.incompleteSources.containsWithStat(part.Path, s.sessions.statSource)) {
 			return decision{media: media, verdict: "unavailable", reason: "media-source-incomplete", streams: []StreamChoice{}}, nil
 		}
 	}
@@ -1116,11 +1161,9 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	}()
 	// The operator's live-session dashboard reads the main item's decision.
 	if suffix == mainSuffix {
-		defer func() {
-			if err == nil {
-				s.observe(scope.SessionID, dec, file, streams, profile, selectedSubtitleIndex, ov)
-			}
-		}()
+		batch.observe = func(dec decision) {
+			s.observe(scope.SessionID, dec, file, streams, profile, selectedSubtitleIndex, ov)
+		}
 	}
 	loudness, loudnessOK := s.loudnessMeasurement(media, file)
 
@@ -1144,7 +1187,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			}
 		}()
 	}
-	restricted, err := s.store.LibraryRestricted(ctx, media.LibraryID)
+	restricted, err := s.decisionRestricted(ctx, media.LibraryID)
 	if err != nil {
 		return decision{}, err
 	}
@@ -1350,7 +1393,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, ov)
 	if directPlay || p7BaseLayer {
 		grant.Target = streamtoken.TargetMediaDirect
-		token, err := s.tokens.Issue(ctx, grant)
+		token, err := s.issueDecisionGrant(ctx, grant)
 		if err != nil {
 			return decision{}, err
 		}
@@ -1530,7 +1573,7 @@ func (s *Service) imageDecision(ctx context.Context, scope auth.Scope, media sto
 	if len(files) == 0 {
 		return decision{media: media, verdict: "unavailable", reason: "media-file-unavailable", streams: []StreamChoice{}}, nil
 	}
-	restricted, err := s.store.LibraryRestricted(ctx, media.LibraryID)
+	restricted, err := s.decisionRestricted(ctx, media.LibraryID)
 	if err != nil {
 		return decision{}, err
 	}
@@ -1546,7 +1589,7 @@ func (s *Service) imageDecision(ctx context.Context, scope auth.Scope, media sto
 		ExpiresAt:  expiresAt,
 		Target:     streamtoken.TargetMediaDirect,
 	}
-	token, err := s.tokens.Issue(ctx, grant)
+	token, err := s.issueDecisionGrant(ctx, grant)
 	if err != nil {
 		return decision{}, err
 	}
@@ -1698,7 +1741,7 @@ func (s *Service) hlsChoice(ctx context.Context, grant streamtoken.Grant, suffix
 	grant = withHLSAudioGrant(grant, audio)
 	caps := s.ladderCaps(profile, ov)
 	grant = withHLSLadderGrant(grant, caps)
-	token, err := s.tokens.Issue(ctx, grant)
+	token, err := s.issueDecisionGrant(ctx, grant)
 	if err != nil {
 		return StreamChoice{}, err
 	}
@@ -1745,7 +1788,7 @@ func (s *Service) cachedRenditionChoice(ctx context.Context, scope auth.Scope, g
 func (s *Service) precomputedStreamChoice(ctx context.Context, grant streamtoken.Grant, suffix string, rendition store.PlaybackRendition, expiresAt time.Time) (StreamChoice, error) {
 	grant.Target = streamtoken.TargetMediaHLS
 	grant.PlaybackRenditionID = rendition.ID
-	token, err := s.tokens.Issue(ctx, grant)
+	token, err := s.issueDecisionGrant(ctx, grant)
 	if err != nil {
 		return StreamChoice{}, err
 	}
@@ -1900,7 +1943,7 @@ func (s *Service) audioCopyChoice(ctx context.Context, grant streamtoken.Grant, 
 	// with the standard transcode, so rung-name ordering can no longer decide it).
 	grant.AudioCopy = true
 	grant = withHLSAudioGrant(grant, audio)
-	token, err := s.tokens.Issue(ctx, grant)
+	token, err := s.issueDecisionGrant(ctx, grant)
 	if err != nil {
 		return StreamChoice{}, err
 	}
@@ -1928,7 +1971,7 @@ func (s *Service) degradedHLSChoice(ctx context.Context, grant streamtoken.Grant
 	grant = withHLSAudioGrant(grant, audio)
 	caps := s.ladderCaps(profile, ov)
 	grant = withHLSLadderGrant(grant, caps)
-	token, err := s.tokens.Issue(ctx, grant)
+	token, err := s.issueDecisionGrant(ctx, grant)
 	if err != nil {
 		return StreamChoice{}, err
 	}
@@ -1953,7 +1996,7 @@ func (s *Service) degradedAudioCopyChoice(ctx context.Context, grant streamtoken
 	grant.AudioCopy = true
 	grant.Degraded = true
 	grant = withHLSAudioGrant(grant, audio)
-	token, err := s.tokens.Issue(ctx, grant)
+	token, err := s.issueDecisionGrant(ctx, grant)
 	if err != nil {
 		return StreamChoice{}, err
 	}
@@ -1978,7 +2021,7 @@ func (s *Service) assetsInfo(ctx context.Context, grant streamtoken.Grant, finge
 		return nil, nil
 	}
 	grant.Target = streamtoken.TargetMediaAssets
-	token, err := s.tokens.Issue(ctx, grant)
+	token, err := s.issueDecisionGrant(ctx, grant)
 	if err != nil {
 		return nil, err
 	}
@@ -2260,7 +2303,7 @@ func (s *Service) muxedCaptionTracksInfo(ctx context.Context, grant streamtoken.
 		grant.Target = streamtoken.TargetMediaSubtitle
 		grant.SubtitleStreamIndex = *tracks[i].StreamIndex + 1
 		grant.SubtitleFileFingerprint = fileFingerprint
-		token, err := s.tokens.Issue(ctx, grant)
+		token, err := s.issueDecisionGrant(ctx, grant)
 		if err != nil {
 			return nil, err
 		}
@@ -2298,11 +2341,7 @@ func (s *Service) captionTracksInfo(ctx context.Context, grant streamtoken.Grant
 	}
 	grant.Target = streamtoken.TargetMediaSidecar
 	grant.SidecarRawASS = profileRendersASS(subtitleFormats)
-	token, err := s.tokens.Issue(ctx, grant)
-	if err != nil {
-		return nil, 0, err
-	}
-	base := "/api/media/sidecar/" + token + "/"
+	var base string
 	var tracks []CaptionTrack
 	unrenderable := 0
 	for i, sc := range sidecars {
@@ -2312,6 +2351,13 @@ func (s *Service) captionTracksInfo(ctx context.Context, grant streamtoken.Grant
 		if !sidecarRenderable(sc.Format, subtitleFormats) {
 			unrenderable++
 			continue
+		}
+		if base == "" {
+			token, err := s.issueDecisionGrant(ctx, grant)
+			if err != nil {
+				return nil, 0, err
+			}
+			base = "/api/media/sidecar/" + token + "/"
 		}
 		tracks = append(tracks, CaptionTrack{
 			ID:       sidecarCaptionID(suffix, i),

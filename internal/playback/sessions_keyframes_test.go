@@ -801,9 +801,9 @@ func TestSlowKeyframeProbeDoesNotHoldFirstPlay(t *testing.T) {
 	close(transcoder.release)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		sessions.keyframes.mu.Lock()
+		sessions.mu.Lock()
 		probed := len(sessions.keyframes.done)
-		sessions.keyframes.mu.Unlock()
+		sessions.mu.Unlock()
 		if probed == 1 {
 			break
 		}

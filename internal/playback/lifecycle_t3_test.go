@@ -2067,7 +2067,15 @@ func TestT3SetupRejectsReplacementAfterGridResolution(t *testing.T) {
 				waitScratchSignal(t, gridDone)
 			}
 			if kind == "cutoff" {
-				s.keyframes.probes.Wait()
+				s.mu.Lock()
+				var pending []<-chan struct{}
+				for _, load := range s.keyframes.inflight {
+					pending = append(pending, load.finished)
+				}
+				s.mu.Unlock()
+				for _, finished := range pending {
+					waitScratchSignal(t, finished)
+				}
 				if got := chargedKeys(s); len(got) != 1 || got[0] != key {
 					t.Fatalf("late keyframe result disturbed the replacement encoder: %v", got)
 				}
@@ -2614,7 +2622,15 @@ func TestT3DelayedKeyframeCacheHitDoesNotDisplaceReplacementLoad(t *testing.T) {
 	old := s.claimSource(src, nil)
 	defer s.releaseSource(old)
 	gen := keyframeGeneration{path: src, size: old.info.Size(), modTimeNs: old.info.ModTime().UnixNano(), identity: old.generation}
-	oldGrid, err := s.keyframes.load(ctx, ctx, gen, old.order, &keyframeFakeTranscoder{
+	b, err := s.BindLive(SessionKey{SessionID: "new-grid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Release()
+	if err := b.Attach("", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	oldGrid, err := s.loadKeyframes(ctx, b, gen, old.order, &keyframeFakeTranscoder{
 		index: ffmpeg.KeyframeIndex{Keyframes: []time.Duration{0, 5 * time.Second}, Duration: 10 * time.Second},
 	})
 	if err != nil || oldGrid == nil {
@@ -2630,16 +2646,15 @@ func TestT3DelayedKeyframeCacheHitDoesNotDisplaceReplacementLoad(t *testing.T) {
 	fresh := s.claimSource(src, nil)
 	defer s.releaseSource(fresh)
 	result := make(chan error, 1)
-	session := newSessionReservation(SessionKey{SessionID: "new-grid"})
 	go func() {
-		grid, err := s.boundVideoTimeline(ctx, ctx, session, fresh)
+		grid, err := s.boundVideoTimeline(ctx, b, fresh)
 		if err == nil && (grid == nil || grid.segmentStart(1) != 4*time.Second) {
 			err = fmt.Errorf("replacement grid = %v", grid)
 		}
 		result <- err
 	}()
 	waitScratchSignal(t, f.started)
-	got, err := s.boundVideoTimeline(ctx, ctx, session, delayed)
+	got, err := s.boundVideoTimeline(ctx, b, delayed)
 	if err != nil || got != oldGrid {
 		t.Fatalf("delayed cache hit = %v, %v", got, err)
 	}
@@ -2647,10 +2662,10 @@ func TestT3DelayedKeyframeCacheHitDoesNotDisplaceReplacementLoad(t *testing.T) {
 	if err := waitScratchResult(t, result); err != nil {
 		t.Fatal(err)
 	}
-	s.keyframes.mu.Lock()
+	s.mu.Lock()
 	freshGen := keyframeGeneration{path: src, size: fresh.info.Size(), modTimeNs: fresh.info.ModTime().UnixNano(), identity: fresh.generation}
 	cached := s.keyframes.done[freshGen]
-	s.keyframes.mu.Unlock()
+	s.mu.Unlock()
 	if cached == nil || cached.segmentStart(1) != 4*time.Second {
 		t.Fatalf("newer load failed to cache its grid: %v", cached)
 	}
