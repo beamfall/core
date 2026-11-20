@@ -1245,6 +1245,17 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(r.clockMs - start).toBeCloseTo(1000 / 15 + 1000 / 60, 6);
   });
 
+  it("runs the fade on the time the limiter is credited with", () => {
+    const { r, renderer, draw } = make();
+    draw(640, 360);
+    const lag = 1000 / 30;
+    renderer.draw(640, 360, 0.1, silentFrame(), false, 100, 1, 100, 320, 180, lag);
+    const left = r.fadeLeft as number;
+    renderer.draw(640, 360, 0.1, silentFrame(), false, 100, 1, 100, 320, 180, lag);
+    const scale = Math.min(1000 / (1000 + lag), (1000 / 15 + 1000 / 60) / (1000 / 15 + lag));
+    expect(left - (r.fadeLeft as number)).toBeCloseTo(Math.min(100 * scale, 1000 / 6) / 1000, 6);
+  });
+
   it("refills from the intervals after the frame that started", () => {
     const { draw, blocks } = make();
     draw(800, 450, 0.1);

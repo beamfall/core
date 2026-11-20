@@ -6,6 +6,7 @@ import { easeFrame, silentFrame } from "./analysis";
 import {
   backingSize,
   canVisualize,
+  lagBound,
   type Rotation,
   slotPixels,
   takeUpcoming,
@@ -272,5 +273,20 @@ describe("chosenVisual", () => {
       expect(chosenVisual("album", key, true).calm).toBe(true);
       expect(chosenVisual("album", key, true)).toBe(visualFor(key, true));
     }
+  });
+});
+
+describe("lagBound", () => {
+  it("is the largest interval held over the last 1.25 s, plus a margin", () => {
+    const ring = new Float64Array([33, 5, 5, 5]);
+    const at = new Float64Array([100, 1000, 1200, 1340]);
+    // A late paint at the slow refresh is still allowed for after the display speeds up.
+    expect(lagBound(ring, at, 4, 1340)).toBe(35);
+    // Once it is older than the hold, the bound follows the faster refresh.
+    expect(lagBound(ring, at, 4, 1360)).toBe(7);
+  });
+
+  it("assumes the slowest cadence before any interval is measured", () => {
+    expect(lagBound(new Float64Array(1), new Float64Array(1), 0, 0)).toBeCloseTo(1000 / 15, 9);
   });
 });

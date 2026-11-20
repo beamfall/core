@@ -880,8 +880,9 @@ describe("Visualizer resize before paint", () => {
     const elapsed = 599 * tick;
     expect(credited / elapsed).toBeGreaterThan(0.95);
     expect(credited / elapsed).toBeLessThan(1.05);
-    // The paint-lag bound passed with it is the display's refresh, not the draw interval.
-    expect(calls.at(-1)?.[10]).toBeCloseTo(tick, 6);
+    // The paint-lag bound passed with it is the display's refresh plus a margin, not the draw
+    // interval.
+    expect(calls.at(-1)?.[10]).toBeCloseTo(tick + 2, 6);
     clock.mockRestore();
   });
 
@@ -895,7 +896,7 @@ describe("Visualizer resize before paint", () => {
     step(100);
     expect(renderer.draw.mock.lastCall?.[5]).toBe(100);
     expect(renderer.draw.mock.lastCall?.[7]).toBe(100);
-    expect(renderer.draw.mock.lastCall?.[10]).toBe(100);
+    expect(renderer.draw.mock.lastCall?.[10]).toBe(102);
     clock.mockRestore();
   });
 });

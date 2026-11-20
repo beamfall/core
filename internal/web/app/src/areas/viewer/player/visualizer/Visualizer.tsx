@@ -31,23 +31,29 @@ const REPORT_FRAMES = 3;
 const STEP_MS = 1000 / 60;
 // How early a tick may come and still step: a display's intervals jitter around its rate.
 const STEP_SLACK_MS = 1.5;
-// How many animation-frame intervals the refresh estimate takes the median of, and what it
-// assumes before it has any.
-const REFRESH_SAMPLES = 15;
-const DEFAULT_REFRESH_MS = 1000 / 60;
+// The paint-lag bound: the largest animation-frame interval of the last LAG_HOLD_MS, plus
+// LAG_MARGIN_MS for a paint later than any interval measured. It is held past the 1 s the flash
+// budget spans, so a frame painted late is still allowed for when the refresh speeds up after
+// it, and it is a maximum, not a median, so one late paint is not underestimated (Codex round 2,
+// CORE-2744). Before any interval is measured it assumes the slowest cadence a page is drawn at.
+const LAG_HOLD_MS = 1250;
+const LAG_MARGIN_MS = 2;
+const LAG_SAMPLES = 512;
+const DEFAULT_LAG_MS = 1000 / 15;
 // Render no more pixels than this: the visual sits behind the artwork card.
 const MAX_DPR = 2;
 
-/** The median of the first n values of ring, sorted in scratch, so a frame allocates nothing. */
-export function medianRefresh(ring: Float64Array, scratch: Float64Array, n: number): number {
-  if (n === 0) return DEFAULT_REFRESH_MS;
+/**
+ * The paint-lag bound at now from the last n intervals in ring, ended at the times in at: the
+ * largest that ended within LAG_HOLD_MS, plus LAG_MARGIN_MS. Allocates nothing.
+ */
+export function lagBound(ring: Float64Array, at: Float64Array, n: number, now: number): number {
+  if (n === 0) return DEFAULT_LAG_MS;
+  let max = 0;
   for (let i = 0; i < n; i++) {
-    const v = ring[i] ?? 0;
-    let j = i;
-    for (; j > 0 && (scratch[j - 1] ?? 0) > v; j--) scratch[j] = scratch[j - 1] ?? 0;
-    scratch[j] = v;
+    if (now - (at[i] ?? 0) <= LAG_HOLD_MS) max = Math.max(max, ring[i] ?? 0);
   }
-  return scratch[n >> 1] ?? DEFAULT_REFRESH_MS;
+  return max + LAG_MARGIN_MS;
 }
 
 /**
@@ -258,11 +264,9 @@ export function Visualizer({
     // The step clock: the last tick's timestamp and the time owed to the next step.
     let lastTick: number | null = null;
     let due = 0;
-    // The display's refresh, the median of the last REFRESH_SAMPLES animation-frame intervals:
-    // the bound on how late a frame is painted after its draw, which the limiter's credit
-    // allows for. A median ignores a stalled frame and timestamp jitter alike.
-    const refresh = new Float64Array(REFRESH_SAMPLES);
-    const sorted = new Float64Array(REFRESH_SAMPLES);
+    // The recent animation-frame intervals and when each ended, for the paint-lag bound.
+    const refresh = new Float64Array(LAG_SAMPLES);
+    const refreshAt = new Float64Array(LAG_SAMPLES);
     let refreshCount = 0;
     // Whether the last draw is unpainted, and the request of the last frame: a draw sets the
     // flag, and the next animation frame, which runs after the paint, clears it. The request is
@@ -485,7 +489,8 @@ export function Visualizer({
           due = 0;
         } else {
           due = Math.min(due + now - lastTick, 2 * STEP_MS);
-          refresh[refreshCount % REFRESH_SAMPLES] = now - lastTick;
+          refresh[refreshCount % LAG_SAMPLES] = now - lastTick;
+          refreshAt[refreshCount % LAG_SAMPLES] = now;
           refreshCount++;
         }
         lastTick = now;
@@ -494,12 +499,12 @@ export function Visualizer({
         const frameMs = lastDrawn === null ? 1000 / 60 : now - lastDrawn;
         const dt = Math.min(MAX_DT, frameMs / 1000);
         // The limiter is credited with the wall-clock time between draws and the bound on a
-        // paint's lateness, a refresh; the renderer turns the two into time it cannot overstate
+        // paint's lateness, the largest recent refresh; the renderer turns the two into time it cannot overstate
         // (CORE-2744). A per-frame lower bound (half of each interval at a steady cadence) ran
         // its clock at half speed and held ragged areas of every moving visual.
         const wall = performance.now();
         const shownMs = lastWall === null ? frameMs : Math.max(0, wall - lastWall);
-        const lagMs = medianRefresh(refresh, sorted, Math.min(refreshCount, REFRESH_SAMPLES));
+        const lagMs = lagBound(refresh, refreshAt, Math.min(refreshCount, LAG_SAMPLES), now);
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
         const heard = heardTime(video, trackRef.current);

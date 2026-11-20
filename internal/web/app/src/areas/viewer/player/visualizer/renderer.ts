@@ -29,6 +29,15 @@ const CREDIT_MS = 1000 / (2 * MAX_FLASH_HZ);
 // interval and one unit more.
 const COVERAGE_MS = 1000 / 15;
 const UNIT_MS = 16 * TICK_MS;
+
+/**
+ * The share of a draw interval the limiter is credited with when a frame is painted up to lagMs
+ * after its draw (CORE-2744): its clock runs slower by lagMs a second, and by enough that a stamp
+ * under the coverage interval old on screen is within the 5 units recency reaches.
+ */
+function creditScale(lagMs: number): number {
+  return Math.min(1000 / (1000 + lagMs), (COVERAGE_MS + UNIT_MS) / (COVERAGE_MS + lagMs));
+}
 /** The limiter's grant state with every budget just spent: two luma tokens of deficit (bit 8 of x
  * carries one), a red token and no credit (Oscillux shaders/limiter/grant.glsl). */
 const SPENT = new Uint32Array([256, TOKEN, TOKEN, 0]);
@@ -761,10 +770,10 @@ export class Renderer {
     const still = sameGeometry(last, want);
     this.asked = want;
     this.want = last;
-    // The fade and the black run on the time the limiter is credited with, shownMs up to one
-    // token's refill a frame, so the fall's grant has come by the end of the fade whatever the
-    // frame rate (Codex rounds 18, 22).
-    const shownS = Math.min(shownMs, CREDIT_MS) / 1000;
+    // The fade and the black run on the time the limiter is credited with, the credited share
+    // of shownMs up to one token's refill a frame, so the fall's grant has come by the end of
+    // the fade whatever the frame rate and paint lag (Codex rounds 18, 22; CORE-2744).
+    const shownS = Math.min(shownMs * creditScale(lagMs), CREDIT_MS) / 1000;
     let size = this.size;
     let started = false;
     if (size && this.fadeLeft > 0) {
@@ -1255,8 +1264,8 @@ export class Renderer {
   private limit(size: Size, shownMs: number, lagMs: number): void {
     const gl = this.gl;
     const L = size.limiter;
-    // shownMs is the time between draws. A frame is painted at most lagMs (about a refresh)
-    // after its draw, so a run of frames was on screen its draw time to within lagMs either way
+    // shownMs is the time between draws. lagMs bounds how late any frame of the last second or
+    // more was painted after its draw (the host holds its largest recent refresh), so a run of frames was on screen its draw time to within lagMs either way
     // (CORE-2744). The limiter is given time it cannot overstate:
     // - its clock (tick and refill) runs slower by lagMs a second, and by enough that a stamp
     //   under the coverage interval old on screen is within the 5 units recency reaches. A span
@@ -1265,8 +1274,7 @@ export class Renderer {
     //   a second is held, not the half of all time a per-frame lower bound held;
     // - deltaMs, which clears every stamp when it is over the coverage interval, is the
     //   interval less lagMs, the least this frame can have been shown (Codex P1).
-    const scale = Math.min(1000 / (1000 + lagMs), (COVERAGE_MS + UNIT_MS) / (COVERAGE_MS + lagMs));
-    const creditMs = shownMs * scale;
+    const creditMs = shownMs * creditScale(lagMs);
     const deltaMs = Math.max(0, shownMs - lagMs);
     this.clockMs += creditMs;
     // The interval up to a host write of the grant state cannot refill the deficit it wrote.
