@@ -5,17 +5,30 @@ import { IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getIdentityEpochSignal, isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
+import { fetchHomeLibraries, type HomeLibrary } from "@/lib/graphql/viewer";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { HOME_NODE_ID, nodePath } from "@/lib/nodePath";
+import { useSession, useViewerIdentity } from "@/lib/session";
 import { useEngagementEpoch } from "../actions";
+import { invalidateHomeRecentCache, reconcileHomeRecentCache } from "../components/HomeRecent";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
-import { fetchSectionItems, SEEALL_PAGE } from "../lib/sections";
-import type { SeeAllContext } from "../lib/seeall";
+import {
+  fetchSectionItems,
+  findHomeRecentSection,
+  MAX_RENDERED_SECTIONS,
+  SECTION_KINDS,
+  SEEALL_PAGE,
+} from "../lib/sections";
+import type { HomeLibrarySeeAllState, SeeAllContext } from "../lib/seeall";
 import { playQueueOf } from "../lib/watchQueue";
+
+type ResolvedSeeAllContext = SeeAllContext & { homeLibraryShelf?: true };
 
 // See All (/seeall/:sourceId), ported from the vanilla openSeeAll /
 // loadSeeAllPage (app.js). Renders one Source as a full grid, paged 60 at a
@@ -25,13 +38,96 @@ import { playQueueOf } from "../lib/watchQueue";
 // react-router navigation state; a direct visit without it degrades to a Back
 // affordance (the vanilla view is reachable only from a shelf).
 export function SeeAllPage() {
+  const location = useLocation();
+  const identity = useViewerIdentity();
+  const { manifest } = useSession();
+  const state = location.state as SeeAllContext | HomeLibrarySeeAllState | null;
+  const ctx = useMemo<ResolvedSeeAllContext | null>(() => {
+    if (!state) return null;
+    if ("section" in state) {
+      // Older generated library shelves put their synthetic Section in history.
+      const legacyLibraryShelf =
+        state.home &&
+        state.libraryID &&
+        state.section.source?.kind === "recently-added" &&
+        state.section.id.endsWith(`:${state.libraryID}`);
+      if (!legacyLibraryShelf) return state;
+    }
+    const layoutNodes = manifest?.navigation.filter(({ view }) => view === "layout");
+    const home = layoutNodes?.find(({ id }) => id === HOME_NODE_ID);
+    if (!home) return null;
+    const layout = manifest?.layouts.find(({ id }) => id === home.layoutID);
+    const sections = layout?.sections.filter(({ kind }) => SECTION_KINDS.has(kind)) ?? [];
+    const section = findHomeRecentSection(sections.slice(0, MAX_RENDERED_SECTIONS));
+    return section
+      ? {
+          section,
+          libraryID: state.libraryID,
+          entityID: "",
+          returnTo: home === layoutNodes?.[0] ? "/" : nodePath(home.id),
+          home: true,
+          homeLibraryShelf: true,
+        }
+      : null;
+  }, [manifest, state]);
+  return (
+    <SeeAllResults
+      key={JSON.stringify([location.key, identity, Boolean(ctx)])}
+      ctx={ctx}
+      identity={identity}
+    />
+  );
+}
+
+async function fetchPage(
+  ctx: ResolvedSeeAllContext,
+  identity: string | null,
+  offset: number,
+  signal?: AbortSignal,
+) {
+  let libraryTitle: HomeLibrary["title"] | undefined;
+  if (ctx.homeLibraryShelf) {
+    // Core applies Home visibility to aggregate reads; a scoped feed can
+    // return a library that was hidden after the viewer opened its shelf.
+    const libraries = await fetchHomeLibraries(signal);
+    signal?.throwIfAborted();
+    if (libraries === null) {
+      invalidateHomeRecentCache(identity);
+      return null;
+    }
+    const visible = libraries.filter(({ showOnHome }) => showOnHome !== false);
+    reconcileHomeRecentCache(identity, visible);
+    const library = visible.find(({ id }) => id === ctx.libraryID);
+    if (!library) return null;
+    libraryTitle = library.title;
+  }
+  signal?.throwIfAborted();
+  const items = await fetchSectionItems(
+    ctx.section,
+    {
+      libraryID: ctx.libraryID,
+      entityID: ctx.entityID,
+      home: ctx.home,
+      paging: { limit: SEEALL_PAGE, offset },
+    },
+    signal,
+  );
+  return { items, libraryTitle };
+}
+
+function SeeAllResults({
+  ctx,
+  identity,
+}: {
+  ctx: ResolvedSeeAllContext | null;
+  identity: string | null;
+}) {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
-  const location = useLocation();
-  const ctx = location.state as SeeAllContext | null;
 
   const [items, setItems] = useState<SourceItem[]>([]);
+  const [libraryTitle, setLibraryTitle] = useState<HomeLibrary["title"]>();
   const [hasMore, setHasMore] = useState(true);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -45,6 +141,7 @@ export function SeeAllPage() {
     gridRef,
     itemCount: items.length,
     enabled: items.length > VIRTUAL_GRID_MIN_ITEMS,
+    variableRows: ctx?.home ? items : undefined,
   });
   const start = gridWindow?.startIndex ?? 0;
   const end = gridWindow?.endIndex ?? items.length;
@@ -52,28 +149,43 @@ export function SeeAllPage() {
   const queue = useMemo(() => playQueueOf(items), [items]);
   const repeated = useMemo(() => repeatedTitles(items), [items]);
 
+  const clearResults = useCallback(
+    (authRejected = false) => {
+      if (authRejected && ctx?.homeLibraryShelf) invalidateHomeRecentCache(identity);
+      setItems([]);
+      setLibraryTitle(undefined);
+      offsetRef.current = 0;
+      setHasMore(false);
+    },
+    [ctx?.homeLibraryShelf, identity],
+  );
+
   const loadPage = useCallback(async () => {
     if (!ctx) return;
     const generation = generationRef.current;
+    const signal = getIdentityEpochSignal();
     setBusy(true);
     try {
-      const page = await fetchSectionItems(ctx.section, {
-        libraryID: ctx.libraryID,
-        entityID: ctx.entityID,
-        home: ctx.home,
-        paging: { limit: SEEALL_PAGE, offset: offsetRef.current },
-      });
-      if (generationRef.current !== generation) return;
-      setItems((prev) => [...prev, ...page]);
-      offsetRef.current += page.length;
-      setHasMore(page.length >= SEEALL_PAGE);
+      const page = await fetchPage(ctx, identity, offsetRef.current, signal);
+      if (generationRef.current !== generation || signal?.aborted) return;
+      if (page) {
+        setItems((prev) => [...prev, ...page.items]);
+        setLibraryTitle(page.libraryTitle);
+        offsetRef.current += page.items.length;
+        setHasMore(page.items.length >= SEEALL_PAGE);
+      } else {
+        clearResults();
+      }
       setFailed(false);
-    } catch {
-      if (generationRef.current === generation) setFailed(true);
+    } catch (error) {
+      if (generationRef.current === generation && !signal?.aborted) {
+        if (isAuthRejection(error)) clearResults(true);
+        setFailed(true);
+      }
     } finally {
       if (generationRef.current === generation) setBusy(false);
     }
-  }, [ctx]);
+  }, [ctx, identity, clearResults]);
 
   // Reads the span already shown again and swaps it in whole, so a list that
   // changed underneath (an item left the watchlist) neither keeps the old rows
@@ -81,42 +193,48 @@ export function SeeAllPage() {
   const reloadShown = useCallback(async () => {
     if (!ctx) return;
     const generation = ++generationRef.current;
+    const signal = getIdentityEpochSignal();
     const want = Math.max(offsetRef.current, SEEALL_PAGE);
     const next: SourceItem[] = [];
+    let nextLibraryTitle: HomeLibrary["title"] | undefined;
     let more = true;
     setBusy(true);
     try {
       while (more && next.length < want) {
-        const page = await fetchSectionItems(ctx.section, {
-          libraryID: ctx.libraryID,
-          entityID: ctx.entityID,
-          home: ctx.home,
-          paging: { limit: SEEALL_PAGE, offset: next.length },
-        });
-        if (generationRef.current !== generation) return;
-        next.push(...page);
-        more = page.length >= SEEALL_PAGE;
+        const page = await fetchPage(ctx, identity, next.length, signal);
+        if (generationRef.current !== generation || signal?.aborted) return;
+        if (!page) {
+          clearResults();
+          setFailed(false);
+          return;
+        }
+        next.push(...page.items);
+        nextLibraryTitle = page.libraryTitle;
+        more = page.items.length >= SEEALL_PAGE;
       }
       setItems(next);
+      setLibraryTitle(nextLibraryTitle);
       offsetRef.current = next.length;
       setHasMore(more);
-    } catch {
+      setFailed(false);
+    } catch (error) {
+      if (generationRef.current === generation && !signal?.aborted && isAuthRejection(error)) {
+        clearResults(true);
+        setFailed(true);
+      }
       // Keep what is shown; the next change or Load More tries again.
     } finally {
       if (generationRef.current === generation) setBusy(false);
     }
-  }, [ctx]);
+  }, [ctx, identity, clearResults]);
 
   useEffect(() => {
-    // Reset and load the first page when the context changes.
-    generationRef.current += 1;
-    offsetRef.current = 0;
-    setItems([]);
-    setHasMore(true);
-    setFailed(false);
-    void loadPage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctx?.section.id, ctx?.libraryID, ctx?.entityID]);
+    if (offsetRef.current > 0) void reloadShown();
+    else void loadPage();
+    return () => {
+      generationRef.current += 1;
+    };
+  }, [loadPage, reloadShown]);
 
   useEffect(() => {
     if (seenEpochRef.current === engagementEpoch) return;
@@ -127,6 +245,7 @@ export function SeeAllPage() {
   const firstPageLoading = busy && items.length === 0;
   const loadFailed = !busy && failed && items.length === 0;
   const empty = !busy && !failed && !hasMore && items.length === 0;
+  const title = ctx?.homeLibraryShelf ? libraryTitle : ctx?.section.title;
 
   function goBack() {
     navigate(ctx?.returnTo || "/");
@@ -161,7 +280,7 @@ export function SeeAllPage() {
             <ChevronLeft aria-hidden />
             {t("back")}
           </Button>
-          <IconHeading icon={LayoutGrid} title={displayString(ctx.section.title, displayLocale)} />
+          {title && <IconHeading icon={LayoutGrid} title={displayString(title, displayLocale)} />}
         </div>
         {firstPageLoading && (
           <div aria-busy="true" className="bf-grid">
@@ -207,6 +326,7 @@ export function SeeAllPage() {
                 setSize={items.length}
                 queue={queue}
                 showYear={showsYear(item, repeated)}
+                intrinsicArtwork={ctx.home}
               />
             );
           })}

@@ -7,6 +7,8 @@ import type { NavigationNode } from "@/lib/graphql/types";
 
 const DOUBLED_PREFIX = /^([a-z0-9]+)-\1-(?=.)/i;
 
+export const HOME_NODE_ID = "home";
+
 /** The address segment for a node ID: its repeated leading word collapsed. */
 export function nodeSlug(id: string): string {
   const match = DOUBLED_PREFIX.exec(id);

@@ -34,9 +34,9 @@ const CARD_BUCKETS = ["w320", "w640"] as const;
 // One catalog card, ported from the vanilla renderItem (app.js). Generic by
 // invariant #1: the wire entity is Media and `kind` is a plugin display
 // discriminant — a "media" item plays, anything else opens entity detail. The
-// poster sits in a fixed frame (2:3, or square for audio: cardArt.ts) whose tinted
-// fallback (with a muted glyph) shows when artwork is absent or fails to load, so
-// layout never shifts. Titles and
+// poster uses a 2:3 or square frame (cardArt.ts) until its artwork loads.
+// Home cards then fit the artwork's natural ratio. A tinted glyph fallback
+// shows when artwork is absent or fails to load. Titles and
 // summaries render as React text only (invariant #5 / ADR-0012 §5).
 //
 // The card link is the only control that carries the item's name: its
@@ -55,6 +55,7 @@ export function MediaItemCard({
   showYear = false,
   display = "poster",
   nameContainer = true,
+  intrinsicArtwork = false,
 }: {
   item: SourceItem;
   /** 1-based aria-posinset for grid a11y; omit outside a grid. */
@@ -82,6 +83,7 @@ export function MediaItemCard({
    * inside a container's own page, where it goes without saying.
    */
   nameContainer?: boolean;
+  intrinsicArtwork?: boolean;
 }) {
   const navigate = useNavigate();
   const cardImageSizes = useCardImageSizes();
@@ -89,7 +91,7 @@ export function MediaItemCard({
   const t = useT();
   const displayLocale = useDisplayLocale();
   const location = useLocation();
-  const [imageFailed, setImageFailed] = useState(false);
+  const [failedPoster, setFailedPoster] = useState("");
   const [previewClip, setPreviewClip] = useState("");
   const isMedia = item.kind === "media";
   const hasPlayButton = showPlayButton && isMedia && !item.locked;
@@ -107,7 +109,11 @@ export function MediaItemCard({
     : t("cardOpen");
   const poster = wide
     ? artworkSlotURL(item, "thumb") || artworkSlotURL(item, "poster")
-    : artworkSlotURL(item, "poster") || artworkSlotURL(item, "thumb");
+    : artworkSlotURL(item, "poster") ||
+      artworkSlotURL(item, "thumb") ||
+      (intrinsicArtwork ? artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "banner") : "");
+  const frameClass = wide ? "bf-poster bf-poster-wide" : artFrameClass(item);
+  const showArtwork = poster && failedPoster !== poster;
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewRequestRef = useRef(0);
@@ -307,16 +313,21 @@ export function MediaItemCard({
           </span>
         )}
         {!isTable && (
-          <div className={wide ? "bf-poster bf-poster-wide" : artFrameClass(item)}>
-            {poster && !imageFailed ? (
+          <div
+            className={
+              intrinsicArtwork && showArtwork ? `${frameClass} bf-poster-intrinsic` : frameClass
+            }
+          >
+            {showArtwork ? (
               <img
+                key={poster}
                 alt=""
                 loading="lazy"
                 decoding="async"
                 src={artworkBucketURL(poster, "w320")}
                 srcSet={artworkSrcSet(poster, CARD_BUCKETS)}
                 sizes={cardImageSizes}
-                onError={() => setImageFailed(true)}
+                onError={() => setFailedPoster(poster)}
               />
             ) : (
               <PosterGlyph mediaClass={item.mediaClass} />

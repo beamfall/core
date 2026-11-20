@@ -17,6 +17,11 @@ export interface SeeAllContext {
   home?: boolean;
 }
 
+/** Home library shelves resolve their title and Source again when opened. */
+export interface HomeLibrarySeeAllState {
+  libraryID: string;
+}
+
 /** The /seeall/:sourceId target (href + navigation state) for one Section. */
 export function seeAllTargetFor(ctx: SeeAllContext): {
   href: string;
