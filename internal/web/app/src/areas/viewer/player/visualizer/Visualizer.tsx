@@ -5,7 +5,6 @@ import { decodable, heardTime } from "../useGaplessAudio";
 import { decodeTrack, easeFrame, silentFrame, TrackAnalysis } from "./analysis";
 import { loadArtwork } from "./artwork";
 import { loadOscillux } from "./oscillux";
-import { RefreshBound } from "./refresh";
 import { MAX_SIDE, Renderer, sameFrame, TRACKED_BLACK } from "./renderer";
 import { canVisualize, type VisualChoice } from "./visualChoice";
 import {
@@ -243,8 +242,6 @@ export function Visualizer({
     // The step clock: the last tick's timestamp and the time owed to the next step.
     let lastTick: number | null = null;
     let due = 0;
-    // The time each frame is credited to the limiter with, from the shortest draw interval seen.
-    const refresh = new RefreshBound();
     // Whether the last draw is unpainted, and the request of the last frame: a draw sets the
     // flag, and the next animation frame, which runs after the paint, clears it. The request is
     // measured in place, as the slot an observer reports is (`seen`), so neither a frame nor
@@ -472,22 +469,16 @@ export function Visualizer({
         if (lastDrawn !== null) due = Math.max(0, due - STEP_MS);
         const frameMs = lastDrawn === null ? 1000 / 60 : now - lastDrawn;
         const dt = Math.min(MAX_DT, frameMs / 1000);
-        // The limiter ages its evidence by the credit of refresh.ts, a lower bound on the time
-        // the last frame was shown once the page has drawn at its display's rate and not
-        // before, from the shorter of the frame timestamps' interval and the time between
-        // draws (a late callback has a stale timestamp, Codex round 18). A device that draws
-        // slower than its display refreshes ages its evidence slower: held areas wait longer. A
-        // display that speeds up its refresh rate between two paints is over-credited one
-        // interval (Codex round 22, OSC-0046). The bound is noted from the timestamps' interval
-        // alone: they are taken at vsync, while the time between draws jitters below a refresh
-        // (a late callback, then an on-time one), which pinned the bound at 4 ms, aged the
-        // limiter's evidence at a quarter of the real rate and held torn areas on every
-        // moving visual (CORE-2737).
+        // The limiter ages its evidence by the wall-clock time between draws. Each frame is
+        // painted after its draw and no more than about a refresh later, so whatever one paint's
+        // lateness, the credited time over any run of frames is the time they were on screen to
+        // within that lag: lateness shortens one frame and lengthens the next, and does not add
+        // up. That lets at most 2 * maxFlashHz * lag more transitions into any window, a small
+        // fraction of one flash. A per-frame lower bound (half of each interval at a steady
+        // cadence) ran the limiter's clock at half speed and held ragged areas of every moving
+        // visual (CORE-2744, after CORE-2737's quarter speed).
         const wall = performance.now();
-        const interval =
-          lastWall === null ? frameMs : Math.max(0, Math.min(frameMs, wall - lastWall));
-        if (lastWall !== null) refresh.note(frameMs);
-        const shownMs = refresh.shown(interval);
+        const shownMs = lastWall === null ? frameMs : Math.max(0, wall - lastWall);
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
         const heard = heardTime(video, trackRef.current);
