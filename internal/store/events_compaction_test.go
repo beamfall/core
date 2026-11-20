@@ -26,12 +26,15 @@ func TestCompactEvents(t *testing.T) {
 		t.Fatalf("record fresh token: %v", err)
 	}
 
-	// Auth attempts: one beyond retention, one recent.
+	// Auth attempts: one beyond retention in each database, one recent.
 	if err := st.RecordAuthAttempt(ctx, AuthAttempt{OccurredAt: now.Add(-retention - 24*time.Hour), Action: "reveal", Key: "k", Success: false}); err != nil {
 		t.Fatalf("record old auth: %v", err)
 	}
 	if err := st.RecordAuthAttempt(ctx, AuthAttempt{OccurredAt: now.Add(-time.Minute), Action: "reveal", Key: "k", Success: false}); err != nil {
 		t.Fatalf("record recent auth: %v", err)
+	}
+	if err := st.RecordAuthAttempt(ctx, AuthAttempt{OccurredAt: now.Add(-retention - time.Hour), Action: IntegrationAttemptAction, Key: "profile:fixture"}); err != nil {
+		t.Fatalf("record old integration auth: %v", err)
 	}
 
 	// An old audit-log entry: must SURVIVE (append-only, ADR-0012 §11).
@@ -55,8 +58,8 @@ func TestCompactEvents(t *testing.T) {
 	if res.ExpiredStreamTokens != 1 {
 		t.Fatalf("expected 1 expired stream token pruned, got %d", res.ExpiredStreamTokens)
 	}
-	if res.OldAuthAttempts != 1 {
-		t.Fatalf("expected 1 old auth attempt pruned, got %d", res.OldAuthAttempts)
+	if res.OldAuthAttempts != 2 {
+		t.Fatalf("expected 2 old auth attempts pruned, got %d", res.OldAuthAttempts)
 	}
 	if res.OldOutboxEvents != 2 {
 		t.Fatalf("expected 2 old outbox events pruned, got %d", res.OldOutboxEvents)

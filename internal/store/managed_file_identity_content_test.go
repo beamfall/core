@@ -235,6 +235,33 @@ func TestManagedImportRestoresLegacyPartOrVersion(t *testing.T) {
 				after.PartOrdinal != before.PartOrdinal || after.VersionLabel != before.VersionLabel {
 				t.Fatalf("restored file = %+v, want the identity and slot of %+v", after, before)
 			}
+			observed, err := st.LibraryMediaFileFingerprintByPath(ctx, member.LibraryID, member.Path)
+			if err != nil || !observed.InventoryPending {
+				t.Fatalf("restored member observation = %+v, err = %v", observed, err)
+			}
+			member.ScanPath = &store.ScanPathObservation{Live: observed}
+			member.SizeBytes, member.ModTime = observed.SizeBytes, observed.ModTime
+			member.Streams = []store.MediaFileStream{{Index: 1, Type: "subtitle", Codec: "ass"}}
+			if name == "part" {
+				_, _, err = st.ImportMediaFileParts(ctx, []store.ImportMediaFilePart{
+					{SourceOrdinal: 1, File: first}, {SourceOrdinal: 2, File: member},
+				})
+			} else {
+				_, err = st.ImportMediaFileVersion(ctx, store.MediaVersionImport{
+					MediaID: after.MediaID, File: member, Label: after.VersionLabel,
+				})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			observed, err = st.LibraryMediaFileFingerprintByPath(ctx, member.LibraryID, member.Path)
+			if err != nil || observed.InventoryPending {
+				t.Fatalf("inventoried member observation = %+v, err = %v", observed, err)
+			}
+			streams, err := st.MediaFileStreams(ctx, member.ContentFingerprint)
+			if err != nil || len(streams) != 1 || streams[0].Type != "subtitle" {
+				t.Fatalf("member inventory = %+v, err = %v", streams, err)
+			}
 		})
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -29,6 +30,8 @@ var (
 	// 2026-11-18 that an adult Profile without an entry PIN opens freely, so
 	// the picker reports which Profiles have one (ProfileEntryPINsSet).
 	ErrProfileEntryPINMismatch = errors.New("profile entry PIN mismatch")
+	// ErrMalformedProfileEntryPIN identifies a mismatch detected before the KDF.
+	ErrMalformedProfileEntryPIN = fmt.Errorf("malformed verifier: %w", ErrProfileEntryPINMismatch)
 )
 
 const (
@@ -106,29 +109,27 @@ func newProfileEntryPINVerifier(pin string) (string, error) {
 	return profileEntryPINArgon2Prefix + hex.EncodeToString(salt) + "$" + hex.EncodeToString(hash), nil
 }
 
-func verifyProfileEntryPINVerifier(verifier, pin string) bool {
-	if !strings.HasPrefix(verifier, profileEntryPINArgon2Prefix) {
-		return false
+func verifyProfileEntryPINVerifier(ctx context.Context, verifier, pin string) error {
+	encoded, tagged := strings.CutPrefix(verifier, profileEntryPINArgon2Prefix)
+	saltHex, hashHex, paired := strings.Cut(encoded, "$")
+	if !tagged || !paired || len(saltHex) != 2*profileEntryPINSaltLen || len(hashHex) != 2*profileEntryPINArgon2KeyLen {
+		return ErrMalformedProfileEntryPIN
 	}
-	parts := strings.Split(strings.TrimPrefix(verifier, profileEntryPINArgon2Prefix), "$")
-	if len(parts) != 2 {
-		return false
+	salt, saltErr := hex.DecodeString(saltHex)
+	want, hashErr := hex.DecodeString(hashHex)
+	if saltErr != nil || hashErr != nil {
+		return ErrMalformedProfileEntryPIN
 	}
-	salt, err := hex.DecodeString(parts[0])
-	if err != nil || len(salt) != profileEntryPINSaltLen {
-		return false
-	}
-	want, err := hex.DecodeString(parts[1])
-	if err != nil || len(want) != profileEntryPINArgon2KeyLen {
-		return false
-	}
-	got := argon2.IDKey([]byte(pin), salt,
+	got := deriveCredentialKey(ctx, pin, salt,
 		profileEntryPINArgon2Time,
 		profileEntryPINArgon2Memory,
 		profileEntryPINArgon2Threads,
 		profileEntryPINArgon2KeyLen,
 	)
-	return subtle.ConstantTimeCompare(got, want) == 1
+	if subtle.ConstantTimeCompare(got, want) != 1 {
+		return ErrProfileEntryPINMismatch
+	}
+	return nil
 }
 
 // SetProfileEntryPIN establishes or rotates an adult Profile's independent
@@ -211,10 +212,10 @@ func (s *Store) VerifyProfileEntryPIN(ctx context.Context, profileID ProfileID, 
 	if disabled != 0 {
 		return ErrProfileDisabled
 	}
-	if kind == ProfileManaged {
+	if kind != ProfileAdult || !verifier.Valid || verifier.String == "" {
 		return ErrNoProfileEntryPIN
 	}
-	return verifyProfileEntryPIN(kind, verifier, pin)
+	return verifyProfileEntryPINVerifier(ctx, verifier.String, pin)
 }
 
 // SetSessionProfileWithEntryPIN verifies the target Profile's independent
@@ -271,8 +272,8 @@ func (s *Store) SetSessionProfileWithEntryPIN(ctx context.Context, sessionID Ses
 		return ErrProfileDisabled
 	}
 	if kind == ProfileAdult && verifier.Valid && verifier.String != "" {
-		if err := verifyProfileEntryPIN(kind, verifier, pin); err != nil {
-			return err
+		if err := verifyProfileEntryPINVerifier(ctx, verifier.String, pin); err != nil {
+			return ErrProfileEntryPINMismatch
 		}
 	}
 
@@ -322,14 +323,4 @@ func (s *Store) ProfileEntryPINsSet(ctx context.Context) (map[ProfileID]bool, er
 		return nil, errors.Join(err, rows.Close())
 	}
 	return set, rows.Close()
-}
-
-func verifyProfileEntryPIN(kind ProfileKind, verifier sql.NullString, pin string) error {
-	if kind != ProfileAdult || !verifier.Valid || verifier.String == "" {
-		return ErrNoProfileEntryPIN
-	}
-	if !verifyProfileEntryPINVerifier(verifier.String, pin) {
-		return ErrProfileEntryPINMismatch
-	}
-	return nil
 }

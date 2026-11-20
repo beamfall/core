@@ -230,6 +230,10 @@ func Open(ctx context.Context, dataDir string, opts Options) (*Store, error) {
 		_ = st.Close()
 		return nil, err
 	}
+	if err := st.importIntegrationAuthAttempts(ctx); err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("import integration auth attempts: %w", err)
+	}
 	if err := st.resumeProfileFootprintDeletes(ctx); err != nil {
 		_ = st.Close()
 		return nil, fmt.Errorf("resume profile-footprint deletion: %w", err)
@@ -3564,7 +3568,8 @@ func (s *Store) updateAIMediaMetadataSQL(ctx context.Context, id MediaID, metada
 }
 
 func (s *Store) insertAuthAttempt(ctx context.Context, attempt AuthAttempt) error {
-	_, err := s.eventsW.ExecContext(ctx,
+	_, writer := s.authAttemptDBs(attempt.Action)
+	_, err := writer.ExecContext(ctx,
 		"INSERT INTO auth_attempt(occurred_at_ms, action, key, success) VALUES (?, ?, ?, ?)",
 		timeToMillis(attempt.OccurredAt), attempt.Action, attempt.Key, boolInt(attempt.Success),
 	)

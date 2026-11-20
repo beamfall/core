@@ -119,5 +119,7 @@ package store
 // generation. It is consulted by playback and the in-progress shelf only.
 // `GOWORK=off make bench` passed on 2026-11-18 for this bump: worst P95 was
 // search/fts/revealed at 39.970167 ms against 60 ms; performance-scale passed.
-// CORE-1162 adds 0126, a per-file pending inventory flag read by scan admission.
-const schemaFreezeCatalogMigrations = 122
+// CORE-2675 adds 0126_integration_auth_attempt so integration Session
+// issuance and throttle settlement share a transaction, off the entity-query hot path.
+// CORE-1162 adds 0127, a per-file pending inventory flag read by scan admission.
+const schemaFreezeCatalogMigrations = 123

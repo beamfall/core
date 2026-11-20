@@ -1790,10 +1790,10 @@ func (s *Store) Session(ctx context.Context, id SessionID) (Session, error) {
 	return s.sessionSQL(ctx, id)
 }
 
-// CreateIntegrationSession inserts a keyless, non-renewable integration
-// Session. Standing sessions require the Profile opt-in; bounded admin setup
-// sessions use the same kind and ceiling but may be created before opt-in.
-func (s *Store) CreateIntegrationSession(ctx context.Context, session Session, requireOptIn bool) error {
+// CreateIntegrationSession rechecks Profile eligibility, inserts a keyless,
+// non-renewable integration Session, and settles its throttle reservation in
+// one transaction. Bounded admin setup sessions may be created before opt-in.
+func (s *Store) CreateIntegrationSession(ctx context.Context, session Session, requireOptIn bool, reservation AuthAttemptReservation) error {
 	if session.ID == "" || session.ProfileID == "" {
 		return ValidationError("integration session identity is required")
 	}
@@ -1802,6 +1802,9 @@ func (s *Store) CreateIntegrationSession(ctx context.Context, session Session, r
 	}
 	if session.ExpiresAt.IsZero() {
 		return ValidationError("integration session expiry is required")
+	}
+	if reservation.action != IntegrationAttemptAction || len(reservation.rows) == 0 {
+		return ValidationError("integration auth attempt reservation is required")
 	}
 	scopes, err := encodeIntegrationScopes(session.IntegrationScopes)
 	if err != nil {
@@ -1812,21 +1815,45 @@ func (s *Store) CreateIntegrationSession(ctx context.Context, session Session, r
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	profile, err := s.profileSQL(ctx, session.ProfileID)
+	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if profile.Kind != ProfileAdult || profile.Disabled {
+	defer tx.Rollback()
+	var kind ProfileKind
+	var disabled, optIn int
+	err = tx.QueryRowContext(ctx, "SELECT kind, disabled, integration_sign_in FROM profile WHERE id = ?", session.ProfileID).
+		Scan(&kind, &disabled, &optIn)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ValidationError("profile not found")
+	}
+	if err != nil {
+		return err
+	}
+	if kind != ProfileAdult || disabled != 0 {
 		return ErrProfileDisabled
 	}
-	if requireOptIn && !profile.IntegrationSignIn {
+	if requireOptIn && optIn == 0 {
 		return ValidationError("integration sign-in is disabled")
 	}
-	_, err = s.catalogW.ExecContext(ctx, `
+	var inserted SessionID
+	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO auth_session(id, device_id, profile_id, revealed, expires_at_ms, admin_until_ms, kind, integration_scopes)
-		VALUES (?, NULL, ?, 0, ?, NULL, ?, ?)`,
-		session.ID, session.ProfileID, timeToMillis(session.ExpiresAt), SessionKindIntegration, scopes)
-	return err
+		VALUES (?, NULL, ?, 0, ?, NULL, ?, ?) RETURNING id`,
+		session.ID, session.ProfileID, timeToMillis(session.ExpiresAt), SessionKindIntegration, scopes).Scan(&inserted); err != nil {
+		return err
+	}
+	for _, row := range reservation.rows {
+		// Mark the original rows in place so later failures keep their order.
+		var id int64
+		if err := tx.QueryRowContext(ctx, `
+			UPDATE auth_attempt SET success = 1
+			WHERE id = ? AND action = ? AND key = ? AND occurred_at_ms = ? AND success = 0
+			RETURNING id`, row.id, reservation.action, row.key, reservation.atMS).Scan(&id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // RevokeIntegrationSession deletes one integration Session for its Profile.

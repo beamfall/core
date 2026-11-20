@@ -94,7 +94,7 @@ package store
 //     owning Library plane. The same 2026-11-18 benchmark recorded beside the
 //     catalog marker passed; source fingerprints never enter the shared DB.
 //
-//   - encrypted-library 0012 (CORE-1162) mirrors catalog 0126's pending
+//   - encrypted-library 0012 (CORE-1162) mirrors catalog 0127's pending
 //     inventory flag, which scan reads and clears in the owning plane.
 //
 // The earlier entries rode the `make bench` gate at the migration that introduced
