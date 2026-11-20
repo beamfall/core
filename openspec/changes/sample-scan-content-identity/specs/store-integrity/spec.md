@@ -68,11 +68,11 @@ Mtime comparisons SHALL round Unix nanoseconds toward zero to milliseconds.
 - **AND** a match keeps the identity and records stats that survive reopening, including a verified
   Unix-epoch mtime, while a mismatch uses the sampled identity
 
-#### Scenario: A scan cannot finish sampling a file
+#### Scenario: A scan cannot verify a file
 
-- **WHEN** a scan sees a file inside the stability window or any step of sampling fails
-- **THEN** it skips admission and records the path as seen for the missing-file sweep
-- **AND** the next scan can retry against the same stored identity and stats
+- **WHEN** the file is still settling, the sample fails (including if the path no longer names the sampled inode), or the legacy comparison hits an I/O error
+- **THEN** the scan skips admission and marks the path seen, preserving the stored identity and stats for retry
+- **AND** it defers Part groups in the affected folder for this scan, including across job yields, without changing their fingerprints or ordinals
 
 #### Scenario: Legacy file moved, changed, or returns after a missing mark
 
