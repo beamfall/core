@@ -1282,8 +1282,11 @@ describe("Renderer switch feedback (CORE-2724)", () => {
     expect(recorded.blits).toHaveLength(0);
     expect(size.outgoing).toBe(feedback);
     expect(size.feedback).not.toBe(feedback);
-    const black = recorded.fills.filter(([, i, v]) => i === 0 && v.join() === "0,0,0,1");
-    expect(black).toHaveLength(2);
+    const fresh = size.feedback as unknown as { fbo: unknown }[];
+    expect(recorded.fills.map(([f, i, v]) => [f, i, v.join()])).toEqual([
+      [fresh[0].fbo, 0, "0,0,0,1"],
+      [fresh[1].fbo, 0, "0,0,0,1"],
+    ]);
   });
 
   it("clears the feedback when the visual changes at once", () => {
