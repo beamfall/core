@@ -10,6 +10,11 @@ They SHALL check both digests before publishing the staged file and again during
 Managed convert SHALL check for duplicates before writing the conversion journal. The existing file
 and its Media SHALL remain unchanged.
 
+#### Scenario: Conversion lease changes after the import fence
+
+- **WHEN** a successor catalogs the converted output before the previous owner attempts admission
+- **THEN** duplicate refusal leaves the successor's catalog row and file intact
+
 #### Scenario: Same bytes at two paths
 
 - **WHEN** a file is cataloged by scan or managed admission and the same bytes are imported at a
@@ -115,10 +120,11 @@ hexadecimal digest digits. A legacy Media ID SHALL retain its existing scheme an
 
 ### Requirement: Exact duplicate checks recognize both fingerprint schemes
 
-Proxy promotion and qBittorrent ingest SHALL check live public catalog rows for the candidate's
-full SHA-256 and sampled identity before publishing an archive or relocating a download. A
-sampled match SHALL count as a duplicate only when the matched file's full SHA-256 equals the
-candidate's full SHA-256.
+Proxy promotion and qBittorrent ingest SHALL check live public catalog rows for both fingerprints
+before publishing or relocating bytes, excluding trashed Media and Libraries. A sampled hit SHALL
+count as a duplicate only if the full SHA-256 matches. Confirmation SHALL hash a regular file
+opened through its configured Library root. Proxy promotion SHALL repeat the check in the
+catalog publication transaction.
 
 #### Scenario: Exact duplicate in either scheme
 
@@ -129,6 +135,11 @@ candidate's full SHA-256.
 
 - **WHEN** only a sampled identity matches and the full digests differ
 - **THEN** promotion or relocation proceeds through its usual admission path
+
+#### Scenario: Concurrent sampled admission during promotion
+
+- **WHEN** identical sampled bytes are cataloged before the promotion transaction starts
+- **THEN** the archive publication is rolled back and the existing cataloged file is kept
 
 ### Requirement: Export manifests verify complete originals
 

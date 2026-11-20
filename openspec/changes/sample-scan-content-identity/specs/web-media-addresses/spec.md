@@ -70,6 +70,11 @@ viewer SHALL replace the address in place without adding a history entry or rest
 - **THEN** the viewer retries while the address and viewer identity remain current and selects
   the legacy ID only after a confirmed sampled miss
 
+#### Scenario: Cached sampled detail while offline
+
+- **WHEN** the current viewer opens a bare sampled ID with cached detail
+- **THEN** the viewer can render the sampled item immediately while the address revalidates
+
 #### Scenario: Permanent lookup failure
 
 - **WHEN** the sampled lookup for an ambiguous bookmark fails permanently, including an
