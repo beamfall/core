@@ -512,6 +512,68 @@ func (s *orderedSourceEndStore) ObserveSourceEnd(ctx context.Context, id store.M
 	return s.sourceEndObserver.ObserveSourceEnd(ctx, id, path, fingerprint, generation, observe)
 }
 
+func TestT3AdjustedEOFPersistsSourceSeconds(t *testing.T) {
+	for _, inspection := range []string{"segment", "reaper"} {
+		t.Run(inspection, func(t *testing.T) {
+			ctx := t.Context()
+			dataDir := storetest.MigratedDataDir(t)
+			st := storetest.OpenAt(t, dataDir)
+			src := filepath.Join(t.TempDir(), "source")
+			seedScratchFile(t, src)
+			const fingerprint = "adjusted-eof"
+			item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: "library-local", Path: src, Title: "Source", Container: "m4a",
+				Codec: "aac", Class: store.MediaClassAudio, ContentFingerprint: fingerprint, DurationSecondsHint: 120,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			input, signal, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer input.Close()
+			defer signal.Close()
+			s := newTestSessions(t, &eofInspectionTranscoder{input: input}, t.TempDir(), nil)
+			s.sourceStore = st
+			key := SessionKey{SessionID: "adjusted-eof", MediaID: item.ID}
+			shape := StreamShape{AudioOnly: true, Adjust: ffmpeg.AudioAdjust{Tempo: 1.25}}
+			request := func(name string) (string, error) {
+				return s.FilePathShaped(ctx, key, src, 120, 0, 0, false, false, ladderCaps{}, VideoSignal{}, -1,
+					ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, nil, shape, PriorityNormal, audioOnlyRungID+"/"+name)
+			}
+			path, err := request("init.mp4")
+			if err != nil {
+				t.Fatal(err)
+			}
+			h := registeredSession(t, s, key)
+			run := h.run
+			dir := filepath.Dir(path)
+			// The 20th boundary is at 80 output seconds, or 100 source seconds.
+			writeArtifact(t, dir, "seg00019.m4s", mediaSegment())
+			if inspection == "segment" {
+				writeArtifact(t, dir, "seg00020.m4s", emptySegment())
+				if _, err := request("seg00020.m4s"); !errors.Is(err, ErrSourceEnded) {
+					t.Fatalf("segment request = %v, want EOF", err)
+				}
+				select {
+				case <-run.reaped:
+					t.Fatal("child reaped before the segment could record EOF")
+				default:
+				}
+			} else {
+				if err := signal.Close(); err != nil {
+					t.Fatal(err)
+				}
+				waitScratchSignal(t, run.exited)
+			}
+			if end := storetest.RecordedSourceEnd(t, dataDir, fingerprint, h.sourceGeneration); end != 100 {
+				t.Fatalf("persisted EOF = %v seconds, want 100 source seconds", end)
+			}
+		})
+	}
+}
+
 func TestT3SegmentRetriesOutsideStoreWhileReaperOwnsOutput(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()

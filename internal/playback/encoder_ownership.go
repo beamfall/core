@@ -126,6 +126,9 @@ func (s *Sessions) handoffEncoder(key SessionKey, start *encoderStart, proc *ffm
 		h.resumeSeconds = 0
 	} else {
 		run.acceptReasonLocked(exitStopped)
+		if teardown := h.teardown; teardown != nil {
+			teardown.lateChildReap = run.reaped
+		}
 	}
 	h.scratch.users++
 	s.mu.Unlock()

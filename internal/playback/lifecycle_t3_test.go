@@ -76,10 +76,15 @@ type blockedStartTranscoder struct {
 	entered     chan struct{}
 	returnChild <-chan struct{}
 	child       *ffmpeg.HLSProcess
+	command     *exec.Cmd
 }
 
 func (f *blockedStartTranscoder) StartHLSSegments(ctx context.Context, _, _ string, _, _ int, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
-	child, err := ffmpeg.StartHLSCommand(exec.CommandContext(context.WithoutCancel(ctx), "sleep", "60"))
+	cmd := f.command
+	if cmd == nil {
+		cmd = exec.CommandContext(context.WithoutCancel(ctx), "sleep", "60")
+	}
+	child, err := ffmpeg.StartHLSCommand(cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -167,6 +172,88 @@ func TestT3StartWaiterLeavesBeforeUnhandedChildReturns(t *testing.T) {
 				t.Fatal("late child did not stop and release capacity")
 			}
 		})
+	}
+}
+
+type latchedEncoderOutput struct {
+	entered chan struct{}
+	release <-chan struct{}
+}
+
+func (w latchedEncoderOutput) Write(p []byte) (int, error) {
+	close(w.entered)
+	<-w.release
+	return len(p), nil
+}
+
+func TestT3SecondTerminationJoinsLateChildReap(t *testing.T) {
+	childStarted, handoff := scratchLatch(t)
+	outputEntered, reap := scratchLatch(t)
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", "printf x; exec sleep 60")
+	cmd.Stdout = latchedEncoderOutput{entered: outputEntered, release: reap.ch}
+	f := &blockedStartTranscoder{entered: childStarted, returnChild: handoff.ch, command: cmd}
+	s := newTestSessions(t, f, t.TempDir(), nil)
+	defer handoff.open()
+	defer reap.open()
+	key := SessionKey{SessionID: "late-handoff"}
+	started := make(chan error, 1)
+	go func() {
+		_, err := filePath720(s, key, "720p/seg00000.m4s")
+		started <- err
+	}()
+	waitScratchSignal(t, childStarted)
+	waitScratchSignal(t, outputEntered)
+	run := registeredSession(t, s, key).start.run
+	if n := s.TerminateSession(key.SessionID); n != 1 {
+		t.Fatalf("first termination revoked %d instances, want 1", n)
+	}
+
+	handoff.open()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for !f.child.StopRequested() {
+		select {
+		case <-tick.C:
+		case <-deadline.C:
+			t.Fatal("late child was never handed off and stopped")
+		}
+	}
+	if len(chargedKeys(s)) != 1 {
+		t.Fatal("late child lost capacity while reap was blocked")
+	}
+
+	secondEntered := make(chan struct{})
+	terminated := make(chan error, 1)
+	go func() {
+		close(secondEntered)
+		if n := s.TerminateSession(key.SessionID); n != 0 {
+			terminated <- fmt.Errorf("second termination revoked %d instances, want 0", n)
+			return
+		}
+		select {
+		case <-run.reaped:
+			terminated <- nil
+		default:
+			terminated <- errors.New("second termination returned before the late child was reaped")
+		}
+	}()
+	waitScratchSignal(t, secondEntered)
+	select {
+	case err := <-terminated:
+		t.Fatalf("second termination returned with reap latched: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	reap.open()
+	if err := waitScratchResult(t, terminated); err != nil {
+		t.Fatal(err)
+	}
+	if len(chargedKeys(s)) != 0 {
+		t.Fatal("termination returned with capacity still charged")
+	}
+	if err := waitScratchResult(t, started); !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("late starter = %v, want eviction", err)
 	}
 }
 

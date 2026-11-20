@@ -176,6 +176,23 @@ func OpenSQLiteDB(t testing.TB) *sql.DB {
 	return db
 }
 
+// RecordedSourceEnd reads the persisted EOF for a source generation in the
+// local fixture catalog.
+func RecordedSourceEnd(t testing.TB, dataDir, fingerprint, generation string) float64 {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(dataDir, "db", "catalog.db"))
+	if err != nil {
+		t.Fatalf("open catalog fixture: %v", err)
+	}
+	defer db.Close()
+	var end float64
+	err = db.QueryRowContext(t.Context(), `SELECT end_seconds FROM source_end_observation WHERE content_fingerprint = ? AND generation = ?`, fingerprint, generation).Scan(&end)
+	if err != nil {
+		t.Fatalf("read recorded source end: %v", err)
+	}
+	return end
+}
+
 // BackdateTrashedMedia updates a fixture trash timestamp. It lives under
 // internal/store so storage-driver access stays inside the store boundary.
 func BackdateTrashedMedia(t testing.TB, dataDir string, id store.MediaID, when time.Time) {
