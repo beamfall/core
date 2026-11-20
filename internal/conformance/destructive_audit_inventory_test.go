@@ -175,6 +175,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"QueueMove":                               {},
 	"QueueRemove":                             {},
 	"QueueReplaceWithStation":                 {},
+	"ReadEntityCardDetails":                   {},
 	"RecommendFromEngagement":                 {},
 	"RecordAuthAttempt":                       {},
 	"RefreshLibraryHealthCache":               {},
