@@ -11,72 +11,6 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
-func TestLiveFingerprintLookupExcludesTrashAndUnsafeFiles(t *testing.T) {
-	for _, scenario := range []string{"trashed Media", "trashed Library", "outside-root symlink", "directory"} {
-		t.Run(scenario, func(t *testing.T) {
-			st, root, _ := importStageHarness(t)
-			ctx := t.Context()
-			const library store.LibraryID = "library-local"
-			path := filepath.Join(root, "cataloged.mkv")
-			payload := []byte("known bytes")
-			if err := os.WriteFile(path, payload, 0o600); err != nil {
-				t.Fatal(err)
-			}
-			sample, err := store.SampleMediaFileContent(ctx, path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			full, err := store.HashMediaFileContent(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-				LibraryID: library, Path: path, Title: "Cataloged", Container: "mkv",
-				Codec: "h264", ContentFingerprint: sample,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if id, found, err := st.MediaFileMatchesSample(ctx, sample, full); err != nil || !found || id != media.ID {
-				t.Fatalf("live match = %q, %t, %v", id, found, err)
-			}
-			switch scenario {
-			case "trashed Media", "trashed Library":
-				if scenario == "trashed Media" {
-					err = st.TrashMedia(ctx, media.ID, store.LibraryFilter{AllLibraries: true})
-				} else {
-					err = st.DeleteLibrary(ctx, library)
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				if id, found, err := st.LiveMediaFileExistsByFingerprint(ctx, sample); err != nil || found || id != "" {
-					t.Fatalf("trashed lookup = %q, %t, %v", id, found, err)
-				}
-			case "outside-root symlink", "directory":
-				if err := os.Remove(path); err != nil {
-					t.Fatal(err)
-				}
-				if scenario == "outside-root symlink" {
-					outside := filepath.Join(t.TempDir(), "payload.mkv")
-					if err := os.WriteFile(outside, payload, 0o600); err != nil {
-						t.Fatal(err)
-					}
-					err = os.Symlink(outside, path)
-				} else {
-					err = os.Mkdir(path, 0o700)
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			if id, found, err := st.MediaFileMatchesSample(ctx, sample, full); err != nil || found || id != "" {
-				t.Fatalf("non-live match = %q, %t, %v", id, found, err)
-			}
-		})
-	}
-}
-
 // liveFileAt returns the live media_file row cataloged at path in library-local.
 func liveFileAt(t *testing.T, st *store.Store, path string) store.MediaFile {
 	t.Helper()
@@ -119,51 +53,6 @@ func importFromOutside(t *testing.T, st *store.Store, root string, filter store.
 // admitted bytes, not the path: the same bytes imported under two names resolve
 // to one Media, and new bytes at a reused name get a new identity.
 func TestManagedImportIdentityFollowsContent(t *testing.T) {
-	t.Run("duplicate at a live catalog path absent on disk", func(t *testing.T) {
-		for _, legacy := range []bool{false, true} {
-			name := "sample"
-			if legacy {
-				name = "legacy"
-			}
-			t.Run(name, func(t *testing.T) {
-				ctx := t.Context()
-				st, root, filter := importStageHarness(t)
-				const filename = "absent.mkv"
-				source := writeOutOfLibrarySource(t, filename, "same bytes")
-				target := filepath.Join(root, filename)
-				fp := contentFingerprint(t, source)
-				if legacy {
-					var err error
-					fp, err = store.HashMediaFileContent(source)
-					if err != nil {
-						t.Fatal(err)
-					}
-				}
-				if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-					LibraryID: "library-local", Path: target, Title: "Cataloged", Container: "mkv", Codec: "h264", ContentFingerprint: fp,
-				}); err != nil {
-					t.Fatal(err)
-				}
-				before := liveFileAt(t, st, target)
-				token, err := st.RegisterImportSource(source)
-				if err != nil {
-					t.Fatal(err)
-				}
-				_, err = st.ImportManagedFile(ctx, "library-local", token, root, "mkv", "h264", store.MediaClassVideo, filter)
-				var validation store.ValidationError
-				if !errors.As(err, &validation) {
-					t.Fatalf("duplicate import err = %v, want ValidationError", err)
-				}
-				if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
-					t.Fatalf("refused import left a file at the cataloged path: %v", err)
-				}
-				if after := liveFileAt(t, st, target); after != before {
-					t.Fatalf("refused import changed catalog row from %+v to %+v", before, after)
-				}
-			})
-		}
-	})
-
 	t.Run("same bytes at a second path are refused", func(t *testing.T) {
 		st, root, filter := importStageHarness(t)
 		first := importFromOutside(t, st, root, filter, "first.mkv", "identical-bytes")

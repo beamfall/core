@@ -10,8 +10,7 @@ import (
 // (Version, Part) file. Path is the on-disk location of the bytes — plaintext
 // for a non-Encrypted Library, the `.libencrypt` at-rest ciphertext for an
 // Encrypted one (the export decrypts it through the cipher seam to recover the
-// byte-exact original). ContentFingerprint is the `sha256:` content identity the
-// ingest recorded, so a third party can verify the exported bytes round-trip.
+// byte-exact original). ContentFingerprint identifies the catalog row.
 type ExportFile struct {
 	Path               string
 	ContentFingerprint string

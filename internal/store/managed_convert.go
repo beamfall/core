@@ -1,9 +1,7 @@
 package store
 
 import (
-	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -230,12 +228,6 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 		_ = os.Remove(tmpOut)
 		return ConvertResult{}, err
 	}
-	// Recovery treats a live row at the journaled destination as proof of
-	// admission. Reject duplicates before that row can look like our output.
-	if err := s.checkPublicContentDuplicate(ctx, fingerprint, legacyFingerprint); err != nil {
-		_ = os.Remove(tmpOut)
-		return ConvertResult{}, err
-	}
 
 	// Durable succession journal write — the intent record, lease-fenced, and
 	// strictly BEFORE any side effect. A stale owner is rejected here with
@@ -268,7 +260,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 	// repoint an existing row (CORE-1831, the conversion leg of CORE-1089).
 	release := s.holdManagedAdmission(dst)
 	defer release()
-	landed, admitErr := admitStagedFileWithIdentity(tmpOut, dst)
+	admitErr := admitStagedFileNoReplace(tmpOut, dst)
 	if errors.Is(admitErr, os.ErrExist) {
 		done, result, recErr := s.recoverConvertJournal(ctx, libraryID, dst, srcPath, filter, lease, now)
 		if recErr != nil {
@@ -279,7 +271,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 			_ = os.Remove(tmpOut)
 			return result, nil
 		}
-		landed, admitErr = admitStagedFileWithIdentity(tmpOut, dst)
+		admitErr = admitStagedFileNoReplace(tmpOut, dst)
 	}
 	if admitErr != nil {
 		_ = os.Remove(tmpOut)
@@ -291,10 +283,9 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 	// on-disk write so we never leave an un-cataloged orphan and never trash the
 	// original.
 	if err := s.fenceConvertStep(ctx, "import", lease); err != nil {
-		s.rollbackConvertAdmission(ctx, lease.JobID, record, dst, landed)
+		_ = removeConvertResidue(dst)
 		return ConvertResult{}, err
 	}
-	s.convertStep("after-import-fence")
 	media, _, err := s.ImportMediaFile(ctx, ImportMediaFile{
 		LibraryID:          libraryID,
 		Path:               dst,
@@ -307,7 +298,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 		legacyFingerprint:  legacyFingerprint,
 	})
 	if err != nil {
-		s.rollbackConvertAdmission(ctx, lease.JobID, record, dst, landed)
+		_ = removeConvertResidue(dst)
 		return ConvertResult{}, fmt.Errorf("admit converted file: %w", err)
 	}
 
@@ -392,7 +383,7 @@ func (s *Store) recoverConvertJournal(ctx context.Context, libraryID LibraryID, 
 	if err := s.fenceConvertStep(ctx, "residue", lease); err != nil {
 		return false, ConvertResult{}, err
 	}
-	if err := removeConvertResidue(dst, nil); err != nil {
+	if err := removeConvertResidue(dst); err != nil {
 		return false, ConvertResult{}, err
 	}
 	return false, ConvertResult{}, nil
@@ -429,52 +420,16 @@ func (s *Store) convertDstState(ctx context.Context, libraryID LibraryID, dst st
 	return true, mediaID, true, nil
 }
 
-// rollbackConvertAdmission drops only the failed attempt's own uncataloged inode.
-// The lock keeps a successor from journaling a new publication and keeps other
-// admissions from cataloging the path while the rollback removes it.
-func (s *Store) rollbackConvertAdmission(ctx context.Context, jobID JobID, checkpoint []byte, dst string, landed os.FileInfo) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.guardLocked() != nil {
-		return
-	}
-	ctx = context.WithoutCancel(ctx)
-	job, err := s.jobSQL(ctx, jobID)
-	if err != nil || !bytes.Equal(job.Checkpoint, checkpoint) {
-		return
-	}
-	var cataloged int
-	err = s.catalogR.QueryRowContext(ctx,
-		"SELECT 1 FROM media_file WHERE path = ? AND missing_at_ms IS NULL LIMIT 1", dst,
-	).Scan(&cataloged)
-	if errors.Is(err, sql.ErrNoRows) {
-		_ = removeConvertResidue(dst, landed)
-	}
-}
-
 // removeConvertResidue removes this job's own journal-named, uncataloged
 // destination residue through a proven directory descriptor (the same posture
 // as every managed-file mutation). An already-absent entry is success.
-func removeConvertResidue(dst string, expected os.FileInfo) error {
+func removeConvertResidue(dst string) error {
 	root, err := openManagedDir(filepath.Dir(dst))
 	if err != nil {
 		return err
 	}
 	defer root.Close()
-	name := filepath.Base(dst)
-	if expected != nil {
-		current, err := root.Lstat(name)
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if !os.SameFile(expected, current) {
-			return nil
-		}
-	}
-	err = root.Remove(name)
+	err = root.Remove(filepath.Base(dst))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}

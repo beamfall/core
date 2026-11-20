@@ -13,5 +13,5 @@ without waiting for a whole-file read.
   the full digest once at its existing path and record the stats on a match.
 - Keep managed staging's full SHA-256 for duplicate checks against legacy rows.
 - Check both catalog schemes before promoting streamed bytes or relocating downloaded bytes.
-  Confirm sampled candidates by comparing full SHA-256 digests.
+  Either catalog match is sufficient, including when unsampled bytes differ.
 - Compute photo export manifest digests from the exported plaintext.

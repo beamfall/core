@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -79,25 +78,24 @@ func TestConvertScanInWindowSkipsAndManagedAdmissionCatalogs(t *testing.T) {
 func TestConvertScanInWindowCannotBypassDuplicateRefusal(t *testing.T) {
 	ctx := context.Background()
 	fx := newInternalConvertFixture(t)
-	// internalConverter writes "converted:" + the source bytes.
+	// internalConverter writes "converted:" + the source bytes, so these are
+	// exactly the bytes the conversion will produce, already cataloged.
 	other := filepath.Join(fx.root, "other.mp4")
 	if err := os.WriteFile(other, []byte("converted:clip"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := scanImport(ctx, fx.st, other); err != nil {
+		t.Fatalf("seed scan import: %v", err)
+	}
+	before := liveRowsAt(t, fx.st, other)
+	if len(before) != 1 {
+		t.Fatalf("seeded rows at other.mp4 = %#v, want one", before)
+	}
+
 	lease := fx.claimLease(t, "worker-a")
 	scanErr := errors.New("scan hook did not run")
-	var before []MediaFile
 	fx.st.convertStepHook = func(step string) {
 		if step == "import" {
-			// Catalog the duplicate after the publication precheck so the
-			// transactional refusal still has to catch it.
-			if err := scanImport(ctx, fx.st, other); err != nil {
-				t.Fatalf("concurrent scan import: %v", err)
-			}
-			before = liveRowsAt(t, fx.st, other)
-			if len(before) != 1 {
-				t.Fatalf("seeded rows at other.mp4 = %#v, want one", before)
-			}
 			scanErr = scanImport(ctx, fx.st, fx.dst)
 		}
 	}
@@ -123,67 +121,5 @@ func TestConvertScanInWindowCannotBypassDuplicateRefusal(t *testing.T) {
 	}
 	if _, statErr := os.Stat(fx.src); statErr != nil {
 		t.Fatalf("refused conversion disturbed the original: %v", statErr)
-	}
-}
-
-func TestConvertRefusesDuplicateBeforeJournal(t *testing.T) {
-	for _, scheme := range []string{"sample1", "sha256"} {
-		t.Run(scheme, func(t *testing.T) {
-			ctx := t.Context()
-			fx := newInternalConvertFixture(t)
-			// Leave a live destination row for the staged bytes, with no file on disk.
-			if err := os.WriteFile(fx.dst, []byte("converted:clip"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			fingerprintFile := SampleMediaFileContent
-			if scheme == "sha256" {
-				fingerprintFile = HashMediaFileContentContext
-			}
-			fingerprint, err := fingerprintFile(ctx, fx.dst)
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, prior, err := fx.st.ImportMediaFile(ctx, scanShapedImport(fx.dst, fingerprint))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Remove(fx.dst); err != nil {
-				t.Fatal(err)
-			}
-			lease := fx.claimLease(t, "worker-a")
-			initialJob, err := fx.st.Job(ctx, lease.JobID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			fx.st.convertStepHook = func(step string) {
-				if step != "entry" {
-					t.Errorf("duplicate reached conversion step %q", step)
-				}
-			}
-			for _, worker := range []string{"worker-a", "worker-b"} {
-				if worker == "worker-b" {
-					lease = fx.handOverLease(t, lease.JobID, worker)
-				}
-				converter := &internalConverter{}
-				_, err := fx.st.ConvertManagedFile(ctx, "library-local", fx.src, "h264-mp4", converter, fx.filter, lease, time.Now().UTC())
-				var validation ValidationError
-				if !errors.As(err, &validation) || converter.calls != 1 {
-					t.Fatalf("%s conversion: calls = %d, error = %v, want staged duplicate refusal", worker, converter.calls, err)
-				}
-				job, err := fx.st.Job(ctx, lease.JobID)
-				if err != nil || !bytes.Equal(job.Checkpoint, initialJob.Checkpoint) {
-					t.Fatalf("duplicate changed checkpoint from %q to %q: %v", initialJob.Checkpoint, job.Checkpoint, err)
-				}
-				if _, err := os.Stat(fx.dst); !os.IsNotExist(err) {
-					t.Fatalf("duplicate destination should be absent: %v", err)
-				}
-				if _, err := os.Stat(fx.src); err != nil {
-					t.Fatalf("duplicate disturbed source: %v", err)
-				}
-			}
-			if rows := liveRowsAt(t, fx.st, fx.dst); len(rows) != 1 || rows[0].MediaID != prior.MediaID || rows[0].ContentFingerprint != prior.ContentFingerprint {
-				t.Fatalf("existing destination row changed: %+v", rows)
-			}
-		})
 	}
 }

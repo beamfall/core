@@ -229,30 +229,29 @@ func (s *stagedSource) close() {
 }
 
 // copyIntoRootTemp writes src's bytes into a freshly created, uniquely named
-// 0600 temp inside root and returns its member name and inode. O_EXCL makes
+// 0600 temp inside root and returns the temp's member name. O_EXCL is what makes
 // the create fail closed: openat refuses any existing entry at the name,
 // symlinks included, so the copy can never be redirected through a planted link.
-func copyIntoRootTemp(root *os.Root, src *os.File, prefix string) (string, os.FileInfo, error) {
+func copyIntoRootTemp(root *os.Root, src *os.File, prefix string) (string, error) {
 	var token [16]byte
 	if _, err := rand.Read(token[:]); err != nil {
-		return "", nil, err
+		return "", err
 	}
 	name := prefix + hex.EncodeToString(token[:])
 	tmp, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	if _, err := io.Copy(tmp, src); err != nil {
 		_ = tmp.Close()
 		_ = root.Remove(name)
-		return "", nil, err
+		return "", err
 	}
-	info, statErr := tmp.Stat()
-	if err := errors.Join(statErr, tmp.Close()); err != nil {
+	if err := tmp.Close(); err != nil {
 		_ = root.Remove(name)
-		return "", nil, err
+		return "", err
 	}
-	return name, info, nil
+	return name, nil
 }
 
 // newConvertStagingPath returns a fresh, unique staging path for one conversion
@@ -420,13 +419,6 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		return ManagedPath{}, err
 	}
 	defer release()
-	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
-	if err != nil {
-		return ManagedPath{}, err
-	}
-	if err := refuseCatalogedDuplicate(ctx, plane.reader, fingerprint, legacyFingerprint); err != nil {
-		return ManagedPath{}, err
-	}
 	if err := admitStagedFileNoReplace(stagingPath, target); err != nil {
 		return ManagedPath{}, err
 	}
@@ -643,20 +635,15 @@ func copyOpenFileToStaging(ctx context.Context, src *os.File, stagingPath string
 // that exposes a new name in the Library root. A destination directory replaced
 // mid-admission is refused rather than becoming the place the file lands.
 func admitStagedFileNoReplace(stagingPath, dst string) error {
-	_, err := admitStagedFileWithIdentity(stagingPath, dst)
-	return err
-}
-
-func admitStagedFileWithIdentity(stagingPath, dst string) (os.FileInfo, error) {
 	source, err := openStagedSource(stagingPath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer source.close()
 	dstDir := filepath.Dir(dst)
 	root, err := openManagedDir(dstDir)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer root.Close()
 	// Same-filesystem fast path: link the staged inode at dst without copying.
@@ -667,25 +654,24 @@ func admitStagedFileWithIdentity(stagingPath, dst string) (os.FileInfo, error) {
 	// descriptor. EEXIST is the no-replace refusal and is returned as-is.
 	if linkErr := os.Link(stagingPath, dst); linkErr == nil {
 		if err := verifyManagedDirUnreplaced(root, dstDir); err != nil {
-			return nil, err
+			return err
 		}
 		landed, err := root.Lstat(filepath.Base(dst))
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if !os.SameFile(source.id, landed) {
-			return nil, errManagedPathIdentity
+			return errManagedPathIdentity
 		}
 		source.remove()
-		return landed, nil
+		return nil
 	} else if !errors.Is(linkErr, syscall.EXDEV) {
 		// Includes EEXIST — the no-replace refusal — returned as-is.
-		return nil, linkErr
+		return linkErr
 	}
-	name := filepath.Base(dst)
-	tmpName, copied, err := copyIntoRootTemp(root, source.file, "."+name+".import-")
+	tmpName, err := copyIntoRootTemp(root, source.file, "."+filepath.Base(dst)+".import-")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	committed := false
 	defer func() {
@@ -694,22 +680,15 @@ func admitStagedFileWithIdentity(stagingPath, dst string) (os.FileInfo, error) {
 		}
 	}()
 	if err := verifyManagedDirUnreplaced(root, dstDir); err != nil {
-		return nil, err
+		return err
 	}
-	if err := root.Link(tmpName, name); err != nil {
-		return nil, err
-	}
-	landed, err := root.Lstat(name)
-	if err != nil {
-		return nil, err
-	}
-	if !os.SameFile(copied, landed) {
-		return nil, errManagedPathIdentity
+	if err := root.Link(tmpName, filepath.Base(dst)); err != nil {
+		return err
 	}
 	committed = true
 	_ = root.Remove(tmpName)
 	source.remove()
-	return landed, nil
+	return nil
 }
 
 // ManagedPath is the result shape for a Library-root-scoped folder/file

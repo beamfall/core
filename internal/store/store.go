@@ -19,7 +19,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/beamfall/core/internal/serverrole"
@@ -664,7 +663,7 @@ type ImportMediaFile struct {
 	// repairs a stale classification (CORE-2189).
 	ExtraFromPath bool
 	// managedAdmission marks a managed import or convert, which refuses
-	// duplicates instead of repointing an existing file row.
+	// duplicates at another path or in another library instead of repointing them.
 	managedAdmission bool
 	// legacyFingerprint is the full staging digest used for duplicate checks
 	// during managed admission. Only ContentFingerprint is persisted.
@@ -2536,19 +2535,12 @@ func (s *Store) MediaLibraryID(ctx context.Context, id MediaID) (LibraryID, erro
 	return libraryID, err
 }
 
-// checkPublicContentDuplicate rejects either digest if it belongs to an
-// existing public catalog row, including retained rows.
-func (s *Store) checkPublicContentDuplicate(ctx context.Context, fingerprint, legacyFingerprint string) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return err
-	}
-	return refuseCatalogedDuplicate(ctx, s.catalogR, fingerprint, legacyFingerprint)
-}
-
-// MediaFileExistsByFingerprint returns the owning Media ID of a non-missing
-// file. Scan accounting and migration apply their own visibility filter.
+// MediaFileExistsByFingerprint reports whether a live (non-missing) Media File
+// already carries the given content fingerprint, returning the owning Media ID.
+// Server-internal read for the ingest exact-duplicate skip: a
+// byte-identical payload already in the catalog is never re-linked. Visibility
+// gating is the caller's concern — this is a fingerprint identity check, not a
+// content read.
 func (s *Store) MediaFileExistsByFingerprint(ctx context.Context, fingerprint string) (MediaID, bool, error) {
 	if fingerprint == "" {
 		return "", false, errors.New("content fingerprint is required")
@@ -2566,119 +2558,41 @@ func (s *Store) MediaFileExistsByFingerprint(ctx context.Context, fingerprint st
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
-	return mediaID, err == nil, err
+	if err != nil {
+		return "", false, err
+	}
+	return mediaID, true, nil
 }
 
-// LiveMediaFileExistsByFingerprint returns the owning Media ID for a live file in
-// the public catalog. Missing files, trashed Media and trashed Libraries are
-// excluded. This is a catalog lookup and does not inspect file contents.
-func (s *Store) LiveMediaFileExistsByFingerprint(ctx context.Context, fingerprint string) (MediaID, bool, error) {
+// LiveMediaFileExistsByFingerprint returns a public catalog match for either
+// fingerprint. Missing files, trashed Media and trashed Libraries are excluded.
+func (s *Store) LiveMediaFileExistsByFingerprint(ctx context.Context, sample, full string) (MediaID, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return "", false, err
 	}
-	candidate, err := liveMediaFileByFingerprint(ctx, s.catalogR, fingerprint)
-	return candidate.mediaID, candidate.mediaID != "", err
+	return liveMediaFileByFingerprint(ctx, s.catalogR, sample, full)
 }
 
-// MediaFileMatchesSample checks the full digest of the exact Part and Version
-// found by the sample in the live public catalog. A missing file or a sample
-// collision is not an exact duplicate.
-func (s *Store) MediaFileMatchesSample(ctx context.Context, sample, full string) (MediaID, bool, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return "", false, err
-	}
-	candidate, err := s.mediaFileMatchesSampleLocked(ctx, s.catalogR, sample, full)
-	return candidate.mediaID, candidate.mediaID != "", err
-}
-
-func (s *Store) mediaFileMatchesSampleLocked(ctx context.Context, q fingerprintQueryer, sample, full string) (liveFingerprintFile, error) {
-	candidate, err := liveMediaFileByFingerprint(ctx, q, sample)
-	if err != nil || candidate.mediaID == "" {
-		return liveFingerprintFile{}, err
-	}
-	roots, err := libraryRootsSQL(ctx, s.catalogR, candidate.libraryID)
-	if err != nil {
-		return liveFingerprintFile{}, err
-	}
-	rootPath := libraryFolderRoot(roots, candidate.path)
-	if rootPath == "" {
-		// Managed files can record canonical paths under symlinked roots.
-		for i, root := range roots {
-			roots[i], _ = filepath.EvalSymlinks(root)
-		}
-		rootPath = libraryFolderRoot(roots, candidate.path)
-	}
-	if rootPath == "" {
-		return liveFingerprintFile{}, nil
-	}
-	relative, err := filepath.Rel(rootPath, candidate.path)
-	if err != nil {
-		return liveFingerprintFile{}, err
-	}
-	root, err := openManagedDir(rootPath)
-	if err != nil {
-		return liveFingerprintFile{}, nil
-	}
-	defer root.Close()
-	// A replaced path may be a FIFO or an escaping symlink. Open through the
-	// root without blocking, then check and hash the same descriptor.
-	file, err := root.OpenFile(relative, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return liveFingerprintFile{}, nil
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		return liveFingerprintFile{}, err
-	}
-	digest, err := hashMediaFileReader(ctx, file)
-	if err != nil || digest != full {
-		return liveFingerprintFile{}, err
-	}
-	entry, err := root.Stat(relative)
-	if err != nil || !os.SameFile(info, entry) || entry.Size() != info.Size() || !entry.ModTime().Equal(info.ModTime()) {
-		return liveFingerprintFile{}, nil
-	}
-	// An ingest lookup outside a write transaction may have raced trash or a
-	// catalog move during the full read.
-	current, err := liveMediaFileByFingerprint(ctx, q, sample)
-	if err != nil || current != candidate {
-		return liveFingerprintFile{}, err
-	}
-	return candidate, nil
-}
-
-type fingerprintQueryer interface {
+func liveMediaFileByFingerprint(ctx context.Context, db interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
-type liveFingerprintFile struct {
-	mediaID   MediaID
-	libraryID LibraryID
-	path      string
-}
-
-func liveMediaFileByFingerprint(ctx context.Context, q fingerprintQueryer, fingerprint string) (liveFingerprintFile, error) {
-	if fingerprint == "" {
-		return liveFingerprintFile{}, errors.New("content fingerprint is required")
-	}
-	var candidate liveFingerprintFile
-	err := q.QueryRowContext(ctx, `
-		SELECT f.media_id, m.library_id, f.path
+}, sample, full string) (MediaID, bool, error) {
+	var id MediaID
+	err := db.QueryRowContext(ctx, `
+		SELECT f.media_id
 		FROM media_file f
 		JOIN media m ON m.id = f.media_id
 		JOIN library l ON l.id = m.library_id
-		WHERE f.content_fingerprint = ? AND f.missing_at_ms IS NULL
-		  AND m.trashed_at_ms IS NULL AND l.trashed_at_ms IS NULL
-	`, fingerprint).Scan(&candidate.mediaID, &candidate.libraryID, &candidate.path)
+		WHERE f.content_fingerprint IN (NULLIF(?, ''), NULLIF(?, ''))
+		  AND f.missing_at_ms IS NULL AND m.trashed_at_ms IS NULL AND l.trashed_at_ms IS NULL
+		ORDER BY f.content_fingerprint = ? DESC
+		LIMIT 1
+	`, sample, full, sample).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return liveFingerprintFile{}, nil
+		return "", false, nil
 	}
-	return candidate, err
+	return id, err == nil, err
 }
 
 // SetMatchPinned sets the ADR-0009 §7 import match-pin on the
@@ -4041,10 +3955,6 @@ func HashMediaFileContentContext(ctx context.Context, path string) (string, erro
 
 func hashMediaFileContent(ctx context.Context, file io.ReadCloser) (string, error) {
 	defer file.Close()
-	return hashMediaFileReader(ctx, file)
-}
-
-func hashMediaFileReader(ctx context.Context, file io.Reader) (string, error) {
 	hash := sha256.New()
 	buffer := make([]byte, 128*1024)
 	for {

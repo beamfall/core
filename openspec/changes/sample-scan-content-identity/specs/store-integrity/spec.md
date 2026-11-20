@@ -4,16 +4,10 @@
 
 Managed import and managed convert SHALL store the same `sample1:` identity a scan would compute
 from the staged bytes. They SHALL also compute the full SHA-256 digest during staging for legacy
-duplicate checks. They SHALL refuse, with a validation error, any admission whose sample or legacy
-digest is already cataloged in the destination catalog, including live, missing and trashed rows.
-They SHALL check both digests before publishing the staged file and again during catalog admission.
-Managed convert SHALL check for duplicates before writing the conversion journal. The existing file
+duplicate checks. They SHALL refuse, with a validation error, an admission whose sample or legacy
+digest is already cataloged at another path or in another library, including missing and trashed
+rows. The duplicate lookup SHALL run at the existing catalog admission step. The existing file
 and its Media SHALL remain unchanged.
-
-#### Scenario: Conversion lease changes after the import fence
-
-- **WHEN** a successor catalogs the converted output before the previous owner attempts admission
-- **THEN** duplicate refusal leaves the successor's catalog row and file intact
 
 #### Scenario: Same bytes at two paths
 
@@ -44,15 +38,8 @@ and its Media SHALL remain unchanged.
 
 #### Scenario: Existing legacy content
 
-- **WHEN** staged bytes match a cataloged legacy full SHA-256 digest
+- **WHEN** staged bytes match a legacy full SHA-256 digest cataloged at another path
 - **THEN** managed admission refuses the duplicate
-
-#### Scenario: Cataloged conversion target absent on disk
-
-- **WHEN** a live catalog row at the conversion destination matches either staged digest and the
-  destination file is absent
-- **THEN** conversion refuses the duplicate before writing the journal or publishing the staged
-  file, so recovery cannot treat the old destination row as a completed conversion
 
 ## ADDED Requirements
 
@@ -118,27 +105,22 @@ hexadecimal digest digits. A legacy Media ID SHALL retain its existing scheme an
   from the fingerprint
 - **THEN** the new Media ID has the sampled prefix and the first 17 digits of the sample digest
 
-### Requirement: Exact duplicate checks recognize both fingerprint schemes
+### Requirement: Duplicate checks recognize both fingerprint schemes
 
 Proxy promotion and qBittorrent ingest SHALL check live public catalog rows for both fingerprints
-before publishing or relocating bytes, excluding trashed Media and Libraries. A sampled hit SHALL
-count as a duplicate only if the full SHA-256 matches. Confirmation SHALL hash a regular file
-opened through its configured Library root. Proxy promotion SHALL repeat the check in the
-catalog publication transaction.
+before publishing or relocating bytes, excluding missing files and trashed Media and Libraries.
+A match on either fingerprint SHALL count as a duplicate, including a sampled match whose
+unsampled bytes differ. The lookup SHALL use the catalog alone. Proxy promotion SHALL repeat
+the catalog lookup in the publication transaction.
 
-#### Scenario: Exact duplicate in either scheme
+#### Scenario: Duplicate in either scheme
 
-- **WHEN** a live row has the full digest or its sampled match is confirmed by the full digest
+- **WHEN** a live row matches the full or the sampled fingerprint
 - **THEN** the existing Media and file remain intact and no second archive or incoming file is published
-
-#### Scenario: Sample matches different bytes
-
-- **WHEN** only a sampled identity matches and the full digests differ
-- **THEN** promotion or relocation proceeds through its usual admission path
 
 #### Scenario: Concurrent sampled admission during promotion
 
-- **WHEN** identical sampled bytes are cataloged before the promotion transaction starts
+- **WHEN** a matching sample is cataloged before the promotion transaction starts
 - **THEN** promotion skips the duplicate and keeps the existing cataloged file at its path,
   including when that path is the archive destination
 

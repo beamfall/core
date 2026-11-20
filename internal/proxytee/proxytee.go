@@ -524,7 +524,7 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	promoted = didPromote
 }
 
-// promote checks the completed tee for an exact duplicate before moving it.
+// promote checks the completed tee for an existing content identity before moving it.
 // A duplicate leaves the provisional stream replayable. Otherwise the archive
 // keeps the stream's Media ID and records its full SHA-256.
 func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream, expected os.FileInfo) (bool, error) {
@@ -540,15 +540,11 @@ func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream
 	if err != nil {
 		return false, err
 	}
-	_, duplicate, err := s.store.LiveMediaFileExistsByFingerprint(ctx, fingerprint)
-	if err != nil || duplicate {
-		return false, err
-	}
 	sample, err := store.SampleMediaFileContentAt(ctx, promoted, expected.Size())
 	if err != nil {
 		return false, err
 	}
-	_, duplicate, err = s.store.MediaFileMatchesSample(ctx, sample, fingerprint)
+	_, duplicate, err := s.store.LiveMediaFileExistsByFingerprint(ctx, sample, fingerprint)
 	if err != nil || duplicate {
 		return false, err
 	}

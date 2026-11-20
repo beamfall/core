@@ -45,16 +45,15 @@ func (c *fakeCatalog) AllLibraryRoots(context.Context) ([]string, error) {
 func (c *fakeCatalog) LibraryRoots(_ context.Context, id store.LibraryID) ([]string, error) {
 	return c.roots[id], nil
 }
-func (c *fakeCatalog) LiveMediaFileExistsByFingerprint(_ context.Context, fp string) (store.MediaID, bool, error) {
+func (c *fakeCatalog) LiveMediaFileExistsByFingerprint(_ context.Context, sample, full string) (store.MediaID, bool, error) {
 	if c.existsErr != nil {
 		return "", false, c.existsErr
 	}
-	id, ok := c.fingerprints[fp]
+	if id, ok := c.fingerprints[sample]; ok {
+		return id, true, nil
+	}
+	id, ok := c.fingerprints[full]
 	return id, ok, nil
-}
-
-func (c *fakeCatalog) MediaFileMatchesSample(context.Context, string, string) (store.MediaID, bool, error) {
-	return "", false, nil
 }
 
 // fakeScan records enqueued scans.
@@ -217,11 +216,13 @@ func TestIngestChecksBothFingerprintSchemes(t *testing.T) {
 		name      string
 		sampled   bool
 		collision bool
+		absent    bool
 		trashed   bool
 	}{
 		{name: "legacy-exact"},
 		{name: "sampled-exact", sampled: true},
 		{name: "sampled-collision", sampled: true, collision: true},
+		{name: "sampled-candidate-unavailable", sampled: true, absent: true},
 		{name: "sampled-trashed", sampled: true, trashed: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -283,6 +284,11 @@ func TestIngestChecksBothFingerprintSchemes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if tc.absent {
+				if err := os.Remove(cataloged); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if tc.trashed {
 				if err := cat.TrashMedia(ctx, media.ID, store.LibraryFilter{AllLibraries: true}); err != nil {
 					t.Fatal(err)
@@ -297,7 +303,7 @@ func TestIngestChecksBothFingerprintSchemes(t *testing.T) {
 				t.Fatal(err)
 			}
 			destination := filepath.Join(libRoot, IncomingFolderName, "download.mkv")
-			if tc.collision || tc.trashed {
+			if tc.trashed {
 				if result.Imported != 1 || result.Skipped != 0 || len(scan.scans) != 1 {
 					t.Fatalf("expected relocation: result = %+v, scans = %v", result, scan.scans)
 				}
@@ -307,7 +313,7 @@ func TestIngestChecksBothFingerprintSchemes(t *testing.T) {
 				return
 			}
 			if result.Imported != 0 || result.Skipped != 1 || len(scan.scans) != 0 {
-				t.Fatalf("exact match: result = %+v, scans = %v", result, scan.scans)
+				t.Fatalf("catalog match: result = %+v, scans = %v", result, scan.scans)
 			}
 			if _, err := os.Stat(destination); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("duplicate was relocated or stat failed: %v", err)

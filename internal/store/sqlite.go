@@ -2887,7 +2887,7 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		return Media{}, MediaFile{}, false, err
 	}
 	if imported.managedAdmission {
-		if err := refuseCatalogedDuplicate(ctx, tx, imported.ContentFingerprint, imported.legacyFingerprint); err != nil {
+		if err := refuseCatalogedDuplicateTx(ctx, tx, imported); err != nil {
 			return Media{}, MediaFile{}, false, err
 		}
 	}
@@ -2996,17 +2996,19 @@ func mediaHoldsOtherFilesInAnotherLibraryTx(ctx context.Context, tx *sql.Tx, med
 	return err == nil, err
 }
 
-// refuseCatalogedDuplicate checks both schemes. Missing and trashed rows still
-// own their fingerprint. Use it before publication and in the admission transaction.
-func refuseCatalogedDuplicate(ctx context.Context, db interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, fingerprint, legacyFingerprint string) error {
+// refuseCatalogedDuplicateTx rejects a managed admission whose content is
+// already cataloged at a different path or in a different library, whether that
+// row is live or retained as missing (a trashed file keeps its row so restore
+// can revive it by path; repointing it would orphan the restore).
+func refuseCatalogedDuplicateTx(ctx context.Context, tx *sql.Tx, imported ImportMediaFile) error {
 	var missingAt sql.NullInt64
-	err := db.QueryRowContext(ctx, `
-		SELECT missing_at_ms FROM media_file
-		WHERE content_fingerprint IN (?, ?)
-		ORDER BY missing_at_ms
-		LIMIT 1`, fingerprint, legacyFingerprint,
+	err := tx.QueryRowContext(ctx, `
+		SELECT f.missing_at_ms FROM media_file f JOIN media m ON m.id = f.media_id
+		WHERE f.content_fingerprint IN (?, NULLIF(?, ''))
+		  AND (f.path <> ? OR m.library_id <> ?)
+		ORDER BY f.missing_at_ms
+		LIMIT 1`,
+		imported.ContentFingerprint, imported.legacyFingerprint, imported.Path, imported.LibraryID,
 	).Scan(&missingAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil

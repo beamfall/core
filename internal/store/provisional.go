@@ -313,8 +313,8 @@ func (s *Store) PromoteProvisionalMedia(ctx context.Context, mediaID MediaID, co
 	return err
 }
 
-// ProvisionalPromotionDuplicateError means another live Media owns the exact
-// bytes. KeepArchive protects the file when that Media already uses finalPath.
+// ProvisionalPromotionDuplicateError means another live Media owns the content
+// identity. KeepArchive protects the file when that Media already uses finalPath.
 type ProvisionalPromotionDuplicateError struct {
 	KeepArchive bool
 }
@@ -324,7 +324,7 @@ func (*ProvisionalPromotionDuplicateError) Error() string {
 }
 
 // PromoteProvisionalMediaGeneration promotes only the live provisional path
-// observed by the caller. A supplied sample enables exact duplicate checks
+// observed by the caller. A supplied sample enables duplicate checks
 // against both fingerprint schemes in the publication transaction.
 func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID MediaID, expectedTeePath, contentFingerprint, sample, finalPath string) (bool, error) {
 	if mediaID == "" {
@@ -335,6 +335,11 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 	}
 	if finalPath == "" {
 		return false, ValidationError("final path is required")
+	}
+	var archivePath string
+	if sample != "" {
+		// The archive can be cataloged under its canonical path.
+		archivePath, _ = filepath.EvalSymlinks(finalPath)
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -349,33 +354,19 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 	}
 	defer tx.Rollback()
 	if sample != "" {
-		candidate, err := liveMediaFileByFingerprint(ctx, tx, contentFingerprint)
+		_, duplicate, err := liveMediaFileByFingerprint(ctx, tx, sample, contentFingerprint)
 		if err != nil {
 			return false, err
 		}
-		if candidate.mediaID == "" {
-			candidate, err = s.mediaFileMatchesSampleLocked(ctx, tx, sample, contentFingerprint)
-			if err != nil {
-				return false, err
-			}
-		}
-		if candidate.mediaID != "" {
-			matchedPath, _ := filepath.EvalSymlinks(candidate.path)
-			archivePath, _ := filepath.EvalSymlinks(finalPath)
-			keep := filepath.Clean(candidate.path) == filepath.Clean(finalPath) ||
-				archivePath != "" && matchedPath == archivePath
-			if !keep {
-				// A second admission can own the archive path even when the
-				// duplicate was found at a different path under the other scheme.
-				err := tx.QueryRowContext(ctx, `
-					SELECT EXISTS (SELECT 1 FROM media_file
-						WHERE path IN (?, ?) AND missing_at_ms IS NULL)
-				`, finalPath, archivePath).Scan(&keep)
-				if err != nil {
-					return false, errors.Join(&ProvisionalPromotionDuplicateError{KeepArchive: true}, err)
-				}
-			}
-			return false, &ProvisionalPromotionDuplicateError{KeepArchive: keep}
+		if duplicate {
+			// A concurrent admission can own the archive path even when the
+			// duplicate was found at a different path under the other scheme.
+			var keep bool
+			err := tx.QueryRowContext(ctx, `
+				SELECT EXISTS (SELECT 1 FROM media_file
+					WHERE path IN (?, ?) AND missing_at_ms IS NULL)
+			`, finalPath, archivePath).Scan(&keep)
+			return false, errors.Join(&ProvisionalPromotionDuplicateError{KeepArchive: keep || err != nil}, err)
 		}
 	}
 	query := `

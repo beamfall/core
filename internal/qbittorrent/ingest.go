@@ -35,11 +35,8 @@ type Catalog interface {
 	AllLibraryRoots(ctx context.Context) ([]string, error)
 	// LibraryRoots returns a Library's configured root folders.
 	LibraryRoots(ctx context.Context, libraryID store.LibraryID) ([]string, error)
-	// LiveMediaFileExistsByFingerprint reports an existing live file by content
-	// fingerprint (the exact-duplicate skip, §5).
-	LiveMediaFileExistsByFingerprint(ctx context.Context, fingerprint string) (store.MediaID, bool, error)
-	// MediaFileMatchesSample confirms the full digest of a live sampled candidate.
-	MediaFileMatchesSample(ctx context.Context, sample, full string) (store.MediaID, bool, error)
+	// LiveMediaFileExistsByFingerprint finds a live file by either identity scheme (§5).
+	LiveMediaFileExistsByFingerprint(ctx context.Context, sample, full string) (store.MediaID, bool, error)
 }
 
 // ScanEnqueuer hands a Library root to the standard scan pipeline (§4). The
@@ -54,7 +51,7 @@ type Fingerprinter func(path string) (string, error)
 
 // Ingestor routes completed downloads from a Source into Libraries: explicit
 // category->Library map (never inference, §3), hardlink-first relocation into
-// the Incoming Folder (§2), exact-duplicate skip (§5), Parse Hints sidecar, and
+// the Incoming Folder (§2), duplicate skip (§5), Parse Hints sidecar, and
 // scan handoff (§4). It deletes nothing.
 type Ingestor struct {
 	// mu guards the live config (source + routing), which the Console's
@@ -201,7 +198,7 @@ func (i *Ingestor) StatusFeed() []StatusEntry {
 // RunResult summarizes one ingest pass.
 type RunResult struct {
 	Imported   int
-	Skipped    int // exact-duplicate skips
+	Skipped    int // duplicate skips
 	Unrouted   int
 	Errors     int
 	ScansArmed map[store.LibraryID]bool
@@ -367,21 +364,18 @@ func (i *Ingestor) importItem(ctx context.Context, item Item, libraryID store.Li
 			i.recordError(item, libraryID, "fingerprint failed")
 			return libraryID, linkedAny, OutcomeError
 		}
-		existing, exists, err := i.catalog.LiveMediaFileExistsByFingerprint(ctx, fingerprint)
-		if err == nil && !exists {
-			sample, sampleErr := store.SampleMediaFileContent(ctx, mediaFile.absolutePath)
-			if sampleErr != nil {
-				i.recordError(item, libraryID, "fingerprint failed")
-				return libraryID, linkedAny, OutcomeError
-			}
-			existing, exists, err = i.catalog.MediaFileMatchesSample(ctx, sample, fingerprint)
+		sample, err := store.SampleMediaFileContent(ctx, mediaFile.absolutePath)
+		if err != nil {
+			i.recordError(item, libraryID, "fingerprint failed")
+			return libraryID, linkedAny, OutcomeError
 		}
+		existing, exists, err := i.catalog.LiveMediaFileExistsByFingerprint(ctx, sample, fingerprint)
 		if err != nil {
 			i.recordError(item, libraryID, "catalog lookup failed")
 			return libraryID, linkedAny, OutcomeError
 		}
 		if exists {
-			// Exact-fingerprint duplicate: nothing linked, seed untouched (§5).
+			// Cataloged identity: nothing linked, seed untouched (§5).
 			i.ledger.Record(StatusEntry{
 				TorrentHash:  item.ID,
 				ReleaseName:  item.ReleaseName,
@@ -427,7 +421,7 @@ func (i *Ingestor) importItem(ctx context.Context, item Item, libraryID store.Li
 			i.recordError(item, libraryID, "payload files outside approved download roots")
 			return libraryID, false, OutcomeError
 		}
-		// Every member was an exact duplicate.
+		// Every member already had a cataloged identity.
 		return libraryID, false, OutcomeAlreadyInCatalog
 	}
 	i.ledger.Record(StatusEntry{

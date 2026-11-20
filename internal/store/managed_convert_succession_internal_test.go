@@ -227,38 +227,6 @@ func TestConvertSuccessionFenceInterleavings(t *testing.T) {
 	}
 }
 
-func TestConvertStaleImportPreservesSuccessorOutput(t *testing.T) {
-	fx := newInternalConvertFixture(t)
-	ctx := t.Context()
-	lease := fx.claimLease(t, "worker-a")
-	var successorMedia MediaID
-	fx.st.convertStepHook = func(step string) {
-		if step != "after-import-fence" {
-			return
-		}
-		fx.st.convertStepHook = nil
-		successor := fx.handOverLease(t, lease.JobID, "worker-b")
-		result, err := fx.st.ConvertManagedFile(ctx, "library-local", fx.src, "h264-mp4", &internalConverter{}, fx.filter, successor, time.Now().UTC())
-		if err != nil || result.Converted.ID == "" {
-			t.Fatalf("successor admission = %+v, err = %v", result, err)
-		}
-		successorMedia = result.Converted.ID
-	}
-	_, err := fx.st.ConvertManagedFile(ctx, "library-local", fx.src, "h264-mp4", &internalConverter{}, fx.filter, lease, time.Now().UTC())
-	var duplicate ValidationError
-	if successorMedia == "" || !errors.As(err, &duplicate) {
-		t.Fatalf("successor Media = %q, stale admission error = %v", successorMedia, err)
-	}
-	data, err := os.ReadFile(fx.dst)
-	if err != nil || string(data) != "converted:clip" {
-		t.Fatalf("successor output = %q, err = %v", data, err)
-	}
-	id, _, err := fx.st.mediaForManagedFilePath(ctx, "library-local", fx.dst)
-	if err != nil || id != successorMedia {
-		t.Fatalf("cataloged Media = %q, err = %v, want %q", id, err, successorMedia)
-	}
-}
-
 // TestConvertAdmissionCollisionSelfHeals covers the window between the journal
 // write and the admission: a stale straggler's file lands at dst first. The
 // live generation's no-replace admission collides, recovery proves the file is

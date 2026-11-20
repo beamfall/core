@@ -504,11 +504,12 @@ func TestProxyTeeStreamsToClientAndArchivesInPlace(t *testing.T) {
 
 func TestPromotionKeepsExistingContent(t *testing.T) {
 	for _, tc := range []struct {
-		name                                       string
-		sampled, concurrent, atArchive, legacyAlso bool
+		name                                                  string
+		sampled, concurrent, atArchive, legacyAlso, collision bool
 	}{
 		{name: "sha256"},
 		{name: "sample1", sampled: true},
+		{name: "sample1 collision at archive destination", sampled: true, atArchive: true, collision: true},
 		{name: "sample1 admitted just before CAS", sampled: true, concurrent: true},
 		{name: "sample1 takes ownership of archive path", sampled: true, concurrent: true, atArchive: true},
 		{name: "archive path claimed alongside legacy match", sampled: true, concurrent: true, atArchive: true, legacyAlso: true},
@@ -519,11 +520,25 @@ func TestPromotionKeepsExistingContent(t *testing.T) {
 			if err := h.store.SetLibraryRoots(ctx, "library-local", []string{h.archiveRoot}); err != nil {
 				t.Fatal(err)
 			}
+			body := enclosureBody
+			catalogedBytes := body
+			if tc.collision {
+				body = make([]byte, 2<<20)
+				catalogedBytes = bytes.Clone(body)
+				catalogedBytes[64<<10] = 1 // Between the first two sample chunks.
+				h.svc.origin = &concurrentOrigin{calls: 1, peerBody: body}
+			}
 			path := filepath.Join(h.archiveRoot, "existing.mp3")
 			if tc.atArchive {
 				path = h.archivePath
-			} else if err := os.WriteFile(path, enclosureBody, 0o600); err != nil {
-				t.Fatal(err)
+			}
+			if !tc.atArchive || !tc.concurrent {
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, catalogedBytes, 0o600); err != nil {
+					t.Fatal(err)
+				}
 			}
 			var existing store.Media
 			var fingerprint string
@@ -571,13 +586,13 @@ func TestPromotionKeepsExistingContent(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/media/proxy/"+h.proxyToken(t), nil)
 			rec := httptest.NewRecorder()
 			h.svc.ServeProxy(rec, req)
-			if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), enclosureBody) {
-				t.Fatalf("proxy response = %d, %q", rec.Code, rec.Body.String())
+			if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), body) {
+				t.Fatalf("proxy response = %d, %d bytes", rec.Code, rec.Body.Len())
 			}
 			if tc.atArchive {
 				got, err := os.ReadFile(h.archivePath)
-				if err != nil || !bytes.Equal(got, enclosureBody) {
-					t.Fatalf("cataloged archive = %q, err = %v", got, err)
+				if err != nil || !bytes.Equal(got, catalogedBytes) {
+					t.Fatalf("cataloged archive changed (size %d), err = %v", len(got), err)
 				}
 			} else if _, err := os.Stat(h.archivePath); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("duplicate archive exists or stat failed: %v", err)
