@@ -6,7 +6,7 @@ import type { FieldFilters, Layout, Section } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { applyRenderFocus } from "../lib/renderFocus";
-import { MAX_RENDERED_SECTIONS, SECTION_KINDS } from "../lib/sections";
+import { findHomeRecentSection, MAX_RENDERED_SECTIONS, SECTION_KINDS } from "../lib/sections";
 import { FilterBar } from "./FilterBar";
 import { FirstScanButton } from "./FirstScanButton";
 import { Hero } from "./Hero";
@@ -71,16 +71,9 @@ export function LayoutView({
   const { sections, homeRecent, homeHero } = useMemo(() => {
     const known = (layout?.sections || []).filter((section) => SECTION_KINDS.has(section.kind));
     const sections = known.slice(0, MAX_RENDERED_SECTIONS);
-    const homeRecent =
-      home && !libraryID
-        ? sections.find(
-            (section) => section.kind === "shelf" && section.source?.kind === "recently-added",
-          )
-        : undefined;
+    const homeRecent = home && !libraryID ? findHomeRecentSection(sections) : undefined;
     const homeHero: Section | undefined =
-      homeRecent &&
-      sections.indexOf(homeRecent) < MAX_RENDERED_SECTIONS - 1 &&
-      !sections.some((section) => section.kind === "hero")
+      homeRecent && !sections.some((section) => section.kind === "hero")
         ? { ...homeRecent, id: `${homeRecent.id}:featured`, kind: "hero", title: t("homeFeatured") }
         : undefined;
     if (known.length > MAX_RENDERED_SECTIONS) {
@@ -121,18 +114,8 @@ export function LayoutView({
   const recentFilters = homeRecent ? extraFiltersForIndex(sections.indexOf(homeRecent)) : null;
   const recentFeed = useHomeRecent(homeRecent, recentFilters, attempt, reportConnectionLost);
   const feature = useHomeArtwork(homeHero ? recentFeed.heroItems : [], recentFeed.epoch);
-  // Only loaded artwork occupies a Section slot.
-  const sectionLimit = feature?.artwork.ready ? MAX_RENDERED_SECTIONS - 1 : MAX_RENDERED_SECTIONS;
-  const displayedSections = useMemo(
-    () => sections.slice(0, sectionLimit),
-    [sections, sectionLimit],
-  );
   // Replace the manifest's Recent slot with one slot per visible library.
-  // Reserve a possible hero slot so pages don't shift when its image loads.
-  const maxRecentShelves = Math.max(
-    1,
-    MAX_RENDERED_SECTIONS - sections.length + 1 - Number(Boolean(homeHero)),
-  );
+  const maxRecentShelves = MAX_RENDERED_SECTIONS - sections.length + 1;
   const [artworkWaitExpired, setArtworkWaitExpired] = useState<string>();
   const waitingForArtwork = Boolean(
     homeHero && (feature ? !feature.artwork.ready : recentFeed.pending),
@@ -150,8 +133,8 @@ export function LayoutView({
   }, [navigationID, recentFeed.epoch, waitToFocus]);
 
   const hydratable = useMemo(
-    () => displayedSections.filter((section) => section.kind !== "filter-bar"),
-    [displayedSections],
+    () => sections.filter((section) => section.kind !== "filter-bar"),
+    [sections],
   );
   const hydrationStates = hydration.layout === layout ? hydration.states : {};
   const stateFor = (section: Section) =>
@@ -289,11 +272,11 @@ export function LayoutView({
           <LibraryEmpty />
         )
       ) : (
-        displayedSections.map((section, index) => {
+        sections.map((section, index) => {
           if (section.kind === "filter-bar") {
             // A filter-bar with no options or no adjacent target collapses (ADR-0014).
             const target = filterTargets.get(index);
-            if (!(section.filters || []).length || target === undefined || target >= sectionLimit) {
+            if (!(section.filters || []).length || target === undefined) {
               return null;
             }
             return (
@@ -317,7 +300,7 @@ export function LayoutView({
                 maxShelves={maxRecentShelves}
                 buildSeeAll={(shelf, libraryID) =>
                   buildSeeAll?.(
-                    recentFilters && shelf.source
+                    !libraryID && recentFilters && shelf.source
                       ? {
                           ...shelf,
                           source: {

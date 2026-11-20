@@ -118,7 +118,7 @@ describe("Viewer Home", () => {
     }
   });
 
-  it("pages populated libraries within the Section budget including Continue Watching and the hero", async () => {
+  it("pages populated libraries within the Section budget alongside the hero", async () => {
     const populated = Array.from({ length: 25 }, (_, i) => ({
       id: `library-${i + 1}`,
       title: `Library ${i + 1}`,
@@ -140,12 +140,12 @@ describe("Viewer Home", () => {
     await waitFor(() => expect(next).toHaveAttribute("aria-disabled", "false"));
     const previous = screen.getByRole("button", { name: "Bibliothèques précédentes" });
     expect(previous).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByRole("list", { name: "Library 22" })).toBeVisible();
-    expect(screen.queryByRole("list", { name: "Library 23" })).toBeNull();
+    expect(screen.getByRole("list", { name: "Library 23" })).toBeVisible();
+    expect(screen.queryByRole("list", { name: "Library 24" })).toBeNull();
 
     fireEvent.load(container.querySelector(".bf-hero img") as HTMLImageElement);
     expect(container.querySelectorAll(".bf-section:not([hidden])")).toHaveLength(
-      MAX_RENDERED_SECTIONS,
+      MAX_RENDERED_SECTIONS + 1,
     );
 
     next.focus();
@@ -153,10 +153,10 @@ describe("Viewer Home", () => {
     expect(next).toHaveFocus();
     expect(next).toHaveAttribute("aria-disabled", "true");
     expect(screen.queryByRole("list", { name: "Library 1" })).toBeNull();
-    expect(screen.getByRole("list", { name: "Library 23" })).toBeVisible();
+    expect(screen.getByRole("list", { name: "Library 24" })).toBeVisible();
     expect(screen.getByRole("list", { name: "Library 25" })).toBeVisible();
     expect(screen.getByRole("list", { name: "Reprendre la lecture" })).toBeVisible();
-    expect(container.querySelectorAll(".bf-section:not([hidden])")).toHaveLength(5);
+    expect(container.querySelectorAll(".bf-section:not([hidden])")).toHaveLength(4);
 
     fireEvent.click(previous);
     expect(screen.getByRole("list", { name: "Library 1" })).toBeVisible();
@@ -360,38 +360,36 @@ describe("Viewer Home", () => {
     }
   });
 
-  it("keeps the last shelf in a full manifest when the hero artwork fails", async () => {
+  it("keeps all 24 manifest sections when the hero loads from the final shelf", async () => {
     const [keepWatching, recent] = layout.sections;
     const sections = [
-      recent,
       ...Array.from({ length: MAX_RENDERED_SECTIONS - 1 }, (_, index) => ({
         ...keepWatching,
-        id: `section-${index + 2}`,
-        title: `Shelf ${index + 2}`,
+        id: `section-${index + 1}`,
+        title: `Shelf ${index + 1}`,
       })),
+      recent,
     ];
     vi.mocked(fetchSectionItems).mockImplementation(async (section, context) => {
-      if (section.id === `section-${MAX_RENDERED_SECTIONS}`) return [newItem("Last item")];
+      if (section.id !== "recent") return [newItem(section.id)];
       return section.id === "recent" && context.libraryID === "one"
         ? [newItem("Recent item", { artwork: { poster: "/broken" } })]
         : [];
     });
 
     const { container } = renderHome({ ...layout, sections });
-    const lastShelf = `Shelf ${MAX_RENDERED_SECTIONS}`;
-    const shelf = await screen.findByRole("list", { name: lastShelf });
-    expect(within(shelf).getByRole("link", { name: "Last item" })).toBeVisible();
-    const heroArt = container.querySelector(".bf-hero img");
+    const shelf = await screen.findByRole("list", { name: "Library One" });
+    const heroArt = container.querySelector(".bf-hero img") as HTMLImageElement;
     expect(heroArt).toBeInTheDocument();
 
-    fireEvent.load(heroArt as HTMLImageElement);
+    fireEvent.load(heroArt);
     expect(screen.getByRole("heading", { name: "Recent item" })).toBeVisible();
-    expect(screen.queryByRole("list", { name: lastShelf })).toBeNull();
+    expect(within(shelf).getByRole("link", { name: "Recent item" })).toBeVisible();
+    expect(screen.getAllByRole("list")).toHaveLength(MAX_RENDERED_SECTIONS);
 
-    fireEvent.error(heroArt as HTMLImageElement);
+    fireEvent.error(heroArt);
     expect(container.querySelector(".bf-hero")).toBeNull();
-    const restored = await screen.findByRole("list", { name: lastShelf });
-    expect(within(restored).getByRole("link", { name: "Last item" })).toBeVisible();
+    expect(screen.getAllByRole("list")).toHaveLength(MAX_RENDERED_SECTIONS);
   });
 
   it("renders cached shelves on return and keeps them during failed engagement revalidation", async () => {

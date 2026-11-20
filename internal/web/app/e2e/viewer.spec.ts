@@ -1,3 +1,4 @@
+import type { Locator } from "@playwright/test";
 import {
   applyLargeText,
   collectFatalErrors,
@@ -146,16 +147,21 @@ test.describe("viewer", () => {
       .getByRole("list")
       .filter({ has: page.getByRole("link", { name: "square" }) });
     await expect(shelf).toBeVisible();
-    for (const { id, width, height } of artwork) {
-      const frame = shelf.getByRole("link", { name: id }).locator(".bf-poster");
-      await frame.scrollIntoViewIfNeeded();
-      await expect
-        .poll(() => frame.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth))
-        .toBeGreaterThan(0);
-      const bounds = await frame.boundingBox();
-      expect(bounds?.width).toBeGreaterThan(0);
-      expect((bounds?.width ?? 0) / (bounds?.height ?? 1)).toBeCloseTo(width / height, 2);
+    async function expectArtworkAspect(cards: Locator) {
+      for (const { id, width, height } of artwork) {
+        const frame = cards.getByRole("link", { name: id }).locator(".bf-poster");
+        await frame.scrollIntoViewIfNeeded();
+        await expect
+          .poll(() =>
+            frame.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth),
+          )
+          .toBeGreaterThan(0);
+        const bounds = await frame.boundingBox();
+        expect(bounds?.width).toBeGreaterThan(0);
+        expect((bounds?.width ?? 0) / (bounds?.height ?? 1)).toBeCloseTo(width / height, 2);
+      }
     }
+    await expectArtworkAspect(shelf);
 
     const secondShelf = page.getByRole("list", { name: "Second Library" });
     await expect(secondShelf.getByRole("link", { name: "Second library item" })).toBeVisible();
@@ -178,13 +184,13 @@ test.describe("viewer", () => {
 
     await page
       .locator(".bf-section")
-      .filter({ has: secondShelf })
+      .filter({ has: shelf })
       .getByRole("button", { name: "See all" })
       .click();
     await expect(page).toHaveURL(/\/seeall\//);
-    await expect(page.getByRole("heading", { name: "Second Library" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Second library item" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "square" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Local Library" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Second library item" })).toHaveCount(0);
+    await expectArtworkAspect(page.locator(".bf-grid"));
   });
 
   test("accessibility variant: Viewer supports large text", async ({ page }) => {

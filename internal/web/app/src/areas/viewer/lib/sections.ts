@@ -18,6 +18,12 @@ export const SECTION_KINDS = new Set([
 // many known Sections; the rest are dropped (a diagnostic in the original).
 export const MAX_RENDERED_SECTIONS = 24;
 
+export function findHomeRecentSection(sections: Section[]): Section | undefined {
+  return sections.find(
+    (section) => section.kind === "shelf" && section.source?.kind === "recently-added",
+  );
+}
+
 // See All fetches bounded pages and accumulates them into the windowed grid;
 // only its viewport slice mounts even as multiple pages are retained.
 export const SEEALL_PAGE = 60;

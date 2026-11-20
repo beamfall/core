@@ -1,14 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { fetchHomeLibraries } from "@/lib/graphql/viewer";
 import { I18nProvider } from "@/lib/i18n";
 import { notifyEngagementChanged } from "../actions/engagementSync";
 import { fetchSectionItems } from "../lib/sections";
-import type { SeeAllContext } from "../lib/seeall";
+import type { HomeLibrarySeeAllState, SeeAllContext } from "../lib/seeall";
 import { SeeAllPage } from "./SeeAllPage";
 
 vi.mock("../lib/sections", async (importOriginal) => {
@@ -23,6 +23,10 @@ vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock("../components/ViewerActions", () => ({ ViewerActions: () => null }));
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({ manifest }),
+  useViewerIdentity: () => identity,
+}));
 
 const section: Section = {
   id: "all",
@@ -31,6 +35,17 @@ const section: Section = {
   artworkSlot: "poster",
   source: { kind: "recent" } as Section["source"],
 };
+const recent: Section = {
+  ...section,
+  id: "recent",
+  kind: "shelf",
+  source: { kind: "recently-added" },
+};
+const manifest = {
+  navigation: [{ id: "home", layoutID: "home", view: "layout" }],
+  layouts: [{ id: "home", sections: [recent] }],
+};
+let identity = "revealed";
 const rows = Array.from<unknown, SourceItem>({ length: 120 }, (_, index) => ({
   id: `media-${index}`,
   kind: "media",
@@ -43,9 +58,9 @@ const context: SeeAllContext = {
   entityID: "",
   returnTo: "/",
 };
-const scopedHome = { ...context, home: true };
+const scopedHome: HomeLibrarySeeAllState = { libraryID: "lib" };
 
-function renderSeeAll(state: SeeAllContext) {
+function renderSeeAll(state: SeeAllContext | HomeLibrarySeeAllState) {
   return render(
     <I18nProvider>
       <MemoryRouter initialEntries={[{ pathname: "/seeall/source", state }]}>
@@ -59,6 +74,7 @@ function renderSeeAll(state: SeeAllContext) {
 
 afterEach(() => {
   cleanup();
+  identity = "revealed";
   vi.mocked(fetchHomeLibraries).mockReset();
   vi.mocked(fetchSectionItems).mockReset();
 });
@@ -172,12 +188,16 @@ describe("See All rendering contract", () => {
     renderSeeAll(scopedHome);
 
     await screen.findByRole("link", { name: "Item 0" });
+    expect(screen.getByRole("heading", { name: "Library" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Load more" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Load more" })).toBeNull());
     act(() => notifyEngagementChanged());
     await screen.findByRole("link", { name: "Item 1" });
     expect(screen.queryByRole("link", { name: "Item 0" })).toBeNull();
     expect(fetchHomeLibraries).toHaveBeenCalledTimes(4);
+    expect(vi.mocked(fetchSectionItems).mock.calls.every(([section]) => section === recent)).toBe(
+      true,
+    );
     expect(vi.mocked(fetchSectionItems).mock.calls.map(([, query]) => query)).toEqual(
       [0, 60, 0, 60].map((offset) => ({
         libraryID: "lib",
@@ -198,6 +218,7 @@ describe("See All rendering contract", () => {
 
     await screen.findByRole("status");
     expect(fetchSectionItems).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
@@ -213,6 +234,45 @@ describe("See All rendering contract", () => {
     await user.click(screen.getByRole("button", { name: "Load more" }));
     await screen.findByRole("status");
     expect(screen.queryByRole("link", { name: "Item 0" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Library" })).toBeNull();
+    expect(fetchSectionItems).toHaveBeenCalledTimes(1);
+  });
+
+  it("discards a legacy history title when returning to See All after relock", async () => {
+    vi.mocked(fetchHomeLibraries)
+      .mockResolvedValueOnce([{ id: "lib", title: "Current library title" }])
+      .mockResolvedValueOnce([]);
+    vi.mocked(fetchSectionItems).mockResolvedValueOnce(rows.slice(0, 1));
+    const user = userEvent.setup();
+    const state = { ...context, home: true, section: { ...section, title: "Old library title" } };
+
+    function Home() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate(-1)}>Browser back</button>;
+    }
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={[{ pathname: "/seeall/recent%3Alib", state }]}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(screen.queryByText("Old library title")).toBeNull();
+    await screen.findByRole("heading", { name: "Current library title" });
+    await screen.findByRole("link", { name: "Item 0" });
+    await user.click(screen.getByRole("button", { name: "Back" }));
+
+    identity = "relocked";
+    await user.click(screen.getByRole("button", { name: "Browser back" }));
+    await screen.findByRole("status");
+    expect(screen.queryByRole("heading")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Item 0" })).toBeNull();
+    expect(fetchHomeLibraries).toHaveBeenCalledTimes(2);
     expect(fetchSectionItems).toHaveBeenCalledTimes(1);
   });
 });

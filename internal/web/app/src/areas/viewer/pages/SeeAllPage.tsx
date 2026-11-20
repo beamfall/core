@@ -8,16 +8,22 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getIdentityEpochSignal, isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
-import { fetchHomeLibraries } from "@/lib/graphql/viewer";
+import { fetchHomeLibraries, type HomeLibrary } from "@/lib/graphql/viewer";
 import { useDisplayLocale, useT } from "@/lib/i18n";
-import { useViewerIdentity } from "@/lib/session";
+import { useSession, useViewerIdentity } from "@/lib/session";
 import { useEngagementEpoch } from "../actions";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
-import { fetchSectionItems, SEEALL_PAGE } from "../lib/sections";
-import type { SeeAllContext } from "../lib/seeall";
+import {
+  fetchSectionItems,
+  findHomeRecentSection,
+  MAX_RENDERED_SECTIONS,
+  SECTION_KINDS,
+  SEEALL_PAGE,
+} from "../lib/sections";
+import type { HomeLibrarySeeAllState, SeeAllContext } from "../lib/seeall";
 import { playQueueOf } from "../lib/watchQueue";
 
 // See All (/seeall/:sourceId), ported from the vanilla openSeeAll /
@@ -30,25 +36,37 @@ import { playQueueOf } from "../lib/watchQueue";
 export function SeeAllPage() {
   const location = useLocation();
   const identity = useViewerIdentity();
-  return (
-    <SeeAllResults
-      key={JSON.stringify([location.key, identity])}
-      ctx={location.state as SeeAllContext | null}
-    />
-  );
+  const { manifest } = useSession();
+  const state = location.state as SeeAllContext | HomeLibrarySeeAllState | null;
+  const ctx = useMemo<SeeAllContext | null>(() => {
+    if (!state) return null;
+    // Older history entries for these shelves carried a full Section.
+    if ("section" in state && (!state.home || !state.libraryID)) return state;
+    const home = manifest?.navigation.find(({ view }) => view === "layout");
+    const layout = manifest?.layouts.find(({ id }) => id === home?.layoutID);
+    const sections = layout?.sections.filter(({ kind }) => SECTION_KINDS.has(kind)) ?? [];
+    const section = findHomeRecentSection(sections.slice(0, MAX_RENDERED_SECTIONS));
+    return section
+      ? { section, libraryID: state.libraryID, entityID: "", returnTo: "/", home: true }
+      : null;
+  }, [manifest, state]);
+  return <SeeAllResults key={JSON.stringify([location.key, identity, Boolean(ctx)])} ctx={ctx} />;
 }
 
 async function fetchPage(ctx: SeeAllContext, offset: number, signal?: AbortSignal) {
+  let libraryTitle: HomeLibrary["title"] | undefined;
   if (ctx.home && ctx.libraryID) {
     // Core applies Home visibility to aggregate reads; a scoped feed can
     // return a library that was hidden after the viewer opened its shelf.
     const libraries = await fetchHomeLibraries(signal);
-    if (!libraries?.some(({ id, showOnHome }) => id === ctx.libraryID && showOnHome !== false)) {
-      return null;
-    }
+    const library = libraries?.find(
+      ({ id, showOnHome }) => id === ctx.libraryID && showOnHome !== false,
+    );
+    if (!library) return null;
+    libraryTitle = library.title;
   }
   signal?.throwIfAborted();
-  return fetchSectionItems(
+  const items = await fetchSectionItems(
     ctx.section,
     {
       libraryID: ctx.libraryID,
@@ -58,6 +76,7 @@ async function fetchPage(ctx: SeeAllContext, offset: number, signal?: AbortSigna
     },
     signal,
   );
+  return { items, libraryTitle };
 }
 
 function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
@@ -66,6 +85,7 @@ function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
   const navigate = useNavigate();
 
   const [items, setItems] = useState<SourceItem[]>([]);
+  const [libraryTitle, setLibraryTitle] = useState<HomeLibrary["title"]>();
   const [hasMore, setHasMore] = useState(true);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -88,6 +108,7 @@ function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
 
   const clearResults = useCallback(() => {
     setItems([]);
+    setLibraryTitle(undefined);
     offsetRef.current = 0;
     setHasMore(false);
   }, []);
@@ -101,9 +122,10 @@ function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
       const page = await fetchPage(ctx, offsetRef.current, signal);
       if (generationRef.current !== generation || signal?.aborted) return;
       if (page) {
-        setItems((prev) => [...prev, ...page]);
-        offsetRef.current += page.length;
-        setHasMore(page.length >= SEEALL_PAGE);
+        setItems((prev) => [...prev, ...page.items]);
+        setLibraryTitle(page.libraryTitle);
+        offsetRef.current += page.items.length;
+        setHasMore(page.items.length >= SEEALL_PAGE);
       } else {
         clearResults();
       }
@@ -127,6 +149,7 @@ function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
     const signal = getIdentityEpochSignal();
     const want = Math.max(offsetRef.current, SEEALL_PAGE);
     const next: SourceItem[] = [];
+    let nextLibraryTitle: HomeLibrary["title"] | undefined;
     let more = true;
     setBusy(true);
     try {
@@ -138,10 +161,12 @@ function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
           setFailed(false);
           return;
         }
-        next.push(...page);
-        more = page.length >= SEEALL_PAGE;
+        next.push(...page.items);
+        nextLibraryTitle = page.libraryTitle;
+        more = page.items.length >= SEEALL_PAGE;
       }
       setItems(next);
+      setLibraryTitle(nextLibraryTitle);
       offsetRef.current = next.length;
       setHasMore(more);
       setFailed(false);
@@ -157,11 +182,12 @@ function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
   }, [ctx, clearResults]);
 
   useEffect(() => {
-    void loadPage();
+    if (offsetRef.current > 0) void reloadShown();
+    else void loadPage();
     return () => {
       generationRef.current += 1;
     };
-  }, [loadPage]);
+  }, [loadPage, reloadShown]);
 
   useEffect(() => {
     if (seenEpochRef.current === engagementEpoch) return;
@@ -172,6 +198,7 @@ function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
   const firstPageLoading = busy && items.length === 0;
   const loadFailed = !busy && failed && items.length === 0;
   const empty = !busy && !failed && !hasMore && items.length === 0;
+  const title = ctx?.home && ctx.libraryID ? libraryTitle : ctx?.section.title;
 
   function goBack() {
     navigate(ctx?.returnTo || "/");
@@ -206,7 +233,7 @@ function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
             <ChevronLeft aria-hidden />
             {t("back")}
           </Button>
-          <IconHeading icon={LayoutGrid} title={displayString(ctx.section.title, displayLocale)} />
+          {title && <IconHeading icon={LayoutGrid} title={displayString(title, displayLocale)} />}
         </div>
         {firstPageLoading && (
           <div aria-busy="true" className="bf-grid">
@@ -252,6 +279,7 @@ function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
                 setSize={items.length}
                 queue={queue}
                 showYear={showsYear(item, repeated)}
+                intrinsicArtwork={ctx.home}
               />
             );
           })}

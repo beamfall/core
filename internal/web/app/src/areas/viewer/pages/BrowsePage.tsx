@@ -11,7 +11,7 @@ import { LayoutView } from "../components/LayoutView";
 import { LibraryHeader } from "../components/LibraryPivots";
 import type { SeeAllTarget } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
-import { seeAllTargetFor } from "../lib/seeall";
+import { type HomeLibrarySeeAllState, seeAllTargetFor } from "../lib/seeall";
 
 // Browse view, ported from the vanilla renderNavigation / selectEntry /
 // renderLayout (app.js). Resolves a NavigationNode to its Layout and renders it
@@ -58,6 +58,10 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
   const libraryID = node?.libraryID || "";
 
   function buildSeeAll(section: Section, scopedLibraryID = libraryID): SeeAllTarget {
+    if (home && scopedLibraryID) {
+      const state: HomeLibrarySeeAllState = { libraryID: scopedLibraryID };
+      return { href: `/seeall/${encodeURIComponent(section.id)}`, state };
+    }
     return seeAllTargetFor({
       section,
       libraryID: scopedLibraryID,

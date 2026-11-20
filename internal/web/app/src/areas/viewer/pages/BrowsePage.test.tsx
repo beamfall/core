@@ -55,7 +55,7 @@ vi.mock("../components/LayoutView", () => ({
       data-home={String(!!home)}
       data-seeall-home={String(!!buildSeeAll?.({ id: "shelf" })?.state.home)}
       data-seeall-library={buildSeeAll?.({ id: "shelf" })?.state.libraryID}
-      data-seeall-scoped-library={buildSeeAll?.({ id: "shelf" }, "scoped-lib")?.state.libraryID}
+      data-seeall-scoped-state={JSON.stringify(buildSeeAll?.({ id: "shelf" }, "scoped-lib")?.state)}
     >
       <button type="button" onClick={() => onEmptyChange?.(true)}>
         settle empty
@@ -108,8 +108,8 @@ describe("BrowsePage node resolution", () => {
     expect(screen.getByTestId("layout")).toHaveAttribute("data-seeall-home", "true");
     expect(screen.getByTestId("layout")).toHaveAttribute("data-seeall-library", "");
     expect(screen.getByTestId("layout")).toHaveAttribute(
-      "data-seeall-scoped-library",
-      "scoped-lib",
+      "data-seeall-scoped-state",
+      JSON.stringify({ libraryID: "scoped-lib" }),
     );
     cleanup();
 
