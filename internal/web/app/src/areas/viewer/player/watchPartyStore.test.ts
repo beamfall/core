@@ -680,6 +680,66 @@ describe("races", () => {
     }
   });
 
+  it("drops stale host controls and reloads the roster after a missed handoff", async () => {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [{ displayName: "Host", present: true }],
+    });
+    expect(await startWatchParty("m1")).toBe(true);
+    vi.mocked(watchPartyTransport).mockRejectedValue(new ApiError("not the party host", 403));
+    const anchor = { item: "m2", positionMS: 14_000, presentAtMS: 10_000 };
+    vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+      deliver({
+        groupID: "p1",
+        signal: "roster",
+        ...anchor,
+        paused: false,
+        members: ["Guest", "Host"],
+      });
+      return { partyID: "p1", ...anchor };
+    });
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // The host wakes after grace. No handoff frame reached the disconnected tab.
+      const refused = sendPartyTransport("m1", { positionMS: 30_000, playing: false });
+      const queued = sendPartyTransport("m1", { positionMS: 60_000, playing: false });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(watchPartyTransport).toHaveBeenCalledTimes(1);
+      expect(acceptWatchParty).toHaveBeenCalledExactlyOnceWith({
+        partyID: "p1",
+        clockOffsetMS: 25,
+        renderLatencyMS: 0,
+      });
+      await expect(refused).resolves.toBe(false);
+      await expect(queued).resolves.toBe(false);
+      expect(pendingPartyTransport("m1")).toBeUndefined();
+      expect(getWatchParty()).toMatchObject({
+        status: "active",
+        isHost: false,
+        members: ["Guest", "Host"],
+        timeline: { ...anchor, paused: false },
+      });
+
+      vi.mocked(requestWatchPartyTransport).mockResolvedValueOnce({
+        partyID: "p1",
+        approved: true,
+      });
+      await expect(sendPartyTransport("m2", { positionMS: 20_000 })).resolves.toBe(true);
+      expect(requestWatchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+        partyID: "p1",
+        item: "m2",
+        positionMS: 20_000,
+        paused: false,
+      });
+    } finally {
+      vi.mocked(watchPartyTransport).mockReset();
+      vi.useRealTimers();
+    }
+  });
+
   it("retries a failed title switch so the host and member land on the same title", async () => {
     vi.mocked(createWatchParty).mockResolvedValue({
       partyID: "p1",

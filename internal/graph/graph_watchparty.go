@@ -326,12 +326,6 @@ func (h *Handler) acceptWatchParty(ctx context.Context, scope auth.Scope, req re
 	if err != nil {
 		return AcceptWatchPartyResult{}, partyClientError(err)
 	}
-	// An uninvited Profile learns nothing about the party's content (§6): the
-	// invite is checked before the Reveal intersection. conductor.Accept
-	// re-checks it atomically below.
-	if !slices.Contains(g.Invitees(), scope.ProfileID) {
-		return AcceptWatchPartyResult{}, partyClientError(conductor.ErrNoInvite)
-	}
 	// The Reveal intersection: the accepting session must be able
 	// to Reveal the party's content with ITS OWN filter. h.store.Media returns
 	// "media not found" when the filter cannot see it, so a managed or unrevealed
@@ -557,7 +551,7 @@ func (h *Handler) holdPartyRequest(ctx context.Context, partyID string, from sto
 // §2.8 precedence). Applied is true when the skip moved the SHARED timeline — the
 // host's own auto-skip, or a non-host's in a relaxed party, applied as an
 // authoritative broadcast (Item/PositionMS/PresentAtMS describe that transition).
-// Applied is false when the skip was SUPPRESSED — a non-host in a strict party:
+// Applied is false for a stale item or a non-host in a strict party:
 // nothing was mutated and no host notification was sent (auto-skip fires unbidden,
 // so a per-segment approval prompt would spam the host); the result carries the
 // live party anchor instead so the member re-syncs to the host timeline rather
@@ -571,9 +565,8 @@ type WatchPartyAutoSkipResult struct {
 }
 
 // watchPartyAutoSkip reconciles a member's CLIENT-side auto-skip with the
-// host-authoritative party timeline. Auto-skip never
-// seeks locally during a party — it routes through the host transport so it can
-// only ever move the SHARED timeline:
+// host-authoritative party timeline. Auto-skip can only seek within the party's
+// current item. A stale skip returns the live anchor without a transition.
 //
 //   - Host (any party): authoritative — identical to a manual host skip
 //     (watchPartyTransport). The server broadcasts the new position; each client
@@ -605,58 +598,23 @@ func (h *Handler) watchPartyAutoSkip(ctx context.Context, scope auth.Scope, req 
 	}
 	position := time.Duration(int64Var(req, "positionMS")) * time.Millisecond
 
-	g, err := h.conductor.Party(partyID)
+	h.partyMu.Lock()
+	anchor, members, err := h.conductor.PartyAutoSkip(partyID, scope.SessionID, item, position)
+	if err == nil && members != nil {
+		err = h.publishPartyTransitionLocked(ctx, partyID, scope.ProfileID, members, anchor)
+	}
+	h.partyMu.Unlock()
 	if err != nil {
 		return WatchPartyAutoSkipResult{}, partyClientError(err)
 	}
-	host, _ := g.Host()
-
-	// apply broadcasts an authoritative transition on hostSession's behalf — the
-	// host's own auto-skip, or a relaxed non-host's applied for the host. Mirrors
-	// watchPartyTransport (broadcast + activity log on the timeline mutation).
-	apply := func(hostSession store.SessionID) (WatchPartyAutoSkipResult, error) {
-		// An auto-skip moves the position only; a party its host paused stays
-		// paused. A held lead party resumes: its lead is playing through the skip.
-		transition, err := h.partyTransition(ctx, partyID, hostSession, scope.ProfileID, item, position, g.HostPaused())
-		if err != nil {
-			return WatchPartyAutoSkipResult{}, err
-		}
+	if members != nil {
 		if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
 			return WatchPartyAutoSkipResult{}, err
 		}
-		return WatchPartyAutoSkipResult{
-			PartyID:     partyID,
-			Applied:     true,
-			Item:        string(transition.Item),
-			PositionMS:  transition.Position.Milliseconds(),
-			PresentAtMS: transition.PresentAt.UnixMilli(),
-		}, nil
-	}
-
-	if scope.SessionID == host {
-		return apply(host)
-	}
-
-	// Non-host: RequestTransport classifies under the party's relaxed setting and
-	// enforces membership (ErrNotMember) — it never mutates the timeline itself.
-	decision, err := h.conductor.RequestTransport(partyID, scope.SessionID)
-	if err != nil {
-		return WatchPartyAutoSkipResult{}, partyClientError(err)
-	}
-	if decision.Authoritative {
-		return apply(decision.Host)
-	}
-
-	// Strict party: suppress. Nothing is mutated and no host
-	// notification is sent; hand back the live anchor so the member re-syncs to the
-	// host timeline instead of seeking locally and diverging.
-	anchor, err := h.conductor.PartyAnchor(partyID)
-	if err != nil {
-		return WatchPartyAutoSkipResult{}, partyClientError(err)
 	}
 	return WatchPartyAutoSkipResult{
 		PartyID:     partyID,
-		Applied:     false,
+		Applied:     members != nil,
 		Item:        string(anchor.Item),
 		PositionMS:  anchor.Position.Milliseconds(),
 		PresentAtMS: anchor.PresentAt.UnixMilli(),
@@ -704,15 +662,19 @@ func (h *Handler) partyTransition(ctx context.Context, partyID string, hostSessi
 	if err != nil {
 		return conductor.Transition{}, partyClientError(err)
 	}
+	if err := h.publishPartyTransitionLocked(ctx, partyID, caller, members, transition); err != nil {
+		return conductor.Transition{}, err
+	}
+	return transition, nil
+}
+
+func (h *Handler) publishPartyTransitionLocked(ctx context.Context, partyID string, caller store.ProfileID, members []conductor.Member, transition conductor.Transition) error {
 	// The timeline has moved whether or not the fan-out succeeds, so a playing
 	// lead party is watched either way.
 	if transition.Lead && !transition.Paused {
 		h.watchLeadLocked(partyID, conductor.LeadSilence)
 	}
-	if err := h.broadcastPartyTransition(ctx, partyID, caller, members, transition); err != nil {
-		return conductor.Transition{}, err
-	}
-	return transition, nil
+	return h.broadcastPartyTransition(ctx, partyID, caller, members, transition)
 }
 
 // errPartyTitleNotVisible refuses a move to a Media some member cannot see.
@@ -789,6 +751,11 @@ func leadRate(t conductor.Transition) int {
 func (h *Handler) acceptPartyMember(ctx context.Context, g *conductor.Group, scope auth.Scope, member conductor.Member) (conductor.Transition, error) {
 	h.partyMu.Lock()
 	defer h.partyMu.Unlock()
+	// Check admission before looking up content so it remains private to invitees
+	// and returning sessions. Accept rechecks the same grant under the group lock.
+	if !g.CanAccept(scope.ProfileID, scope.SessionID) {
+		return conductor.Transition{}, partyClientError(conductor.ErrNoInvite)
+	}
 	// The Reveal intersection: the accepting session must be able to Reveal the
 	// party's content, and the title it is on now, with ITS OWN filter.
 	// h.store.Media returns "media not found" when the filter cannot see it, so

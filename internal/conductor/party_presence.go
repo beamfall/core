@@ -120,7 +120,7 @@ func (r *Registry) ExpireDisconnected(grace time.Duration) []PartyExpiry {
 	var out []PartyExpiry
 	for _, session := range due {
 		for _, id := range r.partiesOf(session) {
-			leave, err := r.LeaveParty(id, session)
+			leave, err := r.leaveParty(id, session, true)
 			if err != nil {
 				continue // left or dissolved in the meantime
 			}

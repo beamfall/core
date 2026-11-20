@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -43,6 +44,9 @@ func TestWatchPartyHostLeaveHandsOff(t *testing.T) {
 	if _, errs := post(t, h, transportBody(partyID, "media-alpha", 0), authorizeViewer); len(errs) == 0 {
 		t.Fatal("old host transport accepted after leaving")
 	}
+	if _, errs := post(t, h, acceptBody(partyID), authorizeViewer); len(errs) != 1 || errs[0].Message != "unknown invite" {
+		t.Fatalf("explicitly departed host could rejoin without an invite: errors = %#v", errs)
+	}
 	if p, _ := h.partyHostProfile(partyID); p != "profile-managed" {
 		t.Fatalf("party host profile = %q, want profile-managed", p)
 	}
@@ -83,7 +87,7 @@ func TestWatchPartyDroppedStreamExpires(t *testing.T) {
 
 	h.EventStreamOpened("session-default")
 	h.EventStreamOpened("session-managed")
-	// The host's tab closes and its pagehide leave never arrives.
+	// The host's stream drops while its device is asleep.
 	h.conductor.StreamClosed("session-default")
 
 	cursor := lastSeq(t, st)
@@ -97,5 +101,31 @@ func TestWatchPartyDroppedStreamExpires(t *testing.T) {
 	}
 	if !h.conductor.SessionInParty("session-managed") {
 		t.Fatal("connected member was expired")
+	}
+	if _, errs := post(t, h, transportBody(partyID, "media-alpha", 12000), authorizeManaged); len(errs) != 0 {
+		t.Fatalf("new host transport errors = %#v", errs)
+	}
+	if _, errs := post(t, h, acceptBody(partyID), authorizeRevealed); len(errs) != 1 || errs[0].Message != "unknown invite" {
+		t.Fatalf("different session of the former host's Profile could accept: errors = %#v", errs)
+	}
+	h.EventStreamOpened("session-default")
+	if _, errs := post(t, h, transportBody(partyID, "media-alpha", 0), authorizeViewer); len(errs) != 1 || errs[0].Message != "not the party host" {
+		t.Fatalf("stale host transport errors = %#v, want not the party host", errs)
+	}
+	cursor = lastSeq(t, st)
+	data, errs := post(t, h, acceptBody(partyID), authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("returning host accept errors = %#v", errs)
+	}
+	var accepted AcceptWatchPartyResult
+	if err := json.Unmarshal(data["acceptWatchParty"], &accepted); err != nil || accepted.Item != "media-alpha" || accepted.PositionMS != 12000 {
+		t.Fatalf("returning host anchor = %#v, %v", accepted, err)
+	}
+	rows = partySyncRows(t, st, partyID, cursor, store.GroupSignalRoster)
+	if len(rows) != 2 || rows[0].Handoff || rows[1].Handoff || len(rows[0].Members) != 2 || len(rows[1].Members) != 2 {
+		t.Fatalf("roster after rejoining = %#v, want both members and no handoff", rows)
+	}
+	if p, _ := h.partyHostProfile(partyID); p != "profile-managed" || !h.conductor.SessionInParty("session-default") {
+		t.Fatalf("party host = %q or former host did not rejoin as a member", p)
 	}
 }

@@ -271,13 +271,13 @@ function enqueueTransport(
       run: async () => {
         const isLatest = () => isCurrent() && (queue.pending ?? queue.inFlight) === work;
         while (isLatest() && !work.confirmed) {
+          const sentAsHost = state.isHost;
           try {
             work.submitted = true;
             let result: PartyAutoSkipOutcome;
             if (autoSkip) {
               result = await applyPartyAutoSkip(work, isLatest);
             } else {
-              const sentAsHost = state.isHost;
               const applied = await applyPartyTransport(intent);
               if (applied) {
                 if (playbackChange) playbackChange.confirmed = true;
@@ -292,6 +292,23 @@ function enqueueTransport(
             settleTransport(work, result, queue.pending);
             return;
           } catch (err) {
+            if (
+              sentAsHost &&
+              gen === generation &&
+              err instanceof ApiError &&
+              err.message === "not the party host"
+            ) {
+              // The handoff may have happened while this tab's stream was closed.
+              // Drop controls from the old role before requesting the live roster.
+              transportEpoch++;
+              latestTransport = null;
+              queue.pending?.settle("unconfirmed");
+              queue.pending = null;
+              work.settle("unconfirmed");
+              set({ isHost: false, requests: [] });
+              await refreshPartyAfterHandoff(partyID, gen);
+              return;
+            }
             if (
               gen === generation &&
               err instanceof ApiError &&
@@ -808,6 +825,27 @@ function waitForRoster(ms: number): Promise<void> {
     }
     rosterWaiters.push(done);
   });
+}
+
+async function refreshPartyAfterHandoff(partyID: string, gen: number): Promise<void> {
+  try {
+    // The expired host's session can accept again as a member. The server
+    // sends the current roster and timeline on the existing group.sync stream.
+    await acceptWatchParty({
+      partyID,
+      clockOffsetMS: Math.round(state.offsetMS),
+      renderLatencyMS: 0,
+    });
+  } catch (err) {
+    if (
+      gen === generation &&
+      err instanceof ApiError &&
+      (err.message === "unknown party" || err.message === "unknown invite")
+    ) {
+      forgetFollowing();
+      reset();
+    }
+  }
 }
 
 /**
