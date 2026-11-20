@@ -18,7 +18,6 @@ import (
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
-	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/playback/subtitleingest"
@@ -1155,7 +1154,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp4")
 	}
 	if secure != nil {
-		serveLiveArtifact(w, r, name, artifact.OpenEncrypted)
+		serveLiveArtifact(w, r, name, func() (liveArtifactFile, error) { return artifact.OpenEncrypted() })
 		return
 	}
 	f, info, err := artifact.OpenPlain()
@@ -1706,8 +1705,14 @@ func (h *Handler) encryptedLiveSource(library store.Library, file store.MediaFil
 	return &playback.EncryptedSource{LibraryID: string(libraryID), Fingerprint: fingerprint, Open: open, Size: size, Revoked: revoked}, true
 }
 
+// liveArtifactFile is the decrypted view of one encrypted live-session file.
+type liveArtifactFile interface {
+	io.ReadSeekCloser
+	ModTime() time.Time
+}
+
 // serveLiveArtifact serves one file of an encrypted live session decrypted.
-func serveLiveArtifact(w http.ResponseWriter, r *http.Request, name string, open func() (*encderiv.LiveFile, error)) {
+func serveLiveArtifact(w http.ResponseWriter, r *http.Request, name string, open func() (liveArtifactFile, error)) {
 	f, err := open()
 	if err != nil {
 		writeLiveHLSError(w, r, err)

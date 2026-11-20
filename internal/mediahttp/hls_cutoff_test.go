@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/playback/sessiontest"
@@ -39,7 +38,7 @@ func TestLiveHLSEncryptedReopenUsesResolutionStatus(t *testing.T) {
 			resolved, reopened := httptest.NewRecorder(), httptest.NewRecorder()
 			err := fmt.Errorf("live artifact: %w", tc.err)
 			writeLiveHLSError(resolved, r, err)
-			serveLiveArtifact(reopened, r, "720p/seg00000.m4s", func() (*encderiv.LiveFile, error) { return nil, err })
+			serveLiveArtifact(reopened, r, "720p/seg00000.m4s", func() (liveArtifactFile, error) { return nil, err })
 			if resolved.Code != tc.code || reopened.Code != tc.code || resolved.Body.String() != reopened.Body.String() {
 				t.Fatalf("resolution = %d %q, encrypted reopen = %d %q, want matching %d responses",
 					resolved.Code, resolved.Body.String(), reopened.Code, reopened.Body.String(), tc.code)
