@@ -107,28 +107,34 @@ func integrationToken(header http.Header) string {
 var mediaBrowserParam = regexp.MustCompile(`^[ \t]*([A-Za-z][A-Za-z0-9_-]*)[ \t]*=[ \t]*"((?:[^"\\]|\\.)*)"[ \t]*(,|$)`)
 
 func mediaBrowserToken(header string) string {
+	return mediaBrowserValue(header, "Token")
+}
+
+// mediaBrowserValue returns the named quoted parameter of a MediaBrowser
+// authorization header, or "" when the header is malformed or repeats it.
+func mediaBrowserValue(header, name string) string {
 	header = strings.TrimSpace(header)
 	schemeEnd := strings.IndexAny(header, " \t")
 	if schemeEnd < 0 || !strings.EqualFold(header[:schemeEnd], "MediaBrowser") {
 		return ""
 	}
-	var token string
-	var seenToken bool
+	var value string
+	var seen bool
 	for params := header[schemeEnd:]; params != ""; {
 		match := mediaBrowserParam.FindStringSubmatch(params)
 		if match == nil {
 			return ""
 		}
-		if strings.EqualFold(match[1], "Token") {
-			if seenToken {
+		if strings.EqualFold(match[1], name) {
+			if seen {
 				return ""
 			}
-			token, seenToken = match[2], true
+			value, seen = match[2], true
 		}
 		params = params[len(match[0]):]
 		if match[3] == "," && params == "" {
 			return ""
 		}
 	}
-	return token
+	return value
 }

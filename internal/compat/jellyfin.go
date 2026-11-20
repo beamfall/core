@@ -28,6 +28,8 @@ var jellyfinRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http
 	{http.MethodGet, Prefix + "System/Info/Public"}:        (*Handler).publicSystemInfo,
 	{http.MethodGet, Prefix + "System/Configuration"}:      (*Handler).systemConfiguration,
 	{http.MethodGet, Prefix + "Items"}:                     (*Handler).emptyItems,
+	{http.MethodPost, Prefix + "Auth/Keys"}:                (*Handler).createAPIKey,
+	{http.MethodGet, Prefix + "Auth/Keys"}:                 (*Handler).listAPIKeys,
 }
 
 // notifierRoutes are the routes the *arr Emby/Jellyfin connection calls. They
@@ -188,11 +190,40 @@ func (h *Handler) authenticateByName(w http.ResponseWriter, r *http.Request, cli
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"AccessToken": session.Token,
-		"User":        map[string]string{"Id": string(session.ProfileID)},
-		"ExpiresAt":   session.ExpiresAt,
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(authenticationResult{ // #nosec G117 -- the bearer is the sign-in result, sent only to its caller with no-store.
+		AccessToken: session.Token,
+		ServerID:    h.serverID,
+		ExpiresAt:   session.ExpiresAt,
+		User: compatUser{
+			ID: string(session.ProfileID), Name: session.ProfileName,
+			ServerID: h.serverID, ServerName: h.serverName,
+			Policy: compatUserPolicy{IsAdministrator: session.Setup},
+		},
 	})
+}
+
+// authenticationResult is the AuthenticateByName body. It names the signed-in
+// Profile and the server, and nothing else from the Profile.
+type authenticationResult struct {
+	AccessToken string     `json:"AccessToken"`
+	ServerID    string     `json:"ServerId"`
+	ExpiresAt   time.Time  `json:"ExpiresAt"`
+	User        compatUser `json:"User"`
+}
+
+type compatUser struct {
+	ID         string           `json:"Id"`
+	Name       string           `json:"Name"`
+	ServerID   string           `json:"ServerId"`
+	ServerName string           `json:"ServerName,omitempty"`
+	Policy     compatUserPolicy `json:"Policy"`
+}
+
+// compatUserPolicy reports IsAdministrator only for the bounded admin setup
+// session, which is what setup wizards such as Seerr check.
+type compatUserPolicy struct {
+	IsAdministrator bool `json:"IsAdministrator"`
 }
 
 func writeAuthenticationFailure(w http.ResponseWriter) {

@@ -273,6 +273,10 @@ type IntegrationScope string
 const (
 	IntegrationScopeRead    IntegrationScope = "compat.read"
 	IntegrationScopeRefresh IntegrationScope = "compat.refresh"
+	// IntegrationScopeSetup marks the bounded admin setup session. Only the
+	// admin setup sign-in may hold it (CreateIntegrationSession refuses it
+	// whenever Profile opt-in is required).
+	IntegrationScopeSetup IntegrationScope = "compat.setup"
 )
 
 // Session is the server-side authorization context for a Profile.
@@ -292,7 +296,7 @@ type Session struct {
 }
 
 func validIntegrationScope(scope IntegrationScope) bool {
-	return scope == IntegrationScopeRead || scope == IntegrationScopeRefresh
+	return scope == IntegrationScopeRead || scope == IntegrationScopeRefresh || scope == IntegrationScopeSetup
 }
 
 func encodeIntegrationScopes(scopes []IntegrationScope) (string, error) {
@@ -1800,6 +1804,9 @@ func (s *Store) CreateIntegrationSession(ctx context.Context, session Session, r
 	}
 	if reservation.action != IntegrationAttemptAction || len(reservation.rows) == 0 {
 		return ValidationError("integration auth attempt reservation is required")
+	}
+	if requireOptIn && slices.Contains(session.IntegrationScopes, IntegrationScopeSetup) {
+		return ValidationError("integration setup scope requires the admin setup sign-in")
 	}
 	scopes, err := encodeIntegrationScopes(session.IntegrationScopes)
 	if err != nil {

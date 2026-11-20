@@ -100,6 +100,9 @@ func TestIntegrationAdminSetupTTLAndNonRenewability(t *testing.T) {
 	if !session.Setup || session.ExpiresAt != now.Add(integrationSetupTTL) {
 		t.Fatalf("setup session = %+v", session)
 	}
+	if _, err := svc.IntegrationScope(ctx, session.Token, store.IntegrationScopeSetup); err != nil {
+		t.Fatalf("setup Session lacks the server-assigned setup scope: %v", err)
+	}
 	now = session.ExpiresAt
 	if _, err := svc.IntegrationScope(ctx, session.Token, store.IntegrationScopeRead); err == nil {
 		t.Fatal("expired setup Session authorized")

@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -569,8 +570,12 @@ func (s *Service) enforceProfileAccessSchedule(ctx context.Context, profile stor
 type IntegrationSession struct {
 	Token     string
 	ProfileID store.ProfileID
-	ExpiresAt time.Time
-	Setup     bool
+	// ProfileName is the signed-in Profile's display name.
+	ProfileName string
+	ExpiresAt   time.Time
+	// Setup marks the bounded admin setup session, which also carries the
+	// server-assigned store.IntegrationScopeSetup.
+	Setup bool
 }
 
 // AuthenticateIntegrationByName authenticates a Profile entry credential, or
@@ -629,6 +634,7 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 	ttl := integrationSessionTTL
 	if setup {
 		ttl = integrationSetupTTL
+		scopes = append(slices.Clone(scopes), store.IntegrationScopeSetup)
 	}
 	expires := s.now().Add(ttl).UTC()
 	err = s.store.CreateIntegrationSession(ctx, store.Session{
@@ -639,7 +645,7 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
 	s.auditIntegrationAttempt(ctx, profile, nil, attemptKey, true)
-	return IntegrationSession{Token: token, ProfileID: profile.ID, ExpiresAt: expires, Setup: setup}, nil
+	return IntegrationSession{Token: token, ProfileID: profile.ID, ProfileName: profile.Name, ExpiresAt: expires, Setup: setup}, nil
 }
 
 func (s *Service) verifyIntegrationCredential(ctx context.Context, profileID store.ProfileID, credential string, setup bool) error {
