@@ -4,7 +4,7 @@ import { AppShell } from "@/components/chrome/AppShell";
 import { displayString } from "@/lib/display";
 import type { NavigationNode, Section } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
-import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
+import { findNodeBySlug, HOME_NODE_ID, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
 import { SectionSkeleton } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
@@ -15,8 +15,8 @@ import { type HomeLibrarySeeAllState, seeAllTargetFor } from "../lib/seeall";
 
 // Browse view, ported from the vanilla renderNavigation / selectEntry /
 // renderLayout (app.js). Resolves a NavigationNode to its Layout and renders it
-// scoped to the node's libraryID. Home ("/") binds to the first layout
-// NavigationNode (the aggregate Home entry); "/n/:nodeId" binds to a named one.
+// scoped to the node's libraryID. The root ("/") binds to the first layout
+// NavigationNode; "/n/:nodeId" binds to a named one.
 // Only the "layout" view type is renderable. A "/n/:nodeId" that names no
 // layout node (the manifest's "ambient" entry, which carries no Layout, or a
 // library that is gone or hidden from this Profile) redirects to Home rather
@@ -45,9 +45,9 @@ export function BrowsePage() {
   const layoutNodes: NavigationNode[] = (manifest?.navigation || []).filter(
     (entry) => entry.view === "layout",
   );
-  const homeNode = layoutNodes[0];
-  const node = nodeId === undefined ? homeNode : findNodeBySlug(layoutNodes, nodeId);
-  if (!node && homeNode) {
+  const landingNode = layoutNodes[0];
+  const node = nodeId === undefined ? landingNode : findNodeBySlug(layoutNodes, nodeId);
+  if (!node && landingNode) {
     return <Navigate to="/" replace />;
   }
   // An old link names the node by its raw ID; move it to the readable address
@@ -55,7 +55,7 @@ export function BrowsePage() {
   if (nodeId !== undefined && node && nodeId !== nodeSlug(node.id)) {
     return <Navigate to={nodePath(node.id)} replace />;
   }
-  const home = node !== undefined && node === homeNode;
+  const home = node?.id === HOME_NODE_ID;
   const layout = (manifest?.layouts || []).find((l) => l.id === node?.layoutID) || null;
   const libraryID = node?.libraryID || "";
 
@@ -68,7 +68,7 @@ export function BrowsePage() {
       section,
       libraryID,
       entityID: "",
-      returnTo: home || !node ? "/" : nodePath(node.id),
+      returnTo: nodeId === undefined || !node ? "/" : nodePath(node.id),
       home,
     });
   }
@@ -94,7 +94,7 @@ export function BrowsePage() {
         libraryID={libraryID}
         home={home}
         buildSeeAll={buildSeeAll}
-        navigationID={node?.id || "home"}
+        navigationID={node?.id || HOME_NODE_ID}
         onEmptyChange={(empty) => {
           const id = node?.id ?? null;
           setEmptyNode((current) => (empty ? id : current === id ? null : current));

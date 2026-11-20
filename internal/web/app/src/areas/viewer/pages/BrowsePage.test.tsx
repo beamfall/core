@@ -170,7 +170,7 @@ describe("BrowsePage node resolution", () => {
         libraryID: "lib-a",
         entityID: "",
         returnTo: "/",
-        home: true,
+        home: false,
       });
     }
   });

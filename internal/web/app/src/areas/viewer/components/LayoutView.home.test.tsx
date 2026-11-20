@@ -11,6 +11,7 @@ import { clearViewerCache } from "@/lib/viewerCache";
 import { notifyEngagementChanged } from "../actions/engagementSync";
 import { fetchSectionItems, MAX_RENDERED_SECTIONS } from "../lib/sections";
 import { BrowsePage } from "../pages/BrowsePage";
+import { SeeAllPage } from "../pages/SeeAllPage";
 import { LayoutView } from "./LayoutView";
 
 const libraries = [
@@ -109,6 +110,26 @@ const newItem = (id: string, extra?: Partial<SourceItem>): SourceItem => ({
   ...extra,
 });
 
+const homeNode = { id: "home", libraryID: "", title: "Home", view: "layout", layoutID: layout.id };
+
+function renderViewerRoutes(navigation: typeof session.manifest.navigation) {
+  activeSession = {
+    ...session,
+    manifest: { ...session.manifest, navigation, layouts: [layout] },
+  };
+  return render(
+    <I18nProvider initialLocale="en">
+      <MemoryRouter basename="/web" initialEntries={["/web/"]}>
+        <Routes>
+          <Route path="/" element={<BrowsePage />} />
+          <Route path="/n/:nodeId" element={<BrowsePage />} />
+          <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
+        </Routes>
+      </MemoryRouter>
+    </I18nProvider>,
+  );
+}
+
 function renderHome(homeLayout = layout) {
   return render(
     <I18nProvider initialLocale="fr">
@@ -135,18 +156,7 @@ afterEach(() => {
 });
 
 describe("Viewer Home", () => {
-  it("keeps Home visibility and artwork when opening Home from the sidebar", async () => {
-    activeSession = {
-      ...session,
-      manifest: {
-        ...session.manifest,
-        navigation: [
-          { id: "home", libraryID: "", title: "Home", view: "layout", layoutID: layout.id },
-          ...session.manifest.navigation,
-        ],
-        layouts: [layout],
-      },
-    };
+  it("keeps Home visibility, artwork and See All when a library is the landing node", async () => {
     const visible = newItem("Visible item", { artwork: { poster: "/visible" } });
     const hidden = newItem("Hidden item");
     vi.mocked(fetchSectionItems).mockImplementation(async (section, { libraryID, home }) => {
@@ -155,18 +165,10 @@ describe("Viewer Home", () => {
       if (libraryID === "hidden" || (!libraryID && !home)) return [hidden];
       return [];
     });
-    const { container } = render(
-      <I18nProvider>
-        <MemoryRouter basename="/web" initialEntries={["/web/n/library-one"]}>
-          <Routes>
-            <Route path="/" element={<BrowsePage />} />
-            <Route path="/n/:nodeId" element={<BrowsePage />} />
-          </Routes>
-        </MemoryRouter>
-      </I18nProvider>,
-    );
+    const { container } = renderViewerRoutes([...session.manifest.navigation, homeNode]);
 
     expect(screen.getByRole("heading", { name: "Library One", level: 1 })).toBeVisible();
+    expect(fetchHomeLibraries).not.toHaveBeenCalled();
     const homeLink = screen.getByRole("link", { name: "Home" });
     expect(homeLink).toHaveAttribute("href", "/web/n/home");
     fireEvent.click(homeLink);
@@ -185,7 +187,62 @@ describe("Viewer Home", () => {
     if (!heroArt) throw new Error("Expected hero artwork");
     fireEvent.load(heroArt);
     expect(screen.getByRole("heading", { name: visible.title })).toBeVisible();
+
+    fireEvent.click(within(shelf.parentElement ?? shelf).getByRole("button", { name: "See all" }));
+    expect(await screen.findByRole("heading", { name: "Library One" })).toBeVisible();
+    expect(screen.getByRole("link", { name: visible.title })).toBeVisible();
+    expect(screen.queryByRole("link", { name: hidden.title })).toBeNull();
+    expect(fetchSectionItems).toHaveBeenCalledWith(
+      layout.sections[1],
+      expect.objectContaining({ libraryID: "one", home: true, paging: { limit: 60, offset: 0 } }),
+      undefined,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("heading", { name: "Home", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Library One" })).toBeVisible();
   });
+
+  it.each(["Load more", "engagement refresh"] as const)(
+    "drops the cached Home shelf when %s in See All observes a hidden library",
+    async (trigger) => {
+      const item = newItem("Cached item");
+      vi.mocked(fetchSectionItems).mockImplementation(async (section, { libraryID, paging }) => {
+        if (section.id !== "recent" || libraryID !== "one") return [];
+        if (!paging) return [item];
+        return [item, ...Array.from({ length: paging.limit - 1 }, (_, i) => newItem(`Item ${i}`))];
+      });
+      renderViewerRoutes([homeNode, ...session.manifest.navigation]);
+
+      const shelf = await screen.findByRole("list", { name: "Library One" });
+      expect(within(shelf).getByRole("link", { name: item.title })).toBeVisible();
+      fireEvent.click(
+        within(shelf.parentElement ?? shelf).getByRole("button", { name: "See all" }),
+      );
+      await screen.findByRole("button", { name: "Load more" });
+      expect(screen.getByRole("link", { name: item.title })).toBeVisible();
+
+      vi.mocked(fetchHomeLibraries).mockResolvedValue(
+        libraries.map((library) =>
+          library.id === "one" ? { ...library, showOnHome: false } : library,
+        ),
+      );
+      if (trigger === "Load more") {
+        fireEvent.click(screen.getByRole("button", { name: trigger }));
+      } else {
+        act(() => notifyEngagementChanged());
+      }
+      await screen.findByRole("status");
+      expect(screen.queryByRole("link", { name: item.title })).toBeNull();
+
+      vi.mocked(fetchHomeLibraries).mockRejectedValue(new Error("offline"));
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      expect(screen.getByRole("heading", { name: "Home", level: 1 })).toBeInTheDocument();
+      expect(screen.queryByRole("list", { name: "Library One" })).toBeNull();
+      expect(await screen.findByText(/connection.*lost/i)).toBeVisible();
+      expect(screen.queryByRole("link", { name: item.title })).toBeNull();
+    },
+  );
 
   it("does not hydrate a Recent shelf beyond the layout's Section limit", () => {
     const [keepWatching, recent] = layout.sections;

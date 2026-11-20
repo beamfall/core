@@ -10,8 +10,10 @@ import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { fetchHomeLibraries, type HomeLibrary } from "@/lib/graphql/viewer";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { HOME_NODE_ID, nodePath } from "@/lib/nodePath";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { useEngagementEpoch } from "../actions";
+import { invalidateHomeRecentCache } from "../components/HomeRecent";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
@@ -51,8 +53,10 @@ export function SeeAllPage() {
         state.section.id.endsWith(`:${state.libraryID}`);
       if (!legacyLibraryShelf) return state;
     }
-    const home = manifest?.navigation.find(({ view }) => view === "layout");
-    const layout = manifest?.layouts.find(({ id }) => id === home?.layoutID);
+    const layoutNodes = manifest?.navigation.filter(({ view }) => view === "layout");
+    const home = layoutNodes?.find(({ id }) => id === HOME_NODE_ID);
+    if (!home) return null;
+    const layout = manifest?.layouts.find(({ id }) => id === home.layoutID);
     const sections = layout?.sections.filter(({ kind }) => SECTION_KINDS.has(kind)) ?? [];
     const section = findHomeRecentSection(sections.slice(0, MAX_RENDERED_SECTIONS));
     return section
@@ -60,13 +64,19 @@ export function SeeAllPage() {
           section,
           libraryID: state.libraryID,
           entityID: "",
-          returnTo: "/",
+          returnTo: home === layoutNodes?.[0] ? "/" : nodePath(home.id),
           home: true,
           homeLibraryShelf: true,
         }
       : null;
   }, [manifest, state]);
-  return <SeeAllResults key={JSON.stringify([location.key, identity, Boolean(ctx)])} ctx={ctx} />;
+  return (
+    <SeeAllResults
+      key={JSON.stringify([location.key, identity, Boolean(ctx)])}
+      ctx={ctx}
+      identity={identity}
+    />
+  );
 }
 
 async function fetchPage(ctx: ResolvedSeeAllContext, offset: number, signal?: AbortSignal) {
@@ -95,7 +105,13 @@ async function fetchPage(ctx: ResolvedSeeAllContext, offset: number, signal?: Ab
   return { items, libraryTitle };
 }
 
-function SeeAllResults({ ctx }: { ctx: ResolvedSeeAllContext | null }) {
+function SeeAllResults({
+  ctx,
+  identity,
+}: {
+  ctx: ResolvedSeeAllContext | null;
+  identity: string | null;
+}) {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
@@ -124,11 +140,13 @@ function SeeAllResults({ ctx }: { ctx: ResolvedSeeAllContext | null }) {
   const repeated = useMemo(() => repeatedTitles(items), [items]);
 
   const clearResults = useCallback(() => {
+    // Returning Home while offline must not restore the denied shelf.
+    if (ctx?.homeLibraryShelf) invalidateHomeRecentCache(identity);
     setItems([]);
     setLibraryTitle(undefined);
     offsetRef.current = 0;
     setHasMore(false);
-  }, []);
+  }, [ctx?.homeLibraryShelf, identity]);
 
   const loadPage = useCallback(async () => {
     if (!ctx) return;

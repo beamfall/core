@@ -7,7 +7,12 @@ import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
 import { fetchHomeLibraries, type HomeLibrary } from "@/lib/graphql/viewer";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
-import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
+import {
+  clearViewerCache,
+  deleteViewerCache,
+  readViewerCache,
+  writeViewerCache,
+} from "@/lib/viewerCache";
 import { useEngagementEpoch } from "../actions/engagementSync";
 import { artworkSlotURL } from "../lib/artwork";
 import { groupByContainer } from "../lib/containerGroups";
@@ -40,6 +45,10 @@ const EMPTY_DATA: HomeRecentData = {
 // Keep one snapshot per identity so a new visibility or authorization result
 // supersedes earlier Home data, including data for a different filter.
 const HOME_RECENT_CACHE_KEY = "home-recent";
+
+export function invalidateHomeRecentCache(identity: string | null): void {
+  deleteViewerCache(identity, HOME_RECENT_CACHE_KEY);
+}
 
 function cachedRecentData(identity: string | null, scope: string): HomeRecentData {
   const cached = readViewerCache<{ scope: string; data: HomeRecentData }>(
