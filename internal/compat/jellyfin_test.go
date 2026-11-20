@@ -20,6 +20,9 @@ func TestJellyfinRouteInventory(t *testing.T) {
 	want := []jellyfinRoute{
 		{http.MethodPost, Prefix + "Users/AuthenticateByName"},
 		{http.MethodPost, Prefix + "Sessions/Logout"},
+		{http.MethodGet, Prefix + "System/Info"},
+		{http.MethodGet, Prefix + "System/Info/Public"},
+		{http.MethodPost, Prefix + "Library/Refresh"},
 	}
 	if len(jellyfinRoutes) != len(want) {
 		t.Errorf("registered %d compat routes, want %d", len(jellyfinRoutes), len(want))
@@ -70,8 +73,10 @@ func TestJellyfinUnregisteredRoutesFallThrough(t *testing.T) {
 }
 
 func TestBoundaryToggleTrustZonePanicAndRelay(t *testing.T) {
-	panicHandler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") })
-	enabled, err := New(Config{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, panicHandler)
+	enabled, err := New(Config{
+		Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"},
+		SetupRequired: func() bool { panic("boom") },
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +95,7 @@ func TestBoundaryToggleTrustZonePanicAndRelay(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.handler.SetRelayedRequestPredicate(func(*http.Request) bool { return tc.relayed })
-			req := httptest.NewRequest(http.MethodGet, Prefix+"System/Info", nil)
+			req := httptest.NewRequest(http.MethodGet, Prefix+"System/Info/Public", nil)
 			req.RemoteAddr = tc.remoteAddr
 			rec := httptest.NewRecorder()
 			tc.handler.ServeHTTP(rec, req)
@@ -100,7 +105,7 @@ func TestBoundaryToggleTrustZonePanicAndRelay(t *testing.T) {
 		})
 	}
 
-	disabled, err := New(Config{AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, panicHandler)
+	disabled, err := New(Config{AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,23 +119,22 @@ func TestBoundaryToggleTrustZonePanicAndRelay(t *testing.T) {
 }
 
 func TestProxyHeadersAreUntrustedUnlessProxyCIDRConfigured(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	untrusted, err := New(Config{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, next)
+	untrusted, err := New(Config{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, Prefix+"System/Info", nil)
+	req := httptest.NewRequest(http.MethodGet, Prefix+"System/Info/Public", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	req.Header.Set("X-Forwarded-For", "203.0.113.9")
 	rec := httptest.NewRecorder()
 	untrusted.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("untrusted proxy header changed admission: %d", rec.Code)
 	}
 
 	trusted, err := New(Config{
 		Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}, TrustedProxyCIDRs: []string{"127.0.0.0/8"},
-	}, nil, next)
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

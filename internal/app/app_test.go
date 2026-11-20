@@ -504,6 +504,98 @@ func TestAppWiresJellyfinCompatToggle(t *testing.T) {
 	}
 }
 
+func TestAppCompatIdentityAndRefreshSurviveRestart(t *testing.T) {
+	ctx := t.Context()
+	cfg := testConfig(t)
+	cfg.ServerName = "Integration Test Server"
+	cfg.JellyfinCompat.Enabled = true
+	open := func() *App {
+		t.Helper()
+		a, err := New(ctx, cfg, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = a.Close() })
+		return a
+	}
+	a := open()
+	st := a.store
+	profile, err := st.CreateProfile(ctx, "Integration", store.ProfileAdult, store.LibraryFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetProfileEntryPIN(ctx, profile.ID, "2468"); err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	if _, err := st.UpdateProfileSettings(ctx, profile.ID, store.ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	var liveID store.LibraryID
+	for _, title := range []string{"Live", "Restricted", "Trashed"} {
+		library, err := st.CreateLibraryWithRoots(ctx, title, title == "Restricted", "", profile.ID, []string{t.TempDir()}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch title {
+		case "Live":
+			liveID = library.ID
+		case "Trashed":
+			if err := st.DeleteLibrary(ctx, library.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	call := func(method, path, token, body string, wantStatus int) []byte {
+		t.Helper()
+		req := httptest.NewRequestWithContext(ctx, method, "/compat/jellyfin/"+path, strings.NewReader(body))
+		req.RemoteAddr = "127.0.0.1:1234"
+		if token != "" {
+			req.Header.Set("X-Emby-Token", token)
+		}
+		rec := httptest.NewRecorder()
+		a.Handler().ServeHTTP(rec, req)
+		if rec.Code != wantStatus {
+			t.Fatalf("%s %s returned %d, want %d", method, path, rec.Code, wantStatus)
+		}
+		return rec.Body.Bytes()
+	}
+	var login struct{ AccessToken string }
+	if err := json.Unmarshal(call(http.MethodPost, "Users/AuthenticateByName", "", `{"Username":"Integration","Pw":"2468"}`, http.StatusOK), &login); err != nil || login.AccessToken == "" {
+		t.Fatal("login did not return an integration bearer")
+	}
+	public := call(http.MethodGet, "System/Info/Public", "", "", http.StatusOK)
+	var identity struct{ ID, ProductName, ServerName string }
+	if err := json.Unmarshal(public, &identity); err != nil || identity.ID == "" || identity.ProductName != "Beamfall" || identity.ServerName != cfg.ServerName {
+		t.Fatalf("invalid server identity: %s", public)
+	}
+	if err := st.SetSessionRevealed(ctx, store.SessionID(login.AccessToken), true); err != nil {
+		t.Fatal(err)
+	}
+	call(http.MethodPost, "Library/Refresh", login.AccessToken, "", http.StatusNoContent)
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	a = open()
+	if got := call(http.MethodGet, "System/Info/Public", "", "", http.StatusOK); !bytes.Equal(got, public) {
+		t.Fatalf("public identity changed after restart: %s", got)
+	}
+	call(http.MethodGet, "System/Info", login.AccessToken, "", http.StatusOK)
+	queued, err := a.store.ListJobs(ctx, store.JobStatusQueued)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scanKeys []string
+	for _, job := range queued {
+		if job.Kind == scanpkg.JobKind {
+			scanKeys = append(scanKeys, job.DedupeKey)
+		}
+	}
+	if len(scanKeys) != 1 || !strings.HasPrefix(scanKeys[0], string(liveID)+":") {
+		t.Fatalf("scan jobs after restart = %v; want exactly one for %s", scanKeys, liveID)
+	}
+}
+
 func TestNewClosesOwnedWatcherOnLateConstructorFailure(t *testing.T) {
 	realClose := closeOwnedWatcher
 	closed := 0

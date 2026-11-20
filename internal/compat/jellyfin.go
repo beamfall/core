@@ -2,10 +2,13 @@
 package compat
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
@@ -21,12 +24,19 @@ type jellyfinRoute struct {
 var jellyfinRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http.Request, net.IP){
 	{http.MethodPost, Prefix + "Users/AuthenticateByName"}: (*Handler).authenticateByName,
 	{http.MethodPost, Prefix + "Sessions/Logout"}:          (*Handler).logout,
+	{http.MethodGet, Prefix + "System/Info"}:               (*Handler).systemInfo,
+	{http.MethodGet, Prefix + "System/Info/Public"}:        (*Handler).publicSystemInfo,
+	{http.MethodPost, Prefix + "Library/Refresh"}:          (*Handler).refreshLibrary,
 }
 
 type Config struct {
 	Enabled           bool
 	AllowedCIDRs      []string
 	TrustedProxyCIDRs []string
+	ServerID          string
+	ServerName        string
+	SetupRequired     func() bool
+	EnqueueRefresh    func(context.Context, auth.Scope)
 }
 
 type Handler struct {
@@ -36,6 +46,12 @@ type Handler struct {
 	auth           *auth.Service
 	next           http.Handler
 	relayed        func(*http.Request) bool
+	serverID       string
+	serverName     string
+	setupRequired  func() bool
+	enqueueRefresh func(context.Context, auth.Scope)
+	refreshMu      sync.Mutex
+	nextRefresh    time.Time
 }
 
 func New(cfg Config, authService *auth.Service, next http.Handler) (*Handler, error) {
@@ -50,7 +66,11 @@ func New(cfg Config, authService *auth.Service, next http.Handler) (*Handler, er
 	if next == nil {
 		next = http.NotFoundHandler()
 	}
-	return &Handler{enabled: cfg.Enabled, allowed: allowed, trustedProxies: trusted, auth: authService, next: next}, nil
+	return &Handler{
+		enabled: cfg.Enabled, allowed: allowed, trustedProxies: trusted, auth: authService, next: next,
+		serverID: cfg.ServerID, serverName: cfg.ServerName, setupRequired: cfg.SetupRequired,
+		enqueueRefresh: cfg.EnqueueRefresh,
+	}, nil
 }
 
 func (h *Handler) SetRelayedRequestPredicate(predicate func(*http.Request) bool) {
@@ -156,14 +176,18 @@ func (h *Handler) authenticateByName(w http.ResponseWriter, r *http.Request, cli
 
 func writeAuthenticationFailure(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte("{\"error\":\"authentication failed\"}\n"))
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request, _ net.IP) {
-	token := strings.TrimSpace(r.Header.Get("X-Emby-Token"))
-	if token == "" || h.auth.RevokeIntegrationSession(r.Context(), token) != nil {
-		http.Error(w, "invalid integration session", http.StatusUnauthorized)
+	token := integrationToken(r.Header)
+	if _, ok := h.integrationScope(w, r, token, store.IntegrationScopeRead); !ok {
+		return
+	}
+	if h.auth.RevokeIntegrationSession(r.Context(), token) != nil {
+		writeAuthenticationFailure(w)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

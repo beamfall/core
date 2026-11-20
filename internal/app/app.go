@@ -1342,7 +1342,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// reveal-filtered catalog/session reads, while scan-job construction lives
 	// here at the composition root since server cannot import internal/scan.
 	srv.SetV1Store(st)
-	srv.SetV1ScanEnqueuer(v1ScanEnqueuer(st, jobWake))
+	scanEnqueue := v1ScanEnqueuer(st, jobWake)
+	srv.SetV1ScanEnqueuer(scanEnqueue)
 	srv.SetV1ProgressRecorder(graphHandler)
 	srv.SetBackupIngestEncryptor(appLibEncryptDBCipher{manager: libEncryptManager})
 	// Proxy-tee stream-first archive (ADR-0052 §2.1-2.2): on first play of a
@@ -1503,6 +1504,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	compatHandler, err := compat.New(compat.Config{
 		Enabled: cfg.JellyfinCompat.Enabled, AllowedCIDRs: cfg.JellyfinCompat.AllowedCIDRs,
 		TrustedProxyCIDRs: cfg.JellyfinCompat.TrustedProxyCIDRs,
+		ServerID:          discovery.ServerID(offlinePackPin), ServerName: cfg.ServerName,
+		SetupRequired:  pairingService.SetupRequired,
+		EnqueueRefresh: compatLibraryRefresher(st, scanEnqueue, sealedPredicate, logger),
 	}, authService, nil)
 	if err != nil {
 		_ = st.Close()
@@ -2993,6 +2997,33 @@ func v1ScanEnqueuer(st *store.Store, wake *jobWake) server.V1ScanEnqueuer {
 			return "", err
 		}
 		return created.ID, nil
+	}
+}
+
+func compatLibraryRefresher(st *store.Store, enqueue server.V1ScanEnqueuer, sealed func(store.LibraryID) bool, logger *slog.Logger) func(context.Context, auth.Scope) {
+	return func(ctx context.Context, scope auth.Scope) {
+		filter := scope.LibraryFilter()
+		filter.Revealed = false
+		libraries, err := st.Libraries(ctx, filter)
+		if err != nil {
+			logger.WarnContext(ctx, "compat refresh libraries unavailable", "error", err)
+			return
+		}
+		for _, library := range libraries {
+			if sealed(library.ID) {
+				continue
+			}
+			roots, err := st.LibraryRoots(ctx, library.ID)
+			if err != nil {
+				logger.WarnContext(ctx, "compat refresh roots unavailable", "library", library.ID, "error", err)
+				continue
+			}
+			for _, root := range roots {
+				if _, err := enqueue(ctx, library.ID, root); err != nil {
+					logger.WarnContext(ctx, "compat refresh scan enqueue failed", "library", library.ID, "error", err)
+				}
+			}
+		}
 	}
 }
 
