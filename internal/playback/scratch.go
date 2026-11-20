@@ -196,11 +196,24 @@ func (s *Sessions) allocateScratchLocked(ctx context.Context, key SessionKey, li
 		if s.mkdirDir != nil {
 			mkdir = s.mkdirDir
 		}
-		err := mkdir(filepath.Join(s.dir, name), 0o700)
+		path := filepath.Join(s.dir, name)
+		err := mkdir(path, 0o700)
+		var collisionDir bool
+		if errors.Is(err, fs.ErrExist) {
+			info, statErr := os.Lstat(path)
+			if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
+				err = fmt.Errorf("inspect transcode scratch collision %q: %w", name, statErr)
+			}
+			collisionDir = info != nil && info.IsDir()
+		}
 		s.mu.Lock()
 		if errors.Is(err, fs.ErrExist) {
-			// The session never owned this entry. Its cleanup belongs to the root.
-			p.state = scratchDebt
+			// Only directories belong to root reconciliation.
+			if collisionDir {
+				p.state = scratchDebt
+			} else {
+				delete(s.paths, name)
+			}
 			s.wakeCloseLocked()
 			continue
 		}

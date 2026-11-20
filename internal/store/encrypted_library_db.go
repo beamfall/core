@@ -82,6 +82,9 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 	if err != nil || !proceed {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// Scratch is shared across libraries and needs no catalog snapshot. Run
 	// its reconciliation before working files or a registered plane exist.
 	if scratch, ok := reconciler.(interface {

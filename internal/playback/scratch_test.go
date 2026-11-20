@@ -513,6 +513,43 @@ func TestScratchAllocationSkipsCollisionWithoutServingStaleSegment(t *testing.T)
 	}
 }
 
+func TestScratchFileCollisionSurvivesReaperAndClose(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		reap bool
+	}{
+		{name: "reaper", reap: true},
+		{name: "close"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestSessions(t, nil, t.TempDir(), nil)
+			collision := filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce))
+			seedScratchFile(t, collision)
+
+			playlist, err := filePath720(s, SessionKey{SessionID: "file-collision"}, masterPlaylistName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantDir := filepath.Join(s.dir, fmt.Sprintf("session-%s-2", s.bootNonce))
+			if got := filepath.Dir(playlist); got != wantDir {
+				t.Fatalf("allocated %q, want %q", got, wantDir)
+			}
+			if tc.reap {
+				s.reap()
+				if got := string(mustRead(t, collision)); got != "stale" {
+					t.Fatalf("collision after reaper = %q, want original bytes", got)
+				}
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if got := string(mustRead(t, collision)); got != "stale" {
+				t.Fatalf("collision after Close = %q, want original bytes", got)
+			}
+		})
+	}
+}
+
 func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *testing.T) {
 	s := newTestSessions(t, nil, t.TempDir(), nil)
 	collision := fmt.Sprintf("session-%s-1", s.bootNonce)
