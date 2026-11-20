@@ -49,8 +49,8 @@ without recording or delivering any notification.
 ### Requirement: Compatibility media update requests are bounded
 
 The server SHALL expose POST `Library/Media/Updated` with an integration session granting refresh
-access. It SHALL decode a bounded JSON body listing updated paths, reject a malformed or oversized
-body with 400, and share the refresh admission limit with `Library/Refresh`.
+access. It SHALL decode a bounded JSON body listing updated paths, reject a malformed, oversized or
+trailing-data body with 400, and share the refresh admission limit with `Library/Refresh`.
 
 #### Scenario: Oversized update body
 
@@ -62,12 +62,18 @@ body with 400, and share the refresh admission limit with `Library/Refresh`.
 An admitted media update SHALL queue one scan per eligible Library root that equals or contains an
 updated absolute path, through the existing per-root scan queue, and SHALL queue nothing for paths
 outside every eligible root. A well-formed request SHALL return an empty 204 response whether or
-not any root matched.
+not any root matched. Matching SHALL use the session scope read after the body arrives and SHALL run
+after the response is written.
 
 #### Scenario: Two updates under one root
 
 - **WHEN** an admitted request lists two paths under the same eligible Library root
 - **THEN** the server queues one scan for that root and none for any other root
+
+#### Scenario: Session revoked during the upload
+
+- **WHEN** the integration session is revoked while its media update body is arriving
+- **THEN** the server returns the uniform 401 and queues no scan
 
 #### Scenario: Update outside every root
 

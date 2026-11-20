@@ -134,6 +134,10 @@ func TestJellyfinAuthenticationFailuresAreUniform(t *testing.T) {
 	}{
 		{jellyfinRoute{http.MethodGet, "System/Info"}, store.IntegrationScopeRefresh},
 		{jellyfinRoute{http.MethodPost, "Library/Refresh"}, store.IntegrationScopeRead},
+		{jellyfinRoute{http.MethodGet, "System/Configuration"}, store.IntegrationScopeRefresh},
+		{jellyfinRoute{http.MethodGet, "mediabrowser/Library/MediaFolders"}, store.IntegrationScopeRefresh},
+		{jellyfinRoute{http.MethodPost, "Notifications/Admin"}, store.IntegrationScopeRefresh},
+		{jellyfinRoute{http.MethodPost, "mediabrowser/Library/Media/Updated"}, store.IntegrationScopeRead},
 	} {
 		t.Run(route.path, func(t *testing.T) {
 			scoped, err := service.AuthenticateIntegrationByName(t.Context(), "Default", "2468", "192.0.2.10", []store.IntegrationScope{route.otherScope})

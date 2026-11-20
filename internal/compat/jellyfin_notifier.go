@@ -1,7 +1,9 @@
 package compat
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 
@@ -57,17 +59,24 @@ type mediaUpdateRequest struct {
 
 // mediaUpdated queues scans for the eligible Library roots that contain the
 // updated paths. A well-formed request always gets 204, whether or not a root
-// matched, so the response cannot be used to probe server paths.
+// matched, and root matching runs after the response is written, so neither
+// the response nor its timing can be used to probe server paths.
 func (h *Handler) mediaUpdated(w http.ResponseWriter, r *http.Request, _ net.IP) {
-	scope, ok := h.integrationScope(w, r, integrationToken(r.Header), store.IntegrationScopeRefresh)
-	if !ok {
+	token := integrationToken(r.Header)
+	if _, ok := h.integrationScope(w, r, token, store.IntegrationScopeRefresh); !ok {
 		return
 	}
 	defer r.Body.Close()
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, mediaUpdateBodyLimit))
 	var request mediaUpdateRequest
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, mediaUpdateBodyLimit)).Decode(&request) != nil ||
-		len(request.Updates) > mediaUpdateMaxPaths {
+	if err != nil || json.Unmarshal(body, &request) != nil || len(request.Updates) > mediaUpdateMaxPaths {
 		http.Error(w, "invalid media update", http.StatusBadRequest)
+		return
+	}
+	// Read the scope again now the body has arrived: a grant or session
+	// withdrawn during the upload must not queue a scan.
+	scope, ok := h.integrationScope(w, r, token, store.IntegrationScopeRefresh)
+	if !ok {
 		return
 	}
 	paths := make([]string, 0, len(request.Updates))
@@ -77,7 +86,13 @@ func (h *Handler) mediaUpdated(w http.ResponseWriter, r *http.Request, _ net.IP)
 		}
 	}
 	if len(paths) > 0 && h.enqueueRefresh != nil && h.allowRefresh() {
-		h.enqueueRefresh(r.Context(), scope, paths)
+		// The shared limiter admits at most one of these per interval.
+		ctx := context.WithoutCancel(r.Context())
+		h.background.Go(func() {
+			ctx, cancel := context.WithTimeout(ctx, refreshInterval)
+			defer cancel()
+			h.enqueueRefresh(ctx, scope, paths)
+		})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

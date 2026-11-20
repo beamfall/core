@@ -101,8 +101,14 @@ func TestJellyfinMediaUpdated(t *testing.T) {
 			http.StatusNoContent, []string{"/media/movies/A (2020)", "/media/movies/B"}},
 		{"lidarr alias", "mediabrowser/Library/Media/Updated", refresh,
 			`{"Updates":[{"Path":"/music/Artist","UpdateType":"Created"}]}`, http.StatusNoContent, []string{"/music/Artist"}},
+		{"tool casing", "Library/Media/Updated", refresh,
+			`{"updates":[{"path":"/media/tv/Show","updateType":"Created"}]}`, http.StatusNoContent, []string{"/media/tv/Show"}},
 		{"no paths", "Library/Media/Updated", refresh, `{"Updates":[]}`, http.StatusNoContent, nil},
 		{"malformed", "Library/Media/Updated", refresh, `{"Updates":`, http.StatusBadRequest, nil},
+		{"trailing data", "Library/Media/Updated", refresh,
+			`{"Updates":[{"Path":"/media/a"}]} {"Updates":[]}`, http.StatusBadRequest, nil},
+		{"oversized trailing space", "Library/Media/Updated", refresh,
+			`{"Updates":[{"Path":"/media/a"}]}` + strings.Repeat(" ", mediaUpdateBodyLimit), http.StatusBadRequest, nil},
 		{"oversized body", "Library/Media/Updated", refresh,
 			`{"Updates":[{"Path":"/` + strings.Repeat("a", mediaUpdateBodyLimit) + `"}]}`, http.StatusBadRequest, nil},
 		{"too many paths", "Library/Media/Updated", refresh,
@@ -122,6 +128,7 @@ func TestJellyfinMediaUpdated(t *testing.T) {
 			req.Body = io.NopCloser(strings.NewReader(tc.body))
 			req.Header.Set("X-MediaBrowser-Token", tc.token)
 			rec := sendCompat(handler, req)
+			handler.background.Wait()
 			if rec.Code != tc.status {
 				t.Fatalf("media update returned %d, want %d", rec.Code, tc.status)
 			}
@@ -153,8 +160,51 @@ func TestJellyfinMediaUpdatedSharesRefreshAdmission(t *testing.T) {
 		if rec := sendCompat(handler, req); rec.Code != http.StatusNoContent {
 			t.Fatalf("%s returned %d, want 204", path, rec.Code)
 		}
+		handler.background.Wait()
 	}
 	if len(calls) != 1 || calls[0] != nil {
 		t.Fatalf("enqueue calls = %v, want one full refresh", calls)
+	}
+}
+
+// revokeOnRead signs the session out when the handler starts reading the body.
+type revokeOnRead struct {
+	io.Reader
+	revoke func()
+}
+
+func (r *revokeOnRead) Read(p []byte) (int, error) {
+	if r.revoke != nil {
+		r.revoke()
+		r.revoke = nil
+	}
+	return r.Reader.Read(p)
+}
+
+func TestJellyfinMediaUpdatedRechecksSessionAfterBody(t *testing.T) {
+	_, service := integrationService(t, time.Now)
+	token := scopedIntegrationToken(t, service, store.IntegrationScopeRefresh)
+	handler := newIdentityHandler(t, Config{
+		Enabled: true,
+		EnqueueRefresh: func(context.Context, auth.Scope, []string) {
+			t.Error("media update queued a scan for a session revoked during the upload")
+		},
+	}, service)
+	req := compatRequest(t, http.MethodPost, "Library/Media/Updated")
+	req.Header.Set("X-MediaBrowser-Token", token)
+	req.Body = io.NopCloser(&revokeOnRead{
+		Reader: strings.NewReader(`{"Updates":[{"Path":"/media/a","UpdateType":"Created"}]}`),
+		revoke: func() {
+			logout := compatRequest(t, http.MethodPost, "Sessions/Logout")
+			logout.Header.Set("X-Emby-Token", token)
+			if rec := sendCompat(handler, logout); rec.Code != http.StatusNoContent {
+				t.Fatalf("logout returned %d", rec.Code)
+			}
+		},
+	})
+	rec := sendCompat(handler, req)
+	handler.background.Wait()
+	if rec.Code != http.StatusUnauthorized || rec.Body.String() != "{\"error\":\"authentication failed\"}\n" {
+		t.Fatalf("revoked upload returned %d %q, want uniform 401", rec.Code, rec.Body)
 	}
 }

@@ -71,6 +71,7 @@ type Handler struct {
 	setupRequired  func() bool
 	enqueueRefresh func(ctx context.Context, scope auth.Scope, paths []string)
 	refreshMu      sync.Mutex
+	background     sync.WaitGroup // media update scans queued after the response
 	nextRefresh    time.Time
 }
 
