@@ -79,6 +79,29 @@ func TestTranscodeResourceSettingsPreserveSymlinkParentPath(t *testing.T) {
 	}
 }
 
+func TestTranscodeResourceSettingsEquivalentScratchNeedsNoRestart(t *testing.T) {
+	active, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "scratch")
+	if err := os.Symlink(active, alias); err != nil {
+		t.Fatal(err)
+	}
+	st := storetest.Open(t)
+	handler := newTranscodeRuntimeHandler(t, st, TranscodeRuntime{ActiveTempDir: active, StartupTempDir: active})
+	for _, dir := range []string{active + "/", alias} {
+		variables, err := json.Marshal(map[string]string{"tempDir": dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, errs := setTranscodeResources(t, handler, string(variables))
+		if len(errs) != 0 || info.TempDir != dir || info.EffectiveTempDir != active || info.TempDirRestartRequired {
+			t.Errorf("setTranscodeConfig = (%+v, %v), want %q stored and %q active", info, errs, dir, active)
+		}
+	}
+}
+
 // TestTranscodeResourceSettingsApplyLiveAndAudit proves the CORE-1970 settings
 // round-trip through the wire: the cap and tone-map switch apply live, the temp
 // directory reports restart-required, effective values sit beside the stored

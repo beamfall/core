@@ -58,12 +58,12 @@ func WithScratchReadDir(read func(fs.FS, string) ([]fs.DirEntry, error)) Session
 	return func(s *Sessions) { s.readScratch = read }
 }
 
-// NewSessions creates the default root on first use.
+// NewSessions creates the default root under the resolved data directory on first use.
 func NewSessions(transcoder Transcoder, dataDir string, now func() time.Time) (*Sessions, error) {
-	dir, err := defaultScratchPath(dataDir)
-	if err != nil {
-		return nil, err
+	if dataDir == "" {
+		return nil, errors.New("playback: data directory is empty")
 	}
+	dir := filepath.Join(dataDir, "transcode")
 	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, err
 	}
@@ -72,19 +72,7 @@ func NewSessions(transcoder Transcoder, dataDir string, now func() time.Time) (*
 
 // ResolveDefaultScratchDir resolves the existing default root without creating it.
 func ResolveDefaultScratchDir(dataDir string) (string, error) {
-	dir, err := defaultScratchPath(dataDir)
-	if err != nil {
-		return "", err
-	}
-	return resolveScratchDir(dir)
-}
-
-func defaultScratchPath(dataDir string) (string, error) {
-	dir, err := resolveScratchDir(dataDir)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "transcode"), nil
+	return resolveScratchDir(filepath.Join(dataDir, "transcode"))
 }
 
 func resolveScratchDir(path string) (string, error) {

@@ -186,9 +186,13 @@ func tempDirRestartRequired(stored string, runtime TranscodeRuntime) bool {
 		return false
 	}
 	if stored == "" {
-		stored = runtime.DefaultTempDir
+		return runtime.DefaultTempDir != runtime.ActiveTempDir
 	}
-	return stored != runtime.ActiveTempDir
+	if stored == runtime.ActiveTempDir {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(stored)
+	return err != nil || resolved != runtime.ActiveTempDir
 }
 
 // ResolveTranscodeCap is the startup counterpart of desiredTranscodeCap, so the

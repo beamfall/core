@@ -536,6 +536,65 @@ func TestNewReleasesScratchAfterBootstrapSetupTokenFailure(t *testing.T) {
 	}
 }
 
+func TestNewRefusesSplitDataDirectoryOnUpgrade(t *testing.T) {
+	cfg := testConfig(t)
+	legacy := cfg.DataDir
+	resolved := t.TempDir()
+	child := filepath.Join(resolved, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(legacy, "link")
+	if err := os.Symlink(child, link); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(t.Context(), legacy, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	orphan := filepath.Join(legacy, "transcode", "session-1")
+	if err := os.MkdirAll(orphan, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	segment := filepath.Join(orphan, "seg-00000.ts")
+	if err := os.WriteFile(segment, []byte("prior-boot segment"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.DataDir = link + "/.."
+	cfg.TranscodeScratchDir = filepath.Join(cfg.DataDir, "transcode")
+	beamfall, err := New(t.Context(), cfg, nil, nil)
+	if beamfall != nil {
+		_ = beamfall.Close()
+	}
+	if beamfall != nil || err == nil || !strings.Contains(err.Error(), "recover the existing installation") {
+		t.Fatalf("New with split DataDir returned app=%t, err=%v, want recovery error", beamfall != nil, err)
+	}
+	if _, err := os.Stat(filepath.Join(resolved, "db")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("alternate catalog directory should not be created: %v", err)
+	}
+	if _, err := os.Stat(segment); err != nil {
+		t.Fatalf("refused startup modified legacy scratch: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(resolved, "transcode")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("alternate scratch directory should not be created: %v", err)
+	}
+
+	cfg.DataDir = legacy
+	beamfall, err = New(t.Context(), cfg, nil, nil)
+	if err != nil {
+		t.Fatalf("retry with existing data directory: %v", err)
+	}
+	if err := beamfall.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(segment); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("prior-boot segment should be removed after retry: %v", err)
+	}
+}
+
 func TestNewHonorsConsoleScratchWhenItMatchesLexicalDefault(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.SeedDevelopmentData = true
@@ -543,27 +602,20 @@ func TestNewHonorsConsoleScratchWhenItMatchesLexicalDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := t.TempDir()
-	child := filepath.Join(b, "child")
-	if err := os.Mkdir(child, 0o700); err != nil {
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(a, link); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(a, "link")
-	if err := os.Symlink(child, link); err != nil {
-		t.Fatal(err)
-	}
-	cfg.DataDir = link + "/.."
-	stored := filepath.Join(a, "transcode")
+	cfg.DataDir = link
+	cfg.TranscodeScratchDir = filepath.Join(link, "transcode")
+	stored := cfg.TranscodeScratchDir
 	active := filepath.Join(a, "scratch")
 	if err := os.Symlink(active, stored); err != nil {
 		t.Fatal(err)
 	}
-	defaultOrphan := filepath.Join(b, "transcode", "session-1")
 	storedOrphan := filepath.Join(active, "session-2")
-	for _, orphan := range []string{defaultOrphan, storedOrphan} {
-		if err := os.MkdirAll(orphan, 0o700); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.MkdirAll(storedOrphan, 0o700); err != nil {
+		t.Fatal(err)
 	}
 	st, err := store.Open(t.Context(), a, store.Options{})
 	if err != nil {
@@ -584,9 +636,6 @@ func TestNewHonorsConsoleScratchWhenItMatchesLexicalDefault(t *testing.T) {
 	})
 	if _, err := os.Stat(storedOrphan); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("Console scratch orphan should be removed: %v", err)
-	}
-	if _, err := os.Stat(defaultOrphan); err != nil {
-		t.Errorf("default scratch should be untouched: %v", err)
 	}
 	if err := beamfall.store.SetSessionAdminUntil(t.Context(), "session-manager", time.Now().Add(time.Hour).UTC()); err != nil {
 		t.Fatal(err)

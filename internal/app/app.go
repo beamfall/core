@@ -311,6 +311,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	if len(cfg.StreamTokenKey) == 0 {
 		return nil, errors.New("stream token key is required")
 	}
+	if err := cfg.ResolveDataDir(); err != nil {
+		return nil, err
+	}
 	st, err := store.Open(ctx, cfg.DataDir, store.Options{
 		SeedDevelopmentData:               cfg.SeedDevelopmentData,
 		SeedProfile:                       store.SeedProfile(cfg.SeedProfile),
