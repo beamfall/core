@@ -154,6 +154,7 @@ export function JellyfinCompat() {
               <Textarea
                 id="jellyfin-compat-allowed"
                 value={allowed}
+                readOnly={busy}
                 className="font-mono"
                 autoComplete="off"
                 spellCheck={false}
@@ -172,6 +173,7 @@ export function JellyfinCompat() {
               <Textarea
                 id="jellyfin-compat-proxies"
                 value={proxies}
+                readOnly={busy}
                 className="font-mono"
                 autoComplete="off"
                 spellCheck={false}

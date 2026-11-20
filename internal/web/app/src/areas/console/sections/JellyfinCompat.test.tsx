@@ -149,8 +149,12 @@ describe("JellyfinCompat", () => {
     await user.click(await screen.findByRole("checkbox", { name: "Shows" }));
     expect(screen.getByRole("checkbox", { name: "Films" })).toBeDisabled();
     expect(screen.getByRole("switch", { name: "Compatibility API" })).toBeDisabled();
+    // A save response replaces both network lists, so they cannot take edits meanwhile.
+    expect(document.getElementById("jellyfin-compat-allowed")).toHaveAttribute("readonly");
+    expect(document.getElementById("jellyfin-compat-proxies")).toHaveAttribute("readonly");
     finish({ ...settings, libraries: settings.libraries.map((l) => ({ ...l, allowed: true })) });
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Films" })).toBeEnabled());
+    expect(document.getElementById("jellyfin-compat-allowed")).not.toHaveAttribute("readonly");
     expect(setJellyfinCompat).toHaveBeenCalledTimes(1);
   });
 

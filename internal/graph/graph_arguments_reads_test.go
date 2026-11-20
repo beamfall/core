@@ -550,12 +550,15 @@ func TestFieldArgumentRegistryCoversResolverReads(t *testing.T) {
 		}
 	}
 	for field := range fieldArgumentRegistry {
-		if _, ok := fieldHandlerRegistry[field]; !ok {
+		if _, ok := fieldHandlerRegistry[field]; !ok && !suppressedDispatchFields[field] {
 			t.Errorf("fieldArgumentRegistry[%q] names no dispatched field", field)
 		}
 	}
 	reads, dynamic := fieldResolverReads(t)
 	for field, args := range fieldArgumentRegistry {
+		if suppressedDispatchFields[field] {
+			continue // an App Store build prunes its resolvers; the default build checks it
+		}
 		listed := map[string]NestedArgument{}
 		for _, arg := range args {
 			if _, dup := listed[arg.Name]; dup {

@@ -455,6 +455,9 @@ func TestFieldHandlerRegistryMatchesDispatch(t *testing.T) {
 	usedOrders := map[fieldDispatchOrder]bool{}
 	for name := range dispatch {
 		registered, ok := fieldHandlerRegistry[name]
+		if !ok && suppressedDispatchFields[name] {
+			continue
+		}
 		if !ok {
 			t.Errorf("dispatched field %q is missing from fieldHandlerRegistry", name)
 			continue
@@ -491,8 +494,10 @@ func TestFieldHandlerRegistryMatchesDispatch(t *testing.T) {
 			t.Errorf("fieldHandlerRegistry contains stale field %q with no fields[%q] dispatch", name, name)
 		}
 	}
+	// An App Store build prunes the suppressed fields, which can leave their
+	// dispatch runs unreferenced; the default build checks every run is used.
 	for order, run := range fieldDispatchRuns {
-		if run != nil && !usedOrders[fieldDispatchOrder(order)] {
+		if run != nil && !usedOrders[fieldDispatchOrder(order)] && len(suppressedDispatchFields) == 0 {
 			t.Errorf("fieldDispatchRuns[%d] is not referenced by any field", order)
 		}
 		if run == nil && usedOrders[fieldDispatchOrder(order)] {
@@ -933,7 +938,7 @@ func TestAPITokenTiersBoundConsoleFields(t *testing.T) {
 		}
 	}
 	for field := range agentTokenDenied {
-		if !adminFields[field] {
+		if !adminFields[field] && !suppressedDispatchFields[field] {
 			t.Errorf("agentTokenDenied %q is not a Console field", field)
 		}
 	}

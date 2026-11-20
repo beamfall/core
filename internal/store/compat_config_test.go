@@ -113,8 +113,8 @@ func TestProfileIntegrationSignInOptIn(t *testing.T) {
 	if _, err := st.SetProfileIntegrationSignIn(ctx, away.ID, true); !errors.As(err, &validation) {
 		t.Fatalf("disabled adult profile opt-in: %v; want a validation error", err)
 	}
-	if _, err := st.SetProfileIntegrationSignIn(ctx, "profile-missing", true); err == nil || errors.As(err, &validation) {
-		t.Fatalf("missing profile opt-in: %v; want not found", err)
+	if _, err := st.SetProfileIntegrationSignIn(ctx, "profile-missing", true); err == nil || err.Error() != "profile not found" {
+		t.Fatalf("missing profile opt-in: %v; want profile not found", err)
 	}
 	profile, err := st.SetProfileIntegrationSignIn(ctx, "profile-default", true)
 	if err != nil || !profile.IntegrationSignIn {
@@ -137,5 +137,16 @@ func TestProfileIntegrationSignInOptIn(t *testing.T) {
 	}
 	if _, err := st.Session(ctx, session.ID); err == nil {
 		t.Fatal("opt-out did not revoke the integration session")
+	}
+	// A Profile edit that read the row before the opt-out must not write the
+	// stale opt-in back when it lands after it.
+	stale := profile
+	stale.IntegrationSignIn = true
+	stale.Name = "Renamed"
+	if err := st.updateProfileSettingsSQL(ctx, stale, nil); err != nil {
+		t.Fatal(err)
+	}
+	if after, err := st.Profile(ctx, "profile-default"); err != nil || after.IntegrationSignIn || after.Name != "Renamed" {
+		t.Fatalf("stale edit after opt-out = %+v, %v; want renamed and still opted out", after, err)
 	}
 }
