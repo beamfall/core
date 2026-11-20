@@ -43,9 +43,19 @@ func (cfg *Config) ResolveDataDir() error {
 	if !cfg.TranscodeScratchDirExplicit && cfg.TranscodeScratchDir == filepath.Join(cfg.DataDir, "transcode") {
 		cfg.TranscodeScratchDir = filepath.Join(resolved, "transcode")
 	}
+	cfg.configuredDataDir = cfg.DataDir
 	cfg.DataDir = resolved
 	cfg.resolvedDataDir = resolved
 	return nil
+}
+
+// ConfiguredDataDir is the input spelling used by older startup code to locate
+// recovery state beside the directory.
+func (cfg Config) ConfiguredDataDir() string {
+	if cfg.DataDir == cfg.resolvedDataDir && cfg.configuredDataDir != "" {
+		return cfg.configuredDataDir
+	}
+	return cfg.DataDir
 }
 
 // evalDataDir also handles first startup, when some trailing components may

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	backupcore "github.com/beamfall/core/internal/backup"
+	"github.com/beamfall/core/internal/config"
 	"github.com/beamfall/core/internal/restorestage"
 	storecore "github.com/beamfall/core/internal/store"
 )
@@ -365,5 +366,34 @@ func TestServeRefusesAnInterruptedRestoreAndRemovesOrphanClaims(t *testing.T) {
 	release()
 	if _, err := os.Lstat(orphan); !os.IsNotExist(err) {
 		t.Fatalf("orphan decrypted claim kept: %v", err)
+	}
+}
+
+func TestServeRefusesAnInterruptedRestoreBesideDataDirAlias(t *testing.T) {
+	dataDir := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "data")
+	if err := os.Symlink(dataDir, alias); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := alias + ".pre-restore"
+	if err := restorestage.WriteJournal(alias, restorestage.Journal{Snapshot: snapshot}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load([]string{"--data-dir", alias}, func(string) (string, bool) { return "", false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	beamfall, release, err := startServer(t.Context(), cfg)
+	if beamfall != nil {
+		_ = beamfall.Close()
+	}
+	if release != nil {
+		release()
+	}
+	if beamfall != nil || err == nil || !strings.Contains(err.Error(), snapshot) {
+		t.Fatalf("start through alias returned app=%t, err=%v, want interrupted restore naming %s", beamfall != nil, err, snapshot)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, serverLockName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("server lock should not be created: %v", err)
 	}
 }

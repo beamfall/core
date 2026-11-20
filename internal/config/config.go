@@ -23,10 +23,11 @@ const qbittorrentRoutingHelp = `qBittorrent category->Library map, e.g. "inbox=l
 
 // Config contains process-level settings for a Beamfall server instance.
 type Config struct {
-	Addr            string
-	DataDir         string
-	resolvedDataDir string
-	ServerName      string
+	Addr              string
+	DataDir           string
+	configuredDataDir string
+	resolvedDataDir   string
+	ServerName        string
 	// NodeHostListen is the bind address of the node-facing mTLS SESSION
 	// listener (ADR-0129 §5: the node dials the main). Empty (the default)
 	// DISABLES it, so single-machine installs are unaffected; set via

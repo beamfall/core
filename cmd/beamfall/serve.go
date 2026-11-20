@@ -53,7 +53,7 @@ func startServer(ctx context.Context, cfg config.Config) (*app.App, func(), erro
 	if err := cfg.ResolveDataDir(); err != nil {
 		return nil, nil, err
 	}
-	release, err := lockServeDataDir(cfg.DataDir)
+	release, err := lockServeDataDir(cfg.DataDir, cfg.ConfiguredDataDir())
 	if err != nil {
 		return nil, nil, err
 	}
