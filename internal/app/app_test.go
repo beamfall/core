@@ -40,6 +40,7 @@ import (
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
 	backupcore "github.com/beamfall/core/internal/backup"
+	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/compat"
 	"github.com/beamfall/core/internal/config"
 	"github.com/beamfall/core/internal/genassets"
@@ -558,8 +559,8 @@ func TestAppCompatIdentityAndRefreshSurviveRestart(t *testing.T) {
 		t.Fatal("login did not return an integration bearer")
 	}
 	public := call(http.MethodGet, "System/Info/Public", "", "", http.StatusOK)
-	var identity struct{ ID, ProductName, ServerName string }
-	if err := json.Unmarshal(public, &identity); err != nil || identity.ID == "" || identity.ProductName != "Beamfall" || identity.ServerName != cfg.ServerName {
+	var identity struct{ ID, ProductName, ServerName, Version string }
+	if err := json.Unmarshal(public, &identity); err != nil || identity.ID == "" || identity.ProductName != "Beamfall" || identity.ServerName != cfg.ServerName || identity.Version != capabilities.ReleaseVersion {
 		t.Fatalf("invalid server identity: %s", public)
 	}
 	if err := st.SetSessionRevealed(ctx, store.SessionID(login.AccessToken), true); err != nil {
