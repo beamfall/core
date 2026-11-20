@@ -69,6 +69,9 @@ equal size whose samples all match share an identity even when unsampled bytes d
 - **WHEN** the path, recorded size and recorded mtime match a legacy row
 - **THEN** the scan reuses the legacy identity without reading bytes for fingerprinting
 
+The mtime comparison SHALL use the original catalog precision, dividing Unix nanoseconds by
+1,000,000 and rounding toward zero, including for timestamps before the Unix epoch.
+
 #### Scenario: Legacy file in an unsealed encrypted Library
 
 - **WHEN** a scan finds the unchanged file after the Library is sealed and unsealed
@@ -88,7 +91,7 @@ equal size whose samples all match share an identity even when unsampled bytes d
 
 #### Scenario: Verified Unix-epoch mtime
 
-- **WHEN** the one-time legacy comparison verifies a file whose mtime is the Unix epoch
+- **WHEN** the one-time legacy comparison verifies a file whose mtime rounds to the Unix epoch
 - **THEN** the catalog distinguishes that timestamp from an unknown mtime after reopening, and
   the next unchanged scan reuses the legacy identity without reading bytes for fingerprinting
 
@@ -109,3 +112,30 @@ hexadecimal digest digits. A legacy Media ID SHALL retain its existing scheme an
 - **WHEN** a sample identifies bytes with no existing Media and the catalog derives an ID
   from the fingerprint
 - **THEN** the new Media ID has the sampled prefix and the first 17 digits of the sample digest
+
+### Requirement: Exact duplicate checks recognize both fingerprint schemes
+
+Proxy promotion and qBittorrent ingest SHALL check live public catalog rows for the candidate's
+full SHA-256 and sampled identity before publishing an archive or relocating a download. A
+sampled match SHALL count as a duplicate only when the matched file's full SHA-256 equals the
+candidate's full SHA-256.
+
+#### Scenario: Exact duplicate in either scheme
+
+- **WHEN** a live row has the full digest or its sampled match is confirmed by the full digest
+- **THEN** the existing Media and file remain intact and no second archive or incoming file is published
+
+#### Scenario: Sample matches different bytes
+
+- **WHEN** only a sampled identity matches and the full digests differ
+- **THEN** promotion or relocation proceeds through its usual admission path
+
+### Requirement: Export manifests verify complete originals
+
+The photo export manifest SHALL record `sha256:` followed by the SHA-256 digest of the full
+plaintext written for each original.
+
+#### Scenario: Export of sampled content
+
+- **WHEN** a photo export writes an original from a row with a sampled identity
+- **THEN** the manifest digest verifies the complete exported bytes

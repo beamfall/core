@@ -12,3 +12,6 @@ without waiting for a whole-file read.
 - Keep legacy identities at unchanged paths. For a legacy row with incomplete stats, compare
   the full digest once at its existing path and record the stats on a match.
 - Keep managed staging's full SHA-256 for duplicate checks against legacy rows.
+- Check both catalog schemes before promoting streamed bytes or relocating downloaded bytes.
+  Confirm sampled candidates by comparing full SHA-256 digests.
+- Compute photo export manifest digests from the exported plaintext.
