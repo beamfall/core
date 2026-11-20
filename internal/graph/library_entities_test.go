@@ -11,6 +11,7 @@ import (
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
+	music "github.com/beamfall/plugin-music"
 )
 
 const libraryEntitiesTestQuery = `query($libraryID: String!, $kind: String, $limit: Int, $offset: Int) {
@@ -137,6 +138,65 @@ func libraryEntityTitles(items []LibraryEntityItem) []string {
 		titles = append(titles, item.Title)
 	}
 	return titles
+}
+
+func TestLibraryEntitiesMusicArtistBrowse(t *testing.T) {
+	st := storetest.Open(t)
+	registry, err := newTestPluginRegistry([]plugin.Bundle{music.Bundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(manifest.NewService(st, time.Now, registry), auth.NewService(st), st, registry, Options{
+		EntityBrowseSources: map[plugin.ID]map[string][]store.EntityBrowseSource{music.PluginID: {"artist": {
+			{Relation: "album-artist", FromKind: "album"},
+			{Relation: "appears-on", ExcludeMediaRelation: "album-track"},
+		}}},
+	})
+	ctx := context.Background()
+	library, err := st.CreateLibrary(ctx, "Music", false, music.PluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entity := range []store.Entity{
+		{ID: "album", Kind: "album", Title: "An Album"},
+		{ID: "album-artist", Kind: "artist", Title: "Earth, Wind & Fire"},
+		{ID: "combined-credit", Kind: "artist", Title: "AURORA, Pomme"},
+		{ID: "loose-credit", Kind: "artist", Title: "Tyler, The Creator"},
+	} {
+		entity.LibraryID = library.ID
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tracks := map[string]store.MediaID{}
+	for _, name := range []string{"grouped", "loose"} {
+		item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: library.ID, Path: "/music/" + name + ".flac", Title: name,
+			Container: "flac", Codec: "flac", Class: store.MediaClassAudio, ContentFingerprint: "fp-" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tracks[name] = item.ID
+	}
+	for _, relation := range []store.EntityRelation{
+		{FromEntityID: "album", Name: "album-artist", ToEntityID: "album-artist"},
+		{FromEntityID: "album", Name: "album-track", ToMediaID: tracks["grouped"]},
+		{FromEntityID: "combined-credit", Name: "appears-on", ToMediaID: tracks["grouped"]},
+		{FromEntityID: "loose-credit", Name: "appears-on", ToMediaID: tracks["loose"]},
+	} {
+		if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var resp LibraryEntitiesResponse
+	execGraph(t, handler, authorizeViewer, libraryEntitiesTestQuery,
+		map[string]any{"libraryID": string(library.ID), "kind": "artist"}, "libraryEntities", &resp)
+	if len(resp.Kinds) != 2 || resp.Kinds[0].Kind != "artist" || resp.Kinds[0].Total != 2 ||
+		resp.Kinds[1].Kind != "album" || resp.Kinds[1].Total != 1 || resp.Total != 2 ||
+		!slices.Equal(libraryEntityTitles(resp.Items), []string{"Earth, Wind & Fire", "Tyler, The Creator"}) {
+		t.Fatalf("Artists browse = %+v", resp)
+	}
 }
 
 // The browse kinds, their order and labels come from the plugin: a kind

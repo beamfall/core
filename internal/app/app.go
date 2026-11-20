@@ -1252,6 +1252,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		HardwareAcceleration:         cfg.HardwareAcceleration,
 		Identify:                     identifyService,
 		Artwork:                      artworkService,
+		EntityBrowseSources:          activeEntityBrowseRules(executablePlugins, hooks.EntityBrowseRules, logger),
 		StreamTokens:                 tokenService,
 		ArtworkCandidateFetcher:      scrapeEngine,
 		ArtworkCandidateImporter:     artworkService,

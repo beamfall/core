@@ -403,6 +403,7 @@ type Options struct {
 	HardwareAcceleration         config.HardwareAccelReport
 	Identify                     *identify.Service
 	Artwork                      ArtworkLocator
+	EntityBrowseSources          map[plugin.ID]map[string][]store.EntityBrowseSource
 	StreamTokens                 *streamtoken.Service
 	ArtworkCandidateFetcher      ArtworkCandidateFetcher
 	ArtworkCandidateImporter     ArtworkCandidateImporter
@@ -468,6 +469,9 @@ type Handler struct {
 	scanObserver    ScanObserver
 	libraryObserver LibraryMutationObserver
 	hardwareAccel   config.HardwareAccelReport
+
+	// Immutable after construction, keyed by plugin ID and Entity kind.
+	entityBrowseSources map[plugin.ID]map[string][]store.EntityBrowseSource
 
 	// Immutable after construction, keyed by plugin ID and container kind.
 	engagementContainers map[store.EngagementContainerKey]store.EngagementContainerRelations
@@ -827,6 +831,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.hardwareAccel = o.HardwareAcceleration
 	h.identify = o.Identify
 	h.artwork = o.Artwork
+	h.entityBrowseSources = o.EntityBrowseSources
 	h.tokens = o.StreamTokens
 	h.candidateFetch = o.ArtworkCandidateFetcher
 	h.candidateImport = o.ArtworkCandidateImporter

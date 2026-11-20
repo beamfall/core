@@ -206,9 +206,12 @@ func (h *Handler) libraryEntities(ctx context.Context, scope auth.Scope, req req
 		names[i] = kind.Name
 	}
 	filter := scope.LibraryFilter()
+	sources := h.entityBrowseSources[bundle.ID]
 	// The first read only totals the kinds, so the default kind is the first
 	// one the caller can actually browse.
-	totals, err := h.store.LibraryEntities(ctx, filter, store.LibraryEntitiesQuery{LibraryID: libraryID, Kinds: names})
+	totals, err := h.store.LibraryEntities(ctx, filter, store.LibraryEntitiesQuery{
+		LibraryID: libraryID, Kinds: names, BrowseSources: sources,
+	})
 	if err != nil {
 		return LibraryEntitiesResponse{}, err
 	}
@@ -236,14 +239,15 @@ func (h *Handler) libraryEntities(ctx context.Context, scope auth.Scope, req req
 		return resp, nil
 	}
 	result, err := h.store.LibraryEntities(ctx, filter, store.LibraryEntitiesQuery{
-		LibraryID:   libraryID,
-		Kinds:       []string{resp.Kind},
-		Kind:        resp.Kind,
-		ChildKinds:  plan.childKinds(resp.Kind),
-		ParentKinds: plan.parentKinds(listed),
-		Browse:      browse,
-		Limit:       limit,
-		Offset:      offset,
+		LibraryID:     libraryID,
+		Kinds:         []string{resp.Kind},
+		Kind:          resp.Kind,
+		ChildKinds:    plan.childKinds(resp.Kind),
+		ParentKinds:   plan.parentKinds(listed),
+		BrowseSources: sources,
+		Browse:        browse,
+		Limit:         limit,
+		Offset:        offset,
 	})
 	if err != nil {
 		return LibraryEntitiesResponse{}, err

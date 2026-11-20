@@ -6,14 +6,18 @@ import (
 	"slices"
 )
 
-// libraryEntityCandidates reads every untrashed Entity of one kind in a
-// Library as a browse candidate, keyed by its id, carrying only its title. The
-// browse keys come from the Media it reaches, when a sort or filter needs them.
-func libraryEntityCandidates(ctx context.Context, reader *sql.DB, libraryID LibraryID, kind string, restricted bool) ([]libraryBrowseCandidate, error) {
-	rows, err := reader.QueryContext(ctx, `
-		SELECT id, title FROM entity
-		WHERE library_id = ? AND kind = ? AND trashed_at_ms IS NULL
-	`, libraryID, kind)
+// libraryEntityCandidates reads the eligible untrashed Entities of one kind
+// as browse candidates. Their other browse keys come from the Media they reach
+// when a sort or filter needs them.
+func libraryEntityCandidates(ctx context.Context, reader *sql.DB, query LibraryEntitiesQuery, restricted bool) ([]libraryBrowseCandidate, error) {
+	statement := `SELECT id, title FROM entity e WHERE library_id = ? AND kind = ? AND trashed_at_ms IS NULL`
+	args := []any{query.LibraryID, query.Kind}
+	if clause, sourceArgs := entityBrowseSourceSQL(query.BrowseSources[query.Kind]); clause != "" {
+		// #nosec G202 -- the predicate uses fixed SQL fragments and bound args.
+		statement += ` AND ` + clause
+		args = append(args, sourceArgs...)
+	}
+	rows, err := reader.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, err
 	}
