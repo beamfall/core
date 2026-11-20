@@ -96,6 +96,14 @@ vi.mock("../player/watchPartyStore", async (importOriginal) => ({
   watchPartyDefersUpNext: vi.fn(() => false),
 }));
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((finish) => {
+    resolve = finish;
+  });
+  return { promise, resolve };
+}
+
 function playerState(overrides: Partial<PlayerState>): PlayerState {
   return {
     phase: "loading",
@@ -274,7 +282,7 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
     expect(await startWatchParty("media-alpha", 0, false, true)).toBe(true);
 
     const anchor = { item: "media-alpha", positionMS: 30_000, presentAtMS: Date.now() };
-    const response = Promise.withResolvers<Awaited<ReturnType<typeof watchPartyAutoSkip>>>();
+    const response = deferred<Awaited<ReturnType<typeof watchPartyAutoSkip>>>();
     vi.mocked(watchPartyAutoSkip).mockReturnValueOnce(response.promise);
     const broadcast = (positionMS: number) =>
       stream.mock.lastCall?.[0](
@@ -1698,7 +1706,7 @@ describe("PlayerPage Watch Party startup (CORE-1858)", () => {
   it("publishes the live playhead and pause state after delayed creation", async () => {
     vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
     vi.mocked(calibrateWatchPartyClock).mockResolvedValue({ offsetMS: 0, roundTripMS: 1 });
-    const creation = Promise.withResolvers<Awaited<ReturnType<typeof createWatchParty>>>();
+    const creation = deferred<Awaited<ReturnType<typeof createWatchParty>>>();
     vi.mocked(createWatchParty).mockReturnValueOnce(creation.promise);
     vi.mocked(watchPartyTransport).mockImplementationOnce(async ({ item, positionMS }) => ({
       item,

@@ -81,6 +81,15 @@ function mount(video: FakeVideo) {
   );
 }
 
+function deferredTransport() {
+  let resolve!: (applied: boolean) => void;
+  const promise = new Promise<boolean>((finish) => {
+    resolve = finish;
+  });
+  vi.mocked(sendPartyTransport).mockReturnValueOnce(promise);
+  return resolve;
+}
+
 describe("useWatchParty local transport", () => {
   beforeEach(() => {
     vi.mocked(sendPartyTransport).mockClear();
@@ -151,8 +160,7 @@ describe("useWatchParty local transport", () => {
     party = { ...activeParty(timeline), isHost: true };
     const video = new FakeVideo();
     const view = mount(video);
-    let finish!: (applied: boolean) => void;
-    vi.mocked(sendPartyTransport).mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    const finish = deferredTransport();
     vi.advanceTimersByTime(1);
     markViewerIntent();
     video.currentTime = 45;
@@ -199,11 +207,8 @@ describe("useWatchParty local transport", () => {
     party = { ...activeParty(timeline), isHost: true };
     const video = new FakeVideo();
     const view = mount(video);
-    const first = Promise.withResolvers<boolean>();
-    const second = Promise.withResolvers<boolean>();
-    vi.mocked(sendPartyTransport)
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
+    const resolveFirst = deferredTransport();
+    const resolveSecond = deferredTransport();
     for (const target of [30, 60]) {
       vi.advanceTimersByTime(1);
       markViewerIntent();
@@ -222,14 +227,14 @@ describe("useWatchParty local transport", () => {
     };
     await act(async () => {
       publish(30_000);
-      first.resolve(true);
+      resolveFirst(true);
     });
     act(() => vi.advanceTimersByTime(3100));
     expect(video.currentTime).toBe(60);
 
     await act(async () => {
       publish(60_000);
-      second.resolve(true);
+      resolveSecond(true);
     });
     expect(video.currentTime).toBe(60);
     act(() => publish(70_000));
@@ -241,11 +246,8 @@ describe("useWatchParty local transport", () => {
     party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
     const video = new FakeVideo();
     mount(video);
-    const first = Promise.withResolvers<boolean>();
-    const second = Promise.withResolvers<boolean>();
-    vi.mocked(sendPartyTransport)
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
+    const resolveFirst = deferredTransport();
+    const resolveSecond = deferredTransport();
     for (const target of [30, 60]) {
       vi.advanceTimersByTime(1);
       markViewerIntent();
@@ -253,10 +255,10 @@ describe("useWatchParty local transport", () => {
       video.dispatchEvent(new Event("seeking"));
       video.dispatchEvent(new Event("seeked"));
     }
-    await act(async () => second.resolve(false));
+    await act(async () => resolveSecond(false));
     act(() => vi.advanceTimersByTime(500));
     expect(video.currentTime).toBe(0);
-    await act(async () => first.resolve(false));
+    await act(async () => resolveFirst(false));
   });
 
   it("ignores autoplay after an unrelated long touch gesture", () => {

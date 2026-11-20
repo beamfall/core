@@ -496,16 +496,17 @@ describe("races", () => {
       members: [],
     });
     await startWatchParty("m1");
-    const first = Promise.withResolvers<Awaited<ReturnType<typeof watchPartyTransport>>>();
-    const second = Promise.withResolvers<Awaited<ReturnType<typeof watchPartyTransport>>>();
+    type Anchor = Awaited<ReturnType<typeof watchPartyTransport>>;
+    let resolveFirst!: (anchor: Anchor) => void;
+    let resolveSecond!: (anchor: Anchor) => void;
     vi.mocked(watchPartyTransport)
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
+      .mockReturnValueOnce(new Promise((finish) => (resolveFirst = finish)))
+      .mockReturnValueOnce(new Promise((finish) => (resolveSecond = finish)));
     const firstSeek = sendPartyTransport("m1", 30_000, true);
     const secondSeek = sendPartyTransport("m1", 60_000, true);
-    second.resolve({ item: "m1", positionMS: 60_000, presentAtMS: 10_200 });
+    resolveSecond({ item: "m1", positionMS: 60_000, presentAtMS: 10_200 });
     await secondSeek;
-    first.resolve({ item: "m1", positionMS: 30_000, presentAtMS: 10_100 });
+    resolveFirst({ item: "m1", positionMS: 30_000, presentAtMS: 10_100 });
     await firstSeek;
     expect(getWatchParty().timeline?.positionMS).toBe(60_000);
   });
