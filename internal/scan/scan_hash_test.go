@@ -204,6 +204,106 @@ func TestScanDoesNotRepointMediaWhenFileChangesDuringSampling(t *testing.T) {
 	}
 }
 
+func TestScanRetriesLegacyFileAfterMtimeChangesDuringSampling(t *testing.T) {
+	ctx := t.Context()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dir)
+	req := Request{LibraryID: "library-local", Root: root}
+	path := writeScanFile(t, root, "legacy.mp4", []byte("unchanged legacy bytes"))
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full, err := store.HashMediaFileContent(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, file, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: req.LibraryID, Path: path, Title: "Legacy", Container: "mp4", Codec: "h264",
+		ContentFingerprint: full, SizeBytes: before.Size(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetMatchPinned(ctx, full, true); err != nil {
+		t.Fatal(err)
+	}
+	const profile = "profile-default"
+	if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
+		ProfileID: profile, MediaID: media.ID, DurationSeconds: 100, PositionSeconds: 32,
+	}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
+		t.Fatal(err)
+	}
+	gone := writeScanFile(t, root, "gone.mp4", []byte("deleted bytes"))
+	_, deleted, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: req.LibraryID, Path: gone, Title: "Gone", Container: "mp4", Codec: "h264",
+		ContentFingerprint: fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("deleted bytes"))),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+
+	originalSample, originalLegacy := sampleScanFile, legacyFileContent
+	t.Cleanup(func() { sampleScanFile, legacyFileContent = originalSample, originalLegacy })
+	fullReads := 0
+	legacyFileContent = func(ctx context.Context, path string) (string, error) {
+		fullReads++
+		return originalLegacy(ctx, path)
+	}
+	mtime := before.ModTime().Add(time.Second)
+	sampleScanFile = func(ctx context.Context, path string) (string, error) {
+		return store.SampleMediaFileContentFrom(ctx, func() (store.SampleFile, error) {
+			file, err := os.OpenInRoot(root, filepath.Base(path))
+			if err != nil {
+				return nil, err
+			}
+			return &changingSampleFile{File: file, beforeFirstRead: func() error {
+				return os.Chtimes(path, mtime, mtime)
+			}}, nil
+		})
+	}
+	// Advance beyond both rows' last-seen milliseconds so missing retirement runs.
+	cutoff := time.UnixMilli(max(file.LastSeenAt.UnixMilli(), deleted.LastSeenAt.UnixMilli()) + 1)
+	first, err := scanFromCheckpoint(ctx, st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(2), nil, req, jobCheckpoint{}, cutoff, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after, err := os.Stat(path); err != nil || after.Size() != before.Size() || !after.ModTime().Equal(mtime) {
+		t.Fatalf("mtime-only change did not reach the file: stat = %+v, err = %v", after, err)
+	}
+	if first.FilesSeen != 0 || fullReads != 0 || first.FilesMissing != 1 {
+		t.Errorf("first scan: admitted = %d, full hashes = %d, missing = %d, want only the deleted file marked missing", first.FilesSeen, fullReads, first.FilesMissing)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st = storetest.OpenAt(t, dir)
+	live, err := st.MediaFilesForLibrary(ctx, req.LibraryID)
+	if err != nil || len(live) != 1 || live[0].MediaID != media.ID || !live[0].ModTime.IsZero() {
+		t.Errorf("live files after reopening = %+v, err = %v, want statless legacy Media %s", live, err, media.ID)
+	}
+
+	sampleScanFile = originalSample
+	second, err := Scan(ctx, st, nil, nil, nil, nil, nil, req)
+	if err != nil || len(second.Files) != 1 || second.Files[0].MediaID != media.ID || second.Files[0].ContentFingerprint != full || fullReads != 1 {
+		t.Fatalf("retry files = %+v, full hashes = %d, err = %v, want one full compare and legacy Media %s", second.Files, fullReads, err, media.ID)
+	}
+	progress, found, err := st.PlaybackProgressFor(ctx, profile, second.Files[0].MediaID)
+	if err != nil || !found || progress.PositionSeconds != 32 {
+		t.Fatalf("playback progress = %+v, found = %t, err = %v", progress, found, err)
+	}
+	if pinned, found, err := st.MatchPinned(ctx, second.Files[0].ContentFingerprint); err != nil || !found || !pinned {
+		t.Fatalf("match pin = %t, found = %t, err = %v", pinned, found, err)
+	}
+}
+
 func TestScanLegacyMtimePersistsAcrossReopen(t *testing.T) {
 	epoch := time.Unix(0, 0).UTC()
 	// Seed the rounded legacy value directly. origin/main used UnixNano()/1e6,

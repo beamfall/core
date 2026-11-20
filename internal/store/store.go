@@ -3140,6 +3140,30 @@ func (s *Store) MarkMissingMediaFilesNotSeenSince(ctx context.Context, libraryID
 	return err
 }
 
+// MarkMediaFileSeen records that a scan found the path without verifying its
+// content. It leaves the file stats and fingerprint available for a retry.
+func (s *Store) MarkMediaFileSeen(ctx context.Context, libraryID LibraryID, path string, seenAt time.Time) error {
+	if libraryID == "" || path == "" || seenAt.IsZero() {
+		return errors.New("library ID, path and seen time are required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return err
+	}
+	seenMS := timeToMillis(seenAt)
+	_, err = plane.writer.ExecContext(ctx, `
+		UPDATE media_file SET last_seen_at_ms = ?
+		WHERE path = ? AND missing_at_ms IS NULL AND last_seen_at_ms < ?
+		  AND media_id IN (SELECT id FROM media WHERE library_id = ? AND trashed_at_ms IS NULL)
+	`, seenMS, path, seenMS, libraryID)
+	return err
+}
+
 // MarkMediaFileMissing marks one live file of a Library missing. A scan calls
 // it for a catalogued file it now deliberately leaves out, so that file leaves
 // the catalog even when the missing-ratio guard holds back the end-of-scan
