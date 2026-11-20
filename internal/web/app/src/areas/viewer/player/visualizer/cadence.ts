@@ -19,7 +19,8 @@
 // holds or, with the GPU idle, recovers. Measured in Chromium under ANGLE Metal, a 200 ms
 // throttle found every fence signalled and a GPU overload at 30 to 100 ms found none signalled.
 // The check runs at the budget, not at the next callback, so a browser that holds callbacks back
-// until the GPU is done still counts its overload.
+// until the GPU is done still counts its overload. A check that runs late, behind a busy main
+// thread, bounds the GPU's time only by when it ran, so the interval records as that bound.
 
 /** Intervals the gate watches before it passes any to the governor. */
 export const CADENCE_WINDOW = 30;
@@ -51,12 +52,15 @@ export class CadenceGate {
   /**
    * The interval to record with the governor for this frame, or null to skip it while the gate
    * is still learning the cadence. Pauses and invalid intervals pass through unchanged for the
-   * governor to ignore. gpuIdle says the GPU finished the previous frame within its budget: a
-   * slow interval then records as the target interval, and stays out of the cadence window.
+   * governor to ignore. gpuMs, when known, is a bound on how long the GPU took over the previous
+   * frame: a slow interval then records as that bound, or as the target interval if the GPU kept
+   * within GPU_BUDGET_MS, and stays out of the cadence window.
    */
-  sample(frameMs: number, gpuIdle = false): number | null {
+  sample(frameMs: number, gpuMs: number | null = null): number | null {
     if (!Number.isFinite(frameMs) || frameMs <= 0 || frameMs >= PAUSE_MS) return frameMs;
-    if (gpuIdle && frameMs > this.targetMs * SLOW_FACTOR) return this.targetMs;
+    if (gpuMs !== null && frameMs > this.targetMs * SLOW_FACTOR) {
+      return gpuMs <= GPU_BUDGET_MS ? this.targetMs : Math.min(frameMs, gpuMs);
+    }
     this.window.push(frameMs);
     if (this.window.length > CADENCE_WINDOW) this.window.shift();
     if (this.window.length < CADENCE_WINDOW) return null;

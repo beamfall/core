@@ -70,10 +70,18 @@ describe("CadenceGate (CORE-2483)", () => {
   it("records slow intervals after a frame the GPU kept up with as the target", () => {
     const gate = new CadenceGate();
     for (let i = 0; i < CADENCE_WINDOW; i++) gate.sample(16.7);
-    expect(gate.sample(200, true)).toBeCloseTo(1000 / 60);
-    expect(gate.sample(16.7, true)).toBe(16.7);
-    expect(gate.sample(200, false)).toBe(200);
-    expect(gate.sample(400, true)).toBe(400);
+    expect(gate.sample(200, 3)).toBeCloseTo(1000 / 60);
+    expect(gate.sample(16.7, 3)).toBe(16.7);
+    expect(gate.sample(200, null)).toBe(200);
+    expect(gate.sample(400, 3)).toBe(400);
+  });
+
+  // Codex review of CORE-2720: a check that ran late bounds the GPU's time only by when it ran.
+  it("records a slow interval as the bound a late fence check gives", () => {
+    const gate = new CadenceGate();
+    for (let i = 0; i < CADENCE_WINDOW; i++) gate.sample(16.7);
+    expect(gate.sample(50, 45)).toBe(45);
+    expect(gate.sample(40, 45)).toBe(40);
   });
 
   it("keeps full quality through a throttled page", () => {
@@ -84,7 +92,7 @@ describe("CadenceGate (CORE-2483)", () => {
     quality.free();
     const gate = new CadenceGate();
     for (const ms of [...steady(16.7, 60), ...steady(120, 600, 80)]) {
-      const sample = gate.sample(ms, ms > 20);
+      const sample = gate.sample(ms, ms > 20 ? 3 : null);
       if (sample !== null) governor.record(sample);
     }
     expect(governor.level).toBe(3);
@@ -101,7 +109,7 @@ describe("CadenceGate (CORE-2483)", () => {
     quality.free();
     const gate = new CadenceGate();
     for (let i = 0; i < 3000; i++) {
-      const sample = gate.sample(1000 / 30, true);
+      const sample = gate.sample(1000 / 30, 3);
       if (sample !== null) governor.record(sample);
     }
     expect(governor.level).toBe(3);

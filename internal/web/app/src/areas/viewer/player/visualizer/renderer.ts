@@ -360,10 +360,12 @@ export class Renderer {
   // Oscillux's quality governor and the level the targets are built for (CORE-2215).
   private readonly governor: InstanceType<Oscillux["Governor"]>;
   private readonly cadence = new CadenceGate();
-  // The fence after the last frame drawn and whether the GPU had finished it GPU_BUDGET_MS
-  // later, null until that check (CORE-2720).
+  // The fence after the last frame drawn, when it was submitted, and the time by which the GPU
+  // had finished it as of the check GPU_BUDGET_MS later: null if it had not, undefined until
+  // that check (CORE-2720).
   private frameSync: WebGLSync | null = null;
-  private frameKeptUp: boolean | null = null;
+  private frameSubmitted = 0;
+  private frameGpuMs: number | null | undefined;
   private frameTimer: ReturnType<typeof setTimeout> | undefined;
   private level = TOP_LEVEL;
   private readonly switchUbo: WebGLBuffer;
@@ -752,7 +754,7 @@ export class Renderer {
   ): void {
     if (!this.visual) return;
     const gl = this.gl;
-    const gpuIdle = this.frameDone();
+    const gpuMs = this.frameDone();
     this.reducedMotion = reducedMotion;
     this.undo = null;
     const last = this.asked;
@@ -823,7 +825,7 @@ export class Renderer {
     // (CORE-2483). Nor is a slow interval after a frame the GPU had finished: the browser
     // throttled the page (CORE-2720).
     if (p === null) {
-      const sample = this.cadence.sample(frameMs, gpuIdle);
+      const sample = this.cadence.sample(frameMs, gpuMs);
       if (sample !== null) this.governor.record(sample);
       this.setLevel(size, this.governor.level);
     }
@@ -880,10 +882,11 @@ export class Renderer {
     // 4. The limited frame to the canvas.
     this.showLimited(size);
     this.frameSync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-    this.frameKeptUp = null;
+    this.frameSubmitted = performance.now();
+    this.frameGpuMs = undefined;
     clearTimeout(this.frameTimer);
     this.frameTimer = setTimeout(() => {
-      if (!this.disposed) this.frameKeptUp = this.frameSignalled();
+      if (!this.disposed) this.frameGpuMs = this.frameSignalled();
     }, GPU_BUDGET_MS);
     // Every frame of the fade reads its own grant, last of all its commands, in place of a read
     // the GPU had not finished: the next draw takes the word only if the GPU has finished this
@@ -1044,25 +1047,29 @@ export class Renderer {
     return (this.grantWord[0] & 0xf0) === 0;
   }
 
-  // Whether the GPU finished the last frame drawn within GPU_BUDGET_MS; false with no frame
-  // since the last call. The check at the budget decides; a draw before it (a fast frame, or
-  // timers held back with the callbacks) polls now. A frame not drawn (black, a withdrawn start)
+  // How long after its submission the GPU had, at most, taken over the last frame drawn; null
+  // when it had not finished at the check, or with no frame since the last call. The check at the
+  // budget decides; a draw before it (a fast frame, or timers held back with the callbacks) polls
+  // now. A check that runs late proves only that the GPU finished by then, so it reports that
+  // time, never less (Codex review of CORE-2720). A frame not drawn (black, a withdrawn start)
   // leaves no fence.
-  private frameDone(): boolean {
+  private frameDone(): number | null {
     clearTimeout(this.frameTimer);
-    const kept = this.frameKeptUp ?? this.frameSignalled();
-    this.frameKeptUp = null;
-    return kept;
+    const gpuMs = this.frameGpuMs === undefined ? this.frameSignalled() : this.frameGpuMs;
+    this.frameGpuMs = undefined;
+    return gpuMs;
   }
 
-  // Polls and releases the frame fence without waiting: whether the GPU has finished the frame.
-  private frameSignalled(): boolean {
+  // Polls and releases the frame fence without waiting: the time since submission if the GPU has
+  // finished the frame, else null.
+  private frameSignalled(): number | null {
     const sync = this.frameSync;
-    if (!sync) return false;
+    if (!sync) return null;
     this.frameSync = null;
     const status = this.gl.clientWaitSync(sync, 0, 0);
     this.gl.deleteSync(sync);
-    return status !== this.gl.TIMEOUT_EXPIRED && status !== this.gl.WAIT_FAILED;
+    if (status === this.gl.TIMEOUT_EXPIRED || status === this.gl.WAIT_FAILED) return null;
+    return performance.now() - this.frameSubmitted;
   }
 
   // Abandons the read in flight: the frame it read is no longer the one on screen.

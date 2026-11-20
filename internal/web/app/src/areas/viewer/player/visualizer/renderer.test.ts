@@ -1121,7 +1121,9 @@ describe("Renderer geometry (CORE-2516)", () => {
   it("tells the cadence gate whether the GPU finished the last frame", () => {
     const { renderer, r, draw, gpu } = make();
     const idle: boolean[] = [];
-    r.cadence = { sample: (_: number, gpuIdle: boolean) => (idle.push(gpuIdle), null) };
+    r.cadence = {
+      sample: (_: number, gpuMs: number | null) => (idle.push(gpuMs !== null), null),
+    };
     draw(64, 36);
     draw(64, 36);
     gpu.busy = true;
@@ -1138,7 +1140,9 @@ describe("Renderer geometry (CORE-2516)", () => {
     try {
       const { renderer, r, draw, gpu } = make();
       const idle: boolean[] = [];
-      r.cadence = { sample: (_: number, gpuIdle: boolean) => (idle.push(gpuIdle), null) };
+      r.cadence = {
+        sample: (_: number, gpuMs: number | null) => (idle.push(gpuMs !== null), null),
+      };
       draw(64, 36);
       gpu.busy = true;
       vi.advanceTimersByTime(GPU_BUDGET_MS + 1);
@@ -1148,6 +1152,25 @@ describe("Renderer geometry (CORE-2516)", () => {
       renderer.draw(64, 36, 0.2, silentFrame(), false);
       expect(idle).toEqual([false, false, true]);
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Codex review of CORE-2720: a check held back by a busy main thread finds the fence signalled
+  // but proves only that the GPU finished by then, so it reports that time.
+  it("reports a late fence check as the time it ran", () => {
+    vi.useFakeTimers();
+    const now = vi.spyOn(performance, "now").mockReturnValue(1000);
+    try {
+      const { renderer, r, draw } = make();
+      const seen: (number | null)[] = [];
+      r.cadence = { sample: (_: number, gpuMs: number | null) => (seen.push(gpuMs), null) };
+      draw(64, 36);
+      now.mockReturnValue(1045);
+      renderer.draw(64, 36, 0.045, silentFrame(), false);
+      expect(seen).toEqual([null, 45]);
+    } finally {
+      now.mockRestore();
       vi.useRealTimers();
     }
   });
