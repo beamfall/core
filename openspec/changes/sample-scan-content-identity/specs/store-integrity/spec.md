@@ -2,17 +2,14 @@
 
 ### Requirement: Managed file identity comes from file content
 
-For new rows, managed import and managed convert SHALL store the same `sample1:` identity a scan
-would compute from the staged bytes. They SHALL also compute the full SHA-256 digest during staging for legacy
-duplicate checks. They SHALL refuse, with a validation error, an admission whose sample or legacy
-digest is already cataloged at another path or in another library, including missing and trashed
-rows. The duplicate lookup SHALL run at the existing catalog admission step. The existing file
-and its Media SHALL remain unchanged.
+Managed import and convert SHALL store the scan's `sample1:` identity for new rows and compute the
+full SHA-256 during staging. At catalog admission, either digest matching a row in another
+library or at another path, including missing and trashed rows, SHALL cause a validation error.
+The existing file and Media SHALL remain unchanged.
 
 #### Scenario: Same bytes at two paths
 
-- **WHEN** a file is cataloged by scan or managed admission and the same bytes are imported at a
-  second path
+- **WHEN** bytes cataloged with a sampled or legacy fingerprint are imported at a second path
 - **THEN** the import fails with a validation error and leaves no file at the second path
 
 #### Scenario: Same bytes as a trashed file
@@ -37,11 +34,6 @@ and its Media SHALL remain unchanged.
 - **THEN** it uses the same fingerprint and creates no duplicate Media for those bytes
 - **AND** its first scan records file stats and OSHash and attempts to collect embedded stream
   and attachment inventory. An unavailable or failing probe does not prevent storing OSHash.
-
-#### Scenario: Existing legacy content
-
-- **WHEN** staged bytes match a legacy full SHA-256 digest cataloged at another path
-- **THEN** managed admission refuses the duplicate
 
 #### Scenario: Managed reimport at an existing legacy path
 
@@ -73,19 +65,13 @@ equal size whose samples all match share an identity even when unsampled bytes d
 - **WHEN** the path, recorded size and recorded mtime match a legacy row
 - **THEN** the scan reuses the legacy identity without reading bytes for fingerprinting
 
-The mtime comparison SHALL use the original catalog precision, dividing Unix nanoseconds by
-1,000,000 and rounding toward zero, including for timestamps before the Unix epoch.
+Mtime comparisons SHALL round Unix nanoseconds toward zero to catalog milliseconds, including
+timestamps before the Unix epoch.
 
 #### Scenario: Legacy file in an unsealed encrypted Library
 
 - **WHEN** a scan finds the unchanged file after the Library is sealed and unsealed
 - **THEN** the scan reuses the fingerprint and Media ID from the Library's own catalog
-
-#### Scenario: Missing legacy file returns to its original path
-
-- **WHEN** a scan discovers a file whose previous legacy row is marked missing
-- **THEN** the scan uses its sampled identity, even when the previous row has the same stats or the
-  entire file fits in the sample. The legacy watch state and match pin stay with the old identity.
 
 #### Scenario: Legacy file at the same path with incomplete stats
 
@@ -102,11 +88,11 @@ comparison of an available legacy row with incomplete stats is the sole full-dig
 - **THEN** the catalog distinguishes that timestamp from an unknown mtime after reopening, and
   the next unchanged scan reuses the legacy identity without reading bytes for fingerprinting
 
-#### Scenario: Legacy file moved or changed outside Beamfall
+#### Scenario: Legacy file moved, changed, or returns after a missing mark
 
-- **WHEN** the scan discovers a legacy file at a new path or with changed recorded stats at the
-  same path
-- **THEN** the file gets a sampled identity and cannot recover watch state or matches from its
+- **WHEN** a scan finds a legacy file moved, with changed recorded stats, or already marked missing
+- **THEN** the file gets a sampled identity even if unchanged since it went missing, or if it fits
+  entirely in the sample. It cannot recover watch state or matches from its
   legacy fingerprint. Existing Part and Version grouping still determines the logical Media.
 
 ### Requirement: Sampled Media IDs distinguish the fingerprint scheme
