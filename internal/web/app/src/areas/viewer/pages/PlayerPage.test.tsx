@@ -1630,6 +1630,60 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     expect(document.querySelector("video")).toBeNull();
   });
 
+  it("starts at the clicked playhead after opening Notifications during creation (CORE-1858)", async () => {
+    const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
+    const creation = deferred<Awaited<ReturnType<typeof createWatchParty>>>();
+    vi.mocked(calibrateWatchPartyClock).mockResolvedValue({ offsetMS: 0, roundTripMS: 1 });
+    vi.mocked(createWatchParty).mockClear().mockReturnValueOnce(creation.promise);
+    vi.mocked(fetchNotifications).mockResolvedValue([]);
+    vi.mocked(watchPartyTransport)
+      .mockClear()
+      .mockImplementationOnce(async ({ item, positionMS }) => ({
+        item,
+        positionMS,
+        presentAtMS: 0,
+      }));
+    try {
+      await act(async () => renderHosted({ mediaClass: "video" }));
+      const video = await waitFor(() => stageVideo());
+      video.currentTime = 65;
+      Object.defineProperty(video, "paused", { configurable: true, value: false });
+      fireEvent.click(screen.getByRole("button", { name: "Watch Party" }));
+      await act(async () =>
+        fireEvent.click(screen.getByRole("button", { name: "Start a Watch Party" })),
+      );
+      expect(createWatchParty).toHaveBeenCalledTimes(1);
+      expect(getWatchParty().status).toBe("starting");
+      expect(watchPartyTransport).not.toHaveBeenCalled();
+
+      await act(async () => go("/notifications"));
+      expect(pathname).toBe("/notifications");
+      expect(document.querySelector("video")).toBeNull();
+      video.currentTime = 0;
+      Object.defineProperty(video, "paused", { value: true });
+      await act(async () => {
+        creation.resolve({ partyID: "p1", content: "media-alpha", relaxed: true, members: [] });
+      });
+
+      expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+        partyID: "p1",
+        item: "media-alpha",
+        positionMS: 65_000,
+        paused: false,
+      });
+      expect(getWatchParty()).toMatchObject({
+        status: "active",
+        timeline: { positionMS: 65_000, paused: false },
+      });
+    } finally {
+      act(resetWatchPartyForTest);
+      stream.mockRestore();
+      vi.mocked(createWatchParty).mockReset();
+      vi.mocked(calibrateWatchPartyClock).mockRejectedValue(new Error("not on the home network"));
+      vi.mocked(watchPartyTransport).mockReset();
+    }
+  });
+
   it("keeps hosting while the viewer opens Notifications and approves a seek (CORE-1871)", async () => {
     const unsubscribe = vi.fn();
     const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(unsubscribe);

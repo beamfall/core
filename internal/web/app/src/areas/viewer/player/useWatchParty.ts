@@ -600,15 +600,18 @@ export function useWatchParty({
   const start = useCallback(
     async (relaxed = true, lead = false) => {
       if (!mediaId) return false;
+      const video = videoRef.current;
+      const readPlayback = () => ({
+        positionMS: video ? video.currentTime * positionScaleRef.current : 0,
+        paused: video?.paused ?? true,
+      });
+      const playbackAtStart = readPlayback();
       return startWatchParty(
         mediaId,
-        () => {
-          const video = mediaIdRef.current === mediaId ? videoRef.current : null;
-          return {
-            positionMS: video ? video.currentTime * positionScaleRef.current : 0,
-            paused: video?.paused ?? true,
-          };
-        },
+        () =>
+          videoRef.current === video && mediaIdRef.current === mediaId
+            ? readPlayback()
+            : playbackAtStart,
         !lead && relaxed,
         lead,
       );
