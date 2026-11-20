@@ -43,6 +43,13 @@ and its Media SHALL remain unchanged.
 - **WHEN** staged bytes match a legacy full SHA-256 digest cataloged at another path
 - **THEN** managed admission refuses the duplicate
 
+#### Scenario: Managed reimport at a live legacy path
+
+- **WHEN** managed admission replaces a file removed outside Beamfall and the staged full digest
+  matches the live legacy row at the same path in the same library
+- **THEN** the admission preserves the legacy fingerprint and Media ID, including watch state
+  and match pins, and clears the old mtime so the next scan verifies the replacement once
+
 ## ADDED Requirements
 
 ### Requirement: Scans bound the reads used for content identity
@@ -122,6 +129,12 @@ the catalog lookup in the publication transaction.
 
 - **WHEN** a live row matches the full or the sampled fingerprint
 - **THEN** the existing Media and file remain intact and no second archive or incoming file is published
+
+#### Scenario: Download path changes during fingerprinting
+
+- **WHEN** qBittorrent ingest computes both fingerprints from one validated open download file
+  and the download path no longer names that file after hashing
+- **THEN** ingest reports a fingerprint failure before the duplicate lookup or relocation
 
 #### Scenario: Concurrent sampled admission during promotion
 
