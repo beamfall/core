@@ -530,11 +530,20 @@ func TestScanAndManagedImportShareSampleIdentity(t *testing.T) {
 	}
 }
 
-func TestManagedAdmissionRestoresLegacyIdentityAtSamePath(t *testing.T) {
-	t.Run("import before missing scan", func(t *testing.T) { testManagedLegacyReadmission(t, false, false) })
-	t.Run("import after missing scan", func(t *testing.T) { testManagedLegacyReadmission(t, false, true) })
-	t.Run("convert before missing scan", func(t *testing.T) { testManagedLegacyReadmission(t, true, false) })
-	t.Run("convert after missing scan", func(t *testing.T) { testManagedLegacyReadmission(t, true, true) })
+func TestAdmissionRestoresIdentityAtSamePath(t *testing.T) {
+	for _, action := range []string{"scan", "import", "convert"} {
+		for _, order := range []string{"legacy only", "sample last", "legacy last"} {
+			if action == "scan" && order == "legacy only" {
+				continue // Covered by TestScanLegacyFingerprintCompatibility.
+			}
+			t.Run(action+"/"+order+"/live", func(t *testing.T) {
+				testSamePathReadmission(t, action, order, false)
+			})
+			t.Run(action+"/"+order+"/missing", func(t *testing.T) {
+				testSamePathReadmission(t, action, order, true)
+			})
+		}
+	}
 }
 
 type legacyReadmissionConverter struct{ payload []byte }
@@ -544,7 +553,7 @@ func (c legacyReadmissionConverter) ConvertFile(_ context.Context, _, dst, _ str
 	return "mp4", "h264", store.MediaClassVideo, err
 }
 
-func testManagedLegacyReadmission(t *testing.T, convert, markMissing bool) {
+func testSamePathReadmission(t *testing.T, action, order string, markMissing bool) {
 	t.Helper()
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -562,21 +571,69 @@ func testManagedLegacyReadmission(t *testing.T, convert, markMissing bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-		LibraryID: libraryID, Path: path, Title: "Legacy", Container: "mp4", Codec: "h264",
-		ContentFingerprint: legacy, SizeBytes: int64(len(payload)), ModTime: time.Unix(1, 0),
-	})
+	sample, err := store.SampleMediaFileContent(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := st.SetMatchPinned(ctx, legacy, true); err != nil || !ok {
-		t.Fatalf("set original match pin: %t, %v", ok, err)
-	}
-	if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
-		ProfileID: profile, MediaID: media.ID, DurationSeconds: 100, PositionSeconds: 32,
-	}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
+	originalMtime := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(path, originalMtime, originalMtime); err != nil {
 		t.Fatal(err)
 	}
+	fingerprints := []string{legacy}
+	switch order {
+	case "sample last":
+		fingerprints = []string{legacy, sample}
+	case "legacy last":
+		fingerprints = []string{sample, legacy}
+	}
+	ids := make(map[string]store.MediaID, len(fingerprints))
+	for _, fingerprint := range fingerprints {
+		var mediaID store.MediaID
+		if order == "sample last" && fingerprint == sample {
+			// Reproduce the returning-file case: the walker already readmitted
+			// the bytes as sample1 while the legacy row was missing.
+			if err := st.MarkMediaFileMissing(ctx, libraryID, path); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: libraryID, Root: root}); err != nil {
+				t.Fatal(err)
+			}
+			files, err := st.MediaFilesForLibrary(ctx, libraryID)
+			if err != nil || len(files) != 1 || files[0].ContentFingerprint != sample {
+				t.Fatalf("sample admission = %+v, err = %v", files, err)
+			}
+			mediaID = files[0].MediaID
+		} else {
+			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: libraryID, Path: path, Title: "Original", Container: "mp4", Codec: "h264",
+				ContentFingerprint: fingerprint, SizeBytes: int64(len(payload)), ModTime: originalMtime,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			mediaID = media.ID
+		}
+		ids[fingerprint] = mediaID
+		if ok, err := st.SetMatchPinned(ctx, fingerprint, fingerprint == sample); err != nil || !ok {
+			t.Fatalf("set match pin for %s: %t, %v", fingerprint, ok, err)
+		}
+		position := 32
+		if fingerprint == sample {
+			position = 67
+		}
+		if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
+			ProfileID: profile, MediaID: mediaID, DurationSeconds: 100, PositionSeconds: position,
+		}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
+			t.Fatal(err)
+		}
+		// Give the second catalog admission a different last-seen millisecond.
+		time.Sleep(time.Millisecond)
+	}
+	wantFingerprint := fingerprints[len(fingerprints)-1]
+	if action == "scan" && markMissing {
+		wantFingerprint = sample // A scan can verify the missing sampled row without a full read.
+	}
+	wantMediaID := ids[wantFingerprint]
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
@@ -594,7 +651,16 @@ func testManagedLegacyReadmission(t *testing.T, convert, markMissing bool) {
 		wantFiles++
 	}
 	filter := store.LibraryFilter{AllLibraries: true}
-	if convert {
+	switch action {
+	case "scan":
+		writeScanFile(t, root, name, payload)
+		if err := os.Chtimes(path, originalMtime, originalMtime); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: libraryID, Root: root}); err != nil {
+			t.Fatal(err)
+		}
+	case "convert":
 		src := writeScanFile(t, root, "legacy.mkv", []byte("input to conversion"))
 		if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
 			LibraryID: libraryID, Path: src, Title: "Source", Container: "mkv", Codec: "h264",
@@ -613,10 +679,14 @@ func testManagedLegacyReadmission(t *testing.T, convert, markMissing bool) {
 		}
 		lease := store.ConvertOwnerLease{JobID: job.ID, Owner: job.LeaseOwner}
 		result, err := st.ConvertManagedFile(ctx, libraryID, src, "h264-mp4", legacyReadmissionConverter{payload}, filter, lease, now)
-		if err != nil || result.Converted.ID != media.ID {
-			t.Fatalf("converted Media = %q, err = %v, want %q", result.Converted.ID, err, media.ID)
+		if err != nil || result.Converted.ID != wantMediaID {
+			t.Fatalf("converted Media = %q, err = %v, want %q", result.Converted.ID, err, wantMediaID)
 		}
-	} else {
+		recovered, err := st.ConvertManagedFile(ctx, libraryID, src, "h264-mp4", legacyReadmissionConverter{payload}, filter, lease, now)
+		if err != nil || recovered.Converted.ID != wantMediaID {
+			t.Fatalf("recovered converted Media = %q, err = %v, want %q", recovered.Converted.ID, err, wantMediaID)
+		}
+	default:
 		source, err := st.RegisterImportSource(writeScanFile(t, t.TempDir(), name, payload))
 		if err != nil {
 			t.Fatal(err)
@@ -633,16 +703,20 @@ func testManagedLegacyReadmission(t *testing.T, convert, markMissing bool) {
 			t.Fatalf("live files = %+v, err = %v, want %d files", files, err, wantFiles)
 		}
 		for _, file := range files {
-			if file.Path == path && file.MediaID == media.ID && file.ContentFingerprint == legacy {
+			if file.Path == path && file.MediaID == wantMediaID && file.ContentFingerprint == wantFingerprint {
 				return
 			}
 		}
-		t.Fatalf("live files = %+v, err = %v, want legacy %q at %q on %q", files, err, legacy, path, media.ID)
+		t.Fatalf("live files = %+v, err = %v, want %q at %q on %q", files, err, wantFingerprint, path, wantMediaID)
 	}
 	checkIdentity()
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	stored, err := st.LibraryMediaFileFingerprintByPath(ctx, libraryID, path)
+	if err != nil || stored.SizeBytes != info.Size() || !store.MediaFileModTimeMatches(stored.ModTime, info.ModTime()) {
+		t.Fatalf("stored admission stats = %+v, err = %v, want size %d and mtime %v", stored, err, info.Size(), info.ModTime())
 	}
 	stubNow(t, info.ModTime().Add(time.Minute))
 	result, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: libraryID, Root: root})
@@ -650,12 +724,18 @@ func testManagedLegacyReadmission(t *testing.T, convert, markMissing bool) {
 		t.Fatalf("rescan = %+v, err = %v, want the fast path", result, err)
 	}
 	checkIdentity()
-	progress, found, err := st.PlaybackProgressFor(ctx, profile, media.ID)
-	if err != nil || !found || progress.PositionSeconds != 32 {
-		t.Fatalf("playback progress = %+v, found = %t, err = %v", progress, found, err)
-	}
-	if pinned, found, err := st.MatchPinned(ctx, legacy); err != nil || !found || !pinned {
-		t.Fatalf("match pin = %t, found = %t, err = %v", pinned, found, err)
+	for fingerprint, mediaID := range ids {
+		position := 32
+		if fingerprint == sample {
+			position = 67
+		}
+		progress, found, err := st.PlaybackProgressFor(ctx, profile, mediaID)
+		if err != nil || !found || progress.PositionSeconds != position {
+			t.Fatalf("%s playback progress = %+v, found = %t, err = %v", fingerprint, progress, found, err)
+		}
+		if pinned, found, err := st.MatchPinned(ctx, fingerprint); err != nil || !found || pinned != (fingerprint == sample) {
+			t.Fatalf("%s match pin = %t, found = %t, err = %v", fingerprint, pinned, found, err)
+		}
 	}
 }
 

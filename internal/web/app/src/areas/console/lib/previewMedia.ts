@@ -1,3 +1,4 @@
+import { mediaPath } from "@/areas/viewer/lib/mediaAddress";
 import { requestOpenInNativePlayer } from "@/lib/beamfallHost";
 
 /// The outcome of routing a Console "preview this Media" affordance (MGRWEB-7).
@@ -11,7 +12,7 @@ export type PreviewRoute = { kind: "native" } | { kind: "web"; path: string };
 /// The browser in-web player route for `mediaId` (the only path that mounts the
 /// hls.js player). Used solely outside the Apple host.
 export function webPlayerPath(mediaId: string): string {
-  return `/watch/${encodeURIComponent(mediaId)}`;
+  return mediaPath("watch", mediaId);
 }
 
 /// Host-aware routing for the embedded Console's preview affordance.

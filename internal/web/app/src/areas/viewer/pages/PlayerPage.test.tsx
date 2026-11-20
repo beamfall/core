@@ -19,6 +19,7 @@ import {
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { STRINGS } from "@/strings";
+import { TrackList } from "../components/TrackList";
 import { fetchMedia as fetchAddressMedia } from "../lib/mediaDetail";
 import { type PlaybackAdjustment, type PlaybackInfo, unavailableReason } from "../lib/playback";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
@@ -141,11 +142,12 @@ function presentFirstFrame(): HTMLVideoElement {
 describe("PlayerPage timestamp links", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("keeps shared playback links under the Vite base URL", () => {
+  it.each([
+    ["media/alpha", "media%2Falpha"],
+    ["media-sample1-a371bff46385f7ded", "sample1.a371bff46385f7ded"],
+  ])("keeps a shared playback link for %s under the Vite base URL", (id, token) => {
     vi.stubEnv("BASE_URL", "/web/");
-    expect(buildTimestampedLink("media/alpha", 42)).toBe(
-      `${window.location.origin}/web/watch/media%2Falpha?t=42`,
-    );
+    expect(buildTimestampedLink(id, 42)).toBe(`${window.location.origin}/web/watch/${token}?t=42`);
   });
 });
 
@@ -1175,6 +1177,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     info: Partial<PlaybackInfo>,
     extraState: object = {},
     initialPath = "/watch/media-alpha",
+    home = <p>home route</p>,
   ) {
     vi.mocked(usePlayer).mockImplementation((mediaID) => ({
       videoRef: { current: null },
@@ -1207,7 +1210,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
           <Navigator />
           <PlayerHost>
             <Routes>
-              <Route path="/" element={<p>home route</p>} />
+              <Route path="/" element={home} />
               <Route path="/search" element={<p>search route</p>} />
               <Route path="/media/*" element={<p>media route</p>} />
               <Route path="/watch/*" element={<PlayerPage />} />
@@ -1219,6 +1222,32 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
   }
 
   const miniPlayer = () => screen.queryByRole("region", { name: "Now playing" });
+
+  it("starts playback from a sampled track row even when the catalog is offline", async () => {
+    const token = "a371bff46385f7ded";
+    const item = { id: `media-sample1-${token}`, kind: "media", title: "Sampled track" };
+    vi.mocked(fetchAddressMedia).mockClear().mockRejectedValueOnce(new TypeError("offline"));
+    vi.mocked(fetchMedia).mockRejectedValueOnce(new TypeError("offline"));
+    renderHosted(
+      { mediaClass: "audio" },
+      {},
+      "/",
+      <TrackList rows={[{ item, number: 1 }]} queue={[item]} label="Tracks" />,
+    );
+
+    expect(screen.getByRole("link", { name: /Sampled track/ })).toHaveAttribute(
+      "href",
+      `/media/sample1.${token}`,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Play Sampled track" }));
+    expect(pathname).toBe(`/watch/sample1.${token}`);
+    await waitFor(() =>
+      expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === item.id)).toBe(true),
+    );
+    await waitFor(() => expect(stageVideo()).toBeInTheDocument());
+    expect(fetchAddressMedia).not.toHaveBeenCalled();
+    vi.mocked(fetchAddressMedia).mockReset();
+  });
 
   it("keeps audio playing on the same media element in a docked mini player across routes", async () => {
     renderHosted({ mediaClass: "audio" });

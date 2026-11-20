@@ -8,6 +8,7 @@ import { fetchNotifications, markNotificationRead } from "@/lib/graphql";
 import type { NotificationInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { ViewerActions } from "../components/ViewerActions";
+import { mediaPath } from "../lib/mediaAddress";
 import {
   decidePartyRequest,
   getWatchParty,
@@ -106,7 +107,7 @@ export function NotificationsPage() {
       return;
     }
     if (!notification.read) void onMarkRead(notification.id);
-    navigate(`/watch/${encodeURIComponent(item)}`);
+    navigate(mediaPath("watch", item));
   }
 
   // Approve or decline a member's request from its notification (CORE-1765).

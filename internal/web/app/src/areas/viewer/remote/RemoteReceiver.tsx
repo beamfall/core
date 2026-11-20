@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { fetchMySessions } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { mediaPath } from "../lib/mediaAddress";
 import {
   claimControlEvent,
   deliverPlayerCommand,
@@ -75,7 +76,7 @@ export function useRemoteReceiver(profileID: string): RemoteReceiver {
               command.positionMs === undefined
                 ? ""
                 : `?t=${Math.max(0, Math.floor(command.positionMs / 1000))}`;
-            navigate(`/watch/${encodeURIComponent(command.mediaID)}${at}`);
+            navigate(`${mediaPath("watch", command.mediaID)}${at}`);
           } else if (command.command === "display-message" && command.text) {
             setMessage(command.text);
           } else {

@@ -89,7 +89,7 @@ export function librarySlug(libraryID: string | undefined, libraries: readonly L
  * words it uses the bare ID or the unambiguous sampled token.
  */
 export function mediaPath(
-  route: MediaRoute,
+  route: MediaRoute | "credits",
   id: string,
   readable?: { library?: string; words?: string },
 ): string {

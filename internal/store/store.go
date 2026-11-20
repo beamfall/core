@@ -668,7 +668,7 @@ type ImportMediaFile struct {
 	// legacyFingerprint is the full staging digest used for duplicate checks
 	// during managed admission. Only ContentFingerprint is persisted.
 	legacyFingerprint string
-	// managedFileInfo records the admitted inode for a same-path legacy reimport.
+	// managedFileInfo records the stats of the admitted inode.
 	managedFileInfo os.FileInfo
 }
 
@@ -2945,22 +2945,11 @@ func (s *Store) mediaFileFingerprintByPath(ctx context.Context, libraryID Librar
 		}
 		reader = plane.reader
 	}
-	var fp StoredFingerprint
-	var mtimeMS int64
-	err := reader.QueryRowContext(ctx, `
-		SELECT content_fingerprint, size_bytes, mtime_ms
-		FROM media_file
-		WHERE path = ? AND missing_at_ms IS NULL
-	`, path).Scan(&fp.ContentFingerprint, &fp.SizeBytes, &mtimeMS)
+	match, err := samePathMediaFileSQL(ctx, reader, libraryID, path, "", "", false)
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoredFingerprint{}, nil
 	}
-	if err != nil {
-		return StoredFingerprint{}, err
-	}
-	fp.ModTime = mediaFileMillisToTime(mtimeMS)
-	fp.OK = true
-	return fp, nil
+	return match.StoredFingerprint, err
 }
 
 // The media_file column uses zero for unknown mtimes. Reserve an otherwise

@@ -2867,6 +2867,42 @@ func replaceMediaFileSidecarsTx(ctx context.Context, tx *sql.Tx, fingerprint str
 	return nil
 }
 
+type samePathMediaFile struct {
+	StoredFingerprint
+	mediaID MediaID
+	missing bool
+}
+
+// Without an incoming digest, only a live row can establish the path's identity.
+// With digests, select a matching row before any upsert can retire a live match.
+func samePathMediaFileSQL(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, libraryID LibraryID, path, fingerprint, legacyFingerprint string, excludeExtras bool) (samePathMediaFile, error) {
+	// Keep the live-only predicate indexable on the scan's fast path.
+	predicate := "f.missing_at_ms IS NULL"
+	args := []any{path, libraryID, libraryID, excludeExtras}
+	if fingerprint != "" {
+		predicate = `f.content_fingerprint IN (?, NULLIF(?, ''))
+			ORDER BY f.missing_at_ms IS NOT NULL, f.last_seen_at_ms DESC, f.missing_at_ms DESC, f.content_fingerprint`
+		args = append(args, fingerprint, legacyFingerprint)
+	}
+	var match samePathMediaFile
+	var mtimeMS int64
+	err := q.QueryRowContext(ctx, `
+		SELECT f.media_id, f.content_fingerprint, f.size_bytes, f.mtime_ms, f.missing_at_ms IS NOT NULL
+		FROM media_file f JOIN media m ON m.id = f.media_id
+		WHERE f.path = ? AND (? = '' OR m.library_id = ?) AND m.trashed_at_ms IS NULL
+		  AND (NOT ? OR m.extra = 0) AND `+predicate+` LIMIT 1
+	`, args...,
+	).Scan(&match.mediaID, &match.ContentFingerprint, &match.SizeBytes, &mtimeMS, &match.missing)
+	if err != nil {
+		return samePathMediaFile{}, err
+	}
+	match.ModTime = mediaFileMillisToTime(mtimeMS)
+	match.OK = true
+	return match, nil
+}
+
 // importMediaFileSQL returns created=true when the upsert inserted a new Media
 // row (no row with this id existed before), so the caller can emit media.created
 // vs media.updated. Existence is read inside the same tx as the upsert so the
@@ -2883,22 +2919,17 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		if err := refuseCatalogedDuplicateTx(ctx, tx, imported); err != nil {
 			return Media{}, MediaFile{}, false, err
 		}
-		// A full digest match at the same path restores the legacy file in place.
-		// Keep its fingerprint as well as its Media ID for fingerprint-keyed state.
-		err := tx.QueryRowContext(ctx, `
-			SELECT f.media_id FROM media_file f JOIN media m ON m.id = f.media_id
-			WHERE f.content_fingerprint = NULLIF(?, '') AND f.path = ? AND m.library_id = ?
-			  AND m.trashed_at_ms IS NULL
-		`, imported.legacyFingerprint, imported.Path, imported.LibraryID).Scan(&mediaID)
-		if err == nil {
-			imported.ContentFingerprint = imported.legacyFingerprint
-			if info := imported.managedFileInfo; info != nil {
-				imported.SizeBytes = info.Size()
-				imported.ModTime = info.ModTime()
-			}
-		} else if !errors.Is(err, sql.ErrNoRows) {
-			return Media{}, MediaFile{}, false, err
-		}
+	}
+	match, err := samePathMediaFileSQL(ctx, tx, imported.LibraryID, imported.Path, imported.ContentFingerprint, imported.legacyFingerprint, false)
+	if err == nil {
+		mediaID = match.mediaID
+		imported.ContentFingerprint = match.ContentFingerprint
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Media{}, MediaFile{}, false, err
+	}
+	if info := imported.managedFileInfo; info != nil {
+		imported.SizeBytes = info.Size()
+		imported.ModTime = info.ModTime()
 	}
 	if mediaID == "" {
 		err = tx.QueryRowContext(ctx,
@@ -3140,7 +3171,22 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 	defer tx.Rollback()
 
 	var mediaID MediaID
+	var missingMediaID MediaID
 	for _, part := range ordered {
+		match, err := samePathMediaFileSQL(ctx, tx, part.File.LibraryID, part.File.Path, part.File.ContentFingerprint, "", false)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return Media{}, nil, false, err
+		}
+		if match.OK {
+			if !match.missing {
+				mediaID = match.mediaID
+				break
+			}
+			if missingMediaID == "" {
+				missingMediaID = match.mediaID
+			}
+			continue
+		}
 		err = tx.QueryRowContext(ctx,
 			"SELECT media_id FROM media_file WHERE content_fingerprint = ? AND missing_at_ms IS NULL",
 			part.File.ContentFingerprint,
@@ -3154,6 +3200,9 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 		if mediaID != "" {
 			break
 		}
+	}
+	if mediaID == "" {
+		mediaID = missingMediaID
 	}
 	if mediaID == "" {
 		if plane.encrypted {

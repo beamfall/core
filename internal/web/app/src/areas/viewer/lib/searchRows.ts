@@ -1,5 +1,6 @@
 import type { SearchResultItem } from "@/lib/graphql/types";
 import type { StringKey } from "@/strings";
+import { mediaPath } from "./mediaAddress";
 
 // Presentation helpers shared by the header search and the search page. Core
 // is domain-agnostic: a row's type is its core media class (a Media row) or its
@@ -122,12 +123,12 @@ export function nestUnderContainers(
  */
 export function searchRowOpenPath(item: SearchResultItem): string {
   const id = encodeURIComponent(item.id);
-  return item.kind === "media" ? `/watch/${id}` : `/entity/${id}`;
+  return item.kind === "media" ? mediaPath("watch", item.id) : `/entity/${id}`;
 }
 
 /** Where a row's Play control goes, or "" when the row is not playable. */
 export function searchRowPlayPath(item: SearchResultItem): string {
-  return item.kind === "media" ? `/watch/${encodeURIComponent(item.id)}` : "";
+  return item.kind === "media" ? mediaPath("watch", item.id) : "";
 }
 
 export function searchPagePath(term: string): string {

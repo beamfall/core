@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -411,15 +412,14 @@ func (s *Store) convertDstState(ctx context.Context, libraryID LibraryID, dst st
 	if source.Kind != "file" {
 		return false, "", false, ValidationError("conversion destination is not a file")
 	}
-	mediaID, _, err = s.mediaForManagedFilePath(ctx, libraryID, source.Path)
-	var validation ValidationError
-	if errors.As(err, &validation) {
+	match, err := samePathMediaFileSQL(ctx, s.catalogR, libraryID, source.Path, "", "", true)
+	if errors.Is(err, sql.ErrNoRows) {
 		return true, "", false, nil
 	}
 	if err != nil {
 		return false, "", false, err
 	}
-	return true, mediaID, true, nil
+	return true, match.mediaID, true, nil
 }
 
 // removeConvertResidue removes this job's own journal-named, uncataloged

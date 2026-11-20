@@ -4,6 +4,7 @@ import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { itemTargetFor } from "../actions";
 import { activateLink } from "../lib/activateLink";
+import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState } from "../lib/mediaDetail";
 import { formatDuration, playState, type TrackRow } from "../lib/trackList";
 import type { PlayQueueItem } from "../lib/watchQueue";
@@ -34,13 +35,13 @@ export function TrackList({
       {rows.map((row) => {
         const { item } = row;
         const duration = formatDuration(row.durationSeconds);
-        const id = encodeURIComponent(item.id);
-        const path = `/media/${id}`;
+        const path = mediaPath("media", item.id);
         const openDetails = () =>
           navigate(path, {
             state: { ...mediaLinkState(item, identity), ...playState(identity, queue, item) },
           });
-        const play = () => navigate(`/watch/${id}`, { state: playState(identity, queue, item) });
+        const play = () =>
+          navigate(mediaPath("watch", item.id), { state: playState(identity, queue, item) });
         return (
           <li key={item.id} className="bf-card-shell bf-track">
             <Link

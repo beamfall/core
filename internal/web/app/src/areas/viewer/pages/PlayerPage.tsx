@@ -745,7 +745,7 @@ function FeaturePlayer({
   // ends host playback first (CORE-1875).
   function stopRemotely() {
     onStop?.();
-    navigate(mediaId ? `/media/${encodeURIComponent(mediaId)}` : "/", { replace: true });
+    navigate(mediaId ? mediaPath("media", mediaId) : "/", { replace: true });
   }
 
   // Docked, the full player stays mounted but hidden, so its media element
@@ -1033,7 +1033,7 @@ function parseTimestampParam(raw: string | null): number | undefined {
 
 export function buildTimestampedLink(mediaId: string, seconds: number): string {
   const url = new URL(
-    `${import.meta.env.BASE_URL}watch/${encodeURIComponent(mediaId)}`,
+    `${import.meta.env.BASE_URL}${mediaPath("watch", mediaId).slice(1)}`,
     window.location.origin,
   );
   url.searchParams.set("t", String(Math.max(0, Math.floor(seconds))));

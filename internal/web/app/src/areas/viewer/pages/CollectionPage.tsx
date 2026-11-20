@@ -19,6 +19,7 @@ import { MediaItemCard } from "../components/MediaItemCard";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import { fetchCollection, fetchCollectionItems, memberOrder, moveEntry } from "../lib/collections";
+import { mediaPath } from "../lib/mediaAddress";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 
 // One ordered Collection's own page (/collections/:libraryId/:collectionId,
@@ -102,7 +103,7 @@ export function CollectionPage() {
     const state: PlayerNavState = identity
       ? { title: first.title, queue: queueWindow(queue, first.id), queueIdentity: identity }
       : { title: first.title };
-    navigate(`/watch/${encodeURIComponent(first.id)}`, { state });
+    navigate(mediaPath("watch", first.id), { state });
   }
 
   const back = (

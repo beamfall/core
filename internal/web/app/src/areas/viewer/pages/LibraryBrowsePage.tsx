@@ -32,6 +32,7 @@ import {
   parseBrowseState,
 } from "../lib/libraryBrowse";
 import { LIBRARY_VIEW_PARAM } from "../lib/libraryViews";
+import { mediaPath } from "../lib/mediaAddress";
 import { startPlayQueue } from "../lib/playQueue";
 import { type PlayQueueItem, playQueueOf } from "../lib/watchQueue";
 import { LibraryViews } from "./LibraryViews";
@@ -277,7 +278,7 @@ function LibraryBrowse({
       );
       // The player reads its heading from navigation state.
       if (first) {
-        navigate(`/watch/${encodeURIComponent(first.id)}`, { state: { title: first.title } });
+        navigate(mediaPath("watch", first.id), { state: { title: first.title } });
       }
     } catch {
       setFailed(true);

@@ -8,6 +8,7 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { entityLinkState } from "../lib/entityPreview";
+import { mediaPath } from "../lib/mediaAddress";
 import { rememberRenderFocus } from "../lib/renderFocus";
 
 // Hero Section, ported from the vanilla buildHero (app.js): one prominent
@@ -37,7 +38,7 @@ export function Hero({
     if (isMedia) {
       // Carry the title forward so the player's info overlay can name the Media
       // (the playback-info wire does not report it).
-      navigate(`/watch/${encodeURIComponent(item.id)}`, {
+      navigate(mediaPath("watch", item.id), {
         state: { title: item.title },
       });
     } else {

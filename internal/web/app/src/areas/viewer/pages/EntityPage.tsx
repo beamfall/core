@@ -57,6 +57,7 @@ import {
   listensOverLayout,
   shuffled,
 } from "../lib/listeningLayout";
+import { mediaPath } from "../lib/mediaAddress";
 import { seeAllTargetFor } from "../lib/seeall";
 import { audioQueue, containerTrackRows, isAudioListing, playState } from "../lib/trackList";
 import { fieldDisplayValue, formatScore } from "../lib/viewerFields";
@@ -429,14 +430,14 @@ export function EntityPage() {
       state.queue = queueWindow(fallbackQueue, item.id);
       state.queueIdentity = identity;
     }
-    navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
+    navigate(mediaPath("watch", item.id), { state });
   }
 
   // Plays every listed track in a fresh random order (CORE-2362).
   function shuffleAll() {
     if (!listeningTracks || listeningTracks.length === 0) return;
     const order = shuffled(listeningTracks);
-    navigate(`/watch/${encodeURIComponent(order[0].id)}`, {
+    navigate(mediaPath("watch", order[0].id), {
       state: playState(identity, audioQueue(order), order[0]),
     });
   }

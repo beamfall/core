@@ -6,6 +6,7 @@ import { useViewerIdentity } from "@/lib/session";
 import { activateLink } from "../lib/activateLink";
 import { artworkBucketURL } from "../lib/artwork";
 import { childThumbURL, groupChildrenByKind } from "../lib/containerChildren";
+import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
 import { runtimeParts } from "../lib/viewerFields";
 import { type PlayQueueItem, playQueueOf, queueWindow } from "../lib/watchQueue";
@@ -71,7 +72,7 @@ function ChildRow({
   const t = useT();
   const identity = useViewerIdentity();
   const navigate = useNavigate();
-  const path = `/media/${encodeURIComponent(item.id)}`;
+  const path = mediaPath("media", item.id);
   function queueState() {
     return identity && queue.length > 0
       ? { queue: queueWindow(queue, item.id), queueIdentity: identity }
@@ -81,7 +82,7 @@ function ChildRow({
     navigate(path, { state: { ...mediaLinkState(item, identity), ...queueState() } });
   }
   function play() {
-    navigate(`/watch/${encodeURIComponent(item.id)}`, {
+    navigate(mediaPath("watch", item.id), {
       state: { title: item.title, ...queueState() },
     });
   }

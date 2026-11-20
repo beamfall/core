@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { buttonVariants } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
+import { mediaPath } from "../lib/mediaAddress";
 import type { PlayerNavState } from "../lib/watchQueue";
 import { useHomeNetwork, watchPartyInviteState } from "../lib/watchTogether";
 import { getWatchParty, startWatchParty, useWatchPartyState } from "../player/watchPartyStore";
@@ -46,7 +47,7 @@ export function WatchTogetherButton({
       skipPrePlay: true,
       ...watchPartyInviteState(),
     };
-    navigate(`/watch/${encodeURIComponent(mediaID)}`, { state });
+    navigate(mediaPath("watch", mediaID), { state });
   }
 
   return (

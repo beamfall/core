@@ -65,14 +65,18 @@ afterEach(() => {
 });
 
 describe("CastCrewPage (CORE-2503)", () => {
-  it("preserves the original direct credits address when Back precedes resolution", () => {
-    const id = "media-sample1-a371bff46385f7ded";
-    vi.mocked(fetchMedia).mockImplementationOnce(() => new Promise(() => {}));
-    renderAt(castCrewPath(id));
+  const sampledID = "media-sample1-a371bff46385f7ded";
+  it.each([
+    [`/credits/${sampledID}`, `/media/${sampledID}`],
+    [castCrewPath(sampledID), "/media/sample1.a371bff46385f7ded"],
+  ])("returns from %s before the catalog responds", (credits, detail) => {
+    vi.mocked(fetchMedia).mockImplementation(() => new Promise(() => {}));
+    renderAt(credits);
 
-    expect(fetchMedia).toHaveBeenCalledWith(id, expect.any(AbortSignal));
+    expect(fetchMedia).toHaveBeenCalledWith(sampledID, expect.any(AbortSignal));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(screen.getByText(`/media/${id}`)).toBeVisible();
+    expect(screen.getByText(detail)).toBeVisible();
+    vi.mocked(fetchMedia).mockReset();
   });
 
   it("lists the cast and then each department in billing order", async () => {

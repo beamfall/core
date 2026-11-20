@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { LibrarySummary } from "@/lib/graphql/types";
 import {
@@ -16,6 +18,37 @@ const libraries: LibrarySummary[] = [
   { id: "library-music", title: "Music", pluginID: "music", previewClips: false },
   { id: "library-films", title: "Films & Shows", pluginID: null, previewClips: false },
 ];
+
+describe("routes built from known Media IDs", () => {
+  // Keep the route-producing call sites on the shared encoder. The route
+  // behavior itself is covered below and through the PlayerPage click test.
+  it.each([
+    ["viewer/components/ContainerChildren.tsx", ["media", "watch"]],
+    ["viewer/components/ContainerMediaRows.tsx", ["media", "watch"]],
+    ["viewer/components/Hero.tsx", ["watch"]],
+    ["viewer/components/MediaDetailMoreMenu.tsx", ["media"]],
+    ["viewer/components/MediaItemCard.tsx", ["media", "watch"]],
+    ["viewer/components/TrackList.tsx", ["media", "watch"]],
+    ["viewer/components/WatchTogetherButton.tsx", ["watch"]],
+    ["viewer/lib/searchRows.ts", ["watch", "watch"]],
+    ["viewer/pages/CastCrewPage.tsx", ["credits", "media"]],
+    ["viewer/pages/CollectionPage.tsx", ["watch"]],
+    ["viewer/pages/EntityPage.tsx", ["watch", "watch"]],
+    ["viewer/pages/LibraryBrowsePage.tsx", ["watch"]],
+    ["viewer/pages/MediaDetailPage.tsx", ["watch", "media"]],
+    ["viewer/pages/MyDataPage.tsx", ["media"]],
+    ["viewer/pages/NotificationsPage.tsx", ["watch"]],
+    ["viewer/pages/PlayerPage.tsx", ["watch", "watch", "media", "watch"]],
+    ["viewer/pages/PlaylistPage.tsx", ["watch"]],
+    ["viewer/remote/RemoteReceiver.tsx", ["watch"]],
+    ["console/lib/previewMedia.ts", ["watch"]],
+  ])("%s encodes each known-ID route", (file, routes) => {
+    const source = readFileSync(resolve("src/areas", file), "utf8");
+    const calls = [...source.matchAll(/\bmediaPath\("(media|watch|credits)",/g)];
+    expect(calls.map(([, route]) => route).toSorted()).toEqual(routes.toSorted());
+    expect(source).not.toMatch(/(?:`\/?|\})\b(?:media|watch)\/\$\{/);
+  });
+});
 
 describe("readable media addresses (CORE-2329)", () => {
   it("folds text to lowercase ASCII words", () => {

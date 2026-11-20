@@ -463,7 +463,7 @@ export function MediaDetailPage() {
                 )}
                 {next && (
                   <Link
-                    to={`/media/${encodeURIComponent(next.id)}`}
+                    to={mediaPath("media", next.id)}
                     state={mediaLinkState(next, identity)}
                     className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
                     aria-label={t("mediaDetailNextLabel", { title: next.title })}

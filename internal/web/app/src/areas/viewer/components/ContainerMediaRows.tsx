@@ -8,6 +8,7 @@ import { activateLink } from "../lib/activateLink";
 import { artworkBucketURL } from "../lib/artwork";
 import { childThumbURL } from "../lib/containerChildren";
 import { itemRuntimeSeconds, rowOrdinals } from "../lib/containerPage";
+import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
 import { runtimeParts } from "../lib/viewerFields";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
@@ -42,7 +43,7 @@ export function ContainerMediaRows({
       state.queue = queueWindow(queue, item.id);
       state.queueIdentity = identity;
     }
-    navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
+    navigate(mediaPath("watch", item.id), { state });
   }
 
   // The detail page forwards the container's queue to its own Play.
@@ -55,7 +56,7 @@ export function ContainerMediaRows({
   return (
     <ol className="bf-rows" aria-label={label}>
       {media.map((item, index) => {
-        const path = `/media/${encodeURIComponent(item.id)}`;
+        const path = mediaPath("media", item.id);
         const openDetails = () => navigate(path, { state: linkState(item) });
         const thumb = childThumbURL(item);
         const seconds = itemRuntimeSeconds(item);

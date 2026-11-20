@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Menu } from "@/components/ui/astryx-primitives";
 import { buttonVariants } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
+import { mediaPath } from "../lib/mediaAddress";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 
 const COPIED_RESET_MS = 2000;
@@ -26,8 +27,9 @@ export function MediaDetailMoreMenu({ mediaID, title }: { mediaID: string; title
   function copyLink() {
     const clipboard = navigator.clipboard;
     if (!clipboard) return;
-    const path = `media/${encodeURIComponent(mediaID)}`;
-    const href = new URL(`${import.meta.env.BASE_URL}${path}`, window.location.origin).href;
+    const path = mediaPath("media", mediaID);
+    const href = new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin)
+      .href;
     void clipboard.writeText(href).then(
       () => {
         setCopied(true);

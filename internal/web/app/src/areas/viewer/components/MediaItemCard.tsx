@@ -14,6 +14,7 @@ import { cardAccessibleName, cardRating, cardState } from "../lib/cardState";
 import { cardHeading, cardSubline } from "../lib/cardTitles";
 import { entityLinkState } from "../lib/entityPreview";
 import type { LibraryViewMode } from "../lib/libraryBrowse";
+import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState } from "../lib/mediaDetail";
 import { fetchPreviewInfo } from "../lib/playback";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
@@ -180,7 +181,7 @@ export function MediaItemCard({
   }
 
   function play() {
-    navigate(`/watch/${encodeURIComponent(item.id)}`, { state: playState() });
+    navigate(mediaPath("watch", item.id), { state: playState() });
   }
 
   // The navigation state the card's link carries to the page it opens.
@@ -263,7 +264,7 @@ export function MediaItemCard({
       onDetails={
         isMedia
           ? () =>
-              navigate(`/media/${encodeURIComponent(item.id)}`, {
+              navigate(mediaPath("media", item.id), {
                 state: {
                   ...mediaLinkState(item, identity, focusAnchor?.section),
                   ...queueState(),

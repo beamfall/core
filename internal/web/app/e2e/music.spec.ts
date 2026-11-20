@@ -66,7 +66,7 @@ async function expectPlaying(page: Page, after = 0): Promise<void> {
  */
 function watchAddress(id: string): RegExp {
   const token = id.replace(/^media-sha256-/, "").replace(/^media-sample1-/, "sample1[.]");
-  return new RegExp(`/web/watch/(?:${id}|(?:[^?#]*-)?${token})$`);
+  return new RegExp(`/web/watch/(?:${id}|${token}|[^?#]*-${token})$`);
 }
 
 /** Plays Track One from its album page's track list (CORE-1635), which starts playback directly. */
@@ -95,6 +95,8 @@ test("plays an album and advances to its next track (CORE-1640)", async ({ page 
 
   // The track ends after TEST_ALBUM.seconds; the queue moves on without a click.
   expect(`/web${mediaPath("watch", second.id)}`).toMatch(watchAddress(second.id));
+  const sampledID = "media-sample1-0123456789abcdef0";
+  expect(`/web${mediaPath("watch", sampledID)}`).toMatch(watchAddress(sampledID));
   await expect(page).toHaveURL(watchAddress(second.id), { timeout: 15_000 });
   await expect(page.locator(AUDIO_TITLE)).toHaveText(second.title);
   await expectPlaying(page);

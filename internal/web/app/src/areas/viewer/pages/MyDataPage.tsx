@@ -42,6 +42,7 @@ import type {
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { ViewerActions } from "../components/ViewerActions";
+import { mediaPath } from "../lib/mediaAddress";
 
 // The event-log page size (matches the server default; the server clamps).
 const MY_DATA_LOG_PAGE_SIZE = 25;
@@ -525,7 +526,7 @@ function EventRow({
         {/* The event names no title, and its Media id is internal: the row links
             to the item instead of printing the id (CORE-2319). */}
         <Link
-          to={`/media/${encodeURIComponent(event.mediaID)}`}
+          to={mediaPath("media", event.mediaID)}
           className="break-words text-sm text-[var(--text-primary)] hover:underline"
         >
           {kindLabel}

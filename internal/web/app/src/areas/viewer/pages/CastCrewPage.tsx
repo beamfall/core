@@ -19,7 +19,7 @@ import "./media-detail.css";
 type Status = "loading" | "ready" | "missing" | "failed";
 
 /** The Cast & Crew address of a Media item, the detail page's "See all". */
-export const castCrewPath = (mediaId: string) => `/credits/${encodeURIComponent(mediaId)}`;
+export const castCrewPath = (mediaId: string) => mediaPath("credits", mediaId);
 
 // Cast & Crew (/credits/:mediaId, CORE-2503): every person credit of one Media
 // item, the cast first and then each department, in billing order. It paints

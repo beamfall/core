@@ -10,6 +10,7 @@ import { useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { ViewerActions } from "../components/ViewerActions";
 import { fetchEntryLocks } from "../lib/collections";
+import { mediaPath } from "../lib/mediaAddress";
 import {
   loadPlaylists,
   memberOrder,
@@ -97,7 +98,7 @@ export function PlaylistPage() {
 
   function play(entry: PlayQueueItem) {
     const inQueue = queue.some((item) => item.id === entry.id);
-    navigate(`/watch/${encodeURIComponent(entry.id)}`, {
+    navigate(mediaPath("watch", entry.id), {
       state: playState(identity, inQueue ? queue : [], entry),
     });
   }
