@@ -665,8 +665,8 @@ func TestAbandonedPartialIsNotPromoted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrimaryMediaFile: %v", err)
 	}
-	if strings.HasPrefix(file.ContentFingerprint, "sha256:") {
-		t.Fatalf("partial was fingerprinted (%q) — must stay the provisional placeholder", file.ContentFingerprint)
+	if want := "provisional:" + string(h.mediaID); file.ContentFingerprint != want {
+		t.Fatalf("partial fingerprint = %q, want %q", file.ContentFingerprint, want)
 	}
 	if _, err := os.Stat(h.archivePath); !os.IsNotExist(err) {
 		t.Fatalf("archive file exists after a partial: a partial must not be moved into place")

@@ -43,10 +43,10 @@ and its Media SHALL remain unchanged.
 - **WHEN** staged bytes match a legacy full SHA-256 digest cataloged at another path
 - **THEN** managed admission refuses the duplicate
 
-#### Scenario: Managed reimport at a live legacy path
+#### Scenario: Managed reimport at an existing legacy path
 
 - **WHEN** managed admission replaces a file removed outside Beamfall and the staged full digest
-  matches the live legacy row at the same path in the same library
+  matches a non-trashed legacy row at the same path in the same library, whether live or marked missing
 - **THEN** the admission preserves the legacy fingerprint and Media ID, including watch state
   and match pins, and clears the old mtime so the next scan verifies the replacement once
 

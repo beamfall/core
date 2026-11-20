@@ -3018,30 +3018,34 @@ func mediaHoldsOtherFilesInAnotherLibraryTx(ctx context.Context, tx *sql.Tx, med
 // already cataloged at a different path or in a different library, whether that
 // row is live or retained as missing (a trashed file keeps its row so restore
 // can revive it by path; repointing it would orphan the restore). It returns
-// the Media ID for an exact live match at this path in this library.
+// the Media ID for an exact live match at this path in this library, or an
+// exact legacy match even when a scan has marked its file missing.
 func checkManagedAdmissionFingerprintTx(ctx context.Context, tx *sql.Tx, imported ImportMediaFile, fingerprint string) (MediaID, error) {
 	var mediaID MediaID
 	var path string
 	var libraryID LibraryID
 	var missingAt sql.NullInt64
+	var trashed bool
 	err := tx.QueryRowContext(ctx, `
-		SELECT f.media_id, f.path, m.library_id, f.missing_at_ms FROM media_file f JOIN media m ON m.id = f.media_id
+		SELECT f.media_id, f.path, m.library_id, f.missing_at_ms, m.trashed_at_ms IS NOT NULL
+		FROM media_file f JOIN media m ON m.id = f.media_id
 		WHERE f.content_fingerprint = ?`,
 		fingerprint,
-	).Scan(&mediaID, &path, &libraryID, &missingAt)
+	).Scan(&mediaID, &path, &libraryID, &missingAt, &trashed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	if err != nil {
 		return "", err
 	}
-	if path == imported.Path && libraryID == imported.LibraryID {
-		if missingAt.Valid {
+	legacy := fingerprint == imported.legacyFingerprint
+	if path == imported.Path && libraryID == imported.LibraryID && (!legacy || !trashed) {
+		if missingAt.Valid && !legacy {
 			return "", nil
 		}
 		return mediaID, nil
 	}
-	if missingAt.Valid {
+	if missingAt.Valid || trashed {
 		return "", ValidationError("a file with the same content is retained in a library's trash or missing files")
 	}
 	return "", ValidationError("a file with the same content is already in a library")

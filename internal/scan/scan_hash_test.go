@@ -231,6 +231,7 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 		missing      bool
 		trashed      bool
 		reimport     bool
+		missingFirst bool
 		wantFullRead bool
 	}{
 		{name: "recorded"},
@@ -239,6 +240,7 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 		{name: "returning-statless", missing: true, missingMtime: true},
 		{name: "managed-trash", trashed: true},
 		{name: "managed-reimport-before-scan-marks-missing", reimport: true, wantFullRead: true},
+		{name: "managed-reimport-after-scan-marks-missing", reimport: true, missingFirst: true, wantFullRead: true},
 		{name: "statless", missingMtime: true, wantFullRead: true},
 		{name: "moved", move: true},
 		{name: "known-size-changed", missingMtime: true, change: true},
@@ -281,6 +283,14 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 			if tc.reimport {
 				if err := os.Remove(path); err != nil {
 					t.Fatal(err)
+				}
+				if tc.missingFirst {
+					if err := st.MarkMediaFileMissing(ctx, req.LibraryID, path); err != nil {
+						t.Fatal(err)
+					}
+					if _, live, err := st.MediaFileExistsByFingerprint(ctx, full); err != nil || live {
+						t.Fatalf("missing fixture still live: %t, %v", live, err)
+					}
 				}
 				source, err := st.RegisterImportSource(writeScanFile(t, t.TempDir(), filepath.Base(path), payload))
 				if err != nil {
