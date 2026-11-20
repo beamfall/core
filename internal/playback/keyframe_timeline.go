@@ -213,6 +213,7 @@ type keyframeCache struct {
 
 type keyframePublication struct {
 	latest  *keyframeLoad
+	order   uint64
 	running int
 }
 
@@ -255,7 +256,7 @@ func (s *Sessions) boundVideoTimeline(ctx, owner context.Context, session *hlsSe
 		return nil, errSetupUnavailable
 	}
 	gen := keyframeGeneration{path: source.path, size: info.Size(), modTimeNs: info.ModTime().UnixNano(), identity: source.generation}
-	timeline, err := s.keyframes.load(ctx, owner, gen, prober)
+	timeline, err := s.keyframes.load(ctx, owner, gen, source.order, prober)
 	if errors.Is(err, errKeyframesPending) {
 		// A slow probe must not keep the title from playing: the uniform
 		// grid plays, only its seeks land on the keyframe before.
@@ -271,15 +272,17 @@ var errKeyframesPending = errors.New("keyframe probe still running")
 
 // load returns gen's timeline, starting a probe when none is cached or
 // running. It waits at most the first-play wait for a running probe.
-func (c *keyframeCache) load(ctx, owner context.Context, gen keyframeGeneration, prober keyframeTranscoder) (*keyframeTimeline, error) {
+func (c *keyframeCache) load(ctx, owner context.Context, gen keyframeGeneration, order uint64, prober keyframeTranscoder) (*keyframeTimeline, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
 		return nil, ErrSessionEvicted
 	}
+	pending := c.publications[gen.path]
 	if timeline, ok := c.done[gen]; ok {
-		if pending := c.publications[gen.path]; pending != nil {
-			pending.latest = nil
+		// A cache hit can arrive after a newer generation already claimed a load.
+		if pending != nil && order > pending.order {
+			pending.latest, pending.order = nil, order
 		}
 		c.mu.Unlock()
 		return timeline, nil
@@ -294,18 +297,19 @@ func (c *keyframeCache) load(ctx, owner context.Context, gen keyframeGeneration,
 		if c.publications == nil {
 			c.publications = make(map[string]*keyframePublication)
 		}
-		pending := c.publications[gen.path]
 		if pending == nil {
 			pending = &keyframePublication{}
 			c.publications[gen.path] = pending
 		}
-		pending.latest = load
 		pending.running++
 		if c.stopCtx == nil {
 			c.stopCtx, c.stopProbes = context.WithCancel(context.Background())
 		}
 		c.probes.Add(1)
 		go c.probe(owner, gen, load, c.store, prober, c.stopCtx)
+	}
+	if order > pending.order {
+		pending.latest, pending.order = load, order
 	}
 	wait := c.firstPlayWait
 	if wait <= 0 {

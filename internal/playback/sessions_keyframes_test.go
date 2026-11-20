@@ -314,7 +314,7 @@ func TestReencodeSessionsDoNotProbeKeyframes(t *testing.T) {
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
-	path, err := sessions.FilePath(context.Background(), key, "/src/movie.mkv", 120, 1280, 720, false, "720p/index.m3u8")
+	path, err := sessions.FilePath(context.Background(), key, fakeSourcePath, 120, 1280, 720, false, "720p/index.m3u8")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -298,7 +298,7 @@ func TestSessionKeepsPrimingOnlyForPicturelessSources(t *testing.T) {
 		transcoder := &fakeTranscoder{}
 		sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 		key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
-		if _, err := sessions.FilePath(context.Background(), key, "/src/piece.m4a", 120, tc.width, tc.height, false, tc.rung+"/seg00000.m4s"); err != nil {
+		if _, err := sessions.FilePath(context.Background(), key, fakeSourcePath, 120, tc.width, tc.height, false, tc.rung+"/seg00000.m4s"); err != nil {
 			t.Fatalf("%dx%d segment: %v", tc.width, tc.height, err)
 		}
 		if err := sessions.Close(); err != nil {

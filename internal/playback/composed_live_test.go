@@ -215,7 +215,7 @@ func TestComposedShapedSessionRefusesUnresolvedPicture(t *testing.T) {
 	} {
 		sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 		sessions.SetPictureComposer(composer)
-		_, err := sessions.FilePathShaped(context.Background(), SessionKey{SessionID: "s", MediaID: "m"}, "/src/song.mp3", 30, 0, 0,
+		_, err := sessions.FilePathShaped(context.Background(), SessionKey{SessionID: "s", MediaID: "m"}, fakeSourcePath, 30, 0, 0,
 			false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{ComposedPicture: true}, PriorityNormal, masterPlaylistName)
 		if err := sessions.Close(); err != nil {
 			t.Fatal(err)

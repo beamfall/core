@@ -62,7 +62,7 @@ func (c *incompleteSourceCache) contains(path string) bool {
 type sourceGenerationOwner struct {
 	generation         string
 	users              int
-	claims, published  uint64
+	published          uint64
 	durationGeneration string
 	durationPublished  uint64
 }
@@ -72,8 +72,8 @@ type sourceGenerationOwner struct {
 func (s *Sessions) claimSource(path string, secure *EncryptedSource) sourceCapture {
 	s.mu.Lock()
 	owner := s.acquireSourceLocked(path)
-	owner.claims++
-	order := owner.claims
+	s.sourceClaimOrder++
+	order := s.sourceClaimOrder
 	s.mu.Unlock()
 	source := captureSource(path, secure, s.statSource)
 	source.owner, source.order = owner, order

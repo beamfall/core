@@ -498,6 +498,7 @@ type Sessions struct {
 	durationFlights   map[string]*durationFlight
 	incompleteSources incompleteSourceCache
 	sourceOwners      map[string]*sourceGenerationOwner
+	sourceClaimOrder  uint64
 	sourceStore       sourceEndObserver
 	// bootNonce tags every session directory this instance mints (see
 	// newBootNonce): nextID resets to zero each process lifetime, so without it
@@ -531,9 +532,9 @@ type Sessions struct {
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
 	revocationPoll time.Duration
 	// charges includes all capacity owners through reap, even detached ones.
-	charges     map[*hlsSession]struct{}
-	revocations map[*hlsSession]*sessionTeardown
-	failedHeads map[*hlsSession]struct{}
+	charges       map[*hlsSession]struct{}
+	revocations   map[*hlsSession]*sessionTeardown
+	continuations map[*hlsSession]struct{}
 	// starting counts ensureRung starts running with mu released.
 	starting int
 	// detached counts sessionTeardowns handed out under mu that runTeardowns
@@ -896,7 +897,7 @@ func (s *Sessions) terminate(matches func(SessionKey) bool) int {
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{cleanupOnRelease: true}).teardown)
 		}
 	}
-	for session := range s.failedHeads {
+	for session := range s.continuations {
 		if matches(session.key) {
 			if session.admitted {
 				revoked++
@@ -1017,7 +1018,7 @@ func (b *LiveBinding) prepare(ctx context.Context, src string, durationSeconds, 
 	if b.duration != nil && !source.matches(b.duration.source) {
 		return nil, errSetupUnavailable
 	}
-	if source.info == nil && shape.Encrypted == nil && b.profile != "" {
+	if shape.Encrypted == nil && (source.generation == "" || !source.info.Mode().IsRegular()) {
 		return nil, errSetupUnavailable
 	}
 	picture, err := s.livePicture(workCtx, b.session, source, shape)
@@ -2136,7 +2137,7 @@ func (s *Sessions) Close() error {
 		for _, session := range s.sessions {
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
 		}
-		for session := range s.failedHeads {
+		for session := range s.continuations {
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
 		}
 		s.mu.Unlock()
