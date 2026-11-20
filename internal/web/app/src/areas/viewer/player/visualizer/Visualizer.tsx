@@ -303,6 +303,14 @@ export function Visualizer({
     let due = 0;
     // The recent animation-frame intervals, for the paint-lag bounds.
     const lags = lagHistory();
+    // After a break in painting (the page hidden, the context restored) the next draw is timed as
+    // a first one: no interval spans the break, and the limiter is credited one step, not the
+    // break, with no stamp cleared (Codex round 4 of CORE-2744).
+    const restartClocks = () => {
+      lastTick = null;
+      lastDrawn = null;
+      lastWall = null;
+    };
     // Whether the last draw is unpainted, and the request of the last frame: a draw sets the
     // flag, and the next animation frame, which runs after the paint, clears it. The request is
     // measured in place, as the slot an observer reports is (`seen`), so neither a frame nor
@@ -464,7 +472,7 @@ export function Visualizer({
       if (!renderer || !video) return;
       // No frame is painted while the page is hidden, so the time it is hidden is no interval.
       if (document.hidden) {
-        lastTick = null;
+        restartClocks();
         return;
       }
       // Every animation-frame interval bounds the lag of the paint before it, whether this frame
@@ -612,8 +620,7 @@ export function Visualizer({
           visualRef.current = first;
           return renderer.use(first).then(() => {
             if (!current()) return;
-            lastDrawn = null;
-            lastWall = null;
+            restartClocks();
             cancelAnimationFrame(frame);
             frame = requestAnimationFrame(tick);
             queueUpcoming(renderer, rotateRef.current, first);
@@ -647,8 +654,12 @@ export function Visualizer({
       }
     };
     const restored = () => void start(true);
+    // Browsers usually stop animation frames while the page is hidden, so the tick cannot see
+    // the hide itself: the first interval after it would span the whole time hidden.
+    const visibility = () => restartClocks();
     canvas.addEventListener("webglcontextlost", lost);
     canvas.addEventListener("webglcontextrestored", restored);
+    document.addEventListener("visibilitychange", visibility);
     void start();
     return () => {
       alive = false;
@@ -656,6 +667,7 @@ export function Visualizer({
       observer.disconnect();
       canvas.removeEventListener("webglcontextlost", lost);
       canvas.removeEventListener("webglcontextrestored", restored);
+      document.removeEventListener("visibilitychange", visibility);
       rendererRef.current?.dispose();
       rendererRef.current = null;
     };

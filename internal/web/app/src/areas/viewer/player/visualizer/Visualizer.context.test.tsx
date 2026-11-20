@@ -269,6 +269,23 @@ it("passes the time since the last draw after a playback pause", async () => {
   expect(renderer.draw.mock.lastCall?.[5]).toBe(300);
 });
 
+// A hidden page usually gets no animation frames, so the first one after it would span the
+// whole time hidden: the limiter would take that for a paint lag and hold the frame.
+it("times the first draw after the page is hidden as a first draw", async () => {
+  const { videoRef } = mount();
+  await waitFor(() => expect(pending.size).toBe(1));
+  const renderer = made.renderers[0];
+  Object.defineProperty(videoRef.current, "readyState", { value: 3 });
+  vi.spyOn(videoRef.current, "paused", "get").mockReturnValue(false);
+  step(16);
+  step(32);
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  step(10032);
+  expect(renderer.draw).toHaveBeenCalledTimes(3);
+  expect(renderer.draw.mock.lastCall?.[5]).toBeCloseTo(1000 / 60);
+  expect(renderer.draw.mock.lastCall?.[10]).toBeCloseTo(1000 / 15);
+});
+
 // Oscillux's visuals are tuned per 60 Hz step: a 120 Hz display stepped their feedback and
 // trails twice as fast, smearing them.
 it("steps the visual at 60 Hz at most on a faster display", async () => {
