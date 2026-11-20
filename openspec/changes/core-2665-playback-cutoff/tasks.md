@@ -5,4 +5,5 @@
 - [x] Move playback I/O outside session transitions.
 - [x] Verify source-read cutoff, exact joins and opens, inherited reap barriers, and cancellation before and after slot transfer.
 - [x] Exercise shared-resolution initiators and followers, Store callback ordering, and source-generation publication under cache pressure.
-- [ ] Complete the remaining landing-sequence integration variants and Linux race run.
+- [x] Cover HDR preparation, final uploads, stale EOF, idle admission, and duration handoff at capacity.
+- [ ] Repeat the landing-sequence race checks on Linux.
