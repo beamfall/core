@@ -2572,6 +2572,78 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
       stream.mockRestore();
     }
   });
+
+  it("leaves the current party before accepting another party's invite in Notifications", async () => {
+    const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
+    const departure = deferred<void>();
+    vi.mocked(leaveWatchParty).mockClear().mockReturnValueOnce(departure.promise);
+    vi.mocked(calibrateWatchPartyClock).mockResolvedValue({ offsetMS: 0, roundTripMS: 1 });
+    vi.mocked(createWatchParty).mockResolvedValueOnce({
+      partyID: "p1",
+      content: "media-alpha",
+      relaxed: false,
+      members: [],
+    });
+    vi.mocked(fetchNotifications).mockResolvedValue([
+      {
+        id: "invite-2",
+        kind: "watch-party-invite",
+        title: "Join the other party",
+        body: "Guest",
+        ref: "p2",
+        createdAt: "2026-11-20T10:00:00Z",
+        read: true,
+      },
+    ]);
+    vi.mocked(acceptWatchParty)
+      .mockClear()
+      .mockImplementationOnce(async () => {
+        const anchor = { partyID: "p2", item: "media-next", positionMS: 45_000, presentAtMS: 0 };
+        stream.mock.lastCall?.[0](
+          new MessageEvent("group.sync", {
+            data: JSON.stringify({
+              payload: { ...anchor, groupID: "p2", signal: "roster", paused: true },
+            }),
+          }),
+        );
+        return anchor;
+      });
+    try {
+      expect(await startWatchParty("media-alpha")).toBe(true);
+      renderHosted({ mediaClass: "video" });
+      await waitFor(() => stageVideo());
+
+      await act(async () => go("/notifications"));
+      const switchParty = await screen.findByRole("button", { name: "Leave and join" });
+      expect(getWatchParty().partyID).toBe("p1");
+      expect(leaveWatchParty).not.toHaveBeenCalled();
+
+      fireEvent.click(switchParty);
+      expect(leaveWatchParty).toHaveBeenCalledExactlyOnceWith("p1");
+      expect(acceptWatchParty).not.toHaveBeenCalled();
+      expect(pathname).toBe("/notifications");
+
+      await act(async () => departure.resolve(undefined));
+      expect(acceptWatchParty).toHaveBeenCalledExactlyOnceWith({
+        partyID: "p2",
+        clockOffsetMS: 0,
+        renderLatencyMS: 0,
+      });
+      await waitFor(() => expect(pathname).toBe("/watch/media-next"));
+      expect(getWatchParty()).toMatchObject({
+        status: "active",
+        partyID: "p2",
+        timeline: { item: "media-next", positionMS: 45_000 },
+      });
+    } finally {
+      act(resetWatchPartyForTest);
+      stream.mockRestore();
+      vi.mocked(acceptWatchParty).mockReset();
+      vi.mocked(calibrateWatchPartyClock).mockRejectedValue(new Error("not on the home network"));
+      vi.mocked(fetchNotifications).mockReset();
+      vi.mocked(leaveWatchParty).mockClear();
+    }
+  });
 });
 
 // feature:watch-together-entry (CORE-1764)
