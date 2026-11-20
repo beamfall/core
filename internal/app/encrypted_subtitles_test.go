@@ -153,7 +153,7 @@ func newEncryptedSubtitleFixture(t *testing.T) encryptedSubtitleFixture {
 
 	runner := &endpointSubtitleRunner{source: mediaRaw}
 	subsDir := filepath.Join(dataDir, "subtitles")
-	handler := mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, dataDir), sessiontest.New(t, nil, filepath.Join(dataDir, "transcode"), nil))
+	handler := mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, dataDir), sessiontest.New(t, nil, dataDir, nil))
 	// The wirings mirror the composition root (app.New), with FFmpeg faked.
 	handler.SetSubtitles(ffmpeg.New(), subsDir)
 	handler.SetSealed(func(id store.LibraryID) bool {

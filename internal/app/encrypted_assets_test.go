@@ -237,7 +237,7 @@ func newEncryptedAssetsFixture(t *testing.T) encryptedAssetsFixture {
 		}
 		return token
 	}
-	handler := mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, dataDir), sessiontest.New(t, nil, filepath.Join(dataDir, "transcode"), nil))
+	handler := mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, dataDir), sessiontest.New(t, nil, dataDir, nil))
 	handler.SetSealed(sealed)
 	handler.SetEncryptedBytes(adapter)
 	handler.SetAssets(assets)

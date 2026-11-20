@@ -198,6 +198,24 @@ func TestNewSessionsResolvesSymlinkBeforeParentTraversal(t *testing.T) {
 	if got := string(mustRead(t, marker)); got != "stale" {
 		t.Fatalf("unrelated scratch marker changed: %q", got)
 	}
+
+	defaultManager := newTestSessions(t, nil, media, nil)
+	ownedMarker := filepath.Join(defaultManager.dir, "session-42", "marker")
+	lexicalMarker := filepath.Join(scratch, "transcode", "session-42", "marker")
+	seedScratchFile(t, ownedMarker)
+	seedScratchFile(t, lexicalMarker)
+	s, err = NewSessions(nil, alias+"/..", nil)
+	if s != nil {
+		_ = s.Close()
+	}
+	if !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Errorf("default constructor returned %v, want a lock conflict on %s", err, defaultManager.dir)
+	}
+	for _, marker := range []string{ownedMarker, lexicalMarker} {
+		if got := string(mustRead(t, marker)); got != "stale" {
+			t.Errorf("scratch marker %s changed: %q", marker, got)
+		}
+	}
 }
 
 func TestCloseWaitsForOpenArtifactReader(t *testing.T) {

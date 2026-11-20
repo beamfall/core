@@ -396,7 +396,7 @@ func (f *encryptedPrecomputeAppFixture) serve(t *testing.T, renditionID store.Pl
 		t.Fatal(err)
 	}
 	dataDir := t.TempDir()
-	handler := mediahttp.NewHandler(f.st, authService, tokens, artwork.NewService(f.st, nil, dataDir), sessiontest.New(t, nil, filepath.Join(dataDir, "transcode"), nil))
+	handler := mediahttp.NewHandler(f.st, authService, tokens, artwork.NewService(f.st, nil, dataDir), sessiontest.New(t, nil, dataDir, nil))
 	handler.SetSealed(f.sealed)
 	handler.SetEncryptedBytes(f.adapter)
 	return func(name string) *httptest.ResponseRecorder {

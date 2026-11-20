@@ -73,28 +73,28 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 	if cipher == nil {
 		return errors.New("encrypted-library DB cipher is required")
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	proceed, err := s.encryptedLibraryUnsealNeededLocked(libraryID)
+	reconciler, proceed, err := func() (EncryptedDerivativeReconciler, bool, error) {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		proceed, err := s.encryptedLibraryUnsealNeededLocked(libraryID)
+		return s.encDerivativeReconciler, proceed, err
+	}()
 	if err != nil || !proceed {
 		return err
 	}
 	// Scratch is shared across libraries and needs no catalog snapshot. Run
 	// its reconciliation before working files or a registered plane exist.
-	reconciler := s.encDerivativeReconciler
 	if scratch, ok := reconciler.(interface {
 		ReconcileEncryptedTranscodeScratch(context.Context, LibraryID) error
 	}); ok {
-		s.mu.Unlock()
-		err = scratch.ReconcileEncryptedTranscodeScratch(ctx, libraryID)
-		s.mu.Lock()
-		if err != nil {
+		if err := scratch.ReconcileEncryptedTranscodeScratch(ctx, libraryID); err != nil {
 			return err
 		}
-		proceed, err = s.encryptedLibraryUnsealNeededLocked(libraryID)
-		if err != nil || !proceed {
-			return err
-		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if proceed, err := s.encryptedLibraryUnsealNeededLocked(libraryID); err != nil || !proceed {
+		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return err

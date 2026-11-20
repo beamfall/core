@@ -60,36 +60,48 @@ func WithScratchReadDir(read func(fs.FS, string) ([]fs.DirEntry, error)) Session
 
 // NewSessions creates the default root on first use.
 func NewSessions(transcoder Transcoder, dataDir string, now func() time.Time) (*Sessions, error) {
+	dataDir, err := resolveScratchDir(dataDir)
+	if err != nil {
+		return nil, err
+	}
 	dir := filepath.Join(dataDir, "transcode")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, err
 	}
 	return NewSessionsInDir(transcoder, dir, now)
 }
 
-// NewSessionsInDir requires an existing directory and locks its inode before
-// reconciling session entries. Closing the descriptor releases the flock.
-func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.Time, opts ...SessionsOption) (*Sessions, error) {
-	if scratchDir == "" {
-		return nil, errors.New("playback: explicit scratch directory is empty")
+func resolveScratchDir(path string) (string, error) {
+	if path == "" {
+		return "", errors.New("playback: scratch directory is empty")
 	}
 	// Resolve symlinks before normalizing the absolute spelling. A parent
 	// traversal after a symlink belongs to the target's parent.
-	dir, err := filepath.EvalSymlinks(scratchDir)
+	dir, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if !filepath.IsAbs(dir) {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		// Getwd can return the logical PWD, which may contain a symlink.
 		cwd, err = filepath.EvalSymlinks(cwd)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		dir = filepath.Join(cwd, dir)
+	}
+	return filepath.Abs(dir)
+}
+
+// NewSessionsInDir requires an existing directory and locks its inode before
+// reconciling session entries. Closing the descriptor releases the flock.
+func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.Time, opts ...SessionsOption) (*Sessions, error) {
+	dir, err := resolveScratchDir(scratchDir)
+	if err != nil {
+		return nil, err
 	}
 	lock, err := openScratchFile(dir, unix.O_RDONLY|unix.O_DIRECTORY)
 	if err != nil {
