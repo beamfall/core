@@ -93,6 +93,28 @@ equal size whose samples all match share an identity even when unsampled bytes d
 - **THEN** the file gets a sampled identity and cannot recover watch state or matches from its
   legacy fingerprint. Existing Part and Version grouping still determines the logical Media.
 
+### Requirement: Proxy promotion recognizes both content schemes
+
+Proxy promotion SHALL refuse a cataloged identity matching the completed archive's sampled or
+legacy digest before replacing the archive path. It SHALL check both digests again in the
+generation update and store the sampled digest on successful promotion. The existing GUID-based
+Media ID SHALL survive promotion. The duplicate check covers retained rows in the public catalog.
+
+#### Scenario: Archive promotion encounters cataloged content
+
+- **WHEN** the completed archive matches a sampled or legacy file already in the catalog
+- **THEN** promotion is refused and the existing file retains its path
+
+### Requirement: Download ingest recognizes both content schemes
+
+Download ingest SHALL skip files whose sampled or legacy digest matches a live row in the public
+catalog and leave the existing catalog path and the source file in place.
+
+#### Scenario: Download ingest encounters sampled content
+
+- **WHEN** the incoming bytes match a sampled file already in the catalog
+- **THEN** relocation is skipped and the existing file retains its path
+
 ### Requirement: Sampled Media IDs distinguish the fingerprint scheme
 
 A Media ID derived from a sample SHALL use `media-sample1-` and the first 17 digest digits.
@@ -115,3 +137,14 @@ the sampled ID is absent.
 
 - **WHEN** a viewer opens `/watch/media-sample1-a371bff46385f7ded` and the sampled ID is absent
 - **THEN** the viewer resolves the bookmark to `media-sha256-a371bff46385f7ded`
+
+#### Scenario: Temporary lookup failure
+
+- **WHEN** the sampled lookup for an ambiguous bookmark fails temporarily
+- **THEN** the viewer retries while the address and viewer identity remain current and selects
+  the legacy ID only after a confirmed sampled miss
+
+#### Scenario: Expand the docked player
+
+- **WHEN** the listener expands the docked player for a sampled ID
+- **THEN** the active playback session survives address resolution and attaches to the full player
