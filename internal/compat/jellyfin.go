@@ -13,6 +13,16 @@ import (
 
 const Prefix = "/compat/jellyfin/"
 
+type jellyfinRoute struct {
+	method string
+	path   string
+}
+
+var jellyfinRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http.Request){
+	{http.MethodPost, Prefix + "Users/AuthenticateByName"}: (*Handler).authenticateByName,
+	{http.MethodPost, Prefix + "Sessions/Logout"}:          (*Handler).logout,
+}
+
 type Config struct {
 	Enabled           bool
 	AllowedCIDRs      []string
@@ -66,14 +76,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	switch {
-	case r.Method == http.MethodPost && r.URL.Path == Prefix+"Users/AuthenticateByName":
-		h.authenticateByName(w, r)
-	case r.Method == http.MethodPost && r.URL.Path == Prefix+"Sessions/Logout":
-		h.logout(w, r)
-	default:
-		h.next.ServeHTTP(w, r)
+	if serve := jellyfinRoutes[jellyfinRoute{r.Method, r.URL.Path}]; serve != nil {
+		serve(h, w, r)
+		return
 	}
+	h.next.ServeHTTP(w, r)
 }
 
 func (h *Handler) clientIP(r *http.Request) net.IP {
