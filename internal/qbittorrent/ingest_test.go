@@ -79,7 +79,9 @@ func newTestIngestor(t *testing.T, src Source, cat Catalog, scan ScanEnqueuer, r
 		Source: src, Catalog: cat, Scan: scan, Ledger: ledger, Routing: routing,
 		ApprovedRoots: approvedRoots,
 		// Deterministic fingerprint by path so tests need no file content hash.
-		Fingerprint: func(_ context.Context, file *os.File) (string, error) { return "fp:" + filepath.Base(file.Name()), nil },
+		Fingerprint: func(_ context.Context, file fingerprintReader) (string, error) {
+			return "fp:" + filepath.Base(file.Name()), nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewIngestor: %v", err)
@@ -124,7 +126,7 @@ func TestIngestRefusesPayloadReplacedDuringFingerprinting(t *testing.T) {
 	scan := &fakeScan{}
 	ing, ledger := newTestIngestor(t, src, cat, scan, map[string]store.LibraryID{"films": "lib-films"}, downloads)
 	swapped := false
-	ing.fingerprint = func(ctx context.Context, file *os.File) (string, error) {
+	ing.fingerprint = func(ctx context.Context, file fingerprintReader) (string, error) {
 		full, err := store.HashMediaFileContentReader(ctx, file)
 		if err != nil || full != originalFull {
 			t.Fatalf("open descriptor fingerprint = %q, %v, want %q", full, err, originalFull)
@@ -345,7 +347,7 @@ func TestIngestChecksBothFingerprintSchemes(t *testing.T) {
 			src := &fakeSource{items: []Item{{ID: "hash-dup", Category: "films", ContentPath: download}}}
 			scan := &fakeScan{}
 			ing, ledger := newTestIngestor(t, src, cat, scan, map[string]store.LibraryID{"films": library}, downloads)
-			ing.fingerprint = func(ctx context.Context, file *os.File) (string, error) {
+			ing.fingerprint = func(ctx context.Context, file fingerprintReader) (string, error) {
 				return store.HashMediaFileContentReader(ctx, file)
 			}
 			result, err := ing.Run(ctx)
@@ -471,8 +473,10 @@ func TestIngestFailureLogsSafeSummary(t *testing.T) {
 		Ledger:        ledger,
 		Routing:       map[string]store.LibraryID{"films": "lib-films"},
 		ApprovedRoots: []string{filepath.Join(tmp, "downloads")},
-		Fingerprint:   func(_ context.Context, file *os.File) (string, error) { return "fp:" + filepath.Base(file.Name()), nil },
-		Logger:        logger,
+		Fingerprint: func(_ context.Context, file fingerprintReader) (string, error) {
+			return "fp:" + filepath.Base(file.Name()), nil
+		},
+		Logger: logger,
 	})
 	if err != nil {
 		t.Fatalf("NewIngestor: %v", err)
@@ -503,7 +507,9 @@ func newTestIngestorWithLedger(t *testing.T, src Source, cat Catalog, scan ScanE
 	ing, err := NewIngestor(Config{
 		Source: src, Catalog: cat, Scan: scan, Ledger: ledger, Routing: routing,
 		ApprovedRoots: approvedRoots,
-		Fingerprint:   func(_ context.Context, file *os.File) (string, error) { return "fp:" + filepath.Base(file.Name()), nil },
+		Fingerprint: func(_ context.Context, file fingerprintReader) (string, error) {
+			return "fp:" + filepath.Base(file.Name()), nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewIngestor: %v", err)
@@ -557,7 +563,7 @@ func TestIngestPartialMultiFileRetryReusesExistingLinkedDestination(t *testing.T
 	ing, err := NewIngestor(Config{
 		Source: src, Catalog: cat, Scan: scan, Ledger: ledger, Routing: map[string]store.LibraryID{"films": "lib-films"},
 		ApprovedRoots: []string{filepath.Join(tmp, "downloads")},
-		Fingerprint: func(_ context.Context, file *os.File) (string, error) {
+		Fingerprint: func(_ context.Context, file fingerprintReader) (string, error) {
 			if filepath.Base(file.Name()) == "ep2.mkv" && ep2Failures == 0 {
 				ep2Failures++
 				return "", errors.New("temporary fingerprint failure")

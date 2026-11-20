@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -45,8 +46,13 @@ type ScanEnqueuer interface {
 	EnqueueScan(ctx context.Context, libraryID store.LibraryID, root string) error
 }
 
+type fingerprintReader interface {
+	io.Reader
+	Name() string
+}
+
 // Fingerprinter computes the full fingerprint from the open payload.
-type Fingerprinter func(context.Context, *os.File) (string, error)
+type Fingerprinter func(context.Context, fingerprintReader) (string, error)
 
 // Ingestor routes completed downloads from a Source into Libraries: explicit
 // category->Library map (never inference, §3), hardlink-first relocation into
@@ -117,7 +123,7 @@ func NewIngestor(cfg Config) (*Ingestor, error) {
 	}
 	fingerprint := cfg.Fingerprint
 	if fingerprint == nil {
-		fingerprint = func(ctx context.Context, file *os.File) (string, error) {
+		fingerprint = func(ctx context.Context, file fingerprintReader) (string, error) {
 			return store.HashMediaFileContentReader(ctx, file)
 		}
 	}
@@ -315,7 +321,7 @@ func (i *Ingestor) fingerprintPayload(ctx context.Context, path string, admitted
 	if !os.SameFile(admitted, opened) {
 		return "", "", errors.New("download changed before fingerprinting")
 	}
-	full, err := i.fingerprint(ctx, file)
+	full, err := i.fingerprint(ctx, struct{ fingerprintReader }{file})
 	if err != nil {
 		return "", "", err
 	}

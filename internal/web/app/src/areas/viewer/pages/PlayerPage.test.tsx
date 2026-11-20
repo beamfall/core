@@ -1224,8 +1224,8 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
   const miniPlayer = () => screen.queryByRole("region", { name: "Now playing" });
 
   it("starts playback from a sampled track row even when the catalog is offline", async () => {
-    const token = "a371bff46385f7ded";
-    const item = { id: `media-sample1-${token}`, kind: "media", title: "Sampled track" };
+    const sampleHash = "a371bff46385f7ded";
+    const item = { id: `media-sample1-${sampleHash}`, kind: "media", title: "Sampled track" };
     vi.mocked(fetchAddressMedia).mockClear().mockRejectedValueOnce(new TypeError("offline"));
     vi.mocked(fetchMedia).mockRejectedValueOnce(new TypeError("offline"));
     renderHosted(
@@ -1237,10 +1237,10 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
 
     expect(screen.getByRole("link", { name: /Sampled track/ })).toHaveAttribute(
       "href",
-      `/media/sample1.${token}`,
+      `/media/sample1.${sampleHash}`,
     );
     fireEvent.click(screen.getByRole("button", { name: "Play Sampled track" }));
-    expect(pathname).toBe(`/watch/sample1.${token}`);
+    expect(pathname).toBe(`/watch/sample1.${sampleHash}`);
     await waitFor(() =>
       expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === item.id)).toBe(true),
     );
@@ -1279,10 +1279,10 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
   });
 
   it("expands a sampled track on the same media element with the catalog offline", async () => {
-    const token = "a371bff46385f7ded";
+    const sampleHash = "a371bff46385f7ded";
     vi.mocked(fetchAddressMedia).mockClear().mockRejectedValueOnce(new TypeError("offline"));
     vi.mocked(fetchMedia).mockRejectedValueOnce(new TypeError("offline"));
-    renderHosted({ mediaClass: "audio" }, {}, `/watch/sample1.${token}`);
+    renderHosted({ mediaClass: "audio" }, {}, `/watch/sample1.${sampleHash}`);
     const video = await waitFor(() => stageVideo());
     act(() => {
       void go("/search");
@@ -1290,7 +1290,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     const region = await screen.findByRole("region", { name: "Now playing" });
     fireEvent.click(within(region).getByRole("button", { name: "Open player" }));
     await waitFor(() => expect(miniPlayer()).toBeNull());
-    expect(pathname).toBe(`/watch/sample1.${token}`);
+    expect(pathname).toBe(`/watch/sample1.${sampleHash}`);
     expect(stageVideo()).toBe(video);
     expect(document.querySelector("main")).toBeVisible();
     expect(fetchAddressMedia).not.toHaveBeenCalled();

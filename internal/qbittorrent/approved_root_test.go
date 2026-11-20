@@ -29,7 +29,7 @@ func refusalIngestor(t *testing.T, src Source, cat Catalog, scan ScanEnqueuer, r
 	ing, err := NewIngestor(Config{
 		Source: src, Catalog: cat, Scan: scan, Ledger: ledger, Routing: routing,
 		ApprovedRoots: approvedRoots,
-		Fingerprint: func(_ context.Context, file *os.File) (string, error) {
+		Fingerprint: func(_ context.Context, file fingerprintReader) (string, error) {
 			t.Errorf("refused payload was fingerprinted: %s", file.Name())
 			return "fp:" + filepath.Base(file.Name()), nil
 		},
