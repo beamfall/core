@@ -134,6 +134,10 @@ func TestJellyfinAuthenticationFailuresAreUniform(t *testing.T) {
 	}{
 		{jellyfinRoute{http.MethodGet, "System/Info"}, store.IntegrationScopeRefresh},
 		{jellyfinRoute{http.MethodPost, "Library/Refresh"}, store.IntegrationScopeRead},
+		{jellyfinRoute{http.MethodGet, "System/Configuration"}, store.IntegrationScopeRefresh},
+		{jellyfinRoute{http.MethodGet, "mediabrowser/Library/MediaFolders"}, store.IntegrationScopeRefresh},
+		{jellyfinRoute{http.MethodPost, "Notifications/Admin"}, store.IntegrationScopeRefresh},
+		{jellyfinRoute{http.MethodPost, "mediabrowser/Library/Media/Updated"}, store.IntegrationScopeRead},
 	} {
 		t.Run(route.path, func(t *testing.T) {
 			scoped, err := service.AuthenticateIntegrationByName(t.Context(), "Default", "2468", "192.0.2.10", []store.IntegrationScope{route.otherScope})
@@ -197,7 +201,7 @@ func TestJellyfinRefreshBurst(t *testing.T) {
 	_, service := integrationService(t, time.Now)
 	var enqueues atomic.Int32
 	handler := newIdentityHandler(t, Config{
-		Enabled: true, EnqueueRefresh: func(_ context.Context, _ auth.Scope) { enqueues.Add(1) },
+		Enabled: true, EnqueueRefresh: func(_ context.Context, _ auth.Scope, _ []string) { enqueues.Add(1) },
 	}, service)
 	tokens := []string{loginIntegration(t, handler), loginIntegration(t, handler)}
 	var wg sync.WaitGroup
@@ -236,7 +240,7 @@ func TestJellyfinRefreshBoundary(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			handler := newIdentityHandler(t, Config{
 				Enabled: tc.enabled,
-				EnqueueRefresh: func(context.Context, auth.Scope) {
+				EnqueueRefresh: func(context.Context, auth.Scope, []string) {
 					t.Error("refresh crossed the request boundary")
 				},
 			}, service)

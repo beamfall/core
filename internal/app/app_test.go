@@ -19,6 +19,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -721,8 +722,11 @@ func TestAppCompatIdentityAndRefreshSurviveRestart(t *testing.T) {
 	if _, err := st.UpdateProfileSettings(ctx, profile.ID, store.ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
 		t.Fatal(err)
 	}
+	var libraryRoots []string
 	for _, title := range []string{"First", "Second"} {
-		if _, err := st.CreateLibraryWithRoots(ctx, title, false, "", profile.ID, []string{t.TempDir()}, ""); err != nil {
+		root := t.TempDir()
+		libraryRoots = append(libraryRoots, root)
+		if _, err := st.CreateLibraryWithRoots(ctx, title, false, "", profile.ID, []string{root}, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -761,6 +765,11 @@ func TestAppCompatIdentityAndRefreshSurviveRestart(t *testing.T) {
 		t.Fatalf("public identity changed after restart: %s", got)
 	}
 	call(http.MethodGet, "System/Info", login.AccessToken, "", http.StatusOK)
+	update, err := json.Marshal(map[string]any{"Updates": []map[string]string{{"Path": libraryRoots[0], "UpdateType": "Created"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call(http.MethodPost, "Library/Media/Updated", login.AccessToken, string(update), http.StatusNoContent)
 	queued, err := a.store.ListJobs(ctx, store.JobStatusQueued)
 	if err != nil {
 		t.Fatal(err)
@@ -848,9 +857,9 @@ func TestCompatRefreshQueuesEligibleRoots(t *testing.T) {
 					slog.Default())
 				handler, err := compat.New(compat.Config{
 					Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"},
-					EnqueueRefresh: func(ctx context.Context, scope auth.Scope) {
+					EnqueueRefresh: func(ctx context.Context, scope auth.Scope, paths []string) {
 						admitted.Add(1)
-						refresh(ctx, scope)
+						refresh(ctx, scope, paths)
 					},
 				}, service, nil)
 				if err != nil {
@@ -937,6 +946,93 @@ func TestCompatRefreshQueuesEligibleRoots(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCompatMediaUpdateQueuesContainingRoots(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	profile, err := st.CreateProfile(ctx, "Integration", store.ProfileAdult, store.LibraryFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type scanTarget struct {
+		LibraryID store.LibraryID `json:"library_id"`
+		Root      string          `json:"root"`
+	}
+	roots := map[string][]string{}
+	ids := map[string]store.LibraryID{}
+	var granted []store.LibraryID
+	for _, title := range []string{"Movies", "Shows", "Ineligible", "Sealed"} {
+		roots[title] = []string{t.TempDir(), t.TempDir()}
+		library, err := st.CreateLibraryWithRoots(ctx, title, false, "", profile.ID, roots[title], "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[title] = library.ID
+		granted = append(granted, library.ID)
+	}
+	if _, err := st.SetProfileLibraries(ctx, profile.ID, granted); err != nil {
+		t.Fatal(err)
+	}
+	refresh := compatLibraryRefresher(st, nil,
+		func(id store.LibraryID) bool { return id == ids["Sealed"] },
+		func(_ context.Context, id store.LibraryID) bool { return id != ids["Ineligible"] },
+		slog.Default())
+	scope := auth.Scope{ProfileID: profile.ID, LibraryIDs: granted}
+	movies, shows := roots["Movies"], roots["Shows"]
+	refresh(ctx, scope, []string{
+		filepath.Join(movies[0], "A (2020)", "a.mkv"),
+		filepath.Join(movies[0], "B (2021)"),
+		shows[1],
+		movies[1] + "-sibling",
+		filepath.Join(roots["Ineligible"][0], "x"),
+		filepath.Join(roots["Sealed"][0], "x"),
+		"relative/path",
+	})
+	queued, err := st.ListJobs(ctx, store.JobStatusQueued)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[scanTarget]bool{}
+	for _, job := range queued {
+		var target scanTarget
+		if err := json.Unmarshal(job.Payload, &target); err != nil {
+			t.Fatal(err)
+		}
+		got[target] = true
+	}
+	want := map[scanTarget]bool{
+		{LibraryID: ids["Movies"], Root: movies[0]}: true,
+		{LibraryID: ids["Shows"], Root: shows[1]}:   true,
+	}
+	if len(queued) != len(want) || !maps.Equal(got, want) {
+		t.Fatalf("queued scans %v, want %v", got, want)
+	}
+}
+
+func TestRootContains(t *testing.T) {
+	sep := string(filepath.Separator)
+	root := filepath.Join(sep+"media", "movies")
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{root, true},
+		{root + sep, true},
+		{filepath.Join(root, "A", "a.mkv"), true},
+		{root + sep + ".." + sep + "shows", false},
+		{root + "-old", false},
+		{sep + "media", false},
+		{"media" + sep + "movies", false},
+		{"", false},
+	} {
+		if got := rootContains(root, tc.path); got != tc.want {
+			t.Errorf("rootContains(%q, %q) = %v, want %v", root, tc.path, got, tc.want)
+		}
+	}
+	if !rootContains(sep, filepath.Join(sep+"any", "path")) {
+		t.Error("filesystem root must contain every absolute path")
 	}
 }
 

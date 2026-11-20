@@ -22,7 +22,16 @@ func TestJellyfinRouteInventory(t *testing.T) {
 		{http.MethodPost, Prefix + "Sessions/Logout"},
 		{http.MethodGet, Prefix + "System/Info"},
 		{http.MethodGet, Prefix + "System/Info/Public"},
+		{http.MethodGet, Prefix + "System/Configuration"},
+		{http.MethodGet, Prefix + "Items"},
+		{http.MethodPost, Prefix + "Notifications/Admin"},
+		{http.MethodGet, Prefix + "Library/MediaFolders"},
+		{http.MethodPost, Prefix + "Library/Media/Updated"},
 		{http.MethodPost, Prefix + "Library/Refresh"},
+		{http.MethodPost, Prefix + "mediabrowser/Notifications/Admin"},
+		{http.MethodGet, Prefix + "mediabrowser/Library/MediaFolders"},
+		{http.MethodPost, Prefix + "mediabrowser/Library/Media/Updated"},
+		{http.MethodPost, Prefix + "mediabrowser/Library/Refresh"},
 	}
 	if len(jellyfinRoutes) != len(want) {
 		t.Errorf("registered %d compat routes, want %d", len(jellyfinRoutes), len(want))
@@ -58,6 +67,16 @@ func TestJellyfinUnregisteredRoutesFallThrough(t *testing.T) {
 		{http.MethodPost, "sessions/Logout"},
 		{http.MethodGet, ""},
 		{http.MethodPost, "unknown"},
+		{http.MethodGet, "Items/item-id/Download"},
+		{http.MethodGet, "Items/item-id"},
+		{http.MethodPost, "Items"},
+		{http.MethodGet, "Library/Media/Updated"},
+		{http.MethodPost, "Library/Media/Updated/"},
+		{http.MethodGet, "mediabrowser/System/Info"},
+		{http.MethodGet, "mediabrowser/Items"},
+		{http.MethodGet, "mediabrowser/Videos/item-id/stream"},
+		{http.MethodPost, "mediabrowser//Library/Refresh"},
+		{http.MethodPost, "MediaBrowser/Library/Refresh"},
 	}
 	for _, route := range tests {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
