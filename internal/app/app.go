@@ -1936,7 +1936,7 @@ func (a *App) RunPendingJobs(ctx context.Context, classes ...store.JobClass) (in
 // Run starts the HTTP server and shuts it down when ctx is canceled. The jobs
 // goroutine is stopped and awaited before the store closes, so no job write
 // can race a closing store.
-func (a *App) Run(ctx context.Context) error {
+func (a *App) Run(ctx context.Context) (resultErr error) {
 	if !a.runStarted.CompareAndSwap(false, true) {
 		return errAlreadyRun
 	}
@@ -2010,6 +2010,7 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		if err := shutdown.run(); err != nil {
 			a.logger.Error("ordered shutdown failed", "error", err)
+			resultErr = errors.Join(resultErr, err)
 		}
 		a.logger.Info("server stopped")
 	}()
@@ -2152,15 +2153,12 @@ func (a *App) Run(ctx context.Context) error {
 				}()
 				select {
 				case <-jobsCtx.Done():
-					shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					_ = bsrv.Shutdown(shutdownCtx)
-					cancel()
-					if err := <-errc; err != nil {
+					if _, err := drainHTTPServer(bsrv, errc, httpDrainBound); err != nil {
 						a.logger.Warn("relay carrier backend stopped", "error", err)
 					}
 				case err := <-errc:
 					if err != nil {
-						a.logger.Warn("relay carrier backend stopped", "error", err)
+						a.logger.Warn("relay carrier backend stopped", "error", errors.Join(err, bsrv.Close()))
 					}
 				}
 			}()
@@ -2289,8 +2287,11 @@ func (a *App) Run(ctx context.Context) error {
 	case err := <-errc:
 		if err != nil {
 			a.logger.Error("http server failed", "error", err)
+			// Serve closes the listener on error. Close the accepted connections
+			// too, so stalled responses can release playback before checkpointing.
+			return errors.Join(err, httpServer.Close())
 		}
-		return err
+		return nil
 	}
 }
 

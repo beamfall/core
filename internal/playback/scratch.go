@@ -73,14 +73,23 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 	if scratchDir == "" {
 		return nil, errors.New("playback: explicit scratch directory is empty")
 	}
-	dir, err := filepath.Abs(scratchDir)
+	// Resolve symlinks before normalizing the absolute spelling. A parent
+	// traversal after a symlink belongs to the target's parent.
+	dir, err := filepath.EvalSymlinks(scratchDir)
 	if err != nil {
 		return nil, err
 	}
-	// Keep the canonical spelling for diagnostic and artifact names.
-	dir, err = filepath.EvalSymlinks(dir)
-	if err != nil {
-		return nil, err
+	if !filepath.IsAbs(dir) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		// Getwd can return the logical PWD, which may contain a symlink.
+		cwd, err = filepath.EvalSymlinks(cwd)
+		if err != nil {
+			return nil, err
+		}
+		dir = filepath.Join(cwd, dir)
 	}
 	lock, err := openScratchFile(dir, unix.O_RDONLY|unix.O_DIRECTORY)
 	if err != nil {

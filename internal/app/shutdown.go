@@ -34,8 +34,8 @@ var errAlreadyRun = errors.New("app: Run already started for this app")
 // runtime. Each phase is synchronous and every wait is bounded: claim
 // acceptance stops before the graceful drain, cancellation and a bounded worker
 // join happen before runtime state is checkpointed, and only then may the store
-// close. HTTP listeners are retired by drainHTTPServer before this sequence
-// runs, so no request can enter while jobs are being joined.
+// close. The primary HTTP server retires its listener and connections before
+// this sequence runs. Relay HTTP connections drain with the runtime workers.
 type shutdownSequence struct {
 	stopClaims    func()
 	claimsDrained <-chan struct{}

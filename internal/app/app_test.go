@@ -2265,6 +2265,7 @@ func testConfig(t *testing.T) config.Config {
 }
 
 type failingListener struct {
+	firstConn  net.Conn
 	acceptOnce sync.Once
 	failOnce   sync.Once
 	accepting  chan struct{}
@@ -2272,15 +2273,22 @@ type failingListener struct {
 	fail       chan struct{}
 }
 
+var errTestListenerFailed = errors.New("test listener failed")
+
 func newFailingListener() *failingListener {
 	return &failingListener{accepting: make(chan struct{}), returned: make(chan struct{}), fail: make(chan struct{})}
 }
 
 func (l *failingListener) Accept() (net.Conn, error) {
+	if l.firstConn != nil {
+		conn := l.firstConn
+		l.firstConn = nil
+		return conn, nil
+	}
 	l.acceptOnce.Do(func() { close(l.accepting) })
 	<-l.fail
 	close(l.returned)
-	return nil, errors.New("test listener failed")
+	return nil, errTestListenerFailed
 }
 
 func (l *failingListener) Close() error {

@@ -173,6 +173,33 @@ func TestNewSessionsRejectsLiveRootAndAliasBeforeSweep(t *testing.T) {
 	}
 }
 
+func TestNewSessionsResolvesSymlinkBeforeParentTraversal(t *testing.T) {
+	media := t.TempDir()
+	child := filepath.Join(media, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	newTestSessionsInDir(t, nil, media, nil)
+	scratch := t.TempDir()
+	alias := filepath.Join(scratch, "alias")
+	if err := os.Symlink(child, alias); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(scratch, "session-42", "marker")
+	seedScratchFile(t, marker)
+	// Join would erase the parent traversal before the constructor sees it.
+	s, err := NewSessionsInDir(nil, alias+"/..", nil)
+	if s != nil {
+		_ = s.Close()
+	}
+	if !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Errorf("constructor returned %v, want a lock conflict on %s", err, media)
+	}
+	if got := string(mustRead(t, marker)); got != "stale" {
+		t.Fatalf("unrelated scratch marker changed: %q", got)
+	}
+}
+
 func TestCloseWaitsForOpenArtifactReader(t *testing.T) {
 	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "reader"}, "/src", 120, 1280, 720, false, false,
