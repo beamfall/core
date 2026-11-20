@@ -193,6 +193,72 @@ describe("useWatchParty local transport", () => {
     expect(video.currentTime).toBe(0);
   });
 
+  it("keeps the latest seek through an earlier acknowledgement (CORE-1805)", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+    const timeline = { item: "m1", positionMS: 0, presentAtMS: 0, paused: true };
+    party = { ...activeParty(timeline), isHost: true };
+    const video = new FakeVideo();
+    const view = mount(video);
+    const first = Promise.withResolvers<boolean>();
+    const second = Promise.withResolvers<boolean>();
+    vi.mocked(sendPartyTransport)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    for (const target of [30, 60]) {
+      vi.advanceTimersByTime(1);
+      markViewerIntent();
+      video.currentTime = target;
+      video.dispatchEvent(new Event("seeking"));
+      video.dispatchEvent(new Event("seeked"));
+    }
+    expect(vi.mocked(sendPartyTransport).mock.calls).toEqual([
+      ["m1", 30_000, true],
+      ["m1", 60_000, true],
+    ]);
+
+    const publish = (positionMS: number) => {
+      party = { ...party, timeline: { ...timeline, positionMS } };
+      view.rerender();
+    };
+    await act(async () => {
+      publish(30_000);
+      first.resolve(true);
+    });
+    act(() => vi.advanceTimersByTime(3100));
+    expect(video.currentTime).toBe(60);
+
+    await act(async () => {
+      publish(60_000);
+      second.resolve(true);
+    });
+    expect(video.currentTime).toBe(60);
+    act(() => publish(70_000));
+    expect(video.currentTime).toBe(70);
+  });
+
+  it("releases a rejected latest seek while an earlier request is still pending", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
+    const video = new FakeVideo();
+    mount(video);
+    const first = Promise.withResolvers<boolean>();
+    const second = Promise.withResolvers<boolean>();
+    vi.mocked(sendPartyTransport)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    for (const target of [30, 60]) {
+      vi.advanceTimersByTime(1);
+      markViewerIntent();
+      video.currentTime = target;
+      video.dispatchEvent(new Event("seeking"));
+      video.dispatchEvent(new Event("seeked"));
+    }
+    await act(async () => second.resolve(false));
+    act(() => vi.advanceTimersByTime(500));
+    expect(video.currentTime).toBe(0);
+    await act(async () => first.resolve(false));
+  });
+
   it("ignores autoplay after an unrelated long touch gesture", () => {
     party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
     const video = new FakeVideo();

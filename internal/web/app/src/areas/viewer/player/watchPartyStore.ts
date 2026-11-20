@@ -124,6 +124,9 @@ let rosterWaiters: Array<() => void> = [];
 let generation = 0;
 // Counts timeline frames, so a host's transport response older than a frame is dropped.
 let timelineFrames = 0;
+// Concurrent host mutations can also return in reverse order, without a frame.
+let transportSequence = 0;
+let lastTransportResponse = 0;
 /** Date.now() of the last drift report; the rate bound counts from it. */
 let lastDriftReport = Number.NEGATIVE_INFINITY;
 
@@ -667,9 +670,11 @@ export async function sendPartyTransport(
   const frames = timelineFrames;
   try {
     if (state.isHost) {
+      const sequence = ++transportSequence;
       const anchor = await watchPartyTransport(vars);
       // The stream's own transition may already have overtaken this response.
-      if (gen === generation && frames === timelineFrames) {
+      if (gen === generation && frames === timelineFrames && sequence > lastTransportResponse) {
+        lastTransportResponse = sequence;
         const rate = state.timeline?.ratePermille;
         set({
           timeline: {

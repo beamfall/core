@@ -487,6 +487,28 @@ describe("races", () => {
     await sendPartyTransport("m1", 5000, false);
     expect(getWatchParty().timeline).toMatchObject({ presentAtMS: 10_100, paused: true });
   });
+
+  it("drops an earlier host seek response that arrives after the latest response", async () => {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    await startWatchParty("m1");
+    const first = Promise.withResolvers<Awaited<ReturnType<typeof watchPartyTransport>>>();
+    const second = Promise.withResolvers<Awaited<ReturnType<typeof watchPartyTransport>>>();
+    vi.mocked(watchPartyTransport)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const firstSeek = sendPartyTransport("m1", 30_000, true);
+    const secondSeek = sendPartyTransport("m1", 60_000, true);
+    second.resolve({ item: "m1", positionMS: 60_000, presentAtMS: 10_200 });
+    await secondSeek;
+    first.resolve({ item: "m1", positionMS: 30_000, presentAtMS: 10_100 });
+    await firstSeek;
+    expect(getWatchParty().timeline?.positionMS).toBe(60_000);
+  });
 });
 
 describe("host leave, end and page exit (CORE-1763)", () => {
