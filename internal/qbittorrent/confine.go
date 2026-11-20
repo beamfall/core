@@ -80,13 +80,12 @@ func (g rootGuard) confinesPath(path string) bool {
 	return true
 }
 
-// confinesFile is confinesPath plus the no-follow leaf check: the path itself
-// must be a regular file (never a symlink), so the exact inode admitted here
-// is the one the fingerprint/link/copy/sidecar steps operate on.
-func (g rootGuard) confinesFile(path string) bool {
+// confinedFileInfo adds a no-follow leaf check to confinesPath and returns
+// the identity of the regular file admitted by the guard.
+func (g rootGuard) confinedFileInfo(path string) os.FileInfo {
 	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return false
+	if err != nil || !info.Mode().IsRegular() || !g.confinesPath(path) {
+		return nil
 	}
-	return g.confinesPath(path)
+	return info
 }

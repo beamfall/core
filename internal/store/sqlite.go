@@ -2895,8 +2895,17 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 			if fingerprint == "" {
 				continue
 			}
-			if err := refuseCatalogedDuplicateTx(ctx, tx, imported, fingerprint); err != nil {
+			existing, err := checkManagedAdmissionFingerprintTx(ctx, tx, imported, fingerprint)
+			if err != nil {
 				return Media{}, MediaFile{}, false, err
+			}
+			if existing != "" && fingerprint == imported.legacyFingerprint {
+				imported.ContentFingerprint, mediaID = fingerprint, existing
+				// The old mtime describes the removed inode. Leave the replacement
+				// for scan inventory and the one-time legacy digest verification.
+				if _, err := tx.ExecContext(ctx, "UPDATE media_file SET mtime_ms = 0 WHERE content_fingerprint = ?", fingerprint); err != nil {
+					return Media{}, MediaFile{}, false, err
+				}
 			}
 		}
 	}
@@ -3005,32 +3014,37 @@ func mediaHoldsOtherFilesInAnotherLibraryTx(ctx context.Context, tx *sql.Tx, med
 	return err == nil, err
 }
 
-// refuseCatalogedDuplicateTx rejects a managed admission whose content is
+// checkManagedAdmissionFingerprintTx rejects a managed admission whose content is
 // already cataloged at a different path or in a different library, whether that
 // row is live or retained as missing (a trashed file keeps its row so restore
-// can revive it by path; repointing it would orphan the restore).
-func refuseCatalogedDuplicateTx(ctx context.Context, tx *sql.Tx, imported ImportMediaFile, fingerprint string) error {
+// can revive it by path; repointing it would orphan the restore). It returns
+// the Media ID for an exact live match at this path in this library.
+func checkManagedAdmissionFingerprintTx(ctx context.Context, tx *sql.Tx, imported ImportMediaFile, fingerprint string) (MediaID, error) {
+	var mediaID MediaID
 	var path string
 	var libraryID LibraryID
 	var missingAt sql.NullInt64
 	err := tx.QueryRowContext(ctx, `
-		SELECT f.path, m.library_id, f.missing_at_ms FROM media_file f JOIN media m ON m.id = f.media_id
+		SELECT f.media_id, f.path, m.library_id, f.missing_at_ms FROM media_file f JOIN media m ON m.id = f.media_id
 		WHERE f.content_fingerprint = ?`,
 		fingerprint,
-	).Scan(&path, &libraryID, &missingAt)
+	).Scan(&mediaID, &path, &libraryID, &missingAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		return "", nil
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	if path == imported.Path && libraryID == imported.LibraryID {
-		return nil
+		if missingAt.Valid {
+			return "", nil
+		}
+		return mediaID, nil
 	}
 	if missingAt.Valid {
-		return ValidationError("a file with the same content is retained in a library's trash or missing files")
+		return "", ValidationError("a file with the same content is retained in a library's trash or missing files")
 	}
-	return ValidationError("a file with the same content is already in a library")
+	return "", ValidationError("a file with the same content is already in a library")
 }
 
 // upsertMediaRowForImportTx inserts or updates the Media row for an imported

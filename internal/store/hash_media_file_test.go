@@ -21,7 +21,7 @@ func (f *cancelOnReadFile) Read(buffer []byte) (int, error) {
 	return n, err
 }
 
-func TestHashMediaFileContentCancellationClosesReader(t *testing.T) {
+func TestHashMediaFileContentReaderStopsOnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	const size = 2 * 1024 * 1024
@@ -38,14 +38,14 @@ func TestHashMediaFileContentCancellationClosesReader(t *testing.T) {
 	}
 	reader := &cancelOnReadFile{File: file, cancel: cancel}
 
-	fingerprint, err := hashMediaFileContent(ctx, reader)
+	fingerprint, err := HashMediaFileContentReader(ctx, reader)
 	if fingerprint != "" || !errors.Is(err, context.Canceled) {
 		t.Fatalf("hash = %q, %v, want cancellation without a fingerprint", fingerprint, err)
 	}
 	if reader.bytes <= 0 || reader.bytes > 128*1024 {
 		t.Fatalf("read %d of %d bytes, want one chunk", reader.bytes, size)
 	}
-	if _, err := file.Stat(); !errors.Is(err, os.ErrClosed) {
-		t.Fatalf("file.Stat after cancellation = %v, want closed file", err)
+	if _, err := file.Stat(); err != nil {
+		t.Fatalf("file.Stat after cancellation = %v, want caller's file to remain open", err)
 	}
 }

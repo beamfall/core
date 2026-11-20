@@ -3977,11 +3977,13 @@ func HashMediaFileContentContext(ctx context.Context, path string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	return hashMediaFileContent(ctx, file)
+	defer file.Close()
+	return HashMediaFileContentReader(ctx, file)
 }
 
-func hashMediaFileContent(ctx context.Context, file io.ReadCloser) (string, error) {
-	defer file.Close()
+// HashMediaFileContentReader hashes bytes through an already-open reader.
+// The caller owns the reader and positions it at the start of the file.
+func HashMediaFileContentReader(ctx context.Context, file io.Reader) (string, error) {
 	hash := sha256.New()
 	buffer := make([]byte, 128*1024)
 	for {

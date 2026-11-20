@@ -45,9 +45,8 @@ type ScanEnqueuer interface {
 	EnqueueScan(ctx context.Context, libraryID store.LibraryID, root string) error
 }
 
-// Fingerprinter computes a file's content fingerprint. Defaults to
-// store.HashMediaFileContent; injectable for tests.
-type Fingerprinter func(path string) (string, error)
+// Fingerprinter computes the full fingerprint from the open payload.
+type Fingerprinter func(context.Context, *os.File) (string, error)
 
 // Ingestor routes completed downloads from a Source into Libraries: explicit
 // category->Library map (never inference, §3), hardlink-first relocation into
@@ -118,7 +117,9 @@ func NewIngestor(cfg Config) (*Ingestor, error) {
 	}
 	fingerprint := cfg.Fingerprint
 	if fingerprint == nil {
-		fingerprint = store.HashMediaFileContent
+		fingerprint = func(ctx context.Context, file *os.File) (string, error) {
+			return store.HashMediaFileContentReader(ctx, file)
+		}
 	}
 	logger := cfg.Logger
 	if logger == nil {
@@ -301,8 +302,39 @@ func (i *Ingestor) ownsGeneration(generation uint64) bool {
 	return i.generation == generation
 }
 
+func (i *Ingestor) fingerprintPayload(ctx context.Context, path string, admitted os.FileInfo) (string, string, error) {
+	file, err := os.OpenInRoot(filepath.Dir(path), filepath.Base(path))
+	if err != nil {
+		return "", "", err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil {
+		return "", "", err
+	}
+	if !os.SameFile(admitted, opened) {
+		return "", "", errors.New("download changed before fingerprinting")
+	}
+	full, err := i.fingerprint(ctx, file)
+	if err != nil {
+		return "", "", err
+	}
+	sample, err := store.SampleMediaFileContentAt(ctx, file, opened.Size())
+	if err != nil {
+		return "", "", err
+	}
+	current, err := os.Lstat(path)
+	if err != nil {
+		return "", "", err
+	}
+	if !os.SameFile(opened, current) || opened.Size() != current.Size() || !opened.ModTime().Equal(current.ModTime()) {
+		return "", "", errors.New("download changed during fingerprinting")
+	}
+	return sample, full, nil
+}
+
 // importItem relocates an item's media-bearing files into the target Library's
-// Incoming Folder, skipping exact-fingerprint duplicates, and records the
+// Incoming Folder, skipping fingerprint duplicates, and records the
 // outcome. It returns the Library, whether at least one file landed (so a scan
 // should be armed), and the recorded outcome.
 //
@@ -352,19 +384,14 @@ func (i *Ingestor) importItem(ctx context.Context, item Item, libraryID store.Li
 		// Final containment gate, immediately before the first byte of payload
 		// work: the resolved file must still confine to an approved download
 		// root, sit outside every Library root, and be a regular file (never a
-		// symlink leaf) — so the inode fingerprinted/linked below is exactly
-		// the one admitted here.
-		if !guard.confinesFile(mediaFile.absolutePath) {
+		// symlink leaf). Both fingerprints must describe the admitted inode.
+		admitted := guard.confinedFileInfo(mediaFile.absolutePath)
+		if admitted == nil {
 			i.logger.Warn("qbittorrent: refusing file outside approved download roots", "torrent", item.ID, "path", mediaFile.relPath)
 			refusedAny = true
 			continue
 		}
-		fingerprint, err := i.fingerprint(mediaFile.absolutePath)
-		if err != nil {
-			i.recordError(item, libraryID, "fingerprint failed")
-			return libraryID, linkedAny, OutcomeError
-		}
-		sample, err := store.SampleMediaFileContent(ctx, mediaFile.absolutePath)
+		sample, fingerprint, err := i.fingerprintPayload(ctx, mediaFile.absolutePath, admitted)
 		if err != nil {
 			i.recordError(item, libraryID, "fingerprint failed")
 			return libraryID, linkedAny, OutcomeError

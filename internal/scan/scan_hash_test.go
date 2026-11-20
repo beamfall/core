@@ -230,6 +230,7 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 		move         bool
 		missing      bool
 		trashed      bool
+		reimport     bool
 		wantFullRead bool
 	}{
 		{name: "recorded"},
@@ -237,6 +238,7 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 		{name: "returning-small", missing: true},
 		{name: "returning-statless", missing: true, missingMtime: true},
 		{name: "managed-trash", trashed: true},
+		{name: "managed-reimport-before-scan-marks-missing", reimport: true, wantFullRead: true},
 		{name: "statless", missingMtime: true, wantFullRead: true},
 		{name: "moved", move: true},
 		{name: "known-size-changed", missingMtime: true, change: true},
@@ -276,6 +278,27 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 			}
 
 			scanPath := path
+			if tc.reimport {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				source, err := st.RegisterImportSource(writeScanFile(t, t.TempDir(), filepath.Base(path), payload))
+				if err != nil {
+					t.Fatal(err)
+				}
+				admitted, err := st.ImportManagedFile(ctx, req.LibraryID, source, root, "mp4", "h264", store.MediaClassVideo, store.LibraryFilter{AllLibraries: true})
+				if err != nil || admitted.Path != path {
+					t.Fatalf("managed reimport = %+v, %v, want %q", admitted, err, path)
+				}
+				if id, live, err := st.MediaFileExistsByFingerprint(ctx, full); err != nil || !live || id != media.ID {
+					t.Fatalf("legacy match after reimport = %q, live = %t, err = %v, want %q", id, live, err, media.ID)
+				}
+				// The replacement must be settled and have a distinct mtime.
+				replacementMtime := info.ModTime().Add(-time.Hour)
+				if err := os.Chtimes(path, replacementMtime, replacementMtime); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if tc.move {
 				scanPath = filepath.Join(root, "external-rename.mp4")
 				if err := os.Rename(path, scanPath); err != nil {
