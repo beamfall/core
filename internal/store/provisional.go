@@ -360,13 +360,19 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 		}
 		if duplicate {
 			// A concurrent admission can own the archive path even when the
-			// duplicate was found at a different path under the other scheme.
+			// duplicate was found at a different path. Read the committed catalog
+			// independently of the transaction, which cancellation can roll back.
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+			defer cancel()
 			var keep bool
-			err := tx.QueryRowContext(ctx, `
+			err := s.catalogR.QueryRowContext(cleanupCtx, `
 				SELECT EXISTS (SELECT 1 FROM media_file
 					WHERE path IN (?, ?) AND missing_at_ms IS NULL)
 			`, finalPath, archivePath).Scan(&keep)
-			return false, errors.Join(&ProvisionalPromotionDuplicateError{KeepArchive: keep || err != nil}, err)
+			if err != nil {
+				return false, err
+			}
+			return false, &ProvisionalPromotionDuplicateError{KeepArchive: keep}
 		}
 	}
 	query := `

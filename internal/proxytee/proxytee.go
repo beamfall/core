@@ -544,6 +544,9 @@ func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream
 	if err != nil {
 		return false, err
 	}
+	if err := s.validatePublication(st.teeRelative, expected, promoted); err != nil {
+		return false, err
+	}
 	_, duplicate, err := s.store.LiveMediaFileExistsByFingerprint(ctx, sample, legacyFingerprint)
 	if err != nil || duplicate {
 		return false, err
@@ -611,8 +614,9 @@ func (s *Service) validatePublication(relative string, expected os.FileInfo, pro
 		return err
 	}
 	fileInfo, err := promoted.Stat()
-	if err != nil || !fileInfo.Mode().IsRegular() || !os.SameFile(expected, fileInfo) {
-		return errors.New("published archive no longer matches hashed file")
+	if err != nil || !fileInfo.Mode().IsRegular() || !os.SameFile(expected, fileInfo) ||
+		fileInfo.Size() != expected.Size() || !fileInfo.ModTime().Equal(expected.ModTime()) {
+		return errors.New("archive file no longer matches the completed tee")
 	}
 	return s.checkRegularIdentity(relative, fileInfo)
 }
@@ -625,12 +629,7 @@ func (s *Service) openCompletedRegular(relative string, expected os.FileInfo) (*
 	if err != nil {
 		return nil, err
 	}
-	fileInfo, err := file.Stat()
-	if err != nil || !fileInfo.Mode().IsRegular() || !os.SameFile(expected, fileInfo) {
-		_ = file.Close()
-		return nil, errors.New("archive partial is not the completed regular file")
-	}
-	if err := s.checkRegularIdentity(relative, fileInfo); err != nil {
+	if err := s.validatePublication(relative, expected, file); err != nil {
 		_ = file.Close()
 		return nil, err
 	}

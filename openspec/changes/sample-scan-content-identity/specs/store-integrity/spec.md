@@ -121,16 +121,13 @@ hexadecimal digest digits. A legacy Media ID SHALL retain its existing scheme an
 
 ### Requirement: Duplicate checks recognize both fingerprint schemes
 
-Proxy promotion and qBittorrent ingest SHALL check live public catalog rows for both fingerprints
-before publishing or relocating bytes, excluding missing files and trashed Media and Libraries.
-A match on either fingerprint SHALL count as a duplicate, including a sampled match whose
-unsampled bytes differ. The lookup SHALL use the catalog alone. Proxy promotion SHALL repeat the lookup in
-the publication transaction and keep an archive on a duplicate only when a bounded query verifies ownership.
-The open tee descriptor SHALL match the completed tee's identity, size and mtime before and after fingerprinting.
+Before publication, proxy promotion and qBittorrent ingest SHALL treat a match on either fingerprint in the live public catalog as a duplicate.
+Missing files and trashed Media and Libraries SHALL be excluded. Proxy promotion SHALL repeat the lookup in the publication transaction and keep a duplicate archive only when a bounded query verifies ownership.
+The open tee SHALL match the completed tee's inode, size and mtime before and after fingerprinting.
 
 #### Scenario: Duplicate in either scheme
 
-- **WHEN** a live row matches the full or the sampled fingerprint
+- **WHEN** a live row matches either digest, including a sampled match with different unsampled bytes
 - **THEN** the existing Media and file remain intact and no second archive or incoming file is published
 
 #### Scenario: Download path changes during fingerprinting

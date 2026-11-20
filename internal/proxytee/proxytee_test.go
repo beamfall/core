@@ -1029,6 +1029,39 @@ func TestCloseErrorDoesNotPromote(t *testing.T) {
 	}
 }
 
+func TestPromotionRejectsTeeGrowthAfterClose(t *testing.T) {
+	h := newHarness(t)
+	realClose := closeTeeFile
+	grew := false
+	closeTeeFile = func(f *os.File) error {
+		if err := realClose(f); err != nil {
+			return err
+		}
+		if err := os.Truncate(f.Name(), int64(len(enclosureBody)+1)); err != nil {
+			t.Fatal(err)
+		}
+		grew = true
+		return nil
+	}
+	t.Cleanup(func() { closeTeeFile = realClose })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/media/proxy/"+h.proxyToken(t), nil)
+	rec := httptest.NewRecorder()
+	h.svc.ServeProxy(rec, req)
+	if !grew || rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), enclosureBody) {
+		t.Fatalf("grew = %t, status = %d, body = %q", grew, rec.Code, rec.Body.Bytes())
+	}
+	if prov, err := h.store.MediaFileProvisional(t.Context(), h.mediaID); err != nil || !prov {
+		t.Fatalf("provisional = %t, err = %v; want unchanged", prov, err)
+	}
+	if _, err := os.Stat(h.archivePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("archive exists or stat failed: %v", err)
+	}
+	if info, err := os.Stat(h.archivePath + ".partial"); err != nil || info.Size() != int64(len(enclosureBody)+1) {
+		t.Fatalf("changed partial = %v, err = %v", info, err)
+	}
+}
+
 // TestProxyRejectsTokenForWrongTarget confirms the proxy refuses a token minted
 // for a different byte target (defence-in-depth: a direct-play token cannot be
 // replayed against the proxy endpoint).

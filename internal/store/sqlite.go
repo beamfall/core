@@ -2901,11 +2901,6 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 			}
 			if existing != "" && fingerprint == imported.legacyFingerprint {
 				imported.ContentFingerprint, mediaID = fingerprint, existing
-				// The old mtime describes the removed inode. Leave the replacement
-				// for scan inventory and the one-time legacy digest verification.
-				if _, err := tx.ExecContext(ctx, "UPDATE media_file SET mtime_ms = 0 WHERE content_fingerprint = ?", fingerprint); err != nil {
-					return Media{}, MediaFile{}, false, err
-				}
 			}
 		}
 	}

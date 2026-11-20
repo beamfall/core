@@ -2,8 +2,14 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
+	"errors"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"modernc.org/sqlite"
 )
 
 // TestMediaFileProvisional exercises the ADR-0052 §2.2-2.3 provisional-flag
@@ -229,6 +235,108 @@ func TestPromotionCompensationIsExactAndRestoresProvisionalGeneration(t *testing
 	if got := countMediaEvents(mediaOutboxEvents(t, st), MediaEventUpdated, mediaID); got != before+2 {
 		t.Fatalf("media.updated count = %d, want %d for promotion and compensation", got, before+2)
 	}
+}
+
+func TestDuplicatePromotionChecksArchiveOwnershipAfterCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		owned       bool
+		lookupFails bool
+	}{
+		{name: "unowned"},
+		{name: "owned", owned: true},
+		{name: "lookup error", lookupFails: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := openSeeded(t)
+			ctx := t.Context()
+			dir := t.TempDir()
+			finalPath := filepath.Join(dir, "archive.mp4")
+			teePath := finalPath + ".partial"
+			duplicatePath := filepath.Join(dir, "existing.mp4")
+			if tc.owned {
+				duplicatePath = finalPath
+			}
+			const sample = "sample1:duplicate"
+			if _, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+				LibraryID: "library-local", Path: duplicatePath, Title: "Existing", Container: "mp4", Codec: "h264", ContentFingerprint: sample,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			mediaID, _, err := st.RegisterProvisionalMedia(ctx, ProvisionalMedia{
+				LibraryID: "library-local", GUID: "duplicate-promotion", Title: "Provisional",
+				TeePath: teePath, Class: MediaClassVideo,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.lookupFails {
+				reader := st.catalogR
+				st.catalogR, err = sql.Open("sqlite", ":memory:")
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = st.catalogR.Close(); st.catalogR = reader })
+			}
+			promotionCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			if err := st.catalogW.Close(); err != nil {
+				t.Fatal(err)
+			}
+			st.catalogW = sql.OpenDB(cancelAfterQueryConnector{path: st.catalogPath, cancel: cancel})
+			updated, err := st.PromoteProvisionalMediaGeneration(promotionCtx, mediaID, teePath, sample, "sha256:duplicate", finalPath)
+			if updated || promotionCtx.Err() == nil {
+				t.Fatalf("promotion updated = %t, cancellation = %v, err = %v", updated, promotionCtx.Err(), err)
+			}
+			var duplicate *ProvisionalPromotionDuplicateError
+			if tc.lookupFails {
+				if err == nil || errors.As(err, &duplicate) {
+					t.Fatalf("ownership failure = %v, want an error that triggers rollback", err)
+				}
+			} else if !errors.As(err, &duplicate) || duplicate.KeepArchive != tc.owned {
+				t.Fatalf("ownership decision = %+v, err = %v, want KeepArchive = %t", duplicate, err, tc.owned)
+			}
+		})
+	}
+}
+
+type cancelAfterQueryConnector struct {
+	path   string
+	cancel context.CancelFunc
+}
+
+func (c cancelAfterQueryConnector) Driver() driver.Driver { return &sqlite.Driver{} }
+
+func (c cancelAfterQueryConnector) Connect(context.Context) (driver.Conn, error) {
+	conn, err := c.Driver().Open(sqliteDSN(c.path, nil, "immediate"))
+	if err != nil {
+		return nil, err
+	}
+	return cancelAfterQueryConn{Conn: conn, cancel: c.cancel}, nil
+}
+
+type cancelAfterQueryConn struct {
+	driver.Conn
+	cancel context.CancelFunc
+}
+
+func (c cancelAfterQueryConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	rows, err := c.Conn.(driver.QueryerContext).QueryContext(ctx, query, args)
+	if err != nil {
+		return nil, err
+	}
+	return cancelAfterQueryRows{Rows: rows, cancel: c.cancel}, nil
+}
+
+type cancelAfterQueryRows struct {
+	driver.Rows
+	cancel context.CancelFunc
+}
+
+func (r cancelAfterQueryRows) Close() error {
+	err := r.Rows.Close()
+	r.cancel()
+	return err
 }
 
 func TestRegistrationCompensationIsExact(t *testing.T) {
