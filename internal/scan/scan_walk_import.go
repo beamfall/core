@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"path/filepath"
@@ -201,6 +202,28 @@ func (s *scanWalkState) retryAutoIdentify(path string, mediaID store.MediaID, fi
 	return nil
 }
 
+// hashLegacyScanFile shares the scan workers' process-wide disk slot and holds
+// it until the legacy reader closes.
+func hashLegacyScanFile(ctx context.Context, path string) (string, error) {
+	select {
+	case scanHashSlot <- struct{}{}:
+	default:
+		if onScanHashWait != nil {
+			onScanHashWait(path)
+		}
+		select {
+		case scanHashSlot <- struct{}{}:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	defer func() { <-scanHashSlot }()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return legacyFileContent(ctx, path)
+}
+
 func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	stored := task.stored
 	if stored.OK && strings.HasPrefix(stored.ContentFingerprint, "sha256:") &&
@@ -209,7 +232,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		(stored.ModTime.IsZero() || store.MediaFileModTimeMatches(stored.ModTime, task.info.modTime)) {
 		// The path's recorded stats did not disqualify the legacy identity.
 		// Verify it once so the normal import records the missing stats.
-		full, err := legacyFileContent(s.ctx, task.path)
+		full, err := hashLegacyScanFile(s.ctx, task.path)
 		if err != nil {
 			return err
 		}

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -559,13 +560,40 @@ func TestScanReturningSampleIgnoresUnrelatedLegacyStats(t *testing.T) {
 	}
 }
 
-func TestScanJobsSerializeFileSamples(t *testing.T) {
+func TestScanJobsSerializeFingerprintReads(t *testing.T) {
 	// feature:scan-pipeline
+	t.Run("sample", func(t *testing.T) { testScanJobsSerializeFingerprintReads(t, false) })
+	t.Run("legacy", func(t *testing.T) { testScanJobsSerializeFingerprintReads(t, true) })
+}
+
+func testScanJobsSerializeFingerprintReads(t *testing.T, legacy bool) {
+	t.Helper()
 	now := time.Now().UTC()
 	st := storetest.Open(t)
-	firstRoot, secondRoot := t.TempDir(), t.TempDir()
+	firstRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	firstPath := writeScanFile(t, firstRoot, "first.mp4", []byte("first"))
 	secondPath := writeScanFile(t, secondRoot, "second.mp4", []byte("second"))
+	if legacy {
+		for _, path := range []string{firstPath, secondPath} {
+			fingerprint, err := store.HashMediaFileContent(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := st.ImportMediaFile(t.Context(), store.ImportMediaFile{
+				LibraryID: "library-local", Path: path, Title: filepath.Base(path),
+				Container: "mp4", Codec: "h264", ContentFingerprint: fingerprint,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	enqueueHashTestScan(t, st, "first", firstRoot, now)
 	enqueueHashTestScan(t, st, "second", secondRoot, now.Add(time.Millisecond))
 
@@ -576,40 +604,74 @@ func TestScanJobsSerializeFileSamples(t *testing.T) {
 		runs.Wait()
 	}()
 	firstHash := make(chan struct{})
-	firstHashReturned := make(chan struct{})
+	firstReaderClosed := make(chan struct{})
 	secondHash := make(chan struct{})
 	secondWaiting := make(chan struct{})
 	releaseFirst := make(chan struct{})
-	originalHash, originalWait := sampleScanFile, onScanHashWait
+	hash := &sampleScanFile
+	if legacy {
+		hash = &legacyFileContent
+	}
+	originalHash, originalWait := *hash, onScanHashWait
 	onScanHashWait = func(path string) {
 		if path == secondPath {
 			close(secondWaiting)
 		}
 	}
-	sampleScanFile = func(hashCtx context.Context, path string) (string, error) {
+	*hash = func(hashCtx context.Context, path string) (string, error) {
 		switch path {
 		case firstPath:
-			defer close(firstHashReturned)
+			defer close(firstReaderClosed)
+			read := func() (string, error) { return originalHash(hashCtx, path) }
+			if legacy {
+				file, err := os.OpenInRoot(firstRoot, filepath.Base(path))
+				if err != nil {
+					return "", err
+				}
+				defer file.Close()
+				read = func() (string, error) { return store.HashMediaFileContentReader(hashCtx, file) }
+			}
 			close(firstHash)
 			select {
 			case <-releaseFirst:
 			case <-ctx.Done(): // Bound teardown even if the scan drops cancellation.
 				return "", ctx.Err()
 			}
+			return read()
 		case secondPath:
 			select {
-			case <-firstHashReturned:
+			case <-firstReaderClosed:
 			default:
-				t.Error("second job entered its hash before the first hash returned")
+				t.Error("second job entered its hash before the first reader closed")
 			}
 			close(secondHash)
 		}
 		return originalHash(hashCtx, path)
 	}
-	t.Cleanup(func() { sampleScanFile, onScanHashWait = originalHash, originalWait })
+	t.Cleanup(func() { *hash, onScanHashWait = originalHash, originalWait })
 
+	var prober Prober
+	firstProbing, secondProbing := make(chan struct{}), make(chan struct{})
+	releaseFirstProbe, releaseSecondProbe := make(chan struct{}), make(chan struct{})
+	if legacy {
+		// Park both jobs after sampling so the second job waits specifically
+		// on its legacy comparison, not its sample.
+		prober = poolProbeFunc(func(ctx context.Context, path string) (ffmpeg.Probe, error) {
+			probing, release := firstProbing, releaseFirstProbe
+			if path == secondPath {
+				probing, release = secondProbing, releaseSecondProbe
+			}
+			close(probing)
+			select {
+			case <-release:
+				return ffmpeg.Probe{}, nil
+			case <-ctx.Done():
+				return ffmpeg.Probe{}, ctx.Err()
+			}
+		})
+	}
 	registry := jobs.NewRegistry(st, "worker")
-	registry.Register(JobKind, HandlerWithWorkerGovernor(st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(2)))
+	registry.Register(JobKind, HandlerWithWorkerGovernor(st, prober, nil, nil, nil, nil, nil, nil, fixedGovernor(2)))
 	run := func() <-chan error {
 		done := make(chan error, 1)
 		runs.Go(func() {
@@ -618,13 +680,27 @@ func TestScanJobsSerializeFileSamples(t *testing.T) {
 		})
 		return done
 	}
-	firstDone := run()
-	select {
-	case <-firstHash:
-	case <-ctx.Done():
-		t.Fatal("first job never started hashing")
+	wait := func(ready <-chan struct{}, step string) {
+		t.Helper()
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for %s", step)
+		}
 	}
-	secondDone := run()
+	var secondDone <-chan error
+	firstDone := run()
+	if legacy {
+		wait(firstProbing, "first job to finish sampling")
+		secondDone = run()
+		wait(secondProbing, "second job to finish sampling")
+		close(releaseFirstProbe)
+		wait(firstHash, "first job to start the legacy read")
+		close(releaseSecondProbe)
+	} else {
+		wait(firstHash, "first job to start sampling")
+		secondDone = run()
+	}
 	select {
 	case <-secondWaiting:
 	case <-secondHash:
