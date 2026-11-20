@@ -2,7 +2,6 @@ package scan
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -177,15 +176,6 @@ func (s *scanWalkState) flushPendingPartsUnlessImage(isImage bool) error {
 }
 
 func (s *scanWalkState) flushPendingParts() error {
-	for len(s.pendingParts) > 0 {
-		if err := s.flushPartGroup(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *scanWalkState) flushPartGroup() error {
 	if len(s.pendingParts) == 0 {
 		return nil
 	}
@@ -195,9 +185,8 @@ func (s *scanWalkState) flushPartGroup() error {
 	if err := s.completePending(); err != nil {
 		return err
 	}
-	walkOrder := s.pendingParts
+	parts := s.pendingParts
 	s.pendingParts = nil
-	parts := append([]parsedPartImport(nil), walkOrder...)
 	sort.SliceStable(parts, func(i, j int) bool {
 		return parts[i].parsed.Index < parts[j].parsed.Index
 	})
@@ -206,20 +195,6 @@ func (s *scanWalkState) flushPartGroup() error {
 		imports[i] = store.ImportMediaFilePart{File: part.imported, SourceOrdinal: part.parsed.Index}
 	}
 	media, files, err := s.st.ImportMediaFileParts(s.ctx, imports)
-	if errors.Is(err, store.ErrScanPathChanged) {
-		for _, part := range walkOrder {
-			path := part.imported.Path
-			s.dropTallies(path)
-			task := &workerTask{path: path}
-			if err := s.refillTask(task); err != nil {
-				return err
-			}
-			if err := s.consumeTask(task); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
 	if err != nil {
 		// A member a managed import is still admitting skips the whole group
 		// this pass; the next scan groups it with the cataloged file.

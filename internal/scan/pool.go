@@ -63,9 +63,6 @@ type workerTask struct {
 
 	// Filled by the worker; the consumer must not read them before done closes.
 	stored      store.StoredFingerprint
-	sample      string
-	legacy      string
-	reused      bool
 	fastPath    bool
 	fingerprint string
 	oshash      string
@@ -109,35 +106,26 @@ func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
 	}
 	t.stored = stored
 	mtimeMatches := store.MediaFileModTimeMatches(stored.ModTime, t.info.modTime)
-	t.reused = stored.OK &&
+	t.fastPath = stored.OK &&
 		stored.ContentFingerprint != "" &&
 		stored.SizeBytes == t.info.size &&
 		mtimeMatches
-	t.fastPath = t.reused && !stored.InventoryPending
 	if t.fastPath {
 		return
 	}
-	if t.reused {
-		t.fingerprint = stored.ContentFingerprint
-	} else {
-		fingerprint, err := t.readFingerprint(ctx, s, mtimeMatches)
-		if err != nil {
-			t.err = err
-			return
-		}
-		t.fingerprint = fingerprint
-	}
-	t.probeFile(ctx, s.prober)
-	if t.reused && !t.probe.succeeded {
-		t.fastPath = true
+	fingerprint, err := t.readFingerprint(ctx, mtimeMatches)
+	if err != nil {
+		t.err = err
 		return
 	}
+	t.fingerprint = fingerprint
 	oshash, err := OSHash(t.path)
 	if err != nil {
 		t.err = err
 		return
 	}
 	t.oshash = oshash
+	t.probeFile(ctx, s.prober)
 	if s.grabber != nil && t.probe.hasVideo {
 		// Best-effort, like the probe fallback: a failed grab (no FFmpeg,
 		// corrupt frame) leaves phash empty for a later scan — the store never
@@ -152,9 +140,8 @@ func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
 
 // readFingerprint preserves a legacy identity when only missing stats prevent
 // the fast path. If any recorded stat changed, the sample suffices.
-func (t *workerTask) readFingerprint(ctx context.Context, s *scanWalkState, mtimeMatches bool) (string, error) {
+func (t *workerTask) readFingerprint(ctx context.Context, mtimeMatches bool) (string, error) {
 	stored := t.stored
-	var legacy string
 	if stored.OK && strings.HasPrefix(stored.ContentFingerprint, "sha256:") &&
 		(stored.SizeBytes == 0 || stored.ModTime.IsZero()) &&
 		(stored.SizeBytes == 0 || stored.SizeBytes == t.info.size) &&
@@ -163,36 +150,8 @@ func (t *workerTask) readFingerprint(ctx context.Context, s *scanWalkState, mtim
 		if err != nil || fingerprint == stored.ContentFingerprint {
 			return fingerprint, err
 		}
-		legacy = fingerprint
 	}
-	sample, err := sampleFileContent(ctx, t.path, &legacy)
-	if err != nil {
-		return "", err
-	}
-	match, err := s.st.ScanSampleMatch(ctx, s.req.LibraryID, t.path, sample, legacy, t.info.size, t.info.modTime)
-	if err != nil {
-		return "", err
-	}
-	if match.OK && legacy == "" && strings.HasPrefix(match.ContentFingerprint, "sha256:") &&
-		(match.SizeBytes == 0 || match.ModTime.IsZero()) {
-		legacy, err = legacyFileContent(ctx, t.path)
-		if err != nil {
-			return "", err
-		}
-		match, err = s.st.ScanSampleMatch(ctx, s.req.LibraryID, t.path, sample, legacy, t.info.size, t.info.modTime)
-		if err != nil {
-			return "", err
-		}
-	}
-	t.sample, t.legacy = sample, legacy
-	if match.OK {
-		return match.ContentFingerprint, nil
-	}
-	return sample, nil
-}
-
-func (t *workerTask) scanPathObservation() *store.ScanPathObservation {
-	return &store.ScanPathObservation{Live: t.stored, Sample: t.sample, Legacy: t.legacy}
+	return sampleFileContent(ctx, t.path)
 }
 
 // probeFile probes a non-image file, leaving t.probe unset when there is no

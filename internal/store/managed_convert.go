@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -261,8 +260,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 	// repoint an existing row (CORE-1831, the conversion leg of CORE-1089).
 	release := s.holdManagedAdmission(dst)
 	defer release()
-	var landed os.FileInfo
-	admitErr := admitStagedFileNoReplaceWithInfo(tmpOut, dst, &landed)
+	admitErr := admitStagedFileNoReplace(tmpOut, dst)
 	if errors.Is(admitErr, os.ErrExist) {
 		done, result, recErr := s.recoverConvertJournal(ctx, libraryID, dst, srcPath, filter, lease, now)
 		if recErr != nil {
@@ -273,7 +271,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 			_ = os.Remove(tmpOut)
 			return result, nil
 		}
-		admitErr = admitStagedFileNoReplaceWithInfo(tmpOut, dst, &landed)
+		admitErr = admitStagedFileNoReplace(tmpOut, dst)
 	}
 	if admitErr != nil {
 		_ = os.Remove(tmpOut)
@@ -298,7 +296,6 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 		ContentFingerprint: fingerprint,
 		managedAdmission:   true,
 		legacyFingerprint:  legacyFingerprint,
-		managedFileInfo:    landed,
 	})
 	if err != nil {
 		_ = removeConvertResidue(dst)
@@ -412,14 +409,15 @@ func (s *Store) convertDstState(ctx context.Context, libraryID LibraryID, dst st
 	if source.Kind != "file" {
 		return false, "", false, ValidationError("conversion destination is not a file")
 	}
-	match, err := samePathMediaFileSQL(ctx, s.catalogR, libraryID, source.Path, "", "", true)
-	if errors.Is(err, sql.ErrNoRows) {
+	mediaID, _, err = s.mediaForManagedFilePath(ctx, libraryID, source.Path)
+	var validation ValidationError
+	if errors.As(err, &validation) {
 		return true, "", false, nil
 	}
 	if err != nil {
 		return false, "", false, err
 	}
-	return true, match.mediaID, true, nil
+	return true, mediaID, true, nil
 }
 
 // removeConvertResidue removes this job's own journal-named, uncataloged

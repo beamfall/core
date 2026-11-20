@@ -182,92 +182,6 @@ func TestManagedImportIdentityFollowsContent(t *testing.T) {
 	})
 }
 
-func TestManagedImportRestoresLegacyPartOrVersion(t *testing.T) {
-	for _, name := range []string{"part", "version"} {
-		t.Run(name, func(t *testing.T) {
-			ctx := t.Context()
-			st, root, filter := importStageHarness(t)
-			seed := func(name, payload string) store.ImportMediaFile {
-				t.Helper()
-				path := filepath.Join(root, name)
-				if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				fingerprint, err := store.HashMediaFileContent(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				return store.ImportMediaFile{
-					LibraryID: "library-local", Path: path, Title: name, Container: "mkv", Codec: "h264",
-					ContentFingerprint: fingerprint,
-				}
-			}
-			const memberName, payload = "member.mkv", "legacy member bytes"
-			first := seed("anchor.mkv", "legacy anchor bytes")
-			member := seed(memberName, payload)
-			if name == "part" {
-				if _, _, err := st.ImportMediaFileParts(ctx, []store.ImportMediaFilePart{
-					{SourceOrdinal: 1, File: first}, {SourceOrdinal: 2, File: member},
-				}); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				media, _, err := st.ImportMediaFile(ctx, first)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err := st.ImportMediaFileVersion(ctx, store.MediaVersionImport{
-					MediaID: media.ID, File: member, Label: "alternate",
-				}); err != nil {
-					t.Fatal(err)
-				}
-			}
-			before := liveFileAt(t, st, member.Path)
-			if err := os.Remove(member.Path); err != nil {
-				t.Fatal(err)
-			}
-			if err := st.MarkMediaFileMissing(ctx, member.LibraryID, member.Path); err != nil {
-				t.Fatal(err)
-			}
-			restored := importFromOutside(t, st, root, filter, memberName, payload)
-			after := liveFileAt(t, st, restored.Path)
-			if after.MediaID != before.MediaID || after.ContentFingerprint != before.ContentFingerprint ||
-				after.PartOrdinal != before.PartOrdinal || after.VersionLabel != before.VersionLabel {
-				t.Fatalf("restored file = %+v, want the identity and slot of %+v", after, before)
-			}
-			observed, err := st.LibraryMediaFileFingerprintByPath(ctx, member.LibraryID, member.Path)
-			if err != nil || !observed.InventoryPending {
-				t.Fatalf("restored member observation = %+v, err = %v", observed, err)
-			}
-			member.ScanPath = &store.ScanPathObservation{Live: observed}
-			member.SizeBytes, member.ModTime = observed.SizeBytes, observed.ModTime
-			member.Streams = []store.MediaFileStream{{Index: 1, Type: "subtitle", Codec: "ass"}}
-			if name == "part" {
-				_, _, err = st.ImportMediaFileParts(ctx, []store.ImportMediaFilePart{
-					{SourceOrdinal: 1, File: first}, {SourceOrdinal: 2, File: member},
-				})
-			} else {
-				_, err = st.ImportMediaFileVersion(ctx, store.MediaVersionImport{
-					MediaID: after.MediaID, File: member, Label: after.VersionLabel,
-				})
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			observed, err = st.LibraryMediaFileFingerprintByPath(ctx, member.LibraryID, member.Path)
-			if err != nil || observed.InventoryPending {
-				t.Fatalf("inventoried member observation = %+v, err = %v", observed, err)
-			}
-			streams, err := st.MediaFileStreams(ctx, member.ContentFingerprint)
-			if err != nil || len(streams) != 1 || streams[0].Type != "subtitle" {
-				t.Fatalf("member inventory = %+v, err = %v", streams, err)
-			}
-		})
-	}
-}
-
-// TestManagedConvertIdentityFollowsContent proves the converted artifact is
-// cataloged under the digest of its own bytes.
 func TestManagedConvertIdentityFollowsContent(t *testing.T) {
 	st, root, filter := importStageHarness(t)
 	imported := importFromOutside(t, st, root, filter, "clip.mkv", "convert-source")
@@ -288,6 +202,10 @@ func TestManagedConvertIdentityFollowsContent(t *testing.T) {
 	}
 	if converted == nil {
 		t.Fatalf("no live file for converted media %q", result.Converted.ID)
+	}
+	stored, err := st.MediaFileFingerprintByPath(t.Context(), converted.Path)
+	if err != nil || !stored.OK || stored.SizeBytes != 0 || !stored.ModTime.IsZero() {
+		t.Fatalf("conversion must leave stats for the first scan: %+v, err = %v", stored, err)
 	}
 	if want := contentFingerprint(t, converted.Path); converted.ContentFingerprint != want {
 		t.Fatalf("converted fingerprint = %q, want content hash %q", converted.ContentFingerprint, want)

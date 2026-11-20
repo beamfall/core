@@ -1,0 +1,10 @@
+{
+  "type": "backup",
+  "createdAt": "2026-11-20T03:36:59.670871Z",
+  "envelope": "set.bbk",
+  "envelopeVersion": 2,
+  "keyFingerprint": "6ZE7XjLklVM2neNs",
+  "envelopeSizeBytes": 1990732,
+  "envelopeSha256": "48a1f19c6d77ac69b3f54309fec78832e5b6d370f41029c3948ff29e78d1aa1a",
+  "manifestFormatEncrypted": true
+}

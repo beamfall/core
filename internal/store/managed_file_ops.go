@@ -419,8 +419,7 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		return ManagedPath{}, err
 	}
 	defer release()
-	var landed os.FileInfo
-	if err := admitStagedFileNoReplaceWithInfo(stagingPath, target, &landed); err != nil {
+	if err := admitStagedFileNoReplace(stagingPath, target); err != nil {
 		return ManagedPath{}, err
 	}
 
@@ -445,7 +444,6 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		ContentFingerprint: fingerprint,
 		managedAdmission:   true,
 		legacyFingerprint:  legacyFingerprint,
-		managedFileInfo:    landed,
 	})
 	if err != nil {
 		s.removeUncatalogedManagedTargetLocked(ctx, libraryID, target)
@@ -637,11 +635,6 @@ func copyOpenFileToStaging(ctx context.Context, src *os.File, stagingPath string
 // that exposes a new name in the Library root. A destination directory replaced
 // mid-admission is refused rather than becoming the place the file lands.
 func admitStagedFileNoReplace(stagingPath, dst string) error {
-	return admitStagedFileNoReplaceWithInfo(stagingPath, dst, nil)
-}
-
-// When requested, retain the stats of the inode admitted by the hard link.
-func admitStagedFileNoReplaceWithInfo(stagingPath, dst string, info *os.FileInfo) error {
 	source, err := openStagedSource(stagingPath)
 	if err != nil {
 		return err
@@ -670,9 +663,6 @@ func admitStagedFileNoReplaceWithInfo(stagingPath, dst string, info *os.FileInfo
 		if !os.SameFile(source.id, landed) {
 			return errManagedPathIdentity
 		}
-		if info != nil {
-			*info = landed
-		}
 		source.remove()
 		return nil
 	} else if !errors.Is(linkErr, syscall.EXDEV) {
@@ -691,12 +681,6 @@ func admitStagedFileNoReplaceWithInfo(stagingPath, dst string, info *os.FileInfo
 	}()
 	if err := verifyManagedDirUnreplaced(root, dstDir); err != nil {
 		return err
-	}
-	if info != nil {
-		*info, err = root.Lstat(tmpName)
-		if err != nil {
-			return err
-		}
 	}
 	if err := root.Link(tmpName, filepath.Base(dst)); err != nil {
 		return err

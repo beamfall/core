@@ -94,10 +94,7 @@ package store
 //     owning Library plane. The same 2026-11-18 benchmark recorded beside the
 //     catalog marker passed; source fingerprints never enter the shared DB.
 //
-//   - encrypted-library 0012 (CORE-1162) mirrors catalog 0127's pending
-//     inventory flag, which scan reads and clears in the owning plane.
-//
-// The earlier entries rode the `make bench` gate at the migration that introduced
+// Every entry above rode the `make bench` gate at the migration that introduced
 // it, and each sits off the entity-query hot path.
 //
 // Historical vocabulary-firewall anchors remain here because conformance pins
@@ -105,5 +102,5 @@ package store
 //   - mute/retention/podcast predicates
 const (
 	schemaFreezeEventsMigrations           = 23
-	schemaFreezeEncryptedLibraryMigrations = 12
+	schemaFreezeEncryptedLibraryMigrations = 11
 )
