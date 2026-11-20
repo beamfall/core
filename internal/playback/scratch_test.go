@@ -550,6 +550,79 @@ func TestScratchFileCollisionSurvivesReaperAndClose(t *testing.T) {
 	}
 }
 
+func TestScratchCollisionInspectionDebt(t *testing.T) {
+	for _, cleanup := range []string{"sweep", "reaper", "close"} {
+		for _, directory := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/directory=%t", cleanup, directory), func(t *testing.T) {
+				now := time.Unix(0, 0)
+				s := newTestSessions(t, nil, t.TempDir(), func() time.Time { return now })
+				name := fmt.Sprintf("session-%s-1", s.bootNonce)
+				collision := filepath.Join(s.dir, name)
+				marker := collision
+				if directory {
+					marker = filepath.Join(collision, "marker")
+				}
+				seedScratchFile(t, marker)
+				inspectErr := &fs.PathError{Op: "lstat", Path: collision, Err: unix.EIO}
+				inspections := 0
+				s.lstatScratch = func(path string) (fs.FileInfo, error) {
+					if path != collision {
+						return nil, fmt.Errorf("unexpected collision inspection: %s", path)
+					}
+					inspections++
+					if inspections <= 2 {
+						return nil, inspectErr
+					}
+					return os.Lstat(collision)
+				}
+
+				a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "collision"}, "/src",
+					120, 1280, 720, false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{},
+					nil, StreamShape{LibraryID: "library"}, PriorityNormal, masterPlaylistName)
+				if err != nil {
+					t.Fatal(err)
+				}
+				a.Release()
+				wantDir := filepath.Join(s.dir, fmt.Sprintf("session-%s-2", s.bootNonce))
+				if got := filepath.Dir(a.path); got != wantDir || inspections != 1 {
+					t.Fatalf("allocated %q, want %q, after %d collision inspections", got, wantDir, inspections)
+				}
+				if err := s.PurgeOrphanedTranscodeDirs(); !errors.Is(err, inspectErr) {
+					t.Fatalf("sweep returned %v, want collision inspection error", err)
+				}
+				if got := string(mustRead(t, marker)); got != "stale" {
+					t.Fatalf("collision marker after failed inspection = %q", got)
+				}
+				if debt := s.paths[name]; debt == nil || debt.state != scratchDebt || debt.library != "" || debt.retryAt.IsZero() {
+					t.Fatalf("collision debt = %+v, want a scheduled root-only retry", debt)
+				}
+
+				switch cleanup {
+				case "sweep":
+					err = s.PurgeOrphanedTranscodeDirs()
+				case "reaper":
+					s.reap()
+					if inspections != 2 {
+						t.Fatalf("reaper retried before backoff: %d inspections", inspections)
+					}
+					now = now.Add(time.Second)
+					s.reap()
+				case "close":
+					err = s.Close()
+				}
+				if err != nil || inspections != 3 || s.paths[name] != nil {
+					t.Fatalf("retry error = %v, inspections = %d, remaining debt = %+v", err, inspections, s.paths[name])
+				}
+				if directory {
+					requireScratchMissing(t, collision)
+				} else if got := string(mustRead(t, marker)); got != "stale" {
+					t.Fatalf("regular collision after retry = %q", got)
+				}
+			})
+		}
+	}
+}
+
 func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *testing.T) {
 	s := newTestSessions(t, nil, t.TempDir(), nil)
 	collision := fmt.Sprintf("session-%s-1", s.bootNonce)

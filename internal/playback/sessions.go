@@ -471,6 +471,7 @@ type Sessions struct {
 	closeSweepErr error
 	readScratch   func(fs.FS, string) ([]fs.DirEntry, error)
 	mkdirDir      func(string, fs.FileMode) error
+	lstatScratch  func(string) (fs.FileInfo, error)
 	join          func(*os.File, func(string) (*os.File, error), []string) error
 	// durationProbes caches on-demand runtime probes (ProbedDurationSeconds).
 	durationProbes    durationProbeCache

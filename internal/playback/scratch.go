@@ -40,6 +40,8 @@ type scratchPath struct {
 	cutoff  chan struct{}
 	retryAt time.Time
 	backoff time.Duration
+	// An unclassified mkdir collision must be inspected before removal.
+	inspectCollision bool
 }
 
 // scratchAllocation is the unpublished setup owner while mkdir runs off-lock.
@@ -177,6 +179,21 @@ func (s *Sessions) ScratchDirInfo() fs.FileInfo {
 	return s.rootInfo
 }
 
+func (s *Sessions) scratchCollisionDir(path string) (bool, error) {
+	lstat := os.Lstat
+	if s.lstatScratch != nil {
+		lstat = s.lstatScratch
+	}
+	info, err := lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect transcode scratch collision %q: %w", filepath.Base(path), err)
+	}
+	return info.IsDir(), nil
+}
+
 // allocateScratchLocked drops mu for exclusive mkdir. setupMu keeps the
 // existing single setup owner while the registry exposes the unresolved claim.
 func (s *Sessions) allocateScratchLocked(ctx context.Context, key SessionKey, library store.LibraryID) (*scratchPath, error) {
@@ -198,19 +215,17 @@ func (s *Sessions) allocateScratchLocked(ctx context.Context, key SessionKey, li
 		}
 		path := filepath.Join(s.dir, name)
 		err := mkdir(path, 0o700)
+		collision := errors.Is(err, fs.ErrExist)
 		var collisionDir bool
-		if errors.Is(err, fs.ErrExist) {
-			info, statErr := os.Lstat(path)
-			if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-				err = fmt.Errorf("inspect transcode scratch collision %q: %w", name, statErr)
-			}
-			collisionDir = info != nil && info.IsDir()
+		var inspectErr error
+		if collision {
+			collisionDir, inspectErr = s.scratchCollisionDir(path)
 		}
 		s.mu.Lock()
-		if errors.Is(err, fs.ErrExist) {
-			// Only directories belong to root reconciliation.
-			if collisionDir {
+		if collision {
+			if collisionDir || inspectErr != nil {
 				p.state = scratchDebt
+				p.inspectCollision = inspectErr != nil
 			} else {
 				delete(s.paths, name)
 			}
@@ -265,13 +280,20 @@ func (s *Sessions) claimScratchRemovalLocked(p *scratchPath) {
 }
 
 func (s *Sessions) removeScratch(p *scratchPath) error {
-	remove := os.RemoveAll
-	if s.removeDir != nil {
-		remove = s.removeDir
+	path := filepath.Join(s.dir, p.name)
+	shouldRemove := true
+	var err error
+	if p.inspectCollision {
+		shouldRemove, err = s.scratchCollisionDir(path)
 	}
-	err := remove(filepath.Join(s.dir, p.name))
-	if errors.Is(err, fs.ErrNotExist) {
-		err = nil
+	if shouldRemove {
+		remove := os.RemoveAll
+		if s.removeDir != nil {
+			remove = s.removeDir
+		}
+		if removeErr := remove(path); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+			err = fmt.Errorf("remove transcode scratch %q: %w", p.name, removeErr)
+		}
 	}
 
 	s.mu.Lock()
@@ -282,7 +304,6 @@ func (s *Sessions) removeScratch(p *scratchPath) error {
 		p.state = scratchDebt
 		p.backoff = min(max(time.Second, 2*p.backoff), time.Minute)
 		p.retryAt = s.now().Add(p.backoff)
-		err = fmt.Errorf("remove transcode scratch %q: %w", p.name, err)
 	}
 	s.removing--
 	s.wakeCloseLocked()
