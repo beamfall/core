@@ -65,13 +65,11 @@ func (r *Runner) Chapters(ctx context.Context, path string) ([]Chapter, error) {
 	if err := checkPath(path); err != nil {
 		return nil, err
 	}
-	r.resolveOnce.Do(func() {
-		r.ffprobePath, r.resolveErr = exec.LookPath("ffprobe")
-	})
-	if r.resolveErr != nil {
-		return nil, fmt.Errorf("ffprobe is not available: %w", r.resolveErr)
+	ffprobePath, err := r.resolveProbe(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("ffprobe is not available: %w", err)
 	}
-	cmd := r.hardenedCommand(ctx, r.ffprobePath, readConfinement(path).ReadOnly, nil,
+	cmd := r.hardenedCommand(ctx, ffprobePath, readConfinement(path).ReadOnly, nil,
 		append(append([]string{
 			"-v", "error",
 			"-print_format", "json",

@@ -59,36 +59,58 @@ func encryptedSessionRefusal(secure *EncryptedSource, durationSeconds int, burnS
 // startEncryptedRung opens a loopback endpoint for one encoder run and starts
 // FFmpeg against it. The run's token lives exactly as long as the process: the
 // reaper revokes it on exit, and an endpoint failure kills the process.
-func (s *Sessions) startEncryptedRung(ctx context.Context, session *hlsSession, rung Rung, segment int) (*ffmpeg.HLSProcess, *encderiv.LiveRun, error) {
+func (s *Sessions) startEncryptedRung(ctx context.Context, start *encoderStart, rung Rung, segment int) (*ffmpeg.HLSProcess, error) {
+	session, run := start.session, start.run
 	starter, ok := s.transcoder.(encryptedTranscoder)
 	if !ok {
-		return nil, nil, ErrEncryptedLiveUnavailable
+		return nil, ErrEncryptedLiveUnavailable
 	}
 	live, err := encderiv.StartLiveRun(encderiv.LiveRunConfig{
-		Session: session.live,
-		Rung:    rung.ID,
-		Open:    session.secure.Open,
-		Size:    session.secure.Size,
+		Session:  session.live,
+		Rung:     rung.ID,
+		Open:     session.secure.Open,
+		Size:     session.secure.Size,
+		Disabled: true,
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
+	}
+	s.mu.Lock()
+	valid := s.liveStartLocked(start)
+	if valid {
+		run.live = live
+	}
+	s.mu.Unlock()
+	if !valid {
+		live.Revoke()
+		return nil, ErrSessionEvicted
+	}
+	go s.watchLiveRun(run)
+	live.Enable()
+	if _, owned := s.transcoder.(*ffmpeg.Runner); !owned {
+		if err := s.permitEncoder(start.ctx, start); err != nil {
+			return nil, err
+		}
 	}
 	ep := ffmpeg.EncryptedLiveEndpoint{Source: live.SourceURL(), Output: live.OutputURL(), Secret: live.Secret()}
-	proc, err := starter.StartEncryptedHLSSegments(ctx, ep, segment, rungSegmentSeconds(rung), session.rendition(rung))
-	if err != nil {
-		live.Revoke()
-		return nil, nil, err
-	}
-	return proc, live, nil
+	return starter.StartEncryptedHLSSegments(ctx, ep, segment, rungSegmentSeconds(rung), session.rendition(rung))
 }
 
-// watchLiveRun kills run's process once its endpoint fails (a refused request,
-// a failed upload, or an expired token), and returns once the process exits.
-func watchLiveRun(run *encoderRun) {
+func (s *Sessions) watchLiveRun(run *encoderRun) {
 	select {
-	case <-run.exited:
+	case <-run.ctx.Done():
 	case <-run.live.Failed():
-		run.proc.Kill()
+		s.mu.Lock()
+		failed := s.acceptEndpointFailureLocked(run)
+		proc := run.proc
+		s.mu.Unlock()
+		if failed {
+			if proc != nil {
+				proc.Kill()
+			} else {
+				run.cancel()
+			}
+		}
 	}
 }
 
@@ -116,23 +138,22 @@ func (s *Sessions) watchLiveRevocation(session *hlsSession, done <-chan struct{}
 	}
 }
 
-// segmentLacksMedia is the package's segmentLacksMedia for one of the
-// session's segments, decrypting it first on an encrypted session.
-func (h *hlsSession) segmentLacksMedia(path string) bool {
+// inspectSegment checks a confined segment, decrypting it for an encrypted session.
+func (h *hlsSession) inspectSegment(path string) (empty, readable bool) {
 	if h.live != nil {
 		f, err := h.openEncryptedArtifact(path)
 		if err != nil {
-			return false
+			return false, false
 		}
 		defer f.Close()
-		return readerLacksMedia(f, f.Size())
+		return inspectMediaBoxes(f, f.Size())
 	}
 	f, info, err := h.openArtifact(path)
 	if err != nil {
-		return false
+		return false, false
 	}
 	defer f.Close()
-	return readerLacksMedia(f, info.Size())
+	return inspectMediaBoxes(f, info.Size())
 }
 
 // writePlaylist stores one of the playlists the session serves itself, under

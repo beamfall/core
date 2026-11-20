@@ -130,7 +130,7 @@ func PrecomputeComposedRendition(ctx context.Context, st *store.Store, mediaID s
 	if err != nil || !ok {
 		return nil, err
 	}
-	if !composedRecipeRunnable(supported, picture, req) {
+	if !composedRecipeRunnable(ctx, supported, picture, req) {
 		return nil, ErrComposedRecipeUnsupported
 	}
 	job, err := RequestPrecomputeRendition(ctx, st, req, normalizePrecomputeTime(now))
@@ -170,7 +170,7 @@ func EnsureComposedRendition(ctx context.Context, st *store.Store, mediaID store
 	if !errors.Is(err, store.ErrPlaybackRenditionNotFound) {
 		return false, err
 	}
-	if !composedRecipeRunnable(supported, picture, req) {
+	if !composedRecipeRunnable(ctx, supported, picture, req) {
 		return false, ErrComposedRecipeUnsupported
 	}
 	if _, err := RequestPrecomputeRendition(ctx, st, req, normalizePrecomputeTime(now)); err != nil {
@@ -234,9 +234,11 @@ func composedRequest(ctx context.Context, st *store.Store, mediaID store.MediaID
 // composedRecipeRunnable consults the capability check (nil: the cached check
 // of the resolved build) against the exact rendition the precomputed encode
 // runs at, for both the explicit precompute and the Schedule sweep.
-func composedRecipeRunnable(supported ComposedRecipeCheck, picture ComposedPicture, req PrecomputeRequest) bool {
+func composedRecipeRunnable(ctx context.Context, supported ComposedRecipeCheck, picture ComposedPicture, req PrecomputeRequest) bool {
 	if supported == nil {
-		supported = composedRecipeSupported
+		supported = func(timedText bool, rendition ffmpeg.Rendition) bool {
+			return composedRecipeSupported(ctx, timedText, rendition)
+		}
 	}
 	return supported(picture.TimedText != "", composedPrecomputeRendition(req.Height))
 }
@@ -350,7 +352,7 @@ func (s *Service) composedChoice(ctx context.Context, scope auth.Scope, grant st
 	// A build that cannot run the recipe (no libass for timed text, no AAC
 	// encoder) would turn a song that plays as audio into a failing stream, so
 	// it keeps the audio.
-	if !canLive || !composedRecipeSupported(picture.TimedText != "", composedLiveRendition(liveRung, wantedAudio, grantAudioAdjust(grant))) {
+	if !canLive || !composedRecipeSupported(ctx, picture.TimedText != "", composedLiveRendition(liveRung, wantedAudio, grantAudioAdjust(grant))) {
 		return StreamChoice{}, false, false, nil
 	}
 	choice, err = s.liveComposedChoice(ctx, grant, suffix, wantedAudio, liveRung, expiresAt)
@@ -399,7 +401,7 @@ var ErrComposedRecipeUnsupported = errors.New("ffmpeg build cannot run the compo
 // composedRecipeSupported is the cached ComposedRecipeCheck of the resolved
 // build. It is a variable so a test can state the build it means instead of
 // inheriting the FFmpeg on the developer's PATH, like toneMapSupported.
-var composedRecipeSupported ComposedRecipeCheck = ffmpeg.ComposedRecipeSupported
+var composedRecipeSupported = ffmpeg.ComposedRecipeSupportedContext
 
 // composedLiveRendition is the rendition a live composed session encodes for
 // rung, audio and adjust: the fields hlsSession.rendition fills that decide

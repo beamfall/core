@@ -2,7 +2,7 @@ package playback
 
 import (
 	"context"
-	"sync"
+	"errors"
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -27,75 +27,147 @@ const (
 	durationProbeCacheLimit = 4096
 )
 
+var errDurationChanged = errors.New("source duration changed during setup")
+
 type durationProbeEntry struct {
-	seconds int
-	at      time.Time
+	generation string
+	seconds    int
+	at         time.Time
 }
 
-// durationProbeCache remembers on-demand duration probes by content
-// fingerprint. Its zero value is ready to use.
-type durationProbeCache struct {
-	mu      sync.Mutex
-	entries map[string]durationProbeEntry
+type durationKey struct {
+	path, generation string
 }
 
-// ProbedDurationSeconds returns the runtime of the file at path, probing it on
-// demand when the stored Media has none (CORE-2314). A Media imported before
-// its probe could read a duration has DurationSeconds 0, and a session for it
-// would get a growing playlist that ends where the encoder currently is. The
-// result is cached by content fingerprint, so a playback that asks once per
-// request probes the file once. It returns 0 when the transcoder cannot probe,
-// the probe fails or the file declares no duration.
-//
-// Callers never pass an Encrypted Library's file: its bytes on disk are
-// ciphertext and are never probed in place.
+type retainedDuration struct {
+	source         sourceCapture
+	seconds, users int
+}
+
+type durationFlight struct {
+	generation string
+	users      int
+}
+
+// ProbedDurationSeconds probes a plain source when the catalog has no runtime.
 func (s *Sessions) ProbedDurationSeconds(ctx context.Context, fingerprint, path string) int {
-	if s == nil || fingerprint == "" || path == "" {
+	if s == nil {
 		return 0
+	}
+	return s.probedSourceDuration(ctx, nil, fingerprint, path)
+}
+
+func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBinding, fingerprint, path string) int {
+	if fingerprint == "" || path == "" || ctx.Err() != nil {
+		return 0
+	}
+	source := captureSource(path, nil, s.statSource)
+	now := s.now()
+	s.mu.Lock()
+	if binding != nil && !binding.validLocked() {
+		s.mu.Unlock()
+		return 0
+	}
+	if prior := s.durationFlights[path]; prior != nil && source.generation != "" && prior.generation != source.generation {
+		delete(s.durationFlights, path)
+	}
+	entry := s.durationProbes[path]
+	matches := source.generation != "" && entry.generation == source.generation
+	if binding != nil {
+		if binding.duration == nil || !binding.duration.source.matches(source) {
+			if binding.duration != nil {
+				s.releaseDurationLocked(binding.duration)
+			}
+			binding.duration = s.retainDurationLocked(source)
+		}
+		if matches && entry.seconds > 0 {
+			binding.duration.seconds = entry.seconds
+		}
+		if binding.duration.seconds > 0 {
+			seconds := binding.duration.seconds
+			s.mu.Unlock()
+			return seconds
+		}
+	}
+	if matches && (entry.seconds > 0 || now.Sub(entry.at) < durationProbeMissTTL) {
+		s.mu.Unlock()
+		return entry.seconds
 	}
 	prober, ok := s.transcoder.(durationProber)
 	if !ok {
+		s.mu.Unlock()
 		return 0
 	}
-	now := s.now()
-	if seconds, ok := s.durationProbes.lookup(fingerprint, now); ok {
-		return seconds
+	if s.durationFlights == nil {
+		s.durationFlights = make(map[string]*durationFlight)
 	}
+	flight := s.durationFlights[path]
+	if flight == nil || flight.generation != source.generation {
+		flight = &durationFlight{generation: source.generation}
+		s.durationFlights[path] = flight
+	}
+	flight.users++
+	s.mu.Unlock()
+
 	probeCtx, cancel := context.WithTimeout(ctx, durationProbeTimeout)
 	defer cancel()
 	seconds := 0
 	if probe, err := prober.Probe(probeCtx, path); err == nil && probe.DurationSeconds > 0 {
 		seconds = probe.DurationSeconds
 	}
-	if seconds == 0 && ctx.Err() != nil {
-		// The request went away; that says nothing about the file.
+	valid := source.generation != "" && source.matches(captureSource(path, nil, s.statSource))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.durationFlights[path] != flight {
 		return 0
 	}
-	s.durationProbes.remember(fingerprint, seconds, now)
+	flight.users--
+	if flight.users == 0 {
+		delete(s.durationFlights, path)
+	}
+	if ctx.Err() != nil || s.closed || binding != nil && !binding.validLocked() {
+		return 0
+	}
+	if !valid {
+		return seconds // an unverified result cannot populate the cache
+	}
+	entry = s.durationProbes[path]
+	retained := s.durationRetained[durationKey{path, source.generation}]
+	if retained != nil && retained.seconds > 0 {
+		return retained.seconds
+	}
+	if entry.generation == source.generation && entry.seconds > 0 {
+		return entry.seconds
+	}
+	if seconds > 0 && retained != nil {
+		retained.seconds = seconds
+	}
+	if s.durationProbes == nil || len(s.durationProbes) >= durationProbeCacheLimit && entry.generation == "" {
+		s.durationProbes = make(map[string]durationProbeEntry)
+	}
+	s.durationProbes[path] = durationProbeEntry{source.generation, seconds, now}
 	return seconds
 }
 
-func (c *durationProbeCache) lookup(fingerprint string, now time.Time) (int, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	entry, ok := c.entries[fingerprint]
-	if !ok {
-		return 0, false
+func (s *Sessions) retainDurationLocked(source sourceCapture) *retainedDuration {
+	key := durationKey{source.path, source.generation}
+	if s.durationRetained == nil {
+		s.durationRetained = make(map[durationKey]*retainedDuration)
 	}
-	if entry.seconds == 0 && now.Sub(entry.at) >= durationProbeMissTTL {
-		delete(c.entries, fingerprint)
-		return 0, false
+	retained := s.durationRetained[key]
+	if retained == nil {
+		retained = &retainedDuration{source: source}
+		s.durationRetained[key] = retained
 	}
-	return entry.seconds, true
+	retained.users++
+	return retained
 }
 
-func (c *durationProbeCache) remember(fingerprint string, seconds int, now time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.entries == nil || len(c.entries) >= durationProbeCacheLimit {
-		c.entries = make(map[string]durationProbeEntry)
+func (s *Sessions) releaseDurationLocked(retained *retainedDuration) {
+	retained.users--
+	if retained.users == 0 {
+		delete(s.durationRetained, durationKey{retained.source.path, retained.source.generation})
 	}
-	c.entries[fingerprint] = durationProbeEntry{seconds: seconds, at: now}
 }
 
 // probedDuration is the on-demand runtime of a video or audio Media's

@@ -52,15 +52,13 @@ func defaultHTTPProtocolHelp(ctx context.Context, toolPath string) ([]byte, erro
 	return out.bytes(), nil
 }
 
-type maxRedirectsEntry struct {
-	once      sync.Once
-	supported bool
-}
+type maxRedirectsEntry = sharedResolution[bool]
 
 var (
 	maxRedirectsMu     sync.Mutex
 	maxRedirectsByTool                        = map[string]*maxRedirectsEntry{}
 	httpProtocolHelp   httpProtocolHelpRunner = defaultHTTPProtocolHelp
+	redirectLookups                           = map[string]*sharedResolution[string]{}
 )
 
 // toolHasMaxRedirects reports whether toolPath's http protocol takes
@@ -68,7 +66,27 @@ var (
 // listing that fails counts as supported: the run then fails exactly as it did
 // before this check, rather than silently dropping the guard.
 func toolHasMaxRedirects(toolPath string) bool {
-	key := toolIdentityKey(toolPath)
+	return toolHasMaxRedirectsContext(context.Background(), toolPath)
+}
+
+func toolHasMaxRedirectsContext(ctx context.Context, toolPath string) bool {
+	maxRedirectsMu.Lock()
+	lookup := redirectLookups[toolPath]
+	if lookup == nil {
+		lookup = &sharedResolution[string]{}
+		redirectLookups[toolPath] = lookup
+	}
+	maxRedirectsMu.Unlock()
+	key, err := lookup.wait(ctx, func() (string, error) {
+		key := toolIdentityKey(toolPath)
+		maxRedirectsMu.Lock()
+		delete(redirectLookups, toolPath)
+		maxRedirectsMu.Unlock()
+		return key, nil
+	})
+	if err != nil {
+		return false
+	}
 	maxRedirectsMu.Lock()
 	entry, ok := maxRedirectsByTool[key]
 	if !ok {
@@ -77,11 +95,11 @@ func toolHasMaxRedirects(toolPath string) bool {
 	}
 	run := httpProtocolHelp
 	maxRedirectsMu.Unlock()
-	entry.once.Do(func() {
+	supported, _ := entry.wait(ctx, func() (bool, error) {
 		help, err := run(context.Background(), toolPath)
-		entry.supported = err != nil || bytes.Contains(help, []byte(maxRedirectsOption+" "))
+		return err != nil || bytes.Contains(help, []byte(maxRedirectsOption+" ")), nil
 	})
-	return entry.supported
+	return supported
 }
 
 // toolIdentityKey keys the capability cache by the probed binary itself, so
@@ -98,7 +116,11 @@ func toolIdentityKey(toolPath string) string {
 // pipeArgsForTool adapts a pipe argv built with pipeInputOptions to the tool
 // that will run it, dropping the -max_redirects pair on a build without it.
 func pipeArgsForTool(toolPath string, args []string) []string {
-	if toolHasMaxRedirects(toolPath) {
+	return pipeArgsForToolContext(context.Background(), toolPath, args)
+}
+
+func pipeArgsForToolContext(ctx context.Context, toolPath string, args []string) []string {
+	if toolHasMaxRedirectsContext(ctx, toolPath) {
 		return args
 	}
 	return withoutMaxRedirects(args)

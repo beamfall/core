@@ -165,18 +165,20 @@ const (
 // at once instead of waiting out its latency budget. exited is nil for a
 // process that is not running (test transcoders), which never signals.
 type encoderRun struct {
-	session *hlsSession
-	proc    *ffmpeg.HLSProcess
-	exited  chan struct{}
-	outcome encoderExit // written under Sessions.mu before exited closes
-	// waiting counts the requests currently waiting on this run's artifacts;
-	// the stall watchdog only acts while it is non-zero.
-	waiting atomic.Int32
-	// stalled is set by the stall watchdog just before it kills the process.
-	stalled atomic.Bool
-	// live is the run's loopback endpoint on an encrypted session, revoked
-	// when the process exits or is stopped (ADR-0236 D3); nil otherwise.
-	live *encderiv.LiveRun
+	session     *hlsSession
+	proc        *ffmpeg.HLSProcess
+	ctx         context.Context
+	cancel      context.CancelFunc
+	reaped      chan struct{}
+	exited      chan struct{}
+	outcome     encoderExit
+	hasReason   bool
+	stopIssued  bool
+	outputOwner bool
+	carry       *encoderStart
+	transfer    *encoderStart
+	waiting     atomic.Int32
+	live        *encderiv.LiveRun
 }
 
 func (r *encoderRun) exitedChan() <-chan struct{} {
@@ -224,21 +226,38 @@ const (
 )
 
 type hlsSession struct {
-	key               SessionKey
-	state             sessionState
-	teardown          *sessionTeardown
-	dir               string
-	scratch           *scratchPath
-	joins             map[string]chan struct{}
-	src               string
-	sourceInfo        os.FileInfo
-	sourceGeneration  string
-	durationSeconds   int
-	rungs             []Rung
-	audioProfile      ffmpeg.AudioProfile
-	audioStreamIndex  *int
-	sourceVideo       VideoSignal
-	burnSubtitleIndex int
+	cutoffCtx             context.Context
+	cancelCutoff          context.CancelFunc
+	admitted              bool
+	library               store.LibraryID
+	profile               store.ProfileID
+	loadProfile           func(context.Context, store.ProfileID) (store.Profile, error)
+	binders               int
+	probes                map[*probeOwner]struct{}
+	setup                 *setupOperation
+	failedSetup           *setupOperation
+	writing               *encoderRun
+	artifactVersion       uint64
+	inspections           int
+	inspectionDone        chan struct{}
+	predecessorWait       []<-chan struct{}
+	sourceDurationSeconds int
+	key                   SessionKey
+	state                 sessionState
+	teardown              *sessionTeardown
+	dir                   string
+	scratch               *scratchPath
+	joins                 map[string]chan struct{}
+	src                   string
+	sourceInfo            os.FileInfo
+	sourceOwner           *sourceGenerationOwner
+	sourceGeneration      string
+	durationSeconds       int
+	rungs                 []Rung
+	audioProfile          ffmpeg.AudioProfile
+	audioStreamIndex      *int
+	sourceVideo           VideoSignal
+	burnSubtitleIndex     int
 	// encodePolicy is the Console encode policy this session started under
 	// (CORE-2452); nil when the transcoder applies none.
 	encodePolicy *ffmpeg.EncodePolicy
@@ -278,11 +297,6 @@ type hlsSession struct {
 	// lease meanwhile.
 	start       *encoderStart
 	baseSegment int
-	// startMu serializes encoder starts and replacements for this session, so
-	// ensureRung can release mu around Stop and spawn without a second request
-	// on the same session starting another encoder meanwhile. Lock order:
-	// startMu before mu, never the reverse.
-	startMu sync.Mutex
 	// frontier caches the highest produced segment for the current
 	// (proc, baseSegment) generation so the common seek-lookahead check needs no
 	// syscall under the lock. It only ever advances forward within a generation
@@ -315,6 +329,7 @@ type hlsSession struct {
 	// exactly once on launch-failure rollback, process reap, or teardown. nil
 	// means the session holds no live process (or the governor is unwired).
 	transcodeLease *governor.TranscodeLease
+	charged        bool
 	// run is the generation of the current or most recent process (proc).
 	run *encoderRun
 	// lastCrashed records that the most recent process exit was a crash, so
@@ -461,8 +476,9 @@ type Sessions struct {
 	now           func() time.Time
 	rootLock      *os.File
 	rootInfo      fs.FileInfo
-	setupMu       sync.Mutex
-	allocation    *scratchAllocation
+	preparing     int
+	probing       int
+	allocations   map[*scratchAllocation]struct{}
 	paths         map[string]*scratchPath
 	removing      int
 	sweeping      bool
@@ -471,13 +487,17 @@ type Sessions struct {
 	closeSweepErr error
 	readScratch   func(fs.FS, string) ([]fs.DirEntry, error)
 	mkdirDir      func(string, fs.FileMode) error
+	statSource    func(string) (os.FileInfo, error)
 	lstatScratch  func(string) (fs.FileInfo, error)
 	join          func(*os.File, func(string) (*os.File, error), []string) error
 	// beforeSetupCommit lets tests pause after writing the unpublished playlists.
 	beforeSetupCommit func()
 	// durationProbes caches on-demand runtime probes (ProbedDurationSeconds).
-	durationProbes    durationProbeCache
+	durationProbes    map[string]durationProbeEntry
+	durationRetained  map[durationKey]*retainedDuration
+	durationFlights   map[string]*durationFlight
 	incompleteSources incompleteSourceCache
+	sourceOwners      map[string]*sourceGenerationOwner
 	sourceStore       *store.Store
 	// bootNonce tags every session directory this instance mints (see
 	// newBootNonce): nextID resets to zero each process lifetime, so without it
@@ -510,15 +530,15 @@ type Sessions struct {
 	removeDir func(string) error
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
 	revocationPoll time.Duration
-	// stopping counts encoders removed from the map whose teardown has not yet
-	// stopped them (or whose off-lock start has not yet given up). They still
-	// run, so they still count against the cap.
-	stopping int
+	// charges includes all capacity owners through reap, even detached ones.
+	charges     map[*hlsSession]struct{}
+	revocations map[*hlsSession]*sessionTeardown
+	failedHeads map[*hlsSession]struct{}
 	// starting counts ensureRung starts running with mu released.
 	starting int
 	// detached counts sessionTeardowns handed out under mu that runTeardowns
 	// has not finished, including ones that only remove a directory. Close
-	// waits for starting, stopping and detached to reach zero so no encoder,
+	// waits for starting and detached to reach zero so no encoder,
 	// lease or directory outlives it.
 	detached int
 	// offLockIdle is closed when all admitted off-lock work finishes.
@@ -536,36 +556,47 @@ type Sessions struct {
 // slow teardown never stalls requests for every other session. Whoever builds
 // one under mu adds it to s.detached; runTeardowns takes it back out.
 type sessionTeardown struct {
-	session *hlsSession
-	proc    *ffmpeg.HLSProcess
-	// lease is the session's transcode lease, released only once proc has
-	// stopped so the governor keeps background generation out until then.
-	lease *governor.TranscodeLease
-	// counted means detachment added this teardown to s.stopping.
-	counted bool
-	// Late starts, shape replacement, preemption and the idle reaper leave
-	// removal to the last user if busy.
+	session          *hlsSession
+	run              *encoderRun
+	preparing        *encoderRun
+	liveRun          *encderiv.LiveRun
+	preparingLive    *encderiv.LiveRun
+	live             *encderiv.LiveSession
 	cleanupOnRelease bool
-	// End access before waiting for directory owners to exit.
-	liveRun *encderiv.LiveRun
-	live    *encderiv.LiveSession
+	cutoffDone       chan struct{}
+	probeReaps       []<-chan struct{}
+	spawnDone        <-chan struct{}
+	stopChild        bool
 }
 
-// runTeardowns stops detached encoders before waiting on directory references.
-// Every detached path has exactly one initial removal owner.
 func (s *Sessions) runTeardowns(teardowns []*sessionTeardown) {
 	for _, t := range teardowns {
+		if t.session.cancelCutoff != nil {
+			t.session.cancelCutoff()
+		}
 		if t.liveRun != nil {
-			t.liveRun.Revoke()
+			t.liveRun.Abort()
 		}
-		s.stop(t.proc)
-		if t.lease != nil {
-			t.lease.Release()
+		if t.preparingLive != nil {
+			t.preparingLive.Abort()
 		}
-		if t.proc != nil {
-			s.mu.Lock()
-			s.transitionLocked(t.session, stoppedDetachedEncoder{teardown: t})
-			s.mu.Unlock()
+		if t.preparing != nil {
+			t.preparing.cancel()
+		}
+		if t.stopChild && s.stopEncoder == nil {
+			t.run.proc.RequestStop()
+		}
+		close(t.cutoffDone)
+	}
+	for _, t := range teardowns {
+		for _, probe := range t.probeReaps {
+			<-probe
+		}
+		if t.run != nil {
+			if t.stopChild && s.stopEncoder != nil {
+				s.stop(t.run.proc)
+			}
+			<-t.run.reaped
 		}
 	}
 	for _, t := range teardowns {
@@ -615,7 +646,7 @@ func (s *Sessions) wakeCloseLocked() {
 
 // offLockIdleLocked reports whether the manager has joined its owned work. Callers hold mu.
 func (s *Sessions) offLockIdleLocked() bool {
-	if s.starting != 0 || s.stopping != 0 || s.detached != 0 || s.removing != 0 || s.sweeping {
+	if s.preparing != 0 || s.probing != 0 || s.starting != 0 || s.detached != 0 || s.removing != 0 || s.sweeping {
 		return false
 	}
 	// An allocation is an owner from reservation through setup, even before
@@ -643,7 +674,7 @@ func (s *Sessions) stop(proc *ffmpeg.HLSProcess) {
 // holdsTranscodeLocked reports whether session occupies a transcode slot: it
 // has a live process, or ensureRung is starting one. Callers hold mu.
 func (session *hlsSession) holdsTranscodeLocked() bool {
-	return session.proc != nil || session.start != nil
+	return session.charged
 }
 
 // resumeHint is a resume position noted by playback info.
@@ -721,20 +752,6 @@ const initSegmentName = "init.mp4"
 // masterPlaylistName is the multi-rendition entry point clients fetch first.
 const masterPlaylistName = "master.m3u8"
 
-// ActiveKeys returns the keys of every session with a live transcode
-// process. The playbackInfo stream-cap check counts these per Profile.
-func (s *Sessions) ActiveKeys() []SessionKey {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	keys := make([]SessionKey, 0, len(s.sessions))
-	for key, session := range s.sessions {
-		if session.holdsTranscodeLocked() {
-			keys = append(keys, key)
-		}
-	}
-	return keys
-}
-
 // CanAdmit reports whether a transcode for key could start now at the default
 // PriorityNormal rank. It is the unchanged entry point the byte/decision layer
 // calls (it has no priority signal); CanAdmitPriority carries an explicit rank.
@@ -762,6 +779,7 @@ func (s *Sessions) CanAdmitSession(sessionID store.SessionID, mediaID store.Medi
 // preempted for it — an idle session of any rank, or, for a higher-priority
 // newcomer, a strictly-lower-priority session even while it streams.
 func (s *Sessions) CanAdmitPriority(key SessionKey, priority Priority) bool {
+	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if session, ok := s.sessions[key]; ok && session.holdsTranscodeLocked() {
@@ -770,19 +788,13 @@ func (s *Sessions) CanAdmitPriority(key SessionKey, priority Priority) bool {
 	if s.liveCount() < s.cap {
 		return true
 	}
-	return s.preemptableLocked(key, priority) != nil
+	return s.liveCount() <= s.cap && s.preemptableLocked(key, priority, now) != nil
 }
 
 // liveCount counts sessions holding a live FFmpeg process, plus removed
 // sessions whose encoder has not stopped yet. Callers hold mu.
 func (s *Sessions) liveCount() int {
-	count := s.stopping
-	for _, session := range s.sessions {
-		if session.holdsTranscodeLocked() {
-			count++
-		}
-	}
-	return count
+	return len(s.charges)
 }
 
 // preemptableLocked picks the session a newcomer at rank priority may evict to
@@ -799,12 +811,12 @@ func (s *Sessions) liveCount() int {
 //
 // An active session of equal-or-higher rank is never a victim, so oversubscrip-
 // tion never fails an equal-or-better stream mid-play. Callers hold mu.
-func (s *Sessions) preemptableLocked(key SessionKey, priority Priority) *hlsSession {
-	cutoff := s.now().Add(-preemptIdleAfter)
+func (s *Sessions) preemptableLocked(key SessionKey, priority Priority, now time.Time) *hlsSession {
+	cutoff := now.Add(-preemptIdleAfter)
 	var victim *hlsSession
 	var oldest time.Time
 	for other, session := range s.sessions {
-		if other == key || !session.holdsTranscodeLocked() {
+		if other == key || session.proc == nil || !session.charged {
 			continue
 		}
 		if session.start != nil {
@@ -824,32 +836,6 @@ func (s *Sessions) preemptableLocked(key SessionKey, priority Priority) *hlsSess
 		}
 	}
 	return victim
-}
-
-// admitLocked claims a transcode slot for key at rank priority, preempting the
-// most-idle eligible session at capacity (an idle session of any rank, or a
-// strictly-lower-priority active one for a higher-priority newcomer). A degraded
-// (capacity-degraded Watch-Party) start is the bounded overflow valve: when no
-// slot is free and none can be preempted, it is admitted over the cap rather
-// than refused — ADR-0010 §6's "drop to this quality" answer, at the cheapest
-// (lowest) rung, so the party stays whole. The over-cap
-// admission is bounded server-side: only a real party member for the party's
-// content reaches the byte layer with grant.Degraded set (the conductor roster
-// is the gate), so a client cannot use it as a general cap bypass. Callers hold
-// mu.
-// A preempted victim's teardown is returned for the caller to run after
-// releasing mu.
-func (s *Sessions) admitLocked(key SessionKey, priority Priority, degraded bool) (*sessionTeardown, error) {
-	if s.liveCount() < s.cap {
-		return nil, nil
-	}
-	if victim := s.preemptableLocked(key, priority); victim != nil {
-		return s.transitionLocked(victim, detachSession{cleanupOnRelease: true}).teardown, nil
-	}
-	if degraded {
-		return nil, nil // over-cap, lowest rung only: keep the party member streaming
-	}
-	return nil, ErrTranscodeCapacity
 }
 
 // TerminateSession aborts every in-flight transcode owned by one auth Session
@@ -882,19 +868,46 @@ func (s *Sessions) TerminatePlayback(sessionID store.SessionID, mediaID store.Me
 func (s *Sessions) terminate(matches func(SessionKey) bool) int {
 	s.mu.Lock()
 	revoked := 0
-	if a := s.allocation; a != nil && !s.closed && !a.revoked && matches(a.key) {
-		a.revoked = true
-		revoked++
+	for allocation := range s.allocations {
+		if matches(allocation.key) {
+			allocation.revoked = true
+		}
+	}
+	var joins []*sessionTeardown
+	for h, t := range s.revocations {
+		if matches(h.key) {
+			joins = append(joins, t)
+		}
 	}
 	var teardowns []*sessionTeardown
 	for key, session := range s.sessions {
-		if matches(key) {
-			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
+		if matches(key) && session.state < sessionRevoking {
+			if session.admitted || session.state == sessionRunning {
+				revoked++
+			}
+			teardowns = append(teardowns, s.transitionLocked(session, detachSession{cleanupOnRelease: true}).teardown)
+		}
+	}
+	for session := range s.failedHeads {
+		if matches(session.key) {
+			if session.admitted {
+				revoked++
+			}
+			teardowns = append(teardowns, s.transitionLocked(session, detachSession{cleanupOnRelease: true}).teardown)
 		}
 	}
 	s.mu.Unlock()
 	s.runTeardowns(teardowns)
-	return revoked + len(teardowns)
+	for _, t := range joins {
+		<-t.cutoffDone
+		for _, probe := range t.probeReaps {
+			<-probe
+		}
+		if t.run != nil {
+			<-t.run.reaped
+		}
+	}
+	return revoked
 }
 
 // newBootNonce mints an 8-byte crypto-random hex tag, ignoring the
@@ -911,43 +924,146 @@ func newBootNonce() string {
 // LiveArtifactShaped selects and holds one live artifact. Its caller releases
 // it after closing any reader opened from it.
 func (s *Sessions) LiveArtifactShaped(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority, name string) (*LiveArtifact, error) {
-	if shape.Encrypted != nil && shape.ComposedPicture {
-		return nil, ErrEncryptedLiveUnavailable // ADR-0236 D4
-	}
-	picture, err := s.livePicture(ctx, key, src, shape)
+	binding, err := s.BindLive(key)
 	if err != nil {
 		return nil, err
 	}
-	// The keyframe timeline lays out the copied-video rung, which a composed
-	// picture or an audio adjustment replaces with a single encoded rung.
-	// An audio-only shape never copies a picture stream through: the audio
-	// class's embedded art is not video.
-	if shape.AudioOnly {
-		audioCopy = false
+	defer binding.Release()
+	library := shape.LibraryID
+	if shape.Encrypted != nil {
+		library = store.LibraryID(shape.Encrypted.LibraryID)
 	}
-	var timeline *keyframeTimeline
-	if audioCopy && durationSeconds > 0 && picture == nil && shape.Adjust.IsZero() && shape.Encrypted == nil {
-		if timeline, err = s.copyVideoTimeline(ctx, key, src); err != nil {
+	if err := binding.Attach(library, "", nil); err != nil {
+		return nil, err
+	}
+	return binding.ArtifactShaped(ctx, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
+}
+
+// ArtifactShaped resolves an artifact using this exact verified binding.
+func (b *LiveBinding) ArtifactShaped(ctx context.Context, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority, name string) (*LiveArtifact, error) {
+	s := b.manager
+	key := b.session.key
+	session, err := b.prepare(ctx, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority)
+	if err != nil {
+		return nil, err
+	}
+	for _, done := range session.predecessorWait {
+		if err := waitEncoderOwner(ctx, session, done); err != nil {
+			s.releaseScratch(session.scratch)
 			return nil, err
 		}
 	}
-	audioOnlyPeak := audioOnlyBandwidth(audioProfile, shape.AudioSource, !shape.Adjust.IsZero())
-	session, err := s.session(ctx, key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, shape.Encrypted, shape.LibraryID, priority)
+	rung, file, _ := strings.Cut(name, "/")
+	trackRun := file != "" && (file != "index.m3u8" || session.durationSeconds == 0)
+	delivery := ""
+	if trackRun && file != "index.m3u8" {
+		delivery = rung
+	}
+	started := time.Now()
+	for {
+		s.mu.Lock()
+		version := session.artifactVersion
+		s.mu.Unlock()
+		path, err := s.resolveArtifactPath(ctx, key, session, name)
+		s.mu.Lock()
+		evicted := session.state != sessionRunning
+		stale := trackRun && version != session.artifactVersion
+		s.mu.Unlock()
+		if !evicted && (stale && err == nil || errors.Is(err, ErrArtifactChanged)) {
+			err = ctx.Err()
+			if err == nil {
+				if time.Since(started) < PostSeekTranscodeLatencyBudget {
+					continue
+				}
+				err = context.DeadlineExceeded
+			}
+		}
+		if evicted || err != nil {
+			s.releaseScratch(session.scratch)
+			if evicted {
+				return nil, ErrSessionEvicted
+			}
+			return nil, err
+		}
+		return &LiveArtifact{manager: s, session: session, path: path, trackRun: trackRun, version: version, delivery: delivery}, nil
+	}
+}
+
+func (b *LiveBinding) prepare(ctx context.Context, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority) (prepared *hlsSession, result error) {
+	s := b.manager
+	if !b.attached {
+		return nil, errSetupUnavailable
+	}
+	if err := b.Check(); err != nil {
+		return nil, err
+	}
+	source := captureSource(src, shape.Encrypted, s.statSource)
+	inputs := setupInputs{
+		videoWidth: videoWidth, videoHeight: videoHeight,
+		duration: durationSeconds, burnSubtitle: burnSubtitleIndex,
+		audioCopy: audioCopy, degraded: degraded, composed: shape.ComposedPicture, audioOnly: shape.AudioOnly,
+		caps: caps, video: sourceVideo, audio: audioProfile, stream: audioStreamIndex, adjust: shape.Adjust,
+	}
+	claim, err := b.claimSetup(ctx, source, inputs)
 	if err != nil {
 		return nil, err
 	}
-	path, err := s.resolveArtifactPath(ctx, key, session, name)
-	s.mu.Lock()
-	evicted := session.state != sessionRunning
-	s.mu.Unlock()
-	if evicted || err != nil {
-		s.releaseScratch(session.scratch)
-		if evicted {
-			return nil, ErrSessionEvicted
+	owner := b.session
+	defer func() { b.finishSetup(owner, claim, result) }()
+	workCtx, cancel := b.Context(context.WithoutCancel(ctx))
+	defer cancel()
+	defer func() {
+		if err := b.Check(); err != nil {
+			if prepared != nil {
+				s.releaseScratch(prepared.scratch)
+				prepared = nil
+			}
+			result = err
 		}
+	}()
+	if shape.Encrypted != nil && shape.ComposedPicture {
+		return nil, ErrEncryptedLiveUnavailable
+	}
+	if b.duration != nil && !source.matches(b.duration.source) {
+		return nil, errSetupUnavailable
+	}
+	if source.info == nil && shape.Encrypted == nil && b.profile != "" {
+		return nil, errSetupUnavailable
+	}
+	picture, err := s.livePicture(workCtx, b.session, source, shape)
+	if err != nil {
 		return nil, err
 	}
-	return &LiveArtifact{manager: s, session: session, path: path}, nil
+	if err := b.publishSetupPicture(claim, picture); err != nil {
+		return nil, err
+	}
+	if shape.AudioOnly {
+		audioCopy = false
+	}
+	for {
+		s.mu.Lock()
+		if b.duration != nil && b.duration.seconds > 0 {
+			durationSeconds = b.duration.seconds
+		} else if owner.state == sessionRunning && durationSeconds <= 0 && source.matches(owner.sourceCapture()) {
+			durationSeconds = owner.sourceDurationSeconds
+		}
+		s.mu.Unlock()
+		var timeline *keyframeTimeline
+		if audioCopy && durationSeconds > 0 && picture == nil && shape.Adjust.IsZero() && shape.Encrypted == nil {
+			timeline, err = s.boundVideoTimeline(workCtx, b.probeContext(owner.cutoffCtx), b.session, source)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !source.matches(captureSource(src, shape.Encrypted, s.statSource)) {
+			return nil, errSetupUnavailable
+		}
+		audioOnlyPeak := audioOnlyBandwidth(audioProfile, shape.AudioSource, !shape.Adjust.IsZero())
+		prepared, err := s.session(ctx, b, source, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, claim.picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, shape.Encrypted, b.library, priority)
+		if !errors.Is(err, errDurationChanged) {
+			return prepared, err
+		}
+	}
 }
 
 func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, session *hlsSession, name string) (string, error) {
@@ -992,14 +1108,10 @@ func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, sess
 		if err != nil {
 			return "", err
 		}
-		s.markDelivered(session, rung.ID)
 		return path, nil
 	}
 	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, false, path, run, waitBudget); err != nil {
 		return "", err
-	}
-	if file != "index.m3u8" {
-		s.markDelivered(session, rung.ID)
 	}
 	return path, nil
 }
@@ -1043,29 +1155,54 @@ func (s *Sessions) playlistSegment(ctx context.Context, key SessionKey, session 
 func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int) (string, error) {
 	path := filepath.Join(session.dir, rung.ID, fmt.Sprintf("seg%05d.m4s", segment))
 	waitBudget := s.transcodeLatencyBudget(session, path)
-	if s.beyondSourceEnd(session, rung, segment) {
-		return "", ErrSourceEnded // known short source: never encode an empty segment
+	started := time.Now()
+	for {
+		if s.beyondSourceEnd(session, rung, segment) {
+			return "", ErrSourceEnded
+		}
+		run, err := s.ensureRung(ctx, key, session, rung, segment, path)
+		if err != nil {
+			return "", err
+		}
+		if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, true, path, run, waitBudget); err != nil {
+			return "", err
+		}
+		s.mu.Lock()
+		current, writing, pending := session.run, session.writing, session.start
+		s.mu.Unlock()
+		if run == nil {
+			run = current
+		}
+		observeCtx, cancel := context.WithTimeout(ctx, waitBudget)
+		_, observed, observeErr := s.observeIncompleteSource(observeCtx, key, session, run, func() (time.Duration, bool) {
+			empty, _ := session.inspectSegment(path)
+			return session.segmentStart(rung, segment), empty
+		})
+		cancel()
+		if errors.Is(observeErr, ErrArtifactChanged) {
+			if time.Since(started) >= waitBudget {
+				return "", context.DeadlineExceeded
+			}
+			if writing != nil && writing != current && pending != nil {
+				if err := waitEncoderOwner(ctx, session, pending.done); err != nil {
+					return "", err
+				}
+			}
+			continue
+		}
+		if observed {
+			if err := s.noteSourceEnd(key, session, run, rung, segment, ""); err == ErrArtifactChanged {
+				continue
+			} else if err != nil {
+				return "", err
+			}
+			return "", ErrSourceEnded
+		}
+		if observeErr != nil {
+			return "", observeErr
+		}
+		return path, nil
 	}
-	run, err := s.ensureRung(ctx, key, session, rung, segment, path)
-	if err != nil {
-		return "", err
-	}
-	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, true, path, run, waitBudget); err != nil {
-		return "", err
-	}
-	_, observed, observeErr := s.observeIncompleteSource(key, session, func() (time.Duration, bool) {
-		return session.segmentStart(rung, segment), session.segmentLacksMedia(path)
-	})
-	if observed {
-		// FFmpeg started past the real end of a truncated source writes a
-		// segment with no media; serving it as playable would stall the player.
-		s.noteSourceEnd(key, session, rung, segment, "")
-		return "", ErrSourceEnded
-	}
-	if observeErr != nil {
-		return "", observeErr
-	}
-	return path, nil
 }
 
 // waitForEncoder waits for path while watching the encoder run that should
@@ -1096,7 +1233,7 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 			if !live {
 				return ErrSessionEvicted
 			}
-			run = nil // replaced by another request's encoder: keep waiting
+			run = nil // the replacement owns any future output on this path
 		case exitEndOfInput:
 			if isSegment && s.beyondSourceEnd(session, rung, segment) {
 				return ErrSourceEnded
@@ -1193,13 +1330,22 @@ func (s *Sessions) beyondSourceEnd(session *hlsSession, rung Rung, segment int) 
 
 // noteSourceEnd records that the source has no media from rung's segment on
 // and logs it once per new (lower) bound.
-func (s *Sessions) noteSourceEnd(key SessionKey, session *hlsSession, rung Rung, segment int, stderr string) {
+func (s *Sessions) noteSourceEnd(key SessionKey, session *hlsSession, run *encoderRun, rung Rung, segment int, stderr string) error {
 	s.mu.Lock()
-	lowered := s.transitionLocked(session, recordSourceEnd{rung: rung, segment: segment}).lowered
+	if session.state != sessionRunning {
+		s.mu.Unlock()
+		return ErrSessionEvicted
+	}
+	if session.run != run {
+		s.mu.Unlock()
+		return ErrArtifactChanged
+	}
+	result := s.transitionLocked(session, recordSourceEnd{rung: rung, segment: segment})
 	s.mu.Unlock()
-	if lowered {
+	if result.lowered {
 		logSourceEnd(key, session, rung, segment, stderr)
 	}
+	return nil
 }
 
 func logSourceEnd(key SessionKey, session *hlsSession, rung Rung, segment int, stderr string) {
@@ -1211,16 +1357,6 @@ func logSourceEnd(key SessionKey, session *hlsSession, rung Rung, segment int, s
 		"source_end_segment", segment,
 		"probed_duration_seconds", session.durationSeconds,
 		"stderr", stderr)
-}
-
-// markDelivered records the rendition a media request was just served from. A
-// player switching back to a rendition already on disk starts no encoder, so
-// the encoder start alone would keep reporting the previous rendition.
-// Variant playlists do not count: a player may read several while choosing.
-func (s *Sessions) markDelivered(session *hlsSession, rungID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.transitionLocked(session, deliverSessionRung{id: rungID})
 }
 
 // transcodeLatencyBudget classifies a missing artifact before ensureRung
@@ -1250,33 +1386,42 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // non-zero adjust stretches durationSeconds (a source duration) onto the
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung. audioOnly (an audio-class Media) offers that rung too.
-func (s *Sessions) session(ctx context.Context, key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, library store.LibraryID, priority Priority) (*hlsSession, error) {
-	// Capture the generation before encoding, outside the session lock.
-	var sourceInfo os.FileInfo
-	if secure == nil {
-		sourceInfo, _ = os.Stat(src)
-	}
-	sourceGeneration := store.SourceFileGeneration(sourceInfo)
-	if secure != nil {
-		sourceGeneration = store.EncryptedSourceGeneration(secure.Fingerprint)
-	}
+func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sourceCapture, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, library store.LibraryID, priority Priority) (*hlsSession, error) {
+	key, src := binding.session.key, source.path
+	sourceInfo, sourceGeneration := source.info, source.generation
+	var watchSession *hlsSession
+	var watchDone <-chan struct{}
 	var teardowns []*sessionTeardown
-	s.setupMu.Lock()
 	s.mu.Lock()
 	defer func() {
 		s.mu.Unlock()
-		s.setupMu.Unlock()
 		s.runTeardowns(teardowns)
+		if watchDone != nil {
+			go s.watchLiveRevocation(watchSession, watchDone, secure.Revoked, s.liveRevocationInterval())
+		}
 	}()
-	if s.closed {
+	if !binding.validLocked() {
 		return nil, ErrSessionEvicted
 	}
 	// One encode policy decides both the ladder and the encoder (CORE-2452):
 	// an existing session's pinned snapshot, which a reshaped replacement
 	// inherits, so a Console save in either direction never changes the rungs
 	// of a session already playing; otherwise the current policy, read once.
-	existing := s.sessions[key]
+	existing := binding.session
+	if existing.state != sessionRunning {
+		existing = nil
+	}
+
+	s.mu.Unlock()
 	policy, hevcAllowed := s.sessionEncodePolicy(existing)
+	now := s.now()
+	s.mu.Lock()
+	if !binding.validLocked() {
+		return nil, ErrSessionEvicted
+	}
+	if binding.duration != nil && binding.duration.seconds > 0 && binding.duration.seconds != durationSeconds {
+		return nil, errDurationChanged
+	}
 	if caps.HEVC && !hevcAllowed {
 		caps.HEVC = false
 		caps.HEVCMaxHeight = 0
@@ -1291,7 +1436,8 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	} else if audioOnly || !adjust.IsZero() {
 		requestedRungs = []Rung{audioOnlyRung(audioOnlyPeak)}
 	}
-	durationSeconds = adjust.OutputSeconds(durationSeconds)
+	sourceDuration := durationSeconds
+	durationSeconds = adjust.OutputSeconds(sourceDuration)
 	audioSource := videoWidth <= 0 && videoHeight <= 0 && picture == nil
 	var primed primedGrid
 	if audioOnly && audioSource && adjust.IsZero() && durationSeconds > 0 {
@@ -1316,13 +1462,16 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 			return nil, err
 		}
 		// A resume hint noted while this encoder ran applies only to a replacement.
-		s.transitionLocked(existing, reuseSession{priority: priority})
+		s.transitionLocked(existing, reuseSession{priority: priority, at: now})
 		existing.scratch.users++
 		return existing, nil
 	}
 	allocation := &scratchAllocation{key: key}
-	s.allocation = allocation
-	defer func() { s.allocation = nil }()
+	if s.allocations == nil {
+		s.allocations = make(map[*scratchAllocation]struct{})
+	}
+	s.allocations[allocation] = struct{}{}
+	defer func() { delete(s.allocations, allocation) }()
 	scratch, err := s.allocateScratchLocked(allocation, library)
 	if err != nil {
 		return nil, err
@@ -1330,26 +1479,27 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	s.mu.Unlock()
 	dir := filepath.Join(s.dir, scratch.name)
 	session := &hlsSession{
-		key:               key,
-		dir:               dir,
-		scratch:           scratch,
-		src:               src,
-		sourceInfo:        sourceInfo,
-		sourceGeneration:  sourceGeneration,
-		durationSeconds:   durationSeconds,
-		timeline:          timeline,
-		rungs:             requestedRungs,
-		audioProfile:      audioProfile,
-		audioStreamIndex:  audioStreamIndex,
-		sourceVideo:       sourceVideo,
-		burnSubtitleIndex: burnSubtitleIndex,
-		audioSource:       audioSource,
-		primed:            primed,
-		priority:          priority,
-		degraded:          degraded,
-		adjust:            adjust,
-		secure:            secure,
-		encodePolicy:      policy,
+		key:                   key,
+		dir:                   dir,
+		scratch:               scratch,
+		src:                   src,
+		sourceInfo:            sourceInfo,
+		sourceGeneration:      sourceGeneration,
+		sourceDurationSeconds: sourceDuration,
+		durationSeconds:       durationSeconds,
+		timeline:              timeline,
+		rungs:                 requestedRungs,
+		audioProfile:          audioProfile,
+		audioStreamIndex:      audioStreamIndex,
+		sourceVideo:           sourceVideo,
+		burnSubtitleIndex:     burnSubtitleIndex,
+		audioSource:           audioSource,
+		primed:                primed,
+		priority:              priority,
+		degraded:              degraded,
+		adjust:                adjust,
+		secure:                secure,
+		encodePolicy:          policy,
 	}
 	if secure != nil {
 		session.live, err = encderiv.NewLiveSession(dir, secure.LibraryID)
@@ -1364,23 +1514,53 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	if s.beforeSetupCommit != nil {
 		s.beforeSetupCommit()
 	}
+	current := captureSource(src, secure, s.statSource)
+	now = s.now()
 	s.mu.Lock()
-	// setupMu excludes other publishers. Termination can still revoke this claim
+	// The setup claim excludes other publishers for this instance. Termination can still revoke this claim
 	// while its directory is being prepared.
-	if s.closed || allocation.revoked {
+	if !binding.validLocked() || allocation.revoked {
 		err = ErrSessionEvicted
 	} else if canceled := ctx.Err(); canceled != nil {
 		err = canceled
+	} else if !source.matches(current) {
+		err = errSetupUnavailable
+	} else if binding.duration != nil && binding.duration.seconds > 0 && binding.duration.seconds != sourceDuration {
+		err = errDurationChanged
 	}
 	if err != nil {
 		scratch.users--
 		teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
+		if !errors.Is(err, errDurationChanged) &&
+			!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			binding.recordSetupLocked(binding.session, binding.session.setup, err)
+		}
 		return nil, err
 	}
-	if existing != nil && s.sessions[key] == existing {
-		teardowns = append(teardowns, s.transitionLocked(existing, detachSession{cleanupOnRelease: true}).teardown)
+	previous := binding.session
+	if existing != nil {
+		t := s.transitionLocked(existing, detachSession{cleanupOnRelease: true}).teardown
+		teardowns = append(teardowns, t)
+		if t.run != nil {
+			session.predecessorWait = append(session.predecessorWait, t.run.reaped)
+		}
+		if t.spawnDone != nil {
+			session.predecessorWait = append(session.predecessorWait, t.spawnDone)
+		}
 	}
-	session.lastAccess = s.now()
+	// Promotion transfers only the publishing binder. Waiters on an initial
+	// reservation share that same instance, including its cutoff.
+	if existing == nil {
+		session = promoteReservation(previous, session)
+	} else {
+		previous.binders--
+		session.binders = 1
+		binding.session = session
+		session.cutoffCtx, session.cancelCutoff = context.WithCancel(context.Background())
+	}
+	session.admitted, session.profile, session.library = true, binding.profile, library
+	session.loadProfile = binding.loadProfile
+	session.lastAccess = now
 	if hint, ok := s.resumeHints[key]; ok {
 		delete(s.resumeHints, key)
 		if session.lastAccess.Sub(hint.at) < sessionIdleTimeout {
@@ -1390,7 +1570,7 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	s.transitionLocked(session, publishSession{composed: picture, picture: preparedPicture})
 	scratch.allocating = false
 	if session.revokeDone != nil {
-		go s.watchLiveRevocation(session, session.revokeDone, secure.Revoked, s.liveRevocationInterval())
+		watchSession, watchDone = session, session.revokeDone
 	}
 	return session, nil
 }
@@ -1474,136 +1654,109 @@ func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeli
 // new-bitrate, reusing the seek-restart machinery), and restarts it when a
 // seek lands outside the produced window. It returns the encoder run that will
 // produce path, or nil when path already exists.
-func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, path string) (*encoderRun, error) {
-	select {
-	case <-session.scratch.cutoff:
-		return nil, ErrSessionEvicted
-	default:
-	}
-	if session.artifactReady(path) {
-		return nil, nil // already produced (possibly by an earlier rendition run)
-	}
-	session.startMu.Lock()
-	defer session.startMu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if session.state != sessionRunning {
-		return nil, ErrSessionEvicted // torn down between s.session() and this lock
-	}
-	if session.artifactReady(path) {
-		return nil, nil
-	}
-	if segment == initRequest {
-		if session.proc != nil && session.currentRung == rung.ID {
-			return session.run, nil // every encoder writes init.mp4 when it starts
+func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, requested int, path string) (*encoderRun, error) {
+	for {
+		select {
+		case <-session.scratch.cutoff:
+			return nil, ErrSessionEvicted
+		default:
 		}
-		segment = session.resumeSegmentLocked(rung)
-	}
-	if session.proc != nil && session.currentRung == rung.ID {
-		if session.durationSeconds == 0 {
-			return session.run, nil // linear mode: the running process will reach it
-		}
-		if segment >= session.baseSegment && segment <= session.frontier+seekLookaheadSegments {
-			return session.run, nil // within the cached frontier; the running transcode reaches it
-		}
-		// Cache miss: the request is beyond the cached frontier, so refresh from
-		// disk — but never hold s.mu across the ReadDir. Drop the lock, scan, then
-		// re-acquire and re-validate before trusting the refreshed frontier: the
-		// session may have been evicted or its run may have exited.
-		base := session.baseSegment
-		run := session.run
-		s.mu.Unlock()
-		scanned := session.scanFrontier(rung.ID, base)
+		ready := session.artifactReady(path)
 		s.mu.Lock()
 		if session.state != sessionRunning {
-			return nil, ErrSessionEvicted // torn down while the frontier scan ran off-lock
+			s.mu.Unlock()
+			return nil, ErrSessionEvicted
 		}
-		if s.transitionLocked(session, advanceFrontier{run: run, rungID: rung.ID, base: base, scanned: scanned}).accepted &&
-			segment >= session.baseSegment && segment <= session.frontier+seekLookaheadSegments {
-			return session.run, nil // the running transcode will reach it; wait outside the lock
+		if ready {
+			s.mu.Unlock()
+			return nil, nil
 		}
-	}
-	var victim *sessionTeardown
-	if session.proc == nil {
-		if session.transcodeFailed {
-			return nil, ErrTranscodeFailed
-		}
-		// The last encoder crashed: this start is a crash restart, bounded by
-		// the session budget so a source that kills FFmpeg fails fast.
-		if session.lastCrashed && !s.transitionLocked(session, takeEncoderRestart{}).accepted {
-			return nil, errEncoderFailing
-		}
-		var err error
-		if victim, err = s.admitLocked(key, session.priority, session.degraded); err != nil {
+		if err := ctx.Err(); err != nil {
+			s.mu.Unlock()
 			return nil, err
 		}
+		if pending := session.start; pending != nil {
+			s.mu.Unlock()
+			if err := waitEncoderOwner(ctx, session, pending.done); err != nil {
+				return nil, err
+			}
+			s.mu.Lock()
+			live := session.state == sessionRunning
+			s.mu.Unlock()
+			if !live {
+				return nil, ErrSessionEvicted
+			}
+			if pending.err != nil && !errors.Is(pending.err, context.Canceled) {
+				return nil, pending.err
+			}
+			continue
+		}
+		segment := requested
+		if requested == initRequest {
+			segment = session.resumeSegmentLocked(rung)
+		}
+		old := session.run
+		if session.proc != nil && session.currentRung == rung.ID {
+			if requested == initRequest || session.durationSeconds == 0 ||
+				segment >= session.baseSegment && segment <= session.frontier+seekLookaheadSegments {
+				s.mu.Unlock()
+				return old, nil
+			}
+			base := session.baseSegment
+			s.mu.Unlock()
+			scanned, _ := session.scanFrontier(rung.ID, base)
+			ready = session.artifactReady(path)
+			s.mu.Lock()
+			if session.state != sessionRunning {
+				s.mu.Unlock()
+				return nil, ErrSessionEvicted
+			}
+			if ready {
+				s.mu.Unlock()
+				return nil, nil
+			}
+			if session.start != nil || session.run != old {
+				s.mu.Unlock()
+				continue
+			}
+			if s.transitionLocked(session, advanceFrontier{run: old, rungID: rung.ID, base: base, scanned: scanned}).accepted &&
+				segment >= base && segment <= session.frontier+seekLookaheadSegments {
+				s.mu.Unlock()
+				return old, nil
+			}
+		}
+		runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		run := &encoderRun{session: session, ctx: runCtx, cancel: cancel, reaped: make(chan struct{}), exited: make(chan struct{})}
+		start := &encoderStart{ctx: ctx, session: session, run: run, done: make(chan struct{})}
+		session.start = start
+		s.starting++
+		stopOld := session.proc != nil
+		if stopOld {
+			s.acceptEndpointFailureLocked(old)
+			old.acceptReasonLocked(exitStopped)
+			old.carry = start
+			old.stopIssued = true
+		}
+		s.mu.Unlock()
+		launched, err := s.startEncoder(ctx, key, start, old, stopOld, rung, segment, requested != initRequest)
+		s.finishEncoderStart(start, err)
+		return launched, err
 	}
-	// Stop and spawn outside mu. The claim keeps the slot counted while
-	// startMu prevents a second request from starting another encoder.
-	start := &encoderStart{}
-	s.transitionLocked(session, start)
-	s.mu.Unlock()
-	if victim != nil {
-		s.runTeardowns([]*sessionTeardown{victim})
-	}
-	if start.replacedLive != nil {
-		start.replacedLive.Revoke()
-	}
-	s.stop(start.replaced)
-	procCtx := context.WithoutCancel(ctx)
-	var proc *ffmpeg.HLSProcess
-	var liveRun *encderiv.LiveRun
-	var err error
+}
+
+func (s *Sessions) launchEncoder(ctx context.Context, start *encoderStart, rung Rung, segment int) (*ffmpeg.HLSProcess, error) {
+	session := start.session
 	rungDir := filepath.Join(session.dir, rung.ID)
 	if session.secure != nil {
-		// The encrypted encode shares the primed grid; segments the earlier
-		// start rewrites are refused as existing and the first copy stays.
-		segment = session.primed.restartSegment(segment)
-		proc, liveRun, err = s.startEncryptedRung(procCtx, session, rung, segment)
-	} else if t := session.keyframeTimeline(rung); t != nil && session.durationSeconds > 0 {
-		// Start at the actual keyframe time to match the playlist (CORE-0021).
-		proc, err = s.transcoder.(keyframeTranscoder).StartHLSKeyframeSegments(procCtx, session.src, rungDir, segment, t.segmentStart(segment), session.rendition(rung))
-	} else if session.durationSeconds > 0 {
-		segment = session.primed.restartSegment(segment)
-		proc, err = s.transcoder.StartHLSSegments(procCtx, session.src, rungDir, segment, rungSegmentSeconds(rung), session.rendition(rung))
-	} else {
-		proc, err = s.transcoder.StartHLS(procCtx, session.src, rungDir, session.rendition(rung))
+		return s.startEncryptedRung(ctx, start, rung, segment)
 	}
-	s.mu.Lock()
-	var run *encoderRun
-	if err == nil {
-		run = &encoderRun{proc: proc, live: liveRun}
+	if timeline := session.keyframeTimeline(rung); timeline != nil && session.durationSeconds > 0 {
+		return s.transcoder.(keyframeTranscoder).StartHLSKeyframeSegments(ctx, session.src, rungDir, segment, timeline.segmentStart(segment), session.rendition(rung))
 	}
-	if !s.transitionLocked(session, completeEncoderStart{start: start, run: run, rungID: rung.ID, segment: segment}).accepted {
-		// The artifact request still holds the directory. Stop the late
-		// child and finish its claim before releasing that reference.
-		s.mu.Unlock()
-		if err == nil {
-			if liveRun != nil {
-				liveRun.Revoke()
-			}
-			s.stop(proc)
-		}
-		s.mu.Lock()
-		s.transitionLocked(session, finishDetachedStart{start: start})
-		return nil, ErrSessionEvicted
+	if session.durationSeconds > 0 {
+		return s.transcoder.StartHLSSegments(ctx, session.src, rungDir, segment, rungSegmentSeconds(rung), session.rendition(rung))
 	}
-	if err != nil {
-		return nil, err
-	}
-	if run.exited != nil {
-		session.scratch.users++
-		s.reapProcess(key, session, run, rung, segment)
-		if proc.ReportsProgress() {
-			go watchForStall(run, s.encoderStallTimeout())
-		}
-		if liveRun != nil {
-			go watchLiveRun(run)
-		}
-	} else if liveRun != nil {
-		liveRun.Revoke() // no process to serve
-	}
-	return run, nil
+	return s.transcoder.StartHLS(ctx, session.src, rungDir, session.rendition(rung))
 }
 
 // resumeSegmentLocked is the segment an encoder started for an init.mp4
@@ -1627,9 +1780,9 @@ func (session *hlsSession) resumeSegmentLocked(rung Rung) int {
 // HLS session, so the session's first encoder starts there. A position of 0
 // clears it. A session that already started an encoder ignores it.
 func (s *Sessions) NoteResumePosition(key SessionKey, seconds int) {
+	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := s.now()
 	for k, hint := range s.resumeHints {
 		if now.Sub(hint.at) >= sessionIdleTimeout {
 			delete(s.resumeHints, k)
@@ -1667,17 +1820,24 @@ func (s *Sessions) encoderStallTimeout() time.Duration {
 // for stall while at least one request is waiting on it, and returns once the
 // process has exited. An encoder nobody waits on is left alone: it may simply
 // be ahead of a paused viewer. The reaper classifies the kill as exitStalled.
-func watchForStall(run *encoderRun, stall time.Duration) {
+func (s *Sessions) watchForStall(run *encoderRun, stall time.Duration) {
 	ticker := time.NewTicker(max(stall/4, time.Millisecond))
 	defer ticker.Stop()
 	for {
 		select {
-		case <-run.exited:
+		case <-run.reaped:
 			return
 		case <-ticker.C:
 			if run.waiting.Load() > 0 && time.Since(run.proc.ProgressedAt()) >= stall {
-				run.stalled.Store(true)
-				run.proc.Kill()
+				s.mu.Lock()
+				active := run.session.proc == run.proc && run.session.run == run
+				if active {
+					run.acceptReasonLocked(exitStalled)
+				}
+				s.mu.Unlock()
+				if active {
+					run.proc.Kill()
+				}
 				return
 			}
 		}
@@ -1693,32 +1853,46 @@ func watchForStall(run *encoderRun, stall time.Duration) {
 func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoderRun, rung Rung, base int) {
 	started := time.Now() // before the goroutine, so no segment of this run predates it
 	go func() {
-		defer close(run.exited)
 		defer s.releaseScratch(session.scratch)
+		defer run.cancel()
 		waitErr := run.proc.Wait()
+		s.mu.Lock()
+		s.acceptEndpointFailureLocked(run)
+		s.childReapedLocked(run)
+		s.mu.Unlock()
 		if run.live != nil {
-			// The token lives exactly as long as the process, plus the time
-			// to store the uploads it sent before exiting.
 			run.live.Finish()
 		}
+		s.mu.Lock()
+		s.acceptEndpointFailureLocked(run)
 		outcome := exitCrashed
 		switch {
+		case run.hasReason:
+			outcome = run.outcome
 		case run.proc.StopRequested():
 			outcome = exitStopped
 		case waitErr == nil:
 			outcome = exitEndOfInput
-		case run.stalled.Load():
-			outcome = exitStalled
 		}
+		run.acceptReasonLocked(outcome)
+		s.mu.Unlock()
 		// Filesystem reads stay off-lock, as with ensureRung's frontier scan.
 		rungDir := filepath.Join(session.dir, rung.ID)
-		frontier := session.scanFrontier(rung.ID, base)
+		frontier, scanned := session.scanFrontier(rung.ID, base)
 		wroteSegment := session.segmentWrittenSince(rung.ID, base, started)
 		sourceEnd := -1 // the first segment with no media, when the source ends early
-		if outcome == exitEndOfInput && session.durationSeconds > 0 {
-			_, _, _ = s.observeIncompleteSource(key, session, func() (time.Duration, bool) {
+		if outcome == exitEndOfInput && scanned && session.durationSeconds > 0 {
+			observeCtx, cancel := context.WithTimeout(run.ctx, 5*time.Second)
+			_, observed, _ := s.observeIncompleteSource(observeCtx, key, session, run, func() (time.Duration, bool) {
 				last := frontier
-				for last >= base && session.segmentLacksMedia(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last))) {
+				for last >= base {
+					empty, readable := session.inspectSegment(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last)))
+					if !readable {
+						return 0, false
+					}
+					if !empty {
+						break
+					}
 					last--
 				}
 				if end := last + 1; end < session.segmentCount(rung) {
@@ -1727,12 +1901,20 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 				}
 				return 0, false
 			})
+			cancel()
+			if !observed {
+				sourceEnd = -1
+			}
 		}
 
 		s.mu.Lock()
 		result := s.transitionLocked(session, reapEncoder{
 			run: run, outcome: outcome, wroteSegment: wroteSegment, sourceEnd: sourceEnd, rung: rung,
 		})
+		if session.writing == run {
+			session.writing = nil
+		}
+		close(run.exited)
 		s.mu.Unlock()
 
 		stderr := run.proc.StderrTail()
@@ -1769,11 +1951,11 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 
 // scanFrontier reads the held rung directory. Callers fold the result back
 // into the session's cached frontier under the manager lock.
-func (h *hlsSession) scanFrontier(rung string, base int) int {
+func (h *hlsSession) scanFrontier(rung string, base int) (int, bool) {
 	frontier := base - 1
 	entries, err := h.readRung(rung)
 	if err != nil {
-		return frontier
+		return frontier, false
 	}
 	for _, entry := range entries {
 		match := segmentName.FindStringSubmatch(entry.Name())
@@ -1785,7 +1967,7 @@ func (h *hlsSession) scanFrontier(rung string, base int) int {
 			frontier = segment
 		}
 	}
-	return frontier
+	return frontier, true
 }
 
 func rungSegmentSeconds(rung Rung) int {
@@ -1926,11 +2108,11 @@ func (s *Sessions) Run(ctx context.Context) {
 }
 
 func (s *Sessions) reap() {
+	cutoff := s.now().Add(-sessionIdleTimeout)
 	s.mu.Lock()
 	var teardowns []*sessionTeardown
-	cutoff := s.now().Add(-sessionIdleTimeout)
 	for _, session := range s.sessions {
-		if session.lastAccess.Before(cutoff) {
+		if session.state == sessionRunning && session.lastAccess.Before(cutoff) {
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{cleanupOnRelease: true}).teardown)
 		}
 	}
@@ -1952,6 +2134,9 @@ func (s *Sessions) Close() error {
 		for _, session := range s.sessions {
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
 		}
+		for session := range s.failedHeads {
+			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
+		}
 		s.mu.Unlock()
 		s.runTeardowns(teardowns)
 		s.keyframes.probes.Wait()
@@ -1966,7 +2151,7 @@ func (s *Sessions) Close() error {
 		}
 		s.mu.Unlock()
 		if s.rootLock != nil {
-			s.closeErr = errors.Join(s.closeSweepErr, s.retryScratch(true), s.rootLock.Close())
+			s.closeErr = errors.Join(s.closeSweepErr, s.retryScratch(true), unlockScratchRoot(s.rootLock))
 		}
 	})
 	return s.closeErr
@@ -2102,19 +2287,19 @@ func pollForArtifact(ctx context.Context, path string, exited, cutoff <-chan str
 	}
 }
 
-// readerLacksMedia reports whether a complete ISO-BMFF segment contains no
-// media payload. It reads only box headers and declines malformed input.
-func readerLacksMedia(r io.ReaderAt, size int64) bool {
+// inspectMediaBoxes reports whether a complete ISO-BMFF segment has media.
+// It reads box headers and distinguishes malformed or unreadable data.
+func inspectMediaBoxes(r io.ReaderAt, size int64) (empty, readable bool) {
 	if size == 0 {
-		return false
+		return false, false
 	}
 	var header [16]byte
 	for off := int64(0); off < size; {
 		if size-off < 8 {
-			return false // trailing bytes that are not a box
+			return false, false // trailing bytes that are not a box
 		}
 		if _, err := r.ReadAt(header[:8], off); err != nil {
-			return false
+			return false, false
 		}
 		boxSize := int64(binary.BigEndian.Uint32(header[:4]))
 		headerSize := int64(8)
@@ -2123,26 +2308,26 @@ func readerLacksMedia(r io.ReaderAt, size int64) bool {
 			boxSize = size - off
 		case 1: // 64-bit largesize follows the type
 			if size-off < 16 {
-				return false
+				return false, false
 			}
 			if _, err := r.ReadAt(header[8:16], off+8); err != nil {
-				return false
+				return false, false
 			}
 			large := binary.BigEndian.Uint64(header[8:16])
 			// #nosec G115 -- size-off is positive (loop guard), so it fits in uint64.
 			if large > uint64(size-off) {
-				return false
+				return false, false
 			}
 			boxSize = int64(large) // #nosec G115 -- large <= size-off, an int64, so it fits.
 			headerSize = 16
 		}
 		if boxSize < headerSize || boxSize > size-off {
-			return false
+			return false, false
 		}
 		if string(header[4:8]) == "mdat" && boxSize > headerSize {
-			return false
+			return false, true
 		}
 		off += boxSize
 	}
-	return true
+	return true, true
 }

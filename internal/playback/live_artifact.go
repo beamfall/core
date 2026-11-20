@@ -15,32 +15,47 @@ import (
 // LiveArtifact owns a directory reference for the selected session. Its caller
 // must close any opened reader before calling Release.
 type LiveArtifact struct {
-	manager *Sessions
-	session *hlsSession
-	path    string
-	once    sync.Once
+	manager  *Sessions
+	session  *hlsSession
+	path     string
+	once     sync.Once
+	trackRun bool
+	version  uint64
+	delivery string
 }
 
 func (a *LiveArtifact) Release() {
 	a.once.Do(func() { a.manager.releaseScratch(a.session.scratch) })
 }
 
-func (a *LiveArtifact) evicted() bool {
+// Cutoff closes when the exact instance loses byte access.
+func (a *LiveArtifact) Cutoff() <-chan struct{} { return a.session.scratch.cutoff }
+
+func (a *LiveArtifact) validate(delivered bool) error {
 	a.manager.mu.Lock()
 	defer a.manager.mu.Unlock()
-	return a.session.state != sessionRunning
+	if a.session.state != sessionRunning {
+		return ErrSessionEvicted
+	}
+	if a.trackRun && a.session.artifactVersion != a.version {
+		return ErrArtifactChanged
+	}
+	if delivered && a.delivery != "" {
+		a.manager.transitionLocked(a.session, deliverSessionRung{id: a.delivery})
+	}
+	return nil
 }
 
 func (a *LiveArtifact) OpenPlain() (*os.File, fs.FileInfo, error) {
-	if a.evicted() {
-		return nil, nil, ErrSessionEvicted
+	if err := a.validate(false); err != nil {
+		return nil, nil, err
 	}
 	f, info, err := a.session.openArtifact(a.path)
-	if a.evicted() {
+	if claimErr := a.validate(err == nil); claimErr != nil {
 		if f != nil {
 			_ = f.Close()
 		}
-		return nil, nil, ErrSessionEvicted
+		return nil, nil, claimErr
 	}
 	if errors.Is(err, fs.ErrInvalid) || errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
 		return nil, nil, errors.Join(fs.ErrNotExist, err)
@@ -49,14 +64,17 @@ func (a *LiveArtifact) OpenPlain() (*os.File, fs.FileInfo, error) {
 }
 
 func (a *LiveArtifact) OpenEncrypted() (*encderiv.LiveFile, error) {
-	if a.evicted() {
-		return nil, ErrSessionEvicted
+	if err := a.validate(false); err != nil {
+		return nil, err
 	}
 	f, err := a.session.openEncryptedArtifact(a.path)
-	if a.evicted() || errors.Is(err, encderiv.ErrLiveSessionClosed) {
+	if claimErr := a.validate(err == nil); claimErr != nil {
 		if f != nil {
 			_ = f.Close()
 		}
+		return nil, claimErr
+	}
+	if errors.Is(err, encderiv.ErrLiveSessionClosed) {
 		return nil, ErrSessionEvicted
 	}
 	return f, err

@@ -174,12 +174,14 @@ func TestComposedShapedSessionEncodesOneComposedRung(t *testing.T) {
 	})
 	key := SessionKey{SessionID: "session-default", MediaID: "media-song"}
 	shape := StreamShape{ComposedPicture: true}
-	masterPath, err := sessions.FilePathShaped(t.Context(), key, "/src/song.mp3", 30, 0, 0, false, false,
+	src := filepath.Join(t.TempDir(), "song.mp3")
+	seedScratchFile(t, src)
+	masterPath, err := sessions.FilePathShaped(t.Context(), key, src, 30, 0, 0, false, false,
 		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, shape, PriorityNormal, masterPlaylistName)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sessions.FilePathShaped(t.Context(), key, "/src/song.mp3", 30, 0, 0, false, false,
+	if _, err := sessions.FilePathShaped(t.Context(), key, src, 30, 0, 0, false, false,
 		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, shape, PriorityNormal, ComposedRungID+"/seg00000.m4s"); err != nil {
 		t.Fatal(err)
 	}

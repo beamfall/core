@@ -70,13 +70,13 @@ func TestPrecomputedRenditionRequiresToneMapMarkerForHDRSource(t *testing.T) {
 	profile := CapabilityProfile{VideoCodecs: []VideoCodecCap{{Codec: "h264", MaxHeight: 720}}}
 	sourceVideo := VideoSignal{ColorTransfer: "smpte2084", ColorPrimaries: "bt2020"}
 
-	if precomputedRenditionCompatible(rendition, profile, sourceVideo, false, ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, quirkOverlay{}) {
+	if precomputedRenditionCompatible(context.Background(), rendition, profile, sourceVideo, false, ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, quirkOverlay{}) {
 		t.Fatal("HDR-source precompute without tone-map marker must not be served")
 	}
 	if err := os.WriteFile(filepath.Join(dir, toneMappedSDRMarker), []byte("ok\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !precomputedRenditionCompatible(rendition, profile, sourceVideo, false, ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, quirkOverlay{}) {
+	if !precomputedRenditionCompatible(context.Background(), rendition, profile, sourceVideo, false, ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, quirkOverlay{}) {
 		t.Fatal("HDR-source precompute with tone-map marker should be compatible")
 	}
 }
@@ -85,13 +85,13 @@ func TestPrecomputedRenditionAudioCompatibility(t *testing.T) {
 	rendition := store.PlaybackRendition{Kind: store.PlaybackRenditionKindHLS, Status: store.PlaybackRenditionReady, Codec: "h264", Height: 720}
 	profile := CapabilityProfile{VideoCodecs: []VideoCodecCap{{Codec: "h264", MaxHeight: 720}}}
 
-	if precomputedRenditionCompatible(rendition, profile, VideoSignal{}, true, ffmpeg.AudioProfile{Codec: "eac3", Channels: 6}, quirkOverlay{}) {
+	if precomputedRenditionCompatible(context.Background(), rendition, profile, VideoSignal{}, true, ffmpeg.AudioProfile{Codec: "eac3", Channels: 6}, quirkOverlay{}) {
 		t.Fatal("AAC stereo precompute was accepted for an E-AC-3 5.1 transcode profile")
 	}
-	if !precomputedRenditionCompatible(rendition, profile, VideoSignal{}, true, ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, quirkOverlay{}) {
+	if !precomputedRenditionCompatible(context.Background(), rendition, profile, VideoSignal{}, true, ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, quirkOverlay{}) {
 		t.Fatal("AAC stereo precompute was rejected for an AAC stereo transcode profile")
 	}
-	if !precomputedRenditionCompatible(rendition, profile, VideoSignal{}, false, ffmpeg.AudioProfile{Codec: "eac3", Channels: 6}, quirkOverlay{}) {
+	if !precomputedRenditionCompatible(context.Background(), rendition, profile, VideoSignal{}, false, ffmpeg.AudioProfile{Codec: "eac3", Channels: 6}, quirkOverlay{}) {
 		t.Fatal("video-only precompute was rejected for an irrelevant audio target")
 	}
 }

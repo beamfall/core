@@ -174,6 +174,9 @@ func (s *LiveSession) WriteFile(rel string, data []byte) error {
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
+	if err == nil && s.cutoff.Load() {
+		err = ErrLiveSessionClosed
+	}
 	if err == nil {
 		err = os.Rename(tmp, path)
 	}
@@ -211,6 +214,9 @@ func (s *LiveSession) put(rel string, body io.Reader) error {
 	err = s.encrypt(f, body, rel)
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
+	}
+	if err == nil && s.cutoff.Load() {
+		err = ErrLiveSessionClosed
 	}
 	if err == nil {
 		err = os.Rename(part, path)
@@ -305,7 +311,12 @@ func (f *LiveFile) Read(p []byte) (int, error) {
 	if f.ended || f.owner.cutoff.Load() {
 		return 0, ErrLiveSessionClosed
 	}
-	return f.r.Read(p)
+	n, err := f.r.Read(p)
+	if f.owner.cutoff.Load() {
+		clear(p[:n])
+		return 0, ErrLiveSessionClosed
+	}
+	return n, err
 }
 
 func (f *LiveFile) Seek(offset int64, whence int) (int64, error) {
@@ -337,6 +348,10 @@ func (f *LiveFile) ReadAt(p []byte, off int64) (int, error) {
 	}
 	if _, seekErr := f.r.Seek(pos, io.SeekStart); err == nil {
 		err = seekErr
+	}
+	if f.owner.cutoff.Load() {
+		clear(p[:n])
+		return 0, ErrLiveSessionClosed
 	}
 	return n, err
 }
@@ -398,6 +413,7 @@ func (k liveSink) upload(name string, body io.Reader) error {
 
 // LiveRunConfig describes one encoder run of a live session.
 type LiveRunConfig struct {
+	Disabled bool
 	// Session receives the run's uploads.
 	Session *LiveSession
 	// Rung is the run's rendition directory, one path component.
@@ -443,6 +459,8 @@ func StartLiveRun(cfg LiveRunConfig) (*LiveRun, error) {
 		cfg.peer = checkPeer
 	}
 	ep, err := startEndpoint(endpointConfig{
+		disabled: cfg.Disabled,
+		cutoff:   &cfg.Session.cutoff,
 		open:     cfg.Open,
 		size:     cfg.Size,
 		deadline: cfg.now().Add(cfg.TTL),
@@ -469,6 +487,16 @@ func (r *LiveRun) Port() int { return r.ep.Port() }
 
 // Secret is the token, for redacting the URLs from diagnostics.
 func (r *LiveRun) Secret() string { return r.ep.token }
+
+// Enable admits requests for a registered run. An aborted run stays closed.
+func (r *LiveRun) Enable() {
+	r.ep.mu.Lock()
+	r.ep.disabled = false
+	r.ep.mu.Unlock()
+}
+
+// Abort refuses new requests and closes connections without joining handlers.
+func (r *LiveRun) Abort() { r.ep.Abort() }
 
 // Revoke ends the token and waits for requests in flight; an upload cut off
 // leaves no file behind.

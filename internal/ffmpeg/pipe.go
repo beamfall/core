@@ -167,7 +167,7 @@ func (r *Runner) runPipeToolWith(ctx context.Context, port int, in PipeInput, to
 	if err != nil {
 		return fmt.Errorf("%s is not available: %w", tool, err)
 	}
-	cmd, err := r.pipeCommand(ctx, runtime.GOOS, port, toolPath, pipeArgsForTool(toolPath, args))
+	cmd, err := r.pipeCommand(ctx, runtime.GOOS, port, toolPath, pipeArgsForToolContext(ctx, toolPath, args))
 	if err != nil {
 		return err
 	}

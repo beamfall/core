@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -190,15 +189,17 @@ type keyframeGeneration struct {
 	path      string
 	size      int64
 	modTimeNs int64
+	identity  string
 }
 
 // keyframeCache holds probed timelines and makes concurrent first plays of
 // one file share a single probe. Its zero value is ready to use.
 type keyframeCache struct {
-	mu       sync.Mutex
-	store    KeyframeStore
-	done     map[keyframeGeneration]*keyframeTimeline
-	inflight map[keyframeGeneration]*keyframeLoad
+	mu           sync.Mutex
+	store        KeyframeStore
+	done         map[keyframeGeneration]*keyframeTimeline
+	inflight     map[keyframeGeneration]*keyframeLoad
+	publications map[string]*keyframePublication
 	// closed refuses new probes once close has begun. stopProbes cancels the
 	// probes still running (stopCtx is created with the first probe), and
 	// probes counts them so close can wait for each to return.
@@ -208,6 +209,11 @@ type keyframeCache struct {
 	probes     sync.WaitGroup
 	// firstPlayWait overrides keyframeFirstPlayWait when positive (tests).
 	firstPlayWait time.Duration
+}
+
+type keyframePublication struct {
+	latest  *keyframeLoad
+	running int
 }
 
 type keyframeLoad struct {
@@ -232,28 +238,28 @@ func (s *Sessions) SetKeyframeStore(keyframes KeyframeStore) {
 // (and tears down) a session that is playing. Otherwise the file's current
 // generation is looked up in memory, then in the store, and probed only when
 // neither has it.
-func (s *Sessions) copyVideoTimeline(ctx context.Context, key SessionKey, src string) (*keyframeTimeline, error) {
+func (s *Sessions) boundVideoTimeline(ctx, owner context.Context, session *hlsSession, source sourceCapture) (*keyframeTimeline, error) {
 	prober, ok := s.transcoder.(keyframeTranscoder)
 	if !ok {
 		return nil, nil
 	}
 	s.mu.Lock()
-	if existing, ok := s.sessions[key]; ok && existing.src == src && slices.ContainsFunc(existing.rungs, func(r Rung) bool { return r.CopyVideo }) {
-		timeline := existing.timeline
+	if session.state == sessionRunning && source.info != nil && source.matches(session.sourceCapture()) && slices.ContainsFunc(session.rungs, func(r Rung) bool { return r.CopyVideo }) {
+		timeline := session.timeline
 		s.mu.Unlock()
 		return timeline, nil
 	}
 	s.mu.Unlock()
-	info, err := os.Stat(src)
-	if err != nil {
-		return nil, err
+	info := source.info
+	if info == nil {
+		return nil, errSetupUnavailable
 	}
-	gen := keyframeGeneration{path: src, size: info.Size(), modTimeNs: info.ModTime().UnixNano()}
-	timeline, err := s.keyframes.load(ctx, gen, prober)
+	gen := keyframeGeneration{path: source.path, size: info.Size(), modTimeNs: info.ModTime().UnixNano(), identity: source.generation}
+	timeline, err := s.keyframes.load(ctx, owner, gen, prober)
 	if errors.Is(err, errKeyframesPending) {
 		// A slow probe must not keep the title from playing: the uniform
 		// grid plays, only its seeks land on the keyframe before.
-		slog.Warn("keyframe probe still running; audio-copy session uses the uniform segment grid", "media", key.MediaID)
+		slog.Warn("keyframe probe still running; audio-copy session uses the uniform segment grid", "media", session.key.MediaID)
 		return nil, nil
 	}
 	return timeline, err
@@ -265,13 +271,16 @@ var errKeyframesPending = errors.New("keyframe probe still running")
 
 // load returns gen's timeline, starting a probe when none is cached or
 // running. It waits at most the first-play wait for a running probe.
-func (c *keyframeCache) load(ctx context.Context, gen keyframeGeneration, prober keyframeTranscoder) (*keyframeTimeline, error) {
+func (c *keyframeCache) load(ctx, owner context.Context, gen keyframeGeneration, prober keyframeTranscoder) (*keyframeTimeline, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
 		return nil, ErrSessionEvicted
 	}
 	if timeline, ok := c.done[gen]; ok {
+		if pending := c.publications[gen.path]; pending != nil {
+			pending.latest = nil
+		}
 		c.mu.Unlock()
 		return timeline, nil
 	}
@@ -282,11 +291,21 @@ func (c *keyframeCache) load(ctx context.Context, gen keyframeGeneration, prober
 			c.inflight = map[keyframeGeneration]*keyframeLoad{}
 		}
 		c.inflight[gen] = load
+		if c.publications == nil {
+			c.publications = make(map[string]*keyframePublication)
+		}
+		pending := c.publications[gen.path]
+		if pending == nil {
+			pending = &keyframePublication{}
+			c.publications[gen.path] = pending
+		}
+		pending.latest = load
+		pending.running++
 		if c.stopCtx == nil {
 			c.stopCtx, c.stopProbes = context.WithCancel(context.Background())
 		}
 		c.probes.Add(1)
-		go c.probe(context.WithoutCancel(ctx), gen, load, c.store, prober, c.stopCtx)
+		go c.probe(owner, gen, load, c.store, prober, c.stopCtx)
 	}
 	wait := c.firstPlayWait
 	if wait <= 0 {
@@ -315,17 +334,21 @@ func (c *keyframeCache) probe(ctx context.Context, gen keyframeGeneration, load 
 	load.timeline, load.err = resolveKeyframes(probeCtx, gen, keyframes, prober)
 	stopProbe()
 	cancel()
+	if load.err == nil && gen.identity != "" && captureSource(gen.path, nil, nil).generation != gen.identity {
+		load.err = errSetupUnavailable
+	}
 
 	c.mu.Lock()
 	delete(c.inflight, gen)
-	if load.err == nil {
+	pending := c.publications[gen.path]
+	current := pending.latest == load
+	pending.running--
+	if pending.running == 0 {
+		delete(c.publications, gen.path)
+	}
+	if load.err == nil && current && !c.closed {
 		if c.done == nil {
 			c.done = map[keyframeGeneration]*keyframeTimeline{}
-		}
-		for old := range c.done {
-			if old.path == gen.path {
-				delete(c.done, old) // an earlier generation of the same file
-			}
 		}
 		for old := range c.done {
 			if len(c.done) < keyframeCacheEntries {
@@ -334,11 +357,12 @@ func (c *keyframeCache) probe(ctx context.Context, gen keyframeGeneration, load 
 			delete(c.done, old)
 		}
 		c.done[gen] = load.timeline
-	} else {
-		slog.Warn("keyframe probe failed", "err", load.err)
 	}
 	c.mu.Unlock()
 	close(load.finished)
+	if load.err != nil && !errors.Is(load.err, context.Canceled) {
+		slog.Warn("keyframe probe failed", "err", load.err)
+	}
 }
 
 // stop closes probe admission and signals running probes. The caller joins

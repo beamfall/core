@@ -569,23 +569,18 @@ type Timeline struct {
 
 // Service owns playbackInfo decisions.
 type Service struct {
-	store           *store.Store
-	profileSessions profileSessionStore
-	tokens          *streamtoken.Service
-	now             func() time.Time
-	sessions        *Sessions
-	assets          AssetsLocator
-	roster          PartyRoster
-	selector        *SelectorService
-	sealed          SealedPredicate
-	quirks          QuirkDB
-	composer        PictureComposer
-	composedCache   string
-	observed        observations
-}
-
-type profileSessionStore interface {
-	MyProfileSessions(context.Context, store.ProfileID) ([]store.MyProfileSession, error)
+	store         *store.Store
+	tokens        *streamtoken.Service
+	now           func() time.Time
+	sessions      *Sessions
+	assets        AssetsLocator
+	roster        PartyRoster
+	selector      *SelectorService
+	sealed        SealedPredicate
+	quirks        QuirkDB
+	composer      PictureComposer
+	composedCache string
+	observed      observations
 }
 
 // SealedPredicate reports whether a Library is currently Sealed (ADR-0098 area
@@ -718,7 +713,7 @@ func NewService(st *store.Store, tokens *streamtoken.Service, now func() time.Ti
 	if err != nil {
 		panic("playback: embedded quirks baseline is invalid: " + err.Error())
 	}
-	return &Service{store: st, profileSessions: st, tokens: tokens, now: now, quirks: quirks}
+	return &Service{store: st, tokens: tokens, now: now, quirks: quirks}
 }
 
 // decision is the resolved ladder outcome for one media ID.
@@ -1297,7 +1292,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// A build without the adjustment's filters (or the audio encoder) declines
 	// the adjustment rather than offer a stream that fails to start.
 	if !adjust.IsZero() && media.Class == store.MediaClassAudio && sourceHasAudio && transcodeRefusal == "" && s.sessions != nil &&
-		audioAdjustSupported(adjustedAudioRendition(hlsAudio, adjust)) {
+		audioAdjustSupported(ctx, adjustedAudioRendition(hlsAudio, adjust)) {
 		grant = withAudioAdjustGrant(grant, adjust)
 	} else {
 		adjust = ffmpeg.AudioAdjust{}
@@ -1371,7 +1366,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		// ADR-0010 §8: a manual rendition pin is offered on direct-playable
 		// files too (the weak-WiFi case) — but only when the transcode could
 		// actually start right now.
-		if transcodeRefusal == "" && sourceVideo.FullTranscodeRefusal() == "" && policyRefusal == "" {
+		if transcodeRefusal == "" && sourceVideo.fullTranscodeRefusal(ctx) == "" && policyRefusal == "" {
 			hls, err := s.hlsChoice(ctx, grant, suffix, media, profile, hlsAudio, audioOnlyPeak, expiresAt, ov)
 			if err != nil {
 				return decision{}, err
@@ -1442,7 +1437,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 				// transcode only the audio, lighter than a re-encode.
 				hls, err = s.degradedAudioCopyChoice(ctx, grant, suffix, hlsAudio, expiresAt)
 			} else {
-				if reason := cmp.Or(sourceVideo.FullTranscodeRefusal(), policyRefusal); reason != "" {
+				if reason := cmp.Or(sourceVideo.fullTranscodeRefusal(ctx), policyRefusal); reason != "" {
 					return decision{media: media, verdict: "unavailable", reason: reason, streams: []StreamChoice{}, timeline: timeline, parts: parts, assets: assets, captionTracks: captionTracks, overlayApplied: true}, nil
 				}
 				hls, err = s.degradedHLSChoice(ctx, grant, suffix, media, profile, hlsAudio, audioOnlyPeak, expiresAt, ov)
@@ -1495,7 +1490,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			overlayApplied: true,
 		}, nil
 	}
-	if reason := cmp.Or(sourceVideo.FullTranscodeRefusal(), policyRefusal); reason != "" {
+	if reason := cmp.Or(sourceVideo.fullTranscodeRefusal(ctx), policyRefusal); reason != "" {
 		return decision{media: media, verdict: "unavailable", reason: reason, streams: []StreamChoice{}, timeline: timeline, parts: parts, assets: assets, captionTracks: captionTracks, overlayApplied: true}, nil
 	}
 
@@ -1673,20 +1668,19 @@ func groupVersions(files []store.MediaFile) [][]store.MediaFile {
 // newcomer may preempt a strictly-lower-priority stream at
 // capacity, so checking admission at that rank keeps the verdict honest — a
 // foreground playhead is not refused for capacity it could actually claim.
-func (s *Service) transcodeRefusal(ctx context.Context, scope auth.Scope, mediaID store.MediaID, profile CapabilityProfile, policy store.Profile, priority Priority) string {
+func (s *Service) transcodeRefusal(_ context.Context, scope auth.Scope, mediaID store.MediaID, profile CapabilityProfile, policy store.Profile, priority Priority) string {
 	if !policy.TranscodeAllowed {
 		return "transcode-disallowed"
 	}
-	if policy.MaxConcurrentStreams != nil &&
-		s.activeProfileTranscodes(ctx, scope, mediaID) >= *policy.MaxConcurrentStreams {
-		return "stream-limit-reached"
-	}
-	if s.sessions != nil && !s.sessions.CanAdmitPriority(SessionKey{
-		SessionID:         scope.SessionID,
-		MediaID:           mediaID,
-		ProfileCapability: CapabilityFingerprint(profile),
-	}, priority) {
-		return "transcode-capacity-reached"
+	key := SessionKey{SessionID: scope.SessionID, MediaID: mediaID, ProfileCapability: CapabilityFingerprint(profile)}
+	if s.sessions != nil {
+		if policy.MaxConcurrentStreams != nil &&
+			s.sessions.activeProfileTranscodes(scope.ProfileID, key) >= *policy.MaxConcurrentStreams {
+			return "stream-limit-reached"
+		}
+		if !s.sessions.CanAdmitPriority(key, priority) {
+			return "transcode-capacity-reached"
+		}
 	}
 	return ""
 }
@@ -1737,7 +1731,7 @@ func (s *Service) cachedRenditionChoice(ctx context.Context, scope auth.Scope, g
 		if rendition.RungID == ComposedRungID {
 			continue
 		}
-		if !precomputedRenditionCompatible(rendition, profile, sourceVideo, sourceHasAudio, wantedAudio, ov) {
+		if !precomputedRenditionCompatible(ctx, rendition, profile, sourceVideo, sourceHasAudio, wantedAudio, ov) {
 			continue
 		}
 		choice, err := s.precomputedStreamChoice(ctx, grant, suffix, rendition, expiresAt)
@@ -1769,14 +1763,14 @@ func (s *Service) precomputedStreamChoice(ctx context.Context, grant streamtoken
 	}, nil
 }
 
-func precomputedRenditionCompatible(r store.PlaybackRendition, profile CapabilityProfile, sourceVideo VideoSignal, sourceHasAudio bool, wantedAudio ffmpeg.AudioProfile, ov quirkOverlay) bool {
+func precomputedRenditionCompatible(ctx context.Context, r store.PlaybackRendition, profile CapabilityProfile, sourceVideo VideoSignal, sourceHasAudio bool, wantedAudio ffmpeg.AudioProfile, ov quirkOverlay) bool {
 	if r.Kind != store.PlaybackRenditionKindHLS || r.Status != store.PlaybackRenditionReady {
 		return false
 	}
 	if ov.vetoesRendition(r) {
 		return false
 	}
-	if sourceVideo.FullTranscodeRefusal() != "" {
+	if sourceVideo.fullTranscodeRefusal(ctx) != "" {
 		return false
 	}
 	if sourceHasAudio && !precomputedAudioCompatible(wantedAudio) {
@@ -2390,38 +2384,6 @@ func profileRendersASS(subtitleFormats []string) bool {
 	return declaresSubtitleFormat(subtitleFormats, "ass")
 }
 
-// activeProfileTranscodes counts the Profile's running HLS transcode sessions
-// — the v1 definition of an active stream (direct-play byte serving is
-// stateless and untracked). The requesting session's own transcode of the
-// same Media is excluded: it would be reused, not forked.
-func (s *Service) activeProfileTranscodes(ctx context.Context, scope auth.Scope, mediaID store.MediaID) int {
-	if s.sessions == nil {
-		return 0
-	}
-	keys := s.sessions.ActiveKeys()
-	if len(keys) == 0 {
-		return 0
-	}
-	profileSessions, err := s.profileSessions.MyProfileSessions(ctx, scope.ProfileID)
-	if err != nil {
-		return 0 // an unresolvable snapshot never counts against the cap
-	}
-	profileSessionIDs := make(map[store.SessionID]struct{}, len(profileSessions))
-	for _, session := range profileSessions {
-		profileSessionIDs[session.ID] = struct{}{}
-	}
-	active := 0
-	for _, key := range keys {
-		if key.SessionID == scope.SessionID && key.MediaID == mediaID {
-			continue
-		}
-		if _, ok := profileSessionIDs[key.SessionID]; ok {
-			active++
-		}
-	}
-	return active
-}
-
 // trackPreferences maps the stored Profile policy onto the wire shape; lists
 // serialize as [] (never null) so clients can index them defensively.
 func trackPreferences(policy store.Profile) TrackPreferences {
@@ -2959,7 +2921,7 @@ func (v VideoSignal) NeedsToneMap() bool {
 // toneMapSupported gates HDR renditions on a PROVEN tone-map capability. It is
 // a variable so a test can state the build it means (conforming or not) instead
 // of inheriting whatever FFmpeg happens to sit on the developer's PATH.
-var toneMapSupported = ffmpeg.ToneMapSupported
+var toneMapSupported = ffmpeg.ToneMapSupportedContext
 
 // FullTranscodeRefusal names why this source cannot be re-encoded at all, or ""
 // when it can. The reason reaches the wire as playbackInfo's `reason`, so a
@@ -2971,6 +2933,10 @@ var toneMapSupported = ffmpeg.ToneMapSupported
 // the same reason: the honest outcome of a missing capability is fewer
 // renditions offered, never a rendition with the wrong colors.
 func (v VideoSignal) FullTranscodeRefusal() string {
+	return v.fullTranscodeRefusal(context.Background())
+}
+
+func (v VideoSignal) fullTranscodeRefusal(ctx context.Context) string {
 	if v.DoViProfile == 5 {
 		return ffmpeg.ToneMapRefusalDoViP5
 	}
@@ -2978,7 +2944,7 @@ func (v VideoSignal) FullTranscodeRefusal() string {
 		if !ffmpeg.ToneMapEnabled() {
 			return ffmpeg.ToneMapRefusalDisabled
 		}
-		if !toneMapSupported() {
+		if !toneMapSupported(ctx) {
 			return ffmpeg.ToneMapRefusalUnverified
 		}
 	}

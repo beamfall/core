@@ -67,7 +67,7 @@ func withAudioAdjustGrant(grant streamtoken.Grant, adjust ffmpeg.AudioAdjust) st
 // audioAdjustSupported reports whether the resolved FFmpeg build can run the
 // audio encode of an adjusted rendition. It is a variable so a test can state
 // the build it means, like composedRecipeSupported.
-var audioAdjustSupported = ffmpeg.AudioAdjustSupported
+var audioAdjustSupported = ffmpeg.AudioAdjustSupportedContext
 
 // adjustedAudioRendition is the audio side of an adjusted encode: what decides
 // the audio filters and encoder the command names.

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -1194,7 +1195,7 @@ func TestArtworkCandidateRejectsSealedLibrary(t *testing.T) {
 	}
 }
 
-type fakeHLSTranscoder struct{}
+type fakeHLSTranscoder struct{ holdChild bool }
 
 func (fakeHLSTranscoder) StartHLS(_ context.Context, _, dir string, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
 	if err := os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U\n"), 0o600); err != nil {
@@ -1203,13 +1204,16 @@ func (fakeHLSTranscoder) StartHLS(_ context.Context, _, dir string, _ ffmpeg.Ren
 	return &ffmpeg.HLSProcess{}, nil
 }
 
-func (fakeHLSTranscoder) StartHLSSegments(_ context.Context, _, dir string, startSegment, _ int, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+func (f fakeHLSTranscoder) StartHLSSegments(ctx context.Context, _, dir string, startSegment, _ int, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
 	if err := os.WriteFile(filepath.Join(dir, "init.mp4"), []byte("init"), 0o600); err != nil {
 		return nil, err
 	}
 	name := filepath.Join(dir, fmt.Sprintf("seg%05d.m4s", startSegment))
 	if err := os.WriteFile(name, []byte("m4s"), 0o600); err != nil {
 		return nil, err
+	}
+	if f.holdChild {
+		return ffmpeg.StartHLSCommand(exec.CommandContext(ctx, "sleep", "60"))
 	}
 	return &ffmpeg.HLSProcess{}, nil
 }
@@ -2051,8 +2055,8 @@ func TestHLSSessionRecreatedForModeShapingChange(t *testing.T) {
 	if code := fetchSegment(issue(true, false), "/audio-copy/seg00000.m4s"); code != http.StatusOK {
 		t.Fatalf("audio-copy seg status = %d, want 200", code)
 	}
-	if len(sessions.ActiveKeys()) != 1 {
-		t.Fatalf("ActiveKeys = %d, want 1 (recreated standard→audio-copy session)", len(sessions.ActiveKeys()))
+	if sessions.TerminateSession("session-default") != 1 {
+		t.Fatalf("sessions terminated = %d, want 1 (recreated standard→audio-copy session)", sessions.TerminateSession("session-default"))
 	}
 
 	// Degraded mode must also recreate and refuse an inherited standard segment.
@@ -2073,8 +2077,8 @@ func TestHLSSessionRecreatedForModeShapingChange(t *testing.T) {
 	if code := degradedFetch(issue(false, true), "/480p/seg00000.m4s"); code != http.StatusOK {
 		t.Fatalf("degraded seg status = %d, want 200", code)
 	}
-	if len(degradedSessions.ActiveKeys()) != 1 {
-		t.Fatalf("ActiveKeys = %d, want 1 (recreated standard→degraded session)", len(degradedSessions.ActiveKeys()))
+	if degradedSessions.TerminateSession("session-default") != 1 {
+		t.Fatalf("sessions terminated = %d, want 1 (recreated standard→degraded session)", degradedSessions.TerminateSession("session-default"))
 	}
 }
 
@@ -2114,7 +2118,7 @@ func TestHLSForegroundGrantControlsPreemption(t *testing.T) {
 	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
 
 	// One transcode slot, so the second start must preempt to be admitted.
-	sessions := sessiontest.New(t, fakeHLSTranscoder{}, t.TempDir(), nil)
+	sessions := sessiontest.New(t, fakeHLSTranscoder{holdChild: true}, t.TempDir(), nil)
 	sessions.SetTranscodeCap(1)
 	defer sessions.Close()
 	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions)

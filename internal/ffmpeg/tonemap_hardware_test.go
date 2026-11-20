@@ -594,7 +594,7 @@ func TestToneMapProbeArgsPlaceDeviceInitBeforeInput(t *testing.T) {
 func withToneMapEligibility(t *testing.T, eligible func(HWAccel, TransferClass) bool) {
 	t.Helper()
 	previous := toneMapHardwareEligible
-	toneMapHardwareEligible = eligible
+	toneMapHardwareEligible = func(_ context.Context, backend HWAccel, class TransferClass) bool { return eligible(backend, class) }
 	t.Cleanup(func() { toneMapHardwareEligible = previous })
 }
 

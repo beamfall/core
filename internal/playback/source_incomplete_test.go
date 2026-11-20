@@ -221,7 +221,9 @@ func TestIncompleteSourceObservationTracksOnlyTheObservedFileGeneration(t *testi
 			}
 			var cache incompleteSourceCache
 			if !changeBeforeObservation {
-				cache.remember(source, observed)
+				if current, err := os.Stat(source); err == nil && sameSourceFile(current, observed) {
+					cache.rememberVerified(source, observed)
+				}
 				if !cache.contains(source) {
 					t.Fatal("unchanged truncated source not remembered")
 				}
@@ -239,7 +241,9 @@ func TestIncompleteSourceObservationTracksOnlyTheObservedFileGeneration(t *testi
 				t.Fatal(err)
 			}
 			if changeBeforeObservation {
-				cache.remember(source, observed)
+				if current, err := os.Stat(source); err == nil && sameSourceFile(current, observed) {
+					cache.rememberVerified(source, observed)
+				}
 			}
 			if cache.contains(source) {
 				t.Fatal("replacement poisoned by old source's EOF")
@@ -344,11 +348,91 @@ func TestEvictedSessionCannotObserveEOFInRemovedOutput(t *testing.T) {
 	}
 	requireScratchMissing(t, session.dir)
 	inspected := false
-	_, observed, err := sessions.observeIncompleteSource(key, session, func() (time.Duration, bool) {
+	_, observed, err := sessions.observeIncompleteSource(context.Background(), key, session, nil, func() (time.Duration, bool) {
 		inspected = true
 		return 0, true // removed output would look like EOF at zero
 	})
-	if err != nil || observed || inspected {
+	if !errors.Is(err, ErrSessionEvicted) || observed || inspected {
 		t.Fatalf("evicted output inspected=%v observed=%v err=%v", inspected, observed, err)
+	}
+}
+
+func TestT3EOFInspectionDiscardsLosingStoreCallback(t *testing.T) {
+	for _, action := range []string{"cutoff", "lock conflict"} {
+		t.Run(action, func(t *testing.T) {
+			st := storetest.Open(t)
+			src := filepath.Join(t.TempDir(), "source")
+			seedScratchFile(t, src)
+			item, _, err := st.ImportMediaFile(t.Context(), store.ImportMediaFile{
+				LibraryID: "library-local", Path: src, Title: "Source",
+				Container: "mkv", Codec: "h264", Class: store.MediaClassVideo,
+				ContentFingerprint: "t3-source-end", DurationSecondsHint: 120,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			files, err := st.MediaFilesForMedia(t.Context(), item.ID, store.LibraryFilter{AllLibraries: true})
+			if err != nil || len(files) != 1 {
+				t.Fatalf("source files = %v, error = %v", files, err)
+			}
+			s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+			s.sourceStore = st
+			key := SessionKey{SessionID: "inspection", MediaID: item.ID}
+			a, err := s.LiveArtifactShaped(t.Context(), key, src, 120, 1280, 720, false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, masterPlaylistName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer a.Release()
+			entered, release := scratchLatch(t)
+			defer release.open()
+			outcome := make(chan error, 1)
+			go func() {
+				calls := 0
+				_, observed, err := s.observeIncompleteSource(t.Context(), key, a.session, nil, func() (time.Duration, bool) {
+					calls++
+					if calls == 1 {
+						close(entered)
+						<-release.ch
+						return 4 * time.Second, true
+					}
+					return 0, false
+				})
+				if observed || action == "lock conflict" && calls != 2 {
+					err = fmt.Errorf("inspection = observed %v, attempts %d, error %w", observed, calls, err)
+				}
+				outcome <- err
+			}()
+			waitScratchSignal(t, entered)
+			catalogClear := func() error {
+				incomplete, err := st.MediaFileSourceIncomplete(t.Context(), files[0])
+				if incomplete {
+					return errors.New("discarded inspection reached the catalog")
+				}
+				return err
+			}
+			want := error(nil)
+			if action == "cutoff" {
+				s.TerminateSession(key.SessionID)
+				release.open()
+				want = ErrSessionEvicted
+			} else {
+				func() {
+					s.mu.Lock()
+					defer s.mu.Unlock()
+					release.open()
+					checked := make(chan error, 1)
+					go func() { checked <- catalogClear() }()
+					if err := waitScratchResult(t, checked); err != nil {
+						t.Fatal(err)
+					}
+				}()
+			}
+			if err := waitScratchResult(t, outcome); !errors.Is(err, want) {
+				t.Fatalf("inspection error = %v, want %v", err, want)
+			}
+			if err := catalogClear(); err != nil || s.incompleteSources.contains(src) {
+				t.Fatalf("discarded EOF changed catalog or memory: %v", err)
+			}
+		})
 	}
 }

@@ -1,6 +1,7 @@
 package playback
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -19,9 +20,9 @@ import (
 // capability itself state the other case explicitly via withToneMapSupport
 // or withComposedRecipeSupport.
 func TestMain(m *testing.M) {
-	toneMapSupported = func() bool { return true }
-	composedRecipeSupported = func(bool, ffmpeg.Rendition) bool { return true }
-	audioAdjustSupported = func(ffmpeg.Rendition) bool { return true }
+	toneMapSupported = func(context.Context) bool { return true }
+	composedRecipeSupported = func(context.Context, bool, ffmpeg.Rendition) bool { return true }
+	audioAdjustSupported = func(context.Context, ffmpeg.Rendition) bool { return true }
 	os.Exit(m.Run())
 }
 
@@ -29,7 +30,7 @@ func TestMain(m *testing.M) {
 func withToneMapSupport(t *testing.T, supported bool) {
 	t.Helper()
 	previous := toneMapSupported
-	toneMapSupported = func() bool { return supported }
+	toneMapSupported = func(context.Context) bool { return supported }
 	t.Cleanup(func() { toneMapSupported = previous })
 }
 

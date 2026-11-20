@@ -109,7 +109,7 @@ func TestHLSShimGetsOnlyItsAcceleratorsGPUGrant(t *testing.T) {
 	fakeFFmpegOnPath(t)
 	originalToneMap, originalDecode := selectRenditionToneMapBackend, selectRenditionDeviceDecode
 	t.Cleanup(func() { selectRenditionToneMapBackend, selectRenditionDeviceDecode = originalToneMap, originalDecode })
-	selectRenditionDeviceDecode = func(Rendition) bool { return false }
+	selectRenditionDeviceDecode = func(context.Context, Rendition) bool { return false }
 	src := filepath.Join(t.TempDir(), "in.mkv")
 	if err := os.WriteFile(src, []byte("media"), 0o600); err != nil {
 		t.Fatal(err)
@@ -134,7 +134,7 @@ func TestHLSShimGetsOnlyItsAcceleratorsGPUGrant(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	for _, tc := range cases {
-		selectRenditionToneMapBackend = func(Rendition) HWAccel { return tc.toneMap }
+		selectRenditionToneMapBackend = func(context.Context, Rendition) HWAccel { return tc.toneMap }
 		runner := New()
 		runner.SetHardeningShim(shim)
 		runner.SetHardwareEncode(tc.encode)

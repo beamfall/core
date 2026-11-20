@@ -307,11 +307,11 @@ func TestSegmentLacksMedia(t *testing.T) {
 		if err := os.WriteFile(path, tc.body, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if got := h.segmentLacksMedia(path); got != tc.want {
+		if got, _ := h.inspectSegment(path); got != tc.want {
 			t.Errorf("%s: segmentLacksMedia = %v, want %v", tc.name, got, tc.want)
 		}
 	}
-	if h.segmentLacksMedia(filepath.Join(dir, "missing.m4s")) {
+	if empty, _ := h.inspectSegment(filepath.Join(dir, "missing.m4s")); empty {
 		t.Error("a missing file must not read as an empty segment")
 	}
 }

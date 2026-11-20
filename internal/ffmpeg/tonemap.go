@@ -765,9 +765,9 @@ func (i FFmpegIdentity) String() string {
 // running server — the BYO-FFmpeg swap D4 requires to invalidate a verdict.
 var resolvedIdentity struct {
 	sync.Mutex
+	checking *sharedResolution[FFmpegIdentity]
 	stat     string
-	identity FFmpegIdentity
-	err      error
+	build    *sharedResolution[FFmpegIdentity]
 }
 
 // ResolveFFmpegIdentity returns the identity of the FFmpeg binary this process
@@ -775,24 +775,39 @@ var resolvedIdentity struct {
 //
 //io:ignore — binary provenance read for the capability cache key, not a server I/O journey.
 func ResolveFFmpegIdentity(ctx context.Context) (FFmpegIdentity, error) {
-	path, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		return FFmpegIdentity{}, err
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return FFmpegIdentity{}, err
-	}
-	stat := fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().UnixNano())
-
 	resolvedIdentity.Lock()
-	defer resolvedIdentity.Unlock()
-	if resolvedIdentity.stat == stat {
-		return resolvedIdentity.identity, resolvedIdentity.err
+	checking := resolvedIdentity.checking
+	if checking == nil {
+		checking = &sharedResolution[FFmpegIdentity]{}
+		resolvedIdentity.checking = checking
 	}
-	resolvedIdentity.stat = stat
-	resolvedIdentity.identity, resolvedIdentity.err = readFFmpegIdentity(ctx, path)
-	return resolvedIdentity.identity, resolvedIdentity.err
+	resolvedIdentity.Unlock()
+	return checking.wait(ctx, func() (FFmpegIdentity, error) {
+		defer func() {
+			resolvedIdentity.Lock()
+			resolvedIdentity.checking = nil
+			resolvedIdentity.Unlock()
+		}()
+		path, err := exec.LookPath("ffmpeg")
+		if err != nil {
+			return FFmpegIdentity{}, err
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return FFmpegIdentity{}, err
+		}
+		stat := fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().UnixNano())
+		resolvedIdentity.Lock()
+		if resolvedIdentity.stat != stat {
+			resolvedIdentity.stat = stat
+			resolvedIdentity.build = &sharedResolution[FFmpegIdentity]{}
+		}
+		build := resolvedIdentity.build
+		resolvedIdentity.Unlock()
+		return build.wait(context.Background(), func() (FFmpegIdentity, error) {
+			return readFFmpegIdentity(context.Background(), path)
+		})
+	})
 }
 
 func readFFmpegIdentity(ctx context.Context, path string) (FFmpegIdentity, error) {
@@ -837,10 +852,7 @@ type toneMapVerdictKey struct {
 	identity string
 }
 
-type toneMapVerdictEntry struct {
-	once    sync.Once
-	verdict ToneMapProbe
-}
+type toneMapVerdictEntry = sharedResolution[ToneMapProbe]
 
 var (
 	toneMapVerdictMu sync.Mutex
@@ -853,15 +865,17 @@ var (
 // never authorise a rendition; the committed
 // evidence file is release-gate input, never a runtime input.
 func ToneMapCapabilityFor(backend HWAccel, class TransferClass) ToneMapProbe {
+	return toneMapCapabilityFor(context.Background(), backend, class)
+}
+
+func toneMapCapabilityFor(ctx context.Context, backend HWAccel, class TransferClass) ToneMapProbe {
 	entry := toneMapVerdictEntryFor(toneMapVerdictKey{
-		backend:  backend,
-		class:    class,
-		identity: currentFFmpegIdentityKey(),
+		backend: backend, class: class, identity: currentFFmpegIdentityKey(ctx),
 	})
-	entry.once.Do(func() {
-		entry.verdict = ProbeToneMap(context.Background(), ToneMapOptions{Backend: backend, Class: class})
+	verdict, _ := entry.wait(ctx, func() (ToneMapProbe, error) {
+		return ProbeToneMap(context.Background(), ToneMapOptions{Backend: backend, Class: class}), nil
 	})
-	return entry.verdict
+	return verdict
 }
 
 func toneMapVerdictEntryFor(key toneMapVerdictKey) *toneMapVerdictEntry {
@@ -877,8 +891,8 @@ func toneMapVerdictEntryFor(key toneMapVerdictKey) *toneMapVerdictEntry {
 
 // currentFFmpegIdentityKey never fails the caller: an unresolvable binary keys
 // its own bucket, and the probe that runs under it fails closed anyway.
-func currentFFmpegIdentityKey() string {
-	identity, err := ResolveFFmpegIdentity(context.Background())
+func currentFFmpegIdentityKey(ctx context.Context) string {
+	identity, err := ResolveFFmpegIdentity(ctx)
 	if err != nil {
 		return "unresolved"
 	}
@@ -911,8 +925,8 @@ func ToneMapBackendPreference(goos string) []HWAccel {
 // tone-map path for a class. It is a variable so a test can state the
 // certification it means instead of probing the developer's host — the same
 // injection discipline as HWAccelRunner.
-var toneMapHardwareEligible = func(backend HWAccel, class TransferClass) bool {
-	return ToneMapCapabilityFor(backend, class).Status == ToneMapWorking
+var toneMapHardwareEligible = func(ctx context.Context, backend HWAccel, class TransferClass) bool {
+	return toneMapCapabilityFor(ctx, backend, class).Status == ToneMapWorking
 }
 
 // SelectToneMapBackend takes the FIRST eligible backend in the declared order,
@@ -922,11 +936,15 @@ var toneMapHardwareEligible = func(backend HWAccel, class TransferClass) bool {
 // unsupported verdict is skipped rather than attempted, so a failed backend
 // disables only itself.
 func SelectToneMapBackend(class TransferClass, goos string) HWAccel {
+	return selectToneMapBackend(context.Background(), class, goos)
+}
+
+func selectToneMapBackend(ctx context.Context, class TransferClass, goos string) HWAccel {
 	if !HardwareCertifiableClass(class) {
 		return ""
 	}
 	for _, backend := range ToneMapBackendPreference(goos) {
-		if toneMapHardwareEligible(backend, class) {
+		if toneMapHardwareEligible(ctx, backend, class) {
 			return backend
 		}
 	}
@@ -936,7 +954,7 @@ func SelectToneMapBackend(class TransferClass, goos string) HWAccel {
 // selectRenditionToneMapBackend resolves the hardware tone-map backend for one
 // rendition at spawn time. It is a variable so a test can pin the selection
 // rather than probing whatever hardware the host happens to have.
-var selectRenditionToneMapBackend = func(r Rendition) HWAccel {
+var selectRenditionToneMapBackend = func(ctx context.Context, r Rendition) HWAccel {
 	if r.CopyVideo || r.ToneMapUnavailable() || !r.needsToneMap() {
 		return ""
 	}
@@ -944,7 +962,7 @@ var selectRenditionToneMapBackend = func(r Rendition) HWAccel {
 	if !classified {
 		return ""
 	}
-	return SelectToneMapBackend(class, runtime.GOOS)
+	return selectToneMapBackend(ctx, class, runtime.GOOS)
 }
 
 // ToneMapSupported reports whether the resolved FFmpeg binary has been PROVEN
@@ -954,7 +972,11 @@ var selectRenditionToneMapBackend = func(r Rendition) HWAccel {
 //
 //io:ignore — in-memory capability check after a one-shot probe, not a server I/O journey.
 func ToneMapSupported() bool {
-	return ToneMapCapability().Status == ToneMapWorking
+	return ToneMapSupportedContext(context.Background())
+}
+
+func ToneMapSupportedContext(ctx context.Context) bool {
+	return toneMapCapabilityFor(ctx, "", TransferClassPQ).Status == ToneMapWorking
 }
 
 // toneMapDisabled is the operator's Console tone-map switch, stored inverted so
@@ -979,4 +1001,4 @@ func ToneMapEnabled() bool {
 // is a variable so a test can state the build it means (conforming or not)
 // rather than inheriting whichever FFmpeg happens to sit on the developer's
 // PATH — the same injection discipline as HWAccelRunner.
-var toneMapSupported = ToneMapSupported
+var toneMapSupported = ToneMapSupportedContext

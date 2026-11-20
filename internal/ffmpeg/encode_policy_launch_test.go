@@ -40,8 +40,8 @@ func withHardwareToneMap(t *testing.T) {
 	t.Helper()
 	originalToneMap, originalDecode := selectRenditionToneMapBackend, selectRenditionDeviceDecode
 	t.Cleanup(func() { selectRenditionToneMapBackend, selectRenditionDeviceDecode = originalToneMap, originalDecode })
-	selectRenditionToneMapBackend = func(Rendition) HWAccel { return HWAccelNVENC }
-	selectRenditionDeviceDecode = func(r Rendition) bool { return r.hwAccel != "" }
+	selectRenditionToneMapBackend = func(context.Context, Rendition) HWAccel { return HWAccelNVENC }
+	selectRenditionDeviceDecode = func(_ context.Context, r Rendition) bool { return r.hwAccel != "" }
 }
 
 // TestSoftwareOnlyPolicyKeepsHDRToneMapOffTheDevice pins Codex's finding on
@@ -75,7 +75,7 @@ func TestSoftwareOnlyPolicyKeepsHDRToneMapOffTheDevice(t *testing.T) {
 		runner.SetHardwareEncode(HardwareEncode{Accel: HWAccelNVENC})
 		runner.SetEncodePolicy(tc.policy)
 
-		prepared := runner.launchRendition(hdr)
+		prepared := runner.launchRendition(context.Background(), hdr)
 		if gotHW := prepared.toneMapAccel != "" || prepared.deviceDecode; gotHW != tc.wantNVIDIA {
 			t.Errorf("%s: tone-map %q device decode %v, want hardware %v", tc.name, prepared.toneMapAccel, prepared.deviceDecode, tc.wantNVIDIA)
 		}

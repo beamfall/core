@@ -53,7 +53,11 @@ func gaplessArgs(path string, durationSeconds int) []string {
 // streams. It is best effort: a failure leaves the streams without gapless
 // facts, which every consumer reads as "not declared".
 func (r *Runner) probeGapless(ctx context.Context, path string, probe *Probe) {
-	cmd := r.hardenedCommand(ctx, r.ffprobePath, readConfinement(path).ReadOnly, nil, gaplessArgs(path, probe.DurationSeconds))
+	ffprobePath, err := r.resolveProbe(ctx)
+	if err != nil {
+		return
+	}
+	cmd := r.hardenedCommand(ctx, ffprobePath, readConfinement(path).ReadOnly, nil, gaplessArgs(path, probe.DurationSeconds))
 	stdout, _, err := r.run(ctx, cmd)
 	if err != nil {
 		return

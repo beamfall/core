@@ -2,13 +2,13 @@ package playback
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -116,72 +116,39 @@ func TestInfoDirectPlayCarriesNoReasonWhenTranscodeAllowed(t *testing.T) {
 	}
 }
 
-// startTranscode starts a fake HLS transcode under the given session key so
-// the stream-cap counter sees it as active.
-func startTranscode(t *testing.T, sessions *Sessions, key SessionKey) {
+func startTranscode(t *testing.T, sessions *Sessions, key SessionKey, profiles ...store.ProfileID) {
 	t.Helper()
-	if _, err := sessions.FilePath(context.Background(), key, "/src/media.bin", 120, 1280, 720, false, "720p/seg00000.m4s"); err != nil {
-		t.Fatalf("starting fake transcode: %v", err)
+	binding, err := sessions.BindLive(key)
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-type countingProfileSessionStore struct {
-	calls    int
-	sessions []store.MyProfileSession
-}
-
-func (s *countingProfileSessionStore) MyProfileSessions(context.Context, store.ProfileID) ([]store.MyProfileSession, error) {
-	s.calls++
-	return s.sessions, nil
-}
-
-func TestInfoBatchesActiveProfileSessionLookup(t *testing.T) {
-	for _, activeCount := range []int{1, 12} {
-		t.Run(fmt.Sprintf("active-%d", activeCount), func(t *testing.T) {
-			service, st, scope := newPolicyTestService(t, "session-default")
-			limit := 1
-			setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{MaxConcurrentStreams: &limit})
-
-			sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
-			defer sessions.Close()
-			sessions.SetTranscodeCap(32)
-			service.SetSessions(sessions)
-
-			lookup := &countingProfileSessionStore{}
-			service.profileSessions = lookup
-			for i := range activeCount {
-				sessionID := store.SessionID(fmt.Sprintf("session-batch-%02d", i))
-				lookup.sessions = append(lookup.sessions, store.MyProfileSession{ID: sessionID})
-				startTranscode(t, sessions, SessionKey{SessionID: sessionID, MediaID: store.MediaID(fmt.Sprintf("media-%02d", i))})
-			}
-
-			resp, err := service.Info(context.Background(), scope, InfoRequest{
-				MediaID:           "media-alpha",
-				CapabilityProfile: incapableCaps,
-			})
-			if err != nil {
-				t.Fatalf("Info returned error: %v", err)
-			}
-			if resp.Reason != "stream-limit-reached" {
-				t.Fatalf("Reason = %q, want stream-limit-reached", resp.Reason)
-			}
-			if lookup.calls != 1 {
-				t.Fatalf("profile session queries = %d, want 1 for %d active sessions", lookup.calls, activeCount)
-			}
-		})
+	defer binding.Release()
+	profile := store.ProfileID("profile-default")
+	if len(profiles) > 0 {
+		profile = profiles[0]
 	}
+	if err := binding.Attach("", profile, nil); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "media.bin")
+	seedScratchFile(t, src)
+	artifact, err := binding.ArtifactShaped(context.Background(), src, 120, 1280, 720, false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, "720p/init.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact.Release()
 }
 
 func TestInfoRefusesTranscodePastProfileStreamCap(t *testing.T) {
 	service, st, scope := newPolicyTestService(t, "session-default")
 	limit := 1
 	setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{MaxConcurrentStreams: &limit})
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	defer sessions.Close()
 	service.SetSessions(sessions)
 	// session-revealed shares profile-default: its running transcode counts
 	// against the same Profile cap.
-	startTranscode(t, sessions, SessionKey{SessionID: "session-revealed", MediaID: "media-alpha"})
+	startTranscode(t, sessions, SessionKey{SessionID: "session-revealed", MediaID: "media-alpha", ProfileCapability: CapabilityFingerprint(incapableCaps)}, scope.ProfileID)
 
 	resp, err := service.Info(context.Background(), scope, InfoRequest{
 		MediaID:           "media-alpha",
@@ -202,12 +169,12 @@ func TestInfoStreamCapIgnoresOwnTranscodeOfSameMedia(t *testing.T) {
 	service, st, scope := newPolicyTestService(t, "session-default")
 	limit := 1
 	setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{MaxConcurrentStreams: &limit})
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	defer sessions.Close()
 	service.SetSessions(sessions)
 	// The requesting session's own transcode of the same Media would be
 	// reused, not forked — it never blocks its own playbackInfo refresh.
-	startTranscode(t, sessions, SessionKey{SessionID: "session-default", MediaID: "media-alpha"})
+	startTranscode(t, sessions, SessionKey{SessionID: "session-default", MediaID: "media-alpha", ProfileCapability: CapabilityFingerprint(incapableCaps)}, scope.ProfileID)
 
 	resp, err := service.Info(context.Background(), scope, InfoRequest{
 		MediaID:           "media-alpha",
@@ -225,12 +192,12 @@ func TestInfoStreamCapIgnoresOtherProfiles(t *testing.T) {
 	service, st, scope := newPolicyTestService(t, "session-default")
 	limit := 1
 	setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{MaxConcurrentStreams: &limit})
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	defer sessions.Close()
 	service.SetSessions(sessions)
 	// session-managed belongs to profile-managed: its transcode never counts
 	// against profile-default's cap.
-	startTranscode(t, sessions, SessionKey{SessionID: "session-managed", MediaID: "media-alpha"})
+	startTranscode(t, sessions, SessionKey{SessionID: "session-managed", MediaID: "media-alpha", ProfileCapability: CapabilityFingerprint(incapableCaps)}, "profile-managed")
 
 	resp, err := service.Info(context.Background(), scope, InfoRequest{
 		MediaID:           "media-alpha",
@@ -296,7 +263,7 @@ func TestInfoTrackPreferencesDefaultToEmptyListsNeverNull(t *testing.T) {
 
 func TestInfoRefusesTranscodeAtServerCapacity(t *testing.T) {
 	service, _, scope := newPolicyTestService(t, "session-default")
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
 	service.SetSessions(sessions)
@@ -336,7 +303,7 @@ func (s stubRoster) SessionInWatchPartyForMedia(store.SessionID, store.MediaID) 
 // rendition, grant.Degraded set) instead of being refused.
 func TestInfoDegradesWatchPartyMemberAtServerCapacity(t *testing.T) {
 	service, _, scope := newPolicyTestService(t, "session-default")
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
 	service.SetSessions(sessions)
@@ -373,7 +340,7 @@ func TestInfoDegradesWatchPartyMemberAtServerCapacity(t *testing.T) {
 // (the roster, not a client flag, is the gate).
 func TestInfoRefusesNonPartyMemberAtServerCapacity(t *testing.T) {
 	service, _, scope := newPolicyTestService(t, "session-default")
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
 	service.SetSessions(sessions)
@@ -415,7 +382,7 @@ func TestInfoDoesNotDegradeWatchPartyMemberPastPolicyGate(t *testing.T) {
 
 func TestInfoOmitsManualPinWhenTranscodeCannotStart(t *testing.T) {
 	service, _, scope := newPolicyTestService(t, "session-default")
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
 	service.SetSessions(sessions)

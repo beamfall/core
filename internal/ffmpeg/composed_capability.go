@@ -192,11 +192,7 @@ func probeCapabilities(ctx context.Context, run componentListRunner) (capabiliti
 	return capabilities{Filters: parseComponentList(string(filters)), Encoders: parseComponentList(string(encoders))}, nil
 }
 
-type capabilitiesEntry struct {
-	once sync.Once
-	caps capabilities
-	err  error
-}
+type capabilitiesEntry = sharedResolution[capabilities]
 
 var (
 	capabilitiesMu      sync.Mutex
@@ -207,8 +203,8 @@ var (
 // on first use and keeps the answer in memory, keyed by the binary's identity.
 // A failed listing is kept too (and fails closed in the exported checks): an
 // unresolvable binary keys its own bucket, and a changed binary a new one.
-func capabilitiesForCurrentBuild() (capabilities, error) {
-	key := currentFFmpegIdentityKey()
+func capabilitiesForCurrentBuild(ctx context.Context) (capabilities, error) {
+	key := currentFFmpegIdentityKey(ctx)
 	capabilitiesMu.Lock()
 	entry, ok := capabilitiesByBuild[key]
 	if !ok {
@@ -216,10 +212,9 @@ func capabilitiesForCurrentBuild() (capabilities, error) {
 		capabilitiesByBuild[key] = entry
 	}
 	capabilitiesMu.Unlock()
-	entry.once.Do(func() {
-		entry.caps, entry.err = probeCapabilities(context.Background(), nil)
+	return entry.wait(ctx, func() (capabilities, error) {
+		return probeCapabilities(context.Background(), nil)
 	})
-	return entry.caps, entry.err
 }
 
 // ComposedRecipeSupported reports whether the resolved FFmpeg build has every
@@ -230,7 +225,11 @@ func capabilitiesForCurrentBuild() (capabilities, error) {
 //
 //io:ignore — in-memory capability check after a one-shot listing, not a server I/O journey.
 func ComposedRecipeSupported(timedText bool, rendition Rendition) bool {
-	caps, err := capabilitiesForCurrentBuild()
+	return ComposedRecipeSupportedContext(context.Background(), timedText, rendition)
+}
+
+func ComposedRecipeSupportedContext(ctx context.Context, timedText bool, rendition Rendition) bool {
+	caps, err := capabilitiesForCurrentBuild(ctx)
 	if err != nil {
 		return false
 	}
@@ -249,6 +248,10 @@ func ComposedRecipeSupported(timedText bool, rendition Rendition) bool {
 //
 //io:ignore — in-memory capability check after a one-shot listing, not a server I/O journey.
 func AudioAdjustSupported(rendition Rendition) bool {
-	caps, err := capabilitiesForCurrentBuild()
+	return AudioAdjustSupportedContext(context.Background(), rendition)
+}
+
+func AudioAdjustSupportedContext(ctx context.Context, rendition Rendition) bool {
+	caps, err := capabilitiesForCurrentBuild(ctx)
 	return err == nil && len(caps.missingFor(rendition.audioArgs())) == 0
 }

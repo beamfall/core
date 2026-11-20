@@ -314,7 +314,7 @@ func TestToneMapRefusalAllowsHDRWhenTheChainIsVerified(t *testing.T) {
 func withToneMapSupport(t *testing.T, supported bool) {
 	t.Helper()
 	previous := toneMapSupported
-	toneMapSupported = func() bool { return supported }
+	toneMapSupported = func(context.Context) bool { return supported }
 	t.Cleanup(func() { toneMapSupported = previous })
 }
 
