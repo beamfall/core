@@ -214,8 +214,18 @@ func (r *Registry) Invite(id string, host store.SessionID, invitee store.Profile
 	return nil
 }
 
-// Accept consumes a pending invite for profile and joins the accepting session
-// as a party member (ADR-0038 §2.5 steps 3-4). The CALLER must already have
+// CanAccept reports whether the Profile was invited or the session may return
+// after a host handoff. The surface checks this before looking up party content.
+func (g *Group) CanAccept(profile store.ProfileID, session store.SessionID) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	_, invited := g.invites[profile]
+	expiredProfile, expired := g.expiredHosts[session]
+	return invited || (expired && expiredProfile == profile)
+}
+
+// Accept joins the accepting session as a party member (ADR-0038 §2.5 steps
+// 3-4), consuming its invite or permission to return after a host handoff. The CALLER must already have
 // confirmed at the surface that this session can Reveal the party's content
 // (§2.3) — the Registry holds no library state, so the Reveal intersection is
 // enforced by the surface against the accepting session's own LibraryFilter
@@ -238,13 +248,18 @@ func (r *Registry) Accept(id string, profile store.ProfileID, m Member) error {
 		r.mu.Unlock()
 		return ErrNotParty
 	}
-	if _, ok := g.invites[profile]; !ok {
+	_, invited := g.invites[profile]
+	expiredProfile, expired := g.expiredHosts[m.SessionID]
+	returning := expired && expiredProfile == profile
+	if !invited && !returning {
 		g.mu.Unlock()
 		r.mu.Unlock()
 		return ErrNoInvite
 	}
 	// A lead party's invite stays, so a follower that reloads joins again.
-	if !g.lead {
+	if returning {
+		delete(g.expiredHosts, m.SessionID)
+	} else if !g.lead {
 		delete(g.invites, profile)
 	}
 	member := m
@@ -276,10 +291,40 @@ func (r *Registry) HostTransition(id string, host store.SessionID, item store.Me
 	}
 	now := r.now()
 	g.mu.Lock()
+	defer g.mu.Unlock()
 	if g.host != host {
-		g.mu.Unlock()
 		return Transition{}, nil, ErrNotHost
 	}
+	t, members := g.applyTransitionLocked(now, item, position, paused)
+	return t, members, nil
+}
+
+// PartyAutoSkip applies a position-only move for the host or a relaxed party
+// member. A skip for a previous item or a strict-party guest returns the live
+// anchor and no recipients (ADR-0038 §2.8).
+func (r *Registry) PartyAutoSkip(id string, session store.SessionID, item store.MediaID, position time.Duration) (Transition, []Member, error) {
+	g, err := r.partyLookup(id)
+	if err != nil {
+		return Transition{}, nil, err
+	}
+	now := r.now()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if _, member := g.members[session]; !member {
+		return Transition{}, nil, ErrNotMember
+	}
+	if session != g.host && g.lead {
+		return Transition{}, nil, ErrNotHost
+	}
+	if g.item != item || (session != g.host && !g.relaxed) {
+		return g.partyAnchorLocked(now), nil, nil
+	}
+	// Preserve the host's pause. A lead held for silence is still playing.
+	t, members := g.applyTransitionLocked(now, g.item, position, g.paused && !g.held)
+	return t, members, nil
+}
+
+func (g *Group) applyTransitionLocked(now time.Time, item store.MediaID, position time.Duration, paused bool) (Transition, []Member) {
 	g.item = item
 	g.position = position
 	g.anchor = now
@@ -293,17 +338,14 @@ func (r *Registry) HostTransition(id string, host store.SessionID, item store.Me
 	if g.lead {
 		// The lead is already at position: followers join it at once.
 		g.stated = now
-		t := g.transitionLocked(now)
-		g.mu.Unlock()
-		return t, members, nil
+		return g.transitionLocked(now), members
 	}
-	g.mu.Unlock()
 	return Transition{
 		Item:      item,
 		Position:  position,
 		PresentAt: now.Add(PreBufferWindow),
 		Paused:    paused,
-	}, members, nil
+	}, members
 }
 
 // TransportRequest is a non-host participant's seek/skip request (ADR-0038
@@ -385,11 +427,18 @@ type PartyLeave struct {
 // CORE-0531 limits. ErrNoGroup and ErrNotParty are reported as-is so the
 // surface can route them to partyClientError.
 func (r *Registry) LeaveParty(id string, session store.SessionID) (PartyLeave, error) {
+	return r.leaveParty(id, session, false)
+}
+
+func (r *Registry) leaveParty(id string, session store.SessionID, expired bool) (PartyLeave, error) {
 	g, err := r.partyLookup(id)
 	if err != nil {
 		return PartyLeave{}, err
 	}
 	g.mu.Lock()
+	if !expired {
+		delete(g.expiredHosts, session)
+	}
 	if _, ok := g.members[session]; !ok {
 		g.mu.Unlock()
 		return PartyLeave{}, ErrNotMember
@@ -419,6 +468,12 @@ func (r *Registry) LeaveParty(id string, session store.SessionID) (PartyLeave, e
 				// Requests were addressed to the old host; the new one did not see them.
 				g.requests = nil
 				leave.NewHost = next
+				if expired {
+					if g.expiredHosts == nil {
+						g.expiredHosts = make(map[store.SessionID]store.ProfileID)
+					}
+					g.expiredHosts[session] = left.ProfileID
+				}
 				break
 			}
 		}
@@ -472,8 +527,12 @@ func (r *Registry) PartyAnchor(id string) (Transition, error) {
 	now := r.now()
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	return g.partyAnchorLocked(now), nil
+}
+
+func (g *Group) partyAnchorLocked(now time.Time) Transition {
 	if g.lead {
-		return g.transitionLocked(now), nil
+		return g.transitionLocked(now)
 	}
 	current := g.position
 	if !g.paused {
@@ -484,7 +543,7 @@ func (r *Registry) PartyAnchor(id string) (Transition, error) {
 		Position:  current,
 		PresentAt: now.Add(PreBufferWindow),
 		Paused:    g.paused,
-	}, nil
+	}
 }
 
 // PartyRequest is a member's play, pause or seek in a host-only party, held

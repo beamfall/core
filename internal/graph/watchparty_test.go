@@ -435,6 +435,35 @@ func TestWatchPartyAutoSkipRejectsNonMember(t *testing.T) {
 	}
 }
 
+// feature:watch-party
+func TestWatchPartyAutoSkipRejectsPreviousItem(t *testing.T) {
+	st := storetest.Open(t)
+	h := newConductorHandler(st, time.Unix(1_700_000_000, 0).UTC())
+	party := createParty(t, h, "media-alpha", true, authorizeRevealed)
+	if _, errs := post(t, h, transportBody(party.PartyID, "media-archive", 12000), authorizeRevealed); len(errs) != 0 {
+		t.Fatalf("host title switch errors = %#v", errs)
+	}
+	cursor := lastSeq(t, st)
+	data, errs := post(t, h, autoSkipBody(party.PartyID, "media-alpha", 42000), authorizeRevealed)
+	if len(errs) != 0 {
+		t.Fatalf("stale auto-skip errors = %#v", errs)
+	}
+	var res WatchPartyAutoSkipResult
+	if err := json.Unmarshal(data["watchPartyAutoSkip"], &res); err != nil {
+		t.Fatalf("decode stale auto-skip: %v", err)
+	}
+	if res.Applied || res.Item != "media-archive" || res.PositionMS != 12000 {
+		t.Fatalf("stale auto-skip = %#v, want unapplied at media-archive/12000", res)
+	}
+	anchor, err := h.conductor.PartyAnchor(party.PartyID)
+	if err != nil || anchor.Item != "media-archive" || anchor.Position != 12*time.Second {
+		t.Fatalf("party anchor after stale auto-skip = %#v, %v", anchor, err)
+	}
+	if n := countTransitionsAt(t, st, party.PartyID, cursor, -1); n != 0 {
+		t.Fatalf("stale auto-skip broadcast %d transition(s), want 0", n)
+	}
+}
+
 // TestWatchPartyFormationInviteAcceptJoin is acceptance (b):
 // invite by display name → in-app notification → accept → join. The invitee's
 // notification lands in their inbox, and accepting adds them to the party.

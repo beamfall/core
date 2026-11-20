@@ -13,6 +13,7 @@ import {
   decidePartyRequest,
   getWatchParty,
   joinWatchParty,
+  leaveParty,
   useWatchPartyState,
 } from "../player/watchPartyStore";
 
@@ -89,12 +90,21 @@ export function NotificationsPage() {
     }
   }
 
-  // Join a Watch Party from its invite (CORE-1677): accept, then open the
-  // player on the title the party is watching.
+  // Join a Watch Party from its invite (CORE-1677), leaving any other party first.
   async function onJoinParty(notification: NotificationInfo) {
     if (joiningID) return;
     setError(null);
     setJoiningID(notification.id);
+    const currentParty = getWatchParty();
+    if (
+      currentParty.status !== "idle" &&
+      currentParty.partyID !== notification.ref &&
+      !(await leaveParty())
+    ) {
+      setJoiningID("");
+      setError(t("watchPartyLeaveError"));
+      return;
+    }
     const item = await joinWatchParty(notification.ref);
     setJoiningID("");
     if (!item) {
@@ -107,7 +117,7 @@ export function NotificationsPage() {
       return;
     }
     if (!notification.read) void onMarkRead(notification.id);
-    navigate(mediaPath("watch", item));
+    navigate(mediaPath("watch", item), { state: { selectPartyTitle: false } });
   }
 
   // Approve or decline a member's request from its notification (CORE-1765).
@@ -192,6 +202,10 @@ function NotificationRow({
 }) {
   const t = useT();
   const party = useWatchPartyState();
+  const joinLabel =
+    party.status !== "idle" && party.partyID !== notification.ref
+      ? "watchPartyLeaveAndJoin"
+      : "watchPartyJoin";
   // Requests filed before they had their own kind arrived as invites to the
   // host's own party; those are not invites.
   const joinable =
@@ -235,7 +249,7 @@ function NotificationRow({
       <div className="flex gap-2 self-start sm:self-center">
         {joinable && (
           <Button size="sm" disabled={joining} onClick={() => onJoinParty(notification)}>
-            {joining ? t("watchPartyJoining") : t("watchPartyJoin")}
+            {t(joining ? "watchPartyJoining" : joinLabel)}
           </Button>
         )}
         {decidable && (

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { ApiError, subscribeEvents } from "@/lib/api";
+import { ApiError, getIdentityEpochSignal, subscribeEvents } from "@/lib/api";
 import {
   acceptWatchParty,
   calibrateWatchPartyClock,
@@ -13,6 +13,7 @@ import {
   reportWatchPartyLeadPosition,
   requestWatchPartyTransport,
   type WatchPartyInfo,
+  watchPartyAutoSkip,
   watchPartyTransport,
 } from "@/lib/graphql";
 import {
@@ -40,7 +41,7 @@ import {
 export type WatchPartyStatus = "idle" | "starting" | "joining" | "active";
 
 /** Why the last party action failed; the UI turns it into words. */
-export type WatchPartyErrorKind = "" | "home-network" | "failed";
+export type WatchPartyErrorKind = "" | "home-network" | "failed" | "leave-failed";
 
 /** What last happened to the party's host (CORE-1763); the UI turns it into words. */
 export type WatchPartyNotice = "" | "handoff" | "ended";
@@ -117,11 +118,255 @@ const ROSTER_WAIT_MS = 1500;
 let state: WatchPartyState = IDLE;
 const listeners = new Set<() => void>();
 let closeStream: (() => void) | null = null;
+let stopPartyLifetime: (() => void) | null = null;
 let rosterWaiters: Array<() => void> = [];
 // Bumped by every reset, so a start or join that a leave overtook knows it is stale.
 let generation = 0;
-// Counts timeline frames, so a host's transport response older than a frame is dropped.
-let timelineFrames = 0;
+// A membership or title change invalidates controls even if the viewer later returns.
+let transportEpoch = 0;
+// A silence hold changes the shared anchor without changing the lead's own intent.
+let leadPauseIntent: boolean | undefined;
+// The latest shared rewind lets each member recognize a return into a segment.
+let rewind: { fromMS: number; toMS: number } | null = null;
+
+export const PARTY_TRANSPORT_TIMEOUT_MS = 15_000;
+const TRANSPORT_RETRY_MS = 1000;
+const PARTY_TITLE_NOT_VISIBLE = "cannot play this in the party: it is not visible to every member";
+
+interface TransportIntent {
+  readonly itemId: string;
+  readonly positionMS: number;
+  readonly playing: boolean;
+  readonly epoch: number;
+  readonly seekProtectedUntil: number;
+  readonly positionExpiresAt?: number;
+}
+
+interface TransportWork {
+  intent: TransportIntent;
+  autoSkip: boolean;
+  titleSwitch: boolean;
+  playbackChange?: { confirmed: boolean; readPlayheadMS?: () => number | undefined };
+  isCurrent: () => boolean;
+  submitted: boolean;
+  settled: boolean;
+  confirmed: boolean;
+  run: () => Promise<void>;
+  settle: (result: PartyAutoSkipOutcome) => void;
+}
+
+interface TransportQueue {
+  inFlight: TransportWork | null;
+  settled?: Promise<void>;
+  pending: TransportWork | null;
+}
+
+const transportQueues = new Map<string, TransportQueue>();
+let latestTransport: TransportWork | null = null;
+
+export function getPartyTransportEpoch(): number {
+  return transportEpoch;
+}
+
+/** Queued and submitted controls share the same target until its anchor arrives. */
+export function pendingPartyTransport(itemId: string): TransportIntent | undefined {
+  return pendingTransportWork(itemId)?.intent;
+}
+
+function pendingTransportWork(itemId: string): TransportWork | undefined {
+  const work = latestTransport;
+  if (work?.intent.itemId !== itemId || !work.isCurrent()) return;
+  // A relaxed member can miss the stream acknowledgement after approval.
+  if (work.settled && performance.now() >= work.intent.seekProtectedUntil) {
+    latestTransport = null;
+    return;
+  }
+  return work;
+}
+
+function matchesTransport(work: TransportWork, timeline: PartyTimeline): boolean {
+  const { intent, autoSkip, playbackChange } = work;
+  return (
+    timeline.item === intent.itemId &&
+    timeline.positionMS === intent.positionMS &&
+    ((autoSkip && !playbackChange) || timeline.paused === !intent.playing)
+  );
+}
+
+function pauseRetainsLeadSkip(work: TransportWork, next: TransportWork | null): boolean {
+  return (
+    state.lead &&
+    state.isHost &&
+    next !== null &&
+    !next.intent.playing &&
+    next.intent.itemId === work.intent.itemId &&
+    next.intent.epoch === work.intent.epoch &&
+    next.intent.positionMS === work.intent.positionMS
+  );
+}
+
+function settleTransport(
+  work: TransportWork,
+  result: PartyAutoSkipOutcome,
+  next: TransportWork | null,
+): void {
+  if (result === "unconfirmed" && work.autoSkip && next && pauseRetainsLeadSkip(work, next)) {
+    // The retained target can still be acknowledged by the authoritative Pause.
+    const settlePause = next.settle;
+    next.settle = (outcome) => {
+      work.settle(outcome === "applied" ? "applied" : "unconfirmed");
+      settlePause(outcome);
+    };
+    return;
+  }
+  work.settle(result);
+}
+
+/** A superseded switch that was already sent can still move the shared title. */
+export function submittedPartyTitleSwitch():
+  | { itemId: string; settled: Promise<void> }
+  | undefined {
+  const queue = transportQueues.get(state.partyID);
+  const work = queue?.inFlight;
+  if (work?.submitted && work.titleSwitch && queue?.settled) {
+    return { itemId: work.intent.itemId, settled: queue.settled };
+  }
+}
+
+function runTransport(partyID: string, queue: TransportQueue, work: TransportWork): void {
+  queue.inFlight = work;
+  queue.settled = work.run().finally(() => {
+    if (transportQueues.get(partyID) !== queue) return;
+    const next = queue.pending;
+    queue.pending = null;
+    if (next) runTransport(partyID, queue, next);
+    else transportQueues.delete(partyID);
+  });
+}
+
+// A stream acknowledgement can settle playback early. Keep the slot until
+// the mutation itself has settled so the server sees intents in order.
+function enqueueTransport(
+  intent: TransportIntent,
+  autoSkip: boolean,
+  playbackChange: TransportWork["playbackChange"],
+  selection?: AbortSignal,
+): Promise<PartyAutoSkipOutcome> {
+  const { partyID } = state;
+  const gen = generation;
+  const isCurrent = () =>
+    intent.epoch === transportEpoch &&
+    state.partyID === partyID &&
+    !(state.lead && !state.isHost) &&
+    (!selection || (state.isHost && !selection.aborted));
+  const running = transportQueues.get(partyID);
+  const queue = running ?? { inFlight: null, pending: null };
+  return new Promise((resolve) => {
+    const work: TransportWork = {
+      intent,
+      autoSkip,
+      titleSwitch: state.isHost && intent.itemId !== state.timeline?.item,
+      playbackChange,
+      isCurrent,
+      submitted: false,
+      settled: false,
+      confirmed: false,
+      run: async () => {
+        const isLatest = () => isCurrent() && (queue.pending ?? queue.inFlight) === work;
+        while (isLatest() && !work.confirmed) {
+          const now = performance.now();
+          if (!work.submitted && now >= (work.intent.positionExpiresAt ?? Infinity)) {
+            if (playbackChange?.confirmed !== false) break;
+            // The queued Play/Pause still applies, but its paired seek expired.
+            const timeline = state.timeline;
+            const positionMS =
+              playbackChange.readPlayheadMS?.() ??
+              (timeline?.item === intent.itemId ? expectedPositionMS(timeline, partyNowMS()) : 0);
+            work.intent = {
+              ...intent,
+              positionMS: Math.max(0, Math.round(positionMS)),
+              positionExpiresAt: undefined,
+              seekProtectedUntil: now + PARTY_TRANSPORT_TIMEOUT_MS,
+            };
+            work.autoSkip = false;
+          }
+          const sentAsHost = state.isHost;
+          try {
+            work.submitted = true;
+            let result: PartyAutoSkipOutcome;
+            if (work.autoSkip) {
+              result = await applyPartyAutoSkip(work, isLatest);
+            } else {
+              const applied = await applyPartyTransport(work.intent);
+              if (applied) {
+                if (playbackChange) playbackChange.confirmed = true;
+                // A host response carries the acknowledged anchor even if the
+                // stream delivered a newer one. A member's response has no anchor.
+                if (sentAsHost && latestTransport === work) latestTransport = null;
+              }
+              result = applied ? "applied" : "denied";
+            }
+            if (result !== "applied" && latestTransport === work) latestTransport = null;
+            work.settled = true;
+            settleTransport(work, result, queue.pending);
+            return;
+          } catch (err) {
+            const refusal = err instanceof ApiError ? err.message : undefined;
+            const notMember = refusal === "not a member of this party";
+            if (
+              sentAsHost &&
+              gen === generation &&
+              (refusal === "not the party host" || notMember)
+            ) {
+              // The handoff may have happened while this tab's stream was closed.
+              // Drop controls from the old role before requesting the live roster.
+              transportEpoch++;
+              latestTransport = null;
+              queue.pending?.settle("unconfirmed");
+              queue.pending = null;
+              work.settle("unconfirmed");
+              set({ isHost: false, requests: [] });
+              await refreshPartyAfterHandoff(partyID, gen);
+              return;
+            }
+            if (gen === generation && (refusal === "unknown party" || notMember)) {
+              if (state.lead) declinedParties.add(partyID);
+              forgetFollowing();
+              reset();
+              break;
+            }
+            if (!isLatest() || work.confirmed) break;
+            // An explicit title refusal leaves the shared title where it was.
+            if (err instanceof ApiError && err.message === PARTY_TITLE_NOT_VISIBLE) {
+              set(failure(err));
+              break;
+            }
+            await new Promise<void>((retry) => setTimeout(retry, TRANSPORT_RETRY_MS));
+          }
+        }
+        if (latestTransport === work) latestTransport = null;
+        settleTransport(work, work.confirmed ? "applied" : "unconfirmed", queue.pending);
+      },
+      settle: resolve,
+    };
+    latestTransport = work;
+    if (running) {
+      queue.pending?.settle("unconfirmed");
+      queue.pending = work;
+    } else {
+      transportQueues.set(partyID, queue);
+      runTransport(partyID, queue, work);
+    }
+  });
+}
+
+export function hasPartyTransportPending(): boolean {
+  return (
+    transportQueues.has(state.partyID) ||
+    (state.timeline !== null && pendingPartyTransport(state.timeline.item) !== undefined)
+  );
+}
+
 /** Date.now() of the last drift report; the rate bound counts from it. */
 let lastDriftReport = Number.NEGATIVE_INFINITY;
 
@@ -174,6 +419,20 @@ function noteFollowing(): void {
 }
 
 function set(patch: Partial<WatchPartyState>): void {
+  const { timeline } = patch;
+  if (timeline && timeline !== state.timeline) {
+    const inFlight = transportQueues.get(state.partyID)?.inFlight;
+    for (const work of new Set([inFlight, latestTransport])) {
+      if (!work?.submitted || !work.isCurrent() || !matchesTransport(work, timeline)) continue;
+      work.confirmed = true;
+      if (work.playbackChange) work.playbackChange.confirmed = true;
+      const latest = work === latestTransport;
+      if (work.autoSkip && state.isHost && (latest || pauseRetainsLeadSkip(work, latestTransport)))
+        work.settle("applied");
+      if (latest) latestTransport = null;
+    }
+    noteTimeline(timeline);
+  }
   state = { ...state, ...patch };
   for (const listener of listeners) listener();
 }
@@ -185,6 +444,41 @@ function subscribe(listener: () => void): () => void {
 
 export function getWatchParty(): WatchPartyState {
   return state;
+}
+
+export function getLeadPauseIntent(): boolean | undefined {
+  return leadPauseIntent;
+}
+
+export function rememberLeadPauseIntent(paused: boolean): void {
+  leadPauseIntent = paused;
+}
+
+function noteTimeline(next: PartyTimeline): void {
+  const previous = state.timeline;
+  if (previous?.item !== next.item) {
+    transportEpoch++;
+    latestTransport = null;
+    rewind = null;
+    return;
+  }
+  const fromMS = expectedPositionMS(previous, Math.min(partyNowMS(), next.presentAtMS));
+  const toMS = next.positionMS;
+  // Play, pause and roster updates can restate the anchor during the rewind visit.
+  if (rewind && fromMS < rewind.fromMS && toMS >= rewind.toMS && toMS < rewind.fromMS) return;
+  rewind = toMS < fromMS ? { fromMS, toMS } : null;
+}
+
+/** A shared move from past this segment back into it suppresses this visit. */
+export function partyRewoundIntoSegment(item: string, startMS: number, endMS: number): boolean {
+  return (
+    rewind !== null &&
+    state.timeline?.item === item &&
+    rewind.toMS >= startMS &&
+    rewind.toMS < endMS &&
+    rewind.fromMS >= endMS &&
+    state.timeline.positionMS < endMS
+  );
 }
 
 /** The current party state, re-rendering on every change. */
@@ -270,7 +564,6 @@ function applyFrame(frame: GroupSyncFrame): void {
   if (lead && !state.lead) patch.lead = true;
   if (frame.item && !(frame.signal === "roster" && sameTimeline(state.timeline, frame, lead))) {
     patch.timeline = timelineOf(frame, lead);
-    timelineFrames++;
   }
   if (frame.signal === "roster") {
     const members = frame.members ?? state.members;
@@ -391,7 +684,28 @@ export function partyNowMS(): number {
   return localClockMS() + state.offsetMS;
 }
 
+// The signed-in tab owns the membership across SPA routes. The player only
+// controls the current media element.
+function bindPartyLifetime(): void {
+  const epoch = getIdentityEpochSignal();
+  const onIdentityEnd = () => {
+    forgetFollowing();
+    closeStream?.();
+    closeStream = null;
+    leavePartyOnPageHide();
+  };
+  window.addEventListener("pagehide", leavePartyOnPageHide);
+  epoch?.addEventListener("abort", onIdentityEnd, { once: true });
+  stopPartyLifetime = () => {
+    window.removeEventListener("pagehide", leavePartyOnPageHide);
+    epoch?.removeEventListener("abort", onIdentityEnd);
+  };
+}
+
 function reset(patch: Partial<WatchPartyState> = {}): void {
+  stopPartyLifetime?.();
+  stopPartyLifetime = null;
+  ownSession = null;
   // A player still listening for a lead party keeps the stream.
   if (watching === 0) {
     closeStream?.();
@@ -401,6 +715,15 @@ function reset(patch: Partial<WatchPartyState> = {}): void {
   clockTimer = null;
   clock = null;
   generation++;
+  transportEpoch++;
+  latestTransport = null;
+  leadPauseIntent = undefined;
+  const transport = transportQueues.get(state.partyID);
+  if (transport?.pending) {
+    transport.pending.settle("unconfirmed");
+    transport.pending = null;
+  }
+  rewind = null;
   lastDriftReport = Number.NEGATIVE_INFINITY;
   const waiters = rosterWaiters;
   rosterWaiters = [];
@@ -427,22 +750,28 @@ function invitedOf(info: WatchPartyInfo): string[] {
   return info.members.filter((m) => !m.present).map((m) => m.displayName);
 }
 
+type StartPlayback = { positionMS: number; paused: boolean; revision?: number };
+
 /**
- * Start a party around `content`, hosted by this session. The timeline holds
- * at `positionMS` until the host's first transport puts it in motion. `lead`
- * starts a lead party: host-only, with this session as the lead screen.
+ * Start a party around `content`, hosted by this session. Set its initial
+ * server anchor before exposing the party for invites. A number is a saved
+ * position to start paused at. A player supplies a live sample after creation.
+ * `lead` starts a host-only party with this session as the lead screen.
  */
 export async function startWatchParty(
   content: string,
-  positionMS = 0,
+  playback: number | (() => StartPlayback) = 0,
   relaxed = true,
   lead = false,
 ): Promise<boolean> {
   if (state.status !== "idle") return false;
   set({ status: "starting", error: "", errorDetail: "", notice: "", noticeName: "" });
+  bindPartyLifetime();
   const gen = generation;
+  let partyID = "";
   try {
     const measured = await measureClock();
+    if (gen !== generation) return false;
     // Relaxed: anyone in the household party may play, pause or seek. Host-only:
     // a member's play, pause or seek waits for the host's approval (CORE-1765).
     // A lead party is always host-only.
@@ -453,15 +782,40 @@ export async function startWatchParty(
       renderLatencyMS: 0,
       ...(lead ? { lead: true } : {}),
     });
-    startedParties.add(info.partyID);
+    partyID = info.partyID;
+    startedParties.add(partyID);
     if (gen !== generation) {
-      // Left while the party was being created: end it on the server too.
-      await leaveWatchParty(info.partyID).catch(() => {});
+      // The party was created after the viewer left, so the leave had no ID.
+      await leaveWatchParty(partyID).catch(() => {});
       return false;
     }
+    set({ partyID });
+    const samplePlayback: () => StartPlayback =
+      typeof playback === "function" ? playback : () => ({ positionMS: playback, paused: true });
+    let intent = samplePlayback();
+    let positionMS = Math.max(0, Math.round(intent.positionMS));
+    let anchor = { item: content, positionMS, presentAtMS: 0 };
+    if (positionMS !== 0 || !intent.paused) {
+      while (true) {
+        anchor = await watchPartyTransport({
+          partyID,
+          item: content,
+          positionMS,
+          paused: intent.paused,
+        });
+        if (gen !== generation) return false;
+        const latest = samplePlayback();
+        // The playhead advances naturally while the request is in flight.
+        if (latest.paused === intent.paused && latest.revision === intent.revision) break;
+        intent = latest;
+        positionMS = Math.max(0, Math.round(intent.positionMS));
+      }
+    }
+    if (gen !== generation) return false;
+    if (lead) rememberLeadPauseIntent(intent.paused);
     set({
       status: "active",
-      partyID: info.partyID,
+      partyID,
       isHost: true,
       lead,
       leadOffer: null,
@@ -469,10 +823,8 @@ export async function startWatchParty(
       members: present(info),
       invited: invitedOf(info),
       timeline: {
-        item: content,
-        positionMS: Math.max(0, Math.round(positionMS)),
-        presentAtMS: 0,
-        paused: true,
+        ...anchor,
+        paused: intent.paused,
         ...(lead ? { lead: true } : {}),
       },
     });
@@ -480,7 +832,11 @@ export async function startWatchParty(
     openStream();
     return true;
   } catch (err) {
-    if (gen === generation) reset(failure(err));
+    if (gen === generation) {
+      // An initial transport can fail after the server has created the party.
+      if (partyID) await confirmPartyDeparture(failure(err));
+      else reset(failure(err));
+    }
     return false;
   }
 }
@@ -495,6 +851,27 @@ function waitForRoster(ms: number): Promise<void> {
     }
     rosterWaiters.push(done);
   });
+}
+
+async function refreshPartyAfterHandoff(partyID: string, gen: number): Promise<void> {
+  try {
+    // The expired host's session can accept again as a member. The server
+    // sends the current roster and timeline on the existing group.sync stream.
+    await acceptWatchParty({
+      partyID,
+      clockOffsetMS: Math.round(state.offsetMS),
+      renderLatencyMS: 0,
+    });
+  } catch (err) {
+    if (
+      gen === generation &&
+      err instanceof ApiError &&
+      (err.message === "unknown party" || err.message === "unknown invite")
+    ) {
+      forgetFollowing();
+      reset();
+    }
+  }
 }
 
 /**
@@ -523,6 +900,7 @@ export async function joinWatchParty(
     notice: "",
     noticeName: "",
   });
+  bindPartyLifetime();
   const gen = generation;
   openStream();
   try {
@@ -611,43 +989,150 @@ export async function inviteToParty(displayName: string): Promise<boolean> {
   }
 }
 
-/**
- * Put this viewer's play, pause or seek on the shared timeline: the host's is
- * authoritative, a member's is a request the relaxed party applies.
- */
-export async function sendPartyTransport(
-  item: string,
-  positionMS: number,
-  paused: boolean,
-): Promise<void> {
-  if (state.status !== "active") return;
-  // A follower screen has no transport: the server refuses it.
-  if (state.lead && !state.isHost) return;
-  const partyID = state.partyID;
-  const vars = { partyID, item, positionMS: Math.max(0, Math.round(positionMS)), paused };
+/** Put the viewer's changes on the shared timeline as a full playback state. */
+export function sendPartyTransport(
+  itemId: string,
+  change: {
+    positionMS?: number;
+    playing?: boolean;
+    playheadMS?: number | (() => number | undefined);
+    selection?: AbortSignal;
+  },
+  expiresAt = performance.now() + PARTY_TRANSPORT_TIMEOUT_MS,
+): Promise<boolean> {
+  const { status, lead, isHost, partyID, timeline } = state;
+  if (status !== "active" || !timeline || (lead && !isHost)) return Promise.resolve(false);
+  const previousWork = pendingTransportWork(itemId);
+  const previous = previousWork?.intent;
+  const readPlayheadMS = typeof change.playheadMS === "function" ? change.playheadMS : undefined;
+  const positionMS =
+    change.positionMS ??
+    previous?.positionMS ??
+    (typeof change.playheadMS === "number" ? change.playheadMS : readPlayheadMS?.()) ??
+    expectedPositionMS(timeline, partyNowMS());
+  const intent = {
+    itemId,
+    positionMS: Math.max(0, Math.round(positionMS)),
+    playing: change.playing ?? previous?.playing ?? !timeline.paused,
+    epoch: transportEpoch,
+    seekProtectedUntil: Math.max(expiresAt, previous?.seekProtectedUntil ?? 0),
+    positionExpiresAt: change.positionMS === undefined ? previous?.positionExpiresAt : expiresAt,
+  };
+  // A playback toggle can replace a queued skip while carrying its position.
+  const queued = transportQueues.get(partyID)?.pending;
+  const autoSkip =
+    queued?.autoSkip === true && queued === previousWork && change.positionMS === undefined;
+  const playbackChange =
+    change.playing === undefined
+      ? previousWork?.playbackChange
+      : { confirmed: false, readPlayheadMS };
+  return enqueueTransport(intent, autoSkip, playbackChange, change.selection).then(
+    (result) => result === "applied",
+  );
+}
+
+async function applyPartyTransport(intent: TransportIntent): Promise<boolean> {
+  const { partyID, isHost, timeline } = state;
   const gen = generation;
-  const frames = timelineFrames;
-  try {
-    if (state.isHost) {
-      const anchor = await watchPartyTransport(vars);
-      // The stream's own transition may already have overtaken this response.
-      if (gen === generation && frames === timelineFrames) {
-        const rate = state.timeline?.ratePermille;
-        set({
-          timeline: {
-            ...anchor,
-            paused,
-            ...(state.lead ? { lead: true } : {}),
-            ...(state.lead && rate !== undefined ? { ratePermille: rate } : {}),
-          },
-        });
-      }
-    } else {
-      await requestWatchPartyTransport(vars);
-    }
-  } catch (err) {
-    if (gen === generation) set(failure(err));
+  const { itemId: item, positionMS, playing } = intent;
+  const paused = !playing;
+  const vars = { partyID, item, positionMS, paused };
+  if (!isHost) {
+    const request = await requestWatchPartyTransport(vars);
+    return gen === generation && request.approved;
   }
+  const anchor = await watchPartyTransport(vars);
+  const latest = state.timeline;
+  // A same-title frame cannot invalidate a pending switch to another title.
+  const switching = item !== timeline?.item;
+  if (
+    intent.epoch === transportEpoch &&
+    (switching || latest === timeline || anchor.presentAtMS > (latest?.presentAtMS ?? 0))
+  ) {
+    const rate = latest?.ratePermille;
+    set({
+      timeline: {
+        ...anchor,
+        paused,
+        ...(state.lead ? { lead: true } : {}),
+        ...(state.lead && rate !== undefined ? { ratePermille: rate } : {}),
+      },
+    });
+  }
+  return gen === generation && (!switching || state.timeline?.item === item);
+}
+
+export type PartyAutoSkipOutcome = "applied" | "denied" | "unconfirmed";
+
+/** The server decides whether the auto-skip can move the shared timeline. */
+export function sendPartyAutoSkip(
+  itemId: string,
+  positionMS: number,
+  expiresAt = performance.now() + PARTY_TRANSPORT_TIMEOUT_MS,
+): Promise<PartyAutoSkipOutcome> {
+  const { status, timeline, lead, isHost } = state;
+  if (status !== "active" || timeline?.item !== itemId || (lead && !isHost)) {
+    return Promise.resolve("unconfirmed");
+  }
+  const previousWork = pendingTransportWork(itemId);
+  const previous = previousWork?.intent;
+  return enqueueTransport(
+    {
+      itemId,
+      positionMS: Math.max(0, Math.round(positionMS)),
+      playing: previous?.playing ?? !timeline.paused,
+      epoch: transportEpoch,
+      seekProtectedUntil: Math.max(expiresAt, previous?.seekProtectedUntil ?? 0),
+      positionExpiresAt: expiresAt,
+    },
+    true,
+    previousWork?.playbackChange,
+  );
+}
+
+async function applyPartyAutoSkip(
+  work: TransportWork,
+  isLatest: () => boolean,
+): Promise<PartyAutoSkipOutcome> {
+  const { intent, playbackChange } = work;
+  const { itemId: item, positionMS: target, playing } = intent;
+  const { partyID, lead } = state;
+  let timeline = state.timeline;
+  if (timeline?.item !== item) return "unconfirmed";
+  // The skip mutation moves position only. If needed, send the desired
+  // playback state at the shared playhead first.
+  if (playbackChange?.confirmed === false) {
+    const applied = await applyPartyTransport({
+      ...intent,
+      positionMS: Math.round(expectedPositionMS(timeline, partyNowMS())),
+    });
+    if (!applied || !isLatest()) return "unconfirmed";
+    playbackChange.confirmed = true;
+    if (performance.now() >= (intent.positionExpiresAt ?? Infinity)) return "unconfirmed";
+    timeline = state.timeline;
+  }
+  const result = await watchPartyAutoSkip({ partyID, item, positionMS: target });
+  const latest = state.timeline;
+  // A stale-item reply can arrive before the title change on the stream. Do
+  // not let the caller fall back to a scrub that would restore the old title.
+  if (!work.isCurrent() || latest?.item !== item || result.item !== item) return "unconfirmed";
+  if (!result.applied) return isLatest() && latest === timeline ? "denied" : "unconfirmed";
+  const relevant = isLatest() || pauseRetainsLeadSkip(work, latestTransport);
+  if (work.confirmed) return relevant ? "applied" : "unconfirmed";
+  // A lead response can supersede an earlier heartbeat. Otherwise the stream
+  // wins once it has published a newer anchor.
+  if (latest !== timeline && (!lead || latest.presentAtMS >= result.presentAtMS)) {
+    return relevant && matchesTransport(work, latest) ? "applied" : "unconfirmed";
+  }
+  set({
+    timeline: {
+      ...latest,
+      positionMS: result.positionMS,
+      presentAtMS: result.presentAtMS,
+      ...(playbackChange ? { paused: !playing } : {}),
+    },
+  });
+  return relevant ? "applied" : "unconfirmed";
 }
 
 /**
@@ -720,13 +1205,31 @@ export function watchPartyDefersUpNext(party: WatchPartyState): boolean {
  * Leave the party; the local player keeps playing on its own. A host's leave
  * hands the party to the earliest member still in it.
  */
-export async function leaveParty(): Promise<void> {
+export function leaveParty(): Promise<boolean> {
+  return confirmPartyDeparture();
+}
+
+async function confirmPartyDeparture(patch: Partial<WatchPartyState> = {}): Promise<boolean> {
   const partyID = state.partyID;
+  const gen = generation;
+  if (partyID) {
+    try {
+      await leaveWatchParty(partyID);
+    } catch (err) {
+      if (gen !== generation) return false;
+      const refusal = err instanceof ApiError ? err.message : undefined;
+      if (refusal !== "unknown party" && refusal !== "not a member of this party") {
+        set({ error: "leave-failed", errorDetail: "" });
+        return false;
+      }
+    }
+    if (gen !== generation) return false;
+  }
   // Leaving a lead party is a choice: do not rejoin it, or follow it unasked.
   if (partyID && state.lead) declinedParties.add(partyID);
   forgetFollowing();
-  reset();
-  if (partyID) await leaveWatchParty(partyID).catch(() => {});
+  reset(patch);
+  return true;
 }
 
 /** As host, end the party for everyone in it. */
@@ -744,10 +1247,10 @@ export async function endParty(): Promise<void> {
  * keeps the party it follows, so a reload rejoins it.
  */
 export function leavePartyOnPageHide(): void {
-  if (state.status === "idle" || !state.partyID) return;
+  if (state.status === "idle") return;
   const partyID = state.partyID;
   reset();
-  leaveWatchPartyKeepalive(partyID);
+  if (partyID) leaveWatchPartyKeepalive(partyID);
 }
 
 export function clearWatchPartyError(): void {
@@ -764,5 +1267,5 @@ export function resetWatchPartyForTest(): void {
   declinedParties.clear();
   startedParties.clear();
   reset();
-  ownSession = null;
+  transportQueues.clear();
 }

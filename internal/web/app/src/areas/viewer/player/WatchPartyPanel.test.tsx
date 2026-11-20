@@ -73,6 +73,12 @@ function renderPanel(party: WatchPartyState, onStart = vi.fn(async () => true)) 
 }
 
 describe("WatchPartyPanel", () => {
+  it("shows a leave failure while preserving the controls for the current party", () => {
+    renderPanel({ ...idle, status: "active", partyID: "p1", error: "leave-failed" });
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't leave the Watch Party.");
+    expect(screen.getByRole("button", { name: "Leave party" })).toBeEnabled();
+  });
+
   it("starts a party from the title playing", async () => {
     const { onStart } = renderPanel(idle);
     await userEvent.click(screen.getByRole("button", { name: "Start a Watch Party" }));

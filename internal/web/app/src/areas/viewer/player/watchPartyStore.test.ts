@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, subscribeEvents } from "@/lib/api";
+import { ApiError, setIdentityEpochSignal, subscribeEvents } from "@/lib/api";
 import {
   acceptWatchParty,
   calibrateWatchPartyClock,
@@ -12,6 +12,7 @@ import {
   reportWatchPartyDrift,
   reportWatchPartyLeadPosition,
   requestWatchPartyTransport,
+  watchPartyAutoSkip,
   watchPartyTransport,
 } from "@/lib/graphql";
 import {
@@ -27,10 +28,12 @@ import {
   leavePartyOnPageHide,
   MAX_PARTY_REQUESTS,
   partyNowMS,
+  pendingPartyTransport,
   reportLeadPosition,
   reportPartyDrift,
   resetWatchPartyForTest,
   resumeFollowedParty,
+  sendPartyAutoSkip,
   sendPartyTransport,
   startWatchParty,
   watchForLeadParty,
@@ -55,6 +58,7 @@ vi.mock("@/lib/graphql", () => ({
   reportWatchPartyDrift: vi.fn(),
   reportWatchPartyLeadPosition: vi.fn(),
   requestWatchPartyTransport: vi.fn(),
+  watchPartyAutoSkip: vi.fn(),
   watchPartyTransport: vi.fn(),
 }));
 
@@ -81,16 +85,22 @@ beforeEach(() => {
 
 afterEach(() => {
   resetWatchPartyForTest();
+  setIdentityEpochSignal();
   window.sessionStorage.clear();
 });
 
 describe("startWatchParty", () => {
-  it("hosts a relaxed party held at the current position and opens the stream", async () => {
+  it("sets the server anchor before exposing a party at the viewer's saved position (CORE-1858)", async () => {
     vi.mocked(createWatchParty).mockResolvedValue({
       partyID: "p1",
       content: "m1",
       relaxed: true,
       members: [{ displayName: "Host", present: true }],
+    });
+    vi.mocked(watchPartyTransport).mockImplementationOnce(async ({ item, positionMS }) => {
+      expect(getWatchParty().status).toBe("starting");
+      expect(subscribeEvents).not.toHaveBeenCalled();
+      return { item, positionMS, presentAtMS: 1000 };
     });
 
     expect(await startWatchParty("m1", 4200.4)).toBe(true);
@@ -101,15 +111,73 @@ describe("startWatchParty", () => {
       clockOffsetMS: 25,
       renderLatencyMS: 0,
     });
+    expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+      partyID: "p1",
+      item: "m1",
+      positionMS: 4200,
+      paused: true,
+    });
     expect(getWatchParty()).toMatchObject({
       status: "active",
       partyID: "p1",
       isHost: true,
       offsetMS: 25,
       members: ["Host"],
-      timeline: { item: "m1", positionMS: 4200, paused: true },
+      timeline: { item: "m1", positionMS: 4200, presentAtMS: 1000, paused: true },
     });
     expect(subscribeEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends the current position and playing state in the startup sequence (CORE-1858)", async () => {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    vi.mocked(watchPartyTransport).mockImplementationOnce(async ({ item, positionMS }) => ({
+      item,
+      positionMS,
+      presentAtMS: 1000,
+    }));
+    expect(await startWatchParty("m1", () => ({ positionMS: 42_500, paused: false }))).toBe(true);
+    expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+      partyID: "p1",
+      item: "m1",
+      positionMS: 42_500,
+      paused: false,
+    });
+    expect(getWatchParty().timeline).toEqual({
+      item: "m1",
+      positionMS: 42_500,
+      presentAtMS: 1000,
+      paused: false,
+    });
+
+    // A second tab gets the same initial server anchor on accept.
+    const anchor = await vi.mocked(watchPartyTransport).mock.results[0]?.value;
+    if (!anchor) throw new Error("missing startup transport");
+    resetWatchPartyForTest();
+    vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+      deliver({ groupID: "p1", signal: "roster", ...anchor, paused: false });
+      return { partyID: "p1", ...anchor };
+    });
+    expect(await joinWatchParty("p1")).toBe("m1");
+    expect(getWatchParty().timeline).toEqual({ ...anchor, paused: false });
+  });
+
+  it("leaves the server party when its initial transport fails (CORE-1858)", async () => {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    vi.mocked(watchPartyTransport).mockRejectedValueOnce(new Error("offline"));
+    expect(await startWatchParty("m1", 42_500)).toBe(false);
+    expect(leaveWatchParty).toHaveBeenCalledExactlyOnceWith("p1");
+    expect(getWatchParty()).toMatchObject({ status: "idle", error: "failed" });
+    expect(subscribeEvents).not.toHaveBeenCalled();
   });
 
   it("maps a refusal to the home-network error", async () => {
@@ -252,7 +320,7 @@ describe("party actions", () => {
       positionMS: 6000,
       presentAtMS: 12_000,
     });
-    await sendPartyTransport("m1", 6000.2, false);
+    await sendPartyTransport("m1", { positionMS: 6000.2, playing: true });
     expect(watchPartyTransport).toHaveBeenCalledWith({
       partyID: "p1",
       item: "m1",
@@ -273,7 +341,7 @@ describe("party actions", () => {
     });
     await joinWatchParty("p2");
     vi.mocked(requestWatchPartyTransport).mockResolvedValue({ partyID: "p2", approved: true });
-    await sendPartyTransport("m1", 100, true);
+    await sendPartyTransport("m1", { positionMS: 100, playing: false });
     expect(requestWatchPartyTransport).toHaveBeenCalledWith({
       partyID: "p2",
       item: "m1",
@@ -282,9 +350,13 @@ describe("party actions", () => {
     });
   });
 
-  it("leaves locally first, then tells the server", async () => {
+  it("clears local membership after the server confirms the departure", async () => {
     await host();
-    await leaveParty();
+    vi.mocked(leaveWatchParty).mockImplementationOnce(async () => {
+      expect(getWatchParty().status).toBe("active");
+      expect(unsubscribe).not.toHaveBeenCalled();
+    });
+    expect(await leaveParty()).toBe(true);
     expect(getWatchParty().status).toBe("idle");
     expect(unsubscribe).toHaveBeenCalled();
     expect(leaveWatchParty).toHaveBeenCalledWith("p1");
@@ -420,8 +492,417 @@ describe("races", () => {
       });
       return { item: "m1", positionMS: 5000, presentAtMS: 10_000 };
     });
-    await sendPartyTransport("m1", 5000, false);
+    await sendPartyTransport("m1", { positionMS: 5000, playing: true });
     expect(getWatchParty().timeline).toMatchObject({ presentAtMS: 10_100, paused: true });
+    expect(pendingPartyTransport("m1")).toBeUndefined();
+  });
+
+  it.each(["seek", "auto-skip"])(
+    "serializes scrubs after an in-flight %s for the other member",
+    async (kind) => {
+      vi.mocked(createWatchParty).mockResolvedValue({
+        partyID: "p1",
+        content: "m1",
+        relaxed: true,
+        members: [],
+      });
+      await startWatchParty("m1");
+      const hostStream = vi.mocked(subscribeEvents).mock.lastCall?.[0];
+      vi.resetModules();
+      const member = await import("./watchPartyStore");
+      expect(member.getWatchParty().status).toBe("idle");
+      vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+        deliver({ groupID: "p1", signal: "roster", item: "m1", paused: true });
+        return { partyID: "p1", item: "m1", positionMS: 0, presentAtMS: 0 };
+      });
+      expect(await member.joinWatchParty("p1")).toBe("m1");
+      let releaseFirst!: () => void;
+      const firstInFlight = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const publish = (item: string, positionMS: number, paused: boolean) => {
+        const anchor = { item, positionMS, presentAtMS: 10_000 };
+        const payload = { groupID: "p1", signal: "transition", paused, ...anchor };
+        hostStream?.({ type: "group.sync", data: JSON.stringify({ payload }) } as never);
+        deliver(payload);
+        return anchor;
+      };
+      vi.mocked(watchPartyTransport).mockImplementation(async ({ item, positionMS, paused }) => {
+        if (positionMS === 30_000) await firstInFlight;
+        return publish(item, positionMS, paused);
+      });
+      vi.mocked(watchPartyAutoSkip).mockImplementationOnce(async ({ item, positionMS }) => {
+        const anchor = publish(item, positionMS, true);
+        await firstInFlight;
+        return { ...anchor, partyID: "p1", applied: true };
+      });
+      const autoSkip = kind === "auto-skip";
+      try {
+        const first = autoSkip
+          ? sendPartyAutoSkip("m1", 30_000)
+          : sendPartyTransport("m1", { positionMS: 30_000, playing: false });
+        const middle = sendPartyTransport("m1", { positionMS: 60_000, playing: false });
+        const latest = sendPartyTransport("m1", { positionMS: 90_000, playing: false });
+        if (autoSkip) {
+          // The stream can acknowledge playback while the HTTP slot is still occupied.
+          expect(await first).toBe("applied");
+        }
+        expect(watchPartyTransport).toHaveBeenCalledTimes(autoSkip ? 0 : 1);
+        expect(member.getWatchParty().timeline?.positionMS).toBe(autoSkip ? 30_000 : 0);
+        releaseFirst();
+        await expect(middle).resolves.toBe(false);
+        await expect(latest).resolves.toBe(true);
+        expect(vi.mocked(watchPartyTransport).mock.calls.map(([v]) => v.positionMS)).toEqual(
+          autoSkip ? [90_000] : [30_000, 90_000],
+        );
+        expect(member.getWatchParty().timeline?.positionMS).toBe(90_000);
+        expect(getWatchParty().timeline?.positionMS).toBe(90_000);
+      } finally {
+        releaseFirst();
+        member.resetWatchPartyForTest();
+        vi.mocked(watchPartyAutoSkip).mockReset();
+      }
+    },
+  );
+
+  it.each([false, true])("drops an expired queued scrub (also paused: %s)", async (pause) => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    try {
+      expect(await startWatchParty("m1")).toBe(true);
+      let releaseFirst!: () => void;
+      const inFlight = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      vi.mocked(watchPartyTransport).mockImplementation(async ({ item, positionMS }) => {
+        if (positionMS === 30_000) await inFlight;
+        return { item, positionMS, presentAtMS: 0 };
+      });
+      const first = sendPartyTransport("m1", { positionMS: 30_000, playing: true });
+      let livePosition = 60_000;
+      const playback = pause
+        ? sendPartyTransport("m1", { playing: false, playheadMS: () => livePosition })
+        : undefined;
+      const queued = sendPartyTransport("m1", { positionMS: 60_000 }, 15_000);
+      expect(watchPartyTransport).toHaveBeenCalledTimes(1);
+      expect(pendingPartyTransport("m1")?.positionMS).toBe(60_000);
+      clock.mockReturnValue(20_000);
+      livePosition = 45_000;
+      releaseFirst();
+      await expect(first).resolves.toBe(true);
+      if (playback) await expect(playback).resolves.toBe(false);
+      await expect(queued).resolves.toBe(pause);
+      expect(
+        vi.mocked(watchPartyTransport).mock.calls.map(([v]) => [v.positionMS, v.paused]),
+      ).toEqual(
+        pause
+          ? [
+              [30_000, false],
+              [45_000, true],
+            ]
+          : [[30_000, false]],
+      );
+      expect(getWatchParty().timeline?.positionMS).toBe(pause ? 45_000 : 30_000);
+      expect(pendingPartyTransport("m1")).toBeUndefined();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("ends paused on the server when Play takes 17 seconds and the viewer then pauses", async () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    let returnPlay!: () => void;
+    const playResponse = new Promise<void>((resolve) => {
+      returnPlay = resolve;
+    });
+    let serverPaused = true;
+    try {
+      expect(await startWatchParty("m1")).toBe(true);
+      vi.mocked(watchPartyTransport).mockImplementation(async ({ item, positionMS, paused }) => {
+        serverPaused = paused;
+        if (!paused) await playResponse;
+        const anchor = { item, positionMS, presentAtMS: 0 };
+        deliver({ groupID: "p1", signal: "transition", ...anchor, paused });
+        return anchor;
+      });
+
+      const play = sendPartyTransport("m1", { playing: true, playheadMS: 10_000 });
+      expect(serverPaused).toBe(false);
+      clock.mockReturnValue(500);
+      const pause = sendPartyTransport("m1", { playing: false, playheadMS: 10_000 });
+      expect(watchPartyTransport).toHaveBeenCalledTimes(1);
+      clock.mockReturnValue(17_000);
+      expect(pendingPartyTransport("m1")?.playing).toBe(false);
+      returnPlay();
+
+      await expect(play).resolves.toBe(true);
+      await expect(pause).resolves.toBe(true);
+      expect(watchPartyTransport).toHaveBeenCalledTimes(2);
+      expect(serverPaused).toBe(true);
+      expect(getWatchParty().timeline?.paused).toBe(true);
+    } finally {
+      returnPlay();
+      clock.mockRestore();
+    }
+  });
+
+  it("does not repeat an in-flight Pause that a matching anchor confirms before auto-skip", async () => {
+    vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+      deliver({ groupID: "p1", signal: "roster", item: "m1", paused: false });
+      return { partyID: "p1", item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    expect(await joinWatchParty("p1")).toBe("m1");
+    let releasePause!: () => void;
+    const reply = new Promise<void>((resolve) => {
+      releasePause = resolve;
+    });
+    vi.mocked(requestWatchPartyTransport).mockImplementationOnce(async () => {
+      await reply;
+      return { partyID: "p1", approved: true };
+    });
+    const anchor = { item: "m1", positionMS: 5_000, presentAtMS: 10_000 };
+    vi.mocked(watchPartyAutoSkip).mockResolvedValueOnce({
+      ...anchor,
+      partyID: "p1",
+      positionMS: 30_000,
+      applied: true,
+    });
+    try {
+      const pause = sendPartyTransport("m1", { playing: false, playheadMS: anchor.positionMS });
+      const skip = sendPartyAutoSkip("m1", 30_000);
+      expect(watchPartyAutoSkip).not.toHaveBeenCalled();
+      deliver({ groupID: "p1", signal: "transition", ...anchor, paused: true });
+      releasePause();
+
+      await expect(pause).resolves.toBe(true);
+      await expect(skip).resolves.toBe("applied");
+      expect(requestWatchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+        partyID: "p1",
+        item: "m1",
+        positionMS: 5_000,
+        paused: true,
+      });
+      expect(getWatchParty().timeline).toMatchObject({ positionMS: 30_000, paused: true });
+    } finally {
+      releasePause();
+    }
+  });
+
+  it.each(["seek", "auto-skip"])("recovers after host wake on %s", async (action) => {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [{ displayName: "Host", present: true }],
+    });
+    expect(await startWatchParty("m1")).toBe(true);
+    const autoSkip = action === "auto-skip";
+    const mutation = vi.mocked(autoSkip ? watchPartyAutoSkip : watchPartyTransport);
+    const reason = autoSkip ? "not a member of this party" : "not the party host";
+    mutation.mockRejectedValueOnce(new ApiError(reason, 403));
+    const anchor = { item: "m2", positionMS: 14_000, presentAtMS: 10_000 };
+    vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+      deliver({
+        groupID: "p1",
+        signal: "roster",
+        ...anchor,
+        paused: false,
+        members: ["Guest", "Host"],
+      });
+      return { partyID: "p1", ...anchor };
+    });
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // The host wakes after grace. No handoff frame reached the disconnected tab.
+      const refused = autoSkip
+        ? sendPartyAutoSkip("m1", 30_000)
+        : sendPartyTransport("m1", { positionMS: 30_000, playing: false });
+      const queued = sendPartyTransport("m1", { positionMS: 60_000, playing: false });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(mutation).toHaveBeenCalledTimes(1);
+      if (autoSkip) expect(watchPartyTransport).not.toHaveBeenCalled();
+      expect(acceptWatchParty).toHaveBeenCalledExactlyOnceWith({
+        partyID: "p1",
+        clockOffsetMS: 25,
+        renderLatencyMS: 0,
+      });
+      await expect(refused).resolves.toBe(autoSkip ? "unconfirmed" : false);
+      await expect(queued).resolves.toBe(false);
+      expect(pendingPartyTransport("m1")).toBeUndefined();
+      expect(getWatchParty()).toMatchObject({
+        status: "active",
+        isHost: false,
+        members: ["Guest", "Host"],
+        timeline: { ...anchor, paused: false },
+      });
+
+      vi.mocked(requestWatchPartyTransport).mockResolvedValueOnce({
+        partyID: "p1",
+        approved: true,
+      });
+      await expect(sendPartyTransport("m2", { positionMS: 20_000 })).resolves.toBe(true);
+      expect(requestWatchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+        partyID: "p1",
+        item: "m2",
+        positionMS: 20_000,
+        paused: false,
+      });
+    } finally {
+      mutation.mockReset();
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a failed title switch so the host and member land on the same title", async () => {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    expect(await startWatchParty("m1")).toBe(true);
+    const hostStream = vi.mocked(subscribeEvents).mock.lastCall?.[0];
+    vi.resetModules();
+    const member = await import("./watchPartyStore");
+    vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+      deliver({ groupID: "p1", signal: "roster", item: "m1", paused: true });
+      return { partyID: "p1", item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    expect(await member.joinWatchParty("p1")).toBe("m1");
+    vi.mocked(watchPartyTransport)
+      .mockRejectedValueOnce(new TypeError("Network unavailable"))
+      .mockImplementation(async ({ item, positionMS, paused }) => {
+        const anchor = { item, positionMS, presentAtMS: 10_000 };
+        const payload = { groupID: "p1", signal: "transition", ...anchor, paused };
+        hostStream?.({ type: "group.sync", data: JSON.stringify({ payload }) } as never);
+        deliver(payload);
+        return anchor;
+      });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const selection = new AbortController();
+      const change = sendPartyTransport("m2", {
+        positionMS: 0,
+        playing: true,
+        selection: selection.signal,
+      });
+      expect(watchPartyTransport).toHaveBeenCalledTimes(1);
+      expect(member.getWatchParty().timeline?.item).toBe("m1");
+      await vi.advanceTimersByTimeAsync(1000);
+      await expect(change).resolves.toBe(true);
+      expect(watchPartyTransport).toHaveBeenCalledTimes(2);
+      expect(watchPartyTransport).toHaveBeenLastCalledWith({
+        partyID: "p1",
+        item: "m2",
+        positionMS: 0,
+        paused: false,
+      });
+      expect(member.getWatchParty().timeline?.item).toBe("m2");
+      expect(getWatchParty().timeline?.item).toBe("m2");
+    } finally {
+      vi.useRealTimers();
+      member.resetWatchPartyForTest();
+    }
+  });
+
+  it.each(["unknown party", "not a member of this party"])(
+    "clears stale membership on the first %s refusal and drops pending transport",
+    async (reason) => {
+      const partyID = "stale-party";
+      const host = reason === "unknown party";
+      if (host) {
+        vi.mocked(createWatchParty).mockResolvedValueOnce({
+          partyID,
+          content: "m1",
+          relaxed: true,
+          members: [],
+        });
+        expect(await startWatchParty("m1")).toBe(true);
+      } else {
+        vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+          deliver({ groupID: partyID, signal: "roster", item: "m1", paused: true });
+          return { partyID, item: "m1", positionMS: 0, presentAtMS: 0 };
+        });
+        expect(await joinWatchParty(partyID)).toBe("m1");
+      }
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const mutation = host
+        ? vi.mocked(watchPartyTransport)
+        : vi.mocked(requestWatchPartyTransport);
+      mutation.mockRejectedValue(new ApiError(reason, host ? 200 : 403));
+      try {
+        const refused = sendPartyTransport("m1", { playing: true });
+        const queued = host ? undefined : sendPartyTransport("m1", { playing: false });
+        expect(mutation).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(getWatchParty()).toMatchObject({ status: "idle", partyID: "", timeline: null });
+        await expect(refused).resolves.toBe(false);
+        if (queued) await expect(queued).resolves.toBe(false);
+        await vi.advanceTimersByTimeAsync(3000);
+        expect(mutation).toHaveBeenCalledTimes(1);
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+        expect(leaveWatchParty).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+        mutation.mockReset();
+      }
+    },
+  );
+
+  it("discards a relaxed member's queued seek after the host changes titles", async () => {
+    vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+      deliver({ groupID: "p1", signal: "roster", item: "m1", paused: true });
+      return { partyID: "p1", item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    expect(await joinWatchParty("p1")).toBe("m1");
+    expect(getWatchParty().isHost).toBe(false);
+
+    let releaseFirst!: () => void;
+    const inFlight = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    vi.mocked(requestWatchPartyTransport)
+      .mockResolvedValue({ partyID: "p1", approved: true })
+      .mockImplementationOnce(async () => {
+        await inFlight;
+        return { partyID: "p1", approved: true };
+      });
+
+    const first = sendPartyTransport("m1", { positionMS: 30_000, playing: false });
+    const queued = sendPartyTransport("m1", { positionMS: 60_000, playing: false });
+    expect(requestWatchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+      partyID: "p1",
+      item: "m1",
+      positionMS: 30_000,
+      paused: true,
+    });
+    deliver({
+      groupID: "p1",
+      signal: "transition",
+      item: "m2",
+      positionMS: 0,
+      presentAtMS: 0,
+      paused: false,
+    });
+    expect(getWatchParty().timeline?.item).toBe("m2");
+    releaseFirst();
+
+    await expect(first).resolves.toBe(true);
+    await expect(queued).resolves.toBe(false);
+    expect(requestWatchPartyTransport).toHaveBeenCalledTimes(1);
+    expect(getWatchParty().timeline?.item).toBe("m2");
   });
 });
 
@@ -516,6 +997,32 @@ describe("host leave, end and page exit (CORE-1763)", () => {
     expect(leaveWatchParty).not.toHaveBeenCalled();
   });
 
+  it.each(["unknown party", "not a member of this party"])(
+    "clears membership when leaving returns %s",
+    async (message) => {
+      await member();
+      vi.mocked(leaveWatchParty).mockRejectedValueOnce(new ApiError(message, 200));
+
+      await expect(leaveParty()).resolves.toBe(true);
+      expect(leaveWatchParty).toHaveBeenCalledExactlyOnceWith("p3");
+      expect(getWatchParty()).toMatchObject({ status: "idle", partyID: "", error: "" });
+      expect(unsubscribe).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("keeps membership and its stream when leaving fails without confirmation", async () => {
+    await member();
+    vi.mocked(leaveWatchParty).mockRejectedValueOnce(new TypeError("offline"));
+
+    await expect(leaveParty()).resolves.toBe(false);
+    expect(getWatchParty()).toMatchObject({
+      status: "active",
+      partyID: "p3",
+      error: "leave-failed",
+    });
+    expect(unsubscribe).not.toHaveBeenCalled();
+  });
+
   it("ends the party for everyone only as host", async () => {
     await member();
     await endParty();
@@ -536,11 +1043,44 @@ describe("host leave, end and page exit (CORE-1763)", () => {
 
   it("leaves with a keepalive request when the page goes away", async () => {
     await member();
-    leavePartyOnPageHide();
+    window.dispatchEvent(new Event("pagehide"));
     expect(leaveWatchPartyKeepalive).toHaveBeenCalledWith("p3");
     expect(getWatchParty().status).toBe("idle");
-    leavePartyOnPageHide();
+    window.dispatchEvent(new Event("pagehide"));
     expect(leaveWatchPartyKeepalive).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears membership and the event stream when the signed-in identity ends", async () => {
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    await member();
+    epoch.abort();
+    expect(leaveWatchPartyKeepalive).toHaveBeenCalledExactlyOnceWith("p3");
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(getWatchParty()).toMatchObject({ status: "idle", partyID: "", timeline: null });
+  });
+
+  it("leaves a starting party on pagehide even if its initial transport is still pending", async () => {
+    vi.mocked(createWatchParty).mockResolvedValueOnce({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    let finish!: (anchor: Awaited<ReturnType<typeof watchPartyTransport>>) => void;
+    vi.mocked(watchPartyTransport).mockReturnValueOnce(
+      new Promise((resolve) => (finish = resolve)),
+    );
+    const starting = startWatchParty("m1", 42_500);
+    await vi.waitFor(() => expect(watchPartyTransport).toHaveBeenCalled());
+    window.dispatchEvent(new Event("pagehide"));
+    expect(leaveWatchPartyKeepalive).toHaveBeenCalledExactlyOnceWith("p1");
+
+    finish({ item: "m1", positionMS: 42_500, presentAtMS: 1000 });
+    expect(await starting).toBe(false);
+    expect(leaveWatchParty).not.toHaveBeenCalled();
+    expect(subscribeEvents).not.toHaveBeenCalled();
+    expect(getWatchParty()).toMatchObject({ status: "idle", partyID: "", timeline: null });
   });
 });
 
@@ -827,7 +1367,7 @@ describe("lead party (CORE-2245)", () => {
   it("sends no transport and no drift report from a follower", async () => {
     await follow({ lead: true });
 
-    await sendPartyTransport("m1", 1000, false);
+    await sendPartyTransport("m1", { positionMS: 1000, playing: true });
     expect(reportPartyDrift(80, 1_000_000)).toBe(false);
 
     expect(requestWatchPartyTransport).not.toHaveBeenCalled();
@@ -844,7 +1384,7 @@ describe("lead party (CORE-2245)", () => {
       presentAtMS: 20_000,
     });
 
-    await sendPartyTransport("m1", 3000, false);
+    await sendPartyTransport("m1", { positionMS: 3000, playing: true });
 
     expect(getWatchParty().timeline).toEqual({
       item: "m1",
