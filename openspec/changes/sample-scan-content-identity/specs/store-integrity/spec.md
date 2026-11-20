@@ -43,8 +43,8 @@ and its Media SHALL remain unchanged.
 
 #### Scenario: Legacy bytes restored by managed admission
 
-- **WHEN** the on-disk file is absent but its legacy row is still live, and managed import or convert
-  restores bytes whose full SHA-256 matches that row at the same path and in the same library
+- **WHEN** the on-disk file is absent and managed import or convert restores bytes whose full
+  SHA-256 matches a live or missing file row on a non-trashed Media at the same path and library
 - **THEN** admission preserves the existing Media ID, fingerprint, watch state and match pin
 - **AND** the catalog records the admitted file's stats so the next unchanged scan reuses the row
 

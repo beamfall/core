@@ -90,6 +90,12 @@ viewer SHALL replace the address in place without adding a history entry or rest
 - **THEN** the viewer uses the sampled token and attaches the active playback session to the full
   player even if the catalog is offline
 
+#### Scenario: Start sampled Media from its detail page
+
+- **WHEN** the viewer selects Play or Start Over for a sampled Media shown on its detail page
+- **THEN** the watch address uses the unambiguous sampled token so playback can start even when
+  the catalog lookup for the watch page is unavailable
+
 #### Scenario: Back from unresolved credits
 
 - **WHEN** a viewer opens a sampled credits bookmark directly and activates Back during lookup
