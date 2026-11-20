@@ -122,11 +122,14 @@ let stopPartyLifetime: (() => void) | null = null;
 let rosterWaiters: Array<() => void> = [];
 // Bumped by every reset, so a start or join that a leave overtook knows it is stale.
 let generation = 0;
+// A title change invalidates queued controls even if the party later returns to that title.
+let itemEpoch = 0;
 // The latest shared rewind lets each member recognize a return into a segment.
 let rewind: { fromMS: number; toMS: number } | null = null;
 
 interface TransportWork {
   generation: number;
+  itemEpoch: number;
   expiresAt?: number;
   autoSkip?: { item: string; positionMS: number };
   run: () => Promise<void>;
@@ -159,20 +162,23 @@ function enqueueTransport<T>(
 ): Promise<T> {
   const { partyID } = state;
   const gen = generation;
+  const epoch = itemEpoch;
+  const isCurrent = () => gen === generation && epoch === itemEpoch;
   const running = transportQueues.get(partyID);
   const queue = running ?? { inFlight: null, pending: null };
   return new Promise((settle) => {
     const work: TransportWork = {
       generation: gen,
+      itemEpoch: epoch,
       expiresAt,
       autoSkip,
       run: () => {
         // The player follows the shared timeline again after the seek deadline.
-        if (gen !== generation || (expiresAt !== undefined && performance.now() >= expiresAt)) {
+        if (!isCurrent() || (expiresAt !== undefined && performance.now() >= expiresAt)) {
           settle(superseded);
           return Promise.resolve();
         }
-        return run(settle, () => gen === generation && (queue.pending ?? queue.inFlight) === work);
+        return run(settle, () => isCurrent() && (queue.pending ?? queue.inFlight) === work);
       },
       supersede: () => settle(superseded),
     };
@@ -199,7 +205,11 @@ export function pendingPartyAutoSkipTarget(item: string): number | undefined {
     deadline !== undefined && performance.now() >= deadline
       ? queue.inFlight
       : (queue.pending ?? queue.inFlight);
-  if (latest?.generation === generation && latest.autoSkip?.item === item) {
+  if (
+    latest?.generation === generation &&
+    latest.itemEpoch === itemEpoch &&
+    latest.autoSkip?.item === item
+  ) {
     return latest.autoSkip.positionMS;
   }
 }
@@ -273,6 +283,7 @@ export function getWatchParty(): WatchPartyState {
 function noteTimeline(next: PartyTimeline): void {
   const previous = state.timeline;
   if (previous?.item !== next.item) {
+    itemEpoch++;
     rewind = null;
     return;
   }
@@ -561,7 +572,7 @@ function invitedOf(info: WatchPartyInfo): string[] {
   return info.members.filter((m) => !m.present).map((m) => m.displayName);
 }
 
-type StartPlayback = { positionMS: number; paused: boolean };
+type StartPlayback = { positionMS: number; paused: boolean; revision?: number };
 
 /**
  * Start a party around `content`, hosted by this session. Set its initial
@@ -601,13 +612,27 @@ export async function startWatchParty(
       return false;
     }
     set({ partyID });
-    const { positionMS, paused } =
-      typeof playback === "function" ? playback() : { positionMS: playback, paused: true };
-    const position = Math.max(0, Math.round(positionMS));
-    const anchor =
-      position !== 0 || !paused
-        ? await watchPartyTransport({ partyID, item: content, positionMS: position, paused })
-        : { item: content, positionMS: position, presentAtMS: 0 };
+    const samplePlayback: () => StartPlayback =
+      typeof playback === "function" ? playback : () => ({ positionMS: playback, paused: true });
+    let intent = samplePlayback();
+    let positionMS = Math.max(0, Math.round(intent.positionMS));
+    let anchor = { item: content, positionMS, presentAtMS: 0 };
+    if (positionMS !== 0 || !intent.paused) {
+      while (true) {
+        anchor = await watchPartyTransport({
+          partyID,
+          item: content,
+          positionMS,
+          paused: intent.paused,
+        });
+        if (gen !== generation) return false;
+        const latest = samplePlayback();
+        // The playhead advances naturally while the request is in flight.
+        if (latest.paused === intent.paused && latest.revision === intent.revision) break;
+        intent = latest;
+        positionMS = Math.max(0, Math.round(intent.positionMS));
+      }
+    }
     if (gen !== generation) return false;
     set({
       status: "active",
@@ -620,7 +645,7 @@ export async function startWatchParty(
       invited: invitedOf(info),
       timeline: {
         ...anchor,
-        paused,
+        paused: intent.paused,
         ...(lead ? { lead: true } : {}),
       },
     });

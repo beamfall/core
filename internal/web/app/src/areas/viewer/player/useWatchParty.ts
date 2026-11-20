@@ -69,6 +69,7 @@ interface LocalSeek {
   item: string;
   expiresAt: number;
   skipFrom?: PartyTimeline;
+  skipTarget?: number;
 }
 
 interface SubmittedSeek extends LocalSeek {
@@ -310,7 +311,9 @@ export function useWatchParty({
         pending.partyID === s.partyID &&
         pending.item === tl.item &&
         performance.now() < pending.expiresAt &&
-        (pending.skipFrom === undefined || pending.skipFrom === tl) &&
+        (pending.skipFrom === undefined ||
+          pending.skipFrom === tl ||
+          (pending.skipTarget !== undefined && pending.skipTarget !== tl.positionMS)) &&
         (pending !== sent || awaitingAnchor)
       )
         return;
@@ -574,7 +577,17 @@ export function useWatchParty({
         // A second scrub can return to the current anchor while the server
         // is still processing a seek or auto-skip away from it.
         if (Math.abs(local - pendingTarget) <= SEEK_THRESHOLD_MS) {
-          localSeek.current = skipTarget === undefined ? sent : null;
+          // A scrub to the pending skip's target shares its acknowledgement.
+          localSeek.current =
+            skipTarget === undefined
+              ? sent
+              : {
+                  partyID: s.partyID,
+                  item: tl.item,
+                  expiresAt: tracked?.expiresAt ?? performance.now() + SEEK_INTENT_TIMEOUT_MS,
+                  skipFrom: tl,
+                  skipTarget,
+                };
           return;
         }
       } else if (agrees) {
@@ -695,20 +708,28 @@ export function useWatchParty({
     async (relaxed = true, lead = false) => {
       if (!mediaId) return false;
       const video = videoRef.current;
+      let revision = 0;
       const readPlayback = () => ({
         positionMS: video ? video.currentTime * positionScaleRef.current : 0,
         paused: video?.paused ?? true,
+        revision,
       });
-      const playbackAtStart = readPlayback();
-      return startWatchParty(
-        mediaId,
-        () =>
-          videoRef.current === video && mediaIdRef.current === mediaId
-            ? readPlayback()
-            : playbackAtStart,
-        !lead && relaxed,
-        lead,
-      );
+      let latest = readPlayback();
+      const samplePlayback = () => {
+        if (videoRef.current === video && mediaIdRef.current === mediaId) latest = readPlayback();
+        return latest;
+      };
+      const onPlaybackChange = () => {
+        revision++;
+        samplePlayback();
+      };
+      const events = ["play", "pause", "seeking"] as const;
+      for (const event of events) video?.addEventListener(event, onPlaybackChange);
+      try {
+        return await startWatchParty(mediaId, samplePlayback, !lead && relaxed, lead);
+      } finally {
+        for (const event of events) video?.removeEventListener(event, onPlaybackChange);
+      }
     },
     [mediaId, videoRef],
   );

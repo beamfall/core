@@ -590,6 +590,50 @@ describe("races", () => {
       clock.mockRestore();
     }
   });
+
+  it("discards a relaxed member's queued seek after the host changes titles", async () => {
+    vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+      deliver({ groupID: "p1", signal: "roster", item: "m1", paused: true });
+      return { partyID: "p1", item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    expect(await joinWatchParty("p1")).toBe("m1");
+    expect(getWatchParty().isHost).toBe(false);
+
+    let releaseFirst!: () => void;
+    const inFlight = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    vi.mocked(requestWatchPartyTransport)
+      .mockResolvedValue({ partyID: "p1", approved: true })
+      .mockImplementationOnce(async () => {
+        await inFlight;
+        return { partyID: "p1", approved: true };
+      });
+
+    const first = sendPartyTransport("m1", 30_000, true);
+    const queued = sendPartyTransport("m1", 60_000, true);
+    expect(requestWatchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+      partyID: "p1",
+      item: "m1",
+      positionMS: 30_000,
+      paused: true,
+    });
+    deliver({
+      groupID: "p1",
+      signal: "transition",
+      item: "m2",
+      positionMS: 0,
+      presentAtMS: 0,
+      paused: false,
+    });
+    expect(getWatchParty().timeline?.item).toBe("m2");
+    releaseFirst();
+
+    await expect(first).resolves.toBe(true);
+    await expect(queued).resolves.toBe(false);
+    expect(requestWatchPartyTransport).toHaveBeenCalledTimes(1);
+    expect(getWatchParty().timeline?.item).toBe("m2");
+  });
 });
 
 describe("host leave, end and page exit (CORE-1763)", () => {
