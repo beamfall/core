@@ -360,12 +360,21 @@ func (i *Ingestor) importItem(ctx context.Context, item Item, libraryID store.Li
 			refusedAny = true
 			continue
 		}
-		fingerprint, err := i.fingerprint(mediaFile.absolutePath)
+		sample, err := store.SampleMediaFileContent(ctx, mediaFile.absolutePath)
 		if err != nil {
 			i.recordError(item, libraryID, "fingerprint failed")
 			return libraryID, linkedAny, OutcomeError
 		}
-		existing, exists, err := i.catalog.MediaFileExistsByFingerprint(ctx, fingerprint)
+		existing, exists, err := i.catalog.MediaFileExistsByFingerprint(ctx, sample)
+		if err == nil && !exists {
+			var legacy string
+			legacy, err = i.fingerprint(mediaFile.absolutePath)
+			if err != nil {
+				i.recordError(item, libraryID, "fingerprint failed")
+				return libraryID, linkedAny, OutcomeError
+			}
+			existing, exists, err = i.catalog.MediaFileExistsByFingerprint(ctx, legacy)
+		}
 		if err != nil {
 			i.recordError(item, libraryID, "catalog lookup failed")
 			return libraryID, linkedAny, OutcomeError

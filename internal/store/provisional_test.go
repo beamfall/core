@@ -204,7 +204,7 @@ func TestPromotionCompensationIsExactAndRestoresProvisionalGeneration(t *testing
 		t.Fatal(err)
 	}
 	before := countMediaEvents(mediaOutboxEvents(t, st), MediaEventUpdated, mediaID)
-	updated, err := st.PromoteProvisionalMediaGeneration(ctx, mediaID, teePath, fingerprint, finalPath)
+	updated, err := st.PromoteProvisionalMediaGeneration(ctx, mediaID, teePath, fingerprint, "", finalPath)
 	if err != nil || !updated {
 		t.Fatalf("promotion updated=%v err=%v", updated, err)
 	}

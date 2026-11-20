@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
@@ -39,6 +39,8 @@ describe("legacy watch bookmark resolution", () => {
   const bookmark = "/watch/media-sample1-a371bff46385f7ded";
   const sampledID = "media-sample1-a371bff46385f7ded";
 
+  afterEach(() => vi.useRealTimers());
+
   it.each([null, { ...media, id: sampledID }])(
     "resolves the literal bookmark when the sampled lookup returns %j",
     async (sample) => {
@@ -55,6 +57,31 @@ describe("legacy watch bookmark resolution", () => {
       expect(fetchMedia).toHaveBeenLastCalledWith(sampledID, expect.any(AbortSignal));
     },
   );
+
+  it("keeps the address unresolved after an error and tries the legacy ID after a confirmed miss", async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchMedia)
+      .mockClear()
+      .mockRejectedValueOnce(new Error("network unavailable"))
+      .mockResolvedValueOnce(null);
+    render(
+      <MemoryRouter initialEntries={[bookmark]}>
+        <Routes>
+          <Route path="/watch/*" element={<WatchAddress />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(screen.queryByText(sampledID)).toBeNull();
+    expect(screen.queryByText(ID)).toBeNull();
+    expect(fetchMedia).toHaveBeenCalledTimes(1);
+
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+    expect(screen.getByText(ID).textContent).toBe(ID);
+    expect(fetchMedia).toHaveBeenCalledTimes(2);
+    expect(fetchMedia).toHaveBeenLastCalledWith(sampledID, expect.any(AbortSignal));
+  });
 });
 
 function arriveAt(path: string, route: "watch" | "media" = "watch", enabled = true) {

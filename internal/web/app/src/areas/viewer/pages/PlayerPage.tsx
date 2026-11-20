@@ -126,11 +126,11 @@ export function PlayerPage() {
 
   const current = decided && decided.mediaId === mediaId ? decided : null;
   const feature = mediaId !== null && (bypass || (current && current.items.length === 0));
-  // A pre-play queue (or the wait for one) ends whatever the host plays: the
-  // route is about to start another title.
+  // Once the address resolves, a pre-play queue (or the wait for one) ends
+  // whatever the host plays. The address may resolve to the docked player.
   useLayoutEffect(() => {
-    if (host && !feature) host.stop();
-  }, [host, feature]);
+    if (host && mediaId !== null && !feature) host.stop();
+  }, [host, mediaId, feature]);
   if (feature) {
     const entry = { mediaId: mediaId || "", state: location.state, search: location.search };
     return host ? <AttachToHost host={host} entry={entry} /> : <FeaturePlayer entry={entry} />;

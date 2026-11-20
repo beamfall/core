@@ -2535,6 +2535,17 @@ func (s *Store) MediaLibraryID(ctx context.Context, id MediaID) (LibraryID, erro
 	return libraryID, err
 }
 
+// CheckPublicContentDuplicate rejects either digest if it belongs to an
+// existing public catalog row, including retained rows.
+func (s *Store) CheckPublicContentDuplicate(ctx context.Context, fingerprint, legacyFingerprint string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	return refuseCatalogedDuplicate(ctx, s.catalogR, fingerprint, legacyFingerprint)
+}
+
 // MediaFileExistsByFingerprint reports whether a live (non-missing) Media File
 // already carries the given content fingerprint, returning the owning Media ID.
 // Server-internal read for the ingest exact-duplicate skip: a

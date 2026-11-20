@@ -12,6 +12,7 @@ import {
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { STRINGS } from "@/strings";
+import { fetchMedia as fetchAddressMedia } from "../lib/mediaDetail";
 import { type PlaybackAdjustment, type PlaybackInfo, unavailableReason } from "../lib/playback";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerHost } from "../player/PlayerHost";
@@ -34,6 +35,10 @@ vi.mock("@/lib/graphql", () => ({
   fetchPrePlayQueue: vi.fn().mockResolvedValue([]),
   // Off the home network: the player does not listen for a lead party.
   calibrateWatchPartyClock: vi.fn().mockRejectedValue(new Error("not on the home network")),
+}));
+vi.mock("../lib/mediaDetail", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/mediaDetail")>()),
+  fetchMedia: vi.fn(),
 }));
 vi.mock("../player/PrePlayStage", () => ({
   PrePlayStage: vi.fn(({ items, onDone }: { items: { title: string }[]; onDone: () => void }) => (
@@ -1157,7 +1162,11 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     return null;
   }
 
-  function renderHosted(info: Partial<PlaybackInfo>, extraState: object = {}) {
+  function renderHosted(
+    info: Partial<PlaybackInfo>,
+    extraState: object = {},
+    initialPath = "/watch/media-alpha",
+  ) {
     vi.mocked(usePlayer).mockImplementation((mediaID) => ({
       videoRef: { current: null },
       hlsRef: { current: null },
@@ -1174,7 +1183,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
           initialEntries={[
             { pathname: "/" },
             {
-              pathname: "/watch/media-alpha",
+              pathname: initialPath,
               state: {
                 skipPrePlay: true,
                 title: "Track One",
@@ -1229,6 +1238,35 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     expect(screen.queryByText("search route")).toBeNull();
     expect(stageVideo()).toBe(video);
     expect(document.querySelector("main")).toBeVisible();
+  });
+
+  it("keeps the sampled track playing while the expanded address resolves", async () => {
+    const token = "a371bff46385f7ded";
+    const sampledID = `media-sample1-${token}`;
+    let resolveLookup: (media: Awaited<ReturnType<typeof fetchAddressMedia>>) => void = () =>
+      undefined;
+    vi.mocked(fetchAddressMedia).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLookup = resolve;
+        }),
+    );
+    renderHosted({ mediaClass: "audio" }, {}, `/watch/sample1.${token}`);
+    const video = await waitFor(() => stageVideo());
+    act(() => {
+      void go("/search");
+    });
+    const region = await screen.findByRole("region", { name: "Now playing" });
+    fireEvent.click(within(region).getByRole("button", { name: "Open player" }));
+    expect(fetchAddressMedia).toHaveBeenLastCalledWith(sampledID, expect.any(AbortSignal));
+    expect(miniPlayer()).toBe(region);
+    expect(stageVideo()).toBe(video);
+
+    await act(async () => {
+      resolveLookup({ id: sampledID } as Awaited<ReturnType<typeof fetchAddressMedia>>);
+    });
+    expect(miniPlayer()).toBeNull();
+    expect(stageVideo()).toBe(video);
   });
 
   // Codex round 2, P2-2: the in-player Version pick belongs to the playback

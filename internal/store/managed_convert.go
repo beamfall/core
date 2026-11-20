@@ -230,7 +230,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 	}
 	// Recovery treats a live row at the journaled destination as proof of
 	// admission. Reject duplicates before that row can look like our output.
-	if err := s.checkConvertDuplicate(ctx, fingerprint, legacyFingerprint); err != nil {
+	if err := s.CheckPublicContentDuplicate(ctx, fingerprint, legacyFingerprint); err != nil {
 		_ = os.Remove(tmpOut)
 		return ConvertResult{}, err
 	}
@@ -320,15 +320,6 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 		return ConvertResult{Converted: media}, fmt.Errorf("preserve original in trash: %w", err)
 	}
 	return ConvertResult{Converted: media, Original: trash}, nil
-}
-
-func (s *Store) checkConvertDuplicate(ctx context.Context, fingerprint, legacyFingerprint string) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return err
-	}
-	return refuseCatalogedDuplicate(ctx, s.catalogR, fingerprint, legacyFingerprint)
 }
 
 // convertJournalRecord reads this job's durable succession journal. A missing,

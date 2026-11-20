@@ -21,14 +21,27 @@ export function useMediaAddressID(): string | null {
   useEffect(() => {
     if (!legacy) return;
     const controller = new AbortController();
-    // A failed request leaves the preferred ID so the page can handle the error.
-    fetchMedia(preferred, controller.signal)
-      .then((media) => (media ? preferred : legacy))
-      .catch(() => preferred)
-      .then((id) => {
-        if (!controller.signal.aborted && !epoch?.aborted) setResolution({ scope, epoch, id });
-      });
-    return () => controller.abort();
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let delay = 1_000;
+    const current = () => !controller.signal.aborted && !epoch?.aborted;
+    const resolve = () => {
+      if (!current()) return;
+      void fetchMedia(preferred, controller.signal).then(
+        (media) => {
+          if (current()) setResolution({ scope, epoch, id: media ? preferred : legacy });
+        },
+        () => {
+          if (!current()) return;
+          retry = setTimeout(resolve, delay);
+          delay = Math.min(delay * 2, 30_000);
+        },
+      );
+    };
+    resolve();
+    return () => {
+      controller.abort();
+      clearTimeout(retry);
+    };
   }, [epoch, legacy, preferred, scope]);
   if (!legacy) return preferred;
   return resolution?.scope === scope && resolution.epoch === epoch ? resolution.id : null;
