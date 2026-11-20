@@ -2460,12 +2460,12 @@ func (p *pathProber) Probe(_ context.Context, path string) (ffmpeg.Probe, error)
 func countHashes(t *testing.T) *int {
 	t.Helper()
 	calls := 0
-	original := sampleFileContent
-	sampleFileContent = func(ctx context.Context, path string) (string, error) {
+	original := sampleScanFile
+	sampleScanFile = func(ctx context.Context, path string) (string, error) {
 		calls++
 		return original(ctx, path)
 	}
-	t.Cleanup(func() { sampleFileContent = original })
+	t.Cleanup(func() { sampleScanFile = original })
 	return &calls
 }
 

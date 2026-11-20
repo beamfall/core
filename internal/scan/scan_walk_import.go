@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"path/filepath"
+	"strings"
 
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/store"
@@ -73,7 +74,6 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		Container:          containerFromPath(path),
 		Codec:              "h264",
 		ContentFingerprint: stored.ContentFingerprint,
-		KeepProbeFacts:     true,
 		SizeBytes:          task.info.size,
 		ModTime:            task.info.modTime.UTC(),
 		Extra:              isExtraPath(s.extrasRoot, path),
@@ -202,6 +202,21 @@ func (s *scanWalkState) retryAutoIdentify(path string, mediaID store.MediaID, fi
 }
 
 func (s *scanWalkState) consumeFullTask(task *workerTask) error {
+	stored := task.stored
+	if stored.OK && strings.HasPrefix(stored.ContentFingerprint, "sha256:") &&
+		(stored.SizeBytes == 0 || stored.ModTime.IsZero()) &&
+		(stored.SizeBytes == 0 || stored.SizeBytes == task.info.size) &&
+		(stored.ModTime.IsZero() || store.MediaFileModTimeMatches(stored.ModTime, task.info.modTime)) {
+		// The path's recorded stats did not disqualify the legacy identity.
+		// Verify it once so the normal import records the missing stats.
+		full, err := legacyFileContent(s.ctx, task.path)
+		if err != nil {
+			return err
+		}
+		if full == stored.ContentFingerprint {
+			task.fingerprint = full
+		}
+	}
 	path := task.path
 	fingerprint := task.fingerprint
 	imported := store.ImportMediaFile{
@@ -211,7 +226,6 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		Container:          containerFromPath(path),
 		Codec:              "h264",
 		ContentFingerprint: fingerprint,
-		KeepProbeFacts:     task.keepProbeFacts,
 		OSHash:             task.oshash,
 		SizeBytes:          task.info.size,
 		ModTime:            task.info.modTime.UTC(),

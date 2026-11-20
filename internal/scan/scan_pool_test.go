@@ -73,12 +73,12 @@ func (p *atomicProber) Probe(context.Context, string) (ffmpeg.Probe, error) {
 func countHashesAtomic(t *testing.T) *atomic.Int64 {
 	t.Helper()
 	calls := &atomic.Int64{}
-	original := sampleFileContent
-	sampleFileContent = func(ctx context.Context, path string) (string, error) {
+	original := sampleScanFile
+	sampleScanFile = func(ctx context.Context, path string) (string, error) {
 		calls.Add(1)
 		return original(ctx, path)
 	}
-	t.Cleanup(func() { sampleFileContent = original })
+	t.Cleanup(func() { sampleScanFile = original })
 	return calls
 }
 
@@ -368,12 +368,12 @@ func TestPhotoScanSharesGovernorBudgetAcrossFillAndDerivation(t *testing.T) {
 		writeScanFile(t, root, "photo-"+zeroPad(i)+".jpg", []byte("photo "+zeroPad(i)))
 	}
 	tracker := &combinedWorkTracker{}
-	originalHash := sampleFileContent
-	sampleFileContent = func(ctx context.Context, path string) (string, error) {
+	originalHash := sampleScanFile
+	sampleScanFile = func(ctx context.Context, path string) (string, error) {
 		tracker.run("hash")
 		return originalHash(ctx, path)
 	}
-	t.Cleanup(func() { sampleFileContent = originalHash })
+	t.Cleanup(func() { sampleScanFile = originalHash })
 	st := storetest.Open(t)
 	result, err := ScanWithWorkerGovernor(context.Background(), st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(workers), Request{LibraryID: "library-local", Root: root}, trackedImageDeriver{tracker: tracker})
 	if err != nil {

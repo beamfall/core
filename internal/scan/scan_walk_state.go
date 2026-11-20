@@ -174,12 +174,17 @@ func (s *scanWalkState) admitEntry(path string, entry fs.DirEntry, err error) (*
 	if s.imageRule.skips(path) {
 		return nil, nil
 	}
-	if now().Sub(info.ModTime()) < stabilityWindow {
+	mtime := info.ModTime()
+	if now().Sub(mtime) < stabilityWindow {
 		return nil, nil
+	}
+	// The legacy catalog writer rounded pre-epoch mtimes toward zero.
+	if mtime.Before(time.Unix(0, 0)) {
+		mtime = time.UnixMilli(mtime.UnixNano() / int64(time.Millisecond))
 	}
 	return &workerTask{
 		path: path,
-		info: fileStat{size: info.Size(), modTime: info.ModTime()},
+		info: fileStat{size: info.Size(), modTime: mtime},
 		done: make(chan struct{}),
 	}, nil
 }
@@ -190,7 +195,7 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 		return
 	}
 	defer s.releaseBudget()
-	task.fill(ctx, s)
+	task.fill(ctx, s.st, s.prober, s.grabber)
 	if task.err == nil && task.fastPath {
 		// An unchanged file whose Media still holds legacy parser fields is
 		// probed once, so its parse can settle them (CORE-2554).

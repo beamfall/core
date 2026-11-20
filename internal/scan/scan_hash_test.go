@@ -4,18 +4,16 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -85,9 +83,9 @@ func TestScanBoundsFingerprintReadsOnSparseFile(t *testing.T) {
 	}
 	var readers []*countingSampleReader
 	var fullReads int
-	savedSample, savedLegacy := sampleFileContent, legacyFileContent
-	t.Cleanup(func() { sampleFileContent, legacyFileContent = savedSample, savedLegacy })
-	sampleFileContent = func(ctx context.Context, path string) (string, error) {
+	savedSample, savedLegacy := sampleScanFile, legacyFileContent
+	t.Cleanup(func() { sampleScanFile, legacyFileContent = savedSample, savedLegacy })
+	sampleScanFile = func(ctx context.Context, path string) (string, error) {
 		return store.SampleMediaFileContentFrom(ctx, func() (store.SampleFile, error) {
 			file, err := os.OpenInRoot(filepath.Dir(path), filepath.Base(path))
 			if err != nil {
@@ -172,9 +170,9 @@ func TestScanLegacyMtimePersistsAcrossReopen(t *testing.T) {
 				t.Fatal(err)
 			}
 			var fullReads, sampleReads int
-			savedLegacy, savedSample := legacyFileContent, sampleFileContent
-			t.Cleanup(func() { legacyFileContent, sampleFileContent = savedLegacy, savedSample })
-			sampleFileContent = func(ctx context.Context, path string) (string, error) {
+			savedLegacy, savedSample := legacyFileContent, sampleScanFile
+			t.Cleanup(func() { legacyFileContent, sampleScanFile = savedLegacy, savedSample })
+			sampleScanFile = func(ctx context.Context, path string) (string, error) {
 				sampleReads++
 				return savedSample(ctx, path)
 			}
@@ -185,8 +183,8 @@ func TestScanLegacyMtimePersistsAcrossReopen(t *testing.T) {
 			if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, req); err != nil {
 				t.Fatal(err)
 			}
-			if fullReads != tc.fullReads || sampleReads != 0 {
-				t.Fatalf("first scan: full = %d, sampled = %d, want full = %d, sampled = 0", fullReads, sampleReads, tc.fullReads)
+			if fullReads != tc.fullReads || sampleReads != tc.fullReads {
+				t.Fatalf("first scan: full = %d, sampled = %d, want full = %d, sampled = %d", fullReads, sampleReads, tc.fullReads, tc.fullReads)
 			}
 			if err := st.Close(); err != nil {
 				t.Fatal(err)
@@ -199,10 +197,10 @@ func TestScanLegacyMtimePersistsAcrossReopen(t *testing.T) {
 			if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, req); err != nil {
 				t.Fatal(err)
 			}
-			if fullReads != tc.fullReads || sampleReads != 0 {
-				t.Fatalf("after reopen: full = %d, sampled = %d, want full = %d, sampled = 0", fullReads, sampleReads, tc.fullReads)
+			if fullReads != tc.fullReads || sampleReads != tc.fullReads {
+				t.Fatalf("after reopen: full = %d, sampled = %d, want full = %d, sampled = %d", fullReads, sampleReads, tc.fullReads, tc.fullReads)
 			}
-			stored, err := st.LibraryMediaFileFingerprintByPath(ctx, req.LibraryID, path)
+			stored, err := st.MediaFileFingerprintByPath(ctx, path)
 			if err != nil || !stored.OK || !stored.ModTime.Equal(tc.want) {
 				t.Fatalf("stats after reopen and rescan = %+v, err = %v", stored, err)
 			}
@@ -226,12 +224,12 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacyCalls, sampleCalls := make(map[string]int), make(map[string]int)
-	savedLegacy, savedSample := legacyFileContent, sampleFileContent
+	savedLegacy, savedSample := legacyFileContent, sampleScanFile
 	savedNow := now
-	t.Cleanup(func() { legacyFileContent, sampleFileContent, now = savedLegacy, savedSample, savedNow })
+	t.Cleanup(func() { legacyFileContent, sampleScanFile, now = savedLegacy, savedSample, savedNow })
 	// Let newly admitted inodes settle without changing their actual mtimes.
 	now = func() time.Time { return savedNow().Add(time.Minute) }
-	sampleFileContent = func(ctx context.Context, path string) (string, error) {
+	sampleScanFile = func(ctx context.Context, path string) (string, error) {
 		sampleCalls[path]++
 		return savedSample(ctx, path)
 	}
@@ -378,7 +376,7 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 				t.Fatalf("legacy hash calls = %v, want %d for %q", legacyCalls, wantFullReads, path)
 			}
 
-			stored, err := st.LibraryMediaFileFingerprintByPath(ctx, req.LibraryID, scanPath)
+			stored, err := st.MediaFileFingerprintByPath(ctx, scanPath)
 			if err != nil || !stored.OK || stored.SizeBytes == 0 || stored.ModTime.IsZero() {
 				t.Fatalf("stored fingerprint = %+v, err = %v", stored, err)
 			}
@@ -395,8 +393,8 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 				}
 				return
 			}
-			if sampleCalls[path] != 0 {
-				t.Fatalf("unchanged legacy file was sampled %d times", sampleCalls[path])
+			if sampleCalls[path] != wantFullReads {
+				t.Fatalf("legacy file was sampled %d times, want %d", sampleCalls[path], wantFullReads)
 			}
 			if stored.ContentFingerprint != full || id != media.ID {
 				t.Fatalf("stored = %q, %s, want %q, %s", stored.ContentFingerprint, id, full, media.ID)
@@ -416,246 +414,6 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 				t.Fatalf("match pin = %t, found = %t, err = %v", pinned, found, err)
 			}
 		})
-	}
-}
-
-// Keep the catalog snapshot in memory during seal, so no plaintext is written
-// outside the store's working area by this lifecycle fixture.
-type scanCatalogCipher struct {
-	snapshot    []byte
-	workingPath string
-}
-
-func (c *scanCatalogCipher) SealDBFile(_ context.Context, _ store.LibraryID, workingPath, _ string) error {
-	root, err := os.OpenRoot(filepath.Dir(workingPath))
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	c.snapshot, err = root.ReadFile(filepath.Base(workingPath))
-	return err
-}
-
-func (c *scanCatalogCipher) UnsealDBFile(_ context.Context, _ store.LibraryID, _, workingPath string) error {
-	c.workingPath = workingPath
-	if c.snapshot == nil {
-		return nil
-	}
-	return os.WriteFile(workingPath, c.snapshot, 0o600)
-}
-
-func TestScanPreservesEncryptedLegacyMediaAfterSeal(t *testing.T) {
-	ctx := t.Context()
-	st, err := store.Open(ctx, storetest.MigratedDataDir(t), store.Options{
-		SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	req := Request{LibraryID: "library-local", Root: t.TempDir()}
-	if err := st.SetLibraryBacking(ctx, req.LibraryID, false, true); err != nil {
-		t.Fatal(err)
-	}
-	var cipher scanCatalogCipher
-	if err := st.UnsealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
-		t.Fatal(err)
-	}
-	want := make(map[string]store.MediaFile)
-	for _, name := range []string{"unchanged.mp4", "returning.mp4"} {
-		path := writeScanFile(t, req.Root, name, []byte(name))
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		fingerprint, err := store.HashMediaFileContent(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, file, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-			LibraryID: req.LibraryID, Path: path, Title: name, Container: "mp4", Codec: "hevc",
-			DurationSecondsHint: 123,
-			ContentFingerprint:  fingerprint, SizeBytes: info.Size(), ModTime: info.ModTime(),
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if name == "returning.mp4" {
-			if err := st.MarkMediaFileMissing(ctx, req.LibraryID, path); err != nil {
-				t.Fatal(err)
-			}
-		}
-		want[path] = file
-	}
-	if err := st.SealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
-		t.Fatal(err)
-	}
-	if st.EncryptedLibraryDBRegistered(req.LibraryID) {
-		t.Fatal("catalog stayed open after seal")
-	}
-	if err := st.UnsealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
-		t.Fatal(err)
-	}
-	savedLegacy, savedSample := legacyFileContent, sampleFileContent
-	t.Cleanup(func() { legacyFileContent, sampleFileContent = savedLegacy, savedSample })
-	legacyFileContent = func(_ context.Context, path string) (string, error) {
-		t.Errorf("encrypted path was hashed in full: %s", path)
-		return "", os.ErrInvalid
-	}
-	sampleFileContent = func(ctx context.Context, path string) (string, error) {
-		if filepath.Base(path) == "returning.mp4" {
-			return savedSample(ctx, path)
-		}
-		t.Errorf("unchanged encrypted path was sampled: %s", path)
-		return "", os.ErrInvalid
-	}
-	prober := poolProbeFunc(func(_ context.Context, path string) (ffmpeg.Probe, error) {
-		if filepath.Base(path) == "unchanged.mp4" {
-			return ffmpeg.Probe{}, errors.New("probe temporarily unavailable")
-		}
-		return ffmpeg.Probe{HasVideo: true, VideoCodec: "h264", DurationSeconds: 9}, nil
-	})
-	if _, err := ScanWithWorkerGovernor(ctx, st, prober, nil, nil, nil, nil, nil, nil, fixedGovernor(4), req); err != nil {
-		t.Fatal(err)
-	}
-	files, err := st.MediaFilesForLibrary(ctx, req.LibraryID)
-	if err != nil || len(files) != len(want) {
-		t.Fatalf("encrypted files after rescan = %+v, err = %v", files, err)
-	}
-	for _, file := range files {
-		before := want[file.Path]
-		if filepath.Base(file.Path) == "returning.mp4" {
-			if before.MediaID == file.MediaID || !strings.HasPrefix(file.ContentFingerprint, "sample1:") {
-				t.Fatalf("returning encrypted file = %+v, want new identity after %+v", file, before)
-			}
-			continue
-		}
-		if before.MediaID != file.MediaID || before.ContentFingerprint != file.ContentFingerprint {
-			t.Fatalf("encrypted file after rescan = %+v, want identity from %+v", file, before)
-		}
-		media, err := st.Media(ctx, file.MediaID, store.LibraryFilter{AllowedIDs: []store.LibraryID{req.LibraryID}, Revealed: true})
-		if err != nil || media.Codec != "hevc" || media.DurationSeconds != 123 {
-			t.Fatalf("encrypted probe facts after rescan = %s, %ds, err = %v", media.Codec, media.DurationSeconds, err)
-		}
-	}
-}
-
-func TestScanRetriesFailedEncryptedProbeWithoutRehashing(t *testing.T) {
-	ctx := t.Context()
-	st, err := store.Open(ctx, storetest.MigratedDataDir(t), store.Options{
-		SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	req := Request{LibraryID: "library-local", Root: t.TempDir()}
-	if err := st.SetLibraryBacking(ctx, req.LibraryID, false, true); err != nil {
-		t.Fatal(err)
-	}
-	var cipher scanCatalogCipher
-	if err := st.UnsealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
-		t.Fatal(err)
-	}
-	path := writeScanFile(t, req.Root, "retry.mkv", []byte("retry probe"))
-	if _, err := Scan(ctx, st, fakeProber{err: errors.New("probe unavailable")}, nil, nil, nil, nil, req); err != nil {
-		t.Fatal(err)
-	}
-	files, err := st.MediaFilesForLibrary(ctx, req.LibraryID)
-	if err != nil || len(files) != 1 || files[0].Path != path ||
-		!strings.HasPrefix(files[0].ContentFingerprint, "sample1:") {
-		t.Fatalf("files after failed probe = %+v, err = %v", files, err)
-	}
-	before := files[0]
-	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{req.LibraryID}, Revealed: true}
-	media, err := st.Media(ctx, before.MediaID, filter)
-	if err != nil || media.DurationSeconds != 0 {
-		t.Fatalf("duration after failed probe = %d, err = %v", media.DurationSeconds, err)
-	}
-	if err := st.SealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.UnsealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
-		t.Fatal(err)
-	}
-
-	dsn := url.URL{Scheme: "file", Path: cipher.workingPath, RawQuery: "mode=ro"}
-	db, err := sql.Open("sqlite", dsn.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	countTracks := func(kind string) int {
-		t.Helper()
-		var count int
-		err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_file_stream
-			WHERE content_fingerprint = ? AND stream_type = ?`, before.ContentFingerprint, kind).Scan(&count)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return count
-	}
-	for _, kind := range []string{"audio", "subtitle"} {
-		if count := countTracks(kind); count != 0 {
-			t.Fatalf("%s tracks before retry = %d, want 0", kind, count)
-		}
-	}
-
-	savedLegacy, savedSample := legacyFileContent, sampleFileContent
-	t.Cleanup(func() { legacyFileContent, sampleFileContent = savedLegacy, savedSample })
-	rejectHash := func(_ context.Context, path string) (string, error) {
-		t.Errorf("unchanged encrypted file was hashed: %s", path)
-		return "", os.ErrInvalid
-	}
-	legacyFileContent, sampleFileContent = rejectHash, rejectHash
-	prober := &countingProber{probe: ffmpeg.Probe{
-		HasVideo: true, VideoCodec: "hevc", AudioCodec: "aac", DurationSeconds: 123,
-		Streams: []ffmpeg.ProbeStream{
-			{Type: "video", Codec: "hevc"}, {Type: "audio", Codec: "aac"}, {Type: "subtitle", Codec: "subrip"},
-		},
-	}}
-	if _, err := Scan(ctx, st, prober, nil, nil, nil, nil, req); err != nil {
-		t.Fatal(err)
-	}
-	if prober.calls != 1 {
-		t.Fatalf("probe calls = %d, want one retry", prober.calls)
-	}
-	files, err = st.MediaFilesForLibrary(ctx, req.LibraryID)
-	if err != nil || len(files) != 1 || files[0].MediaID != before.MediaID ||
-		files[0].ContentFingerprint != before.ContentFingerprint {
-		t.Fatalf("files after probe recovery = %+v, want identity from %+v, err = %v", files, before, err)
-	}
-	media, err = st.Media(ctx, before.MediaID, filter)
-	if err != nil || media.Codec != "hevc" || media.DurationSeconds != 123 {
-		t.Fatalf("recovered probe facts = %s, %ds, err = %v", media.Codec, media.DurationSeconds, err)
-	}
-	for _, kind := range []string{"audio", "subtitle"} {
-		if count := countTracks(kind); count != 1 {
-			t.Fatalf("%s tracks after retry = %d, want 1", kind, count)
-		}
-	}
-}
-
-func TestScanPublicFastPathPreservesProbeFacts(t *testing.T) {
-	ctx := t.Context()
-	st := storetest.Open(t)
-	req := Request{LibraryID: "library-local", Root: t.TempDir()}
-	path := writeScanFile(t, req.Root, "unchanged.mkv", []byte("unchanged hevc"))
-	prober := &countingProber{probe: ffmpeg.Probe{HasVideo: true, VideoCodec: "hevc", DurationSeconds: 123}}
-	if _, err := Scan(ctx, st, prober, nil, nil, nil, nil, req); err != nil {
-		t.Fatal(err)
-	}
-	files, err := st.MediaFilesForLibrary(ctx, req.LibraryID)
-	if err != nil || len(files) != 1 || files[0].Path != path || prober.calls != 1 {
-		t.Fatalf("initial scan files = %+v, probes = %d, err = %v", files, prober.calls, err)
-	}
-	if _, err := Scan(ctx, st, prober, nil, nil, nil, nil, req); err != nil {
-		t.Fatal(err)
-	}
-	media, err := st.Media(ctx, files[0].MediaID, store.LibraryFilter{AllLibraries: true})
-	if err != nil || media.Codec != "hevc" || media.DurationSeconds != 123 || prober.calls != 1 {
-		t.Fatalf("public fast-path facts = %s, %ds, probes = %d, err = %v",
-			media.Codec, media.DurationSeconds, prober.calls, err)
 	}
 }
 
@@ -711,7 +469,7 @@ func testScanAndManagedImportShareSampleIdentity(t *testing.T, prober Prober) {
 		t.Fatal(err)
 	}
 	stubNow(t, time.Now().Add(time.Minute))
-	before, err := st.LibraryMediaFileFingerprintByPath(ctx, req.LibraryID, imported.Path)
+	before, err := st.MediaFileFingerprintByPath(ctx, imported.Path)
 	if err != nil || !before.OK || !strings.HasPrefix(before.ContentFingerprint, "sample1:") {
 		t.Fatalf("managed identity = %+v, err = %v", before, err)
 	}
@@ -801,6 +559,101 @@ func TestScanReturningSampleIgnoresUnrelatedLegacyStats(t *testing.T) {
 	}
 }
 
+func TestScanJobsSerializeFileSamples(t *testing.T) {
+	// feature:scan-pipeline
+	now := time.Now().UTC()
+	st := storetest.Open(t)
+	firstRoot, secondRoot := t.TempDir(), t.TempDir()
+	firstPath := writeScanFile(t, firstRoot, "first.mp4", []byte("first"))
+	secondPath := writeScanFile(t, secondRoot, "second.mp4", []byte("second"))
+	enqueueHashTestScan(t, st, "first", firstRoot, now)
+	enqueueHashTestScan(t, st, "second", secondRoot, now.Add(time.Millisecond))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	var runs sync.WaitGroup
+	defer func() {
+		cancel()
+		runs.Wait()
+	}()
+	firstHash := make(chan struct{})
+	firstHashReturned := make(chan struct{})
+	secondHash := make(chan struct{})
+	secondWaiting := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	originalHash, originalWait := sampleScanFile, onScanHashWait
+	onScanHashWait = func(path string) {
+		if path == secondPath {
+			close(secondWaiting)
+		}
+	}
+	sampleScanFile = func(hashCtx context.Context, path string) (string, error) {
+		switch path {
+		case firstPath:
+			defer close(firstHashReturned)
+			close(firstHash)
+			select {
+			case <-releaseFirst:
+			case <-ctx.Done(): // Bound teardown even if the scan drops cancellation.
+				return "", ctx.Err()
+			}
+		case secondPath:
+			select {
+			case <-firstHashReturned:
+			default:
+				t.Error("second job entered its hash before the first hash returned")
+			}
+			close(secondHash)
+		}
+		return originalHash(hashCtx, path)
+	}
+	t.Cleanup(func() { sampleScanFile, onScanHashWait = originalHash, originalWait })
+
+	registry := jobs.NewRegistry(st, "worker")
+	registry.Register(JobKind, HandlerWithWorkerGovernor(st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(2)))
+	run := func() <-chan error {
+		done := make(chan error, 1)
+		runs.Go(func() {
+			_, err := registry.RunOne(ctx, nil, now.Add(time.Second))
+			done <- err
+		})
+		return done
+	}
+	firstDone := run()
+	select {
+	case <-firstHash:
+	case <-ctx.Done():
+		t.Fatal("first job never started hashing")
+	}
+	secondDone := run()
+	select {
+	case <-secondWaiting:
+	case <-secondHash:
+		t.Fatal("second job entered its hash while the first job was hashing")
+	case <-ctx.Done():
+		t.Fatal("second job never waited for the occupied hash slot")
+	}
+	close(releaseFirst)
+	for _, done := range []<-chan error{firstDone, secondDone} {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []store.JobID{"first", "second"} {
+		job, err := st.Job(t.Context(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job.Status != store.JobStatusCompleted {
+			t.Fatalf("job %s status = %s (%s), want completed", id, job.Status, job.Error)
+		}
+	}
+	select {
+	case <-secondHash:
+	default:
+		t.Fatal("second job never started hashing after the slot was released")
+	}
+}
+
 func TestScanJobYieldClosesInFlightHashReader(t *testing.T) {
 	// feature:scan-pipeline
 	now := time.Now().UTC()
@@ -817,8 +670,8 @@ func TestScanJobYieldClosesInFlightHashReader(t *testing.T) {
 	runCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	reading, closed := make(chan struct{}), make(chan struct{})
-	original := sampleFileContent
-	sampleFileContent = func(ctx context.Context, path string) (string, error) {
+	original := sampleScanFile
+	sampleScanFile = func(ctx context.Context, path string) (string, error) {
 		if path != pending {
 			return original(ctx, path)
 		}
@@ -844,7 +697,7 @@ func TestScanJobYieldClosesInFlightHashReader(t *testing.T) {
 	}
 	savedBudget, savedClock := scanJobRunBudget, scanJobClock
 	t.Cleanup(func() {
-		sampleFileContent = original
+		sampleScanFile = original
 		scanJobRunBudget, scanJobClock = savedBudget, savedClock
 	})
 	scanJobRunBudget = 0

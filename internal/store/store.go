@@ -619,9 +619,6 @@ type ImportMediaFile struct {
 	Summary             string
 	ContentFingerprint  string
 	DurationSecondsHint int
-	// KeepProbeFacts preserves the existing primary file's facts on an
-	// unchanged rescan that did not run a probe.
-	KeepProbeFacts bool
 	// VideoWidthHint/VideoHeightHint carry the probed frame size; 0 when the
 	// probe was unavailable (re-scans without FFmpeg keep the stored values).
 	VideoWidthHint  int
@@ -2947,16 +2944,6 @@ type StoredFingerprint struct {
 // MediaFileFingerprintByPath reads the stored fingerprint and file stats for
 // an available path in the public catalog.
 func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (StoredFingerprint, error) {
-	return s.mediaFileFingerprintByPath(ctx, "", path)
-}
-
-// LibraryMediaFileFingerprintByPath reads an available file from the catalog
-// plane the scan will write to, including an unsealed encrypted Library.
-func (s *Store) LibraryMediaFileFingerprintByPath(ctx context.Context, libraryID LibraryID, path string) (StoredFingerprint, error) {
-	return s.mediaFileFingerprintByPath(ctx, libraryID, path)
-}
-
-func (s *Store) mediaFileFingerprintByPath(ctx context.Context, libraryID LibraryID, path string) (StoredFingerprint, error) {
 	if path == "" {
 		return StoredFingerprint{}, errors.New("path is required")
 	}
@@ -2965,17 +2952,9 @@ func (s *Store) mediaFileFingerprintByPath(ctx context.Context, libraryID Librar
 	if err := s.guardLocked(); err != nil {
 		return StoredFingerprint{}, err
 	}
-	reader := s.catalogR
-	if libraryID != "" {
-		plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
-		if err != nil {
-			return StoredFingerprint{}, err
-		}
-		reader = plane.reader
-	}
 	var fp StoredFingerprint
 	var mtimeMS int64
-	err := reader.QueryRowContext(ctx, `
+	err := s.catalogR.QueryRowContext(ctx, `
 		SELECT content_fingerprint, size_bytes, mtime_ms
 		FROM media_file
 		WHERE path = ? AND missing_at_ms IS NULL

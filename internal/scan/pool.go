@@ -168,7 +168,7 @@ func hashScanFile(ctx context.Context, path string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	return hashFileContent(ctx, path)
+	return sampleScanFile(ctx, path)
 }
 
 // probeFile probes a non-image file, leaving t.probe unset when there is no
