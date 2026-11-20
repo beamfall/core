@@ -1687,6 +1687,54 @@ describe("PlayerPage Watch together arrival", () => {
   });
 });
 
+describe("PlayerPage Watch Party startup (CORE-1858)", () => {
+  afterEach(() => {
+    act(resetWatchPartyForTest);
+    vi.restoreAllMocks();
+    vi.mocked(watchPartyTransport).mockReset();
+    vi.mocked(calibrateWatchPartyClock).mockRejectedValue(new Error("not on the home network"));
+  });
+
+  it("publishes the live playhead and pause state after delayed creation", async () => {
+    vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
+    vi.mocked(calibrateWatchPartyClock).mockResolvedValue({ offsetMS: 0, roundTripMS: 1 });
+    const creation = Promise.withResolvers<Awaited<ReturnType<typeof createWatchParty>>>();
+    vi.mocked(createWatchParty).mockReturnValueOnce(creation.promise);
+    vi.mocked(watchPartyTransport).mockImplementationOnce(async ({ item, positionMS }) => ({
+      item,
+      positionMS,
+      presentAtMS: 0,
+    }));
+    await act(async () => {
+      renderPlayer(playerState({ phase: "playing" }));
+    });
+    const video = stageVideo();
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    video.currentTime = 42;
+    fireEvent.click(screen.getByRole("button", { name: "Watch Party" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Start a Watch Party" }));
+    });
+    expect(getWatchParty().status).toBe("starting");
+    expect(watchPartyTransport).not.toHaveBeenCalled();
+
+    await act(async () => {
+      video.currentTime = 65;
+      fireEvent.seeked(video);
+      Object.defineProperty(video, "paused", { value: true });
+      fireEvent.pause(video);
+      creation.resolve({ partyID: "p1", content: "media-alpha", relaxed: true, members: [] });
+    });
+    expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+      partyID: "p1",
+      item: "media-alpha",
+      positionMS: 65_000,
+      paused: true,
+    });
+    expect(getWatchParty().timeline).toMatchObject({ positionMS: 65_000, paused: true });
+  });
+});
+
 // feature:watch-party
 describe("PlayerPage in a Watch Party (CORE-1766)", () => {
   beforeEach(() => {

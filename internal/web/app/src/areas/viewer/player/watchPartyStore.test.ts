@@ -136,7 +136,7 @@ describe("startWatchParty", () => {
       positionMS,
       presentAtMS: 1000,
     }));
-    expect(await startWatchParty("m1", 42_500, true, false, false)).toBe(true);
+    expect(await startWatchParty("m1", () => ({ positionMS: 42_500, paused: false }))).toBe(true);
     expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
       partyID: "p1",
       item: "m1",

@@ -453,17 +453,19 @@ function invitedOf(info: WatchPartyInfo): string[] {
   return info.members.filter((m) => !m.present).map((m) => m.displayName);
 }
 
+type StartPlayback = { positionMS: number; paused: boolean };
+
 /**
  * Start a party around `content`, hosted by this session. Set its initial
- * server anchor before exposing the party for invites. `lead` starts a lead
- * party: host-only, with this session as the lead screen.
+ * server anchor before exposing the party for invites. A number is a saved
+ * position to start paused at. A player supplies a live sample after creation.
+ * `lead` starts a host-only party with this session as the lead screen.
  */
 export async function startWatchParty(
   content: string,
-  positionMS = 0,
+  playback: number | (() => StartPlayback) = 0,
   relaxed = true,
   lead = false,
-  paused = true,
 ): Promise<boolean> {
   if (state.status !== "idle") return false;
   set({ status: "starting", error: "", errorDetail: "", notice: "", noticeName: "" });
@@ -491,6 +493,8 @@ export async function startWatchParty(
       return false;
     }
     set({ partyID });
+    const { positionMS, paused } =
+      typeof playback === "function" ? playback() : { positionMS: playback, paused: true };
     const position = Math.max(0, Math.round(positionMS));
     const anchor =
       position !== 0 || !paused

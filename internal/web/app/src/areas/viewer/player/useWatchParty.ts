@@ -566,12 +566,21 @@ export function useWatchParty({
 
   const start = useCallback(
     async (relaxed = true, lead = false) => {
-      const video = videoRef.current;
       if (!mediaId) return false;
-      const position = video ? video.currentTime * positionScale : 0;
-      return startWatchParty(mediaId, position, !lead && relaxed, lead, video?.paused ?? true);
+      return startWatchParty(
+        mediaId,
+        () => {
+          const video = mediaIdRef.current === mediaId ? videoRef.current : null;
+          return {
+            positionMS: video ? video.currentTime * positionScaleRef.current : 0,
+            paused: video?.paused ?? true,
+          };
+        },
+        !lead && relaxed,
+        lead,
+      );
     },
-    [mediaId, videoRef, positionScale],
+    [mediaId, videoRef],
   );
 
   const autoSkipLead = useCallback(
