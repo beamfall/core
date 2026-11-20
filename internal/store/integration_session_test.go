@@ -287,6 +287,7 @@ func TestIntegrationSetupSessionBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer held.Close()
 	var windowClosed atomic.Bool
 	clock := func() time.Time {
 		if windowClosed.Load() {
@@ -297,8 +298,15 @@ func TestIntegrationSetupSessionBinding(t *testing.T) {
 	waits := st.catalogW.Stats().WaitCount
 	created := make(chan error, 1)
 	go func() { created <- st.CreateIntegrationSession(ctx, closed, false, reservation, clock) }()
-	for st.catalogW.Stats().WaitCount == waits {
-		time.Sleep(time.Millisecond)
+	for deadline := time.Now().Add(10 * time.Second); st.catalogW.Stats().WaitCount == waits; time.Sleep(time.Millisecond) {
+		select {
+		case err := <-created:
+			t.Fatalf("setup session creation did not wait for the writer: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("setup session creation never asked for the writer")
+		}
 	}
 	windowClosed.Store(true)
 	if err := held.Close(); err != nil {
