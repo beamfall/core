@@ -541,6 +541,9 @@ type Handler struct {
 	// (the default) means the build cannot edit ingest config — the mutation
 	// reports it unavailable rather than silently dropping the write.
 	qbittorrentConfigurer QBittorrentIngestConfigurer
+	// jellyfinCompat stores and applies the compatibility settings
+	// (CORE-2683); nil means the build cannot edit them.
+	jellyfinCompat JellyfinCompatController
 	// queryEmbedder is the read-side seam of the ADR-0041 Enrichment Plugin: it
 	// turns a query string into a vector of one EmbeddingKind so Core can run
 	// SemanticSearch. It is the symmetric partner of the write-only
@@ -6397,6 +6400,7 @@ func init() {
 	// unknown top-level fields — not advertised, not reachable (invariant 8).
 	registerCapabilityControlFields()
 	registerQBittorrentFields()
+	registerJellyfinCompatFields()
 	for name := range queryFields {
 		scopedFields[name] = true
 	}
@@ -6411,6 +6415,15 @@ func init() {
 	for name := range adminFields {
 		if !scopedFields[name] {
 			panic("graph: adminFields lists unknown scoped field: " + name)
+		}
+	}
+	// A role-gated field with no scope classification was not registered on
+	// this build (an App Store binary). Drop its dispatch entry too, so the
+	// parser rejects it as an unknown top-level field and agentCatalog does not
+	// advertise it, rather than leaving it to fail later at the role check.
+	for name, handler := range fieldHandlerRegistry {
+		if handler.roleGate != rolePublic && !scopedFields[name] {
+			delete(fieldHandlerRegistry, name)
 		}
 	}
 }

@@ -132,6 +132,21 @@ describe("searchSettings", () => {
     ).toBe(true);
   });
 
+  it("leaves the Jellyfin compatibility page out of search on App Store hosts (CORE-2683)", () => {
+    for (const query of ["jellyfin", "trusted proxy", "allowed networks"]) {
+      const store = searchSettings(query, t, { appStoreHost: true, limit: 50 });
+      expect(
+        store.some((r) => r.path === "jellyfin-compat"),
+        query,
+      ).toBe(false);
+      const open = searchSettings(query, t, { limit: 50 });
+      expect(
+        open.some((r) => r.path === "jellyfin-compat"),
+        query,
+      ).toBe(true);
+    }
+  });
+
   it("marks Advanced settings so opening one turns Advanced on", () => {
     const [codec] = searchSettings("codec", t, { pages: [] }).filter(
       (r) => r.setting === "console.playback.codec",

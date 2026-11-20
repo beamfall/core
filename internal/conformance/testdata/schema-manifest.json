@@ -540,6 +540,11 @@
     "tier": "session"
   },
   {
+    "field": "jellyfincompat",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
     "field": "job",
     "effect": "read",
     "tier": "admin"
@@ -1260,6 +1265,11 @@
     "tier": "session"
   },
   {
+    "field": "setjellyfincompat",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "setlibraryaiindexing",
     "effect": "write",
     "tier": "admin"
@@ -1326,6 +1336,11 @@
   },
   {
     "field": "setprofileavatar",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setprofileintegrationsignin",
     "effect": "write",
     "tier": "admin"
   },

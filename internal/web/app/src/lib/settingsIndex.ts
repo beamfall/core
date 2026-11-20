@@ -229,6 +229,38 @@ export const SETTINGS_INDEX: SettingsPage[] = [
   },
   {
     area: "console",
+    path: "jellyfin-compat",
+    page: "navJellyfinCompat",
+    settings: [
+      {
+        id: "console.jellyfinCompat.enabled",
+        label: "jellyfinCompatEnabled",
+        help: "jellyfinCompatEnabledHelp",
+      },
+      {
+        id: "console.jellyfinCompat.allowedCIDRs",
+        label: "jellyfinCompatAllowedCIDRs",
+        help: "jellyfinCompatAllowedCIDRsHelp",
+      },
+      {
+        id: "console.jellyfinCompat.trustedProxyCIDRs",
+        label: "jellyfinCompatProxyCIDRs",
+        help: "jellyfinCompatProxyCIDRsHelp",
+      },
+      {
+        id: "console.jellyfinCompat.libraries",
+        label: "jellyfinCompatLibrariesHeading",
+        help: "jellyfinCompatLibrariesHelp",
+      },
+      {
+        id: "console.jellyfinCompat.profiles",
+        label: "jellyfinCompatProfilesHeading",
+        help: "jellyfinCompatProfilesHelp",
+      },
+    ],
+  },
+  {
+    area: "console",
     path: "retention",
     page: "navLeavingSoonRules",
     settings: [
@@ -501,6 +533,8 @@ export const APP_STORE_FIREWALL_PATHS = new Set([
   "layout",
   "capabilities",
   "migrate",
+  // Names Jellyfin and the automation tools that use it (CORE-2683).
+  "jellyfin-compat",
 ]);
 
 export type SearchablePage = {
@@ -531,6 +565,7 @@ export const MENU_PAGES: SearchablePage[] = [
       ["remote", "remoteAccessHeading"],
       ["api", "navApiKeys"],
       ["webhooks", "webhooksHeading"],
+      ["jellyfin-compat", "navJellyfinCompat"],
       ["backups", "backupHeading"],
       ["retention", "navLeavingSoonRules"],
       ["identification", "navOptionalFeatures"],

@@ -96,6 +96,9 @@ vi.mock("./sections/ActivityLog", () => ({
 vi.mock("./sections/Retention", () => ({
   Retention: () => <div>retention-panel</div>,
 }));
+vi.mock("./sections/JellyfinCompat", () => ({
+  JellyfinCompat: () => <div>jellyfin-compat-panel</div>,
+}));
 vi.mock("../manage/pages/BackupExportPage", () => ({
   BackupExportPage: () => <div>backup-export-panel</div>,
 }));
@@ -188,6 +191,30 @@ describe("ConsoleArea App Store host firewall", () => {
     expect(screen.getByRole("link", { name: "Optional features" })).toBeVisible();
     expect(screen.getByText("qbittorrent-panel")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Migration" })).toBeInTheDocument();
+  });
+
+  it("hides the Jellyfin compatibility page from App Store hosts (CORE-2683)", async () => {
+    setHost("ipad-manager-app-store");
+
+    const { container } = renderConsole("/console/jellyfin-compat");
+
+    await screen.findByRole("heading", { name: "Common tasks" });
+    expect(screen.queryByText("jellyfin-compat-panel")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Jellyfin compatibility" })).toBeNull();
+    expect(container.textContent).not.toMatch(/Jellyfin|Seerr|Radarr|Sonarr/i);
+  });
+
+  it("shows the Jellyfin compatibility page on direct and browser hosts", async () => {
+    setHost("apple-manager-macos-direct");
+    const direct = renderConsole("/console/jellyfin-compat");
+    expect(await screen.findByText("jellyfin-compat-panel")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Jellyfin compatibility" })).toBeInTheDocument();
+    direct.unmount();
+
+    delete window.beamfallHost;
+    renderConsole("/console/jellyfin-compat");
+    expect(await screen.findByText("jellyfin-compat-panel")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Jellyfin compatibility" })).toBeInTheDocument();
   });
 
   it("does not render the capabilities route for iPad App Store hosts", async () => {

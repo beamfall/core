@@ -18,6 +18,7 @@ import {
   fetchDevices,
   fetchEnforcedFilters,
   fetchHostMetrics,
+  fetchJellyfinCompat,
   fetchLiveSessions,
   fetchPlaybackCache,
   fetchPlayHistory,
@@ -41,6 +42,8 @@ import {
   setConsoleConfig,
   setDeviceRole,
   setExtensionPreauthorization,
+  setJellyfinCompat,
+  setProfileIntegrationSignIn,
   setProfileLibraries,
   setProfileRemoteBitrateCap,
   setProfileStreamCap,
@@ -65,6 +68,21 @@ const recordedSignals: (AbortSignal | null | undefined)[] = [];
 // throwing on a missing `data.<field>` while these tests assert only the
 // outgoing request (operation name + variables) at the choke-point.
 const DATA = {
+  jellyfinCompat: {
+    enabled: false,
+    allowedCIDRs: [],
+    trustedProxyCIDRs: [],
+    libraries: [],
+    profiles: [],
+  },
+  setJellyfinCompat: {
+    enabled: true,
+    allowedCIDRs: [],
+    trustedProxyCIDRs: [],
+    libraries: [],
+    profiles: [],
+  },
+  setProfileIntegrationSignIn: { id: "p-1", name: "Alex", integrationSignIn: true },
   setConsoleConfig: { backgroundWorkers: 2, viewerPairingCodesDisabled: true, plugins: [] },
   remoteAccess: { directHTTPS: null, relay: null, plainHTTPPublicWarning: false, endpoints: [] },
   setRemoteAccessPortMapping: {
@@ -124,6 +142,7 @@ const CONSOLE_READS: [string, (signal: AbortSignal) => Promise<unknown>][] = [
   ["fetchAccessSchedule", (s) => fetchAccessSchedule("p-1", s)],
   ["fetchEnforcedFilters", (s) => fetchEnforcedFilters(s)],
   ["fetchQBittorrentIngest", (s) => fetchQBittorrentIngest(s)],
+  ["fetchJellyfinCompat", (s) => fetchJellyfinCompat(s)],
   ["fetchAPITokens", (s) => fetchAPITokens(s)],
   ["fetchAPIKeys", (s) => fetchAPIKeys(s)],
   ["fetchActivityRecords", (s) => fetchActivityRecords(s)],
@@ -521,5 +540,28 @@ describe("console GraphQL requests", () => {
     expect(recorded[0].query).toContain("serverLogs(limit: $limit) { available capacity lines }");
     expect(recorded[0].variables).toEqual({});
     expect(recorded[1].variables).toEqual({ limit: 200 });
+  });
+
+  it("Jellyfin compatibility reads and mutations send only the given fields (CORE-2683)", async () => {
+    await fetchJellyfinCompat();
+    await setJellyfinCompat({ enabled: true });
+    await setJellyfinCompat({ allowedCIDRs: ["10.0.0.0/8"], trustedProxyCIDRs: [] });
+    await setJellyfinCompat({ libraryIDs: ["lib-1"] });
+    await setProfileIntegrationSignIn("p-1", false);
+
+    expect(recorded[0].query).toContain(
+      "jellyfinCompat { enabled allowedCIDRs trustedProxyCIDRs libraries { id title allowed } profiles { id name integrationSignIn } }",
+    );
+    expect(recorded[0].variables).toEqual({});
+    expect(recorded[1].query).toContain(
+      "setJellyfinCompat(enabled: $enabled, allowedCIDRs: $allowedCIDRs, trustedProxyCIDRs: $trustedProxyCIDRs, libraryIDs: $libraryIDs)",
+    );
+    expect(recorded[1].variables).toEqual({ enabled: true });
+    expect(recorded[2].variables).toEqual({ allowedCIDRs: ["10.0.0.0/8"], trustedProxyCIDRs: [] });
+    expect(recorded[3].variables).toEqual({ libraryIDs: ["lib-1"] });
+    expect(recorded[4].query).toContain(
+      "setProfileIntegrationSignIn(profileID: $profileID, enabled: $enabled) { id name integrationSignIn }",
+    );
+    expect(recorded[4].variables).toEqual({ profileID: "p-1", enabled: false });
   });
 });

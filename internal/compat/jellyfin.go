@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
@@ -62,10 +63,22 @@ type Config struct {
 	EnqueueRefresh    func(ctx context.Context, scope auth.Scope, paths []string)
 }
 
-type Handler struct {
+// Settings are the operator-owned parts of Config that can change while the
+// server runs (ADR-0171 §2.2, §2.4).
+type Settings struct {
+	Enabled           bool
+	AllowedCIDRs      []string
+	TrustedProxyCIDRs []string
+}
+
+type runtimeSettings struct {
 	enabled        bool
 	allowed        []*net.IPNet
 	trustedProxies []*net.IPNet
+}
+
+type Handler struct {
+	settings       atomic.Pointer[runtimeSettings]
 	auth           *auth.Service
 	next           http.Handler
 	relayed        func(*http.Request) bool
@@ -80,22 +93,36 @@ type Handler struct {
 }
 
 func New(cfg Config, authService *auth.Service, next http.Handler) (*Handler, error) {
-	allowed, err := parseCIDRs(cfg.AllowedCIDRs)
-	if err != nil {
-		return nil, err
-	}
-	trusted, err := parseCIDRs(cfg.TrustedProxyCIDRs)
-	if err != nil {
-		return nil, err
-	}
 	if next == nil {
 		next = http.NotFoundHandler()
 	}
-	return &Handler{
-		enabled: cfg.Enabled, allowed: allowed, trustedProxies: trusted, auth: authService, next: next,
+	h := &Handler{
+		auth: authService, next: next,
 		serverID: cfg.ServerID, serverName: cfg.ServerName, releaseVersion: cfg.ReleaseVersion,
 		setupRequired: cfg.SetupRequired, enqueueRefresh: cfg.EnqueueRefresh,
-	}, nil
+	}
+	if err := h.Apply(Settings{Enabled: cfg.Enabled, AllowedCIDRs: cfg.AllowedCIDRs, TrustedProxyCIDRs: cfg.TrustedProxyCIDRs}); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
+// Apply replaces the route group's settings. The next request sees them; no
+// restart is needed. Invalid CIDRs leave the current settings in place. An App
+// Store build never enables the route group.
+func (h *Handler) Apply(settings Settings) error {
+	allowed, err := parseCIDRs(settings.AllowedCIDRs)
+	if err != nil {
+		return err
+	}
+	trusted, err := parseCIDRs(settings.TrustedProxyCIDRs)
+	if err != nil {
+		return err
+	}
+	h.settings.Store(&runtimeSettings{
+		enabled: settings.Enabled && !appStoreBuild, allowed: allowed, trustedProxies: trusted,
+	})
+	return nil
 }
 
 func (h *Handler) SetRelayedRequestPredicate(predicate func(*http.Request) bool) {
@@ -103,7 +130,8 @@ func (h *Handler) SetRelayedRequestPredicate(predicate func(*http.Request) bool)
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !strings.HasPrefix(r.URL.Path, Prefix) || !h.enabled {
+	settings := h.settings.Load()
+	if !strings.HasPrefix(r.URL.Path, Prefix) || !settings.enabled {
 		http.NotFound(w, r)
 		return
 	}
@@ -111,8 +139,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	clientIP := h.clientIP(r)
-	if clientIP.IsUnspecified() || !containsIP(h.allowed, clientIP) {
+	clientIP := settings.clientIP(r)
+	if clientIP.IsUnspecified() || !containsIP(settings.allowed, clientIP) {
 		http.Error(w, "compatibility route unavailable", http.StatusForbidden)
 		return
 	}
@@ -129,9 +157,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.next.ServeHTTP(w, r)
 }
 
-func (h *Handler) clientIP(r *http.Request) net.IP {
+func (s *runtimeSettings) clientIP(r *http.Request) net.IP {
 	peer := remoteIP(r.RemoteAddr)
-	if !containsIP(h.trustedProxies, peer) {
+	if !containsIP(s.trustedProxies, peer) {
 		return peer
 	}
 	forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))

@@ -1408,6 +1408,18 @@
       ]
     },
     {
+      "field": "jellyfincompat",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "allowedCIDRs",
+        "enabled",
+        "libraries",
+        "profiles",
+        "trustedProxyCIDRs"
+      ]
+    },
+    {
       "field": "job",
       "effect": "read",
       "tier": "admin",
@@ -3427,6 +3439,18 @@
       ]
     },
     {
+      "field": "setjellyfincompat",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "allowedCIDRs",
+        "enabled",
+        "libraries",
+        "profiles",
+        "trustedProxyCIDRs"
+      ]
+    },
+    {
       "field": "setlibraryaiindexing",
       "effect": "write",
       "tier": "admin",
@@ -3645,6 +3669,16 @@
         "name",
         "pictureURL",
         "remoteMaxBitrate"
+      ]
+    },
+    {
+      "field": "setprofileintegrationsignin",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "id",
+        "integrationSignIn",
+        "name"
       ]
     },
     {
