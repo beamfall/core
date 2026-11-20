@@ -297,6 +297,50 @@ func TestIntegrationKDFBusyRefusalPreservesBothBudgets(t *testing.T) {
 	}
 }
 
+// TestIntegrationDeadlineWhileWaitingForKDFSlotStillAudits: a request whose
+// deadline expires while it waits for a KDF slot is refused, and the denial
+// audit is still written despite the expired request context.
+func TestIntegrationDeadlineWhileWaitingForKDFSlotStillAudits(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	enableIntegrationSignIn(t, st, "profile-default")
+	svc := NewService(st)
+	func() {
+		previousWait := adminKDFSlotWait
+		adminKDFSlotWait = time.Minute
+		for range adminKDFSlotCount {
+			adminKDFSlots <- struct{}{}
+		}
+		defer func() {
+			for range adminKDFSlotCount {
+				<-adminKDFSlots
+			}
+			adminKDFSlotWait = previousWait
+		}()
+		reqCtx, cancel := context.WithTimeout(WithRefusalNote(ctx), 100*time.Millisecond)
+		defer cancel()
+		if session, err := svc.AuthenticateIntegrationByName(reqCtx, "Default", "2468", integrationTestIP, compatScopes); session.Token != "" || err != ErrIntegrationAuthentication {
+			t.Fatalf("deadline request returned a token (%t) or wrong error (%v)", session.Token != "", err)
+		}
+		if reqCtx.Err() == nil {
+			t.Fatal("request context still live; the deadline path was not exercised")
+		}
+	}()
+	entries, err := st.ActivityEntries(ctx, store.ActivityQuery{Filter: store.LibraryFilter{AllLibraries: true, Revealed: true}, Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	denials := 0
+	for _, entry := range entries {
+		if entry.Action == "integration.login.denied" && entry.ProfileID == "profile-default" {
+			denials++
+		}
+	}
+	if denials != 1 {
+		t.Fatalf("deadline refusal wrote %d Profile denial events, want 1", denials)
+	}
+}
+
 func TestIntegrationSettlementFailureRefusesAndLeavesBothLanesCharged(t *testing.T) {
 	ctx := t.Context()
 	dataDir := storetest.MigratedDataDir(t)

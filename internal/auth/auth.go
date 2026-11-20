@@ -704,8 +704,15 @@ func (s *Service) auditIntegrationAttempt(ctx context.Context, profile store.Pro
 		entry.TargetType = "security-target"
 		entry.TargetID = strings.TrimPrefix(attemptKey, "unknown:")
 	}
-	_ = s.store.AppendActivity(ctx, entry)
+	// The audit outlives the request: a refusal caused by the request deadline
+	// must still be recorded, within a bound of its own.
+	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), integrationAuditTimeout)
+	defer cancel()
+	_ = s.store.AppendActivity(auditCtx, entry)
 }
+
+// integrationAuditTimeout bounds the detached sign-in audit write.
+const integrationAuditTimeout = 5 * time.Second
 
 // IntegrationScope authenticates an integration bearer for one closed compat
 // scope. Enrolled sessions and integrations lacking the bit fail closed.
