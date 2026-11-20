@@ -545,7 +545,7 @@ func (s *Store) availabilitySQL(ctx context.Context, value string, filter Librar
 	args = append(args, certArgs...)
 	args = append(args, limit, offset)
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT m.id, m.title, m.duration_seconds
+		SELECT m.id, m.title, m.library_id, m.duration_seconds
 		FROM media m
 		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
 		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+certClause+bandClause+`
@@ -560,15 +560,17 @@ func (s *Store) availabilitySQL(ctx context.Context, value string, filter Librar
 	for rows.Next() {
 		var id MediaID
 		var title string
+		var libraryID LibraryID
 		var durationSeconds int
-		if err := rows.Scan(&id, &title, &durationSeconds); err != nil {
+		if err := rows.Scan(&id, &title, &libraryID, &durationSeconds); err != nil {
 			return nil, err
 		}
 		items = append(items, SourceItem{
-			ID:      id,
-			Kind:    "media",
-			Title:   title,
-			Summary: mediaDurationSummary(durationSeconds),
+			ID:        id,
+			Kind:      "media",
+			Title:     title,
+			LibraryID: libraryID,
+			Summary:   mediaDurationSummary(durationSeconds),
 		})
 	}
 	return items, rows.Err()

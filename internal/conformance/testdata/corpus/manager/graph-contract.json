@@ -35,6 +35,7 @@
         "durationSeconds": 120,
         "id": "media-alpha",
         "kind": "media",
+        "libraryID": "library-local",
         "mediaClass": "video",
         "summary": "2 min",
         "title": "Sample Media"

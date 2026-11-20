@@ -940,6 +940,7 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 			Title:      title,
 			Summary:    mediaDurationSummary(durationSeconds),
 			Restricted: restricted[libraryID],
+			LibraryID:  libraryID,
 			Year:       year,
 		})
 	}
@@ -1338,7 +1339,7 @@ func (s *Store) entityItemsSQL(ctx context.Context, filter LibraryFilter, kind s
 	}
 	args = append(args, limit, offset)
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT id, title FROM entity
+		SELECT id, title, library_id FROM entity
 		WHERE kind = ? AND library_id IN (`+strings.Join(placeholders, ", ")+`)
 			AND trashed_at_ms IS NULL
 		ORDER BY title COLLATE NOCASE, id
@@ -1352,10 +1353,11 @@ func (s *Store) entityItemsSQL(ctx context.Context, filter LibraryFilter, kind s
 	for rows.Next() {
 		var id EntityID
 		var title string
-		if err := rows.Scan(&id, &title); err != nil {
+		var libraryID LibraryID
+		if err := rows.Scan(&id, &title, &libraryID); err != nil {
 			return nil, err
 		}
-		items = append(items, SourceItem{ID: MediaID(id), Kind: "entity", Title: title})
+		items = append(items, SourceItem{ID: MediaID(id), Kind: "entity", Title: title, LibraryID: libraryID})
 	}
 	return items, rows.Err()
 }

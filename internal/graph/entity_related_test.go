@@ -93,7 +93,7 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 
 	read := func(id string) EntityDetailInfo {
 		t.Helper()
-		body := []byte(`{"query":"query($id:String!) { entity(id: $id) { id kind title relatedEntities { kind kindDisplayName items { id kind title } } } }","variables":{"id":"` + id + `"}}`)
+		body := []byte(`{"query":"query($id:String!) { entity(id: $id) { id kind title relatedEntities { kind kindDisplayName items { id kind title libraryID } } } }","variables":{"id":"` + id + `"}}`)
 		req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
 		authorizeViewer(req)
 		rec := httptest.NewRecorder()
@@ -121,8 +121,8 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 		Archetype:       "container",
 		// First Record's only Media is video, so its card carries that class.
 		Items: []SourceItem{
-			{ID: "entity-record-a", Kind: "entity", Title: "First Record", MediaClass: "video"},
-			{ID: "entity-record-b", Kind: "entity", Title: "Second Record"},
+			{ID: "entity-record-a", LibraryID: string(library.ID), Kind: "entity", Title: "First Record", MediaClass: "video"},
+			{ID: "entity-record-b", LibraryID: string(library.ID), Kind: "entity", Title: "Second Record"},
 		},
 	}}
 	if !reflect.DeepEqual(got, want) {
@@ -134,7 +134,7 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 		Kind:            "performer",
 		KindDisplayName: plugin.L("Performer"),
 		Archetype:       "person",
-		Items:           []SourceItem{{ID: "entity-performer", Kind: "entity", Title: "The Performer"}},
+		Items:           []SourceItem{{ID: "entity-performer", LibraryID: string(library.ID), Kind: "entity", Title: "The Performer"}},
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("record relatedEntities = %#v, want %#v", got, want)

@@ -80,15 +80,14 @@ func parseSearchMode(req request) (SearchMode, error) {
 // SourceItem fields plus how it was found (Mode) and, for semantic hits, the
 // cosine Score in [0,1]. Keyword hits carry mode=keyword and score=0.
 //
-// The remaining fields describe the row for display (CORE-1191): the Library it
-// lives in, the Media year and class, or the Entity kind with its
+// The remaining fields describe the row for display (CORE-1191): the Library
+// title, the Media year and class, or the Entity kind with its
 // plugin-declared display name. All are omitted when the row's Library is not
 // visible to the caller's scope.
 type SearchResultItem struct {
 	SourceItem
 	Mode                  SearchMode          `json:"mode"`
 	Score                 float32             `json:"score"`
-	LibraryID             string              `json:"libraryID,omitempty"`
 	LibraryTitle          string              `json:"libraryTitle,omitempty"`
 	Year                  int                 `json:"year,omitempty"`
 	MediaClass            string              `json:"mediaClass,omitempty"`
@@ -234,7 +233,7 @@ func (h *Handler) describeSearchRows(ctx context.Context, filter store.LibraryFi
 	}
 	rows := make([]store.SourceItem, len(items))
 	for i, item := range items {
-		rows[i] = store.SourceItem{ID: store.MediaID(item.ID), Kind: item.Kind}
+		rows[i] = store.SourceItem{ID: store.MediaID(item.ID), Kind: item.Kind, LibraryID: store.LibraryID(item.LibraryID)}
 	}
 	details, err := h.store.SearchRowDetails(ctx, filter, rows)
 	if err != nil {
@@ -246,10 +245,11 @@ func (h *Handler) describeSearchRows(ctx context.Context, filter store.LibraryFi
 	}
 	displayNames := map[kindKey]plugin.LocaleString{}
 	for i, detail := range details {
-		if detail.LibraryID == "" {
+		if detail.LibraryID == "" || detail.LibraryID != rows[i].LibraryID {
+			// The item may have moved since the title and owner were read.
+			details[i] = store.SearchRowDetail{}
 			continue
 		}
-		items[i].LibraryID = string(detail.LibraryID)
 		items[i].LibraryTitle = detail.LibraryTitle
 		items[i].Year = detail.Year
 		items[i].MediaClass = detail.MediaClass
@@ -521,6 +521,7 @@ func (h *Handler) semanticItems(ctx context.Context, profileID store.ProfileID, 
 			ID:         media.ID,
 			Kind:       "media",
 			Title:      media.Title,
+			LibraryID:  media.LibraryID,
 			Summary:    media.Summary,
 			MediaClass: media.Class,
 			Year:       media.Year,
@@ -599,10 +600,11 @@ func (h *Handler) recommendItems(ctx context.Context, profileID store.ProfileID,
 			continue
 		}
 		source := store.SourceItem{
-			ID:      media.ID,
-			Kind:    "media",
-			Title:   media.Title,
-			Summary: media.Summary,
+			ID:        media.ID,
+			Kind:      "media",
+			Title:     media.Title,
+			LibraryID: media.LibraryID,
+			Summary:   media.Summary,
 		}
 		// Library-level restricted flag — Revealed-only, see
 		// semanticItems for the rationale.

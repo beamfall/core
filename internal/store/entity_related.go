@@ -111,6 +111,7 @@ func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filt
 			Kind:       "entity",
 			Title:      title,
 			Restricted: restricted[libraryID],
+			LibraryID:  libraryID,
 		})
 	}
 	if err := rows.Err(); err != nil {

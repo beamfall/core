@@ -835,7 +835,7 @@ func (s *Store) collectionSourceItemsLocked(ctx context.Context, filter LibraryF
 			skip--
 			continue
 		}
-		items = append(items, SourceItem{ID: media.ID, Kind: ItemTargetMedia, Title: media.Title, Summary: mediaDurationSummary(media.DurationSeconds)})
+		items = append(items, SourceItem{ID: media.ID, Kind: ItemTargetMedia, Title: media.Title, LibraryID: media.LibraryID, Summary: mediaDurationSummary(media.DurationSeconds)})
 		if len(items) >= limit {
 			break
 		}

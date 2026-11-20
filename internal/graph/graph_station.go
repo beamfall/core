@@ -57,6 +57,7 @@ type stationSeed struct {
 // (ADR-0098 §Stations).
 type StationCandidate struct {
 	MediaID     string `json:"mediaID"`
+	LibraryID   string `json:"libraryID,omitempty"`
 	Title       string `json:"title"`
 	Explanation string `json:"explanation,omitempty"`
 }
@@ -122,6 +123,7 @@ func (h *Handler) generateStation(ctx context.Context, scope auth.Scope, seed st
 	for i, c := range candidates {
 		out[i] = StationCandidate{
 			MediaID:     string(c.ID),
+			LibraryID:   string(c.LibraryID),
 			Title:       c.Title,
 			Explanation: stationItemExplanation(seed),
 		}

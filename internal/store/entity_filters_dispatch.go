@@ -27,7 +27,7 @@ func (s *Store) entityItemsFilteredSQL(ctx context.Context, filter LibraryFilter
 	args = append(args, limit, offset)
 	//nolint:gosec // G202: joins and placeholders are generated internally; values remain bound.
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT e.id, e.title FROM entity e`+joins+`
+		SELECT e.id, e.title, e.library_id FROM entity e`+joins+`
 		WHERE e.kind = ? AND e.library_id IN (`+libraries+`)
 			AND e.trashed_at_ms IS NULL
 		ORDER BY e.title COLLATE NOCASE, e.id
@@ -41,10 +41,11 @@ func (s *Store) entityItemsFilteredSQL(ctx context.Context, filter LibraryFilter
 	for rows.Next() {
 		var id EntityID
 		var title string
-		if err := rows.Scan(&id, &title); err != nil {
+		var libraryID LibraryID
+		if err := rows.Scan(&id, &title, &libraryID); err != nil {
 			return nil, err
 		}
-		items = append(items, SourceItem{ID: MediaID(id), Kind: "entity", Title: title})
+		items = append(items, SourceItem{ID: MediaID(id), Kind: "entity", Title: title, LibraryID: libraryID})
 	}
 	return items, rows.Err()
 }

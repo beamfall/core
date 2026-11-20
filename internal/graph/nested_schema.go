@@ -14,7 +14,7 @@ import (
 // their effect/tier — it says nothing about the SHAPE each field resolves to.
 // The depth-1 dispatcher routes solely on those top-level names and never
 // inspects nested selection sets, so a client requesting a nonexistent NESTED
-// field (the H1 startMillis, the H17 sourceItems.libraryID, an H2 mediaClass)
+// field (the H1 startMillis, an H2 mediaClass)
 // gets silently-incomplete data with no error.
 //
 // This file reflects over the dispatcher's own Go result structs to produce a

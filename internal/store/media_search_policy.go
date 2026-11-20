@@ -143,7 +143,7 @@ func metadataSearchDatabase(ctx context.Context, db *sql.DB, filter LibraryFilte
 	}
 	// #nosec G202 -- only generated placeholders, fixed joins, and closed certification clauses are interpolated.
 	rows, err := db.QueryContext(ctx, `
-		SELECT m.id, m.title, m.duration_seconds, group_concat(ft.value, ' ')
+		SELECT m.id, m.title, m.library_id, m.duration_seconds, group_concat(ft.value, ' ')
 		FROM media_field_fts
 		JOIN media_field_text ft ON ft.rowid = media_field_fts.rowid
 		JOIN media m ON m.id = ft.media_id`+libraryJoin+`
@@ -163,8 +163,9 @@ func metadataSearchDatabase(ctx context.Context, db *sql.DB, filter LibraryFilte
 	for rows.Next() {
 		var id MediaID
 		var title, value string
+		var libraryID LibraryID
 		var duration int
-		if err := rows.Scan(&id, &title, &duration, &value); err != nil {
+		if err := rows.Scan(&id, &title, &libraryID, &duration, &value); err != nil {
 			return nil, err
 		}
 		score := matcher.rank(title, value)
@@ -172,7 +173,7 @@ func metadataSearchDatabase(ctx context.Context, db *sql.DB, filter LibraryFilte
 			continue
 		}
 		ranked = append(ranked, rankedSourceItem{score: score, item: SourceItem{
-			ID: id, Kind: "media", Title: title, Summary: mediaDurationSummary(duration),
+			ID: id, Kind: "media", Title: title, LibraryID: libraryID, Summary: mediaDurationSummary(duration),
 		}})
 	}
 	return ranked, rows.Err()

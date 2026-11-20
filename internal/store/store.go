@@ -922,9 +922,8 @@ type SourceItem struct {
 	// Byline names the people a card credits under its title, set by the
 	// graph from MediaEntityLinks (CORE-2362); nil means none.
 	Byline []string
-	// LibraryID is a media-kind item's Library, set by AnnotateMediaClass so
-	// the graph can render that Library plugin's card subtitle. Never on the
-	// wire; empty for entities.
+	// LibraryID is the owner from the catalog read that supplied Title.
+	// It is empty for synthetic rows without a single owner.
 	LibraryID LibraryID
 	// Subtitle is the Library plugin's MediaSubtitle rendered per locale
 	// (BCP-47 tag → text), set by the graph (CORE-1226); nil means none.

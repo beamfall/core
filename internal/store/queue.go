@@ -279,7 +279,7 @@ func (s *Store) queueItemsSQL(ctx context.Context, profileID ProfileID, filter L
 			visibleIndex++
 			continue
 		}
-		items = append(items, SourceItem{ID: media.ID, Kind: "media", Title: media.Title, Summary: mediaDurationSummary(media.DurationSeconds)})
+		items = append(items, SourceItem{ID: media.ID, Kind: "media", Title: media.Title, LibraryID: media.LibraryID, Summary: mediaDurationSummary(media.DurationSeconds)})
 		visibleIndex++
 		if len(items) >= limit {
 			break

@@ -602,6 +602,7 @@ func (s *Store) visibleProfileItemsSQL(ctx context.Context, rows []profileItemRo
 				continue
 			}
 			item.Title = media.Title
+			item.LibraryID = media.LibraryID
 			item.Summary = mediaDurationSummary(media.DurationSeconds)
 		} else {
 			entity, err := s.visibleEntitySQL(ctx, EntityID(row.id), filter)
@@ -612,6 +613,7 @@ func (s *Store) visibleProfileItemsSQL(ctx context.Context, rows []profileItemRo
 				return nil, err
 			}
 			item.Title = entity.Title
+			item.LibraryID = entity.LibraryID
 		}
 		if row.rating > 0 {
 			item.Summary = strconv.Itoa(row.rating) + "/" + strconv.Itoa(ItemRatingMax)

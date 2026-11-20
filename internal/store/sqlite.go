@@ -2283,7 +2283,7 @@ func containerRollUpSQL(matched string, rollUp *ContainerRollUp, placeholders []
 	return `
 		WITH matched AS (` + matched + `),
 		tops AS (
-			SELECT mt.id AS media_id, t.id AS top_id, t.title AS top_title
+			SELECT mt.id AS media_id, t.id AS top_id, t.title AS top_title, t.library_id AS top_library_id
 			FROM matched mt
 			JOIN entity_relation c ON c.to_media_id = mt.id
 			  AND c.relation IN (` + strings.Join(members, ", ") + `)
@@ -2293,11 +2293,11 @@ func containerRollUpSQL(matched string, rollUp *ContainerRollUp, placeholders []
 			JOIN entity t ON t.id = p.to_entity_id AND t.trashed_at_ms IS NULL
 			  AND t.library_id IN (` + strings.Join(placeholders, ", ") + `)
 		)
-		SELECT id, kind, title, duration_seconds, '' AS members FROM matched
+		SELECT id, kind, title, library_id, duration_seconds, '' AS members FROM matched
 		WHERE id NOT IN (SELECT media_id FROM tops)
 		UNION ALL
-		SELECT top_id, 'entity', top_title, 0, group_concat(media_id, char(31)) FROM tops
-		GROUP BY top_id, top_title
+		SELECT top_id, 'entity', top_title, top_library_id, 0, group_concat(media_id, char(31)) FROM tops
+		GROUP BY top_id, top_title, top_library_id
 		ORDER BY 3 COLLATE NOCASE, 1
 		LIMIT ? OFFSET ?`, args
 }
@@ -2340,7 +2340,7 @@ func (s *Store) sourceItemsSQL(ctx context.Context, filter LibraryFilter, fieldF
 	// ~0.1ms here). rowid cannot be indexed by a secondary index, so the scan is
 	// the only plan that streams the ORDER BY and short-circuits at LIMIT.
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT m.id, m.title, m.duration_seconds
+		SELECT m.id, m.title, m.library_id, m.duration_seconds
 		FROM media m NOT INDEXED
 		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
 		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+`
@@ -2357,15 +2357,17 @@ func (s *Store) sourceItemsSQL(ctx context.Context, filter LibraryFilter, fieldF
 	for rows.Next() {
 		var id MediaID
 		var title string
+		var libraryID LibraryID
 		var durationSeconds int
-		if err := rows.Scan(&id, &title, &durationSeconds); err != nil {
+		if err := rows.Scan(&id, &title, &libraryID, &durationSeconds); err != nil {
 			return nil, err
 		}
 		items = append(items, SourceItem{
-			ID:      id,
-			Kind:    "media",
-			Title:   title,
-			Summary: mediaDurationSummary(durationSeconds),
+			ID:        id,
+			Kind:      "media",
+			Title:     title,
+			LibraryID: libraryID,
+			Summary:   mediaDurationSummary(durationSeconds),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -2400,7 +2402,7 @@ func (s *Store) onThisDayItemsSQL(ctx context.Context, filter LibraryFilter, lim
 	args = append(args, certArgs...)
 	args = append(args, limit, offset)
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT m.id, m.title, m.duration_seconds
+		SELECT m.id, m.title, m.library_id, m.duration_seconds
 		FROM media m
 		JOIN media_field_date fd ON fd.media_id = m.id AND fd.field = 'capture-date'
 		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
@@ -2420,15 +2422,17 @@ func (s *Store) onThisDayItemsSQL(ctx context.Context, filter LibraryFilter, lim
 	for rows.Next() {
 		var id MediaID
 		var title string
+		var libraryID LibraryID
 		var durationSeconds int
-		if err := rows.Scan(&id, &title, &durationSeconds); err != nil {
+		if err := rows.Scan(&id, &title, &libraryID, &durationSeconds); err != nil {
 			return nil, err
 		}
 		items = append(items, SourceItem{
-			ID:      id,
-			Kind:    "media",
-			Title:   title,
-			Summary: mediaDurationSummary(durationSeconds),
+			ID:        id,
+			Kind:      "media",
+			Title:     title,
+			LibraryID: libraryID,
+			Summary:   mediaDurationSummary(durationSeconds),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -3523,7 +3527,7 @@ func (s *Store) allItemsSQL(ctx context.Context, filter LibraryFilter, fieldFilt
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	args = append(args, certArgs...)
 	matched := `
-		SELECT m.id, 'media' AS kind, m.title, m.duration_seconds
+		SELECT m.id, 'media' AS kind, m.title, m.library_id, m.duration_seconds
 		FROM media m
 		WHERE m.library_id IN (` + strings.Join(placeholders, ", ") + `)
 		  AND m.trashed_at_ms IS NULL` + mediaExcludeExtrasClause + filterClause + entityClause + certClause
@@ -3547,15 +3551,16 @@ func (s *Store) allItemsSQL(ctx context.Context, filter LibraryFilter, fieldFilt
 	for rows.Next() {
 		var id MediaID
 		var kind, title, members string
+		var libraryID LibraryID
 		var durationSeconds int
-		dest := []any{&id, &kind, &title, &durationSeconds}
+		dest := []any{&id, &kind, &title, &libraryID, &durationSeconds}
 		if rolling {
 			dest = append(dest, &members)
 		}
 		if err := rows.Scan(dest...); err != nil {
 			return nil, err
 		}
-		item := SourceItem{ID: id, Kind: kind, Title: title}
+		item := SourceItem{ID: id, Kind: kind, Title: title, LibraryID: libraryID}
 		if kind == "media" {
 			item.Summary = mediaDurationSummary(durationSeconds)
 		}
@@ -3603,7 +3608,7 @@ func (s *Store) randomItemsSQL(ctx context.Context, filter LibraryFilter, seed s
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	args = append(args, certArgs...)
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT m.id, m.title, m.duration_seconds
+		SELECT m.id, m.title, m.library_id, m.duration_seconds
 		FROM media m
 		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
 		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+certClause+`
@@ -3620,16 +3625,18 @@ func (s *Store) randomItemsSQL(ctx context.Context, filter LibraryFilter, seed s
 	for rows.Next() {
 		var id MediaID
 		var title string
+		var libraryID LibraryID
 		var durationSeconds int
-		if err := rows.Scan(&id, &title, &durationSeconds); err != nil {
+		if err := rows.Scan(&id, &title, &libraryID, &durationSeconds); err != nil {
 			return nil, err
 		}
 		candidates = append(candidates, candidate{
 			item: SourceItem{
-				ID:      id,
-				Kind:    "media",
-				Title:   title,
-				Summary: mediaDurationSummary(durationSeconds),
+				ID:        id,
+				Kind:      "media",
+				Title:     title,
+				LibraryID: libraryID,
+				Summary:   mediaDurationSummary(durationSeconds),
 			},
 			// sha256("<seed>\x00<media_id>") — a stable permutation key. The NUL
 			// separator keeps (seed,id) pairs unambiguous; the digest re-seeds the

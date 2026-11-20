@@ -88,7 +88,7 @@ type corpusSurface struct {
 
 // The graph query mirrors TestGoldenGraphResponse verbatim so the corpus pins
 // the same SessionInfo / PluginInfo / SourceItem shapes clients decode.
-const corpusGraphQuery = `{"query":"query Contract($kind: String!) { currentSession { id deviceRole profileID profile revealed } plugins { id displayName mediaLabel mediaClassLabels } sourceItems(source: { kind: $kind }) { id kind title summary artwork { poster } artworkSlots } }","variables":{"kind":"recently-added"}}`
+const corpusGraphQuery = `{"query":"query Contract($kind: String!) { currentSession { id deviceRole profileID profile revealed } plugins { id displayName mediaLabel mediaClassLabels } sourceItems(source: { kind: $kind }) { id kind title libraryID summary artwork { poster } artworkSlots } }","variables":{"kind":"recently-added"}}`
 
 // media-alpha lives in library-local, which every context (including the
 // managed child) can access, so playback-info resolves in all four — the

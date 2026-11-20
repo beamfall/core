@@ -18,7 +18,7 @@ import (
 // MediaRatingFrom, CORE-2398, CORE-2415); Media without them keep the zero
 // values. Every open catalog plane is read, so an
 // unsealed Encrypted Library's Media are annotated too. The same read sets a
-// media-kind item's LibraryID and DurationSeconds. Safe on any SourceItem slice.
+// media-kind item's DurationSeconds. Safe on any SourceItem slice.
 func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) error {
 	var ids, entityIDs []MediaID
 	for i := range items {
@@ -39,7 +39,6 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 	type cardFacts struct {
 		class         MediaClass
 		year          int
-		library       LibraryID
 		duration      int
 		certification string
 		score         sql.NullFloat64
@@ -54,7 +53,7 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 				args[i] = id
 			}
 			// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
-			rows, err := reader.QueryContext(ctx, `SELECT id, media_class, year, library_id, duration_seconds, `+mediaRatingColumns+` FROM media WHERE id IN (`+sqlPlaceholders(len(chunk))+`)`, args...)
+			rows, err := reader.QueryContext(ctx, `SELECT id, media_class, year, duration_seconds, `+mediaRatingColumns+` FROM media WHERE id IN (`+sqlPlaceholders(len(chunk))+`)`, args...)
 			if err != nil {
 				return err
 			}
@@ -62,15 +61,14 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 				var id MediaID
 				var class MediaClass
 				var year sql.NullInt64
-				var library LibraryID
 				var duration sql.NullInt64
 				var certification string
 				var score, votes sql.NullFloat64
-				if err := rows.Scan(&id, &class, &year, &library, &duration, &certification, &score, &votes); err != nil {
+				if err := rows.Scan(&id, &class, &year, &duration, &certification, &score, &votes); err != nil {
 					_ = rows.Close()
 					return err
 				}
-				facts[id] = cardFacts{class: class, year: int(year.Int64), library: library, duration: int(duration.Int64), certification: certification, score: score, votes: votes}
+				facts[id] = cardFacts{class: class, year: int(year.Int64), duration: int(duration.Int64), certification: certification, score: score, votes: votes}
 			}
 			if err := rows.Close(); err != nil {
 				return err
@@ -91,7 +89,6 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 		}
 		items[i].MediaClass = facts[items[i].ID].class
 		items[i].Year = facts[items[i].ID].year
-		items[i].LibraryID = facts[items[i].ID].library
 		items[i].DurationSeconds = facts[items[i].ID].duration
 		items[i].Certification = facts[items[i].ID].certification
 		items[i].AudienceScore = votedAudienceScore(facts[items[i].ID].score, facts[items[i].ID].votes)

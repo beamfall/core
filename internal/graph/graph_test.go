@@ -588,7 +588,7 @@ func TestUnknownTopLevelFieldRejectsWholeBatch(t *testing.T) {
 // nested schema instead of a runtime graph error.
 func TestUnknownNestedFieldRuntimeRejectionIsDeferred(t *testing.T) {
 	handler := newTestHandler(t)
-	body := []byte(`{"query":"query { sourceItems { id libraryID } }","variables":{"kind":"recently-added"}}`)
+	body := []byte(`{"query":"query { sourceItems { id phantomField } }","variables":{"kind":"recently-added"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
 	authorizeViewer(req)
 	rec := httptest.NewRecorder()
@@ -604,8 +604,8 @@ func TestUnknownNestedFieldRuntimeRejectionIsDeferred(t *testing.T) {
 		t.Fatalf("errors = %#v, want no runtime nested-field error", resp.Errors)
 	}
 	for _, child := range topLevel(t, "sourceitems").Children {
-		if child.Name == "libraryID" {
-			t.Fatal("NestedSchema exposes sourceItems.libraryID; deferral no longer documents this client drift")
+		if child.Name == "phantomField" {
+			t.Fatal("NestedSchema exposes sourceItems.phantomField; deferral no longer documents this client drift")
 		}
 	}
 }

@@ -61,7 +61,7 @@ func TestGoldenGraphResponse(t *testing.T) {
 		"media-alpha:" + artwork.SlotBackdrop: true,
 	}})
 
-	body := `{"query":"query Contract($kind: String!) { currentSession { id deviceRole profileID profile revealed } plugins { id displayName mediaLabel mediaClassLabels } sourceItems(source: { kind: $kind }) { id kind title summary artwork { poster } artworkSlots } }","variables":{"kind":"recently-added"}}`
+	body := `{"query":"query Contract($kind: String!) { currentSession { id deviceRole profileID profile revealed } plugins { id displayName mediaLabel mediaClassLabels } sourceItems(source: { kind: $kind }) { id kind title libraryID summary artwork { poster } artworkSlots } }","variables":{"kind":"recently-added"}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/graphql", strings.NewReader(body))
 	req.Header.Set("X-Beamfall-Session", "session-default")
 	req.Header.Set("X-Beamfall-Device", "device-tv")

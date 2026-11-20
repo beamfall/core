@@ -136,10 +136,9 @@ func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 // enforced-filter lock affordance, set on a visible-but-blocked item under a
 // locked certification ceiling), and muted (ADR-0054 §2.7: the per-item
 // Per-Profile Mute badge on deliberately-surfaced / Favorite-overridden items),
-// engagement (CORE-1192: the acting Profile's playback state for the card)
-// and NOTHING else: the android-ui kit's selection of `libraryID` under
-// sourceItems is a nonexistent nested field (the contract this schema exists to
-// surface). `mediaClass` was added deliberately by CORE-1492 for class-aware
+// engagement (CORE-1192: the acting Profile's playback state for the card).
+// `libraryID` carries the item's owning Library (CORE-1496).
+// `mediaClass` was added deliberately by CORE-1492 for class-aware
 // card placeholders, `artwork.dominantColor` by CORE-0315 for a poster's
 // tint, `year` by CORE-2269 so a card can state it, and `byline` by CORE-2362
 // so an audio card can name its people, `subtitle`, `sequence`, `index` and
@@ -155,14 +154,12 @@ func TestNestedSchemaSourceItemShape(t *testing.T) {
 	if si.Kind != "object" {
 		t.Fatalf("sourceItems kind = %q, want object", si.Kind)
 	}
-	want := []string{"artwork", "artworkSlots", "audienceScore", "audienceScoreLabel", "audienceScoreVotes", "byline", "certification", "container", "durationSeconds", "engagement", "id", "index", "kind", "locked", "mediaClass", "muted", "restricted", "sequence", "subtitle", "summary", "title", "year"}
+	want := []string{"artwork", "artworkSlots", "audienceScore", "audienceScoreLabel", "audienceScoreVotes", "byline", "certification", "container", "durationSeconds", "engagement", "id", "index", "kind", "libraryID", "locked", "mediaClass", "muted", "restricted", "sequence", "subtitle", "summary", "title", "year"}
 	if got := childNames(si.Children); !slices.Equal(got, want) {
 		t.Fatalf("sourceItems fields = %v, want %v", got, want)
 	}
 	for _, c := range si.Children {
 		switch c.Name {
-		case "libraryID":
-			t.Errorf("sourceItems unexpectedly exposes %q — client-drift would be masked", c.Name)
 		case "artwork":
 			if c.Kind != "object" || !slices.Equal(childNames(c.Children), []string{"dominantColor", "poster"}) {
 				t.Errorf("sourceItems.artwork = %v (%s), want object{dominantColor, poster}", childNames(c.Children), c.Kind)
@@ -191,6 +188,7 @@ func TestNestedSchemaSourceItemOptionalFields(t *testing.T) {
 		"container":          true,
 		"id":                 false,
 		"kind":               false,
+		"libraryID":          true,
 		"locked":             true,
 		"muted":              true,
 		"restricted":         true,

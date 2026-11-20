@@ -104,6 +104,7 @@ type SessionInfo struct {
 // SourceItem is one rendered item returned by a Section Source.
 type SourceItem struct {
 	ID           string            `json:"id"`
+	LibraryID    string            `json:"libraryID,omitempty"`
 	Kind         string            `json:"kind"`
 	Title        string            `json:"title"`
 	Summary      string            `json:"summary,omitempty"`
@@ -1170,6 +1171,7 @@ func (h *Handler) annotateBylines(ctx context.Context, items []store.SourceItem)
 func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 	resp := SourceItem{
 		ID:                 string(item.ID),
+		LibraryID:          string(item.LibraryID),
 		Kind:               item.Kind,
 		Title:              item.Title,
 		Summary:            item.Summary,

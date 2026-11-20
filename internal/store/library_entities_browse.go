@@ -7,7 +7,7 @@ import (
 )
 
 // libraryEntityCandidates reads every untrashed Entity of one kind in a
-// Library as a browse candidate, keyed by its id, carrying only its title. The
+// Library as a browse candidate, keyed by its ID. The
 // browse keys come from the Media it reaches, when a sort or filter needs them.
 func libraryEntityCandidates(ctx context.Context, reader *sql.DB, libraryID LibraryID, kind string, restricted bool) ([]libraryBrowseCandidate, error) {
 	rows, err := reader.QueryContext(ctx, `
@@ -26,7 +26,7 @@ func libraryEntityCandidates(ctx context.Context, reader *sql.DB, libraryID Libr
 			return nil, err
 		}
 		candidates = append(candidates, libraryBrowseCandidate{
-			item: SourceItem{ID: MediaID(id), Kind: "entity", Title: title, Restricted: restricted},
+			item: SourceItem{ID: MediaID(id), Kind: "entity", Title: title, LibraryID: libraryID, Restricted: restricted},
 		})
 	}
 	return candidates, rows.Err()

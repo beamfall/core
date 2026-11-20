@@ -25,6 +25,7 @@ type rankedSourceItem struct {
 
 type mediaSearchCandidate struct {
 	id              MediaID
+	libraryID       LibraryID
 	title           string
 	durationSeconds int
 }
@@ -61,7 +62,7 @@ func (s *Store) fuzzySearchMediaLocked(ctx context.Context, filter LibraryFilter
 	args = append(args, certArgs...)
 	args = append(args, fuzzySearchScanLimit)
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT m.id, m.title, m.duration_seconds
+		SELECT m.id, m.title, m.library_id, m.duration_seconds
 		FROM media m
 		WHERE m.trashed_at_ms IS NULL
 		  AND m.library_id IN (`+strings.Join(placeholders, ", ")+`)`+certClause+`
@@ -74,7 +75,7 @@ func (s *Store) fuzzySearchMediaLocked(ctx context.Context, filter LibraryFilter
 	var candidates []mediaSearchCandidate
 	for rows.Next() {
 		var candidate mediaSearchCandidate
-		if err := rows.Scan(&candidate.id, &candidate.title, &candidate.durationSeconds); err != nil {
+		if err := rows.Scan(&candidate.id, &candidate.title, &candidate.libraryID, &candidate.durationSeconds); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -92,10 +93,11 @@ func (s *Store) fuzzySearchMediaLocked(ctx context.Context, filter LibraryFilter
 			continue
 		}
 		ranked = append(ranked, rankedSourceItem{score: score, item: SourceItem{
-			ID:      candidate.id,
-			Kind:    "media",
-			Title:   candidate.title,
-			Summary: mediaDurationSummary(candidate.durationSeconds),
+			ID:        candidate.id,
+			Kind:      "media",
+			Title:     candidate.title,
+			LibraryID: candidate.libraryID,
+			Summary:   mediaDurationSummary(candidate.durationSeconds),
 		}})
 	}
 	for _, libraryID := range visible {
@@ -131,10 +133,11 @@ func (s *Store) fuzzySearchMediaLocked(ctx context.Context, filter LibraryFilter
 				continue
 			}
 			ranked = append(ranked, rankedSourceItem{score: score, item: SourceItem{
-				ID:      id,
-				Kind:    "media",
-				Title:   title,
-				Summary: mediaDurationSummary(durationSeconds),
+				ID:        id,
+				Kind:      "media",
+				Title:     title,
+				LibraryID: libraryID,
+				Summary:   mediaDurationSummary(durationSeconds),
 			}})
 		}
 		if err := rows.Err(); err != nil {
@@ -187,7 +190,7 @@ func (s *Store) archiveSearchMediaLocked(ctx context.Context, filter LibraryFilt
 	args = append(args, certArgs...)
 	args = append(args, fuzzySearchScanLimit)
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT m.id, m.title, COALESCE(m.summary, ''), m.duration_seconds
+		SELECT m.id, m.title, m.library_id, COALESCE(m.summary, ''), m.duration_seconds
 		FROM media m
 		WHERE m.trashed_at_ms IS NULL
 		  AND m.library_id IN (`+strings.Join(placeholders, ", ")+`)`+certClause+`
@@ -202,8 +205,9 @@ func (s *Store) archiveSearchMediaLocked(ctx context.Context, filter LibraryFilt
 	for rows.Next() {
 		var id MediaID
 		var title, summary string
+		var libraryID LibraryID
 		var durationSeconds int
-		if err := rows.Scan(&id, &title, &summary, &durationSeconds); err != nil {
+		if err := rows.Scan(&id, &title, &libraryID, &summary, &durationSeconds); err != nil {
 			return nil, err
 		}
 		score := matcher.rank(title, summary)
@@ -211,10 +215,11 @@ func (s *Store) archiveSearchMediaLocked(ctx context.Context, filter LibraryFilt
 			continue
 		}
 		ranked = append(ranked, rankedSourceItem{score: score, item: SourceItem{
-			ID:      id,
-			Kind:    "media",
-			Title:   title,
-			Summary: mediaDurationSummary(durationSeconds),
+			ID:        id,
+			Kind:      "media",
+			Title:     title,
+			LibraryID: libraryID,
+			Summary:   mediaDurationSummary(durationSeconds),
 		}})
 	}
 	if err := rows.Err(); err != nil {
@@ -253,10 +258,11 @@ func (s *Store) archiveSearchMediaLocked(ctx context.Context, filter LibraryFilt
 				continue
 			}
 			ranked = append(ranked, rankedSourceItem{score: score, item: SourceItem{
-				ID:      id,
-				Kind:    "media",
-				Title:   title,
-				Summary: mediaDurationSummary(durationSeconds),
+				ID:        id,
+				Kind:      "media",
+				Title:     title,
+				LibraryID: libraryID,
+				Summary:   mediaDurationSummary(durationSeconds),
 			}})
 		}
 		if err := rows.Err(); err != nil {
@@ -337,6 +343,7 @@ func (s *Store) fuzzySearchEntitiesLocked(ctx context.Context, visible []Library
 			Kind:       "entity",
 			Title:      title,
 			Restricted: restricted[libraryID],
+			LibraryID:  libraryID,
 		}})
 	}
 	if err := rows.Err(); err != nil {

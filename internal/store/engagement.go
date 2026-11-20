@@ -595,7 +595,9 @@ func (s *Store) filteredEngagementPage(ctx context.Context, query string, args [
 				skipped++
 				continue
 			}
-			items = append(items, c.build(media))
+			item := c.build(media)
+			item.LibraryID = media.LibraryID
+			items = append(items, item)
 			if limit > 0 && len(items) >= limit {
 				return true, nil
 			}
@@ -689,7 +691,7 @@ func (s *Store) watchedByAnyProfileSQL(ctx context.Context, value string, filter
 	args = append(args, certArgs...)
 	args = append(args, limit, offset)
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT m.id, m.title, m.duration_seconds
+		SELECT m.id, m.title, m.library_id, m.duration_seconds
 		FROM media m
 		WHERE m.library_id IN (`+strings.Join(libraryPlaceholders, ", ")+`)
 		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+certClause+bandClause+`
@@ -703,14 +705,15 @@ func (s *Store) watchedByAnyProfileSQL(ctx context.Context, value string, filter
 	items := []SourceItem{}
 	for rows.Next() {
 		var media Media
-		if err := rows.Scan(&media.ID, &media.Title, &media.DurationSeconds); err != nil {
+		if err := rows.Scan(&media.ID, &media.Title, &media.LibraryID, &media.DurationSeconds); err != nil {
 			return nil, err
 		}
 		items = append(items, SourceItem{
-			ID:      media.ID,
-			Kind:    "media",
-			Title:   media.Title,
-			Summary: mediaDurationSummary(media.DurationSeconds),
+			ID:        media.ID,
+			Kind:      "media",
+			Title:     media.Title,
+			LibraryID: media.LibraryID,
+			Summary:   mediaDurationSummary(media.DurationSeconds),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -986,6 +989,7 @@ type ListeningStatsItem struct {
 	Kind      string
 	Title     string
 	PlayCount int
+	libraryID LibraryID
 }
 
 type ListeningPeriodSummary struct {
@@ -996,6 +1000,7 @@ type ListeningPeriodSummary struct {
 }
 
 type listeningPlay struct {
+	libraryID    LibraryID
 	mediaID      MediaID
 	title        string
 	playCount    int
@@ -1006,6 +1011,15 @@ type listeningPlay struct {
 // one Profile. artistKinds/albumKinds are plugin-owned entity kind names; Core
 // groups only by those opaque strings.
 func (s *Store) ListeningStatsFor(ctx context.Context, profileID ProfileID, filter LibraryFilter, period string, artistKinds, albumKinds []string, limit int) (ListeningStats, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return ListeningStats{}, err
+	}
+	return s.listeningStatsForLocked(ctx, profileID, filter, period, artistKinds, albumKinds, limit)
+}
+
+func (s *Store) listeningStatsForLocked(ctx context.Context, profileID ProfileID, filter LibraryFilter, period string, artistKinds, albumKinds []string, limit int) (ListeningStats, error) {
 	if profileID == "" {
 		return ListeningStats{}, ValidationError("profile ID is required")
 	}
@@ -1016,12 +1030,6 @@ func (s *Store) ListeningStatsFor(ctx context.Context, profileID ProfileID, filt
 		limit = 50
 	}
 	startMS, label := listeningPeriodStart(period)
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return ListeningStats{}, err
-	}
 
 	plays, err := s.visibleListeningPlaysLocked(ctx, profileID, filter, startMS)
 	if err != nil {
@@ -1044,17 +1052,25 @@ func (s *Store) ListeningStatsFor(ctx context.Context, profileID ProfileID, filt
 		trackSeen[p.mediaID] = true
 		if len(stats.TopTracks) < limit {
 			stats.TopTracks = append(stats.TopTracks, ListeningStatsItem{
-				ID: string(p.mediaID), Kind: "track", Title: p.title, PlayCount: p.playCount,
+				ID: string(p.mediaID), Kind: "track", Title: p.title, PlayCount: p.playCount, libraryID: p.libraryID,
 			})
 		}
 	}
 	stats.Summary.TrackCount = len(trackSeen)
 
-	stats.TopArtists, stats.Summary.ArtistCount, err = s.topListeningEntitiesLocked(ctx, plays, artistKinds, "artist", limit)
+	visible, err := s.visibleLibraryIDsLocked(ctx, filter)
 	if err != nil {
 		return ListeningStats{}, err
 	}
-	stats.TopAlbums, stats.Summary.AlbumCount, err = s.topListeningEntitiesLocked(ctx, plays, albumKinds, "album", limit)
+	libraries := make(map[LibraryID]bool, len(visible))
+	for _, id := range visible {
+		libraries[id] = true
+	}
+	stats.TopArtists, stats.Summary.ArtistCount, err = s.topListeningEntitiesLocked(ctx, libraries, plays, artistKinds, "artist", limit)
+	if err != nil {
+		return ListeningStats{}, err
+	}
+	stats.TopAlbums, stats.Summary.AlbumCount, err = s.topListeningEntitiesLocked(ctx, libraries, plays, albumKinds, "album", limit)
 	if err != nil {
 		return ListeningStats{}, err
 	}
@@ -1070,7 +1086,7 @@ func (s *Store) listeningStatsSourceItems(ctx context.Context, profileID Profile
 	if query.Kind == "top-albums" && strings.TrimSpace(query.EntityKind) != "" {
 		albumKinds = []string{strings.TrimSpace(query.EntityKind)}
 	}
-	stats, err := s.ListeningStatsFor(ctx, profileID, filter, query.Value, artistKinds, albumKinds, limit+offset)
+	stats, err := s.listeningStatsForLocked(ctx, profileID, filter, query.Value, artistKinds, albumKinds, limit+offset)
 	if err != nil {
 		return nil, err
 	}
@@ -1107,7 +1123,7 @@ func listeningStatsSourceItemsFrom(stats []ListeningStatsItem) []SourceItem {
 		if item.PlayCount != 1 {
 			summary = strconv.Itoa(item.PlayCount) + " plays"
 		}
-		items[i] = SourceItem{ID: MediaID(item.ID), Kind: item.Kind, Title: item.Title, Summary: summary}
+		items[i] = SourceItem{ID: MediaID(item.ID), Kind: item.Kind, Title: item.Title, LibraryID: item.libraryID, Summary: summary}
 	}
 	return items
 }
@@ -1174,13 +1190,13 @@ func (s *Store) visibleListeningPlaysLocked(ctx context.Context, profileID Profi
 			continue
 		}
 		plays = append(plays, listeningPlay{
-			mediaID: r.mediaID, title: media.Title, playCount: r.playCount, lastPlayedMS: r.lastPlayedMS,
+			mediaID: r.mediaID, libraryID: media.LibraryID, title: media.Title, playCount: r.playCount, lastPlayedMS: r.lastPlayedMS,
 		})
 	}
 	return plays, nil
 }
 
-func (s *Store) topListeningEntitiesLocked(ctx context.Context, plays []listeningPlay, kinds []string, kindLabel string, limit int) ([]ListeningStatsItem, int, error) {
+func (s *Store) topListeningEntitiesLocked(ctx context.Context, libraries map[LibraryID]bool, plays []listeningPlay, kinds []string, kindLabel string, limit int) ([]ListeningStatsItem, int, error) {
 	if len(plays) == 0 || len(kinds) == 0 {
 		return []ListeningStatsItem{}, 0, nil
 	}
@@ -1202,6 +1218,7 @@ func (s *Store) topListeningEntitiesLocked(ctx context.Context, plays []listenin
 
 	type agg struct {
 		id           EntityID
+		libraryID    LibraryID
 		title        string
 		playCount    int
 		lastPlayedMS int64
@@ -1217,10 +1234,10 @@ func (s *Store) topListeningEntitiesLocked(ctx context.Context, plays []listenin
 			args[i] = id
 		}
 		rows, err := s.catalogR.QueryContext(ctx, `
-			SELECT e.id, e.kind, e.title, er.to_media_id
+			SELECT e.id, e.kind, e.title, e.library_id, er.to_media_id
 			FROM entity_relation er
 			JOIN entity e ON e.id = er.from_entity_id
-			WHERE er.to_media_id IN (`+strings.Join(placeholders, ", ")+`)
+			WHERE e.trashed_at_ms IS NULL AND er.to_media_id IN (`+strings.Join(placeholders, ", ")+`)
 		`, args...)
 		if err != nil {
 			return nil, 0, err
@@ -1228,18 +1245,19 @@ func (s *Store) topListeningEntitiesLocked(ctx context.Context, plays []listenin
 		for rows.Next() {
 			var entityID EntityID
 			var kind, title string
+			var libraryID LibraryID
 			var mediaID MediaID
-			if err := rows.Scan(&entityID, &kind, &title, &mediaID); err != nil {
+			if err := rows.Scan(&entityID, &kind, &title, &libraryID, &mediaID); err != nil {
 				rows.Close()
 				return nil, 0, err
 			}
-			if !kindSet[kind] {
+			if !kindSet[kind] || !libraries[libraryID] {
 				continue
 			}
 			p := playByMedia[mediaID]
 			a := byEntity[entityID]
 			if a == nil {
-				a = &agg{id: entityID, title: title}
+				a = &agg{id: entityID, libraryID: libraryID, title: title}
 				byEntity[entityID] = a
 			}
 			a.playCount += p.playCount
@@ -1271,7 +1289,7 @@ func (s *Store) topListeningEntitiesLocked(ctx context.Context, plays []listenin
 		if len(out) >= limit {
 			break
 		}
-		out = append(out, ListeningStatsItem{ID: string(e.id), Kind: kindLabel, Title: e.title, PlayCount: e.playCount})
+		out = append(out, ListeningStatsItem{ID: string(e.id), Kind: kindLabel, Title: e.title, PlayCount: e.playCount, libraryID: e.libraryID})
 	}
 	return out, len(entities), nil
 }
