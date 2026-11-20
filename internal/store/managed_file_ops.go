@@ -529,8 +529,10 @@ func (s *Store) removeUncatalogedManagedTargetLocked(ctx context.Context, librar
 		slog.Warn("managed import cleanup kept the admitted file", "path", target, "error", err)
 		return
 	}
-	// Protect a live row at the path in any library on this catalog plane.
-	_, err = samePathMediaFileSQL(ctx, plane.reader, "", target, "", "", false)
+	var cataloged int
+	err = plane.reader.QueryRowContext(ctx,
+		"SELECT 1 FROM media_file WHERE path = ? AND missing_at_ms IS NULL LIMIT 1", target,
+	).Scan(&cataloged)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		_ = os.Remove(target)

@@ -52,9 +52,8 @@ and its Media SHALL remain unchanged.
 
 #### Scenario: Recovery sees a committed admission
 
-- **WHEN** convert recovery checks its journal destination or managed import checks for an
-  already committed admission during cleanup
-- **THEN** it uses the same same-path lookup in live-only mode, since the admission wrote its
+- **WHEN** convert recovery checks its journal destination
+- **THEN** it uses the same path lookup in live-only mode, since the admission wrote its
   identity before recovery and recovery has no staged fingerprint to compare
 
 ## ADDED Requirements
