@@ -100,10 +100,12 @@ vi.mock("../player/watchPartyStore", async (importOriginal) => ({
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((finish) => {
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((finish, fail) => {
     resolve = finish;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function playerState(overrides: Partial<PlayerState>): PlayerState {
@@ -270,12 +272,14 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
   );
 
   it.each([
-    { order: "timeupdate first", transition: null, target: 30 },
-    { order: "seeked first", transition: 30_000, target: 30 },
-    { order: "timeupdate first", transition: 45_000, target: 45 },
+    { order: "timeupdate first", transition: null, reject: false, target: 30 },
+    { order: "seeked first", transition: 30_000, reject: false, target: 30 },
+    { order: "timeupdate first", transition: 45_000, reject: false, target: 45 },
+    { order: "timeupdate first", transition: null, reject: true, target: 10 },
+    { order: "timeupdate first", transition: 45_000, reject: true, target: 45 },
   ])(
-    "sends only the auto-skip when a scrub lands in an intro ($order, stream position $transition)",
-    async ({ order, transition, target }) => {
+    "resolves a scrub into an intro ($order, stream position $transition, rejected $reject)",
+    async ({ order, transition, reject, target }) => {
       vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
       vi.mocked(watchPartyTransport).mockClear();
       vi.mocked(fetchClientPrefs).mockResolvedValue([{ key: "autoskip.intro", value: "on" }]);
@@ -290,6 +294,13 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
       expect(await startWatchParty("media-alpha")).toBe(true);
       const response = deferred<Awaited<ReturnType<typeof watchPartyAutoSkip>>>();
       vi.mocked(watchPartyAutoSkip).mockReturnValueOnce(response.promise);
+      if (reject && transition === null) {
+        vi.mocked(watchPartyTransport).mockImplementationOnce(async ({ item, positionMS }) => ({
+          item,
+          positionMS,
+          presentAtMS: 0,
+        }));
+      }
       await act(async () => {
         renderPlayer(
           playerState({
@@ -338,16 +349,27 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
         if (transition === 30_000) expect(video.currentTime).toBe(30);
       }
       await act(async () => {
-        response.resolve({
-          partyID: "p1",
-          applied: true,
-          item: "media-alpha",
-          positionMS: 30_000,
-          presentAtMS: 0,
-        });
+        if (reject) response.reject(new Error("Network unavailable"));
+        else
+          response.resolve({
+            partyID: "p1",
+            applied: true,
+            item: "media-alpha",
+            positionMS: 30_000,
+            presentAtMS: 0,
+          });
       });
       act(() => vi.advanceTimersByTime(500));
-      expect(watchPartyTransport).not.toHaveBeenCalled();
+      if (reject && transition === null) {
+        expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+          partyID: "p1",
+          item: "media-alpha",
+          positionMS: 10_000,
+          paused: true,
+        });
+      } else {
+        expect(watchPartyTransport).not.toHaveBeenCalled();
+      }
       expect(video.currentTime).toBe(target);
     },
   );

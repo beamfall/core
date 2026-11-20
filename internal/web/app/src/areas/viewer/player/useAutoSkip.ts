@@ -7,7 +7,13 @@ import {
   autoSkipSegmentKey,
 } from "../lib/transport";
 import { markViewerIntent } from "./viewerIntent";
-import { getWatchParty, type PartyAutoSkipOutcome, sendPartyAutoSkip } from "./watchPartyStore";
+import {
+  getWatchParty,
+  hasPartyTransportPending,
+  type PartyAutoSkipOutcome,
+  partyRewoundIntoSegment,
+  sendPartyAutoSkip,
+} from "./watchPartyStore";
 
 export type PartySeekAutoSkip = (
   video: HTMLVideoElement,
@@ -105,7 +111,6 @@ export function useAutoSkip({
     if (!attached || !video) return;
     let cancelled = false;
     let seeking = false;
-    let pendingSkip: { key: string; request: Promise<PartyAutoSkipOutcome> } | null = null;
 
     const showSkip = (segment: AutoSkipSegment, partyID: string) => {
       undoSegmentRef.current = segment;
@@ -113,18 +118,13 @@ export function useAutoSkip({
       setSkipped(segment);
     };
 
-    const trySkip = () => {
+    const trySkip = (fromSeek = false) => {
       const scale = songScaleRef.current;
       const segment = autoSkipSegmentAt(
         markersRef.current,
         video.currentTime * scale,
         prefsRef.current,
       );
-      if (pendingSkip) {
-        return segment && autoSkipSegmentKey(segment) === pendingSkip.key
-          ? pendingSkip.request
-          : undefined;
-      }
       if (!segment) {
         // A genuine exit-without-undo: the segment is no longer under us and
         // we didn't just seek it ourselves. Clear the guard so a later
@@ -136,22 +136,25 @@ export function useAutoSkip({
       if (suppressedKeyRef.current === key) return;
       const party = getWatchParty();
       if (party.status === "starting" || party.status === "joining") return;
-      suppressedKeyRef.current = key;
       if (party.status === "active") {
-        const target = segment.endSeconds * 1000;
+        const target = Math.round(segment.endSeconds * 1000);
+        if (partyRewoundIntoSegment(mediaID, Math.round(segment.startSeconds * 1000), target)) {
+          return;
+        }
+        // A playback tick must not displace a newer queued scrub.
+        if (!fromSeek && hasPartyTransportPending()) return;
+        suppressedKeyRef.current = key;
         const request = party.lead
           ? party.isHost && autoSkipLead?.(target)
           : sendPartyAutoSkip(mediaID, target);
         if (!request) return;
-        const handled = request.then((outcome) => {
-          pendingSkip = null;
+        return request.then((outcome) => {
           if (cancelled || getWatchParty().partyID !== party.partyID) return "unconfirmed";
           if (outcome === "applied") showSkip(segment, party.partyID);
           return outcome;
         });
-        pendingSkip = { key, request: handled };
-        return handled;
       }
+      suppressedKeyRef.current = key;
       ignoreNextTickRef.current = true;
       video.currentTime = segment.endSeconds / scale;
       showSkip(segment, "");
@@ -174,7 +177,7 @@ export function useAutoSkip({
       void trySkip();
     };
     if (partySeekAutoSkip) {
-      partySeekAutoSkip.current = (element) => (element === video ? trySkip() : undefined);
+      partySeekAutoSkip.current = (element) => (element === video ? trySkip(true) : undefined);
     }
 
     video.addEventListener("timeupdate", onTime);

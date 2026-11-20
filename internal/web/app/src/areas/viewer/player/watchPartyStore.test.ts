@@ -12,6 +12,7 @@ import {
   reportWatchPartyDrift,
   reportWatchPartyLeadPosition,
   requestWatchPartyTransport,
+  watchPartyAutoSkip,
   watchPartyTransport,
 } from "@/lib/graphql";
 import {
@@ -31,6 +32,7 @@ import {
   reportPartyDrift,
   resetWatchPartyForTest,
   resumeFollowedParty,
+  sendPartyAutoSkip,
   sendPartyTransport,
   startWatchParty,
   watchForLeadParty,
@@ -55,6 +57,7 @@ vi.mock("@/lib/graphql", () => ({
   reportWatchPartyDrift: vi.fn(),
   reportWatchPartyLeadPosition: vi.fn(),
   requestWatchPartyTransport: vi.fn(),
+  watchPartyAutoSkip: vi.fn(),
   watchPartyTransport: vi.fn(),
 }));
 
@@ -488,28 +491,73 @@ describe("races", () => {
     expect(getWatchParty().timeline).toMatchObject({ presentAtMS: 10_100, paused: true });
   });
 
-  it("drops an earlier host seek response that arrives after the latest response", async () => {
-    vi.mocked(createWatchParty).mockResolvedValue({
-      partyID: "p1",
-      content: "m1",
-      relaxed: true,
-      members: [],
-    });
-    await startWatchParty("m1");
-    type Anchor = Awaited<ReturnType<typeof watchPartyTransport>>;
-    let resolveFirst!: (anchor: Anchor) => void;
-    let resolveSecond!: (anchor: Anchor) => void;
-    vi.mocked(watchPartyTransport)
-      .mockReturnValueOnce(new Promise((finish) => (resolveFirst = finish)))
-      .mockReturnValueOnce(new Promise((finish) => (resolveSecond = finish)));
-    const firstSeek = sendPartyTransport("m1", 30_000, true);
-    const secondSeek = sendPartyTransport("m1", 60_000, true);
-    resolveSecond({ item: "m1", positionMS: 60_000, presentAtMS: 10_200 });
-    await secondSeek;
-    resolveFirst({ item: "m1", positionMS: 30_000, presentAtMS: 10_100 });
-    await firstSeek;
-    expect(getWatchParty().timeline?.positionMS).toBe(60_000);
-  });
+  it.each(["seek", "auto-skip"])(
+    "serializes scrubs after an in-flight %s for the other member",
+    async (kind) => {
+      vi.mocked(createWatchParty).mockResolvedValue({
+        partyID: "p1",
+        content: "m1",
+        relaxed: true,
+        members: [],
+      });
+      await startWatchParty("m1");
+      const hostStream = vi.mocked(subscribeEvents).mock.lastCall?.[0];
+      vi.resetModules();
+      const member = await import("./watchPartyStore");
+      expect(member.getWatchParty().status).toBe("idle");
+      vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+        deliver({ groupID: "p1", signal: "roster", item: "m1", paused: true });
+        return { partyID: "p1", item: "m1", positionMS: 0, presentAtMS: 0 };
+      });
+      expect(await member.joinWatchParty("p1")).toBe("m1");
+      let releaseFirst!: () => void;
+      const firstInFlight = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const publish = (item: string, positionMS: number, paused: boolean) => {
+        const anchor = { item, positionMS, presentAtMS: 10_000 };
+        const payload = { groupID: "p1", signal: "transition", paused, ...anchor };
+        hostStream?.({ type: "group.sync", data: JSON.stringify({ payload }) } as never);
+        deliver(payload);
+        return anchor;
+      };
+      vi.mocked(watchPartyTransport).mockImplementation(async ({ item, positionMS, paused }) => {
+        if (positionMS === 30_000) await firstInFlight;
+        return publish(item, positionMS, paused);
+      });
+      vi.mocked(watchPartyAutoSkip).mockImplementationOnce(async ({ item, positionMS }) => {
+        const anchor = publish(item, positionMS, true);
+        await firstInFlight;
+        return { ...anchor, partyID: "p1", applied: true };
+      });
+      const autoSkip = kind === "auto-skip";
+      try {
+        const first = autoSkip
+          ? sendPartyAutoSkip("m1", 30_000)
+          : sendPartyTransport("m1", 30_000, true);
+        const middle = sendPartyTransport("m1", 60_000, true);
+        const latest = sendPartyTransport("m1", 90_000, true);
+        if (autoSkip) {
+          // The stream can acknowledge playback while the HTTP slot is still occupied.
+          expect(await first).toBe("applied");
+        }
+        expect(watchPartyTransport).toHaveBeenCalledTimes(autoSkip ? 0 : 1);
+        expect(member.getWatchParty().timeline?.positionMS).toBe(autoSkip ? 30_000 : 0);
+        releaseFirst();
+        await expect(middle).resolves.toBe(false);
+        await expect(latest).resolves.toBe(true);
+        expect(vi.mocked(watchPartyTransport).mock.calls.map(([v]) => v.positionMS)).toEqual(
+          autoSkip ? [90_000] : [30_000, 90_000],
+        );
+        expect(member.getWatchParty().timeline?.positionMS).toBe(90_000);
+        expect(getWatchParty().timeline?.positionMS).toBe(90_000);
+      } finally {
+        releaseFirst();
+        member.resetWatchPartyForTest();
+        vi.mocked(watchPartyAutoSkip).mockReset();
+      }
+    },
+  );
 });
 
 describe("host leave, end and page exit (CORE-1763)", () => {

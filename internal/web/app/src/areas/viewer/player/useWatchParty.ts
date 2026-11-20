@@ -149,7 +149,7 @@ export function useWatchParty({
   // from before the mount (the notification's Join click) is not counted.
   const mountedAt = useRef(performance.now());
   const lastCorrection = useRef(Number.NEGATIVE_INFINITY);
-  const pendingLeadSkip = useRef<HTMLVideoElement | null>(null);
+  const pendingLeadSkip = useRef<{ video: HTMLVideoElement } | null>(null);
   const leadAutoSkip = useRef<number | null>(null);
   const leadFrame = useRef<FrameSample | null>(null);
   const localSeek = useRef<LocalSeek | null>(null);
@@ -397,7 +397,7 @@ export function useWatchParty({
     const report = () => {
       // A stalled player has no position to report: its clock is not running.
       if (
-        pendingLeadSkip.current === video ||
+        pendingLeadSkip.current?.video === video ||
         video.paused ||
         video.seeking ||
         video.readyState < 3
@@ -415,7 +415,7 @@ export function useWatchParty({
     const onStall = () => {
       const tl = getWatchParty().timeline;
       if (
-        pendingLeadSkip.current === video ||
+        pendingLeadSkip.current?.video === video ||
         !tl ||
         tl.paused ||
         tl.item !== mediaIdRef.current ||
@@ -427,7 +427,7 @@ export function useWatchParty({
     const onPlaying = () => {
       const tl = getWatchParty().timeline;
       if (
-        pendingLeadSkip.current === video ||
+        pendingLeadSkip.current?.video === video ||
         !tl ||
         !tl.paused ||
         tl.item !== mediaIdRef.current ||
@@ -604,8 +604,8 @@ export function useWatchParty({
         if (localSeek.current !== skipping) return;
         const latest = getWatchParty();
         if (latest.partyID !== skipping.partyID || latest.timeline?.item !== skipping.item) return;
-        if (outcome === "denied") {
-          // A member without auto-skip permission can still request their scrub.
+        if (outcome === "denied" || outcome === "failed") {
+          // A refused or failed skip can still leave the original scrub to send.
           submitLocal(event.type, local, paused, skipping);
         } else {
           localSeek.current = null;
@@ -666,9 +666,10 @@ export function useWatchParty({
       const { partyID, timeline, lead, isHost } = getWatchParty();
       if (!video || !lead || !isHost || !timeline || timeline.item !== mediaIdRef.current)
         return "unconfirmed";
-      pendingLeadSkip.current = video;
+      const pending = { video };
+      pendingLeadSkip.current = pending;
       const outcome = await sendPartyAutoSkip(timeline.item, positionMS);
-      if (pendingLeadSkip.current === video) pendingLeadSkip.current = null;
+      if (pendingLeadSkip.current === pending) pendingLeadSkip.current = null;
       if (outcome !== "applied") return outcome;
       const latest = getWatchParty();
       if (

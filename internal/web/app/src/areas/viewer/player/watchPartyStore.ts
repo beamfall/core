@@ -122,11 +122,60 @@ let stopPartyLifetime: (() => void) | null = null;
 let rosterWaiters: Array<() => void> = [];
 // Bumped by every reset, so a start or join that a leave overtook knows it is stale.
 let generation = 0;
-// Counts timeline frames, so a host's transport response older than a frame is dropped.
-let timelineFrames = 0;
-// Concurrent host mutations can also return in reverse order, without a frame.
-let transportSequence = 0;
-let lastTransportResponse = 0;
+// The latest shared rewind lets each member recognize a return into a segment.
+let rewind: { fromMS: number; toMS: number } | null = null;
+
+interface TransportWork {
+  run: () => Promise<void>;
+  supersede: () => void;
+}
+
+interface TransportQueue {
+  latest: TransportWork | null;
+  pending: TransportWork | null;
+}
+
+const transportQueues = new Map<string, TransportQueue>();
+
+function runTransport(partyID: string, queue: TransportQueue, work: TransportWork): void {
+  void work.run().finally(() => {
+    const next = queue.pending;
+    queue.pending = null;
+    if (next) runTransport(partyID, queue, next);
+    else transportQueues.delete(partyID);
+  });
+}
+
+// A stream acknowledgement can settle playback early. Keep the slot until
+// the mutation itself has settled so the server sees intents in order.
+function enqueueTransport<T>(
+  superseded: T,
+  run: (settle: (result: T) => void, isLatest: () => boolean) => Promise<void>,
+): Promise<T> {
+  const { partyID } = state;
+  const gen = generation;
+  const running = transportQueues.get(partyID);
+  const queue = running ?? { latest: null, pending: null };
+  return new Promise((settle) => {
+    const work: TransportWork = {
+      run: () => run(settle, () => gen === generation && queue.latest === work),
+      supersede: () => settle(superseded),
+    };
+    queue.latest = work;
+    if (running) {
+      queue.pending?.supersede();
+      queue.pending = work;
+    } else {
+      transportQueues.set(partyID, queue);
+      runTransport(partyID, queue, work);
+    }
+  });
+}
+
+export function hasPartyTransportPending(): boolean {
+  return transportQueues.has(state.partyID);
+}
+
 /** Date.now() of the last drift report; the rate bound counts from it. */
 let lastDriftReport = Number.NEGATIVE_INFINITY;
 
@@ -179,6 +228,7 @@ function noteFollowing(): void {
 }
 
 function set(patch: Partial<WatchPartyState>): void {
+  if (patch.timeline && patch.timeline !== state.timeline) noteTimeline(patch.timeline);
   state = { ...state, ...patch };
   for (const listener of listeners) listener();
 }
@@ -190,6 +240,31 @@ function subscribe(listener: () => void): () => void {
 
 export function getWatchParty(): WatchPartyState {
   return state;
+}
+
+function noteTimeline(next: PartyTimeline): void {
+  const previous = state.timeline;
+  if (previous?.item !== next.item) {
+    rewind = null;
+    return;
+  }
+  const fromMS = expectedPositionMS(previous, Math.min(partyNowMS(), next.presentAtMS));
+  const toMS = next.positionMS;
+  // Play, pause and roster updates can restate the anchor during the rewind visit.
+  if (rewind && fromMS < rewind.fromMS && toMS >= rewind.toMS && toMS < rewind.fromMS) return;
+  rewind = toMS < fromMS ? { fromMS, toMS } : null;
+}
+
+/** A shared move from past this segment back into it suppresses this visit. */
+export function partyRewoundIntoSegment(item: string, startMS: number, endMS: number): boolean {
+  return (
+    rewind !== null &&
+    state.timeline?.item === item &&
+    rewind.toMS >= startMS &&
+    rewind.toMS < endMS &&
+    rewind.fromMS >= endMS &&
+    state.timeline.positionMS < endMS
+  );
 }
 
 /** The current party state, re-rendering on every change. */
@@ -275,7 +350,6 @@ function applyFrame(frame: GroupSyncFrame): void {
   if (lead && !state.lead) patch.lead = true;
   if (frame.item && !(frame.signal === "roster" && sameTimeline(state.timeline, frame, lead))) {
     patch.timeline = timelineOf(frame, lead);
-    timelineFrames++;
   }
   if (frame.signal === "roster") {
     const members = frame.members ?? state.members;
@@ -427,6 +501,12 @@ function reset(patch: Partial<WatchPartyState> = {}): void {
   clockTimer = null;
   clock = null;
   generation++;
+  const transport = transportQueues.get(state.partyID);
+  if (transport?.pending) {
+    transport.pending.supersede();
+    transport.pending = null;
+  }
+  rewind = null;
   lastDriftReport = Number.NEGATIVE_INFINITY;
   const waiters = rosterWaiters;
   rosterWaiters = [];
@@ -660,99 +740,106 @@ export async function inviteToParty(displayName: string): Promise<boolean> {
  * Put this viewer's play, pause or seek on the shared timeline: the host's is
  * authoritative, a member's is a request the relaxed party applies.
  */
-export async function sendPartyTransport(
+export function sendPartyTransport(
   item: string,
   positionMS: number,
   paused: boolean,
 ): Promise<boolean> {
-  if (state.status !== "active") return false;
-  // A follower screen has no transport: the server refuses it.
-  if (state.lead && !state.isHost) return false;
+  if (state.status !== "active" || (state.lead && !state.isHost)) return Promise.resolve(false);
   const partyID = state.partyID;
   const vars = { partyID, item, positionMS: Math.max(0, Math.round(positionMS)), paused };
   const gen = generation;
-  const frames = timelineFrames;
-  try {
-    if (state.isHost) {
-      const sequence = ++transportSequence;
-      const anchor = await watchPartyTransport(vars);
-      // The stream's own transition may already have overtaken this response.
-      if (gen === generation && frames === timelineFrames && sequence > lastTransportResponse) {
-        lastTransportResponse = sequence;
-        const rate = state.timeline?.ratePermille;
-        set({
-          timeline: {
-            ...anchor,
-            paused,
-            ...(state.lead ? { lead: true } : {}),
-            ...(state.lead && rate !== undefined ? { ratePermille: rate } : {}),
-          },
-        });
-      }
-      return gen === generation;
+  return enqueueTransport(false, async (settle, isLatest) => {
+    if (state.lead && !state.isHost) {
+      settle(false);
+      return;
     }
-    const request = await requestWatchPartyTransport(vars);
-    return gen === generation && request.approved;
-  } catch (err) {
-    if (gen === generation) set(failure(err));
-    return false;
-  }
+    const timeline = state.timeline;
+    try {
+      if (state.isHost) {
+        const anchor = await watchPartyTransport(vars);
+        // The stream's own transition may already have overtaken this response.
+        if (gen === generation && state.timeline === timeline) {
+          const rate = timeline?.ratePermille;
+          set({
+            timeline: {
+              ...anchor,
+              paused,
+              ...(state.lead ? { lead: true } : {}),
+              ...(state.lead && rate !== undefined ? { ratePermille: rate } : {}),
+            },
+          });
+        }
+        settle(gen === generation);
+      } else {
+        const request = await requestWatchPartyTransport(vars);
+        settle(gen === generation && request.approved);
+      }
+    } catch (err) {
+      if (isLatest()) set(failure(err));
+      settle(false);
+    }
+  });
 }
 
-export type PartyAutoSkipOutcome = "applied" | "denied" | "unconfirmed";
+export type PartyAutoSkipOutcome = "applied" | "denied" | "failed" | "unconfirmed";
 
 /** The server decides whether the auto-skip can move the shared timeline. */
-export async function sendPartyAutoSkip(
-  item: string,
-  positionMS: number,
-): Promise<PartyAutoSkipOutcome> {
-  const { partyID, status, timeline, lead, isHost } = state;
-  if (status !== "active" || !timeline || timeline.item !== item || (lead && !isHost)) {
-    return "unconfirmed";
+export function sendPartyAutoSkip(item: string, positionMS: number): Promise<PartyAutoSkipOutcome> {
+  if (state.status !== "active" || state.timeline?.item !== item || (state.lead && !state.isHost)) {
+    return Promise.resolve("unconfirmed");
   }
-  const gen = generation;
   const target = Math.round(positionMS);
-  let stopTracking: (() => void) | undefined;
-  let acknowledged = false;
-  // Playback can follow the skip as soon as the transition arrives, even if
-  // the HTTP response is still on the way.
-  const transition = new Promise<PartyAutoSkipOutcome>((resolve) => {
-    stopTracking = subscribe(() => {
+  return enqueueTransport<PartyAutoSkipOutcome>("unconfirmed", async (settle, isLatest) => {
+    const { partyID, timeline, lead, isHost } = state;
+    if (timeline?.item !== item || (lead && !isHost)) {
+      settle("unconfirmed");
+      return;
+    }
+    const gen = generation;
+    let acknowledged = false;
+    // Playback can follow the skip as soon as the transition arrives, even if
+    // the HTTP response is still on the way.
+    const stopTracking = subscribe(() => {
       const latest = state.timeline;
-      if (gen !== generation || latest?.item !== item) {
-        resolve("unconfirmed");
+      if (!isLatest() || latest?.item !== item) {
+        settle("unconfirmed");
       } else if (latest !== timeline && latest.positionMS === target) {
         acknowledged = true;
-        resolve("applied");
+        settle("applied");
       }
     });
-  });
-  const response = watchPartyAutoSkip({ partyID, item, positionMS: target })
-    .then((result): PartyAutoSkipOutcome => {
+    try {
+      const result = await watchPartyAutoSkip({ partyID, item, positionMS: target });
       const latest = state.timeline;
       if (acknowledged || gen !== generation || latest?.item !== item) {
-        return "unconfirmed";
+        settle("unconfirmed");
+        return;
       }
-      if (!result.applied) return "denied";
+      if (!result.applied) {
+        settle(isLatest() ? "denied" : "unconfirmed");
+        return;
+      }
       // A lead transition uses the server's immediate clock. Its response can
       // supersede an earlier heartbeat, but must never rewind a later anchor.
       if (latest !== timeline && (!lead || latest.presentAtMS >= result.presentAtMS)) {
-        return latest.positionMS === result.positionMS && latest.presentAtMS === result.presentAtMS
-          ? "applied"
-          : "unconfirmed";
+        const matches =
+          latest.positionMS === result.positionMS && latest.presentAtMS === result.presentAtMS;
+        settle(isLatest() && matches ? "applied" : "unconfirmed");
+        return;
       }
       set({
         timeline: { ...latest, positionMS: result.positionMS, presentAtMS: result.presentAtMS },
       });
-      return "applied";
-    })
-    // An automatic skip is optional. Leave playback on the shared timeline.
-    .catch((): PartyAutoSkipOutcome => "unconfirmed");
-  try {
-    return await Promise.race([transition, response]);
-  } finally {
-    stopTracking?.();
-  }
+      settle(isLatest() ? "applied" : "unconfirmed");
+    } catch {
+      // Only an unchanged anchor leaves the scrub that triggered this skip
+      // eligible for ordinary transport.
+      settle(isLatest() && state.timeline === timeline ? "failed" : "unconfirmed");
+    } finally {
+      stopTracking();
+    }
+  });
 }
 
 /**

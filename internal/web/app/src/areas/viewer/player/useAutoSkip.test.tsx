@@ -1,8 +1,23 @@
 import { act, renderHook } from "@testing-library/react";
 import { createRef } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as api from "@/lib/api";
+import * as graphql from "@/lib/graphql";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import { useAutoSkip } from "./useAutoSkip";
+import * as host from "./watchPartyStore";
+
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  subscribeEvents: vi.fn(),
+}));
+vi.mock("@/lib/graphql", () => ({
+  acceptWatchParty: vi.fn(),
+  calibrateWatchPartyClock: vi.fn(),
+  createWatchParty: vi.fn(),
+  watchPartyAutoSkip: vi.fn(),
+  watchPartyTransport: vi.fn(),
+}));
 
 // A minimal fake <video> — just enough of the EventTarget + currentTime
 // surface useAutoSkip drives (mirrors useMediaSession.test.tsx's FakeVideo).
@@ -31,7 +46,7 @@ const markers: PlaybackMarker[] = [
 
 type Props = Parameters<typeof useAutoSkip>[0];
 
-function setup(over: Partial<Props> = {}) {
+function setup(over: Partial<Props> = {}, useSkip = useAutoSkip) {
   const video = new FakeVideo();
   const ref = createRef<HTMLVideoElement>();
   (ref as { current: unknown }).current = video;
@@ -42,7 +57,7 @@ function setup(over: Partial<Props> = {}) {
     prefs: { intro: true, recap: true, credits: true },
     ...over,
   } as Props;
-  const view = renderHook((props: Props) => useAutoSkip(props), { initialProps });
+  const view = renderHook((props: Props) => useSkip(props), { initialProps });
   return { video, view, initialProps };
 }
 
@@ -122,5 +137,82 @@ describe("useAutoSkip", () => {
     // auto-skip immediately rather than staying suppressed from the old one.
     tick(video, 10);
     expect(video.currentTime).toBe(30);
+  });
+
+  it("lets two auto-skip-enabled party members watch the segment after Undo", async () => {
+    const streams = new Set<Parameters<typeof api.subscribeEvents>[0]>();
+    const stream = vi.spyOn(api, "subscribeEvents").mockImplementation((listener) => {
+      streams.add(listener);
+      return () => streams.delete(listener);
+    });
+    // Load a second store and hook as if the follower were in another browser.
+    vi.resetModules();
+    const follower = await import("./watchPartyStore");
+    const { useAutoSkip: useFollowerAutoSkip } = await import("./useAutoSkip");
+    const anchor = { partyID: "p1", item: "m1", positionMS: 0, presentAtMS: 0 };
+    const publish = (positionMS: number, signal = "transition") => {
+      const event = new MessageEvent("group.sync", {
+        data: JSON.stringify({
+          payload: { ...anchor, groupID: "p1", positionMS, paused: true, signal },
+        }),
+      });
+      for (const listener of streams) listener(event);
+      return { ...anchor, positionMS };
+    };
+    vi.spyOn(graphql, "calibrateWatchPartyClock").mockResolvedValue({
+      offsetMS: 0,
+      roundTripMS: 1,
+    });
+    vi.spyOn(graphql, "createWatchParty").mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    vi.spyOn(graphql, "acceptWatchParty").mockImplementation(async () => publish(0, "roster"));
+    const skip = vi
+      .spyOn(graphql, "watchPartyAutoSkip")
+      .mockImplementation(async ({ positionMS }) => ({ ...publish(positionMS), applied: true }));
+    vi.spyOn(graphql, "watchPartyTransport").mockImplementation(async ({ positionMS }) =>
+      publish(positionMS),
+    );
+    try {
+      expect(await host.startWatchParty("m1")).toBe(true);
+      expect(await follower.joinWatchParty("p1")).toBe("m1");
+      expect(follower.getWatchParty().isHost).toBe(false);
+      expect(stream).toHaveBeenCalledTimes(2);
+      const markers = [{ title: "Intro", startSeconds: 5, endSeconds: 30, segmentKind: "intro" }];
+      const first = setup({ markers });
+      const second = setup({ markers }, useFollowerAutoSkip);
+      await act(async () => first.video.emitTimeUpdate(10));
+      expect(first.view.result.current.skipped?.segmentKind).toBe("intro");
+      expect(follower.getWatchParty().timeline?.positionMS).toBe(30_000);
+      tick(second.video, 30);
+      tick(second.video, 32);
+
+      act(() => first.view.result.current.undo());
+      expect(first.video.currentTime).toBe(5);
+      // The browser's seeked event sends this rewind as ordinary party transport.
+      await host.sendPartyTransport("m1", first.video.currentTime * 1000, true);
+      expect(follower.getWatchParty().timeline?.positionMS).toBe(5000);
+      await act(async () => {
+        first.video.emitTimeUpdate(5);
+        first.video.emitTimeUpdate(6);
+        second.video.emitTimeUpdate(5);
+        second.video.emitTimeUpdate(6);
+      });
+      expect(skip).toHaveBeenCalledTimes(1);
+      expect(follower.getWatchParty().timeline?.positionMS).toBe(5000);
+
+      // A later entry from before the segment can skip again.
+      publish(0);
+      tick(second.video, 0);
+      await act(async () => second.video.emitTimeUpdate(6));
+      expect(skip).toHaveBeenCalledTimes(2);
+    } finally {
+      host.resetWatchPartyForTest();
+      follower.resetWatchPartyForTest();
+      vi.restoreAllMocks();
+    }
   });
 });
