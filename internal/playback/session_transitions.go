@@ -66,7 +66,6 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 		session.composed = change.composed
 		session.picture = change.picture
 		session.state = sessionRunning
-		s.retainSourceLocked(session)
 		s.sessions[session.key] = session
 		if session.secure != nil && session.secure.Revoked != nil {
 			session.revokeDone = make(chan struct{})
@@ -138,7 +137,7 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 		}
 		s.detached--
 		delete(s.revocations, session)
-		s.releaseSourceLocked(session)
+		s.releaseSourceLocked(session.src, session.sourceOwner)
 		session.teardown = nil
 		session.state = sessionRetired
 		s.wakeCloseLocked()
@@ -162,7 +161,7 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 					result.failedNow = true
 				}
 			}
-			if change.sourceEnd >= 0 {
+			if change.sourceEnd >= 0 && session.currentSourceLocked() {
 				result.lowered = session.noteSourceEndLocked(session.segmentStart(change.rung, change.sourceEnd))
 			}
 		}

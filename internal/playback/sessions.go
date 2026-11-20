@@ -498,7 +498,7 @@ type Sessions struct {
 	durationFlights   map[string]*durationFlight
 	incompleteSources incompleteSourceCache
 	sourceOwners      map[string]*sourceGenerationOwner
-	sourceStore       *store.Store
+	sourceStore       sourceEndObserver
 	// bootNonce tags every session directory this instance mints (see
 	// newBootNonce): nextID resets to zero each process lifetime, so without it
 	// a fresh instance's first session would mint the exact directory name a
@@ -570,6 +570,11 @@ type sessionTeardown struct {
 }
 
 func (s *Sessions) runTeardowns(teardowns []*sessionTeardown) {
+	s.signalTeardowns(teardowns)
+	s.joinTeardowns(teardowns)
+}
+
+func (s *Sessions) signalTeardowns(teardowns []*sessionTeardown) {
 	for _, t := range teardowns {
 		if t.session.cancelCutoff != nil {
 			t.session.cancelCutoff()
@@ -588,6 +593,9 @@ func (s *Sessions) runTeardowns(teardowns []*sessionTeardown) {
 		}
 		close(t.cutoffDone)
 	}
+}
+
+func (s *Sessions) joinTeardowns(teardowns []*sessionTeardown) {
 	for _, t := range teardowns {
 		for _, probe := range t.probeReaps {
 			<-probe
@@ -942,51 +950,29 @@ func (s *Sessions) LiveArtifactShaped(ctx context.Context, key SessionKey, src s
 // ArtifactShaped resolves an artifact using this exact verified binding.
 func (b *LiveBinding) ArtifactShaped(ctx context.Context, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority, name string) (*LiveArtifact, error) {
 	s := b.manager
-	key := b.session.key
 	session, err := b.prepare(ctx, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority)
 	if err != nil {
 		return nil, err
 	}
-	for _, done := range session.predecessorWait {
-		if err := waitEncoderOwner(ctx, session, done); err != nil {
-			s.releaseScratch(session.scratch)
-			return nil, err
-		}
-	}
 	rung, file, _ := strings.Cut(name, "/")
-	trackRun := file != "" && (file != "index.m3u8" || session.durationSeconds == 0)
-	delivery := ""
-	if trackRun && file != "index.m3u8" {
-		delivery = rung
+	artifact := &LiveArtifact{
+		manager: s, session: session, ctx: ctx, name: name,
+		trackRun: file != "" && (file != "index.m3u8" || session.durationSeconds == 0),
 	}
-	started := time.Now()
-	for {
-		s.mu.Lock()
-		version := session.artifactVersion
-		s.mu.Unlock()
-		path, err := s.resolveArtifactPath(ctx, key, session, name)
-		s.mu.Lock()
-		evicted := session.state != sessionRunning
-		stale := trackRun && version != session.artifactVersion
-		s.mu.Unlock()
-		if !evicted && (stale && err == nil || errors.Is(err, ErrArtifactChanged)) {
-			err = ctx.Err()
-			if err == nil {
-				if time.Since(started) < PostSeekTranscodeLatencyBudget {
-					continue
-				}
-				err = context.DeadlineExceeded
-			}
+	if artifact.trackRun {
+		artifact.budget = s.transcodeLatencyBudget(session, filepath.Join(session.dir, name))
+		artifact.deadline = time.Now().Add(artifact.budget)
+		if file != "index.m3u8" {
+			artifact.delivery = rung
 		}
-		if evicted || err != nil {
-			s.releaseScratch(session.scratch)
-			if evicted {
-				return nil, ErrSessionEvicted
-			}
-			return nil, err
-		}
-		return &LiveArtifact{manager: s, session: session, path: path, trackRun: trackRun, version: version, delivery: delivery}, nil
 	}
+	resolved, err := artifact.resolve(false)
+	if err != nil {
+		artifact.Release()
+		return nil, err
+	}
+	artifact.path, artifact.version = resolved.path, resolved.version
+	return artifact, nil
 }
 
 func (b *LiveBinding) prepare(ctx context.Context, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority) (prepared *hlsSession, result error) {
@@ -997,7 +983,11 @@ func (b *LiveBinding) prepare(ctx context.Context, src string, durationSeconds, 
 	if err := b.Check(); err != nil {
 		return nil, err
 	}
-	source := captureSource(src, shape.Encrypted, s.statSource)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	source := s.claimSource(src, shape.Encrypted)
+	defer s.releaseSource(source)
 	inputs := setupInputs{
 		videoWidth: videoWidth, videoHeight: videoHeight,
 		duration: durationSeconds, burnSubtitle: burnSubtitleIndex,
@@ -1066,54 +1056,46 @@ func (b *LiveBinding) prepare(ctx context.Context, src string, durationSeconds, 
 	}
 }
 
-func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, session *hlsSession, name string) (string, error) {
+func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, session *hlsSession, name string, budget time.Duration) (artifactObservation, error) {
 	var err error
 	if name == masterPlaylistName {
-		return filepath.Join(session.dir, masterPlaylistName), nil
+		return artifactObservation{path: filepath.Join(session.dir, masterPlaylistName)}, nil
 	}
 	rungID, file, ok := strings.Cut(name, "/")
 	if !ok || !rungFileName.MatchString(file) {
-		return "", errors.New("unknown stream file")
+		return artifactObservation{}, errors.New("unknown stream file")
 	}
 	rung, ok := session.rung(rungID)
 	if !ok {
-		return "", errors.New("unknown stream file")
+		return artifactObservation{}, errors.New("unknown stream file")
 	}
 	path := filepath.Join(session.dir, rungID, file)
-	waitBudget := s.transcodeLatencyBudget(session, path)
 
 	segment := 0
 	var run *encoderRun
 	switch {
 	case file == "index.m3u8":
 		if session.durationSeconds > 0 {
-			return path, nil // synthesized at session creation
+			return artifactObservation{path: path}, nil // synthesized at session creation
 		}
 		// Linear mode: ffmpeg owns the variant playlist, so it must run.
 		if run, err = s.ensureRung(ctx, key, session, rung, 0, path); err != nil {
-			return "", err
+			return artifactObservation{}, err
 		}
 	case file == initSegmentName:
 		segment = initRequest
 		if run, err = s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
-			return "", err
+			return artifactObservation{}, err
 		}
 	default:
 		match := segmentName.FindStringSubmatch(file)
 		segment, _ = strconv.Atoi(match[1])
 		if session.durationSeconds > 0 && segment >= session.playlistSegmentCount(rung) {
-			return "", errors.New("unknown stream file")
+			return artifactObservation{}, errors.New("unknown stream file")
 		}
-		path, err := s.playlistSegment(ctx, key, session, rung, segment)
-		if err != nil {
-			return "", err
-		}
-		return path, nil
+		return s.playlistSegment(ctx, key, session, rung, segment, budget)
 	}
-	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, false, path, run, waitBudget); err != nil {
-		return "", err
-	}
-	return path, nil
+	return s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, false, path, run, budget)
 }
 
 // playlistSegment resolves the media segment rung's playlist lists at index
@@ -1121,88 +1103,73 @@ func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, sess
 // timeline a segment that merges several GOPs (CORE-1843) is joined from their
 // files once and kept beside them; when a truncated source ends inside it, the
 // segment carries the media before the end.
-func (s *Sessions) playlistSegment(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int) (string, error) {
+func (s *Sessions) playlistSegment(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, budget time.Duration) (artifactObservation, error) {
 	first, end := session.encoderSegments(rung, segment)
 	if end-first == 1 {
-		return s.encoderSegment(ctx, key, session, rung, first)
+		return s.encoderSegment(ctx, key, session, rung, first, budget)
 	}
 	joined := filepath.Join(session.dir, rung.ID, fmt.Sprintf("joined%05d.m4s", segment))
-	if session.artifactReady(joined) {
-		return joined, nil
+	if artifact, ready := s.readyArtifact(session, joined); ready {
+		return artifact, nil
 	}
 	parts := make([]string, 0, end-first)
+	var firstArtifact artifactObservation
 	for part := first; part < end; part++ {
-		path, err := s.encoderSegment(ctx, key, session, rung, part)
+		artifact, err := s.encoderSegment(ctx, key, session, rung, part, budget)
 		if errors.Is(err, ErrSourceEnded) && len(parts) > 0 {
 			break
 		}
 		if err != nil {
-			return "", err
+			return artifactObservation{}, err
 		}
-		parts = append(parts, path)
+		if len(parts) == 0 {
+			firstArtifact = artifact
+		} else if artifact.version != firstArtifact.version {
+			return artifactObservation{}, ErrArtifactChanged
+		}
+		parts = append(parts, artifact.path)
 	}
 	if len(parts) == 1 {
-		return parts[0], nil
+		return firstArtifact, nil
 	}
-	if err := s.joinArtifact(ctx, session, joined, parts); err != nil {
-		return "", err
+	if err := s.joinArtifact(ctx, session, joined, parts, firstArtifact.version); err != nil {
+		return artifactObservation{}, err
 	}
-	return joined, nil
+	firstArtifact.path = joined
+	return firstArtifact, nil
 }
 
 // encoderSegment waits for encoder segment file segment of rung, starting or
 // moving the encoder when the running one will not reach it.
-func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int) (string, error) {
+func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, budget time.Duration) (artifactObservation, error) {
 	path := filepath.Join(session.dir, rung.ID, fmt.Sprintf("seg%05d.m4s", segment))
-	waitBudget := s.transcodeLatencyBudget(session, path)
-	started := time.Now()
-	for {
-		if s.beyondSourceEnd(session, rung, segment) {
-			return "", ErrSourceEnded
-		}
-		run, err := s.ensureRung(ctx, key, session, rung, segment, path)
-		if err != nil {
-			return "", err
-		}
-		if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, true, path, run, waitBudget); err != nil {
-			return "", err
-		}
-		s.mu.Lock()
-		current, writing, pending := session.run, session.writing, session.start
-		s.mu.Unlock()
-		if run == nil {
-			run = current
-		}
-		observeCtx, cancel := context.WithTimeout(ctx, waitBudget)
-		_, observed, observeErr := s.observeIncompleteSource(observeCtx, key, session, run, func() (time.Duration, bool) {
-			empty, _ := session.inspectSegment(path)
-			return session.segmentStart(rung, segment), empty
-		})
-		cancel()
-		if errors.Is(observeErr, ErrArtifactChanged) {
-			if time.Since(started) >= waitBudget {
-				return "", context.DeadlineExceeded
-			}
-			if writing != nil && writing != current && pending != nil {
-				if err := waitEncoderOwner(ctx, session, pending.done); err != nil {
-					return "", err
-				}
-			}
-			continue
-		}
-		if observed {
-			if err := s.noteSourceEnd(key, session, run, rung, segment, ""); err == ErrArtifactChanged {
-				continue
-			} else if err != nil {
-				return "", err
-			}
-			return "", ErrSourceEnded
-		}
-		if observeErr != nil {
-			return "", observeErr
-		}
-		return path, nil
+	if s.beyondSourceEnd(session, rung, segment) {
+		return artifactObservation{}, ErrSourceEnded
 	}
+	run, err := s.ensureRung(ctx, key, session, rung, segment, path)
+	if err != nil {
+		return artifactObservation{}, err
+	}
+	artifact, err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, true, path, run, budget)
+	if err != nil {
+		return artifactObservation{}, err
+	}
+	observeCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	_, observed, err := s.observeIncompleteSource(observeCtx, key, session, artifact, false, func() (time.Duration, bool) {
+		empty, _ := session.inspectSegment(path)
+		return session.segmentStart(rung, segment), empty
+	})
+	if err != nil {
+		return artifactObservation{}, err
+	}
+	if observed {
+		if err := s.noteSourceEnd(key, session, artifact, rung, segment, ""); err != nil {
+			return artifactObservation{}, err
+		}
+		return artifactObservation{}, ErrSourceEnded
+	}
+	return artifact, nil
 }
 
 // waitForEncoder waits for path while watching the encoder run that should
@@ -1212,40 +1179,49 @@ func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *
 // end of input fails the request at once instead of letting it wait out its
 // budget; an encoder the server stopped (switch, seek, teardown) leaves the
 // request waiting for its replacement as before.
-func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun) error {
+func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun) (artifactObservation, error) {
 	restarts := 0
 	for {
 		if run != nil {
 			run.waiting.Add(1)
 		}
-		err := waitForArtifact(ctx, path, run.exitedChan(), session.scratch.cutoff, session.artifactReady)
+		var artifact artifactObservation
+		err := waitForArtifact(ctx, path, run.exitedChan(), session.scratch.cutoff, func(path string) bool {
+			var ready bool
+			artifact, ready = s.readyArtifact(session, path)
+			return ready
+		})
 		if run != nil {
 			run.waiting.Add(-1)
 		}
 		if !errors.Is(err, errEncoderExited) {
-			return err
+			return artifact, err
+		}
+		s.mu.Lock()
+		live := session.state == sessionRunning
+		stale := session.run != run || session.writing != nil && session.writing != run
+		s.mu.Unlock()
+		if !live {
+			return artifactObservation{}, ErrSessionEvicted
+		}
+		if stale && run.outcome != exitStopped {
+			return artifactObservation{}, ErrArtifactChanged
 		}
 		switch run.outcome {
 		case exitStopped:
-			s.mu.Lock()
-			live := session.state == sessionRunning
-			s.mu.Unlock()
-			if !live {
-				return ErrSessionEvicted
-			}
 			run = nil // the replacement owns any future output on this path
 		case exitEndOfInput:
 			if isSegment && s.beyondSourceEnd(session, rung, segment) {
-				return ErrSourceEnded
+				return artifactObservation{}, ErrSourceEnded
 			}
-			return errEncoderEnded
+			return artifactObservation{}, errEncoderEnded
 		default:
 			if restarts >= maxRequestEncoderRestarts {
-				return errEncoderFailing
+				return artifactObservation{}, errEncoderFailing
 			}
 			restarts++
 			if run, err = s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
-				return err
+				return artifactObservation{}, err
 			}
 			slog.Warn("restarted live transcode at the requested segment",
 				"media", key.MediaID, "rung", rung.ID, "segment", segment, "attempt", restarts)
@@ -1263,20 +1239,20 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 // started past the segment, fails as before. A run writes its segments in
 // order from its base, and the request is at most seekLookaheadSegments past
 // the frontier when the wait starts, so the number of extra windows is bounded.
-func (s *Sessions) waitWhileEncoderProgresses(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun, budget time.Duration) error {
+func (s *Sessions) waitWhileEncoderProgresses(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun, budget time.Duration) (artifactObservation, error) {
 	for {
 		windowStart := time.Now()
 		current, _, tracked := s.rungEncoder(session, rung)
 		waitCtx, cancel := context.WithTimeout(ctx, budget)
-		err := s.waitForEncoder(waitCtx, key, session, rung, segment, isSegment, path, run)
+		artifact, err := s.waitForEncoder(waitCtx, key, session, rung, segment, isSegment, path, run)
 		cancel()
 		if err == nil || !isSegment || ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
-			return err
+			return artifact, err
 		}
 		after, base, stillTracked := s.rungEncoder(session, rung)
 		if !tracked || !stillTracked || current != run || after != run || base > segment ||
 			!session.segmentWrittenSince(rung.ID, base, windowStart) {
-			return err
+			return artifactObservation{}, err
 		}
 	}
 }
@@ -1330,15 +1306,19 @@ func (s *Sessions) beyondSourceEnd(session *hlsSession, rung Rung, segment int) 
 
 // noteSourceEnd records that the source has no media from rung's segment on
 // and logs it once per new (lower) bound.
-func (s *Sessions) noteSourceEnd(key SessionKey, session *hlsSession, run *encoderRun, rung Rung, segment int, stderr string) error {
+func (s *Sessions) noteSourceEnd(key SessionKey, session *hlsSession, artifact artifactObservation, rung Rung, segment int, stderr string) error {
 	s.mu.Lock()
 	if session.state != sessionRunning {
 		s.mu.Unlock()
 		return ErrSessionEvicted
 	}
-	if session.run != run {
+	if session.run != artifact.run || session.artifactVersion != artifact.version {
 		s.mu.Unlock()
 		return ErrArtifactChanged
+	}
+	if !session.currentSourceLocked() {
+		s.mu.Unlock()
+		return errSetupUnavailable
 	}
 	result := s.transitionLocked(session, recordSourceEnd{rung: rung, segment: segment})
 	s.mu.Unlock()
@@ -1391,11 +1371,18 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 	sourceInfo, sourceGeneration := source.info, source.generation
 	var watchSession *hlsSession
 	var watchDone <-chan struct{}
-	var teardowns []*sessionTeardown
+	var discard, predecessor *sessionTeardown
 	s.mu.Lock()
 	defer func() {
 		s.mu.Unlock()
-		s.runTeardowns(teardowns)
+		if discard != nil {
+			s.runTeardowns([]*sessionTeardown{discard})
+		}
+		if predecessor != nil {
+			teardowns := []*sessionTeardown{predecessor}
+			s.signalTeardowns(teardowns)
+			go s.joinTeardowns(teardowns)
+		}
 		if watchDone != nil {
 			go s.watchLiveRevocation(watchSession, watchDone, secure.Revoked, s.liveRevocationInterval())
 		}
@@ -1421,6 +1408,9 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 	}
 	if binding.duration != nil && binding.duration.seconds > 0 && binding.duration.seconds != durationSeconds {
 		return nil, errDurationChanged
+	}
+	if source.supersededLocked() {
+		return nil, errSetupUnavailable
 	}
 	if caps.HEVC && !hevcAllowed {
 		caps.HEVC = false
@@ -1463,6 +1453,7 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 		}
 		// A resume hint noted while this encoder ran applies only to a replacement.
 		s.transitionLocked(existing, reuseSession{priority: priority, at: now})
+		source.publishLocked()
 		existing.scratch.users++
 		return existing, nil
 	}
@@ -1523,14 +1514,14 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 		err = ErrSessionEvicted
 	} else if canceled := ctx.Err(); canceled != nil {
 		err = canceled
-	} else if !source.matches(current) {
+	} else if !source.matches(current) || source.supersededLocked() {
 		err = errSetupUnavailable
 	} else if binding.duration != nil && binding.duration.seconds > 0 && binding.duration.seconds != sourceDuration {
 		err = errDurationChanged
 	}
 	if err != nil {
 		scratch.users--
-		teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
+		discard = s.transitionLocked(session, detachSession{}).teardown
 		if !errors.Is(err, errDurationChanged) &&
 			!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			binding.recordSetupLocked(binding.session, binding.session.setup, err)
@@ -1540,7 +1531,14 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 	previous := binding.session
 	if existing != nil {
 		t := s.transitionLocked(existing, detachSession{cleanupOnRelease: true}).teardown
-		teardowns = append(teardowns, t)
+		predecessor = t
+		for _, done := range existing.predecessorWait {
+			select {
+			case <-done:
+			default:
+				session.predecessorWait = append(session.predecessorWait, done)
+			}
+		}
 		if t.run != nil {
 			session.predecessorWait = append(session.predecessorWait, t.run.reaped)
 		}
@@ -1560,6 +1558,10 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 	}
 	session.admitted, session.profile, session.library = true, binding.profile, library
 	session.loadProfile = binding.loadProfile
+	if sourceGeneration != "" {
+		session.sourceOwner = s.acquireSourceLocked(src)
+		source.publishLocked()
+	}
 	session.lastAccess = now
 	if hint, ok := s.resumeHints[key]; ok {
 		delete(s.resumeHints, key)
@@ -1883,7 +1885,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		sourceEnd := -1 // the first segment with no media, when the source ends early
 		if outcome == exitEndOfInput && scanned && session.durationSeconds > 0 {
 			observeCtx, cancel := context.WithTimeout(run.ctx, 5*time.Second)
-			_, observed, _ := s.observeIncompleteSource(observeCtx, key, session, run, func() (time.Duration, bool) {
+			_, observed, _ := s.observeIncompleteSource(observeCtx, key, session, artifactObservation{run: run}, true, func() (time.Duration, bool) {
 				last := frontier
 				for last >= base {
 					empty, readable := session.inspectSegment(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last)))

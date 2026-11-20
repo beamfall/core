@@ -44,13 +44,16 @@ func joinFragments(dst *os.File, open func(string) (*os.File, error), parts []st
 
 // joinArtifact serializes writers by destination and publishes from a private
 // staging file only while the same session still owns the directory.
-func (s *Sessions) joinArtifact(ctx context.Context, h *hlsSession, dst string, parts []string) error {
-	var version uint64
+func (s *Sessions) joinArtifact(ctx context.Context, h *hlsSession, dst string, parts []string, version uint64) error {
 	for {
 		s.mu.Lock()
 		if h.state != sessionRunning {
 			s.mu.Unlock()
 			return ErrSessionEvicted
+		}
+		if h.artifactVersion != version {
+			s.mu.Unlock()
+			return ErrArtifactChanged
 		}
 		if wait := h.joins[dst]; wait != nil {
 			s.mu.Unlock()
@@ -68,12 +71,15 @@ func (s *Sessions) joinArtifact(ctx context.Context, h *hlsSession, dst string, 
 		}
 		done := make(chan struct{})
 		h.joins[dst] = done
-		version = h.artifactVersion
+		// A same-directory start must wait until the join has published or
+		// discarded its staging file. The inputs are already finalized.
+		s.holdInspectionLocked(h)
 		s.mu.Unlock()
 		defer func() {
 			s.mu.Lock()
 			delete(h.joins, dst)
 			close(done)
+			s.releaseInspectionLocked(h)
 			s.mu.Unlock()
 		}()
 		break
@@ -103,24 +109,16 @@ func (s *Sessions) joinArtifact(ctx context.Context, h *hlsSession, dst string, 
 	}
 	s.mu.Lock()
 	live := h.state == sessionRunning
-	stale := h.artifactVersion != version
 	s.mu.Unlock()
 	if !live {
 		return ErrSessionEvicted
-	}
-	if stale {
-		return ErrArtifactChanged
 	}
 	err = os.Rename(tmp.Name(), filepath.Join(h.dir, rel))
 	s.mu.Lock()
 	live = h.state == sessionRunning
-	stale = h.artifactVersion != version
 	s.mu.Unlock()
 	if !live {
 		return ErrSessionEvicted
-	}
-	if stale {
-		return ErrArtifactChanged
 	}
 	return err
 }

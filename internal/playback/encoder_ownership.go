@@ -216,6 +216,15 @@ func waitEncoderOwner(ctx context.Context, h *hlsSession, done <-chan struct{}) 
 
 func (s *Sessions) startEncoder(ctx context.Context, key SessionKey, start *encoderStart, old *encoderRun, stopOld bool, rung Rung, segment int, isSegment bool) (*encoderRun, error) {
 	h, run := start.session, start.run
+	stopPreparationCancel := context.AfterFunc(ctx, func() {
+		s.mu.Lock()
+		unpermitted := !start.permitted
+		s.mu.Unlock()
+		if unpermitted {
+			run.cancel()
+		}
+	})
+	defer stopPreparationCancel()
 	if old != nil {
 		if stopOld {
 			if old.live != nil {
@@ -231,6 +240,11 @@ func (s *Sessions) startEncoder(ctx context.Context, key SessionKey, start *enco
 			return nil, err
 		}
 	}
+	for _, done := range h.predecessorWait {
+		if err := waitEncoderOwner(ctx, h, done); err != nil {
+			return nil, err
+		}
+	}
 
 	s.mu.Lock()
 	if err := s.startErrorLocked(ctx, start); err != nil {
@@ -242,15 +256,14 @@ func (s *Sessions) startEncoder(ctx context.Context, key SessionKey, start *enco
 		return nil, ErrSourceEnded
 	}
 	newCharge := !h.charged
-	loader := h.loadProfile
+	profile, loader := h.profile, h.loadProfile
 	s.mu.Unlock()
-	if newCharge && h.profile != "" && loader != nil {
-		profileCtx, cancel := context.WithCancel(ctx)
-		stop := context.AfterFunc(h.cutoffCtx, cancel)
-		policy, err := loader(profileCtx, h.profile)
-		stop()
-		cancel()
+	if newCharge && profile != "" && loader != nil {
+		policy, err := loader(run.ctx, profile)
 		if err != nil {
+			if h.cutoffCtx.Err() != nil {
+				return nil, ErrSessionEvicted
+			}
 			return nil, err
 		}
 		start.limit = policy.MaxConcurrentStreams
@@ -336,9 +349,13 @@ func (s *Sessions) startEncoder(ctx context.Context, key SessionKey, start *enco
 	}
 	s.mu.Lock()
 	live := s.liveStartLocked(start)
+	canceled := !start.permitted && ctx.Err() != nil
 	s.mu.Unlock()
 	if !live {
 		return nil, ErrSessionEvicted
+	}
+	if canceled {
+		return nil, ctx.Err()
 	}
 	if err != nil {
 		return nil, err

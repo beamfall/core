@@ -501,6 +501,18 @@ func (b *uploadBody) Read(p []byte) (int, error) {
 	return n, err
 }
 
+type sourceReader struct {
+	endpoint *endpoint
+	source   io.Reader
+}
+
+func (r sourceReader) Read(p []byte) (int, error) {
+	if err := r.endpoint.live(); err != nil {
+		return 0, err
+	}
+	return r.source.Read(p)
+}
+
 func (e *endpoint) serveRange(w http.ResponseWriter, r *http.Request, open Opener) {
 	start, end, partial, ok := parseRange(r.Header.Get("Range"), e.size)
 	h := w.Header()
@@ -531,6 +543,10 @@ func (e *endpoint) serveRange(w http.ResponseWriter, r *http.Request, open Opene
 		http.Error(w, "unavailable", http.StatusInternalServerError)
 		return
 	}
+	if err := e.live(); err != nil {
+		http.Error(w, "gone", http.StatusGone)
+		return
+	}
 	length := end - start + 1
 	h.Set("Content-Type", "application/octet-stream")
 	h.Set("Content-Length", strconv.FormatInt(length, 10))
@@ -545,13 +561,18 @@ func (e *endpoint) serveRange(w http.ResponseWriter, r *http.Request, open Opene
 	}
 	buf := make([]byte, copyChunkBytes)
 	defer clear(buf)
+	reader := sourceReader{endpoint: e, source: src}
 	for length > 0 {
 		n := int(min(length, int64(len(buf))))
-		if _, err := io.ReadFull(src, buf[:n]); err != nil {
+		if _, err := io.ReadFull(reader, buf[:n]); err != nil {
 			// A source that fails authentication or ends before its declared
 			// length must fail the job even if the transcoder exits cleanly on
 			// the short input it saw.
-			e.fail(errSourceFailure)
+			if errors.Is(err, ErrRevoked) || errors.Is(err, ErrExpired) {
+				e.fail(err)
+			} else {
+				e.fail(errSourceFailure)
+			}
 			panic(http.ErrAbortHandler)
 		}
 		// Checked after the read, which can block, so no chunk is written once

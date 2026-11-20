@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -348,7 +349,7 @@ func TestEvictedSessionCannotObserveEOFInRemovedOutput(t *testing.T) {
 	}
 	requireScratchMissing(t, session.dir)
 	inspected := false
-	_, observed, err := sessions.observeIncompleteSource(context.Background(), key, session, nil, func() (time.Duration, bool) {
+	_, observed, err := sessions.observeIncompleteSource(context.Background(), key, session, artifactObservation{}, false, func() (time.Duration, bool) {
 		inspected = true
 		return 0, true // removed output would look like EOF at zero
 	})
@@ -388,7 +389,7 @@ func TestT3EOFInspectionDiscardsLosingStoreCallback(t *testing.T) {
 			outcome := make(chan error, 1)
 			go func() {
 				calls := 0
-				_, observed, err := s.observeIncompleteSource(t.Context(), key, a.session, nil, func() (time.Duration, bool) {
+				_, observed, err := s.observeIncompleteSource(t.Context(), key, a.session, artifactObservation{}, false, func() (time.Duration, bool) {
 					calls++
 					if calls == 1 {
 						close(entered)
@@ -434,5 +435,89 @@ func TestT3EOFInspectionDiscardsLosingStoreCallback(t *testing.T) {
 				t.Fatalf("discarded EOF changed catalog or memory: %v", err)
 			}
 		})
+	}
+}
+
+type orderedSourceEndStore struct {
+	sourceEndObserver
+	calls                                       atomic.Int32
+	firstCallback, firstReturned, reaperStarted chan struct{}
+	release                                     <-chan struct{}
+	staged                                      atomic.Bool
+}
+
+func (s *orderedSourceEndStore) ObserveSourceEnd(ctx context.Context, id store.MediaID, path, fingerprint, generation string, observe func() (float64, bool)) error {
+	switch s.calls.Add(1) {
+	case 1:
+		defer close(s.firstReturned)
+		return s.sourceEndObserver.ObserveSourceEnd(ctx, id, path, fingerprint, generation, func() (float64, bool) {
+			close(s.firstCallback)
+			<-s.release
+			end, ok := observe()
+			s.staged.Store(ok)
+			return end, ok
+		})
+	case 2:
+		close(s.reaperStarted)
+	}
+	return s.sourceEndObserver.ObserveSourceEnd(ctx, id, path, fingerprint, generation, observe)
+}
+
+func TestT3SegmentRetriesOutsideStoreWhileReaperOwnsOutput(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	src := filepath.Join(t.TempDir(), "source")
+	seedScratchFile(t, src)
+	item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: "library-local", Path: src, Title: "Source",
+		Container: "mkv", Codec: "h264", Class: store.MediaClassVideo,
+		ContentFingerprint: "ordered-source-end", DurationSecondsHint: 120,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, signal, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	defer signal.Close()
+	s := newTestSessions(t, &eofInspectionTranscoder{input: input}, t.TempDir(), nil)
+	entered, release := scratchLatch(t)
+	defer release.open()
+	observer := &orderedSourceEndStore{
+		sourceEndObserver: st, firstCallback: entered, release: release.ch,
+		firstReturned: make(chan struct{}), reaperStarted: make(chan struct{}),
+	}
+	s.sourceStore = observer
+	key := SessionKey{SessionID: "eof", MediaID: item.ID}
+	path, err := s.FilePath(ctx, key, src, 120, 1280, 720, false, "720p/init.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := registeredSession(t, s, key).run
+	// An actual finalized empty segment would stage EOF from the segment
+	// callback if it were allowed to inspect during reap.
+	writeArtifact(t, filepath.Dir(path), "seg00000.m4s", emptySegment())
+	result := make(chan error, 1)
+	go func() {
+		_, err := s.FilePath(ctx, key, src, 120, 1280, 720, false, "720p/seg00000.m4s")
+		result <- err
+	}()
+	waitScratchSignal(t, observer.firstCallback)
+	_ = signal.Close()
+	waitScratchSignal(t, run.reaped)
+	waitScratchSignal(t, observer.reaperStarted)
+	release.open()
+	waitScratchSignal(t, observer.firstReturned)
+	if observer.staged.Load() {
+		t.Fatal("segment callback staged EOF ahead of the reaper")
+	}
+	waitScratchSignal(t, run.exited)
+	if err := waitScratchResult(t, result); !errors.Is(err, ErrSourceEnded) {
+		t.Fatalf("segment did not observe the settled result: %v", err)
+	}
+	if got := observer.calls.Load(); got != 3 {
+		t.Fatalf("Store calls = %d, want segment, reaper, and segment retry", got)
 	}
 }

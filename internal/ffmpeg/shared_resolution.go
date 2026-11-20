@@ -9,10 +9,11 @@ import (
 // sharedResolution starts tool-owned work on the first call. Every caller
 // waits independently, including the caller that starts the worker.
 type sharedResolution[T any] struct {
-	once  sync.Once
-	ready chan struct{}
-	value T
-	err   error
+	resolve func() (T, error) // optional resolver supplied with a preconfigured entry
+	once    sync.Once
+	ready   chan struct{}
+	value   T
+	err     error
 }
 
 func (s *sharedResolution[T]) wait(ctx context.Context, resolve func() (T, error)) (T, error) {
@@ -23,6 +24,9 @@ func (s *sharedResolution[T]) wait(ctx context.Context, resolve func() (T, error
 	s.once.Do(func() {
 		s.ready = make(chan struct{})
 		go func() {
+			if s.resolve != nil {
+				resolve = s.resolve
+			}
 			s.value, s.err = resolve()
 			close(s.ready)
 		}()

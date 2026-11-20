@@ -943,7 +943,7 @@ func TestScratchArtifactOpensRefuseSymlinksAndFIFO(t *testing.T) {
 	if err := waitScratchResult(t, result); err == nil {
 		t.Fatal("opened a writerless FIFO")
 	}
-	if err := s.joinArtifact(context.Background(), a.session, filepath.Join(a.session.dir, "720p", "joined00000.m4s"), []string{path}); err == nil {
+	if err := s.joinArtifact(context.Background(), a.session, filepath.Join(a.session.dir, "720p", "joined00000.m4s"), []string{path}, 0); err == nil {
 		t.Fatal("join read a writerless FIFO")
 	}
 }

@@ -245,6 +245,9 @@ func (b *LiveBinding) claimSetup(ctx context.Context, source sourceCapture, shap
 			if err := b.Check(); err != nil {
 				return nil, err
 			}
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if other.err != nil {
 				if errors.Is(other.err, context.Canceled) || errors.Is(other.err, context.DeadlineExceeded) {
 					continue
@@ -304,6 +307,8 @@ type sourceCapture struct {
 	path       string
 	info       os.FileInfo
 	generation string
+	owner      *sourceGenerationOwner
+	order      uint64
 }
 
 func captureSource(path string, secure *EncryptedSource, stat func(string) (os.FileInfo, error)) sourceCapture {
@@ -326,7 +331,7 @@ func (c sourceCapture) matches(other sourceCapture) bool {
 }
 
 func (h *hlsSession) sourceCapture() sourceCapture {
-	return sourceCapture{h.src, h.sourceInfo, h.sourceGeneration}
+	return sourceCapture{path: h.src, info: h.sourceInfo, generation: h.sourceGeneration}
 }
 
 // Preparation builds the immutable shape off to the side. Initial promotion

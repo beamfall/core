@@ -61,15 +61,13 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	if fingerprint == "" || path == "" || ctx.Err() != nil {
 		return 0
 	}
-	source := captureSource(path, nil, s.statSource)
+	source := s.claimSource(path, nil)
+	defer s.releaseSource(source)
 	now := s.now()
 	s.mu.Lock()
 	if binding != nil && !binding.validLocked() {
 		s.mu.Unlock()
 		return 0
-	}
-	if prior := s.durationFlights[path]; prior != nil && source.generation != "" && prior.generation != source.generation {
-		delete(s.durationFlights, path)
 	}
 	entry := s.durationProbes[path]
 	matches := source.generation != "" && entry.generation == source.generation
@@ -80,6 +78,20 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 			}
 			binding.duration = s.retainDurationLocked(source)
 		}
+	}
+	owner := source.owner
+	if source.supersededLocked() || source.order < owner.durationPublished && source.generation != owner.durationGeneration {
+		s.mu.Unlock()
+		return 0
+	}
+	if source.generation != "" {
+		owner.durationPublished = max(owner.durationPublished, source.order)
+		owner.durationGeneration = source.generation
+		if prior := s.durationFlights[path]; prior != nil && prior.generation != source.generation {
+			delete(s.durationFlights, path)
+		}
+	}
+	if binding != nil {
 		if matches && entry.seconds > 0 {
 			binding.duration.seconds = entry.seconds
 		}
@@ -125,7 +137,7 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	if flight.users == 0 {
 		delete(s.durationFlights, path)
 	}
-	if ctx.Err() != nil || s.closed || binding != nil && !binding.validLocked() {
+	if ctx.Err() != nil || s.closed || source.supersededLocked() || binding != nil && !binding.validLocked() {
 		return 0
 	}
 	if !valid {
@@ -156,6 +168,7 @@ func (s *Sessions) retainDurationLocked(source sourceCapture) *retainedDuration 
 	}
 	retained := s.durationRetained[key]
 	if retained == nil {
+		source.owner, source.order = nil, 0
 		retained = &retainedDuration{source: source}
 		s.durationRetained[key] = retained
 	}

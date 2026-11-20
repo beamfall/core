@@ -647,7 +647,7 @@ func TestJoinFragmentsKeepsFragmentsAndDropsIndexes(t *testing.T) {
 		t.Fatal(err)
 	}
 	dst := filepath.Join(dir, "joined00000.m4s")
-	if err := sessions.joinArtifact(t.Context(), session, dst, []string{partA, partB}); err != nil {
+	if err := sessions.joinArtifact(t.Context(), session, dst, []string{partA, partB}, 0); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(dst) // #nosec G304 -- path is beneath a test-owned temporary directory.
@@ -664,7 +664,7 @@ func TestJoinFragmentsKeepsFragmentsAndDropsIndexes(t *testing.T) {
 		t.Fatal(err)
 	}
 	refused := filepath.Join(dir, "joined00001.m4s")
-	if err := sessions.joinArtifact(t.Context(), session, refused, []string{partA, broken}); err == nil {
+	if err := sessions.joinArtifact(t.Context(), session, refused, []string{partA, broken}, 0); err == nil {
 		t.Fatal("joined a truncated segment")
 	}
 	if _, err := os.Stat(refused); !os.IsNotExist(err) {

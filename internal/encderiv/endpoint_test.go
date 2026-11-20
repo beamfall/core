@@ -427,6 +427,72 @@ func TestEndpointRevokeAbortsBodyMidStream(t *testing.T) {
 	}
 }
 
+type interruptedSource struct {
+	memSource
+	wait  func()
+	stage string
+	reads int
+}
+
+func (s *interruptedSource) Seek(offset int64, whence int) (int64, error) {
+	if s.stage == "seek" {
+		s.wait()
+	}
+	return s.memSource.Seek(offset, whence)
+}
+
+func (s *interruptedSource) Read(p []byte) (int, error) {
+	s.reads++
+	if s.stage == "partial read" && s.reads == 1 {
+		s.wait()
+		return s.memSource.Read(p[:1])
+	}
+	return s.memSource.Read(p)
+}
+
+func TestEndpointCutoffPreventsFurtherSourceReads(t *testing.T) {
+	for _, stage := range []string{"seek", "partial read"} {
+		t.Run(stage, func(t *testing.T) {
+			data := testPayload(32)
+			f := newEndpointFixture(t, data, int64(len(data)), nil)
+			entered, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			unblock := func() { once.Do(func() { close(release) }) }
+			defer unblock()
+			src := &interruptedSource{memSource: memSource{bytes.NewReader(data)}, stage: stage, wait: func() {
+				close(entered)
+				<-release
+			}}
+			w := httptest.NewRecorder()
+			done := make(chan any, 1)
+			go func() {
+				defer func() { done <- recover() }()
+				f.ep.serveRange(w, httptest.NewRequest(http.MethodGet, "/", nil), func() (io.ReadSeekCloser, error) {
+					return src, nil
+				})
+			}()
+			select {
+			case <-entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("source did not reach the cutoff window")
+			}
+			f.ep.Abort()
+			unblock()
+			select {
+			case stopped := <-done:
+				if stage == "seek" && (stopped != nil || src.reads != 0 || w.Code != http.StatusGone) {
+					t.Fatalf("seek cutoff: panic %v, reads %d, status %d", stopped, src.reads, w.Code)
+				}
+				if stage == "partial read" && (stopped != http.ErrAbortHandler || src.reads != 1 || w.Body.Len() != 0) {
+					t.Fatalf("partial read cutoff: panic %v, reads %d, bytes %d", stopped, src.reads, w.Body.Len())
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("cutoff did not end the source response")
+			}
+		})
+	}
+}
+
 // hookSource runs onRead once, before the first read at or past at.
 type hookSource struct {
 	*bytes.Reader
