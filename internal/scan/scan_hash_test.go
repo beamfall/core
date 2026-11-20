@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -420,7 +422,8 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 // Keep the catalog snapshot in memory during seal, so no plaintext is written
 // outside the store's working area by this lifecycle fixture.
 type scanCatalogCipher struct {
-	snapshot []byte
+	snapshot    []byte
+	workingPath string
 }
 
 func (c *scanCatalogCipher) SealDBFile(_ context.Context, _ store.LibraryID, workingPath, _ string) error {
@@ -434,6 +437,7 @@ func (c *scanCatalogCipher) SealDBFile(_ context.Context, _ store.LibraryID, wor
 }
 
 func (c *scanCatalogCipher) UnsealDBFile(_ context.Context, _ store.LibraryID, _, workingPath string) error {
+	c.workingPath = workingPath
 	if c.snapshot == nil {
 		return nil
 	}
@@ -505,12 +509,14 @@ func TestScanPreservesEncryptedLegacyMediaAfterSeal(t *testing.T) {
 		t.Errorf("unchanged encrypted path was sampled: %s", path)
 		return "", os.ErrInvalid
 	}
-	prober := &countingProber{probe: ffmpeg.Probe{HasVideo: true, VideoCodec: "h264", DurationSeconds: 9}}
+	prober := poolProbeFunc(func(_ context.Context, path string) (ffmpeg.Probe, error) {
+		if filepath.Base(path) == "unchanged.mp4" {
+			return ffmpeg.Probe{}, errors.New("probe temporarily unavailable")
+		}
+		return ffmpeg.Probe{HasVideo: true, VideoCodec: "h264", DurationSeconds: 9}, nil
+	})
 	if _, err := ScanWithWorkerGovernor(ctx, st, prober, nil, nil, nil, nil, nil, nil, fixedGovernor(4), req); err != nil {
 		t.Fatal(err)
-	}
-	if prober.calls != 1 {
-		t.Fatalf("probe calls = %d, want one for the returning file only", prober.calls)
 	}
 	files, err := st.MediaFilesForLibrary(ctx, req.LibraryID)
 	if err != nil || len(files) != len(want) {
@@ -531,6 +537,125 @@ func TestScanPreservesEncryptedLegacyMediaAfterSeal(t *testing.T) {
 		if err != nil || media.Codec != "hevc" || media.DurationSeconds != 123 {
 			t.Fatalf("encrypted probe facts after rescan = %s, %ds, err = %v", media.Codec, media.DurationSeconds, err)
 		}
+	}
+}
+
+func TestScanRetriesFailedEncryptedProbeWithoutRehashing(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, storetest.MigratedDataDir(t), store.Options{
+		SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	req := Request{LibraryID: "library-local", Root: t.TempDir()}
+	if err := st.SetLibraryBacking(ctx, req.LibraryID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	var cipher scanCatalogCipher
+	if err := st.UnsealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
+		t.Fatal(err)
+	}
+	path := writeScanFile(t, req.Root, "retry.mkv", []byte("retry probe"))
+	if _, err := Scan(ctx, st, fakeProber{err: errors.New("probe unavailable")}, nil, nil, nil, nil, req); err != nil {
+		t.Fatal(err)
+	}
+	files, err := st.MediaFilesForLibrary(ctx, req.LibraryID)
+	if err != nil || len(files) != 1 || files[0].Path != path ||
+		!strings.HasPrefix(files[0].ContentFingerprint, "sample1:") {
+		t.Fatalf("files after failed probe = %+v, err = %v", files, err)
+	}
+	before := files[0]
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{req.LibraryID}, Revealed: true}
+	media, err := st.Media(ctx, before.MediaID, filter)
+	if err != nil || media.DurationSeconds != 0 {
+		t.Fatalf("duration after failed probe = %d, err = %v", media.DurationSeconds, err)
+	}
+	if err := st.SealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, req.LibraryID, &cipher); err != nil {
+		t.Fatal(err)
+	}
+
+	dsn := url.URL{Scheme: "file", Path: cipher.workingPath, RawQuery: "mode=ro"}
+	db, err := sql.Open("sqlite", dsn.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	countTracks := func(kind string) int {
+		t.Helper()
+		var count int
+		err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_file_stream
+			WHERE content_fingerprint = ? AND stream_type = ?`, before.ContentFingerprint, kind).Scan(&count)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return count
+	}
+	for _, kind := range []string{"audio", "subtitle"} {
+		if count := countTracks(kind); count != 0 {
+			t.Fatalf("%s tracks before retry = %d, want 0", kind, count)
+		}
+	}
+
+	savedLegacy, savedSample := legacyFileContent, sampleFileContent
+	t.Cleanup(func() { legacyFileContent, sampleFileContent = savedLegacy, savedSample })
+	rejectHash := func(_ context.Context, path string) (string, error) {
+		t.Errorf("unchanged encrypted file was hashed: %s", path)
+		return "", os.ErrInvalid
+	}
+	legacyFileContent, sampleFileContent = rejectHash, rejectHash
+	prober := &countingProber{probe: ffmpeg.Probe{
+		HasVideo: true, VideoCodec: "hevc", AudioCodec: "aac", DurationSeconds: 123,
+		Streams: []ffmpeg.ProbeStream{
+			{Type: "video", Codec: "hevc"}, {Type: "audio", Codec: "aac"}, {Type: "subtitle", Codec: "subrip"},
+		},
+	}}
+	if _, err := Scan(ctx, st, prober, nil, nil, nil, nil, req); err != nil {
+		t.Fatal(err)
+	}
+	if prober.calls != 1 {
+		t.Fatalf("probe calls = %d, want one retry", prober.calls)
+	}
+	files, err = st.MediaFilesForLibrary(ctx, req.LibraryID)
+	if err != nil || len(files) != 1 || files[0].MediaID != before.MediaID ||
+		files[0].ContentFingerprint != before.ContentFingerprint {
+		t.Fatalf("files after probe recovery = %+v, want identity from %+v, err = %v", files, before, err)
+	}
+	media, err = st.Media(ctx, before.MediaID, filter)
+	if err != nil || media.Codec != "hevc" || media.DurationSeconds != 123 {
+		t.Fatalf("recovered probe facts = %s, %ds, err = %v", media.Codec, media.DurationSeconds, err)
+	}
+	for _, kind := range []string{"audio", "subtitle"} {
+		if count := countTracks(kind); count != 1 {
+			t.Fatalf("%s tracks after retry = %d, want 1", kind, count)
+		}
+	}
+}
+
+func TestScanPublicFastPathPreservesProbeFacts(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	req := Request{LibraryID: "library-local", Root: t.TempDir()}
+	path := writeScanFile(t, req.Root, "unchanged.mkv", []byte("unchanged hevc"))
+	prober := &countingProber{probe: ffmpeg.Probe{HasVideo: true, VideoCodec: "hevc", DurationSeconds: 123}}
+	if _, err := Scan(ctx, st, prober, nil, nil, nil, nil, req); err != nil {
+		t.Fatal(err)
+	}
+	files, err := st.MediaFilesForLibrary(ctx, req.LibraryID)
+	if err != nil || len(files) != 1 || files[0].Path != path || prober.calls != 1 {
+		t.Fatalf("initial scan files = %+v, probes = %d, err = %v", files, prober.calls, err)
+	}
+	if _, err := Scan(ctx, st, prober, nil, nil, nil, nil, req); err != nil {
+		t.Fatal(err)
+	}
+	media, err := st.Media(ctx, files[0].MediaID, store.LibraryFilter{AllLibraries: true})
+	if err != nil || media.Codec != "hevc" || media.DurationSeconds != 123 || prober.calls != 1 {
+		t.Fatalf("public fast-path facts = %s, %ds, probes = %d, err = %v",
+			media.Codec, media.DurationSeconds, prober.calls, err)
 	}
 }
 

@@ -73,6 +73,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		Container:          containerFromPath(path),
 		Codec:              "h264",
 		ContentFingerprint: stored.ContentFingerprint,
+		KeepProbeFacts:     true,
 		SizeBytes:          task.info.size,
 		ModTime:            task.info.modTime.UTC(),
 		Extra:              isExtraPath(s.extrasRoot, path),

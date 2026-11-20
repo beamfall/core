@@ -110,8 +110,8 @@ func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
 	if t.fastPath {
 		return
 	}
-	// The fast task uses the public catalog. Use a private row only to
-	// select the fingerprint and avoid replacing an unchanged file's probe facts.
+	// The public catalog controls fast-path routing. Private rows can reuse
+	// their fingerprint while still taking the normal probe path.
 	if s.st.EncryptedLibraryDBRegistered(s.req.LibraryID) {
 		stored, err = s.st.LibraryMediaFileFingerprintByPath(ctx, s.req.LibraryID, t.path)
 		if err != nil {
@@ -132,10 +132,8 @@ func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
 		return
 	}
 	t.oshash = oshash
-	if t.keepProbeFacts {
-		return
-	}
 	t.probeFile(ctx, s.prober)
+	t.keepProbeFacts = t.keepProbeFacts && !t.probe.succeeded
 	if s.grabber != nil && t.probe.hasVideo {
 		// Best-effort, like the probe fallback: a failed grab (no FFmpeg,
 		// corrupt frame) leaves phash empty for a later scan — the store never
