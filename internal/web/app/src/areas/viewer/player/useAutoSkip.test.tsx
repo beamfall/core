@@ -15,6 +15,7 @@ vi.mock("@/lib/graphql", () => ({
   acceptWatchParty: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
   createWatchParty: vi.fn(),
+  leaveWatchParty: vi.fn(async () => {}),
   watchPartyAutoSkip: vi.fn(),
   watchPartyTransport: vi.fn(),
 }));
@@ -137,6 +138,42 @@ describe("useAutoSkip", () => {
     // auto-skip immediately rather than staying suppressed from the old one.
     tick(video, 10);
     expect(video.currentTime).toBe(30);
+  });
+
+  it("can skip the same segment locally on the first tick after leaving a party", async () => {
+    vi.mocked(api.subscribeEvents).mockReturnValueOnce(() => {});
+    vi.mocked(graphql.calibrateWatchPartyClock).mockResolvedValueOnce({
+      offsetMS: 0,
+      roundTripMS: 1,
+    });
+    vi.mocked(graphql.createWatchParty).mockResolvedValueOnce({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    const skip = vi.mocked(graphql.watchPartyAutoSkip).mockClear().mockResolvedValueOnce({
+      partyID: "p1",
+      item: "m1",
+      positionMS: 30_000,
+      presentAtMS: 0,
+      applied: true,
+    });
+    try {
+      expect(await host.startWatchParty("m1")).toBe(true);
+      const { video } = setup();
+      await act(async () => video.emitTimeUpdate(10));
+      expect(skip).toHaveBeenCalledTimes(1);
+
+      await act(async () => host.leaveParty());
+      tick(video, 11);
+      expect(video.currentTime).toBe(30);
+      expect(skip).toHaveBeenCalledTimes(1);
+    } finally {
+      host.resetWatchPartyForTest();
+      vi.mocked(api.subscribeEvents).mockReset();
+      skip.mockReset();
+    }
   });
 
   it("lets two auto-skip-enabled party members watch the segment after Undo", async () => {

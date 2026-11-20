@@ -27,11 +27,11 @@ export type PartySeekAutoSkip = (
 // auto-advance (useUpNext) — this hook only ever seeks within the current
 // Media.
 //
-// One-shot re-fire guard: each segment instance is keyed by kind+start. Once a
-// segment has been auto-skipped, that key stays suppressed — including
+// One-shot re-fire guard: each segment instance is keyed by party and kind+start.
+// Once a segment has been auto-skipped, that key stays suppressed — including
 // through Undo's seek back into the segment — until the playhead genuinely
-// leaves the segment's range without Undo being pressed again. A `mediaID`
-// change (new Media loaded) always clears the guard.
+// leaves the segment's range without Undo being pressed again, or the party or
+// Media changes.
 //
 // Markers are in song seconds. Under an applied tempo (CORE-1659) a stream
 // second covers `songScale` song seconds, so the playhead is compared in song
@@ -63,7 +63,7 @@ export function useAutoSkip({
   dismiss: () => void;
 } {
   const [skipped, setSkipped] = useState<AutoSkipSegment | null>(null);
-  const suppressedKeyRef = useRef<string | null>(null);
+  const suppressedKeyRef = useRef<{ partyID: string; segmentKey: string } | null>(null);
   const undoSegmentRef = useRef<AutoSkipSegment | null>(null);
   const undoPartyRef = useRef("");
   // Consumes the single timeupdate tick that follows our own programmatic
@@ -100,7 +100,7 @@ export function useAutoSkip({
     // Re-arm the guard for this exact segment before seeking back into it —
     // otherwise the very next tick (now inside the segment again) would
     // immediately re-trigger the auto-skip we're trying to undo.
-    suppressedKeyRef.current = autoSkipSegmentKey(segment);
+    suppressedKeyRef.current = { partyID: party.partyID, segmentKey: autoSkipSegmentKey(segment) };
     ignoreNextTickRef.current = true;
     if (party.status === "active") markViewerIntent();
     video.currentTime = segment.startSeconds / songScaleRef.current;
@@ -133,9 +133,10 @@ export function useAutoSkip({
         suppressedKeyRef.current = null;
         return;
       }
-      const key = autoSkipSegmentKey(segment);
-      if (suppressedKeyRef.current === key) return;
       const party = getWatchParty();
+      const key = { partyID: party.partyID, segmentKey: autoSkipSegmentKey(segment) };
+      const suppressed = suppressedKeyRef.current;
+      if (suppressed?.partyID === key.partyID && suppressed.segmentKey === key.segmentKey) return;
       if (party.status === "starting" || party.status === "joining") return;
       if (party.status === "active") {
         const target = Math.round(segment.endSeconds * 1000);
@@ -168,12 +169,13 @@ export function useAutoSkip({
       seeking = false;
     };
     const onTime = () => {
+      const party = getWatchParty();
       // The browser can clear video.seeking and fire timeupdate before seeked.
       // Let the party's seeked handler decide whether to skip or send transport.
-      if (video.seeking || (seeking && getWatchParty().status === "active")) return;
+      if (video.seeking || (seeking && party.status === "active")) return;
       if (ignoreNextTickRef.current) {
         ignoreNextTickRef.current = false;
-        return;
+        if (suppressedKeyRef.current?.partyID === party.partyID) return;
       }
       void trySkip();
     };
