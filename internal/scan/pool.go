@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -62,16 +61,15 @@ type workerTask struct {
 	info fileStat
 
 	// Filled by the worker; the consumer must not read them before done closes.
-	stored         store.StoredFingerprint
-	fastPath       bool
-	keepProbeFacts bool
-	fingerprint    string
-	oshash         string
-	probe          probeOutcome
-	phash          string
-	local          []LocalMetadata
-	err            error
-	done           chan struct{}
+	stored      store.StoredFingerprint
+	fastPath    bool
+	fingerprint string
+	oshash      string
+	probe       probeOutcome
+	phash       string
+	local       []LocalMetadata
+	err         error
+	done        chan struct{}
 }
 
 // fileStat is the slice of fs.FileInfo the pipeline needs (size + mtime),
@@ -95,32 +93,30 @@ type probeOutcome struct {
 // fill computes the expensive, side-effect-free per-file work: the fast-path
 // fingerprint lookup (ADR-0009 identity preserved — an unchanged triple still
 // performs ZERO hashes and ZERO probes), then for changed/new files the
-// sampled fingerprint, the OSHash, the bounded probe, and the perceptual
+// whole-file content hash, the OSHash, the bounded probe, and the perceptual
 // hash. Store access here is read-only; the store serializes it internally
 // (one write connection, ADR-0011 §1), so concurrent fills are safe alongside
 // the consumer's ordered writes.
-func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
-	stored, err := s.st.MediaFileFingerprintByPath(ctx, t.path)
+func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, grabber FrameGrabber) {
+	stored, err := st.MediaFileFingerprintByPath(ctx, t.path)
 	if err != nil {
 		t.err = err
 		return
 	}
 	t.stored = stored
-	t.fastPath = t.matchesStats(stored)
+	// The stored mtime is millisecond-resolution (the store truncates on
+	// write), so compare at the same granularity — a file mtime carries
+	// sub-millisecond precision that would otherwise never match.
+	modTimeMS := t.info.modTime.UTC().Truncate(time.Millisecond)
+	t.fastPath = stored.OK &&
+		stored.ContentFingerprint != "" &&
+		stored.SizeBytes == t.info.size &&
+		!stored.ModTime.IsZero() &&
+		stored.ModTime.Equal(modTimeMS)
 	if t.fastPath {
 		return
 	}
-	// The public catalog controls fast-path routing. Private rows can reuse
-	// their fingerprint while still taking the normal probe path.
-	if s.st.EncryptedLibraryDBRegistered(s.req.LibraryID) {
-		stored, err = s.st.LibraryMediaFileFingerprintByPath(ctx, s.req.LibraryID, t.path)
-		if err != nil {
-			t.err = err
-			return
-		}
-	}
-	t.keepProbeFacts = t.matchesStats(stored)
-	fingerprint, err := t.readFingerprint(ctx, stored)
+	fingerprint, err := hashScanFile(ctx, t.path)
 	if err != nil {
 		t.err = err
 		return
@@ -132,13 +128,12 @@ func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
 		return
 	}
 	t.oshash = oshash
-	t.probeFile(ctx, s.prober)
-	t.keepProbeFacts = t.keepProbeFacts && !t.probe.succeeded
-	if s.grabber != nil && t.probe.hasVideo {
+	t.probeFile(ctx, prober)
+	if grabber != nil && t.probe.hasVideo {
 		// Best-effort, like the probe fallback: a failed grab (no FFmpeg,
 		// corrupt frame) leaves phash empty for a later scan — the store never
 		// overwrites a stored phash with "".
-		if phash, phashErr := PHash(ctx, s.grabber, t.path, t.probe.value.DurationSeconds); phashErr == nil {
+		if phash, phashErr := PHash(ctx, grabber, t.path, t.probe.value.DurationSeconds); phashErr == nil {
 			t.phash = phash
 		} else {
 			slog.Debug("scan: perceptual hash failed", "path", t.path, "error", phashErr.Error())
@@ -146,27 +141,34 @@ func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
 	}
 }
 
-func (t *workerTask) matchesStats(stored store.StoredFingerprint) bool {
-	return stored.OK && stored.ContentFingerprint != "" && stored.SizeBytes == t.info.size &&
-		store.MediaFileModTimeMatches(stored.ModTime, t.info.modTime)
-}
+// Whole-file reads compete for storage bandwidth across all scan runs. Keep the
+// slot until the reader closes, and leave probes and other work outside it.
+var scanHashSlot = make(chan struct{}, 1)
 
-// readFingerprint preserves a legacy identity when only missing stats prevent
-// the fast path. If any recorded stat changed, the sample suffices.
-func (t *workerTask) readFingerprint(ctx context.Context, stored store.StoredFingerprint) (string, error) {
-	if t.keepProbeFacts {
-		return stored.ContentFingerprint, nil
-	}
-	if stored.OK && strings.HasPrefix(stored.ContentFingerprint, "sha256:") &&
-		(stored.SizeBytes == 0 || stored.ModTime.IsZero()) &&
-		(stored.SizeBytes == 0 || stored.SizeBytes == t.info.size) &&
-		(stored.ModTime.IsZero() || store.MediaFileModTimeMatches(stored.ModTime, t.info.modTime)) {
-		fingerprint, err := legacyFileContent(ctx, t.path)
-		if err != nil || fingerprint == stored.ContentFingerprint {
-			return fingerprint, err
+// onScanHashWait lets a test observe a worker finding the hash slot occupied.
+var onScanHashWait func(path string)
+
+func hashScanFile(ctx context.Context, path string) (string, error) {
+	done := ctx.Done()
+	select {
+	case scanHashSlot <- struct{}{}:
+	case <-done:
+		return "", ctx.Err()
+	default:
+		if onScanHashWait != nil {
+			onScanHashWait(path)
+		}
+		select {
+		case scanHashSlot <- struct{}{}:
+		case <-done:
+			return "", ctx.Err()
 		}
 	}
-	return sampleFileContent(ctx, t.path)
+	defer func() { <-scanHashSlot }()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return hashFileContent(ctx, path)
 }
 
 // probeFile probes a non-image file, leaving t.probe unset when there is no
