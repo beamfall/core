@@ -91,7 +91,7 @@ export interface WatchPartyView {
    * starts a lead party with this screen as the lead (CORE-2245).
    */
   start: (relaxed?: boolean, lead?: boolean) => Promise<boolean>;
-  leave: () => Promise<void>;
+  leave: () => Promise<boolean>;
   autoSkipLead: (positionMS: number, expiresAt?: number) => Promise<PartyAutoSkipOutcome>;
 }
 
@@ -114,6 +114,7 @@ export function useWatchParty({
   videoRef,
   attached,
   mediaId,
+  titleSelectionEpoch,
   onFollow,
   songScale = 1,
   partySeekAutoSkip,
@@ -122,6 +123,8 @@ export function useWatchParty({
   /** Whether the <video> is mounted (it is not while an error replaces the stage). */
   attached: boolean;
   mediaId: string;
+  /** The party epoch when this title was selected for shared playback. */
+  titleSelectionEpoch?: number;
   /** Move the player to the Media the party moved to. */
   onFollow: (item: string) => void;
   /** Original media seconds per stream second, after any applied tempo. */
@@ -306,11 +309,12 @@ export function useWatchParty({
   useLayoutEffect(() => {
     const partyItem = getWatchParty().timeline?.item;
     if (!active || !party.isHost || !partyItem || !mediaId) return;
+    const epoch = getPartyTransportEpoch();
+    if (titleSelectionEpoch !== epoch) return;
     const submitted = submittedPartyTitleSwitch();
     if (!submitted && partyItem === mediaId) return;
     const selection = new AbortController();
     hostSelection.current = selection.signal;
-    const epoch = getPartyTransportEpoch();
     const followShared = () => {
       if (selection.signal.aborted) return;
       hostSelection.current = null;
@@ -360,7 +364,7 @@ export function useWatchParty({
       selection.abort();
       hostSelection.current = null;
     };
-  }, [active, mediaId, party.isHost, party.partyID]);
+  }, [active, mediaId, party.isHost, party.partyID, titleSelectionEpoch]);
 
   // Follow the party to another title.
   useEffect(() => {

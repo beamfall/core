@@ -23,7 +23,7 @@ vi.mock("./watchPartyStore", () => ({
   useWatchPartyState: () => party,
   sendPartyTransport: vi.fn(async () => true),
   startWatchParty: vi.fn(async () => true),
-  leaveParty: vi.fn(async () => {}),
+  leaveParty: vi.fn(async () => true),
   reportPartyDrift: vi.fn(() => true),
   reportLeadPosition: vi.fn(() => true),
   partyNowMS: () => Date.now() + party.offsetMS,
@@ -349,12 +349,14 @@ describe("useWatchParty drift and advance (CORE-1766)", () => {
       ...activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true }),
       isHost: true,
     };
+    const initialProps: { mediaId: string; titleSelectionEpoch?: number } = { mediaId: "m1" };
     const host = renderHook(
-      ({ mediaId }) => useWatchParty({ videoRef, attached: true, mediaId, onFollow }),
-      { initialProps: { mediaId: "m1" } },
+      ({ mediaId, titleSelectionEpoch }) =>
+        useWatchParty({ videoRef, attached: true, mediaId, titleSelectionEpoch, onFollow }),
+      { initialProps },
     );
     // The host's Up Next takes its player to the next item.
-    host.rerender({ mediaId: "m2" });
+    host.rerender({ mediaId: "m2", titleSelectionEpoch: 1 });
     expect(sendPartyTransport).toHaveBeenCalledWith("m2", {
       positionMS: 0,
       playing: true,

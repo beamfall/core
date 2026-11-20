@@ -96,8 +96,14 @@ export function NotificationsPage() {
     setError(null);
     setJoiningID(notification.id);
     const currentParty = getWatchParty();
-    if (currentParty.status !== "idle" && currentParty.partyID !== notification.ref) {
-      await leaveParty();
+    if (
+      currentParty.status !== "idle" &&
+      currentParty.partyID !== notification.ref &&
+      !(await leaveParty())
+    ) {
+      setJoiningID("");
+      setError(t("watchPartyLeaveError"));
+      return;
     }
     const item = await joinWatchParty(notification.ref);
     setJoiningID("");
@@ -111,7 +117,7 @@ export function NotificationsPage() {
       return;
     }
     if (!notification.read) void onMarkRead(notification.id);
-    navigate(mediaPath("watch", item));
+    navigate(mediaPath("watch", item), { state: { selectPartyTitle: false } });
   }
 
   // Approve or decline a member's request from its notification (CORE-1765).

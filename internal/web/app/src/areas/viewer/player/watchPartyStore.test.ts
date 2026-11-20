@@ -350,9 +350,13 @@ describe("party actions", () => {
     });
   });
 
-  it("leaves locally first, then tells the server", async () => {
+  it("clears local membership after the server confirms the departure", async () => {
     await host();
-    await leaveParty();
+    vi.mocked(leaveWatchParty).mockImplementationOnce(async () => {
+      expect(getWatchParty().status).toBe("active");
+      expect(unsubscribe).not.toHaveBeenCalled();
+    });
+    expect(await leaveParty()).toBe(true);
     expect(getWatchParty().status).toBe("idle");
     expect(unsubscribe).toHaveBeenCalled();
     expect(leaveWatchParty).toHaveBeenCalledWith("p1");

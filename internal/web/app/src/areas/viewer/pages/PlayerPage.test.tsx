@@ -2363,7 +2363,10 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
       try {
         expect(await startWatchParty("media-alpha")).toBe(true);
         await act(async () => renderHosted({ mediaClass: "video" }));
-        await act(async () => go("/watch/media-next", { state: { skipPrePlay: true } }));
+        const next = vi.mocked(PlayerTransport).mock.lastCall?.[0].onNextInQueue;
+        expect(next).toBeTypeOf("function");
+        await act(async () => next?.());
+        expect(pathname).toBe("/watch/media-next");
         expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
           partyID,
           item: "media-next",
@@ -2573,10 +2576,67 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     }
   });
 
-  it("leaves the current party before accepting another party's invite in Notifications", async () => {
+  it("follows the current party title and paused anchor on Back from Notifications", async () => {
+    const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
+    vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 0, roundTripMS: 1 });
+    vi.mocked(createWatchParty).mockResolvedValueOnce({
+      partyID: "p1",
+      content: "media-alpha",
+      relaxed: true,
+      members: [],
+    });
+    vi.mocked(fetchNotifications).mockResolvedValue([]);
+    vi.mocked(watchPartyTransport)
+      .mockReset()
+      .mockImplementation(async ({ item, positionMS }) => ({ item, positionMS, presentAtMS: 1 }));
+    const anchor = { item: "media-next", positionMS: 45_000, presentAtMS: 0, paused: true };
+    try {
+      expect(await startWatchParty("media-alpha")).toBe(true);
+      renderHosted({ mediaClass: "video" });
+      await waitFor(() => stageVideo());
+      // A previously selected title is now a history entry.
+      vi.mocked(fetchPrePlayQueue).mockResolvedValueOnce([]);
+      await act(async () => go("/watch/media-alpha"));
+      await waitFor(() => stageVideo());
+      await act(async () => go("/notifications"));
+      expect(document.querySelector("video")).toBeNull();
+      vi.mocked(fetchPrePlayQueue).mockClear();
+      await act(async () => {
+        stream.mock.lastCall?.[0](
+          new MessageEvent("group.sync", {
+            data: JSON.stringify({
+              payload: { ...anchor, groupID: "p1", signal: "transition" },
+            }),
+          }),
+        );
+      });
+      expect(getWatchParty().timeline).toMatchObject(anchor);
+
+      await act(async () => go(-1));
+      expect(watchPartyTransport).not.toHaveBeenCalled();
+      expect(fetchPrePlayQueue).not.toHaveBeenCalled();
+      await waitFor(() => expect(pathname).toBe("/watch/media-next"));
+      const video = stageVideo();
+      Object.defineProperty(video, "readyState", { value: 4 });
+      await waitFor(() => expect(video.currentTime).toBe(45));
+      expect(video.paused).toBe(true);
+      expect(getWatchParty().timeline).toMatchObject(anchor);
+    } finally {
+      act(resetWatchPartyForTest);
+      stream.mockRestore();
+      vi.mocked(fetchNotifications).mockReset();
+      vi.mocked(watchPartyTransport).mockReset();
+    }
+  });
+
+  it("requires a confirmed departure before accepting another party's invite in Notifications", async () => {
     const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
     const departure = deferred<void>();
-    vi.mocked(leaveWatchParty).mockClear().mockReturnValueOnce(departure.promise);
+    const retry = deferred<void>();
+    vi.mocked(leaveWatchParty)
+      .mockClear()
+      .mockReturnValueOnce(departure.promise)
+      .mockReturnValueOnce(retry.promise);
     vi.mocked(calibrateWatchPartyClock).mockResolvedValue({ offsetMS: 0, roundTripMS: 1 });
     vi.mocked(createWatchParty).mockResolvedValueOnce({
       partyID: "p1",
@@ -2622,8 +2682,19 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
       expect(leaveWatchParty).toHaveBeenCalledExactlyOnceWith("p1");
       expect(acceptWatchParty).not.toHaveBeenCalled();
       expect(pathname).toBe("/notifications");
+      expect(getWatchParty()).toMatchObject({ partyID: "p1", status: "active", isHost: true });
 
-      await act(async () => departure.resolve(undefined));
+      await act(async () => departure.reject(new TypeError("Network unavailable")));
+      expect(screen.getByRole("alert")).toHaveTextContent("Couldn't leave the Watch Party.");
+      expect(acceptWatchParty).not.toHaveBeenCalled();
+      expect(pathname).toBe("/notifications");
+      expect(getWatchParty()).toMatchObject({ partyID: "p1", status: "active", isHost: true });
+
+      fireEvent.click(screen.getByRole("button", { name: "Leave and join" }));
+      expect(leaveWatchParty).toHaveBeenCalledTimes(2);
+      expect(leaveWatchParty).toHaveBeenLastCalledWith("p1");
+      expect(acceptWatchParty).not.toHaveBeenCalled();
+      await act(async () => retry.resolve(undefined));
       expect(acceptWatchParty).toHaveBeenCalledExactlyOnceWith({
         partyID: "p2",
         clockOffsetMS: 0,

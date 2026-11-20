@@ -54,7 +54,7 @@ export function WatchPartyPanel({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onStart: (relaxed: boolean, lead?: boolean) => Promise<boolean>;
-  onLeave: () => Promise<void>;
+  onLeave: () => void;
 }) {
   const t = useT();
   const panelID = useId();
@@ -85,7 +85,9 @@ export function WatchPartyPanel({
       ? t("watchPartyHomeNetworkOnly")
       : party.error === "failed"
         ? t("watchPartyFailed", { reason: party.errorDetail })
-        : "";
+        : party.error === "leave-failed"
+          ? t("watchPartyLeaveError")
+          : "";
 
   return (
     <div className="relative ml-auto">

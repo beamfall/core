@@ -41,7 +41,7 @@ import {
 export type WatchPartyStatus = "idle" | "starting" | "joining" | "active";
 
 /** Why the last party action failed; the UI turns it into words. */
-export type WatchPartyErrorKind = "" | "home-network" | "failed";
+export type WatchPartyErrorKind = "" | "home-network" | "failed" | "leave-failed";
 
 /** What last happened to the party's host (CORE-1763); the UI turns it into words. */
 export type WatchPartyNotice = "" | "handoff" | "ended";
@@ -1165,13 +1165,23 @@ export function watchPartyDefersUpNext(party: WatchPartyState): boolean {
  * Leave the party; the local player keeps playing on its own. A host's leave
  * hands the party to the earliest member still in it.
  */
-export async function leaveParty(): Promise<void> {
+export async function leaveParty(): Promise<boolean> {
   const partyID = state.partyID;
+  const gen = generation;
+  if (partyID) {
+    try {
+      await leaveWatchParty(partyID);
+    } catch {
+      if (gen === generation) set({ error: "leave-failed", errorDetail: "" });
+      return false;
+    }
+    if (gen !== generation) return false;
+  }
   // Leaving a lead party is a choice: do not rejoin it, or follow it unasked.
   if (partyID && state.lead) declinedParties.add(partyID);
   forgetFollowing();
   reset();
-  if (partyID) await leaveWatchParty(partyID).catch(() => {});
+  return true;
 }
 
 /** As host, end the party for everyone in it. */
