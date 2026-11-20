@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/beamfall/core/internal/store"
 )
@@ -43,7 +44,7 @@ func (h *Handler) listAPIKeys(w http.ResponseWriter, r *http.Request, _ net.IP) 
 
 // mediaBrowserClient returns the Client parameter of the MediaBrowser
 // authorization header that carries token. When none does (the token came in
-// another header), it takes the first header that carries no token.
+// another header), it takes the first header with no Token parameter.
 func mediaBrowserClient(header http.Header, token string) string {
 	names := []string{"X-Emby-Authorization", "Authorization"}
 	for _, name := range names {
@@ -52,7 +53,8 @@ func mediaBrowserClient(header http.Header, token string) string {
 		}
 	}
 	for _, name := range names {
-		if value := header.Get(name); mediaBrowserToken(value) == "" {
+		// Any Token parameter, even an ambiguous one, rules the header out.
+		if value := header.Get(name); !strings.Contains(strings.ToLower(value), "token=") {
 			if client := mediaBrowserValue(value, "Client"); client != "" {
 				return client
 			}

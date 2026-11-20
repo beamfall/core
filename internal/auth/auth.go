@@ -648,15 +648,11 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 		// The store caps setup Sessions at the TTL from the reservation.
 		expires = reservation.At().Add(integrationSetupTTL).UTC()
 		scopes = append(slices.Clone(scopes), store.IntegrationScopeSetup)
-		if !s.now().Before(expires) {
-			// The window closed while the sign-in was being verified.
-			return IntegrationSession{}, s.integrationFailure(started)
-		}
 	}
 	err = s.store.CreateIntegrationSession(ctx, store.Session{
 		ID: store.SessionID(token), ProfileID: profile.ID, Kind: store.SessionKindIntegration,
 		IntegrationScopes: scopes, ExpiresAt: expires,
-	}, !setup, reservation)
+	}, !setup, reservation, s.now)
 	if err != nil {
 		return IntegrationSession{}, s.integrationFailure(started)
 	}

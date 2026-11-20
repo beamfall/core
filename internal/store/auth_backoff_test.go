@@ -220,7 +220,7 @@ func TestIntegrationSettlementPreservesLaterFailuresAtSameMillisecond(t *testing
 	if _, err := st.UpdateProfileSettings(ctx, session.ProfileID, ProfileSettings{IntegrationSignIn: &optIn}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CreateIntegrationSession(ctx, session, true, first); err != nil {
+	if err := st.CreateIntegrationSession(ctx, session, true, first, time.Now); err != nil {
 		t.Fatal(err)
 	}
 	for _, key := range keys {
@@ -296,7 +296,7 @@ func TestIntegrationAttemptsSurviveCatalogUpgradeWithoutReplay(t *testing.T) {
 	if _, err := st.UpdateProfileSettings(ctx, session.ProfileID, ProfileSettings{IntegrationSignIn: &optIn}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CreateIntegrationSession(ctx, session, true, reservation); err != nil {
+	if err := st.CreateIntegrationSession(ctx, session, true, reservation, time.Now); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Close(); err != nil {

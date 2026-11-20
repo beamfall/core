@@ -1800,8 +1800,10 @@ func (s *Store) Session(ctx context.Context, id SessionID) (Session, error) {
 
 // CreateIntegrationSession rechecks Profile eligibility, inserts a keyless,
 // non-renewable integration Session, and settles its throttle reservation in
-// one transaction. Bounded admin setup sessions may be created before opt-in.
-func (s *Store) CreateIntegrationSession(ctx context.Context, session Session, requireOptIn bool, reservation AuthAttemptReservation) error {
+// one transaction. Bounded admin setup sessions may be created before opt-in;
+// now is read inside that transaction so a setup window that closed while
+// waiting for the writer refuses the insert.
+func (s *Store) CreateIntegrationSession(ctx context.Context, session Session, requireOptIn bool, reservation AuthAttemptReservation, now func() time.Time) error {
 	if session.ID == "" || session.ProfileID == "" {
 		return ValidationError("integration session identity is required")
 	}
@@ -1862,6 +1864,9 @@ func (s *Store) CreateIntegrationSession(ctx context.Context, session Session, r
 	}
 	if setup && owner == 0 {
 		return ValidationError("integration setup session requires the owner profile")
+	}
+	if setup && !now().Before(session.ExpiresAt) {
+		return ValidationError("integration setup window has closed")
 	}
 	var inserted SessionID
 	if err := tx.QueryRowContext(ctx, `

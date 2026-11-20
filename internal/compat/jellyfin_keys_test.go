@@ -205,4 +205,15 @@ func TestJellyfinAPIKeysNameTheTokenHeadersClient(t *testing.T) {
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &keys) != nil || len(keys.Items) != 1 || keys.Items[0].AppName != "" {
 		t.Fatalf("GET Auth/Keys with a Client-less token header = %d %s, want an empty AppName", rec.Code, rec.Body)
 	}
+
+	// With the token in X-Emby-Token, a header with an ambiguous Token is not
+	// a fallback either.
+	req = compatRequest(t, http.MethodGet, "Auth/Keys")
+	req.Header.Set("X-Emby-Token", setup)
+	req.Header.Set("X-Emby-Authorization", `MediaBrowser Client="Decoy", Token="a", Token="b"`)
+	req.Header.Set("Authorization", `MediaBrowser Client="Seerr", Device="Seerr"`)
+	rec = sendCompat(handler, req)
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &keys) != nil || len(keys.Items) != 1 || keys.Items[0].AppName != "Seerr" {
+		t.Fatalf("GET Auth/Keys with the token in X-Emby-Token = %d %s, want AppName Seerr", rec.Code, rec.Body)
+	}
 }

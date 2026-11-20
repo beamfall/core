@@ -36,14 +36,14 @@ func TestIntegrationSessionKindsAndOptIn(t *testing.T) {
 	if err != nil || !until.IsZero() {
 		t.Fatalf("reserve integration attempts: locked until %v, error %v", until, err)
 	}
-	if err := st.CreateIntegrationSession(ctx, session, true, reservation); err != ValidationError("integration sign-in is disabled") {
+	if err := st.CreateIntegrationSession(ctx, session, true, reservation, time.Now); err != ValidationError("integration sign-in is disabled") {
 		t.Fatalf("integration session without Profile opt-in: %v", err)
 	}
 	enabled := true
 	if _, err := st.UpdateProfileSettings(ctx, session.ProfileID, ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CreateIntegrationSession(ctx, session, true, reservation); err != nil {
+	if err := st.CreateIntegrationSession(ctx, session, true, reservation, time.Now); err != nil {
 		t.Fatalf("CreateIntegrationSession: %v", err)
 	}
 	got, err := st.Session(ctx, session.ID)
@@ -54,7 +54,7 @@ func TestIntegrationSessionKindsAndOptIn(t *testing.T) {
 	invalid := session
 	invalid.ID = "integration-invalid"
 	invalid.IntegrationScopes = []IntegrationScope{"compat.admin"}
-	if err := st.CreateIntegrationSession(ctx, invalid, true, reservation); err != ValidationError("unknown integration session scope") {
+	if err := st.CreateIntegrationSession(ctx, invalid, true, reservation, time.Now); err != ValidationError("unknown integration session scope") {
 		t.Fatalf("integration session with a scope outside the ceiling: %v", err)
 	}
 
@@ -119,7 +119,7 @@ func TestIntegrationSessionTransactionRollbackSurvivesReopen(t *testing.T) {
 				ID: "rejected-integration", ProfileID: "profile-default", Kind: SessionKindIntegration,
 				IntegrationScopes: scopes, ExpiresAt: now.Add(time.Hour),
 			}
-			if err := st.CreateIntegrationSession(ctx, session, true, reservation); err == nil || !strings.Contains(err.Error(), tc.message) {
+			if err := st.CreateIntegrationSession(ctx, session, true, reservation, time.Now); err == nil || !strings.Contains(err.Error(), tc.message) {
 				t.Fatalf("CreateIntegrationSession = %v, want injected failure %q", err, tc.message)
 			}
 			if err := st.Close(); err != nil {
@@ -263,18 +263,28 @@ func TestIntegrationSetupSessionBinding(t *testing.T) {
 				ID: SessionID(fmt.Sprintf("setup-%d", i)), ProfileID: tc.profile, Kind: SessionKindIntegration,
 				IntegrationScopes: tc.scopes, ExpiresAt: now.Add(tc.ttl),
 			}
-			err := st.CreateIntegrationSession(ctx, session, tc.requireOptIn, reserve(tc.key))
+			err := st.CreateIntegrationSession(ctx, session, tc.requireOptIn, reserve(tc.key), time.Now)
 			switch {
 			case tc.want == "" && err != nil:
 				t.Fatalf("owner setup session: %v", err)
 			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
 				t.Fatalf("error = %v, want %q", err, tc.want)
-			case tc.want != "":
-				if _, err := st.Session(ctx, session.ID); err == nil {
-					t.Fatal("the refused session was stored")
-				}
+			case tc.want != "" && sessionStored(t, st, session.ID):
+				t.Fatal("the refused session was stored")
 			}
 		})
+	}
+
+	// A setup window that closes while the sign-in waits for the writer
+	// refuses the insert.
+	closed := Session{
+		ID: "setup-closed", ProfileID: "profile-default", Kind: SessionKindIntegration,
+		IntegrationScopes: setupScopes, ExpiresAt: now.Add(IntegrationSetupTTL),
+	}
+	late := func() time.Time { return closed.ExpiresAt }
+	if err := st.CreateIntegrationSession(ctx, closed, false, reserve(adminKey), late); err == nil ||
+		!strings.Contains(err.Error(), "window has closed") || sessionStored(t, st, closed.ID) {
+		t.Fatalf("setup session after the window closed: %v", err)
 	}
 
 	// Transferring ownership ends the outgoing owner's setup Session and
@@ -287,16 +297,25 @@ func TestIntegrationSetupSessionBinding(t *testing.T) {
 		ID: "ordinary", ProfileID: "profile-default", Kind: SessionKindIntegration,
 		IntegrationScopes: []IntegrationScope{IntegrationScopeRead}, ExpiresAt: now.Add(time.Minute),
 	}
-	if err := st.CreateIntegrationSession(ctx, ordinary, true, reserve("profile:profile-default")); err != nil {
+	if err := st.CreateIntegrationSession(ctx, ordinary, true, reserve("profile:profile-default"), time.Now); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetProfileOwner(ctx, other.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.Session(ctx, "setup-5"); err == nil {
+	if sessionStored(t, st, "setup-5") {
 		t.Fatal("the former owner's setup session outlived the transfer")
 	}
-	if _, err := st.Session(ctx, ordinary.ID); err != nil {
-		t.Fatalf("ordinary integration session after the transfer: %v", err)
+	if !sessionStored(t, st, ordinary.ID) {
+		t.Fatal("the transfer removed an ordinary integration session")
 	}
+}
+
+func sessionStored(t *testing.T, st *Store, id SessionID) bool {
+	t.Helper()
+	var stored bool
+	if err := st.catalogR.QueryRowContext(t.Context(), "SELECT EXISTS(SELECT 1 FROM auth_session WHERE id = ?)", id).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	return stored
 }
