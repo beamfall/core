@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+func (s *Store) SetManagedImportCatalogHookForTest(hook func()) {
+	s.managedImportStepHook = func(step string) {
+		if step == "catalog" {
+			hook()
+		}
+	}
+}
+
 // CORE-1089: a scan import landing between ImportManagedFile's on-disk
 // admission and its managed catalog admission. The managedImportStepHook runs
 // the scan-shaped import at that exact point, which wall-clock scheduling

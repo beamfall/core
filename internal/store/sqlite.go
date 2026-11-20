@@ -2876,6 +2876,14 @@ func replaceMediaFileSidecarsTx(ctx context.Context, tx *sql.Tx, fingerprint str
 // vs media.updated. Existence is read inside the same tx as the upsert so the
 // classification cannot race a concurrent writer.
 func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, imported ImportMediaFile, now time.Time) (Media, MediaFile, bool, error) {
+	// Observe the admitted inode before opening the write transaction. Only
+	// an exact legacy reimport uses these stats, to invalidate stale values.
+	var admittedSize, admittedMtime int64
+	if imported.legacyFingerprint != "" {
+		if info, err := os.Lstat(imported.Path); err == nil && info.Mode().IsRegular() {
+			admittedSize, admittedMtime = info.Size(), mediaFileTimeToMillis(info.ModTime())
+		}
+	}
 	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return Media{}, MediaFile{}, false, err
@@ -2901,6 +2909,13 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 			}
 			if existing != "" && fingerprint == imported.legacyFingerprint {
 				imported.ContentFingerprint, mediaID = fingerprint, existing
+				if _, err := tx.ExecContext(ctx, `
+					UPDATE media_file
+					SET mtime_ms = 0, size_bytes = CASE WHEN size_bytes = ? THEN size_bytes ELSE 0 END
+					WHERE content_fingerprint = ? AND (size_bytes <> ? OR mtime_ms <> ?)
+				`, admittedSize, fingerprint, admittedSize, admittedMtime); err != nil {
+					return Media{}, MediaFile{}, false, err
+				}
 			}
 		}
 	}

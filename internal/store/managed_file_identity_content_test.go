@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -180,6 +181,48 @@ func TestManagedImportIdentityFollowsContent(t *testing.T) {
 			t.Fatalf("replacement kept the original media %q", originalFile.MediaID)
 		}
 	})
+}
+
+func TestManagedReimportMatchingLegacyStatsSkipsFingerprinting(t *testing.T) {
+	ctx := t.Context()
+	st, root, filter := importStageHarness(t)
+	const name, payload = "legacy.mkv", "legacy content"
+	path := filepath.Join(root, name)
+	if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fingerprint, err := store.HashMediaFileContent(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mtime := time.Unix(1700000000, 0)
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: "library-local", Path: path, Title: "Legacy", Container: "mkv", Codec: "h264",
+		ContentFingerprint: fingerprint, SizeBytes: int64(len(payload)), ModTime: mtime,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	st.SetManagedImportCatalogHookForTest(func() {
+		// Set the matching mtime before the catalog admission observes the inode.
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	})
+	importFromOutside(t, st, root, filter, name, payload)
+	result, err := scan.Scan(ctx, st, nil, nil, nil, nil, nil, scan.Request{LibraryID: "library-local", Root: root})
+	if err != nil || result.FilesSeen != 1 {
+		t.Fatalf("scan = %+v, err = %v, want one file seen", result, err)
+	}
+	file := liveFileAt(t, st, path)
+	// Either fingerprint read path also computes OSHash. It stays empty
+	// here because the scan took the zero-read stats fast path.
+	if file.OSHash != "" || file.ContentFingerprint != fingerprint || file.MediaID != media.ID || !file.ModTime.Equal(mtime) {
+		t.Fatalf("file after matching-stat rescan = %+v, want unchanged identity and no hashes read", file)
+	}
 }
 
 func TestManagedImportReusesSoftTrashedLegacyIdentity(t *testing.T) {

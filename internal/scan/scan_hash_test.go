@@ -213,7 +213,10 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 	}
 	legacyCalls, sampleCalls := make(map[string]int), make(map[string]int)
 	savedLegacy, savedSample := legacyFileContent, sampleFileContent
-	t.Cleanup(func() { legacyFileContent, sampleFileContent = savedLegacy, savedSample })
+	savedNow := now
+	t.Cleanup(func() { legacyFileContent, sampleFileContent, now = savedLegacy, savedSample, savedNow })
+	// Let newly admitted inodes settle without changing their actual mtimes.
+	now = func() time.Time { return savedNow().Add(time.Minute) }
 	sampleFileContent = func(ctx context.Context, path string) (string, error) {
 		sampleCalls[path]++
 		return savedSample(ctx, path)
@@ -239,8 +242,8 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 		{name: "returning-small", missing: true},
 		{name: "returning-statless", missing: true, missingMtime: true},
 		{name: "managed-trash", trashed: true},
-		{name: "managed-reimport-before-scan-marks-missing", reimport: true},
-		{name: "managed-reimport-after-scan-marks-missing", reimport: true, missingFirst: true},
+		{name: "managed-reimport-before-scan-marks-missing", reimport: true, wantFullRead: true},
+		{name: "managed-reimport-after-scan-marks-missing", reimport: true, missingFirst: true, wantFullRead: true},
 		{name: "statless", missingMtime: true, wantFullRead: true},
 		{name: "moved", move: true},
 		{name: "known-size-changed", missingMtime: true, change: true},
@@ -303,13 +306,12 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 				if id, live, err := st.MediaFileExistsByFingerprint(ctx, full); err != nil || !live || id != media.ID {
 					t.Fatalf("legacy match after reimport = %q, live = %t, err = %v, want %q", id, live, err, media.ID)
 				}
-				// Make the replacement's observed stats match the recorded legacy stats.
-				if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil {
+				landed, err := os.Stat(path)
+				if err != nil {
 					t.Fatal(err)
 				}
-				stored, err := st.LibraryMediaFileFingerprintByPath(ctx, req.LibraryID, path)
-				if err != nil || !stored.OK || stored.SizeBytes != info.Size() || !store.MediaFileModTimeMatches(stored.ModTime, info.ModTime()) {
-					t.Fatalf("managed reimport lost recorded stats: %+v, err = %v", stored, err)
+				if landed.Size() != info.Size() || store.MediaFileModTimeMatches(info.ModTime(), landed.ModTime()) {
+					t.Fatalf("expected same size and a new mtime after staging, got size %d and mtime %v", landed.Size(), landed.ModTime())
 				}
 			}
 			if tc.move {
@@ -384,6 +386,12 @@ func TestScanLegacyFingerprintCompatibility(t *testing.T) {
 			}
 			if stored.ContentFingerprint != full || id != media.ID {
 				t.Fatalf("stored = %q, %s, want %q, %s", stored.ContentFingerprint, id, full, media.ID)
+			}
+			if tc.reimport {
+				landed, err := os.Stat(path)
+				if err != nil || !store.MediaFileModTimeMatches(stored.ModTime, landed.ModTime()) {
+					t.Fatalf("managed reimport mtime after rescan = %v, stat = %v, err = %v", stored.ModTime, landed, err)
+				}
 			}
 			progress, found, err := st.PlaybackProgressFor(ctx, profile, id)
 			if err != nil || !found || progress.PositionSeconds != 32 {
