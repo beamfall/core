@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { mediaAddressIDs } from "@/areas/viewer/lib/mediaAddress";
 import {
   ErrorLine,
   HelpTip,
@@ -124,7 +125,8 @@ function BulkEditSection({
     ids
       .split(",")
       .map((id) => id.trim())
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((id) => (id.startsWith("sample1.") ? mediaAddressIDs(id)[0] : id));
 
   const fields = (): MediaFieldInput[] => {
     const name = fieldName.trim();

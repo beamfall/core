@@ -2,9 +2,8 @@
 
 ## Why
 
-Initial scans read every byte of large media files to establish identity, exhausting the scan
-job's time budget after only a few files. A bounded fingerprint lets the scan proceed to probing
-without waiting for a whole-file read.
+Initial scans exhaust their time budget reading large files for identity. Bounded fingerprinting
+lets the scan proceed to probing sooner.
 
 ## What changes
 
@@ -12,6 +11,5 @@ without waiting for a whole-file read.
 - Keep legacy identities at unchanged paths. For a legacy row with incomplete stats, compare
   the full digest once at its existing path and record the stats on a match.
 - Keep managed staging's full SHA-256 for duplicate checks against legacy rows.
-- Check both catalog schemes before promoting streamed bytes or relocating downloaded bytes.
-  Either catalog match is sufficient, including when unsampled bytes differ.
+- Treat either digest as a duplicate before proxy promotion or qBittorrent relocation.
 - Compute photo export manifest digests from the exported plaintext.

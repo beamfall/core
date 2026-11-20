@@ -30,18 +30,18 @@ func enqueueHashTestScan(t *testing.T, st *store.Store, id store.JobID, root str
 }
 
 type countingSampleReader struct {
-	fingerprintFile
+	store.SampleFile
 	bytes int
 }
 
 func (r *countingSampleReader) Read(p []byte) (int, error) {
-	n, err := r.fingerprintFile.Read(p)
+	n, err := r.SampleFile.Read(p)
 	r.bytes += n
 	return n, err
 }
 
 func (r *countingSampleReader) ReadAt(p []byte, offset int64) (int, error) {
-	n, err := r.fingerprintFile.ReadAt(p, offset)
+	n, err := r.SampleFile.ReadAt(p, offset)
 	r.bytes += n
 	return n, err
 }
@@ -82,16 +82,18 @@ func TestScanBoundsFingerprintReadsOnSparseFile(t *testing.T) {
 	}
 	var readers []*countingSampleReader
 	var fullReads int
-	savedOpen, savedLegacy := openFingerprintFile, legacyFileContent
-	t.Cleanup(func() { openFingerprintFile, legacyFileContent = savedOpen, savedLegacy })
-	openFingerprintFile = func(path string) (fingerprintFile, error) {
-		file, err := savedOpen(path)
-		if err != nil {
-			return nil, err
-		}
-		reader := &countingSampleReader{fingerprintFile: file}
-		readers = append(readers, reader)
-		return reader, nil
+	savedSample, savedLegacy := sampleFileContent, legacyFileContent
+	t.Cleanup(func() { sampleFileContent, legacyFileContent = savedSample, savedLegacy })
+	sampleFileContent = func(ctx context.Context, path string) (string, error) {
+		return store.SampleMediaFileContentFrom(ctx, func() (store.SampleFile, error) {
+			file, err := os.OpenInRoot(filepath.Dir(path), filepath.Base(path))
+			if err != nil {
+				return nil, err
+			}
+			reader := &countingSampleReader{SampleFile: file}
+			readers = append(readers, reader)
+			return reader, nil
+		})
 	}
 	legacyFileContent = func(ctx context.Context, path string) (string, error) {
 		fullReads++

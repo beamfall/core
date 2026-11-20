@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MediaDetailMoreMenu } from "@/areas/viewer/components/MediaDetailMoreMenu";
 import { bulkEditApply, bulkEditPreview, fetchLibraries } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { BulkOpsPage } from "./BulkOpsPage";
@@ -46,6 +47,32 @@ function renderPage() {
 }
 
 describe("BulkOpsPage", () => {
+  it("previews the sampled Media ID from a copied detail link", async () => {
+    const user = userEvent.setup();
+    const id = "media-sample1-a371bff46385f7ded";
+    render(
+      <I18nProvider>
+        <MediaDetailMoreMenu mediaID={id} title="Sampled item" />
+        <BulkOpsPage />
+      </I18nProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /more actions.*sampled item/i }));
+    await user.click(await screen.findByRole("menuitem", { name: "Copy link" }));
+    const suffix = new URL(await navigator.clipboard.readText()).pathname.split("/").at(-1);
+    expect(suffix).toBe("sample1.a371bff46385f7ded");
+    await user.keyboard("{Escape}");
+
+    await user.type(screen.getByLabelText("Media IDs (comma-separated)"), `${suffix}, media-2`);
+    await user.type(screen.getByLabelText("Field name"), "year");
+    await user.type(screen.getByLabelText("Value"), "1982");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    expect(bulkEditPreview).toHaveBeenCalledWith(
+      [id, "media-2"],
+      [{ name: "year", type: "text", value: "1982" }],
+    );
+  });
+
   // HARD invariant #6: a destructive batch is confirmed against the REAL
   // previewed count. Apply is withheld until a preview exists for the current
   // inputs, and editing any input after the preview withdraws it again.

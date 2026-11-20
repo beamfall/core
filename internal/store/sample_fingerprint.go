@@ -18,10 +18,23 @@ const (
 
 // SampleMediaFileContent reads the sample1 identity from a file.
 func SampleMediaFileContent(ctx context.Context, path string) (string, error) {
+	return SampleMediaFileContentFrom(ctx, func() (SampleFile, error) {
+		return os.OpenInRoot(filepath.Dir(path), filepath.Base(path))
+	})
+}
+
+// SampleFile allows stat and random-access reads on the same open file.
+type SampleFile interface {
+	fs.File
+	io.ReaderAt
+}
+
+// SampleMediaFileContentFrom opens, stats, samples and closes a file.
+func SampleMediaFileContentFrom(ctx context.Context, open func() (SampleFile, error)) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	file, err := os.OpenInRoot(filepath.Dir(path), filepath.Base(path))
+	file, err := open()
 	if err != nil {
 		return "", err
 	}
