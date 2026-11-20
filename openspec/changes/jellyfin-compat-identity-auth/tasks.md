@@ -5,4 +5,4 @@
 - [x] Wire the existing scan queue and verify the refresh limiter and request boundary.
 - [x] Verify the compatibility route inventory and run the focused checks.
 - [ ] Pending: verify the path prefix in Radarr and Sonarr containers in separate work.
-- [ ] Publish the compatibility wire contract and register it in the workspace contract registry.
+- Follow-up CORE-2707 tracks publishing the compatibility wire contract and adding its workspace registry entry.
