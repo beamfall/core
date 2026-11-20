@@ -70,16 +70,7 @@ func TestAcquireServerLockCreatesPrivateFile(t *testing.T) {
 func TestServeHoldsServerLock(t *testing.T) {
 	cfg := config.Default()
 	cfg.Addr = "127.0.0.1:0"
-	dataDir := t.TempDir()
-	child := filepath.Join(dataDir, "child")
-	if err := os.Mkdir(child, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	alias := filepath.Join(t.TempDir(), "alias")
-	if err := os.Symlink(child, alias); err != nil {
-		t.Fatal(err)
-	}
-	cfg.DataDir = alias + "/.."
+	cfg.DataDir = t.TempDir()
 	cfg.ServerName = "LockE2E"
 	cfg.Discovery.Enabled = false
 	cfg.SeedProfile = "conformance"
@@ -118,15 +109,15 @@ func TestServeHoldsServerLock(t *testing.T) {
 	}
 
 	doc := `{"version":1,"backgroundWorkers":7,"plugins":[]}`
-	if _, err := applyOffline(t, dataDir, doc); err == nil || !strings.Contains(err.Error(), "server appears to be running") {
+	if _, err := applyOffline(t, cfg.DataDir, doc); err == nil || !strings.Contains(err.Error(), "server appears to be running") {
 		t.Fatalf("offline apply-config against a running server = %v, want refusal", err)
 	}
-	if _, err := lockServeDataDir(dataDir); err == nil || !strings.Contains(err.Error(), "already running") {
+	if _, err := lockServeDataDir(cfg.DataDir); err == nil || !strings.Contains(err.Error(), "already running") {
 		t.Fatalf("second serve lock = %v, want already running refusal", err)
 	}
 
 	stop()
-	if _, err := applyOffline(t, dataDir, doc); err != nil {
+	if _, err := applyOffline(t, cfg.DataDir, doc); err != nil {
 		t.Fatalf("offline apply-config after the server stopped: %v", err)
 	}
 }

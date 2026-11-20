@@ -41,7 +41,7 @@ func TestRemoteAccessDirectHTTPSEnabledWithTerms(t *testing.T) {
 	if !cfg.RemoteAccess.DirectHTTPSEnabled() {
 		t.Fatal("direct HTTPS not enabled with domain + accepted terms")
 	}
-	wantCache := filepath.Join(cfg.DataDir, "acme")
+	wantCache := filepath.Join(dataDir, "acme")
 	if got := cfg.RemoteAccess.DirectHTTPS.ACMECacheDir; got != wantCache {
 		t.Fatalf("ACMECacheDir = %q, want default %q", got, wantCache)
 	}

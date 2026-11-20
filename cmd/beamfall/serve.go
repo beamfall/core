@@ -50,10 +50,7 @@ func serve(ctx context.Context, args []string) error {
 // probe before writing, applies a staged restore under it, and builds the
 // server. The caller runs the server and then calls release.
 func startServer(ctx context.Context, cfg config.Config) (*app.App, func(), error) {
-	if err := cfg.ResolveDataDir(); err != nil {
-		return nil, nil, err
-	}
-	release, err := lockServeDataDir(cfg.DataDir, cfg.ConfiguredDataDir())
+	release, err := lockServeDataDir(cfg.DataDir)
 	if err != nil {
 		return nil, nil, err
 	}

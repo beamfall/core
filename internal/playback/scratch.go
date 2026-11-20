@@ -58,12 +58,12 @@ func WithScratchReadDir(read func(fs.FS, string) ([]fs.DirEntry, error)) Session
 	return func(s *Sessions) { s.readScratch = read }
 }
 
-// NewSessions creates the default root under the resolved data directory on first use.
+// NewSessions creates the default scratch root on first use.
 func NewSessions(transcoder Transcoder, dataDir string, now func() time.Time) (*Sessions, error) {
-	if dataDir == "" {
-		return nil, errors.New("playback: data directory is empty")
+	dir, err := defaultScratchDir(dataDir)
+	if err != nil {
+		return nil, err
 	}
-	dir := filepath.Join(dataDir, "transcode")
 	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, err
 	}
@@ -72,32 +72,37 @@ func NewSessions(transcoder Transcoder, dataDir string, now func() time.Time) (*
 
 // ResolveDefaultScratchDir resolves the existing default root without creating it.
 func ResolveDefaultScratchDir(dataDir string) (string, error) {
-	return resolveScratchDir(filepath.Join(dataDir, "transcode"))
+	dir, err := defaultScratchDir(dataDir)
+	if err != nil {
+		return "", err
+	}
+	return resolveScratchDir(dir)
+}
+
+func defaultScratchDir(dataDir string) (string, error) {
+	if dataDir == "" {
+		return "", errors.New("playback: data directory is empty")
+	}
+	abs, err := filepath.Abs(dataDir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(abs, "transcode"), nil
 }
 
 func resolveScratchDir(path string) (string, error) {
 	if path == "" {
 		return "", errors.New("playback: scratch directory is empty")
 	}
-	// Resolve symlinks before normalizing the absolute spelling. A parent
-	// traversal after a symlink belongs to the target's parent.
-	dir, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", err
-	}
-	if !filepath.IsAbs(dir) {
+	if !filepath.IsAbs(path) {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return "", err
 		}
-		// Getwd can return the logical PWD, which may contain a symlink.
-		cwd, err = filepath.EvalSymlinks(cwd)
-		if err != nil {
-			return "", err
-		}
-		dir = filepath.Join(cwd, dir)
+		// Preserve parent traversal in explicit scratch paths until symlink resolution.
+		path = cwd + string(os.PathSeparator) + path
 	}
-	return filepath.Abs(dir)
+	return filepath.EvalSymlinks(path)
 }
 
 // NewSessionsInDir requires an existing directory and locks its inode before

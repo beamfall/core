@@ -238,42 +238,8 @@ func TestLoadDefaultsTranscodeScratchDirUnderDataDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	resolved, err := filepath.EvalSymlinks(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := filepath.Join(resolved, "transcode"); cfg.TranscodeScratchDir != want {
+	if want := filepath.Join(dataDir, "transcode"); cfg.TranscodeScratchDir != want {
 		t.Fatalf("TranscodeScratchDir = %q, want %q", cfg.TranscodeScratchDir, want)
-	}
-}
-
-func TestLoadUsesResolvedDataDirBeforeCreatingStreamTokenKey(t *testing.T) {
-	lexical := t.TempDir()
-	target, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	child := filepath.Join(target, "child")
-	if err := os.Mkdir(child, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	link := filepath.Join(lexical, "link")
-	if err := os.Symlink(child, link); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load([]string{"--data-dir", link + "/../new/data"}, func(string) (string, bool) { return "", false })
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := filepath.Join(target, "new", "data")
-	if cfg.DataDir != want || cfg.TranscodeScratchDir != filepath.Join(want, "transcode") {
-		t.Fatalf("data and scratch = %q, %q, want both under %q", cfg.DataDir, cfg.TranscodeScratchDir, want)
-	}
-	if _, err := os.Stat(filepath.Join(want, "stream-token.key")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(lexical, "new")); !os.IsNotExist(err) {
-		t.Fatalf("lexical tree should be untouched: %v", err)
 	}
 }
 

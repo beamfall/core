@@ -124,6 +124,38 @@ func TestNewSessionsCreatesDefaultAndValidatesExplicitRoot(t *testing.T) {
 	}
 }
 
+func TestNewSessionsUsesLexicalDataDirForDefaultScratch(t *testing.T) {
+	dataDir := t.TempDir()
+	otherDir := t.TempDir()
+	child := filepath.Join(otherDir, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(dataDir, "alias")
+	if err := os.Symlink(child, alias); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(otherDir, "transcode", "session-42", "marker")
+	seedScratchFile(t, marker)
+
+	// The default follows Store's lexical data path before resolving scratch.
+	configured := alias + "/.."
+	s := newTestSessions(t, nil, configured, nil)
+	want, err := filepath.EvalSymlinks(filepath.Join(dataDir, "transcode"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.ScratchDir() != want {
+		t.Fatalf("locked root = %q, want %q", s.ScratchDir(), want)
+	}
+	if resolved, err := ResolveDefaultScratchDir(configured); err != nil || resolved != want {
+		t.Fatalf("reported default root = %q, %v, want %q", resolved, err, want)
+	}
+	if got := string(mustRead(t, marker)); got != "stale" {
+		t.Fatalf("unrelated scratch marker changed: %q", got)
+	}
+}
+
 func TestNewSessionsRejectsEmptyExplicitRootBeforeSweeping(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

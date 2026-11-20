@@ -77,20 +77,9 @@ func lockStillAt(f *os.File, path string) bool {
 // directory a restore has renamed away) and after (a restore that renamed the
 // directory after the first check moved its lock with it, so only the journal
 // shows it is running).
-func lockServeDataDir(dataDir string, aliases ...string) (release func(), err error) {
-	checkJournals := func() error {
-		for _, alias := range aliases {
-			if alias != dataDir {
-				// Older boots located the journal beside the configured alias.
-				if err := refuseInterruptedRestore(alias); err != nil {
-					return err
-				}
-			}
-		}
-		return refuseInterruptedRestore(dataDir)
-	}
+func lockServeDataDir(dataDir string) (release func(), err error) {
 	for attempt := 0; attempt < 3; attempt++ {
-		if err := checkJournals(); err != nil {
+		if err := refuseInterruptedRestore(dataDir); err != nil {
 			return nil, err
 		}
 		release, current, err := takeServerLock(dataDir)
@@ -100,7 +89,7 @@ func lockServeDataDir(dataDir string, aliases ...string) (release func(), err er
 		if err != nil {
 			return nil, err
 		}
-		if err := checkJournals(); err != nil {
+		if err := refuseInterruptedRestore(dataDir); err != nil {
 			release()
 			return nil, err
 		}
