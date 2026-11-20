@@ -3,8 +3,10 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,14 +29,20 @@ func TestIntegrationSessionKindsAndOptIn(t *testing.T) {
 		ID: "integration-one", ProfileID: "profile-default", Kind: SessionKindIntegration,
 		IntegrationScopes: []IntegrationScope{IntegrationScopeRead}, ExpiresAt: now.Add(time.Hour),
 	}
-	if err := st.CreateIntegrationSession(ctx, session, true); err == nil {
-		t.Fatal("integration session minted without Profile opt-in")
+	policy := AuthBackoff{Window: time.Minute, FreeAttempts: 3, BaseDelay: time.Second, MaxDelay: time.Minute}
+	keys := []string{"profile:profile-default", "ip:fixture"}
+	reservation, until, err := st.ReserveAuthAttempt(ctx, IntegrationAttemptAction, keys, now, policy)
+	if err != nil || !until.IsZero() {
+		t.Fatalf("reserve integration attempts: locked until %v, error %v", until, err)
+	}
+	if err := st.CreateIntegrationSession(ctx, session, true, reservation); err != ValidationError("integration sign-in is disabled") {
+		t.Fatalf("integration session without Profile opt-in: %v", err)
 	}
 	enabled := true
 	if _, err := st.UpdateProfileSettings(ctx, session.ProfileID, ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CreateIntegrationSession(ctx, session, true); err != nil {
+	if err := st.CreateIntegrationSession(ctx, session, true, reservation); err != nil {
 		t.Fatalf("CreateIntegrationSession: %v", err)
 	}
 	got, err := st.Session(ctx, session.ID)
@@ -45,8 +53,8 @@ func TestIntegrationSessionKindsAndOptIn(t *testing.T) {
 	invalid := session
 	invalid.ID = "integration-invalid"
 	invalid.IntegrationScopes = []IntegrationScope{"compat.admin"}
-	if err := st.CreateIntegrationSession(ctx, invalid, true); err == nil {
-		t.Fatal("integration session accepted a scope outside the ceiling")
+	if err := st.CreateIntegrationSession(ctx, invalid, true, reservation); err != ValidationError("unknown integration session scope") {
+		t.Fatalf("integration session with a scope outside the ceiling: %v", err)
 	}
 
 	enabled = false
@@ -55,6 +63,82 @@ func TestIntegrationSessionKindsAndOptIn(t *testing.T) {
 	}
 	if _, err := st.Session(ctx, session.ID); err == nil {
 		t.Fatal("withdrawing Profile opt-in did not revoke integration sessions")
+	}
+}
+
+func TestIntegrationSessionTransactionRollbackSurvivesReopen(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		trigger string
+		message string
+	}{
+		{
+			name: "session insert",
+			trigger: `CREATE TRIGGER fixture_reject_integration_insert BEFORE INSERT ON auth_session
+				WHEN NEW.kind = 'integration'
+				BEGIN SELECT RAISE(ABORT, 'fixture session insert failure'); END`,
+			message: "fixture session insert failure",
+		},
+		{
+			name: "second lane settlement",
+			trigger: `CREATE TRIGGER fixture_reject_ip_settlement BEFORE UPDATE OF success ON auth_attempt
+				WHEN OLD.key = 'ip:fixture' AND NEW.success = 1
+				BEGIN SELECT RAISE(ABORT, 'fixture settlement failure'); END`,
+			message: "fixture settlement failure",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			dataDir := migratedDataDir(t)
+			opts := Options{SeedDevelopmentData: true}
+			st, err := Open(ctx, dataDir, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			enabled := true
+			if _, err := st.UpdateProfileSettings(ctx, "profile-default", ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now().UTC()
+			policy := AuthBackoff{Window: time.Minute, FreeAttempts: 1, BaseDelay: time.Second, MaxDelay: time.Minute}
+			keys := []string{"profile:profile-default", "ip:fixture"}
+			reservation, until, err := st.ReserveAuthAttempt(ctx, IntegrationAttemptAction, keys, now, policy)
+			if err != nil || !until.IsZero() {
+				t.Fatalf("reserve integration attempts: locked until %v, error %v", until, err)
+			}
+			scopes := []IntegrationScope{IntegrationScopeRead}
+			if _, err := encodeIntegrationScopes(scopes); err != nil {
+				t.Fatalf("encode fixture scopes: %v", err)
+			}
+			if _, err := st.catalogW.ExecContext(ctx, tc.trigger); err != nil {
+				t.Fatal(err)
+			}
+			session := Session{
+				ID: "rejected-integration", ProfileID: "profile-default", Kind: SessionKindIntegration,
+				IntegrationScopes: scopes, ExpiresAt: now.Add(time.Hour),
+			}
+			if err := st.CreateIntegrationSession(ctx, session, true, reservation); err == nil || !strings.Contains(err.Error(), tc.message) {
+				t.Fatalf("CreateIntegrationSession = %v, want injected failure %q", err, tc.message)
+			}
+			if err := st.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := Open(ctx, dataDir, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			var id SessionID
+			if err := reopened.catalogR.QueryRowContext(ctx, "SELECT id FROM auth_session WHERE id = ?", session.ID).Scan(&id); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("reopened session row = %q, %v, want absent", id, err)
+			}
+			for _, key := range keys {
+				if until, err := reopened.AuthBackoffUntil(ctx, IntegrationAttemptAction, key, now, policy); err != nil || !until.After(now) {
+					t.Fatalf("reopened lane %q: locked until %v, error %v", key, until, err)
+				}
+			}
+		})
 	}
 }
 

@@ -2,6 +2,9 @@ package store
 
 import (
 	"context"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -170,11 +173,11 @@ func TestReserveAuthAttemptCountsEveryLaneOrNone(t *testing.T) {
 	keys := []string{"source", "global"}
 
 	recordFailure(t, st, action, "source", at)
-	if until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
+	if _, until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
 		t.Fatalf("first reservation = (%v, %v), want open", until, err)
 	}
 	// "source" now holds two failures and is locked; "global" holds one.
-	until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy)
+	_, until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy)
 	if err != nil || !until.After(at) {
 		t.Fatalf("second reservation = (%v, %v), want locked", until, err)
 	}
@@ -184,11 +187,125 @@ func TestReserveAuthAttemptCountsEveryLaneOrNone(t *testing.T) {
 	for _, key := range keys {
 		recordSuccess(t, st, action, key, at)
 	}
-	if until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
+	if _, until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
 		t.Fatalf("reservation after success = (%v, %v), want open", until, err)
 	}
-	if _, err := st.ReserveAuthAttempt(ctx, action, []string{"source", ""}, at, policy); err == nil {
+	if _, _, err := st.ReserveAuthAttempt(ctx, action, []string{"source", ""}, at, policy); err == nil {
 		t.Fatal("reservation with an empty key succeeded")
+	}
+}
+
+func TestIntegrationSettlementPreservesLaterFailuresAtSameMillisecond(t *testing.T) {
+	st := openBackoffStore(t)
+	ctx := t.Context()
+	policy := AuthBackoff{Window: 10 * time.Minute, FreeAttempts: 3, BaseDelay: time.Second, MaxDelay: time.Hour}
+	at := time.Unix(2_100_000, 0).UTC()
+	const action = IntegrationAttemptAction
+	keys := []string{"name", "source"}
+	for _, key := range keys {
+		recordFailure(t, st, action, key, at)
+	}
+	first, until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy)
+	if err != nil || !until.IsZero() {
+		t.Fatalf("reserve successful credential: (%v, %v)", until, err)
+	}
+	if _, until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
+		t.Fatalf("reserve later failure: (%v, %v)", until, err)
+	}
+	session := Session{
+		ID: "integration-order", ProfileID: "profile-default", Kind: SessionKindIntegration,
+		IntegrationScopes: []IntegrationScope{IntegrationScopeRead}, ExpiresAt: at.Add(time.Hour),
+	}
+	if err := st.CreateIntegrationSession(ctx, session, false, first); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range keys {
+		if failures, _, err := st.consecutiveAuthFailures(ctx, action, key, at, policy); err != nil || failures != 1 {
+			t.Fatalf("%s lane failures = (%d, %v), want only the later failure", key, failures, err)
+		}
+	}
+}
+
+func TestIntegrationAttemptsSurviveCatalogUpgradeWithoutReplay(t *testing.T) {
+	ctx := t.Context()
+	dataDir := t.TempDir()
+	dbDir := filepath.Join(dataDir, "db")
+	if err := os.Mkdir(dbDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	backupDir := filepath.Join(dataDir, "backups")
+	catalogPath := filepath.Join(dbDir, "catalog.db")
+	catalog, err := openSQLite(catalogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer catalog.Close()
+	before := migrationsBefore(t, catalogMigrations, "migrate/catalog", "0126")
+	if err := migrate(ctx, slog.Default(), catalog, catalogPath, "catalog", before, "migrate/catalog", backupDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Close(); err != nil {
+		t.Fatal(err)
+	}
+	eventsPath := filepath.Join(dbDir, "events.db")
+	events, err := openSQLite(eventsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer events.Close()
+	if err := migrate(ctx, slog.Default(), events, eventsPath, "events", eventsMigrations, "migrate/events", backupDir); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	if _, err := events.ExecContext(ctx, `
+		INSERT INTO auth_attempt(occurred_at_ms, action, key, success)
+		VALUES (?, ?, 'profile:profile-default', 0), (?, ?, 'ip:fixture', 0)`,
+		at.UnixMilli(), IntegrationAttemptAction, at.UnixMilli(), IntegrationAttemptAction); err != nil {
+		t.Fatal(err)
+	}
+	if err := events.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := Options{SeedDevelopmentData: true}
+	st, err := Open(ctx, dataDir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	policy := AuthBackoff{Window: time.Minute, FreeAttempts: 1, BaseDelay: time.Second, MaxDelay: time.Minute}
+	keys := []string{"profile:profile-default", "ip:fixture"}
+	for _, key := range keys {
+		if until, err := st.AuthBackoffUntil(ctx, IntegrationAttemptAction, key, at, policy); err != nil || !until.Equal(at.Add(policy.BaseDelay)) {
+			t.Fatalf("upgraded lane %q: locked until %v, error %v", key, until, err)
+		}
+	}
+	reservation, until, err := st.ReserveAuthAttempt(ctx, IntegrationAttemptAction, keys, at.Add(policy.BaseDelay), policy)
+	if err != nil || !until.IsZero() {
+		t.Fatalf("reserve after upgraded lockout: locked until %v, error %v", until, err)
+	}
+	session := Session{
+		ID: "upgraded-integration", ProfileID: "profile-default", Kind: SessionKindIntegration,
+		IntegrationScopes: []IntegrationScope{IntegrationScopeRead}, ExpiresAt: at.Add(time.Hour),
+	}
+	if err := st.CreateIntegrationSession(ctx, session, false, reservation); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(ctx, dataDir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if _, err := reopened.Session(ctx, session.ID); err != nil {
+		t.Fatalf("reopened integration session: %v", err)
+	}
+	for _, key := range keys {
+		if failures, _, err := reopened.consecutiveAuthFailures(ctx, IntegrationAttemptAction, key, at.Add(policy.BaseDelay), policy); err != nil || failures != 0 {
+			t.Fatalf("reopened lane %q: %d failures, error %v", key, failures, err)
+		}
 	}
 }
 

@@ -2,8 +2,11 @@ package compat
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,9 +16,67 @@ import (
 	"github.com/beamfall/core/internal/store/storetest"
 )
 
+func TestJellyfinRouteInventory(t *testing.T) {
+	want := []jellyfinRoute{
+		{http.MethodPost, Prefix + "Users/AuthenticateByName"},
+		{http.MethodPost, Prefix + "Sessions/Logout"},
+		{http.MethodGet, Prefix + "System/Info"},
+		{http.MethodGet, Prefix + "System/Info/Public"},
+		{http.MethodPost, Prefix + "Library/Refresh"},
+	}
+	if len(jellyfinRoutes) != len(want) {
+		t.Errorf("registered %d compat routes, want %d", len(jellyfinRoutes), len(want))
+	}
+	for route, serve := range jellyfinRoutes {
+		if !slices.Contains(want, route) || serve == nil {
+			t.Errorf("unexpected compat route %s %s", route.method, route.path)
+		}
+	}
+}
+
+func TestJellyfinUnregisteredRoutesFallThrough(t *testing.T) {
+	const fallbackBody = "handled by fall-through"
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Fall-Through", "yes")
+		w.WriteHeader(http.StatusTeapot)
+		_, _ = w.Write([]byte(fallbackBody))
+	})
+	handler, err := New(Config{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []jellyfinRoute{
+		{http.MethodGet, "Videos/item-id/stream"},
+		{http.MethodGet, "Audio/item-id/universal"},
+		{http.MethodGet, "Videos/item-id/master.m3u8"},
+		{http.MethodGet, "Items/item-id/PlaybackInfo"},
+		{http.MethodPost, "Items/item-id/PlaybackInfo"},
+		{http.MethodPost, "Sessions/Playing"},
+		{http.MethodGet, "Users/AuthenticateByName"},
+		{http.MethodDelete, "Sessions/Logout"},
+		{http.MethodPost, "Users/AuthenticateByName/"},
+		{http.MethodPost, "sessions/Logout"},
+		{http.MethodGet, ""},
+		{http.MethodPost, "unknown"},
+	}
+	for _, route := range tests {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			req := httptest.NewRequest(route.method, Prefix+route.path, nil)
+			req.RemoteAddr = "127.0.0.1:1234"
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusTeapot || rec.Header().Get("X-Fall-Through") != "yes" || rec.Body.String() != fallbackBody {
+				t.Fatalf("response = %d %v %q, want fall-through", rec.Code, rec.Header(), rec.Body)
+			}
+		})
+	}
+}
+
 func TestBoundaryToggleTrustZonePanicAndRelay(t *testing.T) {
-	panicHandler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") })
-	enabled, err := New(Config{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, panicHandler)
+	enabled, err := New(Config{
+		Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"},
+		SetupRequired: func() bool { panic("boom") },
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +95,7 @@ func TestBoundaryToggleTrustZonePanicAndRelay(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.handler.SetRelayedRequestPredicate(func(*http.Request) bool { return tc.relayed })
-			req := httptest.NewRequest(http.MethodGet, Prefix+"System/Info", nil)
+			req := httptest.NewRequest(http.MethodGet, Prefix+"System/Info/Public", nil)
 			req.RemoteAddr = tc.remoteAddr
 			rec := httptest.NewRecorder()
 			tc.handler.ServeHTTP(rec, req)
@@ -44,7 +105,7 @@ func TestBoundaryToggleTrustZonePanicAndRelay(t *testing.T) {
 		})
 	}
 
-	disabled, err := New(Config{AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, panicHandler)
+	disabled, err := New(Config{AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,23 +119,22 @@ func TestBoundaryToggleTrustZonePanicAndRelay(t *testing.T) {
 }
 
 func TestProxyHeadersAreUntrustedUnlessProxyCIDRConfigured(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	untrusted, err := New(Config{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, next)
+	untrusted, err := New(Config{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, Prefix+"System/Info", nil)
+	req := httptest.NewRequest(http.MethodGet, Prefix+"System/Info/Public", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	req.Header.Set("X-Forwarded-For", "203.0.113.9")
 	rec := httptest.NewRecorder()
 	untrusted.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("untrusted proxy header changed admission: %d", rec.Code)
 	}
 
 	trusted, err := New(Config{
 		Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}, TrustedProxyCIDRs: []string{"127.0.0.0/8"},
-	}, nil, next)
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,133 +145,183 @@ func TestProxyHeadersAreUntrustedUnlessProxyCIDRConfigured(t *testing.T) {
 	}
 }
 
+func TestBoundaryRejectsUnspecifiedClientAddresses(t *testing.T) {
+	handler, err := New(Config{
+		Enabled:           true,
+		AllowedCIDRs:      []string{"0.0.0.0/0", "::/0"},
+		TrustedProxyCIDRs: []string{"127.0.0.1/32"},
+	}, nil, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("request reached fallback") }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ remote, forwarded string }{
+		{"0.0.0.0:1234", ""},
+		{"[::]:1234", ""},
+		{"127.0.0.1:1234", "0.0.0.0"},
+		{"127.0.0.1:1234", "::"},
+	} {
+		req := httptest.NewRequest(http.MethodPost, Prefix+"Users/AuthenticateByName", strings.NewReader(`{}`))
+		req.RemoteAddr = tc.remote
+		req.Header.Set("X-Forwarded-For", tc.forwarded)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden || rec.Body.String() != "compatibility route unavailable\n" {
+			t.Errorf("remote %q, forwarded %q returned %d %q, want existing forbidden response", tc.remote, tc.forwarded, rec.Code, rec.Body)
+		}
+	}
+}
+
 func TestAuthenticateByNameFailureResponsesAreUniform(t *testing.T) {
-	st := storetest.Open(t)
+	ctx := t.Context()
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	restricted := restrictedFixture(t, st)
 	now := time.Now().UTC()
-	authService := auth.NewServiceWithClock(st, func() time.Time { return now })
-	authService.SetIntegrationAttemptSecret([]byte("uniform-response-secret"))
-	calibrationProfile, err := st.CreateProfile(t.Context(), "Timing Calibration", store.ProfileAdult, store.LibraryFilter{Revealed: true, AllLibraries: true})
-	if err != nil {
-		t.Fatal(err)
+
+	seedProfile := func(name string, optIn, disabled bool) store.ProfileID {
+		t.Helper()
+		profile, err := st.CreateProfile(ctx, name, store.ProfileAdult, store.LibraryFilter{Revealed: true, AllLibraries: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetProfileEntryPIN(ctx, profile.ID, "2468"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.UpdateProfileSettings(ctx, profile.ID, store.ProfileSettings{IntegrationSignIn: &optIn, Disabled: &disabled}); err != nil {
+			t.Fatal(err)
+		}
+		return profile.ID
 	}
-	if err := st.SetProfileEntryPIN(t.Context(), calibrationProfile.ID, "2468"); err != nil {
-		t.Fatal(err)
+	seedProfile("Opted In", true, false)
+	seedProfile("Opted Out", false, false)
+	seedProfile("Disabled", true, true)
+	nameProbe := seedProfile("Name Lockout Probe", true, false)
+	ipProbe := seedProfile("IP Lockout Probe", true, false)
+
+	newHandler := func(st *store.Store) *Handler {
+		t.Helper()
+		service := auth.NewServiceWithClock(st, func() time.Time { return now })
+		service.SetIntegrationAttemptSecret([]byte("uniform-response-secret"))
+		handler, err := New(Config{
+			Enabled: true, AllowedCIDRs: []string{"192.0.2.0/24"}, TrustedProxyCIDRs: []string{"127.0.0.1/32"},
+		}, service, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return handler
 	}
-	integrationSignIn := true
-	if _, err := st.UpdateProfileSettings(t.Context(), calibrationProfile.ID, store.ProfileSettings{IntegrationSignIn: &integrationSignIn}); err != nil {
-		t.Fatal(err)
-	}
-	handler, err := New(Config{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}}, authService, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	handler := newHandler(st)
 
 	type response struct {
 		status  int
+		header  http.Header
 		body    []byte
-		elapsed time.Duration
+		refusal auth.RefusalReason
 	}
-	request := func(body string) response {
+	request := func(body, clientIP string) response {
+		t.Helper()
 		req := httptest.NewRequest(http.MethodPost, Prefix+"Users/AuthenticateByName", strings.NewReader(body))
+		req = req.WithContext(auth.WithRefusalNote(ctx))
 		req.RemoteAddr = "127.0.0.1:1234"
+		req.Header.Set("X-Forwarded-For", clientIP)
 		rec := httptest.NewRecorder()
-		started := time.Now()
 		handler.ServeHTTP(rec, req)
-		return response{status: rec.Code, body: rec.Body.Bytes(), elapsed: time.Since(started)}
+		restricted.assertAbsent(t, rec.Body.Bytes())
+		refusal, _ := auth.RefusalFromContext(req.Context())
+		res := rec.Result()
+		defer res.Body.Close()
+		return response{res.StatusCode, res.Header, rec.Body.Bytes(), refusal.Reason}
 	}
-	calibrationBody := `{"Username":"Timing Calibration","Pw":"wrong"}`
-	calibrate := func() response {
-		// The successful request resets this Profile's backoff lane so every ambient sample
-		// exercises the same credential-verification path instead of drifting into lockout.
-		failed := request(calibrationBody)
-		reset := request(`{"Username":"Timing Calibration","Pw":"2468"}`)
-		if reset.status != http.StatusOK {
-			t.Fatalf("calibration reset response = %d/%q", reset.status, reset.body)
-		}
-		return failed
-	}
-	// Timing is compared on per-case minimums over interleaved rounds (CORE-1481). Each round
-	// samples every case once, each followed by a same-case calibration sample, so a scheduler
-	// burst on a loaded -race gate lands on cases and calibration alike instead of on one case's
-	// back-to-back samples. A systematic enumeration oracle shifts every sample of its case, so
-	// it survives the minimum; transient noise does not.
-	const rounds = 4
-	var all []response
-	sample := func(bodies []string, responses, ambient []response) {
-		for range rounds {
-			for i, body := range bodies {
-				got := request(body)
-				cal := calibrate()
-				all = append(all, got, cal)
-				if responses[i].elapsed == 0 || got.elapsed < responses[i].elapsed {
-					responses[i] = got
-				}
-				if ambient[i].elapsed == 0 || cal.elapsed < ambient[i].elapsed {
-					ambient[i] = cal
-				}
-			}
+	requireLogin := func(body, clientIP string) {
+		t.Helper()
+		if got := request(body, clientIP); got.status != http.StatusOK {
+			t.Fatalf("valid login returned %d, want 200", got.status)
 		}
 	}
-	failureBodies := []string{
-		`{"Username":"missing-profile-sensitive-name","Pw":"2468"}`,
-		`{"Username":"Default","Pw":"wrong"}`,
-		`{"Username":"Default","Pw":"2468"}`,
-		`{"Username":"Managed","Pw":"anything"}`,
-		`{"Username":`,
-	}
-	lockoutBodies := []string{`{"Username":"Default","Pw":"2468"}`}
-	responses := make([]response, len(failureBodies)+len(lockoutBodies))
-	ambient := make([]response, len(responses))
-	sample(failureBodies, responses, ambient)
-	for range 8 {
-		_ = request(`{"Username":"Default","Pw":"wrong"}`)
-	}
-	sample(lockoutBodies, responses[len(failureBodies):], ambient[len(failureBodies):])
 
-	ambientFastest := ambient[0].elapsed
-	ambientSlowest := ambient[0].elapsed
-	for _, sample := range ambient[1:] {
-		if sample.elapsed < ambientFastest {
-			ambientFastest = sample.elapsed
-		}
-		if sample.elapsed > ambientSlowest {
-			ambientSlowest = sample.elapsed
-		}
-	}
-	ambientJitter := ambientSlowest - ambientFastest
-
-	want := responses[0]
-	var fastest, slowest time.Duration
-	fastest = want.elapsed
-	for i, got := range responses {
-		if got.status != want.status || !bytes.Equal(got.body, want.body) {
-			t.Fatalf("failure %d response = %d/%q, want %d/%q", i, got.status, got.body, want.status, want.body)
-		}
-		if got.elapsed < 70*time.Millisecond {
-			t.Fatalf("failure %d elapsed = %s, escaped uniform timing class", i, got.elapsed)
-		}
-		if got.elapsed < fastest {
-			fastest = got.elapsed
-		}
-		if got.elapsed > slowest {
-			slowest = got.elapsed
-		}
-	}
-	for i, got := range all {
-		if got.status != want.status || !bytes.Equal(got.body, want.body) {
-			t.Fatalf("sample %d response = %d/%q, want %d/%q", i, got.status, got.body, want.status, want.body)
-		}
-		if got.elapsed < 70*time.Millisecond {
-			t.Fatalf("sample %d elapsed = %s, escaped uniform timing class", i, got.elapsed)
-		}
-	}
-	// The fixed margin covers bounded path work after the common floor. At idle it is tighter
-	// than the former 75 ms absolute bound; the measured term expands only with host jitter.
-	const jitterMargin = 50 * time.Millisecond
-	if spread := slowest - fastest; spread > ambientJitter+jitterMargin {
-		t.Fatalf("failure timing spread = %s (fastest %s, slowest %s), same-case jitter = %s + margin %s", spread, fastest, slowest, ambientJitter, jitterMargin)
-	}
+	want := request(`{"Username":"Opted In","Pw":"wrong"}`, "192.0.2.1")
 	if want.status != http.StatusUnauthorized || string(want.body) != "{\"error\":\"authentication failed\"}\n" {
-		t.Fatalf("uniform failure response = %d/%q", want.status, want.body)
+		t.Fatalf("wrong-password response status %d or body differs from the expected authentication failure", want.status)
 	}
+	checkFailure := func(name string, got response, reason auth.RefusalReason) {
+		t.Helper()
+		if got.refusal != reason {
+			t.Fatalf("%s reached refusal %q, want %q", name, got.refusal, reason)
+		}
+		sameHeader := reflect.DeepEqual(got.header, want.header)
+		sameBody := bytes.Equal(got.body, want.body)
+		if got.status != want.status || !sameHeader || !sameBody {
+			t.Fatalf("%s response differs from wrong password: status %d, headers match %t, body matches %t", name, got.status, sameHeader, sameBody)
+		}
+	}
+	checkFailure("wrong password", want, auth.RefusalIntegrationRejected)
+
+	const (
+		validNameLogin = `{"Username":"Name Lockout Probe","Pw":"2468"}`
+		validIPLogin   = `{"Username":"IP Lockout Probe","Pw":"2468"}`
+		wrongNameLogin = `{"Username":"Name Lockout Probe","Pw":"wrong"}`
+		repeatedIP     = "192.0.2.2"
+		budget         = 5
+	)
+	for range budget - 1 {
+		checkFailure("failed attempt before successful login", request(wrongNameLogin, repeatedIP), auth.RefusalIntegrationRejected)
+	}
+	// The successful login is the fifth reservation on both lanes and resets
+	// both. The later requests exercise each reset in isolation.
+	requireLogin(validNameLogin, repeatedIP)
+	for i := range budget {
+		clientIP := fmt.Sprintf("192.0.2.%d", 10+i)
+		got := request(wrongNameLogin, clientIP)
+		checkFailure("one name from many IPs", got, auth.RefusalIntegrationRejected)
+
+		got = request(fmt.Sprintf(`{"Username":"unknown-%d","Pw":"wrong"}`, i), repeatedIP)
+		checkFailure("one IP with many names", got, auth.RefusalIntegrationRejected)
+	}
+	checkFailure("name locked before restart", request(validNameLogin, "192.0.2.20"), auth.RefusalIntegrationLocked)
+	checkFailure("IP locked before restart", request(validIPLogin, repeatedIP), auth.RefusalIntegrationLocked)
+	requireLogin(validIPLogin, "192.0.2.21")
+
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st = storetest.OpenAt(t, dataDir)
+	handler = newHandler(st)
+	checkFailure("name locked after restart", request(validNameLogin, "192.0.2.22"), auth.RefusalIntegrationLocked)
+	checkFailure("IP locked after restart", request(validIPLogin, repeatedIP), auth.RefusalIntegrationLocked)
+
+	entries, err := st.ActivityEntries(ctx, store.ActivityQuery{
+		Filter: store.LibraryFilter{AllLibraries: true, Revealed: true}, Limit: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	denials := make(map[store.ProfileID]int)
+	for _, entry := range entries {
+		if entry.Action == "integration.login.denied" {
+			denials[entry.ProfileID]++
+		}
+	}
+	if denials[nameProbe] != 2*budget+1 || denials[ipProbe] != 2 {
+		t.Fatalf("audited denials for name probe = %d and IP probe = %d, want %d and 2", denials[nameProbe], denials[ipProbe], 2*budget+1)
+	}
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"unknown profile", `{"Username":"missing-profile-sensitive-name","Pw":"2468"}`},
+		{"wrong password", `{"Username":"Opted In","Pw":"wrong"}`},
+		{"opted out", `{"Username":"Opted Out","Pw":"2468"}`},
+		{"disabled", `{"Username":"Disabled","Pw":"2468"}`},
+		{"managed", `{"Username":"Managed","Pw":"anything"}`},
+		{"malformed", `{"Username":`},
+	}
+	for i, tc := range cases {
+		got := request(tc.body, fmt.Sprintf("192.0.2.%d", 30+i))
+		checkFailure(tc.name, got, auth.RefusalIntegrationRejected)
+	}
+
+	now = now.Add(time.Hour)
+	requireLogin(validNameLogin, "192.0.2.23")
+	requireLogin(validIPLogin, repeatedIP)
 }

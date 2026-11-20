@@ -109,6 +109,30 @@ func TestProfileEntryPINVerifyFailsClosedWithoutVerifier(t *testing.T) {
 	}
 }
 
+func TestMalformedProfileEntryPINRejectsSwitchWithoutDerivation(t *testing.T) {
+	st := openSeeded(t)
+	ctx := WithCredentialDerivationObserver(t.Context(), func(CredentialDerivation) {
+		t.Error("malformed verifier reached Argon2id")
+	})
+	const profileID = "profile-default"
+	result, err := st.catalogW.ExecContext(ctx, `UPDATE server_config SET value = 'invalid' WHERE key = ?`, profileEntryPINConfigKey(profileID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := result.RowsAffected(); err != nil || rows != 1 {
+		t.Fatalf("malformed verifier fixture updated %d rows: %v", rows, err)
+	}
+	if err := st.VerifyProfileEntryPIN(ctx, profileID, developmentProfileEntryPIN); !errors.Is(err, ErrMalformedProfileEntryPIN) {
+		t.Fatalf("verify malformed PIN returned %v", err)
+	}
+	if err := st.SetSessionProfileWithEntryPIN(ctx, "session-managed", profileID, developmentProfileEntryPIN); err != ErrProfileEntryPINMismatch {
+		t.Fatalf("switch with malformed PIN verifier returned %v", err)
+	}
+	if session, err := st.Session(ctx, "session-managed"); err != nil || session.ProfileID != "profile-managed" {
+		t.Fatalf("session after refused switch = %+v, %v", session, err)
+	}
+}
+
 // TestSetSessionProfileWithEntryPINOpensAdultWithoutPIN pins the owner
 // decision of 2026-11-18 (CORE-2581): an adult Profile with no entry PIN opens
 // without one, from any Profile, ignoring a supplied PIN, and still relocks.

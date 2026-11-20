@@ -1356,7 +1356,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// reveal-filtered catalog/session reads, while scan-job construction lives
 	// here at the composition root since server cannot import internal/scan.
 	srv.SetV1Store(st)
-	srv.SetV1ScanEnqueuer(v1ScanEnqueuer(st, jobWake))
+	scanEnqueue := v1ScanEnqueuer(st, jobWake)
+	srv.SetV1ScanEnqueuer(scanEnqueue)
 	srv.SetV1ProgressRecorder(graphHandler)
 	srv.SetBackupIngestEncryptor(appLibEncryptDBCipher{manager: libEncryptManager})
 	// Proxy-tee stream-first archive (ADR-0052 §2.1-2.2): on first play of a
@@ -1509,9 +1510,15 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		graphHandler.SetScrobbleStatusSource(scrobbleStatusSource{dispatcher: scrobbleDispatcher})
 		graphHandler.SetOutboundMetadataResolver(newScrobbleMetadataResolver(st, executablePlugins))
 	}
+	// CORE-2683 owns the operator allowlist; until then, no Library is eligible.
+	compatEligible := func(context.Context, store.LibraryID) bool { return false }
 	compatHandler, err := compat.New(compat.Config{
 		Enabled: cfg.JellyfinCompat.Enabled, AllowedCIDRs: cfg.JellyfinCompat.AllowedCIDRs,
 		TrustedProxyCIDRs: cfg.JellyfinCompat.TrustedProxyCIDRs,
+		ServerID:          discovery.ServerID(offlinePackPin), ServerName: cfg.ServerName,
+		ReleaseVersion: capabilities.ReleaseVersion,
+		SetupRequired:  pairingService.SetupRequired,
+		EnqueueRefresh: compatLibraryRefresher(st, jobWake, sealedPredicate, compatEligible, logger),
 	}, authService, nil)
 	if err != nil {
 		return nil, err
@@ -3003,6 +3010,31 @@ func v1ScanEnqueuer(st *store.Store, wake *jobWake) server.V1ScanEnqueuer {
 			return "", err
 		}
 		return created.ID, nil
+	}
+}
+
+func compatLibraryRefresher(st *store.Store, wake *jobWake, sealed func(store.LibraryID) bool, eligible func(context.Context, store.LibraryID) bool, logger *slog.Logger) func(context.Context, auth.Scope) {
+	return func(ctx context.Context, scope auth.Scope) {
+		filter := scope.LibraryFilter()
+		filter.Revealed = false
+		libraries, err := st.Libraries(ctx, filter)
+		if err != nil {
+			logger.WarnContext(ctx, "compat refresh libraries unavailable", "error", err)
+			return
+		}
+		for _, library := range libraries {
+			if sealed(library.ID) || !eligible(ctx, library.ID) {
+				continue
+			}
+			roots, err := st.LibraryRoots(ctx, library.ID)
+			if err != nil {
+				logger.WarnContext(ctx, "compat refresh roots unavailable", "library", library.ID, "error", err)
+				continue
+			}
+			for _, root := range roots {
+				enqueueScanJob(ctx, st, logger, wake, library.ID, root)
+			}
+		}
 	}
 }
 

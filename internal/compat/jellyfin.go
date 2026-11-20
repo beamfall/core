@@ -2,10 +2,13 @@
 package compat
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
@@ -13,10 +16,28 @@ import (
 
 const Prefix = "/compat/jellyfin/"
 
+type jellyfinRoute struct {
+	method string
+	path   string
+}
+
+var jellyfinRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http.Request, net.IP){
+	{http.MethodPost, Prefix + "Users/AuthenticateByName"}: (*Handler).authenticateByName,
+	{http.MethodPost, Prefix + "Sessions/Logout"}:          (*Handler).logout,
+	{http.MethodGet, Prefix + "System/Info"}:               (*Handler).systemInfo,
+	{http.MethodGet, Prefix + "System/Info/Public"}:        (*Handler).publicSystemInfo,
+	{http.MethodPost, Prefix + "Library/Refresh"}:          (*Handler).refreshLibrary,
+}
+
 type Config struct {
 	Enabled           bool
 	AllowedCIDRs      []string
 	TrustedProxyCIDRs []string
+	ServerID          string
+	ServerName        string
+	ReleaseVersion    string
+	SetupRequired     func() bool
+	EnqueueRefresh    func(context.Context, auth.Scope)
 }
 
 type Handler struct {
@@ -26,6 +47,13 @@ type Handler struct {
 	auth           *auth.Service
 	next           http.Handler
 	relayed        func(*http.Request) bool
+	serverID       string
+	serverName     string
+	releaseVersion string
+	setupRequired  func() bool
+	enqueueRefresh func(context.Context, auth.Scope)
+	refreshMu      sync.Mutex
+	nextRefresh    time.Time
 }
 
 func New(cfg Config, authService *auth.Service, next http.Handler) (*Handler, error) {
@@ -40,7 +68,11 @@ func New(cfg Config, authService *auth.Service, next http.Handler) (*Handler, er
 	if next == nil {
 		next = http.NotFoundHandler()
 	}
-	return &Handler{enabled: cfg.Enabled, allowed: allowed, trustedProxies: trusted, auth: authService, next: next}, nil
+	return &Handler{
+		enabled: cfg.Enabled, allowed: allowed, trustedProxies: trusted, auth: authService, next: next,
+		serverID: cfg.ServerID, serverName: cfg.ServerName, releaseVersion: cfg.ReleaseVersion,
+		setupRequired: cfg.SetupRequired, enqueueRefresh: cfg.EnqueueRefresh,
+	}, nil
 }
 
 func (h *Handler) SetRelayedRequestPredicate(predicate func(*http.Request) bool) {
@@ -56,7 +88,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !containsIP(h.allowed, h.clientIP(r)) {
+	clientIP := h.clientIP(r)
+	if clientIP.IsUnspecified() || !containsIP(h.allowed, clientIP) {
 		http.Error(w, "compatibility route unavailable", http.StatusForbidden)
 		return
 	}
@@ -66,14 +99,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	switch {
-	case r.Method == http.MethodPost && r.URL.Path == Prefix+"Users/AuthenticateByName":
-		h.authenticateByName(w, r)
-	case r.Method == http.MethodPost && r.URL.Path == Prefix+"Sessions/Logout":
-		h.logout(w, r)
-	default:
-		h.next.ServeHTTP(w, r)
+	if serve := jellyfinRoutes[jellyfinRoute{r.Method, r.URL.Path}]; serve != nil {
+		serve(h, w, r, clientIP)
+		return
 	}
+	h.next.ServeHTTP(w, r)
 }
 
 func (h *Handler) clientIP(r *http.Request) net.IP {
@@ -122,18 +152,18 @@ type authenticateRequest struct {
 	Password string `json:"Pw"`
 }
 
-func (h *Handler) authenticateByName(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) authenticateByName(w http.ResponseWriter, r *http.Request, clientIP net.IP) {
 	defer r.Body.Close()
 	var request authenticateRequest
 	scopes := []store.IntegrationScope{store.IntegrationScopeRead, store.IntegrationScopeRefresh}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&request) != nil {
 		// Route malformed payloads through the same authentication refusal lane;
 		// otherwise JSON decoding would expose a faster enumeration class.
-		_, _ = h.auth.AuthenticateIntegrationByName(r.Context(), "", "", scopes)
+		_, _ = h.auth.AuthenticateIntegrationByName(r.Context(), "", "", clientIP.String(), scopes)
 		writeAuthenticationFailure(w)
 		return
 	}
-	session, err := h.auth.AuthenticateIntegrationByName(r.Context(), request.Username, request.Password, scopes)
+	session, err := h.auth.AuthenticateIntegrationByName(r.Context(), request.Username, request.Password, clientIP.String(), scopes)
 	if err != nil {
 		writeAuthenticationFailure(w)
 		return
@@ -148,14 +178,15 @@ func (h *Handler) authenticateByName(w http.ResponseWriter, r *http.Request) {
 
 func writeAuthenticationFailure(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte("{\"error\":\"authentication failed\"}\n"))
 }
 
-func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
-	token := strings.TrimSpace(r.Header.Get("X-Emby-Token"))
+func (h *Handler) logout(w http.ResponseWriter, r *http.Request, _ net.IP) {
+	token := integrationToken(r.Header)
 	if token == "" || h.auth.RevokeIntegrationSession(r.Context(), token) != nil {
-		http.Error(w, "invalid integration session", http.StatusUnauthorized)
+		writeAuthenticationFailure(w)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

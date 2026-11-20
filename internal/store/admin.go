@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"golang.org/x/crypto/argon2"
 )
 
 // ErrNoAdminPassword means no server admin password has been set yet (first
@@ -58,9 +56,15 @@ const adminArgon2Prefix = revealArgon2Prefix
 
 // hashAdminPassword derives the scheme-tagged argon2id verifier for password
 // under salt. The salt is stored alongside in admin_credential.password_salt.
-func hashAdminPassword(password string, salt []byte) string {
-	key := argon2.IDKey([]byte(password), salt, revealArgon2Time, revealArgon2Memory, revealArgon2Threads, revealArgon2KeyLen)
+func hashAdminPassword(ctx context.Context, password string, salt []byte) string {
+	key := deriveCredentialKey(ctx, password, salt, revealArgon2Time, revealArgon2Memory, revealArgon2Threads, revealArgon2KeyLen)
 	return adminArgon2Prefix + hex.EncodeToString(key)
+}
+
+// CheckCredentialDecoy spends the same Argon2id work as an admin password or
+// Profile entry PIN check without reading or accepting any stored credential.
+func CheckCredentialDecoy(ctx context.Context, credential string) {
+	deriveCredentialKey(ctx, credential, nil, revealArgon2Time, revealArgon2Memory, revealArgon2Threads, revealArgon2KeyLen)
 }
 
 // seedAdminCredentialTx writes the server admin-credential verifier inside an
@@ -83,7 +87,7 @@ func seedAdminCredentialTx(ctx context.Context, tx *sql.Tx, password string, sal
 			password_hash = excluded.password_hash,
 			password_salt = excluded.password_salt,
 			updated_at_ms = excluded.updated_at_ms`,
-		adminCredentialID, hashAdminPassword(password, salt), salt, timeToMillis(now))
+		adminCredentialID, hashAdminPassword(ctx, password, salt), salt, timeToMillis(now))
 	return err
 }
 
@@ -118,7 +122,7 @@ func (s *Store) SetAdminPassword(ctx context.Context, password string, now time.
 			password_hash = excluded.password_hash,
 			password_salt = excluded.password_salt,
 			updated_at_ms = excluded.updated_at_ms`,
-		adminCredentialID, hashAdminPassword(password, salt), salt, timeToMillis(now)); err != nil {
+		adminCredentialID, hashAdminPassword(ctx, password, salt), salt, timeToMillis(now)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE auth_session SET admin_until_ms = NULL`); err != nil {
@@ -148,7 +152,7 @@ func (s *Store) CreateFirstAdminPassword(ctx context.Context, session SessionID,
 		return false, err
 	}
 	// The KDF runs before the write transaction so the writer is not held for it.
-	verifier := hashAdminPassword(password, salt)
+	verifier := hashAdminPassword(ctx, password, salt)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
@@ -232,13 +236,13 @@ func (s *Store) VerifyAdminPassword(ctx context.Context, password string) error 
 	if errors.Is(err, sql.ErrNoRows) {
 		// Spend the KDF anyway so an unset password costs the same as a wrong
 		// one — no timing oracle distinguishing "not set" from "wrong".
-		hashAdminPassword(password, salt)
+		CheckCredentialDecoy(ctx, password)
 		return ErrNoAdminPassword
 	}
 	if err != nil {
 		return err
 	}
-	if subtle.ConstantTimeCompare([]byte(hash), []byte(hashAdminPassword(password, salt))) != 1 {
+	if subtle.ConstantTimeCompare([]byte(hash), []byte(hashAdminPassword(ctx, password, salt))) != 1 {
 		return ErrAdminPasswordMismatch
 	}
 	return nil

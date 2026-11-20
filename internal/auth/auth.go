@@ -48,8 +48,9 @@ const (
 	integrationSessionTTL           = 24 * time.Hour
 	integrationSetupTTL             = 15 * time.Minute
 	integrationFailureFloor         = 75 * time.Millisecond
-	integrationAttemptAction        = "integration.login"
+	integrationAttemptAction        = store.IntegrationAttemptAction
 	integrationAttemptPseudonymInfo = "beamfall/integration-attempt-pseudonym/v1"
+	integrationIPThrottleInfo       = "beamfall/integration-ip-throttle/v1"
 )
 
 // adminBackoff is the admin re-auth lane's exponential-backoff curve (ADR-0012
@@ -159,6 +160,7 @@ type Service struct {
 	// resolves fail-closed (no certified Media allowed).
 	certificationScales      map[string][]string
 	integrationAttemptSecret []byte
+	integrationIPSecret      []byte
 	// beforeAdminGrant, when non-nil, runs in BeginAdminSession after the
 	// owner and password checks and before the window is written. Test seam
 	// for the ownership-transfer race; nil in production.
@@ -181,23 +183,29 @@ func NewServiceWithClock(st *store.Store, now func() time.Time) *Service {
 	}
 	secret := make([]byte, 32)
 	_, _ = rand.Read(secret)
-	return &Service{store: st, now: now, integrationAttemptSecret: secret}
+	return &Service{
+		store: st, now: now, integrationAttemptSecret: secret,
+		integrationIPSecret: deriveIntegrationAttemptSecret(secret, integrationIPThrottleInfo),
+	}
 }
 
-// SetIntegrationAttemptSecret binds unknown-name security-event targets to a
-// one-way HKDF key derived from a durable server root with fixed domain-separation
-// info. The root is never used directly, so audit tags cannot be reused as Stream
-// Token material or vice versa. The attempted name itself is never persisted.
+// SetIntegrationAttemptSecret binds unknown-name security-event targets and IP
+// throttle keys to distinct HKDF keys derived from a durable server root.
+// Called at wiring time. An empty root leaves both keys intact.
 func (s *Service) SetIntegrationAttemptSecret(secret []byte) {
 	if len(secret) == 0 {
-		s.integrationAttemptSecret = append([]byte(nil), secret...)
 		return
 	}
-	derived, err := hkdf.Key(sha256.New, secret, nil, integrationAttemptPseudonymInfo, 32)
+	s.integrationAttemptSecret = deriveIntegrationAttemptSecret(secret, integrationAttemptPseudonymInfo)
+	s.integrationIPSecret = deriveIntegrationAttemptSecret(secret, integrationIPThrottleInfo)
+}
+
+func deriveIntegrationAttemptSecret(secret []byte, info string) []byte {
+	derived, err := hkdf.Key(sha256.New, secret, nil, info, 32)
 	if err != nil {
 		panic(err)
 	}
-	s.integrationAttemptSecret = derived
+	return derived
 }
 
 // SetCertificationScales wires the activated plugins' ordered certification
@@ -567,8 +575,9 @@ type IntegrationSession struct {
 
 // AuthenticateIntegrationByName authenticates a Profile entry credential, or
 // the bounded "admin" setup credential, and mints a non-renewable integration
-// Session. Every refusal uses one error and a common minimum timing class.
-func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, credential string, scopes []store.IntegrationScope) (IntegrationSession, error) {
+// Session. clientIP is the canonical address resolved by the integration's
+// trust policy. Every refusal uses one error and a common minimum timing class.
+func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, credential, clientIP string, scopes []store.IntegrationScope) (IntegrationSession, error) {
 	started := time.Now()
 	name = strings.TrimSpace(name)
 	profile, profileErr := s.store.ProfileByName(ctx, name)
@@ -577,43 +586,45 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 		profile, profileErr = s.store.OwnerProfile(ctx)
 	}
 	attemptKey := s.integrationAttemptKey(name, profile, profileErr, setup)
-	lockedUntil, err := s.store.AuthBackoffUntil(ctx, integrationAttemptAction, attemptKey, s.now(), integrationBackoff)
+	keys := []string{attemptKey, s.integrationIPAttemptKey(clientIP)}
+	var reservation store.AuthAttemptReservation
+	var lockedUntil time.Time
+	credentialErr := ErrIntegrationAuthentication
+	err := withAdminKDFSlot(ctx, func() error {
+		var reserveErr error
+		reservation, lockedUntil, reserveErr = s.store.ReserveAuthAttempt(ctx, integrationAttemptAction, keys, s.now().UTC(), integrationBackoff)
+		// Refusals without a usable verifier spend the same Argon2id cost as a
+		// real check, within the same KDF slot.
+		if reserveErr != nil || !lockedUntil.IsZero() || profileErr != nil {
+			store.CheckCredentialDecoy(ctx, credential)
+		} else {
+			credentialErr = s.verifyIntegrationCredential(ctx, profile.ID, credential, setup)
+		}
+		return reserveErr
+	})
 	if err != nil {
-		return IntegrationSession{}, err
+		if errors.Is(err, ErrAdminBusy) {
+			s.auditIntegrationAttempt(ctx, profile, profileErr, attemptKey, false)
+			NoteRefusal(ctx, refusalOperationIntegrationSignIn, RefusalIntegrationRejected, true)
+		}
+		return IntegrationSession{}, s.integrationFailure(started)
 	}
-	if s.now().Before(lockedUntil) {
+	if !lockedUntil.IsZero() {
 		s.auditIntegrationAttempt(ctx, profile, profileErr, attemptKey, false)
 		NoteRefusal(ctx, refusalOperationIntegrationSignIn, RefusalIntegrationLocked, true)
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
 
-	credentialErr := profileErr
-	if credentialErr == nil && setup {
-		// The admin KDF runs inside the process-wide bound; a busy refusal
-		// is one more uniform failure.
-		credentialErr = withAdminKDFSlot(ctx, func() error {
-			return verifyAdminPasswordKDF(ctx, s.store, credential)
-		})
-	}
-	if credentialErr == nil && !setup {
-		credentialErr = s.store.VerifyProfileEntryPIN(ctx, profile.ID, credential)
-		if credentialErr == nil && (!profile.IntegrationSignIn || profile.Disabled || profile.Kind != store.ProfileAdult) {
-			credentialErr = ErrIntegrationAuthentication
-		}
-	}
-	if credentialErr != nil {
-		_ = s.store.RecordAuthAttempt(ctx, store.AuthAttempt{OccurredAt: s.now().UTC(), Action: integrationAttemptAction, Key: attemptKey})
+	if profileErr != nil || credentialErr != nil ||
+		(!setup && (!profile.IntegrationSignIn || profile.Disabled || profile.Kind != store.ProfileAdult)) {
 		s.auditIntegrationAttempt(ctx, profile, profileErr, attemptKey, false)
 		NoteRefusal(ctx, refusalOperationIntegrationSignIn, RefusalIntegrationRejected, true)
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
 
-	if _, err := encodeIntegrationScopeRequest(scopes); err != nil {
-		return IntegrationSession{}, s.integrationFailure(started)
-	}
 	token, err := randomIntegrationToken()
 	if err != nil {
-		return IntegrationSession{}, err
+		return IntegrationSession{}, s.integrationFailure(started)
 	}
 	ttl := integrationSessionTTL
 	if setup {
@@ -623,27 +634,27 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 	err = s.store.CreateIntegrationSession(ctx, store.Session{
 		ID: store.SessionID(token), ProfileID: profile.ID, Kind: store.SessionKindIntegration,
 		IntegrationScopes: scopes, ExpiresAt: expires,
-	}, !setup)
+	}, !setup, reservation)
 	if err != nil {
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
-	_ = s.store.RecordAuthAttempt(ctx, store.AuthAttempt{OccurredAt: s.now().UTC(), Action: integrationAttemptAction, Key: attemptKey, Success: true})
 	s.auditIntegrationAttempt(ctx, profile, nil, attemptKey, true)
 	return IntegrationSession{Token: token, ProfileID: profile.ID, ExpiresAt: expires, Setup: setup}, nil
 }
 
-func encodeIntegrationScopeRequest(scopes []store.IntegrationScope) (string, error) {
-	if len(scopes) == 0 {
-		return "", errors.New("integration scopes are required")
-	}
-	parts := make([]string, 0, len(scopes))
-	for _, scope := range scopes {
-		if scope != store.IntegrationScopeRead && scope != store.IntegrationScopeRefresh {
-			return "", errors.New("integration scope exceeds ceiling")
+func (s *Service) verifyIntegrationCredential(ctx context.Context, profileID store.ProfileID, credential string, setup bool) error {
+	if setup {
+		err := verifyAdminPasswordKDF(ctx, s.store, credential)
+		if err != nil && !errors.Is(err, store.ErrAdminPasswordMismatch) && !errors.Is(err, store.ErrNoAdminPassword) {
+			store.CheckCredentialDecoy(ctx, credential)
 		}
-		parts = append(parts, string(scope))
+		return err
 	}
-	return strings.Join(parts, ","), nil
+	err := s.store.VerifyProfileEntryPIN(ctx, profileID, credential)
+	if err != nil && (errors.Is(err, store.ErrMalformedProfileEntryPIN) || !errors.Is(err, store.ErrProfileEntryPINMismatch)) {
+		store.CheckCredentialDecoy(ctx, credential)
+	}
+	return err
 }
 
 func randomIntegrationToken() (string, error) {
@@ -661,9 +672,17 @@ func (s *Service) integrationAttemptKey(name string, profile store.Profile, prof
 		}
 		return "profile:" + string(profile.ID)
 	}
-	mac := hmac.New(sha256.New, s.integrationAttemptSecret)
-	_, _ = mac.Write([]byte(strings.ToLower(name)))
-	return "unknown:" + hex.EncodeToString(mac.Sum(nil))
+	return "unknown:" + integrationAttemptPseudonym(s.integrationAttemptSecret, strings.ToLower(name))
+}
+
+func (s *Service) integrationIPAttemptKey(ip string) string {
+	return "ip:" + integrationAttemptPseudonym(s.integrationIPSecret, "ip:"+ip)
+}
+
+func integrationAttemptPseudonym(key []byte, value string) string {
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(value))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func (s *Service) integrationFailure(started time.Time) error {
@@ -685,18 +704,22 @@ func (s *Service) auditIntegrationAttempt(ctx context.Context, profile store.Pro
 		entry.TargetType = "security-target"
 		entry.TargetID = strings.TrimPrefix(attemptKey, "unknown:")
 	}
-	_ = s.store.AppendActivity(ctx, entry)
+	// The audit outlives the request: a refusal caused by the request deadline
+	// must still be recorded, within a bound of its own.
+	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), integrationAuditTimeout)
+	defer cancel()
+	_ = s.store.AppendActivity(auditCtx, entry)
 }
+
+// integrationAuditTimeout bounds the detached sign-in audit write.
+const integrationAuditTimeout = 5 * time.Second
 
 // IntegrationScope authenticates an integration bearer for one closed compat
 // scope. Enrolled sessions and integrations lacking the bit fail closed.
 func (s *Service) IntegrationScope(ctx context.Context, token string, required store.IntegrationScope) (Scope, error) {
-	session, err := s.store.Session(ctx, store.SessionID(token))
+	session, err := s.integrationSession(ctx, token)
 	if err != nil {
 		return Scope{}, err
-	}
-	if session.Kind != store.SessionKindIntegration || !s.now().Before(session.ExpiresAt) {
-		return Scope{}, errors.New("invalid integration session")
 	}
 	hasScope := false
 	for _, scope := range session.IntegrationScopes {
@@ -719,11 +742,22 @@ func (s *Service) IntegrationScope(ctx context.Context, token string, required s
 	}, nil
 }
 
+func (s *Service) integrationSession(ctx context.Context, token string) (store.Session, error) {
+	session, err := s.store.Session(ctx, store.SessionID(token))
+	if err != nil {
+		return store.Session{}, err
+	}
+	if session.Kind != store.SessionKindIntegration || !s.now().Before(session.ExpiresAt) {
+		return store.Session{}, errors.New("invalid integration session")
+	}
+	return session, nil
+}
+
 // RevokeIntegrationSession revokes the caller's non-renewable bearer.
 func (s *Service) RevokeIntegrationSession(ctx context.Context, token string) error {
-	session, err := s.store.Session(ctx, store.SessionID(token))
-	if err != nil || session.Kind != store.SessionKindIntegration {
-		return errors.New("invalid integration session")
+	session, err := s.integrationSession(ctx, token)
+	if err != nil {
+		return err
 	}
 	if err := s.store.RevokeIntegrationSession(ctx, session.ID, session.ProfileID); err != nil {
 		return err
@@ -871,7 +905,7 @@ func (s *Service) createFirstAdminPassword(ctx context.Context, scope Scope, pas
 	// parallel requests cannot all pass the throttle before any is counted.
 	var created bool
 	err = withAdminKDFSlot(ctx, func() error {
-		locked, rerr := s.store.ReserveAuthAttempt(ctx, adminAttemptAction, []string{attemptKey}, now.UTC(), adminBackoff)
+		_, locked, rerr := s.store.ReserveAuthAttempt(ctx, adminAttemptAction, []string{attemptKey}, now.UTC(), adminBackoff)
 		if rerr != nil {
 			return rerr
 		}

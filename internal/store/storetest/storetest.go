@@ -206,6 +206,39 @@ func BackdateStreamTokenActivity(t testing.TB, dataDir string, session store.Ses
 	}
 }
 
+// RejectIntegrationIPSettlement injects a write failure on the second lane
+// of an integration settlement while still allowing reservations.
+func RejectIntegrationIPSettlement(t testing.TB, dataDir string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(dataDir, "db", "catalog.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TRIGGER fixture_reject_ip_settlement BEFORE UPDATE OF success ON auth_attempt
+		WHEN OLD.action = 'integration.login' AND OLD.key LIKE 'ip:%' AND NEW.success = 1
+		BEGIN SELECT RAISE(ABORT, 'fixture settlement failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// CorruptProfileEntryPIN replaces an existing fixture verifier with malformed data.
+func CorruptProfileEntryPIN(t testing.TB, dataDir string, id store.ProfileID) {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(dataDir, "db", "catalog.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	result, err := db.Exec(`UPDATE server_config SET value = 'invalid' WHERE key = ?`, "profile.entry_pin:"+string(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := result.RowsAffected(); err != nil || rows != 1 {
+		t.Fatalf("malformed verifier fixture updated %d rows: %v", rows, err)
+	}
+}
+
 // SetLibraryPlugin assigns a plugin to a seeded fixture Library, which the dev
 // seed leaves plugin-less. Library health judges a Library by its plugin
 // (CORE-2383). It lives under internal/store so storage-driver access stays

@@ -34,8 +34,8 @@ type EventsCompactionResult struct {
 	Vacuumed bool
 }
 
-// CompactEvents prunes the genuinely-disposable bookkeeping rows in events.db and
-// reclaims space (PANEL-9 / ADR-0011: the events DB must not grow unbounded).
+// CompactEvents prunes disposable bookkeeping and reclaims space in events.db
+// (PANEL-9 / ADR-0011). It also applies attempt retention to the catalog lanes.
 // retention is the age cutoff for time-based pruning; a value <= 0 uses
 // DefaultEventsRetention. now is injected for testability.
 //
@@ -87,6 +87,14 @@ func (s *Store) CompactEvents(ctx context.Context, retention time.Duration, now 
 		return result, err
 	}
 	result.OldAuthAttempts, _ = oldAuth.RowsAffected()
+
+	oldIntegrationAuth, err := s.catalogW.ExecContext(ctx,
+		"DELETE FROM auth_attempt WHERE occurred_at_ms < ?", cutoffMS)
+	if err != nil {
+		return result, err
+	}
+	oldIntegrationCount, _ := oldIntegrationAuth.RowsAffected()
+	result.OldAuthAttempts += oldIntegrationCount
 
 	oldOutbox, err := s.eventsW.ExecContext(ctx,
 		"DELETE FROM event_outbox WHERE occurred_at_ms < ? AND seq < (SELECT MAX(seq) FROM event_outbox)", cutoffMS)

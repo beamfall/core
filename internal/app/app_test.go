@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -37,7 +38,10 @@ import (
 	"github.com/hashicorp/yamux"
 
 	"github.com/beamfall/core/internal/artwork"
+	"github.com/beamfall/core/internal/auth"
 	backupcore "github.com/beamfall/core/internal/backup"
+	"github.com/beamfall/core/internal/capabilities"
+	"github.com/beamfall/core/internal/compat"
 	"github.com/beamfall/core/internal/config"
 	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/governor"
@@ -687,6 +691,252 @@ func TestClearingConsoleScratchAlreadyAtDefaultNeedsNoRestart(t *testing.T) {
 	info := response.Data.SetTranscodeConfig
 	if rec.Code != http.StatusOK || len(response.Errors) > 0 || info.TempDir != "" || info.EffectiveTempDir != active || info.TempDirRestartRequired {
 		t.Errorf("clear Console scratch = %d %s, want %q effective with no restart", rec.Code, rec.Body.String(), active)
+	}
+}
+
+func TestAppCompatIdentityAndRefreshSurviveRestart(t *testing.T) {
+	ctx := t.Context()
+	cfg := testConfig(t)
+	cfg.ServerName = "Integration Test Server"
+	cfg.JellyfinCompat.Enabled = true
+	open := func() *App {
+		t.Helper()
+		a, err := New(ctx, cfg, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = a.Close() })
+		return a
+	}
+	a := open()
+	st := a.store
+	profile, err := st.CreateProfile(ctx, "Integration", store.ProfileAdult, store.LibraryFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetProfileEntryPIN(ctx, profile.ID, "2468"); err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	if _, err := st.UpdateProfileSettings(ctx, profile.ID, store.ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	for _, title := range []string{"First", "Second"} {
+		if _, err := st.CreateLibraryWithRoots(ctx, title, false, "", profile.ID, []string{t.TempDir()}, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	call := func(method, path, token, body string, wantStatus int) []byte {
+		t.Helper()
+		req := httptest.NewRequestWithContext(ctx, method, "/compat/jellyfin/"+path, strings.NewReader(body))
+		req.RemoteAddr = "127.0.0.1:1234"
+		if token != "" {
+			req.Header.Set("X-Emby-Token", token)
+		}
+		rec := httptest.NewRecorder()
+		a.Handler().ServeHTTP(rec, req)
+		if rec.Code != wantStatus {
+			t.Fatalf("%s %s returned %d, want %d", method, path, rec.Code, wantStatus)
+		}
+		return rec.Body.Bytes()
+	}
+	var login struct{ AccessToken string }
+	if err := json.Unmarshal(call(http.MethodPost, "Users/AuthenticateByName", "", `{"Username":"Integration","Pw":"2468"}`, http.StatusOK), &login); err != nil || login.AccessToken == "" {
+		t.Fatal("login did not return an integration bearer")
+	}
+	public := call(http.MethodGet, "System/Info/Public", "", "", http.StatusOK)
+	var identity struct{ ID, ProductName, ServerName, Version string }
+	if err := json.Unmarshal(public, &identity); err != nil || identity.ID == "" || identity.ProductName != "Beamfall" || identity.ServerName != cfg.ServerName || identity.Version != capabilities.ReleaseVersion {
+		t.Fatalf("invalid server identity: %s", public)
+	}
+	if err := st.SetSessionRevealed(ctx, store.SessionID(login.AccessToken), true); err != nil {
+		t.Fatal(err)
+	}
+	call(http.MethodPost, "Library/Refresh", login.AccessToken, "", http.StatusNoContent)
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	a = open()
+	if got := call(http.MethodGet, "System/Info/Public", "", "", http.StatusOK); !bytes.Equal(got, public) {
+		t.Fatalf("public identity changed after restart: %s", got)
+	}
+	call(http.MethodGet, "System/Info", login.AccessToken, "", http.StatusOK)
+	queued, err := a.store.ListJobs(ctx, store.JobStatusQueued)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range queued {
+		if job.Kind == scanpkg.JobKind {
+			t.Fatalf("production refresh unexpectedly queued a scan job %s", job.ID)
+		}
+	}
+}
+
+func TestCompatRefreshQueuesEligibleRoots(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		allowed  int
+		requests int
+	}{
+		{name: "deny all", requests: 1},
+		{name: "one allowlisted library", allowed: 1, requests: 1},
+		{name: "concurrent burst and restart", allowed: 2, requests: 24},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			dataDir := storetest.MigratedDataDir(t)
+			st := storetest.OpenAt(t, dataDir)
+			profile, err := st.CreateProfile(ctx, "Integration", store.ProfileAdult, store.LibraryFilter{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetProfileEntryPIN(ctx, profile.ID, "2468"); err != nil {
+				t.Fatal(err)
+			}
+			enabled := true
+			if _, err := st.UpdateProfileSettings(ctx, profile.ID, store.ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
+				t.Fatal(err)
+			}
+
+			allow := map[store.LibraryID]bool{}
+			var sealed store.LibraryID
+			var granted []store.LibraryID
+			type scanTarget struct {
+				LibraryID store.LibraryID `json:"library_id"`
+				Root      string          `json:"root"`
+			}
+			want := map[scanTarget]bool{}
+			for i, title := range []string{"First", "Second", "Sealed", "Restricted", "Trashed", "No Profile Grant"} {
+				roots := []string{t.TempDir(), t.TempDir()}
+				library, err := st.CreateLibraryWithRoots(ctx, title, title == "Restricted", "", profile.ID, roots, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				allow[library.ID] = tc.allowed > 0
+				if title != "No Profile Grant" && title != "Trashed" {
+					granted = append(granted, library.ID)
+				}
+				switch title {
+				case "Sealed":
+					sealed = library.ID
+				case "Trashed":
+					if err := st.DeleteLibrary(ctx, library.ID); err != nil {
+						t.Fatal(err)
+					}
+				case "First", "Second":
+					allow[library.ID] = i < tc.allowed
+					if allow[library.ID] {
+						for _, root := range roots {
+							want[scanTarget{LibraryID: library.ID, Root: root}] = true
+						}
+					}
+				}
+			}
+			if _, err := st.SetProfileLibraries(ctx, profile.ID, granted); err != nil {
+				t.Fatal(err)
+			}
+			if queued, err := st.ListJobs(ctx, store.JobStatusQueued); err != nil || len(queued) != 0 {
+				t.Fatalf("fixture has %d queued jobs before refresh (error %v)", len(queued), err)
+			}
+
+			var admitted atomic.Int32
+			newHandler := func(st *store.Store, service *auth.Service) *compat.Handler {
+				t.Helper()
+				refresh := compatLibraryRefresher(st, nil,
+					func(id store.LibraryID) bool { return id == sealed },
+					func(_ context.Context, id store.LibraryID) bool { return allow[id] },
+					slog.Default())
+				handler, err := compat.New(compat.Config{
+					Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"},
+					EnqueueRefresh: func(ctx context.Context, scope auth.Scope) {
+						admitted.Add(1)
+						refresh(ctx, scope)
+					},
+				}, service, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return handler
+			}
+			service := auth.NewService(st)
+			handler := newHandler(st, service)
+			tokens := make([]string, 2)
+			for i := range tokens {
+				session, err := service.AuthenticateIntegrationByName(ctx, "Integration", "2468", "127.0.0.1", []store.IntegrationScope{store.IntegrationScopeRefresh})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := st.SetSessionRevealed(ctx, store.SessionID(session.Token), true); err != nil {
+					t.Fatal(err)
+				}
+				tokens[i] = session.Token
+			}
+
+			request := func(handler *compat.Handler, token string) {
+				req := httptest.NewRequestWithContext(ctx, http.MethodPost, compat.Prefix+"Library/Refresh", nil)
+				req.RemoteAddr = "127.0.0.1:1234"
+				req.Header.Set("X-Emby-Token", token)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
+					t.Errorf("refresh returned %d with %d body bytes", rec.Code, rec.Body.Len())
+				}
+			}
+			queuedIDs := func(st *store.Store) []store.JobID {
+				t.Helper()
+				queued, err := st.ListJobs(ctx, store.JobStatusQueued)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(queued) != len(want) {
+					t.Fatalf("queued %d jobs, want %d", len(queued), len(want))
+				}
+				seen := map[scanTarget]bool{}
+				ids := make([]store.JobID, 0, len(queued))
+				for _, job := range queued {
+					var target scanTarget
+					if err := json.Unmarshal(job.Payload, &target); err != nil {
+						t.Fatal(err)
+					}
+					if job.Kind != scanpkg.JobKind || !want[target] || seen[target] {
+						t.Fatalf("unexpected queued job kind %q for %+v", job.Kind, target)
+					}
+					seen[target] = true
+					ids = append(ids, job.ID)
+				}
+				slices.Sort(ids)
+				return ids
+			}
+
+			var wg sync.WaitGroup
+			start := make(chan struct{})
+			for i := range tc.requests {
+				wg.Go(func() {
+					<-start
+					request(handler, tokens[i%len(tokens)])
+				})
+			}
+			close(start)
+			wg.Wait()
+			if got := admitted.Load(); got != 1 {
+				t.Fatalf("admitted %d requests, want 1", got)
+			}
+			ids := queuedIDs(st)
+
+			if tc.requests > 1 {
+				if err := st.Close(); err != nil {
+					t.Fatal(err)
+				}
+				reopened := storetest.OpenAt(t, dataDir)
+				request(newHandler(reopened, auth.NewService(reopened)), tokens[0])
+				if got := admitted.Load(); got != 2 {
+					t.Fatalf("admitted %d requests after restart, want 2 total", got)
+				}
+				if got := queuedIDs(reopened); !slices.Equal(got, ids) {
+					t.Fatalf("queued job IDs changed after restart and refresh: got %v, want %v", got, ids)
+				}
+			}
+		})
 	}
 }
 

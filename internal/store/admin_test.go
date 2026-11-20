@@ -49,7 +49,7 @@ func TestVerifyAdminPasswordAcceptsExistingShortPassword(t *testing.T) {
 		INSERT INTO admin_credential(id, password_hash, password_salt, updated_at_ms)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET password_hash = excluded.password_hash, password_salt = excluded.password_salt`,
-		adminCredentialID, hashAdminPassword("old", salt), salt, timeToMillis(time.Now())); err != nil {
+		adminCredentialID, hashAdminPassword(ctx, "old", salt), salt, timeToMillis(time.Now())); err != nil {
 		t.Fatalf("plant short verifier: %v", err)
 	}
 	if err := store.VerifyAdminPassword(ctx, "old"); err != nil {

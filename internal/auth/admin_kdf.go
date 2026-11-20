@@ -48,7 +48,7 @@ type AdminPasswordAttempt struct {
 // lanes, which resets them.
 func CheckAdminPassword(ctx context.Context, st *store.Store, attempt AdminPasswordAttempt, password string) error {
 	return withAdminKDFSlot(ctx, func() error {
-		locked, err := st.ReserveAuthAttempt(ctx, attempt.Action, attempt.Keys, attempt.At.UTC(), adminBackoff)
+		_, locked, err := st.ReserveAuthAttempt(ctx, attempt.Action, attempt.Keys, attempt.At.UTC(), adminBackoff)
 		if err != nil {
 			return err
 		}
