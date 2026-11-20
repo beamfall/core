@@ -260,12 +260,7 @@ func imageClassForPath(path string) bool {
 	return imageExtensions[ext]
 }
 
-// Separate seams let tests distinguish sampled reads from the one-time
-// compatibility check of a legacy digest at its original path.
-var (
-	sampleScanFile    = store.SampleMediaFileContent
-	legacyFileContent = store.HashMediaFileContentContext
-)
+var sampleScanFile = store.SampleMediaFileContentChecked
 
 // stabilityWindow is the file-stability quiet period: a file
 // whose mtime is newer than now-stabilityWindow is still being written (a rip

@@ -195,8 +195,16 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 	}
 	defer s.releaseBudget()
 	task.fill(ctx, s.st, s.prober, s.grabber)
-	if task.err == errUnstableSample && task.stored.OK {
-		task.err, task.fastPath = nil, true
+	if task.err == errUnstableSample {
+		// The worker's normal fast-path lookup only sees the public catalog.
+		// Resolve unstable paths in this scan's library before reusing a row.
+		stored, err := s.st.MediaFileFingerprintInLibrary(ctx, s.req.LibraryID, task.path)
+		if err != nil {
+			task.err = err
+		} else if stored.OK {
+			task.stored = stored
+			task.err, task.fastPath = nil, true
+		}
 	}
 	if task.err == nil && task.fastPath {
 		// An unchanged file whose Media still holds legacy parser fields is

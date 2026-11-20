@@ -19,10 +19,19 @@ const (
 
 // SampleMediaFileContent reads the sample1 identity from a file.
 func SampleMediaFileContent(ctx context.Context, path string) (string, error) {
+	return SampleMediaFileContentChecked(ctx, path, nil)
+}
+
+// SampleMediaFileContentChecked lets a caller choose the fingerprint using
+// the sample and the same open file, before the final path verification.
+func SampleMediaFileContentChecked(ctx context.Context, path string, check SampleFingerprintCheck) (string, error) {
 	return SampleMediaFileContentFrom(ctx, path, func() (SampleFile, error) {
 		return os.OpenInRoot(filepath.Dir(path), filepath.Base(path))
-	})
+	}, check)
 }
+
+// SampleFingerprintCheck receives the sample and a reader positioned at byte zero.
+type SampleFingerprintCheck func(io.Reader, string) (string, error)
 
 // SampleFile allows stat and random-access reads on the same open file.
 type SampleFile interface {
@@ -31,7 +40,7 @@ type SampleFile interface {
 }
 
 // SampleMediaFileContentFrom samples an opened file and verifies that path still names its inode.
-func SampleMediaFileContentFrom(ctx context.Context, path string, open func() (SampleFile, error)) (string, error) {
+func SampleMediaFileContentFrom(ctx context.Context, path string, open func() (SampleFile, error), check SampleFingerprintCheck) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -47,6 +56,12 @@ func SampleMediaFileContentFrom(ctx context.Context, path string, open func() (S
 	fingerprint, err := SampleMediaFileContentAt(ctx, file, info.Size())
 	if err != nil {
 		return "", err
+	}
+	if check != nil {
+		fingerprint, err = check(file, fingerprint)
+		if err != nil {
+			return "", err
+		}
 	}
 	after, err := os.Lstat(path)
 	if err != nil {

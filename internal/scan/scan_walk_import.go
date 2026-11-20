@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -202,44 +203,26 @@ func (s *scanWalkState) retryAutoIdentify(path string, mediaID store.MediaID, fi
 	return nil
 }
 
-// The scan workers share this slot until the legacy reader closes.
-func hashLegacyScanFile(ctx context.Context, path string) (string, error) {
-	select {
-	case scanHashSlot <- struct{}{}:
-	default:
-		if onScanHashWait != nil {
-			onScanHashWait(path)
-		}
-		select {
-		case scanHashSlot <- struct{}{}:
-		case <-ctx.Done():
-			return "", ctx.Err()
-		}
+// legacyComparison checks a legacy fingerprint once when the recorded stats
+// allow reuse at its original path but leave one or both values unknown.
+func (task *workerTask) legacyComparison(ctx context.Context) store.SampleFingerprintCheck {
+	stored := task.stored
+	if !stored.OK || !strings.HasPrefix(stored.ContentFingerprint, "sha256:") ||
+		(stored.SizeBytes != 0 && !stored.ModTime.IsZero()) ||
+		(stored.SizeBytes != 0 && stored.SizeBytes != task.info.size) ||
+		(!stored.ModTime.IsZero() && !store.MediaFileModTimeMatches(stored.ModTime, task.info.modTime)) {
+		return nil
 	}
-	defer func() { <-scanHashSlot }()
-	if err := ctx.Err(); err != nil {
-		return "", err
+	return func(file io.Reader, sample string) (string, error) {
+		full, err := store.HashMediaFileContentReader(ctx, file)
+		if err != nil || full == stored.ContentFingerprint {
+			return full, err
+		}
+		return sample, nil
 	}
-	return legacyFileContent(ctx, path)
 }
 
 func (s *scanWalkState) consumeFullTask(task *workerTask) error {
-	stored := task.stored
-	if stored.OK && strings.HasPrefix(stored.ContentFingerprint, "sha256:") &&
-		(stored.SizeBytes == 0 || stored.ModTime.IsZero()) &&
-		(stored.SizeBytes == 0 || stored.SizeBytes == task.info.size) &&
-		(stored.ModTime.IsZero() || store.MediaFileModTimeMatches(stored.ModTime, task.info.modTime)) {
-		full, err := hashLegacyScanFile(s.ctx, task.path)
-		if err != nil {
-			if canceled := s.ctx.Err(); canceled != nil {
-				return canceled
-			}
-			return s.consumeFastTask(task)
-		}
-		if full == stored.ContentFingerprint {
-			task.fingerprint = full
-		}
-	}
 	path := task.path
 	fingerprint := task.fingerprint
 	imported := store.ImportMediaFile{

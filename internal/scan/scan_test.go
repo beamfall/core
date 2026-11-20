@@ -2462,9 +2462,9 @@ func countHashes(t *testing.T) *int {
 	t.Helper()
 	calls := 0
 	original := sampleScanFile
-	sampleScanFile = func(ctx context.Context, path string) (string, error) {
+	sampleScanFile = func(ctx context.Context, path string, check store.SampleFingerprintCheck) (string, error) {
 		calls++
-		return original(ctx, path)
+		return original(ctx, path, check)
 	}
 	t.Cleanup(func() { sampleScanFile = original })
 	return &calls

@@ -2944,6 +2944,19 @@ type StoredFingerprint struct {
 // MediaFileFingerprintByPath reads the stored fingerprint and file stats for
 // an available path in the public catalog.
 func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (StoredFingerprint, error) {
+	return s.mediaFileFingerprintByPath(ctx, path, "")
+}
+
+// MediaFileFingerprintInLibrary reads the available path from the library's
+// catalog, including an encrypted catalog while it is unsealed.
+func (s *Store) MediaFileFingerprintInLibrary(ctx context.Context, libraryID LibraryID, path string) (StoredFingerprint, error) {
+	if libraryID == "" {
+		return StoredFingerprint{}, errors.New("library ID is required")
+	}
+	return s.mediaFileFingerprintByPath(ctx, path, libraryID)
+}
+
+func (s *Store) mediaFileFingerprintByPath(ctx context.Context, path string, libraryID LibraryID) (StoredFingerprint, error) {
 	if path == "" {
 		return StoredFingerprint{}, errors.New("path is required")
 	}
@@ -2954,11 +2967,23 @@ func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (St
 	}
 	var fp StoredFingerprint
 	var mtimeMS int64
-	err := s.catalogR.QueryRowContext(ctx, `
+	reader := s.catalogR
+	query := `
 		SELECT content_fingerprint, size_bytes, mtime_ms
 		FROM media_file
 		WHERE path = ? AND missing_at_ms IS NULL
-	`, path).Scan(&fp.ContentFingerprint, &fp.SizeBytes, &mtimeMS)
+	`
+	args := []any{path}
+	if libraryID != "" {
+		plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+		if err != nil {
+			return StoredFingerprint{}, err
+		}
+		reader = plane.reader
+		query += " AND (SELECT library_id FROM media WHERE id = media_file.media_id) = ?"
+		args = append(args, libraryID)
+	}
+	err := reader.QueryRowContext(ctx, query, args...).Scan(&fp.ContentFingerprint, &fp.SizeBytes, &mtimeMS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoredFingerprint{}, nil
 	}
