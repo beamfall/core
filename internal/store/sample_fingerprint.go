@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -43,7 +44,18 @@ func SampleMediaFileContentFrom(ctx context.Context, open func() (SampleFile, er
 	if err != nil {
 		return "", err
 	}
-	return SampleMediaFileContentAt(ctx, file, info.Size())
+	fingerprint, err := SampleMediaFileContentAt(ctx, file, info.Size())
+	if err != nil {
+		return "", err
+	}
+	after, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	if after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
+		return "", errors.New("file changed while sampling content")
+	}
+	return fingerprint, nil
 }
 
 // SampleMediaFileContentAt hashes the big-endian file size and either the

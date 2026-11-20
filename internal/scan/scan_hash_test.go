@@ -124,6 +124,86 @@ func TestScanBoundsFingerprintReadsOnSparseFile(t *testing.T) {
 	}
 }
 
+type changingSampleFile struct {
+	*os.File
+	beforeFirstRead func() error
+}
+
+func (f *changingSampleFile) ReadAt(p []byte, offset int64) (int, error) {
+	if f.beforeFirstRead != nil {
+		change := f.beforeFirstRead
+		f.beforeFirstRead = nil
+		if err := change(); err != nil {
+			return 0, err
+		}
+	}
+	return f.File.ReadAt(p, offset)
+}
+
+func TestScanDoesNotRepointMediaWhenFileChangesDuringSampling(t *testing.T) {
+	for _, change := range []string{"size", "mtime"} {
+		t.Run(change, func(t *testing.T) {
+			root := t.TempDir()
+			payload := []byte("already cataloged bytes")
+			originalPath := writeScanFile(t, root, "original.mp4", payload)
+			st := storetest.Open(t)
+			req := Request{LibraryID: "library-local", Root: root}
+			initial, err := Scan(t.Context(), st, nil, nil, nil, nil, nil, req)
+			if err != nil || len(initial.Files) != 1 {
+				t.Fatalf("initial scan files = %+v, err = %v, want one cataloged file", initial.Files, err)
+			}
+			copyPath := writeScanFile(t, root, "resumed-copy.mp4", payload)
+			before, err := os.Stat(copyPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir, err := os.OpenRoot(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer dir.Close()
+			originalSample := sampleScanFile
+			t.Cleanup(func() { sampleScanFile = originalSample })
+			sampleScanFile = func(ctx context.Context, path string) (string, error) {
+				if path != copyPath {
+					return originalSample(ctx, path)
+				}
+				return store.SampleMediaFileContentFrom(ctx, func() (store.SampleFile, error) {
+					file, err := dir.OpenFile(filepath.Base(path), os.O_RDWR, 0)
+					if err != nil {
+						return nil, err
+					}
+					return &changingSampleFile{File: file, beforeFirstRead: func() error {
+						if change == "mtime" {
+							return os.Chtimes(path, before.ModTime(), before.ModTime().Add(time.Second))
+						}
+						if _, err := file.WriteAt([]byte(" more bytes"), before.Size()); err != nil {
+							return err
+						}
+						return os.Chtimes(path, before.ModTime(), before.ModTime())
+					}}, nil
+				})
+			}
+			if _, err := Scan(t.Context(), st, nil, nil, nil, nil, nil, req); err != nil {
+				t.Fatal(err)
+			}
+			after, err := os.Stat(copyPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sizeChanged := after.Size() != before.Size()
+			mtimeChanged := !after.ModTime().Equal(before.ModTime())
+			if sizeChanged != (change == "size") || mtimeChanged != (change == "mtime") {
+				t.Fatalf("expected only %s to change, size %d → %d, mtime %v → %v", change, before.Size(), after.Size(), before.ModTime(), after.ModTime())
+			}
+			files, err := st.MediaFilesForLibrary(t.Context(), req.LibraryID)
+			if err != nil || len(files) != 1 || files[0].Path != originalPath || files[0].MediaID != initial.Files[0].MediaID {
+				t.Fatalf("live files = %+v, err = %v, want existing Media %s at %s", files, err, initial.Files[0].MediaID, originalPath)
+			}
+		})
+	}
+}
+
 func TestScanLegacyMtimePersistsAcrossReopen(t *testing.T) {
 	epoch := time.Unix(0, 0).UTC()
 	// Seed the rounded legacy value directly. origin/main used UnixNano()/1e6,
