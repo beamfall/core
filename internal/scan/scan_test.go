@@ -2517,6 +2517,71 @@ func TestScanFastPathSkipsRehashOnUnchangedLibrary(t *testing.T) {
 	}
 }
 
+// TestScanFastPathPreservesProbeFacts pins that an unchanged rescan, which
+// runs no probe, keeps the Media's probed duration, container and codec
+// instead of the fast path's path-derived placeholders.
+func TestScanFastPathPreservesProbeFacts(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	writeScanFile(t, root, "Artist/Album/01 - Track.flac", []byte("unchanged flac bytes"))
+	st := storetest.Open(t)
+	prober := &countingProber{probe: ffmpeg.Probe{Container: "flac", AudioCodec: "flac", DurationSeconds: 387}}
+	req := Request{LibraryID: "library-local", Root: root}
+	first, err := Scan(ctx, st, prober, nil, nil, nil, nil, req)
+	if err != nil || len(first.Files) != 1 {
+		t.Fatalf("first scan = %+v, err = %v", first, err)
+	}
+	if _, err := Scan(ctx, st, prober, nil, nil, nil, nil, req); err != nil {
+		t.Fatal(err)
+	}
+	media, err := st.Media(ctx, first.Files[0].MediaID, store.LibraryFilter{AllLibraries: true})
+	if err != nil || prober.calls != 1 || media.DurationSeconds != 387 || media.Codec != "flac" ||
+		media.Container != "flac" || media.Class != store.MediaClassAudio {
+		t.Fatalf("after fast-path rescan: probes = %d, media = %+v, err = %v; want one probe and flac/flac/387s audio",
+			prober.calls, media, err)
+	}
+}
+
+// TestScanFastPathBackfillsMissingDuration pins the repair of a Media an
+// earlier unprobed rescan left without a duration: its unchanged file is
+// probed once on the fast path, and the next rescan probes nothing.
+func TestScanFastPathBackfillsMissingDuration(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	path := writeScanFile(t, root, "Various Artists/Liked songs/03 - Track.flac", []byte("legacy flac bytes"))
+	st := storetest.Open(t)
+	req := Request{LibraryID: "library-local", Root: root}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := store.HashMediaFileContent(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The row an unprobed fast-path rescan used to leave behind.
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: req.LibraryID, Path: path, Title: "03 - Track", Container: "flac", Codec: "h264",
+		Class: store.MediaClassAudio, ContentFingerprint: digest, SizeBytes: info.Size(), ModTime: info.ModTime(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prober := &countingProber{probe: ffmpeg.Probe{Container: "flac", AudioCodec: "flac", DurationSeconds: 387}}
+	hashes := countHashes(t)
+	for scan, wantProbes := range []int{1, 1} {
+		result, err := Scan(ctx, st, prober, nil, nil, nil, nil, req)
+		if err != nil || len(result.Files) != 1 || result.Files[0].MediaID != media.ID {
+			t.Fatalf("scan %d = %+v, err = %v, want Media %s", scan, result, err, media.ID)
+		}
+		got, err := st.Media(ctx, media.ID, store.LibraryFilter{AllLibraries: true})
+		if err != nil || *hashes != 0 || prober.calls != wantProbes || got.DurationSeconds != 387 || got.Codec != "flac" {
+			t.Fatalf("scan %d: hashes = %d, probes = %d, media = %+v, err = %v; want no hash, %d probe(s), flac 387s",
+				scan, *hashes, prober.calls, got, err, wantProbes)
+		}
+	}
+}
+
 func TestScanFastPathRehashesWhenFileChanges(t *testing.T) {
 	root := t.TempDir()
 	path := writeScanFile(t, root, "a.mp4", []byte("original content"))

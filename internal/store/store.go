@@ -632,6 +632,10 @@ type ImportMediaFile struct {
 	Summary             string
 	ContentFingerprint  string
 	DurationSecondsHint int
+	// KeepProbeFacts marks an unchanged rescan that ran no probe: the
+	// existing first Version's duration, container, codec and frame size stay
+	// as they are instead of taking this import's path-derived placeholders.
+	KeepProbeFacts bool
 	// VideoWidthHint/VideoHeightHint carry the probed frame size; 0 when the
 	// probe was unavailable (re-scans without FFmpeg keep the stored values).
 	VideoWidthHint  int
@@ -2985,6 +2989,44 @@ type StoredFingerprint struct {
 // an available path in the public catalog.
 func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (StoredFingerprint, error) {
 	return s.mediaFileFingerprintByPath(ctx, path, "")
+}
+
+// LibraryFilePathsWithoutDuration returns the available first-part file
+// paths of the Library's non-image Media that hold no duration. Scan probes
+// these files even on its fast path, so a duration an earlier unprobed rescan
+// cleared, or a probe that failed, is filled again.
+func (s *Store) LibraryFilePathsWithoutDuration(ctx context.Context, libraryID LibraryID) (map[string]struct{}, error) {
+	if libraryID == "" {
+		return nil, errors.New("library ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT f.path
+		FROM media m
+		JOIN media_file f ON f.media_id = m.id AND f.missing_at_ms IS NULL AND f.part_ordinal = 0
+		WHERE m.library_id = ? AND m.duration_seconds <= 0 AND m.media_class <> ?
+	`, libraryID, MediaClassImage)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]struct{}{}
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		out[path] = struct{}{}
+	}
+	return out, rows.Err()
 }
 
 // MediaFileFingerprintInLibrary reads the available path from the library's

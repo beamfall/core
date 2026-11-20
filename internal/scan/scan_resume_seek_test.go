@@ -195,7 +195,7 @@ func TestContextualPreflightProbesWithinWorkerBudget(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			prober := &concurrencyProber{probe: ffmpeg.Probe{HasVideo: true, Tags: map[string]string{"group": "valid"}}}
+			prober := &concurrencyProber{probe: ffmpeg.Probe{HasVideo: true, DurationSeconds: 60, Tags: map[string]string{"group": "valid"}}}
 			parsers := map[string]FilenameParser{"contextual": taggedContextualParser{}}
 			result, err := ScanWithWorkerGovernor(context.Background(), st, prober, nil, parsers, nil, nil, nil, nil, fixedGovernor(workers), Request{LibraryID: library.ID, Root: root})
 			if err != nil {
