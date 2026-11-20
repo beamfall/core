@@ -13,6 +13,7 @@ import {
   reportWatchPartyLeadPosition,
   requestWatchPartyTransport,
   type WatchPartyInfo,
+  watchPartyAutoSkip,
   watchPartyTransport,
 } from "@/lib/graphql";
 import {
@@ -647,6 +648,35 @@ export async function sendPartyTransport(
     }
   } catch (err) {
     if (gen === generation) set(failure(err));
+  }
+}
+
+/** The server decides whether the auto-skip can move the shared timeline. */
+export async function sendPartyAutoSkip(item: string, positionMS: number): Promise<boolean> {
+  const { partyID, status, timeline, lead, isHost } = state;
+  if (status !== "active" || !timeline || timeline.item !== item || (lead && !isHost)) {
+    return false;
+  }
+  const gen = generation;
+  try {
+    const result = await watchPartyAutoSkip({
+      partyID,
+      item,
+      positionMS: Math.round(positionMS),
+    });
+    const latest = state.timeline;
+    if (!result.applied || gen !== generation || latest?.item !== item) return false;
+    // A stream frame can already have advanced the timeline past this response.
+    if (latest !== timeline) {
+      return latest.positionMS === result.positionMS && latest.presentAtMS === result.presentAtMS;
+    }
+    set({
+      timeline: { ...timeline, positionMS: result.positionMS, presentAtMS: result.presentAtMS },
+    });
+    return true;
+  } catch {
+    // An automatic skip is optional. Leave playback on the shared timeline.
+    return false;
   }
 }
 

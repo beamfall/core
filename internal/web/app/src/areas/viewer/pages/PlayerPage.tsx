@@ -470,6 +470,7 @@ function FeaturePlayer({
     attached: state.phase !== "message" && state.phase !== "terminal",
     mediaId: mediaId || "",
     onFollow: followParty,
+    songScale,
   });
   // A party member's Up Next and autoplay defer to the party (CORE-1766).
   const partyLeads = watchPartyDefersUpNext(watchParty.party);
@@ -574,6 +575,7 @@ function FeaturePlayer({
       credits: resolvedPrefs.autoSkipCredits,
     },
     songScale,
+    seekLead: watchParty.seekLeadAfterAutoSkip,
   });
 
   // Browser Media Session (ADR-0084 §43): mirror transport state to the OS and

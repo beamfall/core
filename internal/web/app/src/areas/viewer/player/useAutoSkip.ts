@@ -6,6 +6,8 @@ import {
   autoSkipSegmentAt,
   autoSkipSegmentKey,
 } from "../lib/transport";
+import { markViewerIntent } from "./viewerIntent";
+import { getWatchParty, sendPartyAutoSkip } from "./watchPartyStore";
 
 // Auto-skip playback (ADR-0048 Decision 6): while a per-profile
 // autoskip.intro/recap/credits pref is on, the engine seeks straight past a
@@ -29,6 +31,7 @@ export function useAutoSkip({
   mediaID,
   prefs,
   songScale = 1,
+  seekLead,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   markers: PlaybackMarker[];
@@ -36,6 +39,8 @@ export function useAutoSkip({
   prefs: AutoSkipPrefs;
   /** Song seconds per stream second: the tempo the server applied; 1 when none. */
   songScale?: number;
+  /** Apply a server-authorized skip to the lead's own player. */
+  seekLead?: (streamSeconds: number) => void;
 }): {
   skipped: AutoSkipSegment | null;
   undo: () => void;
@@ -44,6 +49,7 @@ export function useAutoSkip({
   const [skipped, setSkipped] = useState<AutoSkipSegment | null>(null);
   const suppressedKeyRef = useRef<string | null>(null);
   const undoSegmentRef = useRef<AutoSkipSegment | null>(null);
+  const undoPartyRef = useRef("");
   // Consumes the single timeupdate tick that follows our own programmatic
   // seek (skip or Undo) so it is never mistaken for a fresh entry/exit.
   const ignoreNextTickRef = useRef(false);
@@ -70,11 +76,17 @@ export function useAutoSkip({
     const video = videoRef.current;
     const segment = undoSegmentRef.current;
     if (!video || !segment) return;
+    const party = getWatchParty();
+    if (party.partyID !== undoPartyRef.current) {
+      setSkipped(null);
+      return;
+    }
     // Re-arm the guard for this exact segment before seeking back into it —
     // otherwise the very next tick (now inside the segment again) would
     // immediately re-trigger the auto-skip we're trying to undo.
     suppressedKeyRef.current = autoSkipSegmentKey(segment);
     ignoreNextTickRef.current = true;
+    if (party.status === "active") markViewerIntent();
     video.currentTime = segment.startSeconds / songScaleRef.current;
     setSkipped(null);
   }, [videoRef]);
@@ -82,8 +94,17 @@ export function useAutoSkip({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    let cancelled = false;
+    let skipPending = false;
+
+    const showSkip = (segment: AutoSkipSegment, partyID: string) => {
+      undoSegmentRef.current = segment;
+      undoPartyRef.current = partyID;
+      setSkipped(segment);
+    };
 
     const onTime = () => {
+      if (skipPending || video.seeking) return;
       if (ignoreNextTickRef.current) {
         ignoreNextTickRef.current = false;
         return;
@@ -103,16 +124,30 @@ export function useAutoSkip({
       }
       const key = autoSkipSegmentKey(segment);
       if (suppressedKeyRef.current === key) return;
+      const party = getWatchParty();
+      if (party.status === "starting" || party.status === "joining") return;
       suppressedKeyRef.current = key;
-      undoSegmentRef.current = segment;
+      if (party.status === "active") {
+        skipPending = true;
+        void sendPartyAutoSkip(mediaID, segment.endSeconds * 1000).then((applied) => {
+          skipPending = false;
+          if (!applied || cancelled || getWatchParty().partyID !== party.partyID) return;
+          if (party.lead && party.isHost) seekLead?.(segment.endSeconds / songScaleRef.current);
+          showSkip(segment, party.partyID);
+        });
+        return;
+      }
       ignoreNextTickRef.current = true;
       video.currentTime = segment.endSeconds / scale;
-      setSkipped(segment);
+      showSkip(segment, "");
     };
 
     video.addEventListener("timeupdate", onTime);
-    return () => video.removeEventListener("timeupdate", onTime);
-  }, [videoRef]);
+    return () => {
+      cancelled = true;
+      video.removeEventListener("timeupdate", onTime);
+    };
+  }, [videoRef, mediaID, seekLead]);
 
   return { skipped, undo, dismiss };
 }

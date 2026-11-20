@@ -9,13 +9,18 @@ import {
   useNavigate,
 } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as api from "@/lib/api";
 import { ApiError, setIdentityEpochSignal } from "@/lib/api";
 import {
+  acceptWatchParty,
+  calibrateWatchPartyClock,
+  createWatchParty,
   fetchClientPrefs,
   fetchMedia,
   fetchPlaybackAdjustmentRanges,
   fetchPrePlayQueue,
   setClientPref,
+  watchPartyAutoSkip,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { STRINGS } from "@/strings";
@@ -27,7 +32,12 @@ import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
-import { watchPartyDefersUpNext } from "../player/watchPartyStore";
+import {
+  joinWatchParty,
+  resetWatchPartyForTest,
+  startWatchParty,
+  watchPartyDefersUpNext,
+} from "../player/watchPartyStore";
 import { deliverPlayerCommand } from "../remote/remoteControl";
 import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
 
@@ -43,6 +53,9 @@ vi.mock("@/lib/graphql", () => ({
   fetchPrePlayQueue: vi.fn().mockResolvedValue([]),
   // Off the home network: the player does not listen for a lead party.
   calibrateWatchPartyClock: vi.fn().mockRejectedValue(new Error("not on the home network")),
+  createWatchParty: vi.fn(),
+  acceptWatchParty: vi.fn(),
+  watchPartyAutoSkip: vi.fn(),
 }));
 vi.mock("../lib/mediaDetail", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/mediaDetail")>()),
@@ -149,6 +162,86 @@ describe("PlayerPage timestamp links", () => {
     vi.stubEnv("BASE_URL", "/web/");
     expect(buildTimestampedLink(id, 42)).toBe(`${window.location.origin}/web/watch/${token}?t=42`);
   });
+});
+
+describe("PlayerPage auto-skip (CORE-1803)", () => {
+  afterEach(() => {
+    resetWatchPartyForTest();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.mocked(watchPartyAutoSkip).mockReset();
+    vi.mocked(fetchClientPrefs).mockResolvedValue([]);
+    vi.mocked(calibrateWatchPartyClock).mockRejectedValue(new Error("not on the home network"));
+  });
+
+  it.each(["solo", "host", "relaxed member", "strict member"])(
+    "handles an auto-skip as %s",
+    async (mode) => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      vi.mocked(fetchClientPrefs).mockResolvedValue([{ key: "autoskip.intro", value: "on" }]);
+      const applied = mode !== "strict member";
+      if (mode !== "solo") {
+        const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
+        vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 0, roundTripMS: 1 });
+        if (mode === "host") {
+          vi.mocked(createWatchParty).mockResolvedValue({
+            partyID: "p1",
+            content: "media-alpha",
+            relaxed: true,
+            members: [],
+          });
+          expect(await startWatchParty("media-alpha")).toBe(true);
+        } else {
+          vi.mocked(acceptWatchParty).mockImplementation(async () => {
+            const anchor = { item: "media-alpha", positionMS: 0, presentAtMS: 0 };
+            stream.mock.lastCall?.[0](
+              new MessageEvent("group.sync", {
+                data: JSON.stringify({
+                  payload: { groupID: "p1", signal: "roster", paused: true, ...anchor },
+                }),
+              }),
+            );
+            return { partyID: "p1", ...anchor };
+          });
+          expect(await joinWatchParty("p1")).toBe("media-alpha");
+        }
+        vi.mocked(watchPartyAutoSkip).mockResolvedValue({
+          partyID: "p1",
+          applied,
+          item: "media-alpha",
+          positionMS: applied ? 30_000 : 0,
+          presentAtMS: 0,
+        });
+      }
+      await act(async () => {
+        renderPlayer(
+          playerState({
+            phase: "playing",
+            info: { adjustment: { pitchShiftSemitones: 0, tempo: 1.25 } } as PlaybackInfo,
+            markers: [{ title: "Intro", segmentKind: "intro", startSeconds: 0, endSeconds: 30 }],
+          }),
+        );
+      });
+      const video = stageVideo();
+      Object.defineProperty(video, "readyState", { value: 4 });
+      video.currentTime = 0.1;
+      fireEvent.timeUpdate(video);
+      if (mode === "solo") {
+        expect(watchPartyAutoSkip).not.toHaveBeenCalled();
+        expect(video.currentTime).toBe(24);
+      } else {
+        expect(video.currentTime).toBe(0.1);
+        expect(watchPartyAutoSkip).toHaveBeenCalledWith({
+          partyID: "p1",
+          item: "media-alpha",
+          positionMS: 30_000,
+        });
+        await act(async () => {});
+        act(() => vi.advanceTimersByTime(500));
+        expect(video.currentTime).toBe(applied ? 24 : 0.1);
+      }
+    },
+  );
 });
 
 // feature:hls-error-recovery

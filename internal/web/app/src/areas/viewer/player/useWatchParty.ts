@@ -76,6 +76,7 @@ export interface WatchPartyView {
    */
   start: (relaxed?: boolean, lead?: boolean) => Promise<boolean>;
   leave: () => Promise<void>;
+  seekLeadAfterAutoSkip: (streamSeconds: number) => void;
 }
 
 /** What this player is in the party: an ordinary member, the lead screen or a follower. */
@@ -102,6 +103,7 @@ export function useWatchParty({
   attached,
   mediaId,
   onFollow,
+  songScale = 1,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   /** Whether the <video> is mounted (it is not while an error replaces the stage). */
@@ -109,6 +111,8 @@ export function useWatchParty({
   mediaId: string;
   /** Move the player to the Media the party moved to. */
   onFollow: (item: string) => void;
+  /** Original media seconds per stream second, after any applied tempo. */
+  songScale?: number;
 }): WatchPartyView {
   const party = useWatchPartyState();
   const [driftMS, setDriftMS] = useState<number | null>(null);
@@ -118,6 +122,7 @@ export function useWatchParty({
   // from before the mount (the notification's Join click) is not counted.
   const mountedAt = useRef(performance.now());
   const lastCorrection = useRef(Number.NEGATIVE_INFINITY);
+  const leadAutoSkip = useRef<number | null>(null);
   const mediaIdRef = useRef(mediaId);
   mediaIdRef.current = mediaId;
   // The element a follower muted, and the listener's own mute to give back.
@@ -134,6 +139,8 @@ export function useWatchParty({
   const role = roleOf(party);
   const active = role !== "off";
   const timeline = party.timeline;
+  const positionScale = 1000 * songScale;
+  const baseRate = 1 / songScale;
 
   const correct = useCallback((change: () => void) => {
     lastCorrection.current = performance.now();
@@ -161,19 +168,20 @@ export function useWatchParty({
       if (!listenerMuted(video)) setListenerMuted(video, true);
       if (video.readyState < 1 || video.seeking) return;
       const end = Number.isFinite(video.duration)
-        ? video.duration * 1000
+        ? video.duration * positionScale
         : Number.POSITIVE_INFINITY;
       const target = Math.min(end, followerTargetMS(tl, partyNowMS(), getDisplayTrimMS()));
-      const drift = video.currentTime * 1000 - target;
+      const drift = video.currentTime * positionScale - target;
       const base = timelineRate(tl);
+      const streamRate = base / songScale;
       const correction = followerCorrection(drift, target, tl);
       if (tl.paused) {
         seekPending.current = false;
-        if (video.playbackRate !== base) video.playbackRate = base;
+        if (video.playbackRate !== streamRate) video.playbackRate = streamRate;
         if (!video.paused) correct(() => video.pause());
         if (correction.kind === "seek")
           correct(() => {
-            video.currentTime = correction.toMS / 1000;
+            video.currentTime = correction.toMS / positionScale;
           });
         setPlayback("paused");
         setDriftMS(null);
@@ -187,13 +195,14 @@ export function useWatchParty({
       }
       if (video.paused && !video.ended) play(video);
       if (correction.kind === "seek") {
-        if (video.playbackRate !== base) video.playbackRate = base;
+        if (video.playbackRate !== streamRate) video.playbackRate = streamRate;
         seekPending.current = true;
         correct(() => {
-          video.currentTime = Math.min(end, correction.toMS + seekLead.current * base) / 1000;
+          video.currentTime =
+            Math.min(end, correction.toMS + seekLead.current * base) / positionScale;
         });
       } else {
-        const rate = correction.kind === "rate" ? correction.rate : base;
+        const rate = (correction.kind === "rate" ? correction.rate : base) / songScale;
         if (video.playbackRate !== rate) video.playbackRate = rate;
       }
       setPlayback("playing");
@@ -207,7 +216,7 @@ export function useWatchParty({
         setDriftMS(Math.round(drift));
       }
     },
-    [correct, play],
+    [correct, play, positionScale, songScale],
   );
 
   const sync = useCallback(() => {
@@ -228,13 +237,13 @@ export function useWatchParty({
     if (video.readyState < 1 || video.seeking) return;
     const now = partyNowMS();
     const expected = expectedPositionMS(tl, now);
-    const drift = video.currentTime * 1000 - expected;
+    const drift = video.currentTime * positionScale - expected;
     if (!timelineStarted(tl, now)) {
-      if (video.playbackRate !== 1) video.playbackRate = 1;
+      if (video.playbackRate !== baseRate) video.playbackRate = baseRate;
       if (!video.paused) correct(() => video.pause());
       if (Math.abs(drift) > SEEK_THRESHOLD_MS)
         correct(() => {
-          video.currentTime = expected / 1000;
+          video.currentTime = expected / positionScale;
         });
       setPlayback(tl.paused ? "paused" : "waiting");
       setDriftMS(tl.paused ? Math.round(drift) : null);
@@ -243,19 +252,19 @@ export function useWatchParty({
     if (video.paused) play(video);
     const correction = correctionFor(drift, expected, false);
     if (correction.kind === "seek") {
-      video.playbackRate = 1;
+      video.playbackRate = baseRate;
       correct(() => {
-        video.currentTime = correction.toMS / 1000;
+        video.currentTime = correction.toMS / positionScale;
       });
     } else if (correction.kind === "rate") {
-      video.playbackRate = correction.rate;
-    } else if (video.playbackRate !== 1) {
-      video.playbackRate = 1;
+      video.playbackRate = correction.rate * baseRate;
+    } else if (video.playbackRate !== baseRate) {
+      video.playbackRate = baseRate;
     }
     setPlayback("playing");
     setDriftMS(Math.round(drift));
     reportPartyDrift(drift);
-  }, [videoRef, correct, play, follow]);
+  }, [videoRef, correct, play, follow, positionScale, baseRate]);
 
   // Follow the party to another title, or, as host, take it to this one.
   useEffect(() => {
@@ -332,7 +341,7 @@ export function useWatchParty({
     const frames = typeof video.requestVideoFrameCallback === "function";
     const onFrame: VideoFrameRequestCallback = (_now, frame) => {
       sample = {
-        positionMS: frame.mediaTime * 1000,
+        positionMS: frame.mediaTime * positionScale,
         atMS: performance.timeOrigin + frame.expectedDisplayTime,
       };
       handle = video.requestVideoFrameCallback(onFrame);
@@ -344,32 +353,38 @@ export function useWatchParty({
       if (getWatchParty().timeline?.item !== mediaIdRef.current) return;
       const now = localClockMS();
       const fresh = sample && Math.abs(now - sample.atMS) <= FRAME_SAMPLE_MAX_AGE_MS;
-      const at = fresh && sample ? sample : { positionMS: video.currentTime * 1000, atMS: now };
-      reportLeadPosition(at.positionMS, at.atMS, video.playbackRate);
+      const at =
+        fresh && sample ? sample : { positionMS: video.currentTime * positionScale, atMS: now };
+      reportLeadPosition(at.positionMS, at.atMS, video.playbackRate * songScale);
     };
     // A stall holds the party where the lead stopped, and its end resumes it.
     const onStall = () => {
       const tl = getWatchParty().timeline;
       if (!tl || tl.paused || tl.item !== mediaIdRef.current || video.paused) return;
-      void sendPartyTransport(tl.item, video.currentTime * 1000, true);
+      void sendPartyTransport(tl.item, video.currentTime * positionScale, true);
     };
     const onPlaying = () => {
       const tl = getWatchParty().timeline;
       if (!tl || !tl.paused || tl.item !== mediaIdRef.current || video.paused) return;
-      void sendPartyTransport(tl.item, video.currentTime * 1000, false);
+      void sendPartyTransport(tl.item, video.currentTime * positionScale, false);
     };
     const beat = setInterval(report, LEAD_REPORT_INTERVAL_MS);
+    const onSeeking = () => {
+      sample = null;
+    };
     video.addEventListener("ratechange", report);
+    video.addEventListener("seeking", onSeeking);
     video.addEventListener("waiting", onStall);
     video.addEventListener("playing", onPlaying);
     return () => {
       clearInterval(beat);
       video.removeEventListener("ratechange", report);
+      video.removeEventListener("seeking", onSeeking);
       video.removeEventListener("waiting", onStall);
       video.removeEventListener("playing", onPlaying);
       if (frames) video.cancelVideoFrameCallback(handle);
     };
-  }, [role, attached, videoRef]);
+  }, [role, attached, videoRef, positionScale, songScale]);
 
   // After a reload, a follower screen rejoins the lead party it was following.
   useEffect(() => {
@@ -412,6 +427,11 @@ export function useWatchParty({
       const s = getWatchParty();
       const tl = s.timeline;
       if (s.status !== "active" || !tl || tl.item !== mediaIdRef.current) return;
+      if (event.type === "seeked" && leadAutoSkip.current !== null) {
+        const target = leadAutoSkip.current;
+        leadAutoSkip.current = null;
+        if (Math.abs(video.currentTime - target) * 1000 <= SEEK_THRESHOLD_MS) return;
+      }
       // The lead's player is the timeline however it was moved (a remote
       // control, a relock): nothing corrects it, so every event is its own.
       const input = lastViewerIntent();
@@ -426,7 +446,7 @@ export function useWatchParty({
       // A follower screen has no transport: the next beat puts it back.
       if (s.lead && !s.isHost) return;
       const now = partyNowMS();
-      const local = video.currentTime * 1000;
+      const local = video.currentTime * positionScale;
       const agrees =
         event.type === "pause"
           ? !timelineStarted(tl, now)
@@ -444,7 +464,7 @@ export function useWatchParty({
       video.removeEventListener("pause", onLocal);
       video.removeEventListener("seeked", onLocal);
     };
-  }, [active, attached, videoRef]);
+  }, [active, attached, videoRef, positionScale]);
 
   // Closing the tab or navigating away leaves within seconds (CORE-1763).
   useEffect(() => {
@@ -481,15 +501,36 @@ export function useWatchParty({
     async (relaxed = true, lead = false) => {
       const video = videoRef.current;
       if (!mediaId) return false;
-      const position = video ? video.currentTime * 1000 : 0;
+      const position = video ? video.currentTime * positionScale : 0;
       const ok = lead
         ? await startWatchParty(mediaId, position, false, true)
         : await startWatchParty(mediaId, position, relaxed);
-      if (ok && video) await sendPartyTransport(mediaId, video.currentTime * 1000, video.paused);
+      if (ok && video)
+        await sendPartyTransport(mediaId, video.currentTime * positionScale, video.paused);
       return ok;
     },
-    [mediaId, videoRef],
+    [mediaId, videoRef, positionScale],
   );
 
-  return { party, driftMS, playback, needsTap, resume, start, leave: leaveParty };
+  const seekLeadAfterAutoSkip = useCallback(
+    (streamSeconds: number) => {
+      const video = videoRef.current;
+      const s = getWatchParty();
+      if (!video || !s.lead || !s.isHost || s.timeline?.item !== mediaIdRef.current) return;
+      leadAutoSkip.current = streamSeconds;
+      video.currentTime = streamSeconds;
+    },
+    [videoRef],
+  );
+
+  return {
+    party,
+    driftMS,
+    playback,
+    needsTap,
+    resume,
+    start,
+    leave: leaveParty,
+    seekLeadAfterAutoSkip,
+  };
 }
