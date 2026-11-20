@@ -106,6 +106,23 @@ func TestIntegrationAdminSetupTTLAndNonRenewability(t *testing.T) {
 	}
 }
 
+func TestIntegrationEmptyRootPreservesBothKeys(t *testing.T) {
+	svc := NewService(storetest.Open(t))
+	svc.SetIntegrationAttemptSecret([]byte("server-secret"))
+	profileErr := errors.New("profile not found")
+	nameKey := svc.integrationAttemptKey("missing", store.Profile{}, profileErr, false)
+	ipKey := svc.integrationIPAttemptKey(integrationTestIP)
+
+	svc.SetIntegrationAttemptSecret(nil)
+
+	if svc.integrationAttemptKey("missing", store.Profile{}, profileErr, false) != nameKey {
+		t.Fatal("empty root changed the unknown-name key")
+	}
+	if svc.integrationIPAttemptKey(integrationTestIP) != ipKey {
+		t.Fatal("empty root changed the IP key")
+	}
+}
+
 func TestIntegrationFailuresAreUniformLockedAndRedacted(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.Open(t)
@@ -243,16 +260,36 @@ func TestIntegrationKDFBusyRefusalPreservesBothBudgets(t *testing.T) {
 			}
 			adminKDFSlotWait = previousWait
 		}()
-		busyCtx := store.WithCredentialDerivationObserver(ctx, func(store.CredentialDerivation) {
+		busyCtx := store.WithCredentialDerivationObserver(WithRefusalNote(ctx), func(store.CredentialDerivation) {
 			t.Error("busy request reached Argon2id")
 		})
 		if session, err := svc.AuthenticateIntegrationByName(busyCtx, "Default", "2468", integrationTestIP, compatScopes); session.Token != "" || err != ErrIntegrationAuthentication {
 			t.Fatalf("busy request returned a token (%t) or wrong error (%v)", session.Token != "", err)
 		}
+		want := Refusal{Operation: refusalOperationIntegrationSignIn, Reason: RefusalIntegrationRejected, Decisive: true}
+		if note, ok := RefusalFromContext(busyCtx); !ok || note != want {
+			t.Fatalf("busy refusal note = %+v (%t), want %+v", note, ok, want)
+		}
 	}()
+	entries, err := st.ActivityEntries(ctx, store.ActivityQuery{Filter: store.LibraryFilter{AllLibraries: true, Revealed: true}, Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	denials := 0
+	for _, entry := range entries {
+		if entry.Action == "integration.login.denied" && entry.ProfileID == "profile-default" {
+			denials++
+		}
+	}
+	if denials != 1 {
+		t.Fatalf("busy refusal wrote %d Profile denial events, want 1", denials)
+	}
+	probePolicy := integrationBackoff
+	probePolicy.FreeAttempts--
+	wantHorizon := now.Truncate(time.Millisecond).Add(probePolicy.BaseDelay)
 	for _, key := range keys {
-		if locked, err := st.AuthBackoffUntil(ctx, integrationAttemptAction, key, now, integrationBackoff); err != nil || !locked.IsZero() {
-			t.Fatalf("lane after busy refusal: locked until %v, error %v", locked, err)
+		if locked, err := st.AuthBackoffUntil(ctx, integrationAttemptAction, key, now, probePolicy); err != nil || !locked.Equal(wantHorizon) {
+			t.Fatalf("lane after busy refusal: locked until %v, error %v, want %v", locked, err, wantHorizon)
 		}
 	}
 	if _, err := svc.AuthenticateIntegrationByName(ctx, "Default", "2468", integrationTestIP, compatScopes); err != nil {

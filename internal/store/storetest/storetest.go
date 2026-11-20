@@ -210,7 +210,7 @@ func BackdateStreamTokenActivity(t testing.TB, dataDir string, session store.Ses
 // of an integration settlement while still allowing reservations.
 func RejectIntegrationIPSettlement(t testing.TB, dataDir string) {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(dataDir, "db", "events.db"))
+	db, err := sql.Open("sqlite", filepath.Join(dataDir, "db", "catalog.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,6 +59,17 @@ type AuthAttemptReservation struct {
 	rows   []reservedAuthAttempt
 }
 
+// IntegrationAttemptAction identifies the throttle lanes committed alongside
+// integration Sessions in the catalog.
+const IntegrationAttemptAction = "integration.login"
+
+func (s *Store) authAttemptDBs(action string) (reader, writer *sql.DB) {
+	if action == IntegrationAttemptAction {
+		return s.catalogR, s.catalogW
+	}
+	return s.eventsR, s.eventsW
+}
+
 type reservedAuthAttempt struct {
 	id  int64
 	key string
@@ -66,7 +77,7 @@ type reservedAuthAttempt struct {
 
 // ReserveAuthAttempt checks every lane (action, key) in keys against policy
 // and, when none is locked, records a failed attempt on each at now, all in
-// one events transaction. The returned reservation identifies the committed
+// one transaction. The returned reservation identifies the committed
 // rows. If any lane is locked, it returns the latest lock horizon and writes
 // nothing. Reserving before the slow check stops
 // parallel requests from all passing the throttle before any failure lands.
@@ -87,7 +98,8 @@ func (s *Store) ReserveAuthAttempt(ctx context.Context, action string, keys []st
 	if err := s.guardLocked(); err != nil {
 		return AuthAttemptReservation{}, time.Time{}, err
 	}
-	tx, err := s.eventsW.BeginTx(ctx, nil)
+	_, writer := s.authAttemptDBs(action)
+	tx, err := writer.BeginTx(ctx, nil)
 	if err != nil {
 		return AuthAttemptReservation{}, time.Time{}, err
 	}
@@ -122,31 +134,46 @@ func (s *Store) ReserveAuthAttempt(ctx context.Context, action string, keys []st
 	return reservation, time.Time{}, nil
 }
 
-// SettleAuthAttempt marks all of a successful reservation's rows in place.
-// Keeping their order preserves any later failures, even in the same millisecond.
-func (s *Store) SettleAuthAttempt(ctx context.Context, reservation AuthAttemptReservation) error {
-	if len(reservation.rows) == 0 {
-		return errors.New("auth attempt reservation is required")
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return err
-	}
-	tx, err := s.eventsW.BeginTx(ctx, nil)
+// importIntegrationAuthAttempts copies the legacy lanes once. The marker and
+// copied rows commit together so a restart can retry an interrupted import
+// without replaying attempts that were already settled in the catalog.
+func (s *Store) importIntegrationAuthAttempts(ctx context.Context) error {
+	const marker = "migration.integration_auth_attempts"
+	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	for _, row := range reservation.rows {
-		// Compaction can remove a row and SQLite can reuse its ID.
+	var imported bool
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM server_config WHERE key = ?)", marker).Scan(&imported); err != nil || imported {
+		return err
+	}
+	rows, err := s.eventsR.QueryContext(ctx, `
+		SELECT id, occurred_at_ms, key, success FROM auth_attempt WHERE action = ?`, IntegrationAttemptAction)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
 		var id int64
-		if err := tx.QueryRowContext(ctx, `
-			UPDATE auth_attempt SET success = 1
-			WHERE id = ? AND action = ? AND key = ? AND occurred_at_ms = ? AND success = 0
-			RETURNING id`, row.id, reservation.action, row.key, reservation.atMS).Scan(&id); err != nil {
+		var atMS int64
+		var key string
+		var success int
+		if err := rows.Scan(&id, &atMS, &key, &success); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO auth_attempt(id, occurred_at_ms, action, key, success) VALUES (?, ?, ?, ?, ?)`,
+			id, atMS, IntegrationAttemptAction, key, success); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO server_config(key, value, updated_at_ms) VALUES (?, '', ?)`, marker, timeToMillis(s.now())); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -201,7 +228,8 @@ func (s *Store) consecutiveAuthFailures(ctx context.Context, action, key string,
 	if err := s.guardLocked(); err != nil {
 		return 0, time.Time{}, err
 	}
-	return consecutiveAuthFailuresIn(ctx, s.eventsR, action, key, now, policy)
+	reader, _ := s.authAttemptDBs(action)
+	return consecutiveAuthFailuresIn(ctx, reader, action, key, now, policy)
 }
 
 type authAttemptQueryer interface {

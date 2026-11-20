@@ -48,7 +48,7 @@ const (
 	integrationSessionTTL           = 24 * time.Hour
 	integrationSetupTTL             = 15 * time.Minute
 	integrationFailureFloor         = 75 * time.Millisecond
-	integrationAttemptAction        = "integration.login"
+	integrationAttemptAction        = store.IntegrationAttemptAction
 	integrationAttemptPseudonymInfo = "beamfall/integration-attempt-pseudonym/v1"
 	integrationIPThrottleInfo       = "beamfall/integration-ip-throttle/v1"
 )
@@ -191,9 +191,9 @@ func NewServiceWithClock(st *store.Store, now func() time.Time) *Service {
 
 // SetIntegrationAttemptSecret binds unknown-name security-event targets and IP
 // throttle keys to distinct HKDF keys derived from a durable server root.
+// Called at wiring time. An empty root leaves both keys intact.
 func (s *Service) SetIntegrationAttemptSecret(secret []byte) {
 	if len(secret) == 0 {
-		s.integrationAttemptSecret = append([]byte(nil), secret...)
 		return
 	}
 	s.integrationAttemptSecret = deriveIntegrationAttemptSecret(secret, integrationAttemptPseudonymInfo)
@@ -603,6 +603,10 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 		return reserveErr
 	})
 	if err != nil {
+		if errors.Is(err, ErrAdminBusy) {
+			s.auditIntegrationAttempt(ctx, profile, profileErr, attemptKey, false)
+			NoteRefusal(ctx, refusalOperationIntegrationSignIn, RefusalIntegrationRejected, true)
+		}
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
 	if !lockedUntil.IsZero() {
@@ -618,15 +622,8 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
 
-	if _, err := encodeIntegrationScopeRequest(scopes); err != nil {
-		return IntegrationSession{}, s.integrationFailure(started)
-	}
 	token, err := randomIntegrationToken()
 	if err != nil {
-		return IntegrationSession{}, s.integrationFailure(started)
-	}
-	// Finish the durable throttle write before creating a usable Session.
-	if err := s.store.SettleAuthAttempt(ctx, reservation); err != nil {
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
 	ttl := integrationSessionTTL
@@ -637,7 +634,7 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 	err = s.store.CreateIntegrationSession(ctx, store.Session{
 		ID: store.SessionID(token), ProfileID: profile.ID, Kind: store.SessionKindIntegration,
 		IntegrationScopes: scopes, ExpiresAt: expires,
-	}, !setup)
+	}, !setup, reservation)
 	if err != nil {
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
@@ -658,20 +655,6 @@ func (s *Service) verifyIntegrationCredential(ctx context.Context, profileID sto
 		store.CheckCredentialDecoy(ctx, credential)
 	}
 	return err
-}
-
-func encodeIntegrationScopeRequest(scopes []store.IntegrationScope) (string, error) {
-	if len(scopes) == 0 {
-		return "", errors.New("integration scopes are required")
-	}
-	parts := make([]string, 0, len(scopes))
-	for _, scope := range scopes {
-		if scope != store.IntegrationScopeRead && scope != store.IntegrationScopeRefresh {
-			return "", errors.New("integration scope exceeds ceiling")
-		}
-		parts = append(parts, string(scope))
-	}
-	return strings.Join(parts, ","), nil
 }
 
 func randomIntegrationToken() (string, error) {
