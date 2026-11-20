@@ -4,13 +4,15 @@
 
 The desktop Viewer SHALL retain the manifest's Continue Watching shelf and
 present recent additions in separate library shelves. It SHALL render only
-libraries with items verified against the server's Home visibility filter.
+libraries whose scoped Home source returns items. The server SHALL return an
+empty page for libraries hidden from Home when queried as a Home source.
 
 #### Scenario: Recently added items span libraries
 
-- **WHEN** the existing Home feed confirms items from two libraries
-- **THEN** each library has its own shelf of confirmed recent items
-- **AND** libraries without confirmed items have no shelf
+- **WHEN** the scoped Home feeds for two libraries return recent items
+- **THEN** each library has its own shelf of recent items, even if its items
+  are outside the aggregate Home feed's first page
+- **AND** libraries whose scoped Home feeds return no items have no shelf
 
 ### Requirement: Home features available artwork
 
