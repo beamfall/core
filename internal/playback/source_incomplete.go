@@ -208,7 +208,7 @@ func (s *Sessions) observeIncompleteSource(ctx context.Context, key SessionKey, 
 				claimErr = ctx.Err()
 			}
 			s.mu.Unlock()
-			return end.Seconds(), claimErr == nil && observed
+			return session.adjust.SourceSeconds(end.Seconds()), claimErr == nil && observed
 		}
 
 		var err error

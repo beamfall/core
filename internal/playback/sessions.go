@@ -569,6 +569,7 @@ type sessionTeardown struct {
 	cutoffDone       chan struct{}
 	probeReaps       []<-chan struct{}
 	spawnDone        <-chan struct{}
+	lateChildReap    <-chan struct{} // Published and read under Sessions.mu.
 	stopChild        bool
 }
 
@@ -884,10 +885,17 @@ func (s *Sessions) terminate(matches func(SessionKey) bool) int {
 			allocation.revoked = true
 		}
 	}
-	var joins []*sessionTeardown
+	var joins []<-chan struct{}
 	for h, t := range s.revocations {
 		if matches(h.key) {
-			joins = append(joins, t)
+			joins = append(joins, t.cutoffDone)
+			joins = append(joins, t.probeReaps...)
+			if t.run != nil {
+				joins = append(joins, t.run.reaped)
+			}
+			if t.lateChildReap != nil {
+				joins = append(joins, t.lateChildReap)
+			}
 		}
 	}
 	var teardowns []*sessionTeardown
@@ -909,14 +917,8 @@ func (s *Sessions) terminate(matches func(SessionKey) bool) int {
 	}
 	s.mu.Unlock()
 	s.runTeardowns(teardowns)
-	for _, t := range joins {
-		<-t.cutoffDone
-		for _, probe := range t.probeReaps {
-			<-probe
-		}
-		if t.run != nil {
-			<-t.run.reaped
-		}
+	for _, done := range joins {
+		<-done
 	}
 	return revoked
 }
