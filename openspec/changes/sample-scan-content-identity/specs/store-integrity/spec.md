@@ -48,8 +48,8 @@ and its Media SHALL remain unchanged.
 - **WHEN** managed admission replaces a file removed outside Beamfall and the staged full digest
   matches a legacy row at the same path in the same library, including a missing file or a
   soft-trashed Media
-- **THEN** the admission preserves the legacy fingerprint and Media ID, including watch state
-  and match pins, and clears the old mtime so the next scan of the live row verifies the replacement once
+- **THEN** the admission preserves the legacy fingerprint, Media ID, watch state, match pins, and recorded stats
+- **AND** a subsequent scan reuses the fingerprint without reading it when the recorded stats match
 - **AND** a soft-trashed Media retains its original trash timestamp and remains restorable
 
 ## ADDED Requirements
@@ -124,8 +124,9 @@ hexadecimal digest digits. A legacy Media ID SHALL retain its existing scheme an
 Proxy promotion and qBittorrent ingest SHALL check live public catalog rows for both fingerprints
 before publishing or relocating bytes, excluding missing files and trashed Media and Libraries.
 A match on either fingerprint SHALL count as a duplicate, including a sampled match whose
-unsampled bytes differ. The lookup SHALL use the catalog alone. Proxy promotion SHALL repeat
-the catalog lookup in the publication transaction.
+unsampled bytes differ. The lookup SHALL use the catalog alone. Proxy promotion SHALL repeat the lookup in
+the publication transaction and keep an archive on a duplicate only when a bounded query verifies ownership.
+The open tee descriptor SHALL match the completed tee's identity, size and mtime before and after fingerprinting.
 
 #### Scenario: Duplicate in either scheme
 
