@@ -111,7 +111,7 @@ export function MediaItemCard({
     ? artworkSlotURL(item, "thumb") || artworkSlotURL(item, "poster")
     : artworkSlotURL(item, "poster") ||
       artworkSlotURL(item, "thumb") ||
-      (intrinsicArtwork ? artworkSlotURL(item, "backdrop") : "");
+      (intrinsicArtwork ? artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "banner") : "");
   const frameClass = wide ? "bf-poster bf-poster-wide" : artFrameClass(item);
   const showArtwork = poster && failedPoster !== poster;
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

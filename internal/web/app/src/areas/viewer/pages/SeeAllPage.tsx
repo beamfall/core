@@ -13,7 +13,7 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { HOME_NODE_ID, nodePath } from "@/lib/nodePath";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { useEngagementEpoch } from "../actions";
-import { invalidateHomeRecentCache } from "../components/HomeRecent";
+import { invalidateHomeRecentCache, reconcileHomeRecentCache } from "../components/HomeRecent";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
@@ -79,15 +79,25 @@ export function SeeAllPage() {
   );
 }
 
-async function fetchPage(ctx: ResolvedSeeAllContext, offset: number, signal?: AbortSignal) {
+async function fetchPage(
+  ctx: ResolvedSeeAllContext,
+  identity: string | null,
+  offset: number,
+  signal?: AbortSignal,
+) {
   let libraryTitle: HomeLibrary["title"] | undefined;
   if (ctx.homeLibraryShelf) {
     // Core applies Home visibility to aggregate reads; a scoped feed can
     // return a library that was hidden after the viewer opened its shelf.
     const libraries = await fetchHomeLibraries(signal);
-    const library = libraries?.find(
-      ({ id, showOnHome }) => id === ctx.libraryID && showOnHome !== false,
-    );
+    signal?.throwIfAborted();
+    if (libraries === null) {
+      invalidateHomeRecentCache(identity);
+      return null;
+    }
+    const visible = libraries.filter(({ showOnHome }) => showOnHome !== false);
+    reconcileHomeRecentCache(identity, visible);
+    const library = visible.find(({ id }) => id === ctx.libraryID);
     if (!library) return null;
     libraryTitle = library.title;
   }
@@ -139,14 +149,16 @@ function SeeAllResults({
   const queue = useMemo(() => playQueueOf(items), [items]);
   const repeated = useMemo(() => repeatedTitles(items), [items]);
 
-  const clearResults = useCallback(() => {
-    // Returning Home while offline must not restore the denied shelf.
-    if (ctx?.homeLibraryShelf) invalidateHomeRecentCache(identity);
-    setItems([]);
-    setLibraryTitle(undefined);
-    offsetRef.current = 0;
-    setHasMore(false);
-  }, [ctx?.homeLibraryShelf, identity]);
+  const clearResults = useCallback(
+    (authRejected = false) => {
+      if (authRejected && ctx?.homeLibraryShelf) invalidateHomeRecentCache(identity);
+      setItems([]);
+      setLibraryTitle(undefined);
+      offsetRef.current = 0;
+      setHasMore(false);
+    },
+    [ctx?.homeLibraryShelf, identity],
+  );
 
   const loadPage = useCallback(async () => {
     if (!ctx) return;
@@ -154,7 +166,7 @@ function SeeAllResults({
     const signal = getIdentityEpochSignal();
     setBusy(true);
     try {
-      const page = await fetchPage(ctx, offsetRef.current, signal);
+      const page = await fetchPage(ctx, identity, offsetRef.current, signal);
       if (generationRef.current !== generation || signal?.aborted) return;
       if (page) {
         setItems((prev) => [...prev, ...page.items]);
@@ -167,13 +179,13 @@ function SeeAllResults({
       setFailed(false);
     } catch (error) {
       if (generationRef.current === generation && !signal?.aborted) {
-        if (isAuthRejection(error)) clearResults();
+        if (isAuthRejection(error)) clearResults(true);
         setFailed(true);
       }
     } finally {
       if (generationRef.current === generation) setBusy(false);
     }
-  }, [ctx, clearResults]);
+  }, [ctx, identity, clearResults]);
 
   // Reads the span already shown again and swaps it in whole, so a list that
   // changed underneath (an item left the watchlist) neither keeps the old rows
@@ -189,7 +201,7 @@ function SeeAllResults({
     setBusy(true);
     try {
       while (more && next.length < want) {
-        const page = await fetchPage(ctx, next.length, signal);
+        const page = await fetchPage(ctx, identity, next.length, signal);
         if (generationRef.current !== generation || signal?.aborted) return;
         if (!page) {
           clearResults();
@@ -207,14 +219,14 @@ function SeeAllResults({
       setFailed(false);
     } catch (error) {
       if (generationRef.current === generation && !signal?.aborted && isAuthRejection(error)) {
-        clearResults();
+        clearResults(true);
         setFailed(true);
       }
       // Keep what is shown; the next change or Load More tries again.
     } finally {
       if (generationRef.current === generation) setBusy(false);
     }
-  }, [ctx, clearResults]);
+  }, [ctx, identity, clearResults]);
 
   useEffect(() => {
     if (offsetRef.current > 0) void reloadShown();

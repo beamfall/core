@@ -7,7 +7,7 @@ import { ApiError } from "@/lib/api";
 import type { Layout, LibrarySummary, SourceItem } from "@/lib/graphql/types";
 import { fetchHomeLibraries } from "@/lib/graphql/viewer";
 import { I18nProvider } from "@/lib/i18n";
-import { clearViewerCache } from "@/lib/viewerCache";
+import { clearViewerCache, viewerCacheEntries } from "@/lib/viewerCache";
 import { notifyEngagementChanged } from "../actions/engagementSync";
 import { fetchSectionItems, MAX_RENDERED_SECTIONS } from "../lib/sections";
 import { BrowsePage } from "../pages/BrowsePage";
@@ -201,6 +201,26 @@ describe("Viewer Home", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByRole("heading", { name: "Home", level: 1 })).toBeInTheDocument();
     expect(await screen.findByRole("list", { name: "Library One" })).toBeVisible();
+  });
+
+  it("drops the whole Home snapshot when See All still shows a remaining library", async () => {
+    const visible = libraries.slice(0, 2);
+    vi.mocked(fetchHomeLibraries).mockResolvedValue(visible);
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, { libraryID }) =>
+      section.id === "recent" ? [newItem(`Item in ${libraryID}`)] : [],
+    );
+    renderViewerRoutes([homeNode, ...session.manifest.navigation]);
+
+    const shelf = await screen.findByRole("list", { name: "Library One" });
+    expect(await screen.findByRole("list", { name: "Library Two" })).toBeVisible();
+    expect(viewerCacheEntries(identity).map(([key]) => key)).toContain("home-recent");
+
+    vi.mocked(fetchHomeLibraries).mockResolvedValue(visible.slice(0, 1));
+    fireEvent.click(within(shelf.parentElement ?? shelf).getByRole("button", { name: "See all" }));
+
+    expect(await screen.findByRole("heading", { name: "Library One" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Item in one" })).toBeVisible();
+    expect(viewerCacheEntries(identity).map(([key]) => key)).not.toContain("home-recent");
   });
 
   it.each(["Load more", "engagement refresh"] as const)(

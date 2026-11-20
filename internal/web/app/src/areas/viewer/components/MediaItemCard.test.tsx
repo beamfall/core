@@ -399,6 +399,23 @@ describe("MediaItemCard grouped container card (CORE-2553)", () => {
 });
 
 describe("MediaItemCard art frame (CORE-2362)", () => {
+  it("uses banner-only artwork in an intrinsic Home card frame", () => {
+    const { container } = render(
+      <I18nProvider initialLocale="en">
+        <MemoryRouter>
+          <MediaItemCard
+            item={baseItem({ artwork: undefined, artworkSlots: { banner: "/art/banner.jpg" } })}
+            intrinsicArtwork
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(container.querySelector(".bf-poster-intrinsic img")).toHaveAttribute(
+      "src",
+      "/art/banner.jpg?bucket=w320",
+    );
+  });
+
   it("frames an audio item's art square and names its byline", () => {
     const { container } = renderCard({ mediaClass: "audio", byline: ["Queen"], summary: "" });
     expect(container.querySelector(".bf-poster.bf-poster-square")).not.toBeNull();

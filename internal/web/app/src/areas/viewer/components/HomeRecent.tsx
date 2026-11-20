@@ -36,6 +36,8 @@ interface HomeRecentFeed {
   failed: boolean;
 }
 
+type HomeRecentSnapshot = { scope: string; data: HomeRecentData };
+
 const EMPTY_DATA: HomeRecentData = {
   libraries: [],
   shelves: new Map(),
@@ -50,11 +52,24 @@ export function invalidateHomeRecentCache(identity: string | null): void {
   deleteViewerCache(identity, HOME_RECENT_CACHE_KEY);
 }
 
+export function reconcileHomeRecentCache(
+  identity: string | null,
+  visibleLibraries: readonly HomeLibrary[],
+): HomeRecentSnapshot | undefined {
+  const cached = readViewerCache<HomeRecentSnapshot>(identity, HOME_RECENT_CACHE_KEY);
+  if (!cached) return undefined;
+
+  const cachedIDs = new Set(cached.data.libraries.map(({ id }) => id));
+  const visibleIDs = new Set(visibleLibraries.map(({ id }) => id));
+  if (cachedIDs.size === visibleIDs.size && [...cachedIDs].every((id) => visibleIDs.has(id))) {
+    return cached;
+  }
+  invalidateHomeRecentCache(identity);
+  return undefined;
+}
+
 function cachedRecentData(identity: string | null, scope: string): HomeRecentData {
-  const cached = readViewerCache<{ scope: string; data: HomeRecentData }>(
-    identity,
-    HOME_RECENT_CACHE_KEY,
-  );
+  const cached = readViewerCache<HomeRecentSnapshot>(identity, HOME_RECENT_CACHE_KEY);
   return cached?.scope === scope ? cached.data : EMPTY_DATA;
 }
 
@@ -132,8 +147,8 @@ export function useHomeRecent(
         return;
       }
       const visible = libraries.filter((library) => library.showOnHome !== false);
-      const visibleIDs = new Set(visible.map(({ id }) => id));
-      const shelves = new Map([...feed.data.shelves].filter(([id]) => visibleIDs.has(id)));
+      const cached = reconcileHomeRecentCache(identity, visible);
+      const shelves = cached?.scope === scope ? cached.data.shelves : EMPTY_DATA.shelves;
       save({ ...EMPTY_DATA, libraries: visible, shelves }, visible.length);
       for (const { id } of visible) {
         fetchSectionItems(section, { ...context, libraryID: id }, signal).then((items) => {
