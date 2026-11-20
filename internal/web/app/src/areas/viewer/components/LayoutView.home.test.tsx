@@ -1,9 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/api";
 import type { Layout, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { clearViewerCache } from "@/lib/viewerCache";
 import { fetchSectionItems } from "../lib/sections";
 import { LayoutView } from "./LayoutView";
 
@@ -22,6 +24,11 @@ vi.mock("@/lib/session", () => ({
 vi.mock("../lib/sections", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/sections")>()),
   fetchSectionItems: vi.fn(),
+}));
+
+vi.mock("@/lib/viewerCache", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/viewerCache")>()),
+  clearViewerCache: vi.fn(),
 }));
 
 const session = {
@@ -72,21 +79,32 @@ function renderHome() {
 afterEach(() => {
   cleanup();
   vi.mocked(fetchSectionItems).mockReset();
+  vi.mocked(clearViewerCache).mockClear();
 });
 
 describe("Viewer Home", () => {
   it("uses scoped shelves even outside the aggregate feed and keeps Continue Watching", async () => {
     const one = newItem("Square artwork", { mediaClass: "audio", artwork: { poster: "/square" } });
     const two = newItem("Landscape artwork", { artworkSlots: { backdrop: "/landscape" } });
+    const shared = newItem("Shared item without artwork");
+    const hidden = newItem("Hidden artwork", { artwork: { poster: "/hidden" } });
+    const aggregate = [
+      shared,
+      ...Array.from({ length: 198 }, (_, index) => newItem(`bare-${index}`)),
+      one,
+    ];
     vi.mocked(fetchSectionItems).mockImplementation(async (section, context) => {
       if (section.id === "continue") return [newItem("In progress")];
       switch (context.libraryID) {
         case "one":
           return [one];
         case "two":
-          return [two];
+          return [shared, two];
+        case "hidden":
+          // The scoped feed alone does not apply ShowOnHome on current Core.
+          return [hidden];
         case "":
-          return [one];
+          return aggregate;
         default:
           return [];
       }
@@ -107,9 +125,10 @@ describe("Viewer Home", () => {
     expect(screen.queryByRole("list", { name: /empty|hidden/i })).toBeNull();
     expect(screen.queryByRole("list", { name: "Ajouts récents" })).toBeNull();
     expect(vi.mocked(fetchSectionItems).mock.calls.every(([, context]) => context.home)).toBe(true);
-    expect(fetchSectionItems).not.toHaveBeenCalledWith(
+    expect(screen.queryByRole("link", { name: hidden.title })).toBeNull();
+    expect(fetchSectionItems).toHaveBeenCalledWith(
       expect.objectContaining({ id: "recent" }),
-      expect.objectContaining({ libraryID: "" }),
+      expect.objectContaining({ libraryID: "", paging: { limit: 200, offset: 0 } }),
       expect.anything(),
     );
     expect(fetchSectionItems).not.toHaveBeenCalledWith(
@@ -118,6 +137,67 @@ describe("Viewer Home", () => {
       expect.anything(),
     );
   });
+
+  it("features artwork from a visible shelf when all 200 aggregate items lack artwork", async () => {
+    const shared = newItem("Shared item without artwork");
+    const feature = newItem("Artwork outside the aggregate window", {
+      artworkSlots: { backdrop: "/older" },
+    });
+    const aggregate = [
+      ...Array.from({ length: 199 }, (_, index) => newItem(`bare-${index}`)),
+      shared,
+    ];
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, context) => {
+      if (section.id === "continue") return [];
+      if (!context.libraryID) return aggregate;
+      return context.libraryID === "two" ? [shared, feature] : [];
+    });
+
+    const { container } = renderHome();
+    const shelf = await screen.findByRole("list", { name: "Library Two" });
+    expect(within(shelf).getByRole("link", { name: feature.title })).toBeVisible();
+    const heroArt = container.querySelector(".bf-hero img");
+    expect(heroArt).toHaveAttribute("src", "/older?bucket=w1280");
+    fireEvent.load(heroArt as HTMLImageElement);
+    expect(screen.getByRole("heading", { name: feature.title })).toBeVisible();
+  });
+
+  it.each([false, true])(
+    "keeps successful feeds independent when another fails (authorization: %s)",
+    async (auth) => {
+      const good = newItem("Available item");
+      let reject!: (error: Error) => void;
+      let failedSignal: AbortSignal | undefined;
+      vi.mocked(fetchSectionItems).mockImplementation(async (section, context, signal) => {
+        if (section.id === "continue") return [];
+        if (context.libraryID === "two") {
+          failedSignal = signal;
+          return new Promise((_, onReject) => {
+            reject = onReject;
+          });
+        }
+        return ["", "one"].includes(context.libraryID) ? [good] : [];
+      });
+
+      renderHome();
+      expect(await screen.findByRole("list", { name: "Library One" })).toBeVisible();
+      expect(screen.queryByRole("list", { name: "Library Two" })).toBeNull();
+      await act(async () =>
+        reject(auth ? new ApiError("unauthorized", 401) : new Error("offline")),
+      );
+
+      expect(screen.getByText(/connexion.*perdue/i)).toBeInTheDocument();
+      expect(screen.queryByRole("list", { name: "Library Two" })).toBeNull();
+      if (auth) {
+        expect(clearViewerCache).toHaveBeenCalledOnce();
+        expect(screen.queryByRole("list", { name: "Library One" })).toBeNull();
+        expect(failedSignal?.aborted).toBe(true);
+      } else {
+        expect(clearViewerCache).not.toHaveBeenCalled();
+        expect(screen.getByRole("list", { name: "Library One" })).toBeVisible();
+      }
+    },
+  );
 
   it("tries available hero artwork and collapses the feature when all images fail", async () => {
     const bare = newItem("No artwork");

@@ -32,11 +32,11 @@ function item(id: string): SourceItem {
   return { id, kind: "media", title: id, artwork: { poster: "" } };
 }
 
-function renderLayout(layout: Layout) {
+function renderLayout(layout: Layout, home = false) {
   return render(
     <I18nProvider>
       <MemoryRouter>
-        <LayoutView layout={layout} libraryID="lib" navigationID="home" />
+        <LayoutView layout={layout} libraryID={home ? "" : "lib"} home={home} navigationID="home" />
       </MemoryRouter>
     </I18nProvider>,
   );
@@ -147,5 +147,29 @@ describe("React Viewer rendering contract", () => {
     expect(warn).toHaveBeenCalledWith("Beamfall rendering diagnostic: SectionLimitExceeded");
     expect(warn.mock.calls.flat().join(" ")).not.toContain("private-");
     expect(fetchSectionItems).toHaveBeenCalledTimes(24);
+  });
+
+  it("counts the prepended Home hero toward the Section limit before hydration", () => {
+    vi.mocked(fetchSectionItems).mockReturnValue(new Promise(() => {}));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const recent: Section = {
+      ...section("recent"),
+      kind: "shelf",
+      source: { kind: "recently-added" },
+    };
+    const sections = [recent, ...Array.from({ length: 23 }, (_, i) => section(`private-${i}`))];
+
+    const { container } = renderLayout({ id: "layout-home", sections }, true);
+
+    expect(container.querySelectorAll(".bf-section")).toHaveLength(24);
+    expect(container.querySelector(".bf-section")).toContainElement(
+      container.querySelector(".bf-hero"),
+    );
+    expect(warn.mock.calls).toEqual([["Beamfall rendering diagnostic: SectionLimitExceeded"]]);
+    expect(fetchSectionItems).not.toHaveBeenCalledWith(
+      sections[23],
+      expect.anything(),
+      expect.anything(),
+    );
   });
 });

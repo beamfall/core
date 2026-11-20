@@ -6,6 +6,7 @@ import {
 } from "./lib/spec";
 import { expect, test } from "./lib/test";
 import { coverUiStates } from "./lib/ui-state-coverage";
+import { expectVisualParity, settleFrames, waitForSplashHandoff } from "./lib/visual-parity";
 
 // VIEWER area (ADR-0007): an enrolled browser bound to the adult Default profile.
 // These specs exercise the real Navigation Manifest + Layout rendering, search,
@@ -37,11 +38,13 @@ test.describe("viewer", () => {
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
-  test("Home features artwork and fits square, landscape and portrait cards", async ({ page }) => {
+  test("Home features artwork and fits square, landscape and portrait cards", async ({
+    page,
+  }, testInfo) => {
     const artwork = [
-      { id: "square", width: 320, height: 320 },
-      { id: "landscape", width: 320, height: 180 },
-      { id: "portrait", width: 320, height: 480 },
+      { id: "square", width: 320, height: 320, color: "#384672" },
+      { id: "landscape", width: 320, height: 180, color: "#246658" },
+      { id: "portrait", width: 320, height: 480, color: "#733e52" },
     ];
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.route("**/core-1154-art/**", async (route) => {
@@ -50,27 +53,74 @@ test.describe("viewer", () => {
       if (!image) return route.abort();
       await route.fulfill({
         contentType: "image/svg+xml",
-        body: `<svg xmlns="http://www.w3.org/2000/svg" width="${image.width}" height="${image.height}"><rect width="100%" height="100%" fill="navy"/></svg>`,
+        body: `<svg xmlns="http://www.w3.org/2000/svg" width="${image.width}" height="${image.height}"><rect width="100%" height="100%" fill="${image.color}"/><circle cx="50%" cy="50%" r="25%" fill="white" opacity=".28"/></svg>`,
       });
+    });
+    await page.route("**/api/manifest", async (route) => {
+      const response = await route.fetch();
+      const manifest = await response.json();
+      manifest.libraries.push({
+        id: "library-extra",
+        title: "Second Library",
+        previewClips: false,
+      });
+      manifest.navigation.push({
+        id: "extra",
+        title: "Second Library",
+        view: "layout",
+        layoutID: "layout-home",
+        libraryID: "library-extra",
+      });
+      await route.fulfill({ response, json: manifest });
     });
     await page.route("**/api/graphql", async (route) => {
       const { query, variables } = route.request().postDataJSON();
       if (!query.startsWith("query SourceItems(")) return route.fallback();
+      if (variables.kind === "continue-watching") {
+        return route.fulfill({
+          json: {
+            data: {
+              sourceItems: [
+                {
+                  id: "in-progress",
+                  kind: "media",
+                  title: "In progress",
+                  artworkSlots: { poster: "/core-1154-art/landscape" },
+                  engagement: { positionSeconds: 120, durationSeconds: 240 },
+                },
+              ],
+            },
+          },
+        });
+      }
       if (variables.kind !== "recently-added") return route.fallback();
-      const items =
-        !variables.libraryID || variables.libraryID === "library-local"
-          ? artwork.map(({ id }) => ({
-              id,
-              kind: "media",
-              title: id,
-              artwork: { poster: `/core-1154-art/${id}` },
-            }))
-          : [];
+      const firstLibrary = artwork.map(({ id }) => ({
+        id,
+        kind: "media",
+        title: id,
+        artwork: { poster: `/core-1154-art/${id}` },
+      }));
+      const secondLibrary = [
+        {
+          id: "extra",
+          kind: "media",
+          title: "Second library item",
+          artwork: { poster: "/core-1154-art/landscape" },
+        },
+      ];
+      const items = !variables.libraryID
+        ? [...firstLibrary, ...secondLibrary]
+        : variables.libraryID === "library-local"
+          ? firstLibrary
+          : variables.libraryID === "library-extra"
+            ? secondLibrary
+            : [];
       await route.fulfill({ json: { data: { sourceItems: items } } });
     });
 
     await page.goto("/web/");
     await expect(page.locator(".bf-hero")).toBeVisible();
+    await expect(page.getByRole("list", { name: "Continue Watching" })).toBeVisible();
     const shelf = page
       .getByRole("list")
       .filter({ has: page.getByRole("link", { name: "square" }) });
@@ -85,6 +135,25 @@ test.describe("viewer", () => {
       expect(bounds?.width).toBeGreaterThan(0);
       expect((bounds?.width ?? 0) / (bounds?.height ?? 1)).toBeCloseTo(width / height, 2);
     }
+
+    const secondShelf = page.getByRole("list", { name: "Second Library" });
+    await expect(secondShelf.getByRole("link", { name: "Second library item" })).toBeVisible();
+    await waitForSplashHandoff(page);
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      window.scrollTo({ top: 0, behavior: "instant" });
+    });
+    await settleFrames(page);
+    await expectVisualParity(page, testInfo, "viewer-home-1440x900", { liveOnly: true });
+
+    await secondShelf.scrollIntoViewIfNeeded();
+    await expect
+      .poll(() =>
+        secondShelf.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth),
+      )
+      .toBeGreaterThan(0);
+    await settleFrames(page);
+    await expectVisualParity(page, testInfo, "viewer-home-shelves-1440x900", { liveOnly: true });
   });
 
   test("accessibility variant: Viewer supports large text", async ({ page }) => {

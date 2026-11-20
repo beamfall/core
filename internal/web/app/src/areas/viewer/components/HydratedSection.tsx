@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
-import { displayString } from "@/lib/display";
-import type { FieldFilters, LibrarySummary, Section, SourceItem } from "@/lib/graphql/types";
-import { useDisplayLocale, useT } from "@/lib/i18n";
+import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
+import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import {
   clearViewerCache,
@@ -13,11 +11,10 @@ import {
   writeViewerCache,
 } from "@/lib/viewerCache";
 import { useEngagementEpoch } from "../actions/engagementSync";
-import { artworkSlotURL } from "../lib/artwork";
 import { groupByContainer, groupsNewByContainer } from "../lib/containerGroups";
-import { fetchSectionItems, type SectionFetchContext } from "../lib/sections";
+import { fetchSectionItems } from "../lib/sections";
 import { Hero } from "./Hero";
-import { SectionHeading, SectionView, type SeeAllTarget } from "./SectionView";
+import { SectionView, type SeeAllTarget } from "./SectionView";
 
 export const SECTION_LOAD_TIMEOUT_MS = 15000;
 
@@ -27,35 +24,6 @@ export const SECTION_LOAD_TIMEOUT_MS = 15000;
 export type SectionHydrationState = "loading" | "empty" | "failed" | "visible";
 
 const SECTION_CACHE_PREFIX = "section:";
-// Scan one bounded page of recent items for the Home hero.
-const HOME_HERO_WINDOW = { limit: 200, offset: 0 };
-
-type HydratedItem = SourceItem & { homeLibraryID?: string };
-
-async function fetchHomeRecent(
-  section: Section,
-  context: SectionFetchContext,
-  libraries: readonly LibrarySummary[],
-  signal: AbortSignal,
-): Promise<HydratedItem[]> {
-  const shelves = await Promise.all(
-    libraries.map(async ({ id: libraryID }) => {
-      const items = await fetchSectionItems(section, { ...context, libraryID }, signal);
-      return items.map((item) => ({ ...item, homeLibraryID: libraryID }));
-    }),
-  );
-  return shelves.flat();
-}
-
-function featuredArtwork(items: readonly SourceItem[], failed: ReadonlySet<string>) {
-  for (const item of items) {
-    if (item.locked) continue;
-    for (const slot of ["backdrop", "poster", "thumb"]) {
-      const url = artworkSlotURL(item, slot);
-      if (url && !failed.has(url)) return { item, url };
-    }
-  }
-}
 
 /** The viewer-cache key for one hydrated slot (scoped by identity in viewerCache). */
 export function sectionCacheKey(
@@ -96,7 +64,6 @@ export function HydratedSection({
   libraryID,
   entityID,
   home = false,
-  homeLibraries,
   extraFilters,
   seeAll,
   onConnectionLost,
@@ -108,8 +75,6 @@ export function HydratedSection({
   entityID: string;
   /** Hydrating Home: Libraries hidden from Home stay out (CORE-2360). */
   home?: boolean;
-  /** Libraries whose scoped Home feeds can supply recent-item shelves. */
-  homeLibraries?: readonly LibrarySummary[];
   /** A filter-bar selection routed to this (target) section; null when none. */
   extraFilters?: FieldFilters | null;
   seeAll?: SeeAllTarget;
@@ -119,28 +84,19 @@ export function HydratedSection({
 }) {
   const identity = useViewerIdentity();
   const t = useT();
-  const displayLocale = useDisplayLocale();
-  const navigate = useNavigate();
   // Watched, watchlist and rating changes (here or on another client) revalidate
   // the section behind the items already shown.
   const engagementEpoch = useEngagementEpoch();
   const cacheKey = sectionCacheKey(section, libraryID, entityID, extraFilters, home);
-  const homeHero = home && section.kind === "hero";
-  // Require a fresh Home visibility check before showing the new shelves or hero.
-  const useCache = !homeLibraries && !homeHero;
-  const [items, setItems] = useState<HydratedItem[] | null>(
-    () => (useCache ? readViewerCache<HydratedItem[]>(identity, cacheKey) : undefined) ?? null,
+  const [items, setItems] = useState<SourceItem[] | null>(
+    () => readViewerCache<SourceItem[]>(identity, cacheKey) ?? null,
   );
-  const [failedArtwork, setFailedArtwork] = useState<ReadonlySet<string>>(() => new Set());
-  const [loadedArtwork, setLoadedArtwork] = useState("");
 
   useEffect(() => {
     let alive = true;
     const controller = new AbortController();
-    const cached = useCache ? readViewerCache<HydratedItem[]>(identity, cacheKey) : undefined;
+    const cached = readViewerCache<SourceItem[]>(identity, cacheKey);
     setItems(cached ?? null);
-    setFailedArtwork(new Set());
-    setLoadedArtwork("");
     onHydrationStateChange?.(cached ? (cached.length ? "visible" : "empty") : "loading");
     const abandon = () => {
       alive = false;
@@ -158,25 +114,13 @@ export function HydratedSection({
       abandon();
       fail();
     }, SECTION_LOAD_TIMEOUT_MS);
-    const context = { libraryID, entityID, extraFilters, home };
-    const request = homeLibraries
-      ? fetchHomeRecent(section, context, homeLibraries, controller.signal)
-      : fetchSectionItems(
-          section,
-          homeHero ? { ...context, paging: HOME_HERO_WINDOW } : context,
-          controller.signal,
-        );
-    request
+    fetchSectionItems(section, { libraryID, entityID, extraFilters, home }, controller.signal)
       .then((next) => {
         if (!alive) return;
         window.clearTimeout(timeout);
-        if (useCache) writeViewerCache(identity, cacheKey, next);
+        writeViewerCache(identity, cacheKey, next);
         setItems(next);
-        if (homeHero) {
-          onHydrationStateChange?.(featuredArtwork(next, new Set()) ? "loading" : "empty");
-        } else {
-          onHydrationStateChange?.(next.length ? "visible" : "empty");
-        }
+        onHydrationStateChange?.(next.length ? "visible" : "empty");
       })
       .catch((err: unknown) => {
         if (!alive) return;
@@ -196,16 +140,16 @@ export function HydratedSection({
     // dependency: a reloaded Layout must re-report hydration state (LayoutView
     // tracks it per Layout object) and revalidates, served from the cache.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity, section, cacheKey, engagementEpoch, homeLibraries, homeHero, useCache]);
+  }, [identity, section, cacheKey, engagementEpoch]);
 
   // Newly added items fold under their container (CORE-2524); a container's own
   // page lists its items as they are.
-  const shown = useMemo<HydratedItem[] | null>(
+  const shown = useMemo(
     () =>
-      items && !homeLibraries && !entityID && groupsNewByContainer(section)
+      items && !entityID && groupsNewByContainer(section)
         ? groupByContainer(items, (count) => t("cardNewCount", { count }))
         : items,
-    [items, entityID, homeLibraries, section, t],
+    [items, entityID, section, t],
   );
 
   if (shown === null) {
@@ -214,57 +158,8 @@ export function HydratedSection({
   if (!shown.length) {
     return null; // empty sections are hidden (ADR-0014)
   }
-  if (homeHero) {
-    const feature = featuredArtwork(shown, failedArtwork);
-    if (!feature) return null;
-    return (
-      <Hero
-        key={feature.url}
-        section={section}
-        item={feature.item}
-        navigationID={navigationID}
-        artwork={{
-          url: feature.url,
-          ready: loadedArtwork === feature.url,
-          onLoad: () => {
-            setLoadedArtwork(feature.url);
-            onHydrationStateChange?.("visible");
-          },
-          onError: () => {
-            const failed = new Set(failedArtwork).add(feature.url);
-            setFailedArtwork(failed);
-            if (!featuredArtwork(shown, failed)) onHydrationStateChange?.("empty");
-          },
-        }}
-      />
-    );
-  }
   if (section.kind === "hero") {
     return <Hero section={section} item={shown[0]} navigationID={navigationID} />;
-  }
-  if (homeLibraries) {
-    return (
-      <section className="flex flex-col gap-6">
-        <SectionHeading
-          title={displayString(section.title, displayLocale)}
-          onSeeAll={seeAll ? () => navigate(seeAll.href, { state: seeAll.state }) : undefined}
-        />
-        {homeLibraries.map((library) => {
-          const recent = shown.filter((item) => item.homeLibraryID === library.id);
-          if (!recent.length) return null;
-          return (
-            <SectionView
-              key={library.id}
-              section={{ ...section, id: `${section.id}:${library.id}`, title: library.title }}
-              items={groupByContainer(recent, (count) => t("cardNewCount", { count }))}
-              navigationID={navigationID}
-              headingLevel="h3"
-              intrinsicArtwork
-            />
-          );
-        })}
-      </section>
-    );
   }
   return (
     <SectionView

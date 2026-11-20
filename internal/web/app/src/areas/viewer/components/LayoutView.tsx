@@ -2,15 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigationType } from "react-router";
 import { ErrorState } from "@/components/beamfall/workbench";
 import { Button, buttonVariants } from "@/components/ui/button";
-import type { FieldFilters, Layout, Section } from "@/lib/graphql/types";
+import type { FieldFilters, Layout, LibrarySummary, Section } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { applyRenderFocus } from "../lib/renderFocus";
 import { MAX_RENDERED_SECTIONS, SECTION_KINDS } from "../lib/sections";
 import { FilterBar } from "./FilterBar";
 import { FirstScanButton } from "./FirstScanButton";
+import { HomeArtworkHero, HomeRecentShelves, useHomeRecent } from "./HomeRecent";
 import { HydratedSection, type SectionHydrationState } from "./HydratedSection";
 import type { SeeAllTarget } from "./SectionView";
+
+const NO_LIBRARIES: readonly LibrarySummary[] = [];
 
 // Renders one Layout's Sections in declared order, ported from the vanilla
 // renderLayout (app.js). Unknown Section kinds are silently dropped and the
@@ -64,43 +67,74 @@ export function LayoutView({
   // field → value selections, keyed by the filter-bar that owns them.
   const [filterSelections, setFilterSelections] = useState<Record<string, FieldFilters>>({});
 
-  const renderable = useMemo<Section[]>(() => {
-    const known = (layout?.sections || []).filter((s) => SECTION_KINDS.has(s.kind));
-    if (known.length > MAX_RENDERED_SECTIONS) {
-      // Intentionally omits Section ids, titles, counts, and Reveal state. The
-      // diagnostic is actionable without leaking filtered-layout contents.
+  const { sections, homeRecent, homeHero } = useMemo(() => {
+    const known = (layout?.sections || []).filter((section) => SECTION_KINDS.has(section.kind));
+    const homeRecent =
+      home && !libraryID
+        ? known.find(
+            (section) => section.kind === "shelf" && section.source?.kind === "recently-added",
+          )
+        : undefined;
+    const homeHero: Section | undefined =
+      homeRecent &&
+      !known.slice(0, MAX_RENDERED_SECTIONS).some((section) => section.kind === "hero")
+        ? { ...homeRecent, id: `${homeRecent.id}:featured`, kind: "hero", title: t("homeFeatured") }
+        : undefined;
+    const ordered = homeHero ? [homeHero, ...known] : known;
+    if (ordered.length > MAX_RENDERED_SECTIONS) {
+      // The diagnostic omits Section ids, titles, counts, and Reveal state.
       console.warn("Beamfall rendering diagnostic: SectionLimitExceeded");
     }
-    return known.slice(0, MAX_RENDERED_SECTIONS);
-  }, [layout]);
+    const sections = ordered.slice(0, MAX_RENDERED_SECTIONS);
+    return {
+      sections,
+      homeRecent: homeRecent && sections.includes(homeRecent) ? homeRecent : undefined,
+      homeHero,
+    };
+  }, [layout, home, libraryID, t]);
 
   const homeLibraries = useMemo(() => {
-    if (!home || libraryID || !manifest) return undefined;
+    if (!homeRecent || !manifest) return NO_LIBRARIES;
     const libraryIDs = new Set(
       manifest.navigation.filter((node) => node.view === "layout").map((node) => node.libraryID),
     );
     return manifest.libraries.filter((library) => libraryIDs.has(library.id));
-  }, [home, libraryID, manifest]);
+  }, [homeRecent, manifest]);
 
-  const homeHero = useMemo<Section | undefined>(() => {
-    if (!home || libraryID || renderable.some((section) => section.kind === "hero")) {
-      return undefined;
+  // Map each filter-bar to the index of the section it narrows: the next
+  // item-bearing section that is neither a filter-bar nor a hero (buildFilterBar).
+  const filterTargets = useMemo<Map<number, number>>(() => {
+    const map = new Map<number, number>();
+    sections.forEach((section, index) => {
+      if (section.kind !== "filter-bar") return;
+      for (let i = index + 1; i < sections.length; i++) {
+        const kind = sections[i].kind;
+        if (kind !== "filter-bar" && kind !== "hero") {
+          map.set(index, i);
+          return;
+        }
+      }
+    });
+    return map;
+  }, [sections]);
+
+  // Which extraFilters a given section index receives, if it is a filter-bar target.
+  const extraFiltersForIndex = (index: number): FieldFilters | null => {
+    for (const [barIndex, targetIndex] of filterTargets) {
+      if (targetIndex === index) {
+        return filterSelections[barIndex] || null;
+      }
     }
-    const recent = renderable.find(
-      (section) => section.kind === "shelf" && section.source?.kind === "recently-added",
-    );
-    if (!recent) return undefined;
-    return {
-      ...recent,
-      id: `${recent.id}:featured`,
-      kind: "hero",
-      title: t("homeFeatured"),
-    };
-  }, [home, libraryID, renderable, t]);
+    return null;
+  };
 
-  const sections = useMemo(
-    () => (homeHero ? [homeHero, ...renderable] : renderable),
-    [homeHero, renderable],
+  const reportConnectionLost = useCallback(() => setConnectionLost(true), []);
+  const recentFeed = useHomeRecent(
+    homeRecent ?? homeHero,
+    homeLibraries,
+    homeRecent ? extraFiltersForIndex(sections.indexOf(homeRecent)) : null,
+    attempt,
+    reportConnectionLost,
   );
 
   const hydratable = useMemo(
@@ -108,16 +142,18 @@ export function LayoutView({
     [sections],
   );
   const hydrationStates = hydration.layout === layout ? hydration.states : {};
+  const stateFor = (section: Section) =>
+    section === homeRecent ? recentFeed.state : hydrationStates[section.id];
   const allHydrated = hydratable.every((section) => {
-    const state = hydrationStates[section.id];
+    const state = stateFor(section);
     return state !== undefined && state !== "loading";
   });
-  const hasVisibleSection = hydratable.some((section) => hydrationStates[section.id] === "visible");
+  const hasVisibleSection = hydratable.some((section) => stateFor(section) === "visible");
   const aggregateEmpty = hydratable.length === 0 || (allHydrated && !hasVisibleSection);
   // Nothing visible and at least one Section could not be reached: the page is
   // a load failure, not an empty library (no owner "first scan" CTA).
   const aggregateFailed =
-    aggregateEmpty && hydratable.some((section) => hydrationStates[section.id] === "failed");
+    aggregateEmpty && hydratable.some((section) => stateFor(section) === "failed");
 
   const settledEmpty = aggregateEmpty && !aggregateFailed;
   useEffect(() => {
@@ -135,6 +171,13 @@ export function LayoutView({
       }));
     },
     [layout],
+  );
+
+  const updateHeroState = useCallback(
+    (state: SectionHydrationState) => {
+      if (homeHero) updateHydrationState(homeHero.id, state);
+    },
+    [homeHero, updateHydrationState],
   );
 
   useEffect(() => {
@@ -173,39 +216,12 @@ export function LayoutView({
     );
   }, [allHydrated, hasVisibleSection, navigationID, navigationType]);
 
-  // Map each filter-bar to the index of the section it narrows: the next
-  // item-bearing section that is neither a filter-bar nor a hero (buildFilterBar).
-  const filterTargets = useMemo<Map<number, number>>(() => {
-    const map = new Map<number, number>();
-    sections.forEach((section, index) => {
-      if (section.kind !== "filter-bar") return;
-      for (let i = index + 1; i < sections.length; i++) {
-        const kind = sections[i].kind;
-        if (kind !== "filter-bar" && kind !== "hero") {
-          map.set(index, i);
-          return;
-        }
-      }
-    });
-    return map;
-  }, [sections]);
-
   // The library accent (validated literal #RRGGBB) tints the fallback gradients.
   const accentVar = useMemo<Record<string, string>>(() => {
     const library = (manifest?.libraries || []).find((l) => l.id === libraryID);
     const accent = library?.accent || "";
     return /^#[0-9a-fA-F]{6}$/.test(accent) ? { ["--library-accent" as string]: accent } : {};
   }, [manifest, libraryID]);
-
-  // Which extraFilters a given section index receives, if it is a filter-bar target.
-  const extraFiltersForIndex = (index: number): FieldFilters | null => {
-    for (const [barIndex, targetIndex] of filterTargets) {
-      if (targetIndex === index) {
-        return filterSelections[barIndex] || null;
-      }
-    }
-    return null;
-  };
 
   function toggleFilter(barIndex: number, field: string, value: string) {
     setFilterSelections((prev) => {
@@ -227,7 +243,7 @@ export function LayoutView({
   // A detail Layout with nothing to show renders nothing: the Entity page
   // around it already has its header, and the library onboarding empty state
   // (first scan, migrate) does not belong inside an Entity (CORE-1786).
-  if (!layout || !renderable.length) {
+  if (!layout || !sections.length) {
     return entityID ? null : <LibraryEmpty />;
   }
 
@@ -269,6 +285,32 @@ export function LayoutView({
               />
             );
           }
+          if (section === homeHero) {
+            return (
+              <HomeArtworkHero
+                key={`${section.id}:${recentFeed.epoch}`}
+                section={section}
+                items={recentFeed.heroItems}
+                pending={recentFeed.pending}
+                failed={recentFeed.failed}
+                navigationID={navigationID}
+                onHydrationStateChange={updateHeroState}
+              />
+            );
+          }
+          if (section === homeRecent) {
+            return (
+              <HomeRecentShelves
+                key={section.id}
+                section={section}
+                libraries={homeLibraries}
+                shelves={recentFeed.shelves}
+                pending={recentFeed.pending}
+                seeAll={buildSeeAll?.(section)}
+                navigationID={navigationID}
+              />
+            );
+          }
           return (
             <HydratedSection
               key={`${section.id}:${attempt}`}
@@ -276,14 +318,9 @@ export function LayoutView({
               libraryID={libraryID}
               entityID={entityID}
               home={home}
-              homeLibraries={
-                section.kind === "shelf" && section.source?.kind === "recently-added"
-                  ? homeLibraries
-                  : undefined
-              }
               extraFilters={extraFiltersForIndex(index)}
               seeAll={section.kind === "hero" ? undefined : buildSeeAll?.(section)}
-              onConnectionLost={() => setConnectionLost(true)}
+              onConnectionLost={reportConnectionLost}
               onHydrationStateChange={(state) => updateHydrationState(section.id, state)}
               navigationID={navigationID}
             />
