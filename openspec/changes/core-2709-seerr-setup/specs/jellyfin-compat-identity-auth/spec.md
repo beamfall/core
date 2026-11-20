@@ -3,24 +3,39 @@
 ### Requirement: Compatibility sign-in describes the signed-in user
 
 A successful `Users/AuthenticateByName` response SHALL carry the integration token, its expiry, the
-server ID, and a `User` object with the Profile ID, the Profile display name, the server ID, the
-configured server name and `Policy.IsAdministrator`. `IsAdministrator` SHALL be true only for the
-admin setup session. The response SHALL NOT include any other Profile, Library or media data.
+server ID, and a `User` object with a user ID, a display name, the server ID, the configured server
+name and `Policy.IsAdministrator`. For a Profile sign-in the user ID and name SHALL be the Profile's.
+`IsAdministrator` SHALL be true only for the admin setup session. The response SHALL NOT include any
+other Profile, Library or media data.
 
 #### Scenario: Admin setup sign-in
 
 - **WHEN** a caller signs in with the admin name and the admin password
-- **THEN** the response reports `IsAdministrator` true and the server ID shown by `System/Info/Public`
+- **THEN** the response reports `IsAdministrator` true, the server ID shown by `System/Info/Public`,
+  and the setup account ID, not the owner Profile's ID
 
 #### Scenario: Opted-in Profile sign-in
 
 - **WHEN** a caller signs in with an opted-in adult Profile and its entry PIN
-- **THEN** the response reports `IsAdministrator` false and the Profile's display name
+- **THEN** the response reports `IsAdministrator` false and the Profile's own ID and display name
+
+### Requirement: The admin setup sign-in reports a setup account
+
+The `User` object of the admin setup sign-in SHALL describe a setup account, not the owner Profile:
+the name `admin` and a user ID derived from the server ID that is stable across sign-ins and differs
+from every Profile ID.
+
+#### Scenario: The owner signs in with a PIN after setup
+
+- **WHEN** the owner Profile signs in with its entry PIN after an admin setup sign-in
+- **THEN** the two responses report different user IDs, and a second admin sign-in reports the first one's ID
 
 ### Requirement: Only the admin setup session carries the setup scope
 
 The server SHALL grant the `compat.setup` integration scope only to a session created by the admin
-setup sign-in, and SHALL refuse to create any other integration session that requests it.
+setup sign-in, and SHALL refuse a sign-in whose caller requests it. The store SHALL refuse to create
+a session with that scope unless it belongs to the owner Profile, is created under the admin
+sign-in's throttle reservation, and expires no later than 15 minutes after that reservation.
 
 #### Scenario: A Profile session asks for the setup scope
 
