@@ -40,6 +40,12 @@ The existing file and its Media SHALL remain unchanged.
 - **WHEN** staged bytes match a cataloged legacy full SHA-256 digest
 - **THEN** managed admission refuses the duplicate
 
+#### Scenario: Cataloged import target absent on disk
+
+- **WHEN** a live catalog row at the import destination matches either staged digest and the
+  destination file is absent
+- **THEN** the import refuses the duplicate before publishing the staged file
+
 ## ADDED Requirements
 
 ### Requirement: Scans bound the reads used for content identity
@@ -60,6 +66,18 @@ equal size whose samples all match share an identity even when unsampled bytes d
 - **WHEN** the path, recorded size and non-zero recorded mtime match a legacy row
 - **THEN** the scan reuses the legacy identity without reading bytes for fingerprinting
 
+#### Scenario: Legacy file in an unsealed encrypted Library
+
+- **WHEN** a scan finds the unchanged file after the Library is sealed and unsealed
+- **THEN** the scan reuses the fingerprint and Media ID from the Library's own catalog
+
+#### Scenario: Missing legacy file returns to its original path
+
+- **WHEN** the path has no live row and one retained legacy row in the scanned Library, and the
+  file matches the recorded stats or passes the incomplete-stats digest comparison
+- **THEN** the scan reuses the retained Media and fingerprint, preserving its watch state and match
+- **AND** Media in catalog trash and files held in managed trash are ineligible for this recovery
+
 #### Scenario: Legacy file at the same path with incomplete stats
 
 - **WHEN** a legacy row has an unrecorded size or mtime and its recorded stats still match
@@ -76,7 +94,11 @@ equal size whose samples all match share an identity even when unsampled bytes d
 ### Requirement: Sampled Media IDs distinguish the fingerprint scheme
 
 A Media ID derived from a sample SHALL use `media-sample1-` and the first 17 digest digits.
-A readable web address for that ID SHALL tag the digest with `sample1.`.
+A readable web address for that ID SHALL tag the digest with `sample1.`. The hyphenated
+`media-sample1-` form is a bare ID at the route root. A Library-qualified address uses the dotted
+token for a sampled item. A legacy title whose slug is `media-sample1` keeps its Library-qualified
+SHA-256 address. When the Library slug is unavailable, new legacy addresses for that title use
+the unqualified SHA-256 ID.
 
 #### Scenario: Identical digest prefix across schemes
 
