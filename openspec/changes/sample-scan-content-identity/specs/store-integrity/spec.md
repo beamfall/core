@@ -72,3 +72,13 @@ equal size whose samples all match share an identity even when unsampled bytes d
   same path
 - **THEN** it matches by sampled identity and does not carry over the legacy Media's watch state
   or matches
+
+### Requirement: Sampled Media IDs distinguish the fingerprint scheme
+
+A Media ID derived from a sample SHALL use `media-sample1-` and the first 17 digest digits.
+A readable web address for that ID SHALL tag the digest with `sample1.`.
+
+#### Scenario: Identical digest prefix across schemes
+
+- **WHEN** a sampled Media ID and a legacy Media ID have the same 17 digest digits
+- **THEN** the viewer resolves their tagged and untagged addresses to their respective IDs
