@@ -4374,6 +4374,14 @@ func (s *Store) SetProfileOwner(ctx context.Context, id ProfileID) error {
 		`UPDATE auth_session SET admin_until_ms = NULL WHERE admin_until_ms IS NOT NULL AND profile_id <> ?`, id); err != nil {
 		return err
 	}
+	// A setup Session carries its authority in its scopes, so the outgoing
+	// owner's ends here too.
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM auth_session WHERE kind = ? AND profile_id <> ?
+			AND ',' || COALESCE(integration_scopes, '') || ',' LIKE ?`,
+		SessionKindIntegration, id, "%,"+string(IntegrationScopeSetup)+",%"); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 

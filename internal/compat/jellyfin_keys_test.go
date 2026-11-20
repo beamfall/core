@@ -196,4 +196,13 @@ func TestJellyfinAPIKeysNameTheTokenHeadersClient(t *testing.T) {
 	if got := keys.Items[0].AppName; got != `Se"err` {
 		t.Fatalf("AppName = %q, want the decoded Client of the header that carried the token", got)
 	}
+
+	// A header carrying another token never names this one.
+	req = compatRequest(t, http.MethodGet, "Auth/Keys")
+	req.Header.Set("X-Emby-Authorization", `MediaBrowser Device="Seerr", DeviceId="BOT_seerr", Version="3.5.2", Token="`+setup+`"`)
+	req.Header.Set("Authorization", `MediaBrowser Client="Decoy", Device="d", DeviceId="d", Version="1", Token="other"`)
+	rec = sendCompat(handler, req)
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &keys) != nil || len(keys.Items) != 1 || keys.Items[0].AppName != "" {
+		t.Fatalf("GET Auth/Keys with a Client-less token header = %d %s, want an empty AppName", rec.Code, rec.Body)
+	}
 }

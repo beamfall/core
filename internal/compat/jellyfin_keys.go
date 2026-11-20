@@ -42,20 +42,20 @@ func (h *Handler) listAPIKeys(w http.ResponseWriter, r *http.Request, _ net.IP) 
 }
 
 // mediaBrowserClient returns the Client parameter of the MediaBrowser
-// authorization header that carries token, or else of the first one that
-// names a Client.
+// authorization header that carries token. When none does (the token came in
+// another header), it takes the first header that carries no token.
 func mediaBrowserClient(header http.Header, token string) string {
 	names := []string{"X-Emby-Authorization", "Authorization"}
 	for _, name := range names {
 		if value := header.Get(name); mediaBrowserToken(value) == token {
-			if client := mediaBrowserValue(value, "Client"); client != "" {
-				return client
-			}
+			return mediaBrowserValue(value, "Client")
 		}
 	}
 	for _, name := range names {
-		if client := mediaBrowserValue(header.Get(name), "Client"); client != "" {
-			return client
+		if value := header.Get(name); mediaBrowserToken(value) == "" {
+			if client := mediaBrowserValue(value, "Client"); client != "" {
+				return client
+			}
 		}
 	}
 	return ""

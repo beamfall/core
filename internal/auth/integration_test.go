@@ -110,6 +110,30 @@ func TestIntegrationAdminSetupTTLAndNonRenewability(t *testing.T) {
 	}
 }
 
+func TestIntegrationSetupSignInRefusedWhenTheWindowClosesDuringVerification(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	base := time.Unix(100, 0).UTC()
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAdminPassword(ctx, "setup-secret", base); err != nil {
+		t.Fatal(err)
+	}
+	// The reservation reads the clock first; every later read lands at the
+	// end of the setup window, as if verification stalled that long.
+	var reads atomic.Int32
+	svc := NewServiceWithClock(st, func() time.Time {
+		if reads.Add(1) == 1 {
+			return base
+		}
+		return base.Add(integrationSetupTTL)
+	})
+	if session, err := svc.AuthenticateIntegrationByName(ctx, "admin", "setup-secret", integrationTestIP, compatScopes); !errors.Is(err, ErrIntegrationAuthentication) {
+		t.Fatalf("setup sign-in after the window closed = %+v, %v", session, err)
+	}
+}
+
 func TestIntegrationSetupScopeIsServerAssigned(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.Open(t)

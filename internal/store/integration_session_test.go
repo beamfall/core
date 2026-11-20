@@ -269,7 +269,34 @@ func TestIntegrationSetupSessionBinding(t *testing.T) {
 				t.Fatalf("owner setup session: %v", err)
 			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
 				t.Fatalf("error = %v, want %q", err, tc.want)
+			case tc.want != "":
+				if _, err := st.Session(ctx, session.ID); err == nil {
+					t.Fatal("the refused session was stored")
+				}
 			}
 		})
+	}
+
+	// Transferring ownership ends the outgoing owner's setup Session and
+	// leaves its ordinary integration Session alone.
+	enabled := true
+	if _, err := st.UpdateProfileSettings(ctx, "profile-default", ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	ordinary := Session{
+		ID: "ordinary", ProfileID: "profile-default", Kind: SessionKindIntegration,
+		IntegrationScopes: []IntegrationScope{IntegrationScopeRead}, ExpiresAt: now.Add(time.Minute),
+	}
+	if err := st.CreateIntegrationSession(ctx, ordinary, true, reserve("profile:profile-default")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetProfileOwner(ctx, other.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Session(ctx, "setup-5"); err == nil {
+		t.Fatal("the former owner's setup session outlived the transfer")
+	}
+	if _, err := st.Session(ctx, ordinary.ID); err != nil {
+		t.Fatalf("ordinary integration session after the transfer: %v", err)
 	}
 }

@@ -35,12 +35,24 @@ from every Profile ID.
 The server SHALL grant the `compat.setup` integration scope only to a session created by the admin
 setup sign-in, and SHALL refuse a sign-in whose caller requests it. The store SHALL refuse to create
 a session with that scope unless it belongs to the owner Profile, is created under the admin
-sign-in's throttle reservation, and expires no later than 15 minutes after that reservation.
+sign-in's throttle reservation, and expires no later than 15 minutes after that reservation. A
+setup session SHALL end when ownership moves.
 
 #### Scenario: A Profile session asks for the setup scope
 
 - **WHEN** an integration session is created for an opted-in Profile with the setup scope requested
 - **THEN** creation fails and no session is stored
+
+#### Scenario: The setup window closes during sign-in
+
+- **WHEN** 15 minutes pass between the admin sign-in's reservation and creating its session
+- **THEN** the sign-in fails and no session is stored
+
+#### Scenario: Ownership moves during setup
+
+- **WHEN** ownership moves to another adult Profile while the former owner's setup session is live
+- **THEN** that setup session no longer authenticates, and the former owner's other integration
+  sessions are unaffected
 
 ### Requirement: Compatibility API key routes never mint a credential
 
