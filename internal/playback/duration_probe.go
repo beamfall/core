@@ -55,10 +55,10 @@ func (s *Sessions) ProbedDurationSeconds(ctx context.Context, fingerprint, path 
 	if s == nil {
 		return 0
 	}
-	return s.probedSourceDuration(ctx, nil, fingerprint, path)
+	return s.probedSourceDuration(ctx, nil, nil, fingerprint, path)
 }
 
-func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBinding, fingerprint, path string) int {
+func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBinding, op *libraryOperation, fingerprint, path string) int {
 	if fingerprint == "" || path == "" || ctx.Err() != nil {
 		return 0
 	}
@@ -69,7 +69,8 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	}
 	now := s.now()
 	s.mu.Lock()
-	if ctx.Err() != nil || s.closed || binding != nil && !binding.validLocked() {
+	if ctx.Err() != nil || s.closed || binding != nil && !binding.validLocked() ||
+		op != nil && s.libraryOperationErrorLocked(op) != nil {
 		s.mu.Unlock()
 		return 0
 	}
@@ -139,10 +140,8 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	if flight.users == 0 {
 		delete(s.durationFlights, path)
 	}
-	if ctx.Err() != nil || s.closed || source.supersededLocked() || binding != nil && !binding.validLocked() {
-		return 0
-	}
-	if !valid {
+	if !valid || ctx.Err() != nil || s.closed || source.supersededLocked() || binding != nil && !binding.validLocked() ||
+		op != nil && s.libraryOperationErrorLocked(op) != nil {
 		return 0
 	}
 	entry = s.durationProbes[path]
@@ -193,7 +192,7 @@ func (s *Sessions) releaseDurationLocked(retained *retainedDuration) {
 
 // probedDuration is the on-demand runtime of a video or audio Media's
 // negotiated file, or 0. An Encrypted Library's file is never probed.
-func (s *Service) probedDuration(ctx context.Context, media store.Media, file store.MediaFile) int {
+func (s *Service) probedDuration(ctx context.Context, op *libraryOperation, media store.Media, file store.MediaFile) int {
 	if s.sessions == nil || media.Class != store.MediaClassVideo && media.Class != store.MediaClassAudio {
 		return 0
 	}
@@ -201,5 +200,5 @@ func (s *Service) probedDuration(ctx context.Context, media store.Media, file st
 	if err != nil || encrypted {
 		return 0
 	}
-	return s.sessions.ProbedDurationSeconds(ctx, file.ContentFingerprint, file.Path)
+	return s.sessions.probedSourceDuration(ctx, nil, op, file.ContentFingerprint, file.Path)
 }

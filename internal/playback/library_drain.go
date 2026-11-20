@@ -51,6 +51,10 @@ type libraryOperation struct {
 func (s *Sessions) claimLibrary(ctx context.Context, library store.LibraryID, stamp DrainFence) (*libraryOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.claimLibraryLocked(ctx, library, stamp)
+}
+
+func (s *Sessions) claimLibraryLocked(ctx context.Context, library store.LibraryID, stamp DrainFence) (*libraryOperation, error) {
 	if !s.admittedLocked(library, stamp) {
 		return nil, ErrSessionEvicted
 	}
@@ -77,6 +81,10 @@ func (s *Sessions) releaseLibrary(op *libraryOperation) {
 func (s *Sessions) libraryOperationError(op *libraryOperation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.libraryOperationErrorLocked(op)
+}
+
+func (s *Sessions) libraryOperationErrorLocked(op *libraryOperation) error {
 	if _, ok := s.libraryOps[op]; !ok || !s.admittedLocked(op.library, op.stamp) {
 		return ErrSessionEvicted
 	}

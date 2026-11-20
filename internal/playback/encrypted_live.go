@@ -124,7 +124,19 @@ func (s *Sessions) watchLiveRevocation(session *hlsSession, done <-chan struct{}
 		case <-done:
 			return
 		case <-ticker.C:
-			if !revoked() {
+			s.mu.Lock()
+			if session.revokeDone != done {
+				s.mu.Unlock()
+				return
+			}
+			op, err := s.claimLibraryLocked(session.cutoffCtx, session.library, s.admissionClock)
+			s.mu.Unlock()
+			if err != nil {
+				return
+			}
+			isRevoked := revoked()
+			s.releaseLibrary(op)
+			if !isRevoked {
 				continue
 			}
 			s.mu.Lock()

@@ -1036,7 +1036,7 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	}
 	batch := &decisionGrants{}
 	ctx = context.WithValue(ctx, decisionGrantsKey{}, batch)
-	dec, err = s.decideMedia(ctx, batch, scope, media, suffix, profile, policy, priority, selectedSubtitleIndex, selectedAudioIndex, selectedVersion, ov, adjust)
+	dec, err = s.decideMedia(ctx, op, batch, scope, media, suffix, profile, policy, priority, selectedSubtitleIndex, selectedAudioIndex, selectedVersion, ov, adjust)
 	if err == nil {
 		dec.loudnessInfo = s.loudnessInfo(dec, profile)
 		if suffix == mainSuffix && dec.media.ID != "" {
@@ -1070,7 +1070,7 @@ func (s *Service) decide(ctx context.Context, stamp DrainFence, scope auth.Scope
 	return dec, nil
 }
 
-func (s *Service) decideMedia(ctx context.Context, batch *decisionGrants, scope auth.Scope, media store.Media, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
+func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *decisionGrants, scope auth.Scope, media store.Media, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
 	// A Sealed Library gets no stream, no selector-bearing Parts, and no asset
 	// advertisement (ADR-0098 area 2). Indistinguishable from unavailable on the
 	// wire, exactly like a Library the scope cannot see (Reveal contract).
@@ -1136,7 +1136,7 @@ func (s *Service) decideMedia(ctx context.Context, batch *decisionGrants, scope 
 	// probed on demand, so the timeline and a live session's playlist cover
 	// the whole file instead of ending where the encoder is (CORE-2314).
 	if media.DurationSeconds <= 0 && len(parts) <= 1 {
-		if seconds := s.probedDuration(ctx, media, file); seconds > 0 {
+		if seconds := s.probedDuration(ctx, op, media, file); seconds > 0 {
 			media.DurationSeconds = seconds
 			timeline.DurationSeconds = seconds
 		}

@@ -363,6 +363,149 @@ func TestT4DurationOwnership(t *testing.T) {
 	}
 }
 
+func TestT4FencedPlaybackInfoProbeLeavesNoCachedMiss(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	marker := filepath.Join(dir, "probe-started")
+	t.Setenv("BEAMFALL_T4_PROBE_STARTED", marker)
+	const tool = `#!/bin/sh
+printf started > "$BEAMFALL_T4_PROBE_STARTED"
+printf '%s\n' '{"format":{"duration":"120"}}'
+`
+	if err := os.WriteFile(filepath.Join(dir, "ffprobe"), []byte(tool), 0o700); err != nil { // #nosec G306 -- private executable test fixture.
+		t.Fatal(err)
+	}
+	runner := ffmpeg.New()
+	f := &drainDurationProbe{}
+	svc, s, scope, _ := drainTestService(t, f)
+	probeEntered, releaseProbe := scratchLatch(t)
+	cancelEntered, releaseCancel := scratchLatch(t)
+	defer releaseProbe.open()
+	defer releaseCancel.open()
+	a, _ := importDrainMedia(t, svc.store, drainLibraryA, store.MediaClassVideo, 0)
+	var probeCalls, grants atomic.Int32
+	probeResult := make(chan error, 1)
+	f.probe = func(ctx context.Context, path string) (ffmpeg.Probe, error) {
+		if probeCalls.Add(1) != 1 {
+			return runner.Probe(ctx, path)
+		}
+		close(probeEntered)
+		<-releaseProbe.ch
+		probe, err := runner.Probe(ctx, path)
+		probeResult <- err
+		return probe, err
+	}
+	svc.tokens.SetRecorder(drainRecorder(func(store.MediaID) { grants.Add(1) }))
+	info := func() (InfoResponse, error) {
+		return svc.Info(t.Context(), scope, InfoRequest{MediaID: string(a), CapabilityProfile: videoClient})
+	}
+	request := make(chan error, 1)
+	go func() {
+		resp, err := info()
+		if err == nil && len(resp.Streams) != 0 {
+			err = fmt.Errorf("fenced decision returned %d streams", len(resp.Streams))
+		}
+		request <- err
+	}()
+	waitScratchSignal(t, probeEntered)
+	s.mu.Lock()
+	claims := len(s.libraryOps)
+	for op := range s.libraryOps {
+		cancel := op.cancel
+		var calls atomic.Int32
+		op.cancel = func() {
+			if calls.Add(1) == 1 {
+				close(cancelEntered)
+				<-releaseCancel.ch
+			}
+			cancel()
+		}
+	}
+	s.mu.Unlock()
+	if claims != 1 {
+		t.Fatalf("playback-info owns %d claims, want one", claims)
+	}
+	drained := startTestDrain(t.Context(), s, drainLibraryA, 0)
+	waitScratchSignal(t, cancelEntered) // Admission is closed, but the probe context is live.
+	releaseProbe.open()
+	if err := testResult(t, probeResult); !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("probe permit returned %v, want eviction", err)
+	}
+	if err := testResult(t, request); err != nil || grants.Load() != 0 {
+		t.Fatalf("fenced decision returned %v and recorded %d grants", err, grants.Load())
+	}
+	requireScratchMissing(t, marker)
+	releaseCancel.open()
+	d := testResult(t, drained)
+	if d.err != nil {
+		t.Fatal(d.err)
+	}
+	if err := s.Reopen(drainLibraryA, d.fence); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := info()
+	if err != nil || resp.Timeline.DurationSeconds != 120 || len(resp.Streams) == 0 || probeCalls.Load() != 2 {
+		t.Fatalf("fresh decision returned duration %d, %d streams, %d probe calls, error %v",
+			resp.Timeline.DurationSeconds, len(resp.Streams), probeCalls.Load(), err)
+	}
+}
+
+func TestT4DrainJoinsOnlyTargetEncryptedRevocationPoll(t *testing.T) {
+	s := newTestSessions(t, &fakeEncryptedTranscoder{}, t.TempDir(), nil)
+	s.revocationPoll = time.Millisecond
+	entered, release := scratchLatch(t)
+	defer release.open()
+	source := testEncryptedSource(nil)
+	source.Revoked = func() bool {
+		close(entered)
+		<-release.ch
+		return true
+	}
+	key := SessionKey{SessionID: "encrypted drain"}
+	if _, err := encryptedFilePath(s, key, source, 120, -1, false, masterPlaylistName); err != nil {
+		t.Fatal(err)
+	}
+	waitScratchSignal(t, entered)
+	library := store.LibraryID(source.LibraryID)
+	s.mu.Lock()
+	session := s.sessions[key]
+	s.mu.Unlock()
+	drained := startTestDrain(t.Context(), s, library, 0)
+
+	// Session teardown can retire while the key-store callback is blocked.
+	// Verify the poll itself still owns work at that point.
+	for {
+		s.mu.Lock()
+		retired := session.state == sessionRetired
+		busy, _ := s.libraryWorkLocked(library, nil)
+		if s.libraryChanged == nil && !retired {
+			s.libraryChanged = make(chan struct{})
+		}
+		changed := s.libraryChanged
+		s.mu.Unlock()
+		if retired {
+			if !busy {
+				t.Fatal("encrypted revocation poll lost ownership after session retirement")
+			}
+			break
+		}
+		waitScratchSignal(t, changed)
+	}
+	assertDrainWaiting(t, drained)
+	const other store.LibraryID = "unrelated library"
+	if _, err := drainFile(t.Context(), s, other, SessionKey{SessionID: "unrelated"}, fakeSourcePath, false, masterPlaylistName); err != nil {
+		t.Fatal(err)
+	}
+	if d := testResult(t, startTestDrain(t.Context(), s, other, 0)); d.err != nil {
+		t.Fatal(d.err)
+	}
+	assertDrainWaiting(t, drained)
+	release.open()
+	if d := testResult(t, drained); d.err != nil {
+		t.Fatal(d.err)
+	}
+}
+
 type drainKeyframeProbe struct {
 	keyframeFakeTranscoder
 	probe func(context.Context, string) (ffmpeg.KeyframeIndex, error)
