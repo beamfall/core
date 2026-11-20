@@ -74,7 +74,7 @@ fi
 # cannot synthesize a false `Sonarr` match across `JSON` + `Array`. Service
 # identifiers beginning with a forbidden name (for example SonarrClient) still
 # fail, as do all user-facing string occurrences.
-acquisition_re='(^|[^[:alnum:]_])(qBittorrent|Radarr|Sonarr|Overseerr|torrent|usenet)'
+acquisition_re='(^|[^[:alnum:]_])(qBittorrent|Radarr|Sonarr|Lidarr|Overseerr|Jellyseerr|Seerr|Jellyfin|Emby|Plex|Tautulli|Kometa|torrent|usenet)'
 
 # Canonical client boundary identities are structural assertions, not vocabulary.
 acquisition_surface_identities=(

@@ -387,6 +387,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	152: dispatchFieldBlock152,
 	153: dispatchFieldBlock153,
 	154: dispatchFieldBlock154,
+	155: dispatchFieldBlock155,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -553,6 +554,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"purgelibrary":                       newFieldHandler("purgeLibrary", "purgeLibrary", fieldMutation, roleSession|roleAdmin, 148),
 	"preplayclips":                       newFieldHandler("prePlayClips", "prePlayClips", fieldRead, roleSession|roleAdmin, 149),
 	"preplayqueue":                       newFieldHandler("prePlayQueue", "prePlayQueue", fieldRead, roleSession, 149),
+	"jellyfincompat":                     newFieldHandler("jellyfinCompat", "jellyfinCompat", fieldRead, roleSession|roleAdmin, 155),
 	"qbittorrentingest":                  newFieldHandler("qbittorrentIngest", "qbittorrentIngest", fieldRead, roleSession|roleAdmin, 106),
 	"qualitypolicy":                      newFieldHandler("qualityPolicy", "qualityPolicy", fieldRead, roleSession|roleAdmin, 50),
 	"queueadd":                           newFieldHandler("queueAdd", "queue", fieldMutation, roleSession, 30),
@@ -643,6 +645,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setpluginconfig":                    newFieldHandler("setPluginConfig", "setPluginConfig", fieldMutation, roleSession|roleAdmin, 66),
 	"setpluginupdatesource":              newFieldHandler("setPluginUpdateSource", "setPluginUpdateSource", fieldMutation, roleSession|roleAdmin, 66),
 	"setprofilelibraries":                newFieldHandler("setProfileLibraries", "setProfileLibraries", fieldMutation, roleSession|roleAdmin, 39),
+	"setjellyfincompat":                  newFieldHandler("setJellyfinCompat", "setJellyfinCompat", fieldMutation, roleSession|roleAdmin, 155),
+	"setprofileintegrationsignin":        newFieldHandler("setProfileIntegrationSignIn", "setProfileIntegrationSignIn", fieldMutation, roleSession|roleAdmin, 155),
 	"setqbittorrentingest":               newFieldHandler("setQBittorrentIngest", "setQBittorrentIngest", fieldMutation, roleSession|roleAdmin, 106),
 	"setqualitypolicy":                   newFieldHandler("setQualityPolicy", "setQualityPolicy", fieldMutation, roleSession|roleAdmin, 50),
 	"setrating":                          newFieldHandler("setRating", "setRating", fieldMutation, roleSession, 146),
@@ -4361,6 +4365,36 @@ func dispatchFieldBlock154(dispatch *fieldDispatchContext) response {
 	if fields["acknowledgebackupkey"] {
 		status, err := h.acknowledgeBackupKey(ctx, scope, req)
 		if resp := resolveField(dispatch, "acknowledgebackupkey", status, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+// Jellyfin compatibility Console settings (CORE-2683, resolvers in
+// graph_jellyfin_compat.go). The fields are registered only outside App Store
+// builds, so this block never runs there.
+func dispatchFieldBlock155(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["setjellyfincompat"] {
+		result, err := h.setJellyfinCompat(ctx, scope, req)
+		if resp := resolveField(dispatch, "setjellyfincompat", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setprofileintegrationsignin"] {
+		result, err := h.setProfileIntegrationSignIn(ctx, scope, req)
+		if resp := resolveField(dispatch, "setprofileintegrationsignin", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["jellyfincompat"] {
+		info, err := h.jellyfinCompatInfo(ctx)
+		if resp := resolveField(dispatch, "jellyfincompat", info, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

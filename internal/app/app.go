@@ -1512,8 +1512,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		graphHandler.SetScrobbleStatusSource(scrobbleStatusSource{dispatcher: scrobbleDispatcher})
 		graphHandler.SetOutboundMetadataResolver(newScrobbleMetadataResolver(st, executablePlugins))
 	}
-	// CORE-2683 owns the operator allowlist; until then, no Library is eligible.
-	compatEligible := func(context.Context, store.LibraryID) bool { return false }
+	// The operator allowlist (CORE-2683) is checked at refresh time, so a Library
+	// restricted or trashed after it was allowlisted is out of reach at once.
+	compatEligible := func(ctx context.Context, id store.LibraryID) bool {
+		eligible, err := st.JellyfinCompatLibraryEligible(ctx, id)
+		return err == nil && eligible
+	}
 	compatHandler, err := compat.New(compat.Config{
 		Enabled: cfg.JellyfinCompat.Enabled, AllowedCIDRs: cfg.JellyfinCompat.AllowedCIDRs,
 		TrustedProxyCIDRs: cfg.JellyfinCompat.TrustedProxyCIDRs,
@@ -1526,6 +1530,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		return nil, err
 	}
 	compatHandler.SetRelayedRequestPredicate(server.RequestFromRelay)
+	compatSettings, err := compat.NewSettingsController(ctx, st, store.JellyfinCompatConfig{
+		Enabled: cfg.JellyfinCompat.Enabled, AllowedCIDRs: cfg.JellyfinCompat.AllowedCIDRs,
+		TrustedProxyCIDRs: cfg.JellyfinCompat.TrustedProxyCIDRs,
+	}, compatHandler)
+	if err != nil {
+		return nil, err
+	}
+	graphHandler.SetJellyfinCompatController(compatSettings)
 	srv.SetProxyTee(proxyTee.ServeProxy)
 	app := &App{
 		cfg:                    cfg,

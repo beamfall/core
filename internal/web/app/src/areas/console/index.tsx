@@ -1,6 +1,7 @@
 import {
   Activity,
   Boxes,
+  Cable,
   Clock,
   Database,
   Gauge,
@@ -58,6 +59,7 @@ import { Capabilities } from "./sections/Capabilities";
 import { Config } from "./sections/Config";
 import { HostGraphs, LiveSessionCount, LiveSessions } from "./sections/Dashboard";
 import { Health } from "./sections/Health";
+import { JellyfinCompat } from "./sections/JellyfinCompat";
 import { Libraries } from "./sections/Libraries";
 import { UpdateAwareness } from "./sections/Operations";
 import { OperationsControls } from "./sections/OperationsControls";
@@ -396,6 +398,14 @@ export const CONSOLE_NAV_GROUPS: NavGroup[] = [
         icon: Webhook,
         element: <Webhooks />,
         placement: "Access/Webhooks",
+      },
+      {
+        path: "jellyfin-compat",
+        advanced: true,
+        label: "navJellyfinCompat",
+        icon: Cable,
+        element: <JellyfinCompat />,
+        placement: "Access/Jellyfin Compatibility",
       },
     ],
   },

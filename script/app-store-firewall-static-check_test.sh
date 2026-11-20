@@ -79,6 +79,17 @@ assert_fails "expected Swift acquisition term to fail" \
 grep -q 'apple-fixture:.*Leak.swift.*RADARR' "$TMP/check.err"
 rm "$TMP/apple/Leak.swift"
 
+# CORE-2683: media-server and compat-tool product names are firewalled too.
+for name in Jellyfin Plex Emby Lidarr Seerr Jellyseerr Tautulli Kometa; do
+  printf 'let label = "Import from %s"\n' "$name" >"$TMP/apple/Leak.swift"
+  assert_fails "expected Swift product name $name to fail" \
+    --target "apple:apple-fixture:$TMP/apple"
+  grep -q "apple-fixture:.*Leak.swift.*$name" "$TMP/check.err"
+done
+printf 'let note = "complex multiplex"\n' >"$TMP/apple/Leak.swift"
+"$ROOT/script/app-store-firewall-static-check.sh" --target "apple:apple-fixture:$TMP/apple" >/dev/null
+rm "$TMP/apple/Leak.swift"
+
 cat >"$TMP/apple/NeutralSurface.swift" <<'SWIFT'
 import BeamfallDirectDistributionKit
 

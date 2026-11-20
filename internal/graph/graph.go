@@ -537,6 +537,9 @@ type Handler struct {
 	// (the default) means the build cannot edit ingest config — the mutation
 	// reports it unavailable rather than silently dropping the write.
 	qbittorrentConfigurer QBittorrentIngestConfigurer
+	// jellyfinCompat stores and applies the compatibility settings
+	// (CORE-2683); nil means the build cannot edit them.
+	jellyfinCompat JellyfinCompatController
 	// queryEmbedder is the read-side seam of the ADR-0041 Enrichment Plugin: it
 	// turns a query string into a vector of one EmbeddingKind so Core can run
 	// SemanticSearch. It is the symmetric partner of the write-only
@@ -6358,6 +6361,7 @@ func init() {
 	// unknown top-level fields — not advertised, not reachable (invariant 8).
 	registerCapabilityControlFields()
 	registerQBittorrentFields()
+	registerJellyfinCompatFields()
 	for name := range queryFields {
 		scopedFields[name] = true
 	}

@@ -596,6 +596,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "before", Kind: "string"},
 		{Name: "confirm", Kind: "boolean"},
 	},
+	"jellyfincompat":    {},
 	"qbittorrentingest": {},
 	"qualitypolicy": {
 		{Name: "libraryID", Kind: "string"},
@@ -944,6 +945,16 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"setprofilelibraries": {
 		{Name: "libraryIDs", Kind: "list"},
+		{Name: "profileID", Kind: "string"},
+	},
+	"setjellyfincompat": {
+		{Name: "allowedCIDRs", Kind: "list", Optional: true},
+		{Name: "enabled", Kind: "boolean", Optional: true},
+		{Name: "libraryIDs", Kind: "list", Optional: true},
+		{Name: "trustedProxyCIDRs", Kind: "list", Optional: true},
+	},
+	"setprofileintegrationsignin": {
+		{Name: "enabled", Kind: "boolean"},
 		{Name: "profileID", Kind: "string"},
 	},
 	"setqbittorrentingest": {

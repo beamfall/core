@@ -225,7 +225,10 @@ var originalScopedFields = []string{
 	"purgetrash",
 	"qualitypolicy",
 	"qbittorrentingest",
-	"setqbittorrentingest",      // FEAT-10 (ADR-0020 §6): runtime ingest reconfigure
+	"setqbittorrentingest", // FEAT-10 (ADR-0020 §6): runtime ingest reconfigure
+	"jellyfincompat",       // CORE-2683 (ADR-0171 §2.2-§2.4): compatibility Console settings
+	"setjellyfincompat",
+	"setprofileintegrationsignin",
 	"encryptedlibrarystatus",    // ENC-2 (ADR-0045 §2.4): credential-free Sealed/Unsealed + mode read
 	"provisionencryptedlibrary", // ENC-2 (ADR-0045 §2.4): mint DEK + three wraps, Recovery Key once
 	"unsealencryptedlibrary",    // ENC-2 (ADR-0045 §2.4): passphrase/Recovery-Key unseal

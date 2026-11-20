@@ -23,6 +23,7 @@ import { consoleOverviewAttentionStrings } from "./console-overview-attention";
 import { customizationStrings } from "./customization";
 import { itemActionStrings } from "./item-actions";
 import { itemMetadataStrings } from "./item-metadata";
+import { jellyfinCompatStrings } from "./jellyfin-compat";
 import { karaokeStrings } from "./karaoke";
 import { libraryHealthStrings } from "./library-health";
 import { libraryMetadataRefreshStrings } from "./library-metadata-refresh";
@@ -180,6 +181,7 @@ export const en = {
   ...activityPluginStrings.en,
   ...workbenchPageStrings.en,
   ...appearanceStrings.en,
+  ...jellyfinCompatStrings.en,
 } as const;
 
 export const fr = {
@@ -273,6 +275,7 @@ export const fr = {
   ...activityPluginStrings.fr,
   ...workbenchPageStrings.fr,
   ...appearanceStrings.fr,
+  ...jellyfinCompatStrings.fr,
 } as const;
 
 export const de = {
@@ -366,6 +369,7 @@ export const de = {
   ...activityPluginStrings.de,
   ...workbenchPageStrings.de,
   ...appearanceStrings.de,
+  ...jellyfinCompatStrings.de,
 } as const;
 
 export const es = {
@@ -459,6 +463,7 @@ export const es = {
   ...activityPluginStrings.es,
   ...workbenchPageStrings.es,
   ...appearanceStrings.es,
+  ...jellyfinCompatStrings.es,
 } as const;
 
 export const pt = {
@@ -552,4 +557,5 @@ export const pt = {
   ...activityPluginStrings.pt,
   ...workbenchPageStrings.pt,
   ...appearanceStrings.pt,
+  ...jellyfinCompatStrings.pt,
 } as const;
