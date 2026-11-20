@@ -8,7 +8,7 @@
 
 import type { AudioFrame } from "./analysis";
 import { AUDIO_KEYS } from "./analysis";
-import { CadenceGate } from "./cadence";
+import { CadenceGate, GPU_BUDGET_MS } from "./cadence";
 import type { Oscillux } from "./oscillux";
 import { shaderSource } from "./oscillux";
 import type { Visual } from "./visuals";
@@ -360,9 +360,11 @@ export class Renderer {
   // Oscillux's quality governor and the level the targets are built for (CORE-2215).
   private readonly governor: InstanceType<Oscillux["Governor"]>;
   private readonly cadence = new CadenceGate();
-  // The fence after the last frame drawn, polled at the next draw: whether the GPU kept up with
-  // it (CORE-2720).
+  // The fence after the last frame drawn and whether the GPU had finished it GPU_BUDGET_MS
+  // later, null until that check (CORE-2720).
   private frameSync: WebGLSync | null = null;
+  private frameKeptUp: boolean | null = null;
+  private frameTimer: ReturnType<typeof setTimeout> | undefined;
   private level = TOP_LEVEL;
   private readonly switchUbo: WebGLBuffer;
   private readonly switchBlock = new Float32Array(12);
@@ -878,6 +880,11 @@ export class Renderer {
     // 4. The limited frame to the canvas.
     this.showLimited(size);
     this.frameSync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    this.frameKeptUp = null;
+    clearTimeout(this.frameTimer);
+    this.frameTimer = setTimeout(() => {
+      if (!this.disposed) this.frameKeptUp = this.frameSignalled();
+    }, GPU_BUDGET_MS);
     // Every frame of the fade reads its own grant, last of all its commands, in place of a read
     // the GPU had not finished: the next draw takes the word only if the GPU has finished this
     // whole frame, so the read waits behind nothing this renderer drew (Codex round 28).
@@ -1037,9 +1044,19 @@ export class Renderer {
     return (this.grantWord[0] & 0xf0) === 0;
   }
 
-  // Whether the GPU has finished the last frame drawn; false with no frame since the last poll.
-  // The fence is the frame's, so a frame not drawn (black, a withdrawn start) leaves none.
+  // Whether the GPU finished the last frame drawn within GPU_BUDGET_MS; false with no frame
+  // since the last call. The check at the budget decides; a draw before it (a fast frame, or
+  // timers held back with the callbacks) polls now. A frame not drawn (black, a withdrawn start)
+  // leaves no fence.
   private frameDone(): boolean {
+    clearTimeout(this.frameTimer);
+    const kept = this.frameKeptUp ?? this.frameSignalled();
+    this.frameKeptUp = null;
+    return kept;
+  }
+
+  // Polls and releases the frame fence without waiting: whether the GPU has finished the frame.
+  private frameSignalled(): boolean {
     const sync = this.frameSync;
     if (!sync) return false;
     this.frameSync = null;
@@ -1141,6 +1158,7 @@ export class Renderer {
     const gl = this.gl;
     this.endSwitch();
     this.freeSize();
+    clearTimeout(this.frameTimer);
     if (this.frameSync) gl.deleteSync(this.frameSync);
     this.frameSync = null;
     for (const p of this.linked) gl.deleteProgram(p);

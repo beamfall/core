@@ -67,10 +67,10 @@ describe("CadenceGate (CORE-2483)", () => {
 
   // CORE-2720: a page the browser throttles without hiding it draws 30 to 250 ms apart with the
   // GPU idle. Those intervals are not the render's.
-  it("skips slow intervals after a frame the GPU had finished", () => {
+  it("records slow intervals after a frame the GPU kept up with as the target", () => {
     const gate = new CadenceGate();
     for (let i = 0; i < CADENCE_WINDOW; i++) gate.sample(16.7);
-    expect(gate.sample(200, true)).toBeNull();
+    expect(gate.sample(200, true)).toBeCloseTo(1000 / 60);
     expect(gate.sample(16.7, true)).toBe(16.7);
     expect(gate.sample(200, false)).toBe(200);
     expect(gate.sample(400, true)).toBe(400);
@@ -85,6 +85,23 @@ describe("CadenceGate (CORE-2483)", () => {
     const gate = new CadenceGate();
     for (const ms of [...steady(16.7, 60), ...steady(120, 600, 80)]) {
       const sample = gate.sample(ms, ms > 20);
+      if (sample !== null) governor.record(sample);
+    }
+    expect(governor.level).toBe(3);
+    governor.free();
+  });
+
+  // Codex review of CORE-2720: skipping those intervals starved a demoted governor of the fast
+  // samples it recovers on, so a steady 30 Hz cap left it at the bottom for good.
+  it("recovers from a demotion at a steady cap the GPU keeps up with", () => {
+    const quality = new osc.GovernorConfig();
+    quality.maxLevel = 3;
+    quality.initialLevel = 0;
+    const governor = new osc.Governor(quality);
+    quality.free();
+    const gate = new CadenceGate();
+    for (let i = 0; i < 3000; i++) {
+      const sample = gate.sample(1000 / 30, true);
       if (sample !== null) governor.record(sample);
     }
     expect(governor.level).toBe(3);

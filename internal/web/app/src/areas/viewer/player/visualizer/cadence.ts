@@ -13,11 +13,13 @@
 //
 // A page the browser throttles without hiding it (a pane in the background of a desktop app, an
 // occluded window) gets callbacks 30 to 250 ms apart, under the governor's pause gap, while the
-// GPU sits idle. The renderer fences each frame and polls the fence at the next callback: a slow
-// interval after a frame the GPU had already finished is the browser's scheduling, not the
-// render, and is skipped (CORE-2720). Measured in Chromium under ANGLE Metal, a 200 ms throttle
-// found every fence signalled, a GPU overload at 30 to 100 ms found none signalled, and main-thread
-// jank found none signalled either, so jank still counts as before.
+// GPU sits idle. The renderer fences each frame and checks the fence GPU_BUDGET_MS after the
+// frame: a slow interval after a frame the GPU finished within that budget is the browser's
+// scheduling, not the render, and records as the target interval (CORE-2720), so the level
+// holds or, with the GPU idle, recovers. Measured in Chromium under ANGLE Metal, a 200 ms
+// throttle found every fence signalled and a GPU overload at 30 to 100 ms found none signalled.
+// The check runs at the budget, not at the next callback, so a browser that holds callbacks back
+// until the GPU is done still counts its overload.
 
 /** Intervals the gate watches before it passes any to the governor. */
 export const CADENCE_WINDOW = 30;
@@ -33,6 +35,8 @@ const STEADY_SHARE = 0.9;
 const PAUSE_MS = 250;
 /** An interval above the target by this factor is slow, as in the governor's default. */
 const SLOW_FACTOR = 1.25;
+/** The time after a frame within which a GPU that keeps up has finished it. */
+export const GPU_BUDGET_MS = (1000 / 60) * SLOW_FACTOR;
 
 export class CadenceGate {
   private readonly window: number[] = [];
@@ -47,12 +51,12 @@ export class CadenceGate {
   /**
    * The interval to record with the governor for this frame, or null to skip it while the gate
    * is still learning the cadence. Pauses and invalid intervals pass through unchanged for the
-   * governor to ignore. gpuIdle says the GPU had finished the previous frame by this one's
-   * callback: a slow interval then is skipped, and kept out of the cadence window.
+   * governor to ignore. gpuIdle says the GPU finished the previous frame within its budget: a
+   * slow interval then records as the target interval, and stays out of the cadence window.
    */
   sample(frameMs: number, gpuIdle = false): number | null {
     if (!Number.isFinite(frameMs) || frameMs <= 0 || frameMs >= PAUSE_MS) return frameMs;
-    if (gpuIdle && frameMs > this.targetMs * SLOW_FACTOR) return null;
+    if (gpuIdle && frameMs > this.targetMs * SLOW_FACTOR) return this.targetMs;
     this.window.push(frameMs);
     if (this.window.length > CADENCE_WINDOW) this.window.shift();
     if (this.window.length < CADENCE_WINDOW) return null;

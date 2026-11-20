@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { silentFrame } from "./analysis";
+import { GPU_BUDGET_MS } from "./cadence";
 import {
   BLACK_S,
   FADE_S,
@@ -1128,6 +1129,27 @@ describe("Renderer geometry (CORE-2516)", () => {
     gpu.busy = false;
     renderer.draw(64, 36, 0.2, silentFrame(), false);
     expect(idle).toEqual([false, true, false, true]);
+  });
+
+  // Codex review of CORE-2720: a browser that holds the next callback until the GPU is done
+  // would find every fence signalled at the callback. The fence is checked at the budget.
+  it("checks the frame fence at the budget, not at the next callback", () => {
+    vi.useFakeTimers();
+    try {
+      const { renderer, r, draw, gpu } = make();
+      const idle: boolean[] = [];
+      r.cadence = { sample: (_: number, gpuIdle: boolean) => (idle.push(gpuIdle), null) };
+      draw(64, 36);
+      gpu.busy = true;
+      vi.advanceTimersByTime(GPU_BUDGET_MS + 1);
+      gpu.busy = false;
+      renderer.draw(64, 36, 0.05, silentFrame(), false);
+      vi.advanceTimersByTime(GPU_BUDGET_MS + 1);
+      renderer.draw(64, 36, 0.2, silentFrame(), false);
+      expect(idle).toEqual([false, false, true]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // Codex round 18: the limiter ages evidence by the time frames are shown apart, which a late
