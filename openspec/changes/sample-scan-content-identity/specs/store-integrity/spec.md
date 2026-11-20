@@ -35,8 +35,8 @@ and its Media SHALL remain unchanged.
 
 - **WHEN** a scan discovers bytes previously admitted by managed import or convert
 - **THEN** it uses the same fingerprint and creates no duplicate Media for those bytes
-- **AND** it collects embedded stream and attachment inventory without sampling or hashing the
-  file again when its recorded stats match. Inventory completion persists separately from file
+- **AND** it collects embedded stream and attachment inventory without recomputing the content
+  fingerprint when the recorded stats match. Inventory completion persists separately from file
   stats and is committed with the inventory for each file, including Parts and Versions.
 
 #### Scenario: Existing legacy content

@@ -263,7 +263,7 @@ func imageClassForPath(path string) bool {
 // Separate seams let tests distinguish sampled reads from the one-time
 // compatibility check of a legacy digest at its original path.
 var (
-	sampleFileContent = store.SampleMediaFileContent
+	sampleFileContent = store.SampleScanMediaFileContent
 	legacyFileContent = store.HashMediaFileContentContext
 )
 

@@ -74,9 +74,9 @@ func countHashesAtomic(t *testing.T) *atomic.Int64 {
 	t.Helper()
 	calls := &atomic.Int64{}
 	original := sampleFileContent
-	sampleFileContent = func(ctx context.Context, path string) (string, error) {
+	sampleFileContent = func(ctx context.Context, path string, legacy *string) (string, error) {
 		calls.Add(1)
-		return original(ctx, path)
+		return original(ctx, path, legacy)
 	}
 	t.Cleanup(func() { sampleFileContent = original })
 	return calls
@@ -369,9 +369,9 @@ func TestPhotoScanSharesGovernorBudgetAcrossFillAndDerivation(t *testing.T) {
 	}
 	tracker := &combinedWorkTracker{}
 	originalHash := sampleFileContent
-	sampleFileContent = func(ctx context.Context, path string) (string, error) {
+	sampleFileContent = func(ctx context.Context, path string, legacy *string) (string, error) {
 		tracker.run("hash")
-		return originalHash(ctx, path)
+		return originalHash(ctx, path, legacy)
 	}
 	t.Cleanup(func() { sampleFileContent = originalHash })
 	st := storetest.Open(t)

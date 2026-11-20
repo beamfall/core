@@ -635,6 +635,9 @@ type ImportMediaFile struct {
 	// recorded" and never match a real stat.
 	SizeBytes int64
 	ModTime   time.Time
+	// ScanPath carries the scan's catalog observation to the write transaction.
+	// A scan supplies even an empty observation so admission can detect a new row.
+	ScanPath *ScanPathObservation
 	// Streams and FontAttachments are the per-stream inventory captured at the
 	// probe. When non-nil, the import full-replaces the stored
 	// inventory for this content fingerprint (a re-probe is a full rescan, no
@@ -2913,8 +2916,22 @@ type StoredFingerprint struct {
 	ContentFingerprint string
 	SizeBytes          int64
 	ModTime            time.Time
+	InventoryPending   bool
 	OK                 bool
+	mediaID            MediaID
 }
+
+// ScanPathObservation records the live row before any reads and, if the scan
+// sampled the file, the digests available to resolve same-path matches.
+type ScanPathObservation struct {
+	Live   StoredFingerprint
+	Sample string
+	Legacy string
+}
+
+// ErrScanPathChanged asks the scanner to refresh its file stats and catalog
+// observation before trying admission again.
+var ErrScanPathChanged = errors.New("catalog file changed during scan")
 
 // MediaFileFingerprintByPath reads the stored fingerprint and file stats for
 // an available path in the public catalog.
@@ -2946,6 +2963,27 @@ func (s *Store) mediaFileFingerprintByPath(ctx context.Context, libraryID Librar
 		reader = plane.reader
 	}
 	match, err := samePathMediaFileSQL(ctx, reader, libraryID, path, "", "", false)
+	if errors.Is(err, sql.ErrNoRows) {
+		return StoredFingerprint{}, nil
+	}
+	return match.StoredFingerprint, err
+}
+
+// ScanSampleMatch ranks a sampled match with a legacy row at the same path.
+// The legacy digest, when known, must match exactly. Otherwise only legacy
+// candidates compatible with the observed stats are eligible for comparison.
+func (s *Store) ScanSampleMatch(ctx context.Context, libraryID LibraryID, path, sample, legacy string, size int64, modTime time.Time) (StoredFingerprint, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return StoredFingerprint{}, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return StoredFingerprint{}, err
+	}
+	match, err := samePathMediaFileSQL(ctx, plane.reader, libraryID, path, sample, legacy, false,
+		scanMatchStats{size: size, mtimeMS: mediaFileTimeToMillis(modTime)})
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoredFingerprint{}, nil
 	}

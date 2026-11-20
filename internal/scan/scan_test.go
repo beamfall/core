@@ -2461,9 +2461,9 @@ func countHashes(t *testing.T) *int {
 	t.Helper()
 	calls := 0
 	original := sampleFileContent
-	sampleFileContent = func(ctx context.Context, path string) (string, error) {
+	sampleFileContent = func(ctx context.Context, path string, legacy *string) (string, error) {
 		calls++
-		return original(ctx, path)
+		return original(ctx, path, legacy)
 	}
 	t.Cleanup(func() { sampleFileContent = original })
 	return &calls

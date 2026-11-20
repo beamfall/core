@@ -563,6 +563,7 @@ func fixtureSemanticValue(ctx context.Context, db *sql.DB, table, column string)
 		"item_rating.target_kind":               "media",
 		"item_rating.rating":                    5,
 		"device_build_binding.surface":          "ios-viewer",
+		"media_file.scan_inventory_pending":     1,
 	}[table+"."+column]; ok {
 		return value, true, nil
 	}

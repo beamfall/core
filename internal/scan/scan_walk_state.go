@@ -191,7 +191,7 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 	}
 	defer s.releaseBudget()
 	task.fill(ctx, s)
-	if task.err == nil && task.fastPath {
+	if task.err == nil && task.fastPath && !task.stored.InventoryPending {
 		// An unchanged file whose Media still holds legacy parser fields is
 		// probed once, so its parse can settle them (CORE-2554).
 		if _, legacy := s.legacyParserPaths[task.path]; legacy {

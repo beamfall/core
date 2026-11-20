@@ -121,6 +121,9 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 	}
 	defer tx.Rollback()
 
+	if err := checkScanPathTx(ctx, tx, req.File); err != nil {
+		return MediaFile{}, err
+	}
 	// The first Version before this import: an unprobed refresh of that same
 	// file keeps the frame size the row already holds for it.
 	priorFirst, err := firstVersionFingerprintSQL(ctx, tx, req.MediaID)

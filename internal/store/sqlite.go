@@ -2835,6 +2835,10 @@ func replaceMediaFileInventoryTx(ctx context.Context, tx *sql.Tx, encrypted bool
 			return err
 		}
 	}
+	if streams != nil {
+		_, err := tx.ExecContext(ctx, "UPDATE media_file SET scan_inventory_pending = 0 WHERE content_fingerprint = ? AND scan_inventory_pending = 1", fingerprint)
+		return err
+	}
 	return nil
 }
 
@@ -2869,38 +2873,86 @@ func replaceMediaFileSidecarsTx(ctx context.Context, tx *sql.Tx, fingerprint str
 
 type samePathMediaFile struct {
 	StoredFingerprint
-	mediaID MediaID
 	missing bool
+}
+
+type scanMatchStats struct {
+	size    int64
+	mtimeMS int64
 }
 
 // Without an incoming digest, only a live row can establish the path's identity.
 // With digests, select a matching row before any upsert can retire a live match.
 func samePathMediaFileSQL(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, libraryID LibraryID, path, fingerprint, legacyFingerprint string, excludeExtras bool) (samePathMediaFile, error) {
+}, libraryID LibraryID, path, fingerprint, legacyFingerprint string, excludeExtras bool, scanStats ...scanMatchStats) (samePathMediaFile, error) {
 	// Keep the live-only predicate indexable on the scan's fast path.
 	predicate := "f.missing_at_ms IS NULL"
 	args := []any{path, libraryID, libraryID, excludeExtras}
 	if fingerprint != "" {
-		predicate = `f.content_fingerprint IN (?, NULLIF(?, ''))
-			ORDER BY f.missing_at_ms IS NOT NULL, f.last_seen_at_ms DESC, f.missing_at_ms DESC, f.content_fingerprint`
-		args = append(args, fingerprint, legacyFingerprint)
+		predicate = "f.content_fingerprint IN (?, NULLIF(?, ''))"
+		if len(scanStats) == 0 {
+			args = append(args, fingerprint, legacyFingerprint)
+		} else {
+			// A missing legacy-only path has no sampled history to reconcile.
+			// Restrict the fallback to a pair with a matching sample at this path.
+			predicate = `(f.content_fingerprint = ? OR (
+				f.content_fingerprint GLOB 'sha256:*' AND (? = '' OR f.content_fingerprint = ?)
+				AND (f.size_bytes = 0 OR f.size_bytes = ?)
+				AND (f.mtime_ms = 0 OR f.mtime_ms = ?)
+				AND EXISTS (SELECT 1 FROM media_file sf JOIN media sm ON sm.id = sf.media_id
+					WHERE sf.content_fingerprint = ? AND sf.path = f.path
+					  AND sm.library_id = m.library_id AND sm.trashed_at_ms IS NULL)))`
+			args = append(args, fingerprint, legacyFingerprint, legacyFingerprint,
+				scanStats[0].size, scanStats[0].mtimeMS, fingerprint)
+		}
+		predicate += " ORDER BY f.missing_at_ms IS NOT NULL, f.last_seen_at_ms DESC, f.missing_at_ms DESC, f.content_fingerprint"
 	}
 	var match samePathMediaFile
 	var mtimeMS int64
 	err := q.QueryRowContext(ctx, `
-		SELECT f.media_id, f.content_fingerprint, f.size_bytes, f.mtime_ms, f.missing_at_ms IS NOT NULL
+		SELECT f.media_id, f.content_fingerprint, f.size_bytes, f.mtime_ms,
+		       f.scan_inventory_pending, f.missing_at_ms IS NOT NULL
 		FROM media_file f JOIN media m ON m.id = f.media_id
 		WHERE f.path = ? AND (? = '' OR m.library_id = ?) AND m.trashed_at_ms IS NULL
 		  AND (NOT ? OR m.extra = 0) AND `+predicate+` LIMIT 1
 	`, args...,
-	).Scan(&match.mediaID, &match.ContentFingerprint, &match.SizeBytes, &mtimeMS, &match.missing)
+	).Scan(&match.mediaID, &match.ContentFingerprint, &match.SizeBytes, &mtimeMS, &match.InventoryPending, &match.missing)
 	if err != nil {
 		return samePathMediaFile{}, err
 	}
 	match.ModTime = mediaFileMillisToTime(mtimeMS)
 	match.OK = true
 	return match, nil
+}
+
+func checkScanPathTx(ctx context.Context, tx *sql.Tx, imported ImportMediaFile) error {
+	observed := imported.ScanPath
+	if observed == nil {
+		return nil
+	}
+	match, err := samePathMediaFileSQL(ctx, tx, imported.LibraryID, imported.Path, "", "", false)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if match.StoredFingerprint != observed.Live {
+		return ErrScanPathChanged
+	}
+	if observed.Sample != "" {
+		match, err = samePathMediaFileSQL(ctx, tx, imported.LibraryID, imported.Path, observed.Sample, observed.Legacy, false,
+			scanMatchStats{size: imported.SizeBytes, mtimeMS: mediaFileTimeToMillis(imported.ModTime)})
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		fingerprint := observed.Sample
+		if match.OK {
+			fingerprint = match.ContentFingerprint
+		}
+		if fingerprint != imported.ContentFingerprint {
+			return ErrScanPathChanged
+		}
+	}
+	return nil
 }
 
 // importMediaFileSQL returns created=true when the upsert inserted a new Media
@@ -2914,6 +2966,9 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	}
 	defer tx.Rollback()
 
+	if err := checkScanPathTx(ctx, tx, imported); err != nil {
+		return Media{}, MediaFile{}, false, err
+	}
 	var mediaID MediaID
 	if imported.managedAdmission {
 		if err := refuseCatalogedDuplicateTx(ctx, tx, imported); err != nil {
@@ -2993,6 +3048,11 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	}
 	if err := upsertMediaFileTx(ctx, tx, file, now); err != nil {
 		return Media{}, MediaFile{}, false, err
+	}
+	if imported.managedAdmission && imported.Class != MediaClassImage {
+		if _, err := tx.ExecContext(ctx, "UPDATE media_file SET scan_inventory_pending = 1 WHERE content_fingerprint = ?", file.ContentFingerprint); err != nil {
+			return Media{}, MediaFile{}, false, err
+		}
 	}
 	if detachedFrom != "" {
 		// A detached file is the only file of its new Media: it takes the
@@ -3172,6 +3232,11 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 
 	var mediaID MediaID
 	var missingMediaID MediaID
+	for _, part := range ordered {
+		if err := checkScanPathTx(ctx, tx, part.File); err != nil {
+			return Media{}, nil, false, err
+		}
+	}
 	for _, part := range ordered {
 		match, err := samePathMediaFileSQL(ctx, tx, part.File.LibraryID, part.File.Path, part.File.ContentFingerprint, "", false)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {

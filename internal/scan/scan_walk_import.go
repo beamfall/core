@@ -3,6 +3,7 @@ package scan
 import (
 	"errors"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -10,6 +11,36 @@ import (
 )
 
 func (s *scanWalkState) consumeTask(task *workerTask) error {
+	for {
+		err := s.consumeTaskOnce(task)
+		if !errors.Is(err, store.ErrScanPathChanged) {
+			return err
+		}
+		s.dropTallies(task.path)
+		if err := s.refillTask(task); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *scanWalkState) refillTask(task *workerTask) error {
+	if err := s.ctx.Err(); err != nil {
+		return err
+	}
+	path := task.path
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("scan path is no longer a regular file")
+	}
+	*task = workerTask{path: path, info: fileStat{size: info.Size(), modTime: info.ModTime()}, done: task.done}
+	s.fill(s.ctx, task)
+	return task.err
+}
+
+func (s *scanWalkState) consumeTaskOnce(task *workerTask) error {
 	if task.err != nil {
 		return task.err
 	}
@@ -48,19 +79,15 @@ func (s *scanWalkState) refreshMovedRow(task *workerTask) error {
 	if !task.stored.OK || !s.movedFingerprints[task.stored.ContentFingerprint] {
 		return nil
 	}
-	fastPath := task.fastPath
 	stored, err := s.st.LibraryMediaFileFingerprintByPath(s.ctx, s.req.LibraryID, task.path)
-	if err != nil {
+	if err != nil || stored == task.stored {
 		return err
 	}
-	task.stored = stored
-	if !fastPath || stored.OK {
+	if !task.reused && !stored.OK {
+		task.stored = stored
 		return nil
 	}
-	// The worker skipped the hashes and the probe for a row the file no
-	// longer has, so the file is filled again as the new file it now is.
-	s.fill(s.ctx, task)
-	return task.err
+	return s.refillTask(task)
 }
 
 func (s *scanWalkState) consumeFastTask(task *workerTask) error {
@@ -75,6 +102,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		ContentFingerprint: stored.ContentFingerprint,
 		SizeBytes:          task.info.size,
 		ModTime:            task.info.modTime.UTC(),
+		ScanPath:           task.scanPathObservation(),
 		Extra:              isExtraPath(s.extrasRoot, path),
 		ExtraFromPath:      true,
 		Sidecars:           s.sidecars.discover(path),
@@ -213,6 +241,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		OSHash:             task.oshash,
 		SizeBytes:          task.info.size,
 		ModTime:            task.info.modTime.UTC(),
+		ScanPath:           task.scanPathObservation(),
 		Extra:              isExtraPath(s.extrasRoot, path),
 		ExtraFromPath:      true,
 		Sidecars:           s.sidecars.discover(path),
@@ -280,15 +309,16 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		}
 		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, authoritative)
 	}
-	// The fast path took every file whose size and mtime are unchanged, so a
-	// file here is new to the catalog or changed on disk (CORE-2040).
-	s.noteFile(path, func(t *fileTally) {
-		if task.stored.OK {
-			t.changed = true
-		} else {
-			t.added = true
-		}
-	})
+	// An unchanged managed file may still need its embedded inventory.
+	if !task.reused {
+		s.noteFile(path, func(t *fileTally) {
+			if task.stored.OK {
+				t.changed = true
+			} else {
+				t.added = true
+			}
+		})
+	}
 	if s.isParsedPart(parsed, parsedOK) {
 		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded); err != nil {
 			return err

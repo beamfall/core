@@ -119,4 +119,5 @@ package store
 // generation. It is consulted by playback and the in-progress shelf only.
 // `GOWORK=off make bench` passed on 2026-11-18 for this bump: worst P95 was
 // search/fts/revealed at 39.970167 ms against 60 ms; performance-scale passed.
-const schemaFreezeCatalogMigrations = 121
+// CORE-1162 adds 0126, a per-file pending inventory flag read by scan admission.
+const schemaFreezeCatalogMigrations = 122
