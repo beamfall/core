@@ -105,10 +105,13 @@ func testPlaybackInfoRefusesIncompletePart(t *testing.T, laterPart bool, version
 		t.Fatalf("baseline did not select the multi-Part Version: %+v", before)
 	}
 	key := SessionKey{SessionID: scope.SessionID, MediaID: media.ID}
+	// The scripted encoder exits at once, so its reap can observe and persist
+	// the source end before the request for seg00038 does. Take the wake
+	// channel before any encoder starts so either observer's write counts.
+	changed := st.EventOutboxChanged()
 	if _, err := sessions.FilePath(ctx, key, source, 6906, 1280, 720, false, "720p/seg00000.m4s"); err != nil {
 		t.Fatal(err)
 	}
-	changed := st.EventOutboxChanged()
 	if _, err := sessions.FilePath(ctx, key, source, 6906, 1280, 720, false, "720p/seg00038.m4s"); !errors.Is(err, ErrSourceEnded) {
 		t.Fatalf("truncated fixture did not reach EOF detection: %v", err)
 	}
