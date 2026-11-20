@@ -48,8 +48,9 @@ and its Media SHALL remain unchanged.
 - **WHEN** managed admission replaces a file removed outside Beamfall and the staged full digest
   matches a legacy row at the same path in the same library, including a missing file or a
   soft-trashed Media
-- **THEN** the admission preserves the legacy fingerprint, Media ID, watch state, match pins, and recorded stats
-- **AND** a subsequent scan reuses the fingerprint without reading it when the recorded stats match
+- **THEN** the admission preserves the legacy fingerprint, Media ID, watch state, and match pins
+- **AND** matching stats stay recorded for a zero-read scan, while stale stats are cleared so the
+  next scan verifies the legacy digest once and records the replacement inode's stats
 - **AND** a soft-trashed Media retains its original trash timestamp and remains restorable
 
 ## ADDED Requirements
