@@ -6,7 +6,9 @@ Managed import and managed convert SHALL store the same `sample1:` identity a sc
 from the staged bytes. They SHALL also compute the full SHA-256 digest during staging for legacy
 duplicate checks. They SHALL refuse, with a validation error, any admission whose sample or legacy
 digest is already cataloged in the destination catalog, including live, missing and trashed rows.
-The existing file and its Media SHALL remain unchanged.
+They SHALL check both digests before publishing the staged file and again during catalog admission.
+Managed convert SHALL check for duplicates before writing the conversion journal. The existing file
+and its Media SHALL remain unchanged.
 
 #### Scenario: Same bytes at two paths
 
@@ -40,11 +42,12 @@ The existing file and its Media SHALL remain unchanged.
 - **WHEN** staged bytes match a cataloged legacy full SHA-256 digest
 - **THEN** managed admission refuses the duplicate
 
-#### Scenario: Cataloged import target absent on disk
+#### Scenario: Cataloged conversion target absent on disk
 
-- **WHEN** a live catalog row at the import destination matches either staged digest and the
+- **WHEN** a live catalog row at the conversion destination matches either staged digest and the
   destination file is absent
-- **THEN** the import refuses the duplicate before publishing the staged file
+- **THEN** conversion refuses the duplicate before writing the journal or publishing the staged
+  file, so recovery cannot treat the old destination row as a completed conversion
 
 ## ADDED Requirements
 
@@ -73,14 +76,13 @@ equal size whose samples all match share an identity even when unsampled bytes d
 
 #### Scenario: Missing legacy file returns to its original path
 
-- **WHEN** the path has no live row and one retained legacy row in the scanned Library, and the
-  file matches the recorded stats or passes the incomplete-stats digest comparison
-- **THEN** the scan reuses the retained Media and fingerprint, preserving its watch state and match
-- **AND** Media in catalog trash and files held in managed trash are ineligible for this recovery
+- **WHEN** the path has only a missing legacy row, even if the returning file has the same stats
+- **THEN** the scan samples the file without reading the full legacy digest or reusing the missing
+  legacy identity
 
 #### Scenario: Legacy file at the same path with incomplete stats
 
-- **WHEN** a legacy row has an unrecorded size or mtime and its recorded stats still match
+- **WHEN** an available legacy row has an unrecorded size or mtime and its recorded stats still match
 - **THEN** the scan compares the full legacy digest once and keeps the identity and records the
   stats if it matches, or uses the sampled identity if it differs
 
@@ -100,7 +102,15 @@ token for a sampled item. A legacy title whose slug is `media-sample1` keeps its
 SHA-256 address. When the Library slug is unavailable, new legacy addresses for that title use
 the unqualified SHA-256 ID.
 
+An unqualified `media-sample1-` address can also be a previously issued legacy bookmark. The
+viewer SHALL use the legacy SHA-256 ID with the same digest digits when the sampled ID is absent.
+
 #### Scenario: Identical digest prefix across schemes
 
 - **WHEN** a sampled Media ID and a legacy Media ID have the same 17 digest digits
 - **THEN** the viewer resolves their tagged and untagged addresses to their respective IDs
+
+#### Scenario: Previously issued unqualified legacy bookmark
+
+- **WHEN** a viewer opens `/watch/media-sample1-a371bff46385f7ded` and the sampled ID is absent
+- **THEN** the viewer resolves the bookmark to `media-sha256-a371bff46385f7ded`
