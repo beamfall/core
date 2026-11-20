@@ -267,16 +267,16 @@ var errKeyframesPending = errors.New("keyframe probe still running")
 // running. It waits at most the first-play wait for a running probe.
 func (c *keyframeCache) load(ctx context.Context, gen keyframeGeneration, prober keyframeTranscoder) (*keyframeTimeline, error) {
 	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, ErrSessionEvicted
+	}
 	if timeline, ok := c.done[gen]; ok {
 		c.mu.Unlock()
 		return timeline, nil
 	}
 	load, ok := c.inflight[gen]
 	if !ok {
-		if c.closed {
-			c.mu.Unlock()
-			return nil, ErrSessionEvicted
-		}
 		load = &keyframeLoad{finished: make(chan struct{})}
 		if c.inflight == nil {
 			c.inflight = map[keyframeGeneration]*keyframeLoad{}
@@ -341,16 +341,15 @@ func (c *keyframeCache) probe(ctx context.Context, gen keyframeGeneration, load 
 	close(load.finished)
 }
 
-// close refuses new probes, cancels the running ones and waits for them to
-// return, so no probe outlives the Sessions that started it.
-func (c *keyframeCache) close() {
+// stop closes probe admission and signals running probes. The caller joins
+// probes separately after signaling session teardown.
+func (c *keyframeCache) stop() {
 	c.mu.Lock()
 	c.closed = true
 	if c.stopProbes != nil {
 		c.stopProbes()
 	}
 	c.mu.Unlock()
-	c.probes.Wait()
 }
 
 // resolveKeyframes reads gen's index from the store, or probes the file and

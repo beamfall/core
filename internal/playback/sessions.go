@@ -1932,6 +1932,7 @@ func (s *Sessions) reap() {
 // root. Concurrent callers join the same cleanup attempt and result.
 func (s *Sessions) Close() error {
 	s.closeOnce.Do(func() {
+		s.keyframes.stop()
 		s.mu.Lock()
 		s.closed = true
 		var teardowns []*sessionTeardown
@@ -1940,7 +1941,7 @@ func (s *Sessions) Close() error {
 		}
 		s.mu.Unlock()
 		s.runTeardowns(teardowns)
-		s.keyframes.close()
+		s.keyframes.probes.Wait()
 
 		s.mu.Lock()
 		for !s.offLockIdleLocked() {

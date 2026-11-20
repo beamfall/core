@@ -275,8 +275,24 @@ func TestNewSessionsResolvesSymlinkBeforeParentTraversal(t *testing.T) {
 	}
 }
 
+type scratchProbeTranscoder struct {
+	keyframeFakeTranscoder
+	started chan struct{}
+}
+
+func (f *scratchProbeTranscoder) ProbeKeyframes(ctx context.Context, _ string) (ffmpeg.KeyframeIndex, error) {
+	if f.probes.Add(1) != 1 {
+		return ffmpeg.KeyframeIndex{}, errors.New("unexpected additional keyframe probe")
+	}
+	close(f.started)
+	<-ctx.Done()
+	return ffmpeg.KeyframeIndex{}, ctx.Err()
+}
+
 func TestCloseWaitsForOpenArtifactReader(t *testing.T) {
-	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	transcoder := &scratchProbeTranscoder{started: make(chan struct{})}
+	s := newTestSessions(t, transcoder, t.TempDir(), nil)
+	s.keyframes.firstPlayWait = 10 * time.Second
 	a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "reader"}, "/src", 120, 1280, 720, false, false,
 		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, masterPlaylistName)
 	if err != nil {
@@ -288,9 +304,29 @@ func TestCloseWaitsForOpenArtifactReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
+	sourceDir := t.TempDir()
+	src, freshSrc := filepath.Join(sourceDir, "first"), filepath.Join(sourceDir, "fresh")
+	seedScratchFile(t, src)
+	seedScratchFile(t, freshSrc)
+	probed := make(chan error, 1)
+	go func() {
+		_, err := s.FilePath(t.Context(), SessionKey{SessionID: "probing"}, src, 120, 1280, 720, true, masterPlaylistName)
+		probed <- err
+	}()
+	waitScratchSignal(t, transcoder.started)
+
 	closed := make(chan error, 1)
 	go func() { closed <- s.Close() }()
 	waitScratchSignal(t, a.session.scratch.cutoff)
+	if _, err := s.FilePath(t.Context(), SessionKey{SessionID: "fresh"}, freshSrc, 120, 1280, 720, true, masterPlaylistName); !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("fresh audio-copy request during Close: %v", err)
+	}
+	if err := waitScratchResult(t, probed); !errors.Is(err, context.Canceled) {
+		t.Fatalf("keyframe probe did not observe cancellation during Close: %v", err)
+	}
+	if got := transcoder.probes.Load(); got != 1 {
+		t.Fatalf("Close admitted a fresh keyframe probe: %d calls", got)
+	}
 	requireScratchLocked(t, s.dir)
 	select {
 	case err := <-closed:
