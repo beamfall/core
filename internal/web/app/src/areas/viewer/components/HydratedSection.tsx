@@ -27,8 +27,8 @@ export const SECTION_LOAD_TIMEOUT_MS = 15000;
 export type SectionHydrationState = "loading" | "empty" | "failed" | "visible";
 
 const SECTION_CACHE_PREFIX = "section:";
-// The SourceItems endpoint serves at most 200 rows in one request.
-const HOME_RECENT_WINDOW = { limit: 200, offset: 0 };
+// Scan one bounded page of recent items for the Home hero.
+const HOME_HERO_WINDOW = { limit: 200, offset: 0 };
 
 type HydratedItem = SourceItem & { homeLibraryID?: string };
 
@@ -38,23 +38,10 @@ async function fetchHomeRecent(
   libraries: readonly LibrarySummary[],
   signal: AbortSignal,
 ): Promise<HydratedItem[]> {
-  if (!libraries.length) return [];
-  // Scoped reads ignore the Home flag, and the Viewer cannot read showOnHome.
-  // The aggregate feed is the authority for which of the scoped rows may show.
-  const visible = await fetchSectionItems(
-    section,
-    { ...context, paging: HOME_RECENT_WINDOW },
-    signal,
-  );
-  if (!visible.length || signal.aborted) return [];
-  const visibleByID = new Map(visible.map((item) => [JSON.stringify([item.kind, item.id]), item]));
   const shelves = await Promise.all(
     libraries.map(async ({ id: libraryID }) => {
       const items = await fetchSectionItems(section, { ...context, libraryID }, signal);
-      return items.flatMap(({ kind, id }) => {
-        const confirmed = visibleByID.get(JSON.stringify([kind, id]));
-        return confirmed ? [{ ...confirmed, homeLibraryID: libraryID }] : [];
-      });
+      return items.map((item) => ({ ...item, homeLibraryID: libraryID }));
     }),
   );
   return shelves.flat();
@@ -121,7 +108,7 @@ export function HydratedSection({
   entityID: string;
   /** Hydrating Home: Libraries hidden from Home stay out (CORE-2360). */
   home?: boolean;
-  /** Libraries eligible to supply sub-shelves of the aggregate Home recent feed. */
+  /** Libraries whose scoped Home feeds can supply recent-item shelves. */
   homeLibraries?: readonly LibrarySummary[];
   /** A filter-bar selection routed to this (target) section; null when none. */
   extraFilters?: FieldFilters | null;
@@ -176,7 +163,7 @@ export function HydratedSection({
       ? fetchHomeRecent(section, context, homeLibraries, controller.signal)
       : fetchSectionItems(
           section,
-          homeHero ? { ...context, paging: HOME_RECENT_WINDOW } : context,
+          homeHero ? { ...context, paging: HOME_HERO_WINDOW } : context,
           controller.signal,
         );
     request

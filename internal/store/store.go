@@ -3495,15 +3495,20 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 	if offset < 0 {
 		offset = 0
 	}
-	if query.Home && query.LibraryID == "" {
+	if query.Home {
 		narrowed, err := s.homeLibraryFilterLocked(ctx, filter)
 		if err != nil {
 			return nil, err
 		}
-		if !narrowed.AllLibraries && len(narrowed.AllowedIDs) == 0 {
+		if !narrowed.AllLibraries && (len(narrowed.AllowedIDs) == 0 ||
+			(query.LibraryID != "" && !slices.Contains(narrowed.AllowedIDs, query.LibraryID))) {
 			return []SourceItem{}, nil
 		}
-		filter = narrowed
+		// A Home visibility check on an all-Libraries grant can return multiple
+		// Libraries. Keep the previous single-Library scope for a scoped query.
+		if query.LibraryID == "" {
+			filter = narrowed
+		}
 	}
 	items, err := s.sourceItemsForKind(ctx, filter, query, limit, offset)
 	if err != nil {

@@ -75,7 +75,7 @@ afterEach(() => {
 });
 
 describe("Viewer Home", () => {
-  it("scopes new shelves and omits empty and hidden libraries while keeping Continue Watching", async () => {
+  it("uses scoped shelves even outside the aggregate feed and keeps Continue Watching", async () => {
     const one = newItem("Square artwork", { mediaClass: "audio", artwork: { poster: "/square" } });
     const two = newItem("Landscape artwork", { artworkSlots: { backdrop: "/landscape" } });
     vi.mocked(fetchSectionItems).mockImplementation(async (section, context) => {
@@ -85,10 +85,8 @@ describe("Viewer Home", () => {
           return [one];
         case "two":
           return [two];
-        case "hidden":
-          return [newItem("Hidden item")];
         case "":
-          return [one, two];
+          return [one];
         default:
           return [];
       }
@@ -106,10 +104,14 @@ describe("Viewer Home", () => {
       expect(within(shelf).getByRole("link", { name: item.title })).toBeVisible();
       expect(shelf.querySelector(".bf-poster-intrinsic img")).toBeVisible();
     }
-    expect(screen.queryByText("Hidden item")).toBeNull();
     expect(screen.queryByRole("list", { name: /empty|hidden/i })).toBeNull();
     expect(screen.queryByRole("list", { name: "Ajouts récents" })).toBeNull();
     expect(vi.mocked(fetchSectionItems).mock.calls.every(([, context]) => context.home)).toBe(true);
+    expect(fetchSectionItems).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: "recent" }),
+      expect.objectContaining({ libraryID: "" }),
+      expect.anything(),
+    );
     expect(fetchSectionItems).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ libraryID: "no-node" }),

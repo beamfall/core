@@ -138,7 +138,10 @@ func TestSourceItemsHomeArgumentSkipsLibrariesHiddenFromHome(t *testing.T) {
 	if got := sourceIDs(`kind: "recently-added"`); !slices.Contains(got, "media-alpha") {
 		t.Fatalf("aggregate recently-added = %v, want media-alpha", got)
 	}
-	if got := sourceIDs(`kind: "recently-added", libraryID: "library-local", home: true`); !slices.Contains(got, "media-alpha") {
+	if got := sourceIDs(`kind: "recently-added", libraryID: "library-local"`); !slices.Contains(got, "media-alpha") {
 		t.Fatalf("library-local recently-added = %v, want media-alpha", got)
+	}
+	if got := sourceIDs(`kind: "recently-added", libraryID: "library-local", home: true`); len(got) != 0 {
+		t.Fatalf("library-local Home recently-added = %v, want empty", got)
 	}
 }

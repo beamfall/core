@@ -34,7 +34,7 @@ export interface SectionFetchContext {
   extraFilters?: FieldFilters | null;
   /** Overrides the per-kind default limit (See All pages SEEALL_PAGE). */
   paging?: { limit: number; offset: number } | null;
-  /** Hydrating Home: Libraries hidden from Home stay out of aggregate Sources (CORE-2360). */
+  /** Hydrating Home: Libraries hidden from Home stay out of Sources (CORE-2360). */
   home?: boolean;
 }
 
