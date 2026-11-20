@@ -57,9 +57,16 @@ func (c *incompleteSourceCache) contains(path string) bool {
 	return false
 }
 
-// A path's latest observed generation remains known while any instance
+type sourceOwnerKey struct {
+	path        string
+	library     string
+	fingerprint string
+}
+
+// A source's latest observed generation remains known while any instance
 // can still publish an observation. Cache eviction cannot revive an older one.
 type sourceGenerationOwner struct {
+	key                sourceOwnerKey
 	generation         string
 	users              int
 	published          uint64
@@ -70,8 +77,20 @@ type sourceGenerationOwner struct {
 // Take the ordinal before stat so a completion delayed after its last stat
 // cannot supersede a newer publication, even after the newer owner retires.
 func (s *Sessions) claimSource(path string, secure *EncryptedSource) sourceCapture {
+	key := sourceOwnerKey{path: path}
+	if secure != nil && path == "" {
+		key = sourceOwnerKey{library: secure.LibraryID, fingerprint: secure.Fingerprint}
+	}
 	s.mu.Lock()
-	owner := s.acquireSourceLocked(path)
+	if s.sourceOwners == nil {
+		s.sourceOwners = make(map[sourceOwnerKey]*sourceGenerationOwner)
+	}
+	owner := s.sourceOwners[key]
+	if owner == nil {
+		owner = &sourceGenerationOwner{key: key}
+		s.sourceOwners[key] = owner
+	}
+	owner.users++
 	s.sourceClaimOrder++
 	order := s.sourceClaimOrder
 	s.mu.Unlock()
@@ -83,7 +102,7 @@ func (s *Sessions) claimSource(path string, secure *EncryptedSource) sourceCaptu
 func (s *Sessions) releaseSource(source sourceCapture) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.releaseSourceLocked(source.path, source.owner)
+	s.releaseSourceLocked(source.owner)
 }
 
 func (c sourceCapture) supersededLocked() bool {
@@ -101,24 +120,11 @@ func (h *hlsSession) currentSourceLocked() bool {
 	return h.sourceOwner == nil || h.sourceOwner.generation == h.sourceGeneration
 }
 
-func (s *Sessions) acquireSourceLocked(path string) *sourceGenerationOwner {
-	if s.sourceOwners == nil {
-		s.sourceOwners = make(map[string]*sourceGenerationOwner)
-	}
-	owner := s.sourceOwners[path]
-	if owner == nil {
-		owner = &sourceGenerationOwner{}
-		s.sourceOwners[path] = owner
-	}
-	owner.users++
-	return owner
-}
-
-func (s *Sessions) releaseSourceLocked(path string, owner *sourceGenerationOwner) {
+func (s *Sessions) releaseSourceLocked(owner *sourceGenerationOwner) {
 	if owner != nil {
 		owner.users--
 		if owner.users == 0 {
-			delete(s.sourceOwners, path)
+			delete(s.sourceOwners, owner.key)
 		}
 	}
 }

@@ -137,7 +137,7 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 		}
 		s.detached--
 		delete(s.revocations, session)
-		s.releaseSourceLocked(session.src, session.sourceOwner)
+		s.releaseSourceLocked(session.sourceOwner)
 		session.teardown = nil
 		session.state = sessionRetired
 		s.wakeCloseLocked()

@@ -499,7 +499,7 @@ type Sessions struct {
 	durationRetained  map[durationKey]*retainedDuration
 	durationFlights   map[string]*durationFlight
 	incompleteSources incompleteSourceCache
-	sourceOwners      map[string]*sourceGenerationOwner
+	sourceOwners      map[sourceOwnerKey]*sourceGenerationOwner
 	sourceClaimOrder  uint64
 	sourceStore       sourceEndObserver
 	// bootNonce tags every session directory this instance mints (see
@@ -1569,7 +1569,8 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 	session.admitted, session.profile, session.library = true, binding.profile, library
 	session.loadProfile = binding.loadProfile
 	if sourceGeneration != "" {
-		session.sourceOwner = s.acquireSourceLocked(src)
+		source.owner.users++
+		session.sourceOwner = source.owner
 		source.publishLocked()
 	}
 	session.lastAccess = now
@@ -1698,7 +1699,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 			if !live {
 				return nil, ErrSessionEvicted
 			}
-			if pending.err != nil && !errors.Is(pending.err, context.Canceled) {
+			if pending.err != nil && !errors.Is(pending.err, context.Canceled) && !errors.Is(pending.err, context.DeadlineExceeded) {
 				return nil, pending.err
 			}
 			continue
@@ -1716,7 +1717,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 			}
 			base := session.baseSegment
 			s.mu.Unlock()
-			scanned, _ := session.scanFrontier(rung.ID, base)
+			frontier, scanned := session.scanFrontier(rung.ID, base)
 			ready = session.artifactReady(path)
 			s.mu.Lock()
 			if session.state != sessionRunning {
@@ -1731,7 +1732,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 				s.mu.Unlock()
 				continue
 			}
-			if s.transitionLocked(session, advanceFrontier{run: old, rungID: rung.ID, base: base, scanned: scanned}).accepted &&
+			if scanned && s.transitionLocked(session, advanceFrontier{run: old, rungID: rung.ID, base: base, scanned: frontier}).accepted &&
 				segment >= base && segment <= session.frontier+seekLookaheadSegments {
 				s.mu.Unlock()
 				return old, nil
@@ -1971,8 +1972,11 @@ func (h *hlsSession) scanFrontier(rung string, base int) (int, bool) {
 	}
 	for _, entry := range entries {
 		match := segmentName.FindStringSubmatch(entry.Name())
-		if match == nil || !entry.Type().IsRegular() {
+		if match == nil {
 			continue
+		}
+		if !entry.Type().IsRegular() {
+			return base - 1, false
 		}
 		segment, _ := strconv.Atoi(match[1])
 		if segment >= base && segment > frontier {

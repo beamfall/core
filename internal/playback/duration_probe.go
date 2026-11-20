@@ -64,6 +64,9 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	}
 	source := s.claimSource(path, nil)
 	defer s.releaseSource(source)
+	if source.generation == "" || !source.info.Mode().IsRegular() {
+		return 0
+	}
 	now := s.now()
 	s.mu.Lock()
 	if binding != nil && !binding.validLocked() {
@@ -71,7 +74,7 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 		return 0
 	}
 	entry := s.durationProbes[path]
-	matches := source.generation != "" && entry.generation == source.generation
+	matches := entry.generation == source.generation
 	if binding != nil {
 		if binding.duration == nil || !binding.duration.source.matches(source) {
 			if binding.duration != nil {
@@ -85,12 +88,10 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 		s.mu.Unlock()
 		return 0
 	}
-	if source.generation != "" {
-		owner.durationPublished = max(owner.durationPublished, source.order)
-		owner.durationGeneration = source.generation
-		if prior := s.durationFlights[path]; prior != nil && prior.generation != source.generation {
-			delete(s.durationFlights, path)
-		}
+	owner.durationPublished = max(owner.durationPublished, source.order)
+	owner.durationGeneration = source.generation
+	if prior := s.durationFlights[path]; prior != nil && prior.generation != source.generation {
+		delete(s.durationFlights, path)
 	}
 	if binding != nil {
 		if matches && entry.seconds > 0 {
@@ -128,7 +129,7 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	if probe, err := prober.Probe(probeCtx, path); err == nil && probe.DurationSeconds > 0 {
 		seconds = probe.DurationSeconds
 	}
-	valid := source.generation != "" && source.matches(captureSource(path, nil, s.statSource))
+	valid := source.matches(captureSource(path, nil, s.statSource))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.durationFlights[path] != flight {
@@ -142,10 +143,7 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 		return 0
 	}
 	if !valid {
-		if source.generation != "" {
-			return 0
-		}
-		return seconds // an unverified result cannot populate the cache
+		return 0
 	}
 	entry = s.durationProbes[path]
 	retained := s.durationRetained[durationKey{path, source.generation}]

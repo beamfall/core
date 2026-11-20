@@ -2372,6 +2372,11 @@ func (h *Handler) switchProfile(ctx context.Context, scope auth.Scope, req reque
 		}
 	}
 	switchErr := h.store.SetSessionProfileWithEntryPIN(ctx, scope.SessionID, targetID, trimmedVariable(req, "pin"))
+	if switchErr == nil && h.transcodeTerminator != nil {
+		// Profile switches keep the auth SessionID. Fence its old playback
+		// after the new binding is durable and before returning it to clients.
+		h.transcodeTerminator.TerminateSession(scope.SessionID)
+	}
 	if adult {
 		recordErr := h.store.RecordAuthAttempt(ctx, store.AuthAttempt{
 			OccurredAt: now,
