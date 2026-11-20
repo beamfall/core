@@ -94,11 +94,14 @@ function deferredTransport() {
   return resolve;
 }
 
-function holdTransport(positionMS: number, expiresAt: number) {
-  const intent = { itemId: "m1", positionMS, playing: false, epoch: 1, expiresAt };
-  vi.mocked(pendingPartyTransport).mockImplementation(() =>
-    performance.now() < expiresAt ? intent : undefined,
-  );
+function holdTransport(positionMS: number, seekProtectedUntil: number) {
+  vi.mocked(pendingPartyTransport).mockReturnValue({
+    itemId: "m1",
+    positionMS,
+    playing: false,
+    epoch: 1,
+    seekProtectedUntil,
+  });
 }
 
 describe("useWatchParty local transport", () => {

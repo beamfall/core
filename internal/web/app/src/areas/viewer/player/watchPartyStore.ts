@@ -128,23 +128,26 @@ let transportEpoch = 0;
 let rewind: { fromMS: number; toMS: number } | null = null;
 
 export const PARTY_TRANSPORT_TIMEOUT_MS = 15_000;
+const TRANSPORT_RETRY_MS = 1000;
+const PARTY_TITLE_NOT_VISIBLE = "cannot play this in the party: it is not visible to every member";
 
 interface TransportIntent {
-  itemId: string;
-  positionMS: number;
-  playing: boolean;
-  epoch: number;
-  expiresAt: number;
+  readonly itemId: string;
+  readonly positionMS: number;
+  readonly playing: boolean;
+  readonly epoch: number;
+  readonly seekProtectedUntil: number;
 }
 
 interface TransportWork {
   intent: TransportIntent;
   autoSkip: boolean;
-  playbackChange: { confirmed: boolean } | undefined;
-  selection?: AbortSignal;
-  startedFrom?: PartyTimeline | null;
+  playbackChange?: { confirmed: boolean };
+  isCurrent: () => boolean;
+  submitted: boolean;
+  confirmed: boolean;
   run: () => Promise<void>;
-  supersede: () => void;
+  settle: (result: PartyAutoSkipOutcome) => void;
 }
 
 interface TransportQueue {
@@ -166,17 +169,7 @@ export function pendingPartyTransport(itemId: string): TransportIntent | undefin
 
 function pendingTransportWork(itemId: string): TransportWork | undefined {
   const work = latestTransport;
-  if (!work) return;
-  const { intent } = work;
-  if (
-    work.selection?.aborted ||
-    intent.epoch !== transportEpoch ||
-    performance.now() >= intent.expiresAt
-  ) {
-    latestTransport = null;
-    return;
-  }
-  if (intent.itemId === itemId) return work;
+  if (work?.intent.itemId === itemId && work.isCurrent()) return work;
 }
 
 function matchesTransport(work: TransportWork, timeline: PartyTimeline): boolean {
@@ -191,6 +184,7 @@ function matchesTransport(work: TransportWork, timeline: PartyTimeline): boolean
 function runTransport(partyID: string, queue: TransportQueue, work: TransportWork): void {
   queue.inFlight = work;
   void work.run().finally(() => {
+    if (transportQueues.get(partyID) !== queue) return;
     const next = queue.pending;
     queue.pending = null;
     if (next) runTransport(partyID, queue, next);
@@ -210,49 +204,58 @@ function enqueueTransport(
   const isCurrent = () =>
     intent.epoch === transportEpoch &&
     state.partyID === partyID &&
+    !(state.lead && !state.isHost) &&
     (!selection || (state.isHost && !selection.aborted));
   const running = transportQueues.get(partyID);
   const queue = running ?? { inFlight: null, pending: null };
   return new Promise((resolve) => {
-    let settled = false;
-    const settle = (result: PartyAutoSkipOutcome) => {
-      if (settled) return;
-      settled = true;
-      if (result !== "applied" && latestTransport === work) latestTransport = null;
-      resolve(result);
-    };
     const work: TransportWork = {
       intent,
       autoSkip,
       playbackChange,
-      selection,
+      isCurrent,
+      submitted: false,
+      confirmed: false,
       run: async () => {
-        // The player follows the shared timeline again after the seek deadline.
-        if (
-          !isCurrent() ||
-          performance.now() >= intent.expiresAt ||
-          (state.lead && !state.isHost)
-        ) {
-          settle("unconfirmed");
-          return;
-        }
-        work.startedFrom = state.timeline;
         const isLatest = () => isCurrent() && (queue.pending ?? queue.inFlight) === work;
-        if (autoSkip) await applyPartyAutoSkip(work, settle, isCurrent, isLatest);
-        else {
+        while (isLatest() && !work.confirmed) {
           try {
-            settle((await applyPartyTransport(intent)) ? "applied" : "unconfirmed");
+            work.submitted = true;
+            let result: PartyAutoSkipOutcome;
+            if (autoSkip) {
+              result = await applyPartyAutoSkip(work, isLatest);
+            } else {
+              const sentAsHost = state.isHost;
+              const applied = await applyPartyTransport(intent);
+              if (applied) {
+                if (playbackChange) playbackChange.confirmed = true;
+                // A host response carries the acknowledged anchor even if the
+                // stream delivered a newer one. A member's response has no anchor.
+                if (sentAsHost && latestTransport === work) latestTransport = null;
+              }
+              result = applied ? "applied" : "denied";
+            }
+            if (result !== "applied" && latestTransport === work) latestTransport = null;
+            work.settle(result);
+            return;
           } catch (err) {
-            if (isLatest()) set(failure(err));
-            settle("unconfirmed");
+            if (!isLatest() || work.confirmed) break;
+            // An explicit title refusal leaves the shared title where it was.
+            if (err instanceof ApiError && err.message === PARTY_TITLE_NOT_VISIBLE) {
+              set(failure(err));
+              break;
+            }
+            await new Promise<void>((retry) => setTimeout(retry, TRANSPORT_RETRY_MS));
           }
         }
+        if (latestTransport === work) latestTransport = null;
+        work.settle(work.confirmed ? "applied" : "unconfirmed");
       },
-      supersede: () => settle("unconfirmed"),
+      settle: resolve,
     };
     latestTransport = work;
     if (running) {
-      queue.pending?.supersede();
+      queue.pending?.settle("unconfirmed");
       queue.pending = work;
     } else {
       transportQueues.set(partyID, queue);
@@ -321,24 +324,20 @@ function noteFollowing(): void {
 
 function set(patch: Partial<WatchPartyState>): void {
   const { timeline } = patch;
-  if (timeline && timeline !== state.timeline) noteTimeline(timeline);
-  state = { ...state, ...patch };
-  if (timeline) {
+  if (timeline && timeline !== state.timeline) {
     const inFlight = transportQueues.get(state.partyID)?.inFlight;
-    const latest = pendingTransportWork(timeline.item);
-    for (const work of [inFlight, latest]) {
-      if (
-        work?.intent.epoch !== transportEpoch ||
-        work.startedFrom === undefined ||
-        work.startedFrom === timeline ||
-        !matchesTransport(work, timeline)
-      )
-        continue;
-      // A queued skip can carry the playback change from this earlier request.
+    for (const work of new Set([inFlight, latestTransport])) {
+      if (!work?.submitted || !work.isCurrent() || !matchesTransport(work, timeline)) continue;
+      work.confirmed = true;
       if (work.playbackChange) work.playbackChange.confirmed = true;
-      if (work === latestTransport) latestTransport = null;
+      if (work === latestTransport) {
+        latestTransport = null;
+        if (work.autoSkip && state.isHost) work.settle("applied");
+      }
     }
+    noteTimeline(timeline);
   }
+  state = { ...state, ...patch };
   for (const listener of listeners) listener();
 }
 
@@ -355,6 +354,7 @@ function noteTimeline(next: PartyTimeline): void {
   const previous = state.timeline;
   if (previous?.item !== next.item) {
     transportEpoch++;
+    latestTransport = null;
     rewind = null;
     return;
   }
@@ -615,7 +615,7 @@ function reset(patch: Partial<WatchPartyState> = {}): void {
   latestTransport = null;
   const transport = transportQueues.get(state.partyID);
   if (transport?.pending) {
-    transport.pending.supersede();
+    transport.pending.settle("unconfirmed");
     transport.pending = null;
   }
   rewind = null;
@@ -882,7 +882,7 @@ export function sendPartyTransport(
     positionMS: Math.max(0, Math.round(positionMS)),
     playing: change.playing ?? previous?.playing ?? !timeline.paused,
     epoch: transportEpoch,
-    expiresAt: Math.max(expiresAt, previous?.expiresAt ?? 0),
+    seekProtectedUntil: Math.max(expiresAt, previous?.seekProtectedUntil ?? 0),
   };
   // A playback toggle can replace a queued skip while carrying its position.
   const queued = transportQueues.get(partyID)?.pending;
@@ -906,9 +906,14 @@ async function applyPartyTransport(intent: TransportIntent): Promise<boolean> {
     return gen === generation && request.approved;
   }
   const anchor = await watchPartyTransport(vars);
-  // The stream's own transition may already have overtaken this response.
-  if (gen === generation && state.timeline === timeline) {
-    const rate = timeline?.ratePermille;
+  const latest = state.timeline;
+  // A same-title frame cannot invalidate a pending switch to another title.
+  const switching = item !== timeline?.item;
+  if (
+    intent.epoch === transportEpoch &&
+    (switching || latest === timeline || anchor.presentAtMS > (latest?.presentAtMS ?? 0))
+  ) {
+    const rate = latest?.ratePermille;
     set({
       timeline: {
         ...anchor,
@@ -918,7 +923,7 @@ async function applyPartyTransport(intent: TransportIntent): Promise<boolean> {
       },
     });
   }
-  return gen === generation;
+  return gen === generation && (!switching || state.timeline?.item === item);
 }
 
 export type PartyAutoSkipOutcome = "applied" | "denied" | "unconfirmed";
@@ -941,7 +946,7 @@ export function sendPartyAutoSkip(
       positionMS: Math.max(0, Math.round(positionMS)),
       playing: previous?.playing ?? !timeline.paused,
       epoch: transportEpoch,
-      expiresAt: Math.max(expiresAt, previous?.expiresAt ?? 0),
+      seekProtectedUntil: Math.max(expiresAt, previous?.seekProtectedUntil ?? 0),
     },
     true,
     previousWork?.playbackChange,
@@ -950,82 +955,43 @@ export function sendPartyAutoSkip(
 
 async function applyPartyAutoSkip(
   work: TransportWork,
-  settle: (result: PartyAutoSkipOutcome) => void,
-  isCurrent: () => boolean,
   isLatest: () => boolean,
-): Promise<void> {
+): Promise<PartyAutoSkipOutcome> {
   const { intent, playbackChange } = work;
   const { itemId: item, positionMS: target, playing } = intent;
-  const { partyID, lead, isHost } = state;
+  const { partyID, lead } = state;
   let timeline = state.timeline;
-  let acknowledged = false;
-  let stopTracking: (() => void) | undefined;
-  try {
-    if (timeline?.item !== item) {
-      settle("unconfirmed");
-      return;
-    }
-    // The skip mutation moves position only. Apply a carried play/pause first
-    // at the shared playhead, then let the server authorize the skip itself.
-    const playbackChanged = playbackChange?.confirmed === false;
-    if (playbackChanged) {
-      const applied = await applyPartyTransport({
-        ...intent,
-        positionMS: Math.round(expectedPositionMS(timeline, partyNowMS())),
-      });
-      if (!applied || !isCurrent() || (state.lead && !state.isHost)) {
-        settle("unconfirmed");
-        return;
-      }
-      timeline = state.timeline;
-    }
-    // The host can acknowledge its skip from the stream. Other members follow
-    // shared transitions, but need their own response to confirm permission.
-    if (isHost) {
-      stopTracking = subscribe(() => {
-        const latest = state.timeline;
-        if (!isLatest() || !state.isHost || latest?.item !== item) {
-          settle("unconfirmed");
-        } else if (latest !== timeline && matchesTransport(work, latest)) {
-          acknowledged = true;
-          settle("applied");
-        }
-      });
-    }
-    const result = await watchPartyAutoSkip({ partyID, item, positionMS: target });
-    const latest = state.timeline;
-    if (acknowledged || !isCurrent() || latest?.item !== item) {
-      settle("unconfirmed");
-      return;
-    }
-    if (!result.applied) {
-      settle(isLatest() && latest === timeline ? "denied" : "unconfirmed");
-      return;
-    }
-    // A lead transition uses the server's immediate clock. Its response can
-    // supersede an earlier heartbeat, but must never rewind a later anchor.
-    if (latest !== timeline && (!lead || latest.presentAtMS >= result.presentAtMS)) {
-      const matches =
-        latest.positionMS === result.positionMS && latest.presentAtMS === result.presentAtMS;
-      settle(isLatest() && matches ? "applied" : "unconfirmed");
-      return;
-    }
-    set({
-      timeline: {
-        ...latest,
-        positionMS: result.positionMS,
-        presentAtMS: result.presentAtMS,
-        ...(playbackChanged ? { paused: !playing } : {}),
-      },
+  if (timeline?.item !== item) return "unconfirmed";
+  // The skip mutation moves position only. If needed, send the desired
+  // playback state at the shared playhead first.
+  if (playbackChange?.confirmed === false) {
+    const applied = await applyPartyTransport({
+      ...intent,
+      positionMS: Math.round(expectedPositionMS(timeline, partyNowMS())),
     });
-    settle(isLatest() ? "applied" : "unconfirmed");
-  } catch {
-    // The server may already have applied the skip. Follow the shared timeline
-    // as updates arrive; sending the original scrub could undo that skip.
-    settle("unconfirmed");
-  } finally {
-    stopTracking?.();
+    if (!applied || !isLatest()) return "unconfirmed";
+    playbackChange.confirmed = true;
+    timeline = state.timeline;
   }
+  const result = await watchPartyAutoSkip({ partyID, item, positionMS: target });
+  const latest = state.timeline;
+  if (!work.isCurrent() || latest?.item !== item) return "unconfirmed";
+  if (work.confirmed && result.applied) return isLatest() ? "applied" : "unconfirmed";
+  if (!result.applied) return isLatest() && latest === timeline ? "denied" : "unconfirmed";
+  // A lead response can supersede an earlier heartbeat. Otherwise the stream
+  // wins once it has published a newer anchor.
+  if (latest !== timeline && (!lead || latest.presentAtMS >= result.presentAtMS)) {
+    return isLatest() && matchesTransport(work, latest) ? "applied" : "unconfirmed";
+  }
+  set({
+    timeline: {
+      ...latest,
+      positionMS: result.positionMS,
+      presentAtMS: result.presentAtMS,
+      ...(playbackChange ? { paused: !playing } : {}),
+    },
+  });
+  return isLatest() ? "applied" : "unconfirmed";
 }
 
 /**
@@ -1142,4 +1108,5 @@ export function resetWatchPartyForTest(): void {
   declinedParties.clear();
   startedParties.clear();
   reset();
+  transportQueues.clear();
 }

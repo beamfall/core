@@ -490,6 +490,7 @@ describe("races", () => {
     });
     await sendPartyTransport("m1", { positionMS: 5000, playing: true });
     expect(getWatchParty().timeline).toMatchObject({ presentAtMS: 10_100, paused: true });
+    expect(pendingPartyTransport("m1")).toBeUndefined();
   });
 
   it.each(["seek", "auto-skip"])(
@@ -560,7 +561,7 @@ describe("races", () => {
     },
   );
 
-  it("discards an expired queued scrub when the previous mutation finishes", async () => {
+  it("sends a queued scrub after its local seek protection ends", async () => {
     const clock = vi.spyOn(performance, "now").mockReturnValue(0);
     vi.mocked(createWatchParty).mockResolvedValue({
       partyID: "p1",
@@ -585,11 +586,54 @@ describe("races", () => {
       clock.mockReturnValue(20_000);
       releaseFirst();
       await expect(first).resolves.toBe(true);
-      await expect(queued).resolves.toBe(false);
-      expect(watchPartyTransport).toHaveBeenCalledTimes(1);
-      expect(getWatchParty().timeline?.positionMS).toBe(30_000);
+      await expect(queued).resolves.toBe(true);
+      expect(watchPartyTransport).toHaveBeenCalledTimes(2);
+      expect(getWatchParty().timeline?.positionMS).toBe(60_000);
       expect(pendingPartyTransport("m1")).toBeUndefined();
     } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("ends paused on the server when Play takes 17 seconds and the viewer then pauses", async () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    let returnPlay!: () => void;
+    const playResponse = new Promise<void>((resolve) => {
+      returnPlay = resolve;
+    });
+    let serverPaused = true;
+    try {
+      expect(await startWatchParty("m1")).toBe(true);
+      vi.mocked(watchPartyTransport).mockImplementation(async ({ item, positionMS, paused }) => {
+        serverPaused = paused;
+        if (!paused) await playResponse;
+        const anchor = { item, positionMS, presentAtMS: 0 };
+        deliver({ groupID: "p1", signal: "transition", ...anchor, paused });
+        return anchor;
+      });
+
+      const play = sendPartyTransport("m1", { playing: true, playheadMS: 10_000 });
+      expect(serverPaused).toBe(false);
+      clock.mockReturnValue(500);
+      const pause = sendPartyTransport("m1", { playing: false, playheadMS: 10_000 });
+      expect(watchPartyTransport).toHaveBeenCalledTimes(1);
+      clock.mockReturnValue(17_000);
+      expect(pendingPartyTransport("m1")?.playing).toBe(false);
+      returnPlay();
+
+      await expect(play).resolves.toBe(true);
+      await expect(pause).resolves.toBe(true);
+      expect(watchPartyTransport).toHaveBeenCalledTimes(2);
+      expect(serverPaused).toBe(true);
+      expect(getWatchParty().timeline?.paused).toBe(true);
+    } finally {
+      returnPlay();
       clock.mockRestore();
     }
   });
@@ -636,7 +680,7 @@ describe("races", () => {
     }
   });
 
-  it("releases a refused seek after the preceding transport settles", async () => {
+  it("retries a failed title switch so the host and member land on the same title", async () => {
     vi.mocked(createWatchParty).mockResolvedValue({
       partyID: "p1",
       content: "m1",
@@ -644,16 +688,48 @@ describe("races", () => {
       members: [],
     });
     expect(await startWatchParty("m1")).toBe(true);
+    const hostStream = vi.mocked(subscribeEvents).mock.lastCall?.[0];
+    vi.resetModules();
+    const member = await import("./watchPartyStore");
+    vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+      deliver({ groupID: "p1", signal: "roster", item: "m1", paused: true });
+      return { partyID: "p1", item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    expect(await member.joinWatchParty("p1")).toBe("m1");
     vi.mocked(watchPartyTransport)
-      .mockResolvedValueOnce({ item: "m1", positionMS: 30_000, presentAtMS: 0 })
-      .mockRejectedValueOnce(new Error("transport refused"));
-    const first = sendPartyTransport("m1", { positionMS: 30_000 });
-    const latest = sendPartyTransport("m1", { positionMS: 60_000 });
-    expect(pendingPartyTransport("m1")?.positionMS).toBe(60_000);
-    await expect(first).resolves.toBe(true);
-    await expect(latest).resolves.toBe(false);
-    expect(getWatchParty().timeline?.positionMS).toBe(30_000);
-    expect(pendingPartyTransport("m1")).toBeUndefined();
+      .mockRejectedValueOnce(new TypeError("Network unavailable"))
+      .mockImplementation(async ({ item, positionMS, paused }) => {
+        const anchor = { item, positionMS, presentAtMS: 10_000 };
+        const payload = { groupID: "p1", signal: "transition", ...anchor, paused };
+        hostStream?.({ type: "group.sync", data: JSON.stringify({ payload }) } as never);
+        deliver(payload);
+        return anchor;
+      });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const selection = new AbortController();
+      const change = sendPartyTransport("m2", {
+        positionMS: 0,
+        playing: true,
+        selection: selection.signal,
+      });
+      expect(watchPartyTransport).toHaveBeenCalledTimes(1);
+      expect(member.getWatchParty().timeline?.item).toBe("m1");
+      await vi.advanceTimersByTimeAsync(1000);
+      await expect(change).resolves.toBe(true);
+      expect(watchPartyTransport).toHaveBeenCalledTimes(2);
+      expect(watchPartyTransport).toHaveBeenLastCalledWith({
+        partyID: "p1",
+        item: "m2",
+        positionMS: 0,
+        paused: false,
+      });
+      expect(member.getWatchParty().timeline?.item).toBe("m2");
+      expect(getWatchParty().timeline?.item).toBe("m2");
+    } finally {
+      vi.useRealTimers();
+      member.resetWatchPartyForTest();
+    }
   });
 
   it("discards a relaxed member's queued seek after the host changes titles", async () => {
