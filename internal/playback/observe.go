@@ -133,7 +133,7 @@ func (s *Sessions) deliveredBandwidth(sessionID store.SessionID, mediaID store.M
 	defer s.mu.Unlock()
 	var current *hlsSession
 	for key, session := range s.sessions {
-		if key.SessionID != sessionID || key.MediaID != mediaID || !session.started {
+		if key.SessionID != sessionID || key.MediaID != mediaID || session.deliveredRung == "" {
 			continue
 		}
 		if current == nil || session.lastAccess.After(current.lastAccess) {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -38,11 +37,9 @@ func (r *Runner) ProbeKeyframes(ctx context.Context, src string) (KeyframeIndex,
 	if err := checkPath(src); err != nil {
 		return KeyframeIndex{}, err
 	}
-	r.resolveOnce.Do(func() {
-		r.ffprobePath, r.resolveErr = exec.LookPath("ffprobe")
-	})
-	if r.resolveErr != nil {
-		return KeyframeIndex{}, fmt.Errorf("ffprobe is not available: %w", r.resolveErr)
+	ffprobePath, err := r.resolveProbe(ctx)
+	if err != nil {
+		return KeyframeIndex{}, fmt.Errorf("ffprobe is not available: %w", err)
 	}
 	args := append(append([]string{
 		"-v", "error",
@@ -50,7 +47,7 @@ func (r *Runner) ProbeKeyframes(ctx context.Context, src string) (KeyframeIndex,
 		"-show_entries", "packet=pts,dts,flags:stream=time_base:format=start_time,duration",
 		"-of", "csv=p=1",
 	}, inputProtocolArgs()...), "--", src)
-	cmd := r.hardenedCommand(ctx, r.ffprobePath, readConfinement(src).ReadOnly, nil, args)
+	cmd := r.hardenedCommand(ctx, ffprobePath, readConfinement(src).ReadOnly, nil, args)
 	parser := &keyframeParser{}
 	var once sync.Once
 	kill := func() { once.Do(func() { killProcessGroup(cmd) }) }

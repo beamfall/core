@@ -19,7 +19,7 @@ import (
 func withComposedRecipeSupport(t *testing.T, graphics, timedText bool) {
 	t.Helper()
 	previous := composedRecipeSupported
-	composedRecipeSupported = func(text bool, _ ffmpeg.Rendition) bool {
+	composedRecipeSupported = func(_ context.Context, text bool, _ ffmpeg.Rendition) bool {
 		if text {
 			return timedText
 		}
@@ -279,7 +279,7 @@ func TestComposedShapedSessionEncodesTheGrantedShape(t *testing.T) {
 func TestLiveComposedCapabilityCheckSeesTheSessionEncode(t *testing.T) {
 	var checked []ffmpeg.Rendition
 	previous := composedRecipeSupported
-	composedRecipeSupported = func(_ bool, rendition ffmpeg.Rendition) bool {
+	composedRecipeSupported = func(_ context.Context, _ bool, rendition ffmpeg.Rendition) bool {
 		checked = append(checked, rendition)
 		return true
 	}
@@ -313,7 +313,7 @@ func TestLiveComposedCapabilityCheckSeesTheSessionEncode(t *testing.T) {
 // plays, composed and unadjusted, instead of a stream that fails to start.
 func TestAdjustmentDeclinedWithoutItsFilters(t *testing.T) {
 	previous := audioAdjustSupported
-	audioAdjustSupported = func(ffmpeg.Rendition) bool { return false }
+	audioAdjustSupported = func(context.Context, ffmpeg.Rendition) bool { return false }
 	t.Cleanup(func() { audioAdjustSupported = previous })
 	cases := map[string]struct {
 		profile      CapabilityProfile

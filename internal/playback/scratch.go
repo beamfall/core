@@ -45,7 +45,7 @@ type scratchPath struct {
 }
 
 // scratchAllocation is the unpublished setup owner through commit or discard.
-// setupMu admits a single owner and mu protects its revocation.
+// Sessions.mu protects its revocation.
 type scratchAllocation struct {
 	key     SessionKey
 	revoked bool
@@ -108,7 +108,7 @@ func resolveScratchDir(path string) (string, error) {
 }
 
 // NewSessionsInDir requires an existing directory and locks its inode before
-// reconciling session entries. Closing the descriptor releases the flock.
+// reconciling session entries. Close releases the flock after cleanup.
 func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.Time, opts ...SessionsOption) (_ *Sessions, resultErr error) {
 	dir, err := resolveScratchDir(scratchDir)
 	if err != nil {
@@ -122,7 +122,7 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		_ = lock.Close()
 		return nil, fmt.Errorf("lock transcode scratch %q: %w", dir, err)
 	}
-	cleanup := lock.Close
+	cleanup := func() error { return unlockScratchRoot(lock) }
 	defer func() {
 		if cleanup != nil {
 			if err := cleanup(); err != nil {
@@ -169,6 +169,13 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 	return s, nil
 }
 
+func unlockScratchRoot(lock *os.File) error {
+	// An unrelated child can briefly inherit the open file description
+	// between fork and exec. Unlock explicitly so a completed Close makes
+	// the root available even while that descriptor is still in transit.
+	return errors.Join(unix.Flock(int(lock.Fd()), unix.LOCK_UN), lock.Close())
+}
+
 // ScratchDir returns the resolved root the manager locked at construction.
 func (s *Sessions) ScratchDir() string {
 	return s.dir
@@ -194,8 +201,8 @@ func (s *Sessions) scratchCollisionDir(path string) (bool, error) {
 	return info.IsDir(), nil
 }
 
-// allocateScratchLocked drops mu for exclusive mkdir. setupMu keeps the
-// existing single setup owner while the registry exposes the unresolved claim.
+// allocateScratchLocked drops mu for exclusive mkdir while the registry
+// exposes the unresolved path claim to the sweep.
 func (s *Sessions) allocateScratchLocked(allocation *scratchAllocation, library store.LibraryID) (*scratchPath, error) {
 	for !s.closed && !allocation.revoked {
 		s.nextID++
@@ -281,6 +288,7 @@ func (s *Sessions) removeScratch(p *scratchPath) error {
 		}
 	}
 
+	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err == nil {
@@ -288,7 +296,7 @@ func (s *Sessions) removeScratch(p *scratchPath) error {
 	} else {
 		p.state, p.allocating = scratchDebt, false
 		p.backoff = min(max(time.Second, 2*p.backoff), time.Minute)
-		p.retryAt = s.now().Add(p.backoff)
+		p.retryAt = now.Add(p.backoff)
 	}
 	s.removing--
 	s.wakeCloseLocked()
@@ -296,9 +304,9 @@ func (s *Sessions) removeScratch(p *scratchPath) error {
 }
 
 func (s *Sessions) retryScratch(closing bool) error {
+	now := s.now()
 	s.mu.Lock()
 	var due []*scratchPath
-	now := s.now()
 	for _, p := range s.paths {
 		if p.state == scratchDebt && (closing || !now.Before(p.retryAt)) {
 			due = append(due, p)
@@ -307,8 +315,9 @@ func (s *Sessions) retryScratch(closing bool) error {
 	s.mu.Unlock()
 	var err error
 	for _, p := range due {
+		now := s.now()
 		s.mu.Lock()
-		if (s.closed && !closing) || s.paths[p.name] != p || p.state != scratchDebt || (!closing && s.now().Before(p.retryAt)) {
+		if (s.closed && !closing) || s.paths[p.name] != p || p.state != scratchDebt || (!closing && now.Before(p.retryAt)) {
 			s.mu.Unlock()
 			continue
 		}

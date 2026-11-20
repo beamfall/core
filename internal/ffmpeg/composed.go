@@ -79,7 +79,7 @@ func (r *Runner) StartBackgroundComposedHLS(ctx context.Context, audioSrc, dir s
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
 	cmd := r.generationCommand(ctx, dirConfinement(audioSrc, dir), ffmpegPath, composedHLSArgs(audioSrc, dir, picture, r.withQuality(rendition))...)
-	process, err := startHLSProcess(cmd)
+	process, err := startHLSProcessContext(ctx, cmd, false)
 	if err != nil {
 		return nil, fmt.Errorf("starting ffmpeg composed encode: %w", err)
 	}
@@ -100,7 +100,7 @@ func (r *Runner) startComposedHLSSegments(ctx context.Context, audioSrc, dir str
 	}
 	conf := dirConfinement(audioSrc, dir)
 	cmd := r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, composedSegmentArgs(audioSrc, dir, picture, startSegment, segmentSeconds, r.withQuality(rendition)))
-	process, err := startHLSProcess(cmd)
+	process, err := startHLSProcessContext(ctx, cmd, false)
 	if err != nil {
 		return nil, fmt.Errorf("starting ffmpeg composed transcode: %w", err)
 	}

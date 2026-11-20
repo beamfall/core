@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -69,6 +70,7 @@ var (
 
 // endpoint serves one source over loopback HTTP for the life of one job.
 type endpoint struct {
+	cutoff   *atomic.Bool
 	token    string
 	host     string
 	server   netip.AddrPort
@@ -92,16 +94,20 @@ type endpoint struct {
 	mu       sync.Mutex
 	open     Opener
 	revoked  bool
+	disabled bool
 	expired  bool
 	active   int
 	lastSeen time.Time
 	failErr  error
 	inflight sync.WaitGroup
 
+	abortOnce  sync.Once
 	revokeOnce sync.Once
 }
 
 type endpointConfig struct {
+	cutoff   *atomic.Bool
+	disabled bool
 	open     Opener
 	size     int64
 	deadline time.Time
@@ -144,6 +150,8 @@ func startEndpoint(cfg endpointConfig) (*endpoint, error) {
 		now:       now,
 		peer:      cfg.peer,
 		open:      cfg.open,
+		disabled:  cfg.disabled,
+		cutoff:    cfg.cutoff,
 		sink:      cfg.sink,
 		rung:      cfg.rung,
 		lastSeen:  now(),
@@ -190,16 +198,20 @@ func (e *endpoint) Err() error {
 	return e.failErr
 }
 
-// Revoke ends the token: new requests are refused, open connections are closed
-// so in-flight bodies abort, and it returns only once every handler has
-// returned and the server has stopped. It is safe to call more than once and
-// from more than one goroutine.
-func (e *endpoint) Revoke() {
-	e.revokeOnce.Do(func() {
+// Abort refuses requests and closes open connections without joining handlers.
+func (e *endpoint) Abort() {
+	e.abortOnce.Do(func() {
 		e.mu.Lock()
 		e.revoked = true
 		e.mu.Unlock()
 		_ = e.srv.Close()
+	})
+}
+
+// Revoke aborts the endpoint and joins its handlers and server.
+func (e *endpoint) Revoke() {
+	e.Abort()
+	e.revokeOnce.Do(func() {
 		e.inflight.Wait()
 		<-e.serveDone
 		e.mu.Lock()
@@ -250,7 +262,7 @@ func (e *endpoint) expire() {
 func (e *endpoint) enter() (Opener, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.revoked || e.open == nil {
+	if e.cutOffLocked() || e.disabled || e.open == nil {
 		return nil, ErrRevoked
 	}
 	now := e.now()
@@ -272,11 +284,15 @@ func (e *endpoint) exit() {
 	e.inflight.Done()
 }
 
+func (e *endpoint) cutOffLocked() bool {
+	return e.revoked || e.cutoff != nil && e.cutoff.Load()
+}
+
 // live reports whether an admitted response may write its next chunk.
 func (e *endpoint) live() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.revoked {
+	if e.cutOffLocked() {
 		return ErrRevoked
 	}
 	now := e.now()
@@ -495,6 +511,10 @@ func (e *endpoint) serveRange(w http.ResponseWriter, r *http.Request, open Opene
 		http.Error(w, "range not satisfiable", http.StatusRequestedRangeNotSatisfiable)
 		return
 	}
+	if err := e.live(); err != nil {
+		http.Error(w, "gone", http.StatusGone)
+		return
+	}
 	src, err := open()
 	if err != nil {
 		e.fail(errSourceFailure)
@@ -502,6 +522,10 @@ func (e *endpoint) serveRange(w http.ResponseWriter, r *http.Request, open Opene
 		return
 	}
 	defer func() { _ = src.Close() }()
+	if err := e.live(); err != nil {
+		http.Error(w, "gone", http.StatusGone)
+		return
+	}
 	if _, err := src.Seek(start, io.SeekStart); err != nil {
 		e.fail(errSourceFailure)
 		http.Error(w, "unavailable", http.StatusInternalServerError)

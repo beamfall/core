@@ -97,32 +97,35 @@ func TestInfoKeepsAStoredRuntimeWithoutProbing(t *testing.T) {
 }
 
 func TestProbedDurationSecondsRemembersAMissForAWhile(t *testing.T) {
+	x, y := filepath.Join(t.TempDir(), "x.mkv"), filepath.Join(t.TempDir(), "y.mkv")
+	seedScratchFile(t, x)
+	seedScratchFile(t, y)
 	prober := &probingTranscoder{}
 	now := time.Unix(1000, 0)
 	sessions := newTestSessions(t, prober, t.TempDir(), func() time.Time { return now })
 	defer sessions.Close()
 
-	if got := sessions.ProbedDurationSeconds(context.Background(), "fp", "/media/x.mkv"); got != 0 {
+	if got := sessions.ProbedDurationSeconds(context.Background(), "fp", x); got != 0 {
 		t.Fatalf("first probe = %d, want 0", got)
 	}
-	_ = sessions.ProbedDurationSeconds(context.Background(), "fp", "/media/x.mkv")
+	_ = sessions.ProbedDurationSeconds(context.Background(), "fp", x)
 	if prober.probeCount() != 1 {
 		t.Fatalf("probes = %d, want 1 within the miss TTL", prober.probeCount())
 	}
 	now = now.Add(durationProbeMissTTL)
 	prober.duration = 60
-	if got := sessions.ProbedDurationSeconds(context.Background(), "fp", "/media/x.mkv"); got != 60 || prober.probeCount() != 2 {
+	if got := sessions.ProbedDurationSeconds(context.Background(), "fp", x); got != 60 || prober.probeCount() != 2 {
 		t.Fatalf("after TTL got %d with %d probes, want 60 with 2", got, prober.probeCount())
 	}
 
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 	prober.duration = 0
-	if got := sessions.ProbedDurationSeconds(cancelled, "fp-other", "/media/y.mkv"); got != 0 {
+	if got := sessions.ProbedDurationSeconds(cancelled, "fp-other", y); got != 0 {
 		t.Fatalf("cancelled probe = %d, want 0", got)
 	}
 	prober.duration = 30
-	if got := sessions.ProbedDurationSeconds(context.Background(), "fp-other", "/media/y.mkv"); got != 30 {
+	if got := sessions.ProbedDurationSeconds(context.Background(), "fp-other", y); got != 30 {
 		t.Fatalf("probe after a cancelled request = %d, want 30 (a cancelled miss is not cached)", got)
 	}
 }

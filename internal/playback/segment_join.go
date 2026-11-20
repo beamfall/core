@@ -45,6 +45,7 @@ func joinFragments(dst *os.File, open func(string) (*os.File, error), parts []st
 // joinArtifact serializes writers by destination and publishes from a private
 // staging file only while the same session still owns the directory.
 func (s *Sessions) joinArtifact(ctx context.Context, h *hlsSession, dst string, parts []string) error {
+	var version uint64
 	for {
 		s.mu.Lock()
 		if h.state != sessionRunning {
@@ -67,6 +68,7 @@ func (s *Sessions) joinArtifact(ctx context.Context, h *hlsSession, dst string, 
 		}
 		done := make(chan struct{})
 		h.joins[dst] = done
+		version = h.artifactVersion
 		s.mu.Unlock()
 		defer func() {
 			s.mu.Lock()
@@ -100,11 +102,27 @@ func (s *Sessions) joinArtifact(ctx context.Context, h *hlsSession, dst string, 
 		return err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if h.state != sessionRunning {
+	live := h.state == sessionRunning
+	stale := h.artifactVersion != version
+	s.mu.Unlock()
+	if !live {
 		return ErrSessionEvicted
 	}
-	return os.Rename(tmp.Name(), filepath.Join(h.dir, rel))
+	if stale {
+		return ErrArtifactChanged
+	}
+	err = os.Rename(tmp.Name(), filepath.Join(h.dir, rel))
+	s.mu.Lock()
+	live = h.state == sessionRunning
+	stale = h.artifactVersion != version
+	s.mu.Unlock()
+	if !live {
+		return ErrSessionEvicted
+	}
+	if stale {
+		return ErrArtifactChanged
+	}
+	return err
 }
 
 // isoBox is one top-level ISO-BMFF box: its four-character type and its bytes,

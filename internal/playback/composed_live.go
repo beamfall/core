@@ -71,15 +71,15 @@ func (s *Sessions) SetPictureComposer(composer GenerationComposer) {
 // outside the sessions lock (resolving reads plugin sidecars) and is skipped
 // when the key already has a composed session for src, so only the request
 // that creates a session pays for it.
-func (s *Sessions) livePicture(ctx context.Context, key SessionKey, src string, shape StreamShape) (*ComposedPicture, error) {
+func (s *Sessions) livePicture(ctx context.Context, session *hlsSession, source sourceCapture, shape StreamShape) (*ComposedPicture, error) {
 	if !shape.ComposedPicture {
 		return nil, nil
 	}
 	s.mu.Lock()
 	composer := s.composer
 	var resolved *ComposedPicture
-	if existing, ok := s.sessions[key]; ok && existing.src == src && existing.composed != nil {
-		resolved = existing.composed
+	if session.state == sessionRunning && source.info != nil && source.matches(session.sourceCapture()) {
+		resolved = session.composed
 	}
 	s.mu.Unlock()
 	if resolved != nil {
@@ -88,7 +88,7 @@ func (s *Sessions) livePicture(ctx context.Context, key SessionKey, src string, 
 	if composer == nil {
 		return nil, ErrComposedPictureUnavailable
 	}
-	picture, ok, err := composer(ctx, key.MediaID, src)
+	picture, ok, err := composer(ctx, session.key.MediaID, source.path)
 	if err != nil {
 		return nil, err
 	}

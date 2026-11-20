@@ -200,10 +200,8 @@ type FontAttachment struct {
 
 // Runner invokes the FFmpeg binaries.
 type Runner struct {
-	resolveOnce sync.Once
-	ffprobePath string
-	resolveErr  error
-	hwAccel     HWAccel
+	ffprobe sharedResolution[string]
+	hwAccel HWAccel
 	// hwHEVC reports that the probe verified hwAccel's HEVC encoder. HEVC is
 	// advertised and selected only when it is set (CORE-2088).
 	hwHEVC bool
@@ -378,13 +376,13 @@ func (r *Runner) hardwareRendition(rendition Rendition) Rendition {
 // then the tone-map backend and device decode. Under the software-only
 // policy the tone-map and decode stay on the CPU too, so no stage of the
 // conversion touches a graphics device (CORE-2452).
-func (r *Runner) launchRendition(rendition Rendition) Rendition {
+func (r *Runner) launchRendition(ctx context.Context, rendition Rendition) Rendition {
 	rendition = r.hardwareRendition(rendition)
 	if r.renditionPolicy(rendition).SoftwareOnly {
 		return rendition
 	}
-	rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
-	return rendition.withDeviceDecode(selectRenditionDeviceDecode(rendition))
+	rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(ctx, rendition))
+	return rendition.withDeviceDecode(selectRenditionDeviceDecode(ctx, rendition))
 }
 
 //io:ignore — in-memory capability check, not an I/O operation (cmd/ioe2e ledger).
@@ -473,13 +471,11 @@ func (r *Runner) Probe(ctx context.Context, path string) (Probe, error) {
 	if err := checkPath(path); err != nil {
 		return Probe{}, err
 	}
-	r.resolveOnce.Do(func() {
-		r.ffprobePath, r.resolveErr = exec.LookPath("ffprobe")
-	})
-	if r.resolveErr != nil {
-		return Probe{}, fmt.Errorf("ffprobe is not available: %w", r.resolveErr)
+	ffprobePath, err := r.resolveProbe(ctx)
+	if err != nil {
+		return Probe{}, fmt.Errorf("ffprobe is not available: %w", err)
 	}
-	cmd := r.hardenedCommand(ctx, r.ffprobePath, readConfinement(path).ReadOnly, nil,
+	cmd := r.hardenedCommand(ctx, ffprobePath, readConfinement(path).ReadOnly, nil,
 		append(append([]string{
 			"-v", "error",
 			"-print_format", "json",
@@ -1863,6 +1859,10 @@ func (r Rendition) ToneMapUnavailable() bool {
 // third refusal, ToneMapRefusalDisabled, applies while the operator has turned
 // tone-mapping off (SetToneMapEnabled).
 func (r Rendition) ToneMapRefusal() string {
+	return r.toneMapRefusal(context.Background())
+}
+
+func (r Rendition) toneMapRefusal(ctx context.Context) string {
 	if r.ToneMapUnavailable() {
 		return ToneMapRefusalDoViP5
 	}
@@ -1870,7 +1870,7 @@ func (r Rendition) ToneMapRefusal() string {
 		if !ToneMapEnabled() {
 			return ToneMapRefusalDisabled
 		}
-		if !toneMapSupported() {
+		if !toneMapSupported(ctx) {
 			return ToneMapRefusalUnverified
 		}
 	}
@@ -2543,9 +2543,13 @@ func (l *lockedTail) String() string {
 // a single exec.Cmd.Wait. Unless the caller routes stderr, StderrTail keeps
 // its bounded tail.
 func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
+	return startHLSProcessContext(context.Background(), cmd, false)
+}
+
+func startHLSProcessContext(ctx context.Context, cmd *exec.Cmd, withholdStderr bool) (*HLSProcess, error) {
 	applySysProcAttr(cmd)
 	configureProcessGroup(cmd)
-	p := &HLSProcess{cmd: cmd}
+	p := &HLSProcess{cmd: cmd, stderrWithheld: withholdStderr}
 	p.stderr.tail.limit = hlsStderrTailBytes
 	cmd.Cancel = func() error {
 		p.stopRequested.Store(true)
@@ -2564,8 +2568,14 @@ func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
 	}
 	p.started = time.Now()
 	p.reportsProgress = reportsProgress
+	if err := playbackPermit(ctx); err != nil {
+		return nil, err
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, err
+	}
+	if claim, ok := ctx.Value(playbackSpawnKey{}).(playbackSpawn); ok && claim.handoff != nil {
+		claim.handoff(p)
 	}
 	return p, nil
 }
@@ -2641,12 +2651,17 @@ func (p *HLSProcess) Wait() error {
 
 // Stop kills the encoder tree and joins the leader through Wait.
 func (p *HLSProcess) Stop() {
+	p.RequestStop()
+	_ = p.Wait()
+}
+
+// RequestStop signals the encoder tree without joining its reaper.
+func (p *HLSProcess) RequestStop() {
 	if !p.Running() {
 		return
 	}
 	p.stopRequested.Store(true)
 	p.killTree()
-	_ = p.Wait()
 }
 
 // Kill terminates the process tree without marking the exit as requested, so
@@ -2718,11 +2733,11 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	if err := checkPath(dir); err != nil {
 		return nil, err
 	}
-	if reason := rendition.ToneMapRefusal(); reason != "" {
+	if reason := rendition.toneMapRefusal(ctx); reason != "" {
 		return nil, errors.New("ffmpeg: " + reason)
 	}
 	if !rendition.AudioOnly {
-		rendition = r.launchRendition(rendition)
+		rendition = r.launchRendition(ctx, rendition)
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -2738,7 +2753,7 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	} else {
 		cmd = r.confinedCommand(ctx, ffmpegPath, conf, args)
 	}
-	process, err := startHLSProcess(cmd)
+	process, err := startHLSProcessContext(ctx, cmd, false)
 	if err != nil {
 		return nil, fmt.Errorf("starting ffmpeg transcode: %w", err)
 	}
@@ -2884,14 +2899,14 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 	if err := checkPath(dir); err != nil {
 		return nil, err
 	}
-	if reason := rendition.ToneMapRefusal(); reason != "" {
+	if reason := rendition.toneMapRefusal(ctx); reason != "" {
 		return nil, errors.New("ffmpeg: " + reason)
 	}
 	if !rendition.adjust.IsZero() && !rendition.AudioOnly {
 		return nil, errors.New("ffmpeg: an adjusted encode must be audio-only or a composed picture")
 	}
 	if !rendition.AudioOnly {
-		rendition = r.launchRendition(rendition)
+		rendition = r.launchRendition(ctx, rendition)
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -2900,7 +2915,7 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 	args := buildArgs(rendition)
 	conf := dirConfinement(src, dir).withGPU(rendition.hwAccel, rendition.toneMapAccel)
 	cmd := r.confinedCommand(ctx, ffmpegPath, conf, args)
-	process, err := startHLSProcess(cmd)
+	process, err := startHLSProcessContext(ctx, cmd, false)
 	if err != nil {
 		return nil, fmt.Errorf("starting ffmpeg transcode: %w", err)
 	}

@@ -259,7 +259,7 @@ func TestQuirkOverlayIsMonotoneRestrictive(t *testing.T) {
 			setup: func(t *testing.T, service *Service, st *store.Store, scope auth.Scope) {
 				limit := 1
 				setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{MaxConcurrentStreams: &limit})
-				sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+				sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 
 				service.SetSessions(sessions)
 				startTranscode(t, sessions, SessionKey{SessionID: scope.SessionID, MediaID: "media-other"})
@@ -270,7 +270,7 @@ func TestQuirkOverlayIsMonotoneRestrictive(t *testing.T) {
 			name:    "quirk-forced transcode at server encoder capacity",
 			entries: []QuirkEntry{denyHEVCForGen1()},
 			setup: func(t *testing.T, service *Service, _ *store.Store, scope auth.Scope) {
-				sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+				sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 
 				sessions.SetTranscodeCap(1)
 				service.SetSessions(sessions)
@@ -799,7 +799,7 @@ func TestQuirkCapsApplyToUnknownDimensionSource(t *testing.T) {
 			Selector: QuirkSelector{Client: "tv-x"},
 			Override: QuirkOverride{MaxHeight: 720},
 		})
-		sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+		sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 		defer sessions.Close()
 		sessions.SetTranscodeCap(1)
 		service.SetSessions(sessions)
@@ -1325,7 +1325,7 @@ func TestContainerRemuxReasonOnlyOnForcedRemux(t *testing.T) {
 			Selector: QuirkSelector{Client: "tv-x"},
 			Override: QuirkOverride{ForceRemux: true},
 		})
-		sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+		sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 		defer sessions.Close()
 		sessions.SetTranscodeCap(1)
 		service.SetSessions(sessions)

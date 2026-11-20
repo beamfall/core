@@ -92,14 +92,8 @@ func TestHLSCastRouteChangeCreatesNewReceiverSession(t *testing.T) {
 		}
 	}
 
-	active := map[string]bool{}
-	for _, key := range handler.hls.ActiveKeys() {
-		if key.SessionID == scope.SessionID && key.MediaID == "media-alpha" {
-			active[key.ProfileCapability] = true
-		}
-	}
-	if !active[senderCapability] || !active[receiverCapability] {
-		t.Fatalf("active capability sessions = %v, want sender and receiver", active)
+	if count := handler.hls.TerminatePlayback(scope.SessionID, "media-alpha"); count != 2 {
+		t.Fatalf("playback sessions = %d, want sender and receiver", count)
 	}
 }
 
@@ -136,7 +130,7 @@ func TestHLSCastMissingReceiverProfileFailsClosed(t *testing.T) {
 		t.Fatalf("status = %d, want 401 for missing receiver profile", rec.Code)
 	}
 	assertCastRefusalEmitsNoBytes(t, rec)
-	if len(handler.hls.ActiveKeys()) != 0 {
+	if handler.hls.TerminatePlayback(scope.SessionID, "media-alpha") != 0 {
 		t.Fatal("missing receiver profile created a session")
 	}
 }
@@ -156,7 +150,7 @@ func TestHLSCastUnresolvedReceiverProfileFailsClosed(t *testing.T) {
 		t.Fatalf("status = %d, want 401 for unresolved receiver profile", rec.Code)
 	}
 	assertCastRefusalEmitsNoBytes(t, rec)
-	if len(handler.hls.ActiveKeys()) != 0 {
+	if handler.hls.TerminatePlayback(scope.SessionID, "media-alpha") != 0 {
 		t.Fatal("unresolved receiver profile created a session")
 	}
 }

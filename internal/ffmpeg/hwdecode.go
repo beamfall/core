@@ -234,7 +234,11 @@ var (
 // one (backend, transfer class) pair, probing on first use. It is keyed and
 // kept exactly like ToneMapCapabilityFor: in memory only, per FFmpeg identity.
 func DeviceDecodeCapabilityFor(backend HWAccel, class TransferClass) ToneMapProbe {
-	key := toneMapVerdictKey{backend: backend, class: class, identity: currentFFmpegIdentityKey()}
+	return deviceDecodeCapabilityFor(context.Background(), backend, class)
+}
+
+func deviceDecodeCapabilityFor(ctx context.Context, backend HWAccel, class TransferClass) ToneMapProbe {
+	key := toneMapVerdictKey{backend: backend, class: class, identity: currentFFmpegIdentityKey(ctx)}
 	deviceDecodeVerdictMu.Lock()
 	entry, cached := deviceDecodeVerdicts[key]
 	if !cached {
@@ -242,21 +246,21 @@ func DeviceDecodeCapabilityFor(backend HWAccel, class TransferClass) ToneMapProb
 		deviceDecodeVerdicts[key] = entry
 	}
 	deviceDecodeVerdictMu.Unlock()
-	entry.once.Do(func() {
-		entry.verdict = ProbeDeviceDecode(context.Background(), DeviceDecodeOptions{
+	verdict, _ := entry.wait(ctx, func() (ToneMapProbe, error) {
+		return ProbeDeviceDecode(context.Background(), DeviceDecodeOptions{
 			ToneMapOptions: ToneMapOptions{Backend: backend, Class: class},
-		})
+		}), nil
 	})
-	return entry.verdict
+	return verdict
 }
 
 // selectRenditionDeviceDecode decides at spawn time whether one rendition
 // uses the device-decode chain. It is a variable so a test can pin the
 // decision rather than probing whatever hardware the host happens to have.
-var selectRenditionDeviceDecode = func(r Rendition) bool {
+var selectRenditionDeviceDecode = func(ctx context.Context, r Rendition) bool {
 	if !r.deviceDecodeEligible() {
 		return false
 	}
 	class, _ := r.deviceDecodeClass()
-	return DeviceDecodeCapabilityFor(r.hwAccel, class).Status == ToneMapWorking
+	return deviceDecodeCapabilityFor(ctx, r.hwAccel, class).Status == ToneMapWorking
 }

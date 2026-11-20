@@ -128,8 +128,23 @@ func supervise(ctx context.Context, cmd *exec.Cmd, stdout, stderr io.Writer) err
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 
+	probe, bound := ctx.Value(playbackProbeKey{}).(playbackProbe)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if bound {
+		if err := probe.permit(); err != nil {
+			return err
+		}
+		defer probe.finish()
+	}
 	if startErr := cmd.Start(); startErr != nil {
 		return fmt.Errorf("ffmpeg: start failed: %w", startErr)
+	}
+	if bound && !probe.handoff() {
+		killProcessGroup(cmd)
+		_ = cmd.Wait()
+		return context.Canceled
 	}
 
 	done := make(chan error, 1)

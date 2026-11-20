@@ -110,7 +110,7 @@ func TestDeviceDecodeIsOffUntilVerified(t *testing.T) {
 func TestSelectRenditionDeviceDecodeNeverProbesIneligibleRenditions(t *testing.T) {
 	sdr := deviceDecodeRendition(HWAccelQSV)
 	sdr.ColorTransfer = "bt709"
-	if selectRenditionDeviceDecode(sdr) {
+	if selectRenditionDeviceDecode(context.Background(), sdr) {
 		t.Fatal("SDR rendition selected the device chain")
 	}
 }

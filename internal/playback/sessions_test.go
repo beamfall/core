@@ -24,6 +24,7 @@ import (
 )
 
 type fakeTranscoder struct {
+	holdChild     bool
 	mu            sync.Mutex
 	starts        []string
 	segmentStarts []int
@@ -31,7 +32,7 @@ type fakeTranscoder struct {
 	segmentsToLay int
 }
 
-func (f *fakeTranscoder) StartHLS(_ context.Context, src, dir string, rendition ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+func (f *fakeTranscoder) StartHLS(ctx context.Context, src, dir string, rendition ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.starts = append(f.starts, src)
@@ -39,10 +40,10 @@ func (f *fakeTranscoder) StartHLS(_ context.Context, src, dir string, rendition 
 	if err := os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U\n"), 0o600); err != nil {
 		return nil, err
 	}
-	return &ffmpeg.HLSProcess{}, nil
+	return f.child(ctx)
 }
 
-func (f *fakeTranscoder) StartHLSSegments(_ context.Context, src, dir string, startSegment, _ int, rendition ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+func (f *fakeTranscoder) StartHLSSegments(ctx context.Context, src, dir string, startSegment, _ int, rendition ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.starts = append(f.starts, src)
@@ -61,7 +62,24 @@ func (f *fakeTranscoder) StartHLSSegments(_ context.Context, src, dir string, st
 			return nil, err
 		}
 	}
-	return &ffmpeg.HLSProcess{}, nil
+	return f.child(ctx)
+}
+
+func (f *fakeTranscoder) child(ctx context.Context) (*ffmpeg.HLSProcess, error) {
+	if !f.holdChild {
+		return &ffmpeg.HLSProcess{}, nil
+	}
+	return ffmpeg.StartHLSCommand(exec.CommandContext(ctx, "sleep", "60"))
+}
+
+func chargedKeys(s *Sessions) []SessionKey {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keys := make([]SessionKey, 0, len(s.charges))
+	for session := range s.charges {
+		keys = append(keys, session.key)
+	}
+	return keys
 }
 
 // filePath720 requests one artifact for a 120s 1280x720 source.
@@ -560,7 +578,7 @@ func TestSeekPastFrontierRestartsTranscodeAtSegment(t *testing.T) {
 // restart the encoder it is waiting on.
 func TestSlowEncoderBehindPlayheadBlocksInsteadOfFailing(t *testing.T) {
 	t.Parallel()
-	transcoder := &fakeTranscoder{segmentsToLay: 1}
+	transcoder := &fakeTranscoder{holdChild: true, segmentsToLay: 1}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	sessions.waitWindow = 100 * time.Millisecond
 	defer sessions.Close()
@@ -607,7 +625,7 @@ func TestSlowEncoderBehindPlayheadBlocksInsteadOfFailing(t *testing.T) {
 func TestStalledEncoderFailsAfterOneWindow(t *testing.T) {
 	t.Parallel()
 	const window = 100 * time.Millisecond
-	sessions := newTestSessions(t, &fakeTranscoder{segmentsToLay: 1}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true, segmentsToLay: 1}, t.TempDir(), nil)
 	sessions.waitWindow = window
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
@@ -630,7 +648,7 @@ func TestStalledEncoderFailsAfterOneWindow(t *testing.T) {
 // below them is still progressing, so the request waits for it.
 func TestBehindPlayheadProgressIgnoresCachedSegments(t *testing.T) {
 	t.Parallel()
-	transcoder := &fakeTranscoder{segmentsToLay: 1}
+	transcoder := &fakeTranscoder{holdChild: true, segmentsToLay: 1}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	sessions.waitWindow = 100 * time.Millisecond
 	defer sessions.Close()
@@ -685,7 +703,7 @@ func TestBehindPlayheadProgressIgnoresCachedSegments(t *testing.T) {
 func TestReplacedEncoderDoesNotExtendTheWait(t *testing.T) {
 	t.Parallel()
 	const window = 100 * time.Millisecond
-	transcoder := &fakeTranscoder{segmentsToLay: 1}
+	transcoder := &fakeTranscoder{holdChild: true, segmentsToLay: 1}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	sessions.waitWindow = window
 	defer sessions.Close()
@@ -1226,7 +1244,7 @@ func assertLatencyBudget(t *testing.T, label string, elapsed, budget time.Durati
 
 func TestRungSwitchReplacesProcessAtRequestedSegment(t *testing.T) {
 	t.Parallel()
-	transcoder := &fakeTranscoder{segmentsToLay: 2}
+	transcoder := &fakeTranscoder{holdChild: true, segmentsToLay: 2}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
@@ -1249,8 +1267,8 @@ func TestRungSwitchReplacesProcessAtRequestedSegment(t *testing.T) {
 		t.Fatalf("switch started at segment %d, want 10", transcoder.segmentStarts[1])
 	}
 	// One live transcode per session throughout.
-	if got := len(sessions.ActiveKeys()); got != 1 {
-		t.Fatalf("ActiveKeys = %d, want 1", got)
+	if got := len(chargedKeys(sessions)); got != 1 {
+		t.Fatalf("charged keys = %d, want 1", got)
 	}
 
 	// Old-rung segments already on disk stay servable without a restart.
@@ -1264,7 +1282,7 @@ func TestRungSwitchReplacesProcessAtRequestedSegment(t *testing.T) {
 
 func TestTranscodeCapRefusesWhenAllSlotsAreActive(t *testing.T) {
 	t.Parallel()
-	transcoder := &fakeTranscoder{}
+	transcoder := &fakeTranscoder{holdChild: true}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(2)
@@ -1286,8 +1304,8 @@ func TestTranscodeCapRefusesWhenAllSlotsAreActive(t *testing.T) {
 		t.Fatalf("err = %v, want ErrTranscodeCapacity", err)
 	}
 	// The admitted sessions keep their slots.
-	if got := len(sessions.ActiveKeys()); got != 2 {
-		t.Fatalf("ActiveKeys = %d, want 2", got)
+	if got := len(chargedKeys(sessions)); got != 2 {
+		t.Fatalf("charged keys = %d, want 2", got)
 	}
 }
 
@@ -1305,7 +1323,7 @@ func TestPerformanceScaleConcurrentTranscodeFloor(t *testing.T) {
 	if os.Getenv("BEAMFALL_PERF") != "1" {
 		t.Skip("set BEAMFALL_PERF=1 (= make bench) to run performance floors")
 	}
-	transcoder := &fakeTranscoder{}
+	transcoder := &fakeTranscoder{holdChild: true}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(performanceScaleTranscodes)
@@ -1334,7 +1352,7 @@ func TestPerformanceScaleConcurrentTranscodeFloor(t *testing.T) {
 			t.Errorf("concurrent transcode: %v", err)
 		}
 	}
-	if got := len(sessions.ActiveKeys()); got != performanceScaleTranscodes {
+	if got := len(chargedKeys(sessions)); got != performanceScaleTranscodes {
 		t.Errorf("active transcodes = %d, want %d", got, performanceScaleTranscodes)
 	}
 	allocated := after.TotalAlloc - before.TotalAlloc
@@ -1365,7 +1383,7 @@ func filePath720Degraded(sessions *Sessions, key SessionKey, name string) (strin
 // advertises only the single lowest rung (also honoring §8: one rendition).
 func TestDegradedSessionAdmitsOverCapAndServesLowestRungOnly(t *testing.T) {
 	t.Parallel()
-	transcoder := &fakeTranscoder{}
+	transcoder := &fakeTranscoder{holdChild: true}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(2)
@@ -1401,8 +1419,8 @@ func TestDegradedSessionAdmitsOverCapAndServesLowestRungOnly(t *testing.T) {
 	if _, err := filePath720Degraded(sessions, keyC, "480p/seg00000.m4s"); err != nil {
 		t.Fatalf("degraded segment over cap: %v", err)
 	}
-	if got := len(sessions.ActiveKeys()); got != 3 {
-		t.Fatalf("ActiveKeys = %d, want 3 (degraded admitted over cap of 2)", got)
+	if got := len(chargedKeys(sessions)); got != 3 {
+		t.Fatalf("charged keys = %d, want 3 (degraded admitted over cap of 2)", got)
 	}
 }
 
@@ -1413,7 +1431,7 @@ func TestDegradedAdmissionPrefersPreemptionBeforeOverCap(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
 	clock := &now
-	transcoder := &fakeTranscoder{}
+	transcoder := &fakeTranscoder{holdChild: true}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), func() time.Time { return *clock })
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
@@ -1430,8 +1448,8 @@ func TestDegradedAdmissionPrefersPreemptionBeforeOverCap(t *testing.T) {
 		t.Fatalf("degraded start: %v", err)
 	}
 	// The idle session was preempted, so the cap of 1 is respected — not exceeded.
-	if got := len(sessions.ActiveKeys()); got != 1 {
-		t.Fatalf("ActiveKeys = %d, want 1 (idle preempted, not over-subscribed)", got)
+	if got := len(chargedKeys(sessions)); got != 1 {
+		t.Fatalf("charged keys = %d, want 1 (idle preempted, not over-subscribed)", got)
 	}
 }
 
@@ -1439,7 +1457,7 @@ func TestHigherPriorityPreemptsActiveLowerPrioritySession(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(1000, 0)
 	clock := func() time.Time { return now }
-	transcoder := &fakeTranscoder{}
+	transcoder := &fakeTranscoder{holdChild: true}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), clock)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
@@ -1465,9 +1483,9 @@ func TestHigherPriorityPreemptsActiveLowerPrioritySession(t *testing.T) {
 	if _, err := filePath720Priority(sessions, fg, PriorityForeground, "720p/seg00000.m4s"); err != nil {
 		t.Fatalf("foreground preempting start: %v", err)
 	}
-	keys := sessions.ActiveKeys()
+	keys := chargedKeys(sessions)
 	if len(keys) != 1 || keys[0] != fg {
-		t.Fatalf("ActiveKeys = %v, want [%v] (foreground evicted the normal stream)", keys, fg)
+		t.Fatalf("charged keys = %v, want [%v] (foreground evicted the normal stream)", keys, fg)
 	}
 }
 
@@ -1475,7 +1493,7 @@ func TestNormalPriorityNeverPreemptsActiveForeground(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(1000, 0)
 	clock := func() time.Time { return now }
-	transcoder := &fakeTranscoder{}
+	transcoder := &fakeTranscoder{holdChild: true}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), clock)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
@@ -1500,9 +1518,9 @@ func TestNormalPriorityNeverPreemptsActiveForeground(t *testing.T) {
 	if _, err := filePath720Priority(sessions, normal, PriorityNormal, "720p/seg00000.m4s"); err != nil {
 		t.Fatalf("normal start after idle window: %v", err)
 	}
-	keys := sessions.ActiveKeys()
+	keys := chargedKeys(sessions)
 	if len(keys) != 1 || keys[0] != normal {
-		t.Fatalf("ActiveKeys = %v, want [%v]", keys, normal)
+		t.Fatalf("charged keys = %v, want [%v]", keys, normal)
 	}
 }
 
@@ -1537,7 +1555,7 @@ func TestTranscodeCapPreemptsIdleSessionForNewOne(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(1000, 0)
 	clock := func() time.Time { return now }
-	transcoder := &fakeTranscoder{}
+	transcoder := &fakeTranscoder{holdChild: true}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), clock)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
@@ -1562,9 +1580,9 @@ func TestTranscodeCapPreemptsIdleSessionForNewOne(t *testing.T) {
 	if _, err := filePath720(sessions, keyNew, "720p/seg00000.m4s"); err != nil {
 		t.Fatalf("preempting start: %v", err)
 	}
-	keys := sessions.ActiveKeys()
+	keys := chargedKeys(sessions)
 	if len(keys) != 1 || keys[0] != keyNew {
-		t.Fatalf("ActiveKeys = %v, want [%v]", keys, keyNew)
+		t.Fatalf("charged keys = %v, want [%v]", keys, keyNew)
 	}
 }
 
@@ -1661,10 +1679,10 @@ func TestScanFrontierReadsHighestSegmentOffLock(t *testing.T) {
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if got := h.scanFrontier("rung", 5); got != 4 {
+	if got, _ := h.scanFrontier("rung", 5); got != 4 {
 		t.Fatalf("empty dir frontier = %d, want 4 (base-1)", got)
 	}
-	if got := h.scanFrontier("missing", 5); got != 4 {
+	if got, _ := h.scanFrontier("missing", 5); got != 4 {
 		t.Fatalf("missing dir frontier = %d, want 4 (base-1)", got)
 	}
 	for _, seg := range []int{3, 5, 6, 7} { // seg3 is below base, ignored
@@ -1676,7 +1694,7 @@ func TestScanFrontierReadsHighestSegmentOffLock(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "init.mp4"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err) // non-segment file must not be counted
 	}
-	if got := h.scanFrontier("rung", 5); got != 7 {
+	if got, _ := h.scanFrontier("rung", 5); got != 7 {
 		t.Fatalf("frontier = %d, want 7 (highest at/above base)", got)
 	}
 }
@@ -1795,7 +1813,7 @@ func (failStartTranscoder) StartHLSSegments(context.Context, string, string, int
 // background generation — and releases it on teardown.
 func TestTranscodeLeaseHeldWhileLiveAndReleasedOnClose(t *testing.T) {
 	g := governor.New()
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	sessions.SetGovernor(g)
 	key := SessionKey{SessionID: "session-a", MediaID: "media-a"}
 
@@ -1845,7 +1863,7 @@ func TestTranscodeLeaseRolledBackOnLaunchFailure(t *testing.T) {
 // throughout, and count returns to zero on teardown.
 func TestTranscodeLeaseHeldAcrossRenditionReplacement(t *testing.T) {
 	g := governor.New()
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	sessions.SetGovernor(g)
 	key := SessionKey{SessionID: "session-c", MediaID: "media-c"}
 
@@ -1913,7 +1931,7 @@ func TestEnsureRungRefusesEvictedSession(t *testing.T) {
 	t.Run("before first spawn", func(t *testing.T) {
 		t.Parallel()
 		g := governor.New()
-		transcoder := &fakeTranscoder{}
+		transcoder := &fakeTranscoder{holdChild: true}
 		sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 		sessions.SetGovernor(g)
 		defer sessions.Close()
@@ -1958,7 +1976,7 @@ func TestEnsureRungRefusesEvictedSession(t *testing.T) {
 	t.Run("while holding a live process", func(t *testing.T) {
 		t.Parallel()
 		g := governor.New()
-		transcoder := &fakeTranscoder{}
+		transcoder := &fakeTranscoder{holdChild: true}
 		sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 		sessions.SetGovernor(g)
 		defer sessions.Close()
@@ -2003,7 +2021,7 @@ func TestEnsureRungRefusesEvictedSession(t *testing.T) {
 	t.Run("concurrent with the off-lock frontier scan", func(t *testing.T) {
 		t.Parallel()
 		g := governor.New()
-		sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+		sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 		sessions.SetGovernor(g)
 		key := SessionKey{SessionID: "session-evicted-race", MediaID: "media-alpha"}
 
@@ -2052,7 +2070,7 @@ func TestTranscodeLeaseReleasedOnIdleReap(t *testing.T) {
 		return clock
 	}
 	g := governor.New()
-	sessions := newTestSessionsInDir(t, &fakeTranscoder{}, t.TempDir(), now)
+	sessions := newTestSessionsInDir(t, &fakeTranscoder{holdChild: true}, t.TempDir(), now)
 	sessions.SetGovernor(g)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-d", MediaID: "media-d"}
@@ -2153,7 +2171,7 @@ func TestNewSessionsInDirPurgeNeverRemovesLiveSessions(t *testing.T) {
 
 func TestDeliveredRungFollowsCachedRenditionSwitch(t *testing.T) {
 	t.Parallel()
-	transcoder := &fakeTranscoder{segmentsToLay: 2}
+	transcoder := &fakeTranscoder{holdChild: true, segmentsToLay: 2}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
@@ -2218,7 +2236,8 @@ func newSlowStop(sessions *Sessions) *slowStop {
 	return b
 }
 
-func (b *slowStop) stop(*ffmpeg.HLSProcess) {
+func (b *slowStop) stop(proc *ffmpeg.HLSProcess) {
+	defer proc.Stop()
 	if !b.armed.Load() {
 		return
 	}
@@ -2261,7 +2280,7 @@ func finishesWhileBlocked(t *testing.T, what string, request func() error) {
 // requests for other sessions.
 func TestSessionTeardownRunsOutsideTheGlobalLock(t *testing.T) {
 	t.Parallel()
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	defer sessions.Close()
 	slow := newSlowStop(sessions)
 	defer slow.unblock()
@@ -2295,6 +2314,9 @@ func TestSessionTeardownRunsOutsideTheGlobalLock(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("TerminateSession did not return after the Stop was released")
 	}
+	if err := sessions.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := os.Stat(dirA); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("session A's directory after teardown: stat err = %v, want not-exist", err)
 	}
@@ -2307,7 +2329,7 @@ func TestSessionTeardownRunsOutsideTheGlobalLock(t *testing.T) {
 func TestEncoderReplacementStopsOutsideTheGlobalLock(t *testing.T) {
 	t.Parallel()
 	g := governor.New()
-	transcoder := &fakeTranscoder{}
+	transcoder := &fakeTranscoder{holdChild: true}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	sessions.SetGovernor(g)
 	sessions.SetTranscodeCap(2)
@@ -2372,7 +2394,7 @@ func TestEncoderReplacementStopsOutsideTheGlobalLock(t *testing.T) {
 func TestSessionEvictedDuringEncoderReplacement(t *testing.T) {
 	t.Parallel()
 	g := governor.New()
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	sessions.SetGovernor(g)
 	defer sessions.Close()
 	slow := newSlowStop(sessions)
@@ -2382,7 +2404,8 @@ func TestSessionEvictedDuringEncoderReplacement(t *testing.T) {
 	if _, err := filePath720(sessions, key, "720p/seg00000.m4s"); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	dir := registeredSession(t, sessions, key).dir
+	original := registeredSession(t, sessions, key)
+	dir := original.dir
 	slow.armed.Store(true)
 
 	seeked := make(chan error, 1)
@@ -2392,20 +2415,29 @@ func TestSessionEvictedDuringEncoderReplacement(t *testing.T) {
 	}()
 	slow.waitEntered(t)
 
-	// The replaced process is already off the session, so this teardown has no
-	// process to stop and must not wait for the replacement.
-	finishesWhileBlocked(t, "TerminateSession", func() error {
-		if n := sessions.TerminateSession(key.SessionID); n != 1 {
-			return fmt.Errorf("TerminateSession = %d, want 1", n)
-		}
-		return nil
-	})
+	terminated := make(chan int, 1)
+	go func() { terminated <- sessions.TerminateSession(key.SessionID) }()
+	waitScratchSignal(t, original.scratch.cutoff)
+	select {
+	case n := <-terminated:
+		t.Fatalf("termination returned %d before the replaced child reaped", n)
+	default:
+	}
 	// The start is still stopping the replaced process, so its lease holds.
 	if got := g.ActiveTranscodes(); got != 1 {
 		t.Fatalf("ActiveTranscodes while the evicted start is stopping = %d, want 1", got)
 	}
 
 	slow.unblock()
+	select {
+	case n := <-terminated:
+		if n != 1 {
+			t.Fatalf("terminated = %d, want 1", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("termination did not join child")
+	}
+
 	select {
 	case err := <-seeked:
 		if !errors.Is(err, ErrSessionEvicted) {
@@ -2416,6 +2448,9 @@ func TestSessionEvictedDuringEncoderReplacement(t *testing.T) {
 	}
 	if got := g.ActiveTranscodes(); got != 0 {
 		t.Fatalf("ActiveTranscodes after the replacement gave up = %d, want 0", got)
+	}
+	if err := sessions.Close(); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("session directory: stat err = %v, want not-exist", err)
@@ -2428,7 +2463,7 @@ func TestSessionEvictedDuringEncoderReplacement(t *testing.T) {
 func TestTeardownKeepsTheSlotUntilTheEncoderStops(t *testing.T) {
 	t.Parallel()
 	g := governor.New()
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	sessions.SetGovernor(g)
 	sessions.SetTranscodeCap(1)
 	defer sessions.Close()
@@ -2475,7 +2510,7 @@ func TestTeardownKeepsTheSlotUntilTheEncoderStops(t *testing.T) {
 func TestCloseWaitsForAnInFlightEncoderStart(t *testing.T) {
 	t.Parallel()
 	g := governor.New()
-	transcoder := &dirlessSpawn{fakeTranscoder: &fakeTranscoder{}}
+	transcoder := &dirlessSpawn{fakeTranscoder: &fakeTranscoder{holdChild: true}}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	sessions.SetGovernor(g)
 	slow := newSlowStop(sessions)
@@ -2511,8 +2546,8 @@ func TestCloseWaitsForAnInFlightEncoderStart(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Close did not return after the start finished")
 	}
-	if got := slow.stops.Load(); got != 2 {
-		t.Fatalf("encoder stops when Close returned = %d, want 2 (the replaced encoder and the one the start spawned)", got)
+	if got := slow.stops.Load(); got != 1 {
+		t.Fatalf("encoder stops when Close returned = %d, want only the replaced encoder", got)
 	}
 	if got := g.ActiveTranscodes(); got != 0 {
 		t.Fatalf("ActiveTranscodes after Close = %d, want 0", got)
@@ -2543,7 +2578,7 @@ func (d *dirlessSpawn) StartHLSSegments(ctx context.Context, src, dir string, st
 func TestCloseWaitsForADetachedTeardown(t *testing.T) {
 	t.Parallel()
 	g := governor.New()
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	sessions.SetGovernor(g)
 	slow := newSlowStop(sessions)
 	defer slow.unblock()
@@ -2647,7 +2682,7 @@ func TestCloseWaitsForADirectoryOnlyTeardown(t *testing.T) {
 func TestPendingStartIsNotPreempted(t *testing.T) {
 	t.Parallel()
 	g := governor.New()
-	transcoder := &fakeTranscoder{}
+	transcoder := &fakeTranscoder{holdChild: true}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	sessions.SetGovernor(g)
 	sessions.SetTranscodeCap(1)
@@ -2739,7 +2774,7 @@ func TestSegmentNamesPastFiveDigitsAreServable(t *testing.T) {
 func TestTerminatePlaybackStopsOnlyThatMediasTranscode(t *testing.T) {
 	t.Parallel()
 	g := governor.New()
-	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	sessions.SetGovernor(g)
 	defer sessions.Close()
 
@@ -2762,11 +2797,11 @@ func TestTerminatePlaybackStopsOnlyThatMediasTranscode(t *testing.T) {
 		t.Fatalf("ActiveTranscodes after ending = %d, want 2", got)
 	}
 	live := map[SessionKey]bool{}
-	for _, key := range sessions.ActiveKeys() {
+	for _, key := range chargedKeys(sessions) {
 		live[key] = true
 	}
 	if live[ended] || !live[otherMedia] || !live[otherSession] {
-		t.Fatalf("live keys = %v, want only %v and %v", sessions.ActiveKeys(), otherMedia, otherSession)
+		t.Fatalf("live keys = %v, want only %v and %v", chargedKeys(sessions), otherMedia, otherSession)
 	}
 	if got := sessions.TerminatePlayback(ended.SessionID, ended.MediaID); got != 0 {
 		t.Fatalf("second TerminatePlayback = %d, want 0", got)

@@ -39,7 +39,7 @@ func (r *Runner) StartEncryptedHLSSegments(ctx context.Context, ep EncryptedLive
 }
 
 func (r *Runner) startEncryptedHLSSegments(ctx context.Context, goos string, ep EncryptedLiveEndpoint, startSegment, segmentSeconds int, rendition Rendition) (*HLSProcess, error) {
-	args, port, err := encryptedSegmentArgs(ep, startSegment, segmentSeconds, r.withQuality(rendition))
+	args, port, err := encryptedSegmentArgsContext(ctx, ep, startSegment, segmentSeconds, r.withQuality(rendition))
 	if err != nil {
 		return nil, err
 	}
@@ -48,13 +48,16 @@ func (r *Runner) startEncryptedHLSSegments(ctx context.Context, goos string, ep 
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
 	// Live playback is not niced: a viewer is waiting on it.
-	cmd, err := r.loopbackCommand(ctx, goos, port, ffmpegPath, pipeArgsForTool(ffmpegPath, args))
+	cmd, err := r.loopbackCommand(ctx, goos, port, ffmpegPath, pipeArgsForToolContext(ctx, ffmpegPath, args))
 	if err != nil {
 		return nil, err
 	}
 	cmd.Env = pipeEnv(os.Environ())
-	process, err := startWithheldHLSProcess(cmd)
+	process, err := startWithheldHLSProcessContext(ctx, cmd)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("starting ffmpeg transcode: %s", redactSecret(err.Error(), ep.Secret))
 	}
 	return process, nil
@@ -63,26 +66,29 @@ func (r *Runner) startEncryptedHLSSegments(ctx context.Context, goos string, ep 
 // startWithheldHLSProcess starts cmd with its stderr discarded, so nothing the
 // process writes there reaches a log (see HLSProcess.stderrWithheld).
 func startWithheldHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
+	return startWithheldHLSProcessContext(context.Background(), cmd)
+}
+
+func startWithheldHLSProcessContext(ctx context.Context, cmd *exec.Cmd) (*HLSProcess, error) {
 	cmd.Stderr = io.Discard
 	cmd.WaitDelay = hlsStderrWaitDelay
-	process, err := startHLSProcess(cmd)
-	if err != nil {
-		return nil, err
-	}
-	process.stderrWithheld = true
-	return process, nil
+	return startHLSProcessContext(ctx, cmd, true)
 }
 
 // encryptedSegmentArgs validates the endpoint and the rendition and builds the
 // argv. It returns the endpoint's port for the sandbox grant.
 func encryptedSegmentArgs(ep EncryptedLiveEndpoint, startSegment, segmentSeconds int, rendition Rendition) ([]string, int, error) {
+	return encryptedSegmentArgsContext(context.Background(), ep, startSegment, segmentSeconds, rendition)
+}
+
+func encryptedSegmentArgsContext(ctx context.Context, ep EncryptedLiveEndpoint, startSegment, segmentSeconds int, rendition Rendition) ([]string, int, error) {
 	if _, ok := rendition.Picture(); ok {
 		return nil, 0, ErrEncryptedLiveShape
 	}
 	if _, ok := rendition.burnsSubtitle(); ok {
 		return nil, 0, ErrEncryptedLiveShape
 	}
-	if reason := rendition.ToneMapRefusal(); reason != "" {
+	if reason := rendition.toneMapRefusal(ctx); reason != "" {
 		return nil, 0, errors.New("ffmpeg: " + reason)
 	}
 	if !rendition.adjust.IsZero() && !rendition.AudioOnly {

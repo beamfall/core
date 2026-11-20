@@ -75,7 +75,7 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 		return "", err
 	}
 	defer artifact.Release()
-	return artifact.path, nil
+	return artifact.path, artifact.validate(true)
 }
 
 func testArtifactForPath(s *Sessions, key SessionKey, path string) (*LiveArtifact, error) {
@@ -321,8 +321,8 @@ func TestCloseWaitsForOpenArtifactReader(t *testing.T) {
 	if _, err := s.FilePath(t.Context(), SessionKey{SessionID: "fresh"}, freshSrc, 120, 1280, 720, true, masterPlaylistName); !errors.Is(err, ErrSessionEvicted) {
 		t.Fatalf("fresh audio-copy request during Close: %v", err)
 	}
-	if err := waitScratchResult(t, probed); !errors.Is(err, context.Canceled) {
-		t.Fatalf("keyframe probe did not observe cancellation during Close: %v", err)
+	if err := waitScratchResult(t, probed); !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("keyframe probe did not observe cutoff during Close: %v", err)
 	}
 	if got := transcoder.probes.Load(); got != 1 {
 		t.Fatalf("Close admitted a fresh keyframe probe: %d calls", got)
@@ -378,19 +378,15 @@ func TestTerminateCutsOffEncryptedReaderBeforeWaitingForRelease(t *testing.T) {
 	}
 	select {
 	case n := <-terminated:
-		t.Fatalf("termination returned while reader still held: %d", n)
-	default:
-	}
-	_ = f.Close()
-	a.Release()
-	select {
-	case n := <-terminated:
 		if n != 1 {
 			t.Fatalf("terminated %d sessions", n)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("termination kept waiting after reader release")
 	}
+	_ = f.Close()
+	a.Release()
+
 	requireScratchMissing(t, a.session.dir)
 }
 
@@ -621,6 +617,20 @@ func TestScratchCollisionInspectionDebt(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestScratchRootUnlocksWhileAnotherDescriptorIsOpen(t *testing.T) {
+	s := newTestSessions(t, nil, t.TempDir(), nil)
+	alias, err := unix.FcntlInt(s.rootLock.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(alias)
+	requireScratchLocked(t, s.dir)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	newTestSessionsInDir(t, nil, s.dir, nil)
 }
 
 func TestScratchSweepAcrossAllocationLifetime(t *testing.T) {
@@ -1001,7 +1011,7 @@ func waitScratchCloseBlocked(t *testing.T, s *Sessions) <-chan struct{} {
 }
 
 func TestCanceledShapeReplacementPreservesEncoderAndResumeHint(t *testing.T) {
-	for _, at := range []string{"before setupMu", "during mkdir", "after successful mkdir"} {
+	for _, at := range []string{"before setup claim", "during mkdir", "after successful mkdir"} {
 		t.Run(at, func(t *testing.T) {
 			transcoder := resumeTranscoder(t)
 			s := newTestSessions(t, transcoder, t.TempDir(), nil)
@@ -1030,7 +1040,7 @@ func TestCanceledShapeReplacementPreservesEncoderAndResumeHint(t *testing.T) {
 
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			if at == "before setupMu" {
+			if at == "before setup claim" {
 				cancel()
 			}
 			entered, release := scratchLatch(t)
@@ -1053,7 +1063,7 @@ func TestCanceledShapeReplacementPreservesEncoderAndResumeHint(t *testing.T) {
 				_, err := s.FilePath(ctx, key, src, 90, 1280, 720, false, masterPlaylistName)
 				canceled <- err
 			}()
-			if at != "before setupMu" {
+			if at != "before setup claim" {
 				waitScratchSignal(t, entered)
 				if at == "after successful mkdir" {
 					mustRead(t, filepath.Join(preparedDir, masterPlaylistName))
@@ -1144,7 +1154,7 @@ func TestCloseWaitsForRemovalAfterLateScratchMkdir(t *testing.T) {
 }
 
 func TestShapeReplacementServesBeforePredecessorReaderReleases(t *testing.T) {
-	transcoder := &fakeTranscoder{}
+	transcoder := &fakeTranscoder{holdChild: true}
 	s := newTestSessions(t, transcoder, t.TempDir(), nil)
 	s.SetTranscodeCap(1)
 	slow := newSlowStop(s)
@@ -1194,7 +1204,7 @@ func TestShapeReplacementServesBeforePredecessorReaderReleases(t *testing.T) {
 }
 
 func TestPreemptionServesBeforeVictimReaderReleases(t *testing.T) {
-	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	s := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
 	s.SetTranscodeCap(1)
 	slow := newSlowStop(s)
 	defer slow.unblock()

@@ -154,6 +154,10 @@ func (h *Handler) verifyMediaGrant(ctx context.Context, token string, target str
 	if err != nil {
 		return streamtoken.Grant{}, auth.Scope{}, err
 	}
+	return h.verifyAuthenticatedMediaGrant(ctx, authenticated)
+}
+
+func (h *Handler) verifyAuthenticatedMediaGrant(ctx context.Context, authenticated streamtoken.AuthenticatedGrant) (streamtoken.Grant, auth.Scope, error) {
 	grant := authenticated.Grant()
 	scope, err := h.auth.Scope(ctx, grant.SessionID)
 	if err != nil {
@@ -993,21 +997,70 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing stream token", http.StatusUnauthorized)
 		return
 	}
-	grant, scope, err := h.verifyMediaGrant(r.Context(), token, streamtoken.TargetMediaHLS)
+	if h.tokens == nil {
+		http.Error(w, "invalid stream token", http.StatusUnauthorized)
+		return
+	}
+	authenticated, err := h.tokens.Authenticate(token, streamtoken.TargetMediaHLS)
 	if err != nil {
 		http.Error(w, "invalid stream token", http.StatusUnauthorized)
 		return
 	}
-	if h.sealedMedia(r, grant.MediaID, scope) {
+	requestCtx := r.Context()
+	signed := authenticated.Grant()
+	var binding *playback.LiveBinding
+	if signed.PlaybackRenditionID == "" {
+		if h.hls == nil {
+			http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		binding, err = h.hls.BindLive(playback.SessionKey{
+			SessionID: signed.SessionID, MediaID: signed.MediaID, ProfileCapability: signed.ProfileCapability,
+		})
+		if err != nil {
+			http.Error(w, "stream ended", http.StatusGone)
+			return
+		}
+		defer binding.Release()
+		ctx, cancel := binding.Context(r.Context())
+		defer cancel()
+		r = r.WithContext(ctx)
+	}
+	ended := func() bool {
+		if binding != nil && binding.Check() != nil {
+			http.Error(w, "stream ended", http.StatusGone)
+			return true
+		}
+		return false
+	}
+	grant, scope, err := h.verifyAuthenticatedMediaGrant(r.Context(), authenticated)
+	if ended() {
+		return
+	}
+	if err != nil {
+		http.Error(w, "invalid stream token", http.StatusUnauthorized)
+		return
+	}
+	sealed := h.sealedMedia(r, grant.MediaID, scope)
+	if ended() {
+		return
+	}
+	if sealed {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
 	}
 	media, err := h.store.Media(r.Context(), grant.MediaID, scope.PlaybackFilter())
+	if ended() {
+		return
+	}
 	if err != nil {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
 	}
 	library, err := h.mediaLibrary(r.Context(), media.LibraryID, scope.PlaybackFilter())
+	if ended() {
+		return
+	}
 	if err != nil {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
@@ -1016,7 +1069,14 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		h.servePrecomputedHLS(w, r, grant, scope, library, name)
 		return
 	}
+	if err := binding.Attach(media.LibraryID, scope.ProfileID, h.store.Profile); err != nil {
+		http.Error(w, "stream ended", http.StatusGone)
+		return
+	}
 	file, err := h.grantFile(r.Context(), grant.MediaID, grant.FileFingerprint, scope.PlaybackFilter())
+	if ended() {
+		return
+	}
 	if err != nil {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
@@ -1025,20 +1085,22 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	// a loopback endpoint and keeps only encrypted files (ADR-0236).
 	var secure *playback.EncryptedSource
 	if library.Encrypted {
-		if secure, ok = h.encryptedLiveSource(library, file); !ok {
+		secure, ok = h.encryptedLiveSource(library, file, binding.Check)
+		if ended() {
+			return
+		}
+		if !ok {
 			http.Error(w, "stream unavailable", http.StatusNotFound)
 			return
 		}
 	}
 	streams, err := h.store.MediaFileStreams(r.Context(), file.ContentFingerprint)
+	if ended() {
+		return
+	}
 	if err != nil {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
-	}
-	key := playback.SessionKey{
-		SessionID:         grant.SessionID,
-		MediaID:           grant.MediaID,
-		ProfileCapability: grant.ProfileCapability,
 	}
 	// The audio-only-transcode verdict (ADR-0010 §5: video copied, only audio
 	// transcoded) rides the signed grant, captured at mint where the capability
@@ -1077,9 +1139,10 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	// Library's file is ciphertext on disk and is never probed in place.
 	durationSeconds := media.DurationSeconds
 	if durationSeconds <= 0 && secure == nil {
-		durationSeconds = h.hls.ProbedDurationSeconds(r.Context(), file.ContentFingerprint, file.Path)
+		durationSeconds = binding.ProbedDurationSeconds(r.Context(), file.ContentFingerprint, file.Path)
 	}
-	artifact, err := h.hls.LiveArtifactShaped(r.Context(), key, file.Path, durationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
+	r = r.WithContext(requestCtx)
+	artifact, err := binding.ArtifactShaped(requestCtx, file.Path, durationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
 	if err != nil {
 		// An evicted session is an expected teardown (ADR-0012 §7 revocation,
 		// idle reap, preemption), not a server fault. 503 is retryable, which
@@ -1644,7 +1707,7 @@ func (h *Handler) Direct(w http.ResponseWriter, r *http.Request) {
 // Encrypted Library: a decrypting reader opened afresh for each encoder run,
 // the plaintext size, and the Sealed predicate that ends the session. It
 // reports false when the file cannot be streamed decrypted.
-func (h *Handler) encryptedLiveSource(library store.Library, file store.MediaFile) (*playback.EncryptedSource, bool) {
+func (h *Handler) encryptedLiveSource(library store.Library, file store.MediaFile, check func() error) (*playback.EncryptedSource, bool) {
 	streaming, ok := h.encryptedBytes.(EncryptedByteReadSeeker)
 	// The object identity is the content fingerprint, never the path.
 	if !ok || file.ContentFingerprint == "" {
@@ -1654,12 +1717,18 @@ func (h *Handler) encryptedLiveSource(library store.Library, file store.MediaFil
 	open := func() (io.ReadSeekCloser, error) {
 		return streaming.OpenDecryptReader(libraryID, path, encryptedClassMediaBytes, fingerprint)
 	}
+	if check() != nil {
+		return nil, false
+	}
 	plain, err := open()
 	if err != nil {
 		return nil, false
 	}
+	defer plain.Close()
+	if check() != nil {
+		return nil, false
+	}
 	size, err := plain.Seek(0, io.SeekEnd)
-	_ = plain.Close()
 	if err != nil {
 		return nil, false
 	}
@@ -1676,6 +1745,10 @@ func serveLiveArtifact(w http.ResponseWriter, r *http.Request, name string, arti
 	if err != nil {
 		if errors.Is(err, playback.ErrSessionEvicted) {
 			http.Error(w, "stream ended", http.StatusGone)
+			return
+		}
+		if errors.Is(err, playback.ErrArtifactChanged) {
+			http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		http.Error(w, "stream unavailable", http.StatusNotFound)
