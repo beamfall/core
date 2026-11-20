@@ -893,12 +893,7 @@ func TestInjectedPlaybackLatencyRegressionReds(t *testing.T) {
 func TestTranscodeLatencyBudgetClassification(t *testing.T) {
 	sessions := &Sessions{}
 	dir := t.TempDir()
-	root, err := os.Open(dir) // #nosec G304 -- dir is this test's private temporary directory.
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer root.Close()
-	session := &hlsSession{dir: dir, scratch: &scratchPath{dir: root}}
+	session := &hlsSession{dir: dir}
 	path := filepath.Join(dir, "seg00000.m4s")
 	if got := sessions.transcodeLatencyBudget(session, path); got != TranscodeStartLatencyBudget {
 		t.Fatalf("first-start budget = %v, want %v", got, TranscodeStartLatencyBudget)
@@ -1661,12 +1656,7 @@ func TestPollForFileTimesOut(t *testing.T) {
 func TestScanFrontierReadsHighestSegmentOffLock(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	root, err := os.Open(dir) // #nosec G304 -- dir is this test's private temporary directory.
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer root.Close()
-	h := &hlsSession{scratch: &scratchPath{dir: root}}
+	h := &hlsSession{dir: dir}
 	dir = filepath.Join(dir, "rung")
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -2609,7 +2599,7 @@ func TestCloseWaitsForADirectoryOnlyTeardown(t *testing.T) {
 			<-release
 		default:
 		}
-		return sessions.root.RemoveAll(filepath.Base(dir))
+		return sessions.removeScratchFixture(dir)
 	}
 	key := SessionKey{SessionID: "session-without-encoder", MediaID: "media-alpha"}
 

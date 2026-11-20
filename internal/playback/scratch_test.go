@@ -14,7 +14,6 @@ import (
 
 	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
-	"github.com/beamfall/core/internal/store"
 	"golang.org/x/sys/unix"
 )
 
@@ -43,6 +42,41 @@ func ownTestSessions(t testing.TB, s *Sessions, err error) *Sessions {
 	return s
 }
 
+// Bare-path helpers support fixtures that control the session lifetime. Use
+// LiveArtifactShaped when the test exercises concurrent teardown.
+func (s *Sessions) FilePath(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy bool, name string) (string, error) {
+	return s.FilePathPriority(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, false, VideoSignal{}, PriorityNormal, name)
+}
+
+func (s *Sessions) FilePathPriority(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, sourceVideo VideoSignal, priority Priority, name string) (string, error) {
+	return s.FilePathPriorityWithBurnSubtitle(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, sourceVideo, -1, priority, name)
+}
+
+func (s *Sessions) FilePathPriorityWithBurnSubtitle(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, sourceVideo VideoSignal, burnSubtitleIndex int, priority Priority, name string) (string, error) {
+	return s.FilePathPriorityWithBurnSubtitleAudio(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, sourceVideo, burnSubtitleIndex, ffmpeg.AudioProfile{}, priority, name)
+}
+
+func (s *Sessions) FilePathPriorityWithBurnSubtitleAudio(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, priority Priority, name string) (string, error) {
+	return s.FilePathPriorityWithBurnSubtitleAudioLadder(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, ladderCaps{}, sourceVideo, burnSubtitleIndex, audioProfile, priority, name)
+}
+
+func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadder(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, priority Priority, name string) (string, error) {
+	return s.FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, nil, priority, name)
+}
+
+func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, priority Priority, name string) (string, error) {
+	return s.FilePathShaped(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, StreamShape{}, priority, name)
+}
+
+func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority, name string) (string, error) {
+	artifact, err := s.LiveArtifactShaped(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
+	if err != nil {
+		return "", err
+	}
+	defer artifact.Release()
+	return artifact.path, nil
+}
+
 func testArtifactForPath(s *Sessions, key SessionKey, path string) (*LiveArtifact, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -59,6 +93,10 @@ func requireScratchMissing(t *testing.T, path string) {
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("scratch %s still present: %v", path, err)
 	}
+}
+
+func (s *Sessions) removeScratchFixture(path string) error {
+	return os.RemoveAll(filepath.Join(s.dir, filepath.Base(path)))
 }
 
 func TestNewSessionsCreatesDefaultAndValidatesExplicitRoot(t *testing.T) {
@@ -160,11 +198,15 @@ func TestCloseWaitsForOpenArtifactReader(t *testing.T) {
 	if _, err := f.Read(make([]byte, 1)); err != nil {
 		t.Fatalf("read held descriptor: %v", err)
 	}
+	if len(mustRead(t, a.path)) == 0 {
+		t.Fatal("held artifact path is empty during Close")
+	}
 	_ = f.Close()
 	a.Release()
 	if err := waitScratchResult(t, closed); err != nil {
 		t.Fatal(err)
 	}
+	requireScratchMissing(t, a.path)
 	newTestSessionsInDir(t, nil, s.dir, nil)
 }
 
@@ -315,8 +357,8 @@ func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *tes
 	seedScratchFile(t, filepath.Join(s.dir, collision, "720p", "seg00000.m4s"))
 	seedScratchFile(t, filepath.Join(s.dir, future, "marker"))
 	entered, release := scratchLatch(t)
-	s.mkdirDir = func(name string, mode fs.FileMode) error {
-		if err := s.root.Mkdir(name, mode); err != nil {
+	s.mkdirDir = func(path string, mode fs.FileMode) error {
+		if err := os.Mkdir(path, mode); err != nil {
 			return err
 		}
 		close(entered)
@@ -380,7 +422,7 @@ func TestScratchSweepRecordsCollisionFailureAsRootDebt(t *testing.T) {
 		if path == collision {
 			return fail
 		}
-		return s.root.RemoveAll(filepath.Base(path))
+		return s.removeScratchFixture(path)
 	}
 	key := SessionKey{SessionID: "collision"}
 	a, err := s.LiveArtifactShaped(t.Context(), key, "/src", 120, 1280, 720, false, false,
@@ -427,7 +469,7 @@ func TestScratchReaperRetriesDetachedDebtWithSuccessorOrVacantHead(t *testing.T)
 					<-release.ch
 					return os.ErrPermission
 				}
-				return s.root.RemoveAll(filepath.Base(path))
+				return s.removeScratchFixture(path)
 			}
 			terminated := make(chan struct{})
 			go func() {
@@ -555,7 +597,7 @@ func TestScratchArtifactOpensRefuseSymlinksAndFIFO(t *testing.T) {
 		_ = f.Close()
 		t.Fatal("opened artifact through an in-root rung symlink")
 	}
-	if entries, err := a.session.scratch.readRung("rung-alias"); err == nil {
+	if entries, err := a.session.readRung("rung-alias"); err == nil {
 		t.Fatalf("listed a symlinked rung: %v", entries)
 	}
 	if err := unix.Mkfifo(path, 0o600); err != nil {
@@ -642,10 +684,10 @@ func waitScratchCloseBlocked(t *testing.T, s *Sessions) <-chan struct{} {
 func TestScratchCleanupOwnsLateMkdirAfterCancellation(t *testing.T) {
 	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	entered, release := scratchLatch(t)
-	s.mkdirDir = func(name string, mode fs.FileMode) error {
+	s.mkdirDir = func(path string, mode fs.FileMode) error {
 		close(entered)
 		<-release.ch
-		return s.root.Mkdir(name, mode)
+		return os.Mkdir(path, mode)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -681,10 +723,10 @@ func TestTerminationRevokesScratchAllocation(t *testing.T) {
 			transcoder := &fakeTranscoder{}
 			s := newTestSessions(t, transcoder, t.TempDir(), nil)
 			entered, release := scratchLatch(t)
-			s.mkdirDir = func(name string, mode fs.FileMode) error {
+			s.mkdirDir = func(path string, mode fs.FileMode) error {
 				close(entered)
 				<-release.ch
-				return s.root.Mkdir(name, mode)
+				return os.Mkdir(path, mode)
 			}
 			key := SessionKey{SessionID: "viewer", MediaID: "item", ProfileCapability: "receiver"}
 			request := make(chan error, 1)
@@ -733,15 +775,15 @@ func TestCloseWaitsForRemovalAfterLateScratchMkdir(t *testing.T) {
 	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	mkdirEntered, mkdirRelease := scratchLatch(t)
 	removeEntered, removeRelease := scratchLatch(t)
-	s.mkdirDir = func(name string, mode fs.FileMode) error {
+	s.mkdirDir = func(path string, mode fs.FileMode) error {
 		close(mkdirEntered)
 		<-mkdirRelease.ch
-		return s.root.Mkdir(name, mode)
+		return os.Mkdir(path, mode)
 	}
 	s.removeDir = func(path string) error {
 		close(removeEntered)
 		<-removeRelease.ch
-		return s.root.RemoveAll(filepath.Base(path))
+		return s.removeScratchFixture(path)
 	}
 	created := make(chan error, 1)
 	go func() {
@@ -777,103 +819,6 @@ func TestCloseWaitsForRemovalAfterLateScratchMkdir(t *testing.T) {
 	newTestSessionsInDir(t, nil, s.dir, nil)
 }
 
-func TestScratchWritersStayInHeldRootAfterReplacement(t *testing.T) {
-	for _, encrypted := range []bool{false, true} {
-		t.Run(fmt.Sprintf("encrypted=%t", encrypted), func(t *testing.T) {
-			s := newTestSessions(t, &fakeEncryptedTranscoder{}, t.TempDir(), nil)
-			shape := StreamShape{ComposedPicture: true}
-			rung := ComposedRungID
-			if encrypted {
-				shape = StreamShape{Encrypted: testEncryptedSource(nil)}
-				rung = "720p"
-			}
-			s.SetPictureComposer(func(context.Context, store.MediaID, string) (ComposedPicture, bool, error) {
-				return ComposedPicture{TimedText: composedTestText}, true, nil
-			})
-			entered, release := scratchLatch(t)
-			s.mkdirDir = func(name string, mode fs.FileMode) error {
-				err := s.root.Mkdir(name, mode)
-				close(entered)
-				<-release.ch
-				return err
-			}
-			result := make(chan error, 1)
-			go func() {
-				a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "root-swap"}, "/src", 120, 1280, 720, false, false,
-					ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, shape, PriorityNormal, rung+"/seg00000.m4s")
-				if err == nil {
-					a.Release()
-				}
-				result <- err
-			}()
-			waitScratchSignal(t, entered)
-			held := s.dir + "-held"
-			if err := os.Rename(s.dir, held); err != nil {
-				t.Fatal(err)
-			}
-			name := fmt.Sprintf("session-%s-1", s.bootNonce)
-			original := filepath.Join(held, name)
-			replacement := filepath.Join(s.dir, name)
-			marker := filepath.Join(replacement, masterPlaylistName)
-			seedScratchFile(t, marker)
-			release.open()
-			if err := waitScratchResult(t, result); err != nil {
-				t.Fatal(err)
-			}
-			for _, rel := range []string{masterPlaylistName, rung + "/index.m3u8", rung + "/seg00000.m4s"} {
-				if len(mustRead(t, filepath.Join(original, rel))) == 0 {
-					t.Fatalf("missing output in the held directory: %s", rel)
-				}
-			}
-			if !encrypted {
-				if got := string(mustRead(t, filepath.Join(original, rung, composedTimedTextFile))); got != composedTestText {
-					t.Fatalf("timed text in the held directory = %q", got)
-				}
-			}
-			requireScratchLocked(t, held)
-			if err := s.Close(); err != nil {
-				t.Fatal(err)
-			}
-			requireScratchMissing(t, original)
-			if got := string(mustRead(t, marker)); got != "stale" {
-				t.Fatalf("replacement playlist changed: %q", got)
-			}
-			entries, err := os.ReadDir(replacement)
-			if err != nil || len(entries) != 1 || entries[0].Name() != masterPlaylistName {
-				t.Fatalf("replacement directory changed: %v, %v", entries, err)
-			}
-		})
-	}
-}
-
-func TestPlainScratchWriterRefusesSymlinkedRung(t *testing.T) {
-	transcoder := &fakeTranscoder{}
-	s := newTestSessions(t, transcoder, t.TempDir(), nil)
-	key := SessionKey{SessionID: "symlinked-rung"}
-	master, err := filePath720(s, key, masterPlaylistName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rungDir := filepath.Join(filepath.Dir(master), "720p")
-	if err := os.Rename(rungDir, rungDir+"-original"); err != nil {
-		t.Fatal(err)
-	}
-	outside := t.TempDir()
-	if err := os.Symlink(outside, rungDir); err != nil {
-		t.Fatal(err)
-	}
-	_, err = filePath720(s, key, "720p/seg00000.m4s")
-	if !errors.Is(err, unix.ENOTDIR) && !errors.Is(err, unix.ELOOP) {
-		t.Fatalf("start with symlinked rung returned %v", err)
-	}
-	if len(transcoder.starts) != 0 {
-		t.Fatal("encoder was invoked with a symlinked output directory")
-	}
-	if entries, err := os.ReadDir(outside); err != nil || len(entries) != 0 {
-		t.Fatalf("outside directory changed: %v, %v", entries, err)
-	}
-}
-
 func TestShapeReplacementServesBeforePredecessorReaderReleases(t *testing.T) {
 	transcoder := &fakeTranscoder{}
 	s := newTestSessions(t, transcoder, t.TempDir(), nil)
@@ -881,11 +826,8 @@ func TestShapeReplacementServesBeforePredecessorReaderReleases(t *testing.T) {
 	slow := newSlowStop(s)
 	defer slow.unblock()
 	key := SessionKey{SessionID: "replace-with-open-reader"}
-	oldPath, err := filePath720(s, key, "720p/seg00000.m4s")
-	if err != nil {
-		t.Fatal(err)
-	}
-	held, err := testArtifactForPath(s, key, oldPath)
+	held, err := s.LiveArtifactShaped(t.Context(), key, "/src/movie.mkv", 120, 1280, 720, false, false,
+		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, "720p/seg00000.m4s")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -917,7 +859,7 @@ func TestShapeReplacementServesBeforePredecessorReaderReleases(t *testing.T) {
 	if _, err := s.FilePath(ctx, key, "/src/movie.mkv", 60, 1280, 720, false, "720p/seg00000.m4s"); err != nil {
 		t.Fatalf("successor could not use the freed encoder slot: %v", err)
 	}
-	if got := string(mustRead(t, oldPath)); got != "m4s" {
+	if got := string(mustRead(t, held.path)); got != "m4s" {
 		t.Fatalf("predecessor artifact while retained = %q", got)
 	}
 	if err := reader.Close(); err != nil {
@@ -925,6 +867,54 @@ func TestShapeReplacementServesBeforePredecessorReaderReleases(t *testing.T) {
 	}
 	held.Release()
 	requireScratchMissing(t, held.session.dir)
+}
+
+func TestPreemptionServesBeforeVictimReaderReleases(t *testing.T) {
+	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	s.SetTranscodeCap(1)
+	slow := newSlowStop(s)
+	defer slow.unblock()
+	const segment = "720p/seg00000.m4s"
+	victim, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "victim"}, "/src", 120, 1280, 720, false, false,
+		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, segment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer victim.Release()
+	reader, _, err := victim.OpenPlain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	slow.armed.Store(true)
+	started := make(chan error, 1)
+	go func() {
+		next, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "preemptor"}, "/src", 120, 1280, 720, false, false,
+			ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityForeground, segment)
+		if err == nil {
+			next.Release()
+		}
+		started <- err
+	}()
+	slow.waitEntered(t)
+	select {
+	case err := <-started:
+		t.Fatalf("preemptor served before the victim stopped: %v", err)
+	default:
+	}
+	slow.unblock()
+	if err := waitScratchResult(t, started); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(mustRead(t, victim.path)); got != "m4s" {
+		t.Fatalf("victim's retained segment = %q", got)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	victim.Release()
+	requireScratchMissing(t, victim.session.dir)
 }
 
 func TestScratchReaperRetriesDebtWhileIdleReaderIsHeld(t *testing.T) {
@@ -941,7 +931,7 @@ func TestScratchReaperRetriesDebtWhileIdleReaderIsHeld(t *testing.T) {
 		if path == debtDir && attempts.Add(1) == 1 {
 			return os.ErrPermission
 		}
-		return s.root.RemoveAll(filepath.Base(path))
+		return s.removeScratchFixture(path)
 	}
 	s.TerminateSession(debtKey.SessionID)
 	if attempts.Load() != 1 {

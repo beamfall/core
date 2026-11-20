@@ -459,7 +459,6 @@ type Sessions struct {
 	transcoder    Transcoder
 	dir           string
 	now           func() time.Time
-	root          *os.Root
 	rootLock      *os.File
 	setupMu       sync.Mutex
 	allocation    *scratchAllocation
@@ -540,8 +539,8 @@ type sessionTeardown struct {
 	lease *governor.TranscodeLease
 	// counted means detachment added this teardown to s.stopping.
 	counted bool
-	// Late starts, shape replacement and the idle reaper leave removal to
-	// the last user if busy.
+	// Late starts, shape replacement, preemption and the idle reaper leave
+	// removal to the last user if busy.
 	cleanupOnRelease bool
 	// End access before waiting for directory owners to exit.
 	liveRun *encderiv.LiveRun
@@ -841,7 +840,7 @@ func (s *Sessions) admitLocked(key SessionKey, priority Priority, degraded bool)
 		return nil, nil
 	}
 	if victim := s.preemptableLocked(key, priority); victim != nil {
-		return s.transitionLocked(victim, detachSession{}).teardown, nil
+		return s.transitionLocked(victim, detachSession{cleanupOnRelease: true}).teardown, nil
 	}
 	if degraded {
 		return nil, nil // over-cap, lowest rung only: keep the party member streaming
@@ -903,61 +902,6 @@ func newBootNonce() string {
 	var b [8]byte
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
-}
-
-// FilePath returns the on-disk path of one HLS artifact, starting (or seek- or
-// rendition-switch-restarting) the transcode as needed and waiting for the
-// file to appear. The name space is master.m3u8 plus <rung>/<artifact>; the
-// rung set is derived from the source dimensions, so a rung above the source
-// does not exist (honest ABR — ADR-0010 §8). durationSeconds drives the
-// synthesized per-rung VOD playlists; zero falls back to the legacy linear
-// mode where ffmpeg owns the variant playlist. audioCopy selects the
-// audio-only-transcode mode: the session offers the single
-// audio-copy rung (video muxed through, only audio transcoded) instead of the
-// resolution ladder, so the served rendition carries -c:v copy.
-func (s *Sessions) FilePath(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy bool, name string) (string, error) {
-	return s.FilePathPriority(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, false, VideoSignal{}, PriorityNormal, name)
-}
-
-// FilePathPriority is FilePath with an explicit admission rank.
-// The rank is the session's standing the first time an encode is admitted and
-// is raised, never lowered, on a later higher-rank request; it governs which
-// other session this one may preempt at capacity. degraded caps a capacity-
-// degraded Watch-Party session to the single lowest rung and lets its admission
-// exceed the cap (ADR-0010 §6 "drop to this quality"; PANEL-16). FilePath
-// delegates here at PriorityNormal and degraded=false, so the unchanged entry
-// point keeps the equal-priority, idle-only, full-ladder behaviour.
-func (s *Sessions) FilePathPriority(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, sourceVideo VideoSignal, priority Priority, name string) (string, error) {
-	return s.FilePathPriorityWithBurnSubtitle(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, sourceVideo, -1, priority, name)
-}
-
-// FilePathPriorityWithBurnSubtitle is FilePathPriority plus a selected subtitle
-// stream index for bitmap-subtitle burn-in.
-func (s *Sessions) FilePathPriorityWithBurnSubtitle(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, sourceVideo VideoSignal, burnSubtitleIndex int, priority Priority, name string) (string, error) {
-	return s.FilePathPriorityWithBurnSubtitleAudio(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, sourceVideo, burnSubtitleIndex, ffmpeg.AudioProfile{}, priority, name)
-}
-
-func (s *Sessions) FilePathPriorityWithBurnSubtitleAudio(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, priority Priority, name string) (string, error) {
-	return s.FilePathPriorityWithBurnSubtitleAudioLadder(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, ladderCaps{}, sourceVideo, burnSubtitleIndex, audioProfile, priority, name)
-}
-
-func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadder(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, priority Priority, name string) (string, error) {
-	return s.FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, nil, priority, name)
-}
-
-func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, priority Priority, name string) (string, error) {
-	return s.FilePathShaped(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, StreamShape{}, priority, name)
-}
-
-// FilePathShaped is FilePathPriorityWithBurnSubtitleAudioLadderMap with the
-// grant's StreamShape, which can reshape the session beyond its ladder.
-func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority, name string) (string, error) {
-	artifact, err := s.LiveArtifactShaped(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
-	if err != nil {
-		return "", err
-	}
-	defer artifact.Release()
-	return artifact.path, nil
 }
 
 // LiveArtifactShaped selects and holds one live artifact. Its caller releases
@@ -1211,7 +1155,7 @@ func (s *Sessions) rungEncoder(session *hlsSession, rung Rung) (run *encoderRun,
 // modified at or after since. Segments cached by earlier runs keep their older
 // times, so only this run's writes count.
 func (h *hlsSession) segmentWrittenSince(rung string, base int, since time.Time) bool {
-	entries, err := h.scratch.readRung(rung)
+	entries, err := h.readRung(rung)
 	if err != nil {
 		return false
 	}
@@ -1223,7 +1167,7 @@ func (h *hlsSession) segmentWrittenSince(rung string, base int, since time.Time)
 		if segment, _ := strconv.Atoi(match[1]); segment < base {
 			continue
 		}
-		f, info, err := openScratchMember(h.scratch.dir, filepath.Join(rung, entry.Name()))
+		f, info, err := h.openArtifact(filepath.Join(h.dir, rung, entry.Name()))
 		if err != nil {
 			continue
 		}
@@ -1412,14 +1356,14 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		}
 	}
 	if err == nil && secure != nil {
-		session.live, err = encderiv.NewLiveSession(scratch.writerDir, secure.LibraryID)
+		session.live, err = encderiv.NewLiveSession(dir, secure.LibraryID)
 	}
 	if err == nil {
-		err = writeSessionPlaylists(scratch.root, requestedRungs, durationSeconds, timeline, primed, session.writePlaylist)
+		err = writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline, primed, session.writePlaylist)
 	}
 	var preparedPicture *ffmpeg.ComposedPicture
 	if err == nil && picture != nil {
-		preparedPicture, err = writeLivePicture(scratch, *picture)
+		preparedPicture, err = writeLivePicture(dir, *picture)
 	}
 	if err != nil {
 		scratch.users--
@@ -1489,12 +1433,12 @@ func rungsEqual(left, right []Rung) bool {
 // playlist each variant serves before a single segment exists. The audio-copy
 // rung's playlist follows timeline when there is one. write stores one
 // playlist under its slash-separated name relative to dir.
-func writeSessionPlaylists(root *os.Root, rungs []Rung, durationSeconds int, timeline *keyframeTimeline, primed primedGrid, write func(rel string, data []byte) error) error {
+func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeline *keyframeTimeline, primed primedGrid, write func(rel string, data []byte) error) error {
 	if err := write(masterPlaylistName, []byte(masterPlaylist(rungs))); err != nil {
 		return err
 	}
 	for _, rung := range rungs {
-		if err := root.Mkdir(rung.ID, 0o700); err != nil {
+		if err := os.Mkdir(filepath.Join(dir, rung.ID), 0o700); err != nil {
 			return err
 		}
 		if durationSeconds > 0 {
@@ -1593,18 +1537,23 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	}
 	s.stop(start.replaced)
 	procCtx := context.WithoutCancel(ctx)
-	if session.secure != nil || (session.durationSeconds > 0 && session.keyframeTimeline(rung) == nil) {
-		segment = session.primed.restartSegment(segment)
-	}
 	var proc *ffmpeg.HLSProcess
 	var liveRun *encderiv.LiveRun
 	var err error
+	rungDir := filepath.Join(session.dir, rung.ID)
 	if session.secure != nil {
 		// The encrypted encode shares the primed grid; segments the earlier
 		// start rewrites are refused as existing and the first copy stays.
+		segment = session.primed.restartSegment(segment)
 		proc, liveRun, err = s.startEncryptedRung(procCtx, session, rung, segment)
+	} else if t := session.keyframeTimeline(rung); t != nil && session.durationSeconds > 0 {
+		// Start at the actual keyframe time to match the playlist (CORE-0021).
+		proc, err = s.transcoder.(keyframeTranscoder).StartHLSKeyframeSegments(procCtx, session.src, rungDir, segment, t.segmentStart(segment), session.rendition(rung))
+	} else if session.durationSeconds > 0 {
+		segment = session.primed.restartSegment(segment)
+		proc, err = s.transcoder.StartHLSSegments(procCtx, session.src, rungDir, segment, rungSegmentSeconds(rung), session.rendition(rung))
 	} else {
-		proc, err = s.startPlainRung(procCtx, session, rung, segment)
+		proc, err = s.transcoder.StartHLS(procCtx, session.src, rungDir, session.rendition(rung))
 	}
 	s.mu.Lock()
 	var run *encoderRun
@@ -1808,7 +1757,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 // into the session's cached frontier under the manager lock.
 func (h *hlsSession) scanFrontier(rung string, base int) int {
 	frontier := base - 1
-	entries, err := h.scratch.readRung(rung)
+	entries, err := h.readRung(rung)
 	if err != nil {
 		return frontier
 	}
@@ -2001,8 +1950,8 @@ func (s *Sessions) Close() error {
 			s.mu.Lock()
 		}
 		s.mu.Unlock()
-		if s.root != nil {
-			s.closeErr = errors.Join(s.closeSweepErr, s.retryScratch(true), s.root.Close(), s.rootLock.Close())
+		if s.rootLock != nil {
+			s.closeErr = errors.Join(s.closeSweepErr, s.retryScratch(true), s.rootLock.Close())
 		}
 	})
 	return s.closeErr

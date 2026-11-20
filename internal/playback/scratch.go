@@ -31,18 +31,15 @@ const (
 
 // Sessions.mu protects the path registry and every claim's mutable state.
 type scratchPath struct {
-	name      string
-	library   store.LibraryID
-	state     scratchState
-	users     int
-	drained   chan struct{}
-	cleanup   *sessionTeardown
-	cutoff    chan struct{}
-	retryAt   time.Time
-	backoff   time.Duration
-	root      *os.Root
-	dir       *os.File
-	writerDir string
+	name    string
+	library store.LibraryID
+	state   scratchState
+	users   int
+	drained chan struct{}
+	cleanup *sessionTeardown
+	cutoff  chan struct{}
+	retryAt time.Time
+	backoff time.Duration
 }
 
 // scratchAllocation is the unpublished setup owner while mkdir runs off-lock.
@@ -85,17 +82,11 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 	if err != nil {
 		return nil, err
 	}
-	root, err := os.OpenRoot(dir)
+	lock, err := openScratchFile(dir, unix.O_RDONLY|unix.O_DIRECTORY)
 	if err != nil {
-		return nil, err
-	}
-	lock, err := root.Open(".")
-	if err != nil {
-		_ = root.Close()
 		return nil, err
 	}
 	if err = unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		_ = root.Close()
 		_ = lock.Close()
 		return nil, fmt.Errorf("lock transcode scratch %q: %w", dir, err)
 	}
@@ -105,7 +96,6 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 	s := &Sessions{
 		transcoder:  transcoder,
 		dir:         dir,
-		root:        root,
 		rootLock:    lock,
 		now:         now,
 		bootNonce:   newBootNonce(),
@@ -119,13 +109,12 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 	}
 	// A successful probe also validates writability for direct callers of this
 	// constructor. Keep the probe under the lock and outside the session namespace.
-	probe := ".beamfall-write-" + s.bootNonce
-	f, err := root.OpenFile(probe, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := os.CreateTemp(dir, ".beamfall-write-*")
 	if err == nil {
-		err = errors.Join(f.Close(), root.Remove(probe))
+		err = errors.Join(f.Close(), os.Remove(f.Name()))
 	}
 	if err != nil {
-		return nil, errors.Join(err, root.Close(), lock.Close())
+		return nil, errors.Join(err, lock.Close())
 	}
 	if err := s.PurgeOrphanedTranscodeDirs(); err != nil {
 		return nil, errors.Join(err, s.Close())
@@ -148,32 +137,19 @@ func (s *Sessions) allocateScratchLocked(ctx context.Context, key SessionKey, li
 		p := &scratchPath{name: name, cutoff: make(chan struct{})}
 		s.paths[name] = p
 		s.mu.Unlock()
-		mkdir := s.root.Mkdir
+		mkdir := os.Mkdir
 		if s.mkdirDir != nil {
 			mkdir = s.mkdirDir
 		}
-		err := mkdir(name, 0o700)
-		created := err == nil
-		var root *os.Root
-		var dir *os.File
-		var writerDir string
-		if created {
-			dir, err = openScratchChild(s.rootLock, name, unix.O_RDONLY|unix.O_DIRECTORY)
-			if err == nil {
-				writerDir, err = scratchWriterPath(dir)
-			}
-			if err == nil {
-				root, err = os.OpenRoot(writerDir)
-			}
-		}
+		err := mkdir(filepath.Join(s.dir, name), 0o700)
 		s.mu.Lock()
-		if !created && errors.Is(err, fs.ErrExist) {
+		if errors.Is(err, fs.ErrExist) {
 			// The session never owned this entry. Its cleanup belongs to the root.
 			p.state = scratchDebt
 			s.wakeCloseLocked()
 			continue
 		}
-		if !created {
+		if err != nil {
 			delete(s.paths, name)
 			s.wakeCloseLocked()
 			if allocation.revoked {
@@ -183,7 +159,7 @@ func (s *Sessions) allocateScratchLocked(ctx context.Context, key SessionKey, li
 		}
 		// Close continues to count this claim through unpublished setup. Its
 		// caller publishes or assigns the initial remover under mu.
-		p.library, p.root, p.dir, p.writerDir = library, root, dir, writerDir
+		p.library = library
 		p.state, p.users = scratchLive, 1
 		if allocation.revoked {
 			err = ErrSessionEvicted
@@ -221,27 +197,17 @@ func (s *Sessions) claimScratchRemovalLocked(p *scratchPath) {
 }
 
 func (s *Sessions) removeScratch(p *scratchPath) error {
-	var err error
-	if p.root != nil {
-		err = p.root.Close()
-	}
-	if p.dir != nil {
-		err = errors.Join(err, p.dir.Close())
-	}
-	remove := s.root.RemoveAll
-	name := p.name
+	remove := os.RemoveAll
 	if s.removeDir != nil {
 		remove = s.removeDir
-		name = filepath.Join(s.dir, name)
 	}
-	removeErr := remove(name)
-	if !errors.Is(removeErr, fs.ErrNotExist) {
-		err = errors.Join(err, removeErr)
+	err := remove(filepath.Join(s.dir, p.name))
+	if errors.Is(err, fs.ErrNotExist) {
+		err = nil
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p.root, p.dir = nil, nil
 	if err == nil {
 		delete(s.paths, p.name)
 	} else {
@@ -303,7 +269,7 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() (result error) {
 	if s.readScratch != nil {
 		readDir = s.readScratch
 	}
-	entries, err := readDir(s.root.FS(), ".")
+	entries, err := readDir(os.DirFS(s.dir), ".")
 	if err != nil {
 		return fmt.Errorf("list transcode scratch: %w", err)
 	}

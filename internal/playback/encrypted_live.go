@@ -3,6 +3,7 @@ package playback
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -141,7 +142,7 @@ func (h *hlsSession) writePlaylist(rel string, data []byte) error {
 	if h.live != nil {
 		return h.live.WriteFile(rel, data)
 	}
-	return h.scratch.root.WriteFile(filepath.FromSlash(rel), data, 0o600)
+	return os.WriteFile(filepath.Join(h.dir, filepath.FromSlash(rel)), data, 0o600)
 }
 
 func (s *Sessions) liveRevocationInterval() time.Duration {

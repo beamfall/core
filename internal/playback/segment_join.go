@@ -2,7 +2,6 @@ package playback
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -80,17 +79,15 @@ func (s *Sessions) joinArtifact(ctx context.Context, h *hlsSession, dst string, 
 	if h.artifactReady(dst) {
 		return nil
 	}
-	rel, err := filepath.Rel(h.dir, dst)
+	rel, err := h.artifactRelativePath(dst)
 	if err != nil {
 		return err
 	}
-	root := h.scratch.root
-	tmpName := ".join-" + rand.Text()
-	tmp, err := root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	tmp, err := os.CreateTemp(h.dir, ".join-*")
 	if err != nil {
 		return err
 	}
-	defer root.Remove(tmpName)
+	defer os.Remove(tmp.Name())
 	join := joinFragments
 	if s.join != nil {
 		join = s.join
@@ -107,7 +104,7 @@ func (s *Sessions) joinArtifact(ctx context.Context, h *hlsSession, dst string, 
 	if h.state != sessionRunning {
 		return ErrSessionEvicted
 	}
-	return root.Rename(tmpName, rel)
+	return os.Rename(tmp.Name(), filepath.Join(h.dir, rel))
 }
 
 // isoBox is one top-level ISO-BMFF box: its four-character type and its bytes,

@@ -3,6 +3,7 @@ package playback
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -100,15 +101,15 @@ func (s *Sessions) livePicture(ctx context.Context, key SessionKey, src string, 
 // writeLivePicture lays a resolved picture out for the encoder: a graphics
 // track is read in place beside the source, and timed text is written into the
 // rung directory, inside the encode's read-write confinement.
-func writeLivePicture(scratch *scratchPath, picture ComposedPicture) (*ffmpeg.ComposedPicture, error) {
+func writeLivePicture(dir string, picture ComposedPicture) (*ffmpeg.ComposedPicture, error) {
 	if picture.TimedText == "" {
 		return &ffmpeg.ComposedPicture{GraphicsPath: picture.GraphicsPath}, nil
 	}
-	rel := filepath.Join(ComposedRungID, composedTimedTextFile)
-	if err := scratch.root.WriteFile(rel, []byte(picture.TimedText), 0o600); err != nil {
+	path := filepath.Join(dir, ComposedRungID, composedTimedTextFile)
+	if err := os.WriteFile(path, []byte(picture.TimedText), 0o600); err != nil {
 		return nil, err
 	}
-	return &ffmpeg.ComposedPicture{TimedTextPath: filepath.Join(scratch.writerDir, rel)}, nil
+	return &ffmpeg.ComposedPicture{TimedTextPath: path}, nil
 }
 
 // composedLiveRungs is the closed vocabulary of live composed shapes, best

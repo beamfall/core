@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sync/atomic"
 )
 
@@ -75,14 +74,6 @@ func (r *Runner) hardenedCommand(ctx context.Context, binPath string, roPaths, r
 // GPU grant a hardware job needs.
 func (r *Runner) confinedCommand(ctx context.Context, binPath string, conf confinement, args []string) *exec.Cmd {
 	return shimCommand(ctx, r.shimPath, binPath, conf, args)
-}
-
-func (r *Runner) liveHLSCommand(ctx context.Context, binPath string, conf confinement, rendition Rendition, args []string) *exec.Cmd {
-	cmd := r.confinedCommand(ctx, binPath, conf, args)
-	if rendition.hlsOutputDir != nil && (runtime.GOOS == "darwin" || runtime.GOOS == "linux") {
-		cmd.ExtraFiles = []*os.File{rendition.hlsOutputDir}
-	}
-	return cmd
 }
 
 // shimCommand wraps binPath in the shim at shimPath under conf, or execs it

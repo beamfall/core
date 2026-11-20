@@ -301,12 +301,7 @@ func TestSegmentLacksMedia(t *testing.T) {
 		{"oversized box", mp4Box("styp", make([]byte, 4))[:10], false},
 	}
 	dir := t.TempDir()
-	root, err := os.Open(dir) // #nosec G304 -- dir is this test's private temporary directory.
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer root.Close()
-	h := &hlsSession{dir: dir, scratch: &scratchPath{dir: root}}
+	h := &hlsSession{dir: dir}
 	for i, tc := range cases {
 		path := filepath.Join(dir, fmt.Sprintf("case%d.m4s", i))
 		if err := os.WriteFile(path, tc.body, 0o600); err != nil {

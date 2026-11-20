@@ -13,6 +13,7 @@ import (
 
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/streamtoken"
 )
 
 // TestFFmpegShimHappyPathRealTranscode is the criterion (c) regression check
@@ -64,7 +65,7 @@ func TestFFmpegShimHappyPathRealTranscode(t *testing.T) {
 	}
 }
 
-func TestFFmpegShimLivePlaybackWritesHeldRung(t *testing.T) {
+func TestFFmpegShimLivePlaybackWritesSessionRung(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg not available")
 	}
@@ -100,17 +101,20 @@ func TestFFmpegShimLivePlaybackWritesHeldRung(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			key := playback.SessionKey{SessionID: "shim-live"}
-			// Request the master first so this exercises the real successor
-			// start path when the second mode replaces the first.
-			if _, err := sessions.FilePath(t.Context(), key, src, tc.duration, 1280, 720, false, "master.m3u8"); err != nil {
-				t.Fatal(err)
-			}
-			path, err := sessions.FilePath(t.Context(), key, src, tc.duration, 1280, 720, false, "720p/seg00000.m4s")
+			artifact, err := sessions.LiveArtifactShaped(t.Context(), key, src, tc.duration, 1280, 720, false, false,
+				playback.LadderCapsFromGrant(streamtoken.Grant{}), playback.VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil,
+				playback.StreamShape{}, playback.PriorityNormal, "720p/seg00000.m4s")
 			if err != nil {
 				t.Fatalf("first live segment through the production shim: %v", err)
 			}
-			if info, err := os.Stat(path); err != nil || info.Size() == 0 {
-				t.Fatalf("live segment is missing or empty: %v, %v", info, err)
+			defer artifact.Release()
+			f, info, err := artifact.OpenPlain()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			if info.Size() == 0 {
+				t.Fatal("live segment is empty")
 			}
 		})
 	}

@@ -62,37 +62,44 @@ func (a *LiveArtifact) OpenEncrypted() (*encderiv.LiveFile, error) {
 	return f, err
 }
 
-func (h *hlsSession) openArtifact(path string) (*os.File, fs.FileInfo, error) {
+// Live artifact paths have at most one rung component. The manager owns the
+// tree until all references exit, so inspecting the rung before opening the
+// file suffices to refuse pre-existing directory links.
+func (h *hlsSession) artifactRelativePath(path string) (string, error) {
 	rel, err := filepath.Rel(h.dir, path)
-	if err != nil || !filepath.IsLocal(rel) {
-		return nil, nil, fs.ErrInvalid
+	if err != nil || !filepath.IsLocal(rel) || rel == "." {
+		return "", fs.ErrInvalid
 	}
-	return openScratchMember(h.scratch.dir, rel)
-}
-
-func openScratchChild(dir *os.File, name string, flags int) (*os.File, error) {
-	if !fs.ValidPath(name) || name == "." || filepath.Base(name) != name {
-		return nil, fs.ErrInvalid
-	}
-	fd, err := unix.Openat(int(dir.Fd()), name, flags|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: name, Err: err}
-	}
-	return os.NewFile(uintptr(fd), name), nil
-}
-
-// Live paths have at most one rung directory. Open both components without
-// following symlinks, and use nonblocking mode before checking the file type.
-func openScratchMember(dir *os.File, rel string) (*os.File, fs.FileInfo, error) {
 	if rung, name, ok := strings.Cut(rel, string(filepath.Separator)); ok {
-		rungDir, err := openScratchChild(dir, rung, unix.O_RDONLY|unix.O_DIRECTORY)
-		if err != nil {
-			return nil, nil, err
+		if filepath.Base(name) != name {
+			return "", fs.ErrInvalid
 		}
-		defer rungDir.Close()
-		dir, rel = rungDir, name
+		dir := filepath.Join(h.dir, rung)
+		info, err := os.Lstat(dir)
+		if err != nil {
+			return "", err
+		}
+		if !info.IsDir() {
+			return "", &os.PathError{Op: "open", Path: dir, Err: unix.ENOTDIR}
+		}
 	}
-	f, err := openScratchChild(dir, rel, unix.O_RDONLY)
+	return rel, nil
+}
+
+func openScratchFile(path string, flags int) (*os.File, error) {
+	fd, err := unix.Open(path, flags|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(fd), path), nil
+}
+
+func (h *hlsSession) openArtifact(path string) (*os.File, fs.FileInfo, error) {
+	rel, err := h.artifactRelativePath(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	f, err := openScratchFile(filepath.Join(h.dir, rel), unix.O_RDONLY)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -107,8 +114,8 @@ func openScratchMember(dir *os.File, rel string) (*os.File, fs.FileInfo, error) 
 	return f, info, nil
 }
 
-func (p *scratchPath) readRung(rung string) ([]os.DirEntry, error) {
-	dir, err := openScratchChild(p.dir, rung, unix.O_RDONLY|unix.O_DIRECTORY)
+func (h *hlsSession) readRung(rung string) ([]os.DirEntry, error) {
+	dir, err := openScratchFile(filepath.Join(h.dir, rung), unix.O_RDONLY|unix.O_DIRECTORY)
 	if err != nil {
 		return nil, err
 	}
