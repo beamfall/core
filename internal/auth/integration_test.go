@@ -6,13 +6,17 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
+
+const integrationTestIP = "192.0.2.1"
 
 var compatScopes = []store.IntegrationScope{store.IntegrationScopeRead, store.IntegrationScopeRefresh}
 
@@ -30,11 +34,11 @@ func TestIntegrationAuthenticationOptInScopeRevocationAndReveal(t *testing.T) {
 	now := time.Unix(100, 0).UTC()
 	svc := NewServiceWithClock(st, func() time.Time { return now })
 
-	if _, err := svc.AuthenticateIntegrationByName(ctx, "Default", "2468", compatScopes); !errors.Is(err, ErrIntegrationAuthentication) {
+	if _, err := svc.AuthenticateIntegrationByName(ctx, "Default", "2468", integrationTestIP, compatScopes); !errors.Is(err, ErrIntegrationAuthentication) {
 		t.Fatalf("opt-out authentication = %v", err)
 	}
 	enableIntegrationSignIn(t, st, "profile-default")
-	session, err := svc.AuthenticateIntegrationByName(ctx, "Default", "2468", compatScopes)
+	session, err := svc.AuthenticateIntegrationByName(ctx, "Default", "2468", integrationTestIP, compatScopes)
 	if err != nil {
 		t.Fatalf("AuthenticateIntegrationByName: %v", err)
 	}
@@ -72,7 +76,7 @@ func TestIntegrationAuthenticationOptInScopeRevocationAndReveal(t *testing.T) {
 	if !revokedAudit {
 		t.Fatal("integration revocation was not audited per Profile")
 	}
-	if _, err := svc.AuthenticateIntegrationByName(ctx, "Default", "2468", []store.IntegrationScope{"compat.admin"}); !errors.Is(err, ErrIntegrationAuthentication) {
+	if _, err := svc.AuthenticateIntegrationByName(ctx, "Default", "2468", integrationTestIP, []store.IntegrationScope{"compat.admin"}); !errors.Is(err, ErrIntegrationAuthentication) {
 		t.Fatalf("outside-ceiling scope = %v", err)
 	}
 }
@@ -88,7 +92,7 @@ func TestIntegrationAdminSetupTTLAndNonRenewability(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewServiceWithClock(st, func() time.Time { return now })
-	session, err := svc.AuthenticateIntegrationByName(ctx, "admin", "setup-secret", compatScopes)
+	session, err := svc.AuthenticateIntegrationByName(ctx, "admin", "setup-secret", integrationTestIP, compatScopes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +137,7 @@ func TestIntegrationFailuresAreUniformLockedAndRedacted(t *testing.T) {
 	}
 	for _, tc := range cases {
 		started := time.Now()
-		_, err := svc.AuthenticateIntegrationByName(ctx, tc.name, tc.credential, compatScopes)
+		_, err := svc.AuthenticateIntegrationByName(ctx, tc.name, tc.credential, integrationTestIP, compatScopes)
 		if !errors.Is(err, ErrIntegrationAuthentication) {
 			t.Fatalf("%q error = %v", tc.name, err)
 		}
@@ -142,10 +146,10 @@ func TestIntegrationFailuresAreUniformLockedAndRedacted(t *testing.T) {
 		}
 	}
 	for range integrationBackoff.FreeAttempts {
-		_, _ = svc.AuthenticateIntegrationByName(ctx, "Default", "wrong", compatScopes)
+		_, _ = svc.AuthenticateIntegrationByName(ctx, "Default", "wrong", integrationTestIP, compatScopes)
 	}
 	started := time.Now()
-	if _, err := svc.AuthenticateIntegrationByName(ctx, "Default", "2468", compatScopes); !errors.Is(err, ErrIntegrationAuthentication) {
+	if _, err := svc.AuthenticateIntegrationByName(ctx, "Default", "2468", integrationTestIP, compatScopes); !errors.Is(err, ErrIntegrationAuthentication) {
 		t.Fatalf("locked correct credential = %v", err)
 	}
 	if time.Since(started) < integrationFailureFloor {
@@ -171,5 +175,101 @@ func TestIntegrationFailuresAreUniformLockedAndRedacted(t *testing.T) {
 	}
 	if unknownTarget != pseudonym || !knownFound {
 		t.Fatalf("audit entries missing redacted unknown or per-Profile known record: %+v", entries)
+	}
+}
+
+func TestIntegrationReservesBeforeConcurrentCredentialVerification(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	enableIntegrationSignIn(t, st, "profile-default")
+	now := time.Now()
+	svc := NewServiceWithClock(st, func() time.Time { return now })
+	const attempts = 12
+	verification := make(chan store.ProfileID, attempts)
+	release := make(chan struct{})
+	results := make(chan error, attempts)
+	svc.integrationVerifier = func(_ context.Context, id store.ProfileID, _ string, _ bool) error {
+		verification <- id
+		<-release
+		return ErrIntegrationAuthentication
+	}
+	svc.integrationDecoy = func(context.Context, string) {
+		verification <- ""
+		<-release
+	}
+	var workers sync.WaitGroup
+	defer workers.Wait()
+	for i := range attempts {
+		workers.Go(func() {
+			clientIP := fmt.Sprintf("192.0.2.%d", i+1)
+			_, err := svc.AuthenticateIntegrationByName(ctx, "Default", "wrong", clientIP, compatScopes)
+			results <- err
+		})
+	}
+	func() {
+		defer close(release)
+		deadline := time.After(5 * time.Second)
+		realVerifications := 0
+		for range attempts {
+			select {
+			case id := <-verification:
+				if id == "profile-default" {
+					realVerifications++
+				}
+			case err := <-results:
+				t.Fatalf("authentication returned before reaching the real or decoy verifier: %v", err)
+			case <-deadline:
+				t.Fatal("parallel authentication did not reach the verifier")
+			}
+		}
+		if realVerifications != integrationBackoff.FreeAttempts {
+			t.Fatalf("real verifications = %d, want %d", realVerifications, integrationBackoff.FreeAttempts)
+		}
+	}()
+	for range attempts {
+		if err := <-results; !errors.Is(err, ErrIntegrationAuthentication) {
+			t.Fatalf("parallel authentication error = %v", err)
+		}
+	}
+}
+
+func TestIntegrationRefusalsPaySlowVerifierCost(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	enableIntegrationSignIn(t, st, "profile-default")
+	now := time.Now().UTC()
+	svc := NewServiceWithClock(st, func() time.Time { return now })
+	keys := []string{"profile:profile-default"}
+	for range integrationBackoff.FreeAttempts {
+		if locked, err := st.ReserveAuthAttempt(ctx, integrationAttemptAction, keys, now, integrationBackoff); err != nil || !locked.IsZero() {
+			t.Fatalf("reserve name lockout fixture: locked until %v, error %v", locked, err)
+		}
+	}
+
+	const verifyCost = 200 * time.Millisecond
+	decoyChecked := false
+	svc.integrationDecoy = func(context.Context, string) {
+		decoyChecked = true
+		time.Sleep(verifyCost)
+	}
+	for _, tc := range []struct {
+		name   string
+		reason RefusalReason
+	}{
+		{"unknown profile", RefusalIntegrationRejected},
+		{"Default", RefusalIntegrationLocked},
+	} {
+		decoyChecked = false
+		requestCtx := WithRefusalNote(ctx)
+		started := time.Now()
+		_, err := svc.AuthenticateIntegrationByName(requestCtx, tc.name, "wrong", integrationTestIP, compatScopes)
+		elapsed := time.Since(started)
+		note, _ := RefusalFromContext(requestCtx)
+		if !errors.Is(err, ErrIntegrationAuthentication) || note.Reason != tc.reason {
+			t.Fatalf("%q refusal = %v (%q), want %q", tc.name, err, note.Reason, tc.reason)
+		}
+		if !decoyChecked || elapsed < verifyCost {
+			t.Fatalf("%q decoy called = %t, elapsed %s, want at least %s", tc.name, decoyChecked, elapsed, verifyCost)
+		}
 	}
 }

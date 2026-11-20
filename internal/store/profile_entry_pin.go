@@ -107,19 +107,13 @@ func newProfileEntryPINVerifier(pin string) (string, error) {
 }
 
 func verifyProfileEntryPINVerifier(verifier, pin string) bool {
-	if !strings.HasPrefix(verifier, profileEntryPINArgon2Prefix) {
-		return false
-	}
-	parts := strings.Split(strings.TrimPrefix(verifier, profileEntryPINArgon2Prefix), "$")
-	if len(parts) != 2 {
-		return false
-	}
-	salt, err := hex.DecodeString(parts[0])
-	if err != nil || len(salt) != profileEntryPINSaltLen {
-		return false
-	}
-	want, err := hex.DecodeString(parts[1])
-	if err != nil || len(want) != profileEntryPINArgon2KeyLen {
+	encoded, tagged := strings.CutPrefix(verifier, profileEntryPINArgon2Prefix)
+	saltHex, hashHex, paired := strings.Cut(encoded, "$")
+	salt, saltErr := hex.DecodeString(saltHex)
+	want, hashErr := hex.DecodeString(hashHex)
+	if !tagged || !paired || saltErr != nil || hashErr != nil ||
+		len(salt) != profileEntryPINSaltLen || len(want) != profileEntryPINArgon2KeyLen {
+		CheckCredentialDecoy(pin)
 		return false
 	}
 	got := argon2.IDKey([]byte(pin), salt,

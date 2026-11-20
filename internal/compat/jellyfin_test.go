@@ -2,6 +2,7 @@ package compat
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -147,7 +148,7 @@ func TestAuthenticateByNameFailureResponsesAreUniform(t *testing.T) {
 	restricted := restrictedFixture(t, st)
 	now := time.Now().UTC()
 
-	seedProfile := func(name string, optIn, disabled bool) {
+	seedProfile := func(name string, optIn, disabled bool) store.ProfileID {
 		t.Helper()
 		profile, err := st.CreateProfile(ctx, name, store.ProfileAdult, store.LibraryFilter{Revealed: true, AllLibraries: true})
 		if err != nil {
@@ -159,18 +160,21 @@ func TestAuthenticateByNameFailureResponsesAreUniform(t *testing.T) {
 		if _, err := st.UpdateProfileSettings(ctx, profile.ID, store.ProfileSettings{IntegrationSignIn: &optIn, Disabled: &disabled}); err != nil {
 			t.Fatal(err)
 		}
+		return profile.ID
 	}
-	seedProfile("Timing Calibration", true, false)
 	seedProfile("Opted In", true, false)
 	seedProfile("Opted Out", false, false)
 	seedProfile("Disabled", true, true)
-	seedProfile("Lockout Probe", true, false)
+	nameProbe := seedProfile("Name Lockout Probe", true, false)
+	ipProbe := seedProfile("IP Lockout Probe", true, false)
 
 	newHandler := func(st *store.Store) *Handler {
 		t.Helper()
 		service := auth.NewServiceWithClock(st, func() time.Time { return now })
 		service.SetIntegrationAttemptSecret([]byte("uniform-response-secret"))
-		handler, err := New(Config{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}}, service, nil)
+		handler, err := New(Config{
+			Enabled: true, AllowedCIDRs: []string{"192.0.2.0/24"}, TrustedProxyCIDRs: []string{"127.0.0.1/32"},
+		}, service, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -182,39 +186,30 @@ func TestAuthenticateByNameFailureResponsesAreUniform(t *testing.T) {
 		status  int
 		header  http.Header
 		body    []byte
-		elapsed time.Duration
 		refusal auth.RefusalReason
 	}
-	request := func(body string) response {
+	request := func(body, clientIP string) response {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodPost, Prefix+"Users/AuthenticateByName", strings.NewReader(body))
 		req = req.WithContext(auth.WithRefusalNote(ctx))
 		req.RemoteAddr = "127.0.0.1:1234"
+		req.Header.Set("X-Forwarded-For", clientIP)
 		rec := httptest.NewRecorder()
-		started := time.Now()
 		handler.ServeHTTP(rec, req)
-		elapsed := time.Since(started)
 		restricted.assertAbsent(t, rec.Body.Bytes())
 		refusal, _ := auth.RefusalFromContext(req.Context())
 		res := rec.Result()
 		defer res.Body.Close()
-		return response{res.StatusCode, res.Header, rec.Body.Bytes(), elapsed, refusal.Reason}
+		return response{res.StatusCode, res.Header, rec.Body.Bytes(), refusal.Reason}
 	}
-	requireLogin := func(body string) {
+	requireLogin := func(body, clientIP string) {
 		t.Helper()
-		if got := request(body); got.status != http.StatusOK {
+		if got := request(body, clientIP); got.status != http.StatusOK {
 			t.Fatalf("valid login returned %d, want 200", got.status)
 		}
 	}
-	calibrate := func() response {
-		t.Helper()
-		failed := request(`{"Username":"Timing Calibration","Pw":"wrong"}`)
-		// Reset this Profile's backoff so each calibration verifies the PIN.
-		requireLogin(`{"Username":"Timing Calibration","Pw":"2468"}`)
-		return failed
-	}
 
-	want := calibrate()
+	want := request(`{"Username":"Opted In","Pw":"wrong"}`, "192.0.2.1")
 	if want.status != http.StatusUnauthorized || string(want.body) != "{\"error\":\"authentication failed\"}\n" {
 		t.Fatalf("wrong-password response status %d or body differs from the expected authentication failure", want.status)
 	}
@@ -228,63 +223,75 @@ func TestAuthenticateByNameFailureResponsesAreUniform(t *testing.T) {
 		if got.status != want.status || !sameHeader || !sameBody {
 			t.Fatalf("%s response differs from wrong password: status %d, headers match %t, body matches %t", name, got.status, sameHeader, sameBody)
 		}
-		if got.elapsed < 70*time.Millisecond {
-			t.Fatalf("%s elapsed = %s, escaped uniform timing class", name, got.elapsed)
-		}
 	}
 	checkFailure("wrong password", want, auth.RefusalIntegrationRejected)
 
-	const validLockoutLogin = `{"Username":"Lockout Probe","Pw":"2468"}`
-	requireLogin(validLockoutLogin)
-	for range 5 {
-		got := request(`{"Username":"Lockout Probe","Pw":"wrong"}`)
-		checkFailure("failed lockout attempt", got, auth.RefusalIntegrationRejected)
+	const (
+		validNameLogin = `{"Username":"Name Lockout Probe","Pw":"2468"}`
+		validIPLogin   = `{"Username":"IP Lockout Probe","Pw":"2468"}`
+		wrongNameLogin = `{"Username":"Name Lockout Probe","Pw":"wrong"}`
+		repeatedIP     = "192.0.2.2"
+		budget         = 5
+	)
+	for range budget - 1 {
+		checkFailure("failed attempt before successful login", request(wrongNameLogin, repeatedIP), auth.RefusalIntegrationRejected)
 	}
-	checkFailure("locked before restart", request(validLockoutLogin), auth.RefusalIntegrationLocked)
+	// The successful login is the fifth reservation on both lanes and resets
+	// both. The later requests exercise each reset in isolation.
+	requireLogin(validNameLogin, repeatedIP)
+	for i := range budget {
+		clientIP := fmt.Sprintf("192.0.2.%d", 10+i)
+		got := request(wrongNameLogin, clientIP)
+		checkFailure("one name from many IPs", got, auth.RefusalIntegrationRejected)
+
+		got = request(fmt.Sprintf(`{"Username":"unknown-%d","Pw":"wrong"}`, i), repeatedIP)
+		checkFailure("one IP with many names", got, auth.RefusalIntegrationRejected)
+	}
+	checkFailure("name locked before restart", request(validNameLogin, "192.0.2.20"), auth.RefusalIntegrationLocked)
+	checkFailure("IP locked before restart", request(validIPLogin, repeatedIP), auth.RefusalIntegrationLocked)
+	requireLogin(validIPLogin, "192.0.2.21")
 
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
-	handler = newHandler(storetest.OpenAt(t, dataDir))
+	st = storetest.OpenAt(t, dataDir)
+	handler = newHandler(st)
+	checkFailure("name locked after restart", request(validNameLogin, "192.0.2.22"), auth.RefusalIntegrationLocked)
+	checkFailure("IP locked after restart", request(validIPLogin, repeatedIP), auth.RefusalIntegrationLocked)
 
-	cases := []struct {
-		name   string
-		body   string
-		reason auth.RefusalReason
-	}{
-		{"unknown profile", `{"Username":"missing-profile-sensitive-name","Pw":"2468"}`, auth.RefusalIntegrationRejected},
-		{"wrong password", `{"Username":"Opted In","Pw":"wrong"}`, auth.RefusalIntegrationRejected},
-		{"opted out", `{"Username":"Opted Out","Pw":"2468"}`, auth.RefusalIntegrationRejected},
-		{"disabled", `{"Username":"Disabled","Pw":"2468"}`, auth.RefusalIntegrationRejected},
-		{"managed", `{"Username":"Managed","Pw":"anything"}`, auth.RefusalIntegrationRejected},
-		{"malformed", `{"Username":`, auth.RefusalIntegrationRejected},
-		{"locked after restart", validLockoutLogin, auth.RefusalIntegrationLocked},
+	entries, err := st.ActivityEntries(ctx, store.ActivityQuery{
+		Filter: store.LibraryFilter{AllLibraries: true, Revealed: true}, Limit: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	// Interleave the cases and calibration samples and compare their minima so
-	// isolated scheduling delays do not make equivalent paths appear different.
-	minimums := make([]time.Duration, len(cases))
-	ambient := make([]time.Duration, len(cases))
-	for round := range 4 {
-		for i, tc := range cases {
-			got := request(tc.body)
-			checkFailure(tc.name, got, tc.reason)
-			cal := calibrate()
-			checkFailure("calibration", cal, auth.RefusalIntegrationRejected)
-			if round == 0 || got.elapsed < minimums[i] {
-				minimums[i] = got.elapsed
-			}
-			if round == 0 || cal.elapsed < ambient[i] {
-				ambient[i] = cal.elapsed
-			}
+	denials := make(map[store.ProfileID]int)
+	for _, entry := range entries {
+		if entry.Action == "integration.login.denied" {
+			denials[entry.ProfileID]++
 		}
 	}
-	const jitterMargin = 50 * time.Millisecond
-	jitter := slices.Max(ambient) - slices.Min(ambient)
-	if spread := slices.Max(minimums) - slices.Min(minimums); spread > jitter+jitterMargin {
-		t.Fatalf("failure timing spread = %s (samples %v), same-case jitter = %s + margin %s", spread, minimums, jitter, jitterMargin)
+	if denials[nameProbe] != 2*budget+1 || denials[ipProbe] != 2 {
+		t.Fatalf("audited denials for name probe = %d and IP probe = %d, want %d and 2", denials[nameProbe], denials[ipProbe], 2*budget+1)
+	}
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"unknown profile", `{"Username":"missing-profile-sensitive-name","Pw":"2468"}`},
+		{"wrong password", `{"Username":"Opted In","Pw":"wrong"}`},
+		{"opted out", `{"Username":"Opted Out","Pw":"2468"}`},
+		{"disabled", `{"Username":"Disabled","Pw":"2468"}`},
+		{"managed", `{"Username":"Managed","Pw":"anything"}`},
+		{"malformed", `{"Username":`},
+	}
+	for i, tc := range cases {
+		got := request(tc.body, fmt.Sprintf("192.0.2.%d", 30+i))
+		checkFailure(tc.name, got, auth.RefusalIntegrationRejected)
 	}
 
 	now = now.Add(time.Hour)
-	requireLogin(validLockoutLogin)
+	requireLogin(validNameLogin, "192.0.2.23")
+	requireLogin(validIPLogin, repeatedIP)
 }

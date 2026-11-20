@@ -63,6 +63,12 @@ func hashAdminPassword(password string, salt []byte) string {
 	return adminArgon2Prefix + hex.EncodeToString(key)
 }
 
+// CheckCredentialDecoy spends the same Argon2id work as an admin password or
+// Profile entry PIN check without reading or accepting any stored credential.
+func CheckCredentialDecoy(credential string) {
+	hashAdminPassword(credential, nil)
+}
+
 // seedAdminCredentialTx writes the server admin-credential verifier inside an
 // open seed transaction with a caller-supplied (fixed) salt, so the seeded
 // verifier is reproducible across re-seeds. It is used only by the seed path

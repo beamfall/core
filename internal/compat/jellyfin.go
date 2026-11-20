@@ -18,7 +18,7 @@ type jellyfinRoute struct {
 	path   string
 }
 
-var jellyfinRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http.Request){
+var jellyfinRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http.Request, net.IP){
 	{http.MethodPost, Prefix + "Users/AuthenticateByName"}: (*Handler).authenticateByName,
 	{http.MethodPost, Prefix + "Sessions/Logout"}:          (*Handler).logout,
 }
@@ -66,7 +66,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !containsIP(h.allowed, h.clientIP(r)) {
+	clientIP := h.clientIP(r)
+	if !containsIP(h.allowed, clientIP) {
 		http.Error(w, "compatibility route unavailable", http.StatusForbidden)
 		return
 	}
@@ -77,7 +78,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	if serve := jellyfinRoutes[jellyfinRoute{r.Method, r.URL.Path}]; serve != nil {
-		serve(h, w, r)
+		serve(h, w, r, clientIP)
 		return
 	}
 	h.next.ServeHTTP(w, r)
@@ -129,18 +130,18 @@ type authenticateRequest struct {
 	Password string `json:"Pw"`
 }
 
-func (h *Handler) authenticateByName(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) authenticateByName(w http.ResponseWriter, r *http.Request, clientIP net.IP) {
 	defer r.Body.Close()
 	var request authenticateRequest
 	scopes := []store.IntegrationScope{store.IntegrationScopeRead, store.IntegrationScopeRefresh}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&request) != nil {
 		// Route malformed payloads through the same authentication refusal lane;
 		// otherwise JSON decoding would expose a faster enumeration class.
-		_, _ = h.auth.AuthenticateIntegrationByName(r.Context(), "", "", scopes)
+		_, _ = h.auth.AuthenticateIntegrationByName(r.Context(), "", "", clientIP.String(), scopes)
 		writeAuthenticationFailure(w)
 		return
 	}
-	session, err := h.auth.AuthenticateIntegrationByName(r.Context(), request.Username, request.Password, scopes)
+	session, err := h.auth.AuthenticateIntegrationByName(r.Context(), request.Username, request.Password, clientIP.String(), scopes)
 	if err != nil {
 		writeAuthenticationFailure(w)
 		return
@@ -159,7 +160,7 @@ func writeAuthenticationFailure(w http.ResponseWriter) {
 	_, _ = w.Write([]byte("{\"error\":\"authentication failed\"}\n"))
 }
 
-func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) logout(w http.ResponseWriter, r *http.Request, _ net.IP) {
 	token := strings.TrimSpace(r.Header.Get("X-Emby-Token"))
 	if token == "" || h.auth.RevokeIntegrationSession(r.Context(), token) != nil {
 		http.Error(w, "invalid integration session", http.StatusUnauthorized)
