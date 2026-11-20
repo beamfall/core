@@ -792,14 +792,15 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	if err != nil {
 		return nil, errors.Join(err, st.Close())
 	}
-	cfg.TranscodeScratchDir = hlsSessions.ScratchDir()
+	sessionsAndStoreOwned := true
 	defer func() {
-		if resultErr != nil {
+		if sessionsAndStoreOwned {
 			if cleanupErr := errors.Join(hlsSessions.Close(), st.Close()); cleanupErr != nil {
 				resultErr = errors.Join(resultErr, cleanupErr)
 			}
 		}
 	}()
+	cfg.TranscodeScratchDir = hlsSessions.ScratchDir()
 	hlsSessions.SetGovernor(resourceGovernor)
 	hlsSessions.SetTranscodeCap(cfg.TranscodeCap)
 	playbackInfo.SetSessions(hlsSessions)
@@ -1551,6 +1552,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	proxyTeeOwned = false
 	watcherOwned = false
+	sessionsAndStoreOwned = false
 	return app, nil
 }
 

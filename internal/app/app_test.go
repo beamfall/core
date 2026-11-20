@@ -536,6 +536,42 @@ func TestNewReleasesScratchAfterBootstrapSetupTokenFailure(t *testing.T) {
 	}
 }
 
+func TestNewReleasesScratchAndStoreAfterPluginFactoryPanic(t *testing.T) {
+	cfg := testConfig(t)
+	bundle := testBundle(testPathPluginID)
+	want := errors.New("plugin factory panic")
+	var openedStore *store.Store
+	hooks := Hooks{PrePlayPolicy: &PrePlayPolicyHook{
+		PluginID: string(bundle.ID),
+		New: func(st *store.Store) graph.PrePlayPolicy {
+			openedStore = st
+			panic(want)
+		},
+	}}
+	func() {
+		defer func() {
+			if got := recover(); got != want {
+				t.Fatalf("New panicked with %v, want %v", got, want)
+			}
+		}()
+		app, err := New(t.Context(), cfg, nil, []plugin.Bundle{bundle}, hooks)
+		if app != nil {
+			_ = app.Close()
+		}
+		t.Errorf("New returned without a plugin factory panic: %v", err)
+	}()
+	if _, err := openedStore.FirstRunSetupComplete(t.Context()); !errors.Is(err, store.ErrClosed) {
+		t.Errorf("Store after constructor panic: %v, want %v", err, store.ErrClosed)
+	}
+	app, err := New(t.Context(), cfg, nil, []plugin.Bundle{bundle})
+	if err != nil {
+		t.Fatalf("immediate retry: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNewHonorsConsoleScratchWhenItMatchesLexicalDefault(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.SeedDevelopmentData = true

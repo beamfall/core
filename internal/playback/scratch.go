@@ -107,7 +107,7 @@ func resolveScratchDir(path string) (string, error) {
 
 // NewSessionsInDir requires an existing directory and locks its inode before
 // reconciling session entries. Closing the descriptor releases the flock.
-func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.Time, opts ...SessionsOption) (*Sessions, error) {
+func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.Time, opts ...SessionsOption) (_ *Sessions, resultErr error) {
 	dir, err := resolveScratchDir(scratchDir)
 	if err != nil {
 		return nil, err
@@ -120,6 +120,14 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		_ = lock.Close()
 		return nil, fmt.Errorf("lock transcode scratch %q: %w", dir, err)
 	}
+	cleanup := lock.Close
+	defer func() {
+		if cleanup != nil {
+			if err := cleanup(); err != nil {
+				resultErr = errors.Join(resultErr, err)
+			}
+		}
+	}()
 	if now == nil {
 		now = time.Now
 	}
@@ -144,11 +152,13 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		err = errors.Join(f.Close(), os.Remove(f.Name()))
 	}
 	if err != nil {
-		return nil, errors.Join(err, lock.Close())
+		return nil, err
 	}
 	if err := s.PurgeOrphanedTranscodeDirs(); err != nil {
-		return nil, errors.Join(err, s.Close())
+		cleanup = s.Close // Retry any removal debt recorded by the startup sweep.
+		return nil, err
 	}
+	cleanup = nil
 	return s, nil
 }
 

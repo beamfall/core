@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -121,6 +122,33 @@ func TestNewSessionsCreatesDefaultAndValidatesExplicitRoot(t *testing.T) {
 	if s, err := NewSessionsInDir(nil, file, nil); err == nil {
 		_ = s.Close()
 		t.Fatal("constructor accepted a regular file as the explicit root")
+	}
+}
+
+func TestNewSessionsInDirReleasesRootAfterStartupPanic(t *testing.T) {
+	want := errors.New("scratch startup panic")
+	for name, option := range map[string]SessionsOption{
+		"option": func(*Sessions) { panic(want) },
+		"read": WithScratchReadDir(func(fs.FS, string) ([]fs.DirEntry, error) {
+			panic(want)
+		}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			func() {
+				defer func() {
+					if got := recover(); got != want {
+						t.Fatalf("constructor panicked with %v, want %v", got, want)
+					}
+				}()
+				s, err := NewSessionsInDir(nil, root, nil, option)
+				if s != nil {
+					_ = s.Close()
+				}
+				t.Errorf("constructor returned without a startup panic: %v", err)
+			}()
+			newTestSessionsInDir(t, nil, root, nil)
+		})
 	}
 }
 
@@ -409,8 +437,33 @@ func TestCloseWaitsForAdmittedScratchSweepAndSharesItsError(t *testing.T) {
 	newTestSessionsInDir(t, nil, s.dir, nil)
 }
 
-func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *testing.T) {
+func TestScratchAllocationSkipsCollisionWithoutServingStaleSegment(t *testing.T) {
 	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	const segment = "720p/seg00000.m4s"
+	stalePath := filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce), segment)
+	seedScratchFile(t, stalePath)
+	a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "first"}, "/src/movie.mkv", 120, 1280, 720,
+		false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, segment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Release()
+	f, _, err := a.OpenPlain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	got, err := io.ReadAll(f)
+	if err != nil || string(got) != "m4s" {
+		t.Fatalf("returned segment = %q, %v, want fresh segment", got, err)
+	}
+	if got := string(mustRead(t, stalePath)); got != "stale" {
+		t.Fatalf("collision segment = %q, want original stale bytes", got)
+	}
+}
+
+func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *testing.T) {
+	s := newTestSessions(t, nil, t.TempDir(), nil)
 	collision := fmt.Sprintf("session-%s-1", s.bootNonce)
 	future := fmt.Sprintf("session-%s-900000", s.bootNonce)
 	seedScratchFile(t, filepath.Join(s.dir, collision, "720p", "seg00000.m4s"))
@@ -427,7 +480,7 @@ func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *tes
 	result := make(chan error, 1)
 	key := SessionKey{SessionID: "first"}
 	go func() {
-		_, err := filePath720(s, key, "720p/seg00000.m4s")
+		_, err := filePath720(s, key, masterPlaylistName)
 		result <- err
 	}()
 	waitScratchSignal(t, entered)
@@ -444,10 +497,6 @@ func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *tes
 	if err := waitScratchResult(t, result); err != nil {
 		t.Fatal(err)
 	}
-	if got := mustRead(t, filepath.Join(newDir, "720p", "seg00000.m4s")); string(got) == "stale" {
-		t.Fatal("new session served the collision's segment")
-	}
-
 	// Model the state after exclusive mkdir and before publication.
 	s.mkdirDir = nil
 	s.mu.Lock()
