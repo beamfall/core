@@ -3019,7 +3019,7 @@ func mediaHoldsOtherFilesInAnotherLibraryTx(ctx context.Context, tx *sql.Tx, med
 // row is live or retained as missing (a trashed file keeps its row so restore
 // can revive it by path; repointing it would orphan the restore). It returns
 // the Media ID for an exact live match at this path in this library, or an
-// exact legacy match even when a scan has marked its file missing.
+// exact legacy match even when its file is missing or its Media is soft-trashed.
 func checkManagedAdmissionFingerprintTx(ctx context.Context, tx *sql.Tx, imported ImportMediaFile, fingerprint string) (MediaID, error) {
 	var mediaID MediaID
 	var path string
@@ -3039,7 +3039,7 @@ func checkManagedAdmissionFingerprintTx(ctx context.Context, tx *sql.Tx, importe
 		return "", err
 	}
 	legacy := fingerprint == imported.legacyFingerprint
-	if path == imported.Path && libraryID == imported.LibraryID && (!legacy || !trashed) {
+	if path == imported.Path && libraryID == imported.LibraryID {
 		if missingAt.Valid && !legacy {
 			return "", nil
 		}

@@ -182,6 +182,56 @@ func TestManagedImportIdentityFollowsContent(t *testing.T) {
 	})
 }
 
+func TestManagedImportReusesSoftTrashedLegacyIdentity(t *testing.T) {
+	ctx := t.Context()
+	st, root, filter := importStageHarness(t)
+	const name = "legacy.mkv"
+	const payload = "soft-trashed legacy content"
+	path := filepath.Join(root, name)
+	if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := store.HashMediaFileContent(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: "library-local", Path: path, Title: "Legacy", Container: "mkv", Codec: "h264",
+		ContentFingerprint: legacy,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.TrashMedia(ctx, media.ID, filter); err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.TrashedMediaList(ctx, filter)
+	if err != nil || len(before) != 1 || before[0].ID != media.ID {
+		t.Fatalf("trash before reimport = %+v, err = %v; want %s", before, err, media.ID)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+
+	imported := importFromOutside(t, st, root, filter, name, payload)
+	if imported.Path != path {
+		t.Fatalf("imported path = %q, want %q", imported.Path, path)
+	}
+	if digest, err := store.HashMediaFileContent(path); err != nil || digest != legacy {
+		t.Fatalf("replacement digest = %q, err = %v; want %q", digest, err, legacy)
+	}
+	after, err := st.TrashedMediaList(ctx, filter)
+	if err != nil || len(after) != 1 || after[0].ID != media.ID || !after[0].TrashedAt.Equal(before[0].TrashedAt) {
+		t.Fatalf("trash after reimport = %+v, err = %v; want original Media and trash timestamp from %+v", after, err, before)
+	}
+	if err := st.RestoreMedia(ctx, media.ID, filter); err != nil {
+		t.Fatalf("restore reimported Media: %v", err)
+	}
+	if file := liveFileAt(t, st, path); file.MediaID != media.ID || file.ContentFingerprint != legacy {
+		t.Fatalf("replacement row = %+v; want original Media %s and fingerprint %s", file, media.ID, legacy)
+	}
+}
+
 func TestManagedConvertIdentityFollowsContent(t *testing.T) {
 	st, root, filter := importStageHarness(t)
 	imported := importFromOutside(t, st, root, filter, "clip.mkv", "convert-source")
