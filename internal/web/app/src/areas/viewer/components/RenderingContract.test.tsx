@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Layout, Section, SourceItem } from "@/lib/graphql/types";
+import { fetchHomeLibraries } from "@/lib/graphql/viewer";
 import { I18nProvider } from "@/lib/i18n";
 import { prepareRenderFocusRestore, resetRenderFocusForTests } from "../lib/renderFocus";
 import { fetchSectionItems } from "../lib/sections";
@@ -16,6 +17,11 @@ vi.mock("../lib/sections", async (importOriginal) => {
 vi.mock("@/lib/session", () => ({
   useSession: () => ({ manifest: null, isManager: false }),
   useViewerIdentity: () => null,
+}));
+
+vi.mock("@/lib/graphql/viewer", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/graphql/viewer")>()),
+  fetchHomeLibraries: vi.fn(),
 }));
 
 function section(id: string): Section {
@@ -45,6 +51,7 @@ function renderLayout(layout: Layout, home = false) {
 afterEach(() => {
   cleanup();
   vi.mocked(fetchSectionItems).mockReset();
+  vi.mocked(fetchHomeLibraries).mockReset();
   resetRenderFocusForTests();
   vi.restoreAllMocks();
 });
@@ -149,7 +156,8 @@ describe("React Viewer rendering contract", () => {
     expect(fetchSectionItems).toHaveBeenCalledTimes(24);
   });
 
-  it("counts the prepended Home hero toward the Section limit before hydration", () => {
+  it("uses the full Section budget for the manifest while Home feeds are pending", () => {
+    vi.mocked(fetchHomeLibraries).mockReturnValue(new Promise(() => {}));
     vi.mocked(fetchSectionItems).mockReturnValue(new Promise(() => {}));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const recent: Section = {
@@ -162,11 +170,9 @@ describe("React Viewer rendering contract", () => {
     const { container } = renderLayout({ id: "layout-home", sections }, true);
 
     expect(container.querySelectorAll(".bf-section")).toHaveLength(24);
-    expect(container.querySelector(".bf-section")).toContainElement(
-      container.querySelector(".bf-hero"),
-    );
-    expect(warn.mock.calls).toEqual([["Beamfall rendering diagnostic: SectionLimitExceeded"]]);
-    expect(fetchSectionItems).not.toHaveBeenCalledWith(
+    expect(container.querySelector(".bf-hero")).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+    expect(fetchSectionItems).toHaveBeenCalledWith(
       sections[23],
       expect.anything(),
       expect.anything(),

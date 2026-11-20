@@ -7,6 +7,7 @@ import type { Layout, SourceItem } from "@/lib/graphql/types";
 import { fetchHomeLibraries } from "@/lib/graphql/viewer";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache } from "@/lib/viewerCache";
+import { notifyEngagementChanged } from "../actions/engagementSync";
 import { fetchSectionItems, MAX_RENDERED_SECTIONS } from "../lib/sections";
 import { LayoutView } from "./LayoutView";
 
@@ -23,7 +24,7 @@ vi.mock("@/lib/graphql/viewer", async (importOriginal) => ({
   fetchHomeLibraries: vi.fn(),
 }));
 vi.mock("@/lib/session", () => ({
-  useViewerIdentity: () => null,
+  useViewerIdentity: () => identity,
   useSession: () => session,
 }));
 vi.mock("../lib/sections", async (importOriginal) => ({
@@ -31,11 +32,12 @@ vi.mock("../lib/sections", async (importOriginal) => ({
   fetchSectionItems: vi.fn(),
 }));
 
-vi.mock("@/lib/viewerCache", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/viewerCache")>()),
-  clearViewerCache: vi.fn(),
-}));
+vi.mock("@/lib/viewerCache", async (importOriginal) => {
+  const cache = await importOriginal<typeof import("@/lib/viewerCache")>();
+  return { ...cache, clearViewerCache: vi.fn(cache.clearViewerCache) };
+});
 
+let identity = "viewer";
 const session = {
   manifest: {
     libraries,
@@ -81,7 +83,12 @@ function renderHome(homeLayout = layout) {
   );
 }
 
-beforeEach(() => vi.mocked(fetchHomeLibraries).mockResolvedValue(libraries));
+beforeEach(() => {
+  identity = "viewer";
+  clearViewerCache();
+  vi.mocked(clearViewerCache).mockClear();
+  vi.mocked(fetchHomeLibraries).mockResolvedValue(libraries);
+});
 
 afterEach(() => {
   cleanup();
@@ -202,6 +209,165 @@ describe("Viewer Home", () => {
     expect(heroArt).toHaveAttribute("src", "/older?bucket=w1280");
     fireEvent.load(heroArt as HTMLImageElement);
     expect(screen.getByRole("heading", { name: feature.title })).toBeVisible();
+    expect(container.querySelector(".bf-hero-action")).toHaveFocus();
+  });
+
+  it("features a visible container's poster when its new items have no art", async () => {
+    const container = { id: "group", title: "Visible container", artwork: { poster: "/group" } };
+    const lockedContainer = {
+      id: "locked-group",
+      title: "Locked container",
+      artwork: { poster: "/locked-group" },
+    };
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, context) =>
+      section.id === "recent" && context.libraryID === "one"
+        ? [
+            newItem("Locked first", { container: lockedContainer, locked: true }),
+            newItem("Locked second", { container: lockedContainer, locked: true }),
+            newItem("First item", { container }),
+            newItem("Second item", { container }),
+          ]
+        : [],
+    );
+
+    const home = renderHome();
+    const shelf = await screen.findByRole("list", { name: "Library One" });
+    expect(within(shelf).getByRole("link", { name: /visible container/i })).toBeVisible();
+    const heroArt = home.container.querySelector(".bf-hero img");
+    expect(heroArt).toHaveAttribute("src", "/group?bucket=w1280");
+    fireEvent.load(heroArt as HTMLImageElement);
+    expect(screen.getByRole("heading", { name: container.title })).toBeVisible();
+  });
+
+  it("focuses a shelf when the hero image never settles", async () => {
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, context) =>
+      section.id === "recent" && context.libraryID === "one"
+        ? [newItem("Available item", { artwork: { poster: "/stalled" } })]
+        : [],
+    );
+
+    const { container } = renderHome();
+    const card = await screen.findByRole("link", { name: "Available item" });
+    const heroArt = container.querySelector(".bf-hero img");
+    expect(heroArt).toHaveAttribute("src", "/stalled?bucket=w1280");
+    expect(heroArt).not.toBeVisible();
+    await waitFor(() => expect(card).toHaveFocus(), { timeout: 2000 });
+
+    fireEvent.load(heroArt as HTMLImageElement);
+    expect(screen.getByRole("heading", { name: "Available item" })).toBeVisible();
+    expect(card).toHaveFocus();
+  });
+
+  it("keeps the last shelf in a full manifest when the hero artwork fails", async () => {
+    const [keepWatching, recent] = layout.sections;
+    const sections = [
+      recent,
+      ...Array.from({ length: MAX_RENDERED_SECTIONS - 1 }, (_, index) => ({
+        ...keepWatching,
+        id: `section-${index + 2}`,
+        title: `Shelf ${index + 2}`,
+      })),
+    ];
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, context) => {
+      if (section.id === `section-${MAX_RENDERED_SECTIONS}`) return [newItem("Last item")];
+      return section.id === "recent" && context.libraryID === "one"
+        ? [newItem("Recent item", { artwork: { poster: "/broken" } })]
+        : [];
+    });
+
+    const { container } = renderHome({ ...layout, sections });
+    const lastShelf = `Shelf ${MAX_RENDERED_SECTIONS}`;
+    const shelf = await screen.findByRole("list", { name: lastShelf });
+    expect(within(shelf).getByRole("link", { name: "Last item" })).toBeVisible();
+    const heroArt = container.querySelector(".bf-hero img");
+    expect(heroArt).toBeInTheDocument();
+
+    fireEvent.load(heroArt as HTMLImageElement);
+    expect(screen.getByRole("heading", { name: "Recent item" })).toBeVisible();
+    expect(screen.queryByRole("list", { name: lastShelf })).toBeNull();
+
+    fireEvent.error(heroArt as HTMLImageElement);
+    expect(container.querySelector(".bf-hero")).toBeNull();
+    const restored = await screen.findByRole("list", { name: lastShelf });
+    expect(within(restored).getByRole("link", { name: "Last item" })).toBeVisible();
+  });
+
+  it("renders cached shelves on return and keeps them during failed engagement revalidation", async () => {
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, context) =>
+      section.id === "recent" && context.libraryID === "one" ? [newItem("Cached item")] : [],
+    );
+    const home = renderHome();
+    expect(await screen.findByRole("link", { name: "Cached item" })).toBeVisible();
+    home.unmount();
+
+    vi.mocked(fetchHomeLibraries).mockRejectedValue(new Error("offline"));
+    renderHome();
+    expect(screen.getByRole("link", { name: "Cached item" })).toBeVisible();
+    expect(await screen.findByText(/connexion.*perdue/i)).toBeVisible();
+
+    let reject!: (error: Error) => void;
+    vi.mocked(fetchHomeLibraries).mockResolvedValue(libraries);
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, context) => {
+      if (section.id !== "recent" || context.libraryID !== "one") return [];
+      return new Promise((_, onReject) => {
+        reject = onReject;
+      });
+    });
+    await act(async () => notifyEngagementChanged());
+    expect(screen.getByRole("link", { name: "Cached item" })).toBeVisible();
+    await act(async () => reject(new Error("offline")));
+    expect(screen.getByRole("link", { name: "Cached item" })).toBeVisible();
+
+    vi.mocked(fetchSectionItems).mockResolvedValue([]);
+    await act(async () => notifyEngagementChanged());
+    expect(screen.queryByRole("link", { name: "Cached item" })).toBeNull();
+  });
+
+  it.each(["hidden", "role", "unauthorized"] as const)(
+    "discards cached scoped feeds on a %s visibility or authorization change",
+    async (change) => {
+      vi.mocked(fetchSectionItems).mockImplementation(async (section, context) =>
+        section.id === "recent" && context.libraryID === "one" ? [newItem("Cached item")] : [],
+      );
+      const home = renderHome();
+      expect(await screen.findByRole("link", { name: "Cached item" })).toBeVisible();
+
+      if (change === "hidden") {
+        vi.mocked(fetchHomeLibraries).mockResolvedValue(
+          libraries.map((library) =>
+            library.id === "one" ? { ...library, showOnHome: false } : library,
+          ),
+        );
+      } else if (change === "role") {
+        vi.mocked(fetchHomeLibraries).mockResolvedValue(null);
+        vi.mocked(fetchSectionItems).mockRejectedValue(new Error("offline"));
+      } else {
+        vi.mocked(fetchHomeLibraries).mockRejectedValue(new ApiError("unauthorized", 401));
+      }
+      await act(async () => notifyEngagementChanged());
+      expect(screen.queryByRole("link", { name: "Cached item" })).toBeNull();
+      home.unmount();
+
+      vi.mocked(fetchHomeLibraries).mockRejectedValue(new Error("offline"));
+      renderHome();
+      expect(await screen.findByText(/connexion.*perdue/i)).toBeVisible();
+      expect(screen.queryByRole("link", { name: "Cached item" })).toBeNull();
+    },
+  );
+
+  it("never renders a cached recent shelf for another identity", async () => {
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, context) =>
+      section.id === "recent" && context.libraryID === "one" ? [newItem("Cached item")] : [],
+    );
+    const home = renderHome();
+    expect(await screen.findByRole("link", { name: "Cached item" })).toBeVisible();
+    home.unmount();
+
+    identity = "another viewer";
+    vi.mocked(fetchHomeLibraries).mockRejectedValue(new Error("offline"));
+    renderHome();
+    expect(await screen.findByText(/connexion.*perdue/i)).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Cached item" })).toBeNull();
   });
 
   it.each([false, true])(

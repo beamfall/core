@@ -9,9 +9,12 @@ import { applyRenderFocus } from "../lib/renderFocus";
 import { MAX_RENDERED_SECTIONS, SECTION_KINDS } from "../lib/sections";
 import { FilterBar } from "./FilterBar";
 import { FirstScanButton } from "./FirstScanButton";
-import { HomeArtworkHero, HomeRecentShelves, useHomeRecent } from "./HomeRecent";
-import { HydratedSection, type SectionHydrationState } from "./HydratedSection";
+import { Hero } from "./Hero";
+import { HomeRecentShelves, useHomeArtwork, useHomeRecent } from "./HomeRecent";
+import { HydratedSection, type SectionHydrationState, SectionSkeleton } from "./HydratedSection";
 import type { SeeAllTarget } from "./SectionView";
+
+const HOME_ARTWORK_FOCUS_WAIT_MS = 1000;
 
 // Renders one Layout's Sections in declared order, ported from the vanilla
 // renderLayout (app.js). Unknown Section kinds are silently dropped and the
@@ -67,25 +70,24 @@ export function LayoutView({
 
   const { sections, homeRecent, homeHero } = useMemo(() => {
     const known = (layout?.sections || []).filter((section) => SECTION_KINDS.has(section.kind));
-    const renderable = known.slice(0, MAX_RENDERED_SECTIONS);
+    const sections = known.slice(0, MAX_RENDERED_SECTIONS);
     const homeRecent =
       home && !libraryID
-        ? renderable.find(
+        ? sections.find(
             (section) => section.kind === "shelf" && section.source?.kind === "recently-added",
           )
         : undefined;
     const homeHero: Section | undefined =
       homeRecent &&
-      renderable.indexOf(homeRecent) < MAX_RENDERED_SECTIONS - 1 &&
-      !renderable.some((section) => section.kind === "hero")
+      sections.indexOf(homeRecent) < MAX_RENDERED_SECTIONS - 1 &&
+      !sections.some((section) => section.kind === "hero")
         ? { ...homeRecent, id: `${homeRecent.id}:featured`, kind: "hero", title: t("homeFeatured") }
         : undefined;
-    const ordered = homeHero ? [homeHero, ...known] : known;
-    if (ordered.length > MAX_RENDERED_SECTIONS) {
+    if (known.length > MAX_RENDERED_SECTIONS) {
       // The diagnostic omits Section ids, titles, counts, and Reveal state.
       console.warn("Beamfall rendering diagnostic: SectionLimitExceeded");
     }
-    return { sections: ordered.slice(0, MAX_RENDERED_SECTIONS), homeRecent, homeHero };
+    return { sections, homeRecent, homeHero };
   }, [layout, home, libraryID, t]);
 
   // Map each filter-bar to the index of the section it narrows: the next
@@ -122,10 +124,32 @@ export function LayoutView({
     attempt,
     reportConnectionLost,
   );
+  const feature = useHomeArtwork(homeHero ? recentFeed.heroItems : [], recentFeed.epoch);
+  // Only loaded artwork occupies a Section slot.
+  const sectionLimit = feature?.artwork.ready ? MAX_RENDERED_SECTIONS - 1 : MAX_RENDERED_SECTIONS;
+  const displayedSections = useMemo(
+    () => sections.slice(0, sectionLimit),
+    [sections, sectionLimit],
+  );
+  const [artworkWaitExpired, setArtworkWaitExpired] = useState<string>();
+  const waitingForArtwork = Boolean(
+    homeHero && (feature ? !feature.artwork.ready : recentFeed.pending),
+  );
+  const waitToFocus = waitingForArtwork && artworkWaitExpired !== recentFeed.epoch;
+  useEffect(() => {
+    if (!waitToFocus || !navigationID || focusAppliedRef.current) return;
+    // Give the hero first focus when it loads promptly. A stalled image leaves
+    // the focus target in the manifest layout once this grace period expires.
+    const timeout = window.setTimeout(
+      () => setArtworkWaitExpired(recentFeed.epoch),
+      HOME_ARTWORK_FOCUS_WAIT_MS,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [navigationID, recentFeed.epoch, waitToFocus]);
 
   const hydratable = useMemo(
-    () => sections.filter((section) => section.kind !== "filter-bar"),
-    [sections],
+    () => displayedSections.filter((section) => section.kind !== "filter-bar"),
+    [displayedSections],
   );
   const hydrationStates = hydration.layout === layout ? hydration.states : {};
   const stateFor = (section: Section) =>
@@ -159,13 +183,6 @@ export function LayoutView({
     [layout],
   );
 
-  const updateHeroState = useCallback(
-    (state: SectionHydrationState) => {
-      if (homeHero) updateHydrationState(homeHero.id, state);
-    },
-    [homeHero, updateHydrationState],
-  );
-
   useEffect(() => {
     const markInteraction = () => {
       interactedDuringHydrationRef.current = true;
@@ -183,6 +200,7 @@ export function LayoutView({
       focusAppliedRef.current ||
       !navigationID ||
       !allHydrated ||
+      waitToFocus ||
       !hasVisibleSection ||
       !rootRef.current
     ) {
@@ -200,7 +218,7 @@ export function LayoutView({
         preventScroll: navigationType === "POP",
       }),
     );
-  }, [allHydrated, hasVisibleSection, navigationID, navigationType]);
+  }, [allHydrated, hasVisibleSection, navigationID, navigationType, waitToFocus]);
 
   // The library accent (validated literal #RRGGBB) tints the fallback gradients.
   const accentVar = useMemo<Record<string, string>>(() => {
@@ -249,6 +267,19 @@ export function LayoutView({
           {t("connectionLost")}
         </div>
       )}
+      {homeHero &&
+        !aggregateEmpty &&
+        (feature ? (
+          <Hero
+            key={`${recentFeed.epoch}:${feature.artwork.url}`}
+            section={homeHero}
+            item={feature.item}
+            artwork={feature.artwork}
+            navigationID={feature.artwork.ready ? navigationID : undefined}
+          />
+        ) : recentFeed.state === "loading" && sections.length < MAX_RENDERED_SECTIONS ? (
+          <SectionSkeleton hero />
+        ) : null)}
       {aggregateFailed ? (
         <LoadFailed onRetry={retrySections} />
       ) : aggregateEmpty ? (
@@ -256,10 +287,11 @@ export function LayoutView({
           <LibraryEmpty />
         )
       ) : (
-        sections.map((section, index) => {
+        displayedSections.map((section, index) => {
           if (section.kind === "filter-bar") {
             // A filter-bar with no options or no adjacent target collapses (ADR-0014).
-            if (!(section.filters || []).length || !filterTargets.has(index)) {
+            const target = filterTargets.get(index);
+            if (!(section.filters || []).length || target === undefined || target >= sectionLimit) {
               return null;
             }
             return (
@@ -268,19 +300,6 @@ export function LayoutView({
                 section={section}
                 selected={filterSelections[index] || {}}
                 onToggle={(field, value) => toggleFilter(index, field, value)}
-              />
-            );
-          }
-          if (section === homeHero) {
-            return (
-              <HomeArtworkHero
-                key={`${section.id}:${recentFeed.epoch}`}
-                section={section}
-                items={recentFeed.heroItems}
-                pending={recentFeed.pending}
-                failed={recentFeed.failed}
-                navigationID={navigationID}
-                onHydrationStateChange={updateHeroState}
               />
             );
           }

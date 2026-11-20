@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { isAuthRejection } from "@/lib/api";
+import { getIdentityEpochSignal, isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
 import { fetchHomeLibraries, type HomeLibrary } from "@/lib/graphql/viewer";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
-import { clearViewerCache } from "@/lib/viewerCache";
+import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
 import { useEngagementEpoch } from "../actions/engagementSync";
 import { artworkSlotURL } from "../lib/artwork";
 import { groupByContainer } from "../lib/containerGroups";
 import { fetchSectionItems } from "../lib/sections";
-import { Hero } from "./Hero";
 import {
   SECTION_LOAD_TIMEOUT_MS,
   type SectionHydrationState,
@@ -19,21 +18,41 @@ import {
 } from "./HydratedSection";
 import { SectionHeading, SectionView, type SeeAllTarget } from "./SectionView";
 
-interface HomeRecentFeed {
+interface HomeRecentData {
   libraries: readonly HomeLibrary[];
   shelves: ReadonlyMap<string, SourceItem[]>;
   fallbackItems: SourceItem[];
+}
+
+interface HomeRecentFeed {
+  data: HomeRecentData;
   pending: number;
   failed: boolean;
 }
 
-const EMPTY_FEED: HomeRecentFeed = {
+const EMPTY_DATA: HomeRecentData = {
   libraries: [],
   shelves: new Map(),
   fallbackItems: [],
-  pending: 0,
-  failed: false,
 };
+
+// Keep one snapshot per identity so a new visibility or authorization result
+// supersedes earlier Home data, including data for a different filter.
+const HOME_RECENT_CACHE_KEY = "home-recent";
+
+function cachedRecentData(identity: string | null, scope: string): HomeRecentData {
+  const cached = readViewerCache<{ scope: string; data: HomeRecentData }>(
+    identity,
+    HOME_RECENT_CACHE_KEY,
+  );
+  return cached?.scope === scope ? cached.data : EMPTY_DATA;
+}
+
+function heroCandidates(items: SourceItem[]): SourceItem[] {
+  const unlocked = items.filter((item) => !item.locked);
+  // The shelf can show a container poster even when its individual items lack art.
+  return [...unlocked, ...groupByContainer(unlocked, () => "")];
+}
 
 export function useHomeRecent(
   section: Section | undefined,
@@ -43,8 +62,9 @@ export function useHomeRecent(
 ) {
   const identity = useViewerIdentity();
   const engagementEpoch = useEngagementEpoch();
-  // A new identity, revalidation or retry retires the previous request and its artwork.
-  const epoch = JSON.stringify([identity, engagementEpoch, attempt, extraFilters]);
+  const scope = JSON.stringify([section, extraFilters]);
+  // Revalidate on engagement changes without remounting the current hero.
+  const epoch = JSON.stringify([identity, scope, attempt]);
   const request = useMemo(() => ({ section, extraFilters, epoch }), [section, extraFilters, epoch]);
   const [result, setResult] = useState<{ request: typeof request; feed: HomeRecentFeed }>();
 
@@ -52,8 +72,12 @@ export function useHomeRecent(
     const { section } = request;
     if (!section) return;
     const controller = new AbortController();
+    const identitySignal = getIdentityEpochSignal();
+    const signal = identitySignal
+      ? AbortSignal.any([controller.signal, identitySignal])
+      : controller.signal;
     const context = { libraryID: "", entityID: "", extraFilters: request.extraFilters, home: true };
-    let feed = { ...EMPTY_FEED, pending: 1 };
+    let feed = { data: cachedRecentData(identity, scope), pending: 1, failed: false };
     const publish = (next: HomeRecentFeed) => {
       feed = next;
       setResult({ request, feed });
@@ -63,6 +87,7 @@ export function useHomeRecent(
       controller.abort();
     };
     const timeout = window.setTimeout(() => {
+      if (signal.aborted) return;
       stop();
       publish({ ...feed, pending: 0, failed: true });
       onConnectionLost();
@@ -71,67 +96,79 @@ export function useHomeRecent(
       if (!pending) window.clearTimeout(timeout);
       publish({ ...next, pending });
     };
+    const save = (data: HomeRecentData, pending?: number) => {
+      writeViewerCache(identity, HOME_RECENT_CACHE_KEY, { scope, data });
+      settle({ ...feed, data }, pending);
+    };
     const fail = (error: unknown) => {
-      if (controller.signal.aborted) return;
+      if (signal.aborted) return;
       if (isAuthRejection(error)) {
         stop();
         clearViewerCache();
-        publish(EMPTY_FEED);
+        publish({ data: EMPTY_DATA, pending: 0, failed: true });
       } else {
         settle({ ...feed, failed: true });
       }
       onConnectionLost();
     };
-    fetchHomeLibraries(controller.signal).then((libraries) => {
-      if (controller.signal.aborted) return;
+    fetchHomeLibraries(signal).then((libraries) => {
+      if (signal.aborted) return;
       if (libraries === null) {
         // Core already applies ShowOnHome to its aggregate read.
-        fetchSectionItems(section, context, controller.signal).then((fallbackItems) => {
-          if (!controller.signal.aborted) settle({ ...feed, fallbackItems });
+        save({ ...EMPTY_DATA, fallbackItems: feed.data.fallbackItems }, 1);
+        fetchSectionItems(section, context, signal).then((fallbackItems) => {
+          if (!signal.aborted) save({ ...EMPTY_DATA, fallbackItems });
         }, fail);
         return;
       }
       const visible = libraries.filter((library) => library.showOnHome !== false);
-      settle({ ...feed, libraries: visible }, visible.length);
+      const visibleIDs = new Set(visible.map(({ id }) => id));
+      const shelves = new Map([...feed.data.shelves].filter(([id]) => visibleIDs.has(id)));
+      save({ ...EMPTY_DATA, libraries: visible, shelves }, visible.length);
       for (const { id } of visible) {
-        fetchSectionItems(section, { ...context, libraryID: id }, controller.signal).then(
-          (items) => {
-            if (controller.signal.aborted) return;
-            const shelves = items.length ? new Map(feed.shelves).set(id, items) : feed.shelves;
-            settle({ ...feed, shelves });
-          },
-          fail,
-        );
+        fetchSectionItems(section, { ...context, libraryID: id }, signal).then((items) => {
+          if (signal.aborted) return;
+          const shelves = new Map(feed.data.shelves);
+          if (items.length) shelves.set(id, items);
+          else shelves.delete(id);
+          save({ ...feed.data, shelves });
+        }, fail);
       }
     }, fail);
+    publish(feed);
     return stop;
-  }, [request, onConnectionLost]);
+  }, [request, identity, scope, engagementEpoch, onConnectionLost]);
 
   return useMemo(() => {
-    const { libraries, shelves, fallbackItems, pending, failed } =
+    const { data, pending, failed } =
       result?.request === request
         ? result.feed
-        : { ...EMPTY_FEED, pending: Number(Boolean(section)) };
-    const state: SectionHydrationState = pending
-      ? "loading"
-      : shelves.size || fallbackItems.length
+        : {
+            data: section ? cachedRecentData(identity, scope) : EMPTY_DATA,
+            pending: Number(Boolean(section)),
+            failed: false,
+          };
+    const { libraries, shelves, fallbackItems } = data;
+    const state: SectionHydrationState =
+      shelves.size || fallbackItems.length
         ? "visible"
-        : failed
-          ? "failed"
-          : "empty";
+        : pending
+          ? "loading"
+          : failed
+            ? "failed"
+            : "empty";
     return {
       state,
       libraries,
       shelves,
       fallbackItems,
       heroItems: fallbackItems.length
-        ? fallbackItems
-        : libraries.flatMap(({ id }) => shelves.get(id) ?? []),
+        ? heroCandidates(fallbackItems)
+        : libraries.flatMap(({ id }) => heroCandidates(shelves.get(id) ?? [])),
       pending: Boolean(pending),
-      failed,
       epoch: request.epoch,
     };
-  }, [request, result, section]);
+  }, [request, result, section, identity, scope]);
 }
 
 export function HomeRecentShelves({
@@ -194,7 +231,6 @@ export function HomeRecentShelves({
 
 function featuredArtwork(items: readonly SourceItem[], failed: ReadonlySet<string>) {
   for (const item of items) {
-    if (item.locked) continue;
     for (const slot of ["backdrop", "poster", "thumb"]) {
       const url = artworkSlotURL(item, slot);
       if (url && !failed.has(url)) return { item, url };
@@ -202,46 +238,23 @@ function featuredArtwork(items: readonly SourceItem[], failed: ReadonlySet<strin
   }
 }
 
-export function HomeArtworkHero({
-  section,
-  items,
-  pending,
-  failed: feedFailed,
-  navigationID,
-  onHydrationStateChange,
-}: {
-  section: Section;
-  items: readonly SourceItem[];
-  pending: boolean;
-  failed: boolean;
-  navigationID?: string;
-  onHydrationStateChange: (state: SectionHydrationState) => void;
-}) {
-  const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
-  const [loaded, setLoaded] = useState("");
-  const feature = featuredArtwork(items, failed);
-  const ready = Boolean(feature && feature.url === loaded);
-  const state = ready
-    ? "visible"
-    : feature || pending
-      ? "loading"
-      : feedFailed
-        ? "failed"
-        : "empty";
-  useEffect(() => onHydrationStateChange(state), [onHydrationStateChange, state]);
-  if (!feature) return pending ? <SectionSkeleton hero /> : null;
-  return (
-    <Hero
-      key={feature.url}
-      section={section}
-      item={feature.item}
-      navigationID={navigationID}
-      artwork={{
-        url: feature.url,
-        ready,
-        onLoad: () => setLoaded(feature.url),
-        onError: () => setFailed((current) => new Set(current).add(feature.url)),
-      }}
-    />
-  );
+export function useHomeArtwork(items: readonly SourceItem[], epoch: string) {
+  const [images, setImages] = useState(() => ({ epoch, failed: new Set<string>(), loaded: "" }));
+  if (images.epoch !== epoch) {
+    setImages({ epoch, failed: new Set(), loaded: "" });
+    return;
+  }
+  const feature = featuredArtwork(items, images.failed);
+  if (!feature) return;
+  const { item, url } = feature;
+  return {
+    item,
+    artwork: {
+      url,
+      ready: url === images.loaded,
+      onLoad: () => setImages((current) => ({ ...current, loaded: url })),
+      onError: () =>
+        setImages((current) => ({ ...current, failed: new Set(current.failed).add(url) })),
+    },
+  };
 }
