@@ -260,7 +260,8 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 	// repoint an existing row (CORE-1831, the conversion leg of CORE-1089).
 	release := s.holdManagedAdmission(dst)
 	defer release()
-	admitErr := admitStagedFileNoReplace(tmpOut, dst)
+	var landed os.FileInfo
+	admitErr := admitStagedFileNoReplaceWithInfo(tmpOut, dst, &landed)
 	if errors.Is(admitErr, os.ErrExist) {
 		done, result, recErr := s.recoverConvertJournal(ctx, libraryID, dst, srcPath, filter, lease, now)
 		if recErr != nil {
@@ -271,7 +272,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 			_ = os.Remove(tmpOut)
 			return result, nil
 		}
-		admitErr = admitStagedFileNoReplace(tmpOut, dst)
+		admitErr = admitStagedFileNoReplaceWithInfo(tmpOut, dst, &landed)
 	}
 	if admitErr != nil {
 		_ = os.Remove(tmpOut)
@@ -296,6 +297,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 		ContentFingerprint: fingerprint,
 		managedAdmission:   true,
 		legacyFingerprint:  legacyFingerprint,
+		managedFileInfo:    landed,
 	})
 	if err != nil {
 		_ = removeConvertResidue(dst)

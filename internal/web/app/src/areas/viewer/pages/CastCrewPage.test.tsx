@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
@@ -41,12 +41,17 @@ const media: GenericMediaInfo = {
   ],
 };
 
+function MediaLocation() {
+  return <p>{useLocation().pathname}</p>;
+}
+
 function renderAt(path: string) {
   return render(
     <I18nProvider>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/credits/*" element={<CastCrewPage />} />
+          <Route path="/media/*" element={<MediaLocation />} />
         </Routes>
       </MemoryRouter>
     </I18nProvider>,
@@ -60,6 +65,16 @@ afterEach(() => {
 });
 
 describe("CastCrewPage (CORE-2503)", () => {
+  it("preserves the original direct credits address when Back precedes resolution", () => {
+    const id = "media-sample1-a371bff46385f7ded";
+    vi.mocked(fetchMedia).mockImplementationOnce(() => new Promise(() => {}));
+    renderAt(castCrewPath(id));
+
+    expect(fetchMedia).toHaveBeenCalledWith(id, expect.any(AbortSignal));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText(`/media/${id}`)).toBeVisible();
+  });
+
   it("lists the cast and then each department in billing order", async () => {
     vi.mocked(fetchMedia).mockResolvedValue(media);
     renderAt(castCrewPath("m1"));

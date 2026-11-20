@@ -92,6 +92,8 @@ describe("readable media addresses (CORE-2329)", () => {
       "/watch/music/new-title-sample1.a371bff46385f7ded",
     );
     expect(mediaIdFromAddress("old-library/old-title-sample1.a371bff46385f7ded")).toBe(sampleID);
+    expect(mediaPath("watch", sampleID)).toBe("/watch/sample1.a371bff46385f7ded");
+    expect(mediaAddressIDs("sample1.a371bff46385f7ded")).toEqual([sampleID]);
     expect(mediaIdFromAddress(sampleID)).toBe(sampleID);
     expect(mediaIdFromAddress("old-library/old-title-sample1-a371bff46385f7ded")).toBe(ID);
     const unlettered = mediaPath("watch", sampleID, { library: "music", words: "千と千尋" });

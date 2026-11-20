@@ -86,7 +86,7 @@ export function librarySlug(libraryID: string | undefined, libraries: readonly L
 
 /**
  * mediaPath is the canonical address of an item on a route. Without readable
- * words (or for an ID that is not content-addressed) it is the bare-ID form.
+ * words it uses the bare ID or the unambiguous sampled token.
  */
 export function mediaPath(
   route: MediaRoute,
@@ -98,9 +98,9 @@ export function mediaPath(
   const slug = slugify(readable?.words ?? "");
   const token = content[1] === "sample1" ? `sample1.${content[2]}` : content[2];
   const library = readable?.library ? `${readable.library}/` : "";
-  const qualifiedSample = content[1] === "sample1" && library;
   const ambiguousLegacy = content[1] === "sha256" && !library && slug === "media-sample1";
-  const tail = slug && !ambiguousLegacy ? `${slug}-${token}` : qualifiedSample ? token : id;
+  const tail =
+    slug && !ambiguousLegacy ? `${slug}-${token}` : content[1] === "sample1" ? token : id;
   return `/${route}/${library}${tail}`;
 }
 

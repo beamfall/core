@@ -11,6 +11,7 @@ import { clearViewerCache, deleteViewerCache, readViewerCache } from "@/lib/view
 import { CastRow } from "../components/CastRow";
 import { NotAvailable } from "../components/NotAvailable";
 import { ViewerActions } from "../components/ViewerActions";
+import { mediaPath } from "../lib/mediaAddress";
 import { fetchMedia, type MediaDetail, mediaDetailCacheKey } from "../lib/mediaDetail";
 import { useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import "./media-detail.css";
@@ -24,7 +25,7 @@ export const castCrewPath = (mediaId: string) => `/credits/${encodeURIComponent(
 // item, the cast first and then each department, in billing order. It paints
 // from the detail page's cached read for this identity and revalidates.
 export function CastCrewPage() {
-  const { id: addressID } = useMediaAddress({ cachedDetail: true });
+  const { id: addressID, confirmed } = useMediaAddress({ cachedDetail: true });
   const mediaId = addressID ?? "";
   const identity = useViewerIdentity();
   const location = useLocation();
@@ -70,7 +71,8 @@ export function CastCrewPage() {
 
   function goBack() {
     if (location.key !== "default") navigate(-1);
-    else navigate(`/media/${encodeURIComponent(mediaId)}`);
+    else if (confirmed && mediaId) navigate(mediaPath("media", mediaId));
+    else navigate(location.pathname.replace(/^\/credits(?=\/|$)/, "/media"));
   }
 
   const current = media?.id === mediaId ? media : null;

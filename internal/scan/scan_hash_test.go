@@ -530,14 +530,27 @@ func TestScanAndManagedImportShareSampleIdentity(t *testing.T) {
 	}
 }
 
-func TestManagedImportRestoresLiveLegacyIdentityAtSamePath(t *testing.T) {
+func TestManagedAdmissionRestoresLiveLegacyIdentityAtSamePath(t *testing.T) {
+	t.Run("import", func(t *testing.T) { testManagedLegacyReadmission(t, false) })
+	t.Run("convert", func(t *testing.T) { testManagedLegacyReadmission(t, true) })
+}
+
+type legacyReadmissionConverter struct{ payload []byte }
+
+func (c legacyReadmissionConverter) ConvertFile(_ context.Context, _, dst, _ string) (string, string, store.MediaClass, error) {
+	err := os.WriteFile(dst, c.payload, 0o600)
+	return "mp4", "h264", store.MediaClassVideo, err
+}
+
+func testManagedLegacyReadmission(t *testing.T, convert bool) {
+	t.Helper()
 	ctx := t.Context()
 	st := storetest.Open(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	const libraryID, profile, name = "library-local", "profile-default", "legacy.mp4"
+	const libraryID, profile, name = "library-local", "profile-default", "legacy-h264-mp4.mp4"
 	if err := st.SetLibraryRoots(ctx, libraryID, []string{root}); err != nil {
 		t.Fatal(err)
 	}
@@ -565,13 +578,38 @@ func TestManagedImportRestoresLiveLegacyIdentityAtSamePath(t *testing.T) {
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	source, err := st.RegisterImportSource(writeScanFile(t, t.TempDir(), name, payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-	imported, err := st.ImportManagedFile(ctx, libraryID, source, root, "mp4", "h264", store.MediaClassVideo, store.LibraryFilter{AllLibraries: true})
-	if err != nil || imported.Path != path {
-		t.Fatalf("reimport = %+v, err = %v, want %q", imported, err, path)
+	filter := store.LibraryFilter{AllLibraries: true}
+	if convert {
+		src := writeScanFile(t, root, "legacy.mkv", []byte("input to conversion"))
+		if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: libraryID, Path: src, Title: "Source", Container: "mkv", Codec: "h264",
+			ContentFingerprint: store.HashMediaFilePath(src),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now()
+		const jobID = "legacy-convert"
+		if _, err := st.EnqueueJob(ctx, store.Job{ID: jobID, Kind: "convert-managed-file", Priority: 1 << 20, CreatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		job, err := st.ClaimNextJob(ctx, "convert-test-worker", nil, now)
+		if err != nil || job.ID != jobID {
+			t.Fatalf("claim convert job = %q, err = %v", job.ID, err)
+		}
+		lease := store.ConvertOwnerLease{JobID: job.ID, Owner: job.LeaseOwner}
+		result, err := st.ConvertManagedFile(ctx, libraryID, src, "h264-mp4", legacyReadmissionConverter{payload}, filter, lease, now)
+		if err != nil || result.Converted.ID != media.ID {
+			t.Fatalf("converted Media = %q, err = %v, want %q", result.Converted.ID, err, media.ID)
+		}
+	} else {
+		source, err := st.RegisterImportSource(writeScanFile(t, t.TempDir(), name, payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		imported, err := st.ImportManagedFile(ctx, libraryID, source, root, "mp4", "h264", store.MediaClassVideo, filter)
+		if err != nil || imported.Path != path {
+			t.Fatalf("reimport = %+v, err = %v, want %q", imported, err, path)
+		}
 	}
 	checkIdentity := func() {
 		t.Helper()

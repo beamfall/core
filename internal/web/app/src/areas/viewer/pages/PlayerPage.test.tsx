@@ -1,6 +1,13 @@
 import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, type NavigateFunction, Route, Routes, useNavigate } from "react-router";
+import {
+  MemoryRouter,
+  type NavigateFunction,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, setIdentityEpochSignal } from "@/lib/api";
 import {
@@ -1157,8 +1164,10 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     { id: "media-next", title: "Track Two" },
   ];
   let go: NavigateFunction = () => undefined;
+  let pathname = "";
   function Navigator() {
     go = useNavigate();
+    pathname = useLocation().pathname;
     return null;
   }
 
@@ -1240,17 +1249,10 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     expect(document.querySelector("main")).toBeVisible();
   });
 
-  it("keeps the sampled track playing while the expanded address resolves", async () => {
+  it("expands a sampled track on the same media element with the catalog offline", async () => {
     const token = "a371bff46385f7ded";
-    const sampledID = `media-sample1-${token}`;
-    let resolveLookup: (media: Awaited<ReturnType<typeof fetchAddressMedia>>) => void = () =>
-      undefined;
-    vi.mocked(fetchAddressMedia).mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveLookup = resolve;
-        }),
-    );
+    vi.mocked(fetchAddressMedia).mockClear().mockRejectedValueOnce(new TypeError("offline"));
+    vi.mocked(fetchMedia).mockRejectedValueOnce(new TypeError("offline"));
     renderHosted({ mediaClass: "audio" }, {}, `/watch/sample1.${token}`);
     const video = await waitFor(() => stageVideo());
     act(() => {
@@ -1258,15 +1260,12 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     });
     const region = await screen.findByRole("region", { name: "Now playing" });
     fireEvent.click(within(region).getByRole("button", { name: "Open player" }));
-    expect(fetchAddressMedia).toHaveBeenLastCalledWith(sampledID, expect.any(AbortSignal));
-    expect(miniPlayer()).toBe(region);
+    await waitFor(() => expect(miniPlayer()).toBeNull());
+    expect(pathname).toBe(`/watch/sample1.${token}`);
     expect(stageVideo()).toBe(video);
-
-    await act(async () => {
-      resolveLookup({ id: sampledID } as Awaited<ReturnType<typeof fetchAddressMedia>>);
-    });
-    expect(miniPlayer()).toBeNull();
-    expect(stageVideo()).toBe(video);
+    expect(document.querySelector("main")).toBeVisible();
+    expect(fetchAddressMedia).not.toHaveBeenCalled();
+    vi.mocked(fetchAddressMedia).mockReset();
   });
 
   it("shows unavailable when a bare sampled address is forbidden", async () => {

@@ -22,6 +22,7 @@ import type {
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { mediaPath } from "../lib/mediaAddress";
 import {
   adjustmentApplied,
   hasPicture,
@@ -456,7 +457,7 @@ function FeaturePlayer({
         onAdvanceDocked({ mediaId: id, state, search: "" });
         return;
       }
-      navigate(`/watch/${encodeURIComponent(id)}`, { replace: true, state });
+      navigate(mediaPath("watch", id), { replace: true, state });
     },
     [navigate, queue, queueIdentity, docked, onAdvanceDocked],
   );
@@ -629,7 +630,7 @@ function FeaturePlayer({
   // same entry, which re-attaches to the playing engine.
   const openFullPlayer = useCallback(() => {
     const carried = entry.state && typeof entry.state === "object" ? entry.state : {};
-    navigate(`/watch/${encodeURIComponent(mediaId)}${entry.search}`, {
+    navigate(`${mediaPath("watch", mediaId)}${entry.search}`, {
       state: { ...carried, skipPrePlay: true },
     });
   }, [navigate, mediaId, entry.state, entry.search]);
