@@ -26,7 +26,25 @@ var jellyfinRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http
 	{http.MethodPost, Prefix + "Sessions/Logout"}:          (*Handler).logout,
 	{http.MethodGet, Prefix + "System/Info"}:               (*Handler).systemInfo,
 	{http.MethodGet, Prefix + "System/Info/Public"}:        (*Handler).publicSystemInfo,
-	{http.MethodPost, Prefix + "Library/Refresh"}:          (*Handler).refreshLibrary,
+	{http.MethodGet, Prefix + "System/Configuration"}:      (*Handler).systemConfiguration,
+	{http.MethodGet, Prefix + "Items"}:                     (*Handler).emptyItems,
+}
+
+// notifierRoutes are the routes the *arr Emby/Jellyfin connection calls. They
+// are served at the prefix and under the mediabrowser/ segment Lidarr 3.x adds.
+var notifierRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http.Request, net.IP){
+	{http.MethodPost, "Notifications/Admin"}:   (*Handler).adminNotification,
+	{http.MethodGet, "Library/MediaFolders"}:   (*Handler).emptyItems,
+	{http.MethodPost, "Library/Media/Updated"}: (*Handler).mediaUpdated,
+	{http.MethodPost, "Library/Refresh"}:       (*Handler).refreshLibrary,
+}
+
+func init() {
+	for route, serve := range notifierRoutes {
+		for _, base := range []string{Prefix, Prefix + "mediabrowser/"} {
+			jellyfinRoutes[jellyfinRoute{route.method, base + route.path}] = serve
+		}
+	}
 }
 
 type Config struct {
@@ -37,7 +55,7 @@ type Config struct {
 	ServerName        string
 	ReleaseVersion    string
 	SetupRequired     func() bool
-	EnqueueRefresh    func(context.Context, auth.Scope)
+	EnqueueRefresh    func(ctx context.Context, scope auth.Scope, paths []string)
 }
 
 type Handler struct {
@@ -51,7 +69,7 @@ type Handler struct {
 	serverName     string
 	releaseVersion string
 	setupRequired  func() bool
-	enqueueRefresh func(context.Context, auth.Scope)
+	enqueueRefresh func(ctx context.Context, scope auth.Scope, paths []string)
 	refreshMu      sync.Mutex
 	nextRefresh    time.Time
 }

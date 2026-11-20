@@ -197,7 +197,7 @@ func TestJellyfinRefreshBurst(t *testing.T) {
 	_, service := integrationService(t, time.Now)
 	var enqueues atomic.Int32
 	handler := newIdentityHandler(t, Config{
-		Enabled: true, EnqueueRefresh: func(_ context.Context, _ auth.Scope) { enqueues.Add(1) },
+		Enabled: true, EnqueueRefresh: func(_ context.Context, _ auth.Scope, _ []string) { enqueues.Add(1) },
 	}, service)
 	tokens := []string{loginIntegration(t, handler), loginIntegration(t, handler)}
 	var wg sync.WaitGroup
@@ -236,7 +236,7 @@ func TestJellyfinRefreshBoundary(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			handler := newIdentityHandler(t, Config{
 				Enabled: tc.enabled,
-				EnqueueRefresh: func(context.Context, auth.Scope) {
+				EnqueueRefresh: func(context.Context, auth.Scope, []string) {
 					t.Error("refresh crossed the request boundary")
 				},
 			}, service)

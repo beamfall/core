@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -3014,8 +3015,11 @@ func v1ScanEnqueuer(st *store.Store, wake *jobWake) server.V1ScanEnqueuer {
 	}
 }
 
-func compatLibraryRefresher(st *store.Store, wake *jobWake, sealed func(store.LibraryID) bool, eligible func(context.Context, store.LibraryID) bool, logger *slog.Logger) func(context.Context, auth.Scope) {
-	return func(ctx context.Context, scope auth.Scope) {
+// compatLibraryRefresher queues scans for the eligible Library roots visible to
+// the integration scope. A nil paths slice selects every eligible root; a
+// non-nil slice selects only the roots equal to or containing one of the paths.
+func compatLibraryRefresher(st *store.Store, wake *jobWake, sealed func(store.LibraryID) bool, eligible func(context.Context, store.LibraryID) bool, logger *slog.Logger) func(context.Context, auth.Scope, []string) {
+	return func(ctx context.Context, scope auth.Scope, paths []string) {
 		filter := scope.LibraryFilter()
 		filter.Revealed = false
 		libraries, err := st.Libraries(ctx, filter)
@@ -3023,6 +3027,7 @@ func compatLibraryRefresher(st *store.Store, wake *jobWake, sealed func(store.Li
 			logger.WarnContext(ctx, "compat refresh libraries unavailable", "error", err)
 			return
 		}
+		matched := false
 		for _, library := range libraries {
 			if sealed(library.ID) || !eligible(ctx, library.ID) {
 				continue
@@ -3033,10 +3038,34 @@ func compatLibraryRefresher(st *store.Store, wake *jobWake, sealed func(store.Li
 				continue
 			}
 			for _, root := range roots {
+				if paths != nil && !slices.ContainsFunc(paths, func(path string) bool { return rootContains(root, path) }) {
+					continue
+				}
+				matched = true
 				enqueueScanJob(ctx, st, logger, wake, library.ID, root)
 			}
 		}
+		if paths != nil && !matched {
+			logger.WarnContext(ctx, "compat media update matched no eligible library root", "paths", len(paths))
+		}
 	}
+}
+
+// rootContains reports whether path is root or lies beneath it. Both are
+// compared as cleaned absolute paths; a relative path never matches.
+func rootContains(root, path string) bool {
+	if !filepath.IsAbs(root) || !filepath.IsAbs(path) {
+		return false
+	}
+	root, path = filepath.Clean(root), filepath.Clean(path)
+	if path == root {
+		return true
+	}
+	prefix := root
+	if !strings.HasSuffix(prefix, string(filepath.Separator)) {
+		prefix += string(filepath.Separator)
+	}
+	return strings.HasPrefix(path, prefix)
 }
 
 func enqueueScanJob(ctx context.Context, st *store.Store, logger *slog.Logger, wake *jobWake, libraryID store.LibraryID, root string) {

@@ -61,7 +61,7 @@ func (h *Handler) refreshLibrary(w http.ResponseWriter, r *http.Request, _ net.I
 		return
 	}
 	if h.enqueueRefresh != nil && h.allowRefresh() {
-		h.enqueueRefresh(r.Context(), scope)
+		h.enqueueRefresh(r.Context(), scope, nil)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -89,8 +89,10 @@ func (h *Handler) integrationScope(w http.ResponseWriter, r *http.Request, token
 }
 
 func integrationToken(header http.Header) string {
-	if token := strings.TrimSpace(header.Get("X-Emby-Token")); token != "" {
-		return token
+	for _, name := range []string{"X-Emby-Token", "X-MediaBrowser-Token"} {
+		if token := strings.TrimSpace(header.Get(name)); token != "" {
+			return token
+		}
 	}
 	for _, name := range []string{"X-Emby-Authorization", "Authorization"} {
 		if token := mediaBrowserToken(header.Get(name)); token != "" {
