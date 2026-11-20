@@ -201,45 +201,48 @@ describe("useWatchParty local transport", () => {
     expect(video.currentTime).toBe(0);
   });
 
-  it("keeps the latest seek through an earlier acknowledgement (CORE-1805)", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
-    const timeline = { item: "m1", positionMS: 0, presentAtMS: 0, paused: true };
-    party = { ...activeParty(timeline), isHost: true };
-    const video = new FakeVideo();
-    const view = mount(video);
-    const resolveFirst = deferredTransport();
-    const resolveSecond = deferredTransport();
-    for (const target of [30, 60]) {
-      vi.advanceTimersByTime(1);
-      markViewerIntent();
-      video.currentTime = target;
-      video.dispatchEvent(new Event("seeking"));
-      video.dispatchEvent(new Event("seeked"));
-    }
-    expect(vi.mocked(sendPartyTransport).mock.calls).toEqual([
-      ["m1", 30_000, true],
-      ["m1", 60_000, true],
-    ]);
+  it.each([0, 60])(
+    "keeps the latest seek to %i seconds through an earlier acknowledgement (CORE-1805)",
+    async (target) => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+      const timeline = { item: "m1", positionMS: 0, presentAtMS: 0, paused: true };
+      party = { ...activeParty(timeline), isHost: true };
+      const video = new FakeVideo();
+      const view = mount(video);
+      const resolveFirst = deferredTransport();
+      const resolveSecond = deferredTransport();
+      for (const seconds of [30, target]) {
+        vi.advanceTimersByTime(1);
+        markViewerIntent();
+        video.currentTime = seconds;
+        video.dispatchEvent(new Event("seeking"));
+        video.dispatchEvent(new Event("seeked"));
+      }
+      expect(vi.mocked(sendPartyTransport).mock.calls).toEqual([
+        ["m1", 30_000, true],
+        ["m1", target * 1000, true],
+      ]);
 
-    const publish = (positionMS: number) => {
-      party = { ...party, timeline: { ...timeline, positionMS } };
-      view.rerender();
-    };
-    await act(async () => {
-      publish(30_000);
-      resolveFirst(true);
-    });
-    act(() => vi.advanceTimersByTime(3100));
-    expect(video.currentTime).toBe(60);
+      const publish = (positionMS: number) => {
+        party = { ...party, timeline: { ...timeline, positionMS } };
+        view.rerender();
+      };
+      await act(async () => {
+        publish(30_000);
+        resolveFirst(true);
+      });
+      act(() => vi.advanceTimersByTime(3100));
+      expect(video.currentTime).toBe(target);
 
-    await act(async () => {
-      publish(60_000);
-      resolveSecond(true);
-    });
-    expect(video.currentTime).toBe(60);
-    act(() => publish(70_000));
-    expect(video.currentTime).toBe(70);
-  });
+      await act(async () => {
+        publish(target * 1000);
+        resolveSecond(true);
+      });
+      expect(video.currentTime).toBe(target);
+      act(() => publish(70_000));
+      expect(video.currentTime).toBe(70);
+    },
+  );
 
   it("releases a rejected latest seek while an earlier request is still pending", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });

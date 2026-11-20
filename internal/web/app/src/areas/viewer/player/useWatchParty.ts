@@ -65,8 +65,25 @@ interface LocalSeek {
   partyID: string;
   item: string;
   expiresAt: number;
-  /** The target sent on seeked and the anchor it will replace. */
-  submitted?: { positionMS: number; from: PartyTimeline };
+}
+
+interface SubmittedSeek extends LocalSeek {
+  positionMS: number;
+  from: PartyTimeline;
+}
+
+function isOutstandingSeek(
+  seek: SubmittedSeek | null,
+  partyID: string,
+  timeline: PartyTimeline,
+): seek is SubmittedSeek {
+  return (
+    seek !== null &&
+    seek.partyID === partyID &&
+    seek.item === timeline.item &&
+    performance.now() < seek.expiresAt &&
+    (seek.from === timeline || seek.positionMS !== timeline.positionMS)
+  );
 }
 
 export type WatchPartyPlayback = "off" | "waiting" | "paused" | "playing";
@@ -132,6 +149,7 @@ export function useWatchParty({
   const leadAutoSkip = useRef<number | null>(null);
   const leadFrame = useRef<FrameSample | null>(null);
   const localSeek = useRef<LocalSeek | null>(null);
+  const submittedSeek = useRef<SubmittedSeek | null>(null);
   const mediaIdRef = useRef(mediaId);
   mediaIdRef.current = mediaId;
   // The element a follower muted, and the listener's own mute to give back.
@@ -245,15 +263,16 @@ export function useWatchParty({
       follow(video, tl);
       return;
     }
+    const sent = submittedSeek.current;
+    const awaitingAnchor = isOutstandingSeek(sent, s.partyID, tl);
+    if (!awaitingAnchor) submittedSeek.current = null;
     const pending = localSeek.current;
     if (pending) {
-      const sent = pending.submitted;
-      const acknowledged = sent && sent.from !== tl && sent.positionMS === tl.positionMS;
       if (
         pending.partyID === s.partyID &&
         pending.item === tl.item &&
         performance.now() < pending.expiresAt &&
-        !acknowledged
+        (pending !== sent || awaitingAnchor)
       )
         return;
       localSeek.current = null;
@@ -508,7 +527,7 @@ export function useWatchParty({
         performance.now() < pending.expiresAt
           ? pending
           : null;
-      if (tracked?.submitted) return;
+      if (tracked && tracked === submittedSeek.current) return;
       if (!s.lead && !tracked && !hasRecentInput()) return;
       const now = partyNowMS();
       const local = video.currentTime * positionScale;
@@ -518,7 +537,15 @@ export function useWatchParty({
           : event.type === "play"
             ? !tl.paused
             : Math.abs(local - expectedPositionMS(tl, now)) <= SEEK_THRESHOLD_MS;
-      if (agrees) {
+      const sent = submittedSeek.current;
+      if (isSeek && isOutstandingSeek(sent, s.partyID, tl)) {
+        // A second scrub can return to the current anchor while the server
+        // is still processing the first scrub away from it.
+        if (Math.abs(local - sent.positionMS) <= SEEK_THRESHOLD_MS) {
+          localSeek.current = sent;
+          return;
+        }
+      } else if (agrees) {
         if (tracked) localSeek.current = null;
         return;
       }
@@ -527,17 +554,22 @@ export function useWatchParty({
         return;
       }
       const positionMS = Math.max(0, Math.round(local));
-      const submitted: LocalSeek = {
+      const submitted: SubmittedSeek = {
         partyID: s.partyID,
         item: tl.item,
         expiresAt: tracked?.expiresAt ?? performance.now() + SEEK_INTENT_TIMEOUT_MS,
-        submitted: { positionMS, from: tl },
+        positionMS,
+        from: tl,
       };
       localSeek.current = submitted;
+      submittedSeek.current = submitted;
       void sendPartyTransport(tl.item, positionMS, video.paused).then((applied) => {
         // A host-only request may still await approval. The local player
         // follows the current anchor in the meantime.
-        if (!applied && localSeek.current === submitted) localSeek.current = null;
+        if (!applied) {
+          if (submittedSeek.current === submitted) submittedSeek.current = null;
+          if (localSeek.current === submitted) localSeek.current = null;
+        }
       });
     };
     video.addEventListener("play", onLocal);
@@ -546,6 +578,7 @@ export function useWatchParty({
     video.addEventListener("seeked", onLocal);
     return () => {
       localSeek.current = null;
+      submittedSeek.current = null;
       video.removeEventListener("play", onLocal);
       video.removeEventListener("pause", onLocal);
       video.removeEventListener("seeking", onSeeking);
