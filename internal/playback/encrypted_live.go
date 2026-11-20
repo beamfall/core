@@ -94,7 +94,7 @@ func watchLiveRun(run *encoderRun) {
 
 // watchLiveRevocation tears the session down once revoked reports true, and
 // returns when the session ends either way.
-func (s *Sessions) watchLiveRevocation(key SessionKey, session *hlsSession, done <-chan struct{}, revoked func() bool, interval time.Duration) {
+func (s *Sessions) watchLiveRevocation(session *hlsSession, done <-chan struct{}, revoked func() bool, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -106,13 +106,10 @@ func (s *Sessions) watchLiveRevocation(key SessionKey, session *hlsSession, done
 				continue
 			}
 			s.mu.Lock()
-			var teardown *sessionTeardown
-			if s.liveLocked(key, session) {
-				teardown = s.removeLocked(key)
-			}
+			teardown := s.transitionLocked(session, detachSession{}).teardown
 			s.mu.Unlock()
 			if teardown != nil {
-				s.runTeardowns([]sessionTeardown{*teardown})
+				s.runTeardowns([]*sessionTeardown{teardown})
 			}
 			return
 		}

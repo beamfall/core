@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -587,8 +594,11 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // slow timbral palette drift
     float drift = 0.16 * u.spectralCentroid + 0.05 * sin(u.time * 0.043);
 
+    // beat swell: ~180 ms attack after the beat, back to zero at the wrap, so it never steps
+    float swell = smoothstep(0.0, 0.36, u.beatPhase) * (1.0 - smoothstep(0.36, 1.0, u.beatPhase));
+
     // ---- silhouette: layered synthesized traces around the fold ----
-    float breath = 0.40 * massAmt * (0.70 + 0.45 * u.amplitude + 0.14 * u.bassImpact);
+    float breath = 0.40 * massAmt * (0.92 + 0.25 * u.amplitude + 0.10 * swell);
     float R = breath;
     for (int i = 0; i < 5; ++i) {
         float fi = float(i);
@@ -616,8 +626,10 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     // rim glow: the wet edge catches light, feathered by treble
     float rim = exp(-((r - R) / max(feather * 1.6, 1e-3))*((r - R) / max(feather * 1.6, 1e-3)));
-    vec3 rimCol = palRoleRim(drift + 0.55, u);
-    vec3 col = ink * mass + rimCol * rim * (0.25 + 1.0 * u.treble) * mass
+    // Rim colour without palRoleRim: its peak role whitens instantly on onset/bass, which strobed the
+    // whole wet edge. A steady pale tint of the palette instead; treble and a smooth beat swell lift it.
+    vec3 rimCol = palVisual(drift + 0.55, u) * 1.2 + vec3(0.16, 0.12, 0.14);
+    vec3 col = ink * mass + rimCol * rim * (0.70 + 0.30 * u.treble + 0.20 * swell) * mass
              + rimCol * rim * 0.14;                          // faint outer wet halo
 
     // heartbeat: interior brightens softly on the beat pulse

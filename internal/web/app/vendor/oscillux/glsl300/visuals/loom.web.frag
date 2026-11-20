@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -601,9 +608,13 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         if (across > 0.0 && across < 1.0) {
             float shuttleZ = 1.18;
 
-            // bass ripple traveling back through the woven history
+            // bass ripple traveling back through the woven history, driven by a
+            // ~170 ms swell after each beat scaled by level: the instant kick
+            // envelopes it used to follow lit and slid the whole cloth at once
+            float bp = u.beatPhase;
+            float swell = smoothstep(0.0, 0.34, bp) * (1.0 - smoothstep(0.34, 1.0, bp)) * u.level;
             float ripple = sin(z * 2.6 - u.time * 4.0)
-                         * u.bassImpact * rippleAmt * exp(-max(z - shuttleZ, 0.0) * 0.55);
+                         * swell * rippleAmt * exp(-max(z - shuttleZ, 0.0) * 0.55);
 
             // ---- history: reproject where this cloth point was last frame ----
             float dtc = clamp(u.dt, 0.008, 0.05);
@@ -643,15 +654,16 @@ vec3 visual(vec2 uv, VisualUniforms u) {
             vec3 warpCol = palVisual(0.12 + fract(sid * 0.113) * 0.55
                                      + 0.10 * u.spectralCentroid, u);
             warpCol = accentize(warpCol, u.accent, 0.12);
-            vec3 weftCol = palRoleBass(0.06 + fract(rid * 0.171) * 0.28, u);
+            vec3 weftCol = palVisual(0.16 + fract(rid * 0.171) * 0.28, u);
 
             // Swings stay modest: every row marches past each pixel several times a
             // second, so a bright weft or onset pump reads as a cloth-wide flicker.
-            vec3 fresh = warpCol * warpLine * (0.45 + 0.9 * thick + 0.12 * u.onset);
-            fresh += weftCol * weftLine * (0.04 + 0.12 * u.bass * u.bass);
-            // crossing knots spark on the beat (HDR cores)
-            fresh += peakWhite(warpCol, 0.45) * knot
-                   * (0.45 + 0.30 * phasePulse(u, 0.0, 0.22)) * (0.3 + thick);
+            vec3 fresh = warpCol * warpLine * (0.62 + 0.28 * bandE);
+            fresh += weftCol * weftLine * (0.05 + 0.05 * u.level);
+            // crossing knots glint, swelling after the beat; kept dim because
+            // the history streams them back along the warp several times a second
+            fresh += peakWhite(warpCol, 0.25) * knot
+                   * (0.15 + 0.05 * swell) * (0.3 + thick);
 
             // metallic chorus thread: every other 16-beat section gleams
             // eased over a beat: a hard section switch lit the whole cloth at once
@@ -663,16 +675,27 @@ vec3 visual(vec2 uv, VisualUniforms u) {
             float freshMask = 1.0 - smoothstep(shuttleZ, shuttleZ + 0.35, z);
             col = mix(history, fresh, freshMask);
 
+            // woven cloth floor: the receding fabric drawn directly at a steady dim
+            // level, so the far cloth is there in every frame instead of depending
+            // on what the history trail happened to carry. max(), not +: PREV
+            // feeds back, so an added floor would pile up. Strands blend to their
+            // mean where they shrink below a pixel so they cannot shimmer.
+            float clothLine = mix(warpLine, 0.30, smoothstep(2.2, 6.0, z));
+            float clothFade = smoothstep(shuttleZ + 0.10, shuttleZ + 0.80, z)
+                            * (1.0 - smoothstep(7.0, 18.0, z));
+            vec3 cloth = warpCol * clothLine * (0.085 + 0.025 * bandE) * clothFade;
+            col = max(col, cloth);
+
             // ripple sheen glints on displaced rows
-            col += palRoleRim(0.45, u) * abs(ripple) * 0.04;
+            col += palVisual(0.45, u) * abs(ripple) * 0.02;
 
             // depth haze: the tapestry recedes into darkness
             col *= 1.0 - smoothstep(4.0, 14.0, z) * 0.06;
 
             // the shuttle: bright line where thread is being laid
             float sh = exp(-abs(z - shuttleZ) * 45.0);
-            vec3 shuttleCol = palRolePeak(0.30 + 0.20 * u.spectralCentroid, u);
-            col += shuttleCol * sh * (1.0 + u.onset * 0.3 + u.beat * 0.2) * (0.25 + bandE);
+            vec3 shuttleCol = peakWhite(palVisual(0.30 + 0.20 * u.spectralCentroid, u), 0.12);
+            col += shuttleCol * sh * (0.85 + 0.35 * swell) * (0.25 + bandE);
         }
 
         // fabric edges fall off into darkness

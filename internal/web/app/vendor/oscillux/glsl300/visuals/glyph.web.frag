@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -572,12 +579,29 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // Rotating spectral sigil with radial bars and broken rings.
 // Polar linework, visually distinct from Kaleidoscope's folded mandala.
 // param0 Rings, param1 Rotation, param2 Glyph Density
+//
+// Flash budget (limiter-red-audit --audio loud): the linework is thin and dense over most of the
+// sigil, so brightness may not follow the beat or the spectrum. The music moves geometry (ring
+// radius, spoke length, line weight) and shifts hue within one brightness band; the beat swells
+// only the small hub ring, with a slow attack. Lines are soft and kept below clipping so a
+// sub-pixel move changes a pixel gradually, and rotation stays slow.
+
+// Soft line: a Gaussian core at least ~1.3 px wide, so motion fades pixels instead of toggling them.
+float glyphLine(float d, float halfWidth) {
+    float w = max(halfWidth, 1.3 * fwidth(d));
+    return exp(-(d * d) / (w * w));
+}
+
+// Beat swell for the hub: ~150 ms rise after the beat, slow release through the rest of the beat.
+float glyphSwell(VisualUniforms u) {
+    float ph = saturate(u.beatPhase);
+    return smoothstep(0.0, 0.3, ph) * (1.0 - smoothstep(0.3, 1.0, ph));
+}
 
 vec3 visual(vec2 uv, VisualUniforms u) {
     vec2 p = motionCentered(uv, u);
-    // eased per-beat twist, continuous across beats (the raw saw snapped)
-    float beatT = u.beatCount + 1.0 - pow(1.0 - saturate(u.beatPhase), 3.0);
-    p = rot2(u.time * mix(0.02, 0.16, u.param1) + beatT * 0.05) * p;
+    float spin = u.time * mix(0.012, 0.06, u.param1);
+    p = rot2(spin) * p;
     float r = length(p);
     float a = atan2_(p.y, p.x);
     float ang = a / 6.2831853 + 0.5;
@@ -585,36 +609,40 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float rings = mix(4.0, 11.0, u.param0);
     // integer dash count so the ring joins across the ang 1->0 wrap (rule 13)
     float density = floor(mix(12.0, 42.0, u.param2) + 0.5);
+    float hue = 0.10 * u.spectralCentroid;
     vec3 glow = vec3(0.0);
 
     for (int k = 0; k < 11; k++) {
         if (float(k) >= rings) break;
         float fk = float(k);
-        float rr = 0.12 + fk * 0.065 + 0.012 * sin(u.time * 0.4 + fk);
         float bandv = bandAtWrapped(u, fk / 11.0 + ang);
-        float cell = fract(ang * (density + fk * 2.0) + fk * 0.23);
-        float dash = smoothstep(0.02, 0.10, cell) * smoothstep(0.72, 0.52, cell);
-        float line = aaLine(r - rr - bandv * 0.025, 0.0028) * dash;
-        vec3 c = palRoleTrace(ang + fk * 0.08 + 0.12 * u.spectralCentroid, u);
-        glow += c * line * (0.35 + bandv * 2.2 + u.bassImpact * 0.8 + u.onset * 0.5);
+        // rings breathe with their band; alternate rings counter-drift slowly against the spin
+        float rr = 0.12 + fk * 0.065 + 0.010 * sin(u.time * 0.3 + fk) + bandv * 0.028;
+        float drift = (mod(fk, 2.0) < 0.5 ? 1.0 : -1.0) * u.time * 0.010;
+        float cell = fract((ang + drift) * (density + fk * 2.0) + fk * 0.23);
+        float dash = smoothstep(0.04, 0.16, cell) * smoothstep(0.74, 0.58, cell);
+        float line = glyphLine(r - rr, 0.0035 + bandv * 0.0025) * dash;
+        vec3 c = palVisual(ang + fk * 0.08 + hue + 0.12 * bandv, u);
+        glow += c * line * (0.55 + 0.10 * bandv);
     }
 
+    float swell = glyphSwell(u);
     for (int i = 0; i < 32; i++) {
         float fi = float(i);
         float spokeA = fi / 32.0;
-        float ad = abs(fract(ang - spokeA + 0.5) - 0.5);
+        float ad = abs(fract(ang - spokeA + 0.5) - 0.5) * 6.2831853 * max(r, 0.05);
         float bandv = bandAt(u, spokeA);
-        float spoke = aaLine(ad, 0.0015 + bandv * 0.0012) *
-                      smoothstep(0.10, 0.18, r) * (1.0 - smoothstep(0.62 + bandv * 0.22, 0.75 + bandv * 0.22, r));
-        glow += palRoleTreble(spokeA + 0.1 * u.spectralCentroid, u) * spoke * (0.15 + bandv * 1.8 + u.beat * 0.4);
+        float reach = 0.66 + bandv * 0.22;
+        float spoke = glyphLine(ad, 0.0018 + r * (0.0065 + bandv * 0.0045)) *
+                      smoothstep(0.10, 0.18, r) * (1.0 - smoothstep(reach - 0.10, reach + 0.04, r));
+        vec3 c = palVisual(0.62 + spokeA * 0.28 + hue + 0.08 * bandv, u);
+        glow += c * spoke * (0.40 + 0.08 * bandv + 0.08 * swell);
     }
 
-    glow += palRoleRim(0.58, u) * aaLine(r - 0.085, 0.004) * (0.35 + u.level * 0.6 + u.onset * 1.6 + u.beat * 1.1);
+    // hub ring: the strongest beat-led brightness, small and with a slow attack
+    glow += palVisual(0.58 + hue, u) * glyphLine(r - 0.085, 0.0045) * (0.45 + 0.35 * swell * u.level);
 
-    vec3 col = feedbackTrail(glow, uv,
-                             min(u.trailDecay, 0.88),
-                             0.002 + 0.005 * u.bassImpact,
-                             0.0025 * u.beat);
+    vec3 col = feedbackTrail(glow, uv, min(u.trailDecay, 0.84), 0.0015, 0.0);
     return col; // LINEAR HDR — post chain tonemaps
 }
 

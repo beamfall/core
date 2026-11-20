@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -638,16 +645,21 @@ vec3 procEnv(vec3 dir, float time, float spectralCentroid) {
         float fb = float(b);
         float bandCenter = 0.15 + fb * 0.12;
         float bandV      = abs(sv - bandCenter);
-        float ringMask   = 1.0 - smoothstep(0.012, 0.055, bandV);
+        float ringMask   = 1.0 - smoothstep(0.010, 0.075, bandV);
 
         // Hue rotates around azimuth; animated slowly
         float t  = su + fb * 0.17 + time * (0.02 + fb * 0.007);
         vec3 c = palCity(t + 0.12 * spectralCentroid);
         c = c * c * 2.6; // deepen saturation — prismatic, never milky
+        // squaring drives palCity's hot stop to pure red, which 8-bit
+        // rounds into a saturated-red flash as the rings sweep the facets:
+        // keep red-dominant bands warm amber/rose instead
+        c.g = max(c.g, 0.30 * c.r);
+        c.b = max(c.b, 0.30 * c.r);
 
         // Brightness varies by azimuth band for a spectrum effect
         float azBand = fract(su * 8.0 + fb * 0.3);
-        float bright = 0.6 + 0.6 * sin(azBand * 6.28318530);
+        float bright = 0.70 + 0.48 * sin(azBand * 6.28318530);
 
         env += c * ringMask * bright * 1.6;
     }
@@ -683,8 +695,8 @@ vec3 envRefractChromatic(vec3 rd, vec3 n, float iorBase, float dispersion,
 }
 
 // ---------------------------------------------------------------------------
-// Crack-flash pattern: high-freq sinusoidal thresholded to thin lines.
-// Shard count driven by treble / onset — more treble = more fracture lines.
+// Crack pattern: high-freq sinusoidal thresholded to thin lines.
+// Shard count driven by treble; the beat swell lights them.
 // ---------------------------------------------------------------------------
 float crackPattern(vec3 p, float shardFreq) {
     float v = 0.0;
@@ -705,21 +717,30 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float dispersion  = mix(0.05, 1.0, u.param1);          // IOR spread
     float fracturePow = u.param2;                          // crack intensity
 
-    // Bass drives gem scale and camera push
-    float gemScale    = 1.0 + 0.18 * u.bassImpact;
-    float camPush     = 0.22 * u.bassImpact;
+    // Beat swell: ~150 ms attack, long release, zero at the beat wrap so it
+    // never jumps; scaled by the smoothed level. Every kick-driven brightness
+    // or size change rides this instead of the instant bassImpact/onset, which
+    // strobed the whole gem under loud audio (CORE-2659).
+    float bp          = u.beatPhase;
+    float swell       = smoothstep(0.0, 0.30, bp) * (1.0 - smoothstep(0.30, 1.0, bp))
+                      * saturate(u.level * 1.2);
 
-    // Mid drives internal wobble on the SDF cutplanes (via time offset)
-    float wobbleTime  = u.time + u.mid * 0.8;
+    // Beat swell drives gem scale (a camera push shifted every refraction
+    // across the whole gem and read as a flash). The resting size carries the
+    // presence the bass push used to give: a large, steady gem.
+    float gemScale    = 1.34 + 0.04 * swell;
 
-    // Treble + onset -> fracture brightness and shard count
+    // Slow internal wobble on the SDF cutplanes
+    float wobbleTime  = u.time;
+
+    // Treble -> shard density; the beat swell lights the cracks
     float shardFreq   = mix(14.0, 34.0, u.treble);         // more treble = denser cracks
-    float transient   = saturate(u.onset * 3.0 + u.beat * 0.5);
-    float fractureAmt = fracturePow * transient;
+    float fractureAmt = fracturePow * (0.20 + 0.80 * swell);
 
     // beat clock -> slow base rotation on top of the normal yaw; continuous
-    // across beats (beatPhase alone snapped back 0.4 rad on every beat)
-    float beatRot     = mod(u.beatCount + u.beatPhase, 157.07963) * 0.4;
+    // across beats, eased within each beat so the gem steps with the music.
+    // Wrap the angle by whole turns only, so it never jumps however long it runs.
+    float beatRot     = mod(u.beatCount * 0.10, 6.2831853) + smoothstep(0.0, 0.95, bp) * 0.10;
 
     // spectralCentroid -> tint hue bias
     float tintT       = u.spectralCentroid;
@@ -728,11 +749,11 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // Ray setup — orbiting camera
     // ------------------------------------------------------------------
     vec2 sp = motionCentered(uv, u);
-    vec3 ro = vec3(0.0, 0.0, 2.75 - camPush);
+    vec3 ro = vec3(0.0, 0.0, 2.75);
     vec3 rd = normalize(vec3(sp, -1.6));
 
-    float yaw   = u.time * 0.18 + u.bass * 0.4 + beatRot;
-    float pitch = u.time * 0.09 + u.mid  * 0.2;
+    float yaw   = u.time * 0.12 + beatRot;
+    float pitch = u.time * 0.07;
     mat2 Ry = rot2(yaw);
     mat2 Rx = rot2(pitch);
     ro.xz = Ry * ro.xz;
@@ -741,7 +762,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     rd.yz = Rx * rd.yz;
 
     // ------------------------------------------------------------------
-    // Raymarch (scale gem with bassImpact)
+    // Raymarch (gem scale breathes with the beat swell)
     // ------------------------------------------------------------------
     float t   = 0.0;
     float hit = 0.0;
@@ -750,7 +771,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     for (int i = 0; i < 72; ++i) {
         vec3 p = ro + rd * t;
-        // Scale the SDF query point inversely -> gem grows on bassImpact
+        // Scale the SDF query point inversely -> gem grows with gemScale
         float d = crystalSDF(p / gemScale, facetSharp, wobbleTime) * gemScale;
         if (d < EPS) { hit = 1.0; break; }
         t += d * 0.85;
@@ -790,7 +811,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float facetHue = fract(dot(fq, vec3(0.157, 0.311, 0.427)));
         vec3 facetTint = palVisual(facetHue * 0.6 + tintT * 0.3 + 0.05, u);
         facetTint = facetTint * facetTint * 2.2;
-        vec3 refrTinted = refrCol * mix(vec3(1.0), facetTint, 0.90) * 1.30;
+        vec3 refrTinted = refrCol * mix(vec3(1.0), facetTint, 0.90) * 1.05;
 
         // --- Mix refract/reflect by Fresnel (grazing -> more reflect) ---
         vec3 gemCol = mix(refrTinted, reflCol * 0.85, fres);
@@ -801,7 +822,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
         // Internal bass glow — colored ember in the heart of the gem, not a wash
         float heart = exp(-dot(pLocal, pLocal) * 2.2);
-        float glow = (u.bassImpact * 0.30 + u.amplitude * 0.12) * heart;
+        float glow = (0.20 + u.level * 0.14 + swell * 0.06) * heart;
         glow *= (1.0 - fres);   // strongest on the interior
         vec3 glowCol = palVisual(0.1 + tintT * 0.3, u);
         glowCol = glowCol * glowCol * 2.2;
@@ -817,21 +838,32 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         vec3 specCol = peakWhite(palVisual(facetHue + 0.2, u), 0.45);
         gemCol += specCol * spec * glitter * (2.2 + 2.5 * u.treble);
 
+        // Iridescent thin-film sheen: an opal ramp (cyan -> lavender ->
+        // orchid -> white) that drifts across each facet with view angle and
+        // position. It tints the refraction and adds a steady pastel glaze,
+        // so the gem reads bright and opalescent between beats.
+        float film = fract(cosI * 1.7 + facetHue * 0.9
+                         + dot(pLocal, vec3(0.55, 0.8, 0.35)) + u.time * 0.05);
+        float fw = film * 4.0;
+        vec3 opal = mix(vec3(0.35, 0.80, 1.00), vec3(0.62, 0.42, 1.00), smoothstep(0.0, 1.0, fw));
+        opal = mix(opal, vec3(0.95, 0.42, 0.95), smoothstep(1.0, 2.0, fw));
+        opal = mix(opal, vec3(1.00, 0.95, 1.00), smoothstep(2.0, 3.0, fw));
+        opal = mix(opal, vec3(0.35, 0.80, 1.00), smoothstep(3.0, 4.0, fw));
+        gemCol *= mix(vec3(1.0), opal * 1.20, 0.60);
+        gemCol += opal * opal * (0.06 + 0.14 * (1.0 - cosI));
+
         // Rim/edge brightening from Fresnel: facet outlines pop
         float rim = pow(1.0 - cosI, 3.5);
-        vec3 rimCol = palVisual(tintT + 0.5 + u.beatPhase * 0.2, u);
-        gemCol += rimCol * rim * (0.45 + u.bassImpact * 0.5);
+        vec3 rimCol = palVisual(tintT + 0.5 + swell * 0.12, u);
+        gemCol += (rimCol * 0.75 + 0.25) * rim * (0.80 + swell * 0.12);
 
-        // Beat brightening: a whisper only — a gem-wide pulse reads as a flash
-        gemCol += u.accent.rgb * u.beat * 0.05;
-
-        // --- Crack-flash on transients ---
+        // --- Cracks glow with the beat swell ---
         if (fractureAmt > 0.001) {
             float crack = crackPattern(pLocal * (4.0 + u.param0 * 6.0), shardFreq);
             // Crack lines: spectrum-colored shards, 5-8x HDR
-            vec3 crackCol = palVisual(tintT + crack * 0.4 + u.onset * 0.2, u);
-            crackCol = peakWhite(crackCol, 0.22 * u.onset);
-            gemCol += crackCol * crack * fractureAmt * 4.5;
+            vec3 crackCol = palVisual(tintT + crack * 0.4 + swell * 0.15, u);
+            crackCol = peakWhite(crackCol, 0.15 * swell);
+            gemCol += crackCol * crack * fractureAmt * 1.6;
         }
 
         col = gemCol;
@@ -844,7 +876,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // ghost facets into a pastel wash that kills the prismatic saturation.
     col = feedbackTrail(col, uv,
                         min(u.trailDecay, 0.55),
-                        0.002 + 0.006 * u.bassImpact,     // subtle zoom
+                        0.002,                            // subtle zoom
                         0.001 * sin(u.time * 0.5));       // very slow swirl
 
     return col; // LINEAR HDR — post chain tonemaps

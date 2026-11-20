@@ -1,8 +1,8 @@
-# Vendored Oscillux v0.2.9 (web)
+# Vendored Oscillux v0.2.10 (web)
 
 The Web Viewer's audio visualizer (CORE-1309) runs Oscillux, the only source of visual effects
-in Beamfall (ADR-0228). These files are copied unchanged from the Oscillux v0.2.9 release, cut
-from rev `971d56649f7c4dc097891275183e591a79be97cb` under `AGPL-3.0-only` (ADR-0233). Core adds no
+in Beamfall (ADR-0228). These files are copied unchanged from the Oscillux v0.2.10 release, cut
+from rev `383abd24f8b324e583f5955a4f14c87b71ec4383` under `AGPL-3.0-only` (ADR-0233). Core adds no
 licence terms to them. `pin.json` records the release assets and their SHA-256 sums.
 
 - `wasm/`: the `oscillux-wasm.tgz` package as released (`@oscillux/core`), with its licence,

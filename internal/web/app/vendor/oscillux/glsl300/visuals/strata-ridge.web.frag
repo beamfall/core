@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -574,15 +581,16 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // onsets send a white-hot shimmer racing along the front ridge.
 // param0 = Ridge Count ; param1 = Peak Drama ; param2 = Afterglow
 
-// One synthesized trace height for ridge `id` at horizontal position x01.
+// One synthesized trace height for ridge `id` at horizontal position x01;
+// `react` blends the spectrum reads toward a steady 0.45.
 // Central envelope concentrates energy mid-frame like the album plate.
-float ridgeTrace(vec2 xAndId, VisualUniforms u) {
+float ridgeTrace(vec2 xAndId, float react, VisualUniforms u) {
     float x = xAndId.x;
     float id = xAndId.y;
     float env = exp(-((x - 0.5) * 3.1)*((x - 0.5) * 3.1));
     float edge = smoothstep(0.0, 0.06, x) * smoothstep(1.0, 0.94, x);
-    float bandA = bandAt(u, fract(x * 0.82 + id * 0.043));
-    float bandB = bandAt(u, fract(x * 0.31 + 0.27 + id * 0.061));
+    float bandA = mix(0.45, bandAt(u, fract(x * 0.82 + id * 0.043)), react);
+    float bandB = mix(0.45, bandAt(u, fract(x * 0.31 + 0.27 + id * 0.061)), react);
     float w = sin(x * 11.0 + id * 1.93 + u.time * 0.55) * 0.42;
     w += sin(x * 23.0 - id * 3.11 - u.time * 0.9 + bandB * 2.4) * 0.26;
     w += sin(x * 53.0 + id * 7.7 + u.time * 2.1) * 0.09 * (0.3 + u.treble);
@@ -610,11 +618,15 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float baseline = 0.14 + 0.70 * (1.0 - pow(1.0 - t, 1.65));
 
         // Older traces flatten and calm down; bass lifts the near peaks.
-        // The instant bassImpact kick stays small: tall bright ridges jumping
-        // together on every hit swept a third of the frame at once.
+        // `react` scales how far the live spectrum and bass move each trace
+        // (the front most, history least). Every kick lifts the whole stack at
+        // once, so full-depth reaction and an instant bassImpact lift swept the
+        // lines across most of the frame: 18 large-area luma transitions a
+        // second under loud audio against a source budget of 6.
+        float react = mix(0.5, 0.3, t);
         float amp = drama * mix(0.26, 0.055, t)
-                  * (1.0 + 0.55 * u.bass * (1.0 - t) + 0.10 * u.bassImpact * (1.0 - t));
-        float crest = baseline + ridgeTrace(vec2(x, fi), u) * amp;
+                  * (1.0 + 0.55 * react * u.bass * (1.0 - t));
+        float crest = baseline + ridgeTrace(vec2(x, fi), react, u) * amp;
 
         // Occlusion: a nearer ridge's peak hides the trace lines behind it.
         float vis = smoothstep(0.0, 0.014, crest - maxCrest);
@@ -632,7 +644,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         c = accentize(c, u.accent, 0.06);
 
         float bright = mix(2.2, 0.10, pow(t, 0.42)); // front = HDR hero
-        float liveBand = bandAt(u, fract(x * 0.82 + fi * 0.043));
+        float liveBand = mix(0.45, bandAt(u, fract(x * 0.82 + fi * 0.043)), react);
         glow += c * line * vis * bright * (0.55 + 0.9 * liveBand);
         glow += c * under * vis * bright * 0.10; // faint glow skirt under each crest
 

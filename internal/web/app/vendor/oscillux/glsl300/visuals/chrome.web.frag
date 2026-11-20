@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -571,6 +578,20 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // Dark metaballs reflect sparse neon softboxes. Most of the surface stays dark;
 // only reflected strips, Fresnel rim, and transient glints enter HDR.
 // param0 = Blob Count ; param1 = Reflection ; param2 = Surface Ripple
+//
+// Flash budget (CORE-2659): no brightness, colour or geometry here follows an instant
+// kick/onset/flux/band value or reseeds on the beat. The music arrives through chromeSwell, a
+// smooth beat envelope (about 0.4 beat attack, 0.6 beat release, continuous across the beat
+// wrap), and through the loudness level. The swell warms and brightens the small bright parts
+// (rim, glints, horizon line, pin lights) instead of flashing or resizing the whole metal.
+
+// Smooth beat envelope in [0, 1]: rises over 0.4 beat to a peak just after the kick and falls over
+// the rest of the beat, with zero slope at both ends so the wrap at the next beat is seamless.
+float chromeSwell(VisualUniforms u) {
+    float x = fract(u.beatPhase + 0.35);
+    float e = x < 0.4 ? smoothstep(0.0, 0.4, x) : 1.0 - smoothstep(0.4, 1.0, x);
+    return e * saturate(u.level * 1.2);
+}
 
 float smin_chrome(float a, float b, float k) {
     float h = clamp(0.5 + 0.5 * (b - a) / max(k, 1e-5), 0.0, 1.0);
@@ -578,8 +599,11 @@ float smin_chrome(float a, float b, float k) {
 }
 
 float sdf_chrome(vec3 p, VisualUniforms u, int nBlobs) {
-    float orbitR = mix(0.40, 0.66, u.mid);
-    float bassR = u.bassImpact * 0.09;
+    // The beat never resizes or moves the metal: every reflection on it would shift at once and
+    // the whole surface would flash. The swell lives in the small bright parts instead (rim,
+    // glints, horizon line, pin lights); size follows the loudness level only.
+    float orbitR = mix(0.40, 0.62, u.level);
+    float bassR = 0.06 * u.level;
     float d = 1e9;
 
     for (int i = 0; i < 7; i++) {
@@ -587,7 +611,8 @@ float sdf_chrome(vec3 p, VisualUniforms u, int nBlobs) {
 
         float fi = float(i);
         float phase = fi * 1.618;
-        float bandEnergy = band(u, i * 9);
+        // Slow per-blob breathing in place of the instant band level.
+        float bandEnergy = u.level * (0.55 + 0.45 * sin(u.time * 0.53 + phase * 2.1));
 
         vec3 center = vec3(
             sin(u.time * 0.42 + phase) * orbitR * (0.65 + bandEnergy * 0.30),
@@ -595,7 +620,7 @@ float sdf_chrome(vec3 p, VisualUniforms u, int nBlobs) {
             sin(u.time * 0.31 + fi * 0.9) * orbitR * 0.34
         );
 
-        float radius = 0.40 + bandEnergy * 0.11 + bassR;
+        float radius = 0.42 + bandEnergy * 0.11 + bassR;
         float blob = length(p - center) - radius;
         d = (i == 0) ? blob : smin_chrome(d, blob, 0.32);
     }
@@ -614,7 +639,7 @@ vec3 calcNormal_chrome(vec3 p, VisualUniforms u, int nBlobs) {
     return len > 1e-6 ? n / len : vec3(0.0, 1.0, 0.0);
 }
 
-vec3 envChromeR2(vec3 r, VisualUniforms u) {
+vec3 envChromeR2(vec3 r, VisualUniforms u, float swell) {
     float phi = atan2_(r.z, r.x);
     float y = r.y;
     vec3 env = vec3(0.0);
@@ -626,34 +651,47 @@ vec3 envChromeR2(vec3 r, VisualUniforms u) {
         float ad = abs(atan2_(sin(phi - a), cos(phi - a)));
         float strip = exp(-ad * ad * 150.0) + exp(-ad * ad * 14.0) * 0.22;
         strip *= smoothstep(-0.88, -0.22, y) * (1.0 - smoothstep(0.55, 0.90, y));
-        float boxE = 0.7 + 1.4 * band(u, int(fi) * 13 + 5);
-        env += palVisual(0.06 + fi * 0.21 + 0.09 * u.spectralCentroid, u) * strip * 2.6 * boxE;
+        // Each box swells a little on its own share of the beat: a travelling shimmer, not a
+        // whole-surface flash.
+        float boxSwell = 0.5 + 0.5 * sin(6.2831853 * (u.beatPhase - fi * 0.25));
+        float boxE = 1.35 + 0.55 * u.level + 0.18 * swell * boxSwell;
+        // Studio gels: boxes alternate warm amber and cool teal, drifting slowly, so the mirror
+        // carries coloured reflections even on a grey palette. Steady, never beat-driven.
+        float gelDrift = 0.5 + 0.5 * sin(u.time * 0.11 + fi * 1.9);
+        vec3 gel = mod(fi, 2.0) < 0.5
+            ? mix(vec3(1.30, 0.78, 0.40), vec3(1.25, 0.95, 0.45), gelDrift)
+            : mix(vec3(0.55, 0.95, 1.25), vec3(0.75, 0.80, 1.30), gelDrift);
+        env += palVisual(0.06 + fi * 0.21 + 0.09 * u.spectralCentroid, u) * gel * strip * 2.6 * boxE;
     }
 
     // Dim colored dome so reflections never read as void.
     env += palVisual(0.55 + 0.10 * u.spectralCentroid + y * 0.10, u)
          * (0.018 + 0.035 * smoothstep(-1.0, 1.0, y)) * (0.6 + 0.8 * u.level);
 
-    // A low horizon glow line, warmed by kick.
+    // A low horizon glow line, steadily warm orange-gold (G floor keeps it off pure red),
+    // swelling gently on the beat.
     float horizon = exp(-abs(y + 0.10) * 90.0);
-    env += mix(vec3(0.0, 0.72, 1.0), vec3(1.55, 0.24, 0.02), u.bassImpact)
-         * horizon * (0.40 + 1.2 * u.bassImpact);
+    vec3 horizonCol = mix(vec3(1.50, 0.50, 0.12), vec3(1.35, 0.72, 0.18),
+                          0.5 + 0.5 * sin(u.time * 0.17));
+    env += horizonCol * horizon * (0.85 + 0.25 * swell);
 
-    // Sparse pin lights for treble/flux.
+    // Sparse pin lights for treble: fixed per sector (no reseed on the beat), drifting slowly.
     float sector = floor((phi / 6.2831853 + 0.5) * 42.0);
-    float h = hash11(sector * 1.37 + floor(u.beatCount));
-    float pinPhi = h * 6.2831853 - 3.14159265;
+    float h = hash11(sector * 1.37);
+    float pinPhi = h * 6.2831853 - 3.14159265 + 0.05 * sin(u.time * 0.4 + h * 9.0);
     float pinY = hash11(sector * 2.91 + 4.0) * 1.5 - 0.75;
     float pinD = abs(atan2_(sin(phi - pinPhi), cos(phi - pinPhi)));
     float pin = exp(-pinD * pinD * 600.0) * exp(-(y - pinY)*(y - pinY) * 50.0);
-    env += peakWhite(palVisual(h + 0.2 * u.spectralCentroid, u), pin * u.flux * 0.15)
-         * pin * u.flux * (1.0 + u.treble * 2.5);
+    float twinkle = 0.5 + 0.5 * sin(u.time * 1.3 + h * 40.0);
+    env += palVisual(h + 0.2 * u.spectralCentroid, u)
+         * pin * (0.25 + 0.35 * u.treble) * twinkle * (0.6 + 0.4 * swell);
 
     return env;
 }
 
 vec3 visual(vec2 uv, VisualUniforms u) {
     vec2 sp = motionCentered(uv, u);
+    float swell = chromeSwell(u);
 
     int nBlobs = int(mix(3.0, 7.0, u.param0));
     float reflStrength = mix(0.55, 1.35, u.param1);
@@ -681,40 +719,49 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         vec3 pos = ro + rd * t;
         vec3 nor = calcNormal_chrome(pos, u, nBlobs);
 
-        float ripplePhase = length(pos.xy) * 11.0 - u.time * 4.6 + u.beatPhase * 6.2831853;
+        // Slow travelling ripple; its depth, not its speed, follows the music.
+        float ripplePhase = length(pos.xy) * 11.0 - u.time * 1.4;
         vec3 tangentPerturb = vec3(
             sin(ripplePhase + pos.z * 3.0),
             cos(ripplePhase + pos.x * 2.6),
             sin(ripplePhase * 0.7 + pos.y * 4.0)
         );
-        float ripple = sin(ripplePhase) * (0.25 + u.treble) * rippleAmt;
+        float ripple = sin(ripplePhase) * (0.35 + 0.35 * u.treble + 0.30 * swell) * rippleAmt;
         // fade the perturbation at the silhouette — kills the "fuzz" halo
         ripple *= 0.25 + 0.75 * max(dot(nor, -rd), 0.0);
         vec3 nPerturbed = normalize(nor + tangentPerturb * ripple);
 
         vec3 refl = reflect(rd, nPerturbed);
-        vec3 env = envChromeR2(refl, u) * reflStrength;
+        vec3 env = envChromeR2(refl, u, swell) * reflStrength;
 
         float NoV = max(dot(nPerturbed, -rd), 0.0);
         float fres = pow(1.0 - NoV, 5.0);
 
         vec3 baseMetal = vec3(0.012, 0.014, 0.020);
         vec3 darkReflection = env * (0.30 + 0.55 * (1.0 - fres));
-        vec3 rim = mix(vec3(0.0, 0.74, 1.05), vec3(1.55, 0.24, 0.02), u.bassImpact)
-                 * fres * (0.55 + 2.2 * u.bassImpact);
+        // Rim: a steady warm orange-gold Fresnel light that drifts slowly between orange and gold
+        // (G floor, never saturated red), with a touch of cool palette accent along one side.
+        // The beat only nudges its strength a little; the colour never turns on the beat.
+        vec3 rimWarm = mix(vec3(1.55, 0.50, 0.10), vec3(1.40, 0.74, 0.16),
+                           0.5 + 0.5 * sin(u.time * 0.23));
+        vec3 rimCool = palVisual(0.62 + 0.10 * u.spectralCentroid, u) * vec3(0.55, 0.85, 1.10);
+        float coolSide = 0.20 * smoothstep(0.1, 0.9, -nor.y + 0.3 * sin(u.time * 0.13));
+        vec3 rim = mix(rimWarm, rimCool, coolSide) * fres * (1.55 + 0.25 * swell);
 
         vec3 glints = vec3(0.0);
         for (int i = 0; i < 8; i++) {
             float fi = float(i);
-            vec2 h = hash22(vec2(fi * 1.7, floor(u.beatCount) + 2.0));
+            // Fixed lights that orbit slowly; no reseed on the beat.
+            vec2 h = hash22(vec2(fi * 1.7, 2.0));
+            h.x = fract(h.x + u.time * (0.012 + 0.008 * fi));
             vec3 dir = normalize(vec3(
                 cos(h.x * 6.2831853) * sqrt(max(0.0, 1.0 - h.y * h.y)),
                 h.y * 2.0 - 1.0,
                 sin(h.x * 6.2831853) * sqrt(max(0.0, 1.0 - h.y * h.y))
             ));
             float spec = pow(max(dot(reflect(-dir, nPerturbed), -rd), 0.0), 80.0);
-            glints += peakWhite(palVisual(h.x + u.spectralCentroid * 0.2, u), spec * 0.16)
-                    * spec * (u.flux + u.treble * 0.35) * 2.4;
+            glints += palVisual(fi * 0.13 + u.spectralCentroid * 0.2, u)
+                    * spec * (0.70 + 0.30 * u.treble + 0.45 * swell) * 2.4;
         }
 
         vec3 base = baseMetal;
@@ -723,8 +770,8 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         vec3 glow = darkReflection + glints;
         vec3 trail = feedbackTrail(glow, uv,
                                    min(u.trailDecay, 0.50),
-                                   0.002 + 0.004 * u.bassImpact,
-                                   0.0008 * u.beat);
+                                   0.002 + 0.002 * swell,
+                                   0.0);
         col = base + trail + rim;
     } else {
         // studio backdrop: the environment itself, dim and defocused, plus a
@@ -735,14 +782,14 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         // the palette's own luminance so pale palettes (Porcelain) do not
         // turn the room mid-grey.
         float palLum = saturate(luma(palVisual(0.5, u)));
-        vec3 bg = envChromeR2(bgDir, u) * 0.03 * mix(1.0, 0.4, palLum);
+        vec3 bg = envChromeR2(bgDir, u, swell) * 0.03 * mix(1.0, 0.4, palLum);
         float floorGlow = exp(-(sp.y - 0.62)*(sp.y - 0.62) * 22.0) * smoothstep(1.4, 0.2, abs(sp.x));
         bg += palVisual(0.12 + 0.1 * u.spectralCentroid, u) * floorGlow
-            * (0.012 + 0.08 * u.bassImpact) * mix(1.0, 0.4, palLum);
+            * (0.03 + 0.02 * swell) * mix(1.0, 0.4, palLum);
         float vig = 1.0 - smoothstep(0.7, 1.9, length(sp)) * 0.7;
         col = bg * vig;
         col = feedbackTrail(col, uv, min(u.trailDecay, 0.50),
-                            0.002 + 0.004 * u.bassImpact, 0.0008 * u.beat);
+                            0.002 + 0.002 * swell, 0.0);
     }
 
     return col; // LINEAR HDR — post chain tonemaps
