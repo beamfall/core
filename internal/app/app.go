@@ -311,9 +311,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	if len(cfg.StreamTokenKey) == 0 {
 		return nil, errors.New("stream token key is required")
 	}
-	if cfg.TranscodeScratchDir == "" {
-		cfg.TranscodeScratchDir = filepath.Join(cfg.DataDir, "transcode")
-	}
 	st, err := store.Open(ctx, cfg.DataDir, store.Options{
 		SeedDevelopmentData:               cfg.SeedDevelopmentData,
 		SeedProfile:                       store.SeedProfile(cfg.SeedProfile),
@@ -523,7 +520,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// Log the cap that is in force and where it came from, not just the
 	// automatic one, which an env or Console cap may override (CORE-2317).
 	logger.Info("transcode cap: effective", "cap", cfg.TranscodeCap, "source", transcodeCapSource(transcodePolicy, envTranscodeCap), "automatic", autoTranscodeCap, "hardware", transcodePolicy.HardwareEnabled)
-	defaultTranscodeScratchDir := filepath.Join(cfg.DataDir, "transcode")
+	startupScratchDir := cfg.TranscodeScratchDir
+	// Config.Load fills in the lexical default. Classify it before applying a
+	// Console override, which can have the same spelling.
+	if !cfg.TranscodeScratchDirExplicit && startupScratchDir == filepath.Join(cfg.DataDir, "transcode") {
+		startupScratchDir = ""
+	}
 	if !cfg.TranscodeScratchDirExplicit && transcodePolicy.TempDir != "" {
 		// The Console-stored temp directory applies at startup. It was proven
 		// writable when stored; if it has since gone away, fall back to the
@@ -531,9 +533,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		// stored directory as not yet in effect.
 		if err := config.ValidateTranscodeScratchDir(transcodePolicy.TempDir); err != nil {
 			logger.Warn("stored transcode temp directory unusable; using the default", "err", err)
-			cfg.TranscodeScratchDir = defaultTranscodeScratchDir
+			startupScratchDir = ""
 		} else {
-			cfg.TranscodeScratchDir = transcodePolicy.TempDir
+			startupScratchDir = transcodePolicy.TempDir
 		}
 	}
 	ffmpeg.SetToneMapEnabled(transcodePolicy.ToneMapEnabled)
@@ -782,14 +784,15 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// Console resource graphs: an in-memory ring of host samples, never persisted.
 	hostSampler := hostmetrics.New(hostmetrics.DefaultInterval, hostmetrics.DefaultWindow)
 	var hlsSessions *playback.Sessions
-	if !cfg.TranscodeScratchDirExplicit && cfg.TranscodeScratchDir == defaultTranscodeScratchDir {
+	if startupScratchDir == "" && !cfg.TranscodeScratchDirExplicit {
 		hlsSessions, err = playback.NewSessions(ffmpegRunner, cfg.DataDir, time.Now)
 	} else {
-		hlsSessions, err = playback.NewSessionsInDir(ffmpegRunner, cfg.TranscodeScratchDir, time.Now)
+		hlsSessions, err = playback.NewSessionsInDir(ffmpegRunner, startupScratchDir, time.Now)
 	}
 	if err != nil {
 		return nil, errors.Join(err, st.Close())
 	}
+	cfg.TranscodeScratchDir = hlsSessions.ScratchDir()
 	defer func() {
 		if resultErr != nil {
 			if cleanupErr := errors.Join(hlsSessions.Close(), st.Close()); cleanupErr != nil {
@@ -1227,7 +1230,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		SoftwareAutoCap: softwareTranscodeCap,
 		EnvCap:          envTranscodeCap,
 		ActiveTempDir:   cfg.TranscodeScratchDir,
-		DefaultTempDir:  defaultTranscodeScratchDir,
+		StartupTempDir:  startupScratchDir,
 		EnvTempDir:      cfg.TranscodeScratchDirExplicit,
 	}
 	graphOptions := graph.Options{

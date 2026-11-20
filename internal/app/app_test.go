@@ -536,6 +536,81 @@ func TestNewReleasesScratchAfterBootstrapSetupTokenFailure(t *testing.T) {
 	}
 }
 
+func TestNewHonorsConsoleScratchWhenItMatchesLexicalDefault(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SeedDevelopmentData = true
+	a, err := filepath.EvalSymlinks(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := t.TempDir()
+	child := filepath.Join(b, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(a, "link")
+	if err := os.Symlink(child, link); err != nil {
+		t.Fatal(err)
+	}
+	cfg.DataDir = link + "/.."
+	stored := filepath.Join(a, "transcode")
+	active := filepath.Join(a, "scratch")
+	if err := os.Symlink(active, stored); err != nil {
+		t.Fatal(err)
+	}
+	defaultOrphan := filepath.Join(b, "transcode", "session-1")
+	storedOrphan := filepath.Join(active, "session-2")
+	for _, orphan := range []string{defaultOrphan, storedOrphan} {
+		if err := os.MkdirAll(orphan, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := store.Open(t.Context(), a, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, saveErr := st.SetTranscodeConfig(t.Context(), store.TranscodeConfigPatch{TempDir: &stored}, time.Now())
+	if err := errors.Join(saveErr, st.Close()); err != nil {
+		t.Fatal(err)
+	}
+	beamfall, err := New(t.Context(), cfg, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := beamfall.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := os.Stat(storedOrphan); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Console scratch orphan should be removed: %v", err)
+	}
+	if _, err := os.Stat(defaultOrphan); err != nil {
+		t.Errorf("default scratch should be untouched: %v", err)
+	}
+	if err := beamfall.store.SetSessionAdminUntil(t.Context(), "session-manager", time.Now().Add(time.Hour).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/graphql", strings.NewReader(`{"query":"query { transcodeConfig { tempDir effectiveTempDir tempDirRestartRequired } }"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Beamfall-Session", "session-manager")
+	req.Header.Set("X-Beamfall-Device", "device-mac")
+	req.Header.Set("X-Beamfall-Device-Secret", "dev-manager-secret")
+	rec := httptest.NewRecorder()
+	beamfall.Handler().ServeHTTP(rec, req)
+	var response struct {
+		Data   struct{ TranscodeConfig graph.TranscodeConfigInfo }
+		Errors []json.RawMessage
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	info := response.Data.TranscodeConfig
+	if rec.Code != http.StatusOK || len(response.Errors) > 0 || info.TempDir != stored || info.EffectiveTempDir != active || info.TempDirRestartRequired {
+		t.Errorf("transcodeConfig = %d %s, want %q stored and %q effective", rec.Code, rec.Body.String(), stored, active)
+	}
+}
+
 func TestNewClosesOwnedWatcherOnLateConstructorFailure(t *testing.T) {
 	realClose := closeOwnedWatcher
 	closed := 0

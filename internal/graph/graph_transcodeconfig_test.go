@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,6 +50,35 @@ func setTranscodeResources(t *testing.T, handler *Handler, variables string) (Tr
 	return info, errs
 }
 
+func TestTranscodeResourceSettingsPreserveSymlinkParentPath(t *testing.T) {
+	st := storetest.Open(t)
+	a, b := t.TempDir(), t.TempDir()
+	child := filepath.Join(b, "child")
+	for _, dir := range []string{child, filepath.Join(a, "scratch"), filepath.Join(b, "scratch")} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(a, "link")
+	if err := os.Symlink(child, link); err != nil {
+		t.Fatal(err)
+	}
+	dir := link + "/../scratch"
+	handler := newTranscodeRuntimeHandler(t, st, TranscodeRuntime{ActiveTempDir: filepath.Join(a, "scratch")})
+	variables, err := json.Marshal(map[string]string{"tempDir": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, errs := setTranscodeResources(t, handler, string(variables))
+	if len(errs) != 0 || info.TempDir != dir || !info.TempDirRestartRequired {
+		t.Errorf("setTranscodeConfig = (%+v, %v), want %q pending restart", info, errs, dir)
+	}
+	stored, err := st.TranscodeConfig(t.Context())
+	if err != nil || stored.TempDir != dir {
+		t.Fatalf("stored tempDir = (%q, %v), want %q", stored.TempDir, err, dir)
+	}
+}
+
 // TestTranscodeResourceSettingsApplyLiveAndAudit proves the CORE-1970 settings
 // round-trip through the wire: the cap and tone-map switch apply live, the temp
 // directory reports restart-required, effective values sit beside the stored
@@ -59,7 +89,7 @@ func TestTranscodeResourceSettingsApplyLiveAndAudit(t *testing.T) {
 	active := t.TempDir()
 	handler := newTranscodeRuntimeHandler(t, st, TranscodeRuntime{
 		CapSetter: setter, StartupCap: 1, AutoCap: 1,
-		ActiveTempDir: active, DefaultTempDir: active,
+		ActiveTempDir: active,
 	})
 
 	data, errs := post(t, handler, `{"query":"query { transcodeConfig { `+transcodeResourceSelection+` } }"}`, authorizeManager)
@@ -167,7 +197,7 @@ func TestTranscodeResourceSettingsEnvOverride(t *testing.T) {
 	envDir := t.TempDir()
 	handler := newTranscodeRuntimeHandler(t, st, TranscodeRuntime{
 		CapSetter: setter, StartupCap: 6, AutoCap: 1, EnvCap: 6,
-		ActiveTempDir: envDir, DefaultTempDir: t.TempDir(), EnvTempDir: true,
+		ActiveTempDir: envDir, EnvTempDir: true,
 	})
 
 	stored := t.TempDir()
@@ -259,7 +289,7 @@ func TestTranscodeConfigOverlappingSavesApplyInStoredOrder(t *testing.T) {
 	active := t.TempDir()
 	handler := newTranscodeRuntimeHandler(t, st, TranscodeRuntime{
 		CapSetter: setter, StartupCap: 1, AutoCap: 1,
-		ActiveTempDir: active, DefaultTempDir: active,
+		ActiveTempDir: active,
 	})
 
 	var wg sync.WaitGroup

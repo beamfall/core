@@ -143,6 +143,11 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 	return s, nil
 }
 
+// ScratchDir returns the resolved root the manager locked at construction.
+func (s *Sessions) ScratchDir() string {
+	return s.dir
+}
+
 // allocateScratchLocked drops mu for exclusive mkdir. setupMu keeps the
 // existing single setup owner while the registry exposes the unresolved claim.
 func (s *Sessions) allocateScratchLocked(ctx context.Context, key SessionKey, library store.LibraryID) (*scratchPath, error) {

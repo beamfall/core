@@ -72,8 +72,9 @@ type TranscodeRuntime struct {
 	EnvCap int
 	// ActiveTempDir is the scratch directory the running transcoder uses.
 	ActiveTempDir string
-	// DefaultTempDir is the directory used when no temp directory is stored.
-	DefaultTempDir string
+	// StartupTempDir is the configured spelling selected at startup. An empty
+	// value means the default under the data directory was selected.
+	StartupTempDir string
 	// EnvTempDir reports that an env var or flag set ActiveTempDir.
 	EnvTempDir bool
 }
@@ -157,7 +158,7 @@ func transcodeConfigInfo(cfg store.TranscodeConfig, report config.HardwareAccelR
 		TempDir:                                cfg.TempDir,
 		EffectiveTempDir:                       runtime.ActiveTempDir,
 		TempDirEnvOverride:                     runtime.EnvTempDir,
-		TempDirRestartRequired:                 desiredTempDir(cfg, runtime) != runtime.ActiveTempDir,
+		TempDirRestartRequired:                 tempDirRestartRequired(cfg.TempDir, runtime),
 		ToneMapEnabled:                         cfg.ToneMapEnabled,
 	}
 }
@@ -178,18 +179,8 @@ func desiredTranscodeCap(cfg store.TranscodeConfig, runtime TranscodeRuntime) in
 	}
 }
 
-// desiredTempDir resolves the temp directory the configuration asks for: the
-// env/flag override (already active), else the stored directory, else the
-// default.
-func desiredTempDir(cfg store.TranscodeConfig, runtime TranscodeRuntime) string {
-	switch {
-	case runtime.EnvTempDir:
-		return runtime.ActiveTempDir
-	case cfg.TempDir != "":
-		return cfg.TempDir
-	default:
-		return runtime.DefaultTempDir
-	}
+func tempDirRestartRequired(stored string, runtime TranscodeRuntime) bool {
+	return !runtime.EnvTempDir && stored != runtime.StartupTempDir && (stored == "" || stored != runtime.ActiveTempDir)
 }
 
 // ResolveTranscodeCap is the startup counterpart of desiredTranscodeCap, so the
@@ -213,7 +204,6 @@ func transcodeTempDirVariable(value string) (string, error) {
 	if !filepath.IsAbs(dir) {
 		return "", clientError("tempDir must be an absolute path")
 	}
-	dir = filepath.Clean(dir)
 	if err := config.ValidateTranscodeScratchDir(dir); err != nil {
 		return "", clientError("tempDir must be an existing, writable directory")
 	}
