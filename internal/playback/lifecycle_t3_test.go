@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/store"
 )
@@ -26,10 +27,12 @@ func TestT3FinalizedSegmentServesBeforeChildReap(t *testing.T) {
 	for _, delay := range []time.Duration{0, PostSeekTranscodeLatencyBudget + 200*time.Millisecond} {
 		t.Run(delay.String(), func(t *testing.T) {
 			transcoder := &scriptedTranscoder{start: func(_ int, dir string, _ int) []string {
-				// Stage the segment privately, then publish it while the child
-				// is running, including after the shorter post-seek budget.
+				// Publish two segments independently while the child runs.
 				writeArtifact(t, dir, "private", mediaSegment())
-				return []string{"sh", "-c", "sleep \"$1\"; mv \"$2/private\" \"$2/seg00000.m4s\"; exec sleep 60",
+				writeArtifact(t, dir, "later", mediaSegment())
+				return []string{"sh", "-c", `sleep "$1"; mv "$2/private" "$2/seg00000.m4s"
+while [ ! -f "$2/next" ]; do sleep 0.02; done
+mv "$2/later" "$2/seg00001.m4s"; exec sleep 60`,
 					"fixture", fmt.Sprintf("%.3f", delay.Seconds()), dir}
 			}}
 			s := newTestSessions(t, transcoder, t.TempDir(), nil)
@@ -46,6 +49,10 @@ func TestT3FinalizedSegmentServesBeforeChildReap(t *testing.T) {
 			case <-h.run.reaped:
 				t.Fatal("segment did not serve while the child was running")
 			default:
+			}
+			writeArtifact(t, filepath.Dir(path), "next", []byte("publish"))
+			if _, err := filePath720(s, key, "720p/seg00001.m4s"); err != nil || transcoder.startCount() != 1 {
+				t.Fatalf("the same child could not serve a later segment: %v", err)
 			}
 			if n := s.TerminateSession(key.SessionID); n != 1 {
 				t.Fatalf("terminated %d instances", n)
@@ -445,6 +452,13 @@ func TestT3ReapTransfersCapacityToItsAssignedStart(t *testing.T) {
 			victim := SessionKey{SessionID: "victim"}
 			requester := SessionKey{SessionID: "requester"}
 			third := SessionKey{SessionID: "third"}
+			service := &Service{sessions: s}
+			limit := 1
+			policy := store.Profile{TranscodeAllowed: true, MaxConcurrentStreams: &limit}
+			streamLimited := func(key SessionKey) bool {
+				scope := auth.Scope{SessionID: key.SessionID, ProfileID: store.ProfileID(key.SessionID)}
+				return service.transcodeRefusal(t.Context(), scope, "different-media", CapabilityProfile{}, policy, PriorityNormal) == "stream-limit-reached"
+			}
 			start := func(ctx context.Context, key SessionKey, priority Priority) (*LiveArtifact, error) {
 				b, err := s.BindLive(key)
 				if err != nil {
@@ -475,6 +489,9 @@ func TestT3ReapTransfersCapacityToItsAssignedStart(t *testing.T) {
 			slow.waitEntered(t)
 			if got := chargedKeys(s); len(got) != 1 || got[0] != victim {
 				t.Fatalf("charges before reap = %v", got)
+			}
+			if !streamLimited(victim) || streamLimited(requester) || streamLimited(third) {
+				t.Fatal("pending transfer charged the wrong Profile before reap")
 			}
 			if _, _, err := segment.OpenPlain(); !errors.Is(err, ErrSessionEvicted) {
 				t.Fatalf("victim open before reap = %v", err)
@@ -518,6 +535,9 @@ func TestT3ReapTransfersCapacityToItsAssignedStart(t *testing.T) {
 			if got := chargedKeys(s); len(got) != 1 || got[0] != want {
 				t.Fatalf("charges after reap = %v, want %v", got, want)
 			}
+			if streamLimited(victim) || !streamLimited(want) {
+				t.Fatal("settled transfer charged the wrong Profile")
+			}
 		})
 	}
 }
@@ -548,6 +568,13 @@ func (f *finalUploadTranscoder) StartEncryptedHLSSegments(ctx context.Context, e
 }
 
 func TestT3ReapFreesCapacityWhileFinalUploadOwnsWrites(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("upload failure %v", failed), func(t *testing.T) { testFinalUploadReap(t, failed) })
+	}
+}
+
+func testFinalUploadReap(t *testing.T, failed bool) {
+	t.Helper()
 	childRead, childWrite, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -572,12 +599,14 @@ func TestT3ReapFreesCapacityWhileFinalUploadOwnsWrites(t *testing.T) {
 	defer body.Close()
 	defer writer.Close()
 	upload := make(chan error, 1)
+	payload := mediaSegment()
 	go func() {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodPut, ep.Output+"/seg00029.m4s", body)
 		if err != nil {
 			upload <- err
 			return
 		}
+		req.ContentLength = int64(len(payload))
 		resp, err := http.DefaultClient.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
@@ -587,7 +616,6 @@ func TestT3ReapFreesCapacityWhileFinalUploadOwnsWrites(t *testing.T) {
 		}
 		upload <- err
 	}()
-	payload := mediaSegment()
 	if _, err := writer.Write(payload[:len(payload)/2]); err != nil {
 		t.Fatal(err)
 	}
@@ -624,12 +652,22 @@ func TestT3ReapFreesCapacityWhileFinalUploadOwnsWrites(t *testing.T) {
 	default:
 	}
 	s.TerminateSession(plain.SessionID)
-	if _, err := writer.Write(payload[len(payload)/2:]); err != nil {
-		t.Fatal(err)
+	if !failed {
+		if _, err := writer.Write(payload[len(payload)/2:]); err != nil {
+			t.Fatal(err)
+		}
 	}
 	_ = writer.Close()
-	if err := waitScratchResult(t, upload); err != nil {
-		t.Fatal(err)
+	if err := waitScratchResult(t, upload); (err != nil) != failed {
+		t.Fatalf("final upload = %v, want failure %v", err, failed)
+	}
+	waitScratchSignal(t, run.exited)
+	want := exitEndOfInput
+	if failed {
+		want = exitCrashed
+	}
+	if run.outcome != want {
+		t.Fatalf("reaped outcome = %v, want %v", run.outcome, want)
 	}
 	if err := waitScratchResult(t, seek); err != nil {
 		t.Fatal(err)
@@ -655,6 +693,13 @@ func (f *orderedDurationTranscoder) Probe(_ context.Context, path string) (ffmpe
 }
 
 func TestT3DurationWinnerSurvivesEvictionBeforeShapeCommit(t *testing.T) {
+	for _, running := range []bool{false, true} {
+		t.Run(fmt.Sprintf("running VOD %v", running), func(t *testing.T) { testDurationWinnerBeforeShapeCommit(t, running) })
+	}
+}
+
+func testDurationWinnerBeforeShapeCommit(t *testing.T, running bool) {
+	t.Helper()
 	root := t.TempDir()
 	src, other := filepath.Join(root, "source"), filepath.Join(root, "other")
 	seedScratchFile(t, src)
@@ -664,13 +709,6 @@ func TestT3DurationWinnerSurvivesEvictionBeforeShapeCommit(t *testing.T) {
 	s := newTestSessions(t, prober, t.TempDir(), nil)
 	entered, release := scratchLatch(t)
 	defer release.open()
-	var prepared atomic.Bool
-	s.beforeSetupCommit = func() {
-		if prepared.CompareAndSwap(false, true) {
-			close(entered)
-			<-release.ch
-		}
-	}
 	binding, err := s.BindLive(SessionKey{SessionID: "first-vod"})
 	if err != nil {
 		t.Fatal(err)
@@ -678,6 +716,26 @@ func TestT3DurationWinnerSurvivesEvictionBeforeShapeCommit(t *testing.T) {
 	defer binding.Release()
 	if err := binding.Attach("library", "", nil); err != nil {
 		t.Fatal(err)
+	}
+	playlist := func(seconds int) (*LiveArtifact, error) {
+		return binding.ArtifactShaped(t.Context(), src, seconds, 1280, 720, false, false,
+			ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, "720p/index.m3u8")
+	}
+	var existing *LiveArtifact
+	if running {
+		existing, err = playlist(120)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer existing.Release()
+	} else {
+		var prepared atomic.Bool
+		s.beforeSetupCommit = func() {
+			if prepared.CompareAndSwap(false, true) {
+				close(entered)
+				<-release.ch
+			}
+		}
 	}
 	defer close(prober.results[0])
 	defer close(prober.results[1])
@@ -705,14 +763,28 @@ func TestT3DurationWinnerSurvivesEvictionBeforeShapeCommit(t *testing.T) {
 	if got := <-hls; got != 0 {
 		t.Fatalf("HLS first result = %d", got)
 	}
+	if running {
+		var stats atomic.Int32
+		s.statSource = func(path string) (os.FileInfo, error) {
+			info, err := os.Stat(path) // #nosec G703 -- source belongs to the private fixture.
+			if path == src && stats.Add(1) == 2 {
+				close(entered)
+				<-release.ch
+			}
+			return info, err
+		}
+	}
 	outcome := make(chan error, 1)
 	go func() {
-		a, err := binding.ArtifactShaped(t.Context(), src, 0, 1280, 720, false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, "720p/index.m3u8")
+		a, err := playlist(0)
 		if err == nil {
 			defer a.Release()
 			data, readErr := os.ReadFile(a.path) // #nosec G304 -- artifact is inside the private test scratch directory.
 			if readErr != nil || a.session.sourceDurationSeconds != 120 || !strings.Contains(string(data), "#EXT-X-ENDLIST") {
 				err = errors.New("VOD did not use the winning source runtime")
+			}
+			if existing != nil && (existing.session != a.session || existing.path != a.path) {
+				err = errors.New("running VOD was reshaped")
 			}
 		}
 		outcome <- err
@@ -1559,6 +1631,7 @@ func TestT3SetupRejectsReplacementAfterGridResolution(t *testing.T) {
 			if kind != "loaded" {
 				f.holdFirst, f.probeFinished = releaseGrid.ch, gridDone
 			}
+			f.holdChild = kind == "cutoff"
 			s := newTestSessions(t, f, t.TempDir(), nil)
 			defer releaseGrid.open()
 			if kind == "timed out" {
@@ -1627,9 +1700,20 @@ func TestT3SetupRejectsReplacementAfterGridResolution(t *testing.T) {
 			if !strings.Contains(string(mustRead(t, path)), "#EXTINF:6.000,") {
 				t.Fatal("fresh setup did not use the replacement grid")
 			}
+			if kind == "cutoff" {
+				if _, err := fetch("seg00000.m4s"); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if f.holdFirst != nil {
 				releaseGrid.open()
 				waitScratchSignal(t, gridDone)
+			}
+			if kind == "cutoff" {
+				s.keyframes.probes.Wait()
+				if got := chargedKeys(s); len(got) != 1 || got[0] != key {
+					t.Fatalf("late keyframe result disturbed the replacement encoder: %v", got)
+				}
 			}
 		})
 	}
@@ -1898,5 +1982,122 @@ func TestT3PlaybackInfoDurationWinsPendingHLSMiss(t *testing.T) {
 	again := playlist(seconds)
 	if again.session != first.session || again.path != first.path || !strings.Contains(string(mustRead(t, again.path)), "#EXT-X-ENDLIST") {
 		t.Fatal("the running VOD was reshaped after duration eviction")
+	}
+}
+
+func TestT3PlaybackWaitsLeaveSharedHDRPreparation(t *testing.T) {
+	for _, mode := range []string{"live cutoff", "playback info cancellation"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("BEAMFALL_T3_FIXTURE", dir)
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			const tool = `#!/bin/sh
+fixture="$BEAMFALL_T3_FIXTURE"
+case " $* " in
+  *" -version "*)
+    printf started > "$fixture/identity"
+    while [ ! -f "$fixture/release" ]; do /bin/sleep 0.02; done
+    printf '%s\n' 'ffmpeg version t3-hdr'
+    printf done > "$fixture/resolved"
+    exit 0 ;;
+esac
+printf spawn > "$fixture/unexpected-spawn"
+exit 1
+`
+			if err := os.WriteFile(filepath.Join(dir, "ffmpeg"), []byte(tool), 0o700); err != nil { // #nosec G306 -- private executable test fixture.
+				t.Fatal(err)
+			}
+			src := filepath.Join(dir, "source")
+			seedScratchFile(t, src)
+			release := func() {
+				_ = os.WriteFile(filepath.Join(dir, "release"), []byte("release"), 0o600)
+			}
+			defer release()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			s := newTestSessions(t, ffmpeg.New(), t.TempDir(), nil)
+			key := SessionKey{SessionID: "hdr"}
+			result := make(chan error, 1)
+			want := error(ErrSessionEvicted)
+			var stop func()
+			if mode == "live cutoff" {
+				go func() {
+					_, err := s.FilePathPriority(ctx, key, src, 120, 1280, 720, false, false,
+						VideoSignal{ColorTransfer: "smpte2084"}, PriorityNormal, "720p/init.mp4")
+					result <- err
+				}()
+				stop = func() {
+					if n := s.TerminateSession(key.SessionID); n != 1 {
+						t.Fatalf("terminated %d HDR instances", n)
+					}
+				}
+			} else {
+				service, st, scope := capabilityTestService(t)
+				service.SetSessions(s)
+				prior := toneMapSupported
+				toneMapSupported = ffmpeg.ToneMapSupportedContext
+				t.Cleanup(func() { toneMapSupported = prior })
+				stream := videoStream("hevc", "Main 10", 0, "")
+				stream.ColorTransfer = "smpte2084"
+				item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+					LibraryID: "library-local", Path: src, Title: "HDR",
+					Container: "mkv", Codec: "hevc", Class: store.MediaClassVideo,
+					ContentFingerprint: "t3-hdr", DurationSecondsHint: 120,
+					VideoWidthHint: 1280, VideoHeightHint: 720, Streams: []store.MediaFileStream{stream, audioStream(1, "aac", 2)},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				go func() {
+					_, err := service.Info(ctx, scope, InfoRequest{MediaID: string(item.ID), CapabilityProfile: incapableCaps})
+					result <- err
+				}()
+				stop, want = cancel, context.Canceled
+			}
+			latchCtx, stopLatch := context.WithTimeout(t.Context(), 5*time.Second)
+			defer stopLatch()
+			if err := waitForFile(latchCtx, filepath.Join(dir, "identity")); err != nil {
+				t.Fatalf("HDR preparation did not reach shared binary identity: %v", err)
+			}
+			stop()
+			err := waitScratchResult(t, result)
+			// Info can return a refusal after the capability check is canceled.
+			// Its caller still returned while tool-owned resolution was blocked.
+			if mode == "live cutoff" && !errors.Is(err, want) ||
+				mode != "live cutoff" && err != nil && !errors.Is(err, want) {
+				t.Fatalf("canceled HDR request = %v", err)
+			}
+			if len(chargedKeys(s)) != 0 {
+				t.Fatal("HDR preparation retained a charge")
+			}
+			requireScratchMissing(t, filepath.Join(dir, "unexpected-spawn"))
+			requireScratchMissing(t, filepath.Join(dir, "resolved"))
+			release()
+			if _, err := ffmpeg.ResolveFFmpegIdentity(latchCtx); err != nil {
+				t.Fatalf("surviving identity waiter: %v", err)
+			}
+			requireScratchMissing(t, filepath.Join(dir, "unexpected-spawn"))
+		})
+	}
+}
+
+func TestT3OrdinaryAdmissionCannotReplaceDegradedOverflow(t *testing.T) {
+	s := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
+	s.SetTranscodeCap(1)
+	normal, overflow, newcomer := SessionKey{SessionID: "normal"}, SessionKey{SessionID: "overflow"}, SessionKey{SessionID: "newcomer"}
+	if _, err := filePath720Priority(s, normal, PriorityForeground, "720p/seg00000.m4s"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := filePath720Degraded(s, overflow, "480p/seg00000.m4s"); err != nil {
+		t.Fatal(err)
+	}
+	if s.CanAdmitPriority(newcomer, PriorityForeground) {
+		t.Fatal("ordinary admission predicted capacity while over the server cap")
+	}
+	if _, err := filePath720Priority(s, newcomer, PriorityForeground, "720p/seg00000.m4s"); !errors.Is(err, ErrTranscodeCapacity) {
+		t.Fatalf("ordinary start with only degraded victim = %v", err)
+	}
+	if len(chargedKeys(s)) != 2 {
+		t.Fatal("ordinary refusal disturbed the current children")
 	}
 }

@@ -1305,6 +1305,10 @@ func TestScratchReaperRetriesDebtWhileIdleReaderIsHeld(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("idle directory removed before reader release: %v", err)
 	}
+	successor, err := filePath720(s, key, masterPlaylistName)
+	if err != nil || successor == path {
+		t.Fatalf("fresh admission during idle teardown = %q, %v", successor, err)
+	}
 	_ = f.Close()
 	a.Release()
 	requireScratchMissing(t, filepath.Dir(path))

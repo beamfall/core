@@ -521,3 +521,86 @@ func TestT3SegmentRetriesOutsideStoreWhileReaperOwnsOutput(t *testing.T) {
 		t.Fatalf("Store calls = %d, want segment, reaper, and segment retry", got)
 	}
 }
+
+func TestT3OldEOFPublicationLosesToReplacementGeneration(t *testing.T) {
+	for _, sameKey := range []bool{false, true} {
+		t.Run(fmt.Sprintf("same key %v", sameKey), func(t *testing.T) {
+			ctx := t.Context()
+			st := storetest.Open(t)
+			src := filepath.Join(t.TempDir(), "source")
+			seedScratchFile(t, src)
+			item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: "library-local", Path: src, Title: "Source", Container: "mkv",
+				Codec: "h264", Class: store.MediaClassVideo, ContentFingerprint: "source-replacement",
+				DurationSecondsHint: 120,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
+			s.sourceStore = st
+			oldKey := SessionKey{SessionID: "before-replacement", MediaID: item.ID}
+			playlist := func(key SessionKey) *LiveArtifact {
+				t.Helper()
+				a, err := s.LiveArtifactShaped(ctx, key, src, 120, 1280, 720, false, false,
+					ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, masterPlaylistName)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(a.Release)
+				return a
+			}
+			old := playlist(oldKey)
+			entered, release := scratchLatch(t)
+			defer release.open()
+			var latch atomic.Bool
+			latch.Store(true)
+			s.statSource = func(path string) (os.FileInfo, error) {
+				info, err := os.Stat(path) // #nosec G703 -- source belongs to the private fixture.
+				if latch.CompareAndSwap(true, false) {
+					close(entered)
+					<-release.ch
+				}
+				return info, err
+			}
+			outcome := make(chan error, 1)
+			go func() {
+				_, observed, err := s.observeIncompleteSource(ctx, oldKey, old.session, artifactObservation{}, false, func() (time.Duration, bool) {
+					return 4 * time.Second, true
+				})
+				if observed {
+					err = errors.New("old inspection published an EOF bound")
+				}
+				outcome <- err
+			}()
+			waitScratchSignal(t, entered)
+			replacement := filepath.Join(filepath.Dir(src), "replacement")
+			seedScratchFile(t, replacement)
+			if err := os.Rename(replacement, src); err != nil {
+				t.Fatal(err)
+			}
+			newKey, want := oldKey, ErrSessionEvicted
+			if !sameKey {
+				newKey.SessionID, want = "after-replacement", errSetupUnavailable
+			}
+			next := playlist(newKey)
+			if next.session == old.session {
+				t.Fatal("replacement generation reused the old instance")
+			}
+			release.open()
+			if err := waitScratchResult(t, outcome); !errors.Is(err, want) {
+				t.Fatalf("old EOF inspection = %v, want %v", err, want)
+			}
+			files, err := st.MediaFilesForMedia(ctx, item.ID, store.LibraryFilter{AllLibraries: true})
+			if err != nil || len(files) != 1 {
+				t.Fatalf("source files = %v, error %v", files, err)
+			}
+			if incomplete, err := st.MediaFileSourceIncomplete(ctx, files[0]); err != nil || incomplete || s.incompleteSources.contains(src) {
+				t.Fatalf("replacement inherited EOF, catalog=%v, error=%v", incomplete, err)
+			}
+			if _, err := s.FilePath(ctx, newKey, src, 120, 1280, 720, false, "720p/seg00000.m4s"); err != nil {
+				t.Fatalf("replacement could not serve bytes: %v", err)
+			}
+		})
+	}
+}
