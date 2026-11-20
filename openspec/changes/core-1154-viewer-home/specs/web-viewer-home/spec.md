@@ -26,7 +26,14 @@ nonempty shelf when the library is returned by the `libraries` query, its
 - **WHEN** the viewer opens See All on a Home library shelf
 - **THEN** the Viewer pages the selected library's recent additions using its
   library ID
-- **AND** it checks current Home visibility before browsing the scoped feed
+- **AND** it stores only the library ID in history and uses the current Home
+  visibility response to resolve the heading and authorize the scoped feed
+
+#### Scenario: A viewer returns to a library shelf after relock
+
+- **WHEN** the viewer returns to See All and the library is absent from the
+  current Home visibility response
+- **THEN** neither its heading nor its items appear
 
 #### Scenario: One library feed is unavailable
 
@@ -43,12 +50,19 @@ nonempty shelf when the library is returned by the `libraries` query, its
 The desktop Viewer SHALL show a hero when an eligible recent item has loadable
 artwork among the recent additions shown on Home. Home card
 frames SHALL follow the loaded artwork's intrinsic aspect ratio and use the
-class-based fallback when artwork is absent or fails.
+class-based fallback when artwork is absent or fails. The Home artwork hero
+SHALL render outside the 24-Section layout budget.
 
 #### Scenario: Home has mixed artwork
 
 - **WHEN** the shelves include square, landscape and portrait artwork
-- **THEN** the Viewer displays each at its intrinsic aspect ratio
+- **THEN** the Viewer displays each at its intrinsic aspect ratio on Home and
+  in See All from a Home shelf
+
+#### Scenario: All 24 manifest sections and the hero are available
+
+- **WHEN** artwork loads for the Home hero and all 24 manifest sections are populated
+- **THEN** Home retains all 24 sections alongside the hero
 
 #### Scenario: No eligible artwork loads
 
