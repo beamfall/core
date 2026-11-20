@@ -594,6 +594,48 @@ describe("races", () => {
     }
   });
 
+  it("does not repeat an in-flight Pause that a matching anchor confirms before auto-skip", async () => {
+    vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+      deliver({ groupID: "p1", signal: "roster", item: "m1", paused: false });
+      return { partyID: "p1", item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    expect(await joinWatchParty("p1")).toBe("m1");
+    let releasePause!: () => void;
+    const reply = new Promise<void>((resolve) => {
+      releasePause = resolve;
+    });
+    vi.mocked(requestWatchPartyTransport).mockImplementationOnce(async () => {
+      await reply;
+      return { partyID: "p1", approved: true };
+    });
+    const anchor = { item: "m1", positionMS: 5_000, presentAtMS: 10_000 };
+    vi.mocked(watchPartyAutoSkip).mockResolvedValueOnce({
+      ...anchor,
+      partyID: "p1",
+      positionMS: 30_000,
+      applied: true,
+    });
+    try {
+      const pause = sendPartyTransport("m1", { playing: false, playheadMS: anchor.positionMS });
+      const skip = sendPartyAutoSkip("m1", 30_000);
+      expect(watchPartyAutoSkip).not.toHaveBeenCalled();
+      deliver({ groupID: "p1", signal: "transition", ...anchor, paused: true });
+      releasePause();
+
+      await expect(pause).resolves.toBe(true);
+      await expect(skip).resolves.toBe("applied");
+      expect(requestWatchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+        partyID: "p1",
+        item: "m1",
+        positionMS: 5_000,
+        paused: true,
+      });
+      expect(getWatchParty().timeline).toMatchObject({ positionMS: 30_000, paused: true });
+    } finally {
+      releasePause();
+    }
+  });
+
   it("releases a refused seek after the preceding transport settles", async () => {
     vi.mocked(createWatchParty).mockResolvedValue({
       partyID: "p1",

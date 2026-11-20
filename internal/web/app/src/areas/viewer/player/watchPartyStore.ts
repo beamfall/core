@@ -140,7 +140,8 @@ interface TransportIntent {
 interface TransportWork {
   intent: TransportIntent;
   autoSkip: boolean;
-  changesPlaying: boolean;
+  playbackChange: { confirmed: boolean } | undefined;
+  selection?: AbortSignal;
   startedFrom?: PartyTimeline | null;
   run: () => Promise<void>;
   supersede: () => void;
@@ -167,7 +168,11 @@ function pendingTransportWork(itemId: string): TransportWork | undefined {
   const work = latestTransport;
   if (!work) return;
   const { intent } = work;
-  if (intent.epoch !== transportEpoch || performance.now() >= intent.expiresAt) {
+  if (
+    work.selection?.aborted ||
+    intent.epoch !== transportEpoch ||
+    performance.now() >= intent.expiresAt
+  ) {
     latestTransport = null;
     return;
   }
@@ -175,11 +180,11 @@ function pendingTransportWork(itemId: string): TransportWork | undefined {
 }
 
 function matchesTransport(work: TransportWork, timeline: PartyTimeline): boolean {
-  const { intent, autoSkip, changesPlaying } = work;
+  const { intent, autoSkip, playbackChange } = work;
   return (
     timeline.item === intent.itemId &&
     timeline.positionMS === intent.positionMS &&
-    ((autoSkip && !changesPlaying) || timeline.paused === !intent.playing)
+    ((autoSkip && !playbackChange) || timeline.paused === !intent.playing)
   );
 }
 
@@ -198,10 +203,14 @@ function runTransport(partyID: string, queue: TransportQueue, work: TransportWor
 function enqueueTransport(
   intent: TransportIntent,
   autoSkip: boolean,
-  changesPlaying: boolean,
+  playbackChange: TransportWork["playbackChange"],
+  selection?: AbortSignal,
 ): Promise<PartyAutoSkipOutcome> {
   const { partyID } = state;
-  const isCurrent = () => intent.epoch === transportEpoch && state.partyID === partyID;
+  const isCurrent = () =>
+    intent.epoch === transportEpoch &&
+    state.partyID === partyID &&
+    (!selection || (state.isHost && !selection.aborted));
   const running = transportQueues.get(partyID);
   const queue = running ?? { inFlight: null, pending: null };
   return new Promise((resolve) => {
@@ -215,7 +224,8 @@ function enqueueTransport(
     const work: TransportWork = {
       intent,
       autoSkip,
-      changesPlaying,
+      playbackChange,
+      selection,
       run: async () => {
         // The player follows the shared timeline again after the seek deadline.
         if (
@@ -310,16 +320,24 @@ function noteFollowing(): void {
 }
 
 function set(patch: Partial<WatchPartyState>): void {
-  if (patch.timeline && patch.timeline !== state.timeline) noteTimeline(patch.timeline);
+  const { timeline } = patch;
+  if (timeline && timeline !== state.timeline) noteTimeline(timeline);
   state = { ...state, ...patch };
-  if (patch.timeline) {
-    const work = pendingTransportWork(patch.timeline.item);
-    if (
-      work?.startedFrom !== undefined &&
-      work.startedFrom !== patch.timeline &&
-      matchesTransport(work, patch.timeline)
-    )
-      latestTransport = null;
+  if (timeline) {
+    const inFlight = transportQueues.get(state.partyID)?.inFlight;
+    const latest = pendingTransportWork(timeline.item);
+    for (const work of [inFlight, latest]) {
+      if (
+        work?.intent.epoch !== transportEpoch ||
+        work.startedFrom === undefined ||
+        work.startedFrom === timeline ||
+        !matchesTransport(work, timeline)
+      )
+        continue;
+      // A queued skip can carry the playback change from this earlier request.
+      if (work.playbackChange) work.playbackChange.confirmed = true;
+      if (work === latestTransport) latestTransport = null;
+    }
   }
   for (const listener of listeners) listener();
 }
@@ -847,7 +865,7 @@ export async function inviteToParty(displayName: string): Promise<boolean> {
 /** Put the viewer's changes on the shared timeline as a full playback state. */
 export function sendPartyTransport(
   itemId: string,
-  change: { positionMS?: number; playing?: boolean; playheadMS?: number },
+  change: { positionMS?: number; playing?: boolean; playheadMS?: number; selection?: AbortSignal },
   expiresAt = performance.now() + PARTY_TRANSPORT_TIMEOUT_MS,
 ): Promise<boolean> {
   const { status, lead, isHost, partyID, timeline } = state;
@@ -870,8 +888,11 @@ export function sendPartyTransport(
   const queued = transportQueues.get(partyID)?.pending;
   const autoSkip =
     queued?.autoSkip === true && queued === previousWork && change.positionMS === undefined;
-  const changesPlaying = change.playing !== undefined || previousWork?.changesPlaying === true;
-  return enqueueTransport(intent, autoSkip, changesPlaying).then((result) => result === "applied");
+  const playbackChange =
+    change.playing === undefined ? previousWork?.playbackChange : { confirmed: false };
+  return enqueueTransport(intent, autoSkip, playbackChange, change.selection).then(
+    (result) => result === "applied",
+  );
 }
 
 async function applyPartyTransport(intent: TransportIntent): Promise<boolean> {
@@ -923,7 +944,7 @@ export function sendPartyAutoSkip(
       expiresAt: Math.max(expiresAt, previous?.expiresAt ?? 0),
     },
     true,
-    previousWork?.changesPlaying === true,
+    previousWork?.playbackChange,
   );
 }
 
@@ -933,7 +954,7 @@ async function applyPartyAutoSkip(
   isCurrent: () => boolean,
   isLatest: () => boolean,
 ): Promise<void> {
-  const { intent, changesPlaying } = work;
+  const { intent, playbackChange } = work;
   const { itemId: item, positionMS: target, playing } = intent;
   const { partyID, lead, isHost } = state;
   let timeline = state.timeline;
@@ -946,7 +967,7 @@ async function applyPartyAutoSkip(
     }
     // The skip mutation moves position only. Apply a carried play/pause first
     // at the shared playhead, then let the server authorize the skip itself.
-    const playbackChanged = changesPlaying && timeline.paused === playing;
+    const playbackChanged = playbackChange?.confirmed === false;
     if (playbackChanged) {
       const applied = await applyPartyTransport({
         ...intent,

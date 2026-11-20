@@ -351,7 +351,11 @@ describe("useWatchParty drift and advance (CORE-1766)", () => {
     );
     // The host's Up Next takes its player to the next item.
     host.rerender({ mediaId: "m2" });
-    expect(sendPartyTransport).toHaveBeenCalledWith("m2", { positionMS: 0, playing: true });
+    expect(sendPartyTransport).toHaveBeenCalledWith("m2", {
+      positionMS: 0,
+      playing: true,
+      selection: expect.any(AbortSignal),
+    });
     expect(onFollow).not.toHaveBeenCalled();
     host.unmount();
 

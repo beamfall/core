@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useHomeNetwork } from "../lib/watchTogether";
 import { getDisplayTrimMS } from "./displayTrim";
 import { listenerMuted, setListenerMuted } from "./listenerMute";
@@ -314,11 +314,28 @@ export function useWatchParty({
     reportPartyDrift(drift);
   }, [videoRef, correct, play, follow, positionScale, baseRate, applyLeadSkip]);
 
-  // Follow the party to another title, or, as host, take it to this one.
+  // A queued host switch belongs to this player selection, including its lifetime.
+  const partyItem = timeline?.item;
+  useLayoutEffect(() => {
+    if (
+      !active ||
+      !party.partyID ||
+      !party.isHost ||
+      !partyItem ||
+      !mediaId ||
+      partyItem === mediaId
+    )
+      return;
+    const selection = new AbortController();
+    void sendPartyTransport(mediaId, { positionMS: 0, playing: true, selection: selection.signal });
+    return () => selection.abort();
+  }, [active, partyItem, mediaId, party.isHost, party.partyID]);
+
+  // Follow the party to another title.
   useEffect(() => {
-    if (!active || !timeline || !mediaId || timeline.item === mediaId) return;
-    if (party.isHost) void sendPartyTransport(mediaId, { positionMS: 0, playing: true });
-    else onFollow(timeline.item);
+    if (active && !party.isHost && timeline && mediaId && timeline.item !== mediaId) {
+      onFollow(timeline.item);
+    }
   }, [active, timeline, mediaId, party.isHost, onFollow]);
 
   // Measure and correct on a steady beat, at each new timeline, and exactly at
