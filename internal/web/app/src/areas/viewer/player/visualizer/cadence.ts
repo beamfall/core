@@ -53,14 +53,20 @@ export class CadenceGate {
    * The interval to record with the governor for this frame, or null to skip it while the gate
    * is still learning the cadence. Pauses and invalid intervals pass through unchanged for the
    * governor to ignore. gpuMs, when known, is a bound on how long the GPU took over the previous
-   * frame: a slow interval then records as that bound, or as the target interval if the GPU kept
-   * within GPU_BUDGET_MS, and stays out of the cadence window.
+   * frame. A slow interval after a frame the GPU kept within GPU_BUDGET_MS records as the target
+   * interval and stays out of the cadence window; a looser bound still goes through cap detection
+   * and then caps what is recorded.
    */
   sample(frameMs: number, gpuMs: number | null = null): number | null {
     if (!Number.isFinite(frameMs) || frameMs <= 0 || frameMs >= PAUSE_MS) return frameMs;
-    if (gpuMs !== null && frameMs > this.targetMs * SLOW_FACTOR) {
-      return gpuMs <= GPU_BUDGET_MS ? this.targetMs : Math.min(frameMs, gpuMs);
-    }
+    const slow = frameMs > this.targetMs * SLOW_FACTOR;
+    if (slow && gpuMs !== null && gpuMs <= GPU_BUDGET_MS) return this.targetMs;
+    const sample = this.capped(frameMs);
+    return sample !== null && slow && gpuMs !== null ? Math.min(sample, gpuMs) : sample;
+  }
+
+  // The interval scaled to the target when the cadence is steady at the browser cap.
+  private capped(frameMs: number): number | null {
     this.window.push(frameMs);
     if (this.window.length > CADENCE_WINDOW) this.window.shift();
     if (this.window.length < CADENCE_WINDOW) return null;

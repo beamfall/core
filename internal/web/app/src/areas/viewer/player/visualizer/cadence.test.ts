@@ -84,6 +84,23 @@ describe("CadenceGate (CORE-2483)", () => {
     expect(gate.sample(40, 45)).toBe(40);
   });
 
+  // Codex review of CORE-2720: a late check at a steady 30 Hz cap must not keep the cap from
+  // being recognized.
+  it("keeps full quality at a steady cap whose fence checks run late", () => {
+    const quality = new osc.GovernorConfig();
+    quality.maxLevel = 3;
+    quality.initialLevel = 3;
+    const governor = new osc.Governor(quality);
+    quality.free();
+    const gate = new CadenceGate();
+    for (const ms of steady(1000 / 30, 1200, 0.8)) {
+      const sample = gate.sample(ms, 22);
+      if (sample !== null) governor.record(sample);
+    }
+    expect(governor.level).toBe(3);
+    governor.free();
+  });
+
   it("keeps full quality through a throttled page", () => {
     const quality = new osc.GovernorConfig();
     quality.maxLevel = 3;
