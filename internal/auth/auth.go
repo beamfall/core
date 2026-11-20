@@ -717,12 +717,9 @@ const integrationAuditTimeout = 5 * time.Second
 // IntegrationScope authenticates an integration bearer for one closed compat
 // scope. Enrolled sessions and integrations lacking the bit fail closed.
 func (s *Service) IntegrationScope(ctx context.Context, token string, required store.IntegrationScope) (Scope, error) {
-	session, err := s.store.Session(ctx, store.SessionID(token))
+	session, err := s.integrationSession(ctx, token)
 	if err != nil {
 		return Scope{}, err
-	}
-	if session.Kind != store.SessionKindIntegration || !s.now().Before(session.ExpiresAt) {
-		return Scope{}, errors.New("invalid integration session")
 	}
 	hasScope := false
 	for _, scope := range session.IntegrationScopes {
@@ -745,11 +742,22 @@ func (s *Service) IntegrationScope(ctx context.Context, token string, required s
 	}, nil
 }
 
+func (s *Service) integrationSession(ctx context.Context, token string) (store.Session, error) {
+	session, err := s.store.Session(ctx, store.SessionID(token))
+	if err != nil {
+		return store.Session{}, err
+	}
+	if session.Kind != store.SessionKindIntegration || !s.now().Before(session.ExpiresAt) {
+		return store.Session{}, errors.New("invalid integration session")
+	}
+	return session, nil
+}
+
 // RevokeIntegrationSession revokes the caller's non-renewable bearer.
 func (s *Service) RevokeIntegrationSession(ctx context.Context, token string) error {
-	session, err := s.store.Session(ctx, store.SessionID(token))
-	if err != nil || session.Kind != store.SessionKindIntegration {
-		return errors.New("invalid integration session")
+	session, err := s.integrationSession(ctx, token)
+	if err != nil {
+		return err
 	}
 	if err := s.store.RevokeIntegrationSession(ctx, session.ID, session.ProfileID); err != nil {
 		return err

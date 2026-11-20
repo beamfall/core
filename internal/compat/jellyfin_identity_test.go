@@ -171,6 +171,28 @@ func TestJellyfinAuthenticationFailuresAreUniform(t *testing.T) {
 	}
 }
 
+func TestJellyfinLogoutRevokesRefreshOnlySession(t *testing.T) {
+	_, service := integrationService(t, time.Now)
+	session, err := service.AuthenticateIntegrationByName(t.Context(), "Default", "2468", "127.0.0.1", []store.IntegrationScope{store.IntegrationScopeRefresh})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newIdentityHandler(t, Config{Enabled: true}, service)
+	for _, tc := range []struct {
+		path string
+		want int
+	}{
+		{"Sessions/Logout", http.StatusNoContent},
+		{"Library/Refresh", http.StatusUnauthorized},
+	} {
+		req := compatRequest(t, http.MethodPost, tc.path)
+		req.Header.Set("X-Emby-Token", session.Token)
+		if rec := sendCompat(handler, req); rec.Code != tc.want {
+			t.Fatalf("%s returned %d, want %d", tc.path, rec.Code, tc.want)
+		}
+	}
+}
+
 func TestJellyfinRefreshBurst(t *testing.T) {
 	_, service := integrationService(t, time.Now)
 	var enqueues atomic.Int32

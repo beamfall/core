@@ -37,7 +37,9 @@ import (
 	"github.com/hashicorp/yamux"
 
 	"github.com/beamfall/core/internal/artwork"
+	"github.com/beamfall/core/internal/auth"
 	backupcore "github.com/beamfall/core/internal/backup"
+	"github.com/beamfall/core/internal/compat"
 	"github.com/beamfall/core/internal/config"
 	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/governor"
@@ -531,19 +533,9 @@ func TestAppCompatIdentityAndRefreshSurviveRestart(t *testing.T) {
 	if _, err := st.UpdateProfileSettings(ctx, profile.ID, store.ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
 		t.Fatal(err)
 	}
-	var liveID store.LibraryID
-	for _, title := range []string{"Live", "Restricted", "Trashed"} {
-		library, err := st.CreateLibraryWithRoots(ctx, title, title == "Restricted", "", profile.ID, []string{t.TempDir()}, "")
-		if err != nil {
+	for _, title := range []string{"First", "Second"} {
+		if _, err := st.CreateLibraryWithRoots(ctx, title, false, "", profile.ID, []string{t.TempDir()}, ""); err != nil {
 			t.Fatal(err)
-		}
-		switch title {
-		case "Live":
-			liveID = library.ID
-		case "Trashed":
-			if err := st.DeleteLibrary(ctx, library.ID); err != nil {
-				t.Fatal(err)
-			}
 		}
 	}
 	call := func(method, path, token, body string, wantStatus int) []byte {
@@ -585,14 +577,177 @@ func TestAppCompatIdentityAndRefreshSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var scanKeys []string
 	for _, job := range queued {
 		if job.Kind == scanpkg.JobKind {
-			scanKeys = append(scanKeys, job.DedupeKey)
+			t.Fatalf("production refresh unexpectedly queued a scan job %s", job.ID)
 		}
 	}
-	if len(scanKeys) != 1 || !strings.HasPrefix(scanKeys[0], string(liveID)+":") {
-		t.Fatalf("scan jobs after restart = %v; want exactly one for %s", scanKeys, liveID)
+}
+
+func TestCompatRefreshQueuesEligibleRoots(t *testing.T) {
+	for _, burst := range []bool{false, true} {
+		name := "one allowlisted library"
+		if burst {
+			name = "concurrent burst across two libraries"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			cfg := testConfig(t)
+			open := func() *App {
+				t.Helper()
+				a, err := New(ctx, cfg, nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = a.Close() })
+				return a
+			}
+			a := open()
+			st := a.store
+			profile, err := st.CreateProfile(ctx, "Integration", store.ProfileAdult, store.LibraryFilter{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetProfileEntryPIN(ctx, profile.ID, "2468"); err != nil {
+				t.Fatal(err)
+			}
+			enabled := true
+			if _, err := st.UpdateProfileSettings(ctx, profile.ID, store.ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
+				t.Fatal(err)
+			}
+			allow := map[store.LibraryID]bool{}
+			var sealed store.LibraryID
+			var granted []store.LibraryID
+			var want []scanpkg.JobRoot
+			for _, title := range []string{"First", "Second", "Sealed", "Restricted", "Trashed", "No Profile Grant"} {
+				roots := []string{t.TempDir(), t.TempDir()}
+				slices.Sort(roots)
+				library, err := st.CreateLibraryWithRoots(ctx, title, title == "Restricted", "", profile.ID, roots, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				allow[library.ID] = title != "Second" || burst
+				if title != "No Profile Grant" && title != "Trashed" {
+					granted = append(granted, library.ID)
+				}
+				switch title {
+				case "Sealed":
+					sealed = library.ID
+				case "Trashed":
+					if err := st.DeleteLibrary(ctx, library.ID); err != nil {
+						t.Fatal(err)
+					}
+				case "First", "Second":
+					if allow[library.ID] {
+						for _, root := range roots {
+							want = append(want, scanpkg.JobRoot{LibraryID: library.ID, Root: root})
+						}
+					}
+				}
+			}
+			if _, err := st.SetProfileLibraries(ctx, profile.ID, granted); err != nil {
+				t.Fatal(err)
+			}
+			before, err := st.ListJobs(ctx, store.JobStatusQueued)
+			if err != nil {
+				t.Fatal(err)
+			}
+			service := auth.NewService(st)
+			handler, err := compat.New(compat.Config{
+				Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"},
+				EnqueueRefresh: compatLibraryRefresher(st, nil,
+					func(id store.LibraryID) bool { return id == sealed },
+					func(_ context.Context, id store.LibraryID) bool { return allow[id] },
+					slog.Default()),
+			}, service, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tokens := make([]string, 2)
+			for i := range tokens {
+				session, err := service.AuthenticateIntegrationByName(ctx, "Integration", "2468", "127.0.0.1", []store.IntegrationScope{store.IntegrationScopeRefresh})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := st.SetSessionRevealed(ctx, store.SessionID(session.Token), true); err != nil {
+					t.Fatal(err)
+				}
+				tokens[i] = session.Token
+			}
+			requests := 1
+			if burst {
+				requests = 24
+			}
+			var wg sync.WaitGroup
+			start := make(chan struct{})
+			for i := range requests {
+				wg.Go(func() {
+					<-start
+					req := httptest.NewRequestWithContext(ctx, http.MethodPost, compat.Prefix+"Library/Refresh", nil)
+					req.RemoteAddr = "127.0.0.1:1234"
+					req.Header.Set("X-Emby-Token", tokens[i%len(tokens)])
+					rec := httptest.NewRecorder()
+					handler.ServeHTTP(rec, req)
+					if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
+						t.Errorf("refresh returned %d with %d body bytes", rec.Code, rec.Body.Len())
+					}
+				})
+			}
+			close(start)
+			wg.Wait()
+
+			queued, err := st.ListJobs(ctx, store.JobStatusQueued)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(queued) != len(before)+1 {
+				t.Fatalf("refresh added %d jobs, want one", len(queued)-len(before))
+			}
+			var job store.Job
+			for _, entry := range queued {
+				if !slices.ContainsFunc(before, func(prior store.Job) bool { return prior.ID == entry.ID }) {
+					job = entry
+				}
+			}
+			if job.Kind != scanpkg.JobKind {
+				t.Fatalf("refresh added job kind %q, want %q", job.Kind, scanpkg.JobKind)
+			}
+			var payload struct{ Roots []scanpkg.JobRoot }
+			if err := json.Unmarshal(job.Payload, &payload); err != nil || !slices.Equal(payload.Roots, want) {
+				t.Fatalf("queued roots = %+v, want %+v (decode error %v)", payload.Roots, want, err)
+			}
+
+			// Drive the real worker, reopening the store after the first root.
+			for i := range want {
+				claimed, err := a.jobs.RunOne(ctx, nil, time.Now().UTC())
+				if err != nil || claimed.ID != job.ID {
+					t.Fatalf("claim %d returned job %s, want %s (error %v)", i, claimed.ID, job.ID, err)
+				}
+				if i == 0 {
+					if err := a.Close(); err != nil {
+						t.Fatal(err)
+					}
+					a = open()
+				}
+			}
+			finished, err := a.store.Job(ctx, job.ID)
+			if err != nil || finished.Status != store.JobStatusCompleted {
+				t.Fatalf("batch status = %s (failure %q, error %v)", finished.Status, finished.Error, err)
+			}
+			events, err := a.store.ListJobEvents(ctx, job.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			completedRoots := 0
+			for _, event := range events {
+				if event.Type == scanpkg.ScanSummaryEvent {
+					completedRoots++
+				}
+			}
+			if completedRoots != len(want) {
+				t.Fatalf("worker completed %d root scans, want %d", completedRoots, len(want))
+			}
+		})
 	}
 }
 

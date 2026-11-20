@@ -183,10 +183,7 @@ func writeAuthenticationFailure(w http.ResponseWriter) {
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request, _ net.IP) {
 	token := integrationToken(r.Header)
-	if _, ok := h.integrationScope(w, r, token, store.IntegrationScopeRead); !ok {
-		return
-	}
-	if h.auth.RevokeIntegrationSession(r.Context(), token) != nil {
+	if token == "" || h.auth.RevokeIntegrationSession(r.Context(), token) != nil {
 		writeAuthenticationFailure(w)
 		return
 	}

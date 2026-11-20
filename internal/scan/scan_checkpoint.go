@@ -9,30 +9,38 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
-func requestFromJobPayload(payload []byte) (Request, error) {
+type scanJobRequest struct {
+	Request
+	Roots []JobRoot
+}
+
+func requestFromJobPayload(payload []byte) (scanJobRequest, error) {
 	var decoded jobPayload
 	if err := json.Unmarshal(payload, &decoded); err != nil {
-		return Request{}, err
+		return scanJobRequest{}, err
+	}
+	if decoded.Version == batchJobPayloadVersion && len(decoded.Roots) > 0 {
+		return scanJobRequest{Roots: decoded.Roots}, nil
 	}
 	// v1 predates the backfill flag (always a normal scan); v2 carries it. Both
 	// decode the same struct — a v1 payload's absent "backfill" is false.
 	if decoded.Version == 1 || decoded.Version == 2 {
-		return Request{
+		return scanJobRequest{Request: Request{
 			LibraryID: decoded.LibraryID,
 			Root:      decoded.Root,
 			Backfill:  decoded.Backfill,
-		}, nil
+		}}, nil
 	}
 	if decoded.Version == 0 && decoded.LibraryID == "" && decoded.Root == "" {
 		var legacy Request
 		if err := json.Unmarshal(payload, &legacy); err != nil {
-			return Request{}, err
+			return scanJobRequest{}, err
 		}
 		if legacy.LibraryID != "" || legacy.Root != "" {
-			return legacy, nil
+			return scanJobRequest{Request: legacy}, nil
 		}
 	}
-	return Request{}, fmt.Errorf("unsupported scan job payload version %d", decoded.Version)
+	return scanJobRequest{}, fmt.Errorf("unsupported scan job payload version %d", decoded.Version)
 }
 
 func checkpointFromJob(payload []byte) (jobCheckpoint, error) {

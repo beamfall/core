@@ -67,6 +67,51 @@ func TestScanJobFailsFastWhenRootIsMissing(t *testing.T) {
 	}
 }
 
+func TestBatchScanSkipsLibraryTrashedAfterEnqueue(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	var targets []JobRoot
+	for _, title := range []string{"Trashed", "Live"} {
+		root := t.TempDir()
+		if title == "Trashed" {
+			root = filepath.Join(root, "gone")
+		}
+		library, err := st.CreateLibraryWithRoots(ctx, title, false, "", "profile-default", []string{root}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		targets = append(targets, JobRoot{LibraryID: library.ID, Root: root})
+	}
+	job, err := NewBatchJob(targets, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err = st.EnqueueJob(ctx, job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteLibrary(ctx, targets[0].LibraryID); err != nil {
+		t.Fatal(err)
+	}
+	registry := jobs.NewRegistry(st, "worker")
+	registry.Register(JobKind, Handler(st, nil, nil, nil, nil, nil))
+	for range targets {
+		if _, err := registry.RunOne(ctx, nil, time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = completedScanSummary(t, st, job.ID)
+	events, err := st.ListJobEvents(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.Type == ScanRootUnavailableEvent {
+			t.Fatal("worker checked the filesystem for a trashed Library")
+		}
+	}
+}
+
 // TestScanJobYieldsWhenRunBudgetIsSpent: a batch of slow files yields once the
 // run has used its time budget, not only after a fixed file count, so a slow
 // scan cannot hold a worker for the length of a whole batch (CORE-2306).

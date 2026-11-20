@@ -1501,12 +1501,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		graphHandler.SetScrobbleStatusSource(scrobbleStatusSource{dispatcher: scrobbleDispatcher})
 		graphHandler.SetOutboundMetadataResolver(newScrobbleMetadataResolver(st, executablePlugins))
 	}
+	// CORE-2683 owns the operator allowlist; until then, no Library is eligible.
+	compatEligible := func(context.Context, store.LibraryID) bool { return false }
 	compatHandler, err := compat.New(compat.Config{
 		Enabled: cfg.JellyfinCompat.Enabled, AllowedCIDRs: cfg.JellyfinCompat.AllowedCIDRs,
 		TrustedProxyCIDRs: cfg.JellyfinCompat.TrustedProxyCIDRs,
 		ServerID:          discovery.ServerID(offlinePackPin), ServerName: cfg.ServerName,
 		SetupRequired:  pairingService.SetupRequired,
-		EnqueueRefresh: compatLibraryRefresher(st, scanEnqueue, sealedPredicate, logger),
+		EnqueueRefresh: compatLibraryRefresher(st, jobWake, sealedPredicate, compatEligible, logger),
 	}, authService, nil)
 	if err != nil {
 		_ = st.Close()
@@ -3000,7 +3002,7 @@ func v1ScanEnqueuer(st *store.Store, wake *jobWake) server.V1ScanEnqueuer {
 	}
 }
 
-func compatLibraryRefresher(st *store.Store, enqueue server.V1ScanEnqueuer, sealed func(store.LibraryID) bool, logger *slog.Logger) func(context.Context, auth.Scope) {
+func compatLibraryRefresher(st *store.Store, wake *jobWake, sealed func(store.LibraryID) bool, eligible func(context.Context, store.LibraryID) bool, logger *slog.Logger) func(context.Context, auth.Scope) {
 	return func(ctx context.Context, scope auth.Scope) {
 		filter := scope.LibraryFilter()
 		filter.Revealed = false
@@ -3009,8 +3011,9 @@ func compatLibraryRefresher(st *store.Store, enqueue server.V1ScanEnqueuer, seal
 			logger.WarnContext(ctx, "compat refresh libraries unavailable", "error", err)
 			return
 		}
+		var targets []scanpkg.JobRoot
 		for _, library := range libraries {
-			if sealed(library.ID) {
+			if sealed(library.ID) || !eligible(ctx, library.ID) {
 				continue
 			}
 			roots, err := st.LibraryRoots(ctx, library.ID)
@@ -3019,10 +3022,18 @@ func compatLibraryRefresher(st *store.Store, enqueue server.V1ScanEnqueuer, seal
 				continue
 			}
 			for _, root := range roots {
-				if _, err := enqueue(ctx, library.ID, root); err != nil {
-					logger.WarnContext(ctx, "compat refresh scan enqueue failed", "library", library.ID, "error", err)
-				}
+				targets = append(targets, scanpkg.JobRoot{LibraryID: library.ID, Root: root})
 			}
+		}
+		if len(targets) == 0 {
+			return
+		}
+		job, err := scanpkg.NewBatchJob(targets, time.Now().UTC())
+		if err == nil {
+			_, err = enqueueAndWake(ctx, st, wake, job)
+		}
+		if err != nil {
+			logger.WarnContext(ctx, "compat refresh scan enqueue failed", "error", err)
 		}
 	}
 }

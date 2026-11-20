@@ -25,14 +25,38 @@ credentials. Query parameters SHALL NOT grant access.
 - **WHEN** a caller sends a valid integration token only in the `api_key` query parameter
 - **THEN** the response is identical to the response for a missing credential
 
+### Requirement: Compatibility logout revokes a valid integration session
+
+The server SHALL expose POST `Sessions/Logout` through the compatibility request boundary.
+It SHALL accept a valid integration session regardless of its operation scopes, revoke it
+durably and return an empty 204 response.
+
+#### Scenario: A refresh-only integration logs out
+
+- **WHEN** a valid integration session granting only refresh access calls logout
+- **THEN** logout returns an empty 204 response and later refresh requests using that token return 401
+
 ### Requirement: Compatibility library refresh is bounded
 
 The server SHALL expose POST `Library/Refresh` through the existing compatibility request boundary
 and require an integration session granting refresh access. The server SHALL admit at most one
-refresh submission per minute, using the existing scan queue. Authenticated requests SHALL
-return 204 whether admitted or rate limited.
+refresh submission per minute. An admitted refresh SHALL submit a single durable scan job
+covering every configured root of every eligible Library when any such roots exist.
+Authenticated requests SHALL return an empty 204 response even when rate limited or when
+there are no eligible roots.
 
 #### Scenario: Concurrent refresh requests
 
 - **WHEN** several authenticated callers request a refresh within the same minute
-- **THEN** at most one request submits scan work and each receives an empty 204 response
+- **THEN** at most one durable scan job is submitted for the eligible roots and each caller receives an empty 204 response
+
+### Requirement: Compatibility refresh requires operator allowlisting
+
+Eligible Libraries SHALL be visible to the integration session's Profile without Reveal,
+unsealed, and on the operator allowlist defined by ADR-0171. Until CORE-2683 supplies the
+allowlist, no Library SHALL be eligible.
+
+#### Scenario: No Library is allowlisted
+
+- **WHEN** an authenticated caller requests refresh and there are no allowlisted Libraries
+- **THEN** the server returns an empty 204 response and submits no scan job
