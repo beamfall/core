@@ -118,6 +118,51 @@ describe("Viewer Home", () => {
     }
   });
 
+  it("pages populated libraries within the Section budget including Continue Watching and the hero", async () => {
+    const populated = Array.from({ length: 25 }, (_, i) => ({
+      id: `library-${i + 1}`,
+      title: `Library ${i + 1}`,
+    }));
+    vi.mocked(fetchHomeLibraries).mockResolvedValue([...libraries, ...populated]);
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, { libraryID }) => {
+      if (section.id === "continue") return [newItem("In progress")];
+      if (!libraryID.startsWith("library-")) return [];
+      return [
+        newItem(
+          libraryID,
+          libraryID === populated[0].id ? { artwork: { poster: "/featured" } } : undefined,
+        ),
+      ];
+    });
+
+    const { container } = renderHome();
+    const next = await screen.findByRole("button", { name: "Bibliothèques suivantes" });
+    await waitFor(() => expect(next).toHaveAttribute("aria-disabled", "false"));
+    const previous = screen.getByRole("button", { name: "Bibliothèques précédentes" });
+    expect(previous).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("list", { name: "Library 22" })).toBeVisible();
+    expect(screen.queryByRole("list", { name: "Library 23" })).toBeNull();
+
+    fireEvent.load(container.querySelector(".bf-hero img") as HTMLImageElement);
+    expect(container.querySelectorAll(".bf-section:not([hidden])")).toHaveLength(
+      MAX_RENDERED_SECTIONS,
+    );
+
+    next.focus();
+    fireEvent.click(next);
+    expect(next).toHaveFocus();
+    expect(next).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("list", { name: "Library 1" })).toBeNull();
+    expect(screen.getByRole("list", { name: "Library 23" })).toBeVisible();
+    expect(screen.getByRole("list", { name: "Library 25" })).toBeVisible();
+    expect(screen.getByRole("list", { name: "Reprendre la lecture" })).toBeVisible();
+    expect(container.querySelectorAll(".bf-section:not([hidden])")).toHaveLength(5);
+
+    fireEvent.click(previous);
+    expect(screen.getByRole("list", { name: "Library 1" })).toBeVisible();
+    expect(screen.queryByRole("list", { name: "Library 25" })).toBeNull();
+  });
+
   it("shows a quiet library outside the aggregate window and excludes hidden and empty libraries", async () => {
     const one = newItem("Square artwork", { mediaClass: "audio", artwork: { poster: "/square" } });
     const two = newItem("Landscape artwork", { artworkSlots: { backdrop: "/landscape" } });
@@ -212,6 +257,36 @@ describe("Viewer Home", () => {
     expect(container.querySelector(".bf-hero-action")).toHaveFocus();
   });
 
+  it("keeps the hero action focused when a higher-ranked shelf resolves later", async () => {
+    let resolveFirst!: (items: SourceItem[]) => void;
+    const first = new Promise<SourceItem[]>((resolve) => {
+      resolveFirst = resolve;
+    });
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, { libraryID }) => {
+      if (section.id !== "recent") return [];
+      if (libraryID === "one") return first;
+      return libraryID === "two"
+        ? [newItem("Second library hero", { artwork: { poster: "/second" } })]
+        : [];
+    });
+
+    const { container } = renderHome();
+    await screen.findByRole("list", { name: "Library Two" });
+    const heroArt = container.querySelector(".bf-hero img") as HTMLImageElement;
+    expect(heroArt).toHaveAttribute("src", "/second?bucket=w1280");
+    fireEvent.load(heroArt);
+    const action = container.querySelector(".bf-hero-action");
+    expect(action).toHaveFocus();
+
+    await act(async () =>
+      resolveFirst([newItem("First library artwork", { artwork: { poster: "/first" } })]),
+    );
+    expect(screen.getByRole("list", { name: "Library One" })).toBeVisible();
+    expect(container.querySelector(".bf-hero img")).toBe(heroArt);
+    expect(screen.getByRole("heading", { name: "Second library hero" })).toBeVisible();
+    expect(action).toHaveFocus();
+  });
+
   it("features a visible container's poster when its new items have no art", async () => {
     const container = { id: "group", title: "Visible container", artwork: { poster: "/group" } };
     const lockedContainer = {
@@ -256,6 +331,33 @@ describe("Viewer Home", () => {
     fireEvent.load(heroArt as HTMLImageElement);
     expect(screen.getByRole("heading", { name: "Available item" })).toBeVisible();
     expect(card).toHaveFocus();
+  });
+
+  it("advances past a stalled image and shows the next artwork without taking shelf focus", async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, { libraryID }) => {
+      if (section.id !== "recent") return [];
+      if (libraryID === "one") return [newItem("Stalled", { artwork: { poster: "/stalled" } })];
+      return libraryID === "two" ? [newItem("Working", { artwork: { poster: "/working" } })] : [];
+    });
+
+    try {
+      const { container } = renderHome();
+      await act(async () => {});
+      const firstImage = container.querySelector(".bf-hero img") as HTMLImageElement;
+      expect(firstImage).toHaveAttribute("src", "/stalled?bucket=w1280");
+      const card = screen.getByRole("link", { name: "Stalled" });
+
+      act(() => vi.advanceTimersByTime(3000));
+      const secondImage = container.querySelector(".bf-hero img") as HTMLImageElement;
+      expect(secondImage).toHaveAttribute("src", "/working?bucket=w1280");
+      expect(card).toHaveFocus();
+      fireEvent.load(secondImage);
+      expect(screen.getByRole("heading", { name: "Working" })).toBeVisible();
+      expect(card).toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the last shelf in a full manifest when the hero artwork fails", async () => {

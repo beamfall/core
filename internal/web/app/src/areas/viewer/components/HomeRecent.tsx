@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { Button } from "@/components/ui/button";
 import { getIdentityEpochSignal, isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
@@ -177,7 +178,8 @@ export function HomeRecentShelves({
   shelves,
   fallbackItems,
   pending,
-  seeAll,
+  maxShelves,
+  buildSeeAll,
   navigationID,
 }: {
   section: Section;
@@ -185,12 +187,20 @@ export function HomeRecentShelves({
   shelves: ReadonlyMap<string, SourceItem[]>;
   fallbackItems: SourceItem[];
   pending: boolean;
-  seeAll?: SeeAllTarget;
+  maxShelves: number;
+  buildSeeAll?: (section: Section, libraryID?: string) => SeeAllTarget | undefined;
   navigationID?: string;
 }) {
   const t = useT();
   const locale = useDisplayLocale();
   const navigate = useNavigate();
+  const [requestedPage, setPage] = useState(0);
+  const populated = libraries.filter(({ id }) => shelves.has(id));
+  const lastPage = Math.max(0, Math.ceil(populated.length / maxShelves) - 1);
+  const page = Math.min(requestedPage, lastPage);
+  if (!pending && requestedPage !== page) setPage(page);
+  const pageLibraries = populated.slice(page * maxShelves, (page + 1) * maxShelves);
+  const seeAll = buildSeeAll?.(section);
   const groupItems = (items: SourceItem[]) =>
     groupByContainer(items, (count) => t("cardNewCount", { count }));
   if (fallbackItems.length) {
@@ -211,14 +221,44 @@ export function HomeRecentShelves({
         title={displayString(section.title, locale)}
         onSeeAll={seeAll ? () => navigate(seeAll.href, { state: seeAll.state }) : undefined}
       />
-      {libraries.map((library) => {
+      {lastPage > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-disabled={pending || page === 0}
+            className="aria-disabled:opacity-50"
+            onClick={() => {
+              if (!pending && page > 0) setPage(page - 1);
+            }}
+          >
+            {t("homePreviousShelves")}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-disabled={pending || page === lastPage}
+            className="aria-disabled:opacity-50"
+            onClick={() => {
+              if (!pending && page < lastPage) setPage(page + 1);
+            }}
+          >
+            {t("homeNextShelves")}
+          </Button>
+        </div>
+      )}
+      {pageLibraries.map((library) => {
         const items = shelves.get(library.id);
         if (!items) return null;
+        const shelf = { ...section, id: `${section.id}:${library.id}`, title: library.title };
         return (
           <SectionView
             key={library.id}
-            section={{ ...section, id: `${section.id}:${library.id}`, title: library.title }}
+            section={shelf}
             items={groupItems(items)}
+            seeAll={buildSeeAll?.(shelf, library.id)}
             navigationID={navigationID}
             headingLevel="h3"
             intrinsicArtwork
@@ -229,32 +269,75 @@ export function HomeRecentShelves({
   );
 }
 
-function featuredArtwork(items: readonly SourceItem[], failed: ReadonlySet<string>) {
-  for (const item of items) {
-    for (const slot of ["backdrop", "poster", "thumb"]) {
-      const url = artworkSlotURL(item, slot);
-      if (url && !failed.has(url)) return { item, url };
-    }
-  }
+const HOME_ARTWORK_TIMEOUT_MS = 3000;
+const HERO_SLOTS = ["backdrop", "poster", "thumb"] as const;
+
+interface ArtworkAttempt {
+  itemID: string;
+  url: string;
 }
 
 export function useHomeArtwork(items: readonly SourceItem[], epoch: string) {
-  const [images, setImages] = useState(() => ({ epoch, failed: new Set<string>(), loaded: "" }));
+  const [images, setImages] = useState<{
+    epoch: string;
+    failed: ReadonlySet<string>;
+    attempt?: ArtworkAttempt;
+    ready: boolean;
+  }>(() => ({ epoch, failed: new Set(), ready: false }));
+  const { attempt, ready } = images;
+  useEffect(() => {
+    if (!attempt || ready) return;
+    const timeout = window.setTimeout(() => reject(attempt, "timeout"), HOME_ARTWORK_TIMEOUT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [attempt, ready]);
+
+  function reject(candidate: ArtworkAttempt, reason: "timeout" | "error") {
+    setImages((current) =>
+      current.attempt !== candidate || (reason === "timeout" && current.ready)
+        ? current
+        : {
+            epoch: current.epoch,
+            failed: new Set(current.failed).add(candidate.url),
+            ready: false,
+          },
+    );
+  }
+
   if (images.epoch !== epoch) {
-    setImages({ epoch, failed: new Set(), loaded: "" });
+    setImages({ epoch, failed: new Set(), ready: false });
     return;
   }
-  const feature = featuredArtwork(items, images.failed);
-  if (!feature) return;
-  const { item, url } = feature;
-  return {
-    item,
-    artwork: {
-      url,
-      ready: url === images.loaded,
-      onLoad: () => setImages((current) => ({ ...current, loaded: url })),
-      onError: () =>
-        setImages((current) => ({ ...current, failed: new Set(current.failed).add(url) })),
-    },
-  };
+  if (attempt) {
+    // Keep the same image and action while earlier shelves settle. Match
+    // against live candidates so hidden, locked, and removed items drop out.
+    const item = items.find(
+      (item) =>
+        item.id === attempt.itemID &&
+        HERO_SLOTS.some((slot) => artworkSlotURL(item, slot) === attempt.url),
+    );
+    if (item) {
+      return {
+        item,
+        artwork: {
+          url: attempt.url,
+          ready,
+          onLoad: () =>
+            setImages((current) =>
+              current.attempt === attempt ? { ...current, ready: true } : current,
+            ),
+          onError: () => reject(attempt, "error"),
+        },
+      };
+    }
+  }
+  for (const item of items) {
+    for (const slot of HERO_SLOTS) {
+      const url = artworkSlotURL(item, slot);
+      if (url && !images.failed.has(url)) {
+        setImages({ ...images, attempt: { itemID: item.id, url }, ready: false });
+        return;
+      }
+    }
+  }
+  if (attempt) setImages({ ...images, attempt: undefined, ready: false });
 }

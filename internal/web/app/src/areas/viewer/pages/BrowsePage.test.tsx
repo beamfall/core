@@ -42,7 +42,10 @@ vi.mock("../components/LayoutView", () => ({
     navigationID: string;
     libraryID: string;
     home?: boolean;
-    buildSeeAll?: (section: { id: string }) => { state: { home?: boolean } } | undefined;
+    buildSeeAll?: (
+      section: { id: string },
+      libraryID?: string,
+    ) => { state: { home?: boolean; libraryID: string } } | undefined;
     onEmptyChange?: (empty: boolean) => void;
   }) => (
     <div
@@ -51,6 +54,8 @@ vi.mock("../components/LayoutView", () => ({
       data-library={libraryID}
       data-home={String(!!home)}
       data-seeall-home={String(!!buildSeeAll?.({ id: "shelf" })?.state.home)}
+      data-seeall-library={buildSeeAll?.({ id: "shelf" })?.state.libraryID}
+      data-seeall-scoped-library={buildSeeAll?.({ id: "shelf" }, "scoped-lib")?.state.libraryID}
     >
       <button type="button" onClick={() => onEmptyChange?.(true)}>
         settle empty
@@ -101,11 +106,17 @@ describe("BrowsePage node resolution", () => {
     renderAt("/");
     expect(screen.getByTestId("layout")).toHaveAttribute("data-home", "true");
     expect(screen.getByTestId("layout")).toHaveAttribute("data-seeall-home", "true");
+    expect(screen.getByTestId("layout")).toHaveAttribute("data-seeall-library", "");
+    expect(screen.getByTestId("layout")).toHaveAttribute(
+      "data-seeall-scoped-library",
+      "scoped-lib",
+    );
     cleanup();
 
     renderAt("/n/library-lib-a");
     expect(screen.getByTestId("layout")).toHaveAttribute("data-home", "false");
     expect(screen.getByTestId("layout")).toHaveAttribute("data-seeall-home", "false");
+    expect(screen.getByTestId("layout")).toHaveAttribute("data-seeall-library", "lib-a");
   });
 
   it("sends the layout-less ambient node to Home instead of drawing Home at its address", () => {

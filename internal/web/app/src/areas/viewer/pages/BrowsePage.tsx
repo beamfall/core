@@ -57,10 +57,10 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
   const layout = (manifest?.layouts || []).find((l) => l.id === node?.layoutID) || null;
   const libraryID = node?.libraryID || "";
 
-  function buildSeeAll(section: Section): SeeAllTarget {
+  function buildSeeAll(section: Section, scopedLibraryID = libraryID): SeeAllTarget {
     return seeAllTargetFor({
       section,
-      libraryID,
+      libraryID: scopedLibraryID,
       entityID: "",
       returnTo: home || !node ? "/" : nodePath(node.id),
       home,

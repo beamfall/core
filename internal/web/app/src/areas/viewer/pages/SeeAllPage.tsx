@@ -5,9 +5,12 @@ import { IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getIdentityEpochSignal, isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
+import { fetchHomeLibraries } from "@/lib/graphql/viewer";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { useViewerIdentity } from "@/lib/session";
 import { useEngagementEpoch } from "../actions";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
@@ -25,11 +28,42 @@ import { playQueueOf } from "../lib/watchQueue";
 // react-router navigation state; a direct visit without it degrades to a Back
 // affordance (the vanilla view is reachable only from a shelf).
 export function SeeAllPage() {
+  const location = useLocation();
+  const identity = useViewerIdentity();
+  return (
+    <SeeAllResults
+      key={JSON.stringify([location.key, identity])}
+      ctx={location.state as SeeAllContext | null}
+    />
+  );
+}
+
+async function fetchPage(ctx: SeeAllContext, offset: number, signal?: AbortSignal) {
+  if (ctx.home && ctx.libraryID) {
+    // Core applies Home visibility to aggregate reads; a scoped feed can
+    // return a library that was hidden after the viewer opened its shelf.
+    const libraries = await fetchHomeLibraries(signal);
+    if (!libraries?.some(({ id, showOnHome }) => id === ctx.libraryID && showOnHome !== false)) {
+      return null;
+    }
+  }
+  signal?.throwIfAborted();
+  return fetchSectionItems(
+    ctx.section,
+    {
+      libraryID: ctx.libraryID,
+      entityID: ctx.entityID,
+      home: ctx.home,
+      paging: { limit: SEEALL_PAGE, offset },
+    },
+    signal,
+  );
+}
+
+function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
-  const location = useLocation();
-  const ctx = location.state as SeeAllContext | null;
 
   const [items, setItems] = useState<SourceItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
@@ -52,28 +86,37 @@ export function SeeAllPage() {
   const queue = useMemo(() => playQueueOf(items), [items]);
   const repeated = useMemo(() => repeatedTitles(items), [items]);
 
+  const clearResults = useCallback(() => {
+    setItems([]);
+    offsetRef.current = 0;
+    setHasMore(false);
+  }, []);
+
   const loadPage = useCallback(async () => {
     if (!ctx) return;
     const generation = generationRef.current;
+    const signal = getIdentityEpochSignal();
     setBusy(true);
     try {
-      const page = await fetchSectionItems(ctx.section, {
-        libraryID: ctx.libraryID,
-        entityID: ctx.entityID,
-        home: ctx.home,
-        paging: { limit: SEEALL_PAGE, offset: offsetRef.current },
-      });
-      if (generationRef.current !== generation) return;
-      setItems((prev) => [...prev, ...page]);
-      offsetRef.current += page.length;
-      setHasMore(page.length >= SEEALL_PAGE);
+      const page = await fetchPage(ctx, offsetRef.current, signal);
+      if (generationRef.current !== generation || signal?.aborted) return;
+      if (page) {
+        setItems((prev) => [...prev, ...page]);
+        offsetRef.current += page.length;
+        setHasMore(page.length >= SEEALL_PAGE);
+      } else {
+        clearResults();
+      }
       setFailed(false);
-    } catch {
-      if (generationRef.current === generation) setFailed(true);
+    } catch (error) {
+      if (generationRef.current === generation && !signal?.aborted) {
+        if (isAuthRejection(error)) clearResults();
+        setFailed(true);
+      }
     } finally {
       if (generationRef.current === generation) setBusy(false);
     }
-  }, [ctx]);
+  }, [ctx, clearResults]);
 
   // Reads the span already shown again and swaps it in whole, so a list that
   // changed underneath (an item left the watchlist) neither keeps the old rows
@@ -81,42 +124,44 @@ export function SeeAllPage() {
   const reloadShown = useCallback(async () => {
     if (!ctx) return;
     const generation = ++generationRef.current;
+    const signal = getIdentityEpochSignal();
     const want = Math.max(offsetRef.current, SEEALL_PAGE);
     const next: SourceItem[] = [];
     let more = true;
     setBusy(true);
     try {
       while (more && next.length < want) {
-        const page = await fetchSectionItems(ctx.section, {
-          libraryID: ctx.libraryID,
-          entityID: ctx.entityID,
-          home: ctx.home,
-          paging: { limit: SEEALL_PAGE, offset: next.length },
-        });
-        if (generationRef.current !== generation) return;
+        const page = await fetchPage(ctx, next.length, signal);
+        if (generationRef.current !== generation || signal?.aborted) return;
+        if (!page) {
+          clearResults();
+          setFailed(false);
+          return;
+        }
         next.push(...page);
         more = page.length >= SEEALL_PAGE;
       }
       setItems(next);
       offsetRef.current = next.length;
       setHasMore(more);
-    } catch {
+      setFailed(false);
+    } catch (error) {
+      if (generationRef.current === generation && !signal?.aborted && isAuthRejection(error)) {
+        clearResults();
+        setFailed(true);
+      }
       // Keep what is shown; the next change or Load More tries again.
     } finally {
       if (generationRef.current === generation) setBusy(false);
     }
-  }, [ctx]);
+  }, [ctx, clearResults]);
 
   useEffect(() => {
-    // Reset and load the first page when the context changes.
-    generationRef.current += 1;
-    offsetRef.current = 0;
-    setItems([]);
-    setHasMore(true);
-    setFailed(false);
     void loadPage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctx?.section.id, ctx?.libraryID, ctx?.entityID]);
+    return () => {
+      generationRef.current += 1;
+    };
+  }, [loadPage]);
 
   useEffect(() => {
     if (seenEpochRef.current === engagementEpoch) return;

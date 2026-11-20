@@ -39,7 +39,7 @@ export function LayoutView({
   /** Rendering Home: aggregate Sections leave out Libraries hidden from Home (CORE-2360). */
   home?: boolean;
   /** Maps a (shelf) Section to its See-All target; omit to hide See-All. */
-  buildSeeAll?: (section: Section) => SeeAllTarget | undefined;
+  buildSeeAll?: (section: Section, libraryID?: string) => SeeAllTarget | undefined;
   /** Stable navigation identity for initial focus and Reveal/relock restore. */
   navigationID?: string;
   /** Told whether the Layout settled with nothing to show (not a load failure). */
@@ -118,18 +118,20 @@ export function LayoutView({
   };
 
   const reportConnectionLost = useCallback(() => setConnectionLost(true), []);
-  const recentFeed = useHomeRecent(
-    homeRecent,
-    homeRecent ? extraFiltersForIndex(sections.indexOf(homeRecent)) : null,
-    attempt,
-    reportConnectionLost,
-  );
+  const recentFilters = homeRecent ? extraFiltersForIndex(sections.indexOf(homeRecent)) : null;
+  const recentFeed = useHomeRecent(homeRecent, recentFilters, attempt, reportConnectionLost);
   const feature = useHomeArtwork(homeHero ? recentFeed.heroItems : [], recentFeed.epoch);
   // Only loaded artwork occupies a Section slot.
   const sectionLimit = feature?.artwork.ready ? MAX_RENDERED_SECTIONS - 1 : MAX_RENDERED_SECTIONS;
   const displayedSections = useMemo(
     () => sections.slice(0, sectionLimit),
     [sections, sectionLimit],
+  );
+  // Replace the manifest's Recent slot with one slot per visible library.
+  // Reserve a possible hero slot so pages don't shift when its image loads.
+  const maxRecentShelves = Math.max(
+    1,
+    MAX_RENDERED_SECTIONS - sections.length + 1 - Number(Boolean(homeHero)),
   );
   const [artworkWaitExpired, setArtworkWaitExpired] = useState<string>();
   const waitingForArtwork = Boolean(
@@ -271,7 +273,7 @@ export function LayoutView({
         !aggregateEmpty &&
         (feature ? (
           <Hero
-            key={`${recentFeed.epoch}:${feature.artwork.url}`}
+            key={JSON.stringify([recentFeed.epoch, feature.item.id, feature.artwork.url])}
             section={homeHero}
             item={feature.item}
             artwork={feature.artwork}
@@ -306,13 +308,27 @@ export function LayoutView({
           if (section === homeRecent) {
             return (
               <HomeRecentShelves
-                key={section.id}
+                key={recentFeed.epoch}
                 section={section}
                 libraries={recentFeed.libraries}
                 shelves={recentFeed.shelves}
                 fallbackItems={recentFeed.fallbackItems}
                 pending={recentFeed.pending}
-                seeAll={buildSeeAll?.(section)}
+                maxShelves={maxRecentShelves}
+                buildSeeAll={(shelf, libraryID) =>
+                  buildSeeAll?.(
+                    recentFilters && shelf.source
+                      ? {
+                          ...shelf,
+                          source: {
+                            ...shelf.source,
+                            fieldFilters: { ...shelf.source.fieldFilters, ...recentFilters },
+                          },
+                        }
+                      : shelf,
+                    libraryID,
+                  )
+                }
                 navigationID={navigationID}
               />
             );

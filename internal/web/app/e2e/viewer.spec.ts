@@ -46,6 +46,12 @@ test.describe("viewer", () => {
       { id: "landscape", width: 320, height: 180, color: "#246658" },
       { id: "portrait", width: 320, height: 480, color: "#733e52" },
     ];
+    // Keep the screenshot fixture deterministic. The Home unit tests cover the
+    // reverse response order and verify focus on the first loaded hero.
+    let releaseSecondLibrary!: () => void;
+    const firstHeroReady = new Promise<void>((resolve) => {
+      releaseSecondLibrary = resolve;
+    });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.route("**/core-1154-art/**", async (route) => {
       const id = new URL(route.request().url()).pathname.split("/").at(-1);
@@ -76,8 +82,7 @@ test.describe("viewer", () => {
     await page.route("**/api/graphql", async (route) => {
       const { query, variables } = route.request().postDataJSON();
       if (query.startsWith("query HomeLibraries ")) {
-        // Core currently restricts the real resolver to Admin Sessions. Exercise
-        // the Viewer rendering when it can read the same library visibility fields.
+        // Exercise a session that can read the library visibility fields.
         return route.fulfill({
           json: {
             data: {
@@ -108,6 +113,7 @@ test.describe("viewer", () => {
         });
       }
       if (variables.kind !== "recently-added") return route.fallback();
+      if (variables.libraryID === "library-extra") await firstHeroReady;
       const firstLibrary = artwork.map(({ id }) => ({
         id,
         kind: "media",
@@ -134,6 +140,7 @@ test.describe("viewer", () => {
     await page.goto("/web/");
     await expect(page.locator(".bf-hero img")).toHaveAttribute("src", /\/core-1154-art\/square/);
     await expect(page.locator(".bf-hero")).toBeVisible();
+    releaseSecondLibrary();
     await expect(page.getByRole("list", { name: "Continue Watching" })).toBeVisible();
     const shelf = page
       .getByRole("list")
@@ -168,6 +175,16 @@ test.describe("viewer", () => {
       .toBeGreaterThan(0);
     await settleFrames(page);
     await expectVisualParity(page, testInfo, "viewer-home-shelves-1440x900", { liveOnly: true });
+
+    await page
+      .locator(".bf-section")
+      .filter({ has: secondShelf })
+      .getByRole("button", { name: "See all" })
+      .click();
+    await expect(page).toHaveURL(/\/seeall\//);
+    await expect(page.getByRole("heading", { name: "Second Library" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Second library item" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "square" })).toHaveCount(0);
   });
 
   test("accessibility variant: Viewer supports large text", async ({ page }) => {
