@@ -64,7 +64,8 @@ timestamps before the Unix epoch.
 #### Scenario: Legacy file in an unsealed encrypted Library
 
 - **WHEN** a scan finds the unchanged file after the Library is sealed and unsealed
-- **THEN** the scan reuses the fingerprint and Media ID from the Library's own catalog
+- **THEN** the scan reuses the fingerprint and Media ID from the Library's own catalog and retains
+  existing probe facts without probing the file again
 
 #### Scenario: Legacy file at the same path with incomplete stats
 

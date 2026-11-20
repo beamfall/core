@@ -64,31 +64,9 @@ viewer SHALL replace the address in place without adding a history entry or rest
 - **WHEN** a viewer opens `/watch/media-sample1-a371bff46385f7ded` and the sampled ID is absent
 - **THEN** the viewer resolves the bookmark to `media-sha256-a371bff46385f7ded`
 
-#### Scenario: Temporary lookup failure
-
-- **WHEN** the sampled lookup for an ambiguous bookmark fails temporarily
-- **THEN** the viewer retries while the address and viewer identity remain current and selects
-  the legacy ID only after a confirmed sampled miss
-
-#### Scenario: Cached sampled detail while offline
-
-- **WHEN** the current viewer opens a bare sampled ID with cached detail, a viewer-bound card
-  preview, or a matching item in a viewer-cached section
-- **THEN** the viewer can render the sampled item immediately while the address revalidates
-- **AND** the viewer keeps the bookmark until the server confirms which item it identifies
-
-#### Scenario: Permanent lookup failure
-
-- **WHEN** the sampled lookup for an ambiguous bookmark fails permanently, including an
-  authorization rejection
-- **THEN** the viewer shows its existing unavailable message without retrying or selecting the
-  legacy ID
-
-#### Scenario: Expand the docked player
-
-- **WHEN** the listener expands the docked player for a sampled ID
-- **THEN** the viewer uses the sampled token and attaches the active playback session to the full
-  player even if the catalog is offline
+While resolving an ambiguous bookmark, the viewer MAY display cached sampled detail. The viewer
+SHALL retry transient lookup failures while the address and viewer identity remain current, and
+show the existing unavailable state for permanent failures.
 
 #### Scenario: Navigate with a known sampled Media ID
 
@@ -101,3 +79,8 @@ viewer SHALL replace the address in place without adding a history entry or rest
 
 - **WHEN** a viewer opens a sampled credits bookmark directly and activates Back during lookup
 - **THEN** the detail address retains the bookmark's suffix
+
+#### Scenario: Bulk Edit with a sampled item address
+
+- **WHEN** an operator enters a copied link, a sampled token, or a readable path segment ending in that token
+- **THEN** Bulk Edit sends the sampled Media ID to preview and apply
