@@ -30,12 +30,18 @@ func enqueueHashTestScan(t *testing.T, st *store.Store, id store.JobID, root str
 }
 
 type countingSampleReader struct {
-	io.ReaderAt
+	fingerprintFile
 	bytes int
 }
 
+func (r *countingSampleReader) Read(p []byte) (int, error) {
+	n, err := r.fingerprintFile.Read(p)
+	r.bytes += n
+	return n, err
+}
+
 func (r *countingSampleReader) ReadAt(p []byte, offset int64) (int, error) {
-	n, err := r.ReaderAt.ReadAt(p, offset)
+	n, err := r.fingerprintFile.ReadAt(p, offset)
 	r.bytes += n
 	return n, err
 }
@@ -74,19 +80,18 @@ func TestScanBoundsFingerprintReadsOnSparseFile(t *testing.T) {
 	if err := os.Chtimes(path, settled, settled); err != nil {
 		t.Fatal(err)
 	}
-	var bytesRead, fullReads int
-	savedSample, savedLegacy := sampleFileContent, legacyFileContent
-	t.Cleanup(func() { sampleFileContent, legacyFileContent = savedSample, savedLegacy })
-	sampleFileContent = func(ctx context.Context, path string) (string, error) {
-		file, err := os.OpenInRoot(root, filepath.Base(path))
+	var readers []*countingSampleReader
+	var fullReads int
+	savedOpen, savedLegacy := openFingerprintFile, legacyFileContent
+	t.Cleanup(func() { openFingerprintFile, legacyFileContent = savedOpen, savedLegacy })
+	openFingerprintFile = func(path string) (fingerprintFile, error) {
+		file, err := savedOpen(path)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		defer file.Close()
-		reader := &countingSampleReader{ReaderAt: file}
-		fingerprint, err := store.SampleMediaFileContentAt(ctx, reader, size)
-		bytesRead += reader.bytes
-		return fingerprint, err
+		reader := &countingSampleReader{fingerprintFile: file}
+		readers = append(readers, reader)
+		return reader, nil
 	}
 	legacyFileContent = func(ctx context.Context, path string) (string, error) {
 		fullReads++
@@ -106,8 +111,12 @@ func TestScanBoundsFingerprintReadsOnSparseFile(t *testing.T) {
 	if file.MediaID != wantID {
 		t.Fatalf("Media ID = %s, want %s", file.MediaID, wantID)
 	}
-	if bytesRead != 14*64*1024 || fullReads != 0 {
-		t.Fatalf("sample bytes = %d, full reads = %d", bytesRead, fullReads)
+	var bytesRead int
+	for _, reader := range readers {
+		bytesRead += reader.bytes
+	}
+	if len(readers) != 1 || bytesRead != 14*64*1024 || fullReads != 0 {
+		t.Fatalf("sample opens = %d, sample bytes = %d, legacy hashes = %d", len(readers), bytesRead, fullReads)
 	}
 }
 

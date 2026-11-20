@@ -41,12 +41,15 @@ describe("viewerFacingFields", () => {
 });
 
 describe("viewerFacingFields drops what is internal or already shown (CORE-2319)", () => {
-  it("drops internal content addresses", () => {
+  it.each([
+    "sha256:9f2c4a1b7e3d5f60a1b2;cel;plan=4",
+    `sample1:${"a".repeat(64)};plan=${"b".repeat(64)}`,
+  ])("drops the internal content address %s", (value) => {
     const fields = [
       field({
         name: "source",
         label: "Hydrated From",
-        value: "sha256:9f2c4a1b7e3d5f60a1b2;cel;plan=4",
+        value,
       }),
       field({ name: "tagline", label: "Tagline", value: "A sha256 story" }),
     ];

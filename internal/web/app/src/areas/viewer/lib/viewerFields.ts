@@ -51,7 +51,7 @@ export interface ShownFacts {
 
 // A content address or provenance record ("sha256:9f2c…;cel;plan=…") is
 // bookkeeping a hydration stage writes, never a fact a viewer reads (CORE-2319).
-const INTERNAL_IDENTIFIER = /(?:^|[\s;:=])(?:sha\d+|blake\d*|md5):[0-9a-f]{16,}|;cel;/i;
+const INTERNAL_IDENTIFIER = /(?:^|[\s;:=])(?:sha\d+|blake\d*|md5|sample1):[0-9a-f]{16,}|;cel;/i;
 
 /** isInternalIdentifier reports a value that is an internal content address. */
 export function isInternalIdentifier(value: string): boolean {

@@ -4,6 +4,9 @@ package scan
 import (
 	"context"
 	"errors"
+	"io"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -263,9 +266,34 @@ func imageClassForPath(path string) bool {
 // Separate seams let tests distinguish sampled reads from the one-time
 // compatibility check of a legacy digest at its original path.
 var (
-	sampleFileContent = store.SampleMediaFileContent
+	sampleFileContent = sampleScanFile
 	legacyFileContent = store.HashMediaFileContentContext
 )
+
+type fingerprintFile interface {
+	fs.File
+	io.ReaderAt
+}
+
+var openFingerprintFile = func(path string) (fingerprintFile, error) {
+	return os.OpenInRoot(filepath.Dir(path), filepath.Base(path))
+}
+
+func sampleScanFile(ctx context.Context, path string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	file, err := openFingerprintFile(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	return store.SampleMediaFileContentAt(ctx, file, info.Size())
+}
 
 // stabilityWindow is the file-stability quiet period: a file
 // whose mtime is newer than now-stabilityWindow is still being written (a rip
