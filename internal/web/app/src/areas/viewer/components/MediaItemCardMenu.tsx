@@ -2,17 +2,24 @@ import {
   Check,
   Circle,
   CircleCheck,
+  Disc3,
   Link2,
   ListPlus,
   MoreVertical,
   Play,
   SquareArrowOutUpRight,
+  UserRound,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
 import { Menu } from "@/components/ui/astryx-primitives";
-import type { ItemTarget } from "@/lib/graphql/types";
+import { fetchMedia } from "@/lib/graphql";
+import type { ItemTarget, MediaCredit } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { useViewerIdentity } from "@/lib/session";
 import { useItemActions } from "../actions";
+import { entityPath } from "../lib/entityAddress";
+import { moreWithLead } from "../lib/related";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 
 const COPIED_RESET_MS = 2000;
@@ -29,6 +36,8 @@ export function MediaItemCardMenu({
   primaryLabel,
   isMedia,
   isAudio = false,
+  credits,
+  containerID,
   href,
   target,
   onPrimary,
@@ -39,6 +48,9 @@ export function MediaItemCardMenu({
   isMedia: boolean;
   /** The Media's class is "audio": the watched entry uses listening wording. */
   isAudio?: boolean;
+  /** Credit rows already read by the listing, when available. */
+  credits?: readonly MediaCredit[];
+  containerID?: string;
   /** Absolute link to the item, for Copy link. */
   href: string;
   /** The item the watched entry acts on. */
@@ -48,14 +60,53 @@ export function MediaItemCardMenu({
   onDetails?: () => void;
 }) {
   const t = useT();
+  const identity = useViewerIdentity();
   const [copied, setCopied] = useState(false);
   const [opened, setOpened] = useState(false);
+  const [open, setOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [creditRead, setCreditRead] = useState<{
+    identity: string;
+    mediaID: string;
+    credits: readonly MediaCredit[];
+  } | null>(null);
   const { state, pending, failed, retry, setWatched } = useItemActions(target, {
     enabled: opened,
   });
   const watched = state?.watched ?? false;
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioID = isAudio && isMedia && "mediaID" in target ? target.mediaID : undefined;
+  const loadedCredits =
+    creditRead && creditRead.identity === identity && creditRead.mediaID === audioID
+      ? creditRead.credits
+      : undefined;
+  const audioCredits = audioID && identity ? (credits ?? loadedCredits) : undefined;
+  const artistID = moreWithLead(audioCredits)?.entityID;
+  const albumCredit = audioCredits?.find(
+    (credit) => credit.archetype === "container" && credit.entityID,
+  );
+  const albumID = audioID && identity ? (albumCredit?.entityID ?? containerID) : undefined;
+
+  useEffect(() => {
+    setCreditRead((read) =>
+      read?.identity === identity && read?.mediaID === audioID ? read : null,
+    );
+  }, [audioID, identity]);
+
+  useEffect(() => {
+    if (!open || !audioID || !identity || audioCredits) return;
+    const controller = new AbortController();
+    fetchMedia(audioID, controller.signal)
+      .then((media) => {
+        if (!controller.signal.aborted) {
+          setCreditRead({ identity, mediaID: audioID, credits: media?.credits ?? [] });
+        }
+      })
+      .catch(() => {
+        // A later opening can retry the optional credit read.
+      });
+    return () => controller.abort();
+  }, [open, audioID, identity, audioCredits]);
 
   useEffect(() => {
     return () => {
@@ -90,6 +141,7 @@ export function MediaItemCardMenu({
       )}
       <Menu.Root
         onOpenChange={(open) => {
+          setOpen(open);
           if (!open) return;
           // A state load that failed is tried again each time the menu opens.
           if (opened && failed && !state) retry();
@@ -111,6 +163,24 @@ export function MediaItemCardMenu({
                   <SquareArrowOutUpRight aria-hidden="true" size={15} />
                   {t("mediaDetailDetails")}
                 </Menu.Item>
+              )}
+              {artistID && (
+                <Menu.LinkItem
+                  className="bf-card-menu-item"
+                  render={<Link to={entityPath(artistID)} />}
+                >
+                  <UserRound aria-hidden="true" size={15} />
+                  {t("trackGoToArtist")}
+                </Menu.LinkItem>
+              )}
+              {albumID && (
+                <Menu.LinkItem
+                  className="bf-card-menu-item"
+                  render={<Link to={entityPath(albumID)} />}
+                >
+                  <Disc3 aria-hidden="true" size={15} />
+                  {t("trackGoToAlbum")}
+                </Menu.LinkItem>
               )}
               <Menu.Item
                 className="bf-card-menu-item"

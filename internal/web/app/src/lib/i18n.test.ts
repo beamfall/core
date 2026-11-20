@@ -48,3 +48,22 @@ describe("French Canadian catalog coverage", () => {
     for (const key of keys) expect(STRINGS.fr[key], key).not.toBe(STRINGS.en[key]);
   });
 });
+
+describe("music viewer catalog", () => {
+  it.each([
+    ["en", "Up next", "Tracks", "Go to artist", "Go to album"],
+    ["fr", "À suivre", "Pistes", "Aller à l’artiste", "Aller à l’album"],
+    ["de", "Als Nächstes", "Titel", "Zum Interpreten", "Zum Album"],
+    ["es", "A continuación", "Pistas", "Ir al artista", "Ir al álbum"],
+    ["pt", "A seguir", "Faixas", "Ir para o artista", "Ir para o álbum"],
+  ] as const)(
+    "localizes the audio listing and navigation in %s",
+    (locale, upNext, tracks, artist, album) => {
+      const strings = STRINGS[locale];
+      expect(strings.entityDetailUpNext).toBe(upNext);
+      expect(strings.personTracks).toBe(tracks);
+      expect(strings.trackGoToArtist).toBe(artist);
+      expect(strings.trackGoToAlbum).toBe(album);
+    },
+  );
+});

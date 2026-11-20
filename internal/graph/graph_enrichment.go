@@ -299,6 +299,7 @@ func (h *Handler) describeSearchCards(ctx context.Context, details []store.Searc
 		items[i].Container = h.sourceItemContainer(card)
 		if items[i].EntityKind != "" {
 			items[i].MediaClass = string(card.MediaClass)
+			items[i].Year = card.Year
 		}
 		items[i].Byline = card.Byline
 		items[i].Subtitle = plugin.LocaleString(card.Subtitle)
