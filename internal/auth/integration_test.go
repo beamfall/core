@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -100,9 +101,66 @@ func TestIntegrationAdminSetupTTLAndNonRenewability(t *testing.T) {
 	if !session.Setup || session.ExpiresAt != now.Add(integrationSetupTTL) {
 		t.Fatalf("setup session = %+v", session)
 	}
+	if _, err := svc.IntegrationScope(ctx, session.Token, store.IntegrationScopeSetup); err != nil {
+		t.Fatalf("setup Session lacks the server-assigned setup scope: %v", err)
+	}
 	now = session.ExpiresAt
 	if _, err := svc.IntegrationScope(ctx, session.Token, store.IntegrationScopeRead); err == nil {
 		t.Fatal("expired setup Session authorized")
+	}
+}
+
+func TestIntegrationSetupSignInRefusedWhenTheWindowClosesDuringVerification(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	base := time.Unix(100, 0).UTC()
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAdminPassword(ctx, "setup-secret", base); err != nil {
+		t.Fatal(err)
+	}
+	// The reservation reads the clock first; every later read lands at the
+	// end of the setup window, as if verification stalled that long.
+	var reads atomic.Int32
+	svc := NewServiceWithClock(st, func() time.Time {
+		if reads.Add(1) == 1 {
+			return base
+		}
+		return base.Add(integrationSetupTTL)
+	})
+	if session, err := svc.AuthenticateIntegrationByName(ctx, "admin", "setup-secret", integrationTestIP, compatScopes); !errors.Is(err, ErrIntegrationAuthentication) {
+		t.Fatalf("setup sign-in after the window closed = %+v, %v", session, err)
+	}
+}
+
+func TestIntegrationSetupScopeIsServerAssigned(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	now := time.Unix(100, 0).UTC()
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAdminPassword(ctx, "setup-secret", now); err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	if _, err := st.UpdateProfileSettings(ctx, "profile-default", store.ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewServiceWithClock(st, func() time.Time { return now })
+	asked := append(slices.Clone(compatScopes), store.IntegrationScopeSetup)
+	for _, login := range []struct{ name, credential string }{{"admin", "setup-secret"}, {"Default", "2468"}} {
+		if _, err := svc.AuthenticateIntegrationByName(ctx, login.name, login.credential, integrationTestIP, asked); !errors.Is(err, ErrIntegrationSetupScopeRequested) {
+			t.Fatalf("%s sign-in asking for the setup scope = %v", login.name, err)
+		}
+	}
+	profile, err := svc.AuthenticateIntegrationByName(ctx, "Default", "2468", integrationTestIP, compatScopes)
+	if err != nil || profile.Setup {
+		t.Fatalf("owner PIN sign-in = %+v, %v", profile, err)
+	}
+	if _, err := svc.IntegrationScope(ctx, profile.Token, store.IntegrationScopeSetup); err == nil {
+		t.Fatal("owner PIN Session holds the setup scope")
 	}
 }
 

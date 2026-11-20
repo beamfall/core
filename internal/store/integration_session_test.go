@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -35,14 +37,14 @@ func TestIntegrationSessionKindsAndOptIn(t *testing.T) {
 	if err != nil || !until.IsZero() {
 		t.Fatalf("reserve integration attempts: locked until %v, error %v", until, err)
 	}
-	if err := st.CreateIntegrationSession(ctx, session, true, reservation); err != ValidationError("integration sign-in is disabled") {
+	if err := st.CreateIntegrationSession(ctx, session, true, reservation, time.Now); err != ValidationError("integration sign-in is disabled") {
 		t.Fatalf("integration session without Profile opt-in: %v", err)
 	}
 	enabled := true
 	if _, err := st.UpdateProfileSettings(ctx, session.ProfileID, ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CreateIntegrationSession(ctx, session, true, reservation); err != nil {
+	if err := st.CreateIntegrationSession(ctx, session, true, reservation, time.Now); err != nil {
 		t.Fatalf("CreateIntegrationSession: %v", err)
 	}
 	got, err := st.Session(ctx, session.ID)
@@ -53,7 +55,7 @@ func TestIntegrationSessionKindsAndOptIn(t *testing.T) {
 	invalid := session
 	invalid.ID = "integration-invalid"
 	invalid.IntegrationScopes = []IntegrationScope{"compat.admin"}
-	if err := st.CreateIntegrationSession(ctx, invalid, true, reservation); err != ValidationError("unknown integration session scope") {
+	if err := st.CreateIntegrationSession(ctx, invalid, true, reservation, time.Now); err != ValidationError("unknown integration session scope") {
 		t.Fatalf("integration session with a scope outside the ceiling: %v", err)
 	}
 
@@ -118,7 +120,7 @@ func TestIntegrationSessionTransactionRollbackSurvivesReopen(t *testing.T) {
 				ID: "rejected-integration", ProfileID: "profile-default", Kind: SessionKindIntegration,
 				IntegrationScopes: scopes, ExpiresAt: now.Add(time.Hour),
 			}
-			if err := st.CreateIntegrationSession(ctx, session, true, reservation); err == nil || !strings.Contains(err.Error(), tc.message) {
+			if err := st.CreateIntegrationSession(ctx, session, true, reservation, time.Now); err == nil || !strings.Contains(err.Error(), tc.message) {
 				t.Fatalf("CreateIntegrationSession = %v, want injected failure %q", err, tc.message)
 			}
 			if err := st.Close(); err != nil {
@@ -214,4 +216,135 @@ func TestSessionReadRejectsKeylessAndUnknownLegacyRows(t *testing.T) {
 	if _, err := st.Session(ctx, "unknown-kind"); err == nil {
 		t.Fatal("unknown Session kind authorized")
 	}
+}
+
+// TestIntegrationSetupSessionBinding pins that the setup scope and the opt-in
+// bypass go together and stay tied to the owner, the admin throttle lane and
+// the setup window, whatever the caller passes.
+func TestIntegrationSetupSessionBinding(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	other, err := st.CreateProfile(ctx, "Other Adult", ProfileAdult, LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	policy := AuthBackoff{Window: time.Minute, FreeAttempts: 100, BaseDelay: time.Second, MaxDelay: time.Minute}
+	reserve := func(key string) AuthAttemptReservation {
+		t.Helper()
+		reservation, until, err := st.ReserveAuthAttempt(ctx, IntegrationAttemptAction, []string{key, "ip:fixture"}, now, policy)
+		if err != nil || !until.IsZero() {
+			t.Fatalf("reserve %s: locked until %v, error %v", key, until, err)
+		}
+		return reservation
+	}
+	setupScopes := []IntegrationScope{IntegrationScopeRead, IntegrationScopeSetup}
+	adminKey := IntegrationSetupAttemptKey("profile-default")
+	for i, tc := range []struct {
+		name         string
+		profile      ProfileID
+		scopes       []IntegrationScope
+		ttl          time.Duration
+		key          string
+		requireOptIn bool
+		want         string
+	}{
+		{"opt-in bypass without the setup scope", "profile-default", []IntegrationScope{IntegrationScopeRead}, time.Minute, adminKey, false, "requires the admin setup sign-in"},
+		{"setup scope with opt-in required", "profile-default", setupScopes, time.Minute, adminKey, true, "requires the admin setup sign-in"},
+		{"profile throttle lane", "profile-default", setupScopes, time.Minute, "profile:profile-default", false, "requires the admin sign-in reservation"},
+		{"longer than the setup window", "profile-default", setupScopes, IntegrationSetupTTL + time.Second, adminKey, false, "outlives the setup window"},
+		{"not the owner", other.ID, setupScopes, time.Minute, IntegrationSetupAttemptKey(other.ID), false, "requires the owner profile"},
+		{"owner setup", "profile-default", setupScopes, IntegrationSetupTTL, adminKey, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			session := Session{
+				ID: SessionID(fmt.Sprintf("setup-%d", i)), ProfileID: tc.profile, Kind: SessionKindIntegration,
+				IntegrationScopes: tc.scopes, ExpiresAt: now.Add(tc.ttl),
+			}
+			err := st.CreateIntegrationSession(ctx, session, tc.requireOptIn, reserve(tc.key), time.Now)
+			switch {
+			case tc.want == "" && err != nil:
+				t.Fatalf("owner setup session: %v", err)
+			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			case tc.want != "" && sessionStored(t, st, session.ID):
+				t.Fatal("the refused session was stored")
+			}
+		})
+	}
+
+	// A setup window that closes while the sign-in waits for the writer
+	// refuses the insert.
+	closed := Session{
+		ID: "setup-closed", ProfileID: "profile-default", Kind: SessionKindIntegration,
+		IntegrationScopes: setupScopes, ExpiresAt: now.Add(IntegrationSetupTTL),
+	}
+	reservation := reserve(adminKey)
+	held, err := st.catalogW.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	var windowClosed atomic.Bool
+	clock := func() time.Time {
+		if windowClosed.Load() {
+			return closed.ExpiresAt
+		}
+		return now
+	}
+	waits := st.catalogW.Stats().WaitCount
+	created := make(chan error, 1)
+	go func() { created <- st.CreateIntegrationSession(ctx, closed, false, reservation, clock) }()
+	for deadline := time.Now().Add(10 * time.Second); st.catalogW.Stats().WaitCount == waits; time.Sleep(time.Millisecond) {
+		select {
+		case err := <-created:
+			t.Fatalf("setup session creation did not wait for the writer: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("setup session creation never asked for the writer")
+		}
+	}
+	windowClosed.Store(true)
+	if err := held.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-created; err == nil || !strings.Contains(err.Error(), "window has closed") || sessionStored(t, st, closed.ID) {
+		t.Fatalf("setup session after the window closed: %v", err)
+	}
+
+	// Transferring ownership ends the outgoing owner's setup Session and
+	// leaves its ordinary integration Session alone.
+	enabled := true
+	if _, err := st.UpdateProfileSettings(ctx, "profile-default", ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	ordinary := Session{
+		ID: "ordinary", ProfileID: "profile-default", Kind: SessionKindIntegration,
+		IntegrationScopes: []IntegrationScope{IntegrationScopeRead}, ExpiresAt: now.Add(time.Minute),
+	}
+	if err := st.CreateIntegrationSession(ctx, ordinary, true, reserve("profile:profile-default"), time.Now); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetProfileOwner(ctx, other.ID); err != nil {
+		t.Fatal(err)
+	}
+	if sessionStored(t, st, "setup-5") {
+		t.Fatal("the former owner's setup session outlived the transfer")
+	}
+	if !sessionStored(t, st, ordinary.ID) {
+		t.Fatal("the transfer removed an ordinary integration session")
+	}
+}
+
+func sessionStored(t *testing.T, st *Store, id SessionID) bool {
+	t.Helper()
+	var stored bool
+	if err := st.catalogR.QueryRowContext(t.Context(), "SELECT EXISTS(SELECT 1 FROM auth_session WHERE id = ?)", id).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	return stored
 }

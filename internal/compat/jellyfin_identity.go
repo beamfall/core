@@ -106,29 +106,45 @@ func integrationToken(header http.Header) string {
 // client label cannot be mistaken for a separate Token parameter.
 var mediaBrowserParam = regexp.MustCompile(`^[ \t]*([A-Za-z][A-Za-z0-9_-]*)[ \t]*=[ \t]*"((?:[^"\\]|\\.)*)"[ \t]*(,|$)`)
 
+// mediaBrowserEscape matches one backslash escape inside a quoted parameter.
+var mediaBrowserEscape = regexp.MustCompile(`\\(.)`)
+
 func mediaBrowserToken(header string) string {
+	return mediaBrowserValue(header, "Token")
+}
+
+// mediaBrowserValue returns the named quoted parameter of a MediaBrowser
+// authorization header, or "" when the header is malformed or repeats it.
+func mediaBrowserValue(header, name string) string {
+	if value, count := mediaBrowserLookup(header, name); count == 1 {
+		return value
+	}
+	return ""
+}
+
+// mediaBrowserLookup returns the last value of the named parameter of a
+// well-formed MediaBrowser authorization header and how many times the
+// parameter appears. A malformed header reports no occurrences.
+func mediaBrowserLookup(header, name string) (string, int) {
 	header = strings.TrimSpace(header)
 	schemeEnd := strings.IndexAny(header, " \t")
 	if schemeEnd < 0 || !strings.EqualFold(header[:schemeEnd], "MediaBrowser") {
-		return ""
+		return "", 0
 	}
-	var token string
-	var seenToken bool
+	var value string
+	var count int
 	for params := header[schemeEnd:]; params != ""; {
 		match := mediaBrowserParam.FindStringSubmatch(params)
 		if match == nil {
-			return ""
+			return "", 0
 		}
-		if strings.EqualFold(match[1], "Token") {
-			if seenToken {
-				return ""
-			}
-			token, seenToken = match[2], true
+		if strings.EqualFold(match[1], name) {
+			value, count = mediaBrowserEscape.ReplaceAllString(match[2], "$1"), count+1
 		}
 		params = params[len(match[0]):]
 		if match[3] == "," && params == "" {
-			return ""
+			return "", 0
 		}
 	}
-	return token
+	return value, count
 }

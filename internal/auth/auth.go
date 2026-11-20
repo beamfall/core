@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -46,7 +47,7 @@ const (
 	// adminAttemptWindow forgets failures older than this.
 	adminAttemptWindow              = 10 * time.Minute
 	integrationSessionTTL           = 24 * time.Hour
-	integrationSetupTTL             = 15 * time.Minute
+	integrationSetupTTL             = store.IntegrationSetupTTL
 	integrationFailureFloor         = 75 * time.Millisecond
 	integrationAttemptAction        = store.IntegrationAttemptAction
 	integrationAttemptPseudonymInfo = "beamfall/integration-attempt-pseudonym/v1"
@@ -85,6 +86,14 @@ var ErrAccessOutsideSchedule = errors.New("profile access not allowed at this ti
 // ErrIntegrationAuthentication is the single network-facing failure class for
 // every integration sign-in refusal, including lockout.
 var ErrIntegrationAuthentication = errors.New("integration authentication rejected")
+
+// IntegrationSetupName is the sign-in name of the bounded admin setup
+// session, which checks the admin password instead of a Profile PIN.
+const IntegrationSetupName = "admin"
+
+// ErrIntegrationSetupScopeRequested reports a caller that asked for the
+// server-assigned setup scope.
+var ErrIntegrationSetupScopeRequested = errors.New("integration setup scope is server-assigned")
 
 var integrationBackoff = store.AuthBackoff{
 	Window: 10 * time.Minute, FreeAttempts: 5, BaseDelay: 2 * time.Second, MaxDelay: 10 * time.Minute,
@@ -569,8 +578,12 @@ func (s *Service) enforceProfileAccessSchedule(ctx context.Context, profile stor
 type IntegrationSession struct {
 	Token     string
 	ProfileID store.ProfileID
-	ExpiresAt time.Time
-	Setup     bool
+	// ProfileName is the signed-in Profile's display name.
+	ProfileName string
+	ExpiresAt   time.Time
+	// Setup marks the bounded admin setup session, which also carries the
+	// server-assigned store.IntegrationScopeSetup.
+	Setup bool
 }
 
 // AuthenticateIntegrationByName authenticates a Profile entry credential, or
@@ -579,9 +592,13 @@ type IntegrationSession struct {
 // trust policy. Every refusal uses one error and a common minimum timing class.
 func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, credential, clientIP string, scopes []store.IntegrationScope) (IntegrationSession, error) {
 	started := time.Now()
+	if slices.Contains(scopes, store.IntegrationScopeSetup) {
+		// The setup scope is server-assigned to the admin sign-in only.
+		return IntegrationSession{}, ErrIntegrationSetupScopeRequested
+	}
 	name = strings.TrimSpace(name)
 	profile, profileErr := s.store.ProfileByName(ctx, name)
-	setup := strings.EqualFold(name, "admin")
+	setup := strings.EqualFold(name, IntegrationSetupName)
 	if setup {
 		profile, profileErr = s.store.OwnerProfile(ctx)
 	}
@@ -626,20 +643,21 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 	if err != nil {
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
-	ttl := integrationSessionTTL
+	expires := s.now().Add(integrationSessionTTL).UTC()
 	if setup {
-		ttl = integrationSetupTTL
+		// The store caps setup Sessions at the TTL from the reservation.
+		expires = reservation.At().Add(integrationSetupTTL).UTC()
+		scopes = append(slices.Clone(scopes), store.IntegrationScopeSetup)
 	}
-	expires := s.now().Add(ttl).UTC()
 	err = s.store.CreateIntegrationSession(ctx, store.Session{
 		ID: store.SessionID(token), ProfileID: profile.ID, Kind: store.SessionKindIntegration,
 		IntegrationScopes: scopes, ExpiresAt: expires,
-	}, !setup, reservation)
+	}, !setup, reservation, s.now)
 	if err != nil {
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
 	s.auditIntegrationAttempt(ctx, profile, nil, attemptKey, true)
-	return IntegrationSession{Token: token, ProfileID: profile.ID, ExpiresAt: expires, Setup: setup}, nil
+	return IntegrationSession{Token: token, ProfileID: profile.ID, ProfileName: profile.Name, ExpiresAt: expires, Setup: setup}, nil
 }
 
 func (s *Service) verifyIntegrationCredential(ctx context.Context, profileID store.ProfileID, credential string, setup bool) error {
@@ -668,7 +686,7 @@ func randomIntegrationToken() (string, error) {
 func (s *Service) integrationAttemptKey(name string, profile store.Profile, profileErr error, setup bool) string {
 	if profileErr == nil {
 		if setup {
-			return "admin:" + string(profile.ID)
+			return store.IntegrationSetupAttemptKey(profile.ID)
 		}
 		return "profile:" + string(profile.ID)
 	}

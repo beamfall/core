@@ -216,7 +216,11 @@ func TestIntegrationSettlementPreservesLaterFailuresAtSameMillisecond(t *testing
 		ID: "integration-order", ProfileID: "profile-default", Kind: SessionKindIntegration,
 		IntegrationScopes: []IntegrationScope{IntegrationScopeRead}, ExpiresAt: at.Add(time.Hour),
 	}
-	if err := st.CreateIntegrationSession(ctx, session, false, first); err != nil {
+	optIn := true
+	if _, err := st.UpdateProfileSettings(ctx, session.ProfileID, ProfileSettings{IntegrationSignIn: &optIn}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateIntegrationSession(ctx, session, true, first, time.Now); err != nil {
 		t.Fatal(err)
 	}
 	for _, key := range keys {
@@ -288,7 +292,11 @@ func TestIntegrationAttemptsSurviveCatalogUpgradeWithoutReplay(t *testing.T) {
 		ID: "upgraded-integration", ProfileID: "profile-default", Kind: SessionKindIntegration,
 		IntegrationScopes: []IntegrationScope{IntegrationScopeRead}, ExpiresAt: at.Add(time.Hour),
 	}
-	if err := st.CreateIntegrationSession(ctx, session, false, reservation); err != nil {
+	optIn := true
+	if _, err := st.UpdateProfileSettings(ctx, session.ProfileID, ProfileSettings{IntegrationSignIn: &optIn}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateIntegrationSession(ctx, session, true, reservation, time.Now); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Close(); err != nil {

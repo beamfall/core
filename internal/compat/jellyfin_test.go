@@ -24,6 +24,8 @@ func TestJellyfinRouteInventory(t *testing.T) {
 		{http.MethodGet, Prefix + "System/Info/Public"},
 		{http.MethodGet, Prefix + "System/Configuration"},
 		{http.MethodGet, Prefix + "Items"},
+		{http.MethodPost, Prefix + "Auth/Keys"},
+		{http.MethodGet, Prefix + "Auth/Keys"},
 		{http.MethodPost, Prefix + "Notifications/Admin"},
 		{http.MethodGet, Prefix + "Library/MediaFolders"},
 		{http.MethodPost, Prefix + "Library/Media/Updated"},
