@@ -48,7 +48,7 @@ func SampleMediaFileContentFrom(ctx context.Context, path string, open func() (S
 	if err != nil {
 		return "", err
 	}
-	after, err := os.Stat(path)
+	after, err := os.Lstat(path)
 	if err != nil {
 		return "", err
 	}

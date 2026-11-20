@@ -75,8 +75,8 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		Container:          containerFromPath(path),
 		Codec:              "h264",
 		ContentFingerprint: stored.ContentFingerprint,
-		SizeBytes:          task.info.size,
-		ModTime:            task.info.modTime.UTC(),
+		SizeBytes:          stored.SizeBytes,
+		ModTime:            stored.ModTime,
 		Extra:              isExtraPath(s.extrasRoot, path),
 		ExtraFromPath:      true,
 		Sidecars:           s.sidecars.discover(path),
@@ -202,8 +202,7 @@ func (s *scanWalkState) retryAutoIdentify(path string, mediaID store.MediaID, fi
 	return nil
 }
 
-// hashLegacyScanFile shares the scan workers' process-wide disk slot and holds
-// it until the legacy reader closes.
+// The scan workers share this slot until the legacy reader closes.
 func hashLegacyScanFile(ctx context.Context, path string) (string, error) {
 	select {
 	case scanHashSlot <- struct{}{}:
@@ -230,14 +229,12 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		(stored.SizeBytes == 0 || stored.ModTime.IsZero()) &&
 		(stored.SizeBytes == 0 || stored.SizeBytes == task.info.size) &&
 		(stored.ModTime.IsZero() || store.MediaFileModTimeMatches(stored.ModTime, task.info.modTime)) {
-		// The path's recorded stats did not disqualify the legacy identity.
-		// Verify it once so the normal import records the missing stats.
 		full, err := hashLegacyScanFile(s.ctx, task.path)
 		if err != nil {
 			if canceled := s.ctx.Err(); canceled != nil {
 				return canceled
 			}
-			return errFileSettling
+			return s.consumeFastTask(task)
 		}
 		if full == stored.ContentFingerprint {
 			task.fingerprint = full

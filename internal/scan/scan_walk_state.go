@@ -15,11 +15,7 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
-var errFileSettling = errors.New("file is still settling")
-
-type deferredPartSeenError struct{ error }
-
-func (e deferredPartSeenError) Unwrap() error { return e.error }
+var errUnstableSample = errors.New("file sample could not be verified")
 
 type scanWalkState struct {
 	ctx                context.Context
@@ -180,30 +176,28 @@ func (s *scanWalkState) admitEntry(path string, entry fs.DirEntry, err error) (*
 	if s.imageRule.skips(path) {
 		return nil, nil
 	}
-	task := &workerTask{path: path, done: make(chan struct{})}
-	mtime := info.ModTime()
-	if now().Sub(mtime) < stabilityWindow {
-		// Handle settling files in walk order alongside failed samples.
-		task.err = errFileSettling
+	if now().Sub(info.ModTime()) < stabilityWindow {
+		return nil, nil
 	}
-	// The legacy catalog writer rounded pre-epoch mtimes toward zero.
-	if mtime.Before(time.Unix(0, 0)) {
-		mtime = time.UnixMilli(mtime.UnixNano() / int64(time.Millisecond))
-	}
-	task.info = fileStat{size: info.Size(), modTime: mtime}
-	return task, nil
+	// Match the catalog writer's millisecond rounding, including pre-epoch mtimes.
+	mtime := time.UnixMilli(info.ModTime().UnixNano() / int64(time.Millisecond))
+	return &workerTask{
+		path: path,
+		info: fileStat{size: info.Size(), modTime: mtime},
+		done: make(chan struct{}),
+	}, nil
 }
 
 func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
-	if task.err != nil {
-		return
-	}
 	if err := s.acquireBudget(ctx); err != nil {
 		task.err = err
 		return
 	}
 	defer s.releaseBudget()
 	task.fill(ctx, s.st, s.prober, s.grabber)
+	if task.err == errUnstableSample && task.stored.OK {
+		task.err, task.fastPath = nil, true
+	}
 	if task.err == nil && task.fastPath {
 		// An unchanged file whose Media still holds legacy parser fields is
 		// probed once, so its parse can settle them (CORE-2554).
@@ -217,20 +211,10 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 }
 
 func (s *scanWalkState) skipOrPropagate(path string, err error) error {
-	if err == nil {
+	if err == nil || err == errUnstableSample {
 		return nil
 	}
-	if errors.Is(err, errFileSettling) {
-		if s.parser != nil && !imageClassForPath(path) {
-			if s.checkpoint.DeferredPartDirs == nil {
-				s.checkpoint.DeferredPartDirs = map[string]bool{}
-			}
-			s.checkpoint.DeferredPartDirs[store.HashMediaFilePath(filepath.Dir(path))] = true
-		}
-		return s.st.MarkMediaFileSeen(s.ctx, s.req.LibraryID, path, s.scanStarted)
-	}
-	var seenErr deferredPartSeenError
-	if errors.As(err, &seenErr) || errors.Is(err, fs.SkipDir) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, jobs.ErrYielded) || errors.Is(err, errImageDerivation) {
+	if errors.Is(err, fs.SkipDir) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, jobs.ErrYielded) || errors.Is(err, errImageDerivation) {
 		return err
 	}
 	slog.Warn("scan: skipping unreadable or invalid file", "path", path, "error", err.Error())

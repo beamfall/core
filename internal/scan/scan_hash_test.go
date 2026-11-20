@@ -140,92 +140,17 @@ func (f *changingSampleFile) ReadAt(p []byte, offset int64) (int, error) {
 	return f.File.ReadAt(p, offset)
 }
 
-func TestScanDoesNotRepointMediaWhenFileChangesDuringSampling(t *testing.T) {
-	for _, change := range []string{"size", "mtime", "rename-over"} {
-		t.Run(change, func(t *testing.T) {
-			root := t.TempDir()
-			payload := []byte("already cataloged bytes")
-			originalPath := writeScanFile(t, root, "original.mp4", payload)
-			st := storetest.Open(t)
-			req := Request{LibraryID: "library-local", Root: root}
-			initial, err := Scan(t.Context(), st, nil, nil, nil, nil, nil, req)
-			if err != nil || len(initial.Files) != 1 {
-				t.Fatalf("initial scan files = %+v, err = %v, want one cataloged file", initial.Files, err)
-			}
-			copyPath := writeScanFile(t, root, "resumed-copy.mp4", payload)
-			before, err := os.Stat(copyPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			replacement := writeScanFile(t, root, ".replacement", bytes.Repeat([]byte{'x'}, len(payload)))
-			if err := os.Chtimes(replacement, before.ModTime(), before.ModTime()); err != nil {
-				t.Fatal(err)
-			}
-			dir, err := os.OpenRoot(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer dir.Close()
-			originalSample := sampleScanFile
-			t.Cleanup(func() { sampleScanFile = originalSample })
-			sampleScanFile = func(ctx context.Context, path string) (string, error) {
-				if path != copyPath {
-					return originalSample(ctx, path)
-				}
-				return store.SampleMediaFileContentFrom(ctx, path, func() (store.SampleFile, error) {
-					file, err := dir.OpenFile(filepath.Base(path), os.O_RDWR, 0)
-					if err != nil {
-						return nil, err
-					}
-					return &changingSampleFile{File: file, beforeFirstRead: func() error {
-						switch change {
-						case "rename-over":
-							return os.Rename(replacement, path)
-						case "mtime":
-							return os.Chtimes(path, before.ModTime(), before.ModTime().Add(time.Second))
-						}
-						if _, err := file.WriteAt([]byte(" more bytes"), before.Size()); err != nil {
-							return err
-						}
-						return os.Chtimes(path, before.ModTime(), before.ModTime())
-					}}, nil
-				})
-			}
-			if _, err := Scan(t.Context(), st, nil, nil, nil, nil, nil, req); err != nil {
-				t.Fatal(err)
-			}
-			after, err := os.Stat(copyPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sizeChanged := after.Size() != before.Size()
-			mtimeChanged := !after.ModTime().Equal(before.ModTime())
-			if sizeChanged != (change == "size") || mtimeChanged != (change == "mtime") {
-				t.Fatalf("expected only %s to change, size %d → %d, mtime %v → %v", change, before.Size(), after.Size(), before.ModTime(), after.ModTime())
-			}
-			if os.SameFile(before, after) == (change == "rename-over") {
-				t.Fatalf("unexpected inode at the sampled path after %s", change)
-			}
-			files, err := st.MediaFilesForLibrary(t.Context(), req.LibraryID)
-			if err != nil || len(files) != 1 || files[0].Path != originalPath || files[0].MediaID != initial.Files[0].MediaID {
-				t.Fatalf("live files = %+v, err = %v, want existing Media %s at %s", files, err, initial.Files[0].MediaID, originalPath)
-			}
-		})
-	}
-}
-
-func TestScanRetriesLegacyFileAfterUnstableSample(t *testing.T) {
+func TestScanTreatsUnstableSampleAsUnchanged(t *testing.T) {
 	readErr := errors.New("injected sample read error")
 	for _, tc := range []struct {
 		name    string
 		change  func(*os.File, string, os.FileInfo) error
 		wantErr error
-		trashed bool
 	}{
 		{name: "grow", change: func(file *os.File, _ string, before os.FileInfo) error {
 			return file.Truncate(before.Size() + 1)
 		}},
-		{name: "touch mtime only", change: func(_ *os.File, path string, before os.FileInfo) error {
+		{name: "touch mtime", change: func(_ *os.File, path string, before os.FileInfo) error {
 			mtime := before.ModTime().Add(time.Second)
 			return os.Chtimes(path, mtime, mtime)
 		}},
@@ -235,275 +160,274 @@ func TestScanRetriesLegacyFileAfterUnstableSample(t *testing.T) {
 		{name: "read error", change: func(*os.File, string, os.FileInfo) error {
 			return readErr
 		}, wantErr: readErr},
-		{name: "trashed row with read error", change: func(*os.File, string, os.FileInfo) error {
-			return readErr
-		}, wantErr: readErr, trashed: true},
-		{name: "legacy read error", wantErr: readErr},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			testScanRetriesLegacyFileAfterUnstableSample(t, tc.change, tc.wantErr, tc.trashed)
-		})
-	}
-}
-
-func TestScanDefersPartsWhenASampleFails(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		part  int
-		yield bool
-	}{
-		{name: "first Part", part: 0},
-		{name: "last Part", part: 1},
-		{name: "resume past failed Part", part: 0, yield: true},
+		{name: "rename over", change: func(_ *os.File, path string, _ os.FileInfo) error {
+			return os.Rename(filepath.Join(filepath.Dir(path), ".replacement"), path)
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			root := t.TempDir()
-			dir := storetest.MigratedDataDir(t)
-			st := storetest.OpenAt(t, dir)
+			dataDir := storetest.MigratedDataDir(t)
+			st := storetest.OpenAt(t, dataDir)
 			req := Request{LibraryID: partsLibrary(t, st), Root: root}
-			paths := []string{
-				writeScanFile(t, root, "01.mp3", []byte("first part")),
-				writeScanFile(t, root, "02.mp3", []byte("second part")),
-			}
+			filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{req.LibraryID}}
+			const payload = "first part"
+			path := writeScanFile(t, root, "disc-a/01.mp3", []byte(payload))
+			writeScanFile(t, root, "disc-b/02.mp3", []byte("second part"))
 			parsers := map[string]FilenameParser{"parts": numberedPartsParser{}}
-			run := func(started time.Time, checkpoint jobCheckpoint) Result {
+			run := func(started time.Time) Result {
 				t.Helper()
-				result, err := scanFromCheckpoint(ctx, st, nil, nil, parsers, nil, nil, nil, nil, fixedGovernor(2), nil, req, checkpoint, started, nil)
+				result, err := scanFromCheckpoint(ctx, st, nil, nil, parsers, nil, nil, nil, nil, fixedGovernor(2), nil, req, jobCheckpoint{}, started, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
 				return result
 			}
-			initial := run(time.Now(), jobCheckpoint{})
-			if len(initial.Files) != 2 || initial.MediaImported != 1 || initial.Files[0].MediaID != initial.Files[1].MediaID {
-				t.Fatalf("initial Parts = %+v, want one Media with two Parts", initial)
+			initial := run(time.Now())
+			if initial.FilesSeen != 2 || initial.MediaImported != 1 {
+				t.Fatalf("fixture did not import one Media with two Parts: %+v", initial)
 			}
 			mediaID := initial.Files[0].MediaID
-			filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{req.LibraryID}}
-			checkParts := func() []store.MediaFile {
+			before, err := st.MediaFilesForMedia(ctx, mediaID, filter)
+			if err != nil || len(before) != 2 || before[0].Path != path {
+				t.Fatalf("fixture Parts = %+v, err = %v", before, err)
+			}
+			stats := func(path string) store.StoredFingerprint {
+				t.Helper()
+				stored, err := st.MediaFileFingerprintByPath(ctx, path)
+				if err != nil || !stored.OK || stored.ModTime.IsZero() {
+					t.Fatalf("stored file stats for %s = %+v, err = %v", path, stored, err)
+				}
+				return stored
+			}
+			beforeStats := []store.StoredFingerprint{stats(before[0].Path), stats(before[1].Path)}
+			fingerprint := before[0].ContentFingerprint
+			if found, err := st.SetMatchPinned(ctx, fingerprint, true); err != nil || !found {
+				t.Fatalf("set match pin: found = %t, err = %v", found, err)
+			}
+			const profile = "profile-default"
+			resumeAudio := true
+			if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
+				ProfileID: profile, MediaID: mediaID, DurationSeconds: 100, PositionSeconds: 32,
+			}, false, store.ResumePolicy{Class: store.MediaClassAudio, Override: &resumeAudio}); err != nil {
+				t.Fatal(err)
+			}
+			checkParts := func() {
 				t.Helper()
 				files, err := st.MediaFilesForMedia(ctx, mediaID, filter)
-				if err != nil || len(files) != 2 {
+				if err != nil || len(files) != len(before) {
 					t.Fatalf("Parts = %+v, err = %v, want both Parts of %s", files, err, mediaID)
 				}
 				for i, file := range files {
-					if file.Path != paths[i] || file.PartOrdinal != i || file.ContentFingerprint != initial.Files[i].ContentFingerprint {
-						t.Fatalf("Part %d changed identity or ordinal: %+v", i, file)
+					want := before[i]
+					if file.MediaID != want.MediaID || file.Path != want.Path || file.ContentFingerprint != want.ContentFingerprint ||
+						file.PartOrdinal != want.PartOrdinal {
+						t.Fatalf("Part %d = %+v, want original identity and ordinal %+v", i, file, want)
+					}
+					if got := stats(file.Path); got != beforeStats[i] {
+						t.Fatalf("Part %d stats = %+v, want %+v", i, got, beforeStats[i])
 					}
 				}
-				return files
+				if progress, found, err := st.PlaybackProgressFor(ctx, profile, mediaID); err != nil || !found || progress.PositionSeconds != 32 {
+					t.Fatalf("watch state = %+v, found = %t, err = %v", progress, found, err)
+				}
+				if pinned, found, err := st.MatchPinned(ctx, fingerprint); err != nil || !found || !pinned {
+					t.Fatalf("match pin = %t, found = %t, err = %v", pinned, found, err)
+				}
 			}
-			before := checkParts()
-			path := paths[tc.part]
-			info, err := os.Stat(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			mtime := info.ModTime().Add(time.Second)
+			checkParts()
+
+			// Force sampling even though the bytes match. Keep the replacement's
+			// size and mtime identical so only the inode check can reject it.
+			mtime := beforeStats[0].ModTime.Add(time.Second)
 			if err := os.Chtimes(path, mtime, mtime); err != nil {
 				t.Fatal(err)
 			}
+			if tc.name == "rename over" {
+				replacement := writeScanFile(t, filepath.Dir(path), ".replacement", bytes.Repeat([]byte{'x'}, len(payload)))
+				if err := os.Chtimes(replacement, mtime, mtime); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeScanFile(t, root, "disc-a/01_cover.jpg", jpegBytes("between Parts"))
+			disc, err := os.OpenRoot(filepath.Dir(path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer disc.Close()
 			original := sampleScanFile
 			t.Cleanup(func() { sampleScanFile = original })
-			calls := 0
+			var injected bool
+			var changeErr, sampleErr error
 			sampleScanFile = func(ctx context.Context, candidate string) (string, error) {
-				if candidate == path {
-					calls++
-					return "", io.ErrUnexpectedEOF
+				if candidate != path {
+					return original(ctx, candidate)
 				}
-				return original(ctx, candidate)
+				digest, err := store.SampleMediaFileContentFrom(ctx, path, func() (store.SampleFile, error) {
+					file, err := disc.OpenFile(filepath.Base(path), os.O_RDWR, 0)
+					if err != nil {
+						return nil, err
+					}
+					info, err := file.Stat()
+					if err != nil {
+						_ = file.Close()
+						return nil, err
+					}
+					return &changingSampleFile{File: file, beforeFirstRead: func() error {
+						injected = true
+						changeErr = tc.change(file, path, info)
+						return changeErr
+					}}, nil
+				})
+				sampleErr = err
+				return digest, err
 			}
 			cutoff := time.UnixMilli(max(before[0].LastSeenAt.UnixMilli(), before[1].LastSeenAt.UnixMilli()) + 1)
-			var checkpoint jobCheckpoint
-			if tc.yield {
-				cover := writeScanFile(t, root, "01_cover.jpg", jpegBytes("intervening image"))
-				var saved []byte
-				_, err := scanFromCheckpoint(ctx, st, nil, nil, parsers, nil, nil, nil, nil, fixedGovernor(1), nil, req, jobCheckpoint{}, cutoff, func(cp jobCheckpoint, _ store.JobProgress) error {
-					if cp.LastPath != cover {
-						t.Fatalf("yield at %q, want %q", cp.LastPath, cover)
-					}
-					var err error
-					saved, err = marshalScanCheckpoint(cp)
-					if err != nil {
-						return err
-					}
-					return jobs.ErrYielded
-				})
-				if !errors.Is(err, jobs.ErrYielded) {
-					t.Fatalf("scan did not yield at the intervening image: %v", err)
-				}
-				checkpoint, err = checkpointFromJob(saved)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := st.Close(); err != nil {
-					t.Fatal(err)
-				}
-				st = storetest.OpenAt(t, dir)
+			first := run(cutoff)
+			if !injected || changeErr != nil && !errors.Is(changeErr, readErr) ||
+				sampleErr == nil || tc.wantErr != nil && !errors.Is(sampleErr, tc.wantErr) {
+				t.Fatalf("injection reached = %t, mutation error = %v, sample error = %v", injected, changeErr, sampleErr)
 			}
-			deferred := run(cutoff, checkpoint)
-			if calls != 1 {
-				t.Fatalf("unstable Part sample attempts = %d, want 1", calls)
+			if first.FilesSeen != 3 || first.MediaImported != 2 || first.FilesAdded != 1 || first.FilesChanged != 0 || first.FilesMissing != 0 {
+				t.Fatalf("unstable scan did not complete both Parts normally: %+v", first)
 			}
 			if err := st.Close(); err != nil {
 				t.Fatal(err)
 			}
-			st = storetest.OpenAt(t, dir)
+			st = storetest.OpenAt(t, dataDir)
 			checkParts()
-			if len(deferred.Files) != 0 || deferred.FilesMissing != 0 {
-				t.Fatalf("deferred scan = %+v, want neither Part admitted or marked missing", deferred)
-			}
+
 			sampleScanFile = original
-			if retry := run(cutoff.Add(time.Millisecond), jobCheckpoint{}); len(retry.Files) != 2+checkpoint.FilesSeen {
-				t.Fatalf("retry files = %+v, want both Parts and any intervening image", retry.Files)
+			if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+				t.Fatal(err)
 			}
+			if err := os.Chtimes(path, mtime, mtime); err != nil {
+				t.Fatal(err)
+			}
+			stable := run(cutoff.Add(time.Millisecond))
+			if stable.FilesSeen != 3 || stable.MediaImported != 2 || stable.FilesMissing != 0 {
+				t.Fatalf("stable retry did not complete both Parts: %+v", stable)
+			}
+			beforeStats[0].ModTime = mtime
 			checkParts()
 		})
 	}
+
+	t.Run("new path with read error", func(t *testing.T) {
+		ctx := t.Context()
+		root := t.TempDir()
+		path := writeScanFile(t, root, "new.mp4", []byte("new bytes"))
+		st := storetest.Open(t)
+		req := Request{LibraryID: "library-local", Root: root}
+		original := sampleScanFile
+		t.Cleanup(func() { sampleScanFile = original })
+		var reads int
+		sampleScanFile = func(_ context.Context, candidate string) (string, error) {
+			if candidate == path {
+				reads++
+			}
+			return "", readErr
+		}
+		first, err := Scan(ctx, st, nil, nil, nil, nil, nil, req)
+		if err != nil || first.FilesSeen != 0 || reads != 1 {
+			t.Fatalf("unstable scan = %+v, reads = %d, err = %v, want one read attempt and no admission", first, reads, err)
+		}
+		sampleScanFile = original
+		second, err := Scan(ctx, st, nil, nil, nil, nil, nil, req)
+		if err != nil || len(second.Files) != 1 || second.Files[0].Path != path || second.FilesAdded != 1 {
+			t.Fatalf("stable scan = %+v, err = %v, want one new file", second, err)
+		}
+	})
+
+	t.Run("resume onto duplicate", func(t *testing.T) {
+		ctx := t.Context()
+		root := t.TempDir()
+		dataDir := storetest.MigratedDataDir(t)
+		st := storetest.OpenAt(t, dataDir)
+		req := Request{LibraryID: "library-local", Root: root}
+		payload := []byte("same bytes")
+		firstPath := writeScanFile(t, root, "a.mp4", payload)
+		initial, err := Scan(ctx, st, nil, nil, nil, nil, nil, req)
+		if err != nil || len(initial.Files) != 1 {
+			t.Fatalf("fixture scan = %+v, err = %v", initial, err)
+		}
+		copyPath := writeScanFile(t, root, "b.mp4", payload)
+		mtime := time.Now().Add(-time.Minute)
+		if err := os.Chtimes(firstPath, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+		original := sampleScanFile
+		t.Cleanup(func() { sampleScanFile = original })
+		reads := 0
+		sampleScanFile = func(ctx context.Context, path string) (string, error) {
+			if path == firstPath {
+				reads++
+				return "", readErr
+			}
+			return original(ctx, path)
+		}
+		started := time.Now()
+		var checkpoint jobCheckpoint
+		_, err = scanFromCheckpoint(ctx, st, nil, nil, nil, nil, nil, nil, nil, nil, nil, req, jobCheckpoint{}, started, func(cp jobCheckpoint, _ store.JobProgress) error {
+			checkpoint = cp
+			return jobs.ErrYielded
+		})
+		if !errors.Is(err, jobs.ErrYielded) || reads != 1 || checkpoint.LastPath != firstPath || checkpoint.FilesSeen != 1 || checkpoint.MediaImported != 1 {
+			t.Fatalf("checkpoint = %+v, reads = %d, err = %v, want the unchanged file counted before yield", checkpoint, reads, err)
+		}
+		if err := st.Close(); err != nil {
+			t.Fatal(err)
+		}
+		st = storetest.OpenAt(t, dataDir)
+		resumed, err := scanFromCheckpoint(ctx, st, nil, nil, nil, nil, nil, nil, nil, nil, nil, req, checkpoint, started, nil)
+		if err != nil || resumed.FilesSeen != 2 || resumed.MediaImported != 1 || len(resumed.Files) != 1 ||
+			resumed.Files[0].Path != copyPath || resumed.Files[0].MediaID != initial.Files[0].MediaID {
+			t.Fatalf("resumed scan = %+v, err = %v, want the stable copy with the same Media counted once", resumed, err)
+		}
+	})
 }
 
-func testScanRetriesLegacyFileAfterUnstableSample(t *testing.T, change func(*os.File, string, os.FileInfo) error, wantErr error, trashed bool) {
-	t.Helper()
+func TestScanTreatsFailedLegacyCompareAsUnchanged(t *testing.T) {
 	ctx := t.Context()
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := storetest.MigratedDataDir(t)
-	st := storetest.OpenAt(t, dir)
+	root := t.TempDir()
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
 	req := Request{LibraryID: "library-local", Root: root}
-	payload := []byte("unchanged legacy bytes")
-	path := writeScanFile(t, root, "legacy.mp4", payload)
-	before, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	full, err := store.HashMediaFileContent(path)
+	path := writeScanFile(t, root, "legacy.mp4", []byte("unchanged legacy bytes"))
+	digest, err := store.HashMediaFileContent(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	media, file, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-		LibraryID: req.LibraryID, Path: path, Title: "Legacy", Container: "mp4", Codec: "h264",
-		ContentFingerprint: full, SizeBytes: before.Size(),
+		LibraryID: req.LibraryID, Path: path, Title: "Legacy", Container: "mp4", Codec: "h264", ContentFingerprint: digest,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.SetMatchPinned(ctx, full, true); err != nil {
-		t.Fatal(err)
+	original := legacyFileContent
+	t.Cleanup(func() { legacyFileContent = original })
+	reads := 0
+	legacyFileContent = func(context.Context, string) (string, error) {
+		reads++
+		return "", io.ErrUnexpectedEOF
 	}
-	const profile = "profile-default"
-	if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
-		ProfileID: profile, MediaID: media.ID, DurationSeconds: 100, PositionSeconds: 32,
-	}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
-		t.Fatal(err)
-	}
-	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{req.LibraryID}}
-	if trashed {
-		if err := st.TrashMedia(ctx, media.ID, filter); err != nil {
-			t.Fatal(err)
-		}
-	}
-	gone := writeScanFile(t, root, "gone.mp4", []byte("deleted bytes"))
-	_, deleted, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-		LibraryID: req.LibraryID, Path: gone, Title: "Gone", Container: "mp4", Codec: "h264",
-		ContentFingerprint: fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("deleted bytes"))),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(gone); err != nil {
-		t.Fatal(err)
-	}
-
-	originalSample, originalLegacy := sampleScanFile, legacyFileContent
-	t.Cleanup(func() { sampleScanFile, legacyFileContent = originalSample, originalLegacy })
-	fullReads := 0
-	legacyFileContent = func(ctx context.Context, path string) (string, error) {
-		fullReads++
-		if change == nil && fullReads == 1 {
-			return "", wantErr
-		}
-		return originalLegacy(ctx, path)
-	}
-	rootDir, err := os.OpenRoot(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rootDir.Close()
-	var sampleErr, changeErr error
-	var changeAttempted bool
-	if change != nil {
-		sampleScanFile = func(ctx context.Context, path string) (string, error) {
-			fingerprint, err := store.SampleMediaFileContentFrom(ctx, path, func() (store.SampleFile, error) {
-				file, err := rootDir.OpenFile(filepath.Base(path), os.O_RDWR, 0)
-				if err != nil {
-					return nil, err
-				}
-				return &changingSampleFile{File: file, beforeFirstRead: func() error {
-					changeAttempted = true
-					changeErr = change(file, path, before)
-					return changeErr
-				}}, nil
-			})
-			sampleErr = err
-			return fingerprint, err
-		}
-	}
-	// Advance beyond both rows' last-seen milliseconds so missing retirement runs.
-	cutoff := time.UnixMilli(max(file.LastSeenAt.UnixMilli(), deleted.LastSeenAt.UnixMilli()) + 1)
-	first, err := scanFromCheckpoint(ctx, st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(2), nil, req, jobCheckpoint{}, cutoff, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantFirstFullReads := 1
-	if change != nil {
-		wantFirstFullReads = 0
-		if !changeAttempted || (changeErr != nil && !errors.Is(changeErr, wantErr)) {
-			t.Fatalf("sample injection reached = %t, error = %v", changeAttempted, changeErr)
-		}
-		if sampleErr == nil || (wantErr != nil && !errors.Is(sampleErr, wantErr)) {
-			t.Fatalf("sampling error = %v, want a failure (specific error: %v)", sampleErr, wantErr)
-		}
-	}
-	if first.FilesSeen != 0 || fullReads != wantFirstFullReads || first.FilesMissing != 1 {
-		t.Errorf("first scan: admitted = %d, full hashes = %d, missing = %d, want only the deleted file marked missing", first.FilesSeen, fullReads, first.FilesMissing)
+	cutoff := time.UnixMilli(file.LastSeenAt.UnixMilli() + 1)
+	first, err := scanFromCheckpoint(ctx, st, nil, nil, nil, nil, nil, nil, nil, nil, nil, req, jobCheckpoint{}, cutoff, nil)
+	if err != nil || first.FilesSeen != 1 || first.FilesMissing != 0 || reads != 1 {
+		t.Fatalf("scan after failed compare = %+v, reads = %d, err = %v, want unchanged file counted", first, reads, err)
 	}
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
-	st = storetest.OpenAt(t, dir)
-	if trashed {
-		if err := st.RestoreMedia(ctx, media.ID, filter); err != nil {
-			t.Fatalf("restore Media that should still be trashed: %v", err)
-		}
+	st = storetest.OpenAt(t, dataDir)
+	persisted, err := st.MediaFileFingerprintByPath(ctx, path)
+	if err != nil || !persisted.OK || persisted.ContentFingerprint != digest || persisted.SizeBytes != 0 || !persisted.ModTime.IsZero() {
+		t.Fatalf("persisted identity = %+v, err = %v, want legacy fingerprint with unrecorded stats", persisted, err)
 	}
-	live, err := st.MediaFilesForLibrary(ctx, req.LibraryID)
-	if err != nil || len(live) != 1 || live[0].MediaID != media.ID || live[0].ContentFingerprint != full ||
-		live[0].SizeBytes != before.Size() || !live[0].ModTime.IsZero() {
-		t.Errorf("live files after reopening = %+v, err = %v, want statless legacy Media %s", live, err, media.ID)
-	}
-
-	if change != nil {
-		if err := os.WriteFile(path, payload, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chtimes(path, before.ModTime(), before.ModTime()); err != nil {
-			t.Fatal(err)
-		}
-	}
-	sampleScanFile = originalSample
+	legacyFileContent = original
 	second, err := Scan(ctx, st, nil, nil, nil, nil, nil, req)
-	if err != nil || len(second.Files) != 1 || second.Files[0].MediaID != media.ID || second.Files[0].ContentFingerprint != full || fullReads != wantFirstFullReads+1 {
-		t.Fatalf("retry files = %+v, full hashes = %d, err = %v, want one full compare and legacy Media %s", second.Files, fullReads, err, media.ID)
-	}
-	progress, found, err := st.PlaybackProgressFor(ctx, profile, second.Files[0].MediaID)
-	if err != nil || !found || progress.PositionSeconds != 32 {
-		t.Fatalf("playback progress = %+v, found = %t, err = %v", progress, found, err)
-	}
-	if pinned, found, err := st.MatchPinned(ctx, second.Files[0].ContentFingerprint); err != nil || !found || !pinned {
-		t.Fatalf("match pin = %t, found = %t, err = %v", pinned, found, err)
+	if err != nil || len(second.Files) != 1 || second.Files[0].MediaID != media.ID || second.Files[0].ContentFingerprint != digest {
+		t.Fatalf("stable retry = %+v, err = %v, want original Media %s", second, err, media.ID)
 	}
 }
 

@@ -167,7 +167,7 @@ func hashScanFile(ctx context.Context, path string) (string, error) {
 	defer func() { <-scanHashSlot }()
 	fingerprint, err := sampleScanFile(ctx, path)
 	if err != nil && ctx.Err() == nil {
-		return "", errFileSettling
+		return "", errUnstableSample
 	}
 	return fingerprint, err
 }
