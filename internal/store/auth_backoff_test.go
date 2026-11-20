@@ -170,11 +170,11 @@ func TestReserveAuthAttemptCountsEveryLaneOrNone(t *testing.T) {
 	keys := []string{"source", "global"}
 
 	recordFailure(t, st, action, "source", at)
-	if until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
+	if _, until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
 		t.Fatalf("first reservation = (%v, %v), want open", until, err)
 	}
 	// "source" now holds two failures and is locked; "global" holds one.
-	until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy)
+	_, until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy)
 	if err != nil || !until.After(at) {
 		t.Fatalf("second reservation = (%v, %v), want locked", until, err)
 	}
@@ -184,11 +184,38 @@ func TestReserveAuthAttemptCountsEveryLaneOrNone(t *testing.T) {
 	for _, key := range keys {
 		recordSuccess(t, st, action, key, at)
 	}
-	if until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
+	if _, until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
 		t.Fatalf("reservation after success = (%v, %v), want open", until, err)
 	}
-	if _, err := st.ReserveAuthAttempt(ctx, action, []string{"source", ""}, at, policy); err == nil {
+	if _, _, err := st.ReserveAuthAttempt(ctx, action, []string{"source", ""}, at, policy); err == nil {
 		t.Fatal("reservation with an empty key succeeded")
+	}
+}
+
+func TestSettleAuthAttemptPreservesLaterFailuresAtSameMillisecond(t *testing.T) {
+	st := openBackoffStore(t)
+	ctx := t.Context()
+	policy := AuthBackoff{Window: 10 * time.Minute, FreeAttempts: 3, BaseDelay: time.Second, MaxDelay: time.Hour}
+	at := time.Unix(2_100_000, 0).UTC()
+	const action = "test.settle"
+	keys := []string{"name", "source"}
+	for _, key := range keys {
+		recordFailure(t, st, action, key, at)
+	}
+	first, until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy)
+	if err != nil || !until.IsZero() {
+		t.Fatalf("reserve successful credential: (%v, %v)", until, err)
+	}
+	if _, until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
+		t.Fatalf("reserve later failure: (%v, %v)", until, err)
+	}
+	if err := st.SettleAuthAttempt(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range keys {
+		if failures, _, err := st.consecutiveAuthFailures(ctx, action, key, at, policy); err != nil || failures != 1 {
+			t.Fatalf("%s lane failures = (%d, %v), want only the later failure", key, failures, err)
+		}
 	}
 }
 

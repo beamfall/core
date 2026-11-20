@@ -67,7 +67,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	clientIP := h.clientIP(r)
-	if !containsIP(h.allowed, clientIP) {
+	if clientIP.IsUnspecified() || !containsIP(h.allowed, clientIP) {
 		http.Error(w, "compatibility route unavailable", http.StatusForbidden)
 		return
 	}

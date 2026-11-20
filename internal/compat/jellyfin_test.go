@@ -141,6 +141,32 @@ func TestProxyHeadersAreUntrustedUnlessProxyCIDRConfigured(t *testing.T) {
 	}
 }
 
+func TestBoundaryRejectsUnspecifiedClientAddresses(t *testing.T) {
+	handler, err := New(Config{
+		Enabled:           true,
+		AllowedCIDRs:      []string{"0.0.0.0/0", "::/0"},
+		TrustedProxyCIDRs: []string{"127.0.0.1/32"},
+	}, nil, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("request reached fallback") }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ remote, forwarded string }{
+		{"0.0.0.0:1234", ""},
+		{"[::]:1234", ""},
+		{"127.0.0.1:1234", "0.0.0.0"},
+		{"127.0.0.1:1234", "::"},
+	} {
+		req := httptest.NewRequest(http.MethodPost, Prefix+"Users/AuthenticateByName", strings.NewReader(`{}`))
+		req.RemoteAddr = tc.remote
+		req.Header.Set("X-Forwarded-For", tc.forwarded)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden || rec.Body.String() != "compatibility route unavailable\n" {
+			t.Errorf("remote %q, forwarded %q returned %d %q, want existing forbidden response", tc.remote, tc.forwarded, rec.Code, rec.Body)
+		}
+	}
+}
+
 func TestAuthenticateByNameFailureResponsesAreUniform(t *testing.T) {
 	ctx := t.Context()
 	dataDir := storetest.MigratedDataDir(t)

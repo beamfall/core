@@ -50,6 +50,7 @@ const (
 	integrationFailureFloor         = 75 * time.Millisecond
 	integrationAttemptAction        = "integration.login"
 	integrationAttemptPseudonymInfo = "beamfall/integration-attempt-pseudonym/v1"
+	integrationIPThrottleInfo       = "beamfall/integration-ip-throttle/v1"
 )
 
 // adminBackoff is the admin re-auth lane's exponential-backoff curve (ADR-0012
@@ -159,8 +160,7 @@ type Service struct {
 	// resolves fail-closed (no certified Media allowed).
 	certificationScales      map[string][]string
 	integrationAttemptSecret []byte
-	integrationVerifier      func(context.Context, store.ProfileID, string, bool) error
-	integrationDecoy         func(context.Context, string)
+	integrationIPSecret      []byte
 	// beforeAdminGrant, when non-nil, runs in BeginAdminSession after the
 	// owner and password checks and before the window is written. Test seam
 	// for the ownership-transfer race; nil in production.
@@ -183,24 +183,29 @@ func NewServiceWithClock(st *store.Store, now func() time.Time) *Service {
 	}
 	secret := make([]byte, 32)
 	_, _ = rand.Read(secret)
-	s := &Service{store: st, now: now, integrationAttemptSecret: secret, integrationDecoy: checkIntegrationDecoy}
-	s.integrationVerifier = s.verifyIntegrationCredential
-	return s
+	return &Service{
+		store: st, now: now, integrationAttemptSecret: secret,
+		integrationIPSecret: deriveIntegrationAttemptSecret(secret, integrationIPThrottleInfo),
+	}
 }
 
 // SetIntegrationAttemptSecret binds unknown-name security-event targets and IP
-// throttle keys to a one-way HKDF key derived from a durable server root with
-// fixed domain-separation info. Neither the attempted name nor IP is persisted.
+// throttle keys to distinct HKDF keys derived from a durable server root.
 func (s *Service) SetIntegrationAttemptSecret(secret []byte) {
 	if len(secret) == 0 {
 		s.integrationAttemptSecret = append([]byte(nil), secret...)
 		return
 	}
-	derived, err := hkdf.Key(sha256.New, secret, nil, integrationAttemptPseudonymInfo, 32)
+	s.integrationAttemptSecret = deriveIntegrationAttemptSecret(secret, integrationAttemptPseudonymInfo)
+	s.integrationIPSecret = deriveIntegrationAttemptSecret(secret, integrationIPThrottleInfo)
+}
+
+func deriveIntegrationAttemptSecret(secret []byte, info string) []byte {
+	derived, err := hkdf.Key(sha256.New, secret, nil, info, 32)
 	if err != nil {
 		panic(err)
 	}
-	s.integrationAttemptSecret = derived
+	return derived
 }
 
 // SetCertificationScales wires the activated plugins' ordered certification
@@ -581,15 +586,22 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 		profile, profileErr = s.store.OwnerProfile(ctx)
 	}
 	attemptKey := s.integrationAttemptKey(name, profile, profileErr, setup)
-	keys := []string{attemptKey, "ip:" + s.integrationAttemptPseudonym("ip:"+clientIP)}
-	now := s.now().UTC()
-	lockedUntil, err := s.store.ReserveAuthAttempt(ctx, integrationAttemptAction, keys, now, integrationBackoff)
+	keys := []string{attemptKey, s.integrationIPAttemptKey(clientIP)}
+	var reservation store.AuthAttemptReservation
+	var lockedUntil time.Time
 	credentialErr := ErrIntegrationAuthentication
-	if err == nil && lockedUntil.IsZero() && profileErr == nil {
-		credentialErr = s.integrationVerifier(ctx, profile.ID, credential, setup)
-	} else {
-		s.integrationDecoy(ctx, credential)
-	}
+	err := withAdminKDFSlot(ctx, func() error {
+		var reserveErr error
+		reservation, lockedUntil, reserveErr = s.store.ReserveAuthAttempt(ctx, integrationAttemptAction, keys, s.now().UTC(), integrationBackoff)
+		// Refusals without a usable verifier spend the same Argon2id cost as a
+		// real check, within the same KDF slot.
+		if reserveErr != nil || !lockedUntil.IsZero() || profileErr != nil {
+			store.CheckCredentialDecoy(ctx, credential)
+		} else {
+			credentialErr = s.verifyIntegrationCredential(ctx, profile.ID, credential, setup)
+		}
+		return reserveErr
+	})
 	if err != nil {
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
@@ -613,6 +625,10 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 	if err != nil {
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
+	// Finish the durable throttle write before creating a usable Session.
+	if err := s.store.SettleAuthAttempt(ctx, reservation); err != nil {
+		return IntegrationSession{}, s.integrationFailure(started)
+	}
 	ttl := integrationSessionTTL
 	if setup {
 		ttl = integrationSetupTTL
@@ -625,40 +641,23 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 	if err != nil {
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
-	// As in admin sign-in, record success at the reservation time so a later
-	// attempt keeps its place in the backoff history.
-	for _, key := range keys {
-		_ = s.store.RecordAuthAttempt(ctx, store.AuthAttempt{OccurredAt: now, Action: integrationAttemptAction, Key: key, Success: true})
-	}
 	s.auditIntegrationAttempt(ctx, profile, nil, attemptKey, true)
 	return IntegrationSession{Token: token, ProfileID: profile.ID, ExpiresAt: expires, Setup: setup}, nil
 }
 
-// A refusal without a usable verifier pays the same Argon2id cost even when
-// that cost exceeds the minimum refusal time. Real and decoy checks share the
-// process-wide KDF bound because each derivation allocates 64 MiB.
-func checkIntegrationDecoy(ctx context.Context, credential string) {
-	_ = withAdminKDFSlot(ctx, func() error {
-		store.CheckCredentialDecoy(credential)
-		return nil
-	})
-}
-
 func (s *Service) verifyIntegrationCredential(ctx context.Context, profileID store.ProfileID, credential string, setup bool) error {
-	return withAdminKDFSlot(ctx, func() error {
-		if setup {
-			err := verifyAdminPasswordKDF(ctx, s.store, credential)
-			if err != nil && !errors.Is(err, store.ErrAdminPasswordMismatch) && !errors.Is(err, store.ErrNoAdminPassword) {
-				store.CheckCredentialDecoy(credential)
-			}
-			return err
-		}
-		err := s.store.VerifyProfileEntryPIN(ctx, profileID, credential)
-		if err != nil && !errors.Is(err, store.ErrProfileEntryPINMismatch) {
-			store.CheckCredentialDecoy(credential)
+	if setup {
+		err := verifyAdminPasswordKDF(ctx, s.store, credential)
+		if err != nil && !errors.Is(err, store.ErrAdminPasswordMismatch) && !errors.Is(err, store.ErrNoAdminPassword) {
+			store.CheckCredentialDecoy(ctx, credential)
 		}
 		return err
-	})
+	}
+	err := s.store.VerifyProfileEntryPIN(ctx, profileID, credential)
+	if err != nil && (errors.Is(err, store.ErrMalformedProfileEntryPIN) || !errors.Is(err, store.ErrProfileEntryPINMismatch)) {
+		store.CheckCredentialDecoy(ctx, credential)
+	}
+	return err
 }
 
 func encodeIntegrationScopeRequest(scopes []store.IntegrationScope) (string, error) {
@@ -690,11 +689,15 @@ func (s *Service) integrationAttemptKey(name string, profile store.Profile, prof
 		}
 		return "profile:" + string(profile.ID)
 	}
-	return "unknown:" + s.integrationAttemptPseudonym(strings.ToLower(name))
+	return "unknown:" + integrationAttemptPseudonym(s.integrationAttemptSecret, strings.ToLower(name))
 }
 
-func (s *Service) integrationAttemptPseudonym(value string) string {
-	mac := hmac.New(sha256.New, s.integrationAttemptSecret)
+func (s *Service) integrationIPAttemptKey(ip string) string {
+	return "ip:" + integrationAttemptPseudonym(s.integrationIPSecret, "ip:"+ip)
+}
+
+func integrationAttemptPseudonym(key []byte, value string) string {
+	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(value))
 	return hex.EncodeToString(mac.Sum(nil))
 }
@@ -904,7 +907,7 @@ func (s *Service) createFirstAdminPassword(ctx context.Context, scope Scope, pas
 	// parallel requests cannot all pass the throttle before any is counted.
 	var created bool
 	err = withAdminKDFSlot(ctx, func() error {
-		locked, rerr := s.store.ReserveAuthAttempt(ctx, adminAttemptAction, []string{attemptKey}, now.UTC(), adminBackoff)
+		_, locked, rerr := s.store.ReserveAuthAttempt(ctx, adminAttemptAction, []string{attemptKey}, now.UTC(), adminBackoff)
 		if rerr != nil {
 			return rerr
 		}

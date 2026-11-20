@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -129,6 +130,14 @@ func TestIntegrationFailuresAreUniformLockedAndRedacted(t *testing.T) {
 	if different := strings.TrimPrefix(other.integrationAttemptKey(unknownName, store.Profile{}, profileErr, false), "unknown:"); different == pseudonym {
 		t.Fatal("pseudonym did not change with a different root")
 	}
+	ipKey := svc.integrationIPAttemptKey(integrationTestIP)
+	spoofedNameKey := svc.integrationAttemptKey("ip:"+integrationTestIP, store.Profile{}, profileErr, false)
+	if strings.TrimPrefix(spoofedNameKey, "unknown:") == strings.TrimPrefix(ipKey, "ip:") {
+		t.Fatal("unknown name and IP share the same digest")
+	}
+	if other.integrationIPAttemptKey(integrationTestIP) == ipKey {
+		t.Fatal("IP digest did not change with a different root")
+	}
 
 	cases := []struct{ name, credential string }{
 		{unknownName, "2468"},
@@ -179,97 +188,156 @@ func TestIntegrationFailuresAreUniformLockedAndRedacted(t *testing.T) {
 }
 
 func TestIntegrationReservesBeforeConcurrentCredentialVerification(t *testing.T) {
-	ctx := t.Context()
 	st := storetest.Open(t)
 	enableIntegrationSignIn(t, st, "profile-default")
 	now := time.Now()
 	svc := NewServiceWithClock(st, func() time.Time { return now })
+	previousWait := adminKDFSlotWait
+	adminKDFSlotWait = 30 * time.Second
+	t.Cleanup(func() { adminKDFSlotWait = previousWait })
+	var real, decoy atomic.Int64
+	ctx := store.WithCredentialDerivationObserver(t.Context(), func(got store.CredentialDerivation) {
+		if got.SaltBytes == 0 {
+			decoy.Add(1)
+		} else {
+			real.Add(1)
+		}
+	})
 	const attempts = 12
-	verification := make(chan store.ProfileID, attempts)
-	release := make(chan struct{})
-	results := make(chan error, attempts)
-	svc.integrationVerifier = func(_ context.Context, id store.ProfileID, _ string, _ bool) error {
-		verification <- id
-		<-release
-		return ErrIntegrationAuthentication
-	}
-	svc.integrationDecoy = func(context.Context, string) {
-		verification <- ""
-		<-release
-	}
 	var workers sync.WaitGroup
-	defer workers.Wait()
 	for i := range attempts {
 		workers.Go(func() {
 			clientIP := fmt.Sprintf("192.0.2.%d", i+1)
-			_, err := svc.AuthenticateIntegrationByName(ctx, "Default", "wrong", clientIP, compatScopes)
-			results <- err
+			if _, err := svc.AuthenticateIntegrationByName(ctx, "Default", "wrong", clientIP, compatScopes); err != ErrIntegrationAuthentication {
+				t.Errorf("parallel authentication returned %v", err)
+			}
 		})
 	}
-	func() {
-		defer close(release)
-		deadline := time.After(5 * time.Second)
-		realVerifications := 0
-		for range attempts {
-			select {
-			case id := <-verification:
-				if id == "profile-default" {
-					realVerifications++
-				}
-			case err := <-results:
-				t.Fatalf("authentication returned before reaching the real or decoy verifier: %v", err)
-			case <-deadline:
-				t.Fatal("parallel authentication did not reach the verifier")
-			}
-		}
-		if realVerifications != integrationBackoff.FreeAttempts {
-			t.Fatalf("real verifications = %d, want %d", realVerifications, integrationBackoff.FreeAttempts)
-		}
-	}()
-	for range attempts {
-		if err := <-results; !errors.Is(err, ErrIntegrationAuthentication) {
-			t.Fatalf("parallel authentication error = %v", err)
-		}
+	workers.Wait()
+	if free := int64(integrationBackoff.FreeAttempts); real.Load() != free || decoy.Load() != attempts-free {
+		t.Fatalf("real and decoy checks = %d and %d, want %d and %d", real.Load(), decoy.Load(), free, attempts-free)
 	}
 }
 
-func TestIntegrationRefusalsPaySlowVerifierCost(t *testing.T) {
+func TestIntegrationKDFBusyRefusalPreservesBothBudgets(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
 	enableIntegrationSignIn(t, st, "profile-default")
 	now := time.Now().UTC()
 	svc := NewServiceWithClock(st, func() time.Time { return now })
-	keys := []string{"profile:profile-default"}
-	for range integrationBackoff.FreeAttempts {
-		if locked, err := st.ReserveAuthAttempt(ctx, integrationAttemptAction, keys, now, integrationBackoff); err != nil || !locked.IsZero() {
-			t.Fatalf("reserve name lockout fixture: locked until %v, error %v", locked, err)
+	keys := []string{"profile:profile-default", svc.integrationIPAttemptKey(integrationTestIP)}
+	for range integrationBackoff.FreeAttempts - 1 {
+		if _, locked, err := st.ReserveAuthAttempt(ctx, integrationAttemptAction, keys, now, integrationBackoff); err != nil || !locked.IsZero() {
+			t.Fatalf("reserve near-lockout fixture: locked until %v, error %v", locked, err)
 		}
 	}
+	func() {
+		previousWait := adminKDFSlotWait
+		adminKDFSlotWait = time.Millisecond
+		for range adminKDFSlotCount {
+			adminKDFSlots <- struct{}{}
+		}
+		defer func() {
+			for range adminKDFSlotCount {
+				<-adminKDFSlots
+			}
+			adminKDFSlotWait = previousWait
+		}()
+		busyCtx := store.WithCredentialDerivationObserver(ctx, func(store.CredentialDerivation) {
+			t.Error("busy request reached Argon2id")
+		})
+		if session, err := svc.AuthenticateIntegrationByName(busyCtx, "Default", "2468", integrationTestIP, compatScopes); session.Token != "" || err != ErrIntegrationAuthentication {
+			t.Fatalf("busy request returned a token (%t) or wrong error (%v)", session.Token != "", err)
+		}
+	}()
+	for _, key := range keys {
+		if locked, err := st.AuthBackoffUntil(ctx, integrationAttemptAction, key, now, integrationBackoff); err != nil || !locked.IsZero() {
+			t.Fatalf("lane after busy refusal: locked until %v, error %v", locked, err)
+		}
+	}
+	if _, err := svc.AuthenticateIntegrationByName(ctx, "Default", "2468", integrationTestIP, compatScopes); err != nil {
+		t.Fatalf("correct credential after a slot freed: %v", err)
+	}
+}
 
-	const verifyCost = 200 * time.Millisecond
-	decoyChecked := false
-	svc.integrationDecoy = func(context.Context, string) {
-		decoyChecked = true
-		time.Sleep(verifyCost)
+func TestIntegrationSettlementFailureRefusesAndLeavesBothLanesCharged(t *testing.T) {
+	ctx := t.Context()
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	enableIntegrationSignIn(t, st, "profile-default")
+	now := time.Now().UTC()
+	svc := NewServiceWithClock(st, func() time.Time { return now })
+	keys := []string{"profile:profile-default", svc.integrationIPAttemptKey(integrationTestIP)}
+	for range integrationBackoff.FreeAttempts - 1 {
+		if _, locked, err := st.ReserveAuthAttempt(ctx, integrationAttemptAction, keys, now, integrationBackoff); err != nil || !locked.IsZero() {
+			t.Fatalf("reserve near-lockout fixture: locked until %v, error %v", locked, err)
+		}
+	}
+	storetest.RejectIntegrationIPSettlement(t, dataDir)
+	verified := false
+	requestCtx := store.WithCredentialDerivationObserver(ctx, func(got store.CredentialDerivation) { verified = got.SaltBytes != 0 })
+	session, err := svc.AuthenticateIntegrationByName(requestCtx, "Default", "2468", integrationTestIP, compatScopes)
+	if session != (IntegrationSession{}) || err != ErrIntegrationAuthentication || !verified {
+		t.Fatalf("settlement failure returned a session (%t), error %v, real verification %t", session != (IntegrationSession{}), err, verified)
+	}
+	for _, key := range keys {
+		if locked, err := st.AuthBackoffUntil(ctx, integrationAttemptAction, key, now, integrationBackoff); err != nil || !locked.After(now) {
+			t.Fatalf("lane after settlement failure: locked until %v, error %v", locked, err)
+		}
+	}
+}
+
+func TestIntegrationDerivesArgon2idForRealAndDecoyChecks(t *testing.T) {
+	ctx := t.Context()
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	enableIntegrationSignIn(t, st, "profile-default")
+	now := time.Now().UTC()
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAdminPassword(ctx, "setup-secret", now); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewServiceWithClock(st, func() time.Time { return now })
+	const lockedIP = "192.0.2.2"
+	for range integrationBackoff.FreeAttempts {
+		if _, locked, err := st.ReserveAuthAttempt(ctx, integrationAttemptAction, []string{svc.integrationIPAttemptKey(lockedIP)}, now, integrationBackoff); err != nil || !locked.IsZero() {
+			t.Fatalf("reserve lockout fixture: locked until %v, error %v", locked, err)
+		}
 	}
 	for _, tc := range []struct {
-		name   string
-		reason RefusalReason
+		path, name, credential, ip string
+		saltBytes                  int
+		reason                     RefusalReason
 	}{
-		{"unknown profile", RefusalIntegrationRejected},
-		{"Default", RefusalIntegrationLocked},
+		{"entry PIN", "Default", "2468", integrationTestIP, 16, ""},
+		{"admin password", "admin", "setup-secret", integrationTestIP, 16, ""},
+		{"unknown name", "unknown profile", "wrong", integrationTestIP, 0, RefusalIntegrationRejected},
+		{"locked", "Default", "2468", lockedIP, 0, RefusalIntegrationLocked},
+		{"malformed verifier", "Default", "2468", integrationTestIP, 0, RefusalIntegrationRejected},
 	} {
-		decoyChecked = false
-		requestCtx := WithRefusalNote(ctx)
-		started := time.Now()
-		_, err := svc.AuthenticateIntegrationByName(requestCtx, tc.name, "wrong", integrationTestIP, compatScopes)
-		elapsed := time.Since(started)
-		note, _ := RefusalFromContext(requestCtx)
-		if !errors.Is(err, ErrIntegrationAuthentication) || note.Reason != tc.reason {
-			t.Fatalf("%q refusal = %v (%q), want %q", tc.name, err, note.Reason, tc.reason)
-		}
-		if !decoyChecked || elapsed < verifyCost {
-			t.Fatalf("%q decoy called = %t, elapsed %s, want at least %s", tc.name, decoyChecked, elapsed, verifyCost)
-		}
+		t.Run(tc.path, func(t *testing.T) {
+			if tc.path == "malformed verifier" {
+				storetest.CorruptProfileEntryPIN(t, dataDir, "profile-default")
+			}
+			var derivations []store.CredentialDerivation
+			requestCtx := store.WithCredentialDerivationObserver(WithRefusalNote(ctx), func(got store.CredentialDerivation) {
+				derivations = append(derivations, got)
+			})
+			_, err := svc.AuthenticateIntegrationByName(requestCtx, tc.name, tc.credential, tc.ip, compatScopes)
+			note, _ := RefusalFromContext(requestCtx)
+			var wantErr error
+			if tc.reason != "" {
+				wantErr = ErrIntegrationAuthentication
+			}
+			if err != wantErr || note.Reason != tc.reason {
+				t.Errorf("returned %v (%q), want %v (%q)", err, note.Reason, wantErr, tc.reason)
+			}
+			want := store.CredentialDerivation{SaltBytes: tc.saltBytes, Passes: 1, MemoryKiB: 64 * 1024, Lanes: 4, KeyBytes: 32}
+			if len(derivations) != 1 || derivations[0] != want {
+				t.Errorf("derivations = %+v, want one %+v", derivations, want)
+			}
+		})
 	}
 }

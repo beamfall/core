@@ -52,57 +52,103 @@ func (s *Store) AuthBackoffUntil(ctx context.Context, action, key string, now ti
 	return backoffHorizon(failures, lastFailure, now, policy), nil
 }
 
+// AuthAttemptReservation identifies the rows written for one credential check.
+type AuthAttemptReservation struct {
+	action string
+	atMS   int64
+	rows   []reservedAuthAttempt
+}
+
+type reservedAuthAttempt struct {
+	id  int64
+	key string
+}
+
 // ReserveAuthAttempt checks every lane (action, key) in keys against policy
 // and, when none is locked, records a failed attempt on each at now, all in
-// one events transaction. It returns the latest lock horizon, recording
-// nothing, when any lane is locked. Reserving before the slow check stops
-// parallel requests from all passing the throttle before any failure lands;
-// a caller whose attempt then succeeds records a success, which resets the
-// lanes.
-func (s *Store) ReserveAuthAttempt(ctx context.Context, action string, keys []string, now time.Time, policy AuthBackoff) (time.Time, error) {
+// one events transaction. The returned reservation identifies the committed
+// rows. If any lane is locked, it returns the latest lock horizon and writes
+// nothing. Reserving before the slow check stops
+// parallel requests from all passing the throttle before any failure lands.
+func (s *Store) ReserveAuthAttempt(ctx context.Context, action string, keys []string, now time.Time, policy AuthBackoff) (AuthAttemptReservation, time.Time, error) {
 	if action == "" || len(keys) == 0 {
-		return time.Time{}, errors.New("auth attempt scope is required")
+		return AuthAttemptReservation{}, time.Time{}, errors.New("auth attempt scope is required")
 	}
 	for _, key := range keys {
 		if key == "" {
-			return time.Time{}, errors.New("auth attempt scope is required")
+			return AuthAttemptReservation{}, time.Time{}, errors.New("auth attempt scope is required")
 		}
 	}
 	if now.IsZero() {
-		return time.Time{}, errors.New("auth attempt time is required")
+		return AuthAttemptReservation{}, time.Time{}, errors.New("auth attempt time is required")
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return time.Time{}, err
+		return AuthAttemptReservation{}, time.Time{}, err
 	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
-		return time.Time{}, err
+		return AuthAttemptReservation{}, time.Time{}, err
 	}
 	defer tx.Rollback()
 	var locked time.Time
 	for _, key := range keys {
 		failures, lastFailure, err := consecutiveAuthFailuresIn(ctx, tx, action, key, now, policy)
 		if err != nil {
-			return time.Time{}, err
+			return AuthAttemptReservation{}, time.Time{}, err
 		}
 		if until := backoffHorizon(failures, lastFailure, now, policy); until.After(locked) {
 			locked = until
 		}
 	}
 	if !locked.IsZero() {
-		return locked, nil
+		return AuthAttemptReservation{}, locked, nil
 	}
+	reservation := AuthAttemptReservation{action: action, atMS: timeToMillis(now), rows: make([]reservedAuthAttempt, 0, len(keys))}
 	for _, key := range keys {
-		if _, err := tx.ExecContext(ctx,
-			"INSERT INTO auth_attempt(occurred_at_ms, action, key, success) VALUES (?, ?, ?, 0)",
-			timeToMillis(now), action, key,
-		); err != nil {
-			return time.Time{}, err
+		var id int64
+		if err := tx.QueryRowContext(ctx,
+			"INSERT INTO auth_attempt(occurred_at_ms, action, key, success) VALUES (?, ?, ?, 0) RETURNING id",
+			reservation.atMS, action, key,
+		).Scan(&id); err != nil {
+			return AuthAttemptReservation{}, time.Time{}, err
+		}
+		reservation.rows = append(reservation.rows, reservedAuthAttempt{id: id, key: key})
+	}
+	if err := tx.Commit(); err != nil {
+		return AuthAttemptReservation{}, time.Time{}, err
+	}
+	return reservation, time.Time{}, nil
+}
+
+// SettleAuthAttempt marks all of a successful reservation's rows in place.
+// Keeping their order preserves any later failures, even in the same millisecond.
+func (s *Store) SettleAuthAttempt(ctx context.Context, reservation AuthAttemptReservation) error {
+	if len(reservation.rows) == 0 {
+		return errors.New("auth attempt reservation is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	tx, err := s.eventsW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, row := range reservation.rows {
+		// Compaction can remove a row and SQLite can reuse its ID.
+		var id int64
+		if err := tx.QueryRowContext(ctx, `
+			UPDATE auth_attempt SET success = 1
+			WHERE id = ? AND action = ? AND key = ? AND occurred_at_ms = ? AND success = 0
+			RETURNING id`, row.id, reservation.action, row.key, reservation.atMS).Scan(&id); err != nil {
+			return err
 		}
 	}
-	return time.Time{}, tx.Commit()
+	return tx.Commit()
 }
 
 // backoffHorizon is the lock horizon for a lane with failures consecutive
