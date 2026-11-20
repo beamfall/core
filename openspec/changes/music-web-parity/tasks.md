@@ -1,0 +1,5 @@
+- [ ] Use localized listening wording for audio listings and actions.
+- [ ] Rank artist tracks by the active profile's plays and label unranked lists “Tracks”.
+- [ ] Link track menus to related Entities and show audio container card metadata.
+- [ ] Run the focused viewer tests, typecheck, lint and catalog parity check.
+- [ ] Archive the change after landing.
