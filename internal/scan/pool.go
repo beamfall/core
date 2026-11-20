@@ -63,7 +63,6 @@ type workerTask struct {
 
 	// Filled by the worker; the consumer must not read them before done closes.
 	stored      store.StoredFingerprint
-	retained    bool
 	fastPath    bool
 	fingerprint string
 	oshash      string
@@ -100,15 +99,10 @@ type probeOutcome struct {
 // (one write connection, ADR-0011 §1), so concurrent fills are safe alongside
 // the consumer's ordered writes.
 func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
-	stored, err := s.st.MediaFileFingerprintByPath(ctx, s.req.LibraryID, t.path)
+	stored, err := s.st.LibraryMediaFileFingerprintByPath(ctx, s.req.LibraryID, t.path)
 	if err != nil {
 		t.err = err
 		return
-	}
-	t.retained = false
-	if !stored.OK {
-		stored = s.retainedLegacy[t.path]
-		t.retained = stored.OK
 	}
 	t.stored = stored
 	// The stored mtime is millisecond-resolution (the store truncates on
@@ -152,7 +146,8 @@ func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
 // the fast path. If any recorded stat changed, the sample suffices.
 func (t *workerTask) readFingerprint(ctx context.Context, modTimeMS time.Time) (string, error) {
 	stored := t.stored
-	if strings.HasPrefix(stored.ContentFingerprint, "sha256:") &&
+	if stored.OK && strings.HasPrefix(stored.ContentFingerprint, "sha256:") &&
+		(stored.SizeBytes == 0 || stored.ModTime.IsZero()) &&
 		(stored.SizeBytes == 0 || stored.SizeBytes == t.info.size) &&
 		(stored.ModTime.IsZero() || stored.ModTime.Equal(modTimeMS)) {
 		fingerprint, err := legacyFileContent(ctx, t.path)

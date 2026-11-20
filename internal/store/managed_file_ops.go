@@ -423,7 +423,7 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 	if err != nil {
 		return ManagedPath{}, err
 	}
-	if err := refuseCatalogedDuplicate(ctx, plane.reader, target, fingerprint, legacyFingerprint); err != nil {
+	if err := refuseCatalogedDuplicate(ctx, plane.reader, fingerprint, legacyFingerprint); err != nil {
 		return ManagedPath{}, err
 	}
 	if err := admitStagedFileNoReplace(stagingPath, target); err != nil {

@@ -7,14 +7,16 @@ import type { GenericMediaInfo, LibrarySummary, MediaCredit } from "@/lib/graphq
 // where the token alone names the item and everything before it is cosmetic.
 // The token carries the 17 hex digits from a content-addressed Media ID
 // (store.mediaIDForFingerprint). Sampled IDs tag the digest with "sample1."
-// so the client can distinguish them from existing SHA-256 addresses. The readable words come from generic display fields only: the
-// Library's name, the item's own title, and who made it or what it belongs
+// so the client can distinguish them from existing SHA-256 addresses. The
+// readable words come from the Library's name, the item's own title, and who
+// made it or what it belongs
 // to. Any other ID shape (an encrypted Library's random IDs among them, whose
 // titles must not reach the address bar) keeps the bare-ID address. A stale
 // or bare address resolves through its token and is replaced by the
 // canonical one once the item is known.
 
 const CONTENT_ID = /^media-(sha256|sample1)-([0-9a-f]{17})$/;
+const BARE_SAMPLED_ID = /^media-sample1-([0-9a-f]{17})$/;
 const TOKEN = /(?:^|-)(sample1\.)?([0-9a-f]{17})$/;
 /** The readable words before the token are capped at this many characters. */
 export const MAX_SLUG_LENGTH = 60;
@@ -44,11 +46,8 @@ export function slugify(text: string, max = MAX_SLUG_LENGTH): string {
   return slug;
 }
 
-/**
- * mediaIdFromAddress reads the Media ID from the part of a watch or detail
- * path after the route: the token of a readable address, or a bare ID.
- */
-export function mediaIdFromAddress(rest: string | undefined): string {
+/** Reads the ID from the route suffix, with a legacy fallback for ambiguous old bookmarks. */
+export function mediaAddressIDs(rest: string | undefined): [string, string?] {
   const segments = (rest ?? "").split("/").filter(Boolean);
   const last = segments.at(-1) ?? "";
   let segment = last;
@@ -57,12 +56,12 @@ export function mediaIdFromAddress(rest: string | undefined): string {
   } catch {
     // A malformed escape is read as typed.
   }
-  // A library-qualified, hyphenated sample ID is also a legacy readable
-  // address for the title "Media Sample1". Sampled addresses use the dotted
-  // token under a library, leaving raw sampled IDs for unqualified links.
-  if (segments.length === 1 && CONTENT_ID.test(segment)) return segment;
+  // Older unqualified links for "Media Sample1" have the same spelling as a
+  // bare sampled ID. Under a Library, sampled links always use dotted tokens.
+  const bareSample = segments.length === 1 ? BARE_SAMPLED_ID.exec(segment) : null;
+  if (bareSample) return [segment, `media-sha256-${bareSample[1]}`];
   const token = TOKEN.exec(segment);
-  return token ? `media-${token[1] ? "sample1" : "sha256"}-${token[2]}` : segment;
+  return [token ? `media-${token[1] ? "sample1" : "sha256"}-${token[2]}` : segment];
 }
 
 /** The words an item is addressed by: who made it or what it belongs to, then its title. */

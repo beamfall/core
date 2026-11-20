@@ -34,7 +34,6 @@ type scanWalkState struct {
 	// legacyParserPaths are the unchanged files probed on the fast path so
 	// their parse settles legacy parser fields (CORE-2554).
 	legacyParserPaths map[string]struct{}
-	retainedLegacy    map[string]store.StoredFingerprint
 	req               Request
 	checkpoint        jobCheckpoint
 	scanStarted       time.Time

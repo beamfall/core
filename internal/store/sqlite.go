@@ -2878,12 +2878,16 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	}
 	defer tx.Rollback()
 
-	mediaID, _, err := existingMediaIDForImportTx(ctx, tx, imported)
-	if err != nil {
+	var mediaID MediaID
+	err = tx.QueryRowContext(ctx,
+		"SELECT media_id FROM media_file WHERE content_fingerprint = ? AND missing_at_ms IS NULL",
+		imported.ContentFingerprint,
+	).Scan(&mediaID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return Media{}, MediaFile{}, false, err
 	}
 	if imported.managedAdmission {
-		if err := refuseCatalogedDuplicate(ctx, tx, "", imported.ContentFingerprint, imported.legacyFingerprint); err != nil {
+		if err := refuseCatalogedDuplicate(ctx, tx, imported.ContentFingerprint, imported.legacyFingerprint); err != nil {
 			return Media{}, MediaFile{}, false, err
 		}
 	}
@@ -2976,24 +2980,6 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	return media, file, created, nil
 }
 
-// existingMediaIDForImportTx keeps a returning legacy file attached to its
-// original Media, including an opaque encrypted ID or a grouped Part/Version.
-func existingMediaIDForImportTx(ctx context.Context, tx *sql.Tx, imported ImportMediaFile) (MediaID, bool, error) {
-	var id MediaID
-	var missing bool
-	err := tx.QueryRowContext(ctx, `
-		SELECT media_id, missing_at_ms IS NOT NULL FROM media_file
-		WHERE content_fingerprint = ? AND (
-		  missing_at_ms IS NULL OR (? AND path = ? AND content_fingerprint GLOB 'sha256:*'
-		    AND media_id IN (SELECT id FROM media WHERE library_id = ? AND trashed_at_ms IS NULL))
-		)
-	`, imported.ContentFingerprint, imported.RestoreMissingLegacy, imported.Path, imported.LibraryID).Scan(&id, &missing)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", false, nil
-	}
-	return id, missing, err
-}
-
 // mediaHoldsOtherFilesInAnotherLibraryTx reports whether mediaID belongs to a
 // Library other than imported's and holds a live file other than imported's.
 func mediaHoldsOtherFilesInAnotherLibraryTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile) (bool, error) {
@@ -3011,18 +2997,16 @@ func mediaHoldsOtherFilesInAnotherLibraryTx(ctx context.Context, tx *sql.Tx, med
 }
 
 // refuseCatalogedDuplicate checks both schemes. Missing and trashed rows still
-// own their fingerprint. Before publishing an import, restrict the check to
-// live cataloged targets whose row would prevent cleanup after a refusal.
+// own their fingerprint. Use it before publication and in the admission transaction.
 func refuseCatalogedDuplicate(ctx context.Context, db interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, target, fingerprint, legacyFingerprint string) error {
+}, fingerprint, legacyFingerprint string) error {
 	var missingAt sql.NullInt64
 	err := db.QueryRowContext(ctx, `
 		SELECT missing_at_ms FROM media_file
 		WHERE content_fingerprint IN (?, ?)
-		  AND (? = '' OR EXISTS (SELECT 1 FROM media_file WHERE path = ? AND missing_at_ms IS NULL))
 		ORDER BY missing_at_ms
-		LIMIT 1`, fingerprint, legacyFingerprint, target, target,
+		LIMIT 1`, fingerprint, legacyFingerprint,
 	).Scan(&missingAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
@@ -3135,22 +3119,21 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 	}
 	defer tx.Rollback()
 
-	var mediaID, retainedMediaID MediaID
+	var mediaID MediaID
 	for _, part := range ordered {
-		id, missing, err := existingMediaIDForImportTx(ctx, tx, part.File)
+		err = tx.QueryRowContext(ctx,
+			"SELECT media_id FROM media_file WHERE content_fingerprint = ? AND missing_at_ms IS NULL",
+			part.File.ContentFingerprint,
+		).Scan(&mediaID)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
 		if err != nil {
 			return Media{}, nil, false, err
 		}
-		if id != "" && !missing {
-			mediaID = id
+		if mediaID != "" {
 			break
 		}
-		if retainedMediaID == "" {
-			retainedMediaID = id
-		}
-	}
-	if mediaID == "" {
-		mediaID = retainedMediaID
 	}
 	if mediaID == "" {
 		if plane.encrypted {

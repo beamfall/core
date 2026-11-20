@@ -96,19 +96,20 @@ equal size whose samples all match share an identity even when unsampled bytes d
 ### Requirement: Sampled Media IDs distinguish the fingerprint scheme
 
 A Media ID derived from a sample SHALL use `media-sample1-` and the first 17 digest digits.
-A readable web address for that ID SHALL tag the digest with `sample1.`. The hyphenated
-`media-sample1-` form is a bare ID at the route root. A Library-qualified address uses the dotted
-token for a sampled item. A legacy title whose slug is `media-sample1` keeps its Library-qualified
-SHA-256 address. When the Library slug is unavailable, new legacy addresses for that title use
-the unqualified SHA-256 ID.
-
-An unqualified `media-sample1-` address can also be a previously issued legacy bookmark. The
-viewer SHALL use the legacy SHA-256 ID with the same digest digits when the sampled ID is absent.
+A readable web address for that ID SHALL tag the digest with `sample1.`. At the route root, a
+bare `media-sample1-` address SHALL resolve to the SHA-256 ID with the same digest digits when
+the sampled ID is absent.
 
 #### Scenario: Identical digest prefix across schemes
 
 - **WHEN** a sampled Media ID and a legacy Media ID have the same 17 digest digits
 - **THEN** the viewer resolves their tagged and untagged addresses to their respective IDs
+
+#### Scenario: Generating addresses for a legacy title with the sampled ID slug
+
+- **WHEN** a legacy title has the slug `media-sample1`
+- **THEN** the viewer qualifies its readable SHA-256 address with the Library slug, or generates
+  the bare SHA-256 ID when the Library slug is unavailable
 
 #### Scenario: Previously issued unqualified legacy bookmark
 

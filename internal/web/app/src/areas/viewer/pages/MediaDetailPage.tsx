@@ -1,6 +1,6 @@
 import { ArrowLeft, ChevronRight, Play, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,7 +35,6 @@ import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { artFrameClass } from "../lib/cardArt";
 import { audioPeople, type ContainerLink, useContainerContext } from "../lib/containerContext";
-import { mediaIdFromAddress } from "../lib/mediaAddress";
 import {
   fetchMedia,
   fetchMediaDetailFields,
@@ -47,7 +46,7 @@ import {
 } from "../lib/mediaDetail";
 import { castHasDetail, creditsWithJob } from "../lib/people";
 import { streamFacts } from "../lib/streamFacts";
-import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
+import { useCanonicalMediaAddress, useMediaAddressID } from "../lib/useCanonicalMediaAddress";
 import {
   type CategoryFacts,
   type DetailScore,
@@ -103,7 +102,8 @@ const WRITER_JOBS = ["Writer", "Screenplay"];
 // with nothing to show offers a retry.
 export function MediaDetailPage() {
   // A readable address (CORE-2329) or a bare ID: the token names the item.
-  const mediaId = mediaIdFromAddress(useParams()["*"]);
+  const addressID = useMediaAddressID();
+  const mediaId = addressID ?? "";
   const location = useLocation();
   const navigate = useNavigate();
   const identity = useViewerIdentity();
@@ -113,7 +113,8 @@ export function MediaDetailPage() {
   const [detail, setDetail] = useState<MediaDetail | null>(
     () => readViewerCache<MediaDetail>(identity, cacheKey) ?? null,
   );
-  const [status, setStatus] = useState<Status>(detail ? "ready" : "loading");
+  const [detailStatus, setStatus] = useState<Status>(detail ? "ready" : "loading");
+  const status = addressID === null ? "loading" : detailStatus;
   const [attempt, setAttempt] = useState(0);
 
   const preview = readMediaPreview(location.state, identity, mediaId);

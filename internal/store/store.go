@@ -668,9 +668,6 @@ type ImportMediaFile struct {
 	// legacyFingerprint is the full staging digest used for duplicate checks
 	// during managed admission. Only ContentFingerprint is persisted.
 	legacyFingerprint string
-	// RestoreMissingLegacy permits a scan to reuse a retained legacy owner
-	// after verifying the file at its original path.
-	RestoreMissingLegacy bool
 }
 
 // ImportMediaFilePart is one file in a parser-confirmed Parts group. The scan
@@ -2886,12 +2883,19 @@ type StoredFingerprint struct {
 	OK                 bool
 }
 
-// MediaFileFingerprintByPath returns the stored content fingerprint and the
-// (size, mtime) it was hashed at for an available file at path (the scan
-// fast path). The scan reuses the fingerprint when the recorded stats match
-// and reads the file again when they differ. Like other file-plane reads,
-// this is server-internal.
-func (s *Store) MediaFileFingerprintByPath(ctx context.Context, libraryID LibraryID, path string) (StoredFingerprint, error) {
+// MediaFileFingerprintByPath reads the stored fingerprint and file stats for
+// an available path in the public catalog.
+func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (StoredFingerprint, error) {
+	return s.mediaFileFingerprintByPath(ctx, "", path)
+}
+
+// LibraryMediaFileFingerprintByPath reads an available file from the catalog
+// plane the scan will write to, including an unsealed encrypted Library.
+func (s *Store) LibraryMediaFileFingerprintByPath(ctx context.Context, libraryID LibraryID, path string) (StoredFingerprint, error) {
+	return s.mediaFileFingerprintByPath(ctx, libraryID, path)
+}
+
+func (s *Store) mediaFileFingerprintByPath(ctx context.Context, libraryID LibraryID, path string) (StoredFingerprint, error) {
 	if path == "" {
 		return StoredFingerprint{}, errors.New("path is required")
 	}
@@ -2900,13 +2904,17 @@ func (s *Store) MediaFileFingerprintByPath(ctx context.Context, libraryID Librar
 	if err := s.guardLocked(); err != nil {
 		return StoredFingerprint{}, err
 	}
-	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
-	if err != nil {
-		return StoredFingerprint{}, err
+	reader := s.catalogR
+	if libraryID != "" {
+		plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+		if err != nil {
+			return StoredFingerprint{}, err
+		}
+		reader = plane.reader
 	}
 	var fp StoredFingerprint
 	var mtimeMS int64
-	err = plane.reader.QueryRowContext(ctx, `
+	err := reader.QueryRowContext(ctx, `
 		SELECT content_fingerprint, size_bytes, mtime_ms
 		FROM media_file
 		WHERE path = ? AND missing_at_ms IS NULL

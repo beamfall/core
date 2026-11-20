@@ -1,6 +1,6 @@
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
@@ -11,8 +11,8 @@ import { clearViewerCache, deleteViewerCache, readViewerCache } from "@/lib/view
 import { CastRow } from "../components/CastRow";
 import { NotAvailable } from "../components/NotAvailable";
 import { ViewerActions } from "../components/ViewerActions";
-import { mediaIdFromAddress } from "../lib/mediaAddress";
 import { fetchMedia, type MediaDetail, mediaDetailCacheKey } from "../lib/mediaDetail";
+import { useMediaAddressID } from "../lib/useCanonicalMediaAddress";
 import "./media-detail.css";
 
 type Status = "loading" | "ready" | "missing" | "failed";
@@ -24,7 +24,8 @@ export const castCrewPath = (mediaId: string) => `/credits/${encodeURIComponent(
 // item, the cast first and then each department, in billing order. It paints
 // from the detail page's cached read for this identity and revalidates.
 export function CastCrewPage() {
-  const mediaId = mediaIdFromAddress(useParams()["*"]);
+  const addressID = useMediaAddressID();
+  const mediaId = addressID ?? "";
   const identity = useViewerIdentity();
   const location = useLocation();
   const navigate = useNavigate();
@@ -32,7 +33,8 @@ export function CastCrewPage() {
   const [media, setMedia] = useState<GenericMediaInfo | null>(
     () => readViewerCache<MediaDetail>(identity, mediaDetailCacheKey(mediaId))?.media ?? null,
   );
-  const [status, setStatus] = useState<Status>(media ? "ready" : "loading");
+  const [detailStatus, setStatus] = useState<Status>(media ? "ready" : "loading");
+  const status = addressID === null ? "loading" : detailStatus;
 
   useEffect(() => {
     if (!mediaId) return;

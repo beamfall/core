@@ -35,10 +35,6 @@ func skipExcludedScanDirectory(name string, isDir bool) error {
 
 func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, grabber FrameGrabber, parsers map[string]FilenameParser, interactiveSidecarExts []string, identifier Identifier, localExtractors map[string][]LocalExtractor, metadataHydrators map[string]MetadataHydrator, gov WorkerGovernor, imageDeriver ImageDeriver, req Request, checkpoint jobCheckpoint, scanStarted time.Time, progress func(jobCheckpoint, store.JobProgress) error) (Result, error) {
 	workers := scanWorkers(gov)
-	retainedLegacy, err := st.RetainedLegacyFingerprints(ctx, req.LibraryID, req.Root)
-	if err != nil {
-		return Result{}, err
-	}
 	state := scanWalkState{
 		ctx:                 ctx,
 		st:                  st,
@@ -47,7 +43,6 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		identifier:          identifier,
 		imageDeriver:        imageDeriver,
 		req:                 req,
-		retainedLegacy:      retainedLegacy,
 		checkpoint:          checkpoint,
 		scanStarted:         scanStarted,
 		progress:            progress,

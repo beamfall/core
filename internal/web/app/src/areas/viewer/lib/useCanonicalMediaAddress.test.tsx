@@ -1,11 +1,13 @@
-import { render } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
-import { useCanonicalMediaAddress } from "./useCanonicalMediaAddress";
+import { fetchMedia } from "./mediaDetail";
+import { useCanonicalMediaAddress, useMediaAddressID } from "./useCanonicalMediaAddress";
 
 const session = vi.hoisted(() => ({ revealed: false }));
 vi.mock("@/lib/session", () => ({
+  useViewerIdentity: () => "viewer",
   useSession: () => ({
     revealed: session.revealed,
     manifest: {
@@ -13,6 +15,7 @@ vi.mock("@/lib/session", () => ({
     },
   }),
 }));
+vi.mock("./mediaDetail", () => ({ fetchMedia: vi.fn() }));
 
 const ID = "media-sha256-a371bff46385f7ded";
 const media: GenericMediaInfo = {
@@ -27,6 +30,32 @@ function Harness({ route, enabled }: { route: "watch" | "media"; enabled?: boole
   useCanonicalMediaAddress(route, media, enabled);
   return null;
 }
+
+function WatchAddress() {
+  return <div>{useMediaAddressID()}</div>;
+}
+
+describe("legacy watch bookmark resolution", () => {
+  const bookmark = "/watch/media-sample1-a371bff46385f7ded";
+  const sampledID = "media-sample1-a371bff46385f7ded";
+
+  it.each([null, { ...media, id: sampledID }])(
+    "resolves the literal bookmark when the sampled lookup returns %j",
+    async (sample) => {
+      vi.mocked(fetchMedia).mockResolvedValueOnce(sample);
+      render(
+        <MemoryRouter initialEntries={[bookmark]}>
+          <Routes>
+            <Route path="/watch/*" element={<WatchAddress />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      const expectedID = sample ? sampledID : ID;
+      expect((await screen.findByText(expectedID)).textContent).toBe(expectedID);
+      expect(fetchMedia).toHaveBeenLastCalledWith(sampledID, expect.any(AbortSignal));
+    },
+  );
+});
 
 function arriveAt(path: string, route: "watch" | "media" = "watch", enabled = true) {
   window.history.replaceState({ idx: 3 }, "", path);

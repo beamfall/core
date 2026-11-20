@@ -4,13 +4,14 @@ import {
   canonicalMediaPath,
   librarySlug,
   MAX_SLUG_LENGTH,
-  mediaIdFromAddress,
+  mediaAddressIDs,
   mediaPath,
   readableMediaWords,
   slugify,
 } from "./mediaAddress";
 
 const ID = "media-sha256-a371bff46385f7ded";
+const mediaIdFromAddress = (rest: string | undefined) => mediaAddressIDs(rest)[0];
 const libraries: LibrarySummary[] = [
   { id: "library-music", title: "Music", pluginID: "music", previewClips: false },
   { id: "library-films", title: "Films & Shows", pluginID: null, previewClips: false },

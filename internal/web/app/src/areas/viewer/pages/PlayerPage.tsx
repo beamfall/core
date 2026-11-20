@@ -1,6 +1,6 @@
 import { AlertCircle, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { MAIN_CONTENT_ID, SkipLink } from "@/components/chrome/SkipLink";
 import { Button } from "@/components/ui/button";
 import { getIdentityEpochSignal } from "@/lib/api";
@@ -22,7 +22,6 @@ import type {
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
-import { mediaIdFromAddress } from "../lib/mediaAddress";
 import {
   adjustmentApplied,
   hasPicture,
@@ -45,7 +44,7 @@ import {
   SUBTITLE_APPEARANCE_KEYS,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
-import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
+import { useCanonicalMediaAddress, useMediaAddressID } from "../lib/useCanonicalMediaAddress";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
   type PlayQueueItem,
@@ -101,7 +100,7 @@ export function PlayerPage() {
   const t = useT();
   const location = useLocation();
   // A readable address (CORE-2329) or a bare ID: the token names the item.
-  const mediaId = mediaIdFromAddress(useParams()["*"]) || undefined;
+  const mediaId = useMediaAddressID();
   const host = usePlayerHost();
   const skip = new URLSearchParams(location.search).has("t");
   const carried =
@@ -126,7 +125,7 @@ export function PlayerPage() {
   }, [mediaId]);
 
   const current = decided && decided.mediaId === mediaId ? decided : null;
-  const feature = bypass || (current && current.items.length === 0);
+  const feature = mediaId !== null && (bypass || (current && current.items.length === 0));
   // A pre-play queue (or the wait for one) ends whatever the host plays: the
   // route is about to start another title.
   useLayoutEffect(() => {

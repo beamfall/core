@@ -101,7 +101,7 @@ func TestManagedMovesInvalidateScanFastPath(t *testing.T) {
 
 func fastPathModTime(t *testing.T, st *store.Store, path string) time.Time {
 	t.Helper()
-	stored, err := st.MediaFileFingerprintByPath(context.Background(), "library-local", path)
+	stored, err := st.MediaFileFingerprintByPath(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,8 +1,38 @@
-import { useEffect } from "react";
-import { useHref } from "react-router";
+import { useEffect, useState } from "react";
+import { useHref, useLocation, useParams } from "react-router";
+import { getIdentityEpochSignal } from "@/lib/api";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
-import { useSession } from "@/lib/session";
-import { canonicalMediaPath, type MediaRoute, mediaIdFromAddress, mediaPath } from "./mediaAddress";
+import { useSession, useViewerIdentity } from "@/lib/session";
+import { canonicalMediaPath, type MediaRoute, mediaAddressIDs, mediaPath } from "./mediaAddress";
+import { fetchMedia } from "./mediaDetail";
+
+/** Resolves an ambiguous bare address in the current viewer's catalog. */
+export function useMediaAddressID(): string | null {
+  const [preferred, legacy] = mediaAddressIDs(useParams()["*"]);
+  const identity = useViewerIdentity();
+  const { key } = useLocation();
+  const epoch = getIdentityEpochSignal();
+  const scope = JSON.stringify([key, identity, preferred]);
+  const [resolution, setResolution] = useState<{
+    scope: string;
+    epoch: AbortSignal | undefined;
+    id: string;
+  } | null>(null);
+  useEffect(() => {
+    if (!legacy) return;
+    const controller = new AbortController();
+    // A failed request leaves the preferred ID so the page can handle the error.
+    fetchMedia(preferred, controller.signal)
+      .then((media) => (media ? preferred : legacy))
+      .catch(() => preferred)
+      .then((id) => {
+        if (!controller.signal.aborted && !epoch?.aborted) setResolution({ scope, epoch, id });
+      });
+    return () => controller.abort();
+  }, [epoch, legacy, preferred, scope]);
+  if (!legacy) return preferred;
+  return resolution?.scope === scope && resolution.epoch === epoch ? resolution.id : null;
+}
 
 /**
  * useCanonicalMediaAddress rewrites the address bar to an item's canonical
@@ -32,7 +62,10 @@ export function useCanonicalMediaAddress(
     const current = window.location.pathname;
     // Only the page showing this item owns the address (a docked player
     // sits over another page).
-    if (!current.startsWith(root) || mediaIdFromAddress(current.slice(root.length)) !== media.id) {
+    if (
+      !current.startsWith(root) ||
+      !mediaAddressIDs(current.slice(root.length)).includes(media.id)
+    ) {
       return;
     }
     const target = revealed

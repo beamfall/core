@@ -112,15 +112,18 @@ func TestManagedImportScanInWindowCannotBypassDuplicateRefusal(t *testing.T) {
 	if err := os.WriteFile(first, []byte("shared-bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := scanImport(ctx, fx.st, first); err != nil {
-		t.Fatalf("seed scan import: %v", err)
-	}
-	before := fx.liveRows(t)[first]
 
 	second := filepath.Join(fx.root, "second.mkv")
 	var scanErr error
+	var before MediaFile
 	fx.st.managedImportStepHook = func(step string) {
 		if step == "catalog" {
+			// The duplicate appears after the publication precheck. Exercise
+			// the transactional check and the scan exclusion independently.
+			if err := scanImport(ctx, fx.st, first); err != nil {
+				t.Fatalf("concurrent scan import: %v", err)
+			}
+			before = fx.liveRows(t)[first]
 			scanErr = scanImport(ctx, fx.st, second)
 		}
 	}
@@ -143,6 +146,38 @@ func TestManagedImportScanInWindowCannotBypassDuplicateRefusal(t *testing.T) {
 	}
 	if _, ok := rows[second]; ok {
 		t.Fatalf("catalog has a row at the refused path %s: %#v", second, rows)
+	}
+}
+
+func TestManagedImportRefusesLegacyDuplicateBeforePublication(t *testing.T) {
+	ctx := t.Context()
+	fx := newManagedScanRaceFixture(t)
+	first := filepath.Join(fx.root, "first.mkv")
+	const payload = "legacy bytes"
+	if err := os.WriteFile(first, []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fingerprint, err := HashMediaFileContent(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, row, err := fx.st.ImportMediaFile(ctx, scanShapedImport(first, fingerprint))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx.st.managedImportStepHook = func(step string) {
+		t.Errorf("duplicate made it to step %q after publication", step)
+	}
+	_, err = fx.importManaged(ctx, fx.token(t, "second.mkv", payload))
+	var validation ValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("import error = %v, want duplicate validation error", err)
+	}
+	if _, err := os.Stat(filepath.Join(fx.root, "second.mkv")); !os.IsNotExist(err) {
+		t.Fatalf("duplicate destination should be absent: %v", err)
+	}
+	if got := fx.liveRows(t)[first]; got.MediaID != row.MediaID || got.ContentFingerprint != fingerprint {
+		t.Fatalf("legacy row changed: %+v", got)
 	}
 }
 
