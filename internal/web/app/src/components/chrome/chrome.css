@@ -102,7 +102,8 @@
   position: sticky;
   top: 60px;
   flex: none;
-  width: 236px;
+  /* The person's chosen width (CORE-2734), set by the shell. */
+  width: var(--bf-sidebar-width, 200px);
   height: calc(100vh - 60px);
   height: calc(100dvh - 60px);
   overflow-y: auto;
@@ -116,6 +117,54 @@
 
 .bf-sidebar.is-collapsed {
   width: 72px;
+}
+
+/* The resize handle straddles the sidebar's border (CORE-2734): a wide, invisible
+ * hit area whose centre line brightens on hover, focus and drag. */
+.bf-sidebar-resizer {
+  position: sticky;
+  top: 60px;
+  z-index: 2;
+  flex: none;
+  width: 10px;
+  height: calc(100vh - 60px);
+  height: calc(100dvh - 60px);
+  /* Starts on the sidebar's border and reaches into the content, so the
+     sidebar's own scrollbar stays grabbable. */
+  margin-inline: -1px -9px;
+  cursor: col-resize;
+  touch-action: none;
+  /* Transparent, so forced-colors mode still draws a focus ring. */
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+}
+
+.bf-sidebar-resizer::after {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 2px;
+  content: "";
+  background: transparent;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-sidebar-resizer:hover::after,
+.bf-body.is-resizing .bf-sidebar-resizer::after {
+  background: var(--border-strong);
+}
+
+.bf-sidebar-resizer:focus-visible::after {
+  background: var(--focus-ring);
+}
+
+.bf-body.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.bf-body.is-resizing .bf-sidebar {
+  transition: none;
 }
 
 .bf-side-list {

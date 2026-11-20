@@ -26,7 +26,10 @@ async function gridColumns(page: Page): Promise<number> {
 }
 
 test.describe("poster size", () => {
-  test.use({ viewport: { width: 1280, height: 900 } });
+  // Auto-fill counts step at fixed widths, so pick one where Large, Medium and
+  // Small each land on a different count beside the default 200px sidebar
+  // (CORE-2734); at 1280 Large and Medium both fit six.
+  test.use({ viewport: { width: 1240, height: 900 } });
 
   test("smaller sizes fit more columns and the choice persists", async ({ page }) => {
     const errors = collectFatalErrors(page);

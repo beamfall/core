@@ -11,6 +11,8 @@ export const sidebarStrings = {
     sidebarMoved: "{name} moved to position {position} of {count}",
     sidebarSaveFailed: "Your sidebar could not be saved. Try again.",
     sidebarDragHint: "Drag to reorder",
+    sidebarResize: "Resize sidebar",
+    sidebarResizeHint: "Drag to resize, double-click to reset",
   },
   fr: {
     sidebarEdit: "Modifier les bibliothèques",
@@ -23,6 +25,8 @@ export const sidebarStrings = {
     sidebarMoved: "{name} déplacé en position {position} sur {count}",
     sidebarSaveFailed: "Votre barre latérale n’a pas pu être enregistrée. Réessayez.",
     sidebarDragHint: "Faire glisser pour réordonner",
+    sidebarResize: "Redimensionner la barre latérale",
+    sidebarResizeHint: "Faites glisser pour redimensionner, double-cliquez pour rétablir",
   },
   de: {
     sidebarEdit: "Bibliotheken bearbeiten",
@@ -36,6 +40,8 @@ export const sidebarStrings = {
     sidebarSaveFailed:
       "Ihre Seitenleiste konnte nicht gespeichert werden. Versuchen Sie es erneut.",
     sidebarDragHint: "Zum Neuordnen ziehen",
+    sidebarResize: "Seitenleiste skalieren",
+    sidebarResizeHint: "Ziehen zum Skalieren, Doppelklick zum Zurücksetzen",
   },
   es: {
     sidebarEdit: "Editar bibliotecas",
@@ -48,6 +54,8 @@ export const sidebarStrings = {
     sidebarMoved: "{name} movido a la posición {position} de {count}",
     sidebarSaveFailed: "No se pudo guardar la barra lateral. Inténtalo de nuevo.",
     sidebarDragHint: "Arrastra para reordenar",
+    sidebarResize: "Cambiar el tamaño de la barra lateral",
+    sidebarResizeHint: "Arrastra para cambiar el tamaño; doble clic para restablecer",
   },
   pt: {
     sidebarEdit: "Editar bibliotecas",
@@ -60,5 +68,7 @@ export const sidebarStrings = {
     sidebarMoved: "{name} movido para a posição {position} de {count}",
     sidebarSaveFailed: "Não foi possível guardar a barra lateral. Tente novamente.",
     sidebarDragHint: "Arraste para reordenar",
+    sidebarResize: "Redimensionar a barra lateral",
+    sidebarResizeHint: "Arraste para redimensionar; clique duas vezes para repor",
   },
 } as const;
