@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
-import type { FieldFilters, LibrarySummary, Section, SourceItem } from "@/lib/graphql/types";
+import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
+import { fetchHomeLibraries, type HomeLibrary } from "@/lib/graphql/viewer";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { clearViewerCache } from "@/lib/viewerCache";
@@ -18,21 +19,24 @@ import {
 } from "./HydratedSection";
 import { SectionHeading, SectionView, type SeeAllTarget } from "./SectionView";
 
-const HOME_WINDOW = { limit: 200, offset: 0 };
-
 interface HomeRecentFeed {
-  aggregate: SourceItem[];
-  scoped: ReadonlyMap<string, SourceItem[]>;
+  libraries: readonly HomeLibrary[];
+  shelves: ReadonlyMap<string, SourceItem[]>;
+  fallbackItems: SourceItem[];
   pending: number;
   failed: boolean;
 }
 
-const EMPTY_FEED: HomeRecentFeed = { aggregate: [], scoped: new Map(), pending: 0, failed: false };
-const itemKey = (item: SourceItem) => `${item.kind}:${item.id}`;
+const EMPTY_FEED: HomeRecentFeed = {
+  libraries: [],
+  shelves: new Map(),
+  fallbackItems: [],
+  pending: 0,
+  failed: false,
+};
 
 export function useHomeRecent(
   section: Section | undefined,
-  libraries: readonly LibrarySummary[],
   extraFilters: FieldFilters | null,
   attempt: number,
   onConnectionLost: () => void,
@@ -41,17 +45,15 @@ export function useHomeRecent(
   const engagementEpoch = useEngagementEpoch();
   // A new identity, revalidation or retry retires the previous request and its artwork.
   const epoch = JSON.stringify([identity, engagementEpoch, attempt, extraFilters]);
-  const request = useMemo(
-    () => ({ section, libraries, extraFilters, epoch }),
-    [section, libraries, extraFilters, epoch],
-  );
+  const request = useMemo(() => ({ section, extraFilters, epoch }), [section, extraFilters, epoch]);
   const [result, setResult] = useState<{ request: typeof request; feed: HomeRecentFeed }>();
 
   useEffect(() => {
-    if (!request.section) return;
+    const { section } = request;
+    if (!section) return;
     const controller = new AbortController();
     const context = { libraryID: "", entityID: "", extraFilters: request.extraFilters, home: true };
-    let feed = { ...EMPTY_FEED, pending: 1 + request.libraries.length };
+    let feed = { ...EMPTY_FEED, pending: 1 };
     const publish = (next: HomeRecentFeed) => {
       feed = next;
       setResult({ request, feed });
@@ -65,8 +67,7 @@ export function useHomeRecent(
       publish({ ...feed, pending: 0, failed: true });
       onConnectionLost();
     }, SECTION_LOAD_TIMEOUT_MS);
-    const settle = (next: HomeRecentFeed) => {
-      const pending = feed.pending - 1;
+    const settle = (next: HomeRecentFeed, pending = feed.pending - 1) => {
       if (!pending) window.clearTimeout(timeout);
       publish({ ...next, pending });
     };
@@ -81,47 +82,51 @@ export function useHomeRecent(
       }
       onConnectionLost();
     };
-    fetchSectionItems(request.section, { ...context, paging: HOME_WINDOW }, controller.signal).then(
-      (aggregate) => {
-        if (!controller.signal.aborted) settle({ ...feed, aggregate });
-      },
-      fail,
-    );
-    for (const { id } of request.libraries) {
-      fetchSectionItems(request.section, { ...context, libraryID: id }, controller.signal).then(
-        (items) => {
-          if (controller.signal.aborted) return;
-          const scoped = new Map(feed.scoped).set(id, items);
-          settle({ ...feed, scoped });
-        },
-        fail,
-      );
-    }
+    fetchHomeLibraries(controller.signal).then((libraries) => {
+      if (controller.signal.aborted) return;
+      if (libraries === null) {
+        // Core already applies ShowOnHome to its aggregate read.
+        fetchSectionItems(section, context, controller.signal).then((fallbackItems) => {
+          if (!controller.signal.aborted) settle({ ...feed, fallbackItems });
+        }, fail);
+        return;
+      }
+      const visible = libraries.filter((library) => library.showOnHome !== false);
+      settle({ ...feed, libraries: visible }, visible.length);
+      for (const { id } of visible) {
+        fetchSectionItems(section, { ...context, libraryID: id }, controller.signal).then(
+          (items) => {
+            if (controller.signal.aborted) return;
+            const shelves = items.length ? new Map(feed.shelves).set(id, items) : feed.shelves;
+            settle({ ...feed, shelves });
+          },
+          fail,
+        );
+      }
+    }, fail);
     return stop;
   }, [request, onConnectionLost]);
 
   return useMemo(() => {
-    const { aggregate, scoped, pending, failed } =
+    const { libraries, shelves, fallbackItems, pending, failed } =
       result?.request === request
         ? result.feed
         : { ...EMPTY_FEED, pending: Number(Boolean(section)) };
-    // An aggregate Home request applies ShowOnHome. Scoped requests currently
-    // ignore it (CORE-1496), so require a shared item before showing that shelf.
-    const homeItems = new Set(aggregate.map(itemKey));
-    const shelves = new Map(
-      [...scoped].filter(([, items]) => items.some((item) => homeItems.has(itemKey(item)))),
-    );
     const state: SectionHydrationState = pending
       ? "loading"
-      : shelves.size
+      : shelves.size || fallbackItems.length
         ? "visible"
         : failed
           ? "failed"
           : "empty";
     return {
       state,
+      libraries,
       shelves,
-      heroItems: [...aggregate, ...[...shelves.values()].flat()],
+      fallbackItems,
+      heroItems: fallbackItems.length
+        ? fallbackItems
+        : libraries.flatMap(({ id }) => shelves.get(id) ?? []),
       pending: Boolean(pending),
       failed,
       epoch: request.epoch,
@@ -133,13 +138,15 @@ export function HomeRecentShelves({
   section,
   libraries,
   shelves,
+  fallbackItems,
   pending,
   seeAll,
   navigationID,
 }: {
   section: Section;
-  libraries: readonly LibrarySummary[];
+  libraries: readonly HomeLibrary[];
   shelves: ReadonlyMap<string, SourceItem[]>;
+  fallbackItems: SourceItem[];
   pending: boolean;
   seeAll?: SeeAllTarget;
   navigationID?: string;
@@ -147,6 +154,19 @@ export function HomeRecentShelves({
   const t = useT();
   const locale = useDisplayLocale();
   const navigate = useNavigate();
+  const groupItems = (items: SourceItem[]) =>
+    groupByContainer(items, (count) => t("cardNewCount", { count }));
+  if (fallbackItems.length) {
+    return (
+      <SectionView
+        section={section}
+        items={groupItems(fallbackItems)}
+        seeAll={seeAll}
+        navigationID={navigationID}
+        intrinsicArtwork
+      />
+    );
+  }
   if (!shelves.size) return pending ? <SectionSkeleton hero={false} /> : null;
   return (
     <section className="flex flex-col gap-6">
@@ -161,7 +181,7 @@ export function HomeRecentShelves({
           <SectionView
             key={library.id}
             section={{ ...section, id: `${section.id}:${library.id}`, title: library.title }}
-            items={groupByContainer(items, (count) => t("cardNewCount", { count }))}
+            items={groupItems(items)}
             navigationID={navigationID}
             headingLevel="h3"
             intrinsicArtwork

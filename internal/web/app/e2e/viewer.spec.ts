@@ -75,6 +75,20 @@ test.describe("viewer", () => {
     });
     await page.route("**/api/graphql", async (route) => {
       const { query, variables } = route.request().postDataJSON();
+      if (query.startsWith("query HomeLibraries ")) {
+        // Core currently restricts the real resolver to Admin Sessions. Exercise
+        // the Viewer rendering when it can read the same library visibility fields.
+        return route.fulfill({
+          json: {
+            data: {
+              libraries: [
+                { id: "library-local", title: "Local Library", showOnHome: true },
+                { id: "library-extra", title: "Second Library", showOnHome: true },
+              ],
+            },
+          },
+        });
+      }
       if (!query.startsWith("query SourceItems(")) return route.fallback();
       if (variables.kind === "continue-watching") {
         return route.fulfill({
@@ -108,9 +122,8 @@ test.describe("viewer", () => {
           artwork: { poster: "/core-1154-art/landscape" },
         },
       ];
-      const items = !variables.libraryID
-        ? [...firstLibrary, ...secondLibrary]
-        : variables.libraryID === "library-local"
+      const items =
+        variables.libraryID === "library-local"
           ? firstLibrary
           : variables.libraryID === "library-extra"
             ? secondLibrary
@@ -119,6 +132,7 @@ test.describe("viewer", () => {
     });
 
     await page.goto("/web/");
+    await expect(page.locator(".bf-hero img")).toHaveAttribute("src", /\/core-1154-art\/square/);
     await expect(page.locator(".bf-hero")).toBeVisible();
     await expect(page.getByRole("list", { name: "Continue Watching" })).toBeVisible();
     const shelf = page

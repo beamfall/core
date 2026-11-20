@@ -6,7 +6,7 @@
 // (internal/web/static/app.js) — they are contract-tested server-side, so they
 // must not be "improved" or reformatted.
 
-import { getManifest, graphql } from "@/lib/api";
+import { ApiError, getManifest, graphql } from "@/lib/api";
 import { rebindCompatibility } from "@/lib/compat";
 import type {
   ClientPref,
@@ -18,6 +18,7 @@ import type {
   GenericMediaInfo,
   ItemStateInfo,
   ItemTarget,
+  LibraryInfo,
   MetadataAttribution,
   MyDataDeleteResult,
   MyDataSummary,
@@ -49,6 +50,34 @@ import type {
 /** Fetch the Navigation Manifest (the Viewer's nav + layout document). */
 export function fetchManifest(signal?: AbortSignal): Promise<NavigationManifest> {
   return getManifest<NavigationManifest>(signal);
+}
+
+export type HomeLibrary = Pick<LibraryInfo, "id" | "title" | "showOnHome">;
+
+const HOME_LIBRARIES_QUERY = "query HomeLibraries { libraries { id title showOnHome } }";
+
+/** Returns null when Core requires an Admin Session for the visibility read. */
+export async function fetchHomeLibraries(signal?: AbortSignal): Promise<HomeLibrary[] | null> {
+  try {
+    const data = await graphql<{ libraries: HomeLibrary[] | null }>(
+      HOME_LIBRARIES_QUERY,
+      {},
+      signal,
+      {
+        adminUnlock: false,
+      },
+    );
+    return data.libraries ?? [];
+  } catch (error) {
+    if (
+      error instanceof ApiError &&
+      error.status === 403 &&
+      error.message === "admin session required"
+    ) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 // --- Session, profiles, reveal (ADR-0004) ---------------------------------

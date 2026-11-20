@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigationType } from "react-router";
 import { ErrorState } from "@/components/beamfall/workbench";
 import { Button, buttonVariants } from "@/components/ui/button";
-import type { FieldFilters, Layout, LibrarySummary, Section } from "@/lib/graphql/types";
+import type { FieldFilters, Layout, Section } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { applyRenderFocus } from "../lib/renderFocus";
@@ -12,8 +12,6 @@ import { FirstScanButton } from "./FirstScanButton";
 import { HomeArtworkHero, HomeRecentShelves, useHomeRecent } from "./HomeRecent";
 import { HydratedSection, type SectionHydrationState } from "./HydratedSection";
 import type { SeeAllTarget } from "./SectionView";
-
-const NO_LIBRARIES: readonly LibrarySummary[] = [];
 
 // Renders one Layout's Sections in declared order, ported from the vanilla
 // renderLayout (app.js). Unknown Section kinds are silently dropped and the
@@ -69,15 +67,17 @@ export function LayoutView({
 
   const { sections, homeRecent, homeHero } = useMemo(() => {
     const known = (layout?.sections || []).filter((section) => SECTION_KINDS.has(section.kind));
+    const renderable = known.slice(0, MAX_RENDERED_SECTIONS);
     const homeRecent =
       home && !libraryID
-        ? known.find(
+        ? renderable.find(
             (section) => section.kind === "shelf" && section.source?.kind === "recently-added",
           )
         : undefined;
     const homeHero: Section | undefined =
       homeRecent &&
-      !known.slice(0, MAX_RENDERED_SECTIONS).some((section) => section.kind === "hero")
+      renderable.indexOf(homeRecent) < MAX_RENDERED_SECTIONS - 1 &&
+      !renderable.some((section) => section.kind === "hero")
         ? { ...homeRecent, id: `${homeRecent.id}:featured`, kind: "hero", title: t("homeFeatured") }
         : undefined;
     const ordered = homeHero ? [homeHero, ...known] : known;
@@ -85,21 +85,8 @@ export function LayoutView({
       // The diagnostic omits Section ids, titles, counts, and Reveal state.
       console.warn("Beamfall rendering diagnostic: SectionLimitExceeded");
     }
-    const sections = ordered.slice(0, MAX_RENDERED_SECTIONS);
-    return {
-      sections,
-      homeRecent: homeRecent && sections.includes(homeRecent) ? homeRecent : undefined,
-      homeHero,
-    };
+    return { sections: ordered.slice(0, MAX_RENDERED_SECTIONS), homeRecent, homeHero };
   }, [layout, home, libraryID, t]);
-
-  const homeLibraries = useMemo(() => {
-    if (!homeRecent || !manifest) return NO_LIBRARIES;
-    const libraryIDs = new Set(
-      manifest.navigation.filter((node) => node.view === "layout").map((node) => node.libraryID),
-    );
-    return manifest.libraries.filter((library) => libraryIDs.has(library.id));
-  }, [homeRecent, manifest]);
 
   // Map each filter-bar to the index of the section it narrows: the next
   // item-bearing section that is neither a filter-bar nor a hero (buildFilterBar).
@@ -130,8 +117,7 @@ export function LayoutView({
 
   const reportConnectionLost = useCallback(() => setConnectionLost(true), []);
   const recentFeed = useHomeRecent(
-    homeRecent ?? homeHero,
-    homeLibraries,
+    homeRecent,
     homeRecent ? extraFiltersForIndex(sections.indexOf(homeRecent)) : null,
     attempt,
     reportConnectionLost,
@@ -303,8 +289,9 @@ export function LayoutView({
               <HomeRecentShelves
                 key={section.id}
                 section={section}
-                libraries={homeLibraries}
+                libraries={recentFeed.libraries}
                 shelves={recentFeed.shelves}
+                fallbackItems={recentFeed.fallbackItems}
                 pending={recentFeed.pending}
                 seeAll={buildSeeAll?.(section)}
                 navigationID={navigationID}

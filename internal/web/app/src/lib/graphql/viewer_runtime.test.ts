@@ -1,7 +1,37 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { fetchSourceItems } from "./viewer";
+import { setAdminUnlockHandler } from "@/lib/api";
+import { fetchHomeLibraries, fetchSourceItems } from "./viewer";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  setAdminUnlockHandler(undefined);
+  vi.unstubAllGlobals();
+});
+
+it("reads Home visibility from the scoped libraries selection", async () => {
+  const libraries = [{ id: "quiet", title: "Quiet Library", showOnHome: true }];
+  const request = vi.fn(async (_url: string, init?: RequestInit) => {
+    expect(JSON.parse(init?.body as string).query).toContain("libraries { id title showOnHome }");
+    return new Response(JSON.stringify({ data: { libraries } }));
+  });
+  vi.stubGlobal("fetch", request);
+
+  await expect(fetchHomeLibraries()).resolves.toEqual(libraries);
+  expect(request).toHaveBeenCalledOnce();
+});
+
+it("handles a visibility read refusal without prompting for Admin unlock", async () => {
+  const unlock = vi.fn(async () => true);
+  setAdminUnlockHandler(unlock);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () => new Response(JSON.stringify({ errors: [{ message: "admin session required" }] })),
+    ),
+  );
+
+  await expect(fetchHomeLibraries()).resolves.toBeNull();
+  expect(unlock).not.toHaveBeenCalled();
+});
 
 it("requests stored card runtime and playback eligibility", async () => {
   let query = "";
