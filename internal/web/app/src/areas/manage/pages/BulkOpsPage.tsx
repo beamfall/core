@@ -126,7 +126,12 @@ function BulkEditSection({
       .split(",")
       .map((id) => id.trim())
       .filter(Boolean)
-      .map((id) => (id.startsWith("sample1.") ? mediaAddressIDs(id)[0] : id));
+      .map((id) => {
+        const address = id.split(/[?#]/, 1)[0];
+        return /(?:^|[-/])sample1\.[0-9a-f]{17}\/?$/.test(address)
+          ? mediaAddressIDs(address)[0]
+          : id;
+      });
 
   const fields = (): MediaFieldInput[] => {
     const name = fieldName.trim();

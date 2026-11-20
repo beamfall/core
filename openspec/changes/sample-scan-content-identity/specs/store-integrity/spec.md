@@ -2,9 +2,10 @@
 
 ### Requirement: Managed file identity comes from file content
 
-Managed import and convert SHALL store `sample1:` for new rows and compute the full SHA-256 during
-staging. Either digest matching a row at another path or in another Library SHALL cause a validation
-error, including for missing or trashed rows, and preserve the existing file and Media.
+Managed staging SHALL compute both digests and store `sample1:` on new rows. Either digest matching
+a row at another path or Library SHALL fail validation and leave the existing file and Media intact,
+including missing or trashed rows. The first scan SHALL reuse the identity, record stats and OSHash
+even if probing fails, and attempt stream and attachment inventory.
 
 #### Scenario: Same bytes at two paths
 
@@ -18,19 +19,13 @@ error, including for missing or trashed rows, and preserve the existing file and
 
 #### Scenario: New bytes at a reused path
 
-- **WHEN** a file with a different sampled identity is imported at a deleted file's path
+- **WHEN** a different sampled identity is admitted at a deleted file's path
 - **THEN** the replacement gets a different Media
 
 #### Scenario: Converted artifact
 
 - **WHEN** managed convert admits a converted artifact
-- **THEN** its media file carries the sampled identity of the artifact's bytes
-
-#### Scenario: Managed artifact scanned after admission
-
-- **WHEN** a scan discovers bytes previously admitted by managed import or convert
-- **THEN** it finds the existing identity, records stats and OSHash, and attempts embedded stream
-  and attachment inventory. An unavailable or failing probe does not prevent storing OSHash.
+- **THEN** its row carries the sampled identity of the artifact's bytes
 
 #### Scenario: Managed reimport at an existing legacy path
 
@@ -43,10 +38,11 @@ error, including for missing or trashed rows, and preserve the existing file and
 
 ### Requirement: Scans bound the reads used for content identity
 
-`sample1:` SHALL precede the lowercase hex SHA-256 of the eight-byte unsigned big-endian file size
-and the sampled bytes in offset order. Files up to 917,504 bytes SHALL contribute all bytes. Larger
-files SHALL contribute fourteen 65,536-byte chunks at floor(i × (size − 65,536) / 13) for i = 0…13.
-Equal sizes and samples share an identity even when unsampled bytes differ.
+`sample1:` SHALL prefix the lowercase SHA-256 hex digest of the unsigned 8-byte big-endian size
+followed by the sampled bytes. Files up to 917,504 bytes SHALL contribute all bytes. Larger files
+SHALL contribute 14 chunks of 65,536 bytes at floor(i × (size − 65,536) / 13) in order for i = 0…13.
+Deduplication and moves SHALL compare exact fingerprints. Equal sizes and samples share an identity.
+Mtime comparisons SHALL round Unix nanoseconds toward zero to milliseconds.
 
 #### Scenario: First scan of a large file
 
@@ -58,9 +54,6 @@ Equal sizes and samples share an identity even when unsampled bytes differ.
 - **WHEN** the path, recorded size and recorded mtime match a legacy row
 - **THEN** the scan reuses the legacy identity without reading bytes for fingerprinting
 
-Mtime comparisons SHALL round Unix nanoseconds toward zero to catalog milliseconds, including
-timestamps before the Unix epoch.
-
 #### Scenario: Legacy file in an unsealed encrypted Library
 
 - **WHEN** a scan finds the unchanged file after the Library is sealed and unsealed
@@ -70,16 +63,9 @@ timestamps before the Unix epoch.
 #### Scenario: Legacy file at the same path with incomplete stats
 
 - **WHEN** an available legacy row has an unrecorded size or mtime and its recorded stats still match
-- **THEN** the scan compares the full legacy digest once at that path and keeps the identity and
-  records the stats if it matches, or uses the sampled identity if it differs
-
-Scan deduplication and move detection SHALL compare exact fingerprint strings. The one-time
-comparison of an available legacy row with incomplete stats is the sole full-digest scan path.
-
-#### Scenario: Verified Unix-epoch mtime
-
-- **WHEN** the one-time legacy comparison verifies a file whose mtime rounds to the Unix epoch
-- **THEN** reopening preserves the timestamp and the next unchanged scan reuses the legacy identity without reads
+- **THEN** the scan compares the full digest once at that path, the sole full-digest scan case
+- **AND** a match keeps the identity and records stats that survive reopening, including a verified
+  Unix-epoch mtime, while a mismatch uses the sampled identity
 
 #### Scenario: Legacy file moved, changed, or returns after a missing mark
 
@@ -99,29 +85,21 @@ digits. Legacy Media IDs SHALL retain their existing scheme and length.
 
 ### Requirement: Duplicate checks recognize both fingerprint schemes
 
-Before publication, proxy promotion and qBittorrent ingest SHALL treat a match on either fingerprint in the live public catalog as a duplicate.
-Missing files and trashed Media and Libraries SHALL be excluded. Proxy promotion SHALL repeat the lookup in the publication transaction and keep a duplicate archive only when a bounded query verifies ownership.
-The open tee SHALL match the completed tee's inode, size and mtime before and after fingerprinting.
+Proxy promotion and qBittorrent ingest SHALL check both digests among live public files, excluding
+trashed Media and Libraries. Promotion SHALL recheck in its publication transaction and verify
+ownership with a bounded lookup before keeping a duplicate archive. The opened tee SHALL match
+the completed tee's inode, size and mtime before and after fingerprinting. Ingest SHALL reject a
+changed payload before lookup or relocation. Proxy archives SHALL use the sampled identity.
 
 #### Scenario: Duplicate in either scheme
 
 - **WHEN** either digest matches a live row, including a sample with different unsampled bytes
 - **THEN** the existing Media and file remain intact, without publishing another file
 
-#### Scenario: Download path changes during fingerprinting
-
-- **WHEN** the download path no longer names the validated descriptor used to compute both digests
-- **THEN** ingest reports a fingerprint failure before the duplicate lookup or relocation
-
 #### Scenario: Concurrent sampled admission during promotion
 
 - **WHEN** a matching sample is cataloged before the promotion transaction starts
 - **THEN** promotion skips the duplicate and keeps the existing file, even at the archive destination
-
-#### Scenario: A scan discovers a copy of a promoted archive
-
-- **WHEN** proxy promotion publishes an archive and a scan later discovers identical bytes
-- **THEN** the scan finds the promoted Media by its `sample1:` fingerprint
 
 ### Requirement: Export manifests verify complete originals
 

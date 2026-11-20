@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -468,8 +469,9 @@ func TestScanPreservesEncryptedLegacyMediaAfterSeal(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, file, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-			LibraryID: req.LibraryID, Path: path, Title: name, Container: "mp4", Codec: "h264",
-			ContentFingerprint: fingerprint, SizeBytes: info.Size(), ModTime: info.ModTime(),
+			LibraryID: req.LibraryID, Path: path, Title: name, Container: "mp4", Codec: "hevc",
+			DurationSecondsHint: 123,
+			ContentFingerprint:  fingerprint, SizeBytes: info.Size(), ModTime: info.ModTime(),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -503,8 +505,12 @@ func TestScanPreservesEncryptedLegacyMediaAfterSeal(t *testing.T) {
 		t.Errorf("unchanged encrypted path was sampled: %s", path)
 		return "", os.ErrInvalid
 	}
-	if _, err := ScanWithWorkerGovernor(ctx, st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(4), req); err != nil {
+	prober := &countingProber{probe: ffmpeg.Probe{HasVideo: true, VideoCodec: "h264", DurationSeconds: 9}}
+	if _, err := ScanWithWorkerGovernor(ctx, st, prober, nil, nil, nil, nil, nil, nil, fixedGovernor(4), req); err != nil {
 		t.Fatal(err)
+	}
+	if prober.calls != 1 {
+		t.Fatalf("probe calls = %d, want one for the returning file only", prober.calls)
 	}
 	files, err := st.MediaFilesForLibrary(ctx, req.LibraryID)
 	if err != nil || len(files) != len(want) {
@@ -520,6 +526,10 @@ func TestScanPreservesEncryptedLegacyMediaAfterSeal(t *testing.T) {
 		}
 		if before.MediaID != file.MediaID || before.ContentFingerprint != file.ContentFingerprint {
 			t.Fatalf("encrypted file after rescan = %+v, want identity from %+v", file, before)
+		}
+		media, err := st.Media(ctx, file.MediaID, store.LibraryFilter{AllowedIDs: []store.LibraryID{req.LibraryID}, Revealed: true})
+		if err != nil || media.Codec != "hevc" || media.DurationSeconds != 123 {
+			t.Fatalf("encrypted probe facts after rescan = %s, %ds, err = %v", media.Codec, media.DurationSeconds, err)
 		}
 	}
 }

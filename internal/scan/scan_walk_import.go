@@ -49,7 +49,7 @@ func (s *scanWalkState) refreshMovedRow(task *workerTask) error {
 		return nil
 	}
 	fastPath := task.fastPath
-	stored, err := s.st.LibraryMediaFileFingerprintByPath(s.ctx, s.req.LibraryID, task.path)
+	stored, err := s.st.MediaFileFingerprintByPath(s.ctx, task.path)
 	if err != nil {
 		return err
 	}
@@ -210,6 +210,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		Container:          containerFromPath(path),
 		Codec:              "h264",
 		ContentFingerprint: fingerprint,
+		KeepProbeFacts:     task.keepProbeFacts,
 		OSHash:             task.oshash,
 		SizeBytes:          task.info.size,
 		ModTime:            task.info.modTime.UTC(),

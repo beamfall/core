@@ -619,6 +619,9 @@ type ImportMediaFile struct {
 	Summary             string
 	ContentFingerprint  string
 	DurationSecondsHint int
+	// KeepProbeFacts preserves the existing primary file's facts on an
+	// unchanged rescan that did not run a probe.
+	KeepProbeFacts bool
 	// VideoWidthHint/VideoHeightHint carry the probed frame size; 0 when the
 	// probe was unavailable (re-scans without FFmpeg keep the stored values).
 	VideoWidthHint  int

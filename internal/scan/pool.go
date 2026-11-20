@@ -62,15 +62,16 @@ type workerTask struct {
 	info fileStat
 
 	// Filled by the worker; the consumer must not read them before done closes.
-	stored      store.StoredFingerprint
-	fastPath    bool
-	fingerprint string
-	oshash      string
-	probe       probeOutcome
-	phash       string
-	local       []LocalMetadata
-	err         error
-	done        chan struct{}
+	stored         store.StoredFingerprint
+	fastPath       bool
+	keepProbeFacts bool
+	fingerprint    string
+	oshash         string
+	probe          probeOutcome
+	phash          string
+	local          []LocalMetadata
+	err            error
+	done           chan struct{}
 }
 
 // fileStat is the slice of fs.FileInfo the pipeline needs (size + mtime),
@@ -99,21 +100,27 @@ type probeOutcome struct {
 // (one write connection, ADR-0011 §1), so concurrent fills are safe alongside
 // the consumer's ordered writes.
 func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
-	stored, err := s.st.LibraryMediaFileFingerprintByPath(ctx, s.req.LibraryID, t.path)
+	stored, err := s.st.MediaFileFingerprintByPath(ctx, t.path)
 	if err != nil {
 		t.err = err
 		return
 	}
 	t.stored = stored
-	mtimeMatches := store.MediaFileModTimeMatches(stored.ModTime, t.info.modTime)
-	t.fastPath = stored.OK &&
-		stored.ContentFingerprint != "" &&
-		stored.SizeBytes == t.info.size &&
-		mtimeMatches
+	t.fastPath = t.matchesStats(stored)
 	if t.fastPath {
 		return
 	}
-	fingerprint, err := t.readFingerprint(ctx, mtimeMatches)
+	// The fast task uses the public catalog. Use a private row only to
+	// select the fingerprint and avoid replacing an unchanged file's probe facts.
+	if s.st.EncryptedLibraryDBRegistered(s.req.LibraryID) {
+		stored, err = s.st.LibraryMediaFileFingerprintByPath(ctx, s.req.LibraryID, t.path)
+		if err != nil {
+			t.err = err
+			return
+		}
+	}
+	t.keepProbeFacts = t.matchesStats(stored)
+	fingerprint, err := t.readFingerprint(ctx, stored)
 	if err != nil {
 		t.err = err
 		return
@@ -125,6 +132,9 @@ func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
 		return
 	}
 	t.oshash = oshash
+	if t.keepProbeFacts {
+		return
+	}
 	t.probeFile(ctx, s.prober)
 	if s.grabber != nil && t.probe.hasVideo {
 		// Best-effort, like the probe fallback: a failed grab (no FFmpeg,
@@ -138,14 +148,21 @@ func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
 	}
 }
 
+func (t *workerTask) matchesStats(stored store.StoredFingerprint) bool {
+	return stored.OK && stored.ContentFingerprint != "" && stored.SizeBytes == t.info.size &&
+		store.MediaFileModTimeMatches(stored.ModTime, t.info.modTime)
+}
+
 // readFingerprint preserves a legacy identity when only missing stats prevent
 // the fast path. If any recorded stat changed, the sample suffices.
-func (t *workerTask) readFingerprint(ctx context.Context, mtimeMatches bool) (string, error) {
-	stored := t.stored
+func (t *workerTask) readFingerprint(ctx context.Context, stored store.StoredFingerprint) (string, error) {
+	if t.keepProbeFacts {
+		return stored.ContentFingerprint, nil
+	}
 	if stored.OK && strings.HasPrefix(stored.ContentFingerprint, "sha256:") &&
 		(stored.SizeBytes == 0 || stored.ModTime.IsZero()) &&
 		(stored.SizeBytes == 0 || stored.SizeBytes == t.info.size) &&
-		(stored.ModTime.IsZero() || mtimeMatches) {
+		(stored.ModTime.IsZero() || store.MediaFileModTimeMatches(stored.ModTime, t.info.modTime)) {
 		fingerprint, err := legacyFileContent(ctx, t.path)
 		if err != nil || fingerprint == stored.ContentFingerprint {
 			return fingerprint, err

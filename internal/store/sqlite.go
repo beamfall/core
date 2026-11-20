@@ -2954,7 +2954,7 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		if err != nil {
 			return Media{}, MediaFile{}, false, err
 		}
-		keepProbeFacts = first != "" && first != imported.ContentFingerprint
+		keepProbeFacts = first != "" && (imported.KeepProbeFacts || first != imported.ContentFingerprint)
 	}
 	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, imported, plane.encrypted, keepProbeFacts)
 	if err != nil {
@@ -3187,7 +3187,16 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 		}
 	}
 
-	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, ordered[0].File, plane.encrypted, false)
+	primary := ordered[0].File
+	keepProbeFacts := false
+	if primary.KeepProbeFacts {
+		first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
+		if err != nil {
+			return Media{}, nil, false, err
+		}
+		keepProbeFacts = first == primary.ContentFingerprint
+	}
+	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, primary, plane.encrypted, keepProbeFacts)
 	if err != nil {
 		return Media{}, nil, false, err
 	}

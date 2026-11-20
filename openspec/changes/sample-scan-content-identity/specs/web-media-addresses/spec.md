@@ -37,6 +37,9 @@ The web viewer SHALL resolve a watch or detail address by its token and SHALL ac
 ID. An unqualified address spelling a sampled Media ID SHALL try that ID first and fall back to the
 SHA-256 Media ID with the same digits only after a confirmed miss. Once the item is loaded, the
 viewer SHALL replace the address in place without adding a history entry or restarting playback.
+While resolving an ambiguous bookmark, the viewer MAY display cached sampled detail. The viewer
+SHALL retry transient lookup failures while the address and viewer identity remain current, and
+show the existing unavailable state for permanent failures.
 
 #### Scenario: Legacy bare-ID link
 
@@ -63,10 +66,6 @@ viewer SHALL replace the address in place without adding a history entry or rest
 
 - **WHEN** a viewer opens `/watch/media-sample1-a371bff46385f7ded` and the sampled ID is absent
 - **THEN** the viewer resolves the bookmark to `media-sha256-a371bff46385f7ded`
-
-While resolving an ambiguous bookmark, the viewer MAY display cached sampled detail. The viewer
-SHALL retry transient lookup failures while the address and viewer identity remain current, and
-show the existing unavailable state for permanent failures.
 
 #### Scenario: Navigate with a known sampled Media ID
 

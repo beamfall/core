@@ -47,7 +47,11 @@ function renderPage() {
 }
 
 describe("BulkOpsPage", () => {
-  it("previews the sampled Media ID from a copied detail link", async () => {
+  it.each([
+    ["Copy Link suffix", (url: URL) => url.pathname.split("/").at(-1)],
+    ["Copy Link URL", (url: URL) => url.href],
+    ["address-bar segment", () => "track-two-sample1.a371bff46385f7ded"],
+  ])("previews the sampled Media ID from the %s", async (_, input) => {
     const user = userEvent.setup();
     const id = "media-sample1-a371bff46385f7ded";
     render(
@@ -59,11 +63,14 @@ describe("BulkOpsPage", () => {
 
     await user.click(screen.getByRole("button", { name: /more actions.*sampled item/i }));
     await user.click(await screen.findByRole("menuitem", { name: "Copy link" }));
-    const suffix = new URL(await navigator.clipboard.readText()).pathname.split("/").at(-1);
-    expect(suffix).toBe("sample1.a371bff46385f7ded");
+    const link = new URL(await navigator.clipboard.readText());
+    expect(link.pathname).toMatch(/\/sample1\.a371bff46385f7ded$/);
     await user.keyboard("{Escape}");
 
-    await user.type(screen.getByLabelText("Media IDs (comma-separated)"), `${suffix}, media-2`);
+    await user.type(
+      screen.getByLabelText("Media IDs (comma-separated)"),
+      `${input(link)}, media-2`,
+    );
     await user.type(screen.getByLabelText("Field name"), "year");
     await user.type(screen.getByLabelText("Value"), "1982");
     await user.click(screen.getByRole("button", { name: "Preview" }));
