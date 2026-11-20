@@ -38,6 +38,8 @@ type Catalog interface {
 	// MediaFileExistsByFingerprint reports an existing live file by content
 	// fingerprint (the exact-duplicate skip, §5).
 	MediaFileExistsByFingerprint(ctx context.Context, fingerprint string) (store.MediaID, bool, error)
+	// MediaFileMatchesSample confirms the full digest of a live sampled candidate.
+	MediaFileMatchesSample(ctx context.Context, sample, full string) (store.MediaID, bool, error)
 }
 
 // ScanEnqueuer hands a Library root to the standard scan pipeline (§4). The
@@ -366,6 +368,14 @@ func (i *Ingestor) importItem(ctx context.Context, item Item, libraryID store.Li
 			return libraryID, linkedAny, OutcomeError
 		}
 		existing, exists, err := i.catalog.MediaFileExistsByFingerprint(ctx, fingerprint)
+		if err == nil && !exists {
+			sample, sampleErr := store.SampleMediaFileContent(ctx, mediaFile.absolutePath)
+			if sampleErr != nil {
+				i.recordError(item, libraryID, "fingerprint failed")
+				return libraryID, linkedAny, OutcomeError
+			}
+			existing, exists, err = i.catalog.MediaFileMatchesSample(ctx, sample, fingerprint)
+		}
 		if err != nil {
 			i.recordError(item, libraryID, "catalog lookup failed")
 			return libraryID, linkedAny, OutcomeError

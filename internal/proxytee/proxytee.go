@@ -514,60 +514,72 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	teeClosed = true
-	if err := s.promote(r.Context(), grant.MediaID, st, teeInfo); err != nil {
+	didPromote, err := s.promote(r.Context(), grant.MediaID, st, teeInfo)
+	if err != nil {
 		// Promotion failed (hash/move/store error): leave the provisional intact
 		// and the partial on disk so a retry can promote it. Do not surface to
 		// the client — its bytes already arrived.
 		return
 	}
-	promoted = true
+	promoted = didPromote
 }
 
-// promote fingerprints the completed tee file, moves it into the archive path,
-// and flips the Media's media_file from provisional to archived in place
-// (MediaID preserved). The fingerprint is the SAME content hash a scan computes
-// (store.HashMediaFileContent), so a streamed-then-archived file is identity-
-// equivalent to a downloaded or scanned one.
-func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream, expected os.FileInfo) error {
+// promote checks the completed tee for an exact duplicate before moving it.
+// A duplicate leaves the provisional stream replayable. Otherwise the archive
+// keeps the stream's Media ID and records its full SHA-256.
+func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream, expected os.FileInfo) (bool, error) {
 	if err := s.checkArchiveRoot(); err != nil {
-		return err
+		return false, err
 	}
-	if err := s.archiveRoot.MkdirAll(filepath.Dir(st.archiveRelative), 0o700); err != nil {
-		return err
-	}
-	sourceInfo, err := s.archiveRoot.Lstat(st.teeRelative)
-	if err != nil || !sourceInfo.Mode().IsRegular() || !os.SameFile(expected, sourceInfo) {
-		return errors.New("archive partial identity changed")
-	}
-	if err := s.archiveRoot.Rename(st.teeRelative, st.archiveRelative); err != nil {
-		return err
-	}
-	promoted, err := s.openPromotedRegular(st.archiveRelative, expected)
+	promoted, err := s.openCompletedRegular(st.teeRelative, expected)
 	if err != nil {
-		_ = s.discardChangedPromotion(st.archiveRelative)
-		return err
+		return false, err
 	}
 	defer promoted.Close()
 	fingerprint, err := hashOpenFile(promoted)
 	if err != nil {
-		return errors.Join(err, s.rollbackPromotion(st, expected))
+		return false, err
+	}
+	_, duplicate, err := s.store.MediaFileExistsByFingerprint(ctx, fingerprint)
+	if err != nil || duplicate {
+		return false, err
+	}
+	sample, err := store.SampleMediaFileContentAt(ctx, promoted, expected.Size())
+	if err != nil {
+		return false, err
+	}
+	_, duplicate, err = s.store.MediaFileMatchesSample(ctx, sample, fingerprint)
+	if err != nil || duplicate {
+		return false, err
 	}
 	if err := s.checkArchiveRoot(); err != nil {
-		return errors.Join(err, s.rollbackPromotion(st, expected))
+		return false, err
+	}
+	if err := s.archiveRoot.MkdirAll(filepath.Dir(st.archiveRelative), 0o700); err != nil {
+		return false, err
+	}
+	if err := s.checkRegularIdentity(st.teeRelative, expected); err != nil {
+		return false, err
+	}
+	if err := s.archiveRoot.Rename(st.teeRelative, st.archiveRelative); err != nil {
+		return false, err
+	}
+	if err := s.checkArchiveRoot(); err != nil {
+		return false, errors.Join(err, s.rollbackPromotion(st, expected))
 	}
 	if err := s.checkRegularIdentity(st.archiveRelative, expected); err != nil {
 		_ = s.discardChangedPromotion(st.archiveRelative)
-		return err
+		return false, err
 	}
 	if s.beforeCAS != nil {
 		s.beforeCAS()
 	}
 	updated, err := s.store.PromoteProvisionalMediaGeneration(ctx, mediaID, st.teePath, fingerprint, st.archivePath)
 	if err != nil {
-		return errors.Join(err, s.rollbackPromotion(st, expected))
+		return false, errors.Join(err, s.rollbackPromotion(st, expected))
 	}
 	if !updated {
-		return errors.Join(store.ErrProvisionalRegistrationConflict, s.rollbackPromotion(st, expected))
+		return false, errors.Join(store.ErrProvisionalRegistrationConflict, s.rollbackPromotion(st, expected))
 	}
 	if s.afterCAS != nil {
 		s.afterCAS()
@@ -577,18 +589,18 @@ func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream
 			context.WithoutCancel(ctx), mediaID, fingerprint, st.archivePath, st.teePath,
 		)
 		if compensationErr != nil {
-			return errors.Join(err, compensationErr)
+			return false, errors.Join(err, compensationErr)
 		}
 		if !compensated {
-			return errors.Join(err, store.ErrProvisionalRegistrationConflict)
+			return false, errors.Join(err, store.ErrProvisionalRegistrationConflict)
 		}
 		if rootErr := s.checkArchiveRoot(); rootErr != nil {
 			closeErr := promoted.Close()
-			return errors.Join(err, rootErr, closeErr, s.discardChangedPromotion(st.archiveRelative))
+			return false, errors.Join(err, rootErr, closeErr, s.discardChangedPromotion(st.archiveRelative))
 		}
-		return errors.Join(err, s.rollbackPromotion(st, expected))
+		return false, errors.Join(err, s.rollbackPromotion(st, expected))
 	}
-	return nil
+	return true, nil
 }
 
 func (s *Service) validatePublication(relative string, expected os.FileInfo, promoted *os.File) error {
@@ -602,7 +614,7 @@ func (s *Service) validatePublication(relative string, expected os.FileInfo, pro
 	return s.checkRegularIdentity(relative, fileInfo)
 }
 
-func (s *Service) openPromotedRegular(relative string, expected os.FileInfo) (*os.File, error) {
+func (s *Service) openCompletedRegular(relative string, expected os.FileInfo) (*os.File, error) {
 	if err := s.checkRegularIdentity(relative, expected); err != nil {
 		return nil, err
 	}
@@ -613,7 +625,7 @@ func (s *Service) openPromotedRegular(relative string, expected os.FileInfo) (*o
 	fileInfo, err := file.Stat()
 	if err != nil || !fileInfo.Mode().IsRegular() || !os.SameFile(expected, fileInfo) {
 		_ = file.Close()
-		return nil, errors.New("promoted archive is not the completed regular file")
+		return nil, errors.New("archive partial is not the completed regular file")
 	}
 	if err := s.checkRegularIdentity(relative, fileInfo); err != nil {
 		_ = file.Close()

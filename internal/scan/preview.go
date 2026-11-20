@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/beamfall/core/internal/store"
 )
@@ -208,8 +207,7 @@ func previewSupportedMediaFile(path string, info fs.FileInfo, rule ImageRule) bo
 func previewUnchanged(file store.MediaFile, info fs.FileInfo) bool {
 	return file.ContentFingerprint != "" &&
 		file.SizeBytes == info.Size() &&
-		!file.ModTime.IsZero() &&
-		file.ModTime.Equal(info.ModTime().UTC().Truncate(time.Millisecond))
+		store.MediaFileModTimeMatches(file.ModTime, info.ModTime())
 }
 
 // LibraryStateDigest fingerprints what a preview was planned against: the

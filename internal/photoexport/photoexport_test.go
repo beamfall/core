@@ -99,6 +99,11 @@ func TestExportPlaintextCustodialLibraryRoundTrips(t *testing.T) {
 
 	plainBody := []byte("a single still image\x00\x01\x02binary")
 	plain := writeOriginal(t, src, "still.jpg", plainBody, "", 0)
+	sample, err := store.SampleMediaFileContent(ctx, plain.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain.ContentFingerprint = sample
 
 	// Live Photo: one Media, still as Part 0 + motion as Part 1.
 	stillBody := []byte("live-photo still bytes")
@@ -160,7 +165,7 @@ func TestExportPlaintextCustodialLibraryRoundTrips(t *testing.T) {
 		fpByContent[string(b)] = fingerprint(b)
 	}
 	exportedExt := map[string]int{}
-	for _, item := range man.Items {
+	for _, item := range onDisk.Items {
 		for _, f := range item.Files {
 			got, err := os.ReadFile(filepath.Join(dest, f.RelPath))
 			if err != nil {

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
 )
 
 // fakeSource is an in-memory Source.
@@ -50,6 +51,10 @@ func (c *fakeCatalog) MediaFileExistsByFingerprint(_ context.Context, fp string)
 	}
 	id, ok := c.fingerprints[fp]
 	return id, ok, nil
+}
+
+func (c *fakeCatalog) MediaFileMatchesSample(context.Context, string, string) (store.MediaID, bool, error) {
+	return "", false, nil
 }
 
 // fakeScan records enqueued scans.
@@ -207,43 +212,104 @@ func TestIngestSkipsExactDuplicate(t *testing.T) {
 	}
 }
 
-func TestIngestRelocatesDespiteSampleOnlyMatch(t *testing.T) {
-	tmp := t.TempDir()
-	libRoot := filepath.Join(tmp, "library")
-	downloads := filepath.Join(tmp, "downloads")
-	download := filepath.Join(downloads, "download.mkv")
-	writePayload(t, download)
-	content := make([]byte, 2<<20)
-	if err := os.WriteFile(download, content, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cataloged := filepath.Join(tmp, "cataloged.mkv")
-	content[64<<10] = 1 // Between the first two sample chunks.
-	if err := os.WriteFile(cataloged, content, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	ctx := t.Context()
-	sample, err := store.SampleMediaFileContent(ctx, cataloged)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := store.SampleMediaFileContent(ctx, download); err != nil || got != sample {
-		t.Fatalf("download sample = %q, err = %v, want %q", got, err, sample)
-	}
-	cat := &fakeCatalog{
-		roots:        map[store.LibraryID][]string{"lib-films": {libRoot}},
-		fingerprints: map[string]store.MediaID{sample: "media-existing"},
-	}
-	src := &fakeSource{items: []Item{{ID: "hash-sample", Category: "films", ContentPath: download}}}
-	scan := &fakeScan{}
-	ing, _ := newTestIngestor(t, src, cat, scan, map[string]store.LibraryID{"films": "lib-films"}, downloads)
-	ing.fingerprint = store.HashMediaFileContent
-	result, err := ing.Run(ctx)
-	if err != nil || result.Imported != 1 || result.Skipped != 0 || len(scan.scans) != 1 {
-		t.Fatalf("sample-only match: result = %+v, scans = %v, err = %v", result, scan.scans, err)
-	}
-	if _, err := os.Stat(filepath.Join(libRoot, IncomingFolderName, "download.mkv")); err != nil {
-		t.Fatal(err)
+func TestIngestChecksBothFingerprintSchemes(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		sampled   bool
+		collision bool
+	}{
+		{name: "legacy-exact"},
+		{name: "sampled-exact", sampled: true},
+		{name: "sampled-collision", sampled: true, collision: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			tmp, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			libRoot := filepath.Join(tmp, "library")
+			downloads := filepath.Join(tmp, "downloads")
+			download := filepath.Join(downloads, "download.mkv")
+			cataloged := filepath.Join(libRoot, "cataloged.mkv")
+			writePayload(t, download)
+			writePayload(t, cataloged)
+			content := make([]byte, 2<<20)
+			if err := os.WriteFile(download, content, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if tc.collision {
+				content[64<<10] = 1 // Between the first two sample chunks.
+			}
+			if err := os.WriteFile(cataloged, content, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			fingerprint, err := store.HashMediaFileContent(cataloged)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.sampled {
+				fingerprint, err = store.SampleMediaFileContent(ctx, cataloged)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got, err := store.SampleMediaFileContent(ctx, download); err != nil || got != fingerprint {
+					t.Fatalf("download sample = %q, err = %v, want %q", got, err, fingerprint)
+				}
+			}
+			const library store.LibraryID = "library-local"
+			cat := storetest.Open(t)
+			if err := cat.SetLibraryRoots(ctx, library, []string{libRoot}); err != nil {
+				t.Fatal(err)
+			}
+			primary := filepath.Join(libRoot, "primary.mkv")
+			writePayload(t, primary)
+			primaryFingerprint, err := store.HashMediaFileContent(primary)
+			if err != nil {
+				t.Fatal(err)
+			}
+			media, _, err := cat.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: library, Path: primary, Title: "Cataloged", Container: "mkv",
+				Codec: "h264", ContentFingerprint: primaryFingerprint,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = cat.AddMediaFileVersion(ctx, media.ID, store.MediaFile{
+				Path: cataloged, VersionLabel: "alternate", ContentFingerprint: fingerprint,
+			}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			src := &fakeSource{items: []Item{{ID: "hash-dup", Category: "films", ContentPath: download}}}
+			scan := &fakeScan{}
+			ing, ledger := newTestIngestor(t, src, cat, scan, map[string]store.LibraryID{"films": library}, downloads)
+			ing.fingerprint = store.HashMediaFileContent
+			result, err := ing.Run(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			destination := filepath.Join(libRoot, IncomingFolderName, "download.mkv")
+			if tc.collision {
+				if result.Imported != 1 || result.Skipped != 0 || len(scan.scans) != 1 {
+					t.Fatalf("sample-only match: result = %+v, scans = %v", result, scan.scans)
+				}
+				if _, err := os.Stat(destination); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if result.Imported != 0 || result.Skipped != 1 || len(scan.scans) != 0 {
+				t.Fatalf("exact match: result = %+v, scans = %v", result, scan.scans)
+			}
+			if _, err := os.Stat(destination); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("duplicate was relocated or stat failed: %v", err)
+			}
+			status := ledger.Status()
+			if len(status) != 1 || status[0].MediaPointer != string(media.ID) {
+				t.Fatalf("status = %+v, want pointer to %q", status, media.ID)
+			}
+		})
 	}
 }
 

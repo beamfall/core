@@ -19,6 +19,7 @@ package photoexport
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -130,7 +131,7 @@ type ManifestItem struct {
 }
 
 // ManifestFile names one byte-exact original written under the originals subtree
-// and the content fingerprint a third party can verify the bytes against.
+// and the full SHA-256 digest a third party can verify the bytes against.
 type ManifestFile struct {
 	// RelPath is the file's location relative to the export root, using forward
 	// slashes so the manifest is portable across operating systems.
@@ -255,7 +256,7 @@ func (s *Service) writeItem(dest string, item store.ExportItem) (ManifestItem, e
 		}
 		mi.Files = append(mi.Files, ManifestFile{
 			RelPath:            filepath.ToSlash(filepath.Join(originalsDir, safeComponent(string(item.Media.ID)), name)),
-			ContentFingerprint: f.ContentFingerprint,
+			ContentFingerprint: fmt.Sprintf("sha256:%x", sha256.Sum256(plain)),
 			VersionLabel:       f.VersionLabel,
 			PartOrdinal:        f.PartOrdinal,
 		})

@@ -108,61 +108,92 @@ func TestScanBoundsFingerprintReadsOnSparseFile(t *testing.T) {
 	}
 }
 
-func TestScanLegacyEpochMtimePersistsAcrossReopen(t *testing.T) {
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := writeScanFile(t, root, "epoch.mp4", []byte("legacy epoch fixture"))
+func TestScanLegacyMtimePersistsAcrossReopen(t *testing.T) {
 	epoch := time.Unix(0, 0).UTC()
-	if err := os.Chtimes(path, epoch, epoch); err != nil {
-		t.Fatal(err)
-	}
-	ctx := t.Context()
-	dir := storetest.MigratedDataDir(t)
-	st := storetest.OpenAt(t, dir)
-	req := Request{LibraryID: "library-local", Root: root}
-	full, err := store.HashMediaFileContent(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-		LibraryID: req.LibraryID, Path: path, Title: "Epoch", Container: "mp4", Codec: "h264", ContentFingerprint: full,
-		SizeBytes: int64(len("legacy epoch fixture")),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fullReads int
-	saved := legacyFileContent
-	t.Cleanup(func() { legacyFileContent = saved })
-	legacyFileContent = func(ctx context.Context, path string) (string, error) {
-		fullReads++
-		return saved(ctx, path)
-	}
-	if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, req); err != nil {
-		t.Fatal(err)
-	}
-	if fullReads != 1 {
-		t.Fatalf("first scan read full content %d times, want one", fullReads)
-	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
-	st = storetest.OpenAt(t, dir)
-	if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, req); err != nil {
-		t.Fatal(err)
-	}
-	if fullReads != 1 {
-		t.Fatalf("both scans read full content %d times, want one", fullReads)
-	}
-	stored, err := st.LibraryMediaFileFingerprintByPath(ctx, req.LibraryID, path)
-	if err != nil || !stored.OK || !stored.ModTime.Equal(epoch) {
-		t.Fatalf("stats after reopen and rescan = %+v, err = %v", stored, err)
-	}
-	file, err := st.PrimaryMediaFile(ctx, media.ID, store.LibraryFilter{AllLibraries: true})
-	if err != nil || file.ContentFingerprint != full || file.Path != path {
-		t.Fatalf("file after reopen and rescan = %+v, err = %v", file, err)
+	// Seed the rounded legacy value directly. origin/main used UnixNano()/1e6,
+	// so a native mtime of -1.5ms is recorded as -1ms.
+	preEpoch := time.UnixMilli(-1).UTC()
+	for _, tc := range []struct {
+		name      string
+		mtime     time.Duration
+		seed      time.Time
+		want      time.Time
+		fullReads int
+	}{
+		{name: "recorded-pre-epoch", mtime: -1500 * time.Microsecond, seed: preEpoch, want: preEpoch},
+		{name: "statless-pre-epoch", mtime: -1500 * time.Microsecond, want: preEpoch, fullReads: 1},
+		{name: "statless-epoch", want: epoch, fullReads: 1},
+		{name: "statless-rounds-to-epoch", mtime: -500 * time.Microsecond, want: epoch, fullReads: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := writeScanFile(t, root, "epoch.mp4", []byte("legacy epoch fixture"))
+			mtime := time.Unix(0, int64(tc.mtime)).UTC()
+			if err := os.Chtimes(path, mtime, mtime); err != nil {
+				t.Fatal(err)
+			}
+			info, err := os.Stat(path)
+			if err != nil || !info.ModTime().Equal(mtime) {
+				t.Fatalf("file stat = %v, err = %v, want mtime %v", info, err, mtime)
+			}
+			ctx := t.Context()
+			dir := storetest.MigratedDataDir(t)
+			st := storetest.OpenAt(t, dir)
+			req := Request{LibraryID: "library-local", Root: root}
+			full, err := store.HashMediaFileContent(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: req.LibraryID, Path: path, Title: "Epoch", Container: "mp4", Codec: "h264", ContentFingerprint: full,
+				SizeBytes: info.Size(), ModTime: tc.seed,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fullReads, sampleReads int
+			savedLegacy, savedSample := legacyFileContent, sampleFileContent
+			t.Cleanup(func() { legacyFileContent, sampleFileContent = savedLegacy, savedSample })
+			sampleFileContent = func(ctx context.Context, path string) (string, error) {
+				sampleReads++
+				return savedSample(ctx, path)
+			}
+			legacyFileContent = func(ctx context.Context, path string) (string, error) {
+				fullReads++
+				return savedLegacy(ctx, path)
+			}
+			if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, req); err != nil {
+				t.Fatal(err)
+			}
+			if fullReads != tc.fullReads || sampleReads != 0 {
+				t.Fatalf("first scan: full = %d, sampled = %d, want full = %d, sampled = 0", fullReads, sampleReads, tc.fullReads)
+			}
+			if err := st.Close(); err != nil {
+				t.Fatal(err)
+			}
+			st = storetest.OpenAt(t, dir)
+			preview, err := PreviewRoots(ctx, st, req.LibraryID, []string{root}, 0, ImagesBesideMedia)
+			if err != nil || preview.Unchanged != 1 || len(preview.Changes) != 0 {
+				t.Fatalf("preview after reopen = %+v, err = %v", preview, err)
+			}
+			if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, req); err != nil {
+				t.Fatal(err)
+			}
+			if fullReads != tc.fullReads || sampleReads != 0 {
+				t.Fatalf("after reopen: full = %d, sampled = %d, want full = %d, sampled = 0", fullReads, sampleReads, tc.fullReads)
+			}
+			stored, err := st.LibraryMediaFileFingerprintByPath(ctx, req.LibraryID, path)
+			if err != nil || !stored.OK || !stored.ModTime.Equal(tc.want) {
+				t.Fatalf("stats after reopen and rescan = %+v, err = %v", stored, err)
+			}
+			file, err := st.PrimaryMediaFile(ctx, media.ID, store.LibraryFilter{AllLibraries: true})
+			if err != nil || file.ContentFingerprint != full || file.Path != path {
+				t.Fatalf("file after reopen and rescan = %+v, err = %v", file, err)
+			}
+		})
 	}
 }
 

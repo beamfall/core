@@ -502,6 +502,50 @@ func TestProxyTeeStreamsToClientAndArchivesInPlace(t *testing.T) {
 	}
 }
 
+func TestPromotionKeepsExistingContent(t *testing.T) {
+	for _, scheme := range []string{"sha256", "sample1"} {
+		t.Run(scheme, func(t *testing.T) {
+			h := newHarness(t)
+			ctx := t.Context()
+			path := filepath.Join(t.TempDir(), "existing.mp3")
+			if err := os.WriteFile(path, enclosureBody, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			fingerprint, err := store.HashMediaFileContent(path)
+			if scheme == "sample1" && err == nil {
+				fingerprint, err = store.SampleMediaFileContent(ctx, path)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			existing, _, err := h.store.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: "library-local", Title: "Existing", Path: path, Class: store.MediaClassAudio,
+				Container: "mp3", Codec: "mp3", ContentFingerprint: fingerprint,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.svc.beforeCAS = func() { t.Error("duplicate reached archive publication") }
+			req := httptest.NewRequest(http.MethodGet, "/api/media/proxy/"+h.proxyToken(t), nil)
+			rec := httptest.NewRecorder()
+			h.svc.ServeProxy(rec, req)
+			if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), enclosureBody) {
+				t.Fatalf("proxy response = %d, %q", rec.Code, rec.Body.String())
+			}
+			if _, err := os.Stat(h.archivePath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("duplicate archive exists or stat failed: %v", err)
+			}
+			if prov, err := h.store.MediaFileProvisional(ctx, h.mediaID); err != nil || !prov {
+				t.Fatalf("stream provisional = %t, err = %v", prov, err)
+			}
+			file, err := h.store.PrimaryMediaFile(ctx, existing.ID, store.LibraryFilter{AllLibraries: true})
+			if err != nil || file.Path != path || file.ContentFingerprint != fingerprint {
+				t.Fatalf("existing file = %+v, err = %v", file, err)
+			}
+		})
+	}
+}
+
 // TestAbandonedPartialIsNotPromoted is the POD-2 acceptance point (d): an
 // abandoned mid-stream partial is NOT auto-promoted. A client range request
 // (a seek) is a sub-resource fetch, never the full body, so it must leave the
@@ -854,7 +898,7 @@ func TestPromoteRestoresPartialWhenStoreUpdateFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := h.svc.promote(ctx, h.mediaID, st, partialInfo); err == nil {
+	if _, err := h.svc.promote(ctx, h.mediaID, st, partialInfo); err == nil {
 		t.Fatal("promote succeeded with canceled store context")
 	}
 	if _, err := os.Stat(st.teePath); err != nil {

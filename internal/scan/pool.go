@@ -105,19 +105,15 @@ func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
 		return
 	}
 	t.stored = stored
-	// The stored mtime is millisecond-resolution (the store truncates on
-	// write), so compare at the same granularity — a file mtime carries
-	// sub-millisecond precision that would otherwise never match.
-	modTimeMS := t.info.modTime.UTC().Truncate(time.Millisecond)
+	mtimeMatches := store.MediaFileModTimeMatches(stored.ModTime, t.info.modTime)
 	t.fastPath = stored.OK &&
 		stored.ContentFingerprint != "" &&
 		stored.SizeBytes == t.info.size &&
-		!stored.ModTime.IsZero() &&
-		stored.ModTime.Equal(modTimeMS)
+		mtimeMatches
 	if t.fastPath {
 		return
 	}
-	fingerprint, err := t.readFingerprint(ctx, modTimeMS)
+	fingerprint, err := t.readFingerprint(ctx, mtimeMatches)
 	if err != nil {
 		t.err = err
 		return
@@ -144,12 +140,12 @@ func (t *workerTask) fill(ctx context.Context, s *scanWalkState) {
 
 // readFingerprint preserves a legacy identity when only missing stats prevent
 // the fast path. If any recorded stat changed, the sample suffices.
-func (t *workerTask) readFingerprint(ctx context.Context, modTimeMS time.Time) (string, error) {
+func (t *workerTask) readFingerprint(ctx context.Context, mtimeMatches bool) (string, error) {
 	stored := t.stored
 	if stored.OK && strings.HasPrefix(stored.ContentFingerprint, "sha256:") &&
 		(stored.SizeBytes == 0 || stored.ModTime.IsZero()) &&
 		(stored.SizeBytes == 0 || stored.SizeBytes == t.info.size) &&
-		(stored.ModTime.IsZero() || stored.ModTime.Equal(modTimeMS)) {
+		(stored.ModTime.IsZero() || mtimeMatches) {
 		fingerprint, err := legacyFileContent(ctx, t.path)
 		if err != nil || fingerprint == stored.ContentFingerprint {
 			return fingerprint, err

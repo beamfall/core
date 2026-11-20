@@ -2553,26 +2553,57 @@ func (s *Store) checkPublicContentDuplicate(ctx context.Context, fingerprint, le
 // gating is the caller's concern — this is a fingerprint identity check, not a
 // content read.
 func (s *Store) MediaFileExistsByFingerprint(ctx context.Context, fingerprint string) (MediaID, bool, error) {
-	if fingerprint == "" {
-		return "", false, errors.New("content fingerprint is required")
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
+	mediaID, _, err := s.liveMediaFileByFingerprint(ctx, fingerprint)
+	return mediaID, mediaID != "", err
+}
+
+// MediaFileMatchesSample checks the full digest of the exact Part and Version
+// found by the sample in the live public catalog. A missing file or a sample
+// collision is not an exact duplicate.
+func (s *Store) MediaFileMatchesSample(ctx context.Context, sample, full string) (MediaID, bool, error) {
+	mediaID, path, err := s.liveMediaFileByFingerprint(ctx, sample)
+	if err != nil || mediaID == "" {
 		return "", false, err
 	}
-	var mediaID MediaID
-	err := s.catalogR.QueryRowContext(ctx,
-		"SELECT media_id FROM media_file WHERE content_fingerprint = ? AND missing_at_ms IS NULL",
-		fingerprint,
-	).Scan(&mediaID)
-	if errors.Is(err, sql.ErrNoRows) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) || (err == nil && !info.Mode().IsRegular()) {
 		return "", false, nil
 	}
 	if err != nil {
 		return "", false, err
 	}
+	digest, err := HashMediaFileContentContext(ctx, path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil || digest != full {
+		return "", false, err
+	}
 	return mediaID, true, nil
+}
+
+func (s *Store) liveMediaFileByFingerprint(ctx context.Context, fingerprint string) (MediaID, string, error) {
+	if fingerprint == "" {
+		return "", "", errors.New("content fingerprint is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return "", "", err
+	}
+	var mediaID MediaID
+	var path string
+	err := s.catalogR.QueryRowContext(ctx,
+		"SELECT media_id, path FROM media_file WHERE content_fingerprint = ? AND missing_at_ms IS NULL",
+		fingerprint,
+	).Scan(&mediaID, &path)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return mediaID, path, nil
 }
 
 // SetMatchPinned sets the ADR-0009 §7 import match-pin on the
@@ -2945,14 +2976,21 @@ func (s *Store) mediaFileFingerprintByPath(ctx context.Context, libraryID Librar
 // unused value for the epoch so a verified timestamp survives a reopen.
 const mediaFileEpochMillis int64 = -1 << 63
 
+// MediaFileModTimeMatches compares recorded and observed mtimes with the
+// original writer's millisecond rounding, including timestamps before 1970.
+func MediaFileModTimeMatches(recorded, observed time.Time) bool {
+	return !recorded.IsZero() && !observed.IsZero() && timeToMillis(recorded) == timeToMillis(observed)
+}
+
 func mediaFileTimeToMillis(value time.Time) int64 {
 	if value.IsZero() {
 		return 0
 	}
-	if value.UnixMilli() == 0 {
+	millis := timeToMillis(value)
+	if millis == 0 {
 		return mediaFileEpochMillis
 	}
-	return value.UnixMilli()
+	return millis
 }
 
 func mediaFileMillisToTime(value int64) time.Time {
