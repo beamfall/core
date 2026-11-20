@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -569,7 +576,7 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // SPDX-License-Identifier: AGPL-3.0-only
 // Memory Tunnel — flying down a corridor whose floor and ceiling are paved
 // with framed photo prints. Each tile shows the whole photo, lit by a pulsing
-// horizon; beats send a wave of light racing down the corridor.
+// horizon; beats send a wave of colour racing down the corridor.
 // param0 = Flight ; param1 = Depth ; param2 = Pulse
 
 vec3 visual(vec2 uv, VisualUniforms u) {
@@ -578,9 +585,14 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float far = mix(4.2, 7.0, u.param1);
     float pulseAmt = mix(0.4, 1.5, u.param2);
 
-    // beat count that surges after each beat and never jumps back at the wrap
-    // (beatPhase alone snapped every print back a fifth of a tile once a beat)
-    float beatSurge = floor(u.beatCount) + 1.0 - pow(1.0 - u.beatPhase, 3.0);
+    // beat count that glides forward over each beat and never jumps back at the
+    // wrap; an eased glide (not a kick) so the whole lattice of high-contrast
+    // prints never lurches at once under loud music
+    float beatSurge = floor(u.beatCount) + smoothstep(0.0, 1.0, u.beatPhase);
+    // beat swell: ~180 ms attack, released to zero by the wrap, so nothing
+    // steps on the beat
+    float swell = smoothstep(0.0, 0.36, u.beatPhase)
+                * (1.0 - smoothstep(0.36, 1.0, u.beatPhase));
 
     float z = 1.0 / max(0.13, abs(p.y) + 0.22);
     float lane = p.x * z;
@@ -591,8 +603,11 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float cellX = fract(cellPhaseX);
     float cellPhaseZ = depth * 0.55;
     float cellZ = fract(cellPhaseZ);
-    float frameX = aaLineCyclic(cellPhaseX, 0.012);
-    float frameZ = aaLineCyclic(cellPhaseZ, 0.016);
+    // frames keep a slim on-screen width: near the camera a cell spans a big
+    // slice of the screen, so a fixed cell-space width became thick bands that
+    // swept the frame edges as the corridor flowed
+    float frameX = aaLineCyclic(cellPhaseX, 0.012 * clamp(z / 2.5, 0.3, 1.0));
+    float frameZ = aaLineCyclic(cellPhaseZ, 0.016 * clamp(z * z / 5.0, 0.15, 1.0));
     float frame = max(frameX, frameZ);
 
     // fog window: fade in near camera, out toward the horizon
@@ -603,30 +618,41 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // ceiling tiles flip so prints hang the right way up
     if (p.y > 0.0) { tileUV.y = 1.0 - tileUV.y; }
     vec3 photo = max(IMG(photoCover(clamp(tileUV, 0.001, 0.999), u.resolution, IMGSIZE)).rgb, vec3(0.0));
+    // richer prints: push saturation and contrast so the corridor stays vivid
+    float photoLum = dot(photo, vec3(0.2126, 0.7152, 0.0722));
+    photo = max(mix(vec3(photoLum), photo, 1.35), vec3(0.0));
+    photo = photo * photo * 1.6;
 
     // beat pulse: a bright wave races down the corridor from the horizon
     float wave = fract(depth * 0.15 - u.beatPhase);
-    float pulse = exp(-wave * wave * 18.0) * (0.45 + 0.35 * u.beat) * pulseAmt;
+    float pulse = exp(-wave * wave * 18.0) * (0.45 + 0.30 * swell) * pulseAmt;
 
-    // the wave sweeps every print once a beat, so it only tints the photos;
-    // the slim frames carry its light
+    // the wave sweeps every print once a beat, so it shifts their hue, not
+    // their brightness; the slim frames carry a little of its light
     float interior = (1.0 - frame);
-    vec3 col = photo * interior * fog
-             * (0.24 + 0.12 * u.level + 0.06 * pulse + 0.03 * u.bass);
+    vec3 waveTint = palVisual(fract(0.30 + depth * 0.05), u);
+    waveTint /= max(dot(waveTint, vec3(0.2126, 0.7152, 0.0722)), 0.05);
+    vec3 lit = mix(vec3(1.0), clamp(waveTint, 0.0, 3.0), clamp(pulse * 0.45, 0.0, 0.6));
+    vec3 col = photo * lit * interior * fog * (0.30 + 0.05 * u.level);
 
     // slim glowing frames between prints — never louder than the prints
-    col += palVisual(fract(depth * 0.07 + lane * 0.05), u) * frame * fog
-         * (0.06 + 0.22 * u.bass + 0.30 * pulse);
+    col += palVisual(fract(depth * 0.07 + lane * 0.05 + 0.12 * pulse), u) * frame * fog
+         * (0.24 + 0.06 * u.level + 0.14 * pulse);
 
-    // luminous horizon at the vanishing line; it spans the frame, so the kick
-    // only nudges it
-    float horizon = exp(-abs(p.y) * 20.0) * (0.5 + 0.3 * u.bassImpact) * pulseAmt;
-    col += palVisual(0.58 + u.spectralCentroid * 0.2, u) * horizon * 0.35;
+    // luminous horizon at the vanishing line; it spans the frame and the bloom
+    // spreads it, so an instant kick here flashed the whole middle of the screen:
+    // it glows steadily, and the beat swells it gently and turns its hue
+    float horizon = exp(-abs(p.y) * 20.0) * (0.60 + 0.08 * swell) * pulseAmt;
+    col += palVisual(0.58 + u.spectralCentroid * 0.2 + 0.05 * swell, u) * horizon * 0.35;
     // hot core right at the vanishing point
-    col += peakWhite(palVisual(0.62, u), 0.3 + 0.2 * u.bassImpact)
-         * exp(-(p.x * p.x * 6.0 + p.y * p.y * 90.0) * 2.5) * (0.35 + 0.4 * u.bassImpact);
+    col += peakWhite(palVisual(0.62, u), 0.36 + 0.06 * swell)
+         * exp(-(p.x * p.x * 6.0 + p.y * p.y * 90.0) * 2.5) * (0.47 + 0.08 * swell);
 
-    col *= 0.40 + 0.60 * smoothstep(1.65, 0.30, length(p));
+    col *= 0.22 + 0.78 * smoothstep(1.55, 0.30, length(p));
+    // colour floor: dim red stripes and gold frame tails keep some green and
+    // blue, so nothing settles into pure saturated red
+    col.g = max(col.g, col.r * 0.15);
+    col.b = max(col.b, col.r * 0.20);
     col = feedbackTrail(col, uv, min(u.trailDecay, 0.68),
                         0.003 + 0.002 * u.bassImpact, 0.001);
     return col; // LINEAR HDR — post chain tonemaps

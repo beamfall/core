@@ -2,9 +2,9 @@
   "source": {
     "repo": "oscillux",
     "path": "shaders/manifest.json",
-    "rev": "971d56649f7c4dc097891275183e591a79be97cb",
-    "release": "v0.2.9",
-    "sha256": "a28504d75d2f08fddbad64afc1577bf638555744b53828e24b712c7c5415b34c",
+    "rev": "383abd24f8b324e583f5955a4f14c87b71ec4383",
+    "release": "v0.2.10",
+    "sha256": "df873883811271f466df229936f24ad589e041ef5d4b96f9c63778cc793c4973",
     "license": "AGPL-3.0-only",
     "note": "The listed fields of every visual, in the manifest catalogOrder, copied unchanged from the manifest at the pinned rev. Data only: the shader bytes are in glsl300/."
   },
@@ -2638,7 +2638,7 @@
     {
       "id": "phosphor-scope",
       "name": "Phosphor Scope",
-      "header": "// Phosphor Scope: Vintage CRT oscilloscope in a dark room: bass-vs-mid Lissajous figures morph with timbre, the beam kicks on onsets, and phosphor persistence smears the trace into glowing memory.",
+      "header": "// Phosphor Scope: Vintage CRT oscilloscope in a dark room: a slowly morphing Lissajous figure held in phosphor memory, redrawn by a white-hot beam whose head lands on the kick while the beat breathes the glow.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
@@ -2998,7 +2998,7 @@
     {
       "id": "interference",
       "name": "Interference",
-      "header": "// Interference: Bass, mid and treble each radiate circular wavefronts shaped by their own trace; where crests align the water burns HDR-hot with moiré shimmer, and every beat re-anchors the emitters with a soft shockwave.",
+      "header": "// Interference: Bass, mid and treble each radiate circular wavefronts shaped by their own trace; where crests align the water burns HDR-hot with moiré shimmer, and every beat surges the ripples outward while the emitters wander slowly with the phrase.",
       "tier": "standard",
       "calm": false,
       "imageInput": false,
@@ -3058,7 +3058,7 @@
     {
       "id": "filament",
       "name": "Filament",
-      "header": "// Filament: A single elastic string plucked by the music: band-weighted standing-wave harmonics decay between beats, node beads glow with their harmonic, and bass bows the whole span.",
+      "header": "// Filament: A braided elastic string plucked by the music: band-weighted standing-wave harmonics decay between beats, node beads glow with their harmonic, and bass bows the whole span.",
       "tier": "standard",
       "calm": true,
       "imageInput": false,
@@ -3418,7 +3418,7 @@
     {
       "id": "prism-room",
       "name": "Prism Room",
-      "header": "// Prism Room: Faceted caustic chamber: kaleidoscopic glass panes lit per band, caustic sweeps on the beat, HDR edge filaments and vertex glints.",
+      "header": "// Prism Room: Faceted caustic chamber: kaleidoscopic glass panes lit per band, caustic sweeps on the clock, HDR edge filaments and vertex glints that carry the kick.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,

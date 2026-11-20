@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -567,37 +574,63 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
-// Filament — a single elastic string spanning the screen, plucked
+// Filament — a braided elastic string spanning the screen, plucked
 // by the music. Displacement is a sum of standing-wave harmonics whose weights
-// come from band energies (fundamental=bass … high harmonics=treble), with a
-// per-beat pluck-decay envelope; glowing harmonic-node beads ride the string;
-// bassImpact bows the whole span. Calm-capable: quiet audio leaves a near-still
-// glowing thread.
+// come from band energies (fundamental=bass, so bass bows the whole span … high
+// harmonics=treble), swelled by a per-beat pluck envelope. The string is three
+// thick glowing strands braided around that shape; glowing harmonic-node beads
+// ride every strand and a glint runs along them over each beat. Calm-capable:
+// quiet audio leaves a near-still glowing braid.
 // param0 Tension ; param1 Glow ; param2 Bead Shine
+//
+// Flash budget (visual-flash-check, --audio loud): the string is the only bright
+// thing on screen, so every pixel its glow crosses makes a luma transition, and
+// motion that moves the whole span at once covers a large area. So the span moves
+// at a bounded speed: slow harmonic rates, saturating band weights (a kick on a
+// loud band cannot snap the shape), a small eased pluck swell, and no
+// instantaneous bassImpact/amplitude/onset jumps in position, width or glow. The
+// beat shows as the glint instead of a whole-span lurch. Brightness, width and
+// glow are steady (a constant level makes no transitions), so the strands stay
+// thick and bright; what the budget limits is how much bright edge sweeps past
+// per moment, which grows with the strands' spread and the span's speed. Hence
+// the slow harmonic rates, the strands' moderate spread, and one shared halo
+// and bloom (low enough to stay under the luma step) rather than one per strand.
 
-float filamentY(float x01, VisualUniforms u, float tension, float pluck) {
+// Pluck envelope over one beat: an eased swell that peaks 0.45 beat after the
+// kick (225 ms at 120 BPM) and eases back to zero by the next beat, so the
+// string never snaps on the beat or its wrap. (A step from 0.09 to 1 in one
+// frame swept the whole bright string and its halo across the frame at once,
+// and a fast exponential release after the peak still moved the span faster
+// than the flash budget allows.)
+float pluckEnv(float bp) {
+    return smoothstep(0.0, 0.45, bp) * (1.0 - smoothstep(0.45, 1.0, bp));
+}
+
+float filamentY(float x01, VisualUniforms u, float tension, float pluck, float t) {
+    // a tighter string answers faster with less travel, so the span's speed
+    // (and its flash budget) hardly depends on the Tension setting
+    float give = clamp(1.35 / tension, 0.75, 1.3);
     float y = 0.0;
     for (int n = 1; n <= 8; ++n) {
         float fn = float(n);
-        float w = bandAt(u, (fn - 1.0) / 7.0) * (1.25 - 0.09 * fn); // physical rolloff
-        float om = tension * (1.2 + 0.7 * fn);
+        // saturating band weight: quiet bands leave their harmonic still, loud ones
+        // drive it fully, and a kick on an already loud band cannot snap the shape
+        float b = bandAt(u, (fn - 1.0) / 7.0);
+        float w = b * (2.0 - b) * (1.25 - 0.09 * fn);
+        float om = tension * (0.21 + 0.13 * fn);
         float shape = sin(fn * 3.14159265 * x01);
-        float osc = cos(om * u.time + fn * 1.7);
-        float amp = w * pluck * (0.52 / fn) * (0.35 + 0.95 * u.amplitude);
-        y += shape * osc * amp;
+        float osc = cos(om * t + fn * 1.7);
+        y += shape * osc * w * (0.38 / fn) * pluck * give;
     }
-    // bass bows the whole string in one arc
-    y += sin(3.14159265 * x01) * 0.20 * u.bassImpact;
     return y;
 }
 
-// Pluck envelope over one beat: a short eased rise, then a decay that ends at
-// the value it starts from, so the string never snaps on the beat wrap. A
-// step from 0.09 to 1 in one frame swept the whole bright string (and its halo)
-// across the frame at once: a large-area flash every beat.
-float pluckEnv(float bp) {
-    float rise = smoothstep(0.0, 0.40, bp);
-    return mix(0.0907, 1.0, rise) * exp(-4.0 * max(bp - 0.40, 0.0));
+// Three strands share the plucked shape and twist around it: each rides a slow
+// travelling wave pinned to zero at both anchors, a third of a turn apart, so the
+// strands cross and braid along the span while it moves at a bounded speed.
+float strandTwist(float x01, float i, float t) {
+    float env = sin(3.14159265 * x01);
+    return 0.055 * env * sin(6.2831853 * (1.15 * x01 - 0.07 * t) + i * 2.0943951);
 }
 
 vec3 visual(vec2 uv, VisualUniforms u) {
@@ -612,67 +645,73 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float glowAmt = mix(0.6, 1.9, u.param1);
     float beadAmt = mix(0.3, 1.7, u.param2);
 
-    // pluck envelope: excitation decays between beats, re-armed on each beat
-    float pluck = pluckEnv(u.beatPhase) * 0.25 + 0.22;
+    // pluck envelope: excitation swells after each beat and settles before the next
+    float env = pluckEnv(u.beatPhase);
+    float pluck = 0.43 + 0.04 * env;
 
-    float y = filamentY(x01, u, tension, pluck);
-    float d = p.y - y;
-
-    // temporal echo: the string a moment ago, as a dim ghost (depth cue)
-    float yGhost = filamentY(x01, u, tension, pluckEnv(fract(u.beatPhase - 0.22)) * 0.5 + 0.16);
-    float dGhost = p.y - mix(yGhost, y, 0.35);
+    float y = filamentY(x01, u, tension, pluck, u.time);
 
     // string velocity proxy (finite difference in x -> local slope energy)
-    float y2 = filamentY(x01 + 0.004, u, tension, pluck);
+    float y2 = filamentY(x01 + 0.004, u, tension, pluck, u.time);
     float slope = abs(y2 - y) * 250.0;
-    float energy = saturate(slope * 0.35 + u.amplitude * 0.6);
+    float energy = saturate(slope * 0.35 + 0.35 * u.level);
 
-    // ---- the string: hot core + inner halo + wide bloom ----
-    float th = 0.0035 * (1.0 + 0.8 * u.amplitude + 0.5 * u.bassImpact);
-    float core = aaLine(d, th);
-    float halo = aaLine(d, th * 5.0) * 0.22;
-    float bloom = exp(-d * d / (0.007 + 0.012 * u.bassImpact + 1e-5)) * 0.14;
-
-    vec3 cTrace = palRoleTrace(x01 * 0.55 + 0.10 * u.spectralCentroid, u);
-    cTrace = accentize(cTrace, u.accent, 0.08);
-    vec3 col = cTrace * (core * (2.2 + 3.2 * energy) * glowAmt
-                       + halo * (0.7 + 1.6 * energy)
-                       + bloom * glowAmt);
-
-    // ghost pass: dim, wider, cooler — reads as motion history
-    vec3 cGhost = palRoleFog(x01 * 0.55 + 0.35, u);
-    col += cGhost * aaLine(dGhost, th * 2.6) * 0.20 * (0.3 + 0.7 * u.amplitude);
-
-    // pluck flash races along the string on the beat
+    // the beat's glint runs along every strand over the beat (small area, eased)
     float flashX = u.beatPhase;
-    float flash = exp(-(x01 - flashX)*(x01 - flashX) * 140.0) * exp(-3.0 * u.beatPhase);
-    col += palRolePeak(0.5, u) * flash * core * u.onset * 3.5;
+    float flash = exp(-(x01 - flashX)*(x01 - flashX) * 90.0) * env;
+    vec3 cPeak = palRolePeak(0.5, u);
 
-    // ---- harmonic-node beads at k/8 span positions ----
+    // ---- three braided strands: hot cores + a shared halo and wide bloom ----
+    float th = 0.0080;
+    vec3 col = vec3(0.0);
+    float haloMax = 0.0;
+    float dMin = 1e3;
+    for (int i = 0; i < 3; ++i) {
+        float fi = float(i);
+        float d = p.y - (y + strandTwist(x01, fi, u.time));
+        dMin = min(dMin, abs(d));
+        float core = aaLine(d, th);
+        float halo = exp(-d * d / (th * th * 9.0));
+        haloMax = max(haloMax, halo);
+        vec3 cTrace = palRoleTrace(x01 * 0.55 + 0.10 * u.spectralCentroid + 0.12 * fi, u);
+        cTrace = accentize(cTrace, u.accent, 0.08);
+        col += cTrace * core * (2.6 + 2.0 * energy) * glowAmt;
+        col += cPeak * flash * core * 2.0;
+    }
+    // the glow is shared, not summed: where strands cross or gather at the
+    // anchors the bundle keeps one halo and one bloom instead of a white blob
+    vec3 cGlow = accentize(palRoleTrace(x01 * 0.55 + 0.10 * u.spectralCentroid + 0.12, u), u.accent, 0.08);
+    float bloom = exp(-dMin * dMin / 0.020) * 0.07;
+    col += cGlow * (haloMax * 0.35 * (1.0 + 0.5 * energy) + bloom) * glowAmt;
+    col += cPeak * flash * haloMax * 0.6;
+
+    // ---- harmonic-node beads at k/8 span positions, on every strand ----
     for (int k = 1; k <= 7; ++k) {
         float fk = float(k);
         float xk = fk / 8.0;
-        float yk = filamentY(xk, u, tension, pluck);
-        vec2 db = vec2((uv.x - xk) * aspect * fit * 2.0, p.y - yk);
-        float r2 = dot(db, db);
-        float wk = bandAt(u, (fk - 1.0) / 7.0);
-        float bead = exp(-r2 / (0.00010 + 0.00030 * wk + 1e-6));
-        float beadHalo = exp(-r2 / 0.0035) * 0.20;
+        float yk = filamentY(xk, u, tension, pluck, u.time);
+        float wk = 0.5 + 0.5 * bandAt(u, (fk - 1.0) / 7.0);
         vec3 cb = palRoleTreble(fk / 7.0, u);
-        col += cb * (bead * (1.2 + 4.5 * wk) + beadHalo * wk) * beadAmt;
+        float dx = (uv.x - xk) * aspect * fit * 2.0;
+        for (int i = 0; i < 3; ++i) {
+            vec2 db = vec2(dx, p.y - (yk + strandTwist(xk, float(i), u.time)));
+            float r2 = dot(db, db);
+            float bead = exp(-r2 / (0.00022 + 0.00012 * wk));
+            float beadHalo = exp(-r2 / 0.0030) * 0.22;
+            col += cb * (bead * (2.4 + 2.6 * wk) * (0.9 + 0.2 * env) + beadHalo * wk) * beadAmt;
+        }
     }
 
-    // anchors: dim endpoints ground the string physically
+    // anchors: endpoints where the strands gather ground the string physically
     float edge = aspect * fit;
     float endL = exp(-dot(vec2(p.x + edge, p.y), vec2(p.x + edge, p.y)) / 0.004);
     float endR = exp(-dot(vec2(p.x - edge, p.y), vec2(p.x - edge, p.y)) / 0.004);
-    col += palRoleFog(0.3, u) * (endL + endR) * 0.5;
+    col += palRoleFog(0.3, u) * (endL + endR) * 0.8;
 
     // faint ambient fog so calm mode isn't a void
-    col += palRoleFog(0.62, u) * exp(-p.y * p.y * 3.0) * 0.015 * (0.4 + 0.6 * u.amplitude);
+    col += palRoleFog(0.62, u) * exp(-p.y * p.y * 3.0) * 0.015 * (0.4 + 0.6 * u.level);
 
-    return feedbackTrail(col, uv, min(u.trailDecay, 0.70),
-                         0.0012 + 0.0025 * u.bassImpact, 0.0);
+    return feedbackTrail(col, uv, min(u.trailDecay, 0.62), 0.0012 + 0.0010 * env, 0.0);
 }
 
 in vec2 vUV;

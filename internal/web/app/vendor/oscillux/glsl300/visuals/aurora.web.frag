@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -569,120 +576,175 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // SPDX-License-Identifier: AGPL-3.0-only
 // Aurora — frequency + beat.
 //
-// Full-frame undulating light curtains over a starfield, with a dark ground
-// and a dimmed water reflection below the horizon. Each curtain is a bright
-// lower rim with rays streaking upward, striated by ridged noise and lit by
-// the spectrum across the width of the frame.
+// A night landscape: soft aurora curtains and a thin, static starfield fill
+// the sky behind two mountain ranges, and a still lake below the shore holds
+// a dim, rippled reflection of the sky and the ridges. Each curtain is a
+// glowing lower edge with rays streaking upward, lit by the spectrum across
+// the width of the frame. The music moves the curtains (sway and a wave that
+// travels along them) and swells their brightness slowly around each beat.
 // param0 Curtains -> 3..5 curtain layers
 // param1 Sway     -> undulation amplitude
 // param2 Altitude -> how high the rays reach
 
-vec3 visual(vec2 uv, VisualUniforms u) {
-    vec2 p = motionCentered(uv, u);
-    // y-down coords: p.y = -1 top of screen, +1 bottom.
+// Ridge tops in y-down coordinates (smaller y is higher on screen).
+float auroraPeak(float x) { return 1.0 - abs(sin(x)); }  // sharp crests, round valleys
 
-    int nCurtains = int(mix(3.0, 5.0, u.param0) + 0.5);
-    float swayAmt = mix(0.12, 0.34, u.param1);
-    float altitude = mix(0.55, 1.25, u.param2);
+float auroraFarRidge(float x, float horizonY) {
+    float h = 0.15 + 0.05 * sin(x * 0.9 + 1.0)
+            + 0.10 * auroraPeak(x * 1.7 + 0.3) * (0.6 + 0.4 * sin(x * 0.5 + 2.0))
+            + 0.030 * auroraPeak(x * 4.3 + 1.1)
+            + 0.030 * fbm(vec2(x * 6.0 + 2.3, 7.1));
+    return horizonY - h;
+}
 
+float auroraNearRidge(float x, float horizonY) {
+    float flank = smoothstep(0.45, 1.70, abs(x + 0.20));
+    float h = 0.025 + 0.030 * auroraPeak(x * 2.1 + 0.7)
+            + 0.15 * flank * (0.65 + 0.35 * sin(x * 1.9 + 1.3))
+            + 0.020 * fbm(vec2(x * 9.0 + 9.2, 3.4));
+    return horizonY - h;
+}
+
+// Sky light at q: night gradient plus the curtains (no stars, no land).
+vec3 auroraSky(vec2 q, VisualUniforms u, int nCurtains, float swayAmt,
+               float altitude, float swell, float horizonY) {
     float t = u.time;
-    float horizonY = 0.70;
+    float skyT = saturate((q.y + 1.0) / (horizonY + 1.0));
+    vec3 col = palVisual(0.30 + 0.04 * u.spectralCentroid, u)
+             * (0.004 + 0.036 * skyT * skyT * skyT) * (0.75 + 0.25 * u.level);
 
-    // Mirror below-horizon space back into the sky for a water reflection.
-    float ground = smoothstep(horizonY - 0.005, horizonY + 0.03, p.y);
-    vec2 q = p;
-    q.y = horizonY - abs(p.y - horizonY) * 1.30;
-    // ripple the reflection slightly
-    q.x += ground * 0.020 * sin(p.y * 34.0 + t * 1.3);
-    float mirrorDim = mix(1.0, 0.30, ground);
-
-    vec3 col = vec3(0.0);
-
-    // Deep night-sky gradient — darkest at the top, faint glow near horizon.
-    float skyT = saturate((q.y + 1.0) * 0.5);
-    col += palVisual(0.60 + 0.10 * u.spectralCentroid, u)
-         * (0.006 + 0.040 * skyT * skyT) * (0.55 + 0.75 * u.level) * mirrorDim;
-
-    // Stars (sky only), twinkling with treble.
-    vec2 cell = floor(p * vec2(52.0, 30.0));
-    vec2 sh = hash22(cell);
-    vec2 sPos = (cell + sh) / vec2(52.0, 30.0);
-    float sd = length((p - sPos) * vec2(1.0, 1.0));
-    float starSeed = hash21(cell + 7.0);
-    float twinkle = 0.55 + 0.45 * sin(t * (2.0 + starSeed * 5.0) + starSeed * 40.0);
-    float star = exp(-sd * sd * 26000.0) * step(0.93, starSeed) * twinkle;
-    col += vec3(0.75, 0.85, 1.0) * star * (0.50 + 0.3 * u.treble) * (1.0 - ground);
-
-    vec3 glow = vec3(0.0);
-
+    vec3 aur = vec3(0.0);
     for (int ci = 0; ci < 5; ci++) {
         if (ci >= nCurtains) break;
         float fi = float(ci);
         float fr = (fi + 0.5) / float(nCurtains);
 
         // farther curtains sit higher on screen and render dimmer
-        float depth = mix(1.05, 0.45, fr);
-        float baseY = mix(0.52, -0.42, fr);
+        float depth = mix(1.0, 0.50, fr);
+        float baseY = mix(0.42, -0.40, fr);
 
         // spectrum drive across the frame width
         float xb = saturate(q.x * 0.26 + 0.5);
         float energy = bandAt(u, fr * 0.22 + xb * 0.58);
 
-        // undulating lower-edge curve — band-driven sway
+        // undulating lower edge; the music widens the sway and sends a wave along it
         float sway = sin(q.x * 0.65 - t * 0.21 + fi * 4.0) * 0.90
-                   + sin(q.x * 1.5 + t * 0.50 + fi * 2.3) * 0.55
-                   + sin(q.x * 3.1 - t * 0.33 + fi * 1.1) * 0.28;
-        sway += (fbm(vec2(q.x * 0.85 + fi * 7.0, t * 0.11 + fi * 3.3)) - 0.5) * 2.4;
-        float yc = baseY + sway * swayAmt * (1.0 + u.bass * 0.35 + u.bassImpact * 0.15);
-        // beat wave traveling along the curtain
-        yc += 0.012 * u.bassImpact * sin(q.x * 3.4 - u.beatPhase * 6.2831853 + fi * 1.7);
+                   + sin(q.x * 1.5 + t * 0.47 + fi * 2.3) * 0.50
+                   + sin(q.x * 3.1 - t * 0.31 + fi * 1.1) * 0.22;
+        sway += (fbm(vec2(q.x * 0.85 + fi * 7.0, t * 0.10 + fi * 3.3)) - 0.5) * 2.2;
+        float yc = baseY + sway * swayAmt * (0.85 + 0.25 * u.level + 0.10 * swell);
+        yc += 0.020 * (0.4 + 0.6 * swell) * sin(q.x * 3.4 - u.beatPhase * 6.2831853 + fi * 1.7);
 
-        float d = q.y - yc;              // >0 below the rim, <0 in the rays
+        float d = q.y - yc;              // >0 below the edge, <0 in the rays
         float above = max(-d, 0.0);
 
-        // curtain body: rays fading upward; thin skirt just below the rim
-        float body = d > 0.0 ? exp(-d * 34.0) * 0.30
-                             : exp(-above / (0.22 * altitude));
-        float rim = exp(-d * d * 620.0);
+        // vertical ray striations; brighter rays reach higher
+        float rays = fbmRidged(vec2(q.x * (4.0 + fi * 0.8) + fi * 11.0 + sway * 0.6,
+                                    t * 0.12 + fi * 5.0));
+        rays = smoothstep(0.15, 0.95, rays + energy * 0.10);
+        float reach = 0.20 * altitude * (0.55 + 0.90 * rays);
 
-        // curtain presence: hard dark gaps where the curtain fades out
-        float pres = smoothstep(0.28, 0.62,
-                     fbm(vec2(q.x * 0.42 + fi * 13.7, t * 0.05 + fi)) + energy * 0.08);
-        body *= pres; rim *= pres;
+        // soft lower edge (continuous at d = 0) and rays fading upward
+        float lower = d / 0.045;
+        float body = d > 0.0 ? exp(-lower * lower) : exp(-above / reach);
+        float edge = exp(-d * d * 1100.0);
 
-        // vertical ray striations, brightened by band energy
-        float rays = fbmRidged(vec2(q.x * (4.5 + fi * 0.9) + fi * 11.0 + sway * 0.8,
-                                    t * 0.18 + fi * 5.0));
-        rays = 0.16 + 0.90 * smoothstep(0.30, 0.95, rays + energy * 0.12);
+        // curtain presence: wide, soft gaps between folds
+        float pres = smoothstep(0.30, 0.72,
+                     fbm(vec2(q.x * 0.40 + fi * 13.7, t * 0.04 + fi)) + energy * 0.06);
 
-        float bright = (0.55 + 0.6 * energy + 0.15 * u.beat) * depth;
+        float bright = depth * pres * (0.62 + 0.22 * energy + 0.12 * swell);
 
-        // hue drifts with height: hot rim -> cooler high rays
-        vec3 cLow = palVisual(fr * 0.45 + 0.06 + 0.10 * u.spectralCentroid + 0.015 * t, u);
-        vec3 cHigh = palVisual(fr * 0.45 + 0.38 + 0.10 * u.spectralCentroid + 0.015 * t, u);
-        vec3 c = mix(cLow, cHigh, saturate(above * 1.4 / altitude));
-        c = accentize(c, u.accent, 0.10);
+        // teal at the lower edge, cooling to blue in the high rays
+        float hue = 0.05 * u.spectralCentroid + 0.025 * sin(t * 0.07 + fi * 1.9);
+        vec3 cLow = palVisual(0.50 + 0.03 * fr + hue, u);
+        vec3 cHigh = palVisual(0.30 + 0.04 * fr + hue, u);
+        vec3 c = mix(cLow, cHigh, saturate(above * 1.6 / altitude));
+        c = accentize(c, u.accent, 0.08);
 
-        col += c * body * rays * bright * 0.36 * mirrorDim;
-        glow += peakWhite(c, 0.10 + 0.12 * u.treble) * rim * rays
-              * (0.40 + 0.4 * energy + 0.2 * u.bassImpact) * depth * mirrorDim * 0.35;
+        // treble shimmer drifting along the lower edge
+        float shimmer = smoothstep(0.55, 0.90,
+                        vnoise(vec2(q.x * 6.0 - t * 1.4 + fi * 5.0, fi * 3.0)));
 
-        // treble sparks racing along the rim
-        float sparkle = step(0.80, hash21(vec2(floor(q.x * 26.0 + fi * 9.0),
-                                               floor(u.beatCount))));
-        glow += palVisual(fr + 0.5, u) * rim * sparkle * u.flux * u.treble * 0.3 * mirrorDim;
+        aur += c * bright * (body * (0.10 + 0.55 * rays)
+                           + edge * (0.06 + 0.16 * rays) * (1.0 + 0.8 * shimmer * u.treble));
+    }
+    // overlapping folds blend instead of stacking into hot seams
+    float peak = max(aur.r, max(aur.g, aur.b));
+    aur *= 1.0 / (1.0 + 0.55 * peak);
+    return col + aur;
+}
+
+vec3 visual(vec2 uv, VisualUniforms u) {
+    vec2 p = motionCentered(uv, u);
+    // y-down coords: p.y = -1 top of screen, +1 bottom.
+
+    int nCurtains = int(mix(3.0, 5.0, u.param0) + 0.5);
+    float swayAmt = mix(0.10, 0.28, u.param1);
+    float altitude = mix(0.60, 1.30, u.param2);
+    float t = u.time;
+    float horizonY = 0.70;
+    float px = 2.0 / max(u.resolution.y, 1.0);
+
+    // Smooth swell around each beat: continuous across the phase wrap,
+    // ~250 ms rise to a peak just after the beat and ~250 ms fall.
+    float swell = 0.5 + 0.5 * cos(6.2831853 * (u.beatPhase - 0.15));
+    swell *= swell;
+
+    // Below the shore, look up the mirrored sky through gentle ripples.
+    float water = step(horizonY, p.y);
+    float w = max(p.y - horizonY, 0.0);
+    float rz = 1.0 / (w + 0.05);
+    vec2 q = p;
+    if (water > 0.5) {
+        q.y = horizonY - w * 1.8;   // foreshortened mirror
+        q.x += (0.002 + 0.040 * w) * (vnoise(vec2(p.x * 2.5, rz * 5.0 + t * 0.35)) - 0.5) * 2.0;
+        q.y += (0.002 + 0.020 * w) * (vnoise(vec2(p.x * 1.5 + 5.0, rz * 8.0 - t * 0.30)) - 0.5) * 2.0;
     }
 
-    // horizon line + waterline haze
-    float hLine = exp(-abs(p.y - horizonY) * 60.0);
-    col += palVisual(0.72 + 0.10 * u.spectralCentroid, u) * hLine
-         * (0.05 + 0.06 * u.bassImpact + 0.10 * u.amplitude);
-    // darken the water body slightly toward the bottom
-    col *= 1.0 - ground * smoothstep(horizonY, 1.35, p.y) * 0.45;
+    vec3 sky = auroraSky(q, u, nCurtains, swayAmt, altitude, swell, horizonY);
+    vec3 skyLight = sky;  // what the land catches: curtains and sky glow, no stars
 
-    vec3 trailedGlow = feedbackTrail(glow, uv, min(u.trailDecay, 0.50),
-                                     0.0015, 0.0005);
-    return col + trailedGlow; // LINEAR HDR — post chain tonemaps
+    // Stars: sparse, fixed in place, twinkling slowly; fainter near the horizon.
+    if (water < 0.5) {
+        vec2 cell = floor(p * vec2(34.0, 20.0));
+        float seed = hash21(cell + 7.0);
+        vec2 sPos = (cell + 0.15 + 0.7 * hash22(cell)) / vec2(34.0, 20.0);
+        vec2 sd = p - sPos;
+        float mag = hash21(cell + 19.0);
+        float twinkle = 0.80 + 0.20 * sin(t * (0.5 + mag * 0.9) + seed * 40.0);
+        float star = exp(-dot(sd, sd) * 30000.0) * step(0.89, seed)
+                   * (0.25 + 0.75 * mag * mag) * twinkle;
+        float extinction = 1.0 - smoothstep(-0.2, horizonY, p.y);
+        sky += vec3(0.70, 0.82, 1.0) * star * 0.55 * extinction;
+    }
+
+    // Land: a hazy far range and a dark near range occlude everything behind them.
+    float farY = auroraFarRidge(q.x, horizonY);
+    float nearY = auroraNearRidge(q.x, horizonY);
+    float farMask = smoothstep(farY - px, farY + px, q.y);
+    float nearMask = smoothstep(nearY - px, nearY + px, q.y);
+    vec3 night = palVisual(0.28, u);
+    // far slopes: dark haze, catching a little curtain light along the crest
+    vec3 farCol = night * 0.004 + skyLight * (0.025 + 0.10 * exp(-max(q.y - farY, 0.0) * 50.0));
+    vec3 nearCol = night * 0.0008 + skyLight * 0.02 * exp(-max(q.y - nearY, 0.0) * 80.0);
+    vec3 col = mix(sky, farCol, farMask);
+    col = mix(col, nearCol, nearMask);
+
+    if (water > 0.5) {
+        // dim, cool reflection with soft horizontal ripple streaks, darker away from shore
+        float streak = 0.80 + 0.35 * vnoise(vec2(p.x * 1.2 + 3.0, rz * 12.0 + t * 0.25));
+        col *= vec3(0.80, 0.92, 1.0) * streak * mix(0.55, 0.30, saturate(w / 0.30));
+    }
+
+    // a faint, broken glint along the shoreline in the scene's palette
+    float shore = exp(-abs(p.y - horizonY - 0.003) / 0.003);
+    float broken = smoothstep(0.35, 0.80, vnoise(vec2(p.x * 2.2 + t * 0.10, 2.0)))
+                 * (0.5 + 0.5 * vnoise(vec2(p.x * 19.0 - t * 0.20, 4.0)));
+    col += palVisual(0.48, u) * shore * broken * (0.030 + 0.015 * u.level);
+
+    // brief persistence softens curtain motion; no zoom or turn, so the land never smears
+    return feedbackTrail(col, uv, min(u.trailDecay, 0.45), 0.0, 0.0); // LINEAR HDR — post chain tonemaps
 }
 
 in vec2 vUV;

@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -593,7 +600,9 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     vec2 p = motionCentered(uv, u);
 
     // spectralCentroid tilts the flight path; a slow weave keeps it alive.
-    vec2 tilt = vec2((u.spectralCentroid - 0.45) * 0.42 + 0.10 * sin(u.time * 0.23),
+    // The centroid moves on every kick, and at 0.42 that shoved the whole
+    // tube (rails and rings) sideways in one frame, so it only leans now.
+    vec2 tilt = vec2((u.spectralCentroid - 0.45) * 0.10 + 0.12 * sin(u.time * 0.23),
                      0.09 * sin(u.time * 0.31 + 1.7));
     p -= tilt;
 
@@ -607,10 +616,19 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float density = mix(3.5, 8.0, u.param1);
     float turb = mix(0.10, 0.42, u.param2);
 
-    // Forward travel: cruise + a lurch each beat (beatCount + eased beatPhase
-    // is continuous, so the tunnel surges without snapping).
-    float lurch = 1.0 - pow(1.0 - saturate(u.beatPhase), 3.0);
-    float travel = u.time * speed + (u.beatCount + lurch) * 0.35;
+    // Forward travel: cruise + a lurch each beat. The lurch's velocity is
+    // 12 bp (1 - bp)^2: zero at the beat, peaking a third of the way in, so
+    // the near rings surge without a kick-instant jump, and beatCount + lurch
+    // stays continuous across the wrap.
+    float bp = saturate(u.beatPhase);
+    float lurch = 1.0 - (1.0 - bp) * (1.0 - bp) * (1.0 - bp) * (1.0 + 3.0 * bp);
+    float travel = u.time * speed + (u.beatCount + lurch) * 0.27;
+    // Beat swell: ~150 ms attack (at 120 bpm) and a long release, zero at the
+    // wrap, scaled by the smoothed level. Every beat-driven brightness or
+    // width below rides this instead of the instant kick/onset/flux, which
+    // strobed the rails and rings under loud audio (source flash budget).
+    float swell = smoothstep(0.0, 0.3, bp) * (1.0 - smoothstep(0.3, 1.0, bp))
+                * saturate(u.level * 1.2);
 
     float z = 1.0 / rS;            // depth down the throat
     float q = z * density * 0.30 + travel; // ring coordinate
@@ -631,21 +649,25 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float d = ff - 0.5 + slice;
         // gaussian profile (not aaLine): spectrum-bin kinks in the slice make
         // fwidth spike, which dotted the rings at the near wall.
-        float coreW = 0.030 + 0.006 * u.bassImpact;
+        float coreW = 0.030 + 0.005 * swell;
         float core = exp(-d * d / max(coreW * coreW, 1e-5));
         float haloW = coreW * 4.5;
         float halo = exp(-d * d / max(haloW * haloW, 1e-5)) * 0.16;
 
         float age = fract(rid * 0.618); // stable per-ring variation
         float hue = fract(0.06 + age * 0.34 + 0.10 * u.spectralCentroid);
-        vec3 rc = palRoleTrace(hue, u);
+        // palVisual, not palRoleTrace: its + 0.03 * beatPhase hue jumps back at
+        // every beat wrap; the swell shifts hue smoothly instead.
+        vec3 rc = palVisual(hue + 0.03 * swell, u);
         rc = accentize(rc, u.accent, 0.07);
 
         float bandE = bandAtWrapped(u, t01 + age);
-        float energy = (0.55 + 2.2 * bandE) * fog;
+        // the band shapes the ring around the turn more than it scales it, so a
+        // kick filling the spectrum does not light every ring at once
+        float energy = (1.2 + 0.8 * bandE + 0.3 * swell) * fog;
         // near rings sweep most of the frame, so they stay dim; the hot
         // cores live down the throat where they cover little area
-        col += rc * (core * (0.8 - 0.55 * near) + halo * (1.0 - 0.6 * near)) * energy;
+        col += rc * (core * (0.8 - 0.66 * near) + halo * (1.0 - 0.65 * near)) * energy;
 
         // (No onset flash on the nearest ring: it spans most of the frame,
         // so even a short white-hot pulse strobed. The lurch carries the beat.)
@@ -660,16 +682,19 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     // ---- longitudinal rails where the trace peaks, streaking toward us ----
     float railBand = bandAtWrapped(u, t01);
-    float rail = pow(railBand, 3.0) * aaLineCyclic(t01 * 12.0 + 0.5, 0.025);
-    col += palRoleTreble(fract(t01 + 0.2), u) * rail * fog * (0.3 + 1.2 * u.flux) * near;
+    // Rails were flux-driven (x4 in one frame on every onset) and cubed on the
+    // kick-filled band: the strobe. Now a steady glow that swells on the beat.
+    float rail = (0.75 + 0.25 * railBand) * aaLineCyclic(t01 * 12.0 + 0.5, 0.025);
+    vec3 railCol = palVisual(0.62 + fract(t01 + 0.2) * 0.28 + 0.10 * u.spectralCentroid, u);
+    col += railCol * rail * fog * (0.30 + 0.07 * swell) * near;
 
     // ---- vanishing point: a faint distant coal, brighter on bass ----
-    col += palRoleBass(0.06, u) * exp(-rS * 14.0) * (0.3 + 1.4 * u.bass) * 0.5;
+    col += palVisual(0.06 + 0.10, u) * exp(-rS * 14.0) * (0.45 + 0.6 * u.bass + 0.5 * swell) * 0.5;
 
     // ---- speed streaks: zooming feedback smears rings into motion lines ----
     vec3 outc = feedbackTrail(col, uv,
                               min(u.trailDecay, 0.86),
-                              0.008 + 0.004 * u.bassImpact + 0.006 * speed,
+                              0.008 + 0.003 * swell + 0.006 * speed,
                               0.0015);
     return outc; // LINEAR HDR
 }
