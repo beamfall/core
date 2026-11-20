@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -330,13 +331,18 @@ func TestEvictedSessionCannotObserveEOFInRemovedOutput(t *testing.T) {
 	defer sessions.Close()
 	sessions.sourceStore = f.st
 	key := SessionKey{SessionID: "evicted", MediaID: f.mediaID}
-	session := &hlsSession{key: key, dir: t.TempDir(), secure: testEncryptedSource(nil)}
-	sessions.mu.Lock()
-	sessions.transitionLocked(session, publishSession{})
-	sessions.mu.Unlock()
+	artifact, err := sessions.LiveArtifactShaped(t.Context(), key, "", 120, 1280, 720, false, false,
+		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, nil,
+		StreamShape{Encrypted: testEncryptedSource(nil)}, PriorityNormal, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := artifact.session
+	artifact.Release()
 	if n := sessions.TerminateSession(key.SessionID); n != 1 {
 		t.Fatalf("terminated %d sessions", n)
 	}
+	requireScratchMissing(t, session.dir)
 	inspected := false
 	_, observed, err := sessions.observeIncompleteSource(key, session, func() (time.Duration, bool) {
 		inspected = true

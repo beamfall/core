@@ -1222,6 +1222,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	beamService := beam.NewService(st, authService, time.Now)
 	// Console transcoder resource settings (CORE-1970): the cap applies live
 	// through hlsSessions; the temp directory needs a restart.
+	var defaultScratchDir string
+	switch {
+	case startupScratchDir == "":
+		defaultScratchDir = cfg.TranscodeScratchDir
+	case !cfg.TranscodeScratchDirExplicit:
+		// The unused default may not exist yet. Leave it untouched until selected.
+		defaultScratchDir, _ = playback.ResolveDefaultScratchDir(cfg.DataDir)
+	}
 	transcodeRuntime := graph.TranscodeRuntime{
 		CapSetter:       hlsSessions,
 		EncodePolicy:    ffmpegRunner,
@@ -1230,6 +1238,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		SoftwareAutoCap: softwareTranscodeCap,
 		EnvCap:          envTranscodeCap,
 		ActiveTempDir:   cfg.TranscodeScratchDir,
+		DefaultTempDir:  defaultScratchDir,
 		StartupTempDir:  startupScratchDir,
 		EnvTempDir:      cfg.TranscodeScratchDirExplicit,
 	}

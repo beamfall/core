@@ -611,6 +611,59 @@ func TestNewHonorsConsoleScratchWhenItMatchesLexicalDefault(t *testing.T) {
 	}
 }
 
+func TestClearingConsoleScratchAlreadyAtDefaultNeedsNoRestart(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SeedDevelopmentData = true
+	active, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := filepath.Join(t.TempDir(), "console-scratch")
+	for _, path := range []string{filepath.Join(cfg.DataDir, "transcode"), stored} {
+		if err := os.Symlink(active, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := store.Open(t.Context(), cfg.DataDir, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, saveErr := st.SetTranscodeConfig(t.Context(), store.TranscodeConfigPatch{TempDir: &stored}, time.Now())
+	if err := errors.Join(saveErr, st.Close()); err != nil {
+		t.Fatal(err)
+	}
+	beamfall, err := New(t.Context(), cfg, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := beamfall.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := beamfall.store.SetSessionAdminUntil(t.Context(), "session-manager", time.Now().Add(time.Hour).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/graphql", strings.NewReader(`{"query":"mutation { setTranscodeConfig(tempDir: \"\") { tempDir effectiveTempDir tempDirRestartRequired } }"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Beamfall-Session", "session-manager")
+	req.Header.Set("X-Beamfall-Device", "device-mac")
+	req.Header.Set("X-Beamfall-Device-Secret", "dev-manager-secret")
+	rec := httptest.NewRecorder()
+	beamfall.Handler().ServeHTTP(rec, req)
+	var response struct {
+		Data   struct{ SetTranscodeConfig graph.TranscodeConfigInfo }
+		Errors []json.RawMessage
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	info := response.Data.SetTranscodeConfig
+	if rec.Code != http.StatusOK || len(response.Errors) > 0 || info.TempDir != "" || info.EffectiveTempDir != active || info.TempDirRestartRequired {
+		t.Errorf("clear Console scratch = %d %s, want %q effective with no restart", rec.Code, rec.Body.String(), active)
+	}
+}
+
 func TestNewClosesOwnedWatcherOnLateConstructorFailure(t *testing.T) {
 	realClose := closeOwnedWatcher
 	closed := 0

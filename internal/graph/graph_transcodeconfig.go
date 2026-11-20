@@ -72,6 +72,8 @@ type TranscodeRuntime struct {
 	EnvCap int
 	// ActiveTempDir is the scratch directory the running transcoder uses.
 	ActiveTempDir string
+	// DefaultTempDir is the resolved default scratch directory at startup, if present.
+	DefaultTempDir string
 	// StartupTempDir is the configured spelling selected at startup. An empty
 	// value means the default under the data directory was selected.
 	StartupTempDir string
@@ -180,7 +182,13 @@ func desiredTranscodeCap(cfg store.TranscodeConfig, runtime TranscodeRuntime) in
 }
 
 func tempDirRestartRequired(stored string, runtime TranscodeRuntime) bool {
-	return !runtime.EnvTempDir && stored != runtime.StartupTempDir && (stored == "" || stored != runtime.ActiveTempDir)
+	if runtime.EnvTempDir || stored == runtime.StartupTempDir {
+		return false
+	}
+	if stored == "" {
+		stored = runtime.DefaultTempDir
+	}
+	return stored != runtime.ActiveTempDir
 }
 
 // ResolveTranscodeCap is the startup counterpart of desiredTranscodeCap, so the
