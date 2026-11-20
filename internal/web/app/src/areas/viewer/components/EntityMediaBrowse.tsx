@@ -120,9 +120,15 @@ async function readPlayedTracks(items: readonly SourceItem[], signal: AbortSigna
   const remaining = new Set(items.filter((item) => item.kind === "media").map((item) => item.id));
   const played: SourceItem[] = [];
   const limit = 200;
+  const maxPages = 5;
   let emptyPages = 0;
-  // Like ProfileFeed, allow for pages emptied by the server's post-page mute filter.
-  for (let offset = 0; remaining.size > 0 && played.length < TOP_TRACKS_LIMIT; offset += limit) {
+  // Bound the profile-wide scan when the person has few plays, allowing for
+  // pages emptied by the server's post-page mute filter.
+  for (
+    let pageIndex = 0;
+    pageIndex < maxPages && remaining.size > 0 && played.length < TOP_TRACKS_LIMIT;
+    pageIndex++
+  ) {
     const page = await fetchSourceItems(
       {
         kind: "most-played",
@@ -132,7 +138,7 @@ async function readPlayedTracks(items: readonly SourceItem[], signal: AbortSigna
         fieldFilters: null,
         entityFilter: null,
         limit,
-        offset,
+        offset: pageIndex * limit,
       },
       signal,
     );

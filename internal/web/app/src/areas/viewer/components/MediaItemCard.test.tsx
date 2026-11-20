@@ -412,25 +412,19 @@ describe("MediaItemCard art frame (CORE-2362)", () => {
     expect(container.querySelector(".bf-poster.bf-poster-square")).not.toBeNull();
   });
 
-  it("shows an audio container's credited artist and release year under its title", async () => {
-    vi.mocked(fetchEntity).mockResolvedValue({
+  it("shows an audio container's credited artist and release year without a detail lookup", () => {
+    renderCard({
       id: "record-21",
-      kind: "record",
+      kind: "entity",
       title: "21",
-      archetype: "container",
-      fields: [{ name: "release-date", type: "date", value: "2011-01-24T00:00:00Z" }],
-      relatedEntities: [
-        {
-          kind: "performer",
-          archetype: "person",
-          items: [{ id: "adele", kind: "entity", title: "Adele" }],
-        },
-      ],
+      mediaClass: "audio",
+      byline: ["Adele"],
+      year: 2011,
+      summary: "12 items",
     });
-    renderCard({ id: "record-21", kind: "entity", title: "21", mediaClass: "audio" });
-    await act(async () => {});
     expect(screen.getByText("Adele · 2011")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "21, Adele · 2011" })).toBeInTheDocument();
+    expect(fetchEntity).not.toHaveBeenCalled();
   });
 
   it("keeps a video entity card's existing subtitle without a detail lookup", () => {

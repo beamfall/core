@@ -251,6 +251,25 @@ describe("EntityMediaBrowse", () => {
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/t3|t3:audio,t1:audio,t2:audio");
   });
 
+  it("stops after five most-played pages when a person's ranking has few matches", async () => {
+    vi.mocked(fetchSourceItems).mockImplementation(async ({ offset = 0 }) => {
+      if (offset === 0) return [tracks[2]];
+      if (offset < 1000) return [{ id: "other", kind: "media", title: "Another artist" }];
+      return [];
+    });
+    renderBrowse(artist, tracks);
+    expect(await screen.findByRole("list", { name: "Top tracks" })).toBeInTheDocument();
+    expect(
+      vi.mocked(fetchSourceItems).mock.calls.map(([{ limit, offset }]) => [limit, offset]),
+    ).toEqual([
+      [200, 0],
+      [200, 200],
+      [200, 400],
+      [200, 600],
+      [200, 800],
+    ]);
+  });
+
   it("lists every track under the top tracks when the top list leaves some out (CORE-2362)", async () => {
     const many: SourceItem[] = Array.from({ length: 12 }, (_, index) => ({
       id: `m${index + 1}`,

@@ -17,7 +17,7 @@ const libraryEntitiesTestQuery = `query($libraryID: String!, $kind: String, $lim
 	libraryEntities(libraryID: $libraryID, kind: $kind, limit: $limit, offset: $offset) {
 		kinds { kind label kindDisplayName archetype total }
 		allLabel kind total
-		items { id kind title mediaClass childCount mediaCount parents { id title } }
+		items { id kind title mediaClass byline year childCount mediaCount parents { id title } }
 	}
 }`
 
@@ -235,10 +235,22 @@ func TestLibraryEntitiesHidesWhatTheSessionCannotBrowse(t *testing.T) {
 	}
 }
 
-// An audio card credits its person-archetype Entities in link order, on the
-// Library grid and in search; a video card and an Entity card carry none.
+// Audio Media and containers credit their person-archetype Entities in link
+// order on the Library grids and in search.
 func TestAudioCardsCarryTheirByline(t *testing.T) {
 	handler, libraryID, media := newShelfLibrary(t, false)
+	ctx := context.Background()
+	if err := handler.store.UpsertEntity(ctx, store.Entity{
+		ID: "entity-box-a", LibraryID: libraryID, Kind: "box", Title: "Alpha Quill",
+		Fields: []store.EntityField{{Name: "release-date", Type: store.EntityFieldDate, Date: time.Date(2001, 2, 3, 0, 0, 0, 0, time.UTC)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := handler.store.UpsertEntityRelation(ctx, store.EntityRelation{
+		FromEntityID: "entity-box-b", Name: "holds", ToMediaID: media["clip"],
+	}); err != nil {
+		t.Fatal(err)
+	}
 	var page LibraryItemsResponse
 	execGraph(t, handler, authorizeViewer,
 		`query($libraryID: String!) { libraryItems(libraryID: $libraryID, limit: 50) { items { id byline mediaClass } } }`,
@@ -257,9 +269,23 @@ func TestAudioCardsCarryTheirByline(t *testing.T) {
 		t.Fatalf("uncredited piece byline = %v, want none", got)
 	}
 
+	var boxes LibraryEntitiesResponse
+	execGraph(t, handler, authorizeViewer, libraryEntitiesTestQuery,
+		map[string]any{"libraryID": string(libraryID), "kind": "box"}, "libraryEntities", &boxes)
+	if len(boxes.Items) != 2 {
+		t.Fatalf("box cards = %+v, want two", boxes.Items)
+	}
+	if box := boxes.Items[0]; box.ID != "entity-box-a" || box.MediaClass != "audio" ||
+		!slices.Equal(box.Byline, []string{"Em", "Zed"}) || box.Year != 2001 {
+		t.Fatalf("audio box card = %+v, want Em, Zed and release year 2001", box)
+	}
+	if box := boxes.Items[1]; box.ID != "entity-box-b" || box.MediaClass != "video" || len(box.Byline) != 0 {
+		t.Fatalf("video box card = %+v, want a video card without a byline", box)
+	}
+
 	var search SearchResultResponse
 	execGraph(t, handler, authorizeViewer,
-		`query($query: String!) { searchResult(query: $query, mode: keyword) { items { id kind mediaClass byline entityKind } } }`,
+		`query($query: String!) { searchResult(query: $query, mode: keyword) { items { id kind mediaClass byline year entityKind } } }`,
 		map[string]any{"query": "Quill"}, "searchResult", &search)
 	rows := map[string]SearchResultItem{}
 	for _, item := range search.Items {
@@ -269,8 +295,9 @@ func TestAudioCardsCarryTheirByline(t *testing.T) {
 	if !ok || piece.MediaClass != "audio" || !slices.Equal(piece.Byline, []string{"Zed", "Em"}) {
 		t.Fatalf("search piece row = %+v (found %v), want audio with byline Zed, Em", piece, ok)
 	}
-	if box, ok := rows["entity-box-a"]; !ok || box.EntityKind != "box" || box.MediaClass != "audio" || len(box.Byline) != 0 {
-		t.Fatalf("search box row = %+v (found %v), want a box row with the audio class and no byline", box, ok)
+	if box, ok := rows["entity-box-a"]; !ok || box.EntityKind != "box" || box.MediaClass != "audio" ||
+		!slices.Equal(box.Byline, []string{"Em", "Zed"}) || box.Year != 2001 {
+		t.Fatalf("search box row = %+v (found %v), want audio with byline Em, Zed and release year 2001", box, ok)
 	}
 }
 
