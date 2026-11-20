@@ -453,6 +453,8 @@ export function usePlayer(
   startTracks?: StartTracks,
   /** One explicit start's identity (PlayerNavState.startID): a new one loads afresh. */
   startID?: string,
+  /** Restore the lead's shared playback when returning to the player. */
+  restorePartyPlayback = false,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -833,6 +835,7 @@ export function usePlayer(
       // intent survives a silence hold while the player was closed.
       const party = getWatchParty();
       const leadOpening =
+        restorePartyPlayback &&
         !reloading &&
         !restartFrom &&
         party.status === "active" &&

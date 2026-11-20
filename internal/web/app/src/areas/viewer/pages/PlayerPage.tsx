@@ -309,6 +309,7 @@ function FeaturePlayer({
     selectedVersion,
     navState.tracks,
     navState.startID,
+    entry.titleSelectionEpoch === undefined,
   );
   // A new Version is another file: remember it, then reload at the playhead.
   const selectVersion = useCallback(

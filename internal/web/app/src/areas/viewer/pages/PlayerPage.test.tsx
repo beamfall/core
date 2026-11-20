@@ -31,9 +31,16 @@ import {
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { RegisterProvider } from "@/lib/register";
+import { clearViewerCache } from "@/lib/viewerCache";
 import { STRINGS } from "@/strings";
 import { TrackList } from "../components/TrackList";
-import { fetchMedia as fetchAddressMedia } from "../lib/mediaDetail";
+import {
+  fetchMedia as fetchAddressMedia,
+  fetchMediaDetailFields,
+  fetchMediaRelations,
+  fetchMediaTracks,
+  mediaLinkState,
+} from "../lib/mediaDetail";
 import {
   fetchPlaybackInfo,
   type PlaybackAdjustment,
@@ -56,6 +63,7 @@ import {
   watchPartyDefersUpNext,
 } from "../player/watchPartyStore";
 import { deliverPlayerCommand } from "../remote/remoteControl";
+import { MediaDetailPage } from "./MediaDetailPage";
 import { NotificationsPage } from "./NotificationsPage";
 import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
 
@@ -66,10 +74,12 @@ vi.mock("@/lib/session", () => ({
 vi.mock("@/lib/graphql", () => ({
   fetchClientPrefs: vi.fn().mockResolvedValue([]),
   setClientPref: vi.fn().mockResolvedValue(undefined),
+  fetchItemState: vi.fn().mockResolvedValue(null),
   fetchMedia: vi.fn().mockResolvedValue(null),
   fetchPlaybackAdjustmentRanges: vi.fn().mockResolvedValue(null),
   fetchPlaybackMarkers: vi.fn().mockResolvedValue([]),
   fetchPrePlayQueue: vi.fn().mockResolvedValue([]),
+  fetchRelatedMedia: vi.fn().mockResolvedValue([]),
   // Off the home network: the player does not listen for a lead party.
   calibrateWatchPartyClock: vi.fn().mockRejectedValue(new Error("not on the home network")),
   createWatchParty: vi.fn(),
@@ -87,6 +97,9 @@ vi.mock("@/lib/graphql", () => ({
 vi.mock("../lib/mediaDetail", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/mediaDetail")>()),
   fetchMedia: vi.fn(),
+  fetchMediaDetailFields: vi.fn(),
+  fetchMediaRelations: vi.fn(),
+  fetchMediaTracks: vi.fn(),
 }));
 vi.mock("../lib/playback", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/playback")>()),
@@ -2050,6 +2063,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     extraState: object = {},
     initialPath = "/watch/media-alpha",
     home = <p>home route</p>,
+    detail = <p>media route</p>,
   ) {
     vi.mocked(usePlayer).mockImplementation(
       typeof playback === "function"
@@ -2096,7 +2110,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
                   </RegisterProvider>
                 }
               />
-              <Route path="/media/*" element={<p>media route</p>} />
+              <Route path="/media/*" element={<RegisterProvider>{detail}</RegisterProvider>} />
               <Route path="/watch/*" element={<PlayerPage />} />
             </Routes>
           </PlayerHost>
@@ -2766,6 +2780,103 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
       load.mockRestore();
       pause.mockRestore();
       play.mockRestore();
+      vi.mocked(fetchNotifications).mockReset();
+      vi.mocked(fetchPlaybackInfo).mockReset();
+      vi.mocked(watchPartyTransport).mockReset();
+    }
+  });
+
+  it("starts over from the detail page while the paused lead player is docked", async () => {
+    const { usePlayer: realUsePlayer } =
+      await vi.importActual<typeof import("../player/usePlayer")>("../player/usePlayer");
+    const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(function (
+      this: HTMLMediaElement,
+    ) {
+      this.currentTime = 0;
+    });
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(function (
+      this: HTMLMediaElement,
+    ) {
+      Object.defineProperty(this, "paused", { configurable: true, value: false });
+      this.dispatchEvent(new Event("play"));
+      return Promise.resolve();
+    });
+    const media = { id: "media-alpha", title: "Track One", mediaClass: "audio", favorited: false };
+    vi.mocked(fetchAddressMedia).mockResolvedValue(media);
+    vi.mocked(fetchNotifications).mockResolvedValue([]);
+    vi.mocked(fetchMediaDetailFields).mockResolvedValue([]);
+    vi.mocked(fetchMediaRelations).mockResolvedValue([]);
+    vi.mocked(fetchMediaTracks).mockResolvedValue([]);
+    vi.mocked(fetchPlaybackInfo)
+      .mockReset()
+      .mockResolvedValue({
+        mediaClass: "audio",
+        streams: [{ kind: "direct-play", url: "/stream/media-alpha" }],
+      });
+    vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 0, roundTripMS: 1 });
+    vi.mocked(createWatchParty).mockResolvedValueOnce({
+      partyID: "p1",
+      content: media.id,
+      relaxed: false,
+      members: [],
+    });
+    vi.mocked(watchPartyTransport)
+      .mockReset()
+      .mockImplementation(async ({ item, positionMS }) => ({ item, positionMS, presentAtMS: 1 }));
+    let unmount: (() => void) | undefined;
+    try {
+      expect(await startWatchParty(media.id, 45_000, false, true)).toBe(true);
+      ({ unmount } = renderHosted(realUsePlayer, {}, undefined, undefined, <MediaDetailPage />));
+      const video = await waitFor(() => {
+        const element = stageVideo();
+        expect(element).toHaveAttribute("src", "/stream/media-alpha");
+        return element;
+      });
+      fireEvent.loadedMetadata(video);
+      expect(video.currentTime).toBe(45);
+      expect(video.paused).toBe(true);
+      expect(getWatchParty().timeline).toMatchObject({ positionMS: 45_000, paused: true });
+      const card = {
+        ...media,
+        kind: "media",
+        engagement: { positionSeconds: 45, durationSeconds: 120 },
+      };
+      await act(async () => go("/media/media-alpha", { state: mediaLinkState(card, "viewer-1") }));
+      expect(miniPlayer()).toBeVisible();
+      expect(stageVideo()).toBe(video);
+      vi.mocked(watchPartyTransport).mockClear();
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Start Track One from the beginning" }),
+      );
+      await waitFor(() => {
+        expect(miniPlayer()).toBeNull();
+        expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2);
+        expect(video).toHaveAttribute("src", "/stream/media-alpha");
+      });
+      expect(stageVideo()).toBe(video);
+      fireEvent.loadedMetadata(video);
+      await act(async () => fireEvent.canPlay(video));
+      expect(video.currentTime).toBe(0);
+      expect(video.paused).toBe(false);
+      expect(watchPartyTransport).toHaveBeenCalledWith({
+        partyID: "p1",
+        item: media.id,
+        positionMS: 0,
+        paused: false,
+      });
+    } finally {
+      unmount?.();
+      act(resetWatchPartyForTest);
+      clearViewerCache();
+      stream.mockRestore();
+      load.mockRestore();
+      play.mockRestore();
+      vi.mocked(fetchAddressMedia).mockReset();
+      vi.mocked(fetchMediaDetailFields).mockReset();
+      vi.mocked(fetchMediaRelations).mockReset();
+      vi.mocked(fetchMediaTracks).mockReset();
       vi.mocked(fetchNotifications).mockReset();
       vi.mocked(fetchPlaybackInfo).mockReset();
       vi.mocked(watchPartyTransport).mockReset();
