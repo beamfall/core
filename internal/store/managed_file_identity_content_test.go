@@ -30,9 +30,9 @@ func liveFileAt(t *testing.T, st *store.Store, path string) store.MediaFile {
 
 func contentFingerprint(t *testing.T, path string) string {
 	t.Helper()
-	fingerprint, err := store.SampleMediaFileContent(t.Context(), path)
+	fingerprint, err := store.SampleMediaFileContentChecked(t.Context(), path, nil)
 	if err != nil {
-		t.Fatalf("SampleMediaFileContent(%q): %v", path, err)
+		t.Fatalf("sample fingerprint for %q: %v", path, err)
 	}
 	return fingerprint
 }

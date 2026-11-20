@@ -79,7 +79,7 @@ func (fx managedScanRaceFixture) importManaged(ctx context.Context, token string
 // scanImport is what a scan does with a file it finds: hash the bytes and
 // import them through the ordinary (non-managed) path.
 func scanImport(ctx context.Context, st *Store, path string) error {
-	fingerprint, err := SampleMediaFileContent(ctx, path)
+	fingerprint, err := SampleMediaFileContentChecked(ctx, path, nil)
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func TestManagedImportScanInWindowSkipsAndManagedAdmissionCatalogs(t *testing.T)
 		if step != "catalog" {
 			return
 		}
-		fingerprint, err := SampleMediaFileContent(ctx, target)
+		fingerprint, err := SampleMediaFileContentChecked(ctx, target, nil)
 		if err != nil {
 			t.Errorf("hash admitted file: %v", err)
 			return
@@ -208,7 +208,7 @@ func TestManagedImportFailureCleanupKeepsFileAnotherAdmissionCataloged(t *testin
 		// An admission the in-flight guard does not cover catalogs the file
 		// (written straight through the catalog SQL), then the managed
 		// admission fails.
-		fingerprint, err := SampleMediaFileContent(ctx, target)
+		fingerprint, err := SampleMediaFileContentChecked(ctx, target, nil)
 		if err != nil {
 			t.Errorf("hash admitted file: %v", err)
 			return

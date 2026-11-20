@@ -107,7 +107,7 @@ func TestIngestRefusesPayloadReplacedDuringFingerprinting(t *testing.T) {
 	if err := os.WriteFile(replacement, []byte("replacement"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	replacementSample, err := store.SampleMediaFileContent(ctx, replacement)
+	replacementSample, err := store.SampleMediaFileContentChecked(ctx, replacement, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,11 +300,11 @@ func TestIngestChecksBothFingerprintSchemes(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tc.sampled {
-				fingerprint, err = store.SampleMediaFileContent(ctx, cataloged)
+				fingerprint, err = store.SampleMediaFileContentChecked(ctx, cataloged, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if got, err := store.SampleMediaFileContent(ctx, download); err != nil || got != fingerprint {
+				if got, err := store.SampleMediaFileContentChecked(ctx, download, nil); err != nil || got != fingerprint {
 					t.Fatalf("download sample = %q, err = %v, want %q", got, err, fingerprint)
 				}
 			}

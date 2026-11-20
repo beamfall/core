@@ -478,7 +478,7 @@ func TestProxyTeeStreamsToClientAndArchivesInPlace(t *testing.T) {
 	if file.Path != h.archivePath {
 		t.Fatalf("promoted file path = %q, want archive path %q", file.Path, h.archivePath)
 	}
-	wantFP, err := store.SampleMediaFileContent(ctx, h.archivePath)
+	wantFP, err := store.SampleMediaFileContentChecked(ctx, h.archivePath, nil)
 	if err != nil {
 		t.Fatalf("hash archive file: %v", err)
 	}
@@ -568,7 +568,7 @@ func TestPromotionKeepsExistingContent(t *testing.T) {
 			admit := func() {
 				var err error
 				if tc.sampled {
-					fingerprint, err = store.SampleMediaFileContent(ctx, path)
+					fingerprint, err = store.SampleMediaFileContentChecked(ctx, path, nil)
 				} else {
 					fingerprint, err = store.HashMediaFileContent(path)
 				}

@@ -402,6 +402,79 @@ func (p *legacyProbeParser) Parse(_ string, probe ParseProbe) (ParsedMedia, bool
 	return ParsedMedia{Title: title}, true
 }
 
+func TestScanStopsOnUnstableSampleLookupFailure(t *testing.T) {
+	ctx := t.Context()
+	root, dataDir := t.TempDir(), storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	req := Request{LibraryID: "library-local", Root: root}
+	path := writeScanFile(t, root, "a.mp4", []byte("legacy bytes"))
+	next := writeScanFile(t, root, "b.mp4", []byte("new bytes"))
+	digest, err := store.HashMediaFileContent(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, file, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: req.LibraryID, Path: path, Title: "Legacy", Container: "mp4", Codec: "h264", ContentFingerprint: digest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored, err := st.MediaFileFingerprintInLibrary(ctx, req.LibraryID, path); err != nil || !stored.OK || stored.ContentFingerprint != digest {
+		t.Fatalf("legacy fixture = %+v, err = %v", stored, err)
+	}
+	db := storetest.OpenSQLiteDB(t)
+	if _, err := db.ExecContext(ctx, `ATTACH DATABASE ? AS fixture`, filepath.Join(dataDir, "db", "catalog.db")); err != nil {
+		t.Fatal(err)
+	}
+	setSize := func(size any) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, `UPDATE fixture.media_file SET size_bytes = ? WHERE path = ?`, size, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original := sampleScanFile
+	t.Cleanup(func() { sampleScanFile = original })
+	const invalidSize = "injected lookup failure"
+	var lookupErr error
+	var reachedNext bool
+	sampleScanFile = func(ctx context.Context, candidate string, check store.SampleFingerprintCheck) (string, error) {
+		switch candidate {
+		case path:
+			if check == nil {
+				t.Fatal("fixture did not reach the legacy comparison")
+			}
+			return original(ctx, candidate, func(_ io.Reader, sample string) (string, error) {
+				setSize(invalidSize)
+				_, lookupErr = st.MediaFileFingerprintInLibrary(ctx, req.LibraryID, path)
+				return check(iotest.ErrReader(io.ErrUnexpectedEOF), sample)
+			})
+		case next:
+			// A scan that incorrectly continues can finish its missing-file sweep.
+			reachedNext = true
+			setSize(file.SizeBytes)
+		}
+		return original(ctx, candidate, check)
+	}
+	cutoff := time.UnixMilli(file.LastSeenAt.UnixMilli() + 1)
+	result, scanErr := scanFromCheckpoint(ctx, st, nil, nil, nil, nil, nil, nil, nil, nil, nil, req, jobCheckpoint{}, cutoff, nil)
+	setSize(file.SizeBytes)
+	if lookupErr == nil || !strings.Contains(lookupErr.Error(), invalidSize) {
+		t.Fatalf("scoped lookup injection = %v", lookupErr)
+	}
+	if scanErr == nil || !strings.Contains(scanErr.Error(), lookupErr.Error()) || reachedNext {
+		t.Fatalf("scan = %+v, error = %v, reached next file = %t, want scoped lookup failure", result, scanErr, reachedNext)
+	}
+	files, err := st.MediaFilesForMedia(ctx, media.ID, store.LibraryFilter{AllowedIDs: []store.LibraryID{req.LibraryID}})
+	if err != nil || len(files) != 1 || files[0].ContentFingerprint != digest || files[0].LastSeenAt.UnixMilli() != file.LastSeenAt.UnixMilli() {
+		t.Fatalf("legacy Media files after failed scan = %+v, err = %v", files, err)
+	}
+	sampleScanFile = original
+	retry, err := Scan(ctx, st, nil, nil, nil, nil, nil, req)
+	if err != nil || len(retry.Files) != 2 || retry.Files[0].MediaID != media.ID || retry.FilesMissing != 0 {
+		t.Fatalf("stable retry = %+v, err = %v, want legacy Media %s and the new file", retry, err, media.ID)
+	}
+}
+
 func TestScanTreatsFailedLegacyCompareAsUnchanged(t *testing.T) {
 	for _, replace := range []bool{false, true} {
 		name := "full read error"
@@ -496,7 +569,7 @@ func TestScanTreatsFailedLegacyCompareAsUnchanged(t *testing.T) {
 				t.Fatalf("stable retry = %+v, err = %v", second, err)
 			}
 			if replace {
-				want, err := store.SampleMediaFileContent(ctx, path)
+				want, err := store.SampleMediaFileContentChecked(ctx, path, nil)
 				if err != nil || second.Files[0].MediaID == media.ID || second.Files[0].ContentFingerprint != want {
 					t.Fatalf("stable replacement = %+v, want a new Media with fingerprint %q, err = %v", second.Files[0], want, err)
 				}
@@ -1015,7 +1088,7 @@ func TestScanReturningSampleIgnoresUnrelatedLegacyStats(t *testing.T) {
 	}
 	st := storetest.Open(t)
 	req := Request{LibraryID: "library-local", Root: root}
-	fingerprint, err := store.SampleMediaFileContent(ctx, path)
+	fingerprint, err := store.SampleMediaFileContentChecked(ctx, path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

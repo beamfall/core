@@ -99,7 +99,7 @@ func TestExportPlaintextCustodialLibraryRoundTrips(t *testing.T) {
 
 	plainBody := []byte("a single still image\x00\x01\x02binary")
 	plain := writeOriginal(t, src, "still.jpg", plainBody, "", 0)
-	sample, err := store.SampleMediaFileContent(ctx, plain.Path)
+	sample, err := store.SampleMediaFileContentChecked(ctx, plain.Path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -44,7 +44,7 @@ func TestScanJobRecordsSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fingerprint, err := store.SampleMediaFileContent(ctx, unmatched)
+	fingerprint, err := store.SampleMediaFileContentChecked(ctx, unmatched, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

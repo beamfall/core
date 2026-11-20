@@ -17,11 +17,6 @@ const (
 	mediaSampleCount = 14
 )
 
-// SampleMediaFileContent reads the sample1 identity from a file.
-func SampleMediaFileContent(ctx context.Context, path string) (string, error) {
-	return SampleMediaFileContentChecked(ctx, path, nil)
-}
-
 // SampleMediaFileContentChecked lets a caller choose the fingerprint using
 // the sample and the same open file, before the final path verification.
 func SampleMediaFileContentChecked(ctx context.Context, path string, check SampleFingerprintCheck) (string, error) {
@@ -58,8 +53,7 @@ func SampleMediaFileContentFrom(ctx context.Context, path string, open func() (S
 		return "", err
 	}
 	if check != nil {
-		fingerprint, err = check(file, fingerprint)
-		if err != nil {
+		if fingerprint, err = check(file, fingerprint); err != nil {
 			return "", err
 		}
 	}

@@ -200,7 +200,7 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 		// Resolve unstable paths in this scan's library before reusing a row.
 		stored, err := s.st.MediaFileFingerprintInLibrary(ctx, s.req.LibraryID, task.path)
 		if err != nil {
-			task.err = err
+			task.err = errors.Join(errUnstableSample, err)
 		} else if stored.OK {
 			task.stored = stored
 			task.err, task.fastPath = nil, true
@@ -222,7 +222,7 @@ func (s *scanWalkState) skipOrPropagate(path string, err error) error {
 	if err == nil || err == errUnstableSample {
 		return nil
 	}
-	if errors.Is(err, fs.SkipDir) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, jobs.ErrYielded) || errors.Is(err, errImageDerivation) {
+	if errors.Is(err, errUnstableSample) || errors.Is(err, fs.SkipDir) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, jobs.ErrYielded) || errors.Is(err, errImageDerivation) {
 		return err
 	}
 	slog.Warn("scan: skipping unreadable or invalid file", "path", path, "error", err.Error())

@@ -2119,7 +2119,7 @@ func TestScanJobLinksExtrasAcrossYieldBoundary(t *testing.T) {
 	if feature == nil {
 		t.Fatalf("feature missing from browse Source: %#v", items)
 	}
-	fingerprint, err := store.SampleMediaFileContent(t.Context(), filepath.Join(root, "Extras", "Making Of.mp4"))
+	fingerprint, err := store.SampleMediaFileContentChecked(t.Context(), filepath.Join(root, "Extras", "Making Of.mp4"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
