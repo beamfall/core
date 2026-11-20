@@ -28,6 +28,7 @@ import {
   leavePartyOnPageHide,
   MAX_PARTY_REQUESTS,
   partyNowMS,
+  pendingPartyTransport,
   reportLeadPosition,
   reportPartyDrift,
   resetWatchPartyForTest,
@@ -319,7 +320,7 @@ describe("party actions", () => {
       positionMS: 6000,
       presentAtMS: 12_000,
     });
-    await sendPartyTransport("m1", 6000.2, false);
+    await sendPartyTransport("m1", { positionMS: 6000.2, playing: true });
     expect(watchPartyTransport).toHaveBeenCalledWith({
       partyID: "p1",
       item: "m1",
@@ -340,7 +341,7 @@ describe("party actions", () => {
     });
     await joinWatchParty("p2");
     vi.mocked(requestWatchPartyTransport).mockResolvedValue({ partyID: "p2", approved: true });
-    await sendPartyTransport("m1", 100, true);
+    await sendPartyTransport("m1", { positionMS: 100, playing: false });
     expect(requestWatchPartyTransport).toHaveBeenCalledWith({
       partyID: "p2",
       item: "m1",
@@ -487,7 +488,7 @@ describe("races", () => {
       });
       return { item: "m1", positionMS: 5000, presentAtMS: 10_000 };
     });
-    await sendPartyTransport("m1", 5000, false);
+    await sendPartyTransport("m1", { positionMS: 5000, playing: true });
     expect(getWatchParty().timeline).toMatchObject({ presentAtMS: 10_100, paused: true });
   });
 
@@ -534,9 +535,9 @@ describe("races", () => {
       try {
         const first = autoSkip
           ? sendPartyAutoSkip("m1", 30_000)
-          : sendPartyTransport("m1", 30_000, true);
-        const middle = sendPartyTransport("m1", 60_000, true);
-        const latest = sendPartyTransport("m1", 90_000, true);
+          : sendPartyTransport("m1", { positionMS: 30_000, playing: false });
+        const middle = sendPartyTransport("m1", { positionMS: 60_000, playing: false });
+        const latest = sendPartyTransport("m1", { positionMS: 90_000, playing: false });
         if (autoSkip) {
           // The stream can acknowledge playback while the HTTP slot is still occupied.
           expect(await first).toBe("applied");
@@ -577,18 +578,40 @@ describe("races", () => {
         if (positionMS === 30_000) await inFlight;
         return { item, positionMS, presentAtMS: 0 };
       });
-      const first = sendPartyTransport("m1", 30_000, true);
-      const queued = sendPartyTransport("m1", 60_000, true, 15_000);
+      const first = sendPartyTransport("m1", { positionMS: 30_000, playing: false });
+      const queued = sendPartyTransport("m1", { positionMS: 60_000, playing: false }, 15_000);
       expect(watchPartyTransport).toHaveBeenCalledTimes(1);
+      expect(pendingPartyTransport("m1")?.positionMS).toBe(60_000);
       clock.mockReturnValue(20_000);
       releaseFirst();
       await expect(first).resolves.toBe(true);
       await expect(queued).resolves.toBe(false);
       expect(watchPartyTransport).toHaveBeenCalledTimes(1);
       expect(getWatchParty().timeline?.positionMS).toBe(30_000);
+      expect(pendingPartyTransport("m1")).toBeUndefined();
     } finally {
       clock.mockRestore();
     }
+  });
+
+  it("releases a refused seek after the preceding transport settles", async () => {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    expect(await startWatchParty("m1")).toBe(true);
+    vi.mocked(watchPartyTransport)
+      .mockResolvedValueOnce({ item: "m1", positionMS: 30_000, presentAtMS: 0 })
+      .mockRejectedValueOnce(new Error("transport refused"));
+    const first = sendPartyTransport("m1", { positionMS: 30_000 });
+    const latest = sendPartyTransport("m1", { positionMS: 60_000 });
+    expect(pendingPartyTransport("m1")?.positionMS).toBe(60_000);
+    await expect(first).resolves.toBe(true);
+    await expect(latest).resolves.toBe(false);
+    expect(getWatchParty().timeline?.positionMS).toBe(30_000);
+    expect(pendingPartyTransport("m1")).toBeUndefined();
   });
 
   it("discards a relaxed member's queued seek after the host changes titles", async () => {
@@ -610,8 +633,8 @@ describe("races", () => {
         return { partyID: "p1", approved: true };
       });
 
-    const first = sendPartyTransport("m1", 30_000, true);
-    const queued = sendPartyTransport("m1", 60_000, true);
+    const first = sendPartyTransport("m1", { positionMS: 30_000, playing: false });
+    const queued = sendPartyTransport("m1", { positionMS: 60_000, playing: false });
     expect(requestWatchPartyTransport).toHaveBeenCalledExactlyOnceWith({
       partyID: "p1",
       item: "m1",
@@ -1071,7 +1094,7 @@ describe("lead party (CORE-2245)", () => {
   it("sends no transport and no drift report from a follower", async () => {
     await follow({ lead: true });
 
-    await sendPartyTransport("m1", 1000, false);
+    await sendPartyTransport("m1", { positionMS: 1000, playing: true });
     expect(reportPartyDrift(80, 1_000_000)).toBe(false);
 
     expect(requestWatchPartyTransport).not.toHaveBeenCalled();
@@ -1088,7 +1111,7 @@ describe("lead party (CORE-2245)", () => {
       presentAtMS: 20_000,
     });
 
-    await sendPartyTransport("m1", 3000, false);
+    await sendPartyTransport("m1", { positionMS: 3000, playing: true });
 
     expect(getWatchParty().timeline).toEqual({
       item: "m1",

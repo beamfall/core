@@ -6,11 +6,13 @@ import type { PartySeekAutoSkip } from "./useAutoSkip";
 import { lastViewerIntent, markViewerIntent } from "./viewerIntent";
 import {
   followLeadParty,
+  getPartyTransportEpoch,
   getWatchParty,
   leaveParty,
+  PARTY_TRANSPORT_TIMEOUT_MS,
   type PartyAutoSkipOutcome,
   partyNowMS,
-  pendingPartyAutoSkipTarget,
+  pendingPartyTransport,
   reportLeadPosition,
   reportPartyDrift,
   resumeFollowedParty,
@@ -61,42 +63,17 @@ const FOLLOW_READOUT_INTERVAL_MS = 500;
  * input, and only if no correction came after that input.
  */
 const INTENT_WINDOW_MS = 1500;
-/** Fallback if the browser never completes the seek or its transition never arrives. */
-const SEEK_INTENT_TIMEOUT_MS = 15_000;
-
 interface LocalSeek {
-  partyID: string;
-  item: string;
+  epoch: number;
   expiresAt: number;
-  skipFrom?: PartyTimeline;
-  skipTarget?: number;
-}
-
-interface SubmittedSeek extends LocalSeek {
-  positionMS: number;
-  from: PartyTimeline;
 }
 
 interface LeadSkip {
   video: HTMLVideoElement;
-  partyID: string;
+  epoch: number;
   from: PartyTimeline;
   positionMS: number;
   reconcileUntil?: number;
-}
-
-function isOutstandingSeek(
-  seek: SubmittedSeek | null,
-  partyID: string,
-  timeline: PartyTimeline,
-): seek is SubmittedSeek {
-  return (
-    seek !== null &&
-    seek.partyID === partyID &&
-    seek.item === timeline.item &&
-    performance.now() < seek.expiresAt &&
-    (seek.from === timeline || seek.positionMS !== timeline.positionMS)
-  );
 }
 
 export type WatchPartyPlayback = "off" | "waiting" | "paused" | "playing";
@@ -164,7 +141,6 @@ export function useWatchParty({
   const leadAutoSkip = useRef<number | null>(null);
   const leadFrame = useRef<FrameSample | null>(null);
   const localSeek = useRef<LocalSeek | null>(null);
-  const submittedSeek = useRef<SubmittedSeek | null>(null);
   const mediaIdRef = useRef(mediaId);
   mediaIdRef.current = mediaId;
   // The element a follower muted, and the listener's own mute to give back.
@@ -279,7 +255,7 @@ export function useWatchParty({
       if (
         !s.lead ||
         !s.isHost ||
-        s.partyID !== skip.partyID ||
+        getPartyTransportEpoch() !== skip.epoch ||
         video !== skip.video ||
         tl?.item !== skip.from.item ||
         tl.item !== mediaIdRef.current ||
@@ -302,23 +278,10 @@ export function useWatchParty({
       follow(video, tl);
       return;
     }
-    const sent = submittedSeek.current;
-    const awaitingAnchor = isOutstandingSeek(sent, s.partyID, tl);
-    if (!awaitingAnchor) submittedSeek.current = null;
-    const pending = localSeek.current;
-    if (pending) {
-      if (
-        pending.partyID === s.partyID &&
-        pending.item === tl.item &&
-        performance.now() < pending.expiresAt &&
-        (pending.skipFrom === undefined ||
-          pending.skipFrom === tl ||
-          (pending.skipTarget !== undefined && pending.skipTarget !== tl.positionMS)) &&
-        (pending !== sent || awaitingAnchor)
-      )
-        return;
-      localSeek.current = null;
-    }
+    const seek = localSeek.current;
+    if (seek?.epoch === getPartyTransportEpoch() && performance.now() < seek.expiresAt) return;
+    localSeek.current = null;
+    if (pendingPartyTransport(tl.item)) return;
     if (video.readyState < 1 || video.seeking) return;
     const now = partyNowMS();
     const expected = expectedPositionMS(tl, now);
@@ -354,7 +317,7 @@ export function useWatchParty({
   // Follow the party to another title, or, as host, take it to this one.
   useEffect(() => {
     if (!active || !timeline || !mediaId || timeline.item === mediaId) return;
-    if (party.isHost) void sendPartyTransport(mediaId, 0, false);
+    if (party.isHost) void sendPartyTransport(mediaId, { positionMS: 0, playing: true });
     else onFollow(timeline.item);
   }, [active, timeline, mediaId, party.isHost, onFollow]);
 
@@ -434,14 +397,16 @@ export function useWatchParty({
     if (frames) handle = video.requestVideoFrameCallback(onFrame);
     const report = () => {
       // A stalled player has no position to report: its clock is not running.
+      const tl = getWatchParty().timeline;
       if (
         pendingLeadSkip.current?.video === video ||
         video.paused ||
         video.seeking ||
-        video.readyState < 3
+        video.readyState < 3 ||
+        tl?.item !== mediaIdRef.current ||
+        pendingPartyTransport(tl.item)
       )
         return;
-      if (getWatchParty().timeline?.item !== mediaIdRef.current) return;
       const now = localClockMS();
       const sample = leadFrame.current;
       const fresh = sample && Math.abs(now - sample.atMS) <= FRAME_SAMPLE_MAX_AGE_MS;
@@ -450,30 +415,21 @@ export function useWatchParty({
       reportLeadPosition(at.positionMS, at.atMS, video.playbackRate * songScale);
     };
     // A stall holds the party where the lead stopped, and its end resumes it.
-    const onStall = () => {
+    const setRunning = (playing: boolean) => {
       const tl = getWatchParty().timeline;
       if (
         pendingLeadSkip.current?.video === video ||
         !tl ||
-        tl.paused ||
         tl.item !== mediaIdRef.current ||
         video.paused
       )
         return;
-      void sendPartyTransport(tl.item, video.currentTime * positionScale, true);
+      const pending = pendingPartyTransport(tl.item);
+      if (playing === (pending?.playing ?? !tl.paused)) return;
+      void sendPartyTransport(tl.item, { playing, playheadMS: video.currentTime * positionScale });
     };
-    const onPlaying = () => {
-      const tl = getWatchParty().timeline;
-      if (
-        pendingLeadSkip.current?.video === video ||
-        !tl ||
-        !tl.paused ||
-        tl.item !== mediaIdRef.current ||
-        video.paused
-      )
-        return;
-      void sendPartyTransport(tl.item, video.currentTime * positionScale, false);
-    };
+    const onStall = () => setRunning(false);
+    const onPlaying = () => setRunning(true);
     const beat = setInterval(report, LEAD_REPORT_INTERVAL_MS);
     const onSeeking = () => {
       leadFrame.current = null;
@@ -545,84 +501,9 @@ export function useWatchParty({
       }
       if (!hasRecentInput()) return;
       localSeek.current = {
-        partyID: s.partyID,
-        item: s.timeline.item,
-        expiresAt: performance.now() + SEEK_INTENT_TIMEOUT_MS,
+        epoch: getPartyTransportEpoch(),
+        expiresAt: performance.now() + PARTY_TRANSPORT_TIMEOUT_MS,
       };
-    };
-    const submitLocal = (
-      type: string,
-      local: number,
-      paused: boolean,
-      tracked: LocalSeek | null,
-    ) => {
-      const s = getWatchParty();
-      const tl = s.timeline;
-      if (s.status !== "active" || !tl || tl.item !== mediaIdRef.current) return;
-      if (s.lead && !s.isHost) return;
-      const isSeek = type === "seeked";
-      const now = partyNowMS();
-      const agrees =
-        type === "pause"
-          ? !timelineStarted(tl, now)
-          : type === "play"
-            ? !tl.paused
-            : Math.abs(local - expectedPositionMS(tl, now)) <= SEEK_THRESHOLD_MS;
-      const sent = submittedSeek.current;
-      const skipTarget = isSeek ? pendingPartyAutoSkipTarget(tl.item) : undefined;
-      const pendingTarget =
-        skipTarget ??
-        (isSeek && isOutstandingSeek(sent, s.partyID, tl) ? sent.positionMS : undefined);
-      if (pendingTarget !== undefined) {
-        // A second scrub can return to the current anchor while the server
-        // is still processing a seek or auto-skip away from it.
-        if (Math.abs(local - pendingTarget) <= SEEK_THRESHOLD_MS) {
-          // A scrub to the pending skip's target shares its acknowledgement.
-          localSeek.current =
-            skipTarget === undefined
-              ? sent
-              : {
-                  partyID: s.partyID,
-                  item: tl.item,
-                  expiresAt: tracked?.expiresAt ?? performance.now() + SEEK_INTENT_TIMEOUT_MS,
-                  skipFrom: tl,
-                  skipTarget,
-                };
-          return;
-        }
-      } else if (agrees) {
-        if (tracked) localSeek.current = null;
-        return;
-      }
-      if (!isSeek) {
-        if (tracked) localSeek.current = null;
-        void sendPartyTransport(tl.item, local, paused);
-        return;
-      }
-      const expiresAt = tracked?.expiresAt ?? performance.now() + SEEK_INTENT_TIMEOUT_MS;
-      if (s.lead) {
-        if (tracked) localSeek.current = null;
-        void sendPartyTransport(tl.item, local, paused, expiresAt);
-        return;
-      }
-      const positionMS = Math.max(0, Math.round(local));
-      const submitted: SubmittedSeek = {
-        partyID: s.partyID,
-        item: tl.item,
-        expiresAt,
-        positionMS,
-        from: tl,
-      };
-      localSeek.current = submitted;
-      submittedSeek.current = submitted;
-      void sendPartyTransport(tl.item, positionMS, paused, expiresAt).then((applied) => {
-        // A host-only request may still await approval. The local player
-        // follows the current anchor in the meantime.
-        if (!applied) {
-          if (submittedSeek.current === submitted) submittedSeek.current = null;
-          if (localSeek.current === submitted) localSeek.current = null;
-        }
-      });
     };
     const onLocal = (event: Event) => {
       const s = getWatchParty();
@@ -639,41 +520,33 @@ export function useWatchParty({
       // control, a relock): nothing corrects it, so every event is its own.
       // A follower screen has no transport: the next beat puts it back.
       if (s.lead && !s.isHost) return;
-      const pending = localSeek.current;
-      const tracked =
-        isSeek &&
-        pending &&
-        pending.partyID === s.partyID &&
-        pending.item === tl.item &&
-        performance.now() < pending.expiresAt
-          ? pending
-          : null;
-      if (tracked && tracked === submittedSeek.current) return;
+      const epoch = getPartyTransportEpoch();
+      const seek = localSeek.current;
+      const tracked = isSeek && seek?.epoch === epoch && performance.now() < seek.expiresAt;
+      if (isSeek) localSeek.current = null;
       if (!s.lead && !tracked && !hasRecentInput()) return;
       const local = video.currentTime * positionScale;
-      const paused = video.paused;
-      const expiresAt = tracked?.expiresAt ?? performance.now() + SEEK_INTENT_TIMEOUT_MS;
-      const skip = isSeek ? partySeekAutoSkip?.current?.(video, expiresAt) : undefined;
-      if (!skip) {
-        submitLocal(event.type, local, paused, tracked);
+      const pending = pendingPartyTransport(tl.item);
+      if (!isSeek) {
+        const playing = event.type === "play";
+        if (playing === (pending?.playing ?? !tl.paused)) return;
+        void sendPartyTransport(tl.item, { playing, playheadMS: local });
         return;
       }
-      const skipping: LocalSeek = {
-        partyID: s.partyID,
-        item: tl.item,
-        expiresAt,
-        skipFrom: tl,
-      };
-      localSeek.current = skipping;
+      const target = pending?.positionMS ?? expectedPositionMS(tl, partyNowMS());
+      if (Math.abs(local - target) <= SEEK_THRESHOLD_MS) return;
+      const expiresAt = tracked ? seek.expiresAt : performance.now() + PARTY_TRANSPORT_TIMEOUT_MS;
+      const skip = partySeekAutoSkip?.current?.(video, expiresAt);
+      if (!skip) {
+        void sendPartyTransport(tl.item, { positionMS: local }, expiresAt);
+        return;
+      }
       void skip.then((outcome) => {
-        if (localSeek.current !== skipping) return;
-        const latest = getWatchParty();
-        if (latest.partyID !== skipping.partyID || latest.timeline?.item !== skipping.item) return;
-        if (outcome === "denied" && latest.timeline === tl && performance.now() < expiresAt) {
-          // An explicit denial on the same anchor leaves the original scrub to send.
-          submitLocal(event.type, local, paused, skipping);
+        if (getPartyTransportEpoch() !== epoch) return;
+        if (outcome === "denied" && performance.now() < expiresAt) {
+          // An explicit denial leaves the original scrub to send.
+          void sendPartyTransport(tl.item, { positionMS: local }, expiresAt);
         } else {
-          localSeek.current = null;
           sync();
         }
       });
@@ -685,7 +558,6 @@ export function useWatchParty({
     return () => {
       if (pendingLeadSkip.current?.video === video) pendingLeadSkip.current = null;
       localSeek.current = null;
-      submittedSeek.current = null;
       video.removeEventListener("play", onLocal);
       video.removeEventListener("pause", onLocal);
       video.removeEventListener("seeking", onSeeking);
@@ -737,12 +609,12 @@ export function useWatchParty({
   const autoSkipLead = useCallback(
     async (positionMS: number, expiresAt?: number): Promise<PartyAutoSkipOutcome> => {
       const video = videoRef.current;
-      const { partyID, timeline, lead, isHost } = getWatchParty();
+      const { timeline, lead, isHost } = getWatchParty();
       if (!video || !lead || !isHost || !timeline || timeline.item !== mediaIdRef.current)
         return "unconfirmed";
       const pending: LeadSkip = {
         video,
-        partyID,
+        epoch: getPartyTransportEpoch(),
         from: timeline,
         positionMS: Math.round(positionMS),
       };
@@ -751,7 +623,7 @@ export function useWatchParty({
       if (pendingLeadSkip.current !== pending) return "unconfirmed";
       if (outcome === "unconfirmed") {
         // A late transition can still confirm the position before we resume reporting.
-        pending.reconcileUntil = performance.now() + SEEK_INTENT_TIMEOUT_MS;
+        pending.reconcileUntil = performance.now() + PARTY_TRANSPORT_TIMEOUT_MS;
         sync();
         return outcome;
       }
@@ -760,7 +632,7 @@ export function useWatchParty({
       const latest = getWatchParty();
       if (
         videoRef.current !== video ||
-        latest.partyID !== partyID ||
+        getPartyTransportEpoch() !== pending.epoch ||
         latest.timeline?.item !== timeline.item ||
         latest.timeline.positionMS !== pending.positionMS ||
         mediaIdRef.current !== timeline.item

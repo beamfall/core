@@ -5,6 +5,7 @@ import { useWatchParty } from "./useWatchParty";
 import { markViewerIntent } from "./viewerIntent";
 import {
   followLeadParty,
+  pendingPartyTransport,
   reportLeadPosition,
   reportPartyDrift,
   resumeFollowedParty,
@@ -29,7 +30,9 @@ vi.mock("./watchPartyStore", () => ({
   followLeadParty: vi.fn(async () => null),
   resumeFollowedParty: vi.fn(async () => null),
   watchForLeadParty: vi.fn(() => () => {}),
-  pendingPartyAutoSkipTarget: () => undefined,
+  pendingPartyTransport: vi.fn(() => undefined),
+  getPartyTransportEpoch: () => 1,
+  PARTY_TRANSPORT_TIMEOUT_MS: 15_000,
 }));
 
 let homeNetwork = false;
@@ -91,9 +94,17 @@ function deferredTransport() {
   return resolve;
 }
 
+function holdTransport(positionMS: number, expiresAt: number) {
+  const intent = { itemId: "m1", positionMS, playing: false, epoch: 1, expiresAt };
+  vi.mocked(pendingPartyTransport).mockImplementation(() =>
+    performance.now() < expiresAt ? intent : undefined,
+  );
+}
+
 describe("useWatchParty local transport", () => {
   beforeEach(() => {
     vi.mocked(sendPartyTransport).mockClear();
+    vi.mocked(pendingPartyTransport).mockReset();
   });
 
   afterEach(() => {
@@ -123,7 +134,7 @@ describe("useWatchParty local transport", () => {
     // The viewer presses Play straight after.
     fireEvent.pointerDown(document.body);
     video.play();
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 0, false);
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", { playheadMS: 0, playing: true });
     view.unmount();
   });
 
@@ -134,7 +145,11 @@ describe("useWatchParty local transport", () => {
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
     video.currentTime = 30;
     video.dispatchEvent(new Event("seeked"));
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 30_000, true, expect.any(Number));
+    expect(sendPartyTransport).toHaveBeenCalledWith(
+      "m1",
+      { positionMS: 30_000 },
+      expect.any(Number),
+    );
     view.unmount();
   });
 
@@ -151,7 +166,11 @@ describe("useWatchParty local transport", () => {
     markViewerIntent();
     video.currentTime = 45;
     video.dispatchEvent(new Event("seeked"));
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 45_000, true, expect.any(Number));
+    expect(sendPartyTransport).toHaveBeenCalledWith(
+      "m1",
+      { positionMS: 45_000 },
+      expect.any(Number),
+    );
     view.unmount();
   });
 
@@ -172,12 +191,18 @@ describe("useWatchParty local transport", () => {
 
     video.seeking = false;
     video.dispatchEvent(new Event("seeked"));
-    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith("m1", 45_000, true, 15_001);
+    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith(
+      "m1",
+      { positionMS: 45_000 },
+      15_001,
+    );
+    holdTransport(45_000, 15_001);
     act(() => vi.advanceTimersByTime(500));
     expect(video.currentTime).toBe(45);
 
     await act(async () => {
       party = { ...party, timeline: { ...timeline, positionMS: 45_000 } };
+      vi.mocked(pendingPartyTransport).mockReturnValue(undefined);
       finish(true);
       view.rerender();
     });
@@ -195,7 +220,12 @@ describe("useWatchParty local transport", () => {
     video.currentTime = 45;
     video.dispatchEvent(new Event("seeking"));
     await act(async () => video.dispatchEvent(new Event("seeked")));
-    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith("m1", 45_000, true, 15_001);
+    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith(
+      "m1",
+      { positionMS: 45_000 },
+      15_001,
+    );
+    holdTransport(45_000, 15_001);
     act(() => vi.advanceTimersByTime(500));
     expect(video.currentTime).toBe(45);
     act(() => vi.advanceTimersByTime(15_000));
@@ -218,10 +248,11 @@ describe("useWatchParty local transport", () => {
         video.currentTime = seconds;
         video.dispatchEvent(new Event("seeking"));
         video.dispatchEvent(new Event("seeked"));
+        holdTransport(seconds * 1000, performance.now() + 15_000);
       }
       expect(vi.mocked(sendPartyTransport).mock.calls).toEqual([
-        ["m1", 30_000, true, 15_001],
-        ["m1", target * 1000, true, 15_002],
+        ["m1", { positionMS: 30_000 }, 15_001],
+        ["m1", { positionMS: target * 1000 }, 15_002],
       ]);
 
       const publish = (positionMS: number) => {
@@ -236,6 +267,7 @@ describe("useWatchParty local transport", () => {
       expect(video.currentTime).toBe(target);
 
       await act(async () => {
+        vi.mocked(pendingPartyTransport).mockReturnValue(undefined);
         publish(target * 1000);
         resolveSecond(true);
       });
@@ -244,26 +276,6 @@ describe("useWatchParty local transport", () => {
       expect(video.currentTime).toBe(70);
     },
   );
-
-  it("releases a rejected latest seek while an earlier request is still pending", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
-    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
-    const video = new FakeVideo();
-    mount(video);
-    const resolveFirst = deferredTransport();
-    const resolveSecond = deferredTransport();
-    for (const target of [30, 60]) {
-      vi.advanceTimersByTime(1);
-      markViewerIntent();
-      video.currentTime = target;
-      video.dispatchEvent(new Event("seeking"));
-      video.dispatchEvent(new Event("seeked"));
-    }
-    await act(async () => resolveSecond(false));
-    act(() => vi.advanceTimersByTime(500));
-    expect(video.currentTime).toBe(0);
-    await act(async () => resolveFirst(false));
-  });
 
   it("ignores autoplay after an unrelated long touch gesture", () => {
     party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
@@ -291,7 +303,7 @@ describe("useWatchParty local transport", () => {
     // useMediaSession's play handler marks the intent, then plays.
     markViewerIntent();
     video.play();
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 0, false);
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", { playheadMS: 0, playing: true });
     view.unmount();
   });
 });
@@ -339,7 +351,7 @@ describe("useWatchParty drift and advance (CORE-1766)", () => {
     );
     // The host's Up Next takes its player to the next item.
     host.rerender({ mediaId: "m2" });
-    expect(sendPartyTransport).toHaveBeenCalledWith("m2", 0, false);
+    expect(sendPartyTransport).toHaveBeenCalledWith("m2", { positionMS: 0, playing: true });
     expect(onFollow).not.toHaveBeenCalled();
     host.unmount();
 
@@ -518,12 +530,16 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       const view = mount(video);
       fireEvent.pointerDown(document.body);
       video.play();
-      expect(sendPartyTransport).toHaveBeenCalledWith("m1", 0, false);
+      expect(sendPartyTransport).toHaveBeenCalledWith("m1", { playheadMS: 0, playing: true });
 
       fireEvent.keyDown(document.body, { key: "ArrowRight" });
       video.currentTime = 30;
       video.dispatchEvent(new Event("seeked"));
-      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 30_000, false, expect.any(Number));
+      expect(sendPartyTransport).toHaveBeenLastCalledWith(
+        "m1",
+        { positionMS: 30_000 },
+        expect.any(Number),
+      );
       view.unmount();
     });
 
@@ -612,7 +628,10 @@ describe("useWatchParty lead party (CORE-2245)", () => {
 
       video.readyState = 2;
       video.dispatchEvent(new Event("waiting"));
-      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 20_000, true);
+      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", {
+        playheadMS: 20_000,
+        playing: false,
+      });
       vi.mocked(reportLeadPosition).mockClear();
       act(() => {
         vi.advanceTimersByTime(1000);
@@ -623,7 +642,10 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       view.rerender();
       video.readyState = 4;
       video.dispatchEvent(new Event("playing"));
-      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 20_000, false);
+      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", {
+        playheadMS: 20_000,
+        playing: true,
+      });
       view.unmount();
     });
 
@@ -634,7 +656,10 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       video.currentTime = 20;
       const view = mount(video);
       video.pause();
-      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 20_000, true);
+      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", {
+        playheadMS: 20_000,
+        playing: false,
+      });
       view.unmount();
     });
 

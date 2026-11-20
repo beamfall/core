@@ -193,7 +193,7 @@ describe("useAutoSkip", () => {
       act(() => first.view.result.current.undo());
       expect(first.video.currentTime).toBe(5);
       // The browser's seeked event sends this rewind as ordinary party transport.
-      await host.sendPartyTransport("m1", first.video.currentTime * 1000, true);
+      await host.sendPartyTransport("m1", { positionMS: first.video.currentTime * 1000 });
       expect(follower.getWatchParty().timeline?.positionMS).toBe(5000);
       await act(async () => {
         first.video.emitTimeUpdate(5);
