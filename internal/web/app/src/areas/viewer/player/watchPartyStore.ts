@@ -124,6 +124,8 @@ let rosterWaiters: Array<() => void> = [];
 let generation = 0;
 // A membership or title change invalidates controls even if the viewer later returns.
 let transportEpoch = 0;
+// A silence hold changes the shared anchor without changing the lead's own intent.
+let leadPauseIntent: boolean | undefined;
 // The latest shared rewind lets each member recognize a return into a segment.
 let rewind: { fromMS: number; toMS: number } | null = null;
 
@@ -427,6 +429,14 @@ export function getWatchParty(): WatchPartyState {
   return state;
 }
 
+export function getLeadPauseIntent(): boolean | undefined {
+  return leadPauseIntent;
+}
+
+export function rememberLeadPauseIntent(paused: boolean): void {
+  leadPauseIntent = paused;
+}
+
 function noteTimeline(next: PartyTimeline): void {
   const previous = state.timeline;
   if (previous?.item !== next.item) {
@@ -690,6 +700,7 @@ function reset(patch: Partial<WatchPartyState> = {}): void {
   generation++;
   transportEpoch++;
   latestTransport = null;
+  leadPauseIntent = undefined;
   const transport = transportQueues.get(state.partyID);
   if (transport?.pending) {
     transport.pending.settle("unconfirmed");
@@ -784,6 +795,7 @@ export async function startWatchParty(
       }
     }
     if (gen !== generation) return false;
+    if (lead) rememberLeadPauseIntent(intent.paused);
     set({
       status: "active",
       partyID,

@@ -2644,7 +2644,16 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     }
   });
 
-  it("restores a paused lead host on Back from Notifications without sending Play", async () => {
+  it.each([
+    {
+      name: "restores a paused lead host on Back from Notifications without sending Play",
+      explicitPause: true,
+    },
+    {
+      name: "resumes a lead host from a silence hold on Back from Notifications",
+      explicitPause: false,
+    },
+  ])("$name", async ({ explicitPause }) => {
     const { usePlayer: realUsePlayer } =
       await vi.importActual<typeof import("../player/usePlayer")>("../player/usePlayer");
     const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
@@ -2654,6 +2663,12 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
       Object.defineProperty(this, "paused", { configurable: true, value: false });
       this.dispatchEvent(new Event("play"));
       return Promise.resolve();
+    });
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(function (
+      this: HTMLMediaElement,
+    ) {
+      Object.defineProperty(this, "paused", { configurable: true, value: true });
+      this.dispatchEvent(new Event("pause"));
     });
     const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
     vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 0, roundTripMS: 1 });
@@ -2670,7 +2685,11 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     });
     vi.mocked(watchPartyTransport)
       .mockReset()
-      .mockImplementation(async ({ item, positionMS }) => ({ item, positionMS, presentAtMS: 0 }));
+      .mockImplementation(async ({ item, positionMS }) => ({
+        item,
+        positionMS,
+        presentAtMS: Date.now(),
+      }));
     let unmount: (() => void) | undefined;
     try {
       expect(await startWatchParty("media-alpha", 45_000, false, true)).toBe(true);
@@ -2681,8 +2700,39 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
         expect(video).toHaveAttribute("src", "/stream/media-alpha");
         return video;
       });
+      fireEvent.loadedMetadata(first);
+      await act(async () => first.play());
+      expect(getWatchParty().timeline).toMatchObject({ paused: false });
+      if (explicitPause) {
+        await act(async () => first.pause());
+        expect(getWatchParty().timeline).toMatchObject({ paused: true });
+      }
+      play.mockClear();
+      vi.mocked(watchPartyTransport).mockClear();
       await act(async () => go("/notifications"));
       expect(document.querySelector("video")).toBeNull();
+      const positionMS = explicitPause ? 45_000 : 47_000;
+      if (!explicitPause) {
+        await act(async () => {
+          stream.mock.lastCall?.[0](
+            new MessageEvent("group.sync", {
+              data: JSON.stringify({
+                payload: {
+                  signal: "transition",
+                  groupID: "p1",
+                  item: "media-alpha",
+                  positionMS,
+                  presentAtMS: Date.now() + 3000,
+                  paused: true,
+                  lead: true,
+                  ratePermille: 1000,
+                },
+              }),
+            }),
+          );
+        });
+        expect(getWatchParty().timeline).toMatchObject({ paused: true, positionMS });
+      }
       await act(async () => go(-1));
       const video = await waitFor(() => {
         const reopened = stageVideo();
@@ -2693,18 +2743,20 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
       Object.defineProperty(video, "readyState", { value: 4 });
       fireEvent.loadedMetadata(video);
       fireEvent.seeked(video);
-      fireEvent.canPlay(video);
-      expect(video.paused).toBe(true);
-      expect(video.currentTime).toBe(45);
-      expect(play).not.toHaveBeenCalled();
-      expect(watchPartyTransport).not.toHaveBeenCalled();
-
-      fireEvent.pointerDown(video);
-      await act(async () => video.play());
+      await act(async () => fireEvent.canPlay(video));
+      expect(video.paused).toBe(explicitPause);
+      expect(video.currentTime).toBe(positionMS / 1000);
+      if (explicitPause) {
+        expect(play).not.toHaveBeenCalled();
+        expect(watchPartyTransport).not.toHaveBeenCalled();
+        await act(async () => video.play());
+      } else {
+        expect(play).toHaveBeenCalledTimes(1);
+      }
       expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
         partyID: "p1",
         item: "media-alpha",
-        positionMS: 45_000,
+        positionMS,
         paused: false,
       });
     } finally {
@@ -2712,6 +2764,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
       act(resetWatchPartyForTest);
       stream.mockRestore();
       load.mockRestore();
+      pause.mockRestore();
       play.mockRestore();
       vi.mocked(fetchNotifications).mockReset();
       vi.mocked(fetchPlaybackInfo).mockReset();

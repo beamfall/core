@@ -13,6 +13,7 @@ import {
   type PartyAutoSkipOutcome,
   partyNowMS,
   pendingPartyTransport,
+  rememberLeadPauseIntent,
   reportLeadPosition,
   reportPartyDrift,
   resumeFollowedParty,
@@ -582,6 +583,7 @@ export function useWatchParty({
       const pending = pendingPartyTransport(tl.item);
       if (!isSeek) {
         const playing = event.type === "play";
+        if (s.lead) rememberLeadPauseIntent(!playing);
         if (playing === (pending?.playing ?? !tl.paused)) return;
         void sendPartyTransport(tl.item, { playing, playheadMS: local });
         return;

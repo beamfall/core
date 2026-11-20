@@ -26,6 +26,7 @@ vi.mock("./watchPartyStore", () => ({
   leaveParty: vi.fn(async () => true),
   reportPartyDrift: vi.fn(() => true),
   reportLeadPosition: vi.fn(() => true),
+  rememberLeadPauseIntent: vi.fn(),
   partyNowMS: () => Date.now() + party.offsetMS,
   followLeadParty: vi.fn(async () => null),
   resumeFollowedParty: vi.fn(async () => null),

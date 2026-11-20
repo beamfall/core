@@ -46,7 +46,7 @@ import {
   shownCaptionElement,
   trackPreferencePolicy,
 } from "./streamTracks";
-import { getWatchParty, partyNowMS } from "./watchPartyStore";
+import { getLeadPauseIntent, getWatchParty, partyNowMS } from "./watchPartyStore";
 import { expectedPositionMS } from "./watchPartySync";
 
 // The player engine, ported from the vanilla play() / startPreparedPlayback /
@@ -829,8 +829,8 @@ export function usePlayer(
       let songScale = songSecondsPerStreamSecond(info);
       songScaleRef.current = songScale;
 
-      // A returning lead opens on the shared timeline. Restore through the
-      // engine's normal resume path so canplay cannot undo a shared pause.
+      // A returning lead opens at the shared position. Its own play/pause
+      // intent survives a silence hold while the player was closed.
       const party = getWatchParty();
       const leadOpening =
         !reloading &&
@@ -841,7 +841,8 @@ export function usePlayer(
         party.timeline?.item === mediaID
           ? party.timeline
           : null;
-      const startPaused = retryPaused || leadOpening?.paused === true;
+      const startPaused =
+        retryPaused || (leadOpening !== null && (getLeadPauseIntent() ?? leadOpening.paused));
 
       // The playhead: the native resume point not yet applied, else the
       // element's own position.
