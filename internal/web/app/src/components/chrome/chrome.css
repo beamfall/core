@@ -129,7 +129,9 @@
   width: 10px;
   height: calc(100vh - 60px);
   height: calc(100dvh - 60px);
-  margin-inline: -6px -4px;
+  /* Starts on the sidebar's border and reaches into the content, so the
+     sidebar's own scrollbar stays grabbable. */
+  margin-inline: -1px -9px;
   cursor: col-resize;
   touch-action: none;
   /* Transparent, so forced-colors mode still draws a focus ring. */
@@ -140,7 +142,7 @@
 .bf-sidebar-resizer::after {
   position: absolute;
   inset-block: 0;
-  left: 4px;
+  left: 0;
   width: 2px;
   content: "";
   background: transparent;

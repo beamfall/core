@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type PointerEvent, useRef } from "react";
+import { type KeyboardEvent, type PointerEvent, useEffect, useRef } from "react";
 import { useT } from "@/lib/i18n";
 import {
   clampSidebarWidth,
@@ -31,6 +31,17 @@ export function SidebarResizer({
   const drag = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const latest = useRef(width);
   latest.current = width;
+  const resizingChange = useRef(onResizingChange);
+  resizingChange.current = onResizingChange;
+
+  // Unmounting mid-drag (the window narrowing to the phone layout) must not
+  // leave the shell stuck in its resizing state with text selection off.
+  useEffect(
+    () => () => {
+      if (drag.current) resizingChange.current(false);
+    },
+    [],
+  );
 
   function set(next: number, commit: boolean) {
     const clamped = clampSidebarWidth(next);
@@ -40,8 +51,12 @@ export function SidebarResizer({
   }
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0) return;
+    // One drag at a time: a second finger must not take over the first one's.
+    if (event.button !== 0 || drag.current) return;
     event.preventDefault();
+    // preventDefault stops the click from focusing the separator; focus it so
+    // arrow keys work after a drag.
+    event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture?.(event.pointerId);
     drag.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: width };
     onResizingChange(true);
@@ -62,6 +77,8 @@ export function SidebarResizer({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    // Leave modified keys (Alt+Arrow is browser Back/Forward) to the browser.
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const next = sidebarWidthForKey(event.key, width);
     if (next == null) return;
     event.preventDefault();
@@ -84,6 +101,7 @@ export function SidebarResizer({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
       onDoubleClick={() => set(SIDEBAR_WIDTH_DEFAULT, true)}
       onKeyDown={onKeyDown}
     />
