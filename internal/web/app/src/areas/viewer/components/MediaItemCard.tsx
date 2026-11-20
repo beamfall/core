@@ -11,7 +11,7 @@ import { activateLink } from "../lib/activateLink";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { artFrameClass } from "../lib/cardArt";
 import { cardAccessibleName, cardRating, cardState } from "../lib/cardState";
-import { cardHeading, cardSubline } from "../lib/cardTitles";
+import { cardHeading, cardSubline, showsAudioEntityDetails } from "../lib/cardTitles";
 import { entityLinkState } from "../lib/entityPreview";
 import type { LibraryViewMode } from "../lib/libraryBrowse";
 import { mediaPath } from "../lib/mediaAddress";
@@ -100,6 +100,7 @@ export function MediaItemCard({
   const isTable = display === "table";
   const { heading, lead } = cardHeading(item, nameContainer, displayLocale);
   const subline = cardSubline(item, showYear || isTable, displayLocale, lead);
+  const featureAudioDetails = showsAudioEntityDetails(item);
   const isRow = display === "list" || isTable;
   const wide = display === "thumbnail";
   // The page the card's own activation opens (and the More menu's copied link).
@@ -264,6 +265,7 @@ export function MediaItemCard({
       primaryLabel={primaryLabel}
       isMedia={isMedia}
       isAudio={item.mediaClass === "audio"}
+      containerID={item.container?.id}
       href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
       target={itemTargetFor(item)}
       onPrimary={isMedia ? play : open}
@@ -292,7 +294,15 @@ export function MediaItemCard({
         state={showPlayButton ? undefined : linkState()}
         onClick={showPlayButton ? (event) => activateLink(event, open) : undefined}
         aria-label={cardAccessibleName(
-          { ...item, title: cardLabelTitle(item, heading, showYear, lead) },
+          {
+            ...item,
+            title: cardLabelTitle(
+              item,
+              heading,
+              showYear && !featureAudioDetails,
+              featureAudioDetails ? subline : lead,
+            ),
+          },
           state,
           rating,
         )}

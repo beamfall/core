@@ -11,13 +11,14 @@ import (
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
+	music "github.com/beamfall/plugin-music"
 )
 
 const libraryEntitiesTestQuery = `query($libraryID: String!, $kind: String, $limit: Int, $offset: Int) {
 	libraryEntities(libraryID: $libraryID, kind: $kind, limit: $limit, offset: $offset) {
 		kinds { kind label kindDisplayName archetype total }
 		allLabel kind total
-		items { id kind title mediaClass childCount mediaCount parents { id title } }
+		items { id kind title mediaClass byline year childCount mediaCount parents { id title } }
 	}
 }`
 
@@ -139,6 +140,97 @@ func libraryEntityTitles(items []LibraryEntityItem) []string {
 	return titles
 }
 
+func newMusicArtistBrowseFixture(t *testing.T) (*Handler, store.LibraryID) {
+	t.Helper()
+	st := storetest.Open(t)
+	registry, err := newTestPluginRegistry([]plugin.Bundle{music.Bundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(manifest.NewService(st, time.Now, registry), auth.NewService(st), st, registry, Options{
+		EntityBrowseSources: map[plugin.ID]map[string][]store.EntityBrowseSource{music.PluginID: {"artist": {
+			{Relation: "album-artist", FromKind: "album"},
+			{Relation: "appears-on", ExcludeMediaRelation: "album-track"},
+		}}},
+	})
+	ctx := context.Background()
+	library, err := st.CreateLibrary(ctx, "Music", false, music.PluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entity := range []store.Entity{
+		{ID: "album", Kind: "album", Title: "An Album"},
+		{ID: "album-artist", Kind: "artist", Title: "Earth, Wind & Fire"},
+		{ID: "combined-credit", Kind: "artist", Title: "AURORA, Pomme"},
+		{ID: "loose-credit", Kind: "artist", Title: "Tyler, The Creator"},
+	} {
+		entity.LibraryID = library.ID
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tracks := map[string]store.MediaID{}
+	for _, name := range []string{"grouped", "loose"} {
+		item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: library.ID, Path: "/music/" + name + ".flac", Title: name,
+			Container: "flac", Codec: "flac", Class: store.MediaClassAudio, ContentFingerprint: "fp-" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tracks[name] = item.ID
+	}
+	for _, relation := range []store.EntityRelation{
+		{FromEntityID: "album", Name: "album-artist", ToEntityID: "album-artist"},
+		{FromEntityID: "album", Name: "album-track", ToMediaID: tracks["grouped"]},
+		{FromEntityID: "combined-credit", Name: "appears-on", ToMediaID: tracks["grouped"]},
+		{FromEntityID: "loose-credit", Name: "appears-on", ToMediaID: tracks["loose"]},
+	} {
+		if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return handler, library.ID
+}
+
+func TestLibraryEntitiesMusicArtistBrowse(t *testing.T) {
+	handler, libraryID := newMusicArtistBrowseFixture(t)
+	var resp LibraryEntitiesResponse
+	execGraph(t, handler, authorizeViewer, libraryEntitiesTestQuery,
+		map[string]any{"libraryID": string(libraryID), "kind": "artist"}, "libraryEntities", &resp)
+	if len(resp.Kinds) != 2 || resp.Kinds[0].Kind != "artist" || resp.Kinds[0].Total != 2 ||
+		resp.Kinds[1].Kind != "album" || resp.Kinds[1].Total != 1 || resp.Total != 2 ||
+		!slices.Equal(libraryEntityTitles(resp.Items), []string{"Earth, Wind & Fire", "Tyler, The Creator"}) {
+		t.Fatalf("Artists browse = %+v", resp)
+	}
+}
+
+func TestSourceItemsMusicArtistsHomeShelf(t *testing.T) {
+	handler, _ := newMusicArtistBrowseFixture(t)
+	var source plugin.SourceSpec
+	for _, layout := range music.Bundle().Layouts {
+		if layout.ID != "home" {
+			continue
+		}
+		for _, section := range layout.Sections {
+			if section.ID == "artists" {
+				source = section.Source
+				break
+			}
+		}
+	}
+	if source.Kind != "entity-items" {
+		t.Fatalf("Artists home shelf source = %+v", source)
+	}
+	var items []SourceItem
+	execGraph(t, handler, authorizeViewer, `query($kind: String!, $entityKind: String!, $home: Boolean) {
+		sourceItems(kind: $kind, entityKind: $entityKind, home: $home) { id }
+	}`, map[string]any{"kind": source.Kind, "entityKind": source.EntityKind, "home": true}, "sourceItems", &items)
+	if got, want := itemIDs(items), []string{"album-artist", "loose-credit"}; !slices.Equal(got, want) {
+		t.Fatalf("Artists home shelf = %v, want %v", got, want)
+	}
+}
+
 // The browse kinds, their order and labels come from the plugin: a kind
 // another kind points at comes first, a kind with no Entities is left out,
 // and the Media view takes the plugin's unfiltered grid title.
@@ -235,10 +327,22 @@ func TestLibraryEntitiesHidesWhatTheSessionCannotBrowse(t *testing.T) {
 	}
 }
 
-// An audio card credits its person-archetype Entities in link order, on the
-// Library grid and in search; a video card and an Entity card carry none.
+// Audio Media and containers credit their person-archetype Entities in link
+// order on the Library grids and in search.
 func TestAudioCardsCarryTheirByline(t *testing.T) {
 	handler, libraryID, media := newShelfLibrary(t, false)
+	ctx := context.Background()
+	if err := handler.store.UpsertEntity(ctx, store.Entity{
+		ID: "entity-box-a", LibraryID: libraryID, Kind: "box", Title: "Alpha Quill",
+		Fields: []store.EntityField{{Name: "release-date", Type: store.EntityFieldDate, Date: time.Date(2001, 2, 3, 0, 0, 0, 0, time.UTC)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := handler.store.UpsertEntityRelation(ctx, store.EntityRelation{
+		FromEntityID: "entity-box-b", Name: "holds", ToMediaID: media["clip"],
+	}); err != nil {
+		t.Fatal(err)
+	}
 	var page LibraryItemsResponse
 	execGraph(t, handler, authorizeViewer,
 		`query($libraryID: String!) { libraryItems(libraryID: $libraryID, limit: 50) { items { id byline mediaClass } } }`,
@@ -257,9 +361,23 @@ func TestAudioCardsCarryTheirByline(t *testing.T) {
 		t.Fatalf("uncredited piece byline = %v, want none", got)
 	}
 
+	var boxes LibraryEntitiesResponse
+	execGraph(t, handler, authorizeViewer, libraryEntitiesTestQuery,
+		map[string]any{"libraryID": string(libraryID), "kind": "box"}, "libraryEntities", &boxes)
+	if len(boxes.Items) != 2 {
+		t.Fatalf("box cards = %+v, want two", boxes.Items)
+	}
+	if box := boxes.Items[0]; box.ID != "entity-box-a" || box.MediaClass != "audio" ||
+		!slices.Equal(box.Byline, []string{"Em", "Zed"}) || box.Year != 2001 {
+		t.Fatalf("audio box card = %+v, want Em, Zed and release year 2001", box)
+	}
+	if box := boxes.Items[1]; box.ID != "entity-box-b" || box.MediaClass != "video" || len(box.Byline) != 0 {
+		t.Fatalf("video box card = %+v, want a video card without a byline", box)
+	}
+
 	var search SearchResultResponse
 	execGraph(t, handler, authorizeViewer,
-		`query($query: String!) { searchResult(query: $query, mode: keyword) { items { id kind mediaClass byline entityKind } } }`,
+		`query($query: String!) { searchResult(query: $query, mode: keyword) { items { id kind mediaClass byline year entityKind } } }`,
 		map[string]any{"query": "Quill"}, "searchResult", &search)
 	rows := map[string]SearchResultItem{}
 	for _, item := range search.Items {
@@ -269,8 +387,9 @@ func TestAudioCardsCarryTheirByline(t *testing.T) {
 	if !ok || piece.MediaClass != "audio" || !slices.Equal(piece.Byline, []string{"Zed", "Em"}) {
 		t.Fatalf("search piece row = %+v (found %v), want audio with byline Zed, Em", piece, ok)
 	}
-	if box, ok := rows["entity-box-a"]; !ok || box.EntityKind != "box" || box.MediaClass != "audio" || len(box.Byline) != 0 {
-		t.Fatalf("search box row = %+v (found %v), want a box row with the audio class and no byline", box, ok)
+	if box, ok := rows["entity-box-a"]; !ok || box.EntityKind != "box" || box.MediaClass != "audio" ||
+		!slices.Equal(box.Byline, []string{"Em", "Zed"}) || box.Year != 2001 {
+		t.Fatalf("search box row = %+v (found %v), want audio with byline Em, Zed and release year 2001", box, ok)
 	}
 }
 

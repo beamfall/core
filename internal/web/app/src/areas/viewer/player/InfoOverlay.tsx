@@ -80,7 +80,9 @@ export function InfoOverlay({
               </Dialog.Close>
               <Dialog.Title render={<h3 />}>{mediaTitle || t("playbackDetails")}</Dialog.Title>
             </div>
-            {mediaID && open && <ItemActions target={{ mediaID }} />}
+            {mediaID && open && (
+              <ItemActions target={{ mediaID }} isAudio={info?.mediaClass === "audio"} />
+            )}
             {mediaTitle && <p className="bf-up-next-title">{t("playbackDetails")}</p>}
             <dl className="bf-info-rows">
               {rows.map((row) => (

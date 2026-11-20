@@ -2,6 +2,7 @@ import type { MediaRow } from "@/lib/graphql/browse";
 import type {
   EntityInfo,
   GenericMediaInfo,
+  MediaCredit,
   RelatedEntityGroup,
   SourceItem,
 } from "@/lib/graphql/types";
@@ -24,7 +25,7 @@ import { type PlayerNavState, type PlayQueueItem, playQueueOf, queueWindow } fro
 // - A "person" Entity lists its related "container" Entities as usual, then
 //   "Appears on": containers credited on the person's own Media that are not
 //   among its related containers (a compilation credits another album person).
-// - Top tracks: the profile's top-tracks feed narrowed to the person's Media,
+// - Top tracks: the profile's most-played feed narrowed to the person's Media,
 //   filled up from server order.
 
 export const AUDIO_CLASS = "audio";
@@ -35,6 +36,7 @@ type ClassedItem = SourceItem & { mediaClass?: string };
 /** One row of a track list. */
 export interface TrackRow {
   item: SourceItem;
+  credits?: readonly MediaCredit[];
   /** The stored index for an album when usable, else the 1-based display position. */
   number: number;
   /** The stored sequence this row groups under; set only when the list is grouped. */
@@ -131,6 +133,7 @@ function trackRow(
   const people = personCredits(row);
   const differs = people.some((credit) => !owners.has(credit.entityID));
   const track: TrackRow = { item, number };
+  if (row) track.credits = row.credits ?? [];
   if (group !== undefined) track.group = group;
   if (differs) track.artist = people.map((credit) => credit.title).join(", ");
   if (row?.durationSeconds) track.durationSeconds = row.durationSeconds;
@@ -244,14 +247,14 @@ export function appearsOn(
 }
 
 /**
- * The person's top tracks: their Media in the profile's top-tracks order, then
+ * The person's top tracks: their Media in the profile's play-count order, then
  * the rest in server order, capped at `limit`.
  */
 export function topTracks(
   items: readonly SourceItem[],
   profileTop: readonly SourceItem[],
   limit = TOP_TRACKS_LIMIT,
-): SourceItem[] {
+): { tracks: SourceItem[]; hasPlays: boolean } {
   const media = items.filter((item) => item.kind === "media");
   const byID = new Map(media.map((item) => [item.id, item]));
   const out: SourceItem[] = [];
@@ -265,7 +268,7 @@ export function topTracks(
   for (const item of media) {
     if (!taken.has(item.id)) out.push(item);
   }
-  return out.slice(0, limit);
+  return { tracks: out.slice(0, limit), hasPlays: taken.size > 0 };
 }
 
 /** The watch-route state that starts `item` with `queue` as the player's queue. */

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -549,6 +550,69 @@ func TestEntityItemsSourceRevealFiltered(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("entity items without a kind = %#v, want empty", items)
+	}
+}
+
+func TestEntityItemsSourceBrowseRules(t *testing.T) {
+	st, lib, _ := relatedFixture(t)
+	ctx := context.Background()
+	other, err := st.CreateLibrary(ctx, "Other", false, "other", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RegisterEntityFieldIndexes(ctx, []EntityFieldIndex{
+		{Kind: "maker", Field: "region", Type: EntityFieldText, Filterable: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	region := EntityField{Name: "region", Type: EntityFieldText, Text: "north"}
+	for _, entity := range []Entity{
+		{ID: "group-maker", LibraryID: lib.ID, Kind: "maker", Title: "Bravo", Fields: []EntityField{region}},
+		{ID: "combined-credit", LibraryID: lib.ID, Kind: "maker", Title: "Alpha, Delta", Fields: []EntityField{region}},
+		{ID: "loose-credit", LibraryID: lib.ID, Kind: "maker", Title: "Charlie"},
+		{ID: "other-maker", LibraryID: other.ID, Kind: "maker", Title: "Echo"},
+		{ID: "unbound-maker", LibraryID: "library-local", Kind: "maker", Title: "Foxtrot"},
+	} {
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upsertRelatedEntity(t, st, "box", lib.ID, "box", "Box")
+	media := map[string]MediaID{}
+	for _, name := range []string{"grouped", "loose"} {
+		item, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: lib.ID, Path: "/shelf/" + name + ".flac", Title: name,
+			Container: "flac", Codec: "flac", Class: MediaClassAudio, ContentFingerprint: "fp-" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		media[name] = item.ID
+	}
+	relateEntities(t, st,
+		EntityRelation{FromEntityID: "box", Name: "box-maker", ToEntityID: "group-maker"},
+		EntityRelation{FromEntityID: "box", Name: "contains", ToMediaID: media["grouped"]},
+		EntityRelation{FromEntityID: "combined-credit", Name: "credit", ToMediaID: media["grouped"]},
+		EntityRelation{FromEntityID: "loose-credit", Name: "credit", ToMediaID: media["loose"]},
+	)
+	filter := LibraryFilter{AllLibraries: true}
+	query := SourceQuery{Kind: "entity-items", EntityKind: "maker", Home: true,
+		EntityBrowseSources: map[string][]EntityBrowseSource{"shelf": {
+			{Relation: "box-maker", FromKind: "box"},
+			{Relation: "credit", ExcludeMediaRelation: "contains"},
+		}},
+	}
+	if got, want := sourceItemIDs(mustSourceItems(t, st, filter, query)), []MediaID{"group-maker", "loose-credit", "other-maker", "unbound-maker"}; !slices.Equal(got, want) {
+		t.Fatalf("entity shelf = %v, want %v", got, want)
+	}
+	query.Limit, query.Offset = 1, 1
+	if got := sourceItemIDs(mustSourceItems(t, st, filter, query)); !slices.Equal(got, []MediaID{"loose-credit"}) {
+		t.Fatalf("second shelf page = %v, want loose-credit", got)
+	}
+	query.Limit, query.Offset = 0, 0
+	query.EntityFieldFilters = []EntityField{region}
+	if got := sourceItemIDs(mustSourceItems(t, st, filter, query)); !slices.Equal(got, []MediaID{"group-maker"}) {
+		t.Fatalf("field-filtered shelf = %v, want group-maker", got)
 	}
 }
 

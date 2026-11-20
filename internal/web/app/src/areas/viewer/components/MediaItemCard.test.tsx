@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchItemState, setWatched } from "@/lib/graphql";
+import { fetchEntity, fetchItemState, setWatched } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { STRINGS } from "@/strings";
@@ -17,6 +17,7 @@ import { MediaItemCard, PREVIEW_DWELL_MS } from "./MediaItemCard";
 
 vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
+  fetchEntity: vi.fn(),
   fetchItemState: vi.fn(),
   setWatched: vi.fn(),
 }));
@@ -41,6 +42,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   installMatchMedia();
   vi.mocked(fetchPreviewInfo).mockReset();
+  vi.mocked(fetchEntity).mockReset().mockResolvedValue(null);
   vi.mocked(fetchItemState).mockReset();
   vi.mocked(setWatched).mockReset();
   vi.mocked(fetchItemState).mockResolvedValue({
@@ -425,6 +427,27 @@ describe("MediaItemCard art frame (CORE-2362)", () => {
   it("frames an Entity whose Media are all audio square", () => {
     const { container } = renderCard({ kind: "entity", mediaClass: "audio" });
     expect(container.querySelector(".bf-poster.bf-poster-square")).not.toBeNull();
+  });
+
+  it("shows an audio container's credited artist and release year without a detail lookup", () => {
+    renderCard({
+      id: "record-21",
+      kind: "entity",
+      title: "21",
+      mediaClass: "audio",
+      byline: ["Adele"],
+      year: 2011,
+      summary: "12 items",
+    });
+    expect(screen.getByText("Adele · 2011")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "21, Adele · 2011" })).toBeInTheDocument();
+    expect(fetchEntity).not.toHaveBeenCalled();
+  });
+
+  it("keeps a video entity card's existing subtitle without a detail lookup", () => {
+    renderCard({ kind: "entity", mediaClass: "video", summary: "Video collection" });
+    expect(screen.getByText("Video collection")).toBeInTheDocument();
+    expect(fetchEntity).not.toHaveBeenCalled();
   });
 
   it("keeps the 2:3 frame for video and for an unknown class", () => {

@@ -25,6 +25,7 @@ type Hooks struct {
 	LocalExtractors                map[string][]scan.LocalExtractor
 	HydrationMappers               map[string]HydrationMapper
 	EntityPosterRules              []EntityPosterRule
+	EntityBrowseRules              []EntityBrowseRule
 	OfflinePackResolvers           []OfflinePackResolverHook
 	OfflinePackAttestationVerifier offlinepack.DeviceKeyAttestationVerifier
 	EnrichmentProvider             EnrichmentProviderFactory

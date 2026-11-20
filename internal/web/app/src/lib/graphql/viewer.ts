@@ -214,7 +214,7 @@ export async function fetchSourceItems(
 // --- Entity detail --------------------------------------------------------
 
 const ENTITY_QUERY =
-  "query Entity($id: String!) { entity(id: $id) { id kind kindDisplayName title archetype artworkSlots fields { name type value label } relatedEntities { kind kindDisplayName archetype items { id kind title summary artwork { poster } artworkSlots mediaClass byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } } }";
+  "query Entity($id: String!) { entity(id: $id) { id kind kindDisplayName title archetype artworkSlots fields { name type value label } relatedEntities { kind kindDisplayName archetype items { id kind title summary artwork { poster } artworkSlots mediaClass year byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } } }";
 
 /** Entity — the detail header (declared fields, server-stringified) and its related Entities. */
 export async function fetchEntity(id: string, signal?: AbortSignal): Promise<EntityInfo | null> {

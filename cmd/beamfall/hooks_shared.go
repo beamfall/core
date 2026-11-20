@@ -104,6 +104,12 @@ func addMusicHooks(hooks *app.Hooks) {
 			{Relation: "appears-on"},
 		}},
 	)
+	hooks.EntityBrowseRules = append(hooks.EntityBrowseRules, app.EntityBrowseRule{
+		PluginID: music.PluginID, Kind: "artist", Sources: []app.EntityBrowseSource{
+			{Relation: "album-artist", FromKind: "album"},
+			{Relation: "appears-on", ExcludeMediaRelation: "album-track"},
+		},
+	})
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.LastfmImporterID}] = func(_ []string, path string) migrate.Source { return music.NewLastfmSource(path) }
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.ListenBrainzImporterID}] = func(_ []string, path string) migrate.Source { return music.NewListenBrainzSource(path) }
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.NavidromeImporterID}] = func(categories []string, path string) migrate.Source {

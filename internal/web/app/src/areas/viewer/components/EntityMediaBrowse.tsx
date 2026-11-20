@@ -4,6 +4,8 @@ import { fetchSourceItems } from "@/lib/graphql";
 import type { MediaRow } from "@/lib/graphql/browse";
 import type { EntityInfo, SourceItem } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { useViewerIdentity } from "@/lib/session";
+import { useEngagementEpoch } from "../actions/engagementSync";
 import { filmographyOrder } from "../lib/people";
 import {
   appearsOn,
@@ -11,6 +13,7 @@ import {
   containerTrackRows,
   isAudioListing,
   listedTrackRows,
+  TOP_TRACKS_LIMIT,
   type TrackRow,
   topTracks,
   trackGroups,
@@ -113,6 +116,42 @@ function ContainerTracks({ tracks }: { tracks: TrackRow[] }) {
   );
 }
 
+async function readPlayedTracks(items: readonly SourceItem[], signal: AbortSignal) {
+  const remaining = new Set(items.filter((item) => item.kind === "media").map((item) => item.id));
+  const played: SourceItem[] = [];
+  const limit = 200;
+  const maxPages = 5;
+  let emptyPages = 0;
+  // Bound the profile-wide scan when the person has few plays, allowing for
+  // pages emptied by the server's post-page mute filter.
+  for (
+    let pageIndex = 0;
+    pageIndex < maxPages && remaining.size > 0 && played.length < TOP_TRACKS_LIMIT;
+    pageIndex++
+  ) {
+    const page = await fetchSourceItems(
+      {
+        kind: "most-played",
+        entityKind: "",
+        libraryID: "",
+        entityID: "",
+        fieldFilters: null,
+        entityFilter: null,
+        limit,
+        offset: pageIndex * limit,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    for (const item of page) {
+      if (remaining.delete(item.id)) played.push(item);
+    }
+    emptyPages = page.length === 0 ? emptyPages + 1 : 0;
+    if (emptyPages === 3) break;
+  }
+  return played;
+}
+
 function PersonListening({
   entity,
   items,
@@ -123,31 +162,28 @@ function PersonListening({
   rows: Record<string, MediaRow>;
 }) {
   const t = useT();
-  const [profileTop, setProfileTop] = useState<SourceItem[]>([]);
+  const identity = useViewerIdentity();
+  const epoch = useEngagementEpoch();
+  const [ranking, setRanking] = useState<{ identity: string; items: SourceItem[] } | null>(null);
 
   useEffect(() => {
+    if (!identity) return;
     const controller = new AbortController();
-    fetchSourceItems(
-      {
-        kind: "top-tracks",
-        entityKind: "",
-        libraryID: "",
-        entityID: "",
-        fieldFilters: null,
-        entityFilter: null,
-        limit: 200,
-        offset: 0,
-      },
-      controller.signal,
-    )
-      .then(setProfileTop)
+    readPlayedTracks(items, controller.signal)
+      .then((played) => {
+        if (!controller.signal.aborted) setRanking({ identity, items: played });
+      })
       .catch(() => {
-        if (!controller.signal.aborted) setProfileTop([]);
+        if (!controller.signal.aborted) setRanking(null);
       });
     return () => controller.abort();
-  }, []);
+  }, [identity, items, epoch]);
 
-  const top = topTracks(items, profileTop);
+  const { tracks: top, hasPlays } = topTracks(
+    items,
+    ranking?.identity === identity ? (ranking?.items ?? []) : [],
+  );
+  const topLabel = t(hasPlays ? "personTopTracks" : "personTracks");
   const owners = new Set([entity.id]);
   // Numbered by rank; the person's own credit is never repeated on its rows.
   const topRows = listedTrackRows(top, rows, owners);
@@ -159,9 +195,9 @@ function PersonListening({
     <>
       <section className="bf-section flex flex-col gap-3">
         <h2 className="bf-section-title">
-          <span>{t("personTopTracks")}</span>
+          <span>{topLabel}</span>
         </h2>
-        <TrackList rows={topRows} queue={audioQueue(top)} label={t("personTopTracks")} />
+        <TrackList rows={topRows} queue={audioQueue(top)} label={topLabel} />
       </section>
       {allRows && (
         <section className="bf-section flex flex-col gap-3">

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 )
@@ -124,6 +125,126 @@ func TestLibraryEntitiesListsKindWithCounts(t *testing.T) {
 	}
 	if len(lids.Items) != 2 || lids.Items[0].MediaCount != 3 || len(lids.Items[0].Parents) != 1 || lids.Items[0].Parents[0].ID != "entity-box-a" {
 		t.Fatalf("lids = %+v, want two lids of Alpha with three Media each", lids.Items)
+	}
+}
+
+func TestLibraryEntitiesBrowseSources(t *testing.T) {
+	for _, plane := range []string{"catalog", "encrypted"} {
+		t.Run(plane, func(t *testing.T) {
+			ctx := context.Background()
+			var st *Store
+			var libraryID LibraryID
+			if plane == "encrypted" {
+				var media Media
+				st, media = seededEncryptedMedia(t, "browse-sources-seed")
+				t.Cleanup(func() {
+					if err := st.Close(); err != nil {
+						t.Error(err)
+					}
+				})
+				libraryID = media.LibraryID
+			} else {
+				var lib Library
+				st, lib, _ = relatedFixture(t)
+				libraryID = lib.ID
+			}
+			for id, title := range map[EntityID]string{
+				"maker-a": "Alpha", "maker-b": "Beta, Chorus", "maker-g": "Gamma", "maker-t": "Trashed",
+			} {
+				upsertRelatedEntity(t, st, id, libraryID, "maker", title)
+			}
+			upsertRelatedEntity(t, st, "box", libraryID, "box", "Box")
+			media := map[string]MediaID{}
+			for _, name := range []string{"grouped", "loose", "trashed"} {
+				item, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+					LibraryID: libraryID, Path: "/shelf/" + name + ".flac", Title: name,
+					Container: "flac", Codec: "flac", Class: MediaClassAudio, ContentFingerprint: "fp-" + name,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				media[name] = item.ID
+			}
+			relateEntities(t, st,
+				EntityRelation{FromEntityID: "box", Name: "box-maker", ToEntityID: "maker-a"},
+				EntityRelation{FromEntityID: "box", Name: "contains", ToMediaID: media["grouped"]},
+				EntityRelation{FromEntityID: "maker-b", Name: "credit", ToMediaID: media["grouped"]},
+				EntityRelation{FromEntityID: "maker-g", Name: "credit", ToMediaID: media["loose"]},
+				EntityRelation{FromEntityID: "maker-t", Name: "credit", ToMediaID: media["trashed"]},
+			)
+			filter := LibraryFilter{AllLibraries: true}
+			if plane == "encrypted" {
+				// Seed the encrypted plane's lifecycle marker for this read test.
+				if _, err := st.encryptedDBs[libraryID].writer.ExecContext(ctx,
+					`UPDATE media SET trashed_at_ms = 1 WHERE id = ?`, media["trashed"]); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := st.TrashMedia(ctx, media["trashed"], filter); err != nil {
+				t.Fatal(err)
+			}
+			query := LibraryEntitiesQuery{LibraryID: libraryID, Kinds: []string{"maker", "box"}, Kind: "maker"}
+			list := func() LibraryEntitiesResult {
+				t.Helper()
+				got, err := st.LibraryEntities(ctx, filter, query)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return got
+			}
+			if got := list(); got.Total != 4 || got.Totals["maker"] != 4 || len(got.Letters) != 4 ||
+				!reflect.DeepEqual(libraryEntityIDs(got.Items), []MediaID{"maker-a", "maker-b", "maker-g", "maker-t"}) {
+				t.Fatalf("browse without rules = %+v", got)
+			}
+			query.BrowseSources = map[string][]EntityBrowseSource{"maker": {
+				{Relation: "box-maker", FromKind: "box"},
+				{Relation: "credit", ExcludeMediaRelation: "contains"},
+			}}
+			letters := []LibraryBrowseLetter{{Letter: "A", Count: 1}, {Letter: "G", Offset: 1, Count: 1}}
+			if got := list(); got.Total != 2 || !reflect.DeepEqual(got.Totals, map[string]int{"maker": 2, "box": 1}) ||
+				!reflect.DeepEqual(libraryEntityIDs(got.Items), []MediaID{"maker-a", "maker-g"}) || !reflect.DeepEqual(got.Letters, letters) {
+				t.Fatalf("browse with rules = %+v", got)
+			}
+			query.Offset, query.Limit = 1, 1
+			if got := list(); got.Total != 2 || !reflect.DeepEqual(libraryEntityIDs(got.Items), []MediaID{"maker-g"}) || !reflect.DeepEqual(got.Letters, letters) {
+				t.Fatalf("page with rules = %+v", got)
+			}
+			query.Browse.Text = "Chorus"
+			if got := list(); got.Total != 0 || got.Totals["maker"] != 2 || len(got.Items) != 0 || len(got.Letters) != 0 {
+				t.Fatalf("text filter for hidden Entity = %+v", got)
+			}
+			query.Browse.Text = ""
+			credits, err := st.EntitiesForMedia(ctx, media["grouped"], "credit", filter)
+			if err != nil || len(credits) != 1 || credits[0].Entity.Title != "Beta, Chorus" {
+				t.Fatalf("original track credit = %+v, err = %v", credits, err)
+			}
+
+			if plane == "encrypted" {
+				if _, err := st.encryptedDBs[libraryID].writer.ExecContext(ctx,
+					`UPDATE entity SET trashed_at_ms = 1 WHERE id = 'box'`); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := st.TrashEntity(ctx, "box", filter, time.Now().UTC()); err != nil {
+				t.Fatal(err)
+			}
+			query.Offset = 0
+			if got := list(); got.Total != 1 || got.Totals["box"] != 0 || !reflect.DeepEqual(libraryEntityIDs(got.Items), []MediaID{"maker-g"}) {
+				t.Fatalf("browse after trashing source = %+v", got)
+			}
+			if plane == "encrypted" {
+				if err := st.SealEncryptedLibraryDB(ctx, libraryID, copyEncryptedLibraryDBCipher{}); err != nil {
+					t.Fatal(err)
+				}
+				if got := list(); got.Total != 0 || len(got.Totals) != 0 || len(got.Items) != 0 || len(got.Letters) != 0 {
+					t.Fatalf("sealed browse = %+v", got)
+				}
+				if err := st.UnsealEncryptedLibraryDB(ctx, libraryID, copyEncryptedLibraryDBCipher{}); err != nil {
+					t.Fatal(err)
+				}
+				if got := list(); got.Total != 1 || !reflect.DeepEqual(libraryEntityIDs(got.Items), []MediaID{"maker-g"}) {
+					t.Fatalf("unsealed browse = %+v", got)
+				}
+			}
+		})
 	}
 }
 
@@ -315,6 +436,38 @@ func TestNaturalCompare(t *testing.T) {
 	} {
 		if got := naturalCompare(tc.a, tc.b); got != tc.want {
 			t.Errorf("naturalCompare(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
+// TestReadEntityCardDetailsHonorsLibraryFilter pins that card credits are read
+// only from Libraries the caller can see (CORE-2768 review).
+func TestReadEntityCardDetailsHonorsLibraryFilter(t *testing.T) {
+	st, lib, _, _ := libraryEntitiesFixture(t)
+	ctx := context.Background()
+	upsertRelatedEntity(t, st, "entity-person-a", lib.ID, "maker", "Abe")
+	relateEntities(t, st, EntityRelation{FromEntityID: "entity-box-a", Name: "by", ToEntityID: "entity-person-a"})
+	ids := []EntityID{"entity-box-a"}
+
+	details, err := st.ReadEntityCardDetails(ctx, LibraryFilter{AllowedIDs: []LibraryID{lib.ID}}, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := details["entity-box-a"]
+	if got.LibraryID != lib.ID || !slices.ContainsFunc(got.Credits, func(c EntityCardCredit) bool { return c.Title == "Abe" }) {
+		t.Fatalf("visible details = %+v, want Abe in %q", got, lib.ID)
+	}
+	for name, filter := range map[string]LibraryFilter{
+		"other Library": {AllowedIDs: []LibraryID{"library-other"}},
+		"no grant":      {},
+		"sealed":        {AllLibraries: true, SealedIDs: []LibraryID{lib.ID}},
+	} {
+		details, err := st.ReadEntityCardDetails(ctx, filter, ids)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(details) != 0 {
+			t.Fatalf("%s: details = %+v, want none", name, details)
 		}
 	}
 }

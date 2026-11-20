@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -278,5 +279,17 @@ func TestMusicDeclaresEntityPosterInheritance(t *testing.T) {
 		if got, ok := declared[from]; !ok || got != to {
 			t.Errorf("music bundle relation %q targets %q (declared %v), want %q", from, got, ok, to)
 		}
+	}
+}
+
+func TestMusicDeclaresEntityBrowseRule(t *testing.T) {
+	want := []app.EntityBrowseRule{{
+		PluginID: music.PluginID, Kind: "artist", Sources: []app.EntityBrowseSource{
+			{Relation: "album-artist", FromKind: "album"},
+			{Relation: "appears-on", ExcludeMediaRelation: "album-track"},
+		},
+	}}
+	if got := firstPartyHooks().EntityBrowseRules; !reflect.DeepEqual(got, want) {
+		t.Fatalf("music browse rules = %+v, want %+v", got, want)
 	}
 }

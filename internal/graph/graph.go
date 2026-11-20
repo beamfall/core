@@ -145,8 +145,8 @@ type SourceItem struct {
 	// share, so a container of audio frames its art like its tracks
 	// (CORE-2362). Absent for unknown or mixed classes.
 	MediaClass string `json:"mediaClass,omitempty"`
-	// Year is a media-kind item's stored year or a Section Source Entity's
-	// earliest visible linked Media year. Absent when no year is known.
+	// Year is a Media item's stored year or an Entity card's display year.
+	// Absent when no year is known.
 	Year int `json:"year,omitempty"`
 	// DurationSeconds is a Media item's stored runtime, so a list row can
 	// state it without a detail read (CORE-2386). Absent for entities and for
@@ -164,8 +164,8 @@ type SourceItem struct {
 	// for a Library whose plugin declares none (CORE-2415).
 	AudienceScoreLabel plugin.LocaleString `json:"audienceScoreLabel,omitempty"`
 	AudienceScoreVotes int                 `json:"audienceScoreVotes,omitempty"`
-	// Byline names, for an audio Media item, the person-archetype Entities
-	// linked to it, in link order, so a card credits them under its title
+	// Byline names the person-archetype Entities linked to audio Media or
+	// audio containers, in link order, so a card credits them under its title
 	// (CORE-2362). Absent for every other item.
 	Byline []string `json:"byline,omitempty"`
 	// Subtitle tells a Media item apart from its siblings: the Library
@@ -403,6 +403,7 @@ type Options struct {
 	HardwareAcceleration         config.HardwareAccelReport
 	Identify                     *identify.Service
 	Artwork                      ArtworkLocator
+	EntityBrowseSources          map[plugin.ID]map[string][]store.EntityBrowseSource
 	StreamTokens                 *streamtoken.Service
 	ArtworkCandidateFetcher      ArtworkCandidateFetcher
 	ArtworkCandidateImporter     ArtworkCandidateImporter
@@ -468,6 +469,9 @@ type Handler struct {
 	scanObserver    ScanObserver
 	libraryObserver LibraryMutationObserver
 	hardwareAccel   config.HardwareAccelReport
+
+	// Immutable after construction, keyed by plugin ID and Entity kind.
+	entityBrowseSources map[plugin.ID]map[string][]store.EntityBrowseSource
 
 	// Immutable after construction, keyed by plugin ID and container kind.
 	engagementContainers map[store.EngagementContainerKey]store.EngagementContainerRelations
@@ -827,6 +831,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.hardwareAccel = o.HardwareAcceleration
 	h.identify = o.Identify
 	h.artwork = o.Artwork
+	h.entityBrowseSources = o.EntityBrowseSources
 	h.tokens = o.StreamTokens
 	h.candidateFetch = o.ArtworkCandidateFetcher
 	h.candidateImport = o.ArtworkCandidateImporter
@@ -1099,7 +1104,7 @@ func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []s
 	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
 		return err
 	}
-	if err := h.annotateBylines(ctx, items); err != nil {
+	if err := h.annotateBylines(ctx, scope.LibraryFilter(), items); err != nil {
 		return err
 	}
 	if err := h.annotateContainers(ctx, items); err != nil {
@@ -1119,46 +1124,80 @@ const cardBylineArchetype = "person"
 // maxCardByline caps how many names one card credits.
 const maxCardByline = 3
 
-// annotateBylines sets Byline on each audio Media item from the
-// person-archetype Entities linked to it, in link order (CORE-2362). It runs
-// after AnnotateMediaClass, which supplies the class. The linked Entities
-// share the visible Media's Library, so naming them reveals nothing the
-// caller cannot already reach.
-func (h *Handler) annotateBylines(ctx context.Context, items []store.SourceItem) error {
-	var ids []store.MediaID
+// annotateBylines credits audio Media and audio containers from the
+// person-archetype Entities linked to them (CORE-2362, CORE-2764). It runs
+// after AnnotateMediaClass. Linked Entities share the visible card's Library.
+func (h *Handler) annotateBylines(ctx context.Context, filter store.LibraryFilter, items []store.SourceItem) error {
+	var mediaIDs []store.MediaID
+	var entityIDs []store.EntityID
 	for _, item := range items {
-		if item.Kind != "entity" && item.MediaClass == store.MediaClassAudio {
-			ids = append(ids, item.ID)
+		if item.MediaClass != store.MediaClassAudio {
+			continue
+		}
+		if item.Kind == "entity" {
+			if !item.Locked {
+				entityIDs = append(entityIDs, store.EntityID(item.ID))
+			}
+		} else {
+			mediaIDs = append(mediaIDs, item.ID)
 		}
 	}
-	if len(ids) == 0 {
-		return nil
+	links, err := h.store.MediaEntityLinks(ctx, mediaIDs)
+	if err != nil {
+		return err
 	}
-	links, err := h.store.MediaEntityLinks(ctx, ids)
+	entities, err := h.store.ReadEntityCardDetails(ctx, filter, entityIDs)
 	if err != nil {
 		return err
 	}
 	archetypes := map[store.LibraryID]map[string]string{}
+	kindsFor := func(libraryID store.LibraryID) map[string]string {
+		if kinds, ok := archetypes[libraryID]; ok {
+			return kinds
+		}
+		kinds := map[string]string{}
+		if bundle, found := h.libraryBundle(ctx, libraryID); found {
+			for _, kind := range bundle.EntityKinds {
+				kinds[kind.Name] = kind.Archetype
+			}
+		}
+		archetypes[libraryID] = kinds
+		return kinds
+	}
+	addCredit := func(item *store.SourceItem, archetype, title string) {
+		if len(item.Byline) < maxCardByline && archetype == cardBylineArchetype && !slices.Contains(item.Byline, title) {
+			item.Byline = append(item.Byline, title)
+		}
+	}
 	for i := range items {
 		item := &items[i]
-		if item.Kind == "entity" || item.MediaClass != store.MediaClassAudio {
+		if item.MediaClass != store.MediaClassAudio {
+			continue
+		}
+		if item.Kind == "entity" {
+			detail, ok := entities[store.EntityID(item.ID)]
+			if !ok || item.Locked {
+				continue
+			}
+			kinds := kindsFor(detail.LibraryID)
+			if kinds[detail.Kind] != "container" {
+				continue
+			}
+			// The album's release date outranks the earliest-track year a
+			// shelf query may have set.
+			if detail.ReleaseYear > 0 {
+				item.Year = detail.ReleaseYear
+			}
+			for _, credit := range detail.Credits {
+				addCredit(item, kinds[credit.Kind], credit.Title)
+				if len(item.Byline) == maxCardByline {
+					break
+				}
+			}
 			continue
 		}
 		for _, link := range links[item.ID] {
-			kinds, ok := archetypes[link.LibraryID]
-			if !ok {
-				kinds = map[string]string{}
-				if bundle, found := h.libraryBundle(ctx, link.LibraryID); found {
-					for _, kind := range bundle.EntityKinds {
-						kinds[kind.Name] = kind.Archetype
-					}
-				}
-				archetypes[link.LibraryID] = kinds
-			}
-			if kinds[link.Kind] != cardBylineArchetype || slices.Contains(item.Byline, link.Title) {
-				continue
-			}
-			item.Byline = append(item.Byline, link.Title)
+			addCredit(item, kindsFor(link.LibraryID)[link.Kind], link.Title)
 			if len(item.Byline) == maxCardByline {
 				break
 			}

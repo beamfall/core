@@ -251,6 +251,9 @@ func refreshFirstVersionFactsTx(ctx context.Context, tx *sql.Tx, mediaID MediaID
 		}
 		return err
 	}
+	if imported.KeepProbeFacts && first == priorFirst {
+		return nil
+	}
 	width, height := max(imported.VideoWidthHint, 0), max(imported.VideoHeightHint, 0)
 	keepFrame := priorFirst == first && width == 0 && height == 0
 	_, err = tx.ExecContext(ctx, `

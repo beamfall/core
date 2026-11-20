@@ -33,10 +33,10 @@ afterEach(() => {
   server.calls = [];
 });
 
-function renderActions() {
+function renderActions(isAudio = false) {
   return render(
     <I18nProvider>
-      <ItemActions target={{ entityID: "entity-1" }} />
+      <ItemActions target={{ entityID: "entity-1" }} isAudio={isAudio} />
     </I18nProvider>,
   );
 }
@@ -64,6 +64,25 @@ describe("ItemActions", () => {
       ["setWatchlisted", { entityID: "entity-1" }, true],
       ["setRating", { entityID: "entity-1" }, 8],
       ["setRating", { entityID: "entity-1" }, 0],
+    ]);
+  });
+
+  it("marks audio played and unplayed without offering watchlist controls", async () => {
+    renderActions(true);
+    const markPlayed = screen.getByRole("button", { name: "Mark played" });
+    await waitFor(() => expect(markPlayed).toBeEnabled());
+    expect(screen.queryByRole("button", { name: /watchlist|mark watched/i })).toBeNull();
+
+    fireEvent.click(markPlayed);
+    const markUnplayed = await screen.findByRole("button", {
+      name: "Mark unplayed",
+      pressed: true,
+    });
+    fireEvent.click(markUnplayed);
+    await screen.findByRole("button", { name: "Mark played", pressed: false });
+    expect(server.calls).toEqual([
+      ["setWatched", { entityID: "entity-1" }, true],
+      ["setWatched", { entityID: "entity-1" }, false],
     ]);
   });
 
