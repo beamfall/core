@@ -18,3 +18,7 @@ func waitForProcessExit(pid int) error {
 		return err
 	}
 }
+
+// sweepExitedGroup is a no-op on Linux: a fork racing the group KILL is
+// restarted by the kernel, so one group signal reaches every member.
+func sweepExitedGroup(int) error { return nil }

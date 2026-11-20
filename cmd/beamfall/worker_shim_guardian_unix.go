@@ -21,6 +21,7 @@ const (
 	workerShimGuardianReadyFD      = 4
 	workerShimGuardianReadyByte    = 0xa5
 	workerShimGuardianReadyTimeout = 2 * time.Second
+	workerShimGuardianKillDeadline = 2 * time.Second
 )
 
 func runWorkerShimWithGuardian(argv []string, lifetimeFD int) error {
@@ -103,8 +104,17 @@ func runWorkerShimGuardian() error {
 	defer func() { _ = ready.Close() }()
 
 	// The guardian is the process-group birth-identity pin. It survives TERM so
-	// the owned PGID cannot disappear and be reused before the one final KILL.
+	// the owned PGID cannot disappear and be reused before the final KILL.
 	signal.Ignore(os.Interrupt, syscall.SIGTERM)
+	pgid := syscall.Getpgrp()
+	// The guardian leaves the group before its final KILL (below), so it pins
+	// the ID first, while it is still a member, and refuses the worker if it
+	// cannot.
+	pin, err := integrationhost.PinProcessGroup(pgid)
+	if err != nil {
+		return fmt.Errorf("worker-shim guardian: %w", err)
+	}
+	defer pin.Release()
 	if _, err := ready.Write([]byte{workerShimGuardianReadyByte}); err != nil {
 		return fmt.Errorf("worker-shim guardian: signal readiness: %w", err)
 	}
@@ -112,10 +122,14 @@ func runWorkerShimGuardian() error {
 	if _, err := io.Copy(io.Discard, lifetime); err != nil {
 		return fmt.Errorf("worker-shim guardian: lifetime read: %w", err)
 	}
-	pgid := syscall.Getpgrp()
-	_ = syscall.Kill(-pgid, syscall.SIGTERM)
+	// The guardian is still a member here, so kill(0) reaches the group; in a
+	// bwrap sandbox the group is 1, and kill(-1) would broadcast.
+	_ = syscall.Kill(0, syscall.SIGTERM)
 	time.Sleep(integrationhost.WorkerTerminationGrace)
-	if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
+	// One group KILL can miss a member's mid-fork child on macOS (CORE-2716),
+	// so the guardian leaves the group before the KILL and repeats it while
+	// members remain; its pin keeps the group ID reserved meanwhile.
+	if err := integrationhost.KillProcessGroup(pgid, true, workerShimGuardianKillDeadline); err != nil {
 		return fmt.Errorf("worker-shim guardian: kill process group %d: %w", pgid, err)
 	}
 	return nil

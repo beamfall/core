@@ -80,7 +80,7 @@ func (r *Runner) Chapters(ctx context.Context, path string) ([]Chapter, error) {
 	output, stderr, err := r.run(ctx, cmd)
 	if err != nil {
 		if detail := captureDetail(output, stderr, nil); detail != "" {
-			return nil, fmt.Errorf("ffprobe chapters: %s", detail)
+			return nil, errors.Join(fmt.Errorf("ffprobe chapters: %s", detail), survivedError(err))
 		}
 		return nil, fmt.Errorf("ffprobe chapters: %w", err)
 	}
@@ -148,6 +148,9 @@ func (r *Runner) OpeningTextCues(ctx context.Context, src string, maxSeconds int
 			continue
 		}
 		streamCues, err := r.openingTextCuesForStream(ctx, src, stream.Index, maxSeconds)
+		if errors.Is(err, errGroupSurvived) {
+			return nil, err
+		}
 		if err != nil {
 			decodeErrs = append(decodeErrs, err)
 			continue
@@ -177,7 +180,7 @@ func (r *Runner) openingTextCuesForStream(ctx context.Context, src string, strea
 	)
 	stdout, stderr, err := r.run(ctx, cmd)
 	if err != nil {
-		return nil, fmt.Errorf("ffmpeg opening cues: %s", captureDetail(stdout, stderr, err))
+		return nil, errors.Join(fmt.Errorf("ffmpeg opening cues: %s", captureDetail(stdout, stderr, err)), survivedError(err))
 	}
 	return parseOpeningTextCues(string(stdout), float64(maxSeconds)), nil
 }
@@ -248,7 +251,7 @@ func (r *Runner) AudioFingerprintTail(ctx context.Context, src string, windowCou
 	signature, err := r.audioFingerprint(ctx, src, windowCount, []string{
 		"-sseof", "-" + strconv.FormatFloat(tailSeconds, 'f', 3, 64),
 	})
-	if err == nil || !sseofUnavailable(err.Error()) {
+	if err == nil || errors.Is(err, errGroupSurvived) || !sseofUnavailable(err.Error()) {
 		return signature, err
 	}
 	start := math.Max(0, float64(durationSeconds)-tailSeconds)
@@ -301,7 +304,7 @@ func (r *Runner) audioFingerprint(ctx context.Context, src string, windowCount i
 	cmd := r.generationCommand(ctx, readConfinement(src), ffmpegPath, args...)
 	stdout, stderr, err := r.run(ctx, cmd)
 	if err != nil {
-		return nil, fmt.Errorf("ffmpeg fingerprint analysis: %s", captureDetail(stdout, stderr, err))
+		return nil, errors.Join(fmt.Errorf("ffmpeg fingerprint analysis: %s", captureDetail(stdout, stderr, err)), survivedError(err))
 	}
 	signature := parseWaveformAmplitudes(string(stdout) + string(stderr))
 	if len(signature) == 0 {

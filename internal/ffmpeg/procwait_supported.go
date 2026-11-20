@@ -2,7 +2,11 @@
 
 package ffmpeg
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+	"os/exec"
+)
 
 var hlsExitObserver = waitForProcessExit
 
@@ -11,9 +15,34 @@ func (p *HLSProcess) waitForExit() error {
 	// Even on observer failure the leader is unreaped, reserving the group
 	// ID for the final kill. The OS init reaps orphaned descendants.
 	p.killTree()
-	waitErr := p.cmd.Wait()
-	if observeErr != nil {
-		return fmt.Errorf("ffmpeg: observe encoder exit: %w", observeErr)
+	sweepErr := sweepExitedGroup(p.cmd.Process.Pid)
+	return reapError("encoder", observeErr, sweepErr, p.cmd.Wait())
+}
+
+// reapGroup waits for cmd's group leader to exit without reaping it, kills
+// whatever is left of its process group, and only then reaps the leader. The
+// unreaped (zombie) leader keeps the group ID reserved, so neither the group
+// KILL nor the macOS sweep can reach a reused group (CORE-2716). Members still
+// running after a natural exit are killed too, as HLSProcess already does.
+func reapGroup(cmd *exec.Cmd) error {
+	observeErr := waitForProcessExit(cmd.Process.Pid)
+	killProcessGroup(cmd)
+	sweepErr := sweepExitedGroup(cmd.Process.Pid)
+	return reapError("process", observeErr, sweepErr, cmd.Wait())
+}
+
+// reapError reports observer and sweep failures, both when both occur, ahead
+// of the child's own exit error.
+func reapError(what string, observeErr, sweepErr, waitErr error) error {
+	if observeErr == nil && sweepErr == nil {
+		return waitErr
 	}
-	return waitErr
+	var errs []error
+	if observeErr != nil {
+		errs = append(errs, fmt.Errorf("ffmpeg: observe %s exit: %w", what, observeErr))
+	}
+	if sweepErr != nil {
+		errs = append(errs, fmt.Errorf("ffmpeg: kill %s group: %w", what, sweepErr))
+	}
+	return errors.Join(errs...)
 }

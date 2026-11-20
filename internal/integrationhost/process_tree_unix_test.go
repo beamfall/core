@@ -6,12 +6,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -362,4 +366,87 @@ func waitResult(t *testing.T, done <-chan error) error {
 		t.Fatal("process containment did not finish")
 		return nil
 	}
+}
+
+// TestRetireKillsMidForkChildren is the CORE-2716 regression: on macOS one
+// group SIGKILL misses a member's child that is still being forked. The
+// workers ignore TERM, as the shim guardian does, so retire reaches its KILL
+// while they fork; concurrent trees add the load the miss needs.
+func TestRetireKillsMidForkChildren(t *testing.T) {
+	if testing.Short() {
+		t.Skip("forks thousands of processes")
+	}
+	if runtime.GOOS != "darwin" {
+		t.Skip("the mid-fork miss is an XNU behaviour; Linux restarts the fork")
+	}
+	const (
+		workers = 8
+		rounds  = 40
+	)
+	var survived atomic.Int64
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range rounds {
+				outlived, retireErr, err := retireForkingTree()
+				// Off macOS a PID 1 that leaves orphans unreaped can hold
+				// zombies in the group past the deadline; the witness still
+				// decides survival there.
+				if retireErr != nil {
+					t.Errorf("retire: %v", retireErr)
+				}
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if outlived {
+					survived.Add(1)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if n := survived.Load(); n > 0 {
+		t.Fatalf("%d of %d retired worker trees kept a live member", n, workers*rounds)
+	}
+}
+
+// retireForkingTree starts a TERM-ignoring worker that forks as fast as it
+// can, retires it after a short random delay, and reports whether any member
+// outlived retire. Every member inherits the write end of a witness pipe, so
+// the read end reaches EOF only once all of them have exited; zombies hold no
+// descriptors. Children end by themselves after a few seconds, so the test
+// never signals a group it may no longer own. A retire error is reported apart
+// from the witness result.
+func retireForkingTree() (outlived bool, retireErr, err error) {
+	const script = `trap '' TERM; i=0; while [ $i -lt 200 ]; do sleep 3 & i=$((i+1)); done; wait`
+	r, w, err := os.Pipe()
+	if err != nil {
+		return false, nil, err
+	}
+	defer r.Close()
+	// #nosec G204 -- fixed shell and test-owned script.
+	cmd := exec.Command("/bin/sh", "-c", script)
+	cmd.ExtraFiles = []*os.File{w}
+	tree, err := newWorkerProcessTree(cmd)
+	if err == nil {
+		err = tree.start()
+	}
+	_ = w.Close()
+	if err != nil {
+		return false, nil, fmt.Errorf("start worker tree: %w", err)
+	}
+	waitDone := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(waitDone) }()
+	//nolint:gosec // jitter only, not security
+	time.Sleep(time.Duration(rand.IntN(20000)) * time.Microsecond)
+	retireErr = tree.retire(0, workerKillDeadline)
+	<-waitDone
+	if err := r.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		return false, nil, err
+	}
+	_, readErr := io.Copy(io.Discard, r)
+	return readErr != nil, retireErr, nil
 }

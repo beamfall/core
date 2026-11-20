@@ -58,14 +58,14 @@ func (r *Runner) ProbeKeyframes(ctx context.Context, src string) (KeyframeIndex,
 	parser.onFail = kill
 	runErr := r.runWith(ctx, cmd, parser, stderr)
 	if stderr.overflowed() {
-		return KeyframeIndex{}, ErrOutputOverflow
+		return KeyframeIndex{}, overflowError(runErr)
 	}
 	if parser.err != nil {
-		return KeyframeIndex{}, fmt.Errorf("ffprobe keyframes: %w", parser.err)
+		return KeyframeIndex{}, errors.Join(fmt.Errorf("ffprobe keyframes: %w", parser.err), survivedError(runErr))
 	}
 	if runErr != nil {
 		if detail := captureDetail(nil, stderr.bytes(), nil); detail != "" {
-			return KeyframeIndex{}, fmt.Errorf("ffprobe keyframes: %s", detail)
+			return KeyframeIndex{}, errors.Join(fmt.Errorf("ffprobe keyframes: %s", detail), survivedError(runErr))
 		}
 		return KeyframeIndex{}, fmt.Errorf("ffprobe keyframes: %w", runErr)
 	}

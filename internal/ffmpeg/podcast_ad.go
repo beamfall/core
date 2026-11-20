@@ -78,7 +78,7 @@ func (r *Runner) AudioAdFeatures(ctx context.Context, src string, maxWindows int
 	)
 	stdout, stderr, err := r.run(ctx, cmd)
 	if err != nil {
-		return AudioAdFeatureSet{}, fmt.Errorf("ffmpeg audio ad analysis: %s", captureDetail(stdout, stderr, err))
+		return AudioAdFeatureSet{}, errors.Join(fmt.Errorf("ffmpeg audio ad analysis: %s", captureDetail(stdout, stderr, err)), survivedError(err))
 	}
 	features, err := parseAudioAdFeatureMetadata(string(stdout)+string(stderr), maxWindows)
 	if err != nil {
