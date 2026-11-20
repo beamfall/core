@@ -1,5 +1,5 @@
 import { Bell, LayoutDashboard, Menu } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { ServerActivity } from "@/components/beamfall/ServerActivity";
 import { Dialog as DialogPrimitive } from "@/components/ui/astryx-primitives";
@@ -13,8 +13,10 @@ import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
 import { LibrarySidebar } from "./LibrarySidebar";
 import { usePosterSizeRoot } from "./posterSize";
+import { SidebarResizer } from "./SidebarResizer";
 import { MAIN_CONTENT_ID, SkipLink } from "./SkipLink";
 import { useSidebarPrefs } from "./sidebarPrefs";
+import { readSidebarWidth, writeSidebarWidth } from "./sidebarWidth";
 import { NOTIFICATION_BADGE_LIMIT, useUnreadNotifications } from "./unreadNotifications";
 import "./chrome.css";
 
@@ -87,6 +89,9 @@ export function AppShell({
   const phone = usePhoneLayout();
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // The expanded desktop width the person dragged to (CORE-2734).
+  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
+  const [resizing, setResizing] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const hasSidebar = register === "viewer" && !!manifest && manifest.navigation.length > 0;
   // The Profile's own pin and order choice over the server navigation (CORE-2435).
@@ -217,7 +222,7 @@ export function AppShell({
         </div>
       </header>
 
-      <div className="bf-body">
+      <div className={"bf-body" + (resizing ? " is-resizing" : "")}>
         {hasSidebar &&
           manifest &&
           (phone ? (
@@ -256,8 +261,18 @@ export function AppShell({
               prefs={sidebarPrefs}
               prefsReady={sidebarPrefsReady}
               onSavePrefs={sidebarEditable ? saveSidebarPrefs : undefined}
+              style={{ "--bf-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
             />
           ))}
+        {hasSidebar && manifest && !phone && !collapsed && (
+          <SidebarResizer
+            sidebarId={sidebarId}
+            width={sidebarWidth}
+            onChange={setSidebarWidth}
+            onCommit={writeSidebarWidth}
+            onResizingChange={setResizing}
+          />
+        )}
         <div className="bf-content">
           {needsEnroll && (
             <div role="status" className="bf-banner">

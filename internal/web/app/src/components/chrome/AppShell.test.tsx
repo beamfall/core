@@ -222,6 +222,64 @@ describe("AppShell library sidebar", () => {
     );
   });
 
+  describe("resizable width (CORE-2734)", () => {
+    beforeEach(() => {
+      window.localStorage.setItem("beamfall.sidebarCollapsed", "0");
+    });
+
+    afterEach(() => {
+      window.localStorage.clear();
+    });
+
+    function sidebarOf(separator: HTMLElement) {
+      return document.getElementById(separator.getAttribute("aria-controls") ?? "");
+    }
+
+    it("resizes by keyboard within the limits and remembers the width", async () => {
+      const user = userEvent.setup();
+      renderShell();
+      const separator = screen.getByRole("separator", { name: "Resize sidebar" });
+      expect(separator).toHaveAttribute("aria-valuenow", "200");
+      expect(separator).toHaveAttribute("aria-valuemin", "168");
+      expect(separator).toHaveAttribute("aria-valuemax", "360");
+      expect(sidebarOf(separator)).toHaveClass("bf-sidebar");
+
+      separator.focus();
+      await user.keyboard("{ArrowRight}{ArrowRight}");
+      expect(separator).toHaveAttribute("aria-valuenow", "232");
+      expect(sidebarOf(separator)?.style.getPropertyValue("--bf-sidebar-width")).toBe("232px");
+      expect(window.localStorage.getItem("beamfall.sidebarWidth")).toBe("232");
+
+      await user.keyboard("{End}{ArrowRight}");
+      expect(separator).toHaveAttribute("aria-valuenow", "360");
+      await user.keyboard("{Home}{ArrowLeft}");
+      expect(separator).toHaveAttribute("aria-valuenow", "168");
+
+      cleanup();
+      renderShell();
+      expect(screen.getByRole("separator", { name: "Resize sidebar" })).toHaveAttribute(
+        "aria-valuenow",
+        "168",
+      );
+    });
+
+    it("resets to the default on double-click", async () => {
+      window.localStorage.setItem("beamfall.sidebarWidth", "300");
+      renderShell();
+      const separator = screen.getByRole("separator", { name: "Resize sidebar" });
+      expect(separator).toHaveAttribute("aria-valuenow", "300");
+      await userEvent.dblClick(separator);
+      expect(separator).toHaveAttribute("aria-valuenow", "200");
+      expect(window.localStorage.getItem("beamfall.sidebarWidth")).toBeNull();
+    });
+
+    it("offers no handle on the collapsed icon rail", async () => {
+      renderShell();
+      await userEvent.click(screen.getByRole("button", { name: "Navigation" }));
+      expect(screen.queryByRole("separator", { name: "Resize sidebar" })).not.toBeInTheDocument();
+    });
+  });
+
   describe("phone drawer (CORE-1166)", () => {
     const originalMatchMedia = window.matchMedia;
 
@@ -245,6 +303,7 @@ describe("AppShell library sidebar", () => {
       expect(toggle).toHaveAttribute("aria-haspopup", "dialog");
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(screen.queryByRole("link", { name: "Space Archive" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("separator", { name: "Resize sidebar" })).not.toBeInTheDocument();
     });
 
     it("moves focus into the drawer on open and traps it there", async () => {
