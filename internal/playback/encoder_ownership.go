@@ -218,7 +218,11 @@ func (s *Sessions) startEncoder(ctx context.Context, key SessionKey, start *enco
 	h, run := start.session, start.run
 	stopPreparationCancel := context.AfterFunc(ctx, func() {
 		s.mu.Lock()
-		unpermitted := !start.permitted
+		unpermitted := s.liveStartLocked(start) && !start.permitted
+		if unpermitted && h.proc == nil {
+			// A carried child still owns the charge until its reaper sees cancellation.
+			s.releaseEncoderLocked(h)
+		}
 		s.mu.Unlock()
 		if unpermitted {
 			run.cancel()

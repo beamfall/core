@@ -124,6 +124,9 @@ func openLiveClaim[T io.Closer](a *LiveArtifact, open func(string) (T, error)) (
 				}
 				err = valid
 			} else {
+				if errors.Is(err, fs.ErrNotExist) {
+					err = errors.Join(ErrNotFound, err)
+				}
 				return file, err
 			}
 		}
@@ -142,13 +145,13 @@ func (a *LiveArtifact) OpenPlain() (*os.File, fs.FileInfo, error) {
 	f, err := openLiveClaim(a, func(path string) (*os.File, error) {
 		file, stat, err := a.session.openArtifact(path)
 		info = stat
+		if errors.Is(err, fs.ErrInvalid) || errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
+			err = errors.Join(fs.ErrNotExist, err)
+		}
 		return file, err
 	})
 	if err != nil {
 		info = nil
-	}
-	if errors.Is(err, fs.ErrInvalid) || errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
-		return nil, nil, errors.Join(fs.ErrNotExist, err)
 	}
 	return f, info, err
 }

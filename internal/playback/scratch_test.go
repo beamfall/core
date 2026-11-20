@@ -887,6 +887,40 @@ func TestScratchOwnershipStaysBoundedDuringLatchedSweep(t *testing.T) {
 	}
 }
 
+func TestLiveArtifactOpenReportsMissingFile(t *testing.T) {
+	for _, encrypted := range []bool{false, true} {
+		t.Run(fmt.Sprintf("encrypted %v", encrypted), func(t *testing.T) {
+			s := newTestSessions(t, &fakeEncryptedTranscoder{}, t.TempDir(), nil)
+			shape := StreamShape{}
+			if encrypted {
+				shape.Encrypted = testEncryptedSource(nil)
+			}
+			artifact, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "missing-artifact"}, fakeSourcePath,
+				120, 1280, 720, false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil,
+				shape, PriorityNormal, masterPlaylistName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer artifact.Release()
+			if err := os.Remove(artifact.path); err != nil {
+				t.Fatal(err)
+			}
+			var file io.Closer
+			if encrypted {
+				file, err = artifact.OpenEncrypted()
+			} else {
+				file, _, err = artifact.OpenPlain()
+			}
+			if err == nil {
+				_ = file.Close()
+			}
+			if !errors.Is(err, ErrNotFound) || !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("missing artifact open = %v, want ErrNotFound wrapping ENOENT", err)
+			}
+		})
+	}
+}
+
 func TestScratchArtifactOpensRefuseSymlinksAndFIFO(t *testing.T) {
 	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	key := SessionKey{SessionID: "unsafe"}
@@ -1157,6 +1191,15 @@ func TestShapeReplacementServesBeforePredecessorReaderReleases(t *testing.T) {
 	transcoder := &fakeTranscoder{holdChild: true}
 	s := newTestSessions(t, transcoder, t.TempDir(), nil)
 	s.SetTranscodeCap(1)
+	firstDir := filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce))
+	removed := make(chan error, 1)
+	s.removeDir = func(path string) error {
+		err := s.removeScratchFixture(path)
+		if path == firstDir {
+			removed <- err
+		}
+		return err
+	}
 	slow := newSlowStop(s)
 	defer slow.unblock()
 	key := SessionKey{SessionID: "replace-with-open-reader"}
@@ -1211,6 +1254,9 @@ func TestShapeReplacementServesBeforePredecessorReaderReleases(t *testing.T) {
 		t.Fatal(err)
 	}
 	held.Release()
+	if err := waitScratchResult(t, removed); err != nil {
+		t.Fatal(err)
+	}
 	requireScratchMissing(t, held.session.dir)
 }
 

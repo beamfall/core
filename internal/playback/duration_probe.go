@@ -142,6 +142,9 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 		return 0
 	}
 	if !valid {
+		if source.generation != "" {
+			return 0
+		}
 		return seconds // an unverified result cannot populate the cache
 	}
 	entry = s.durationProbes[path]

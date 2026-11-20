@@ -1725,7 +1725,7 @@ func writeLiveHLSError(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "stream ended", http.StatusGone)
 	case errors.Is(err, playback.ErrNotFound):
 		http.Error(w, "segment does not exist", http.StatusNotFound)
-	case errors.Is(err, playback.ErrEncryptedLiveUnavailable), rootScopeStatus(err) == http.StatusNotFound:
+	case errors.Is(err, playback.ErrEncryptedLiveUnavailable):
 		http.Error(w, "stream unavailable", http.StatusNotFound)
 	case errors.Is(err, playback.ErrTranscodeFailed):
 		http.Error(w, "transcode failed", http.StatusInternalServerError)

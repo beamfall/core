@@ -87,7 +87,8 @@ func putLive(url string, body []byte) error {
 // fake transcoder does not read it.
 func testEncryptedSource(revoked *atomic.Bool) *EncryptedSource {
 	src := &EncryptedSource{
-		LibraryID: "library-sealed",
+		LibraryID:   "library-sealed",
+		Fingerprint: "test-encrypted-source",
 		Open: func() (io.ReadSeekCloser, error) {
 			return nopReadSeekCloser{bytes.NewReader([]byte("plaintext-source"))}, nil
 		},
@@ -107,6 +108,36 @@ func encryptedFilePath(sessions *Sessions, key SessionKey, secure *EncryptedSour
 	return sessions.FilePathShaped(context.Background(), key, "", durationSeconds, 1280, 720, false, false,
 		ladderCaps{}, VideoSignal{}, burnSubtitleIndex, ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, nil,
 		StreamShape{Encrypted: secure, ComposedPicture: composed}, PriorityNormal, name)
+}
+
+func TestT3DirectEncryptedSourcesRequireDistinctVerifiedGenerations(t *testing.T) {
+	transcoder := &fakeEncryptedTranscoder{}
+	s := newTestSessions(t, transcoder, t.TempDir(), nil)
+	key := SessionKey{SessionID: "encrypted-generations"}
+	const segment = "720p/seg00000.m4s"
+	const firstBytes, secondBytes = "first source", "other source"
+	first, second := testEncryptedSource(nil), testEncryptedSource(nil)
+	first.Open = func() (io.ReadSeekCloser, error) { return nopReadSeekCloser{bytes.NewReader([]byte(firstBytes))}, nil }
+	second.Open = func() (io.ReadSeekCloser, error) { return nopReadSeekCloser{bytes.NewReader([]byte(secondBytes))}, nil }
+	first.Size, second.Size = int64(len(firstBytes)), int64(len(secondBytes))
+	first.Fingerprint, second.Fingerprint = "", ""
+	for _, source := range []*EncryptedSource{first, second} {
+		if _, err := encryptedFilePath(s, key, source, 120, -1, false, segment); !errors.Is(err, ErrEncryptedLiveUnavailable) {
+			t.Errorf("unverified encrypted request = %v, want unavailable", err)
+		}
+	}
+	if entries, err := os.ReadDir(s.dir); err != nil || len(entries) != 0 || transcoder.encryptedStarts() != 0 {
+		t.Fatalf("unverified source left artifacts or started an encoder: %v, %v", entries, err)
+	}
+	first.Fingerprint, second.Fingerprint = "fingerprint-one", "fingerprint-two"
+	a, err := encryptedFilePath(s, key, first, 120, -1, false, segment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := encryptedFilePath(s, key, second, 120, -1, false, segment)
+	if err != nil || a == b || transcoder.encryptedStarts() != 2 {
+		t.Fatalf("second generation = %q, %v, first = %q, starts = %d", b, err, a, transcoder.encryptedStarts())
+	}
 }
 
 // readLiveArtifact returns the decrypted bytes of an encrypted session file.
