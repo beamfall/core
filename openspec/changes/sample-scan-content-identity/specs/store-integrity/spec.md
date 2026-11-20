@@ -66,7 +66,7 @@ equal size whose samples all match share an identity even when unsampled bytes d
 
 #### Scenario: Unchanged legacy file
 
-- **WHEN** the path, recorded size and non-zero recorded mtime match a legacy row
+- **WHEN** the path, recorded size and recorded mtime match a legacy row
 - **THEN** the scan reuses the legacy identity without reading bytes for fingerprinting
 
 #### Scenario: Legacy file in an unsealed encrypted Library
@@ -86,34 +86,18 @@ equal size whose samples all match share an identity even when unsampled bytes d
 - **THEN** the scan compares the full legacy digest once and keeps the identity and records the
   stats if it matches, or uses the sampled identity if it differs
 
+#### Scenario: Verified Unix-epoch mtime
+
+- **WHEN** the one-time legacy comparison verifies a file whose mtime is the Unix epoch
+- **THEN** the catalog distinguishes that timestamp from an unknown mtime after reopening, and
+  the next unchanged scan reuses the legacy identity without reading bytes for fingerprinting
+
 #### Scenario: Legacy file moved or changed outside Beamfall
 
 - **WHEN** the scan discovers a legacy file at a new path or with changed recorded stats at the
   same path
 - **THEN** the file gets a sampled identity and cannot recover watch state or matches from its
   legacy fingerprint. Existing Part and Version grouping still determines the logical Media.
-
-### Requirement: Proxy promotion recognizes both content schemes
-
-Proxy promotion SHALL refuse a cataloged identity matching the completed archive's sampled or
-legacy digest before replacing the archive path. It SHALL check both digests again in the
-generation update and store the sampled digest on successful promotion. The existing GUID-based
-Media ID SHALL survive promotion. The duplicate check covers retained rows in the public catalog.
-
-#### Scenario: Archive promotion encounters cataloged content
-
-- **WHEN** the completed archive matches a sampled or legacy file already in the catalog
-- **THEN** promotion is refused and the existing file retains its path
-
-### Requirement: Download ingest recognizes both content schemes
-
-Download ingest SHALL skip files whose sampled or legacy digest matches a live row in the public
-catalog and leave the existing catalog path and the source file in place.
-
-#### Scenario: Download ingest encounters sampled content
-
-- **WHEN** the incoming bytes match a sampled file already in the catalog
-- **THEN** relocation is skipped and the existing file retains its path
 
 ### Requirement: Sampled Media IDs distinguish the fingerprint scheme
 
@@ -143,6 +127,13 @@ the sampled ID is absent.
 - **WHEN** the sampled lookup for an ambiguous bookmark fails temporarily
 - **THEN** the viewer retries while the address and viewer identity remain current and selects
   the legacy ID only after a confirmed sampled miss
+
+#### Scenario: Permanent lookup failure
+
+- **WHEN** the sampled lookup for an ambiguous bookmark fails permanently, including an
+  authorization rejection
+- **THEN** the viewer shows its existing unavailable message without retrying or selecting the
+  legacy ID
 
 #### Scenario: Expand the docked player
 
