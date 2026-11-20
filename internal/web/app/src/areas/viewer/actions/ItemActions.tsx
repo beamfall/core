@@ -13,9 +13,11 @@ const STARS = [1, 2, 3, 4, 5];
  */
 export function ItemActions({
   target,
+  isAudio = false,
   className = "",
 }: {
   target: ItemTarget;
+  isAudio?: boolean;
   className?: string;
 }) {
   const t = useT();
@@ -23,6 +25,9 @@ export function ItemActions({
     useItemActions(target);
   const disabled = pending || !state;
   const watched = state?.watched ?? false;
+  const watchedLabel = isAudio
+    ? t(watched ? "itemMarkUnplayed" : "itemMarkPlayed")
+    : t(watched ? "itemMarkUnwatched" : "itemMarkWatched");
   const watchlisted = state?.watchlisted ?? false;
   const stars = Math.ceil((state?.rating ?? 0) / 2);
 
@@ -36,18 +41,20 @@ export function ItemActions({
         onClick={() => void setWatched(!watched)}
       >
         {watched ? <CircleCheck aria-hidden="true" /> : <Circle aria-hidden="true" />}
-        {watched ? t("itemMarkUnwatched") : t("itemMarkWatched")}
+        {watchedLabel}
       </button>
-      <button
-        type="button"
-        className="bf-item-action"
-        aria-pressed={watchlisted}
-        disabled={disabled}
-        onClick={() => void setWatchlisted(!watchlisted)}
-      >
-        {watchlisted ? <BookmarkCheck aria-hidden="true" /> : <Bookmark aria-hidden="true" />}
-        {watchlisted ? t("itemWatchlistRemove") : t("itemWatchlistAdd")}
-      </button>
+      {!isAudio && (
+        <button
+          type="button"
+          className="bf-item-action"
+          aria-pressed={watchlisted}
+          disabled={disabled}
+          onClick={() => void setWatchlisted(!watchlisted)}
+        >
+          {watchlisted ? <BookmarkCheck aria-hidden="true" /> : <Bookmark aria-hidden="true" />}
+          {watchlisted ? t("itemWatchlistRemove") : t("itemWatchlistAdd")}
+        </button>
+      )}
       <fieldset className="bf-item-rating" disabled={disabled}>
         <legend className="sr-only">{t("itemYourRating")}</legend>
         {STARS.map((star) => (

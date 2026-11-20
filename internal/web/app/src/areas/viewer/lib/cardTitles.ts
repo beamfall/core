@@ -1,6 +1,8 @@
 import { displayString } from "@/lib/display";
-import type { SourceItem } from "@/lib/graphql/types";
+import type { EntityInfo, SourceItem } from "@/lib/graphql/types";
 import { cardByline } from "./cardArt";
+import { entityYear } from "./entityHero";
+import { entityPeople } from "./listeningLayout";
 
 function titleKey(title: string): string {
   return title.trim().toLocaleLowerCase();
@@ -48,6 +50,21 @@ export function cardSubline(
     item.summary,
   ];
   return [...new Set(parts.filter(Boolean))].join(" · ");
+}
+
+/** An audio container's own person credits and release year. */
+export function audioContainerSubline(item: SourceItem, entity: EntityInfo | null): string {
+  if (entity?.archetype !== "container") return "";
+  const people = entityPeople(entity)
+    .map((person) => person.title)
+    .filter(Boolean)
+    .join(", ");
+  const releaseDate = entity.fields.find(
+    (field) => field.name === "release-date" && field.type === "date",
+  )?.value;
+  const releaseYear = /^([1-9]\d{3})-\d{2}-\d{2}(?:T|$)/.exec(releaseDate ?? "")?.[1];
+  const year = entityYear(entity) ?? releaseYear ?? item.year;
+  return [people, year].filter(Boolean).join(" · ");
 }
 
 /**

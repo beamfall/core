@@ -25,9 +25,10 @@ SHALL list separately the containers credited on its Media that are not related 
 ### Requirement: Listening wording for audio Media
 
 The web viewer SHALL use listening wording in audio Media card menus and item actions.
-On an audio Entity listing, the remaining count SHALL read “unplayed” and the next
-in-progress item SHALL be labelled “Up next”. Audio item actions SHALL omit the watchlist
-button. Video surfaces SHALL retain watching wording and the watchlist button.
+On an audio Entity listing, the remaining count SHALL read “unplayed” and the item
+selected for the primary Play or Resume action SHALL be labelled “Up next”. Audio item
+actions SHALL omit the watchlist button. Video surfaces SHALL retain watching wording
+and the watchlist button.
 
 #### Scenario: Audio card menu
 

@@ -152,6 +152,19 @@ describe("EntityMediaBrowse", () => {
     ]);
   });
 
+  it("uses the fetched track credits for links in the row menu", async () => {
+    renderBrowse(album, tracks);
+    fireEvent.click(await screen.findByRole("button", { name: "More actions for Track One" }));
+    expect(screen.getByRole("menuitem", { name: "Go to artist" })).toHaveAttribute(
+      "href",
+      "/entity/person-a",
+    );
+    expect(screen.getByRole("menuitem", { name: "Go to album" })).toHaveAttribute(
+      "href",
+      "/entity/album-1",
+    );
+  });
+
   it("plays from any track with the container's tracks as the queue", async () => {
     renderBrowse(album, tracks);
     fireEvent.click(await screen.findByRole("button", { name: "Play Track Two" }));
@@ -165,7 +178,7 @@ describe("EntityMediaBrowse", () => {
     cleanup();
     vi.mocked(fetchMediaRows).mockClear();
     renderBrowse(artist, tracks);
-    await screen.findByRole("list", { name: "Top tracks" });
+    await screen.findByRole("list", { name: "Tracks" });
     expect(vi.mocked(fetchMediaRows).mock.calls[0][2]).toEqual({ positions: false });
   });
 
@@ -191,7 +204,7 @@ describe("EntityMediaBrowse", () => {
   });
 
   it("splits an audio person's page into top tracks and the containers it appears on", async () => {
-    vi.mocked(fetchSourceItems).mockResolvedValue([
+    vi.mocked(fetchSourceItems).mockResolvedValueOnce([
       { id: "t3", kind: "media", title: "Track Three" },
     ]);
     renderBrowse(artist, tracks);
@@ -214,9 +227,16 @@ describe("EntityMediaBrowse", () => {
       t2: { ...rows.t2, sequence: 1, index: 2 },
       t3: { ...rows.t3, sequence: 1, index: 8 },
     });
-    vi.mocked(fetchSourceItems).mockResolvedValue([tracks[2], tracks[0]]);
+    vi.mocked(fetchSourceItems)
+      .mockResolvedValueOnce([{ id: "other", kind: "media", title: "Another artist" }])
+      .mockResolvedValueOnce([tracks[2], tracks[0]]);
     renderBrowse(artist, tracks);
     const top = within(await screen.findByRole("list", { name: "Top tracks" }));
+    expect(fetchSourceItems).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ kind: "most-played", offset: 200 }),
+      expect.any(AbortSignal),
+    );
     await vi.waitFor(() =>
       expect(top.getAllByRole("link").map((link) => link.textContent)).toEqual([
         "1Track Three",
@@ -263,8 +283,13 @@ describe("EntityMediaBrowse", () => {
     const plays = within(all).getAllByRole("button", { name: /^Play / });
     expect(plays).toHaveLength(12);
     expect(plays[11]).toHaveAccessibleName("Play Song 12");
-    const top = screen.getByRole("list", { name: "Top tracks" });
-    expect(within(top).getAllByRole("button", { name: /^Play / })).toHaveLength(10);
+    const top = screen.getByRole("list", { name: "Tracks" });
+    expect(
+      within(top)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(many.slice(0, 10).map((item, index) => `${index + 1}${item.title}`));
+    expect(screen.queryByRole("heading", { name: "Top tracks" })).toBeNull();
 
     fireEvent.click(plays[11]);
     const watch = await screen.findByTestId("watch");

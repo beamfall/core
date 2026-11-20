@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchItemState, setWatched } from "@/lib/graphql";
+import { fetchEntity, fetchItemState, setWatched } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { STRINGS } from "@/strings";
@@ -17,6 +17,7 @@ import { MediaItemCard, PREVIEW_DWELL_MS } from "./MediaItemCard";
 
 vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
+  fetchEntity: vi.fn(),
   fetchItemState: vi.fn(),
   setWatched: vi.fn(),
 }));
@@ -41,6 +42,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   installMatchMedia();
   vi.mocked(fetchPreviewInfo).mockReset();
+  vi.mocked(fetchEntity).mockReset().mockResolvedValue(null);
   vi.mocked(fetchItemState).mockReset();
   vi.mocked(setWatched).mockReset();
   vi.mocked(fetchItemState).mockResolvedValue({
@@ -408,6 +410,33 @@ describe("MediaItemCard art frame (CORE-2362)", () => {
   it("frames an Entity whose Media are all audio square", () => {
     const { container } = renderCard({ kind: "entity", mediaClass: "audio" });
     expect(container.querySelector(".bf-poster.bf-poster-square")).not.toBeNull();
+  });
+
+  it("shows an audio container's credited artist and release year under its title", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue({
+      id: "record-21",
+      kind: "record",
+      title: "21",
+      archetype: "container",
+      fields: [{ name: "release-date", type: "date", value: "2011-01-24T00:00:00Z" }],
+      relatedEntities: [
+        {
+          kind: "performer",
+          archetype: "person",
+          items: [{ id: "adele", kind: "entity", title: "Adele" }],
+        },
+      ],
+    });
+    renderCard({ id: "record-21", kind: "entity", title: "21", mediaClass: "audio" });
+    await act(async () => {});
+    expect(screen.getByText("Adele · 2011")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "21, Adele · 2011" })).toBeInTheDocument();
+  });
+
+  it("keeps a video entity card's existing subtitle without a detail lookup", () => {
+    renderCard({ kind: "entity", mediaClass: "video", summary: "Video collection" });
+    expect(screen.getByText("Video collection")).toBeInTheDocument();
+    expect(fetchEntity).not.toHaveBeenCalled();
   });
 
   it("keeps the 2:3 frame for video and for an unknown class", () => {

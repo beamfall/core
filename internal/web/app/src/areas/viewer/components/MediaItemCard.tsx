@@ -3,7 +3,8 @@ import type { PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useCardImageSizes } from "@/components/chrome/posterSize";
-import type { SourceItem } from "@/lib/graphql/types";
+import { fetchEntity } from "@/lib/graphql";
+import type { EntityInfo, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { itemTargetFor } from "../actions";
@@ -11,7 +12,7 @@ import { activateLink } from "../lib/activateLink";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { artFrameClass } from "../lib/cardArt";
 import { cardAccessibleName, cardRating, cardState } from "../lib/cardState";
-import { cardHeading, cardSubline } from "../lib/cardTitles";
+import { audioContainerSubline, cardHeading, cardSubline } from "../lib/cardTitles";
 import { entityLinkState } from "../lib/entityPreview";
 import type { LibraryViewMode } from "../lib/libraryBrowse";
 import { mediaPath } from "../lib/mediaAddress";
@@ -92,12 +93,22 @@ export function MediaItemCard({
   const [imageFailed, setImageFailed] = useState(false);
   const [previewClip, setPreviewClip] = useState("");
   const isMedia = item.kind === "media";
+  const audioEntityID =
+    !isMedia && !item.locked && item.mediaClass === "audio" ? item.id : undefined;
+  const cardRef = useRef<HTMLLIElement>(null);
+  const [audioEntity, setAudioEntity] = useState<{ identity: string; entity: EntityInfo } | null>(
+    null,
+  );
+  const audioSubline =
+    audioEntity && audioEntity.identity === identity && audioEntity.entity.id === audioEntityID
+      ? audioContainerSubline(item, audioEntity.entity)
+      : "";
   const hasPlayButton = showPlayButton && isMedia && !item.locked;
   const state = cardState(item, t);
   const rating = isMedia ? cardRating(item, displayLocale, t) : undefined;
   const isTable = display === "table";
   const { heading, lead } = cardHeading(item, nameContainer, displayLocale);
-  const subline = cardSubline(item, showYear || isTable, displayLocale, lead);
+  const subline = audioSubline || cardSubline(item, showYear || isTable, displayLocale, lead);
   const isRow = display === "list" || isTable;
   const wide = display === "thumbnail";
   // The page the card's own activation opens (and the More menu's copied link).
@@ -111,6 +122,37 @@ export function MediaItemCard({
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewRequestRef = useRef(0);
+
+  // SourceItem has no Entity credit list or release date. Read the existing
+  // detail only as the card comes into view, including lazily mounted browse rows.
+  useEffect(() => {
+    setAudioEntity(null);
+    if (!audioEntityID || !identity || !cardRef.current) return;
+    const controller = new AbortController();
+    const read = () => {
+      void fetchEntity(audioEntityID, controller.signal)
+        .then((entity) => {
+          if (entity && !controller.signal.aborted) setAudioEntity({ identity, entity });
+        })
+        .catch(() => {
+          // A failed optional metadata read leaves the catalog subtitle in place.
+        });
+    };
+    if (typeof IntersectionObserver === "undefined") {
+      read();
+      return () => controller.abort();
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (controller.signal.aborted || !entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      read();
+    });
+    observer.observe(cardRef.current);
+    return () => {
+      observer.disconnect();
+      controller.abort();
+    };
+  }, [audioEntityID, identity]);
 
   const clearPreviewTimer = useCallback(() => {
     if (previewTimerRef.current !== null) {
@@ -258,6 +300,7 @@ export function MediaItemCard({
       primaryLabel={primaryLabel}
       isMedia={isMedia}
       isAudio={item.mediaClass === "audio"}
+      containerID={item.container?.id}
       href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
       target={itemTargetFor(item)}
       onPrimary={isMedia ? play : open}
@@ -277,6 +320,7 @@ export function MediaItemCard({
 
   return (
     <li
+      ref={cardRef}
       className={`bf-card-shell list-none${hasPlayButton ? " bf-card-shell-with-play" : ""}`}
       aria-posinset={posInSet}
       aria-setsize={setSize}
@@ -286,7 +330,10 @@ export function MediaItemCard({
         state={showPlayButton ? undefined : linkState()}
         onClick={showPlayButton ? (event) => activateLink(event, open) : undefined}
         aria-label={cardAccessibleName(
-          { ...item, title: cardLabelTitle(item, heading, showYear, lead) },
+          {
+            ...item,
+            title: cardLabelTitle(item, heading, showYear && !audioSubline, audioSubline || lead),
+          },
           state,
           rating,
         )}
