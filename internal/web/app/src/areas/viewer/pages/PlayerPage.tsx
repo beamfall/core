@@ -575,7 +575,7 @@ function FeaturePlayer({
       credits: resolvedPrefs.autoSkipCredits,
     },
     songScale,
-    seekLead: watchParty.seekLeadAfterAutoSkip,
+    autoSkipLead: watchParty.autoSkipLead,
   });
 
   // Browser Media Session (ADR-0084 §43): mirror transport state to the OS and

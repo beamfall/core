@@ -697,25 +697,46 @@ export async function sendPartyAutoSkip(item: string, positionMS: number): Promi
     return false;
   }
   const gen = generation;
-  try {
-    const result = await watchPartyAutoSkip({
-      partyID,
-      item,
-      positionMS: Math.round(positionMS),
-    });
-    const latest = state.timeline;
-    if (!result.applied || gen !== generation || latest?.item !== item) return false;
-    // A stream frame can already have advanced the timeline past this response.
-    if (latest !== timeline) {
-      return latest.positionMS === result.positionMS && latest.presentAtMS === result.presentAtMS;
-    }
-    set({
-      timeline: { ...timeline, positionMS: result.positionMS, presentAtMS: result.presentAtMS },
-    });
-    return true;
-  } catch {
+  const target = Math.round(positionMS);
+  let stopTracking: (() => void) | undefined;
+  let acknowledged = false;
+  // The lead must move as soon as followers get the skip, even if its HTTP
+  // response is still on the way.
+  const transition = lead
+    ? new Promise<boolean>((resolve) => {
+        stopTracking = subscribe(() => {
+          const latest = state.timeline;
+          if (gen !== generation || latest?.item !== item) {
+            resolve(false);
+          } else if (latest !== timeline && latest.positionMS === target) {
+            acknowledged = true;
+            resolve(true);
+          }
+        });
+      })
+    : null;
+  const response = watchPartyAutoSkip({ partyID, item, positionMS: target })
+    .then((result) => {
+      const latest = state.timeline;
+      if (!result.applied || acknowledged || gen !== generation || latest?.item !== item) {
+        return false;
+      }
+      // A lead transition uses the server's immediate clock. Its response can
+      // supersede an earlier heartbeat, but must never rewind a later anchor.
+      if (latest !== timeline && (!lead || latest.presentAtMS >= result.presentAtMS)) {
+        return latest.positionMS === result.positionMS && latest.presentAtMS === result.presentAtMS;
+      }
+      set({
+        timeline: { ...latest, positionMS: result.positionMS, presentAtMS: result.presentAtMS },
+      });
+      return true;
+    })
     // An automatic skip is optional. Leave playback on the shared timeline.
-    return false;
+    .catch(() => false);
+  try {
+    return await (transition ? Promise.race([transition, response]) : response);
+  } finally {
+    stopTracking?.();
   }
 }
 

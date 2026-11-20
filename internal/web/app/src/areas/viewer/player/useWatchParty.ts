@@ -11,6 +11,7 @@ import {
   reportLeadPosition,
   reportPartyDrift,
   resumeFollowedParty,
+  sendPartyAutoSkip,
   sendPartyTransport,
   startWatchParty,
   useWatchPartyState,
@@ -85,7 +86,7 @@ export interface WatchPartyView {
    */
   start: (relaxed?: boolean, lead?: boolean) => Promise<boolean>;
   leave: () => Promise<void>;
-  seekLeadAfterAutoSkip: (streamSeconds: number) => void;
+  autoSkipLead: (positionMS: number) => Promise<boolean>;
 }
 
 /** What this player is in the party: an ordinary member, the lead screen or a follower. */
@@ -127,7 +128,9 @@ export function useWatchParty({
   // from before the mount (the notification's Join click) is not counted.
   const mountedAt = useRef(performance.now());
   const lastCorrection = useRef(Number.NEGATIVE_INFINITY);
+  const pendingLeadSkip = useRef<HTMLVideoElement | null>(null);
   const leadAutoSkip = useRef<number | null>(null);
+  const leadFrame = useRef<FrameSample | null>(null);
   const localSeek = useRef<LocalSeek | null>(null);
   const mediaIdRef = useRef(mediaId);
   mediaIdRef.current = mediaId;
@@ -146,6 +149,8 @@ export function useWatchParty({
   const active = role !== "off";
   const timeline = party.timeline;
   const positionScale = 1000 * songScale;
+  const positionScaleRef = useRef(positionScale);
+  positionScaleRef.current = positionScale;
   const baseRate = 1 / songScale;
 
   const correct = useCallback((change: () => void) => {
@@ -353,11 +358,11 @@ export function useWatchParty({
   useEffect(() => {
     const video = videoRef.current;
     if (role !== "lead" || !attached || !video) return;
-    let sample: FrameSample | null = null;
+    leadFrame.current = null;
     let handle = 0;
     const frames = typeof video.requestVideoFrameCallback === "function";
     const onFrame: VideoFrameRequestCallback = (_now, frame) => {
-      sample = {
+      leadFrame.current = {
         positionMS: frame.mediaTime * positionScale,
         atMS: performance.timeOrigin + frame.expectedDisplayTime,
       };
@@ -366,9 +371,16 @@ export function useWatchParty({
     if (frames) handle = video.requestVideoFrameCallback(onFrame);
     const report = () => {
       // A stalled player has no position to report: its clock is not running.
-      if (video.paused || video.seeking || video.readyState < 3) return;
+      if (
+        pendingLeadSkip.current === video ||
+        video.paused ||
+        video.seeking ||
+        video.readyState < 3
+      )
+        return;
       if (getWatchParty().timeline?.item !== mediaIdRef.current) return;
       const now = localClockMS();
+      const sample = leadFrame.current;
       const fresh = sample && Math.abs(now - sample.atMS) <= FRAME_SAMPLE_MAX_AGE_MS;
       const at =
         fresh && sample ? sample : { positionMS: video.currentTime * positionScale, atMS: now };
@@ -377,17 +389,31 @@ export function useWatchParty({
     // A stall holds the party where the lead stopped, and its end resumes it.
     const onStall = () => {
       const tl = getWatchParty().timeline;
-      if (!tl || tl.paused || tl.item !== mediaIdRef.current || video.paused) return;
+      if (
+        pendingLeadSkip.current === video ||
+        !tl ||
+        tl.paused ||
+        tl.item !== mediaIdRef.current ||
+        video.paused
+      )
+        return;
       void sendPartyTransport(tl.item, video.currentTime * positionScale, true);
     };
     const onPlaying = () => {
       const tl = getWatchParty().timeline;
-      if (!tl || !tl.paused || tl.item !== mediaIdRef.current || video.paused) return;
+      if (
+        pendingLeadSkip.current === video ||
+        !tl ||
+        !tl.paused ||
+        tl.item !== mediaIdRef.current ||
+        video.paused
+      )
+        return;
       void sendPartyTransport(tl.item, video.currentTime * positionScale, false);
     };
     const beat = setInterval(report, LEAD_REPORT_INTERVAL_MS);
     const onSeeking = () => {
-      sample = null;
+      leadFrame.current = null;
     };
     video.addEventListener("ratechange", report);
     video.addEventListener("seeking", onSeeking);
@@ -551,13 +577,30 @@ export function useWatchParty({
     [mediaId, videoRef, positionScale],
   );
 
-  const seekLeadAfterAutoSkip = useCallback(
-    (streamSeconds: number) => {
+  const autoSkipLead = useCallback(
+    async (positionMS: number) => {
       const video = videoRef.current;
-      const s = getWatchParty();
-      if (!video || !s.lead || !s.isHost || s.timeline?.item !== mediaIdRef.current) return;
+      const { partyID, timeline, lead, isHost } = getWatchParty();
+      if (!video || !lead || !isHost || !timeline || timeline.item !== mediaIdRef.current)
+        return false;
+      pendingLeadSkip.current = video;
+      const applied = await sendPartyAutoSkip(timeline.item, positionMS);
+      if (pendingLeadSkip.current === video) pendingLeadSkip.current = null;
+      const latest = getWatchParty();
+      if (
+        !applied ||
+        videoRef.current !== video ||
+        latest.partyID !== partyID ||
+        latest.timeline?.item !== timeline.item ||
+        latest.timeline.positionMS !== Math.round(positionMS) ||
+        mediaIdRef.current !== timeline.item
+      )
+        return false;
+      const streamSeconds = positionMS / positionScaleRef.current;
+      leadFrame.current = null;
       leadAutoSkip.current = streamSeconds;
       video.currentTime = streamSeconds;
+      return true;
     },
     [videoRef],
   );
@@ -570,6 +613,6 @@ export function useWatchParty({
     resume,
     start,
     leave: leaveParty,
-    seekLeadAfterAutoSkip,
+    autoSkipLead,
   };
 }

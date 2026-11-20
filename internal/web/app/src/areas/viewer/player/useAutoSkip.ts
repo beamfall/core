@@ -31,7 +31,7 @@ export function useAutoSkip({
   mediaID,
   prefs,
   songScale = 1,
-  seekLead,
+  autoSkipLead,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   markers: PlaybackMarker[];
@@ -39,8 +39,8 @@ export function useAutoSkip({
   prefs: AutoSkipPrefs;
   /** Song seconds per stream second: the tempo the server applied; 1 when none. */
   songScale?: number;
-  /** Apply a server-authorized skip to the lead's own player. */
-  seekLead?: (streamSeconds: number) => void;
+  /** Coordinate the lead's skip with its position reports. */
+  autoSkipLead?: (positionMS: number) => Promise<boolean>;
 }): {
   skipped: AutoSkipSegment | null;
   undo: () => void;
@@ -128,11 +128,15 @@ export function useAutoSkip({
       if (party.status === "starting" || party.status === "joining") return;
       suppressedKeyRef.current = key;
       if (party.status === "active") {
+        const target = segment.endSeconds * 1000;
+        const request = party.lead
+          ? party.isHost && autoSkipLead?.(target)
+          : sendPartyAutoSkip(mediaID, target);
+        if (!request) return;
         skipPending = true;
-        void sendPartyAutoSkip(mediaID, segment.endSeconds * 1000).then((applied) => {
+        void request.then((applied) => {
           skipPending = false;
           if (!applied || cancelled || getWatchParty().partyID !== party.partyID) return;
-          if (party.lead && party.isHost) seekLead?.(segment.endSeconds / songScaleRef.current);
           showSkip(segment, party.partyID);
         });
         return;
@@ -147,7 +151,7 @@ export function useAutoSkip({
       cancelled = true;
       video.removeEventListener("timeupdate", onTime);
     };
-  }, [videoRef, mediaID, seekLead]);
+  }, [videoRef, mediaID, autoSkipLead]);
 
   return { skipped, undo, dismiss };
 }
