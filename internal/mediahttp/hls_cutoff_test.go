@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/playback/sessiontest"
@@ -75,7 +76,7 @@ func (r cutoffCompatResolver) Resolve(context.Context, string, streamtoken.Decis
 }
 
 func TestHLSCutoffDuringVerificationOrDurationProbe(t *testing.T) {
-	for _, stage := range []string{"verification", "duration", "duration permit", "library drain across verification"} {
+	for _, stage := range []string{"verification", "duration", "duration permit", "library drain across scope lookup"} {
 		t.Run(stage, func(t *testing.T) {
 			h, tokens, scope, now := castTrustBoundaryFixture(t)
 			src := filepath.Join(t.TempDir(), "source")
@@ -140,8 +141,18 @@ printf '%s\n' '{"format":{"duration":"120"}}'
 			if err != nil {
 				t.Fatal(err)
 			}
-			if stage == "verification" || stage == "library drain across verification" {
+			switch stage {
+			case "verification":
 				h.SetCompatDecisionResolver(cutoffCompatResolver(latch))
+			case "library drain across scope lookup":
+				// The admin-window check reads the injected clock inside Scope.
+				if err := h.store.SetSessionAdminUntil(t.Context(), scope.SessionID, now.Add(time.Hour)); err != nil {
+					t.Fatal(err)
+				}
+				h.auth = auth.NewServiceWithClock(h.store, func() time.Time {
+					latch()
+					return now
+				})
 			}
 			result := make(chan *httptest.ResponseRecorder, 1)
 			go func() { result <- fetchCastHLS(h, token, "720p/seg00000.m4s") }()
@@ -150,7 +161,7 @@ printf '%s\n' '{"format":{"duration":"120"}}'
 			case <-time.After(5 * time.Second):
 				t.Fatal("HLS did not reach the latch")
 			}
-			if stage == "library drain across verification" {
+			if stage == "library drain across scope lookup" {
 				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 				defer cancel()
 				fence, err := h.hls.Drain(ctx, media.LibraryID, 0)
@@ -178,7 +189,7 @@ printf '%s\n' '{"format":{"duration":"120"}}'
 			case <-time.After(5 * time.Second):
 				t.Fatal("HLS did not return after cutoff")
 			}
-			if stage == "library drain across verification" {
+			if stage == "library drain across scope lookup" {
 				if probes.Load() != 0 {
 					t.Fatalf("stale scope lookup started %d probes", probes.Load())
 				}
