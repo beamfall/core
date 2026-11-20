@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
-	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -33,7 +32,7 @@ type systemInfo struct {
 
 func (h *Handler) identity() publicSystemInfo {
 	return publicSystemInfo{
-		ID: h.serverID, ProductName: "Beamfall", Version: capabilities.ReleaseVersion,
+		ID: h.serverID, ProductName: "Beamfall", Version: h.releaseVersion,
 		ServerName: h.serverName, OperatingSystem: runtime.GOOS,
 		StartupWizardCompleted: h.setupRequired == nil || !h.setupRequired(),
 	}

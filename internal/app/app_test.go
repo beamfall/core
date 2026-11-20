@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -585,25 +586,19 @@ func TestAppCompatIdentityAndRefreshSurviveRestart(t *testing.T) {
 }
 
 func TestCompatRefreshQueuesEligibleRoots(t *testing.T) {
-	for _, burst := range []bool{false, true} {
-		name := "one allowlisted library"
-		if burst {
-			name = "concurrent burst across two libraries"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		allowed  int
+		requests int
+	}{
+		{name: "deny all", requests: 1},
+		{name: "one allowlisted library", allowed: 1, requests: 1},
+		{name: "concurrent burst and restart", allowed: 2, requests: 24},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
-			cfg := testConfig(t)
-			open := func() *App {
-				t.Helper()
-				a, err := New(ctx, cfg, nil, nil)
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { _ = a.Close() })
-				return a
-			}
-			a := open()
-			st := a.store
+			dataDir := storetest.MigratedDataDir(t)
+			st := storetest.OpenAt(t, dataDir)
 			profile, err := st.CreateProfile(ctx, "Integration", store.ProfileAdult, store.LibraryFilter{})
 			if err != nil {
 				t.Fatal(err)
@@ -615,18 +610,22 @@ func TestCompatRefreshQueuesEligibleRoots(t *testing.T) {
 			if _, err := st.UpdateProfileSettings(ctx, profile.ID, store.ProfileSettings{IntegrationSignIn: &enabled}); err != nil {
 				t.Fatal(err)
 			}
+
 			allow := map[store.LibraryID]bool{}
 			var sealed store.LibraryID
 			var granted []store.LibraryID
-			var want []scanpkg.JobRoot
-			for _, title := range []string{"First", "Second", "Sealed", "Restricted", "Trashed", "No Profile Grant"} {
+			type scanTarget struct {
+				LibraryID store.LibraryID `json:"library_id"`
+				Root      string          `json:"root"`
+			}
+			want := map[scanTarget]bool{}
+			for i, title := range []string{"First", "Second", "Sealed", "Restricted", "Trashed", "No Profile Grant"} {
 				roots := []string{t.TempDir(), t.TempDir()}
-				slices.Sort(roots)
 				library, err := st.CreateLibraryWithRoots(ctx, title, title == "Restricted", "", profile.ID, roots, "")
 				if err != nil {
 					t.Fatal(err)
 				}
-				allow[library.ID] = title != "Second" || burst
+				allow[library.ID] = tc.allowed > 0
 				if title != "No Profile Grant" && title != "Trashed" {
 					granted = append(granted, library.ID)
 				}
@@ -638,9 +637,10 @@ func TestCompatRefreshQueuesEligibleRoots(t *testing.T) {
 						t.Fatal(err)
 					}
 				case "First", "Second":
+					allow[library.ID] = i < tc.allowed
 					if allow[library.ID] {
 						for _, root := range roots {
-							want = append(want, scanpkg.JobRoot{LibraryID: library.ID, Root: root})
+							want[scanTarget{LibraryID: library.ID, Root: root}] = true
 						}
 					}
 				}
@@ -648,21 +648,31 @@ func TestCompatRefreshQueuesEligibleRoots(t *testing.T) {
 			if _, err := st.SetProfileLibraries(ctx, profile.ID, granted); err != nil {
 				t.Fatal(err)
 			}
-			before, err := st.ListJobs(ctx, store.JobStatusQueued)
-			if err != nil {
-				t.Fatal(err)
+			if queued, err := st.ListJobs(ctx, store.JobStatusQueued); err != nil || len(queued) != 0 {
+				t.Fatalf("fixture has %d queued jobs before refresh (error %v)", len(queued), err)
 			}
-			service := auth.NewService(st)
-			handler, err := compat.New(compat.Config{
-				Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"},
-				EnqueueRefresh: compatLibraryRefresher(st, nil,
+
+			var admitted atomic.Int32
+			newHandler := func(st *store.Store, service *auth.Service) *compat.Handler {
+				t.Helper()
+				refresh := compatLibraryRefresher(st, nil,
 					func(id store.LibraryID) bool { return id == sealed },
 					func(_ context.Context, id store.LibraryID) bool { return allow[id] },
-					slog.Default()),
-			}, service, nil)
-			if err != nil {
-				t.Fatal(err)
+					slog.Default())
+				handler, err := compat.New(compat.Config{
+					Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"},
+					EnqueueRefresh: func(ctx context.Context, scope auth.Scope) {
+						admitted.Add(1)
+						refresh(ctx, scope)
+					},
+				}, service, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return handler
 			}
+			service := auth.NewService(st)
+			handler := newHandler(st, service)
 			tokens := make([]string, 2)
 			for i := range tokens {
 				session, err := service.AuthenticateIntegrationByName(ctx, "Integration", "2468", "127.0.0.1", []store.IntegrationScope{store.IntegrationScopeRefresh})
@@ -674,78 +684,70 @@ func TestCompatRefreshQueuesEligibleRoots(t *testing.T) {
 				}
 				tokens[i] = session.Token
 			}
-			requests := 1
-			if burst {
-				requests = 24
+
+			request := func(handler *compat.Handler, token string) {
+				req := httptest.NewRequestWithContext(ctx, http.MethodPost, compat.Prefix+"Library/Refresh", nil)
+				req.RemoteAddr = "127.0.0.1:1234"
+				req.Header.Set("X-Emby-Token", token)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
+					t.Errorf("refresh returned %d with %d body bytes", rec.Code, rec.Body.Len())
+				}
 			}
+			queuedIDs := func(st *store.Store) []store.JobID {
+				t.Helper()
+				queued, err := st.ListJobs(ctx, store.JobStatusQueued)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(queued) != len(want) {
+					t.Fatalf("queued %d jobs, want %d", len(queued), len(want))
+				}
+				seen := map[scanTarget]bool{}
+				ids := make([]store.JobID, 0, len(queued))
+				for _, job := range queued {
+					var target scanTarget
+					if err := json.Unmarshal(job.Payload, &target); err != nil {
+						t.Fatal(err)
+					}
+					if job.Kind != scanpkg.JobKind || !want[target] || seen[target] {
+						t.Fatalf("unexpected queued job kind %q for %+v", job.Kind, target)
+					}
+					seen[target] = true
+					ids = append(ids, job.ID)
+				}
+				slices.Sort(ids)
+				return ids
+			}
+
 			var wg sync.WaitGroup
 			start := make(chan struct{})
-			for i := range requests {
+			for i := range tc.requests {
 				wg.Go(func() {
 					<-start
-					req := httptest.NewRequestWithContext(ctx, http.MethodPost, compat.Prefix+"Library/Refresh", nil)
-					req.RemoteAddr = "127.0.0.1:1234"
-					req.Header.Set("X-Emby-Token", tokens[i%len(tokens)])
-					rec := httptest.NewRecorder()
-					handler.ServeHTTP(rec, req)
-					if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
-						t.Errorf("refresh returned %d with %d body bytes", rec.Code, rec.Body.Len())
-					}
+					request(handler, tokens[i%len(tokens)])
 				})
 			}
 			close(start)
 			wg.Wait()
+			if got := admitted.Load(); got != 1 {
+				t.Fatalf("admitted %d requests, want 1", got)
+			}
+			ids := queuedIDs(st)
 
-			queued, err := st.ListJobs(ctx, store.JobStatusQueued)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(queued) != len(before)+1 {
-				t.Fatalf("refresh added %d jobs, want one", len(queued)-len(before))
-			}
-			var job store.Job
-			for _, entry := range queued {
-				if !slices.ContainsFunc(before, func(prior store.Job) bool { return prior.ID == entry.ID }) {
-					job = entry
+			if tc.requests > 1 {
+				if err := st.Close(); err != nil {
+					t.Fatal(err)
 				}
-			}
-			if job.Kind != scanpkg.JobKind {
-				t.Fatalf("refresh added job kind %q, want %q", job.Kind, scanpkg.JobKind)
-			}
-			var payload struct{ Roots []scanpkg.JobRoot }
-			if err := json.Unmarshal(job.Payload, &payload); err != nil || !slices.Equal(payload.Roots, want) {
-				t.Fatalf("queued roots = %+v, want %+v (decode error %v)", payload.Roots, want, err)
-			}
-
-			// Drive the real worker, reopening the store after the first root.
-			for i := range want {
-				claimed, err := a.jobs.RunOne(ctx, nil, time.Now().UTC())
-				if err != nil || claimed.ID != job.ID {
-					t.Fatalf("claim %d returned job %s, want %s (error %v)", i, claimed.ID, job.ID, err)
+				reopened := storetest.OpenAt(t, dataDir)
+				request(newHandler(reopened, auth.NewService(reopened)), tokens[0])
+				if got := admitted.Load(); got != 2 {
+					t.Fatalf("admitted %d requests after restart, want 2 total", got)
 				}
-				if i == 0 {
-					if err := a.Close(); err != nil {
-						t.Fatal(err)
-					}
-					a = open()
+				if got := queuedIDs(reopened); !slices.Equal(got, ids) {
+					t.Fatalf("queued job IDs changed after restart and refresh: got %v, want %v", got, ids)
 				}
-			}
-			finished, err := a.store.Job(ctx, job.ID)
-			if err != nil || finished.Status != store.JobStatusCompleted {
-				t.Fatalf("batch status = %s (failure %q, error %v)", finished.Status, finished.Error, err)
-			}
-			events, err := a.store.ListJobEvents(ctx, job.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			completedRoots := 0
-			for _, event := range events {
-				if event.Type == scanpkg.ScanSummaryEvent {
-					completedRoots++
-				}
-			}
-			if completedRoots != len(want) {
-				t.Fatalf("worker completed %d root scans, want %d", completedRoots, len(want))
 			}
 		})
 	}

@@ -35,6 +35,7 @@ type Config struct {
 	TrustedProxyCIDRs []string
 	ServerID          string
 	ServerName        string
+	ReleaseVersion    string
 	SetupRequired     func() bool
 	EnqueueRefresh    func(context.Context, auth.Scope)
 }
@@ -48,6 +49,7 @@ type Handler struct {
 	relayed        func(*http.Request) bool
 	serverID       string
 	serverName     string
+	releaseVersion string
 	setupRequired  func() bool
 	enqueueRefresh func(context.Context, auth.Scope)
 	refreshMu      sync.Mutex
@@ -68,8 +70,8 @@ func New(cfg Config, authService *auth.Service, next http.Handler) (*Handler, er
 	}
 	return &Handler{
 		enabled: cfg.Enabled, allowed: allowed, trustedProxies: trusted, auth: authService, next: next,
-		serverID: cfg.ServerID, serverName: cfg.ServerName, setupRequired: cfg.SetupRequired,
-		enqueueRefresh: cfg.EnqueueRefresh,
+		serverID: cfg.ServerID, serverName: cfg.ServerName, releaseVersion: cfg.ReleaseVersion,
+		setupRequired: cfg.SetupRequired, enqueueRefresh: cfg.EnqueueRefresh,
 	}, nil
 }
 

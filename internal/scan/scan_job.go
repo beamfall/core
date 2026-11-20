@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"slices"
 	"time"
 
 	"github.com/beamfall/core/internal/jobs"
@@ -16,8 +15,6 @@ import (
 // JobPriority places library scans above background sweeps (0) and below
 // foreground/playback demand (10), so scans get a worker first (CORE-2571).
 const JobPriority = 5
-
-const batchJobPayloadVersion = 3
 
 // NewJob builds the durable store.Job for req, deriving a dedupe key from its
 // Library and root (backfills get a distinct key so they never suppress, or
@@ -57,32 +54,6 @@ func NewJob(req JobRequest) (store.Job, error) {
 		DedupeKey: dedupeKey,
 		Payload:   payload,
 		CreatedAt: req.CreatedAt,
-	}, nil
-}
-
-// NewBatchJob builds one durable scan job covering all supplied Library roots.
-func NewBatchJob(roots []JobRoot, createdAt time.Time) (store.Job, error) {
-	if len(roots) == 0 {
-		return store.Job{}, errors.New("scan roots are required")
-	}
-	roots = slices.Clone(roots)
-	for i, target := range roots {
-		if target.LibraryID == "" || target.Root == "" {
-			return store.Job{}, errors.New("library ID and scan root are required")
-		}
-		root, err := normalizeRoot(target.Root)
-		if err != nil {
-			return store.Job{}, err
-		}
-		roots[i].Root = root
-	}
-	payload, err := json.Marshal(jobPayload{Version: batchJobPayloadVersion, Roots: roots})
-	if err != nil {
-		return store.Job{}, err
-	}
-	return store.Job{
-		Kind: JobKind, Class: store.JobClassBackground, Priority: JobPriority,
-		Payload: payload, CreatedAt: createdAt,
 	}, nil
 }
 
@@ -130,47 +101,7 @@ func HandlerWithWorkerGovernor(st *store.Store, prober Prober, grabber FrameGrab
 		if err != nil {
 			return jobs.Result{}, err
 		}
-		checkpoint, err := checkpointFromJob(job.Checkpoint)
-		if err != nil {
-			return jobs.Result{}, err
-		}
-		if len(req.Roots) == 0 {
-			return runScanJob(ctx, st, prober, grabber, parsers, interactiveSidecarExts, identifier, localExtractors, metadataHydrators, gov, firstImageDeriver(imageDerivers), job, req.Request, checkpoint)
-		}
-
-		// Each claim advances one root using the normal scan checkpoint. A
-		// completed root is durable before the job yields or completes.
-		index := 0
-		if checkpoint.RootIndex != nil {
-			index = *checkpoint.RootIndex
-			if index < 0 || index >= len(req.Roots) {
-				return jobs.Result{}, errors.New("scan checkpoint root is out of range")
-			}
-			if checkpoint.Stage == "complete" {
-				index++
-				checkpoint = jobCheckpoint{Stage: "scanning"}
-			}
-		}
-		if index == len(req.Roots) {
-			return jobs.Result{}, nil
-		}
-		checkpoint.RootIndex = &index
-		target := req.Roots[index]
-		available, err := batchRootAvailable(ctx, st, target)
-		if err != nil {
-			return jobs.Result{}, err
-		}
-		var result jobs.Result
-		if available {
-			root := Request{LibraryID: target.LibraryID, Root: target.Root}
-			result, err = runScanJob(ctx, st, prober, grabber, parsers, interactiveSidecarExts, identifier, localExtractors, metadataHydrators, gov, firstImageDeriver(imageDerivers), job, root, checkpoint)
-		} else {
-			result, err = finishBatchRoot(ctx, st, job, checkpoint)
-		}
-		if err == nil && index+1 < len(req.Roots) {
-			err = jobs.ErrYielded
-		}
-		return result, err
+		return runScanJob(ctx, st, prober, grabber, parsers, interactiveSidecarExts, identifier, localExtractors, metadataHydrators, gov, firstImageDeriver(imageDerivers), job, req)
 	}
 }
 
@@ -221,30 +152,18 @@ func firstImageDeriver(derivers []ImageDeriver) ImageDeriver {
 	return derivers[0]
 }
 
-// A queued root may have been removed, trashed, restricted or sealed before
-// this claim. Recheck before touching its filesystem.
-func batchRootAvailable(ctx context.Context, st *store.Store, target JobRoot) (bool, error) {
-	libraries, err := st.Libraries(ctx, store.LibraryFilter{AllowedIDs: []store.LibraryID{target.LibraryID}})
-	if err != nil || len(libraries) == 0 {
-		return false, err
+func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber FrameGrabber, parsers map[string]FilenameParser, interactiveSidecarExts []string, identifier Identifier, localExtractors map[string][]LocalExtractor, metadataHydrators map[string]MetadataHydrator, gov WorkerGovernor, imageDeriver ImageDeriver, job store.Job, req Request) (jobs.Result, error) {
+	checkpoint, err := checkpointFromJob(job.Checkpoint)
+	if err != nil {
+		return jobs.Result{}, err
 	}
-	if libraries[0].Encrypted && !st.EncryptedLibraryDBRegistered(target.LibraryID) {
-		return false, nil
-	}
-	roots, err := st.LibraryRoots(ctx, target.LibraryID)
-	return slices.Contains(roots, target.Root), err
-}
-
-func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber FrameGrabber, parsers map[string]FilenameParser, interactiveSidecarExts []string, identifier Identifier, localExtractors map[string][]LocalExtractor, metadataHydrators map[string]MetadataHydrator, gov WorkerGovernor, imageDeriver ImageDeriver, job store.Job, req Request, checkpoint jobCheckpoint) (jobs.Result, error) {
-	// Record a gone or unreadable folder before attempting a walk, so the
-	// Console can name the folder that needs attention (CORE-2309).
+	// A Library folder that is gone or unreadable fails the job before any
+	// work, every time it is claimed: the walk would only skip it file by file
+	// and the job would keep coming back. The job records why, so the Console
+	// can name the folder that needs attention (CORE-2309).
 	if rootErr := checkScanRootReadable(req.Root); rootErr != nil {
 		if eventErr := appendScanRootUnavailable(ctx, st, job.ID, req, rootErr); eventErr != nil {
 			return jobs.Result{}, errors.Join(rootErr, eventErr)
-		}
-		if checkpoint.RootIndex != nil {
-			// Keep an unavailable root from preventing scans of later roots.
-			return finishBatchRoot(ctx, st, job, checkpoint)
 		}
 		return jobs.Result{}, rootErr
 	}
@@ -261,17 +180,16 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 	// advanced by a few files per attempt (CORE-2353).
 	var workStarted time.Time
 	tally := newIdentifyTally(checkpoint.Unidentified)
-	result, err := scanFromCheckpoint(withIdentifyTally(ctx, tally), st, prober, grabber, parsers, interactiveSidecarExts, identifier, localExtractors, metadataHydrators, gov, imageDeriver, req, checkpoint, scanStarted, func(current jobCheckpoint, progress store.JobProgress) error {
-		current.RootIndex = checkpoint.RootIndex
-		current.Unidentified = tally.snapshot()
-		data, err := marshalScanCheckpoint(current)
+	result, err := scanFromCheckpoint(withIdentifyTally(ctx, tally), st, prober, grabber, parsers, interactiveSidecarExts, identifier, localExtractors, metadataHydrators, gov, imageDeriver, req, checkpoint, scanStarted, func(checkpoint jobCheckpoint, progress store.JobProgress) error {
+		checkpoint.Unidentified = tally.snapshot()
+		data, err := marshalScanCheckpoint(checkpoint)
 		if err != nil {
 			return err
 		}
+		latest = data
 		if err := st.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
 			return err
 		}
-		latest = data
 		filesThisRun++
 		now := scanJobClock()
 		if workStarted.IsZero() {
@@ -289,7 +207,6 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			if result.interrupted != nil {
 				interrupted := *result.interrupted
-				interrupted.RootIndex = checkpoint.RootIndex
 				interrupted.Unidentified = tally.snapshot()
 				latest, _ = marshalScanCheckpoint(interrupted)
 			} else if len(latest) == 0 {
@@ -297,42 +214,25 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 			}
 			return jobs.Result{Checkpoint: latest, RunAfter: time.Now().UTC()}, jobs.ErrYielded
 		}
-		return jobs.Result{Checkpoint: latest}, err
+		return jobs.Result{}, err
 	}
 	result.Unidentified = tally.snapshot()
 	complete := result.checkpoint("complete")
-	complete.RootIndex = checkpoint.RootIndex
 	complete.Unidentified = result.Unidentified
 	data, err := marshalScanCheckpoint(complete)
 	if err != nil {
-		return jobs.Result{Checkpoint: latest}, err
+		return jobs.Result{}, err
 	}
 	if err := appendScanSummary(ctx, st, job.ID, result); err != nil {
-		return jobs.Result{Checkpoint: latest}, err
+		return jobs.Result{}, err
 	}
 	logIdentifyOutcomes(ctx, req.LibraryID, result.Unidentified)
-	err = st.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, store.JobProgress{
+	return jobs.Result{}, st.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, store.JobProgress{
 		Current: int64(result.FilesSeen),
 		Total:   int64(result.totalFiles),
 		Unit:    "files",
 		Message: missingCredentialsMessage(result.MissingCredentials, identifier) + unidentifiableMessage(result.Unidentified),
 	}, time.Now().UTC())
-	if err != nil {
-		return jobs.Result{Checkpoint: latest}, err
-	}
-	return jobs.Result{Checkpoint: data}, nil
-}
-
-func finishBatchRoot(ctx context.Context, st *store.Store, job store.Job, checkpoint jobCheckpoint) (jobs.Result, error) {
-	checkpoint.Stage = "complete"
-	data, err := marshalScanCheckpoint(checkpoint)
-	if err != nil {
-		return jobs.Result{}, err
-	}
-	if err := st.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, job.Progress, time.Now().UTC()); err != nil {
-		return jobs.Result{}, err
-	}
-	return jobs.Result{Checkpoint: data}, nil
 }
 
 // ScanRootUnavailableEvent is the job event type a scan job records when its

@@ -1507,6 +1507,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		Enabled: cfg.JellyfinCompat.Enabled, AllowedCIDRs: cfg.JellyfinCompat.AllowedCIDRs,
 		TrustedProxyCIDRs: cfg.JellyfinCompat.TrustedProxyCIDRs,
 		ServerID:          discovery.ServerID(offlinePackPin), ServerName: cfg.ServerName,
+		ReleaseVersion: capabilities.ReleaseVersion,
 		SetupRequired:  pairingService.SetupRequired,
 		EnqueueRefresh: compatLibraryRefresher(st, jobWake, sealedPredicate, compatEligible, logger),
 	}, authService, nil)
@@ -3011,7 +3012,6 @@ func compatLibraryRefresher(st *store.Store, wake *jobWake, sealed func(store.Li
 			logger.WarnContext(ctx, "compat refresh libraries unavailable", "error", err)
 			return
 		}
-		var targets []scanpkg.JobRoot
 		for _, library := range libraries {
 			if sealed(library.ID) || !eligible(ctx, library.ID) {
 				continue
@@ -3022,18 +3022,8 @@ func compatLibraryRefresher(st *store.Store, wake *jobWake, sealed func(store.Li
 				continue
 			}
 			for _, root := range roots {
-				targets = append(targets, scanpkg.JobRoot{LibraryID: library.ID, Root: root})
+				enqueueScanJob(ctx, st, logger, wake, library.ID, root)
 			}
-		}
-		if len(targets) == 0 {
-			return
-		}
-		job, err := scanpkg.NewBatchJob(targets, time.Now().UTC())
-		if err == nil {
-			_, err = enqueueAndWake(ctx, st, wake, job)
-		}
-		if err != nil {
-			logger.WarnContext(ctx, "compat refresh scan enqueue failed", "error", err)
 		}
 	}
 }

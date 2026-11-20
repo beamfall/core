@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
-	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -69,9 +68,10 @@ func loginIntegration(t *testing.T, handler *Handler) string {
 }
 
 func TestJellyfinSystemInfo(t *testing.T) {
+	const version = "v1.2.3"
 	st, service := integrationService(t, time.Now)
 	handler := newIdentityHandler(t, Config{
-		Enabled: true, ServerID: "stable-id", ServerName: "Home Server",
+		Enabled: true, ServerID: "stable-id", ServerName: "Home Server", ReleaseVersion: version,
 		SetupRequired: func() bool { return false },
 	}, service)
 	token := loginIntegration(t, handler)
@@ -87,7 +87,7 @@ func TestJellyfinSystemInfo(t *testing.T) {
 			t.Fatalf("system info: %d %s", rec.Code, rec.Body.String())
 		}
 		want := map[string]any{
-			"Id": "stable-id", "ProductName": "Beamfall", "Version": capabilities.ReleaseVersion,
+			"Id": "stable-id", "ProductName": "Beamfall", "Version": version,
 			"ServerName": "Home Server", "OperatingSystem": runtime.GOOS, "StartupWizardCompleted": true,
 		}
 		if authenticated {

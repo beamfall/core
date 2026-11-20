@@ -307,26 +307,18 @@ type JobRequest struct {
 	Backfill bool
 }
 
-// JobRoot identifies a configured Library root in a batch scan.
-type JobRoot struct {
-	LibraryID store.LibraryID `json:"library_id"`
-	Root      string          `json:"root"`
-}
-
 // jobPayload version history: v1 carried {library_id, root}; v2 adds the
 // metadata-backfill flag. A v1 payload still loads — the absent field decodes
-// as false. v3 carries a batch of roots instead of a single target.
+// as false, so an in-flight pre-upgrade scan job resumes as a normal scan.
 type jobPayload struct {
 	Version   int             `json:"version"`
-	LibraryID store.LibraryID `json:"library_id,omitempty"`
-	Root      string          `json:"root,omitempty"`
+	LibraryID store.LibraryID `json:"library_id"`
+	Root      string          `json:"root"`
 	Backfill  bool            `json:"backfill"`
-	Roots     []JobRoot       `json:"roots,omitempty"`
 }
 
 type jobCheckpoint struct {
 	Version       int    `json:"version"`
-	RootIndex     *int   `json:"root_index,omitempty"` // Set only for a batch scan.
 	Stage         string `json:"stage"`
 	LastPath      string `json:"last_path,omitempty"`
 	FilesSeen     int    `json:"files_seen"`
