@@ -354,12 +354,33 @@ test("visual parity covers every migrated player widget state", async ({
   await closeSharedSelectPopup(page);
   await page.keyboard.press("Escape");
 
+  // The details dialog reads the calling Profile's item state. The mocked media
+  // does not exist on the shared E2E server, so pin the state the golden shows.
+  await page.route("**/api/graphql", async (route) => {
+    const body = route.request().postDataJSON() as { query?: string } | null;
+    if (!body?.query?.startsWith("query ItemState(")) return route.fallback();
+    await route.fulfill({
+      json: {
+        data: {
+          itemState: {
+            id: "media-alpha",
+            kind: "media",
+            watched: true,
+            watchlisted: false,
+            rating: 0,
+          },
+        },
+      },
+    });
+  });
   await setSettingsOpen(page, true);
   await page.getByRole("button", { name: "Playback details" }).click();
   const detailsDialog = page.getByRole("dialog", { name: "Acceptance review demo" });
   await expect(detailsDialog).toBeVisible();
   await detailsDialog.focus();
   await expect(detailsDialog).toBeFocused();
+  // The watched control reads "Mark watched", disabled, until the item state loads.
+  await expect(detailsDialog.getByRole("button", { name: /^Mark (un)?watched$/ })).toBeEnabled();
   await expectVisualParity(page, testInfo, "player-details-dialog-open-focused");
   await page.keyboard.press("Escape");
 

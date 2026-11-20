@@ -180,6 +180,12 @@ test.describe("viewer", () => {
       await document.fonts.ready;
       window.scrollTo({ top: 0, behavior: "instant" });
     });
+    // Home focuses the hero when its artwork beats a 1s grace period, else the
+    // first shelf card. A loaded host can miss the grace, so pin the hero focus
+    // the golden shows; the Home unit tests cover the fallback.
+    const heroPlay = page.locator(".bf-hero [data-focus-item]");
+    await heroPlay.focus();
+    await expect(heroPlay).toBeFocused();
     await settleFrames(page);
     await expectVisualParity(page, testInfo, "viewer-home-1440x900", { liveOnly: true });
 
