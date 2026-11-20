@@ -204,7 +204,39 @@ func TestScanDoesNotRepointMediaWhenFileChangesDuringSampling(t *testing.T) {
 	}
 }
 
-func TestScanRetriesLegacyFileAfterMtimeChangesDuringSampling(t *testing.T) {
+func TestScanRetriesLegacyFileAfterUnstableSample(t *testing.T) {
+	readErr := errors.New("injected sample read error")
+	for _, tc := range []struct {
+		name    string
+		change  func(*os.File, string, os.FileInfo) error
+		wantErr error
+		trashed bool
+	}{
+		{name: "grow", change: func(file *os.File, _ string, before os.FileInfo) error {
+			return file.Truncate(before.Size() + 1)
+		}},
+		{name: "touch mtime only", change: func(_ *os.File, path string, before os.FileInfo) error {
+			mtime := before.ModTime().Add(time.Second)
+			return os.Chtimes(path, mtime, mtime)
+		}},
+		{name: "truncate", change: func(file *os.File, _ string, before os.FileInfo) error {
+			return file.Truncate(before.Size() - 1)
+		}, wantErr: io.EOF},
+		{name: "read error", change: func(*os.File, string, os.FileInfo) error {
+			return readErr
+		}, wantErr: readErr},
+		{name: "trashed row with read error", change: func(*os.File, string, os.FileInfo) error {
+			return readErr
+		}, wantErr: readErr, trashed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testScanRetriesLegacyFileAfterUnstableSample(t, tc.change, tc.wantErr, tc.trashed)
+		})
+	}
+}
+
+func testScanRetriesLegacyFileAfterUnstableSample(t *testing.T, change func(*os.File, string, os.FileInfo) error, wantErr error, trashed bool) {
+	t.Helper()
 	ctx := t.Context()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -213,7 +245,8 @@ func TestScanRetriesLegacyFileAfterMtimeChangesDuringSampling(t *testing.T) {
 	dir := storetest.MigratedDataDir(t)
 	st := storetest.OpenAt(t, dir)
 	req := Request{LibraryID: "library-local", Root: root}
-	path := writeScanFile(t, root, "legacy.mp4", []byte("unchanged legacy bytes"))
+	payload := []byte("unchanged legacy bytes")
+	path := writeScanFile(t, root, "legacy.mp4", payload)
 	before, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -238,6 +271,12 @@ func TestScanRetriesLegacyFileAfterMtimeChangesDuringSampling(t *testing.T) {
 	}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
 		t.Fatal(err)
 	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{req.LibraryID}}
+	if trashed {
+		if err := st.TrashMedia(ctx, media.ID, filter); err != nil {
+			t.Fatal(err)
+		}
+	}
 	gone := writeScanFile(t, root, "gone.mp4", []byte("deleted bytes"))
 	_, deleted, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
 		LibraryID: req.LibraryID, Path: gone, Title: "Gone", Container: "mp4", Codec: "h264",
@@ -257,17 +296,27 @@ func TestScanRetriesLegacyFileAfterMtimeChangesDuringSampling(t *testing.T) {
 		fullReads++
 		return originalLegacy(ctx, path)
 	}
-	mtime := before.ModTime().Add(time.Second)
+	rootDir, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rootDir.Close()
+	var sampleErr, changeErr error
+	var changeAttempted bool
 	sampleScanFile = func(ctx context.Context, path string) (string, error) {
-		return store.SampleMediaFileContentFrom(ctx, func() (store.SampleFile, error) {
-			file, err := os.OpenInRoot(root, filepath.Base(path))
+		fingerprint, err := store.SampleMediaFileContentFrom(ctx, func() (store.SampleFile, error) {
+			file, err := rootDir.OpenFile(filepath.Base(path), os.O_RDWR, 0)
 			if err != nil {
 				return nil, err
 			}
 			return &changingSampleFile{File: file, beforeFirstRead: func() error {
-				return os.Chtimes(path, mtime, mtime)
+				changeAttempted = true
+				changeErr = change(file, path, before)
+				return changeErr
 			}}, nil
 		})
+		sampleErr = err
+		return fingerprint, err
 	}
 	// Advance beyond both rows' last-seen milliseconds so missing retirement runs.
 	cutoff := time.UnixMilli(max(file.LastSeenAt.UnixMilli(), deleted.LastSeenAt.UnixMilli()) + 1)
@@ -275,8 +324,11 @@ func TestScanRetriesLegacyFileAfterMtimeChangesDuringSampling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after, err := os.Stat(path); err != nil || after.Size() != before.Size() || !after.ModTime().Equal(mtime) {
-		t.Fatalf("mtime-only change did not reach the file: stat = %+v, err = %v", after, err)
+	if !changeAttempted || (changeErr != nil && !errors.Is(changeErr, wantErr)) {
+		t.Fatalf("sample injection reached = %t, error = %v", changeAttempted, changeErr)
+	}
+	if sampleErr == nil || (wantErr != nil && !errors.Is(sampleErr, wantErr)) {
+		t.Fatalf("sampling error = %v, want a failure (specific error: %v)", sampleErr, wantErr)
 	}
 	if first.FilesSeen != 0 || fullReads != 0 || first.FilesMissing != 1 {
 		t.Errorf("first scan: admitted = %d, full hashes = %d, missing = %d, want only the deleted file marked missing", first.FilesSeen, fullReads, first.FilesMissing)
@@ -285,11 +337,23 @@ func TestScanRetriesLegacyFileAfterMtimeChangesDuringSampling(t *testing.T) {
 		t.Fatal(err)
 	}
 	st = storetest.OpenAt(t, dir)
+	if trashed {
+		if err := st.RestoreMedia(ctx, media.ID, filter); err != nil {
+			t.Fatalf("restore Media that should still be trashed: %v", err)
+		}
+	}
 	live, err := st.MediaFilesForLibrary(ctx, req.LibraryID)
-	if err != nil || len(live) != 1 || live[0].MediaID != media.ID || !live[0].ModTime.IsZero() {
+	if err != nil || len(live) != 1 || live[0].MediaID != media.ID || live[0].ContentFingerprint != full ||
+		live[0].SizeBytes != before.Size() || !live[0].ModTime.IsZero() {
 		t.Errorf("live files after reopening = %+v, err = %v, want statless legacy Media %s", live, err, media.ID)
 	}
 
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, before.ModTime(), before.ModTime()); err != nil {
+		t.Fatal(err)
+	}
 	sampleScanFile = originalSample
 	second, err := Scan(ctx, st, nil, nil, nil, nil, nil, req)
 	if err != nil || len(second.Files) != 1 || second.Files[0].MediaID != media.ID || second.Files[0].ContentFingerprint != full || fullReads != 1 {

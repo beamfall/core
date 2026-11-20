@@ -17,9 +17,6 @@ const (
 	mediaSampleCount = 14
 )
 
-// ErrSampleFileChanged indicates the sampled file needs to settle before retrying.
-var ErrSampleFileChanged = errors.New("file changed while sampling content")
-
 // SampleMediaFileContent reads the sample1 identity from a file.
 func SampleMediaFileContent(ctx context.Context, path string) (string, error) {
 	return SampleMediaFileContentFrom(ctx, func() (SampleFile, error) {
@@ -56,7 +53,7 @@ func SampleMediaFileContentFrom(ctx context.Context, open func() (SampleFile, er
 		return "", err
 	}
 	if after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
-		return "", ErrSampleFileChanged
+		return "", errors.New("file changed while sampling content")
 	}
 	return fingerprint, nil
 }

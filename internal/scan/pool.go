@@ -165,10 +165,11 @@ func hashScanFile(ctx context.Context, path string) (string, error) {
 		}
 	}
 	defer func() { <-scanHashSlot }()
-	if err := ctx.Err(); err != nil {
-		return "", err
+	fingerprint, err := sampleScanFile(ctx, path)
+	if err != nil && ctx.Err() == nil {
+		return "", errFileSettling
 	}
-	return sampleScanFile(ctx, path)
+	return fingerprint, err
 }
 
 // probeFile probes a non-image file, leaving t.probe unset when there is no

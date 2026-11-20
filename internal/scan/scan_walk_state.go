@@ -214,9 +214,7 @@ func (s *scanWalkState) skipOrPropagate(path string, err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, store.ErrSampleFileChanged) || errors.Is(err, errFileSettling) {
-		// Persist presence before advancing the scan checkpoint. The next full
-		// scan can retry with the same fingerprint and stats still in place.
+	if errors.Is(err, errFileSettling) {
 		return s.st.MarkMediaFileSeen(s.ctx, s.req.LibraryID, path, s.scanStarted)
 	}
 	if errors.Is(err, fs.SkipDir) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, jobs.ErrYielded) || errors.Is(err, errImageDerivation) {

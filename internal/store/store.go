@@ -3159,7 +3159,7 @@ func (s *Store) MarkMediaFileSeen(ctx context.Context, libraryID LibraryID, path
 	_, err = plane.writer.ExecContext(ctx, `
 		UPDATE media_file SET last_seen_at_ms = ?
 		WHERE path = ? AND missing_at_ms IS NULL AND last_seen_at_ms < ?
-		  AND media_id IN (SELECT id FROM media WHERE library_id = ? AND trashed_at_ms IS NULL)
+		  AND media_id IN (SELECT id FROM media WHERE library_id = ?)
 	`, seenMS, path, seenMS, libraryID)
 	return err
 }

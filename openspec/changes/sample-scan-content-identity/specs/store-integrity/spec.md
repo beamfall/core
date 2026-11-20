@@ -70,9 +70,8 @@ Mtime comparisons SHALL round Unix nanoseconds toward zero to milliseconds.
 
 #### Scenario: A scan cannot finish sampling a file
 
-- **WHEN** a scan sees a file inside the stability window or sampling fails, including on a size or
-  mtime change, short read, EOF, or file access error
-- **THEN** it skips admission and records the presence of any live row at that Library and path
+- **WHEN** a scan sees a file inside the stability window or any step of sampling fails
+- **THEN** it skips admission and records the path as seen for the missing-file sweep
 - **AND** the next scan can retry against the same stored identity and stats
 
 #### Scenario: Legacy file moved, changed, or returns after a missing mark
