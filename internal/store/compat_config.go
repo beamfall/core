@@ -21,7 +21,7 @@ const (
 )
 
 // JellyfinCompatConfig is the resolved compatibility configuration.
-// LibraryIDs is the stored allowlist as written; JellyfinCompatLibraryEligible
+// LibraryIDs is the stored allowlist as written; JellyfinCompatEligibleLibraries
 // decides eligibility at use time.
 type JellyfinCompatConfig struct {
 	Enabled           bool
@@ -131,16 +131,25 @@ func decodeList[T any](values map[string]string, key string, into *[]T) {
 // Library must exist, not be trashed and not be Reveal-restricted. Any invalid
 // value refuses the whole write.
 func (s *Store) SetJellyfinCompatConfig(ctx context.Context, patch JellyfinCompatPatch, defaults JellyfinCompatConfig, now time.Time) (JellyfinCompatConfig, error) {
+	// Resolve first and return the merged result, so a successful write always
+	// hands the caller the config it stored: no read after the commit can fail
+	// and leave the live route group behind the stored settings.
+	cfg, err := s.JellyfinCompatConfig(ctx, defaults)
+	if err != nil {
+		return JellyfinCompatConfig{}, err
+	}
 	writes := map[string]string{}
 	if patch.Enabled != nil {
 		writes[configJellyfinCompatEnabled] = boolToConfig(*patch.Enabled)
+		cfg.Enabled = *patch.Enabled
 	}
 	for _, list := range []struct {
 		key    string
 		values *[]string
+		into   *[]string
 	}{
-		{configJellyfinCompatAllowedCIDRs, patch.AllowedCIDRs},
-		{configJellyfinCompatTrustedProxies, patch.TrustedProxyCIDRs},
+		{configJellyfinCompatAllowedCIDRs, patch.AllowedCIDRs, &cfg.AllowedCIDRs},
+		{configJellyfinCompatTrustedProxies, patch.TrustedProxyCIDRs, &cfg.TrustedProxyCIDRs},
 	} {
 		if list.values == nil {
 			continue
@@ -160,6 +169,7 @@ func (s *Store) SetJellyfinCompatConfig(ctx context.Context, patch JellyfinCompa
 			return JellyfinCompatConfig{}, err
 		}
 		writes[list.key] = string(encoded)
+		*list.into = normalized
 	}
 	if patch.LibraryIDs != nil {
 		eligible, err := s.compatSelectableLibraries(ctx)
@@ -180,11 +190,12 @@ func (s *Store) SetJellyfinCompatConfig(ctx context.Context, patch JellyfinCompa
 			return JellyfinCompatConfig{}, err
 		}
 		writes[configJellyfinCompatLibraries] = string(encoded)
+		cfg.LibraryIDs = ids
 	}
 	if err := s.setServerConfigValues(ctx, writes, now); err != nil {
 		return JellyfinCompatConfig{}, err
 	}
-	return s.JellyfinCompatConfig(ctx, defaults)
+	return cfg, nil
 }
 
 // JellyfinCompatSelectableLibraries lists the Libraries an operator may put on
@@ -206,25 +217,33 @@ func (s *Store) compatSelectableLibraries(ctx context.Context) (map[LibraryID]bo
 	return eligible, nil
 }
 
-// JellyfinCompatLibraryEligible reports whether a compatibility tool may act on
-// the Library now: it must be on the stored allowlist, live, and not
-// Reveal-restricted. It is checked at use time, so restricting or trashing a
-// Library after it was allowlisted takes it out of reach at once.
-func (s *Store) JellyfinCompatLibraryEligible(ctx context.Context, id LibraryID) (bool, error) {
+// JellyfinCompatEligibleLibraries returns the Libraries a compatibility tool
+// may act on now: on the stored allowlist, live, and not Reveal-restricted. It
+// is read at use time, once per request, so restricting or trashing a Library
+// after it was allowlisted takes it out of reach at once.
+func (s *Store) JellyfinCompatEligibleLibraries(ctx context.Context) (map[LibraryID]bool, error) {
 	cfg, err := s.JellyfinCompatConfig(ctx, JellyfinCompatConfig{})
-	if err != nil || !slices.Contains(cfg.LibraryIDs, id) {
-		return false, err
-	}
-	eligible, err := s.compatSelectableLibraries(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return eligible[id], nil
+	selectable, err := s.compatSelectableLibraries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	eligible := make(map[LibraryID]bool, len(cfg.LibraryIDs))
+	for _, id := range cfg.LibraryIDs {
+		if selectable[id] {
+			eligible[id] = true
+		}
+	}
+	return eligible, nil
 }
 
 // SetProfileIntegrationSignIn turns a Profile's integration sign-in opt-in on
 // or off (ADR-0171 §2.4). Only an adult, enabled Profile may opt in. Turning it
-// off revokes the Profile's integration sessions.
+// off revokes the Profile's integration sessions in the same transaction. The
+// write touches only the opt-in column and re-checks eligibility in its WHERE
+// clause, so a concurrent Profile edit is neither overwritten nor raced.
 func (s *Store) SetProfileIntegrationSignIn(ctx context.Context, id ProfileID, enabled bool) (Profile, error) {
 	if id == "" {
 		return Profile{}, ValidationError("profile ID is required")
@@ -234,15 +253,35 @@ func (s *Store) SetProfileIntegrationSignIn(ctx context.Context, id ProfileID, e
 	if err := s.guardLocked(); err != nil {
 		return Profile{}, err
 	}
-	profile, err := s.profileSQL(ctx, id)
+	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
 		return Profile{}, err
 	}
-	if enabled && (profile.Kind != ProfileAdult || profile.Disabled) {
+	defer tx.Rollback()
+	query := `UPDATE profile SET integration_sign_in = 0 WHERE id = ?`
+	args := []any{id}
+	if enabled {
+		query = `UPDATE profile SET integration_sign_in = 1 WHERE id = ? AND kind = ? AND disabled = 0`
+		args = append(args, ProfileAdult)
+	}
+	result, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return Profile{}, err
+	}
+	if changed, err := result.RowsAffected(); err != nil {
+		return Profile{}, err
+	} else if changed == 0 {
+		if _, err := s.profileSQL(ctx, id); err != nil {
+			return Profile{}, err
+		}
 		return Profile{}, ValidationError("only an enabled adult profile can sign in to compatibility tools")
 	}
-	profile.IntegrationSignIn = enabled
-	if err := s.updateProfileSettingsSQL(ctx, profile); err != nil {
+	if !enabled {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_session WHERE profile_id = ? AND kind = ?`, id, SessionKindIntegration); err != nil {
+			return Profile{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return Profile{}, err
 	}
 	return s.profileSQL(ctx, id)

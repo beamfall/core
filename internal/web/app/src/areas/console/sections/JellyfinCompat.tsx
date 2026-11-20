@@ -45,7 +45,9 @@ export function JellyfinCompat() {
   const [allowed, setAllowed] = useState("");
   const [proxies, setProxies] = useState("");
   const [formLoaded, setFormLoaded] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
+  // One save at a time: each write sends or merges a snapshot of the settings,
+  // so a second write started before the first returns could undo it.
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
 
@@ -58,11 +60,8 @@ export function JellyfinCompat() {
     setFormLoaded(true);
   }, [data, formLoaded]);
 
-  async function apply(
-    key: string,
-    update: JellyfinCompatUpdate,
-  ): Promise<JellyfinCompatInfo | null> {
-    setBusy(key);
+  async function apply(update: JellyfinCompatUpdate): Promise<JellyfinCompatInfo | null> {
+    setBusy(true);
     setError("");
     setSaved(false);
     try {
@@ -73,12 +72,12 @@ export function JellyfinCompat() {
       setError(t("jellyfinCompatSaveFailed", { reason: errorReason(err) }));
       return null;
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
   async function saveNetworks() {
-    const next = await apply("networks", {
+    const next = await apply({
       allowedCIDRs: cidrList(allowed),
       trustedProxyCIDRs: cidrList(proxies),
     });
@@ -94,12 +93,12 @@ export function JellyfinCompat() {
     const libraryIDs = data.libraries
       .filter((l) => (l.id === id ? on : l.allowed))
       .map((l) => l.id);
-    void apply(`library:${id}`, { libraryIDs });
+    void apply({ libraryIDs });
   }
 
   async function toggleProfile(id: string, enabled: boolean) {
     if (!data) return;
-    setBusy(`profile:${id}`);
+    setBusy(true);
     setError("");
     setSaved(false);
     try {
@@ -111,7 +110,7 @@ export function JellyfinCompat() {
     } catch (err) {
       setError(t("jellyfinCompatSaveFailed", { reason: errorReason(err) }));
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
@@ -138,8 +137,8 @@ export function JellyfinCompat() {
               control={
                 <Switch
                   checked={data.enabled}
-                  disabled={busy === "enabled"}
-                  onCheckedChange={(c) => void apply("enabled", { enabled: c })}
+                  disabled={busy}
+                  onCheckedChange={(c) => void apply({ enabled: c })}
                   aria-label={t("jellyfinCompatEnabled")}
                 />
               }
@@ -184,11 +183,7 @@ export function JellyfinCompat() {
               </p>
             </ManageField>
             <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                disabled={busy === "networks"}
-                onClick={() => void saveNetworks()}
-              >
+              <Button type="button" disabled={busy} onClick={() => void saveNetworks()}>
                 {t("jellyfinCompatSaveNetworks")}
               </Button>
               {saved && (
@@ -211,7 +206,7 @@ export function JellyfinCompat() {
                 <label key={library.id} className="flex items-center gap-2 text-sm">
                   <Checkbox
                     checked={library.allowed}
-                    disabled={busy === `library:${library.id}`}
+                    disabled={busy}
                     onCheckedChange={(c) => toggleLibrary(library.id, c === true)}
                   />
                   {library.title}
@@ -233,7 +228,7 @@ export function JellyfinCompat() {
                   <span className="console-control-label min-w-0">{profile.name}</span>
                   <Switch
                     checked={profile.integrationSignIn}
-                    disabled={busy === `profile:${profile.id}`}
+                    disabled={busy}
                     onCheckedChange={(c) => void toggleProfile(profile.id, c)}
                     aria-label={profile.name}
                   />

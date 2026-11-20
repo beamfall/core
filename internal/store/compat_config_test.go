@@ -78,17 +78,16 @@ func TestJellyfinCompatAllowlistRefusesRestrictedAndChecksAtUseTime(t *testing.T
 	if err != nil || !slices.Equal(cfg.LibraryIDs, []LibraryID{open.ID}) {
 		t.Fatalf("allowlist = %+v, %v", cfg, err)
 	}
-	if ok, err := st.JellyfinCompatLibraryEligible(ctx, open.ID); err != nil || !ok {
-		t.Fatalf("allowlisted library eligible = %v, %v; want true", ok, err)
-	}
-	if ok, _ := st.JellyfinCompatLibraryEligible(ctx, restricted.ID); ok {
+	if eligible, err := st.JellyfinCompatEligibleLibraries(ctx); err != nil || !eligible[open.ID] {
+		t.Fatalf("allowlisted library eligible = %v, %v; want true", eligible, err)
+	} else if eligible[restricted.ID] {
 		t.Fatal("restricted library not on the allowlist is eligible")
 	}
 	if err := st.UpdateLibraryRestricted(ctx, open.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := st.JellyfinCompatLibraryEligible(ctx, open.ID); err != nil || ok {
-		t.Fatalf("library restricted after allowlisting eligible = %v, %v; want false", ok, err)
+	if eligible, err := st.JellyfinCompatEligibleLibraries(ctx); err != nil || eligible[open.ID] {
+		t.Fatalf("library restricted after allowlisting eligible = %v, %v; want false", eligible, err)
 	}
 }
 
@@ -102,6 +101,20 @@ func TestProfileIntegrationSignInOptIn(t *testing.T) {
 	var validation ValidationError
 	if _, err := st.SetProfileIntegrationSignIn(ctx, child.ID, true); !errors.As(err, &validation) {
 		t.Fatalf("managed profile opt-in: %v; want a validation error", err)
+	}
+	away, err := st.CreateProfile(ctx, "Away", ProfileAdult, LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := true
+	if _, err := st.UpdateProfileSettings(ctx, away.ID, ProfileSettings{Disabled: &disabled}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetProfileIntegrationSignIn(ctx, away.ID, true); !errors.As(err, &validation) {
+		t.Fatalf("disabled adult profile opt-in: %v; want a validation error", err)
+	}
+	if _, err := st.SetProfileIntegrationSignIn(ctx, "profile-missing", true); err == nil || errors.As(err, &validation) {
+		t.Fatalf("missing profile opt-in: %v; want not found", err)
 	}
 	profile, err := st.SetProfileIntegrationSignIn(ctx, "profile-default", true)
 	if err != nil || !profile.IntegrationSignIn {

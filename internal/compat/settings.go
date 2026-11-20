@@ -2,6 +2,8 @@ package compat
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -21,7 +23,15 @@ type SettingsController struct {
 
 // NewSettingsController reads the stored settings, with the bootstrap config
 // as the fallback for every key never written, and applies them to handler.
+// Bootstrap CIDRs must lie in the same local trust zones a Console write is
+// held to (ADR-0171 §2.4); anything else refuses start-up rather than serving
+// a wider network than the Console could ever configure.
 func NewSettingsController(ctx context.Context, st *store.Store, defaults store.JellyfinCompatConfig, handler *Handler) (*SettingsController, error) {
+	for _, cidr := range slices.Concat(defaults.AllowedCIDRs, defaults.TrustedProxyCIDRs) {
+		if _, err := store.NormalizeCompatTrustZoneCIDR(cidr); err != nil {
+			return nil, fmt.Errorf("jellyfin compatibility bootstrap: %w", err)
+		}
+	}
 	c := &SettingsController{store: st, defaults: defaults, handler: handler}
 	cfg, err := c.Settings(ctx)
 	if err != nil {

@@ -4,9 +4,9 @@ export const jellyfinCompatStrings = {
   en: {
     navJellyfinCompat: "Jellyfin compatibility",
     jellyfinCompatLead:
-      "A Jellyfin-compatible API for automation tools such as Seerr, Radarr and Sonarr, so they can see what is already in your libraries.",
+      "A Jellyfin-compatible API for automation tools such as Seerr, Radarr and Sonarr.",
     jellyfinCompatSetup:
-      "Point the tool at this server as if it were a Jellyfin server and sign in with a profile you opt in below. The API is off by default. When on, it answers only clients on the allowed networks, never through the relay or remote access.",
+      "In the tool, use this server's address followed by /compat/jellyfin/ as the Jellyfin server URL. During setup, sign in as admin with the admin password; after that the tool signs in as a profile you opt in below, with that profile's PIN. The API is off by default. When on, it answers only clients on the allowed networks, never through the relay or remote access.",
     jellyfinCompatDisclaimer:
       "Beamfall is not affiliated with or endorsed by Jellyfin. The name is used only to describe compatibility.",
     jellyfinCompatUnavailable: "Couldn't load the compatibility settings.",
@@ -34,9 +34,9 @@ export const jellyfinCompatStrings = {
   fr: {
     navJellyfinCompat: "Compatibilité Jellyfin",
     jellyfinCompatLead:
-      "Une API compatible Jellyfin pour les outils d’automatisation comme Seerr, Radarr et Sonarr, afin qu’ils voient ce qui se trouve déjà dans vos bibliothèques.",
+      "Une API compatible Jellyfin pour les outils d’automatisation comme Seerr, Radarr et Sonarr.",
     jellyfinCompatSetup:
-      "Indiquez ce serveur à l’outil comme s’il s’agissait d’un serveur Jellyfin et connectez-vous avec un profil autorisé ci-dessous. L’API est désactivée par défaut. Une fois activée, elle ne répond qu’aux clients des réseaux autorisés, jamais via le relais ni l’accès à distance.",
+      "Dans l’outil, indiquez comme URL du serveur Jellyfin l’adresse de ce serveur suivie de /compat/jellyfin/. Pendant la configuration, connectez-vous en tant qu’admin avec le mot de passe administrateur ; ensuite, l’outil se connecte avec un profil autorisé ci-dessous et le code PIN de ce profil. L’API est désactivée par défaut. Une fois activée, elle ne répond qu’aux clients des réseaux autorisés, jamais via le relais ni l’accès à distance.",
     jellyfinCompatDisclaimer:
       "Beamfall n’est ni affilié à Jellyfin ni approuvé par Jellyfin. Le nom sert uniquement à décrire la compatibilité.",
     jellyfinCompatUnavailable: "Impossible de charger les réglages de compatibilité.",
@@ -64,9 +64,9 @@ export const jellyfinCompatStrings = {
   de: {
     navJellyfinCompat: "Jellyfin-Kompatibilität",
     jellyfinCompatLead:
-      "Eine Jellyfin-kompatible API für Automatisierungswerkzeuge wie Seerr, Radarr und Sonarr, damit sie sehen, was bereits in deinen Mediatheken ist.",
+      "Eine Jellyfin-kompatible API für Automatisierungswerkzeuge wie Seerr, Radarr und Sonarr.",
     jellyfinCompatSetup:
-      "Richte das Werkzeug auf diesen Server aus, als wäre er ein Jellyfin-Server, und melde dich mit einem unten freigegebenen Profil an. Die API ist standardmäßig aus. Eingeschaltet antwortet sie nur Clients in den erlaubten Netzwerken, nie über das Relay oder den Fernzugriff.",
+      "Trage im Werkzeug als Jellyfin-Server-URL die Adresse dieses Servers gefolgt von /compat/jellyfin/ ein. Melde dich bei der Einrichtung als admin mit dem Administratorpasswort an; danach meldet sich das Werkzeug mit einem unten freigegebenen Profil und dessen PIN an. Die API ist standardmäßig aus. Eingeschaltet antwortet sie nur Clients in den erlaubten Netzwerken, nie über das Relay oder den Fernzugriff.",
     jellyfinCompatDisclaimer:
       "Beamfall ist weder mit Jellyfin verbunden noch von Jellyfin unterstützt. Der Name dient nur zur Beschreibung der Kompatibilität.",
     jellyfinCompatUnavailable: "Die Kompatibilitätseinstellungen konnten nicht geladen werden.",
@@ -94,9 +94,9 @@ export const jellyfinCompatStrings = {
   es: {
     navJellyfinCompat: "Compatibilidad con Jellyfin",
     jellyfinCompatLead:
-      "Una API compatible con Jellyfin para herramientas de automatización como Seerr, Radarr y Sonarr, para que vean lo que ya hay en tus bibliotecas.",
+      "Una API compatible con Jellyfin para herramientas de automatización como Seerr, Radarr y Sonarr.",
     jellyfinCompatSetup:
-      "Apunta la herramienta a este servidor como si fuera un servidor Jellyfin e inicia sesión con un perfil habilitado abajo. La API está desactivada de forma predeterminada. Cuando está activada, solo responde a clientes de las redes permitidas, nunca a través del relé ni del acceso remoto.",
+      "En la herramienta, usa como URL del servidor Jellyfin la dirección de este servidor seguida de /compat/jellyfin/. Durante la configuración, inicia sesión como admin con la contraseña de administrador; después, la herramienta inicia sesión con un perfil habilitado abajo y el PIN de ese perfil. La API está desactivada de forma predeterminada. Cuando está activada, solo responde a clientes de las redes permitidas, nunca a través del relé ni del acceso remoto.",
     jellyfinCompatDisclaimer:
       "Beamfall no está afiliado a Jellyfin ni cuenta con su respaldo. El nombre solo se usa para describir la compatibilidad.",
     jellyfinCompatUnavailable: "No se pudieron cargar los ajustes de compatibilidad.",
@@ -124,9 +124,9 @@ export const jellyfinCompatStrings = {
   pt: {
     navJellyfinCompat: "Compatibilidade com Jellyfin",
     jellyfinCompatLead:
-      "Uma API compatível com Jellyfin para ferramentas de automação como Seerr, Radarr e Sonarr, para que vejam o que já está nas suas bibliotecas.",
+      "Uma API compatível com Jellyfin para ferramentas de automação como Seerr, Radarr e Sonarr.",
     jellyfinCompatSetup:
-      "Aponte a ferramenta para este servidor como se fosse um servidor Jellyfin e entre com um perfil habilitado abaixo. A API fica desativada por padrão. Quando ativada, responde apenas a clientes das redes permitidas, nunca pelo relay nem pelo acesso remoto.",
+      "Na ferramenta, use como URL do servidor Jellyfin o endereço deste servidor seguido de /compat/jellyfin/. Durante a configuração, entre como admin com a senha de administrador; depois, a ferramenta entra com um perfil habilitado abaixo e o PIN desse perfil. A API fica desativada por padrão. Quando ativada, responde apenas a clientes das redes permitidas, nunca pelo relay nem pelo acesso remoto.",
     jellyfinCompatDisclaimer:
       "O Beamfall não é afiliado ao Jellyfin nem endossado por ele. O nome é usado apenas para descrever a compatibilidade.",
     jellyfinCompatUnavailable: "Não foi possível carregar as configurações de compatibilidade.",

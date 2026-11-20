@@ -45,6 +45,8 @@ describe("JellyfinCompat", () => {
 
     expect(await screen.findByText(/not affiliated with or endorsed by Jellyfin/)).toBeVisible();
     expect(screen.getByText(/never through the relay or remote access/)).toBeVisible();
+    expect(screen.getByText(/\/compat\/jellyfin\//)).toBeVisible();
+    expect(screen.getByText(/sign in as admin with the admin password/)).toBeVisible();
     expect(screen.getByText(/must overwrite X-Forwarded-For/)).toBeVisible();
   });
 
@@ -132,6 +134,24 @@ describe("JellyfinCompat", () => {
     });
     await user.click(screen.getByRole("checkbox", { name: "Films" }));
     expect(setJellyfinCompat).toHaveBeenLastCalledWith({ libraryIDs: ["lib-shows"] });
+  });
+
+  it("holds every control while a save is in flight", async () => {
+    const user = userEvent.setup();
+    let finish: (value: typeof settings) => void = () => {};
+    vi.mocked(setJellyfinCompat).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderPage();
+
+    await user.click(await screen.findByRole("checkbox", { name: "Shows" }));
+    expect(screen.getByRole("checkbox", { name: "Films" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "Compatibility API" })).toBeDisabled();
+    finish({ ...settings, libraries: settings.libraries.map((l) => ({ ...l, allowed: true })) });
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Films" })).toBeEnabled());
+    expect(setJellyfinCompat).toHaveBeenCalledTimes(1);
   });
 
   it("opts a profile in through setProfileIntegrationSignIn and says what off does", async () => {

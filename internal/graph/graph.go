@@ -6378,6 +6378,15 @@ func init() {
 			panic("graph: adminFields lists unknown scoped field: " + name)
 		}
 	}
+	// A role-gated field with no scope classification was not registered on
+	// this build (an App Store binary). Drop its dispatch entry too, so the
+	// parser rejects it as an unknown top-level field and agentCatalog does not
+	// advertise it, rather than leaving it to fail later at the role check.
+	for name, handler := range fieldHandlerRegistry {
+		if handler.roleGate != rolePublic && !scopedFields[name] {
+			delete(fieldHandlerRegistry, name)
+		}
+	}
 }
 
 func requiresScope(fields map[string]bool) bool {

@@ -185,15 +185,19 @@ var diagnosticsTokenMutations = map[string]bool{
 
 // agentTokenDenied are the admin fields no token tier may run (CORE-2095):
 // minting or registering a credential, moving server ownership, and revealing
-// or confirming the backup key (CORE-2032). These stay Admin Session only, so a
-// token can never mint another credential or read the backup key.
+// or confirming the backup key (CORE-2032), and opening the Jellyfin-compatible
+// route group or letting a Profile sign in through it (CORE-2683). These stay
+// Admin Session only, so a token can never mint another credential, read the
+// backup key, or widen who may sign in from the network.
 var agentTokenDenied = map[string]bool{
-	"createapitoken":       true,
-	"createapikey":         true,
-	"registerimportsource": true,
-	"transferprofileowner": true,
-	"revealbackupkey":      true,
-	"acknowledgebackupkey": true,
+	"createapitoken":              true,
+	"createapikey":                true,
+	"registerimportsource":        true,
+	"transferprofileowner":        true,
+	"revealbackupkey":             true,
+	"acknowledgebackupkey":        true,
+	"setjellyfincompat":           true,
+	"setprofileintegrationsignin": true,
 }
 
 // adminTokenMayRun reports whether the request authenticated with an admin API

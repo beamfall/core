@@ -134,9 +134,13 @@ func (h *Handler) setJellyfinCompat(ctx context.Context, scope auth.Scope, req r
 func (h *Handler) setProfileIntegrationSignIn(ctx context.Context, scope auth.Scope, req request) (JellyfinCompatProfileInfo, error) {
 	v := newVars(req)
 	id, _ := v.String("profileID")
-	enabled, _ := v.Bool("enabled")
+	enabled, hasEnabled := v.Bool("enabled")
 	if err := v.Err(); err != nil {
 		return JellyfinCompatProfileInfo{}, err
+	}
+	if !hasEnabled {
+		// A missing flag must not read as "off": that would revoke sessions.
+		return JellyfinCompatProfileInfo{}, clientError("enabled is required")
 	}
 	id = strings.TrimSpace(id)
 	if id == "" {

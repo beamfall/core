@@ -120,6 +120,11 @@ func TestJellyfinCompatConsoleFields(t *testing.T) {
 	if len(resp.Errors) != 0 || !resp.Data.SetProfileIntegrationSignIn.IntegrationSignIn {
 		t.Fatalf("adult opt-in = %+v", resp)
 	}
+	// An omitted enabled argument is refused rather than read as an opt-out.
+	omitted := decodeCompat(t, postGraphQL(t, handler, authorizeManager, `mutation { setProfileIntegrationSignIn(profileID: "profile-default") { id integrationSignIn } }`, nil).Body.Bytes())
+	if len(omitted.Errors) == 0 || !strings.Contains(omitted.Errors[0].Message, "enabled is required") {
+		t.Fatalf("opt-in without enabled = %+v", omitted)
+	}
 
 	entries, err := st.ActivityEntries(ctx, store.ActivityQuery{Filter: store.LibraryFilter{Revealed: true, AllLibraries: true}, Limit: 50})
 	if err != nil {

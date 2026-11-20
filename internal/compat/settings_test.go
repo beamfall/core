@@ -74,3 +74,26 @@ func TestSettingsControllerAppliesWithoutRestart(t *testing.T) {
 		t.Fatalf("refused write changed the live settings: status = %d", code)
 	}
 }
+
+// TestSettingsControllerRefusesAnOutOfZoneBootstrap covers CORE-2683: the
+// config-file bootstrap is held to the same trust zones as a Console write, so
+// a public range in the config cannot open the route group to the internet.
+func TestSettingsControllerRefusesAnOutOfZoneBootstrap(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	for _, defaults := range []store.JellyfinCompatConfig{
+		{Enabled: true, AllowedCIDRs: []string{"0.0.0.0/0"}},
+		{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}, TrustedProxyCIDRs: []string{"203.0.113.0/24"}},
+	} {
+		handler, err := New(Config{}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewSettingsController(ctx, st, defaults, handler); err == nil {
+			t.Fatalf("bootstrap %+v accepted", defaults)
+		}
+		if code := compatStatus(t, handler, "127.0.0.1:1234"); code != http.StatusNotFound {
+			t.Fatalf("refused bootstrap opened the route group: status = %d", code)
+		}
+	}
+}

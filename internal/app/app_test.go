@@ -853,7 +853,7 @@ func TestCompatRefreshQueuesEligibleRoots(t *testing.T) {
 				t.Helper()
 				refresh := compatLibraryRefresher(st, nil,
 					func(id store.LibraryID) bool { return id == sealed },
-					func(_ context.Context, id store.LibraryID) bool { return allow[id] },
+					func(context.Context) (map[store.LibraryID]bool, error) { return allow, nil },
 					slog.Default())
 				handler, err := compat.New(compat.Config{
 					Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"},
@@ -977,7 +977,9 @@ func TestCompatMediaUpdateQueuesContainingRoots(t *testing.T) {
 	}
 	refresh := compatLibraryRefresher(st, nil,
 		func(id store.LibraryID) bool { return id == ids["Sealed"] },
-		func(_ context.Context, id store.LibraryID) bool { return id != ids["Ineligible"] },
+		func(context.Context) (map[store.LibraryID]bool, error) {
+			return map[store.LibraryID]bool{ids["Movies"]: true, ids["Shows"]: true, ids["Sealed"]: true}, nil
+		},
 		slog.Default())
 	scope := auth.Scope{ProfileID: profile.ID, LibraryIDs: granted}
 	movies, shows := roots["Movies"], roots["Shows"]
