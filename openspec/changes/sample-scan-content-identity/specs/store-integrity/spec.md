@@ -68,11 +68,12 @@ Mtime comparisons SHALL round Unix nanoseconds toward zero to milliseconds.
 - **AND** a match keeps the identity and records stats that survive reopening, including a verified
   Unix-epoch mtime, while a mismatch uses the sampled identity
 
-#### Scenario: A file is still changing during a scan
+#### Scenario: A scan cannot finish sampling a file
 
-- **WHEN** a scan sees a file inside the stability window or detects a size or mtime change during sampling
-- **THEN** it defers fingerprinting and records the presence of any live row at that Library and path
-- **AND** the next full scan can retry against the same stored identity and stats
+- **WHEN** a scan sees a file inside the stability window or sampling fails, including on a size or
+  mtime change, short read, EOF, or file access error
+- **THEN** it skips admission and records the presence of any live row at that Library and path
+- **AND** the next scan can retry against the same stored identity and stats
 
 #### Scenario: Legacy file moved, changed, or returns after a missing mark
 
