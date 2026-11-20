@@ -655,7 +655,7 @@ func TestBehindPlayheadProgressIgnoresCachedSegments(t *testing.T) {
 	t.Parallel()
 	transcoder := &fakeTranscoder{holdChild: true, segmentsToLay: 1}
 	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
-	sessions.waitWindow = 100 * time.Millisecond
+	sessions.waitWindow = 50 * time.Millisecond
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 
@@ -674,27 +674,29 @@ func TestBehindPlayheadProgressIgnoresCachedSegments(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	done := make(chan struct{})
-	var writer sync.WaitGroup
-	writer.Add(1)
-	defer func() { close(done); writer.Wait() }() // before Close removes dir
-	go func() {
-		defer writer.Done()
-		for segment := 1; segment <= 3; segment++ {
-			select {
-			case <-done:
-				return
-			case <-time.After(60 * time.Millisecond):
-			}
-			if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("seg%05d.m4s", segment)), []byte("m4s"), 0o600); err != nil {
-				t.Errorf("write seg%d: %v", segment, err)
-				return
-			}
+	// The encoder writes its next segment as each window expires, so every
+	// window sees progress and seg3 arrives only after three windows, however
+	// late the scheduler runs this test (CORE-1881). The explicit times keep a
+	// coarse file-system clock from dating a write before its window.
+	next := 0
+	sessions.windowExpired = func() {
+		next++
+		path := filepath.Join(dir, fmt.Sprintf("seg%05d.m4s", next))
+		if err := os.WriteFile(path, []byte("m4s"), 0o600); err != nil {
+			t.Errorf("write seg%d: %v", next, err)
+			return
 		}
-	}()
+		now := time.Now()
+		if err := os.Chtimes(path, now, now); err != nil {
+			t.Errorf("date seg%d: %v", next, err)
+		}
+	}
 
 	if _, err := filePath720(sessions, key, "720p/seg00003.m4s"); err != nil {
 		t.Fatalf("seg3 below cached segments failed: %v", err)
+	}
+	if next < 3 {
+		t.Fatalf("seg3 served after %d windows, want it to wait out 3", next)
 	}
 	if starts := transcoder.segmentStartsSnapshot(); len(starts) != 1 || starts[0] != 0 {
 		t.Fatalf("segmentStarts = %v, want [0]", starts)

@@ -520,6 +520,10 @@ type Sessions struct {
 	// one artifact wait window. Tests set it so a slow-encoder scenario runs in
 	// milliseconds instead of whole budgets.
 	waitWindow time.Duration
+	// windowExpired, when set, runs each time a wait window on a segment
+	// expires, before the request checks the encoder's progress. Tests set it
+	// to write a segment inside the window instead of racing a timer.
+	windowExpired func()
 	// stallTimeout, when positive, replaces encoderStallTimeout. Tests set it.
 	stallTimeout time.Duration
 	// resumeHints holds resume positions noted for sessions that do not exist
@@ -1256,6 +1260,9 @@ func (s *Sessions) waitWhileEncoderProgresses(ctx context.Context, key SessionKe
 		cancel()
 		if err == nil || !isSegment || ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
 			return artifact, err
+		}
+		if s.windowExpired != nil {
+			s.windowExpired()
 		}
 		after, base, stillTracked := s.rungEncoder(session, rung)
 		if !tracked || !stillTracked || current != run || after != run || base > segment ||
