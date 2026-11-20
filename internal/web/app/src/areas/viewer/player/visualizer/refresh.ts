@@ -24,7 +24,8 @@
 // and no more than the bound (Codex rounds 19 to 21). At a steady cadence that is half of each
 // interval. A steady cadence does not show the refresh period, so it earns no more than that.
 //
-// The bound is the shortest interval between two draws since the loop first ran, and it is never
+// The bound is the shortest interval between two draws' animation-frame timestamps since the loop
+// first ran (not their wall-clock interval, which jitters below a refresh), and it is never
 // forgotten: a larger bound credits more, and a page that slows down on the same display (120 to
 // 30 draws a second at 120 Hz) would raise a bound taken over its recent draws to four refreshes
 // and be credited two for a frame shown one (Codex round 28). So a display that slows down (a

@@ -859,6 +859,24 @@ describe("Visualizer resize before paint", () => {
     clock.mockRestore();
   });
 
+  // CORE-2737: callbacks run late and then on time, so the time between draws jitters below a
+  // refresh while the vsync timestamps stay steady. The jitter must not pin the bound at 4 ms.
+  it("bounds the refresh by the frame timestamps, not the jittery draw intervals", async () => {
+    mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    const period = 1000 / 60;
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    step(0);
+    for (let i = 1; i <= 20; i++) {
+      // Every fifth callback runs 14 ms late, so the next draw follows it by under 3 ms.
+      clock.mockReturnValue(i * period + (i % 5 === 0 ? 14 : 0));
+      step(i * period);
+    }
+    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(period / 2);
+    clock.mockRestore();
+  });
+
   // Codex round 19: a frame painted late and the next on time are shown one refresh apart.
   it("never times the limiter past the shortest draw interval seen", async () => {
     mount();

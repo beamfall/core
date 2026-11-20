@@ -478,11 +478,15 @@ export function Visualizer({
         // draws (a late callback has a stale timestamp, Codex round 18). A device that draws
         // slower than its display refreshes ages its evidence slower: held areas wait longer. A
         // display that speeds up its refresh rate between two paints is over-credited one
-        // interval (Codex round 22, OSC-0046).
+        // interval (Codex round 22, OSC-0046). The bound is noted from the timestamps' interval
+        // alone: they are taken at vsync, while the time between draws jitters below a refresh
+        // (a late callback, then an on-time one), which pinned the bound at 4 ms, aged the
+        // limiter's evidence at a quarter of the real rate and held torn areas on every
+        // moving visual (CORE-2737).
         const wall = performance.now();
         const interval =
           lastWall === null ? frameMs : Math.max(0, Math.min(frameMs, wall - lastWall));
-        if (lastWall !== null) refresh.note(interval);
+        if (lastWall !== null) refresh.note(frameMs);
         const shownMs = refresh.shown(interval);
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
