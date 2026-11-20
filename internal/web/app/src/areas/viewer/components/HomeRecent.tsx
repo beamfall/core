@@ -102,11 +102,17 @@ export function useHomeRecent(
       ? AbortSignal.any([controller.signal, identitySignal])
       : controller.signal;
     const context = { libraryID: "", entityID: "", extraFilters: request.extraFilters, home: true };
-    let feed = { data: cachedRecentData(identity, scope), pending: 1, failed: false };
+    let feed = { data: EMPTY_DATA, pending: 1, failed: false };
+    let hasCurrentData = false;
     const publish = (next: HomeRecentFeed) => {
       feed = next;
       setResult({ request, feed });
     };
+    const connectionFailure = () => ({
+      ...feed,
+      data: hasCurrentData ? feed.data : cachedRecentData(identity, scope),
+      failed: true,
+    });
     const stop = () => {
       window.clearTimeout(timeout);
       controller.abort();
@@ -114,15 +120,19 @@ export function useHomeRecent(
     const timeout = window.setTimeout(() => {
       if (signal.aborted) return;
       stop();
-      publish({ ...feed, pending: 0, failed: true });
+      publish({ ...connectionFailure(), pending: 0 });
       onConnectionLost();
     }, SECTION_LOAD_TIMEOUT_MS);
     const settle = (next: HomeRecentFeed, pending = feed.pending - 1) => {
       if (!pending) window.clearTimeout(timeout);
       publish({ ...next, pending });
     };
-    const save = (data: HomeRecentData, pending?: number) => {
+    const cache = (data: HomeRecentData) => {
       writeViewerCache(identity, HOME_RECENT_CACHE_KEY, { scope, data });
+    };
+    const save = (data: HomeRecentData, pending?: number) => {
+      hasCurrentData = true;
+      cache(data);
       settle({ ...feed, data }, pending);
     };
     const fail = (error: unknown) => {
@@ -132,15 +142,17 @@ export function useHomeRecent(
         clearViewerCache();
         publish({ data: EMPTY_DATA, pending: 0, failed: true });
       } else {
-        settle({ ...feed, failed: true });
+        settle(connectionFailure());
       }
       onConnectionLost();
     };
     fetchHomeLibraries(signal).then((libraries) => {
       if (signal.aborted) return;
       if (libraries === null) {
-        // Core already applies ShowOnHome to its aggregate read.
-        save({ ...EMPTY_DATA, fallbackItems: feed.data.fallbackItems }, 1);
+        // Drop scoped data and wait for the server-filtered aggregate read.
+        const { fallbackItems } = cachedRecentData(identity, scope);
+        cache({ ...EMPTY_DATA, fallbackItems });
+        publish(feed);
         fetchSectionItems(section, context, signal).then((fallbackItems) => {
           if (!signal.aborted) save({ ...EMPTY_DATA, fallbackItems });
         }, fail);
@@ -160,7 +172,6 @@ export function useHomeRecent(
         }, fail);
       }
     }, fail);
-    publish(feed);
     return stop;
   }, [request, identity, scope, engagementEpoch, onConnectionLost]);
 
@@ -169,7 +180,7 @@ export function useHomeRecent(
       result?.request === request
         ? result.feed
         : {
-            data: section ? cachedRecentData(identity, scope) : EMPTY_DATA,
+            data: EMPTY_DATA,
             pending: Number(Boolean(section)),
             failed: false,
           };
@@ -193,7 +204,7 @@ export function useHomeRecent(
       pending: Boolean(pending),
       epoch: request.epoch,
     };
-  }, [request, result, section, identity, scope]);
+  }, [request, result, section]);
 }
 
 export function HomeRecentShelves({
