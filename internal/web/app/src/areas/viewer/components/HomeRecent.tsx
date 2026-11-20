@@ -188,7 +188,7 @@ export function HomeRecentShelves({
   fallbackItems: SourceItem[];
   pending: boolean;
   maxShelves: number;
-  buildSeeAll?: (section: Section, libraryID?: string) => SeeAllTarget | undefined;
+  buildSeeAll?: (section: Section, homeShelfLibraryID?: string) => SeeAllTarget | undefined;
   navigationID?: string;
 }) {
   const t = useT();

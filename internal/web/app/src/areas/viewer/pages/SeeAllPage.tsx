@@ -26,6 +26,8 @@ import {
 import type { HomeLibrarySeeAllState, SeeAllContext } from "../lib/seeall";
 import { playQueueOf } from "../lib/watchQueue";
 
+type ResolvedSeeAllContext = SeeAllContext & { homeLibraryShelf?: true };
+
 // See All (/seeall/:sourceId), ported from the vanilla openSeeAll /
 // loadSeeAllPage (app.js). Renders one Source as a full grid, paged 60 at a
 // time through the same Section card path as browse (so a result activates
@@ -38,24 +40,38 @@ export function SeeAllPage() {
   const identity = useViewerIdentity();
   const { manifest } = useSession();
   const state = location.state as SeeAllContext | HomeLibrarySeeAllState | null;
-  const ctx = useMemo<SeeAllContext | null>(() => {
+  const ctx = useMemo<ResolvedSeeAllContext | null>(() => {
     if (!state) return null;
-    // Older history entries for these shelves carried a full Section.
-    if ("section" in state && (!state.home || !state.libraryID)) return state;
+    if ("section" in state) {
+      // Older generated library shelves put their synthetic Section in history.
+      const legacyLibraryShelf =
+        state.home &&
+        state.libraryID &&
+        state.section.source?.kind === "recently-added" &&
+        state.section.id.endsWith(`:${state.libraryID}`);
+      if (!legacyLibraryShelf) return state;
+    }
     const home = manifest?.navigation.find(({ view }) => view === "layout");
     const layout = manifest?.layouts.find(({ id }) => id === home?.layoutID);
     const sections = layout?.sections.filter(({ kind }) => SECTION_KINDS.has(kind)) ?? [];
     const section = findHomeRecentSection(sections.slice(0, MAX_RENDERED_SECTIONS));
     return section
-      ? { section, libraryID: state.libraryID, entityID: "", returnTo: "/", home: true }
+      ? {
+          section,
+          libraryID: state.libraryID,
+          entityID: "",
+          returnTo: "/",
+          home: true,
+          homeLibraryShelf: true,
+        }
       : null;
   }, [manifest, state]);
   return <SeeAllResults key={JSON.stringify([location.key, identity, Boolean(ctx)])} ctx={ctx} />;
 }
 
-async function fetchPage(ctx: SeeAllContext, offset: number, signal?: AbortSignal) {
+async function fetchPage(ctx: ResolvedSeeAllContext, offset: number, signal?: AbortSignal) {
   let libraryTitle: HomeLibrary["title"] | undefined;
-  if (ctx.home && ctx.libraryID) {
+  if (ctx.homeLibraryShelf) {
     // Core applies Home visibility to aggregate reads; a scoped feed can
     // return a library that was hidden after the viewer opened its shelf.
     const libraries = await fetchHomeLibraries(signal);
@@ -79,7 +95,7 @@ async function fetchPage(ctx: SeeAllContext, offset: number, signal?: AbortSigna
   return { items, libraryTitle };
 }
 
-function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
+function SeeAllResults({ ctx }: { ctx: ResolvedSeeAllContext | null }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
@@ -99,6 +115,7 @@ function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
     gridRef,
     itemCount: items.length,
     enabled: items.length > VIRTUAL_GRID_MIN_ITEMS,
+    variableRows: ctx?.home ? items : undefined,
   });
   const start = gridWindow?.startIndex ?? 0;
   const end = gridWindow?.endIndex ?? items.length;
@@ -198,7 +215,7 @@ function SeeAllResults({ ctx }: { ctx: SeeAllContext | null }) {
   const firstPageLoading = busy && items.length === 0;
   const loadFailed = !busy && failed && items.length === 0;
   const empty = !busy && !failed && !hasMore && items.length === 0;
-  const title = ctx?.home && ctx.libraryID ? libraryTitle : ctx?.section.title;
+  const title = ctx?.homeLibraryShelf ? libraryTitle : ctx?.section.title;
 
   function goBack() {
     navigate(ctx?.returnTo || "/");

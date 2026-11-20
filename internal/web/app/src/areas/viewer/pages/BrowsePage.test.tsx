@@ -2,8 +2,9 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { NavigationManifest } from "@/lib/graphql/types";
+import type { Layout, NavigationManifest, Section } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import type { HomeLibrarySeeAllState, SeeAllContext } from "../lib/seeall";
 import { BrowsePage } from "./BrowsePage";
 
 // The manifest the server really sends: Home, the layout-less "ambient" entry,
@@ -33,35 +34,52 @@ vi.mock("@/components/chrome/AppShell", () => ({
 }));
 vi.mock("../components/LayoutView", () => ({
   LayoutView: ({
+    layout,
     navigationID,
     libraryID,
     home,
     buildSeeAll,
     onEmptyChange,
   }: {
+    layout: Layout | null;
     navigationID: string;
     libraryID: string;
     home?: boolean;
     buildSeeAll?: (
-      section: { id: string },
-      libraryID?: string,
-    ) => { state: { home?: boolean; libraryID: string } } | undefined;
+      section: Section,
+      homeShelfLibraryID?: string,
+    ) => { state: SeeAllContext | HomeLibrarySeeAllState } | undefined;
     onEmptyChange?: (empty: boolean) => void;
-  }) => (
-    <div
-      data-testid="layout"
-      data-navigation={navigationID}
-      data-library={libraryID}
-      data-home={String(!!home)}
-      data-seeall-home={String(!!buildSeeAll?.({ id: "shelf" })?.state.home)}
-      data-seeall-library={buildSeeAll?.({ id: "shelf" })?.state.libraryID}
-      data-seeall-scoped-state={JSON.stringify(buildSeeAll?.({ id: "shelf" }, "scoped-lib")?.state)}
-    >
-      <button type="button" onClick={() => onEmptyChange?.(true)}>
-        settle empty
-      </button>
-    </div>
-  ),
+  }) => {
+    const shelf: Section = {
+      id: "recent",
+      kind: "shelf",
+      title: "Recently Added",
+      artworkSlot: "poster",
+      source: { kind: "recently-added" },
+    };
+    const state = buildSeeAll?.(shelf)?.state;
+    return (
+      <div
+        data-testid="layout"
+        data-navigation={navigationID}
+        data-library={libraryID}
+        data-home={String(!!home)}
+        data-seeall-home={String(!!(state && "home" in state && state.home))}
+        data-seeall-library={state?.libraryID}
+        data-seeall-scoped-state={JSON.stringify(buildSeeAll?.(shelf, "scoped-lib")?.state)}
+      >
+        {layout?.sections.map((section) => (
+          <span key={section.id} data-testid={section.id}>
+            {JSON.stringify(buildSeeAll?.(section)?.state)}
+          </span>
+        ))}
+        <button type="button" onClick={() => onEmptyChange?.(true)}>
+          settle empty
+        </button>
+      </div>
+    );
+  },
 }));
 vi.mock("../components/RevealControls", () => ({ RevealControls: () => null }));
 vi.mock("../components/ViewerActions", () => ({ ViewerActions: () => null }));
@@ -117,6 +135,44 @@ describe("BrowsePage node resolution", () => {
     expect(screen.getByTestId("layout")).toHaveAttribute("data-home", "false");
     expect(screen.getByTestId("layout")).toHaveAttribute("data-seeall-home", "false");
     expect(screen.getByTestId("layout")).toHaveAttribute("data-seeall-library", "lib-a");
+  });
+
+  it("keeps the selected sources when the first layout belongs to a library", () => {
+    const sections: Section[] = [
+      {
+        id: "continue",
+        kind: "shelf",
+        title: "Continue Watching",
+        artworkSlot: "poster",
+        source: { kind: "continue-watching" },
+      },
+      {
+        id: "watchlist",
+        kind: "shelf",
+        title: "Watchlist",
+        artworkSlot: "poster",
+        source: { kind: "watchlist" },
+      },
+    ];
+    renderAt("/", {
+      loading: false,
+      manifest: {
+        ...manifest,
+        navigation: [...manifest.navigation].reverse(),
+        layouts: [{ id: "layout-home", sections }],
+      },
+    });
+
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Space Archive");
+    for (const section of sections) {
+      expect(JSON.parse(screen.getByTestId(section.id).textContent ?? "")).toEqual({
+        section,
+        libraryID: "lib-a",
+        entityID: "",
+        returnTo: "/",
+        home: true,
+      });
+    }
   });
 
   it("sends the layout-less ambient node to Home instead of drawing Home at its address", () => {

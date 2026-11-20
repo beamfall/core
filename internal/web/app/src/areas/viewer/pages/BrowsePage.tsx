@@ -57,14 +57,14 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
   const layout = (manifest?.layouts || []).find((l) => l.id === node?.layoutID) || null;
   const libraryID = node?.libraryID || "";
 
-  function buildSeeAll(section: Section, scopedLibraryID = libraryID): SeeAllTarget {
-    if (home && scopedLibraryID) {
-      const state: HomeLibrarySeeAllState = { libraryID: scopedLibraryID };
+  function buildSeeAll(section: Section, homeShelfLibraryID?: string): SeeAllTarget {
+    if (home && homeShelfLibraryID) {
+      const state: HomeLibrarySeeAllState = { libraryID: homeShelfLibraryID };
       return { href: `/seeall/${encodeURIComponent(section.id)}`, state };
     }
     return seeAllTargetFor({
       section,
-      libraryID: scopedLibraryID,
+      libraryID,
       entityID: "",
       returnTo: home || !node ? "/" : nodePath(node.id),
       home,

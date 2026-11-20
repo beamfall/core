@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -77,6 +77,8 @@ afterEach(() => {
   identity = "revealed";
   vi.mocked(fetchHomeLibraries).mockReset();
   vi.mocked(fetchSectionItems).mockReset();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("See All rendering contract", () => {
@@ -105,6 +107,68 @@ describe("See All rendering contract", () => {
       expect(cards.length).toBeLessThan(120);
       expect(cards[0].closest("li")).toHaveAttribute("aria-setsize", "120");
       expect(document.querySelector(".bf-grid-spacer")).not.toBeNull();
+    });
+  });
+
+  it("keeps mixed artwork rows in view when scrolling beyond the first page", async () => {
+    const columns = 4;
+    const gap = 20;
+    const viewport = 240;
+    const rowHeights = [...Array(4).fill(240), ...Array(4).fill(145), ...Array(12).fill(80)];
+    const offsets = [0];
+    for (const height of rowHeights) offsets.push((offsets.at(-1) ?? 0) + height + gap);
+    const art = rows.slice(0, rowHeights.length * columns).map((item, index) => ({
+      ...item,
+      artwork: {
+        poster: `/assets/${index < 16 ? "portrait" : index < 32 ? "square" : "landscape"}.png`,
+      },
+    }));
+    vi.stubGlobal("innerHeight", viewport);
+    let scroll = 0;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.classList.contains("bf-grid")) return { top: -scroll } as DOMRect;
+      const index = Number(this.getAttribute("aria-posinset")) - 1;
+      return { height: rowHeights[Math.floor(index / columns)] ?? 0 } as DOMRect;
+    });
+    vi.mocked(fetchSectionItems)
+      .mockResolvedValueOnce(art.slice(0, 60))
+      .mockResolvedValueOnce(art.slice(60));
+    const user = userEvent.setup();
+    renderSeeAll({ ...context, libraryID: "", home: true });
+    await screen.findByRole("link", { name: "Item 0" });
+    const grid = screen.getByRole("list");
+    grid.style.gridTemplateColumns = "150px ".repeat(columns).trim();
+    grid.style.rowGap = `${gap}px`;
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+
+    // Scroll as a viewer would, measuring each row before it becomes a spacer.
+    for (const row of [3, 6, 9, 12, 15, 17]) {
+      scroll = offsets[row] + 5;
+      fireEvent.scroll(window);
+      const firstRendered = (row - 2) * columns;
+      await waitFor(() => {
+        const cards = screen.getAllByRole("listitem");
+        expect(cards[0]).toHaveAttribute("aria-posinset", String(firstRendered + 1));
+        expect(grid.firstElementChild).toHaveStyle({ height: `${offsets[row - 2] - gap}px` });
+        let lastVisible = row;
+        while (offsets[lastVisible + 1] < scroll + viewport) lastVisible += 1;
+        expect(cards.at(-1)).toHaveAttribute("aria-setsize", String(art.length));
+        expect(Number(cards.at(-1)?.getAttribute("aria-posinset"))).toBeGreaterThanOrEqual(
+          (lastVisible + 1) * columns,
+        );
+      });
+    }
+
+    scroll = 0;
+    fireEvent.scroll(window);
+    await waitFor(() => {
+      expect(screen.getAllByRole("listitem")[0]).toHaveAttribute("aria-posinset", "1");
+      const renderedCount = screen.getAllByRole("listitem").length;
+      expect(grid.lastElementChild).toHaveStyle({
+        height: `${offsets[rowHeights.length] - offsets[renderedCount / columns] - gap}px`,
+      });
     });
   });
 
@@ -177,6 +241,29 @@ describe("See All rendering contract", () => {
     expect(fetchHomeLibraries).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["continue-watching", "Continue Watching"],
+    ["watchlist", "Watchlist"],
+  ])("opens the preserved %s source for an ordinary Home shelf", async (kind, title) => {
+    const picked = { ...section, id: kind, title, source: { kind } };
+    vi.mocked(fetchSectionItems).mockResolvedValueOnce(rows.slice(0, 1));
+    renderSeeAll({ ...context, section: picked, home: true });
+
+    await screen.findByRole("link", { name: "Item 0" });
+    expect(screen.getByRole("heading", { name: title })).toBeVisible();
+    expect(fetchSectionItems).toHaveBeenCalledWith(
+      picked,
+      {
+        libraryID: "lib",
+        entityID: "",
+        home: true,
+        paging: { limit: 60, offset: 0 },
+      },
+      undefined,
+    );
+    expect(fetchHomeLibraries).not.toHaveBeenCalled();
+  });
+
   it("pages and refreshes every loaded page of a Home library's scoped feed", async () => {
     vi.mocked(fetchHomeLibraries).mockResolvedValue([{ id: "lib", title: "Library" }]);
     vi.mocked(fetchSectionItems)
@@ -244,7 +331,11 @@ describe("See All rendering contract", () => {
       .mockResolvedValueOnce([]);
     vi.mocked(fetchSectionItems).mockResolvedValueOnce(rows.slice(0, 1));
     const user = userEvent.setup();
-    const state = { ...context, home: true, section: { ...section, title: "Old library title" } };
+    const state = {
+      ...context,
+      home: true,
+      section: { ...recent, id: "recent:lib", title: "Old library title" },
+    };
 
     function Home() {
       const navigate = useNavigate();

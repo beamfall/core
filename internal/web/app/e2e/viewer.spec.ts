@@ -131,7 +131,17 @@ test.describe("viewer", () => {
       ];
       const items =
         variables.libraryID === "library-local"
-          ? firstLibrary
+          ? variables.limit === 60
+            ? [
+                ...firstLibrary,
+                ...Array.from({ length: 109 }, (_, index) => ({
+                  id: `mixed-${index}`,
+                  kind: "media",
+                  title: `Mixed ${index}`,
+                  artwork: { poster: `/core-1154-art/${index < 29 ? "portrait" : "landscape"}` },
+                })),
+              ].slice(variables.offset, variables.offset + variables.limit)
+            : firstLibrary
           : variables.libraryID === "library-extra"
             ? secondLibrary
             : [];
@@ -191,6 +201,33 @@ test.describe("viewer", () => {
     await expect(page.getByRole("heading", { name: "Local Library" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Second library item" })).toHaveCount(0);
     await expectArtworkAspect(page.locator(".bf-grid"));
+
+    await page.getByRole("button", { name: "Load more" }).click();
+    await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+    // Step through the grid so each row lays out before it leaves the window.
+    // Later landscape rows must fill the viewport and mount beyond page one.
+    let visiblePosition = 0;
+    for (let step = 0; step < 24 && visiblePosition <= 60; step += 1) {
+      await page.evaluate(() => window.scrollBy({ top: 160, behavior: "instant" }));
+      await settleFrames(page);
+      let position = 0;
+      await expect
+        .poll(async () => {
+          position = await page.locator(".bf-grid > li[aria-posinset]").evaluateAll((cards) => {
+            const middle = window.innerHeight / 2;
+            const card = cards.find((element) => {
+              const { top, bottom } = element.getBoundingClientRect();
+              return top <= middle + 40 && bottom >= middle - 40;
+            });
+            return Number(card?.getAttribute("aria-posinset")) || 0;
+          });
+          return position;
+        })
+        .toBeGreaterThanOrEqual(Math.max(1, visiblePosition));
+      visiblePosition = position;
+    }
+    expect(visiblePosition).toBeGreaterThan(60);
   });
 
   test("accessibility variant: Viewer supports large text", async ({ page }) => {

@@ -39,7 +39,7 @@ export function LayoutView({
   /** Rendering Home: aggregate Sections leave out Libraries hidden from Home (CORE-2360). */
   home?: boolean;
   /** Maps a (shelf) Section to its See-All target; omit to hide See-All. */
-  buildSeeAll?: (section: Section, libraryID?: string) => SeeAllTarget | undefined;
+  buildSeeAll?: (section: Section, homeShelfLibraryID?: string) => SeeAllTarget | undefined;
   /** Stable navigation identity for initial focus and Reveal/relock restore. */
   navigationID?: string;
   /** Told whether the Layout settled with nothing to show (not a load failure). */
