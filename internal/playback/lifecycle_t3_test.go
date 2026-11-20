@@ -21,6 +21,8 @@ import (
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
+	"golang.org/x/sys/unix"
 )
 
 func TestT3FinalizedSegmentServesBeforeChildReap(t *testing.T) {
@@ -165,6 +167,63 @@ func TestT3StartWaiterLeavesBeforeUnhandedChildReturns(t *testing.T) {
 				t.Fatal("late child did not stop and release capacity")
 			}
 		})
+	}
+}
+
+type expiringStartTranscoder struct {
+	fakeTranscoder
+	entered chan struct{}
+	release <-chan struct{}
+	calls   atomic.Int32
+}
+
+func (f *expiringStartTranscoder) StartHLSSegments(ctx context.Context, src, dir string, segment, seconds int, rung ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	if f.calls.Add(1) == 1 {
+		close(f.entered)
+		<-f.release
+		return nil, context.DeadlineExceeded
+	}
+	return f.fakeTranscoder.StartHLSSegments(ctx, src, dir, segment, seconds, rung)
+}
+
+type observedStartWait struct {
+	context.Context
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (w *observedStartWait) Done() <-chan struct{} {
+	w.once.Do(func() { close(w.entered) })
+	return w.Context.Done()
+}
+
+func TestT3StartWaiterRetriesAfterStarterDeadline(t *testing.T) {
+	entered, release := scratchLatch(t)
+	f := &expiringStartTranscoder{entered: entered, release: release.ch}
+	s := newTestSessions(t, f, t.TempDir(), nil)
+	defer release.open()
+	key := SessionKey{SessionID: "expired-starter"}
+	if _, err := filePath720(s, key, masterPlaylistName); err != nil {
+		t.Fatal(err)
+	}
+	started, waited := make(chan error, 1), make(chan error, 1)
+	go func() {
+		_, err := filePath720(s, key, "720p/seg00000.m4s")
+		started <- err
+	}()
+	waitScratchSignal(t, entered)
+	waitCtx := &observedStartWait{Context: t.Context(), entered: make(chan struct{})}
+	go func() {
+		_, err := s.FilePath(waitCtx, key, fakeSourcePath, 120, 1280, 720, false, "720p/seg00000.m4s")
+		waited <- err
+	}()
+	waitScratchSignal(t, waitCtx.entered)
+	release.open()
+	if err := waitScratchResult(t, started); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("starter = %v", err)
+	}
+	if err := waitScratchResult(t, waited); err != nil || f.calls.Load() != 2 {
+		t.Fatalf("surviving waiter = %v, start attempts = %d", err, f.calls.Load())
 	}
 }
 
@@ -906,7 +965,7 @@ func TestT3PinnedGridRequiresTheSameFileIdentity(t *testing.T) {
 }
 
 func TestT3UnreadableOutputDoesNotPublishEOF(t *testing.T) {
-	for _, stage := range []string{"rung scan", "segment read"} {
+	for _, stage := range []string{"rung scan", "segment read", "segment FIFO"} {
 		t.Run(stage, func(t *testing.T) {
 			input, signal, err := os.Pipe()
 			if err != nil {
@@ -918,19 +977,33 @@ func TestT3UnreadableOutputDoesNotPublishEOF(t *testing.T) {
 			seedScratchFile(t, src)
 			f := &eofInspectionTranscoder{input: input}
 			s := newTestSessions(t, f, t.TempDir(), nil)
-			key := SessionKey{SessionID: "eof"}
+			st := storetest.Open(t)
+			media, file, err := st.ImportMediaFile(t.Context(), store.ImportMediaFile{
+				LibraryID: "library-local", Path: src, Title: "EOF fixture", Container: "mp4",
+				Codec: "h264", Class: store.MediaClassVideo, ContentFingerprint: "eof-fixture",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.sourceStore = st
+			key := SessionKey{SessionID: "eof", MediaID: media.ID}
 			path, err := s.FilePath(t.Context(), key, src, 120, 1280, 720, false, "720p/init.mp4")
 			if err != nil {
 				t.Fatal(err)
 			}
 			h := registeredSession(t, s, key)
 			dir := filepath.Dir(path)
-			if stage == "rung scan" {
+			switch stage {
+			case "rung scan":
 				if err := os.RemoveAll(dir); err != nil {
 					t.Fatal(err)
 				}
-			} else {
+			case "segment read":
 				writeArtifact(t, dir, "seg00000.m4s", []byte("not a complete box"))
+			case "segment FIFO":
+				if err := unix.Mkfifo(filepath.Join(dir, "seg00000.m4s"), 0o600); err != nil {
+					t.Fatal(err)
+				}
 			}
 			_ = signal.Close()
 			waitScratchSignal(t, h.run.exited)
@@ -938,7 +1011,10 @@ func TestT3UnreadableOutputDoesNotPublishEOF(t *testing.T) {
 			known := h.sourceEndKnown
 			s.mu.Unlock()
 			if known || s.incompleteSources.contains(src) {
-				t.Fatalf("%s established an EOF bound", stage)
+				t.Errorf("%s established an in-memory EOF bound", stage)
+			}
+			if incomplete, err := st.MediaFileSourceIncomplete(t.Context(), file); err != nil || incomplete {
+				t.Fatalf("%s changed catalog EOF: incomplete = %t, error = %v", stage, incomplete, err)
 			}
 		})
 	}
@@ -1685,6 +1761,58 @@ func TestT3DurationDiscardsSourceReplacedDuringProbe(t *testing.T) {
 	f.results[1] <- 137
 	if got := s.ProbedDurationSeconds(t.Context(), "file", src); got != 137 {
 		t.Fatalf("replacement duration = %d, want 137", got)
+	}
+}
+
+func TestT3UnverifiedDurationLeavesVerifiedProbeInFlight(t *testing.T) {
+	for _, nonRegular := range []bool{false, true} {
+		t.Run(fmt.Sprintf("non-regular=%t", nonRegular), func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "source")
+			seedScratchFile(t, src)
+			info, err := os.Stat(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := &orderedDurationTranscoder{path: src, entered: make(chan int, 2),
+				results: [2]chan int{make(chan int, 1), make(chan int, 1)}}
+			s := newTestSessions(t, f, t.TempDir(), nil)
+			defer close(f.results[0])
+			defer close(f.results[1])
+			var stats atomic.Int32
+			s.statSource = func(path string) (os.FileInfo, error) {
+				if stats.Add(1) == 2 {
+					if nonRegular {
+						return info, nil
+					}
+					return nil, os.ErrNotExist
+				}
+				return os.Stat(path) // #nosec G703 -- private fixture.
+			}
+			verified := make(chan int, 1)
+			go func() { verified <- s.ProbedDurationSeconds(t.Context(), "file", src) }()
+			select {
+			case <-f.entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("verified duration probe did not start")
+			}
+			f.results[1] <- 60
+			if got := s.ProbedDurationSeconds(t.Context(), "file", src); got != 0 || f.calls.Load() != 1 {
+				t.Fatalf("unverified duration = %d, probes = %d", got, f.calls.Load())
+			}
+			f.results[0] <- 137
+			select {
+			case got := <-verified:
+				if got != 137 {
+					t.Fatalf("verified duration = %d", got)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("verified probe did not finish")
+			}
+			if got := s.ProbedDurationSeconds(t.Context(), "file", src); got != 137 || f.calls.Load() != 1 {
+				t.Fatalf("cached duration = %d, probes = %d", got, f.calls.Load())
+			}
+		})
 	}
 }
 

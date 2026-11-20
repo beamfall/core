@@ -446,6 +446,55 @@ type orderedSourceEndStore struct {
 	staged                                      atomic.Bool
 }
 
+func TestT3PathlessEncryptedItemsKeepIndependentEOFObservations(t *testing.T) {
+	f := newEncryptedPrecomputeFixture(t)
+	ctx := t.Context()
+	first, err := f.st.MediaFilesForMedia(ctx, f.mediaID, store.LibraryFilter{AllLibraries: true})
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first encrypted source = %v, %v", first, err)
+	}
+	second, secondFile, err := f.st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: "library-local", Path: filepath.Join(t.TempDir(), "second"), Title: "Second source",
+		Container: "mkv", Codec: "hevc", Class: store.MediaClassVideo, ContentFingerprint: "second-encrypted-source",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newTestSessions(t, &fakeEncryptedTranscoder{segment: func(int) []byte { return emptySegment() }}, t.TempDir(), nil)
+	entered, release := scratchLatch(t)
+	defer release.open()
+	observer := &orderedSourceEndStore{
+		sourceEndObserver: f.st, firstCallback: entered, release: release.ch,
+		firstReturned: make(chan struct{}), reaperStarted: make(chan struct{}),
+	}
+	s.sourceStore = observer
+	request := func(file store.MediaFile, name string) error {
+		secure := testEncryptedSource(nil)
+		secure.LibraryID, secure.Fingerprint = "library-local", file.ContentFingerprint
+		_, err := encryptedFilePath(s, SessionKey{SessionID: "viewer", MediaID: file.MediaID}, secure, 120, -1, false, name)
+		return err
+	}
+	const segment = "720p/seg00010.m4s"
+	pending := make(chan error, 1)
+	go func() { pending <- request(first[0], segment) }()
+	waitScratchSignal(t, entered)
+	if err := request(secondFile, masterPlaylistName); err != nil {
+		t.Fatalf("second encrypted item %s setup: %v", second.ID, err)
+	}
+	release.open()
+	if err := waitScratchResult(t, pending); !errors.Is(err, ErrSourceEnded) || !observer.staged.Load() {
+		t.Fatalf("first inspection = %v, staged = %t", err, observer.staged.Load())
+	}
+	if err := request(secondFile, segment); !errors.Is(err, ErrSourceEnded) {
+		t.Fatalf("second inspection = %v", err)
+	}
+	for _, file := range []store.MediaFile{first[0], secondFile} {
+		if incomplete, err := f.st.MediaFileSourceIncomplete(ctx, file); err != nil || !incomplete {
+			t.Fatalf("catalog EOF for %s = %t, %v", file.ContentFingerprint, incomplete, err)
+		}
+	}
+}
+
 func (s *orderedSourceEndStore) ObserveSourceEnd(ctx context.Context, id store.MediaID, path, fingerprint, generation string, observe func() (float64, bool)) error {
 	switch s.calls.Add(1) {
 	case 1:
