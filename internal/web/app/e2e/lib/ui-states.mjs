@@ -95,6 +95,7 @@ export const CONSOLE_ROUTES = Object.freeze([
   "remote",
   "api",
   "webhooks",
+  "jellyfin-compat",
   "backups",
   "retention",
   "identification",
