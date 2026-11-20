@@ -501,7 +501,7 @@ type Sessions struct {
 	writeSetupPlaylist func(*hlsSession, string, []byte) error
 	// beforeSetupCommit lets tests pause after writing the unpublished playlists.
 	beforeSetupCommit func()
-	// durationProbes caches on-demand runtime probes (ProbedDurationSeconds).
+	// durationProbes caches on-demand runtime probes by source path and generation.
 	durationProbes    map[string]durationProbeEntry
 	durationRetained  map[durationKey]*retainedDuration
 	durationFlights   map[string]*durationFlight

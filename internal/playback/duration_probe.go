@@ -50,14 +50,6 @@ type durationFlight struct {
 	seconds    int // winning positive held until the last overlapping probe finishes
 }
 
-// ProbedDurationSeconds probes a plain source when the catalog has no runtime.
-func (s *Sessions) ProbedDurationSeconds(ctx context.Context, fingerprint, path string) int {
-	if s == nil {
-		return 0
-	}
-	return s.probedSourceDuration(ctx, nil, nil, fingerprint, path)
-}
-
 func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBinding, op *libraryOperation, fingerprint, path string) int {
 	if fingerprint == "" || path == "" || ctx.Err() != nil {
 		return 0
@@ -69,8 +61,7 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	}
 	now := s.now()
 	s.mu.Lock()
-	if ctx.Err() != nil || s.closed || binding != nil && !binding.validLocked() ||
-		op != nil && s.libraryOperationErrorLocked(op) != nil {
+	if ctx.Err() != nil || s.libraryOperationErrorLocked(op) != nil || binding != nil && !binding.validLocked() {
 		s.mu.Unlock()
 		return 0
 	}
@@ -140,8 +131,8 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	if flight.users == 0 {
 		delete(s.durationFlights, path)
 	}
-	if !valid || ctx.Err() != nil || s.closed || source.supersededLocked() || binding != nil && !binding.validLocked() ||
-		op != nil && s.libraryOperationErrorLocked(op) != nil {
+	if !valid || ctx.Err() != nil || s.libraryOperationErrorLocked(op) != nil || source.supersededLocked() ||
+		binding != nil && !binding.validLocked() {
 		return 0
 	}
 	entry = s.durationProbes[path]
