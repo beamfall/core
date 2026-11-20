@@ -86,6 +86,14 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		imported.Class = store.MediaClassImage
 		imported.Codec = ""
 	}
+	// Without a probe the import carries only path-derived placeholders, so
+	// the Media keeps its recorded probe facts. A file probed here (legacy
+	// parser fields, or a Media without a duration) refreshes them.
+	if task.probe.succeeded {
+		applyProbeFacts(&imported, task.probe.value)
+	} else {
+		imported.KeepProbeFacts = true
+	}
 	var parsed ParsedMedia
 	var parsedFields []store.MediaField
 	parsedOK := false
@@ -123,7 +131,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, authoritative)
 	}
 	if s.isParsedPart(parsed, parsedOK) {
-		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), nil, false); err != nil {
+		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), task.probe.value.Chapters, task.probe.succeeded); err != nil {
 			return err
 		}
 		return s.ctx.Err()
@@ -251,21 +259,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	var probeChapters []ffmpeg.ProbeChapter
 	if probeSucceeded {
 		probe := task.probe.value
-		if probe.Container != "" {
-			imported.Container = probe.Container
-		}
-		if probe.VideoCodec != "" {
-			imported.Codec = probe.VideoCodec
-		}
-		if !probe.HasVideo && probe.AudioCodec != "" {
-			imported.Class = store.MediaClassAudio
-			imported.Codec = probe.AudioCodec
-		}
-		imported.DurationSecondsHint = probe.DurationSeconds
-		imported.VideoWidthHint = probe.VideoWidth
-		imported.VideoHeightHint = probe.VideoHeight
-		imported.Streams = streamsFromProbe(probe.Streams)
-		imported.FontAttachments = fontsFromProbe(probe.FontAttachments)
+		applyProbeFacts(&imported, probe)
 		probeTags = probe.Tags
 		probeChapters = probe.Chapters
 	}
@@ -375,6 +369,26 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		return err
 	}
 	return s.ctx.Err()
+}
+
+// applyProbeFacts copies a successful probe's container, codec, class,
+// duration, frame size and stream inventory onto imported.
+func applyProbeFacts(imported *store.ImportMediaFile, probe ffmpeg.Probe) {
+	if probe.Container != "" {
+		imported.Container = probe.Container
+	}
+	if probe.VideoCodec != "" {
+		imported.Codec = probe.VideoCodec
+	}
+	if !probe.HasVideo && probe.AudioCodec != "" {
+		imported.Class = store.MediaClassAudio
+		imported.Codec = probe.AudioCodec
+	}
+	imported.DurationSecondsHint = probe.DurationSeconds
+	imported.VideoWidthHint = probe.VideoWidth
+	imported.VideoHeightHint = probe.VideoHeight
+	imported.Streams = streamsFromProbe(probe.Streams)
+	imported.FontAttachments = fontsFromProbe(probe.FontAttachments)
 }
 
 func (s *scanWalkState) hydrateMetadata(media store.Media, path, fingerprint string, metadata map[string]string) error {
