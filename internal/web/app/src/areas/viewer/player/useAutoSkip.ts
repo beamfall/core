@@ -8,6 +8,7 @@ import {
 } from "../lib/transport";
 import { markViewerIntent } from "./viewerIntent";
 import {
+  getPartyTransportEpoch,
   getWatchParty,
   hasPartyTransportPending,
   type PartyAutoSkipOutcome,
@@ -44,6 +45,7 @@ export function useAutoSkip({
   prefs,
   songScale = 1,
   autoSkipLead,
+  seekToPartySkip,
   partySeekAutoSkip,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -55,6 +57,8 @@ export function useAutoSkip({
   songScale?: number;
   /** Coordinate the lead's skip with its position reports. */
   autoSkipLead?: (positionMS: number, expiresAt?: number) => Promise<PartyAutoSkipOutcome>;
+  /** Apply an acknowledged member skip as a party correction. */
+  seekToPartySkip?: (video: HTMLVideoElement, streamSeconds: number) => void;
   /** Give party transport the opportunity to skip a segment reached by a scrub. */
   partySeekAutoSkip?: RefObject<PartySeekAutoSkip | null>;
 }): {
@@ -146,13 +150,28 @@ export function useAutoSkip({
         // A playback tick must not displace a newer queued scrub.
         if (expiresAt === undefined && hasPartyTransportPending()) return;
         suppressedKeyRef.current = key;
+        const epoch = getPartyTransportEpoch();
         const request = party.lead
           ? party.isHost && autoSkipLead?.(target, expiresAt)
           : sendPartyAutoSkip(mediaID, target, expiresAt);
         if (!request) return;
         return request.then((outcome) => {
-          if (cancelled || getWatchParty().partyID !== party.partyID) return "unconfirmed";
-          if (outcome === "applied") showSkip(segment, party.partyID);
+          const latest = getWatchParty();
+          if (cancelled || videoRef.current !== video || getPartyTransportEpoch() !== epoch)
+            return "unconfirmed";
+          if (outcome === "applied") {
+            if (!party.lead) {
+              const anchor = latest.timeline;
+              if (anchor?.item !== mediaID || anchor.positionMS !== target) return "unconfirmed";
+              const streamSeconds = anchor.positionMS / (1000 * songScaleRef.current);
+              if (video.currentTime !== streamSeconds) {
+                ignoreNextTickRef.current = true;
+                if (seekToPartySkip) seekToPartySkip(video, streamSeconds);
+                else video.currentTime = streamSeconds;
+              }
+            }
+            showSkip(segment, party.partyID);
+          }
           return outcome;
         });
       }
@@ -194,7 +213,7 @@ export function useAutoSkip({
       video.removeEventListener("seeking", onSeeking);
       video.removeEventListener("seeked", onSeeked);
     };
-  }, [videoRef, attached, mediaID, autoSkipLead, partySeekAutoSkip]);
+  }, [videoRef, attached, mediaID, autoSkipLead, seekToPartySkip, partySeekAutoSkip]);
 
   return { skipped, undo, dismiss };
 }

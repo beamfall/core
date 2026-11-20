@@ -565,7 +565,7 @@ describe("races", () => {
     },
   );
 
-  it("sends a queued scrub after its local seek protection ends", async () => {
+  it.each([false, true])("drops an expired queued scrub (also paused: %s)", async (pause) => {
     const clock = vi.spyOn(performance, "now").mockReturnValue(0);
     vi.mocked(createWatchParty).mockResolvedValue({
       partyID: "p1",
@@ -583,16 +583,31 @@ describe("races", () => {
         if (positionMS === 30_000) await inFlight;
         return { item, positionMS, presentAtMS: 0 };
       });
-      const first = sendPartyTransport("m1", { positionMS: 30_000, playing: false });
-      const queued = sendPartyTransport("m1", { positionMS: 60_000, playing: false }, 15_000);
+      const first = sendPartyTransport("m1", { positionMS: 30_000, playing: true });
+      let livePosition = 60_000;
+      const playback = pause
+        ? sendPartyTransport("m1", { playing: false, playheadMS: () => livePosition })
+        : undefined;
+      const queued = sendPartyTransport("m1", { positionMS: 60_000 }, 15_000);
       expect(watchPartyTransport).toHaveBeenCalledTimes(1);
       expect(pendingPartyTransport("m1")?.positionMS).toBe(60_000);
       clock.mockReturnValue(20_000);
+      livePosition = 45_000;
       releaseFirst();
       await expect(first).resolves.toBe(true);
-      await expect(queued).resolves.toBe(true);
-      expect(watchPartyTransport).toHaveBeenCalledTimes(2);
-      expect(getWatchParty().timeline?.positionMS).toBe(60_000);
+      if (playback) await expect(playback).resolves.toBe(false);
+      await expect(queued).resolves.toBe(pause);
+      expect(
+        vi.mocked(watchPartyTransport).mock.calls.map(([v]) => [v.positionMS, v.paused]),
+      ).toEqual(
+        pause
+          ? [
+              [30_000, false],
+              [45_000, true],
+            ]
+          : [[30_000, false]],
+      );
+      expect(getWatchParty().timeline?.positionMS).toBe(pause ? 45_000 : 30_000);
       expect(pendingPartyTransport("m1")).toBeUndefined();
     } finally {
       clock.mockRestore();

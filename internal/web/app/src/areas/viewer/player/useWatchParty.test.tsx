@@ -96,6 +96,12 @@ function deferredTransport() {
   return resolve;
 }
 
+function samplesPlayhead(positionMS: number) {
+  return expect.toSatisfy(
+    (sample: unknown) => typeof sample === "function" && sample() === positionMS,
+  );
+}
+
 function holdTransport(positionMS: number, seekProtectedUntil: number) {
   vi.mocked(pendingPartyTransport).mockReturnValue({
     itemId: "m1",
@@ -139,7 +145,10 @@ describe("useWatchParty local transport", () => {
     // The viewer presses Play straight after.
     fireEvent.pointerDown(document.body);
     video.play();
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", { playheadMS: 0, playing: true });
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", {
+      playheadMS: samplesPlayhead(0),
+      playing: true,
+    });
     view.unmount();
   });
 
@@ -308,7 +317,10 @@ describe("useWatchParty local transport", () => {
     // useMediaSession's play handler marks the intent, then plays.
     markViewerIntent();
     video.play();
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", { playheadMS: 0, playing: true });
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", {
+      playheadMS: samplesPlayhead(0),
+      playing: true,
+    });
     view.unmount();
   });
 });
@@ -541,7 +553,10 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       const view = mount(video);
       fireEvent.pointerDown(document.body);
       video.play();
-      expect(sendPartyTransport).toHaveBeenCalledWith("m1", { playheadMS: 0, playing: true });
+      expect(sendPartyTransport).toHaveBeenCalledWith("m1", {
+        playheadMS: samplesPlayhead(0),
+        playing: true,
+      });
 
       fireEvent.keyDown(document.body, { key: "ArrowRight" });
       video.currentTime = 30;
@@ -640,7 +655,7 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       video.readyState = 2;
       video.dispatchEvent(new Event("waiting"));
       expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", {
-        playheadMS: 20_000,
+        playheadMS: samplesPlayhead(20_000),
         playing: false,
       });
       vi.mocked(reportLeadPosition).mockClear();
@@ -654,7 +669,7 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       video.readyState = 4;
       video.dispatchEvent(new Event("playing"));
       expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", {
-        playheadMS: 20_000,
+        playheadMS: samplesPlayhead(20_000),
         playing: true,
       });
       view.unmount();
@@ -668,7 +683,7 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       const view = mount(video);
       video.pause();
       expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", {
-        playheadMS: 20_000,
+        playheadMS: samplesPlayhead(20_000),
         playing: false,
       });
       view.unmount();

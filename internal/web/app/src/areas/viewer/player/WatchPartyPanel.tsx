@@ -108,7 +108,11 @@ export function WatchPartyPanel({
           aria-label={t("watchPartyButton")}
           className="absolute right-0 top-full mt-2 flex w-[min(20rem,calc(100vw-2rem))] flex-col gap-3 rounded-lg border border-on-scrim/15 bg-[color-mix(in_oklab,var(--on-scrim)_6%,var(--scrim))] p-4 text-sm text-on-scrim shadow-lg"
         >
-          {!active ? (
+          {party.status === "starting" && party.partyID && party.error === "leave-failed" ? (
+            <Button variant="outline" size="sm" onClick={() => void onLeave()}>
+              {t("watchPartyLeave")}
+            </Button>
+          ) : !active ? (
             <>
               <p className="m-0 text-on-scrim/75">{t("watchPartyIntro")}</p>
               <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">

@@ -94,6 +94,7 @@ export interface WatchPartyView {
   start: (relaxed?: boolean, lead?: boolean) => Promise<boolean>;
   leave: () => Promise<boolean>;
   autoSkipLead: (positionMS: number, expiresAt?: number) => Promise<PartyAutoSkipOutcome>;
+  seekToPartySkip: (video: HTMLVideoElement, streamSeconds: number) => void;
 }
 
 /** What this player is in the party: an ordinary member, the lead screen or a follower. */
@@ -251,6 +252,15 @@ export function useWatchParty({
     leadAutoSkip.current = streamSeconds;
     skip.video.currentTime = streamSeconds;
   }, []);
+
+  const seekToPartySkip = useCallback(
+    (video: HTMLVideoElement, streamSeconds: number) => {
+      correct(() => {
+        video.currentTime = streamSeconds;
+      });
+    },
+    [correct],
+  );
 
   const sync = useCallback(() => {
     const s = getWatchParty();
@@ -480,7 +490,11 @@ export function useWatchParty({
         return;
       const pending = pendingPartyTransport(tl.item);
       if (playing === (pending?.playing ?? !tl.paused)) return;
-      void sendPartyTransport(tl.item, { playing, playheadMS: video.currentTime * positionScale });
+      void sendPartyTransport(tl.item, {
+        playing,
+        playheadMS: () =>
+          videoRef.current === video ? video.currentTime * positionScaleRef.current : undefined,
+      });
     };
     const onStall = () => setRunning(false);
     const onPlaying = () => setRunning(true);
@@ -585,7 +599,11 @@ export function useWatchParty({
         const playing = event.type === "play";
         if (s.lead) rememberLeadPauseIntent(!playing);
         if (playing === (pending?.playing ?? !tl.paused)) return;
-        void sendPartyTransport(tl.item, { playing, playheadMS: local });
+        void sendPartyTransport(tl.item, {
+          playing,
+          playheadMS: () =>
+            videoRef.current === video ? video.currentTime * positionScaleRef.current : undefined,
+        });
         return;
       }
       const target = pending?.positionMS ?? expectedPositionMS(tl, partyNowMS());
@@ -701,5 +719,6 @@ export function useWatchParty({
     start,
     leave: leaveParty,
     autoSkipLead,
+    seekToPartySkip,
   };
 }

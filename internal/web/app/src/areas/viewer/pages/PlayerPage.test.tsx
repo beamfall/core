@@ -289,6 +289,37 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
     return { video, play, publish, partyID, view };
   }
 
+  it("seeks a paused member to the acknowledged skip before showing Undo", async () => {
+    const { video, publish, partyID } = await mountPartyPlayer(true);
+    await act(async () => {
+      publish(true, 29_800);
+    });
+    expect(video.currentTime).toBe(29.8);
+    vi.mocked(watchPartyAutoSkip).mockResolvedValueOnce({
+      partyID,
+      applied: true,
+      item: "media-alpha",
+      positionMS: 30_000,
+      presentAtMS: Date.now(),
+    });
+
+    await act(async () => fireEvent.timeUpdate(video));
+
+    expect(watchPartyAutoSkip).toHaveBeenCalledExactlyOnceWith({
+      partyID,
+      item: "media-alpha",
+      positionMS: 30_000,
+    });
+    expect(video.currentTime).toBe(30);
+    expect(screen.getByRole("button", { name: "Undo" })).toBeVisible();
+    fireEvent.seeking(video);
+    fireEvent.seeked(video);
+    act(() => vi.advanceTimersByTime(500));
+    expect(video.currentTime).toBe(30);
+    expect(video.paused).toBe(true);
+    expect(requestWatchPartyTransport).not.toHaveBeenCalled();
+  });
+
   it("follows host Play after an approved member Pause misses its transition", async () => {
     const { video, play, publish, partyID } = await mountPartyPlayer(true);
     await act(async () => {
@@ -801,9 +832,12 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
     expect(requestWatchPartyTransport).not.toHaveBeenCalled();
   });
 
-  it.each([1000, 20_000])(
-    "handles a return to the current anchor while a skip is pending (%i ms)",
-    async (delay) => {
+  it.each([
+    { delay: 1000, expired: false },
+    { delay: 20_000, expired: true },
+  ])(
+    "handles a return to the current anchor while a skip is pending ($delay ms)",
+    async ({ delay, expired }) => {
       vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
       vi.mocked(watchPartyTransport).mockClear();
       vi.mocked(fetchClientPrefs).mockResolvedValue([{ key: "autoskip.intro", value: "on" }]);
@@ -858,13 +892,19 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
           presentAtMS: 0,
         }),
       );
-      expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
-        partyID: "p1",
-        item: "media-alpha",
-        positionMS: 0,
-        paused: true,
-      });
-      expect(video.currentTime).toBe(0);
+      if (expired) {
+        expect(watchPartyTransport).not.toHaveBeenCalled();
+        act(() => vi.advanceTimersByTime(500));
+        expect(video.currentTime).toBe(30);
+      } else {
+        expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+          partyID: "p1",
+          item: "media-alpha",
+          positionMS: 0,
+          paused: true,
+        });
+        expect(video.currentTime).toBe(0);
+      }
     },
   );
 
@@ -2990,6 +3030,39 @@ describe("PlayerPage Watch Party startup (CORE-1858)", () => {
     vi.restoreAllMocks();
     vi.mocked(watchPartyTransport).mockReset();
     vi.mocked(calibrateWatchPartyClock).mockRejectedValue(new Error("not on the home network"));
+  });
+
+  it("can leave the same party after startup transport and cleanup both fail", async () => {
+    vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
+    vi.mocked(calibrateWatchPartyClock).mockResolvedValue({ offsetMS: 0, roundTripMS: 1 });
+    vi.mocked(createWatchParty).mockResolvedValueOnce({
+      partyID: "p1",
+      content: "media-alpha",
+      relaxed: true,
+      members: [],
+    });
+    vi.mocked(watchPartyTransport).mockRejectedValueOnce(new Error("Transport unavailable"));
+    vi.mocked(leaveWatchParty)
+      .mockRejectedValueOnce(new Error("Network unavailable"))
+      .mockResolvedValueOnce(undefined);
+    await act(async () => {
+      renderPlayer(playerState({ phase: "playing" }));
+    });
+    stageVideo().currentTime = 42;
+    fireEvent.click(screen.getByRole("button", { name: "Watch Party" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Start a Watch Party" }));
+    });
+    expect(watchPartyTransport).toHaveBeenCalledTimes(1);
+    expect(leaveWatchParty).toHaveBeenCalledExactlyOnceWith("p1");
+    expect(getWatchParty().partyID).toBe("p1");
+    expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Leave party" }));
+    });
+    expect(leaveWatchParty).toHaveBeenNthCalledWith(2, "p1");
+    expect(getWatchParty()).toMatchObject({ status: "idle", partyID: "" });
   });
 
   it("publishes the live playhead and pause state after delayed creation", async () => {

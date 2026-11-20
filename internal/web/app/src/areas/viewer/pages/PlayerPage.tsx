@@ -610,6 +610,7 @@ function FeaturePlayer({
     },
     songScale,
     autoSkipLead: watchParty.autoSkipLead,
+    seekToPartySkip: watchParty.seekToPartySkip,
     partySeekAutoSkip,
   });
 

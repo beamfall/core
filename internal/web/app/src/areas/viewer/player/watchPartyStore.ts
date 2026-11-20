@@ -139,13 +139,14 @@ interface TransportIntent {
   readonly playing: boolean;
   readonly epoch: number;
   readonly seekProtectedUntil: number;
+  readonly positionExpiresAt?: number;
 }
 
 interface TransportWork {
   intent: TransportIntent;
   autoSkip: boolean;
   titleSwitch: boolean;
-  playbackChange?: { confirmed: boolean };
+  playbackChange?: { confirmed: boolean; readPlayheadMS?: () => number | undefined };
   isCurrent: () => boolean;
   submitted: boolean;
   settled: boolean;
@@ -273,14 +274,30 @@ function enqueueTransport(
       run: async () => {
         const isLatest = () => isCurrent() && (queue.pending ?? queue.inFlight) === work;
         while (isLatest() && !work.confirmed) {
+          const now = performance.now();
+          if (!work.submitted && now >= (work.intent.positionExpiresAt ?? Infinity)) {
+            if (playbackChange?.confirmed !== false) break;
+            // The queued Play/Pause still applies, but its paired seek expired.
+            const timeline = state.timeline;
+            const positionMS =
+              playbackChange.readPlayheadMS?.() ??
+              (timeline?.item === intent.itemId ? expectedPositionMS(timeline, partyNowMS()) : 0);
+            work.intent = {
+              ...intent,
+              positionMS: Math.max(0, Math.round(positionMS)),
+              positionExpiresAt: undefined,
+              seekProtectedUntil: now + PARTY_TRANSPORT_TIMEOUT_MS,
+            };
+            work.autoSkip = false;
+          }
           const sentAsHost = state.isHost;
           try {
             work.submitted = true;
             let result: PartyAutoSkipOutcome;
-            if (autoSkip) {
+            if (work.autoSkip) {
               result = await applyPartyAutoSkip(work, isLatest);
             } else {
-              const applied = await applyPartyTransport(intent);
+              const applied = await applyPartyTransport(work.intent);
               if (applied) {
                 if (playbackChange) playbackChange.confirmed = true;
                 // A host response carries the acknowledged anchor even if the
@@ -816,9 +833,9 @@ export async function startWatchParty(
     return true;
   } catch (err) {
     if (gen === generation) {
-      reset(failure(err));
       // An initial transport can fail after the server has created the party.
-      if (partyID) await leaveWatchParty(partyID).catch(() => {});
+      if (partyID) await confirmPartyDeparture(failure(err));
+      else reset(failure(err));
     }
     return false;
   }
@@ -975,17 +992,23 @@ export async function inviteToParty(displayName: string): Promise<boolean> {
 /** Put the viewer's changes on the shared timeline as a full playback state. */
 export function sendPartyTransport(
   itemId: string,
-  change: { positionMS?: number; playing?: boolean; playheadMS?: number; selection?: AbortSignal },
+  change: {
+    positionMS?: number;
+    playing?: boolean;
+    playheadMS?: number | (() => number | undefined);
+    selection?: AbortSignal;
+  },
   expiresAt = performance.now() + PARTY_TRANSPORT_TIMEOUT_MS,
 ): Promise<boolean> {
   const { status, lead, isHost, partyID, timeline } = state;
   if (status !== "active" || !timeline || (lead && !isHost)) return Promise.resolve(false);
   const previousWork = pendingTransportWork(itemId);
   const previous = previousWork?.intent;
+  const readPlayheadMS = typeof change.playheadMS === "function" ? change.playheadMS : undefined;
   const positionMS =
     change.positionMS ??
     previous?.positionMS ??
-    change.playheadMS ??
+    (typeof change.playheadMS === "number" ? change.playheadMS : readPlayheadMS?.()) ??
     expectedPositionMS(timeline, partyNowMS());
   const intent = {
     itemId,
@@ -993,13 +1016,16 @@ export function sendPartyTransport(
     playing: change.playing ?? previous?.playing ?? !timeline.paused,
     epoch: transportEpoch,
     seekProtectedUntil: Math.max(expiresAt, previous?.seekProtectedUntil ?? 0),
+    positionExpiresAt: change.positionMS === undefined ? previous?.positionExpiresAt : expiresAt,
   };
   // A playback toggle can replace a queued skip while carrying its position.
   const queued = transportQueues.get(partyID)?.pending;
   const autoSkip =
     queued?.autoSkip === true && queued === previousWork && change.positionMS === undefined;
   const playbackChange =
-    change.playing === undefined ? previousWork?.playbackChange : { confirmed: false };
+    change.playing === undefined
+      ? previousWork?.playbackChange
+      : { confirmed: false, readPlayheadMS };
   return enqueueTransport(intent, autoSkip, playbackChange, change.selection).then(
     (result) => result === "applied",
   );
@@ -1057,6 +1083,7 @@ export function sendPartyAutoSkip(
       playing: previous?.playing ?? !timeline.paused,
       epoch: transportEpoch,
       seekProtectedUntil: Math.max(expiresAt, previous?.seekProtectedUntil ?? 0),
+      positionExpiresAt: expiresAt,
     },
     true,
     previousWork?.playbackChange,
@@ -1081,6 +1108,7 @@ async function applyPartyAutoSkip(
     });
     if (!applied || !isLatest()) return "unconfirmed";
     playbackChange.confirmed = true;
+    if (performance.now() >= (intent.positionExpiresAt ?? Infinity)) return "unconfirmed";
     timeline = state.timeline;
   }
   const result = await watchPartyAutoSkip({ partyID, item, positionMS: target });
@@ -1177,7 +1205,11 @@ export function watchPartyDefersUpNext(party: WatchPartyState): boolean {
  * Leave the party; the local player keeps playing on its own. A host's leave
  * hands the party to the earliest member still in it.
  */
-export async function leaveParty(): Promise<boolean> {
+export function leaveParty(): Promise<boolean> {
+  return confirmPartyDeparture();
+}
+
+async function confirmPartyDeparture(patch: Partial<WatchPartyState> = {}): Promise<boolean> {
   const partyID = state.partyID;
   const gen = generation;
   if (partyID) {
@@ -1196,7 +1228,7 @@ export async function leaveParty(): Promise<boolean> {
   // Leaving a lead party is a choice: do not rejoin it, or follow it unasked.
   if (partyID && state.lead) declinedParties.add(partyID);
   forgetFollowing();
-  reset();
+  reset(patch);
   return true;
 }
 
