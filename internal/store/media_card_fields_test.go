@@ -7,7 +7,7 @@ import (
 
 // TestMediaCardFieldValuesReadsNamedTextAndNumberFields pins CORE-1226: the
 // bulk card read returns only the named text and number fields, keyed by
-// Media, and AnnotateMediaClass names each Media's Library.
+// Media. Card annotation preserves provenance from the browse read.
 func TestMediaCardFieldValuesReadsNamedTextAndNumberFields(t *testing.T) {
 	st := openDemo(t)
 	ctx := context.Background()
@@ -42,11 +42,14 @@ func TestMediaCardFieldValuesReadsNamedTextAndNumberFields(t *testing.T) {
 		t.Fatalf("no names = %v, %v", empty, err)
 	}
 
-	items := []SourceItem{{ID: first, Kind: "media"}}
+	items := []SourceItem{all.Items[0], {ID: first, Kind: "media"}}
 	if err := st.AnnotateMediaClass(ctx, items); err != nil {
 		t.Fatal(err)
 	}
 	if items[0].LibraryID != "library-demo-open" {
-		t.Fatalf("LibraryID = %q, want library-demo-open", items[0].LibraryID)
+		t.Fatalf("browse LibraryID = %q, want library-demo-open", items[0].LibraryID)
+	}
+	if items[1].LibraryID != "" {
+		t.Fatalf("annotation assigned owner %q to a row without catalog provenance", items[1].LibraryID)
 	}
 }
