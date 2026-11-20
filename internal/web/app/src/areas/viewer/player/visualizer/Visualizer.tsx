@@ -304,8 +304,8 @@ export function Visualizer({
     // The recent animation-frame intervals, for the paint-lag bounds.
     const lags = lagHistory();
     // After a break in painting (the page hidden, the context restored) the next draw is timed as
-    // a first one: no interval spans the break, and the limiter is credited one step, not the
-    // break, with no stamp cleared (Codex round 4 of CORE-2744).
+    // a first one: no interval spans the break, and the limiter is credited none of it, with no
+    // stamp cleared (Codex rounds 4 and 5 of CORE-2744).
     const restartClocks = () => {
       lastTick = null;
       lastDrawn = null;
@@ -551,7 +551,9 @@ export function Visualizer({
         // (CORE-2744). A per-frame lower bound (half of each interval at a steady cadence) ran
         // its clock at half speed and held ragged areas of every moving visual.
         const wall = performance.now();
-        const shownMs = lastWall === null ? frameMs : Math.max(0, wall - lastWall);
+        // The first draw, or the first after a break, credits no time: nothing measured was shown
+        // before it (Codex round 5 of CORE-2744).
+        const shownMs = lastWall === null ? 0 : Math.max(0, wall - lastWall);
         const [lagMs, recentLagMs] = lagBounds(lags, now);
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.

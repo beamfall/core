@@ -283,6 +283,8 @@ it("times the first draw after the page is hidden as a first draw", async () => 
   step(10032);
   expect(renderer.draw).toHaveBeenCalledTimes(3);
   expect(renderer.draw.mock.lastCall?.[5]).toBeCloseTo(1000 / 60);
+  // The limiter is credited none of the break.
+  expect(renderer.draw.mock.lastCall?.[7]).toBe(0);
   expect(renderer.draw.mock.lastCall?.[10]).toBeCloseTo(1000 / 15);
 });
 
