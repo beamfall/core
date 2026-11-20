@@ -324,9 +324,9 @@ func (*ProvisionalPromotionDuplicateError) Error() string {
 }
 
 // PromoteProvisionalMediaGeneration promotes only the live provisional path
-// observed by the caller. A supplied sample enables duplicate checks
+// observed by the caller. A supplied legacy fingerprint enables duplicate checks
 // against both fingerprint schemes in the publication transaction.
-func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID MediaID, expectedTeePath, contentFingerprint, sample, finalPath string) (bool, error) {
+func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID MediaID, expectedTeePath, contentFingerprint, legacyFingerprint, finalPath string) (bool, error) {
 	if mediaID == "" {
 		return false, ValidationError("media ID is required")
 	}
@@ -337,7 +337,7 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 		return false, ValidationError("final path is required")
 	}
 	var archivePath string
-	if sample != "" {
+	if legacyFingerprint != "" {
 		// The archive can be cataloged under its canonical path.
 		archivePath, _ = filepath.EvalSymlinks(finalPath)
 	}
@@ -353,8 +353,8 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 		return false, err
 	}
 	defer tx.Rollback()
-	if sample != "" {
-		_, duplicate, err := liveMediaFileByFingerprint(ctx, tx, sample, contentFingerprint)
+	if legacyFingerprint != "" {
+		_, duplicate, err := liveMediaFileByFingerprint(ctx, tx, contentFingerprint, legacyFingerprint)
 		if err != nil {
 			return false, err
 		}

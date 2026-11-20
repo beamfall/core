@@ -102,7 +102,7 @@ const WRITER_JOBS = ["Writer", "Screenplay"];
 // with nothing to show offers a retry.
 export function MediaDetailPage() {
   // A readable address (CORE-2329) or a bare ID: the token names the item.
-  const { id: addressID, confirmed } = useMediaAddress({ cachedDetail: true });
+  const { id: addressID, confirmed, pendingID } = useMediaAddress({ cachedDetail: true });
   const mediaId = addressID ?? "";
   const location = useLocation();
   const navigate = useNavigate();
@@ -117,8 +117,9 @@ export function MediaDetailPage() {
   const status = addressID === null ? "loading" : addressID === "" ? "missing" : detailStatus;
   const [attempt, setAttempt] = useState(0);
 
-  const preview = readMediaPreview(location.state, identity, mediaId);
-  const card: SourceItem | undefined = preview?.item ?? findCachedSectionItem(identity, mediaId);
+  const previewID = pendingID ?? mediaId;
+  const preview = readMediaPreview(location.state, identity, previewID);
+  const card: SourceItem | undefined = preview?.item ?? findCachedSectionItem(identity, previewID);
 
   // `attempt` is a dependency so that Try again re-runs the request.
   useEffect(() => {
@@ -222,7 +223,7 @@ export function MediaDetailPage() {
     }
     // ?t=0 is the player's "from the beginning" (it also skips pre-play).
     const suffix = fromStart ? "?t=0" : "";
-    navigate(`/watch/${encodeURIComponent(mediaId)}${suffix}`, { state });
+    navigate(`/watch/${encodeURIComponent(previewID)}${suffix}`, { state });
   }
 
   const back = (

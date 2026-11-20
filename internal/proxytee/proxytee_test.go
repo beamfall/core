@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -477,15 +478,12 @@ func TestProxyTeeStreamsToClientAndArchivesInPlace(t *testing.T) {
 	if file.Path != h.archivePath {
 		t.Fatalf("promoted file path = %q, want archive path %q", file.Path, h.archivePath)
 	}
-	wantFP, err := store.HashMediaFileContent(h.archivePath)
+	wantFP, err := store.SampleMediaFileContent(ctx, h.archivePath)
 	if err != nil {
 		t.Fatalf("hash archive file: %v", err)
 	}
 	if file.ContentFingerprint != wantFP {
 		t.Fatalf("fingerprint = %q, want the teed-file content hash %q", file.ContentFingerprint, wantFP)
-	}
-	if !strings.HasPrefix(file.ContentFingerprint, "sha256:") {
-		t.Fatalf("fingerprint = %q, want a real sha256 content hash, not a placeholder", file.ContentFingerprint)
 	}
 
 	// The bytes that landed on disk equal the bytes the client got.
@@ -499,6 +497,31 @@ func TestProxyTeeStreamsToClientAndArchivesInPlace(t *testing.T) {
 	// The in-progress partial is gone (renamed into place).
 	if _, err := os.Stat(h.archivePath + ".partial"); !os.IsNotExist(err) {
 		t.Fatalf("partial still present after promotion: %v", err)
+	}
+
+	// A scan that only sees a copy of the archive must resolve the same Media.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const libraryID = "library-local"
+	if err := h.store.SetLibraryRoots(ctx, libraryID, []string{root}); err != nil {
+		t.Fatal(err)
+	}
+	copyPath := filepath.Join(root, "copy.mp3")
+	if err := os.WriteFile(copyPath, onDisk, 0o600); err != nil { // #nosec G703 -- fixed name inside this test's private directory.
+		t.Fatal(err)
+	}
+	settled := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(copyPath, settled, settled); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scan.Scan(ctx, h.store, nil, nil, nil, nil, nil, scan.Request{LibraryID: libraryID, Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	files, err := h.store.MediaFilesForLibrary(ctx, libraryID)
+	if err != nil || len(files) != 1 || files[0].Path != copyPath || files[0].MediaID != h.mediaID || files[0].ContentFingerprint != wantFP {
+		t.Fatalf("files after scanning the copy = %+v, err = %v, want one row for %q on %q", files, err, h.mediaID, copyPath)
 	}
 }
 

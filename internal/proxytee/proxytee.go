@@ -526,7 +526,7 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 
 // promote checks the completed tee for an existing content identity before moving it.
 // A duplicate leaves the provisional stream replayable. Otherwise the archive
-// keeps the stream's Media ID and records its full SHA-256.
+// keeps the stream's Media ID and records its sampled fingerprint.
 func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream, expected os.FileInfo) (bool, error) {
 	if err := s.checkArchiveRoot(); err != nil {
 		return false, err
@@ -536,7 +536,7 @@ func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream
 		return false, err
 	}
 	defer promoted.Close()
-	fingerprint, err := hashOpenFile(promoted)
+	legacyFingerprint, err := hashOpenFile(promoted)
 	if err != nil {
 		return false, err
 	}
@@ -544,7 +544,7 @@ func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream
 	if err != nil {
 		return false, err
 	}
-	_, duplicate, err := s.store.LiveMediaFileExistsByFingerprint(ctx, sample, fingerprint)
+	_, duplicate, err := s.store.LiveMediaFileExistsByFingerprint(ctx, sample, legacyFingerprint)
 	if err != nil || duplicate {
 		return false, err
 	}
@@ -570,7 +570,7 @@ func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream
 	if s.beforeCAS != nil {
 		s.beforeCAS()
 	}
-	updated, err := s.store.PromoteProvisionalMediaGeneration(ctx, mediaID, st.teePath, fingerprint, sample, st.archivePath)
+	updated, err := s.store.PromoteProvisionalMediaGeneration(ctx, mediaID, st.teePath, sample, legacyFingerprint, st.archivePath)
 	var duplicatePromotion *store.ProvisionalPromotionDuplicateError
 	if errors.As(err, &duplicatePromotion) {
 		if duplicatePromotion.KeepArchive {
@@ -589,7 +589,7 @@ func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream
 	}
 	if err := s.validatePublication(st.archiveRelative, expected, promoted); err != nil {
 		compensated, compensationErr := s.store.CompensateProvisionalMediaPromotion(
-			context.WithoutCancel(ctx), mediaID, fingerprint, st.archivePath, st.teePath,
+			context.WithoutCancel(ctx), mediaID, sample, st.archivePath, st.teePath,
 		)
 		if compensationErr != nil {
 			return false, errors.Join(err, compensationErr)

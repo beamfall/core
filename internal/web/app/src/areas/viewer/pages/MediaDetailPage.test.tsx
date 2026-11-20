@@ -198,23 +198,40 @@ describe("MediaDetailPage", () => {
     expect(readViewerCache(identity, mediaDetailCacheKey("m1"))).toMatchObject({ media });
   });
 
-  it("paints the opening card at once and plays the item", async () => {
-    vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
-    const { container } = renderAt([
-      { pathname: "/media/m1", state: mediaLinkState(card, identity) },
-    ]);
+  it.each([
+    { id: "m1", fromSection: false },
+    { id: "media-sample1-a371bff46385f7ded", fromSection: false },
+    { id: "media-sample1-a371bff46385f7ded", fromSection: true },
+  ])(
+    "paints $id at once from the viewer preview and plays it (section=$fromSection)",
+    async ({ id, fromSection }) => {
+      const item = { ...card, id, artworkSlots: { poster: `/api/media/artwork/${id}/poster?v=1` } };
+      if (fromSection) writeViewerCache(identity, sectionCacheKey(shelf, "lib", "", null), [item]);
+      vi.mocked(fetchMedia).mockRejectedValue(new TypeError("Failed to fetch"));
+      const path = `/media/${id}`;
+      window.history.replaceState(null, "", path);
+      try {
+        const { container } = renderAt([
+          { pathname: path, state: fromSection ? undefined : mediaLinkState(item, identity) },
+        ]);
 
-    expect(screen.getByRole("heading", { level: 1, name: "Card title" })).toBeInTheDocument();
-    expect(container.querySelector(".bf-detail-poster img")?.getAttribute("src")).toContain(
-      "/api/media/artwork/m1/poster",
-    );
+        expect(screen.getByRole("heading", { level: 1, name: "Card title" })).toBeInTheDocument();
+        expect(container.querySelector(".bf-detail-poster img")?.getAttribute("src")).toContain(
+          `/api/media/artwork/${id}/poster`,
+        );
+        await act(async () => {});
+        expect(screen.getByRole("heading", { level: 1, name: "Card title" })).toBeInTheDocument();
+        expect(window.location.pathname).toBe(path);
+        expect(fetchMedia).toHaveBeenCalledWith(id, expect.any(AbortSignal));
 
-    fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
-    expect(screen.getByTestId("path")).toHaveTextContent("/watch/m1");
-    expect(watchState()).toEqual({
-      title: "Card title",
-    });
-  });
+        fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
+        expect(screen.getByTestId("path")).toHaveTextContent(`/watch/${id}`);
+        expect(watchState()).toEqual({ title: "Card title" });
+      } finally {
+        window.history.replaceState(null, "", "/");
+      }
+    },
+  );
 
   it("forwards the opening card's queue to the player, only for its own identity (CORE-1143)", () => {
     vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));

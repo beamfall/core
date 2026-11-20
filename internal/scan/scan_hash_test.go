@@ -530,6 +530,76 @@ func TestScanAndManagedImportShareSampleIdentity(t *testing.T) {
 	}
 }
 
+func TestManagedImportRestoresLiveLegacyIdentityAtSamePath(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const libraryID, profile, name = "library-local", "profile-default", "legacy.mp4"
+	if err := st.SetLibraryRoots(ctx, libraryID, []string{root}); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("legacy content")
+	path := writeScanFile(t, root, name, payload)
+	legacy, err := store.HashMediaFileContent(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: libraryID, Path: path, Title: "Legacy", Container: "mp4", Codec: "h264",
+		ContentFingerprint: legacy, SizeBytes: int64(len(payload)), ModTime: time.Unix(1, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := st.SetMatchPinned(ctx, legacy, true); err != nil || !ok {
+		t.Fatalf("set original match pin: %t, %v", ok, err)
+	}
+	if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
+		ProfileID: profile, MediaID: media.ID, DurationSeconds: 100, PositionSeconds: 32,
+	}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	source, err := st.RegisterImportSource(writeScanFile(t, t.TempDir(), name, payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imported, err := st.ImportManagedFile(ctx, libraryID, source, root, "mp4", "h264", store.MediaClassVideo, store.LibraryFilter{AllLibraries: true})
+	if err != nil || imported.Path != path {
+		t.Fatalf("reimport = %+v, err = %v, want %q", imported, err, path)
+	}
+	checkIdentity := func() {
+		t.Helper()
+		files, err := st.MediaFilesForLibrary(ctx, libraryID)
+		if err != nil || len(files) != 1 || files[0].Path != path || files[0].MediaID != media.ID || files[0].ContentFingerprint != legacy {
+			t.Fatalf("live files = %+v, err = %v, want legacy %q at %q on %q", files, err, legacy, path, media.ID)
+		}
+	}
+	checkIdentity()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stubNow(t, info.ModTime().Add(time.Minute))
+	result, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: libraryID, Root: root})
+	if err != nil || result.FilesSeen != 1 || result.FilesAdded != 0 || result.FilesChanged != 0 {
+		t.Fatalf("rescan = %+v, err = %v, want the fast path", result, err)
+	}
+	checkIdentity()
+	progress, found, err := st.PlaybackProgressFor(ctx, profile, media.ID)
+	if err != nil || !found || progress.PositionSeconds != 32 {
+		t.Fatalf("playback progress = %+v, found = %t, err = %v", progress, found, err)
+	}
+	if pinned, found, err := st.MatchPinned(ctx, legacy); err != nil || !found || !pinned {
+		t.Fatalf("match pin = %t, found = %t, err = %v", pinned, found, err)
+	}
+}
+
 func TestScanJobYieldClosesInFlightHashReader(t *testing.T) {
 	// feature:scan-pipeline
 	now := time.Now().UTC()

@@ -20,6 +20,7 @@ function isTransientLookupFailure(error: unknown): boolean {
 export function useMediaAddress({ cachedDetail = false } = {}): {
   id: string | null;
   confirmed: boolean;
+  pendingID?: string;
 } {
   const [preferred, legacy] = mediaAddressIDs(useParams()["*"]);
   const identity = useViewerIdentity();
@@ -72,6 +73,7 @@ export function useMediaAddress({ cachedDetail = false } = {}): {
       const cached = readViewerCache<MediaDetail>(identity, mediaDetailCacheKey(preferred));
       if (cached?.media.id === preferred) return { id: preferred, confirmed: false };
     }
+    return { id: null, confirmed: false, pendingID: preferred };
   }
   return { id: null, confirmed: false };
 }

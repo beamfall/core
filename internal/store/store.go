@@ -668,6 +668,8 @@ type ImportMediaFile struct {
 	// legacyFingerprint is the full staging digest used for duplicate checks
 	// during managed admission. Only ContentFingerprint is persisted.
 	legacyFingerprint string
+	// managedFileInfo records the admitted inode for a same-path legacy reimport.
+	managedFileInfo os.FileInfo
 }
 
 // ImportMediaFilePart is one file in a parser-confirmed Parts group. The scan

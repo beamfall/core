@@ -2878,6 +2878,28 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	}
 	defer tx.Rollback()
 
+	if imported.managedAdmission {
+		if err := refuseCatalogedDuplicateTx(ctx, tx, imported); err != nil {
+			return Media{}, MediaFile{}, false, err
+		}
+		// A full digest match at the same path restores the legacy file in place.
+		// Keep its fingerprint as well as its Media ID for fingerprint-keyed state.
+		var legacy string
+		err := tx.QueryRowContext(ctx, `
+			SELECT f.content_fingerprint FROM media_file f JOIN media m ON m.id = f.media_id
+			WHERE f.content_fingerprint = NULLIF(?, '') AND f.path = ? AND m.library_id = ?
+			  AND f.missing_at_ms IS NULL AND m.trashed_at_ms IS NULL
+		`, imported.legacyFingerprint, imported.Path, imported.LibraryID).Scan(&legacy)
+		if err == nil {
+			imported.ContentFingerprint = legacy
+			if info := imported.managedFileInfo; info != nil {
+				imported.SizeBytes = info.Size()
+				imported.ModTime = info.ModTime()
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return Media{}, MediaFile{}, false, err
+		}
+	}
 	var mediaID MediaID
 	err = tx.QueryRowContext(ctx,
 		"SELECT media_id FROM media_file WHERE content_fingerprint = ? AND missing_at_ms IS NULL",
@@ -2885,11 +2907,6 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	).Scan(&mediaID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return Media{}, MediaFile{}, false, err
-	}
-	if imported.managedAdmission {
-		if err := refuseCatalogedDuplicateTx(ctx, tx, imported); err != nil {
-			return Media{}, MediaFile{}, false, err
-		}
 	}
 	// Bytes that turn up in another Library leave their Versions behind: moving
 	// the whole Media would carry its other files into a Library their viewers
