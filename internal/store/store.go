@@ -2635,7 +2635,7 @@ func (s *Store) mediaFileMatchesSampleLocked(ctx context.Context, q fingerprintQ
 	if err != nil || !info.Mode().IsRegular() {
 		return liveFingerprintFile{}, err
 	}
-	digest, err := hashMediaFileContent(ctx, file)
+	digest, err := hashMediaFileReader(ctx, file)
 	if err != nil || digest != full {
 		return liveFingerprintFile{}, err
 	}
@@ -4036,11 +4036,15 @@ func HashMediaFileContentContext(ctx context.Context, path string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
 	return hashMediaFileContent(ctx, file)
 }
 
-func hashMediaFileContent(ctx context.Context, file io.Reader) (string, error) {
+func hashMediaFileContent(ctx context.Context, file io.ReadCloser) (string, error) {
+	defer file.Close()
+	return hashMediaFileReader(ctx, file)
+}
+
+func hashMediaFileReader(ctx context.Context, file io.Reader) (string, error) {
 	hash := sha256.New()
 	buffer := make([]byte, 128*1024)
 	for {
