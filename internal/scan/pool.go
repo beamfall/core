@@ -167,6 +167,7 @@ func hashScanFile(ctx context.Context, path string, check store.SampleFingerprin
 	defer func() { <-scanHashSlot }()
 	fingerprint, err := sampleScanFile(ctx, path, check)
 	if err != nil && ctx.Err() == nil {
+		slog.Warn("scan: file sample could not be verified", "path", path, "error", err.Error())
 		return "", errUnstableSample
 	}
 	return fingerprint, err
