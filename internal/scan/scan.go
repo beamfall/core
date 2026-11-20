@@ -260,10 +260,12 @@ func imageClassForPath(path string) bool {
 	return imageExtensions[ext]
 }
 
-// hashFileContent is the whole-file content hash (a package-level seam so a
-// counting test can assert the fast-path performs zero hashes on an unchanged
-// library). Production always points it at store.HashMediaFileContentContext.
-var hashFileContent = store.HashMediaFileContentContext
+// Separate seams let tests distinguish sampled reads from the one-time
+// compatibility check of a legacy digest at its original path.
+var (
+	sampleFileContent = store.SampleMediaFileContent
+	legacyFileContent = store.HashMediaFileContentContext
+)
 
 // stabilityWindow is the file-stability quiet period: a file
 // whose mtime is newer than now-stabilityWindow is still being written (a rip
@@ -283,7 +285,7 @@ const stabilityWindow = 5 * time.Second
 var probeTimeout = 30 * time.Second
 
 // now is the wall clock used for the file-stability check (a package-level
-// seam, mirroring hashFileContent, so a test can pin "now" and assert a
+// seam, mirroring sampleFileContent, so a test can pin "now" and assert a
 // fresh-mtime file is skipped while an old-mtime file is processed).
 // Production always reads the real clock.
 var now = time.Now

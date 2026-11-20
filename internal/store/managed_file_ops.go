@@ -187,19 +187,23 @@ func openStagedSource(stagingPath string) (*stagedSource, error) {
 	return &stagedSource{file: file, root: root, name: name, id: opened}, nil
 }
 
-// hashStagedFile returns the "sha256:<hex>" content fingerprint of a staging
-// artifact, read through the same stable reference openStagedSource proves.
-func hashStagedFile(stagingPath string) (string, error) {
+// fingerprintStagedFile samples and hashes a conversion artifact through the
+// same stable reference openStagedSource proves.
+func fingerprintStagedFile(ctx context.Context, stagingPath string) (sample, legacy string, err error) {
 	staged, err := openStagedSource(stagingPath)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer staged.close()
 	hash := sha256.New()
 	if _, err := io.Copy(hash, staged.file); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+	sample, err = SampleMediaFileContentAt(ctx, staged.file, staged.id.Size())
+	if err != nil {
+		return "", "", err
+	}
+	return sample, "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // remove deletes the staging artifact through the staging-directory descriptor,
@@ -401,7 +405,7 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		return ManagedPath{}, err
 	}
 	defer os.Remove(stagingPath)
-	fingerprint, err := copyOpenFileToStaging(srcFd, stagingPath)
+	fingerprint, legacyFingerprint, err := copyOpenFileToStaging(ctx, srcFd, stagingPath)
 	if err != nil {
 		return ManagedPath{}, err
 	}
@@ -439,6 +443,7 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		Class:              class,
 		ContentFingerprint: fingerprint,
 		managedAdmission:   true,
+		legacyFingerprint:  legacyFingerprint,
 	})
 	if err != nil {
 		s.removeUncatalogedManagedTargetLocked(ctx, libraryID, target)
@@ -571,36 +576,37 @@ func newImportStagingPath(stagingRoot string) (string, error) {
 // copyOpenFileToStaging copies FROM the already-open source fd (the stable
 // reference bound by ImportManagedFile) into a fresh 0600 staging file. It NEVER
 // reopens the source by path, so the admitted bytes are exactly those the fd
-// points at. It returns the content fingerprint of the bytes it wrote, hashed
-// during the copy, so the catalog identity is the identity of the admitted
-// content (the same "sha256:<hex>" form HashMediaFileContent produces).
+// points at. It hashes the full bytes during the copy for legacy duplicate
+// checks, then samples those bytes from the staging descriptor for identity.
 //
 // The write runs through a descriptor on the staging directory, so the file is
 // created inside the directory that was proved rather than wherever the staging
 // name resolves at write time.
-func copyOpenFileToStaging(src *os.File, stagingPath string) (string, error) {
+func copyOpenFileToStaging(ctx context.Context, src *os.File, stagingPath string) (sample, legacy string, err error) {
 	dir := filepath.Dir(stagingPath)
 	name := filepath.Base(stagingPath)
 	root, err := openManagedDir(dir)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer root.Close()
-	dst, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	dst, err := root.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	hash := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(dst, hash), src); err != nil {
+	size, err := io.Copy(io.MultiWriter(dst, hash), src)
+	if err != nil {
 		_ = dst.Close()
 		_ = root.Remove(name)
-		return "", err
+		return "", "", err
 	}
-	if err := dst.Close(); err != nil {
+	sample, sampleErr := SampleMediaFileContentAt(ctx, dst, size)
+	if err := errors.Join(sampleErr, dst.Close()); err != nil {
 		_ = root.Remove(name)
-		return "", err
+		return "", "", err
 	}
-	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+	return sample, "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // admitStagedFileNoReplace positions a staged file into the Library root with a

@@ -33,7 +33,7 @@ The existing file and its Media SHALL remain unchanged.
 #### Scenario: Managed artifact scanned after admission
 
 - **WHEN** a scan discovers bytes previously admitted by managed import or convert
-- **THEN** it uses the same fingerprint and Media identity
+- **THEN** it uses the same fingerprint and creates no duplicate Media for those bytes
 
 #### Scenario: Existing legacy content
 
@@ -70,8 +70,8 @@ equal size whose samples all match share an identity even when unsampled bytes d
 
 - **WHEN** the scan discovers a legacy file at a new path or with changed recorded stats at the
   same path
-- **THEN** it matches by sampled identity and does not carry over the legacy Media's watch state
-  or matches
+- **THEN** the file gets a sampled identity and cannot recover watch state or matches from its
+  legacy fingerprint. Existing Part and Version grouping still determines the logical Media.
 
 ### Requirement: Sampled Media IDs distinguish the fingerprint scheme
 

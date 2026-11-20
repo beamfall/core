@@ -85,6 +85,16 @@ describe("readable media addresses (CORE-2329)", () => {
     expect(mediaPath("watch", "a b")).toBe("/watch/a%20b");
   });
 
+  it("builds and resolves sampled addresses alongside legacy ones", () => {
+    const sampleID = "media-sample1-a371bff46385f7ded";
+    expect(mediaPath("watch", sampleID, { library: "music", words: "New title" })).toBe(
+      "/watch/music/new-title-sample1.a371bff46385f7ded",
+    );
+    expect(mediaIdFromAddress("old-library/old-title-sample1.a371bff46385f7ded")).toBe(sampleID);
+    expect(mediaIdFromAddress(sampleID)).toBe(sampleID);
+    expect(mediaIdFromAddress("old-library/old-title-sample1-a371bff46385f7ded")).toBe(ID);
+  });
+
   it("resolves readable, stale and bare addresses to the same item", () => {
     expect(
       mediaIdFromAddress("music/come-from-away-company-38-planes-reprise-a371bff46385f7ded"),

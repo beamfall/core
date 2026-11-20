@@ -29,9 +29,9 @@ func liveFileAt(t *testing.T, st *store.Store, path string) store.MediaFile {
 
 func contentFingerprint(t *testing.T, path string) string {
 	t.Helper()
-	fingerprint, err := store.HashMediaFileContent(path)
+	fingerprint, err := store.SampleMediaFileContent(t.Context(), path)
 	if err != nil {
-		t.Fatalf("HashMediaFileContent(%q): %v", path, err)
+		t.Fatalf("SampleMediaFileContent(%q): %v", path, err)
 	}
 	return fingerprint
 }
@@ -87,6 +87,42 @@ func TestManagedImportIdentityFollowsContent(t *testing.T) {
 		}
 		if media.LibraryID != firstMedia.LibraryID {
 			t.Fatalf("first media library = %q, want %q", media.LibraryID, firstMedia.LibraryID)
+		}
+	})
+
+	t.Run("same bytes as a legacy row are refused", func(t *testing.T) {
+		ctx := t.Context()
+		st, root, filter := importStageHarness(t)
+		path := filepath.Join(root, "legacy.mkv")
+		const payload = "legacy content"
+		if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		legacy, err := store.HashMediaFileContent(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, firstFile, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: "library-local", Path: path, Title: "Legacy", Container: "mkv", Codec: "h264",
+			ContentFingerprint: legacy,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		source, err := st.RegisterImportSource(writeOutOfLibrarySource(t, "duplicate.mkv", payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = st.ImportManagedFile(ctx, "library-local", source, root, "mkv", "h264", store.MediaClassVideo, filter)
+		var validation store.ValidationError
+		if !errors.As(err, &validation) {
+			t.Fatalf("duplicate of legacy file: %v, want validation error", err)
+		}
+		if _, err := os.Stat(filepath.Join(root, "duplicate.mkv")); !os.IsNotExist(err) {
+			t.Fatalf("duplicate path still exists: %v", err)
+		}
+		if after := liveFileAt(t, st, path); after.MediaID != firstFile.MediaID || after.ContentFingerprint != legacy {
+			t.Fatalf("legacy row = %+v, want unchanged from %+v", after, firstFile)
 		}
 	})
 

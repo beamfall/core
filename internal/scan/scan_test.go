@@ -2118,7 +2118,7 @@ func TestScanJobLinksExtrasAcrossYieldBoundary(t *testing.T) {
 	if feature == nil {
 		t.Fatalf("feature missing from browse Source: %#v", items)
 	}
-	fingerprint, err := store.HashMediaFileContent(filepath.Join(root, "Extras", "Making Of.mp4"))
+	fingerprint, err := store.SampleMediaFileContent(t.Context(), filepath.Join(root, "Extras", "Making Of.mp4"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2460,12 +2460,12 @@ func (p *pathProber) Probe(_ context.Context, path string) (ffmpeg.Probe, error)
 func countHashes(t *testing.T) *int {
 	t.Helper()
 	calls := 0
-	original := hashFileContent
-	hashFileContent = func(ctx context.Context, path string) (string, error) {
+	original := sampleFileContent
+	sampleFileContent = func(ctx context.Context, path string) (string, error) {
 		calls++
 		return original(ctx, path)
 	}
-	t.Cleanup(func() { hashFileContent = original })
+	t.Cleanup(func() { sampleFileContent = original })
 	return &calls
 }
 
@@ -2522,7 +2522,9 @@ func TestScanFastPathRehashesWhenFileChanges(t *testing.T) {
 	st := storetest.Open(t)
 	hashes := countHashes(t)
 
-	if _, err := Scan(context.Background(), st, nil, nil, nil, nil, nil, Request{LibraryID: "library-local", Root: root}); err != nil {
+	req := Request{LibraryID: "library-local", Root: root}
+	first, err := Scan(t.Context(), st, nil, nil, nil, nil, nil, req)
+	if err != nil {
 		t.Fatalf("first scan: %v", err)
 	}
 	if *hashes != 1 {
@@ -2543,8 +2545,14 @@ func TestScanFastPathRehashesWhenFileChanges(t *testing.T) {
 	}
 
 	*hashes = 0
-	if _, err := Scan(context.Background(), st, nil, nil, nil, nil, nil, Request{LibraryID: "library-local", Root: root}); err != nil {
+	second, err := Scan(t.Context(), st, nil, nil, nil, nil, nil, req)
+	if err != nil {
 		t.Fatalf("second scan: %v", err)
+	}
+	if len(first.Files) != 1 || len(second.Files) != 1 ||
+		first.Files[0].ContentFingerprint == second.Files[0].ContentFingerprint ||
+		first.Files[0].MediaID == second.Files[0].MediaID {
+		t.Fatalf("replacement must have a new fingerprint and Media ID: before = %+v, after = %+v", first.Files, second.Files)
 	}
 	if *hashes != 1 {
 		t.Fatalf("changed file re-hash count = %d, want 1 (changed size/mtime must re-hash)", *hashes)

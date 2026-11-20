@@ -5,18 +5,17 @@ import type { GenericMediaInfo, LibrarySummary, MediaCredit } from "@/lib/graphq
 //   /watch/<library-slug>/<readable-slug>-<token>
 //
 // where the token alone names the item and everything before it is cosmetic.
-// The token is the hex digest of a content-addressed Media ID
-// ("media-sha256-" plus 17 hex digits, store.mediaIDForFingerprint), so the
-// client turns it back into the ID without a server lookup and two items never
-// share one. The readable words come from generic display fields only: the
+// The token carries the 17 hex digits from a content-addressed Media ID
+// (store.mediaIDForFingerprint). Sampled IDs tag the digest with "sample1."
+// so the client can distinguish them from existing SHA-256 addresses. The readable words come from generic display fields only: the
 // Library's name, the item's own title, and who made it or what it belongs
 // to. Any other ID shape (an encrypted Library's random IDs among them, whose
 // titles must not reach the address bar) keeps the bare-ID address. A stale
 // or bare address resolves through its token and is replaced by the
 // canonical one once the item is known.
 
-const CONTENT_ID = /^media-sha256-([0-9a-f]{17})$/;
-const TOKEN = /(?:^|-)([0-9a-f]{17})$/;
+const CONTENT_ID = /^media-(sha256|sample1)-([0-9a-f]{17})$/;
+const TOKEN = /(?:^|-)(sample1\.)?([0-9a-f]{17})$/;
 /** The readable words before the token are capped at this many characters. */
 export const MAX_SLUG_LENGTH = 60;
 
@@ -60,7 +59,7 @@ export function mediaIdFromAddress(rest: string | undefined): string {
   }
   if (CONTENT_ID.test(segment)) return segment;
   const token = TOKEN.exec(segment);
-  return token ? `media-sha256-${token[1]}` : segment;
+  return token ? `media-${token[1] ? "sample1" : "sha256"}-${token[2]}` : segment;
 }
 
 /** The words an item is addressed by: who made it or what it belongs to, then its title. */
@@ -95,7 +94,8 @@ export function mediaPath(
   const content = CONTENT_ID.exec(id);
   if (!content) return `/${route}/${encodeURIComponent(id)}`;
   const slug = slugify(readable?.words ?? "");
-  const tail = slug ? `${slug}-${content[1]}` : id;
+  const token = content[1] === "sample1" ? `sample1.${content[2]}` : content[2];
+  const tail = slug ? `${slug}-${token}` : id;
   const library = readable?.library ? `${readable.library}/` : "";
   return `/${route}/${library}${tail}`;
 }

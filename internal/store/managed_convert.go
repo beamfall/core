@@ -223,7 +223,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 	// Fingerprint the staged artifact's content before it is admitted: the
 	// admission links this inode at dst, so the catalog identity is the identity
 	// of the bytes that land in the root.
-	fingerprint, err := hashStagedFile(tmpOut)
+	fingerprint, legacyFingerprint, err := fingerprintStagedFile(ctx, tmpOut)
 	if err != nil {
 		_ = os.Remove(tmpOut)
 		return ConvertResult{}, err
@@ -295,6 +295,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 		Class:              class,
 		ContentFingerprint: fingerprint,
 		managedAdmission:   true,
+		legacyFingerprint:  legacyFingerprint,
 	})
 	if err != nil {
 		_ = removeConvertResidue(dst)

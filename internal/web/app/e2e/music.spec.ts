@@ -65,8 +65,8 @@ async function expectPlaying(page: Page, after = 0): Promise<void> {
  * digest.
  */
 function watchAddress(id: string): RegExp {
-  const token = id.replace(/^media-sha256-/, "");
-  return new RegExp(`/web/watch/(?:[^?#]*-)?${token}$`);
+  const token = id.replace(/^media-sha256-/, "").replace(/^media-sample1-/, "sample1[.]");
+  return new RegExp(`/web/watch/(?:${id}|[^?#]*-${token})$`);
 }
 
 /** Plays Track One from its album page's track list (CORE-1635), which starts playback directly. */

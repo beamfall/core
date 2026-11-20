@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -93,7 +94,7 @@ type probeOutcome struct {
 // fill computes the expensive, side-effect-free per-file work: the fast-path
 // fingerprint lookup (ADR-0009 identity preserved — an unchanged triple still
 // performs ZERO hashes and ZERO probes), then for changed/new files the
-// whole-file content hash, the OSHash, the bounded probe, and the perceptual
+// sampled fingerprint, the OSHash, the bounded probe, and the perceptual
 // hash. Store access here is read-only; the store serializes it internally
 // (one write connection, ADR-0011 §1), so concurrent fills are safe alongside
 // the consumer's ordered writes.
@@ -116,7 +117,7 @@ func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, g
 	if t.fastPath {
 		return
 	}
-	fingerprint, err := hashScanFile(ctx, t.path)
+	fingerprint, err := t.readFingerprint(ctx, modTimeMS)
 	if err != nil {
 		t.err = err
 		return
@@ -141,34 +142,19 @@ func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, g
 	}
 }
 
-// Whole-file reads compete for storage bandwidth across all scan runs. Keep the
-// slot until the reader closes, and leave probes and other work outside it.
-var scanHashSlot = make(chan struct{}, 1)
-
-// onScanHashWait lets a test observe a worker finding the hash slot occupied.
-var onScanHashWait func(path string)
-
-func hashScanFile(ctx context.Context, path string) (string, error) {
-	done := ctx.Done()
-	select {
-	case scanHashSlot <- struct{}{}:
-	case <-done:
-		return "", ctx.Err()
-	default:
-		if onScanHashWait != nil {
-			onScanHashWait(path)
-		}
-		select {
-		case scanHashSlot <- struct{}{}:
-		case <-done:
-			return "", ctx.Err()
+// readFingerprint preserves a legacy identity when only missing stats prevent
+// the fast path. If any recorded stat changed, the sample suffices.
+func (t *workerTask) readFingerprint(ctx context.Context, modTimeMS time.Time) (string, error) {
+	stored := t.stored
+	if strings.HasPrefix(stored.ContentFingerprint, "sha256:") &&
+		(stored.SizeBytes == 0 || stored.SizeBytes == t.info.size) &&
+		(stored.ModTime.IsZero() || stored.ModTime.Equal(modTimeMS)) {
+		fingerprint, err := legacyFileContent(ctx, t.path)
+		if err != nil || fingerprint == stored.ContentFingerprint {
+			return fingerprint, err
 		}
 	}
-	defer func() { <-scanHashSlot }()
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	return hashFileContent(ctx, path)
+	return sampleFileContent(ctx, t.path)
 }
 
 // probeFile probes a non-image file, leaving t.probe unset when there is no

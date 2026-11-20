@@ -662,11 +662,12 @@ type ImportMediaFile struct {
 	// file's path. The stored bit then follows Extra both ways, so a rescan
 	// repairs a stale classification (CORE-2189).
 	ExtraFromPath bool
-	// managedAdmission marks a managed import or convert. Such an admission
-	// is refused when its fingerprint is already live at another path or in
-	// another library, instead of repointing that row (content_fingerprint is
-	// unique, and a scan's rename detection relies on the repoint).
+	// managedAdmission marks a managed import or convert, which refuses
+	// duplicates instead of repointing an existing file row.
 	managedAdmission bool
+	// legacyFingerprint is the full staging digest used for duplicate checks
+	// during managed admission. Only ContentFingerprint is persisted.
+	legacyFingerprint string
 }
 
 // ImportMediaFilePart is one file in a parser-confirmed Parts group. The scan
@@ -2884,10 +2885,9 @@ type StoredFingerprint struct {
 
 // MediaFileFingerprintByPath returns the stored content fingerprint and the
 // (size, mtime) it was hashed at for an available file at path (the scan
-// fast-path). A scan that stat()s an unchanged (path, size, mtime) reuses the
-// stored fingerprint instead of re-hashing the whole file — ADR-0009 content
-// identity is unaffected (a changed size/mtime makes OK false on the triple
-// check, forcing a re-hash). Server-internal, like the other file-plane reads.
+// fast path). The scan reuses the fingerprint when the recorded stats match
+// and reads the file again when they differ. Like other file-plane reads,
+// this is server-internal.
 func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (StoredFingerprint, error) {
 	if path == "" {
 		return StoredFingerprint{}, errors.New("path is required")
@@ -3778,19 +3778,16 @@ func mediaDurationSummary(seconds int) string {
 }
 
 // mediaIDForFingerprint derives the durable Media ID from a content fingerprint.
-// The fingerprint is "sha256:<hex>"; after the separator is mapped to "-" the
-// 24-character truncation keeps "media-sha256-" plus 17 hex digits (~68 bits of
-// the digest). Birthday collisions at 68 bits are ~n^2/2^69 — about 1 in 3e7
-// even at ten million Media items — which is acceptable for a per-server
-// catalog. The truncated form is identity-bearing and persisted: do not widen
-// or change it, or existing Media IDs would silently fork.
+// Both content schemes retain 17 hex digits (68 digest bits). The truncated
+// form is persisted, so keep the limit stable for each scheme.
 func mediaIDForFingerprint(fingerprint string) MediaID {
 	safe := strings.ToLower(fingerprint)
 	safe = strings.NewReplacer(":", "-", "/", "-", "\\", "-", " ", "-").Replace(safe)
-	if len(safe) > 24 {
-		safe = safe[:24]
+	limit := 24
+	if strings.HasPrefix(fingerprint, "sample1:") {
+		limit = len("sample1-") + 17
 	}
-	return MediaID("media-" + safe)
+	return MediaID("media-" + safe[:min(len(safe), limit)])
 }
 
 func (s *Store) allocateEncryptedMediaIDLocked(ctx context.Context) (MediaID, error) {
@@ -3855,13 +3852,13 @@ func HashDeviceSecret(secret string) string {
 
 // HashMediaFilePath returns a deterministic fingerprint derived from a path,
 // not from file content. It exists for catalog-only fixtures; managed import
-// and convert fingerprint the admitted bytes instead (HashMediaFileContent form).
+// and convert fingerprint the admitted bytes instead.
 func HashMediaFilePath(path string) string {
 	sum := sha256.Sum256([]byte(path))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// HashMediaFileContent returns the content fingerprint used for Media identity.
+// HashMediaFileContent returns the legacy full SHA-256 content fingerprint.
 func HashMediaFileContent(path string) (string, error) {
 	return HashMediaFileContentContext(context.Background(), path)
 }
