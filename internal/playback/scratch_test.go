@@ -661,7 +661,7 @@ func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *tes
 	// Model the state after exclusive mkdir and before publication.
 	s.mkdirDir = nil
 	s.mu.Lock()
-	unpublished, err := s.allocateScratchLocked(t.Context(), SessionKey{}, "library")
+	unpublished, err := s.allocateScratchLocked(&scratchAllocation{}, "library")
 	s.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -950,32 +950,92 @@ func waitScratchCloseBlocked(t *testing.T, s *Sessions) <-chan struct{} {
 	return nil
 }
 
-func TestScratchCleanupOwnsLateMkdirAfterCancellation(t *testing.T) {
-	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
-	entered, release := scratchLatch(t)
-	s.mkdirDir = func(path string, mode fs.FileMode) error {
-		close(entered)
-		<-release.ch
-		return os.Mkdir(path, mode)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	result := make(chan error, 1)
-	go func() {
-		_, err := s.FilePath(ctx, SessionKey{SessionID: "canceled"}, "/src", 120, 1280, 720, false, masterPlaylistName)
-		result <- err
-	}()
-	waitScratchSignal(t, entered)
-	cancel()
-	release.open()
-	if err := waitScratchResult(t, result); !errors.Is(err, context.Canceled) {
-		t.Fatalf("canceled creator returned %v", err)
-	}
-	requireScratchMissing(t, filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce)))
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.paths) != 0 || len(s.sessions) != 0 {
-		t.Fatalf("late mkdir retained %d paths and %d sessions", len(s.paths), len(s.sessions))
+func TestCanceledShapeReplacementPreservesEncoderAndResumeHint(t *testing.T) {
+	for _, at := range []string{"before setupMu", "during mkdir", "after successful mkdir"} {
+		t.Run(at, func(t *testing.T) {
+			transcoder := resumeTranscoder(t)
+			s := newTestSessions(t, transcoder, t.TempDir(), nil)
+			key := SessionKey{SessionID: "viewer", MediaID: "item", ProfileCapability: "receiver"}
+			const src = "/src/movie.mkv"
+			if _, err := filePath720(s, key, "720p/init.mp4"); err != nil {
+				t.Fatal(err)
+			}
+			path, err := filePath720(s, key, masterPlaylistName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			playlist, err := testArtifactForPath(s, key, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer playlist.Release()
+			original := mustRead(t, path)
+			s.mu.Lock()
+			proc := playlist.session.proc
+			s.mu.Unlock()
+			if proc == nil {
+				t.Fatal("original encoder did not start")
+			}
+			s.NoteResumePosition(key, 41)
+
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if at == "before setupMu" {
+				cancel()
+			}
+			entered, release := scratchLatch(t)
+			if at != "before setupMu" {
+				s.mkdirDir = func(path string, mode fs.FileMode) error {
+					if at == "after successful mkdir" {
+						if err := os.Mkdir(path, mode); err != nil {
+							return err
+						}
+					}
+					close(entered)
+					<-release.ch
+					if at == "during mkdir" {
+						return os.Mkdir(path, mode)
+					}
+					return nil
+				}
+			}
+			canceled := make(chan error, 1)
+			go func() {
+				_, err := s.FilePath(ctx, key, src, 90, 1280, 720, false, masterPlaylistName)
+				canceled <- err
+			}()
+			if at != "before setupMu" {
+				waitScratchSignal(t, entered)
+				cancel()
+				release.open()
+			}
+			if err := waitScratchResult(t, canceled); !errors.Is(err, context.Canceled) {
+				t.Fatalf("canceled replacement returned %v", err)
+			}
+			s.mkdirDir = nil
+			requireScratchMissing(t, filepath.Join(s.dir, fmt.Sprintf("session-%s-2", s.bootNonce)))
+			s.mu.Lock()
+			head, running, hint, paths := s.sessions[key], playlist.session.proc, s.resumeHints[key], len(s.paths)
+			s.mu.Unlock()
+			if head != playlist.session || running != proc || paths != 1 || hint.seconds != 41 {
+				t.Errorf("cancellation preserved head=%v encoder=%v paths=%d resume=%d",
+					head == playlist.session, running == proc, paths, hint.seconds)
+			}
+			f, _, err := playlist.OpenPlain()
+			if err != nil {
+				t.Errorf("original playlist after cancellation: %v", err)
+			} else {
+				got, err := io.ReadAll(f)
+				_ = f.Close()
+				if err != nil || string(got) != string(original) {
+					t.Errorf("original playlist changed: %s, %v", got, err)
+				}
+			}
+			if _, err := s.FilePath(t.Context(), key, src, 90, 1280, 720, false, "720p/init.mp4"); err != nil {
+				t.Fatal(err)
+			}
+			requireStarts(t, transcoder, 0, 10)
+		})
 	}
 }
 

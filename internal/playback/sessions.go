@@ -1273,7 +1273,7 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	// an existing session's pinned snapshot, which a reshaped replacement
 	// inherits, so a Console save in either direction never changes the rungs
 	// of a session already playing; otherwise the current policy, read once.
-	existing, hasExisting := s.sessions[key]
+	existing := s.sessions[key]
 	policy, hevcAllowed := s.sessionEncodePolicy(existing)
 	if caps.HEVC && !hevcAllowed {
 		caps.HEVC = false
@@ -1303,30 +1303,30 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	if secure != nil {
 		library = store.LibraryID(secure.LibraryID)
 	}
-	if hasExisting {
-		if existing.scratch.library != library || existing.sourceGeneration != sourceGeneration || (existing.sourceInfo != nil && !sameSourceFile(existing.sourceInfo, sourceInfo)) || existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
-			teardowns = append(teardowns, s.transitionLocked(existing, detachSession{cleanupOnRelease: true}).teardown)
-		} else {
-			// A position noted while this session ran was kept only for a
-			// reshaped replacement; the unchanged session ignores it.
-			s.transitionLocked(existing, reuseSession{priority: priority})
-			existing.scratch.users++
-			return existing, nil
+	if existing != nil && existing.scratch.library == library &&
+		existing.sourceGeneration == sourceGeneration && (existing.sourceInfo == nil || sameSourceFile(existing.sourceInfo, sourceInfo)) &&
+		existing.src == src && existing.durationSeconds == durationSeconds && existing.primed == primed &&
+		existing.timeline == timeline && existing.degraded == degraded && rungsEqual(existing.rungs, requestedRungs) &&
+		existing.sourceVideo == sourceVideo && existing.burnSubtitleIndex == burnSubtitleIndex &&
+		audioProfilesEqual(existing.audioProfile, audioProfile) && equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) &&
+		(existing.composed == nil) == (picture == nil) && existing.adjust == adjust && (existing.secure == nil) == (secure == nil) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
+		// A resume hint noted while this encoder ran applies only to a replacement.
+		s.transitionLocked(existing, reuseSession{priority: priority})
+		existing.scratch.users++
+		return existing, nil
 	}
-	scratch, err := s.allocateScratchLocked(ctx, key, library)
-	if scratch == nil {
+	allocation := &scratchAllocation{key: key}
+	s.allocation = allocation
+	defer func() { s.allocation = nil }()
+	scratch, err := s.allocateScratchLocked(allocation, library)
+	if err != nil {
 		return nil, err
 	}
+	s.mu.Unlock()
 	dir := filepath.Join(s.dir, scratch.name)
-	lastAccess := s.now()
-	var resumeSeconds int
-	if hint, ok := s.resumeHints[key]; ok {
-		delete(s.resumeHints, key)
-		if s.now().Sub(hint.at) < sessionIdleTimeout {
-			resumeSeconds = hint.seconds
-		}
-	}
 	session := &hlsSession{
 		key:               key,
 		dir:               dir,
@@ -1343,21 +1343,13 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		burnSubtitleIndex: burnSubtitleIndex,
 		audioSource:       audioSource,
 		primed:            primed,
-		lastAccess:        lastAccess,
 		priority:          priority,
 		degraded:          degraded,
 		adjust:            adjust,
 		secure:            secure,
 		encodePolicy:      policy,
-		resumeSeconds:     resumeSeconds,
 	}
-	if err == nil {
-		err = ctx.Err()
-		if s.closed {
-			err = ErrSessionEvicted
-		}
-	}
-	if err == nil && secure != nil {
+	if secure != nil {
 		session.live, err = encderiv.NewLiveSession(dir, secure.LibraryID)
 	}
 	if err == nil {
@@ -1367,16 +1359,30 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	if err == nil && picture != nil {
 		preparedPicture, err = writeLivePicture(dir, *picture)
 	}
+	s.mu.Lock()
+	// setupMu excludes other publishers. Termination can still revoke this claim
+	// while its directory is being prepared.
+	if s.closed || allocation.revoked {
+		err = ErrSessionEvicted
+	} else if canceled := ctx.Err(); canceled != nil {
+		err = canceled
+	}
 	if err != nil {
 		scratch.users--
 		teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
 		return nil, err
 	}
-	if !s.transitionLocked(session, publishSession{composed: picture, picture: preparedPicture}).accepted {
-		scratch.users--
-		teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
-		return nil, ErrSessionEvicted
+	if existing != nil && s.sessions[key] == existing {
+		teardowns = append(teardowns, s.transitionLocked(existing, detachSession{cleanupOnRelease: true}).teardown)
 	}
+	session.lastAccess = s.now()
+	if hint, ok := s.resumeHints[key]; ok {
+		delete(s.resumeHints, key)
+		if session.lastAccess.Sub(hint.at) < sessionIdleTimeout {
+			session.resumeSeconds = hint.seconds
+		}
+	}
+	s.transitionLocked(session, publishSession{composed: picture, picture: preparedPicture})
 	if session.revokeDone != nil {
 		go s.watchLiveRevocation(session, session.revokeDone, secure.Revoked, s.liveRevocationInterval())
 	}
