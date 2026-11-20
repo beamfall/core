@@ -982,6 +982,32 @@ describe("host leave, end and page exit (CORE-1763)", () => {
     expect(leaveWatchParty).not.toHaveBeenCalled();
   });
 
+  it.each(["unknown party", "not a member of this party"])(
+    "clears membership when leaving returns %s",
+    async (message) => {
+      await member();
+      vi.mocked(leaveWatchParty).mockRejectedValueOnce(new ApiError(message, 200));
+
+      await expect(leaveParty()).resolves.toBe(true);
+      expect(leaveWatchParty).toHaveBeenCalledExactlyOnceWith("p3");
+      expect(getWatchParty()).toMatchObject({ status: "idle", partyID: "", error: "" });
+      expect(unsubscribe).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("keeps membership and its stream when leaving fails without confirmation", async () => {
+    await member();
+    vi.mocked(leaveWatchParty).mockRejectedValueOnce(new TypeError("offline"));
+
+    await expect(leaveParty()).resolves.toBe(false);
+    expect(getWatchParty()).toMatchObject({
+      status: "active",
+      partyID: "p3",
+      error: "leave-failed",
+    });
+    expect(unsubscribe).not.toHaveBeenCalled();
+  });
+
   it("ends the party for everyone only as host", async () => {
     await member();
     await endParty();

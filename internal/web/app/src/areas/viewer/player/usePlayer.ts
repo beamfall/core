@@ -46,6 +46,8 @@ import {
   shownCaptionElement,
   trackPreferencePolicy,
 } from "./streamTracks";
+import { getWatchParty, partyNowMS } from "./watchPartyStore";
+import { expectedPositionMS } from "./watchPartySync";
 
 // The player engine, ported from the vanilla play() / startPreparedPlayback /
 // applyPlaybackSource / reportProgress (app.js). It owns the <video> element,
@@ -827,6 +829,20 @@ export function usePlayer(
       let songScale = songSecondsPerStreamSecond(info);
       songScaleRef.current = songScale;
 
+      // A returning lead opens on the shared timeline. Restore through the
+      // engine's normal resume path so canplay cannot undo a shared pause.
+      const party = getWatchParty();
+      const leadOpening =
+        !reloading &&
+        !restartFrom &&
+        party.status === "active" &&
+        party.lead &&
+        party.isHost &&
+        party.timeline?.item === mediaID
+          ? party.timeline
+          : null;
+      const startPaused = retryPaused || leadOpening?.paused === true;
+
       // The playhead: the native resume point not yet applied, else the
       // element's own position.
       const playheadPosition = () =>
@@ -1188,7 +1204,7 @@ export function usePlayer(
             // the playhead on the same 1/2/4 s backoff hls.js uses.
             if (code === 2) {
               // A paused quality change (CORE-1971) leaves `played` empty too.
-              const play = !video.paused || (!retryPaused && video.played.length === 0);
+              const play = !video.paused || (!startPaused && video.played.length === 0);
               const position = playheadPosition();
               const reloadAtPlayhead = () => {
                 if (alive && activeStream === target) reloadNative(target, position, play);
@@ -1281,7 +1297,7 @@ export function usePlayer(
         // element is still paused only because autoplay had not yet kicked in.
         const play =
           !video.paused ||
-          (renditionKey === undefined && !retryPaused && video.played.length === 0);
+          (renditionKey === undefined && !startPaused && video.played.length === 0);
         detachEngine();
         activeStream = sibling;
         attachEngine(sibling, engine, position, { play, pinRendition });
@@ -1300,9 +1316,12 @@ export function usePlayer(
       switchRef.current = switchToHls;
 
       // The opening song position, as a stream position.
-      const opening =
+      const localOpening =
         retryFrom > 0 ? retryFrom : startAt !== undefined ? startAt : resumePositionFromInfo(info);
-      attachEngine(stream, initialEngine, opening / songScale, { play: !retryPaused });
+      const opening = leadOpening
+        ? expectedPositionMS(leadOpening, partyNowMS()) / 1000
+        : localOpening;
+      attachEngine(stream, initialEngine, opening / songScale, { play: !startPaused });
 
       setState({
         phase: "playing",

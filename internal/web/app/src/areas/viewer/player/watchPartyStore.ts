@@ -1171,9 +1171,13 @@ export async function leaveParty(): Promise<boolean> {
   if (partyID) {
     try {
       await leaveWatchParty(partyID);
-    } catch {
-      if (gen === generation) set({ error: "leave-failed", errorDetail: "" });
-      return false;
+    } catch (err) {
+      if (gen !== generation) return false;
+      const refusal = err instanceof ApiError ? err.message : undefined;
+      if (refusal !== "unknown party" && refusal !== "not a member of this party") {
+        set({ error: "leave-failed", errorDetail: "" });
+        return false;
+      }
     }
     if (gen !== generation) return false;
   }
