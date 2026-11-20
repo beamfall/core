@@ -23,6 +23,9 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
+// The fake encoder needs a stat-able source and supplies its own media bytes.
+const fakeSourcePath = "testdata/fake-source.txt"
+
 type fakeTranscoder struct {
 	holdChild     bool
 	mu            sync.Mutex
@@ -84,7 +87,7 @@ func chargedKeys(s *Sessions) []SessionKey {
 
 // filePath720 requests one artifact for a 120s 1280x720 source.
 func filePath720(sessions *Sessions, key SessionKey, name string) (string, error) {
-	return sessions.FilePath(context.Background(), key, "/src/movie.mkv", 120, 1280, 720, false, name)
+	return sessions.FilePath(context.Background(), key, fakeSourcePath, 120, 1280, 720, false, name)
 }
 
 func TestMasterPlaylistAdvertisesOnlySustainableRungs(t *testing.T) {
@@ -125,7 +128,7 @@ func TestSessionHEVCLadderFromGrantCaps(t *testing.T) {
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 	caps := ladderCaps{ClientMaxHeight: 1080, HEVC: true, HEVCMaxHeight: 2160}
 
-	path, err := sessions.FilePathPriorityWithBurnSubtitleAudioLadder(context.Background(), key, "/src/movie.mkv", 120, 3840, 2160, false, false, caps, VideoSignal{}, -1, ffmpeg.AudioProfile{}, PriorityNormal, "master.m3u8")
+	path, err := sessions.FilePathPriorityWithBurnSubtitleAudioLadder(context.Background(), key, fakeSourcePath, 120, 3840, 2160, false, false, caps, VideoSignal{}, -1, ffmpeg.AudioProfile{}, PriorityNormal, "master.m3u8")
 	if err != nil {
 		t.Fatalf("master.m3u8: %v", err)
 	}
@@ -141,7 +144,7 @@ func TestSessionHEVCLadderFromGrantCaps(t *testing.T) {
 		t.Fatalf("master playlist missing capped H.264 1080p rung:\n%s", master)
 	}
 
-	if _, err := sessions.FilePathPriorityWithBurnSubtitleAudioLadder(context.Background(), key, "/src/movie.mkv", 120, 3840, 2160, false, false, caps, VideoSignal{}, -1, ffmpeg.AudioProfile{}, PriorityNormal, "2160p-hevc/seg00000.m4s"); err != nil {
+	if _, err := sessions.FilePathPriorityWithBurnSubtitleAudioLadder(context.Background(), key, fakeSourcePath, 120, 3840, 2160, false, false, caps, VideoSignal{}, -1, ffmpeg.AudioProfile{}, PriorityNormal, "2160p-hevc/seg00000.m4s"); err != nil {
 		t.Fatalf("HEVC segment: %v", err)
 	}
 	if got := transcoder.renditions[0]; got.VideoCodec != "hevc" || got.Height != 2160 || got.VideoKbps != 25000 {
@@ -155,7 +158,7 @@ func TestMasterPlaylistUnknownDimensionsOffersSingleSourceRung(t *testing.T) {
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 
-	path, err := sessions.FilePath(context.Background(), key, "/src/movie.mkv", 120, 0, 0, false, "master.m3u8")
+	path, err := sessions.FilePath(context.Background(), key, fakeSourcePath, 120, 0, 0, false, "master.m3u8")
 	if err != nil {
 		t.Fatalf("master.m3u8: %v", err)
 	}
@@ -214,13 +217,15 @@ func TestSessionReplacesArtifactsWhenSourceChanges(t *testing.T) {
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 
-	for _, src := range []string{"/src/old.mkv", "/src/replaced.mkv"} {
+	replacement := filepath.Join(t.TempDir(), "replacement.mkv")
+	seedScratchFile(t, replacement)
+	for _, src := range []string{fakeSourcePath, replacement} {
 		if _, err := sessions.FilePath(context.Background(), key, src, 120, 1280, 720, false, "720p/seg00000.m4s"); err != nil {
 			t.Fatalf("segment for %s: %v", src, err)
 		}
 	}
 
-	if got := transcoder.starts; len(got) != 2 || got[0] != "/src/old.mkv" || got[1] != "/src/replaced.mkv" {
+	if got := transcoder.starts; len(got) != 2 || got[0] != fakeSourcePath || got[1] != replacement {
 		t.Fatalf("transcode sources = %v, want old then replacement", got)
 	}
 }
@@ -233,7 +238,7 @@ func TestAudioCopySelectionServesCopyVideoRung(t *testing.T) {
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 
 	filePath := func(name string) (string, error) {
-		return sessions.FilePath(context.Background(), key, "/src/movie.mkv", 120, 1280, 720, true, name)
+		return sessions.FilePath(context.Background(), key, fakeSourcePath, 120, 1280, 720, true, name)
 	}
 
 	// The master advertises only the audio-copy rung — no resolution ladder to
@@ -275,7 +280,7 @@ func TestSessionRenditionCarriesAudioProfile(t *testing.T) {
 	if _, err := sessions.FilePathPriorityWithBurnSubtitleAudio(
 		context.Background(),
 		key,
-		"/src/movie.mkv",
+		fakeSourcePath,
 		120,
 		1280,
 		720,
@@ -308,7 +313,7 @@ func TestSessionRenditionCarriesAudioStreamIndex(t *testing.T) {
 	if _, err := sessions.FilePathPriorityWithBurnSubtitleAudioLadderMap(
 		context.Background(),
 		SessionKey{SessionID: "session-default", MediaID: "media-alpha"},
-		"/src/movie.mkv", 120, 1280, 720, false, false, ladderCaps{}, VideoSignal{}, -1,
+		fakeSourcePath, 120, 1280, 720, false, false, ladderCaps{}, VideoSignal{}, -1,
 		ffmpeg.AudioProfile{}, &selected, PriorityNormal, "720p/seg00000.m4s",
 	); err != nil {
 		t.Fatalf("seg0: %v", err)
@@ -330,7 +335,7 @@ func TestSessionRenditionCarriesSourceVideoSignal(t *testing.T) {
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 	sourceVideo := VideoSignal{ColorTransfer: "smpte2084", ColorPrimaries: "bt2020", DoViProfile: 8, DoViBLCompatID: 6}
 
-	if _, err := sessions.FilePathPriority(context.Background(), key, "/src/movie.mkv", 120, 1280, 720, false, false, sourceVideo, PriorityNormal, "720p/seg00000.m4s"); err != nil {
+	if _, err := sessions.FilePathPriority(context.Background(), key, fakeSourcePath, 120, 1280, 720, false, false, sourceVideo, PriorityNormal, "720p/seg00000.m4s"); err != nil {
 		t.Fatalf("FilePathPriority: %v", err)
 	}
 	if len(transcoder.renditions) != 1 {
@@ -349,7 +354,7 @@ func TestSessionRenditionCarriesBurnSubtitleSelection(t *testing.T) {
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 
-	if _, err := sessions.FilePathPriorityWithBurnSubtitle(context.Background(), key, "/src/movie.mkv", 120, 1280, 720, false, false, VideoSignal{}, 2, PriorityNormal, "720p/seg00000.m4s"); err != nil {
+	if _, err := sessions.FilePathPriorityWithBurnSubtitle(context.Background(), key, fakeSourcePath, 120, 1280, 720, false, false, VideoSignal{}, 2, PriorityNormal, "720p/seg00000.m4s"); err != nil {
 		t.Fatalf("FilePathPriorityWithBurnSubtitle: %v", err)
 	}
 	if len(transcoder.renditions) != 1 {
@@ -458,7 +463,7 @@ func TestKnownDurationSynthesizesVODPlaylistPerRung(t *testing.T) {
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 
-	path, err := sessions.FilePath(context.Background(), key, "/src/movie.mkv", 10, 1280, 720, false, "720p/index.m3u8")
+	path, err := sessions.FilePath(context.Background(), key, fakeSourcePath, 10, 1280, 720, false, "720p/index.m3u8")
 	if err != nil {
 		t.Fatalf("FilePath returned error: %v", err)
 	}
@@ -485,7 +490,7 @@ func TestKnownDurationSynthesizesVODPlaylistPerRung(t *testing.T) {
 	}
 
 	// The init segment the MAP line points at is servable from the rung.
-	if _, err := sessions.FilePath(context.Background(), key, "/src/movie.mkv", 10, 1280, 720, false, "720p/init.mp4"); err != nil {
+	if _, err := sessions.FilePath(context.Background(), key, fakeSourcePath, 10, 1280, 720, false, "720p/init.mp4"); err != nil {
 		t.Fatalf("init.mp4: %v", err)
 	}
 }
@@ -772,7 +777,7 @@ func TestForwardSeekLatencyIndependentOfDistance(t *testing.T) {
 		sessions.waitWindow = bound
 		key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 		request := func(name string) error {
-			_, err := sessions.FilePath(context.Background(), key, "/src/movie.mkv", durationSeconds, 1280, 720, false, name)
+			_, err := sessions.FilePath(context.Background(), key, fakeSourcePath, durationSeconds, 1280, 720, false, name)
 			return err
 		}
 		if err := request("720p/seg00000.m4s"); err != nil {
@@ -1368,13 +1373,13 @@ func TestPerformanceScaleConcurrentTranscodeFloor(t *testing.T) {
 // filePath720Priority requests one artifact for a 120s 1280x720 source at an
 // explicit admission rank.
 func filePath720Priority(sessions *Sessions, key SessionKey, priority Priority, name string) (string, error) {
-	return sessions.FilePathPriority(context.Background(), key, "/src/movie.mkv", 120, 1280, 720, false, false, VideoSignal{}, priority, name)
+	return sessions.FilePathPriority(context.Background(), key, fakeSourcePath, 120, 1280, 720, false, false, VideoSignal{}, priority, name)
 }
 
 // filePath720Degraded requests one artifact for a 120s 1280x720 source as a
 // capacity-degraded Watch-Party session.
 func filePath720Degraded(sessions *Sessions, key SessionKey, name string) (string, error) {
-	return sessions.FilePathPriority(context.Background(), key, "/src/movie.mkv", 120, 1280, 720, false, true, VideoSignal{}, PriorityNormal, name)
+	return sessions.FilePathPriority(context.Background(), key, fakeSourcePath, 120, 1280, 720, false, true, VideoSignal{}, PriorityNormal, name)
 }
 
 // TestDegradedSessionAdmitsOverCapAndServesLowestRungOnly proves the PANEL-16
@@ -2075,7 +2080,7 @@ func TestTranscodeLeaseReleasedOnIdleReap(t *testing.T) {
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-d", MediaID: "media-d"}
 
-	if _, err := sessions.FilePath(context.Background(), key, "/src/movie.mkv", 120, 1280, 720, false, "720p/seg00000.m4s"); err != nil {
+	if _, err := sessions.FilePath(context.Background(), key, fakeSourcePath, 120, 1280, 720, false, "720p/seg00000.m4s"); err != nil {
 		t.Fatalf("start transcode: %v", err)
 	}
 	if got := g.ActiveTranscodes(); got != 1 {
@@ -2734,7 +2739,7 @@ func TestSegmentNamesPastFiveDigitsAreServable(t *testing.T) {
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 	duration := (100000 + 2) * segmentSeconds
 	filePath := func(name string) (string, error) {
-		return sessions.FilePath(context.Background(), key, "/src/long.mkv", duration, 1280, 720, false, name)
+		return sessions.FilePath(context.Background(), key, fakeSourcePath, duration, 1280, 720, false, name)
 	}
 
 	index, err := filePath("720p/index.m3u8")

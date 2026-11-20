@@ -159,7 +159,7 @@ func TestInfoAdjustedComposedPictureIsAlwaysLive(t *testing.T) {
 }
 
 func adjustedFilePath(sessions *Sessions, key SessionKey, adjust ffmpeg.AudioAdjust, name string) (string, error) {
-	return sessions.FilePathShaped(context.Background(), key, "/src/song.flac", 120, 0, 0, false, false,
+	return sessions.FilePathShaped(context.Background(), key, fakeSourcePath, 120, 0, 0, false, false,
 		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, nil, StreamShape{Adjust: adjust}, PriorityNormal, name)
 }
 

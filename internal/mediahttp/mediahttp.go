@@ -18,6 +18,7 @@ import (
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/playback/subtitleingest"
@@ -1144,37 +1145,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(requestCtx)
 	artifact, err := binding.ArtifactShaped(requestCtx, file.Path, durationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
 	if err != nil {
-		// An evicted session is an expected teardown (ADR-0012 §7 revocation,
-		// idle reap, preemption), not a server fault. 503 is retryable, which
-		// is wrong here: a revoked device would keep asking for segments. 410
-		// tells the player this stream is gone for good.
-		if errors.Is(err, playback.ErrSessionEvicted) {
-			http.Error(w, "stream ended", http.StatusGone)
-			return
-		}
-		// A segment past where a truncated source really ends does not exist
-		// and never will; 503 would have the player retry it forever. The
-		// session logged the source end once, so this is not logged again.
-		if errors.Is(err, playback.ErrNotFound) {
-			http.Error(w, "segment does not exist", http.StatusNotFound)
-			return
-		}
-		// A shape the encrypted plane does not carry will not appear on retry.
-		if errors.Is(err, playback.ErrEncryptedLiveUnavailable) {
-			http.Error(w, "stream unavailable", http.StatusNotFound)
-			return
-		}
-		// The session's encoder kept crashing or stalling without output and
-		// the session has given up (CORE-2379). 503 would have the player
-		// retry for as long as it is open, behind an endless spinner; 500 says
-		// the stream failed, so the player can surface an error. The session
-		// logged the cause.
-		if errors.Is(err, playback.ErrTranscodeFailed) {
-			http.Error(w, "transcode failed", http.StatusInternalServerError)
-			return
-		}
-		logHLSServeFailure(r.Context(), err)
-		http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
+		writeLiveHLSError(w, r, err)
 		return
 	}
 	defer artifact.Release()
@@ -1184,16 +1155,12 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp4")
 	}
 	if secure != nil {
-		serveLiveArtifact(w, r, name, artifact)
+		serveLiveArtifact(w, r, name, artifact.OpenEncrypted)
 		return
 	}
 	f, info, err := artifact.OpenPlain()
 	if err != nil {
-		if errors.Is(err, playback.ErrSessionEvicted) {
-			http.Error(w, "stream ended", http.StatusGone)
-			return
-		}
-		http.Error(w, "stream unavailable", rootScopeStatus(err))
+		writeLiveHLSError(w, r, err)
 		return
 	}
 	defer f.Close()
@@ -1740,22 +1707,32 @@ func (h *Handler) encryptedLiveSource(library store.Library, file store.MediaFil
 }
 
 // serveLiveArtifact serves one file of an encrypted live session decrypted.
-func serveLiveArtifact(w http.ResponseWriter, r *http.Request, name string, artifact *playback.LiveArtifact) {
-	f, err := artifact.OpenEncrypted()
+func serveLiveArtifact(w http.ResponseWriter, r *http.Request, name string, open func() (*encderiv.LiveFile, error)) {
+	f, err := open()
 	if err != nil {
-		if errors.Is(err, playback.ErrSessionEvicted) {
-			http.Error(w, "stream ended", http.StatusGone)
-			return
-		}
-		if errors.Is(err, playback.ErrArtifactChanged) {
-			http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		http.Error(w, "stream unavailable", http.StatusNotFound)
+		writeLiveHLSError(w, r, err)
 		return
 	}
 	defer f.Close()
 	http.ServeContent(w, r, filepath.Base(name), f.ModTime(), requestContextReadSeeker{ctx: r.Context(), ReadSeeker: f})
+}
+
+// Live artifact opens can rerun resolution after a seek. Both entry points
+// report the same result for the bound session.
+func writeLiveHLSError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, playback.ErrSessionEvicted):
+		http.Error(w, "stream ended", http.StatusGone)
+	case errors.Is(err, playback.ErrNotFound):
+		http.Error(w, "segment does not exist", http.StatusNotFound)
+	case errors.Is(err, playback.ErrEncryptedLiveUnavailable), rootScopeStatus(err) == http.StatusNotFound:
+		http.Error(w, "stream unavailable", http.StatusNotFound)
+	case errors.Is(err, playback.ErrTranscodeFailed):
+		http.Error(w, "transcode failed", http.StatusInternalServerError)
+	default:
+		logHLSServeFailure(r.Context(), err)
+		http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
+	}
 }
 
 type requestContextReadSeeker struct {

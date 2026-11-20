@@ -113,7 +113,7 @@ func TestT3StartWaiterLeavesBeforeUnhandedChildReturns(t *testing.T) {
 			defer cancel()
 			waiter := make(chan error, 1)
 			go func() {
-				_, err := s.FilePath(ctx, key, "/src/movie.mkv", 120, 1280, 720, false, "720p/seg00001.m4s")
+				_, err := s.FilePath(ctx, key, fakeSourcePath, 120, 1280, 720, false, "720p/seg00001.m4s")
 				waiter <- err
 			}()
 			// Claim setup directly to observe the waiter holding a reference
@@ -198,7 +198,7 @@ func TestT3ChildlessArtifactWaitObservesCutoff(t *testing.T) {
 			}
 			done := make(chan error, 1)
 			go func() {
-				_, err := s.FilePath(t.Context(), key, "/src/movie.mkv", 120, 1280, 720, false, "720p/init.mp4")
+				_, err := s.FilePath(t.Context(), key, fakeSourcePath, 120, 1280, 720, false, "720p/init.mp4")
 				done <- err
 			}()
 			waitScratchSignal(t, transcoder.started)
@@ -1185,32 +1185,80 @@ func TestT3ProfileLookupFailureRefusesOnlyNewStarts(t *testing.T) {
 }
 
 func TestT3HandoffRechecksBothCapsAtReap(t *testing.T) {
+	const targetProfile = store.ProfileID("target-profile")
 	for _, kind := range []string{"lowered server cap", "filled profile cap", "available"} {
 		t.Run(kind, func(t *testing.T) {
-			s := &Sessions{sessions: make(map[SessionKey]*hlsSession), cap: 2}
-			victim := newSessionReservation(SessionKey{SessionID: "victim"})
-			peer := newSessionReservation(SessionKey{SessionID: "peer"})
-			target := newSessionReservation(SessionKey{SessionID: "target"})
-			victim.state, peer.state, target.state = sessionRevoking, sessionRunning, sessionRunning
-			target.profile = "target-profile"
+			transcoder := &fakeTranscoder{holdChild: true}
+			s := newTestSessions(t, transcoder, t.TempDir(), nil)
+			s.SetTranscodeCap(2)
+			slow := newSlowStop(s)
+			defer slow.unblock()
 			limit := 1
-			start := &encoderStart{session: target, ctx: t.Context(), limit: &limit}
-			target.start = start
-			victimRun := &encoderRun{session: victim, reaped: make(chan struct{}), transfer: start}
-			victim.run = victimRun
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			s.reserveEncoderLocked(victim)
-			s.reserveEncoderLocked(peer)
+			load := func(context.Context, store.ProfileID) (store.Profile, error) {
+				return store.Profile{MaxConcurrentStreams: &limit}, nil
+			}
+			start := func(key SessionKey, profile store.ProfileID, priority Priority) error {
+				b, err := s.BindLive(key)
+				if err != nil {
+					return err
+				}
+				defer b.Release()
+				if err := b.Attach("library", profile, load); err != nil {
+					return err
+				}
+				a, err := b.ArtifactShaped(t.Context(), fakeSourcePath, 120, 1280, 720, false, false, ladderCaps{},
+					VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, priority, "720p/seg00000.m4s")
+				if err == nil {
+					a.Release()
+				}
+				return err
+			}
+			victim, peer := SessionKey{SessionID: "victim"}, SessionKey{SessionID: "peer"}
+			target, competitor := SessionKey{SessionID: "target"}, SessionKey{SessionID: "competitor"}
+			if err := start(victim, "victim-profile", PriorityNormal); err != nil {
+				t.Fatal(err)
+			}
+			if err := start(peer, "peer-profile", PriorityForeground); err != nil {
+				t.Fatal(err)
+			}
+			victimRun := registeredSession(t, s, victim).run
+			peerRun := registeredSession(t, s, peer).run
+			slow.armed.Store(true)
+			result := make(chan error, 1)
+			go func() { result <- start(target, targetProfile, PriorityForeground) }()
+			slow.waitEntered(t)
 			switch kind {
 			case "lowered server cap":
-				s.cap = 1
+				s.SetTranscodeCap(1)
 			case "filled profile cap":
-				peer.profile = target.profile
+				peerRun.proc.RequestStop()
+				waitScratchSignal(t, peerRun.reaped)
+				if err := start(competitor, targetProfile, PriorityForeground); err != nil {
+					t.Fatalf("second byte start while victim reap is held: %v", err)
+				}
 			}
-			s.childReapedLocked(victimRun)
-			if victim.charged || target.charged != (kind == "available") {
-				t.Fatalf("reap charge, victim %v, requester %v", victim.charged, target.charged)
+			startsBeforeReap := len(transcoder.segmentStartsSnapshot())
+			wantBeforeReap := 2
+			if kind == "filled profile cap" {
+				wantBeforeReap++
+			}
+			if startsBeforeReap != wantBeforeReap {
+				t.Fatalf("encoder starts before reap = %d, want %d", startsBeforeReap, wantBeforeReap)
+			}
+			slow.unblock()
+			waitScratchSignal(t, victimRun.reaped)
+			err := waitScratchResult(t, result)
+			wantStarts := startsBeforeReap
+			if kind == "available" {
+				wantStarts++
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if !errors.Is(err, ErrTranscodeCapacity) {
+				t.Fatalf("requester after cap change = %v, want capacity refusal", err)
+			}
+			if got := len(transcoder.segmentStartsSnapshot()); got != wantStarts {
+				t.Fatalf("encoder starts after reap = %d, want %d", got, wantStarts)
 			}
 		})
 	}
@@ -1890,7 +1938,16 @@ func TestT3OpenReacquiresArtifactAfterSameInstanceSeek(t *testing.T) {
 	}
 }
 
-func TestT3PlaybackInfoDurationWinsPendingHLSMiss(t *testing.T) {
+func TestT3DurationWinnerSurvivesEvictionAcrossCallers(t *testing.T) {
+	for _, hlsWins := range []bool{false, true} {
+		t.Run(fmt.Sprintf("HLS publishes positive %v", hlsWins), func(t *testing.T) {
+			testDurationWinnerAcrossCallers(t, hlsWins)
+		})
+	}
+}
+
+func testDurationWinnerAcrossCallers(t *testing.T, hlsWins bool) {
+	t.Helper()
 	service, st, scope := capabilityTestService(t)
 	ctx := t.Context()
 	src := filepath.Join(t.TempDir(), "source")
@@ -1916,7 +1973,8 @@ func TestT3PlaybackInfoDurationWinsPendingHLSMiss(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer bind.Release()
+	releaseBinding := sync.OnceFunc(bind.Release)
+	defer releaseBinding()
 	if err := bind.Attach(media.LibraryID, scope.ProfileID, st.Profile); err != nil {
 		t.Fatal(err)
 	}
@@ -1954,11 +2012,30 @@ func TestT3PlaybackInfoDurationWinsPendingHLSMiss(t *testing.T) {
 		info <- err
 	}()
 	waitProbe(1)
-	f.results[1] <- 120
-	if err := waitScratchResult(t, info); err != nil {
-		t.Fatal(err)
+	waitHLS := func() int {
+		t.Helper()
+		select {
+		case seconds := <-hls:
+			return seconds
+		case <-time.After(5 * time.Second):
+			t.Fatal("HLS duration did not complete")
+			return 0
+		}
 	}
-	// Eviction while the miss is pending must not erase the winning bound value.
+	if hlsWins {
+		f.results[0] <- 120
+		if seconds := waitHLS(); seconds != 120 {
+			t.Fatalf("HLS positive = %d", seconds)
+		}
+		releaseBinding()
+	} else {
+		f.results[1] <- 120
+		if err := waitScratchResult(t, info); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Evict the positive from the bounded cache before the miss completes.
 	s.mu.Lock()
 	for i := 1; i < durationProbeCacheLimit; i++ {
 		s.durationProbes[fmt.Sprintf("fixture-%d", i)] = durationProbeEntry{generation: "fixture", seconds: 1}
@@ -1969,13 +2046,21 @@ func TestT3PlaybackInfoDurationWinsPendingHLSMiss(t *testing.T) {
 	if got := s.ProbedDurationSeconds(ctx, "other", other); got != 60 {
 		t.Fatalf("evicting publication = %d", got)
 	}
-	f.results[0] <- 0
-	var seconds int
-	select {
-	case seconds = <-hls:
-	case <-time.After(5 * time.Second):
-		t.Fatal("HLS duration did not complete")
+	if hlsWins {
+		f.results[1] <- 0
+		if err := waitScratchResult(t, info); err != nil {
+			t.Fatal(err)
+		}
+		s.mu.Lock()
+		cached := s.durationProbes[src].seconds
+		s.mu.Unlock()
+		if cached != 120 {
+			t.Fatalf("playback-info miss replaced the evicted positive: cached %d", cached)
+		}
+		return
 	}
+	f.results[0] <- 0
+	seconds := waitHLS()
 	if seconds != 120 {
 		t.Fatalf("HLS miss lost the retained positive: %d", seconds)
 	}
@@ -2099,5 +2184,165 @@ func TestT3OrdinaryAdmissionCannotReplaceDegradedOverflow(t *testing.T) {
 	}
 	if len(chargedKeys(s)) != 2 {
 		t.Fatal("ordinary refusal disturbed the current children")
+	}
+}
+
+func TestT3TerminateFindsKeyframeProbeAfterLastBinderLeaves(t *testing.T) {
+	fixture := t.TempDir()
+	t.Setenv("PATH", fixture+string(os.PathListSeparator)+os.Getenv("PATH"))
+	const probe = `#!/bin/sh
+printf start > "$BEAMFALL_T3_KEYFRAME_STARTED"
+exec /bin/sleep 60
+`
+	if err := os.WriteFile(filepath.Join(fixture, "ffprobe"), []byte(probe), 0o700); err != nil { // #nosec G306 -- private executable test fixture.
+		t.Fatal(err)
+	}
+	src := filepath.Join(fixture, "source")
+	seedScratchFile(t, src)
+	for _, failSetup := range []bool{false, true} {
+		t.Run(fmt.Sprintf("setup fails %v", failSetup), func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "keyframe-started")
+			t.Setenv("BEAMFALL_T3_KEYFRAME_STARTED", marker)
+			s := newTestSessions(t, ffmpeg.New(), t.TempDir(), nil)
+			s.keyframes.firstPlayWait = 50 * time.Millisecond
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var probeWaitErr error
+			waitForProbe := func() {
+				waitCtx, stop := context.WithTimeout(t.Context(), 5*time.Second)
+				defer stop()
+				probeWaitErr = waitForFile(waitCtx, marker)
+			}
+			want := error(context.Canceled)
+			if failSetup {
+				want = fs.ErrPermission
+				s.mkdirDir = func(string, fs.FileMode) error {
+					waitForProbe()
+					return fs.ErrPermission
+				}
+			} else {
+				s.beforeSetupCommit = func() {
+					waitForProbe()
+					cancel()
+				}
+			}
+			key := SessionKey{SessionID: "timed-out-keyframes"}
+			b, err := s.BindLive(key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			release := sync.OnceFunc(b.Release)
+			defer release()
+			if err := b.Attach("library", "profile", nil); err != nil {
+				t.Fatal(err)
+			}
+			_, err = b.ArtifactShaped(ctx, src, 120, 1280, 720, true, false, ladderCaps{}, VideoSignal{},
+				-1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, masterPlaylistName)
+			if probeWaitErr != nil {
+				t.Fatalf("keyframe child did not start: %v", probeWaitErr)
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("setup = %v, want %v", err, want)
+			}
+			h := b.session
+			s.mu.Lock()
+			var reaped <-chan struct{}
+			for probe := range h.probes {
+				if probe.handedOff {
+					reaped = probe.done
+				}
+			}
+			s.mu.Unlock()
+			if reaped == nil {
+				t.Fatal("first-play wait did not leave a handed-off FFprobe child")
+			}
+			release()
+			s.mu.Lock()
+			headGone := s.sessions[key] == nil && h.binders == 0
+			s.mu.Unlock()
+			if !headGone {
+				t.Fatal("last release left a head without a binder")
+			}
+			if count := s.TerminateSession(key.SessionID); count != 1 {
+				t.Errorf("termination found %d admitted instances, want 1", count)
+			}
+			select {
+			case <-reaped:
+			default:
+				t.Fatal("termination returned before FFprobe was reaped")
+			}
+		})
+	}
+}
+
+func TestT3DirectArtifactRefusesUnverifiedPlainSource(t *testing.T) {
+	for _, name := range []string{masterPlaylistName, "720p/seg00000.m4s"} {
+		t.Run(name, func(t *testing.T) {
+			transcoder := &fakeTranscoder{}
+			s := newTestSessions(t, transcoder, t.TempDir(), nil)
+			missing := filepath.Join(t.TempDir(), "missing")
+			_, err := s.FilePath(t.Context(), SessionKey{SessionID: "missing-source"}, missing, 120, 1280, 720, false, name)
+			if !errors.Is(err, errSetupUnavailable) {
+				t.Fatalf("missing source = %v, want retryable setup failure", err)
+			}
+			entries, err := os.ReadDir(s.dir)
+			if err != nil || len(entries) != 0 || len(transcoder.segmentStartsSnapshot()) != 0 {
+				t.Fatalf("unverified plain source left artifacts or started an encoder: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
+func TestT3DelayedKeyframeCacheHitDoesNotDisplaceReplacementLoad(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "source")
+	seedScratchFile(t, src)
+	f := &blockingProbeTranscoder{started: make(chan struct{}), release: make(chan struct{})}
+	s := newTestSessions(t, f, t.TempDir(), nil)
+	release := sync.OnceFunc(func() { close(f.release) })
+	defer release()
+	s.keyframes.firstPlayWait = 5 * time.Second
+	ctx := t.Context()
+	old := s.claimSource(src, nil)
+	defer s.releaseSource(old)
+	gen := keyframeGeneration{path: src, size: old.info.Size(), modTimeNs: old.info.ModTime().UnixNano(), identity: old.generation}
+	oldGrid, err := s.keyframes.load(ctx, ctx, gen, old.order, &keyframeFakeTranscoder{
+		index: ffmpeg.KeyframeIndex{Keyframes: []time.Duration{0, 5 * time.Second}, Duration: 10 * time.Second},
+	})
+	if err != nil || oldGrid == nil {
+		t.Fatalf("cache seed = %v, %v", oldGrid, err)
+	}
+	delayed := s.claimSource(src, nil)
+	defer s.releaseSource(delayed)
+	replacement := filepath.Join(filepath.Dir(src), "replacement")
+	seedScratchFile(t, replacement)
+	if err := os.Rename(replacement, src); err != nil {
+		t.Fatal(err)
+	}
+	fresh := s.claimSource(src, nil)
+	defer s.releaseSource(fresh)
+	result := make(chan error, 1)
+	session := newSessionReservation(SessionKey{SessionID: "new-grid"})
+	go func() {
+		grid, err := s.boundVideoTimeline(ctx, ctx, session, fresh)
+		if err == nil && (grid == nil || grid.segmentStart(1) != 4*time.Second) {
+			err = fmt.Errorf("replacement grid = %v", grid)
+		}
+		result <- err
+	}()
+	waitScratchSignal(t, f.started)
+	got, err := s.boundVideoTimeline(ctx, ctx, session, delayed)
+	if err != nil || got != oldGrid {
+		t.Fatalf("delayed cache hit = %v, %v", got, err)
+	}
+	release()
+	if err := waitScratchResult(t, result); err != nil {
+		t.Fatal(err)
+	}
+	s.keyframes.mu.Lock()
+	freshGen := keyframeGeneration{path: src, size: fresh.info.Size(), modTimeNs: fresh.info.ModTime().UnixNano(), identity: fresh.generation}
+	cached := s.keyframes.done[freshGen]
+	s.keyframes.mu.Unlock()
+	if cached == nil || cached.segmentStart(1) != 4*time.Second {
+		t.Fatalf("newer load failed to cache its grid: %v", cached)
 	}
 }

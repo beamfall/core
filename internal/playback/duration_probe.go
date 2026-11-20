@@ -47,6 +47,7 @@ type retainedDuration struct {
 type durationFlight struct {
 	generation string
 	users      int
+	seconds    int // winning positive held until the last overlapping probe finishes
 }
 
 // ProbedDurationSeconds probes a plain source when the catalog has no runtime.
@@ -145,14 +146,20 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	}
 	entry = s.durationProbes[path]
 	retained := s.durationRetained[durationKey{path, source.generation}]
-	if retained != nil && retained.seconds > 0 {
-		return retained.seconds
+	switch {
+	case flight.seconds > 0:
+		seconds = flight.seconds
+	case retained != nil && retained.seconds > 0:
+		seconds = retained.seconds
+	case entry.generation == source.generation && entry.seconds > 0:
+		seconds = entry.seconds
 	}
-	if entry.generation == source.generation && entry.seconds > 0 {
-		return entry.seconds
-	}
+	flight.seconds = seconds
 	if seconds > 0 && retained != nil {
 		retained.seconds = seconds
+	}
+	if entry.generation == source.generation && entry.seconds > 0 {
+		return seconds
 	}
 	if s.durationProbes == nil || len(s.durationProbes) >= durationProbeCacheLimit && entry.generation == "" {
 		s.durationProbes = make(map[string]durationProbeEntry)

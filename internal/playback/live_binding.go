@@ -113,15 +113,27 @@ func (b *LiveBinding) Release() {
 	defer s.mu.Unlock()
 	h := b.session
 	h.binders--
-	if h.binders == 0 {
-		delete(s.failedHeads, h)
-	}
+	s.trackContinuationLocked(h)
 	if b.duration != nil {
 		s.releaseDurationLocked(b.duration)
 	}
 	if h.binders == 0 && h.state != sessionRunning && h.setup == nil && s.sessions[h.key] == h {
 		delete(s.sessions, h.key)
 	}
+}
+
+// A failed setup may still have bound callers, and a timed-out keyframe
+// wait may leave a probe running after the last caller leaves the head.
+func (s *Sessions) trackContinuationLocked(h *hlsSession) {
+	failedWaiters := h.state == sessionFailed && h.binders > 0
+	if h.state >= sessionRevoking || len(h.probes) == 0 && !failedWaiters {
+		delete(s.continuations, h)
+		return
+	}
+	if s.continuations == nil {
+		s.continuations = make(map[*hlsSession]struct{})
+	}
+	s.continuations[h] = struct{}{}
 }
 
 // Context cancels verification or source preparation when the bound instance is cut off.
@@ -169,6 +181,7 @@ func (b *LiveBinding) probeContext(ctx context.Context) context.Context {
 		}
 		h.probes[active] = struct{}{}
 		s.probing++
+		s.trackContinuationLocked(h)
 		return nil
 	}, func() bool {
 		s.mu.Lock()
@@ -180,6 +193,7 @@ func (b *LiveBinding) probeContext(ctx context.Context) context.Context {
 		defer s.mu.Unlock()
 		delete(h.probes, active)
 		s.probing--
+		s.trackContinuationLocked(h)
 		close(active.done)
 		s.wakeCloseLocked()
 	})
@@ -211,9 +225,7 @@ func (b *LiveBinding) claimSetup(ctx context.Context, source sourceCapture, shap
 			replacement := newSessionReservation(h.key)
 			replacement.admitted, replacement.library, replacement.profile = true, b.library, b.profile
 			replacement.binders, h.binders = 1, h.binders-1
-			if h.binders == 0 {
-				delete(s.failedHeads, h)
-			}
+			s.trackContinuationLocked(h)
 			b.session, s.sessions[h.key] = replacement, replacement
 			h = replacement
 		} else if !b.validLocked() {
@@ -294,11 +306,7 @@ func (b *LiveBinding) recordSetupLocked(h *hlsSession, claim *setupOperation, er
 	if err != nil && h.state == sessionStarting &&
 		!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		h.state, h.failedSetup = sessionFailed, claim
-		s := b.manager
-		if s.failedHeads == nil {
-			s.failedHeads = make(map[*hlsSession]struct{})
-		}
-		s.failedHeads[h] = struct{}{}
+		b.manager.trackContinuationLocked(h)
 	}
 	close(claim.done)
 }
@@ -319,8 +327,9 @@ func captureSource(path string, secure *EncryptedSource, stat func(string) (os.F
 		if stat == nil {
 			stat = os.Stat
 		}
-		c.info, _ = stat(path)
-		c.generation = store.SourceFileGeneration(c.info)
+		if info, err := stat(path); err == nil {
+			c.info, c.generation = info, store.SourceFileGeneration(info)
+		}
 	}
 	return c
 }

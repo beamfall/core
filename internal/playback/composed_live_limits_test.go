@@ -259,7 +259,7 @@ func TestComposedShapedSessionEncodesTheGrantedShape(t *testing.T) {
 			return ComposedPicture{TimedText: composedTestText}, true, nil
 		})
 		for _, name := range []string{masterPlaylistName, ComposedRungID + "/seg00000.m4s"} {
-			if _, err := sessions.FilePathShaped(context.Background(), SessionKey{SessionID: "s", MediaID: "m"}, "/src/song.mp3", 30, 0, 0,
+			if _, err := sessions.FilePathShaped(context.Background(), SessionKey{SessionID: "s", MediaID: "m"}, fakeSourcePath, 30, 0, 0,
 				false, false, ladderCaps{ClientMaxHeight: height}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil,
 				StreamShape{ComposedPicture: true}, PriorityNormal, name); err != nil {
 				t.Fatalf("%dp %s: %v", height, name, err)

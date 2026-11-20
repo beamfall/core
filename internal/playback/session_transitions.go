@@ -80,7 +80,7 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 		} else if session.state == sessionRunning {
 			return transitionResult{}
 		}
-		delete(s.failedHeads, session)
+		delete(s.continuations, session)
 		t := &sessionTeardown{session: session, live: session.live, cleanupOnRelease: change.cleanupOnRelease, cutoffDone: make(chan struct{})}
 		for probe := range session.probes {
 			if probe.handedOff {

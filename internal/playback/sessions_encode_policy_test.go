@@ -60,7 +60,7 @@ func (p *savingTranscoder) SupportsTranscodeCodec(codec string) bool {
 func hevcSessionRequest(sessions *Sessions) func(SessionKey, string) (string, error) {
 	caps := ladderCaps{ClientMaxHeight: 1080, HEVC: true, HEVCMaxHeight: 2160}
 	return func(key SessionKey, name string) (string, error) {
-		return sessions.FilePathPriorityWithBurnSubtitleAudioLadder(context.Background(), key, "/src/movie.mkv", 120, 3840, 2160, false, false, caps, VideoSignal{}, -1, ffmpeg.AudioProfile{}, PriorityNormal, name)
+		return sessions.FilePathPriorityWithBurnSubtitleAudioLadder(context.Background(), key, fakeSourcePath, 120, 3840, 2160, false, false, caps, VideoSignal{}, -1, ffmpeg.AudioProfile{}, PriorityNormal, name)
 	}
 }
 

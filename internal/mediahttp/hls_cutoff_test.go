@@ -2,6 +2,8 @@ package mediahttp
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,19 +13,50 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/streamtoken"
 )
 
+func TestLiveHLSEncryptedReopenUsesResolutionStatus(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		code int
+	}{
+		{playback.ErrTranscodeCapacity, http.StatusServiceUnavailable},
+		{context.DeadlineExceeded, http.StatusServiceUnavailable},
+		{playback.ErrArtifactChanged, http.StatusServiceUnavailable},
+		{playback.ErrTranscodeFailed, http.StatusInternalServerError},
+		{playback.ErrSessionEvicted, http.StatusGone},
+		{playback.ErrNotFound, http.StatusNotFound},
+		{os.ErrNotExist, http.StatusNotFound},
+	} {
+		t.Run(tc.err.Error(), func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/hls/720p/seg00000.m4s", nil)
+			resolved, reopened := httptest.NewRecorder(), httptest.NewRecorder()
+			err := fmt.Errorf("live artifact: %w", tc.err)
+			writeLiveHLSError(resolved, r, err)
+			serveLiveArtifact(reopened, r, "720p/seg00000.m4s", func() (*encderiv.LiveFile, error) { return nil, err })
+			if resolved.Code != tc.code || reopened.Code != tc.code || resolved.Body.String() != reopened.Body.String() {
+				t.Fatalf("resolution = %d %q, encrypted reopen = %d %q, want matching %d responses",
+					resolved.Code, resolved.Body.String(), reopened.Code, reopened.Body.String(), tc.code)
+			}
+		})
+	}
+}
+
 type cutoffTranscoder struct {
 	fakeHLSTranscoder
-	probe  func() (ffmpeg.Probe, error)
+	probe  func(context.Context, string) (ffmpeg.Probe, error)
 	starts atomic.Int32
 }
 
-func (f *cutoffTranscoder) Probe(context.Context, string) (ffmpeg.Probe, error) { return f.probe() }
+func (f *cutoffTranscoder) Probe(ctx context.Context, path string) (ffmpeg.Probe, error) {
+	return f.probe(ctx, path)
+}
 
 func (f *cutoffTranscoder) StartHLS(ctx context.Context, src, dir string, rendition ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
 	f.starts.Add(1)
@@ -43,7 +76,7 @@ func (r cutoffCompatResolver) Resolve(context.Context, string, streamtoken.Decis
 }
 
 func TestT3HLSCutoffDuringVerificationOrDurationProbe(t *testing.T) {
-	for _, stage := range []string{"verification", "duration"} {
+	for _, stage := range []string{"verification", "duration", "duration permit"} {
 		t.Run(stage, func(t *testing.T) {
 			h, tokens, scope, now := castTrustBoundaryFixture(t)
 			src := filepath.Join(t.TempDir(), "source")
@@ -63,7 +96,35 @@ func TestT3HLSCutoffDuringVerificationOrDurationProbe(t *testing.T) {
 			unblock := func() { releaseOnce.Do(func() { close(release) }) }
 			defer unblock()
 			latch := func() { close(entered); <-release }
-			encoder := &cutoffTranscoder{probe: func() (ffmpeg.Probe, error) {
+			var runner *ffmpeg.Runner
+			var marker string
+			if stage == "duration permit" {
+				dir := filepath.Dir(src)
+				marker = filepath.Join(dir, "ffprobe-started")
+				t.Setenv("BEAMFALL_T3_PROBE_MARKER", marker)
+				t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+				const probe = `#!/bin/sh
+: > "$BEAMFALL_T3_PROBE_MARKER"
+printf '%s\n' '{"format":{"duration":"120"}}'
+`
+				if err := os.WriteFile(filepath.Join(dir, "ffprobe"), []byte(probe), 0o700); err != nil { // #nosec G306 -- private executable test fixture.
+					t.Fatal(err)
+				}
+				runner = ffmpeg.New()
+				if result, err := runner.Probe(t.Context(), src); err != nil || result.DurationSeconds != 120 {
+					t.Fatalf("FFprobe fixture duration = %d, %v", result.DurationSeconds, err)
+				}
+				if err := os.Remove(marker); err != nil {
+					t.Fatal(err)
+				}
+			}
+			encoder := &cutoffTranscoder{probe: func(ctx context.Context, path string) (ffmpeg.Probe, error) {
+				if runner != nil {
+					latch()
+					// Preserve the binding's permit while bypassing the supervisor's
+					// early context check so the permit itself must deny the spawn.
+					return runner.Probe(context.WithoutCancel(ctx), path)
+				}
 				if stage == "duration" {
 					latch()
 				}
@@ -89,7 +150,7 @@ func TestT3HLSCutoffDuringVerificationOrDurationProbe(t *testing.T) {
 				t.Fatal("HLS did not reach the latch")
 			}
 			wantRevoked := 0
-			if stage == "duration" {
+			if stage != "verification" {
 				wantRevoked = 1
 			}
 			if got := h.hls.TerminateSession(scope.SessionID); got != wantRevoked {
@@ -103,6 +164,11 @@ func TestT3HLSCutoffDuringVerificationOrDurationProbe(t *testing.T) {
 				}
 			case <-time.After(5 * time.Second):
 				t.Fatal("HLS did not return after cutoff")
+			}
+			if marker != "" {
+				if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("cut-off HLS permit let FFprobe start: %v", err)
+				}
 			}
 		})
 	}

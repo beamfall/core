@@ -1,0 +1,1 @@
+Source fixture for playback tests that use a fake encoder.

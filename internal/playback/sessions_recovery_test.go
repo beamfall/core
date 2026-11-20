@@ -255,7 +255,7 @@ func TestShortLastSegmentStillServes(t *testing.T) {
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-ten", MediaID: "media-ten"}
 	for _, name := range []string{"720p/seg00000.m4s", "720p/seg00002.m4s"} {
-		if _, err := sessions.FilePath(context.Background(), key, "/src/ten.mkv", 10, 1280, 720, false, name); err != nil {
+		if _, err := sessions.FilePath(context.Background(), key, fakeSourcePath, 10, 1280, 720, false, name); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
@@ -274,7 +274,7 @@ func TestShortLastSegmentStillServes(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if _, err := sessions.FilePath(context.Background(), key, "/src/ten.mkv", 10, 1280, 720, false, "720p/seg00002.m4s"); err != nil {
+	if _, err := sessions.FilePath(context.Background(), key, fakeSourcePath, 10, 1280, 720, false, "720p/seg00002.m4s"); err != nil {
 		t.Fatalf("short last segment after reap: %v", err)
 	}
 }

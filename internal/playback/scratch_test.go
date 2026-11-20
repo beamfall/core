@@ -293,7 +293,7 @@ func TestCloseWaitsForOpenArtifactReader(t *testing.T) {
 	transcoder := &scratchProbeTranscoder{started: make(chan struct{})}
 	s := newTestSessions(t, transcoder, t.TempDir(), nil)
 	s.keyframes.firstPlayWait = 10 * time.Second
-	a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "reader"}, "/src", 120, 1280, 720, false, false,
+	a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "reader"}, fakeSourcePath, 120, 1280, 720, false, false,
 		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, masterPlaylistName)
 	if err != nil {
 		t.Fatal(err)
@@ -489,7 +489,7 @@ func TestScratchAllocationSkipsCollisionWithoutServingStaleSegment(t *testing.T)
 	const segment = "720p/seg00000.m4s"
 	stalePath := filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce), segment)
 	seedScratchFile(t, stalePath)
-	a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "first"}, "/src/movie.mkv", 120, 1280, 720,
+	a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "first"}, fakeSourcePath, 120, 1280, 720,
 		false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, segment)
 	if err != nil {
 		t.Fatal(err)
@@ -572,7 +572,7 @@ func TestScratchCollisionInspectionDebt(t *testing.T) {
 					return os.Lstat(collision)
 				}
 
-				a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "collision"}, "/src",
+				a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "collision"}, fakeSourcePath,
 					120, 1280, 720, false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{},
 					nil, StreamShape{LibraryID: "library"}, PriorityNormal, masterPlaylistName)
 				if err != nil {
@@ -754,7 +754,7 @@ func TestScratchSweepRecordsCollisionFailureAsRootDebt(t *testing.T) {
 		return s.removeScratchFixture(path)
 	}
 	key := SessionKey{SessionID: "collision"}
-	a, err := s.LiveArtifactShaped(t.Context(), key, "/src", 120, 1280, 720, false, false,
+	a, err := s.LiveArtifactShaped(t.Context(), key, fakeSourcePath, 120, 1280, 720, false, false,
 		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{LibraryID: "library"}, PriorityNormal, masterPlaylistName)
 	if err != nil {
 		t.Fatal(err)
@@ -782,7 +782,7 @@ func TestScratchReaperRetriesDetachedDebtWithSuccessorOrVacantHead(t *testing.T)
 			var millis atomic.Int64
 			s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), func() time.Time { return time.UnixMilli(millis.Load()) })
 			key := SessionKey{SessionID: "same-key"}
-			a, err := s.LiveArtifactShaped(t.Context(), key, "/src", 120, 1280, 720, false, false, ladderCaps{},
+			a, err := s.LiveArtifactShaped(t.Context(), key, fakeSourcePath, 120, 1280, 720, false, false, ladderCaps{},
 				VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{LibraryID: "library"}, PriorityNormal, masterPlaylistName)
 			if err != nil {
 				t.Fatal(err)
@@ -1016,7 +1016,7 @@ func TestCanceledShapeReplacementPreservesEncoderAndResumeHint(t *testing.T) {
 			transcoder := resumeTranscoder(t)
 			s := newTestSessions(t, transcoder, t.TempDir(), nil)
 			key := SessionKey{SessionID: "viewer", MediaID: "item", ProfileCapability: "receiver"}
-			const src = "/src/movie.mkv"
+			const src = fakeSourcePath
 			if _, err := filePath720(s, key, "720p/init.mp4"); err != nil {
 				t.Fatal(err)
 			}
@@ -1160,7 +1160,7 @@ func TestShapeReplacementServesBeforePredecessorReaderReleases(t *testing.T) {
 	slow := newSlowStop(s)
 	defer slow.unblock()
 	key := SessionKey{SessionID: "replace-with-open-reader"}
-	held, err := s.LiveArtifactShaped(t.Context(), key, "/src/movie.mkv", 120, 1280, 720, false, false,
+	held, err := s.LiveArtifactShaped(t.Context(), key, fakeSourcePath, 120, 1280, 720, false, false,
 		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, "720p/seg00000.m4s")
 	if err != nil {
 		t.Fatal(err)
@@ -1175,22 +1175,33 @@ func TestShapeReplacementServesBeforePredecessorReaderReleases(t *testing.T) {
 	slow.armed.Store(true)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	replaced := make(chan error, 1)
+	playlist := make(chan error, 1)
 	go func() {
-		_, err := s.FilePath(ctx, key, "/src/movie.mkv", 60, 1280, 720, false, masterPlaylistName)
-		replaced <- err
+		_, err := s.FilePath(ctx, key, fakeSourcePath, 60, 1280, 720, false, masterPlaylistName)
+		playlist <- err
 	}()
 	slow.waitEntered(t)
-	select {
-	case err := <-replaced:
-		t.Fatalf("replacement served before stopping predecessor: %v", err)
-	default:
-	}
-	slow.unblock()
-	if err := waitScratchResult(t, replaced); err != nil {
+	if err := waitScratchResult(t, playlist); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.FilePath(ctx, key, "/src/movie.mkv", 60, 1280, 720, false, "720p/seg00000.m4s"); err != nil {
+	segment := make(chan error, 1)
+	go func() {
+		_, err := s.FilePath(ctx, key, fakeSourcePath, 60, 1280, 720, false, "720p/seg00000.m4s")
+		segment <- err
+	}()
+	select {
+	case err := <-segment:
+		t.Fatalf("uncached segment completed before predecessor reap: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+	s.mu.Lock()
+	predecessorCharged, charges := held.session.charged, len(s.charges)
+	s.mu.Unlock()
+	if !predecessorCharged || charges != 1 || len(transcoder.segmentStartsSnapshot()) != 1 {
+		t.Fatal("successor used encoder capacity before predecessor reap")
+	}
+	slow.unblock()
+	if err := waitScratchResult(t, segment); err != nil {
 		t.Fatalf("successor could not use the freed encoder slot: %v", err)
 	}
 	if got := string(mustRead(t, held.path)); got != "m4s" {
@@ -1209,7 +1220,7 @@ func TestPreemptionServesBeforeVictimReaderReleases(t *testing.T) {
 	slow := newSlowStop(s)
 	defer slow.unblock()
 	const segment = "720p/seg00000.m4s"
-	victim, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "victim"}, "/src", 120, 1280, 720, false, false,
+	victim, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "victim"}, fakeSourcePath, 120, 1280, 720, false, false,
 		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, segment)
 	if err != nil {
 		t.Fatal(err)
@@ -1224,7 +1235,7 @@ func TestPreemptionServesBeforeVictimReaderReleases(t *testing.T) {
 	slow.armed.Store(true)
 	started := make(chan error, 1)
 	go func() {
-		next, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "preemptor"}, "/src", 120, 1280, 720, false, false,
+		next, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "preemptor"}, fakeSourcePath, 120, 1280, 720, false, false,
 			ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityForeground, segment)
 		if err == nil {
 			next.Release()
