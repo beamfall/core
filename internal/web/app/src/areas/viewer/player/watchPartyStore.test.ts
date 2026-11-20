@@ -85,12 +85,17 @@ afterEach(() => {
 });
 
 describe("startWatchParty", () => {
-  it("hosts a relaxed party held at the current position and opens the stream", async () => {
+  it("sets the server anchor before exposing a party at the viewer's saved position (CORE-1858)", async () => {
     vi.mocked(createWatchParty).mockResolvedValue({
       partyID: "p1",
       content: "m1",
       relaxed: true,
       members: [{ displayName: "Host", present: true }],
+    });
+    vi.mocked(watchPartyTransport).mockImplementationOnce(async ({ item, positionMS }) => {
+      expect(getWatchParty().status).toBe("starting");
+      expect(subscribeEvents).not.toHaveBeenCalled();
+      return { item, positionMS, presentAtMS: 1000 };
     });
 
     expect(await startWatchParty("m1", 4200.4)).toBe(true);
@@ -101,15 +106,73 @@ describe("startWatchParty", () => {
       clockOffsetMS: 25,
       renderLatencyMS: 0,
     });
+    expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+      partyID: "p1",
+      item: "m1",
+      positionMS: 4200,
+      paused: true,
+    });
     expect(getWatchParty()).toMatchObject({
       status: "active",
       partyID: "p1",
       isHost: true,
       offsetMS: 25,
       members: ["Host"],
-      timeline: { item: "m1", positionMS: 4200, paused: true },
+      timeline: { item: "m1", positionMS: 4200, presentAtMS: 1000, paused: true },
     });
     expect(subscribeEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends the current position and playing state in the startup sequence (CORE-1858)", async () => {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    vi.mocked(watchPartyTransport).mockImplementationOnce(async ({ item, positionMS }) => ({
+      item,
+      positionMS,
+      presentAtMS: 1000,
+    }));
+    expect(await startWatchParty("m1", 42_500, true, false, false)).toBe(true);
+    expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+      partyID: "p1",
+      item: "m1",
+      positionMS: 42_500,
+      paused: false,
+    });
+    expect(getWatchParty().timeline).toEqual({
+      item: "m1",
+      positionMS: 42_500,
+      presentAtMS: 1000,
+      paused: false,
+    });
+
+    // A second tab gets the same initial server anchor on accept.
+    const anchor = await vi.mocked(watchPartyTransport).mock.results[0]?.value;
+    if (!anchor) throw new Error("missing startup transport");
+    resetWatchPartyForTest();
+    vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+      deliver({ groupID: "p1", signal: "roster", ...anchor, paused: false });
+      return { partyID: "p1", ...anchor };
+    });
+    expect(await joinWatchParty("p1")).toBe("m1");
+    expect(getWatchParty().timeline).toEqual({ ...anchor, paused: false });
+  });
+
+  it("leaves the server party when its initial transport fails (CORE-1858)", async () => {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    vi.mocked(watchPartyTransport).mockRejectedValueOnce(new Error("offline"));
+    expect(await startWatchParty("m1", 42_500)).toBe(false);
+    expect(leaveWatchParty).toHaveBeenCalledExactlyOnceWith("p1");
+    expect(getWatchParty()).toMatchObject({ status: "idle", error: "failed" });
+    expect(subscribeEvents).not.toHaveBeenCalled();
   });
 
   it("maps a refusal to the home-network error", async () => {

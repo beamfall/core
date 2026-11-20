@@ -429,21 +429,25 @@ function invitedOf(info: WatchPartyInfo): string[] {
 }
 
 /**
- * Start a party around `content`, hosted by this session. The timeline holds
- * at `positionMS` until the host's first transport puts it in motion. `lead`
- * starts a lead party: host-only, with this session as the lead screen.
+ * Start a party around `content`, hosted by this session. Set its initial
+ * server anchor before exposing the party for invites. `lead` starts a lead
+ * party: host-only, with this session as the lead screen.
  */
 export async function startWatchParty(
   content: string,
   positionMS = 0,
   relaxed = true,
   lead = false,
+  paused = true,
 ): Promise<boolean> {
   if (state.status !== "idle") return false;
   set({ status: "starting", error: "", errorDetail: "", notice: "", noticeName: "" });
   const gen = generation;
+  let partyID = "";
+  let started = false;
   try {
     const measured = await measureClock();
+    if (gen !== generation) return false;
     // Relaxed: anyone in the household party may play, pause or seek. Host-only:
     // a member's play, pause or seek waits for the host's approval (CORE-1765).
     // A lead party is always host-only.
@@ -454,15 +458,18 @@ export async function startWatchParty(
       renderLatencyMS: 0,
       ...(lead ? { lead: true } : {}),
     });
-    startedParties.add(info.partyID);
-    if (gen !== generation) {
-      // Left while the party was being created: end it on the server too.
-      await leaveWatchParty(info.partyID).catch(() => {});
-      return false;
-    }
+    partyID = info.partyID;
+    startedParties.add(partyID);
+    if (gen !== generation) return false;
+    const position = Math.max(0, Math.round(positionMS));
+    const anchor =
+      position !== 0 || !paused
+        ? await watchPartyTransport({ partyID, item: content, positionMS: position, paused })
+        : { item: content, positionMS: position, presentAtMS: 0 };
+    if (gen !== generation) return false;
     set({
       status: "active",
-      partyID: info.partyID,
+      partyID,
       isHost: true,
       lead,
       leadOffer: null,
@@ -470,19 +477,21 @@ export async function startWatchParty(
       members: present(info),
       invited: invitedOf(info),
       timeline: {
-        item: content,
-        positionMS: Math.max(0, Math.round(positionMS)),
-        presentAtMS: 0,
-        paused: true,
+        ...anchor,
+        paused,
         ...(lead ? { lead: true } : {}),
       },
     });
     keepClock(measured);
     openStream();
+    started = true;
     return true;
   } catch (err) {
     if (gen === generation) reset(failure(err));
     return false;
+  } finally {
+    // A failed initial transport or a leave during startup can strand a room.
+    if (partyID && !started) await leaveWatchParty(partyID).catch(() => {});
   }
 }
 

@@ -469,17 +469,17 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       view.unmount();
     });
 
-    it("starts a lead party from this player, then puts its position on the timeline", async () => {
+    it("starts a party at the current position and playing state (CORE-1858)", async () => {
       party = idle();
       const video = playing(42);
       const view = mount(video);
 
       await expect(view.result.current.start(false, true)).resolves.toBe(true);
-      expect(startWatchParty).toHaveBeenCalledWith("m1", 42_000, false, true);
-      expect(sendPartyTransport).toHaveBeenCalledWith("m1", 42_000, false);
+      expect(startWatchParty).toHaveBeenCalledWith("m1", 42_000, false, true, false);
+      expect(sendPartyTransport).not.toHaveBeenCalled();
 
       await view.result.current.start(false);
-      expect(startWatchParty).toHaveBeenLastCalledWith("m1", 42_000, false);
+      expect(startWatchParty).toHaveBeenLastCalledWith("m1", 42_000, false, false, false);
       view.unmount();
     });
   });

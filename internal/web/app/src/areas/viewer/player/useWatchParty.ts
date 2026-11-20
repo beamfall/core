@@ -571,12 +571,7 @@ export function useWatchParty({
       const video = videoRef.current;
       if (!mediaId) return false;
       const position = video ? video.currentTime * positionScale : 0;
-      const ok = lead
-        ? await startWatchParty(mediaId, position, false, true)
-        : await startWatchParty(mediaId, position, relaxed);
-      if (ok && video)
-        await sendPartyTransport(mediaId, video.currentTime * positionScale, video.paused);
-      return ok;
+      return startWatchParty(mediaId, position, !lead && relaxed, lead, video?.paused ?? true);
     },
     [mediaId, videoRef, positionScale],
   );
