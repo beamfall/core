@@ -3,6 +3,8 @@ package compat
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -195,12 +197,25 @@ func (h *Handler) authenticateByName(w http.ResponseWriter, r *http.Request, cli
 		AccessToken: session.Token,
 		ServerID:    h.serverID,
 		ExpiresAt:   session.ExpiresAt,
-		User: compatUser{
-			ID: string(session.ProfileID), Name: session.ProfileName,
-			ServerID: h.serverID, ServerName: h.serverName,
-			Policy: compatUserPolicy{IsAdministrator: session.Setup},
-		},
+		User:        h.signedInUser(session),
 	})
+}
+
+// signedInUser describes the sign-in's account. The admin setup sign-in gets
+// its own stable account, never the owner Profile's: tools such as Seerr keep
+// the administrator they create at setup and later match sign-ins by Id
+// alone, so sharing the Id would make the owner's PIN a tool admin login.
+func (h *Handler) signedInUser(session auth.IntegrationSession) compatUser {
+	user := compatUser{
+		ID: string(session.ProfileID), Name: session.ProfileName,
+		ServerID: h.serverID, ServerName: h.serverName,
+	}
+	if session.Setup {
+		sum := sha256.Sum256([]byte("beamfall compat setup user\x00" + h.serverID))
+		user.ID, user.Name = hex.EncodeToString(sum[:16]), auth.IntegrationSetupName
+		user.Policy.IsAdministrator = true
+	}
+	return user
 }
 
 // authenticationResult is the AuthenticateByName body. It names the signed-in

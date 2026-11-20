@@ -59,6 +59,9 @@ type AuthAttemptReservation struct {
 	rows   []reservedAuthAttempt
 }
 
+// At reports when the reservation was taken, in server time.
+func (r AuthAttemptReservation) At() time.Time { return millisToTime(r.atMS) }
+
 // IntegrationAttemptAction identifies the throttle lanes committed alongside
 // integration Sessions in the catalog.
 const IntegrationAttemptAction = "integration.login"

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -83,12 +84,22 @@ func TestJellyfinSignInDescribesUser(t *testing.T) {
 
 	admin := signIn(t, handler, "admin", "setup-secret")
 	if !admin.User.Policy.IsAdministrator || admin.ServerID != "stable-id" || admin.User.ServerID != "stable-id" ||
-		admin.User.ServerName != "Home Server" || admin.User.ID == "" || admin.User.Name == "" {
+		admin.User.ServerName != "Home Server" || admin.User.Name != "admin" || len(admin.User.ID) != 32 {
 		t.Fatalf("admin sign-in = %+v", admin)
 	}
-	profile := signIn(t, handler, "Default", "2468")
-	if profile.User.Policy.IsAdministrator || profile.User.Name != "Default" || profile.User.ServerID != "stable-id" {
-		t.Fatalf("profile sign-in = %+v", profile)
+	// The owner's PIN sign-in is a different account: Seerr keeps the admin it
+	// creates at setup and matches later sign-ins by Id alone.
+	owner := signIn(t, handler, "Default", "2468")
+	if owner.User.Policy.IsAdministrator || owner.User.Name != "Default" || owner.User.ServerID != "stable-id" ||
+		owner.User.ID != "profile-default" || owner.User.ID == admin.User.ID {
+		t.Fatalf("owner PIN sign-in = %+v, admin Id %q", owner, admin.User.ID)
+	}
+	if again := signIn(t, handler, "admin", "setup-secret"); again.User.ID != admin.User.ID {
+		t.Fatalf("setup account Id changed between sign-ins: %q, %q", admin.User.ID, again.User.ID)
+	}
+	other := newIdentityHandler(t, Config{Enabled: true, ServerID: "other-id"}, service)
+	if got := signIn(t, other, "admin", "setup-secret"); got.User.ID == admin.User.ID {
+		t.Fatal("setup account Id is shared across servers")
 	}
 }
 
@@ -121,16 +132,17 @@ func TestJellyfinAPIKeysEchoOnlyTheSetupToken(t *testing.T) {
 		t.Fatalf("Auth/Keys Cache-Control = %q, want no-store", got)
 	}
 
-	for _, token := range []string{profile, "", "not-a-token"} {
-		for _, method := range []string{http.MethodPost, http.MethodGet} {
-			if rec := sendCompat(handler, seerrRequest(t, method, "Auth/Keys", token)); rec.Code != http.StatusUnauthorized {
-				t.Fatalf("%s Auth/Keys with a non-setup credential = %d, want 401", method, rec.Code)
-			}
-		}
+	revoked := signIn(t, handler, "admin", "setup-secret").AccessToken
+	if rec := sendCompat(handler, seerrRequest(t, http.MethodPost, "Sessions/Logout", revoked)); rec.Code != http.StatusNoContent {
+		t.Fatalf("setup logout = %d", rec.Code)
+	}
+	for name, token := range map[string]string{"profile": profile, "invalid": "not-a-token", "revoked setup": revoked} {
+		assertLikeMissingToken(t, handler, name, token)
 	}
 
 	// The listed key is the setup session itself: it dies with the setup TTL.
 	clock.Advance(15*time.Minute + time.Second)
+	assertLikeMissingToken(t, handler, "expired setup", keys.Items[0].AccessToken)
 	for _, route := range []struct{ method, path string }{
 		{http.MethodGet, "Auth/Keys"}, {http.MethodGet, "System/Info"}, {http.MethodPost, "Library/Refresh"},
 	} {
@@ -148,5 +160,40 @@ func TestJellyfinSetupScopeRefusedForProfiles(t *testing.T) {
 	scopes := []store.IntegrationScope{store.IntegrationScopeRead, store.IntegrationScopeSetup}
 	if _, err := service.AuthenticateIntegrationByName(t.Context(), "Default", "2468", "127.0.0.1", scopes); err == nil {
 		t.Fatal("a Profile session was granted the setup scope")
+	}
+}
+
+// assertLikeMissingToken checks that both Auth/Keys methods answer token
+// exactly as they answer a request with no credential.
+func assertLikeMissingToken(t *testing.T, handler *Handler, name, token string) {
+	t.Helper()
+	for _, method := range []string{http.MethodPost, http.MethodGet} {
+		missing := compatRequest(t, method, "Auth/Keys")
+		want := sendCompat(handler, missing)
+		got := sendCompat(handler, seerrRequest(t, method, "Auth/Keys", token))
+		if want.Code != http.StatusUnauthorized || got.Code != want.Code || got.Body.String() != want.Body.String() ||
+			!reflect.DeepEqual(got.Header(), want.Header()) {
+			t.Fatalf("%s Auth/Keys with the %s credential = %d %q, want the missing-token response %d %q",
+				method, name, got.Code, got.Body, want.Code, want.Body)
+		}
+	}
+}
+
+func TestJellyfinAPIKeysNameTheTokenHeadersClient(t *testing.T) {
+	st, service := integrationService(t, time.Now)
+	setAdminSetup(t, st, time.Now())
+	handler := newIdentityHandler(t, Config{Enabled: true, ServerID: "stable-id"}, service)
+	setup := signIn(t, handler, "admin", "setup-secret").AccessToken
+
+	req := compatRequest(t, http.MethodGet, "Auth/Keys")
+	req.Header.Set("X-Emby-Authorization", `MediaBrowser Client="Decoy", Device="d", DeviceId="d", Version="1"`)
+	req.Header.Set("Authorization", `MediaBrowser Client="Se\"err", Device="Seerr", DeviceId="BOT_seerr", Version="3.5.2", Token="`+setup+`"`)
+	rec := sendCompat(handler, req)
+	var keys struct{ Items []struct{ AppName string } }
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &keys) != nil || len(keys.Items) != 1 {
+		t.Fatalf("GET Auth/Keys = %d %s", rec.Code, rec.Body)
+	}
+	if got := keys.Items[0].AppName; got != `Se"err` {
+		t.Fatalf("AppName = %q, want the decoded Client of the header that carried the token", got)
 	}
 }

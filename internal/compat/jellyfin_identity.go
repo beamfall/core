@@ -106,6 +106,9 @@ func integrationToken(header http.Header) string {
 // client label cannot be mistaken for a separate Token parameter.
 var mediaBrowserParam = regexp.MustCompile(`^[ \t]*([A-Za-z][A-Za-z0-9_-]*)[ \t]*=[ \t]*"((?:[^"\\]|\\.)*)"[ \t]*(,|$)`)
 
+// mediaBrowserEscape matches one backslash escape inside a quoted parameter.
+var mediaBrowserEscape = regexp.MustCompile(`\\(.)`)
+
 func mediaBrowserToken(header string) string {
 	return mediaBrowserValue(header, "Token")
 }
@@ -129,7 +132,7 @@ func mediaBrowserValue(header, name string) string {
 			if seen {
 				return ""
 			}
-			value, seen = match[2], true
+			value, seen = mediaBrowserEscape.ReplaceAllString(match[2], "$1"), true
 		}
 		params = params[len(match[0]):]
 		if match[3] == "," && params == "" {

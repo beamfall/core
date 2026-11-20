@@ -35,16 +35,25 @@ func (h *Handler) listAPIKeys(w http.ResponseWriter, r *http.Request, _ net.IP) 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"Items":            []apiKey{{AccessToken: token, AppName: mediaBrowserClient(r.Header)}},
+		"Items":            []apiKey{{AccessToken: token, AppName: mediaBrowserClient(r.Header, token)}},
 		"TotalRecordCount": 1,
 		"StartIndex":       0,
 	})
 }
 
-// mediaBrowserClient returns the Client parameter of the first MediaBrowser
-// authorization header that carries one.
-func mediaBrowserClient(header http.Header) string {
-	for _, name := range []string{"X-Emby-Authorization", "Authorization"} {
+// mediaBrowserClient returns the Client parameter of the MediaBrowser
+// authorization header that carries token, or else of the first one that
+// names a Client.
+func mediaBrowserClient(header http.Header, token string) string {
+	names := []string{"X-Emby-Authorization", "Authorization"}
+	for _, name := range names {
+		if value := header.Get(name); mediaBrowserToken(value) == token {
+			if client := mediaBrowserValue(value, "Client"); client != "" {
+				return client
+			}
+		}
+	}
+	for _, name := range names {
 		if client := mediaBrowserValue(header.Get(name), "Client"); client != "" {
 			return client
 		}

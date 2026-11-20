@@ -274,10 +274,19 @@ const (
 	IntegrationScopeRead    IntegrationScope = "compat.read"
 	IntegrationScopeRefresh IntegrationScope = "compat.refresh"
 	// IntegrationScopeSetup marks the bounded admin setup session. Only the
-	// admin setup sign-in may hold it (CreateIntegrationSession refuses it
-	// whenever Profile opt-in is required).
+	// admin setup sign-in may hold it: CreateIntegrationSession ties it to the
+	// owner Profile, the admin throttle lane and IntegrationSetupTTL.
 	IntegrationScopeSetup IntegrationScope = "compat.setup"
 )
+
+// IntegrationSetupTTL is the longest life of an admin setup Session.
+const IntegrationSetupTTL = 15 * time.Minute
+
+// IntegrationSetupAttemptKey names the throttle lane of an admin setup
+// sign-in for the owner Profile.
+func IntegrationSetupAttemptKey(owner ProfileID) string {
+	return "admin:" + string(owner)
+}
 
 // Session is the server-side authorization context for a Profile.
 type Session struct {
@@ -1805,8 +1814,21 @@ func (s *Store) CreateIntegrationSession(ctx context.Context, session Session, r
 	if reservation.action != IntegrationAttemptAction || len(reservation.rows) == 0 {
 		return ValidationError("integration auth attempt reservation is required")
 	}
-	if requireOptIn && slices.Contains(session.IntegrationScopes, IntegrationScopeSetup) {
+	// Skipping opt-in and holding the setup scope go together: only the admin
+	// setup sign-in does either, for the owner, inside the setup window.
+	setup := slices.Contains(session.IntegrationScopes, IntegrationScopeSetup)
+	if setup == requireOptIn {
 		return ValidationError("integration setup scope requires the admin setup sign-in")
+	}
+	if setup {
+		if !slices.ContainsFunc(reservation.rows, func(row reservedAuthAttempt) bool {
+			return row.key == IntegrationSetupAttemptKey(session.ProfileID)
+		}) {
+			return ValidationError("integration setup session requires the admin sign-in reservation")
+		}
+		if timeToMillis(session.ExpiresAt) > reservation.atMS+IntegrationSetupTTL.Milliseconds() {
+			return ValidationError("integration setup session outlives the setup window")
+		}
 	}
 	scopes, err := encodeIntegrationScopes(session.IntegrationScopes)
 	if err != nil {
@@ -1823,9 +1845,9 @@ func (s *Store) CreateIntegrationSession(ctx context.Context, session Session, r
 	}
 	defer tx.Rollback()
 	var kind ProfileKind
-	var disabled, optIn int
-	err = tx.QueryRowContext(ctx, "SELECT kind, disabled, integration_sign_in FROM profile WHERE id = ?", session.ProfileID).
-		Scan(&kind, &disabled, &optIn)
+	var disabled, optIn, owner int
+	err = tx.QueryRowContext(ctx, "SELECT kind, disabled, integration_sign_in, is_owner FROM profile WHERE id = ?", session.ProfileID).
+		Scan(&kind, &disabled, &optIn, &owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ValidationError("profile not found")
 	}
@@ -1837,6 +1859,9 @@ func (s *Store) CreateIntegrationSession(ctx context.Context, session Session, r
 	}
 	if requireOptIn && optIn == 0 {
 		return ValidationError("integration sign-in is disabled")
+	}
+	if setup && owner == 0 {
+		return ValidationError("integration setup session requires the owner profile")
 	}
 	var inserted SessionID
 	if err := tx.QueryRowContext(ctx, `

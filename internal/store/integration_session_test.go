@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -213,5 +214,62 @@ func TestSessionReadRejectsKeylessAndUnknownLegacyRows(t *testing.T) {
 	}
 	if _, err := st.Session(ctx, "unknown-kind"); err == nil {
 		t.Fatal("unknown Session kind authorized")
+	}
+}
+
+// TestIntegrationSetupSessionBinding pins that the setup scope and the opt-in
+// bypass go together and stay tied to the owner, the admin throttle lane and
+// the setup window, whatever the caller passes.
+func TestIntegrationSetupSessionBinding(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	other, err := st.CreateProfile(ctx, "Other Adult", ProfileAdult, LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	policy := AuthBackoff{Window: time.Minute, FreeAttempts: 100, BaseDelay: time.Second, MaxDelay: time.Minute}
+	reserve := func(key string) AuthAttemptReservation {
+		t.Helper()
+		reservation, until, err := st.ReserveAuthAttempt(ctx, IntegrationAttemptAction, []string{key, "ip:fixture"}, now, policy)
+		if err != nil || !until.IsZero() {
+			t.Fatalf("reserve %s: locked until %v, error %v", key, until, err)
+		}
+		return reservation
+	}
+	setupScopes := []IntegrationScope{IntegrationScopeRead, IntegrationScopeSetup}
+	adminKey := IntegrationSetupAttemptKey("profile-default")
+	for i, tc := range []struct {
+		name         string
+		profile      ProfileID
+		scopes       []IntegrationScope
+		ttl          time.Duration
+		key          string
+		requireOptIn bool
+		want         string
+	}{
+		{"opt-in bypass without the setup scope", "profile-default", []IntegrationScope{IntegrationScopeRead}, time.Minute, adminKey, false, "requires the admin setup sign-in"},
+		{"setup scope with opt-in required", "profile-default", setupScopes, time.Minute, adminKey, true, "requires the admin setup sign-in"},
+		{"profile throttle lane", "profile-default", setupScopes, time.Minute, "profile:profile-default", false, "requires the admin sign-in reservation"},
+		{"longer than the setup window", "profile-default", setupScopes, IntegrationSetupTTL + time.Second, adminKey, false, "outlives the setup window"},
+		{"not the owner", other.ID, setupScopes, time.Minute, IntegrationSetupAttemptKey(other.ID), false, "requires the owner profile"},
+		{"owner setup", "profile-default", setupScopes, IntegrationSetupTTL, adminKey, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			session := Session{
+				ID: SessionID(fmt.Sprintf("setup-%d", i)), ProfileID: tc.profile, Kind: SessionKindIntegration,
+				IntegrationScopes: tc.scopes, ExpiresAt: now.Add(tc.ttl),
+			}
+			err := st.CreateIntegrationSession(ctx, session, tc.requireOptIn, reserve(tc.key))
+			switch {
+			case tc.want == "" && err != nil:
+				t.Fatalf("owner setup session: %v", err)
+			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
