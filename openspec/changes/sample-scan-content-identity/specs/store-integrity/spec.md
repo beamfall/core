@@ -35,6 +35,9 @@ and its Media SHALL remain unchanged.
 
 - **WHEN** a scan discovers bytes previously admitted by managed import or convert
 - **THEN** it uses the same fingerprint and creates no duplicate Media for those bytes
+- **AND** it collects embedded stream and attachment inventory without sampling or hashing the
+  file again when its recorded stats match. Inventory completion persists separately from file
+  stats and is committed with the inventory for each file, including Parts and Versions.
 
 #### Scenario: Existing legacy content
 
@@ -90,11 +93,21 @@ The mtime comparison SHALL use the original catalog precision, dividing Unix nan
 - **THEN** the scan samples the file without reading the full legacy digest or reusing the missing
   legacy identity
 
-#### Scenario: Missing sampled file returns to its original path
+#### Scenario: Both identity schemes match a returning file
 
-- **WHEN** a scan samples the returning file and finds a same-library, same-path match
-- **THEN** it selects a live match first and otherwise revives the selected missing row,
-  retaining its Media ID and recording the observed stats
+- **WHEN** a scan finds a same-library, same-path sampled match for a returning file and
+  a legacy match at that path
+- **THEN** it uses the same ordering as managed admission, preferring a live match and otherwise
+  reviving the most recently seen matching missing row with its Media ID and observed stats
+- **AND** it uses the full digest already available from the bounded read of a small file.
+  For larger files, the existing unchanged-stat rule applies to the legacy candidate; a legacy
+  candidate with incomplete stats and no conflicting recorded stat may use the one-time compare.
+
+#### Scenario: A managed admission changes a returning file during a scan
+
+- **WHEN** a scan's catalog observation changes before its admission transaction
+- **THEN** it retries with current file stats and identity before writing, preserving any newly
+  admitted live match and collecting any inventory still pending
 
 #### Scenario: Legacy file at the same path with incomplete stats
 
