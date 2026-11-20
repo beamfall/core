@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -281,9 +282,29 @@ func TestIntegrationSetupSessionBinding(t *testing.T) {
 		ID: "setup-closed", ProfileID: "profile-default", Kind: SessionKindIntegration,
 		IntegrationScopes: setupScopes, ExpiresAt: now.Add(IntegrationSetupTTL),
 	}
-	late := func() time.Time { return closed.ExpiresAt }
-	if err := st.CreateIntegrationSession(ctx, closed, false, reserve(adminKey), late); err == nil ||
-		!strings.Contains(err.Error(), "window has closed") || sessionStored(t, st, closed.ID) {
+	reservation := reserve(adminKey)
+	held, err := st.catalogW.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var windowClosed atomic.Bool
+	clock := func() time.Time {
+		if windowClosed.Load() {
+			return closed.ExpiresAt
+		}
+		return now
+	}
+	waits := st.catalogW.Stats().WaitCount
+	created := make(chan error, 1)
+	go func() { created <- st.CreateIntegrationSession(ctx, closed, false, reservation, clock) }()
+	for st.catalogW.Stats().WaitCount == waits {
+		time.Sleep(time.Millisecond)
+	}
+	windowClosed.Store(true)
+	if err := held.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-created; err == nil || !strings.Contains(err.Error(), "window has closed") || sessionStored(t, st, closed.ID) {
 		t.Fatalf("setup session after the window closed: %v", err)
 	}
 

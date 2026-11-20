@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
-	"strings"
 
 	"github.com/beamfall/core/internal/store"
 )
@@ -53,8 +52,9 @@ func mediaBrowserClient(header http.Header, token string) string {
 		}
 	}
 	for _, name := range names {
-		// Any Token parameter, even an ambiguous one, rules the header out.
-		if value := header.Get(name); !strings.Contains(strings.ToLower(value), "token=") {
+		value := header.Get(name)
+		// Any Token parameter, even an empty or repeated one, rules the header out.
+		if _, tokens := mediaBrowserLookup(value, "Token"); tokens == 0 {
 			if client := mediaBrowserValue(value, "Client"); client != "" {
 				return client
 			}
