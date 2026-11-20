@@ -7,7 +7,10 @@ import {
   backingSize,
   canVisualize,
   lagBound,
+  lagBounds,
+  lagHistory,
   type Rotation,
+  recordLag,
   slotPixels,
   takeUpcoming,
   Visualizer,
@@ -277,16 +280,27 @@ describe("chosenVisual", () => {
 });
 
 describe("lagBound", () => {
-  it("is the largest interval held over the last 1.25 s, plus a margin", () => {
-    const ring = new Float64Array([33, 5, 5, 5]);
-    const at = new Float64Array([100, 1000, 1200, 1340]);
-    // A late paint at the slow refresh is still allowed for after the display speeds up.
-    expect(lagBound(ring, at, 4, 1340)).toBe(35);
-    // Once it is older than the hold, the bound follows the faster refresh.
-    expect(lagBound(ring, at, 4, 1360)).toBe(7);
+  it("holds the largest interval for the budget's second and recency's coverage interval", () => {
+    const h = lagHistory();
+    recordLag(h, 33, 100);
+    for (let t = 105; t <= 1340; t += 5) recordLag(h, 5, t);
+    // A late paint at the slow refresh is still allowed for by the budget after the display
+    // speeds up, and by recency only for the coverage interval after it.
+    expect(lagBounds(h, 1340)).toEqual([35, 7]);
+    expect(lagBounds(h, 160)).toEqual([35, 35]);
+    // Once it is older than the budget's hold, both follow the faster refresh.
+    recordLag(h, 5, 1400);
+    expect(lagBounds(h, 1400)).toEqual([7, 7]);
+  });
+
+  it("keeps an interval its hold however many frames come after it", () => {
+    const h = lagHistory();
+    recordLag(h, 16, 0);
+    for (let t = 1; t <= 1200; t += 0.5) recordLag(h, 0.5, t);
+    expect(lagBound(h, 1200, 1250)).toBe(18);
   });
 
   it("assumes the slowest cadence before any interval is measured", () => {
-    expect(lagBound(new Float64Array(1), new Float64Array(1), 0, 0)).toBeCloseTo(1000 / 15, 9);
+    expect(lagBound(lagHistory(), 0, 1250)).toBeCloseTo(1000 / 15, 9);
   });
 });

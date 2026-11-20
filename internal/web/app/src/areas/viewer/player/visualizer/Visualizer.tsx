@@ -31,29 +31,66 @@ const REPORT_FRAMES = 3;
 const STEP_MS = 1000 / 60;
 // How early a tick may come and still step: a display's intervals jitter around its rate.
 const STEP_SLACK_MS = 1.5;
-// The paint-lag bound: the largest animation-frame interval of the last LAG_HOLD_MS, plus
-// LAG_MARGIN_MS for a paint later than any interval measured. It is held past the 1 s the flash
-// budget spans, so a frame painted late is still allowed for when the refresh speeds up after
-// it, and it is a maximum, not a median, so one late paint is not underestimated (Codex round 2,
-// CORE-2744). Before any interval is measured it assumes the slowest cadence a page is drawn at.
+// The paint-lag bound: the largest animation-frame interval measured lately, plus LAG_MARGIN_MS
+// for a paint later than any interval measured (a maximum, not a median, so one late paint is
+// not underestimated). A frame's lag matters to the limiter for as long as the frames after it
+// can be compared with it: the 1 s flash budget for about a second after it, recency and the
+// stamps' clearing for the coverage interval. So the budget's bound holds an interval
+// LAG_HOLD_MS and recency's RECENT_HOLD_MS; a stall then slows the clock's recency share only
+// for the coverage interval after it (Codex rounds 2 and 3, CORE-2744). The intervals are kept
+// as maxima of LAG_BUCKET_MS buckets, so no rate of animation frames evicts one early. Before an
+// interval is measured, the bound is the slowest cadence a page is drawn at.
 const LAG_HOLD_MS = 1250;
+const RECENT_HOLD_MS = 1000 / 15 + 1000 / 60;
 const LAG_MARGIN_MS = 2;
-const LAG_SAMPLES = 512;
+const LAG_BUCKET_MS = 50;
+const LAG_BUCKETS = 32;
 const DEFAULT_LAG_MS = 1000 / 15;
 // Render no more pixels than this: the visual sits behind the artwork card.
 const MAX_DPR = 2;
 
-/**
- * The paint-lag bound at now from the last n intervals in ring, ended at the times in at: the
- * largest that ended within LAG_HOLD_MS, plus LAG_MARGIN_MS. Allocates nothing.
- */
-export function lagBound(ring: Float64Array, at: Float64Array, n: number, now: number): number {
-  if (n === 0) return DEFAULT_LAG_MS;
-  let max = 0;
-  for (let i = 0; i < n; i++) {
-    if (now - (at[i] ?? 0) <= LAG_HOLD_MS) max = Math.max(max, ring[i] ?? 0);
+/** Recent animation-frame intervals, as the largest in each LAG_BUCKET_MS of time. */
+export type LagHistory = { bucket: Float64Array; max: Float64Array; at: Float64Array };
+
+export function lagHistory(): LagHistory {
+  return {
+    bucket: new Float64Array(LAG_BUCKETS).fill(-1),
+    max: new Float64Array(LAG_BUCKETS),
+    at: new Float64Array(LAG_BUCKETS),
+  };
+}
+
+/** Records an animation-frame interval that ended at now. Allocates nothing. */
+export function recordLag(h: LagHistory, interval: number, now: number): void {
+  const b = Math.floor(now / LAG_BUCKET_MS);
+  const i = b % LAG_BUCKETS;
+  if (h.bucket[i] !== b) {
+    h.bucket[i] = b;
+    h.max[i] = interval;
+  } else {
+    h.max[i] = Math.max(h.max[i] ?? 0, interval);
   }
-  return max + LAG_MARGIN_MS;
+  h.at[i] = now;
+}
+
+/**
+ * The paint-lag bound at now: the largest interval that ended within holdMs, plus LAG_MARGIN_MS,
+ * or DEFAULT_LAG_MS when none did. A bucket counts from its last interval's end, so it is held
+ * at least holdMs. Allocates nothing.
+ */
+export function lagBound(h: LagHistory, now: number, holdMs: number): number {
+  let max = -1;
+  for (let i = 0; i < LAG_BUCKETS; i++) {
+    if ((h.bucket[i] ?? -1) >= 0 && now - (h.at[i] ?? 0) <= holdMs) {
+      max = Math.max(max, h.max[i] ?? 0);
+    }
+  }
+  return max < 0 ? DEFAULT_LAG_MS : max + LAG_MARGIN_MS;
+}
+
+/** The budget's and recency's paint-lag bounds at now. */
+export function lagBounds(h: LagHistory, now: number): [number, number] {
+  return [lagBound(h, now, LAG_HOLD_MS), lagBound(h, now, RECENT_HOLD_MS)];
 }
 
 /**
@@ -264,10 +301,8 @@ export function Visualizer({
     // The step clock: the last tick's timestamp and the time owed to the next step.
     let lastTick: number | null = null;
     let due = 0;
-    // The recent animation-frame intervals and when each ended, for the paint-lag bound.
-    const refresh = new Float64Array(LAG_SAMPLES);
-    const refreshAt = new Float64Array(LAG_SAMPLES);
-    let refreshCount = 0;
+    // The recent animation-frame intervals, for the paint-lag bounds.
+    const lags = lagHistory();
     // Whether the last draw is unpainted, and the request of the last frame: a draw sets the
     // flag, and the next animation frame, which runs after the paint, clears it. The request is
     // measured in place, as the slot an observer reports is (`seen`), so neither a frame nor
@@ -426,7 +461,18 @@ export function Visualizer({
       unpainted = false;
       const renderer = rendererRef.current;
       const video = videoRef.current;
-      if (!renderer || !video || document.hidden) return;
+      if (!renderer || !video) return;
+      // No frame is painted while the page is hidden, so the time it is hidden is no interval.
+      if (document.hidden) {
+        lastTick = null;
+        return;
+      }
+      // Every animation-frame interval bounds the lag of the paint before it, whether this frame
+      // draws or not, so a pause or a wait is not taken for one long interval when it ends
+      // (Codex round 3).
+      const ticked = lastTick;
+      if (ticked !== null) recordLag(lags, now - ticked, now);
+      lastTick = now;
       // A report made at another device pixel ratio does not measure the slot at this one: CSS
       // pixels times the new ratio is a guess, and a fade or a clip from a guessed slot can cut a
       // lit frame with no grant. The frame on screen is held as it is, refitted to the same
@@ -482,29 +528,23 @@ export function Visualizer({
           video.readyState >= HAVE_FUTURE_DATA &&
           renderer.settled(width, height, texel, slotWidth, slotHeight)
         ) {
+          // The held frame is a step behind once playback resumes: the first tick after draws.
+          due = STEP_MS;
           fitCanvas(renderer);
           return;
         }
-        if (lastDrawn === null || lastTick === null) {
-          due = 0;
-        } else {
-          due = Math.min(due + now - lastTick, 2 * STEP_MS);
-          refresh[refreshCount % LAG_SAMPLES] = now - lastTick;
-          refreshAt[refreshCount % LAG_SAMPLES] = now;
-          refreshCount++;
-        }
-        lastTick = now;
+        due = lastDrawn === null || ticked === null ? 0 : Math.min(due + now - ticked, 2 * STEP_MS);
         if (lastDrawn !== null && due < STEP_MS - STEP_SLACK_MS) return;
         if (lastDrawn !== null) due = Math.max(0, due - STEP_MS);
         const frameMs = lastDrawn === null ? 1000 / 60 : now - lastDrawn;
         const dt = Math.min(MAX_DT, frameMs / 1000);
         // The limiter is credited with the wall-clock time between draws and the bound on a
-        // paint's lateness, the largest recent refresh; the renderer turns the two into time it cannot overstate
+        // paint's lateness, the largest recent refreshes; the renderer turns them into time it cannot overstate
         // (CORE-2744). A per-frame lower bound (half of each interval at a steady cadence) ran
         // its clock at half speed and held ragged areas of every moving visual.
         const wall = performance.now();
         const shownMs = lastWall === null ? frameMs : Math.max(0, wall - lastWall);
-        const lagMs = lagBound(refresh, refreshAt, Math.min(refreshCount, LAG_SAMPLES), now);
+        const [lagMs, recentLagMs] = lagBounds(lags, now);
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
         const heard = heardTime(video, trackRef.current);
@@ -525,6 +565,7 @@ export function Visualizer({
           slotWidth,
           slotHeight,
           lagMs,
+          recentLagMs,
         );
         lastDrawn = now;
         lastWall = wall;
