@@ -1249,3 +1249,50 @@ describe("frameSize", () => {
     expect(frameSize(w, h)).toEqual([ew, eh]);
   });
 });
+
+// CORE-2724: the incoming visual's feedback starts black, so the outgoing visual shows only
+// through the switch pass and leaves nothing in the incoming one's trails.
+describe("Renderer switch feedback (CORE-2724)", () => {
+  const make = (reducedMotion: boolean) => {
+    const { gl, ...recorded } = recordingGl();
+    const r = Object.create(Renderer.prototype) as Record<string, unknown>;
+    const feedback = [
+      { tex: { id: "a" }, fbo: { id: "fa" } },
+      { tex: { id: "b" }, fbo: { id: "fb" } },
+    ];
+    const size = { renderWidth: 64, renderHeight: 36, feedback, outgoing: null };
+    Object.assign(r, {
+      gl,
+      size,
+      reducedMotion,
+      visual: { visual: { id: "aurora" }, program: {}, locations: new Map(), image: null },
+      outgoing: null,
+      image: null,
+      feedbackFormat: { internal: 0, type: 0, label: "float" },
+      transition: { request: () => 0 },
+      endSwitch: () => undefined,
+    });
+    const apply = (r.apply as (v: unknown, p: unknown) => void).bind(r);
+    return { apply, size, feedback, recorded };
+  };
+
+  it("blends into a fresh black pair without copying the outgoing feedback", () => {
+    const { apply, size, feedback, recorded } = make(false);
+    apply({ id: "nebula" }, {});
+    expect(recorded.blits).toHaveLength(0);
+    expect(size.outgoing).toBe(feedback);
+    expect(size.feedback).not.toBe(feedback);
+    const black = recorded.fills.filter(([, i, v]) => i === 0 && v.join() === "0,0,0,1");
+    expect(black).toHaveLength(2);
+  });
+
+  it("clears the feedback when the visual changes at once", () => {
+    const { apply, size, feedback, recorded } = make(true);
+    apply({ id: "nebula" }, {});
+    expect(size.feedback).toBe(feedback);
+    expect(recorded.fills.map(([f, i, v]) => [f, i, v.join()])).toEqual([
+      [feedback[0].fbo, 0, "0,0,0,1"],
+      [feedback[1].fbo, 0, "0,0,0,1"],
+    ]);
+  });
+});

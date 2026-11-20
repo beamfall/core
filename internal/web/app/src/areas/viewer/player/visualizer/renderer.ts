@@ -593,10 +593,10 @@ export class Renderer {
   }
 
   /**
-   * Compiles a visual (once) and switches to it. The incoming visual starts from the outgoing
-   * one's last frame as its feedback and the clock runs on (CORE-2218); Oscillux's switch pass
-   * then blends the two over 1.2 s (CORE-2219). A request during a switch waits for it to end;
-   * under reduced motion the visual changes at once.
+   * Compiles a visual (once) and switches to it. The incoming visual starts from black feedback,
+   * so nothing of the outgoing one lingers in its trails (CORE-2724), and the clock runs on;
+   * Oscillux's switch pass blends the two over 1.2 s (CORE-2219). A request during a switch waits
+   * for it to end; under reduced motion the visual changes at once.
    */
   async use(visual: Visual): Promise<void> {
     this.wanted = visual;
@@ -622,22 +622,15 @@ export class Renderer {
     if (action === "same") return;
     if (action === "instant") {
       this.endSwitch();
+      if (size && this.visual) this.clearFeedback(size.feedback);
       this.visual = { visual, program, locations: new Map(), image: this.image };
       return;
     }
-    // blend: the current visual goes out with its feedback and image; the incoming one gets a
-    // copy of that feedback and shares the image until setImage hands it its own.
+    // blend: the current visual goes out with its feedback and image; the incoming one starts
+    // from black feedback of its own and shares the image until setImage hands it its own.
     const s = size as Size;
     const { internal, type } = this.feedbackFormat;
     const feedback = this.feedbackPair(s.renderWidth, s.renderHeight, internal, type, false);
-    this.copy(
-      s.feedback[0],
-      s.renderWidth,
-      s.renderHeight,
-      feedback[0],
-      s.renderWidth,
-      s.renderHeight,
-    );
     s.outgoing = s.feedback;
     s.feedback = feedback;
     this.outgoing = this.visual;
@@ -1425,6 +1418,15 @@ export class Renderer {
     );
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+  }
+
+  // Clears feedback targets to the black a fresh pair starts from.
+  private clearFeedback(targets: Target[]): void {
+    const gl = this.gl;
+    for (const t of targets) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+      gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
+    }
   }
 
   private feedbackPair(
