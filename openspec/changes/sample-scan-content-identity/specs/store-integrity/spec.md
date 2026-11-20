@@ -41,11 +41,12 @@ and its Media SHALL remain unchanged.
 - **WHEN** staged bytes match a legacy full SHA-256 digest cataloged at another path
 - **THEN** managed admission refuses the duplicate
 
-#### Scenario: Legacy bytes restored by managed import
+#### Scenario: Legacy bytes restored by managed admission
 
-- **WHEN** the on-disk file is absent but its legacy row is still live, and managed import
+- **WHEN** the on-disk file is absent but its legacy row is still live, and managed import or convert
   restores bytes whose full SHA-256 matches that row at the same path and in the same library
-- **THEN** the import preserves the existing Media ID, fingerprint, watch state and match pin
+- **THEN** admission preserves the existing Media ID, fingerprint, watch state and match pin
+- **AND** the catalog records the admitted file's stats so the next unchanged scan reuses the row
 
 ## ADDED Requirements
 

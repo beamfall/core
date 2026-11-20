@@ -19,7 +19,7 @@ SHALL be `sample1.` followed by its digest digits.
 Address words SHALL be lowercase ASCII, with accents folded, apostrophes and other punctuation
 dropped and runs of other characters collapsed to one hyphen, cut at a word boundary within 60
 characters. If item words fold to nothing, the viewer SHALL use the Media ID as the last path
-segment, except that a sampled address qualified by a Library SHALL use the sampled token.
+segment and SHALL use the sampled token for sampled Media.
 
 #### Scenario: Accented title
 
@@ -29,7 +29,7 @@ segment, except that a sampled address qualified by a Library SHALL use the samp
 #### Scenario: Title with no Latin letters
 
 - **WHEN** an item's words fold to nothing
-- **THEN** the address carries the Media ID, or the sampled token after the Library words
+- **THEN** the address carries the Media ID, or the sampled token for sampled Media
 
 ### Requirement: Old and stale addresses resolve to the canonical one
 
@@ -87,4 +87,10 @@ viewer SHALL replace the address in place without adding a history entry or rest
 #### Scenario: Expand the docked player
 
 - **WHEN** the listener expands the docked player for a sampled ID
-- **THEN** the active playback session survives address resolution and attaches to the full player
+- **THEN** the viewer uses the sampled token and attaches the active playback session to the full
+  player even if the catalog is offline
+
+#### Scenario: Back from unresolved credits
+
+- **WHEN** a viewer opens a sampled credits bookmark directly and activates Back during lookup
+- **THEN** the detail address retains the bookmark's suffix
