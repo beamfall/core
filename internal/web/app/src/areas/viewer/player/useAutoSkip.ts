@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import {
   type AutoSkipPrefs,
@@ -7,7 +7,11 @@ import {
   autoSkipSegmentKey,
 } from "../lib/transport";
 import { markViewerIntent } from "./viewerIntent";
-import { getWatchParty, sendPartyAutoSkip } from "./watchPartyStore";
+import { getWatchParty, type PartyAutoSkipOutcome, sendPartyAutoSkip } from "./watchPartyStore";
+
+export type PartySeekAutoSkip = (
+  video: HTMLVideoElement,
+) => Promise<PartyAutoSkipOutcome> | undefined;
 
 // Auto-skip playback (ADR-0048 Decision 6): while a per-profile
 // autoskip.intro/recap/credits pref is on, the engine seeks straight past a
@@ -27,20 +31,25 @@ import { getWatchParty, sendPartyAutoSkip } from "./watchPartyStore";
 // time and every seek converts back to stream time.
 export function useAutoSkip({
   videoRef,
+  attached = true,
   markers,
   mediaID,
   prefs,
   songScale = 1,
   autoSkipLead,
+  partySeekAutoSkip,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
+  attached?: boolean;
   markers: PlaybackMarker[];
   mediaID: string;
   prefs: AutoSkipPrefs;
   /** Song seconds per stream second: the tempo the server applied; 1 when none. */
   songScale?: number;
   /** Coordinate the lead's skip with its position reports. */
-  autoSkipLead?: (positionMS: number) => Promise<boolean>;
+  autoSkipLead?: (positionMS: number) => Promise<PartyAutoSkipOutcome>;
+  /** Give party transport the opportunity to skip a segment reached by a scrub. */
+  partySeekAutoSkip?: RefObject<PartySeekAutoSkip | null>;
 }): {
   skipped: AutoSkipSegment | null;
   undo: () => void;
@@ -93,9 +102,10 @@ export function useAutoSkip({
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!attached || !video) return;
     let cancelled = false;
-    let skipPending = false;
+    let seeking = false;
+    let pendingSkip: { key: string; request: Promise<PartyAutoSkipOutcome> } | null = null;
 
     const showSkip = (segment: AutoSkipSegment, partyID: string) => {
       undoSegmentRef.current = segment;
@@ -103,18 +113,18 @@ export function useAutoSkip({
       setSkipped(segment);
     };
 
-    const onTime = () => {
-      if (skipPending || video.seeking) return;
-      if (ignoreNextTickRef.current) {
-        ignoreNextTickRef.current = false;
-        return;
-      }
+    const trySkip = () => {
       const scale = songScaleRef.current;
       const segment = autoSkipSegmentAt(
         markersRef.current,
         video.currentTime * scale,
         prefsRef.current,
       );
+      if (pendingSkip) {
+        return segment && autoSkipSegmentKey(segment) === pendingSkip.key
+          ? pendingSkip.request
+          : undefined;
+      }
       if (!segment) {
         // A genuine exit-without-undo: the segment is no longer under us and
         // we didn't just seek it ourselves. Clear the guard so a later
@@ -133,25 +143,51 @@ export function useAutoSkip({
           ? party.isHost && autoSkipLead?.(target)
           : sendPartyAutoSkip(mediaID, target);
         if (!request) return;
-        skipPending = true;
-        void request.then((applied) => {
-          skipPending = false;
-          if (!applied || cancelled || getWatchParty().partyID !== party.partyID) return;
-          showSkip(segment, party.partyID);
+        const handled = request.then((outcome) => {
+          pendingSkip = null;
+          if (cancelled || getWatchParty().partyID !== party.partyID) return "unconfirmed";
+          if (outcome === "applied") showSkip(segment, party.partyID);
+          return outcome;
         });
-        return;
+        pendingSkip = { key, request: handled };
+        return handled;
       }
       ignoreNextTickRef.current = true;
       video.currentTime = segment.endSeconds / scale;
       showSkip(segment, "");
     };
 
+    const onSeeking = () => {
+      seeking = true;
+    };
+    const onSeeked = () => {
+      seeking = false;
+    };
+    const onTime = () => {
+      // The browser can clear video.seeking and fire timeupdate before seeked.
+      // Let the party's seeked handler decide whether to skip or send transport.
+      if (video.seeking || (seeking && getWatchParty().status === "active")) return;
+      if (ignoreNextTickRef.current) {
+        ignoreNextTickRef.current = false;
+        return;
+      }
+      void trySkip();
+    };
+    if (partySeekAutoSkip) {
+      partySeekAutoSkip.current = (element) => (element === video ? trySkip() : undefined);
+    }
+
     video.addEventListener("timeupdate", onTime);
+    video.addEventListener("seeking", onSeeking);
+    video.addEventListener("seeked", onSeeked);
     return () => {
       cancelled = true;
+      if (partySeekAutoSkip) partySeekAutoSkip.current = null;
       video.removeEventListener("timeupdate", onTime);
+      video.removeEventListener("seeking", onSeeking);
+      video.removeEventListener("seeked", onSeeked);
     };
-  }, [videoRef, mediaID, autoSkipLead]);
+  }, [videoRef, attached, mediaID, autoSkipLead, partySeekAutoSkip]);
 
   return { skipped, undo, dismiss };
 }

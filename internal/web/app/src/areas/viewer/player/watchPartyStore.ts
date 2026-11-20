@@ -699,51 +699,57 @@ export async function sendPartyTransport(
   }
 }
 
+export type PartyAutoSkipOutcome = "applied" | "denied" | "unconfirmed";
+
 /** The server decides whether the auto-skip can move the shared timeline. */
-export async function sendPartyAutoSkip(item: string, positionMS: number): Promise<boolean> {
+export async function sendPartyAutoSkip(
+  item: string,
+  positionMS: number,
+): Promise<PartyAutoSkipOutcome> {
   const { partyID, status, timeline, lead, isHost } = state;
   if (status !== "active" || !timeline || timeline.item !== item || (lead && !isHost)) {
-    return false;
+    return "unconfirmed";
   }
   const gen = generation;
   const target = Math.round(positionMS);
   let stopTracking: (() => void) | undefined;
   let acknowledged = false;
-  // The lead must move as soon as followers get the skip, even if its HTTP
-  // response is still on the way.
-  const transition = lead
-    ? new Promise<boolean>((resolve) => {
-        stopTracking = subscribe(() => {
-          const latest = state.timeline;
-          if (gen !== generation || latest?.item !== item) {
-            resolve(false);
-          } else if (latest !== timeline && latest.positionMS === target) {
-            acknowledged = true;
-            resolve(true);
-          }
-        });
-      })
-    : null;
-  const response = watchPartyAutoSkip({ partyID, item, positionMS: target })
-    .then((result) => {
+  // Playback can follow the skip as soon as the transition arrives, even if
+  // the HTTP response is still on the way.
+  const transition = new Promise<PartyAutoSkipOutcome>((resolve) => {
+    stopTracking = subscribe(() => {
       const latest = state.timeline;
-      if (!result.applied || acknowledged || gen !== generation || latest?.item !== item) {
-        return false;
+      if (gen !== generation || latest?.item !== item) {
+        resolve("unconfirmed");
+      } else if (latest !== timeline && latest.positionMS === target) {
+        acknowledged = true;
+        resolve("applied");
       }
+    });
+  });
+  const response = watchPartyAutoSkip({ partyID, item, positionMS: target })
+    .then((result): PartyAutoSkipOutcome => {
+      const latest = state.timeline;
+      if (acknowledged || gen !== generation || latest?.item !== item) {
+        return "unconfirmed";
+      }
+      if (!result.applied) return "denied";
       // A lead transition uses the server's immediate clock. Its response can
       // supersede an earlier heartbeat, but must never rewind a later anchor.
       if (latest !== timeline && (!lead || latest.presentAtMS >= result.presentAtMS)) {
-        return latest.positionMS === result.positionMS && latest.presentAtMS === result.presentAtMS;
+        return latest.positionMS === result.positionMS && latest.presentAtMS === result.presentAtMS
+          ? "applied"
+          : "unconfirmed";
       }
       set({
         timeline: { ...latest, positionMS: result.positionMS, presentAtMS: result.presentAtMS },
       });
-      return true;
+      return "applied";
     })
     // An automatic skip is optional. Leave playback on the shared timeline.
-    .catch(() => false);
+    .catch((): PartyAutoSkipOutcome => "unconfirmed");
   try {
-    return await (transition ? Promise.race([transition, response]) : response);
+    return await Promise.race([transition, response]);
   } finally {
     stopTracking?.();
   }

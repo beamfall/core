@@ -64,7 +64,7 @@ import { PrePlayStage } from "../player/PrePlayStage";
 import { SkippedOverlay } from "../player/SkippedOverlay";
 import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
 import { UpNextCard } from "../player/UpNextCard";
-import { useAutoSkip } from "../player/useAutoSkip";
+import { type PartySeekAutoSkip, useAutoSkip } from "../player/useAutoSkip";
 import { useCaptionLoad } from "../player/useCaptionLoad";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
 import { decodableStream, useGaplessAudio } from "../player/useGaplessAudio";
@@ -465,12 +465,15 @@ function FeaturePlayer({
   // Watch Party (CORE-1677): the party moves every member's player to the
   // title it is on and keeps the <video> on its shared timeline.
   const followParty = useCallback((id: string) => playItem(id, ""), [playItem]);
+  const playerAttached = state.phase !== "message" && state.phase !== "terminal";
+  const partySeekAutoSkip = useRef<PartySeekAutoSkip | null>(null);
   const watchParty = useWatchParty({
     videoRef,
-    attached: state.phase !== "message" && state.phase !== "terminal",
+    attached: playerAttached,
     mediaId: mediaId || "",
     onFollow: followParty,
     songScale,
+    partySeekAutoSkip,
   });
   // A party member's Up Next and autoplay defer to the party (CORE-1766).
   const partyLeads = watchPartyDefersUpNext(watchParty.party);
@@ -567,6 +570,7 @@ function FeaturePlayer({
   // separate end-of-file auto-advance above.
   const autoSkip = useAutoSkip({
     videoRef,
+    attached: playerAttached,
     markers: state.markers,
     mediaID: mediaId || "",
     prefs: {
@@ -576,6 +580,7 @@ function FeaturePlayer({
     },
     songScale,
     autoSkipLead: watchParty.autoSkipLead,
+    partySeekAutoSkip,
   });
 
   // Browser Media Session (ADR-0084 §43): mirror transport state to the OS and

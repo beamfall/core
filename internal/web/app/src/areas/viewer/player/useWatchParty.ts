@@ -2,11 +2,13 @@ import { type RefObject, useCallback, useEffect, useRef, useState } from "react"
 import { useHomeNetwork } from "../lib/watchTogether";
 import { getDisplayTrimMS } from "./displayTrim";
 import { listenerMuted, setListenerMuted } from "./listenerMute";
+import type { PartySeekAutoSkip } from "./useAutoSkip";
 import { lastViewerIntent, markViewerIntent } from "./viewerIntent";
 import {
   followLeadParty,
   getWatchParty,
   leaveParty,
+  type PartyAutoSkipOutcome,
   partyNowMS,
   reportLeadPosition,
   reportPartyDrift,
@@ -103,7 +105,7 @@ export interface WatchPartyView {
    */
   start: (relaxed?: boolean, lead?: boolean) => Promise<boolean>;
   leave: () => Promise<void>;
-  autoSkipLead: (positionMS: number) => Promise<boolean>;
+  autoSkipLead: (positionMS: number) => Promise<PartyAutoSkipOutcome>;
 }
 
 /** What this player is in the party: an ordinary member, the lead screen or a follower. */
@@ -127,6 +129,7 @@ export function useWatchParty({
   mediaId,
   onFollow,
   songScale = 1,
+  partySeekAutoSkip,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   /** Whether the <video> is mounted (it is not while an error replaces the stage). */
@@ -136,6 +139,7 @@ export function useWatchParty({
   onFollow: (item: string) => void;
   /** Original media seconds per stream second, after any applied tempo. */
   songScale?: number;
+  partySeekAutoSkip?: RefObject<PartySeekAutoSkip | null>;
 }): WatchPartyView {
   const party = useWatchPartyState();
   const [driftMS, setDriftMS] = useState<number | null>(null);
@@ -504,37 +508,22 @@ export function useWatchParty({
         expiresAt: performance.now() + SEEK_INTENT_TIMEOUT_MS,
       };
     };
-    const onLocal = (event: Event) => {
+    const submitLocal = (
+      type: string,
+      local: number,
+      paused: boolean,
+      tracked: LocalSeek | null,
+    ) => {
       const s = getWatchParty();
       const tl = s.timeline;
       if (s.status !== "active" || !tl || tl.item !== mediaIdRef.current) return;
-      if (event.type === "seeked" && leadAutoSkip.current !== null) {
-        const target = leadAutoSkip.current;
-        leadAutoSkip.current = null;
-        if (Math.abs(video.currentTime - target) * 1000 <= SEEK_THRESHOLD_MS) return;
-      }
-      // The lead's player is the timeline however it was moved (a remote
-      // control, a relock): nothing corrects it, so every event is its own.
-      // A follower screen has no transport: the next beat puts it back.
       if (s.lead && !s.isHost) return;
-      const isSeek = event.type === "seeked";
-      const pending = localSeek.current;
-      const tracked =
-        isSeek &&
-        pending &&
-        pending.partyID === s.partyID &&
-        pending.item === tl.item &&
-        performance.now() < pending.expiresAt
-          ? pending
-          : null;
-      if (tracked && tracked === submittedSeek.current) return;
-      if (!s.lead && !tracked && !hasRecentInput()) return;
+      const isSeek = type === "seeked";
       const now = partyNowMS();
-      const local = video.currentTime * positionScale;
       const agrees =
-        event.type === "pause"
+        type === "pause"
           ? !timelineStarted(tl, now)
-          : event.type === "play"
+          : type === "play"
             ? !tl.paused
             : Math.abs(local - expectedPositionMS(tl, now)) <= SEEK_THRESHOLD_MS;
       const sent = submittedSeek.current;
@@ -550,7 +539,8 @@ export function useWatchParty({
         return;
       }
       if (!isSeek || s.lead) {
-        void sendPartyTransport(tl.item, local, video.paused);
+        if (tracked) localSeek.current = null;
+        void sendPartyTransport(tl.item, local, paused);
         return;
       }
       const positionMS = Math.max(0, Math.round(local));
@@ -563,12 +553,63 @@ export function useWatchParty({
       };
       localSeek.current = submitted;
       submittedSeek.current = submitted;
-      void sendPartyTransport(tl.item, positionMS, video.paused).then((applied) => {
+      void sendPartyTransport(tl.item, positionMS, paused).then((applied) => {
         // A host-only request may still await approval. The local player
         // follows the current anchor in the meantime.
         if (!applied) {
           if (submittedSeek.current === submitted) submittedSeek.current = null;
           if (localSeek.current === submitted) localSeek.current = null;
+        }
+      });
+    };
+    const onLocal = (event: Event) => {
+      const s = getWatchParty();
+      const tl = s.timeline;
+      if (s.status !== "active" || !tl || tl.item !== mediaIdRef.current) return;
+      const isSeek = event.type === "seeked";
+      if (isSeek && leadAutoSkip.current !== null) {
+        const target = leadAutoSkip.current;
+        leadAutoSkip.current = null;
+        if (Math.abs(video.currentTime - target) * 1000 <= SEEK_THRESHOLD_MS) return;
+      }
+      // The lead's player is the timeline however it was moved (a remote
+      // control, a relock): nothing corrects it, so every event is its own.
+      // A follower screen has no transport: the next beat puts it back.
+      if (s.lead && !s.isHost) return;
+      const pending = localSeek.current;
+      const tracked =
+        isSeek &&
+        pending &&
+        pending.partyID === s.partyID &&
+        pending.item === tl.item &&
+        performance.now() < pending.expiresAt
+          ? pending
+          : null;
+      if (tracked && tracked === submittedSeek.current) return;
+      if (!s.lead && !tracked && !hasRecentInput()) return;
+      const local = video.currentTime * positionScale;
+      const paused = video.paused;
+      const skip = isSeek ? partySeekAutoSkip?.current?.(video) : undefined;
+      if (!skip) {
+        submitLocal(event.type, local, paused, tracked);
+        return;
+      }
+      const skipping = tracked ?? {
+        partyID: s.partyID,
+        item: tl.item,
+        expiresAt: performance.now() + SEEK_INTENT_TIMEOUT_MS,
+      };
+      localSeek.current = skipping;
+      void skip.then((outcome) => {
+        if (localSeek.current !== skipping) return;
+        const latest = getWatchParty();
+        if (latest.partyID !== skipping.partyID || latest.timeline?.item !== skipping.item) return;
+        if (outcome === "denied") {
+          // A member without auto-skip permission can still request their scrub.
+          submitLocal(event.type, local, paused, skipping);
+        } else {
+          localSeek.current = null;
+          sync();
         }
       });
     };
@@ -584,7 +625,7 @@ export function useWatchParty({
       video.removeEventListener("seeking", onSeeking);
       video.removeEventListener("seeked", onLocal);
     };
-  }, [active, attached, videoRef, positionScale]);
+  }, [active, attached, videoRef, positionScale, partySeekAutoSkip, sync]);
 
   const resume = useCallback(() => {
     const video = videoRef.current;
@@ -620,29 +661,29 @@ export function useWatchParty({
   );
 
   const autoSkipLead = useCallback(
-    async (positionMS: number) => {
+    async (positionMS: number): Promise<PartyAutoSkipOutcome> => {
       const video = videoRef.current;
       const { partyID, timeline, lead, isHost } = getWatchParty();
       if (!video || !lead || !isHost || !timeline || timeline.item !== mediaIdRef.current)
-        return false;
+        return "unconfirmed";
       pendingLeadSkip.current = video;
-      const applied = await sendPartyAutoSkip(timeline.item, positionMS);
+      const outcome = await sendPartyAutoSkip(timeline.item, positionMS);
       if (pendingLeadSkip.current === video) pendingLeadSkip.current = null;
+      if (outcome !== "applied") return outcome;
       const latest = getWatchParty();
       if (
-        !applied ||
         videoRef.current !== video ||
         latest.partyID !== partyID ||
         latest.timeline?.item !== timeline.item ||
         latest.timeline.positionMS !== Math.round(positionMS) ||
         mediaIdRef.current !== timeline.item
       )
-        return false;
+        return "unconfirmed";
       const streamSeconds = positionMS / positionScaleRef.current;
       leadFrame.current = null;
       leadAutoSkip.current = streamSeconds;
       video.currentTime = streamSeconds;
-      return true;
+      return "applied";
     },
     [videoRef],
   );
