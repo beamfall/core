@@ -64,4 +64,30 @@ describe("CadenceGate (CORE-2483)", () => {
     expect(gate.sample(16.7)).toBe(16.7);
     expect(gate.sample(400)).toBe(400);
   });
+
+  // CORE-2720: a page the browser throttles without hiding it draws 30 to 250 ms apart with the
+  // GPU idle. Those intervals are not the render's.
+  it("skips slow intervals after a frame the GPU had finished", () => {
+    const gate = new CadenceGate();
+    for (let i = 0; i < CADENCE_WINDOW; i++) gate.sample(16.7);
+    expect(gate.sample(200, true)).toBeNull();
+    expect(gate.sample(16.7, true)).toBe(16.7);
+    expect(gate.sample(200, false)).toBe(200);
+    expect(gate.sample(400, true)).toBe(400);
+  });
+
+  it("keeps full quality through a throttled page", () => {
+    const quality = new osc.GovernorConfig();
+    quality.maxLevel = 3;
+    quality.initialLevel = 3;
+    const governor = new osc.Governor(quality);
+    quality.free();
+    const gate = new CadenceGate();
+    for (const ms of [...steady(16.7, 60), ...steady(120, 600, 80)]) {
+      const sample = gate.sample(ms, ms > 20);
+      if (sample !== null) governor.record(sample);
+    }
+    expect(governor.level).toBe(3);
+    governor.free();
+  });
 });

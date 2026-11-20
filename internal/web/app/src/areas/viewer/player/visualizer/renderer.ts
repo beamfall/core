@@ -360,6 +360,9 @@ export class Renderer {
   // Oscillux's quality governor and the level the targets are built for (CORE-2215).
   private readonly governor: InstanceType<Oscillux["Governor"]>;
   private readonly cadence = new CadenceGate();
+  // The fence after the last frame drawn, polled at the next draw: whether the GPU kept up with
+  // it (CORE-2720).
+  private frameSync: WebGLSync | null = null;
   private level = TOP_LEVEL;
   private readonly switchUbo: WebGLBuffer;
   private readonly switchBlock = new Float32Array(12);
@@ -747,6 +750,7 @@ export class Renderer {
   ): void {
     if (!this.visual) return;
     const gl = this.gl;
+    const gpuIdle = this.frameDone();
     this.reducedMotion = reducedMotion;
     this.undo = null;
     const last = this.asked;
@@ -814,9 +818,10 @@ export class Renderer {
     // stall or a throttled page is a pause it ignores rather than a slow frame that steps the
     // render scale down.
     // A steady browser cap at 30 Hz is not overload: the cadence gate scales it to the target
-    // (CORE-2483).
+    // (CORE-2483). Nor is a slow interval after a frame the GPU had finished: the browser
+    // throttled the page (CORE-2720).
     if (p === null) {
-      const sample = this.cadence.sample(frameMs);
+      const sample = this.cadence.sample(frameMs, gpuIdle);
       if (sample !== null) this.governor.record(sample);
       this.setLevel(size, this.governor.level);
     }
@@ -872,6 +877,7 @@ export class Renderer {
 
     // 4. The limited frame to the canvas.
     this.showLimited(size);
+    this.frameSync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
     // Every frame of the fade reads its own grant, last of all its commands, in place of a read
     // the GPU had not finished: the next draw takes the word only if the GPU has finished this
     // whole frame, so the read waits behind nothing this renderer drew (Codex round 28).
@@ -1031,6 +1037,17 @@ export class Renderer {
     return (this.grantWord[0] & 0xf0) === 0;
   }
 
+  // Whether the GPU has finished the last frame drawn; false with no frame since the last poll.
+  // The fence is the frame's, so a frame not drawn (black, a withdrawn start) leaves none.
+  private frameDone(): boolean {
+    const sync = this.frameSync;
+    if (!sync) return false;
+    this.frameSync = null;
+    const status = this.gl.clientWaitSync(sync, 0, 0);
+    this.gl.deleteSync(sync);
+    return status !== this.gl.TIMEOUT_EXPIRED && status !== this.gl.WAIT_FAILED;
+  }
+
   // Abandons the read in flight: the frame it read is no longer the one on screen.
   private dropGrantRead(): void {
     if (!this.grantSync) return;
@@ -1124,6 +1141,8 @@ export class Renderer {
     const gl = this.gl;
     this.endSwitch();
     this.freeSize();
+    if (this.frameSync) gl.deleteSync(this.frameSync);
+    this.frameSync = null;
     for (const p of this.linked) gl.deleteProgram(p);
     for (const s of this.shaders) gl.deleteShader(s);
     // Fields a failed constructor never reached are undefined; GL treats them as null.

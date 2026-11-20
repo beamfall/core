@@ -10,6 +10,14 @@
 // on a variable-refresh or 120 Hz display, still counts. An overload that lands exactly on 30 Hz,
 // as a render missing every other 60 Hz vsync does, is indistinguishable from the cap by timing
 // alone and is not demoted; it already draws at the capped browser's rate.
+//
+// A page the browser throttles without hiding it (a pane in the background of a desktop app, an
+// occluded window) gets callbacks 30 to 250 ms apart, under the governor's pause gap, while the
+// GPU sits idle. The renderer fences each frame and polls the fence at the next callback: a slow
+// interval after a frame the GPU had already finished is the browser's scheduling, not the
+// render, and is skipped (CORE-2720). Measured in Chromium under ANGLE Metal, a 200 ms throttle
+// found every fence signalled, a GPU overload at 30 to 100 ms found none signalled, and main-thread
+// jank found none signalled either, so jank still counts as before.
 
 /** Intervals the gate watches before it passes any to the governor. */
 export const CADENCE_WINDOW = 30;
@@ -23,6 +31,8 @@ const STEADY_TOLERANCE = 0.15;
 const STEADY_SHARE = 0.9;
 /** Intervals at or above this are pauses, as in the governor's default. */
 const PAUSE_MS = 250;
+/** An interval above the target by this factor is slow, as in the governor's default. */
+const SLOW_FACTOR = 1.25;
 
 export class CadenceGate {
   private readonly window: number[] = [];
@@ -37,10 +47,12 @@ export class CadenceGate {
   /**
    * The interval to record with the governor for this frame, or null to skip it while the gate
    * is still learning the cadence. Pauses and invalid intervals pass through unchanged for the
-   * governor to ignore.
+   * governor to ignore. gpuIdle says the GPU had finished the previous frame by this one's
+   * callback: a slow interval then is skipped, and kept out of the cadence window.
    */
-  sample(frameMs: number): number | null {
+  sample(frameMs: number, gpuIdle = false): number | null {
     if (!Number.isFinite(frameMs) || frameMs <= 0 || frameMs >= PAUSE_MS) return frameMs;
+    if (gpuIdle && frameMs > this.targetMs * SLOW_FACTOR) return null;
     this.window.push(frameMs);
     if (this.window.length > CADENCE_WINDOW) this.window.shift();
     if (this.window.length < CADENCE_WINDOW) return null;

@@ -792,9 +792,10 @@ describe("Renderer geometry (CORE-2516)", () => {
     draw(800, 450);
     const size = r.size;
     for (let i = 0; i < 3; i++) draw(800, 450);
-    // One read a frame, each in place of the last; the fade goes on, and no word is taken.
+    // One read a frame, each in place of the last; the fade goes on, and no word is taken. The
+    // frame's own fence (CORE-2720) comes before the read's, which stays last.
     expect(reads).toHaveLength(4);
-    expect(order).toEqual(["blit", "fence", "blit", "fence", "blit", "fence", "blit", "fence"]);
+    expect(order).toEqual(Array(4).fill(["blit", "fence", "fence"]).flat());
     expect(r.size).toBe(size);
     expect(r.fadeLeft).toBeCloseTo(FADE_S - 3 / 60);
     gpu.busy = false;
@@ -805,7 +806,9 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(r.size).toBe(null);
     expect(r.black).toBe(BLACK_S);
     expect(blocking).toEqual([]);
-    expect(waits).toHaveLength(4);
+    // Four polls of the grant and, with the frame fence polled at each draw (CORE-2720), six of
+    // frames: none waits.
+    expect(waits).toHaveLength(10);
     expect(waits.every((timeout) => timeout === 0)).toBe(true);
   });
 
@@ -1110,6 +1113,21 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(() => draw(800, 450, 0.125)).toThrow("incomplete framebuffer");
     expect(r.size).toBe(null);
     expect(blits).toEqual([]);
+  });
+
+  // CORE-2720: a slow interval after a frame the GPU had finished is a throttled page, not an
+  // overloaded render; the gate is told which.
+  it("tells the cadence gate whether the GPU finished the last frame", () => {
+    const { renderer, r, draw, gpu } = make();
+    const idle: boolean[] = [];
+    r.cadence = { sample: (_: number, gpuIdle: boolean) => (idle.push(gpuIdle), null) };
+    draw(64, 36);
+    draw(64, 36);
+    gpu.busy = true;
+    draw(64, 36);
+    gpu.busy = false;
+    renderer.draw(64, 36, 0.2, silentFrame(), false);
+    expect(idle).toEqual([false, true, false, true]);
   });
 
   // Codex round 18: the limiter ages evidence by the time frames are shown apart, which a late
