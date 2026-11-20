@@ -545,6 +545,60 @@ func TestT4DrainIgnoresUnrelatedScratchWork(t *testing.T) {
 	}
 }
 
+func TestT4DrainIgnoresUnrelatedIdleReap(t *testing.T) {
+	s := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
+	for _, library := range []store.LibraryID{"A", "B"} {
+		key := SessionKey{SessionID: store.SessionID(library)}
+		if _, err := drainFile(t.Context(), s, library, key, fakeSourcePath, false, "720p/seg00000.m4s"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := registeredSession(t, s, SessionKey{SessionID: "A"})
+	b := registeredSession(t, s, SessionKey{SessionID: "B"})
+	s.mu.Lock()
+	aRun, bRun := a.run, b.run
+	a.lastAccess, b.lastAccess = time.Time{}, time.Time{}
+	s.mu.Unlock()
+	if aRun == nil || bRun == nil || aRun.proc == nil || bRun.proc == nil {
+		t.Fatal("both idle sessions must have a child to reap")
+	}
+	entered, release := scratchLatch(t)
+	s.stopEncoder = func(proc *ffmpeg.HLSProcess) {
+		if proc == bRun.proc {
+			close(entered)
+			<-release.ch
+		}
+		proc.Stop()
+	}
+	idlePass := make(chan struct{})
+	go func() {
+		s.reap()
+		close(idlePass)
+	}()
+	defer func() {
+		release.open()
+		waitScratchSignal(t, idlePass)
+	}()
+	waitScratchSignal(t, entered)
+	drained := testResult(t, startTestDrain(t.Context(), s, "A", 0))
+	if drained.err != nil {
+		t.Fatal(drained.err)
+	}
+	select {
+	case <-aRun.reaped:
+	default:
+		t.Fatal("library A drained before its child was reaped")
+	}
+	select {
+	case <-bRun.reaped:
+		t.Fatal("library B's reap finished with its stop still blocked")
+	default:
+	}
+	if _, err := os.Stat(a.dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("drained library A directory still exists: %v", err)
+	}
+}
+
 func TestT4DrainScratchDebtAndFenceRetry(t *testing.T) {
 	for _, failure := range []string{"root collision", "owned removal", "canceled wait"} {
 		t.Run(failure, func(t *testing.T) {

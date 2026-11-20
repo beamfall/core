@@ -156,7 +156,7 @@ func (s *Sessions) Drain(ctx context.Context, library store.LibraryID, expectedF
 	// A slow reap or removal must not serialize stop signals or cleanup
 	// for the other sessions. Revocations and scratch claims retain ownership.
 	for _, teardown := range teardowns {
-		go s.joinTeardowns([]*sessionTeardown{teardown})
+		go s.joinTeardown(teardown)
 	}
 
 	s.mu.Lock()

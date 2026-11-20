@@ -587,7 +587,13 @@ type sessionTeardown struct {
 
 func (s *Sessions) runTeardowns(teardowns []*sessionTeardown) {
 	s.signalTeardowns(teardowns)
-	s.joinTeardowns(teardowns)
+	// A detached session must finish independently of other libraries in
+	// the batch, even when this caller waits for the whole batch.
+	var pending sync.WaitGroup
+	for _, t := range teardowns {
+		pending.Go(func() { s.joinTeardown(t) })
+	}
+	pending.Wait()
 }
 
 func (s *Sessions) signalTeardowns(teardowns []*sessionTeardown) {
@@ -611,31 +617,27 @@ func (s *Sessions) signalTeardowns(teardowns []*sessionTeardown) {
 	}
 }
 
-func (s *Sessions) joinTeardowns(teardowns []*sessionTeardown) {
-	for _, t := range teardowns {
-		for _, probe := range t.probeReaps {
-			<-probe
-		}
-		if t.run != nil {
-			if t.stopChild && s.stopEncoder != nil {
-				s.stop(t.run.proc)
-			}
-			<-t.run.reaped
-		}
+func (s *Sessions) joinTeardown(t *sessionTeardown) {
+	for _, probe := range t.probeReaps {
+		<-probe
 	}
-	for _, t := range teardowns {
-		p := t.session.scratch
-		if t.cleanupOnRelease && p != nil {
-			s.mu.Lock()
-			if p.users > 0 {
-				p.cleanup = t
-				s.mu.Unlock()
-				continue
-			}
+	if t.run != nil {
+		if t.stopChild && s.stopEncoder != nil {
+			s.stop(t.run.proc)
+		}
+		<-t.run.reaped
+	}
+	p := t.session.scratch
+	if t.cleanupOnRelease && p != nil {
+		s.mu.Lock()
+		if p.users > 0 {
+			p.cleanup = t
 			s.mu.Unlock()
+			return
 		}
-		s.finishTeardown(t)
+		s.mu.Unlock()
 	}
+	s.finishTeardown(t)
 }
 
 func (s *Sessions) finishTeardown(t *sessionTeardown) {
@@ -1405,9 +1407,8 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 			s.runTeardowns([]*sessionTeardown{discard})
 		}
 		if predecessor != nil {
-			teardowns := []*sessionTeardown{predecessor}
-			s.signalTeardowns(teardowns)
-			go s.joinTeardowns(teardowns)
+			s.signalTeardowns([]*sessionTeardown{predecessor})
+			go s.joinTeardown(predecessor)
 		}
 		if watchDone != nil {
 			go s.watchLiveRevocation(watchSession, watchDone, secure.Revoked, s.liveRevocationInterval())
