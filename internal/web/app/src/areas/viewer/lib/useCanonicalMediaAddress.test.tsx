@@ -3,8 +3,9 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
-import { fetchMedia } from "./mediaDetail";
-import { useCanonicalMediaAddress, useMediaAddressID } from "./useCanonicalMediaAddress";
+import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
+import { fetchMedia, mediaDetailCacheKey } from "./mediaDetail";
+import { useCanonicalMediaAddress, useMediaAddress } from "./useCanonicalMediaAddress";
 
 const session = vi.hoisted(() => ({ revealed: false }));
 vi.mock("@/lib/session", () => ({
@@ -16,7 +17,10 @@ vi.mock("@/lib/session", () => ({
     },
   }),
 }));
-vi.mock("./mediaDetail", () => ({ fetchMedia: vi.fn() }));
+vi.mock("./mediaDetail", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./mediaDetail")>()),
+  fetchMedia: vi.fn(),
+}));
 
 const ID = "media-sha256-a371bff46385f7ded";
 const media: GenericMediaInfo = {
@@ -32,8 +36,8 @@ function Harness({ route, enabled }: { route: "watch" | "media"; enabled?: boole
   return null;
 }
 
-function WatchAddress() {
-  const id = useMediaAddressID();
+function WatchAddress({ cachedDetail = false }: { cachedDetail?: boolean }) {
+  const { id } = useMediaAddress({ cachedDetail });
   return <div>{id === "" ? "unavailable" : id}</div>;
 }
 
@@ -42,8 +46,31 @@ describe("legacy watch bookmark resolution", () => {
   const sampledID = "media-sample1-a371bff46385f7ded";
 
   afterEach(() => {
+    clearViewerCache();
     vi.mocked(fetchMedia).mockReset();
     vi.useRealTimers();
+  });
+
+  it("uses cached sampled detail until the server confirms a miss", async () => {
+    const key = mediaDetailCacheKey(sampledID);
+    writeViewerCache("viewer", key, { media: { ...media, id: sampledID }, fields: [] });
+    let confirmMiss: (value: null) => void = () => {};
+    vi.mocked(fetchMedia).mockReturnValue(
+      new Promise((resolve) => {
+        confirmMiss = resolve;
+      }),
+    );
+    render(
+      <MemoryRouter initialEntries={[bookmark]}>
+        <Routes>
+          <Route path="/watch/*" element={<WatchAddress cachedDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(sampledID)).toBeDefined();
+    await act(async () => confirmMiss(null));
+    expect(screen.getByText(ID)).toBeDefined();
+    expect(readViewerCache("viewer", key)).toBeUndefined();
   });
 
   it.each([null, { ...media, id: sampledID }])(

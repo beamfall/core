@@ -45,7 +45,7 @@ func (c *fakeCatalog) AllLibraryRoots(context.Context) ([]string, error) {
 func (c *fakeCatalog) LibraryRoots(_ context.Context, id store.LibraryID) ([]string, error) {
 	return c.roots[id], nil
 }
-func (c *fakeCatalog) MediaFileExistsByFingerprint(_ context.Context, fp string) (store.MediaID, bool, error) {
+func (c *fakeCatalog) LiveMediaFileExistsByFingerprint(_ context.Context, fp string) (store.MediaID, bool, error) {
 	if c.existsErr != nil {
 		return "", false, c.existsErr
 	}
@@ -217,10 +217,12 @@ func TestIngestChecksBothFingerprintSchemes(t *testing.T) {
 		name      string
 		sampled   bool
 		collision bool
+		trashed   bool
 	}{
 		{name: "legacy-exact"},
 		{name: "sampled-exact", sampled: true},
 		{name: "sampled-collision", sampled: true, collision: true},
+		{name: "sampled-trashed", sampled: true, trashed: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
@@ -281,6 +283,11 @@ func TestIngestChecksBothFingerprintSchemes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if tc.trashed {
+				if err := cat.TrashMedia(ctx, media.ID, store.LibraryFilter{AllLibraries: true}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			src := &fakeSource{items: []Item{{ID: "hash-dup", Category: "films", ContentPath: download}}}
 			scan := &fakeScan{}
 			ing, ledger := newTestIngestor(t, src, cat, scan, map[string]store.LibraryID{"films": library}, downloads)
@@ -290,9 +297,9 @@ func TestIngestChecksBothFingerprintSchemes(t *testing.T) {
 				t.Fatal(err)
 			}
 			destination := filepath.Join(libRoot, IncomingFolderName, "download.mkv")
-			if tc.collision {
+			if tc.collision || tc.trashed {
 				if result.Imported != 1 || result.Skipped != 0 || len(scan.scans) != 1 {
-					t.Fatalf("sample-only match: result = %+v, scans = %v", result, scan.scans)
+					t.Fatalf("expected relocation: result = %+v, scans = %v", result, scan.scans)
 				}
 				if _, err := os.Stat(destination); err != nil {
 					t.Fatal(err)

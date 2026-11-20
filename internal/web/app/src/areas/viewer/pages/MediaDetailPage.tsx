@@ -46,7 +46,7 @@ import {
 } from "../lib/mediaDetail";
 import { castHasDetail, creditsWithJob } from "../lib/people";
 import { streamFacts } from "../lib/streamFacts";
-import { useCanonicalMediaAddress, useMediaAddressID } from "../lib/useCanonicalMediaAddress";
+import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
   type CategoryFacts,
   type DetailScore,
@@ -102,7 +102,7 @@ const WRITER_JOBS = ["Writer", "Screenplay"];
 // with nothing to show offers a retry.
 export function MediaDetailPage() {
   // A readable address (CORE-2329) or a bare ID: the token names the item.
-  const addressID = useMediaAddressID();
+  const { id: addressID, confirmed } = useMediaAddress({ cachedDetail: true });
   const mediaId = addressID ?? "";
   const location = useLocation();
   const navigate = useNavigate();
@@ -167,7 +167,7 @@ export function MediaDetailPage() {
   // Between a route change and the effect, state still holds the previous item.
   const current = detail?.media.id === mediaId ? detail : null;
   const media = current?.media;
-  useCanonicalMediaAddress("media", media ?? null);
+  useCanonicalMediaAddress("media", media ?? null, confirmed);
   const context = useContainerContext(media, mediaId);
   // Audio names its people under the title, unless a credit carries a headshot
   // or a part (an audio drama's cast): then the cast row shows them instead, so

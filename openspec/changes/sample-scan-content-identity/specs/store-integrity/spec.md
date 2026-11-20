@@ -139,7 +139,8 @@ catalog publication transaction.
 #### Scenario: Concurrent sampled admission during promotion
 
 - **WHEN** identical sampled bytes are cataloged before the promotion transaction starts
-- **THEN** the archive publication is rolled back and the existing cataloged file is kept
+- **THEN** promotion skips the duplicate and keeps the existing cataloged file at its path,
+  including when that path is the archive destination
 
 ### Requirement: Export manifests verify complete originals
 

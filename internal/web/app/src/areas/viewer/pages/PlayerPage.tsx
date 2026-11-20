@@ -44,7 +44,7 @@ import {
   SUBTITLE_APPEARANCE_KEYS,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
-import { useCanonicalMediaAddress, useMediaAddressID } from "../lib/useCanonicalMediaAddress";
+import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
   type PlayQueueItem,
@@ -101,7 +101,7 @@ export function PlayerPage() {
   const location = useLocation();
   const navigate = useNavigate();
   // A readable address (CORE-2329) or a bare ID: the token names the item.
-  const mediaId = useMediaAddressID();
+  const { id: mediaId } = useMediaAddress();
   const host = usePlayerHost();
   const skip = new URLSearchParams(location.search).has("t");
   const carried =

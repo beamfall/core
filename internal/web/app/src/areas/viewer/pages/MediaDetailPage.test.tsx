@@ -337,15 +337,30 @@ describe("MediaDetailPage", () => {
     expect(rows).not.toContain("Audio");
   });
 
-  it("keeps a cached detail when revalidation fails", async () => {
-    writeViewerCache(identity, mediaDetailCacheKey("m1"), { media, fields: [] });
-    vi.mocked(fetchMedia).mockRejectedValue(new TypeError("Failed to fetch"));
-    renderAt(["/media/m1"]);
-    await act(async () => {});
+  it.each(["m1", "media-sample1-a371bff46385f7ded"])(
+    "keeps cached detail for %s when revalidation fails",
+    async (id) => {
+      writeViewerCache(identity, mediaDetailCacheKey(id), { media: { ...media, id }, fields: [] });
+      vi.mocked(fetchMedia).mockRejectedValue(new TypeError("Failed to fetch"));
+      const path = `/media/${id}`;
+      window.history.replaceState(null, "", path);
+      try {
+        renderAt([path]);
+        await act(async () => {});
 
-    expect(screen.getByRole("heading", { level: 1, name: "Server title" })).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
+        expect(screen.getByRole("heading", { level: 1, name: "Server title" })).toBeInTheDocument();
+        expect(screen.queryByRole("alert")).toBeNull();
+        expect(fetchMedia).toHaveBeenCalledWith(id, expect.any(AbortSignal));
+        expect(fetchMedia).not.toHaveBeenCalledWith(
+          "media-sha256-a371bff46385f7ded",
+          expect.anything(),
+        );
+        expect(window.location.pathname).toBe(path);
+      } finally {
+        window.history.replaceState(null, "", "/");
+      }
+    },
+  );
 
   it("goes back to the page it came from, or Home on a deep link", async () => {
     vi.mocked(fetchMedia).mockResolvedValue(media);

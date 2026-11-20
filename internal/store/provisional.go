@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -308,13 +309,24 @@ func (s *Store) createProvisionalMediaSQL(ctx context.Context, mediaID MediaID, 
 // An abandoned partial is NEVER promoted: the proxy-tee only calls this on a full,
 // verified body.
 func (s *Store) PromoteProvisionalMedia(ctx context.Context, mediaID MediaID, contentFingerprint, finalPath string) error {
-	_, err := s.PromoteProvisionalMediaGeneration(ctx, mediaID, "", contentFingerprint, finalPath)
+	_, err := s.PromoteProvisionalMediaGeneration(ctx, mediaID, "", contentFingerprint, "", finalPath)
 	return err
 }
 
+// ProvisionalPromotionDuplicateError means another live Media owns the exact
+// bytes. KeepArchive protects the file when that Media already uses finalPath.
+type ProvisionalPromotionDuplicateError struct {
+	KeepArchive bool
+}
+
+func (*ProvisionalPromotionDuplicateError) Error() string {
+	return "provisional promotion duplicates cataloged content"
+}
+
 // PromoteProvisionalMediaGeneration promotes only the live provisional path
-// observed by the caller. expectedTeePath empty preserves the legacy API.
-func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID MediaID, expectedTeePath, contentFingerprint, finalPath string) (bool, error) {
+// observed by the caller. A supplied sample enables exact duplicate checks
+// against both fingerprint schemes in the publication transaction.
+func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID MediaID, expectedTeePath, contentFingerprint, sample, finalPath string) (bool, error) {
 	if mediaID == "" {
 		return false, ValidationError("media ID is required")
 	}
@@ -329,6 +341,43 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	// BEGIN IMMEDIATE serializes the decision and UPDATE with scan and managed
+	// import admissions, even when they use a different fingerprint key.
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if sample != "" {
+		candidate, err := liveMediaFileByFingerprint(ctx, tx, contentFingerprint)
+		if err != nil {
+			return false, err
+		}
+		if candidate.mediaID == "" {
+			candidate, err = s.mediaFileMatchesSampleLocked(ctx, tx, sample, contentFingerprint)
+			if err != nil {
+				return false, err
+			}
+		}
+		if candidate.mediaID != "" {
+			matchedPath, _ := filepath.EvalSymlinks(candidate.path)
+			archivePath, _ := filepath.EvalSymlinks(finalPath)
+			keep := filepath.Clean(candidate.path) == filepath.Clean(finalPath) ||
+				archivePath != "" && matchedPath == archivePath
+			if !keep {
+				// A second admission can own the archive path even when the
+				// duplicate was found at a different path under the other scheme.
+				err := tx.QueryRowContext(ctx, `
+					SELECT EXISTS (SELECT 1 FROM media_file
+						WHERE path IN (?, ?) AND missing_at_ms IS NULL)
+				`, finalPath, archivePath).Scan(&keep)
+				if err != nil {
+					return false, errors.Join(&ProvisionalPromotionDuplicateError{KeepArchive: true}, err)
+				}
+			}
+			return false, &ProvisionalPromotionDuplicateError{KeepArchive: keep}
+		}
+	}
 	query := `
 		UPDATE media_file
 		SET content_fingerprint = ?, path = ?, provisional = 0
@@ -339,7 +388,7 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 		query += " AND path = ?"
 		args = append(args, expectedTeePath)
 	}
-	res, err := s.catalogW.ExecContext(ctx, query, args...)
+	res, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return false, err
 	}
@@ -347,6 +396,9 @@ func (s *Store) PromoteProvisionalMediaGeneration(ctx context.Context, mediaID M
 		// No provisional file for this Media (already promoted, or never
 		// provisional): nothing to do, not an error.
 		return false, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
 	}
 	if eventErr := s.appendMediaEventLocked(ctx, MediaEventUpdated, mediaID, nil, time.Now().UTC()); eventErr != nil {
 		// The promotion is already committed; the append must not fail it, but the

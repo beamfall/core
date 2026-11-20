@@ -540,7 +540,7 @@ func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream
 	if err != nil {
 		return false, err
 	}
-	_, duplicate, err := s.store.MediaFileExistsByFingerprint(ctx, fingerprint)
+	_, duplicate, err := s.store.LiveMediaFileExistsByFingerprint(ctx, fingerprint)
 	if err != nil || duplicate {
 		return false, err
 	}
@@ -574,7 +574,14 @@ func (s *Service) promote(ctx context.Context, mediaID store.MediaID, st *stream
 	if s.beforeCAS != nil {
 		s.beforeCAS()
 	}
-	updated, err := s.store.PromoteProvisionalMediaGeneration(ctx, mediaID, st.teePath, fingerprint, st.archivePath)
+	updated, err := s.store.PromoteProvisionalMediaGeneration(ctx, mediaID, st.teePath, fingerprint, sample, st.archivePath)
+	var duplicatePromotion *store.ProvisionalPromotionDuplicateError
+	if errors.As(err, &duplicatePromotion) {
+		if duplicatePromotion.KeepArchive {
+			return false, nil
+		}
+		return false, s.rollbackPromotion(st, expected)
+	}
 	if err != nil {
 		return false, errors.Join(err, s.rollbackPromotion(st, expected))
 	}

@@ -11,6 +11,72 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
+func TestLiveFingerprintLookupExcludesTrashAndUnsafeFiles(t *testing.T) {
+	for _, scenario := range []string{"trashed Media", "trashed Library", "outside-root symlink", "directory"} {
+		t.Run(scenario, func(t *testing.T) {
+			st, root, _ := importStageHarness(t)
+			ctx := t.Context()
+			const library store.LibraryID = "library-local"
+			path := filepath.Join(root, "cataloged.mkv")
+			payload := []byte("known bytes")
+			if err := os.WriteFile(path, payload, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			sample, err := store.SampleMediaFileContent(ctx, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			full, err := store.HashMediaFileContent(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: library, Path: path, Title: "Cataloged", Container: "mkv",
+				Codec: "h264", ContentFingerprint: sample,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if id, found, err := st.MediaFileMatchesSample(ctx, sample, full); err != nil || !found || id != media.ID {
+				t.Fatalf("live match = %q, %t, %v", id, found, err)
+			}
+			switch scenario {
+			case "trashed Media", "trashed Library":
+				if scenario == "trashed Media" {
+					err = st.TrashMedia(ctx, media.ID, store.LibraryFilter{AllLibraries: true})
+				} else {
+					err = st.DeleteLibrary(ctx, library)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if id, found, err := st.LiveMediaFileExistsByFingerprint(ctx, sample); err != nil || found || id != "" {
+					t.Fatalf("trashed lookup = %q, %t, %v", id, found, err)
+				}
+			case "outside-root symlink", "directory":
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "outside-root symlink" {
+					outside := filepath.Join(t.TempDir(), "payload.mkv")
+					if err := os.WriteFile(outside, payload, 0o600); err != nil {
+						t.Fatal(err)
+					}
+					err = os.Symlink(outside, path)
+				} else {
+					err = os.Mkdir(path, 0o700)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if id, found, err := st.MediaFileMatchesSample(ctx, sample, full); err != nil || found || id != "" {
+				t.Fatalf("non-live match = %q, %t, %v", id, found, err)
+			}
+		})
+	}
+}
+
 // liveFileAt returns the live media_file row cataloged at path in library-local.
 func liveFileAt(t *testing.T, st *store.Store, path string) store.MediaFile {
 	t.Helper()

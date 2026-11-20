@@ -35,9 +35,9 @@ type Catalog interface {
 	AllLibraryRoots(ctx context.Context) ([]string, error)
 	// LibraryRoots returns a Library's configured root folders.
 	LibraryRoots(ctx context.Context, libraryID store.LibraryID) ([]string, error)
-	// MediaFileExistsByFingerprint reports an existing live file by content
+	// LiveMediaFileExistsByFingerprint reports an existing live file by content
 	// fingerprint (the exact-duplicate skip, §5).
-	MediaFileExistsByFingerprint(ctx context.Context, fingerprint string) (store.MediaID, bool, error)
+	LiveMediaFileExistsByFingerprint(ctx context.Context, fingerprint string) (store.MediaID, bool, error)
 	// MediaFileMatchesSample confirms the full digest of a live sampled candidate.
 	MediaFileMatchesSample(ctx context.Context, sample, full string) (store.MediaID, bool, error)
 }
@@ -367,7 +367,7 @@ func (i *Ingestor) importItem(ctx context.Context, item Item, libraryID store.Li
 			i.recordError(item, libraryID, "fingerprint failed")
 			return libraryID, linkedAny, OutcomeError
 		}
-		existing, exists, err := i.catalog.MediaFileExistsByFingerprint(ctx, fingerprint)
+		existing, exists, err := i.catalog.LiveMediaFileExistsByFingerprint(ctx, fingerprint)
 		if err == nil && !exists {
 			sample, sampleErr := store.SampleMediaFileContent(ctx, mediaFile.absolutePath)
 			if sampleErr != nil {

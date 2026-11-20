@@ -3,9 +3,9 @@ import { useHref, useLocation, useParams } from "react-router";
 import { ApiDeadlineError, ApiError, getIdentityEpochSignal, isAuthRejection } from "@/lib/api";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
 import { useSession, useViewerIdentity } from "@/lib/session";
-import { clearViewerCache } from "@/lib/viewerCache";
+import { clearViewerCache, deleteViewerCache, readViewerCache } from "@/lib/viewerCache";
 import { canonicalMediaPath, type MediaRoute, mediaAddressIDs, mediaPath } from "./mediaAddress";
-import { fetchMedia } from "./mediaDetail";
+import { fetchMedia, type MediaDetail, mediaDetailCacheKey } from "./mediaDetail";
 
 function isTransientLookupFailure(error: unknown): boolean {
   if (error instanceof ApiError) {
@@ -16,8 +16,11 @@ function isTransientLookupFailure(error: unknown): boolean {
   return error instanceof TypeError || error instanceof ApiDeadlineError;
 }
 
-/** Resolves a bare address. Null means pending and an empty ID means unavailable. */
-export function useMediaAddressID(): string | null {
+/** Resolves an address. Cached detail can render before the address is confirmed. */
+export function useMediaAddress({ cachedDetail = false } = {}): {
+  id: string | null;
+  confirmed: boolean;
+} {
   const [preferred, legacy] = mediaAddressIDs(useParams()["*"]);
   const identity = useViewerIdentity();
   const { key } = useLocation();
@@ -38,7 +41,9 @@ export function useMediaAddressID(): string | null {
       if (!current()) return;
       void fetchMedia(preferred, controller.signal).then(
         (media) => {
-          if (current()) setResolution({ scope, epoch, id: media ? preferred : legacy });
+          if (!current()) return;
+          if (!media) deleteViewerCache(identity, mediaDetailCacheKey(preferred));
+          setResolution({ scope, epoch, id: media ? preferred : legacy });
         },
         (error: unknown) => {
           if (!current()) return;
@@ -57,9 +62,18 @@ export function useMediaAddressID(): string | null {
       controller.abort();
       clearTimeout(retry);
     };
-  }, [epoch, legacy, preferred, scope]);
-  if (!legacy) return preferred;
-  return resolution?.scope === scope && resolution.epoch === epoch ? resolution.id : null;
+  }, [epoch, identity, legacy, preferred, scope]);
+  if (!legacy) return { id: preferred, confirmed: true };
+  if (!epoch?.aborted) {
+    if (resolution?.scope === scope && resolution.epoch === epoch) {
+      return { id: resolution.id, confirmed: true };
+    }
+    if (cachedDetail) {
+      const cached = readViewerCache<MediaDetail>(identity, mediaDetailCacheKey(preferred));
+      if (cached?.media.id === preferred) return { id: preferred, confirmed: false };
+    }
+  }
+  return { id: null, confirmed: false };
 }
 
 /**

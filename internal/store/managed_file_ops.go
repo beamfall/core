@@ -229,29 +229,30 @@ func (s *stagedSource) close() {
 }
 
 // copyIntoRootTemp writes src's bytes into a freshly created, uniquely named
-// 0600 temp inside root and returns the temp's member name. O_EXCL is what makes
+// 0600 temp inside root and returns its member name and inode. O_EXCL makes
 // the create fail closed: openat refuses any existing entry at the name,
 // symlinks included, so the copy can never be redirected through a planted link.
-func copyIntoRootTemp(root *os.Root, src *os.File, prefix string) (string, error) {
+func copyIntoRootTemp(root *os.Root, src *os.File, prefix string) (string, os.FileInfo, error) {
 	var token [16]byte
 	if _, err := rand.Read(token[:]); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	name := prefix + hex.EncodeToString(token[:])
 	tmp, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if _, err := io.Copy(tmp, src); err != nil {
 		_ = tmp.Close()
 		_ = root.Remove(name)
-		return "", err
+		return "", nil, err
 	}
-	if err := tmp.Close(); err != nil {
+	info, statErr := tmp.Stat()
+	if err := errors.Join(statErr, tmp.Close()); err != nil {
 		_ = root.Remove(name)
-		return "", err
+		return "", nil, err
 	}
-	return name, nil
+	return name, info, nil
 }
 
 // newConvertStagingPath returns a fresh, unique staging path for one conversion
@@ -642,15 +643,20 @@ func copyOpenFileToStaging(ctx context.Context, src *os.File, stagingPath string
 // that exposes a new name in the Library root. A destination directory replaced
 // mid-admission is refused rather than becoming the place the file lands.
 func admitStagedFileNoReplace(stagingPath, dst string) error {
+	_, err := admitStagedFileWithIdentity(stagingPath, dst)
+	return err
+}
+
+func admitStagedFileWithIdentity(stagingPath, dst string) (os.FileInfo, error) {
 	source, err := openStagedSource(stagingPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer source.close()
 	dstDir := filepath.Dir(dst)
 	root, err := openManagedDir(dstDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer root.Close()
 	// Same-filesystem fast path: link the staged inode at dst without copying.
@@ -661,24 +667,25 @@ func admitStagedFileNoReplace(stagingPath, dst string) error {
 	// descriptor. EEXIST is the no-replace refusal and is returned as-is.
 	if linkErr := os.Link(stagingPath, dst); linkErr == nil {
 		if err := verifyManagedDirUnreplaced(root, dstDir); err != nil {
-			return err
+			return nil, err
 		}
 		landed, err := root.Lstat(filepath.Base(dst))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !os.SameFile(source.id, landed) {
-			return errManagedPathIdentity
+			return nil, errManagedPathIdentity
 		}
 		source.remove()
-		return nil
+		return landed, nil
 	} else if !errors.Is(linkErr, syscall.EXDEV) {
 		// Includes EEXIST — the no-replace refusal — returned as-is.
-		return linkErr
+		return nil, linkErr
 	}
-	tmpName, err := copyIntoRootTemp(root, source.file, "."+filepath.Base(dst)+".import-")
+	name := filepath.Base(dst)
+	tmpName, copied, err := copyIntoRootTemp(root, source.file, "."+name+".import-")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	committed := false
 	defer func() {
@@ -687,15 +694,22 @@ func admitStagedFileNoReplace(stagingPath, dst string) error {
 		}
 	}()
 	if err := verifyManagedDirUnreplaced(root, dstDir); err != nil {
-		return err
+		return nil, err
 	}
-	if err := root.Link(tmpName, filepath.Base(dst)); err != nil {
-		return err
+	if err := root.Link(tmpName, name); err != nil {
+		return nil, err
+	}
+	landed, err := root.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(copied, landed) {
+		return nil, errManagedPathIdentity
 	}
 	committed = true
 	_ = root.Remove(tmpName)
 	source.remove()
-	return nil
+	return landed, nil
 }
 
 // ManagedPath is the result shape for a Library-root-scoped folder/file

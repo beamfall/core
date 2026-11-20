@@ -503,40 +503,90 @@ func TestProxyTeeStreamsToClientAndArchivesInPlace(t *testing.T) {
 }
 
 func TestPromotionKeepsExistingContent(t *testing.T) {
-	for _, scheme := range []string{"sha256", "sample1"} {
-		t.Run(scheme, func(t *testing.T) {
+	for _, tc := range []struct {
+		name                                       string
+		sampled, concurrent, atArchive, legacyAlso bool
+	}{
+		{name: "sha256"},
+		{name: "sample1", sampled: true},
+		{name: "sample1 admitted just before CAS", sampled: true, concurrent: true},
+		{name: "sample1 takes ownership of archive path", sampled: true, concurrent: true, atArchive: true},
+		{name: "archive path claimed alongside legacy match", sampled: true, concurrent: true, atArchive: true, legacyAlso: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
 			ctx := t.Context()
-			path := filepath.Join(t.TempDir(), "existing.mp3")
-			if err := os.WriteFile(path, enclosureBody, 0o600); err != nil {
+			if err := h.store.SetLibraryRoots(ctx, "library-local", []string{h.archiveRoot}); err != nil {
 				t.Fatal(err)
 			}
-			fingerprint, err := store.HashMediaFileContent(path)
-			if scheme == "sample1" && err == nil {
-				fingerprint, err = store.SampleMediaFileContent(ctx, path)
-			}
-			if err != nil {
+			path := filepath.Join(h.archiveRoot, "existing.mp3")
+			if tc.atArchive {
+				path = h.archivePath
+			} else if err := os.WriteFile(path, enclosureBody, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			existing, _, err := h.store.ImportMediaFile(ctx, store.ImportMediaFile{
-				LibraryID: "library-local", Title: "Existing", Path: path, Class: store.MediaClassAudio,
-				Container: "mp3", Codec: "mp3", ContentFingerprint: fingerprint,
-			})
-			if err != nil {
-				t.Fatal(err)
+			var existing store.Media
+			var fingerprint string
+			admit := func() {
+				var err error
+				if tc.sampled {
+					fingerprint, err = store.SampleMediaFileContent(ctx, path)
+				} else {
+					fingerprint, err = store.HashMediaFileContent(path)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				existing, _, err = h.store.ImportMediaFile(ctx, store.ImportMediaFile{
+					LibraryID: "library-local", Title: "Existing", Path: path, Class: store.MediaClassAudio,
+					Container: "mp3", Codec: "mp3", ContentFingerprint: fingerprint,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tc.legacyAlso {
+					legacyPath := filepath.Join(h.archiveRoot, "legacy.mp3")
+					if err := os.WriteFile(legacyPath, enclosureBody, 0o600); err != nil {
+						t.Fatal(err)
+					}
+					full, err := store.HashMediaFileContent(legacyPath)
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, _, err = h.store.ImportMediaFile(ctx, store.ImportMediaFile{
+						LibraryID: "library-local", Title: "Legacy", Path: legacyPath, Class: store.MediaClassAudio,
+						Container: "mp3", Codec: "mp3", ContentFingerprint: full,
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
 			}
-			h.svc.beforeCAS = func() { t.Error("duplicate reached archive publication") }
+			if tc.concurrent {
+				h.svc.beforeCAS = admit
+			} else {
+				admit()
+				h.svc.beforeCAS = func() { t.Error("duplicate reached archive publication") }
+			}
 			req := httptest.NewRequest(http.MethodGet, "/api/media/proxy/"+h.proxyToken(t), nil)
 			rec := httptest.NewRecorder()
 			h.svc.ServeProxy(rec, req)
 			if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), enclosureBody) {
 				t.Fatalf("proxy response = %d, %q", rec.Code, rec.Body.String())
 			}
-			if _, err := os.Stat(h.archivePath); !errors.Is(err, os.ErrNotExist) {
+			if tc.atArchive {
+				got, err := os.ReadFile(h.archivePath)
+				if err != nil || !bytes.Equal(got, enclosureBody) {
+					t.Fatalf("cataloged archive = %q, err = %v", got, err)
+				}
+			} else if _, err := os.Stat(h.archivePath); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("duplicate archive exists or stat failed: %v", err)
 			}
 			if prov, err := h.store.MediaFileProvisional(ctx, h.mediaID); err != nil || !prov {
 				t.Fatalf("stream provisional = %t, err = %v", prov, err)
+			}
+			if existing.ID == "" {
+				t.Fatal("duplicate admission did not run")
 			}
 			file, err := h.store.PrimaryMediaFile(ctx, existing.ID, store.LibraryFilter{AllLibraries: true})
 			if err != nil || file.Path != path || file.ContentFingerprint != fingerprint {
