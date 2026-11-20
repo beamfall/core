@@ -2,8 +2,8 @@
 
 ### Requirement: Managed file identity comes from file content
 
-Managed import and managed convert SHALL store the same `sample1:` identity a scan would compute
-from the staged bytes. They SHALL also compute the full SHA-256 digest during staging for legacy
+For new rows, managed import and managed convert SHALL store the same `sample1:` identity a scan
+would compute from the staged bytes. They SHALL also compute the full SHA-256 digest during staging for legacy
 duplicate checks. They SHALL refuse, with a validation error, an admission whose sample or legacy
 digest is already cataloged at another path or in another library, including missing and trashed
 rows. The duplicate lookup SHALL run at the existing catalog admission step. The existing file
@@ -40,6 +40,12 @@ and its Media SHALL remain unchanged.
 
 - **WHEN** staged bytes match a legacy full SHA-256 digest cataloged at another path
 - **THEN** managed admission refuses the duplicate
+
+#### Scenario: Legacy bytes restored by managed import
+
+- **WHEN** the on-disk file is absent but its legacy row is still live, and managed import
+  restores bytes whose full SHA-256 matches that row at the same path and in the same library
+- **THEN** the import preserves the existing Media ID, fingerprint, watch state and match pin
 
 ## ADDED Requirements
 
@@ -123,6 +129,11 @@ the catalog lookup in the publication transaction.
 - **WHEN** a matching sample is cataloged before the promotion transaction starts
 - **THEN** promotion skips the duplicate and keeps the existing cataloged file at its path,
   including when that path is the archive destination
+
+#### Scenario: A scan discovers a copy of a promoted archive
+
+- **WHEN** proxy promotion publishes an archive and a scan later discovers identical bytes
+- **THEN** the scan resolves the bytes to the promoted Media through its `sample1:` fingerprint
 
 ### Requirement: Export manifests verify complete originals
 

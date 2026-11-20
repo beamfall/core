@@ -72,7 +72,8 @@ viewer SHALL replace the address in place without adding a history entry or rest
 
 #### Scenario: Cached sampled detail while offline
 
-- **WHEN** the current viewer opens a bare sampled ID with cached detail
+- **WHEN** the current viewer opens a bare sampled ID with cached detail, a viewer-bound card
+  preview, or a matching item in a viewer-cached section
 - **THEN** the viewer can render the sampled item immediately while the address revalidates
 - **AND** the viewer keeps the bookmark until the server confirms which item it identifies
 
