@@ -1112,9 +1112,12 @@ func TestT3TerminationReapsSiblingDuringPlaylistWrite(t *testing.T) {
 	run := registeredSession(t, s, active).run
 	entered, release := scratchLatch(t)
 	defer release.open()
-	s.beforeSetupCommit = func() {
-		close(entered)
-		<-release.ch
+	s.writeSetupPlaylist = func(session *hlsSession, rel string, data []byte) error {
+		if rel == masterPlaylistName {
+			close(entered)
+			<-release.ch
+		}
+		return session.writePlaylist(rel, data)
 	}
 	request := make(chan error, 1)
 	go func() {
@@ -1128,10 +1131,13 @@ func TestT3TerminationReapsSiblingDuringPlaylistWrite(t *testing.T) {
 		}
 		select {
 		case <-run.reaped:
-			return nil
 		default:
 			return errors.New("termination left the active sibling unreaped")
 		}
+		if len(chargedKeys(s)) != 0 {
+			return errors.New("termination left the active sibling's slot charged")
+		}
+		return nil
 	})
 	release.open()
 	if err := waitScratchResult(t, request); !errors.Is(err, ErrSessionEvicted) {
@@ -1512,6 +1518,59 @@ fi
 	}
 }
 
+func TestT3CanceledStarterReleasesReservationBeforePreparationReturns(t *testing.T) {
+	entered, release := scratchLatch(t)
+	starter := SessionKey{SessionID: "blocked"}
+	transcoder := &fakeTranscoder{holdChild: true}
+	var blocked *hlsSession
+	var armed atomic.Bool
+	var s *Sessions
+	s = newTestSessions(t, transcoder, t.TempDir(), func() time.Time {
+		if armed.Load() {
+			s.mu.Lock()
+			reserved := blocked.charged && blocked.start != nil && !blocked.start.permitted
+			s.mu.Unlock()
+			if reserved && armed.CompareAndSwap(true, false) {
+				// This off-lock preparation step stays blocked after cancellation.
+				close(entered)
+				<-release.ch
+			}
+		}
+		return time.Now()
+	})
+	defer release.open()
+	s.SetTranscodeCap(1)
+	if _, err := filePath720(s, starter, masterPlaylistName); err != nil {
+		t.Fatal(err)
+	}
+	blocked = registeredSession(t, s, starter)
+	armed.Store(true)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := s.FilePath(ctx, starter, fakeSourcePath, 120, 1280, 720, false, "720p/seg00000.m4s")
+		result <- err
+	}()
+	waitScratchSignal(t, entered)
+	s.mu.Lock()
+	start := blocked.start
+	s.mu.Unlock()
+	cancel()
+	waitScratchSignal(t, start.run.ctx.Done())
+	finishesWhileBlocked(t, "new start at capacity one", func() error {
+		_, err := filePath720(s, SessionKey{SessionID: "next"}, "720p/seg00000.m4s")
+		return err
+	})
+	release.open()
+	if err := waitScratchResult(t, result); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled starter = %v", err)
+	}
+	if got := len(transcoder.segmentStartsSnapshot()); got != 1 {
+		t.Fatalf("encoder starts = %d, want only the next request's child", got)
+	}
+}
+
 func TestT3JoinHoldsOutputThroughPublication(t *testing.T) {
 	for _, action := range []string{"seek", "cutoff"} {
 		t.Run(action, func(t *testing.T) {
@@ -1591,6 +1650,41 @@ func TestT3JoinHoldsOutputThroughPublication(t *testing.T) {
 				t.Fatal("joined output was not published")
 			}
 		})
+	}
+}
+
+func TestT3DurationDiscardsSourceReplacedDuringProbe(t *testing.T) {
+	dir := t.TempDir()
+	src, replacement := filepath.Join(dir, "source"), filepath.Join(dir, "replacement")
+	seedScratchFile(t, src)
+	seedScratchFile(t, replacement)
+	f := &orderedDurationTranscoder{path: src, entered: make(chan int, 2),
+		results: [2]chan int{make(chan int, 1), make(chan int, 1)}}
+	s := newTestSessions(t, f, t.TempDir(), nil)
+	defer close(f.results[0])
+	defer close(f.results[1])
+	old := make(chan int, 1)
+	go func() { old <- s.ProbedDurationSeconds(t.Context(), "file", src) }()
+	select {
+	case <-f.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("duration probe did not start")
+	}
+	if err := os.Rename(replacement, src); err != nil {
+		t.Fatal(err)
+	}
+	f.results[0] <- 100
+	select {
+	case got := <-old:
+		if got != 0 {
+			t.Errorf("duration after replacement = %d, want a miss", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("old duration probe did not finish")
+	}
+	f.results[1] <- 137
+	if got := s.ProbedDurationSeconds(t.Context(), "file", src); got != 137 {
+		t.Fatalf("replacement duration = %d, want 137", got)
 	}
 }
 

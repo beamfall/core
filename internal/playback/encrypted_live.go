@@ -19,7 +19,7 @@ import (
 type EncryptedSource struct {
 	// LibraryID binds the session's files to their Library.
 	LibraryID string
-	// Fingerprint is the stable identity and generation of the encrypted source object.
+	// Fingerprint is the required, verified content identity of the source opened by Open.
 	Fingerprint string
 	// Open returns a fresh plaintext reader of the source; Size is its length.
 	Open encderiv.Opener

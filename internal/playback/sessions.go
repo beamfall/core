@@ -490,6 +490,8 @@ type Sessions struct {
 	statSource    func(string) (os.FileInfo, error)
 	lstatScratch  func(string) (fs.FileInfo, error)
 	join          func(*os.File, func(string) (*os.File, error), []string) error
+
+	writeSetupPlaylist func(*hlsSession, string, []byte) error
 	// beforeSetupCommit lets tests pause after writing the unpublished playlists.
 	beforeSetupCommit func()
 	// durationProbes caches on-demand runtime probes (ProbedDurationSeconds).
@@ -986,6 +988,9 @@ func (b *LiveBinding) prepare(ctx context.Context, src string, durationSeconds, 
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if shape.Encrypted != nil && shape.Encrypted.Fingerprint == "" {
+		return nil, ErrEncryptedLiveUnavailable
 	}
 	source := s.claimSource(src, shape.Encrypted)
 	defer s.releaseSource(source)
@@ -1497,7 +1502,11 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 		session.live, err = encderiv.NewLiveSession(dir, secure.LibraryID)
 	}
 	if err == nil {
-		err = writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline, primed, session.writePlaylist)
+		write := session.writePlaylist
+		if s.writeSetupPlaylist != nil {
+			write = func(rel string, data []byte) error { return s.writeSetupPlaylist(session, rel, data) }
+		}
+		err = writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline, primed, write)
 	}
 	var preparedPicture *ffmpeg.ComposedPicture
 	if err == nil && picture != nil {

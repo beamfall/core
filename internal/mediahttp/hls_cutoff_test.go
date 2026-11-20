@@ -32,7 +32,7 @@ func TestLiveHLSEncryptedReopenUsesResolutionStatus(t *testing.T) {
 		{playback.ErrTranscodeFailed, http.StatusInternalServerError},
 		{playback.ErrSessionEvicted, http.StatusGone},
 		{playback.ErrNotFound, http.StatusNotFound},
-		{os.ErrNotExist, http.StatusNotFound},
+		{&os.PathError{Op: "fork/exec", Path: "ffmpeg", Err: os.ErrNotExist}, http.StatusServiceUnavailable},
 	} {
 		t.Run(tc.err.Error(), func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/hls/720p/seg00000.m4s", nil)
