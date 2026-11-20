@@ -70,9 +70,9 @@ Mtime comparisons SHALL round Unix nanoseconds toward zero to milliseconds.
 
 #### Scenario: A scan cannot verify a file
 
-- **WHEN** the file is still settling, the sample fails (including if the path no longer names the sampled inode), or the legacy comparison hits an I/O error
-- **THEN** the scan skips admission and marks the path seen, preserving the stored identity and stats for retry
-- **AND** it defers Part groups in the affected folder for this scan, including across job yields, without changing their fingerprints or ordinals
+- **WHEN** sampling fails, the path no longer names the sampled inode, or the legacy comparison hits an I/O error
+- **THEN** an existing file follows the unchanged-file path using its recorded stats and fingerprint, including normal seen counts and Part grouping
+- **AND** a new file is left for the next scan
 
 #### Scenario: Legacy file moved, changed, or returns after a missing mark
 
