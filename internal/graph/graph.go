@@ -1104,7 +1104,7 @@ func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []s
 	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
 		return err
 	}
-	if err := h.annotateBylines(ctx, items); err != nil {
+	if err := h.annotateBylines(ctx, scope.LibraryFilter(), items); err != nil {
 		return err
 	}
 	if err := h.annotateContainers(ctx, items); err != nil {
@@ -1127,7 +1127,7 @@ const maxCardByline = 3
 // annotateBylines credits audio Media and audio containers from the
 // person-archetype Entities linked to them (CORE-2362, CORE-2764). It runs
 // after AnnotateMediaClass. Linked Entities share the visible card's Library.
-func (h *Handler) annotateBylines(ctx context.Context, items []store.SourceItem) error {
+func (h *Handler) annotateBylines(ctx context.Context, filter store.LibraryFilter, items []store.SourceItem) error {
 	var mediaIDs []store.MediaID
 	var entityIDs []store.EntityID
 	for _, item := range items {
@@ -1146,7 +1146,7 @@ func (h *Handler) annotateBylines(ctx context.Context, items []store.SourceItem)
 	if err != nil {
 		return err
 	}
-	entities, err := h.store.ReadEntityCardDetails(ctx, entityIDs)
+	entities, err := h.store.ReadEntityCardDetails(ctx, filter, entityIDs)
 	if err != nil {
 		return err
 	}
@@ -1183,7 +1183,9 @@ func (h *Handler) annotateBylines(ctx context.Context, items []store.SourceItem)
 			if kinds[detail.Kind] != "container" {
 				continue
 			}
-			if item.Year == 0 {
+			// The album's release date outranks the earliest-track year a
+			// shelf query may have set.
+			if detail.ReleaseYear > 0 {
 				item.Year = detail.ReleaseYear
 			}
 			for _, credit := range detail.Credits {

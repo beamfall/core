@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 )
@@ -435,6 +436,38 @@ func TestNaturalCompare(t *testing.T) {
 	} {
 		if got := naturalCompare(tc.a, tc.b); got != tc.want {
 			t.Errorf("naturalCompare(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
+// TestReadEntityCardDetailsHonorsLibraryFilter pins that card credits are read
+// only from Libraries the caller can see (CORE-2768 review).
+func TestReadEntityCardDetailsHonorsLibraryFilter(t *testing.T) {
+	st, lib, _, _ := libraryEntitiesFixture(t)
+	ctx := context.Background()
+	upsertRelatedEntity(t, st, "entity-person-a", lib.ID, "maker", "Abe")
+	relateEntities(t, st, EntityRelation{FromEntityID: "entity-box-a", Name: "by", ToEntityID: "entity-person-a"})
+	ids := []EntityID{"entity-box-a"}
+
+	details, err := st.ReadEntityCardDetails(ctx, LibraryFilter{AllowedIDs: []LibraryID{lib.ID}}, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := details["entity-box-a"]
+	if got.LibraryID != lib.ID || !slices.ContainsFunc(got.Credits, func(c EntityCardCredit) bool { return c.Title == "Abe" }) {
+		t.Fatalf("visible details = %+v, want Abe in %q", got, lib.ID)
+	}
+	for name, filter := range map[string]LibraryFilter{
+		"other Library": {AllowedIDs: []LibraryID{"library-other"}},
+		"no grant":      {},
+		"sealed":        {AllLibraries: true, SealedIDs: []LibraryID{lib.ID}},
+	} {
+		details, err := st.ReadEntityCardDetails(ctx, filter, ids)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(details) != 0 {
+			t.Fatalf("%s: details = %+v, want none", name, details)
 		}
 	}
 }

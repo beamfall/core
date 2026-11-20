@@ -85,9 +85,11 @@ type EntityCardCredit struct {
 }
 
 // ReadEntityCardDetails reads the release date and outgoing Entity links of
-// visible cards in batches. Links stay within the card's Library, exclude
-// trashed targets, and follow sort order, then title. Sealed planes are skipped.
-func (s *Store) ReadEntityCardDetails(ctx context.Context, ids []EntityID) (map[EntityID]EntityCardDetails, error) {
+// visible cards in batches. Only Entities in Libraries the filter shows are
+// read, and each card keeps the first such Library it is found in. Links stay
+// within the card's Library, exclude trashed targets, and follow sort order,
+// then title. Sealed planes are skipped.
+func (s *Store) ReadEntityCardDetails(ctx context.Context, filter LibraryFilter, ids []EntityID) (map[EntityID]EntityCardDetails, error) {
 	details := make(map[EntityID]EntityCardDetails, len(ids))
 	if len(ids) == 0 {
 		return details, nil
@@ -97,14 +99,20 @@ func (s *Store) ReadEntityCardDetails(ctx context.Context, ids []EntityID) (map[
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
+	visible, err := s.visibleLibraryIDsLocked(ctx, filter)
+	if err != nil || len(visible) == 0 {
+		return details, err
+	}
+	libraryPlaceholders, libraryArgs := libraryIDPlaceholders(visible)
 	for _, reader := range s.openCatalogReadersLocked() {
 		for start := 0; start < len(ids); start += engagementChunkSize {
 			chunk := ids[start:min(start+engagementChunkSize, len(ids))]
-			args := make([]any, 0, len(chunk)+1)
+			args := make([]any, 0, len(chunk)+len(libraryArgs)+1)
 			args = append(args, releaseDateField)
 			for _, id := range chunk {
 				args = append(args, id)
 			}
+			args = append(args, libraryArgs...)
 			// #nosec G202 -- only generated placeholders are interpolated.
 			rows, err := reader.QueryContext(ctx, `
 				SELECT source.id, source.library_id, source.kind, d.value_ms, target.kind, target.title
@@ -114,6 +122,7 @@ func (s *Store) ReadEntityCardDetails(ctx context.Context, ids []EntityID) (map[
 				LEFT JOIN entity target ON target.id = r.to_entity_id
 					AND target.library_id = source.library_id AND target.trashed_at_ms IS NULL
 				WHERE source.id IN (`+sqlPlaceholders(len(chunk))+`) AND source.trashed_at_ms IS NULL
+					AND source.library_id IN (`+libraryPlaceholders+`)
 				GROUP BY source.id, target.id
 				ORDER BY source.id, MIN(r.sort_order) IS NULL, MIN(r.sort_order), target.title COLLATE NOCASE, target.id`, args...)
 			if err != nil {
@@ -129,7 +138,10 @@ func (s *Store) ReadEntityCardDetails(ctx context.Context, ids []EntityID) (map[
 					_ = rows.Close()
 					return nil, err
 				}
-				detail := details[id]
+				detail, seen := details[id]
+				if seen && detail.LibraryID != libraryID {
+					continue
+				}
 				detail.LibraryID, detail.Kind = libraryID, kind
 				if date.Valid {
 					detail.ReleaseYear = max(0, time.UnixMilli(date.Int64).UTC().Year())

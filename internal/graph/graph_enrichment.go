@@ -265,14 +265,14 @@ func (h *Handler) describeSearchRows(ctx context.Context, filter store.LibraryFi
 		}
 		items[i].EntityKindDisplayName = name
 	}
-	return h.describeSearchCards(ctx, details, rows, items)
+	return h.describeSearchCards(ctx, filter, details, rows, items)
 }
 
 // describeSearchCards gives each visible row the card fields every other card
 // surface carries: an entity row the class its Media share, an audio row its
 // byline (CORE-2362), its rating (CORE-2398, CORE-2415) and its container
 // (CORE-2524).
-func (h *Handler) describeSearchCards(ctx context.Context, details []store.SearchRowDetail, rows []store.SourceItem, items []SearchResultItem) error {
+func (h *Handler) describeSearchCards(ctx context.Context, filter store.LibraryFilter, details []store.SearchRowDetail, rows []store.SourceItem, items []SearchResultItem) error {
 	cards := make([]store.SourceItem, 0, len(rows))
 	at := make([]int, 0, len(rows))
 	for i, detail := range details {
@@ -284,7 +284,7 @@ func (h *Handler) describeSearchCards(ctx context.Context, details []store.Searc
 	if err := h.store.AnnotateMediaClass(ctx, cards); err != nil {
 		return err
 	}
-	if err := h.annotateBylines(ctx, cards); err != nil {
+	if err := h.annotateBylines(ctx, filter, cards); err != nil {
 		return err
 	}
 	if err := h.annotateSubtitles(ctx, cards); err != nil {
