@@ -7,7 +7,13 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/beamfall/core/internal/store"
 )
+
+type sourceEndObserver interface {
+	ObserveSourceEnd(context.Context, store.MediaID, string, string, string, func() (float64, bool)) error
+}
 
 // Remember observed EOF beyond a player session's lifetime. The observation is
 // about one file generation, not the catalogue's duration or the Media's other
@@ -54,33 +60,80 @@ func (c *incompleteSourceCache) contains(path string) bool {
 // A path's latest observed generation remains known while any instance
 // can still publish an observation. Cache eviction cannot revive an older one.
 type sourceGenerationOwner struct {
-	generation string
-	users      int
+	generation         string
+	users              int
+	claims, published  uint64
+	durationGeneration string
+	durationPublished  uint64
 }
 
-func (s *Sessions) retainSourceLocked(session *hlsSession) {
-	if session.sourceGeneration == "" {
-		return
+// Take the ordinal before stat so a completion delayed after its last stat
+// cannot supersede a newer publication, even after the newer owner retires.
+func (s *Sessions) claimSource(path string, secure *EncryptedSource) sourceCapture {
+	s.mu.Lock()
+	owner := s.acquireSourceLocked(path)
+	owner.claims++
+	order := owner.claims
+	s.mu.Unlock()
+	source := captureSource(path, secure, s.statSource)
+	source.owner, source.order = owner, order
+	return source
+}
+
+func (s *Sessions) releaseSource(source sourceCapture) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.releaseSourceLocked(source.path, source.owner)
+}
+
+func (c sourceCapture) supersededLocked() bool {
+	return c.order < c.owner.published && c.generation != c.owner.generation
+}
+
+func (c sourceCapture) publishLocked() {
+	if c.generation != "" {
+		c.owner.published = max(c.owner.published, c.order)
+		c.owner.generation = c.generation
 	}
+}
+
+func (h *hlsSession) currentSourceLocked() bool {
+	return h.sourceOwner == nil || h.sourceOwner.generation == h.sourceGeneration
+}
+
+func (s *Sessions) acquireSourceLocked(path string) *sourceGenerationOwner {
 	if s.sourceOwners == nil {
 		s.sourceOwners = make(map[string]*sourceGenerationOwner)
 	}
-	owner := s.sourceOwners[session.src]
+	owner := s.sourceOwners[path]
 	if owner == nil {
 		owner = &sourceGenerationOwner{}
-		s.sourceOwners[session.src] = owner
+		s.sourceOwners[path] = owner
 	}
-	owner.generation = session.sourceGeneration
 	owner.users++
-	session.sourceOwner = owner
+	return owner
 }
 
-func (s *Sessions) releaseSourceLocked(session *hlsSession) {
-	if owner := session.sourceOwner; owner != nil {
+func (s *Sessions) releaseSourceLocked(path string, owner *sourceGenerationOwner) {
+	if owner != nil {
 		owner.users--
 		if owner.users == 0 {
-			delete(s.sourceOwners, session.src)
+			delete(s.sourceOwners, path)
 		}
+	}
+}
+
+func (s *Sessions) holdInspectionLocked(session *hlsSession) {
+	if session.inspections == 0 {
+		session.inspectionDone = make(chan struct{})
+	}
+	session.inspections++
+}
+
+func (s *Sessions) releaseInspectionLocked(session *hlsSession) {
+	session.inspections--
+	if session.inspections == 0 {
+		close(session.inspectionDone)
 	}
 }
 
@@ -89,15 +142,17 @@ var ErrArtifactChanged = errors.New("playback artifact run changed")
 
 // Observe a finalized segment or a reaped run's output. Store callbacks use
 // nonblocking lock attempts so their caller can retry outside Store.
-func (s *Sessions) observeIncompleteSource(ctx context.Context, key SessionKey, session *hlsSession, run *encoderRun, observe func() (time.Duration, bool)) (time.Duration, bool, error) {
+func (s *Sessions) observeIncompleteSource(ctx context.Context, key SessionKey, session *hlsSession, artifact artifactObservation, reaping bool, observe func() (time.Duration, bool)) (time.Duration, bool, error) {
+	run := artifact.run
 	valid := func() error {
 		if session.state != sessionRunning {
 			return ErrSessionEvicted
 		}
-		if owner := session.sourceOwner; owner != nil && owner.generation != session.sourceGeneration {
+		if !session.currentSourceLocked() {
 			return errSetupUnavailable
 		}
-		if session.run != run || session.writing != nil && session.writing != run {
+		if session.run != run || session.writing != nil && session.writing != run ||
+			!reaping && session.artifactVersion != artifact.version {
 			return ErrArtifactChanged
 		}
 		return nil
@@ -105,6 +160,7 @@ func (s *Sessions) observeIncompleteSource(ctx context.Context, key SessionKey, 
 	for {
 		var end time.Duration
 		var observed, busy, held bool
+		var settling <-chan struct{}
 		var claimErr error
 		inspect := func() (float64, bool) {
 			if !s.mu.TryLock() {
@@ -116,11 +172,17 @@ func (s *Sessions) observeIncompleteSource(ctx context.Context, key SessionKey, 
 				claimErr = ctx.Err()
 			}
 			if claimErr == nil {
-				if session.inspections == 0 {
-					session.inspectionDone = make(chan struct{})
+				if !reaping && run != nil && session.writing == run {
+					select {
+					case <-run.reaped:
+						settling = run.exited
+					default:
+					}
 				}
-				session.inspections++
-				held = true
+				if settling == nil {
+					s.holdInspectionLocked(session)
+					held = true
+				}
 			}
 			s.mu.Unlock()
 			if !held {
@@ -155,10 +217,7 @@ func (s *Sessions) observeIncompleteSource(ctx context.Context, key SessionKey, 
 		}
 		s.mu.Lock()
 		if held {
-			session.inspections--
-			if session.inspections == 0 {
-				close(session.inspectionDone)
-			}
+			s.releaseInspectionLocked(session)
 		}
 		currentErr := valid()
 		if currentErr == nil && claimErr == nil && !busy && observed && session.sourceInfo != nil {
@@ -174,6 +233,12 @@ func (s *Sessions) observeIncompleteSource(ctx context.Context, key SessionKey, 
 		if err != nil {
 			slog.Error("observing source end failed", "media", key.MediaID, "error", err)
 			return end, observed && !busy, err
+		}
+		if settling != nil {
+			if err := waitEncoderOwner(ctx, session, settling); err != nil {
+				return 0, false, err
+			}
+			continue
 		}
 		if !busy {
 			return end, observed, nil

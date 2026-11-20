@@ -747,7 +747,7 @@ func TestReplacedEncoderDoesNotExtendTheWait(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*window)
 	defer cancel()
 	started := time.Now()
-	err = sessions.waitWhileEncoderProgresses(ctx, key, session, rung, 3, true, filepath.Join(dir, "seg00003.m4s"), replaced, window)
+	_, err = sessions.waitWhileEncoderProgresses(ctx, key, session, rung, 3, true, filepath.Join(dir, "seg00003.m4s"), replaced, window)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
 	}

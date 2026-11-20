@@ -136,7 +136,14 @@ func startTranscode(t *testing.T, sessions *Sessions, key SessionKey, profiles .
 	if err != nil {
 		t.Fatal(err)
 	}
-	artifact.Release()
+	defer artifact.Release()
+	f, _, err := artifact.OpenPlain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestInfoRefusesTranscodePastProfileStreamCap(t *testing.T) {
@@ -402,5 +409,72 @@ func TestInfoOmitsManualPinWhenTranscodeCannotStart(t *testing.T) {
 	}
 	if len(resp.Streams) != 1 || resp.Streams[0].Kind != "direct-play" {
 		t.Fatalf("Streams = %#v, want only the direct choice", resp.Streams)
+	}
+}
+
+func TestT3ProfileChargeOutlivesAuthRowUntilReap(t *testing.T) {
+	service, st, requester := newPolicyTestService(t, "session-default")
+	ctx := t.Context()
+	victim, err := auth.NewService(st).Scope(ctx, "session-revealed")
+	if err != nil || victim.ProfileID != requester.ProfileID {
+		t.Fatalf("same-Profile victim = %v, %v", victim.ProfileID, err)
+	}
+	limit := 1
+	setProfileSettings(t, st, requester.ProfileID, store.ProfileSettings{MaxConcurrentStreams: &limit})
+	policy, err := st.Profile(ctx, requester.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newTestSessions(t, &fakeTranscoder{holdChild: true}, t.TempDir(), nil)
+	service.SetSessions(s)
+	s.SetTranscodeCap(2)
+	const mediaID = store.MediaID("media-alpha")
+	key := SessionKey{SessionID: victim.SessionID, MediaID: mediaID, ProfileCapability: CapabilityFingerprint(incapableCaps)}
+	startTranscode(t, s, key, victim.ProfileID)
+	refusal := func(scope auth.Scope, profile CapabilityProfile) string {
+		return service.transcodeRefusal(ctx, scope, mediaID, profile, policy, PriorityNormal)
+	}
+	if got := refusal(victim, incapableCaps); got != "" {
+		t.Fatalf("exact owner reuse = %q", got)
+	}
+	if got := refusal(victim, CapabilityProfile{}); got != "stream-limit-reached" {
+		t.Fatalf("different capability reuse = %q", got)
+	}
+	if _, _, delivered := s.deliveredBandwidth(victim.SessionID, mediaID); !delivered {
+		t.Fatal("victim did not report its delivered rung")
+	}
+
+	slow := newSlowStop(s)
+	defer slow.unblock()
+	slow.armed.Store(true)
+	if err := st.TerminateSession(ctx, victim.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Session(ctx, victim.SessionID); err == nil {
+		t.Fatal("victim auth row still exists")
+	}
+	done := make(chan int, 1)
+	go func() { done <- s.TerminateSession(victim.SessionID) }()
+	slow.waitEntered(t)
+	if got := refusal(victim, incapableCaps); got != "stream-limit-reached" {
+		t.Fatalf("fenced owner reuse = %q", got)
+	}
+	if got := refusal(requester, incapableCaps); got != "stream-limit-reached" {
+		t.Fatalf("device admission before reap = %q", got)
+	}
+	if _, _, delivered := s.deliveredBandwidth(victim.SessionID, mediaID); delivered {
+		t.Fatal("fenced victim still reports a delivered rung")
+	}
+	slow.unblock()
+	select {
+	case n := <-done:
+		if n != 1 {
+			t.Fatalf("terminated %d instances", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("termination did not join reap")
+	}
+	if got := refusal(requester, incapableCaps); got != "" {
+		t.Fatalf("device admission after reap = %q", got)
 	}
 }

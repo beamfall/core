@@ -1,12 +1,15 @@
 package playback
 
 import (
+	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/beamfall/core/internal/encderiv"
 	"golang.org/x/sys/unix"
@@ -22,6 +25,32 @@ type LiveArtifact struct {
 	trackRun bool
 	version  uint64
 	delivery string
+	ctx      context.Context
+	name     string
+	budget   time.Duration
+	deadline time.Time
+}
+
+type artifactObservation struct {
+	path    string
+	run     *encoderRun
+	version uint64
+}
+
+// Bind readiness to the output observed around the confined open. A start
+// can advance the version while a requester waits for its first segment.
+func (s *Sessions) readyArtifact(h *hlsSession, path string) (artifactObservation, bool) {
+	s.mu.Lock()
+	artifact := artifactObservation{path: path, run: h.run, version: h.artifactVersion}
+	live := h.state == sessionRunning
+	s.mu.Unlock()
+	if !live || !h.artifactReady(path) {
+		return artifactObservation{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return artifact, h.state == sessionRunning && h.artifactVersion == artifact.version &&
+		h.run == artifact.run && (h.writing == nil || h.writing == artifact.run)
 }
 
 func (a *LiveArtifact) Release() {
@@ -32,12 +61,16 @@ func (a *LiveArtifact) Release() {
 func (a *LiveArtifact) Cutoff() <-chan struct{} { return a.session.scratch.cutoff }
 
 func (a *LiveArtifact) validate(delivered bool) error {
+	return a.validateVersion(a.version, delivered)
+}
+
+func (a *LiveArtifact) validateVersion(version uint64, delivered bool) error {
 	a.manager.mu.Lock()
 	defer a.manager.mu.Unlock()
 	if a.session.state != sessionRunning {
 		return ErrSessionEvicted
 	}
-	if a.trackRun && a.session.artifactVersion != a.version {
+	if a.trackRun && a.session.artifactVersion != version {
 		return ErrArtifactChanged
 	}
 	if delivered && a.delivery != "" {
@@ -46,16 +79,73 @@ func (a *LiveArtifact) validate(delivered bool) error {
 	return nil
 }
 
-func (a *LiveArtifact) OpenPlain() (*os.File, fs.FileInfo, error) {
-	if err := a.validate(false); err != nil {
-		return nil, nil, err
-	}
-	f, info, err := a.session.openArtifact(a.path)
-	if claimErr := a.validate(err == nil); claimErr != nil {
-		if f != nil {
-			_ = f.Close()
+func (a *LiveArtifact) resolve(retry bool) (artifactObservation, error) {
+	ctx := a.ctx
+	var cancel context.CancelFunc
+	defer func() {
+		if cancel != nil {
+			cancel()
 		}
-		return nil, nil, claimErr
+	}()
+	for {
+		if retry && cancel == nil {
+			ctx, cancel = context.WithDeadline(ctx, a.deadline)
+		}
+		if err := ctx.Err(); err != nil {
+			if validateErr := a.validateVersion(a.version, false); errors.Is(validateErr, ErrSessionEvicted) {
+				return artifactObservation{}, validateErr
+			}
+			return artifactObservation{}, err
+		}
+		claim, err := a.manager.resolveArtifactPath(ctx, a.session.key, a.session, a.name, a.budget)
+		valid := a.validateVersion(claim.version, false)
+		if errors.Is(valid, ErrSessionEvicted) {
+			return artifactObservation{}, valid
+		}
+		if errors.Is(err, ErrArtifactChanged) || err == nil && errors.Is(valid, ErrArtifactChanged) {
+			retry = true
+			continue
+		}
+		return claim, err
+	}
+}
+
+func openLiveClaim[T io.Closer](a *LiveArtifact, open func(string) (T, error)) (T, error) {
+	claim := artifactObservation{path: a.path, version: a.version}
+	var zero T
+	for {
+		err := a.validateVersion(claim.version, false)
+		if err == nil {
+			var file T
+			file, err = open(claim.path)
+			if valid := a.validateVersion(claim.version, err == nil); valid != nil {
+				if err == nil {
+					_ = file.Close()
+				}
+				err = valid
+			} else {
+				return file, err
+			}
+		}
+		if !errors.Is(err, ErrArtifactChanged) || a.ctx == nil {
+			return zero, err
+		}
+		claim, err = a.resolve(true)
+		if err != nil {
+			return zero, err
+		}
+	}
+}
+
+func (a *LiveArtifact) OpenPlain() (*os.File, fs.FileInfo, error) {
+	var info fs.FileInfo
+	f, err := openLiveClaim(a, func(path string) (*os.File, error) {
+		file, stat, err := a.session.openArtifact(path)
+		info = stat
+		return file, err
+	})
+	if err != nil {
+		info = nil
 	}
 	if errors.Is(err, fs.ErrInvalid) || errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
 		return nil, nil, errors.Join(fs.ErrNotExist, err)
@@ -64,16 +154,7 @@ func (a *LiveArtifact) OpenPlain() (*os.File, fs.FileInfo, error) {
 }
 
 func (a *LiveArtifact) OpenEncrypted() (*encderiv.LiveFile, error) {
-	if err := a.validate(false); err != nil {
-		return nil, err
-	}
-	f, err := a.session.openEncryptedArtifact(a.path)
-	if claimErr := a.validate(err == nil); claimErr != nil {
-		if f != nil {
-			_ = f.Close()
-		}
-		return nil, claimErr
-	}
+	f, err := openLiveClaim(a, a.session.openEncryptedArtifact)
 	if errors.Is(err, encderiv.ErrLiveSessionClosed) {
 		return nil, ErrSessionEvicted
 	}
