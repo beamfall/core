@@ -337,7 +337,10 @@ describe("Manage navigation", () => {
     vi.mocked(fetchCapabilityStates).mockResolvedValueOnce(workflowStates(true, false));
     render(manageRouter("/manage/libraries", []));
     expect(await screen.findByRole("link", { name: "Convert" })).toBeVisible();
-    expect(screen.queryByRole("link", { name: "Rename" })).not.toBeInTheDocument();
+    // Every workflow shows while the first read is pending; wait for it to hide Rename.
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "Rename" })).not.toBeInTheDocument(),
+    );
 
     vi.mocked(fetchCapabilityStates).mockRejectedValueOnce(
       new ApiError("admin session required", 403),

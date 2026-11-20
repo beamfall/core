@@ -330,8 +330,10 @@ func TestEvictedSessionCannotObserveEOFInRemovedOutput(t *testing.T) {
 	defer sessions.Close()
 	sessions.sourceStore = f.st
 	key := SessionKey{SessionID: "evicted", MediaID: f.mediaID}
-	session := &hlsSession{dir: t.TempDir(), secure: testEncryptedSource(nil)}
-	sessions.sessions[key] = session
+	session := &hlsSession{key: key, dir: t.TempDir(), secure: testEncryptedSource(nil)}
+	sessions.mu.Lock()
+	sessions.transitionLocked(session, publishSession{})
+	sessions.mu.Unlock()
 	if n := sessions.TerminateSession(key.SessionID); n != 1 {
 		t.Fatalf("terminated %d sessions", n)
 	}

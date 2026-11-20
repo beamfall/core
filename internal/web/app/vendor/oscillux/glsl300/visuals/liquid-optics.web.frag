@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -582,7 +589,10 @@ float waterH(vec2 q, float t) {
 vec3 visual(vec2 uv, VisualUniforms u) {
     vec2 p = centered(uv, u.resolution);
     float flow = mix(0.16, 0.9, u.param2);
-    float t = u.time * flow;
+    // each beat the water surges forward and settles: an ease-out step in
+    // the flow clock, continuous across the wrap, so the beat reads as motion
+    float surge = floor(u.beatCount) + (1.0 - exp(-16.0 * fract(u.beatPhase))) / (1.0 - exp(-16.0));
+    float t = u.time * flow + 0.05 * surge;
 
     float refr = mix(0.010, 0.055, u.param0);
     float causticAmt = mix(0.5, 2.6, u.param1);
@@ -594,17 +604,26 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float gx = (waterH(w + vec2(e, 0.0), t) - h0) / e;
     float gy = (waterH(w + vec2(0.0, e), t) - h0) / e;
 
-    // bass ripple burst expanding from center each beat
+    // bass ripple ring launched from the centre each beat. Its envelope is back
+    // to zero before the wrap, so the launch never pops: keyed to the instant
+    // bassImpact, its glow and refraction lit a band of the pool at once, a
+    // large-area luma flash on every beat.
     float r = length(p);
-    float rippleR = fract(u.beatPhase) * 1.7;
-    float rippleEnv = exp(-abs(r - rippleR) * 6.5) * u.bassImpact;
-    float ripple = sin((r - rippleR) * 30.0) * rippleEnv;
+    float ph = fract(u.beatPhase);
+    float fade = 1.0 - smoothstep(0.55, 0.97, ph);
+    // kick: displacement that moves fastest right on the beat (motion, not
+    // light); swell: the slow brightness envelope for the caustic pump
+    float kick = (1.0 - exp(-ph * 6.0)) * fade;
+    float swell = smoothstep(0.0, 0.34, ph) * fade;
+    float rippleR = 0.08 + ph * 0.75;
+    float rippleEnv = exp(-abs(r - rippleR) * 3.6) * kick * (0.55 + 0.45 * u.bass);
+    float ripple = sin(r * 16.0 - u.time * 1.3) * rippleEnv;
     vec2 rdir = p / max(r, 1e-3);
     vec2 nWave = vec2(gx, gy) * (1.0 + 0.6 * u.mid);
-    vec2 n = nWave + rdir * ripple * 3.0;
+    vec2 n = nWave + rdir * ripple * 1.8;
 
     // ---- refracted artwork with chromatic split ----
-    vec2 off = n * refr * (1.0 + 0.9 * u.bassImpact);
+    vec2 off = n * refr * (1.0 + 0.8 * kick);
     vec2 base = uv + off;
     float split = 0.0045 + 0.004 * u.treble;
     vec3 art;
@@ -628,7 +647,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     causticCol = accentize(causticCol, u.accent, 0.18);
     // a gentle pump: the web covers much of the pool, so a strong mid or
     // bass swing brightened it all at once
-    col += causticCol * web * causticAmt * (0.7 + 0.35 * u.mid + 0.30 * u.bassImpact);
+    col += causticCol * web * causticAmt * (0.7 + 0.35 * u.mid + 0.30 * swell);
 
     // secondary coarser web, counter-drifting (depth parallax)
     float ca2 = fbmRidged(w * 0.55 - nWave * 0.22 + vec2(t * 0.19, 4.7));
@@ -641,8 +660,14 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     col += peakWhite(palVisual(hue + 0.3, u), 0.5) * glint
          * (0.3 + 1.6 * u.treble) * causticAmt * 0.7;
 
-    // ripple ring itself glows
-    col += palRoleBass(0.06, u) * rippleEnv * rippleEnv * 1.0;
+    // the ripple ring recolours the pool as it rolls outward, holding each
+    // pixel's luminance: an additive glow sweeping over the pool lit a fresh
+    // band every frame, a moving large-area flash. palVisual directly, not
+    // palRoleBass, whose beatPhase and bassImpact terms jump at the wrap.
+    vec3 ringCol = palVisual(hue + 0.5, u);
+    float lumC = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    float lumR = max(dot(ringCol, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
+    col = mix(col, ringCol * (lumC / lumR), saturate(rippleEnv * 0.85));
 
     // pool vignette: dark glass rim closing to black
     col *= 1.0 - smoothstep(0.62, 1.35, r) * 0.96;

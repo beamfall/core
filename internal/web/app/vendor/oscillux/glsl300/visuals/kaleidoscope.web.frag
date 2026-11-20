@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -569,13 +576,21 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // SPDX-License-Identifier: AGPL-3.0-only
 // Kaleidoscope — frequency + beat.
 //
-// Radial spectrum mandala that collapses into a dark event horizon on big
-// beats. Angular wedge folding produces nested mirrored rings; spectrum bins
-// map to radial teeth; bassImpact expands the center void; onset fires white
-// fracture rays; feedbackTrail with zoom-in rotation creates tunnel trails.
+// Radial spectrum mandala around a dark event horizon. Angular wedge folding
+// produces nested mirrored rings; spectrum bins map to radial teeth; the beat
+// surges the spin and breathes the void, rim, tooth caps and thin rays along
+// the fold seams; feedbackTrail with zoom-in rotation creates
+// tunnel trails.
+//
+// Flash budget: the teeth fill most of the frame, so their body brightness
+// stays steady and the music moves their length, the spin and the colour.
+// Brightness swells ride a beat envelope with a ~150 ms attack and a long
+// release, and only on thin or small elements (caps, rim, seam rays). The
+// seam ray mask also no longer lights the whole wedge (its far-seam term was
+// inverted, so every onset flashed the full disc white).
 //
 // param0  Segments   mirror-fold count (2..16)
-// param1  Spin       base rotation speed, nudged by beatPhase
+// param1  Spin       base rotation speed, surged on each beat
 // param2  Vortex     radial swirl / depth of the inward tunnel
 
 vec3 visual(vec2 uv, VisualUniforms u) {
@@ -583,27 +598,31 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     // ---- parameters ----
     float nSegs   = max(floor(mix(2.0, 16.0, u.param0) + 0.5), 2.0);
-    float spinSpd = mix(0.04, 0.40, u.param1);
+    float spinSpd = mix(0.02, 0.22, u.param1);
     float vortex  = u.param2;
 
     // ---- polar coords ----
     float r = length(p);
     float a = atan2_(p.y, p.x);   // -pi..pi
 
-    // ---- bassImpact drives center event-horizon void radius ----
-    // a small swing: every ring and tooth sits on voidR, so a wide kick moved
-    // the whole mandala at once
-    float voidR = 0.10 + 0.05 * u.bassImpact;
-    // soft attack peaking ~100 ms after the kick, for the wide-area swells
-    float kickSoft = 4.0 * u.bassImpact * (1.0 - u.bassImpact);
+    // ---- beat envelope: 0 on the beat, peaks ~30% into it, back to 0 by the next ----
+    // continuous across the beatPhase wrap, so no swell starts or ends in one frame
+    float swell = smoothstep(0.0, 0.30, u.beatPhase) * (1.0 - smoothstep(0.30, 1.0, u.beatPhase));
+    swell *= 0.55 + 0.45 * saturate(u.bass);
+
+    // ---- center event-horizon void breathes on the beat envelope ----
+    // only the void and its rim breathe; the teeth and rings stand on the
+    // fixed base radius so a beat does not move every edge at once
+    float baseR = 0.10;
+    float voidR = baseR + 0.02 * swell;
 
     // ---- param2 vortex: radius-dependent angle swirl ----
     float vortexTwist = vortex * 1.4 * 0.04 / max(r, 0.05);
 
-    // ---- rotation: continuous spin + beatPhase nudge ----
+    // ---- rotation: continuous spin + eased surge after each beat ----
     // beat count that surges after each beat and never jumps back at the wrap
     float beatSurge = floor(u.beatCount) + 1.0 - pow(1.0 - u.beatPhase, 3.0);
-    float rotAngle = u.time * spinSpd + beatSurge * 0.25 * spinSpd;
+    float rotAngle = u.time * spinSpd + beatSurge * 0.35 * spinSpd;
     float aTwisted = a + rotAngle + vortexTwist;
 
     // ---- kaleidoscope angular fold into one mirrored wedge ----
@@ -623,81 +642,86 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     // ====================================================================
     // LAYER 1 — Radial teeth (spectrum bars from voidR outward)
+    // The spectrum sets each tooth's length; the body keeps a steady radial
+    // gradient so a kick moves the tips rather than pumping the whole disc.
     // ====================================================================
-    float toothBase  = voidR + 0.02;
-    float toothLen   = 0.08 + bSmooth * 0.38 + kickSoft * 0.04;
+    float toothBase  = baseR + 0.02;
+    float toothLen   = 0.12 + bSmooth * 0.40;
     float toothOuter = toothBase + toothLen;
 
     float angEdge = smoothstep(0.0, 0.06, ang01) * smoothstep(1.0, 0.94, ang01);
-    float radMask = step(toothBase, r) * step(r, toothOuter);
+    float radIn   = smoothstep(toothBase, toothBase + 0.015, r);
+    float radOut  = 1.0 - smoothstep(toothOuter - 0.03, toothOuter, r);
+    float radMask = radIn * radOut;
 
-    float toothT   = ang01 + hueShift + 0.05 * u.time;
+    float toothT   = 0.35 * ang01 + hueShift + 0.05 * u.time;
     vec3 toothCol  = palVisual(toothT, u);
-    toothCol = accentize(toothCol, u.accent, 0.20 + 0.25 * u.bassImpact);
+    toothCol = accentize(toothCol, u.accent, 0.25);
 
-    float capProx     = smoothstep(toothOuter - 0.025, toothOuter, r);
-    float toothBright = (0.38 + bSmooth * 1.55) * (1.0 + capProx * 1.15);
-    col += toothCol * radMask * angEdge * toothBright;
+    float along     = saturate((r - toothBase) / max(toothLen, 1e-3));
+    float body      = mix(0.62, 0.30, along) * (0.85 + 0.15 * bSmooth);
+    float capProx   = smoothstep(toothOuter - 0.05, toothOuter - 0.015, r);
+    float toothBright = body + capProx * (0.55 + 0.20 * swell);
+    // seams dim the teeth rather than cut them, so the spin sweeps soft edges
+    col += toothCol * radMask * mix(0.6, 1.0, angEdge) * toothBright;
 
     // ====================================================================
     // LAYER 2 — Nested concentric ring lines
     // ====================================================================
     for (int ri = 1; ri <= 5; ri++) {
         float fRi   = float(ri);
-        float ringR = voidR + (1.0 - voidR) * (fRi / 5.5);
+        float ringR = baseR + (1.0 - baseR) * (fRi / 5.5);
         float rBand = bandAt(u, fRi / 6.0);
-        float rLine = aaLine(r - ringR, 0.003 + 0.006 * rBand);
+        float rLine = aaLine(r - ringR, 0.003 + 0.004 * rBand);
         float rT    = ang01 + hueShift + fRi * 0.13 + 0.04 * u.time;
         vec3 rCol   = palVisual(rT, u);
         float hiFreq = fRi / 5.0;
         rCol = mix(rCol, vec3(0.0, 0.78, 1.0), hiFreq * 0.45 * u.treble);
         rCol = accentize(rCol, u.accent, 0.12);
-        col += rCol * rLine * (0.70 + rBand * 2.1) * angEdge;
+        col += rCol * rLine * (0.80 + rBand * 0.70) * angEdge;
     }
 
     // ====================================================================
     // LAYER 3 — Center rim glow (inner edge of the event horizon)
     // ====================================================================
-    float rimWidth = 0.008 + 0.012 * u.bassImpact;
+    float rimWidth = 0.008 + 0.006 * swell;
     float rimLine  = aaLine(r - voidR, rimWidth);
-    vec3 rimCol    = palVisual(hueShift + 0.62, u) * (1.25 + u.bassImpact * 1.45);
-    rimCol = mix(rimCol, vec3(1.6, 0.24, 0.02), u.bassImpact * 0.55);
+    vec3 rimCol    = palVisual(hueShift + 0.62, u) * (1.15 + 0.55 * swell);
     col += rimCol * rimLine;
 
     // ====================================================================
-    // LAYER 4 — onset: white fracture rays at fold-mirror seams
+    // LAYER 4 — beat: thin light rays along the fold-mirror seams
     // ====================================================================
-    if (u.onset > 0.02) {
+    {
         float rayNear0 = 1.0 - smoothstep(0.0,  0.08, ang01);
-        float rayNear1 = 1.0 - smoothstep(0.92, 1.0,  ang01);
+        float rayNear1 = smoothstep(0.92, 1.0,  ang01);
         float rayMask  = max(rayNear0, rayNear1);
-        float rayRadial = smoothstep(voidR, voidR + 0.06, r)
+        float rayRadial = smoothstep(baseR, baseR + 0.06, r)
                         * (1.0 - smoothstep(0.5, 1.0, r));
         float rayThin = pow(rayMask, 4.0);
-        float peak = saturate(u.onset * u.bassImpact * 0.22);
-        col += peakWhite(palVisual(0.04 + hueShift, u), peak) * rayThin * rayRadial * u.onset * 0.75;
+        col += peakWhite(palVisual(0.04 + hueShift, u), 0.15 * swell) * rayThin * rayRadial * swell * 0.60;
     }
 
     // ====================================================================
-    // LAYER 5 — treble/flux fine veins (crisp lines from upper spectrum)
+    // LAYER 5 — treble fine veins (crisp lines from upper spectrum)
     // ====================================================================
     {
-        float veinR    = voidR + 0.04 + bHi * 0.12;
+        float veinR    = baseR + 0.04 + bHi * 0.12;
         float veinLine = aaLine(r - veinR, 0.004);
-        vec3 veinCol   = palVisual(0.76 + hueShift, u) * (1.5 + u.treble * 2.4);
+        vec3 veinCol   = palVisual(0.76 + hueShift, u) * (1.2 + u.treble * 0.9);
         col += veinCol * veinLine * u.treble * angEdge;
     }
 
     // ====================================================================
-    // BLACK EVENT HORIZON core — hard mask inside voidR
+    // BLACK EVENT HORIZON core — soft mask inside voidR
     // ====================================================================
     col *= smoothstep(0.0, voidR, r);
 
     // ====================================================================
     // FEEDBACK TRAILS — zoom-in rotation produces collapsing tunnel trails
     // ====================================================================
-    float fbZoom = 0.004 + 0.003 * u.bassImpact;
-    float fbRot  = 0.004 * spinSpd + 0.002 * u.beat;
+    float fbZoom = 0.004 + 0.001 * swell;
+    float fbRot  = 0.004 * spinSpd;
     col = feedbackTrail(col, uv, min(u.trailDecay, 0.76), fbZoom, fbRot);
 
     return col; // LINEAR HDR — post chain tonemaps

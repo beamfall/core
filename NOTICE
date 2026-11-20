@@ -202,7 +202,7 @@ GET /source/ffmpeg, with its SHA-256 in the X-Checksum-SHA256 header.
 
 -------------------------------------------------------------------------------
 
-21. Oscillux v0.2.9 (AGPL-3.0-only)
+21. Oscillux v0.2.10 (AGPL-3.0-only)
     https://github.com/beamfall/oscillux
     Vendored unchanged in internal/web/app/vendor/oscillux/ and bundled into
     the web UI as the audio visualizer (CORE-1309, ADR-0228). Same licence as

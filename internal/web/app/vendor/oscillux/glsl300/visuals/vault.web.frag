@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -607,7 +614,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     vec2 sp = centered(uv, u.resolution);
     float grand = mix(0.85, 1.45, u.param0);
     float orn = mix(0.4, 1.4, u.param1);
-    float speed = mix(0.9, 2.6, u.param2);
+    float speed = mix(0.55, 1.55, u.param2);
 
     float zc = u.time * speed;
     float section = floor(u.beatCount / 16.0); // song section => room grammar
@@ -626,17 +633,25 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float rr = sin(u.time * 0.05) * 0.04;
     rd.xy = rot2(rr) * rd.xy;
 
-    float beatE = (0.25 + 1.5 * exp(-u.beatPhase * 4.0)) * (0.5 + u.beat * 1.6);
+    // beat swell: ~175 ms smoothstep attack, release back to zero at the
+    // wrap so the ribs breathe instead of strobing on each kick
+    float swell = smoothstep(0.0, 0.35, u.beatPhase)
+                * (1.0 - smoothstep(0.35, 1.0, u.beatPhase));
+    float beatE = 0.75 + 0.85 * swell;
 
+    // rib haze is integrated over march distance (not summed per step), so
+    // it no longer jumps when grazing rays change their step count
     float tt = 0.0, emis = 0.0, glow = 0.0;
     for (int i = 0; i < 80; ++i) {
         vec3 pos = ro + rd * tt;
         vec2 dm = mapVault(pos, r, orn);
-        glow += dm.y * beatE * 0.05 * exp(-dm.x * dm.x * 30.0);
         if (dm.x < 0.002 || tt > 60.0) { emis = dm.y; break; }
-        tt += dm.x * 0.85;
+        float dt = dm.x * 0.85;
+        glow += dm.y * exp(-dm.x * dm.x * 30.0) * min(dt, 0.25) * exp(-tt * 0.05);
+        tt += dt;
         emis = dm.y;
     }
+    glow *= beatE;
 
     vec3 pos = ro + rd * tt;
     // normal by central differences
@@ -666,20 +681,21 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float torch = exp(-tt * 0.20) * smoothstep(0.4, 3.2, tt)
                 * torchH * (0.40 + u.bass * 1.3)
                 * (0.85 + 0.15 * sin(u.time * 7.0 + pos.z * 2.0));
-    vec3 torchCol = palRoleBass(0.06, u);
+    // palRoleBass nudges by beatPhase (jumps at the wrap); mix its terms locally
+    vec3 torchCol = mix(palVisual(0.16, u), palVisual(0.04 + 0.011, u), 0.62 + 0.25 * u.bassImpact);
 
     // cool skylight from the vault crown
     float crown = smoothstep(-0.2, 1.6, pos.y) * 0.22;
     vec3 crownCol = palVisual(0.55 + 0.1 * u.spectralCentroid, u);
 
     vec3 col = base * (diff * 0.14
-                       + torch * 2.0 * torchCol / max(luma(torchCol), 0.3)
+                       + torch * 1.6 * torchCol / max(luma(torchCol), 0.3)
                        + crown * crownCol * (0.4 + 0.7 * u.mid));
 
     // beat-pulsed emissive ribs (HDR cores lighting the vault); near ribs
     // dim to silhouette so the eye is pulled down the hall
     float ribGate = smoothstep(0.3, 2.4, tt) * (0.35 + 0.65 * exp(-tt * 0.07));
-    col += ribCol * emis * min(beatE, 2.2) * 2.6 * ribGate;
+    col += ribCol * emis * min(beatE, 2.2) * 3.2 * ribGate;
     col += ribCol * glow * 1.6;
 
     // treble clerestory light shafts

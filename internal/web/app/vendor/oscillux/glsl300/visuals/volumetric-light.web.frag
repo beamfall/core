@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -615,12 +622,21 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
         vec3 bc = palVisual(fr * 0.55 + 0.06 * u.spectralCentroid + 0.015 * u.time, u);
         bc = accentize(bc, u.accent, 0.15);
+        // keep G a fair share of R (a saturated red-orange, not pink): the dim
+        // halo tails of the red shafts otherwise quantise to pure red and
+        // swell as one large red area on the beat
+        bc.g = max(bc.g, bc.r * 0.30);
 
         // beat-driven: each shaft swells on its own phase offset. A gentle
         // swell, not a slam: a whole saturated shaft doubling in brightness on
         // the kick was a large-area (often red) flash.
-        float slam = phasePulse(u, fr * 0.35, 0.10) * u.bassImpact;
-        float energy = 0.10 + 2.4 * bandE * bandE + 0.45 * slam;
+        // Each shaft's swell rises over ~180 ms (0.36 beat at 120 bpm) from its
+        // own phase offset and falls back to zero before that offset wraps, so
+        // the swell is continuous across the beat: no kick-edge step.
+        float ph = fract(u.beatPhase - fr * 0.35);
+        float slam = smoothstep(0.0, 0.36, ph) * (1.0 - smoothstep(0.40, 1.0, ph))
+                   * u.bassImpact;
+        float energy = 0.10 + 2.4 * bandE * bandE + 0.55 * slam;
 
         col += bc * halo * sh * smoke * fall * haze * energy * 0.40;
         // steady white core; onset whitening flipped every shaft's red balance

@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -569,6 +576,14 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // SPDX-License-Identifier: AGPL-3.0-only
 // Ripple / beat + spectrum cymatics ripples.
 // param0 = Ring Width ; param1 = Expansion ; param2 = Persistence
+//
+// Flash budget (CORE-2659): every pixel inside the ring field is crossed by
+// the ring train, and each crossing is one rise and one fall of luminance, so
+// the train's speed times its ring count sets how much of the frame flashes in
+// any 1/15 s. Rings drift slowly and the beat eases them instead of throwing
+// them; nothing jumps on the kick (instant kick, onset, bassImpact and
+// amplitude reads are gone), and the beat heat is a swell built from the
+// continuous beatPhase clock (~150 ms attack, the rest of the beat to fall).
 
 vec3 visual(vec2 uv, VisualUniforms u) {
     const float TEXTURE_REPEATS = 6.0;
@@ -581,6 +596,14 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     vec2  p = motionCentered(uv, u);
     float a = atan2_(p.y, p.x);
     float ang01 = a / 6.2831853 + 0.5;
+    float r = length(p);
+
+    // Beat swell: ~0.3 beat rise from the beat, falling over the rest of it, so
+    // heat breathes with the music instead of stepping on the kick. Zero at
+    // both ends of the beat, so it is continuous across the beat wrap.
+    float swell = smoothstep(0.0, 0.3, u.beatPhase)
+                * (1.0 - smoothstep(0.3, 1.0, u.beatPhase))
+                * saturate(u.level * 1.2);
 
     // Per-angle spectrum read — used to distort ring radii (cymatics contours).
     // Wrap frequency: one monotone sweep per revolution, the same angular
@@ -592,89 +615,90 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // monotonically, so the sweep spans the whole spectrum. Folding the old
     // sub-range back on itself instead (0.5-0.5*cos) also joins, but doubles the
     // contour frequency and mirrors it.
+    // Low gain: the spectrum steps on every kick, and a large gain jolted every
+    // ring outward at once (a frame-wide flash). The contour stays readable.
     float specBin  = bandAtWrapped(u, ang01 + 0.05);
     float specBin2 = bandAtWrapped(u, ang01 + 0.30);
-    float warp     = specBin * 0.18 + specBin2 * 0.09;
+    float warp     = specBin * 0.05 + specBin2 * 0.025;
 
     // Noise domain on a circle of radius 3.2/2pi: it traverses 3.2 domain units
     // per revolution, the same rate as the old fbm(ang01*3.2) ramp, so the noise
     // feature scale per unit angle is preserved — it just no longer tears.
     vec2 fbmDomain = vec2(cos(ang01 * 6.2831853), sin(ang01 * 6.2831853))
                      * (3.2 / 6.2831853)
-                   + vec2(u.time * 0.07, (u.beatCount + u.beatPhase) * 0.17);
+                   + vec2(u.time * 0.05, (u.beatCount + u.beatPhase) * 0.12);
     float fbmAngle = fbm(fbmDomain);
-    warp += (fbmAngle - 0.5) * 0.06 * (0.3 + u.mid * 0.7);
+    warp += (fbmAngle - 0.5) * 0.08 * (0.3 + u.mid * 0.7);
 
-    // Ring train — 7 rings cycling in phase, seeded by beatCount for variation
-    const int NRINGS = 7;
+    // Ring train — rings cycling in phase on one continuous beat clock.
+    const int NRINGS = 6;
     vec3 col = vec3(0.0);
 
-    // One continuous beat clock. The rings used to ride beatPhase (which wraps
-    // every beat), a per-beat beatCount reseed and time * an audio-driven speed,
-    // so every beat teleported the whole ring train and each pixel flickered:
-    // a large-area flash. Now the beat only eases the train outward.
-    float beatClock = u.beatCount + smoothstep(0.0, 1.0, u.beatPhase);
+    // The beat eases the train outward (smoothstep over each beat), a gentle
+    // surge, never a jump. Slow enough that a pixel sees about one ring pass a
+    // second: faster trains crossed a quarter of the field every 1/15 s.
+    float beatClock = u.beatCount + mix(u.beatPhase, smoothstep(0.0, 1.0, u.beatPhase), 0.6);
+    float sustain   = 0.55 + u.level * 0.45;
 
     for (int k = 0; k < NRINGS; ++k) {
         float fk = float(k);
 
-        float phase = fract(fk / float(NRINGS) + beatClock * 0.10 + u.time * 0.04);
+        float phase = fract(fk / float(NRINGS) + beatClock * 0.032 + u.time * 0.014);
 
         float ringR   = phase * expansion;
         float ringRW  = ringR + warp * ringR;
 
-        float r = length(p);
         float dist = abs(r - ringRW);
 
+        // Crisp core plus a soft halo: the halo makes the ring read as glowing
+        // without adding fast edges.
         float lineMask = aaLine(dist, ringHalfW);
+        float halo     = exp(-dist * dist / (ringHalfW * ringHalfW * 9.0 + 1e-5)) * 0.35;
 
-        float age   = clamp(phase, 0.0, 1.0);
+        float age     = clamp(phase, 0.0, 1.0);
         float ageFade = pow(1.0 - age, 1.6 + u.param2 * 0.8);
+        // Fade in from the centre: a ring is born dark and brightens over its
+        // first tenth instead of popping in at full strength at the wrap.
+        ageFade *= smoothstep(0.0, 0.08, phase);
 
-        // Kick heat stays on the newborn ring near the centre (small area),
-        // with a gentle boost instead of a 5x HDR slam.
-        float birthAge    = smoothstep(0.18, 0.0, phase);
-        float beatBoost   = 1.0 + birthAge * (u.bassImpact * 1.2 + u.beat * 0.5);
+        // Beat heat stays on the newborn ring near the centre (small area).
+        float birthAge  = smoothstep(0.22, 0.0, phase);
+        float heat      = birthAge * swell;
 
-        float brightness = lineMask * ageFade * beatBoost *
-                           (0.45 + u.amplitude * 0.55);
+        float brightness = (lineMask + halo) * ageFade * sustain * (1.0 + heat * 0.5);
 
         float palT   = fract(phase * 0.55 + fk * 0.13 + u.spectralCentroid * 0.12
-                             + u.time * 0.04);
+                             + u.time * 0.03);
         vec3 ringCol = palVisual(palT, u);
 
-        vec3 hotBirth = vec3(1.7, 0.28, 0.03);
-        ringCol = mix(ringCol, hotBirth, birthAge * 0.6 * saturate(u.bassImpact + u.beat));
-        ringCol = peakWhite(ringCol, birthAge * u.bassImpact * 0.32);
+        // Gold, not red: newborn rings blaze gold (R well under 80% of the sum).
+        vec3 hotBirth = vec3(1.55, 0.95, 0.30);
+        ringCol = mix(ringCol, hotBirth, birthAge * (0.35 + 0.35 * swell));
+        ringCol = peakWhite(ringCol, heat * 0.25);
 
         ringCol = accentize(ringCol, u.accent, 0.10);
 
-        float hdrScale = mix(1.4, 2.2, birthAge * saturate(u.bassImpact + u.beat * 0.6));
+        float hdrScale = mix(1.4, 1.9, heat);
         col += ringCol * brightness * hdrScale;
     }
 
-    // Onset / treble: thin secondary caustic shards.
-    if (u.onset > 0.05 || u.treble > 0.30) {
-        float r = length(p);
-        for (int s = 0; s < 4; s++) {
-            float shardR = (0.15 + float(s) * 0.11) * expansion;
-            float shardR2 = shardR + warp * shardR * 0.6;
-            float shardDist = abs(r - shardR2);
-            float shardMask = aaLine(shardDist, ringHalfW * 0.35);
-            float angMod = 0.5 + 0.5 * sin(ang01 * 6.2831853 * TEXTURE_REPEATS
-                                           + u.time * 1.8);
-            vec3 shardCol = palVisual(ang01 + float(s) * 0.22, u);
-            shardCol = peakWhite(shardCol, saturate(u.treble * u.onset * 0.35));
-            // thin accents: kept well below the rings so onsets glint, not strobe
-            col += shardCol * shardMask * angMod
-                   * (u.onset * 0.6 + u.treble * 0.5);
-        }
+    // Treble: thin caustic shards. They drift slowly round their rings and
+    // follow the sustained treble, so they glint without strobing.
+    for (int s = 0; s < 4; s++) {
+        float shardR = (0.15 + float(s) * 0.11) * expansion;
+        float shardR2 = shardR + warp * shardR * 0.6;
+        float shardDist = abs(r - shardR2);
+        float shardMask = aaLine(shardDist, ringHalfW * 0.35);
+        float angMod = 0.5 + 0.5 * sin(ang01 * 6.2831853 * TEXTURE_REPEATS
+                                       + u.time * 0.35 + float(s) * 1.7);
+        vec3 shardCol = palVisual(ang01 + float(s) * 0.22, u);
+        col += shardCol * shardMask * angMod * angMod
+               * (0.12 + u.treble * 0.22 + swell * 0.10);
     }
 
-    // Feedback trails: small outward zoom → persistent expanding rings.
-    // steady zoom: a bass-pumped zoom smeared the whole trail field each kick
-    float zoom    = 0.004 + 0.002 * u.bassImpact * u.param1;
-    float rotAmt  = 0.0015 * u.mid;
+    // Feedback trails: small steady outward zoom → persistent expanding rings.
+    float zoom    = 0.0045;
+    float rotAmt  = 0.0012 * u.mid;
     float effDecay = u.trailDecay * (0.75 + 0.25 * persistence);
     col = feedbackTrail(col, uv, effDecay, zoom, rotAmt);
 

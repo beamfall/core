@@ -320,6 +320,13 @@ vec3 suppressGreenCast(vec3 col) {
     return col;
 }
 
+// beatArc rises from 0 at the beat to 1 mid-beat and back to 0 by the next beat, so a hue
+// shift driven by it has no step at the beat wrap (a raw beatPhase term jumps by its full
+// amount on every beat, which reads as a flash over the whole frame; CORE-2659).
+float beatArc(VisualUniforms u) {
+    return 0.5 - 0.5 * cos(6.2831853 * u.beatPhase);
+}
+
 // Green-cast suppression is applied ONCE to the finished frame by the platform
 // wrapper, not per palette read. Per-sample suppression was both expensive
 // (~15 extra ops on every one of up to 120 palette reads per pixel, since most
@@ -335,7 +342,7 @@ vec3 palVisual(float t, VisualUniforms u) {
     int a = int(mod(floor(phase), 32.0));
     int b = int(mod(float(a + 1), 32.0));
     float blend = smoothstep(0.18, 0.82, fract(phase));
-    float nudge = u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    float nudge = beatArc(u) * 0.015 + u.spectralCentroid * 0.08;
     return mix(palByIndex(t + nudge, a), palByIndex(t + nudge, b), blend);
 }
 
@@ -344,11 +351,11 @@ vec3 peakWhite(vec3 col, float peak) {
 }
 
 vec3 palRoleTrace(float t, VisualUniforms u) {
-    return palVisual(t + 0.03 * u.beatPhase, u);
+    return palVisual(t + 0.03 * beatArc(u), u);
 }
 
 vec3 palRoleBass(float t, VisualUniforms u) {
-    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 hot = palVisual(0.03 + t * 0.18 + 0.04 * beatArc(u), u);
     vec3 body = palVisual(t + 0.10, u);
     return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
 }
@@ -570,20 +577,50 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // Prism Room — faceted caustic chamber.
 // kaleidoscopic wedge fold builds a room
 // of glass panes; each facet is lit by its own spectrum band, caustic sweeps
-// wash across rows on the beat, HDR edge filaments carve the geometry.
+// wash across rows, HDR edge filaments carve the geometry and carry the kick.
 // param0 = Facets ; param1 = Sweep ; param2 = Edge Glow
+//
+// Flash budget: the panes are large saturated areas, so nothing moves or
+// recolours them on the beat. The room turns and its hues drift on the clock,
+// band energy sets each pane's glow within one brightness band, and the kick
+// lands on the thin seams and vertex glints. Pane hues stay out of the red end
+// of the palette and a red guard keeps any accent or palette off saturated red.
+
+// Hue wheel over palHeatIce that skips its two bad spans: the red end (0..0.14),
+// which must not fill large changing areas, and the green middle (0.55..0.78),
+// which the wrapper's green-cast suppression greys out. The wheel runs
+// magenta, blue, cyan, (short bridge) yellow, orange, salmon, then a pink
+// bridge back to magenta, so a hue drifting through fract() never jumps.
+vec3 wheel(float h, VisualUniforms u) {
+    float x = fract(h) * 0.76;
+    if (x < 0.40) return palVisual(0.14 + x, u);
+    if (x < 0.43) return mix(palVisual(0.54, u), palVisual(0.79, u), smoothstep(0.40, 0.43, x));
+    if (x < 0.64) return palVisual(0.79 + (x - 0.43), u);
+    return mix(palVisual(1.0, u), palVisual(0.14, u), smoothstep(0.64, 0.76, x));
+}
+
+vec3 spectral(float h, VisualUniforms u) {
+    vec3 c = wheel(h, u);
+    c = clamp(mix(vec3(luma(c)), c, 1.45), vec3(0.0), vec3(4.0));
+    return c * c;
+}
+
+// Keep green + blue at least 0.4 of red: R / (R + G + B) stays under ~0.72.
+vec3 redGuard(vec3 c) {
+    float lack = max(0.4 * c.r - (c.g + c.b), 0.0);
+    return c + vec3(0.0, 0.55, 0.45) * lack;
+}
 
 vec3 visual(vec2 uv, VisualUniforms u) {
     vec2 p = motionCentered(uv, u);
     float facetsF = floor(mix(5.0, 10.0, u.param0) + 0.5);
-    float sweepSpd = mix(0.10, 0.55, u.param1);
+    float sweepSpd = mix(0.06, 0.30, u.param1);
     float edgeGlow = mix(0.9, 3.4, u.param2);
 
     float r = length(p);
-    // eased beat clock, continuous across beats: the raw beatPhase saw
-    // snapped the whole room on every beat
-    float beatT = u.beatCount + 1.0 - pow(1.0 - saturate(u.beatPhase), 3.0);
-    float a = atan2_(p.y, p.x) + u.time * 0.045 + beatT * 0.08;
+    // steady turn on the clock: a beat-driven turn sweeps every pane seam
+    // across the frame at once
+    float a = atan2_(p.y, p.x) + u.time * 0.05;
 
     // ---- kaleidoscopic wedge fold ----
     float sector = 6.2831853 / facetsF;
@@ -605,34 +642,27 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     vec3 col = vec3(0.0);
 
     // ---- glass pane fill ----
-    float hue = cid * 0.55 + row * 0.055 + 0.10 * u.spectralCentroid + 0.04 * beatT;
-    vec3 pane = palVisual(hue, u);
-    // push the glass toward pure spectral color: darker but far more saturated
-    pane = clamp(mix(vec3(luma(pane)), pane, 1.55), vec3(0.0), vec3(4.0));
-    pane = pane * pane * 1.6; // spectral glass: kill the pastel, keep the hue
-    pane = accentize(pane, u.accent, 0.15);
+    // hue drifts slowly on the clock; each pane turns within its own span
+    float hue = cid * 0.90 + row * 0.055 + u.time * 0.012;
+    vec3 pane = accentize(spectral(hue, u) * 1.6, u.accent, 0.15);
 
-    // internal gradient: light pools toward the pane's outer edge, the rest
-    // of the pane stays smoked glass over darkness
-    float grad = mix(0.10, 1.0, rl * rl);
+    // internal gradient: light pools toward the pane's outer edge
+    float grad = mix(0.45, 1.0, rl * rl);
     float roomWin = smoothstep(0.10, 0.30, r) * (1.0 - smoothstep(0.85, 1.35, r));
-    // only facets whose band is hot light up; the rest stay smoked glass —
-    // the light source is the room's heart, so outer rows fall darker
-    float lit = smoothstep(0.28, 0.80, bandE);
-    float heart = mix(1.0, 0.30, smoothstep(0.40, 1.10, r));
-    col += pane * grad * roomWin * heart * (0.025 + 1.5 * lit * bandE + 0.35 * bandE + 0.06 * u.level);
-
-    // beat glint on random facets: a tint, not a white flash, since many
-    // panes lighting at once read as a whole-room strobe
-    float flashGate = step(0.80, hash21(vec2(row + floor(u.beatCount), aid)));
-    col += pane * flashGate * u.onset * u.onset * roomWin * 0.08;
+    float heart = mix(1.0, 0.70, smoothstep(0.40, 1.10, r));
+    // every pane is clear spectral glass at a steady brightness; a hot band
+    // only lifts its glow a little, so the room stays in one brightness band
+    float lit = smoothstep(0.20, 0.90, bandE);
+    vec3 glass = pane * (1.0 + 0.18 * lit + 0.08 * u.level);
+    col += glass * grad * roomWin * heart;
 
     // ---- caustic sweep washing outward through the rows ----
-    float sweepR = fract(u.time * sweepSpd + beatT * 0.25) * 1.5;
-    float sweep = exp(-((rr - sweepR) * 16.0)*((rr - sweepR) * 16.0));
-    vec3 sweepCol = palVisual(hue + 0.25, u);
-    sweepCol = sweepCol * sweepCol * 1.6;
-    col += sweepCol * sweep * roomWin * heart * (0.12 + 0.4 * u.mid + 0.15 * u.bassImpact);
+    // a soft, slow wash on the clock; the mid band sets how much light it carries
+    float sweepR = fract(u.time * sweepSpd) * 1.6 - 0.05;
+    float sd = (rr - sweepR) * 9.0;
+    float sweep = exp(-sd * sd);
+    vec3 sweepCol = spectral(hue + 0.25, u);
+    col += sweepCol * sweep * roomWin * heart * (0.05 + 0.08 * u.mid);
 
     // ---- HDR edge filaments ----
     // wedge seams (arc-length distance so lines stay thin)
@@ -640,10 +670,11 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // row seams
     float dRow = min(rl, 1.0 - rl) * rowW;
     float edgeR = aaLine(dRow, 0.0030);
-    vec3 rim = palVisual(hue + 0.12, u);
+    vec3 rim = wheel(hue + 0.12, u);
     rim = clamp(mix(vec3(luma(rim)), rim, 1.4), vec3(0.0), vec3(4.0));
-    float edgeE = edgeGlow * (0.4 + 0.8 * u.bassImpact + 1.4 * bandE);
-    col += rim * (edgeA + edgeR) * roomWin * heart * edgeE * 0.30;
+    // the kick lives here: thin seams can pulse without a large-area flash
+    float edgeE = edgeGlow * (0.45 + 0.9 * u.bassImpact + 0.8 * bandE);
+    col += rim * (edgeA + edgeR) * roomWin * heart * edgeE * (0.30 + 0.6 * sweep);
 
     // vertex glints where seams cross — sparks ride the caustic sweep
     float glint = edgeA * edgeR;
@@ -652,11 +683,12 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     // ---- dark heart of the room + falloff ----
     col *= smoothstep(0.05, 0.16, r);
-    col += palVisual(hue, u) * exp(-r * r * 2.6) * smoothstep(0.05, 0.22, r) * (0.08 + 0.12 * u.bass);
+    col += spectral(hue, u) * exp(-r * r * 2.6) * smoothstep(0.05, 0.22, r) * (0.04 + 0.03 * u.level);
     // walls beyond the glass fall to black
     col *= 1.0 - smoothstep(1.05, 1.5, r) * 0.95;
 
-    col = feedbackTrail(col, uv, min(u.trailDecay + 0.05 * u.bassImpact, 0.55), 0.002, 0.0006 + 0.0012 * u.beat);
+    col = redGuard(col);
+    col = feedbackTrail(col, uv, min(u.trailDecay, 0.55), 0.002, 0.0006);
     return col; // LINEAR HDR
 }
 
