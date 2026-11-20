@@ -797,6 +797,9 @@ type SourceQuery struct {
 	// EntityFieldFilters AND-composes registered, Filterable Entity field
 	// equality predicates for an "entity-items" query. Ignored by other kinds.
 	EntityFieldFilters []EntityField
+	// EntityBrowseSources gives each Library plugin's eligible sources for
+	// EntityKind. Libraries without a rule keep their existing eligibility.
+	EntityBrowseSources map[string][]EntityBrowseSource
 	// EntityID scopes an "entity-media" query to one context Entity (the
 	// detail view's entity); required for that kind, empty for the rest.
 	EntityID EntityID
@@ -3696,7 +3699,7 @@ func (s *Store) sourceItemsForKind(ctx context.Context, filter LibraryFilter, qu
 		if query.EntityKind == "" {
 			return []SourceItem{}, nil
 		}
-		return s.entityItemsFilteredSQL(ctx, filter, query.EntityKind, query.EntityFieldFilters, limit, offset)
+		return s.entityItemsSQL(ctx, filter, query, limit, offset)
 	case "entity-media":
 		if query.EntityID == "" {
 			return []SourceItem{}, nil

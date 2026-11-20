@@ -140,7 +140,8 @@ func libraryEntityTitles(items []LibraryEntityItem) []string {
 	return titles
 }
 
-func TestLibraryEntitiesMusicArtistBrowse(t *testing.T) {
+func newMusicArtistBrowseFixture(t *testing.T) (*Handler, store.LibraryID) {
+	t.Helper()
 	st := storetest.Open(t)
 	registry, err := newTestPluginRegistry([]plugin.Bundle{music.Bundle()})
 	if err != nil {
@@ -189,13 +190,44 @@ func TestLibraryEntitiesMusicArtistBrowse(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	return handler, library.ID
+}
+
+func TestLibraryEntitiesMusicArtistBrowse(t *testing.T) {
+	handler, libraryID := newMusicArtistBrowseFixture(t)
 	var resp LibraryEntitiesResponse
 	execGraph(t, handler, authorizeViewer, libraryEntitiesTestQuery,
-		map[string]any{"libraryID": string(library.ID), "kind": "artist"}, "libraryEntities", &resp)
+		map[string]any{"libraryID": string(libraryID), "kind": "artist"}, "libraryEntities", &resp)
 	if len(resp.Kinds) != 2 || resp.Kinds[0].Kind != "artist" || resp.Kinds[0].Total != 2 ||
 		resp.Kinds[1].Kind != "album" || resp.Kinds[1].Total != 1 || resp.Total != 2 ||
 		!slices.Equal(libraryEntityTitles(resp.Items), []string{"Earth, Wind & Fire", "Tyler, The Creator"}) {
 		t.Fatalf("Artists browse = %+v", resp)
+	}
+}
+
+func TestSourceItemsMusicArtistsHomeShelf(t *testing.T) {
+	handler, _ := newMusicArtistBrowseFixture(t)
+	var source plugin.SourceSpec
+	for _, layout := range music.Bundle().Layouts {
+		if layout.ID != "home" {
+			continue
+		}
+		for _, section := range layout.Sections {
+			if section.ID == "artists" {
+				source = section.Source
+				break
+			}
+		}
+	}
+	if source.Kind != "entity-items" {
+		t.Fatalf("Artists home shelf source = %+v", source)
+	}
+	var items []SourceItem
+	execGraph(t, handler, authorizeViewer, `query($kind: String!, $entityKind: String!, $home: Boolean) {
+		sourceItems(kind: $kind, entityKind: $entityKind, home: $home) { id }
+	}`, map[string]any{"kind": source.Kind, "entityKind": source.EntityKind, "home": true}, "sourceItems", &items)
+	if got, want := itemIDs(items), []string{"album-artist", "loose-credit"}; !slices.Equal(got, want) {
+		t.Fatalf("Artists home shelf = %v, want %v", got, want)
 	}
 }
 
