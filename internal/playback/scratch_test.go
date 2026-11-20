@@ -24,9 +24,18 @@ func newTestSessions(t testing.TB, transcoder Transcoder, dir string, now func()
 	return ownTestSessions(t, s, err)
 }
 
+// newTestSessionsInDir waits out a lock that only a forked child still holds:
+// parallel tests start subprocesses, and between fork and exec the child has a
+// copy of every descriptor, so a directory just closed by an earlier instance
+// can stay flocked for a moment (CORE-2739).
 func newTestSessionsInDir(t testing.TB, transcoder Transcoder, dir string, now func() time.Time) *Sessions {
 	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
 	s, err := NewSessionsInDir(transcoder, dir, now)
+	for errors.Is(err, unix.EWOULDBLOCK) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		s, err = NewSessionsInDir(transcoder, dir, now)
+	}
 	return ownTestSessions(t, s, err)
 }
 
