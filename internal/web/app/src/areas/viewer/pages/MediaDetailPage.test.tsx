@@ -7,6 +7,7 @@ import {
   calibrateWatchPartyClock,
   fetchEntity,
   fetchMediaForEntity,
+  fetchPrePlayQueue,
   fetchRelatedMedia,
   fetchSourceItems,
 } from "@/lib/graphql";
@@ -15,6 +16,7 @@ import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
 import { expectNoAxeViolations } from "@/test/axe";
 import { sectionCacheKey } from "../components/HydratedSection";
+import { mediaPath } from "../lib/mediaAddress";
 import {
   fetchMedia,
   fetchMediaDetailFields,
@@ -26,7 +28,9 @@ import {
 } from "../lib/mediaDetail";
 import { readVersionChoice } from "../lib/versionChoice";
 import { resetHomeNetworkProbeForTest } from "../lib/watchTogether";
+import { usePlayerHost } from "../player/PlayerHost";
 import { MediaDetailPage } from "./MediaDetailPage";
+import { PlayerPage } from "./PlayerPage";
 
 const mocks = vi.hoisted(() => ({
   identity: null as string | null,
@@ -47,6 +51,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
   fetchEntity: vi.fn(),
   fetchMediaForEntity: vi.fn(),
+  fetchPrePlayQueue: vi.fn(),
   fetchRelatedMedia: vi.fn(),
   fetchSourceItems: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
@@ -73,6 +78,7 @@ vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
 vi.mock("../components/ViewerActions", () => ({ ViewerActions: () => null }));
+vi.mock("../player/PlayerHost", () => ({ usePlayerHost: vi.fn() }));
 vi.mock("../player/preload", () => ({ preloadPlayer: vi.fn() }));
 
 const identity = JSON.stringify(["viewer", "p1", "adult", false]);
@@ -108,14 +114,17 @@ function Probe() {
   );
 }
 
-function renderAt(entries: Array<string | { pathname: string; state?: unknown }>) {
+function renderAt(
+  entries: Array<string | { pathname: string; state?: unknown }>,
+  watchPage: ReactNode = <Probe />,
+) {
   return render(
     <I18nProvider>
       <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
         <Routes>
           <Route path="/" element={<Probe />} />
           <Route path="/n/:id" element={<Probe />} />
-          <Route path="/watch/*" element={<Probe />} />
+          <Route path="/watch/*" element={watchPage} />
           <Route path="/entity/:id" element={<Probe />} />
           <Route path="/media/*" element={<MediaDetailPage />} />
         </Routes>
@@ -146,11 +155,13 @@ function pending<T>() {
 
 beforeEach(() => {
   mocks.identity = identity;
+  vi.mocked(usePlayerHost).mockReset();
   vi.mocked(fetchMedia).mockReset();
   vi.mocked(fetchMediaDetailFields).mockReset().mockResolvedValue([]);
   vi.mocked(fetchMediaRelations).mockReset().mockResolvedValue([]);
   vi.mocked(fetchMediaTracks).mockReset().mockResolvedValue([]);
   vi.mocked(fetchMediaForEntity).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchPrePlayQueue).mockReset().mockResolvedValue([]);
   vi.mocked(fetchRelatedMedia).mockReset().mockResolvedValue([]);
   vi.mocked(fetchSourceItems).mockReset().mockResolvedValue([]);
   vi.mocked(fetchEntity).mockReset().mockResolvedValue(null);
@@ -225,11 +236,47 @@ describe("MediaDetailPage", () => {
         expect(fetchMedia).toHaveBeenCalledWith(id, expect.any(AbortSignal));
 
         fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
-        expect(screen.getByTestId("path")).toHaveTextContent(`/watch/${id}`);
+        expect(screen.getByTestId("path")).toHaveTextContent(mediaPath("watch", id));
         expect(watchState()).toEqual({ title: "Card title" });
       } finally {
         window.history.replaceState(null, "", "/");
       }
+    },
+  );
+
+  it.each([
+    { action: "Play Server title", search: "" },
+    { action: "Start Server title from the beginning", search: "?t=0" },
+  ])(
+    "opens the player through $action when the catalog is unavailable",
+    async ({ action, search }) => {
+      const id = "media-sample1-a371bff46385f7ded";
+      const attach = vi.fn();
+      vi.mocked(usePlayerHost).mockReturnValue({ attach, detach: vi.fn(), stop: vi.fn() });
+      vi.mocked(fetchMedia).mockResolvedValue({ ...media, id });
+      const item = { ...card, id, engagement: { positionSeconds: 60, durationSeconds: 600 } };
+      renderAt(
+        [
+          {
+            pathname: "/media/sample1.a371bff46385f7ded",
+            state: search ? mediaLinkState(item, identity) : undefined,
+          },
+        ],
+        <PlayerPage />,
+      );
+      const control = await screen.findByRole("button", { name: action });
+      vi.mocked(fetchMedia).mockClear().mockRejectedValue(new TypeError("Failed to fetch"));
+
+      fireEvent.click(control);
+
+      await waitFor(() =>
+        expect(attach).toHaveBeenCalledWith({
+          mediaId: id,
+          search,
+          state: expect.objectContaining({ title: "Server title" }),
+        }),
+      );
+      expect(fetchMedia).not.toHaveBeenCalled();
     },
   );
 

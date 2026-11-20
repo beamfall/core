@@ -35,6 +35,7 @@ import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { artFrameClass } from "../lib/cardArt";
 import { audioPeople, type ContainerLink, useContainerContext } from "../lib/containerContext";
+import { mediaPath } from "../lib/mediaAddress";
 import {
   fetchMedia,
   fetchMediaDetailFields,
@@ -223,7 +224,7 @@ export function MediaDetailPage() {
     }
     // ?t=0 is the player's "from the beginning" (it also skips pre-play).
     const suffix = fromStart ? "?t=0" : "";
-    navigate(`/watch/${encodeURIComponent(previewID)}${suffix}`, { state });
+    navigate(`${mediaPath("watch", previewID)}${suffix}`, { state });
   }
 
   const back = (

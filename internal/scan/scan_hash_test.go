@@ -530,9 +530,11 @@ func TestScanAndManagedImportShareSampleIdentity(t *testing.T) {
 	}
 }
 
-func TestManagedAdmissionRestoresLiveLegacyIdentityAtSamePath(t *testing.T) {
-	t.Run("import", func(t *testing.T) { testManagedLegacyReadmission(t, false) })
-	t.Run("convert", func(t *testing.T) { testManagedLegacyReadmission(t, true) })
+func TestManagedAdmissionRestoresLegacyIdentityAtSamePath(t *testing.T) {
+	t.Run("import before missing scan", func(t *testing.T) { testManagedLegacyReadmission(t, false, false) })
+	t.Run("import after missing scan", func(t *testing.T) { testManagedLegacyReadmission(t, false, true) })
+	t.Run("convert before missing scan", func(t *testing.T) { testManagedLegacyReadmission(t, true, false) })
+	t.Run("convert after missing scan", func(t *testing.T) { testManagedLegacyReadmission(t, true, true) })
 }
 
 type legacyReadmissionConverter struct{ payload []byte }
@@ -542,7 +544,7 @@ func (c legacyReadmissionConverter) ConvertFile(_ context.Context, _, dst, _ str
 	return "mp4", "h264", store.MediaClassVideo, err
 }
 
-func testManagedLegacyReadmission(t *testing.T, convert bool) {
+func testManagedLegacyReadmission(t *testing.T, convert, markMissing bool) {
 	t.Helper()
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -577,6 +579,19 @@ func testManagedLegacyReadmission(t *testing.T, convert bool) {
 	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
+	}
+	wantFiles := 1
+	if markMissing {
+		// A completely empty root triggers the scan's missing-file guard.
+		remaining := writeScanFile(t, root, "remaining.mp4", []byte("another file"))
+		stubNow(t, time.Now().Add(time.Minute))
+		if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: libraryID, Root: root}); err != nil {
+			t.Fatalf("scan after removing legacy file: %v", err)
+		}
+		if files, err := st.MediaFilesForLibrary(ctx, libraryID); err != nil || len(files) != 1 || files[0].Path != remaining {
+			t.Fatalf("live files after removing legacy file = %+v, err = %v, want only %q", files, err, remaining)
+		}
+		wantFiles++
 	}
 	filter := store.LibraryFilter{AllLibraries: true}
 	if convert {
@@ -614,9 +629,15 @@ func testManagedLegacyReadmission(t *testing.T, convert bool) {
 	checkIdentity := func() {
 		t.Helper()
 		files, err := st.MediaFilesForLibrary(ctx, libraryID)
-		if err != nil || len(files) != 1 || files[0].Path != path || files[0].MediaID != media.ID || files[0].ContentFingerprint != legacy {
-			t.Fatalf("live files = %+v, err = %v, want legacy %q at %q on %q", files, err, legacy, path, media.ID)
+		if err != nil || len(files) != wantFiles {
+			t.Fatalf("live files = %+v, err = %v, want %d files", files, err, wantFiles)
 		}
+		for _, file := range files {
+			if file.Path == path && file.MediaID == media.ID && file.ContentFingerprint == legacy {
+				return
+			}
+		}
+		t.Fatalf("live files = %+v, err = %v, want legacy %q at %q on %q", files, err, legacy, path, media.ID)
 	}
 	checkIdentity()
 	info, err := os.Stat(path)
@@ -625,7 +646,7 @@ func testManagedLegacyReadmission(t *testing.T, convert bool) {
 	}
 	stubNow(t, info.ModTime().Add(time.Minute))
 	result, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: libraryID, Root: root})
-	if err != nil || result.FilesSeen != 1 || result.FilesAdded != 0 || result.FilesChanged != 0 {
+	if err != nil || result.FilesSeen != wantFiles || result.FilesAdded != 0 || result.FilesChanged != 0 {
 		t.Fatalf("rescan = %+v, err = %v, want the fast path", result, err)
 	}
 	checkIdentity()

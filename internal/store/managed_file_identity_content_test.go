@@ -182,6 +182,63 @@ func TestManagedImportIdentityFollowsContent(t *testing.T) {
 	})
 }
 
+func TestManagedImportRestoresLegacyPartOrVersion(t *testing.T) {
+	for _, name := range []string{"part", "version"} {
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			st, root, filter := importStageHarness(t)
+			seed := func(name, payload string) store.ImportMediaFile {
+				t.Helper()
+				path := filepath.Join(root, name)
+				if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				fingerprint, err := store.HashMediaFileContent(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return store.ImportMediaFile{
+					LibraryID: "library-local", Path: path, Title: name, Container: "mkv", Codec: "h264",
+					ContentFingerprint: fingerprint,
+				}
+			}
+			const memberName, payload = "member.mkv", "legacy member bytes"
+			first := seed("anchor.mkv", "legacy anchor bytes")
+			member := seed(memberName, payload)
+			if name == "part" {
+				if _, _, err := st.ImportMediaFileParts(ctx, []store.ImportMediaFilePart{
+					{SourceOrdinal: 1, File: first}, {SourceOrdinal: 2, File: member},
+				}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				media, _, err := st.ImportMediaFile(ctx, first)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := st.ImportMediaFileVersion(ctx, store.MediaVersionImport{
+					MediaID: media.ID, File: member, Label: "alternate",
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := liveFileAt(t, st, member.Path)
+			if err := os.Remove(member.Path); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.MarkMediaFileMissing(ctx, member.LibraryID, member.Path); err != nil {
+				t.Fatal(err)
+			}
+			restored := importFromOutside(t, st, root, filter, memberName, payload)
+			after := liveFileAt(t, st, restored.Path)
+			if after.MediaID != before.MediaID || after.ContentFingerprint != before.ContentFingerprint ||
+				after.PartOrdinal != before.PartOrdinal || after.VersionLabel != before.VersionLabel {
+				t.Fatalf("restored file = %+v, want the identity and slot of %+v", after, before)
+			}
+		})
+	}
+}
+
 // TestManagedConvertIdentityFollowsContent proves the converted artifact is
 // cataloged under the digest of its own bytes.
 func TestManagedConvertIdentityFollowsContent(t *testing.T) {
