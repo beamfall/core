@@ -125,6 +125,21 @@ func TestNewSessionsCreatesDefaultAndValidatesExplicitRoot(t *testing.T) {
 	}
 }
 
+func TestNewSessionsCreatesMissingDataDirectory(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "missing", "data")
+	requireScratchMissing(t, data)
+	s := newTestSessions(t, nil, data, nil)
+	for _, dir := range []string{data, s.ScratchDir()} {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.IsDir() || info.Mode().Perm() != 0o700 {
+			t.Errorf("%s mode = %v, want a private directory", dir, info.Mode())
+		}
+	}
+}
+
 func TestNewSessionsInDirReleasesRootAfterStartupPanic(t *testing.T) {
 	want := errors.New("scratch startup panic")
 	for name, option := range map[string]SessionsOption{

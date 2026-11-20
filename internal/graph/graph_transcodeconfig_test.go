@@ -88,8 +88,12 @@ func TestTranscodeResourceSettingsEquivalentScratchNeedsNoRestart(t *testing.T) 
 	if err := os.Symlink(active, alias); err != nil {
 		t.Fatal(err)
 	}
+	activeInfo, err := os.Stat(active)
+	if err != nil {
+		t.Fatal(err)
+	}
 	st := storetest.Open(t)
-	handler := newTranscodeRuntimeHandler(t, st, TranscodeRuntime{ActiveTempDir: active, StartupTempDir: active})
+	handler := newTranscodeRuntimeHandler(t, st, TranscodeRuntime{ActiveTempDir: active, ActiveTempDirInfo: activeInfo, StartupTempDir: active})
 	for _, dir := range []string{active + "/", alias} {
 		variables, err := json.Marshal(map[string]string{"tempDir": dir})
 		if err != nil {
@@ -99,6 +103,42 @@ func TestTranscodeResourceSettingsEquivalentScratchNeedsNoRestart(t *testing.T) 
 		if len(errs) != 0 || info.TempDir != dir || info.EffectiveTempDir != active || info.TempDirRestartRequired {
 			t.Errorf("setTranscodeConfig = (%+v, %v), want %q stored and %q active", info, errs, dir, active)
 		}
+	}
+}
+
+func TestTranscodeResourceSettingsCaseOnlyScratchSelection(t *testing.T) {
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := filepath.Join(parent, "Scratch")
+	if err := os.Mkdir(active, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	activeInfo, err := os.Stat(active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := filepath.Join(parent, "scratch")
+	wantRestart := false
+	if _, err := os.Stat(selected); os.IsNotExist(err) {
+		// On a case-sensitive volume the alternate spelling can be a second directory.
+		if err := os.Mkdir(selected, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		wantRestart = true
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	st := storetest.Open(t)
+	handler := newTranscodeRuntimeHandler(t, st, TranscodeRuntime{ActiveTempDir: active, ActiveTempDirInfo: activeInfo, StartupTempDir: active})
+	variables, err := json.Marshal(map[string]string{"tempDir": selected})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, errs := setTranscodeResources(t, handler, string(variables))
+	if len(errs) != 0 || info.TempDir != selected || info.EffectiveTempDir != active || info.TempDirRestartRequired != wantRestart {
+		t.Errorf("setTranscodeConfig = (%+v, %v), want %q stored, %q active and restart required = %v", info, errs, selected, active, wantRestart)
 	}
 }
 

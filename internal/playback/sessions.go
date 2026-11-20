@@ -460,6 +460,7 @@ type Sessions struct {
 	dir           string
 	now           func() time.Time
 	rootLock      *os.File
+	rootInfo      fs.FileInfo
 	setupMu       sync.Mutex
 	allocation    *scratchAllocation
 	paths         map[string]*scratchPath

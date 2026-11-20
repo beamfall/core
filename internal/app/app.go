@@ -1232,16 +1232,17 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		defaultScratchDir, _ = playback.ResolveDefaultScratchDir(cfg.DataDir)
 	}
 	transcodeRuntime := graph.TranscodeRuntime{
-		CapSetter:       hlsSessions,
-		EncodePolicy:    ffmpegRunner,
-		StartupCap:      cfg.TranscodeCap,
-		AutoCap:         autoTranscodeCap,
-		SoftwareAutoCap: softwareTranscodeCap,
-		EnvCap:          envTranscodeCap,
-		ActiveTempDir:   cfg.TranscodeScratchDir,
-		DefaultTempDir:  defaultScratchDir,
-		StartupTempDir:  startupScratchDir,
-		EnvTempDir:      cfg.TranscodeScratchDirExplicit,
+		CapSetter:         hlsSessions,
+		EncodePolicy:      ffmpegRunner,
+		StartupCap:        cfg.TranscodeCap,
+		AutoCap:           autoTranscodeCap,
+		SoftwareAutoCap:   softwareTranscodeCap,
+		EnvCap:            envTranscodeCap,
+		ActiveTempDir:     cfg.TranscodeScratchDir,
+		ActiveTempDirInfo: hlsSessions.ScratchDirInfo(),
+		DefaultTempDir:    defaultScratchDir,
+		StartupTempDir:    startupScratchDir,
+		EnvTempDir:        cfg.TranscodeScratchDirExplicit,
 	}
 	graphOptions := graph.Options{
 		AuditRecorder:                observability.NewAuditLogger(logger),

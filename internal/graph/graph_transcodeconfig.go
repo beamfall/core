@@ -2,7 +2,9 @@ package graph
 
 import (
 	"context"
+	"io/fs"
 	"math"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -72,6 +74,8 @@ type TranscodeRuntime struct {
 	EnvCap int
 	// ActiveTempDir is the scratch directory the running transcoder uses.
 	ActiveTempDir string
+	// ActiveTempDirInfo identifies the locked scratch directory at startup.
+	ActiveTempDirInfo fs.FileInfo
 	// DefaultTempDir is the resolved default scratch directory at startup, if present.
 	DefaultTempDir string
 	// StartupTempDir is the configured spelling selected at startup. An empty
@@ -186,13 +190,13 @@ func tempDirRestartRequired(stored string, runtime TranscodeRuntime) bool {
 		return false
 	}
 	if stored == "" {
-		return runtime.DefaultTempDir != runtime.ActiveTempDir
+		stored = runtime.DefaultTempDir
 	}
-	if stored == runtime.ActiveTempDir {
-		return false
+	if runtime.ActiveTempDirInfo == nil {
+		return stored != runtime.ActiveTempDir
 	}
-	resolved, err := filepath.EvalSymlinks(stored)
-	return err != nil || resolved != runtime.ActiveTempDir
+	selected, err := os.Stat(stored)
+	return err != nil || !os.SameFile(runtime.ActiveTempDirInfo, selected)
 }
 
 // ResolveTranscodeCap is the startup counterpart of desiredTranscodeCap, so the

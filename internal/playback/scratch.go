@@ -64,7 +64,7 @@ func NewSessions(transcoder Transcoder, dataDir string, now func() time.Time) (*
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
 	return NewSessionsInDir(transcoder, dir, now)
@@ -128,6 +128,10 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 			}
 		}
 	}()
+	info, err := lock.Stat()
+	if err != nil {
+		return nil, err
+	}
 	if now == nil {
 		now = time.Now
 	}
@@ -135,6 +139,7 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		transcoder:  transcoder,
 		dir:         dir,
 		rootLock:    lock,
+		rootInfo:    info,
 		now:         now,
 		bootNonce:   newBootNonce(),
 		sessions:    make(map[SessionKey]*hlsSession),
@@ -165,6 +170,11 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 // ScratchDir returns the resolved root the manager locked at construction.
 func (s *Sessions) ScratchDir() string {
 	return s.dir
+}
+
+// ScratchDirInfo identifies the directory locked at construction.
+func (s *Sessions) ScratchDirInfo() fs.FileInfo {
+	return s.rootInfo
 }
 
 // allocateScratchLocked drops mu for exclusive mkdir. setupMu keeps the
