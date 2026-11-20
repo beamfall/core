@@ -21,8 +21,7 @@ var errIncompleteScratchSweep = errors.New("playback: incomplete scratch reconci
 type scratchState uint8
 
 const (
-	scratchAllocating scratchState = iota
-	scratchLive
+	scratchLive scratchState = iota
 	scratchPending
 	scratchRemoving
 	scratchDebt
@@ -33,12 +32,14 @@ type scratchPath struct {
 	name    string
 	library store.LibraryID
 	state   scratchState
-	users   int
-	drained chan struct{}
-	cleanup *sessionTeardown
-	cutoff  chan struct{}
-	retryAt time.Time
-	backoff time.Duration
+	// Set from name reservation through publication or the setup owner's cleanup.
+	allocating bool
+	users      int
+	drained    chan struct{}
+	cleanup    *sessionTeardown
+	cutoff     chan struct{}
+	retryAt    time.Time
+	backoff    time.Duration
 	// An unclassified mkdir collision must be inspected before removal.
 	inspectCollision bool
 }
@@ -47,16 +48,7 @@ type scratchPath struct {
 // setupMu admits a single owner and mu protects its revocation.
 type scratchAllocation struct {
 	key     SessionKey
-	path    *scratchPath // set only once mkdir confirms ownership
 	revoked bool
-}
-
-func (a *scratchAllocation) revokeLocked() {
-	a.revoked = true
-	if a.path != nil {
-		// Reconciliation reports the pending path; setup remains its removal owner.
-		a.path.state = scratchPending
-	}
 }
 
 // SessionsOption configures a session manager before its startup sweep.
@@ -211,7 +203,7 @@ func (s *Sessions) allocateScratchLocked(allocation *scratchAllocation, library 
 		if s.paths[name] != nil {
 			continue
 		}
-		p := &scratchPath{name: name, cutoff: make(chan struct{})}
+		p := &scratchPath{name: name, allocating: true, cutoff: make(chan struct{})}
 		s.paths[name] = p
 		s.mu.Unlock()
 		mkdir := os.Mkdir
@@ -229,7 +221,7 @@ func (s *Sessions) allocateScratchLocked(allocation *scratchAllocation, library 
 		s.mu.Lock()
 		if collision {
 			if collisionDir || inspectErr != nil {
-				p.state = scratchDebt
+				p.state, p.allocating = scratchDebt, false
 				p.inspectCollision = inspectErr != nil
 			} else {
 				delete(s.paths, name)
@@ -245,14 +237,7 @@ func (s *Sessions) allocateScratchLocked(allocation *scratchAllocation, library 
 			}
 			return nil, err
 		}
-		// Close continues to count this claim through unpublished setup. Its
-		// caller publishes or assigns the initial remover under mu.
-		p.library = library
-		p.state, p.users = scratchLive, 1
-		allocation.path = p
-		if allocation.revoked {
-			p.state = scratchPending
-		}
+		p.library, p.users = library, 1
 		return p, nil
 	}
 	return nil, ErrSessionEvicted
@@ -301,7 +286,7 @@ func (s *Sessions) removeScratch(p *scratchPath) error {
 	if err == nil {
 		delete(s.paths, p.name)
 	} else {
-		p.state = scratchDebt
+		p.state, p.allocating = scratchDebt, false
 		p.backoff = min(max(time.Second, 2*p.backoff), time.Minute)
 		p.retryAt = s.now().Add(p.backoff)
 	}
@@ -367,25 +352,17 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() (result error) {
 	targets := make(map[string]*scratchPath)
 	incomplete := false
 	for name, p := range s.paths {
-		switch p.state {
-		case scratchPending, scratchRemoving:
+		switch {
+		case p.allocating || p.state == scratchPending || p.state == scratchRemoving:
 			incomplete = true
-		case scratchDebt:
+		case p.state == scratchDebt:
 			targets[name] = p
 		}
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if !sessionDirName.MatchString(name) {
-			continue
-		}
-		switch p := s.paths[name]; {
-		case p == nil:
-			if entry.IsDir() {
-				targets[name] = nil
-			}
-		case p.state == scratchAllocating:
-			incomplete = true
+		if s.paths[name] == nil && entry.IsDir() && sessionDirName.MatchString(name) {
+			targets[name] = nil
 		}
 	}
 	s.mu.Unlock()
@@ -404,7 +381,7 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() (result error) {
 			s.mu.Unlock()
 			continue // the recorded debt was removed
 		case p.state == scratchDebt && (cutoff == nil || p == cutoff):
-		case p.state == scratchLive:
+		case p.state == scratchLive && !p.allocating:
 			s.mu.Unlock()
 			continue
 		default:

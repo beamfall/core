@@ -883,7 +883,7 @@ func (s *Sessions) terminate(matches func(SessionKey) bool) int {
 	s.mu.Lock()
 	revoked := 0
 	if a := s.allocation; a != nil && !s.closed && !a.revoked && matches(a.key) {
-		a.revokeLocked()
+		a.revoked = true
 		revoked++
 	}
 	var teardowns []*sessionTeardown
@@ -1388,6 +1388,7 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		}
 	}
 	s.transitionLocked(session, publishSession{composed: picture, picture: preparedPicture})
+	scratch.allocating = false
 	if session.revokeDone != nil {
 		go s.watchLiveRevocation(session, session.revokeDone, secure.Revoked, s.liveRevocationInterval())
 	}
@@ -1947,9 +1948,6 @@ func (s *Sessions) Close() error {
 		s.keyframes.stop()
 		s.mu.Lock()
 		s.closed = true
-		if s.allocation != nil {
-			s.allocation.revokeLocked()
-		}
 		var teardowns []*sessionTeardown
 		for _, session := range s.sessions {
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)

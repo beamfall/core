@@ -623,41 +623,112 @@ func TestScratchCollisionInspectionDebt(t *testing.T) {
 	}
 }
 
-func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *testing.T) {
+func TestScratchSweepAcrossAllocationLifetime(t *testing.T) {
 	s := newTestSessions(t, nil, t.TempDir(), nil)
-	collision := fmt.Sprintf("session-%s-1", s.bootNonce)
-	future := fmt.Sprintf("session-%s-900000", s.bootNonce)
-	seedScratchFile(t, filepath.Join(s.dir, collision, "720p", "seg00000.m4s"))
-	seedScratchFile(t, filepath.Join(s.dir, future, "marker"))
-	entered, release := scratchLatch(t)
+	collision := filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce))
+	dir := filepath.Join(s.dir, fmt.Sprintf("session-%s-2", s.bootNonce))
+	future := filepath.Join(s.dir, fmt.Sprintf("session-%s-900000", s.bootNonce))
+	seedScratchFile(t, filepath.Join(collision, "720p", "seg00000.m4s"))
+	seedScratchFile(t, filepath.Join(future, "marker"))
+
+	reserved, create := scratchLatch(t)
+	created, report := scratchLatch(t)
+	prepared, commit := scratchLatch(t)
+	removing, remove := scratchLatch(t)
 	s.mkdirDir = func(path string, mode fs.FileMode) error {
-		if err := os.Mkdir(path, mode); err != nil {
-			return err
+		if path != dir {
+			return os.Mkdir(path, mode)
 		}
-		close(entered)
-		<-release.ch
-		return nil
+		close(reserved)
+		<-create.ch
+		err := os.Mkdir(path, mode)
+		close(created)
+		<-report.ch
+		return err
 	}
-	result := make(chan error, 1)
-	key := SessionKey{SessionID: "first"}
+	s.beforeSetupCommit = func() {
+		close(prepared)
+		<-commit.ch
+	}
+	s.removeDir = func(path string) error {
+		if path == dir {
+			close(removing)
+			<-remove.ch
+		}
+		return s.removeScratchFixture(path)
+	}
+	key := SessionKey{SessionID: "viewer", MediaID: "item"}
+	request := make(chan error, 1)
 	go func() {
 		_, err := filePath720(s, key, masterPlaylistName)
-		result <- err
+		request <- err
 	}()
-	waitScratchSignal(t, entered)
-	newDir := filepath.Join(s.dir, fmt.Sprintf("session-%s-2", s.bootNonce))
-	if err := s.PurgeOrphanedTranscodeDirs(); !errors.Is(err, errIncompleteScratchSweep) {
-		t.Fatalf("sweep with unresolved mkdir: %v", err)
+	waitScratchSignal(t, reserved)
+
+	checkSweep := func(t *testing.T, want error) {
+		t.Helper()
+		if err := s.PurgeOrphanedTranscodeDirs(); !errors.Is(err, want) {
+			t.Fatalf("sweep = %v, want %v", err, want)
+		}
 	}
-	requireScratchMissing(t, filepath.Join(s.dir, collision))
-	requireScratchMissing(t, filepath.Join(s.dir, future))
-	if _, err := os.Stat(newDir); err != nil {
-		t.Fatalf("sweep removed unresolved allocation: %v", err)
+	t.Run("allocation in flight", func(t *testing.T) {
+		// Even before a directory exists, the reservation makes the sweep incomplete.
+		checkSweep(t, errIncompleteScratchSweep)
+		requireScratchMissing(t, collision)
+		requireScratchMissing(t, future)
+
+		listed, reconcile := scratchLatch(t)
+		s.readScratch = func(root fs.FS, name string) ([]fs.DirEntry, error) {
+			entries, err := fs.ReadDir(root, name)
+			close(listed)
+			<-reconcile.ch
+			return entries, err
+		}
+		sweep := make(chan error, 1)
+		go func() { sweep <- s.PurgeOrphanedTranscodeDirs() }()
+		waitScratchSignal(t, listed)
+		if other := s.TerminatePlayback(key.SessionID, "other"); other != 0 {
+			t.Errorf("unrelated playback revoked %d allocations", other)
+		}
+		if first, repeat := s.TerminatePlayback(key.SessionID, key.MediaID), s.TerminateSession(key.SessionID); first != 1 || repeat != 0 {
+			t.Errorf("revocations = %d, %d, want 1, 0", first, repeat)
+		}
+		create.open()
+		waitScratchSignal(t, created)
+		reconcile.open()
+		if err := waitScratchResult(t, sweep); !errors.Is(err, errIncompleteScratchSweep) {
+			t.Fatalf("sweep with late mkdir absent from listing = %v", err)
+		}
+		s.readScratch = nil
+
+		report.open()
+		waitScratchSignal(t, prepared)
+		checkSweep(t, errIncompleteScratchSweep)
+		mustRead(t, filepath.Join(dir, masterPlaylistName))
+		commit.open()
+		waitScratchSignal(t, removing)
+		checkSweep(t, errIncompleteScratchSweep)
+	})
+	if t.Failed() {
+		return
 	}
-	release.open()
-	if err := waitScratchResult(t, result); err != nil {
-		t.Fatal(err)
-	}
+	t.Run("finished removal", func(t *testing.T) {
+		remove.open()
+		if err := waitScratchResult(t, request); !errors.Is(err, ErrSessionEvicted) {
+			t.Fatalf("revoked creator returned %v", err)
+		}
+		requireScratchMissing(t, dir)
+		checkSweep(t, nil)
+	})
+	t.Run("published", func(t *testing.T) {
+		s.beforeSetupCommit = nil
+		path, err := filePath720(s, key, masterPlaylistName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkSweep(t, nil)
+		mustRead(t, path)
+	})
 }
 
 func TestScratchSweepRecordsCollisionFailureAsRootDebt(t *testing.T) {
@@ -1020,89 +1091,6 @@ func TestCanceledShapeReplacementPreservesEncoderAndResumeHint(t *testing.T) {
 				t.Fatal(err)
 			}
 			requireStarts(t, transcoder, 0, 10)
-		})
-	}
-}
-
-func TestTerminationRevokesScratchAllocation(t *testing.T) {
-	cases := []struct {
-		name      string
-		lateMkdir bool
-		terminate func(*Sessions, SessionKey) int
-	}{
-		{"session with late mkdir", true, func(s *Sessions, key SessionKey) int { return s.TerminateSession(key.SessionID) }},
-		{"playback with confirmed mkdir", false, func(s *Sessions, key SessionKey) int { return s.TerminatePlayback(key.SessionID, key.MediaID) }},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			transcoder := &fakeTranscoder{}
-			s := newTestSessions(t, transcoder, t.TempDir(), nil)
-			mkdirEntered, mkdirRelease := scratchLatch(t)
-			prepared, publish := scratchLatch(t)
-			if tc.lateMkdir {
-				s.mkdirDir = func(path string, mode fs.FileMode) error {
-					close(mkdirEntered)
-					<-mkdirRelease.ch
-					return os.Mkdir(path, mode)
-				}
-			}
-			s.beforeSetupCommit = func() {
-				close(prepared)
-				<-publish.ch
-			}
-			key := SessionKey{SessionID: "viewer", MediaID: "item", ProfileCapability: "receiver"}
-			request := make(chan error, 1)
-			go func() {
-				_, err := filePath720(s, key, "720p/seg00000.m4s")
-				request <- err
-			}()
-			if tc.lateMkdir {
-				waitScratchSignal(t, mkdirEntered)
-			} else {
-				waitScratchSignal(t, prepared)
-				if err := s.PurgeOrphanedTranscodeDirs(); err != nil {
-					t.Fatalf("sweep before revocation: %v", err)
-				}
-			}
-			terminated := make(chan error, 1)
-			go func() {
-				if count := s.TerminatePlayback(key.SessionID, "other"); count != 0 {
-					terminated <- fmt.Errorf("unrelated playback revoked %d sessions", count)
-					return
-				}
-				if count := tc.terminate(s, key); count != 1 {
-					terminated <- fmt.Errorf("termination revoked %d sessions, want 1", count)
-					return
-				}
-				if count := tc.terminate(s, key); count != 0 {
-					terminated <- fmt.Errorf("repeated termination revoked %d sessions", count)
-					return
-				}
-				terminated <- nil
-			}()
-			if err := waitScratchResult(t, terminated); err != nil {
-				t.Fatal(err)
-			}
-			mkdirRelease.open()
-			waitScratchSignal(t, prepared)
-			dir := filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce))
-			if err := s.PurgeOrphanedTranscodeDirs(); !errors.Is(err, errIncompleteScratchSweep) {
-				t.Errorf("sweep with revoked unpublished directory = %v, want incomplete reconciliation", err)
-			}
-			mustRead(t, filepath.Join(dir, masterPlaylistName))
-			publish.open()
-			if err := waitScratchResult(t, request); !errors.Is(err, ErrSessionEvicted) {
-				t.Fatalf("revoked creator returned %v", err)
-			}
-			requireScratchMissing(t, dir)
-			if got := len(transcoder.starts); got != 0 {
-				t.Fatalf("revoked creator started %d encoders", got)
-			}
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			if s.allocation != nil || len(s.sessions) != 0 || len(s.paths) != 0 {
-				t.Fatal("revoked creator retained a scratch claim or published a session")
-			}
 		})
 	}
 }
