@@ -5,7 +5,6 @@ import { useWatchParty } from "./useWatchParty";
 import { markViewerIntent } from "./viewerIntent";
 import {
   followLeadParty,
-  leavePartyOnPageHide,
   reportLeadPosition,
   reportPartyDrift,
   resumeFollowedParty,
@@ -24,7 +23,6 @@ vi.mock("./watchPartyStore", () => ({
   sendPartyTransport: vi.fn(async () => true),
   startWatchParty: vi.fn(async () => true),
   leaveParty: vi.fn(async () => {}),
-  leavePartyOnPageHide: vi.fn(),
   reportPartyDrift: vi.fn(() => true),
   reportLeadPosition: vi.fn(() => true),
   partyNowMS: () => Date.now() + party.offsetMS,
@@ -223,18 +221,6 @@ describe("useWatchParty local transport", () => {
     video.play();
     expect(sendPartyTransport).toHaveBeenCalledWith("m1", 0, false);
     view.unmount();
-  });
-});
-
-describe("useWatchParty page exit", () => {
-  it("leaves the party when the tab is closed or navigated away", () => {
-    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
-    const view = mount(new FakeVideo());
-    window.dispatchEvent(new Event("pagehide"));
-    expect(leavePartyOnPageHide).toHaveBeenCalledTimes(1);
-    view.unmount();
-    window.dispatchEvent(new Event("pagehide"));
-    expect(leavePartyOnPageHide).toHaveBeenCalledTimes(1);
   });
 });
 

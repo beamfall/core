@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { ApiError, subscribeEvents } from "@/lib/api";
+import { ApiError, getIdentityEpochSignal, subscribeEvents } from "@/lib/api";
 import {
   acceptWatchParty,
   calibrateWatchPartyClock,
@@ -118,6 +118,7 @@ const ROSTER_WAIT_MS = 1500;
 let state: WatchPartyState = IDLE;
 const listeners = new Set<() => void>();
 let closeStream: (() => void) | null = null;
+let stopPartyLifetime: (() => void) | null = null;
 let rosterWaiters: Array<() => void> = [];
 // Bumped by every reset, so a start or join that a leave overtook knows it is stale.
 let generation = 0;
@@ -392,7 +393,28 @@ export function partyNowMS(): number {
   return localClockMS() + state.offsetMS;
 }
 
+// The signed-in tab owns the membership across SPA routes. The player only
+// controls the current media element.
+function bindPartyLifetime(): void {
+  const epoch = getIdentityEpochSignal();
+  const onIdentityEnd = () => {
+    forgetFollowing();
+    closeStream?.();
+    closeStream = null;
+    leavePartyOnPageHide();
+  };
+  window.addEventListener("pagehide", leavePartyOnPageHide);
+  epoch?.addEventListener("abort", onIdentityEnd, { once: true });
+  stopPartyLifetime = () => {
+    window.removeEventListener("pagehide", leavePartyOnPageHide);
+    epoch?.removeEventListener("abort", onIdentityEnd);
+  };
+}
+
 function reset(patch: Partial<WatchPartyState> = {}): void {
+  stopPartyLifetime?.();
+  stopPartyLifetime = null;
+  ownSession = null;
   // A player still listening for a lead party keeps the stream.
   if (watching === 0) {
     closeStream?.();
@@ -442,9 +464,9 @@ export async function startWatchParty(
 ): Promise<boolean> {
   if (state.status !== "idle") return false;
   set({ status: "starting", error: "", errorDetail: "", notice: "", noticeName: "" });
+  bindPartyLifetime();
   const gen = generation;
   let partyID = "";
-  let started = false;
   try {
     const measured = await measureClock();
     if (gen !== generation) return false;
@@ -460,7 +482,12 @@ export async function startWatchParty(
     });
     partyID = info.partyID;
     startedParties.add(partyID);
-    if (gen !== generation) return false;
+    if (gen !== generation) {
+      // The party was created after the viewer left, so the leave had no ID.
+      await leaveWatchParty(partyID).catch(() => {});
+      return false;
+    }
+    set({ partyID });
     const position = Math.max(0, Math.round(positionMS));
     const anchor =
       position !== 0 || !paused
@@ -484,14 +511,14 @@ export async function startWatchParty(
     });
     keepClock(measured);
     openStream();
-    started = true;
     return true;
   } catch (err) {
-    if (gen === generation) reset(failure(err));
+    if (gen === generation) {
+      reset(failure(err));
+      // An initial transport can fail after the server has created the party.
+      if (partyID) await leaveWatchParty(partyID).catch(() => {});
+    }
     return false;
-  } finally {
-    // A failed initial transport or a leave during startup can strand a room.
-    if (partyID && !started) await leaveWatchParty(partyID).catch(() => {});
   }
 }
 
@@ -533,6 +560,7 @@ export async function joinWatchParty(
     notice: "",
     noticeName: "",
   });
+  bindPartyLifetime();
   const gen = generation;
   openStream();
   try {
@@ -785,10 +813,10 @@ export async function endParty(): Promise<void> {
  * keeps the party it follows, so a reload rejoins it.
  */
 export function leavePartyOnPageHide(): void {
-  if (state.status === "idle" || !state.partyID) return;
+  if (state.status === "idle") return;
   const partyID = state.partyID;
   reset();
-  leaveWatchPartyKeepalive(partyID);
+  if (partyID) leaveWatchPartyKeepalive(partyID);
 }
 
 export function clearWatchPartyError(): void {
@@ -805,5 +833,4 @@ export function resetWatchPartyForTest(): void {
   declinedParties.clear();
   startedParties.clear();
   reset();
-  ownSession = null;
 }

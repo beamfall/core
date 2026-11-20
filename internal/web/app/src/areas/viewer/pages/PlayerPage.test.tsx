@@ -15,14 +15,19 @@ import {
   acceptWatchParty,
   calibrateWatchPartyClock,
   createWatchParty,
+  decideWatchPartyRequest,
   fetchClientPrefs,
   fetchMedia,
+  fetchNotifications,
   fetchPlaybackAdjustmentRanges,
   fetchPrePlayQueue,
+  leaveWatchParty,
+  leaveWatchPartyKeepalive,
   setClientPref,
   watchPartyAutoSkip,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import { RegisterProvider } from "@/lib/register";
 import { STRINGS } from "@/strings";
 import { TrackList } from "../components/TrackList";
 import { fetchMedia as fetchAddressMedia } from "../lib/mediaDetail";
@@ -33,16 +38,18 @@ import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
 import {
+  getWatchParty,
   joinWatchParty,
   resetWatchPartyForTest,
   startWatchParty,
   watchPartyDefersUpNext,
 } from "../player/watchPartyStore";
 import { deliverPlayerCommand } from "../remote/remoteControl";
+import { NotificationsPage } from "./NotificationsPage";
 import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
 
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({ revealed: true, session: { profileID: "profile-a" } }),
+  useSession: () => ({ profiles: [], revealed: true, session: { profileID: "profile-a" } }),
   useViewerIdentity: () => "viewer-1",
 }));
 vi.mock("@/lib/graphql", () => ({
@@ -55,6 +62,10 @@ vi.mock("@/lib/graphql", () => ({
   calibrateWatchPartyClock: vi.fn().mockRejectedValue(new Error("not on the home network")),
   createWatchParty: vi.fn(),
   acceptWatchParty: vi.fn(),
+  decideWatchPartyRequest: vi.fn(),
+  fetchNotifications: vi.fn(),
+  leaveWatchParty: vi.fn(async () => {}),
+  leaveWatchPartyKeepalive: vi.fn(),
   watchPartyAutoSkip: vi.fn(),
 }));
 vi.mock("../lib/mediaDetail", async (importOriginal) => ({
@@ -1305,6 +1316,14 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
             <Routes>
               <Route path="/" element={home} />
               <Route path="/search" element={<p>search route</p>} />
+              <Route
+                path="/notifications"
+                element={
+                  <RegisterProvider>
+                    <NotificationsPage />
+                  </RegisterProvider>
+                }
+              />
               <Route path="/media/*" element={<p>media route</p>} />
               <Route path="/watch/*" element={<PlayerPage />} />
             </Routes>
@@ -1517,6 +1536,57 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     expect(screen.getByText("search route")).toBeInTheDocument();
     expect(miniPlayer()).toBeNull();
     expect(document.querySelector("video")).toBeNull();
+  });
+
+  it("keeps hosting while the viewer opens Notifications and approves a seek (CORE-1871)", async () => {
+    const unsubscribe = vi.fn();
+    const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(unsubscribe);
+    try {
+      vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 0, roundTripMS: 1 });
+      vi.mocked(createWatchParty).mockResolvedValue({
+        partyID: "p1",
+        content: "media-alpha",
+        relaxed: false,
+        members: [],
+      });
+      vi.mocked(fetchNotifications).mockResolvedValue([
+        {
+          id: "n1",
+          kind: "watch-party-request",
+          title: "Viewer requested a seek",
+          body: "Guest",
+          ref: "p1:req-1",
+          createdAt: "2026-11-20T10:00:00Z",
+          read: true,
+        },
+      ]);
+      vi.mocked(decideWatchPartyRequest).mockResolvedValue({
+        item: "media-alpha",
+        positionMS: 45_000,
+        presentAtMS: 0,
+      });
+      expect(await startWatchParty("media-alpha", 0, false)).toBe(true);
+      renderHosted({ mediaClass: "video" });
+      await waitFor(() => stageVideo());
+
+      await act(async () => go("/notifications"));
+      await screen.findByText("Viewer requested a seek");
+      expect(document.querySelector("video")).toBeNull();
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+      expect(leaveWatchParty).not.toHaveBeenCalled();
+      expect(unsubscribe).not.toHaveBeenCalled();
+      expect(getWatchParty()).toMatchObject({ partyID: "p1", status: "active", isHost: true });
+
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: "Approve" })));
+      expect(decideWatchPartyRequest).toHaveBeenCalledExactlyOnceWith("p1", "req-1", true);
+      await act(async () => window.dispatchEvent(new Event("pagehide")));
+      expect(leaveWatchPartyKeepalive).toHaveBeenCalledExactlyOnceWith("p1");
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+      expect(getWatchParty().status).toBe("idle");
+    } finally {
+      resetWatchPartyForTest();
+      stream.mockRestore();
+    }
   });
 });
 

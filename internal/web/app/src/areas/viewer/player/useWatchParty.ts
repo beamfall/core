@@ -7,7 +7,6 @@ import {
   followLeadParty,
   getWatchParty,
   leaveParty,
-  leavePartyOnPageHide,
   partyNowMS,
   reportLeadPosition,
   reportPartyDrift,
@@ -103,10 +102,6 @@ interface FrameSample {
   positionMS: number;
   atMS: number;
 }
-
-// A leave scheduled by an unmount, cancelled by a remount (React StrictMode
-// mounts twice in development; only a real exit from the player leaves).
-let pendingLeave: ReturnType<typeof setTimeout> | null = null;
 
 export function useWatchParty({
   videoRef,
@@ -534,26 +529,6 @@ export function useWatchParty({
       video.removeEventListener("seeked", onLocal);
     };
   }, [active, attached, videoRef, positionScale]);
-
-  // Closing the tab or navigating away leaves within seconds (CORE-1763).
-  useEffect(() => {
-    window.addEventListener("pagehide", leavePartyOnPageHide);
-    return () => window.removeEventListener("pagehide", leavePartyOnPageHide);
-  }, []);
-
-  // Leaving the player leaves the party.
-  useEffect(() => {
-    if (pendingLeave) {
-      clearTimeout(pendingLeave);
-      pendingLeave = null;
-    }
-    return () => {
-      pendingLeave = setTimeout(() => {
-        pendingLeave = null;
-        if (getWatchParty().status !== "idle") void leaveParty();
-      }, 0);
-    };
-  }, []);
 
   const resume = useCallback(() => {
     const video = videoRef.current;

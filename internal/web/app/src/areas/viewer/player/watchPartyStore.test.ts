@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, subscribeEvents } from "@/lib/api";
+import { ApiError, setIdentityEpochSignal, subscribeEvents } from "@/lib/api";
 import {
   acceptWatchParty,
   calibrateWatchPartyClock,
@@ -81,6 +81,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetWatchPartyForTest();
+  setIdentityEpochSignal();
   window.sessionStorage.clear();
 });
 
@@ -599,11 +600,44 @@ describe("host leave, end and page exit (CORE-1763)", () => {
 
   it("leaves with a keepalive request when the page goes away", async () => {
     await member();
-    leavePartyOnPageHide();
+    window.dispatchEvent(new Event("pagehide"));
     expect(leaveWatchPartyKeepalive).toHaveBeenCalledWith("p3");
     expect(getWatchParty().status).toBe("idle");
-    leavePartyOnPageHide();
+    window.dispatchEvent(new Event("pagehide"));
     expect(leaveWatchPartyKeepalive).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears membership and the event stream when the signed-in identity ends", async () => {
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    await member();
+    epoch.abort();
+    expect(leaveWatchPartyKeepalive).toHaveBeenCalledExactlyOnceWith("p3");
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(getWatchParty()).toMatchObject({ status: "idle", partyID: "", timeline: null });
+  });
+
+  it("leaves a starting party on pagehide even if its initial transport is still pending", async () => {
+    vi.mocked(createWatchParty).mockResolvedValueOnce({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    let finish!: (anchor: Awaited<ReturnType<typeof watchPartyTransport>>) => void;
+    vi.mocked(watchPartyTransport).mockReturnValueOnce(
+      new Promise((resolve) => (finish = resolve)),
+    );
+    const starting = startWatchParty("m1", 42_500);
+    await vi.waitFor(() => expect(watchPartyTransport).toHaveBeenCalled());
+    window.dispatchEvent(new Event("pagehide"));
+    expect(leaveWatchPartyKeepalive).toHaveBeenCalledExactlyOnceWith("p1");
+
+    finish({ item: "m1", positionMS: 42_500, presentAtMS: 1000 });
+    expect(await starting).toBe(false);
+    expect(leaveWatchParty).not.toHaveBeenCalled();
+    expect(subscribeEvents).not.toHaveBeenCalled();
+    expect(getWatchParty()).toMatchObject({ status: "idle", partyID: "", timeline: null });
   });
 });
 
