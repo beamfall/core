@@ -52,17 +52,18 @@ Mtime comparisons SHALL round Unix nanoseconds toward zero to milliseconds.
 #### Scenario: Unchanged legacy file
 
 - **WHEN** the path, recorded size and recorded mtime match a legacy row
-- **THEN** the scan reuses the legacy identity without reading bytes for fingerprinting and retains probe facts if no probe succeeds
+- **THEN** the existing public catalog fast path reuses the legacy identity without reading bytes for fingerprinting
 
-#### Scenario: Unchanged file in an unsealed encrypted Library
+#### Scenario: Legacy file known only to an encrypted Library
 
-- **WHEN** a scan finds the unchanged file after the Library is sealed and unsealed
-- **THEN** the scan reuses the stored fingerprint and Media ID and retries probing without hashing
-- **AND** a successful probe refreshes duration and stream inventory, while a failed probe preserves stored facts
+- **WHEN** a legacy fingerprint exists only in an encrypted catalog
+- **THEN** the scan retains the existing public catalog routing and probe behavior
+- **AND** a legacy identity can be replaced by a sampled identity, including if both catalogs share the path
 
 #### Scenario: Legacy file at the same path with incomplete stats
 
-- **WHEN** an available legacy row has an unrecorded size or mtime and its recorded stats still match
+- **WHEN** the public catalog lookup finds an available legacy row with an unrecorded size or mtime
+  and its recorded stats still match
 - **THEN** the scan compares the full digest once at that path, the sole full-digest scan case
 - **AND** a match keeps the identity and records stats that survive reopening, including a verified
   Unix-epoch mtime, while a mismatch uses the sampled identity
