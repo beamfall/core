@@ -35,29 +35,13 @@ and its Media SHALL remain unchanged.
 
 - **WHEN** a scan discovers bytes previously admitted by managed import or convert
 - **THEN** it uses the same fingerprint and creates no duplicate Media for those bytes
-- **AND** it collects embedded stream and attachment inventory without recomputing the content
-  fingerprint when the recorded stats match. Inventory completion persists separately from file
-  stats and is committed with the inventory for each file, including Parts and Versions.
+- **AND** its first scan records file stats and OSHash and attempts to collect embedded stream
+  and attachment inventory. An unavailable or failing probe does not prevent storing OSHash.
 
 #### Scenario: Existing legacy content
 
 - **WHEN** staged bytes match a legacy full SHA-256 digest cataloged at another path
 - **THEN** managed admission refuses the duplicate
-
-#### Scenario: Same-path admission finds both schemes
-
-- **WHEN** the on-disk file is absent and managed import or convert restores bytes whose full
-  SHA-256 and sample identify rows at the same path and library
-- **THEN** admission prefers a live match, or revives the most recently seen missing match when
-  neither is live, excluding trashed Media
-- **AND** it preserves the selected Media ID, fingerprint, watch state and match pin and records
-  the admitted file's stats so the next unchanged scan reuses the row
-
-#### Scenario: Recovery sees a committed admission
-
-- **WHEN** convert recovery checks its journal destination
-- **THEN** it uses the same path lookup in live-only mode, since the admission wrote its
-  identity before recovery and recovery has no staged fingerprint to compare
 
 ## ADDED Requirements
 
@@ -89,31 +73,18 @@ The mtime comparison SHALL use the original catalog precision, dividing Unix nan
 
 #### Scenario: Missing legacy file returns to its original path
 
-- **WHEN** the path has only a missing legacy row, even if the returning file has the same stats
-- **THEN** the scan samples the file without reading the full legacy digest or reusing the missing
-  legacy identity
-
-#### Scenario: Both identity schemes match a returning file
-
-- **WHEN** a scan finds a same-library, same-path sampled match for a returning file and
-  a legacy match at that path
-- **THEN** it uses the same ordering as managed admission, preferring a live match and otherwise
-  reviving the most recently seen matching missing row with its Media ID and observed stats
-- **AND** it uses the full digest already available from the bounded read of a small file.
-  For larger files, the existing unchanged-stat rule applies to the legacy candidate; a legacy
-  candidate with incomplete stats and no conflicting recorded stat may use the one-time compare.
-
-#### Scenario: A managed admission changes a returning file during a scan
-
-- **WHEN** a scan's catalog observation changes before its admission transaction
-- **THEN** it retries with current file stats and identity before writing, preserving any newly
-  admitted live match and collecting any inventory still pending
+- **WHEN** a scan discovers a file whose previous legacy row is marked missing
+- **THEN** the scan uses its sampled identity, even when the previous row has the same stats or the
+  entire file fits in the sample. The legacy watch state and match pin stay with the old identity.
 
 #### Scenario: Legacy file at the same path with incomplete stats
 
 - **WHEN** an available legacy row has an unrecorded size or mtime and its recorded stats still match
-- **THEN** the scan compares the full legacy digest once and keeps the identity and records the
-  stats if it matches, or uses the sampled identity if it differs
+- **THEN** the scan compares the full legacy digest once at that path and keeps the identity and
+  records the stats if it matches, or uses the sampled identity if it differs
+
+Scan deduplication and move detection SHALL compare exact fingerprint strings. The one-time
+comparison of an available legacy row with incomplete stats is the sole full-digest scan path.
 
 #### Scenario: Verified Unix-epoch mtime
 
