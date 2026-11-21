@@ -33,6 +33,16 @@ func TestOrder(t *testing.T) {
 			want: []string{"a1", "b1", "a2", "a3"},
 		},
 		{
+			name:     "round-robin counts a pinned entry as its participant's turn",
+			fairness: RoundRobin,
+			waiting: []Entry{
+				{ID: "a1", ParticipantID: "A", AddedAtMS: 1, Pin: 1},
+				{ID: "a2", ParticipantID: "A", AddedAtMS: 2},
+				{ID: "b1", ParticipantID: "B", AddedAtMS: 3},
+			},
+			want: []string{"a1", "b1", "a2"},
+		},
+		{
 			name:     "fifo keeps arrival order",
 			fairness: FIFO,
 			waiting: []Entry{

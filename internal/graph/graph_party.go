@@ -4,7 +4,11 @@ import (
 	"context"
 	"errors"
 	"math"
+	"net/url"
+	"os"
+	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/beamfall/core/internal/artwork"
@@ -105,8 +109,21 @@ type PartyStageInfo struct {
 // partyScreenReport): they carry no nested fields.
 type partyBooleanResult struct{}
 
-// PartyJoinPath is the web route a guest opens to join with code.
-func PartyJoinPath(code string) string { return "/web/join/" + code }
+// PartyJoinPath is the web route a guest opens to join with code, under the
+// path prefix of BEAMFALL_BASE_URL when the server is mounted below the root.
+func PartyJoinPath(code string) string { return partyBasePath() + "/web/join/" + code }
+
+var partyBasePath = sync.OnceValue(func() string { return partyBasePathOf(os.Getenv("BEAMFALL_BASE_URL")) })
+
+// partyBasePathOf returns the path prefix of a base URL, normalized as the
+// server mounts it: "" when unset, unparseable or at the root.
+func partyBasePathOf(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return strings.TrimSuffix(path.Clean("/"+strings.TrimPrefix(u.Path, "/")), "/")
+}
 
 // PartyTime renders an optional party timestamp as RFC 3339, "" when unset.
 func PartyTime(at time.Time) string {
@@ -123,7 +140,7 @@ func partyError(err error) error {
 	case err == nil:
 		return nil
 	case errors.As(err, &input):
-		return clientError(input.Message)
+		return clientError(input.Error())
 	case errors.Is(err, store.ErrPartyNotFound):
 		return clientError("party session not found")
 	}
@@ -382,11 +399,21 @@ func (h *Handler) partyRestoreWrite(ctx context.Context, scope auth.Scope, req r
 	})
 }
 
-// partyAdvanceWrite resolves partyAdvance; a stale fromEntryID is a no-op.
+// partyAdvanceWrite resolves partyAdvance; a stale fromEntryID is a no-op. A
+// Profile advancing another host's session through its live screen gets null,
+// since it hosts no session of its own.
 func (h *Handler) partyAdvanceWrite(ctx context.Context, scope auth.Scope, req request) (*PartySessionInfo, error) {
-	return h.partyHostWrite(ctx, scope, req, func(host store.ProfileID, filter store.LibraryFilter) error {
-		return h.store.AdvanceParty(ctx, host, filter, trimmedVariable(req, "fromEntryID"))
+	err := h.withExpectedProfile(ctx, scope, req, func() error {
+		filter, err := h.partyHostFilter(ctx, scope)
+		if err != nil {
+			return err
+		}
+		return partyError(h.store.AdvanceParty(ctx, scope.ProfileID, filter, trimmedVariable(req, "fromEntryID")))
 	})
+	if err != nil {
+		return nil, err
+	}
+	return h.partySessionRead(ctx, scope)
 }
 
 // partyPlaybackWrite resolves partyPlayback: the lead screen's anchor.

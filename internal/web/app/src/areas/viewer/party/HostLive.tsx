@@ -338,6 +338,37 @@ export function PartyScreens({ session, run }: PanelProps) {
   );
 }
 
+const FIND_PAGE = 200;
+const FIND_MAX_PAGES = 10;
+const FIND_WANT = 50;
+
+/**
+ * Keyword search kept to the party's Libraries. searchResult takes no Library
+ * argument, so this pages through the ranked global hits (bounded) until it
+ * has FIND_WANT in-party matches or the hits run out, rather than filtering
+ * only the first page and missing matches ranked below other Libraries'.
+ */
+export async function searchPartyLibraries(
+  query: string,
+  libraries: ReadonlySet<string>,
+  signal: AbortSignal,
+): Promise<SearchResultItem[]> {
+  const found: SearchResultItem[] = [];
+  for (let page = 0; page < FIND_MAX_PAGES && found.length < FIND_WANT; page++) {
+    const response = await searchResult(query, "keyword", signal, {
+      offset: page * FIND_PAGE,
+      limit: FIND_PAGE,
+    });
+    for (const item of response.items) {
+      if (item.kind === "media" && item.libraryID !== undefined && libraries.has(item.libraryID)) {
+        found.push(item);
+      }
+    }
+    if (!response.hasMore || signal.aborted) break;
+  }
+  return found.slice(0, FIND_WANT);
+}
+
 export function PartyFind({ session, run }: PanelProps) {
   const t = useT();
   const locale = useDisplayLocale();
@@ -370,17 +401,10 @@ export function PartyFind({ session, run }: PanelProps) {
     const libraries = new Set(libraryKey.split("\n"));
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      searchResult(query, "keyword", controller.signal)
-        .then((response) => {
+      searchPartyLibraries(query, libraries, controller.signal)
+        .then((items) => {
           if (controller.signal.aborted) return;
-          setResults(
-            response.items.filter(
-              (item) =>
-                item.kind === "media" &&
-                item.libraryID !== undefined &&
-                libraries.has(item.libraryID),
-            ),
-          );
+          setResults(items);
           setSearchFailed(false);
         })
         .catch(() => {

@@ -128,3 +128,17 @@ func TestPartySessionGraphOperations(t *testing.T) {
 		t.Fatalf("partyAdvance after end = %+v", resp.Errors)
 	}
 }
+
+func TestPartyBasePathOf(t *testing.T) {
+	for raw, want := range map[string]string{
+		"":                                "",
+		"https://media.example.test":      "",
+		"https://media.example.test/":     "",
+		"https://media.example.test/bf/":  "/bf",
+		"https://media.example.test/a//b": "/a/b",
+	} {
+		if got := partyBasePathOf(raw); got != want {
+			t.Errorf("partyBasePathOf(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}

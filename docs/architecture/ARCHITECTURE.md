@@ -208,6 +208,7 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | package | allowed `internal/` imports |
 |---|---|
 | `config` | serverrole (bootstrap config carries the ADR-0123 §2 attached/main `Role`) |
+| `partyqueue` | — (leaf; pure ordering and wait-estimate math for a shared request rotation, CORE-1662; stdlib only, no internal deps) |
 | `serverrole` | — (leaf; the ADR-0123 §2 two-face authority `Role` — `Main`/`Attached` — plus the `GuardAuthority` sentinel the catalog-row / Stream-Token / engagement seams consult; stdlib only, no internal deps) |
 | `nodehost` | — (leaf; the ADR-0123 §5 Origin-Node enrollment lifecycle + the ADR-0063 origin-node Compatibility Handshake gate + per-node revoke/rotate — NODE-3; operates on real x509 mTLS leaves, stdlib only, no internal deps) |
 | `nodehostd` | `nodehost` (node-facing mTLS SESSION transport, ADR-0129 §5: the node dials the main; main-side listener + node-side dialer pin SPKI in both directions. The `app` composition root prepares the cloned self-signed mTLS config + compatibility policy and passes them in, so no `remoteaccess`/`config` edge.) |
@@ -220,7 +221,7 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `causation` | — (leaf; ADR-0125 Integration Worker global-chain budget, per-worker action rate, authenticated causation tokens, and bounded/coalesced abort feed; stdlib only) |
 | `apptest` | app, config, plugin, store (in-process E2E test harness, mirrors `store/storetest` but top-level next to `app`: boots the composition root over `httptest` for the I/O E2E track. Test-support only, never imported by production code) |
 | `ioe2e` | — (I/O E2E journey package: `io_e2e`-tagged `*_test.go` journeys only — real ffmpeg ops + harness lifecycle happy-paths — plus an empty untagged `doc.go`. Test imports are arch-walk-invisible; no production imports) |
-| `store` (+ subpackages) | serverrole (the only importer of the SQLite driver; imports `serverrole` for the ADR-0123 §2 attached-authority guard on catalog/engagement authors) |
+| `store` (+ subpackages) | serverrole, partyqueue (the only importer of the SQLite driver; imports `serverrole` for the ADR-0123 §2 attached-authority guard on catalog/engagement authors and `partyqueue` for rotation order) |
 | `governor` | — |
 | `ffmpeg` | — |
 | `reveal` | — |

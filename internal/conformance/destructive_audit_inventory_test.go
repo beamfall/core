@@ -103,6 +103,8 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"JellyfinCompatSelectableLibraries":       {},
 	"CompatIntegrationKeys":                   {},
 	"CreateCompatIntegrationKey":              {},
+	"PartySessionForHost":                     {},
+	"PartyStage":                              {},
 	"RevokeCompatIntegrationKey":              {},
 	"Libraries":                               {},
 	"LibraryBrowse":                           {},

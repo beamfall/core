@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { createRef } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/api";
 import {
   fetchPartyStage,
   type PartyEntry,
@@ -134,5 +135,34 @@ describe("PartyStagePage", () => {
 
     expect(partyAdvance).toHaveBeenCalledTimes(1);
     expect(partyAdvance).toHaveBeenCalledWith("e1");
+  });
+
+  it("keeps playing through a network blip", async () => {
+    vi.mocked(fetchPartyStage)
+      .mockResolvedValueOnce(stage({ current: song }))
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+    const { container } = renderStage();
+
+    expect(await screen.findByText("Sung by Juniper")).toBeInTheDocument();
+    // The third poll starts only after the second one's failure settled.
+    await waitFor(() => expect(fetchPartyStage).toHaveBeenCalledTimes(3), { timeout: 4000 });
+    expect(container.querySelector("video")).not.toBeNull();
+  });
+
+  it("unmounts the player when the party ends", async () => {
+    vi.mocked(fetchPartyStage)
+      .mockResolvedValueOnce(stage({ current: song }))
+      .mockRejectedValue(new ApiError("party session not found", 200));
+    const { container } = renderStage();
+
+    expect(await screen.findByText("Sung by Juniper")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "The party is not reachable. It may have ended.",
+        {},
+        { timeout: 3000 },
+      ),
+    ).toBeInTheDocument();
+    expect(container.querySelector("video")).toBeNull();
   });
 });

@@ -93,6 +93,9 @@ func TestPartyGuestRoutes(t *testing.T) {
 
 	rec = partyGuestCall(t, srv, http.MethodGet, "/api/party/guest", "", token)
 	wantDevicePairingStatus(t, rec, http.StatusOK, "guest view")
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("guest view Cache-Control = %q", got)
+	}
 	guestView := decodeDevicePairing[partyGuestViewResponse](t, rec)
 	if guestView.SessionID != view.Session.ID || guestView.MaxWaiting != store.PartyMaxGuestWaiting ||
 		len(guestView.Entries) != 1 || guestView.Entries[0].MediaID != "" || len(guestView.Mine) != 2 {

@@ -56,12 +56,13 @@ func Order(fairness Fairness, waiting []Entry, lastTurnMS map[string]int64) []En
 			free = append(free, entry)
 		}
 	}
+	slots := pinSlots(pinned, len(waiting))
 	if fairness == FIFO {
 		free = fifo(free)
 	} else {
-		free = roundRobin(free, lastTurnMS)
+		free = roundRobin(free, slots, lastTurnMS)
 	}
-	return placePins(pinned, free)
+	return fillSlots(slots, free)
 }
 
 func byAdded(a, b Entry) int {
@@ -77,7 +78,10 @@ func fifo(entries []Entry) []Entry {
 	return out
 }
 
-func roundRobin(entries []Entry, lastTurnMS map[string]int64) []Entry {
+// roundRobin orders the free entries into the slots pinSlots left open. A
+// pinned entry in a slot counts as its participant's turn, as it does when the
+// queue advances, so later free picks rotate around it.
+func roundRobin(entries []Entry, slots []*Entry, lastTurnMS map[string]int64) []Entry {
 	queues := map[string][]Entry{}
 	for _, entry := range fifo(entries) {
 		queues[entry.ParticipantID] = append(queues[entry.ParticipantID], entry)
@@ -102,7 +106,14 @@ func roundRobin(entries []Entry, lastTurnMS map[string]int64) []Entry {
 		latest = max(latest, at)
 	}
 	out := make([]Entry, 0, len(entries))
-	for len(out) < len(entries) {
+	for _, slot := range slots {
+		if slot != nil {
+			// A simulated turn starts after every real one.
+			latest++
+			rank[slot.ParticipantID] = latest
+			turned[slot.ParticipantID] = true
+			continue
+		}
 		next := ""
 		for participant, queue := range queues {
 			if len(queue) == 0 {
@@ -137,8 +148,8 @@ func less(a, b string, rank, first map[string]int64, turned map[string]bool) boo
 	return a < b
 }
 
-func placePins(pinned, free []Entry) []Entry {
-	n := len(pinned) + len(free)
+// pinSlots returns n slots with each pinned entry at its position.
+func pinSlots(pinned []Entry, n int) []*Entry {
 	slots := make([]*Entry, n)
 	slices.SortStableFunc(pinned, func(a, b Entry) int {
 		if c := cmp.Compare(a.Pin, b.Pin); c != 0 {
@@ -156,7 +167,12 @@ func placePins(pinned, free []Entry) []Entry {
 		}
 		slots[at] = &pinned[i]
 	}
-	out := make([]Entry, 0, n)
+	return slots
+}
+
+// fillSlots returns the slots in order with free entries in the open ones.
+func fillSlots(slots []*Entry, free []Entry) []Entry {
+	out := make([]Entry, 0, len(slots))
 	next := 0
 	for _, slot := range slots {
 		if slot != nil {

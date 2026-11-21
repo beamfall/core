@@ -390,12 +390,41 @@ func (s *Store) partyHostFilterLocked(ctx context.Context, host LibraryFilter, l
 		}
 	}
 	return LibraryFilter{
-		AllowedIDs:    allowed,
-		Revealed:      host.Revealed,
-		SealedIDs:     slices.Clone(host.SealedIDs),
-		Certification: slices.Clone(host.Certification),
-		PlaybackGate:  true,
+		AllowedIDs:      allowed,
+		Revealed:        host.Revealed,
+		SealedIDs:       slices.Clone(host.SealedIDs),
+		Certification:   slices.Clone(host.Certification),
+		PlaybackGate:    true,
+		GrantedMediaIDs: slices.Clone(host.GrantedMediaIDs),
 	}, allowed, nil
+}
+
+// partyLiveSessionLocked narrows the session's stored host visibility to the
+// host Profile's current Libraries and AccessGrants, so guests and screens
+// lose access as soon as the host does. It only ever narrows: a disabled or
+// deleted host leaves no Libraries.
+func (s *Store) partyLiveSessionLocked(ctx context.Context, session PartySession) (PartySession, error) {
+	host, err := s.profileSQL(ctx, session.HostProfileID)
+	var missing ValidationError
+	if errors.As(err, &missing) {
+		host, err = Profile{Disabled: true}, nil
+	}
+	if err != nil {
+		return PartySession{}, err
+	}
+	granted, err := readGrantedMediaIDs(ctx, s.catalogR, session.HostProfileID)
+	if err != nil {
+		return PartySession{}, err
+	}
+	filter := session.hostFilter
+	filter.AllowedIDs = slices.DeleteFunc(slices.Clone(filter.AllowedIDs), func(id LibraryID) bool {
+		return host.Disabled || !slices.Contains(host.Library, id)
+	})
+	filter.GrantedMediaIDs = slices.DeleteFunc(slices.Clone(filter.GrantedMediaIDs), func(id MediaID) bool {
+		return !slices.Contains(granted, id)
+	})
+	session.hostFilter = filter
+	return session, nil
 }
 
 func encodePartyFilter(filter LibraryFilter) (string, error) {
@@ -546,6 +575,9 @@ func (s *Store) readPartyView(ctx context.Context, find func(q partyQuerier, now
 		nowMS := timeToMillis(s.serverNow())
 		session, err := find(s.eventsR, nowMS)
 		if err != nil {
+			return PartyView{}, err
+		}
+		if session, err = s.partyLiveSessionLocked(ctx, session); err != nil {
 			return PartyView{}, err
 		}
 		state, err := loadPartyState(ctx, s.eventsR, session, nowMS)
@@ -699,13 +731,21 @@ func (st partyState) currentEntry() (partyEntryRow, bool) {
 }
 
 // targetPositionMS is where playback is at nowMS: positionMS plus the time
-// since the anchor while playing. Positions are in the played stream's
-// milliseconds, so a tempo-adjusted stream runs durationSeconds/tempo.
+// since the anchor while playing. Positions are in the media's own
+// milliseconds, so wall time since the anchor advances them at tempo.
 func (session PartySession) targetPositionMS(nowMS int64) int64 {
 	if session.PlaybackState == "playing" && nowMS > session.AnchorAtMS {
-		return session.PositionMS + nowMS - session.AnchorAtMS
+		return session.PositionMS + int64(float64(nowMS-session.AnchorAtMS)*session.tempo())
 	}
 	return session.PositionMS
+}
+
+// tempo is the playback rate, with 1 standing in for an unset or invalid one.
+func (session PartySession) tempo() float64 {
+	if session.Tempo > 0 {
+		return session.Tempo
+	}
+	return 1
 }
 
 func (s *Store) buildPartyViewLocked(ctx context.Context, state partyState, nowMS int64) (PartyView, error) {
@@ -751,8 +791,7 @@ func (s *Store) buildPartyViewLocked(ctx context.Context, state partyState, nowM
 		if duration <= 0 {
 			duration = fallback
 		}
-		streamMS := float64(duration) * 1000 / session.Tempo
-		remainingMS := max(streamMS-float64(session.targetPositionMS(nowMS)), 0)
+		remainingMS := max((float64(duration)*1000-float64(session.targetPositionMS(nowMS)))/session.tempo(), 0)
 		timing.HasCurrent = true
 		timing.CurrentRemainingSeconds = int(math.Ceil(remainingMS / 1000))
 	}
@@ -1147,9 +1186,34 @@ func (s *Store) RestorePartyEntry(ctx context.Context, host ProfileID, filter Li
 // AdvanceParty marks the current entry done and makes the next visible
 // waiting entry current, skipping entries whose Media is no longer visible.
 // Naming fromEntryID makes it idempotent: a fromEntryID that is not current
-// leaves the session unchanged.
+// leaves the session unchanged. A Profile with a live screen on another
+// host's session advances that session, but only past its current entry.
 func (s *Store) AdvanceParty(ctx context.Context, host ProfileID, filter LibraryFilter, fromEntryID string) error {
 	fromEntryID = strings.TrimSpace(fromEntryID)
+	if fromEntryID != "" {
+		advanced := false
+		err := s.partyWrite(ctx, func(tx *sql.Tx, nowMS int64) error {
+			session, err := scanPartySession(tx.QueryRowContext(ctx, `SELECT `+partySessionColumns+`
+				FROM party_session WHERE current_entry_id = ? AND host_profile_id <> ?
+					AND ended_at_ms IS NULL AND expires_at_ms > ?
+					AND session_id IN (SELECT session_id FROM party_screen WHERE profile_id = ? AND dropped_at_ms IS NULL)`,
+				fromEntryID, host, nowMS, host))
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if session, err = s.partyLiveSessionLocked(ctx, session); err != nil {
+				return err
+			}
+			advanced = true
+			return s.advancePartyLocked(ctx, tx, session, nowMS)
+		})
+		if err != nil || advanced {
+			return err
+		}
+	}
 	return s.partyHostWrite(ctx, host, filter, func(tx *sql.Tx, session PartySession, nowMS int64) error {
 		if fromEntryID != "" && fromEntryID != session.CurrentEntryID {
 			return nil
@@ -1368,7 +1432,20 @@ func (s *Store) PartyStage(ctx context.Context, sessionID, screenID string) (Par
 	var nowMS int64
 	view, err := s.readPartyView(ctx, func(q partyQuerier, now int64) (PartySession, error) {
 		nowMS = now
-		return livePartySessionByID(ctx, q, strings.TrimSpace(sessionID), now)
+		session, err := livePartySessionByID(ctx, q, strings.TrimSpace(sessionID), now)
+		if err != nil || strings.TrimSpace(screenID) == "" {
+			return session, err
+		}
+		var registered int
+		if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM party_screen
+			WHERE screen_id = ? AND session_id = ? AND dropped_at_ms IS NULL`,
+			strings.TrimSpace(screenID), session.ID).Scan(&registered); err != nil {
+			return PartySession{}, err
+		}
+		if registered == 0 {
+			return PartySession{}, partyInvalid("screen not found")
+		}
+		return session, nil
 	})
 	if err != nil {
 		return PartyStageView{}, err
@@ -1575,12 +1652,12 @@ func (s *Store) partyMediaLastCurrent(ctx context.Context, sessionID string) (ma
 }
 
 // RequestPartyEntry adds a guest request: waiting at once under auto-add,
-// otherwise pending host approval. It returns the new entry's ID.
-func (s *Store) RequestPartyEntry(ctx context.Context, tokenHash string, mediaID MediaID) (string, error) {
+// otherwise pending host approval. It returns the new entry.
+func (s *Store) RequestPartyEntry(ctx context.Context, tokenHash string, mediaID MediaID) (PartyEntryView, error) {
 	if mediaID == "" {
-		return "", partyInvalid("mediaID is required")
+		return PartyEntryView{}, partyInvalid("mediaID is required")
 	}
-	var entryID string
+	var created PartyEntryView
 	err := s.partyWrite(ctx, func(tx *sql.Tx, nowMS int64) error {
 		guest, err := partyGuestByToken(ctx, tx, tokenHash, nowMS)
 		if err != nil {
@@ -1590,8 +1667,16 @@ func (s *Store) RequestPartyEntry(ctx context.Context, tokenHash string, mediaID
 		if err != nil {
 			return ErrPartyGuestRefused
 		}
-		if err := s.requirePartyMediaLocked(ctx, session, mediaID); err != nil {
+		if session, err = s.partyLiveSessionLocked(ctx, session); err != nil {
 			return err
+		}
+		media, err := s.visibleMediaBatchSQL(ctx, []MediaID{mediaID}, session.hostFilter)
+		if err != nil {
+			return err
+		}
+		m, ok := media[mediaID]
+		if !ok {
+			return partyInvalid("media not found")
 		}
 		var open int
 		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM party_entry
@@ -1605,14 +1690,21 @@ func (s *Store) RequestPartyEntry(ctx context.Context, tokenHash string, mediaID
 		if session.AutoAdd {
 			state = PartyEntryWaiting
 		}
-		if entryID, err = newPartyID("pe-"); err != nil {
+		entryID, err := newPartyID("pe-")
+		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO party_entry (entry_id, session_id, participant_id, media_id, state, added_at_ms)
-			VALUES (?, ?, ?, ?, ?, ?)`, entryID, session.ID, guest.ParticipantID, mediaID, state, nowMS)
-		return err
+		if _, err = tx.ExecContext(ctx, `INSERT INTO party_entry (entry_id, session_id, participant_id, media_id, state, added_at_ms)
+			VALUES (?, ?, ?, ?, ?, ?)`, entryID, session.ID, guest.ParticipantID, mediaID, state, nowMS); err != nil {
+			return err
+		}
+		created = PartyEntryView{
+			ID: entryID, MediaID: mediaID, Title: m.Title, DurationSeconds: m.DurationSeconds,
+			ParticipantID: guest.ParticipantID, ParticipantName: guest.Name, State: state, AddedAt: millisToTime(nowMS),
+		}
+		return nil
 	})
-	return entryID, err
+	return created, err
 }
 
 // CancelPartyEntry withdraws one of the guest's own pending or waiting

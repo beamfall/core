@@ -156,7 +156,10 @@ func TestPartyGuestsJoinRequestAndEnd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		entries = append(entries, id)
+		if id.ID == "" || id.State != PartyEntryPending || id.Title != "Sample Media" {
+			t.Fatalf("requested entry = %+v", id)
+		}
+		entries = append(entries, id.ID)
 	}
 	if _, err := st.RequestPartyEntry(ctx, "hash-casey", "media-alpha"); !errors.Is(err, ErrPartyWaitingLimit) {
 		t.Fatalf("fourth request = %v, want waiting limit", err)
@@ -231,5 +234,116 @@ func TestPartyGuestsJoinRequestAndEnd(t *testing.T) {
 	var left int
 	if err := st.eventsR.QueryRowContext(ctx, `SELECT COUNT(*) FROM party_entry`).Scan(&left); err != nil || left != 0 {
 		t.Fatalf("party entries after erasure = %d, %v", left, err)
+	}
+}
+
+func TestPartyAnchorAdvancesAtTempo(t *testing.T) {
+	session := PartySession{PlaybackState: "playing", PositionMS: 30_000, AnchorAtMS: 1_000, Tempo: 1.5}
+	if got := session.targetPositionMS(11_000); got != 45_000 {
+		t.Fatalf("target = %d, want 45000 (10s of wall time at 1.5x)", got)
+	}
+
+	st := openSeeded(t)
+	ctx := context.Background()
+	clock := time.UnixMilli(1_900_000_000_000)
+	st.now = func() time.Time { return clock }
+	startTestParty(t, st, false)
+	host := partyHostFilter()
+	for range 2 {
+		if err := st.AddPartyEntry(ctx, "profile-default", host, "media-alpha", "", "Avery"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.AdvanceParty(ctx, "profile-default", host, ""); err != nil {
+		t.Fatal(err)
+	}
+	view, _, _ := st.PartySessionForHost(ctx, "profile-default", host)
+	tempo := 1.5
+	if err := st.SetPartyPlayback(ctx, "profile-default", host, PartyPlaybackInput{
+		EntryID: view.Current.ID, State: "playing", PositionMS: 60_000, Tempo: &tempo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(10 * time.Second)
+	view, _, _ = st.PartySessionForHost(ctx, "profile-default", host)
+	// 75s into the 120s Media at 1.5x leaves 30s of wall time.
+	if eta := view.Waiting[0].ETASeconds - view.ChangeoverSeconds; eta != 30 {
+		t.Fatalf("first ETA less changeover = %d, want 30", eta)
+	}
+}
+
+func TestPartyGuestsFollowHostAccess(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	view := startTestParty(t, st, false)
+	if _, err := st.JoinParty(ctx, view.Session.JoinCode, "Casey", "hash-casey"); err != nil {
+		t.Fatal(err)
+	}
+
+	narrowed, _, err := st.partyHostFilterLocked(ctx, LibraryFilter{
+		AllowedIDs: []LibraryID{"library-local"}, GrantedMediaIDs: []MediaID{"media-alpha"},
+	}, []LibraryID{"library-local"})
+	if err != nil || len(narrowed.GrantedMediaIDs) != 1 || narrowed.GrantedMediaIDs[0] != "media-alpha" {
+		t.Fatalf("host filter grants = %v, %v", narrowed.GrantedMediaIDs, err)
+	}
+
+	if results, err := st.SearchPartyMedia(ctx, "hash-casey", "Media", 10); err != nil || len(results) != 1 {
+		t.Fatalf("guest search before revocation = %+v, %v", results, err)
+	}
+	if _, err := st.SetProfileLibraries(ctx, "profile-default", []LibraryID{}); err != nil {
+		t.Fatal(err)
+	}
+	if results, err := st.SearchPartyMedia(ctx, "hash-casey", "Media", 10); err != nil || len(results) != 0 {
+		t.Fatalf("guest search after revocation = %+v, %v", results, err)
+	}
+	if _, err := st.RequestPartyEntry(ctx, "hash-casey", "media-alpha"); !errors.Is(err, ErrPartyInvalid) {
+		t.Fatalf("request after revocation = %v", err)
+	}
+}
+
+func TestPartyScreenAdvanceAndDrop(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	view := startTestParty(t, st, false)
+	host := partyHostFilter()
+	for range 2 {
+		if err := st.AddPartyEntry(ctx, "profile-default", host, "media-alpha", "", "Avery"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.AdvanceParty(ctx, "profile-default", host, ""); err != nil {
+		t.Fatal(err)
+	}
+	view, _, _ = st.PartySessionForHost(ctx, "profile-default", host)
+	first := view.Current.ID
+	other := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+
+	// Without a screen on the session, another Profile cannot advance it.
+	if err := st.AdvanceParty(ctx, "profile-managed", other, first); !errors.Is(err, ErrPartyNotFound) {
+		t.Fatalf("advance without a screen = %v", err)
+	}
+	screen, err := st.RegisterPartyScreen(ctx, view.Session.ID, "profile-managed", "Den", "joined", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.PartyStage(ctx, view.Session.ID, screen.ID); err != nil {
+		t.Fatalf("stage for a live screen = %v", err)
+	}
+	if err := st.AdvanceParty(ctx, "profile-managed", other, first); err != nil {
+		t.Fatalf("screen advance = %v", err)
+	}
+	view, _, _ = st.PartySessionForHost(ctx, "profile-default", host)
+	if view.Current == nil || view.Current.ID == first {
+		t.Fatalf("screen advance left current at %+v", view.Current)
+	}
+
+	if err := st.DropPartyScreen(ctx, "profile-default", host, screen.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.PartyStage(ctx, view.Session.ID, screen.ID); !errors.Is(err, ErrPartyInvalid) {
+		t.Fatalf("stage for a dropped screen = %v", err)
+	}
+	if err := st.AdvanceParty(ctx, "profile-managed", other, view.Current.ID); !errors.Is(err, ErrPartyNotFound) {
+		t.Fatalf("advance from a dropped screen = %v", err)
 	}
 }

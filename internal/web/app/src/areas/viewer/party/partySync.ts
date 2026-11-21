@@ -15,11 +15,14 @@ export const REPORT_MS = 5000;
 
 /**
  * The song position, in ms, the anchor puts at server time `nowMS`:
- * positionMS + (now − anchorAtMS) while playing, else positionMS.
+ * positionMS + (now − anchorAtMS) × tempo while playing, else positionMS. A
+ * stream adjusted to `tempo` covers that many song seconds per wall second,
+ * the same scale the stage reads its playhead in (songSecondsPerStreamSecond).
  */
 export function anchorTargetMS(playback: PartyPlayback, nowMS: number): number {
   if (playback.state !== "playing") return Math.max(0, playback.positionMS);
-  return Math.max(0, playback.positionMS + (nowMS - playback.anchorAtMS));
+  const tempo = Number.isFinite(playback.tempo) && playback.tempo > 0 ? playback.tempo : 1;
+  return Math.max(0, playback.positionMS + (nowMS - playback.anchorAtMS) * tempo);
 }
 
 /**

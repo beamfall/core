@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { QrCode } from "@/components/beamfall/QrCode";
 import { Button } from "@/components/ui/button";
+import { ApiError } from "@/lib/api";
 import { localClockMS } from "@/lib/clockEstimate";
 import {
   calibrateWatchPartyClock,
@@ -22,6 +23,11 @@ import { usePlayer } from "../player/usePlayer";
 import "../party/party.css";
 
 const FOLLOW_MS = 250;
+
+/** Whether a stage poll failed because the server has no such live session. */
+function isPartyGone(error: unknown): boolean {
+  return error instanceof ApiError && /party session not found/i.test(error.message);
+}
 
 function storageKey(sessionID: string, kind: PartyScreenKind): string {
   return `beamfall.partyScreen.${kind}.${sessionID}`;
@@ -113,7 +119,11 @@ export function PartyStagePage() {
         setStage(next);
         setStageFailed(false);
       } catch (error) {
-        if (!signal.aborted) setStageFailed(true);
+        if (signal.aborted) throw error;
+        setStageFailed(true);
+        // The session ended or never existed: drop the stage so its player
+        // unmounts. Any other failure (a network blip) keeps playing.
+        if (isPartyGone(error)) setStage(undefined);
         throw error;
       }
     },

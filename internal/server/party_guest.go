@@ -44,7 +44,7 @@ type PartyGuestStore interface {
 	JoinParty(ctx context.Context, code, name, tokenHash string) (store.PartyGuest, error)
 	PartyGuestView(ctx context.Context, tokenHash string) (store.PartyGuest, store.PartyView, error)
 	SearchPartyMedia(ctx context.Context, tokenHash, query string, limit int) ([]store.PartyMediaView, error)
-	RequestPartyEntry(ctx context.Context, tokenHash string, mediaID store.MediaID) (string, error)
+	RequestPartyEntry(ctx context.Context, tokenHash string, mediaID store.MediaID) (store.PartyEntryView, error)
 	CancelPartyEntry(ctx context.Context, tokenHash, entryID string) error
 	ReserveAuthAttempt(ctx context.Context, action string, keys []string, now time.Time, policy store.AuthBackoff) (store.AuthAttemptReservation, time.Time, error)
 	RecordAuthAttempt(ctx context.Context, attempt store.AuthAttempt) error
@@ -121,6 +121,8 @@ func partyGuestTokenHash(token string) string {
 }
 
 func (s *Server) partyGuestStore(w http.ResponseWriter, r *http.Request) (PartyGuestStore, bool) {
+	// Guest responses carry a bearer capability's private view; never cache them.
+	w.Header().Set("Cache-Control", "no-store")
 	if s.partyGuests == nil {
 		writeError(w, r, http.StatusServiceUnavailable, "party sessions unavailable")
 		return nil, false
@@ -319,7 +321,7 @@ func (s *Server) partyGuestRequest(w http.ResponseWriter, r *http.Request) {
 	if !reservePartyAttempt(w, r, party, partyRequestAttemptAction, []string{"party-request:" + guest.ParticipantID}, partyRequestBackoff) {
 		return
 	}
-	entryID, err := party.RequestPartyEntry(r.Context(), hash, store.MediaID(req.MediaID))
+	created, err := party.RequestPartyEntry(r.Context(), hash, store.MediaID(req.MediaID))
 	if err != nil {
 		writePartyGuestError(w, r, err)
 		return
@@ -329,13 +331,14 @@ func (s *Server) partyGuestRequest(w http.ResponseWriter, r *http.Request) {
 		writePartyGuestError(w, r, err)
 		return
 	}
-	for _, entry := range newPartyGuestViewResponse(guest, view).Mine {
-		if entry.ID == entryID {
-			writeJSON(w, http.StatusOK, map[string]any{"entry": entry})
-			return
+	// The entry may already have left Mine (made current, or advanced past).
+	entry := newPartyGuestEntry(created, true)
+	for _, mine := range newPartyGuestViewResponse(guest, view).Mine {
+		if mine.ID == created.ID {
+			entry = mine
 		}
 	}
-	writeErrorCause(w, r, http.StatusInternalServerError, "party request failed", errors.New("requested entry missing from the guest view"))
+	writeJSON(w, http.StatusOK, map[string]any{"entry": entry})
 }
 
 func (s *Server) partyGuestCancel(w http.ResponseWriter, r *http.Request) {
