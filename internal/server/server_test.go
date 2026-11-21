@@ -84,6 +84,7 @@ func TestRoutesAreRecorded(t *testing.T) {
 		{Method: http.MethodPost, Pattern: "/api/compat/handshake", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/media/artwork-upload/{recordID}", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodGet, Pattern: "/api/manifest", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodGet, Pattern: subscriptionExportPath, RevealClass: reveal.ContentBytes},
 		{Method: http.MethodPost, Pattern: "/api/playback-info", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/preview-info", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/beam/offers", RevealClass: reveal.ContentJSON},

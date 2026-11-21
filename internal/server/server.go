@@ -108,6 +108,7 @@ type Server struct {
 	knownProxies        *KnownProxies
 	artworkImport       ArtworkImporter
 	artworkApply        artworkApplyStore
+	subscriptionExport  subscriptionExportStore
 	profilePictures     profilePictureStore
 	compat              *compatState
 	devBuilds           *devBuildsFile
@@ -299,6 +300,9 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	if applyStore, ok := jobStats.(artworkApplyStore); ok {
 		s.artworkApply = applyStore
 	}
+	if subscriptions, ok := jobStats.(subscriptionExportStore); ok {
+		s.subscriptionExport = subscriptions
+	}
 	if pictures, ok := jobStats.(profilePictureStore); ok {
 		s.profilePictures = pictures
 	}
@@ -323,6 +327,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	s.handle(http.MethodPost, "/api/compat/handshake", reveal.ContentJSON, s.compatHandshake)
 	s.handle(http.MethodPost, createMediaArtworkRoutePattern, reveal.ContentJSON, s.createMediaWithArtwork)
 	s.handle(http.MethodGet, "/api/manifest", reveal.ContentJSON, s.manifestDocument)
+	s.handle(http.MethodGet, subscriptionExportPath, reveal.ContentBytes, s.exportSubscriptions)
 	s.handle(http.MethodPost, "/api/playback-info", reveal.ContentJSON, s.playbackInfo)
 	s.handle(http.MethodPost, "/api/preview-info", reveal.ContentJSON, s.previewInfo)
 	s.handle(http.MethodPost, "/api/beam/offers", reveal.ContentJSON, s.createBeamOffer)

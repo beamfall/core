@@ -167,7 +167,7 @@ export function SubscriptionsPage() {
     <div className="space-y-4">
       <ManageSection
         actions={
-          <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
             <Label htmlFor="subscription-library" className="sr-only">
               {t("library")}
             </Label>
@@ -183,6 +183,11 @@ export function SubscriptionsPage() {
                 ))}
               </SelectContent>
             </Select>
+            <Button variant="outline" asChild>
+              <a href="/api/subscriptions/export.opml" download="subscriptions.opml">
+                {t("exportSubscriptionsOpml")}
+              </a>
+            </Button>
           </div>
         }
       >

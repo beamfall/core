@@ -43,6 +43,7 @@ export const sharedStateStrings = {
     couldNotCreateLibrary: "Could not create the library.",
     couldNotUpdateLibrary: "Could not update the library.",
     subscriptionsUnavailable: "Subscriptions are unavailable right now.",
+    exportSubscriptionsOpml: "Export subscriptions as OPML",
     libraryEmptyTitle: "Nothing to show in this library yet.",
     // Empty-as-activation (onboarding-funnel §6) is for owners and managers only.
     libraryEmptyOwnerTitle: "Your library is ready. Let's fill it.",
@@ -97,6 +98,7 @@ export const sharedStateStrings = {
     couldNotCreateLibrary: "Impossible de créer la bibliothèque.",
     couldNotUpdateLibrary: "Impossible de mettre à jour la bibliothèque.",
     subscriptionsUnavailable: "Les abonnements sont indisponibles pour le moment.",
+    exportSubscriptionsOpml: "Exporter les abonnements au format OPML",
     libraryEmptyTitle: "Rien à afficher dans cette bibliothèque pour le moment.",
     libraryEmptyOwnerTitle: "Votre bibliothèque est prête. Remplissons-la.",
     libraryEmptyOwnerLead:
@@ -153,6 +155,7 @@ export const sharedStateStrings = {
     couldNotCreateLibrary: "Die Bibliothek konnte nicht erstellt werden.",
     couldNotUpdateLibrary: "Die Bibliothek konnte nicht aktualisiert werden.",
     subscriptionsUnavailable: "Abonnements sind derzeit nicht verfügbar.",
+    exportSubscriptionsOpml: "Abonnements als OPML exportieren",
     libraryEmptyTitle: "In dieser Bibliothek gibt es noch nichts anzuzeigen.",
     libraryEmptyOwnerTitle: "Deine Bibliothek ist bereit. Füllen wir sie.",
     libraryEmptyOwnerLead:
@@ -206,6 +209,7 @@ export const sharedStateStrings = {
     couldNotCreateLibrary: "No se pudo crear la biblioteca.",
     couldNotUpdateLibrary: "No se pudo actualizar la biblioteca.",
     subscriptionsUnavailable: "Las suscripciones no están disponibles en este momento.",
+    exportSubscriptionsOpml: "Exportar suscripciones como OPML",
     libraryEmptyTitle: "Aún no hay nada que mostrar en esta biblioteca.",
     libraryEmptyOwnerTitle: "Tu biblioteca está lista. Vamos a llenarla.",
     libraryEmptyOwnerLead: "Inicia un análisis para traer tus medios, o migra desde otro servidor.",
@@ -259,6 +263,7 @@ export const sharedStateStrings = {
     couldNotCreateLibrary: "Não foi possível criar a biblioteca.",
     couldNotUpdateLibrary: "Não foi possível atualizar a biblioteca.",
     subscriptionsUnavailable: "As assinaturas não estão disponíveis no momento.",
+    exportSubscriptionsOpml: "Exportar assinaturas como OPML",
     libraryEmptyTitle: "Ainda não há nada para mostrar nesta biblioteca.",
     libraryEmptyOwnerTitle: "Sua biblioteca está pronta. Vamos preenchê-la.",
     libraryEmptyOwnerLead:

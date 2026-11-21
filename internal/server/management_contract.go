@@ -130,6 +130,22 @@ var managementRouteContracts = []ManagementRouteContract{
 	{Method: http.MethodPost, Pattern: "/api/pairing-requests/deny", Note: "Deny a pending device pairing request (admin)"},
 	{Method: http.MethodPost, Pattern: "/api/group/calibrate", Note: "Calibrate group watch sync"},
 	{Method: http.MethodGet, Pattern: "/api/manifest", Note: "Navigation Manifest: server-side layout and section configuration"},
+	{
+		Method:        http.MethodGet,
+		Pattern:       subscriptionExportPath,
+		Note:          "Download visible Subscriptions as OPML 2.0. Set includePrivate=true to include authenticated feeds with exportable URLs.",
+		Authorization: "manager-session",
+		Success: &ManagementRouteResponseContract{
+			Status:      http.StatusOK,
+			ContentType: subscriptionExportContentType,
+		},
+		Errors: []ManagementRouteErrorContract{
+			{Status: http.StatusUnauthorized, Messages: []string{"invalid session"}},
+			{Status: http.StatusForbidden, Messages: []string{"manager session required"}},
+			{Status: http.StatusInternalServerError, Messages: []string{"could not export subscriptions"}},
+			{Status: http.StatusServiceUnavailable, Messages: []string{"subscription export unavailable"}},
+		},
+	},
 	{Method: http.MethodGet, Pattern: "/api/events", Note: "SSE event fanout: real-time server events for Console/Manage UIs"},
 }
 

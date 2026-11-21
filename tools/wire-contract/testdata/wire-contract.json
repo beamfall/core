@@ -39542,6 +39542,43 @@
       },
       {
         "method": "GET",
+        "pattern": "/api/subscriptions/export.opml",
+        "note": "Download visible Subscriptions as OPML 2.0. Set includePrivate=true to include authenticated feeds with exportable URLs.",
+        "authorization": "manager-session",
+        "success": {
+          "status": 200,
+          "contentType": "application/xml; charset=utf-8",
+          "fields": []
+        },
+        "errors": [
+          {
+            "status": 401,
+            "messages": [
+              "invalid session"
+            ]
+          },
+          {
+            "status": 403,
+            "messages": [
+              "manager session required"
+            ]
+          },
+          {
+            "status": 500,
+            "messages": [
+              "could not export subscriptions"
+            ]
+          },
+          {
+            "status": 503,
+            "messages": [
+              "subscription export unavailable"
+            ]
+          }
+        ]
+      },
+      {
+        "method": "GET",
         "pattern": "/api/events",
         "note": "SSE event fanout: real-time server events for Console/Manage UIs"
       }

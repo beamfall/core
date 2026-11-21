@@ -28,6 +28,19 @@ vi.mock("@/lib/session", () => ({
 describe("SubscriptionsPage", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("links to the default OPML download with a localized label", async () => {
+    vi.mocked(fetchSubscriptions).mockResolvedValue([]);
+    render(
+      <I18nProvider initialLocale="fr">
+        <SubscriptionsPage />
+      </I18nProvider>,
+    );
+    const link = screen.getByRole("link", { name: "Exporter les abonnements au format OPML" });
+    expect(link).toHaveAttribute("href", "/api/subscriptions/export.opml");
+    expect(link).toHaveAttribute("download", "subscriptions.opml");
+    await waitFor(() => expect(fetchSubscriptions).toHaveBeenCalledWith("library-a"));
+  });
+
   it("does not let an older library response replace the current library", async () => {
     let resolveA: ((value: SubscriptionInfo[]) => void) | undefined;
     vi.mocked(fetchSubscriptions).mockImplementation((libraryID) => {
