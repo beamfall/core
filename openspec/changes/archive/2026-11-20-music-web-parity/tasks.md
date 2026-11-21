@@ -2,4 +2,4 @@
 - [x] Rank artist tracks by the active profile's plays and label unranked lists “Tracks”.
 - [x] Link track menus to related Entities and show audio container card metadata.
 - [x] Run the focused viewer tests, typecheck, lint and catalog parity check.
-- [ ] Archive the change after landing.
+- [x] Archive the change after landing.
