@@ -9,7 +9,7 @@ import { fetchSetupRequired } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
-import { useEngagementEvents } from "./actions";
+import { HiddenUndoNotice, useEngagementEvents } from "./actions";
 import { SectionSkeleton } from "./components/HydratedSection";
 import { useScrollRestoration } from "./lib/useScrollRestoration";
 import { BrowsePage } from "./pages/BrowsePage";
@@ -185,6 +185,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <RemoteMessage message={remote.message} onDismiss={remote.dismissMessage} />
+      <HiddenUndoNotice profileID={profileID} />
     </PlayerHost>
   );
 }

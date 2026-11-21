@@ -5,6 +5,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import type { FieldFilters, Layout, Section } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
+import { HiddenAwareEmpty } from "../actions/HiddenControls";
 import { applyRenderFocus } from "../lib/renderFocus";
 import { findHomeRecentSection, MAX_RENDERED_SECTIONS, SECTION_KINDS } from "../lib/sections";
 import { FilterBar } from "./FilterBar";
@@ -269,7 +270,7 @@ export function LayoutView({
         <LoadFailed onRetry={retrySections} />
       ) : aggregateEmpty ? (
         entityID ? null : (
-          <LibraryEmpty />
+          <HiddenAwareEmpty fallback={<LibraryEmpty />} />
         )
       ) : (
         sections.map((section, index) => {

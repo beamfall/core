@@ -9,6 +9,9 @@ import { BulkOpsPage } from "./BulkOpsPage";
 
 vi.mock("@/lib/graphql", () => ({
   bulkEditApply: vi.fn(),
+  fetchMutes: vi.fn(async () => []),
+  setMute: vi.fn(async () => undefined),
+  clearMute: vi.fn(async () => undefined),
   bulkEditPreview: vi.fn(),
   fetchLibraries: vi.fn(),
   organizeApply: vi.fn(),

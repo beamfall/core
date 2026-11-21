@@ -30,6 +30,7 @@ import { useSession } from "@/lib/session";
 import { SCHEME_PREFERENCES, type SchemePreference } from "@/lib/theme/runtime";
 import { THEME_PRESETS } from "@/lib/theme/theme.generated";
 import type { StringKey } from "@/strings";
+import { notifyEngagementChanged, useHiddenItems } from "../actions";
 import {
   DOWNSTREAM_AUDIO_DEFAULT,
   DOWNSTREAM_AUDIO_MODES,
@@ -481,6 +482,24 @@ export function ProfileSettingsPage() {
           </CollapsibleCard>
         </section>
 
+        <section aria-label={t("hiddenItemsLabel")}>
+          <CollapsibleCard title={t("hiddenItemsLabel")} defaultOpen>
+            <div className="settings-row flex flex-col gap-1">
+              <ToggleRow
+                labelKey="hideWatched"
+                checked={prefs.hideWatched}
+                onChange={(on) =>
+                  void persist(PREF_KEYS.hideWatched, encodeBool(on), {
+                    hideWatched: on,
+                  }).then(notifyEngagementChanged)
+                }
+              />
+              <span className="text-sm text-[var(--text-muted)]">{t("hideWatchedLead")}</span>
+            </div>
+            <HiddenItemsRow />
+          </CollapsibleCard>
+        </section>
+
         <section aria-label={t("settingsAccessibilityHeading")}>
           <CollapsibleCard title={t("settingsAccessibilityHeading")} defaultOpen>
             <div className="settings-row flex flex-col gap-1">
@@ -587,4 +606,38 @@ function stillWatchingOptions(after: number): string[] {
   const options: string[] = [...STILL_WATCHING_OPTIONS];
   const current = stillWatchingValue(after);
   return options.includes(current) ? options : [...options, current];
+}
+
+/** How many items this Profile has hidden, with one control to show them all again. */
+function HiddenItemsRow() {
+  const t = useT();
+  const { mutes, failed, unhideAll } = useHiddenItems();
+  const [pending, setPending] = useState(false);
+  const count = mutes?.length ?? 0;
+  return (
+    <div className="settings-row flex flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm text-[var(--text-primary)]" aria-live="polite">
+          {t("hiddenItemsCount", { count: String(count) })}
+        </span>
+        <button
+          type="button"
+          className="bf-item-action"
+          disabled={pending || mutes === null || count === 0}
+          onClick={() => {
+            setPending(true);
+            void unhideAll().finally(() => setPending(false));
+          }}
+        >
+          {t("hiddenItemsUnhideAll")}
+        </button>
+      </div>
+      <span className="text-sm text-[var(--text-muted)]">{t("hiddenItemsLead")}</span>
+      {failed && (
+        <span role="status" className="text-sm text-[var(--state-danger)]">
+          {t("itemActionFailed")}
+        </span>
+      )}
+    </div>
+  );
 }

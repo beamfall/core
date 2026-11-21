@@ -1299,6 +1299,18 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 			secrets:  secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")},
 		}
 	}
+	st.SetMuteParentRelations(func() []store.MuteTreeEdge {
+		// Hiding a container follows both hierarchies a plugin declares: a
+		// same-Kind parent and a container roll-up parent of another Kind.
+		var edges []store.MuteTreeEdge
+		for _, relation := range plugins.EntityParentRelations() {
+			edges = append(edges, store.MuteTreeEdge{Relation: relation})
+		}
+		for _, edge := range plugins.ContainerRollUpEdges() {
+			edges = append(edges, store.MuteTreeEdge(edge))
+		}
+		return edges
+	})
 	graphHandler := graph.NewHandler(manifests, authService, st, plugins, graphOptions)
 	graphServer := serverGraphHandler{Handler: graphHandler}
 	srv := server.New(

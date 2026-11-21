@@ -192,6 +192,11 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 		limit = 200
 	}
 	offset := max(query.Offset, 0)
+	watch, err := s.effectiveBrowseWatchLocked(ctx, query)
+	if err != nil {
+		return empty, err
+	}
+	query.Watch = watch
 
 	set, err := s.libraryVisibleSetLocked(ctx, filter, query.ProfileID)
 	if err != nil || len(set.visible) == 0 {

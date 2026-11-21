@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fetchMutes } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { notifyEngagementChanged } from "../actions/engagementSync";
@@ -14,6 +15,15 @@ import { LibraryBrowsePage } from "./LibraryBrowsePage";
 vi.mock("../lib/libraryBrowse", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/libraryBrowse")>();
   return { ...actual, fetchLibraryItems: vi.fn() };
+});
+vi.mock("@/lib/graphql", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/graphql")>();
+  return {
+    ...actual,
+    fetchClientPrefs: vi.fn(async () => []),
+    fetchMutes: vi.fn(async () => []),
+    setClientPref: vi.fn(async () => undefined),
+  };
 });
 vi.mock("@/lib/session", () => ({
   useSession: () => ({
@@ -410,6 +420,58 @@ describe("Library browse", { timeout: 20_000 }, () => {
       }),
     );
     expect(screen.getByTestId("where")).not.toHaveTextContent("rated=");
+  });
+
+  it("starts an unfiltered read over when Hide watched flips, so the count follows (CORE-2836)", async () => {
+    const user = userEvent.setup();
+    let hiding = false;
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) =>
+      hiding
+        ? { ...pageFor(request), total: 3, items: pageFor(request).items.slice(0, 3) }
+        : pageFor(request),
+    );
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "Hide watched" });
+    await waitFor(() => expect(toggle).toBeEnabled());
+
+    hiding = true;
+    await user.click(toggle);
+    expect(await screen.findByText("3 items")).toBeInTheDocument();
+  });
+
+  it("starts the read over when the Profile's hidden items change, so the count follows (CORE-2836)", async () => {
+    let hidden = false;
+    vi.mocked(fetchMutes).mockImplementation(async () =>
+      hidden ? ([{ kind: "media", targetID: "media-0" }] as never) : [],
+    );
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) =>
+      hidden ? { ...pageFor(request), total: TOTAL - 1 } : pageFor(request),
+    );
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    await waitFor(() => expect(fetchMutes).toHaveBeenCalled());
+
+    hidden = true;
+    act(() => notifyEngagementChanged());
+    expect(await screen.findByText("1,199 items")).toBeInTheDocument();
+    vi.mocked(fetchMutes).mockImplementation(async () => []);
   });
 
   it("reloads when engagement changes under a query that depends on it, and refreshes cards in place otherwise", async () => {

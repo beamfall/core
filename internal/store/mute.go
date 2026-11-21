@@ -3,18 +3,44 @@ package store
 import (
 	"context"
 	"database/sql"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// MuteKind is the target species of a per-Profile Mute: any
-// Entity or any Tag. Individual Media are not mutable in v1.
+// MuteKind is the target species of a per-Profile Mute: any Entity, any Tag,
+// or one Media item (CORE-2836).
 type MuteKind string
 
 const (
 	MuteKindEntity MuteKind = "entity"
 	MuteKindTag    MuteKind = "tag"
+	MuteKindMedia  MuteKind = "media"
 )
+
+// ValidMuteKind reports whether kind is in the closed Mute vocabulary.
+func ValidMuteKind(kind MuteKind) bool {
+	return kind == MuteKindEntity || kind == MuteKindTag || kind == MuteKindMedia
+}
+
+// MuteTreeEdge is one step a direct Entity Mute follows down an Entity
+// hierarchy: a child Entity linked to its parent by Relation. With no Kinds the
+// step is a same-Kind parent; otherwise the child must be of ChildKind and the
+// parent of ParentKind, as a plugin declared it.
+type MuteTreeEdge struct {
+	Relation, ChildKind, ParentKind string
+}
+
+// SetMuteParentRelations installs the app's source of plugin-declared tree
+// steps (same-Kind parents and container roll-up parents), which a direct
+// Entity Mute follows down to child Entities so hiding a container hides
+// everything under it.
+func (s *Store) SetMuteParentRelations(fn func() []MuteTreeEdge) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.muteParentRelations = fn
+}
 
 // MuteTarget is one "Not interested" entry a Profile has authored for itself.
 type MuteTarget struct {
@@ -34,8 +60,8 @@ func (s *Store) SetMute(ctx context.Context, profileID ProfileID, kind MuteKind,
 	if profileID == "" || targetID == "" {
 		return ValidationError("profile ID and target ID are required")
 	}
-	if kind != MuteKindEntity && kind != MuteKindTag {
-		return ValidationError("mute kind must be entity or tag")
+	if !ValidMuteKind(kind) {
+		return ValidationError("mute kind must be entity, tag or media")
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -184,7 +210,13 @@ func (s *Store) mutedReachLocked(ctx context.Context, relations *sql.DB, profile
 	// signal. The entity-kind sets are tracked separately for entity-item badges.
 	directTargets := map[string]struct{}{}
 	broadSeeds := []string{}
+	directEntitySeeds := []string{}
 	for _, m := range mutes {
+		if m.Kind == MuteKindMedia {
+			// A Media Mute names the Media itself: always direct, no relation.
+			reach.directlyMuted[MediaID(m.TargetID)] = true
+			continue
+		}
 		if m.IncludeDescendants {
 			broadSeeds = append(broadSeeds, m.TargetID)
 			if m.Kind == MuteKindEntity {
@@ -194,7 +226,21 @@ func (s *Store) mutedReachLocked(ctx context.Context, relations *sql.DB, profile
 			directTargets[m.TargetID] = struct{}{}
 			if m.Kind == MuteKindEntity {
 				reach.directEntities[m.TargetID] = struct{}{}
+				directEntitySeeds = append(directEntitySeeds, m.TargetID)
 			}
+		}
+	}
+	// A direct Entity Mute covers the Entity's tree along the plugin-declared
+	// parent relations, so hiding a container hides its child containers and
+	// every Media under them.
+	if len(directEntitySeeds) > 0 && s.muteParentRelations != nil {
+		children, err := entityTreeDescendants(ctx, relations, directEntitySeeds, s.muteParentRelations())
+		if err != nil {
+			return reach, err
+		}
+		for id := range children {
+			directTargets[id] = struct{}{}
+			reach.directEntities[id] = struct{}{}
 		}
 	}
 
@@ -272,7 +318,7 @@ func (s *Store) applyMuteFilterLocked(ctx context.Context, relations *sql.DB, pr
 	}
 	directlyMuted := reach.directlyMuted
 	broadlyMuted := reach.broadlyMuted
-	if len(directlyMuted) == 0 && len(broadlyMuted) == 0 {
+	if len(directlyMuted) == 0 && len(broadlyMuted) == 0 && len(reach.directEntities) == 0 {
 		return items, nil
 	}
 
@@ -299,6 +345,11 @@ func (s *Store) applyMuteFilterLocked(ctx context.Context, relations *sql.DB, pr
 		if directlyMuted[item.ID] {
 			continue
 		}
+		// An Entity card for a hidden container (or one under it) drops like
+		// its Media do, so a hidden show leaves an entity-items shelf too.
+		if _, hidden := reach.directEntities[string(item.ID)]; hidden && item.Kind == "entity" {
+			continue
+		}
 		if broadlyMuted[item.ID] && !protected[item.ID] {
 			continue
 		}
@@ -308,6 +359,45 @@ func (s *Store) applyMuteFilterLocked(ctx context.Context, relations *sql.DB, pr
 		out = []SourceItem{}
 	}
 	return out, nil
+}
+
+// dropMutedEntitiesLocked removes from an Entity browse the Entities the
+// Profile muted directly, with the child Entities below them, so a hidden
+// container leaves the browse even when nothing filters it by its Media. A
+// broad (include-descendants) Mute keeps its own Media rule and does not drop
+// Entities here. The caller holds s.mu.
+func (s *Store) dropMutedEntitiesLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, candidates []libraryBrowseCandidate) ([]libraryBrowseCandidate, error) {
+	if profileID == "" || len(candidates) == 0 {
+		return candidates, nil
+	}
+	mutes, err := s.mutedTargetsLocked(ctx, profileID)
+	if err != nil {
+		return nil, err
+	}
+	muted := map[string]struct{}{}
+	seeds := []string{}
+	for _, m := range mutes {
+		if m.Kind == MuteKindEntity && !m.IncludeDescendants {
+			muted[m.TargetID] = struct{}{}
+			seeds = append(seeds, m.TargetID)
+		}
+	}
+	if len(seeds) == 0 {
+		return candidates, nil
+	}
+	if s.muteParentRelations != nil {
+		children, err := entityTreeDescendants(ctx, relations, seeds, s.muteParentRelations())
+		if err != nil {
+			return nil, err
+		}
+		for id := range children {
+			muted[id] = struct{}{}
+		}
+	}
+	return slices.DeleteFunc(candidates, func(c libraryBrowseCandidate) bool {
+		_, hidden := muted[string(c.item.ID)]
+		return hidden
+	}), nil
 }
 
 // AnnotateMuted marks, on each surfaced SourceItem, whether the acting Profile's
@@ -407,6 +497,59 @@ func (s *Store) mutedTargetsLocked(ctx context.Context, profileID ProfileID) ([]
 			IncludeDescendants: incDesc != 0,
 			MutedAt:            millisToTime(mutedMS),
 		})
+	}
+	return out, rows.Err()
+}
+
+// entityTreeDescendants returns the child Entities below the seeds along the
+// given parent relations, where a child relates to its parent by
+// from_entity_id -> to_entity_id. The relations may cross Kinds (a container
+// held by a container of another Kind), so the walk does not compare Kinds.
+// Seeds are not included. No relation means no tree.
+func entityTreeDescendants(ctx context.Context, relations *sql.DB, seeds []string, edges []MuteTreeEdge) (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	if len(seeds) == 0 || len(edges) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, len(seeds)+3*len(edges))
+	for _, id := range seeds {
+		args = append(args, id)
+	}
+	steps := make([]string, 0, len(edges))
+	for _, edge := range edges {
+		if edge.ChildKind == "" && edge.ParentKind == "" {
+			steps = append(steps, "(r.relation = ? AND child.kind = subtree.kind)")
+			args = append(args, edge.Relation)
+			continue
+		}
+		steps = append(steps, "(r.relation = ? AND child.kind = ? AND subtree.kind = ?)")
+		args = append(args, edge.Relation, edge.ChildKind, edge.ParentKind)
+	}
+	seedIn := strings.TrimSuffix(strings.Repeat("?, ", len(seeds)), ", ")
+	// #nosec G202 -- only generated placeholders and fixed clauses are interpolated.
+	rows, err := relations.QueryContext(ctx, `
+		WITH RECURSIVE subtree(id, kind, depth) AS (
+			SELECT id, kind, 0 FROM entity WHERE id IN (`+seedIn+`)
+			UNION
+			SELECT child.id, child.kind, subtree.depth + 1
+			FROM entity_relation r
+			JOIN subtree ON subtree.id = r.to_entity_id
+			JOIN entity child ON child.id = r.from_entity_id
+			WHERE (`+strings.Join(steps, " OR ")+`)
+				AND subtree.depth < `+strconv.Itoa(muteDescendantDepthCap)+`
+		)
+		SELECT DISTINCT id FROM subtree WHERE depth > 0
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = struct{}{}
 	}
 	return out, rows.Err()
 }
@@ -638,10 +781,7 @@ func hasRollUpMembers(items []SourceItem) bool {
 func (s *Store) applyMuteFilterRolledUpLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, filter LibraryFilter, items []SourceItem) ([]SourceItem, error) {
 	flat := make([]SourceItem, 0, len(items))
 	for _, item := range items {
-		if len(item.rollUpMembers) == 0 {
-			flat = append(flat, SourceItem{ID: item.ID, Kind: item.Kind})
-			continue
-		}
+		flat = append(flat, SourceItem{ID: item.ID, Kind: item.Kind})
 		for _, member := range item.rollUpMembers {
 			flat = append(flat, SourceItem{ID: member, Kind: "media"})
 		}
@@ -656,17 +796,24 @@ func (s *Store) applyMuteFilterRolledUpLocked(ctx context.Context, relations *sq
 	}
 	out := []SourceItem{}
 	for _, item := range items {
+		if !survivors[item.ID] {
+			continue // the card itself is hidden
+		}
 		if len(item.rollUpMembers) == 0 {
-			if survivors[item.ID] {
-				out = append(out, item)
-			}
+			out = append(out, item)
 			continue
 		}
+		// A later filter (Hide watched) judges the card by the members that
+		// survived; rollUpMembers keeps them all for the Muted badge.
+		var members []MediaID
 		for _, member := range item.rollUpMembers {
 			if survivors[member] {
-				out = append(out, item)
-				break
+				members = append(members, member)
 			}
+		}
+		if len(members) > 0 {
+			item.visibleMembers = members
+			out = append(out, item)
 		}
 	}
 	return out, nil

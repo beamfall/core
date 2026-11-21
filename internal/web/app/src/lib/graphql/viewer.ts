@@ -20,6 +20,7 @@ import type {
   ItemTarget,
   LibraryInfo,
   MetadataAttribution,
+  MuteInfo,
   MyDataDeleteResult,
   MyDataSummary,
   MyEngagementExport,
@@ -549,6 +550,44 @@ export async function setClientPref(key: string, value: string): Promise<{ key: 
     value,
   });
   return data.setClientPref;
+}
+
+// --- Hide (per-Profile Mute) ----------------------------------------------
+
+const MUTES_QUERY = "query Mutes { mutes { kind targetID includeDescendants mutedAt } }";
+
+/** Mutes — the calling Profile's hidden items, Entities and Tags, newest first. */
+export async function fetchMutes(signal?: AbortSignal): Promise<MuteInfo[]> {
+  const data = await graphql<{ mutes: MuteInfo[] | null }>(MUTES_QUERY, {}, signal);
+  return data.mutes ?? [];
+}
+
+const SET_MUTE_MUTATION =
+  "mutation SetMute($kind: String!, $targetID: String!, $includeDescendants: Boolean) { setMute(kind: $kind, targetID: $targetID, includeDescendants: $includeDescendants) { muted } }";
+
+/** SetMute — hide one Media item ("media") or an Entity and everything under it ("entity"). */
+export async function setMute(kind: string, targetID: string): Promise<void> {
+  await graphql<{ setMute: { muted: boolean } }>(SET_MUTE_MUTATION, {
+    kind,
+    targetID,
+    includeDescendants: false,
+  });
+}
+
+const CLEAR_MUTE_MUTATION =
+  "mutation ClearMute($kind: String!, $targetID: String!) { clearMute(kind: $kind, targetID: $targetID) { muted } }";
+
+/** ClearMute — show a hidden item again. */
+export async function clearMute(kind: string, targetID: string): Promise<void> {
+  await graphql<{ clearMute: { muted: boolean } }>(CLEAR_MUTE_MUTATION, { kind, targetID });
+}
+
+const CLEAR_ALL_MUTES_MUTATION = "mutation ClearAllMutes { clearAllMutes { cleared } }";
+
+/** ClearAllMutes — show everything the calling Profile hid; returns how many. */
+export async function clearAllMutes(): Promise<number> {
+  const data = await graphql<{ clearAllMutes: { cleared: number } }>(CLEAR_ALL_MUTES_MUTATION, {});
+  return data.clearAllMutes.cleared;
 }
 
 // --- Item actions: watched, watchlist, rating -----------------------------

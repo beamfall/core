@@ -4,7 +4,13 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
-import { fetchClientPrefs, fetchMetadataCredits, setClientPref } from "@/lib/graphql";
+import {
+  clearAllMutes,
+  fetchClientPrefs,
+  fetchMetadataCredits,
+  fetchMutes,
+  setClientPref,
+} from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { RegisterProvider } from "@/lib/register";
 import { useSession } from "@/lib/session";
@@ -16,6 +22,10 @@ vi.mock("@/components/chrome/AppShell", () => ({
 
 vi.mock("@/lib/graphql", () => ({
   fetchClientPrefs: vi.fn(),
+  fetchMutes: vi.fn(async () => []),
+  setMute: vi.fn(async () => undefined),
+  clearMute: vi.fn(async () => undefined),
+  clearAllMutes: vi.fn(async () => 0),
   fetchMetadataCredits: vi.fn(),
   setClientPref: vi.fn(),
 }));
@@ -47,6 +57,8 @@ function setProfileKind(kind: "adult" | "managed", profileID = "p1") {
 
 beforeEach(() => {
   vi.mocked(fetchClientPrefs).mockReset();
+  vi.mocked(fetchMutes).mockReset().mockResolvedValue([]);
+  vi.mocked(clearAllMutes).mockClear();
   vi.mocked(setClientPref).mockReset();
   vi.mocked(fetchClientPrefs).mockResolvedValue([{ key: "autoskip.intro", value: "on" }]);
   vi.mocked(setClientPref).mockResolvedValue({ key: "autoskip.recap" });
@@ -84,6 +96,29 @@ describe("ProfileSettingsPage", () => {
 
     await user.click(screen.getByRole("switch", { name: "Skip recaps" }));
     expect(setClientPref).toHaveBeenCalledWith("autoskip.recap", "on");
+  });
+
+  it("turns Hide watched on and shows every hidden item again (CORE-2836)", async () => {
+    vi.mocked(fetchMutes).mockResolvedValue([
+      {
+        kind: "entity",
+        targetID: "show-1",
+        includeDescendants: true,
+        mutedAt: "2026-11-20T00:00:00Z",
+      },
+      { kind: "media", targetID: "m1", includeDescendants: false, mutedAt: "2026-11-20T00:00:00Z" },
+    ]);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("switch", { name: "Hide watched" }));
+    expect(setClientPref).toHaveBeenCalledWith("profile.hide-watched", "on");
+
+    expect(await screen.findByText("Hidden: 2")).toBeInTheDocument();
+    vi.mocked(fetchMutes).mockResolvedValue([]);
+    await user.click(screen.getByRole("button", { name: "Unhide all" }));
+    expect(clearAllMutes).toHaveBeenCalledOnce();
+    expect(await screen.findByText("Hidden: 0")).toBeInTheDocument();
   });
 
   it("clears a boolean preference with an empty value", async () => {

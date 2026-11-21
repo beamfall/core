@@ -89,6 +89,11 @@ func (s *Store) LibraryEntities(ctx context.Context, filter LibraryFilter, query
 		limit = 200
 	}
 	offset := max(query.Offset, 0)
+	watch, err := s.effectiveBrowseWatchLocked(ctx, query.Browse)
+	if err != nil {
+		return empty, err
+	}
+	query.Browse.Watch = watch
 
 	libraries, err := loadLibraries(ctx, s.catalogR)
 	if err != nil {
@@ -141,6 +146,9 @@ func (s *Store) LibraryEntities(ctx context.Context, filter LibraryFilter, query
 		return empty, err
 	}
 	candidates = filterLibraryBrowseText(candidates, query.Browse.Text)
+	if candidates, err = s.dropMutedEntitiesLocked(ctx, reader, query.Browse.ProfileID, candidates); err != nil {
+		return empty, err
+	}
 	if libraryEntityBrowseReadsMedia(query.Browse) {
 		candidates, err = s.libraryEntityBrowseFilterLocked(ctx, reader, filter, query, candidates)
 		if err != nil {

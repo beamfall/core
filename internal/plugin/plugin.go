@@ -343,8 +343,49 @@ func (r *Registry) EntityParentRelations() []string {
 // nothing, so its Media stay listed as themselves. Both are sorted and without repeats; core names no
 // Kind or relation (invariant #1).
 func (r *Registry) ContainerRollUpRelations() (members, parents []string) {
+	r.eachContainerRollUp(func(held []string, climbs []ContainerEdge) {
+		for _, name := range held {
+			if !contains(members, name) {
+				members = append(members, name)
+			}
+		}
+		for _, edge := range climbs {
+			if !contains(parents, edge.Relation) {
+				parents = append(parents, edge.Relation)
+			}
+		}
+	})
+	slices.Sort(members)
+	slices.Sort(parents)
+	return members, parents
+}
+
+// ContainerEdge is one container roll-up step a bundle declares: an Entity of
+// ChildKind climbs to its container of ParentKind by Relation.
+type ContainerEdge struct {
+	Relation, ChildKind, ParentKind string
+}
+
+// ContainerRollUpEdges returns the parent steps behind ContainerRollUpRelations
+// with the Kinds at each end, so a walk down a container hierarchy follows only
+// the edges a bundle declared and never a same-named relation between other Kinds.
+func (r *Registry) ContainerRollUpEdges() []ContainerEdge {
+	var edges []ContainerEdge
+	r.eachContainerRollUp(func(_ []string, climbs []ContainerEdge) {
+		for _, edge := range climbs {
+			if !slices.Contains(edges, edge) {
+				edges = append(edges, edge)
+			}
+		}
+	})
+	return edges
+}
+
+// eachContainerRollUp calls visit for every container Kind that holds one
+// Media by a relation and climbs to a browsed container Kind of its bundle.
+func (r *Registry) eachContainerRollUp(visit func(held []string, climbs []ContainerEdge)) {
 	if r == nil {
-		return nil, nil
+		return
 	}
 	for _, id := range r.order {
 		bundle := r.bundles[id]
@@ -368,33 +409,21 @@ func (r *Registry) ContainerRollUpRelations() (members, parents []string) {
 			if !containers[kind.Name] {
 				continue
 			}
-			var held, climbs []string
+			var held []string
+			var climbs []ContainerEdge
 			for _, relation := range kind.Relations {
 				switch {
 				case relation.ToKind == MediaKindName && relation.Cardinality == "one":
 					held = append(held, relation.Name)
 				case relation.ToKind != kind.Name && containers[relation.ToKind] && browsed[relation.ToKind]:
-					climbs = append(climbs, relation.Name)
+					climbs = append(climbs, ContainerEdge{Relation: relation.Name, ChildKind: kind.Name, ParentKind: relation.ToKind})
 				}
 			}
-			if len(held) == 0 || len(climbs) == 0 {
-				continue
-			}
-			for _, name := range held {
-				if !contains(members, name) {
-					members = append(members, name)
-				}
-			}
-			for _, name := range climbs {
-				if !contains(parents, name) {
-					parents = append(parents, name)
-				}
+			if len(held) > 0 && len(climbs) > 0 {
+				visit(held, climbs)
 			}
 		}
 	}
-	slices.Sort(members)
-	slices.Sort(parents)
-	return members, parents
 }
 
 func contains(values []string, value string) bool {

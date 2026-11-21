@@ -586,6 +586,14 @@ export interface ClientPref {
   value: string;
 }
 
+/** One of the calling Profile's Mutes (graph.MyMuteInfo). Kind is entity, tag or media. */
+export interface MuteInfo {
+  kind: string;
+  targetID: string;
+  includeDescendants: boolean;
+  mutedAt: string;
+}
+
 // --- Mode-aware search (graph_enrichment.go) ------------------------------
 
 /**

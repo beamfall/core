@@ -1,6 +1,7 @@
-import { Bookmark, BookmarkCheck, Circle, CircleCheck, Star } from "lucide-react";
+import { Bookmark, BookmarkCheck, Circle, CircleCheck, Eye, EyeOff, Star } from "lucide-react";
 import type { ItemTarget } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { useItemHide } from "./hiddenItems";
 import { useItemActions } from "./useItemActions";
 
 const STARS = [1, 2, 3, 4, 5];
@@ -9,15 +10,19 @@ const STARS = [1, 2, 3, 4, 5];
  * The watched, watchlist and rating controls for one item, for the calling
  * Profile. Self-contained: give it a target (see itemTargetFor for a feed item)
  * and it loads the state, applies the actions and follows changes made on other
- * clients. Ratings are stored 1–10 and shown as five stars.
+ * clients. Ratings are stored 1–10 and shown as five stars. Given a
+ * `hideTitle`, it also offers Hide for the calling Profile (CORE-2836).
  */
 export function ItemActions({
   target,
   isAudio = false,
+  hideTitle,
   className = "",
 }: {
   target: ItemTarget;
   isAudio?: boolean;
+  /** The item's title, for the Hide notice; Hide is offered only when set. */
+  hideTitle?: string;
   className?: string;
 }) {
   const t = useT();
@@ -73,6 +78,7 @@ export function ItemActions({
           </button>
         ))}
       </fieldset>
+      {hideTitle !== undefined && <HideButton target={target} title={hideTitle} />}
       {failed && (
         <span role="status" className="bf-item-actions-error">
           {t("itemActionFailed")}
@@ -84,5 +90,29 @@ export function ItemActions({
         </button>
       )}
     </div>
+  );
+}
+
+function HideButton({ target, title }: { target: ItemTarget; title: string }) {
+  const t = useT();
+  const { hidden, pending, failed, toggle } = useItemHide(target, title);
+  return (
+    <>
+      <button
+        type="button"
+        className="bf-item-action"
+        aria-pressed={hidden ?? false}
+        disabled={pending || hidden === null}
+        onClick={() => void toggle()}
+      >
+        {hidden ? <Eye aria-hidden="true" /> : <EyeOff aria-hidden="true" />}
+        {t(hidden ? "itemUnhide" : "itemHide")}
+      </button>
+      {failed && (
+        <span role="status" className="bf-item-actions-error">
+          {t("itemActionFailed")}
+        </span>
+      )}
+    </>
   );
 }

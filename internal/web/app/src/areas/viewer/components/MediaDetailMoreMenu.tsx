@@ -1,8 +1,9 @@
-import { Check, Link2, ListPlus, MoreHorizontal } from "lucide-react";
+import { Check, Eye, EyeOff, Link2, ListPlus, MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Menu } from "@/components/ui/astryx-primitives";
 import { buttonVariants } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
+import { useItemHide } from "../actions";
 import { mediaPath } from "../lib/mediaAddress";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 
@@ -11,11 +12,14 @@ const COPIED_RESET_MS = 2000;
 // The More menu on a Media detail page (CORE-2436): the actions that do not
 // earn a button of their own beside Play. Built on the Base UI menu like the
 // card menu, so arrow keys, Escape and focus return come from the primitive.
-// Add to playlist opens the existing manager-gated dialog (CORE-1635).
+// Add to playlist opens the existing manager-gated dialog (CORE-1635); Hide
+// takes the item out of this Profile's browsing (CORE-2836).
 export function MediaDetailMoreMenu({ mediaID, title }: { mediaID: string; title: string }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [opened, setOpened] = useState(false);
+  const hide = useItemHide({ mediaID }, title, { enabled: opened });
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -42,7 +46,12 @@ export function MediaDetailMoreMenu({ mediaID, title }: { mediaID: string; title
 
   return (
     <>
-      <Menu.Root>
+      {hide.failed && (
+        <span role="status" className="bf-card-action-error">
+          {t("itemActionFailed")}
+        </span>
+      )}
+      <Menu.Root onOpenChange={(open) => open && setOpened(true)}>
         <Menu.Trigger
           className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary bf-detail-more`}
           aria-label={t("cardMoreActions", { title })}
@@ -55,6 +64,18 @@ export function MediaDetailMoreMenu({ mediaID, title }: { mediaID: string; title
               <Menu.Item className="bf-card-menu-item" onClick={() => setAddOpen(true)}>
                 <ListPlus aria-hidden="true" size={15} />
                 {t("addToPlaylist")}
+              </Menu.Item>
+              <Menu.Item
+                className="bf-card-menu-item"
+                disabled={hide.pending || hide.hidden === null}
+                onClick={() => void hide.toggle()}
+              >
+                {hide.hidden ? (
+                  <Eye aria-hidden="true" size={15} />
+                ) : (
+                  <EyeOff aria-hidden="true" size={15} />
+                )}
+                {t(hide.hidden ? "itemUnhide" : "itemHide")}
               </Menu.Item>
               <Menu.Item className="bf-card-menu-item" closeOnClick={false} onClick={copyLink}>
                 {copied ? (

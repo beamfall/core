@@ -5,7 +5,13 @@ import { Button } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import type { DisplayString } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
-import { useEngagementEpoch } from "../actions";
+import {
+  HideWatchedToggle,
+  hiddenKeyMoved,
+  useEngagementEpoch,
+  useHiddenKey,
+  useHideWatched,
+} from "../actions";
 import { LibraryBrowseEmpty, LibraryBrowseToolbar } from "../components/LibraryBrowseToolbar";
 import { LibraryLetterRail } from "../components/LibraryLetterRail";
 import { LibraryHeader } from "../components/LibraryPivots";
@@ -351,15 +357,24 @@ function LibraryEntityGrid({
   }, [loadPage, stateKey, retryTick]);
 
   // Watched state and ratings can change under a query that sorts or filters
-  // by them; the cached pages are then stale, so the query starts again.
+  // by them; the cached pages are then stale, so the query starts again. So
+  // does a read with no watch filter when Hide watched flips.
   const engagementEpoch = useEngagementEpoch();
   const seenEpochRef = useRef(engagementEpoch);
-  const followsEngagement = browseFollowsEngagement(state);
+  const hideWatched = useHideWatched();
+  const seenHideRef = useRef(hideWatched.version);
+  const hiddenKey = useHiddenKey();
+  const seenHiddenKeyRef = useRef<string | null>(null);
+  const unfiltered = state.watch === "";
+  const followsEngagement = browseFollowsEngagement(state, hideWatched.on === true);
   useEffect(() => {
-    if (seenEpochRef.current === engagementEpoch) return;
+    const toggled = seenHideRef.current !== hideWatched.version;
+    const hid = hiddenKeyMoved(seenHiddenKeyRef, hiddenKey);
+    if (seenEpochRef.current === engagementEpoch && !toggled && !hid) return;
     seenEpochRef.current = engagementEpoch;
-    if (followsEngagement) setRetryTick((tick) => tick + 1);
-  }, [engagementEpoch, followsEngagement]);
+    seenHideRef.current = hideWatched.version;
+    if (followsEngagement || hid || (toggled && unfiltered)) setRetryTick((tick) => tick + 1);
+  }, [engagementEpoch, hideWatched.version, hiddenKey, followsEngagement, unfiltered]);
 
   const itemCount = total ?? 0;
   const listRef = useRef<HTMLUListElement | null>(null);
@@ -428,7 +443,12 @@ function LibraryEntityGrid({
         onUpdate={update}
         libraryName={heading}
         leading={switcher}
-        trailing={<PosterSizeControl />}
+        trailing={
+          <>
+            <PosterSizeControl />
+            <HideWatchedToggle />
+          </>
+        }
       />
       {failed && (
         <div role="alert" className="bf-empty flex flex-col gap-3">

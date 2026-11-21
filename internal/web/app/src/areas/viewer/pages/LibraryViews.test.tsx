@@ -22,6 +22,15 @@ vi.mock("../lib/libraryBrowse", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/libraryBrowse")>();
   return { ...actual, fetchLibraryItems: vi.fn() };
 });
+vi.mock("@/lib/graphql", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/graphql")>();
+  return {
+    ...actual,
+    fetchClientPrefs: vi.fn(async () => []),
+    fetchMutes: vi.fn(async () => []),
+    setClientPref: vi.fn(async () => undefined),
+  };
+});
 vi.mock("@/lib/session", () => ({
   useSession: () => ({
     loading: false,
@@ -342,6 +351,24 @@ describe("Entity kind sort, filters and letter rail (CORE-2440)", () => {
     expect(vi.mocked(fetchLibraryEntities).mock.calls.at(-1)?.[0]).toMatchObject({
       kind: "maker",
       state: { sort: "plays" },
+      offset: 0,
+    });
+  });
+
+  it("reads an unfiltered kind again when Hide watched flips (CORE-2836)", async () => {
+    const user = userEvent.setup();
+    renderAt("/n/tunes/all?view=maker");
+    await within(await screen.findByRole("list", { name: "Makers" })).findByText("Maker A");
+    const toggle = screen.getByRole("button", { name: "Hide watched" });
+    await waitFor(() => expect(toggle).toBeEnabled());
+    const before = vi.mocked(fetchLibraryEntities).mock.calls.length;
+
+    await user.click(toggle);
+    await waitFor(() =>
+      expect(vi.mocked(fetchLibraryEntities).mock.calls.length).toBeGreaterThan(before),
+    );
+    expect(vi.mocked(fetchLibraryEntities).mock.calls.at(-1)?.[0]).toMatchObject({
+      kind: "maker",
       offset: 0,
     });
   });

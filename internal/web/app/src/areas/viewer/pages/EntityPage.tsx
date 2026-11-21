@@ -622,7 +622,13 @@ export function EntityPage() {
                     </p>
                   </div>
                 )}
-                {entity && <ItemActions target={{ entityID: entityId }} isAudio={isAudio} />}
+                {entity && (
+                  <ItemActions
+                    target={{ entityID: entityId }}
+                    isAudio={isAudio}
+                    hideTitle={entity.title}
+                  />
+                )}
                 {summary && <DetailOverview text={summary} id="bf-entity-overview" />}
                 {fields.length > 0 && (
                   <dl className="bf-metadata">

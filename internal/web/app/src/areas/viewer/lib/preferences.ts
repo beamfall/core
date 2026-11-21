@@ -49,6 +49,8 @@ export const PREF_KEYS = {
   subtitleEdge: "subtitle.edge",
   subtitlePosition: "subtitle.position",
   stillWatchingAfter: "stillwatching.after",
+  // Hide finished Media from catalog shelves and library browse (CORE-2836, profile_hide_watched.go).
+  hideWatched: "profile.hide-watched",
   // Theme preset and reserved accent (CORE-1179, ADR-0231 D10); the scheme stays on the device.
   themePreset: THEME_PREF_KEYS.preset,
   themeAccent: THEME_PREF_KEYS.accent,
@@ -92,6 +94,8 @@ export interface ViewerPreferences {
   autoSkipAd: boolean;
   recommendOptIn: boolean;
   reduceMotion: boolean;
+  /** Leave finished Media out of catalog shelves and library browse (CORE-2836). */
+  hideWatched: boolean;
   playbackSpeed: PlaybackSpeed;
   trimSilence: boolean;
   skipInterval: SkipInterval;
@@ -171,6 +175,7 @@ export function resolvePreferences(prefs: ClientPref[], showID = ""): ViewerPref
     autoSkipAd: bool(map, PREF_KEYS.autoSkipAd),
     recommendOptIn: bool(map, PREF_KEYS.recommendOptIn),
     reduceMotion: bool(map, PREF_KEYS.reduceMotion),
+    hideWatched: bool(map, PREF_KEYS.hideWatched),
     playbackSpeed: speed(map),
     trimSilence: bool(map, PREF_KEYS.trimSilence),
     skipInterval: showID

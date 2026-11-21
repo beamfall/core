@@ -885,10 +885,14 @@ type SourceItem struct {
 	// for (ContainerRollUp), so passive-rail mute filtering judges the
 	// container by its members exactly as the unrolled rail would.
 	rollUpMembers []MediaID
-	Kind          string
-	Title         string
-	Summary       string
-	Restricted    bool
+	// visibleMembers are the rollUpMembers the Profile's Mutes left, set by
+	// the mute pass, so Hide watched judges the card by the same members
+	// while the Muted badge still sees them all.
+	visibleMembers []MediaID
+	Kind           string
+	Title          string
+	Summary        string
+	Restricted     bool
 	// MediaClass is a media-kind item's playback class ("audio", "video"),
 	// set by AnnotateMediaClass; an entity item carries the class its linked
 	// Media share (CORE-2362). Empty for unknown or mixed classes.
@@ -1116,6 +1120,10 @@ type Store struct {
 	// (CORE-2340, CORE-2383). Guarded by mu.
 	healthProfiler     LibraryHealthProfiler
 	healthArtworkProbe LibraryHealthArtworkProbe
+	// muteParentRelations names the steps a direct Entity Mute follows down
+	// to child Entities (app-injected from the active plugins; nil means a
+	// direct Mute reaches only the Entity's own Media).
+	muteParentRelations func() []MuteTreeEdge
 	// encDerivativePurgers are the app-injected seams that remove a purged
 	// encrypted Library's regenerable derivative ciphertext (CORE-2057).
 	// Guarded by mu; called only with mu released.
@@ -3586,21 +3594,9 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 		}
 		filter = narrowed
 	}
-	items, err := s.sourceItemsForKind(ctx, filter, query, limit, offset)
+	items, err := s.profileSourceItemsLocked(ctx, filter, query, limit, offset)
 	if err != nil {
 		return nil, err
-	}
-	// Per-Profile Mute: an implicit negative Source predicate
-	// applied here, at Source evaluation, so every passive-discovery rail above
-	// is filtered uniformly. It is deliberately NOT applied in SearchMedia or
-	// any direct media fetch — a muted target stays searchable and playable
-	// (§2.2). A profile-less rail (e.g. an unauthenticated all-items scan) has no
-	// mute list to apply, so it passes through unchanged.
-	if query.ProfileID != "" && strings.TrimSpace(query.Query) == "" {
-		items, err = s.applyMuteFilterLocked(ctx, s.catalogR, query.ProfileID, filter, items)
-		if err != nil {
-			return nil, err
-		}
 	}
 	if err := s.annotateRestrictedLocked(ctx, nil, items); err != nil {
 		return nil, err
