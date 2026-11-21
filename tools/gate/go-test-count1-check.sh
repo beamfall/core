@@ -33,7 +33,7 @@ FILE_EXEMPT=(
 LINE_ALLOWLIST=(
   # -c only compiles a test binary to run under a Docker fixture; no tests
   # execute here, so there is nothing for -count=1 to protect.
-  'go test -c ./internal/ffmpeg -o "$tmp/ffmpeg.test"'
+  'go test -c -tags tonemap_conformance ./internal/ffmpeg -o "$tmp/ffmpeg.test"'
   # Step NAME in gate_scope_test.sh's excluded-inventory set — a quoted data
   # string, never an invocation; the leading double quote keeps this from
   # matching a real call.
