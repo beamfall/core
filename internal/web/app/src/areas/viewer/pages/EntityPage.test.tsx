@@ -1077,10 +1077,17 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
   beforeEach(() => {
     mocks.layouts = [tracksLayout];
     vi.mocked(fetchEntity).mockResolvedValue(record);
+    // The listing carries each track's position, byline and duration, so the
+    // rows come from it without a media(id) read (CORE-2922).
     vi.mocked(fetchMediaForEntity).mockResolvedValue([
-      track("t2", "Second Song"),
-      track("t1", "First Song"),
-      track("t3", "Third Song"),
+      {
+        ...track("t2", "Second Song"),
+        index: 2,
+        durationSeconds: 125,
+        byline: ["Maker A", "Guest B"],
+      },
+      { ...track("t1", "First Song"), index: 1, durationSeconds: 125, byline: ["Maker A"] },
+      { ...track("t3", "Third Song"), index: 3, durationSeconds: 125, byline: ["Maker A"] },
     ]);
     vi.mocked(fetchMediaRows).mockResolvedValue({
       t2: row("t2", "Second Song", 2, [maker, guest]),

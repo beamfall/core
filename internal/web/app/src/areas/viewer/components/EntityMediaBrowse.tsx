@@ -184,7 +184,7 @@ function PersonListening({
     ranking?.identity === identity ? (ranking?.items ?? []) : [],
   );
   const topLabel = t(hasPlays ? "personTopTracks" : "personTracks");
-  const owners = new Set([entity.id]);
+  const owners = new Set([entity.title]);
   // Numbered by rank; the person's own credit is never repeated on its rows.
   const topRows = listedTrackRows(top, rows, owners);
   // Every track in server order, when the top list leaves some out.

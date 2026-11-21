@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { MediaRow } from "@/lib/graphql/browse";
-import type { GenericMediaInfo, RelatedEntityGroup, SourceItem } from "@/lib/graphql/types";
+import type { RelatedEntityGroup, SourceItem } from "@/lib/graphql/types";
 import {
   albumTrackRows,
   appearsOn,
   formatDuration,
   hasKnownNonAudio,
   isAudioListing,
+  LISTED_BYLINE_LIMIT,
+  listedRow,
+  listedTrackRows,
   ownerPeople,
   playState,
   topTracks,
@@ -157,7 +160,7 @@ describe("track list rules", () => {
   });
 
   it("falls back to the people credited on every track when the container relates none", () => {
-    expect([...ownerPeople(undefined, items, rows)]).toEqual(["person-a"]);
+    expect([...ownerPeople(undefined, items, rows)]).toEqual(["Test Artist"]);
   });
 
   it("is an audio listing only when every Media item is audio", () => {
@@ -214,7 +217,7 @@ describe("person page split", () => {
     },
   ];
   const items = [media("t1", "Track One"), media("t2", "Track Two"), media("t3", "Track Three")];
-  const rows: Record<string, GenericMediaInfo> = {
+  const rows: Record<string, MediaRow> = {
     t1: {
       id: "t1",
       title: "Track One",
@@ -258,4 +261,67 @@ describe("person page split", () => {
     expect(ranking.hasPlays).toBe(false);
     expect(ranking.tracks.map((item) => item.id)).toEqual(["t1", "t2", "t3"]);
   });
+});
+
+describe("rows built from the listing (CORE-2922)", () => {
+  const audio = (id: string, title: string, byline: string[], extra: Partial<SourceItem> = {}) =>
+    media(id, title, { mediaClass: "audio", byline, ...extra });
+
+  it("builds an audio item's row from its listing entry", () => {
+    const item = audio("t1", "Track One", ["Test Artist"], {
+      durationSeconds: 201,
+      sequence: 2,
+      index: 7,
+      container: { id: "album-own", title: "Test Album" },
+    });
+    expect(listedRow(item)).toEqual({
+      id: "t1",
+      title: "Track One",
+      favorited: false,
+      mediaClass: "audio",
+      byline: ["Test Artist"],
+      durationSeconds: 201,
+      sequence: 2,
+      index: 7,
+      container: { id: "album-own", title: "Test Album" },
+    });
+  });
+
+  it("leaves an item of unknown class, or with a byline at the server's cap, to media(id)", () => {
+    expect(listedRow(media("t1", "Track One"))).toBeNull();
+    expect(listedRow(media("t1", "Track One", { mediaClass: "video" }))).toBeNull();
+    const capped = Array.from({ length: LISTED_BYLINE_LIMIT }, (_, n) => `Person ${n}`);
+    expect(listedRow(audio("t1", "Track One", capped))).toBeNull();
+    expect(listedRow(audio("t1", "Track One", capped.slice(1)))).not.toBeNull();
+  });
+
+  it("names differing people, finds the album's own and lists appears-on as a media(id) row would", () => {
+    const items = [
+      audio("t1", "Track One", ["Test Artist"], {
+        container: { id: "album-own", title: "Test Album" },
+      }),
+      audio("t2", "Track Two", ["Test Artist", "Guest Artist"], {
+        container: { id: "album-mix", title: "Test Mix" },
+      }),
+    ];
+    const listed = Object.fromEntries(items.map((item) => [item.id, listedRow(item) as MediaRow]));
+    const owners = ownerPeople(undefined, items, listed);
+    expect([...owners]).toEqual(["Test Artist"]);
+    const tracks = listedTrackRows(items, listed, owners);
+    expect(tracks.map((track) => track.artist)).toEqual([undefined, "Test Artist, Guest Artist"]);
+    expect(tracks.every((track) => track.credits === undefined)).toBe(true);
+    expect(appearsOn(own(), items, listed)).toEqual([
+      { id: "album-mix", kind: "entity", title: "Test Mix" },
+    ]);
+  });
+
+  function own(): RelatedEntityGroup[] {
+    return [
+      {
+        kind: "record",
+        archetype: "container",
+        items: [{ id: "album-own", kind: "entity", title: "Test Album" }],
+      },
+    ];
+  }
 });

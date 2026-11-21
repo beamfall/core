@@ -21,7 +21,11 @@ import { type PlayerNavState, type PlayQueueItem, playQueueOf, queueWindow } fro
 //   are numbered from 1. A row names the
 //   track's "person" credits only when they differ from the container's own
 //   people: its related "person" Entities, or, when it declares none, the people
-//   credited on every track.
+//   credited on every track. People compare by name, the text the row shows.
+// - A row comes from the listing item itself when the server reported it as
+//   audio with an uncapped byline (CORE-2922): its byline names the track's
+//   people and its container is the one it is on. Any other Media item is read
+//   through media(id).
 // - A "person" Entity lists its related "container" Entities as usual, then
 //   "Appears on": containers credited on the person's own Media that are not
 //   among its related containers (a compilation credits another album person).
@@ -70,26 +74,67 @@ export function hasKnownNonAudio(items: readonly ClassedItem[]): boolean {
   );
 }
 
-function personCredits(row: GenericMediaInfo | undefined) {
-  return (row?.credits ?? []).filter((credit) => credit.archetype === "person");
+/**
+ * The server's cap on byline names (graph maxCardByline). A byline this long
+ * may be cut short, so its row is read through media(id) instead.
+ */
+export const LISTED_BYLINE_LIMIT = 3;
+
+/**
+ * The track row an audio Media item's listing entry already carries, or null
+ * when the item must be read through media(id): not reported as audio, or its
+ * byline may be capped.
+ */
+export function listedRow(item: ClassedItem): MediaRow | null {
+  if (item.kind !== "media" || item.mediaClass !== AUDIO_CLASS) return null;
+  const byline = item.byline ?? [];
+  if (byline.length >= LISTED_BYLINE_LIMIT) return null;
+  const row: MediaRow = {
+    id: item.id,
+    title: item.title,
+    favorited: false,
+    mediaClass: AUDIO_CLASS,
+    byline,
+  };
+  if (item.durationSeconds) row.durationSeconds = item.durationSeconds;
+  const sequence = usablePosition(item.sequence);
+  const index = usablePosition(item.index);
+  if (sequence !== undefined) row.sequence = sequence;
+  if (index !== undefined) row.index = index;
+  if (item.container) row.container = { id: item.container.id, title: item.container.title };
+  return row;
 }
 
-/** The container's own people: related "person" Entities, else those credited on every track. */
+/** The names of a row's credited people: its "person" credits, else its listed byline. */
+function personNames(row: MediaRow | undefined): string[] {
+  if (row?.credits) {
+    return row.credits
+      .filter((credit) => credit.archetype === "person")
+      .map((credit) => credit.title);
+  }
+  return [...(row?.byline ?? [])];
+}
+
+/** The containers a row is credited on: its "container" credits, else its listed container. */
+function containerCredits(row: MediaRow | undefined): { entityID: string; title: string }[] {
+  if (row?.credits) return row.credits.filter((credit) => credit.archetype === "container");
+  return row?.container ? [{ entityID: row.container.id, title: row.container.title }] : [];
+}
+
+/** The container's own people by name: related "person" Entities, else those credited on every track. */
 export function ownerPeople(
   groups: readonly RelatedEntityGroup[] | undefined,
   items: readonly SourceItem[],
-  rows: Readonly<Record<string, GenericMediaInfo>>,
+  rows: Readonly<Record<string, MediaRow>>,
 ): Set<string> {
   const related = new Set<string>();
   for (const group of groups ?? []) {
     if (group.archetype !== "person") continue;
-    for (const item of group.items) related.add(item.id);
+    for (const item of group.items) related.add(item.title);
   }
   if (related.size > 0) return related;
   const media = items.filter((item) => item.kind === "media");
-  const credited = media.map(
-    (item) => new Set(personCredits(rows[item.id]).map((credit) => credit.entityID)),
-  );
+  const credited = media.map((item) => new Set(personNames(rows[item.id])));
   if (credited.length === 0) return related;
   return new Set([...credited[0]].filter((id) => credited.every((ids) => ids.has(id))));
 }
@@ -130,12 +175,13 @@ function trackRow(
   number: number,
   group?: number,
 ): TrackRow {
-  const people = personCredits(row);
-  const differs = people.some((credit) => !owners.has(credit.entityID));
+  const people = personNames(row);
+  const differs = people.some((name) => !owners.has(name));
   const track: TrackRow = { item, number };
-  if (row) track.credits = row.credits ?? [];
+  // A listed row has no credits; the row menu reads them when it opens.
+  if (row?.credits) track.credits = row.credits;
   if (group !== undefined) track.group = group;
-  if (differs) track.artist = people.map((credit) => credit.title).join(", ");
+  if (differs) track.artist = people.join(", ");
   if (row?.durationSeconds) track.durationSeconds = row.durationSeconds;
   return track;
 }
@@ -226,7 +272,7 @@ export function formatDuration(seconds: number | undefined): string {
 export function appearsOn(
   groups: readonly RelatedEntityGroup[] | undefined,
   items: readonly SourceItem[],
-  rows: Readonly<Record<string, GenericMediaInfo>>,
+  rows: Readonly<Record<string, MediaRow>>,
 ): SourceItem[] {
   const own = new Set<string>();
   for (const group of groups ?? []) {
@@ -236,8 +282,8 @@ export function appearsOn(
   const seen = new Set<string>();
   const out: SourceItem[] = [];
   for (const item of items) {
-    for (const credit of rows[item.id]?.credits ?? []) {
-      if (credit.archetype !== "container" || own.has(credit.entityID)) continue;
+    for (const credit of containerCredits(rows[item.id])) {
+      if (own.has(credit.entityID)) continue;
       if (seen.has(credit.entityID)) continue;
       seen.add(credit.entityID);
       out.push({ id: credit.entityID, kind: "entity", title: credit.title });
