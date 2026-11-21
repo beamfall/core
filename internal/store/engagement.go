@@ -64,6 +64,11 @@ const watchedThreshold = 0.95
 // playedThreshold marks audio media played: min(80%, track end).
 const playedThreshold = 0.8
 
+// resumeFinishRemainingSeconds marks resume-eligible audio (audiobooks,
+// podcasts) played only once this little is left: a fraction threshold would
+// fire with hours to go in a long book and reset its resume position.
+const resumeFinishRemainingSeconds = 30
+
 // resumeFloorSeconds hides barely-started playback from Continue Watching.
 const resumeFloorSeconds = 10
 
@@ -174,7 +179,9 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 	resumeEligible := policy.Eligible()
 	watched := finished
 	if progress.DurationSeconds > 0 &&
-		float64(progress.PositionSeconds) >= threshold*float64(progress.DurationSeconds) {
+		float64(progress.PositionSeconds) >= threshold*float64(progress.DurationSeconds) &&
+		(policy.Class != MediaClassAudio || !resumeEligible ||
+			progress.DurationSeconds-progress.PositionSeconds <= resumeFinishRemainingSeconds) {
 		watched = true
 	}
 	position := progress.PositionSeconds
