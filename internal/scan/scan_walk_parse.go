@@ -293,7 +293,9 @@ func appendParsedStructuralMediaFields(fields []store.MediaField, parsed ParsedM
 	if parsed.Class != "" {
 		add(store.MediaField{Name: "class", Type: store.EntityFieldText, Text: parsed.Class})
 	}
-	if sequence, err := strconv.ParseFloat(strings.TrimSpace(parsed.Sequence), 64); err == nil && sequence > 0 {
+	// Zero is a valid sequence, so it is stored like any other; only an
+	// absent or negative sequence is dropped (CORE-1290).
+	if sequence, err := strconv.ParseFloat(strings.TrimSpace(parsed.Sequence), 64); err == nil && sequence >= 0 {
 		add(store.MediaField{Name: "sequence", Type: store.EntityFieldNumber, Number: sequence})
 	}
 	if parsed.Index > 0 {

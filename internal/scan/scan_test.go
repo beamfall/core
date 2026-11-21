@@ -1441,6 +1441,7 @@ func TestScanPersistsParsedStructuralFieldsOffline(t *testing.T) {
 	root := t.TempDir()
 	episodePath := writeScanFile(t, root, "Show.S01E03.Title.1080p.mkv", []byte("episode"))
 	rangePath := writeScanFile(t, root, "Show.S01E03-E04.1080p.mkv", []byte("range"))
+	specialPath := writeScanFile(t, root, "Show.S00E05.Special.1080p.mkv", []byte("special"))
 	filmPath := writeScanFile(t, root, "Film.1999.1080p.mkv", []byte("film"))
 	st := storetest.Open(t)
 	library, err := st.CreateLibrary(context.Background(), "Film TV", false, filmtv.PluginID, "profile-default")
@@ -1491,6 +1492,10 @@ func TestScanPersistsParsedStructuralFieldsOffline(t *testing.T) {
 	assertNumber(rangeFields, "sequence", 1)
 	assertNumber(rangeFields, "index", 3)
 	assertNumber(rangeFields, "index-end", 4)
+	// A sequence of 0 is stored so the plugin can label it (CORE-1290).
+	specialFields := fieldsFor(specialPath)
+	assertNumber(specialFields, "sequence", 0)
+	assertNumber(specialFields, "index", 5)
 	filmFields := fieldsFor(filmPath)
 	if field := filmFields["class"]; field.Type != store.EntityFieldText || field.Text != "movie" {
 		t.Fatalf("film class = %#v", field)
