@@ -30,8 +30,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/beamfall/core/internal/jobs"
@@ -63,6 +65,14 @@ type Poller struct {
 	// cleanup — the same on-disk and receipt state a process kill at that
 	// boundary leaves behind.
 	fault func(point string) error
+	// now and jitter are test seams for the poll clock and backoff jitter;
+	// nil means the wall clock and a uniform random draw.
+	now    func() time.Time
+	jitter func() float64
+	// inflight holds the Subscriptions being polled; background tracks
+	// PollSubscriptionNow goroutines.
+	inflight   sync.Map
+	background sync.WaitGroup
 }
 
 // NewPoller creates a Poller over the shared hardened scrape engine.
@@ -104,9 +114,10 @@ func NewPollJob(createdAt time.Time) (store.Job, error) {
 	}, nil
 }
 
-// Handler returns the poll job handler: one Subscription per claim,
-// checkpointed by Subscription ID so a preempted poll resumes where it
-// stopped. Per-Subscription failures are counted, never fatal — one dead
+// Handler returns the poll job handler: one due Subscription per claim
+// (store.DueSubscriptions: not retired, next poll time reached), walked in ID
+// order and checkpointed by Subscription ID so a preempted poll resumes where
+// it stopped. Per-Subscription failures are counted, never fatal — one dead
 // feed must not starve the rest.
 func Handler(p *Poller) jobs.Handler {
 	return func(ctx context.Context, job store.Job) (jobs.Result, error) {
@@ -116,10 +127,11 @@ func Handler(p *Poller) jobs.Handler {
 				return jobs.Result{}, err
 			}
 		}
-		subscriptions, err := p.store.AllSubscriptions(ctx)
+		subscriptions, err := p.store.DueSubscriptions(ctx, p.clock())
 		if err != nil {
 			return jobs.Result{}, err
 		}
+		slices.SortFunc(subscriptions, func(a, b store.Subscription) int { return strings.Compare(string(a.ID), string(b.ID)) })
 		remaining := false
 		for _, subscription := range subscriptions {
 			if checkpoint.LastID != "" && string(subscription.ID) <= checkpoint.LastID {
@@ -128,7 +140,7 @@ func Handler(p *Poller) jobs.Handler {
 			if ctx.Err() != nil {
 				break
 			}
-			downloaded, err := p.pollSubscription(ctx, subscription)
+			downloaded, err := p.pollGuarded(ctx, subscription)
 			checkpoint.Downloaded += downloaded
 			if err != nil {
 				checkpoint.Failed++
@@ -162,18 +174,20 @@ func Handler(p *Poller) jobs.Handler {
 	}
 }
 
-// pollSubscription fetches one feed, downloads unseen entries' enclosures
-// into the Subscription's root, and enqueues the standard Library scan when
-// anything new arrived. Returns how many enclosures were published,
-// resumed crash residue included.
+// pollSubscription fetches one feed, records every entry in the file-less
+// catalogue, downloads the entries the Subscription's policy selects into
+// its root, and enqueues the standard Library scan when anything new
+// arrived. It persists feed health (success, or a classified failure with
+// backoff) and feed-move observations. Returns how many enclosures were
+// published, resumed crash residue included.
 func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscription) (int, error) {
-	now := time.Now().UTC()
+	now := p.clock()
 	// Resolve the private-feed Authorization header from the secure store via
 	// the stored ref (invariant #5): the literal credential never lives in the
 	// catalog DB. An anonymous feed has an empty ref and resolves to "".
 	authHeader, err := p.engine.Credential(subscription.AuthRef)
 	if err != nil {
-		return 0, err
+		return 0, p.recordFailure(ctx, subscription, store.FeedErrorAuth, now, err)
 	}
 	seen, err := p.store.SubscriptionSeenGUIDs(ctx, subscription.ID)
 	if err != nil {
@@ -188,18 +202,40 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	}
 	result, err := p.engine.FetchConditionalAuth(ctx, subscription.FeedURL, subscription.ETag, subscription.LastModified, authHeader)
 	if err != nil {
-		return published, err
+		// A refused cross-origin permanent redirect is still a move
+		// observation; a failure with no redirect leaves a pending move as is.
+		if result.PermanentRedirect != "" {
+			moved, moveErr := p.observeFeedMove(ctx, subscription, result.PermanentRedirect)
+			if moveErr != nil {
+				return published, moveErr
+			}
+			if moved {
+				return published, p.store.RecordSubscriptionPollSuccess(ctx, subscription.ID, now, now)
+			}
+		}
+		return published, p.recordFailure(ctx, subscription, ClassifyFeedError(err), now, err)
 	}
 	if result.NotModified {
-		return published, p.store.MarkSubscriptionPolled(ctx, subscription.ID, result.ETag, result.LastModified, now)
+		if err := p.store.MarkSubscriptionPolled(ctx, subscription.ID, result.ETag, result.LastModified, now); err != nil {
+			return published, err
+		}
+		return published, p.finishFeedPoll(ctx, subscription, result.PermanentRedirect, result.PermanentRedirect != "", false, now)
 	}
-	entries, err := scrape.ParseFeedEntries(result.Data)
+	document, err := scrape.ParseFeed(result.Data)
+	if err != nil {
+		return published, p.recordFailure(ctx, subscription, store.FeedErrorParse, now, &feedParseError{err: err})
+	}
+	moveCandidate := result.PermanentRedirect
+	if moveCandidate == "" {
+		moveCandidate = document.NewFeedURL
+	}
+	selected, catalogued, err := p.catalogue(ctx, subscription, document, now)
 	if err != nil {
 		return published, err
 	}
 	downloaded := 0
 	var firstErr error
-	for _, entry := range entries {
+	for _, entry := range document.Entries {
 		if ctx.Err() != nil {
 			return published + downloaded, ctx.Err()
 		}
@@ -213,7 +249,10 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 			// GUID before saving validators for this feed response.
 			entryErr = p.store.AliasSubscriptionEntryGUID(ctx, subscription.ID, entry.EnclosureURL, entry.GUID)
 		} else {
-			entryErr = p.ingestEntry(ctx, subscription, entry, authHeader, now)
+			if catalogued && !selected[entry.GUID] {
+				continue
+			}
+			entryErr = p.ingestEntry(ctx, subscription, entry, authHeader, catalogued, now)
 			if entryErr == nil {
 				downloaded++
 			}
@@ -230,9 +269,14 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	}
 	// A partial poll still counts as polled: seen GUIDs gate re-downloads,
 	// but only a fully clean poll may store the new validators — otherwise a
-	// 304 on the next poll would skip the entries that failed this time.
+	// 304 on the next poll would skip the entries that failed this time. A
+	// pending feed move also withholds them, so the next poll reads the body
+	// that carries the move again.
 	if firstErr != nil {
 		if err := p.store.MarkSubscriptionPolled(ctx, subscription.ID, "", "", now); err != nil {
+			return published + downloaded, err
+		}
+		if err := p.finishFeedPoll(ctx, subscription, moveCandidate, true, true, now); err != nil {
 			return published + downloaded, err
 		}
 		return published + downloaded, firstErr
@@ -243,7 +287,14 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if err := sweepStaleArtifacts(subscription.Root, subscription.ID); err != nil {
 		return published + downloaded, err
 	}
-	return published + downloaded, p.store.MarkSubscriptionPolled(ctx, subscription.ID, result.ETag, result.LastModified, now)
+	etag, lastModified := result.ETag, result.LastModified
+	if moveCandidate != "" {
+		etag, lastModified = "", ""
+	}
+	if err := p.store.MarkSubscriptionPolled(ctx, subscription.ID, etag, lastModified, now); err != nil {
+		return published + downloaded, err
+	}
+	return published + downloaded, p.finishFeedPoll(ctx, subscription, moveCandidate, true, false, now)
 }
 
 // ingestEntry lands one feed entry crash-durably. The payload stages first
@@ -253,7 +304,11 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 // its visible name. Every boundary in between either resumes from the
 // staged payload or retries the download on the next poll; bytes that could
 // still be lost are never acknowledged.
-func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscription, entry scrape.FeedEntry, authHeader string, now time.Time) error {
+//
+// A catalogued entry records its target path (download state queued) before
+// any byte is fetched, so the scan import of that file binds to the entry's
+// existing Media instead of minting a new one.
+func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscription, entry scrape.FeedEntry, authHeader string, catalogued bool, now time.Time) error {
 	if err := os.MkdirAll(subscription.Root, 0o755); err != nil {
 		return err
 	}
@@ -261,6 +316,12 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 	staged, err := findStagedPayload(subscription.Root, key)
 	if err != nil {
 		return err
+	}
+	markQueued := func(target string) error {
+		if !catalogued {
+			return nil
+		}
+		return p.store.SetSubscriptionEntryDownload(ctx, subscription.ID, entry.GUID, store.EntryDownloadQueued, target)
 	}
 	if staged == "" {
 		// The feed credential is scoped to the feed origin: the enclosure URL
@@ -271,8 +332,17 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 		if scrape.SameOrigin(subscription.FeedURL, entry.EnclosureURL) {
 			enclosureAuth = authHeader
 		}
-		staged, err = p.downloadToStage(ctx, subscription.Root, key, entry, enclosureAuth)
+		target := availablePath(subscription.Root, entryFilename(entry))
+		if err := markQueued(target); err != nil {
+			return err
+		}
+		staged, err = p.downloadToStage(ctx, subscription.Root, key, filepath.Base(target), entry, enclosureAuth)
 		if err != nil {
+			if catalogued {
+				// Best effort: the poll already reports err, and a failed
+				// entry stays a download candidate.
+				_ = p.store.SetSubscriptionEntryDownload(ctx, subscription.ID, entry.GUID, store.EntryDownloadFailed, "")
+			}
 			return err
 		}
 	}
@@ -281,6 +351,9 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 		return errors.New("ingest: malformed staged payload name")
 	}
 	target := filepath.Join(subscription.Root, targetBase)
+	if err := markQueued(target); err != nil {
+		return err
+	}
 	// The receipt is the durable acknowledgement: it commits only after the
 	// staged payload would survive a crash.
 	if err := p.store.MarkSubscriptionEntrySeen(ctx, subscription.ID, entry.GUID, target, now); err != nil {
@@ -297,8 +370,15 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 	if err := p.enqueueScan(ctx, subscription, now); err != nil {
 		return err
 	}
-	if _, err := p.publishStagedPayload(subscription.Root, staged); err != nil {
+	publishedAt, err := p.publishStagedPayload(subscription.Root, staged)
+	if err != nil {
 		return err
+	}
+	if publishedAt != target {
+		// The staged name was taken meanwhile; rebind to the diverted path.
+		if err := markQueued(publishedAt); err != nil {
+			return err
+		}
 	}
 	return p.enqueueScan(ctx, subscription, now)
 }
@@ -308,12 +388,10 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 // directory sync. Only the staged form is ever treated as complete; a
 // leftover partial from a crashed or failed attempt is deleted here and
 // re-downloaded.
-func (p *Poller) downloadToStage(ctx context.Context, root, key string, entry scrape.FeedEntry, authHeader string) (string, error) {
+func (p *Poller) downloadToStage(ctx context.Context, root, key, base string, entry scrape.FeedEntry, authHeader string) (string, error) {
 	if err := removeStageArtifacts(root, key, partialSuffix); err != nil {
 		return "", err
 	}
-	target := availablePath(root, entryFilename(entry))
-	base := filepath.Base(target)
 	partial := filepath.Join(root, stageArtifactName(key, base, partialSuffix))
 	// The partial path is confined by construction: root is the
 	// Subscription's configured folder, the key contains only hex and a dot,

@@ -100,7 +100,7 @@ func TestPollSendsSubscriptionAuthorizationHeader(t *testing.T) {
 	// The credential lives in the secure store keyed by a ref; only the ref is
 	// persisted on the Subscription (never the literal header).
 	creds := fakeCredentials{"feed-auth-ref": "Bearer secret"}
-	added, err := st.AddSubscription(ctx, store.Subscription{
+	added, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/feed.xml",
 		Root:      t.TempDir(),
@@ -167,7 +167,7 @@ func TestAuditFeedAuth(t *testing.T) {
 	})
 
 	root := t.TempDir()
-	added, err := st.AddSubscription(ctx, store.Subscription{
+	added, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   feedOrigin.URL + "/feed.xml",
 		Root:      root,
@@ -308,7 +308,7 @@ func TestPollDownloadsNewEntriesAndEnqueuesScan(t *testing.T) {
 	fs.setFeed(fs.item("guid-1", "First Entry", "one.mp3"))
 
 	root := t.TempDir()
-	sub, err := st.AddSubscription(ctx, store.Subscription{
+	sub, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/feed.xml",
 		Root:      root,
@@ -382,7 +382,7 @@ func TestPollRecoversFromStalePartialDownload(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "First Entry.mp3.partial"), []byte("stale"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AddSubscription(ctx, store.Subscription{
+	if _, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/feed.xml",
 		Root:      root,
@@ -409,7 +409,7 @@ func TestPollDedupesByGUIDAcrossPolls(t *testing.T) {
 	fs.setFeed(fs.item("guid-1", "First Entry", "one.mp3"))
 
 	root := t.TempDir()
-	if _, err := st.AddSubscription(ctx, store.Subscription{
+	if _, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/feed.xml",
 		Root:      root,
@@ -427,6 +427,7 @@ func TestPollDedupesByGUIDAcrossPolls(t *testing.T) {
 	// Same GUID, rewritten enclosure URL (ad-insertion style): no re-download.
 	fs.enclosures["one-rewritten.mp3"] = []byte("restuffed-payload")
 	fs.setFeed(fs.item("guid-1", "First Entry", "one-rewritten.mp3") + `<extra/>`)
+	advancePollClock(poller)
 	runPoll(t, st, handler)
 	if entries := dirEntries(t, root); len(entries) != 1 {
 		t.Fatalf("files after second poll = %v, want the original only", entries)
@@ -435,6 +436,7 @@ func TestPollDedupesByGUIDAcrossPolls(t *testing.T) {
 	// A genuinely new GUID downloads — alongside, not over, the old file.
 	fs.enclosures["two.mp3"] = []byte("second-payload")
 	fs.setFeed(fs.item("guid-1", "First Entry", "one-rewritten.mp3") + fs.item("guid-2", "First Entry", "two.mp3"))
+	advancePollClock(poller)
 	runPoll(t, st, handler)
 	entries := dirEntries(t, root)
 	if len(entries) != 2 {
@@ -459,7 +461,7 @@ func TestPollDedupesGUIDLessEntryWhenEnclosureRotates(t *testing.T) {
 	fs.setFeed(fs.guidlessItem("First Entry", "original.mp3"))
 
 	root := t.TempDir()
-	sub, err := st.AddSubscription(ctx, store.Subscription{
+	sub, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/feed.xml",
 		Root:      root,
@@ -498,7 +500,7 @@ func TestPollPreservesLegacyEnclosureIdentityAcrossRestartAndRotation(t *testing
 	fs.setFeed(fs.guidlessItem("First Entry", "original.mp3"))
 
 	root := t.TempDir()
-	sub, err := st.AddSubscription(ctx, store.Subscription{
+	sub, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/feed.xml",
 		Root:      root,
@@ -567,7 +569,7 @@ func TestPollHonorsConditionalGet(t *testing.T) {
 	fs.setFeed(fs.item("guid-1", "First Entry", "one.mp3"))
 
 	root := t.TempDir()
-	sub, err := st.AddSubscription(ctx, store.Subscription{
+	sub, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/feed.xml",
 		Root:      root,
@@ -585,6 +587,7 @@ func TestPollHonorsConditionalGet(t *testing.T) {
 	}
 
 	// Unchanged feed: the server answers 304 and the poll still counts.
+	advancePollClock(poller)
 	runPoll(t, st, handler)
 	second, err := st.Subscription(ctx, sub.ID)
 	if err != nil {
@@ -616,14 +619,14 @@ func TestPollSurvivesADeadFeed(t *testing.T) {
 	// The dead feed sorts first by ID order only by luck; add both and let
 	// the poller visit whichever order IDs land in — the point is the live
 	// one downloads either way.
-	if _, err := st.AddSubscription(ctx, store.Subscription{
+	if _, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/missing-feed.xml",
 		Root:      deadRoot,
 	}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AddSubscription(ctx, store.Subscription{
+	if _, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/feed.xml",
 		Root:      liveRoot,

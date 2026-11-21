@@ -111,7 +111,7 @@ func TestIngestKillMatrixConvergesAfterRestart(t *testing.T) {
 			fs.enclosures["one.mp3"] = []byte("durable-payload")
 			fs.setFeed(fs.item("guid-1", "First Entry", "one.mp3"))
 			root := t.TempDir()
-			sub, err := st.AddSubscription(ctx, store.Subscription{
+			sub, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 				LibraryID: "library-local",
 				FeedURL:   fs.server.URL + "/feed.xml",
 				Root:      root,
@@ -201,7 +201,7 @@ func TestReceiptsBindExactSourceGUIDs(t *testing.T) {
 	}
 	fs.setFeed(items)
 	root := t.TempDir()
-	sub, err := st.AddSubscription(ctx, store.Subscription{
+	sub, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/feed.xml",
 		Root:      root,
@@ -266,7 +266,7 @@ func TestUnacknowledgedStagedPayloadLifecycle(t *testing.T) {
 	fs.enclosures["one.mp3"] = []byte("first-payload")
 	fs.setFeed(fs.item("guid-1", "First Entry", "one.mp3"))
 	root := t.TempDir()
-	sub, err := st.AddSubscription(ctx, store.Subscription{
+	sub, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/feed.xml",
 		Root:      root,
@@ -301,6 +301,7 @@ func TestUnacknowledgedStagedPayloadLifecycle(t *testing.T) {
 
 	// The entry returns: a fresh download lands and is acknowledged.
 	fs.setFeed(fs.item("guid-1", "First Entry", "one.mp3"))
+	advancePollClock(poller)
 	runPoll(t, st, Handler(poller))
 	data, err := readTestFile(filepath.Join(root, "First Entry.mp3"))
 	if err != nil {
@@ -331,7 +332,7 @@ func TestSharedRootSweepPreservesOtherSubscriptionReceipt(t *testing.T) {
 	feedB.enclosures["owned.mp3"] = []byte("subscription-b-payload")
 	feedB.setFeed(feedB.item("guid-b", "Owned by B", "owned.mp3"))
 
-	subscriptionA, err := st.AddSubscription(ctx, store.Subscription{
+	subscriptionA, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   feedA.server.URL + "/feed.xml",
 		Root:      root,
@@ -339,7 +340,7 @@ func TestSharedRootSweepPreservesOtherSubscriptionReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	subscriptionB, err := st.AddSubscription(ctx, store.Subscription{
+	subscriptionB, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   feedB.server.URL + "/feed.xml",
 		Root:      root,
@@ -403,7 +404,7 @@ func TestResumeDivertsInsteadOfClobbering(t *testing.T) {
 	fs.enclosures["one.mp3"] = []byte("resumed-payload")
 	fs.setFeed(fs.item("guid-1", "First Entry", "one.mp3"))
 	root := t.TempDir()
-	if _, err := st.AddSubscription(ctx, store.Subscription{
+	if _, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 		LibraryID: "library-local",
 		FeedURL:   fs.server.URL + "/feed.xml",
 		Root:      root,
@@ -455,7 +456,7 @@ func TestConcurrentPollsAreRaceClean(t *testing.T) {
 	const pollers = 4
 	subscriptions := make([]store.Subscription, pollers)
 	for i := range subscriptions {
-		added, err := st.AddSubscription(ctx, store.Subscription{
+		added, err := addDownloadAllSubscription(ctx, st, store.Subscription{
 			LibraryID: "library-local",
 			// Distinct query strings keep the (library, URL) pairs unique
 			// while every fetch resolves to the same served feed.

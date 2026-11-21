@@ -105,9 +105,9 @@ func (e *Engine) FetchConditionalAuth(ctx context.Context, rawURL, etag, lastMod
 		req.Header.Set("If-Modified-Since", lastModified)
 	}
 	record := &redirectRecord{}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	resp, err := e.requestWith429Retry(withRedirectRecord(ctx, record), req, func(attempt *http.Request) (*http.Response, error) {
 		*record = redirectRecord{}
-		return e.client.Do(attempt.WithContext(withRedirectRecord(attempt.Context(), record)))
+		return e.client.Do(attempt)
 	})
 	moved := ConditionalResult{PermanentRedirect: record.target}
 	if err != nil {

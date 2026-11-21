@@ -335,7 +335,8 @@ func TestObserveSubscriptionFeedMove(t *testing.T) {
 	if _, err := st.AddSubscription(ctx, Subscription{LibraryID: "library-local", FeedURL: other, Root: "/media/local/incoming"}, now); err != nil {
 		t.Fatal(err)
 	}
-	if observe(other) || observe(other) || feedURL() != moved {
+	first, second := observe(other), observe(other)
+	if first || second || feedURL() != moved {
 		t.Fatalf("colliding move rewrote the feed URL to %q", feedURL())
 	}
 }

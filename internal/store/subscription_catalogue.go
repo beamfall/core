@@ -197,7 +197,7 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 		var guid string
 		var mediaID MediaID
 		if err := rows.Scan(&guid, &mediaID); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, nil, err
 		}
 		known[guid] = mediaID
@@ -716,10 +716,10 @@ func (s *Store) ObserveSubscriptionFeedMove(ctx context.Context, id Subscription
 	if err != nil {
 		return false, err
 	}
-	switch {
-	case newURL == "" || newURL == current:
+	switch newURL {
+	case "", current:
 		pending, count = "", 0
-	case newURL == pending:
+	case pending:
 		count++
 	default:
 		pending, count = newURL, 1

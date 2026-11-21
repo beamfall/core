@@ -55,8 +55,7 @@ func TestFetchConditionalRecordsPermanentRedirects(t *testing.T) {
 		_, _ = w.Write([]byte("<rss/>"))
 	}))
 	defer other.Close()
-	var server *httptest.Server
-	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/permanent":
 			http.Redirect(w, r, "/moved", http.StatusMovedPermanently)
