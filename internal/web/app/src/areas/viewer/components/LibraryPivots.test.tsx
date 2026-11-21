@@ -128,6 +128,7 @@ describe("remembered Library pivot", () => {
             collapsed={false}
             drawer={false}
             onNavigate={() => {}}
+            pathname="/n/library-films/collections"
           />
         </MemoryRouter>
       </I18nProvider>,
