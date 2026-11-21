@@ -2861,7 +2861,8 @@ type LibraryInfo struct {
 	DefaultIcon string `json:"defaultIcon,omitempty"`
 }
 
-// createLibrary inserts a Library granted to the manager's Profile.
+// createLibrary inserts a Library granted to the manager's Profile, or to the
+// owner's Profile when the caller is a token with no Profile.
 // A restricted Library may only be created by a revealed session — otherwise
 // its existence would leak into the unrevealed world that just created it.
 func (h *Handler) createLibrary(ctx context.Context, scope auth.Scope, req request) (LibraryInfo, error) {
@@ -2910,7 +2911,18 @@ func (h *Handler) createLibrary(ctx context.Context, scope auth.Scope, req reque
 	if err := store.CheckLibraryRoots(roots); err != nil {
 		return LibraryInfo{}, localizeLibraryRootError(err)
 	}
-	library, err := h.store.CreateLibraryWithRoots(ctx, title, restricted, pluginID, scope.ProfileID, roots, familyScope)
+	var library store.Library
+	var err error
+	if scope.ProfileID == "" {
+		// An admin API token carries no Profile, so its Library is granted to
+		// the server owner's Profile (CORE-2921).
+		library, err = h.store.CreateOwnerLibraryWithRoots(ctx, title, restricted, pluginID, roots, familyScope)
+		if errors.Is(err, store.ErrNoOwnerProfile) {
+			return LibraryInfo{}, clientError("no owner Profile is designated to grant the library to")
+		}
+	} else {
+		library, err = h.store.CreateLibraryWithRoots(ctx, title, restricted, pluginID, scope.ProfileID, roots, familyScope)
+	}
 	if err != nil {
 		return LibraryInfo{}, err
 	}
