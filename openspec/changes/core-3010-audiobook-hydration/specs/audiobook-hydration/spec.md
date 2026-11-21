@@ -4,7 +4,8 @@
 When the audiobook bundle is active, Core SHALL hydrate each audiobook Media from the plugin's
 tag-and-folder plan, writing only relations the bundle declares, and SHALL set the
 `audiobook-hydrated` marker. A file unchanged on disk SHALL NOT be hydrated again. A Media made
-of several Parts SHALL hydrate from its first Part's tags and path.
+of several Parts SHALL hydrate from its first Part's tags and path when that Part is new or
+changed on disk, or when the one-time backfill finds the Media lacking the marker.
 
 #### Scenario: Tagged book
 - **WHEN** a file tagged with an author, a narrator, a series with part "4.5" and a genre is scanned
