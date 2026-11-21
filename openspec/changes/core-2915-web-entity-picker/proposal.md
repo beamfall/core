@@ -19,11 +19,13 @@ item instead, and to edit it from there.
 - A picked item shows its title, kind and Library with an Open link (viewer detail) and, for
   Media, an Edit link to Manage item details.
 - Replace the raw id inputs: Manage Entities, Item details, Artwork, Field locks, Markers, Bulk
-  edit (several), Collection members (several), Tags assign target and bulk targets, Curation
-  subject, relation target and extra; Console Playback cache precompute.
+  edit (several), Collection members (several), Tags assign target and bulk targets; Console
+  Playback cache precompute.
 
 ## Non-goals
 
 - No server change: `searchResult` already returns id, kind, artwork, Library and entity kind.
 - Redesigning the Tags, Curation or Unmatched pages (other tickets own them).
+- Curation: CORE-2913 rewrites that page with its own item search; swapping in this picker
+  follows once both land.
 - Resolving titles for ids that were pasted rather than picked.
