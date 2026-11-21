@@ -570,6 +570,68 @@ func TestDeriveImageIsFingerprintResumableAndRegeneratesChangedSource(t *testing
 	}
 }
 
+func TestDeriveImageRegeneratesDerivativesFromAnOlderScaler(t *testing.T) {
+	st := storetest.Open(t)
+	id, path := importImageFile(t, st, "still", "jpg")
+	scaler := &copyScaler{}
+	svc := NewService(st, scaler, t.TempDir())
+	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+		t.Fatal(err)
+	}
+	// A marker written before imageDerivativeVersion held the bare fingerprint.
+	if err := os.WriteFile(svc.PosterPath(id)+".source-fingerprint", []byte("fingerprint-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if scaler.calls != 6 {
+		t.Fatalf("scale calls = %d, want one regeneration for the unversioned marker", scaler.calls)
+	}
+}
+
+func TestDeriveImageVersionBumpKeepsAnImportedPoster(t *testing.T) {
+	st := storetest.Open(t)
+	id, path := importImageFile(t, st, "still", "jpg")
+	scaler := &copyScaler{}
+	svc := NewService(st, scaler, t.TempDir())
+	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ImportArtwork(context.Background(), id, SlotPoster, []byte("chosen poster")); err != nil {
+		t.Fatal(err)
+	}
+	// The marker is the one a pre-version scaler wrote; importing removed
+	// the buckets.
+	if err := os.WriteFile(svc.PosterPath(id)+".source-fingerprint", []byte("fingerprint-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := scaler.calls
+	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+		t.Fatal(err)
+	}
+	if scaler.calls != before+2 {
+		t.Fatalf("scale calls = %d, want %d: the two buckets only", scaler.calls, before+2)
+	}
+	dir := filepath.Dir(svc.PosterPath(id))
+	for _, name := range []string{SlotPoster + ".jpg", SlotPoster + ".w400.jpg", SlotPoster + ".w1920.jpg"} {
+		// #nosec G304 -- the path is under the test-owned artwork root.
+		if data, err := os.ReadFile(filepath.Join(dir, name)); err != nil || string(data) != "chosen poster" {
+			t.Fatalf("%s = %q, %v; want the imported poster", name, data, err)
+		}
+	}
+	// The rebuilt buckets carry the current stamp: the next scan is a no-op.
+	before = scaler.calls
+	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+		t.Fatal(err)
+	}
+	if scaler.calls != before {
+		t.Fatalf("scale calls = %d after a current rescan, want %d", scaler.calls, before)
+	}
+}
+
 func TestDeriveImageWritesNothingForProtectedLibrary(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

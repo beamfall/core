@@ -783,6 +783,34 @@ func TestScanClassifiesImageByExtension(t *testing.T) {
 	}
 }
 
+// TestScanClassifiesRAWExtensionsAsImage (CORE-0310, CORE-0652): every RAW
+// extension the scanner admits is image-class media, before any probe runs.
+func TestScanClassifiesRAWExtensionsAsImage(t *testing.T) {
+	root := t.TempDir()
+	exts := []string{"cr2", "cr3", "nef", "nrw", "arw", "dng", "raf", "orf", "rw2", "pef", "srw", "3fr", "RAF"}
+	for i, ext := range exts {
+		writeScanFile(t, root, fmt.Sprintf("frame-%02d.%s", i, ext), []byte("raw bytes "+ext))
+	}
+	st := storetest.Open(t)
+	prober := fakeProber{probe: ffmpeg.Probe{Container: "image2", AudioCodec: "pcm_s16le", HasVideo: false}}
+	result, err := Scan(context.Background(), st, prober, nil, nil, nil, nil, Request{LibraryID: "library-local", Root: root})
+	if err != nil {
+		t.Fatalf("Scan returned error: %v", err)
+	}
+	if len(result.Files) != len(exts) {
+		t.Fatalf("imported %d files, want %d (one per RAW extension)", len(result.Files), len(exts))
+	}
+	for _, file := range result.Files {
+		media, err := st.Media(context.Background(), file.MediaID, store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if media.Class != store.MediaClassImage {
+			t.Fatalf("%s: media.Class = %q, want %q", file.Path, media.Class, store.MediaClassImage)
+		}
+	}
+}
+
 func TestScanMapsProbeStreamInventory(t *testing.T) {
 	probe := ffmpeg.Probe{
 		Streams: []ffmpeg.ProbeStream{

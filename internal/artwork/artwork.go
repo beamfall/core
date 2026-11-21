@@ -715,6 +715,12 @@ func (s *Service) derivative(ctx context.Context, original, owner, slot, bucket 
 	return dst, nil
 }
 
+// imageDerivativeVersion is stamped into the DeriveImage fingerprint marker.
+// Bump it when the scaler's output for an unchanged source changes, so existing
+// derivatives regenerate once. v2: RAW previews, EXIF orientation and sRGB
+// conversion (CORE-0310).
+const imageDerivativeVersion = "v2"
+
 // DeriveImage publishes the still-image poster and the two ADR-0043 buckets.
 // The fingerprint marker is written last, so a scan checkpoint can only pass
 // work whose complete derivative set is durable and current.
@@ -735,17 +741,24 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 	}
 	defer unlock()
 	marker := poster + ".source-fingerprint"
+	stamp := imageDerivativeVersion + ":" + fingerprint
 	buckets := []string{"w400", "w1920"}
 	// #nosec G304 -- marker is derived from the server-owned artwork root and validated Media ID.
-	if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) == fingerprint && nonEmptyRegularFile(poster) {
-		fresh := true
+	data, err := os.ReadFile(marker)
+	recorded := strings.TrimSpace(string(data))
+	// A pre-version marker (the bare fingerprint) still covers a poster the
+	// user imported over the generated one: the version bump regenerates only
+	// what the scaler made, never a selection.
+	imported := !regularFileExists(generatedMarkerPath(poster))
+	current := err == nil && nonEmptyRegularFile(poster) && (recorded == stamp || (recorded == fingerprint && imported))
+	var missing []string
+	if current {
 		for _, bucket := range buckets {
 			if !nonEmptyRegularFile(filepath.Join(filepath.Dir(poster), SlotPoster+"."+bucket+".jpg")) {
-				fresh = false
-				break
+				missing = append(missing, bucket)
 			}
 		}
-		if fresh {
+		if len(missing) == 0 {
 			return nil
 		}
 	}
@@ -760,6 +773,11 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 			return errProtectedArtwork
 		}
 		return nil
+	}
+	if current && imported {
+		// The user's poster for this source stays: rebuild only the buckets
+		// that importing it removed, from the poster itself.
+		return s.deriveBucketsFrom(ctx, id, poster, missing, marker, stamp, guard)
 	}
 	err = s.scaleImageAtomic(ctx, path, posterWidth, poster, guard)
 	s.versions.forget(poster)
@@ -776,9 +794,16 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 		}
 		return err
 	}
+	return s.deriveBucketsFrom(ctx, id, path, buckets, marker, stamp, guard)
+}
+
+// deriveBucketsFrom scales src into the poster's named width buckets, then
+// records stamp as the derivatives' source fingerprint.
+func (s *Service) deriveBucketsFrom(ctx context.Context, id store.MediaID, src string, buckets []string, marker, stamp string, guard func() error) error {
+	dir := filepath.Dir(marker)
 	for _, bucket := range buckets {
-		dst := filepath.Join(filepath.Dir(poster), SlotPoster+"."+bucket+".jpg")
-		if err := s.scaleImageAtomic(ctx, path, bucketWidths[bucket], dst, guard); err != nil {
+		dst := filepath.Join(dir, SlotPoster+"."+bucket+".jpg")
+		if err := s.scaleImageAtomic(ctx, src, bucketWidths[bucket], dst, guard); err != nil {
 			if errors.Is(err, errProtectedArtwork) {
 				return s.PurgeMediaArtwork(id)
 			}
@@ -786,7 +811,7 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 			return fmt.Errorf("generating image derivative %s for %s: %w", bucket, id, err)
 		}
 	}
-	if err := writeAtomicFile(marker, []byte(fingerprint+"\n"), guard); err != nil {
+	if err := writeAtomicFile(marker, []byte(stamp+"\n"), guard); err != nil {
 		if errors.Is(err, errProtectedArtwork) {
 			return s.PurgeMediaArtwork(id)
 		}
