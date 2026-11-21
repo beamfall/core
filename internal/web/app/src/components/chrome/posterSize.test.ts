@@ -166,4 +166,79 @@ describe("poster size roaming with the Profile (CORE-2914)", () => {
     await Promise.resolve();
     expect(readPosterSize()).toBe("small");
   });
+
+  it("keeps a queued save when a retried read replaces a failed one", async () => {
+    vi.mocked(fetchClientPrefs).mockRejectedValueOnce(new Error("offline"));
+    let releaseFirst: () => void = () => {};
+    vi.mocked(setClientPref).mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseFirst = () => resolve({ key: POSTER_SIZE_PREF_KEY });
+      }),
+    );
+    const first = renderHook(() => usePosterSizeRoot("p1"));
+    await waitFor(() => expect(fetchClientPrefs).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    setPosterSize("medium");
+    setPosterSize("small");
+    await waitFor(() => expect(setClientPref).toHaveBeenCalledTimes(1));
+    first.unmount();
+    vi.mocked(fetchClientPrefs).mockResolvedValue([]);
+    renderHook(() => usePosterSizeRoot("p1"));
+    releaseFirst();
+
+    await waitFor(() => expect(setClientPref).toHaveBeenCalledTimes(2));
+    expect(setClientPref).toHaveBeenLastCalledWith(POSTER_SIZE_PREF_KEY, "small");
+  });
+
+  it("finishes queued saves and keeps the pick across a Console visit", async () => {
+    vi.mocked(fetchClientPrefs).mockResolvedValue(saved("large"));
+    let releaseFirst: () => void = () => {};
+    vi.mocked(setClientPref).mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseFirst = () => resolve({ key: POSTER_SIZE_PREF_KEY });
+      }),
+    );
+    const { rerender } = renderHook(({ id }) => usePosterSizeRoot(id), {
+      initialProps: { id: "p1" as string | null },
+    });
+    await waitFor(() => expect(fetchClientPrefs).toHaveBeenCalledTimes(1));
+
+    setPosterSize("medium");
+    setPosterSize("small");
+    await waitFor(() => expect(setClientPref).toHaveBeenCalledTimes(1));
+    rerender({ id: null });
+    // A pick in the Console stays the browser's own.
+    setPosterSize("medium");
+    setPosterSize("small");
+    releaseFirst();
+    await waitFor(() => expect(setClientPref).toHaveBeenCalledTimes(2));
+    expect(setClientPref).toHaveBeenLastCalledWith(POSTER_SIZE_PREF_KEY, "small");
+
+    // Back in the Viewer the loaded Profile is not read again over the pick.
+    rerender({ id: "p1" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchClientPrefs).toHaveBeenCalledTimes(1);
+    expect(setClientPref).toHaveBeenCalledTimes(2);
+    expect(readPosterSize()).toBe("small");
+  });
+
+  it("lets another tab's change win over a read still in flight", async () => {
+    let resolveRead: (prefs: { key: string; value: string }[]) => void = () => {};
+    vi.mocked(fetchClientPrefs).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+    );
+    renderHook(() => usePosterSizeRoot("p1"));
+
+    // Another tab picks Small and saves it.
+    localStorage.setItem(POSTER_SIZE_KEY, "small");
+    window.dispatchEvent(new StorageEvent("storage", { key: POSTER_SIZE_KEY, newValue: "small" }));
+    resolveRead(saved("large"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(readPosterSize()).toBe("small");
+    expect(setClientPref).not.toHaveBeenCalled();
+  });
 });

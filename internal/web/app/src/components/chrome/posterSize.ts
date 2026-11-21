@@ -53,6 +53,9 @@ function emit() {
 
 function onStorage(event: StorageEvent) {
   if (event.key !== null && event.key !== POSTER_SIZE_KEY) return;
+  // Another tab's pick (or its adoption of the Profile's size) is newer than
+  // a read this tab still has in flight: that read must not undo it.
+  if (sync?.state === "loading") sync.picked = true;
   emit();
 }
 
@@ -77,12 +80,15 @@ function setBrowserPosterSize(size: PosterSize) {
 }
 
 // The signed-in Profile the choice syncs with, held outside React so it
-// survives AppShell remounts (every route mounts its own shell).
+// survives AppShell remounts (every route mounts its own shell) and a visit
+// to the Console.
 interface ProfileSync {
   profileID: string;
   state: "loading" | "loaded" | "failed";
-  // A pick made under this Profile since its read began: the read is older
-  // and must not undo it.
+  // A Viewer shell for this Profile is mounted: only then does a pick save.
+  active: boolean;
+  // The browser's value changed since this Profile's read began (a pick here
+  // or in another tab): the read is older and must not undo it.
   picked: boolean;
   // Saves run one after another, in pick order, so the Profile ends on the
   // last pick.
@@ -92,13 +98,18 @@ interface ProfileSync {
 let sync: ProfileSync | null = null;
 
 function loadProfile(profileID: string) {
-  if (sync?.profileID === profileID && sync.state !== "failed") return;
+  const same = sync?.profileID === profileID ? sync : null;
+  if (same && same.state !== "failed") {
+    same.active = true;
+    return;
+  }
   const current: ProfileSync = {
     profileID,
     state: "loading",
+    active: true,
     // A retry after a failed read keeps this Profile's picks and their saves.
-    picked: sync?.profileID === profileID && sync.picked,
-    writes: sync?.profileID === profileID ? sync.writes : Promise.resolve(),
+    picked: same?.picked ?? false,
+    writes: same?.writes ?? Promise.resolve(),
   };
   sync = current;
   fetchClientPrefs()
@@ -125,15 +136,18 @@ export function resetPosterSizeSync() {
 export function setPosterSize(size: PosterSize) {
   setBrowserPosterSize(size);
   const current = sync;
-  if (!current) return;
+  if (!current?.active) return;
   current.picked = true;
+  const { profileID } = current;
   // A queued save must not run under a later identity: once a Profile switch,
   // reveal or relock starts a new epoch, the session it would carry belongs
-  // to someone else.
+  // to someone else. A retried read or a Console visit for the same Profile
+  // keeps the queue.
   const epoch = getIdentityEpochSignal();
   current.writes = current.writes
     .then(() => {
-      if (sync !== current || getIdentityEpochSignal() !== epoch || epoch?.aborted) return;
+      if (sync?.profileID !== profileID) return;
+      if (getIdentityEpochSignal() !== epoch || epoch?.aborted) return;
       return setClientPref(POSTER_SIZE_PREF_KEY, size);
     })
     // A failed save keeps the browser's value; the next pick saves again.
@@ -164,6 +178,8 @@ export function usePosterSizeRoot(profileID: string | null) {
   }, [size]);
   useEffect(() => {
     if (profileID) loadProfile(profileID);
-    else sync = null;
+    // Signed out, enrolling or in the Console: picks stay the browser's own,
+    // and saves already queued for the Profile still run.
+    else if (sync) sync.active = false;
   }, [profileID]);
 }

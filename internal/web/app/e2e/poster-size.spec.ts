@@ -147,16 +147,26 @@ test.describe("poster size", () => {
   test("a pick follows the Profile to a browser without one", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await openLibraryGrid(page);
-    const savePick = () =>
-      page.waitForResponse(
-        (res) =>
-          res.url().includes("/graphql") &&
-          (res.request().postData() ?? "").includes("setClientPref"),
-      );
+    // The save of exactly this size, read back from the mutation's result so a
+    // GraphQL error under HTTP 200 fails the test.
+    const savePick = async (size: string) => {
+      const res = await page.waitForResponse((r) => {
+        const body = r.request().postData() ?? "";
+        return (
+          r.url().includes("/graphql") &&
+          body.includes("setClientPref") &&
+          body.includes("web.poster-size") &&
+          body.includes(`"${size}"`)
+        );
+      });
+      const json = await res.json();
+      expect(json.errors, JSON.stringify(json.errors)).toBeUndefined();
+      expect(json.data?.setClientPref?.key).toBe("web.poster-size");
+    };
     try {
-      const saved = savePick();
+      const saved = savePick("small");
       await page.getByRole("button", { name: "Small posters" }).click();
-      expect((await saved).ok()).toBe(true);
+      await saved;
 
       await page.evaluate(() => localStorage.removeItem("beamfall.posterSize"));
       await page.reload();
@@ -168,7 +178,7 @@ test.describe("poster size", () => {
     } finally {
       // Back to the default, which also saves Large to the Profile, so later
       // specs see Large.
-      const restored = savePick();
+      const restored = savePick("large");
       await page.getByRole("button", { name: "Large posters" }).click();
       await restored;
     }
