@@ -744,6 +744,8 @@ func TestSubscriptionTitleRejectsURLs(t *testing.T) {
 		"feeds.example.test/private?token=secret":                    "",
 		"Daily News (https://feeds.example.test/x.xml?sig=abc) feed": "",
 		"Daily News — listen at //cdn.example.test/a?sig=abc":        "",
+		"[2001:db8::1]/feed?token=example":                           "",
+		"Side A // Side B":                                           "Side A // Side B",
 		"Mr. Robot: Season 1 / Part 2":                               "Mr. Robot: Season 1 / Part 2",
 		long:                                                         long[:2*maxSubscriptionTitleRunes],
 	} {
