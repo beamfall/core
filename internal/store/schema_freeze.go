@@ -109,6 +109,8 @@ package store
 // is read only by the continue-watching Source, off the entity-query hot path.
 // Events 0026 (CORE-1630) gives Play Queue entries stable IDs and persists
 // Profile playback state without changing entity queries.
+// Events 0026 (CORE-1662) adds party sessions, participants, entries and
+// screens without changing entity queries.
 const (
 	schemaFreezeEventsMigrations           = 26
 	schemaFreezeEncryptedLibraryMigrations = 11
