@@ -1048,6 +1048,84 @@ func TestNextUpYieldsNothingWhileFrontierIsResumable(t *testing.T) {
 	}
 }
 
+func TestNextUpCountsCompletionsOutsideTheEngagementWindow(t *testing.T) {
+	st := openSeeded(t)
+	filter := LibraryFilter{AllLibraries: true}
+	ids := nextUpFixture(t, st, "entity-season", "s1-")
+
+	// Child 1 was finished long before the engagement window, child 2
+	// today. The window only picks the container; child 1 still counts as
+	// watched, so the frontier is child 3, not child 1.
+	mustReport(t, st, "profile-default", ids[0], 120, 120, true)
+	longAgo := timeToMillis(time.Now().UTC()) - nextUpEngagementWindowMS - 24*3600*1000
+	if _, err := st.eventsW.ExecContext(context.Background(), `
+		UPDATE playback_progress SET updated_at_ms = ? WHERE profile_id = ? AND media_id = ?
+	`, longAgo, "profile-default", ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	mustReport(t, st, "profile-default", ids[1], 120, 120, true)
+	items := nextUp(t, st, filter, "profile-default")
+	if len(items) != 1 || items[0].ID != ids[2] {
+		t.Fatalf("next-up = %#v, want exactly %q", items, ids[2])
+	}
+}
+
+func TestNextUpCrossesIntoTheNextOrderedSibling(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	first := nextUpFixture(t, st, "entity-part-1", "p1-")
+	second := nextUpFixture(t, st, "entity-part-2", "p2-")
+	if err := st.UpsertEntity(ctx, widgetEntity("entity-whole", "library-local")); err != nil {
+		t.Fatal(err)
+	}
+	for i, part := range []EntityID{"entity-part-1", "entity-part-2"} {
+		order := i + 1
+		if err := st.UpsertEntityRelation(ctx, EntityRelation{
+			FromEntityID: part, Name: "part-of", ToEntityID: "entity-whole", SortOrder: &order,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Every child of the first part finished, the second part unstarted:
+	// the frontier is the second part's first child.
+	for _, id := range first {
+		mustReport(t, st, "profile-default", id, 120, 120, true)
+	}
+	items := nextUp(t, st, filter, "profile-default")
+	if len(items) != 1 || items[0].ID != second[0] {
+		t.Fatalf("next-up at part boundary = %#v, want exactly %q", items, second[0])
+	}
+
+	// Once that child is resumable it lives on continue-watching, and the
+	// whole group yields nothing here.
+	mustReport(t, st, "profile-default", second[0], 45, 120, false)
+	if items := nextUp(t, st, filter, "profile-default"); len(items) != 0 {
+		t.Fatalf("next-up with resumable child in the next part = %#v, want empty", items)
+	}
+}
+
+func TestNextUpSkipsContainerWithAnyResumableChild(t *testing.T) {
+	st := openSeeded(t)
+	filter := LibraryFilter{AllLibraries: true}
+	ids := nextUpFixture(t, st, "entity-season", "s1-")
+
+	// Child 2 is resumable while child 1 is unwatched: the container is on
+	// continue-watching, so next-up must not list child 1 beside it.
+	mustReport(t, st, "profile-default", ids[1], 45, 120, false)
+	if items := nextUp(t, st, filter, "profile-default"); len(items) != 0 {
+		t.Fatalf("next-up with a resumable later child = %#v, want empty", items)
+	}
+	cw, err := st.SourceItems(context.Background(), filter, SourceQuery{Kind: "continue-watching", ProfileID: "profile-default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cw) != 1 || cw[0].ID != ids[1] {
+		t.Fatalf("continue-watching = %#v, want %q", cw, ids[1])
+	}
+}
+
 func TestNextUpOrdersContainersByEngagementRecency(t *testing.T) {
 	st := openSeeded(t)
 	filter := LibraryFilter{AllLibraries: true}
