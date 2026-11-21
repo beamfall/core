@@ -73,3 +73,41 @@ func TestForgetStopsOneLibraryAndObserveResumesIt(t *testing.T) {
 		t.Fatalf("Forget(unknown): %v", err)
 	}
 }
+
+// A folder removed from a Library stops being watched while the Library's
+// other folders, and other Libraries, keep their watches (CORE-1280).
+func TestRetainStopsRemovedRootsOnly(t *testing.T) {
+	filmsRoot, extrasRoot, otherRoot := t.TempDir(), t.TempDir(), t.TempDir()
+	var scans atomic.Int32
+	service := NewService(Options{
+		Debounce:    10 * time.Millisecond,
+		NewWatcher:  func() (watchBackend, error) { return newCountingBackend(), nil },
+		EnqueueScan: func(context.Context, store.LibraryID, string) { scans.Add(1) },
+	})
+	t.Cleanup(func() { _ = service.Close() })
+	service.Observe("library-films", filmsRoot)
+	service.Observe("library-films", extrasRoot)
+	service.Observe("library-other", extrasRoot)
+	service.Observe("library-other", otherRoot)
+	extrasState, _ := service.rootStateForTest("library-films", extrasRoot)
+
+	if err := service.Retain("library-films", []string{filmsRoot + "/"}); err != nil {
+		t.Fatalf("Retain: %v", err)
+	}
+	if _, ok := service.rootStateForTest("library-films", extrasRoot); ok {
+		t.Fatal("removed root is still watched")
+	}
+	for _, kept := range []struct {
+		library store.LibraryID
+		root    string
+	}{{"library-films", filmsRoot}, {"library-other", extrasRoot}, {"library-other", otherRoot}} {
+		if state, ok := service.rootStateForTest(kept.library, kept.root); !ok || !state.status().Active {
+			t.Fatalf("%s %s lost its watch", kept.library, kept.root)
+		}
+	}
+	extrasState.handleEvent(fsnotify.Event{Name: extrasRoot + "/new.mp4", Op: fsnotify.Create})
+	time.Sleep(60 * time.Millisecond)
+	if got := scans.Load(); got != 0 {
+		t.Fatalf("scans raised for a removed root = %d, want 0", got)
+	}
+}

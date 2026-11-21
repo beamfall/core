@@ -4468,6 +4468,11 @@ func (o libraryMutationObserver) LibraryRootsChanged(ctx context.Context, librar
 	if o.watcher == nil {
 		return
 	}
+	// roots is the Library's whole folder set, so a folder no longer in it
+	// stops being watched (CORE-1280).
+	if err := o.watcher.Retain(libraryID, roots); err != nil {
+		o.logger.Warn("watcher stop for removed library folder failed", "library", string(libraryID), "error", err)
+	}
 	for _, root := range roots {
 		_ = o.watcher.Observe(libraryID, root)
 	}

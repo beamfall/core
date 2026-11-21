@@ -285,10 +285,27 @@ func (s *Service) Status(libraryID store.LibraryID) Status {
 // deleted Library's folders raise no further scan jobs. A later Observe of the
 // same root starts a fresh watch.
 func (s *Service) Forget(libraryID store.LibraryID) error {
+	return s.forgetRoots(libraryID, func(string) bool { return false })
+}
+
+// Retain stops watching every root of a Library that is not in roots, so a
+// folder removed from the Library raises no further scan jobs (CORE-1280).
+// Roots in the set are left as they are; Observe starts any that are new.
+func (s *Service) Retain(libraryID store.LibraryID, roots []string) error {
+	keep := make(map[string]bool, len(roots))
+	for _, root := range roots {
+		keep[filepath.Clean(root)] = true
+	}
+	return s.forgetRoots(libraryID, func(root string) bool { return keep[root] })
+}
+
+// forgetRoots stops and drops every watched root of a Library that keep
+// rejects.
+func (s *Service) forgetRoots(libraryID store.LibraryID, keep func(root string) bool) error {
 	s.mu.Lock()
 	var states []*rootState
 	for key, state := range s.roots {
-		if key.libraryID == libraryID {
+		if key.libraryID == libraryID && !keep(key.root) {
 			states = append(states, state)
 			delete(s.roots, key)
 		}
