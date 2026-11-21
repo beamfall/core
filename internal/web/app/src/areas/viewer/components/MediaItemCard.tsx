@@ -412,7 +412,7 @@ export function MediaItemCard({
                 state.progressPercent === undefined
                   ? "mediaDetailPlayLabel"
                   : "mediaDetailResumeLabel",
-                { title: labelTitle },
+                { title: quickPlayTitle(labelTitle, heading, lead, item.title) },
               )}
               onClick={play}
               onPointerEnter={preloadPlayer}
@@ -440,6 +440,13 @@ function cardLabelTitle(
 ): string {
   const title = showYear && item.year ? `${heading} (${item.year})` : heading;
   return lead ? `${title}, ${lead}` : title;
+}
+
+// The name Play speaks: the card's title plus the item's own title when the
+// heading and lead leave it out ("Orbit, S1 · E3, Reunion"), so a quick Play
+// names what it plays (CORE-2826).
+function quickPlayTitle(labelTitle: string, heading: string, lead: string, title: string): string {
+  return title && heading !== title && lead !== title ? `${labelTitle}, ${title}` : labelTitle;
 }
 
 // The state drawn on the artwork. Decorative for assistive technology: the

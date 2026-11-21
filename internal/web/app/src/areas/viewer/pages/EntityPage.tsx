@@ -587,14 +587,16 @@ export function EntityPage() {
                     <button
                       type="button"
                       className={`${buttonVariants({ size: "lg" })} bf-detail-play`}
-                      aria-label={t(
-                        nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel",
-                        {
-                          title: nextUpOrdinalText
-                            ? `${nextUpOrdinalText}, ${nextUp.item.title}`
-                            : nextUp.item.title,
-                        },
-                      )}
+                      // The name starts with the visible label, so voice control
+                      // finds the button by what it shows in every locale, then
+                      // adds the title it plays.
+                      aria-label={
+                        nextUpOrdinalText
+                          ? `${t(nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", { title: nextUpOrdinalText })}, ${nextUp.item.title}`
+                          : t(nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", {
+                              title: nextUp.item.title,
+                            })
+                      }
                       onClick={playNext}
                       onPointerEnter={preloadPlayer}
                       onFocus={preloadPlayer}
