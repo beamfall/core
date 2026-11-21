@@ -140,4 +140,89 @@ test.describe("poster size", () => {
     await control.getByRole("button", { name: "Large posters" }).click();
     expect(errors, errors.join("\n")).toEqual([]);
   });
+
+  // The app-wide control stays on the Library pivot in List view, where it
+  // sizes the row thumbnails.
+  test("the Library pivot offers the control in List view and sizes its thumbnails", async ({
+    page,
+  }) => {
+    const errors = collectFatalErrors(page);
+    await openLibraryGrid(page);
+    const control = page.getByRole("group", { name: "Poster size" });
+    await page.getByRole("button", { name: "List", exact: true }).click();
+    await expect(control).toBeVisible();
+    const thumb = page.locator(".bf-stack .bf-poster").first();
+    await expect(thumb).toBeVisible();
+    await expect.poll(() => thumb.evaluate((el) => el.getBoundingClientRect().width)).toBe(48);
+    await control.getByRole("button", { name: "Small posters" }).click();
+    await expect.poll(() => thumb.evaluate((el) => el.getBoundingClientRect().width)).toBe(32);
+
+    await control.getByRole("button", { name: "Large posters" }).click();
+    await page.getByRole("button", { name: "Posters", exact: true }).click();
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
 });
+
+// The seeded library has no Collections, Categories or cast, so this samples
+// each surface's own markup under the app's stylesheet: Large keeps the size
+// each had before CORE-2893, and Small draws it smaller.
+const SURFACES = `
+  <ul class="bf-category-grid">${"<li><a class='bf-category-card' href='#'>C</a></li>".repeat(8)}</ul>
+  <ul class="bf-tile-grid">${"<li><a class='bf-tile' href='#'>T</a></li>".repeat(8)}</ul>
+  <ul class="bf-collection-grid">${"<li><div></div></li>".repeat(10)}</ul>
+  <ul class="bf-shelf bf-cast"><li class="bf-cast-card"></li></ul>
+  <div class="bf-row-link"><span class="bf-row-thumb"></span></div>`;
+
+async function surfaceSizes(page: Page) {
+  return page.evaluate((html) => {
+    document.getElementById("zz-surfaces")?.remove();
+    const host = document.createElement("div");
+    host.id = "zz-surfaces";
+    host.innerHTML = html;
+    (document.querySelector("main") ?? document.body).prepend(host);
+    const el = (sel: string) => host.querySelector(sel) as Element;
+    const cols = (sel: string) => getComputedStyle(el(sel)).gridTemplateColumns.split(" ").length;
+    return {
+      category: cols(".bf-category-grid"),
+      tile: cols(".bf-tile-grid"),
+      collection: cols(".bf-collection-grid"),
+      cast: Math.round(el(".bf-cast-card").getBoundingClientRect().width),
+      row: Math.round(el(".bf-row-thumb").getBoundingClientRect().width),
+    };
+  }, SURFACES);
+}
+
+for (const { width, large, small } of [
+  {
+    width: 1440,
+    large: { category: 4, tile: 6, collection: 7, cast: 120, row: 240 },
+    small: { category: 6, tile: 9, collection: 9, cast: 88, row: 160 },
+  },
+  {
+    width: 390,
+    large: { category: 2, tile: 1, collection: 2, cast: 96, row: 120 },
+    small: { category: 3, tile: 3, collection: 4, cast: 70, row: 80 },
+  },
+]) {
+  test(`every thumbnail surface follows the poster size at ${width}px`, async ({ page }) => {
+    const errors = collectFatalErrors(page);
+    await page.goto("/web/");
+    const link = page.locator('a[href*="/n/library-"]').first();
+    await link.waitFor({ state: "attached" });
+    const href = await link.getAttribute("href");
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${href}/collections`);
+    const control = page.getByRole("group", { name: "Poster size" });
+    await expect(control.getByRole("button", { name: "Large posters" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(await surfaceSizes(page)).toEqual(large);
+
+    await control.getByRole("button", { name: "Small posters" }).click();
+    await expect.poll(() => surfaceSizes(page)).toEqual(small);
+
+    await control.getByRole("button", { name: "Large posters" }).click();
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
+}
