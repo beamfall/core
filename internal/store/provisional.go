@@ -21,6 +21,13 @@ import (
 // already an External ID, and the value never holds a secret URL.
 const ProvisionalExternalIDScheme = "provisional-guid"
 
+func provisionalGUIDExternalID(key string) string {
+	if id, guid, ok := strings.Cut(key, "\x00"); ok {
+		return id + "\x00" + feedGUIDExternalID(guid)
+	}
+	return feedGUIDExternalID(key)
+}
+
 // provisionalMediaID derives a stable, durable Media ID from the (libraryID,
 // GUID) of a provisional play. Unlike a scanned file's ID,
 // which is content-fingerprint-derived (mediaIDForFingerprint), a provisional
@@ -195,8 +202,8 @@ func (s *Store) RegisterProvisionalMedia(ctx context.Context, p ProvisionalMedia
 		// catalogued entry not yet fetched) gains the provisional file in place;
 		// its title and metadata stay. Any other existing row is not ours.
 		if err := tx.QueryRowContext(ctx, `
-			SELECT 1 FROM media_external_id WHERE media_id = ? AND scheme = ? AND value = ?
-		`, mediaID, ProvisionalExternalIDScheme, strings.TrimSpace(p.GUID)).Scan(&one); err != nil {
+			SELECT 1 FROM media_external_id WHERE media_id = ? AND scheme = ? AND value IN (?, ?)
+		`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(strings.TrimSpace(p.GUID)), strings.TrimSpace(p.GUID)).Scan(&one); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return "", "", ErrProvisionalRegistrationConflict
 			}
@@ -222,7 +229,7 @@ func (s *Store) RegisterProvisionalMedia(ctx context.Context, p ProvisionalMedia
 	if err := insertProvisionalMediaFile(ctx, tx, mediaID, p.TeePath); err != nil {
 		return "", "", err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)`, mediaID, ProvisionalExternalIDScheme, strings.TrimSpace(p.GUID)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(strings.TrimSpace(p.GUID))); err != nil {
 		return "", "", err
 	}
 	if err := tx.Commit(); err != nil {
@@ -343,7 +350,7 @@ func (s *Store) createProvisionalMediaSQL(ctx context.Context, mediaID MediaID, 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
 		VALUES (?, ?, ?)
-	`, mediaID, ProvisionalExternalIDScheme, strings.TrimSpace(p.GUID)); err != nil {
+	`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(strings.TrimSpace(p.GUID))); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -13,6 +13,27 @@ type MediaExternalID struct {
 	Value  string
 }
 
+// PublicFeedIdentity protects detail reads of feed identities written before
+// URL GUIDs were made opaque. Other external-ID schemes keep their values.
+func (id MediaExternalID) PublicFeedIdentity(title string) (value, safeTitle string) {
+	guid := id.Value
+	switch id.Scheme {
+	case subscriptionFeedGUIDScheme:
+		value = feedGUIDExternalID(id.Value)
+	case ProvisionalExternalIDScheme:
+		if _, suffix, ok := strings.Cut(guid, "\x00"); ok {
+			guid = suffix
+		}
+		value = provisionalGUIDExternalID(id.Value)
+	default:
+		return id.Value, title
+	}
+	if title == guid {
+		title = feedEntryFallbackTitle(guid)
+	}
+	return value, title
+}
+
 // AddMediaExternalID attaches an external identifier to Media idempotently.
 // A newly attached identifier announces media.updated, so a subscriber waiting
 // for an identifier (a request tool watching for one it asked for) sees it even
@@ -145,12 +166,13 @@ func (s *Store) MediaIDsByExternalID(ctx context.Context, scheme string, value s
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
+	opaque, _ := (MediaExternalID{Scheme: scheme, Value: value}).PublicFeedIdentity("")
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT media_id
+		SELECT DISTINCT media_id
 		FROM media_external_id
-		WHERE scheme = ? AND value = ?
+		WHERE scheme = ? AND value IN (?, ?)
 		ORDER BY media_id
-	`, scheme, value)
+	`, scheme, opaque, value)
 	if err != nil {
 		return nil, err
 	}

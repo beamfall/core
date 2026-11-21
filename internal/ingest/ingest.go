@@ -50,11 +50,6 @@ const PollJobKind store.JobKind = "subscription-poll"
 // user-editable cadence later; this constant is the seed value.
 const DefaultPollInterval = time.Hour
 
-// downloadBudgetBytes caps one enclosure download. Feeds advertise lengths
-// but lie; 2 GiB comfortably covers any real enclosure while bounding disk
-// abuse from a hostile feed.
-const downloadBudgetBytes int64 = 2 << 30
-
 // Poller fetches Subscription feeds and downloads new enclosures.
 type Poller struct {
 	store  *store.Store
@@ -144,11 +139,7 @@ func Handler(p *Poller) jobs.Handler {
 			checkpoint.Downloaded += downloaded
 			if err != nil {
 				checkpoint.Failed++
-				// Never log the error text here: transport errors can embed
-				// the feed URL (a secret). The Subscription ID is enough to
-				// investigate from the Console.
 				p.logger.WarnContext(ctx, "subscription poll failed", "subscription", string(subscription.ID))
-				p.logger.DebugContext(ctx, "subscription poll failure detail", "subscription", string(subscription.ID), "error", err.Error())
 			}
 			checkpoint.LastID = string(subscription.ID)
 			remaining = true
@@ -226,7 +217,7 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 		return published, p.recordFailure(ctx, subscription, store.FeedErrorParse, now, &feedParseError{err: err})
 	}
 	moveCandidate := result.PermanentRedirect
-	if moveCandidate == "" {
+	if moveCandidate == "" && !result.RedirectedTemporarily {
 		moveCandidate = document.NewFeedURL
 	}
 	selected, catalogued, err := p.catalogue(ctx, subscription, document, now)
@@ -249,7 +240,7 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 			// GUID before saving validators for this feed response.
 			entryErr = p.store.AliasSubscriptionEntryGUID(ctx, subscription.ID, entry.EnclosureURL, entry.GUID)
 		} else {
-			if catalogued && !selected[entry.GUID] {
+			if !selected[entry.GUID] {
 				continue
 			}
 			entryErr = p.ingestEntry(ctx, subscription, entry, authHeader, catalogued, now)
@@ -404,7 +395,7 @@ func (p *Poller) downloadToStage(ctx context.Context, root, key, base string, en
 	// The three abort paths below discard the close error deliberately: the
 	// partial is abandoned before the durable point, and the next attempt
 	// deletes and re-downloads it, so durability never depends on this close.
-	if _, err := p.engine.DownloadResourceAuth(ctx, entry.EnclosureURL, file, downloadBudgetBytes, authHeader); err != nil {
+	if _, err := p.engine.DownloadResourceAuth(ctx, entry.EnclosureURL, file, scrape.EnclosureDownloadLimit, authHeader); err != nil {
 		_ = file.Close() // #nosec G104 -- abandoning a pre-durable partial; next attempt deletes it
 		return "", err
 	}

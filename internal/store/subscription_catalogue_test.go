@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -180,6 +182,84 @@ func TestScanImportBindsDownloadToEntryMedia(t *testing.T) {
 	}
 	if _, _, ok, err := st.SubscriptionEntryForMedia(ctx, other.ID); ok || err != nil {
 		t.Fatalf("unrelated media is a feed entry: %v %v", ok, err)
+	}
+}
+
+func TestSubscriptionCatalogueHashesURLGUIDsAndKeepsStreamIdentity(t *testing.T) {
+	st, sub, now := catalogueFixture(t)
+	ctx := t.Context()
+	const guid = "https://cdn.example.com/audio.mp3?signature=test-secret"
+	rows := []FeedCatalogEntry{{GUID: guid, EnclosureURL: guid}}
+	created, err := st.UpsertSubscriptionCatalog(ctx, sub.ID, rows, now)
+	if err != nil || len(created) != 1 {
+		t.Fatalf("upsert: %d entries, %v", len(created), err)
+	}
+	id := created[0].MediaID
+	if id != SubscriptionEntryMediaID(sub.LibraryID, sub.ID, guid) {
+		t.Fatal("catalogue changed the stream identity")
+	}
+	media, err := st.Media(ctx, id, LibraryFilter{AllLibraries: true})
+	if err != nil || media.Title != "Untitled" {
+		t.Fatalf("untitled Media lookup failed or returned an unsafe title: %v", err)
+	}
+	ids, err := st.MediaExternalIDs(ctx, id)
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("external IDs: count=%d err=%v", len(ids), err)
+	}
+	for _, external := range ids {
+		if strings.Contains(external.Value, "://") || strings.Contains(external.Value, "test-secret") ||
+			!strings.Contains(external.Value, "urn:beamfall:feed-entry:") {
+			t.Errorf("external-ID scheme %s did not use an opaque value", external.Scheme)
+		}
+	}
+	path := "/media/local/incoming/play.partial"
+	registered, _, err := st.RegisterProvisionalMedia(ctx, ProvisionalMedia{
+		LibraryID: sub.LibraryID, GUID: SubscriptionEntryStreamKey(sub.ID, guid), Title: media.Title, TeePath: path,
+	})
+	if err != nil || registered != id {
+		t.Fatalf("register = %q, %v, want existing Media", registered, err)
+	}
+	if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, guid, path, now); err != nil {
+		t.Fatal(err)
+	}
+	if added, _, err := st.ReconcileSubscriptionSeenEntries(ctx); err != nil || added != 0 {
+		t.Fatalf("reconcile added %d IDs, err=%v; expected existing opaque ID", added, err)
+	}
+	after, err := st.MediaExternalIDs(ctx, id)
+	if err != nil || !slices.Equal(after, ids) {
+		t.Fatal("registering and reconciling changed the stored external IDs")
+	}
+
+	// Simulate a historical file-less item no longer present in the feed.
+	legacyGUID := guid + "-old"
+	legacy, err := st.UpsertSubscriptionCatalog(ctx, sub.ID, []FeedCatalogEntry{{GUID: legacyGUID}}, now)
+	if err != nil || len(legacy) != 1 {
+		t.Fatalf("seed legacy Media: %d entries, %v", len(legacy), err)
+	}
+	legacyID := legacy[0].MediaID
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media SET title = ? WHERE id = ?`, legacyGUID, legacyID); err != nil {
+		t.Fatal(err)
+	}
+	for _, external := range []MediaExternalID{
+		{Scheme: subscriptionFeedGUIDScheme, Value: legacyGUID},
+		{Scheme: ProvisionalExternalIDScheme, Value: SubscriptionEntryStreamKey(sub.ID, legacyGUID)},
+	} {
+		if _, err := st.catalogW.ExecContext(ctx, `INSERT INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)`, legacyID, external.Scheme, external.Value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := st.ReconcileSubscriptionSeenEntries(ctx); err != nil {
+		t.Fatal(err)
+	}
+	media, err = st.Media(ctx, legacyID, LibraryFilter{AllLibraries: true})
+	after, loadErr := st.MediaExternalIDs(ctx, legacyID)
+	if err != nil || loadErr != nil || media.Title != "Untitled" || len(after) != 2 {
+		t.Fatalf("legacy row remained unsanitized: media err=%v, IDs=%d err=%v", err, len(after), loadErr)
+	}
+	for _, external := range after {
+		if strings.Contains(external.Value, "test-secret") {
+			t.Fatal("legacy URL remained in stored external IDs")
+		}
 	}
 }
 

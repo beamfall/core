@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -169,7 +170,7 @@ func TestFollowFeedGatesProbesAndIsIdempotent(t *testing.T) {
 
 	_, resp := rawGraph(t, fx.handler, authorizeManagedProfile, followFeedMutation,
 		map[string]any{"feedURL": secretFeedURL, "libraryID": "library-local"})
-	wantGraphError(t, resp, ErrorCodeForbidden, "adult profile or manager role required")
+	wantGraphError(t, resp, ErrorCodeForbidden, "adult profile required to follow feeds")
 
 	var first SubscriptionInfo
 	execGraph(t, fx.handler, authorizeViewer, followFeedMutation,
@@ -201,6 +202,15 @@ func TestFollowFeedGatesProbesAndIsIdempotent(t *testing.T) {
 	}
 	if fx.poller.count() != 1 {
 		t.Fatalf("poller kicks after re-follow = %d, want 1", fx.poller.count())
+	}
+}
+
+func TestFollowFeedRejectsManagedProfileOnManagerDevice(t *testing.T) {
+	fx := newFeedFixture(t)
+	scope := auth.Scope{DeviceRole: store.DeviceRoleManager, Profile: store.ProfileManaged}
+	_, err := fx.handler.followFeed(t.Context(), scope, request{})
+	if err == nil || err.Error() != "adult profile required to follow feeds" || fx.prober.calls != 0 {
+		t.Fatalf("followFeed = %v, probes = %d", err, fx.prober.calls)
 	}
 }
 
@@ -291,6 +301,28 @@ func TestRefreshSubscriptionIsRateLimited(t *testing.T) {
 	wantGraphError(t, resp, ErrorCodeNotFound, "unknown subscription")
 }
 
+func TestRefreshSubscriptionRequiresFollowOrManager(t *testing.T) {
+	fx := newFeedFixture(t)
+	sub, _, err := fx.st.GetOrCreateSubscription(t.Context(), store.Subscription{
+		LibraryID: "library-local", FeedURL: secretFeedURL, Root: "/media/Root/Daily News",
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const refresh = `mutation R($id: String!) { refreshSubscription(id: $id) { id followed } }`
+	variables := map[string]any{"id": string(sub.ID)}
+	_, resp := rawGraph(t, fx.handler, authorizeViewer, refresh, variables)
+	wantGraphError(t, resp, ErrorCodeForbidden, "follow the subscription before refreshing it")
+	if fx.poller.count() != 0 {
+		t.Fatal("non-follower refresh kicked the poller")
+	}
+	var info SubscriptionInfo
+	execGraph(t, fx.handler, authorizeManager, refresh, variables, "refreshSubscription", &info)
+	if info.Followed || fx.poller.count() != 1 {
+		t.Fatalf("manager refresh followed=%v, poll count=%d", info.Followed, fx.poller.count())
+	}
+}
+
 func TestSetSubscriptionDownloadPolicyIsManagerGatedAndConfirmsEverything(t *testing.T) {
 	fx := newFeedFixture(t)
 	sub := followTestFeed(t, fx)
@@ -336,10 +368,17 @@ func TestSubscriptionEntriesAndCountsNeverCarryEnclosureURLs(t *testing.T) {
 	sub := followTestFeed(t, fx)
 	id := store.SubscriptionID(sub.ID)
 	published := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	created, err := fx.st.UpsertSubscriptionCatalog(t.Context(), id, []store.FeedCatalogEntry{
+		{GUID: "g1", Title: "Newest"},
+		{GUID: "g2", Title: "Older", Position: 1},
+	}, published)
+	if err != nil || len(created) != 2 {
+		t.Fatalf("seed Media: %d entries, %v", len(created), err)
+	}
 	fx.catalogue.entries[id] = []store.SubscriptionEntry{
-		{SubscriptionID: id, GUID: "g1", MediaID: "m1", Title: "Newest", FeedPosition: 0, PublishedAt: published,
+		{SubscriptionID: id, GUID: "g1", MediaID: created[0].MediaID, Title: "Newest", FeedPosition: 0, PublishedAt: published,
 			EnclosureURL: "https://cdn.example.com/a.mp3?sig=hush", EnclosureLength: 1000, DownloadState: store.EntryDownloadDownloaded, Downloaded: true},
-		{SubscriptionID: id, GUID: "g2", MediaID: "m2", Title: "Older", FeedPosition: 1,
+		{SubscriptionID: id, GUID: "g2", MediaID: created[1].MediaID, Title: "Older", FeedPosition: 1,
 			EnclosureURL: "https://cdn.example.com/b.mp3?sig=hush", EnclosureLength: 2000, DownloadState: store.EntryDownloadNone},
 	}
 	fx.catalogue.health[id] = store.SubscriptionHealth{LastSuccessAt: published}
@@ -357,7 +396,7 @@ func TestSubscriptionEntriesAndCountsNeverCarryEnclosureURLs(t *testing.T) {
 	if err := json.Unmarshal(resp.Data["subscriptionEntries"], &entries); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 2 || entries[0].MediaID != "m1" || entries[1].MediaID != "m2" {
+	if len(entries) != 2 || entries[0].MediaID != string(created[0].MediaID) || entries[1].MediaID != string(created[1].MediaID) {
 		t.Fatalf("entries = %+v", entries)
 	}
 	if entries[0].Availability != "downloaded" || entries[1].Availability != "not-downloaded" || entries[0].PublishedAt != "2026-11-01T09:00:00Z" {
@@ -375,6 +414,50 @@ func TestSubscriptionEntriesAndCountsNeverCarryEnclosureURLs(t *testing.T) {
 		map[string]any{"libraryID": "library-local"}, "subscriptions", &listed)
 	if len(listed) != 1 || listed[0].EntryCount != 2 || listed[0].DownloadedCount != 1 || listed[0].CatalogBytes != 3000 || listed[0].Health.State != SubscriptionHealthOK {
 		t.Fatalf("subscriptions = %+v", listed)
+	}
+}
+
+func TestSubscriptionEntriesUseLibraryMediaVisibility(t *testing.T) {
+	fx := newFeedFixture(t)
+	fx.handler.feedCatalogue = nil
+	ctx := t.Context()
+	library, err := fx.st.CreateLibrary(ctx, "Feed Library", false, "example-feeds", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	sub, err := fx.st.AddSubscription(ctx, store.Subscription{
+		LibraryID: library.ID, FeedURL: secretFeedURL, Root: "/media/Feed",
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := fx.st.UpsertSubscriptionCatalog(ctx, sub.ID, []store.FeedCatalogEntry{
+		{GUID: "blocked", Title: "Blocked"},
+		{GUID: "trash", Title: "Trash", Position: 1},
+		{GUID: "visible", Title: "Visible", Position: 2},
+	}, now)
+	if err != nil || len(created) != 3 {
+		t.Fatalf("seed feed: %d entries, %v", len(created), err)
+	}
+	for _, entry := range created[1:] {
+		if err := fx.st.SetMediaFields(ctx, entry.MediaID, []store.MediaField{
+			{Name: "certification", Type: store.EntityFieldText, Text: "allowed"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scope := auth.Scope{AllLibraries: true, Certification: []store.CertificationConstraint{
+		{PluginID: "example-feeds", Allowed: []string{"allowed"}},
+	}}
+	if err := fx.st.TrashMedia(ctx, created[1].MediaID, scope.LibraryFilter()); err != nil {
+		t.Fatal(err)
+	}
+	items, err := fx.handler.subscriptionEntries(ctx, scope, request{
+		Variables: map[string]any{"subscriptionID": string(sub.ID)},
+	})
+	if err != nil || len(items) != 1 || items[0].MediaID != string(created[2].MediaID) {
+		t.Fatalf("subscriptionEntries = %+v, %v", items, err)
 	}
 }
 

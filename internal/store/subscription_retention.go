@@ -61,6 +61,15 @@ func (s *Store) SubscriptionFollowed(ctx context.Context, profileID ProfileID, s
 	return err == nil, err
 }
 
+const liveSubscriptionReceipts = `
+	FROM subscription_seen_entry se
+	JOIN subscription sub ON sub.id = se.subscription_id
+	JOIN media_file mf ON mf.path = se.path AND mf.missing_at_ms IS NULL
+	JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id AND m.trashed_at_ms IS NULL
+	WHERE se.path <> ''`
+
+const receiptGUIDMayBeURL = `(lower(se.guid) LIKE 'http:%' OR lower(se.guid) LIKE 'https:%')`
+
 func (s *Store) ReconcileSubscriptionSeenEntries(ctx context.Context) (int, int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -70,20 +79,29 @@ func (s *Store) ReconcileSubscriptionSeenEntries(ctx context.Context) (int, int,
 	var skippedBlank int
 	if err := s.catalogR.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM subscription_seen_entry
-		WHERE path = ''
+		WHERE path = '' AND seen_at_ms <> 0
 	`).Scan(&skippedBlank); err != nil {
 		return 0, 0, err
 	}
-	result, err := s.catalogW.ExecContext(ctx, `
-		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
-		SELECT mf.media_id, ?, se.guid
-		FROM subscription_seen_entry se
-		JOIN subscription sub ON sub.id = se.subscription_id
-		JOIN media_file mf ON mf.path = se.path AND mf.missing_at_ms IS NULL
-		JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id AND m.trashed_at_ms IS NULL
-		WHERE se.path <> ''
-	`, subscriptionFeedGUIDScheme)
+	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
+		SELECT mf.media_id, ?, se.guid`+liveSubscriptionReceipts+` AND NOT `+receiptGUIDMayBeURL, subscriptionFeedGUIDScheme)
+	if err != nil {
+		return 0, 0, err
+	}
+	urlIDs, err := reconcileURLGUIDs(ctx, tx)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := repairLegacyFeedCatalogue(ctx, tx); err != nil {
+		return 0, 0, err
+	}
+	if err := tx.Commit(); err != nil {
 		return 0, 0, err
 	}
 	affected, err := result.RowsAffected()
@@ -93,7 +111,80 @@ func (s *Store) ReconcileSubscriptionSeenEntries(ctx context.Context) (int, int,
 	if _, err := s.ReplayItemStateImports(ctx, time.Now().UTC()); err != nil {
 		return 0, 0, err
 	}
-	return int(affected), skippedBlank, nil
+	return int(affected + urlIDs), skippedBlank, nil
+}
+
+func reconcileURLGUIDs(ctx context.Context, tx *sql.Tx) (int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT mf.media_id, se.subscription_id, se.guid`+liveSubscriptionReceipts+` AND `+receiptGUIDMayBeURL)
+	if err != nil {
+		return 0, err
+	}
+	identities, err := scanSubscriptionGUIDs(rows)
+	if err != nil {
+		return 0, err
+	}
+	var affected int64
+	for _, entry := range identities {
+		result, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)
+		`, entry.mediaID, subscriptionFeedGUIDScheme, feedGUIDExternalID(entry.guid))
+		if err != nil {
+			return 0, err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		affected += n
+		if err := repairLegacyFeedIdentity(ctx, tx, entry.subscriptionID, entry.guid, entry.mediaID); err != nil {
+			return 0, err
+		}
+	}
+	return affected, nil
+}
+
+func repairLegacyFeedCatalogue(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT se.media_id, se.subscription_id, se.guid
+		FROM subscription_entry se JOIN media m ON m.id = se.media_id
+		WHERE (`+receiptGUIDMayBeURL+` OR instr(se.guid, '://') > 0 OR se.guid LIKE '//%')
+		  AND (m.title = se.guid OR EXISTS (
+		    SELECT 1 FROM media_external_id e WHERE e.media_id = se.media_id
+		      AND ((e.scheme = ? AND e.value = se.guid) OR (e.scheme = ? AND e.value = se.subscription_id || char(0) || se.guid))
+		  ))
+	`, subscriptionFeedGUIDScheme, ProvisionalExternalIDScheme)
+	if err != nil {
+		return err
+	}
+	identities, err := scanSubscriptionGUIDs(rows)
+	if err != nil {
+		return err
+	}
+	for _, entry := range identities {
+		if err := repairLegacyFeedIdentity(ctx, tx, entry.subscriptionID, entry.guid, entry.mediaID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type subscriptionGUID struct {
+	mediaID        MediaID
+	subscriptionID SubscriptionID
+	guid           string
+}
+
+func scanSubscriptionGUIDs(rows *sql.Rows) ([]subscriptionGUID, error) {
+	defer rows.Close()
+	var entries []subscriptionGUID
+	for rows.Next() {
+		var entry subscriptionGUID
+		if err := rows.Scan(&entry.mediaID, &entry.subscriptionID, &entry.guid); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
 }
 
 // ApplySubscriptionRetentionPolicies runs the autonomous retention sweep:

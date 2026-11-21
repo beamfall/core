@@ -2,11 +2,84 @@ package scrape
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestMalformedFeedRedirectErrorOmitsLocation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", "https://[broken/next?signature=redirect-secret")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer server.Close()
+	engine := New(WithInsecureLoopback())
+	_, err := engine.FetchConditional(t.Context(), server.URL+"/feed?token=feed-secret", "", "")
+	if err == nil {
+		t.Fatal("malformed redirect succeeded")
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) || strings.Contains(err.Error(), "://") || strings.Contains(err.Error(), "secret") {
+		t.Fatal("malformed redirect error exposed a URL")
+	}
+}
+
+func TestParseFeedRequiresFeedRoot(t *testing.T) {
+	for _, input := range []string{"<html><rss/></html>", "<html><body/></html>", "", "<rss/><html/>"} {
+		if _, err := ParseFeed([]byte(input)); err == nil {
+			t.Errorf("accepted non-feed document %q", input)
+		}
+	}
+	for _, input := range []string{"<rss/>", "<feed xmlns=\"http://www.w3.org/2005/Atom\"/>", "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"/>"} {
+		if _, err := ParseFeed([]byte(input)); err != nil {
+			t.Errorf("rejected feed root %q: %v", input, err)
+		}
+	}
+}
+
+func TestFeedTemporaryCrossOriginRedirects(t *testing.T) {
+	var reached atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached.Add(1)
+		if r.Header.Get("Authorization") != "" || r.Header.Get("Referer") != "" {
+			t.Error("cross-origin hop forwarded request credentials or referrer")
+		}
+		_, _ = w.Write([]byte("<rss/>"))
+	}))
+	defer target.Close()
+	for _, code := range []int{http.StatusFound, http.StatusSeeOther, http.StatusTemporaryRedirect} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, target.URL, code)
+			}))
+			defer source.Close()
+			engine := New(WithInsecureLoopback())
+			start := reached.Load()
+			rawURL := source.URL + "/feed?token=signed"
+			got, err := engine.FetchConditional(t.Context(), rawURL, "", "")
+			if err != nil || string(got.Data) != "<rss/>" || got.PermanentRedirect != "" {
+				t.Fatalf("anonymous redirect: body=%q permanent=%t err=%v", got.Data, got.PermanentRedirect != "", err)
+			}
+			for _, credential := range []struct{ url, header string }{
+				{rawURL, "Bearer test"},
+				{strings.Replace(rawURL, "://", "://user:pass@", 1), ""},
+			} {
+				_, err := engine.FetchConditionalAuth(t.Context(), credential.url, "", "", credential.header)
+				if !IsRefused(err) {
+					t.Fatalf("credentialed redirect: got %v, want refusal", err)
+				}
+			}
+			if reached.Load() != start+1 {
+				t.Fatal("credentialed request reached the cross-origin destination")
+			}
+		})
+	}
+}
 
 func TestParseFeedChannelMetadataAndEntryFacts(t *testing.T) {
 	const doc = `<?xml version="1.0"?>

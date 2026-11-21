@@ -4,10 +4,27 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/beamfall/core/internal/store"
 )
+
+func TestV1MediaDetailProtectsLegacyURLGUID(t *testing.T) {
+	const guid = "https://cdn.example.com/track.mp3?signature=test-secret"
+	detail := newV1MediaDetail(store.Media{Title: guid}, []store.MediaExternalID{
+		{Scheme: "feed-guid", Value: guid},
+		{Scheme: store.ProvisionalExternalIDScheme, Value: "sub-1\x00" + guid},
+	})
+	data, err := json.Marshal(detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Title != "Untitled" || len(detail.ExternalIDs) != 2 ||
+		strings.Contains(string(data), "https://") || strings.Contains(string(data), "test-secret") {
+		t.Fatal("Media detail exposed a legacy feed GUID")
+	}
+}
 
 // TestV1LookupMediaByExternalID pins CORE-1698: an integration that knows an
 // item only by another system's identifier can ask whether it is in the

@@ -2,9 +2,12 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -24,8 +27,7 @@ import (
 
 // ErrSubscriptionCatalogUnsupported means the Subscription's Library keeps its
 // Media on the Encrypted-Library plane, where the catalogue (a catalog-plane
-// table referencing media) cannot bind entries. The poller falls back to its
-// download-every-unseen-entry behaviour for such Libraries.
+// table referencing media) cannot bind entries.
 var ErrSubscriptionCatalogUnsupported = errors.New("subscription catalogue is unavailable for encrypted libraries")
 
 // ErrSubscriptionRefreshTooSoon means a refresh was asked for within the
@@ -137,6 +139,20 @@ func SubscriptionEntryMediaID(libraryID LibraryID, id SubscriptionID, guid strin
 	return ProvisionalMediaID(libraryID, SubscriptionEntryStreamKey(id, guid))
 }
 
+func feedGUIDExternalID(guid string) string {
+	if u, err := url.Parse(guid); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		return fmt.Sprintf("urn:beamfall:feed-entry:%x", sha256.Sum256([]byte("guid\x00"+guid)))
+	}
+	return guid
+}
+
+func feedEntryFallbackTitle(guid string) string {
+	if u, err := url.Parse(guid); err == nil && (u.Host != "" || u.Scheme == "http" || u.Scheme == "https") {
+		return "Untitled"
+	}
+	return guid
+}
+
 // UpsertSubscriptionCatalog records every entry of a parsed feed: new entries
 // get a file-less Media, known entries refresh position, title and enclosure.
 // It returns the entries created by this call.
@@ -208,6 +224,8 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 	firstSeen := now
 	if len(known) == 0 && subscription.LastPolledAt.IsZero() {
 		firstSeen = subscription.AddedAt
+	} else if firstSeen.UnixMilli() <= subscription.AddedAt.UnixMilli() {
+		firstSeen = subscription.AddedAt.Add(time.Millisecond)
 	}
 
 	created := []SubscriptionEntry{}
@@ -263,7 +281,7 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT OR IGNORE INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)
-		`, row.MediaID, subscriptionFeedGUIDScheme, guid); err != nil {
+		`, row.MediaID, subscriptionFeedGUIDScheme, feedGUIDExternalID(guid)); err != nil {
 			return nil, nil, err
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -300,14 +318,112 @@ func refreshSubscriptionEntryTx(ctx context.Context, tx *sql.Tx, id Subscription
 		max(0, entry.EnclosureLength), id, guid); err != nil {
 		return err
 	}
-	if title == "" {
-		return nil
+	if title != "" {
+		displayTitle := titleOrFeedFallback(title, guid)
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE media SET title = ?
+			WHERE id = ? AND title <> ? AND title_identified = 0 AND trashed_at_ms IS NULL
+		`, displayTitle, mediaID, displayTitle); err != nil {
+			return err
+		}
 	}
-	_, err := tx.ExecContext(ctx, `
-		UPDATE media SET title = ?
-		WHERE id = ? AND title <> ? AND title_identified = 0 AND trashed_at_ms IS NULL
-	`, title, mediaID, title)
-	return err
+	return repairLegacyFeedIdentity(ctx, tx, id, guid, mediaID)
+}
+
+func repairLegacyFeedIdentity(ctx context.Context, tx *sql.Tx, id SubscriptionID, guid string, mediaID MediaID) error {
+	if title := feedEntryFallbackTitle(guid); title != guid {
+		if _, err := tx.ExecContext(ctx, `UPDATE media SET title = ? WHERE id = ? AND title = ?`, title, mediaID, guid); err != nil {
+			return err
+		}
+	}
+	if opaque := feedGUIDExternalID(guid); opaque != guid {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
+			SELECT media_id, scheme, CASE WHEN scheme = ? THEN ? ELSE ? END
+			FROM media_external_id WHERE media_id = ? AND ((scheme = ? AND value = ?) OR (scheme = ? AND value = ?))
+		`, subscriptionFeedGUIDScheme, opaque, SubscriptionEntryStreamKey(id, opaque),
+			mediaID, subscriptionFeedGUIDScheme, guid, ProvisionalExternalIDScheme, SubscriptionEntryStreamKey(id, guid)); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `
+			DELETE FROM media_external_id
+			WHERE media_id = ? AND ((scheme = ? AND value = ?) OR (scheme = ? AND value = ?))
+		`, mediaID, subscriptionFeedGUIDScheme, guid, ProvisionalExternalIDScheme, SubscriptionEntryStreamKey(id, guid))
+		return err
+	}
+	return nil
+}
+
+func titleOrFeedFallback(title, guid string) string {
+	if title == "" || title == guid {
+		return feedEntryFallbackTitle(guid)
+	}
+	return title
+}
+
+// SubscriptionBackCatalogue is the set of skipped initial GUIDs recorded for
+// a Library that cannot hold file-less Media.
+func (s *Store) SubscriptionBackCatalogue(ctx context.Context, id SubscriptionID) (map[string]bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT guid FROM subscription_seen_entry
+		WHERE subscription_id = ? AND path = '' AND seen_at_ms = 0
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	skipped := map[string]bool{}
+	for rows.Next() {
+		var guid string
+		if err := rows.Scan(&guid); err != nil {
+			return nil, err
+		}
+		skipped[guid] = true
+	}
+	return skipped, rows.Err()
+}
+
+// RecordInitialSubscriptionDownloads commits the initial selection before
+// downloading any bytes. When the Library has no catalogue, it records
+// excluded GUIDs with a blank path and zero time instead of queuing Media.
+func (s *Store) RecordInitialSubscriptionDownloads(ctx context.Context, id SubscriptionID, queued, skipped []string, now time.Time) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, guid := range queued {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE subscription_entry SET download_state = ?
+			WHERE subscription_id = ? AND guid = ? AND download_state = ?
+		`, EntryDownloadQueued, id, guid, EntryDownloadNone); err != nil {
+			return err
+		}
+	}
+	for _, guid := range skipped {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
+			VALUES (?, ?, 0, '')
+		`, id, guid); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE subscription SET last_polled_at_ms = ?, etag = '', last_modified = '' WHERE id = ?
+	`, now.UnixMilli(), id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // archivedSubscriptionMediaTx resolves a pre-catalogue download of guid: the
@@ -335,10 +451,7 @@ func archivedSubscriptionMediaTx(ctx context.Context, tx *sql.Tx, subscription S
 // stream key. inserted is false when the Media row already existed.
 func insertSubscriptionEntryMediaTx(ctx context.Context, tx *sql.Tx, subscription Subscription, row SubscriptionEntry, entry FeedCatalogEntry) (bool, error) {
 	container, codec, class := enclosureMediaFacts(entry.EnclosureType)
-	title := row.Title
-	if title == "" {
-		title = row.GUID
-	}
+	title := titleOrFeedFallback(row.Title, row.GUID)
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO media(id, library_id, title, summary, duration_seconds, container, codec, media_class, mutated_by)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scan')
@@ -354,7 +467,7 @@ func insertSubscriptionEntryMediaTx(ctx context.Context, tx *sql.Tx, subscriptio
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)
-	`, row.MediaID, ProvisionalExternalIDScheme, SubscriptionEntryStreamKey(subscription.ID, row.GUID)); err != nil {
+	`, row.MediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(SubscriptionEntryStreamKey(subscription.ID, row.GUID))); err != nil {
 		return false, err
 	}
 	return affected > 0, nil
@@ -411,6 +524,9 @@ func scanSubscriptionEntryRow(scan func(...any) error) (SubscriptionEntry, error
 	entry.PublishedAt = timeFromMilliOrZero(publishedMS)
 	entry.FirstSeenAt = time.UnixMilli(firstSeenMS).UTC()
 	entry.Downloaded = downloaded != 0
+	if entry.Title == entry.GUID {
+		entry.Title = feedEntryFallbackTitle(entry.GUID)
+	}
 	return entry, nil
 }
 

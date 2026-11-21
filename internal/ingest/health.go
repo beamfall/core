@@ -159,9 +159,8 @@ func catalogueEntries(document scrape.FeedDocument) []scrape.FeedEntry {
 }
 
 // catalogue upserts every enclosure-bearing entry and returns the GUIDs the
-// download policy selects. ok is false when the Library cannot hold a
-// file-less catalogue (encrypted media plane): the caller downloads every
-// unseen entry, the pre-catalogue behaviour.
+// download policy selects. The boolean reports whether the Library holds a
+// file-less catalogue.
 func (p *Poller) catalogue(ctx context.Context, subscription store.Subscription, document scrape.FeedDocument, now time.Time) (map[string]bool, bool, error) {
 	entries := catalogueEntries(document)
 	rows := make([]store.FeedCatalogEntry, len(entries))
@@ -179,15 +178,19 @@ func (p *Poller) catalogue(ctx context.Context, subscription store.Subscription,
 			FeedTitle:       document.Title,
 		}
 	}
-	if _, err := p.store.UpsertSubscriptionCatalog(ctx, subscription.ID, rows, now); err != nil {
-		if errors.Is(err, store.ErrSubscriptionCatalogUnsupported) {
-			return nil, false, nil
-		}
+	_, err := p.store.UpsertSubscriptionCatalog(ctx, subscription.ID, rows, now)
+	encrypted := errors.Is(err, store.ErrSubscriptionCatalogUnsupported)
+	if err != nil && !encrypted {
 		return nil, false, err
 	}
 	policy, _, err := p.store.SubscriptionPolicyAndHealth(ctx, subscription.ID)
 	if err != nil {
 		return nil, false, err
+	}
+	firstPoll := subscription.LastPolledAt.IsZero()
+	if encrypted {
+		selected, err := p.uncataloguedDownloads(ctx, subscription.ID, policy, firstPoll, document.Serial, entries, now)
+		return selected, false, err
 	}
 	stored, err := p.store.SubscriptionEntries(ctx, subscription.ID)
 	if err != nil {
@@ -198,21 +201,62 @@ func (p *Poller) catalogue(ctx context.Context, subscription store.Subscription,
 		byGUID[entry.GUID] = entry
 	}
 	selected := map[string]bool{}
-	for _, guid := range selectByPolicy(policy, document.Serial, subscription.AddedAt, entries, byGUID) {
+	var queued []string
+	initialLatest := firstPoll && policy.Policy == store.DownloadPolicyLatest
+	for _, guid := range selectByPolicy(policy, firstPoll, document.Serial, subscription.AddedAt, entries, byGUID) {
 		if entry, ok := byGUID[guid]; ok && (entry.Downloaded || entry.DownloadState == store.EntryDownloadDownloaded) {
 			continue
 		}
 		selected[guid] = true
+		if initialLatest {
+			queued = append(queued, guid)
+		}
+	}
+	if initialLatest {
+		if err := p.store.RecordInitialSubscriptionDownloads(ctx, subscription.ID, queued, nil, now); err != nil {
+			return nil, false, err
+		}
 	}
 	return selected, true, nil
 }
 
+func (p *Poller) uncataloguedDownloads(ctx context.Context, id store.SubscriptionID, policy store.SubscriptionPolicy, firstPoll, serial bool, entries []scrape.FeedEntry, now time.Time) (map[string]bool, error) {
+	selected := map[string]bool{}
+	if firstPoll {
+		for _, guid := range selectByPolicy(policy, true, serial, time.Time{}, entries, nil) {
+			selected[guid] = true
+		}
+		var skipped []string
+		for _, entry := range entries {
+			if !selected[entry.GUID] {
+				skipped = append(skipped, entry.GUID)
+			}
+		}
+		return selected, p.store.RecordInitialSubscriptionDownloads(ctx, id, nil, skipped, now)
+	}
+	if policy.Policy == store.DownloadPolicyStreamOnly {
+		return selected, nil
+	}
+	var skipped map[string]bool
+	if policy.Policy != store.DownloadPolicyEverything {
+		var err error
+		skipped, err = p.store.SubscriptionBackCatalogue(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+	}
+	for _, entry := range entries {
+		if !skipped[entry.GUID] {
+			selected[entry.GUID] = true
+		}
+	}
+	return selected, nil
+}
+
 // selectByPolicy returns the GUIDs a policy wants on disk, before filtering
-// out what is already there. latest: the first N entries of a serial feed,
-// else the newest N by publication time (undated last, feed order breaks
-// ties); new-only: entries first seen after the Subscription was added;
-// everything: all; stream-only: none.
-func selectByPolicy(policy store.SubscriptionPolicy, serial bool, addedAt time.Time, entries []scrape.FeedEntry, stored map[string]store.SubscriptionEntry) []string {
+// out existing downloads. Latest bootstraps with the first N of a serial
+// feed or newest N by date, then downloads new arrivals like new-only.
+func selectByPolicy(policy store.SubscriptionPolicy, firstPoll, serial bool, addedAt time.Time, entries []scrape.FeedEntry, stored map[string]store.SubscriptionEntry) []string {
 	var guids []string
 	switch policy.Policy {
 	case store.DownloadPolicyStreamOnly:
@@ -221,18 +265,32 @@ func selectByPolicy(policy store.SubscriptionPolicy, serial bool, addedAt time.T
 		for _, entry := range entries {
 			guids = append(guids, entry.GUID)
 		}
-	case store.DownloadPolicyNewOnly:
-		for _, entry := range entries {
-			if row, ok := stored[entry.GUID]; ok && row.FirstSeenAt.After(addedAt) {
-				guids = append(guids, entry.GUID)
+	case store.DownloadPolicyNewOnly, store.DownloadPolicyLatest:
+		if policy.Policy == store.DownloadPolicyNewOnly || !firstPoll {
+			for _, entry := range entries {
+				row, ok := stored[entry.GUID]
+				retryLatest := policy.Policy == store.DownloadPolicyLatest &&
+					(row.DownloadState == store.EntryDownloadQueued || row.DownloadState == store.EntryDownloadFailed)
+				if ok && (row.FirstSeenAt.After(addedAt) || retryLatest) {
+					guids = append(guids, entry.GUID)
+				}
 			}
+			return guids
 		}
-	case store.DownloadPolicyLatest:
 		n := policy.LatestN
 		if n <= 0 {
 			n = store.DefaultDownloadLatestN
 		}
-		ranked := slices.Clone(entries)
+		ranked := make([]scrape.FeedEntry, 0, len(entries))
+		for _, entry := range entries {
+			if stored[entry.GUID].FirstSeenAt.After(addedAt) {
+				// The first poll may have saved a catalogue before it was
+				// interrupted. New arrivals do not compete with that snapshot.
+				guids = append(guids, entry.GUID)
+			} else {
+				ranked = append(ranked, entry)
+			}
+		}
 		if !serial {
 			slices.SortStableFunc(ranked, func(a, b scrape.FeedEntry) int {
 				switch {
@@ -305,7 +363,11 @@ func (p *Poller) pollGuarded(ctx context.Context, subscription store.Subscriptio
 		return 0, nil
 	}
 	defer p.inflight.Delete(subscription.ID)
-	return p.pollSubscription(ctx, subscription)
+	current, err := p.store.Subscription(ctx, subscription.ID)
+	if err != nil {
+		return 0, err
+	}
+	return p.pollSubscription(ctx, current)
 }
 
 func (p *Poller) clock() time.Time {

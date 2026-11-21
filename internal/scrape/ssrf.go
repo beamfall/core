@@ -57,21 +57,45 @@ func (e *Engine) controlDial(network, address string, _ syscall.RawConn) error {
 // isPublicIP rejects loopback, RFC 1918/ULA private, link-local (which covers
 // the 169.254.169.254 cloud metadata endpoint), multicast, and unspecified
 // addresses, for both IPv4 and IPv6 (including v4-mapped v6).
-// checkRedirect pins redirects to the original normalized origin (scheme,
-// hostname, and effective port) and re-vets every hop. net/http copies
-// Authorization headers across same-host redirects, so comparing Hostname alone
-// would leak credentials to another service listening on a different port.
+// checkRedirect re-vets every hop and pins requests to the original origin.
+// Anonymous conditional feed fetches can follow temporary cross-origin hops.
 func (e *Engine) checkRedirect(req *http.Request, via []*http.Request) error {
 	recordRedirectHop(req)
 	if len(via) >= maxRedirects {
 		return fmt.Errorf("scrape: refused after %d redirects", maxRedirects)
 	}
-	original := normalizedRedirectOrigin(via[0].URL)
-	redirected := normalizedRedirectOrigin(req.URL)
-	if original != redirected {
-		return refusedf("scrape: refused cross-origin redirect from %q to %q", original, redirected)
+	target := normalizedRedirectOrigin(req.URL)
+	crossOriginHop := normalizedRedirectOrigin(via[len(via)-1].URL) != target
+	if crossOriginHop || normalizedRedirectOrigin(via[0].URL) != target {
+		record, _ := req.Context().Value(redirectRecordKey{}).(*redirectRecord)
+		if record == nil || (crossOriginHop && !temporaryRedirect(req.Response)) || hasRedirectCredentials(req) {
+			return refusedf("scrape: refused cross-origin redirect")
+		}
+		for _, previous := range via {
+			if hasRedirectCredentials(previous) {
+				return refusedf("scrape: refused cross-origin redirect")
+			}
+		}
+	}
+	if crossOriginHop {
+		req.Header.Del("Referer")
 	}
 	return e.vetURL(req.URL)
+}
+
+func temporaryRedirect(response *http.Response) bool {
+	if response == nil {
+		return false
+	}
+	switch response.StatusCode {
+	case http.StatusFound, http.StatusSeeOther, http.StatusTemporaryRedirect:
+		return true
+	}
+	return false
+}
+
+func hasRedirectCredentials(req *http.Request) bool {
+	return req.Header.Get("Authorization") != "" || req.URL.User != nil
 }
 
 // checkStreamRedirect is checkRedirect for media payloads. Enclosures
@@ -82,7 +106,7 @@ func (e *Engine) checkRedirect(req *http.Request, via []*http.Request) error {
 // its origin, so a feed credential never reaches another origin (CORE-0745).
 func (e *Engine) checkStreamRedirect(req *http.Request, via []*http.Request) error {
 	first := via[0]
-	if first.Header.Get("Authorization") != "" || first.URL.User != nil {
+	if hasRedirectCredentials(first) {
 		return e.checkRedirect(req, via)
 	}
 	recordRedirectHop(req)

@@ -22,12 +22,14 @@
 package proxytee
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -77,6 +79,7 @@ type Service struct {
 	tokens              *streamtoken.Service
 	origin              OriginOpener
 	archiveDir          string
+	archiveByteLimit    int64
 	archiveRoot         *os.Root
 	archiveInfo         os.FileInfo
 	closeOnce           sync.Once
@@ -148,6 +151,7 @@ func New(st *store.Store, authService *auth.Service, tokens *streamtoken.Service
 		tokens:              tokens,
 		origin:              origin,
 		archiveDir:          absoluteRoot,
+		archiveByteLimit:    scrape.EnclosureDownloadLimit,
 		archiveRoot:         archiveRoot,
 		archiveInfo:         archiveInfo,
 		slots:               map[store.MediaID]*streamSlot{},
@@ -424,9 +428,12 @@ func (s *Service) releasePromotion(mediaID store.MediaID, generation uint64, pro
 // the token or the client), opens the origin enclosure with the client's Range
 // forwarded, streams the bytes to the client, and tees them to disk. On a full,
 // length-verified body it fingerprints the teed file and promotes the Media in
-// place (MediaID preserved, provisional cleared). On a partial (client
-// disconnect, truncated origin) it keeps resumable bytes and never promotes.
+// place (MediaID preserved, provisional cleared). Failed and oversized copies
+// are discarded.
 func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	w.Header().Set("Content-Disposition", "inline")
 	token := strings.TrimPrefix(r.URL.Path, "/api/media/proxy/")
 	if token == "" || token == r.URL.Path {
 		http.Error(w, "missing stream token", http.StatusUnauthorized)
@@ -489,28 +496,24 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	// Exactly one full-resource request owns the archive writer. Range requests
 	// and concurrent peers remain client-only, so they cannot corrupt .partial.
 	var teeFile *os.File
-	var teeErr error
 	if owner {
-		teeFile, teeErr = s.openTee(st.teeRelative)
+		teeFile, _ = s.openTee(st.teeRelative)
 	}
-	// A tee open failure must not break playback: serve the client anyway,
-	// just without archiving this pass (the entry stays replayable).
-	var teeWriter io.Writer
-	teeClosed := false
-	if owner && teeErr == nil {
-		teeWriter = teeFile
+	keepTee := false
+	discardTee := func() {
+		_ = teeFile.Close()
+		_ = s.discardChangedPromotion(st.teeRelative)
+		keepTee = true
+	}
+	if teeFile != nil {
 		defer func() {
-			if !teeClosed {
-				_ = closeTeeFile(teeFile)
+			if !keepTee {
+				discardTee()
 			}
 		}()
 	}
 
-	// Forward the origin's range/type headers so the client gets a faithful
-	// proxy (seek works, content type is preserved).
-	if origin.ContentType != "" {
-		w.Header().Set("Content-Type", origin.ContentType)
-	}
+	w.Header().Set("Content-Type", proxyContentType(origin.ContentType))
 	if origin.AcceptRanges != "" {
 		w.Header().Set("Accept-Ranges", origin.AcceptRanges)
 	}
@@ -519,26 +522,27 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(origin.StatusCode)
 
-	// Stream to the client and tee to disk in one pass. io.MultiWriter fans the
-	// origin body to both; a client disconnect surfaces as a write error and
-	// stops the copy with a partial on disk.
-	var sink io.Writer = w
-	if teeWriter != nil {
-		sink = io.MultiWriter(w, teeWriter)
+	if teeFile == nil {
+		_, _ = io.Copy(w, origin.Body)
+		return
 	}
-	written, copyErr := io.Copy(sink, origin.Body)
-
-	// Promotion gate: only a full, length-verified, full-resource (not a ranged
-	// sub-request) body is promoted. A ranged request, a short read, or a copy
-	// error (client gone / origin truncated) leaves the provisional in place and
-	// keeps this pass's resumable bytes — never an auto-promotion of a partial.
-	full := copyErr == nil &&
-		owner &&
-		teeWriter != nil &&
-		origin.StatusCode == http.StatusOK &&
-		origin.TotalSize > 0 &&
-		written == origin.TotalSize
-	if !full {
+	written, err := io.Copy(io.MultiWriter(w, teeFile), io.LimitReader(origin.Body, s.archiveByteLimit))
+	if err != nil {
+		return
+	}
+	if written == s.archiveByteLimit {
+		remainder := bufio.NewReader(origin.Body)
+		_, err := remainder.Peek(1)
+		if err == nil {
+			discardTee()
+			_, _ = io.Copy(w, remainder)
+			return
+		}
+		if !errors.Is(err, io.EOF) {
+			return
+		}
+	}
+	if origin.StatusCode != http.StatusOK || origin.TotalSize <= 0 || written != origin.TotalSize {
 		return
 	}
 	teeInfo, err := teeFile.Stat()
@@ -549,7 +553,7 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	if err := closeTeeFile(teeFile); err != nil {
 		return
 	}
-	teeClosed = true
+	keepTee = true
 	didPromote, err := s.promote(r.Context(), grant.MediaID, st, teeInfo)
 	if err != nil {
 		// Promotion failed (hash/move/store error): leave the provisional intact
@@ -558,6 +562,16 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	promoted = didPromote
+}
+
+func proxyContentType(raw string) string {
+	mediaType, _, err := mime.ParseMediaType(raw)
+	if err == nil && (mediaType == "application/octet-stream" ||
+		strings.HasPrefix(mediaType, "audio/") || strings.HasPrefix(mediaType, "video/") ||
+		strings.HasPrefix(mediaType, "image/")) {
+		return raw
+	}
+	return "application/octet-stream"
 }
 
 // promote checks the completed tee for an existing content identity before moving it.

@@ -30,6 +30,81 @@ type concurrentOrigin struct {
 	peerBody []byte
 }
 
+type fixedOrigin struct{ response scrape.OriginResponse }
+
+func (o fixedOrigin) OpenOriginRange(context.Context, string, string) (scrape.OriginResponse, error) {
+	return o.response, nil
+}
+
+func TestProxySandboxesPublisherContent(t *testing.T) {
+	h := newHarness(t)
+	token := h.proxyToken(t)
+	for _, tc := range []struct{ contentType, want string }{
+		{"text/html; charset=utf-8", "application/octet-stream"},
+		{"application/javascript", "application/octet-stream"},
+		{"", "application/octet-stream"},
+		{"audio/mpeg", "audio/mpeg"},
+		{"video/mp4", "video/mp4"},
+		{"image/svg+xml", "image/svg+xml"},
+		{"application/octet-stream", "application/octet-stream"},
+	} {
+		h.svc.origin = fixedOrigin{scrape.OriginResponse{
+			Body: io.NopCloser(strings.NewReader("<script>alert(1)</script>")), ContentType: tc.contentType,
+			StatusCode: http.StatusPartialContent, ContentRange: "bytes 0-24/25",
+		}}
+		req := httptest.NewRequest(http.MethodGet, "/api/media/proxy/"+token, nil)
+		req.Header.Set("Range", "bytes=0-24")
+		rec := httptest.NewRecorder()
+		h.svc.ServeProxy(rec, req)
+		if rec.Code != http.StatusPartialContent || rec.Header().Get("Content-Type") != tc.want ||
+			rec.Header().Get("X-Content-Type-Options") != "nosniff" ||
+			rec.Header().Get("Content-Security-Policy") != "sandbox; default-src 'none'" ||
+			rec.Header().Get("Content-Disposition") != "inline" {
+			t.Errorf("proxying %q: status %d, headers %v", tc.contentType, rec.Code, rec.Header())
+		}
+	}
+}
+
+type failedArchiveReader struct{}
+
+func (failedArchiveReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+func TestProxyDiscardsFailedAndOversizedArchiveCopies(t *testing.T) {
+	h := newHarness(t)
+	token := h.proxyToken(t)
+	h.svc.archiveByteLimit = 4
+	for _, tc := range []struct {
+		name, wantBody string
+		body           io.Reader
+	}{
+		{"overflow", "12345", strings.NewReader("12345")},
+		{"copy error", "123", io.MultiReader(strings.NewReader("123"), failedArchiveReader{})},
+		{"exact limit", "1234", strings.NewReader("1234")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			size := int64(5)
+			if tc.name == "exact limit" {
+				size = 4
+			}
+			h.svc.origin = fixedOrigin{scrape.OriginResponse{
+				Body: io.NopCloser(tc.body), StatusCode: http.StatusOK, TotalSize: size,
+			}}
+			rec := httptest.NewRecorder()
+			h.svc.ServeProxy(rec, httptest.NewRequest(http.MethodGet, "/api/media/proxy/"+token, nil))
+			if rec.Code != http.StatusOK || rec.Body.String() != tc.wantBody {
+				t.Fatalf("proxy response = %d %q", rec.Code, rec.Body.String())
+			}
+			if _, err := os.Stat(h.archivePath + ".partial"); !os.IsNotExist(err) {
+				t.Fatalf("partial exists after copy: %v", err)
+			}
+			if _, err := os.Stat(h.archivePath); tc.name == "exact limit" && err != nil ||
+				tc.name != "exact limit" && !os.IsNotExist(err) {
+				t.Fatalf("unexpected archive state: %v", err)
+			}
+		})
+	}
+}
+
 func (o *concurrentOrigin) OpenOriginRange(context.Context, string, string) (scrape.OriginResponse, error) {
 	o.mu.Lock()
 	o.calls++
@@ -1024,8 +1099,8 @@ func TestCloseErrorDoesNotPromote(t *testing.T) {
 	if _, err := os.Stat(h.archivePath); !os.IsNotExist(err) {
 		t.Fatalf("archive file exists after tee close error: %v", err)
 	}
-	if _, err := os.Stat(h.archivePath + ".partial"); err != nil {
-		t.Fatalf("partial missing after tee close error: %v", err)
+	if _, err := os.Stat(h.archivePath + ".partial"); !os.IsNotExist(err) {
+		t.Fatalf("partial exists after tee close error: %v", err)
 	}
 }
 

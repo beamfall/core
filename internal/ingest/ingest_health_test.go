@@ -56,9 +56,127 @@ func TestSelectByPolicy(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := selectByPolicy(tc.policy, tc.serial, added, policyEntries(), stored)
+			rows := stored
+			if tc.policy.Policy == store.DownloadPolicyLatest {
+				rows = nil // A first catalogue timestamps its entries at AddedAt.
+			}
+			got := selectByPolicy(tc.policy, true, tc.serial, added, policyEntries(), rows)
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("selected %v, want %v", got, tc.want)
+			}
+		})
+	}
+	t.Run("interrupted initial catalogue", func(t *testing.T) {
+		got := selectByPolicy(latest, true, false, added, policyEntries(), stored)
+		want := []string{"b", "d", "a", "e"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("selected %v, want later arrivals plus the initial limit %v", got, want)
+		}
+	})
+}
+
+func TestLatestDownloadsEveryArrivalAfterFirstPoll(t *testing.T) {
+	fs := newFeedServer(t)
+	st, sub, poller := healthFixture(t, fs.server.URL+"/feed.xml")
+	ctx := t.Context()
+	if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, store.SubscriptionPolicy{Policy: store.DownloadPolicyLatest, LatestN: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"one.mp3", "two.mp3", "three.mp3", "four.mp3"} {
+		fs.enclosures[name] = []byte(name)
+	}
+	initial := fs.item("g1", "One", "one.mp3") + fs.item("g2", "Two", "two.mp3")
+	fs.setFeed(initial)
+	// Persist the initial selection and simulate a restart before any download.
+	document, err := scrape.ParseFeed([]byte(fs.feed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, catalogued, err := poller.catalogue(ctx, sub, document, poller.clock())
+	if err != nil || !catalogued || len(selected) != 1 || !selected["g1"] {
+		t.Fatalf("initial selection = %v, catalogued = %v, err = %v", selected, catalogued, err)
+	}
+	fs.setFeed(fs.item("g2", "Two", "two.mp3") + fs.item("g1", "One", "one.mp3"))
+	sub, err = st.Subscription(ctx, sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 1 || fs.hits("one.mp3") != 1 {
+		t.Fatalf("first poll count = %d, %v", count, err)
+	}
+
+	// Place both new entries below the old ones so top-N selection would miss them.
+	fs.setFeed(initial + fs.item("g3", "Three", "three.mp3") + fs.item("g4", "Four", "four.mp3"))
+	advancePollClock(poller)
+	sub, err = st.Subscription(ctx, sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 2 {
+		t.Fatalf("second poll count = %d, %v; want both arrivals", count, err)
+	}
+	if fs.hits("two.mp3") != 0 || fs.hits("three.mp3") != 1 || fs.hits("four.mp3") != 1 {
+		t.Fatal("later poll did not restrict downloads to the two arrivals")
+	}
+}
+
+func TestEncryptedFeedPollRespectsDownloadPolicies(t *testing.T) {
+	for _, tc := range []struct {
+		policy        store.DownloadPolicy
+		first, second int
+	}{
+		{store.DownloadPolicyStreamOnly, 0, 0},
+		{store.DownloadPolicyNewOnly, 0, 1},
+		{store.DownloadPolicyLatest, 1, 1},
+		{store.DownloadPolicyEverything, 2, 1},
+	} {
+		t.Run(string(tc.policy), func(t *testing.T) {
+			fs := newFeedServer(t)
+			st, sub, poller := healthFixture(t, fs.server.URL+"/feed.xml")
+			ctx := t.Context()
+			if err := st.SetLibraryBacking(ctx, sub.LibraryID, true, true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.UpsertSubscriptionCatalog(ctx, sub.ID, nil, sub.AddedAt); !errors.Is(err, store.ErrSubscriptionCatalogUnsupported) {
+				t.Fatalf("encrypted catalogue precondition: %v", err)
+			}
+			if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, store.SubscriptionPolicy{Policy: tc.policy, LatestN: 1}); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"one.mp3", "two.mp3", "three.mp3"} {
+				fs.enclosures[name] = []byte(name)
+			}
+			initial := fs.item("g1", "One", "one.mp3") + fs.item("g2", "Two", "two.mp3")
+			fs.setFeed(initial)
+			if tc.policy == store.DownloadPolicyLatest {
+				document, err := scrape.ParseFeed([]byte(fs.feed))
+				if err != nil {
+					t.Fatal(err)
+				}
+				selected, catalogued, err := poller.catalogue(ctx, sub, document, poller.clock())
+				if err != nil || catalogued || len(selected) != 1 || !selected["g1"] {
+					t.Fatalf("initial selection = %v, catalogued = %v, err = %v", selected, catalogued, err)
+				}
+				fs.setFeed(fs.item("g2", "Two", "two.mp3") + fs.item("g1", "One", "one.mp3"))
+				sub, err = st.Subscription(ctx, sub.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if count, err := poller.pollSubscription(ctx, sub); err != nil || count != tc.first {
+				t.Fatalf("first poll count = %d, %v; want %d", count, err, tc.first)
+			}
+			fs.setFeed(initial + fs.item("g3", "Three", "three.mp3"))
+			advancePollClock(poller)
+			sub, err := st.Subscription(ctx, sub.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if count, err := poller.pollSubscription(ctx, sub); err != nil || count != tc.second {
+				t.Fatalf("second poll count = %d, %v; want %d", count, err, tc.second)
+			}
+			if tc.policy == store.DownloadPolicyLatest && (fs.hits("one.mp3") != 1 || fs.hits("two.mp3") != 0 || fs.hits("three.mp3") != 1) {
+				t.Fatal("latest downloaded an entry outside its initial limit")
 			}
 		})
 	}
@@ -203,14 +321,18 @@ func TestPollFailureBacksOffAndGoneRetires(t *testing.T) {
 		t.Fatalf("recovered health = %+v", health)
 	}
 
-	// Malformed XML is a parse failure.
-	sf.set(http.StatusOK, `<rss><channel><title a=></title></channel></rss>`)
-	if _, err := poller.pollSubscription(ctx, sub); err == nil {
-		t.Fatal("malformed feed polled clean")
-	}
-	_, health, _ = st.SubscriptionPolicyAndHealth(ctx, sub.ID)
-	if health.LastErrorClass != store.FeedErrorParse {
-		t.Fatalf("parse class = %q", health.LastErrorClass)
+	for _, body := range []string{
+		`<rss><channel><title a=></title></channel></rss>`,
+		`<html><body><h1>Publisher error page</h1></body></html>`,
+	} {
+		sf.set(http.StatusOK, body)
+		if _, err := poller.pollSubscription(ctx, sub); err == nil {
+			t.Fatal("invalid feed polled clean")
+		}
+		_, health, _ = st.SubscriptionPolicyAndHealth(ctx, sub.ID)
+		if health.LastErrorClass != store.FeedErrorParse {
+			t.Fatalf("parse class = %q", health.LastErrorClass)
+		}
 	}
 
 	sf.set(http.StatusGone, "")
@@ -359,7 +481,7 @@ func TestPollTracksFeedMoves(t *testing.T) {
 	})
 
 	t.Run("permanent redirect moves, temporary does not", func(t *testing.T) {
-		sf.set(http.StatusOK, `<rss><channel><title>T</title></channel></rss>`)
+		sf.set(http.StatusOK, feedWith(newURL))
 		st, sub, poller := healthFixture(t, sf.server.URL+"/temporary.xml")
 		for range 3 {
 			if _, err := poller.pollSubscription(ctx, sub); err != nil {
@@ -367,8 +489,9 @@ func TestPollTracksFeedMoves(t *testing.T) {
 			}
 		}
 		if got, _ := st.Subscription(ctx, sub.ID); got.FeedURL != sub.FeedURL {
-			t.Fatal("302 rewrote the feed URL")
+			t.Fatal("temporary destination supplied a persistent feed move")
 		}
+		sf.set(http.StatusOK, `<rss><channel><title>T</title></channel></rss>`)
 		st, sub, poller = healthFixture(t, sf.server.URL+"/permanent.xml")
 		if _, err := poller.pollSubscription(ctx, sub); err != nil {
 			t.Fatal(err)

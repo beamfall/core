@@ -183,8 +183,10 @@ var clientErrorCodes = map[string]ErrorCode{
 	"unknown transport command":           ErrorCodeInvalid,
 
 	"admin password rejected":                                   ErrorCodeForbidden,
+	"adult profile required to follow feeds":                    ErrorCodeForbidden,
 	"adult profile or manager role required":                    ErrorCodeForbidden,
 	"cannot change the current device role":                     ErrorCodeForbidden,
+	"follow the subscription before refreshing it":              ErrorCodeForbidden,
 	"incorrect passphrase or recovery key":                      ErrorCodeForbidden,
 	"managed profiles require guardian or operator data delete": ErrorCodeForbidden,
 	"not a member of this group":                                ErrorCodeForbidden,

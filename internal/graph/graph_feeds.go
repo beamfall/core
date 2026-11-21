@@ -158,7 +158,7 @@ func viewerSafeSubscription(scope auth.Scope, info SubscriptionInfo) Subscriptio
 }
 
 func canFollowFeeds(scope auth.Scope) bool {
-	return scope.DeviceRole == store.DeviceRoleManager || scope.Profile == store.ProfileAdult
+	return scope.Profile == store.ProfileAdult
 }
 
 // publicFeedURL accepts an absolute http(s) URL without credentials.
@@ -213,7 +213,7 @@ func confirmEverything(req request, policy store.SubscriptionPolicy, catalogByte
 
 func (h *Handler) followFeed(ctx context.Context, scope auth.Scope, req request) (SubscriptionInfo, error) {
 	if !canFollowFeeds(scope) {
-		return SubscriptionInfo{}, clientError("adult profile or manager role required")
+		return SubscriptionInfo{}, clientError("adult profile required to follow feeds")
 	}
 	feedURL := strings.TrimSpace(stringVar(req, "feedURL"))
 	if feedURL == "" {
@@ -432,12 +432,22 @@ func (h *Handler) visibleSubscription(ctx context.Context, scope auth.Scope, id 
 }
 
 func (h *Handler) refreshSubscription(ctx context.Context, scope auth.Scope, req request) (SubscriptionInfo, error) {
-	if !canFollowFeeds(scope) {
+	manager := scope.DeviceRole == store.DeviceRoleManager
+	if !manager && !canFollowFeeds(scope) {
 		return SubscriptionInfo{}, clientError("adult profile or manager role required")
 	}
 	subscription, err := h.visibleSubscription(ctx, scope, store.SubscriptionID(trimmedVariable(req, "id")))
 	if err != nil {
 		return SubscriptionInfo{}, err
+	}
+	if !manager {
+		followed, err := h.store.SubscriptionFollowed(ctx, scope.ProfileID, subscription.ID)
+		if err != nil {
+			return SubscriptionInfo{}, err
+		}
+		if !followed {
+			return SubscriptionInfo{}, clientError("follow the subscription before refreshing it")
+		}
 	}
 	err = h.catalogue().RequestSubscriptionRefresh(ctx, subscription.ID, time.Now().UTC())
 	if errors.Is(err, store.ErrSubscriptionRefreshTooSoon) {
@@ -514,13 +524,24 @@ func (h *Handler) subscriptionEntries(ctx context.Context, scope auth.Scope, req
 	if err != nil {
 		return nil, err
 	}
-	infos := make([]SubscriptionEntryInfo, len(entries))
+	ids := make([]store.MediaID, len(entries))
 	for i, entry := range entries {
+		ids[i] = entry.MediaID
+	}
+	visible, err := h.store.LibraryVisibleMediaItems(ctx, scope.LibraryFilter(), subscription.LibraryID, ids)
+	if err != nil {
+		return nil, err
+	}
+	infos := make([]SubscriptionEntryInfo, 0, len(entries))
+	for _, entry := range entries {
+		if _, ok := visible[entry.MediaID]; !ok {
+			continue
+		}
 		availability := "not-downloaded"
 		if entryDownloaded(entry) {
 			availability = "downloaded"
 		}
-		infos[i] = SubscriptionEntryInfo{
+		infos = append(infos, SubscriptionEntryInfo{
 			MediaID:         string(entry.MediaID),
 			Title:           entry.Title,
 			PublishedAt:     formatOptionalTime(entry.PublishedAt),
@@ -528,7 +549,7 @@ func (h *Handler) subscriptionEntries(ctx context.Context, scope auth.Scope, req
 			EnclosureLength: entry.EnclosureLength,
 			DownloadState:   string(entry.DownloadState),
 			Availability:    availability,
-		}
+		})
 	}
 	return infos, nil
 }

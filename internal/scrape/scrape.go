@@ -1286,14 +1286,14 @@ func (e *Engine) invalidateToken(spec plugin.ScraperSpec) {
 func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reader, contentType string, authorize func(*http.Request)) ([]byte, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: invalid request URL: %w", err)
+		return nil, fmt.Errorf("scrape: invalid request URL")
 	}
 	if err := e.vetURL(parsed); err != nil {
 		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, method, parsed.String(), body)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: %w", err)
+		return nil, safeFetchError("building request", err)
 	}
 	// Source etiquette: every request identifies the app (MusicBrainz
 	// rejects or throttles UA-less clients).
@@ -1316,7 +1316,7 @@ func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reade
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("scrape: reading response: %w", err)
+		return nil, safeFetchError("reading response", err)
 	}
 	if int64(len(data)) > e.maxResponseBytes {
 		return nil, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)

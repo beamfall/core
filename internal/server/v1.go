@@ -331,8 +331,12 @@ func newV1MediaDetail(media store.Media, ids []store.MediaExternalID) v1MediaDet
 		Year:            media.Year,
 		DurationSeconds: media.DurationSeconds,
 	}
-	for _, id := range ids[:min(len(ids), v1ExternalIDLimit)] {
-		detail.ExternalIDs = append(detail.ExternalIDs, v1ExternalID{Scheme: id.Scheme, Value: id.Value})
+	for i, id := range ids {
+		value, title := id.PublicFeedIdentity(detail.Title)
+		detail.Title = title
+		if i < v1ExternalIDLimit {
+			detail.ExternalIDs = append(detail.ExternalIDs, v1ExternalID{Scheme: id.Scheme, Value: value})
+		}
 	}
 	return detail
 }

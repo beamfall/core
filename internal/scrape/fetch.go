@@ -3,11 +3,12 @@ package scrape
 // Ingest-facing additions to the hardened engine: conditional
 // feed fetches and streamed resource downloads. Both run through the same
 // ADR-0012 §9 SSRF gate as every scraper request — https only, no literal
-// IPs, no private ranges, host-pinned redirects.
+// IPs, no private ranges, and origin checks on redirects.
 
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,6 +32,8 @@ type ConditionalResult struct {
 	// redirect itself was refused as cross-origin. Secret class like the
 	// feed URL: never logged.
 	PermanentRedirect string
+	// RedirectedTemporarily reports whether a temporary hop was observed.
+	RedirectedTemporarily bool
 }
 
 func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[string]string) ([]byte, error) {
@@ -43,7 +46,7 @@ func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[s
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: building request: %w", err)
+		return nil, safeFetchError("building request", err)
 	}
 	req.Header.Set("User-Agent", userAgent)
 	for name, value := range headers {
@@ -63,7 +66,7 @@ func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[s
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("scrape: reading response: %w", err)
+		return nil, safeFetchError("reading response", err)
 	}
 	if int64(len(data)) > e.maxResponseBytes {
 		return nil, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
@@ -92,7 +95,7 @@ func (e *Engine) FetchConditionalAuth(ctx context.Context, rawURL, etag, lastMod
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return ConditionalResult{}, fmt.Errorf("scrape: building request: %w", err)
+		return ConditionalResult{}, safeFetchError("building request", err)
 	}
 	req.Header.Set("User-Agent", userAgent)
 	if strings.TrimSpace(authHeader) != "" {
@@ -109,31 +112,32 @@ func (e *Engine) FetchConditionalAuth(ctx context.Context, rawURL, etag, lastMod
 		*record = redirectRecord{}
 		return e.client.Do(attempt)
 	})
-	moved := ConditionalResult{PermanentRedirect: record.target}
+	result := ConditionalResult{PermanentRedirect: record.target, RedirectedTemporarily: record.broken}
 	if err != nil {
-		return moved, sanitizedTransportError(parsed, err)
+		return result, sanitizedTransportError(parsed, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotModified {
-		return ConditionalResult{ETag: etag, LastModified: lastModified, NotModified: true, PermanentRedirect: record.target}, nil
+		result.ETag, result.LastModified, result.NotModified = etag, lastModified, true
+		return result, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return moved, &statusError{host: parsed.Hostname(), code: resp.StatusCode}
+		return result, &statusError{host: parsed.Hostname(), code: resp.StatusCode}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
 	if err != nil {
-		return moved, fmt.Errorf("scrape: reading response: %w", err)
+		return result, safeFetchError("reading response", err)
 	}
 	if int64(len(data)) > e.maxResponseBytes {
-		return moved, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
+		return result, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
 	}
-	return ConditionalResult{
-		Data:              data,
-		ETag:              resp.Header.Get("ETag"),
-		LastModified:      resp.Header.Get("Last-Modified"),
-		PermanentRedirect: record.target,
-	}, nil
+	result.Data, result.ETag, result.LastModified = data, resp.Header.Get("ETag"), resp.Header.Get("Last-Modified")
+	return result, nil
 }
+
+// EnclosureDownloadLimit is the per-enclosure archive budget. Declared
+// lengths are optional and untrusted.
+const EnclosureDownloadLimit int64 = 2 << 30
 
 // DownloadResource streams one resource into dst through the vetted client,
 // refusing bodies larger than maxBytes (maxBytes <= 0 means no cap; callers
@@ -155,7 +159,7 @@ func (e *Engine) DownloadResourceAuth(ctx context.Context, rawURL string, dst io
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return 0, fmt.Errorf("scrape: building request: %w", err)
+		return 0, safeFetchError("building request", err)
 	}
 	req.Header.Set("User-Agent", userAgent)
 	if strings.TrimSpace(authHeader) != "" {
@@ -178,7 +182,7 @@ func (e *Engine) DownloadResourceAuth(ctx context.Context, rawURL string, dst io
 	}
 	written, err := io.Copy(dst, reader)
 	if err != nil {
-		return written, fmt.Errorf("scrape: streaming response from %s: %w", parsed.Hostname(), err)
+		return written, safeFetchError("streaming response", err)
 	}
 	if maxBytes > 0 && written > maxBytes {
 		return written, fmt.Errorf("scrape: response from %s exceeds the %d-byte download budget", parsed.Hostname(), maxBytes)
@@ -205,7 +209,7 @@ type OriginResponse struct {
 // OpenOriginRange opens rawURL for streaming through the SAME ADR-0012 §9 SSRF
 // gate as every other server-side fetch (vetURL: https only, no literal IPs, no
 // private ranges; the dialer's controlDial re-checks the resolved IP for
-// DNS-rebinding; checkRedirect host-pins). It forwards the client's Range header
+// DNS-rebinding; checkStreamRedirect re-vets every hop). It forwards the client's Range header
 // to the origin so the proxy can honour client seeks, and returns the open body
 // for the caller to copy + tee. The origin URL never leaves the server — only
 // the streamed bytes do. The caller owns Body and must Close it.
@@ -221,7 +225,7 @@ func (e *Engine) OpenOriginRange(ctx context.Context, rawURL, rangeHeader string
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return OriginResponse{}, fmt.Errorf("scrape: building request: %w", err)
+		return OriginResponse{}, safeFetchError("building request", err)
 	}
 	req.Header.Set("User-Agent", userAgent)
 	if strings.TrimSpace(rangeHeader) != "" {
@@ -262,15 +266,46 @@ func originTotalSize(resp *http.Response) int64 {
 	return 0
 }
 
-// sanitizedTransportError strips the full request URL from client errors
-// (*url.Error embeds it verbatim — query strings can carry credentials) and
-// keeps only the host plus the underlying cause.
+// sanitizedTransportError keeps status and refusal diagnostics and never
+// formats transport text. net/http can include a malformed Location in the
+// underlying error, even after the outer *url.Error is stripped.
 func sanitizedTransportError(parsed *url.URL, err error) error {
-	cause := err
-	if urlErr, ok := err.(*url.Error); ok {
-		cause = urlErr.Err
+	for {
+		urlErr, ok := err.(*url.Error)
+		if !ok {
+			break
+		}
+		err = urlErr.Err
 	}
-	return fmt.Errorf("scrape: request to %s failed: %w", parsed.Hostname(), cause)
+	var refused *refusedError
+	var status *statusError
+	switch {
+	case errors.As(err, &refused):
+		return refused
+	case errors.As(err, &status):
+		return status
+	default:
+		return safeFetchError("request to "+parsed.Hostname(), err)
+	}
+}
+
+// fetchError retains typed causes for classification without printing them.
+type fetchError struct {
+	operation string
+	cause     error
+}
+
+func (e *fetchError) Error() string        { return "scrape: " + e.operation + " failed" }
+func (e *fetchError) Is(target error) bool { return errors.Is(e.cause, target) }
+func (e *fetchError) As(target any) bool {
+	if _, isURL := target.(**url.Error); isURL {
+		return false
+	}
+	return errors.As(e.cause, target)
+}
+
+func safeFetchError(operation string, cause error) error {
+	return &fetchError{operation: operation, cause: cause}
 }
 
 // FeedEntry is one feed item relevant to ingest: its identity GUID, display
@@ -326,8 +361,14 @@ func ParseFeedEntries(data []byte) ([]FeedEntry, error) {
 // entries (see ParseFeedEntries for entry identity).
 func ParseFeed(data []byte) (FeedDocument, error) {
 	root, err := parseXML(data)
-	if err != nil {
-		return FeedDocument{}, fmt.Errorf("scrape: invalid feed document: %w", err)
+	if err != nil || len(root.children) != 1 {
+		return FeedDocument{}, errors.New("scrape: invalid feed document")
+	}
+	name := root.children[0].name
+	switch name[strings.LastIndexByte(name, ':')+1:] {
+	case "rss", "feed", "RDF":
+	default:
+		return FeedDocument{}, errors.New("scrape: unsupported feed root element")
 	}
 	var document FeedDocument
 	channel := root
