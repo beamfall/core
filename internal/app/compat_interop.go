@@ -43,9 +43,9 @@ func compatInterop(reg *plugin.Registry) map[string]compat.Interop {
 			for _, relation := range kind.Relations {
 				switch {
 				case relation.ToKind == plugin.MediaKindName && relation.Cardinality == "one":
-					interop.MemberRelations[relation.Name] = true
+					interop.MemberRelations[compat.MemberRelationKey(kind.Name, relation.Name)] = true
 				case relation.ToKind != kind.Name && interop.KindTypes[relation.ToKind] != "":
-					interop.ParentRelations[relation.Name] = true
+					interop.ParentRelations[compat.ParentRelationKey(kind.Name, relation.Name, relation.ToKind)] = true
 				}
 			}
 		}

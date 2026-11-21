@@ -48,8 +48,8 @@ func TestCompatInteropFlattensBundleDeclaration(t *testing.T) {
 		MediaTypes:      map[string]string{"single": "Movie"},
 		KindTypes:       map[string]string{"outer": "Series", "inner": "Season"},
 		ScopeTypes:      map[string]string{"scope-a": "tvshows"},
-		MemberRelations: map[string]bool{"member": true},
-		ParentRelations: map[string]bool{"member-of": true},
+		MemberRelations: map[string]bool{compat.MemberRelationKey("inner", "member"): true},
+		ParentRelations: map[string]bool{compat.ParentRelationKey("inner", "member-of", "outer"): true},
 		ProviderSchemes: map[string]string{"by-id": "tvdb"},
 	}}
 	if !reflect.DeepEqual(got, want) {

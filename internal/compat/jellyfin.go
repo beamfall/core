@@ -99,6 +99,7 @@ type Handler struct {
 	eligible       func(context.Context) (map[store.LibraryID]bool, error)
 	sealed         func(store.LibraryID) bool
 	interop        map[string]Interop
+	indexes        indexCache
 	refreshMu      sync.Mutex
 	background     sync.WaitGroup // media update scans queued after the response
 	nextRefresh    time.Time
