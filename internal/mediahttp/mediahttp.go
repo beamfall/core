@@ -1085,7 +1085,13 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	// a loopback endpoint and keeps only encrypted files (ADR-0236).
 	var secure *playback.EncryptedSource
 	if library.Encrypted {
+		release, err := binding.HoldSource(r.Context())
+		if err != nil {
+			writeLiveHLSError(w, r, err)
+			return
+		}
 		secure, ok = h.encryptedLiveSource(library, file, binding.Check)
+		release()
 		if ended() {
 			return
 		}

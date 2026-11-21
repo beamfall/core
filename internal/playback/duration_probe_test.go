@@ -96,6 +96,15 @@ func TestInfoKeepsAStoredRuntimeWithoutProbing(t *testing.T) {
 	}
 }
 
+func probeDurationWithLibraryClaim(ctx context.Context, sessions *Sessions, fingerprint, path string) int {
+	op, err := sessions.claimLibrary(ctx, "duration-test", sessions.admissionStamp())
+	if err != nil {
+		return 0
+	}
+	defer sessions.releaseLibrary(op)
+	return sessions.probedSourceDuration(sessions.libraryProbeContext(op), nil, op, fingerprint, path)
+}
+
 func TestProbedDurationSecondsRemembersAMissForAWhile(t *testing.T) {
 	x, y := filepath.Join(t.TempDir(), "x.mkv"), filepath.Join(t.TempDir(), "y.mkv")
 	seedScratchFile(t, x)
@@ -105,27 +114,27 @@ func TestProbedDurationSecondsRemembersAMissForAWhile(t *testing.T) {
 	sessions := newTestSessions(t, prober, t.TempDir(), func() time.Time { return now })
 	defer sessions.Close()
 
-	if got := sessions.ProbedDurationSeconds(context.Background(), "fp", x); got != 0 {
+	if got := probeDurationWithLibraryClaim(t.Context(), sessions, "fp", x); got != 0 {
 		t.Fatalf("first probe = %d, want 0", got)
 	}
-	_ = sessions.ProbedDurationSeconds(context.Background(), "fp", x)
+	_ = probeDurationWithLibraryClaim(t.Context(), sessions, "fp", x)
 	if prober.probeCount() != 1 {
 		t.Fatalf("probes = %d, want 1 within the miss TTL", prober.probeCount())
 	}
 	now = now.Add(durationProbeMissTTL)
 	prober.duration = 60
-	if got := sessions.ProbedDurationSeconds(context.Background(), "fp", x); got != 60 || prober.probeCount() != 2 {
+	if got := probeDurationWithLibraryClaim(t.Context(), sessions, "fp", x); got != 60 || prober.probeCount() != 2 {
 		t.Fatalf("after TTL got %d with %d probes, want 60 with 2", got, prober.probeCount())
 	}
 
-	cancelled, cancel := context.WithCancel(context.Background())
+	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
 	prober.duration = 0
-	if got := sessions.ProbedDurationSeconds(cancelled, "fp-other", y); got != 0 {
+	if got := probeDurationWithLibraryClaim(cancelled, sessions, "fp-other", y); got != 0 {
 		t.Fatalf("cancelled probe = %d, want 0", got)
 	}
 	prober.duration = 30
-	if got := sessions.ProbedDurationSeconds(context.Background(), "fp-other", y); got != 30 {
+	if got := probeDurationWithLibraryClaim(t.Context(), sessions, "fp-other", y); got != 30 {
 		t.Fatalf("probe after a cancelled request = %d, want 30 (a cancelled miss is not cached)", got)
 	}
 }

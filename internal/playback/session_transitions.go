@@ -31,7 +31,7 @@ type recordSourceEnd struct {
 	rung    Rung
 	segment int
 }
-type detachSession struct{ cleanupOnRelease bool }
+type detachSession struct{ cleanupOnRelease, libraryDrain bool }
 type advanceFrontier struct {
 	run     *encoderRun
 	rungID  string
@@ -81,7 +81,7 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 			return transitionResult{}
 		}
 		delete(s.continuations, session)
-		t := &sessionTeardown{session: session, live: session.live, cleanupOnRelease: change.cleanupOnRelease, cutoffDone: make(chan struct{})}
+		t := &sessionTeardown{libraryDrain: change.libraryDrain, session: session, live: session.live, cleanupOnRelease: change.cleanupOnRelease, cutoffDone: make(chan struct{})}
 		for probe := range session.probes {
 			if probe.handedOff {
 				t.probeReaps = append(t.probeReaps, probe.done)

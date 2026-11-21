@@ -424,7 +424,7 @@ func TestT3BoundDurationRejectsReplacementBeforeSetup(t *testing.T) {
 			if err := b.Attach("library", "profile", nil); err != nil {
 				t.Fatal(err)
 			}
-			if cached && s.ProbedDurationSeconds(t.Context(), "fp", src) != 120 {
+			if cached && probeDurationWithLibraryClaim(t.Context(), s, "fp", src) != 120 {
 				t.Fatal("could not warm the duration cache")
 			}
 			seconds := b.ProbedDurationSeconds(t.Context(), "fp", src)
@@ -896,7 +896,7 @@ func testDurationWinnerBeforeShapeCommit(t *testing.T, running bool) {
 		t.Fatal("HLS probe never started")
 	}
 	info := make(chan int, 1)
-	go func() { info <- s.ProbedDurationSeconds(t.Context(), "source", src) }()
+	go func() { info <- probeDurationWithLibraryClaim(t.Context(), s, "source", src) }()
 	select {
 	case i := <-prober.entered:
 		if i != 1 {
@@ -945,7 +945,7 @@ func testDurationWinnerBeforeShapeCommit(t *testing.T, running bool) {
 		s.durationProbes[fmt.Sprintf("unused-%d", i)] = durationProbeEntry{generation: "fixture", seconds: 60}
 	}
 	s.mu.Unlock()
-	if got := s.ProbedDurationSeconds(t.Context(), "another", other); got != 60 {
+	if got := probeDurationWithLibraryClaim(t.Context(), s, "another", other); got != 60 {
 		t.Fatalf("evicting duration publication = %d", got)
 	}
 	s.mu.Lock()
@@ -1827,7 +1827,7 @@ func TestT3DurationDiscardsSourceReplacedDuringProbe(t *testing.T) {
 	defer close(f.results[0])
 	defer close(f.results[1])
 	old := make(chan int, 1)
-	go func() { old <- s.ProbedDurationSeconds(t.Context(), "file", src) }()
+	go func() { old <- probeDurationWithLibraryClaim(t.Context(), s, "file", src) }()
 	select {
 	case <-f.entered:
 	case <-time.After(5 * time.Second):
@@ -1846,7 +1846,7 @@ func TestT3DurationDiscardsSourceReplacedDuringProbe(t *testing.T) {
 		t.Fatal("old duration probe did not finish")
 	}
 	f.results[1] <- 137
-	if got := s.ProbedDurationSeconds(t.Context(), "file", src); got != 137 {
+	if got := probeDurationWithLibraryClaim(t.Context(), s, "file", src); got != 137 {
 		t.Fatalf("replacement duration = %d, want 137", got)
 	}
 }
@@ -1877,14 +1877,14 @@ func TestT3UnverifiedDurationLeavesVerifiedProbeInFlight(t *testing.T) {
 				return os.Stat(path) // #nosec G703 -- private fixture.
 			}
 			verified := make(chan int, 1)
-			go func() { verified <- s.ProbedDurationSeconds(t.Context(), "file", src) }()
+			go func() { verified <- probeDurationWithLibraryClaim(t.Context(), s, "file", src) }()
 			select {
 			case <-f.entered:
 			case <-time.After(5 * time.Second):
 				t.Fatal("verified duration probe did not start")
 			}
 			f.results[1] <- 60
-			if got := s.ProbedDurationSeconds(t.Context(), "file", src); got != 0 || f.calls.Load() != 1 {
+			if got := probeDurationWithLibraryClaim(t.Context(), s, "file", src); got != 0 || f.calls.Load() != 1 {
 				t.Fatalf("unverified duration = %d, probes = %d", got, f.calls.Load())
 			}
 			f.results[0] <- 137
@@ -1896,7 +1896,7 @@ func TestT3UnverifiedDurationLeavesVerifiedProbeInFlight(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("verified probe did not finish")
 			}
-			if got := s.ProbedDurationSeconds(t.Context(), "file", src); got != 137 || f.calls.Load() != 1 {
+			if got := probeDurationWithLibraryClaim(t.Context(), s, "file", src); got != 137 || f.calls.Load() != 1 {
 				t.Fatalf("cached duration = %d, probes = %d", got, f.calls.Load())
 			}
 		})
@@ -1933,7 +1933,7 @@ func TestT3OlderDurationCannotPublishAcrossNewGeneration(t *testing.T) {
 					return info, err
 				}
 				old := make(chan int, 1)
-				go func() { old <- s.ProbedDurationSeconds(t.Context(), "file", src) }()
+				go func() { old <- probeDurationWithLibraryClaim(t.Context(), s, "file", src) }()
 				waitScratchSignal(t, latched)
 				replacement := filepath.Join(filepath.Dir(src), "replacement")
 				seedScratchFile(t, replacement)
@@ -1945,7 +1945,7 @@ func TestT3OlderDurationCannotPublishAcrossNewGeneration(t *testing.T) {
 					newProbe = 1
 				}
 				f.results[newProbe] <- 137
-				if got := s.ProbedDurationSeconds(t.Context(), "file", src); got != 137 {
+				if got := probeDurationWithLibraryClaim(t.Context(), s, "file", src); got != 137 {
 					t.Fatalf("replacement duration = %d", got)
 				}
 				if evict {
@@ -1954,7 +1954,7 @@ func TestT3OlderDurationCannotPublishAcrossNewGeneration(t *testing.T) {
 						s.durationProbes[fmt.Sprintf("filler-%d", i)] = durationProbeEntry{generation: "fixture", seconds: 1}
 					}
 					s.mu.Unlock()
-					if got := s.ProbedDurationSeconds(t.Context(), "other", other); got != 60 {
+					if got := probeDurationWithLibraryClaim(t.Context(), s, "other", other); got != 60 {
 						t.Fatalf("evicting publication = %d", got)
 					}
 				}
@@ -2067,7 +2067,15 @@ func TestT3SetupRejectsReplacementAfterGridResolution(t *testing.T) {
 				waitScratchSignal(t, gridDone)
 			}
 			if kind == "cutoff" {
-				s.keyframes.probes.Wait()
+				s.mu.Lock()
+				var pending []<-chan struct{}
+				for _, load := range s.keyframes.inflight {
+					pending = append(pending, load.finished)
+				}
+				s.mu.Unlock()
+				for _, finished := range pending {
+					waitScratchSignal(t, finished)
+				}
 				if got := chargedKeys(s); len(got) != 1 || got[0] != key {
 					t.Fatalf("late keyframe result disturbed the replacement encoder: %v", got)
 				}
@@ -2352,7 +2360,7 @@ func testDurationWinnerAcrossCallers(t *testing.T, hlsWins bool) {
 	s.mu.Unlock()
 	other := filepath.Join(filepath.Dir(src), "other")
 	seedScratchFile(t, other)
-	if got := s.ProbedDurationSeconds(ctx, "other", other); got != 60 {
+	if got := probeDurationWithLibraryClaim(ctx, s, "other", other); got != 60 {
 		t.Fatalf("evicting publication = %d", got)
 	}
 	if hlsWins {
@@ -2614,7 +2622,15 @@ func TestT3DelayedKeyframeCacheHitDoesNotDisplaceReplacementLoad(t *testing.T) {
 	old := s.claimSource(src, nil)
 	defer s.releaseSource(old)
 	gen := keyframeGeneration{path: src, size: old.info.Size(), modTimeNs: old.info.ModTime().UnixNano(), identity: old.generation}
-	oldGrid, err := s.keyframes.load(ctx, ctx, gen, old.order, &keyframeFakeTranscoder{
+	b, err := s.BindLive(SessionKey{SessionID: "new-grid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Release()
+	if err := b.Attach("", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	oldGrid, err := s.loadKeyframes(ctx, b, gen, old.order, &keyframeFakeTranscoder{
 		index: ffmpeg.KeyframeIndex{Keyframes: []time.Duration{0, 5 * time.Second}, Duration: 10 * time.Second},
 	})
 	if err != nil || oldGrid == nil {
@@ -2630,16 +2646,15 @@ func TestT3DelayedKeyframeCacheHitDoesNotDisplaceReplacementLoad(t *testing.T) {
 	fresh := s.claimSource(src, nil)
 	defer s.releaseSource(fresh)
 	result := make(chan error, 1)
-	session := newSessionReservation(SessionKey{SessionID: "new-grid"})
 	go func() {
-		grid, err := s.boundVideoTimeline(ctx, ctx, session, fresh)
+		grid, err := s.boundVideoTimeline(ctx, b, fresh)
 		if err == nil && (grid == nil || grid.segmentStart(1) != 4*time.Second) {
 			err = fmt.Errorf("replacement grid = %v", grid)
 		}
 		result <- err
 	}()
 	waitScratchSignal(t, f.started)
-	got, err := s.boundVideoTimeline(ctx, ctx, session, delayed)
+	got, err := s.boundVideoTimeline(ctx, b, delayed)
 	if err != nil || got != oldGrid {
 		t.Fatalf("delayed cache hit = %v, %v", got, err)
 	}
@@ -2647,10 +2662,10 @@ func TestT3DelayedKeyframeCacheHitDoesNotDisplaceReplacementLoad(t *testing.T) {
 	if err := waitScratchResult(t, result); err != nil {
 		t.Fatal(err)
 	}
-	s.keyframes.mu.Lock()
+	s.mu.Lock()
 	freshGen := keyframeGeneration{path: src, size: fresh.info.Size(), modTimeNs: fresh.info.ModTime().UnixNano(), identity: fresh.generation}
 	cached := s.keyframes.done[freshGen]
-	s.keyframes.mu.Unlock()
+	s.mu.Unlock()
 	if cached == nil || cached.segmentStart(1) != 4*time.Second {
 		t.Fatalf("newer load failed to cache its grid: %v", cached)
 	}

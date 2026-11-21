@@ -273,41 +273,54 @@ func (s *Service) SetRecorder(recorder Recorder) {
 
 // Issue returns a signed token for a grant.
 func (s *Service) Issue(ctx context.Context, grant Grant) (string, error) {
+	token, record, err := s.PrepareIssue(ctx, grant)
+	if err != nil {
+		return "", err
+	}
+	record(ctx)
+	return token, nil
+}
+
+// PrepareIssue signs a token without recording its issuance. The caller keeps
+// the token private until its admission check commits, then calls record.
+func (s *Service) PrepareIssue(ctx context.Context, grant Grant) (token string, record func(context.Context), err error) {
 	// Authority face: an Attached Origin Node never issues Stream
 	// Tokens — the main server stays the sole issuer. Fail closed before signing.
 	if err := s.role.GuardAuthority(serverrole.FaceStreamToken); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if len(s.key) == 0 {
-		return "", errors.New("stream token key is required")
+		return "", nil, errors.New("stream token key is required")
 	}
 	if !validTarget(grant.Target) || grant.MediaID == "" || grant.DeviceID == "" || grant.SessionID == "" || grant.ProfileID == "" {
-		return "", errors.New("stream token grant is incomplete")
+		return "", nil, errors.New("stream token grant is incomplete")
 	}
 	now := s.now()
 	if !grant.ExpiresAt.After(now) {
-		return "", errors.New("stream token expiry must be in the future")
+		return "", nil, errors.New("stream token expiry must be in the future")
 	}
 	if maximumExpiry := now.Add(MaxStreamTokenTTL); grant.ExpiresAt.After(maximumExpiry) {
 		grant.ExpiresAt = maximumExpiry
 	}
-	grant, err := s.stampCompatDecisionForIssue(ctx, grant)
+	grant, err = s.stampCompatDecisionForIssue(ctx, grant)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	payload, err := json.Marshal(grant)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	signature := s.sign(payload)
-	token := encode(payload) + "." + encode(signature)
+	token = encode(payload) + "." + encode(signature)
 	// Record in the transparency ledger. Best-effort: a ledger
 	// failure must not fail a valid token, so the error is swallowed. The
 	// caller's context bounds the synchronous write.
-	if s.recorder != nil {
-		_ = s.recorder.RecordStreamToken(ctx, grant.SessionID, grant.ProfileID, grant.DeviceID, string(grant.Target), grant.MediaID, grant.Restricted, grant.ExpiresAt)
-	}
-	return token, nil
+	recorder := s.recorder
+	return token, func(ctx context.Context) {
+		if recorder != nil {
+			_ = recorder.RecordStreamToken(ctx, grant.SessionID, grant.ProfileID, grant.DeviceID, string(grant.Target), grant.MediaID, grant.Restricted, grant.ExpiresAt)
+		}
+	}, nil
 }
 
 // Verify checks a token against the current request scope and target.

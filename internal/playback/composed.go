@@ -84,6 +84,10 @@ func (p ComposedPicture) validate() error {
 // size, and modification time (reading a whole track per playbackInfo would
 // cost more than the change detection is worth).
 func (p ComposedPicture) digest() (string, error) {
+	return p.digestWithStat(os.Stat)
+}
+
+func (p ComposedPicture) digestWithStat(stat func(string) (os.FileInfo, error)) (string, error) {
 	if err := p.validate(); err != nil {
 		return "", err
 	}
@@ -91,7 +95,7 @@ func (p ComposedPicture) digest() (string, error) {
 	if p.TimedText != "" {
 		fmt.Fprintf(h, "timed-text\x00%s", p.TimedText)
 	} else {
-		info, err := os.Stat(p.GraphicsPath)
+		info, err := stat(p.GraphicsPath)
 		if err != nil {
 			return "", err
 		}
@@ -332,7 +336,11 @@ func (s *Service) composedChoice(ctx context.Context, scope auth.Scope, grant st
 	if err != nil || !resolved {
 		return StreamChoice{}, false, false, nil
 	}
-	digest, err := picture.digest()
+	stat := os.Stat
+	if s.sessions != nil && s.sessions.statSource != nil {
+		stat = s.sessions.statSource
+	}
+	digest, err := picture.digestWithStat(stat)
 	if err != nil {
 		return StreamChoice{}, false, false, nil
 	}
@@ -374,7 +382,7 @@ func (s *Service) liveComposedChoice(ctx context.Context, grant streamtoken.Gran
 	grant = withHLSAudioGrant(grant, audio)
 	grant = withHLSLadderGrant(grant, ladderCaps{ClientMaxHeight: rung.Height})
 	grant.ComposedPicture = true
-	token, err := s.tokens.Issue(ctx, grant)
+	token, err := s.issueDecisionGrant(ctx, grant)
 	if err != nil {
 		return StreamChoice{}, err
 	}

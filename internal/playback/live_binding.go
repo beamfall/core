@@ -17,6 +17,7 @@ type LiveBinding struct {
 	session     *hlsSession
 	profile     store.ProfileID
 	library     store.LibraryID
+	stamp       DrainFence
 	duration    *retainedDuration
 	attached    bool
 	loadProfile func(context.Context, store.ProfileID) (store.Profile, error)
@@ -70,7 +71,7 @@ func (s *Sessions) BindLive(key SessionKey) (*LiveBinding, error) {
 		s.sessions[key] = session
 	}
 	session.binders++
-	return &LiveBinding{manager: s, session: session}, nil
+	return &LiveBinding{manager: s, session: session, stamp: s.admissionClock}, nil
 }
 
 // Attach records the verified scope. The lookup runs only for an encoder start acquiring capacity.
@@ -79,7 +80,7 @@ func (b *LiveBinding) Attach(library store.LibraryID, profile store.ProfileID, l
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	h := b.session
-	if s.closed || h.state >= sessionRevoking || h.state != sessionFailed && s.sessions[h.key] != h {
+	if !s.admittedLocked(library, b.stamp) || h.state >= sessionRevoking || h.state != sessionFailed && s.sessions[h.key] != h {
 		return ErrSessionEvicted
 	}
 	if h.admitted && (h.library != library || h.profile != profile) {
@@ -95,7 +96,7 @@ func (b *LiveBinding) Check() error {
 	s := b.manager
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed || b.session.state >= sessionRevoking {
+	if s.closed || b.attached && !s.admittedLocked(b.library, b.stamp) || b.session.state >= sessionRevoking {
 		return ErrSessionEvicted
 	}
 	return nil
@@ -103,7 +104,7 @@ func (b *LiveBinding) Check() error {
 
 func (b *LiveBinding) validLocked() bool {
 	s, h := b.manager, b.session
-	return !s.closed && h.state < sessionFailed && s.sessions[h.key] == h
+	return s.admittedLocked(b.library, b.stamp) && h.state < sessionFailed && s.sessions[h.key] == h
 }
 
 // Release drops the binding and any source result it retained.
@@ -126,7 +127,7 @@ func (b *LiveBinding) Release() {
 // wait may leave a probe running after the last caller leaves the head.
 func (s *Sessions) trackContinuationLocked(h *hlsSession) {
 	failedWaiters := h.state == sessionFailed && h.binders > 0
-	if h.state >= sessionRevoking || len(h.probes) == 0 && !failedWaiters {
+	if h.state >= sessionRevoking || len(h.probes) == 0 && h.keyframeLoads == 0 && !failedWaiters {
 		delete(s.continuations, h)
 		return
 	}
@@ -146,16 +147,37 @@ func (b *LiveBinding) Context(parent context.Context) (context.Context, func()) 
 	}
 }
 
+// HoldSource makes an attached binding's off-lock source access visible to Drain and Close.
+func (b *LiveBinding) HoldSource(ctx context.Context) (func(), error) {
+	if !b.attached {
+		return nil, errSetupUnavailable
+	}
+	op, err := b.manager.claimLibrary(ctx, b.library, b.stamp)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.Check(); err != nil {
+		b.manager.releaseLibrary(op)
+		return nil, err
+	}
+	return func() { b.manager.releaseLibrary(op) }, nil
+}
+
 // ProbedDurationSeconds registers the live spawn permit before source stat or
 // FFprobe preparation and retains the generation's result until shape commit.
 func (b *LiveBinding) ProbedDurationSeconds(ctx context.Context, fingerprint, path string) int {
 	if !b.attached {
 		return 0
 	}
-	ctx, cancel := b.Context(ctx)
+	op, err := b.manager.claimLibrary(ctx, b.library, b.stamp)
+	if err != nil {
+		return 0
+	}
+	defer b.manager.releaseLibrary(op)
+	ctx, cancel := b.Context(op.ctx)
 	defer cancel()
-	ctx = b.probeContext(ctx)
-	return b.manager.probedSourceDuration(ctx, b, fingerprint, path)
+	ctx = b.probeContext(ctx, false)
+	return b.manager.probedSourceDuration(ctx, b, op, fingerprint, path)
 }
 
 type probeOwner struct {
@@ -163,13 +185,14 @@ type probeOwner struct {
 	handedOff bool
 }
 
-func (b *LiveBinding) probeContext(ctx context.Context) context.Context {
+func (b *LiveBinding) probeContext(ctx context.Context, keyframe bool) context.Context {
 	s, h := b.manager, b.session
 	var active *probeOwner
 	return ffmpeg.WithPlaybackProbe(ctx, func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if h.state >= sessionFailed || s.closed || s.sessions[h.key] != h {
+		if !s.admittedLocked(b.library, b.stamp) || h.state >= sessionRevoking ||
+			!keyframe && (h.state >= sessionFailed || s.sessions[h.key] != h) {
 			return ErrSessionEvicted
 		}
 		if err := ctx.Err(); err != nil {
@@ -186,7 +209,7 @@ func (b *LiveBinding) probeContext(ctx context.Context) context.Context {
 	}, func() bool {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		active.handedOff = h.state < sessionRevoking && !s.closed
+		active.handedOff = h.state < sessionRevoking && s.admittedLocked(b.library, b.stamp) && ctx.Err() == nil
 		return active.handedOff
 	}, func() {
 		s.mu.Lock()

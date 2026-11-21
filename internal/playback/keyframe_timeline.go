@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -195,20 +194,17 @@ type keyframeGeneration struct {
 // keyframeCache holds probed timelines and makes concurrent first plays of
 // one file share a single probe. Its zero value is ready to use.
 type keyframeCache struct {
-	mu           sync.Mutex
 	store        KeyframeStore
 	done         map[keyframeGeneration]*keyframeTimeline
-	inflight     map[keyframeGeneration]*keyframeLoad
+	inflight     map[keyframeLoadKey]*keyframeLoad
 	publications map[string]*keyframePublication
-	// closed refuses new probes once close has begun. stopProbes cancels the
-	// probes still running (stopCtx is created with the first probe), and
-	// probes counts them so close can wait for each to return.
-	closed     bool
-	stopCtx    context.Context
-	stopProbes context.CancelFunc
-	probes     sync.WaitGroup
 	// firstPlayWait overrides keyframeFirstPlayWait when positive (tests).
 	firstPlayWait time.Duration
+}
+
+type keyframeLoadKey struct {
+	library    store.LibraryID
+	generation keyframeGeneration
 }
 
 type keyframePublication struct {
@@ -219,6 +215,7 @@ type keyframePublication struct {
 
 type keyframeLoad struct {
 	finished chan struct{}
+	cancel   context.CancelFunc
 	timeline *keyframeTimeline
 	err      error
 }
@@ -226,8 +223,8 @@ type keyframeLoad struct {
 // SetKeyframeStore wires the catalog that persists probed keyframe indexes.
 // Optional: without it each Sessions keeps a bounded in-memory cache only.
 func (s *Sessions) SetKeyframeStore(keyframes KeyframeStore) {
-	s.keyframes.mu.Lock()
-	defer s.keyframes.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.keyframes.store = keyframes
 }
 
@@ -239,13 +236,14 @@ func (s *Sessions) SetKeyframeStore(keyframes KeyframeStore) {
 // (and tears down) a session that is playing. Otherwise the file's current
 // generation is looked up in memory, then in the store, and probed only when
 // neither has it.
-func (s *Sessions) boundVideoTimeline(ctx, owner context.Context, session *hlsSession, source sourceCapture) (*keyframeTimeline, error) {
+func (s *Sessions) boundVideoTimeline(ctx context.Context, binding *LiveBinding, source sourceCapture) (*keyframeTimeline, error) {
 	prober, ok := s.transcoder.(keyframeTranscoder)
 	if !ok {
 		return nil, nil
 	}
 	s.mu.Lock()
-	if session.state == sessionRunning && source.info != nil && source.matches(session.sourceCapture()) && slices.ContainsFunc(session.rungs, func(r Rung) bool { return r.CopyVideo }) {
+	session := binding.session
+	if binding.validLocked() && session.state == sessionRunning && source.info != nil && source.matches(session.sourceCapture()) && slices.ContainsFunc(session.rungs, func(r Rung) bool { return r.CopyVideo }) {
 		timeline := session.timeline
 		s.mu.Unlock()
 		return timeline, nil
@@ -256,7 +254,7 @@ func (s *Sessions) boundVideoTimeline(ctx, owner context.Context, session *hlsSe
 		return nil, errSetupUnavailable
 	}
 	gen := keyframeGeneration{path: source.path, size: info.Size(), modTimeNs: info.ModTime().UnixNano(), identity: source.generation}
-	timeline, err := s.keyframes.load(ctx, owner, gen, source.order, prober)
+	timeline, err := s.loadKeyframes(ctx, binding, gen, source.order, prober)
 	if errors.Is(err, errKeyframesPending) {
 		// A slow probe must not keep the title from playing: the uniform
 		// grid plays, only its seeks land on the keyframe before.
@@ -272,28 +270,32 @@ var errKeyframesPending = errors.New("keyframe probe still running")
 
 // load returns gen's timeline, starting a probe when none is cached or
 // running. It waits at most the first-play wait for a running probe.
-func (c *keyframeCache) load(ctx, owner context.Context, gen keyframeGeneration, order uint64, prober keyframeTranscoder) (*keyframeTimeline, error) {
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
+func (s *Sessions) loadKeyframes(ctx context.Context, binding *LiveBinding, gen keyframeGeneration, order uint64, prober keyframeTranscoder) (*keyframeTimeline, error) {
+	s.mu.Lock()
+	if !binding.validLocked() {
+		s.mu.Unlock()
 		return nil, ErrSessionEvicted
 	}
+	c := &s.keyframes
 	pending := c.publications[gen.path]
 	if timeline, ok := c.done[gen]; ok {
 		// A cache hit can arrive after a newer generation already claimed a load.
 		if pending != nil && order > pending.order {
 			pending.latest, pending.order = nil, order
 		}
-		c.mu.Unlock()
+		s.mu.Unlock()
 		return timeline, nil
 	}
-	load, ok := c.inflight[gen]
-	if !ok {
-		load = &keyframeLoad{finished: make(chan struct{})}
+	key := keyframeLoadKey{binding.library, gen}
+	load := c.inflight[key]
+	if load == nil {
+		h := binding.session
+		owner, cancel := context.WithTimeout(h.cutoffCtx, keyframeProbeTimeoutFor(gen.size))
+		load = &keyframeLoad{finished: make(chan struct{}), cancel: cancel}
 		if c.inflight == nil {
-			c.inflight = map[keyframeGeneration]*keyframeLoad{}
+			c.inflight = make(map[keyframeLoadKey]*keyframeLoad)
 		}
-		c.inflight[gen] = load
+		c.inflight[key] = load
 		if c.publications == nil {
 			c.publications = make(map[string]*keyframePublication)
 		}
@@ -302,11 +304,9 @@ func (c *keyframeCache) load(ctx, owner context.Context, gen keyframeGeneration,
 			c.publications[gen.path] = pending
 		}
 		pending.running++
-		if c.stopCtx == nil {
-			c.stopCtx, c.stopProbes = context.WithCancel(context.Background())
-		}
-		c.probes.Add(1)
-		go c.probe(owner, gen, load, c.store, prober, c.stopCtx)
+		h.keyframeLoads++
+		s.trackContinuationLocked(h)
+		go s.probeKeyframes(binding.probeContext(owner, true), key, h, binding.stamp, load, c.store, prober)
 	}
 	if order > pending.order {
 		pending.latest, pending.order = load, order
@@ -315,7 +315,7 @@ func (c *keyframeCache) load(ctx, owner context.Context, gen keyframeGeneration,
 	if wait <= 0 {
 		wait = keyframeFirstPlayWait
 	}
-	c.mu.Unlock()
+	s.mu.Unlock()
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	select {
@@ -328,56 +328,48 @@ func (c *keyframeCache) load(ctx, owner context.Context, gen keyframeGeneration,
 	}
 }
 
-// probe resolves gen into load. It outlives the request that started it:
-// other first plays may be waiting on it, and its result is kept. Only close
-// cancels it early.
-func (c *keyframeCache) probe(ctx context.Context, gen keyframeGeneration, load *keyframeLoad, keyframes KeyframeStore, prober keyframeTranscoder, stopCtx context.Context) {
-	defer c.probes.Done()
-	probeCtx, cancel := context.WithTimeout(ctx, keyframeProbeTimeoutFor(gen.size))
-	stopProbe := context.AfterFunc(stopCtx, cancel)
-	load.timeline, load.err = resolveKeyframes(probeCtx, gen, keyframes, prober)
-	stopProbe()
-	cancel()
+// probeKeyframes owns the load until the probe is reaped and publication is settled.
+func (s *Sessions) probeKeyframes(ctx context.Context, key keyframeLoadKey, h *hlsSession, stamp DrainFence, load *keyframeLoad, keyframes KeyframeStore, prober keyframeTranscoder) {
+	defer load.cancel()
+	gen := key.generation
+	load.timeline, load.err = resolveKeyframes(ctx, gen, keyframes, prober)
 	if load.err == nil && gen.identity != "" && captureSource(gen.path, nil, nil).generation != gen.identity {
 		load.err = errSetupUnavailable
 	}
+	if load.err != nil && !errors.Is(load.err, context.Canceled) {
+		slog.Warn("keyframe probe failed", "err", load.err)
+	}
 
-	c.mu.Lock()
-	delete(c.inflight, gen)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := &s.keyframes
 	pending := c.publications[gen.path]
-	current := pending.latest == load
+	if !s.admittedLocked(key.library, stamp) || h.state >= sessionRevoking {
+		load.err = ErrSessionEvicted
+	} else if load.err == nil {
+		load.err = ctx.Err()
+	}
+	if c.inflight[key] == load && pending.latest == load && load.err == nil {
+		if c.done == nil {
+			c.done = make(map[keyframeGeneration]*keyframeTimeline)
+		}
+		if c.done[gen] == nil && len(c.done) == keyframeCacheEntries {
+			for old := range c.done {
+				delete(c.done, old)
+				break
+			}
+		}
+		c.done[gen] = load.timeline
+	}
+	delete(c.inflight, key)
 	pending.running--
 	if pending.running == 0 {
 		delete(c.publications, gen.path)
 	}
-	if load.err == nil && current && !c.closed {
-		if c.done == nil {
-			c.done = map[keyframeGeneration]*keyframeTimeline{}
-		}
-		for old := range c.done {
-			if len(c.done) < keyframeCacheEntries {
-				break
-			}
-			delete(c.done, old)
-		}
-		c.done[gen] = load.timeline
-	}
-	c.mu.Unlock()
+	h.keyframeLoads--
+	s.trackContinuationLocked(h)
 	close(load.finished)
-	if load.err != nil && !errors.Is(load.err, context.Canceled) {
-		slog.Warn("keyframe probe failed", "err", load.err)
-	}
-}
-
-// stop closes probe admission and signals running probes. The caller joins
-// probes separately after signaling session teardown.
-func (c *keyframeCache) stop() {
-	c.mu.Lock()
-	c.closed = true
-	if c.stopProbes != nil {
-		c.stopProbes()
-	}
-	c.mu.Unlock()
+	s.wakeCloseLocked()
 }
 
 // resolveKeyframes reads gen's index from the store, or probes the file and
@@ -398,6 +390,9 @@ func resolveKeyframes(ctx context.Context, gen keyframeGeneration, keyframes Key
 	timeline := newKeyframeTimeline(index)
 	if timeline == nil {
 		return nil, fmt.Errorf("probe keyframes: duration %v is too short", index.Duration)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	if keyframes != nil {
 		if err := keyframes.PutPlaybackKeyframes(ctx, store.PlaybackKeyframes{

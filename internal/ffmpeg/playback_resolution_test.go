@@ -24,7 +24,11 @@ func blockedResolution[T any](t *testing.T, value T) (func() (T, error), <-chan 
 	}
 	return resolve, started, func() {
 		unblock()
-		<-finished
+		select {
+		case <-started:
+			<-finished
+		default:
+		}
 	}
 }
 
@@ -41,7 +45,10 @@ func (c *resolutionWaitContext) Done() <-chan struct{} {
 	return c.Context.Done()
 }
 
-func TestT3PlaybackSharedCacheWaitsAreCancelable(t *testing.T) {
+// PlaybackResolutionFixtureForTest exposes a blocked tool worker to the
+// external playback-owner tests linked into this package's test binary.
+func PlaybackResolutionFixtureForTest(t *testing.T, name string) (func(context.Context) bool, <-chan struct{}, func(), int32) {
+	t.Helper()
 	identity := FFmpegIdentity{SHA256: "t3 fixture", Version: t.Name()}
 	readyIdentity := &sharedResolution[FFmpegIdentity]{}
 	_, _ = readyIdentity.wait(t.Context(), func() (FFmpegIdentity, error) { return identity, nil })
@@ -55,85 +62,100 @@ func TestT3PlaybackSharedCacheWaitsAreCancelable(t *testing.T) {
 		resolvedIdentity.Unlock()
 	})
 	key := toneMapVerdictKey{class: TransferClassPQ, identity: identity.String()}
+	var call func(context.Context) bool
+	var entered <-chan struct{}
+	var release func()
+	waitCount := int32(2) // tool identity, then the capability entry
+	switch name {
+	case "ffprobe":
+		waitCount = 1
+		resolve, started, unblock := blockedResolution(t, "verified ffprobe")
+		runner := New()
+		runner.ffprobe.resolve = resolve
+		entered, release = started, unblock
+		call = func(ctx context.Context) bool {
+			path, err := runner.resolveProbe(ctx)
+			return err == nil && path == "verified ffprobe"
+		}
+	case "identity":
+		waitCount = 1
+		resolve, started, unblock := blockedResolution(t, identity)
+		entered, release = started, unblock
+		resolvedIdentity.Lock()
+		resolvedIdentity.checking = &sharedResolution[FFmpegIdentity]{resolve: resolve}
+		resolvedIdentity.Unlock()
+		t.Cleanup(func() {
+			resolvedIdentity.Lock()
+			resolvedIdentity.checking = readyIdentity
+			resolvedIdentity.Unlock()
+		})
+		call = func(ctx context.Context) bool {
+			got, err := ResolveFFmpegIdentity(ctx)
+			return err == nil && got == identity
+		}
+	case "tone map", "device decode":
+		resolve, started, unblock := blockedResolution(t, ToneMapProbe{Status: ToneMapWorking})
+		entered, release = started, unblock
+		mu, entries := &toneMapVerdictMu, toneMapVerdicts
+		probe := toneMapCapabilityFor
+		if name == "device decode" {
+			mu, entries, probe = &deviceDecodeVerdictMu, deviceDecodeVerdicts, deviceDecodeCapabilityFor
+		}
+		mu.Lock()
+		entries[key] = &toneMapVerdictEntry{resolve: resolve}
+		mu.Unlock()
+		t.Cleanup(func() {
+			mu.Lock()
+			delete(entries, key)
+			mu.Unlock()
+		})
+		call = func(ctx context.Context) bool { return probe(ctx, "", TransferClassPQ).working() }
+	case "component lists":
+		resolve, started, unblock := blockedResolution(t, capabilities{})
+		entered, release = started, unblock
+		capabilitiesMu.Lock()
+		capabilitiesByBuild[identity.String()] = &capabilitiesEntry{resolve: resolve}
+		capabilitiesMu.Unlock()
+		t.Cleanup(func() {
+			capabilitiesMu.Lock()
+			delete(capabilitiesByBuild, identity.String())
+			capabilitiesMu.Unlock()
+		})
+		call = func(ctx context.Context) bool {
+			_, err := capabilitiesForCurrentBuild(ctx)
+			return err == nil
+		}
+	case "redirect option":
+		path := filepath.Join(t.TempDir(), "ffmpeg")
+		resolve, started, unblock := blockedResolution(t, true)
+		entered, release = started, unblock
+		maxRedirectsMu.Lock()
+		maxRedirectsByTool[path] = &maxRedirectsEntry{resolve: resolve}
+		maxRedirectsMu.Unlock()
+		t.Cleanup(func() {
+			maxRedirectsMu.Lock()
+			delete(maxRedirectsByTool, path)
+			maxRedirectsMu.Unlock()
+		})
+		call = func(ctx context.Context) bool { return toolHasMaxRedirectsContext(ctx, path) }
+	default:
+		t.Fatalf("unknown shared resolution %q", name)
+	}
+	return call, entered, release, waitCount
+}
+
+func BlockedPlaybackProbeForTest(t *testing.T, executable string) (*Runner, <-chan struct{}, func()) {
+	t.Helper()
+	resolve, entered, release := blockedResolution(t, executable)
+	runner := New()
+	runner.ffprobe.resolve = resolve
+	return runner, entered, release
+}
+
+func TestT3PlaybackSharedCacheWaitsAreCancelable(t *testing.T) {
 	for _, name := range []string{"ffprobe", "identity", "tone map", "device decode", "component lists", "redirect option"} {
 		t.Run(name, func(t *testing.T) {
-			var call func(context.Context) bool
-			var entered <-chan struct{}
-			var release func()
-			waitCount := int32(2) // tool identity, then the capability entry
-			switch name {
-			case "ffprobe":
-				waitCount = 1
-				resolve, started, unblock := blockedResolution(t, "verified ffprobe")
-				runner := New()
-				runner.ffprobe.resolve = resolve
-				entered, release = started, unblock
-				call = func(ctx context.Context) bool {
-					path, err := runner.resolveProbe(ctx)
-					return err == nil && path == "verified ffprobe"
-				}
-			case "identity":
-				waitCount = 1
-				resolve, started, unblock := blockedResolution(t, identity)
-				entered, release = started, unblock
-				resolvedIdentity.Lock()
-				resolvedIdentity.checking = &sharedResolution[FFmpegIdentity]{resolve: resolve}
-				resolvedIdentity.Unlock()
-				t.Cleanup(func() {
-					resolvedIdentity.Lock()
-					resolvedIdentity.checking = readyIdentity
-					resolvedIdentity.Unlock()
-				})
-				call = func(ctx context.Context) bool {
-					got, err := ResolveFFmpegIdentity(ctx)
-					return err == nil && got == identity
-				}
-			case "tone map", "device decode":
-				resolve, started, unblock := blockedResolution(t, ToneMapProbe{Status: ToneMapWorking})
-				entered, release = started, unblock
-				mu, entries := &toneMapVerdictMu, toneMapVerdicts
-				probe := toneMapCapabilityFor
-				if name == "device decode" {
-					mu, entries, probe = &deviceDecodeVerdictMu, deviceDecodeVerdicts, deviceDecodeCapabilityFor
-				}
-				mu.Lock()
-				entries[key] = &toneMapVerdictEntry{resolve: resolve}
-				mu.Unlock()
-				t.Cleanup(func() {
-					mu.Lock()
-					delete(entries, key)
-					mu.Unlock()
-				})
-				call = func(ctx context.Context) bool { return probe(ctx, "", TransferClassPQ).working() }
-			case "component lists":
-				resolve, started, unblock := blockedResolution(t, capabilities{})
-				entered, release = started, unblock
-				capabilitiesMu.Lock()
-				capabilitiesByBuild[identity.String()] = &capabilitiesEntry{resolve: resolve}
-				capabilitiesMu.Unlock()
-				t.Cleanup(func() {
-					capabilitiesMu.Lock()
-					delete(capabilitiesByBuild, identity.String())
-					capabilitiesMu.Unlock()
-				})
-				call = func(ctx context.Context) bool {
-					_, err := capabilitiesForCurrentBuild(ctx)
-					return err == nil
-				}
-			case "redirect option":
-				path := filepath.Join(t.TempDir(), "ffmpeg")
-				resolve, started, unblock := blockedResolution(t, true)
-				entered, release = started, unblock
-				maxRedirectsMu.Lock()
-				maxRedirectsByTool[path] = &maxRedirectsEntry{resolve: resolve}
-				maxRedirectsMu.Unlock()
-				t.Cleanup(func() {
-					maxRedirectsMu.Lock()
-					delete(maxRedirectsByTool, path)
-					maxRedirectsMu.Unlock()
-				})
-				call = func(ctx context.Context) bool { return toolHasMaxRedirectsContext(ctx, path) }
-			}
+			call, entered, release, waitCount := PlaybackResolutionFixtureForTest(t, name)
 			for _, waiter := range []string{"initiator", "follower"} {
 				parent, cancel := context.WithCancel(t.Context())
 				defer cancel()

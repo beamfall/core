@@ -234,6 +234,7 @@ type hlsSession struct {
 	loadProfile           func(context.Context, store.ProfileID) (store.Profile, error)
 	binders               int
 	probes                map[*probeOwner]struct{}
+	keyframeLoads         int
 	setup                 *setupOperation
 	failedSetup           *setupOperation
 	writing               *encoderRun
@@ -491,10 +492,16 @@ type Sessions struct {
 	lstatScratch  func(string) (fs.FileInfo, error)
 	join          func(*os.File, func(string) (*os.File, error), []string) error
 
+	// Admission and operations share the session transition lock.
+	admissionClock DrainFence
+	admission      map[store.LibraryID]*libraryAdmission
+	libraryOps     map[*libraryOperation]struct{}
+	libraryChanged chan struct{}
+
 	writeSetupPlaylist func(*hlsSession, string, []byte) error
 	// beforeSetupCommit lets tests pause after writing the unpublished playlists.
 	beforeSetupCommit func()
-	// durationProbes caches on-demand runtime probes (ProbedDurationSeconds).
+	// durationProbes caches on-demand runtime probes by source path and generation.
 	durationProbes    map[string]durationProbeEntry
 	durationRetained  map[durationKey]*retainedDuration
 	durationFlights   map[string]*durationFlight
@@ -553,7 +560,7 @@ type Sessions struct {
 	// closed is set by Close; once set no session is created.
 	closed bool
 
-	// keyframes holds audio-copy keyframe timelines; it has its own lock.
+	// keyframes holds audio-copy keyframe timelines under mu.
 	keyframes keyframeCache
 }
 
@@ -563,6 +570,7 @@ type Sessions struct {
 // slow teardown never stalls requests for every other session. Whoever builds
 // one under mu adds it to s.detached; runTeardowns takes it back out.
 type sessionTeardown struct {
+	libraryDrain     bool
 	session          *hlsSession
 	run              *encoderRun
 	preparing        *encoderRun
@@ -579,7 +587,13 @@ type sessionTeardown struct {
 
 func (s *Sessions) runTeardowns(teardowns []*sessionTeardown) {
 	s.signalTeardowns(teardowns)
-	s.joinTeardowns(teardowns)
+	// A detached session must finish independently of other libraries in
+	// the batch, even when this caller waits for the whole batch.
+	var pending sync.WaitGroup
+	for _, t := range teardowns {
+		pending.Go(func() { s.joinTeardown(t) })
+	}
+	pending.Wait()
 }
 
 func (s *Sessions) signalTeardowns(teardowns []*sessionTeardown) {
@@ -603,31 +617,27 @@ func (s *Sessions) signalTeardowns(teardowns []*sessionTeardown) {
 	}
 }
 
-func (s *Sessions) joinTeardowns(teardowns []*sessionTeardown) {
-	for _, t := range teardowns {
-		for _, probe := range t.probeReaps {
-			<-probe
-		}
-		if t.run != nil {
-			if t.stopChild && s.stopEncoder != nil {
-				s.stop(t.run.proc)
-			}
-			<-t.run.reaped
-		}
+func (s *Sessions) joinTeardown(t *sessionTeardown) {
+	for _, probe := range t.probeReaps {
+		<-probe
 	}
-	for _, t := range teardowns {
-		p := t.session.scratch
-		if t.cleanupOnRelease && p != nil {
-			s.mu.Lock()
-			if p.users > 0 {
-				p.cleanup = t
-				s.mu.Unlock()
-				continue
-			}
+	if t.run != nil {
+		if t.stopChild && s.stopEncoder != nil {
+			s.stop(t.run.proc)
+		}
+		<-t.run.reaped
+	}
+	p := t.session.scratch
+	if t.cleanupOnRelease && p != nil {
+		s.mu.Lock()
+		if p.users > 0 {
+			p.cleanup = t
 			s.mu.Unlock()
+			return
 		}
-		s.finishTeardown(t)
+		s.mu.Unlock()
 	}
+	s.finishTeardown(t)
 }
 
 func (s *Sessions) finishTeardown(t *sessionTeardown) {
@@ -654,6 +664,10 @@ func (s *Sessions) finishTeardown(t *sessionTeardown) {
 // wakeCloseLocked wakes Close once admitted off-lock work is complete.
 // Callers hold mu.
 func (s *Sessions) wakeCloseLocked() {
+	if s.libraryChanged != nil {
+		close(s.libraryChanged)
+		s.libraryChanged = nil
+	}
 	if s.offLockIdle != nil && s.offLockIdleLocked() {
 		close(s.offLockIdle)
 		s.offLockIdle = nil
@@ -662,7 +676,7 @@ func (s *Sessions) wakeCloseLocked() {
 
 // offLockIdleLocked reports whether the manager has joined its owned work. Callers hold mu.
 func (s *Sessions) offLockIdleLocked() bool {
-	if s.preparing != 0 || s.probing != 0 || s.starting != 0 || s.detached != 0 || s.removing != 0 || s.sweeping {
+	if len(s.libraryOps) != 0 || len(s.keyframes.inflight) != 0 || s.preparing != 0 || s.probing != 0 || s.starting != 0 || s.detached != 0 || s.removing != 0 || s.sweeping {
 		return false
 	}
 	// An allocation is an owner from reservation through setup, even before
@@ -986,12 +1000,11 @@ func (b *LiveBinding) ArtifactShaped(ctx context.Context, src string, durationSe
 
 func (b *LiveBinding) prepare(ctx context.Context, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority) (prepared *hlsSession, result error) {
 	s := b.manager
-	if !b.attached {
-		return nil, errSetupUnavailable
-	}
-	if err := b.Check(); err != nil {
+	release, err := b.HoldSource(ctx)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -1052,7 +1065,7 @@ func (b *LiveBinding) prepare(ctx context.Context, src string, durationSeconds, 
 		s.mu.Unlock()
 		var timeline *keyframeTimeline
 		if audioCopy && durationSeconds > 0 && picture == nil && shape.Adjust.IsZero() && shape.Encrypted == nil {
-			timeline, err = s.boundVideoTimeline(workCtx, b.probeContext(owner.cutoffCtx), b.session, source)
+			timeline, err = s.boundVideoTimeline(workCtx, b, source)
 			if err != nil {
 				return nil, err
 			}
@@ -1394,9 +1407,8 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 			s.runTeardowns([]*sessionTeardown{discard})
 		}
 		if predecessor != nil {
-			teardowns := []*sessionTeardown{predecessor}
-			s.signalTeardowns(teardowns)
-			go s.joinTeardowns(teardowns)
+			s.signalTeardowns([]*sessionTeardown{predecessor})
+			go s.joinTeardown(predecessor)
 		}
 		if watchDone != nil {
 			go s.watchLiveRevocation(watchSession, watchDone, secure.Revoked, s.liveRevocationInterval())
@@ -1472,7 +1484,7 @@ func (s *Sessions) session(ctx context.Context, binding *LiveBinding, source sou
 		existing.scratch.users++
 		return existing, nil
 	}
-	allocation := &scratchAllocation{key: key}
+	allocation := &scratchAllocation{key: key, library: library}
 	if s.allocations == nil {
 		s.allocations = make(map[*scratchAllocation]struct{})
 	}
@@ -2152,9 +2164,10 @@ func (s *Sessions) reap() {
 // root. Concurrent callers join the same cleanup attempt and result.
 func (s *Sessions) Close() error {
 	s.closeOnce.Do(func() {
-		s.keyframes.stop()
 		s.mu.Lock()
 		s.closed = true
+		cancels := s.libraryCancelsLocked(func(store.LibraryID) bool { return true })
+		s.wakeCloseLocked()
 		var teardowns []*sessionTeardown
 		for _, session := range s.sessions {
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
@@ -2163,8 +2176,10 @@ func (s *Sessions) Close() error {
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
 		}
 		s.mu.Unlock()
+		for _, cancel := range cancels {
+			cancel()
+		}
 		s.runTeardowns(teardowns)
-		s.keyframes.probes.Wait()
 
 		s.mu.Lock()
 		for !s.offLockIdleLocked() {
