@@ -289,3 +289,20 @@ func TestDownloadResourceStreamRedirects(t *testing.T) {
 		t.Fatalf("credentialed redirect reached the other origin (%d hits)", cdnHits)
 	}
 }
+
+func TestParseFeedTitleIgnoresEntryTitles(t *testing.T) {
+	for doc, want := range map[string]string{
+		`<rss><channel><title> Channel </title><image><title>Logo</title></image><item><title>Ep</title><guid>g</guid></item></channel></rss>`: "Channel",
+		`<rss><channel><item><title>Ep</title><guid>g</guid></item></channel></rss>`:                                                           "",
+		`<feed xmlns="http://www.w3.org/2005/Atom"><title>Atom Channel</title><entry><title>Ep</title><id>i</id></entry></feed>`:               "Atom Channel",
+		`<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Ep</title><id>i</id></entry></feed>`:                                          "",
+	} {
+		feed, err := ParseFeed([]byte(doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if feed.Title != want || len(feed.Entries) != 1 {
+			t.Fatalf("ParseFeed(%s) = %q with %d entries, want %q", doc, feed.Title, len(feed.Entries), want)
+		}
+	}
+}

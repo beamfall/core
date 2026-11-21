@@ -688,3 +688,37 @@ func TestEnclosureExtension(t *testing.T) {
 		}
 	}
 }
+
+func TestPollFillsOnlyEmptySubscriptionTitles(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	fs := newFeedServer(t)
+	fs.setFeed("")
+	now := time.Now().UTC()
+	untitled, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local", FeedURL: fs.server.URL + "/feed.xml?token=test-only", Root: t.TempDir(),
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	titled, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local", FeedURL: fs.server.URL + "/feed.xml", Root: t.TempDir(), Title: "Kept",
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runPoll(t, st, Handler(NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))))
+
+	listed, err := st.Subscriptions(ctx, "library-local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	titles := map[store.SubscriptionID]string{}
+	for _, sub := range listed {
+		titles[sub.ID] = sub.Title
+	}
+	if titles[untitled.ID] != "Feed" || titles[titled.ID] != "Kept" {
+		t.Fatalf("titles after one poll = %#v, want the feed title only for the untitled Subscription", titles)
+	}
+}

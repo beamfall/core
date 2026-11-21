@@ -8,8 +8,12 @@ import (
 	"errors"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // ErrSubscriptionNotFound means no Subscription exists with the given ID.
@@ -337,6 +341,87 @@ func (s *Store) RemoveSubscription(ctx context.Context, id SubscriptionID) (Subs
 		return Subscription{}, err
 	}
 	return removed, nil
+}
+
+// maxSubscriptionTitleRunes caps a Subscription title taken from imported or
+// fetched data.
+const maxSubscriptionTitleRunes = 256
+
+// SubscriptionTitle returns title trimmed and capped for use as a Subscription
+// title, or "" when it is a URL, the feed URL or the feed's host. OPML writers
+// fill outline text with the feed URL or host when a feed has no title, and a
+// feed URL can carry a bearer token that viewers would then see as the title.
+func SubscriptionTitle(title, feedURL string) string {
+	title = strings.TrimSpace(title)
+	if title == "" || title == strings.TrimSpace(feedURL) {
+		return ""
+	}
+	if containsURL(title) {
+		return ""
+	}
+	if feed, err := url.Parse(feedURL); err == nil && feed.Hostname() != "" && strings.EqualFold(title, feed.Hostname()) {
+		return ""
+	}
+	if runes := []rune(title); len(runes) > maxSubscriptionTitleRunes {
+		title = strings.TrimSpace(string(runes[:maxSubscriptionTitleRunes]))
+	}
+	return title
+}
+
+// urlPattern finds a URL anywhere in a title, whatever punctuation or
+// brackets surround it: a scheme separator, a scheme-relative //host, or a
+// dotted host (any script, optional root dot) or bracketed IPv6 host
+// (optional port) followed by a path or query.
+var urlPattern = regexp.MustCompile(`(?i)://|//[^\s/]|[\p{L}\p{M}\p{N}_-]+([.。．｡][\p{L}\p{M}\p{N}_-]+)+[.。．｡]?(:[0-9]+)?(/|\?\S)|\[[0-9a-f.]*:[0-9a-f:.]*\](:[0-9]+)?(/|\?\S)`)
+
+// containsURL reports whether title contains a URL, with or without a scheme,
+// so a signed feed URL inside prose never becomes a visible title.
+// containsURL reports whether title holds anything that reads as a URL. It
+// matches on the NFKC form with format characters and variation selectors
+// removed, so compatibility and IDNA-ignored variants of URL syntax are caught
+// as one class instead of one code point at a time.
+func containsURL(title string) bool {
+	folded := strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Variation_Selector, r) {
+			return -1
+		}
+		return r
+	}, norm.NFKC.String(title))
+	return urlPattern.MatchString(folded)
+}
+
+// FillSubscriptionTitle sets the Subscription's title only while it is empty,
+// so a poll can name a feed imported without a title but never overwrites
+// one. title passes through SubscriptionTitle first; a title it rejects is a
+// no-op. Reports whether the title was set.
+func (s *Store) FillSubscriptionTitle(ctx context.Context, id SubscriptionID, title string) (bool, error) {
+	if id == "" {
+		return false, errors.New("subscription ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var feedURL string
+	if err := s.catalogW.QueryRowContext(ctx, `SELECT feed_url FROM subscription WHERE id = ?`, id).Scan(&feedURL); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, ErrSubscriptionNotFound
+		}
+		return false, err
+	}
+	title = SubscriptionTitle(title, feedURL)
+	if title == "" {
+		return false, nil
+	}
+	result, err := s.catalogW.ExecContext(ctx, `
+		UPDATE subscription SET title = ? WHERE id = ? AND COALESCE(title, '') = ''
+	`, title, id)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected > 0, err
 }
 
 // MarkSubscriptionPolled records a completed poll: the poll time and the

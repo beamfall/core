@@ -38852,6 +38852,43 @@
       },
       {
         "method": "GET",
+        "pattern": "/api/subscriptions/export.opml",
+        "note": "Download every Subscription in visible, unsealed Libraries as OPML 2.0, without auth references, URL userinfo or feeds on this server. By default only clean http(s) feed URLs (no auth reference, userinfo, query or fragment) are exported; includePrivate=true adds the rest with their complete URL and no stored title.",
+        "authorization": "manager-session",
+        "success": {
+          "status": 200,
+          "contentType": "application/xml; charset=utf-8",
+          "fields": []
+        },
+        "errors": [
+          {
+            "status": 401,
+            "messages": [
+              "invalid session"
+            ]
+          },
+          {
+            "status": 403,
+            "messages": [
+              "manager session required"
+            ]
+          },
+          {
+            "status": 500,
+            "messages": [
+              "could not export subscriptions"
+            ]
+          },
+          {
+            "status": 503,
+            "messages": [
+              "subscription export unavailable"
+            ]
+          }
+        ]
+      },
+      {
+        "method": "GET",
         "pattern": "/api/events",
         "note": "SSE event fanout: real-time server events for Console/Manage UIs"
       }

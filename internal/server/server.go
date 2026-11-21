@@ -108,6 +108,8 @@ type Server struct {
 	knownProxies        *KnownProxies
 	artworkImport       ArtworkImporter
 	artworkApply        artworkApplyStore
+	subscriptionExport  subscriptionExportStore
+	subscriptionSealed  func(store.LibraryID) bool
 	profilePictures     profilePictureStore
 	compat              *compatState
 	devBuilds           *devBuildsFile
@@ -242,6 +244,11 @@ func WithCompatRefusalJournalDir(path string) Option {
 	return func(s *Server) { s.compatRefusalDir = strings.TrimSpace(path) }
 }
 
+// WithSubscriptionLibrarySealed supplies the runtime seal state for Subscription exports.
+func WithSubscriptionLibrarySealed(sealed func(store.LibraryID) bool) Option {
+	return func(s *Server) { s.subscriptionSealed = sealed }
+}
+
 // New creates an HTTP server with every route mounted through the recording helper.
 func New(manifests *manifest.Service, playbackInfo *playback.Service, beamService *beam.Service, pairingService *pairing.Service, graphHandler http.Handler, mediaHandler *mediahttp.Handler, authService *auth.Service, jobStats JobStatsProvider, opts ...Option) *Server {
 	baseURL, err := parseBaseURL(os.Getenv("BEAMFALL_BASE_URL"))
@@ -299,6 +306,9 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	if applyStore, ok := jobStats.(artworkApplyStore); ok {
 		s.artworkApply = applyStore
 	}
+	if subscriptions, ok := jobStats.(subscriptionExportStore); ok {
+		s.subscriptionExport = subscriptions
+	}
 	if pictures, ok := jobStats.(profilePictureStore); ok {
 		s.profilePictures = pictures
 	}
@@ -323,6 +333,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	s.handle(http.MethodPost, "/api/compat/handshake", reveal.ContentJSON, s.compatHandshake)
 	s.handle(http.MethodPost, createMediaArtworkRoutePattern, reveal.ContentJSON, s.createMediaWithArtwork)
 	s.handle(http.MethodGet, "/api/manifest", reveal.ContentJSON, s.manifestDocument)
+	s.handle(http.MethodGet, subscriptionExportPath, reveal.ContentBytes, s.exportSubscriptions)
 	s.handle(http.MethodPost, "/api/playback-info", reveal.ContentJSON, s.playbackInfo)
 	s.handle(http.MethodPost, "/api/preview-info", reveal.ContentJSON, s.previewInfo)
 	s.handle(http.MethodPost, "/api/beam/offers", reveal.ContentJSON, s.createBeamOffer)

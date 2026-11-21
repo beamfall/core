@@ -241,6 +241,13 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if err != nil {
 		return published, err
 	}
+	// A Subscription imported without a title takes the feed's own title;
+	// a stored title is never overwritten.
+	if subscription.Title == "" && document.Title != "" {
+		if _, err := p.store.FillSubscriptionTitle(ctx, subscription.ID, document.Title); err != nil {
+			return published, err
+		}
+	}
 	downloaded := 0
 	var firstErr error
 	for _, entry := range document.Entries {
