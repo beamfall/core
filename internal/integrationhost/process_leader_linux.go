@@ -90,11 +90,22 @@ func threadGroupRuns(dir string) bool {
 		return !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ESRCH)
 	}
 	for _, task := range tasks {
-		if state, _, ok := procStateAndGroup(dir + "/task/" + task.Name()); ok && !exited(state) {
+		if threadLive(dir + "/task/" + task.Name()) {
 			return true
 		}
 	}
 	return false
+}
+
+// threadLive reports whether a listed thread runs. A thread whose stat cannot
+// be read or parsed counts as live unless it has gone.
+func threadLive(dir string) bool {
+	stat, err := os.ReadFile(dir + "/stat") // #nosec G304 -- a /proc entry this package built
+	if err != nil {
+		return !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ESRCH)
+	}
+	state, _, ok := parseProcStat(stat)
+	return !ok || !exited(state)
 }
 
 // procStateAndGroup reads the state and process group from dir/stat, for a

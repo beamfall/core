@@ -228,12 +228,11 @@ func superviseGroup(ctx context.Context, group *processGroup, stdout, stderr io.
 		pipes.abandon()
 		return fmt.Errorf("ffmpeg: start failed: %w", startErr)
 	}
-	pipes.started()
 	if bound && !probe.handoff() {
 		group.kill()
 		// reapGroup sweeps and reports a survivor, as a cancel does. The
-		// output is unwanted, so abandon the copies: where the kill takes only
-		// the direct child, a helper holding a pipe would block a drain.
+		// output is unwanted, so no copy ever starts: where the kill takes
+		// only the direct child, a helper holding a pipe would block a copy.
 		reapErr := reapGroup(group)
 		pipes.abandon()
 		if errors.Is(reapErr, errGroupSurvived) {
@@ -241,6 +240,7 @@ func superviseGroup(ctx context.Context, group *processGroup, stdout, stderr io.
 		}
 		return context.Canceled
 	}
+	pipes.started()
 
 	done := make(chan error, 1)
 	go func() { done <- pipes.finish(reapGroup(group)) }()
