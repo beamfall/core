@@ -7,6 +7,7 @@ package scrape
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,41 +27,97 @@ type ConditionalResult struct {
 }
 
 func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[string]string) ([]byte, error) {
+	data, _, err := e.fetchDocument(ctx, rawURL, headers, e.maxResponseBytes, func(req *http.Request) (*http.Response, error) {
+		return e.requestWith429Retry(ctx, req, e.client.Do)
+	})
+	return data, err
+}
+
+// ErrDocumentThrottled reports a document request refused by the upstream.
+var ErrDocumentThrottled = errors.New("scrape: upstream throttled document request")
+
+// CheckDocumentURL applies the pre-dial rules for directory documents and
+// discovered feeds. The hardened dialer checks the resolved address on fetch.
+func (e *Engine) CheckDocumentURL(u *url.URL) error {
+	if u.User != nil {
+		return errors.New("scrape: refused URL with user credentials")
+	}
+	return e.vetURL(u)
+}
+
+// FetchDocumentLimited fetches a capped document and returns its final URL.
+// Each request, including allowed redirect hops, needs admission. An upstream
+// 429 returns immediately, leaving retries to the caller's request budget.
+func (e *Engine) FetchDocumentLimited(ctx context.Context, rawURL string, headers map[string]string, maxBytes int64, admit func() error) ([]byte, *url.URL, error) {
+	client := *e.client
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := e.checkRedirect(req, via); err != nil {
+			return err
+		}
+		if err := e.CheckDocumentURL(req.URL); err != nil {
+			return err
+		}
+		return admit()
+	}
+	data, finalURL, err := e.fetchDocument(ctx, rawURL, headers, min(e.maxResponseBytes, maxBytes), func(req *http.Request) (*http.Response, error) {
+		if err := e.CheckDocumentURL(req.URL); err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err := admit(); err != nil {
+			return nil, err
+		}
+		// The shared agent takes precedence over a caller-supplied header.
+		req.Header.Set("User-Agent", e.userAgent)
+		return client.Do(req) // #nosec G704 -- URL checked above, redirects pinned, and transport vets the resolved IP.
+	})
+	var status *statusError
+	if errors.As(err, &status) && status.code == http.StatusTooManyRequests {
+		return nil, nil, ErrDocumentThrottled
+	}
+	return data, finalURL, err
+}
+
+func (e *Engine) fetchDocument(ctx context.Context, rawURL string, headers map[string]string, maxBytes int64, do func(*http.Request) (*http.Response, error)) ([]byte, *url.URL, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: invalid request URL")
+		return nil, nil, fmt.Errorf("scrape: invalid request URL")
 	}
 	if err := e.vetURL(parsed); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: building request: %w", err)
+		return nil, nil, fmt.Errorf("scrape: building request: %w", err)
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", e.userAgent)
 	for name, value := range headers {
 		if strings.TrimSpace(value) != "" {
 			req.Header.Set(name, value)
 		}
 	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
-		return e.client.Do(attempt)
-	})
+	resp, err := do(req)
 	if err != nil {
-		return nil, sanitizedTransportError(parsed, err)
+		return nil, nil, sanitizedTransportError(parsed, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, &statusError{host: parsed.Hostname(), code: resp.StatusCode}
+		return nil, nil, &statusError{host: parsed.Hostname(), code: resp.StatusCode}
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("scrape: reading response: %w", err)
+		return nil, nil, fmt.Errorf("scrape: reading response: %w", err)
 	}
-	if int64(len(data)) > e.maxResponseBytes {
-		return nil, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
+	if int64(len(data)) > maxBytes {
+		return nil, nil, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), maxBytes)
 	}
-	return data, nil
+	finalURL := parsed
+	if resp.Request != nil {
+		finalURL = resp.Request.URL
+	}
+	return data, finalURL, nil
 }
 
 // FetchConditional GETs one resource with If-None-Match/If-Modified-Since
@@ -86,7 +143,7 @@ func (e *Engine) FetchConditionalAuth(ctx context.Context, rawURL, etag, lastMod
 	if err != nil {
 		return ConditionalResult{}, fmt.Errorf("scrape: building request: %w", err)
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", e.userAgent)
 	if strings.TrimSpace(authHeader) != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
@@ -145,7 +202,7 @@ func (e *Engine) DownloadResourceAuth(ctx context.Context, rawURL string, dst io
 	if err != nil {
 		return 0, fmt.Errorf("scrape: building request: %w", err)
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", e.userAgent)
 	if strings.TrimSpace(authHeader) != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
@@ -211,7 +268,7 @@ func (e *Engine) OpenOriginRange(ctx context.Context, rawURL, rangeHeader string
 	if err != nil {
 		return OriginResponse{}, fmt.Errorf("scrape: building request: %w", err)
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", e.userAgent)
 	if strings.TrimSpace(rangeHeader) != "" {
 		req.Header.Set("Range", rangeHeader)
 	}

@@ -112,3 +112,28 @@ func TestEveryCreatedNotificationKindHasATitle(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchFeedsThrottleIsLocalized(t *testing.T) {
+	handler := newTestHandler(t)
+	handler.SetFeedSearcher(feedSearchFunc(func(context.Context, string) ([]FeedSearchResult, error) {
+		return nil, ErrFeedSearchThrottled
+	}))
+	body := `{"query":"{ searchFeeds(query:\"daily\") { feedURL } }"}`
+	for locale, want := range map[string]string{
+		"en": "Too many feed searches. Try again shortly.",
+		"de": "Zu viele Feed-Suchen. Versuche es in Kürze erneut.",
+		"es": "Demasiadas búsquedas de feeds. Inténtalo de nuevo en breve.",
+		"fr": "Trop de recherches de flux. Réessayez dans un instant.",
+		"pt": "Demasiadas pesquisas de feeds. Tente novamente dentro de instantes.",
+	} {
+		t.Run(locale, func(t *testing.T) {
+			_, errs := post(t, handler, body, func(req *http.Request) {
+				authorizeViewer(req)
+				*req = *req.WithContext(l10n.WithLocale(req.Context(), locale))
+			})
+			if len(errs) != 1 || errs[0].Message != want || errs[0].Extensions.Code != ErrorCodeThrottled {
+				t.Fatalf("errors = %+v, want THROTTLED with %q", errs, want)
+			}
+		})
+	}
+}

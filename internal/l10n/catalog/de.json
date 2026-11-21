@@ -1,4 +1,5 @@
 {
+  "feed_search.throttled": "Zu viele Feed-Suchen. Versuche es in Kürze erneut.",
   "library_root.cant_open": "Der Server kann {path} nicht öffnen.",
   "library_root.missing": "Den Ordner {path} gibt es auf dem Server nicht.",
   "library_root.not_folder": "{path} ist eine Datei, kein Ordner.",

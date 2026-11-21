@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"net/url"
 	"strings"
+	"time"
 
 	"github.com/beamfall/core/internal/app"
 	"github.com/beamfall/core/internal/graph"
@@ -195,7 +193,8 @@ func addPodcastHooks(hooks *app.Hooks) {
 		PluginID:          pluginID,
 		RequiredScraperID: "itunes-directory",
 		New: func(engine *scrape.Engine, secrets app.SecretSource) graph.FeedSearcher {
-			return feedDirectorySearcher{engine: engine, secrets: secrets}
+			endpoint, template, _ := feedDirectoryScraper("itunes-directory")
+			return newFeedDirectorySearcher(engine, secrets, endpoint, template, time.Now)
 		},
 	}
 }
@@ -452,50 +451,6 @@ func (r musicPackResolver) Resolve(ctx context.Context, ref string, filter store
 	return offlinepack.ResolvedTarget{MediaIDs: mediaIDs, Label: resolved.Label}, nil
 }
 
-type feedDirectorySearcher struct {
-	engine  *scrape.Engine
-	secrets app.SecretSource
-}
-
-func (s feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) ([]graph.FeedSearchResult, error) {
-	results, err := s.searchITunes(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	if richer, richerErr := s.searchPodcastIndex(ctx, query); richerErr == nil {
-		results = append(results, richer...)
-	}
-	return results, nil
-}
-
-func (s feedDirectorySearcher) searchITunes(ctx context.Context, query string) ([]graph.FeedSearchResult, error) {
-	endpoint, template, ok := feedDirectoryScraper("itunes-directory")
-	if !ok {
-		return nil, errors.New("feed directory scraper is not registered")
-	}
-	rawURL := strings.TrimRight(endpoint, "/") + strings.ReplaceAll(template, "{query}", url.QueryEscape(query))
-	data, err := s.engine.FetchDocument(ctx, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	var parsed struct {
-		Results []struct {
-			Title       string `json:"collectionName"`
-			FeedURL     string `json:"feedUrl"`
-			ArtworkURL  string `json:"artworkUrl600"`
-			Description string `json:"description"`
-		} `json:"results"`
-	}
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return nil, err
-	}
-	results := make([]graph.FeedSearchResult, 0, len(parsed.Results))
-	for _, item := range parsed.Results {
-		results = append(results, graph.FeedSearchResult{Title: item.Title, FeedURL: item.FeedURL, ArtworkURL: item.ArtworkURL, Description: item.Description})
-	}
-	return results, nil
-}
-
 func feedDirectoryScraper(id string) (string, string, bool) {
 	for _, scraper := range feeds.Bundle().Scrapers {
 		if scraper.ID == id {
@@ -505,16 +460,19 @@ func feedDirectoryScraper(id string) (string, string, bool) {
 	return "", "", false
 }
 
-func (s feedDirectorySearcher) searchPodcastIndex(ctx context.Context, query string) ([]graph.FeedSearchResult, error) {
+func (s *feedDirectorySearcher) searchExtendedDirectory(ctx context.Context, query string) ([]graph.FeedSearchResult, error) {
+	if s.secrets == nil {
+		return nil, nil
+	}
 	key, err := s.secrets.Secret("podcast-index-key")
-	if err != nil {
-		return nil, fmt.Errorf("podcast-index-key: %w", err)
+	if err != nil || strings.TrimSpace(key) == "" {
+		return nil, nil
 	}
 	secret, err := s.secrets.Secret("podcast-index-secret")
-	if err != nil {
-		return nil, fmt.Errorf("podcast-index-secret: %w", err)
+	if err != nil || strings.TrimSpace(secret) == "" {
+		return nil, nil
 	}
-	results, err := feeds.NewClient(key, secret, s.engine).Search(ctx, query)
+	results, err := feeds.NewClient(key, secret, s).Search(ctx, query)
 	if err != nil {
 		return nil, err
 	}

@@ -1074,7 +1074,7 @@ func TestUserAgentSentOnEveryRequest(t *testing.T) {
 	if _, err := engine.FetchResource(context.Background(), server.URL+"/poster.jpg"); err != nil {
 		t.Fatal(err)
 	}
-	want := "beamfall/dev (+https://beamfall.com)"
+	want := "Beamfall/development (+https://beamfall.com/bot)"
 	for _, path := range []string{"/login", "/find", "/item/9", "/poster.jpg"} {
 		if agents[path] != want {
 			t.Errorf("User-Agent on %s = %q, want %q", path, agents[path], want)

@@ -148,6 +148,9 @@ var vocabAllowedLines = map[string][]vocabAllowed{
 		{"podcast", `podcast-index-key`},
 		{"podcast", `podcast-index-secret`},
 	},
+	"cmd/beamfall/feed_directory.go": {
+		{"podcasts", `"podcasts.apple.com"`},
+	},
 	"internal/conductor/conductor.go": {
 		{"podcast", `queue composition stays plugin-owned (music/podcast)`},
 	},

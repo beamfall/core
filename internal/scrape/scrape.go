@@ -194,6 +194,11 @@ func WithMaxResponseBytes(limit int64) Option {
 	return func(e *Engine) { e.maxResponseBytes = limit }
 }
 
+// WithReleaseVersion sets the Beamfall version advertised to upstreams.
+func WithReleaseVersion(version string) Option {
+	return func(e *Engine) { e.userAgent = fmt.Sprintf(userAgentFormat, version) }
+}
+
 // WithInsecureLoopback permits plain-http requests to loopback addresses
 // (http://127.0.0.1:…) so tests can target httptest servers.
 //
@@ -226,10 +231,7 @@ const (
 	// when its declaration sets no CacheHours: a week, the usual guidance for
 	// static lookup endpoints.
 	defaultReferenceCacheHours = 7 * 24
-	// userAgent identifies Beamfall on every engine request — remote-source
-	// etiquette (MusicBrainz requires a descriptive User-Agent and throttles
-	// anonymous clients harder without one).
-	userAgent = "beamfall/dev (+https://beamfall.com)"
+	userAgentFormat            = "Beamfall/%s (+https://beamfall.com/bot)"
 )
 
 // Engine executes ScraperSpecs. Construct once with New and share; it is safe
@@ -239,6 +241,7 @@ type Engine struct {
 	config           ConfigSource
 	timeout          time.Duration
 	maxResponseBytes int64
+	userAgent        string
 	insecureLoopback bool
 	client           *http.Client
 	// streamClient serves DownloadResource: same hardened dialer and redirect
@@ -288,6 +291,7 @@ func New(opts ...Option) *Engine {
 	e := &Engine{
 		timeout:          defaultTimeout,
 		maxResponseBytes: defaultMaxResponseBytes,
+		userAgent:        fmt.Sprintf(userAgentFormat, "development"),
 		tokens:           map[string]cachedToken{},
 		lastRequest:      map[string]time.Time{},
 		references:       map[string]cachedReference{},
@@ -1293,7 +1297,7 @@ func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reade
 	}
 	// Source etiquette: every request identifies the app (MusicBrainz
 	// rejects or throttles UA-less clients).
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", e.userAgent)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}

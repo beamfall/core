@@ -618,6 +618,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// official build bundled (BundledCredentials).
 	scraperCredentials := withBundledCredentials(secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}, BundledCredentials)
 	scrapeEngine := scrape.New(
+		scrape.WithReleaseVersion(capabilities.ReleaseVersion),
 		scrape.WithCredentials(scraperCredentials),
 		scrape.WithConfigSource(pluginConfigWithDefaults{saved: st, bundles: executablePlugins}),
 	)

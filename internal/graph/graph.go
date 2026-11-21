@@ -1015,6 +1015,9 @@ type FeedSearcher interface {
 	SearchFeeds(context.Context, string) ([]FeedSearchResult, error)
 }
 
+// ErrFeedSearchThrottled reports that the directory could not admit a request.
+var ErrFeedSearchThrottled = clientError("feed search throttled")
+
 type feedSearchFunc func(context.Context, string) ([]FeedSearchResult, error)
 
 func (fn feedSearchFunc) SearchFeeds(ctx context.Context, query string) ([]FeedSearchResult, error) {
@@ -3548,6 +3551,9 @@ func (h *Handler) searchFeeds(ctx context.Context, scope auth.Scope, req request
 		return []FeedSearchResult{}, nil
 	}
 	results, err := h.feedSearcher.SearchFeeds(ctx, query)
+	if errors.Is(err, ErrFeedSearchThrottled) {
+		return nil, &l10n.Error{Key: l10n.FeedSearchThrottled, Err: ErrFeedSearchThrottled}
+	}
 	if err != nil {
 		return nil, err
 	}

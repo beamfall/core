@@ -1,4 +1,5 @@
 {
+  "feed_search.throttled": "Demasiadas búsquedas de feeds. Inténtalo de nuevo en breve.",
   "library_root.cant_open": "El servidor no puede abrir {path}.",
   "library_root.missing": "La carpeta {path} no existe en el servidor.",
   "library_root.not_folder": "{path} es un archivo, no una carpeta.",
