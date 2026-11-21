@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EntityInfo, SourceItem } from "@/lib/graphql/types";
 import {
   ancestorOf,
+  groupHeading,
   isRankedShelf,
   itemRuntimeSeconds,
   nextUpName,
@@ -73,6 +74,27 @@ describe("ancestorOf (CORE-2510)", () => {
     const groups = withoutItem(part.relatedEntities ?? [], "w1");
     expect(groups.map((group) => group.kind)).toEqual(["maker"]);
     expect(withoutItem(part.relatedEntities ?? [], undefined)).toHaveLength(2);
+  });
+});
+
+describe("groupHeading (CORE-2831)", () => {
+  it("heads a group with the plugin's plural, then its display name, then the kind", () => {
+    const items: SourceItem[] = [];
+    expect(
+      groupHeading(
+        {
+          kind: "album",
+          kindDisplayName: { en: "Album", fr: "Album" },
+          kindPluralDisplayName: { en: "Albums", fr: "Albums (fr)" },
+          items,
+        },
+        "fr",
+      ),
+    ).toBe("Albums (fr)");
+    expect(groupHeading({ kind: "album", kindDisplayName: { en: "Album" }, items }, "en")).toBe(
+      "Album",
+    );
+    expect(groupHeading({ kind: "album", items }, "en")).toBe("album");
   });
 });
 
