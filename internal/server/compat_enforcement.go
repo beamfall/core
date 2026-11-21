@@ -200,6 +200,10 @@ func (s *Server) requireCompatDecision(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
+		if auth.ProfileMismatch(r, scope) {
+			writeProfileMismatch(w, r)
+			return
+		}
 		subject := compatSubject(scope)
 		if subject == "" {
 			next(w, r)

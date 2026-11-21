@@ -81,7 +81,7 @@ func applyCORS(w http.ResponseWriter, r *http.Request, policy accessPolicy) bool
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", strings.Join([]string{
 				auth.CSRFHeader, "Content-Type", "Authorization",
-				auth.SessionHeader, auth.DeviceHeader, auth.DeviceSecretHeader,
+				auth.SessionHeader, auth.DeviceHeader, auth.DeviceSecretHeader, auth.ProfileHeader,
 			}, ", "))
 		}
 		return true

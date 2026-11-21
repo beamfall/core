@@ -11,8 +11,10 @@ import {
 import {
   ApiError,
   isAuthRejection,
+  setExpectedProfile,
   setIdentityEpochReset,
   setIdentityEpochSignal,
+  setProfileMismatchHandler,
 } from "@/lib/api";
 import { takeBeamfallHostInitialMessages } from "@/lib/beamfallHost";
 import {
@@ -134,6 +136,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const controller = new AbortController();
     controllerRef.current = controller;
     setIdentityEpochSignal(controller.signal);
+    // Requests of the next epoch name no Profile until its session is read,
+    // so the Profile switch itself and the reads after it are never refused.
+    setExpectedProfile();
     clearViewerCache();
     setSession(null);
     setManifest(null);
@@ -167,6 +172,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         s = await readSession(signal);
       }
       if (!current()) return;
+      // From here on every request names this Profile, and the server refuses
+      // one after another tab switched the shared session (CORE-2923).
+      setExpectedProfile(s.profileID);
       // Manifest + profiles are best-effort; a failure here is not fatal to
       // having a session unless either response says this identity is no
       // longer authorized. Hold every scoped value locally until both settle
@@ -177,6 +185,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         (m.status === "rejected" && isAuthRejection(m.reason)) ||
         (p.status === "rejected" && isAuthRejection(p.reason))
       ) {
+        setExpectedProfile();
         clearViewerCache();
         setSession(null);
         setManifest(null);
@@ -221,6 +230,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       subscribeCompatibilityBlock((result) => {
         controllerRef.current?.abort();
         setIdentityEpochSignal();
+        setExpectedProfile();
         clearViewerCache();
         setSession(null);
         setManifest(null);
@@ -249,13 +259,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (!revealedRef.current) return;
       void load();
     });
+    // A request refused because another tab switched the shared session to
+    // another Profile (CORE-2923): read the identity again, so this tab shows
+    // the Profile the session is bound to instead of acting as the old one.
+    // api.ts calls this only for the Profile this tab still shows, and the new
+    // epoch names none until it has read the session, so it cannot loop.
+    setProfileMismatchHandler(() => {
+      void load();
+    });
     void load();
     return () => {
       controllerRef.current?.abort();
       clearViewerCache();
       advanceCompatibilityEpoch();
       setIdentityEpochSignal();
+      setExpectedProfile();
       setIdentityEpochReset();
+      setProfileMismatchHandler();
     };
   }, [load]);
 

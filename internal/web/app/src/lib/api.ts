@@ -48,6 +48,63 @@ function requestSignal(signal?: AbortSignal): AbortSignal | undefined {
   return AbortSignal.any([identityEpochSignal, signal]);
 }
 
+// The Profile this tab shows (CORE-2923). Every tab shares one session
+// cookie, so after another tab switches Profile the server would otherwise
+// apply this tab's requests to the new Profile. Each request names the Profile
+// it was made for, and the server refuses one that no longer matches.
+const PROFILE_HEADER = "X-Beamfall-Profile";
+let expectedProfileID: string | undefined;
+let profileMismatchHandler: (() => void) | undefined;
+
+/**
+ * Name the Profile this tab shows on every request from now on; no argument
+ * while an identity is loading or none is signed in, so the request names none.
+ */
+export function setExpectedProfile(profileID?: string): void {
+  expectedProfileID = profileID || undefined;
+}
+
+/**
+ * Register what a refusal for a Profile this tab still shows does (the session
+ * spine reloads its identity). Call with no argument to unregister.
+ */
+export function setProfileMismatchHandler(handler?: () => void): void {
+  profileMismatchHandler = handler;
+}
+
+/** The Profile this tab's requests name, if any. */
+export function getExpectedProfile(): string | undefined {
+  return expectedProfileID;
+}
+
+/** The Profile header for a request made outside the helpers below. */
+export function profileHeaders(): Record<string, string> {
+  return expectedProfileID ? { [PROFILE_HEADER]: expectedProfileID } : {};
+}
+
+/** Whether a refusal says the session is bound to another Profile than the request named. */
+function isProfileMismatch(status: number, payload: unknown): boolean {
+  if (status !== 409 || typeof payload !== "object" || payload === null) return false;
+  const body = payload as { reason?: unknown; errors?: { extensions?: { reason?: unknown } }[] };
+  if (body.reason === "PROFILE_MISMATCH") return true;
+  return body.errors?.some((error) => error?.extensions?.reason === "PROFILE_MISMATCH") ?? false;
+}
+
+/**
+ * React to a refused request made for `sentProfile`. Only a refusal for the
+ * Profile this tab still shows reloads it: one that arrives after the tab
+ * moved on to another identity belongs to the old one.
+ */
+export function noteProfileRefusal(
+  sentProfile: string | undefined,
+  status: number,
+  payload: unknown,
+): void {
+  if (sentProfile === undefined || sentProfile !== expectedProfileID) return;
+  if (!isProfileMismatch(status, payload)) return;
+  profileMismatchHandler?.();
+}
+
 let requestGuard: ((path: string) => void) | undefined;
 
 /** Install the app-wide guard that can stop normal API use after terminal compatibility. */
@@ -211,11 +268,20 @@ async function requestJSON<T>(
   const transportSignal = callerSignal
     ? AbortSignal.any([callerSignal, deadlineController.signal])
     : deadlineController.signal;
-  const requestInit = { ...init, signal: transportSignal };
+  const sentProfile = expectedProfileID;
+  const requestInit: RequestInit = { ...init, signal: transportSignal };
+  if (sentProfile !== undefined) {
+    requestInit.headers = {
+      ...(init.headers as Record<string, string> | undefined),
+      ...profileHeaders(),
+    };
+  }
   const transport = Promise.resolve(fetch(path, requestInit)).then(async (response) => {
     const bytes = await readResponseBytes(response, path, config.maxResponseBytes);
     if (!response.ok) {
-      throw new ApiError(`${method} ${path} failed`, response.status, parseErrorPayload(bytes));
+      const payload = parseErrorPayload(bytes);
+      noteProfileRefusal(sentProfile, response.status, payload);
+      throw new ApiError(`${method} ${path} failed`, response.status, payload);
     }
     return parseJSONBody<T>(bytes, path, response.status);
   });
@@ -317,7 +383,7 @@ export function postKeepalive(path: string, body: unknown): void {
       method: "POST",
       credentials: "same-origin",
       keepalive: true,
-      headers: { "Content-Type": "application/json", [CSRF_HEADER]: "1" },
+      headers: { "Content-Type": "application/json", [CSRF_HEADER]: "1", ...profileHeaders() },
       body: JSON.stringify(body),
     }).catch(() => {});
   } catch {

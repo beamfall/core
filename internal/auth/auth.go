@@ -33,7 +33,20 @@ const (
 	SessionHeader      = "X-Beamfall-Session"
 	DeviceHeader       = "X-Beamfall-Device"
 	DeviceSecretHeader = "X-Beamfall-Device-Secret" // #nosec G101 -- a header name, not a credential.
+
+	// ProfileHeader names the Profile a request was made for (CORE-2923). A
+	// browser tab keeps its own idea of the signed-in Profile while every tab
+	// shares one session cookie, so after another tab switches Profile the
+	// header lets the server refuse a request the tab made for the old one.
+	ProfileHeader = "X-Beamfall-Profile"
 )
+
+// ProfileMismatch reports whether r names, in ProfileHeader, a Profile other
+// than the one scope is bound to. An absent or blank header names none.
+func ProfileMismatch(r *http.Request, scope Scope) bool {
+	expected := strings.TrimSpace(r.Header.Get(ProfileHeader))
+	return expected != "" && store.ProfileID(expected) != scope.ProfileID
+}
 
 // Admin Session policy (ADR-0007 §4 — "short-lived re-auth"; ADR-0012 §3 —
 // brute-force economics). The ADR pins neither the lifetime nor the lockout

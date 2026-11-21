@@ -6,7 +6,13 @@
 // Every query/mutation string is copied VERBATIM from internal/web/static/app.js
 // (contract-tested server-side).
 
-import { type GraphQLOptions, graphql } from "@/lib/api";
+import {
+  type GraphQLOptions,
+  getExpectedProfile,
+  graphql,
+  noteProfileRefusal,
+  profileHeaders,
+} from "@/lib/api";
 import type {
   AccessScheduleInfo,
   AccessWindowInput,
@@ -1031,16 +1037,18 @@ export async function setProfileAvatar(
 }
 
 async function profilePictureRequest(url: string, init: RequestInit): Promise<string> {
+  const sentProfile = getExpectedProfile();
   const response = await fetch(url, {
     ...init,
     credentials: "same-origin",
-    headers: { "X-Beamfall-Csrf": "1" },
+    headers: { "X-Beamfall-Csrf": "1", ...profileHeaders() },
   });
   const body = (await response.json().catch(() => null)) as {
     pictureURL?: string;
     error?: string;
   } | null;
   if (!response.ok) {
+    noteProfileRefusal(sentProfile, response.status, body);
     throw new Error(body?.error || `profile picture request failed (${response.status})`);
   }
   return body?.pictureURL ?? "";

@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getIdentityEpochSignal } from "@/lib/api";
+import {
+  getExpectedProfile,
+  getIdentityEpochSignal,
+  noteProfileRefusal,
+  profileHeaders,
+} from "@/lib/api";
 import { createMediaFromUnmatched } from "@/lib/graphql";
 import type { UnmatchedRecordInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -15,10 +20,9 @@ const ARTWORK_SLOT = "poster";
 
 /**
  * uploadArtwork POSTs the selected file to the multipart create-Media artwork
- * route (METAPARITY-6-ARTWORK-1, internal/server/artwork_upload.go). It
- * duplicates lib/api.ts's CSRF-header + same-origin-credentials contract
- * in-line rather than importing lib/api.ts, because this ticket's Allowed
- * Paths are scoped to this directory only.
+ * route (METAPARITY-6-ARTWORK-1, internal/server/artwork_upload.go). A
+ * multipart body cannot go through postJSON, so it carries lib/api.ts's
+ * CSRF, credentials and Profile (CORE-2923) contract itself.
  */
 async function uploadArtwork(
   mediaID: string,
@@ -30,15 +34,17 @@ async function uploadArtwork(
   form.append("mediaID", mediaID);
   form.append("slot", slot);
   form.append("file", file);
+  const sentProfile = getExpectedProfile();
   const response = await fetch("/api/media/artwork/upload", {
     method: "POST",
     credentials: "same-origin",
-    headers: { "X-Beamfall-Csrf": "1" },
+    headers: { "X-Beamfall-Csrf": "1", ...profileHeaders() },
     body: form,
     signal,
   });
   if (response.ok) return;
   const body = (await response.json().catch(() => null)) as { error?: string } | null;
+  noteProfileRefusal(sentProfile, response.status, body);
   throw new Error(body?.error || `artwork upload failed (${response.status})`);
 }
 
