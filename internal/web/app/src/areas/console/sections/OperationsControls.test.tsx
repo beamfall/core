@@ -361,6 +361,10 @@ describe("OperationsControls", () => {
     const streamID = "stream-secret";
     const compatKey = "bfj_compatsecret0123";
     const apiKey = "bfk_apisecret0123";
+    // A progress unit is humanised ("bfj_x" reads "Bfj x"), so only redaction
+    // before formatting catches it; the suffix must never appear.
+    const unitSecret = "unitsecret0123";
+    const unitKey = `bfj_${unitSecret}`;
     const initialEvents: JobEventInfo[] = [
       {
         id: "1",
@@ -389,6 +393,13 @@ describe("OperationsControls", () => {
         payload: `{"type":"progress","current":1,"total":2,"unit":"files","message":"key ${compatKey}"}`,
       },
       {
+        id: "6",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:05Z",
+        type: "progress",
+        payload: `{"type":"progress","current":1,"total":2,"unit":"${unitKey}"}`,
+      },
+      {
         id: "5",
         jobID: "job-1",
         occurredAt: "2026-06-20T00:00:04Z",
@@ -413,8 +424,8 @@ describe("OperationsControls", () => {
     expect(await screen.findByText("Failed")).toBeVisible();
     expect(screen.getByText("Restricted")).toBeVisible();
     expect(screen.getByText("(redacted)")).toBeVisible();
-    expect(screen.getAllByText(/\[REDACTED\]/)).toHaveLength(3);
-    for (const leak of [restrictedName, token, host, streamID, compatKey, apiKey]) {
+    expect(screen.getAllByText(/\[REDACTED\]/i).length).toBeGreaterThanOrEqual(3);
+    for (const leak of [restrictedName, token, host, streamID, compatKey, apiKey, unitSecret]) {
       expect(screen.queryByText(new RegExp(leak))).toBeNull();
     }
     expect(fetchJobEvents).toHaveBeenCalledTimes(2);

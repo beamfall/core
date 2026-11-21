@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
@@ -253,13 +253,17 @@ describe("JellyfinCompat", () => {
     renderPage();
 
     const input = await screen.findByLabelText("Key name");
-    await user.type(input, "Seerr{Enter}{Enter}");
-    // Two submits in one tick, before React re-renders the disabled button:
-    // only the in-flight guard can refuse the second.
+    await user.type(input, "Seerr");
+    // Two submits inside one act, before React commits the disabled button:
+    // only the in-flight ref can refuse the second.
     const form = input.closest("form");
     if (!form) throw new Error("key name input has no form");
-    fireEvent.submit(form);
-    fireEvent.submit(form);
+    act(() => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+    });
+    expect(createJellyfinCompatKey).toHaveBeenCalledTimes(1);
+    await user.type(input, "{Enter}");
     expect(screen.getByRole("button", { name: "Create key" })).toBeDisabled();
     finish({ token: `bfj_${"b".repeat(64)}`, key: { ...seerrKey, lastUsedAt: undefined } });
     expect(await screen.findByText(`bfj_${"b".repeat(64)}`)).toBeVisible();

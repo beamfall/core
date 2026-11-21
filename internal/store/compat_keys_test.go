@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -171,14 +172,26 @@ func TestProfileSettingsOptOutRollsBackWhenKeyRevocationFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	session := Session{
+		ID: "integration-rollback", ProfileID: "profile-default", Kind: SessionKindIntegration,
+		IntegrationScopes: []IntegrationScope{IntegrationScopeRead}, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	policy := AuthBackoff{Window: time.Minute, FreeAttempts: 3, BaseDelay: time.Second, MaxDelay: time.Minute}
+	reservation, _, err := st.ReserveAuthAttempt(ctx, IntegrationAttemptAction, []string{"profile:profile-default"}, time.Now(), policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateIntegrationSession(ctx, session, true, reservation, time.Now); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := st.catalogW.ExecContext(ctx, `
 		CREATE TEMP TRIGGER fail_key_revoke BEFORE UPDATE OF revoked_at_ms ON compat_integration_key
 		BEGIN SELECT RAISE(ABORT, 'injected revoke failure'); END`); err != nil {
 		t.Fatal(err)
 	}
 	off := false
-	if _, err := st.UpdateProfileSettings(ctx, "profile-default", ProfileSettings{IntegrationSignIn: &off}); err == nil {
-		t.Fatal("opt-out succeeded despite the injected revoke failure")
+	if _, err := st.UpdateProfileSettings(ctx, "profile-default", ProfileSettings{IntegrationSignIn: &off}); err == nil || !strings.Contains(err.Error(), "injected revoke failure") {
+		t.Fatalf("opt-out: %v; want the injected revoke failure", err)
 	}
 	if _, err := st.catalogW.ExecContext(ctx, `DROP TRIGGER fail_key_revoke`); err != nil {
 		t.Fatal(err)
@@ -192,6 +205,9 @@ func TestProfileSettingsOptOutRollsBackWhenKeyRevocationFails(t *testing.T) {
 	}
 	if _, err := st.CompatIntegrationKeyByToken(ctx, token, now); err != nil {
 		t.Fatalf("key after rolled-back opt-out: %v; want it still valid", err)
+	}
+	if _, err := st.Session(ctx, session.ID); err != nil {
+		t.Fatalf("integration session after rolled-back opt-out: %v; want it kept", err)
 	}
 }
 
@@ -224,12 +240,28 @@ func TestCompatIntegrationKeyLastUseRaceOutcomes(t *testing.T) {
 	later := now.Add(time.Hour)
 
 	refreshed := mint("Refreshed")
-	exec(`CREATE TEMP TRIGGER skip_last_use BEFORE UPDATE OF last_used_at_ms ON compat_integration_key
-		BEGIN SELECT RAISE(IGNORE); END`)
+	// The competing request's write lands first; this lookup's UPDATE then
+	// matches no row (its cutoff predicate fails) and must still authorize.
+	competing := later.Add(-time.Second)
+	exec(fmt.Sprintf(`CREATE TEMP TRIGGER competing_last_use BEFORE UPDATE OF last_used_at_ms ON compat_integration_key
+		WHEN NEW.last_used_at_ms != %d
+		BEGIN
+			UPDATE compat_integration_key SET last_used_at_ms = %d WHERE id = OLD.id;
+			SELECT RAISE(IGNORE);
+		END`, competing.UnixMilli(), competing.UnixMilli()))
 	if _, err := st.CompatIntegrationKeyByToken(ctx, refreshed, later); err != nil {
 		t.Fatalf("lookup after a competing refresh: %v; want it authorized", err)
 	}
-	exec(`DROP TRIGGER skip_last_use`)
+	exec(`DROP TRIGGER competing_last_use`)
+	keys, err := st.CompatIntegrationKeys(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range keys {
+		if key.Name == "Refreshed" && !key.LastUsedAt.Equal(competing) {
+			t.Fatalf("last use = %v; want the competing request's %v", key.LastUsedAt, competing)
+		}
+	}
 
 	revoked := mint("Revoked")
 	exec(`CREATE TEMP TRIGGER revoke_mid_lookup BEFORE UPDATE OF last_used_at_ms ON compat_integration_key

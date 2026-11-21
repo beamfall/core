@@ -23,6 +23,9 @@ is bounded by other means.
 - New admin graph fields `jellyfinCompatKeys`, `createJellyfinCompatKey` and
   `revokeJellyfinCompatKey`, audited and compiled out of App Store builds. The list shows each key's
   name, Profile, creation time and last use. Last use is updated at most once a minute.
+- A mutation that mints a one-time secret must carry no other field, so a later field's failure
+  cannot discard a token that was already stored. The rule covers `createJellyfinCompatKey` and,
+  intentionally, the native `createApiKey` too: a batched `createApiKey` is now refused.
 - The Console compatibility page gains a keys panel: mint (token shown once), list with last use,
   revoke.
 - A test-only build tag, `beamfall_simclock`, lets a recorded run move the server's read clock

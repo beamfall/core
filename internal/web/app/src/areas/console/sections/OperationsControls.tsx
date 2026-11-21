@@ -319,11 +319,14 @@ function JobLog({ jobID, version }: { jobID: string; version: number }) {
     <div className="console-card console-job-events">
       {lines.map(({ event: ev, pauses }) => {
         const at = new Date(ev.occurredAt);
+        // Redact before parsing: formatting a progress unit or message can
+        // reshape a secret past the patterns (bfj_ shown as "Bfj ...").
+        const payload = ev.payload ? redactJobLogPayload(ev.payload) : "";
         const detail =
           pauses > 0
             ? ""
-            : ev.payload
-              ? redactJobLogPayload(jobEventDetail(ev, t) ?? ev.payload)
+            : payload
+              ? (jobEventDetail({ ...ev, payload }, t) ?? payload)
               : t("jobLogPayloadRedacted");
         const label =
           pauses > 0 ? t("jobLogPauseCycles", { count: pauses }) : jobEventLabel(ev.type, t);
