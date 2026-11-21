@@ -40,6 +40,7 @@ import {
 } from "@/lib/graphql";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { notifyIdentityChange } from "@/lib/identityChanges";
 import { RegisterProvider } from "@/lib/register";
 import { clearViewerCache } from "@/lib/viewerCache";
 import { STRINGS } from "@/strings";
@@ -138,7 +139,8 @@ vi.mock("../player/PrePlayStage", () => ({
     </section>
   )),
 }));
-vi.mock("../player/usePlayer", () => ({
+vi.mock("../player/usePlayer", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../player/usePlayer")>()),
   usePlayer: vi.fn(),
   DEFAULT_ADJUSTMENT: { pitchShiftSemitones: 0, tempo: 1 },
 }));
@@ -1537,6 +1539,13 @@ describe("PlayerPage server Play Queue", () => {
   const playingID = () => vi.mocked(usePlayer).mock.lastCall?.[0];
   const gapless = () => vi.mocked(useGaplessAudio).mock.lastCall?.[0];
 
+  async function mockWithRealTransport() {
+    const actual = await vi.importActual<typeof import("../player/PlayerTransport")>(
+      "../player/PlayerTransport",
+    );
+    vi.mocked(PlayerTransport).mockImplementation((props) => <actual.PlayerTransport {...props} />);
+  }
+
   function LocationProbe() {
     location = useLocation();
     return null;
@@ -1609,6 +1618,7 @@ describe("PlayerPage server Play Queue", () => {
     setIdentityEpochSignal();
     graphql.mockRestore();
     pause.mockRestore();
+    vi.mocked(PlayerTransport).mockReset();
     vi.mocked(fetchMedia).mockResolvedValue(null);
   });
 
@@ -1676,6 +1686,41 @@ describe("PlayerPage server Play Queue", () => {
     await waitFor(() => expect(playingID()).toBe(a.id));
   });
 
+  it("uses the current row as the cursor even if it becomes locked while playing", async () => {
+    renderQueue();
+    await waitFor(() => expect(playingID()).toBe(b.id));
+    rows = [a, { ...b, locked: true }, locked, c];
+    fireEvent.ended(stageVideo());
+    await waitFor(() => expect(playingID()).toBe(c.id));
+  });
+
+  it("advances to C when a row is removed before the page boundary at B", async () => {
+    const prefix = Array.from({ length: 199 }, (_, i) => ({ ...a, id: `prior-${i}` }));
+    rows = [...prefix, b, c, { ...c, id: "track-d" }];
+    let removeBeforeSecondPage = false;
+    const offsets: number[] = [];
+    graphql.mockImplementation(async (query, vars) => {
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { media: null, currentSession: serverSession };
+      }
+      const { offset, limit } = vars as { offset: number; limit: number };
+      offsets.push(offset);
+      if (offset > 0 && removeBeforeSecondPage) {
+        rows = rows.slice(1);
+        removeBeforeSecondPage = false;
+      }
+      return { sourceItems: rows.slice(offset, offset + limit), currentSession: serverSession };
+    });
+
+    renderQueue();
+    await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
+    removeBeforeSecondPage = true;
+    offsets.length = 0;
+    act(() => controls()?.onNextInQueue?.());
+    await waitFor(() => expect(playingID()).toBe(c.id));
+    expect(offsets).toEqual([0, 199, 0, 199]);
+  });
+
   it("finishes the current track when another device removes it before ended", async () => {
     renderQueue();
     await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
@@ -1704,64 +1749,193 @@ describe("PlayerPage server Play Queue", () => {
 
   it("withholds a stale gapless candidate and advances to the new server successor", async () => {
     const d = { id: "track-d", title: "D", mediaClass: "audio" };
+    queueMedia = { id: b.id, title: "Current track B", favorited: false, credits: [] };
     renderQueue();
-    await waitFor(() => expect(vi.mocked(usePlayer).mock.lastCall?.[3]).toBe(c.id));
+    await screen.findByRole("heading", { name: "Current track B" });
+    expect(vi.mocked(usePlayer).mock.lastCall?.[3]).toBe(c.id);
     expect(gapless()?.advanceID).toBe(c.id);
-    const verify = gapless()?.verifyNext;
-    expect(verify).toBeTypeOf("function");
     rows = [a, b, d, c];
-    await act(async () => expect(await verify?.(c.id)).toBe(false));
-    await waitFor(() => expect(vi.mocked(usePlayer).mock.lastCall?.[3]).toBe(d.id));
-    expect(gapless()?.next).toBeUndefined();
-    expect(gapless()?.enabled).toBe(false);
+    expect(gapless()?.waitForAdvance).toBe(true);
     fireEvent.ended(stageVideo());
     await waitFor(() => expect(playingID()).toBe(d.id));
+    expect(readQueue).toHaveBeenCalledTimes(2);
   });
 
-  it.each(["Next", "ended"])("revalidates a verified gapless successor on %s", async (trigger) => {
-    renderQueue();
-    await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
-    expect(gapless()?.enabled).toBe(true);
-    expect(gapless()?.advanceID).toBe(c.id);
-    const verify = gapless()?.verifyNext;
-    await act(async () => expect(await verify?.(c.id)).toBe(true));
-    if (trigger === "Next") act(() => controls()?.onNextInQueue?.());
-    else fireEvent.ended(stageVideo());
-    await waitFor(() => expect(playingID()).toBe(c.id));
-    expect(readQueue).toHaveBeenCalledTimes(4);
-  });
+  it.each([false, true])(
+    "waits past C’s scheduled start for the final server decision (B remains: %s)",
+    async (keepCurrent) => {
+      const start = vi.fn();
+      const decodeAudioData = vi.fn(async () => ({ duration: 2 }));
+      const clock = { currentTime: 5 };
+      vi.stubGlobal(
+        "AudioContext",
+        class {
+          state = "running";
+          get currentTime() {
+            return clock.currentTime;
+          }
+          createGain = () => ({ gain: { value: 1 }, connect: vi.fn() });
+          createConstantSource = () => ({ offset: { value: 0 }, connect: vi.fn(), start: vi.fn() });
+          createBufferSource = () => ({
+            connect: vi.fn(),
+            disconnect: vi.fn(),
+            start,
+            stop: vi.fn(),
+          });
+          close = async () => {};
+          decodeAudioData = decodeAudioData;
+        },
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(new ArrayBuffer(8))),
+      );
+      const createElement = document.createElement.bind(document);
+      const probe = vi.spyOn(document, "createElement").mockImplementation(((tag: string) => {
+        const element = createElement(tag);
+        if (element instanceof HTMLAudioElement) {
+          element.load = vi.fn();
+          Object.defineProperty(element, "duration", { value: 2 });
+          Object.defineProperty(element, "src", {
+            set: () => queueMicrotask(() => element.dispatchEvent(new Event("loadedmetadata"))),
+          });
+        }
+        return element;
+      }) as typeof document.createElement);
+      try {
+        renderQueue();
+        const video = stageVideo();
+        Object.defineProperties(video, {
+          paused: { value: false },
+          duration: { value: 10 },
+          ended: { get: () => video.currentTime === 10 },
+        });
+        video.currentTime = 9.2;
+        await waitFor(() => expect(decodeAudioData).toHaveBeenCalledOnce());
+        expect(gapless()?.advanceID).toBe(c.id);
+        const finalRead = deferred<{
+          sourceItems: typeof rows;
+          currentSession: typeof serverSession;
+        }>();
+        readQueue.mockReturnValueOnce(finalRead.promise);
+        video.currentTime = 10;
+        fireEvent.ended(video);
+        await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
+        // The catalog bridge would already have started C at 5.8.
+        clock.currentTime = 6;
+        expect(start).not.toHaveBeenCalled();
+        expect(location.pathname).toBe(`/watch/${b.id}`);
 
-  it.each(["Next", "ended"])("stops on %s if B is removed after verifying C", async (trigger) => {
+        await act(async () =>
+          finalRead.resolve({
+            sourceItems: keepCurrent ? [a, b, c] : [a, c],
+            currentSession: serverSession,
+          }),
+        );
+        if (keepCurrent) {
+          expect(start).toHaveBeenCalledExactlyOnceWith(6, 0, 2);
+          expect(location.pathname).toBe(`/watch/${c.id}`);
+        } else {
+          expect(start).not.toHaveBeenCalled();
+          expect(location.pathname).toBe(`/watch/${b.id}`);
+          expect(controls()?.onNextInQueue).toBeUndefined();
+        }
+        expect(readQueue).toHaveBeenCalledTimes(2);
+      } finally {
+        probe.mockRestore();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it.each(["Next", "ended"])("retries the failed %s without unloading B", async (trigger) => {
     renderQueue();
     await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
-    const verify = gapless()?.verifyNext;
-    await act(async () => expect(await verify?.(c.id)).toBe(true));
-    rows = [a, c];
+    const originalVideo = stageVideo();
+    readQueue.mockRejectedValueOnce(new Error("network"));
     if (trigger === "Next") act(() => controls()?.onNextInQueue?.());
-    else fireEvent.ended(stageVideo());
-    await waitFor(() => expect(controls()?.onNextInQueue).toBeUndefined());
-    expect(readQueue).toHaveBeenCalledTimes(3);
-    expect(location.pathname).toBe(`/watch/${b.id}`);
+    else fireEvent.ended(originalVideo);
+    expect(await screen.findByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueReadFailed);
+    expect(stageVideo()).toBe(originalVideo);
     expect(playingID()).toBe(b.id);
+    expect(controls()?.onNextInQueue).toBeTypeOf("function");
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.tryAgain }));
+    await waitFor(() => expect(playingID()).toBe(c.id));
+    expect(screen.queryByText(STRINGS.en.musicQueueReadFailed)).not.toBeInTheDocument();
+    expect(readQueue).toHaveBeenCalledTimes(3);
   });
 
-  it("makes a new ended read while the scheduling verification is still pending", async () => {
+  it("updates transport navigation when reopening the queue shows a newly appended track", async () => {
+    await mockWithRealTransport();
+    rows = [a, b];
     renderQueue();
-    await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
+    const queueButton = await screen.findByRole("button", { name: STRINGS.en.musicQueueTitle });
+    expect(controls()?.onNextInQueue).toBeUndefined();
+    fireEvent.click(queueButton);
+    const panel = await screen.findByRole("dialog", { name: STRINGS.en.musicQueueTitle });
+    expect(await within(panel).findByText("B")).toHaveAttribute("aria-current", "true");
+    fireEvent.click(within(panel).getByRole("button", { name: STRINGS.en.dialogClose }));
+
+    rows = [b, c];
+    fireEvent.click(queueButton);
+    expect(await within(screen.getByRole("dialog")).findByText("C")).toBeInTheDocument();
+    expect(controls()?.onPreviousInQueue).toBeUndefined();
+    expect(controls()?.onNextInQueue).toBeTypeOf("function");
+    act(() => controls()?.onNextInQueue?.());
+    await waitFor(() => expect(playingID()).toBe(c.id));
+  });
+
+  it("retires a pending ended read when Play queue supersedes it on the same track", async () => {
+    await mockWithRealTransport();
+    rows = [b, c];
+    renderQueue();
+    fireEvent.click(await screen.findByRole("button", { name: STRINGS.en.musicQueueTitle }));
+    const playQueue = await screen.findByRole("button", { name: STRINGS.en.musicQueuePlay });
+    await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
     const pending = deferred<{ sourceItems: typeof rows; currentSession: typeof serverSession }>();
     readQueue.mockReturnValueOnce(pending.promise);
-    const verification = gapless()?.verifyNext?.(c.id);
-    await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
-    rows = [a, c];
     fireEvent.ended(stageVideo());
-    await waitFor(() => expect(controls()?.onNextInQueue).toBeUndefined());
-    await act(async () => {
-      pending.resolve({ sourceItems: [a, b, c], currentSession: serverSession });
-      expect(await verification).toBe(false);
-    });
-    expect(readQueue).toHaveBeenCalledTimes(3);
-    expect(location.pathname).toBe(`/watch/${b.id}`);
+    await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(3));
+    fireEvent.click(playQueue);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await act(async () => pending.resolve({ sourceItems: rows, currentSession: serverSession }));
+    expect(playingID()).toBe(b.id);
+    expect(screen.queryByText(STRINGS.en.musicQueueReadFailed)).not.toBeInTheDocument();
   });
+
+  it.each(["broadcast", "focus", "pageshow"])(
+    "conceals now-playing details on %s until the live identity is checked",
+    async (trigger) => {
+      queueMedia = { id: b.id, title: "Restricted track", favorited: false, credits: [] };
+      renderQueue();
+      await waitFor(() => expect(controls()?.mediaTitle).toBe("Restricted track"));
+      expect(stageVideo().paused).toBe(true);
+      const pending = deferred<{
+        sourceItems: typeof rows;
+        currentSession: typeof serverSession;
+      }>();
+      readQueue.mockReturnValueOnce(pending.promise);
+
+      if (trigger === "broadcast") notifyIdentityChange();
+      else if (trigger === "focus") fireEvent.focus(window);
+      else {
+        fireEvent(window, new Event("pagehide"));
+        expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
+        fireEvent(window, new PageTransitionEvent("pageshow", { persisted: true }));
+      }
+      await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
+      expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
+      expect(controls()?.mediaTitle).toBe("");
+      const changed =
+        trigger === "focus"
+          ? { profileID: "profile-a", revealed: false }
+          : { profileID: "profile-b", revealed: true };
+      await act(async () => pending.resolve({ sourceItems: [], currentSession: changed }));
+      expect(viewer.refresh).toHaveBeenCalledOnce();
+      expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
+      expect(playingID()).toBe("");
+    },
+  );
 
   it("rejects now-playing metadata read under a different live profile", async () => {
     queueMedia = { id: b.id, title: "Other profile title", favorited: false, credits: [] };
@@ -1770,7 +1944,7 @@ describe("PlayerPage server Play Queue", () => {
     await waitFor(() => expect(viewer.refresh).toHaveBeenCalledOnce());
     expect(document.body).not.toHaveTextContent("Other profile title");
     expect(playingID()).toBe("");
-    expect(controls()).toBeUndefined();
+    expect(document.querySelector("video")).toBeNull();
   });
 
   it.each(["relock", "profile switch"])(

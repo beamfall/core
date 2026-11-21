@@ -35,6 +35,7 @@ import {
   switchProfile as switchProfileMutation,
 } from "@/lib/graphql";
 import type { NavigationManifest, ProfileSummary, SessionInfo } from "@/lib/graphql/types";
+import { notifyIdentityChange } from "@/lib/identityChanges";
 import { setManifestRefresher } from "@/lib/manifestRefresh";
 
 // A lapsed session renews once from the device-secret cookies before the
@@ -289,6 +290,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       try {
         return (await revealMutation(pin, signal)).revealed;
       } finally {
+        notifyIdentityChange();
         if (!signal.aborted) await loadEpoch(signal);
       }
     },
@@ -301,6 +303,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       try {
         await promoteMutation(code, signal);
       } finally {
+        notifyIdentityChange();
         if (!signal.aborted) await loadEpoch(signal);
       }
     },
@@ -312,6 +315,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       await relockMutation(signal);
     } finally {
+      notifyIdentityChange();
       if (!signal.aborted) await loadEpoch(signal);
     }
   }, [beginEpoch, loadEpoch]);
@@ -322,6 +326,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       try {
         await switchProfileMutation(profileID, signal, pin);
       } finally {
+        notifyIdentityChange();
         if (!signal.aborted) await loadEpoch(signal);
       }
     },
