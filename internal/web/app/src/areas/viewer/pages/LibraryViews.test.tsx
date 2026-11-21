@@ -138,6 +138,11 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
+// A long user-event flow: it runs in well under a second alone but can pass 5s
+// when the machine is oversubscribed (two vitest runs at once), so it gets its
+// own budget rather than a raised global timeout (CORE-2890).
+const SLOW_FLOW_TIMEOUT = 15_000;
+
 describe("Library views (CORE-2362)", () => {
   it("opens on the first browse kind with a switcher for every kind, the Media and Folders views", async () => {
     renderAt("/n/tunes/all");
@@ -431,23 +436,27 @@ describe("Entity kind sort, filters and letter rail (CORE-2440)", () => {
     );
   });
 
-  it("offers the letter rail on a long title-sorted kind and jumps the grid", async () => {
-    vi.mocked(fetchLibraryEntities).mockImplementation(async (request) => longKindPage(request));
-    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    const user = userEvent.setup();
-    const { container } = renderAt("/n/tunes/all?view=maker");
+  it(
+    "offers the letter rail on a long title-sorted kind and jumps the grid",
+    async () => {
+      vi.mocked(fetchLibraryEntities).mockImplementation(async (request) => longKindPage(request));
+      const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+      const user = userEvent.setup();
+      const { container } = renderAt("/n/tunes/all?view=maker");
 
-    const rail = await screen.findByRole("navigation", { name: "Jump to letter" });
-    expect(within(rail).getByRole("button", { name: "B, no titles" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-    scrollTo.mockClear();
-    await user.click(within(rail).getByRole("button", { name: "C, 45 titles" }));
-    expect(scrollTo).toHaveBeenCalled();
-    await expectNoAxeViolations(container);
-    scrollTo.mockRestore();
-  });
+      const rail = await screen.findByRole("navigation", { name: "Jump to letter" });
+      expect(within(rail).getByRole("button", { name: "B, no titles" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      scrollTo.mockClear();
+      await user.click(within(rail).getByRole("button", { name: "C, 45 titles" }));
+      expect(scrollTo).toHaveBeenCalled();
+      await expectNoAxeViolations(container);
+      scrollTo.mockRestore();
+    },
+    SLOW_FLOW_TIMEOUT,
+  );
 
   it("offers no letter rail on a sort other than title", async () => {
     vi.mocked(fetchLibraryEntities).mockImplementation(async (request) => longKindPage(request));

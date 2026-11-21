@@ -134,3 +134,25 @@ summary. It SHALL take at most 340px of height at desktop width.
 
 - **WHEN** Home features episode 9 of season 34 of "The Graham Norton Show", rated TV-14, 49 minutes, 2026, score 7.4
 - **THEN** the hero is headed "The Graham Norton Show", reads "S34 · E9 · Episode 9" beneath it, and lists 2026, TV-14, 49 min and ★ 7.4
+
+### Requirement: Home leads with resumable items
+
+When the Home layout includes a Continue Watching shelf, the Viewer SHALL show
+the Recently Added hero only after that shelf settles empty or failed. While
+the shelf loads, the Viewer SHALL show neither the hero nor its placeholder.
+When the shelf has items, it SHALL be the first Home block.
+
+#### Scenario: Returning Profile opens Home
+
+- **WHEN** the Continue Watching shelf loads with items
+- **THEN** Home shows that shelf first and no Recently Added hero
+
+#### Scenario: New Profile opens Home
+
+- **WHEN** the Continue Watching shelf loads empty
+- **THEN** Home shows the Recently Added hero above its shelves
+
+#### Scenario: Continue Watching is still loading
+
+- **WHEN** Recently Added artwork is ready before the Continue Watching shelf settles
+- **THEN** Home shows no hero and no hero placeholder until the shelf settles

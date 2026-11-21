@@ -18,6 +18,11 @@ export default defineConfig({
     globals: true,
     include: ["src/**/*.{test,spec}.{ts,tsx}", "sw-plugin.test.ts", "brand-splash-plugin.test.ts"],
     passWithNoTests: true,
+    // Half the CPUs, not Vitest's default of all but one: the gate and other
+    // sessions often run a second suite at the same time, and two default-sized
+    // pools oversubscribe the machine until 5s test timeouts fire (CORE-2890).
+    // `--maxWorkers` on the command line still overrides this.
+    maxWorkers: "50%",
     // Node 25+ shadows jsdom's localStorage/sessionStorage (CORE-2185).
     setupFiles: ["src/test/jsdomStorage.ts"],
   },

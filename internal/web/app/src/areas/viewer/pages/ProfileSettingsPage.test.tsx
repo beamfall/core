@@ -86,6 +86,11 @@ function renderPage() {
   );
 }
 
+// A long user-event flow: it runs in well under a second alone but can pass 5s
+// when the machine is oversubscribed (two vitest runs at once), so it gets its
+// own budget rather than a raised global timeout (CORE-2890).
+const SLOW_FLOW_TIMEOUT = 15_000;
+
 describe("ProfileSettingsPage", () => {
   it("hydrates toggles from clientPrefs and persists a self-service change", async () => {
     const user = userEvent.setup();
@@ -184,62 +189,70 @@ describe("ProfileSettingsPage", () => {
     localStorage.clear();
   });
 
-  it("keeps a newer saved theme when an older save fails afterwards (CORE-1179)", async () => {
-    const user = userEvent.setup();
-    let failMoss: (error: Error) => void = () => {};
-    vi.mocked(setClientPref)
-      .mockImplementationOnce(
-        () =>
-          new Promise((_, reject) => {
-            failMoss = reject;
-          }),
-      )
-      .mockResolvedValueOnce(undefined as never);
-    renderPage();
+  it(
+    "keeps a newer saved theme when an older save fails afterwards (CORE-1179)",
+    async () => {
+      const user = userEvent.setup();
+      let failMoss: (error: Error) => void = () => {};
+      vi.mocked(setClientPref)
+        .mockImplementationOnce(
+          () =>
+            new Promise((_, reject) => {
+              failMoss = reject;
+            }),
+        )
+        .mockResolvedValueOnce(undefined as never);
+      renderPage();
 
-    await user.click(await screen.findByLabelText("Theme"));
-    await user.click(await screen.findByRole("option", { name: "Moss" }));
-    await user.click(screen.getByLabelText("Theme"));
-    await user.click(await screen.findByRole("option", { name: "Tide" }));
-    expect(setClientPref).toHaveBeenLastCalledWith("theme.preset", "tide");
-    await waitFor(() => expect(screen.getByLabelText("Theme")).toHaveTextContent("Tide"));
+      await user.click(await screen.findByLabelText("Theme"));
+      await user.click(await screen.findByRole("option", { name: "Moss" }));
+      await user.click(screen.getByLabelText("Theme"));
+      await user.click(await screen.findByRole("option", { name: "Tide" }));
+      expect(setClientPref).toHaveBeenLastCalledWith("theme.preset", "tide");
+      await waitFor(() => expect(screen.getByLabelText("Theme")).toHaveTextContent("Tide"));
 
-    failMoss(new Error("offline"));
-    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
-    expect(screen.getByLabelText("Theme")).toHaveTextContent("Tide");
-    expect(JSON.parse(localStorage.getItem("beamfall.web.appearance.v1") ?? "{}").preset).toBe(
-      "tide",
-    );
-    localStorage.clear();
-  });
+      failMoss(new Error("offline"));
+      await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+      expect(screen.getByLabelText("Theme")).toHaveTextContent("Tide");
+      expect(JSON.parse(localStorage.getItem("beamfall.web.appearance.v1") ?? "{}").preset).toBe(
+        "tide",
+      );
+      localStorage.clear();
+    },
+    SLOW_FLOW_TIMEOUT,
+  );
 
-  it("shows an older theme save that succeeds after the newest one failed (CORE-1179)", async () => {
-    const user = userEvent.setup();
-    let saveMoss: () => void = () => {};
-    vi.mocked(setClientPref)
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            saveMoss = () => resolve(undefined as never);
-          }),
-      )
-      .mockRejectedValueOnce(new Error("offline"));
-    renderPage();
+  it(
+    "shows an older theme save that succeeds after the newest one failed (CORE-1179)",
+    async () => {
+      const user = userEvent.setup();
+      let saveMoss: () => void = () => {};
+      vi.mocked(setClientPref)
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              saveMoss = () => resolve(undefined as never);
+            }),
+        )
+        .mockRejectedValueOnce(new Error("offline"));
+      renderPage();
 
-    await user.click(await screen.findByLabelText("Theme"));
-    await user.click(await screen.findByRole("option", { name: "Moss" }));
-    await user.click(screen.getByLabelText("Theme"));
-    await user.click(await screen.findByRole("option", { name: "Tide" }));
-    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
-    await waitFor(() => expect(screen.getByLabelText("Theme")).not.toHaveTextContent("Tide"));
+      await user.click(await screen.findByLabelText("Theme"));
+      await user.click(await screen.findByRole("option", { name: "Moss" }));
+      await user.click(screen.getByLabelText("Theme"));
+      await user.click(await screen.findByRole("option", { name: "Tide" }));
+      await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+      await waitFor(() => expect(screen.getByLabelText("Theme")).not.toHaveTextContent("Tide"));
 
-    saveMoss();
-    await waitFor(() => expect(screen.getByLabelText("Theme")).toHaveTextContent("Moss"));
-    expect(JSON.parse(localStorage.getItem("beamfall.web.appearance.v1") ?? "{}").preset).toBe(
-      "moss",
-    );
-    localStorage.clear();
-  });
+      saveMoss();
+      await waitFor(() => expect(screen.getByLabelText("Theme")).toHaveTextContent("Moss"));
+      expect(JSON.parse(localStorage.getItem("beamfall.web.appearance.v1") ?? "{}").preset).toBe(
+        "moss",
+      );
+      localStorage.clear();
+    },
+    SLOW_FLOW_TIMEOUT,
+  );
 
   it("persists the downstream audio preference", async () => {
     const user = userEvent.setup();
