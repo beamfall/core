@@ -430,6 +430,7 @@ type fakeArtwork struct {
 	generated     map[string]bool
 	embedded      bool
 	embeddedCalls int
+	video         bool
 }
 
 type importedArtwork struct {
@@ -463,6 +464,10 @@ func (f *fakeArtwork) IsGeneratedArtwork(_ store.MediaID, slot string) bool {
 func (f *fakeArtwork) ImportEmbeddedPoster(_ context.Context, _ store.MediaID) (bool, error) {
 	f.embeddedCalls++
 	return f.embedded, nil
+}
+
+func (f *fakeArtwork) EmbeddedPosterCurated(_ context.Context, _ store.MediaID) bool {
+	return !f.video
 }
 
 func (f *fakeArtwork) HasEntityPoster(id store.EntityID) bool {
@@ -739,6 +744,50 @@ func TestApplyPrefersEmbeddedPosterToFetchedArtwork(t *testing.T) {
 	}
 	if art.embeddedCalls != 1 || fetcher.calls != 0 || art.calls != 0 {
 		t.Fatalf("embedded=%d fetches=%d imports=%d", art.embeddedCalls, fetcher.calls, art.calls)
+	}
+}
+
+// A cover a release group embedded in a video file must not beat the
+// provider poster (CORE-2901): the embedded cover is not consulted and the
+// existing non-generated poster is replaced.
+func TestApplyReplacesEmbeddedVideoCoverWithProviderPoster(t *testing.T) {
+	engine := &fakeEngine{lookupResult: scrape.Result{
+		Fields:  map[string]any{"title": "Blue Harvest"},
+		Artwork: map[string]string{artwork.SlotPoster: "https://img.example.test/p/42.jpg"},
+	}}
+	fetcher := &fakeFetcher{data: []byte("provider-poster")}
+	art := &fakeArtwork{
+		has:      map[string]bool{artwork.SlotPoster: true},
+		embedded: true,
+		video:    true,
+	}
+	service := identify.NewService(engine, demoBundles(plugin.ScraperSpec{ID: "lookup"}), &fakeStore{})
+	service.SetArtwork(fetcher, art)
+
+	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	if art.embeddedCalls != 0 || fetcher.calls != 1 || art.calls != 1 || string(art.data) != "provider-poster" {
+		t.Fatalf("embedded=%d fetches=%d imports=%d data=%q", art.embeddedCalls, fetcher.calls, art.calls, art.data)
+	}
+}
+
+func TestApplyKeepsLockedVideoPoster(t *testing.T) {
+	engine := &fakeEngine{lookupResult: scrape.Result{
+		Fields:  map[string]any{"title": "Blue Harvest"},
+		Artwork: map[string]string{artwork.SlotPoster: "https://img.example.test/p/42.jpg"},
+	}}
+	fetcher := &fakeFetcher{data: []byte("provider-poster")}
+	art := &fakeArtwork{has: map[string]bool{artwork.SlotPoster: true}, video: true}
+	locks := &artworkLockStore{manual: map[string]bool{store.ArtworkLockField(artwork.SlotPoster): true}}
+	service := identify.NewService(engine, demoBundles(plugin.ScraperSpec{ID: "lookup"}), locks)
+	service.SetArtwork(fetcher, art)
+
+	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	if fetcher.calls != 0 || art.calls != 0 {
+		t.Fatalf("locked video poster replaced: fetches=%d imports=%d", fetcher.calls, art.calls)
 	}
 }
 

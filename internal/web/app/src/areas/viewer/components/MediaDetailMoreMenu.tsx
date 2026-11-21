@@ -1,11 +1,13 @@
-import { Check, Eye, EyeOff, Link2, ListPlus, MoreHorizontal } from "lucide-react";
+import { Check, Eye, EyeOff, Link2, ListPlus, MoreHorizontal, PencilLine } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Menu } from "@/components/ui/astryx-primitives";
 import { buttonVariants } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
+import { useSession } from "@/lib/session";
 import { useItemHide } from "../actions";
 import { mediaPath } from "../lib/mediaAddress";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
+import { EditMediaDetailsDialog } from "./EditMediaDetailsDialog";
 
 const COPIED_RESET_MS = 2000;
 
@@ -13,9 +15,24 @@ const COPIED_RESET_MS = 2000;
 // earn a button of their own beside Play. Built on the Base UI menu like the
 // card menu, so arrow keys, Escape and focus return come from the primitive.
 // Add to playlist opens the existing manager-gated dialog (CORE-1635); Hide
-// takes the item out of this Profile's browsing (CORE-2836).
-export function MediaDetailMoreMenu({ mediaID, title }: { mediaID: string; title: string }) {
+// takes the item out of this Profile's browsing (CORE-2836). Edit details
+// opens the metadata editor for the admin, the manager on the adult Profile
+// that Manage also requires (CORE-2905).
+export function MediaDetailMoreMenu({
+  mediaID,
+  title,
+  artwork,
+  onEdited,
+}: {
+  mediaID: string;
+  title: string;
+  artwork?: Partial<Record<string, string>>;
+  onEdited?: () => void;
+}) {
   const t = useT();
+  const { isManager, session } = useSession();
+  const canEdit = isManager && session?.profile === "adult";
+  const [editOpen, setEditOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [opened, setOpened] = useState(false);
@@ -77,6 +94,12 @@ export function MediaDetailMoreMenu({ mediaID, title }: { mediaID: string; title
                 )}
                 {t(hide.hidden ? "itemUnhide" : "itemHide")}
               </Menu.Item>
+              {canEdit && (
+                <Menu.Item className="bf-card-menu-item" onClick={() => setEditOpen(true)}>
+                  <PencilLine aria-hidden="true" size={15} />
+                  {t("itemMetadataEditDetails")}
+                </Menu.Item>
+              )}
               <Menu.Item className="bf-card-menu-item" closeOnClick={false} onClick={copyLink}>
                 {copied ? (
                   <Check aria-hidden="true" size={15} />
@@ -91,6 +114,15 @@ export function MediaDetailMoreMenu({ mediaID, title }: { mediaID: string; title
       </Menu.Root>
       {addOpen && (
         <AddToPlaylistDialog mediaID={mediaID} title={title} onClose={() => setAddOpen(false)} />
+      )}
+      {editOpen && (
+        <EditMediaDetailsDialog
+          mediaID={mediaID}
+          title={title}
+          artwork={artwork}
+          onChanged={onEdited}
+          onClose={() => setEditOpen(false)}
+        />
       )}
     </>
   );

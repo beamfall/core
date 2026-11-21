@@ -92,8 +92,12 @@ type artworkLockReader interface {
 
 var _ artworkLockReader = (*store.Store)(nil)
 
+// embeddedArtworkStore imports a cover embedded in the primary media file.
+// EmbeddedPosterCurated reports whether such a cover outranks provider
+// posters for this Media (audio and image Media) or is only a fallback (video).
 type embeddedArtworkStore interface {
 	ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (bool, error)
+	EmbeddedPosterCurated(ctx context.Context, id store.MediaID) bool
 }
 
 // FieldStore is the Media field write seam; *store.Store satisfies it.
@@ -962,17 +966,7 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 		if s.artworkLocked(ctx, mediaID, slot) {
 			continue // an admin pinned this slot: keep their artwork
 		}
-		if slot == artwork.SlotPoster && (!s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)) {
-			if embedded, ok := s.artwork.(embeddedArtworkStore); ok {
-				found, err := embedded.ImportEmbeddedPoster(ctx, mediaID)
-				if err != nil {
-					slog.Debug("identify: embedded artwork import failed", "media", string(mediaID), "error", err.Error())
-				} else if found {
-					continue
-				}
-			}
-		}
-		if slot == artwork.SlotPoster && s.artwork.HasArtwork(mediaID, slot) && !s.artwork.IsGeneratedArtwork(mediaID, slot) {
+		if slot == artwork.SlotPoster && s.keepCuratedPoster(ctx, mediaID) {
 			continue
 		}
 		data, err := s.fetcher.FetchResource(ctx, rawURL)
@@ -994,6 +988,30 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 			}
 		}
 	}
+}
+
+// keepCuratedPoster reports whether the Media's current poster outranks the
+// provider poster. Curated posters are an embedded cover in an audio or image
+// file (imported now if the slot is empty or generated) and any other poster
+// that was not generated. For video Media an embedded cover is only the
+// fallback ahead of a grabbed frame: release groups embed their own covers, so
+// the provider poster replaces it, and ImportArtwork still refuses a slot that
+// local sidecar artwork locked.
+func (s *Service) keepCuratedPoster(ctx context.Context, mediaID store.MediaID) bool {
+	embedded, ok := s.artwork.(embeddedArtworkStore)
+	if ok && !embedded.EmbeddedPosterCurated(ctx, mediaID) {
+		return false
+	}
+	replaceable := !s.artwork.HasArtwork(mediaID, artwork.SlotPoster) || s.artwork.IsGeneratedArtwork(mediaID, artwork.SlotPoster)
+	if replaceable && ok {
+		found, err := embedded.ImportEmbeddedPoster(ctx, mediaID)
+		if err != nil {
+			slog.Debug("identify: embedded artwork import failed", "media", string(mediaID), "error", err.Error())
+		} else if found {
+			return true
+		}
+	}
+	return s.artwork.HasArtwork(mediaID, artwork.SlotPoster) && !s.artwork.IsGeneratedArtwork(mediaID, artwork.SlotPoster)
 }
 
 // artworkLocked reports whether an admin locked one artwork slot. A failed

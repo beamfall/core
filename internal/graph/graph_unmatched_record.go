@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,13 +183,16 @@ func (h *Handler) pinUploadedArtwork(ctx context.Context, scope auth.Scope, medi
 			return nil
 		}
 	}
-	if err := h.candidateImport.ImportArtwork(ctx, mediaID, slot, data); err != nil {
+	if err := importPickedArtwork(ctx, h.candidateImport, mediaID, slot, data); err != nil {
 		return err
 	}
 	if err := h.store.UpsertArtworkCandidate(ctx, mediaID, slot, sourceURL, "", ""); err != nil {
 		return err
 	}
 	if err := h.store.MarkArtworkCandidateApplied(ctx, candidateID); err != nil {
+		return err
+	}
+	if _, err := h.store.SetMediaFieldLock(ctx, mediaID, store.ArtworkLockField(slot), true, scope.LibraryFilter()); err != nil {
 		return err
 	}
 	media, err := h.store.Media(ctx, mediaID, scope.LibraryFilter())
@@ -284,9 +288,33 @@ func (h *Handler) prepareUploadedArtwork(
 			if err != nil {
 				return nil, err
 			}
-			return snapshot.restore, importer.ImportArtwork(ctx, media.ID, slot, data)
+			if err := importPickedArtwork(ctx, importer, media.ID, slot, data); err != nil {
+				return snapshot.restore, err
+			}
+			seedUploadedCandidatePreview(ctx, importer, store.ArtworkCandidateID(media.ID, slot, sourceURL), data)
+			return snapshot.restore, nil
 		},
 	}, nil
+}
+
+// candidatePreviewImporter is the optional importer capability that caches a
+// candidate's preview bytes. An upload has no fetchable source URL, so the
+// candidate picker can only show its tile when the bytes are cached here.
+type candidatePreviewImporter interface {
+	ImportCandidateArtwork(ctx context.Context, id store.MediaID, data []byte) error
+}
+
+// seedUploadedCandidatePreview caches an uploaded candidate's preview. It is
+// best effort: the artwork itself is already applied, and a missing preview
+// only leaves the candidate tile blank.
+func seedUploadedCandidatePreview(ctx context.Context, importer ArtworkCandidateImporter, candidateID string, data []byte) {
+	previews, ok := importer.(candidatePreviewImporter)
+	if !ok {
+		return
+	}
+	if err := previews.ImportCandidateArtwork(ctx, artwork.CandidateCacheID(candidateID), data); err != nil {
+		slog.WarnContext(ctx, "cache uploaded artwork candidate preview", "candidate", candidateID, "error", err)
+	}
 }
 
 type uploadedArtworkSnapshot struct {

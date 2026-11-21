@@ -9,6 +9,8 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -33,6 +35,14 @@ import (
 // (graphHandler.SetArtworkCandidateServices(scrapeEngine, artworkService)) —
 // so an uploaded slot is both importable and servable in one test server.
 func newArtworkUploadTestServer(t *testing.T) (*Server, *store.Store) {
+	t.Helper()
+	srv, st, _ := newArtworkUploadTestServerWithArtwork(t)
+	return srv, st
+}
+
+// newArtworkUploadTestServerWithArtwork also returns the artwork service so a
+// test can stage local (sidecar) artwork before uploading.
+func newArtworkUploadTestServerWithArtwork(t *testing.T) (*Server, *store.Store, *artwork.Service) {
 	t.Helper()
 	st := storetest.Open(t)
 	clock := func() time.Time { return time.Unix(0, 0).UTC() }
@@ -59,7 +69,7 @@ func newArtworkUploadTestServer(t *testing.T) (*Server, *store.Store) {
 	srv.SetEvents(st)
 	srv.SetV1Store(st)
 	srv.SetV1ScanEnqueuer(testV1ScanEnqueuer(st))
-	return srv, st
+	return srv, st, artworkService
 }
 
 // pngArtwork returns deterministic, fully encoded PNG bytes. A header-only
@@ -161,6 +171,61 @@ func TestUploadArtworkStoresAndServesTheSlot(t *testing.T) {
 		t.Fatalf("served artwork = %d bytes, want the %d uploaded bytes verbatim", getRec.Body.Len(), len(png))
 	}
 	assertOneAppliedArtworkCandidate(t, st, mediaID, artwork.SlotPoster)
+}
+
+// TestUploadArtworkReplacesSidecarLocksSlotAndCachesPreview: an upload is a manual pick,
+// so it outranks a sidecar-locked slot (ADR-0072) and locks the slot so a
+// refresh or rescan keeps it.
+func TestUploadArtworkReplacesSidecarLocksSlotAndCachesPreview(t *testing.T) {
+	srv, st, artworkService := newArtworkUploadTestServerWithArtwork(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	sidecar := filepath.Join(root, "poster.png")
+	if err := os.WriteFile(sidecar, pngArtwork(t, 4, 6), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := artworkService.ImportLocalArtwork(ctx, "media-alpha", artwork.SlotPoster, root, sidecar); err != nil {
+		t.Fatalf("ImportLocalArtwork: %v", err)
+	}
+	upload := pngArtwork(t, 30, 45)
+	req := uploadArtworkRequest(t, "media-alpha", artwork.SlotPoster, "poster.png", upload, "image/png")
+	authorizeManager(req)
+	req.Header.Set(auth.CSRFHeader, "1")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	served, err := os.ReadFile(artworkService.PosterPath("media-alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(served, upload) {
+		t.Fatalf("poster = %d bytes, want the %d uploaded bytes over the sidecar", len(served), len(upload))
+	}
+	// The candidate picker previews an upload from the candidate cache: the
+	// beamfall-upload:// source URL is not fetchable.
+	candidates, err := st.ArtworkCandidates(ctx, "media-alpha", artwork.SlotPoster, store.LibraryFilter{AllLibraries: true})
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("ArtworkCandidates = %#v, %v; want one", candidates, err)
+	}
+	preview, err := os.ReadFile(artworkService.ArtworkPath(artwork.CandidateCacheID(candidates[0].ID), artwork.SlotPoster))
+	if err != nil {
+		t.Fatalf("uploaded candidate preview not cached: %v", err)
+	}
+	if !bytes.Equal(preview, upload) {
+		t.Fatalf("candidate preview = %d bytes, want the %d uploaded bytes", len(preview), len(upload))
+	}
+	locks, err := st.MediaFieldLocks(ctx, "media-alpha", store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lock := range locks {
+		if lock.Field == store.ArtworkLockField(artwork.SlotPoster) && lock.Locked {
+			return
+		}
+	}
+	t.Fatalf("locks = %#v, want the uploaded poster slot locked", locks)
 }
 
 // TestUploadArtworkRequiresCSRFHeader mirrors

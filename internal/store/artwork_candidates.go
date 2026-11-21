@@ -138,7 +138,9 @@ func (s *Store) ApplyArtworkCandidate(ctx context.Context, apply ArtworkCandidat
 		return err
 	}
 	if applied {
-		return nil
+		// A retry, or a re-upload after "revert to provider" unlocked the
+		// slot: the upload is still a manual pick, so keep the slot locked.
+		return s.lockArtworkSlot(ctx, mediaID, slot)
 	}
 	operationID, err := newArtworkCandidateApplyOperationID()
 	if err != nil {
@@ -172,6 +174,11 @@ func (s *Store) ApplyArtworkCandidate(ctx context.Context, apply ArtworkCandidat
 	}
 	if prior.candidateApplied {
 		return errors.Join(tx.Rollback(), rollbackArtworkCandidate(rollbackArtwork))
+	}
+	// An upload is a manual pick: lock the slot in the same transaction so an
+	// identification, refresh or rescan does not replace it.
+	if err := recordFieldProvenanceTx(ctx, tx, mediaID, ArtworkLockField(slot), MutationSourceManual); err != nil {
+		return errors.Join(err, tx.Rollback(), rollbackArtworkCandidate(rollbackArtwork))
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO artwork_candidate(id, media_id, slot, source_url, plugin_id, scraper_id, created_at_ms)
@@ -239,6 +246,9 @@ type artworkCandidateApplyState struct {
 	candidateExisted bool
 	candidateApplied bool
 	appliedIDs       []string
+	// lockSource is the slot's recorded provenance source before the apply,
+	// or "" when it had none.
+	lockSource string
 }
 
 func loadArtworkCandidateApplyState(
@@ -256,6 +266,12 @@ func loadArtworkCandidateApplyState(
 		state.candidateApplied = applied != 0
 	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
+		return artworkCandidateApplyState{}, err
+	}
+	err = tx.QueryRowContext(ctx,
+		`SELECT source FROM media_field_provenance WHERE media_id = ? AND field = ?`,
+		mediaID, ArtworkLockField(slot)).Scan(&state.lockSource)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return artworkCandidateApplyState{}, err
 	}
 	rows, err := tx.QueryContext(ctx, `
@@ -322,6 +338,36 @@ func (s *Store) restoreArtworkCandidateApplyState(
 		if _, err := tx.ExecContext(ctx, `DELETE FROM artwork_candidate WHERE id = ?`, candidateID); err != nil {
 			return err
 		}
+	}
+	lockField := ArtworkLockField(slot)
+	if state.lockSource == "" {
+		_, err = tx.ExecContext(ctx,
+			`DELETE FROM media_field_provenance WHERE media_id = ? AND field = ?`, mediaID, lockField)
+	} else {
+		_, err = tx.ExecContext(ctx,
+			`UPDATE media_field_provenance SET source = ? WHERE media_id = ? AND field = ?`,
+			state.lockSource, mediaID, lockField)
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// lockArtworkSlot records a manual source for one Media artwork slot.
+func (s *Store) lockArtworkSlot(ctx context.Context, mediaID MediaID, slot string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := recordFieldProvenanceTx(ctx, tx, mediaID, ArtworkLockField(slot), MutationSourceManual); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

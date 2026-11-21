@@ -288,6 +288,21 @@ type ArtworkCandidateImporter interface {
 	ImportArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error
 }
 
+// manualArtworkImporter is the optional importer capability for an operator
+// pick: a manual pick outranks every lock, sidecar locks included (ADR-0072).
+type manualArtworkImporter interface {
+	ImportManualArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error
+}
+
+// importPickedArtwork stores artwork an admin chose (a pinned candidate or an
+// upload) as a manual pick when the importer supports it.
+func importPickedArtwork(ctx context.Context, importer ArtworkCandidateImporter, id store.MediaID, slot string, data []byte) error {
+	if manual, ok := importer.(manualArtworkImporter); ok {
+		return manual.ImportManualArtwork(ctx, id, slot, data)
+	}
+	return importer.ImportArtwork(ctx, id, slot, data)
+}
+
 // ScanObserver receives the Library/root pair after a scan enqueue succeeds.
 type ScanObserver interface {
 	Observe(store.LibraryID, string)
@@ -5161,10 +5176,14 @@ func (h *Handler) pinArtworkCandidate(ctx context.Context, scope auth.Scope, req
 	if err != nil {
 		return ArtworkCandidateInfo{}, err
 	}
-	if err := h.candidateImport.ImportArtwork(ctx, candidate.MediaID, candidate.Slot, data); err != nil {
+	if err := importPickedArtwork(ctx, h.candidateImport, candidate.MediaID, candidate.Slot, data); err != nil {
 		return ArtworkCandidateInfo{}, err
 	}
 	if err := h.store.MarkArtworkCandidateApplied(ctx, candidate.ID); err != nil {
+		return ArtworkCandidateInfo{}, err
+	}
+	// A pin is a manual edit: lock the slot so a refresh or rescan keeps it.
+	if _, err := h.store.SetMediaFieldLock(ctx, candidate.MediaID, store.ArtworkLockField(candidate.Slot), true, scope.LibraryFilter()); err != nil {
 		return ArtworkCandidateInfo{}, err
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityArtworkPin, "media", string(candidate.MediaID), media.LibraryID); err != nil {

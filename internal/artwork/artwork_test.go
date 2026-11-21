@@ -1140,3 +1140,27 @@ func TestImportCandidateArtworkBypassesSealedGate(t *testing.T) {
 		t.Fatal("Media-gated ImportArtwork wrote a poster for an unresolvable synthetic ID; sealed gate not fail-closed")
 	}
 }
+
+// An embedded cover is curated only outside video Media (CORE-2901).
+func TestEmbeddedPosterCuratedOnlyOutsideVideo(t *testing.T) {
+	st := storetest.Open(t)
+	svc := NewService(st, &fakeGrabber{}, t.TempDir())
+	ctx := context.Background()
+	media, err := st.Media(ctx, "media-alpha", store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if media.Class != store.MediaClassVideo {
+		t.Fatalf("fixture class = %q, want video", media.Class)
+	}
+	if svc.EmbeddedPosterCurated(ctx, "media-alpha") {
+		t.Fatal("embedded cover in a video file counted as curated")
+	}
+	image, _ := importImageFile(t, st, "cover", "jpg")
+	if !svc.EmbeddedPosterCurated(ctx, image) {
+		t.Fatal("embedded cover in an image file did not count as curated")
+	}
+	if !svc.EmbeddedPosterCurated(ctx, "media-missing") {
+		t.Fatal("unreadable Media must keep its poster")
+	}
+}

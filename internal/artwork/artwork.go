@@ -876,7 +876,8 @@ func (s *Service) GeneratePoster(ctx context.Context, id store.MediaID) error {
 }
 
 // ImportEmbeddedPoster extracts an attached picture from the primary media
-// file. It is imported provenance, so fetched artwork must not replace it.
+// file. It is imported provenance: fetched artwork does not replace it where
+// EmbeddedPosterCurated holds.
 func (s *Service) ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (bool, error) {
 	if s.embedded == nil || s.isSealed(ctx, id) || s.isEncrypted(ctx, id) {
 		return false, nil
@@ -891,6 +892,19 @@ func (s *Service) ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (b
 	}
 	defer unlock()
 	return s.importEmbeddedPoster(ctx, id, file.Path)
+}
+
+// EmbeddedPosterCurated reports whether a cover embedded in id's primary file
+// outranks a provider poster. An album cover embedded in an audio file is
+// curated; a cover embedded in a video file is release packaging, kept only as
+// the fallback ahead of a grabbed frame. A Media that cannot be read counts as
+// curated, which keeps the existing poster.
+func (s *Service) EmbeddedPosterCurated(ctx context.Context, id store.MediaID) bool {
+	media, err := s.store.Media(ctx, id, store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		return true
+	}
+	return media.Class != store.MediaClassVideo
 }
 
 // localPosterLocked reports whether the poster slot holds locked artwork.

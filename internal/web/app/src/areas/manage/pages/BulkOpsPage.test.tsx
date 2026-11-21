@@ -7,6 +7,10 @@ import { bulkEditApply, bulkEditPreview, fetchLibraries } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { BulkOpsPage } from "./BulkOpsPage";
 
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({ isManager: false, session: { profile: "adult" } }),
+}));
+
 vi.mock("@/lib/graphql", () => ({
   bulkEditApply: vi.fn(),
   fetchMutes: vi.fn(async () => []),

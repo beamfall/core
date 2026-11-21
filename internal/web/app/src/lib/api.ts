@@ -306,6 +306,27 @@ export async function postJSON<T = unknown>(
   );
 }
 
+/** Upload one artwork image for a Media slot (multipart, CSRF header,
+ * same-origin credentials). The server applies it as a manual pick and locks
+ * the slot (internal/server/artwork_upload.go, CORE-2904). */
+export async function uploadMediaArtwork(
+  mediaID: string,
+  slot: string,
+  file: File,
+  options?: JSONRequestArgument,
+): Promise<void> {
+  const form = new FormData();
+  form.append("mediaID", mediaID);
+  form.append("slot", slot);
+  form.append("file", file);
+  await requestJSON<unknown>(
+    "POST",
+    "/api/media/artwork/upload",
+    { method: "POST", credentials: "same-origin", headers: { [CSRF_HEADER]: "1" }, body: form },
+    options,
+  );
+}
+
 /**
  * POST JSON with keepalive, so the request outlives the page that sent it: a
  * pagehide handler uses it to tell the server the viewer left. Fire and

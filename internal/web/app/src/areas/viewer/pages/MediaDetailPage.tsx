@@ -479,7 +479,18 @@ export function MediaDetailPage() {
                     positionSeconds={progress?.positionSeconds}
                   />
                 )}
-                {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} />}
+                {mediaId && (
+                  <MediaDetailMoreMenu
+                    mediaID={mediaId}
+                    title={title}
+                    artwork={{
+                      poster: artworkSlotURL(art as SourceItem, "poster"),
+                      backdrop,
+                      thumb: artworkSlotURL(art as SourceItem, "thumb"),
+                    }}
+                    onEdited={() => setAttempt((n) => n + 1)}
+                  />
+                )}
               </div>
               {media && (
                 <MediaTrackPickers
