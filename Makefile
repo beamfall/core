@@ -225,7 +225,8 @@ orient:
 	@tools/orient/orient.sh
 
 build:
-	go build ./...
+	@set -eu; build_date=$$(date -u +%Y-%m-%dT%H:%M:%SZ); \
+		go build -ldflags="-X github.com/beamfall/core/internal/capabilities.ReleaseBuildDate=$$build_date" ./...
 
 test:
 	go test ./...

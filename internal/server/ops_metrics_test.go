@@ -3,10 +3,10 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,6 +15,7 @@ import (
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/beam"
+	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/governor"
 	"github.com/beamfall/core/internal/graph"
 	"github.com/beamfall/core/internal/manifest"
@@ -278,8 +279,9 @@ func TestHealthDistinguishesReadyFromLive(t *testing.T) {
 	if ready["seedVersion"] != store.AcceptanceSeedVersion {
 		t.Fatalf("ready body seedVersion = %v, want %s", ready["seedVersion"], store.AcceptanceSeedVersion)
 	}
-	if got := fmt.Sprint(ready["capabilities"]); !strings.Contains(got, "conversion") || !strings.Contains(got, "rename") {
-		t.Fatalf("ready body capabilities = %v, want conversion and rename", ready["capabilities"])
+	report, _ := ready["capabilities"].(map[string]any)
+	if ids, ok := report["capabilities"].([]any); !ok || !slices.Equal(ids, []any{"conversion", "rename"}) {
+		t.Fatalf("ready body capabilities = %v, want report with conversion and rename", ready["capabilities"])
 	}
 
 	// Not-ready store: still live, but not ready, 503.
@@ -299,6 +301,40 @@ func TestHealthDistinguishesReadyFromLive(t *testing.T) {
 	}
 	if notReady["status"] != "not_ready" {
 		t.Fatalf("not-ready body status = %v, want not_ready", notReady["status"])
+	}
+}
+
+func TestHealthReportsBuildIdentity(t *testing.T) {
+	oldVersion, oldCommit, oldDate := capabilities.ReleaseVersion, capabilities.ReleaseCommit, capabilities.ReleaseBuildDate
+	t.Cleanup(func() {
+		capabilities.ReleaseVersion, capabilities.ReleaseCommit, capabilities.ReleaseBuildDate = oldVersion, oldCommit, oldDate
+	})
+	const version, commit = "v1.2.3", "0123456789abcdef"
+	capabilities.ReleaseVersion, capabilities.ReleaseCommit = version, commit
+
+	for _, date := range []string{"2026-11-21T16:24:00Z", ""} {
+		name := "stamped"
+		if date == "" {
+			name = "unknown"
+		}
+		t.Run(name, func(t *testing.T) {
+			capabilities.ReleaseBuildDate = date
+			srv := newTestServer(t)
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+			}
+			body := decodeHealth(t, rec.Body.String())
+			report, ok := body["capabilities"].(map[string]any)
+			if !ok || report["version"] != version || report["commit"] != commit {
+				t.Fatalf("health capabilities = %v, want version %q and commit %q", body["capabilities"], version, commit)
+			}
+			got, present := report["buildDate"]
+			if date == "" && present || date != "" && got != date {
+				t.Fatalf("health capabilities.buildDate = %v (present %v), want %q (omitted when empty)", got, present, date)
+			}
+		})
 	}
 }
 

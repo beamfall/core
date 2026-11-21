@@ -90,6 +90,7 @@ type Server struct {
 	// credential; nil means none was established, which refuses every bearer.
 	metricsScrapeDigest []byte
 	testFaults          atomic.Pointer[testFaults]
+	buildIdentity       capabilities.Report
 	buildSHA            string
 	seedProfile         string
 	seedVersion         string
@@ -259,7 +260,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	if err != nil {
 		panic(fmt.Errorf("invalid release first-party build catalog: %w", err))
 	}
-	defaultCapabilities := capabilities.EnabledIDs(nil)
+	report := capabilities.Current()
 	s := &Server{
 		mux:             http.NewServeMux(),
 		accessClasses:   make(map[string]AccessClass),
@@ -273,9 +274,15 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 		auth:            authService,
 		jobStats:        jobStats,
 		buildSHA:        detectBuildSHA(),
-		capabilities:    append([]string(nil), defaultCapabilities...),
-		baseURL:         baseURL,
-		knownProxies:    knownProxies,
+		buildIdentity: capabilities.Report{
+			Version:   report.Version,
+			Commit:    report.Commit,
+			BuildDate: report.BuildDate,
+			BuildTags: report.BuildTags,
+		},
+		capabilities: report.Capabilities,
+		baseURL:      baseURL,
+		knownProxies: knownProxies,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -1113,6 +1120,8 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	}
 	_, ffmpegErr := lookPath("ffmpeg")
 	_, ffprobeErr := lookPath("ffprobe")
+	report := s.buildIdentity
+	report.Capabilities = s.capabilities
 	writeJSON(w, status, map[string]any{
 		"status":       summary,
 		"live":         true,
@@ -1122,7 +1131,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		"buildSHA":     s.buildSHA,
 		"seedProfile":  s.seedProfile,
 		"seedVersion":  s.seedVersion,
-		"capabilities": s.capabilities,
+		"capabilities": report,
 		"features":     serverFeatures,
 	})
 }
