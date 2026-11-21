@@ -3,8 +3,10 @@ package scrape
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -260,7 +262,13 @@ func TestDownloadResourceStreamRedirects(t *testing.T) {
 		_, _ = w.Write([]byte("payload"))
 	}))
 	defer cdn.Close()
+	// Four measurement hops (more than maxRedirects) before the CDN.
 	tracker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hop, _ := strconv.Atoi(r.URL.Query().Get("hop"))
+		if hop < 4 {
+			http.Redirect(w, r, fmt.Sprintf("/file.mp3?hop=%d", hop+1), http.StatusFound)
+			return
+		}
 		http.Redirect(w, r, cdn.URL+"/file.mp3", http.StatusFound)
 	}))
 	defer tracker.Close()

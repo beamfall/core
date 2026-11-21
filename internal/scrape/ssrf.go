@@ -86,8 +86,8 @@ func (e *Engine) checkStreamRedirect(req *http.Request, via []*http.Request) err
 		return e.checkRedirect(req, via)
 	}
 	recordRedirectHop(req)
-	if len(via) >= maxRedirects {
-		return fmt.Errorf("scrape: refused after %d redirects", maxRedirects)
+	if len(via) >= maxStreamRedirects {
+		return fmt.Errorf("scrape: refused after %d redirects", maxStreamRedirects)
 	}
 	return e.vetURL(req.URL)
 }

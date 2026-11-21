@@ -208,6 +208,9 @@ const (
 	defaultMaxResponseBytes = 5 << 20
 	defaultTimeout          = 15 * time.Second
 	maxRedirects            = 3
+	// maxStreamRedirects bounds anonymous media-payload chains, which stack
+	// several measurement prefixes (each a hop) in front of the CDN.
+	maxStreamRedirects = 10
 	// retryAfterRetries is the small 429 cap: one initial request plus three
 	// retries, enough to respect etiquette without stalling forever.
 	retryAfterRetries = 3
