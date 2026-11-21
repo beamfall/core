@@ -62,6 +62,9 @@ func (h *Handler) sessions(w http.ResponseWriter, r *http.Request, _ net.IP) {
 		optedIn[profile.ID] = true
 	}
 	now := time.Now()
+	if h.sessionsNow != nil {
+		now = h.sessionsNow()
+	}
 	active, err := h.store.ActiveSessions(ctx, now, filter)
 	if err != nil {
 		http.Error(w, "compatibility sessions unavailable", http.StatusInternalServerError)

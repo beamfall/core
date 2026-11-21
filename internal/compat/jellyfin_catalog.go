@@ -380,13 +380,16 @@ func (h *Handler) visibleNodes(ctx context.Context, filter store.LibraryFilter, 
 		_, ok := titles[store.EntityID(n.id)]
 		return ok
 	}
-	var holdsVisible func(*catalogNode) bool
-	holdsVisible = func(n *catalogNode) bool {
+	shown := func(n *catalogNode) bool {
 		if n.leaf {
 			_, ok := media[store.MediaID(n.id)]
 			return ok && itemType(n.id) != ""
 		}
-		return live(n) && slices.ContainsFunc(n.children, holdsVisible)
+		return live(n)
+	}
+	var holdsVisible func(*catalogNode) bool
+	holdsVisible = func(n *catalogNode) bool {
+		return shown(n) && (n.leaf || slices.ContainsFunc(n.children, holdsVisible))
 	}
 	var kept []*catalogNode
 	for _, n := range nodes {
@@ -409,25 +412,25 @@ func (h *Handler) visibleNodes(ctx context.Context, filter store.LibraryFilter, 
 		} else {
 			current.name = titles[store.EntityID(n.id)]
 			current.sortKey = current.name
-			current.year = earliestYear(n, media, live)
+			current.year = earliestYear(n, media, shown)
 		}
 		kept = append(kept, &current)
 	}
 	return kept, nil
 }
 
-// earliestYear returns the earliest year among the visible leaves under n
-// reached through live containers only, the year a container carries.
-func earliestYear(n *catalogNode, media map[store.MediaID]store.VisibleMedia, live func(*catalogNode) bool) int {
+// earliestYear returns the earliest year among the shown leaves under n
+// reached through shown containers only, the year a container carries.
+func earliestYear(n *catalogNode, media map[store.MediaID]store.VisibleMedia, shown func(*catalogNode) bool) int {
 	if n.leaf {
 		return media[store.MediaID(n.id)].Year
 	}
 	year := 0
 	for _, child := range n.children {
-		if !child.leaf && !live(child) {
+		if !shown(child) {
 			continue
 		}
-		if y := earliestYear(child, media, live); y > 0 && (year == 0 || y < year) {
+		if y := earliestYear(child, media, shown); y > 0 && (year == 0 || y < year) {
 			year = y
 		}
 	}

@@ -102,6 +102,7 @@ type Handler struct {
 	sealed         func(store.LibraryID) bool
 	interop        map[string]Interop
 	indexes        indexCache
+	sessionsNow    func() time.Time // the Sessions clock; nil means time.Now
 	refreshMu      sync.Mutex
 	background     sync.WaitGroup // media update scans queued after the response
 	nextRefresh    time.Time

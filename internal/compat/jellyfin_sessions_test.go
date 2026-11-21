@@ -106,6 +106,14 @@ func TestJellyfinSessionsListsOptedInNowPlaying(t *testing.T) {
 		}
 	}
 
+	// A playback with no activity within the live-session window drops, though
+	// its grant is unexpired.
+	f.handler.sessionsNow = func() time.Time { return time.Now().Add(store.LiveSessionActivityWindow + time.Second) }
+	if got, body = f.sessions(t); len(got) != 0 {
+		t.Fatalf("stale sessions = %s, want none", body)
+	}
+	f.handler.sessionsNow = nil
+
 	// An ended playback drops at once.
 	if err := f.st.EndPlayback(t.Context(), "session-default", f.part2); err != nil {
 		t.Fatal(err)
@@ -200,17 +208,17 @@ func TestJellyfinItemCountsAreFiltered(t *testing.T) {
 	}
 }
 
-// A Profile switch keeps the session, so one session can hold grants for the
-// same item under an opted-out and an opted-in Profile: only the opted-in
-// Profile's playback is listed, under its own name.
-func TestJellyfinSessionsKeepSwitchedProfilesApart(t *testing.T) {
+// A Profile switch keeps the session (CORE-2682), so a session's playback of
+// one Media names the Profile whose grant was active last: an opted-out
+// Profile's earlier grant is neither listed nor shown under the opted-in
+// Profile, and the entry drops once the opted-out Profile plays again.
+func TestJellyfinSessionsFollowTheProfileNowPlaying(t *testing.T) {
 	f := newCatalogFixture(t)
 	ctx := t.Context()
 	other, err := f.st.CreateProfile(ctx, "Opted Out", store.ProfileAdult, store.LibraryFilter{AllLibraries: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The opted-out grant sorts first (media-direct before media-hls).
 	if err := f.st.RecordStreamToken(ctx, "session-default", other.ID, "device-tv", "media-direct", f.single, false, time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
@@ -218,9 +226,20 @@ func TestJellyfinSessionsKeepSwitchedProfilesApart(t *testing.T) {
 		t.Fatalf("opted-out playback listed: %s", body)
 	}
 	f.play(t, "session-default", "profile-default", f.single, 30, 7200)
+	touch := func(profile store.ProfileID, at time.Time) {
+		t.Helper()
+		if err := f.st.TouchStreamTokenActivity(ctx, "session-default", profile, f.single, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	touch("profile-default", time.Now().Add(time.Second))
 	got, body := f.sessions(t)
 	if len(got) != 1 || got[0].UserName != "Default" || got[0].PlayState.PositionTicks != 30*ticksPerSecond {
 		t.Fatalf("sessions = %s, want only Default's playback", body)
+	}
+	touch(other.ID, time.Now().Add(2*time.Second))
+	if got, body := f.sessions(t); len(got) != 0 {
+		t.Fatalf("sessions after the opted-out Profile played again = %s, want none", body)
 	}
 }
 
@@ -259,6 +278,13 @@ func TestJellyfinCountsAndSessionsReadCurrentRows(t *testing.T) {
 	}
 	if got, body := f.sessions(t); len(got) != 0 {
 		t.Fatalf("sessions after unmapping = %s, want none", body)
+	}
+	// An unmapped member no longer gives its group the earliest year.
+	if err := f.st.UpsertMediaFields(ctx, f.part2, []store.MediaField{{Name: "class", Type: store.EntityFieldText, Text: "not-declared"}}); err != nil {
+		t.Fatal(err)
+	}
+	if group := decodeList(t, f.get(t, "Items?ids="+string(f.group), http.StatusOK)); len(group.Items) != 1 || group.Items[0].ProductionYear != 2010 {
+		t.Fatalf("group after unmapping its oldest member = %+v, want year 2010", group.Items)
 	}
 	if err := f.st.TrashEntity(ctx, f.sub1, store.LibraryFilter{AllLibraries: true}, time.Now()); err != nil {
 		t.Fatal(err)
