@@ -348,6 +348,31 @@ describe("useWatchParty drift and advance (CORE-1766)", () => {
     view.unmount();
   });
 
+  it("measures drift in song time under a karaoke tempo (CORE-1829)", () => {
+    vi.spyOn(Date, "now").mockReturnValue(110_000);
+    // Song second 100 of a party started 100 s ago. At tempo 0.8 a stream
+    // second covers 1.25 song seconds, so a correctly placed player sits at
+    // stream second 80 and must not be pulled back to song second 80.
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 10_000, paused: false });
+    const video = new FakeVideo();
+    video.paused = false;
+    video.currentTime = 80;
+    const videoRef = { current: video as unknown as HTMLVideoElement };
+    const view = renderHook(() =>
+      useWatchParty({
+        videoRef,
+        attached: true,
+        mediaId: "m1",
+        onFollow: () => {},
+        songScale: 1.25,
+      }),
+    );
+    expect(reportPartyDrift).toHaveBeenCalled();
+    expect(vi.mocked(reportPartyDrift).mock.calls[0]?.[0]).toBeCloseTo(0, 0);
+    expect(video.currentTime).toBeCloseTo(80);
+    view.unmount();
+  });
+
   it("does not report while the party is paused", () => {
     party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
     const view = mount(new FakeVideo());

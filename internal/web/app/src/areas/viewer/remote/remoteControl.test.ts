@@ -1,3 +1,4 @@
+import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
   applyPlayerCommand,
@@ -11,6 +12,7 @@ import {
   resetAppliedControlEvents,
   restartInPlace,
   STALE_AFTER_MS,
+  useRemotePlayerTarget,
 } from "./remoteControl";
 
 const NOW = Date.parse("2026-11-14T12:00:00Z");
@@ -90,6 +92,14 @@ describe("applyPlayerCommand", () => {
     return { video, target: { video: () => video, ...overrides } as RemotePlayerTarget };
   }
 
+  it("seeks to the song position under an applied tempo (CORE-1828)", () => {
+    // At tempo 0.8 a stream second covers 1.25 song seconds, so song second
+    // 100 sits at stream second 80.
+    const { video, target: t } = target({ songScale: 1.25 });
+    expect(applyPlayerCommand({ command: "seek", positionMs: 100_000 }, t)).toBe(true);
+    expect(video.currentTime).toBeCloseTo(80);
+  });
+
   it("drives the video element for transport verbs", () => {
     const { video, target: t } = target();
     expect(applyPlayerCommand({ command: "pause" }, t)).toBe(true);
@@ -115,6 +125,23 @@ describe("applyPlayerCommand", () => {
     video.currentTime = 120; // the player's resume seek on metadata
     video.dispatchEvent(new Event("loadedmetadata"));
     expect(video.currentTime).toBe(300);
+  });
+
+  it("converts a deferred seek with the tempo of the stream that loaded (CORE-1828)", () => {
+    // The restart registers before the stream's tempo is known; it loads at
+    // tempo 0.8, so song second 100 sits at stream second 80.
+    const video = document.createElement("video");
+    const view = renderHook((t: RemotePlayerTarget) => useRemotePlayerTarget(t), {
+      initialProps: { video: () => video, songScale: 1 },
+    });
+    applyPlayerCommand(
+      { command: "seek", positionMs: 100_000 },
+      { video: () => video, songScale: 1 },
+    );
+    view.rerender({ video: () => video, songScale: 1.25 });
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(video.currentTime).toBeCloseTo(80);
+    view.unmount();
   });
 
   it("drops a deferred seek that a newer seek or a play-media supersedes", () => {
