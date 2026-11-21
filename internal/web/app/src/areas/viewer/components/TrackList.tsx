@@ -19,14 +19,12 @@ export function TrackList({
   rows,
   queue,
   label,
-  albumEntityID,
 }: {
   rows: readonly TrackRow[];
   /** The list's playable rows, in order, handed to the player. */
   queue: readonly PlayQueueItem[];
   /** Accessible name of the list. */
   label: string;
-  albumEntityID?: string;
 }) {
   const t = useT();
   const navigate = useNavigate();
@@ -38,12 +36,12 @@ export function TrackList({
         const { item } = row;
         const duration = formatDuration(row.durationSeconds);
         const path = mediaPath("media", item.id);
-        const playbackState = () => playState(identity, queue, item, albumEntityID);
         const openDetails = () =>
           navigate(path, {
-            state: { ...mediaLinkState(item, identity), ...playbackState() },
+            state: { ...mediaLinkState(item, identity), ...playState(identity, queue, item) },
           });
-        const play = () => navigate(mediaPath("watch", item.id), { state: playbackState() });
+        const play = () =>
+          navigate(mediaPath("watch", item.id), { state: playState(identity, queue, item) });
         return (
           <li key={item.id} className="bf-card-shell bf-track">
             <Link

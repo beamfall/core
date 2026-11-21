@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "@/lib/api";
 import { editMusicQueue, type MusicQueueRow, registerMusicQueuePlayer } from "./musicQueue";
-import { catalogQueueSource, catalogQueueState } from "./watchQueue";
 
 const scope = { profileID: "profile-a", revealed: false, deviceRole: "viewer", profile: "adult" };
 const track = (id: string): MusicQueueRow => ({ id, title: id, mediaClass: "audio" });
@@ -10,7 +9,6 @@ describe("server Play Queue edits", () => {
   let rows: MusicQueueRow[];
   let reads: number;
   const writes: { mediaID: string; position?: number; expectedProfileID: string }[] = [];
-  let beforeWrite: (id: string) => void;
   let afterWrite: (id: string) => void;
   let dispose: (() => void) | undefined;
 
@@ -18,7 +16,6 @@ describe("server Play Queue edits", () => {
     rows = [];
     reads = 0;
     writes.length = 0;
-    beforeWrite = () => {};
     afterWrite = () => {};
     vi.spyOn(api, "graphql").mockImplementation(async (_, variables) => {
       reads++;
@@ -38,7 +35,6 @@ describe("server Play Queue edits", () => {
       );
       expect(variables.expectedProfileID).toBe(scope.profileID);
       writes.push(variables);
-      beforeWrite(variables.mediaID);
       rows = rows.filter((row) => row.id !== variables.mediaID);
       rows.splice(variables.position ?? rows.length, 0, track(variables.mediaID));
       afterWrite(variables.mediaID);
@@ -52,26 +48,20 @@ describe("server Play Queue edits", () => {
     vi.restoreAllMocks();
   });
 
-  function player(id: string, readCatalog?: () => Promise<string[]>) {
+  function player(id: string) {
     const receive = vi.fn<(rows: MusicQueueRow[] | null) => void>();
-    const cursor = {};
+    const invalidateIdentity = vi.fn();
     dispose = registerMusicQueuePlayer({
       id,
       scope,
-      cursor,
-      readCatalog,
-      beginConversion: () => {
-        dispose?.();
-        dispose = registerMusicQueuePlayer({ id, scope, cursor, receive });
-      },
-      receive,
+      server: { canEdit: () => true, invalidateIdentity, receive },
     });
-    return receive;
+    return { receive, invalidateIdentity };
   }
 
   it("moves an existing track immediately after the cursor and then to the tail", async () => {
     rows = ["target", "head", "playing", "after"].map(track);
-    const receive = player("playing");
+    const { receive } = player("playing");
     expect(await editMusicQueue(scope, "target", "next")).toBe("confirmed");
     expect(rows.map((row) => row.id)).toEqual(["head", "playing", "target", "after"]);
     expect(await editMusicQueue(scope, "target", "tail")).toBe("confirmed");
@@ -82,53 +72,46 @@ describe("server Play Queue edits", () => {
     expect(writes).toHaveLength(2);
   });
 
-  it("imports a complete album outside the navigation window only once", async () => {
-    const album = Array.from({ length: 530 }, (_, index) => track("album-" + (index + 1)));
-    const current = album[240].id;
-    const state = catalogQueueState("viewer-1", album, current);
-    expect(state.queue).toHaveLength(500);
-    expect(state.queue?.some((row) => row.id === album[529].id)).toBe(false);
-    rows = [track("old-1"), track(current), track(album[3].id), track("old-2")];
-    expect(state.queueSource).toEqual(expect.any(String));
-    const source = vi.fn(async () => {
-      const key = state.queueSource;
-      const full = catalogQueueSource(typeof key === "string" ? key : null, undefined);
-      if (!full) throw new Error("Missing catalog source");
-      return full.map((row) => row.id);
-    });
-    const receive = player(current, source);
-
-    expect(await editMusicQueue(scope, "new", "next")).toBe("confirmed");
-    const kept = [current, "new", "old-1", album[3].id, "old-2"];
-    expect(rows.map((row) => row.id)).toEqual([
-      ...kept,
-      ...album.map((row) => row.id).filter((id) => !kept.includes(id)),
+  it("can populate an empty queue while idle and put the next track at the head", async () => {
+    expect(await editMusicQueue(scope, "first", "tail")).toBe("confirmed");
+    expect(await editMusicQueue(scope, "next", "next")).toBe("confirmed");
+    expect(rows.map((row) => row.id)).toEqual(["next", "first"]);
+    expect(writes).toEqual([
+      { mediaID: "first", expectedProfileID: scope.profileID },
+      { mediaID: "next", position: 0, expectedProfileID: scope.profileID },
     ]);
-    expect(receive).toHaveBeenLastCalledWith(rows);
-    expect(await editMusicQueue(scope, album[529].id, "tail")).toBe("confirmed");
-    expect(source).toHaveBeenCalledTimes(1);
-    expect(reads).toBeGreaterThan(4);
-  });
-
-  it("adopts a partial import from a reread and never resumes the writes", async () => {
-    rows = [track("old")];
-    const source = vi.fn(async () => ["played", "playing", "failed", "unattempted"]);
-    const receive = player("playing", source);
-    beforeWrite = (id) => {
-      if (id === "failed") throw new Error("connection closed");
-    };
-    expect(await editMusicQueue(scope, "new", "next")).toBe("failed");
-    expect(writes.map((write) => write.mediaID)).toEqual(["playing", "played", "failed"]);
-    expect(receive).toHaveBeenLastCalledWith([track("playing"), track("old"), track("played")]);
-    expect(await editMusicQueue(scope, "later", "tail")).toBe("confirmed");
-    expect(source).toHaveBeenCalledTimes(1);
-    expect(writes.map((write) => write.mediaID)).toEqual(["playing", "played", "failed", "later"]);
     expect(reads).toBe(4);
   });
 
+  it("drops a locked target before writing", async () => {
+    rows = [track("playing"), { ...track("target"), locked: true }];
+    const { receive } = player("playing");
+    expect(await editMusicQueue(scope, "target", "tail")).toBe("dropped");
+    expect(writes).toHaveLength(0);
+    expect(receive).toHaveBeenCalledWith(rows);
+  });
+
+  it("drops an edit if the listing loses the target's eligibility during preflight", async () => {
+    const isTargetUnlocked = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+    expect(await editMusicQueue(scope, "target", "next", isTargetUnlocked)).toBe("dropped");
+    expect(reads).toBe(1);
+    expect(writes).toHaveLength(0);
+  });
+
+  it.each(["next", "tail"] as const)(
+    "drops %s when another device removed the cursor",
+    async (edit) => {
+      rows = [track("other")];
+      const { receive } = player("playing");
+      expect(await editMusicQueue(scope, "target", edit)).toBe("dropped");
+      expect(writes).toHaveLength(0);
+      expect(receive).toHaveBeenCalledWith(rows);
+    },
+  );
+
   it("confirms a committed placement with a lost response and does not repeat the write", async () => {
     rows = [track("playing"), track("old")];
-    const receive = player("playing");
+    const { receive } = player("playing");
     afterWrite = () => {
       throw new Error("response lost");
     };
@@ -139,13 +122,15 @@ describe("server Play Queue edits", () => {
   });
 
   it("drops a PROFILE_MISMATCH without adopting or retrying the edit", async () => {
-    const receive = player("playing", async () => ["catalog"]);
+    rows = [track("playing")];
+    const { receive, invalidateIdentity } = player("playing");
     vi.mocked(api.postJSON).mockResolvedValueOnce({
       errors: [{ message: "foreign profile", extensions: { reason: "PROFILE_MISMATCH" } }],
     });
     expect(await editMusicQueue(scope, "target", "tail")).toBe("dropped");
     expect(api.postJSON).toHaveBeenCalledTimes(1);
     expect(reads).toBe(1);
-    expect(receive).not.toHaveBeenCalled();
+    expect(receive).toHaveBeenCalledExactlyOnceWith(rows);
+    expect(invalidateIdentity).toHaveBeenCalledOnce();
   });
 });

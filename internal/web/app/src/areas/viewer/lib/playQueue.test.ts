@@ -4,8 +4,6 @@ import { DEFAULT_BROWSE_STATE, type LibraryItemsRequest } from "./libraryBrowse"
 import {
   leavePlayQueue,
   nextInPlayQueue,
-  playAllMusicIDs,
-  playAllSource,
   playQueueHandle,
   playQueueTitle,
   previousInPlayQueue,
@@ -44,37 +42,6 @@ describe("play queue", () => {
     expect(await nextInPlayQueue("b")).toBe("c");
     expect(fetchLibraryItems).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 2 }));
     expect(await nextInPlayQueue("c")).toBe("");
-  });
-
-  it("finishes a Play all listing when editing from track 201", async () => {
-    const ids = Array.from({ length: 410 }, (_, index) => String(index + 1));
-    fetchLibraryItems.mockImplementation(
-      async ({ offset = 0, limit = 200 }: LibraryItemsRequest) => ({
-        ...page([], ids.length),
-        items: page(ids.slice(offset, offset + limit), ids.length).items.map((item) => ({
-          ...item,
-          mediaClass: item.id === "409" ? "video" : "audio",
-          locked: item.id === "408",
-        })),
-      }),
-    );
-    await startPlayQueue(request);
-    for (const id of ids.slice(0, 200)) await nextInPlayQueue(id);
-    expect(fetchLibraryItems.mock.calls.map(([query]) => query.offset)).toEqual([0, 200]);
-    leavePlayQueue(playQueueHandle());
-    fetchLibraryItems.mockClear();
-    expect(await playAllMusicIDs(playAllSource(request), new AbortController().signal)).toEqual(
-      ids.filter((id) => id !== "408" && id !== "409"),
-    );
-    expect(fetchLibraryItems.mock.calls.map(([query]) => query.offset)).toEqual([0, 200, 400]);
-  });
-
-  it("rejects a short later page when the listing reports more rows", async () => {
-    const ids = Array.from({ length: 200 }, (_, index) => String(index + 1));
-    fetchLibraryItems.mockResolvedValueOnce(page(ids, 201)).mockResolvedValueOnce(page([], 201));
-    await expect(
-      playAllMusicIDs(playAllSource(request), new AbortController().signal),
-    ).rejects.toThrow("Play all listing changed during pagination");
   });
 
   it("leaves out items a locked ceiling blocks, on the first page and later ones", async () => {

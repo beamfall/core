@@ -224,11 +224,29 @@ describe("MediaItemCardMenu Play Queue", () => {
     expect(screen.queryByRole("menuitem", { name: "Add to queue" })).not.toBeInTheDocument();
   });
 
+  it.each(["catalog", "different profile"])("hides queue actions during %s playback", (run) => {
+    const dispose = musicQueue.registerMusicQueuePlayer({
+      id: "currently-playing",
+      scope: { profileID: run === "catalog" ? "profile-a" : "profile-b", revealed: false },
+      server:
+        run === "catalog"
+          ? undefined
+          : { canEdit: () => true, invalidateIdentity: () => {}, receive: () => {} },
+    });
+    try {
+      renderMenu(true, undefined, "en", [], true);
+      expect(screen.queryByRole("menuitem", { name: "Play next" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("menuitem", { name: "Add to queue" })).not.toBeInTheDocument();
+    } finally {
+      act(dispose);
+    }
+  });
+
   it("disables both edits for the current track", () => {
     const dispose = musicQueue.registerMusicQueuePlayer({
       id: "t1",
       scope: { profileID: "profile-a", revealed: false },
-      receive: () => {},
+      server: { canEdit: () => true, invalidateIdentity: () => {}, receive: () => {} },
     });
     try {
       renderMenu(true, undefined, "en", [], true);
@@ -263,6 +281,7 @@ describe("MediaItemCardMenu Play Queue", () => {
         expect.objectContaining({ profileID: "profile-a" }),
         "t1",
         "next",
+        expect.any(Function),
       );
       expect(screen.queryByText(french.musicQueueNextConfirmed)).not.toBeInTheDocument();
       await act(async () => settle("confirmed"));

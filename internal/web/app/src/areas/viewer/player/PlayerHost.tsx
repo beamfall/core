@@ -24,8 +24,6 @@ export interface WatchEntry {
   mediaId: string;
   state: unknown;
   search: string;
-  /** The route entry that started playback, carried through mini player reattachment. */
-  playbackKey: string;
   /** Epoch at which the host selected this title, if this entry is a selection. */
   titleSelectionEpoch?: number;
 }

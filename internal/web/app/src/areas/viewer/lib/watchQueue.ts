@@ -1,6 +1,4 @@
-import { getIdentityEpochSignal } from "@/lib/api";
 import type { SourceItem } from "@/lib/graphql/types";
-import { type PlayAllSource, readPlayAllSource } from "./playQueue";
 
 // The play queue a catalog surface hands the player (CORE-1143). A card that
 // starts playback carries the playable siblings it was shown with — an album's
@@ -46,10 +44,6 @@ export interface PlayerNavState {
   queue?: PlayQueueItem[];
   /** The viewer identity the queue was listed for; a queue without it is ignored. */
   queueIdentity?: string;
-  /** Complete window, lookup reference, or null when the source is unavailable. */
-  queueSource?: CatalogQueueSource;
-  /** The listing behind Play all, scoped by queueIdentity. */
-  playAllSource?: PlayAllSource | null;
   tracks?: StartTracks;
   /**
    * The identity of one explicit playback start (Play or Start over on a
@@ -59,8 +53,6 @@ export interface PlayerNavState {
    */
   startID?: string;
 }
-
-type CatalogQueueSource = true | string | { albumEntityID: string } | null;
 
 /** A new playback-start identity for {@link PlayerNavState.startID}. */
 export function newStartID(): string {
@@ -149,55 +141,6 @@ export function queueWindow(
   return queue.slice(start, start + max);
 }
 
-// History carries a lookup key for the latest large catalog start. The
-// complete source stays in memory and is retired with its identity epoch.
-let catalogSource:
-  | {
-      key: string;
-      epoch: AbortSignal | undefined;
-      queue: readonly PlayQueueItem[];
-    }
-  | undefined;
-
-export function catalogQueueState(
-  identity: string | null | undefined,
-  queue: readonly PlayQueueItem[] | undefined,
-  id: string,
-  lockKnown = true,
-  albumEntityID?: string,
-): Pick<PlayerNavState, "queue" | "queueIdentity" | "queueSource"> {
-  if (!identity || !queue?.length) return {};
-  if (!lockKnown)
-    return { queue: queueWindow(queue, id), queueIdentity: identity, queueSource: null };
-  if (albumEntityID)
-    return {
-      queue: queueWindow(queue, id),
-      queueIdentity: identity,
-      queueSource: { albumEntityID },
-    };
-  if (queue.length <= MAX_QUEUE) {
-    return { queue: [...queue], queueIdentity: identity, queueSource: true };
-  }
-  const epoch = getIdentityEpochSignal();
-  if (catalogSource?.queue !== queue || catalogSource.epoch !== epoch) {
-    const key = newStartID();
-    catalogSource = { key, epoch, queue };
-    epoch?.addEventListener(
-      "abort",
-      () => {
-        if (catalogSource?.key === key) catalogSource = undefined;
-      },
-      { once: true },
-    );
-  }
-  return { queue: queueWindow(queue, id), queueIdentity: identity, queueSource: catalogSource.key };
-}
-
-/** A missing large source must never be imported from its history window. */
-export function catalogQueueSource(key: string | null, epoch: AbortSignal | undefined) {
-  return catalogSource?.key === key && catalogSource.epoch === epoch ? catalogSource.queue : null;
-}
-
 /** The queue entries either side of `id`, when it is in the queue. */
 export function queueNeighbours(
   queue: readonly PlayQueueItem[] | undefined,
@@ -219,8 +162,6 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
     title?: unknown;
     queue?: unknown;
     queueIdentity?: unknown;
-    queueSource?: unknown;
-    playAllSource?: unknown;
     tracks?: unknown;
     startID?: unknown;
   };
@@ -243,33 +184,13 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
           )
       : undefined;
   const tracks = readStartTracks(raw.tracks);
-  const queueSource = queue
-    ? readCatalogQueueSource(raw.queueSource, (raw.queue as unknown[]).length)
-    : undefined;
-  const playAllSource =
-    raw.playAllSource === undefined
-      ? undefined
-      : ((sameViewer ? readPlayAllSource(raw.playAllSource) : undefined) ?? null);
   return {
     title,
     queue,
-    ...(queue || playAllSource ? { queueIdentity: identity as string } : {}),
-    ...(queueSource !== undefined ? { queueSource } : {}),
-    ...(playAllSource !== undefined ? { playAllSource } : {}),
+    ...(queue ? { queueIdentity: identity as string } : {}),
     ...(tracks ? { tracks } : {}),
     ...(typeof raw.startID === "string" && raw.startID ? { startID: raw.startID } : {}),
   };
-}
-
-function readCatalogQueueSource(raw: unknown, size: number): CatalogQueueSource | undefined {
-  // Older entries omitted the source and could be capped at exactly MAX_QUEUE.
-  if (raw === undefined) return size < MAX_QUEUE ? undefined : null;
-  if (raw === true || typeof raw === "string" || raw === null) return raw;
-  if (raw && typeof raw === "object" && "albumEntityID" in raw) {
-    const { albumEntityID } = raw;
-    if (typeof albumEntityID === "string" && albumEntityID) return { albumEntityID };
-  }
-  return null;
 }
 
 function readStartTracks(raw: unknown): StartTracks | undefined {

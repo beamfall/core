@@ -1,4 +1,3 @@
-import { fetchMediaForEntity } from "@/lib/graphql";
 import type { MediaRow } from "@/lib/graphql/browse";
 import type {
   EntityInfo,
@@ -7,12 +6,7 @@ import type {
   RelatedEntityGroup,
   SourceItem,
 } from "@/lib/graphql/types";
-import {
-  catalogQueueState,
-  type PlayerNavState,
-  type PlayQueueItem,
-  playQueueOf,
-} from "./watchQueue";
+import { type PlayerNavState, type PlayQueueItem, playQueueOf, queueWindow } from "./watchQueue";
 
 // Listening layout rules (CORE-1635). Core stays domain-agnostic: the layout is
 // chosen from the Entity's archetype, the Media class the server reports and
@@ -204,14 +198,6 @@ export function audioQueue(items: readonly SourceItem[]): PlayQueueItem[] {
   return playQueueOf(items.map((item) => ({ ...item, mediaClass: AUDIO_CLASS })));
 }
 
-/** Refetch a windowed album in its listing order without using cached titles or locks. */
-export async function readAlbumMusicIDs(entityID: string, signal: AbortSignal): Promise<string[]> {
-  const items = await fetchMediaForEntity(entityID, signal);
-  return albumTrackRows(items, {}, new Set()).flatMap(({ item }) =>
-    item.mediaClass === AUDIO_CLASS && !item.locked ? [item.id] : [],
-  );
-}
-
 /** Consecutive rows that share a group, in order; one ungrouped run when none is grouped. */
 export function trackGroups(tracks: readonly TrackRow[]): { group?: number; rows: TrackRow[] }[] {
   const out: { group?: number; rows: TrackRow[] }[] = [];
@@ -290,7 +276,7 @@ export function playState(
   identity: string | null | undefined,
   queue: readonly PlayQueueItem[],
   item: { id: string; title: string },
-  albumEntityID?: string,
 ): PlayerNavState {
-  return { title: item.title, ...catalogQueueState(identity, queue, item.id, true, albumEntityID) };
+  if (!identity || queue.length === 0) return { title: item.title };
+  return { title: item.title, queue: queueWindow(queue, item.id), queueIdentity: identity };
 }

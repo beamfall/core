@@ -109,7 +109,6 @@ export function SearchPage() {
     [groups, nested],
   );
   const total = live.items?.length ?? 0;
-  const queueSourceLockKnown = live.items?.every((item) => item.mode === "keyword") === true;
   const answered = live.items !== null && !live.failed;
   // 4-state honesty: requested non-keyword but keyword was served → the plugin
   // is absent or the index is empty; say so without failing.
@@ -198,8 +197,7 @@ export function SearchPage() {
                       posInSet={index + 1}
                       setSize={group.rows.length}
                       queue={queue}
-                      queueLockKnown={item.mode === "keyword"}
-                      queueSourceLockKnown={queueSourceLockKnown}
+                      queueLockKnown={live.queueLockKnown(item)}
                     />
                   ))}
                 </ul>
@@ -225,8 +223,7 @@ export function SearchPage() {
                             posInSet={index + 1}
                             setSize={held.length}
                             queue={queue}
-                            queueLockKnown={item.mode === "keyword"}
-                            queueSourceLockKnown={queueSourceLockKnown}
+                            queueLockKnown={live.queueLockKnown(item)}
                             nameContainer={false}
                           />
                         ))}

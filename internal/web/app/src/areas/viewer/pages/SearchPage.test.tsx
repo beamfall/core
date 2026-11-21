@@ -317,6 +317,91 @@ describe("keyword pagination (CORE-2321)", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
     expect(screen.getByRole("status")).toHaveTextContent("65 results for “Page”");
   });
+
+  it("clears queue eligibility for omitted rows on both loaded pages", async () => {
+    const rows = Array.from({ length: 65 }, (_, i) => ({
+      id: `track-${i}`,
+      kind: "media",
+      title: `Track ${i}`,
+      mediaClass: "audio",
+      mode: "keyword" as const,
+      score: 0,
+    }));
+    const omitted = new Set(["track-3", "track-61"]);
+    let refreshed = false;
+    vi.mocked(searchResult).mockImplementation(async (_term, _mode, _signal, page) => {
+      const offset = page?.offset ?? 0;
+      const visible = refreshed ? rows.filter((row) => !omitted.has(row.id)) : rows;
+      return {
+        mode: "keyword",
+        restrictedResultsPresent: false,
+        items: visible.slice(offset, offset + 50),
+        hasMore: offset + 50 < visible.length,
+      };
+    });
+    const user = userEvent.setup();
+    renderPage("/search?q=Track");
+    expect(await screen.findByText("Track 3")).toHaveAttribute("data-lock-known", "true");
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await screen.findByText("Track 61")).toHaveAttribute("data-lock-known", "true");
+
+    refreshed = true;
+    await act(async () => notifyEngagementChanged());
+    expect(screen.getByText("Track 3")).toHaveAttribute("data-lock-known", "false");
+    expect(screen.getByText("Track 61")).toHaveAttribute("data-lock-known", "false");
+    expect(screen.getByText("Track 62")).toHaveAttribute("data-lock-known", "true");
+    expect(searchResult).toHaveBeenLastCalledWith("Track", "keyword", expect.any(AbortSignal), {
+      offset: 50,
+      limit: 50,
+    });
+  });
+
+  it("does not mark a late page from before the refresh as unlocked", async () => {
+    const user = userEvent.setup();
+    const first = {
+      id: "first",
+      kind: "media",
+      title: "First",
+      mode: "keyword" as const,
+      score: 0,
+    };
+    let finishPage!: (value: Awaited<ReturnType<typeof searchResult>>) => void;
+    vi.mocked(searchResult)
+      .mockResolvedValueOnce({
+        mode: "keyword",
+        restrictedResultsPresent: false,
+        items: [first],
+        hasMore: true,
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishPage = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        mode: "keyword",
+        restrictedResultsPresent: false,
+        items: [{ ...first, title: "Refreshed" }],
+        hasMore: false,
+      });
+
+    renderPage("/search?q=track");
+    expect(await screen.findByText("First")).toHaveAttribute("data-lock-known", "true");
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await act(async () => notifyEngagementChanged());
+    expect(await screen.findByText("Refreshed")).toHaveAttribute("data-lock-known", "true");
+
+    await act(async () =>
+      finishPage({
+        mode: "keyword",
+        restrictedResultsPresent: false,
+        items: [{ ...first, id: "late", title: "Late", mediaClass: "audio" }],
+        hasMore: false,
+      }),
+    );
+    expect(screen.getByText("Late")).toHaveAttribute("data-lock-known", "false");
+  });
 });
 
 it("keeps results after a page failure and retries the same offset", async () => {

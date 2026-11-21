@@ -273,7 +273,6 @@ describe("MediaDetailPage", () => {
         expect(attach).toHaveBeenCalledWith({
           mediaId: id,
           search,
-          playbackKey: expect.any(String),
           state: expect.objectContaining({ title: "Server title" }),
         }),
       );

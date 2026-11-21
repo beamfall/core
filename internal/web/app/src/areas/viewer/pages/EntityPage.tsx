@@ -62,7 +62,7 @@ import { mediaPath } from "../lib/mediaAddress";
 import { seeAllTargetFor } from "../lib/seeall";
 import { audioQueue, containerTrackRows, isAudioListing, playState } from "../lib/trackList";
 import { fieldDisplayValue, formatScore } from "../lib/viewerFields";
-import { playQueueOf } from "../lib/watchQueue";
+import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import "./media-detail.css";
 import "./entity-detail.css";
@@ -427,14 +427,12 @@ export function EntityPage() {
   function playNext() {
     if (!nextUp) return;
     const { item } = nextUp;
-    navigate(mediaPath("watch", item.id), {
-      state: playState(
-        identity,
-        fallbackQueue ?? [],
-        item,
-        directNext && trackOrder ? entityId : undefined,
-      ),
-    });
+    const state: PlayerNavState = { title: item.title };
+    if (identity && fallbackQueue && fallbackQueue.length > 0) {
+      state.queue = queueWindow(fallbackQueue, item.id);
+      state.queueIdentity = identity;
+    }
+    navigate(mediaPath("watch", item.id), { state });
   }
 
   // Plays every listed track in a fresh random order (CORE-2362).

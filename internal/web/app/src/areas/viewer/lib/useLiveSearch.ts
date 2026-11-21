@@ -16,8 +16,9 @@ export interface LiveSearch {
   items: SearchResultItem[] | null;
   /** The query `items` answers; lags `term` while loading. */
   resultTerm: string;
-  /** The mode the server served for the initial results. Each row keeps its own mode. */
+  /** The mode the server actually served for `items`. */
   servedMode: SearchMode | null;
+  queueLockKnown: (item: SearchResultItem) => boolean;
   failed: boolean;
   hasMore?: boolean;
   loadingMore: boolean;
@@ -31,6 +32,7 @@ interface Settled {
   items: SearchResultItem[] | null;
   resultTerm: string;
   servedMode: SearchMode | null;
+  queueLockKnown: ReadonlySet<string>;
   failed: boolean;
 }
 
@@ -39,6 +41,7 @@ const NOTHING: Settled = {
   items: null,
   resultTerm: "",
   servedMode: null,
+  queueLockKnown: new Set(),
   failed: false,
 };
 
@@ -75,7 +78,8 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
       searchResult(term, mode, controller.signal).then(
         (res) =>
           settle({
-            items: res.items.map((item) => ({ ...item, mode: res.mode })),
+            items: res.items,
+            queueLockKnown: new Set(res.mode === "keyword" ? res.items.map(rowKey) : []),
             resultTerm: term,
             servedMode: res.mode,
             failed: false,
@@ -109,19 +113,30 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
     const loaded = loadedOffset.current;
     async function refreshLoadedPages() {
       const fresh = new Map<string, SearchResultItem>();
+      const queueLockKnown = new Set<string>();
       let offset = 0;
       let requestMode = mode;
       do {
         const res = await searchResult(term, requestMode, controller.signal, { offset, limit: 50 });
         if (controller.signal.aborted) return;
-        for (const item of res.items) fresh.set(rowKey(item), { ...item, mode: res.mode });
+        for (const item of res.items) {
+          const key = rowKey(item);
+          fresh.set(key, item);
+          if (res.mode === "keyword") queueLockKnown.add(key);
+          else queueLockKnown.delete(key);
+        }
         offset += res.items.length;
         if (res.mode !== "keyword" || !res.hasMore || res.items.length === 0) break;
         requestMode = "keyword";
       } while (offset < loaded);
       setSettled((prev) =>
         prev.items && prev.resultTerm === term
-          ? { ...prev, items: prev.items.map((item) => fresh.get(rowKey(item)) ?? item) }
+          ? {
+              ...prev,
+              items: prev.items.map((item) => fresh.get(rowKey(item)) ?? item),
+              // An omitted result can stay visible for continuity, but its lock is unknown.
+              queueLockKnown,
+            }
           : prev,
       );
     }
@@ -148,15 +163,22 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
       .then(
         (res) => {
           if (controller.signal.aborted) return;
-          setSettled((prev) => ({
-            ...prev,
-            items: mergeSearchPages(
-              prev.items ?? [],
-              res.items.map((item) => ({ ...item, mode: res.mode })),
-            ),
-            nextOffset: offset + res.items.length,
-            hasMore: res.mode === "keyword" && res.hasMore === true && res.items.length > 0,
-          }));
+          setSettled((prev) => {
+            const queueLockKnown = new Set(prev.queueLockKnown);
+            // A reply started before a refresh cannot restore queue eligibility.
+            const freshLocks = seenEpoch.current === epoch && res.mode === "keyword";
+            for (const item of res.items) {
+              if (freshLocks) queueLockKnown.add(rowKey(item));
+              else queueLockKnown.delete(rowKey(item));
+            }
+            return {
+              ...prev,
+              items: mergeSearchPages(prev.items ?? [], res.items),
+              queueLockKnown,
+              nextOffset: offset + res.items.length,
+              hasMore: res.mode === "keyword" && res.hasMore === true && res.items.length > 0,
+            };
+          });
         },
         () => {
           if (!controller.signal.aborted) setMoreFailed(true);
@@ -167,7 +189,16 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
       });
   }
 
-  return { term, loading: pending !== "", ...settled, loadingMore, moreFailed, loadMore };
+  return {
+    term,
+    loading: pending !== "",
+    ...settled,
+    queueLockKnown: (item) =>
+      !pending && settled.resultTerm === term && settled.queueLockKnown.has(rowKey(item)),
+    loadingMore,
+    moreFailed,
+    loadMore,
+  };
 }
 
 function rowKey(item: SearchResultItem): string {

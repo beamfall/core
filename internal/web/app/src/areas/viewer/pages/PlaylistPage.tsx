@@ -18,8 +18,8 @@ import {
   moveInPlaylist,
   removeMediaFromPlaylist,
 } from "../lib/playlists";
-import { formatDuration } from "../lib/trackList";
-import { catalogQueueState, type PlayQueueItem } from "../lib/watchQueue";
+import { formatDuration, playState } from "../lib/trackList";
+import type { PlayQueueItem } from "../lib/watchQueue";
 import "../components/listening.css";
 
 // One playlist (CORE-1635): its members in stored order, Play all, and on a
@@ -79,6 +79,7 @@ export function PlaylistPage() {
   // change. Nothing plays until it is known; if the read fails, playback still
   // meets the server's own ceiling check.
   useEffect(() => {
+    setLockRead(undefined);
     if (!orderKey) return;
     const controller = new AbortController();
     fetchEntryLocks(playlistId, orderKey.split("\n").length, controller.signal)
@@ -106,10 +107,7 @@ export function PlaylistPage() {
   function play(entry: PlayQueueItem) {
     const inQueue = queue.some((item) => item.id === entry.id);
     navigate(mediaPath("watch", entry.id), {
-      state: {
-        title: entry.title,
-        ...catalogQueueState(identity, inQueue ? queue : [], entry.id, locks !== "unknown"),
-      },
+      state: playState(identity, inQueue ? queue : [], entry),
     });
   }
 

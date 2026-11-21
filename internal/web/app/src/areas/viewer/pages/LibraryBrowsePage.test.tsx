@@ -34,7 +34,7 @@ vi.mock("@/lib/session", () => ({
       ],
     },
   }),
-  useViewerIdentity: () => "viewer-p",
+  useViewerIdentity: () => ({ profileID: "p", revealed: false }),
 }));
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -99,30 +99,6 @@ afterEach(() => {
 // Each case drives many user events; a loaded gate host can take well past the
 // default 5s per case, so these get a wider budget (CORE-1884).
 describe("Library browse", { timeout: 20_000 }, () => {
-  it("carries the filtered Play all listing into the watch entry", async () => {
-    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
-    function PlayAllEntry() {
-      return <output data-testid="play-all-entry">{JSON.stringify(useLocation().state)}</output>;
-    }
-    render(
-      <I18nProvider>
-        <MemoryRouter initialEntries={["/n/films/all?sort=year&dir=desc"]}>
-          <Routes>
-            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
-            <Route path="/watch/*" element={<PlayAllEntry />} />
-          </Routes>
-        </MemoryRouter>
-      </I18nProvider>,
-    );
-    await userEvent.click(await screen.findByRole("button", { name: "Play all" }));
-    const entry = JSON.parse((await screen.findByTestId("play-all-entry")).textContent ?? "");
-    expect(entry).toMatchObject({
-      queueIdentity: "viewer-p",
-      playAllSource: { libraryID: "lib", filters: "sort=year&dir=desc" },
-    });
-    expect(entry).not.toHaveProperty("queue");
-  });
-
   it("counts the whole library, windows it, and keeps sort, filters and view in the URL and storage", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
     const user = userEvent.setup();

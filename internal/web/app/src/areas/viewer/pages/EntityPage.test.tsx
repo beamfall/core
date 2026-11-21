@@ -544,14 +544,14 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
   });
 
   it("opens detail from More", async () => {
-    const catalogQueueState = vi.spyOn(watchQueue, "catalogQueueState");
+    const queueWindow = vi.spyOn(watchQueue, "queueWindow");
     renderEntity();
     fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
     const details = await screen.findByRole("menuitem", { name: "Details" }, MENU_WAIT);
-    expect(catalogQueueState).not.toHaveBeenCalled();
+    expect(queueWindow).not.toHaveBeenCalled();
     fireEvent.click(details);
     expect(screen.getByRole("status", { name: "detail" })).toHaveTextContent("m1");
-    expect(catalogQueueState.mock.calls.map(([, , id]) => id)).toEqual(["m1"]);
+    expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), "m1");
   });
 
   it("offers Mark played for an audio child alongside video children", async () => {
@@ -569,11 +569,11 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
   });
 
   it.each(["button", "menu"])("keeps direct Play through the %s", async (entry) => {
-    const catalogQueueState = vi.spyOn(watchQueue, "catalogQueueState");
+    const queueWindow = vi.spyOn(watchQueue, "queueWindow");
     renderEntity();
     const link = await screen.findByRole("link", { name: /Related item/ });
     const row = within(link.closest("li")!);
-    expect(catalogQueueState).not.toHaveBeenCalled();
+    expect(queueWindow).not.toHaveBeenCalled();
     if (entry === "menu") {
       fireEvent.click(row.getByRole("button", { name: "More actions for Related item" }));
       fireEvent.click(await screen.findByRole("menuitem", { name: "Play" }, MENU_WAIT));
@@ -585,7 +585,7 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     const state = JSON.parse(output.slice(3));
     expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["m1", "m2"]);
     expect(state.queueIdentity).toBe(identity);
-    expect(catalogQueueState.mock.calls.map(([, , id]) => id)).toEqual(["m1"]);
+    expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), "m1");
   });
 
   it("shows the localized action error on the child whose menu failed to load", async () => {
@@ -630,7 +630,7 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
 });
 
 it("windows a long child queue only when the child detail link is activated", async () => {
-  const catalogQueueState = vi.spyOn(watchQueue, "catalogQueueState");
+  const queueWindow = vi.spyOn(watchQueue, "queueWindow");
   const items = Array.from({ length: watchQueue.MAX_QUEUE + 101 }, (_, index) => ({
     id: `child-${index}`,
     kind: "media",
@@ -642,11 +642,11 @@ it("windows a long child queue only when the child detail link is activated", as
   vi.mocked(fetchMediaForEntity).mockResolvedValue(items);
   renderEntity();
   const title = await screen.findByText(target.title);
-  expect(catalogQueueState.mock.calls.length).toBe(0);
+  expect(queueWindow.mock.calls.length).toBe(0);
 
   fireEvent.click(title);
 
-  expect(catalogQueueState.mock.calls.map(([, , id]) => id)).toEqual([target.id]);
+  expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), target.id);
   const output = screen.getByRole("status", { name: "detail" }).textContent!;
   expect(output.startsWith(`${target.id} `)).toBe(true);
   const state: watchQueue.PlayerNavState = JSON.parse(output.slice(target.id.length + 1));
@@ -689,7 +689,7 @@ describe.each(["list", "grid"] as const)(
     it.each(["title", "thumbnail", "Details", "Play"])(
       "activates the child through its %s",
       async (entry) => {
-        const catalogQueueState = vi.spyOn(watchQueue, "catalogQueueState");
+        const queueWindow = vi.spyOn(watchQueue, "queueWindow");
         renderEntity();
         const children = await screen.findByRole("list", { name: "Children" });
         const link = within(children).getByRole("link", { name: /Related item/ });
@@ -697,7 +697,7 @@ describe.each(["list", "grid"] as const)(
           "href",
           "/watch/recent-item",
         );
-        expect(catalogQueueState.mock.calls.some(([, , id]) => id === "m1")).toBe(false);
+        expect(queueWindow).not.toHaveBeenCalledWith(expect.any(Array), "m1");
 
         if (entry === "title") {
           fireEvent.click(within(link).getByText("Related item"));
@@ -712,7 +712,7 @@ describe.each(["list", "grid"] as const)(
 
         const destination = entry === "Play" ? "player" : "detail";
         expect(screen.getByRole("status", { name: destination })).toHaveTextContent(/^m1\b/);
-        expect(catalogQueueState.mock.calls.filter(([, , id]) => id === "m1")).toHaveLength(1);
+        expect(queueWindow.mock.calls.filter(([, id]) => id === "m1")).toHaveLength(1);
       },
     );
 
@@ -894,34 +894,6 @@ describe("EntityPage audio container order", () => {
     fireEvent.click(primary);
     expect(playerState()).toEqual({ mediaId: "d1t1", queue: ["d1t1", "d1t2", "d2t1"] });
   });
-
-  it.each(["hero", "row"])(
-    "carries a refetchable source from a large album's %s Play",
-    async (start) => {
-      vi.mocked(fetchMediaForEntity).mockResolvedValue(
-        Array.from({ length: 530 }, (_, i) => ({
-          id: `track-${i + 1}`,
-          kind: "media",
-          title: `Track ${i + 1}`,
-          mediaClass: "audio",
-          index: i + 1,
-        })),
-      );
-      const { container } = renderEntity();
-      const list = await screen.findByRole("list", { name: "Tracks" });
-      const play =
-        start === "hero"
-          ? container.querySelector(".bg-primary")
-          : within(list).getByRole("button", { name: "Play Track 1" });
-      expect(play).toHaveAccessibleName("Play Track 1");
-      fireEvent.click(play!);
-      const player = screen.getByRole("status", { name: "player" }).textContent ?? "";
-      const state = JSON.parse(player.slice("track-1 ".length));
-      expect(state.queue).toHaveLength(500);
-      expect(state.queueIdentity).toBe(identity);
-      expect(state.queueSource).toEqual({ albumEntityID: record.id });
-    },
-  );
 
   it.each(["title", "More"])("opens the second disc track's detail through %s", async (entry) => {
     renderEntity();

@@ -1,7 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
-  BrowserRouter,
   MemoryRouter,
   type NavigateFunction,
   Route,
@@ -28,7 +27,6 @@ import {
   decideWatchPartyRequest,
   fetchClientPrefs,
   fetchMedia,
-  fetchMediaForEntity,
   fetchNotifications,
   fetchPlaybackAdjustmentRanges,
   fetchPrePlayQueue,
@@ -53,7 +51,7 @@ import {
   fetchMediaTracks,
   mediaLinkState,
 } from "../lib/mediaDetail";
-import { convertedQueueProfile, editMusicQueue } from "../lib/musicQueue";
+import { editMusicQueue } from "../lib/musicQueue";
 import {
   fetchPlaybackInfo,
   type PlaybackAdjustment,
@@ -61,7 +59,6 @@ import {
   unavailableReason,
 } from "../lib/playback";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
-import { catalogQueueState } from "../lib/watchQueue";
 import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { useGaplessAudio } from "../player/useGaplessAudio";
@@ -102,7 +99,6 @@ vi.mock("@/lib/graphql", () => ({
   setClientPref: vi.fn().mockResolvedValue(undefined),
   fetchItemState: vi.fn().mockResolvedValue(null),
   fetchMedia: vi.fn().mockResolvedValue(null),
-  fetchMediaForEntity: vi.fn(),
   fetchPlaybackAdjustmentRanges: vi.fn().mockResolvedValue(null),
   fetchPlaybackMarkers: vi.fn().mockResolvedValue([]),
   fetchPrePlayQueue: vi.fn().mockResolvedValue([]),
@@ -1558,14 +1554,7 @@ describe("PlayerPage server Play Queue", () => {
     return null;
   }
 
-  function renderQueue(
-    id = b.id,
-    nextID = c.id,
-    search = "?playQueue=profile-a",
-    hosted = false,
-    navState?: unknown,
-    browser = false,
-  ) {
+  function renderQueue(id = b.id, nextID = c.id, search = "?playQueue=profile-a", hosted = false) {
     const videoRef: { current: HTMLVideoElement | null } = { current: null };
     vi.mocked(usePlayer).mockImplementation((mediaID) => ({
       videoRef,
@@ -1597,31 +1586,16 @@ describe("PlayerPage server Play Queue", () => {
         <Route path="/search" element={<p>Search results</p>} />
       </Routes>
     );
-    const tree = () => {
-      const body = (
-        <>
+    const tree = () => (
+      <I18nProvider>
+        <MemoryRouter initialEntries={[`/watch/${id}${search}`]}>
           <LocationProbe />
           {hosted ? <PlayerHost>{routes()}</PlayerHost> : routes()}
-        </>
-      );
-      return (
-        <I18nProvider>
-          {browser ? (
-            <BrowserRouter>{body}</BrowserRouter>
-          ) : (
-            <MemoryRouter initialEntries={[{ pathname: `/watch/${id}`, search, state: navState }]}>
-              {body}
-            </MemoryRouter>
-          )}
-        </I18nProvider>
-      );
-    };
+        </MemoryRouter>
+      </I18nProvider>
+    );
     const view = render(tree());
-    return { ...view, rerender: () => view.rerender(tree()) };
-  }
-
-  function catalogState(queue: typeof rows) {
-    return { queueIdentity: viewer.identity, queue };
+    return { rerender: () => view.rerender(tree()) };
   }
 
   function commitQueueWrite(mediaID: string, position?: number) {
@@ -1658,229 +1632,78 @@ describe("PlayerPage server Play Queue", () => {
     viewer.identity = "viewer-1";
     setIdentityEpochSignal();
     graphql.mockRestore();
+    if (vi.isMockFunction(api.postJSON)) vi.mocked(api.postJSON).mockRestore();
     pause.mockRestore();
     vi.mocked(PlayerTransport).mockReset();
     vi.mocked(useGaplessAudio).mockReset();
     vi.mocked(fetchMedia).mockResolvedValue(null);
   });
 
-  it("waits for a delayed append before advancing a converting catalog run", async () => {
+  it("waits for a delayed append and its confirmation before server Next", async () => {
     rows = [b, a];
-    renderQueue(b.id, c.id, "?t=0");
-    const catalogGapless = gapless();
-    expect(catalogGapless?.waitForAdvance).toBe(false);
-    expect(catalogGapless?.canScheduleAdvance?.()).toBe(true);
-    readQueue.mockImplementationOnce(async () => {
-      expect(catalogGapless?.canScheduleAdvance?.()).toBe(false);
-      return { sourceItems: rows, currentSession: serverSession };
-    });
+    renderQueue(b.id, a.id);
+    await waitFor(() => expect(playingID()).toBe(b.id));
+
     const write = deferred<void>();
+    const confirmation = deferred<Awaited<ReturnType<typeof readQueue>>>();
     const mutation = vi.spyOn(api, "postJSON").mockImplementation(async (_, request) => {
       expect(request).toMatchObject({
         variables: { mediaID: c.id, expectedProfileID: "profile-a" },
       });
       await write.promise;
-      rows = [...rows, c];
-      return { data: { queueAdd: rows } };
+      const result = commitQueueWrite(c.id);
+      readQueue.mockReturnValueOnce(confirmation.promise);
+      return result;
     });
-    try {
-      let append!: ReturnType<typeof editMusicQueue>;
-      await act(async () => {
-        append = editMusicQueue(serverSession, c.id, "tail");
-      });
-      expect(mutation).toHaveBeenCalledTimes(1);
-      expect(readQueue).toHaveBeenCalledTimes(1);
-      act(() => controls()?.onNextInQueue?.());
-      expect(playingID()).toBe(b.id);
-      expect(readQueue).toHaveBeenCalledTimes(1);
-      await act(async () => {
-        write.resolve();
-        expect(await append).toBe("confirmed");
-      });
-      await waitFor(() => expect(playingID()).toBe(a.id));
-      expect(location.search).toBe("?playQueue=profile-a");
-      expect(readQueue).toHaveBeenCalledTimes(3);
-      expect(mutation).toHaveBeenCalledTimes(1);
-    } finally {
-      mutation.mockRestore();
-    }
+
+    const append = editMusicQueue(serverSession, c.id, "tail");
+    await waitFor(() => expect(mutation).toHaveBeenCalledOnce());
+    expect(readQueue).toHaveBeenCalledTimes(2);
+    act(() => controls()?.onNextInQueue?.());
+    expect(playingID()).toBe(b.id);
+    expect(readQueue).toHaveBeenCalledTimes(2);
+
+    await act(async () => write.resolve());
+    expect(playingID()).toBe(b.id);
+    expect(readQueue).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      confirmation.resolve({ sourceItems: rows, currentSession: serverSession });
+      expect(await append).toBe("confirmed");
+    });
+    await waitFor(() => expect(playingID()).toBe(a.id));
+    expect(location.search).toBe("?playQueue=profile-a");
+    expect(readQueue).toHaveBeenCalledTimes(4);
+    expect(mutation).toHaveBeenCalledOnce();
+    expect(rows.map((row) => row.id)).toEqual([b.id, a.id, c.id]);
+    expect(gapless()?.advanceID).toBe(c.id);
   });
 
-  it("keeps the same playback start while marking a converted route for reload", async () => {
+  it("drops an edit in flight when a catalog run starts on the same queued track", async () => {
     rows = [b, a];
-    renderQueue(b.id, c.id, "?t=0");
-    const mutation = vi.spyOn(api, "postJSON").mockImplementation(async () => {
-      rows = [b, c, a];
-      return { data: { queueAdd: rows } };
-    });
-    try {
-      await act(async () => {
-        expect(await editMusicQueue(serverSession, c.id, "next")).toBe("confirmed");
-      });
-      await waitFor(() => expect(location.search).toBe("?t=0&playQueue=profile-a"));
-      expect(playingID()).toBe(b.id);
-      expect(vi.mocked(usePlayer).mock.lastCall?.[2]).toBe(0);
-      expect(location.state).not.toHaveProperty("queue");
-      expect(restart).not.toHaveBeenCalled();
-    } finally {
-      mutation.mockRestore();
-    }
-  });
+    const catalog = (next: typeof c) => ({ queueIdentity: viewer.identity, queue: [b, next] });
+    renderQueue(b.id, a.id, "?playQueue=profile-a", true);
+    await waitFor(() => expect(playingID()).toBe(b.id));
+    const preflight = deferred<Awaited<ReturnType<typeof readQueue>>>();
+    readQueue.mockReturnValueOnce(preflight.promise);
+    const mutation = vi.spyOn(api, "postJSON");
+    const edit = editMusicQueue(serverSession, "requested", "next");
+    await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
 
-  it("refetches the complete album on the first edit after reload", async () => {
-    const album = Array.from({ length: 530 }, (_, i) => ({
-      id: `track-${i + 1}`,
-      title: `Track ${i + 1}`,
-      kind: "media",
-      mediaClass: "audio",
-      index: i + 1,
-    }));
-    const navState = JSON.parse(
-      JSON.stringify(catalogQueueState(viewer.identity, album, album[0].id, true, "album-1")),
-    );
-    expect(navState.queue).toHaveLength(500);
-    expect(navState.queue.at(-1)?.id).toBe("track-500");
-    vi.mocked(fetchMediaForEntity).mockResolvedValueOnce([
-      { ...album[0], id: "album-locked", locked: true, index: 531 },
-      ...album.toReversed(),
-    ]);
-    rows = [];
-    graphql.mockImplementation(async (query, vars) => {
-      if (query.startsWith("query MusicQueueMedia")) {
-        return { media: null, currentSession: serverSession };
-      }
-      const { offset, limit } = vars as { offset: number; limit: number };
-      return { sourceItems: rows.slice(offset, offset + limit), currentSession: serverSession };
+    await act(async () => go(`/watch/${b.id}?t=0`, { state: catalog(c) }));
+    await waitFor(() => expect(gapless()?.advanceID).toBe(c.id));
+    await act(async () => {
+      preflight.resolve({ sourceItems: rows, currentSession: serverSession });
+      expect(await edit).toBe("dropped");
     });
-    const mutation = vi.spyOn(api, "postJSON").mockImplementation(async (_, body) => {
-      const { mediaID, position } = (body as { variables: { mediaID: string; position?: number } })
-        .variables;
-      return commitQueueWrite(mediaID, position);
-    });
-    try {
-      renderQueue(album[0].id, album[1].id, "?t=0", false, navState);
-      await act(async () => {
-        expect(await editMusicQueue(serverSession, c.id, "next")).toBe("confirmed");
-      });
-      expect(fetchMediaForEntity).toHaveBeenCalledWith("album-1", expect.any(AbortSignal));
-      expect(rows).toHaveLength(531);
-      expect(rows.slice(0, 3).map((row) => row.id)).toEqual(["track-1", c.id, "track-2"]);
-      expect(rows.at(-1)?.id).toBe("track-530");
-      expect(rows.some((row) => row.id === "album-locked")).toBe(false);
-    } finally {
-      mutation.mockRestore();
-    }
-  });
 
-  it("converts a reloaded Play all run from track 201 using the complete filtered listing", async () => {
-    const tracks = Array.from({ length: 410 }, (_, i) => ({
-      id: `track-${i + 1}`,
-      title: `Track ${i + 1}`,
-      kind: "media",
-      mediaClass: i === 407 ? "video" : "audio",
-      locked: i === 408,
-    }));
-    const current = tracks[200];
-    const state = {
-      title: tracks[199].title,
-      queueIdentity: viewer.identity,
-      playAllSource: { libraryID: "library-1", filters: "sort=added&dir=desc&q=Track" },
-    };
-    rows = [a];
-    const offsets: number[] = [];
-    graphql.mockImplementation(async (query, vars) => {
-      const { offset, limit } = vars as { offset: number; limit: number };
-      if (query.startsWith("query LibraryItems")) {
-        expect(vars).toMatchObject({
-          libraryID: "library-1",
-          sort: "added",
-          direction: "desc",
-          query: "Track",
-        });
-        offsets.push(offset);
-        return {
-          libraryItems: { total: tracks.length, items: tracks.slice(offset, offset + limit) },
-        };
-      }
-      if (query.startsWith("query MusicQueueMedia"))
-        return { media: null, currentSession: serverSession };
-      return { sourceItems: rows.slice(offset, offset + limit), currentSession: serverSession };
-    });
-    const mutation = vi.spyOn(api, "postJSON").mockImplementation(async (_, request) => {
-      expect(offsets).toEqual([0, 200, 400]);
-      const { mediaID, position } = (
-        request as { variables: { mediaID: string; position?: number } }
-      ).variables;
-      return commitQueueWrite(mediaID, position);
-    });
-    try {
-      const started = renderQueue(tracks[199].id, current.id, "?t=0", false, state);
-      act(() => controls()?.onNextInQueue?.());
-      await waitFor(() => expect(playingID()).toBe(current.id));
-      const historyState = JSON.parse(JSON.stringify(location.state));
-      expect(historyState.playAllSource).toEqual(state.playAllSource);
-      started.unmount();
-      renderQueue(current.id, tracks[201].id, "", false, historyState);
-      await act(async () => {
-        expect(await editMusicQueue(serverSession, "requested", "next")).toBe("confirmed");
-      });
-      expect(rows.map((row) => row.id)).toEqual([
-        current.id,
-        "requested",
-        a.id,
-        ...tracks
-          .filter((track) => track !== current && !track.locked && track.mediaClass === "audio")
-          .map((track) => track.id),
-      ]);
-    } finally {
-      mutation.mockRestore();
-    }
-  });
-
-  it("rereads a short album and skips a sibling trashed since playback started", async () => {
-    rows = [a];
-    const listed = { ...c, kind: "media", index: 2 };
-    const current = { ...b, kind: "media", index: 1 };
-    const navState = catalogQueueState(viewer.identity, [current, listed], b.id, true, "album-1");
-    vi.mocked(fetchMediaForEntity).mockResolvedValueOnce([current]);
-    const mutation = vi.spyOn(api, "postJSON").mockImplementation(async (_, request) => {
-      const { mediaID, position } = (
-        request as { variables: { mediaID: string; position?: number } }
-      ).variables;
-      if (mediaID === listed.id) throw new Error("Track was trashed");
-      return commitQueueWrite(mediaID, position);
-    });
-    try {
-      renderQueue(b.id, c.id, "?t=0", false, navState);
-      await act(async () => {
-        expect(await editMusicQueue(serverSession, "requested", "next")).toBe("confirmed");
-      });
-      expect(fetchMediaForEntity).toHaveBeenCalledWith("album-1", expect.any(AbortSignal));
-      expect(rows.map((row) => row.id)).toEqual([b.id, "requested", a.id]);
-      expect(mutation).toHaveBeenCalledTimes(2);
-    } finally {
-      mutation.mockRestore();
-    }
-  });
-
-  it("declines conversion of a legacy window that may be truncated", async () => {
-    const window = [b, ...Array.from({ length: 499 }, (_, i) => ({ ...c, id: `track-${i}` }))];
-    rows = [b, a, ...window.slice(1)];
-    graphql.mockImplementation(async (_, vars) => {
-      const { offset, limit } = vars as { offset: number; limit: number };
-      return { sourceItems: rows.slice(offset, offset + limit), currentSession: serverSession };
-    });
-    const mutation = vi.spyOn(api, "postJSON").mockResolvedValue({ data: { queueAdd: [] } });
-    try {
-      renderQueue(b.id, c.id, "?t=0", false, catalogState(window));
-      await act(async () => {
-        expect(await editMusicQueue(serverSession, "requested", "tail")).toBe("failed");
-      });
-      expect(mutation).not.toHaveBeenCalled();
-      expect(location.search).toBe("?t=0");
-    } finally {
-      mutation.mockRestore();
-    }
+    const otherTrack = { ...c, id: "second-album-track" };
+    await act(async () => go(`/watch/${b.id}?t=0`, { state: catalog(otherTrack) }));
+    await waitFor(() => expect(gapless()?.advanceID).toBe(otherTrack.id));
+    expect(gapless()?.waitForAdvance).toBe(false);
+    await expect(editMusicQueue(serverSession, "another-request", "tail")).resolves.toBe("dropped");
+    expect(readQueue).toHaveBeenCalledTimes(2);
+    expect(mutation).not.toHaveBeenCalled();
   });
 
   it.each(["read", "write", "confirmation", "relock"])(
@@ -1923,107 +1746,6 @@ describe("PlayerPage server Play Queue", () => {
     },
   );
 
-  it("drops a catalog Next waiting behind an edit that discovers a profile switch", async () => {
-    renderQueue(b.id, c.id, "?t=0", false, catalogState([b, c]));
-    const response = deferred<Awaited<ReturnType<typeof readQueue>>>();
-    readQueue.mockReturnValueOnce(response.promise);
-    const edit = editMusicQueue(serverSession, "requested", "next");
-    act(() => controls()?.onNextInQueue?.());
-    await act(async () => {
-      response.resolve({
-        sourceItems: [],
-        currentSession: { ...serverSession, profileID: "profile-b" },
-      });
-      expect(await edit).toBe("dropped");
-    });
-    expect(location.pathname).toBe(`/watch/${b.id}`);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      STRINGS.en.playerTerminalUnavailable,
-    );
-  });
-
-  it("reloads while docked and returns with Back to the partially imported server queue", async () => {
-    rows = [a];
-    window.history.replaceState({ usr: catalogState([b, c]), idx: 0 }, "", `/watch/${b.id}?t=0`);
-    const view = renderQueue(b.id, c.id, undefined, true, undefined, true);
-    const playbackKey = window.history.state.usr.playbackKey;
-    const mutation = vi.spyOn(api, "postJSON").mockImplementation(async (_, request) => {
-      expect(convertedQueueProfile(playbackKey)).toBe("profile-a");
-      const { mediaID, position } = (
-        request as { variables: { mediaID: string; position?: number } }
-      ).variables;
-      if (mediaID === c.id) throw new Error("connection lost");
-      return commitQueueWrite(mediaID, position);
-    });
-    try {
-      await waitFor(() => expect(playingID()).toBe(b.id));
-      await act(async () => go("/search"));
-      await screen.findByRole("region", { name: "Now playing" });
-      await act(async () => {
-        expect(await editMusicQueue(serverSession, "requested", "next")).toBe("failed");
-      });
-      expect(rows.map((row) => row.id)).toEqual([b.id, a.id]);
-      expect(location.pathname).toBe("/search");
-      view.unmount();
-      mutation.mockClear();
-      renderQueue(b.id, c.id, undefined, true, undefined, true);
-      expect(screen.queryByRole("region", { name: "Now playing" })).not.toBeInTheDocument();
-      readQueue.mockClear();
-      await act(async () => go(-1));
-      await waitFor(() => expect(readQueue).toHaveBeenCalledOnce());
-      await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
-      act(() => controls()?.onNextInQueue?.());
-      await waitFor(() => expect(playingID()).toBe(a.id));
-      expect(location.search).toBe("?playQueue=profile-a");
-      expect(mutation).not.toHaveBeenCalled();
-    } finally {
-      mutation.mockRestore();
-      window.history.replaceState(null, "", "/");
-      window.sessionStorage.clear();
-    }
-  });
-
-  it("reloads after a partial conversion using only server reads", async () => {
-    rows = [a];
-    const original = renderQueue(b.id, c.id, "?t=0", false, catalogState([b, c]));
-    const mutation = vi.spyOn(api, "postJSON").mockImplementation(async (_, body) => {
-      const { mediaID, position } = (body as { variables: { mediaID: string; position?: number } })
-        .variables;
-      if (mediaID === c.id) throw new Error("connection lost");
-      return commitQueueWrite(mediaID, position);
-    });
-    const confirmation = deferred<{
-      sourceItems: typeof rows;
-      currentSession: typeof serverSession;
-    }>();
-    readQueue.mockResolvedValueOnce({ sourceItems: rows, currentSession: serverSession });
-    readQueue.mockReturnValueOnce(confirmation.promise);
-    try {
-      let edit!: ReturnType<typeof editMusicQueue>;
-      await act(async () => {
-        edit = editMusicQueue(serverSession, "requested", "tail");
-      });
-      await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
-      expect(rows.map((row) => row.id)).toEqual([b.id, a.id]);
-      expect(location.search).toBe("?t=0&playQueue=profile-a");
-      const { search, state } = location;
-      original.unmount();
-      mutation.mockClear();
-      renderQueue(b.id, c.id, search, false, state);
-      await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
-      await act(async () => {
-        confirmation.reject(new Error("connection lost"));
-        expect(await edit).toBe("failed");
-      });
-      act(() => controls()?.onNextInQueue?.());
-      await waitFor(() => expect(playingID()).toBe(a.id));
-      expect(mutation).not.toHaveBeenCalled();
-    } finally {
-      confirmation.resolve({ sourceItems: rows, currentSession: serverSession });
-      mutation.mockRestore();
-    }
-  });
-
   it("keeps an established stream attached after an append commits and confirmation fails", async () => {
     rows = [b, a];
     renderQueue(b.id, a.id);
@@ -2047,42 +1769,6 @@ describe("PlayerPage server Play Queue", () => {
       await waitFor(() => expect(playingID()).toBe(c.id));
       expect(readQueue).toHaveBeenCalledTimes(4);
       expect(mutation).toHaveBeenCalledOnce();
-    } finally {
-      mutation.mockRestore();
-    }
-  });
-
-  it("starts a different catalog run for the same track after converting while docked", async () => {
-    await mockWithRealTransport();
-    rows = [b, a];
-    renderQueue(b.id, c.id, "?t=0", true, catalogState([b, c]));
-    await screen.findByRole("button", { name: STRINGS.en.musicQueueTitle });
-    const mutation = vi.spyOn(api, "postJSON").mockImplementation(async (_, body) => {
-      const { mediaID, position } = (body as { variables: { mediaID: string; position?: number } })
-        .variables;
-      return commitQueueWrite(mediaID, position);
-    });
-    try {
-      const initialRead = deferred<Awaited<ReturnType<typeof readQueue>>>();
-      readQueue.mockReturnValueOnce(initialRead.promise);
-      const edit = editMusicQueue(serverSession, "requested", "next");
-      await act(async () => go("/search"));
-      await screen.findByRole("region", { name: "Now playing" });
-      await act(async () => {
-        initialRead.resolve({ sourceItems: rows, currentSession: serverSession });
-        expect(await edit).toBe("confirmed");
-      });
-      expect(location.pathname).toBe("/search");
-      const secondAlbumTrack = { ...c, id: "second-album-track" };
-      act(() => go(`/watch/${b.id}?t=0`, { state: catalogState([b, secondAlbumTrack]) }));
-      await waitFor(() =>
-        expect(vi.mocked(usePlayer).mock.lastCall?.[3]).toBe(secondAlbumTrack.id),
-      );
-      expect(gapless()?.waitForAdvance).toBe(false);
-      await act(async () => {
-        expect(await editMusicQueue(serverSession, "another-request", "tail")).toBe("confirmed");
-      });
-      expect(rows.map((row) => row.id)).toContain(secondAlbumTrack.id);
     } finally {
       mutation.mockRestore();
     }
@@ -2539,10 +2225,7 @@ describe("PlayerPage server Play Queue", () => {
     "aborts the ended advance and drops live titles on %s",
     async (change) => {
       const confirm = vi.fn();
-      vi.mocked(useGaplessAudio).mockReturnValue({
-        confirmAdvance: confirm,
-        cancelAdvance: vi.fn(),
-      });
+      vi.mocked(useGaplessAudio).mockReturnValue(confirm);
       const oldEpoch = new AbortController();
       setIdentityEpochSignal(oldEpoch.signal);
       queueMedia = {

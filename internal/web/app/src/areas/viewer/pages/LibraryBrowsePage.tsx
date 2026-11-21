@@ -7,7 +7,7 @@ import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
-import { useSession, useViewerIdentity } from "@/lib/session";
+import { useSession } from "@/lib/session";
 import {
   HideWatchedToggle,
   hiddenKeyMoved,
@@ -39,7 +39,7 @@ import {
 } from "../lib/libraryBrowse";
 import { LIBRARY_VIEW_PARAM } from "../lib/libraryViews";
 import { mediaPath } from "../lib/mediaAddress";
-import { playAllSource, startPlayQueue } from "../lib/playQueue";
+import { startPlayQueue } from "../lib/playQueue";
 import { type PlayQueueItem, playQueueOf } from "../lib/watchQueue";
 import { LibraryViews } from "./LibraryViews";
 
@@ -285,21 +285,16 @@ function LibraryBrowse({
     return () => leaving.abort();
   }, [libraryID]);
 
-  const identity = useViewerIdentity();
   async function play(shuffle: boolean) {
     setStarting(true);
     try {
-      const request = { libraryID, state, shuffleSeed: shuffle ? newSeed() : undefined };
-      const first = await startPlayQueue(request, leavingRef.current.signal);
+      const first = await startPlayQueue(
+        { libraryID, state, shuffleSeed: shuffle ? newSeed() : undefined },
+        leavingRef.current.signal,
+      );
       // The player reads its heading from navigation state.
       if (first) {
-        navigate(mediaPath("watch", first.id), {
-          state: {
-            title: first.title,
-            queueIdentity: identity,
-            playAllSource: playAllSource(request),
-          },
-        });
+        navigate(mediaPath("watch", first.id), { state: { title: first.title } });
       }
     } catch {
       setFailed(true);

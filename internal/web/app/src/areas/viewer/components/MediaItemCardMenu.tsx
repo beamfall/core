@@ -13,7 +13,7 @@ import {
   SquareArrowOutUpRight,
   UserRound,
 } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router";
 import { Menu } from "@/components/ui/astryx-primitives";
 import { getIdentityEpochSignal } from "@/lib/api";
@@ -25,8 +25,8 @@ import { useItemActions, useItemHide } from "../actions";
 import { entityPath } from "../lib/entityAddress";
 import {
   editMusicQueue,
-  isCurrentMusicTrack,
   type MusicQueueEdit,
+  musicQueueMenuState,
   subscribeMusicQueuePlayer,
 } from "../lib/musicQueue";
 import { moreWithLead } from "../lib/related";
@@ -92,6 +92,14 @@ export function MediaItemCardMenu({
   const hide = useItemHide(target, title, { enabled: opened });
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioID = isAudio && isMedia && "mediaID" in target ? target.mediaID : undefined;
+  const unlockedQueueTarget = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    unlockedQueueTarget.current = queueUnlocked ? audioID : undefined;
+    return () => {
+      unlockedQueueTarget.current = undefined;
+    };
+  }, [audioID, queueUnlocked]);
+
   const loadedCredits =
     creditRead && creditRead.identity === identity && creditRead.mediaID === audioID
       ? creditRead.credits
@@ -181,7 +189,10 @@ export function MediaItemCardMenu({
                 </Menu.Item>
               )}
               {open && audioID && queueUnlocked === true && (
-                <MusicQueueMenuItems mediaID={audioID} />
+                <MusicQueueMenuItems
+                  mediaID={audioID}
+                  isTargetUnlocked={() => unlockedQueueTarget.current === audioID}
+                />
               )}
               {artistID && (
                 <Menu.LinkItem
@@ -254,28 +265,35 @@ export function MediaItemCardMenu({
   );
 }
 
-function MusicQueueMenuItems({ mediaID }: { mediaID: string }) {
+function MusicQueueMenuItems({
+  mediaID,
+  isTargetUnlocked,
+}: {
+  mediaID: string;
+  isTargetUnlocked: () => boolean;
+}) {
   const t = useT();
   const { session, revealed } = useSession();
-  const currentTrack = useSyncExternalStore(subscribeMusicQueuePlayer, () =>
-    isCurrentMusicTrack(mediaID),
+  const scope = session ? { ...session, revealed } : undefined;
+  const queueState = useSyncExternalStore(subscribeMusicQueuePlayer, () =>
+    musicQueueMenuState(scope, mediaID),
   );
 
   async function editQueue(action: MusicQueueEdit) {
-    if (!session?.profileID || currentTrack) return;
+    if (!scope || queueState !== "enabled") return;
     const epoch = getIdentityEpochSignal();
-    const result = await editMusicQueue({ ...session, revealed }, mediaID, action);
+    const result = await editMusicQueue(scope, mediaID, action, isTargetUnlocked);
     if (result !== "dropped" && !epoch?.aborted && epoch === getIdentityEpochSignal()) {
       showMusicQueueNotice(result, action);
     }
   }
 
-  if (!session?.profileID) return null;
+  if (queueState === "hidden") return null;
   return (
     <>
       <Menu.Item
         className="bf-card-menu-item"
-        disabled={currentTrack}
+        disabled={queueState === "disabled"}
         onClick={() => void editQueue("next")}
       >
         <ListStart aria-hidden="true" size={15} />
@@ -283,7 +301,7 @@ function MusicQueueMenuItems({ mediaID }: { mediaID: string }) {
       </Menu.Item>
       <Menu.Item
         className="bf-card-menu-item"
-        disabled={currentTrack}
+        disabled={queueState === "disabled"}
         onClick={() => void editQueue("tail")}
       >
         <ListPlus aria-hidden="true" size={15} />
