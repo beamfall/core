@@ -1,9 +1,9 @@
 - [x] OpenSpec change committed before code
-- [ ] Scanner: add cr3, raf, orf, rw2, pef, srw, 3fr, nrw to `imageExtensions` (CORE-0310, CORE-0652)
-- [ ] FFmpeg: content sniffing and RAW embedded-preview extraction (TIFF IFDs, RW2, RAF, CR3, bounded scan)
-- [ ] FFmpeg: explicit EXIF orientation with autorotation off; HEIF/AVIF left to container transforms
-- [ ] FFmpeg: ICC/nclx classification, `colorspace` conversion and embedded sRGB profile for JPEG derivatives
-- [ ] Tests: per-extension RAW fixtures, orientation 1-8 pixel assertions, Display P3 JPEG and HEIC to sRGB, scanner allowlist
+- [x] Scanner: add cr3, raf, orf, rw2, pef, srw, 3fr, nrw to `imageExtensions` (CORE-0310, CORE-0652)
+- [x] FFmpeg: content sniffing and RAW embedded-preview extraction (TIFF IFDs, RW2, RAF, CR3, bounded scan)
+- [x] FFmpeg: explicit EXIF orientation with autorotation off; HEIF/AVIF left to container transforms
+- [x] FFmpeg: ICC/nclx classification, `colorspace` conversion and embedded sRGB profile for JPEG derivatives
+- [x] Tests: per-extension RAW fixtures, orientation 1-8 pixel assertions, Display P3 JPEG and HEIC to sRGB, scanner allowlist
 - [ ] Follow-up ticket: HEIF/AVIF decoder health line (ADR-0042)
 - [ ] Follow-up ticket: RAW decode without an embedded preview; Adobe RGB/ProPhoto conversion
 - [ ] `openspec archive core-0310-image-previews` after landing

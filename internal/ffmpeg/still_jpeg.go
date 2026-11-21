@@ -1,0 +1,155 @@
+package ffmpeg
+
+import (
+	"bytes"
+	"encoding/binary"
+)
+
+// jpegShape is what validating a JPEG stream reports.
+type jpegShape struct {
+	width, height int
+	length        int // bytes from SOI through EOI
+}
+
+// validJPEG walks a JPEG stream starting at SOI and reports its frame size and
+// length. Only baseline (SOF0), extended sequential (SOF1) and progressive
+// (SOF2) Huffman frames qualify: a lossless SOF3 stream is the raw sensor strip
+// of a CR2/DNG, not a viewable preview, and arithmetic or hierarchical frames are
+// not decodable everywhere. The entropy-coded data of every scan is walked
+// (stuffed bytes and restart markers skipped) until EOI.
+func validJPEG(b []byte) (jpegShape, bool) {
+	if len(b) < 4 || b[0] != 0xFF || b[1] != 0xD8 {
+		return jpegShape{}, false
+	}
+	var shape jpegShape
+	sawFrame, sawScan := false, false
+	pos := 2
+	for pos+1 < len(b) {
+		if b[pos] != 0xFF {
+			return jpegShape{}, false
+		}
+		marker := b[pos+1]
+		switch {
+		case marker == 0xFF:
+			pos++
+			continue
+		case marker == 0xD9:
+			if !sawFrame || !sawScan {
+				return jpegShape{}, false
+			}
+			shape.length = pos + 2
+			return shape, true
+		case marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7):
+			pos += 2
+			continue
+		case marker == 0xD8 || marker == 0x00:
+			return jpegShape{}, false
+		}
+		if pos+4 > len(b) {
+			return jpegShape{}, false
+		}
+		length := int(binary.BigEndian.Uint16(b[pos+2:]))
+		end := pos + 2 + length
+		if length < 2 || end > len(b) {
+			return jpegShape{}, false
+		}
+		segment := b[pos+4 : end]
+		switch {
+		case marker == 0xC0 || marker == 0xC1 || marker == 0xC2:
+			if sawFrame || len(segment) < 6 {
+				return jpegShape{}, false
+			}
+			shape.height = int(binary.BigEndian.Uint16(segment[1:]))
+			shape.width = int(binary.BigEndian.Uint16(segment[3:]))
+			if components := segment[5]; shape.width == 0 || shape.height == 0 || (components != 1 && components != 3) {
+				return jpegShape{}, false
+			}
+			sawFrame = true
+		case marker >= 0xC3 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC:
+			return jpegShape{}, false
+		case marker == 0xDA:
+			if !sawFrame {
+				return jpegShape{}, false
+			}
+			sawScan = true
+			next, ok := skipEntropyData(b, end)
+			if !ok {
+				return jpegShape{}, false
+			}
+			pos = next
+			continue
+		}
+		pos = end
+	}
+	return jpegShape{}, false
+}
+
+// skipEntropyData returns the offset of the first marker after entropy-coded
+// data starting at pos.
+func skipEntropyData(b []byte, pos int) (int, bool) {
+	for {
+		i := bytes.IndexByte(b[pos:], 0xFF)
+		if i < 0 {
+			return 0, false
+		}
+		pos += i
+		if pos+1 >= len(b) {
+			return 0, false
+		}
+		next := b[pos+1]
+		if next == 0x00 || (next >= 0xD0 && next <= 0xD7) || next == 0xFF {
+			pos++
+			if next != 0xFF {
+				pos++
+			}
+			continue
+		}
+		return pos, true
+	}
+}
+
+// jpegMetadata reads the orientation (APP1 Exif) and ICC profile (APP2,
+// reassembled in sequence order) from a JPEG's header segments.
+func jpegMetadata(b []byte) (orientation int, icc []byte) {
+	if len(b) < 4 || b[0] != 0xFF || b[1] != 0xD8 {
+		return 0, nil
+	}
+	chunks := map[byte][]byte{}
+	total := 0
+	pos := 2
+	for pos+4 <= len(b) && b[pos] == 0xFF {
+		marker := b[pos+1]
+		if marker == 0xFF {
+			pos++
+			continue
+		}
+		if marker == 0xDA || marker == 0xD9 {
+			break
+		}
+		length := int(binary.BigEndian.Uint16(b[pos+2:]))
+		end := pos + 2 + length
+		if length < 2 || end > len(b) {
+			break
+		}
+		segment := b[pos+4 : end]
+		switch {
+		case marker == 0xE1 && orientation == 0 && bytes.HasPrefix(segment, []byte("Exif\x00\x00")):
+			orientation = tiffOrientation(segment[6:])
+		case marker == 0xE2 && bytes.HasPrefix(segment, iccMarker) && len(segment) > len(iccMarker)+2:
+			seq := segment[len(iccMarker)]
+			if _, dup := chunks[seq]; !dup && total+len(segment) <= maxICCBytes {
+				chunks[seq] = segment[len(iccMarker)+2:]
+				total += len(segment)
+			}
+		}
+		pos = end
+	}
+	for seq := 1; seq <= len(chunks); seq++ {
+		chunk, ok := chunks[byte(seq)]
+		if !ok {
+			return orientation, nil
+		}
+		icc = append(icc, chunk...)
+	}
+	return orientation, icc
+}
