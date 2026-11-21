@@ -258,3 +258,49 @@ func TestStaleSubtitleTokenStatusHidesScheduleState(t *testing.T) {
 		}
 	}
 }
+
+// TestStaleSubtitleTokenStatusIgnoresScheduleClosingAfterVerify: a stale
+// subtitle token refused on its bindings inside the schedule stays 401 even
+// when the schedule closes before the status is chosen. The status comes from
+// the verification's own result, never from a second session lookup.
+func TestStaleSubtitleTokenStatusIgnoresScheduleClosingAfterVerify(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	authService := auth.NewService(st)
+	scope, err := authService.Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(100, 0).UTC()
+	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
+	staleToken, err := tokens.Issue(ctx, streamtoken.Grant{
+		Target:    streamtoken.TargetMediaSubtitle,
+		MediaID:   "media-alpha",
+		DeviceID:  scope.DeviceID,
+		SessionID: scope.SessionID,
+		ProfileID: scope.ProfileID,
+		ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSessionProfile(ctx, scope.SessionID, "profile-managed"); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
+
+	_, _, verifyErr := handler.verifyMediaGrant(ctx, staleToken, streamtoken.TargetMediaSubtitle)
+	if verifyErr == nil || auth.AccessScheduleEnded(verifyErr) {
+		t.Fatalf("stale token inside schedule: verify err = %v, want a binding refusal", verifyErr)
+	}
+	weekday := (int(time.Now().Weekday()) + 3) % 7
+	if err := st.SetProfileAccessWindows(ctx, "profile-managed", []store.ProfileAccessWindow{{Weekday: weekday, StartMinute: 0, EndMinute: 1440}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authService.Scope(ctx, scope.SessionID); !auth.AccessScheduleEnded(err) {
+		t.Fatalf("schedule did not close: Scope err = %v", err)
+	}
+	if status := endedSubtitleStatus(verifyErr); status != http.StatusUnauthorized {
+		t.Fatalf("status after schedule closed = %d, want 401", status)
+	}
+}

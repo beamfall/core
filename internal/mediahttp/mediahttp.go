@@ -169,7 +169,7 @@ func (h *Handler) verifyAuthenticatedMediaGrant(ctx context.Context, authenticat
 			// schedule state (CORE-2950).
 			return streamtoken.Grant{}, auth.Scope{}, errStreamTokenScopeMismatch
 		}
-		return streamtoken.Grant{}, auth.Scope{}, err
+		return streamtoken.Grant{}, auth.Scope{}, sessionUnresolvedError{err: err}
 	}
 	grant, err = h.verifyCompatDecision(ctx, authenticated, scope)
 	if err != nil {
@@ -203,6 +203,15 @@ func refuseAccessScheduleEnded(w http.ResponseWriter, err error) bool {
 // errStreamTokenScopeMismatch refuses a grant whose signed session binding no
 // longer matches the live session.
 var errStreamTokenScopeMismatch = errors.New("stream token scope mismatch")
+
+// sessionUnresolvedError marks a grant refused because its session did not
+// resolve to a scope, so a route can classify the failure from the one
+// lookup that refused it instead of a second read that may disagree.
+type sessionUnresolvedError struct{ err error }
+
+func (e sessionUnresolvedError) Error() string { return e.err.Error() }
+
+func (e sessionUnresolvedError) Unwrap() error { return e.err }
 
 // grantMaySeeScheduleReason reports whether a grant refused on the access
 // schedule may carry that reason. The session snapshot the schedule was
@@ -454,7 +463,7 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		if refuseAccessScheduleEnded(w, err) {
 			return
 		}
-		http.Error(w, "stream ended", h.endedSubtitleStatus(r.Context(), token, err))
+		http.Error(w, "stream ended", endedSubtitleStatus(err))
 		return
 	}
 	if grant.SubtitleStreamIndex != 0 && grant.SubtitleStreamIndex-1 != streamIndex {
@@ -587,23 +596,17 @@ func (h *Handler) subtitleSidecarPath(ctx context.Context, fingerprint, srcPath 
 }
 
 // endedSubtitleStatus maps a failed subtitle grant verification to its status:
-// 410 when the token itself still authenticates (signature, expiry, target) but
-// its session no longer resolves to a scope, 401 for every other failure. A
-// grant refused on its own bindings stays 401 even when the session is outside
-// its access schedule, so the status never tells a stale token that session's
-// schedule state (CORE-2950).
-func (h *Handler) endedSubtitleStatus(ctx context.Context, token string, verifyErr error) int {
-	if h.tokens == nil || errors.Is(verifyErr, errStreamTokenScopeMismatch) {
-		return http.StatusUnauthorized
+// 410 when the token itself authenticated (signature, expiry, target) but its
+// session no longer resolved to a scope, 401 for every other failure. It reads
+// only the verification's own result: a second session lookup could see the
+// access schedule close in between and tell a grant refused on its own
+// bindings that session's schedule state (CORE-2950).
+func endedSubtitleStatus(verifyErr error) int {
+	var unresolved sessionUnresolvedError
+	if errors.As(verifyErr, &unresolved) {
+		return http.StatusGone
 	}
-	grant, err := h.tokens.UnverifiedGrant(token, streamtoken.TargetMediaSubtitle)
-	if err != nil {
-		return http.StatusUnauthorized
-	}
-	if _, err := h.auth.Scope(ctx, grant.SessionID); err == nil {
-		return http.StatusUnauthorized
-	}
-	return http.StatusGone
+	return http.StatusUnauthorized
 }
 
 // rootedRegularFileExists reports whether a rooted member currently resolves to
