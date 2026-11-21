@@ -324,7 +324,8 @@ func New(opts ...Option) *Engine {
 }
 
 // Variables are the substitution values sourced from the media file being
-// identified: {oshash}, {phash}, {duration} and {year}. The engine always
+// identified: {oshash}, {phash}, {duration}, {year} and the search query's
+// {hint.<key>}. The engine always
 // substitutes every placeholder in both templates — an unknown value
 // substitutes the empty string, so a placeholder never leaks literally to a
 // remote API, and a query parameter whose whole value is {year} is dropped
@@ -343,6 +344,41 @@ type Variables struct {
 	// non-positive Index is unknown.
 	Sequence string
 	Index    int
+	// Hints are the item's named search hints (ParsedMedia.Hints, filled
+	// from mapped embedded tags), substituted for a SearchTemplate's
+	// {hint.<key>} placeholders in the URL query. A missing or empty hint
+	// substitutes the empty string; a scraper's RequiredSearchHints skip the
+	// search instead (RequiredSearchHintsPresent).
+	Hints map[string]string
+}
+
+// RequiredSearchHintsPresent reports whether hints carries a non-empty value
+// for every key spec.RequiredSearchHints names. When it does not, the scraper
+// is skipped for that search: Search returns no results without a request.
+func RequiredSearchHintsPresent(spec plugin.ScraperSpec, hints map[string]string) bool {
+	for _, key := range spec.RequiredSearchHints {
+		if hints[key] == "" {
+			return false
+		}
+	}
+	return true
+}
+
+var hintPlaceholderPattern = regexp.MustCompile(`\{hint\.([a-z0-9_]{1,32})\}`)
+
+// substituteHints replaces {hint.<key>} placeholders in a URL query with the
+// query-escaped hint value, leaving any fragment untouched as the SDK's
+// trace does. Bundle validation confines hint placeholders to the search
+// query, so no other template carries one.
+func substituteHints(query string, hints map[string]string) string {
+	beforeFragment, fragment, hasFragment := strings.Cut(query, "#")
+	beforeFragment = hintPlaceholderPattern.ReplaceAllStringFunc(beforeFragment, func(placeholder string) string {
+		return url.QueryEscape(hints[hintPlaceholderPattern.FindStringSubmatch(placeholder)[1]])
+	})
+	if !hasFragment {
+		return beforeFragment
+	}
+	return beforeFragment + "#" + fragment
 }
 
 // sequenceValue is the {sequence} substitution: the parsed sequence, a
@@ -560,7 +596,7 @@ func (e *Engine) overlayItemLookup(ctx context.Context, spec plugin.ScraperSpec,
 }
 
 // Search executes spec's SearchTemplate with {query} (and the fingerprint
-// variables, when supplied) substituted and returns
+// variables and named hints, when supplied) substituted and returns
 // one Result per element of the CandidatesPath array (capped), each with the
 // search maps (SearchFieldMap/SearchArtworkMap when declared, else the shared
 // FieldMap/ArtworkMap) resolved relative to that element and ID carrying the
@@ -570,6 +606,9 @@ func (e *Engine) Search(ctx context.Context, spec plugin.ScraperSpec, query stri
 		return nil, fmt.Errorf("scrape: scraper %q declares no search template", spec.ID)
 	}
 	v := variablesArg(vars)
+	if !RequiredSearchHintsPresent(spec, v.Hints) {
+		return nil, nil
+	}
 	config, err := e.configValues(ctx, v)
 	if err != nil {
 		return nil, err
@@ -727,6 +766,11 @@ func buildURL(endpoint, template, placeholder, value string, vars Variables, con
 	pairs := append([][2]string{{placeholder, value}}, vars.substitutions(page)...)
 	path, query, hasQuery := strings.Cut(template, "?")
 	query = dropUnknownYear(query, vars)
+	if hasQuery {
+		// Hints first: an escaped value carries no braces, so the
+		// placeholders substituted next cannot be forged by one.
+		query = substituteHints(query, vars.Hints)
+	}
 	for _, pair := range pairs {
 		path = strings.ReplaceAll(path, pair[0], escapePathPlaceholder(pair[1]))
 		if hasQuery {

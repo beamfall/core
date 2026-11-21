@@ -146,6 +146,15 @@ type MediaOrdinalSource interface {
 	ParsedMediaOrdinal(ctx context.Context, mediaID store.MediaID, pluginID string) (sequence string, index int, err error)
 }
 
+// MediaHintSource is optionally implemented by a MediaTitleSource. It
+// supplies the named search hints the plugin parser gives a Media item, read
+// for a manual search so a SearchTemplate's {hint.<key>} placeholders carry
+// the item's values (CORE-2333). It returns nil when the parser supplies
+// none.
+type MediaHintSource interface {
+	ParsedMediaHints(ctx context.Context, mediaID store.MediaID, pluginID string) (map[string]string, error)
+}
+
 // Candidate is one identification candidate from a scraper search.
 type Candidate = sdk.Candidate
 
@@ -317,22 +326,24 @@ func (s *Service) appliedTitle(ctx context.Context, mediaID store.MediaID, plugi
 // empty (free-text-only search). The query may be empty when mediaID is set —
 // a fingerprint-driven scraper queries by content identity, not text.
 func (s *Service) Search(ctx context.Context, pluginID, scraperID, query string, mediaID store.MediaID) ([]Candidate, error) {
-	return s.search(ctx, pluginID, scraperID, query, mediaID, 0)
+	return s.search(ctx, pluginID, scraperID, query, mediaID, 0, s.mediaHints(ctx, mediaID, pluginID))
 }
 
 // SearchYear is Search with a year the operator supplied, filling a
 // SearchTemplate's {year} slot with the same no-results retry without it.
 // A year of zero or less behaves exactly like Search.
 func (s *Service) SearchYear(ctx context.Context, pluginID, scraperID, query string, mediaID store.MediaID, year int) ([]Candidate, error) {
-	return s.search(ctx, pluginID, scraperID, query, mediaID, max(year, 0))
+	return s.search(ctx, pluginID, scraperID, query, mediaID, max(year, 0), s.mediaHints(ctx, mediaID, pluginID))
 }
 
 // search is Search with the item's year when identification knows it (zero
 // when not), substituted for a SearchTemplate's {year}. A year-filtered
 // search that finds nothing runs once more without the year: a file's year
 // can be a later release or air date, and a filter that excludes every
-// candidate must not hide the match an unfiltered search finds.
-func (s *Service) search(ctx context.Context, pluginID, scraperID, query string, mediaID store.MediaID, year int) ([]Candidate, error) {
+// candidate must not hide the match an unfiltered search finds. hints are
+// the item's named search hints; a scraper whose RequiredSearchHints they do
+// not all supply is skipped and finds no candidates.
+func (s *Service) search(ctx context.Context, pluginID, scraperID, query string, mediaID store.MediaID, year int, hints map[string]string) ([]Candidate, error) {
 	if strings.TrimSpace(query) == "" && mediaID == "" {
 		return nil, errors.New("identify: query or media ID is required")
 	}
@@ -345,6 +356,7 @@ func (s *Service) search(ctx context.Context, pluginID, scraperID, query string,
 		return nil, err
 	}
 	vars.PluginID = pluginID
+	vars.Hints = hints
 	usesYear := year > 0 && strings.Contains(spec.SearchTemplate, "{year}")
 	if usesYear {
 		vars.Year = year
@@ -438,6 +450,22 @@ func (s *Service) variables(ctx context.Context, mediaID store.MediaID) (scrape.
 		PHash:           fp.PHash,
 		DurationSeconds: fp.DurationSeconds,
 	}, nil
+}
+
+// mediaHints returns the plugin parser's named search hints for mediaID when
+// the wired title source supplies them. A failed read searches without hints,
+// as a parser that supplies none would.
+func (s *Service) mediaHints(ctx context.Context, mediaID store.MediaID, pluginID string) map[string]string {
+	source, ok := s.titles.(MediaHintSource)
+	if !ok || mediaID == "" {
+		return nil
+	}
+	hints, err := source.ParsedMediaHints(ctx, mediaID, pluginID)
+	if err != nil {
+		slog.Debug("identify: parser hints unavailable", "media", mediaID, "error", err.Error())
+		return nil
+	}
+	return hints
 }
 
 // applyOrdinal sets vars' sequence and index from the plugin parser's

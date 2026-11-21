@@ -1498,7 +1498,7 @@ func TestSearchPassesFingerprintVariables(t *testing.T) {
 		t.Fatalf("Search returned error: %v", err)
 	}
 	want := scrape.Variables{OSHash: "00000000075bcd15", PHash: "f0f0f0f0f0f0f0f0", DurationSeconds: 5400, PluginID: "demo"}
-	if engine.seenVars != want {
+	if !reflect.DeepEqual(engine.seenVars, want) {
 		t.Fatalf("engine saw variables %+v, want %+v", engine.seenVars, want)
 	}
 
@@ -1518,7 +1518,7 @@ func TestApplyPassesFingerprintVariables(t *testing.T) {
 		t.Fatalf("Apply returned error: %v", err)
 	}
 	want := scrape.Variables{OSHash: "00000000075bcd15", DurationSeconds: 90, PluginID: "demo"}
-	if engine.seenVars != want {
+	if !reflect.DeepEqual(engine.seenVars, want) {
 		t.Fatalf("engine saw variables %+v, want %+v", engine.seenVars, want)
 	}
 }
