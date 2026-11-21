@@ -4061,7 +4061,7 @@ func HashMediaFileContentContext(ctx context.Context, path string) (string, erro
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	file, err := openRegularMediaFile(path)
+	file, err := openRegularMediaFileFollowing(path)
 	if err != nil {
 		return "", err
 	}
