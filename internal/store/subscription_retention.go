@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"slices"
 	"time"
 )
 
@@ -109,29 +108,40 @@ func (s *Store) reconcileSubscriptionSeenPaths(ctx context.Context) (int, int, e
 
 // ApplySubscriptionRetentionPolicies moves eligible Media to recoverable Trash.
 // The sweep refuses while Trash is disabled and counts one skip per sweep.
+//
+// Candidates are listed once. Each one is then decided again and moved in its
+// own catalog write transaction, so the decision and the Trash write see the
+// same receipts, policies and pending stars. Favorite and Keep writes take the
+// catalog writer too (SetMediaFavorite), so neither can land between them.
+// Like scan retirement, each move records its outbox event and one actorless
+// media.trash activity entry after the catalog commit.
 func (s *Store) ApplySubscriptionRetentionPolicies(ctx context.Context) (trashed int, skipped bool, err error) {
 	if s.trashDisabled {
 		s.trashDisabledSweepSkips.Add(1)
 		return 0, true, ErrTrashDisabledConfirmationRequired
 	}
-	subscriptions, err := s.retentionSubscriptions(ctx)
+	candidates, err := s.subscriptionRetentionCandidates(ctx)
 	if err != nil {
 		return 0, false, err
 	}
-	// Bound the number of writes while holding the database writers. Readers
-	// use WAL connections throughout, and other writers can run between batches.
-	const batchSize = 16
-	for _, subscription := range subscriptions {
-		ids, err := s.planSubscriptionRetention(ctx, subscription)
+	for _, id := range candidates {
+		now := time.Now().UTC()
+		libraryID, moved, err := s.trashSubscriptionRetentionCandidate(ctx, id, now)
 		if err != nil {
 			return trashed, false, err
 		}
-		for batch := range slices.Chunk(ids, batchSize) {
-			moved, err := s.trashSubscriptionRetentionBatch(ctx, subscription.ID, batch)
-			trashed += moved
-			if err != nil {
-				return trashed, false, err
-			}
+		if !moved {
+			continue
+		}
+		trashed++
+		if err := s.AppendActivity(ctx, ActivityEntry{
+			OccurredAt: now,
+			Action:     ActivityMediaTrash,
+			TargetType: "media",
+			TargetID:   string(id),
+			LibraryID:  libraryID,
+		}); err != nil {
+			return trashed, false, err
 		}
 	}
 	return trashed, false, nil
@@ -143,34 +153,6 @@ func (s *Store) TrashDisabledSweepSkips() int64 {
 	return s.trashDisabledSweepSkips.Load()
 }
 
-const retentionSubscriptionFilter = `
-	WHERE retention_kind IN (?, ?)
-	  AND library_id IN (SELECT id FROM library WHERE trashed_at_ms IS NULL AND encrypted = 0)`
-
-func (s *Store) retentionSubscriptions(ctx context.Context) ([]Subscription, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return nil, err
-	}
-	return s.querySubscriptions(ctx, subscriptionColumns+retentionSubscriptionFilter+` ORDER BY id`,
-		RetentionKeepLastN, RetentionDeleteAfterPlayed)
-}
-
-type retentionQueryer interface {
-	queryRower
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
-func (s *Store) planSubscriptionRetention(ctx context.Context, subscription Subscription) ([]MediaID, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return nil, err
-	}
-	return subscriptionRetentionCandidates(ctx, s.catalogR, s.eventsR, subscription)
-}
-
 // Paths bind a receipt (and any pending star for that receipt) to any live
 // Part of a Media in the Subscription's Library. GUIDs alone are feed-scoped.
 const retentionEntriesFrom = `
@@ -180,61 +162,43 @@ const retentionEntriesFrom = `
 	JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id AND m.trashed_at_ms IS NULL
 	WHERE se.path <> ''`
 
-func subscriptionRetentionCandidates(ctx context.Context, catalog, events retentionQueryer, subscription Subscription) ([]MediaID, error) {
-	rows, err := catalog.QueryContext(ctx, `
-		WITH entries AS (
-			SELECT m.id, se.seen_at_ms, se.feed_position,
-			       ROW_NUMBER() OVER (PARTITION BY m.id
-			           ORDER BY se.seen_at_ms DESC, se.feed_position NULLS LAST) AS occurrence
-		`+retentionEntriesFrom+` AND sub.id = ?
-		), pending_stars AS (
-			SELECT DISTINCT m.id
-			FROM item_state_import isi
-			JOIN subscription_seen_entry se ON se.subscription_id = isi.subscription_id AND se.guid = isi.item_guid
-			JOIN subscription sub ON sub.id = se.subscription_id
-			JOIN media_file mf ON mf.path = se.path AND mf.missing_at_ms IS NULL
-			JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id AND m.trashed_at_ms IS NULL
-			WHERE isi.applied_at_ms = 0 AND isi.starred = 1
-			  AND sub.library_id = ? AND se.path <> ''
-		)
-		SELECT entries.id FROM entries
-		WHERE occurrence = 1 AND entries.id NOT IN (SELECT id FROM pending_stars)
-		ORDER BY seen_at_ms DESC, feed_position NULLS LAST, id
-	`, subscription.ID, subscription.LibraryID)
-	if err != nil {
-		return nil, err
-	}
-	ids, err := scanRetentionIDs(rows)
-	if err != nil || len(ids) == 0 {
-		return nil, err
-	}
+// retentionPendingStarIDs lists Media an imported star still waits to reach.
+const retentionPendingStarIDs = `SELECT m.id` + retentionEntriesFrom + `
+	AND EXISTS (SELECT 1 FROM item_state_import isi
+	            WHERE isi.subscription_id = se.subscription_id AND isi.item_guid = se.guid
+	              AND isi.applied_at_ms = 0 AND isi.starred = 1)`
 
-	// Use one events query for the whole Subscription's candidates. The query
-	// checks play counts for all followers without round trips per Profile.
-	encoded, err := json.Marshal(ids)
-	if err != nil {
+const retentionLibraryEligible = `sub.library_id IN (SELECT id FROM library WHERE trashed_at_ms IS NULL AND encrypted = 0)`
+
+// subscriptionRetentionCandidates lists every Media a policy might move: all
+// of a delete-after-played Subscription's Media, and a keep-last-N
+// Subscription's Media past its first N in receipt and feed order. Exempt Media
+// only push a cutoff later, so this is a superset; the per-Media decision is
+// the authority.
+func (s *Store) subscriptionRetentionCandidates(ctx context.Context) ([]MediaID, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	keep := 0
-	if subscription.RetentionKind == RetentionKeepLastN && subscription.RetentionN != nil {
-		keep = *subscription.RetentionN
-	}
-	rows, err = events.QueryContext(ctx, `
-		WITH followers AS MATERIALIZED (SELECT profile_id FROM follow WHERE subscription_id = ?)
-		SELECT candidate.value FROM json_each(?) candidate
-		WHERE candidate.value NOT IN (SELECT media_id FROM media_favorite)
-		AND (? <> ? OR (
-			EXISTS (SELECT 1 FROM followers)
-			AND NOT EXISTS (
-				SELECT 1 FROM followers f
-				WHERE NOT EXISTS (
-					SELECT 1 FROM playback_progress p
-					WHERE p.profile_id = f.profile_id AND p.media_id = candidate.value AND p.play_count >= 1
-				)
-			)
-		))
-		ORDER BY candidate.key LIMIT -1 OFFSET ?
-	`, subscription.ID, string(encoded), subscription.RetentionKind, RetentionDeleteAfterPlayed, keep)
+	rows, err := s.catalogR.QueryContext(ctx, `
+		WITH entries AS (
+			SELECT sub.id AS subscription_id, sub.retention_kind, sub.retention_n, m.id AS media_id,
+			       se.seen_at_ms, se.feed_position,
+			       ROW_NUMBER() OVER (PARTITION BY sub.id, m.id
+			           ORDER BY se.seen_at_ms DESC, se.feed_position NULLS LAST) AS occurrence
+			`+retentionEntriesFrom+`
+			  AND sub.retention_kind IN (?, ?) AND `+retentionLibraryEligible+`
+		), heads AS (
+			SELECT media_id, retention_kind, retention_n,
+			       ROW_NUMBER() OVER (PARTITION BY subscription_id
+			           ORDER BY seen_at_ms DESC, feed_position NULLS LAST, media_id) AS rank
+			FROM entries WHERE occurrence = 1
+		)
+		SELECT DISTINCT media_id FROM heads
+		WHERE retention_kind = ? OR rank > retention_n
+		ORDER BY media_id
+	`, RetentionKeepLastN, RetentionDeleteAfterPlayed, RetentionDeleteAfterPlayed)
 	if err != nil {
 		return nil, err
 	}
@@ -254,111 +218,161 @@ func scanRetentionIDs(rows *sql.Rows) ([]MediaID, error) {
 	return ids, rows.Err()
 }
 
-func (s *Store) trashSubscriptionRetentionBatch(ctx context.Context, subscriptionID SubscriptionID, batch []MediaID) (int, error) {
+// trashSubscriptionRetentionCandidate decides and moves one Media in a single
+// catalog write transaction. A read-only pass first keeps the catalog writer
+// free for the Media that stay. The outbox event follows the commit, as in
+// TrashMedia.
+func (s *Store) trashSubscriptionRetentionCandidate(ctx context.Context, id MediaID, now time.Time) (LibraryID, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return 0, err
+		return "", false, err
 	}
-	// Reserve catalog then events, the same order as Version merges. Immediate
-	// transactions keep fresh catalog receipts/imports and events engagement
-	// stable through the Trash write without taking the Store's exclusive lock.
-	catalog, err := s.catalogW.BeginTx(ctx, nil)
+	if _, ok, err := subscriptionRetentionPermits(ctx, s.catalogR, s.eventsR, id); err != nil || !ok {
+		return "", false, err
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return "", false, err
 	}
-	defer catalog.Rollback()
-	subscription, err := scanSubscription(catalog.QueryRowContext(ctx, subscriptionColumns+retentionSubscriptionFilter+` AND id = ?`,
-		RetentionKeepLastN, RetentionDeleteAfterPlayed, subscriptionID))
-	if errors.Is(err, ErrSubscriptionNotFound) {
-		return 0, nil
+	defer tx.Rollback()
+	libraryID, ok, err := subscriptionRetentionPermits(ctx, tx, s.eventsR, id)
+	if err != nil || !ok {
+		return "", false, err
 	}
-	if err != nil {
-		return 0, err
+	moved, err := setMediaTrashedAt(ctx, tx, id, now)
+	if err != nil || !moved {
+		return "", false, err
 	}
-	events, err := s.eventsW.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
+	if err := tx.Commit(); err != nil {
+		return "", false, err
 	}
-	defer events.Rollback()
-	current, err := subscriptionRetentionCandidates(ctx, catalog, events, subscription)
-	if err != nil {
-		return 0, err
+	if eventErr := s.appendMediaEventLocked(ctx, MediaEventDeleted, id, mediaDeletedPayload(libraryID), now); eventErr != nil {
+		slog.Warn("media outbox event append failed", "kind", MediaEventDeleted, "media", id, "error", eventErr)
 	}
-	eligible := make(map[MediaID]bool, len(current))
-	for _, id := range current {
-		eligible[id] = true
-	}
-	now := time.Now().UTC()
-	var moved []MediaID
-	for _, id := range batch {
-		if !eligible[id] {
-			continue
-		}
-		waiting, err := retentionAwaitingFollowers(ctx, catalog, events, id)
-		if err != nil {
-			return 0, err
-		}
-		if waiting {
-			continue
-		}
-		ok, err := setMediaTrashedAt(ctx, catalog, id, now)
-		if err != nil {
-			return 0, err
-		}
-		if !ok {
-			continue
-		}
-		if err := appendActivitySQL(ctx, events, ActivityEntry{
-			OccurredAt: now,
-			Action:     ActivityMediaTrash,
-			TargetType: "media",
-			TargetID:   string(id),
-			LibraryID:  subscription.LibraryID,
-		}); err != nil {
-			return 0, err
-		}
-		moved = append(moved, id)
-	}
-	if len(moved) == 0 {
-		return 0, nil
-	}
-	if err := catalog.Commit(); err != nil {
-		return 0, err
-	}
-	// As in other cross-database Media writes, commit catalog first so the
-	// activity log and outbox cannot report a rolled-back move.
-	if err := events.Commit(); err != nil {
-		return len(moved), err
-	}
-	if err := s.appendMediaEventsLocked(ctx, MediaEventDeleted, moved, mediaDeletedPayload(subscription.LibraryID), now); err != nil {
-		slog.Warn("media outbox event append failed", "kind", MediaEventDeleted, "error", err)
-	}
-	return len(moved), nil
+	return libraryID, true, nil
 }
 
-func retentionAwaitingFollowers(ctx context.Context, catalog, events queryRower, id MediaID) (bool, error) {
-	var subscriptions string
-	if err := catalog.QueryRowContext(ctx, `SELECT json_group_array(DISTINCT sub.id)
-		`+retentionEntriesFrom+` AND m.id = ? AND sub.retention_kind = ?`,
-		id, RetentionDeleteAfterPlayed).Scan(&subscriptions); err != nil {
+type retentionQueryer interface {
+	queryRower
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+type retentionReference struct {
+	subscriptionID SubscriptionID
+	kind           RetentionKind
+	n              sql.NullInt64
+	libraryID      LibraryID
+	eligible       bool
+}
+
+// subscriptionRetentionPermits reports whether every Subscription that
+// references the Media permits moving it to Trash: keep-last-N only past its
+// cutoff, delete-after-played only once every follower has played it, and
+// keep-all never. A Favorite, Keep flag or pending imported star protects it
+// from every policy. Inside a catalog write transaction the catalog reads are
+// stable, and Favorites are too because their writes take the catalog writer.
+func subscriptionRetentionPermits(ctx context.Context, catalog retentionQueryer, events queryRower, id MediaID) (LibraryID, bool, error) {
+	references, err := retentionReferences(ctx, catalog, id)
+	if err != nil || len(references) == 0 {
+		return "", false, err
+	}
+	var pendingStar, favorite bool
+	if err := catalog.QueryRowContext(ctx, `SELECT ? IN (`+retentionPendingStarIDs+`)`, id).Scan(&pendingStar); err != nil || pendingStar {
+		return "", false, err
+	}
+	if err := events.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM media_favorite WHERE media_id = ?)`, id).Scan(&favorite); err != nil || favorite {
+		return "", false, err
+	}
+	for _, reference := range references {
+		ok := false
+		switch {
+		case !reference.eligible:
+		case reference.kind == RetentionKeepLastN && reference.n.Valid:
+			ok, err = retentionPastKeepCutoff(ctx, catalog, events, reference.subscriptionID, id, reference.n.Int64)
+		case reference.kind == RetentionDeleteAfterPlayed:
+			ok, err = retentionPlayedByEveryFollower(ctx, events, reference.subscriptionID, id)
+		}
+		if err != nil || !ok {
+			return "", false, err
+		}
+	}
+	return references[0].libraryID, true, nil
+}
+
+func retentionReferences(ctx context.Context, catalog retentionQueryer, id MediaID) ([]retentionReference, error) {
+	rows, err := catalog.QueryContext(ctx, `
+		SELECT DISTINCT sub.id, sub.retention_kind, sub.retention_n, m.library_id, `+retentionLibraryEligible+`
+		`+retentionEntriesFrom+` AND m.id = ?
+		ORDER BY sub.id
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var references []retentionReference
+	for rows.Next() {
+		var reference retentionReference
+		if err := rows.Scan(&reference.subscriptionID, &reference.kind, &reference.n, &reference.libraryID, &reference.eligible); err != nil {
+			return nil, err
+		}
+		references = append(references, reference)
+	}
+	return references, rows.Err()
+}
+
+// retentionPastKeepCutoff reports whether at least keep unprotected Media rank
+// strictly ahead of the Media in the Subscription. Each Media ranks by its
+// newest receipt; within one receipt time an earlier feed position ranks
+// first. A NULL position (a legacy receipt) never ranks ahead of or behind its
+// receipt-time group, so a tie at the cutoff is kept whole.
+func retentionPastKeepCutoff(ctx context.Context, catalog retentionQueryer, events queryRower, subscriptionID SubscriptionID, id MediaID, keep int64) (bool, error) {
+	rows, err := catalog.QueryContext(ctx, `
+		WITH target AS (
+			SELECT se.seen_at_ms AS seen, se.feed_position AS position
+			`+retentionEntriesFrom+` AND sub.id = ? AND m.id = ?
+			ORDER BY se.seen_at_ms DESC, se.feed_position NULLS LAST LIMIT 1
+		)
+		SELECT DISTINCT m.id
+		`+retentionEntriesFrom+` AND sub.id = ? AND m.id <> ?
+		  AND (se.seen_at_ms > (SELECT seen FROM target)
+		       OR (se.seen_at_ms = (SELECT seen FROM target) AND se.feed_position < (SELECT position FROM target)))
+		  AND m.id NOT IN (`+retentionPendingStarIDs+`)
+	`, subscriptionID, id, subscriptionID, id)
+	if err != nil {
 		return false, err
 	}
-	var waiting bool
+	ahead, err := scanRetentionIDs(rows)
+	if err != nil || int64(len(ahead)) < keep {
+		return false, err
+	}
+	encoded, err := json.Marshal(ahead)
+	if err != nil {
+		return false, err
+	}
+	var unprotected int64
+	err = events.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM json_each(?)
+		WHERE value NOT IN (SELECT media_id FROM media_favorite)
+	`, string(encoded)).Scan(&unprotected)
+	return unprotected >= keep, err
+}
+
+// retentionPlayedByEveryFollower requires at least one follower, and a play by
+// each of them.
+func retentionPlayedByEveryFollower(ctx context.Context, events queryRower, subscriptionID SubscriptionID, id MediaID) (bool, error) {
+	var played bool
 	err := events.QueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM json_each(?) sub
-			WHERE NOT EXISTS (SELECT 1 FROM follow WHERE subscription_id = sub.value)
-			   OR EXISTS (
-				SELECT 1 FROM follow f
-				WHERE f.subscription_id = sub.value AND NOT EXISTS (
-					SELECT 1 FROM playback_progress p
-					WHERE p.profile_id = f.profile_id AND p.media_id = ? AND p.play_count >= 1
-				)
+		SELECT EXISTS (SELECT 1 FROM follow WHERE subscription_id = ?)
+		   AND NOT EXISTS (
+			SELECT 1 FROM follow f
+			WHERE f.subscription_id = ? AND NOT EXISTS (
+				SELECT 1 FROM playback_progress p
+				WHERE p.profile_id = f.profile_id AND p.media_id = ? AND p.play_count >= 1
 			)
 		)
-	`, subscriptions, id).Scan(&waiting)
-	return waiting, err
+	`, subscriptionID, subscriptionID, id).Scan(&played)
+	return played, err
 }
 
 func (s *Store) mediaFavoritedByAny(ctx context.Context, mediaID MediaID) (bool, error) {

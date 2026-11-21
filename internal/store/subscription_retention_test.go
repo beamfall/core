@@ -301,71 +301,162 @@ func TestSubscriptionRetentionStaleReplayPreservesPendingStar(t *testing.T) {
 	sweepSubscriptionRetention(t, st, 0)
 }
 
-func TestSubscriptionRetentionAllowsReadsAndRechecksBeforeTrash(t *testing.T) {
+func TestSubscriptionRetentionHoldsOnlyTheCatalogWriter(t *testing.T) {
 	st := openSeeded(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	keep := 1
 	sub, media := subscriptionRetentionFixture(t, st, RetentionKeepLastN, &keep, 2)
-	filter := LibraryFilter{AllowedIDs: []LibraryID{sub.LibraryID}}
 
-	// Reserve the catalog writer so the sweep finishes planning and then
-	// waits before its write. The reader and events writer are independent.
+	// Reserve the catalog writer so the sweep decides read-only and then waits
+	// for its write transaction. Reads and events writes stay available.
 	writer, err := st.catalogW.Conn(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer writer.Close()
-	done := make(chan struct{})
-	var sweepErr error
+	done := make(chan error, 1)
 	waits := st.catalogW.Stats().WaitCount
 	go func() {
-		defer close(done)
 		moved, skipped, err := st.ApplySubscriptionRetentionPolicies(ctx)
-		if err != nil || skipped || moved != 0 {
-			sweepErr = fmt.Errorf("retention sweep = %d, %v, %v, want 0, false, nil", moved, skipped, err)
+		if err == nil && (skipped || moved != 1) {
+			err = fmt.Errorf("retention sweep = %d, %v, want 1, false", moved, skipped)
 		}
+		done <- err
 	}()
-	defer func() {
-		cancel()
-		<-done
-	}()
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
 	for st.catalogW.Stats().WaitCount == waits {
 		select {
-		case <-ticker.C:
+		case <-time.After(time.Millisecond):
 		case <-ctx.Done():
 			t.Fatal("sweep did not reach the catalog writer")
 		}
 	}
-
-	// Read an unrelated Profile and land a rescue after planning. A sweep
-	// that holds an exclusive Store lock prevents both from finishing.
 	if _, err := st.Profile(ctx, "profile-default"); err != nil {
 		t.Fatalf("unrelated Profile read during retention: %v", err)
 	}
 	if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
 		ProfileID: "profile-default", MediaID: media[1], PositionSeconds: 30, DurationSeconds: 120,
 	}, false, ResumePolicy{Class: MediaClassAudio}); err != nil {
-		t.Fatalf("unrelated playback update during retention: %v", err)
-	}
-	if err := st.SetMediaFavorite(ctx, "profile-default", media[0], true, filter); err != nil {
-		t.Fatalf("favorite during retention: %v", err)
+		t.Fatalf("playback update during retention: %v", err)
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-done:
-		if sweepErr != nil {
-			t.Fatal(sweepErr)
-		}
-	case <-ctx.Done():
-		t.Fatal("sweep did not finish")
-	}
-	if _, err := st.Media(ctx, media[0], filter); err != nil {
+	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+	if _, err := st.Media(ctx, media[1], LibraryFilter{AllowedIDs: []LibraryID{sub.LibraryID}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSubscriptionRetentionBreaksSamePollTiesByFeedOrder(t *testing.T) {
+	st := openSeeded(t)
+	keep := 2
+	sub, media := subscriptionRetentionPollFixture(t, st, &keep, []*int{intPtr(3), intPtr(0), intPtr(2), intPtr(1)})
+	sweepSubscriptionRetention(t, st, 2)
+	assertRetentionTrash(t, st, sub, media[0], media[2])
+}
+
+func TestSubscriptionRetentionKeepsLegacyTiesAtTheCutoff(t *testing.T) {
+	st := openSeeded(t)
+	keep := 2
+	sub, media := subscriptionRetentionPollFixture(t, st, &keep, []*int{nil, nil, nil})
+	// An older entry has every member of the tied group ahead of it.
+	path := filepath.Join(sub.Root, "older.mp3")
+	item, _, err := st.ImportMediaFile(t.Context(), ImportMediaFile{
+		LibraryID: sub.LibraryID, Path: path, Title: "older", Class: MediaClassAudio,
+		Container: "mp3", Codec: "mp3", ContentFingerprint: HashMediaFilePath(path),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkSubscriptionEntrySeen(t.Context(), sub.ID, "older", path, sub.AddedAt); err != nil {
+		t.Fatal(err)
+	}
+	sweepSubscriptionRetention(t, st, 1)
+	assertRetentionTrash(t, st, sub, item.ID)
+	for _, id := range media {
+		if _, err := st.Media(t.Context(), id, LibraryFilter{AllowedIDs: []LibraryID{sub.LibraryID}}); err != nil {
+			t.Fatalf("tied media %s is missing: %v", id, err)
+		}
+	}
+}
+
+func TestSubscriptionRetentionKeepAllSubscriptionProtectsSharedMedia(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	keep := 1
+	first, media := subscriptionRetentionFixture(t, st, RetentionKeepLastN, &keep, 3)
+	second, err := st.AddSubscription(ctx, Subscription{
+		LibraryID: first.LibraryID, FeedURL: "https://feeds.example.com/keep-all.xml",
+		Root: "/media/local/keep-all", RetentionKind: RetentionKeepAll,
+	}, first.AddedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkSubscriptionEntrySeen(ctx, second.ID, "shared", filepath.Join(first.Root, "item-0.mp3"), first.AddedAt); err != nil {
+		t.Fatal(err)
+	}
+	sweepSubscriptionRetention(t, st, 1)
+	assertRetentionTrash(t, st, first, media[1])
+}
+
+// subscriptionRetentionPollFixture records one poll: every receipt shares a
+// time, and positions[i] is entry i's feed position (nil for a legacy row).
+func subscriptionRetentionPollFixture(t *testing.T, st *Store, keep *int, positions []*int) (Subscription, []MediaID) {
+	t.Helper()
+	ctx := t.Context()
+	now := time.Date(2026, 6, 18, 14, 0, 0, 0, time.UTC)
+	sub, err := st.AddSubscription(ctx, Subscription{
+		LibraryID: "library-local", FeedURL: "https://feeds.example.com/poll.xml", Root: "/media/local/poll",
+		RetentionKind: RetentionKeepLastN, RetentionN: keep,
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	media := make([]MediaID, len(positions))
+	for i, position := range positions {
+		name := fmt.Sprintf("poll-%d", i)
+		path := filepath.Join(sub.Root, name+".mp3")
+		item, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: sub.LibraryID, Path: path, Title: name, Class: MediaClassAudio,
+			Container: "mp3", Codec: "mp3", ContentFingerprint: HashMediaFilePath(path),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := now.Add(time.Minute)
+		if position == nil {
+			err = st.MarkSubscriptionEntrySeen(ctx, sub.ID, name, path, seen)
+		} else {
+			err = st.MarkSubscriptionFeedEntrySeen(ctx, sub.ID, name, path, seen, *position)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		media[i] = item.ID
+	}
+	return sub, media
+}
+
+func assertRetentionTrash(t *testing.T, st *Store, sub Subscription, want ...MediaID) {
+	t.Helper()
+	entries, err := st.TrashedMediaList(t.Context(), LibraryFilter{AllowedIDs: []LibraryID{sub.LibraryID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[MediaID]bool{}
+	for _, entry := range entries {
+		got[entry.ID] = true
+	}
+	if len(got) != len(want) {
+		t.Fatalf("trash = %v, want %v", got, want)
+	}
+	for _, id := range want {
+		if !got[id] {
+			t.Fatalf("trash = %v, want %v", got, want)
+		}
 	}
 }
 

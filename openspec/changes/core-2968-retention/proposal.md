@@ -7,5 +7,6 @@ Entries downloaded in one poll share a receipt timestamp, so keep-last-N can dis
 ## What Changes
 
 - Persist feed position with the download receipt and use it for entries seen in the same poll.
-- Recheck the current policy, pending stars, Favorites and relevant follows before moving Media to Trash.
+- Decide and move each Media in one catalog write transaction, rechecking every referencing Subscription's policy, pending stars, Favorites and follows; Favorite and Keep writes take the same writer.
+- Keep a legacy tied group whole at the keep-last-N cutoff.
 - Record one actorless activity entry for each Media moved by retention.
