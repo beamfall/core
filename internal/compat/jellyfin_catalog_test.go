@@ -592,6 +592,97 @@ func TestJellyfinCatalogHidesAllowlistedRestrictedLibrary(t *testing.T) {
 	f.get(t, "Items/Latest?ParentId="+string(lib.ID), http.StatusNotFound)
 }
 
+// An ID lookup inside the TTL serves the index's structure only: titles, card
+// fields and container trash are read for the items it serves.
+func TestJellyfinCatalogIDLookupsReadCurrentRows(t *testing.T) {
+	f := newCatalogFixture(t)
+	ctx := t.Context()
+	now := time.Unix(1_000_000, 0)
+	f.handler.indexes.now = func() time.Time { return now }
+	f.get(t, "Items?ids="+string(f.part2)+","+string(f.group), http.StatusOK)
+	if len(f.handler.indexes.entries) != 1 {
+		t.Fatalf("an ID lookup cached %d indexes, want 1", len(f.handler.indexes.entries))
+	}
+	var key string
+	for key = range f.handler.indexes.entries {
+	}
+	warm := f.handler.indexes.recent(key)
+	ids := func(list ...store.EntityID) []string {
+		out := make([]string, len(list))
+		for i, id := range list {
+			out[i] = string(id)
+		}
+		return out
+	}
+
+	title, year := "Part A Renamed", 1999
+	if err := f.st.UpdateMediaMetadata(ctx, f.part2, store.MediaMetadata{Title: &title, Year: &year}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.UpsertEntity(ctx, store.Entity{ID: f.group, LibraryID: f.library, Kind: "group", Title: "Beta Group Renamed"}); err != nil {
+		t.Fatal(err)
+	}
+	renamed := decodeList(t, f.get(t, "Items?ids="+string(f.part2)+","+string(f.group), http.StatusOK))
+	if len(renamed.Items) != 2 || renamed.Items[0].Name != title || renamed.Items[0].ProductionYear != year || renamed.Items[1].Name != "Beta Group Renamed" {
+		t.Fatalf("renamed items = %+v", renamed.Items)
+	}
+
+	// A trashed season hides itself and the members under it, though those
+	// Media are still visible, until the index is rebuilt.
+	if err := f.st.TrashEntity(ctx, f.sub1, store.LibraryFilter{AllLibraries: true}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	list := decodeList(t, f.get(t, "Items?ids="+strings.Join(append(ids(f.sub1, f.sub2), string(f.part1), string(f.part2)), ","), http.StatusOK))
+	if got := itemIDs(list.Items); !slices.Equal(got, ids(f.sub2)) {
+		t.Fatalf("lookup after season trash = %v, want %v", got, ids(f.sub2))
+	}
+	seasons := decodeList(t, f.get(t, "Shows/"+string(f.group)+"/Seasons", http.StatusOK))
+	if got := itemIDs(seasons.Items); !slices.Equal(got, ids(f.sub2)) {
+		t.Fatalf("seasons after season trash = %v", got)
+	}
+	episodes := decodeList(t, f.get(t, "Shows/"+string(f.group)+"/Episodes", http.StatusOK))
+	if got := itemIDs(episodes.Items); !slices.Equal(got, []string{string(f.part3)}) {
+		t.Fatalf("episodes after season trash = %v", got)
+	}
+	f.get(t, "Shows/"+string(f.group)+"/Episodes?seasonId="+string(f.sub1), http.StatusNotFound)
+
+	// A trashed top container hides everything under it.
+	if err := f.st.TrashEntity(ctx, f.group, store.LibraryFilter{AllLibraries: true}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if list := decodeList(t, f.get(t, "Items?ids="+string(f.group)+","+string(f.sub2)+","+string(f.part3), http.StatusOK)); len(list.Items) != 0 {
+		t.Fatalf("lookup after show trash = %v", itemIDs(list.Items))
+	}
+	f.get(t, "Shows/"+string(f.group)+"/Seasons", http.StatusNotFound)
+	f.get(t, "Shows/"+string(f.group)+"/Episodes", http.StatusNotFound)
+
+	if f.handler.indexes.recent(key) != warm {
+		t.Fatal("per-item reads rebuilt the index instead of reading the items they serve")
+	}
+
+	// An ID of the Library that is not in the index rebuilds it once, then is
+	// remembered as absent for the life of the rebuilt index.
+	if list := decodeList(t, f.get(t, "Items?ids="+string(f.unmapped), http.StatusOK)); len(list.Items) != 0 {
+		t.Fatalf("unmapped lookup = %v", itemIDs(list.Items))
+	}
+	rebuilt := f.handler.indexes.recent(key)
+	if rebuilt == warm || !rebuilt.isAbsent(string(f.unmapped)) {
+		t.Fatal("an ID a fresh read did not find was not remembered as absent")
+	}
+	f.get(t, "Items?ids="+string(f.unmapped), http.StatusOK)
+	if f.handler.indexes.recent(key) != rebuilt {
+		t.Fatal("an ID remembered as absent rebuilt the index again")
+	}
+}
+
+func TestJellyfinCatalogLookupWithoutLibraries(t *testing.T) {
+	var h Handler
+	found, err := h.lookupNodes(t.Context(), store.LibraryFilter{}, nil, []string{"any"})
+	if err != nil || len(found) != 0 {
+		t.Fatalf("lookup with no Libraries = %v, %v", found, err)
+	}
+}
+
 func TestJellyfinCatalogIndexCacheExpires(t *testing.T) {
 	f := newCatalogFixture(t)
 	now := time.Unix(1_000_000, 0)

@@ -277,9 +277,12 @@ func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func()
 	args = append(args, entityArgs...)
 	certClause, certArgs := certify()
 	args = append(args, certArgs...)
-	// only, when set, narrows the read to those Media.
-	onlyClause := ""
+	// only, when set, narrows the read to those Media. The library term is
+	// then written +m.library_id so the planner reads those rows by primary
+	// key rather than scanning the Library.
+	onlyClause, libraryColumn := "", "m.library_id"
 	if len(only) > 0 {
+		libraryColumn = "+m.library_id"
 		onlyClause = " AND m.id IN (" + sqlPlaceholders(len(only)) + ")"
 		for _, id := range only {
 			args = append(args, string(id))
@@ -289,7 +292,7 @@ func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func()
 	rows, err := reader.QueryContext(ctx, `
 		SELECT m.id, m.title, m.duration_seconds, COALESCE(m.year, 0), m.video_width, m.video_height, m.rowid
 		FROM media m
-		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
+		WHERE `+libraryColumn+` IN (`+strings.Join(placeholders, ", ")+`)
 		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+`
 		  AND (NOT EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id)
 		       OR EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id AND f.missing_at_ms IS NULL))`+entityClause+certClause+onlyClause+`

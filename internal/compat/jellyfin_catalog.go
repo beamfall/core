@@ -70,8 +70,8 @@ const (
 	// same Library and visibility filter. The tools read one item per request
 	// across a whole Library, so rebuilding each time is quadratic per sync.
 	// Library eligibility, restriction and sealing and each served item's
-	// visibility are still checked on every request; see libraryIndex and
-	// lookupNodes.
+	// visibility, title and card fields are still read on every request; see
+	// libraryIndex and visibleNodes.
 	catalogIndexTTL     = 15 * time.Second
 	catalogIndexEntries = 32
 	catalogIndexBuilds  = 2
@@ -148,6 +148,30 @@ type catalogIndex struct {
 	roots  []*catalogNode
 	byID   map[string]*catalogNode
 	leaves []*catalogNode
+
+	// absent holds IDs of this Library a fresh read confirmed are not in the
+	// index, so a repeat lookup of one does not read the Library again.
+	mu     sync.Mutex
+	absent map[string]bool
+}
+
+func (x *catalogIndex) isAbsent(id string) bool {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	return x.absent[id]
+}
+
+func (x *catalogIndex) markAbsent(ids []string) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	for _, id := range ids {
+		if x.byID[id] == nil {
+			if x.absent == nil {
+				x.absent = map[string]bool{}
+			}
+			x.absent[id] = true
+		}
+	}
 }
 
 // catalogLibraries returns the eligible Libraries the scope sees without
@@ -259,44 +283,86 @@ func indexKey(filter store.LibraryFilter, lib catalogLibrary) (string, error) {
 	return string(lib.library.ID) + "\x00" + string(fingerprint), nil
 }
 
-// visibleNodes keeps the nodes that still show a visible item: a leaf the
-// store still reports visible, or a container holding one. It reads only the
-// leaves under the given nodes.
+// visibleNodes returns current copies of the nodes that still have a visible
+// item: a leaf the store still reports visible, or a container that is still
+// an untrashed Entity of the Library and holds one. A node under a container
+// that is no longer such an Entity is dropped until the index is rebuilt. Each
+// copy carries the item's current title, year and dimensions. It reads only
+// the leaves under the given nodes and the containers on and above them.
 func (h *Handler) visibleNodes(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary, nodes []*catalogNode) ([]*catalogNode, error) {
 	var ids []store.MediaID
+	var entities []store.EntityID
 	seen := map[*catalogNode]bool{}
+	entity := func(n *catalogNode) {
+		if !seen[n] {
+			seen[n] = true
+			entities = append(entities, store.EntityID(n.id))
+		}
+	}
+	walked := map[*catalogNode]bool{}
 	var collect func(*catalogNode)
 	collect = func(n *catalogNode) {
-		if seen[n] {
+		if walked[n] {
 			return
 		}
-		seen[n] = true
+		walked[n] = true
 		if n.leaf {
 			ids = append(ids, store.MediaID(n.id))
+			return
 		}
+		entity(n)
 		for _, child := range n.children {
 			collect(child)
 		}
 	}
 	for _, n := range nodes {
 		collect(n)
+		for p := n.parent; p != nil; p = p.parent {
+			entity(p)
+		}
 	}
-	visible, err := h.store.LibraryVisibleMediaIDs(ctx, filter, lib.library.ID, ids)
+	media, err := h.store.LibraryVisibleMediaItems(ctx, filter, lib.library.ID, ids)
 	if err != nil {
 		return nil, err
 	}
-	var shows func(*catalogNode) bool
-	shows = func(n *catalogNode) bool {
+	titles, err := h.store.LibraryLiveEntityTitles(ctx, lib.library.ID, entities)
+	if err != nil {
+		return nil, err
+	}
+	live := func(n *catalogNode) bool {
+		_, ok := titles[store.EntityID(n.id)]
+		return ok
+	}
+	var holdsVisible func(*catalogNode) bool
+	holdsVisible = func(n *catalogNode) bool {
 		if n.leaf {
-			return visible[store.MediaID(n.id)]
+			_, ok := media[store.MediaID(n.id)]
+			return ok
 		}
-		return slices.ContainsFunc(n.children, shows)
+		return live(n) && slices.ContainsFunc(n.children, holdsVisible)
 	}
 	var kept []*catalogNode
 	for _, n := range nodes {
-		if shows(n) {
-			kept = append(kept, n)
+		if !holdsVisible(n) {
+			continue
 		}
+		held := true
+		for p := n.parent; p != nil && held; p = p.parent {
+			held = live(p)
+		}
+		if !held {
+			continue
+		}
+		current := *n
+		if n.leaf {
+			m := media[store.MediaID(n.id)]
+			current.name, current.sortKey, current.year = m.Title, m.TitleKey(), m.Year
+			current.width, current.height = m.Width, m.Height
+		} else {
+			current.name = titles[store.EntityID(n.id)]
+			current.sortKey = current.name
+		}
+		kept = append(kept, &current)
 	}
 	return kept, nil
 }
@@ -631,9 +697,9 @@ func (h *Handler) itemJSON(node *catalogNode) compatItem {
 	if item.ProviderIDs == nil {
 		item.ProviderIDs = map[string]string{}
 	}
-	if node.top != node {
+	if node.parent != nil {
 		item.SeriesID = node.top.id
-		if node.parent != nil && node.parent != node.top {
+		if node.parent != node.top {
 			item.SeasonID = node.parent.id
 		}
 	}
@@ -672,17 +738,19 @@ type catalogHit struct {
 	lib  catalogLibrary
 }
 
-// lookupNodes finds the visible items with the given IDs. It reads only the
-// eligible Libraries that hold one, each from its recent index, and confirms
-// the items found are still visible, so a per-item sync reads each item's
-// rows rather than its whole Library. An ID the recent index lacks reads the
-// Library afresh.
-func (h *Handler) lookupNodes(ctx context.Context, filter store.LibraryFilter, libraries []catalogLibrary, ids []string) (map[string]catalogHit, error) {
+// findNodes finds the indexed items with the given IDs, without confirming
+// they are still visible. It reads only the eligible Libraries that hold one,
+// each from its recent index. An ID the recent index lacks reads the Library
+// afresh, once per index: one still missing is remembered as absent.
+func (h *Handler) findNodes(ctx context.Context, filter store.LibraryFilter, libraries []catalogLibrary, ids []string) (map[string]catalogHit, error) {
+	found := map[string]catalogHit{}
+	if len(libraries) == 0 || len(ids) == 0 {
+		return found, nil
+	}
 	owners, err := h.store.CatalogItemLibraries(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
-	found := map[string]catalogHit{}
 	for _, lib := range libraries {
 		var wanted []string
 		for _, id := range ids {
@@ -697,16 +765,38 @@ func (h *Handler) lookupNodes(ctx context.Context, filter store.LibraryFilter, l
 		if err != nil {
 			return nil, err
 		}
-		if slices.ContainsFunc(wanted, func(id string) bool { return index.byID[id] == nil }) {
+		if slices.ContainsFunc(wanted, func(id string) bool { return index.byID[id] == nil && !index.isAbsent(id) }) {
 			if index, err = h.libraryIndex(ctx, filter, lib); err != nil {
 				return nil, err
 			}
+			index.markAbsent(wanted)
 		}
-		var nodes []*catalogNode
 		for _, id := range wanted {
 			if node := index.byID[id]; node != nil {
-				nodes = append(nodes, node)
+				found[id] = catalogHit{node: node, lib: lib}
 			}
+		}
+	}
+	return found, nil
+}
+
+// lookupNodes finds the visible items with the given IDs, as current copies,
+// so a per-item sync reads each item's rows rather than its whole Library.
+func (h *Handler) lookupNodes(ctx context.Context, filter store.LibraryFilter, libraries []catalogLibrary, ids []string) (map[string]catalogHit, error) {
+	hits, err := h.findNodes(ctx, filter, libraries, ids)
+	if err != nil {
+		return nil, err
+	}
+	found := map[string]catalogHit{}
+	for _, lib := range libraries {
+		var nodes []*catalogNode
+		for _, id := range ids {
+			if hit, ok := hits[id]; ok && hit.lib.library.ID == lib.library.ID {
+				nodes = append(nodes, hit.node)
+			}
+		}
+		if len(nodes) == 0 {
+			continue
 		}
 		if nodes, err = h.visibleNodes(ctx, filter, lib, nodes); err != nil {
 			return nil, err
@@ -863,7 +953,7 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 	if !ok {
 		return
 	}
-	found, err := h.lookupNodes(r.Context(), filter, libraries, []string{id})
+	found, err := h.findNodes(r.Context(), filter, libraries, []string{id})
 	if err != nil {
 		http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
 		return
@@ -906,10 +996,23 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 		http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
 		return
 	}
-	// A season left with no visible member is hidden itself.
-	if holder != "" && len(nodes) == 0 {
-		http.NotFound(w, r)
-		return
+	// With nothing to list, the container itself may be gone: a middle container left
+	// with no visible member is hidden, and a top container is listed empty only
+	// while it still holds a visible item.
+	if len(nodes) == 0 {
+		shown := false
+		if holder == "" {
+			kept, err := h.visibleNodes(r.Context(), filter, hit.lib, []*catalogNode{node})
+			if err != nil {
+				http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
+				return
+			}
+			shown = len(kept) > 0
+		}
+		if !shown {
+			http.NotFound(w, r)
+			return
+		}
 	}
 	h.writePage(w, r.URL.Query(), nodes)
 }
