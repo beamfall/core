@@ -244,3 +244,19 @@ func TestOwnTrackPreferenceAuditNamesProfileAfterSwitch(t *testing.T) {
 		t.Fatalf("updateProfile audit = %+v (all: %+v), want one success naming profile-managed", finished, audit.records)
 	}
 }
+
+// TestOwnTrackPreferenceWriteClassifiesEveryArgument: the self-service check
+// names every updateProfile argument but profileID, so an argument added
+// later cannot slip past it unclassified (CORE-1937).
+func TestOwnTrackPreferenceWriteClassifiesEveryArgument(t *testing.T) {
+	var want []string
+	for _, arg := range fieldArgumentRegistry["updateprofile"] {
+		if arg.Name != "profileID" {
+			want = append(want, arg.Name)
+		}
+	}
+	slices.Sort(want)
+	if got := slices.Sorted(slices.Values(dynamicArgumentReads["ownTrackPreferenceWrite"])); !slices.Equal(got, want) {
+		t.Fatalf("ownTrackPreferenceWrite classifies %q; updateProfile takes %q", got, want)
+	}
+}

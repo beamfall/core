@@ -155,16 +155,6 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 	return response{}
 }
 
-// ownTrackPreferenceVariables are the updateProfile arguments a Profile may
-// write for itself without an Admin Session (CORE-1937): its audio and
-// subtitle track preferences. Every other Profile policy field stays Console.
-var ownTrackPreferenceVariables = map[string]bool{
-	"audioLanguages":    true,
-	"subtitleLanguages": true,
-	"subtitleMode":      true,
-	"preferSDH":         true,
-}
-
 // ownTrackPreferenceWrite reports whether the dispatch is an enrolled device
 // session writing only its own Profile's track preferences through
 // updateProfile (CORE-1937). Any other selected field, any other argument, or
@@ -185,12 +175,19 @@ func ownTrackPreferenceWrite(dispatch *fieldDispatchContext) bool {
 	if store.ProfileID(trimmedVariable(dispatch.req, "profileID")) != scope.ProfileID {
 		return false
 	}
+	// The input holds only updateProfile's declared arguments
+	// (effectiveArguments), so this table names every one but profileID:
+	// true for a track preference, false for a Profile policy field.
 	writes := false
-	for name, value := range dispatch.req.Variables {
-		if name == "profileID" || value == nil {
+	for name, own := range map[string]bool{
+		"audioLanguages": true, "subtitleLanguages": true, "subtitleMode": true, "preferSDH": true,
+		"disabled": false, "entryPIN": false, "kind": false, "maxConcurrentStreams": false,
+		"name": false, "remoteMaxBitrate": false, "transcodeAllowed": false,
+	} {
+		if dispatch.req.Variables[name] == nil {
 			continue
 		}
-		if !ownTrackPreferenceVariables[name] {
+		if !own {
 			return false
 		}
 		writes = true
