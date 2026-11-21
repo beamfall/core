@@ -3,6 +3,7 @@ import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { isRelativePreviewURL, candidateProvenance as provenance } from "@/lib/artworkCandidate";
 import { fetchArtworkCandidates, pinArtworkCandidate } from "@/lib/graphql";
 import type { ArtworkCandidate } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -13,18 +14,6 @@ const SLOTS: { slot: string; key: StringKey }[] = [
   { slot: "backdrop", key: "artworkSlotBackdrop" },
   { slot: "thumb", key: "artworkSlotThumb" },
 ];
-
-// Only relative same-origin preview URLs render an <img> (app.js
-// isRelativePreviewURL) — artwork bytes are served by the server at
-// /api/media/artwork-candidate/...; an absolute or protocol-relative URL is
-// never followed.
-function isRelativePreviewURL(value: string | undefined): value is string {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//");
-}
-
-function provenance(candidate: ArtworkCandidate): string {
-  return [candidate.pluginID, candidate.scraperID].filter(Boolean).join(" / ");
-}
 
 // Artwork candidates (ADR-0009): the candidate artwork per Media slot. Loaded by
 // Media ID across the three core slots (poster / backdrop / thumb);

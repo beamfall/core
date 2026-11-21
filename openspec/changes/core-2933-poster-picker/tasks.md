@@ -1,0 +1,6 @@
+- [x] Web: "Change poster" button over the detail poster, gated on edit permission (CORE-2933)
+- [x] Web: poster candidates dialog reusing `fetchArtworkCandidates` / `pinArtworkCandidate`
+- [x] Loading, empty and error states announced; focus returns to the button on close
+- [x] Vitest, tsc, `npm run check`; strings re-hashed
+- [x] Browser check by mouse, keyboard and touch width
+- [ ] `openspec archive core-2933-poster-picker` after landing (after core-2930)
