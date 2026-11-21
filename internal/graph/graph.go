@@ -1363,7 +1363,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusConflict, response{Errors: []graphError{refusal}})
 				return
 			}
-			writeGraphError(w, http.StatusUnauthorized, ErrorCodeUnauthenticated, "invalid session")
+			status, refusal := scopeRefusal(err)
+			if requestCarriesScopedKey(r) {
+				// This surface refuses scoped keys whatever their Profile's
+				// schedule, so the schedule reason belongs to session
+				// credentials only; a key keeps the generic refusal.
+				status, refusal = invalidSessionRefusal()
+			}
+			writeJSON(w, status, response{Errors: []graphError{refusal}})
 			return
 		}
 	}
@@ -1438,7 +1445,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.Error("mutation finish audit append failed", "operation", operationID, "error", err)
 		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	status := http.StatusOK
+	if resp.refusalStatus != 0 {
+		status = resp.refusalStatus
+	}
+	writeJSON(w, status, resp)
 }
 
 // postDispatchAuditTimeout bounds the outcome records written after dispatch,
@@ -1740,10 +1751,18 @@ func (h *Handler) reauthorizeAfterMutation(ctx context.Context, scope auth.Scope
 	}
 	refreshed, err := h.auth.Scope(ctx, scope.SessionID)
 	if err != nil {
-		return auth.Scope{}, response{
-			Errors:               []graphError{newGraphError(ErrorCodeUnauthenticated, "invalid session")},
+		status, refusal := scopeRefusal(err)
+		resp := response{
+			Errors:               []graphError{refusal},
 			authorizationRefused: true,
 		}
+		// The schedule refusal keeps its 403 after a mutation, as at the
+		// request gate; every other re-resolution failure stays a 200
+		// GraphQL error, as before (CORE-2950).
+		if status == http.StatusForbidden {
+			resp.refusalStatus = status
+		}
+		return auth.Scope{}, resp
 	}
 	probe := fieldDispatchContext{scope: refreshed, fields: map[string]bool{field: true}}
 	for _, order := range selectedFieldDispatchOrders(probe.fields) {
@@ -6699,11 +6718,14 @@ type request struct {
 }
 
 type response struct {
-	Data                 map[string]any                        `json:"data,omitempty"`
-	Errors               []graphError                          `json:"errors,omitempty"`
-	Extensions           *GraphQLResponseExtensions            `json:"extensions,omitempty"`
-	authorizationRefused bool                                  `json:"-"`
-	privilegedOutcomes   map[string]observability.AuditOutcome `json:"-"`
+	Data                 map[string]any             `json:"data,omitempty"`
+	Errors               []graphError               `json:"errors,omitempty"`
+	Extensions           *GraphQLResponseExtensions `json:"extensions,omitempty"`
+	authorizationRefused bool                       `json:"-"`
+	// refusalStatus, when set, is the HTTP status a scope refusal raised
+	// during dispatch answers with in place of 200.
+	refusalStatus      int                                   `json:"-"`
+	privilegedOutcomes map[string]observability.AuditOutcome `json:"-"`
 }
 
 // GraphQLResponseExtensions is the optional top-level GraphQL extensions object.

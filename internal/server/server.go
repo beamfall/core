@@ -1276,7 +1276,7 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeScopeError(w, r, err, "invalid session")
+		writePlaybackScopeError(w, r, err)
 		return
 	}
 
@@ -1304,7 +1304,7 @@ func (s *Server) previewInfo(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeScopeError(w, r, err, "invalid session")
+		writePlaybackScopeError(w, r, err)
 		return
 	}
 
@@ -1588,6 +1588,28 @@ const statusClientClosedRequest = 499
 // on purpose) — rather than a server failure.
 func clientCanceled(ctx context.Context, err error) bool {
 	return ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
+}
+
+// writePlaybackScopeError answers a playback request whose credential did not
+// resolve to a scope. An enrolled session's access-schedule refusal is a
+// distinct 403 carrying the ACCESS_SCHEDULE_ENDED reason in both the
+// X-Beamfall-Denial-Reason header and the body's reason field; every other
+// failure, a Profile-bound scoped key's schedule refusal included, stays the
+// generic 401 "invalid session" (CORE-2950).
+func writePlaybackScopeError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, auth.ErrProfileMismatch) {
+		writeProfileMismatch(w, r)
+		return
+	}
+	if auth.AccessScheduleReasonVisible(err, nil) {
+		w.Header().Set(auth.DenialReasonHeader, auth.DenialReasonAccessScheduleEnded)
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error":  "access schedule ended",
+			"reason": auth.DenialReasonAccessScheduleEnded,
+		})
+		return
+	}
+	writeError(w, r, http.StatusUnauthorized, "invalid session")
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, status int, message string) {

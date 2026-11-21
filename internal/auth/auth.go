@@ -545,6 +545,9 @@ func (s *Service) scope(ctx context.Context, sessionID store.SessionID, credenti
 	if profile.Kind == store.ProfileManaged {
 		if err := s.enforceProfileAccessSchedule(ctx, profile, session.ID); err != nil {
 			noteCredentialRefusal(ctx, RefusalOutsideSchedule)
+			if errors.Is(err, ErrAccessOutsideSchedule) {
+				err = &sessionScheduleRefusal{snapshot: SessionBinding{SessionID: session.ID, ProfileID: profile.ID, DeviceID: session.DeviceID}}
+			}
 			return Scope{}, err
 		}
 	}

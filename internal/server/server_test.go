@@ -807,6 +807,9 @@ func TestCORSAllowsForeignOriginOnTokenByteGET(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want *", got)
 	}
+	if got := rec.Header().Get("Access-Control-Expose-Headers"); got != auth.DenialReasonHeader {
+		t.Fatalf("Access-Control-Expose-Headers = %q, want %q", got, auth.DenialReasonHeader)
+	}
 	if rec.Body.String() != "beamfall file bytes" {
 		t.Fatalf("media body = %q, want file bytes", rec.Body.String())
 	}
