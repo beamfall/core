@@ -38,13 +38,15 @@ type LibraryEntityRef struct {
 }
 
 // LibraryEntity is one listed Entity with its counts. ChildCount counts the
-// visible linked Entities of a child kind; MediaCount counts the distinct
-// visible Media linked to the Entity or to one of those children.
+// visible linked Entities of a child kind and ChildCounts splits it by kind
+// (CORE-2891); MediaCount counts the distinct visible Media linked to the
+// Entity or to one of those children.
 type LibraryEntity struct {
-	Item       SourceItem
-	ChildCount int
-	MediaCount int
-	Parents    []LibraryEntityRef
+	Item        SourceItem
+	ChildCount  int
+	ChildCounts map[string]int
+	MediaCount  int
+	Parents     []LibraryEntityRef
 }
 
 // LibraryEntitiesResult is one page of a Library's Entities of one kind.
@@ -282,6 +284,10 @@ func libraryEntityLinks(ctx context.Context, reader *sql.DB, query LibraryEntiti
 			continue
 		}
 		item.ChildCount++
+		if item.ChildCounts == nil {
+			item.ChildCounts = map[string]int{}
+		}
+		item.ChildCounts[kind]++
 		children[itemID] = append(children[itemID], otherID)
 	}
 	return children, rows.Err()

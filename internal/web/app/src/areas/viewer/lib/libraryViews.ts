@@ -37,15 +37,31 @@ export interface LibraryEntityParent {
   title: string;
 }
 
+/** A kind whose Entities count as the listed kind's children, in the plugin's words (CORE-2891). */
+export interface LibraryEntityChildKind {
+  kind: string;
+  kindDisplayName?: DisplayString;
+  kindPluralDisplayName?: DisplayString;
+}
+
+export interface LibraryEntityChildCount {
+  kind: string;
+  count: number;
+}
+
 /** One Entity card with its counts and the Entities it sits under. */
 export interface LibraryEntityItem extends SourceItem {
   childCount: number;
+  /** The children by kind, in childKinds order, kinds it has none of left out. */
+  childCounts: LibraryEntityChildCount[];
   mediaCount: number;
   parents: LibraryEntityParent[];
 }
 
 export interface LibraryEntitiesPage {
   kinds: LibraryEntityKind[];
+  /** The listed kind's child kinds, with their plugin display names. */
+  childKinds: LibraryEntityChildKind[];
   /** The plugin's title for its unfiltered Media grid. */
   allLabel?: DisplayString;
   /** The kind listed: the requested one, else the first browse kind. */
@@ -69,7 +85,7 @@ export interface LibraryEntitiesRequest {
 }
 
 const LIBRARY_ENTITIES_QUERY =
-  "query LibraryEntities($libraryID: String!, $kind: String, $sort: String, $direction: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $query: String, $limit: Int, $offset: Int) { libraryEntities(libraryID: $libraryID, kind: $kind, sort: $sort, direction: $direction, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, query: $query, limit: $limit, offset: $offset) { kinds { kind label kindDisplayName archetype total } allLabel kind total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } childCount mediaCount parents { id title } } letters { letter offset count } } }";
+  "query LibraryEntities($libraryID: String!, $kind: String, $sort: String, $direction: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $query: String, $limit: Int, $offset: Int) { libraryEntities(libraryID: $libraryID, kind: $kind, sort: $sort, direction: $direction, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, query: $query, limit: $limit, offset: $offset) { kinds { kind label kindDisplayName archetype total } childKinds { kind kindDisplayName kindPluralDisplayName } allLabel kind total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } childCount childCounts { kind count } mediaCount parents { id title } } letters { letter offset count } } }";
 
 /** The libraryEntities variables: the browse state's, as the Media view sends them, plus the kind. */
 export function libraryEntitiesVariables(request: LibraryEntitiesRequest): Record<string, unknown> {
@@ -150,14 +166,41 @@ export function viewSearchParams(current: URLSearchParams, id: string): URLSearc
   return params;
 }
 
-/** The line under an Entity card's title: the Entities it sits under, else how much it holds. */
+/**
+ * The line under an Entity card's title: the Entities it sits under, else its
+ * children counted by kind in the plugin's words ("4 Albums"), else how much
+ * Media it holds. A kind with no plural name falls back to its singular one,
+ * then to its name.
+ */
 export function entityCardLine(
   item: LibraryEntityItem,
+  childKinds: readonly LibraryEntityChildKind[],
+  locale: string,
   count: (mediaCount: number) => string,
 ): string {
   const parents = item.parents.map((parent) => parent.title).filter(Boolean);
   if (parents.length > 0) return parents.join(", ");
+  const plural = pluralRules(locale);
+  const children = (item.childCounts ?? []).flatMap(({ kind, count: n }) => {
+    const child = childKinds.find((entry) => entry.kind === kind);
+    if (!child || n <= 0) return [];
+    const singular = displayString(child.kindDisplayName, locale) || kind;
+    const name =
+      plural.select(n) === "one"
+        ? singular
+        : displayString(child.kindPluralDisplayName, locale) || singular;
+    return [`${n.toLocaleString(locale)} ${name}`];
+  });
+  if (children.length > 0) return children.join(" · ");
   return item.mediaCount > 0 ? count(item.mediaCount) : "";
+}
+
+function pluralRules(locale: string): Intl.PluralRules {
+  try {
+    return new Intl.PluralRules(locale);
+  } catch {
+    return new Intl.PluralRules("en");
+  }
 }
 
 /**

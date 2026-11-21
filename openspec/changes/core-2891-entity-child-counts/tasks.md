@@ -1,7 +1,7 @@
-- [ ] `internal/store`: `LibraryEntity.ChildCounts` per child kind
-- [ ] `internal/graph`: `childKinds` on the response and `childCounts` on each item
-- [ ] Store and graph tests; wire goldens regenerated with `make regen-wire-goldens`
-- [ ] Web: Entity card line from child counts with plugin labels and plural rules; vitest coverage
+- [x] `internal/store`: `LibraryEntity.ChildCounts` per child kind
+- [x] `internal/graph`: `childKinds` on the response and `childCounts` on each item
+- [x] Store and graph tests; wire goldens regenerated with `make regen-wire-goldens`
+- [x] Web: Entity card line from child counts with plugin labels and plural rules; vitest coverage
 - [ ] Checked in the browser preview with a screenshot
 - [ ] Wire contract published as a new version (lander)
 - [ ] `make gate`

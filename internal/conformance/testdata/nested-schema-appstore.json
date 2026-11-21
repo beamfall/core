@@ -9633,6 +9633,62 @@
         }
       },
       {
+        "name": "childKinds",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "kindDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "kindPluralDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "kindDisplayName",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "kindPluralDisplayName",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          }
+        ]
+      },
+      {
         "name": "items",
         "kind": "list",
         "nullable": true,
@@ -9702,6 +9758,34 @@
             {
               "name": "childCount",
               "kind": "scalar"
+            },
+            {
+              "name": "childCounts",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "count",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "kind",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "count",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "kind",
+                  "kind": "scalar"
+                }
+              ]
             },
             {
               "name": "container",
@@ -9938,6 +10022,34 @@
           {
             "name": "childCount",
             "kind": "scalar"
+          },
+          {
+            "name": "childCounts",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "count",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "kind",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "count",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              }
+            ]
           },
           {
             "name": "container",
