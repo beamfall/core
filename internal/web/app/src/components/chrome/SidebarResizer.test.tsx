@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import { SidebarResizer } from "./SidebarResizer";
@@ -65,9 +65,10 @@ describe("SidebarResizer (CORE-2734)", () => {
   it("ends the drag when pointer capture is lost", () => {
     const { handle, onCommit, onResizingChange } = setup();
     fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 200 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 230 });
     fireEvent.lostPointerCapture(handle, { pointerId: 1 });
     expect(onResizingChange).toHaveBeenLastCalledWith(false);
-    expect(onCommit).toHaveBeenCalledWith(200);
+    expect(onCommit).toHaveBeenCalledWith(230);
   });
 
   it("clears the resizing state when unmounted mid-drag", () => {
@@ -76,5 +77,62 @@ describe("SidebarResizer (CORE-2734)", () => {
     expect(onResizingChange).toHaveBeenLastCalledWith(true);
     unmount();
     expect(onResizingChange).toHaveBeenLastCalledWith(false);
+  });
+
+  describe("width control without dragging (CORE-2736)", () => {
+    function press(handle: HTMLElement, moveTo?: number) {
+      fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 200 });
+      if (moveTo != null) fireEvent.pointerMove(handle, { pointerId: 1, clientX: moveTo });
+      fireEvent.pointerUp(handle, { pointerId: 1 });
+      fireEvent.click(handle, { detail: 1, clientY: 120 });
+    }
+
+    it("opens on a click that stays put and steps the width", async () => {
+      const { handle, onChange, onCommit } = setup();
+      press(handle);
+      const wider = await screen.findByRole("button", { name: "Wider" });
+      expect(screen.getByText("Sidebar width")).toBeInTheDocument();
+      expect(onCommit).not.toHaveBeenCalled();
+      fireEvent.click(wider);
+      expect(onChange).toHaveBeenLastCalledWith(216);
+      expect(onCommit).toHaveBeenLastCalledWith(216);
+      fireEvent.click(screen.getByRole("button", { name: "Narrower" }));
+      expect(onCommit).toHaveBeenLastCalledWith(184);
+    });
+
+    it("disables the step past a limit and the reset at the default", async () => {
+      const { handle, onCommit } = setup(360);
+      press(handle);
+      const wider = await screen.findByRole("button", { name: "Wider" });
+      expect(wider).toHaveAttribute("aria-disabled", "true");
+      fireEvent.click(wider);
+      expect(onCommit).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Default width" }));
+      expect(onCommit).toHaveBeenLastCalledWith(200);
+    });
+
+    it("does not open after a drag", async () => {
+      const { handle, onCommit } = setup();
+      press(handle, 260);
+      expect(onCommit).toHaveBeenLastCalledWith(260);
+      await act(async () => {});
+      expect(screen.queryByRole("button", { name: "Wider" })).toBeNull();
+    });
+
+    it("closes on a second click and on a double-click reset", async () => {
+      const { handle, onCommit } = setup(232);
+      press(handle);
+      await screen.findByRole("button", { name: "Wider" });
+      press(handle);
+      await act(async () => {});
+      expect(screen.queryByRole("button", { name: "Wider" })).toBeNull();
+      press(handle);
+      await screen.findByRole("button", { name: "Wider" });
+      fireEvent.click(handle, { detail: 2 });
+      fireEvent.doubleClick(handle);
+      expect(onCommit).toHaveBeenLastCalledWith(200);
+      await act(async () => {});
+      expect(screen.queryByRole("button", { name: "Wider" })).toBeNull();
+    });
   });
 });
