@@ -1201,6 +1201,120 @@ func TestNextUpSkipsContainerWithAnyResumableChild(t *testing.T) {
 	}
 }
 
+// nextUpParent links each part to parent through an ordered "part-of"
+// relation, in the given order.
+func nextUpParent(t *testing.T, st *Store, parent EntityID, parts ...EntityID) {
+	t.Helper()
+	ctx := context.Background()
+	if err := st.UpsertEntity(ctx, widgetEntity(parent, "library-local")); err != nil {
+		t.Fatal(err)
+	}
+	for i, part := range parts {
+		order := i + 1
+		if err := st.UpsertEntityRelation(ctx, EntityRelation{
+			FromEntityID: part, Name: "part-of", ToEntityID: parent, SortOrder: &order,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestNextUpChecksTheParentsDirectChildrenForResumable(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	// entity-whole holds three direct children and one nested part.
+	direct := nextUpFixture(t, st, "entity-whole", "w-")
+	part := nextUpFixture(t, st, "entity-part-1", "p1-")
+	nextUpParent(t, st, "entity-whole", "entity-part-1")
+	cw := func() []SourceItem {
+		t.Helper()
+		items, err := st.SourceItems(ctx, filter, SourceQuery{Kind: "continue-watching", ProfileID: "profile-default"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return items
+	}
+
+	// A paused direct child, then a finished child of the nested part (the
+	// part is the most recently engaged container): the group is on
+	// continue-watching, so next-up yields nothing.
+	mustReport(t, st, "profile-default", direct[0], 45, 120, false)
+	mustReport(t, st, "profile-default", part[0], 120, 120, true)
+	if _, err := st.eventsW.ExecContext(ctx, `UPDATE playback_progress SET updated_at_ms = updated_at_ms - 60000 WHERE media_id = ?`, direct[0]); err != nil {
+		t.Fatal(err)
+	}
+	if items := nextUp(t, st, filter, "profile-default"); len(items) != 0 {
+		t.Fatalf("next-up with a paused direct child of the parent = %#v, want empty", items)
+	}
+	if items := cw(); len(items) != 1 || items[0].ID != direct[0] {
+		t.Fatalf("continue-watching = %#v, want %q", items, direct[0])
+	}
+
+	// The other way round: a paused child of the nested part, then a
+	// finished direct child (the parent is the most recently engaged).
+	mustReport(t, st, "profile-default", direct[0], 120, 120, true)
+	mustReport(t, st, "profile-default", part[0], 45, 120, false)
+	if _, err := st.eventsW.ExecContext(ctx, `UPDATE playback_progress SET updated_at_ms = updated_at_ms - 60000 WHERE media_id = ?`, part[0]); err != nil {
+		t.Fatal(err)
+	}
+	if items := nextUp(t, st, filter, "profile-default"); len(items) != 0 {
+		t.Fatalf("next-up with a paused child of a nested part = %#v, want empty", items)
+	}
+	if items := cw(); len(items) != 1 || items[0].ID != part[0] {
+		t.Fatalf("continue-watching = %#v, want %q", items, part[0])
+	}
+}
+
+func TestNextUpMatchesContinueWatchingOnIncompleteSources(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	ids := nextUpFixture(t, st, "entity-season", "s1-")
+
+	// Child 1 finished, child 2 paused but its source ended early (a
+	// recorded premature EOF), child 3 unwatched. Continue-watching drops
+	// child 2, so next-up must not treat it as resumable either: the
+	// frontier is the healthy child 3, and the show is on exactly one shelf.
+	mustReport(t, st, "profile-default", ids[0], 120, 120, true)
+	mustReport(t, st, "profile-default", ids[1], 45, 120, false)
+	if err := st.RecordSourceEnd(ctx, ids[1], "/media/s1-Yankee.mp4", "", "generation-truncated", 50); err != nil {
+		t.Fatal(err)
+	}
+	cw, err := st.SourceItems(ctx, filter, SourceQuery{Kind: "continue-watching", ProfileID: "profile-default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cw) != 0 {
+		t.Fatalf("continue-watching with an incomplete source = %#v, want empty", cw)
+	}
+	items := nextUp(t, st, filter, "profile-default")
+	if len(items) != 1 || items[0].ID != ids[2] {
+		t.Fatalf("next-up past an incomplete source = %#v, want exactly %q", items, ids[2])
+	}
+}
+
+func TestNextUpDoesNotGroupUnderATrashedParent(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	first := nextUpFixture(t, st, "entity-part-1", "p1-")
+	nextUpFixture(t, st, "entity-part-2", "p2-")
+	nextUpParent(t, st, "entity-whole", "entity-part-1", "entity-part-2")
+	if err := st.TrashEntity(ctx, "entity-whole", filter, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Every child of the first part finished: with the parent trashed the
+	// parts no longer group, so nothing crosses into the second part.
+	for _, id := range first {
+		mustReport(t, st, "profile-default", id, 120, 120, true)
+	}
+	if items := nextUp(t, st, filter, "profile-default"); len(items) != 0 {
+		t.Fatalf("next-up across a trashed parent = %#v, want empty", items)
+	}
+}
+
 func TestNextUpOrdersContainersByEngagementRecency(t *testing.T) {
 	st := openSeeded(t)
 	filter := LibraryFilter{AllLibraries: true}
