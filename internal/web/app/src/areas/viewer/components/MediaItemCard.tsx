@@ -213,7 +213,9 @@ export function MediaItemCard({
   }
 
   function play() {
-    navigate(mediaPath(opensViewer ? "view" : "watch", item.id), { state: playState() });
+    navigate(opensViewer ? mediaPath("view", item.id) : mediaPath("watch", item.id), {
+      state: playState(),
+    });
   }
 
   // The navigation state the card's link carries to the page it opens.

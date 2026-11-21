@@ -27,7 +27,7 @@ describe("routes built from known Media IDs", () => {
     ["viewer/components/ContainerMediaRows.tsx", ["media", "watch"]],
     ["viewer/components/Hero.tsx", ["watch"]],
     ["viewer/components/MediaDetailMoreMenu.tsx", ["media"]],
-    ["viewer/components/MediaItemCard.tsx", ["media", "watch"]],
+    ["viewer/components/MediaItemCard.tsx", ["media", "view", "watch"]],
     ["viewer/components/TrackList.tsx", ["media", "watch"]],
     ["viewer/components/WatchTogetherButton.tsx", ["watch"]],
     ["viewer/lib/searchRows.ts", ["watch", "watch"]],
@@ -35,16 +35,17 @@ describe("routes built from known Media IDs", () => {
     ["viewer/pages/CollectionPage.tsx", ["watch"]],
     ["viewer/pages/EntityPage.tsx", ["watch", "watch"]],
     ["viewer/pages/LibraryBrowsePage.tsx", ["watch"]],
-    ["viewer/pages/MediaDetailPage.tsx", ["watch", "media"]],
+    ["viewer/pages/ImageViewerPage.tsx", ["view", "view", "watch", "watch"]],
+    ["viewer/pages/MediaDetailPage.tsx", ["view", "watch", "media"]],
     ["viewer/pages/MyDataPage.tsx", ["media"]],
     ["viewer/pages/NotificationsPage.tsx", ["watch"]],
-    ["viewer/pages/PlayerPage.tsx", ["watch", "watch", "media", "watch"]],
+    ["viewer/pages/PlayerPage.tsx", ["view", "watch", "watch", "media", "watch"]],
     ["viewer/pages/PlaylistPage.tsx", ["watch"]],
     ["viewer/remote/RemoteReceiver.tsx", ["watch"]],
     ["console/lib/previewMedia.ts", ["watch"]],
   ])("%s encodes each known-ID route", (file, routes) => {
     const source = readFileSync(resolve("src/areas", file), "utf8");
-    const calls = [...source.matchAll(/\bmediaPath\("(media|watch|credits)",/g)];
+    const calls = [...source.matchAll(/\bmediaPath\("(media|view|watch|credits)",/g)];
     expect(calls.map(([, route]) => route).toSorted()).toEqual(routes.toSorted());
     expect(source).not.toMatch(/(?:`\/?|\})\b(?:media|watch)\/\$\{/);
   });
