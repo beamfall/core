@@ -50,7 +50,7 @@ describe("CastRow", () => {
     expect(img?.getAttribute("src")).toBe("/api/entity/artwork/p1/poster?v=1&bucket=w320");
     expect(links[1].querySelector("img")).toBeNull();
     // The class the app-wide poster size sizes (CORE-2893).
-    expect(links[0].closest("li")).toHaveClass("bf-cast-card");
+    expect(list.querySelector("ul.bf-shelf > li.bf-cast-card")).toBe(links[0].closest("li"));
   });
 
   it("groups people by department when credits carry several", () => {
