@@ -557,6 +557,7 @@ function AssignSection({ tags }: { tags: TagInfo[] }) {
             ) : (
               <EntityPicker
                 id="assign-target-id"
+                className="w-full"
                 kind={targetType}
                 value={targetID}
                 onChange={(picked) => {
@@ -690,6 +691,7 @@ function BulkSection({ tags }: { tags: TagInfo[] }) {
             ) : (
               <EntityMultiPicker
                 id="bulk-target-ids"
+                className="w-full"
                 kind={targetType}
                 value={idList}
                 onChange={(ids) => {

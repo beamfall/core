@@ -187,7 +187,7 @@ function EntitySearchBox({
       }}
       disabled={disabled}
     >
-      <div ref={anchorRef} className={cn("w-72", className)}>
+      <div ref={anchorRef} className={cn("w-72 max-w-full", className)}>
         <Combobox.Input
           ref={inputRef}
           id={id}
@@ -336,7 +336,7 @@ export function EntityPicker({
   const item = picked && picked.id === value ? picked : undefined;
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <EntitySearchBox
         id={id}
         kind={kind}
@@ -414,7 +414,7 @@ export function EntityMultiPicker({
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <EntitySearchBox
         id={id}
         kind={kind}
