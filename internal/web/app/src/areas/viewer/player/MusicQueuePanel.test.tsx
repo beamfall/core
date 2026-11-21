@@ -149,9 +149,47 @@ describe("MusicQueuePanel", () => {
 
     fireEvent.focus(window);
     expect(screen.queryByText("Old first track")).not.toBeInTheDocument();
-    await act(async () => answer(page(refreshedRows)));
+    await act(async () =>
+      answer(page([{ id: "old", title: "Old first track", mediaClass: "audio" }])),
+    );
     expect(onPlay).toHaveBeenCalledExactlyOnceWith("new");
+    expect(requests).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["relock", { profileID: "profile-a", revealed: false }],
+    ["profile switch", { profileID: "profile-b", revealed: true }],
+  ])("ignores a delayed pre-focus response after a remote %s", async (_, changedSession) => {
+    let answer!: (response: Response) => void;
+    let answerFresh!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      answer = resolve;
+    });
+    const fresh = new Promise<Response>((resolve) => {
+      answerFresh = resolve;
+    });
+    const restricted = [{ id: "private", title: "Restricted track", mediaClass: "audio" }];
+    const requests = vi
+      .fn()
+      .mockResolvedValueOnce(page(restricted))
+      .mockReturnValueOnce(pending)
+      .mockReturnValueOnce(fresh);
+    vi.stubGlobal("fetch", requests);
+    const onPlay = renderQueuePanel();
+    fireEvent.click(await screen.findByRole("button", { name: STRINGS.en.musicQueuePlay }));
+    fireEvent.focus(window);
+    expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
     expect(requests).toHaveBeenCalledTimes(2);
+
+    await act(async () => answer(page(restricted)));
+    expect(requests).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
+    expect(onPlay).not.toHaveBeenCalled();
+
+    await act(async () => answerFresh(page([], changedSession)));
+    expect(viewer.refresh).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
+    expect(onPlay).not.toHaveBeenCalled();
   });
 
   it("restarts all pages when a removal shifts the next page", async () => {
