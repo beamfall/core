@@ -7,12 +7,14 @@ package scrape
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ConditionalResult is one conditional-GET response: either NotModified (the
@@ -266,6 +268,8 @@ func sanitizedTransportError(parsed *url.URL, err error) error {
 type FeedEntry struct {
 	GUID  string
 	Title string
+	// DerivedGUID is true when the feed omitted an explicit GUID or Atom ID.
+	DerivedGUID bool
 	// EnclosureURL is the media payload URL ("" for entries with no
 	// enclosure). Never an identity key — ad insertion rewrites it freely.
 	EnclosureURL string
@@ -274,10 +278,9 @@ type FeedEntry struct {
 }
 
 // ParseFeedEntries extracts every entry's GUID, title, and enclosure from an
-// RSS or Atom document, in document order. RSS items without a <guid> (Atom
-// entries without an <id>) fall back to the enclosure URL as a last-resort
-// identity; entries with neither are skipped (nothing to download, nothing
-// to key on).
+// RSS or Atom document, in document order. Entries without an explicit
+// identity need an enclosure and derive their GUID from the item link or
+// publication metadata (ADR-0030 §3).
 func ParseFeedEntries(data []byte) ([]FeedEntry, error) {
 	root, err := parseXML(data)
 	if err != nil {
@@ -302,8 +305,8 @@ func rssEntries(items []*xmlNode) []FeedEntry {
 			entry.EnclosureURL = enclosures[0].attrs["url"]
 			entry.EnclosureType = enclosures[0].attrs["type"]
 		}
-		if entry.GUID == "" {
-			entry.GUID = entry.EnclosureURL
+		if entry.GUID == "" && entry.EnclosureURL != "" {
+			entry.deriveGUID(childText(item, "link"), childText(item, "pubDate"))
 		}
 		if entry.GUID == "" {
 			continue
@@ -329,8 +332,8 @@ func atomEntries(items []*xmlNode) []FeedEntry {
 				break
 			}
 		}
-		if entry.GUID == "" {
-			entry.GUID = entry.EnclosureURL
+		if entry.GUID == "" && entry.EnclosureURL != "" {
+			entry.deriveGUID(atomEntryLink(item), childText(item, "published"))
 		}
 		if entry.GUID == "" {
 			continue
@@ -338,6 +341,40 @@ func atomEntries(items []*xmlNode) []FeedEntry {
 		entries = append(entries, entry)
 	}
 	return entries
+}
+
+func atomEntryLink(item *xmlNode) string {
+	for _, link := range item.children {
+		rel := link.attrs["rel"]
+		if link.name == "link" && (rel == "" || rel == "alternate") {
+			if href := strings.TrimSpace(link.attrs["href"]); href != "" {
+				return href
+			}
+		}
+	}
+	return ""
+}
+
+var feedPublicationLayouts = append([]string{time.RFC3339Nano}, rfc822Layouts...)
+
+func (entry *FeedEntry) deriveGUID(link, published string) {
+	key := "link\x00" + link
+	if link == "" {
+		title := strings.ToLower(strings.Join(strings.Fields(entry.Title), " "))
+		if title == "" && published == "" {
+			return
+		}
+		for _, layout := range feedPublicationLayouts {
+			if stamp, err := time.ParseInLocation(layout, published, time.UTC); err == nil {
+				published = stamp.UTC().Format(time.RFC3339Nano)
+				break
+			}
+		}
+		key = "title-date\x00" + title + "\x00" + published
+	}
+	// Hash links as well as metadata so URL credentials stay out of receipts.
+	entry.GUID = fmt.Sprintf("urn:beamfall:feed-entry:%x", sha256.Sum256([]byte(key)))
+	entry.DerivedGUID = true
 }
 
 func childText(scope *xmlNode, name string) string {

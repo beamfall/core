@@ -415,6 +415,30 @@ func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID
 	return err
 }
 
+// AliasSubscriptionEntryGUID adds a GUID for an existing receipt. It keeps
+// the original receipt and copies the path and timestamp so both GUIDs
+// refer to the same file and retention counts it once.
+func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionID, existingGUID, guid string) error {
+	if id == "" {
+		return errors.New("subscription ID is required")
+	}
+	if strings.TrimSpace(existingGUID) == "" || strings.TrimSpace(guid) == "" {
+		return errors.New("entry GUID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err := s.catalogW.ExecContext(ctx, `
+		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
+		SELECT subscription_id, ?, seen_at_ms, path FROM subscription_seen_entry
+		WHERE subscription_id = ? AND guid = ?
+		ON CONFLICT(subscription_id, guid) DO NOTHING
+	`, guid, id, existingGUID)
+	return err
+}
+
 // AssociateSubscriptionEntryMedia repairs feed identity for archived feed
 // Media that existed before the Subscription poller recorded a seen entry. The
 // caller supplies the Media explicitly; this method never resolves by

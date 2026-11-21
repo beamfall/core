@@ -206,16 +206,27 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 		if entry.EnclosureURL == "" || seen[entry.GUID] {
 			continue
 		}
-		if err := p.ingestEntry(ctx, subscription, entry, authHeader, now); err != nil {
+		var entryErr error
+		if entry.DerivedGUID && seen[entry.EnclosureURL] {
+			// Older pollers used the enclosure URL for entries without a
+			// GUID. Keep that receipt for rollback and persist the derived
+			// GUID before saving validators for this feed response.
+			entryErr = p.store.AliasSubscriptionEntryGUID(ctx, subscription.ID, entry.EnclosureURL, entry.GUID)
+		} else {
+			entryErr = p.ingestEntry(ctx, subscription, entry, authHeader, now)
+			if entryErr == nil {
+				downloaded++
+			}
+		}
+		if entryErr != nil {
 			if firstErr == nil {
-				firstErr = err
+				firstErr = entryErr
 			}
 			continue
 		}
 		// Mirror the persisted receipt in the in-memory set so entries
 		// sharing an exact GUID do not re-download in this poll.
 		seen[entry.GUID] = true
-		downloaded++
 	}
 	// A partial poll still counts as polled: seen GUIDs gate re-downloads,
 	// but only a fully clean poll may store the new validators — otherwise a
