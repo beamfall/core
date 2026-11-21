@@ -677,6 +677,11 @@
         "optional": true
       },
       {
+        "name": "failingSince",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "feedURL",
         "kind": "scalar"
       },
@@ -689,7 +694,15 @@
         "kind": "scalar"
       },
       {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
         "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
         "kind": "scalar"
       },
       {
@@ -702,6 +715,16 @@
         "kind": "scalar"
       },
       {
+        "name": "movedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "retentionKind",
         "kind": "scalar"
       },
@@ -709,6 +732,11 @@
         "name": "retentionN",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "retiredAt",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "root",
@@ -19203,6 +19231,16 @@
     ]
   },
   {
+    "field": "refreshallsubscriptions",
+    "kind": "object",
+    "children": [
+      {
+        "name": "refreshed",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "refreshlibrarymetadata",
     "kind": "object",
     "children": [
@@ -19356,6 +19394,38 @@
       },
       {
         "name": "year",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "refreshsubscription",
+    "kind": "object",
+    "children": [
+      {
+        "name": "failingSince",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
+        "kind": "scalar"
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "title",
         "kind": "scalar"
       }
     ]
@@ -19968,6 +20038,11 @@
         "optional": true
       },
       {
+        "name": "failingSince",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "feedURL",
         "kind": "scalar"
       },
@@ -19980,7 +20055,15 @@
         "kind": "scalar"
       },
       {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
         "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
         "kind": "scalar"
       },
       {
@@ -19993,6 +20076,16 @@
         "kind": "scalar"
       },
       {
+        "name": "movedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "retentionKind",
         "kind": "scalar"
       },
@@ -20000,6 +20093,11 @@
         "name": "retentionN",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "retiredAt",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "root",
@@ -31025,6 +31123,11 @@
         "optional": true
       },
       {
+        "name": "failingSince",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "feedURL",
         "kind": "scalar"
       },
@@ -31037,7 +31140,15 @@
         "kind": "scalar"
       },
       {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
         "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
         "kind": "scalar"
       },
       {
@@ -31050,6 +31161,16 @@
         "kind": "scalar"
       },
       {
+        "name": "movedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "retentionKind",
         "kind": "scalar"
       },
@@ -31057,6 +31178,11 @@
         "name": "retentionN",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "retiredAt",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "root",
@@ -32331,6 +32457,11 @@
         "optional": true
       },
       {
+        "name": "failingSince",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "feedURL",
         "kind": "scalar"
       },
@@ -32343,7 +32474,15 @@
         "kind": "scalar"
       },
       {
+        "name": "healthStatus",
+        "kind": "scalar"
+      },
+      {
         "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastErrorClass",
         "kind": "scalar"
       },
       {
@@ -32356,6 +32495,16 @@
         "kind": "scalar"
       },
       {
+        "name": "movedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "nextPollAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "retentionKind",
         "kind": "scalar"
       },
@@ -32363,6 +32512,11 @@
         "name": "retentionN",
         "kind": "scalar",
         "nullable": true
+      },
+      {
+        "name": "retiredAt",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "root",

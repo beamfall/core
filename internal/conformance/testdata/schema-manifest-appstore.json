@@ -885,12 +885,22 @@
     "tier": "session"
   },
   {
+    "field": "refreshallsubscriptions",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "refreshlibrarymetadata",
     "effect": "write",
     "tier": "admin"
   },
   {
     "field": "refreshmediametadata",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "refreshsubscription",
     "effect": "write",
     "tier": "session"
   },

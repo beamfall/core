@@ -173,14 +173,20 @@
       "tier": "session",
       "children": [
         "addedAt",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]
@@ -2475,6 +2481,14 @@
       ]
     },
     {
+      "field": "refreshallsubscriptions",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "refreshed"
+      ]
+    },
+    {
       "field": "refreshlibrarymetadata",
       "effect": "write",
       "tier": "admin",
@@ -2505,6 +2519,19 @@
         "summary",
         "title",
         "year"
+      ]
+    },
+    {
+      "field": "refreshsubscription",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "failingSince",
+        "healthStatus",
+        "id",
+        "lastErrorClass",
+        "nextPollAt",
+        "title"
       ]
     },
     {
@@ -2623,14 +2650,20 @@
       "tier": "session",
       "children": [
         "addedAt",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]
@@ -3849,14 +3882,20 @@
       "tier": "session",
       "children": [
         "addedAt",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]
@@ -4097,14 +4136,20 @@
       "tier": "session",
       "children": [
         "addedAt",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]
