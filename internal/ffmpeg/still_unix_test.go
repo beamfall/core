@@ -32,16 +32,13 @@ func TestInspectStillFileDoesNotBlockOnAFIFO(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		src, err := inspectStillFile(fifo)
-		if err == nil && src.preview != nil {
-			err = os.ErrInvalid
-		}
+		_, err := inspectStillFile(fifo)
 		done <- err
 	}()
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Fatalf("inspecting a FIFO: %v", err)
+		if err == nil {
+			t.Fatal("a FIFO was accepted as an image source")
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("opening a writerless FIFO blocked")

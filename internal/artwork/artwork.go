@@ -611,7 +611,13 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 	stamp := imageDerivativeVersion + ":" + fingerprint
 	buckets := []string{"w400", "w1920"}
 	// #nosec G304 -- marker is derived from the server-owned artwork root and validated Media ID.
-	if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) == stamp && nonEmptyRegularFile(poster) {
+	data, err := os.ReadFile(marker)
+	recorded := strings.TrimSpace(string(data))
+	// A pre-version marker (the bare fingerprint) still covers a poster the
+	// user imported over the generated one: the version bump regenerates only
+	// what the scaler made, never a selection.
+	current := recorded == stamp || (recorded == fingerprint && !regularFileExists(generatedMarkerPath(poster)))
+	if err == nil && current && nonEmptyRegularFile(poster) {
 		fresh := true
 		for _, bucket := range buckets {
 			if !nonEmptyRegularFile(filepath.Join(filepath.Dir(poster), SlotPoster+"."+bucket+".jpg")) {

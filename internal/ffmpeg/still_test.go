@@ -796,3 +796,65 @@ func TestBestPreviewScanIsBoundedOnNestedCandidates(t *testing.T) {
 		t.Fatal("the fallback scan did not finish: its validation work is unbounded")
 	}
 }
+
+func heifColourOf(t *testing.T, props [][]byte, ipmas [][]byte, iref []byte) stillColour {
+	t.Helper()
+	children := [][]byte{fullBox("pitm", 0, []byte{0, 1})}
+	if iref != nil {
+		children = append(children, fullBox("iref", 0, iref))
+	}
+	iprp := [][]byte{box("ipco", props...)}
+	for _, entries := range ipmas {
+		iprp = append(iprp, fullBox("ipma", 0, entries))
+	}
+	children = append(children, box("iprp", iprp...))
+	data := append(box("ftyp", []byte("heic\x00\x00\x00\x00mif1heic")), fullBox("meta", 0, children...)...)
+	return inspectStill(bytes.NewReader(data), int64(len(data)), "a.heic").colour
+}
+
+func TestHEIFColourResolvesThePrimaryItemsProperty(t *testing.T) {
+	nclx := func(primaries uint16) []byte {
+		b := []byte("nclx\x00\x00\x00\x0d\x00\x01\x80")
+		binary.BigEndian.PutUint16(b[4:], primaries)
+		return box("colr", b)
+	}
+	srgb, p3 := nclx(1), nclx(12)
+	p3ICC := box("colr", append([]byte("prof"), buildDisplayICC("Display P3", p3Colorants)...))
+	// ipma entries: count, then item ID, association count, property indices.
+	cases := []struct {
+		name  string
+		props [][]byte
+		ipmas [][]byte
+		iref  []byte
+		want  bool
+	}{
+		{"ICC listed after nclx", [][]byte{srgb, p3ICC}, [][]byte{{0, 0, 0, 1, 0, 1, 2, 0x81, 0x82}}, nil, true},
+		{"association in a later ipma", [][]byte{srgb, p3}, [][]byte{{0, 0, 0, 1, 0, 2, 1, 0x81}, {0, 0, 0, 1, 0, 1, 1, 0x82}}, nil, true},
+		{"grid inherits the first tile", [][]byte{p3}, [][]byte{{0, 0, 0, 1, 0, 2, 1, 0x81}}, box("dimg", []byte{0, 1, 0, 2, 0, 2, 0, 3}), true},
+		{"grid without a dimg reference", [][]byte{p3}, [][]byte{{0, 0, 0, 1, 0, 2, 1, 0x81}}, nil, false},
+	}
+	for _, c := range cases {
+		if got := heifColourOf(t, c.props, c.ipmas, c.iref); got.converts() != c.want {
+			t.Errorf("%s: colour %+v converts = %v, want %v", c.name, got, got.converts(), c.want)
+		}
+	}
+}
+
+func TestJPEGMetadataReadsOnlyWhatItKeeps(t *testing.T) {
+	xmp := segment(0xE1, append([]byte("http://ns.adobe.com/xap/1.0/\x00"), make([]byte, 60000)...))
+	dupICC := iccSegment(make([]byte, 60000))
+	var segs [][]byte
+	for range 40 { // ≈4.8 MB of APP1 that is not Exif and repeated ICC chunks
+		segs = append(segs, xmp, dupICC)
+	}
+	segs = append(segs, exifSegment(6), exifSegment(3))
+	jpg := withSegments(encodeJPEG(t, solidImage(16, 16, previewColour)), segs...)
+	r := &countingReaderAt{r: bytes.NewReader(jpg)}
+	orientation, icc, complete := jpegMetadataAt(r, int64(len(jpg)))
+	if orientation != 6 || !complete || len(icc) != 60000 {
+		t.Fatalf("orientation %d, icc %d bytes, complete %v; want 6 from the first Exif, one ICC chunk, complete", orientation, len(icc), complete)
+	}
+	if r.read > 200_000 {
+		t.Fatalf("read %d bytes of metadata, want only the kept segments and signatures", r.read)
+	}
+}

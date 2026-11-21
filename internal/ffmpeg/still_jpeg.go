@@ -137,6 +137,7 @@ func jpegMetadataAt(r io.ReaderAt, size int64) (orientation int, icc []byte, com
 	}
 	chunks := map[byte][]byte{}
 	total := 0
+	exifSeen := false
 	pos := int64(2)
 	for range maxJPEGSegments {
 		if n, _ := r.ReadAt(head, pos); n < 2 || head[0] != 0xFF {
@@ -159,20 +160,32 @@ func jpegMetadataAt(r io.ReaderAt, size int64) (orientation int, icc []byte, com
 		if length < 2 || end > size {
 			break
 		}
-		exif := marker == 0xE1 && orientation == 0
+		// Only the first Exif segment and each ICC chunk once are read whole,
+		// after their signature, so the walk reads a bounded total.
+		exif := marker == 0xE1 && !exifSeen
 		iccChunk := marker == 0xE2 && total+int(length) <= maxICCBytes
 		if exif || iccChunk {
-			segment := make([]byte, length-2)
-			if _, err := r.ReadAt(segment, pos+4); err != nil {
+			prefix := make([]byte, min(length-2, int64(len(iccMarker)+2)))
+			if _, err := r.ReadAt(prefix, pos+4); err != nil {
 				break
 			}
+			wanted := false
 			switch {
-			case exif && bytes.HasPrefix(segment, []byte("Exif\x00\x00")):
-				orientation = tiffOrientation(segment[6:])
-			case iccChunk && bytes.HasPrefix(segment, iccMarker) && len(segment) > len(iccMarker)+2:
-				seq := segment[len(iccMarker)]
-				if _, dup := chunks[seq]; !dup {
-					chunks[seq] = segment[len(iccMarker)+2:]
+			case exif && bytes.HasPrefix(prefix, []byte("Exif\x00\x00")):
+				exifSeen, wanted = true, true
+			case iccChunk && bytes.HasPrefix(prefix, iccMarker) && len(prefix) == len(iccMarker)+2 && length-2 > int64(len(prefix)):
+				_, dup := chunks[prefix[len(iccMarker)]]
+				wanted = !dup
+			}
+			if wanted {
+				segment := make([]byte, length-2)
+				if _, err := r.ReadAt(segment, pos+4); err != nil {
+					break
+				}
+				if exif {
+					orientation = tiffOrientation(segment[6:])
+				} else {
+					chunks[segment[len(iccMarker)]] = segment[len(iccMarker)+2:]
 					total += len(segment)
 				}
 			}

@@ -71,6 +71,12 @@ func readSpan(r io.ReaderAt, size int64, span byteSpan, limit int64) []byte {
 	return buf
 }
 
+// readPrefix reads up to n leading bytes of span.
+func readPrefix(r io.ReaderAt, size int64, span byteSpan, n int64) []byte {
+	span.length = min(span.length, n)
+	return readSpan(r, size, span, n)
+}
+
 // inspectStill reads the source's structure. name is only an extension hint.
 func inspectStill(r io.ReaderAt, size int64, name string) stillSource {
 	head := make([]byte, 16)
@@ -406,22 +412,90 @@ func heifColour(r io.ReaderAt, size int64, top []bmffBox) stillColour {
 			}
 		}
 	}
-	index := first
 	primary, hasPrimary := heifPrimaryItem(r, size, metaBoxes)
-	if ipma, ok := findBox(iprpBoxes, "ipma", nil); ok && hasPrimary {
-		index = 0
-		for _, p := range heifAssociations(r, size, ipma, primary) {
-			if _, ok := colrs[p]; ok {
-				index = p
-				break
-			}
+	if !hasPrimary {
+		if box, ok := colrs[first]; ok {
+			return colrColour(readSpan(r, size, box.payload, maxICCBytes+4))
+		}
+		return stillColour{}
+	}
+	box, ok := heifItemColr(r, size, iprpBoxes, colrs, primary)
+	if !ok {
+		// A grid or overlay carries no colour of its own when its tiles do;
+		// the decoder then takes the first tile's (libheif does the same).
+		if tile, found := heifFirstDerivedFrom(r, size, metaBoxes, primary); found {
+			box, ok = heifItemColr(r, size, iprpBoxes, colrs, tile)
 		}
 	}
-	box, ok := colrs[index]
 	if !ok {
 		return stillColour{}
 	}
-	colr := readSpan(r, size, box.payload, maxICCBytes+4)
+	return colrColour(readSpan(r, size, box.payload, maxICCBytes+4))
+}
+
+// heifItemColr picks the item's colour property: an ICC profile wins over
+// nclx whatever their association order, because the decoder applies the
+// profile.
+func heifItemColr(r io.ReaderAt, size int64, iprpBoxes []bmffBox, colrs map[int]bmffBox, item uint32) (bmffBox, bool) {
+	var nclx bmffBox
+	found := false
+	for _, ipma := range iprpBoxes {
+		if ipma.typ != "ipma" {
+			continue
+		}
+		for _, p := range heifAssociations(r, size, ipma, item) {
+			box, ok := colrs[p]
+			if !ok {
+				continue
+			}
+			switch string(readPrefix(r, size, box.payload, 4)) {
+			case "prof", "rICC":
+				return box, true
+			case "nclx":
+				if !found {
+					nclx, found = box, true
+				}
+			}
+		}
+	}
+	return nclx, found
+}
+
+// heifFirstDerivedFrom returns the first item the given derived image (a grid
+// or overlay) is built from, by its dimg reference.
+func heifFirstDerivedFrom(r io.ReaderAt, size int64, metaBoxes []bmffBox, item uint32) (uint32, bool) {
+	iref, ok := findBox(metaBoxes, "iref", nil)
+	if !ok || iref.payload.length < 4 {
+		return 0, false
+	}
+	head := readPrefix(r, size, iref.payload, 1)
+	if len(head) < 1 {
+		return 0, false
+	}
+	idWidth := 2
+	if head[0] != 0 {
+		idWidth = 4
+	}
+	readID := func(b []byte) uint32 {
+		if idWidth == 2 {
+			return uint32(binary.BigEndian.Uint16(b))
+		}
+		return binary.BigEndian.Uint32(b)
+	}
+	for _, ref := range bmffBoxes(r, byteSpan{iref.payload.off + 4, iref.payload.length - 4}) {
+		if ref.typ != "dimg" {
+			continue
+		}
+		b := readPrefix(r, size, ref.payload, int64(2*idWidth+2))
+		if len(b) < 2*idWidth+2 || readID(b) != item || binary.BigEndian.Uint16(b[idWidth:]) == 0 {
+			continue
+		}
+		return readID(b[idWidth+2:]), true
+	}
+	return 0, false
+}
+
+func colrColour(colr []byte) stillColour {
 	if len(colr) < 4 {
 		return stillColour{}
 	}
@@ -436,7 +510,6 @@ func heifColour(r io.ReaderAt, size int64, top []bmffBox) stillColour {
 	return stillColour{}
 }
 
-// heifPrimaryItem reads the pitm box's item ID.
 func heifPrimaryItem(r io.ReaderAt, size int64, metaBoxes []bmffBox) (uint32, bool) {
 	pitm, ok := findBox(metaBoxes, "pitm", nil)
 	if !ok {
@@ -512,7 +585,7 @@ func heifAssociations(r io.ReaderAt, size int64, ipma bmffBox, item uint32) []in
 func inspectPNG(r io.ReaderAt, size int64) stillSource {
 	src := stillSource{orientation: 1}
 	var icc []byte
-	isSRGB, sawICCP := false, false
+	isSRGB, sawICCP, sawEXIF := false, false, false
 	pos := int64(8)
 	for range 4096 {
 		head := make([]byte, 8)
@@ -532,8 +605,12 @@ func inspectPNG(r io.ReaderAt, size int64) stillSource {
 		case "sRGB":
 			isSRGB = true
 		case "eXIf":
-			if o := tiffOrientation(readSpan(r, size, data, 1<<20)); o != 0 {
-				src.orientation = o
+			// PNG allows one eXIf; only the first is read.
+			if !sawEXIF {
+				sawEXIF = true
+				if o := tiffOrientation(readSpan(r, size, data, 1<<20)); o != 0 {
+					src.orientation = o
+				}
 			}
 		case "IEND":
 			pos = size
@@ -566,9 +643,11 @@ func pngICC(chunk []byte) []byte {
 	return icc
 }
 
-// inspectWebP reads the ICCP and EXIF chunks of an extended (VP8X) WebP.
+// inspectWebP reads the first ICCP and EXIF chunks of an extended (VP8X)
+// WebP; the container allows one of each.
 func inspectWebP(r io.ReaderAt, size int64) stillSource {
 	src := stillSource{orientation: 1}
+	sawICCP, sawEXIF := false, false
 	pos := int64(12)
 	for range 4096 {
 		head := make([]byte, 8)
@@ -579,8 +658,16 @@ func inspectWebP(r io.ReaderAt, size int64) stillSource {
 		data := byteSpan{pos + 8, length}
 		switch string(head[:4]) {
 		case "ICCP":
+			if sawICCP {
+				break
+			}
+			sawICCP = true
 			src.colour = iccColour(readSpan(r, size, data, maxICCBytes))
 		case "EXIF":
+			if sawEXIF {
+				break
+			}
+			sawEXIF = true
 			exif := readSpan(r, size, data, 1<<20)
 			exif = bytes.TrimPrefix(exif, []byte("Exif\x00\x00"))
 			if o := tiffOrientation(exif); o != 0 {

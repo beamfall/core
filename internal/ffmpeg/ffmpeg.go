@@ -691,8 +691,9 @@ func inspectStillFile(src string) (stillSource, error) {
 	if err != nil {
 		return stillSource{}, fmt.Errorf("reading image: %w", err)
 	}
+	// FFmpeg would block opening a FIFO or device the inspection skipped.
 	if !info.Mode().IsRegular() {
-		return stillSource{}, nil
+		return stillSource{}, errors.New("image source is not a regular file")
 	}
 	return inspectStill(f, info.Size(), src), nil
 }

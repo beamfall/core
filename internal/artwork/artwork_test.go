@@ -588,6 +588,40 @@ func TestDeriveImageRegeneratesDerivativesFromAnOlderScaler(t *testing.T) {
 	}
 }
 
+func TestDeriveImageVersionBumpKeepsAnImportedPoster(t *testing.T) {
+	st := storetest.Open(t)
+	id, path := importImageFile(t, st, "still", "jpg")
+	scaler := &copyScaler{}
+	svc := NewService(st, scaler, t.TempDir())
+	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ImportArtwork(context.Background(), id, SlotPoster, []byte("chosen poster")); err != nil {
+		t.Fatal(err)
+	}
+	// The lazy path has rebuilt the buckets from the import, and the marker
+	// is the one a pre-version scaler wrote.
+	for _, bucket := range []string{"w400", "w1920"} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(svc.PosterPath(id)), SlotPoster+"."+bucket+".jpg"), []byte("bucket"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(svc.PosterPath(id)+".source-fingerprint", []byte("fingerprint-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := scaler.calls
+	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+		t.Fatal(err)
+	}
+	if scaler.calls != before {
+		t.Fatalf("scale calls = %d, want the imported poster kept", scaler.calls)
+	}
+	// #nosec G304 -- the poster path is under the test-owned artwork root.
+	if data, err := os.ReadFile(svc.PosterPath(id)); err != nil || string(data) != "chosen poster" {
+		t.Fatalf("poster = %q, %v; want the imported poster", data, err)
+	}
+}
+
 func TestDeriveImageWritesNothingForProtectedLibrary(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
