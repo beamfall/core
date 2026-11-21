@@ -329,8 +329,14 @@ function AdminUnlocked({ onChange }: { onChange: (unlocked: boolean) => void }) 
 
 export function ManageArea() {
   const { setRegister } = useRegister();
-  const { isManager, loading, needsEnroll, session } = useSession();
+  const { isManager, loading, needsEnroll, session, switchProfile } = useSession();
+  const { key: locationKey } = useLocation();
   const t = useT();
+  const [switchFailure, setSwitchFailure] = useState<{
+    locationKey: string;
+    profileID: string;
+    reason: StringKey;
+  } | null>(null);
   useEffect(() => setRegister("manage"), [setRegister]);
 
   if (loading) {
@@ -345,10 +351,37 @@ export function ManageArea() {
     return <Navigate to="/" replace />;
   }
 
-  return <ManageWorkspace key={session.profileID} />;
+  const { profileID } = session;
+  const switchError =
+    switchFailure?.locationKey === locationKey && switchFailure.profileID === profileID
+      ? t(switchFailure.reason)
+      : "";
+
+  // A switch reloads the session and unmounts the workspace, even on refusal.
+  // Keep only the localized failure reason, scoped to the originating visit.
+  async function onSwitch(targetID: string, pin?: string) {
+    setSwitchFailure(null);
+    try {
+      await switchProfile(targetID, pin);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      let reason: StringKey = "couldNotSwitchProfile";
+      if (message === "profile PIN attempts throttled") reason = "whosWatchingPinThrottled";
+      if (message === "profile PIN required") reason = "whosWatchingPinWrong";
+      setSwitchFailure({ locationKey, profileID, reason });
+    }
+  }
+
+  return <ManageWorkspace key={profileID} onSwitch={onSwitch} switchError={switchError} />;
 }
 
-function ManageWorkspace() {
+function ManageWorkspace({
+  onSwitch,
+  switchError,
+}: {
+  onSwitch: (id: string, pin?: string) => Promise<void>;
+  switchError: string;
+}) {
   const { pathname } = useLocation();
   const { session } = useSession();
   const t = useT();
@@ -435,7 +468,10 @@ function ManageWorkspace() {
               <Route path="navigation" element={<NavOverridePage />} />
               <Route path="unmatched" element={<UnmatchedPage />} />
               <Route path="restrictions" element={<RestrictionsPage />} />
-              <Route path="profile" element={<ProfilePage />} />
+              <Route
+                path="profile"
+                element={<ProfilePage onSwitch={onSwitch} error={switchError} />}
+              />
               <Route path="*" element={<Navigate to="/manage/libraries" replace />} />
             </Routes>
           </ManageAdminLock>

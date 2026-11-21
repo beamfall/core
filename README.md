@@ -88,7 +88,7 @@ In the web app, open **Manage › Switch profile › Profile settings** and unlo
 password. Pick an adult Profile to set or change the PIN used to enter that Profile. Use
 **Preferred subtitle languages for your current profile** to edit the list. Enter language codes
 such as `en, fr-CA` in order of preference, or clear the field to remove your preferences, then save.
-To unlock restricted content, use the separate PIN in **Manage › Restrictions**.
+To unlock restricted content, use the separate PIN in **Manage › Show restricted content**.
 
 ### Organizing and browsing
 

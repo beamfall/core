@@ -530,6 +530,25 @@ export const SETTINGS_INDEX: SettingsPage[] = [
       },
     ],
   },
+  {
+    area: "manage",
+    path: "profile",
+    page: "navSwitchProfile",
+    settings: [
+      {
+        id: "manage.profile.entryPin",
+        label: "manageProfileEntryPin",
+        help: "manageProfileEntryPinHelp",
+        opener: "manage.profile.openSettings",
+      },
+      {
+        id: "manage.profile.subtitleLanguages",
+        label: "manageProfileSubtitleLanguages",
+        help: "manageProfileSubtitleLanguagesHelp",
+        opener: "manage.profile.openSettings",
+      },
+    ],
+  },
 ];
 
 /** Console pages an App Store build leaves out (see console/index.tsx). */

@@ -21,7 +21,13 @@ export function ProfileSettings() {
     <ManageSection
       title={t("manageProfileSettings")}
       actions={
-        <Button variant="outline" size="sm" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-expanded={open}
+          data-setting="manage.profile.openSettings"
+          onClick={() => setOpen(!open)}
+        >
           {t(open ? "consoleProfilesDone" : "manageProfileSettingsOpen")}
         </Button>
       }
@@ -75,6 +81,7 @@ function SettingsForms() {
               <Label htmlFor="entry-pin-profile">{t("profile")}</Label>
               <select
                 id="entry-pin-profile"
+                data-setting="manage.profile.entryPin"
                 className="block h-9 max-w-full rounded-md border border-input bg-background px-2 text-sm"
                 value={selected?.id ?? ""}
                 disabled={savingPin}
@@ -264,7 +271,7 @@ function SubtitleLanguagesForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-2">
+    <form onSubmit={submit} className="space-y-2" data-setting="manage.profile.subtitleLanguages">
       <Label htmlFor="profile-subtitle-languages">{t("manageProfileSubtitleLanguages")}</Label>
       <p id="profile-subtitle-languages-help" className="text-sm text-muted-foreground">
         {t("manageProfileSubtitleLanguagesHelp")}
