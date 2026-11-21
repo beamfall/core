@@ -394,25 +394,38 @@ const purgeableTrashedMediaSelect = `
 // in a Custodial Library is exempt (purgeableTrashedMediaSelect): the server
 // holds its only copy, so its trash is never auto-purged.
 func (s *Store) PurgeTrashedBefore(ctx context.Context, cutoff time.Time) (int, error) {
+	purged, err := s.PurgeTrashedMediaBefore(ctx, cutoff)
+	return len(purged), err
+}
+
+// PurgeTrashedMediaBefore is PurgeTrashedBefore reporting which Media went, so
+// state kept outside the catalog for them, such as their artwork directories,
+// can go too (CORE-1281). After the rows are committed it still reports them
+// alongside a later error.
+func (s *Store) PurgeTrashedMediaBefore(ctx context.Context, cutoff time.Time) ([]MediaID, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return 0, err
+		return nil, err
 	}
 	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer tx.Rollback()
+	purged, err := queryIDs[MediaID](ctx, tx, purgeableTrashedMediaSelect, timeToMillis(cutoff))
+	if err != nil {
+		return nil, err
+	}
 	affected, err := purgeMediaRowsTx(ctx, tx, purgeableTrashedMediaSelect, timeToMillis(cutoff))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return nil, err
 	}
 	if _, err := s.pruneOrphanedEngagementRowsLocked(ctx); err != nil {
-		return int(affected), err
+		return purged, err
 	}
 	if affected > 0 {
 		if err := appendActivitySQL(ctx, s.eventsW, ActivityEntry{
@@ -421,10 +434,10 @@ func (s *Store) PurgeTrashedBefore(ctx context.Context, cutoff time.Time) (int, 
 			TargetType: "trash",
 			TargetID:   strconv.FormatInt(affected, 10),
 		}); err != nil {
-			return int(affected), err
+			return purged, err
 		}
 	}
-	return int(affected), nil
+	return purged, nil
 }
 
 // purgeMediaRowsTx removes the catalog rows of every Media named by selection,
@@ -465,11 +478,11 @@ func purgeMediaRowsTx(ctx context.Context, tx *sql.Tx, selection string, args ..
 // SweepPurgeTrashedBefore runs the autonomous retained-trash purge. Human
 // confirmed purge calls PurgeTrashedBefore directly and remains legal while
 // trash is disabled.
-func (s *Store) SweepPurgeTrashedBefore(ctx context.Context, cutoff time.Time) (purged int, skipped bool, err error) {
+func (s *Store) SweepPurgeTrashedBefore(ctx context.Context, cutoff time.Time) (purged []MediaID, skipped bool, err error) {
 	if s.trashDisabled {
 		s.trashDisabledSweepSkips.Add(1)
-		return 0, true, ErrTrashDisabledConfirmationRequired
+		return nil, true, ErrTrashDisabledConfirmationRequired
 	}
-	purged, err = s.PurgeTrashedBefore(ctx, cutoff)
+	purged, err = s.PurgeTrashedMediaBefore(ctx, cutoff)
 	return purged, false, err
 }

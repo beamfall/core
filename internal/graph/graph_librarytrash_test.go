@@ -40,6 +40,12 @@ func (o *recordingLibraryObserver) LibraryPurged(_ context.Context, purge store.
 	o.purged = append(o.purged, purge)
 }
 
+func (o *recordingLibraryObserver) MediaPurged(_ context.Context, ids []store.MediaID) {
+	for _, id := range ids {
+		o.calls = append(o.calls, "media-purged:"+string(id))
+	}
+}
+
 func libraryTrashHandler(t *testing.T) (*Handler, *store.Store, *recordingLibraryObserver) {
 	t.Helper()
 	st := storetest.Open(t)

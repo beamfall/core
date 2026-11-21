@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -15,6 +16,8 @@ func TestPurgeTrashAdminRevealedConfirmGated(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)
+	observer := &recordingLibraryObserver{}
+	handler.libraryObserver = observer
 	if err := st.TrashMedia(ctx, "media-alpha", store.LibraryFilter{AllLibraries: true}); err != nil {
 		t.Fatalf("TrashMedia: %v", err)
 	}
@@ -60,6 +63,10 @@ func TestPurgeTrashAdminRevealedConfirmGated(t *testing.T) {
 	}
 	if result.Affected != 1 {
 		t.Fatalf("purgeTrash affected = %d, want 1", result.Affected)
+	}
+	// The purged Media's state outside the catalog is released (CORE-1281).
+	if !slices.Equal(observer.calls, []string{"media-purged:media-alpha"}) {
+		t.Fatalf("observer calls = %v, want the purged Media", observer.calls)
 	}
 	if _, err := st.Media(ctx, "media-alpha", store.LibraryFilter{AllLibraries: true}); err == nil {
 		t.Fatal("purged Media is still readable")

@@ -1329,8 +1329,8 @@ func TestTrashPurgeSweepTrashDisabledRequiresConfirmation(t *testing.T) {
 		t.Fatalf("trash fresh media: %v", err)
 	}
 	purged, skipped, err := st.SweepPurgeTrashedBefore(ctx, cutoff)
-	if !errors.Is(err, ErrTrashDisabledConfirmationRequired) || !skipped || purged != 0 {
-		t.Fatalf("disabled sweep purged=%d skipped=%v err=%v, want confirmation required", purged, skipped, err)
+	if !errors.Is(err, ErrTrashDisabledConfirmationRequired) || !skipped || len(purged) != 0 {
+		t.Fatalf("disabled sweep purged=%d skipped=%v err=%v, want confirmation required", len(purged), skipped, err)
 	}
 	if got := st.TrashDisabledSweepSkips(); got != 1 {
 		t.Fatalf("TrashDisabledSweepSkips = %d, want 1", got)
@@ -1348,8 +1348,8 @@ func TestTrashPurgeSweepTrashDisabledRequiresConfirmation(t *testing.T) {
 	}
 	defer st.Close()
 	purged, skipped, err = st.SweepPurgeTrashedBefore(ctx, cutoff)
-	if err != nil || skipped || purged != 1 {
-		t.Fatalf("enabled sweep purged=%d skipped=%v err=%v, want 1 false nil", purged, skipped, err)
+	if err != nil || skipped || len(purged) != 1 {
+		t.Fatalf("enabled sweep purged=%d skipped=%v err=%v, want 1 false nil", len(purged), skipped, err)
 	}
 	if _, err := st.Media(ctx, "media-alpha", filter); err == nil {
 		t.Fatal("expired trashed media survived enabled sweep")
