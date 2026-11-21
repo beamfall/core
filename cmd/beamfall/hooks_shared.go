@@ -94,6 +94,9 @@ func addMusicHooks(hooks *app.Hooks) {
 	// filename stem ("01 - Opening Light") as its title.
 	hooks.Parsers[music.PluginID] = music.NewParser()
 	hooks.HydrationMappers[music.PluginID] = musicHydrationMapper{}
+	// Music candidates rank by the plugin's own scorer and auto-apply cut;
+	// without it they fell to the default scorer (CORE-1206).
+	hooks.IdentifyScorers[music.PluginID] = app.IdentifyScorerHook{Scorer: music.NewScorer(), Threshold: music.AutoApplyThreshold}
 	// With no provider artwork an album shows the cover of its first track
 	// that has one, and an artist the cover of one of its albums, else of a
 	// track it appears on. Albums come first so artists see this sweep's covers.
