@@ -155,8 +155,6 @@ func (s *Store) VerifyRevealPIN(ctx context.Context, id ProfileID, pin string) e
 // SetSessionRevealed flips a session's reveal state (the Reveal contract's
 // one server-side switch — every read re-derives scope from this row).
 func (s *Store) SetSessionRevealed(ctx context.Context, id SessionID, revealed bool) error {
-	s.sessionBindMu.Lock()
-	defer s.sessionBindMu.Unlock()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {

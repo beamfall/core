@@ -101,12 +101,9 @@ function readQueue(scope: QueueIdentity, signal: AbortSignal): Promise<MusicQueu
 }
 
 const ADD_TRACK = `mutation AddMusicQueueTrack(
-  $mediaID: String!, $position: Int, $expectedProfileID: String!, $expectedRevealed: Boolean!
+  $mediaID: String!, $position: Int, $expectedProfileID: String!
 ) {
-  queueAdd(
-    mediaID: $mediaID, position: $position,
-    expectedProfileID: $expectedProfileID, expectedRevealed: $expectedRevealed
-  ) { id }
+  queueAdd(mediaID: $mediaID, position: $position, expectedProfileID: $expectedProfileID) { id }
 }`;
 
 async function addTrack(
@@ -128,17 +125,12 @@ async function addTrack(
         mediaID,
         position,
         expectedProfileID: scope.profileID,
-        expectedRevealed: scope.revealed,
       },
     },
     signal,
   );
   signal.throwIfAborted();
-  if (
-    result.errors?.some(({ extensions }) =>
-      ["PROFILE_MISMATCH", "REVEAL_STATE_MISMATCH"].includes(extensions?.reason ?? ""),
-    )
-  ) {
+  if (result.errors?.some(({ extensions }) => extensions?.reason === "PROFILE_MISMATCH")) {
     throw new QueueIdentityChanged();
   }
   if (result.errors?.length || !result.data?.queueAdd) throw new Error("Queue write failed");

@@ -9,22 +9,17 @@ import (
 // Profile a write was made for, so the write did not run.
 var ErrSessionProfileMismatch = errors.New("session is bound to another profile")
 
-// ErrSessionRevealMismatch reports that a session's Reveal state changed
-// before a guarded write could apply.
-var ErrSessionRevealMismatch = errors.New("the session's reveal state changed")
-
-// RunWhileSessionBound is RunWhileSessionMatches without a Reveal precondition.
-func (s *Store) RunWhileSessionBound(ctx context.Context, sessionID SessionID, profileID ProfileID, write func() error) error {
-	return s.RunWhileSessionMatches(ctx, sessionID, profileID, nil, write)
-}
-
-// RunWhileSessionMatches verifies the Profile binding and optional Reveal
-// state, then holds them stable until write returns. The
+// RunWhileSessionBound runs write only while sessionID stays bound to
+// profileID. It refuses with ErrSessionProfileMismatch, running nothing, when
+// the session is bound to another Profile. No Profile rebind of any session
+// (SetSessionProfile, SetSessionProfileWithEntryPIN) can commit between the
+// check and write's return, so a write that commits its own transaction
+// inside write lands only while the binding it checked still holds. The
 // session row lives in the catalog database and most writes in the events
 // database, so one SQL transaction cannot cover both; the lock does.
 //
-// write must not rebind a session or change its Reveal state.
-func (s *Store) RunWhileSessionMatches(ctx context.Context, sessionID SessionID, profileID ProfileID, revealed *bool, write func() error) error {
+// write must not rebind a session.
+func (s *Store) RunWhileSessionBound(ctx context.Context, sessionID SessionID, profileID ProfileID, write func() error) error {
 	if sessionID == "" || profileID == "" {
 		return ValidationError("session ID and profile ID are required")
 	}
@@ -36,9 +31,6 @@ func (s *Store) RunWhileSessionMatches(ctx context.Context, sessionID SessionID,
 	}
 	if session.ProfileID != profileID {
 		return ErrSessionProfileMismatch
-	}
-	if revealed != nil && session.Revealed != *revealed {
-		return ErrSessionRevealMismatch
 	}
 	return write()
 }

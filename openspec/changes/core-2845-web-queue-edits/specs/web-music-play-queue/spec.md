@@ -2,11 +2,10 @@
 
 ### Requirement: Audio track menus edit the server Play Queue
 
-The viewer SHALL offer Play next and Add to queue on audio Media with known unlocked state while
-idle or during a server-queue run for the active Profile. The `?playQueue=<profileID>` route
-identifies a server-queue run. The viewer SHALL hide these actions during catalog playback and for
-rows whose lock state is unknown. A search row omitted by a refresh SHALL lose its eligibility,
-including rows retained from later pages. Both actions SHALL be disabled for the current track.
+The viewer SHALL offer Play next and Add to queue for known unlocked audio Media while idle or
+on the active Profile's `?playQueue=<profileID>` route. Both actions SHALL be disabled for the
+current track. The viewer SHALL hide them during catalog playback and on search results.
+CORE-2865 owns catalog conversion. CORE-2867 owns search queue actions.
 
 #### Scenario: Catalog playback starts on an already-queued track
 
@@ -15,10 +14,10 @@ including rows retained from later pages. Both actions SHALL be disabled for the
 
 ### Requirement: Queue edits place tracks relative to the server cursor
 
-Play next SHALL place the selected Media immediately after the current queue cursor or at the head
-while idle. Add to queue SHALL place the selected Media at the tail. An existing row SHALL move to
-the requested position. Before writing, the viewer SHALL confirm the identity, playback context,
-and presence of any active cursor. It SHALL skip the write for a known locked target.
+Play next SHALL place the track after the cursor or at the head while idle. Add to queue SHALL
+place it at the tail. Existing rows SHALL move. Before writing, the viewer SHALL verify identity,
+playback context and cursor presence, and skip known locked targets. CORE-2866 owns server-side
+enforcement after the best-effort client lock check.
 
 #### Scenario: The selected track already appears in the queue
 
@@ -29,8 +28,8 @@ and presence of any active cursor. It SHALL skip the write for a known locked ta
 ### Requirement: Queue edits are serialized with server advancement
 
 The viewer SHALL serialize each edit and its confirming reread with server-queue advancement.
-An edit SHALL issue one queueAdd with the expected Profile ID and Reveal state. A Profile mismatch
-or relock SHALL drop the edit and invalidate the reader. The viewer SHALL confirm placement by
+An edit SHALL issue one queueAdd with the expected Profile ID. A Profile mismatch or an observed
+relock SHALL drop the edit and invalidate the reader. The viewer SHALL confirm placement by
 rereading, even after a lost response, and SHALL never replay the write. If the reread fails,
 audio SHALL stay attached and advancement SHALL require a fresh read.
 
@@ -49,28 +48,7 @@ audio SHALL stay attached and advancement SHALL require a fresh read.
 - **WHEN** a write commits and the response is lost
 - **THEN** the viewer rereads the queue and acknowledges the edit only if the placement is confirmed
 
-### Requirement: Queue addition can require an unchanged Reveal state
+#### Scenario: The confirming queue read observes a relock
 
-The queueAdd mutation SHALL accept an optional boolean `expectedRevealed`. When supplied, the
-server SHALL compare it with the request scope and keep the session's Reveal state and Profile
-binding stable from validation through the queue write. A Reveal mismatch SHALL return
-`CONFLICT` with reason `REVEAL_STATE_MISMATCH` and leave the stored queue unchanged. Omission
-SHALL preserve the existing queueAdd behavior.
-
-#### Scenario: Another tab relocks after preflight
-
-- **WHEN** a listener reads the queue while Revealed and another tab relocks the same session
-  before their queueAdd applies
-- **THEN** a queueAdd carrying `expectedRevealed: true` is refused even for a Media still visible
-  after relock
-- **AND** the viewer drops the edit and invalidates the scoped reader
-
-### Requirement: Overlapping search reads preserve the latest row lock state
-
-The viewer SHALL resolve overlapping search responses for a row by request order. A later
-refresh page that observes a lock SHALL supersede an older Load more response for the same row.
-
-#### Scenario: A row moves between pages during a refresh
-
-- **WHEN** a refresh page returns a locked row that an earlier Load more request saw unlocked
-- **THEN** the row stays locked regardless of which response settles first
+- **WHEN** the confirming read reports that the session has relocked
+- **THEN** the viewer drops the edit without acknowledging it and invalidates the scoped reader

@@ -450,7 +450,7 @@ func (h *Handler) stationStart(ctx context.Context, scope auth.Scope, req reques
 	for i, c := range candidates {
 		mediaIDs[i] = store.MediaID(c.MediaID)
 	}
-	err = h.withExpectedSession(ctx, scope, req, nil, func() error {
+	err = h.withExpectedProfile(ctx, scope, req, func() error {
 		return h.store.QueueReplaceWithStation(ctx, scope.ProfileID, mediaIDs, boolVar(req, "confirmReplace"), scope.LibraryFilter())
 	})
 	if errors.Is(err, store.ErrQueueReplaceNeedsConfirm) {

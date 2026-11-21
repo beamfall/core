@@ -1058,9 +1058,9 @@ type Store struct {
 	logger         *slog.Logger
 	// titleFolds is the title-fold index behind LiveFoldEqualEntities.
 	titleFolds entityTitleFoldIndex
-	// sessionBindMu guards Profile rebinds and Reveal changes (write lock)
-	// against writes with session preconditions (read lock).
-	// See RunWhileSessionMatches. Take it before mu.
+	// sessionBindMu holds Profile rebinds of every session (write lock) off
+	// while a write bound to a session's Profile checks the binding and
+	// commits (read lock); see RunWhileSessionBound. Take it before mu.
 	sessionBindMu sync.RWMutex
 	// convertStepHook, when non-nil, fires at each named ownership-succession
 	// fence point inside ConvertManagedFile. Test-only: it lets a

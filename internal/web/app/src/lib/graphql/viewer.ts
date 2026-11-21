@@ -304,7 +304,7 @@ export async function search(term: string): Promise<SourceItem[]> {
 }
 
 const SEARCH_RESULT_QUERY =
-  "query SearchResult($query: String!, $mode: SearchMode, $offset: Int, $limit: Int) { searchResult(query: $query, mode: $mode, offset: $offset, limit: $limit) { mode hasMore restrictedResultsPresent items { id kind title summary locked score artwork { poster } artworkSlots libraryID libraryTitle year mediaClass certification audienceScore audienceScoreVotes byline subtitle sequence index container { id title artwork { poster } } entityKind entityKindDisplayName engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
+  "query SearchResult($query: String!, $mode: SearchMode, $offset: Int, $limit: Int) { searchResult(query: $query, mode: $mode, offset: $offset, limit: $limit) { mode hasMore restrictedResultsPresent items { id kind title summary score artwork { poster } artworkSlots libraryID libraryTitle year mediaClass certification audienceScore audienceScoreVotes byline subtitle sequence index container { id title artwork { poster } } entityKind entityKindDisplayName engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
 
 /**
  * searchResult — the explainable, mode-aware search (ADR-0041 #106). `mode`

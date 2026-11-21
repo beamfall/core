@@ -12,7 +12,6 @@ describe("server Play Queue edits", () => {
     mediaID: string;
     position?: number;
     expectedProfileID: string;
-    expectedRevealed: boolean;
   }[] = [];
   let afterWrite: (id: string) => void;
   let dispose: (() => void) | undefined;
@@ -36,10 +35,9 @@ describe("server Play Queue edits", () => {
         variables: (typeof writes)[number];
       };
       expect(query).toContain(
-        "expectedProfileID: $expectedProfileID, expectedRevealed: $expectedRevealed",
+        "queueAdd(mediaID: $mediaID, position: $position, expectedProfileID: $expectedProfileID)",
       );
       expect(variables.expectedProfileID).toBe(scope.profileID);
-      expect(variables.expectedRevealed).toBe(scope.revealed);
       writes.push(variables);
       rows = rows.filter((row) => row.id !== variables.mediaID);
       rows.splice(variables.position ?? rows.length, 0, track(variables.mediaID));
@@ -82,8 +80,8 @@ describe("server Play Queue edits", () => {
     expect(await editMusicQueue(scope, "next", "next")).toBe("confirmed");
     expect(rows.map((row) => row.id)).toEqual(["next", "first"]);
     expect(writes).toEqual([
-      { mediaID: "first", expectedProfileID: scope.profileID, expectedRevealed: false },
-      { mediaID: "next", position: 0, expectedProfileID: scope.profileID, expectedRevealed: false },
+      { mediaID: "first", expectedProfileID: scope.profileID },
+      { mediaID: "next", position: 0, expectedProfileID: scope.profileID },
     ]);
     expect(reads).toBe(4);
   });
@@ -96,7 +94,7 @@ describe("server Play Queue edits", () => {
     expect(receive).toHaveBeenCalledWith(rows);
   });
 
-  it("drops an edit if the listing loses the target's eligibility during preflight", async () => {
+  it("drops an edit if the target's lock state becomes unknown during preflight", async () => {
     const isTargetUnlocked = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
     expect(await editMusicQueue(scope, "target", "next", isTargetUnlocked)).toBe("dropped");
     expect(reads).toBe(1);

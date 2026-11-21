@@ -604,7 +604,6 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"queueadd": {
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
-		{Name: "expectedRevealed", Kind: "boolean", Optional: true},
 		{Name: "mediaID", Kind: "string"},
 		{Name: "position", Kind: "number", Optional: true},
 	},

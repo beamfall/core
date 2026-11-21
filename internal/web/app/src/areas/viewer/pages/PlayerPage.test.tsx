@@ -1648,7 +1648,7 @@ describe("PlayerPage server Play Queue", () => {
     const confirmation = deferred<Awaited<ReturnType<typeof readQueue>>>();
     const mutation = vi.spyOn(api, "postJSON").mockImplementation(async (_, request) => {
       expect(request).toMatchObject({
-        variables: { mediaID: c.id, expectedProfileID: "profile-a", expectedRevealed: true },
+        variables: { mediaID: c.id, expectedProfileID: "profile-a" },
       });
       await write.promise;
       const result = commitQueueWrite(c.id);
@@ -1740,7 +1740,7 @@ describe("PlayerPage server Play Queue", () => {
     },
   );
 
-  it.each(["read", "write", "confirmation", "relock", "relock during write"])(
+  it.each(["read", "write", "confirmation", "relock", "confirmation after relock"])(
     "removes a docked title when an edit loses its server identity during %s",
     async (during) => {
       queueMedia = { id: b.id, title: "Retired profile title", favorited: false, credits: [] };
@@ -1758,14 +1758,10 @@ describe("PlayerPage server Play Queue", () => {
             errors: [{ message: "profile switched", extensions: { reason: "PROFILE_MISMATCH" } }],
           };
         }
-        if (during === "relock during write") {
-          serverSession = { ...serverSession, revealed: false };
-          return {
-            errors: [{ message: "relocked", extensions: { reason: "REVEAL_STATE_MISMATCH" } }],
-          };
-        }
-        serverSession = foreign;
-        return commitQueueWrite("requested");
+        const committed = commitQueueWrite("requested");
+        serverSession =
+          during === "confirmation after relock" ? { ...serverSession, revealed: false } : foreign;
+        return committed;
       });
       try {
         if (during === "read") serverSession = foreign;
@@ -1780,9 +1776,9 @@ describe("PlayerPage server Play Queue", () => {
         expect(screen.queryByRole("region", { name: "Now playing" })).not.toBeInTheDocument();
         expect(screen.queryByText(queueMedia.title)).not.toBeInTheDocument();
         expect(mutation).toHaveBeenCalledTimes(during === "read" || during === "relock" ? 0 : 1);
-        if (during === "relock during write") {
-          expect(readQueue).toHaveBeenCalledTimes(2);
-          expect(rows.some((row) => row.id === "requested")).toBe(false);
+        if (during === "confirmation after relock") {
+          expect(readQueue).toHaveBeenCalledTimes(3);
+          expect(rows.at(-1)?.id).toBe("requested");
         }
       } finally {
         mutation.mockRestore();

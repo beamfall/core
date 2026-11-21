@@ -1,7 +1,7 @@
 import { Check, Play } from "lucide-react";
 import type { PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
+import { Link, matchPath, useLocation, useNavigate } from "react-router";
 import { useCardImageSizes } from "@/components/chrome/posterSize";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
@@ -50,7 +50,6 @@ export function MediaItemCard({
   setSize,
   focusAnchor,
   queue,
-  queueLockKnown = true,
   playOnActivate,
   showPlayButton = false,
   showYear = false,
@@ -66,8 +65,6 @@ export function MediaItemCard({
   focusAnchor?: RenderFocusAnchor;
   /** The playable siblings this card is shown with, handed to the player as its queue. */
   queue?: PlayQueueItem[];
-  /** Whether the listing establishes the row's certification lock state. */
-  queueLockKnown?: boolean;
   /** A list row plays at once; a poster opens the Media detail page (CORE-1144). */
   playOnActivate?: boolean;
   /** Child Media have a Play button alongside the detail link. */
@@ -261,6 +258,8 @@ export function MediaItemCard({
     return mediaQueryMatches(POINTER_PREVIEW_QUERY) && !mediaQueryMatches(REDUCED_MOTION_QUERY);
   }
 
+  // Search results lack lock information. Their queue actions are tracked in CORE-2867.
+  const queueUnlocked = !matchPath("/search", location.pathname) && !item.locked;
   const menu = !(showPlayButton && isMedia && item.locked) && (
     <MediaItemCardMenu
       // The actions target this item, not the container its card is headed by.
@@ -268,7 +267,7 @@ export function MediaItemCard({
       primaryLabel={primaryLabel}
       isMedia={isMedia}
       isAudio={item.mediaClass === "audio"}
-      queueUnlocked={queueLockKnown && !item.locked}
+      queueUnlocked={queueUnlocked}
       containerID={item.container?.id}
       href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
       target={itemTargetFor(item)}

@@ -4423,33 +4423,24 @@ var errProfileMismatch = reasonedClientError{
 	reason:  ErrorReasonProfileMismatch,
 }
 
-var errRevealStateMismatch = reasonedClientError{
-	message: clientError("the session's reveal state changed"),
-	reason:  ErrorReasonRevealStateMismatch,
-}
-
-// withExpectedSession holds the request's checked Profile and optional Reveal
-// state stable through the write. A Profile-bound API key has a fixed scope.
-func (h *Handler) withExpectedSession(ctx context.Context, scope auth.Scope, req request, revealed *bool, write func() error) error {
+// withExpectedProfile runs write under the request's optional
+// expectedProfileID precondition (CORE-2177). Absent, write runs as before.
+// Present, write runs only if the session is bound to that Profile when it
+// applies: the store holds every Profile rebind off from the check until write
+// returns, so a write a client made for one Profile can never land in the
+// Profile a switchProfile moved the session to. A Profile-bound API key has no
+// session to rebind, so its fixed Profile is the whole check.
+func (h *Handler) withExpectedProfile(ctx context.Context, scope auth.Scope, req request, write func() error) error {
 	expected, err := checkExpectedProfile(scope, req)
 	if err != nil {
 		return err
 	}
-	if revealed != nil {
-		if scope.Revealed != *revealed {
-			return errRevealStateMismatch
-		}
-		expected = scope.ProfileID
-	}
 	if expected == "" || scope.SessionID == "" {
 		return write()
 	}
-	err = h.store.RunWhileSessionMatches(ctx, scope.SessionID, expected, revealed, write)
+	err = h.store.RunWhileSessionBound(ctx, scope.SessionID, expected, write)
 	if errors.Is(err, store.ErrSessionProfileMismatch) {
 		return errProfileMismatch
-	}
-	if errors.Is(err, store.ErrSessionRevealMismatch) {
-		return errRevealStateMismatch
 	}
 	return err
 }
@@ -4458,7 +4449,7 @@ func (h *Handler) withExpectedSession(ctx context.Context, scope auth.Scope, req
 // front when it is not the Profile this request resolved to. Omitted or null
 // means no precondition (""); a supplied value must name a Profile, so a blank
 // one is refused rather than read as absent. It never touches the store, so a
-// resolver can run it before costly work; withExpectedSession still makes the
+// resolver can run it before costly work; withExpectedProfile still makes the
 // binding check atomic with the write.
 func checkExpectedProfile(scope auth.Scope, req request) (store.ProfileID, error) {
 	value, supplied := req.Variables["expectedProfileID"]
@@ -4476,21 +4467,11 @@ func checkExpectedProfile(scope auth.Scope, req request) (store.ProfileID, error
 	return expected, nil
 }
 
-// queueOps applies the requested Play Queue mutations under the supplied
-// Profile and queueAdd Reveal preconditions.
+// queueOps applies the requested Play Queue mutations, all under one
+// expectedProfileID check when the request carries one.
 func (h *Handler) queueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
-	var revealed *bool
-	if fields["queueadd"] {
-		v := newVars(req)
-		if flag, ok := v.Bool("expectedRevealed"); ok {
-			revealed = &flag
-		}
-		if err := v.Err(); err != nil {
-			return nil, err
-		}
-	}
 	var data map[string]any
-	err := h.withExpectedSession(ctx, scope, req, revealed, func() error {
+	err := h.withExpectedProfile(ctx, scope, req, func() error {
 		var err error
 		data, err = h.applyQueueOps(ctx, scope, fields, req)
 		return err
