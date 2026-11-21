@@ -195,3 +195,53 @@ func TestRefreshAllSubscriptionsSkipsSealedLibrary(t *testing.T) {
 		t.Fatalf("sealed Library's feed was refreshed: %+v", stored.Health)
 	}
 }
+
+// TestSealedLibrarySubscriptionsReadAsMissing pins the CORE-2955 delta
+// review: a Manager granted a Sealed Library cannot list, refresh or add its
+// Subscriptions, and is refused exactly as for a Library that does not exist.
+func TestSealedLibrarySubscriptionsReadAsMissing(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	sealedLibrary, err := st.CreateLibrary(ctx, "Sealed Feeds", false, "feedkit", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: sealedLibrary.ID, FeedURL: "https://feeds.example.com/sealed", Root: "/media/sealed", Title: "Sealed Feed",
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestHandlerWithStore(st)
+	mgr := libencrypt.NewManagerWithParams(newMemSecretStore(), libencrypt.TestArgon2Params)
+	handler.SetLibEncrypt(mgr)
+	if _, err := mgr.Provision(string(sealedLibrary.ID), libencrypt.UnsealModeAuto, ""); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Seal(string(sealedLibrary.ID))
+
+	refusal := func(query string, vars map[string]any) string {
+		t.Helper()
+		resp := postGraphJSON(t, handler, authorizeManager, query, vars)
+		if len(resp.Errors) == 0 {
+			t.Fatalf("%s %v succeeded, want a refusal", query, vars)
+		}
+		return resp.Errors[0].Message
+	}
+	list := `query List($library: String!) { subscriptions(libraryID: $library) { id } }`
+	add := `mutation Add($library: String!) { addSubscription(libraryID: $library, feedURL: "https://feeds.example.com/new") { id } }`
+	refresh := `mutation Refresh($id: String!) { refreshSubscription(id: $id) { id } }`
+	for _, tc := range []struct {
+		name          string
+		query         string
+		sealed, unset map[string]any
+	}{
+		{"list", list, map[string]any{"library": string(sealedLibrary.ID)}, map[string]any{"library": "library-missing"}},
+		{"add", add, map[string]any{"library": string(sealedLibrary.ID)}, map[string]any{"library": "library-missing"}},
+		{"refresh", refresh, map[string]any{"id": string(sub.ID)}, map[string]any{"id": "subscription-missing"}},
+	} {
+		if got, want := refusal(tc.query, tc.sealed), refusal(tc.query, tc.unset); got != want {
+			t.Errorf("%s on a sealed Library refused with %q, want the missing-Library refusal %q", tc.name, got, want)
+		}
+	}
+}

@@ -3305,7 +3305,7 @@ func (h *Handler) refreshSubscription(ctx context.Context, scope auth.Scope, req
 	if err != nil {
 		return SubscriptionRefreshInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return SubscriptionRefreshInfo{}, err
 	}
@@ -3380,6 +3380,27 @@ func (h *Handler) enqueueSubscriptionPoll(ctx context.Context, now time.Time) er
 	return err
 }
 
+// visibleSubscriptionLibrary is visibleLibrary for the Subscription surface,
+// with the caller's filter run through sealedFilter: a Sealed Library serves
+// nothing, so its Subscriptions read exactly like a Library that does not
+// exist (CORE-2955).
+func (h *Handler) visibleSubscriptionLibrary(ctx context.Context, scope auth.Scope, id store.LibraryID) (bool, error) {
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return false, err
+	}
+	libraries, err := h.store.Libraries(ctx, filter)
+	if err != nil {
+		return false, err
+	}
+	for _, library := range libraries {
+		if library.ID == id {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // visibleLibrary reports whether the scope can currently see the Library —
 // the same gate scanLibrary applies before touching Library-scoped state.
 func (h *Handler) visibleLibrary(ctx context.Context, scope auth.Scope, id store.LibraryID) (bool, error) {
@@ -3414,7 +3435,7 @@ func (h *Handler) addSubscription(ctx context.Context, scope auth.Scope, req req
 	if hasAuth && h.subscriptionSecrets == nil {
 		return SubscriptionInfo{}, clientError("private-feed credentials are unavailable on this server")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, store.LibraryID(libraryID))
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, store.LibraryID(libraryID))
 	if err != nil {
 		return SubscriptionInfo{}, err
 	}
@@ -3465,7 +3486,7 @@ func (h *Handler) removeSubscription(ctx context.Context, scope auth.Scope, req 
 	if err != nil {
 		return SubscriptionInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return SubscriptionInfo{}, err
 	}
@@ -3493,7 +3514,7 @@ func (h *Handler) subscriptions(ctx context.Context, scope auth.Scope, req reque
 	if libraryID == "" {
 		return nil, clientError("libraryID is required")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, store.LibraryID(libraryID))
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, store.LibraryID(libraryID))
 	if err != nil {
 		return nil, err
 	}
@@ -3538,7 +3559,7 @@ func (h *Handler) setFollow(ctx context.Context, scope auth.Scope, req request) 
 	if err != nil {
 		return FollowInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return FollowInfo{}, err
 	}
@@ -3568,7 +3589,7 @@ func (h *Handler) setSubscriptionRetention(ctx context.Context, scope auth.Scope
 	if err != nil {
 		return SubscriptionInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return SubscriptionInfo{}, err
 	}
@@ -3612,7 +3633,7 @@ func (h *Handler) associateSubscriptionEntry(ctx context.Context, scope auth.Sco
 	if err != nil {
 		return SubscriptionEntryAssociationInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return SubscriptionEntryAssociationInfo{}, err
 	}
