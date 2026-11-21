@@ -225,7 +225,9 @@ describe("MediaItemCardMenu Continue Watching (CORE-2017)", () => {
   it("removes the Media from the row and keeps its progress", async () => {
     renderMenu(false, undefined, "en", undefined, true);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Remove from Continue Watching" }));
-    await vi.waitFor(() => expect(setContinueWatchingHidden).toHaveBeenCalledWith("t1", true));
+    await vi.waitFor(() =>
+      expect(setContinueWatchingHidden).toHaveBeenCalledWith("t1", true, undefined),
+    );
   });
 
   it("is offered only on the Continue Watching row", async () => {

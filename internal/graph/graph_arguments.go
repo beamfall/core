@@ -850,6 +850,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "value", Kind: "string", Optional: true},
 	},
 	"setcontinuewatchinghidden": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "hidden", Kind: "boolean"},
 		{Name: "mediaID", Kind: "string"},
 	},

@@ -10,6 +10,7 @@ import {
   clearContinueWatchingRemoved,
   removeFromContinueWatching,
 } from "../actions/continueWatching";
+import { notifyEngagementChanged } from "../actions/engagementSync";
 import { fetchSectionItems } from "../lib/sections";
 import { HydratedSection, SECTION_LOAD_TIMEOUT_MS, sectionCacheKey } from "./HydratedSection";
 
@@ -319,6 +320,38 @@ describe("HydratedSection Continue Watching removal (CORE-2017)", () => {
     expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
     // The card's own row lists it again (it was played since): show it.
     await act(async () => reads.all[1]([item]));
+    expect(screen.getByRole("link", { name: /^Visible item/ })).toBeVisible();
+  });
+
+  it("keeps a card a fresh read showed again through a cached revalidation", async () => {
+    identityMock.identity = "viewer-cw";
+    const continueRow: Section = {
+      ...section,
+      id: "sec-continue-cached",
+      title: { en: "Continue Watching" },
+      source: { kind: "continue-watching" } as Section["source"],
+    };
+    const reads: Array<(items: SourceItem[]) => void> = [];
+    vi.mocked(fetchSectionItems).mockImplementation(
+      () => new Promise((resolve) => reads.push(resolve)),
+    );
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <HydratedSection section={continueRow} libraryID="" entityID="" />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    await act(async () => reads[0]([item]));
+    await act(() => removeFromContinueWatching("media-1", "Visible item"));
+    expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
+    // The read after the write lists the card again (it was played since).
+    await act(async () => reads[1]([{ ...item }]));
+    expect(screen.getByRole("link", { name: /^Visible item/ })).toBeVisible();
+    // Another revalidation serves that read from the cache while it runs: the
+    // cached list keeps its read sequence, so the card stays.
+    act(() => notifyEngagementChanged());
+    expect(reads).toHaveLength(3);
     expect(screen.getByRole("link", { name: /^Visible item/ })).toBeVisible();
   });
 });

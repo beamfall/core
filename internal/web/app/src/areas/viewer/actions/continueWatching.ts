@@ -20,6 +20,7 @@ const PENDING = Number.POSITIVE_INFINITY;
 const NONE: ContinueWatchingRemovals = new Map();
 let removed: ContinueWatchingRemovals = NONE;
 let writeSeq = 0;
+let boundProfileID: string | undefined;
 const listeners = new Set<() => void>();
 
 function publish(next: ContinueWatchingRemovals): void {
@@ -36,6 +37,15 @@ function dropRemoval(id: string): void {
   const next = new Map(removed);
   next.delete(id);
   publish(next);
+}
+
+/**
+ * Bind the Profile this tab's viewer runs as. Removals and their Undo name it
+ * to the server, which refuses them once the session (shared by every tab) is
+ * bound to another Profile.
+ */
+export function bindContinueWatchingProfile(profileID: string | undefined): void {
+  boundProfileID = profileID;
 }
 
 /** The write sequence now: capture it as a Continue Watching read starts. */
@@ -65,32 +75,35 @@ export function continueWatchingKeepsOut(
 export async function removeFromContinueWatching(mediaID: string, title: string): Promise<void> {
   const target = { mediaID };
   const epoch = getIdentityEpochSignal();
+  const profileID = boundProfileID;
   setRemoval(mediaID, PENDING);
   try {
-    await setContinueWatchingHidden(mediaID, true);
+    await setContinueWatchingHidden(mediaID, true, profileID);
   } catch {
     if (epoch !== getIdentityEpochSignal()) return;
     dropRemoval(mediaID);
-    announceUndo({ kind: "continue", target, title, failed: true, epoch });
+    announceUndo({ kind: "continue", target, title, failed: true, epoch, profileID });
     return;
   }
   if (epoch !== getIdentityEpochSignal()) return;
   writeSeq += 1;
   if (removed.has(mediaID)) setRemoval(mediaID, writeSeq);
   notifyEngagementChanged();
-  announceUndo({ kind: "continue", target, title, epoch });
+  announceUndo({ kind: "continue", target, title, epoch, profileID });
 }
 
 /**
  * Put a removed Media back on Continue Watching, in its old place. An Undo
- * from another identity epoch writes nothing.
+ * from another identity epoch writes nothing, and the server refuses one made
+ * for a Profile the session is no longer bound to (another tab switched it).
  */
 export async function restoreToContinueWatching(
   mediaID: string,
   epoch = getIdentityEpochSignal(),
+  profileID = boundProfileID,
 ): Promise<void> {
   if (epoch !== getIdentityEpochSignal()) return;
-  await setContinueWatchingHidden(mediaID, false);
+  await setContinueWatchingHidden(mediaID, false, profileID);
   if (epoch !== getIdentityEpochSignal()) return;
   dropRemoval(mediaID);
   notifyEngagementChanged();

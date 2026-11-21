@@ -203,8 +203,10 @@ func (s *Store) rebuildEngagementProjections(ctx context.Context) error {
 
 // rejectUnloggedPlaybackProjections refuses a rebuild that would lose a row.
 // A hide-continue event only flips a flag on an existing row and never
-// creates one, so it does not count as the row's canonical base: a legacy row
-// whose only events are removals from Continue Watching is still unlogged.
+// creates one, so a row is reconstructible only when an event that creates it
+// comes before its first hide-continue. A legacy row hidden before any logged
+// playback (later heartbeats included) is refused rather than replayed with
+// the hide applied to nothing.
 func rejectUnloggedPlaybackProjections(ctx context.Context, tx *sql.Tx) error {
 	var count int
 	err := tx.QueryRowContext(ctx, `
@@ -212,13 +214,22 @@ func rejectUnloggedPlaybackProjections(ctx context.Context, tx *sql.Tx) error {
 		FROM playback_progress AS projection
 		WHERE NOT EXISTS (
 			SELECT 1
-			FROM engagement_event AS event
-			WHERE event.kind = ?
-			  AND event.profile_id = projection.profile_id
-			  AND event.media_id = projection.media_id
-			  AND json_extract(event.payload, '$.operation') <> ?
+			FROM engagement_event AS base
+			WHERE base.kind = ?
+			  AND base.profile_id = projection.profile_id
+			  AND base.media_id = projection.media_id
+			  AND json_extract(base.payload, '$.operation') <> ?
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM engagement_event AS hide
+				WHERE hide.kind = base.kind
+				  AND hide.profile_id = base.profile_id
+				  AND hide.media_id = base.media_id
+				  AND json_extract(hide.payload, '$.operation') = ?
+				  AND hide.rowid < base.rowid
+			  )
 		)
-	`, playbackProjectionEventKind, playbackProjectionOperationHideContinue).Scan(&count)
+	`, playbackProjectionEventKind, playbackProjectionOperationHideContinue, playbackProjectionOperationHideContinue).Scan(&count)
 	if err != nil {
 		return fmt.Errorf("check playback projection base: %w", err)
 	}

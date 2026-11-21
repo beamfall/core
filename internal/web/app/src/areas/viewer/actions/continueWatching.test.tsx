@@ -53,7 +53,7 @@ describe("removeFromContinueWatching", () => {
     act(() => {
       removal = removeFromContinueWatching("m1", "Pilot");
     });
-    expect(setContinueWatchingHidden).toHaveBeenCalledWith("m1", true);
+    expect(setContinueWatchingHidden).toHaveBeenCalledWith("m1", true, undefined);
     // In flight: no read can bring the card back yet.
     const during = continueWatchingReadSeq();
     expect(continueWatchingKeepsOut(result.current, "m1", during)).toBe(true);
@@ -85,17 +85,27 @@ describe("removeFromContinueWatching", () => {
 });
 
 describe("Continue Watching Undo", () => {
-  it("restores the Media to the row", async () => {
-    render(
+  it("restores the Media to the row, naming the Profile it was removed for", async () => {
+    const { rerender } = render(
       <I18nProvider initialLocale="en">
-        <HiddenUndoNotice />
+        <HiddenUndoNotice profileID="p1" />
       </I18nProvider>,
     );
     const { result } = renderHook(() => useContinueWatchingRemoved());
     await act(() => removeFromContinueWatching("m1", "Pilot"));
+    expect(setContinueWatchingHidden).toHaveBeenLastCalledWith("m1", true, "p1");
+    // A re-render for the same Profile keeps the notice; the server checks
+    // the Profile, so another tab's switch cannot redirect the Undo.
+    rerender(
+      <I18nProvider initialLocale="en">
+        <HiddenUndoNotice profileID="p1" />
+      </I18nProvider>,
+    );
     expect(screen.getByRole("status")).toHaveTextContent("Removed “Pilot” from Continue Watching.");
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
-    await vi.waitFor(() => expect(setContinueWatchingHidden).toHaveBeenLastCalledWith("m1", false));
+    await vi.waitFor(() =>
+      expect(setContinueWatchingHidden).toHaveBeenLastCalledWith("m1", false, "p1"),
+    );
     await vi.waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
     expect(result.current.has("m1")).toBe(false);
   });

@@ -153,23 +153,49 @@ func TestProjectionRebuildRefusesUnloggedRows(t *testing.T) {
 // A legacy progress row with no playback event that a Profile then removes
 // from Continue Watching has only a hide-continue event, which cannot recreate
 // it. Rebuild must refuse rather than delete the resume position.
-func TestProjectionRebuildRefusesUnloggedRowWithOnlyHideContinue(t *testing.T) {
-	st := openSeeded(t)
-	ctx := context.Background()
-	if _, err := st.eventsW.ExecContext(ctx, `
-		INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, play_count, updated_at_ms)
-		VALUES ('profile-default', 'media-alpha', 30, 120, 2, 1)
-	`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.SetContinueWatchingHidden(ctx, "profile-default", "media-alpha", true, itemOpenFilter); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.rebuildEngagementProjections(ctx); err == nil {
-		t.Fatal("rebuild accepted a row whose only canonical event is hide-continue")
-	}
-	progress, ok, err := st.PlaybackProgressFor(ctx, "profile-default", "media-alpha")
-	if err != nil || !ok || progress.PositionSeconds != 30 || progress.PlayCount != 2 {
-		t.Fatalf("refused rebuild changed the row: %+v ok=%v err=%v", progress, ok, err)
+func TestProjectionRebuildRefusesUnloggedRowHiddenBeforeAnyLoggedPlayback(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		heartbeat bool
+	}{
+		{name: "only hide-continue"},
+		// A same-position heartbeat after the hide is logged but comes after
+		// it: replaying would apply the hide to nothing, then recreate the
+		// row visible.
+		{name: "hide then heartbeat", heartbeat: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := openSeeded(t)
+			ctx := context.Background()
+			if _, err := st.eventsW.ExecContext(ctx, `
+				INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, play_count, updated_at_ms)
+				VALUES ('profile-default', 'media-alpha', 30, 120, 2, 1)
+			`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.SetContinueWatchingHidden(ctx, "profile-default", "media-alpha", true, itemOpenFilter); err != nil {
+				t.Fatal(err)
+			}
+			if tc.heartbeat {
+				if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+					ProfileID: "profile-default", MediaID: "media-alpha", PositionSeconds: 30, DurationSeconds: 120,
+				}, false, ResumePolicy{Class: MediaClassVideo}); err != nil {
+					t.Fatal(err)
+				}
+				if !continueHidden(t, st, "profile-default", "media-alpha") {
+					t.Fatal("same-position heartbeat cleared the hide")
+				}
+			}
+			if err := st.rebuildEngagementProjections(ctx); err == nil {
+				t.Fatal("rebuild accepted a row hidden before any logged playback")
+			}
+			progress, ok, err := st.PlaybackProgressFor(ctx, "profile-default", "media-alpha")
+			if err != nil || !ok || progress.PositionSeconds != 30 || progress.PlayCount != 2 {
+				t.Fatalf("refused rebuild changed the row: %+v ok=%v err=%v", progress, ok, err)
+			}
+			if !continueHidden(t, st, "profile-default", "media-alpha") {
+				t.Fatal("refused rebuild cleared the hide")
+			}
+		})
 	}
 }

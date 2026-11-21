@@ -5,7 +5,11 @@ import { buttonVariants } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import "../remote/remote.css";
 import "./hidden.css";
-import { clearContinueWatchingRemoved, restoreToContinueWatching } from "./continueWatching";
+import {
+  bindContinueWatchingProfile,
+  clearContinueWatchingRemoved,
+  restoreToContinueWatching,
+} from "./continueWatching";
 import {
   clearHiddenNotice,
   dismissHiddenNotice,
@@ -28,19 +32,20 @@ export function HiddenUndoNotice({ profileID }: { profileID?: string }) {
   const notice = useHiddenNotice();
   // The cleanup runs when the bound Profile changes and when the viewer
   // remounts for another Profile, so a notice never outlives its Profile.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    bindContinueWatchingProfile(profileID);
+    return () => {
+      bindContinueWatchingProfile(undefined);
       clearHiddenNotice();
       clearContinueWatchingRemoved();
-    },
-    [profileID],
-  );
+    };
+  }, [profileID]);
   return notice ? <UndoNotice notice={notice} /> : null;
 }
 
 function undo(notice: HiddenNotice): Promise<void> {
   if (notice.kind === "continue" && "mediaID" in notice.target) {
-    return restoreToContinueWatching(notice.target.mediaID, notice.epoch);
+    return restoreToContinueWatching(notice.target.mediaID, notice.epoch, notice.profileID);
   }
   return unhideItem(notice.target);
 }

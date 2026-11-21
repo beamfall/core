@@ -172,6 +172,8 @@ export interface HiddenNotice {
   failed?: boolean;
   /** The identity epoch the change was made in: an Undo from another writes nothing. */
   epoch?: AbortSignal;
+  /** The Profile the change was made for: the server refuses an Undo for another. */
+  profileID?: string;
 }
 
 let notice: HiddenNotice | null = null;

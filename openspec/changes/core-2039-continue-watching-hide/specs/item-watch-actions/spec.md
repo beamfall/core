@@ -31,6 +31,22 @@ survive a projection rebuild and SHALL NOT change another Profile's Source.
 - **WHEN** the playback projection is rebuilt from the engagement event log after a removal
 - **THEN** the Media is still off the `continue-watching` Source with the same resume position
 
+#### Scenario: Unlogged row
+
+- **WHEN** a rebuild finds a progress row with no logged event that creates it before its first
+  removal
+- **THEN** the rebuild is refused and the row is left as it was
+
+### Requirement: Continue Watching removal honours the expected Profile
+
+`setContinueWatchingHidden` SHALL accept the optional `expectedProfileID` precondition and SHALL
+refuse the write with `PROFILE_MISMATCH` when the session is no longer bound to that Profile.
+
+#### Scenario: Stale Profile
+
+- **WHEN** a client sends `expectedProfileID` for a Profile the session was switched away from
+- **THEN** the call is refused with `PROFILE_MISMATCH` and no Profile's state changes
+
 ### Requirement: Playing a removed item returns it to Continue Watching
 
 The next playback report for the Profile and a removed Media that moves the resume position SHALL

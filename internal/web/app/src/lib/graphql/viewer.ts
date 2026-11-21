@@ -630,20 +630,22 @@ export async function setWatchlisted(
   return data.setWatchlisted;
 }
 
-const SET_CONTINUE_WATCHING_HIDDEN_MUTATION = `mutation SetContinueWatchingHidden($mediaID: ID!, $hidden: Boolean!) { setContinueWatchingHidden(mediaID: $mediaID, hidden: $hidden) { ${ITEM_STATE_FIELDS} } }`;
+const SET_CONTINUE_WATCHING_HIDDEN_MUTATION = `mutation SetContinueWatchingHidden($mediaID: ID!, $hidden: Boolean!, $expectedProfileID: String) { setContinueWatchingHidden(mediaID: $mediaID, hidden: $hidden, expectedProfileID: $expectedProfileID) { ${ITEM_STATE_FIELDS} } }`;
 
 /**
  * SetContinueWatchingHidden — take one Media off the calling Profile's Continue
  * Watching row, or put it back (CORE-2039). The resume position is kept, and
- * playing the Media again returns it to the row.
+ * playing the Media again returns it to the row. With `expectedProfileID` the
+ * server refuses the write once the session is bound to another Profile.
  */
 export async function setContinueWatchingHidden(
   mediaID: string,
   hidden: boolean,
+  expectedProfileID?: string,
 ): Promise<ItemStateInfo> {
   const data = await graphql<{ setContinueWatchingHidden: ItemStateInfo }>(
     SET_CONTINUE_WATCHING_HIDDEN_MUTATION,
-    { mediaID, hidden },
+    expectedProfileID ? { mediaID, hidden, expectedProfileID } : { mediaID, hidden },
   );
   return data.setContinueWatchingHidden;
 }
