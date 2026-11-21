@@ -110,3 +110,40 @@ func TestScopeRefusalMapsOnlyTheScheduleRefusal(t *testing.T) {
 		}
 	}
 }
+
+// TestScopedKeyKeepsGenericRefusalOutsideSchedule: a Profile-bound scoped key
+// whose Profile is outside its schedule keeps the generic 401, because this
+// surface refuses scoped keys whatever the schedule; the reason is for session
+// credentials only.
+func TestScopedKeyKeepsGenericRefusalOutsideSchedule(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	_, key, err := st.CreateScopedAPIKey(t.Context(), "schedule-probe", []store.APIScope{store.ScopeReadCatalog}, "profile-managed", time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeManagedSchedule(t, st)
+	status, resp := postGraphStatus(t, handler, `{"query":"query { profiles { id } }"}`, func(req *http.Request) {
+		req.Header.Set("Authorization", "Bearer "+key)
+	})
+	if status != http.StatusUnauthorized || len(resp.Errors) != 1 ||
+		resp.Errors[0].Extensions.Code != ErrorCodeUnauthenticated || resp.Errors[0].Extensions.Reason != "" {
+		t.Fatalf("scoped key outside schedule: status = %d errors = %#v, want 401 UNAUTHENTICATED with no reason", status, resp.Errors)
+	}
+}
+
+// TestAccessScheduleEndedAfterMutationKeepsForbiddenStatus: when an earlier
+// field of a multi-field mutation moves the session onto a Profile outside its
+// schedule, the re-resolution refusal answers 403 with the reason, as the
+// request gate does.
+func TestAccessScheduleEndedAfterMutationKeepsForbiddenStatus(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	closeManagedSchedule(t, st)
+	body := `{"query":"mutation M($profileID: String!){ switchProfile(profileID:$profileID){ profileID } relock { revealed } }","variables":{"profileID":"profile-managed"}}`
+	status, resp := postGraphStatus(t, handler, body, authorizeRevealed)
+	if status != http.StatusForbidden || len(resp.Errors) != 1 ||
+		resp.Errors[0].Extensions.Code != ErrorCodeForbidden || resp.Errors[0].Extensions.Reason != ErrorReasonAccessScheduleEnded {
+		t.Fatalf("switch then relock outside schedule: status = %d errors = %#v, want 403 FORBIDDEN ACCESS_SCHEDULE_ENDED", status, resp.Errors)
+	}
+}

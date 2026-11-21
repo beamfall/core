@@ -147,6 +147,12 @@ func scopeRefusal(err error) (int, graphError) {
 		refusal.Extensions.Reason = ErrorReasonAccessScheduleEnded
 		return http.StatusForbidden, refusal
 	}
+	return invalidSessionRefusal()
+}
+
+// invalidSessionRefusal is the generic credential refusal: 401
+// UNAUTHENTICATED "invalid session", with no reason.
+func invalidSessionRefusal() (int, graphError) {
 	return http.StatusUnauthorized, newGraphError(ErrorCodeUnauthenticated, "invalid session")
 }
 
