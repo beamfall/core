@@ -26,6 +26,8 @@ export interface PartyGuestEntry {
   /** 1-based among waiting entries, 0 otherwise. */
   position: number;
   etaSeconds: number;
+  /** Present on the guest's own entries (`mine`), so search can mark songs already asked for. */
+  mediaID?: string;
 }
 
 export interface PartyGuestState {
@@ -71,13 +73,27 @@ export class PartyGuestError extends Error {
   constructor(
     readonly kind: PartyGuestErrorKind,
     readonly status: number,
+    /** Seconds from a 429's Retry-After header, when the server sent one. */
+    readonly retryAfterSeconds: number | null = null,
   ) {
     super(`party guest request failed: ${kind} (${status})`);
     this.name = "PartyGuestError";
   }
 }
 
-function errorKind(status: number, conflict: "full" | "limit"): PartyGuestErrorKind {
+// 409 and 429 bodies name the reason: {"error": "full" | "waiting-limit" | "rate-limited"}.
+const REASONS: Record<string, PartyGuestErrorKind> = {
+  full: "full",
+  "waiting-limit": "limit",
+  "rate-limited": "rate-limited",
+};
+
+function errorKind(
+  status: number,
+  reason: string | undefined,
+  conflict: "full" | "limit",
+): PartyGuestErrorKind {
+  if ((status === 409 || status === 429) && reason && reason in REASONS) return REASONS[reason];
   switch (status) {
     case 404:
       return "unknown-code";
@@ -116,13 +132,31 @@ async function call<T>(
     if (signal?.aborted) throw err;
     throw new PartyGuestError("failed", 0);
   }
-  if (!response.ok)
-    throw new PartyGuestError(errorKind(response.status, conflict), response.status);
+  if (!response.ok) throw await responseError(response, conflict);
   try {
     return (await response.json()) as T;
   } catch {
     throw new PartyGuestError("failed", response.status);
   }
+}
+
+async function responseError(
+  response: Response,
+  conflict: "full" | "limit",
+): Promise<PartyGuestError> {
+  let reason: string | undefined;
+  try {
+    const payload = (await response.json()) as { error?: unknown };
+    if (typeof payload.error === "string") reason = payload.error;
+  } catch {
+    // No JSON body: the status alone decides.
+  }
+  const retryAfter = Number.parseInt(response.headers.get("Retry-After") ?? "", 10);
+  return new PartyGuestError(
+    errorKind(response.status, reason, conflict),
+    response.status,
+    Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : null,
+  );
 }
 
 export function joinParty(code: string, name: string): Promise<PartyGuestJoin> {

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,6 +51,7 @@ function guestState(overrides: Partial<PartyGuestState> = {}): PartyGuestState {
     mine: [
       {
         id: "e2",
+        mediaID: "m2",
         title: "Paper Lantern Parade",
         subtitle: "Juniper Vale",
         participantName: "Wren",
@@ -60,6 +61,7 @@ function guestState(overrides: Partial<PartyGuestState> = {}): PartyGuestState {
       },
       {
         id: "e9",
+        mediaID: "m9",
         title: "Glasshouse Weather",
         subtitle: "Juniper Vale",
         participantName: "Wren",
@@ -148,11 +150,11 @@ describe("PartyGuestPage join", () => {
   });
 
   it.each([
-    [404, "That code didn't work. Check it and try again."],
-    [429, "Too many tries. Wait a minute, then try again."],
-    [409, "This party is full. Ask the host to make room."],
-  ])("explains a %i join refusal", async (status, message) => {
-    routes["POST /api/party/join"] = () => json(status, { error: "join code not recognised" });
+    [404, "join code not recognised", "That code didn't work. Check it and try again."],
+    [429, "rate-limited", "Too many tries. Wait a minute, then try again."],
+    [409, "full", "This party is full. Ask the host to make room."],
+  ])("explains a %i join refusal", async (status, reason, message) => {
+    routes["POST /api/party/join"] = () => json(status, { error: reason });
     renderPage();
     await userEvent.type(screen.getByLabelText("Your name"), "Wren");
     await userEvent.click(screen.getByRole("button", { name: "Join" }));
@@ -253,7 +255,7 @@ describe("PartyGuestPage joined", () => {
       json(200, {
         items: [
           {
-            mediaID: "m2",
+            mediaID: "m4",
             title: "Harbour Lights",
             subtitle: "",
             durationSeconds: 180,
@@ -270,4 +272,59 @@ describe("PartyGuestPage joined", () => {
     expect(request).toBeDisabled();
     expect(request).toHaveAccessibleDescription(/You have 2 songs in line, the most allowed/);
   });
+
+  it("marks results already in my songs as Requested", async () => {
+    storeToken();
+    routes["GET /api/party/guest/search"] = () =>
+      json(200, {
+        items: [searchItem("m9", "Glasshouse Weather"), searchItem("m3", "Tin Roof Rain")],
+      });
+    renderPage();
+    await screen.findByText("Number 2 in line");
+    await search("glass");
+    expect(await screen.findByRole("button", { name: "Requested" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Request Tin Roof Rain" })).toBeEnabled();
+  });
+
+  it("explains a waiting-limit refusal from the server", async () => {
+    storeToken();
+    routes["GET /api/party/guest/search"] = () =>
+      json(200, { items: [searchItem("m3", "Tin Roof Rain")] });
+    routes["POST /api/party/guest/request"] = () => json(409, { error: "waiting-limit" });
+    renderPage();
+    await screen.findByText("Number 2 in line");
+    await search("tin");
+    await userEvent.click(await screen.findByRole("button", { name: "Request Tin Roof Rain" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "You have 3 songs in line, the most allowed.",
+    );
+  });
+
+  it("holds Request until Retry-After has passed after a 429", async () => {
+    storeToken();
+    routes["GET /api/party/guest/search"] = () =>
+      json(200, { items: [searchItem("m3", "Tin Roof Rain")] });
+    routes["POST /api/party/guest/request"] = () =>
+      new Response(JSON.stringify({ error: "rate-limited" }), {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Retry-After": "1" },
+      });
+    renderPage();
+    await screen.findByText("Number 2 in line");
+    await search("tin");
+    const request = await screen.findByRole("button", { name: "Request Tin Roof Rain" });
+    await userEvent.click(request);
+    expect(await screen.findByRole("alert")).toHaveTextContent("One moment");
+    expect(request).toBeDisabled();
+    await waitFor(() => expect(request).toBeEnabled(), { timeout: 2500 });
+  });
 });
+
+function searchItem(mediaID: string, title: string) {
+  return { mediaID, title, subtitle: "", durationSeconds: 200, artworkURL: "", lastPlayedAt: "" };
+}
+
+async function search(q: string) {
+  await userEvent.type(screen.getByRole("searchbox", { name: "Find a song" }), q);
+  await userEvent.click(screen.getByRole("button", { name: "Search" }));
+}

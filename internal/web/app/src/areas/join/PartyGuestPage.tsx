@@ -41,6 +41,8 @@ import {
 
 const POLL_MS = 3000;
 const ROTATION_GLANCE = 5;
+// Cooldown after a 429 that carried no Retry-After header.
+const DEFAULT_RETRY_SECONDS = 5;
 
 type Joined = { code: string; token: string; name: string };
 
@@ -282,13 +284,31 @@ function JoinedView({
   const mine = state?.mine ?? [];
   const active = mine.filter((e) => e.state === "pending" || e.state === "waiting").length;
   const atLimit = state != null && state.maxWaiting > 0 && active >= state.maxWaiting;
+  // Media this guest already asked for (pending, waiting or declined): search marks them Requested.
+  const requestedIDs = new Set(mine.flatMap((e) => (e.mediaID ? [e.mediaID] : [])));
+  // After a 429, Request stays disabled until the server's Retry-After has passed.
+  const [coolingDown, setCoolingDown] = useState(false);
+  const cooldownTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(cooldownTimer.current), []);
+
+  function startCooldown(seconds: number | null) {
+    clearTimeout(cooldownTimer.current);
+    setCoolingDown(true);
+    cooldownTimer.current = setTimeout(
+      () => setCoolingDown(false),
+      (seconds ?? DEFAULT_RETRY_SECONDS) * 1000,
+    );
+  }
 
   function handleActionError(err: unknown, fallback: Parameters<T>[0]) {
     if (isEnded(err)) return onEnded();
     if (err instanceof PartyGuestError && err.kind === "rate-limited") {
+      startCooldown(err.retryAfterSeconds);
       setActionError(t("partyGuestRequestRateLimited"));
     } else if (err instanceof PartyGuestError && err.kind === "limit" && state) {
       setActionError(t("partyGuestAtLimit", { max: state.maxWaiting }));
+    } else if (err instanceof PartyGuestError && err.kind === "full") {
+      setActionError(t("partyGuestErrorFull"));
     } else {
       setActionError(t(fallback));
     }
@@ -366,7 +386,14 @@ function JoinedView({
       <GlassCard className="p-5">
         <SearchPanel
           token={joined.token}
-          limitReason={atLimit && state ? t("partyGuestAtLimit", { max: state.maxWaiting }) : null}
+          requestedIDs={requestedIDs}
+          limitReason={
+            atLimit && state
+              ? t("partyGuestAtLimit", { max: state.maxWaiting })
+              : coolingDown
+                ? t("partyGuestRequestRateLimited")
+                : null
+          }
           onRequest={onRequest}
           onEnded={onEnded}
         />
@@ -457,11 +484,13 @@ function formatDuration(seconds: number): string {
 
 function SearchPanel({
   token,
+  requestedIDs,
   limitReason,
   onRequest,
   onEnded,
 }: {
   token: string;
+  requestedIDs: Set<string>;
   limitReason: string | null;
   onRequest: (item: PartySearchItem) => Promise<boolean>;
   onEnded: () => void;
@@ -543,7 +572,7 @@ function SearchPanel({
       {items.length > 0 && (
         <HairlineList className="mt-3">
           {items.map((item) => {
-            const done = requested.has(item.mediaID);
+            const done = requested.has(item.mediaID) || requestedIDs.has(item.mediaID);
             return (
               <li key={item.mediaID} className="flex items-center gap-3 py-3">
                 <div className="min-w-0 flex-1">
