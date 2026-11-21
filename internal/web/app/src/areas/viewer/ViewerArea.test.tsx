@@ -95,7 +95,9 @@ describe("ViewerArea Profile scope", () => {
     const user = userEvent.setup();
     const view = render(
       <MemoryRouter initialEntries={["/"]}>
-        <ViewerArea />
+        <I18nProvider>
+          <ViewerArea />
+        </I18nProvider>
       </MemoryRouter>,
     );
 
@@ -110,7 +112,9 @@ describe("ViewerArea Profile scope", () => {
     };
     view.rerender(
       <MemoryRouter initialEntries={["/"]}>
-        <ViewerArea />
+        <I18nProvider>
+          <ViewerArea />
+        </I18nProvider>
       </MemoryRouter>,
     );
 

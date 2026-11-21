@@ -20,6 +20,7 @@ vi.mock("@/lib/graphql/browse", () => ({
 }));
 
 vi.mock("@/lib/session", () => ({
+  useSession: () => ({ session: null, revealed: false }),
   useViewerIdentity: () => "viewer-1",
 }));
 

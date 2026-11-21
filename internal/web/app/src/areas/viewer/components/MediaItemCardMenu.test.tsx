@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -14,8 +14,10 @@ import {
 } from "@/lib/graphql";
 import type { MediaCredit } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
-import type { Locale } from "@/strings";
+import { type Locale, STRINGS } from "@/strings";
+import * as musicQueue from "../lib/musicQueue";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
+import { MusicQueueNotice } from "./MusicQueueNotice";
 
 vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
@@ -32,7 +34,12 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
 
 vi.mock("@/lib/session", () => ({
   useViewerIdentity: () => "viewer-1",
-  useSession: () => ({ manifest: { libraries: [{ id: "lib-1" }] }, isManager: true }),
+  useSession: () => ({
+    manifest: { libraries: [{ id: "lib-1" }] },
+    isManager: true,
+    session: { profileID: "profile-a" },
+    revealed: false,
+  }),
 }));
 
 beforeEach(() => {
@@ -93,6 +100,7 @@ function renderMenu(
   onDetails?: () => void,
   locale: Locale = "en",
   credits?: readonly MediaCredit[],
+  queueUnlocked?: boolean,
 ) {
   render(
     <I18nProvider initialLocale={locale}>
@@ -103,12 +111,14 @@ function renderMenu(
           isMedia
           isAudio={isAudio}
           credits={credits}
+          queueUnlocked={queueUnlocked}
           href="https://example.test/watch/t1"
           target={{ mediaID: "t1" }}
           onPrimary={() => {}}
           onDetails={onDetails}
         />
         <CurrentPath />
+        <MusicQueueNotice />
       </MemoryRouter>
     </I18nProvider>,
   );
@@ -204,5 +214,66 @@ describe("MediaItemCardMenu hide (CORE-2836)", () => {
     renderMenu(false);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Unhide" }));
     await vi.waitFor(() => expect(clearMute).toHaveBeenCalledWith("media", "t1"));
+  });
+});
+
+describe("MediaItemCardMenu Play Queue", () => {
+  it.each([undefined, false])("hides queue actions when eligibility is %s", (unlocked) => {
+    renderMenu(true, undefined, "en", [], unlocked);
+    expect(screen.queryByRole("menuitem", { name: "Play next" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Add to queue" })).not.toBeInTheDocument();
+  });
+
+  it("disables both edits for the current track", () => {
+    const dispose = musicQueue.registerMusicQueuePlayer({
+      id: "t1",
+      scope: { profileID: "profile-a", revealed: false },
+      receive: () => {},
+    });
+    try {
+      renderMenu(true, undefined, "en", [], true);
+      expect(screen.getByRole("menuitem", { name: "Play next" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      expect(screen.getByRole("menuitem", { name: "Add to queue" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    } finally {
+      act(dispose);
+    }
+  });
+
+  it("only acknowledges a confirmed edit and shows a localized failure", async () => {
+    let settle!: (result: musicQueue.QueueEditResult) => void;
+    const edit = vi
+      .spyOn(musicQueue, "editMusicQueue")
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          settle = resolve;
+        }),
+      )
+      .mockResolvedValueOnce("failed");
+    try {
+      const french = STRINGS.fr;
+      renderMenu(true, undefined, "fr", [], true);
+      fireEvent.click(screen.getByRole("menuitem", { name: french.musicQueuePlayNext }));
+      expect(edit).toHaveBeenCalledWith(
+        expect.objectContaining({ profileID: "profile-a" }),
+        "t1",
+        "next",
+      );
+      expect(screen.queryByText(french.musicQueueNextConfirmed)).not.toBeInTheDocument();
+      await act(async () => settle("confirmed"));
+      expect(await screen.findByText(french.musicQueueNextConfirmed)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /Track One/ }));
+      fireEvent.click(screen.getByRole("menuitem", { name: french.musicQueueAdd }));
+      expect(await screen.findByText(french.musicQueueEditFailed)).toBeInTheDocument();
+      expect(screen.queryByText(french.musicQueueAddConfirmed)).not.toBeInTheDocument();
+    } finally {
+      edit.mockRestore();
+    }
   });
 });

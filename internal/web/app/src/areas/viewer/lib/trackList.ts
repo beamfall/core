@@ -6,7 +6,12 @@ import type {
   RelatedEntityGroup,
   SourceItem,
 } from "@/lib/graphql/types";
-import { type PlayerNavState, type PlayQueueItem, playQueueOf, queueWindow } from "./watchQueue";
+import {
+  catalogQueueState,
+  type PlayerNavState,
+  type PlayQueueItem,
+  playQueueOf,
+} from "./watchQueue";
 
 // Listening layout rules (CORE-1635). Core stays domain-agnostic: the layout is
 // chosen from the Entity's archetype, the Media class the server reports and
@@ -277,6 +282,5 @@ export function playState(
   queue: readonly PlayQueueItem[],
   item: { id: string; title: string },
 ): PlayerNavState {
-  if (!identity || queue.length === 0) return { title: item.title };
-  return { title: item.title, queue: queueWindow(queue, item.id), queueIdentity: identity };
+  return { title: item.title, ...catalogQueueState(identity, queue, item.id) };
 }

@@ -197,6 +197,7 @@ export function SearchPage() {
                       posInSet={index + 1}
                       setSize={group.rows.length}
                       queue={queue}
+                      queueLockKnown={live.servedMode === "keyword"}
                     />
                   ))}
                 </ul>
@@ -222,6 +223,7 @@ export function SearchPage() {
                             posInSet={index + 1}
                             setSize={held.length}
                             queue={queue}
+                            queueLockKnown={live.servedMode === "keyword"}
                             nameContainer={false}
                           />
                         ))}

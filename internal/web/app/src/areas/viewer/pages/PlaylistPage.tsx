@@ -8,6 +8,7 @@ import { fetchMediaRows } from "@/lib/graphql/browse";
 import type { CollectionInfo, GenericMediaInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { MediaItemCardMenu } from "../components/MediaItemCardMenu";
 import { ViewerActions } from "../components/ViewerActions";
 import { fetchEntryLocks } from "../lib/collections";
 import { mediaPath } from "../lib/mediaAddress";
@@ -17,8 +18,8 @@ import {
   moveInPlaylist,
   removeMediaFromPlaylist,
 } from "../lib/playlists";
-import { formatDuration, playState } from "../lib/trackList";
-import type { PlayQueueItem } from "../lib/watchQueue";
+import { formatDuration } from "../lib/trackList";
+import { catalogQueueState, type PlayQueueItem } from "../lib/watchQueue";
 import "../components/listening.css";
 
 // One playlist (CORE-1635): its members in stored order, Play all, and on a
@@ -39,7 +40,10 @@ export function PlaylistPage() {
   const [playlist, setPlaylist] = useState<CollectionInfo | null | undefined>(undefined);
   const [rows, setRows] = useState<Record<string, GenericMediaInfo>>({});
   // Each entry's lock state, "unknown" when the read failed, null while loading.
-  const [locks, setLocks] = useState<Map<string, boolean> | "unknown" | null>(null);
+  const [lockRead, setLockRead] = useState<{
+    key: string;
+    result: Map<string, boolean> | "unknown";
+  }>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -59,6 +63,8 @@ export function PlaylistPage() {
 
   const order = useMemo(() => (playlist ? memberOrder(playlist) : []), [playlist]);
   const orderKey = order.join("\n");
+  const lockKey = JSON.stringify([identity, playlistId, orderKey]);
+  const locks = lockRead?.key === lockKey ? lockRead.result : null;
 
   useEffect(() => {
     if (!orderKey) return;
@@ -73,16 +79,17 @@ export function PlaylistPage() {
   // change. Nothing plays until it is known; if the read fails, playback still
   // meets the server's own ceiling check.
   useEffect(() => {
-    setLocks(null);
     if (!orderKey) return;
     const controller = new AbortController();
     fetchEntryLocks(playlistId, orderKey.split("\n").length, controller.signal)
-      .then(setLocks)
+      .then((result) => {
+        if (!controller.signal.aborted) setLockRead({ key: lockKey, result });
+      })
       .catch(() => {
-        if (!controller.signal.aborted) setLocks("unknown");
+        if (!controller.signal.aborted) setLockRead({ key: lockKey, result: "unknown" });
       });
     return () => controller.abort();
-  }, [playlistId, orderKey]);
+  }, [playlistId, orderKey, lockKey]);
 
   const listed: PlayQueueItem[] = order
     .filter((id) => rows[id])
@@ -99,7 +106,10 @@ export function PlaylistPage() {
   function play(entry: PlayQueueItem) {
     const inQueue = queue.some((item) => item.id === entry.id);
     navigate(mediaPath("watch", entry.id), {
-      state: playState(identity, inQueue ? queue : [], entry),
+      state: {
+        title: entry.title,
+        ...catalogQueueState(identity, inQueue ? queue : [], entry.id, locks !== "unknown"),
+      },
     });
   }
 
@@ -146,7 +156,7 @@ export function PlaylistPage() {
               {listed.map((entry, index) => {
                 const position = order.indexOf(entry.id);
                 return (
-                  <li key={entry.id} className="bf-track">
+                  <li key={entry.id} className="bf-card-shell bf-track">
                     <button
                       type="button"
                       className="bf-track-row"
@@ -162,6 +172,28 @@ export function PlaylistPage() {
                         {formatDuration(rows[entry.id]?.durationSeconds)}
                       </span>
                     </button>
+                    {entry.mediaClass === "audio" &&
+                      locks instanceof Map &&
+                      locks.get(entry.id) === false && (
+                        <div className="bf-child-actions">
+                          <MediaItemCardMenu
+                            title={entry.title}
+                            primaryLabel={t("play")}
+                            isMedia
+                            isAudio
+                            queueUnlocked
+                            credits={rows[entry.id]?.credits}
+                            href={
+                              new URL(
+                                `${import.meta.env.BASE_URL}${mediaPath("watch", entry.id).slice(1)}`,
+                                window.location.origin,
+                              ).href
+                            }
+                            target={{ mediaID: entry.id }}
+                            onPrimary={() => play(entry)}
+                          />
+                        </div>
+                      )}
                     {isManager && (
                       <span className="bf-track-tools">
                         <Button

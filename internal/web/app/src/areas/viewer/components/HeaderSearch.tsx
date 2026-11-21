@@ -18,7 +18,7 @@ import {
   searchRowPlayPath,
 } from "../lib/searchRows";
 import { useLiveSearch, useSearchShortcut } from "../lib/useLiveSearch";
-import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
+import { catalogQueueState, playQueueOf } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 
 /** One action on a result row: open the item, or play it. */
@@ -94,13 +94,9 @@ export function HeaderSearch() {
   function activate(cell: Cell) {
     const { item } = cell;
     if (cell.play) {
-      const state: PlayerNavState = { title: item.title };
-      // A one-item queue still goes, so it ends an earlier Play all queue.
-      if (identity && queue.length > 0) {
-        state.queue = queueWindow(queue, item.id);
-        state.queueIdentity = identity;
-      }
-      navigate(searchRowPlayPath(item), { state });
+      navigate(searchRowPlayPath(item), {
+        state: { title: item.title, ...catalogQueueState(identity, queue, item.id) },
+      });
     } else {
       navigate(searchRowOpenPath(item), {
         state: item.kind === "media" ? { title: item.title } : entityLinkState(item, identity),

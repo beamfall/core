@@ -51,6 +51,7 @@ import {
   fetchMediaTracks,
   mediaLinkState,
 } from "../lib/mediaDetail";
+import { editMusicQueue } from "../lib/musicQueue";
 import {
   fetchPlaybackInfo,
   type PlaybackAdjustment,
@@ -1628,6 +1629,62 @@ describe("PlayerPage server Play Queue", () => {
     vi.mocked(PlayerTransport).mockReset();
     vi.mocked(useGaplessAudio).mockReset();
     vi.mocked(fetchMedia).mockResolvedValue(null);
+  });
+
+  it("waits for a delayed append before advancing a converting catalog run", async () => {
+    rows = [b, a];
+    renderQueue(b.id, c.id, "?t=0");
+    const write = deferred<void>();
+    const mutation = vi.spyOn(api, "postJSON").mockImplementation(async (_, request) => {
+      expect(request).toMatchObject({
+        variables: { mediaID: c.id, expectedProfileID: "profile-a" },
+      });
+      await write.promise;
+      rows = [...rows, c];
+      return { data: { queueAdd: rows } };
+    });
+    try {
+      let append!: ReturnType<typeof editMusicQueue>;
+      await act(async () => {
+        append = editMusicQueue(serverSession, c.id, "tail");
+      });
+      expect(mutation).toHaveBeenCalledTimes(1);
+      expect(readQueue).toHaveBeenCalledTimes(1);
+      act(() => controls()?.onNextInQueue?.());
+      expect(playingID()).toBe(b.id);
+      expect(readQueue).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        write.resolve();
+        expect(await append).toBe("confirmed");
+      });
+      await waitFor(() => expect(playingID()).toBe(a.id));
+      expect(location.search).toBe("?playQueue=profile-a");
+      expect(readQueue).toHaveBeenCalledTimes(3);
+      expect(mutation).toHaveBeenCalledTimes(1);
+    } finally {
+      mutation.mockRestore();
+    }
+  });
+
+  it("keeps the same playback start while marking a converted route for reload", async () => {
+    rows = [b, a];
+    renderQueue(b.id, c.id, "?t=0");
+    const mutation = vi.spyOn(api, "postJSON").mockImplementation(async () => {
+      rows = [b, c, a];
+      return { data: { queueAdd: rows } };
+    });
+    try {
+      await act(async () => {
+        expect(await editMusicQueue(serverSession, c.id, "next")).toBe("confirmed");
+      });
+      await waitFor(() => expect(location.search).toBe("?t=0&playQueue=profile-a"));
+      expect(playingID()).toBe(b.id);
+      expect(vi.mocked(usePlayer).mock.lastCall?.[2]).toBe(0);
+      expect(location.state).not.toHaveProperty("queue");
+      expect(restart).not.toHaveBeenCalled();
+    } finally {
+      mutation.mockRestore();
+    }
   });
 
   it("starts a server run explicitly from ordinary audio playback without serializing titles", async () => {

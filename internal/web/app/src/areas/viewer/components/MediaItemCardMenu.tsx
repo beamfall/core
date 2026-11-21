@@ -7,22 +7,31 @@ import {
   EyeOff,
   Link2,
   ListPlus,
+  ListStart,
   MoreVertical,
   Play,
   SquareArrowOutUpRight,
   UserRound,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router";
 import { Menu } from "@/components/ui/astryx-primitives";
+import { getIdentityEpochSignal } from "@/lib/api";
 import { fetchMedia } from "@/lib/graphql";
 import type { ItemTarget, MediaCredit } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
-import { useViewerIdentity } from "@/lib/session";
+import { useSession, useViewerIdentity } from "@/lib/session";
 import { useItemActions, useItemHide } from "../actions";
 import { entityPath } from "../lib/entityAddress";
+import {
+  editMusicQueue,
+  isCurrentMusicTrack,
+  type MusicQueueEdit,
+  subscribeMusicQueuePlayer,
+} from "../lib/musicQueue";
 import { moreWithLead } from "../lib/related";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
+import { showMusicQueueNotice } from "./MusicQueueNotice";
 
 const COPIED_RESET_MS = 2000;
 
@@ -39,6 +48,7 @@ export function MediaItemCardMenu({
   primaryLabel,
   isMedia,
   isAudio = false,
+  queueUnlocked,
   credits,
   containerID,
   href,
@@ -51,6 +61,8 @@ export function MediaItemCardMenu({
   isMedia: boolean;
   /** The Media's class is "audio": the watched entry uses listening wording. */
   isAudio?: boolean;
+  /** A listing read established that this Media can be played. */
+  queueUnlocked?: boolean;
   /** Credit rows already read by the listing, when available. */
   credits?: readonly MediaCredit[];
   containerID?: string;
@@ -168,6 +180,9 @@ export function MediaItemCardMenu({
                   {t("mediaDetailDetails")}
                 </Menu.Item>
               )}
+              {open && audioID && queueUnlocked === true && (
+                <MusicQueueMenuItems mediaID={audioID} />
+              )}
               {artistID && (
                 <Menu.LinkItem
                   className="bf-card-menu-item"
@@ -235,6 +250,45 @@ export function MediaItemCardMenu({
           onClose={() => setAddOpen(false)}
         />
       )}
+    </>
+  );
+}
+
+function MusicQueueMenuItems({ mediaID }: { mediaID: string }) {
+  const t = useT();
+  const { session, revealed } = useSession();
+  const currentTrack = useSyncExternalStore(subscribeMusicQueuePlayer, () =>
+    isCurrentMusicTrack(mediaID),
+  );
+
+  async function editQueue(action: MusicQueueEdit) {
+    if (!session?.profileID || currentTrack) return;
+    const epoch = getIdentityEpochSignal();
+    const result = await editMusicQueue({ ...session, revealed }, mediaID, action);
+    if (result !== "dropped" && !epoch?.aborted && epoch === getIdentityEpochSignal()) {
+      showMusicQueueNotice(result, action);
+    }
+  }
+
+  if (!session?.profileID) return null;
+  return (
+    <>
+      <Menu.Item
+        className="bf-card-menu-item"
+        disabled={currentTrack}
+        onClick={() => void editQueue("next")}
+      >
+        <ListStart aria-hidden="true" size={15} />
+        {t("musicQueuePlayNext")}
+      </Menu.Item>
+      <Menu.Item
+        className="bf-card-menu-item"
+        disabled={currentTrack}
+        onClick={() => void editQueue("tail")}
+      >
+        <ListPlus aria-hidden="true" size={15} />
+        {t("musicQueueAdd")}
+      </Menu.Item>
     </>
   );
 }

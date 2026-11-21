@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { getIdentityEpochSignal, graphql } from "@/lib/api";
+import { type GraphQLResult, getIdentityEpochSignal, graphql, postJSON } from "@/lib/api";
 import type { GenericMediaInfo, SessionInfo } from "@/lib/graphql/types";
 import { useSession, useViewerIdentity } from "@/lib/session";
 
@@ -100,6 +100,170 @@ async function readScoped<T>(
   return data;
 }
 
+function readQueue(scope: QueueIdentity, signal: AbortSignal): Promise<MusicQueueRow[]> {
+  return readMusicQueue((offset) =>
+    readScoped<Page>(QUEUE_QUERY, { query: "queue", limit: PAGE_SIZE, offset }, scope, signal),
+  );
+}
+
+const ADD_TRACK = `mutation AddMusicQueueTrack(
+  $mediaID: String!, $position: Int, $expectedProfileID: String!
+) {
+  queueAdd(mediaID: $mediaID, position: $position, expectedProfileID: $expectedProfileID) { id }
+}`;
+
+async function addTrack(
+  mediaID: string,
+  position: number | undefined,
+  expectedProfileID: string,
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  const result = await postJSON<
+    Omit<GraphQLResult<{ queueAdd: { id: string }[] }>, "errors"> & {
+      errors?: { message: string; extensions?: { reason?: string } }[];
+    }
+  >(
+    "/api/graphql",
+    { query: ADD_TRACK, variables: { mediaID, position, expectedProfileID } },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (result.errors?.some((error) => error.extensions?.reason === "PROFILE_MISMATCH")) {
+    throw new QueueIdentityChanged();
+  }
+  if (result.errors?.length || !result.data?.queueAdd) throw new Error("Queue write failed");
+}
+
+let pending: Promise<void> | undefined;
+
+/** Writes and cursor advances share a turn, including the confirmation read. */
+export function serializeMusicQueue<T>(work: () => T | Promise<T>): Promise<T> {
+  const result = pending ? pending.then(work) : (async () => work())();
+  const turn = result.then(
+    () => {},
+    () => {},
+  );
+  pending = turn;
+  void turn.then(() => {
+    if (pending === turn) pending = undefined;
+  });
+  return result;
+}
+
+interface QueuePlayer {
+  scope: QueueIdentity;
+  id: string;
+  /** False while a navigation is replacing the cursor. */
+  canEdit?: () => boolean;
+  /** Present until this catalog run starts using the server. */
+  readCatalog?: () => Promise<readonly string[] | undefined>;
+  receive: (rows: MusicQueueRow[] | null, convert: boolean) => void;
+}
+
+let player: QueuePlayer | undefined;
+const playerListeners = new Set<() => void>();
+
+export function registerMusicQueuePlayer(next: QueuePlayer) {
+  player = next;
+  for (const listener of playerListeners) listener();
+  return () => {
+    if (player !== next) return;
+    player = undefined;
+    for (const listener of playerListeners) listener();
+  };
+}
+
+export function subscribeMusicQueuePlayer(listener: () => void) {
+  playerListeners.add(listener);
+  return () => {
+    playerListeners.delete(listener);
+  };
+}
+
+export function isCurrentMusicTrack(id: string): boolean {
+  return player?.id === id;
+}
+
+export type MusicQueueEdit = "next" | "tail";
+export type QueueEditResult = "confirmed" | "failed" | "dropped";
+
+export function editMusicQueue(scope: QueueIdentity, id: string, edit: MusicQueueEdit) {
+  const epoch = getIdentityEpochSignal();
+  const signal = epoch ?? new AbortController().signal;
+  return serializeMusicQueue(async (): Promise<QueueEditResult> => {
+    if (signal.aborted || epoch !== getIdentityEpochSignal()) return "dropped";
+    const forProfile = () =>
+      player?.scope.profileID === scope.profileID && player.scope.revealed === scope.revealed
+        ? player
+        : undefined;
+    let active: QueuePlayer | undefined;
+    let convert = false;
+    let wrote = false;
+    let requested = false;
+    let anchor: string | undefined;
+    try {
+      if (forProfile()?.id === id) return "dropped";
+      const rows = await readQueue(scope, signal);
+      active = forProfile();
+      const current = active?.id;
+      if (current === id) return "dropped";
+      const canWrite = () => forProfile()?.id === current && active?.canEdit?.() !== false;
+      if (!canWrite()) return "failed";
+
+      const catalog = await active?.readCatalog?.();
+      const withoutTarget = rows.filter((row) => row.id !== id);
+      const write = (mediaID: string, position?: number, placement = false) => {
+        if (!canWrite()) throw new Error("Playback cursor changed");
+        wrote = true;
+        if (placement) requested = true;
+        return addTrack(mediaID, position, scope.profileID, signal);
+      };
+
+      if (current && catalog) {
+        convert = true;
+        if (rows[0]?.id !== current) await write(current, 0);
+        const queued = new Set(rows.map((row) => row.id));
+        queued.add(current);
+        for (const mediaID of catalog) {
+          if (queued.has(mediaID)) continue;
+          await write(mediaID);
+          queued.add(mediaID);
+        }
+      }
+
+      const cursorIndex = withoutTarget.findIndex((row) => row.id === current);
+      const position = edit === "tail" ? undefined : convert ? 1 : cursorIndex + 1;
+      if (edit === "next" && (convert || cursorIndex >= 0)) anchor = current;
+      await write(id, position, true);
+    } catch (error) {
+      if (error instanceof QueueIdentityChanged || signal.aborted) return "dropped";
+      if (!wrote) return "failed";
+      // A rejected response may follow a committed write. The only recovery
+      // after a write starts is a fresh read of the server's actual order.
+    }
+
+    let rows: MusicQueueRow[] | null;
+    try {
+      rows = await readQueue(scope, signal);
+    } catch (error) {
+      if (error instanceof QueueIdentityChanged || signal.aborted) return "dropped";
+      rows = null;
+    }
+    const live = forProfile();
+    if (active && live?.id === active.id && live.canEdit?.() !== false) {
+      live.receive(rows, convert);
+    }
+    if (!rows || !requested) return "failed";
+
+    const cursor = rows.findIndex((row) => row.id === anchor);
+    if ((anchor && cursor < 0) || (convert && rows[0]?.id !== active?.id)) return "failed";
+    const placed = edit === "tail" ? rows.at(-1) : rows[cursor + 1];
+    if (placed?.id !== id || !playableMusic(placed)) return "failed";
+    return "confirmed";
+  });
+}
+
 export interface MusicQueueView {
   rows?: MusicQueueRow[];
   failed?: boolean;
@@ -157,9 +321,7 @@ export function useMusicQueue() {
       read.pending?.controller.abort();
       const controller = new AbortController();
       const signal = AbortSignal.any([read.signal, controller.signal]);
-      const promise = readMusicQueue((offset) =>
-        readScoped<Page>(QUEUE_QUERY, { query: "queue", limit: PAGE_SIZE, offset }, scope, signal),
-      )
+      const promise = readQueue(scope, signal)
         .catch((error: unknown) => {
           if (error instanceof QueueIdentityChanged && !signal.aborted && current() === read) {
             invalidate(read);
@@ -180,6 +342,17 @@ export function useMusicQueue() {
       return promise;
     },
     [scope, current, invalidate],
+  );
+
+  const acceptRows = useCallback(
+    (rows: MusicQueueRow[] | null) => {
+      const read = current();
+      if (!read) return;
+      read.pending?.controller.abort();
+      read.pending = undefined;
+      setResult({ scope, failed: rows === null, rows: rows ?? undefined });
+    },
+    [scope, current],
   );
 
   const readMedia = useCallback(
@@ -206,5 +379,5 @@ export function useMusicQueue() {
   );
 
   const view = scope && !scope.epoch?.aborted && result?.scope === scope ? result : undefined;
-  return { view, refresh, readMedia, isCurrent: current };
+  return { view, refresh, acceptRows, readMedia, isCurrent: current };
 }

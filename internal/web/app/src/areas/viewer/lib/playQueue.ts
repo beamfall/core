@@ -21,6 +21,8 @@ interface PlayQueue {
   ids: string[];
   /** The titles the listing gave, by ID: the player's heading for each item. */
   titles: Map<string, string>;
+  audio: Set<string>;
+  loading?: Promise<void>;
   /** Index of the item last handed to the player. */
   cursor: number;
   /** Size of the set, and how far into it the server was read, at the last page. */
@@ -62,6 +64,7 @@ export async function startPlayQueue(
     epoch,
     ids: [],
     titles: new Map(),
+    audio: new Set(),
     cursor: 0,
     total: 0,
     fetched: 0,
@@ -92,7 +95,14 @@ export async function startPlayQueue(
  * smaller still, then scans forward past IDs it already holds, so nothing is
  * skipped and nothing repeats.
  */
-async function loadMore(queue: PlayQueue): Promise<void> {
+function loadMore(queue: PlayQueue): Promise<void> {
+  queue.loading ??= loadPage(queue).finally(() => {
+    queue.loading = undefined;
+  });
+  return queue.loading;
+}
+
+async function loadPage(queue: PlayQueue): Promise<void> {
   let offset = queue.fetched;
   // Progress writes land independently of these reads, so the set can shrink
   // again between a read and its retry: step back every time it does. The
@@ -113,6 +123,7 @@ async function loadMore(queue: PlayQueue): Promise<void> {
     for (const item of more) {
       queue.ids.push(item.id);
       queue.titles.set(item.id, item.title || "");
+      if (item.mediaClass === "audio") queue.audio.add(item.id);
     }
     queue.done = !page.items.length || queue.fetched >= page.total;
     if (more.length || queue.done) return;
@@ -126,6 +137,15 @@ async function loadMore(queue: PlayQueue): Promise<void> {
  */
 export function playQueueHandle(): unknown {
   return activeQueue();
+}
+
+/** Finish reading the Play all source before the first queue write. */
+export async function playAllMusicIDs(mediaID: string): Promise<string[]> {
+  const queue = activeQueue();
+  if (!queue || positionOf(queue, mediaID) < 0) return [];
+  while (!queue.done && activeQueue() === queue) await loadMore(queue);
+  if (activeQueue() !== queue) throw new Error("Play all source changed");
+  return queue.ids.filter((id) => queue.audio.has(id));
 }
 
 /** The listed title of an item the active queue holds, or "". */

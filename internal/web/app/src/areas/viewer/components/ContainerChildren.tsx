@@ -9,7 +9,7 @@ import { childThumbURL, groupChildrenByKind } from "../lib/containerChildren";
 import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
 import { runtimeParts } from "../lib/viewerFields";
-import { type PlayQueueItem, playQueueOf, queueWindow } from "../lib/watchQueue";
+import { catalogQueueState, type PlayQueueItem, playQueueOf } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 
@@ -74,9 +74,7 @@ function ChildRow({
   const navigate = useNavigate();
   const path = mediaPath("media", item.id);
   function queueState() {
-    return identity && queue.length > 0
-      ? { queue: queueWindow(queue, item.id), queueIdentity: identity }
-      : {};
+    return catalogQueueState(identity, queue, item.id);
   }
   function openDetails() {
     navigate(path, { state: { ...mediaLinkState(item, identity), ...queueState() } });
@@ -152,6 +150,7 @@ function ChildRow({
             primaryLabel={t("play")}
             isMedia
             isAudio={item.mediaClass === "audio"}
+            queueUnlocked={!item.locked}
             containerID={item.container?.id}
             href={
               new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href

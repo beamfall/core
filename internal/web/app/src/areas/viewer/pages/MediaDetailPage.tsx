@@ -206,14 +206,16 @@ export function MediaDetailPage() {
   function watch(fromStart: boolean) {
     // Forward the queue the opening card carried (CORE-1143), still bound to
     // the viewer identity it was listed for.
-    const { queue } = readPlayerNavState(location.state, identity);
+    const { queue, queueIdentity, queueSource } = readPlayerNavState(location.state, identity);
     // Every Play or Start over is its own start, so pressing one while the
     // mini player already plays this Media starts it again with these picks.
-    const state: PlayerNavState = { title, startID: newStartID() };
-    if (identity && queue) {
-      state.queue = queue;
-      state.queueIdentity = identity;
-    }
+    const state: PlayerNavState = {
+      title,
+      startID: newStartID(),
+      queue,
+      queueIdentity,
+      queueSource,
+    };
     if (
       trackPicks?.mediaID === mediaId &&
       (trackPicks.versionID !== undefined ||

@@ -19,7 +19,7 @@ import { mediaLinkState } from "../lib/mediaDetail";
 import { fetchPreviewInfo } from "../lib/playback";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
 import { formatDuration } from "../lib/trackList";
-import { type PlayerNavState, type PlayQueueItem, queueWindow } from "../lib/watchQueue";
+import { catalogQueueState, type PlayerNavState, type PlayQueueItem } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 import { PosterGlyph } from "./PosterGlyph";
@@ -50,6 +50,7 @@ export function MediaItemCard({
   setSize,
   focusAnchor,
   queue,
+  queueLockKnown = true,
   playOnActivate,
   showPlayButton = false,
   showYear = false,
@@ -65,6 +66,8 @@ export function MediaItemCard({
   focusAnchor?: RenderFocusAnchor;
   /** The playable siblings this card is shown with, handed to the player as its queue. */
   queue?: PlayQueueItem[];
+  /** False for a listing that does not establish certification lock state. */
+  queueLockKnown?: boolean;
   /** A list row plays at once; a poster opens the Media detail page (CORE-1144). */
   playOnActivate?: boolean;
   /** Child Media have a Play button alongside the detail link. */
@@ -176,9 +179,8 @@ export function MediaItemCard({
   // The siblings as the player's queue (previous/next and the pre-minted next
   // stream), bound to the viewer identity. A one-item queue still goes, so it
   // ends an earlier Play all queue. The detail page forwards it to its Play.
-  function queueState(): Pick<PlayerNavState, "queue" | "queueIdentity"> {
-    if (!identity || !queue || queue.length === 0) return {};
-    return { queue: queueWindow(queue, item.id), queueIdentity: identity };
+  function queueState() {
+    return catalogQueueState(identity, queue, item.id, queueLockKnown);
   }
 
   // Carry the title forward so the player's info overlay can name the Media
@@ -265,6 +267,7 @@ export function MediaItemCard({
       primaryLabel={primaryLabel}
       isMedia={isMedia}
       isAudio={item.mediaClass === "audio"}
+      queueUnlocked={queueLockKnown && !item.locked}
       containerID={item.container?.id}
       href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
       target={itemTargetFor(item)}
@@ -291,8 +294,7 @@ export function MediaItemCard({
     >
       <Link
         to={path}
-        state={showPlayButton ? undefined : linkState()}
-        onClick={showPlayButton ? (event) => activateLink(event, open) : undefined}
+        onClick={(event) => activateLink(event, open)}
         aria-label={cardAccessibleName(
           {
             ...item,

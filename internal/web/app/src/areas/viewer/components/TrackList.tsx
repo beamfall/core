@@ -73,6 +73,7 @@ export function TrackList({
                   primaryLabel={t("play")}
                   isMedia
                   isAudio
+                  queueUnlocked={!item.locked}
                   credits={row.credits}
                   containerID={item.container?.id}
                   href={

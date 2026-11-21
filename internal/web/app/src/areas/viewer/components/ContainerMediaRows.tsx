@@ -11,7 +11,7 @@ import { itemRuntimeSeconds, rowOrdinals } from "../lib/containerPage";
 import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
 import { runtimeParts } from "../lib/viewerFields";
-import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
+import { catalogQueueState, playQueueOf } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 
@@ -38,19 +38,16 @@ export function ContainerMediaRows({
   if (media.length === 0) return null;
 
   function play(item: SourceItem) {
-    const state: PlayerNavState = { title: item.title };
-    if (identity && queue.length > 0) {
-      state.queue = queueWindow(queue, item.id);
-      state.queueIdentity = identity;
-    }
-    navigate(mediaPath("watch", item.id), { state });
+    navigate(mediaPath("watch", item.id), {
+      state: { title: item.title, ...catalogQueueState(identity, queue, item.id) },
+    });
   }
 
   // The detail page forwards the container's queue to its own Play.
   function linkState(item: SourceItem) {
     const link = mediaLinkState(item, identity);
     if (!link || queue.length === 0) return link;
-    return { ...link, queue: queueWindow(queue, item.id), queueIdentity: identity };
+    return { ...link, ...catalogQueueState(identity, queue, item.id) };
   }
 
   return (
@@ -133,6 +130,7 @@ export function ContainerMediaRows({
                   primaryLabel={t("play")}
                   isMedia
                   isAudio={item.mediaClass === "audio"}
+                  queueUnlocked={!item.locked}
                   containerID={item.container?.id}
                   href={
                     new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin)

@@ -126,6 +126,31 @@ describe("PlaylistPage locked entries (CORE-1876)", () => {
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/m-1|m-1,m-3");
   });
 
+  it("shows the audio menu only on rows confirmed unlocked", async () => {
+    vi.mocked(fetchMediaRows).mockResolvedValueOnce({
+      "m-1": { ...row("m-1", "First tone"), mediaClass: "audio" },
+      "m-2": { ...row("m-2", "Second tone"), mediaClass: "audio" },
+      "m-3": { ...row("m-3", "Third tone"), mediaClass: "audio" },
+    });
+    vi.mocked(fetchEntryLocks).mockResolvedValue(
+      new Map([
+        ["m-1", false],
+        ["m-2", true],
+      ]),
+    );
+    renderPage();
+
+    expect(
+      await screen.findByRole("button", { name: "More actions for First tone" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "More actions for Second tone" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "More actions for Third tone" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("plays a muted entry on its own, without the playlist queue", async () => {
     vi.mocked(fetchEntryLocks).mockResolvedValue(new Map([["m-1", false]]));
     renderPage();

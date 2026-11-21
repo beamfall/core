@@ -11,6 +11,7 @@ import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { HiddenUndoNotice, useEngagementEvents } from "./actions";
 import { SectionSkeleton } from "./components/HydratedSection";
+import { MusicQueueNotice } from "./components/MusicQueueNotice";
 import { useScrollRestoration } from "./lib/useScrollRestoration";
 import { BrowsePage } from "./pages/BrowsePage";
 import { CastCrewPage } from "./pages/CastCrewPage";
@@ -186,6 +187,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
       </Routes>
       <RemoteMessage message={remote.message} onDismiss={remote.dismissMessage} />
       <HiddenUndoNotice profileID={profileID} />
+      <MusicQueueNotice />
     </PlayerHost>
   );
 }
