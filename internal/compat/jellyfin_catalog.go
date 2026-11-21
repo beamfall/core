@@ -69,8 +69,9 @@ const (
 	// catalogIndexTTL is how long a built index serves repeat reads for the
 	// same Library and visibility filter. The tools read one item per request
 	// across a whole Library, so rebuilding each time is quadratic per sync.
-	// Library eligibility, restriction and sealing and each item's visibility
-	// are still checked on every request; see libraryIndex.
+	// Library eligibility, restriction and sealing and each served item's
+	// visibility are still checked on every request; see libraryIndex and
+	// lookupNodes.
 	catalogIndexTTL     = 15 * time.Second
 	catalogIndexEntries = 32
 	catalogIndexBuilds  = 2
@@ -210,11 +211,10 @@ type cachedIndex struct {
 // run at once, and a request that waited finds the index the one ahead of it
 // built.
 func (h *Handler) libraryIndex(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary) (*catalogIndex, error) {
-	fingerprint, err := json.Marshal(filter)
+	key, err := indexKey(filter, lib)
 	if err != nil {
 		return nil, err
 	}
-	key := string(lib.library.ID) + "\x00" + string(fingerprint)
 	c := &h.indexes
 	release, err := c.acquire(ctx)
 	if err != nil {
@@ -235,6 +235,70 @@ func (h *Handler) libraryIndex(ctx context.Context, filter store.LibraryFilter, 
 	}
 	c.store(key, visible, index)
 	return index, nil
+}
+
+// recentIndex returns the Library's index as built within catalogIndexTTL,
+// without reading the visible set again, or else libraryIndex's. A caller
+// confirms whatever it serves from it with visibleNodes.
+func (h *Handler) recentIndex(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary) (*catalogIndex, error) {
+	key, err := indexKey(filter, lib)
+	if err != nil {
+		return nil, err
+	}
+	if index := h.indexes.recent(key); index != nil {
+		return index, nil
+	}
+	return h.libraryIndex(ctx, filter, lib)
+}
+
+func indexKey(filter store.LibraryFilter, lib catalogLibrary) (string, error) {
+	fingerprint, err := json.Marshal(filter)
+	if err != nil {
+		return "", err
+	}
+	return string(lib.library.ID) + "\x00" + string(fingerprint), nil
+}
+
+// visibleNodes keeps the nodes that still show a visible item: a leaf the
+// store still reports visible, or a container holding one. It reads only the
+// leaves under the given nodes.
+func (h *Handler) visibleNodes(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary, nodes []*catalogNode) ([]*catalogNode, error) {
+	var ids []store.MediaID
+	seen := map[*catalogNode]bool{}
+	var collect func(*catalogNode)
+	collect = func(n *catalogNode) {
+		if seen[n] {
+			return
+		}
+		seen[n] = true
+		if n.leaf {
+			ids = append(ids, store.MediaID(n.id))
+		}
+		for _, child := range n.children {
+			collect(child)
+		}
+	}
+	for _, n := range nodes {
+		collect(n)
+	}
+	visible, err := h.store.LibraryVisibleMediaIDs(ctx, filter, lib.library.ID, ids)
+	if err != nil {
+		return nil, err
+	}
+	var shows func(*catalogNode) bool
+	shows = func(n *catalogNode) bool {
+		if n.leaf {
+			return visible[store.MediaID(n.id)]
+		}
+		return slices.ContainsFunc(n.children, shows)
+	}
+	var kept []*catalogNode
+	for _, n := range nodes {
+		if shows(n) {
+			kept = append(kept, n)
+		}
+	}
+	return kept, nil
 }
 
 func (c *indexCache) acquire(ctx context.Context) (func(), error) {
@@ -264,6 +328,18 @@ func (c *indexCache) lookup(key string, visible [sha256.Size]byte) *catalogIndex
 	defer c.mu.Unlock()
 	entry, ok := c.entries[key]
 	if !ok || entry.visible != visible || c.clock().Sub(entry.built) >= catalogIndexTTL {
+		return nil
+	}
+	return entry.index
+}
+
+// recent returns the index stored under key within catalogIndexTTL, whatever
+// visible set it was built from.
+func (c *indexCache) recent(key string) *catalogIndex {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.entries[key]
+	if !ok || c.clock().Sub(entry.built) >= catalogIndexTTL {
 		return nil
 	}
 	return entry.index
@@ -500,13 +576,16 @@ func (h *Handler) attachProviderIDs(ctx context.Context, lib catalogLibrary, ind
 // provider the key names: digits, or tt and digits for Imdb. A stored value
 // carrying a path, file name, URL or other text is never echoed.
 func validProviderID(key, value string) bool {
+	if len(value) > catalogProviderIDMax {
+		return false
+	}
 	if key == "Imdb" {
 		var ok bool
 		if value, ok = strings.CutPrefix(value, "tt"); !ok {
 			return false
 		}
 	}
-	if value == "" || len(value) > catalogProviderIDMax {
+	if value == "" {
 		return false
 	}
 	for i := 0; i < len(value); i++ {
@@ -587,18 +666,56 @@ func (h *Handler) catalogScope(w http.ResponseWriter, r *http.Request) ([]catalo
 	return libraries, filter, true
 }
 
-// findNode searches the eligible Libraries for one visible item.
-func (h *Handler) findNode(ctx context.Context, filter store.LibraryFilter, libraries []catalogLibrary, id string) (*catalogNode, error) {
+// catalogHit is one visible item and the Library it was found in.
+type catalogHit struct {
+	node *catalogNode
+	lib  catalogLibrary
+}
+
+// lookupNodes finds the visible items with the given IDs. It reads only the
+// eligible Libraries that hold one, each from its recent index, and confirms
+// the items found are still visible, so a per-item sync reads each item's
+// rows rather than its whole Library. An ID the recent index lacks reads the
+// Library afresh.
+func (h *Handler) lookupNodes(ctx context.Context, filter store.LibraryFilter, libraries []catalogLibrary, ids []string) (map[string]catalogHit, error) {
+	owners, err := h.store.CatalogItemLibraries(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	found := map[string]catalogHit{}
 	for _, lib := range libraries {
-		index, err := h.libraryIndex(ctx, filter, lib)
+		var wanted []string
+		for _, id := range ids {
+			if owners[id] == lib.library.ID {
+				wanted = append(wanted, id)
+			}
+		}
+		if len(wanted) == 0 {
+			continue
+		}
+		index, err := h.recentIndex(ctx, filter, lib)
 		if err != nil {
 			return nil, err
 		}
-		if node := index.byID[id]; node != nil {
-			return node, nil
+		if slices.ContainsFunc(wanted, func(id string) bool { return index.byID[id] == nil }) {
+			if index, err = h.libraryIndex(ctx, filter, lib); err != nil {
+				return nil, err
+			}
+		}
+		var nodes []*catalogNode
+		for _, id := range wanted {
+			if node := index.byID[id]; node != nil {
+				nodes = append(nodes, node)
+			}
+		}
+		if nodes, err = h.visibleNodes(ctx, filter, lib, nodes); err != nil {
+			return nil, err
+		}
+		for _, node := range nodes {
+			found[node.id] = catalogHit{node: node, lib: lib}
 		}
 	}
-	return nil, nil
+	return found, nil
 }
 
 func findLibrary(libraries []catalogLibrary, id string) (catalogLibrary, bool) {
@@ -655,26 +772,15 @@ func (h *Handler) itemsByID(w http.ResponseWriter, r *http.Request, filter store
 			order = append(order, id)
 		}
 	}
-	found := map[string]*catalogNode{}
-	for _, lib := range libraries {
-		if len(found) == len(wanted) {
-			break
-		}
-		index, err := h.libraryIndex(r.Context(), filter, lib)
-		if err != nil {
-			http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
-			return
-		}
-		for id := range wanted {
-			if node := index.byID[id]; node != nil && found[id] == nil {
-				found[id] = node
-			}
-		}
+	found, err := h.lookupNodes(r.Context(), filter, libraries, order)
+	if err != nil {
+		http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
+		return
 	}
 	items := []compatItem{}
 	for _, id := range order {
-		if node := found[id]; node != nil {
-			items = append(items, h.itemJSON(node))
+		if hit, ok := found[id]; ok {
+			items = append(items, h.itemJSON(hit.node))
 		}
 	}
 	writeJSON(w, itemList{Items: items, TotalRecordCount: len(items)})
@@ -757,16 +863,19 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 	if !ok {
 		return
 	}
-	node, err := h.findNode(r.Context(), filter, libraries, id)
+	found, err := h.lookupNodes(r.Context(), filter, libraries, []string{id})
 	if err != nil {
 		http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
 		return
 	}
-	if node == nil || node.leaf || node.parent != nil {
+	hit, ok := found[id]
+	node := hit.node
+	if !ok || node.leaf || node.parent != nil {
 		http.NotFound(w, r)
 		return
 	}
 	var nodes []*catalogNode
+	holder := ""
 	if !leaves {
 		for _, child := range node.children {
 			if !child.leaf {
@@ -774,7 +883,7 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 			}
 		}
 	} else {
-		holder := queryValue(r.URL.Query(), "seasonId")
+		holder = queryValue(r.URL.Query(), "seasonId")
 		if holder != "" && !holdsContainer(node, holder) {
 			http.NotFound(w, r)
 			return
@@ -792,6 +901,15 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 			}
 		}
 		walk(node)
+	}
+	if nodes, err = h.visibleNodes(r.Context(), filter, hit.lib, nodes); err != nil {
+		http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
+		return
+	}
+	// A season left with no visible member is hidden itself.
+	if holder != "" && len(nodes) == 0 {
+		http.NotFound(w, r)
+		return
 	}
 	h.writePage(w, r.URL.Query(), nodes)
 }

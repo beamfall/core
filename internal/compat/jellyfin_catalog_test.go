@@ -515,6 +515,18 @@ func TestJellyfinCatalogRelationsBindToTheirKind(t *testing.T) {
 
 func TestJellyfinCatalogHidesTrashedMembersAndEmptyContainers(t *testing.T) {
 	f := newCatalogFixture(t)
+	now := time.Unix(1_000_000, 0)
+	f.handler.indexes.now = func() time.Time { return now }
+	// Warm the index first: per-item reads keep serving it inside the TTL and
+	// must still hide what was trashed after it was built.
+	f.get(t, "Items?ids="+string(f.part3)+","+string(f.sub2), http.StatusOK)
+	if len(f.handler.indexes.entries) != 1 {
+		t.Fatalf("an ID lookup cached %d indexes, want 1", len(f.handler.indexes.entries))
+	}
+	var key string
+	for key = range f.handler.indexes.entries {
+	}
+	warm := f.handler.indexes.recent(key)
 	// part3 is the only member of sub2: trashing it hides both.
 	if err := f.st.TrashMedia(t.Context(), f.part3, store.LibraryFilter{AllLibraries: true}); err != nil {
 		t.Fatal(err)
@@ -531,6 +543,12 @@ func TestJellyfinCatalogHidesTrashedMembersAndEmptyContainers(t *testing.T) {
 		t.Fatalf("trashed item lookup = %+v", list.Items)
 	}
 	f.get(t, "Shows/"+string(f.group)+"/Episodes?seasonId="+string(f.sub2), http.StatusNotFound)
+	if f.handler.indexes.recent(key) != warm {
+		t.Fatal("per-item reads rebuilt the index instead of checking the items they serve")
+	}
+	if list := decodeList(t, f.get(t, "Items?ids="+string(f.part2)+","+string(f.single), http.StatusOK)); !slices.Equal(itemIDs(list.Items), []string{string(f.part2), string(f.single)}) {
+		t.Fatalf("visible items from the warm index = %v", itemIDs(list.Items))
+	}
 }
 
 func TestJellyfinCatalogHidesAllowlistedRestrictedLibrary(t *testing.T) {
@@ -644,7 +662,8 @@ func TestJellyfinProviderIDAndQueryValue(t *testing.T) {
 		key, value string
 		want       bool
 	}{
-		{"Imdb", "tt0111161", true}, {"Imdb", "0111161", false}, {"Imdb", "tt", false}, {"Imdb", "ttx1", false},
+		{"Imdb", "tt0111161", true}, {"Imdb", "tt" + strings.Repeat("1", catalogProviderIDMax-2), true},
+		{"Imdb", "tt" + strings.Repeat("1", catalogProviderIDMax-1), false}, {"Imdb", "0111161", false}, {"Imdb", "tt", false}, {"Imdb", "ttx1", false},
 		{"Tmdb", "12345", true}, {"Tvdb", "81189", true}, {"AniDB", "1", true}, {"Tmdb", "tt0111161", false},
 		{"Tmdb", "", false}, {"Tmdb", "../x", false}, {"Tmdb", "private-recording.mkv", false},
 		{"Tmdb", "a.b_c-d", false}, {"Tmdb", "https://example.invalid/1", false}, {"Tmdb", "1 2", false},

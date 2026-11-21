@@ -101,12 +101,29 @@ cannot_scan() {
   fail=1
 }
 
+# inspect <file> returns 0 for a regular file to scan, 1 for a path to skip (a
+# non-regular entry, or one deleted from the worktree), and 2 when a parent
+# directory cannot be searched, so the file's state is unknown.
+inspect() {
+  local dir
+  [[ -f "$1" ]] && return 0
+  [[ -e "$1" || -L "$1" ]] && return 1
+  dir="$(dirname -- "$1")"
+  while [[ "$dir" != "." && ! -d "$dir" ]]; do dir="$(dirname -- "$dir")"; done
+  [[ -x "$dir" ]] && return 1
+  return 2
+}
+
 pattern='(entitlement|stripe|premium|payment[-_ ]source|purchase[-_ ]state|beamfall[-_ ]account|account[-_ ](service|portal|deletion|identity|ledger|token|id)|Account(Service|Portal|Ledger|Token|ID|Id)|billing|billing[-_ ](portal|system|service|ledger|provider|integration|webhook)|checkout[-_ ](entry|flow|session|portal)|web[-_ ]checkout|license[-_ ]key|licensed[-_ ]feature|licensing[-_ ](code|logic)|license[-_ ]check)'
 
 files="$(tracked_files)"
 while IFS= read -r file; do
   is_scanned_file "$file" || continue
-  [[ -f "$file" ]] || continue
+  state=0; inspect "$file" || state=$?
+  case "$state" in
+    1) continue ;;
+    2) cannot_scan "$file"; continue ;;
+  esac
 
   matches="$(scan_matches "$file" "$pattern" -inE)" || { cannot_scan "$file"; continue; }
   while IFS=: read -r line_no text; do
@@ -140,8 +157,12 @@ emit_module() {
 
 scan_for_proprietary_modules() {
   # scan_for_proprietary_modules <file>
-  local file="$1" line_no text matches
-  [[ -f "$file" ]] || return 0
+  local file="$1" line_no text matches state=0
+  inspect "$file" || state=$?
+  case "$state" in
+    1) return 0 ;;
+    2) cannot_scan "$file"; return 0 ;;
+  esac
 
   matches="$(scan_matches "$file" "$proprietary_module_pattern" -nE)" || { cannot_scan "$file"; return 0; }
   while IFS=: read -r line_no text; do
