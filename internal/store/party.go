@@ -692,10 +692,12 @@ func (st partyState) currentEntry() (partyEntryRow, bool) {
 	return partyEntryRow{}, false
 }
 
-// targetPositionMS is where playback is at nowMS in Media milliseconds.
+// targetPositionMS is where playback is at nowMS: positionMS plus the time
+// since the anchor while playing. Positions are in the played stream's
+// milliseconds, so a tempo-adjusted stream runs durationSeconds/tempo.
 func (session PartySession) targetPositionMS(nowMS int64) int64 {
 	if session.PlaybackState == "playing" && nowMS > session.AnchorAtMS {
-		return session.PositionMS + int64(float64(nowMS-session.AnchorAtMS)*session.Tempo)
+		return session.PositionMS + nowMS - session.AnchorAtMS
 	}
 	return session.PositionMS
 }
@@ -743,9 +745,10 @@ func (s *Store) buildPartyViewLocked(ctx context.Context, state partyState, nowM
 		if duration <= 0 {
 			duration = fallback
 		}
-		remainingMS := max(int64(duration)*1000-session.targetPositionMS(nowMS), 0)
+		streamMS := float64(duration) * 1000 / session.Tempo
+		remainingMS := max(streamMS-float64(session.targetPositionMS(nowMS)), 0)
 		timing.HasCurrent = true
-		timing.CurrentRemainingSeconds = int(math.Ceil(float64(remainingMS) / 1000 / session.Tempo))
+		timing.CurrentRemainingSeconds = int(math.Ceil(remainingMS / 1000))
 	}
 	ordered := state.waitingOrder(visible)
 	orderedDurations := make([]int, len(ordered))

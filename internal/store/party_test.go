@@ -101,7 +101,7 @@ func TestPartySessionRotationAdvanceAndPlayback(t *testing.T) {
 	}
 	clock = clock.Add(30 * time.Second)
 	view, _, _ = st.PartySessionForHost(ctx, "profile-default", host)
-	// 45s of 120s played at 1.5x leaves 50s; the observed changeover is 10s.
+	// 30s into the 80s stream of 120s at 1.5x leaves 50s; the observed changeover is 10s.
 	if view.ChangeoverSeconds != 10 || view.Waiting[0].ETASeconds != 60 {
 		t.Fatalf("changeover %d, first ETA %d; want 10 and 60", view.ChangeoverSeconds, view.Waiting[0].ETASeconds)
 	}
