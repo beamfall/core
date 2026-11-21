@@ -518,8 +518,8 @@ func queuedScans(t *testing.T, st *store.Store) int {
 
 func TestPollReconcilesLegacyReceiptOnceByEnclosureURL(t *testing.T) {
 	for name, file := range map[string]string{
-		"exact URL":     "ep.mp3?token=a1",
-		"rotated token": "ep.mp3?token=b22",
+		"exact URL":     "ep.mp3?sig=a1",
+		"rotated token": "ep.mp3?sig=b22",
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
@@ -532,7 +532,7 @@ func TestPollReconcilesLegacyReceiptOnceByEnclosureURL(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			addLegacyReceipt(t, st, sub, fs.server.URL+"/files/ep.mp3?token=a1", "Episode.mp3")
+			addLegacyReceipt(t, st, sub, fs.server.URL+"/files/ep.mp3?sig=a1", "Episode.mp3")
 			fs.setFeed(fs.guidlessItem("Episode", file))
 			poller := NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))
 			if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
@@ -552,7 +552,7 @@ func TestPollReconcilesLegacyReceiptOnceByEnclosureURL(t *testing.T) {
 				t.Fatalf("subscription = %+v, %v, want validators stored", sub, err)
 			}
 			// The next poll matches by the persisted identity alone.
-			fs.setFeed(fs.guidlessItem("Episode", "ep.mp3?token=c333"))
+			fs.setFeed(fs.guidlessItem("Episode", "ep.mp3?sig=c333"))
 			if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
 				t.Fatalf("second poll = %d, %v, want no download", count, err)
 			}
@@ -575,10 +575,10 @@ func TestPollTreatsWeakLegacyEvidenceAsNewEntries(t *testing.T) {
 		receipts map[string]string // enclosure path and query → file name
 		items    [][2]string       // title, enclosure path and query
 	}{
-		{"two receipts share the path", map[string]string{"ep.mp3?token=a1": "A.mp3", "ep.mp3?token=b22": "B.mp3"},
-			[][2]string{{"Episode", "ep.mp3?token=c333"}}},
-		{"two entries share the path", map[string]string{"ep.mp3?token=a1": "A.mp3"},
-			[][2]string{{"Episode", "ep.mp3?token=b22"}, {"Bonus", "ep.mp3?token=c333"}}},
+		{"two receipts share the path", map[string]string{"ep.mp3?sig=a1": "A.mp3", "ep.mp3?sig=b22": "B.mp3"},
+			[][2]string{{"Episode", "ep.mp3?sig=c333"}}},
+		{"two entries share the path", map[string]string{"ep.mp3?sig=a1": "A.mp3"},
+			[][2]string{{"Episode", "ep.mp3?sig=b22"}, {"Bonus", "ep.mp3?sig=c333"}}},
 		{"numeric title suffix", map[string]string{"session.mp3": "Session.mp3"},
 			[][2]string{{"Session-2", "session-2.mp3"}}},
 		{"same title, different path", map[string]string{"old.mp3": "Shared Title.mp3"},
@@ -773,7 +773,7 @@ func TestEnclosureExtension(t *testing.T) {
 	}{
 		{scrape.FeedEntry{EnclosureType: "audio/mpeg"}, "mp3"},
 		{scrape.FeedEntry{EnclosureType: "audio/mp4; charset=binary"}, "m4a"},
-		{scrape.FeedEntry{EnclosureURL: "https://cdn.example.com/x/file.OGG?token=secret"}, "ogg"},
+		{scrape.FeedEntry{EnclosureURL: "https://cdn.example.com/x/file.OGG?sig=secret"}, "ogg"},
 		{scrape.FeedEntry{EnclosureURL: "https://cdn.example.com/file"}, "bin"},
 		{scrape.FeedEntry{EnclosureURL: "https://cdn.example.com/file.with-long-ext.something"}, "bin"},
 	}
