@@ -278,7 +278,8 @@ function JoinedView({
 }) {
   const t = useT();
   const { state, offline, refresh } = usePartyState(joined.token, onEnded);
-  const [status, setStatus] = useState<string | null>(null);
+  // The confirmation for the last request, shown while that entry is still pending or waiting.
+  const [status, setStatus] = useState<{ text: string; entryID: string } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const mine = state?.mine ?? [];
@@ -286,6 +287,11 @@ function JoinedView({
   const atLimit = state != null && state.maxWaiting > 0 && active >= state.maxWaiting;
   // Media this guest already asked for (pending, waiting or declined): search marks them Requested.
   const requestedIDs = new Set(mine.flatMap((e) => (e.mediaID ? [e.mediaID] : [])));
+  const statusText =
+    status &&
+    mine.some((e) => e.id === status.entryID && (e.state === "pending" || e.state === "waiting"))
+      ? status.text
+      : null;
   // After a 429, Request stays disabled until the server's Retry-After has passed.
   const [coolingDown, setCoolingDown] = useState(false);
   const cooldownTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -319,14 +325,15 @@ function JoinedView({
     setStatus(null);
     try {
       const entry = await requestPartyMedia(joined.token, item.mediaID);
-      setStatus(
-        t(
+      setStatus({
+        text: t(
           entry.state === "pending"
             ? "partyGuestRequestSentPending"
             : "partyGuestRequestSentWaiting",
         ),
-      );
-      void refresh();
+        entryID: entry.id,
+      });
+      await refresh();
       return true;
     } catch (err) {
       handleActionError(err, "partyGuestRequestFailed");
@@ -374,7 +381,7 @@ function JoinedView({
             </HairlineList>
           )}
           <div aria-live="polite" className="mt-3 text-sm empty:hidden">
-            {status && <p className="m-0 text-muted-foreground">{status}</p>}
+            {statusText && <p className="m-0 text-muted-foreground">{statusText}</p>}
           </div>
           {actionError && (
             <p role="alert" className="m-0 mt-3 text-sm font-medium text-destructive">
@@ -503,7 +510,6 @@ function SearchPanel({
   const [items, setItems] = useState<PartySearchItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [requested, setRequested] = useState<Set<string>>(() => new Set());
   const [pending, setPending] = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent) {
@@ -572,7 +578,7 @@ function SearchPanel({
       {items.length > 0 && (
         <HairlineList className="mt-3">
           {items.map((item) => {
-            const done = requested.has(item.mediaID) || requestedIDs.has(item.mediaID);
+            const done = requestedIDs.has(item.mediaID);
             return (
               <li key={item.mediaID} className="flex items-center gap-3 py-3">
                 <div className="min-w-0 flex-1">
@@ -597,9 +603,8 @@ function SearchPanel({
                   aria-describedby={limitReason && !done ? limitID : undefined}
                   onClick={async () => {
                     setPending(item.mediaID);
-                    const ok = await onRequest(item);
+                    await onRequest(item);
                     setPending(null);
-                    if (ok) setRequested((prev) => new Set(prev).add(item.mediaID));
                   }}
                 >
                   {t(done ? "partyGuestRequested" : "partyGuestRequest")}

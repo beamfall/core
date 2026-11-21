@@ -219,18 +219,22 @@ describe("PartyGuestPage joined", () => {
           },
         ],
       });
-    routes["POST /api/party/guest/request"] = () =>
-      json(200, {
-        entry: {
-          id: "e10",
-          title: "Copper Skyline",
-          subtitle: "Nova Rook",
-          participantName: "Wren",
-          state: "pending",
-          position: 0,
-          etaSeconds: 0,
-        },
-      });
+    const requestedEntry = {
+      id: "e10",
+      mediaID: "m1",
+      title: "Copper Skyline",
+      subtitle: "Nova Rook",
+      participantName: "Wren",
+      state: "pending",
+      position: 0,
+      etaSeconds: 0,
+    };
+    routes["POST /api/party/guest/request"] = () => {
+      const base = guestState();
+      routes["GET /api/party/guest"] = () =>
+        json(200, { ...base, mine: [...base.mine, requestedEntry] });
+      return json(200, { entry: requestedEntry });
+    };
     const { container } = renderPage();
     await screen.findByText("Number 2 in line");
     await userEvent.type(screen.getByRole("searchbox", { name: "Find a song" }), "copper");
