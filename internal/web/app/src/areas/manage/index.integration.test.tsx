@@ -166,11 +166,12 @@ describe("Manage production identity boundary", () => {
 
 function installProfileServer(switchRefusal?: string) {
   const profiles = [
-    { id: session.profileID, name: "Alex", kind: "adult", entryPinSet: true },
-    { id: "profile-sam", name: "Sam", kind: "adult", entryPinSet: false },
+    { id: session.profileID, name: "Alex", kind: "adult" },
+    { id: "profile-sam", name: "Sam", kind: "adult" },
   ];
+  const pins = new Map<string, string>();
+  if (switchRefusal) pins.set("profile-sam", "2468");
   let currentID = session.profileID;
-  let samPin = "";
   const attempts: Record<string, unknown>[] = [];
 
   vi.stubGlobal(
@@ -192,7 +193,12 @@ function installProfileServer(switchRefusal?: string) {
           data: { currentSession: { ...session, profileID: currentID, subtitleLanguages: ["en"] } },
         });
       }
-      if (query.startsWith("query Profiles")) return jsonResponse({ data: { profiles } });
+      if (query.startsWith("query Profiles")) {
+        const roster = query.includes("entryPinSet")
+          ? profiles.map((profile) => ({ ...profile, entryPinSet: pins.has(profile.id) }))
+          : profiles;
+        return jsonResponse({ data: { profiles: roster } });
+      }
       if (query.startsWith("query AdminSession")) {
         return jsonResponse({ data: { adminSession: { active: true } } });
       }
@@ -206,13 +212,13 @@ function installProfileServer(switchRefusal?: string) {
         return jsonResponse({ data: { notifications: [] } });
       }
       if (query.startsWith("mutation UpdateProfile") && variables.profileID === "profile-sam") {
-        samPin = String(variables.entryPIN);
-        profiles[1].entryPinSet = true;
+        pins.set("profile-sam", String(variables.entryPIN));
         return jsonResponse({ data: { updateProfile: { id: "profile-sam" } } });
       }
       if (query.startsWith("mutation SwitchProfile")) {
         attempts.push(variables);
-        if (switchRefusal || !samPin || variables.pin !== samPin) {
+        const pin = pins.get(String(variables.profileID));
+        if (switchRefusal || (pin && variables.pin !== pin)) {
           return jsonResponse({ errors: [{ message: switchRefusal ?? "profile PIN required" }] });
         }
         currentID = String(variables.profileID);
@@ -225,10 +231,22 @@ function installProfileServer(switchRefusal?: string) {
 }
 
 describe("Manage profile settings in the workspace", () => {
-  it("sets another adult profile's PIN and sends it only after the visitor submits the PIN prompt", async () => {
+  it("switches without a PIN until one is set for the same adult profile", async () => {
     const attempts = installProfileServer();
     const user = userEvent.setup();
     render(<ManageHarness page="profile" />);
+
+    await user.click(await screen.findByRole("button", { name: "Sam" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Sam/ })).toHaveAttribute("aria-current", "true"),
+    );
+    await user.click(screen.getByRole("button", { name: "Alex" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Alex/ })).toHaveAttribute("aria-current", "true"),
+    );
+    const pinFreeSwitches = [{ profileID: "profile-sam" }, { profileID: session.profileID }];
+    expect(attempts).toEqual(pinFreeSwitches);
 
     await user.click(await screen.findByRole("button", { name: "Open settings" }));
     await user.selectOptions(await screen.findByLabelText("Profile"), "profile-sam");
@@ -243,7 +261,7 @@ describe("Manage profile settings in the workspace", () => {
     expect(screen.getByLabelText("PIN", { exact: true })).toHaveValue("");
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(attempts).toEqual([]);
+    expect(attempts).toEqual(pinFreeSwitches);
     await user.click(sam);
     await user.type(screen.getByLabelText("PIN", { exact: true }), "2468");
     await user.click(screen.getByRole("button", { name: "Continue" }));
@@ -251,7 +269,7 @@ describe("Manage profile settings in the workspace", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /^Sam/ })).toHaveAttribute("aria-current", "true"),
     );
-    expect(attempts).toEqual([{ profileID: "profile-sam", pin: "2468" }]);
+    expect(attempts).toEqual([...pinFreeSwitches, { profileID: "profile-sam", pin: "2468" }]);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 

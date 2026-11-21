@@ -16,6 +16,7 @@ const session = {
   revealed: false,
 };
 const refreshSession = vi.fn(async () => {});
+const refreshProfiles = vi.fn(async () => {});
 const switchProfile = vi.fn(async () => {});
 
 function renderPage(locale: Locale = "en") {
@@ -88,6 +89,7 @@ async function enterPin(
 describe("Manage profile settings", () => {
   beforeEach(() => {
     refreshSession.mockClear();
+    refreshProfiles.mockClear();
     switchProfile.mockClear();
     vi.mocked(useSession).mockReturnValue({
       isManager: true,
@@ -97,6 +99,7 @@ describe("Manage profile settings", () => {
         { id: "managed-a", name: "Jo", kind: "managed" },
       ],
       refreshSession,
+      refreshProfiles,
     } as unknown as SessionState);
   });
 
@@ -131,6 +134,11 @@ describe("Manage profile settings", () => {
   it("shows the stored PIN status and writes set and change to the selected adult profile", async () => {
     const user = userEvent.setup();
     const { writes } = server();
+    let completeRosterRefresh = () => {};
+    const rosterRefresh = new Promise<void>((resolve) => {
+      completeRosterRefresh = resolve;
+    });
+    refreshProfiles.mockReturnValueOnce(rosterRefresh);
     renderPage();
     await user.click(screen.getByRole("button", { name: "Open settings" }));
 
@@ -148,14 +156,20 @@ describe("Manage profile settings", () => {
     await user.clear(confirmation);
     await enterPin(user, "1234");
     await user.click(screen.getByRole("button", { name: "Set PIN" }));
+    await waitFor(() => expect(refreshProfiles).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: /^Jo/ })).toBeDisabled();
+    expect(screen.queryByText("PIN saved.")).not.toBeInTheDocument();
+    completeRosterRefresh();
     expect(await screen.findByText("PIN saved.")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Change PIN" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Jo/ })).toBeEnabled();
     await waitFor(() => expect(screen.getByLabelText("Profile")).toBeEnabled());
     expect(screen.getByLabelText("New PIN")).toHaveValue("");
     expect(screen.getByLabelText("Confirm PIN")).toHaveValue("");
     await enterPin(user, "5678");
     await user.click(screen.getByRole("button", { name: "Change PIN" }));
     expect(await screen.findByText("PIN saved.")).toBeInTheDocument();
+    expect(refreshProfiles).toHaveBeenCalledTimes(2);
     expect(writes).toEqual([
       { profileID: "adult-b", entryPIN: "1234" },
       { profileID: "adult-b", entryPIN: "5678" },
