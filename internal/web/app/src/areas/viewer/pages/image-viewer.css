@@ -175,6 +175,145 @@
   color: var(--on-scrim-muted);
 }
 
+/* Inline clips (CORE-2977) fill the frame like a picture. */
+.bf-image-viewer-frame video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.bf-image-viewer-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bf-image-viewer-text-button {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.bf-image-viewer-text-button:hover {
+  background: color-mix(in srgb, var(--on-scrim) 12%, transparent);
+}
+
+.bf-image-viewer-text-button:focus-visible {
+  outline: 2px solid var(--on-scrim);
+  outline-offset: 2px;
+}
+
+/* Filmstrip (CORE-2978): the neighbours along the foot of the stage. */
+.bf-image-viewer-filmstrip-dock {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  padding: 8px 12px 12px;
+}
+
+.bf-image-viewer-filmstrip {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.bf-image-viewer-filmstrip ul {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+}
+
+.bf-image-viewer-thumb {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--on-scrim) 10%, transparent);
+  color: var(--on-scrim-muted);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.bf-image-viewer-thumb:hover,
+.bf-image-viewer-thumb[aria-current="true"] {
+  opacity: 1;
+}
+
+.bf-image-viewer-thumb[aria-current="true"] {
+  outline: 2px solid var(--on-scrim);
+  outline-offset: 1px;
+}
+
+.bf-image-viewer-thumb:focus-visible {
+  outline: 2px solid var(--on-scrim);
+  outline-offset: 2px;
+}
+
+.bf-image-viewer-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bf-image-viewer-thumb-duration {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--scrim) 75%, transparent);
+  color: var(--on-scrim);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.bf-image-viewer-stage:has(.bf-image-viewer-filmstrip-dock) .bf-image-viewer-status,
+.bf-image-viewer-stage:has(.bf-image-viewer-filmstrip-dock) .bf-image-viewer-notice {
+  bottom: 96px;
+}
+
+/* Undo toast for a trashed item. */
+.bf-image-viewer-toast {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 14px;
+  transform: translateX(-50%);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--scrim) 90%, var(--on-scrim));
+  font-size: 13px;
+}
+
+/* Idle chrome: hidden outright, no fade (effects come only from Oscillux). A
+ * control holding focus stays visible. */
+.bf-image-viewer[data-chrome="hidden"] .bf-image-viewer-bar:not(:focus-within),
+.bf-image-viewer[data-chrome="hidden"] .bf-image-viewer-step:not(:focus-visible),
+.bf-image-viewer[data-chrome="hidden"] .bf-image-viewer-filmstrip-dock:not(:focus-within) {
+  visibility: hidden;
+}
+
+.bf-image-viewer[data-chrome="hidden"] .bf-image-viewer-stage {
+  cursor: none;
+}
+
 @media (max-width: 640px) {
   .bf-image-viewer-body {
     flex-direction: column;

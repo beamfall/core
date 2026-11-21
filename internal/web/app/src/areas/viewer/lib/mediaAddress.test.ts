@@ -35,7 +35,7 @@ describe("routes built from known Media IDs", () => {
     ["viewer/pages/CollectionPage.tsx", ["watch"]],
     ["viewer/pages/EntityPage.tsx", ["watch", "watch"]],
     ["viewer/pages/LibraryBrowsePage.tsx", ["watch"]],
-    ["viewer/pages/ImageViewerPage.tsx", ["view", "watch"]],
+    ["viewer/pages/ImageViewerPage.tsx", ["view", "view", "watch", "watch"]],
     ["viewer/pages/MediaDetailPage.tsx", ["view", "watch", "media"]],
     ["viewer/pages/MyDataPage.tsx", ["media"]],
     ["viewer/pages/NotificationsPage.tsx", ["watch"]],
