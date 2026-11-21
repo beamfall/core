@@ -241,8 +241,9 @@ type Engine struct {
 	maxResponseBytes int64
 	insecureLoopback bool
 	client           *http.Client
-	// streamClient serves DownloadResource: same hardened dialer and redirect
-	// pinning, but no whole-request timeout — media-sized bodies outlive any
+	// streamClient serves DownloadResource and OpenOriginRange: same hardened
+	// dialer, redirect pinning only for credentialed requests (see
+	// checkStreamRedirect), and no whole-request timeout — media-sized bodies outlive any
 	// fixed wall clock, and ctx bounds the download instead.
 	streamClient *http.Client
 	clock        requestClock
@@ -317,7 +318,7 @@ func New(opts ...Option) *Engine {
 	e.streamClient = &http.Client{
 		// No Timeout: it covers the whole body read, which would cut large
 		// downloads short. Headers/TLS/dial stay capped via the transport.
-		CheckRedirect: e.checkRedirect,
+		CheckRedirect: e.checkStreamRedirect,
 		Transport:     transport,
 	}
 	return e

@@ -249,3 +249,35 @@ func TestFeedEntriesKeepDerivedGUIDsWhenEnclosuresRotate(t *testing.T) {
 		})
 	}
 }
+
+// TestDownloadResourceStreamRedirects: enclosures bounce through measurement
+// hosts, so an anonymous payload fetch follows a cross-origin redirect, while
+// a credentialed one stays pinned to its origin (CORE-0745).
+func TestDownloadResourceStreamRedirects(t *testing.T) {
+	var cdnHits int
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cdnHits++
+		_, _ = w.Write([]byte("payload"))
+	}))
+	defer cdn.Close()
+	tracker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, cdn.URL+"/file.mp3", http.StatusFound)
+	}))
+	defer tracker.Close()
+
+	engine := New(WithInsecureLoopback())
+	var sink bytes.Buffer
+	if _, err := engine.DownloadResource(context.Background(), tracker.URL+"/file.mp3", &sink, 100); err != nil {
+		t.Fatalf("anonymous cross-origin redirect: %v", err)
+	}
+	if sink.String() != "payload" || cdnHits != 1 {
+		t.Fatalf("got %q after %d CDN hits", sink.String(), cdnHits)
+	}
+	sink.Reset()
+	if _, err := engine.DownloadResourceAuth(context.Background(), tracker.URL+"/file.mp3", &sink, 100, "Bearer secret"); err == nil {
+		t.Fatal("credentialed cross-origin redirect succeeded, want refusal")
+	}
+	if cdnHits != 1 {
+		t.Fatalf("credentialed redirect reached the other origin (%d hits)", cdnHits)
+	}
+}

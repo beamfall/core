@@ -74,6 +74,24 @@ func (e *Engine) checkRedirect(req *http.Request, via []*http.Request) error {
 	return e.vetURL(req.URL)
 }
 
+// checkStreamRedirect is checkRedirect for media payloads. Enclosures
+// routinely bounce through measurement prefixes (a tracking host, then a CDN),
+// so an anonymous request may follow a cross-origin redirect; every hop is
+// still re-vetted here and the dialer re-checks the resolved address. A
+// credentialed request (Authorization header or URL userinfo) stays pinned to
+// its origin, so a feed credential never reaches another origin (CORE-0745).
+func (e *Engine) checkStreamRedirect(req *http.Request, via []*http.Request) error {
+	first := via[0]
+	if first.Header.Get("Authorization") != "" || first.URL.User != nil {
+		return e.checkRedirect(req, via)
+	}
+	recordRedirectHop(req)
+	if len(via) >= maxRedirects {
+		return fmt.Errorf("scrape: refused after %d redirects", maxRedirects)
+	}
+	return e.vetURL(req.URL)
+}
+
 // SameOrigin reports whether two absolute URLs share a normalized origin
 // (scheme, case-insensitive hostname, effective port). Unparseable or
 // host-less URLs are never same-origin, so callers scoping credentials with
