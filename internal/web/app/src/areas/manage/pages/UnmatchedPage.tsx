@@ -156,17 +156,22 @@ export function UnmatchedPage() {
     if (results.some((r) => r.status === "rejected")) setError(t("unmatchedUnavailable"));
   };
 
+  // A rescan changes the queue like any batch, so it holds the same lock and
+  // the same reload-or-drop rule.
   const onRescan = async () => {
     if (!libraryID) return;
     setError("");
     setNotice("");
+    setWriting(true);
+    let message = "";
     try {
       const result = await runHealthBulkOp("rescanUnmatched", libraryID);
-      await load();
-      setNotice(`${result.affected} ${t("bulkOpsAffected")}`);
+      message = `${result.affected} ${t("bulkOpsAffected")}`;
     } catch {
       setError(t("unmatchedUnavailable"));
     }
+    await reloadAfterWrite();
+    if (message) setNotice(message);
   };
 
   const activePath = active ? paths[active.items[0]?.mediaID ?? ""] : undefined;

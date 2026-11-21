@@ -468,6 +468,23 @@ describe("UnmatchedPage", () => {
     expect(screen.queryByRole("button", { name: "Match all 3" })).not.toBeInTheDocument();
   });
 
+  it("locks the panel while a rescan runs", async () => {
+    const user = userEvent.setup();
+    let done: () => void = () => {};
+    vi.mocked(runHealthBulkOp).mockReturnValueOnce(
+      new Promise((resolve) => {
+        done = () => resolve({ affected: 0 });
+      }),
+    );
+    renderPage();
+    await openedOnGroup();
+    await screen.findByRole("button", { name: /Suggested/ });
+    await user.click(screen.getByRole("button", { name: "Rescan all unmatched" }));
+    expect(screen.getByRole("button", { name: "Match all 3" })).toBeDisabled();
+    done();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Match all 3" })).toBeEnabled());
+  });
+
   it("explains instead of searching for a source with no catalog", async () => {
     vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(
       queue([{ ...below, scraperID: "manual", candidateID: "", candidateTitle: "" }]),
