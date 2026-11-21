@@ -11,7 +11,8 @@ import { findNodeBySlug } from "@/lib/nodePath";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
-import { LibrarySidebar } from "./LibrarySidebar";
+import { LibrarySidebar, type SidebarGroup, sidebarGroupListId } from "./LibrarySidebar";
+import { PhoneTabBar } from "./PhoneTabBar";
 import { usePosterSizeRoot } from "./posterSize";
 import { SidebarResizer } from "./SidebarResizer";
 import { MAIN_CONTENT_ID, SkipLink } from "./SkipLink";
@@ -89,6 +90,10 @@ export function AppShell({
   const phone = usePhoneLayout();
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // The group a phone tab opened the drawer at (CORE-2827), and the control
+  // that opened it, which gets focus back when it closes.
+  const [drawerGroup, setDrawerGroup] = useState<SidebarGroup | null>(null);
+  const drawerOpenerRef = useRef<HTMLElement | null>(null);
   // The expanded desktop width the person dragged to (CORE-2734).
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const [resizing, setResizing] = useState(false);
@@ -99,6 +104,8 @@ export function AppShell({
     hasSidebar && session && !needsEnroll ? session.profileID : null,
   );
   const sidebarEditable = hasSidebar && !!session && !needsEnroll;
+  // Phone width trades the sidebar for a drawer and a bottom tab bar (CORE-2827).
+  const tabBar = phone && hasSidebar;
   // The Console is reached by an Admin Session, which the server grants to the
   // adult owner Profile whatever the Device Role (auth.BeginAdminSession). The
   // Profile kind is the eligibility the client can see, so the link follows it
@@ -117,8 +124,27 @@ export function AppShell({
   useEffect(() => {
     if (!phone) setDrawerOpen(false);
   }, [phone]);
+  useEffect(() => {
+    if (!drawerOpen) setDrawerGroup(null);
+  }, [drawerOpen]);
+  function openDrawerAt(group: SidebarGroup, opener: HTMLButtonElement) {
+    drawerOpenerRef.current = opener;
+    setDrawerGroup(group);
+    setDrawerOpen(true);
+  }
+  // A tab opens the drawer with focus on its group's first entry.
+  function drawerInitialFocus(): HTMLElement | true {
+    if (!drawerGroup) return true;
+    return (
+      document
+        .getElementById(sidebarGroupListId(sidebarId, drawerGroup))
+        ?.querySelector<HTMLElement>("a") ?? true
+    );
+  }
   function toggleSidebar() {
     if (phone) {
+      drawerOpenerRef.current = menuButtonRef.current;
+      setDrawerGroup(null);
       setDrawerOpen((open) => !open);
       return;
     }
@@ -160,7 +186,7 @@ export function AppShell({
   }
 
   return (
-    <div className="bf-shell min-h-screen text-foreground">
+    <div className={"bf-shell min-h-screen text-foreground" + (tabBar ? " has-tabbar" : "")}>
       <SkipLink />
       <header className={"bf-header" + (revealed ? " is-revealed" : "")}>
         {hasSidebar && (
@@ -231,7 +257,8 @@ export function AppShell({
                 <DialogPrimitive.Backdrop className="bf-sidebar-scrim" />
                 <DialogPrimitive.Popup
                   aria-label={t("navLabel")}
-                  finalFocus={menuButtonRef}
+                  initialFocus={drawerInitialFocus}
+                  finalFocus={drawerOpenerRef}
                   render={
                     <LibrarySidebar
                       id={sidebarId}
@@ -244,6 +271,8 @@ export function AppShell({
                       prefs={sidebarPrefs}
                       prefsReady={sidebarPrefsReady}
                       onSavePrefs={sidebarEditable ? saveSidebarPrefs : undefined}
+                      showPersonal={sidebarEditable}
+                      pathname={location.pathname}
                     />
                   }
                 />
@@ -261,6 +290,8 @@ export function AppShell({
               prefs={sidebarPrefs}
               prefsReady={sidebarPrefsReady}
               onSavePrefs={sidebarEditable ? saveSidebarPrefs : undefined}
+              showPersonal={sidebarEditable}
+              pathname={location.pathname}
               style={{ "--bf-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
             />
           ))}
@@ -285,6 +316,15 @@ export function AppShell({
           </main>
         </div>
       </div>
+      {tabBar && (
+        <PhoneTabBar
+          pathname={location.pathname}
+          sidebarId={sidebarId}
+          drawerGroup={drawerOpen ? drawerGroup : null}
+          showPersonal={sidebarEditable}
+          onOpenGroup={openDrawerAt}
+        />
+      )}
     </div>
   );
 }

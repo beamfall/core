@@ -1,4 +1,5 @@
-// The Viewer sidebar's per-Profile library pin and order editor (CORE-2435).
+// The Viewer sidebar's per-Profile library pin and order editor (CORE-2435),
+// its "Your stuff" group and the phone tab bar (CORE-2827).
 export const sidebarStrings = {
   en: {
     sidebarEdit: "Edit libraries",
@@ -17,6 +18,10 @@ export const sidebarStrings = {
     sidebarNarrower: "Narrower",
     sidebarWider: "Wider",
     sidebarWidthDefault: "Default width",
+    yourStuff: "Your stuff",
+    sidebarEditPersonal: "Edit your stuff",
+    tabBarLabel: "Main sections",
+    tabHome: "Home",
   },
   fr: {
     sidebarEdit: "Modifier les bibliothèques",
@@ -36,6 +41,10 @@ export const sidebarStrings = {
     sidebarNarrower: "Plus étroite",
     sidebarWider: "Plus large",
     sidebarWidthDefault: "Largeur par défaut",
+    yourStuff: "Vos contenus",
+    sidebarEditPersonal: "Modifier vos contenus",
+    tabBarLabel: "Sections principales",
+    tabHome: "Accueil",
   },
   de: {
     sidebarEdit: "Bibliotheken bearbeiten",
@@ -55,6 +64,10 @@ export const sidebarStrings = {
     sidebarNarrower: "Schmaler",
     sidebarWider: "Breiter",
     sidebarWidthDefault: "Standardbreite",
+    yourStuff: "Meine Inhalte",
+    sidebarEditPersonal: "Meine Inhalte bearbeiten",
+    tabBarLabel: "Hauptbereiche",
+    tabHome: "Start",
   },
   es: {
     sidebarEdit: "Editar bibliotecas",
@@ -73,6 +86,10 @@ export const sidebarStrings = {
     sidebarNarrower: "Más estrecha",
     sidebarWider: "Más ancha",
     sidebarWidthDefault: "Ancho predeterminado",
+    yourStuff: "Lo tuyo",
+    sidebarEditPersonal: "Editar lo tuyo",
+    tabBarLabel: "Secciones principales",
+    tabHome: "Inicio",
   },
   pt: {
     sidebarEdit: "Editar bibliotecas",
@@ -91,5 +108,9 @@ export const sidebarStrings = {
     sidebarNarrower: "Mais estreita",
     sidebarWider: "Mais larga",
     sidebarWidthDefault: "Largura predefinida",
+    yourStuff: "As suas coisas",
+    sidebarEditPersonal: "Editar as suas coisas",
+    tabBarLabel: "Secções principais",
+    tabHome: "Início",
   },
 } as const;

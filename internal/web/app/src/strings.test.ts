@@ -132,6 +132,7 @@ const SHIPPED = new Set(
 // merged with the CORE-2836 Hide copy and the CORE-2725 integration key Console copy.
 // merged with the CORE-2767 music play queue copy.
 // merged with the CORE-2814 visualizer Off, previous/next visual and shortcut copy.
+// merged with the CORE-2827 sidebar Your stuff group and phone tab bar copy.
 const BASE_SERIALIZED_LENGTH = 926_928;
 const BASE_REGISTRY_SHA256 = "481d649b1a5f8e19f38fe088bbedbd67462888494eef552e3dc3d99c79c91ad7";
 const BASE_KEY_ORDER_SHA256 = "b9cbc862534be7b39236effd80c72271606e4dbcfdd12abbcb04334aff231f91";

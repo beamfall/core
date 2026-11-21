@@ -2,8 +2,12 @@ import {
   ChevronDown,
   ChevronUp,
   GripVertical,
+  Heart,
+  History,
   House,
   LayoutGrid,
+  ListOrdered,
+  type LucideIcon,
   Pencil,
   Pin,
   PinOff,
@@ -23,7 +27,33 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { libraryIcon } from "@/lib/libraryIcons";
 import { pivotOfPath, rememberedLibraryPath } from "@/lib/libraryPivot";
 import { nodePath } from "@/lib/nodePath";
-import { applySidebarPrefs, EMPTY_SIDEBAR_PREFS, type SidebarLibraryPrefs } from "./sidebarPrefs";
+import type { StringKey } from "@/strings";
+import {
+  applySidebarPrefs,
+  EMPTY_SIDEBAR_PREFS,
+  PERSONAL_ENTRIES,
+  type PersonalEntry,
+  type SidebarLibraryPrefs,
+} from "./sidebarPrefs";
+
+// The "Your stuff" entries' labels and glyphs, the ones the account menu uses.
+const PERSONAL_LABELS: Record<PersonalEntry["id"], StringKey> = {
+  playlists: "playlistsTitle",
+  favorites: "favoritesTitle",
+  history: "historyTitle",
+};
+const PERSONAL_ICONS: Record<PersonalEntry["id"], LucideIcon> = {
+  playlists: ListOrdered,
+  favorites: Heart,
+  history: History,
+};
+
+export type SidebarGroup = "libraries" | "personal";
+
+/** The element ID of a sidebar group's list, for moving focus into it. */
+export function sidebarGroupListId(sidebarId: string, group: SidebarGroup): string {
+  return `${sidebarId}-${group}`;
+}
 
 // The Viewer's left sidebar (CORE-1131): the manifest's navigation as a
 // vertical list, so any number of libraries fits where a header tab strip ran
@@ -44,6 +74,11 @@ import { applySidebarPrefs, EMPTY_SIDEBAR_PREFS, type SidebarLibraryPrefs } from
 // Libraries heading carries an edit button, and the choice (prefs) layers over
 // the navigation the server already shaped with its server-wide override.
 // Unpinned libraries stay reachable under More.
+//
+// A signed-in Profile also gets a "Your stuff" group (CORE-2827): its
+// Playlists, Favorites and History, one click from any page instead of two in
+// the account menu (which keeps them). The group has its own edit button; its
+// unpinned entries leave the sidebar.
 export function LibrarySidebar({
   id,
   navigation,
@@ -55,6 +90,8 @@ export function LibrarySidebar({
   prefs = EMPTY_SIDEBAR_PREFS,
   prefsReady = true,
   onSavePrefs,
+  showPersonal = false,
+  pathname = "",
   className,
   ...aside
 }: Omit<ComponentProps<"aside">, "id" | "children"> & {
@@ -75,6 +112,10 @@ export function LibrarySidebar({
   prefsReady?: boolean;
   /** Saves an edited choice; without it the sidebar offers no edit mode. */
   onSavePrefs?: (prefs: SidebarLibraryPrefs) => Promise<void>;
+  /** Show the signed-in Profile's "Your stuff" group. */
+  showPersonal?: boolean;
+  /** The current route path, to mark the active "Your stuff" entry. */
+  pathname?: string;
 }) {
   const t = useT();
   const { pathname } = useLocation();
@@ -86,28 +127,42 @@ export function LibrarySidebar({
   const libraryNodes = rendered.filter((node) => node.libraryID);
   const libraryIDOf = (node: NavigationNode) => node.libraryID ?? "";
   const { pinned, unpinned } = applySidebarPrefs(libraryNodes, libraryIDOf, prefs);
+  const personalIDOf = (entry: PersonalEntry) => entry.id;
+  const personal = applySidebarPrefs(
+    [...PERSONAL_ENTRIES],
+    personalIDOf,
+    prefs.personal ?? EMPTY_SIDEBAR_PREFS,
+  );
   const [moreOpen, setMoreOpen] = useState(false);
-  const [editing, setEditing] = useState<EditDraft | null>(null);
+  // One group is edited at a time.
+  const [editing, setEditing] = useState<{ group: SidebarGroup; draft: EditDraft } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saveFailed, setSaveFailed] = useState(false);
+  const [saveFailed, setSaveFailed] = useState<SidebarGroup | null>(null);
   // A second Done in the same tick sees stale state; the ref does not.
   const savingRef = useRef(false);
-  const editButtonRef = useRef<HTMLButtonElement>(null);
+  const editButtonRefs = {
+    libraries: useRef<HTMLButtonElement>(null),
+    personal: useRef<HTMLButtonElement>(null),
+  };
   // Leaving edit mode hands focus back to the Edit button it came from.
-  const restoreFocus = useRef(false);
+  const restoreFocus = useRef<SidebarGroup | null>(null);
   useEffect(() => {
-    if (editing || !restoreFocus.current) return;
-    restoreFocus.current = false;
-    editButtonRef.current?.focus();
-  }, [editing]);
-  function leaveEditing() {
-    restoreFocus.current = true;
+    const group = restoreFocus.current;
+    if (editing || !group) return;
+    restoreFocus.current = null;
+    (group === "libraries" ? editButtonRefs.libraries : editButtonRefs.personal).current?.focus();
+  });
+  function leaveEditing(group: SidebarGroup) {
+    restoreFocus.current = group;
     setEditing(null);
   }
-  const canEdit = !!onSavePrefs && libraryNodes.length > 0 && (!collapsed || drawer);
+  const canEditAny = !!onSavePrefs && (!collapsed || drawer);
+  const canEdit = canEditAny && libraryNodes.length > 0;
   // Collapsing to the icon rail (or losing the saver) shows plain navigation;
   // the draft is kept, so expanding again picks the edit up where it was.
-  const activeDraft = canEdit ? editing : null;
+  const activeDraft = canEdit && editing?.group === "libraries" ? editing.draft : null;
+  const personalDraft =
+    canEditAny && showPersonal && editing?.group === "personal" ? editing.draft : null;
   const moreId = `${id}-more`;
   const homeId = rendered[0]?.id;
   // Only tiles without an icon carry a monogram, so only those can collide.
@@ -162,6 +217,90 @@ export function LibrarySidebar({
     );
   }
 
+  function personalItem(entry: PersonalEntry) {
+    const title = t(PERSONAL_LABELS[entry.id]);
+    const Icon = PERSONAL_ICONS[entry.id];
+    const active = pathname === entry.path || pathname.startsWith(`${entry.path}/`);
+    return (
+      <li key={entry.id}>
+        <Link
+          to={entry.path}
+          aria-current={active ? "page" : undefined}
+          className={"bf-side-link" + (active ? " is-active" : "")}
+          title={collapsed && !drawer ? title : undefined}
+          onClick={onNavigate}
+        >
+          <span aria-hidden className="bf-side-glyph">
+            <Icon className="size-[18px]" />
+          </span>
+          <span className="bf-side-label">{title}</span>
+        </Link>
+      </li>
+    );
+  }
+
+  function editButton(group: SidebarGroup, label: string, start: () => EditDraft) {
+    return (
+      <button
+        ref={editButtonRefs[group]}
+        type="button"
+        className="bf-side-tool"
+        aria-label={label}
+        aria-disabled={!prefsReady}
+        title={label}
+        onClick={() => {
+          if (!prefsReady) return;
+          setSaveFailed(null);
+          setEditing({ group, draft: start() });
+        }}
+      >
+        <Pencil aria-hidden className="size-3.5" />
+      </button>
+    );
+  }
+
+  function editor(group: SidebarGroup, draft: EditDraft, titleOf: (key: string) => string) {
+    return (
+      <SidebarEditor
+        draft={draft}
+        titleOf={titleOf}
+        saving={saving}
+        onChange={(next) => setEditing({ group, draft: next })}
+        onCancel={() => {
+          if (!savingRef.current) leaveEditing(group);
+        }}
+        onDone={async () => {
+          if (!onSavePrefs || savingRef.current) return;
+          savingRef.current = true;
+          setSaving(true);
+          setSaveFailed(null);
+          const choice = { order: draft.order, hidden: [...draft.hidden] };
+          try {
+            await onSavePrefs(
+              group === "libraries" ? { ...prefs, ...choice } : { ...prefs, personal: choice },
+            );
+            leaveEditing(group);
+          } catch {
+            setSaveFailed(group);
+          } finally {
+            savingRef.current = false;
+            setSaving(false);
+          }
+        }}
+      />
+    );
+  }
+
+  function saveError(group: SidebarGroup) {
+    return (
+      saveFailed === group && (
+        <p role="alert" className="bf-side-error">
+          {t("sidebarSaveFailed")}
+        </p>
+      )
+    );
+  }
+
   return (
     <aside
       {...aside}
@@ -179,58 +318,22 @@ export function LibrarySidebar({
           <>
             <div className="bf-side-heading-row">
               <h2 className="bf-side-heading">{t("libraries")}</h2>
-              {canEdit && !activeDraft && (
-                <button
-                  ref={editButtonRef}
-                  type="button"
-                  className="bf-side-tool"
-                  aria-label={t("sidebarEdit")}
-                  aria-disabled={!prefsReady}
-                  title={t("sidebarEdit")}
-                  onClick={() => {
-                    if (!prefsReady) return;
-                    setSaveFailed(false);
-                    setEditing(startDraft(pinned, unpinned, libraryIDOf));
-                  }}
-                >
-                  <Pencil aria-hidden className="size-3.5" />
-                </button>
-              )}
+              {canEdit &&
+                !editing &&
+                editButton("libraries", t("sidebarEdit"), () =>
+                  startDraft(pinned, unpinned, libraryIDOf),
+                )}
             </div>
             {activeDraft ? (
-              <SidebarEditor
-                draft={activeDraft}
-                titleOf={(libraryID) => {
-                  const node = libraryNodes.find((n) => n.libraryID === libraryID);
-                  return node ? displayString(node.title, displayLocale) : libraryID;
-                }}
-                saving={saving}
-                onChange={setEditing}
-                onCancel={() => {
-                  if (!savingRef.current) leaveEditing();
-                }}
-                onDone={async () => {
-                  if (!onSavePrefs || savingRef.current) return;
-                  savingRef.current = true;
-                  setSaving(true);
-                  setSaveFailed(false);
-                  try {
-                    await onSavePrefs({
-                      order: activeDraft.order,
-                      hidden: [...activeDraft.hidden],
-                    });
-                    leaveEditing();
-                  } catch {
-                    setSaveFailed(true);
-                  } finally {
-                    savingRef.current = false;
-                    setSaving(false);
-                  }
-                }}
-              />
+              editor("libraries", activeDraft, (libraryID) => {
+                const node = libraryNodes.find((n) => n.libraryID === libraryID);
+                return node ? displayString(node.title, displayLocale) : libraryID;
+              })
             ) : (
               <>
-                <ul className="bf-side-list">{pinned.map(item)}</ul>
+                <ul id={sidebarGroupListId(id, "libraries")} className="bf-side-list">
+                  {pinned.map(item)}
+                </ul>
                 {unpinned.length > 0 && (
                   <>
                     <button
@@ -256,11 +359,30 @@ export function LibrarySidebar({
                 )}
               </>
             )}
-            {saveFailed && (
-              <p role="alert" className="bf-side-error">
-                {t("sidebarSaveFailed")}
-              </p>
-            )}
+            {saveError("libraries")}
+          </>
+        )}
+        {showPersonal && (
+          <>
+            <div className="bf-side-heading-row">
+              <h2 className="bf-side-heading">{t("yourStuff")}</h2>
+              {canEditAny &&
+                !editing &&
+                editButton("personal", t("sidebarEditPersonal"), () =>
+                  startDraft(personal.pinned, personal.unpinned, personalIDOf),
+                )}
+            </div>
+            {personalDraft
+              ? editor("personal", personalDraft, (entryID) => {
+                  const key = PERSONAL_LABELS[entryID as PersonalEntry["id"]];
+                  return key ? t(key) : entryID;
+                })
+              : personal.pinned.length > 0 && (
+                  <ul id={sidebarGroupListId(id, "personal")} className="bf-side-list">
+                    {personal.pinned.map(personalItem)}
+                  </ul>
+                )}
+            {saveError("personal")}
           </>
         )}
       </nav>
@@ -268,18 +390,15 @@ export function LibrarySidebar({
   );
 }
 
-// An edit session's working copy: every library the server lists, in the
-// order being edited, and the ones unpinned.
+// An edit session's working copy: every entry of the group (each library the
+// server lists, or each "Your stuff" entry), in the order being edited, and
+// the ones unpinned.
 interface EditDraft {
   order: string[];
   hidden: Set<string>;
 }
 
-function startDraft(
-  pinned: NavigationNode[],
-  unpinned: NavigationNode[],
-  libraryIDOf: (node: NavigationNode) => string,
-): EditDraft {
+function startDraft<T>(pinned: T[], unpinned: T[], libraryIDOf: (entry: T) => string): EditDraft {
   return {
     order: [...pinned, ...unpinned].map(libraryIDOf),
     hidden: new Set(unpinned.map(libraryIDOf)),

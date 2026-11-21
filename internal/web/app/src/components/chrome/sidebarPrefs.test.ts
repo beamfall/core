@@ -5,6 +5,7 @@ import { fetchClientPrefs, setClientPref } from "@/lib/graphql/viewer";
 import {
   applySidebarPrefs,
   EMPTY_SIDEBAR_PREFS,
+  PERSONAL_ENTRIES,
   parseSidebarPrefs,
   resetSidebarPrefsCache,
   SIDEBAR_LIBRARIES_PREF_KEY,
@@ -48,6 +49,50 @@ describe("serializeSidebarPrefs", () => {
     expect(parseSidebarPrefs(serializeSidebarPrefs(prefs))).toEqual(prefs);
     expect(serializeSidebarPrefs(EMPTY_SIDEBAR_PREFS)).toBe("");
   });
+});
+
+describe("Your stuff choice (CORE-2827)", () => {
+  // A value written before the group existed, exactly as CORE-2435 stored it.
+  const stored = '{"order":["lib-b","lib-a"],"hidden":["lib-c"]}';
+
+  it("still parses a value stored before the group existed", () => {
+    const prefs = parseSidebarPrefs(stored);
+    expect(prefs).toEqual({ order: ["lib-b", "lib-a"], hidden: ["lib-c"] });
+    expect(prefs.personal).toBeUndefined();
+    // The group then shows every entry, in default order.
+    const { pinned, unpinned } = applySidebarPrefs(
+      [...PERSONAL_ENTRIES],
+      (entry) => entry.id,
+      prefs.personal ?? EMPTY_SIDEBAR_PREFS,
+    );
+    expect(pinned.map((entry) => entry.id)).toEqual(["playlists", "favorites", "history"]);
+    expect(unpinned).toEqual([]);
+  });
+
+  it("serializes a choice that leaves the group alone exactly as before", () => {
+    expect(serializeSidebarPrefs(parseSidebarPrefs(stored))).toBe(stored);
+    expect(
+      serializeSidebarPrefs({ ...parseSidebarPrefs(stored), personal: { order: [], hidden: [] } }),
+    ).toBe(stored);
+  });
+
+  it("round-trips the group's order and hidden entries beside the library choice", () => {
+    const prefs = {
+      order: [],
+      hidden: [],
+      personal: { order: ["history", "playlists"], hidden: ["favorites"] },
+    };
+    const raw = serializeSidebarPrefs(prefs);
+    expect(raw).not.toBe("");
+    expect(parseSidebarPrefs(raw)).toEqual(prefs);
+  });
+
+  it.each(['{"personal":"x"}', '{"personal":null}', '{"personal":{"order":[1]}}'])(
+    "reads a malformed group choice %j as none",
+    (raw) => {
+      expect(parseSidebarPrefs(raw)).toEqual(EMPTY_SIDEBAR_PREFS);
+    },
+  );
 });
 
 describe("applySidebarPrefs", () => {
