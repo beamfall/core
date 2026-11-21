@@ -1,33 +1,37 @@
 ## ADDED Requirements
 
-### Requirement: Queue adds enforce current eligibility and report their committed placement
+### Requirement: Queue adds enforce current eligibility
 
-The server SHALL check current Reveal and certification eligibility for the target of
-`queueAdd` atomically with the write, including when `expectedProfileID` is omitted.
-A refusal SHALL leave the Play Queue unchanged. A target outside the caller's visibility
-SHALL return `NOT_FOUND`. A visible target blocked by a certification ceiling SHALL
-return `FORBIDDEN`. With omitted or null `expectedProfileID`, the server SHALL
-apply the write to the session's current Profile using that Profile's eligibility.
-An explicit precondition that fails SHALL return `CONFLICT` with reason `PROFILE_MISMATCH`.
-After committing an add the server SHALL return the first page of at most 50
-visible items in committed order, even if optional card details cannot be read.
-For a visible target, `extensions.queueAdd` SHALL map the mutation's response key
-to its `mediaID` and zero-based `position` in the visible queue, even when the
-target is off-page.
+The server SHALL check current Reveal and certification eligibility atomically
+with `queueAdd` and leave the Play Queue unchanged on refusal. With omitted or
+null `expectedProfileID`, the server SHALL use the session's current Profile
+and its eligibility.
 
 #### Scenario: Eligibility changes after the client checks it
 
 - **WHEN** the client checks an eligible target and a relock or certification change blocks it before `queueAdd` applies
-- **THEN** the server returns the applicable typed refusal
+- **THEN** the server returns `NOT_FOUND` for a hidden target or `FORBIDDEN` for a visible target blocked by certification
 - **AND** the Play Queue is unchanged
+
+#### Scenario: The session switches Profiles after the request is authorized
+
+- **WHEN** a Profile switch applies before the queue add obtains the write lock
+- **THEN** an omitted or null precondition uses the current Profile and its eligibility
+- **AND** an explicit precondition for the previous Profile returns `CONFLICT` with reason `PROFILE_MISMATCH`
+
+### Requirement: Queue adds report their committed placement
+
+After committing an add the server SHALL return the first page of at most 50
+visible items in committed order, even if optional card details cannot be read.
+For a visible target, `extensions.queueAdd` SHALL map the mutation's response key
+to its `mediaID` and zero-based `position` in the visible queue.
 
 #### Scenario: Card details fail after the queue transaction commits
 
 - **WHEN** `queueAdd` commits and the response's optional card reads fail
 - **THEN** the response succeeds with the committed visible queue page and placement
 
-#### Scenario: The session switches Profiles after the request is authorized
+#### Scenario: The target lands outside the first page
 
-- **WHEN** a Profile switch applies before the queue add obtains the write lock
-- **THEN** an omitted or null precondition uses the current Profile and its eligibility
-- **AND** an explicit precondition for the previous Profile is refused
+- **WHEN** `queueAdd` commits a visible target outside the first page
+- **THEN** the first page stays bounded and the response extension includes the target's position
