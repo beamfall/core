@@ -452,7 +452,7 @@ func heifItemColr(r io.ReaderAt, size int64, iprpBoxes []bmffBox, colrs map[int]
 			case "prof", "rICC":
 				// A profile too short for an ICC header is malformed, not a
 				// profile the decoder would apply.
-				if box.payload.length >= 4+128 {
+				if box.payload.length >= 4+minICCBytes {
 					return box, true
 				}
 			case "nclx":

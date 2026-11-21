@@ -176,9 +176,12 @@ func mat3Inv(m [3][3]float64) [3][3]float64 {
 	}
 }
 
+// minICCBytes is an ICC header plus its tag count.
+const minICCBytes = 132
+
 // iccTag returns the bytes of one tag, or nil.
 func iccTag(profile []byte, sig string) []byte {
-	if len(profile) < 132 {
+	if len(profile) < minICCBytes {
 		return nil
 	}
 	count := binary.BigEndian.Uint32(profile[128:])
@@ -209,7 +212,7 @@ func s15f16(b []byte) float64 {
 // profile whose colorants and tone curves match a supported space returns a
 // non-zero value.
 func iccColour(profile []byte) stillColour {
-	if len(profile) < 132 || len(profile) > maxICCBytes || string(profile[16:20]) != "RGB " || string(profile[36:40]) != "acsp" {
+	if len(profile) < minICCBytes || len(profile) > maxICCBytes || string(profile[16:20]) != "RGB " || string(profile[36:40]) != "acsp" {
 		return stillColour{}
 	}
 	var colorant [3][3]float64

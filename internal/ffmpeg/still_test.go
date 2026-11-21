@@ -833,6 +833,7 @@ func TestHEIFColourResolvesThePrimaryItemsProperty(t *testing.T) {
 		{"grid inherits the first tile", [][]byte{p3}, [][]byte{{0, 0, 0, 1, 0, 2, 1, 0x81}}, box("dimg", []byte{0, 1, 0, 2, 0, 2, 0, 3}), true},
 		{"grid without a dimg reference", [][]byte{p3}, [][]byte{{0, 0, 0, 1, 0, 2, 1, 0x81}}, nil, false},
 		{"empty ICC does not hide nclx", [][]byte{box("colr", []byte("prof")), p3}, [][]byte{{0, 0, 0, 1, 0, 1, 2, 0x81, 0x82}}, nil, true},
+		{"truncated ICC does not hide nclx", [][]byte{box("colr", append([]byte("prof"), make([]byte, 128)...)), p3}, [][]byte{{0, 0, 0, 1, 0, 1, 2, 0x81, 0x82}}, nil, true},
 		{"no ipma takes the first colr", [][]byte{p3}, nil, nil, true},
 	}
 	for _, c := range cases {
