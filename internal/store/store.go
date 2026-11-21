@@ -4761,7 +4761,7 @@ func (s *Store) UpdateProfileSettings(ctx context.Context, id ProfileID, setting
 	if settings.RemoteMaxBitrate != nil {
 		profile.RemoteMaxBitrate = *settings.RemoteMaxBitrate
 	}
-	if err := s.updateProfileSettingsSQL(ctx, profile, settings.IntegrationSignIn); err != nil {
+	if err := s.updateProfileSettingsSQL(ctx, profile, settings); err != nil {
 		return Profile{}, err
 	}
 	return s.profileSQL(ctx, id)

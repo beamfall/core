@@ -147,13 +147,53 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 			authorizationRefused: true,
 		}
 	}
-	if gate&roleAdmin != 0 && !dispatch.scope.Admin && !adminTokenMayRun(dispatch) {
+	if gate&roleAdmin != 0 && !dispatch.scope.Admin && !adminTokenMayRun(dispatch) && !ownTrackPreferenceWrite(dispatch) {
 		return response{
 			Errors:               []graphError{newGraphError(ErrorCodeForbidden, "admin session required")},
 			authorizationRefused: true,
 		}
 	}
 	return response{}
+}
+
+// ownTrackPreferenceWrite reports whether the dispatch is an enrolled device
+// session writing only its own Profile's track preferences through
+// updateProfile (CORE-1937). Any other selected field, any other argument, or
+// another Profile's ID keeps the Admin Session requirement.
+func ownTrackPreferenceWrite(dispatch *fieldDispatchContext) bool {
+	scope := dispatch.scope
+	if !scope.IsEnrolledDeviceSession() || scope.ProfileID == "" {
+		return false
+	}
+	for field, requested := range dispatch.fields {
+		if requested && field != "updateprofile" {
+			return false
+		}
+	}
+	if !dispatch.fields["updateprofile"] {
+		return false
+	}
+	if store.ProfileID(trimmedVariable(dispatch.req, "profileID")) != scope.ProfileID {
+		return false
+	}
+	// The input holds only the arguments the document binds on updateProfile
+	// (effectiveArguments), so this table names every one but profileID:
+	// true for a track preference, false for a Profile policy field.
+	writes := false
+	for name, own := range map[string]bool{
+		"audioLanguages": true, "subtitleLanguages": true, "subtitleMode": true, "preferSDH": true,
+		"disabled": false, "entryPIN": false, "kind": false, "maxConcurrentStreams": false,
+		"name": false, "remoteMaxBitrate": false, "transcodeAllowed": false,
+	} {
+		if dispatch.req.Variables[name] == nil {
+			continue
+		}
+		if !own {
+			return false
+		}
+		writes = true
+	}
+	return writes
 }
 
 // adminTokenOps are the Console operations the operator CLI performs against a
@@ -1497,7 +1537,7 @@ func dispatchFieldBlock038(dispatch *fieldDispatchContext) response {
 	req := dispatch.req
 	fields := dispatch.fields
 	if fields["updateprofile"] {
-		profile, err := h.updateProfile(ctx, req)
+		profile, err := h.updateProfile(ctx, scope, req)
 		if resp := resolveField(dispatch, "updateprofile", profile, err); len(resp.Errors) > 0 {
 			return resp
 		}
