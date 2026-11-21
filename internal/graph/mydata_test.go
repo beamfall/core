@@ -889,3 +889,39 @@ func assertRefusalReason(t *testing.T, errs []graphError, want ErrorReason) {
 		t.Fatalf("refusal extensions = %#v, want code %s reason %s", got, ErrorCodeForbidden, want)
 	}
 }
+
+// TestSealedLibraryHidesLegacyQueueEntriesWithoutDeletingThem asserts that the
+// legacy queue mutations and the My Data summary apply the sealed-Library
+// filter: a queueClear while sealed leaves the hidden entry in place, and the
+// same entry ID returns once the Library is unsealed (CORE-1630).
+func TestSealedLibraryHidesLegacyQueueEntriesWithoutDeletingThem(t *testing.T) {
+	// feature:my-data-panel feature:encrypted-library
+	handler := newTestHandler(t)
+	mydataSeedEngagement(t, handler, authorizeViewer)
+	var before PlayQueueInfo
+	execGraph(t, handler, authorizeViewer, "{ playQueue "+queueStateSelection+" }", nil, "playQueue", &before)
+	if len(before.Entries) != 1 {
+		t.Fatalf("seeded queue entries = %d, want 1", len(before.Entries))
+	}
+
+	handler.SetLibEncrypt(stubLibEncrypt{sealed: map[string]bool{"library-local": true}})
+	data, errs := post(t, handler, `{"query":"query { myDataSummary { queueEntries } }"}`, authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("sealed myDataSummary errors = %#v", errs)
+	}
+	var summary MyDataSummaryInfo
+	mustUnmarshal(t, data["myDataSummary"], &summary)
+	if summary.QueueEntries != 0 {
+		t.Fatalf("sealed myDataSummary queueEntries = %d, want 0", summary.QueueEntries)
+	}
+	if got := qaItems(t, handler, qaClear, authorizeViewer, "queueClear"); len(got) != 0 {
+		t.Fatalf("sealed queueClear returned %d visible items, want 0", len(got))
+	}
+
+	handler.SetLibEncrypt(stubLibEncrypt{sealed: map[string]bool{}})
+	var after PlayQueueInfo
+	execGraph(t, handler, authorizeViewer, "{ playQueue "+queueStateSelection+" }", nil, "playQueue", &after)
+	if len(after.Entries) != 1 || after.Entries[0].ID != before.Entries[0].ID {
+		t.Fatalf("unsealed queue entries = %#v, want the original entry %q", after.Entries, before.Entries[0].ID)
+	}
+}

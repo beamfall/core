@@ -425,7 +425,11 @@ type MyDataSummaryInfo struct {
 // (ADR-0036 §2.2 layer 1). Own-Profile-only + Reveal are enforced at the store
 // boundary by passing scope.ProfileID + scope.LibraryFilter() and nothing else.
 func (h *Handler) myDataSummary(ctx context.Context, scope auth.Scope) (MyDataSummaryInfo, error) {
-	summary, err := h.store.MyDataSummary(ctx, scope.ProfileID, scope.LibraryFilter())
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return MyDataSummaryInfo{}, err
+	}
+	summary, err := h.store.MyDataSummary(ctx, scope.ProfileID, filter)
 	if err != nil {
 		return MyDataSummaryInfo{}, err
 	}

@@ -4483,6 +4483,10 @@ func (h *Handler) queueOps(ctx context.Context, scope auth.Scope, fields map[str
 }
 
 func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
 	data := map[string]any{}
 	if fields["queueadd"] {
 		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
@@ -4498,7 +4502,7 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 		if err := v.Err(); err != nil {
 			return nil, err
 		}
-		if err := h.store.QueueAdd(ctx, scope.ProfileID, mediaID, position, scope.LibraryFilter()); err != nil {
+		if err := h.store.QueueAdd(ctx, scope.ProfileID, mediaID, position, filter); err != nil {
 			return nil, clientError("unknown media")
 		}
 		items, err := h.queueItems(ctx, scope)
@@ -4512,7 +4516,7 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 		if mediaID == "" {
 			return nil, clientError("mediaID is required")
 		}
-		if err := h.store.QueueRemove(ctx, scope.ProfileID, mediaID, scope.LibraryFilter()); err != nil {
+		if err := h.store.QueueRemove(ctx, scope.ProfileID, mediaID, filter); err != nil {
 			return nil, err
 		}
 		items, err := h.queueItems(ctx, scope)
@@ -4534,7 +4538,7 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 		if !ok {
 			return nil, clientError("position is required")
 		}
-		if err := h.store.QueueMove(ctx, scope.ProfileID, mediaID, int(number), scope.LibraryFilter()); err != nil {
+		if err := h.store.QueueMove(ctx, scope.ProfileID, mediaID, int(number), filter); err != nil {
 			return nil, err
 		}
 		items, err := h.queueItems(ctx, scope)
@@ -4544,7 +4548,7 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 		data["queuemove"] = items
 	}
 	if fields["queueclear"] {
-		if err := h.store.QueueClear(ctx, scope.ProfileID, scope.LibraryFilter()); err != nil {
+		if err := h.store.QueueClear(ctx, scope.ProfileID, filter); err != nil {
 			return nil, err
 		}
 		items, err := h.queueItems(ctx, scope)
@@ -4557,7 +4561,11 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 }
 
 func (h *Handler) queueItems(ctx context.Context, scope auth.Scope) ([]SourceItem, error) {
-	items, err := h.store.SourceItems(ctx, scope.LibraryFilter(), store.SourceQuery{
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	items, err := h.store.SourceItems(ctx, filter, store.SourceQuery{
 		Kind:      "queue",
 		ProfileID: scope.ProfileID,
 	})
