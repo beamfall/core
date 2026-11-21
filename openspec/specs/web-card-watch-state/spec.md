@@ -66,7 +66,9 @@ item states one, and its playback state where the Profile has one.
 ### Requirement: Cards show playback state on the artwork
 
 A card SHALL draw a progress bar for a partly played item, a finished mark for a completed item and
-the remaining count for an ordered container with children left, on every shelf and grid.
+the remaining count for an ordered container with children left, on every shelf and grid. An audio
+container SHALL NOT show the remaining count. The remaining count SHALL use the same quiet
+translucent pill as the finished mark, not an accent fill.
 
 #### Scenario: Shelf and grid
 
@@ -75,8 +77,13 @@ the remaining count for an ordered container with children left, on every shelf 
 
 #### Scenario: Container with children left
 
-- **WHEN** an ordered container has children the Profile has not finished
-- **THEN** its card shows the remaining count
+- **WHEN** an ordered video container has children the Profile has not finished
+- **THEN** its card shows the remaining count in a translucent pill
+
+#### Scenario: Audio container with children left
+
+- **WHEN** an audio container has children the Profile has not finished
+- **THEN** its card shows no remaining count
 
 ### Requirement: Cards offer Play or Resume and a More menu
 
