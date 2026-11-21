@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { act, render, renderHook } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AudioStage } from "../AudioStage";
@@ -16,6 +16,7 @@ import {
   Visualizer,
   viewClip,
 } from "./Visualizer";
+import { resetVisualChoiceForTest, setVisualChoice, useShownVisual } from "./visualChoice";
 import { chosenVisual, VISUALS, visualFor } from "./visuals";
 
 // The Oscillux core never loads in jsdom: a pending load keeps the visualizer mounted and idle.
@@ -41,6 +42,8 @@ function withWebGL2() {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.localStorage.clear();
+  resetVisualChoiceForTest();
 });
 
 describe("Visualizer (CORE-1309)", () => {
@@ -59,6 +62,31 @@ describe("Visualizer (CORE-1309)", () => {
     const slot = container.querySelector("[data-visualizer-slot]");
     expect(slot?.getAttribute("aria-hidden")).toBe("true");
     expect(slot?.querySelector("canvas.bf-audio-visualizer-canvas")).toBeTruthy();
+  });
+
+  it("mounts no visualizer while it is off, and mounts it again when it comes back (CORE-2814)", () => {
+    withWebGL2();
+    const shown = renderHook(() => useShownVisual());
+    setVisualChoice("off");
+    const { container } = render(
+      <AudioStage
+        title="Song"
+        artworkURL=""
+        credits={[]}
+        videoRef={createRef<HTMLVideoElement>()}
+        stream={direct}
+        trackKey="m1"
+      />,
+    );
+    const slot = container.querySelector("[data-visualizer-slot]");
+    expect(slot?.querySelector("canvas")).toBeNull();
+    expect(shown.result.current).toBeNull();
+    act(() => setVisualChoice(VISUALS[4].id));
+    expect(slot?.querySelector("canvas.bf-audio-visualizer-canvas")).toBeTruthy();
+    // The Visualizer reports what it shows, for the transport's control.
+    expect(shown.result.current).toBe(VISUALS[4].id);
+    act(() => setVisualChoice("off"));
+    expect(slot?.querySelector("canvas")).toBeNull();
   });
 
   // Codex round 25: the slot showed the theme's scrim behind the canvas, so a strip that came

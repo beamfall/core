@@ -46,6 +46,8 @@ describe("resolvePlayerShortcut (CORE-1682)", () => {
     expect(key("<")?.action).toBe("slower");
     expect(key("N", { shiftKey: true })?.action).toBe("nextItem");
     expect(key("P", { shiftKey: true })?.action).toBe("previousItem");
+    expect(key("v")?.action).toBe("nextVisual");
+    expect(key("V", { shiftKey: true })?.action).toBe("previousVisual");
     expect(key("n")).toBeNull();
     expect(key("J", { shiftKey: true })).toBeNull();
     expect(key("ArrowRight", { shiftKey: true })).toBeNull();

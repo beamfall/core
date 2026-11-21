@@ -73,8 +73,10 @@ import { usePlayerShortcuts } from "./usePlayerShortcuts";
 import { useSubtitleAppearance } from "./useSubtitleAppearance";
 import { useSubtitleStyling } from "./useSubtitleStyling";
 import { useWaveform } from "./useWaveform";
+import { VisualControls } from "./VisualControls";
 import { VisualSettings } from "./VisualSettings";
 import { markViewerIntent } from "./viewerIntent";
+import { canVisualize, stepVisual } from "./visualizer/visualChoice";
 import { WaveformBars } from "./WaveformBars";
 
 // The player's control overlay (CORE-1141): a gradient scrim with the title,
@@ -130,6 +132,7 @@ export function PlayerTransport({
   onRetryMusicQueue,
   musicQueueOpen = false,
   serverQueueNextID,
+  audioStage = false,
   onStop,
   onRemoteStop,
   onRemoteRestart,
@@ -179,6 +182,8 @@ export function PlayerTransport({
   onMusicQueueOpenChange?: (open: boolean) => void;
   /** Suppress prefetch of playback-info's next item when the server queue excludes it. */
   serverQueueNextID?: string;
+  /** The audio stage is showing: the transport carries the visualizer control (CORE-2814). */
+  audioStage?: boolean;
   /** Leaves the player when another device sends stop; without it stop only pauses. */
   onStop?: () => void;
   /** Stop requested by another device; falls back to onStop. */
@@ -590,6 +595,7 @@ export function PlayerTransport({
     setMuted(listenerMuted(video));
   }, [videoRef]);
 
+  const visualControls = audioStage && canVisualize();
   usePlayerShortcuts({
     videoRef,
     skipInterval,
@@ -606,6 +612,10 @@ export function PlayerTransport({
     selectAudio: tracks.selectAudio,
     onPreviousInQueue,
     onNextInQueue,
+    ...(visualControls && {
+      onPreviousVisual: () => stepVisual(-1),
+      onNextVisual: () => stepVisual(1),
+    }),
     onHelp: () => {
       setSettingsOpen(false);
       setOpen("shortcuts", true);
@@ -780,6 +790,7 @@ export function PlayerTransport({
       <div className="bf-transport-bottom">
         <div className="bf-player-meta">
           <h2>{mediaTitle || t("playbackDetails")}</h2>
+          {visualControls && <VisualControls />}
         </div>
 
         <div className="bf-scrub-row">

@@ -228,6 +228,22 @@ describe("usePlayerShortcuts (CORE-1682)", () => {
     expect(onPreviousInQueue).toHaveBeenCalledOnce();
   });
 
+  it("steps the visual with V and Shift+V, never inside a text field (CORE-2814)", () => {
+    const onNextVisual = vi.fn();
+    const onPreviousVisual = vi.fn();
+    setup({ onNextVisual, onPreviousVisual });
+    expect(press("v").defaultPrevented).toBe(true);
+    press("V", { shiftKey: true });
+    expect(onNextVisual).toHaveBeenCalledOnce();
+    expect(onPreviousVisual).toHaveBeenCalledOnce();
+
+    screen.getByRole("textbox", { name: "Search" }).focus();
+    expect(press("v").defaultPrevented).toBe(false);
+    press("V", { shiftKey: true });
+    expect(onNextVisual).toHaveBeenCalledOnce();
+    expect(onPreviousVisual).toHaveBeenCalledOnce();
+  });
+
   it("opens help on ? and never fires inside a text field", () => {
     const onHelp = vi.fn();
     const { video } = setup({ onHelp });

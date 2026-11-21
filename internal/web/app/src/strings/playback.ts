@@ -71,6 +71,10 @@ export const playbackStrings = {
     visualChoice: "Visualizer",
     visualChoiceRotate: "Rotate",
     visualChoiceAlbum: "One per album",
+    visualChoiceOff: "Off",
+    visualCurrent: "Visualizer: {name}",
+    visualPrevious: "Previous visual",
+    visualNext: "Next visual",
   },
   fr: {
     seeAll: "Tout voir",
@@ -144,6 +148,10 @@ export const playbackStrings = {
     visualChoice: "Visualiseur",
     visualChoiceRotate: "Rotation",
     visualChoiceAlbum: "Un par album",
+    visualChoiceOff: "Désactivé",
+    visualCurrent: "Visualiseur : {name}",
+    visualPrevious: "Visuel précédent",
+    visualNext: "Visuel suivant",
   },
   de: {
     seeAll: "Alle anzeigen",
@@ -217,6 +225,10 @@ export const playbackStrings = {
     visualChoice: "Visualisierung",
     visualChoiceRotate: "Wechseln",
     visualChoiceAlbum: "Eins pro Album",
+    visualChoiceOff: "Aus",
+    visualCurrent: "Visualisierung: {name}",
+    visualPrevious: "Vorherige Visualisierung",
+    visualNext: "Nächste Visualisierung",
   },
   es: {
     seeAll: "Ver todo",
@@ -290,6 +302,10 @@ export const playbackStrings = {
     visualChoice: "Visualizador",
     visualChoiceRotate: "Rotar",
     visualChoiceAlbum: "Uno por álbum",
+    visualChoiceOff: "Desactivado",
+    visualCurrent: "Visualizador: {name}",
+    visualPrevious: "Visual anterior",
+    visualNext: "Visual siguiente",
   },
   pt: {
     seeAll: "Ver tudo",
@@ -363,5 +379,9 @@ export const playbackStrings = {
     visualChoice: "Visualizador",
     visualChoiceRotate: "Alternar",
     visualChoiceAlbum: "Um por álbum",
+    visualChoiceOff: "Desligado",
+    visualCurrent: "Visualizador: {name}",
+    visualPrevious: "Visual anterior",
+    visualNext: "Próximo visual",
   },
 } as const;

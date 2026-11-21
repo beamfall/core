@@ -77,3 +77,24 @@ export function nextInRotation(
   if (pool.length === 0) return VISUALS[0];
   return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
 }
+
+/**
+ * The visual `step` places away from `currentId` in catalog order, wrapping at the ends; only calm
+ * visuals under reduced motion (CORE-2814). Without a current visual it is the first one, or
+ * stepping back the last.
+ */
+export function steppedVisual(
+  currentId: string | null,
+  step: 1 | -1,
+  reducedMotion: boolean,
+): Visual {
+  const n = VISUALS.length;
+  const at = VISUALS.findIndex((v) => v.id === currentId);
+  const from = at >= 0 ? at : step > 0 ? -1 : n;
+  const fits = (v: Visual) => !reducedMotion || CALM.length === 0 || v.calm;
+  for (let i = 1; i <= n; i++) {
+    const v = VISUALS[(((from + step * i) % n) + n) % n];
+    if (fits(v) && v.id !== currentId) return v;
+  }
+  return VISUALS[at >= 0 ? at : 0];
+}
