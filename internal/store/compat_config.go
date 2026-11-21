@@ -241,9 +241,10 @@ func (s *Store) JellyfinCompatEligibleLibraries(ctx context.Context) (map[Librar
 
 // SetProfileIntegrationSignIn turns a Profile's integration sign-in opt-in on
 // or off (ADR-0171 §2.4). Only an adult, enabled Profile may opt in. Turning it
-// off revokes the Profile's integration sessions in the same transaction. The
-// write touches only the opt-in column and re-checks eligibility in its WHERE
-// clause, so a concurrent Profile edit is neither overwritten nor raced.
+// off revokes the Profile's integration sessions and keys in the same
+// transaction. The write touches only the opt-in column and re-checks
+// eligibility in its WHERE clause, so a concurrent Profile edit is neither
+// overwritten nor raced.
 func (s *Store) SetProfileIntegrationSignIn(ctx context.Context, id ProfileID, enabled bool) (Profile, error) {
 	if id == "" {
 		return Profile{}, ValidationError("profile ID is required")
@@ -278,6 +279,9 @@ func (s *Store) SetProfileIntegrationSignIn(ctx context.Context, id ProfileID, e
 	}
 	if !enabled {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_session WHERE profile_id = ? AND kind = ?`, id, SessionKindIntegration); err != nil {
+			return Profile{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE compat_integration_key SET revoked_at_ms = ? WHERE profile_id = ? AND revoked_at_ms = 0`, timeToMillis(time.Now()), id); err != nil {
 			return Profile{}, err
 		}
 	}
