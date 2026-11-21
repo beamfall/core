@@ -39,7 +39,9 @@ interface MediaState {
 async function mediaState(page: Page): Promise<MediaState | null> {
   return page.evaluate(() => {
     const element = document.querySelector<HTMLMediaElement>("video, audio");
-    return element ? { paused: element.paused, currentTime: element.currentTime } : null;
+    return element
+      ? { paused: element.paused, currentTime: element.currentTime }
+      : null;
   });
 }
 
@@ -47,16 +49,24 @@ async function sessionMetadata(page: Page) {
   return page.evaluate(() => {
     const metadata = navigator.mediaSession?.metadata;
     return metadata
-      ? { title: metadata.title, artist: metadata.artist, album: metadata.album }
+      ? {
+          title: metadata.title,
+          artist: metadata.artist,
+          album: metadata.album,
+        }
       : null;
   });
 }
 
 /** Asserts the media element is running and its clock moves past `after` seconds. */
 async function expectPlaying(page: Page, after = 0): Promise<void> {
-  await expect.poll(async () => (await mediaState(page))?.paused, { timeout: 10_000 }).toBe(false);
   await expect
-    .poll(async () => (await mediaState(page))?.currentTime ?? 0, { timeout: 10_000 })
+    .poll(async () => (await mediaState(page))?.paused, { timeout: 10_000 })
+    .toBe(false);
+  await expect
+    .poll(async () => (await mediaState(page))?.currentTime ?? 0, {
+      timeout: 10_000,
+    })
     .toBeGreaterThan(after);
 }
 
@@ -65,9 +75,13 @@ async function expectPlaying(page: Page, after = 0): Promise<void> {
  * readable slug ending in the same token (CORE-2329).
  */
 function watchAddress(id: string): RegExp {
-  const token = id.replace(/^media-sha256-/, "").replace(/^media-sample1-/, "sample1[.]");
+  const token = id
+    .replace(/^media-sha256-/, "")
+    .replace(/^media-sample1-/, "sample1[.]");
   const segment = "[^/?#]+";
-  return new RegExp(`/web/watch/(?:${segment}/)?(?:${id}|${token}|${segment}-${token})$`);
+  return new RegExp(
+    `/web/watch/(?:${segment}/)?(?:${id}|${token}|${segment}-${token})$`,
+  );
 }
 
 /** Plays Track One from its album page's track list (CORE-1635), which starts playback directly. */
@@ -80,7 +94,9 @@ async function playAlbumFromTrackOne(page: Page): Promise<void> {
   await expect(page).toHaveURL(watchAddress(library.tracks[0].id));
 }
 
-test("plays an album and advances to its next track (CORE-1640)", async ({ page }) => {
+test("plays an album and advances to its next track (CORE-1640)", async ({
+  page,
+}) => {
   test.setTimeout(60_000);
   const errors = collectFatalErrors(page);
   const [first, second] = library.tracks;
@@ -92,14 +108,23 @@ test("plays an album and advances to its next track (CORE-1640)", async ({ page 
   await expectPlaying(page, started);
   await expect
     .poll(() => sessionMetadata(page))
-    .toEqual({ title: first.title, artist: TEST_ALBUM.artist, album: TEST_ALBUM.album });
+    .toEqual({
+      title: first.title,
+      artist: TEST_ALBUM.artist,
+      album: TEST_ALBUM.album,
+    });
 
   // The track ends after TEST_ALBUM.seconds; the queue moves on without a click.
-  expect(`/web${mediaPath("watch", second.id)}`).toMatch(watchAddress(second.id));
+  expect(`/web${mediaPath("watch", second.id)}`).toMatch(
+    watchAddress(second.id),
+  );
   const sampledID = "media-sample1-0123456789abcdef0";
   for (const [readable, expected] of [
     [undefined, "/web/watch/sample1.0123456789abcdef0"],
-    [{ library: "music", words: "音楽" }, "/web/watch/music/sample1.0123456789abcdef0"],
+    [
+      { library: "music", words: "音楽" },
+      "/web/watch/music/sample1.0123456789abcdef0",
+    ],
     [
       { library: "music", words: "Track Two" },
       "/web/watch/music/track-two-sample1.0123456789abcdef0",
@@ -114,7 +139,11 @@ test("plays an album and advances to its next track (CORE-1640)", async ({ page 
   await expectPlaying(page);
   await expect
     .poll(() => sessionMetadata(page))
-    .toEqual({ title: second.title, artist: TEST_ALBUM.artist, album: TEST_ALBUM.album });
+    .toEqual({
+      title: second.title,
+      artist: TEST_ALBUM.artist,
+      album: TEST_ALBUM.album,
+    });
   expect(errors).toEqual([]);
 });
 
@@ -123,43 +152,72 @@ test("elapsed clock advances (CORE-1491)", async ({ page }) => {
   await playAlbumFromTrackOne(page);
   await expect(page.locator(AUDIO_TITLE)).toHaveText(library.tracks[0].title);
   await expectPlaying(page);
-  await expect(page.locator(".bf-time.is-start")).not.toHaveText("0:00", { timeout: 10_000 });
+  await expect(page.locator(".bf-time.is-start")).not.toHaveText("0:00", {
+    timeout: 10_000,
+  });
 });
 
-// CORE-1490: Recently Added mixes the seeded tracks with the seed's video.
-// Playing a track from that list must queue only the audio items, so the audio
-// stage counts the tracks alone. Rows carry their mediaClass (CORE-1492), so the
-// player narrows the queue by class; before that it read "1 of 4". The Home
-// shelf folds the album's new tracks into one card (CORE-2524), so the tracks
-// are played from the shelf's See all page, which lists every item.
-test("a track from a mixed shelf queues only audio items (CORE-1490)", async ({ page }) => {
-  test.setTimeout(60_000);
-  const titles = library.tracks.map((track) => track.title);
-  const trackCard = new RegExp(titles.join("|"));
-  await page.goto("/web/");
-  // Recently Added by name: earlier specs also fill "Your Most-Played" with the
-  // video and a track, and that shelf queues a single audio item.
-  await page
-    .locator("section")
-    .filter({ has: page.getByRole("heading", { name: "Recently Added" }) })
-    .getByRole("button", { name: "See all" })
-    .click();
-  await expect(page).toHaveURL(/\/seeall\//);
-  // The URL changes before the See all route replaces Home, so wait for the
-  // page's own h1 (Home's shelf titles are h2); otherwise "Sample Media" can
-  // match a Home card too.
-  await expect(
-    page.getByRole("heading", { name: "Recently Added", level: 1, exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("link", { name: /Sample Media/ })).toBeVisible();
-  const card = page.getByRole("link", { name: trackCard }).first();
-  const label = (await card.getAttribute("aria-label")) ?? (await card.innerText());
-  const title = titles.find((candidate) => label.includes(candidate));
-  await card.click();
-  await page.locator(".bf-detail-play").click();
-  await expect(page.locator(AUDIO_TITLE)).toHaveText(title ?? "");
-  await expectPlaying(page);
-  await expect(page.locator(".bf-audio-position")).toHaveText(new RegExp(` of ${titles.length}$`), {
-    timeout: 5_000,
-  });
+// CORE-1490: Recently Added mixes audio with the seed's video. Playing a track
+// from that list must queue only the audio items, so the audio stage counts the
+// audio alone. Rows carry their mediaClass (CORE-1492), so the player narrows the
+// queue by class; before that it counted the video too. Home and its See all
+// page fold an album's new tracks into one card (CORE-2524, CORE-2823), so the
+// spec seeds two one-track albums: a track alone in its container stays a track.
+// A queue of one shows no position, hence two.
+const SINGLES = ["Lone Track", "Other Track"].map((track, index) => ({
+  artist: "Single Artist",
+  album: `Single ${index + 1}`,
+  tracks: [track],
+  seconds: 2,
+}));
+
+test("a track from a mixed shelf queues only audio items (CORE-1490)", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const singles = await Promise.all(
+    SINGLES.map((spec) =>
+      seedAudioLibrary(harnessState().baseURL, spec, 60_000),
+    ),
+  );
+  try {
+    await page.goto("/web/");
+    // Recently Added by name: earlier specs also fill "Your Most-Played" with the
+    // video and a track, and that shelf queues a single audio item.
+    await page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "Recently Added" }) })
+      .getByRole("button", { name: "See all" })
+      .click();
+    await expect(page).toHaveURL(/\/seeall\//);
+    // The URL changes before the See all route replaces Home, so wait for the
+    // page's own h1 (Home's shelf titles are h2); otherwise "Sample Media" can
+    // match a Home card too.
+    await expect(
+      page.getByRole("heading", {
+        name: "Recently Added",
+        level: 1,
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /Sample Media/ }),
+    ).toBeVisible();
+    await page
+      .getByRole("link", { name: /Lone Track/ })
+      .first()
+      .click();
+    await page.locator(".bf-detail-play").click();
+    await expect(page.locator(AUDIO_TITLE)).toHaveText("Lone Track");
+    await expectPlaying(page);
+    await expect(page.locator(".bf-audio-position")).toHaveText(/ of 2$/, {
+      timeout: 5_000,
+    });
+  } finally {
+    await Promise.all(
+      singles.map((single) =>
+        removeAudioLibrary(harnessState().baseURL, single),
+      ),
+    );
+  }
 });
