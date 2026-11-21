@@ -1918,6 +1918,11 @@ export interface InitOutput {
     readonly oscillux_transition_reset: (a: number) => number;
     readonly oscillux_transition_status: (a: number, b: number, c: number) => number;
     readonly oscillux_version: () => number;
+    readonly oscillux_window_governor_config_default: (a: number) => number;
+    readonly oscillux_window_governor_create: (a: number, b: number, c: number) => number;
+    readonly oscillux_window_governor_destroy: (a: number) => void;
+    readonly oscillux_window_governor_record: (a: number, b: number, c: number) => number;
+    readonly oscillux_window_governor_reset: (a: number, b: number) => number;
     readonly flashconfig_set_max_red_flashes: (a: number, b: number) => void;
     readonly flashconfig_set_red_rule: (a: number, b: number) => void;
     readonly flashconfig_set_rows: (a: number, b: number) => void;
