@@ -108,6 +108,28 @@ func (h *Handler) setWatchlisted(ctx context.Context, scope auth.Scope, req requ
 	return h.itemActionDone(ctx, scope, target)
 }
 
+// setContinueWatchingHidden removes one Media from the calling Profile's
+// Continue Watching shelf (hidden: true) or puts it back (hidden: false, the
+// web's Undo). Progress is kept; playing the Media again also puts it back.
+func (h *Handler) setContinueWatchingHidden(ctx context.Context, scope auth.Scope, req request) (ItemStateInfo, error) {
+	mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
+	v := newVars(req)
+	hidden, ok := v.Bool("hidden")
+	if err := v.Err(); err != nil {
+		return ItemStateInfo{}, err
+	}
+	if !ok {
+		return ItemStateInfo{}, clientError("hidden is required")
+	}
+	if mediaID == "" {
+		return ItemStateInfo{}, clientError("mediaID is required")
+	}
+	if err := h.store.SetContinueWatchingHidden(ctx, scope.ProfileID, mediaID, hidden, scope.LibraryFilter()); err != nil {
+		return ItemStateInfo{}, itemActionError(err)
+	}
+	return h.itemActionDone(ctx, scope, store.ItemTarget{MediaID: mediaID})
+}
+
 func (h *Handler) setRating(ctx context.Context, scope auth.Scope, req request) (ItemStateInfo, error) {
 	target := h.itemTarget(req)
 	v := newVars(req)

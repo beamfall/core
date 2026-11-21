@@ -1260,6 +1260,11 @@
     "tier": "admin"
   },
   {
+    "field": "setcontinuewatchinghidden",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "setdevicerole",
     "effect": "write",
     "tier": "admin"

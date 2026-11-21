@@ -80,7 +80,7 @@ func snapshotPlaybackProgress(t *testing.T, db *sql.DB) []byte {
 		SELECT profile_id, media_id, position_seconds, duration_seconds, watched,
 		       updated_at_ms, play_count, last_played_at_ms, provenance,
 		       occurred_at_ms, import_run_id, import_importer_id,
-		       import_match_method, event_time_ms, channel_context
+		       import_match_method, event_time_ms, channel_context, continue_hidden
 		FROM playback_progress
 		ORDER BY profile_id, media_id
 	`)
@@ -93,19 +93,20 @@ func snapshotPlaybackProgress(t *testing.T, db *sql.DB) []byte {
 		var (
 			profileID, mediaID, provenance                         string
 			position, duration, watched, playCount, channelContext int
+			continueHidden                                         int
 			updatedAt                                              int64
 			lastPlayedAt, occurredAt, eventTime                    sql.NullInt64
 			runID, importerID, matchMethod                         sql.NullString
 		)
 		if err := rows.Scan(&profileID, &mediaID, &position, &duration, &watched,
 			&updatedAt, &playCount, &lastPlayedAt, &provenance, &occurredAt,
-			&runID, &importerID, &matchMethod, &eventTime, &channelContext); err != nil {
+			&runID, &importerID, &matchMethod, &eventTime, &channelContext, &continueHidden); err != nil {
 			t.Fatal(err)
 		}
-		fmt.Fprintf(&snapshot, "%q\t%q\t%d\t%d\t%d\t%d\t%d\t%v\t%q\t%v\t%v\t%v\t%v\t%v\t%d\n",
+		fmt.Fprintf(&snapshot, "%q\t%q\t%d\t%d\t%d\t%d\t%d\t%v\t%q\t%v\t%v\t%v\t%v\t%v\t%d\t%d\n",
 			profileID, mediaID, position, duration, watched, updatedAt, playCount,
 			lastPlayedAt, provenance, occurredAt, runID, importerID, matchMethod,
-			eventTime, channelContext)
+			eventTime, channelContext, continueHidden)
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)

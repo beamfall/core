@@ -5975,6 +5975,7 @@ var mutationFields = map[string]bool{
 	"setwatched":                         true,
 	"setwatchlisted":                     true,
 	"setrating":                          true,
+	"setcontinuewatchinghidden":          true,
 	"setfavorite":                        true,
 	"queueadd":                           true,
 	"queueremove":                        true,

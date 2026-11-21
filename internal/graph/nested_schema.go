@@ -197,6 +197,7 @@ var resultTypes = map[string]any{
 	"setwatched":                         ItemStateInfo{},
 	"setwatchlisted":                     ItemStateInfo{},
 	"setrating":                          ItemStateInfo{},
+	"setcontinuewatchinghidden":          ItemStateInfo{},
 	"setfavorite":                        MediaInfo{},
 	"queueadd":                           SourceItem{},
 	"queueremove":                        SourceItem{},

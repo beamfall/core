@@ -15,6 +15,7 @@ const (
 	playbackProjectionOperationImport       = "import"
 	playbackProjectionOperationMark         = "mark"
 	playbackProjectionOperationVersionMerge = "merge-version"
+	playbackProjectionOperationHideContinue = "hide-continue"
 )
 
 type playbackProjectionEvent struct {
@@ -36,6 +37,7 @@ type playbackProjectionEvent struct {
 	EventTimeMS       *int64 `json:"eventTimeMs"`
 	ChannelContext    bool   `json:"channelContext"`
 	MergedFromMediaID string `json:"mergedFromMediaId,omitempty"`
+	ContinueHidden    bool   `json:"continueHidden,omitempty"`
 }
 
 func appendPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
@@ -78,6 +80,8 @@ func applyPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbac
 		return applyMarkProjectionEvent(ctx, tx, event)
 	case playbackProjectionOperationVersionMerge:
 		return applyVersionMergeProjectionEvent(ctx, tx, event)
+	case playbackProjectionOperationHideContinue:
+		return applyHideContinueProjectionEvent(ctx, tx, event)
 	default:
 		return fmt.Errorf("unknown playback projection operation %q", event.Operation)
 	}
@@ -101,6 +105,10 @@ func applyVersionMergeProjectionEvent(ctx context.Context, tx *sql.Tx, event pla
 	return err
 }
 
+// applyProgressProjectionEvent applies one playback report. A report that
+// moves the resume position clears continue_hidden, so playing an item again
+// returns it to Continue Watching; a repeat of the same position (a paused
+// player's heartbeat) leaves a removal in place.
 func applyProgressProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, watched, updated_at_ms, play_count, last_played_at_ms, provenance, occurred_at_ms, import_run_id, import_importer_id, import_match_method, event_time_ms, channel_context)
@@ -114,6 +122,7 @@ func applyProgressProjectionEvent(ctx context.Context, tx *sql.Tx, event playbac
 		  updated_at_ms = CASE WHEN (`+positionAdvancedPredicate+`) THEN excluded.updated_at_ms ELSE playback_progress.updated_at_ms END,
 		  event_time_ms = CASE WHEN (`+positionAdvancedPredicate+`) THEN excluded.event_time_ms ELSE playback_progress.event_time_ms END,
 		  channel_context = CASE WHEN (`+positionAdvancedPredicate+`) THEN excluded.channel_context ELSE playback_progress.channel_context END,
+		  continue_hidden = CASE WHEN (`+positionAdvancedPredicate+`) AND excluded.position_seconds <> playback_progress.position_seconds THEN 0 ELSE playback_progress.continue_hidden END,
 		  provenance = excluded.provenance,
 		  occurred_at_ms = excluded.occurred_at_ms,
 		  import_run_id = excluded.import_run_id,

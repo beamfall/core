@@ -3428,6 +3428,18 @@
       ]
     },
     {
+      "field": "setcontinuewatchinghidden",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "rating",
+        "watched",
+        "watchlisted"
+      ]
+    },
+    {
       "field": "setdevicerole",
       "effect": "write",
       "tier": "admin",
