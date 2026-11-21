@@ -161,6 +161,16 @@ func (x *catalogIndex) isAbsent(id string) bool {
 	return x.absent[id]
 }
 
+func (x *catalogIndex) absentIDs() []string {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	ids := make([]string, 0, len(x.absent))
+	for id := range x.absent {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func (x *catalogIndex) markAbsent(ids []string) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -222,7 +232,8 @@ type indexCache struct {
 }
 
 type cachedIndex struct {
-	built   time.Time // when the read the index was built from began
+	read    time.Time // when the read the index was built from began
+	built   time.Time // when the index was stored; it expires catalogIndexTTL after
 	visible [sha256.Size]byte
 	index   *catalogIndex
 }
@@ -382,22 +393,25 @@ func (h *Handler) visibleNodes(ctx context.Context, filter store.LibraryFilter, 
 		} else {
 			current.name = titles[store.EntityID(n.id)]
 			current.sortKey = current.name
-			current.year = earliestYear(n, media)
+			current.year = earliestYear(n, media, live)
 		}
 		kept = append(kept, &current)
 	}
 	return kept, nil
 }
 
-// earliestYear returns the earliest year among the visible leaves under n, the
-// year a container carries.
-func earliestYear(n *catalogNode, media map[store.MediaID]store.VisibleMedia) int {
+// earliestYear returns the earliest year among the visible leaves under n
+// reached through live containers only, the year a container carries.
+func earliestYear(n *catalogNode, media map[store.MediaID]store.VisibleMedia, live func(*catalogNode) bool) int {
 	if n.leaf {
 		return media[store.MediaID(n.id)].Year
 	}
 	year := 0
 	for _, child := range n.children {
-		if y := earliestYear(child, media); y > 0 && (year == 0 || y < year) {
+		if !child.leaf && !live(child) {
+			continue
+		}
+		if y := earliestYear(child, media, live); y > 0 && (year == 0 || y < year) {
 			year = y
 		}
 	}
@@ -421,7 +435,7 @@ func (c *indexCache) acquire(ctx context.Context) (func(), error) {
 
 func (c *indexCache) clock() time.Time {
 	if c.now == nil {
-		c.now = time.Now
+		return time.Now()
 	}
 	return c.now()
 }
@@ -453,21 +467,26 @@ func (c *indexCache) readSince(key string, since time.Time) *catalogIndex {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry, ok := c.entries[key]
-	if !ok || !entry.built.After(since) {
+	if !ok || !entry.read.After(since) {
 		return nil
 	}
 	return entry.index
 }
 
 // store keeps index, built from a read that began at read, under key,
-// evicting the oldest entry when full.
+// evicting the oldest entry when full. IDs the replaced index confirmed absent
+// stay absent on the new one unless its read found them.
 func (c *indexCache) store(key string, visible [sha256.Size]byte, index *catalogIndex, read time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.entries == nil {
 		c.entries = map[string]cachedIndex{}
 	}
-	if _, ok := c.entries[key]; !ok && len(c.entries) >= catalogIndexEntries {
+	prior, ok := c.entries[key]
+	if ok && prior.index != index {
+		index.markAbsent(prior.index.absentIDs())
+	}
+	if !ok && len(c.entries) >= catalogIndexEntries {
 		oldest := ""
 		for k, entry := range c.entries {
 			if oldest == "" || entry.built.Before(c.entries[oldest].built) {
@@ -476,7 +495,7 @@ func (c *indexCache) store(key string, visible [sha256.Size]byte, index *catalog
 		}
 		delete(c.entries, oldest)
 	}
-	c.entries[key] = cachedIndex{built: read, visible: visible, index: index}
+	c.entries[key] = cachedIndex{read: read, built: c.clock(), visible: visible, index: index}
 }
 
 // visibleFingerprint digests every field of the visible items that an index
