@@ -223,8 +223,8 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 			task.probeFile(ctx, s.prober)
 		}
 	}
-	if task.err == nil && imageClassForPath(task.path) {
-		task.local = extractLocalMetadata(ctx, s.req.Root, task.path, s.localExtractors)
+	if class := localMetadataClass(task.path, task.probe); task.err == nil && class != "" {
+		task.local = extractLocalMetadata(ctx, class, s.req.Root, task.path, s.localExtractors)
 	}
 }
 
