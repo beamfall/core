@@ -6,7 +6,7 @@ import { decodeTrack, easeFrame, silentFrame, TrackAnalysis } from "./analysis";
 import { loadArtwork } from "./artwork";
 import { loadOscillux } from "./oscillux";
 import { MAX_SIDE, Renderer, sameFrame, TRACKED_BLACK } from "./renderer";
-import { canVisualize, type VisualChoice } from "./visualChoice";
+import { canVisualize, setShownVisual, type VisualChoice } from "./visualChoice";
 import {
   chosenVisual,
   nextInRotation,
@@ -456,6 +456,7 @@ export function Visualizer({
       r.at = ROTATE_SECONDS;
       const next = takeUpcoming(r, visualRef.current, reducedMotion);
       visualRef.current = next;
+      setShownVisual(next.id);
       renderer
         .use(next)
         .then(() => queueUpcoming(renderer, r, next))
@@ -620,6 +621,7 @@ export function Visualizer({
           renderer.setImage(imageRef.current);
           const first = visualRef.current ?? visualFor(trackRef.current);
           visualRef.current = first;
+          setShownVisual(first.id);
           return renderer.use(first).then(() => {
             if (!current()) return;
             restartClocks();
@@ -690,6 +692,7 @@ export function Visualizer({
       ? takeUpcoming(rotation, visualRef.current, reducedMotion)
       : chosenVisual(choice, visualKey, reducedMotion);
     visualRef.current = visual;
+    setShownVisual(visual.id);
     rotateRef.current = rotation;
     const renderer = rendererRef.current;
     renderer

@@ -1145,6 +1145,7 @@ function FeaturePlayer({
                 musicQueue={musicQueue}
                 onMusicQueueOpenChange={setMusicQueueOpen}
                 serverQueueNextID={serverQueueRun ? (issuedNext?.mediaID ?? "") : undefined}
+                audioStage={showAudioStage}
                 onStop={back}
                 onRemoteStop={stopRemotely}
                 onRemoteRestart={restart}

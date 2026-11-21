@@ -7,7 +7,8 @@ import { VISUALS } from "./visualizer/visuals";
 /**
  * The visualizer row of the player settings sheet (CORE-2368): which Oscillux visual the audio
  * player shows. "Rotate" moves through them all, "One per album" keeps one per album, and each
- * visual can be pinned by its Oscillux catalog name. The choice belongs to this browser.
+ * visual can be pinned by its Oscillux catalog name; "Off" shows none (CORE-2814). The choice
+ * belongs to this browser.
  */
 export function VisualSettings() {
   const t = useT();
@@ -28,6 +29,7 @@ export function VisualSettings() {
       >
         <option value="rotate">{t("visualChoiceRotate")}</option>
         <option value="album">{t("visualChoiceAlbum")}</option>
+        <option value="off">{t("visualChoiceOff")}</option>
         {VISUALS.map((visual) => (
           <option key={visual.id} value={visual.id}>
             {visual.name}

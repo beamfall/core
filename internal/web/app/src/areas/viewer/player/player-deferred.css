@@ -1305,6 +1305,46 @@
   white-space: nowrap;
 }
 
+/* The visualizer control (CORE-2814) takes the title's place in the
+   transport: previous, an on/off toggle naming the visual, next. It sits at
+   the transport's leading edge, below the card, so it never covers the
+   artwork, the words or the waveform. */
+.bf-visual-controls {
+  display: flex;
+  align-items: center;
+  justify-self: start;
+  gap: 2px;
+  max-width: 100%;
+  min-width: 0;
+  margin-left: -8px;
+}
+
+.bf-transport .bf-visual-toggle {
+  min-width: 0;
+  padding: 0 12px;
+}
+
+.bf-visual-name {
+  max-width: 24ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bf-transport .bf-visual-toggle svg {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+.bf-transport .bf-visual-toggle[aria-pressed="false"] {
+  color: color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted));
+}
+
+.bf-transport .bf-visual-toggle[aria-pressed="false"] svg {
+  color: inherit;
+}
+
 /* Narrow windows stack the artwork above the words. The artwork takes the
    height the words leave, so a short window shrinks it instead of clipping it
    under the top bar or the transport. */

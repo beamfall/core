@@ -72,9 +72,10 @@ export function AudioStage({
         <ArtworkLayers url={art} leaveMs={BACKDROP_LEAVE_MS} />
       </div>
       {/* The pinned Oscillux visualizer (CORE-1309). Visual effects come only
-          from Oscillux (ADR-0228); the slot stays empty where it cannot draw. */}
+          from Oscillux (ADR-0228); the slot stays empty where it cannot draw,
+          and when the viewer turns it off (CORE-2814). */}
       <div aria-hidden="true" className="bf-audio-visualizer" data-visualizer-slot="">
-        {videoRef && (
+        {videoRef && visualChoice !== "off" && (
           <Visualizer
             videoRef={videoRef}
             stream={stream}

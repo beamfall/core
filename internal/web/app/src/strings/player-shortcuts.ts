@@ -17,6 +17,7 @@ export const playerShortcutStrings = {
     shortcutNextAudio: "Next audio track",
     shortcutChapter: "Previous or next chapter",
     shortcutQueueItem: "Previous or next in queue",
+    shortcutVisual: "Previous or next visual",
     shortcutHelp: "Show keyboard shortcuts",
   },
   fr: {
@@ -36,6 +37,7 @@ export const playerShortcutStrings = {
     shortcutNextAudio: "Piste audio suivante",
     shortcutChapter: "Chapitre précédent ou suivant",
     shortcutQueueItem: "Précédent ou suivant dans la file",
+    shortcutVisual: "Visuel précédent ou suivant",
     shortcutHelp: "Afficher les raccourcis clavier",
   },
   de: {
@@ -55,6 +57,7 @@ export const playerShortcutStrings = {
     shortcutNextAudio: "Nächste Tonspur",
     shortcutChapter: "Vorheriges oder nächstes Kapitel",
     shortcutQueueItem: "Vorheriges oder nächstes in der Warteschlange",
+    shortcutVisual: "Vorherige oder nächste Visualisierung",
     shortcutHelp: "Tastenkürzel anzeigen",
   },
   es: {
@@ -74,6 +77,7 @@ export const playerShortcutStrings = {
     shortcutNextAudio: "Siguiente pista de audio",
     shortcutChapter: "Capítulo anterior o siguiente",
     shortcutQueueItem: "Anterior o siguiente en la cola",
+    shortcutVisual: "Visual anterior o siguiente",
     shortcutHelp: "Mostrar atajos de teclado",
   },
   pt: {
@@ -93,6 +97,7 @@ export const playerShortcutStrings = {
     shortcutNextAudio: "Faixa de áudio seguinte",
     shortcutChapter: "Capítulo anterior ou seguinte",
     shortcutQueueItem: "Anterior ou seguinte na fila",
+    shortcutVisual: "Visual anterior ou próximo",
     shortcutHelp: "Mostrar atalhos de teclado",
   },
 } as const;

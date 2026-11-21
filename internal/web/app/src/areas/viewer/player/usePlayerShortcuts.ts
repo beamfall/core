@@ -32,6 +32,9 @@ export interface PlayerShortcutHandlers {
   selectAudio: (id: string) => void;
   onPreviousInQueue?: () => void;
   onNextInQueue?: () => void;
+  /** The audio visualizer's previous and next visual (CORE-2814); unset where none draws. */
+  onPreviousVisual?: () => void;
+  onNextVisual?: () => void;
   onHelp: () => void;
 }
 
@@ -184,6 +187,10 @@ function apply(
       return h.onPreviousInQueue?.();
     case "nextItem":
       return h.onNextInQueue?.();
+    case "previousVisual":
+      return h.onPreviousVisual?.();
+    case "nextVisual":
+      return h.onNextVisual?.();
     case "seekPercent":
       if (video && Number.isFinite(video.duration) && video.duration > 0) {
         seekTo((video.duration * (shortcut.percent ?? 0)) / 100);

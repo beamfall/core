@@ -3,7 +3,8 @@
 // never list a key the handler ignores. Resolution is pure: a key event in, an
 // action (or null) out. Ctrl/Alt/Meta chords always stay with the browser.
 // Shift is accepted only where it is part of the character: `?`, `<`, `>` and
-// digits on layouts that shift them, plus Shift+N / Shift+P for the queue.
+// digits on layouts that shift them, plus Shift+N / Shift+P for the queue and
+// Shift+V for the previous visual.
 
 export type ShortcutAction =
   | "togglePlay"
@@ -26,6 +27,8 @@ export type ShortcutAction =
   | "nextChapter"
   | "previousItem"
   | "nextItem"
+  | "previousVisual"
+  | "nextVisual"
   | "seekPercent"
   | "help";
 
@@ -58,6 +61,7 @@ const UNSHIFTED: Record<string, ShortcutAction> = {
   a: "nextAudio",
   pageup: "previousChapter",
   pagedown: "nextChapter",
+  v: "nextVisual",
 };
 
 // Keys whose character already carries the shift, so they answer either way.
@@ -70,6 +74,7 @@ const SHIFT_NEUTRAL: Record<string, ShortcutAction> = {
 const SHIFTED: Record<string, ShortcutAction> = {
   p: "previousItem",
   n: "nextItem",
+  v: "previousVisual",
 };
 
 export function resolvePlayerShortcut(
@@ -100,6 +105,7 @@ export type ShortcutLabelKey =
   | "shortcutNextAudio"
   | "shortcutChapter"
   | "shortcutQueueItem"
+  | "shortcutVisual"
   | "shortcutHelp";
 
 export const SHORTCUT_SHEET: ReadonlyArray<{ keys: string[]; label: ShortcutLabelKey }> = [
@@ -117,6 +123,7 @@ export const SHORTCUT_SHEET: ReadonlyArray<{ keys: string[]; label: ShortcutLabe
   { keys: ["A"], label: "shortcutNextAudio" },
   { keys: ["PgUp", "PgDn"], label: "shortcutChapter" },
   { keys: ["⇧P", "⇧N"], label: "shortcutQueueItem" },
+  { keys: ["⇧V", "V"], label: "shortcutVisual" },
   { keys: ["?"], label: "shortcutHelp" },
 ];
 
