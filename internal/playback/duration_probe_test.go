@@ -98,87 +98,50 @@ func TestInfoProbesAMissingRuntimeOnce(t *testing.T) {
 	}
 }
 
-func TestInfoReturnsBeforeLegacyRuntimeVerification(t *testing.T) {
-	for _, name := range []string{"matching", "replaced"} {
-		t.Run(name, func(t *testing.T) {
-			service, st, scope := capabilityTestService(t)
-			prober := &probingTranscoder{duration: 180}
-			sessions := newTestSessions(t, prober, t.TempDir(), nil)
-			service.SetSessions(sessions)
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			path := filepath.Join(t.TempDir(), "legacy.mkv")
-			seedScratchFile(t, path)
-			fingerprint, err := store.HashMediaFileContent(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-				LibraryID: "library-local", Path: path, Title: "Legacy runtime", Container: "mkv",
-				Class: store.MediaClassVideo, Codec: "h264", ContentFingerprint: fingerprint,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if name == "replaced" {
-				if err := os.WriteFile(path, []byte("different source"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			verificationStarted, release := scratchLatch(t)
-			defer release.open()
-			var verifications atomic.Int32
-			sessions.matchDurationFile = func(ctx context.Context, path, generation, fingerprint string) (bool, error) {
-				if verifications.Add(1) == 1 {
-					close(verificationStarted)
-				}
-				<-release.ch
-				return store.MediaFileMatchesFingerprint(ctx, path, generation, fingerprint)
-			}
-			play := func() <-chan int {
-				result := make(chan int, 1)
-				go func() {
-					info, err := service.Info(ctx, scope, InfoRequest{MediaID: string(media.ID)})
-					if err != nil {
-						t.Errorf("Info: %v", err)
-					}
-					result <- info.Timeline.DurationSeconds
-				}()
-				return result
-			}
-			first := play()
-			waitScratchSignal(t, verificationStarted)
-			for _, result := range []<-chan int{first, play()} {
-				if got := testResult(t, result); got != 180 {
-					t.Fatalf("playback runtime = %d, want 180 while verification is blocked", got)
-				}
-			}
-			cancel() // The completed requests no longer own the write.
-			checkStored := func(want int) {
-				t.Helper()
-				got, err := st.Media(t.Context(), media.ID, scope.LibraryFilter())
-				if err != nil || got.DurationSeconds != want {
-					t.Fatalf("stored runtime = %d, %v; want %d", got.DurationSeconds, err, want)
-				}
-			}
-			checkStored(0)
-			sessions.mu.Lock()
-			if sessions.libraryChanged == nil {
-				sessions.libraryChanged = make(chan struct{})
-			}
-			retired := sessions.libraryChanged
-			sessions.mu.Unlock()
-			release.open()
-			waitScratchSignal(t, retired)
-			want := 180
-			if name == "replaced" {
-				want = 0
-			}
-			checkStored(want)
-			if got := verifications.Load(); got != 1 || prober.probeCount() != 1 {
-				t.Fatalf("got %d verifications and %d probes, want one each", got, prober.probeCount())
-			}
-		})
+func TestInfoProbesLegacyRuntimeWithoutVerificationOrWriteBack(t *testing.T) {
+	ctx := t.Context()
+	service, st, scope := capabilityTestService(t)
+	prober := &probingTranscoder{duration: 180}
+	sessions := newTestSessions(t, prober, t.TempDir(), nil)
+	service.SetSessions(sessions)
+	path := filepath.Join(t.TempDir(), "legacy.mkv")
+	seedScratchFile(t, path)
+	fingerprint, err := store.HashMediaFileContent(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: "library-local", Path: path, Title: "Legacy runtime", Container: "mkv",
+		Class: store.MediaClassVideo, Codec: "h264", ContentFingerprint: fingerprint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var verifications, writes atomic.Int32
+	sessions.matchDurationFile = func(context.Context, string, string, string) (bool, error) {
+		verifications.Add(1)
+		return true, nil
+	}
+	record := sessions.recordDuration
+	sessions.recordDuration = func(ctx context.Context, libraryID store.LibraryID, id store.MediaID, fingerprint, path string, seconds int) (bool, error) {
+		writes.Add(1)
+		return record(ctx, libraryID, id, fingerprint, path, seconds)
+	}
+	for range 2 {
+		info, err := service.Info(ctx, scope, InfoRequest{MediaID: string(media.ID)})
+		if err != nil || info.Timeline.DurationSeconds != 180 {
+			t.Fatalf("playback runtime = %d, %v; want 180", info.Timeline.DurationSeconds, err)
+		}
+	}
+	if err := sessions.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if verifications.Load() != 0 || writes.Load() != 0 || prober.probeCount() != 1 {
+		t.Fatalf("got %d verifications, %d writes and %d probes; want only one probe", verifications.Load(), writes.Load(), prober.probeCount())
+	}
+	got, err := st.Media(ctx, media.ID, scope.LibraryFilter())
+	if err != nil || got.DurationSeconds != 0 {
+		t.Fatalf("stored runtime = %d, %v; want 0", got.DurationSeconds, err)
 	}
 }
 

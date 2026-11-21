@@ -76,11 +76,15 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	if source.generation == "" || !source.info.Mode().IsRegular() {
 		return 0
 	}
-	defer func() {
-		if result > 0 && s.recordDuration != nil && mediaID != "" {
-			s.persistProbedDuration(ctx, op, source, durationWriteTarget{op.library, mediaID, fingerprint}, result)
-		}
-	}()
+	// Legacy fingerprints require reading the whole file. Use the probed
+	// runtime for playback and leave the catalog write to the next scan.
+	if s.recordDuration != nil && mediaID != "" && strings.HasPrefix(fingerprint, "sample1:") {
+		defer func() {
+			if result > 0 {
+				s.persistProbedDuration(ctx, op, source, durationWriteTarget{op.library, mediaID, fingerprint}, result)
+			}
+		}()
+	}
 	now := s.now()
 	s.mu.Lock()
 	if ctx.Err() != nil || s.libraryOperationErrorLocked(op) != nil || binding != nil && !binding.validLocked() {
@@ -196,18 +200,6 @@ func (s *Sessions) persistProbedDuration(ctx context.Context, op *libraryOperati
 		s.mu.Unlock()
 		return
 	}
-	// Legacy fingerprints read the entire file. Give that write-back its
-	// own claim so it outlives the request and is still joined by Drain and Close.
-	var background *libraryOperation
-	if state == 0 && strings.HasPrefix(target.fingerprint, "sha256:") {
-		var err error
-		background, err = s.claimLibraryLocked(context.WithoutCancel(op.ctx), op.library, op.stamp)
-		if err != nil {
-			s.mu.Unlock()
-			return
-		}
-		source.owner.users++
-	}
 	if entry.writes == nil {
 		entry.writes = make(map[durationWriteTarget]durationWriteState)
 		s.durationProbes[source.path] = entry
@@ -215,25 +207,14 @@ func (s *Sessions) persistProbedDuration(ctx context.Context, op *libraryOperati
 	entry.writes[target] = durationWritePending
 	s.mu.Unlock()
 
-	if background != nil {
-		go func() {
-			defer s.releaseLibrary(background)
-			defer s.releaseSource(source)
-			s.writeProbedDuration(background.ctx, background, source, target, seconds, entry.writes, false)
-		}()
-		return
-	}
-	s.writeProbedDuration(ctx, op, source, target, seconds, entry.writes, state == durationWriteVerified)
-}
-
-func (s *Sessions) writeProbedDuration(ctx context.Context, op *libraryOperation, source sourceCapture, target durationWriteTarget, seconds int, writes map[durationWriteTarget]durationWriteState, verified bool) {
 	// Verify the bytes without holding the Sessions lock. The Library claim
 	// stays held through the write, and the store rechecks catalog eligibility.
+	verified := state == durationWriteVerified
 	var err error
 	if !verified {
 		match := s.matchDurationFile
 		if match == nil {
-			match = store.MediaFileMatchesFingerprint
+			match = store.MediaFileMatchesSampleFingerprint
 		}
 		verified, err = match(ctx, source.path, source.generation, target.fingerprint)
 	}
@@ -250,14 +231,14 @@ func (s *Sessions) writeProbedDuration(ctx context.Context, op *libraryOperation
 	s.mu.Lock()
 	switch {
 	case updated && err == nil:
-		writes[target] = durationWriteComplete
+		entry.writes[target] = durationWriteComplete
 	case stable && verified:
 		// A later request may find the same catalog file eligible for writing.
-		writes[target] = durationWriteVerified
+		entry.writes[target] = durationWriteVerified
 	case stable && err == nil:
-		writes[target] = durationWriteMismatch
+		entry.writes[target] = durationWriteMismatch
 	default:
-		delete(writes, target)
+		delete(entry.writes, target)
 	}
 	s.mu.Unlock()
 	if err != nil {
@@ -298,8 +279,11 @@ func (s *Service) probedDuration(ctx context.Context, op *libraryOperation, medi
 		return 0
 	}
 	var mediaID store.MediaID
-	if primary {
-		mediaID = media.ID
+	if primary && file.PartOrdinal == 0 && strings.HasPrefix(file.ContentFingerprint, "sample1:") {
+		multipart, err := s.store.MediaVersionHasAdditionalParts(ctx, media.ID, file.VersionLabel)
+		if err == nil && !multipart {
+			mediaID = media.ID
+		}
 	}
 	return s.sessions.probedSourceDuration(ctx, nil, op, mediaID, file.ContentFingerprint, file.Path)
 }

@@ -24,9 +24,13 @@ import (
 type versionRuntimeTranscoder struct {
 	fakeHLSTranscoder
 	durations map[string]int
+	onProbe   func()
 }
 
 func (f versionRuntimeTranscoder) Probe(_ context.Context, path string) (ffmpeg.Probe, error) {
+	if f.onProbe != nil {
+		f.onProbe()
+	}
 	return ffmpeg.Probe{DurationSeconds: f.durations[path]}, nil
 }
 
@@ -106,6 +110,70 @@ func TestHLSAndPlaybackInfoUseSelectedVersionRuntime(t *testing.T) {
 		t.Fatalf("HLS master = %d %q; want a live variant", master.Code, master.Body.String())
 	}
 	playlist := fetchCastHLS(handler, token, variant)
+	checkRuntimePlaylist(t, playlist, alternateSeconds)
+	checkCatalog()
+}
+
+func TestHLSProbesPrimaryMultipartRuntimeWithoutRequestingWriteBack(t *testing.T) {
+	ctx := t.Context()
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	dir := t.TempDir()
+	var imported []store.ImportMediaFilePart
+	for i, name := range []string{"first.mkv", "second.mkv"} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fingerprint, err := store.SampleMediaFileContentChecked(ctx, path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		imported = append(imported, store.ImportMediaFilePart{SourceOrdinal: i + 1, File: store.ImportMediaFile{
+			LibraryID: "library-local", Title: "Multipart runtime", Class: store.MediaClassVideo,
+			Container: "mkv", Codec: "h264", Path: path, ContentFingerprint: fingerprint,
+			VideoWidthHint: 1280, VideoHeightHint: 720,
+		}})
+	}
+	media, parts, err := st.ImportMediaFileParts(ctx, imported)
+	if err != nil || len(parts) != 2 || media.DurationSeconds != 0 {
+		t.Fatalf("fixture has %d Parts and runtime %d, error = %v", len(parts), media.DurationSeconds, err)
+	}
+	authService := auth.NewService(st)
+	scope, err := authService.Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := streamtoken.NewService([]byte("multipart-runtime-test"), nil)
+	token, err := tokens.Issue(ctx, streamtoken.Grant{
+		Target: streamtoken.TargetMediaHLS, MediaID: media.ID, FileFingerprint: parts[0].ContentFingerprint,
+		DeviceID: scope.DeviceID, SessionID: scope.SessionID, ProfileID: scope.ProfileID,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const partSeconds = 45
+	transcoder := versionRuntimeTranscoder{
+		durations: map[string]int{parts[0].Path: partSeconds},
+		onProbe: func() {
+			// Make the later UPDATE eligible. The request already saw a multi-Part
+			// Version, so it must have declined write-back before probing.
+			storetest.RemoveMediaPart(t, dataDir, parts[1])
+		},
+	}
+	sessions := sessiontest.New(t, transcoder, t.TempDir(), nil)
+	playback.NewService(st, tokens, nil).SetSessions(sessions)
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions)
+	checkRuntimePlaylist(t, fetchCastHLS(handler, token, "720p/index.m3u8"), partSeconds)
+	stored, err := st.Media(ctx, media.ID, scope.LibraryFilter())
+	if err != nil || stored.DurationSeconds != 0 {
+		t.Fatalf("catalog runtime = %d, %v; want 0 after Part 0 playback", stored.DurationSeconds, err)
+	}
+}
+
+func checkRuntimePlaylist(t *testing.T, playlist *httptest.ResponseRecorder, want int) {
+	t.Helper()
 	var seconds float64
 	for line := range strings.SplitSeq(playlist.Body.String(), "\n") {
 		if length, ok := strings.CutPrefix(line, "#EXTINF:"); ok {
@@ -116,10 +184,9 @@ func TestHLSAndPlaybackInfoUseSelectedVersionRuntime(t *testing.T) {
 			seconds += value
 		}
 	}
-	if playlist.Code != http.StatusOK || seconds != alternateSeconds {
-		t.Fatalf("HLS variant = %d, %.3f seconds; want %d seconds\n%s", playlist.Code, seconds, alternateSeconds, playlist.Body.String())
+	if playlist.Code != http.StatusOK || seconds != float64(want) {
+		t.Fatalf("HLS variant = %d, %.3f seconds; want %d seconds\n%s", playlist.Code, seconds, want, playlist.Body.String())
 	}
-	checkCatalog()
 }
 
 // TestDirectServesNegotiatedVersionFile: the direct URL of a non-primary

@@ -8,11 +8,10 @@ import (
 	"strings"
 )
 
-// MediaFileMatchesFingerprint checks the catalog fingerprint against the file
-// generation captured by playback, using the catalog's fingerprint format.
-func MediaFileMatchesFingerprint(ctx context.Context, path, generation, fingerprint string) (bool, error) {
-	sampled := strings.HasPrefix(fingerprint, "sample1:")
-	if !sampled && !strings.HasPrefix(fingerprint, "sha256:") {
+// MediaFileMatchesSampleFingerprint checks the sampled catalog fingerprint
+// against the file generation captured by playback.
+func MediaFileMatchesSampleFingerprint(ctx context.Context, path, generation, fingerprint string) (bool, error) {
+	if !strings.HasPrefix(fingerprint, "sample1:") {
 		return false, nil
 	}
 	file, err := openRegularMediaFileFollowing(path)
@@ -24,12 +23,7 @@ func MediaFileMatchesFingerprint(ctx context.Context, path, generation, fingerpr
 	if err != nil || SourceFileGeneration(info) != generation {
 		return false, err
 	}
-	var actual string
-	if sampled {
-		actual, err = SampleMediaFileContentAt(ctx, file, info.Size())
-	} else {
-		actual, err = HashMediaFileContentReader(ctx, file)
-	}
+	actual, err := SampleMediaFileContentAt(ctx, file, info.Size())
 	return actual == fingerprint, err
 }
 

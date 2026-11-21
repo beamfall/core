@@ -1156,7 +1156,12 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		durationSeconds = media.DurationSeconds
 	}
 	if durationSeconds <= 0 && secure == nil {
-		durationSeconds = binding.ProbedDurationSeconds(r.Context(), file.ContentFingerprint, file.Path, primary)
+		persist := false
+		if primary {
+			multipart, err := h.store.MediaVersionHasAdditionalParts(r.Context(), media.ID, file.VersionLabel)
+			persist = err == nil && !multipart
+		}
+		durationSeconds = binding.ProbedDurationSeconds(r.Context(), file.ContentFingerprint, file.Path, persist)
 	}
 	r = r.WithContext(requestCtx)
 	artifact, err := binding.ArtifactShaped(requestCtx, file.Path, durationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
