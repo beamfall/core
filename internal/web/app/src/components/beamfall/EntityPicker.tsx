@@ -187,7 +187,7 @@ function EntitySearchBox({
       }}
       disabled={disabled}
     >
-      <div ref={anchorRef} className={cn("w-72", className)}>
+      <div ref={anchorRef} className={cn("w-72 max-w-full", className)}>
         <Combobox.Input
           ref={inputRef}
           id={id}
