@@ -138,29 +138,7 @@ func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, pa
 	args = append(args, libArgs...)
 	args = append(args, libArgs...)
 	args = append(args, certArgs...)
-	// #nosec G202 -- interpolated fragments are generated placeholders and closed certification SQL.
-	rows, err := plane.reader.QueryContext(ctx, `
-		WITH RECURSIVE subtree(id, kind) AS (
-			SELECT id, kind FROM entity WHERE id = ? AND trashed_at_ms IS NULL
-			UNION
-			SELECT child.id, child.kind
-			FROM entity_relation r
-			JOIN subtree ON subtree.id = r.to_entity_id
-			JOIN entity child ON child.id = r.from_entity_id
-			WHERE child.kind = subtree.kind
-				AND r.relation IN (`+relationIn+`)
-				AND child.trashed_at_ms IS NULL
-				AND child.library_id IN (`+libIn+`)
-		)
-		SELECT m.id, MAX(m.duration_seconds)
-		FROM subtree
-		JOIN entity_relation r ON r.from_entity_id = subtree.id
-		JOIN media m ON m.id = r.to_media_id
-		WHERE m.trashed_at_ms IS NULL AND m.extra = 0
-			AND m.library_id IN (`+libIn+`)`+certClause+`
-		GROUP BY m.id
-		ORDER BY m.id
-	`, args...)
+	rows, err := plane.reader.QueryContext(ctx, entityTreeMediaSQL(relationIn, libIn, certClause), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +152,37 @@ func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, pa
 		media = append(media, item)
 	}
 	return media, rows.Err()
+}
+
+// entityTreeMediaSQL reads the Media under an Entity tree. Its arguments are
+// the root id, the parent relations, the visible Library ids twice and the
+// certification arguments. CROSS JOIN keeps SQLite walking out from the tree:
+// with the Library lists bound, the planner otherwise starts from a scan of
+// every Entity or Media in those Libraries.
+func entityTreeMediaSQL(relationIn, libIn, certClause string) string {
+	// #nosec G202 -- interpolated fragments are generated placeholders and closed certification SQL.
+	return `
+		WITH RECURSIVE subtree(id, kind) AS (
+			SELECT id, kind FROM entity WHERE id = ? AND trashed_at_ms IS NULL
+			UNION
+			SELECT child.id, child.kind
+			FROM subtree
+			CROSS JOIN entity_relation r ON r.to_entity_id = subtree.id
+			CROSS JOIN entity child ON child.id = r.from_entity_id
+			WHERE child.kind = subtree.kind
+				AND r.relation IN (` + relationIn + `)
+				AND child.trashed_at_ms IS NULL
+				AND child.library_id IN (` + libIn + `)
+		)
+		SELECT m.id, MAX(m.duration_seconds)
+		FROM subtree
+		CROSS JOIN entity_relation r ON r.from_entity_id = subtree.id
+		CROSS JOIN media m ON m.id = r.to_media_id
+		WHERE m.trashed_at_ms IS NULL AND m.extra = 0
+			AND m.library_id IN (` + libIn + `)` + certClause + `
+		GROUP BY m.id
+		ORDER BY m.id
+	`
 }
 
 type itemProgress struct {
