@@ -30,7 +30,9 @@ var jellyfinRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http
 	{http.MethodGet, Prefix + "System/Info"}:               (*Handler).systemInfo,
 	{http.MethodGet, Prefix + "System/Info/Public"}:        (*Handler).publicSystemInfo,
 	{http.MethodGet, Prefix + "System/Configuration"}:      (*Handler).systemConfiguration,
-	{http.MethodGet, Prefix + "Items"}:                     (*Handler).emptyItems,
+	{http.MethodGet, Prefix + "Items"}:                     (*Handler).items,
+	{http.MethodGet, Prefix + "Items/Latest"}:              (*Handler).latestItems,
+	{http.MethodGet, Prefix + "Users"}:                     (*Handler).listUsers,
 	{http.MethodPost, Prefix + "Auth/Keys"}:                (*Handler).createAPIKey,
 	{http.MethodGet, Prefix + "Auth/Keys"}:                 (*Handler).listAPIKeys,
 }
@@ -39,7 +41,7 @@ var jellyfinRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http
 // are served at the prefix and under the mediabrowser/ segment Lidarr 3.x adds.
 var notifierRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http.Request, net.IP){
 	{http.MethodPost, "Notifications/Admin"}:   (*Handler).adminNotification,
-	{http.MethodGet, "Library/MediaFolders"}:   (*Handler).emptyItems,
+	{http.MethodGet, "Library/MediaFolders"}:   (*Handler).mediaFolders,
 	{http.MethodPost, "Library/Media/Updated"}: (*Handler).mediaUpdated,
 	{http.MethodPost, "Library/Refresh"}:       (*Handler).refreshLibrary,
 }
@@ -61,6 +63,12 @@ type Config struct {
 	ReleaseVersion    string
 	SetupRequired     func() bool
 	EnqueueRefresh    func(ctx context.Context, scope auth.Scope, paths []string)
+	// Store, Eligible, Sealed and Interop serve the read-only catalog
+	// (ADR-0171 §2.8). Without a Store the catalog lists nothing.
+	Store    *store.Store
+	Eligible func(context.Context) (map[store.LibraryID]bool, error)
+	Sealed   func(store.LibraryID) bool
+	Interop  map[string]Interop // by plugin ID
 }
 
 // Settings are the operator-owned parts of Config that can change while the
@@ -87,6 +95,11 @@ type Handler struct {
 	releaseVersion string
 	setupRequired  func() bool
 	enqueueRefresh func(ctx context.Context, scope auth.Scope, paths []string)
+	store          *store.Store
+	eligible       func(context.Context) (map[store.LibraryID]bool, error)
+	sealed         func(store.LibraryID) bool
+	interop        map[string]Interop
+	indexes        indexCache
 	refreshMu      sync.Mutex
 	background     sync.WaitGroup // media update scans queued after the response
 	nextRefresh    time.Time
@@ -100,6 +113,7 @@ func New(cfg Config, authService *auth.Service, next http.Handler) (*Handler, er
 		auth: authService, next: next,
 		serverID: cfg.ServerID, serverName: cfg.ServerName, releaseVersion: cfg.ReleaseVersion,
 		setupRequired: cfg.SetupRequired, enqueueRefresh: cfg.EnqueueRefresh,
+		store: cfg.Store, eligible: cfg.Eligible, sealed: cfg.Sealed, interop: cfg.Interop,
 	}
 	if err := h.Apply(Settings{Enabled: cfg.Enabled, AllowedCIDRs: cfg.AllowedCIDRs, TrustedProxyCIDRs: cfg.TrustedProxyCIDRs}); err != nil {
 		return nil, err
@@ -152,6 +166,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if serve := jellyfinRoutes[jellyfinRoute{r.Method, r.URL.Path}]; serve != nil {
 		serve(h, w, r, clientIP)
+		return
+	}
+	if h.serveParameterRoute(w, r) {
 		return
 	}
 	h.next.ServeHTTP(w, r)
@@ -235,15 +252,33 @@ func (h *Handler) authenticateByName(w http.ResponseWriter, r *http.Request, cli
 // alone, so sharing the Id would make the owner's PIN a tool admin login.
 func (h *Handler) signedInUser(session auth.IntegrationSession) compatUser {
 	user := compatUser{
-		ID: string(session.ProfileID), Name: session.ProfileName,
+		ID: h.compatUserID(session.ProfileID), Name: session.ProfileName,
 		ServerID: h.serverID, ServerName: h.serverName,
 	}
 	if session.Setup {
-		sum := sha256.Sum256([]byte("beamfall compat setup user\x00" + h.serverID))
-		user.ID, user.Name = hex.EncodeToString(sum[:16]), auth.IntegrationSetupName
+		user.ID, user.Name = h.setupUser()
 		user.Policy.IsAdministrator = true
 	}
 	return user
+}
+
+// setupUser is the admin setup sign-in's stable account ID and name.
+func (h *Handler) setupUser() (string, string) {
+	sum := sha256.Sum256([]byte("beamfall compat setup user\x00" + h.serverID))
+	return hex.EncodeToString(sum[:16]), auth.IntegrationSetupName
+}
+
+// compatUserID is a Profile's account ID on the compatibility API: a stable
+// 32-hex-digit GUID, the only user ID form Seerr imports or matches.
+func (h *Handler) compatUserID(id store.ProfileID) string {
+	sum := sha256.Sum256([]byte("beamfall compat profile user\x00" + h.serverID + "\x00" + string(id)))
+	return hex.EncodeToString(sum[:16])
+}
+
+// normalizeUserID accepts a user ID with or without GUID dashes, in either
+// case, as clients echo the ID they were given in either form.
+func normalizeUserID(id string) string {
+	return strings.ToLower(strings.ReplaceAll(id, "-", ""))
 }
 
 // authenticationResult is the AuthenticateByName body. It names the signed-in

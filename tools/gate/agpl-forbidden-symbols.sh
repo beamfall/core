@@ -57,29 +57,83 @@ allowed_match() {
   # cast order position (CORE-2503). Only that one file may name it, and only on
   # these exact lines, compared whole after trimming indentation: no pattern,
   # substring or subprocess decides it, so nothing can fail open (CORE-2551).
-  [[ "$file" == internal/web/app/src/areas/viewer/lib/people.ts ]] || return 1
+  #
+  # The Plex import fixture recreates Plex's own settings table, whose
+  # per-account watch-state column Plex names account_id: a foreign schema
+  # spelling, not Beamfall account code (CORE-2681). Only that one line passes.
   local trimmed="${line#"${line%%[![:space:]]*}"}"
-  case "$trimmed" in
-    'const cast = attribute(credit, "character") !== "" || attribute(credit, "billing") !== "";') return 0 ;;
-    'billing: _billing,') return 0 ;;
+  case "$file" in
+    internal/web/app/src/areas/viewer/lib/people.ts)
+      case "$trimmed" in
+        'const cast = attribute(credit, "character") !== "" || attribute(credit, "billing") !== "";') return 0 ;;
+        'billing: _billing,') return 0 ;;
+      esac ;;
+    internal/store/foreignimport/foreignimporttest/foreignimporttest.go)
+      # shellcheck disable=SC2016 # the backquotes are the fixture's Go string, not shell.
+      case "$trimmed" in
+        '`CREATE TABLE metadata_item_settings (id INTEGER PRIMARY KEY, account_id INTEGER, guid TEXT, view_offset INTEGER, view_count INTEGER, last_viewed_at INTEGER, rating REAL)`,') return 0 ;;
+      esac ;;
   esac
   return 1
 }
 
+# scan_matches <file> <pattern> <grep flags> prints the numbered lines of file,
+# comments stripped, that match pattern. Any failure to read or strip the file,
+# or a grep error, returns 2: only grep's own no-match is a clean scan.
+scan_matches() {
+  local file="$1" pattern="$2" flags="$3" stripped rc=0
+  stripped="$(strip_line_comments <"$file")" || return 2
+  printf '%s\n' "$stripped" | grep "$flags" -- "$pattern" || rc=$?
+  [[ "$rc" -le 1 ]] || return 2
+}
+
+# tracked_files [pathspec] lists tracked files in a stable order, or exits the
+# gate when git cannot list them.
+tracked_files() {
+  git ls-files -- "$@" | LC_ALL=C sort || {
+    echo "AGPL forbidden-symbol gate: cannot list tracked files" >&2
+    exit 1
+  }
+}
+
+cannot_scan() {
+  echo "AGPL forbidden-symbol gate: cannot scan $1" >&2
+  fail=1
+}
+
+# inspect <file> returns 0 for a regular file to scan, 1 for a path to skip (a
+# non-regular entry, or one deleted from the worktree), and 2 when a parent
+# directory cannot be searched, so the file's state is unknown.
+inspect() {
+  local dir
+  [[ -f "$1" ]] && return 0
+  [[ -e "$1" || -L "$1" ]] && return 1
+  dir="$(dirname -- "$1")"
+  while [[ "$dir" != "." && ! -d "$dir" ]]; do dir="$(dirname -- "$dir")"; done
+  [[ -x "$dir" ]] && return 1
+  return 2
+}
+
 pattern='(entitlement|stripe|premium|payment[-_ ]source|purchase[-_ ]state|beamfall[-_ ]account|account[-_ ](service|portal|deletion|identity|ledger|token|id)|Account(Service|Portal|Ledger|Token|ID|Id)|billing|billing[-_ ](portal|system|service|ledger|provider|integration|webhook)|checkout[-_ ](entry|flow|session|portal)|web[-_ ]checkout|license[-_ ]key|licensed[-_ ]feature|licensing[-_ ](code|logic)|license[-_ ]check)'
 
+files="$(tracked_files)"
 while IFS= read -r file; do
   is_scanned_file "$file" || continue
-  [[ -f "$file" ]] || continue
+  state=0; inspect "$file" || state=$?
+  case "$state" in
+    1) continue ;;
+    2) cannot_scan "$file"; continue ;;
+  esac
 
+  matches="$(scan_matches "$file" "$pattern" -inE)" || { cannot_scan "$file"; continue; }
   while IFS=: read -r line_no text; do
     [[ -n "${line_no:-}" ]] || continue
     if allowed_match "$file" "$text"; then
       continue
     fi
     emit "$file" "$line_no" "$text"
-  done < <(strip_line_comments <"$file" | grep -inE "$pattern" || true)
-done < <(git ls-files | LC_ALL=C sort)
+  done <<<"$matches"
+done <<<"$files"
 
 # XCONTRACT-9 / ADR-0122 Amendment A §4: the AGPL<->proprietary firewall, machine
 # enforced on the core side. The symbol scan above catches proprietary *concepts*
@@ -103,22 +157,29 @@ emit_module() {
 
 scan_for_proprietary_modules() {
   # scan_for_proprietary_modules <file>
-  local file="$1" line_no text
-  [[ -f "$file" ]] || return 0
+  local file="$1" line_no text matches state=0
+  inspect "$file" || state=$?
+  case "$state" in
+    1) return 0 ;;
+    2) cannot_scan "$file"; return 0 ;;
+  esac
 
+  matches="$(scan_matches "$file" "$proprietary_module_pattern" -nE)" || { cannot_scan "$file"; return 0; }
   while IFS=: read -r line_no text; do
     [[ -n "${line_no:-}" ]] || continue
     emit_module "$file" "$line_no" "$text"
-  done < <(strip_line_comments <"$file" | grep -nE "$proprietary_module_pattern" || true)
+  done <<<"$matches"
 }
 
 for manifest in go.mod go.sum; do
   scan_for_proprietary_modules "$manifest"
 done
 
+go_files="$(tracked_files '*.go')"
 while IFS= read -r file; do
+  [[ -n "$file" ]] || continue
   scan_for_proprietary_modules "$file"
-done < <(git ls-files '*.go' | LC_ALL=C sort)
+done <<<"$go_files"
 
 if [[ "$fail" -ne 0 ]]; then
   echo "==> AGPL forbidden-symbol gate FAILED (ADR-0024 / invariant #7)" >&2

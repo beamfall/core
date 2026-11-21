@@ -208,3 +208,36 @@ func TestJellyfinMediaUpdatedRechecksSessionAfterBody(t *testing.T) {
 		t.Fatalf("revoked upload returned %d %q, want uniform 401", rec.Code, rec.Body)
 	}
 }
+
+func TestJellyfinMediaUpdatedRelativePathsRefreshEveryRoot(t *testing.T) {
+	_, service := integrationService(t, time.Now)
+	refresh := scopedIntegrationToken(t, service, store.IntegrationScopeRefresh)
+	var calls int
+	var got []string
+	handler := newIdentityHandler(t, Config{
+		Enabled: true,
+		EnqueueRefresh: func(_ context.Context, _ auth.Scope, paths []string) {
+			calls++
+			got = paths
+		},
+	}, service)
+	req := compatRequest(t, http.MethodPost, "Library/Media/Updated")
+	req.Body = io.NopCloser(strings.NewReader(`{"Updates":[{"Path":"Artist/Album","UpdateType":"Created"}]}`))
+	req.Header.Set("X-MediaBrowser-Token", refresh)
+	rec := sendCompat(handler, req)
+	handler.background.Wait()
+	if rec.Code != http.StatusNoContent || calls != 1 || got != nil {
+		t.Fatalf("relative update returned %d and enqueued %d calls with %v, want one call with every root", rec.Code, calls, got)
+	}
+}
+
+func TestAbsolutePath(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/media/a": true, `\\nas\share\a`: true, `C:\media\a`: true, "d:/media/a": true,
+		"Artist/Album": false, "": false, "C:": false, `1:\a`: false, "media/a": false, `\a`: false,
+	} {
+		if got := absolutePath(path); got != want {
+			t.Errorf("absolutePath(%q) = %v, want %v", path, got, want)
+		}
+	}
+}

@@ -1520,6 +1520,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		ReleaseVersion: capabilities.ReleaseVersion,
 		SetupRequired:  pairingService.SetupRequired,
 		EnqueueRefresh: compatLibraryRefresher(st, jobWake, sealedPredicate, st.JellyfinCompatEligibleLibraries, logger),
+		Store:          st, Eligible: st.JellyfinCompatEligibleLibraries, Sealed: sealedPredicate,
+		Interop: compatInterop(executablePlugins),
 	}, authService, nil)
 	if err != nil {
 		return nil, err

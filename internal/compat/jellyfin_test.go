@@ -24,6 +24,8 @@ func TestJellyfinRouteInventory(t *testing.T) {
 		{http.MethodGet, Prefix + "System/Info/Public"},
 		{http.MethodGet, Prefix + "System/Configuration"},
 		{http.MethodGet, Prefix + "Items"},
+		{http.MethodGet, Prefix + "Items/Latest"},
+		{http.MethodGet, Prefix + "Users"},
 		{http.MethodPost, Prefix + "Auth/Keys"},
 		{http.MethodGet, Prefix + "Auth/Keys"},
 		{http.MethodPost, Prefix + "Notifications/Admin"},
@@ -79,6 +81,16 @@ func TestJellyfinUnregisteredRoutesFallThrough(t *testing.T) {
 		{http.MethodGet, "mediabrowser/Videos/item-id/stream"},
 		{http.MethodPost, "mediabrowser//Library/Refresh"},
 		{http.MethodPost, "MediaBrowser/Library/Refresh"},
+		{http.MethodPost, "Users/profile-id"},
+		{http.MethodGet, "Users/profile-id/Images/Backdrop"},
+		{http.MethodGet, "Users/profile-id/Items"},
+		{http.MethodGet, "Users//Images/Primary"},
+		{http.MethodGet, "Shows/item-id/Seasons/extra"},
+		{http.MethodGet, "Shows/item-id/NextUp"},
+		{http.MethodPost, "Shows/item-id/Episodes"},
+		{http.MethodGet, "Items/item-id/Images/Primary"},
+		{http.MethodGet, "mediabrowser/Users"},
+		{http.MethodGet, "mediabrowser/Shows/item-id/Seasons"},
 	}
 	for _, route := range tests {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {

@@ -177,4 +177,53 @@ fi
 git -C "$TMP" rm -q --cached internal/server/people.ts
 rm "$TMP/internal/server/people.ts"
 
+# CORE-2681: the Plex import fixture may name Plex's account_id column on its
+# one CREATE TABLE line; any other line in that file naming it fails.
+fixture="$TMP/internal/store/foreignimport/foreignimporttest/foreignimporttest.go"
+mkdir -p "$(dirname "$fixture")"
+cat >"$fixture" <<'GO'
+		`CREATE TABLE metadata_item_settings (id INTEGER PRIMARY KEY, account_id INTEGER, guid TEXT, view_offset INTEGER, view_count INTEGER, last_viewed_at INTEGER, rating REAL)`,
+GO
+git -C "$TMP" add internal/store/foreignimport/foreignimporttest/foreignimporttest.go
+"$TMP/tools/gate/agpl-forbidden-symbols.sh" >/dev/null
+printf '%s\n' '		`CREATE TABLE accounts (id INTEGER PRIMARY KEY, account_id TEXT)`,' >>"$fixture"
+git -C "$TMP" add internal/store/foreignimport/foreignimporttest/foreignimporttest.go
+if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
+  echo "expected a second account_id line in the Plex fixture to fail" >&2
+  exit 1
+fi
+
+git -C "$TMP" rm -q --cached internal/store/foreignimport/foreignimporttest/foreignimporttest.go
+rm "$fixture"
+"$TMP/tools/gate/agpl-forbidden-symbols.sh" >/dev/null
+
+# CORE-2681: the gate fails closed. A tracked file it cannot read, or a tree git
+# cannot list, is a failure, never a clean scan.
+# root reads any file, so the unreadable case runs only as another user.
+if [[ "$(id -u)" -ne 0 ]]; then
+  chmod 000 "$TMP/internal/server/server.go"
+  if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
+    chmod 644 "$TMP/internal/server/server.go"
+    echo "expected an unreadable tracked file to fail" >&2
+    exit 1
+  fi
+  chmod 644 "$TMP/internal/server/server.go"
+  grep -q 'cannot scan internal/server/server.go' /tmp/agpl-forbidden.err
+  # A parent directory it cannot search hides whether the file is there.
+  chmod 000 "$TMP/internal/server"
+  if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
+    chmod 755 "$TMP/internal/server"
+    echo "expected a tracked file under an unsearchable directory to fail" >&2
+    exit 1
+  fi
+  chmod 755 "$TMP/internal/server"
+  grep -q 'cannot scan internal/server/server.go' /tmp/agpl-forbidden.err
+fi
+mkdir -p "$TMP/not-a-repo"
+if BEAMFALL_GATE_ROOT="$TMP/not-a-repo" GIT_CEILING_DIRECTORIES="$TMP" "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
+  echo "expected a tree git cannot list to fail" >&2
+  exit 1
+fi
+grep -q 'cannot list tracked files' /tmp/agpl-forbidden.err
+
 echo "agpl-forbidden-symbols_test: OK"
