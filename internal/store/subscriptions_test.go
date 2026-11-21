@@ -751,6 +751,7 @@ func TestSubscriptionTitleRejectsURLs(t *testing.T) {
 		"News ((feeds.example.test:8443/feed?token=example))": "",
 		"News feeds.example.test./feed?sig=abc":               "",
 		"News 例子.中国/feed?sig=abc":                             "",
+		"News feeds.भारत/feed?sig=abc":                        "",
 		"Side A // Side B":                                    "Side A // Side B",
 		"Mr. Robot: Season 1 / Part 2":                        "Mr. Robot: Season 1 / Part 2",
 		long:                                                  long[:2*maxSubscriptionTitleRunes],

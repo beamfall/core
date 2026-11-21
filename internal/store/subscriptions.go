@@ -367,7 +367,7 @@ func SubscriptionTitle(title, feedURL string) string {
 // brackets surround it: a scheme separator, a scheme-relative //host, or a
 // dotted host (any script, optional root dot) or bracketed IPv6 host
 // (optional port) followed by a path or query.
-var urlPattern = regexp.MustCompile(`(?i)://|//[^\s/]|[\p{L}\p{N}_-]+(\.[\p{L}\p{N}_-]+)+\.?(:[0-9]+)?[/?]|\[[0-9a-f.]*:[0-9a-f:.]*\](:[0-9]+)?[/?]`)
+var urlPattern = regexp.MustCompile(`(?i)://|//[^\s/]|[\p{L}\p{M}\p{N}_-]+(\.[\p{L}\p{M}\p{N}_-]+)+\.?(:[0-9]+)?[/?]|\[[0-9a-f.]*:[0-9a-f:.]*\](:[0-9]+)?[/?]`)
 
 // containsURL reports whether title contains a URL, with or without a scheme,
 // so a signed feed URL inside prose never becomes a visible title.
