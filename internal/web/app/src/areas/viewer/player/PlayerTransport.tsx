@@ -943,6 +943,7 @@ export function PlayerTransport({
               <button
                 type="button"
                 onClick={musicQueue.toggleShuffle}
+                disabled={musicQueue.shuffleLoading}
                 aria-label={t("musicQueueShuffle")}
                 aria-pressed={musicQueue.shuffled}
                 data-active={musicQueue.shuffled}
@@ -950,6 +951,11 @@ export function PlayerTransport({
               >
                 <Shuffle aria-hidden />
               </button>
+              {musicQueue.shuffleFailed && (
+                <span role="status" className="text-sm">
+                  {t("musicQueueLoadFailed")}
+                </span>
+              )}
               <button
                 ref={queueButton}
                 type="button"
@@ -1282,8 +1288,8 @@ export function PlayerTransport({
       <div ref={layerRef} className="bf-transport-layer" />
       {queueOpen && musicQueue && (
         <MusicQueuePanel
+          key={musicQueue.run}
           id={queueID}
-          mediaID={mediaID}
           profileID={profileID}
           music={musicQueue}
           onClose={() => {

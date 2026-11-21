@@ -125,6 +125,7 @@ async function readMore(queue: PlayQueue): Promise<void> {
         id: item.id,
         title: item.title || "",
         mediaClass: item.mediaClass,
+        libraryID: queue.request.libraryID,
       });
     }
     queue.done = !page.items.length || queue.fetched >= page.total;
@@ -172,6 +173,11 @@ export function playAllTracks(mediaID: string): PlayQueueItem[] | undefined {
   return [...queue.items.values()].filter(
     ({ mediaClass }) => !mediaClass || mediaClass === "audio",
   );
+}
+
+export function hasUnloadedPlayAllTracks(mediaID: string): boolean {
+  const queue = activeQueue();
+  return !!queue && !queue.done && positionOf(queue, mediaID) >= 0;
 }
 
 /** Finish reading the Play all snapshot before turning it into an editable queue. */

@@ -36,16 +36,18 @@ function positiveNumber(value: string | undefined): number | undefined {
 export async function fetchMediaRow(
   id: string,
   signal?: AbortSignal,
-  options: { positions?: boolean } = {},
+  options: { positions?: boolean; strict?: boolean } = {},
 ): Promise<MediaRow | null> {
   if (!options.positions) {
     const data = await graphql<{ media: GenericMediaInfo | null }>(MEDIA_ROW_QUERY, { id }, signal);
+    if (options.strict && data.media === undefined) throw new Error("Missing Media row response");
     return data.media ?? null;
   }
   const data = await graphql<{
     media: GenericMediaInfo | null;
     mediaFields: { name: string; value: string }[] | null;
   }>(MEDIA_TRACK_ROW_QUERY, { id }, signal);
+  if (options.strict && data.media === undefined) throw new Error("Missing Media row response");
   if (!data.media) return null;
   const row: MediaRow = { ...data.media };
   const fields = data.mediaFields ?? [];
@@ -60,12 +62,13 @@ const ROW_CONCURRENCY = 4;
 
 /**
  * Rows for many Media items, keyed by id, fetched a few at a time. An item
- * whose read fails is simply absent; an abort rejects the whole call.
+ * whose read fails is absent by default. Pass strict when a caller must
+ * distinguish a failed read from a confirmed missing or invisible item.
  */
 export async function fetchMediaRows(
   ids: readonly string[],
   signal?: AbortSignal,
-  options: { positions?: boolean } = {},
+  options: { positions?: boolean; strict?: boolean } = {},
 ): Promise<Record<string, MediaRow>> {
   const rows: Record<string, MediaRow> = {};
   let next = 0;
@@ -76,7 +79,7 @@ export async function fetchMediaRows(
         const row = await fetchMediaRow(id, signal, options);
         if (row) rows[id] = row;
       } catch (err) {
-        if (signal?.aborted) throw err;
+        if (signal?.aborted || options.strict) throw err;
       }
     }
   }

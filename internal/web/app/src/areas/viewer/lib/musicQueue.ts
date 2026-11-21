@@ -13,8 +13,7 @@ interface QueueRow extends PlayQueueItem {
 type QueueWrite =
   | { field: "queueAdd"; mediaID: string; position?: number }
   | { field: "queueMove"; mediaID: string; position: number }
-  | { field: "queueRemove"; mediaID: string }
-  | { field: "queueClear" };
+  | { field: "queueRemove"; mediaID: string };
 
 const PAGE_SIZE = 200;
 const QUEUE_QUERY = `query MusicQueue($query: String, $limit: Int, $offset: Int) {
@@ -32,9 +31,6 @@ const writeQueries = {
   }`,
   queueRemove: `mutation MusicQueueRemove($mediaID: String!, $expectedProfileID: String!) {
     queueRemove(mediaID: $mediaID, expectedProfileID: $expectedProfileID) { id }
-  }`,
-  queueClear: `mutation MusicQueueClear($expectedProfileID: String!) {
-    queueClear(expectedProfileID: $expectedProfileID) { id }
   }`,
 };
 
@@ -67,12 +63,10 @@ export function playableMusic(row: QueueRow): boolean {
 interface ActiveMusic {
   currentID: string;
   history: readonly PlayQueueItem[];
-  catalog: readonly PlayQueueItem[];
-  fullCatalog?: () => Promise<readonly PlayQueueItem[] | undefined>;
-  /** Switch the current playback start to the durable queue. */
-  adopt: () => void;
-  discard: (id?: string) => void;
-  reprioritize: (id: string, anchor?: string, after?: boolean) => void;
+  requeued: readonly string[];
+  loadContinuation: () => Promise<readonly PlayQueueItem[]>;
+  isCurrent: () => boolean;
+  commitEdit: (intent: QueueEdit) => void;
 }
 
 let activeMusic: { profileID: string; epoch?: AbortSignal; read: () => ActiveMusic } | undefined;
@@ -88,10 +82,11 @@ export function registerActiveMusic(profileID: string, read: () => ActiveMusic):
 interface QueueSnapshot {
   rows: readonly QueueRow[];
   busy: boolean;
+  loaded: boolean;
   notice?: { key: StringKey };
 }
 
-const EMPTY: QueueSnapshot = { rows: [], busy: false };
+const EMPTY: QueueSnapshot = { rows: [], busy: false, loaded: false };
 const listeners = new Set<() => void>();
 let snapshot = EMPTY;
 let owner: { profileID: string; epoch?: AbortSignal } | undefined;
@@ -135,18 +130,34 @@ export function useMusicQueueSnapshot(profileID?: string): QueueSnapshot {
   );
 }
 
-type QueueIntent =
+type QueueEdit =
   | { kind: "next" | "append"; mediaID: string; title: string }
   | { kind: "move"; mediaID: string; anchor: string; after: boolean }
   | { kind: "remove"; mediaID: string }
-  | { kind: "clear" }
-  | { kind: "refresh" };
+  | { kind: "clear" };
 
-function playedIDs(active?: ActiveMusic): Set<string> {
-  return new Set(active ? [active.currentID, ...active.history.map(({ id }) => id)] : []);
+export async function classifyMusic(
+  candidates: readonly PlayQueueItem[],
+  signal?: AbortSignal,
+): Promise<PlayQueueItem[]> {
+  const unknown = candidates.filter(({ mediaClass }) => !mediaClass).map(({ id }) => id);
+  const classified = await fetchMediaRows(unknown, signal, { strict: true });
+  if (Object.values(classified).some(({ mediaClass }) => !mediaClass)) {
+    throw new Error("A queue item did not report its media class");
+  }
+  return candidates
+    .map((track) => {
+      if (track.mediaClass) return track;
+      const row = classified[track.id];
+      return row && { ...row, libraryID: track.libraryID ?? row.libraryID };
+    })
+    .filter((track): track is PlayQueueItem => !!track && playableMusic(track));
 }
 
-export function updateMusicQueue(profileID: string, intent: QueueIntent): Promise<void> {
+export function updateMusicQueue(
+  profileID: string,
+  intent: QueueEdit | { kind: "refresh" },
+): Promise<void> {
   const bound = bind(profileID);
   const requestedPlayer =
     activeMusic?.profileID === profileID && activeMusic.epoch === bound.epoch
@@ -171,7 +182,7 @@ export function updateMusicQueue(profileID: string, intent: QueueIntent): Promis
       const rows = await readQueue(bound.epoch);
       if (!live()) return;
       if (intent.kind === "refresh") {
-        publish({ ...snapshot, rows });
+        publish({ ...snapshot, rows, loaded: true });
         return;
       }
       reconciled = [...rows];
@@ -179,8 +190,12 @@ export function updateMusicQueue(profileID: string, intent: QueueIntent): Promis
       const player = activeMusic === requestedPlayer ? requestedPlayer : undefined;
       const active = player?.read();
       if (!active && intent.kind !== "append" && intent.kind !== "next") return;
-      const played = playedIDs(active);
-      const upcoming = (row: QueueRow) => playableMusic(row) && !played.has(row.id);
+      const played = new Set(
+        active ? [active.currentID, ...active.history.map(({ id }) => id)] : [],
+      );
+      const requeued = new Set(active?.requeued);
+      const upcoming = (row: QueueRow) =>
+        playableMusic(row) && (!played.has(row.id) || requeued.has(row.id));
       const order = reconciled;
       async function apply(operation: QueueWrite) {
         dirty = true;
@@ -188,28 +203,20 @@ export function updateMusicQueue(profileID: string, intent: QueueIntent): Promis
       }
 
       if (intent.kind === "clear") {
-        const removable = rows.filter(upcoming);
-        if (removable.length && removable.length === rows.length) {
-          await apply({ field: "queueClear" });
-          reconciled = [];
-        } else {
-          for (const { id } of removable) {
-            await apply({ field: "queueRemove", mediaID: id });
-            reconciled = reconciled.filter((row) => row.id !== id);
-          }
+        // Remove only the upcoming IDs in this read. Another device can add
+        // rows before these writes reach the server.
+        for (const { id } of rows.filter((row) => row.id !== active?.currentID && upcoming(row))) {
+          await apply({ field: "queueRemove", mediaID: id });
+          reconciled = reconciled.filter((row) => row.id !== id);
         }
       } else {
         // Persist the catalog continuation before editing it. Preserve every
         // server row's relative order, including rows absent from this panel.
         const existing = new Set(rows.map(({ id }) => id));
-        const catalog = (await active?.fullCatalog?.()) ?? active?.catalog ?? [];
+        const catalog = (await active?.loadContinuation()) ?? [];
         const additions = catalog.filter(({ id }) => !existing.has(id) && !played.has(id));
-        const unknown = additions.filter(({ mediaClass }) => !mediaClass).map(({ id }) => id);
-        const classified = unknown.length ? await fetchMediaRows(unknown, bound.epoch) : {};
-        const missing = additions
-          .filter((track) => (track.mediaClass || classified[track.id]?.mediaClass) === "audio")
-          .map((track) => ({ ...track, mediaClass: "audio" }));
-        if (active && activeMusic !== player) return;
+        const missing = await classifyMusic(additions, bound.epoch);
+        if (active && (activeMusic !== player || !active.isCurrent())) return;
         const mediaID = intent.mediaID;
         const editable = (id: string) =>
           [...rows, ...missing].some((row) => row.id === id && upcoming(row));
@@ -258,16 +265,8 @@ export function updateMusicQueue(profileID: string, intent: QueueIntent): Promis
         }
       }
       if (!live()) return;
-      if (active && activeMusic === player) {
-        active.adopt();
-        if (intent.kind === "clear") active.discard();
-        if (intent.kind === "remove") active.discard(intent.mediaID);
-        if (intent.kind === "next") active.reprioritize(intent.mediaID);
-        if (intent.kind === "move")
-          active.reprioritize(intent.mediaID, intent.anchor, intent.after);
-        if (intent.kind === "append") active.reprioritize(intent.mediaID, undefined, true);
-      }
-      publish({ ...snapshot, rows: reconciled });
+      if (active && activeMusic === player && active.isCurrent()) active.commitEdit(intent);
+      publish({ ...snapshot, rows: reconciled, loaded: true });
       const nextRows = dirty ? await readQueue(bound.epoch) : rows;
       if (!live()) return;
       const notice =
@@ -276,7 +275,7 @@ export function updateMusicQueue(profileID: string, intent: QueueIntent): Promis
           : intent.kind === "append"
             ? { key: "musicQueueAdded" as const }
             : undefined;
-      publish({ rows: nextRows, busy: false, notice });
+      publish({ rows: nextRows, busy: false, loaded: true, notice });
     } catch (error) {
       if (!live()) return;
       if (profileMismatch(error)) {
@@ -289,6 +288,7 @@ export function updateMusicQueue(profileID: string, intent: QueueIntent): Promis
       const rows = dirty ? await readQueue(bound.epoch).catch(() => reconciled) : snapshot.rows;
       if (live())
         publish({
+          ...snapshot,
           rows,
           busy: false,
           notice: { key: editing ? "musicQueueWriteFailed" : "musicQueueLoadFailed" },

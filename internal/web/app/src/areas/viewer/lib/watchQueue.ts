@@ -59,6 +59,14 @@ export interface PlayerNavState {
   musicAdopted?: boolean;
   /** Playback-info may pre-mint this candidate for a gapless handoff. */
   musicNextID?: string;
+  musicCursor?: MusicQueueCursor;
+}
+
+/** An adopted queue's playback position. History state stores IDs only. */
+export interface MusicQueueCursor {
+  currentID: string;
+  playedIDs: string[];
+  requeuedIDs: string[];
 }
 
 /** A new playback-start identity for {@link PlayerNavState.startID}. */
@@ -163,7 +171,11 @@ export function queueNeighbours(
  * Reads the watch route's nav state defensively (history state is untyped).
  * The queue is kept only when it was listed for the current viewer identity.
  */
-export function readPlayerNavState(state: unknown, identity: string | null): PlayerNavState {
+export function readPlayerNavState(
+  state: unknown,
+  identity: string | null,
+  profileID?: string,
+): PlayerNavState {
   if (!state || typeof state !== "object") return {};
   const raw = state as {
     title?: unknown;
@@ -175,8 +187,13 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
     musicAdopted?: unknown;
     musicNextID?: unknown;
     musicIdentity?: unknown;
+    musicProfileID?: unknown;
+    musicCursor?: unknown;
   };
-  const title = typeof raw.title === "string" ? raw.title : undefined;
+  const title =
+    typeof raw.title === "string" && !raw.musicRun && raw.musicAdopted !== true
+      ? raw.title
+      : undefined;
   const sameViewer = !!identity && raw.queueIdentity === identity;
   const queue =
     sameViewer && Array.isArray(raw.queue)
@@ -196,17 +213,35 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
       : undefined;
   const tracks = readStartTracks(raw.tracks);
   const sameMusicViewer = !!identity && raw.musicIdentity === identity;
+  // The cursor contains only IDs, so the same profile can keep its position
+  // across relock. Titles and pre-minted next candidates stay identity-scoped.
+  const sameMusicProfile = !!identity && !!profileID && raw.musicProfileID === profileID;
+  const musicAdopted = raw.musicAdopted === true && (sameMusicViewer || sameMusicProfile);
+  const musicCursor = musicAdopted ? readMusicCursor(raw.musicCursor) : undefined;
   return {
     title,
     queue,
     ...(sameMusicViewer && typeof raw.musicRun === "string" ? { musicRun: raw.musicRun } : {}),
-    ...(sameMusicViewer && raw.musicAdopted === true ? { musicAdopted: true } : {}),
+    ...(musicAdopted ? { musicAdopted } : {}),
+    ...(musicCursor ? { musicCursor } : {}),
     ...(sameMusicViewer && typeof raw.musicNextID === "string"
       ? { musicNextID: raw.musicNextID }
       : {}),
     ...(queue ? { queueIdentity: identity as string } : {}),
     ...(tracks ? { tracks } : {}),
     ...(typeof raw.startID === "string" && raw.startID ? { startID: raw.startID } : {}),
+  };
+}
+
+function readMusicCursor(raw: unknown): MusicQueueCursor | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const { currentID, playedIDs, requeuedIDs } = raw as Partial<MusicQueueCursor>;
+  if (typeof currentID !== "string" || !Array.isArray(playedIDs) || !Array.isArray(requeuedIDs))
+    return undefined;
+  return {
+    currentID,
+    playedIDs: playedIDs.filter((id) => typeof id === "string"),
+    requeuedIDs: requeuedIDs.filter((id) => typeof id === "string"),
   };
 }
 

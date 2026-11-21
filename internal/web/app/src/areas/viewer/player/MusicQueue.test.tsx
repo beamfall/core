@@ -11,7 +11,14 @@ import { PARTIAL_CATALOGS } from "@/strings";
 import { musicQueueStrings } from "@/strings/music-queue";
 import { MediaItemCardMenu } from "../components/MediaItemCardMenu";
 import { MusicQueueNotice } from "../components/MusicQueueNotice";
+import { DEFAULT_BROWSE_STATE } from "../lib/libraryBrowse";
 import { MusicQueueProfile, updateMusicQueue, useMusicQueueSnapshot } from "../lib/musicQueue";
+import {
+  finishPlayAllTracks,
+  hasUnloadedPlayAllTracks,
+  playAllTracks,
+  startPlayQueue,
+} from "../lib/playQueue";
 import type { PlayQueueItem } from "../lib/watchQueue";
 import { PlayerTransport } from "./PlayerTransport";
 import { useMusicPlayback } from "./useMusicPlayback";
@@ -47,6 +54,10 @@ type Operation = { query: string; variables: Record<string, unknown> };
 let rows: (PlayQueueItem & { locked?: boolean })[];
 let requests: Operation[];
 let rejectWrite: string | undefined;
+let beforeWrite: (() => void) | undefined;
+let mediaReadError: string | undefined;
+let libraryTracks: PlayQueueItem[];
+let libraryReadError: boolean;
 let epoch: AbortController;
 
 const writes = () => requests.filter(({ query }) => /queue(Add|Move|Remove|Clear)\(/.test(query));
@@ -55,6 +66,10 @@ beforeEach(() => {
   rows = [];
   requests = [];
   rejectWrite = undefined;
+  beforeWrite = undefined;
+  mediaReadError = undefined;
+  libraryTracks = [];
+  libraryReadError = false;
   epoch = new AbortController();
   setIdentityEpochSignal(epoch.signal);
   vi.stubGlobal(
@@ -69,8 +84,29 @@ beforeEach(() => {
         const offset = Number(variables.offset);
         return response({ sourceItems: rows.slice(offset, offset + Number(variables.limit)) });
       }
+      if (query.includes("libraryItems(")) {
+        const offset = Number(variables.offset);
+        if (offset && libraryReadError) return Response.json({}, { status: 503 });
+        return response({
+          libraryItems: {
+            total: libraryTracks.length,
+            items: libraryTracks.slice(offset, offset + Number(variables.limit)).map((row) => ({
+              ...row,
+              kind: "media",
+            })),
+          },
+        });
+      }
+      if (query.includes("query MediaRow")) {
+        const id = String(variables.id);
+        if (mediaReadError === id) return Response.json({}, { status: 503 });
+        return response({
+          media: [current, first, second, extra].find((item) => item.id === id) ?? null,
+        });
+      }
       const field = query.match(/(queueAdd|queueMove|queueRemove|queueClear)\(/)?.[1];
       if (field) {
+        beforeWrite?.();
         expect(variables.expectedProfileID).toBe(profileID);
         if (rejectWrite)
           return Response.json({
@@ -119,15 +155,18 @@ function Player({ catalog = [current] }: { catalog?: PlayQueueItem[] }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef(null);
+  const playAll = playAllTracks(item.id);
   const music = useMusicPlayback({
     current: item,
     audio: true,
     identity: "viewer-a",
     profileID,
     continuing: run,
-    catalog,
+    catalog: playAll ?? catalog,
+    catalogIncomplete: hasUnloadedPlayAllTracks(item.id),
+    fullCatalog: playAll ? () => finishPlayAllTracks(item.id) : undefined,
     adopted: false,
-    onAdopt: () => {},
+    onQueueEdit: () => {},
   });
   return (
     <div ref={stageRef}>
@@ -143,6 +182,16 @@ function Player({ catalog = [current] }: { catalog?: PlayQueueItem[] }) {
         mediaID={item.id}
         mediaTitle={item.title}
         musicQueue={music}
+        onPreviousInQueue={
+          music.previous
+            ? () => {
+                if (!music.previous) return;
+                music.prepareAdvance(music.previous.id, false, true);
+                setRun(music.run);
+                setItem(music.previous);
+              }
+            : undefined
+        }
         onNextInQueue={
           music.next
             ? () => {
@@ -256,15 +305,64 @@ describe("music queue controls", () => {
     expect(button("Play queue")).toHaveFocus();
   });
 
-  it("uses queueClear when all visible server rows are upcoming", async () => {
+  it("clears only the captured upcoming tracks when another device appends a row", async () => {
     rows = [first, second];
+    const video = { ...track("video"), mediaClass: "video" };
+    const locked = { ...track("locked"), locked: true };
+    beforeWrite = () => {
+      rows.push(video, locked);
+      beforeWrite = undefined;
+    };
     const user = setup();
     await user.click(button("Play queue"));
     expect(await screen.findByText("Gamma")).toBeInTheDocument();
     await user.click(button("Clear upcoming"));
     expect(await screen.findByText("No upcoming tracks.")).toBeInTheDocument();
-    expect(writes()).toHaveLength(1);
-    expect(writes()[0].query).toContain("queueClear(");
+    expect(
+      writes().map(({ query, variables }) => [query.includes("queueRemove("), variables.mediaID]),
+    ).toEqual([
+      [true, first.id],
+      [true, second.id],
+    ]);
+    expect(rows).toEqual([video, locked]);
+  });
+
+  it("keeps the catalog continuation when a candidate's class read fails", async () => {
+    const user = setup({
+      catalog: [current, first, { id: second.id, title: second.title }],
+    });
+    mediaReadError = second.id;
+    await user.click(button("Play queue"));
+    await user.click(button("Remove from queue: Beta"));
+    expect(await screen.findByText("Couldn’t update the play queue.")).toBeInTheDocument();
+    expect(titles()).toEqual(["Beta", "Gamma"]);
+    expect(writes()).toHaveLength(0);
+
+    mediaReadError = undefined;
+    await user.click(button("Remove from queue: Beta"));
+    await waitFor(() => expect(titles()).toEqual(["Gamma"]));
+    expect(rows.map(({ id }) => id)).toEqual([second.id]);
+  });
+
+  it.each([
+    ["next", ["Alpha", "Gamma"]],
+    ["append", ["Gamma", "Alpha"]],
+  ] as const)("plays a previously heard track explicitly requeued with %s", async (kind, order) => {
+    rows = [current, first, second];
+    const user = setup();
+    await user.click(button("Play queue"));
+    await screen.findByText("Beta");
+    await user.click(button("Next"));
+    expect(panel()).toHaveTextContent("Now playing Beta");
+    await act(() =>
+      updateMusicQueue(profileID, { kind, mediaID: current.id, title: current.title }),
+    );
+    expect(titles()).toEqual(order);
+    expect(button("Previous")).toBeEnabled();
+    if (kind === "append") await user.click(button("Next"));
+    await user.click(button("Next"));
+    expect(panel()).toHaveTextContent("Now playing Alpha");
+    expect(titles()).toEqual(kind === "append" ? [] : ["Gamma"]);
   });
 
   it("refreshes every queue page after an edit", async () => {
@@ -331,6 +429,60 @@ describe("music queue controls", () => {
       collectionID: "playlist-1",
       mediaIDs: [current.id, second.id, first.id],
     });
+  });
+
+  it("loads the next Play all page before saving the playlist in order", async () => {
+    libraryTracks = [
+      current,
+      ...Array.from({ length: 200 }, (_, index) => track(`song-${index + 1}`)),
+    ];
+    expect(await startPlayQueue({ libraryID: "library-a", state: DEFAULT_BROWSE_STATE })).toEqual({
+      id: current.id,
+      title: current.title,
+    });
+    const user = setup();
+    await user.click(button("Play queue"));
+    await user.click(button("Save queue as playlist"));
+    await user.type(screen.getByRole("textbox", { name: "Playlist name" }), "Whole library");
+    expect(
+      requests
+        .filter(({ query }) => query.includes("libraryItems("))
+        .map(({ variables }) => variables.offset),
+    ).toEqual([0]);
+    await user.click(button("Save"));
+    expect(await screen.findByText("Queue saved as a playlist.")).toBeInTheDocument();
+    expect(
+      requests
+        .filter(({ query }) => query.includes("libraryItems("))
+        .map(({ variables }) => variables.offset),
+    ).toEqual([0, 200]);
+    expect(requests.find(({ query }) => query.includes("addCollectionMedia("))?.variables).toEqual({
+      collectionID: "playlist-1",
+      mediaIDs: libraryTracks.map(({ id }) => id),
+    });
+  });
+
+  it("shuffles every Play all page and restores the original order on toggle off", async () => {
+    libraryTracks = [
+      current,
+      ...Array.from({ length: 200 }, (_, index) => track(`song-${index + 1}`)),
+    ];
+    await startPlayQueue({ libraryID: "library-a", state: DEFAULT_BROWSE_STATE });
+    const user = setup();
+    await user.click(button("Play queue"));
+    expect(titles()[0]).toBe("song-1");
+    libraryReadError = true;
+    await user.click(button("Shuffle queue"));
+    expect(await screen.findByText("Couldn’t load the play queue.")).toBeInTheDocument();
+    expect(button("Shuffle queue")).toHaveAttribute("aria-pressed", "false");
+
+    libraryReadError = false;
+    vi.spyOn(Math, "random").mockReturnValueOnce(0).mockReturnValue(0.999);
+    await user.click(button("Shuffle queue"));
+    await waitFor(() => expect(titles()[0]).toBe("song-200"));
+    expect(panel()).toHaveTextContent("Now playing Alpha");
+    await user.click(button("Shuffle queue"));
+    expect(titles()).toEqual(libraryTracks.slice(1).map(({ title }) => title));
   });
 
   it("explains the single-library constraint before creating a playlist", async () => {

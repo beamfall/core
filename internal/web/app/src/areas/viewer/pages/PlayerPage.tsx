@@ -31,7 +31,12 @@ import {
   sameAdjustment,
   songSecondsPerStreamSecond,
 } from "../lib/playback";
-import { finishPlayAllTracks, playAllTracks, previousInPlayQueue } from "../lib/playQueue";
+import {
+  finishPlayAllTracks,
+  hasUnloadedPlayAllTracks,
+  playAllTracks,
+  previousInPlayQueue,
+} from "../lib/playQueue";
 import {
   resolvePreferences,
   type SkipInterval,
@@ -48,6 +53,7 @@ import {
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
+  type MusicQueueCursor,
   type PlayQueueItem,
   queueNeighbours,
   queueOfClass,
@@ -236,14 +242,21 @@ function FeaturePlayer({
   // never shows the previous item's title, artwork or credits.
   const [mediaRead, setMediaRead] = useState<{
     id: string;
+    identity: string | null;
+    epoch?: AbortSignal;
     info: GenericMediaInfo | null;
   } | null>(null);
-  const media = mediaRead && mediaRead.id === mediaId ? mediaRead.info : null;
+  const mediaEpoch = getIdentityEpochSignal();
+  const currentMediaRead =
+    mediaRead?.id === mediaId && mediaRead.identity === identity && mediaRead.epoch === mediaEpoch
+      ? mediaRead
+      : null;
+  const media = currentMediaRead?.info ?? null;
 
   // The catalog card / hero (and Up Next) carry the Media title forward in nav
   // state, with the siblings it was shown with as the play queue. The media(id)
   // read below fills in the title for a deep link, plus artwork and credits.
-  const navState = readPlayerNavState(entry.state, identity);
+  const navState = readPlayerNavState(entry.state, identity, profileID);
   const queueIdentity = navState.queueIdentity;
   const navTitle = navState.title || media?.title || "";
   // Docked, the browse page under the mini player names the tab (CORE-2322).
@@ -403,15 +416,20 @@ function FeaturePlayer({
     !!identity &&
     !!profileID &&
     (infoIsCurrent ? isAudio : entryClass === "audio" || !!navState.musicRun);
-  const markMusicQueueAdopted = () => {
+  const writeMusicCursor = (run: string, cursor: MusicQueueCursor) => {
     const nextEntry = {
       ...entry,
       state: {
         ...(entry.state && typeof entry.state === "object" ? entry.state : {}),
+        title: undefined,
         queue: undefined,
         queueIdentity: undefined,
+        musicRun: run,
         musicAdopted: true,
+        musicCursor: cursor,
+        musicNextID: undefined,
         musicIdentity: identity,
+        musicProfileID: profileID,
       },
     };
     if (docked) onAdvanceDocked?.(nextEntry);
@@ -425,22 +443,18 @@ function FeaturePlayer({
   const playAll =
     musicAudio && !queue && !navState.musicAdopted ? playAllTracks(mediaId) : undefined;
   const music = useMusicPlayback({
-    current: { id: mediaId, title: navTitle, mediaClass: "audio" },
+    current: { id: mediaId, title: navTitle, mediaClass: "audio", libraryID: media?.libraryID },
     audio: musicAudio,
     identity,
     profileID,
     startID: navState.startID,
     continuing: navState.musicRun,
     adopted: navState.musicAdopted === true,
+    cursor: navState.musicCursor,
     catalog: musicAudio ? (queue ?? playAll ?? []) : [],
-    fullCatalog: playAll
-      ? async () => {
-          const tracks = await finishPlayAllTracks(mediaId);
-          const index = tracks?.findIndex(({ id }) => id === mediaId) ?? -1;
-          return tracks?.slice(index + 1);
-        }
-      : undefined,
-    onAdopt: markMusicQueueAdopted,
+    catalogIncomplete: !!playAll && hasUnloadedPlayAllTracks(mediaId),
+    fullCatalog: playAll ? () => finishPlayAllTracks(mediaId) : undefined,
+    onQueueEdit: writeMusicCursor,
   });
   // Before playback-info answers, a queue entry that reports its class already
   // routes a track to the audio stage instead of an empty video frame
@@ -482,7 +496,9 @@ function FeaturePlayer({
     ? media.artworkSlots?.poster || media.artworkSlots?.thumb || media.artworkSlots?.backdrop || ""
     : "";
   const displayQueue = musicAudio ? music.order : queue;
-  const queueIndex = displayQueue?.findIndex((item) => item.id === mediaId) ?? -1;
+  const queueIndex = musicAudio
+    ? music.currentIndex
+    : (displayQueue?.findIndex((item) => item.id === mediaId) ?? -1);
   const queuePosition =
     displayQueue && displayQueue.length > 1 && queueIndex >= 0
       ? t("queuePosition", { position: queueIndex + 1, total: displayQueue.length })
@@ -499,12 +515,16 @@ function FeaturePlayer({
     credits,
     queuePosition,
   };
-  const stageReady =
-    !mediaId || (!!mediaRead && mediaRead.id === mediaId) || (playing && infoIsCurrent);
-  const [heldStage, setHeldStage] = useState<StageItem | null>(null);
+  const stageReady = !mediaId || !!currentMediaRead || (playing && infoIsCurrent);
+  const [held, setHeld] = useState<{
+    epoch?: AbortSignal;
+    identity: string | null;
+    stage: StageItem | null;
+  }>();
+  const heldStage = held?.identity === identity && held?.epoch === mediaEpoch ? held.stage : null;
   if (stageReady) {
     const keep = showAudioStage ? liveStage : null;
-    if (!sameStageItem(keep, heldStage)) setHeldStage(keep);
+    if (!sameStageItem(keep, heldStage)) setHeld({ epoch: mediaEpoch, identity, stage: keep });
   }
   const stage = stageReady || !heldStage ? liveStage : heldStage;
 
@@ -525,18 +545,26 @@ function FeaturePlayer({
       id: string,
       title: string,
       selectPartyTitle = true,
-      music?: { run: string; adopted: boolean; nextID?: string },
+      music?: { run: string; adopted: boolean; nextID?: string; cursor?: MusicQueueCursor },
     ) => {
+      const hideTitle = !!music || (musicAudio && revealed);
       const state = {
-        title,
+        title: hideTitle ? undefined : title,
         skipPrePlay: true,
         selectPartyTitle,
-        ...(queue ? { queue, queueIdentity } : {}),
+        ...(queue && !music?.adopted
+          ? {
+              queue: revealed && hideTitle ? queue.map((item) => ({ ...item, title: "" })) : queue,
+              queueIdentity,
+            }
+          : {}),
         ...(music && {
           musicRun: music.run,
           musicAdopted: music.adopted,
           musicNextID: music.nextID,
+          musicCursor: music.cursor,
           musicIdentity: identity,
+          musicProfileID: music.adopted ? profileID : undefined,
         }),
       };
       if (docked && onAdvanceDocked) {
@@ -546,7 +574,17 @@ function FeaturePlayer({
       }
       navigate(mediaPath("watch", id), { replace: true, state });
     },
-    [navigate, queue, queueIdentity, docked, onAdvanceDocked, identity],
+    [
+      navigate,
+      queue,
+      queueIdentity,
+      docked,
+      onAdvanceDocked,
+      identity,
+      profileID,
+      revealed,
+      musicAudio,
+    ],
   );
 
   // Watch Party (CORE-1677): the party moves every member's player to the
@@ -589,22 +627,24 @@ function FeaturePlayer({
   const issuedNext = admissibleNext(state.info?.next, queue, playingClass, learnedClasses);
   const musicNext = musicAudio ? music.next : undefined;
   const musicPrevious = musicAudio ? music.previous : undefined;
-  const goToMusicItem = (item: PlayQueueItem, wrap = false) => {
+  const goToMusicItem = (item: PlayQueueItem, wrap = false, previous = false) => {
+    const advance = music.prepareAdvance(item.id, wrap, previous);
+    if (!advance) return;
     if (item.id === mediaId) {
-      if (wrap) restart(0);
+      restart(0);
       return;
     }
-    const nextID = music.prepareAdvance(item.id, wrap);
-    playItem(item.id, item.title, true, {
+    playItem(item.id, "", true, {
       run: music.run,
       adopted: music.adopted,
-      nextID: revealed ? undefined : nextID,
+      nextID: revealed ? undefined : advance.nextID,
+      cursor: advance.cursor,
     });
   };
   const playNext = (() => {
     if (partyLeads) return undefined;
     if (musicNext) return () => goToMusicItem(musicNext, music.upcoming.length === 0);
-    if (musicAudio && (music.adopted || (music.containsCurrent && !playAll))) return undefined;
+    if (musicAudio && music.managesOrder) return undefined;
     if (nextInQueue) return () => goToQueueItem(nextInQueue);
     if (issuedNext?.streams) return () => advanceToNext(issuedNext);
     return undefined;
@@ -616,8 +656,8 @@ function FeaturePlayer({
     [queue, mediaId],
   );
   const playPrevious = (() => {
-    if (musicPrevious) return () => goToMusicItem(musicPrevious);
-    if (musicAudio && music.adopted) return undefined;
+    if (musicPrevious) return () => goToMusicItem(musicPrevious, false, true);
+    if (musicAudio && music.managesOrder) return undefined;
     if (previousInQueue) return () => goToQueueItem(previousInQueue);
     if (playAllPrevious) return () => playItem(playAllPrevious.id, playAllPrevious.title);
     return undefined;
@@ -770,11 +810,12 @@ function FeaturePlayer({
     if (!mediaId) return;
     const controller = new AbortController();
     const settle = (info: GenericMediaInfo | null) => {
-      if (!controller.signal.aborted) setMediaRead({ id: mediaId, info: info ?? null });
+      if (!controller.signal.aborted && !mediaEpoch?.aborted)
+        setMediaRead({ id: mediaId, identity, epoch: mediaEpoch, info: info ?? null });
     };
     void fetchMedia(mediaId, controller.signal).then(settle, () => settle(null));
     return () => controller.abort();
-  }, [mediaId]);
+  }, [mediaId, identity, mediaEpoch]);
 
   // Keys edited in this identity epoch keep their local value over a Profile
   // read, which may predate the write. A Profile switch starts a new epoch.
@@ -950,6 +991,7 @@ function FeaturePlayer({
             <video ref={videoRef} playsInline controls={false} poster={videoPoster || undefined} />
             {showAudioStage && (
               <AudioStage
+                key={identity}
                 title={stage.title}
                 artworkURL={stage.artworkURL}
                 credits={stage.credits}

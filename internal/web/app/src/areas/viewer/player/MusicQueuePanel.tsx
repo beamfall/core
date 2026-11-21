@@ -14,13 +14,11 @@ import type { MusicPlayback } from "./useMusicPlayback";
 
 export function MusicQueuePanel({
   id,
-  mediaID,
   profileID,
   music,
   onClose,
 }: {
   id: string;
-  mediaID: string;
   profileID: string;
   music: MusicPlayback;
   onClose: () => void;
@@ -39,7 +37,7 @@ export function MusicQueuePanel({
   }, [profileID]);
 
   const { upcoming, busy } = music;
-  const current = music.order.find((item) => item.id === mediaID);
+  const { current } = music;
   const move = (mediaID: string, from: number, to: number) => {
     const target = upcoming[to];
     if (busy || !target || from < 0 || from === to) return;
@@ -182,7 +180,7 @@ export function MusicQueuePanel({
       </div>
       {saving && (
         <SaveQueueForm
-          tracks={music.order}
+          completeOrder={music.completeOrder}
           isManager={isManager}
           onClose={(success) => {
             close.current?.focus();
@@ -201,16 +199,16 @@ export function MusicQueuePanel({
 }
 
 function SaveQueueForm({
-  tracks,
+  completeOrder,
   isManager,
   onClose,
 }: {
-  tracks: readonly PlayQueueItem[];
+  completeOrder: () => Promise<readonly PlayQueueItem[]>;
   isManager: boolean;
   onClose: (success: boolean) => void;
 }) {
   const t = useT();
-  const [queue] = useState(() => tracks);
+  const [queue, setQueue] = useState<readonly PlayQueueItem[]>();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<StringKey>();
@@ -225,10 +223,13 @@ function SaveQueueForm({
     setBusy(true);
     setError(undefined);
     try {
+      const tracks = queue ?? (await completeOrder());
+      if (epoch?.aborted) return;
+      if (!queue) setQueue(tracks);
       let id = playlistID;
       if (!id) {
         const libraries = new Set(
-          await Promise.all(queue.map((item) => item.libraryID ?? mediaLibraryID(item.id))),
+          await Promise.all(tracks.map((item) => item.libraryID ?? mediaLibraryID(item.id))),
         );
         if (epoch?.aborted) return;
         if (libraries.size !== 1) {
@@ -242,7 +243,7 @@ function SaveQueueForm({
       if (epoch?.aborted) return;
       await addCollectionMedia(
         id,
-        queue.map((item) => item.id),
+        tracks.map((item) => item.id),
       );
       if (!epoch?.aborted) onClose(true);
     } catch {

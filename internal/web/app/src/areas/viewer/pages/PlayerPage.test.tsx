@@ -48,6 +48,7 @@ import {
   unavailableReason,
 } from "../lib/playback";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
+import { readPlayerNavState } from "../lib/watchQueue";
 import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
@@ -67,9 +68,14 @@ import { MediaDetailPage } from "./MediaDetailPage";
 import { NotificationsPage } from "./NotificationsPage";
 import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
 
+let viewer = { identity: "viewer-1", revealed: true };
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({ profiles: [], revealed: true, session: { profileID: "profile-a" } }),
-  useViewerIdentity: () => "viewer-1",
+  useSession: () => ({
+    profiles: [],
+    revealed: viewer.revealed,
+    session: { profileID: "profile-a" },
+  }),
+  useViewerIdentity: () => viewer.identity,
 }));
 vi.mock("@/lib/graphql", () => ({
   fetchClientPrefs: vi.fn().mockResolvedValue([]),
@@ -1513,6 +1519,7 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
 
   beforeEach(() => {
     restart.mockClear();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
     vi.mocked(usePlayer).mockReset();
     vi.mocked(PlayerTransport).mockClear();
     states = {
@@ -1538,20 +1545,33 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
         : Promise.resolve(track("media-alpha", "Alpha", "Ann")),
     );
   });
-  afterEach(() => vi.mocked(fetchMedia).mockResolvedValue(null));
+  afterEach(() => {
+    vi.mocked(fetchMedia).mockResolvedValue(null);
+    viewer = { identity: "viewer-1", revealed: true };
+    vi.restoreAllMocks();
+  });
 
   // The queue reports no classes, so only the playing item's info names it a track.
-  function renderAdvance() {
+  function renderAdvance(
+    entryState: Record<string, unknown> = { title: "Alpha", queue, queueIdentity: "viewer-1" },
+    id = "media-alpha",
+  ) {
+    let location: ReturnType<typeof useLocation>;
+    function ObserveLocation() {
+      location = useLocation();
+      return null;
+    }
     const tree = () => (
       <I18nProvider>
         <MemoryRouter
           initialEntries={[
             {
-              pathname: "/watch/media-alpha",
-              state: { skipPrePlay: true, title: "Alpha", queue, queueIdentity: "viewer-1" },
+              pathname: `/watch/${id}`,
+              state: { skipPrePlay: true, ...entryState },
             },
           ]}
         >
+          <ObserveLocation />
           <Routes>
             <Route path="/watch/*" element={<PlayerPage />} />
           </Routes>
@@ -1559,7 +1579,11 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
       </I18nProvider>
     );
     const view = render(tree());
-    return () => view.rerender(tree());
+    return {
+      rerender: () => view.rerender(tree()),
+      unmount: view.unmount,
+      location: () => location,
+    };
   }
 
   async function advanceFromFirstTrack(): Promise<HTMLElement> {
@@ -1597,7 +1621,7 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
   });
 
   it("swaps when the next item starts playing before its media read answers", async () => {
-    const rerender = renderAdvance();
+    const { rerender } = renderAdvance();
     const stage = await advanceFromFirstTrack();
     expect(within(stage).getByText("Ann")).toBeInTheDocument();
 
@@ -1608,7 +1632,7 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
   });
 
   it("drops the stage once the next item's playback-info names a video", async () => {
-    const rerender = renderAdvance();
+    const { rerender } = renderAdvance();
     await advanceFromFirstTrack();
     expect(document.querySelector(".bf-audio-stage")).not.toBeNull();
 
@@ -1653,6 +1677,107 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
     expect(transport()?.musicQueue?.repeat).toBe("all");
     fireEvent.ended(video);
     await waitFor(() => expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[0]).toBe("media-prev"));
+  });
+
+  const orderedTracks = [
+    { id: "media-alpha", title: "Alpha", mediaClass: "audio" },
+    { id: "media-next", title: "Beta", mediaClass: "audio" },
+    { id: "media-third", title: "Gamma", mediaClass: "audio" },
+  ];
+  const transport = () => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+
+  function enableAllTracks() {
+    for (const { id } of orderedTracks) {
+      states[id] = playerState({ phase: "playing", mediaID: id, info: audio });
+    }
+  }
+
+  it("stops on ended when the shuffled catalog reaches its final track", async () => {
+    enableAllTracks();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    renderAdvance({ queue: orderedTracks, queueIdentity: viewer.identity });
+    const video = presentFirstFrame();
+    act(() => transport()?.musicQueue?.toggleShuffle());
+    fireEvent.ended(video);
+    await waitFor(() => expect(transport()?.mediaID).toBe("media-third"));
+    fireEvent.ended(video);
+    await waitFor(() => expect(transport()?.mediaID).toBe("media-next"));
+    expect(transport()?.onNextInQueue).toBeUndefined();
+    fireEvent.ended(video);
+    await act(async () => {});
+    expect(transport()?.mediaID).toBe("media-next");
+  });
+
+  it("restores the adopted playback cursor and history on reload with an empty queue cache", async () => {
+    enableAllTracks();
+    const firstEpoch = new AbortController();
+    const newEpoch = new AbortController();
+    const lockedEpoch = new AbortController();
+    setIdentityEpochSignal(firstEpoch.signal);
+    const graph = vi.spyOn(api, "graphql").mockResolvedValue({ sourceItems: orderedTracks });
+    try {
+      const firstView = renderAdvance({
+        musicRun: "reloaded-run",
+        musicAdopted: true,
+        musicIdentity: viewer.identity,
+      });
+      await waitFor(() => expect(transport()?.musicQueue?.next?.id).toBe("media-next"));
+      fireEvent.ended(presentFirstFrame());
+      await waitFor(() => expect(transport()?.mediaID).toBe("media-next"));
+      const state = firstView.location().state;
+      expect(state.musicCursor).toEqual({
+        currentID: "media-next",
+        playedIDs: ["media-alpha"],
+        requeuedIDs: [],
+      });
+      firstView.unmount();
+      firstEpoch.abort();
+      setIdentityEpochSignal(newEpoch.signal);
+
+      const reloaded = renderAdvance(state, "media-next");
+      await waitFor(() => expect(transport()?.musicQueue?.next?.id).toBe("media-third"));
+      expect(transport()?.musicQueue?.previous).toMatchObject({
+        id: "media-alpha",
+        title: "Alpha",
+      });
+      expect(readPlayerNavState(state, "other", "profile-b").musicCursor).toBeUndefined();
+
+      viewer = { identity: "relocked", revealed: false };
+      graph.mockResolvedValue({ sourceItems: orderedTracks.slice(1), media: null });
+      act(() => newEpoch.abort());
+      setIdentityEpochSignal(lockedEpoch.signal);
+      reloaded.rerender();
+      await waitFor(() => expect(transport()?.musicQueue?.next?.id).toBe("media-third"));
+      expect(transport()?.musicQueue?.previous).toBeUndefined();
+      fireEvent.ended(presentFirstFrame());
+      await waitFor(() => expect(transport()?.mediaID).toBe("media-third"));
+    } finally {
+      act(() => lockedEpoch.abort());
+      setIdentityEpochSignal();
+    }
+  });
+
+  it("resolves a revealed queue title from the active identity without writing it into history", async () => {
+    const secretTitle = "Restricted queue track";
+    enableAllTracks();
+    const view = renderAdvance({
+      queue: [orderedTracks[0], { ...orderedTracks[1], title: secretTitle }],
+      queueIdentity: viewer.identity,
+    });
+    fireEvent.ended(presentFirstFrame());
+    await waitFor(() => expect(transport()?.mediaID).toBe("media-next"));
+    const state = view.location().state;
+    expect(JSON.stringify(state)).not.toContain(secretTitle);
+    expect(readPlayerNavState(state, viewer.identity).title).toBeUndefined();
+    expect(readPlayerNavState({ ...state, title: secretTitle }, "relocked").title).toBeUndefined();
+    await act(async () => releaseNext(track("media-next", secretTitle, "Bo")));
+    expect(transport()?.mediaTitle).toBe(secretTitle);
+
+    viewer = { identity: "relocked", revealed: false };
+    vi.mocked(fetchMedia).mockResolvedValue(null);
+    view.rerender();
+    expect(transport()?.mediaTitle).not.toBe(secretTitle);
+    expect(screen.queryByText(secretTitle)).not.toBeInTheDocument();
   });
 
   it("shows a small cue, not a cover, while an audio item loads", () => {
@@ -2329,6 +2454,9 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
   });
 
   it("advances to the next track in place while docked", async () => {
+    vi.mocked(fetchMedia).mockImplementation(async (id) =>
+      id === "media-next" ? { id, title: "Track Two", favorited: false } : null,
+    );
     renderHosted({ mediaClass: "audio" });
     await waitFor(() => stageVideo());
     act(() => {
@@ -2345,7 +2473,8 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
       expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-next")).toBe(true),
     );
     expect(screen.getByText("search route")).toBeInTheDocument();
-    expect(within(miniPlayer() as HTMLElement).getByText("Track Two")).toBeInTheDocument();
+    expect(await within(miniPlayer() as HTMLElement).findByText("Track Two")).toBeInTheDocument();
+    vi.mocked(fetchMedia).mockResolvedValue(null);
   });
 
   it("stops and closes on the mini player's Stop", async () => {
