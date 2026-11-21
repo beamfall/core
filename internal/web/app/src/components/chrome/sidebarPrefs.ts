@@ -14,9 +14,31 @@ export interface SidebarLibraryPrefs {
   order: string[];
   /** Library IDs the Profile unpinned; they move under More. */
   hidden: string[];
+  /**
+   * The "Your stuff" group's choice (CORE-2827), by entry ID: its order, and
+   * the entries unpinned, which leave the sidebar (the account menu keeps
+   * them). Absent from values stored before the group existed, and left out
+   * of the stored value while it is empty, so older clients read it unchanged.
+   */
+  personal?: SidebarListPrefs;
+}
+
+export interface SidebarListPrefs {
+  order: string[];
+  hidden: string[];
 }
 
 export const EMPTY_SIDEBAR_PREFS: SidebarLibraryPrefs = { order: [], hidden: [] };
+
+// The "Your stuff" entries, in default order: the Profile's own lists, at the
+// routes the account menu already links.
+export const PERSONAL_ENTRIES = [
+  { id: "playlists", path: "/playlists" },
+  { id: "favorites", path: "/favorites" },
+  { id: "history", path: "/history" },
+] as const;
+
+export type PersonalEntry = (typeof PERSONAL_ENTRIES)[number];
 
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -30,16 +52,35 @@ export function parseSidebarPrefs(raw: string | null | undefined): SidebarLibrar
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return EMPTY_SIDEBAR_PREFS;
     const record = parsed as Record<string, unknown>;
-    return { order: stringList(record.order), hidden: stringList(record.hidden) };
+    const prefs: SidebarLibraryPrefs = {
+      order: stringList(record.order),
+      hidden: stringList(record.hidden),
+    };
+    const personal = listPrefs(record.personal);
+    if (personal) prefs.personal = personal;
+    return prefs;
   } catch {
     return EMPTY_SIDEBAR_PREFS;
   }
 }
 
+// A stored group choice, or nothing when it is absent, malformed or empty.
+function listPrefs(value: unknown): SidebarListPrefs | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const list = { order: stringList(record.order), hidden: stringList(record.hidden) };
+  return list.order.length > 0 || list.hidden.length > 0 ? list : undefined;
+}
+
 /** Serialize a choice; an empty choice clears the preference. */
 export function serializeSidebarPrefs(prefs: SidebarLibraryPrefs): string {
-  if (prefs.order.length === 0 && prefs.hidden.length === 0) return "";
-  return JSON.stringify({ order: prefs.order, hidden: prefs.hidden });
+  const personal = listPrefs(prefs.personal);
+  if (prefs.order.length === 0 && prefs.hidden.length === 0 && !personal) return "";
+  return JSON.stringify(
+    personal
+      ? { order: prefs.order, hidden: prefs.hidden, personal }
+      : { order: prefs.order, hidden: prefs.hidden },
+  );
 }
 
 /**

@@ -1,9 +1,10 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
+import { expectNoAxeViolations } from "@/test/axe";
 import { AppShell } from "./AppShell";
 
 vi.mock("@/lib/graphql", () => ({
@@ -15,6 +16,12 @@ vi.mock("@/lib/graphql", () => ({
     .mockResolvedValue([
       { id: "j1", kind: "scan", status: "running", progress: { current: 0, total: 0, unit: "" } },
     ]),
+}));
+
+// The signed-in sidebar reads the Profile's sidebar choice (CORE-2435).
+vi.mock("@/lib/graphql/viewer", () => ({
+  fetchClientPrefs: vi.fn().mockResolvedValue([]),
+  setClientPref: vi.fn().mockResolvedValue({ key: "web.sidebar-libraries" }),
 }));
 
 vi.mock("@/lib/register", () => ({
@@ -46,10 +53,10 @@ vi.mock("@/lib/session", () => ({
   }),
 }));
 
-function renderShell() {
+function renderShell(path = "/") {
   return render(
     <I18nProvider>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[path]}>
         <AppShell>
           <div>Surface content</div>
         </AppShell>
@@ -222,6 +229,22 @@ describe("AppShell library sidebar", () => {
     );
   });
 
+  it("puts Playlists one click away for a signed-in Profile on desktop (CORE-2827)", () => {
+    sessionState.signedIn = true;
+    renderShell("/favorites");
+    const nav = screen.getByRole("navigation", { name: "Navigation" });
+    expect(within(nav).getByRole("link", { name: "Playlists" })).toHaveAttribute(
+      "href",
+      "/playlists",
+    );
+    expect(within(nav).getByRole("link", { name: "Favorites" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    // The tab bar is phone-only.
+    expect(screen.queryByRole("navigation", { name: "Main sections" })).toBeNull();
+  });
+
   describe("resizable width (CORE-2734)", () => {
     beforeEach(() => {
       window.localStorage.setItem("beamfall.sidebarCollapsed", "0");
@@ -333,6 +356,49 @@ describe("AppShell library sidebar", () => {
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
       await waitFor(() => expect(toggle).toHaveFocus());
       expect(toggle).toHaveAttribute("aria-expanded", "false");
+    });
+
+    it("offers Home, Search and Libraries in a bottom tab bar (CORE-2827)", async () => {
+      const user = userEvent.setup();
+      const { container } = renderShell();
+      const tabs = screen.getByRole("navigation", { name: "Main sections" });
+      expect(container.querySelector(".bf-shell")).toHaveClass("has-tabbar");
+      const home = within(tabs).getByRole("link", { name: "Home" });
+      expect(home).toHaveAttribute("href", "/");
+      expect(home).toHaveAttribute("aria-current", "page");
+      const search = within(tabs).getByRole("link", { name: "Search" });
+      expect(search).toHaveAttribute("href", "/search");
+      expect(search).not.toHaveAttribute("aria-current");
+      // Your stuff belongs to a signed-in Profile.
+      expect(within(tabs).queryByRole("button", { name: "Your stuff" })).toBeNull();
+      await expectNoAxeViolations(tabs);
+
+      const librariesTab = within(tabs).getByRole("button", { name: "Libraries" });
+      expect(librariesTab).toHaveAttribute("aria-haspopup", "dialog");
+      await user.click(librariesTab);
+      const drawer = await screen.findByRole("dialog", { name: "Navigation" });
+      expect(librariesTab).toHaveAttribute("aria-expanded", "true");
+      const library = within(drawer).getByRole("link", { name: "Space Archive" });
+      await waitFor(() => expect(library).toHaveFocus());
+
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      await waitFor(() => expect(librariesTab).toHaveFocus());
+    });
+
+    it("opens the drawer at Your stuff for a signed-in Profile (CORE-2827)", async () => {
+      sessionState.signedIn = true;
+      const user = userEvent.setup();
+      renderShell("/search");
+      const tabs = screen.getByRole("navigation", { name: "Main sections" });
+      expect(within(tabs).getByRole("link", { name: "Search" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      await user.click(within(tabs).getByRole("button", { name: "Your stuff" }));
+      const drawer = await screen.findByRole("dialog", { name: "Navigation" });
+      const playlists = within(drawer).getByRole("link", { name: "Playlists" });
+      await waitFor(() => expect(playlists).toHaveFocus());
     });
 
     it("closes when a destination is chosen", async () => {

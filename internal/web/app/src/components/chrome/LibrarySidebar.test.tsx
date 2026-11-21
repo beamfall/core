@@ -352,3 +352,123 @@ describe("LibrarySidebar per-Profile pin and order (CORE-2435)", () => {
     );
   });
 });
+
+describe("LibrarySidebar Your stuff group (CORE-2827)", () => {
+  const navigation: NavigationNode[] = [
+    { id: "home", title: "Home", view: "layout", layoutID: "layout-home" },
+    { id: "library-a", title: "Films", view: "layout", layoutID: "layout-a", libraryID: "a" },
+  ];
+  const libraries: LibrarySummary[] = [
+    { id: "a", title: "Films", pluginID: null, previewClips: false },
+  ];
+
+  function renderSidebar({
+    prefs,
+    onSavePrefs,
+    collapsed = false,
+    pathname = "/",
+  }: {
+    prefs?: SidebarLibraryPrefs;
+    onSavePrefs?: (prefs: SidebarLibraryPrefs) => Promise<void>;
+    collapsed?: boolean;
+    pathname?: string;
+  }) {
+    return render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrarySidebar
+            id="side"
+            navigation={navigation}
+            libraries={libraries}
+            activeNodeId="home"
+            collapsed={collapsed}
+            drawer={false}
+            onNavigate={() => {}}
+            prefs={prefs}
+            prefsReady
+            onSavePrefs={onSavePrefs}
+            showPersonal
+            pathname={pathname}
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+  }
+
+  const groupNames = () =>
+    within(document.getElementById("side-personal") as HTMLElement)
+      .getAllByRole("link")
+      .map((link) => link.querySelector(".bf-side-label")?.textContent);
+
+  it("is hidden unless the shell asks for it", () => {
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrarySidebar
+            id="side"
+            navigation={navigation}
+            libraries={libraries}
+            activeNodeId="home"
+            collapsed={false}
+            drawer={false}
+            onNavigate={() => {}}
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(screen.queryByRole("heading", { name: "Your stuff" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Playlists" })).toBeNull();
+  });
+
+  it("puts Playlists one click away, marked current on its page, on the rail too", async () => {
+    const { container } = renderSidebar({ pathname: "/playlists" });
+    expect(screen.getByRole("heading", { name: "Your stuff" })).toBeInTheDocument();
+    expect(groupNames()).toEqual(["Playlists", "Favorites", "History"]);
+    const playlists = screen.getByRole("link", { name: "Playlists" });
+    expect(playlists).toHaveAttribute("href", "/playlists");
+    expect(playlists).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Favorites" })).toHaveAttribute("href", "/favorites");
+    expect(screen.getByRole("link", { name: "History" })).not.toHaveAttribute("aria-current");
+    await expectNoAxeViolations(container);
+    cleanup();
+    renderSidebar({ collapsed: true, pathname: "/playlists/p1" });
+    expect(screen.getByRole("link", { name: "Playlists" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("applies a stored choice and leaves the library choice alone", () => {
+    renderSidebar({
+      prefs: {
+        order: [],
+        hidden: [],
+        personal: { order: ["history", "playlists"], hidden: ["favorites"] },
+      },
+    });
+    expect(groupNames()).toEqual(["History", "Playlists"]);
+    expect(screen.queryByRole("link", { name: "Favorites" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Films" })).toBeInTheDocument();
+  });
+
+  it("reorders and unpins the group in its own editor and keeps the library choice", async () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    const { container } = renderSidebar({ prefs: { order: ["a"], hidden: [] }, onSavePrefs: save });
+    fireEvent.click(screen.getByRole("button", { name: "Edit your stuff" }));
+    // Only one group is edited at a time.
+    expect(screen.queryByRole("button", { name: "Edit libraries" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Pin Playlists" })).toHaveFocus();
+    await expectNoAxeViolations(container);
+
+    fireEvent.click(screen.getByRole("button", { name: "Move History up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pin Favorites" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0]).toEqual({
+      order: ["a"],
+      hidden: [],
+      personal: { order: ["playlists", "history", "favorites"], hidden: ["favorites"] },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Edit your stuff" })).toHaveFocus(),
+    );
+  });
+});
