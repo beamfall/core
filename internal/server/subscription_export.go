@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"path"
 	"slices"
 	"strings"
 
@@ -102,15 +101,15 @@ func (s *Server) subscriptionOPML(ctx context.Context, filter store.LibraryFilte
 			return nil, err
 		}
 		for _, sub := range subscriptions {
-			feedURL, private, ok := s.exportableFeedURL(sub, requestHostname)
-			if !ok || (private && !includePrivate) {
+			feedURL, public, ok := s.exportableFeedURL(sub, requestHostname)
+			if !ok || (!public && !includePrivate) {
 				continue
 			}
 			if count == maxSubscriptionOPMLOutlines {
 				return nil, errSubscriptionOPMLLimit
 			}
 			outline := subscriptionOutline{Type: "rss", Text: sub.Title, Title: sub.Title, XMLURL: feedURL}
-			if private {
+			if !public {
 				// A private feed's stored title can name its subscriber.
 				outline.Text = feedURL
 				outline.Title = ""
@@ -125,13 +124,14 @@ func (s *Server) subscriptionOPML(ctx context.Context, filter store.LibraryFilte
 	return body.Bytes(), nil
 }
 
-// exportableFeedURL returns the Subscription's feed URL without credentials
-// and whether the feed is private. A feed is private when it has an AuthRef
-// or its URL carries userinfo or a secret-looking query parameter; those are
-// removed from the returned URL. ok is false for a feed that cannot be
-// exported at all: one on this server's own host, or one whose path holds a
-// secret that cannot be removed without changing the feed.
-func (s *Server) exportableFeedURL(sub store.Subscription, requestHostname string) (feedURL string, private, ok bool) {
+// exportableFeedURL returns the Subscription's feed URL and whether the feed
+// is public. The store records no directory provenance for Subscriptions, so
+// the only positive evidence of a public feed is a clean URL: http(s), no
+// AuthRef, userinfo, query or fragment. Every other feed is unclassified; its
+// URL is returned complete, with only userinfo removed, so it re-imports as
+// the same feed. ok is false for a feed that is never exported: one on this
+// server's own host, or one whose URL is not an absolute http(s) URL.
+func (s *Server) exportableFeedURL(sub store.Subscription, requestHostname string) (feedURL string, public, ok bool) {
 	u, err := url.Parse(sub.FeedURL)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return "", false, false
@@ -139,98 +139,9 @@ func (s *Server) exportableFeedURL(sub store.Subscription, requestHostname strin
 	if sameHostname(u.Hostname(), requestHostname) || (s.baseURL != nil && sameHostname(u.Hostname(), s.baseURL.Hostname())) {
 		return "", false, false
 	}
-	for _, segment := range strings.Split(u.Path, "/") {
-		// Mixed-case titles with punctuation are common in paths, so only a
-		// UUID or an unbroken run of letters and digits counts as a secret.
-		segment = strings.TrimSuffix(segment, path.Ext(segment))
-		if secretLike(segment, minSecretPathSegment) && (isUUID(segment) || !strings.ContainsAny(segment, secretPunctuation)) {
-			return "", false, false
-		}
-	}
-	private = sub.AuthRef != "" || u.User != nil
+	public = sub.AuthRef == "" && u.User == nil && u.RawQuery == "" && !u.ForceQuery && u.Fragment == ""
 	u.User = nil
-	u.Fragment, u.RawFragment = "", ""
-	if u.RawQuery != "" {
-		kept := make([]string, 0, strings.Count(u.RawQuery, "&")+1)
-		for _, pair := range strings.Split(u.RawQuery, "&") {
-			// Some servers also split parameters on semicolons.
-			if slices.ContainsFunc(strings.Split(pair, ";"), secretQueryParam) {
-				private = true
-				continue
-			}
-			kept = append(kept, pair)
-		}
-		u.RawQuery = strings.Join(kept, "&")
-	}
-	u.ForceQuery = false
-	return u.String(), private, true
-}
-
-const (
-	// Path segments are often long slugs, so only long opaque values count.
-	minSecretPathSegment = 32
-	minSecretQueryValue  = 16
-	secretPunctuation    = "-_.~+/=%"
-)
-
-var secretQueryNameParts = []string{"token", "key", "secret", "pass", "auth", "sig", "session", "cred", "pwd"}
-
-// secretQueryParam reports whether one raw name=value query parameter has a
-// credential-like name or an opaque value.
-func secretQueryParam(param string) bool {
-	rawName, rawValue, _ := strings.Cut(param, "=")
-	name, err := url.QueryUnescape(rawName)
-	if err != nil {
-		return true
-	}
-	name = strings.ToLower(name)
-	return secretLike(rawValue, minSecretQueryValue) ||
-		slices.ContainsFunc(secretQueryNameParts, func(part string) bool { return strings.Contains(name, part) })
-}
-
-// secretLike reports whether value looks like an opaque credential: a UUID,
-// or a long run of letters and digits. Values with punctuation (as in
-// base64 or escaped text) must also mix letter case, so lowercase slugs are
-// not mistaken for secrets.
-func secretLike(value string, minLen int) bool {
-	if isUUID(value) {
-		return true
-	}
-	if len(value) < minLen {
-		return false
-	}
-	var digit, lower, upper, separator bool
-	for _, r := range value {
-		switch {
-		case r >= '0' && r <= '9':
-			digit = true
-		case r >= 'a' && r <= 'z':
-			lower = true
-		case r >= 'A' && r <= 'Z':
-			upper = true
-		case strings.ContainsRune(secretPunctuation, r):
-			separator = true
-		default:
-			return false
-		}
-	}
-	return digit && (lower || upper) && (!separator || (lower && upper))
-}
-
-func isUUID(value string) bool {
-	if len(value) != 36 {
-		return false
-	}
-	for i, r := range value {
-		if i == 8 || i == 13 || i == 18 || i == 23 {
-			if r != '-' {
-				return false
-			}
-		} else if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
-			return false
-		}
-	}
-	return true
+	return u.String(), public, true
 }
 
 // sameHostname compares hostnames case-insensitively, ignoring a trailing dot,

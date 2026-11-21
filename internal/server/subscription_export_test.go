@@ -29,19 +29,17 @@ func TestSubscriptionExportOPML(t *testing.T) {
 	const (
 		publicURL    = "https://feeds.example.test/public.xml"
 		untitledURL  = "https://feeds.example.test/untitled.xml"
-		queryURL     = "https://feeds.example.test/query.xml?format=xml&page=2"
 		slugURL      = "https://feeds.example.test/shows/The-Best-Cooking-Podcast-of-2024-and-Beyond/feed.xml"
-		objectIDURL  = "https://feeds.example.test/public/shows/5e7b777ba085cbe7192b0607"
+		pathTokenURL = "https://feeds.example.test/private/7Qm4zN8vL2cR6tXp/feed.xml" //nolint:gosec // synthetic path token for the classification test
+		queryURL     = "https://feeds.example.test/query.xml?format=xml&page=2"
+		aliceURL     = "https://feeds.example.test/by-author.xml?author=alice"
+		bobURL       = "https://feeds.example.test/by-author.xml?author=bob"
 		fragmentURL  = "https://feeds.example.test/fragment.xml#section"
+		tokenURL     = "https://feeds.example.test/token.xml?format=xml&token=test-only-feed-token" //nolint:gosec // synthetic feed URL for the opt-in export test
 		privateURL   = "https://feeds.example.test/private.xml"
 		privateRef   = "test-only-auth-reference"
 		privateTitle = "Private feed for test-only-subscriber"
 		userinfoURL  = "https://test-only-feed-user:test-only-feed-pass@feeds.example.test/basic.xml" //nolint:gosec // synthetic feed credential for the exclusion test
-		tokenURL     = "https://feeds.example.test/token.xml?format=xml&token=test-only-feed-token"   //nolint:gosec // synthetic feed URL for the credential exclusion test
-		passkeyURL   = "https://feeds.example.test/passkey.xml?PassKey=test-only-feed-passkey"        //nolint:gosec // synthetic feed URL for the credential exclusion test
-		opaqueURL    = "https://feeds.example.test/opaque.xml?u=Zt9q4XWm%2BbR7k/Lp3%3D&lang=en;session=test-only-feed-session"
-		uuidPathURL  = "https://feeds.example.test/private/0f8fad5b-d9cb-469f-a165-70867728950e.rss"
-		opaquePath   = "https://feeds.example.test/episodes/aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY.xml"
 		hiddenURL    = "https://feeds.example.test/hidden.xml"
 		serverURL    = "https://canonical.example.test:8443/internal.xml"
 		requestURL   = "https://SERVER.example.test./local.xml"
@@ -61,17 +59,15 @@ func TestSubscriptionExportOPML(t *testing.T) {
 	for _, sub := range []store.Subscription{
 		{LibraryID: "library-local", FeedURL: publicURL, Title: `Daily & <News> "Live"`},
 		{LibraryID: second.ID, FeedURL: untitledURL},
-		{LibraryID: "library-local", FeedURL: queryURL, Title: "Query"},
 		{LibraryID: "library-local", FeedURL: slugURL, Title: "Slug"},
-		{LibraryID: "library-local", FeedURL: objectIDURL, Title: "Object ID"},
-		{LibraryID: "library-local", FeedURL: fragmentURL, Title: "Fragment"},
+		{LibraryID: "library-local", FeedURL: pathTokenURL, Title: "Path token"},
+		{LibraryID: "library-local", FeedURL: queryURL, Title: privateTitle},
+		{LibraryID: "library-local", FeedURL: aliceURL, Title: privateTitle},
+		{LibraryID: second.ID, FeedURL: bobURL, Title: privateTitle},
+		{LibraryID: "library-local", FeedURL: fragmentURL, Title: privateTitle},
+		{LibraryID: "library-local", FeedURL: tokenURL, Title: privateTitle},
 		{LibraryID: second.ID, FeedURL: privateURL, Title: privateTitle, AuthRef: privateRef},
 		{LibraryID: "library-local", FeedURL: userinfoURL, Title: privateTitle},
-		{LibraryID: "library-local", FeedURL: tokenURL, Title: privateTitle},
-		{LibraryID: "library-local", FeedURL: passkeyURL, Title: privateTitle},
-		{LibraryID: "library-local", FeedURL: opaqueURL, Title: privateTitle},
-		{LibraryID: "library-local", FeedURL: uuidPathURL, Title: privateTitle},
-		{LibraryID: second.ID, FeedURL: opaquePath, Title: privateTitle, AuthRef: privateRef},
 		{LibraryID: "library-archive", FeedURL: hiddenURL, Title: "Restricted feed"},
 		{LibraryID: "library-local", FeedURL: serverURL, Title: "Own server"},
 		{LibraryID: second.ID, FeedURL: requestURL, Title: "Request host", AuthRef: privateRef},
@@ -93,39 +89,41 @@ func TestSubscriptionExportOPML(t *testing.T) {
 		t.Fatalf("cache control = %q", got)
 	}
 	private := downloadSubscriptionOPML(t, srv, "?includePrivate=true")
-	for _, download := range []*httptest.ResponseRecorder{public, private} {
-		for _, forbidden := range []string{
-			"AuthRef", privateRef, privateTitle, hiddenURL, "test-only-feed-", "passkey=", "token=", "Zt9q4XWm", "session=",
-			"@", "#section", "<!--", "0f8fad5b", "aB3dE5fG7h", "canonical.example.test", "server.example.test",
-			"test-only/download/root", "dev-manager-secret",
-		} {
-			if strings.Contains(strings.ToLower(download.Body.String()), strings.ToLower(forbidden)) {
-				t.Fatalf("download contains %q", forbidden)
-			}
-		}
-	}
+	assertSubscriptionExportOmits(t, private.Body.String(),
+		"AuthRef", privateRef, privateTitle, hiddenURL, "test-only-feed-user", "test-only-feed-pass", "@",
+		"canonical.example.test", "server.example.test", "test-only/download/root", "dev-manager-secret")
+	assertSubscriptionExportOmits(t, public.Body.String(), "format=", "author=", "token=", "#section", "basic.xml", "private.xml", privateTitle)
 
+	// A clean URL is the only positive evidence of a public feed the store
+	// holds, so a bearer token in the path cannot be told apart from a slug.
 	wantPublic := map[string]string{
-		publicURL:   `Daily & <News> "Live"`,
-		untitledURL: "",
-		queryURL:    "Query",
-		slugURL:     "Slug",
-		objectIDURL: "Object ID",
-		"https://feeds.example.test/fragment.xml": "Fragment",
+		publicURL:    `Daily & <News> "Live"`,
+		untitledURL:  "",
+		slugURL:      "Slug",
+		pathTokenURL: "Path token",
 	}
 	assertSubscriptionOutlines(t, public.Body.Bytes(), wantPublic, nil)
-	wantPrivate := []string{
-		privateURL,
-		"https://feeds.example.test/basic.xml",
-		"https://feeds.example.test/token.xml?format=xml",
-		"https://feeds.example.test/passkey.xml",
-		"https://feeds.example.test/opaque.xml",
-	}
+	wantPrivate := []string{queryURL, aliceURL, bobURL, fragmentURL, tokenURL, privateURL, "https://feeds.example.test/basic.xml"}
 	assertSubscriptionOutlines(t, private.Body.Bytes(), wantPublic, wantPrivate)
 
 	imported := importSubscriptionOPML(t, public.Body.Bytes())
 	if !maps.Equal(imported, wantPublic) {
 		t.Fatalf("round-trip Subscriptions = %#v, want %#v", imported, wantPublic)
+	}
+	imported = importSubscriptionOPML(t, private.Body.Bytes())
+	for _, feedURL := range append(slices.Collect(maps.Keys(wantPublic)), aliceURL, bobURL, queryURL, privateURL) {
+		if _, ok := imported[feedURL]; !ok {
+			t.Fatalf("opt-in round trip lost %s: %#v", feedURL, imported)
+		}
+	}
+}
+
+func assertSubscriptionExportOmits(t *testing.T, body string, forbidden ...string) {
+	t.Helper()
+	for _, value := range forbidden {
+		if strings.Contains(strings.ToLower(body), strings.ToLower(value)) {
+			t.Fatalf("download contains %q: %s", value, body)
+		}
 	}
 }
 

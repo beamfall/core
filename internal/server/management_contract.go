@@ -133,7 +133,7 @@ var managementRouteContracts = []ManagementRouteContract{
 	{
 		Method:        http.MethodGet,
 		Pattern:       subscriptionExportPath,
-		Note:          "Download every Subscription in visible, unsealed Libraries as OPML 2.0, without credentials or feeds on this server. Private feeds (an auth reference, URL userinfo or a secret query parameter) are left out unless includePrivate=true, and their outlines omit the stored title.",
+		Note:          "Download every Subscription in visible, unsealed Libraries as OPML 2.0, without auth references, URL userinfo or feeds on this server. By default only clean http(s) feed URLs (no auth reference, userinfo, query or fragment) are exported; includePrivate=true adds the rest with their complete URL and no stored title.",
 		Authorization: "manager-session",
 		Success: &ManagementRouteResponseContract{
 			Status:      http.StatusOK,
