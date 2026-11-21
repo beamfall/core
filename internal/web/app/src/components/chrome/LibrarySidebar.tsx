@@ -283,10 +283,7 @@ export function LibrarySidebar({
               draft.order,
               startDraft(personal.pinned, personal.unpinned, personalIDOf).order,
             );
-          const personalChoice =
-            unmoved || sameOrder(draft.order, PERSONAL_ENTRIES.map(personalIDOf))
-              ? { ...choice, order: [] }
-              : choice;
+          const personalChoice = unmoved ? { ...choice, order: [] } : choice;
           try {
             await onSavePrefs(
               group === "libraries"
