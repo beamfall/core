@@ -13,12 +13,19 @@ The server SHALL share in-flight searches by normalized key and cache successful
 
 - **WHEN** a search starts while a search with the same normalized key is in flight
 - **THEN** both searches share the upstream work
+- **AND** the work continues while at least one caller is waiting for it
 
 #### Scenario: Upstream budget exhausted
 
 - **WHEN** uncached searches would exceed 15 upstream requests in a minute
 - **THEN** the server serves any matching cache entry and refuses further required upstream requests immediately with Graph `THROTTLED`
 - **AND** optional enrichment may be skipped when the primary results are already available
+
+#### Scenario: Server restarts with an exhausted budget
+
+- **WHEN** the server restarts after persisting its upstream request reservations
+- **THEN** unexpired reservations continue to count against the budget until their original deadlines
+- **AND** the server sends another upstream request only after durably recording its reservation
 
 ### Requirement: Feed directory identity and credentials
 
@@ -31,17 +38,22 @@ The server SHALL send `Beamfall/<version> (+https://beamfall.com/bot)` as the Us
 
 ### Requirement: Feed discovery from URLs
 
-The existing `searchFeeds` field SHALL accept absolute website URLs. Website discovery reads RSS alternate links and resolves relative links against the document's effective base URL, using the final response URL to resolve a relative HTML base. Outbound discovery requests SHALL use the hardened fetcher, bounded response bodies, and the shared upstream budget. Feed URLs from every directory provider and website discovery SHALL pass the public document URL checks before caching or return.
+The existing `searchFeeds` field SHALL accept absolute website URLs. Outbound discovery requests SHALL use the hardened fetcher, bounded response bodies, and the shared upstream budget. Feed URLs from every directory provider and website discovery SHALL pass the public document URL checks before caching or return.
 
 #### Scenario: Malformed website link
 
-- **WHEN** an input starts with an HTTP(S) scheme but does not parse as an absolute URL with a host
+- **WHEN** an input starts with an HTTP(S) scheme and fails URL parsing or the public document URL checks
 - **THEN** the field returns a localized `INVALID` error without an upstream request
+
+#### Scenario: Pasted Apple Podcasts show link
+
+- **WHEN** a show URL provides a numeric show ID and the iTunes lookup API supplies a usable feed
+- **THEN** the compiled plugin adapter uses the iTunes lookup API and the field returns that feed
 
 #### Scenario: Pasted website link
 
 - **WHEN** a fetched website advertises a usable relative RSS alternate link and declares a base URL
-- **THEN** the field returns the feed URL resolved against that base
+- **THEN** the field returns the feed URL resolved against that base, using the final response URL to resolve a relative HTML base
 
 #### Scenario: Unsafe directory hit
 
