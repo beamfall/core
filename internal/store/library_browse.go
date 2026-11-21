@@ -115,6 +115,7 @@ type libraryBrowseCandidate struct {
 	rowID       int64
 	year        int
 	duration    int
+	width       int
 	height      int
 	watched     bool
 	inProgress  bool
@@ -278,7 +279,7 @@ func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func()
 	args = append(args, certArgs...)
 	// #nosec G202 -- interpolated fragments are internally generated placeholders and closed filter SQL.
 	rows, err := reader.QueryContext(ctx, `
-		SELECT m.id, m.title, m.library_id, m.duration_seconds, COALESCE(m.year, 0), m.video_height, m.rowid
+		SELECT m.id, m.title, m.library_id, m.duration_seconds, COALESCE(m.year, 0), m.video_width, m.video_height, m.rowid
 		FROM media m
 		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
 		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+`
@@ -292,7 +293,7 @@ func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func()
 	candidates := []libraryBrowseCandidate{}
 	for rows.Next() {
 		var c libraryBrowseCandidate
-		if err := rows.Scan(&c.item.ID, &c.item.Title, &c.item.LibraryID, &c.duration, &c.year, &c.height, &c.rowID); err != nil {
+		if err := rows.Scan(&c.item.ID, &c.item.Title, &c.item.LibraryID, &c.duration, &c.year, &c.width, &c.height, &c.rowID); err != nil {
 			return nil, err
 		}
 		c.item.Kind = "media"
