@@ -660,6 +660,11 @@ func TestJellyfinCatalogIDLookupsReadCurrentRows(t *testing.T) {
 		t.Fatalf("episodes after season trash = %v", got)
 	}
 	f.get(t, "Shows/"+string(f.group)+"/Episodes?seasonId="+string(f.sub1), http.StatusNotFound)
+	// The group's year now comes from its live season only.
+	group := decodeList(t, f.get(t, "Items?ids="+string(f.group), http.StatusOK))
+	if len(group.Items) != 1 || group.Items[0].ProductionYear != 2011 {
+		t.Fatalf("group after season trash = %+v, want year 2011", group.Items)
+	}
 
 	// A trashed top container hides everything under it.
 	if err := f.st.TrashEntity(ctx, f.group, store.LibraryFilter{AllLibraries: true}, time.Now()); err != nil {
@@ -737,6 +742,35 @@ func TestIndexCacheReadSince(t *testing.T) {
 	c.store("k", visible, index, asked.Add(time.Millisecond))
 	if c.readSince("k", asked) != index {
 		t.Fatal("an index read after the request asked was not reused")
+	}
+}
+
+// An index expires catalogIndexTTL after it is stored, however long its read
+// and build took.
+func TestIndexCacheExpiresFromStore(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	c := indexCache{now: func() time.Time { return now }}
+	var visible [sha256.Size]byte
+	index := &catalogIndex{}
+	c.store("k", visible, index, now.Add(-catalogIndexTTL-time.Second))
+	if c.lookup("k", visible) != index || c.recent("k") != index {
+		t.Fatal("an index whose slow build outlasted the TTL expired as it was stored")
+	}
+}
+
+// IDs a replaced index confirmed absent stay absent on its replacement unless
+// the new read found them.
+func TestIndexCacheCarriesAbsentIDs(t *testing.T) {
+	var c indexCache
+	var visible [sha256.Size]byte
+	read := time.Unix(1_000_000, 0)
+	first := &catalogIndex{}
+	first.markAbsent([]string{"a", "b"})
+	c.store("k", visible, first, read)
+	second := &catalogIndex{byID: map[string]*catalogNode{"b": {id: "b"}}}
+	c.store("k", visible, second, read.Add(time.Second))
+	if !second.isAbsent("a") || second.isAbsent("b") {
+		t.Fatalf("carried absent = a:%v b:%v, want a only", second.isAbsent("a"), second.isAbsent("b"))
 	}
 }
 
