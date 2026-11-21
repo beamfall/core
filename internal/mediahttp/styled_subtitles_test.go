@@ -103,6 +103,27 @@ Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{\pos(20,40)}Styled
 	handler := NewHandler(st, authService, tokens, nil, nil)
 	handler.SetSubtitles(runner, t.TempDir())
 
+	t.Run("shared extraction slots saturated", func(t *testing.T) {
+		for range subtitleExtractionSlots {
+			release, err := handler.subtitleJobs.acquireSlot(ctx, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(release)
+		}
+		originalWait := handler.subtitleWait
+		t.Cleanup(func() { handler.subtitleWait = originalWait })
+		handler.subtitleWait = 5 * time.Millisecond
+		for _, path := range []string{"0.ass", "0.ass/fonts", "0.ass/fonts/1"} {
+			req := httptest.NewRequest(http.MethodGet, "/api/media/subtitle/"+token+"/"+path, nil)
+			rec := httptest.NewRecorder()
+			handler.Subtitles(rec, req)
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Errorf("%s with both slots held: status = %d, want 503", path, rec.Code)
+			}
+		}
+	})
+
 	for _, tc := range []struct {
 		name, token, path, contentType, body string
 		status                               int

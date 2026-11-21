@@ -60,6 +60,7 @@ import {
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
+import { attachCaptionElements, captionElement, showCaptionElement } from "../player/streamTracks";
 import { useGaplessAudio } from "../player/useGaplessAudio";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
@@ -1117,6 +1118,29 @@ describe("PlayerPage failure and recovery states", () => {
     fireEvent.click(tryAgain);
     expect(retry).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Back to Browse" })).not.toBeInTheDocument();
+  });
+
+  it("starts the ASS fallback on the video mounted after Try again", () => {
+    const state = playerState({ phase: "playing" });
+    const { rerender, retry } = renderPlayer(state);
+    const failedVideo = stageVideo();
+    state.phase = "message";
+    state.message = "Playback failed";
+    rerender();
+    expect(failedVideo).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(retry).toHaveBeenCalledOnce();
+    state.phase = "playing";
+    rerender();
+    const video = stageVideo();
+    expect(video).not.toBe(failedVideo);
+    const track = { id: "styled", format: "ass", url: "/api/media/sidecar/grant/0.ass" };
+    attachCaptionElements(video, [track], "en");
+    act(() => showCaptionElement(video, track.id));
+    expect(captionElement(video, track.id)).toHaveAttribute(
+      "src",
+      "/api/media/sidecar/grant/0.vtt",
+    );
   });
 
   it("renders exactly one h1 on the player route (CORE-0089)", () => {

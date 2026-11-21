@@ -1,10 +1,11 @@
-import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CAPTION_SHOWN_EVENT,
   CAPTION_TRACK_ATTRIBUTE,
   captionElement,
   reloadCaptionElement,
   STYLED_CAPTION_SOURCE_ATTRIBUTE,
+  shownCaptionElement,
   startNativeCaption,
 } from "./streamTracks";
 
@@ -83,7 +84,7 @@ export async function probeCaptionSource(url: string): Promise<number | null> {
  * counts as failed.
  */
 export function useCaptionLoad(
-  videoRef: RefObject<HTMLVideoElement | null>,
+  video: HTMLVideoElement | null,
   options: CaptionLoadOptions = {},
 ): CaptionLoad {
   const {
@@ -93,16 +94,17 @@ export function useCaptionLoad(
   } = options;
   const [status, setStatus] = useState<CaptionLoadStatus>("idle");
   const shownRef = useRef<string | null>(null);
-  // Set while the player itself reloads a track the server is preparing, so
-  // the shown event that reload fires keeps the retry count and the status.
-  const autoRetryRef = useRef(false);
-  const attemptsRef = useRef(0);
-
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
+    if (!video) {
+      shownRef.current = null;
+      setStatus("idle");
+      return;
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    // An automatic reload keeps the retry count for this video and pick.
+    let autoRetry = false;
+    let attempts = 0;
     // Bumped on every pick, so a probe answering for an earlier pick is dropped.
     let generation = 0;
     let styled: { element: HTMLTrackElement; controller: AbortController } | undefined;
@@ -116,17 +118,16 @@ export function useCaptionLoad(
       clearTimers();
       setStatus(next);
     };
-    const onShown = (event: Event) => {
-      const id = (event as CustomEvent<string | null>).detail ?? null;
+    const watchSelection = (id: string | null) => {
       const element = id === null ? null : captionElement(video, id);
       if (styled && styled.element === element) return;
       styled?.controller.abort();
       styled = undefined;
-      const automatic = autoRetryRef.current && id === shownRef.current;
-      autoRetryRef.current = false;
+      const automatic = autoRetry && id === shownRef.current;
+      autoRetry = false;
       generation++;
       shownRef.current = id;
-      if (!automatic) attemptsRef.current = 0;
+      if (!automatic) attempts = 0;
       // Burned-in and menu-only tracks have no element to watch.
       if (id === null || !element) return settle("idle");
       const watchNative = () => {
@@ -173,15 +174,15 @@ export function useCaptionLoad(
       clearTimers();
       const pick = generation;
       const url = element.src || element.getAttribute("src") || "";
-      if (!url || attemptsRef.current >= maxRetries) return settle("failed");
+      if (!url || attempts >= maxRetries) return settle("failed");
       void probe(url).then((retryAfter) => {
         if (pick !== generation || shownRef.current !== id) return;
         if (retryAfter === null) return settle("failed");
-        attemptsRef.current++;
+        attempts++;
         settle("preparing");
         retryTimer = setTimeout(() => {
           if (pick !== generation || shownRef.current !== id) return;
-          autoRetryRef.current = true;
+          autoRetry = true;
           reloadCaptionElement(video, id);
         }, retryAfter * 1000);
       });
@@ -202,9 +203,11 @@ export function useCaptionLoad(
       const id = shownRef.current;
       if (element && id !== null) onFailed(id, element);
     };
+    const onShown = (event: Event) => watchSelection((event as CustomEvent<string | null>).detail);
     video.addEventListener(CAPTION_SHOWN_EVENT, onShown);
     video.addEventListener("load", onLoad, true);
     video.addEventListener("error", onError, true);
+    watchSelection(shownCaptionElement(video));
     return () => {
       generation++;
       styled?.controller.abort();
@@ -213,13 +216,12 @@ export function useCaptionLoad(
       video.removeEventListener("load", onLoad, true);
       video.removeEventListener("error", onError, true);
     };
-  }, [videoRef, timeoutMS, maxRetries, probe]);
+  }, [video, timeoutMS, maxRetries, probe]);
 
   const retry = useCallback(() => {
-    const video = videoRef.current;
     const id = shownRef.current;
     if (video && id !== null) reloadCaptionElement(video, id);
-  }, [videoRef]);
+  }, [video]);
 
   return { status, retry };
 }

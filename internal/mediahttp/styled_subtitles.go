@@ -48,33 +48,46 @@ func (h *Handler) serveStyledSubtitle(w http.ResponseWriter, r *http.Request, gr
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	var data []byte
-	contentType := "text/x-ssa; charset=utf-8"
-	switch resource {
-	case "":
-		data, err = converter.ExtractStyledSubtitle(ctx, file.Path, streamIndex)
-		if err == nil {
-			err = subtitleingest.Guard("ass", data)
-		}
-	case "fonts":
-		contentType = "application/json"
-		var indexes []int
-		indexes, err = converter.SubtitleFontIndexes(ctx, file.Path)
-		if err == nil {
-			data, err = json.Marshal(indexes)
-		}
-	default:
+	var fontIndex int
+	if resource != "" && resource != "fonts" {
 		attachment, ok := strings.CutPrefix(resource, "fonts/")
-		index, parseErr := strconv.Atoi(attachment)
-		if !ok || parseErr != nil || index < 0 {
+		index, err := strconv.Atoi(attachment)
+		if !ok || err != nil || index < 0 {
 			http.NotFound(w, r)
 			return
 		}
-		contentType = "application/octet-stream"
-		data, err = converter.ExtractSubtitleFont(ctx, file.Path, index)
+		fontIndex = index
 	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	release, err := h.subtitleJobs.acquireSlot(ctx, h.subtitleWaitLimit())
+	if err != nil {
+		http.Error(w, "subtitle unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var data []byte
+	contentType := "text/x-ssa; charset=utf-8"
+	func() {
+		defer release()
+		switch resource {
+		case "":
+			data, err = converter.ExtractStyledSubtitle(ctx, file.Path, streamIndex)
+			if err == nil {
+				err = subtitleingest.Guard("ass", data)
+			}
+		case "fonts":
+			contentType = "application/json"
+			var indexes []int
+			indexes, err = converter.SubtitleFontIndexes(ctx, file.Path)
+			if err == nil {
+				data, err = json.Marshal(indexes)
+			}
+		default:
+			contentType = "application/octet-stream"
+			data, err = converter.ExtractSubtitleFont(ctx, file.Path, fontIndex)
+		}
+	}()
 	if errors.Is(err, ffmpeg.ErrFontAttachmentNotFound) {
 		http.NotFound(w, r)
 		return

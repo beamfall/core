@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { act, render, screen } from "@testing-library/react";
-import { createRef } from "react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   attachCaptionElements,
@@ -27,7 +27,6 @@ vi.mock("./styledCaptionRenderer", () => {
   return { startStyledCaption };
 });
 
-const videoRef = createRef<HTMLVideoElement>();
 // The server's answer to the failed track: seconds to wait while it is still
 // extracting, or null for a real failure.
 let probeAnswer: number | null = null;
@@ -35,10 +34,11 @@ const probe = vi.fn<CaptionProbe>(async () => probeAnswer);
 const OPTIONS = { timeoutMS: 1000, maxRetries: 2, probe };
 
 function Harness() {
-  const { status, retry } = useCaptionLoad(videoRef, OPTIONS);
+  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
+  const { status, retry } = useCaptionLoad(video, OPTIONS);
   return (
     <>
-      <video ref={videoRef} />
+      <video ref={setVideo} />
       <output data-testid="status">{status}</output>
       <button type="button" onClick={retry}>
         retry
@@ -48,8 +48,8 @@ function Harness() {
 }
 
 function setup() {
-  render(<Harness />);
-  const video = videoRef.current as HTMLVideoElement;
+  const { container } = render(<Harness />);
+  const video = container.querySelector("video") as HTMLVideoElement;
   attachCaptionElements(
     video,
     [
