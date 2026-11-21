@@ -659,7 +659,9 @@ func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filte
 	}
 	defer tx.Rollback()
 
-	var done []versionMergeRestored
+	// Check every item before replaying any, so a hidden item reads as not
+	// found rather than surfacing another item's file error first.
+	var pending []versionMergeRestored
 	for i := len(items) - 1; i >= 0; i-- {
 		item := items[i]
 		var state versionMergeItemState
@@ -690,10 +692,14 @@ func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filte
 		} else if !ok {
 			return BulkOpBatch{}, ValidationError("batch not found")
 		}
-		if err := undoVersionMergeItemTx(ctx, tx, item.MediaID, state); err != nil {
+		pending = append(pending, versionMergeRestored{item.MediaID, state})
+	}
+	var done []versionMergeRestored
+	for _, r := range pending {
+		if err := undoVersionMergeItemTx(ctx, tx, r.loser, r.state); err != nil {
 			return BulkOpBatch{}, err
 		}
-		done = append(done, versionMergeRestored{item.MediaID, state})
+		done = append(done, r)
 	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE op_batch SET undone_at_ms = ? WHERE id = ?`, timeToMillis(now), batchID); err != nil {
