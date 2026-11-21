@@ -116,4 +116,28 @@ test.describe("poster size", () => {
     await page.getByRole("button", { name: "Large posters" }).click();
     expect(errors, errors.join("\n")).toEqual([]);
   });
+  // CORE-2893: one app-wide choice. Pick Small on the Categories pivot and
+  // Home's shelves draw at Small too.
+  test("a choice on any pivot reaches Home's shelves", async ({ page }) => {
+    const errors = collectFatalErrors(page);
+    await page.goto("/web/");
+    const link = page.locator('a[href*="/n/library-"]').first();
+    await link.waitFor({ state: "attached" });
+    const href = await link.getAttribute("href");
+    await page.goto(`${href}/categories`);
+    const control = page.getByRole("group", { name: "Poster size" });
+    await control.getByRole("button", { name: "Small posters" }).click();
+
+    await page.getByRole("link", { name: "Home" }).first().click();
+    const card = page.locator(".bf-shelf a.bf-card").first();
+    await expect(card).toBeVisible();
+    await expect
+      .poll(() => card.evaluate((el) => Math.round(el.getBoundingClientRect().width)))
+      .toBe(116);
+
+    // Back to the default so later specs on this browser see Large.
+    await page.goto(`${href}/categories`);
+    await control.getByRole("button", { name: "Large posters" }).click();
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
 });

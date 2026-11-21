@@ -424,7 +424,7 @@
 }
 
 [data-register="viewer"] .bf-cast-card {
-  width: 120px;
+  width: var(--bf-cast-card);
 }
 
 [data-register="viewer"] .bf-cast-link {
@@ -485,8 +485,9 @@
 }
 
 @media (max-width: 640px) {
+  /* 96px at Large, as before the poster size reached the cast row. */
   [data-register="viewer"] .bf-cast-card {
-    width: 96px;
+    width: calc(var(--bf-cast-card) * 0.8);
   }
 }
 
