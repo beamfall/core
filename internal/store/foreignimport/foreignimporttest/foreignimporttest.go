@@ -42,12 +42,16 @@ func WriteVersionedSQLiteFixture(t *testing.T, dir, name string, userVersion int
 	})
 }
 
+// PlexFixtureAccount is the source-user ID of WritePlexFixture's one account.
+const PlexFixtureAccount = "Owner#1"
+
 // WritePlexFixture writes a minimal Plex `com.plexapp.plugins.library.db` to a
 // temp file and returns its path: a completed item (view_count > 0 + a
 // last_viewed_at instant) at watchedPath and an in-progress item (view_offset
 // in milliseconds) at resumePath, plus an untouched item the reader's WHERE
 // clause excludes. The watched item's last_viewed_at is the fixed unix instant
 // 1614834367 so a caller can assert the historical timestamp.
+// Both settings rows belong to the one Plex account PlexFixtureAccount.
 func WritePlexFixture(t *testing.T, dir, watchedPath, resumePath string) string {
 	t.Helper()
 	return exec(t, filepath.Join(dir, "plex.db"), []string{
@@ -55,15 +59,17 @@ func WritePlexFixture(t *testing.T, dir, watchedPath, resumePath string) string 
 		`CREATE TABLE metadata_items (id INTEGER PRIMARY KEY, guid TEXT, duration INTEGER)`,
 		`CREATE TABLE media_items (id INTEGER PRIMARY KEY, metadata_item_id INTEGER, duration INTEGER)`,
 		`CREATE TABLE media_parts (id INTEGER PRIMARY KEY, media_item_id INTEGER, file TEXT)`,
-		`CREATE TABLE metadata_item_settings (id INTEGER PRIMARY KEY, guid TEXT, view_offset INTEGER, view_count INTEGER, last_viewed_at INTEGER)`,
+		`CREATE TABLE metadata_item_settings (id INTEGER PRIMARY KEY, account_id INTEGER, guid TEXT, view_offset INTEGER, view_count INTEGER, last_viewed_at INTEGER, rating REAL)`,
+		`CREATE TABLE accounts (id INTEGER PRIMARY KEY, name TEXT)`,
+		`INSERT INTO accounts VALUES (1, 'Owner')`,
 		`INSERT INTO metadata_items VALUES (1, 'plex://item/aaa', 5400000)`,
 		`INSERT INTO media_items VALUES (10, 1, 5400000)`,
 		`INSERT INTO media_parts VALUES (100, 10, '` + watchedPath + `')`,
-		`INSERT INTO metadata_item_settings VALUES (1, 'plex://item/aaa', 0, 2, 1614834367)`,
+		`INSERT INTO metadata_item_settings VALUES (1, 1, 'plex://item/aaa', 0, 2, 1614834367, NULL)`,
 		`INSERT INTO metadata_items VALUES (2, 'plex://item/bbb', 6000000)`,
 		`INSERT INTO media_items VALUES (20, 2, 6000000)`,
 		`INSERT INTO media_parts VALUES (200, 20, '` + resumePath + `')`,
-		`INSERT INTO metadata_item_settings VALUES (2, 'plex://item/bbb', 120000, 0, 0)`,
+		`INSERT INTO metadata_item_settings VALUES (2, 1, 'plex://item/bbb', 120000, 0, 0, NULL)`,
 		`INSERT INTO metadata_items VALUES (3, 'plex://item/ccc', 100000)`,
 		`INSERT INTO media_items VALUES (30, 3, 100000)`,
 		`INSERT INTO media_parts VALUES (300, 30, '/media/films/Untouched.mkv')`,
