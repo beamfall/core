@@ -51,6 +51,16 @@ func startWorkerShimGuardian(lifetimeFD int) error {
 }
 
 func startWorkerShimGuardianProcess(lifetime *os.File, cmd *exec.Cmd, timeout time.Duration) error {
+	// The shim pins its group before the guardian joins it and holds the pin
+	// until the guardian reports readiness, which it does only once it holds
+	// its own. So the guardian is never in an unpinned group, and the shim
+	// reaps its pin before exec, leaving the artifact no stray child
+	// (CORE-2754).
+	pin, err := integrationhost.PinProcessGroup(syscall.Getpgrp())
+	if err != nil {
+		return fmt.Errorf("worker-shim: %w", err)
+	}
+	defer pin.Release()
 	readyR, readyW, err := os.Pipe()
 	if err != nil {
 		return fmt.Errorf("worker-shim: guardian readiness pipe: %w", err)
