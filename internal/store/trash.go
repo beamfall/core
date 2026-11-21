@@ -276,7 +276,8 @@ func (s *Store) trashedMediaSQL(ctx context.Context, filter LibraryFilter) ([]Tr
 }
 
 // purgeableTrashedMediaSelect is the inner selection of Media eligible for a
-// retention purge: trashed before the cutoff AND NOT in a Custodial Library.
+// retention purge: trashed before the cutoff, outside a Custodial Library,
+// with no verified Version merge still waiting for its engagement commit.
 // A Custodial Library holds the canonical (only) copy of its bytes (ADR-0045
 // §2.1), so purging its catalog row would be unrecoverable data loss — there
 // is no operator-on-disk copy to re-import on the next scan. Its durability
@@ -287,6 +288,8 @@ const purgeableTrashedMediaSelect = `
 	SELECT id FROM media
 	WHERE trashed_at_ms IS NOT NULL AND trashed_at_ms < ?
 	  AND library_id NOT IN (SELECT id FROM library WHERE custodial = 1)
+	  AND NOT EXISTS (SELECT 1 FROM op_batch_item i
+	    WHERE i.media_id = media.id AND json_extract(i.prior_state, '$.engagementLibraryId') IS NOT NULL)
 `
 
 // PurgeTrashedBefore removes catalog rows for media trashed before the cutoff.

@@ -3,6 +3,7 @@ package scan
 import (
 	"errors"
 	"log/slog"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -65,6 +66,9 @@ func (s *scanWalkState) attachVersion(key string, imported store.ImportMediaFile
 		AnchorLabel:       anchor.label,
 		DeriveLabels:      parsed.VersionLabel == "" && anchor.label == "",
 	})
+	if errors.Is(err, store.ErrVersionNotAttached) {
+		s.splitVersionDirs[filepath.Dir(imported.Path)] = true
+	}
 	if errors.Is(err, store.ErrVersionNotAttached) || errors.Is(err, store.ErrManagedAdmissionInFlight) {
 		return "", false, nil
 	}
@@ -115,96 +119,122 @@ func (s *scanWalkState) countUnmatchedVersions() {
 	}
 }
 
-// seedVersionAnchors adds, once per directory, an anchor for each title a
-// previous scan cataloged there. Without it a file whose name sorts before an
-// already cataloged sibling would become its own Media, and the sibling could
-// then never join it. The stored files are parsed like walked ones. Each
-// title's anchor is its first Version in label order: the anchor re-imports as
-// a plain file and so refreshes the Media row's probe facts, which playback
-// reads as that first Version's.
+// seedVersionAnchors remembers the first Version of each title already
+// cataloged in the directory. A later file can attach even when it sorts
+// before that Version in the walk.
 func (s *scanWalkState) seedVersionAnchors(dir string) error {
 	if s.versionDirsSeeded[dir] {
 		return nil
 	}
 	s.versionDirsSeeded[dir] = true
-	if s.parser == nil {
-		return nil
+	firsts, split, err := s.directoryVersions(dir)
+	if err != nil {
+		return err
 	}
-	type seed struct {
-		file   store.MediaFile
-		parsed ParsedMedia
-	}
-	var firsts map[string]seed
-	var keys []string
-	// A second pass reads the directory again after a version merge moved
-	// files between Media.
-	for pass := 0; pass < 2; pass++ {
-		files, err := s.st.MediaFilesInDirectory(s.ctx, s.req.LibraryID, dir)
-		if err != nil {
-			return err
-		}
-		firsts, keys = map[string]seed{}, nil
-		// split lists, per key, the Media holding a file that parsed with no
-		// Version label: two or more is a title an earlier scan split before
-		// it labelled Versions (CORE-2473).
-		split := map[string][]store.MediaID{}
-		for _, file := range files {
-			if file.PartOrdinal != 0 {
-				continue
-			}
-			parsed, parsedOK, refused := s.parseFilename(file.Path, ParseProbe{})
-			if refused {
-				continue
-			}
-			candidate := store.ImportMediaFile{Path: file.Path, Extra: isExtraPath(s.extrasRoot, file.Path)}
-			if imageClassForPath(file.Path) {
-				candidate.Class = store.MediaClassImage
-			}
-			key := s.versionGroupKey(candidate, parsed, parsedOK)
-			if key == "" {
-				continue
-			}
-			prior, ok := firsts[key]
-			if !ok {
-				keys = append(keys, key)
-			}
-			if !ok || (file.MediaID == prior.file.MediaID && file.VersionLabel < prior.file.VersionLabel) {
-				firsts[key] = seed{file: file, parsed: parsed}
-			}
-			if parsed.VersionLabel == "" && !slices.Contains(split[key], file.MediaID) {
-				split[key] = append(split[key], file.MediaID)
-			}
-		}
-		if pass > 0 || !s.mergeSplitVersions(keys, split) {
-			break
-		}
-	}
-	for _, key := range keys {
-		first := firsts[key]
+	for key, first := range firsts {
 		s.rememberVersionAnchor(key, first.file.MediaID, first.file.ContentFingerprint, first.parsed)
+		if len(split[key]) > 1 {
+			s.splitVersionDirs[dir] = true
+		}
 	}
 	return nil
 }
 
-// mergeSplitVersions folds each title's already-split unlabelled copies into
-// one Media (store.MergeSplitVersions, CORE-2490) and reports whether any
-// merged. A failed merge only logs: the files keep their own Media, as before.
-func (s *scanWalkState) mergeSplitVersions(keys []string, split map[string][]store.MediaID) bool {
-	merged := false
-	for _, key := range keys {
-		ids := split[key]
-		if len(ids) < 2 {
+type directoryVersion struct {
+	file   store.MediaFile
+	parsed ParsedMedia
+}
+
+func (s *scanWalkState) directoryVersions(dir string) (map[string]directoryVersion, map[string][]store.MediaID, error) {
+	files, err := s.st.MediaFilesInDirectory(s.ctx, s.req.LibraryID, dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	firsts := make(map[string]directoryVersion)
+	split := make(map[string][]store.MediaID)
+	for _, file := range files {
+		if file.PartOrdinal != 0 {
 			continue
 		}
-		result, err := s.st.MergeSplitVersions(s.ctx, s.req.LibraryID, ids, time.Now().UTC())
-		if err != nil {
-			slog.Warn("scan: version merge failed", "library", s.req.LibraryID, "media", ids, "error", err)
+		parsed, parsedOK, refused := s.parseFilename(file.Path, ParseProbe{})
+		if refused {
+			continue
 		}
-		if len(result.Merged) > 0 {
-			merged = true
+		candidate := store.ImportMediaFile{Path: file.Path, Extra: isExtraPath(s.extrasRoot, file.Path)}
+		if imageClassForPath(file.Path) {
+			candidate.Class = store.MediaClassImage
+		}
+		key := s.versionGroupKey(candidate, parsed, parsedOK)
+		if key == "" {
+			continue
+		}
+		prior, ok := firsts[key]
+		if !ok || (file.MediaID == prior.file.MediaID && file.VersionLabel < prior.file.VersionLabel) {
+			firsts[key] = directoryVersion{file: file, parsed: parsed}
+		}
+		if parsed.VersionLabel == "" && !slices.Contains(split[key], file.MediaID) {
+			split[key] = append(split[key], file.MediaID)
 		}
 	}
-	return merged
+	return firsts, split, nil
+}
+
+var mergeScanSplitVersions = (*store.Store).MergeSplitVersions
+
+// Reread affected directories after verified copies have kept their sampled
+// Media. Distinct files still use the default CORE-2490 survivor rule.
+func (s *scanWalkState) mergeSplitVersions(unverified unverifiedCopies) error {
+	if s.parser == nil {
+		return s.ctx.Err()
+	}
+	for _, dir := range pendingIDs(s.splitVersionDirs) {
+		_, split, err := s.directoryVersions(dir)
+		if err != nil {
+			return err
+		}
+		for _, key := range slices.Sorted(maps.Keys(split)) {
+			if err := s.ctx.Err(); err != nil {
+				return err
+			}
+			s.mergeTitleVersions(split[key], unverified)
+		}
+		if err := s.ctx.Err(); err != nil {
+			return err
+		}
+		delete(s.splitVersionDirs, dir)
+	}
+	return s.ctx.Err()
+}
+
+// mergeTitleVersions batches a title's Media, then batches whatever neither
+// survived nor merged. Each pass removes at least its survivor, so n Media take
+// at most n-1 store calls.
+func (s *scanWalkState) mergeTitleVersions(ids []store.MediaID, unverified unverifiedCopies) {
+	remaining := slices.DeleteFunc(slices.Clone(ids), func(id store.MediaID) bool { return unverified[id] })
+	for len(remaining) >= 2 && s.ctx.Err() == nil {
+		result, err := mergeScanSplitVersions(s.st, s.ctx, s.req.LibraryID, remaining, time.Now().UTC())
+		if err != nil {
+			slog.Warn("scan: version merge failed", "library", s.req.LibraryID, "media", remaining, "error", err)
+			return
+		}
+		if result.Survivor == "" {
+			return // fewer than two candidates are eligible
+		}
+		for _, loser := range result.Merged {
+			if s.result.versionMedia[loser] {
+				delete(s.result.versionMedia, loser)
+				s.result.versionMedia[result.Survivor] = true
+			}
+			for i := range s.result.Files {
+				if s.result.Files[i].MediaID == loser {
+					s.result.Files[i].MediaID = result.Survivor
+				}
+			}
+		}
+		remaining = slices.DeleteFunc(remaining, func(id store.MediaID) bool {
+			return id == result.Survivor || slices.Contains(result.Merged, id)
+		})
+	}
 }
 
 // rememberVersionAnchor records the first imported file of a title.

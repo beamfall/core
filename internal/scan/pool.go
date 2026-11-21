@@ -97,7 +97,7 @@ type probeOutcome struct {
 // hash. Store access here is read-only; the store serializes it internally
 // (one write connection, ADR-0011 §1), so concurrent fills are safe alongside
 // the consumer's ordered writes.
-func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, grabber FrameGrabber) {
+func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, grabber FrameGrabber, reservations []store.StoredFingerprint) {
 	stored, err := st.MediaFileFingerprintByPath(ctx, t.path)
 	if err != nil {
 		t.err = err
@@ -116,7 +116,7 @@ func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, g
 	if t.fastPath {
 		return
 	}
-	fingerprint, err := hashScanFile(ctx, t.path, t.legacyComparison(ctx))
+	fingerprint, err := hashScanFile(ctx, t.path, t.legacyComparison(ctx, reservations))
 	if err != nil {
 		t.err = err
 		return

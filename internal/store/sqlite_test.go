@@ -369,10 +369,10 @@ func TestOpenCreatesJobTablesAndEventsVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 23 {
-		t.Fatalf("events user_version = %d, want 23", version)
+	if version != schemaFreezeEventsMigrations {
+		t.Fatalf("events user_version = %d, want %d", version, schemaFreezeEventsMigrations)
 	}
-	for _, name := range []string{"job", "job_checkpoint", "job_event", "event_outbox", "schedule_occurrence", "schedule_occurrence_member"} {
+	for _, name := range []string{"job", "job_checkpoint", "job_event", "event_outbox", "schedule_occurrence", "schedule_occurrence_member", "version_merge_playback"} {
 		if !tableExists(t, store.eventsW, name) {
 			t.Fatalf("%s table was not created", name)
 		}

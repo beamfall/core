@@ -230,6 +230,10 @@ func Open(ctx context.Context, dataDir string, opts Options) (*Store, error) {
 		_ = st.Close()
 		return nil, err
 	}
+	if err := st.recoverVersionCopyEngagement(ctx); err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("recover Version merge engagement: %w", err)
+	}
 	if err := st.importIntegrationAuthAttempts(ctx); err != nil {
 		_ = st.Close()
 		return nil, fmt.Errorf("import integration auth attempts: %w", err)
@@ -2898,10 +2902,18 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	defer tx.Rollback()
 
 	var mediaID MediaID
-	err = tx.QueryRowContext(ctx,
-		"SELECT media_id FROM media_file WHERE content_fingerprint = ? AND missing_at_ms IS NULL",
-		imported.ContentFingerprint,
-	).Scan(&mediaID)
+	var versionLabel string
+	var partOrdinal int
+	err = tx.QueryRowContext(ctx, `
+		SELECT f.media_id, f.version_label, f.part_ordinal
+		FROM media_file f JOIN media m ON m.id = f.media_id
+		WHERE f.content_fingerprint = ? AND (f.missing_at_ms IS NULL OR (
+		  f.path = ? AND f.version_label <> '' AND m.library_id = ? AND m.trashed_at_ms IS NULL
+		  AND NOT EXISTS (SELECT 1 FROM media_file live
+		    WHERE live.media_id = f.media_id AND live.version_label = f.version_label
+		      AND live.part_ordinal = f.part_ordinal AND live.missing_at_ms IS NULL AND live.path <> f.path)
+		))
+	`, imported.ContentFingerprint, imported.Path, imported.LibraryID).Scan(&mediaID, &versionLabel, &partOrdinal)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return Media{}, MediaFile{}, false, err
 	}
@@ -2937,6 +2949,7 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		}
 		if shared {
 			detachedFrom, mediaID = mediaID, ""
+			versionLabel, partOrdinal = "", 0
 		}
 	}
 	if mediaID == "" {
@@ -2955,15 +2968,16 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	// A re-imported file that is not its Media's first Version leaves the row's
 	// probe facts alone: they describe that first Version (see
 	// firstVersionFingerprintSQL), whose file playback trusts them for.
-	keepProbeFacts := false
+	keepTitle, keepProbeFacts := false, false
 	if mediaID != "" && detachedFrom == "" {
 		first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
 		if err != nil {
 			return Media{}, MediaFile{}, false, err
 		}
-		keepProbeFacts = first != "" && (imported.KeepProbeFacts || first != imported.ContentFingerprint)
+		keepTitle = first != "" && first != imported.ContentFingerprint
+		keepProbeFacts = keepTitle || (first != "" && imported.KeepProbeFacts)
 	}
-	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, imported, plane.encrypted, keepProbeFacts)
+	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, imported, plane.encrypted, keepTitle, keepProbeFacts)
 	if err != nil {
 		return Media{}, MediaFile{}, false, err
 	}
@@ -2971,6 +2985,8 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		MediaID:            mediaID,
 		Path:               imported.Path,
 		ContentFingerprint: imported.ContentFingerprint,
+		VersionLabel:       versionLabel,
+		PartOrdinal:        partOrdinal,
 		OSHash:             imported.OSHash,
 		PHash:              imported.PHash,
 		SizeBytes:          imported.SizeBytes,
@@ -3071,7 +3087,7 @@ func checkManagedAdmissionFingerprintTx(ctx context.Context, tx *sql.Tx, importe
 // upsertMediaRowForImportTx inserts or updates the Media row for an imported
 // file. keepProbeFacts leaves an existing row's duration, container, codec and
 // frame size as they are.
-func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile, encrypted, keepProbeFacts bool) (Media, bool, error) {
+func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile, encrypted, keepTitle, keepProbeFacts bool) (Media, bool, error) {
 	var existed int
 	err := tx.QueryRowContext(ctx, "SELECT 1 FROM media WHERE id = ?", mediaID).Scan(&existed)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -3092,6 +3108,9 @@ func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID,
 		VideoHeight:     max(0, imported.VideoHeightHint),
 	}
 	rawClass := string(imported.Class)
+	if keepProbeFacts {
+		rawClass = ""
+	}
 	if media.Class == "" {
 		media.Class = MediaClassVideo
 	}
@@ -3100,7 +3119,7 @@ func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID,
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scan', ?)
 		ON CONFLICT(id) DO UPDATE SET
 		  library_id = excluded.library_id,
-		  title = CASE WHEN media.title_identified = 1 THEN media.title ELSE excluded.title END,
+		  title = CASE WHEN ? OR media.title_identified = 1 THEN media.title ELSE excluded.title END,
 		  summary = CASE WHEN media.summary_identified = 1 THEN media.summary
 		                 WHEN excluded.summary <> ''       THEN excluded.summary
 		                 ELSE media.summary END,
@@ -3115,7 +3134,7 @@ func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID,
 		  media_class = CASE WHEN ? <> '' THEN ? ELSE media.media_class END,
 		  extra = CASE WHEN ? OR excluded.extra = 1 THEN excluded.extra ELSE media.extra END
 	`, media.ID, media.LibraryID, media.Title, media.Summary, nullableInt(media.Year), media.DurationSeconds, media.Container, media.Codec, media.VideoWidth, media.VideoHeight, media.Class, boolInt(imported.Extra),
-		keepProbeFacts, keepProbeFacts, keepProbeFacts, keepProbeFacts, keepProbeFacts, rawClass, rawClass, imported.ExtraFromPath); err != nil {
+		keepTitle, keepProbeFacts, keepProbeFacts, keepProbeFacts, keepProbeFacts, keepProbeFacts, rawClass, rawClass, imported.ExtraFromPath); err != nil {
 		return Media{}, false, err
 	}
 	// Record scan-tier provenance for the built-ins the import supplies. The
@@ -3148,8 +3167,8 @@ func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID,
 	media.Summary = storedSummary.String
 	if keepProbeFacts {
 		if err := tx.QueryRowContext(ctx,
-			"SELECT duration_seconds, container, codec, video_width, video_height FROM media WHERE id = ?", media.ID,
-		).Scan(&media.DurationSeconds, &media.Container, &media.Codec, &media.VideoWidth, &media.VideoHeight); err != nil {
+			"SELECT duration_seconds, container, codec, video_width, video_height, media_class FROM media WHERE id = ?", media.ID,
+		).Scan(&media.DurationSeconds, &media.Container, &media.Codec, &media.VideoWidth, &media.VideoHeight, &media.Class); err != nil {
 			return Media{}, false, err
 		}
 	}
@@ -3203,7 +3222,7 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 		}
 		keepProbeFacts = first == primary.ContentFingerprint
 	}
-	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, primary, plane.encrypted, keepProbeFacts)
+	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, primary, plane.encrypted, false, keepProbeFacts)
 	if err != nil {
 		return Media{}, nil, false, err
 	}

@@ -100,7 +100,10 @@ package store
 // Historical vocabulary-firewall anchors remain here because conformance pins
 // their exact narrow exceptions:
 //   - mute/retention/podcast predicates
+//
+// Events 0024 (CORE-2762) stages Version merge playback for recovery and
+// Profile erasure without changing entity queries.
 const (
-	schemaFreezeEventsMigrations           = 23
+	schemaFreezeEventsMigrations           = 24
 	schemaFreezeEncryptedLibraryMigrations = 11
 )
