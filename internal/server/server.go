@@ -757,7 +757,7 @@ func (s *Server) SetModeration(m *moderation.Service) {
 func (s *Server) moderationScope(w http.ResponseWriter, r *http.Request) (moderation.Scope, bool) {
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return moderation.Scope{}, false
 	}
 	if scope.APITokenID != "" || scope.APIKeyID != "" || scope.ProfileID == "" {
@@ -1257,7 +1257,7 @@ func (s *Server) graphQL(w http.ResponseWriter, r *http.Request) {
 func (s *Server) manifestDocument(w http.ResponseWriter, r *http.Request) {
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 	document, err := s.manifest.Document(r.Context(), scope)
@@ -1276,7 +1276,7 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 
@@ -1304,7 +1304,7 @@ func (s *Server) previewInfo(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 
@@ -1343,7 +1343,7 @@ func (s *Server) createBeamOffer(w http.ResponseWriter, r *http.Request) {
 	}
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 
@@ -1376,7 +1376,7 @@ func (s *Server) claimBeamOffer(w http.ResponseWriter, r *http.Request) {
 	}
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 
@@ -1402,7 +1402,7 @@ func (s *Server) createPairingCode(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 

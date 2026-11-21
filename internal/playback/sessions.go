@@ -892,10 +892,27 @@ func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
 // TerminateSession, and leaves the Session's other Media alone. Ending a
 // playback with no live transcode (direct play) is a zero-stop no-op.
 func (s *Sessions) TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int {
-	return s.terminate(func(key SessionKey) bool { return key.SessionID == sessionID && key.MediaID == mediaID })
+	stopped, wait := s.DetachPlayback(sessionID, mediaID)
+	wait()
+	return stopped
+}
+
+// DetachPlayback is TerminatePlayback split at its blocking point: it detaches
+// the matching transcodes, so no later request reaches them, and returns how
+// many it stopped with a wait that signals and joins their teardown. A caller
+// holding a lock that other requests need detaches under it and waits after
+// releasing it (CORE-2923).
+func (s *Sessions) DetachPlayback(sessionID store.SessionID, mediaID store.MediaID) (int, func()) {
+	return s.detach(func(key SessionKey) bool { return key.SessionID == sessionID && key.MediaID == mediaID })
 }
 
 func (s *Sessions) terminate(matches func(SessionKey) bool) int {
+	stopped, wait := s.detach(matches)
+	wait()
+	return stopped
+}
+
+func (s *Sessions) detach(matches func(SessionKey) bool) (int, func()) {
 	s.mu.Lock()
 	revoked := 0
 	for allocation := range s.allocations {
@@ -934,11 +951,12 @@ func (s *Sessions) terminate(matches func(SessionKey) bool) int {
 		}
 	}
 	s.mu.Unlock()
-	s.runTeardowns(teardowns)
-	for _, done := range joins {
-		<-done
+	return revoked, func() {
+		s.runTeardowns(teardowns)
+		for _, done := range joins {
+			<-done
+		}
 	}
-	return revoked
 }
 
 // newBootNonce mints an 8-byte crypto-random hex tag, ignoring the

@@ -775,7 +775,10 @@ type UpdateChecker interface {
 // stopped so the mutations can report propagation honestly.
 type TranscodeTerminator interface {
 	TerminateSession(sessionID store.SessionID) int
-	TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int
+	// DetachPlayback detaches one Session's transcodes for one Media and
+	// returns a wait that joins their teardown, so a caller can detach under a
+	// lock and wait after releasing it.
+	DetachPlayback(sessionID store.SessionID, mediaID store.MediaID) (int, func())
 }
 
 // TranscodeCapacityProbe reports whether a normal-priority transcode for
@@ -1341,6 +1344,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if auditErr := h.recordPrivilegedAudit(r.Context(), privilegedNames, observability.AuditActor{}, observability.AuditRefused); auditErr != nil {
 				slog.Error("privileged refusal audit failed", "error", auditErr)
+			}
+			if errors.Is(err, auth.ErrProfileMismatch) {
+				// The session moved to another Profile after the route's
+				// precondition passed (CORE-2923): the same refusal it gives.
+				w.Header().Set("Cache-Control", "no-store")
+				refusal := newGraphError(errorCode(errProfileMismatch), errProfileMismatch.Error())
+				refusal.Extensions.Reason = errorReason(errProfileMismatch)
+				writeJSON(w, http.StatusConflict, response{Errors: []graphError{refusal}})
+				return
 			}
 			writeGraphError(w, http.StatusUnauthorized, ErrorCodeUnauthenticated, "invalid session")
 			return
@@ -4017,7 +4029,9 @@ func (h *Handler) revealOps(ctx context.Context, scope auth.Scope, fields map[st
 			}
 			return nil, clientError("reveal PIN mismatch")
 		}
-		if err := h.store.SetSessionRevealed(ctx, scope.SessionID, true); err != nil {
+		if err := h.whileScopeProfile(ctx, scope, func() error {
+			return h.store.SetSessionRevealed(ctx, scope.SessionID, true)
+		}); err != nil {
 			return nil, err
 		}
 		if err := h.logActivity(ctx, scope, store.ActivityReveal, "", "", ""); err != nil {
@@ -4026,7 +4040,9 @@ func (h *Handler) revealOps(ctx context.Context, scope auth.Scope, fields map[st
 		data["reveal"] = RevealState{Revealed: true, RevealPinSet: true}
 	}
 	if fields["relock"] {
-		if err := h.store.SetSessionRevealed(ctx, scope.SessionID, false); err != nil {
+		if err := h.whileScopeProfile(ctx, scope, func() error {
+			return h.store.SetSessionRevealed(ctx, scope.SessionID, false)
+		}); err != nil {
 			return nil, err
 		}
 		if err := h.logActivity(ctx, scope, store.ActivityRelock, "", "", ""); err != nil {
@@ -4503,6 +4519,21 @@ func (h *Handler) withExpectedProfile(ctx context.Context, scope auth.Scope, req
 		return write()
 	}
 	err = h.store.RunWhileSessionBound(ctx, scope.SessionID, expected, write)
+	if errors.Is(err, store.ErrSessionProfileMismatch) {
+		return errProfileMismatch
+	}
+	return err
+}
+
+// whileScopeProfile runs write only while the session stays bound to the
+// Profile this request resolved to (CORE-2923). A write judged for that
+// Profile, such as a Reveal whose PIN it verified, never lands after another
+// tab switched the session to another Profile between the check and the write.
+func (h *Handler) whileScopeProfile(ctx context.Context, scope auth.Scope, write func() error) error {
+	if scope.SessionID == "" || scope.ProfileID == "" {
+		return write()
+	}
+	err := h.store.RunWhileSessionBound(ctx, scope.SessionID, scope.ProfileID, write)
 	if errors.Is(err, store.ErrSessionProfileMismatch) {
 		return errProfileMismatch
 	}

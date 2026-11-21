@@ -121,7 +121,7 @@ func (s *Server) SetV1ScanEnqueuer(enqueue V1ScanEnqueuer) {
 func (s *Server) v1Scope(w http.ResponseWriter, r *http.Request, required store.APIScope) (auth.Scope, bool) {
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid credential")
+		writeScopeError(w, r, err, "invalid credential")
 		return auth.Scope{}, false
 	}
 	if !scope.HasAPIScope(required) {
