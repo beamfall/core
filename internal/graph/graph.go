@@ -25,6 +25,7 @@ import (
 	"github.com/beamfall/core/internal/config"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/identify"
+	"github.com/beamfall/core/internal/ingest"
 	"github.com/beamfall/core/internal/integrationhost"
 	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/manifest"
@@ -3229,17 +3230,44 @@ type SubscriptionInfo struct {
 	Followed      bool   `json:"followed"`
 	RetentionKind string `json:"retentionKind"`
 	RetentionN    *int   `json:"retentionN"`
-	// DownloadPolicy and DownloadLatestN are the Subscription's download
-	// policy (graph_feeds.go). Health, EntryCount, DownloadedCount and
-	// CatalogBytes come from the feed catalogue; CatalogBytes sums the
-	// enclosure lengths the feed declares.
-	DownloadPolicy  string                 `json:"downloadPolicy"`
-	DownloadLatestN int                    `json:"downloadLatestN"`
-	Health          SubscriptionHealthInfo `json:"health"`
-	EntryCount      int                    `json:"entryCount"`
-	DownloadedCount int                    `json:"downloadedCount"`
-	CatalogBytes    int64                  `json:"catalogBytes"`
+	// Download policy and catalogue counts (CORE-2953).
+	DownloadPolicy  string `json:"downloadPolicy"`
+	DownloadLatestN int    `json:"downloadLatestN"`
+	EntryCount      int    `json:"entryCount"`
+	DownloadedCount int    `json:"downloadedCount"`
+	CatalogBytes    int64  `json:"catalogBytes"`
+	// Feed health (ADR-0238 §2.2). healthStatus is ok, failing, warning
+	// (failing for seven days or more) or retired (the origin answered 410);
+	// lastErrorClass is the closed class of the latest failure, never its text.
+	HealthStatus   string `json:"healthStatus"`
+	LastErrorClass string `json:"lastErrorClass"`
+	FailingSince   string `json:"failingSince,omitempty"`
+	NextPollAt     string `json:"nextPollAt,omitempty"`
+	RetiredAt      string `json:"retiredAt,omitempty"`
+	MovedAt        string `json:"movedAt,omitempty"`
 }
+
+// SubscriptionRefreshInfo is the viewer-safe refreshSubscription echo: the
+// Subscription's identity, display title and feed health. Like FollowInfo it
+// never carries feedURL or root.
+type SubscriptionRefreshInfo struct {
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	HealthStatus   string `json:"healthStatus"`
+	LastErrorClass string `json:"lastErrorClass"`
+	FailingSince   string `json:"failingSince,omitempty"`
+	NextPollAt     string `json:"nextPollAt,omitempty"`
+}
+
+// SubscriptionRefreshAllInfo reports how many Subscriptions a Refresh all
+// made due.
+type SubscriptionRefreshAllInfo struct {
+	Refreshed int `json:"refreshed"`
+}
+
+// subscriptionRefreshGap is the minimum time between two manual refreshes of
+// one Subscription (ADR-0238 §2.2).
+const subscriptionRefreshGap = 5 * time.Minute
 
 type SubscriptionEntryAssociationInfo struct {
 	SubscriptionID         string `json:"subscriptionID"`
@@ -3276,7 +3304,115 @@ func (h *Handler) subscriptionBaseInfo(ctx context.Context, scope auth.Scope, su
 		Followed:      followed,
 		RetentionKind: string(subscription.RetentionKind),
 		RetentionN:    subscription.RetentionN,
+
+		HealthStatus:   string(subscription.Health.Status(time.Now().UTC())),
+		LastErrorClass: string(subscription.Health.LastErrorClass),
+		FailingSince:   formatOptionalTime(subscription.Health.FailingSince),
+		NextPollAt:     formatOptionalTime(subscription.Health.NextPollAt),
+		RetiredAt:      formatOptionalTime(subscription.Health.RetiredAt),
+		MovedAt:        formatOptionalTime(subscription.Health.MovedAt),
 	}, nil
+}
+
+// refreshSubscription makes one Subscription due for polling now, a retired
+// one included, and enqueues the poll job. A Manager may refresh any
+// Subscription in a Library it can see; anyone else only one they follow.
+// One refresh per Subscription per subscriptionRefreshGap.
+func (h *Handler) refreshSubscription(ctx context.Context, scope auth.Scope, req request) (SubscriptionRefreshInfo, error) {
+	if scope.DeviceRole != store.DeviceRoleManager && !canFollowFeeds(scope) {
+		return SubscriptionRefreshInfo{}, clientError("adult profile or manager role required")
+	}
+	id := store.SubscriptionID(trimmedVariable(req, "id"))
+	if _, err := h.visibleSubscription(ctx, scope, id); err != nil {
+		return SubscriptionRefreshInfo{}, err
+	}
+	if scope.DeviceRole != store.DeviceRoleManager {
+		followed, err := h.store.SubscriptionFollowed(ctx, scope.ProfileID, id)
+		if err != nil {
+			return SubscriptionRefreshInfo{}, err
+		}
+		if !followed {
+			return SubscriptionRefreshInfo{}, clientError("unknown subscription")
+		}
+	}
+	now := time.Now().UTC()
+	refreshed, err := h.store.RequestSubscriptionRefresh(ctx, id, now, subscriptionRefreshGap)
+	if errors.Is(err, store.ErrSubscriptionRefreshRateLimited) {
+		return SubscriptionRefreshInfo{}, clientError("subscription was refreshed recently; try again later")
+	}
+	if errors.Is(err, store.ErrSubscriptionNotFound) {
+		return SubscriptionRefreshInfo{}, clientError("unknown subscription")
+	}
+	if err != nil {
+		return SubscriptionRefreshInfo{}, err
+	}
+	if err := h.enqueueSubscriptionPoll(ctx, now); err != nil {
+		return SubscriptionRefreshInfo{}, err
+	}
+	health := refreshed.Health
+	return SubscriptionRefreshInfo{
+		ID:             string(refreshed.ID),
+		Title:          refreshed.Title,
+		HealthStatus:   string(health.Status(now)),
+		LastErrorClass: string(health.LastErrorClass),
+		FailingSince:   formatOptionalTime(health.FailingSince),
+		NextPollAt:     formatOptionalTime(health.NextPollAt),
+	}, nil
+}
+
+// refreshAllSubscriptions (manager-gated in execute) makes every
+// Subscription in a Library the caller can see, and outside its refresh gap,
+// due now and enqueues the poll job. Hidden Libraries are neither refreshed
+// nor counted.
+func (h *Handler) refreshAllSubscriptions(ctx context.Context, scope auth.Scope, _ request) (SubscriptionRefreshAllInfo, error) {
+	now := time.Now().UTC()
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return SubscriptionRefreshAllInfo{}, err
+	}
+	refreshed, err := h.store.RequestAllSubscriptionsRefresh(ctx, filter, now, subscriptionRefreshGap)
+	if err != nil {
+		return SubscriptionRefreshAllInfo{}, err
+	}
+	if refreshed > 0 {
+		if err := h.enqueueSubscriptionPoll(ctx, now); err != nil {
+			return SubscriptionRefreshAllInfo{}, err
+		}
+	}
+	return SubscriptionRefreshAllInfo{Refreshed: refreshed}, nil
+}
+
+// enqueueSubscriptionPoll enqueues the deduped poll job. A poll already
+// queued picks the refresh up; one already running reaches it on its next
+// run.
+func (h *Handler) enqueueSubscriptionPoll(ctx context.Context, now time.Time) error {
+	job, err := ingest.NewPollJob(now)
+	if err != nil {
+		return err
+	}
+	_, err = h.store.EnqueueJob(ctx, job)
+	return err
+}
+
+// visibleSubscriptionLibrary is visibleLibrary for the Subscription surface,
+// with the caller's filter run through sealedFilter: a Sealed Library serves
+// nothing, so its Subscriptions read exactly like a Library that does not
+// exist (CORE-2955).
+func (h *Handler) visibleSubscriptionLibrary(ctx context.Context, scope auth.Scope, id store.LibraryID) (bool, error) {
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return false, err
+	}
+	libraries, err := h.store.Libraries(ctx, filter)
+	if err != nil {
+		return false, err
+	}
+	for _, library := range libraries {
+		if library.ID == id {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // visibleLibrary reports whether the scope can currently see the Library —
@@ -3313,7 +3449,7 @@ func (h *Handler) addSubscription(ctx context.Context, scope auth.Scope, req req
 	if hasAuth && h.subscriptionSecrets == nil {
 		return SubscriptionInfo{}, clientError("private-feed credentials are unavailable on this server")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, store.LibraryID(libraryID))
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, store.LibraryID(libraryID))
 	if err != nil {
 		return SubscriptionInfo{}, err
 	}
@@ -3364,7 +3500,7 @@ func (h *Handler) removeSubscription(ctx context.Context, scope auth.Scope, req 
 	if err != nil {
 		return SubscriptionInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return SubscriptionInfo{}, err
 	}
@@ -3392,7 +3528,7 @@ func (h *Handler) subscriptions(ctx context.Context, scope auth.Scope, req reque
 	if libraryID == "" {
 		return nil, clientError("libraryID is required")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, store.LibraryID(libraryID))
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, store.LibraryID(libraryID))
 	if err != nil {
 		return nil, err
 	}
@@ -3437,7 +3573,7 @@ func (h *Handler) setFollow(ctx context.Context, scope auth.Scope, req request) 
 	if err != nil {
 		return FollowInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return FollowInfo{}, err
 	}
@@ -3467,7 +3603,7 @@ func (h *Handler) setSubscriptionRetention(ctx context.Context, scope auth.Scope
 	if err != nil {
 		return SubscriptionInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return SubscriptionInfo{}, err
 	}
@@ -3511,7 +3647,7 @@ func (h *Handler) associateSubscriptionEntry(ctx context.Context, scope auth.Sco
 	if err != nil {
 		return SubscriptionEntryAssociationInfo{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return SubscriptionEntryAssociationInfo{}, err
 	}
@@ -6103,7 +6239,8 @@ var mutationFields = map[string]bool{
 	"setsubscriptionretention":           true,
 	"setsubscriptiondownloadpolicy":      true, // CORE-2957: manager-gated download policy
 	"followfeed":                         true, // CORE-2953: adult or manager follows a public feed
-	"refreshsubscription":                true, // CORE-2955: rate-limited manual refresh
+	"refreshsubscription":                true, // CORE-2955: follower manual feed refresh, rate-limited
+	"refreshallsubscriptions":            true, // CORE-2955: Manager refresh of every feed
 	"runjob":                             true,
 	"runeventscompaction":                true,
 	"jobcancel":                          true,

@@ -26,14 +26,6 @@ type ConditionalResult struct {
 	ETag         string
 	LastModified string
 	NotModified  bool
-	// PermanentRedirect is the URL reached through permanent (301/308)
-	// redirects only, before any temporary one; "" when the first hop was
-	// not permanent. It is set even when the fetch fails, including when the
-	// redirect itself was refused as cross-origin. Secret class like the
-	// feed URL: never logged.
-	PermanentRedirect string
-	// RedirectedTemporarily reports whether a temporary hop was observed.
-	RedirectedTemporarily bool
 }
 
 func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[string]string) ([]byte, error) {
@@ -84,55 +76,8 @@ func (e *Engine) FetchConditional(ctx context.Context, rawURL, etag, lastModifie
 }
 
 func (e *Engine) FetchConditionalAuth(ctx context.Context, rawURL, etag, lastModified string, authHeader string) (ConditionalResult, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		// Never wrap the parse error: it embeds the raw URL, which can carry
-		// private-feed credentials.
-		return ConditionalResult{}, fmt.Errorf("scrape: invalid request URL")
-	}
-	if err := e.vetURL(parsed); err != nil {
-		return ConditionalResult{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
-	if err != nil {
-		return ConditionalResult{}, safeFetchError("building request", err)
-	}
-	req.Header.Set("User-Agent", userAgent)
-	if strings.TrimSpace(authHeader) != "" {
-		req.Header.Set("Authorization", authHeader)
-	}
-	if etag != "" {
-		req.Header.Set("If-None-Match", etag)
-	}
-	if lastModified != "" {
-		req.Header.Set("If-Modified-Since", lastModified)
-	}
-	record := &redirectRecord{}
-	resp, err := e.requestWith429Retry(withRedirectRecord(ctx, record), req, func(attempt *http.Request) (*http.Response, error) {
-		*record = redirectRecord{}
-		return e.client.Do(attempt)
-	})
-	result := ConditionalResult{PermanentRedirect: record.target, RedirectedTemporarily: record.broken}
-	if err != nil {
-		return result, sanitizedTransportError(parsed, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotModified {
-		result.ETag, result.LastModified, result.NotModified = etag, lastModified, true
-		return result, nil
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return result, &statusError{host: parsed.Hostname(), code: resp.StatusCode}
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
-	if err != nil {
-		return result, safeFetchError("reading response", err)
-	}
-	if int64(len(data)) > e.maxResponseBytes {
-		return result, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
-	}
-	result.Data, result.ETag, result.LastModified = data, resp.Header.Get("ETag"), resp.Header.Get("Last-Modified")
-	return result, nil
+	result, err := e.FetchFeed(ctx, rawURL, etag, lastModified, authHeader)
+	return result.ConditionalResult, err
 }
 
 // EnclosureDownloadLimit is the per-enclosure archive budget. Declared

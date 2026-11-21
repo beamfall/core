@@ -125,8 +125,6 @@ package store
 // requests and listed in the Console only, off the entity-query hot path.
 // CORE-2884 adds 0128_entity_enrichment, keyed by entity and read only by the
 // background enrichment job, off the entity-query hot path.
-// CORE-2953 adds 0130_subscription_catalogue_health: subscription poll-health
-// columns and the subscription_entry catalogue, read by the feed poller, the
-// subscription detail read and the scan import binding (by download path),
-// off the entity-query hot path. `make bench` was not run for this bump.
-const schemaFreezeCatalogMigrations = 125
+// CORE-2955 adds 0129_subscription_feed_health for polling and Console reads.
+// CORE-2953 adds 0130_subscription_catalogue_health for download policy, the feed catalogue and scan binding.
+const schemaFreezeCatalogMigrations = 126

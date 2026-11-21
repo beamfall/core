@@ -51,7 +51,7 @@ function subscription(overrides: Partial<FeedSubscription> = {}): FeedSubscripti
     title: "Morning Notes",
     downloadPolicy: "latest",
     downloadLatestN: 3,
-    health: { state: "ok" },
+    healthStatus: "ok",
     entryCount: 120,
     downloadedCount: 3,
     catalogBytes: 41_000_000_000,
@@ -171,7 +171,7 @@ describe("FeedHealth", () => {
   const now = new Date("2026-11-21T12:00:00Z");
   function failing(errorClass: string, state = "failing"): SubscriptionHealth {
     return {
-      state,
+      healthStatus: state,
       lastErrorClass: errorClass,
       failingSince: "2026-11-20T08:00:00Z",
       nextPollAt: "2026-11-21T13:00:00Z",
@@ -210,19 +210,19 @@ describe("FeedHealth", () => {
 
   it("keeps ok and pending quiet and gives retired its own state", () => {
     const { rerender } = wrap(
-      <FeedHealth health={{ state: "ok", lastSuccessAt: "2026-11-21T11:00:00Z" }} now={now} />,
+      <FeedHealth health={{ healthStatus: "ok" }} lastPolledAt="2026-11-21T11:00:00Z" now={now} />,
     );
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.getByText("Updated 1 hour ago")).toBeInTheDocument();
     rerender(
       <I18nProvider>
-        <FeedHealth health={{ state: "pending" }} now={now} />
+        <FeedHealth health={{ healthStatus: "ok" }} now={now} />
       </I18nProvider>,
     );
     expect(screen.getByText("Checking for the first time")).toBeInTheDocument();
     rerender(
       <I18nProvider>
-        <FeedHealth health={{ state: "retired", lastErrorClass: "gone" }} now={now} />
+        <FeedHealth health={{ healthStatus: "retired", lastErrorClass: "http-4xx" }} now={now} />
       </I18nProvider>,
     );
     expect(screen.getByText(/Feed retired by its publisher/)).toHaveAttribute(
@@ -237,7 +237,7 @@ describe("FeedList", () => {
     wrap(
       <FeedList
         nodeID="library-lib-1"
-        subscriptions={[subscription({ health: failing() })]}
+        subscriptions={[subscription(failing())]}
         canChangePolicy={false}
         onChange={vi.fn()}
       />,
@@ -251,7 +251,7 @@ describe("FeedList", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Not updating: Server not found");
 
     function failing(): SubscriptionHealth {
-      return { state: "failing", lastErrorClass: "dns" };
+      return { healthStatus: "failing", lastErrorClass: "dns" };
     }
   });
 
@@ -259,7 +259,12 @@ describe("FeedList", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     vi.mocked(refreshSubscription)
-      .mockResolvedValueOnce(subscription({ health: { state: "pending" } }))
+      .mockResolvedValueOnce({
+        id: "sub-1",
+        title: "Morning Notes",
+        healthStatus: "ok",
+        nextPollAt: "2026-11-21T12:00:00Z",
+      })
       .mockRejectedValueOnce(throttled());
     wrap(
       <FeedList
@@ -272,7 +277,7 @@ describe("FeedList", () => {
     const refresh = screen.getByRole("button", { name: "Refresh Morning Notes" });
     await user.click(refresh);
     expect(refreshSubscription).toHaveBeenCalledWith("sub-1");
-    expect(onChange).toHaveBeenCalledWith(subscription({ health: { state: "pending" } }));
+    expect(onChange).toHaveBeenCalledWith(subscription({ nextPollAt: "2026-11-21T12:00:00Z" }));
     expect(await screen.findByText("Checking for new entries.")).toBeInTheDocument();
 
     await user.click(refresh);

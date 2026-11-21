@@ -19,30 +19,26 @@ import (
 
 // fakeSubscriptionCatalogue is an in-memory feed catalogue for graph tests.
 type fakeSubscriptionCatalogue struct {
-	mu        sync.Mutex
-	policies  map[store.SubscriptionID]store.SubscriptionPolicy
-	health    map[store.SubscriptionID]store.SubscriptionHealth
-	entries   map[store.SubscriptionID][]store.SubscriptionEntry
-	refreshes map[store.SubscriptionID]time.Time
+	mu       sync.Mutex
+	policies map[store.SubscriptionID]store.SubscriptionPolicy
+	entries  map[store.SubscriptionID][]store.SubscriptionEntry
 }
 
 func newFakeSubscriptionCatalogue() *fakeSubscriptionCatalogue {
 	return &fakeSubscriptionCatalogue{
-		policies:  map[store.SubscriptionID]store.SubscriptionPolicy{},
-		health:    map[store.SubscriptionID]store.SubscriptionHealth{},
-		entries:   map[store.SubscriptionID][]store.SubscriptionEntry{},
-		refreshes: map[store.SubscriptionID]time.Time{},
+		policies: map[store.SubscriptionID]store.SubscriptionPolicy{},
+		entries:  map[store.SubscriptionID][]store.SubscriptionEntry{},
 	}
 }
 
-func (f *fakeSubscriptionCatalogue) SubscriptionPolicyAndHealth(_ context.Context, id store.SubscriptionID) (store.SubscriptionPolicy, store.SubscriptionHealth, error) {
+func (f *fakeSubscriptionCatalogue) SubscriptionDownloadPolicy(_ context.Context, id store.SubscriptionID) (store.SubscriptionPolicy, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	policy, ok := f.policies[id]
 	if !ok {
 		policy = store.SubscriptionPolicy{Policy: store.DownloadPolicyLatest, LatestN: store.DefaultDownloadLatestN}
 	}
-	return policy, f.health[id], nil
+	return policy, nil
 }
 
 func (f *fakeSubscriptionCatalogue) SubscriptionEntries(_ context.Context, id store.SubscriptionID) ([]store.SubscriptionEntry, error) {
@@ -55,16 +51,6 @@ func (f *fakeSubscriptionCatalogue) SetSubscriptionDownloadPolicy(_ context.Cont
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.policies[id] = policy
-	return nil
-}
-
-func (f *fakeSubscriptionCatalogue) RequestSubscriptionRefresh(_ context.Context, id store.SubscriptionID, now time.Time) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if last, ok := f.refreshes[id]; ok && now.Sub(last) < store.SubscriptionRefreshInterval {
-		return store.ErrSubscriptionRefreshTooSoon
-	}
-	f.refreshes[id] = now
 	return nil
 }
 
@@ -161,7 +147,7 @@ func wantGraphError(t *testing.T, resp graphTestResponse, code ErrorCode, contai
 const followFeedMutation = `mutation Follow($feedURL: String!, $libraryID: String, $downloadPolicy: String, $latestN: Int, $confirmEverything: Boolean) {
   followFeed(feedURL: $feedURL, libraryID: $libraryID, downloadPolicy: $downloadPolicy, latestN: $latestN, confirmEverything: $confirmEverything) {
     id libraryID feedURL root title followed downloadPolicy downloadLatestN entryCount downloadedCount catalogBytes
-    health { state lastErrorClass failingSince nextPollAt lastSuccessAt }
+    healthStatus lastErrorClass failingSince nextPollAt lastPolledAt
   }
 }`
 
@@ -181,7 +167,7 @@ func TestFollowFeedGatesProbesAndIsIdempotent(t *testing.T) {
 	if first.FeedURL != "" || first.Root != "" {
 		t.Fatalf("viewer followFeed leaked manager fields: feedURL=%q root=%q", first.FeedURL, first.Root)
 	}
-	if first.DownloadPolicy != "latest" || first.DownloadLatestN != 3 || first.Health.State != SubscriptionHealthPending {
+	if first.DownloadPolicy != "latest" || first.DownloadLatestN != 3 || first.HealthStatus != string(store.FeedHealthOK) || first.LastPolledAt != "" {
 		t.Fatalf("default policy/health = %+v", first)
 	}
 	if fx.poller.count() != 1 {
@@ -276,51 +262,22 @@ func followTestFeed(t *testing.T, fx feedFixture) SubscriptionInfo {
 	return info
 }
 
-func TestRefreshSubscriptionIsRateLimited(t *testing.T) {
+func TestRefreshSubscriptionRejectsManagedProfileAndAllowsManager(t *testing.T) {
 	fx := newFeedFixture(t)
 	sub := followTestFeed(t, fx)
-	const refresh = `mutation R($id: String!) { refreshSubscription(id: $id) { id feedURL root } }`
-
-	_, resp := rawGraph(t, fx.handler, authorizeManagedProfile, refresh, map[string]any{"id": sub.ID})
+	const refresh = `mutation R($id: String!) { refreshSubscription(id: $id) { id healthStatus } }`
+	variables := map[string]any{"id": sub.ID}
+	_, resp := rawGraph(t, fx.handler, authorizeManagedProfile, refresh, variables)
 	wantGraphError(t, resp, ErrorCodeForbidden, "adult profile or manager role required")
 
-	var refreshed SubscriptionInfo
-	execGraph(t, fx.handler, authorizeViewer, refresh, map[string]any{"id": sub.ID}, "refreshSubscription", &refreshed)
-	if refreshed.ID != sub.ID || refreshed.FeedURL != "" || refreshed.Root != "" {
-		t.Fatalf("viewer refresh = %+v", refreshed)
-	}
-	kicks := fx.poller.count()
-
-	_, resp = rawGraph(t, fx.handler, authorizeViewer, refresh, map[string]any{"id": sub.ID})
-	wantGraphError(t, resp, ErrorCodeThrottled, "subscription refresh throttled")
-	if fx.poller.count() != kicks {
-		t.Fatal("a throttled refresh kicked the poller")
+	var refreshed SubscriptionRefreshInfo
+	execGraph(t, fx.handler, authorizeManager, refresh, variables, "refreshSubscription", &refreshed)
+	if refreshed.ID != sub.ID || refreshed.HealthStatus != string(store.FeedHealthOK) {
+		t.Fatalf("manager refresh = %+v", refreshed)
 	}
 
-	_, resp = rawGraph(t, fx.handler, authorizeViewer, refresh, map[string]any{"id": "missing"})
-	wantGraphError(t, resp, ErrorCodeNotFound, "unknown subscription")
-}
-
-func TestRefreshSubscriptionRequiresFollowOrManager(t *testing.T) {
-	fx := newFeedFixture(t)
-	sub, _, err := fx.st.GetOrCreateSubscription(t.Context(), store.Subscription{
-		LibraryID: "library-local", FeedURL: secretFeedURL, Root: "/media/Root/Daily News",
-	}, time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	const refresh = `mutation R($id: String!) { refreshSubscription(id: $id) { id followed } }`
-	variables := map[string]any{"id": string(sub.ID)}
-	_, resp := rawGraph(t, fx.handler, authorizeViewer, refresh, variables)
-	wantGraphError(t, resp, ErrorCodeForbidden, "follow the subscription before refreshing it")
-	if fx.poller.count() != 0 {
-		t.Fatal("non-follower refresh kicked the poller")
-	}
-	var info SubscriptionInfo
-	execGraph(t, fx.handler, authorizeManager, refresh, variables, "refreshSubscription", &info)
-	if info.Followed || fx.poller.count() != 1 {
-		t.Fatalf("manager refresh followed=%v, poll count=%d", info.Followed, fx.poller.count())
-	}
+	_, resp = rawGraph(t, fx.handler, authorizeManager, refresh, variables)
+	wantGraphError(t, resp, ErrorCodeThrottled, "subscription was refreshed recently; try again later")
 }
 
 func TestSetSubscriptionDownloadPolicyIsManagerGatedAndConfirmsEverything(t *testing.T) {
@@ -381,7 +338,6 @@ func TestSubscriptionEntriesAndCountsNeverCarryEnclosureURLs(t *testing.T) {
 		{SubscriptionID: id, GUID: "g2", MediaID: created[1].MediaID, Title: "Older", FeedPosition: 1,
 			EnclosureURL: "https://cdn.example.com/b.mp3?sig=hush", EnclosureLength: 2000, DownloadState: store.EntryDownloadNone},
 	}
-	fx.catalogue.health[id] = store.SubscriptionHealth{LastSuccessAt: published}
 
 	body, resp := rawGraph(t, fx.handler, authorizeViewer,
 		`query E($subscriptionID: String!) { subscriptionEntries(subscriptionID: $subscriptionID) { mediaID title publishedAt feedPosition enclosureLength downloadState availability } }`,
@@ -410,9 +366,9 @@ func TestSubscriptionEntriesAndCountsNeverCarryEnclosureURLs(t *testing.T) {
 
 	var listed []SubscriptionInfo
 	execGraph(t, fx.handler, authorizeManager,
-		`query S($libraryID: String!) { subscriptions(libraryID: $libraryID) { id entryCount downloadedCount catalogBytes health { state } } }`,
+		`query S($libraryID: String!) { subscriptions(libraryID: $libraryID) { id entryCount downloadedCount catalogBytes healthStatus } }`,
 		map[string]any{"libraryID": "library-local"}, "subscriptions", &listed)
-	if len(listed) != 1 || listed[0].EntryCount != 2 || listed[0].DownloadedCount != 1 || listed[0].CatalogBytes != 3000 || listed[0].Health.State != SubscriptionHealthOK {
+	if len(listed) != 1 || listed[0].EntryCount != 2 || listed[0].DownloadedCount != 1 || listed[0].CatalogBytes != 3000 || listed[0].HealthStatus != string(store.FeedHealthOK) {
 		t.Fatalf("subscriptions = %+v", listed)
 	}
 }
@@ -458,29 +414,6 @@ func TestSubscriptionEntriesUseLibraryMediaVisibility(t *testing.T) {
 	})
 	if err != nil || len(items) != 1 || items[0].MediaID != string(created[2].MediaID) {
 		t.Fatalf("subscriptionEntries = %+v, %v", items, err)
-	}
-}
-
-func TestSubscriptionHealthStateDerivation(t *testing.T) {
-	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
-	polled := store.Subscription{LastPolledAt: now.Add(-time.Hour)}
-	cases := []struct {
-		name         string
-		subscription store.Subscription
-		health       store.SubscriptionHealth
-		want         string
-	}{
-		{"never polled", store.Subscription{}, store.SubscriptionHealth{}, SubscriptionHealthPending},
-		{"healthy", polled, store.SubscriptionHealth{LastSuccessAt: now.Add(-time.Hour)}, SubscriptionHealthOK},
-		{"failing", polled, store.SubscriptionHealth{FailingSince: now.Add(-6 * 24 * time.Hour)}, SubscriptionHealthFailing},
-		{"first poll failed", store.Subscription{}, store.SubscriptionHealth{FailingSince: now.Add(-time.Minute)}, SubscriptionHealthFailing},
-		{"warning at 7 days", polled, store.SubscriptionHealth{FailingSince: now.Add(-7 * 24 * time.Hour)}, SubscriptionHealthWarning},
-		{"retired wins", polled, store.SubscriptionHealth{FailingSince: now.Add(-30 * 24 * time.Hour), RetiredAt: now}, SubscriptionHealthRetired},
-	}
-	for _, tc := range cases {
-		if got := subscriptionHealthState(tc.subscription, tc.health, now); got != tc.want {
-			t.Errorf("%s: state = %q, want %q", tc.name, got, tc.want)
-		}
 	}
 }
 

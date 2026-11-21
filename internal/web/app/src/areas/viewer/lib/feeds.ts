@@ -73,7 +73,7 @@ export function followErrorClass(err: unknown): string {
 export type HealthTone = "quiet" | "failing" | "warning" | "retired";
 
 export function healthTone(health: SubscriptionHealth | null | undefined): HealthTone {
-  switch (health?.state) {
+  switch (health?.healthStatus) {
     case "failing":
       return "failing";
     case "warning":

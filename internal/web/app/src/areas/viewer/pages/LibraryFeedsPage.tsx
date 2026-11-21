@@ -220,7 +220,9 @@ export function FeedCataloguePage() {
         {/* The pivots stay off so opening one feed does not become the
             Library's remembered pivot. */}
         <LibraryHeader nodeID={node.id} libraryID={libraryID} heading={heading} pivots={false} />
-        {subscription && <FeedHealth health={subscription.health} />}
+        {subscription && (
+          <FeedHealth health={subscription} lastPolledAt={subscription.lastPolledAt} />
+        )}
         {state.kind === "loading" && (
           <p className="m-0 text-sm text-[var(--text-muted)]">{t("loading")}</p>
         )}

@@ -8,9 +8,11 @@ import { errorClassKey, healthTone, parseWireTime } from "../../lib/feeds";
 // try, a week of failing turns amber, and a retired feed says so.
 export function FeedHealth({
   health,
+  lastPolledAt,
   now = new Date(),
 }: {
   health: SubscriptionHealth | null | undefined;
+  lastPolledAt?: string | null;
   now?: Date;
 }) {
   const t = useT();
@@ -25,15 +27,16 @@ export function FeedHealth({
     );
   }
   if (tone === "quiet") {
-    const success = parseWireTime(health?.lastSuccessAt);
-    const text =
-      health?.state === "pending"
-        ? t("feedsHealthPending")
-        : success
-          ? t("feedsHealthOK", { when: formatRelativeTime(success, now, locale) })
-          : t("feedsHealthOKNever");
+    const success = parseWireTime(lastPolledAt);
+    const pending = health?.healthStatus === "ok" && !lastPolledAt;
+    const text = success
+      ? t("feedsHealthOK", { when: formatRelativeTime(success, now, locale) })
+      : t(pending ? "feedsHealthPending" : "feedsHealthOKNever");
     return (
-      <p data-health={health?.state || "ok"} className="m-0 text-sm text-[var(--text-muted)]">
+      <p
+        data-health={pending ? "pending" : health?.healthStatus || "ok"}
+        className="m-0 text-sm text-[var(--text-muted)]"
+      >
         {text}
       </p>
     );

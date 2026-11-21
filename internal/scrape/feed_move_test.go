@@ -19,7 +19,7 @@ func TestMalformedFeedRedirectErrorOmitsLocation(t *testing.T) {
 	}))
 	defer server.Close()
 	engine := New(WithInsecureLoopback())
-	_, err := engine.FetchConditional(t.Context(), server.URL+"/feed?token=feed-secret", "", "")
+	_, err := engine.FetchFeed(t.Context(), server.URL+"/feed?token=feed-secret", "", "", "")
 	if err == nil {
 		t.Fatal("malformed redirect succeeded")
 	}
@@ -61,15 +61,15 @@ func TestFeedTemporaryCrossOriginRedirects(t *testing.T) {
 			engine := New(WithInsecureLoopback())
 			start := reached.Load()
 			rawURL := source.URL + "/feed?token=signed"
-			got, err := engine.FetchConditional(t.Context(), rawURL, "", "")
-			if err != nil || string(got.Data) != "<rss/>" || got.PermanentRedirect != "" {
-				t.Fatalf("anonymous redirect: body=%q permanent=%t err=%v", got.Data, got.PermanentRedirect != "", err)
+			got, err := engine.FetchFeed(t.Context(), rawURL, "", "", "")
+			if err != nil || string(got.Data) != "<rss/>" || got.PermanentURL != "" || !got.RedirectedTemporarily {
+				t.Fatalf("anonymous redirect: body=%q permanent=%t err=%v", got.Data, got.PermanentURL != "", err)
 			}
 			for _, credential := range []struct{ url, header string }{
 				{rawURL, "Bearer test"},
 				{strings.Replace(rawURL, "://", "://user:pass@", 1), ""},
 			} {
-				_, err := engine.FetchConditionalAuth(t.Context(), credential.url, "", "", credential.header)
+				_, err := engine.FetchFeed(t.Context(), credential.url, "", "", credential.header)
 				if !IsRefused(err) {
 					t.Fatalf("credentialed redirect: got %v, want refusal", err)
 				}
@@ -122,7 +122,7 @@ func TestParseFeedChannelMetadataAndEntryFacts(t *testing.T) {
 	}
 }
 
-func TestFetchConditionalRecordsPermanentRedirects(t *testing.T) {
+func TestFetchFeedRecordsPermanentRedirects(t *testing.T) {
 	t.Parallel()
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("<rss/>"))
@@ -150,23 +150,23 @@ func TestFetchConditionalRecordsPermanentRedirects(t *testing.T) {
 	engine := New(WithInsecureLoopback())
 	ctx := context.Background()
 
-	result, err := engine.FetchConditional(ctx, server.URL+"/permanent", "", "")
-	if err != nil || result.PermanentRedirect != server.URL+"/moved" || string(result.Data) != "<rss/>" {
-		t.Fatalf("301 = %q %q %v", result.PermanentRedirect, result.Data, err)
+	result, err := engine.FetchFeed(ctx, server.URL+"/permanent", "", "", "")
+	if err != nil || result.PermanentURL != server.URL+"/moved" || string(result.Data) != "<rss/>" {
+		t.Fatalf("301 = %q %q %v", result.PermanentURL, result.Data, err)
 	}
-	result, err = engine.FetchConditional(ctx, server.URL+"/permanent-then-temporary", "", "")
-	if err != nil || result.PermanentRedirect != server.URL+"/moved-permanently" {
-		t.Fatalf("308 then 302 = %q %v", result.PermanentRedirect, err)
+	result, err = engine.FetchFeed(ctx, server.URL+"/permanent-then-temporary", "", "", "")
+	if err != nil || result.PermanentURL != "" || !result.RedirectedTemporarily {
+		t.Fatalf("308 then 302 = %q %v", result.PermanentURL, err)
 	}
-	result, err = engine.FetchConditional(ctx, server.URL+"/temporary", "", "")
-	if err != nil || result.PermanentRedirect != "" {
-		t.Fatalf("307 = %q %v", result.PermanentRedirect, err)
+	result, err = engine.FetchFeed(ctx, server.URL+"/temporary", "", "", "")
+	if err != nil || result.PermanentURL != "" {
+		t.Fatalf("307 = %q %v", result.PermanentURL, err)
 	}
-	result, err = engine.FetchConditional(ctx, server.URL+"/cross-origin", "", "")
-	if err == nil || !IsRefused(err) || result.PermanentRedirect != other.URL+"/elsewhere" {
-		t.Fatalf("cross-origin 301 = %q %v, want a refusal that records the target", result.PermanentRedirect, err)
+	result, err = engine.FetchFeed(ctx, server.URL+"/cross-origin", "", "", "")
+	if err != nil || result.PermanentURL != other.URL+"/elsewhere" {
+		t.Fatalf("cross-origin 301 = %q %v, want the successfully fetched target", result.PermanentURL, err)
 	}
-	_, err = engine.FetchConditional(ctx, server.URL+"/gone", "", "")
+	_, err = engine.FetchFeed(ctx, server.URL+"/gone", "", "", "")
 	if code, ok := HTTPStatus(err); !ok || code != http.StatusGone || IsRefused(err) {
 		t.Fatalf("HTTPStatus = %d %v (%v)", code, ok, err)
 	}

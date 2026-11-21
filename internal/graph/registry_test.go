@@ -256,6 +256,8 @@ var originalScopedFields = []string{
 	"setretentioncandidatehold", // RET-2 (ADR-0051): viewer-writable keep flag (manager-tier)
 	"removecollectionmedia",
 	"removesubscription",
+	"refreshsubscription",     // CORE-2955 (ADR-0238 §2.2): manual feed refresh, rate-limited
+	"refreshallsubscriptions", // CORE-2955 (ADR-0238 §2.2): Manager Refresh all
 	"reordercollectionmedia",
 	"savedfilters",
 	"scanestimate", // OPS-4 (ADR-0013 §2): first-scan wizard estimate read

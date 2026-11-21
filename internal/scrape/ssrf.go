@@ -1,7 +1,6 @@
 package scrape
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -58,40 +57,14 @@ func (e *Engine) controlDial(network, address string, _ syscall.RawConn) error {
 // the 169.254.169.254 cloud metadata endpoint), multicast, and unspecified
 // addresses, for both IPv4 and IPv6 (including v4-mapped v6).
 // checkRedirect re-vets every hop and pins requests to the original origin.
-// Anonymous conditional feed fetches can follow temporary cross-origin hops.
 func (e *Engine) checkRedirect(req *http.Request, via []*http.Request) error {
-	recordRedirectHop(req)
 	if len(via) >= maxRedirects {
-		return fmt.Errorf("scrape: refused after %d redirects", maxRedirects)
+		return refusedf("scrape: refused after %d redirects", maxRedirects)
 	}
-	target := normalizedRedirectOrigin(req.URL)
-	crossOriginHop := normalizedRedirectOrigin(via[len(via)-1].URL) != target
-	if crossOriginHop || normalizedRedirectOrigin(via[0].URL) != target {
-		record, _ := req.Context().Value(redirectRecordKey{}).(*redirectRecord)
-		if record == nil || (crossOriginHop && !temporaryRedirect(req.Response)) || hasRedirectCredentials(req) {
-			return refusedf("scrape: refused cross-origin redirect")
-		}
-		for _, previous := range via {
-			if hasRedirectCredentials(previous) {
-				return refusedf("scrape: refused cross-origin redirect")
-			}
-		}
-	}
-	if crossOriginHop {
-		req.Header.Del("Referer")
+	if normalizedRedirectOrigin(req.URL) != normalizedRedirectOrigin(via[0].URL) {
+		return refusedf("scrape: refused cross-origin redirect")
 	}
 	return e.vetURL(req.URL)
-}
-
-func temporaryRedirect(response *http.Response) bool {
-	if response == nil {
-		return false
-	}
-	switch response.StatusCode {
-	case http.StatusFound, http.StatusSeeOther, http.StatusTemporaryRedirect:
-		return true
-	}
-	return false
 }
 
 func hasRedirectCredentials(req *http.Request) bool {
@@ -109,9 +82,8 @@ func (e *Engine) checkStreamRedirect(req *http.Request, via []*http.Request) err
 	if hasRedirectCredentials(first) {
 		return e.checkRedirect(req, via)
 	}
-	recordRedirectHop(req)
 	if len(via) >= maxStreamRedirects {
-		return fmt.Errorf("scrape: refused after %d redirects", maxStreamRedirects)
+		return refusedf("scrape: refused after %d redirects", maxStreamRedirects)
 	}
 	return e.vetURL(req.URL)
 }
@@ -174,31 +146,4 @@ func (e *Engine) CheckURL(rawURL string) error {
 		return refusedf("scrape: refused invalid URL")
 	}
 	return e.vetURL(parsed)
-}
-
-// redirectRecord tracks a fetch's redirect chain: target is the last URL
-// reached through permanent (301/308) hops only, before any temporary hop.
-type redirectRecord struct {
-	target string
-	broken bool
-}
-
-type redirectRecordKey struct{}
-
-func withRedirectRecord(ctx context.Context, record *redirectRecord) context.Context {
-	return context.WithValue(ctx, redirectRecordKey{}, record)
-}
-
-// recordRedirectHop runs before the redirect is vetted, so a refused
-// cross-origin permanent redirect is still recorded for the caller.
-func recordRedirectHop(req *http.Request) {
-	record, _ := req.Context().Value(redirectRecordKey{}).(*redirectRecord)
-	if record == nil || record.broken {
-		return
-	}
-	if req.Response != nil && (req.Response.StatusCode == http.StatusMovedPermanently || req.Response.StatusCode == http.StatusPermanentRedirect) {
-		record.target = req.URL.String()
-		return
-	}
-	record.broken = true
 }

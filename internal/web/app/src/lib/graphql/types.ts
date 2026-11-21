@@ -1054,29 +1054,33 @@ export interface SubscriptionInfo {
   retentionN: number | null;
 }
 
-/** Feed health (graph.SubscriptionHealthInfo, CORE-2955). `state` is ok,
- * pending, failing, warning (failing for 7 days or more) or retired;
- * `lastErrorClass` names the failure class while failing. */
+/** Feed health (CORE-2955). `healthStatus` is ok, failing, warning after
+ * seven days of failure, or retired. `lastErrorClass` is a closed class. */
 export interface SubscriptionHealth {
-  state: string;
+  healthStatus: string;
   lastErrorClass?: string | null;
   failingSince?: string | null;
   nextPollAt?: string | null;
-  lastSuccessAt?: string | null;
 }
 
 /** A followed feed as the feed home shows it (graph.SubscriptionInfo, the
  * CORE-2957 selection). Never selects feedURL: it is secret-class. */
-export interface FeedSubscription {
+export interface FeedSubscription extends SubscriptionHealth {
   id: string;
   libraryID: string;
   title: string;
   downloadPolicy: string;
   downloadLatestN: number;
-  health: SubscriptionHealth;
+  lastPolledAt?: string | null;
   entryCount: number;
   downloadedCount: number;
   catalogBytes: number;
+}
+
+/** The viewer-safe refreshSubscription response. */
+export interface SubscriptionRefreshInfo extends SubscriptionHealth {
+  id: string;
+  title: string;
 }
 
 /** One searchFeeds result (graph.FeedSearchResult). */

@@ -14,9 +14,7 @@ import (
 	"github.com/beamfall/core/internal/serverrole"
 )
 
-// Feed catalogue, download policy and feed health (ADR-0238, CORE-2953 and
-// CORE-2955). The signatures below are the agreed interface between store,
-// ingest, playback and graph.
+// Feed catalogue and download policy (ADR-0238, CORE-2953).
 //
 // Grouping: a feed's entries are grouped by their subscription_entry rows
 // (SubscriptionEntries lists them in feed order, SubscriptionEntryForMedia
@@ -30,10 +28,6 @@ import (
 // table referencing media) cannot bind entries.
 var ErrSubscriptionCatalogUnsupported = errors.New("subscription catalogue is unavailable for encrypted libraries")
 
-// ErrSubscriptionRefreshTooSoon means a refresh was asked for within the
-// 5-minute window of the previous one (ADR-0238).
-var ErrSubscriptionRefreshTooSoon = errors.New("subscription refreshed too recently")
-
 // DownloadPolicy decides which catalogued feed entries the poller downloads.
 type DownloadPolicy string
 
@@ -45,37 +39,7 @@ const (
 
 	// DefaultDownloadLatestN is N for the `latest` policy.
 	DefaultDownloadLatestN = 3
-
-	// SubscriptionRefreshInterval is the minimum gap between refreshes.
-	SubscriptionRefreshInterval = 5 * time.Minute
 )
-
-// FeedErrorClass classifies a failed poll. "" means the last poll succeeded
-// (or none has run). The class never carries the feed URL or response body.
-type FeedErrorClass string
-
-const (
-	FeedErrorDNS         FeedErrorClass = "dns"
-	FeedErrorTLS         FeedErrorClass = "tls"
-	FeedErrorHTTP4xx     FeedErrorClass = "http-4xx"
-	FeedErrorHTTP5xx     FeedErrorClass = "http-5xx"
-	FeedErrorParse       FeedErrorClass = "parse"
-	FeedErrorSSRFBlocked FeedErrorClass = "ssrf-blocked"
-	FeedErrorAuth        FeedErrorClass = "auth"
-	FeedErrorGone        FeedErrorClass = "gone" // HTTP 410: the feed is retired
-	FeedErrorNetwork     FeedErrorClass = "network"
-)
-
-// SubscriptionHealth is a Subscription's persisted poll outcome.
-type SubscriptionHealth struct {
-	LastErrorClass      FeedErrorClass
-	FailingSince        time.Time // zero when healthy
-	ConsecutiveFailures int
-	NextPollAt          time.Time // zero means due now
-	LastSuccessAt       time.Time
-	RetiredAt           time.Time // set by a 410; the poller skips retired feeds
-	RefreshRequestedAt  time.Time
-}
 
 // SubscriptionPolicy is a Subscription's download policy.
 type SubscriptionPolicy struct {
@@ -521,7 +485,7 @@ func scanSubscriptionEntryRow(scan func(...any) error) (SubscriptionEntry, error
 		&entry.DownloadState, &entry.DownloadPath, &downloaded); err != nil {
 		return SubscriptionEntry{}, err
 	}
-	entry.PublishedAt = timeFromMilliOrZero(publishedMS)
+	entry.PublishedAt = optionalUnixMilli(publishedMS)
 	entry.FirstSeenAt = time.UnixMilli(firstSeenMS).UTC()
 	entry.Downloaded = downloaded != 0
 	if entry.Title == entry.GUID {
@@ -613,45 +577,35 @@ func (s *Store) SetSubscriptionEntryDownload(ctx context.Context, id Subscriptio
 	return requireOneRow(result, ValidationError("subscription entry not found"))
 }
 
-// SubscriptionPolicyAndHealth reads the policy and health of a Subscription.
-func (s *Store) SubscriptionPolicyAndHealth(ctx context.Context, id SubscriptionID) (SubscriptionPolicy, SubscriptionHealth, error) {
+// SubscriptionDownloadPolicy reads the catalogue download policy for a Subscription.
+func (s *Store) SubscriptionDownloadPolicy(ctx context.Context, id SubscriptionID) (SubscriptionPolicy, error) {
 	if id == "" {
-		return SubscriptionPolicy{}, SubscriptionHealth{}, errors.New("subscription ID is required")
+		return SubscriptionPolicy{}, errors.New("subscription ID is required")
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return SubscriptionPolicy{}, SubscriptionHealth{}, err
+		return SubscriptionPolicy{}, err
 	}
 	var policy SubscriptionPolicy
-	var health SubscriptionHealth
-	var failingMS, nextMS, successMS, retiredMS, refreshMS int64
 	err := s.catalogR.QueryRowContext(ctx, `
-		SELECT download_policy, download_latest_n, last_error_class, failing_since_ms, consecutive_failures,
-		  next_poll_at_ms, last_success_at_ms, retired_at_ms, refresh_requested_at_ms
-		FROM subscription WHERE id = ?
-	`, id).Scan(&policy.Policy, &policy.LatestN, &health.LastErrorClass, &failingMS, &health.ConsecutiveFailures,
-		&nextMS, &successMS, &retiredMS, &refreshMS)
+		SELECT download_policy, download_latest_n FROM subscription WHERE id = ?
+	`, id).Scan(&policy.Policy, &policy.LatestN)
 	if errors.Is(err, sql.ErrNoRows) {
-		return SubscriptionPolicy{}, SubscriptionHealth{}, ErrSubscriptionNotFound
+		return SubscriptionPolicy{}, ErrSubscriptionNotFound
 	}
 	if err != nil {
-		return SubscriptionPolicy{}, SubscriptionHealth{}, err
+		return SubscriptionPolicy{}, err
 	}
 	if policy.LatestN <= 0 {
 		policy.LatestN = DefaultDownloadLatestN
 	}
-	health.FailingSince = timeFromMilliOrZero(failingMS)
-	health.NextPollAt = timeFromMilliOrZero(nextMS)
-	health.LastSuccessAt = timeFromMilliOrZero(successMS)
-	health.RetiredAt = timeFromMilliOrZero(retiredMS)
-	health.RefreshRequestedAt = timeFromMilliOrZero(refreshMS)
-	return policy, health, nil
+	return policy, nil
 }
 
 // SetSubscriptionDownloadPolicy changes the policy. latestN <= 0 keeps the
-// default. The Subscription becomes due now and its conditional-GET
-// validators are cleared, so the next poll applies the policy to the full
+// default. An active Subscription becomes due now. Clearing its conditional-GET
+// validators makes the next poll apply the policy to the full
 // feed rather than to an unchanged (304) response.
 func (s *Store) SetSubscriptionDownloadPolicy(ctx context.Context, id SubscriptionID, policy SubscriptionPolicy) error {
 	if id == "" {
@@ -673,200 +627,14 @@ func (s *Store) SetSubscriptionDownloadPolicy(ctx context.Context, id Subscripti
 	}
 	result, err := s.catalogW.ExecContext(ctx, `
 		UPDATE subscription
-		SET download_policy = ?, download_latest_n = ?, next_poll_at_ms = 0, etag = '', last_modified = ''
+		SET download_policy = ?, download_latest_n = ?, etag = '', last_modified = '',
+		    next_poll_at_ms = CASE WHEN retired_at_ms = 0 THEN 0 ELSE next_poll_at_ms END
 		WHERE id = ?
 	`, policy.Policy, latestN, id)
 	if err != nil {
 		return err
 	}
 	return requireOneRow(result, ErrSubscriptionNotFound)
-}
-
-// RecordSubscriptionPollSuccess clears the failure state.
-func (s *Store) RecordSubscriptionPollSuccess(ctx context.Context, id SubscriptionID, at, nextPollAt time.Time) error {
-	if id == "" {
-		return errors.New("subscription ID is required")
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return err
-	}
-	result, err := s.catalogW.ExecContext(ctx, `
-		UPDATE subscription
-		SET last_error_class = '', failing_since_ms = 0, consecutive_failures = 0,
-		  last_success_at_ms = ?, next_poll_at_ms = ?
-		WHERE id = ?
-	`, at.UTC().UnixMilli(), unixMilliOrZero(nextPollAt), id)
-	if err != nil {
-		return err
-	}
-	return requireOneRow(result, ErrSubscriptionNotFound)
-}
-
-// RecordSubscriptionPollFailure records a failed poll. FeedErrorGone also
-// sets RetiredAt.
-func (s *Store) RecordSubscriptionPollFailure(ctx context.Context, id SubscriptionID, class FeedErrorClass, at, nextPollAt time.Time) error {
-	if id == "" {
-		return errors.New("subscription ID is required")
-	}
-	switch class {
-	case FeedErrorDNS, FeedErrorTLS, FeedErrorHTTP4xx, FeedErrorHTTP5xx, FeedErrorParse,
-		FeedErrorSSRFBlocked, FeedErrorAuth, FeedErrorGone, FeedErrorNetwork:
-	default:
-		return ValidationError("feed error class is invalid")
-	}
-	atMS := at.UTC().UnixMilli()
-	retiredMS := int64(0)
-	if class == FeedErrorGone {
-		retiredMS = atMS
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return err
-	}
-	result, err := s.catalogW.ExecContext(ctx, `
-		UPDATE subscription
-		SET last_error_class = ?,
-		  failing_since_ms = CASE WHEN failing_since_ms = 0 THEN ? ELSE failing_since_ms END,
-		  consecutive_failures = consecutive_failures + 1,
-		  next_poll_at_ms = ?,
-		  retired_at_ms = CASE WHEN ? > 0 AND retired_at_ms = 0 THEN ? ELSE retired_at_ms END
-		WHERE id = ?
-	`, class, atMS, unixMilliOrZero(nextPollAt), retiredMS, retiredMS, id)
-	if err != nil {
-		return err
-	}
-	return requireOneRow(result, ErrSubscriptionNotFound)
-}
-
-// RequestSubscriptionRefresh makes the Subscription due now. It returns
-// ErrSubscriptionRefreshTooSoon within SubscriptionRefreshInterval of the
-// previous request. The conditional-GET validators are cleared so the refresh
-// fetches the full feed.
-func (s *Store) RequestSubscriptionRefresh(ctx context.Context, id SubscriptionID, now time.Time) error {
-	if id == "" {
-		return errors.New("subscription ID is required")
-	}
-	nowMS := now.UTC().UnixMilli()
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return err
-	}
-	result, err := s.catalogW.ExecContext(ctx, `
-		UPDATE subscription
-		SET refresh_requested_at_ms = ?, next_poll_at_ms = ?, etag = '', last_modified = ''
-		WHERE id = ? AND (refresh_requested_at_ms = 0 OR refresh_requested_at_ms <= ?)
-	`, nowMS, nowMS, id, nowMS-SubscriptionRefreshInterval.Milliseconds())
-	if err != nil {
-		return err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected > 0 {
-		return nil
-	}
-	var one int
-	err = s.catalogR.QueryRowContext(ctx, `SELECT 1 FROM subscription WHERE id = ?`, id).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrSubscriptionNotFound
-	}
-	if err != nil {
-		return err
-	}
-	return ErrSubscriptionRefreshTooSoon
-}
-
-// DueSubscriptions lists unretired Subscriptions whose NextPollAt <= now.
-func (s *Store) DueSubscriptions(ctx context.Context, now time.Time) ([]Subscription, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return nil, err
-	}
-	return s.querySubscriptions(ctx, subscriptionColumns+`
-		WHERE retired_at_ms = 0 AND next_poll_at_ms <= ? ORDER BY next_poll_at_ms, id`, now.UTC().UnixMilli())
-}
-
-// ObserveSubscriptionFeedMove records one poll's feed-move observation: the
-// new feed URL a permanent redirect or an in-feed new-feed-url announced, or
-// "" when the poll saw none. The feed URL is rewritten only when two
-// consecutive observations agree; a different URL restarts the count and ""
-// clears it. A move to a URL another Subscription of the Library already
-// follows is dropped and the old URL kept. moved reports a rewrite. The
-// caller vets the URL (SSRF guard) first; newURL is secret class and never
-// appears in an error.
-func (s *Store) ObserveSubscriptionFeedMove(ctx context.Context, id SubscriptionID, newURL string) (moved bool, err error) {
-	if id == "" {
-		return false, errors.New("subscription ID is required")
-	}
-	if strings.TrimSpace(newURL) != "" {
-		// Never wrap the url.Parse error: it embeds the raw URL.
-		if newURL, err = normalizeSubscriptionFeedURL(newURL); err != nil {
-			return false, err
-		}
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return false, err
-	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	var libraryID LibraryID
-	var current, pending string
-	var count int
-	err = tx.QueryRowContext(ctx, `
-		SELECT library_id, feed_url, pending_feed_url, pending_feed_url_count FROM subscription WHERE id = ?
-	`, id).Scan(&libraryID, &current, &pending, &count)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, ErrSubscriptionNotFound
-	}
-	if err != nil {
-		return false, err
-	}
-	switch newURL {
-	case "", current:
-		pending, count = "", 0
-	case pending:
-		count++
-	default:
-		pending, count = newURL, 1
-	}
-	if count >= 2 {
-		var taken int
-		err := tx.QueryRowContext(ctx, `
-			SELECT 1 FROM subscription WHERE library_id = ? AND feed_url = ? AND id <> ?
-		`, libraryID, pending, id).Scan(&taken)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return false, err
-		}
-		if err == nil {
-			pending, count = "", 0
-		} else {
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE subscription
-				SET feed_url = ?, pending_feed_url = '', pending_feed_url_count = 0, etag = '', last_modified = ''
-				WHERE id = ?
-			`, pending, id); err != nil {
-				return false, err
-			}
-			return true, tx.Commit()
-		}
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE subscription SET pending_feed_url = ?, pending_feed_url_count = ? WHERE id = ?
-	`, pending, count, id); err != nil {
-		return false, err
-	}
-	return false, tx.Commit()
 }
 
 func requireOneRow(result sql.Result, notFound error) error {
@@ -885,11 +653,4 @@ func unixMilliOrZero(t time.Time) int64 {
 		return 0
 	}
 	return t.UTC().UnixMilli()
-}
-
-func timeFromMilliOrZero(ms int64) time.Time {
-	if ms <= 0 {
-		return time.Time{}
-	}
-	return time.UnixMilli(ms).UTC()
 }

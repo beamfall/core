@@ -286,90 +286,97 @@ func TestUpsertSubscriptionCatalogBindsPreCatalogueDownload(t *testing.T) {
 	}
 }
 
-func TestSubscriptionRefreshWindowAndDueList(t *testing.T) {
+func TestSubscriptionRefreshWindowAndDueState(t *testing.T) {
 	st, sub, now := catalogueFixture(t)
 	ctx := context.Background()
-	if err := st.RecordSubscriptionPollSuccess(ctx, sub.ID, now, now.Add(time.Hour)); err != nil {
+	const minGap = 5 * time.Minute
+	if err := st.RecordSubscriptionPollSuccess(ctx, sub, "stale-etag", "stale-date", now, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	due, err := st.DueSubscriptions(ctx, now)
-	if err != nil || len(due) != 0 {
-		t.Fatalf("due before refresh = %d, %v", len(due), err)
+	stored, err := st.Subscription(ctx, sub.ID)
+	if err != nil || stored.Health.Due(now) {
+		t.Fatalf("subscription due before refresh or read failed: %v", err)
 	}
-	if err := st.RequestSubscriptionRefresh(ctx, sub.ID, now); err != nil {
-		t.Fatalf("first refresh: %v", err)
+	refreshed, err := st.RequestSubscriptionRefresh(ctx, sub.ID, now, minGap)
+	if err != nil || !refreshed.Health.Due(now) || refreshed.ETag != "" || refreshed.LastModified != "" {
+		t.Fatalf("refresh did not make the feed due for a full fetch: %v", err)
 	}
-	due, err = st.DueSubscriptions(ctx, now)
-	if err != nil || len(due) != 1 {
-		t.Fatalf("due after refresh = %d, %v", len(due), err)
+	if _, err := st.RequestSubscriptionRefresh(ctx, sub.ID, now.Add(4*time.Minute), minGap); !errors.Is(err, ErrSubscriptionRefreshRateLimited) {
+		t.Fatalf("refresh within window = %v, want ErrSubscriptionRefreshRateLimited", err)
 	}
-	if err := st.RequestSubscriptionRefresh(ctx, sub.ID, now.Add(4*time.Minute)); !errors.Is(err, ErrSubscriptionRefreshTooSoon) {
-		t.Fatalf("refresh within window = %v, want ErrSubscriptionRefreshTooSoon", err)
-	}
-	if err := st.RequestSubscriptionRefresh(ctx, sub.ID, now.Add(5*time.Minute)); err != nil {
+	if _, err := st.RequestSubscriptionRefresh(ctx, sub.ID, now.Add(minGap), minGap); err != nil {
 		t.Fatalf("refresh after window: %v", err)
 	}
-	if err := st.RequestSubscriptionRefresh(ctx, "subscription-missing", now); !errors.Is(err, ErrSubscriptionNotFound) {
+	if _, err := st.RequestSubscriptionRefresh(ctx, "subscription-missing", now, minGap); !errors.Is(err, ErrSubscriptionNotFound) {
 		t.Fatalf("missing refresh = %v", err)
 	}
 }
 
-func TestSubscriptionHealthPersistence(t *testing.T) {
-	st, sub, now := catalogueFixture(t)
+func TestSubscriptionPollCompletionPreservesNewerRefresh(t *testing.T) {
 	ctx := context.Background()
-	if err := st.RecordSubscriptionPollFailure(ctx, sub.ID, FeedErrorDNS, now, now.Add(time.Hour)); err != nil {
-		t.Fatal(err)
+	cases := map[string]func(*Store, Subscription, time.Time) error{
+		"success": func(st *Store, sub Subscription, now time.Time) error {
+			return st.RecordSubscriptionPollSuccess(ctx, sub, "obsolete-etag", "obsolete-date", now, now.Add(time.Hour))
+		},
+		"failure": func(st *Store, sub Subscription, now time.Time) error {
+			return st.RecordSubscriptionPollFailure(ctx, sub, FeedErrorNetwork, now, now.Add(time.Hour))
+		},
+		"gone": func(st *Store, sub Subscription, now time.Time) error {
+			return st.RecordSubscriptionRetired(ctx, sub, now)
+		},
+		"gone after refresh between snapshot and poll start": func(st *Store, sub Subscription, now time.Time) error {
+			return st.RecordSubscriptionRetired(ctx, sub, now.Add(time.Millisecond))
+		},
 	}
-	if err := st.RecordSubscriptionPollFailure(ctx, sub.ID, FeedErrorNetwork, now.Add(time.Hour), now.Add(3*time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	_, health, err := st.SubscriptionPolicyAndHealth(ctx, sub.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if health.LastErrorClass != FeedErrorNetwork || !health.FailingSince.Equal(now) || health.ConsecutiveFailures != 2 || !health.NextPollAt.Equal(now.Add(3*time.Hour)) {
-		t.Fatalf("health after failures = %+v", health)
-	}
-	if err := st.RecordSubscriptionPollSuccess(ctx, sub.ID, now.Add(3*time.Hour), now.Add(4*time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	_, health, _ = st.SubscriptionPolicyAndHealth(ctx, sub.ID)
-	if health.LastErrorClass != "" || !health.FailingSince.IsZero() || health.ConsecutiveFailures != 0 || !health.LastSuccessAt.Equal(now.Add(3*time.Hour)) {
-		t.Fatalf("health after success = %+v", health)
-	}
-	if err := st.RecordSubscriptionPollFailure(ctx, sub.ID, FeedErrorGone, now.Add(5*time.Hour), now.Add(6*time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	_, health, _ = st.SubscriptionPolicyAndHealth(ctx, sub.ID)
-	if !health.RetiredAt.Equal(now.Add(5 * time.Hour)) {
-		t.Fatalf("RetiredAt = %v", health.RetiredAt)
-	}
-	if due, err := st.DueSubscriptions(ctx, now.Add(48*time.Hour)); err != nil || len(due) != 0 {
-		t.Fatalf("retired subscription is due: %d %v", len(due), err)
-	}
-	if err := st.RecordSubscriptionPollFailure(ctx, sub.ID, "bogus", now, now); err == nil {
-		t.Fatal("unknown error class accepted")
+	for name, finish := range cases {
+		t.Run(name, func(t *testing.T) {
+			st, snapshot, now := catalogueFixture(t)
+			if err := st.MarkSubscriptionPolled(ctx, snapshot.ID, "old-etag", "old-date", now.Add(-time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			// The poll takes its snapshot before the refresh. Both can
+			// start in the same millisecond.
+			refreshed, err := st.RequestSubscriptionRefresh(ctx, snapshot.ID, now, 5*time.Minute)
+			if err != nil || !refreshed.Health.Due(now) {
+				t.Fatalf("refresh did not make feed due: %v", err)
+			}
+			if err := finish(st, snapshot, now); err != nil {
+				t.Fatal(err)
+			}
+			pending, err := st.Subscription(ctx, snapshot.ID)
+			if err != nil || !pending.Health.Due(now) || pending.ETag != "" || pending.LastModified != "" {
+				t.Fatalf("in-flight poll consumed the newer refresh: due=%v, validators set=%v, err=%v",
+					pending.Health.Due(now), pending.ETag != "" || pending.LastModified != "", err)
+			}
+			if err := st.RecordSubscriptionPollSuccess(ctx, pending, "fresh-etag", "", now, now.Add(time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			completed, err := st.Subscription(ctx, snapshot.ID)
+			if err != nil || completed.Health.Due(now) || completed.ETag != "fresh-etag" {
+				t.Fatalf("refreshed poll was not recorded: due=%v, err=%v", completed.Health.Due(now), err)
+			}
+		})
 	}
 }
 
 func TestSubscriptionDownloadPolicyRoundTrip(t *testing.T) {
 	st, sub, _ := catalogueFixture(t)
 	ctx := context.Background()
-	policy, _, err := st.SubscriptionPolicyAndHealth(ctx, sub.ID)
+	policy, err := st.SubscriptionDownloadPolicy(ctx, sub.ID)
 	if err != nil || policy.Policy != DownloadPolicyNewOnly || policy.LatestN != DefaultDownloadLatestN {
 		t.Fatalf("default policy = %+v, %v", policy, err)
 	}
 	if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, SubscriptionPolicy{Policy: DownloadPolicyLatest, LatestN: 5}); err != nil {
 		t.Fatal(err)
 	}
-	policy, _, _ = st.SubscriptionPolicyAndHealth(ctx, sub.ID)
+	policy, _ = st.SubscriptionDownloadPolicy(ctx, sub.ID)
 	if policy.Policy != DownloadPolicyLatest || policy.LatestN != 5 {
 		t.Fatalf("policy = %+v", policy)
 	}
 	if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, SubscriptionPolicy{Policy: DownloadPolicyStreamOnly}); err != nil {
 		t.Fatal(err)
 	}
-	policy, _, _ = st.SubscriptionPolicyAndHealth(ctx, sub.ID)
+	policy, _ = st.SubscriptionDownloadPolicy(ctx, sub.ID)
 	if policy.Policy != DownloadPolicyStreamOnly || policy.LatestN != DefaultDownloadLatestN {
 		t.Fatalf("policy = %+v", policy)
 	}
@@ -378,7 +385,7 @@ func TestSubscriptionDownloadPolicyRoundTrip(t *testing.T) {
 	}
 }
 
-func TestObserveSubscriptionFeedMove(t *testing.T) {
+func TestRecordSubscriptionMoveObservation(t *testing.T) {
 	st, sub, now := catalogueFixture(t)
 	ctx := context.Background()
 	moved := "https://feeds.example.com/moved.xml?token=hush"
@@ -386,9 +393,9 @@ func TestObserveSubscriptionFeedMove(t *testing.T) {
 
 	observe := func(url string) bool {
 		t.Helper()
-		ok, err := st.ObserveSubscriptionFeedMove(ctx, sub.ID, url)
+		ok, err := st.RecordSubscriptionMoveObservation(ctx, sub.ID, url, now)
 		if err != nil {
-			t.Fatalf("ObserveSubscriptionFeedMove: %v", err)
+			t.Fatalf("RecordSubscriptionMoveObservation: %v", err)
 		}
 		return ok
 	}

@@ -37,10 +37,9 @@ type SubscriptionPoller interface {
 
 // subscriptionCatalogue is the store's feed-catalogue surface the graph uses.
 type subscriptionCatalogue interface {
-	SubscriptionPolicyAndHealth(ctx context.Context, id store.SubscriptionID) (store.SubscriptionPolicy, store.SubscriptionHealth, error)
+	SubscriptionDownloadPolicy(ctx context.Context, id store.SubscriptionID) (store.SubscriptionPolicy, error)
 	SubscriptionEntries(ctx context.Context, id store.SubscriptionID) ([]store.SubscriptionEntry, error)
 	SetSubscriptionDownloadPolicy(ctx context.Context, id store.SubscriptionID, policy store.SubscriptionPolicy) error
-	RequestSubscriptionRefresh(ctx context.Context, id store.SubscriptionID, now time.Time) error
 }
 
 // SetFeedProber wires the probe followFeed runs before creating a
@@ -55,8 +54,8 @@ func (h *Handler) SetFeedErrorClassifier(classify func(error) store.FeedErrorCla
 	h.feedErrorClass = classify
 }
 
-// SetSubscriptionPoller wires the poller kicked after a follow, a refresh and
-// a download policy change.
+// SetSubscriptionPoller wires the poller kicked after a follow or a download
+// policy change.
 func (h *Handler) SetSubscriptionPoller(poller SubscriptionPoller) {
 	h.feedPoller = poller
 }
@@ -74,47 +73,8 @@ func (h *Handler) pollSubscription(ctx context.Context, id store.SubscriptionID)
 	}
 }
 
-// Health states of a Subscription.
-const (
-	SubscriptionHealthOK      = "ok"
-	SubscriptionHealthPending = "pending"
-	SubscriptionHealthFailing = "failing"
-	SubscriptionHealthWarning = "warning"
-	SubscriptionHealthRetired = "retired"
-)
-
-// subscriptionWarningAfter is how long a feed fails before the Manager is
-// warned (ADR-0238: never disabled, warned after 7 days).
-const subscriptionWarningAfter = 7 * 24 * time.Hour
-
-// SubscriptionHealthInfo is the wire shape of a Subscription's poll health.
-type SubscriptionHealthInfo struct {
-	State          string `json:"state"`
-	LastErrorClass string `json:"lastErrorClass,omitempty"`
-	FailingSince   string `json:"failingSince,omitempty"`
-	NextPollAt     string `json:"nextPollAt,omitempty"`
-	LastSuccessAt  string `json:"lastSuccessAt,omitempty"`
-}
-
-// subscriptionHealthState derives the state: retired, then failing (warning
-// after 7 days), then pending when the feed was never polled, else ok.
-func subscriptionHealthState(subscription store.Subscription, health store.SubscriptionHealth, now time.Time) string {
-	switch {
-	case !health.RetiredAt.IsZero():
-		return SubscriptionHealthRetired
-	case !health.FailingSince.IsZero() && now.Sub(health.FailingSince) >= subscriptionWarningAfter:
-		return SubscriptionHealthWarning
-	case !health.FailingSince.IsZero():
-		return SubscriptionHealthFailing
-	case subscription.LastPolledAt.IsZero() && health.LastSuccessAt.IsZero():
-		return SubscriptionHealthPending
-	default:
-		return SubscriptionHealthOK
-	}
-}
-
 func (h *Handler) withSubscriptionCatalogue(ctx context.Context, info SubscriptionInfo, subscription store.Subscription) (SubscriptionInfo, error) {
-	policy, health, err := h.catalogue().SubscriptionPolicyAndHealth(ctx, subscription.ID)
+	policy, err := h.catalogue().SubscriptionDownloadPolicy(ctx, subscription.ID)
 	if err != nil {
 		return SubscriptionInfo{}, err
 	}
@@ -124,13 +84,6 @@ func (h *Handler) withSubscriptionCatalogue(ctx context.Context, info Subscripti
 	}
 	info.DownloadPolicy = string(policy.Policy)
 	info.DownloadLatestN = policy.LatestN
-	info.Health = SubscriptionHealthInfo{
-		State:          subscriptionHealthState(subscription, health, time.Now().UTC()),
-		LastErrorClass: string(health.LastErrorClass),
-		FailingSince:   formatOptionalTime(health.FailingSince),
-		NextPollAt:     formatOptionalTime(health.NextPollAt),
-		LastSuccessAt:  formatOptionalTime(health.LastSuccessAt),
-	}
 	info.EntryCount = len(entries)
 	for _, entry := range entries {
 		if entryDownloaded(entry) {
@@ -291,7 +244,7 @@ func (h *Handler) classifyFeedError(err error) store.FeedErrorClass {
 // visible, else the single visible Library that can hold feeds.
 func (h *Handler) followLibrary(ctx context.Context, scope auth.Scope, requested string) (store.LibraryID, error) {
 	if requested != "" {
-		visible, err := h.visibleLibrary(ctx, scope, store.LibraryID(requested))
+		visible, err := h.visibleSubscriptionLibrary(ctx, scope, store.LibraryID(requested))
 		if err != nil {
 			return "", err
 		}
@@ -314,7 +267,11 @@ func (h *Handler) followLibrary(ctx context.Context, scope auth.Scope, requested
 // plugin declares a subscriptions importer, or, when no plugin does, those
 // that already hold a Subscription.
 func (h *Handler) feedLibraries(ctx context.Context, scope auth.Scope) ([]store.LibraryID, error) {
-	libraries, err := h.store.Libraries(ctx, scope.LibraryFilter())
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	libraries, err := h.store.Libraries(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +378,7 @@ func (h *Handler) visibleSubscription(ctx context.Context, scope auth.Scope, id 
 	if err != nil {
 		return store.Subscription{}, clientError("unknown subscription")
 	}
-	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	visible, err := h.visibleSubscriptionLibrary(ctx, scope, subscription.LibraryID)
 	if err != nil {
 		return store.Subscription{}, err
 	}
@@ -431,40 +388,6 @@ func (h *Handler) visibleSubscription(ctx context.Context, scope auth.Scope, id 
 	return subscription, nil
 }
 
-func (h *Handler) refreshSubscription(ctx context.Context, scope auth.Scope, req request) (SubscriptionInfo, error) {
-	manager := scope.DeviceRole == store.DeviceRoleManager
-	if !manager && !canFollowFeeds(scope) {
-		return SubscriptionInfo{}, clientError("adult profile or manager role required")
-	}
-	subscription, err := h.visibleSubscription(ctx, scope, store.SubscriptionID(trimmedVariable(req, "id")))
-	if err != nil {
-		return SubscriptionInfo{}, err
-	}
-	if !manager {
-		followed, err := h.store.SubscriptionFollowed(ctx, scope.ProfileID, subscription.ID)
-		if err != nil {
-			return SubscriptionInfo{}, err
-		}
-		if !followed {
-			return SubscriptionInfo{}, clientError("follow the subscription before refreshing it")
-		}
-	}
-	err = h.catalogue().RequestSubscriptionRefresh(ctx, subscription.ID, time.Now().UTC())
-	if errors.Is(err, store.ErrSubscriptionRefreshTooSoon) {
-		return SubscriptionInfo{}, clientError("subscription refresh throttled")
-	}
-	if err != nil {
-		return SubscriptionInfo{}, err
-	}
-	h.pollSubscription(ctx, subscription.ID)
-	info, err := h.subscriptionInfo(ctx, scope, subscription)
-	if err != nil {
-		return SubscriptionInfo{}, err
-	}
-	return viewerSafeSubscription(scope, info), nil
-}
-
-// activitySubscriptionDownloadPolicy audits a download policy change.
 const activitySubscriptionDownloadPolicy = "subscription.download_policy"
 
 // setSubscriptionDownloadPolicy changes the policy (manager-gated in

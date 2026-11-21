@@ -92,7 +92,6 @@ var resultTypes = map[string]any{
 	"subscriptions":                 SubscriptionInfo{},
 	"subscriptionentries":           SubscriptionEntryInfo{},
 	"followfeed":                    SubscriptionInfo{},
-	"refreshsubscription":           SubscriptionInfo{},
 	"setsubscriptiondownloadpolicy": SubscriptionInfo{},
 	"jobs":                          JobInfo{},
 	"job":                           JobInfo{},
@@ -217,6 +216,8 @@ var resultTypes = map[string]any{
 	"scrobblestatus":                     ScrobbleStatusInfo{},      // MUSIC-7: admin diagnostic object
 	"setclientpref":                      ClientPrefInfo{},
 	"setfollow":                          FollowInfo{},
+	"refreshsubscription":                SubscriptionRefreshInfo{},
+	"refreshallsubscriptions":            SubscriptionRefreshAllInfo{},
 	"associatesubscriptionentry":         SubscriptionEntryAssociationInfo{},
 	"setmute":                            MuteResult{},
 	"clearmute":                          MuteResult{},

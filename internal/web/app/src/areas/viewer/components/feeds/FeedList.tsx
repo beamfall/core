@@ -82,13 +82,14 @@ function FeedRow({
   const [confirmEverything, setConfirmEverything] = useState(false);
   const title = subscription.title || t("feedsUntitled");
   const latestN = subscription.downloadLatestN || DEFAULT_LATEST_N;
-  const tone = healthTone(subscription.health);
+  const tone = healthTone(subscription);
 
   async function refresh() {
     setRefreshing(true);
     setNotice(null);
     try {
-      onChange(await refreshSubscription(subscription.id));
+      const refreshed = await refreshSubscription(subscription.id);
+      onChange({ ...subscription, ...refreshed });
       setNotice("refreshQueued");
     } catch (err) {
       setNotice(isRateLimited(err) ? "rateLimited" : "refreshFailed");
@@ -191,7 +192,7 @@ function FeedRow({
           </Button>
         </div>
       </div>
-      <FeedHealth health={subscription.health} />
+      <FeedHealth health={subscription} lastPolledAt={subscription.lastPolledAt} />
       {noticeText && (
         <p
           role={notice === "refreshQueued" ? "status" : "alert"}

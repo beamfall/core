@@ -56,6 +56,8 @@ type Subscription struct {
 	LastModified  string
 	RetentionKind RetentionKind
 	RetentionN    *int
+	// Health is the poller's record of how the feed is fetching (CORE-2955).
+	Health SubscriptionHealth
 }
 
 // SubscriptionEntryAssociation is a feed-scoped association between one
@@ -578,7 +580,7 @@ func pathWithinRoot(root, path string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
-const subscriptionColumns = `SELECT id, library_id, feed_url, auth_ref, root, title, added_at_ms, last_polled_at_ms, etag, last_modified, retention_kind, retention_n FROM subscription`
+const subscriptionColumns = `SELECT id, library_id, feed_url, auth_ref, root, title, added_at_ms, last_polled_at_ms, etag, last_modified, retention_kind, retention_n, ` + subscriptionHealthColumns + ` FROM subscription`
 
 func (s *Store) querySubscriptions(ctx context.Context, query string, args ...any) ([]Subscription, error) {
 	rows, err := s.catalogR.QueryContext(ctx, query, args...)
@@ -609,11 +611,14 @@ func scanSubscriptionRow(scan func(...any) error) (Subscription, error) {
 	var subscription Subscription
 	var addedMS, polledMS int64
 	var retentionN sql.NullInt64
-	if err := scan(&subscription.ID, &subscription.LibraryID, &subscription.FeedURL, &subscription.AuthRef,
+	var health subscriptionHealthRow
+	dest := []any{&subscription.ID, &subscription.LibraryID, &subscription.FeedURL, &subscription.AuthRef,
 		&subscription.Root, &subscription.Title, &addedMS, &polledMS,
-		&subscription.ETag, &subscription.LastModified, &subscription.RetentionKind, &retentionN); err != nil {
+		&subscription.ETag, &subscription.LastModified, &subscription.RetentionKind, &retentionN}
+	if err := scan(append(dest, health.dest()...)...); err != nil {
 		return Subscription{}, err
 	}
+	subscription.Health = health.health()
 	if subscription.RetentionKind == "" {
 		subscription.RetentionKind = RetentionKeepAll
 	}

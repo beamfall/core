@@ -6,10 +6,15 @@
 // the person is about to follow, nothing more).
 
 import { graphql } from "@/lib/api";
-import type { FeedSearchResult, FeedSubscription, SubscriptionEntry } from "./types";
+import type {
+  FeedSearchResult,
+  FeedSubscription,
+  SubscriptionEntry,
+  SubscriptionRefreshInfo,
+} from "./types";
 
 const FEED_SUBSCRIPTION_FIELDS =
-  "id libraryID title downloadPolicy downloadLatestN health { state lastErrorClass failingSince nextPollAt lastSuccessAt } entryCount downloadedCount catalogBytes";
+  "id libraryID title downloadPolicy downloadLatestN healthStatus lastErrorClass failingSince nextPollAt lastPolledAt entryCount downloadedCount catalogBytes";
 
 const SEARCH_FEEDS_QUERY =
   "query SearchFeeds($query: String!) { searchFeeds(query: $query) { title feedURL artworkURL description } }";
@@ -17,7 +22,7 @@ const FEED_SUBSCRIPTIONS_QUERY = `query FeedSubscriptions($libraryID: String!) {
 const FEED_SUBSCRIPTION_IDS_QUERY =
   "query FeedSubscriptionIDs($libraryID: String!) { subscriptions(libraryID: $libraryID) { id } }";
 const FOLLOW_FEED_MUTATION = `mutation FollowFeed($feedURL: String!, $libraryID: String, $downloadPolicy: String, $latestN: Int) { followFeed(feedURL: $feedURL, libraryID: $libraryID, downloadPolicy: $downloadPolicy, latestN: $latestN) { ${FEED_SUBSCRIPTION_FIELDS} } }`;
-const REFRESH_SUBSCRIPTION_MUTATION = `mutation RefreshSubscription($id: String!) { refreshSubscription(id: $id) { ${FEED_SUBSCRIPTION_FIELDS} } }`;
+const REFRESH_SUBSCRIPTION_MUTATION = `mutation RefreshSubscription($id: String!) { refreshSubscription(id: $id) { id title healthStatus lastErrorClass failingSince nextPollAt } }`;
 const SET_DOWNLOAD_POLICY_MUTATION = `mutation SetSubscriptionDownloadPolicy($id: String!, $downloadPolicy: String!, $latestN: Int, $confirmEverything: Boolean) { setSubscriptionDownloadPolicy(id: $id, downloadPolicy: $downloadPolicy, latestN: $latestN, confirmEverything: $confirmEverything) { ${FEED_SUBSCRIPTION_FIELDS} } }`;
 const SUBSCRIPTION_ENTRIES_QUERY =
   "query SubscriptionEntries($subscriptionID: String!) { subscriptionEntries(subscriptionID: $subscriptionID) { mediaID title publishedAt feedPosition enclosureLength downloadState availability } }";
@@ -65,8 +70,8 @@ export async function followFeed(
 
 /** Ask for a poll now. The server refuses with THROTTLED inside five minutes
  * of the last one. */
-export async function refreshSubscription(id: string): Promise<FeedSubscription> {
-  const data = await graphql<{ refreshSubscription: FeedSubscription }>(
+export async function refreshSubscription(id: string): Promise<SubscriptionRefreshInfo> {
+  const data = await graphql<{ refreshSubscription: SubscriptionRefreshInfo }>(
     REFRESH_SUBSCRIPTION_MUTATION,
     { id },
   );

@@ -92,7 +92,7 @@ func TestLatestDownloadsEveryArrivalAfterFirstPoll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	selected, catalogued, err := poller.catalogue(ctx, sub, document, poller.clock())
+	selected, catalogued, err := poller.catalogue(ctx, sub, document, poller.now())
 	if err != nil || !catalogued || len(selected) != 1 || !selected["g1"] {
 		t.Fatalf("initial selection = %v, catalogued = %v, err = %v", selected, catalogued, err)
 	}
@@ -153,7 +153,7 @@ func TestEncryptedFeedPollRespectsDownloadPolicies(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				selected, catalogued, err := poller.catalogue(ctx, sub, document, poller.clock())
+				selected, catalogued, err := poller.catalogue(ctx, sub, document, poller.now())
 				if err != nil || catalogued || len(selected) != 1 || !selected["g1"] {
 					t.Fatalf("initial selection = %v, catalogued = %v, err = %v", selected, catalogued, err)
 				}
@@ -202,7 +202,7 @@ func TestClassifyFeedError(t *testing.T) {
 		{status(http.StatusNotFound), store.FeedErrorHTTP4xx},
 		{status(http.StatusUnauthorized), store.FeedErrorAuth},
 		{status(http.StatusForbidden), store.FeedErrorAuth},
-		{status(http.StatusGone), store.FeedErrorGone},
+		{status(http.StatusGone), store.FeedErrorHTTP4xx},
 		{status(http.StatusBadGateway), store.FeedErrorHTTP5xx},
 		{&feedParseError{err: errors.New("bad xml")}, store.FeedErrorParse},
 		{refused, store.FeedErrorSSRFBlocked},
@@ -212,26 +212,6 @@ func TestClassifyFeedError(t *testing.T) {
 		if got := ClassifyFeedError(tc.err); got != tc.want {
 			t.Errorf("ClassifyFeedError(%v) = %q, want %q", tc.err, got, tc.want)
 		}
-	}
-}
-
-func TestFailureBackoffBounds(t *testing.T) {
-	for failures := 1; failures <= 12; failures++ {
-		base := DefaultPollInterval << (failures - 1)
-		if base > maxPollBackoff {
-			base = maxPollBackoff
-		}
-		for _, random := range []float64{0, 0.5, 0.999999} {
-			got := failureBackoff(DefaultPollInterval, failures, random)
-			low := time.Duration(float64(base) * 0.8)
-			high := min(time.Duration(float64(base)*1.2), maxPollBackoff)
-			if got < low || got > high {
-				t.Fatalf("failures=%d random=%v: %v outside [%v, %v]", failures, random, got, low, high)
-			}
-		}
-	}
-	if got := failureBackoff(DefaultPollInterval, 40, 0.999999); got != maxPollBackoff {
-		t.Fatalf("capped backoff = %v, want %v", got, maxPollBackoff)
 	}
 }
 
@@ -247,10 +227,18 @@ func newStatusFeed(t *testing.T) *statusFeed {
 	t.Helper()
 	sf := &statusFeed{code: http.StatusOK}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/feed.xml", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/feed.xml", func(w http.ResponseWriter, r *http.Request) {
 		sf.mu.Lock()
 		code, body := sf.code, sf.body
 		sf.mu.Unlock()
+		if code == http.StatusOK {
+			const etag = `"feed-v1"`
+			w.Header().Set("ETag", etag)
+			if r.Header.Get("If-None-Match") == etag {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
 		w.WriteHeader(code)
 		_, _ = w.Write([]byte(body))
 	})
@@ -287,39 +275,12 @@ func healthFixture(t *testing.T, feedURL string) (*store.Store, store.Subscripti
 	return st, sub, poller
 }
 
-func TestPollFailureBacksOffAndGoneRetires(t *testing.T) {
+func TestPollRejectsMalformedFeedDocuments(t *testing.T) {
 	sf := newStatusFeed(t)
 	st, sub, poller := healthFixture(t, sf.server.URL+"/feed.xml")
 	ctx := context.Background()
 	start := time.Now().UTC().Truncate(time.Millisecond)
 	poller.now = func() time.Time { return start }
-
-	sf.set(http.StatusBadGateway, "")
-	for range 2 {
-		if _, err := poller.pollSubscription(ctx, sub); err == nil {
-			t.Fatal("5xx poll succeeded")
-		}
-	}
-	_, health, err := st.SubscriptionPolicyAndHealth(ctx, sub.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if health.LastErrorClass != store.FeedErrorHTTP5xx || health.ConsecutiveFailures != 2 || !health.FailingSince.Equal(start) {
-		t.Fatalf("health = %+v", health)
-	}
-	if want := start.Add(2 * DefaultPollInterval); !health.NextPollAt.Equal(want) {
-		t.Fatalf("next poll = %v, want %v (2 failures, mid jitter)", health.NextPollAt, want)
-	}
-
-	// Recovery clears the failure streak and schedules one interval out.
-	sf.set(http.StatusOK, `<rss><channel><title>Back</title></channel></rss>`)
-	if _, err := poller.pollSubscription(ctx, sub); err != nil {
-		t.Fatalf("recovered poll: %v", err)
-	}
-	_, health, _ = st.SubscriptionPolicyAndHealth(ctx, sub.ID)
-	if health.LastErrorClass != "" || health.ConsecutiveFailures != 0 || !health.NextPollAt.Equal(start.Add(DefaultPollInterval)) {
-		t.Fatalf("recovered health = %+v", health)
-	}
 
 	for _, body := range []string{
 		`<rss><channel><title a=></title></channel></rss>`,
@@ -329,28 +290,12 @@ func TestPollFailureBacksOffAndGoneRetires(t *testing.T) {
 		if _, err := poller.pollSubscription(ctx, sub); err == nil {
 			t.Fatal("invalid feed polled clean")
 		}
-		_, health, _ = st.SubscriptionPolicyAndHealth(ctx, sub.ID)
+		health := reloadSubscription(t, st, sub.ID).Health
 		if health.LastErrorClass != store.FeedErrorParse {
 			t.Fatalf("parse class = %q", health.LastErrorClass)
 		}
 	}
 
-	sf.set(http.StatusGone, "")
-	if _, err := poller.pollSubscription(ctx, sub); err == nil {
-		t.Fatal("410 poll succeeded")
-	}
-	_, health, _ = st.SubscriptionPolicyAndHealth(ctx, sub.ID)
-	if health.LastErrorClass != store.FeedErrorGone || health.RetiredAt.IsZero() {
-		t.Fatalf("gone health = %+v", health)
-	}
-	due, err := st.DueSubscriptions(ctx, start.Add(48*time.Hour))
-	if err != nil || len(due) != 0 {
-		t.Fatalf("retired feed still due: %d, %v", len(due), err)
-	}
-	if err := poller.PollSubscriptionNow(ctx, sub.ID); err != nil {
-		t.Fatal(err)
-	}
-	poller.background.Wait()
 }
 
 func TestPollCataloguesEveryEntryAndDownloadsOnlyNewOnes(t *testing.T) {
@@ -444,8 +389,8 @@ func TestPollTracksFeedMoves(t *testing.T) {
 		if got.FeedURL != newURL {
 			t.Fatal("two consistent observations did not move the feed")
 		}
-		_, health, _ := st.SubscriptionPolicyAndHealth(ctx, sub.ID)
-		if health.NextPollAt.After(poller.clock()) {
+		health := reloadSubscription(t, st, sub.ID).Health
+		if health.NextPollAt.After(poller.now()) {
 			t.Fatalf("moved feed next poll = %v, want due now", health.NextPollAt)
 		}
 	})
@@ -534,9 +479,8 @@ func TestPollSubscriptionNowRunsInBackground(t *testing.T) {
 		t.Fatal(err)
 	}
 	poller.background.Wait()
-	_, health, err := st.SubscriptionPolicyAndHealth(context.Background(), sub.ID)
-	if err != nil || health.LastSuccessAt.IsZero() {
-		t.Fatalf("background poll did not run: %+v %v", health, err)
+	if stored := reloadSubscription(t, st, sub.ID); stored.LastPolledAt.IsZero() {
+		t.Fatal("background poll did not record a poll time")
 	}
 	if err := poller.PollSubscriptionNow(context.Background(), "missing"); err == nil {
 		t.Fatal("unknown subscription accepted")

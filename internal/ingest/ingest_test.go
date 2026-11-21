@@ -233,9 +233,18 @@ func (fs *feedServer) guidlessItem(title, file string) string {
 		title, fs.server.URL, file)
 }
 
-// runPoll drives the claimed poll job through the yield loop until it
-// completes, the way the registry would.
+// runPoll makes every Subscription due, then drives the claimed poll job
+// through the yield loop until it completes, the way the registry would.
 func runPoll(t *testing.T, st *store.Store, handler jobs.Handler) {
+	t.Helper()
+	if _, err := st.RequestAllSubscriptionsRefresh(context.Background(), store.LibraryFilter{AllLibraries: true}, time.Now().UTC(), 0); err != nil {
+		t.Fatal(err)
+	}
+	drivePoll(t, st, handler)
+}
+
+// drivePoll runs one poll job without touching Subscription due times.
+func drivePoll(t *testing.T, st *store.Store, handler jobs.Handler) {
 	t.Helper()
 	ctx := context.Background()
 	now := time.Now().UTC()

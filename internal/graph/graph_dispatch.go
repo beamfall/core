@@ -627,7 +627,6 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"searchentities":                     newFieldHandler("searchEntities", "searchEntities", fieldRead, roleSession, 22),
 	"searchfeeds":                        newFieldHandler("searchFeeds", "searchFeeds", fieldRead, roleSession, 23),
 	"followfeed":                         newFieldHandler("followFeed", "followFeed", fieldMutation, roleSession, 23),
-	"refreshsubscription":                newFieldHandler("refreshSubscription", "refreshSubscription", fieldMutation, roleSession, 23),
 	"searchresult":                       newFieldHandler("searchResult", "searchResult", fieldRead, roleSession, 20),
 	"semanticcapability":                 newFieldHandler("semanticCapability", "semanticCapability", fieldRead, roleSession, 21),
 	"serverinfo":                         newFieldHandler("serverInfo", "", fieldRead, rolePublic, 0),
@@ -640,6 +639,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setextensionpreauthorization":       newFieldHandler("setExtensionPreauthorization", "setExtensionPreauthorization", fieldMutation, roleSession|roleAdmin, 96),
 	"setfavorite":                        newFieldHandler("setFavorite", "setFavorite", fieldMutation, roleSession, 34),
 	"setfollow":                          newFieldHandler("setFollow", "setFollow", fieldMutation, roleSession, 53),
+	"refreshsubscription":                newFieldHandler("refreshSubscription", "refreshSubscription", fieldMutation, roleSession, 53),
+	"refreshallsubscriptions":            newFieldHandler("refreshAllSubscriptions", "refreshAllSubscriptions", fieldMutation, roleSession|roleManager, 54),
 	"setlibraryaiindexing":               newFieldHandler("setLibraryAIIndexing", "setLibraryAIIndexing", fieldMutation, roleSession|roleAdmin, 77),
 	"setlibrarybacking":                  newFieldHandler("setLibraryBacking", "setLibraryBacking", fieldMutation, roleSession|roleAdmin, 48),
 	"setlibrarypreviewclips":             newFieldHandler("setLibraryPreviewClips", "setLibraryPreviewClips", fieldMutation, roleSession|roleAdmin, 47),
@@ -1170,12 +1171,6 @@ func dispatchFieldBlock023(dispatch *fieldDispatchContext) response {
 	if fields["followfeed"] {
 		subscription, err := h.followFeed(ctx, scope, req)
 		if resp := resolveField(dispatch, "followfeed", subscription, err); len(resp.Errors) > 0 {
-			return resp
-		}
-	}
-	if fields["refreshsubscription"] {
-		subscription, err := h.refreshSubscription(ctx, scope, req)
-		if resp := resolveField(dispatch, "refreshsubscription", subscription, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
@@ -1785,6 +1780,12 @@ func dispatchFieldBlock053(dispatch *fieldDispatchContext) response {
 			return resp
 		}
 	}
+	if fields["refreshsubscription"] {
+		refreshed, err := h.refreshSubscription(ctx, scope, req)
+		if resp := resolveField(dispatch, "refreshsubscription", refreshed, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	return response{}
 }
 
@@ -1794,7 +1795,7 @@ func dispatchFieldBlock054(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
-	if fields["addsubscription"] || fields["removesubscription"] || fields["subscriptions"] || fields["setsubscriptionretention"] || fields["setsubscriptiondownloadpolicy"] || fields["associatesubscriptionentry"] {
+	if fields["addsubscription"] || fields["removesubscription"] || fields["subscriptions"] || fields["setsubscriptionretention"] || fields["setsubscriptiondownloadpolicy"] || fields["associatesubscriptionentry"] || fields["refreshallsubscriptions"] {
 		if fields["addsubscription"] {
 			subscription, err := h.addSubscription(ctx, scope, req)
 			if resp := resolveField(dispatch, "addsubscription", subscription, err); len(resp.Errors) > 0 {
@@ -1828,6 +1829,12 @@ func dispatchFieldBlock054(dispatch *fieldDispatchContext) response {
 		if fields["associatesubscriptionentry"] {
 			association, err := h.associateSubscriptionEntry(ctx, scope, req)
 			if resp := resolveField(dispatch, "associatesubscriptionentry", association, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["refreshallsubscriptions"] {
+			refreshed, err := h.refreshAllSubscriptions(ctx, scope, req)
+			if resp := resolveField(dispatch, "refreshallsubscriptions", refreshed, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}

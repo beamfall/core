@@ -632,11 +632,12 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "kind", Kind: "string"},
 		{Name: "mediaID", Kind: "string", Optional: true},
 	},
-	"refreshmediametadata": {
-		{Name: "mediaID", Kind: "string"},
-	},
+	"refreshallsubscriptions": {},
 	"refreshsubscription": {
 		{Name: "id", Kind: "string"},
+	},
+	"refreshmediametadata": {
+		{Name: "mediaID", Kind: "string"},
 	},
 	"registerdevicepushtoken": {
 		{Name: "platform", Kind: "string"},

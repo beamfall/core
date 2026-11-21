@@ -25,6 +25,6 @@ func addDownloadAllSubscription(ctx context.Context, st *store.Store, subscripti
 // advancePollClock moves the poller's clock past the next scheduled poll, so
 // a test can poll a healthy feed again right away.
 func advancePollClock(p *Poller) {
-	at := p.clock().Add(DefaultPollInterval + time.Minute)
+	at := p.now().Add(DefaultPollInterval + time.Minute)
 	p.now = func() time.Time { return at }
 }
