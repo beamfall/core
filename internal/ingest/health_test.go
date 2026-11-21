@@ -94,7 +94,7 @@ func TestFeedFailureClasses(t *testing.T) {
 		{"http-4xx", statusServer(http.StatusNotFound, ""), loopback, false, store.FeedErrorHTTP4xx},
 		{"auth-status", statusServer(http.StatusUnauthorized, ""), loopback, false, store.FeedErrorAuth},
 		{"auth-credential", statusServer(http.StatusOK, healthyFeed), loopback, true, store.FeedErrorAuth},
-		{"parse", statusServer(http.StatusOK, "<rss><channel><item></rss>"), loopback, false, store.FeedErrorParse},
+		{"parse", statusServer(http.StatusOK, "<rss><channel>\x00</channel></rss>"), loopback, false, store.FeedErrorParse},
 		{"ssrf-blocked", statusServer(http.StatusOK, healthyFeed), scrape.New(), false, store.FeedErrorSSRFBlocked},
 		{"tls", tlsServer.URL + "/feed.xml", loopback, false, store.FeedErrorTLS},
 		{"dns", "https://feed.invalid/feed.xml", loopback, false, store.FeedErrorDNS},
