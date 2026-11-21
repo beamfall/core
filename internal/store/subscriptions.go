@@ -391,10 +391,22 @@ func (s *Store) SubscriptionSeenGUIDs(ctx context.Context, id SubscriptionID) (m
 	return seen, rows.Err()
 }
 
-// MarkSubscriptionEntrySeen records one ingested feed-entry GUID and the
-// absolute path where its enclosure landed. Re-marking an already-seen GUID
-// is a no-op, including path preservation.
+type SubscriptionGUIDSource string
+
+const (
+	SubscriptionGUIDUnknown  SubscriptionGUIDSource = "unknown"
+	SubscriptionGUIDExplicit SubscriptionGUIDSource = "explicit"
+	SubscriptionGUIDDerived  SubscriptionGUIDSource = "derived"
+)
+
+// MarkSubscriptionEntrySeen records a receipt when the GUID source is unknown.
 func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID, guid string, path string, now time.Time) error {
+	return s.MarkSubscriptionEntrySeenWithSource(ctx, id, guid, path, SubscriptionGUIDUnknown, now)
+}
+
+// MarkSubscriptionEntrySeenWithSource records the GUID, destination and source
+// together. Re-marking an already-seen GUID preserves the original receipt.
+func (s *Store) MarkSubscriptionEntrySeenWithSource(ctx context.Context, id SubscriptionID, guid string, path string, source SubscriptionGUIDSource, now time.Time) error {
 	if id == "" {
 		return errors.New("subscription ID is required")
 	}
@@ -408,24 +420,27 @@ func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID
 		return err
 	}
 	_, err := s.catalogW.ExecContext(ctx, `
-		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path, guid_source)
+		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(subscription_id, guid) DO NOTHING
-	`, id, guid, now.UTC().UnixMilli(), path)
+	`, id, guid, now.UTC().UnixMilli(), path, source)
 	return err
 }
 
-// SubscriptionMediaReceipt links a seen entry to the Media at its recorded path.
+// SubscriptionMediaReceipt links a seen entry to the Media at its recorded path
+// when the path has been scanned.
 type SubscriptionMediaReceipt struct {
-	GUID    string
-	Path    string
-	MediaID MediaID
-	Title   string
+	GUID       string
+	Path       string
+	MediaID    MediaID
+	Title      string
+	GUIDSource SubscriptionGUIDSource
 }
 
 // SubscriptionMediaReceipts resolves receipts through every Part and Version
 // in the shared catalog. Trashed and missing files still count as seen when
-// the path identifies exactly one Media. Encrypted catalogs stay outside this
+// the path identifies exactly one Media. A receipt without a Media ID can
+// still be waiting for its scan. Encrypted catalogs stay outside this
 // reconciliation because their Media metadata belongs to a separate plane.
 func (s *Store) SubscriptionMediaReceipts(ctx context.Context, id SubscriptionID) ([]SubscriptionMediaReceipt, error) {
 	s.mu.RLock()
@@ -434,15 +449,15 @@ func (s *Store) SubscriptionMediaReceipts(ctx context.Context, id SubscriptionID
 		return nil, err
 	}
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT se.guid, se.path, m.id, m.title
+		SELECT se.guid, se.path, COALESCE(MIN(m.id), ''), COALESCE(MIN(m.title), ''), se.guid_source
 		FROM subscription_seen_entry se
 		JOIN subscription sub ON sub.id = se.subscription_id
 		JOIN library l ON l.id = sub.library_id AND l.encrypted = 0
-		JOIN media_file mf ON mf.path = se.path
-		JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id
+		LEFT JOIN media_file mf ON mf.path = se.path
+		LEFT JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id
 		WHERE se.subscription_id = ? AND se.path <> ''
 		GROUP BY se.guid
-		HAVING COUNT(DISTINCT m.id) = 1
+		HAVING COUNT(DISTINCT m.id) <= 1
 	`, id)
 	if err != nil {
 		return nil, err
@@ -451,7 +466,7 @@ func (s *Store) SubscriptionMediaReceipts(ctx context.Context, id SubscriptionID
 	var receipts []SubscriptionMediaReceipt
 	for rows.Next() {
 		var receipt SubscriptionMediaReceipt
-		if err := rows.Scan(&receipt.GUID, &receipt.Path, &receipt.MediaID, &receipt.Title); err != nil {
+		if err := rows.Scan(&receipt.GUID, &receipt.Path, &receipt.MediaID, &receipt.Title, &receipt.GUIDSource); err != nil {
 			return nil, err
 		}
 		receipts = append(receipts, receipt)
@@ -474,14 +489,14 @@ func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionI
 		return err
 	}
 	result, err := s.catalogW.ExecContext(ctx, `
-		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
-		SELECT se.subscription_id, ?, se.seen_at_ms, se.path
+		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path, guid_source)
+		SELECT se.subscription_id, ?, se.seen_at_ms, se.path, 'derived'
 		FROM subscription_seen_entry se
 		JOIN subscription sub ON sub.id = se.subscription_id
 		JOIN library l ON l.id = sub.library_id AND l.encrypted = 0
 		JOIN media_file mf ON mf.path = se.path
 		JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id
-		WHERE se.subscription_id = ? AND se.guid = ? AND se.path = ?
+		WHERE se.subscription_id = ? AND se.guid = ? AND se.path = ? AND se.guid_source = 'unknown'
 		GROUP BY se.guid
 		HAVING COUNT(DISTINCT m.id) = 1 AND MIN(m.id) = ?
 		ON CONFLICT(subscription_id, guid) DO NOTHING

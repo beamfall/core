@@ -30,7 +30,9 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -198,11 +200,12 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if err != nil {
 		return published, err
 	}
-	legacy, err := p.matchLegacyEntries(ctx, subscription.ID, entries, seen)
+	legacy, err := p.matchLegacyEntries(ctx, subscription, entries, seen)
 	if err != nil {
 		return published, err
 	}
 	downloaded := 0
+	deferred := false
 	var firstErr error
 	for _, entry := range entries {
 		if ctx.Err() != nil {
@@ -213,6 +216,10 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 		}
 		var entryErr error
 		if receipt := legacy[entry.GUID]; receipt.GUID != "" {
+			if receipt.MediaID == "" {
+				deferred = true
+				continue
+			}
 			entryErr = p.store.AliasSubscriptionEntryGUID(ctx, subscription.ID, receipt, entry.GUID)
 		} else {
 			entryErr = p.ingestEntry(ctx, subscription, entry, authHeader, now)
@@ -231,9 +238,15 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 		seen[entry.GUID] = true
 	}
 	// A partial poll still counts as polled: seen GUIDs gate re-downloads,
-	// but only a fully clean poll may store the new validators — otherwise a
-	// 304 on the next poll would skip the entries that failed this time.
-	if firstErr != nil {
+	// but only a fully clean poll may store the new validators. A 304 on
+	// the next poll would skip entries that failed or are waiting for a scan.
+	if deferred {
+		// Re-arm the scan if it already ran and skipped a just-published file.
+		if err := p.enqueueScan(ctx, subscription, now); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if firstErr != nil || deferred {
 		if err := p.store.MarkSubscriptionPolled(ctx, subscription.ID, "", "", now); err != nil {
 			return published + downloaded, err
 		}
@@ -248,33 +261,23 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	return published + downloaded, p.store.MarkSubscriptionPolled(ctx, subscription.ID, result.ETag, result.LastModified, now)
 }
 
-// matchLegacyEntries reconciles enclosure-keyed receipts before downloads.
-// Old receipts retain the file path but no publication metadata, so both the
-// feed entry and the stored receipt need an unambiguous title match.
-func (p *Poller) matchLegacyEntries(ctx context.Context, id store.SubscriptionID, entries []scrape.FeedEntry, seen map[string]bool) (map[string]store.SubscriptionMediaReceipt, error) {
+// matchLegacyEntries reconciles historical enclosure-keyed receipts before
+// downloads. A matching receipt whose file is still awaiting import defers
+// the entry until the scan resolves its path.
+func (p *Poller) matchLegacyEntries(ctx context.Context, subscription store.Subscription, entries []scrape.FeedEntry, seen map[string]bool) (map[string]store.SubscriptionMediaReceipt, error) {
 	if len(seen) == 0 {
 		return nil, nil
 	}
 	explicit := make(map[string]bool)
-	entriesByTitle := make(map[string]string)
-	var needsMatch bool
+	unseen := make([]scrape.FeedEntry, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.DerivedGUID {
 			explicit[entry.GUID] = true
-			continue
-		}
-		title := legacyEntryTitle(entry.Title)
-		if title == "" {
-			continue
-		}
-		needsMatch = needsMatch || !seen[entry.GUID]
-		if guid, exists := entriesByTitle[title]; exists && guid != entry.GUID {
-			entriesByTitle[title] = ""
-		} else {
-			entriesByTitle[title] = entry.GUID
+		} else if entry.EnclosureURL != "" && !seen[entry.GUID] {
+			unseen = append(unseen, entry)
 		}
 	}
-	if !needsMatch {
+	if len(unseen) == 0 {
 		return nil, nil
 	}
 	legacyGUIDs := make(map[string]bool)
@@ -282,56 +285,154 @@ func (p *Poller) matchLegacyEntries(ctx context.Context, id store.SubscriptionID
 		if explicit[guid] {
 			continue
 		}
-		u, err := url.Parse(guid)
-		if err == nil && u.Host != "" && (u.Scheme == "http" || u.Scheme == "https") {
+		if legacyHTTPURL(guid) != nil {
 			legacyGUIDs[guid] = true
 		}
 	}
 	if len(legacyGUIDs) == 0 {
 		return nil, nil
 	}
-	receipts, err := p.store.SubscriptionMediaReceipts(ctx, id)
+	receipts, err := p.store.SubscriptionMediaReceipts(ctx, subscription.ID)
 	if err != nil {
 		return nil, err
 	}
-	// An explicit GUID can be a URL. Also reserve files already associated
-	// with a stable receipt, even if its entry has since left the feed.
+	// Reserve paths already associated with a known identity, including
+	// explicit HTTP GUIDs that have left the feed.
 	reservedPaths := make(map[string]bool)
 	for _, receipt := range receipts {
-		if !legacyGUIDs[receipt.GUID] {
+		if receipt.GUIDSource != store.SubscriptionGUIDUnknown || !legacyGUIDs[receipt.GUID] {
 			reservedPaths[receipt.Path] = true
 		}
 	}
-	matches := make(map[string]store.SubscriptionMediaReceipt)
+	candidates := make([]store.SubscriptionMediaReceipt, 0, len(receipts))
 	for _, receipt := range receipts {
 		if reservedPaths[receipt.Path] {
 			continue
 		}
-		// Ingest used the sanitized title as the filename. Keep that evidence
-		// when a scan or later metadata edit gave the Media a different title.
-		base := filepath.Base(receipt.Path)
-		stem := strings.TrimSuffix(base, filepath.Ext(base))
-		fileGUID, fileMatch := entriesByTitle[legacyEntryTitle(stem)]
-		titleGUID, titleMatch := entriesByTitle[legacyEntryTitle(receipt.Title)]
-		if fileMatch && titleMatch && fileGUID != titleGUID {
-			matches[fileGUID] = store.SubscriptionMediaReceipt{}
-			matches[titleGUID] = store.SubscriptionMediaReceipt{}
+		if receipt.MediaID == "" {
+			pending, err := pendingLegacyFile(subscription.Root, receipt.Path)
+			if err != nil {
+				return nil, err
+			}
+			if !pending {
+				continue
+			}
+		}
+		candidates = append(candidates, receipt)
+	}
+	return matchLegacyReceipts(unseen, candidates), nil
+}
+
+func pendingLegacyFile(root, filename string) (bool, error) {
+	// Polling wrote enclosures directly into the subscription root.
+	if filepath.Dir(filename) != filepath.Clean(root) {
+		return false, nil
+	}
+	info, err := os.Lstat(filename)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil && info.Mode().IsRegular(), err
+}
+
+func matchLegacyReceipts(entries []scrape.FeedEntry, receipts []store.SubscriptionMediaReceipt) map[string]store.SubscriptionMediaReceipt {
+	entriesByURL := make(map[string]scrape.FeedEntry)
+	for _, entry := range entries {
+		addUniqueLegacyEntry(entriesByURL, entry.EnclosureURL, entry)
+	}
+	matches := make(map[string]store.SubscriptionMediaReceipt)
+	matchedPaths := make(map[string]bool)
+	// The current enclosure URL plus the stored title or filename can
+	// identify an old receipt even when multiple entries share a title.
+	for _, receipt := range receipts {
+		entry := entriesByURL[receipt.GUID]
+		if entry.GUID != "" && legacyReceiptMatchesEntry(receipt, entry) {
+			if matches[entry.GUID].GUID == "" && !matchedPaths[receipt.Path] {
+				matches[entry.GUID] = receipt
+			}
+			matchedPaths[receipt.Path] = true
+		}
+	}
+	entriesByTitle := make(map[string]scrape.FeedEntry)
+	for _, entry := range entries {
+		if title := legacyEntryTitle(entry.Title); title != "" && matches[entry.GUID].GUID == "" {
+			addUniqueLegacyEntry(entriesByTitle, title, entry)
+		}
+	}
+	rotated := make(map[string]store.SubscriptionMediaReceipt)
+	for _, receipt := range receipts {
+		if matchedPaths[receipt.Path] {
 			continue
 		}
-		guid := titleGUID
-		if fileMatch {
-			guid = fileGUID
+		possible := make(map[string]bool)
+		for _, title := range legacyReceiptTitles(receipt) {
+			entry := entriesByTitle[title]
+			if entry.GUID != "" && legacyEnclosureRelated(receipt, entry) {
+				possible[entry.GUID] = true
+			}
 		}
-		if guid == "" || seen[guid] {
-			continue
+		for guid := range possible {
+			if _, exists := rotated[guid]; exists || len(possible) > 1 {
+				rotated[guid] = store.SubscriptionMediaReceipt{}
+			} else {
+				rotated[guid] = receipt
+			}
 		}
-		if _, exists := matches[guid]; exists {
-			matches[guid] = store.SubscriptionMediaReceipt{}
-		} else {
+	}
+	for guid, receipt := range rotated {
+		if receipt.GUID != "" {
 			matches[guid] = receipt
 		}
 	}
-	return matches, nil
+	return matches
+}
+
+func addUniqueLegacyEntry(entries map[string]scrape.FeedEntry, key string, entry scrape.FeedEntry) {
+	if previous, exists := entries[key]; exists && previous.GUID != entry.GUID {
+		entries[key] = scrape.FeedEntry{}
+	} else {
+		entries[key] = entry
+	}
+}
+
+func legacyReceiptMatchesEntry(receipt store.SubscriptionMediaReceipt, entry scrape.FeedEntry) bool {
+	if title := legacyEntryTitle(entry.Title); title != "" && slices.Contains(legacyReceiptTitles(receipt), title) {
+		return true
+	}
+	// With no usable title, old ingest named the file from the receipt GUID.
+	entry.GUID = receipt.GUID
+	return sanitizeFilename(entry.Title) == "" && filepath.Base(receipt.Path) == entryFilename(entry)
+}
+
+func legacyReceiptTitles(receipt store.SubscriptionMediaReceipt) []string {
+	stem := strings.TrimSuffix(filepath.Base(receipt.Path), filepath.Ext(receipt.Path))
+	titles := []string{legacyEntryTitle(receipt.Title), legacyEntryTitle(stem)}
+	// Ingest suffixes duplicate filenames even when publication dates differ.
+	if i := strings.LastIndexByte(stem, '-'); i >= 0 {
+		if n, err := strconv.Atoi(stem[i+1:]); err == nil && n >= 2 {
+			titles = append(titles, legacyEntryTitle(stem[:i]))
+		}
+	}
+	return titles
+}
+
+func legacyHTTPURL(rawURL string) *url.URL {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return nil
+	}
+	return u
+}
+
+func legacyEnclosureRelated(receipt store.SubscriptionMediaReceipt, entry scrape.FeedEntry) bool {
+	oldURL, newURL := legacyHTTPURL(receipt.GUID), legacyHTTPURL(entry.EnclosureURL)
+	// A title alone cannot distinguish an old HTTP GUID from an enclosure.
+	// Require a payload-shaped URL with a shared CDN path or directory.
+	return oldURL != nil && newURL != nil &&
+		strings.EqualFold(path.Ext(oldURL.Path), filepath.Ext(receipt.Path)) &&
+		filepath.Ext(receipt.Path) != "" &&
+		(oldURL.EscapedPath() == newURL.EscapedPath() ||
+			(scrape.SameOrigin(receipt.GUID, entry.EnclosureURL) && path.Dir(oldURL.EscapedPath()) == path.Dir(newURL.EscapedPath())))
 }
 
 func legacyEntryTitle(title string) string {
@@ -378,7 +479,11 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 	target := filepath.Join(subscription.Root, targetBase)
 	// The receipt is the durable acknowledgement: it commits only after the
 	// staged payload would survive a crash.
-	if err := p.store.MarkSubscriptionEntrySeen(ctx, subscription.ID, entry.GUID, target, now); err != nil {
+	source := store.SubscriptionGUIDExplicit
+	if entry.DerivedGUID {
+		source = store.SubscriptionGUIDDerived
+	}
+	if err := p.store.MarkSubscriptionEntrySeenWithSource(ctx, subscription.ID, entry.GUID, target, source, now); err != nil {
 		return err
 	}
 	if err := p.faultAt("receipt-recorded"); err != nil {
