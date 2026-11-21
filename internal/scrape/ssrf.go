@@ -1,6 +1,8 @@
 package scrape
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,17 +17,17 @@ import (
 func (e *Engine) vetURL(u *url.URL) error {
 	host := u.Hostname()
 	if host == "" {
-		return fmt.Errorf("scrape: refused URL without a host")
+		return refusedf("scrape: refused URL without a host")
 	}
 	ip := net.ParseIP(host)
 	if e.insecureLoopback && ip != nil && ip.IsLoopback() {
 		return nil // TESTS ONLY (WithInsecureLoopback)
 	}
 	if u.Scheme != "https" {
-		return fmt.Errorf("scrape: refused scheme %q — scrapers require https", u.Scheme)
+		return refusedf("scrape: refused scheme %q — scrapers require https", u.Scheme)
 	}
 	if ip != nil {
-		return fmt.Errorf("scrape: refused literal IP host %q — scrapers require hostnames", host)
+		return refusedf("scrape: refused literal IP host %q — scrapers require hostnames", host)
 	}
 	return nil
 }
@@ -37,17 +39,17 @@ func (e *Engine) vetURL(u *url.URL) error {
 func (e *Engine) controlDial(network, address string, _ syscall.RawConn) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
-		return fmt.Errorf("scrape: refused dial to unparseable address %q", address)
+		return refusedf("scrape: refused dial to unparseable address %q", address)
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
-		return fmt.Errorf("scrape: refused dial to non-IP address %q", host)
+		return refusedf("scrape: refused dial to non-IP address %q", host)
 	}
 	if e.insecureLoopback && ip.IsLoopback() {
 		return nil // TESTS ONLY (WithInsecureLoopback)
 	}
 	if !IsPublicRoutableIP(ip) {
-		return fmt.Errorf("scrape: refused dial to non-public address %q", ip)
+		return refusedf("scrape: refused dial to non-public address %q", ip)
 	}
 	return nil
 }
@@ -60,13 +62,14 @@ func (e *Engine) controlDial(network, address string, _ syscall.RawConn) error {
 // Authorization headers across same-host redirects, so comparing Hostname alone
 // would leak credentials to another service listening on a different port.
 func (e *Engine) checkRedirect(req *http.Request, via []*http.Request) error {
+	recordRedirectHop(req)
 	if len(via) >= maxRedirects {
 		return fmt.Errorf("scrape: refused after %d redirects", maxRedirects)
 	}
 	original := normalizedRedirectOrigin(via[0].URL)
 	redirected := normalizedRedirectOrigin(req.URL)
 	if original != redirected {
-		return fmt.Errorf("scrape: refused cross-origin redirect from %q to %q", original, redirected)
+		return refusedf("scrape: refused cross-origin redirect from %q to %q", original, redirected)
 	}
 	return e.vetURL(req.URL)
 }
@@ -100,4 +103,60 @@ func normalizedRedirectOrigin(u *url.URL) string {
 		}
 	}
 	return scheme + "://" + net.JoinHostPort(hostname, port)
+}
+
+// refusedError is an SSRF-guard refusal. Its message is the one the guard has
+// always returned; the type lets callers classify refusals with IsRefused.
+type refusedError struct{ msg string }
+
+func (r *refusedError) Error() string { return r.msg }
+
+func refusedf(format string, args ...any) error {
+	return &refusedError{msg: fmt.Sprintf(format, args...)}
+}
+
+// IsRefused reports whether err is (or wraps) an SSRF-guard refusal: a
+// non-https or host-less URL, a literal IP host, a dial to a non-public
+// address or a cross-origin redirect.
+func IsRefused(err error) bool {
+	var refused *refusedError
+	return errors.As(err, &refused)
+}
+
+// CheckURL applies the pre-dial SSRF rules to rawURL without fetching it.
+// The dial-time address check still runs on every later fetch. A parse
+// failure is never wrapped: the error would embed the URL.
+func (e *Engine) CheckURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return refusedf("scrape: refused invalid URL")
+	}
+	return e.vetURL(parsed)
+}
+
+// redirectRecord tracks a fetch's redirect chain: target is the last URL
+// reached through permanent (301/308) hops only, before any temporary hop.
+type redirectRecord struct {
+	target string
+	broken bool
+}
+
+type redirectRecordKey struct{}
+
+func withRedirectRecord(ctx context.Context, record *redirectRecord) context.Context {
+	return context.WithValue(ctx, redirectRecordKey{}, record)
+}
+
+// recordRedirectHop runs before the redirect is vetted, so a refused
+// cross-origin permanent redirect is still recorded for the caller.
+func recordRedirectHop(req *http.Request) {
+	record, _ := req.Context().Value(redirectRecordKey{}).(*redirectRecord)
+	if record == nil || record.broken {
+		return
+	}
+	if req.Response != nil && (req.Response.StatusCode == http.StatusMovedPermanently || req.Response.StatusCode == http.StatusPermanentRedirect) {
+		record.target = req.URL.String()
+		return
+	}
+	record.broken = true
 }
