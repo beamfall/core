@@ -8,9 +8,9 @@ export const settingsHelpManage2Strings = {
       "An adult profile can require a PIN when someone switches to it. Set or change that PIN here.",
     manageProfileChoose: "Choose a profile",
     manageProfileEntryPinUnavailable: "Profile PIN settings are unavailable.",
-    manageProfileSubtitleLanguages: "Preferred subtitle languages",
+    manageProfileSubtitleLanguages: "Preferred subtitle languages for your current profile",
     manageProfileSubtitleLanguagesHelp:
-      "For your current profile. Enter language codes in order of preference, separated by commas, such as en, fr-CA. Leave blank to clear your choices.",
+      "Enter language codes in order of preference, separated by commas, such as en, fr-CA. Leave blank to clear your choices.",
     manageProfileSubtitleLanguagesSaved: "Subtitle languages saved.",
     manageProfileSubtitleLanguagesFailed: "Could not save subtitle languages. Try again.",
     manageProfileSubtitleLanguagesUnavailable: "Could not load subtitle languages.",
@@ -51,9 +51,9 @@ export const settingsHelpManage2Strings = {
       "Un profil adulte peut demander un code PIN lorsque quelqu’un le sélectionne. Définissez ou modifiez ce code ici.",
     manageProfileChoose: "Choisir un profil",
     manageProfileEntryPinUnavailable: "Les paramètres du code PIN du profil sont indisponibles.",
-    manageProfileSubtitleLanguages: "Langues de sous-titres préférées",
+    manageProfileSubtitleLanguages: "Langues de sous-titres préférées pour votre profil actuel",
     manageProfileSubtitleLanguagesHelp:
-      "Pour votre profil actuel. Saisissez les codes de langue par ordre de préférence, séparés par des virgules, par exemple fr-CA, en. Laissez le champ vide pour effacer vos choix.",
+      "Saisissez les codes de langue par ordre de préférence, séparés par des virgules, par exemple fr-CA, en. Laissez le champ vide pour effacer vos choix.",
     manageProfileSubtitleLanguagesSaved: "Langues de sous-titres enregistrées.",
     manageProfileSubtitleLanguagesFailed:
       "Impossible d’enregistrer les langues de sous-titres. Réessayez.",
@@ -95,9 +95,9 @@ export const settingsHelpManage2Strings = {
       "Beim Wechsel zu einem Erwachsenenprofil kann eine PIN erforderlich sein. Legen Sie diese PIN hier fest oder ändern Sie sie.",
     manageProfileChoose: "Profil auswählen",
     manageProfileEntryPinUnavailable: "Die Einstellungen für die Profil-PIN sind nicht verfügbar.",
-    manageProfileSubtitleLanguages: "Bevorzugte Untertitelsprachen",
+    manageProfileSubtitleLanguages: "Bevorzugte Untertitelsprachen für Ihr aktuelles Profil",
     manageProfileSubtitleLanguagesHelp:
-      "Für Ihr aktuelles Profil. Geben Sie Sprachcodes in der gewünschten Reihenfolge ein, durch Kommas getrennt, zum Beispiel de, en. Lassen Sie das Feld leer, um die Auswahl zu löschen.",
+      "Geben Sie Sprachcodes in der gewünschten Reihenfolge ein, durch Kommas getrennt, zum Beispiel de, en. Lassen Sie das Feld leer, um die Auswahl zu löschen.",
     manageProfileSubtitleLanguagesSaved: "Untertitelsprachen gespeichert.",
     manageProfileSubtitleLanguagesFailed:
       "Die Untertitelsprachen konnten nicht gespeichert werden. Versuchen Sie es erneut.",
@@ -140,9 +140,9 @@ export const settingsHelpManage2Strings = {
       "Un perfil de adulto puede pedir un PIN al cambiar a él. Configura o cambia ese PIN aquí.",
     manageProfileChoose: "Elegir un perfil",
     manageProfileEntryPinUnavailable: "Los ajustes del PIN del perfil no están disponibles.",
-    manageProfileSubtitleLanguages: "Idiomas de subtítulos preferidos",
+    manageProfileSubtitleLanguages: "Idiomas de subtítulos preferidos para tu perfil actual",
     manageProfileSubtitleLanguagesHelp:
-      "Para tu perfil actual. Introduce los códigos de idioma en orden de preferencia, separados por comas, por ejemplo es, en. Deja el campo vacío para borrar tus preferencias.",
+      "Introduce los códigos de idioma en orden de preferencia, separados por comas, por ejemplo es, en. Deja el campo vacío para borrar tus preferencias.",
     manageProfileSubtitleLanguagesSaved: "Idiomas de subtítulos guardados.",
     manageProfileSubtitleLanguagesFailed:
       "No se pudieron guardar los idiomas de subtítulos. Inténtalo de nuevo.",
@@ -184,9 +184,9 @@ export const settingsHelpManage2Strings = {
       "Um perfil de adulto pode exigir um PIN ao mudar para ele. Defina ou altere esse PIN aqui.",
     manageProfileChoose: "Escolher um perfil",
     manageProfileEntryPinUnavailable: "As configurações do PIN do perfil não estão disponíveis.",
-    manageProfileSubtitleLanguages: "Idiomas de legenda preferidos",
+    manageProfileSubtitleLanguages: "Idiomas de legenda preferidos para o seu perfil atual",
     manageProfileSubtitleLanguagesHelp:
-      "Para o perfil atual. Digite os códigos de idioma em ordem de preferência, separados por vírgulas, como pt, en. Deixe o campo em branco para limpar suas escolhas.",
+      "Digite os códigos de idioma em ordem de preferência, separados por vírgulas, como pt, en. Deixe o campo em branco para limpar suas escolhas.",
     manageProfileSubtitleLanguagesSaved: "Idiomas de legenda salvos.",
     manageProfileSubtitleLanguagesFailed:
       "Não foi possível salvar os idiomas de legenda. Tente novamente.",
