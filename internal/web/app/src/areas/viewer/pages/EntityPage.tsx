@@ -245,7 +245,7 @@ export function EntityPage() {
         : []),
     ]),
     // Without a poster to carry it, the unwatched count is a chip.
-    ...(!photo && unwatched > 0 ? [{ key: "unwatched", text: remainingLabel }] : []),
+    ...(!photo && !isAudio && unwatched > 0 ? [{ key: "unwatched", text: remainingLabel }] : []),
   ].filter((item) => item.text !== "");
   const itemCount = (count: number) => t("entityDetailItemCount", { count });
   // A middle-level parent heads its own children with their count; an audio
@@ -496,7 +496,7 @@ export function EntityPage() {
                     sizes="(max-width: 640px) 120px, 200px"
                     alt=""
                   />
-                  {unwatched > 0 && (
+                  {!isAudio && unwatched > 0 && (
                     <span className="bf-card-badge bf-entity-unwatched">
                       <span aria-hidden="true">{unwatched}</span>
                       <span className="sr-only">{remainingLabel}</span>

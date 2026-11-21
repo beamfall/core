@@ -1211,8 +1211,10 @@
   height: 22px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-ink);
+  /* A quiet glass pill (CORE-2835): the count is status, not a call to act. */
+  background: color-mix(in oklab, var(--bg-root) 82%, transparent);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in oklab, var(--text-primary) 28%, transparent);
   font-size: 12px;
   line-height: 1;
   font-weight: 600;
@@ -1221,9 +1223,6 @@
 
 [data-register="viewer"] .bf-card-badge-finished {
   padding: 0;
-  background: color-mix(in oklab, var(--bg-root) 82%, transparent);
-  color: var(--text-primary);
-  border: 1px solid color-mix(in oklab, var(--text-primary) 28%, transparent);
 }
 
 [data-register="viewer"] .bf-card-play {

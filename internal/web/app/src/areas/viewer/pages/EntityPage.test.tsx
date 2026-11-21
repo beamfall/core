@@ -1033,7 +1033,7 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
       renderEntity();
       await act(async () => {});
 
-      expect(screen.getByText("3 unplayed")).toBeInTheDocument();
+      expect(screen.queryByText("3 unplayed")).toBeNull();
       expect(screen.getByText("Up next", { exact: true })).toBeInTheDocument();
       expect(screen.queryByText("3 unwatched")).toBeNull();
       expect(screen.queryByText("On deck")).toBeNull();
