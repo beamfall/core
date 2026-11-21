@@ -19,6 +19,9 @@ import (
 // TestGroupListsLiveMemberSeesRunningNotZombie checks the Linux /proc scan:
 // a running member is live, and the same member as an unreaped zombie is not.
 func TestGroupListsLiveMemberSeesRunningNotZombie(t *testing.T) {
+	if ours, known := procNamespace(); !known || !ours {
+		t.Skip("/proc is not this process's PID namespace")
+	}
 	cmd := exec.Command("sleep", "30")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -51,24 +54,40 @@ func TestGroupListsLiveMemberSeesALiveMemberBesideAZombieLeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	pid := cmd.Process.Pid
-	t.Cleanup(func() { _ = cmd.Wait() })
+	// The unreaped leader holds the pgid until Wait, so the KILL here cannot
+	// reach a group that reused it.
+	t.Cleanup(func() { _ = syscall.Kill(-pid, syscall.SIGKILL); _ = cmd.Wait() })
+	if ours, known := procNamespace(); !known || !ours {
+		t.Skip("/proc is not this process's PID namespace")
+	}
 	if err := waitForProcessExit(pid); err != nil {
 		t.Fatal(err)
 	}
 	if !groupListsLiveMember(pid) {
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
 		t.Fatal("a running member beside the zombie leader was not listed as live")
 	}
 	if err := sweepExitedGroup(pid); err != nil {
 		t.Fatalf("sweep left the member: %v", err)
 	}
+	if groupListsLiveMember(pid) {
+		t.Fatal("the sweep returned clean with the member still running")
+	}
 }
 
+// BenchmarkGroupListsLiveMember measures the full /proc traversal a clean
+// reap makes: no process has pgid -1, so the scan never stops early.
 func BenchmarkGroupListsLiveMember(b *testing.B) {
-	pgid := syscall.Getpgrp()
 	for b.Loop() {
-		groupListsLiveMember(pgid)
+		groupListsLiveMember(-1)
 	}
+}
+
+func TestProcNamespaceIsOursOnAPlainHost(t *testing.T) {
+	ours, known := procNamespace()
+	if !known {
+		t.Fatal("the namespace check failed on a readable /proc")
+	}
+	t.Logf("procNamespace ours=%v", ours)
 }
 
 func TestParseProcStatTakesFieldsAfterTheLastParen(t *testing.T) {

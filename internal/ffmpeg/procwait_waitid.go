@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"strconv"
-	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -38,7 +37,11 @@ const groupQuietProbes = 1
 // live member. This mirrors integrationhost's scan; ffmpeg is a leaf package
 // and cannot import it.
 func groupListsLiveMember(pgid int) bool {
-	if !procIsOurs() {
+	ours, known := procNamespace()
+	if !known {
+		return true // cannot tell; a survivor report beats an unbounded drain
+	}
+	if !ours {
 		return false // the pids in this /proc are not ours to compare
 	}
 	entries, err := os.ReadDir("/proc")
@@ -65,14 +68,37 @@ func groupListsLiveMember(pgid int) bool {
 	return false
 }
 
-// procIsOurs reports whether /proc belongs to this process's PID namespace,
-// so the pgids it lists are the ones this process sees. A /proc inherited
-// from an ancestor namespace numbers processes differently; the sweep then
-// cannot tell members apart and is skipped, as it was before CORE-2821.
-var procIsOurs = sync.OnceValue(func() bool {
+// procNamespace reports whether /proc belongs to this process's PID
+// namespace, so the pgids it lists are the ones this process sees. A /proc
+// inherited from an ancestor namespace numbers processes differently, even
+// where this process's own pid happens to match; the sweep then cannot tell
+// members apart and is skipped, as it was before CORE-2821. NStgid lists one
+// id per namespace from the one /proc belongs to down to this process's own,
+// so a single entry proves they are the same. known is false when the check
+// itself failed; it is made on every scan, so a passing failure does not
+// switch the sweep off for the life of the process.
+func procNamespace() (ours, known bool) {
+	pid := strconv.Itoa(os.Getpid())
+	status, err := os.ReadFile("/proc/self/status")
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, true // this process is not in the namespace /proc shows
+	}
+	if err != nil {
+		return false, false
+	}
+	for _, line := range bytes.Split(status, []byte("\n")) {
+		if rest, found := bytes.CutPrefix(line, []byte("NStgid:")); found {
+			ids := bytes.Fields(rest)
+			return len(ids) == 1 && string(ids[0]) == pid, true
+		}
+	}
+	// Kernels before 4.1 have no NStgid; compare the pid /proc gives us.
 	self, err := os.Readlink("/proc/self")
-	return err == nil && self == strconv.Itoa(os.Getpid())
-})
+	if err != nil {
+		return false, false
+	}
+	return self == pid, true
+}
 
 // procHidden reports a stat read refused for another user's process, as
 // hidepid allows. The supervisor's own descendants stay readable to it.
