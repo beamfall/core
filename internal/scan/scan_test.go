@@ -1464,7 +1464,7 @@ func TestScanPersistsParsedStructuralFieldsOffline(t *testing.T) {
 	assertNumber(rangeFields, "sequence", 1)
 	assertNumber(rangeFields, "index", 3)
 	assertNumber(rangeFields, "index-end", 4)
-	// A season 0 special keeps its sequence so the plugin can mark it (CORE-1290).
+	// A sequence of 0 is stored so the plugin can label it (CORE-1290).
 	specialFields := fieldsFor(specialPath)
 	assertNumber(specialFields, "sequence", 0)
 	assertNumber(specialFields, "index", 5)
