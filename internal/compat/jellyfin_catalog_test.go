@@ -890,13 +890,15 @@ func TestJellyfinProviderIDAndQueryValue(t *testing.T) {
 // TestContainerLeavesReadsOnlyTheRequestedSeason is the CORE-2817 check: an
 // Episodes request narrowed by seasonId hands visibility checks only that
 // season's leaves, however many seasons the show holds. The season is
-// confirmed by walking up from it, and every other season's children are
-// left nil-poisoned so that reading one would panic.
+// confirmed by walking up from it; a nil entry in the show's children and in
+// every other season's makes any scan of them panic.
 func TestContainerLeavesReadsOnlyTheRequestedSeason(t *testing.T) {
 	const seasons, perSeason = 40, 25
 	show := &catalogNode{id: "show"}
 	other := &catalogNode{id: "other"}
 	var season17 *catalogNode
+	// A nil sibling ahead of the seasons panics a scan of the show's children.
+	show.children = []*catalogNode{nil}
 	for s := range seasons {
 		season := &catalogNode{id: fmt.Sprintf("season-%d", s), parent: show}
 		show.children = append(show.children, season)
