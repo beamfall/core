@@ -211,3 +211,26 @@ describe("SectionView shelf ranking", () => {
     },
   );
 });
+
+// CORE-2881: a stacked list or info row is already a row; only posters carry
+// the one-click Play.
+describe("SectionView quick Play", () => {
+  for (const kind of ["info", "list"] as const) {
+    it(`leaves it off ${kind} rows`, () => {
+      const { container } = render(
+        <I18nProvider>
+          <MemoryRouter>
+            <SectionView section={{ ...grid, kind }} items={items(2)} />
+          </MemoryRouter>
+        </I18nProvider>,
+      );
+      expect(container.querySelector(".bf-stack")).not.toBeNull();
+      expect(container.querySelector(".bf-card-quickplay")).toBeNull();
+    });
+  }
+
+  it("keeps it on grid posters", () => {
+    const { container } = renderGrid(2);
+    expect(container.querySelectorAll(".bf-card-quickplay")).toHaveLength(2);
+  });
+});
