@@ -103,6 +103,16 @@ export function MediaItemCard({
   const featureAudioDetails = showsAudioEntityDetails(item);
   const isRow = display === "list" || isTable;
   const wide = display === "thumbnail";
+  // A poster or thumbnail of playable Media gets a one-click Play beside More
+  // (CORE-2826). Rows and play-on-activate cards already play, and a child
+  // card's own Play button covers the rest.
+  const hasQuickPlay = isMedia && !item.locked && !isRow && !playOnActivate && !hasPlayButton;
+  const labelTitle = cardLabelTitle(
+    item,
+    heading,
+    showYear && !featureAudioDetails,
+    featureAudioDetails ? subline : lead,
+  );
   // The page the card's own activation opens (and the More menu's copied link).
   const path = `/${isMedia ? (playOnActivate ? "watch" : "media") : "entity"}/${encodeURIComponent(item.id)}`;
   const primaryLabel = isMedia
@@ -293,19 +303,7 @@ export function MediaItemCard({
         to={path}
         state={showPlayButton ? undefined : linkState()}
         onClick={showPlayButton ? (event) => activateLink(event, open) : undefined}
-        aria-label={cardAccessibleName(
-          {
-            ...item,
-            title: cardLabelTitle(
-              item,
-              heading,
-              showYear && !featureAudioDetails,
-              featureAudioDetails ? subline : lead,
-            ),
-          },
-          state,
-          rating,
-        )}
+        aria-label={cardAccessibleName({ ...item, title: labelTitle }, state, rating)}
         onBlur={stopPreview}
         onPointerCancel={stopPreview}
         onPointerEnter={handlePointerEnter}
@@ -405,7 +403,26 @@ export function MediaItemCard({
           {menu}
         </div>
       ) : (
-        menu
+        <>
+          {hasQuickPlay && (
+            <button
+              type="button"
+              className="bf-card-quickplay"
+              aria-label={t(
+                state.progressPercent === undefined
+                  ? "mediaDetailPlayLabel"
+                  : "mediaDetailResumeLabel",
+                { title: labelTitle },
+              )}
+              onClick={play}
+              onPointerEnter={preloadPlayer}
+              onFocus={preloadPlayer}
+            >
+              <Play aria-hidden size={14} fill="currentColor" />
+            </button>
+          )}
+          {menu}
+        </>
       )}
     </li>
   );

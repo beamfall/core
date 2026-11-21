@@ -1,7 +1,7 @@
 - [x] OpenSpec change with the spec deltas (this change)
-- [ ] Web: poster and thumbnail Media cards gain a hover and focus Play button using the card's play path
-- [ ] Web: the last pivot per Library node is remembered and the sidebar link opens it
-- [ ] Web: the container Entity primary button names the next-up child's ordinal
-- [ ] Vitest coverage for each acceptance criterion; lint and typecheck
+- [x] Web: poster and thumbnail Media cards gain a hover and focus Play button using the card's play path
+- [x] Web: the last pivot per Library node is remembered and the sidebar link opens it
+- [x] Web: the container Entity primary button names the next-up child's ordinal
+- [x] Vitest coverage for each acceptance criterion; lint and typecheck
 - [ ] `make gate` via `corvint-tasks gate run` (lander)
 - [ ] `openspec archive core-2826-library-play-shortcuts` after landing

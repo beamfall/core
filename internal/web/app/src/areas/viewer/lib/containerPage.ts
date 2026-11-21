@@ -121,6 +121,17 @@ export function nextUpName(item: SourceItem, locale: string): string {
   return parts.join(SUBTITLE_SEPARATOR);
 }
 
+/**
+ * The short ordinal a primary action names its next-up child by (CORE-2826):
+ * the plugin subtitle's parts other than the item's title, joined by spaces
+ * ("S1 · E3" reads "S1 E3"); "" when the subtitle has nothing else.
+ */
+export function nextUpOrdinal(item: SourceItem, locale: string): string {
+  return subtitleParts(item, locale)
+    .filter((part) => part !== item.title)
+    .join(" ");
+}
+
 /** The runtime a row shows: the item's own, else the engagement's. */
 export function itemRuntimeSeconds(item: SourceItem): number | undefined {
   const seconds = item.durationSeconds ?? item.engagement?.durationSeconds;

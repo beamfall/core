@@ -35,6 +35,7 @@ import {
   ancestorOf,
   groupHeading,
   nextUpName,
+  nextUpOrdinal,
   siblingContainers,
   similarContainers,
   similarityGroups,
@@ -197,6 +198,9 @@ export function EntityPage() {
   // The listed Media once known to be all audio: what Shuffle plays, and for a
   // container the sign to name its people under the title.
   const isAudio = isAudioListing(fallback ?? NO_ITEMS, listing.rows ?? {});
+  // The primary action names the child it plays by its plugin ordinal
+  // (CORE-2826); a listening page keeps the plain label.
+  const nextUpOrdinalText = nextUp && !isAudio ? nextUpOrdinal(nextUp.item, displayLocale) : "";
   const listeningTracks = useMemo(() => {
     if (trackOrder) return trackOrder;
     if (entity?.archetype !== "person" || !listedItems || !listing.rows || !isAudio) return null;
@@ -586,7 +590,9 @@ export function EntityPage() {
                       aria-label={t(
                         nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel",
                         {
-                          title: nextUp.item.title,
+                          title: nextUpOrdinalText
+                            ? `${nextUpOrdinalText}, ${nextUp.item.title}`
+                            : nextUp.item.title,
                         },
                       )}
                       onClick={playNext}
@@ -594,7 +600,13 @@ export function EntityPage() {
                       onFocus={preloadPlayer}
                     >
                       <Play aria-hidden />
-                      {nextUp.resume ? t("mediaDetailResume") : t("play")}
+                      {nextUpOrdinalText
+                        ? t(nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", {
+                            title: nextUpOrdinalText,
+                          })
+                        : nextUp.resume
+                          ? t("mediaDetailResume")
+                          : t("play")}
                     </button>
                     {listeningTracks && listeningTracks.length > 1 && (
                       <button
