@@ -363,24 +363,15 @@ func SubscriptionTitle(title, feedURL string) string {
 	return title
 }
 
-// hostPathPattern matches a scheme-less URL: a dotted or bracketed IPv6
-// host, an optional port, then a path or query.
-var hostPathPattern = regexp.MustCompile(`(?i)^([a-z0-9-]+(\.[a-z0-9-]+)+|\[[0-9a-f:.]+\])(:[0-9]+)?[/?]`)
+// urlPattern finds a URL anywhere in a title, whatever punctuation or
+// brackets surround it: a scheme separator, a scheme-relative //host, or a
+// dotted or bracketed IPv6 host (optional port) followed by a path or query.
+var urlPattern = regexp.MustCompile(`(?i)://|//[^\s/]|[a-z0-9-]+(\.[a-z0-9-]+)+(:[0-9]+)?[/?]|\[[0-9a-f.]*:[0-9a-f:.]*\](:[0-9]+)?[/?]`)
 
-// containsURL reports whether any word of title is a URL, with or without a
-// scheme, so a signed feed URL inside prose never becomes a visible title.
+// containsURL reports whether title contains a URL, with or without a scheme,
+// so a signed feed URL inside prose never becomes a visible title.
 func containsURL(title string) bool {
-	for _, word := range strings.Fields(title) {
-		word = strings.Trim(word, "()<>\"'.,;:!")
-		// Check the word as written, so a bracketed IPv6 host stays intact,
-		// and with brackets stripped, so a bracketed dotted host is exposed.
-		for _, w := range []string{word, strings.Trim(word, "[]")} {
-			if strings.Contains(w, "://") || (strings.HasPrefix(w, "//") && len(w) > 2) || hostPathPattern.MatchString(w) {
-				return true
-			}
-		}
-	}
-	return false
+	return urlPattern.MatchString(title)
 }
 
 // FillSubscriptionTitle sets the Subscription's title only while it is empty,
