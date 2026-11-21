@@ -64,10 +64,13 @@ export function FieldLocksPage() {
     setError("");
     const id = loadedID;
     if (!id) return;
+    // A newer load or Clear since the write started owns the table.
+    const seq = loadSeq.current;
     try {
-      setLocks(await setMediaFieldLock(id, lock.field, !lock.locked));
+      const next = await setMediaFieldLock(id, lock.field, !lock.locked);
+      if (seq === loadSeq.current) setLocks(next);
     } catch {
-      setError(t("fieldLocksUnavailable"));
+      if (seq === loadSeq.current) setError(t("fieldLocksUnavailable"));
     }
   };
 

@@ -4,6 +4,7 @@ export const entityPickerStrings = {
     entityPickerResults: "Matching items",
     entityPickerSearching: "Searching…",
     entityPickerNoMatches: "No items match.",
+    entityPickerRefine: "No matches in the first results. Try a longer title.",
     entityPickerUnavailable: "Search is unavailable. You can still paste an ID.",
     entityPickerUseID: "Use this ID: {id}",
     entityPickerUseIDs: "Use these IDs: {count}",
@@ -17,6 +18,8 @@ export const entityPickerStrings = {
     entityPickerResults: "Éléments correspondants",
     entityPickerSearching: "Recherche…",
     entityPickerNoMatches: "Aucun élément ne correspond.",
+    entityPickerRefine:
+      "Aucune correspondance dans les premiers résultats. Essayez un titre plus long.",
     entityPickerUnavailable: "La recherche est indisponible. Vous pouvez toujours coller un ID.",
     entityPickerUseID: "Utiliser cet ID : {id}",
     entityPickerUseIDs: "Utiliser ces ID : {count}",
@@ -30,6 +33,8 @@ export const entityPickerStrings = {
     entityPickerResults: "Passende Elemente",
     entityPickerSearching: "Suche läuft…",
     entityPickerNoMatches: "Keine passenden Elemente.",
+    entityPickerRefine:
+      "Keine Treffer in den ersten Ergebnissen. Versuchen Sie einen längeren Titel.",
     entityPickerUnavailable: "Die Suche ist nicht verfügbar. Sie können trotzdem eine ID einfügen.",
     entityPickerUseID: "Diese ID verwenden: {id}",
     entityPickerUseIDs: "Diese IDs verwenden: {count}",
@@ -43,6 +48,8 @@ export const entityPickerStrings = {
     entityPickerResults: "Elementos coincidentes",
     entityPickerSearching: "Buscando…",
     entityPickerNoMatches: "Ningún elemento coincide.",
+    entityPickerRefine:
+      "No hay coincidencias en los primeros resultados. Pruebe con un título más largo.",
     entityPickerUnavailable: "La búsqueda no está disponible. Aún puedes pegar un ID.",
     entityPickerUseID: "Usar este ID: {id}",
     entityPickerUseIDs: "Usar estos ID: {count}",
@@ -56,6 +63,8 @@ export const entityPickerStrings = {
     entityPickerResults: "Itens correspondentes",
     entityPickerSearching: "A pesquisar…",
     entityPickerNoMatches: "Nenhum item corresponde.",
+    entityPickerRefine:
+      "Nenhuma correspondência nos primeiros resultados. Tente um título mais longo.",
     entityPickerUnavailable: "A pesquisa não está disponível. Ainda pode colar um ID.",
     entityPickerUseID: "Usar este ID: {id}",
     entityPickerUseIDs: "Usar estes IDs: {count}",

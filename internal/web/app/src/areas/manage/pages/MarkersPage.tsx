@@ -130,11 +130,12 @@ export function MarkersPage() {
   const onCreate = async () => {
     if (!mediaID) return;
     setError("");
+    const seq = loadSeq.current;
     try {
       await createMarker(mediaID, blankDraft());
-      await load(mediaID);
+      if (seq === loadSeq.current) await load(mediaID);
     } catch {
-      setError(t("markersSaveFailed"));
+      if (seq === loadSeq.current) setError(t("markersSaveFailed"));
     }
   };
 

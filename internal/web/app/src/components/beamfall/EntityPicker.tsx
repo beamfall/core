@@ -37,7 +37,7 @@ type Option = { type: "item"; item: SearchResultItem } | { type: "raw"; ids: str
 type SearchState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ready"; items: SearchResultItem[] }
+  | { status: "ready"; items: SearchResultItem[]; capped: boolean }
   | { status: "error" };
 
 /** Splits pasted text into IDs on commas and whitespace. */
@@ -59,6 +59,9 @@ function useEntitySearch(term: string, kind: EntityPickerKind): SearchState {
     const controller = new AbortController();
     const run = async () => {
       const items: SearchResultItem[] = [];
+      // capped: the scan stopped at SEARCH_SCAN_MAX with more results left, so
+      // an empty list means "refine", not "nothing matches".
+      let capped = true;
       for (let offset = 0; offset < SEARCH_SCAN_MAX; offset += SEARCH_PAGE) {
         const res = await searchResult(query, "keyword", controller.signal, {
           offset,
@@ -66,14 +69,17 @@ function useEntitySearch(term: string, kind: EntityPickerKind): SearchState {
         });
         const page = res.items ?? [];
         items.push(...page.filter((item) => kind === "any" || item.kind === kind));
-        if (items.length >= SEARCH_LIMIT || !res.hasMore || page.length === 0) break;
+        if (items.length >= SEARCH_LIMIT || !res.hasMore || page.length === 0) {
+          capped = false;
+          break;
+        }
       }
-      return items.slice(0, SEARCH_LIMIT);
+      return { items: items.slice(0, SEARCH_LIMIT), capped };
     };
     const timer = setTimeout(() => {
       run().then(
-        (items) => {
-          if (!controller.signal.aborted) setState({ status: "ready", items });
+        ({ items, capped }) => {
+          if (!controller.signal.aborted) setState({ status: "ready", items, capped });
         },
         () => {
           if (!controller.signal.aborted) setState({ status: "error" });
@@ -160,7 +166,7 @@ function EntitySearchBox({
       : search.status === "error"
         ? t("entityPickerUnavailable")
         : search.status === "ready" && search.items.length === 0
-          ? t("entityPickerNoMatches")
+          ? t(search.capped ? "entityPickerRefine" : "entityPickerNoMatches")
           : "";
 
   return (

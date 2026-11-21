@@ -385,21 +385,26 @@ function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: 
   const onAssign = async () => {
     onError("");
     if (!assignment || !addTagID) return;
+    const seq = loadSeq.current;
     try {
-      setAssignment(await assignTag(addTagID, assignment.targetType, assignment.targetID));
+      const next = await assignTag(addTagID, assignment.targetType, assignment.targetID);
+      if (seq !== loadSeq.current) return;
+      setAssignment(next);
       setAddTagID("");
     } catch {
-      onError(t("tagsUnavailable"));
+      if (seq === loadSeq.current) onError(t("tagsUnavailable"));
     }
   };
 
   const onUnassign = async (tagID: string) => {
     onError("");
     if (!assignment) return;
+    const seq = loadSeq.current;
     try {
-      setAssignment(await unassignTag(tagID, assignment.targetType, assignment.targetID));
+      const next = await unassignTag(tagID, assignment.targetType, assignment.targetID);
+      if (seq === loadSeq.current) setAssignment(next);
     } catch {
-      onError(t("tagsUnavailable"));
+      if (seq === loadSeq.current) onError(t("tagsUnavailable"));
     }
   };
 
@@ -423,7 +428,15 @@ function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: 
         <div className="flex flex-wrap items-start gap-3">
           <div className="space-y-1">
             <Label htmlFor="assign-target-type">{t("tagTargetType")}</Label>
-            <Select value={targetType} onValueChange={(v) => setTargetType(v as TagTargetType)}>
+            <Select
+              value={targetType}
+              onValueChange={(v) => {
+                // A new kind invalidates the picked ID and the shown target.
+                setTargetType(v as TagTargetType);
+                setTargetID("");
+                onUnload();
+              }}
+            >
               <SelectTrigger id="assign-target-type" className="w-40">
                 <SelectValue />
               </SelectTrigger>

@@ -159,6 +159,17 @@ describe("EntityPicker", () => {
     expect(tracked().mock.calls[1]?.[3]).toEqual({ offset: 16, limit: 16 });
   });
 
+  it("asks for a longer title when the scan cap is hit with no match", async () => {
+    const media = Array.from({ length: 16 }, (_, i) => ({ ...mediaRow, id: `m-${i}` }));
+    tracked().mockResolvedValue({ mode: "keyword", items: media, hasMore: true });
+    wrap(<Single onChange={vi.fn()} kind="entity" />);
+    await userEvent.type(screen.getByRole("combobox"), "harbor");
+    expect(
+      await screen.findByText("No matches in the first results. Try a longer title."),
+    ).toBeInTheDocument();
+    expect(tracked()).toHaveBeenCalledTimes(4);
+  });
+
   it("offers Entity rows when kind is any, without an edit link", async () => {
     respond([entityRow]);
     const onChange = vi.fn();
