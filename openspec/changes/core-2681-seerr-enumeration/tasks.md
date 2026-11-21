@@ -10,4 +10,4 @@
 - [x] Tier-1 tests: allowlisted, non-allowlisted, Reveal-restricted and certification-restricted, by item and by count.
 - [x] Update the route inventory test.
 - [x] Record the enumeration and the relative-path rule in ADR-0171 §2.8.
-- [ ] Recorded Seerr run: users import and availability for an allowlisted Library.
+- [x] Recorded Seerr run: users import and availability for an allowlisted Library.
