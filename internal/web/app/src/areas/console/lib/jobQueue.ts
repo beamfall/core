@@ -195,33 +195,26 @@ export function redactJobLogPayload(payload: string): string {
   );
 }
 
-function redactJsonStrings(value: unknown): unknown {
-  if (typeof value === "string") return redactJobLogPayload(value);
-  if (Array.isArray(value)) return value.map(redactJsonStrings);
-  if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, field]) => [key, redactJsonStrings(field)]),
-    );
-  }
-  return value;
-}
+const jsonStringLiteral = /"(?:[^"\\]|\\.)*"/g;
 
 /**
- * A job event payload with every string value blanked as redactJobLogPayload
- * does, redacted after JSON decoding, for jobEventDetail to format. Decoding
- * first catches a secret that JSON escaping hides and keeps a credential
- * pattern from consuming JSON delimiters; formatting afterwards cannot reshape
- * a secret past the patterns. Property names and number literals are not
- * kept faithfully, so never display this output as is: show a payload the
- * formatter does not recognise through redactJobLogPayload. A payload that is
- * not JSON is redacted as text.
+ * A job event payload with every JSON string literal, property names
+ * included, decoded, redacted as redactJobLogPayload does and re-encoded,
+ * and the text between literals kept verbatim. Decoding first catches a
+ * secret that JSON escaping hides (`\u0026token=`, `Bearer\t...`); redacting
+ * one literal at a time keeps a credential pattern from consuming delimiters
+ * or later fields, and numbers stay exactly as stored. The result is safe to
+ * format and to show as is. A payload that is not JSON is redacted as text.
  */
 export function redactJobEventPayload(payload: string): string {
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(payload);
+    JSON.parse(payload);
   } catch {
     return redactJobLogPayload(payload);
   }
-  return JSON.stringify(redactJsonStrings(parsed));
+  return payload.replace(jsonStringLiteral, (literal) => {
+    const value = JSON.parse(literal) as string;
+    const redacted = redactJobLogPayload(value);
+    return redacted === value ? literal : JSON.stringify(redacted);
+  });
 }

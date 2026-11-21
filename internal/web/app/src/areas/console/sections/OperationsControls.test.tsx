@@ -368,6 +368,7 @@ describe("OperationsControls", () => {
     const escapedToken = "escaped-token-secret";
     const tailToken = "tail-bearer-secret";
     const keySecret = "propertynamesecret";
+    const tabToken = "tab-bearer-secret";
     const initialEvents: JobEventInfo[] = [
       {
         id: "1",
@@ -425,14 +426,15 @@ describe("OperationsControls", () => {
         type: "progress",
         payload: `{"type":"progress","current":2,"total":2,"unit":"files","message":"GET /x?a=1\\u0026token=${escapedToken} Bearer ${tailToken}"}`,
       },
-      // A payload the formatter does not recognise shows as stored, redacted
-      // as text: a secret in a property name is blanked and digits are kept.
+      // A payload the formatter does not recognise shows as stored with each
+      // string literal redacted: property names and escaped whitespace are
+      // covered, later fields survive and digits are kept.
       {
         id: "9",
         jobID: "job-1",
         occurredAt: "2026-06-20T00:00:08Z",
         type: "started",
-        payload: `{"bfj_${keySecret}":1,"recordID":9007199254740993}`,
+        payload: `{"bfj_${keySecret}":1,"auth":"Bearer\\t${tabToken}","recordID":9007199254740993}`,
       },
     ];
     vi.mocked(fetchJobEvents)
@@ -458,9 +460,11 @@ describe("OperationsControls", () => {
     expect(screen.getByText("key [REDACTED]")).toBeVisible();
     expect(screen.getByText(/^1\/2 \[REDACTED\]/i)).toBeVisible();
     expect(screen.getByText("2/2 files - GET /x?a=1[REDACTED] [REDACTED]")).toBeVisible();
-    expect(screen.getByText('{"[REDACTED]":1,"recordID":9007199254740993}')).toBeVisible();
+    expect(
+      screen.getByText('{"[REDACTED]":1,"auth":"[REDACTED]","recordID":9007199254740993}'),
+    ).toBeVisible();
     const leaks = [restrictedName, token, host, streamID, compatKey, apiKey, unitSecret];
-    for (const leak of [...leaks, escapedToken, tailToken, keySecret]) {
+    for (const leak of [...leaks, escapedToken, tailToken, keySecret, tabToken]) {
       expect(screen.queryByText(new RegExp(leak))).toBeNull();
       // Titles carry the detail too.
       expect(document.body.innerHTML).not.toContain(leak);

@@ -236,6 +236,16 @@ describe("redactJobEventPayload (CORE-2725)", () => {
     expect(out).toEqual({ a: [{ k: "[REDACTED]" }], n: 3, b: true });
   });
 
+  it("redacts a credential hidden behind an escaped tab", () => {
+    expect(redactJobEventPayload('{"auth":"Bearer\\tplaceholder"}')).toBe('{"auth":"[REDACTED]"}');
+  });
+
+  it("keeps later fields, property names and number literals exactly", () => {
+    expect(
+      redactJobEventPayload('{"auth":"Bearer placeholder","bfj_k1":1,"recordID":9007199254740993}'),
+    ).toBe('{"auth":"[REDACTED]","[REDACTED]":1,"recordID":9007199254740993}');
+  });
+
   it("redacts a payload that is not JSON as text", () => {
     expect(redactJobEventPayload("worker=w2 bfk_abc")).toBe("worker=w2 [REDACTED]");
   });
