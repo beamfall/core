@@ -293,36 +293,40 @@ function digitGroups(value: number): string {
 
 /** This file's source with its BASE_* constants rewritten to `values`; nothing else changes. */
 function rerecordBaselines(source: string, values: Baselines): string {
+  // Keep the checkout's own line endings.
+  const eol = source.includes("\r\n") ? "\r\n" : "\n";
   const catalogs = LOCALES.map((locale) => {
     const entry = values.catalogs[locale];
+    // A regional tag such as fr-CA is not a bare property name.
+    const name = /^[A-Za-z_$][\w$]*$/.test(locale) ? locale : JSON.stringify(locale);
     return [
-      `  ${locale}: {`,
+      `  ${name}: {`,
       `    partialCount: ${digitGroups(entry.partialCount)},`,
       `    partialSha256: "${entry.partialSha256}",`,
       `    resolvedSha256: "${entry.resolvedSha256}",`,
       "  },",
-    ].join("\n");
-  }).join("\n");
+    ].join(eol);
+  }).join(eol);
   const replacements: [RegExp, string][] = [
     [
-      /^const BASE_SERIALIZED_LENGTH = [\d_]+;$/m,
+      /^const BASE_SERIALIZED_LENGTH = [\d_]+;(?=\r?$)/m,
       `const BASE_SERIALIZED_LENGTH = ${digitGroups(values.serializedLength)};`,
     ],
     [
-      /^const BASE_REGISTRY_SHA256 = "[0-9a-f]+";$/m,
+      /^const BASE_REGISTRY_SHA256 = "[0-9a-f]+";(?=\r?$)/m,
       `const BASE_REGISTRY_SHA256 = "${values.registrySha256}";`,
     ],
     [
-      /^const BASE_KEY_ORDER_SHA256 = "[0-9a-f]+";$/m,
+      /^const BASE_KEY_ORDER_SHA256 = "[0-9a-f]+";(?=\r?$)/m,
       `const BASE_KEY_ORDER_SHA256 = "${values.keyOrderSha256}";`,
     ],
     [
-      /^const BASE_PLACEHOLDER_SHA256 = "[0-9a-f]+";$/m,
+      /^const BASE_PLACEHOLDER_SHA256 = "[0-9a-f]+";(?=\r?$)/m,
       `const BASE_PLACEHOLDER_SHA256 = "${values.placeholderSha256}";`,
     ],
     [
-      /^const BASE_CATALOGS = \{\n[\s\S]*?\n\} as const satisfies/m,
-      `const BASE_CATALOGS = {\n${catalogs}\n} as const satisfies`,
+      /^const BASE_CATALOGS = \{\r?\n[\s\S]*?\r?\n\} as const satisfies/m,
+      `const BASE_CATALOGS = {${eol}${catalogs}${eol}} as const satisfies`,
     ],
   ];
   let next = source;
@@ -349,6 +353,9 @@ describe("strings baseline re-record (CORE-2455)", () => {
     const changed = rerecordBaselines(source, { ...values, registrySha256: "0".repeat(64) });
     expect(changed).not.toBe(source);
     expect(changed.replace("0".repeat(64), values.registrySha256)).toBe(source);
+    // A CRLF checkout re-records in place too.
+    const crlf = source.replace(/\n/g, "\r\n");
+    expect(rerecordBaselines(crlf, values)).toBe(crlf);
   });
 });
 
