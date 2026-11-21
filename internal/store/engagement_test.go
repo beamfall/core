@@ -1788,3 +1788,43 @@ func mediaIDStrings(ids []MediaID) []string {
 	}
 	return out
 }
+
+func TestNextUpHoldsAGroupWithAPausedUnorderedChild(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	ids := nextUpFixture(t, st, "entity-season", "s1-")
+	extra, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID:          "library-local",
+		Path:               "/media/s1-Unordered.mp4",
+		Title:              "s1-Unordered",
+		Container:          "mp4",
+		Codec:              "h264",
+		ContentFingerprint: "sha256:s1-Unordered",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntityRelation(ctx, EntityRelation{
+		FromEntityID: "entity-season", Name: "linked", ToMediaID: extra.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Every ordered child finished and the unordered child paused: Continue
+	// Watching shows it, so Up Next must not offer it as the frontier too.
+	for _, id := range ids {
+		mustReport(t, st, "profile-default", id, 120, 120, true)
+	}
+	mustReport(t, st, "profile-default", extra.ID, 45, 120, false)
+	cw, err := st.SourceItems(ctx, filter, SourceQuery{Kind: "continue-watching", ProfileID: "profile-default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cw) != 1 || cw[0].ID != extra.ID {
+		t.Fatalf("continue-watching = %#v, want exactly %q", cw, extra.ID)
+	}
+	if items := nextUp(t, st, filter, "profile-default"); len(items) != 0 {
+		t.Fatalf("next-up with a paused unordered child = %#v, want empty", items)
+	}
+}

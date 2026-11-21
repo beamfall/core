@@ -896,6 +896,9 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 		return containers[i] < containers[j]
 	})
 
+	if len(containers) == 0 {
+		return []SourceItem{}, nil
+	}
 	// A group whose containers Continue Watching holds yields nothing, so the
 	// two shelves stay disjoint by construction (see nextUpHeldSQL).
 	libraries, err := s.visibleLibraryIDsLocked(ctx, filter)
@@ -976,8 +979,10 @@ func anyHeld(held map[EntityID]bool, ids []EntityID) bool {
 
 // nextUpHeldSQL returns the containers Continue Watching holds: every live,
 // visible container of a registered kind that reaches one of the Profile's
-// continue-watching items through ordered relations, at any depth up to
-// nextUpMaxDepth. The walk starts from continue-watching's own items, so the
+// continue-watching items, at any depth up to nextUpMaxDepth. The first step
+// takes any link from the item to a container, ordered or not, because the
+// frontier reader offers a container's unordered children too; the steps
+// above it follow ordered relations. The walk starts from continue-watching's own items, so the
 // resumable predicate (resume floor, channel plays, Extras, incomplete
 // sources, Media visibility) is Continue Watching's by construction, and it
 // stops at a hidden or trashed entity. A next-up group touching this set is
@@ -1001,7 +1006,7 @@ func (s *Store) nextUpHeldSQL(ctx context.Context, profileID ProfileID, filter L
 		base := `SELECT er.to_media_id, er.from_entity_id, 1
 			FROM entity_relation er
 			JOIN entity c ON c.id = er.from_entity_id
-			WHERE er.sort_order IS NOT NULL AND er.to_media_id IN (` + sqlPlaceholders(len(chunk)) + `)
+			WHERE er.to_media_id IN (` + sqlPlaceholders(len(chunk)) + `)
 			  AND c.kind IN (` + kindPlaceholders + `) AND c.trashed_at_ms IS NULL
 			  AND c.library_id IN (` + libraryPlaceholders + `)`
 		err := s.nextUpWalkSQL(ctx, base, args, kindPlaceholders, libraryPlaceholders, kindArgs, libraryArgs, func(_ string, id EntityID) {
