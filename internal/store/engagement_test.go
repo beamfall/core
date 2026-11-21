@@ -936,6 +936,7 @@ func assertQueueIDs(t *testing.T, st *Store, filter LibraryFilter, profile Profi
 func nextUpFixture(t *testing.T, st *Store, container EntityID, prefix string) []MediaID {
 	t.Helper()
 	ctx := context.Background()
+	registerNextUpContainerKind(t, st)
 	if err := st.UpsertEntity(ctx, widgetEntity(container, "library-local")); err != nil {
 		t.Fatal(err)
 	}
@@ -962,6 +963,15 @@ func nextUpFixture(t *testing.T, st *Store, container EntityID, prefix string) [
 		}
 	}
 	return ids
+}
+
+// registerNextUpContainerKind registers the widget kind with the Container
+// posture, as app activation does for a container-archetype kind.
+func registerNextUpContainerKind(t *testing.T, st *Store) {
+	t.Helper()
+	if err := st.RegisterEntityKindPolicies(context.Background(), []EntityKindPolicy{{Kind: "widget", Container: true}}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func mustReport(t *testing.T, st *Store, profile ProfileID, media MediaID, position, duration int, finished bool) {
@@ -1103,6 +1113,71 @@ func TestNextUpCrossesIntoTheNextOrderedSibling(t *testing.T) {
 	mustReport(t, st, "profile-default", second[0], 45, 120, false)
 	if items := nextUp(t, st, filter, "profile-default"); len(items) != 0 {
 		t.Fatalf("next-up with resumable child in the next part = %#v, want empty", items)
+	}
+}
+
+func TestNextUpIgnoresOrderedRelationsOfNonContainerKinds(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	registerNextUpContainerKind(t, st)
+	person := Entity{ID: "entity-person", LibraryID: "library-local", Kind: "person", Title: "Credited Person"}
+	if err := st.UpsertEntity(ctx, person); err != nil {
+		t.Fatal(err)
+	}
+	credit := func(media MediaID, billing int) {
+		t.Helper()
+		if err := st.UpsertEntityRelation(ctx, EntityRelation{
+			FromEntityID: person.ID, Name: "credited-in", ToMediaID: media, SortOrder: &billing,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A person's credits carry a billing sort_order, but a person is not a
+	// container: finishing one credited item surfaces no other.
+	var credited []MediaID
+	for _, title := range []string{"Alpha", "Bravo"} {
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: "library-local", Path: "/media/credit-" + title + ".mp4", Title: title,
+			Container: "mp4", Codec: "h264", ContentFingerprint: "sha256:credit-" + title,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		credited = append(credited, media.ID)
+		credit(media.ID, len(credited))
+	}
+	mustReport(t, st, "profile-default", credited[0], 120, 120, true)
+	if items := nextUp(t, st, filter, "profile-default"); len(items) != 0 {
+		t.Fatalf("next-up through a credit = %#v, want empty", items)
+	}
+
+	// A part whose first ordered entity link is that person (the relation
+	// name sorts before part-of) still groups under its container parent.
+	first := nextUpFixture(t, st, "entity-part-1", "p1-")
+	second := nextUpFixture(t, st, "entity-part-2", "p2-")
+	if err := st.UpsertEntity(ctx, widgetEntity("entity-whole", "library-local")); err != nil {
+		t.Fatal(err)
+	}
+	links := []EntityRelation{
+		{FromEntityID: "entity-part-1", Name: "a-credit", ToEntityID: person.ID},
+		{FromEntityID: "entity-part-1", Name: "part-of", ToEntityID: "entity-whole"},
+		{FromEntityID: "entity-part-2", Name: "part-of", ToEntityID: "entity-whole"},
+	}
+	for i, link := range links {
+		order := i + 1
+		link.SortOrder = &order
+		if err := st.UpsertEntityRelation(ctx, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range first {
+		mustReport(t, st, "profile-default", id, 120, 120, true)
+	}
+	items := nextUp(t, st, filter, "profile-default")
+	if len(items) != 1 || items[0].ID != second[0] {
+		t.Fatalf("next-up at part boundary = %#v, want exactly %q", items, second[0])
 	}
 }
 

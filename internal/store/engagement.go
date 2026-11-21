@@ -792,10 +792,12 @@ func boolToInt(value bool) int {
 // (under the resume floor) and channel-context plays count as unwatched,
 // mirroring continue-watching, so no item falls between the two shelves.
 //
-// Ordered containers are recognized by their data, never the manifest: a
-// relation row carrying a sort_order is the play-next seed. Other relations
-// carry a sort_order too (credit billing, the index of a scraped list), so
-// this test is wider than container membership (CORE-2822).
+// A container is an Entity of a kind registered with the Container posture
+// (EntityKindPolicy, lowered from the container archetype), and its ordered
+// relation rows (those carrying a sort_order) are the play-next order. The
+// parent and siblings must be container kinds too. Other relations carry a
+// sort_order (credit billing, the index of a scraped list), so the kind, not
+// the sort_order, decides membership (CORE-2822).
 //
 // Engagement rows live in the events database and relations in the catalog,
 // so the composition happens here rather than in one SQL statement. Child
@@ -803,6 +805,10 @@ func boolToInt(value bool) int {
 // mediaForEntitySQL's standard LibraryFilter funnel; a container hidden under
 // the filter is skipped whole.
 func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
+	containerKinds := s.containerKindsLocked()
+	if len(containerKinds) == 0 {
+		return []SourceItem{}, nil
+	}
 	windowStart := timeToMillis(time.Now().UTC()) - nextUpEngagementWindowMS
 	rows, err := s.eventsR.QueryContext(ctx, `
 		SELECT media_id, updated_at_ms
@@ -841,16 +847,16 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 	const chunkSize = 500
 	for start := 0; start < len(engaged); start += chunkSize {
 		chunk := engaged[start:min(start+chunkSize, len(engaged))]
-		placeholders := make([]string, len(chunk))
-		args := make([]any, len(chunk))
-		for i, id := range chunk {
-			placeholders[i] = "?"
-			args[i] = id
+		kindPlaceholders, args := entityKindPlaceholders(containerKinds)
+		for _, id := range chunk {
+			args = append(args, id)
 		}
+		// #nosec G202 -- only generated placeholders are interpolated; every value is a bound arg.
 		relationRows, err := s.catalogR.QueryContext(ctx, `
-			SELECT from_entity_id, to_media_id
-			FROM entity_relation
-			WHERE sort_order IS NOT NULL AND to_media_id IN (`+strings.Join(placeholders, ", ")+`)
+			SELECT er.from_entity_id, er.to_media_id
+			FROM entity_relation er
+			JOIN entity container ON container.id = er.from_entity_id AND container.kind IN (`+kindPlaceholders+`)
+			WHERE er.sort_order IS NOT NULL AND er.to_media_id IN (`+sqlPlaceholders(len(chunk))+`)
 		`, args...)
 		if err != nil {
 			return nil, err
@@ -891,7 +897,7 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 	seenGroup := map[EntityID]bool{}
 	seen := map[MediaID]bool{}
 	for _, containerID := range containers {
-		group, siblings, err := s.nextUpGroupSQL(ctx, containerID)
+		group, siblings, err := s.nextUpGroupSQL(ctx, containerID, containerKinds)
 		if err != nil {
 			return nil, err
 		}
@@ -926,25 +932,34 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 }
 
 // nextUpGroupSQL returns the next-up group of an ordered container: when the
-// container relates to a parent Entity through an ordered relation, the
-// parent and every Entity related to it the same way, in sort order (the
-// container among them); otherwise the container alone.
-func (s *Store) nextUpGroupSQL(ctx context.Context, containerID EntityID) (EntityID, []EntityID, error) {
+// container relates to a parent container through an ordered relation, the
+// parent and every container related to it the same way, in sort order (the
+// container among them); otherwise the container alone. kinds are the
+// registered container kinds; an ordered link to any other kind (a credited
+// person, a category) is never a parent.
+func (s *Store) nextUpGroupSQL(ctx context.Context, containerID EntityID, kinds []string) (EntityID, []EntityID, error) {
+	kindPlaceholders, kindArgs := entityKindPlaceholders(kinds)
+	args := append([]any{containerID}, kindArgs...)
+	args = append(args, kindArgs...)
+	// #nosec G202 -- only generated placeholders are interpolated; every value is a bound arg.
 	rows, err := s.catalogR.QueryContext(ctx, `
 		WITH parent AS (
-			SELECT relation, to_entity_id
-			FROM entity_relation
-			WHERE from_entity_id = ? AND to_entity_id IS NOT NULL AND sort_order IS NOT NULL
-			ORDER BY relation, to_entity_id
+			SELECT er.relation, er.to_entity_id
+			FROM entity_relation er
+			JOIN entity p ON p.id = er.to_entity_id
+			WHERE er.from_entity_id = ? AND er.sort_order IS NOT NULL
+			  AND p.kind IN (`+kindPlaceholders+`)
+			ORDER BY er.relation, er.to_entity_id
 			LIMIT 1
 		)
 		SELECT parent.to_entity_id, sibling.from_entity_id
 		FROM parent
 		JOIN entity_relation sibling
 		  ON sibling.to_entity_id = parent.to_entity_id AND sibling.relation = parent.relation
+		JOIN entity s ON s.id = sibling.from_entity_id AND s.kind IN (`+kindPlaceholders+`)
 		WHERE sibling.sort_order IS NOT NULL
 		ORDER BY sibling.sort_order, sibling.from_entity_id
-	`, containerID)
+	`, args...)
 	if err != nil {
 		return "", nil, err
 	}

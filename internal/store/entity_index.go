@@ -49,6 +49,11 @@ type EntityKindPolicy struct {
 	// the cursor query is available for any kind, but callers consult this to
 	// choose the O(page) path for large kinds.
 	CursorPaginated bool
+	// Container marks a kind of the container archetype: an Entity of this
+	// kind holds its ordered children, and only such kinds seed the next-up
+	// Source or group as parts under a parent. Other ordered relations (a
+	// credit's billing, a scraped list's index) never do (CORE-2822).
+	Container bool
 }
 
 // entityIndexNamePattern is the declared-name shape (the plugin contract's
@@ -157,7 +162,7 @@ func (s *Store) RegisterEntityFieldIndexes(ctx context.Context, specs []EntityFi
 }
 
 // RegisterEntityKindPolicies installs plugin-declared KIND-level policies: it
-// records each kind's FullTextSearchable / OrphanGC / CursorPaginated posture
+// records each kind's FullTextSearchable / OrphanGC / CursorPaginated / Container posture
 // and re-syncs the entity FTS rows of every kind whose FullTextSearchable
 // posture it sets, so declarations apply to entities upserted before
 // activation (an opt-out kind's title-only FTS rows are cleared; an opt-in
@@ -185,6 +190,7 @@ func (s *Store) RegisterEntityKindPolicies(ctx context.Context, policies []Entit
 			policy.FullTextSearchable = policy.FullTextSearchable || prior.FullTextSearchable
 			policy.OrphanGC = policy.OrphanGC || prior.OrphanGC
 			policy.CursorPaginated = policy.CursorPaginated || prior.CursorPaginated
+			policy.Container = policy.Container || prior.Container
 		}
 		s.entityKindPolicies[policy.Kind] = policy
 		kinds[policy.Kind] = true
@@ -217,6 +223,19 @@ func (s *Store) EntityKindPolicy(kind string) (EntityKindPolicy, bool) {
 // full-text search. Callers hold s.mu (read or write).
 func (s *Store) entityKindFullTextSearchableLocked(kind string) bool {
 	return s.entityKindPolicies[kind].FullTextSearchable
+}
+
+// containerKindsLocked returns the sorted kind names registered as Container,
+// bound as an IN-list by the next-up Source. Callers hold s.mu (read or write).
+func (s *Store) containerKindsLocked() []string {
+	var out []string
+	for kind, policy := range s.entityKindPolicies {
+		if policy.Container {
+			out = append(out, kind)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // orphanGCKindsLocked returns the sorted kind names that declared

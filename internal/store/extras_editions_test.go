@@ -275,6 +275,7 @@ func TestExtraExcludedFromNextUp(t *testing.T) {
 	// watched opener, an Extra (trailer) at the frontier, and a normal episode
 	// after it. Engagement in the opener engages the container.
 	container := EntityID("container-nextup")
+	registerNextUpContainerKind(t, st)
 	if err := st.UpsertEntity(ctx, widgetEntity(container, "library-local")); err != nil {
 		t.Fatalf("UpsertEntity: %v", err)
 	}

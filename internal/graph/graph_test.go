@@ -5378,6 +5378,11 @@ func TestNextUpAdvancesAfterFinishingOrderedChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// App activation registers container-archetype kinds with the store;
+	// this test wires the stack by hand, so it registers the kind itself.
+	if err := st.RegisterEntityKindPolicies(ctx, []store.EntityKindPolicy{{Kind: "container", Container: true}}); err != nil {
+		t.Fatal(err)
+	}
 	handler := NewHandler(
 		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, registry),
 		auth.NewService(st),

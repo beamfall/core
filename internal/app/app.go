@@ -3397,7 +3397,9 @@ func scanLocalExtractors(registry *plugin.Registry, supplied map[string][]scanpk
 // entityKindPolicies lowers each plugin's kind-level declarations to store
 // policies. An outermost container kind is title-searchable whether or not
 // its plugin opts it in, so searching a container's title finds the
-// container rather than only the items it holds (CORE-2525).
+// container rather than only the items it holds (CORE-2525). A kind of the
+// container archetype carries the Container posture, so only real containers
+// seed the next-up Source (CORE-2822).
 func entityKindPolicies(plugins *plugin.Registry) []store.EntityKindPolicy {
 	var policies []store.EntityKindPolicy
 	for _, id := range plugins.IDs() {
@@ -3405,7 +3407,8 @@ func entityKindPolicies(plugins *plugin.Registry) []store.EntityKindPolicy {
 		outermost := identify.OutermostContainerKinds(bundle)
 		for _, kind := range bundle.EntityKinds {
 			searchable := kind.FullTextSearchable || outermost[kind.Name]
-			if !searchable && kind.OrphanPolicy != "gc" && !kind.CursorPaginated {
+			container := kind.Archetype == "container"
+			if !searchable && kind.OrphanPolicy != "gc" && !kind.CursorPaginated && !container {
 				continue
 			}
 			policies = append(policies, store.EntityKindPolicy{
@@ -3413,6 +3416,7 @@ func entityKindPolicies(plugins *plugin.Registry) []store.EntityKindPolicy {
 				FullTextSearchable: searchable,
 				OrphanGC:           kind.OrphanPolicy == "gc",
 				CursorPaginated:    kind.CursorPaginated,
+				Container:          container,
 			})
 		}
 	}

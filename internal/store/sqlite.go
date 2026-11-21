@@ -221,6 +221,7 @@ func Open(ctx context.Context, dataDir string, opts Options) (*Store, error) {
 			_ = st.Close()
 			return nil, err
 		}
+		st.registerSeedKindPolicies(profile)
 	}
 	if st.catalogR, err = openSQLiteReader(catalogPath); err != nil {
 		_ = st.Close()
@@ -375,6 +376,24 @@ func copyFileBounded(src, dst string, limit int64) (int64, error) {
 		err = fmt.Errorf("%s exceeds %d bytes", src, limit)
 	}
 	return n, err
+}
+
+// registerSeedKindPolicies declares the kind postures of a seed's own
+// Entities. The demo and acceptance worlds hold an ordered "container" Entity
+// that no plugin declares, so the seed registers it with the Container posture
+// that plugin activation gives a container-archetype kind; otherwise their
+// next-up Source would stay empty (CORE-2822). Registered on every Open, since
+// the policies live in memory while the seeded rows persist.
+func (s *Store) registerSeedKindPolicies(profile SeedProfile) {
+	if profile != SeedProfileDemo && profile != SeedProfileAcceptance {
+		return
+	}
+	if s.entityKindPolicies == nil {
+		s.entityKindPolicies = map[string]EntityKindPolicy{}
+	}
+	policy := s.entityKindPolicies["container"]
+	policy.Kind, policy.Container = "container", true
+	s.entityKindPolicies["container"] = policy
 }
 
 func (opts Options) resolvedSeedProfile() SeedProfile {
