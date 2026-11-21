@@ -7,6 +7,7 @@ import type { LibrarySummary, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { useHiddenItems } from "../viewer/actions";
+import { hiddenKeyMoved } from "../viewer/actions/hiddenItems";
 import { artworkBucketURL, artworkSlotURL } from "../viewer/lib/artwork";
 import { fetchViewerCollections, type LibraryCollections } from "../viewer/lib/collections";
 import { fetchMediaDetailFields } from "../viewer/lib/mediaDetail";
@@ -50,6 +51,20 @@ const SLIDE_BUCKET = "w1280";
 const PREFS_KEY = "bf.slideshow.prefs";
 const CHROME_HIDE_MS = 3000;
 const NO_LIBRARIES: readonly LibrarySummary[] = [];
+const SESSION_RECHECK_MS = 60_000;
+/** Re-read a preview clip this long before its Stream Token expires. */
+const CLIP_EXPIRY_MARGIN_MS = 60_000;
+
+/** A clip's preview URL ("" when it has none) and its token expiry (0 when unstated). */
+interface ClipPreview {
+  url: string;
+  expiresAt: number;
+}
+
+function clipPreviewFresh(preview: ClipPreview | undefined, now: number): boolean {
+  if (!preview) return false;
+  return !preview.url || !preview.expiresAt || now < preview.expiresAt - CLIP_EXPIRY_MARGIN_MS;
+}
 
 interface SlideshowPrefs {
   interval: number;
@@ -112,9 +127,14 @@ function readNowPlaying(): string {
   return [title, artist].filter(Boolean).join(" · ");
 }
 
-function interactiveTarget(target: EventTarget | null): boolean {
+function interactiveTarget(target: EventTarget | null, key: string): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return !!target.closest("input, select, textarea, [contenteditable='true']");
+  // A focused button keeps Space for its own activation.
+  const own =
+    key === " "
+      ? "input, select, textarea, button, [contenteditable='true']"
+      : "input, select, textarea, [contenteditable='true']";
+  return !!target.closest(own);
 }
 
 /** The slideshow route. A Profile or Reveal change remounts it, so nothing carries across. */
@@ -129,10 +149,18 @@ function Slideshow() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const source = useMemo(() => parseSlideshowSource(searchParams), [searchParams]);
-  const { manifest } = useSession();
+  const { manifest, refreshSession } = useSession();
   const libraries = manifest?.libraries ?? NO_LIBRARIES;
   const { mutes, failed: hiddenFailed, isHidden } = useHiddenItems();
   const hiddenReady = mutes !== null || hiddenFailed;
+  const hiddenKey = useMemo(
+    () =>
+      mutes
+        ?.map((mute) => `${mute.kind}:${mute.targetID}:${mute.includeDescendants}`)
+        .sort()
+        .join("|") ?? null,
+    [mutes],
+  );
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [prefs, setPrefs] = useState<SlideshowPrefs>(loadPrefs);
@@ -147,7 +175,11 @@ function Slideshow() {
   const [chrome, setChrome] = useState(true);
   const [now, setNow] = useState(() => new Date());
   const [nowPlaying, setNowPlaying] = useState("");
-  const [clipURLs, setClipURLs] = useState<Record<string, string>>({});
+  const [clipURLs, setClipURLs] = useState<Record<string, ClipPreview>>({});
+  // A hide made elsewhere refetches the Source, so the server drops a hidden
+  // container's descendants too; a return to the tab re-reads the session first.
+  const [reload, setReload] = useState(0);
+  const [revalidating, setRevalidating] = useState(false);
   const [captions, setCaptions] = useState<Record<string, string>>({});
 
   const updatePrefs = useCallback((patch: Partial<SlideshowPrefs>) => {
@@ -158,32 +190,66 @@ function Slideshow() {
     });
   }, []);
 
-  // Load the Source's items, progressively, whenever the Source changes.
+  const seenHidden = useRef<string | null>(null);
   useEffect(() => {
+    if (hiddenKeyMoved(seenHidden, hiddenKey)) setReload((value) => value + 1);
+  }, [hiddenKey]);
+
+  // Another tab may switch Profile or Reveal: re-read the session on return and
+  // every minute. A Profile change reloads the identity, which remounts this page.
+  useEffect(() => {
+    let cancelled = false;
+    const revalidate = (hideUntilDone: boolean) => {
+      if (hideUntilDone) setRevalidating(true);
+      void refreshSession()
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setRevalidating(false);
+        });
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") revalidate(true);
+    };
+    document.addEventListener("visibilitychange", visible);
+    const timer = window.setInterval(() => revalidate(false), SESSION_RECHECK_MS);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", visible);
+      window.clearInterval(timer);
+    };
+  }, [refreshSession]);
+
+  // Load the Source's items, progressively, whenever the Source changes or a hide moves.
+  const loadedSource = useRef<SlideshowSource | null>(null);
+  useEffect(() => {
+    void reload;
     setItems(null);
     setLoadFailed(false);
-    setBroken(new Set());
-    setIndex(0);
     setShown(null);
+    if (!sameSource(loadedSource.current, source)) {
+      loadedSource.current = source;
+      setBroken(new Set());
+      setIndex(0);
+    }
     if (!source) return;
     const controller = new AbortController();
     fetchSlideshowItems(source, (next) => setItems(next), controller.signal).catch(() => {
       if (!controller.signal.aborted) setLoadFailed(true);
     });
     return () => controller.abort();
-  }, [source]);
+  }, [source, reload]);
 
   const slides = useMemo<Slide[]>(() => {
-    if (!items || !hiddenReady) return [];
+    if (!items || !hiddenReady || revalidating) return [];
     return slidesFrom(items, isHidden).filter((slide) => !broken.has(slide.item.id));
-  }, [items, hiddenReady, isHidden, broken]);
+  }, [items, hiddenReady, revalidating, isHidden, broken]);
   const count = slides.length;
   const current = count > 0 ? slides[index % count] : null;
   const intervalMs = prefs.interval * 1000;
 
   const step = useCallback(
     (delta: number) => {
-      if (count === 0) return;
+      if (count < 2) return;
       setShown(null);
       setIndex((value) => ((((value % count) + delta) % count) + count) % count);
     },
@@ -237,13 +303,16 @@ function Slideshow() {
   // A clip's generated preview clip: an asset read, not a playback decision.
   const clipID = current?.clip ? current.item.id : "";
   useEffect(() => {
-    if (!clipID || clipID in clipURLs) return;
+    if (!clipID || clipPreviewFresh(clipURLs[clipID], Date.now())) return;
     let cancelled = false;
     fetchPreviewInfo(clipID)
-      .then((info) => info.assets?.previewClip ?? "")
-      .catch(() => "")
-      .then((url) => {
-        if (!cancelled) setClipURLs((value) => ({ ...value, [clipID]: url }));
+      .then((info) => ({
+        url: info.assets?.previewClip ?? "",
+        expiresAt: Date.parse(info.assets?.expiresAt ?? "") || 0,
+      }))
+      .catch(() => ({ url: "", expiresAt: 0 }))
+      .then((preview) => {
+        if (!cancelled) setClipURLs((value) => ({ ...value, [clipID]: preview }));
       });
     return () => {
       cancelled = true;
@@ -356,7 +425,7 @@ function Slideshow() {
         else close();
         return;
       }
-      if (sheetOpen || interactiveTarget(event.target)) return;
+      if (sheetOpen || interactiveTarget(event.target, event.key)) return;
       const actions: Record<string, () => void> = {
         " ": () => setPaused((value) => !value),
         ArrowLeft: () => step(-1),
@@ -412,7 +481,11 @@ function Slideshow() {
           <SlideView
             key={current.item.id}
             slide={current}
-            clipURL={clipURLs[current.item.id]}
+            clipURL={
+              clipPreviewFresh(clipURLs[current.item.id], Date.now())
+                ? clipURLs[current.item.id]?.url
+                : undefined
+            }
             slideRef={slideRef}
             onPainted={markPainted}
             onBroken={markBroken}
@@ -523,7 +596,14 @@ function SlideView({
   const { item } = slide;
   const poster = slideImageURL(item);
   const [clipFailed, setClipFailed] = useState(false);
+  const [posterLoaded, setPosterLoaded] = useState(false);
   const playClip = slide.clip && !!clipURL && !clipFailed;
+  const clipPending = slide.clip && clipURL === undefined;
+
+  // The poster starts the interval only once the clip lookup has settled without a clip.
+  useEffect(() => {
+    if (posterLoaded && !playClip && !clipPending) onPainted(item.id);
+  }, [posterLoaded, playClip, clipPending, item.id, onPainted]);
 
   // A slide with nothing left to show is skipped (a clip waits for its lookup first).
   useEffect(() => {
@@ -556,7 +636,7 @@ function SlideView({
       src={poster}
       alt={displayString(item.title)}
       decoding="async"
-      onLoad={() => onPainted(item.id)}
+      onLoad={() => setPosterLoaded(true)}
       onError={() => onBroken(item.id)}
     />
   );

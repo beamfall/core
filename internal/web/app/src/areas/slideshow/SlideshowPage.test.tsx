@@ -37,7 +37,10 @@ vi.mock("../viewer/actions", () => ({
   }),
 }));
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({ manifest: { libraries: [{ id: "lib", title: "Pictures" }] } }),
+  useSession: () => ({
+    manifest: { libraries: [{ id: "lib", title: "Pictures" }] },
+    refreshSession: async () => {},
+  }),
   useViewerIdentity: () => "profile-a",
 }));
 
