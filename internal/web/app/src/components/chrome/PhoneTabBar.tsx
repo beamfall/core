@@ -12,12 +12,15 @@ import { PERSONAL_ENTRIES } from "./sidebarPrefs";
 // it never covers content.
 export function PhoneTabBar({
   pathname,
+  onHome,
   sidebarId,
   drawerGroup,
   showPersonal,
   onOpenGroup,
 }: {
   pathname: string;
+  /** The open page is Home, at "/" or at its own node address. */
+  onHome: boolean;
   /** The drawer the group tabs open, while it is open. */
   sidebarId: string;
   /** The group the open drawer was opened at, or null while it is closed. */
@@ -27,13 +30,12 @@ export function PhoneTabBar({
   onOpenGroup: (group: SidebarGroup, opener: HTMLButtonElement) => void;
 }) {
   const t = useT();
-  const onLibrary = pathname.startsWith("/n/");
+  const onLibrary = !onHome && pathname.startsWith("/n/");
   const onPersonal = PERSONAL_ENTRIES.some(
     (entry) => pathname === entry.path || pathname.startsWith(`${entry.path}/`),
   );
 
-  function link(to: string, label: string, Icon: typeof House) {
-    const current = pathname === to;
+  function link(to: string, label: string, Icon: typeof House, current: boolean) {
     return (
       <li>
         <Link
@@ -70,8 +72,8 @@ export function PhoneTabBar({
   return (
     <nav aria-label={t("tabBarLabel")} className="bf-tabbar">
       <ul className={"bf-tab-list" + (showPersonal ? "" : " is-short")}>
-        {link("/", t("tabHome"), House)}
-        {link("/search", t("search"), Search)}
+        {link("/", t("tabHome"), House, onHome)}
+        {link("/search", t("search"), Search, pathname === "/search")}
         {groupButton("libraries", t("libraries"), LibraryBig, onLibrary)}
         {showPersonal && groupButton("personal", t("yourStuff"), Star, onPersonal)}
       </ul>
