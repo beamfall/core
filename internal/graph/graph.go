@@ -3347,10 +3347,12 @@ func (h *Handler) refreshSubscription(ctx context.Context, scope auth.Scope, req
 }
 
 // refreshAllSubscriptions (manager-gated in execute) makes every
-// Subscription outside its refresh gap due now and enqueues the poll job.
-func (h *Handler) refreshAllSubscriptions(ctx context.Context, _ auth.Scope, _ request) (SubscriptionRefreshAllInfo, error) {
+// Subscription in a Library the caller can see, and outside its refresh gap,
+// due now and enqueues the poll job. Hidden Libraries are neither refreshed
+// nor counted.
+func (h *Handler) refreshAllSubscriptions(ctx context.Context, scope auth.Scope, _ request) (SubscriptionRefreshAllInfo, error) {
 	now := time.Now().UTC()
-	refreshed, err := h.store.RequestAllSubscriptionsRefresh(ctx, now, subscriptionRefreshGap)
+	refreshed, err := h.store.RequestAllSubscriptionsRefresh(ctx, scope.LibraryFilter(), now, subscriptionRefreshGap)
 	if err != nil {
 		return SubscriptionRefreshAllInfo{}, err
 	}

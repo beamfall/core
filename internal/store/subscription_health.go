@@ -284,19 +284,38 @@ func (s *Store) RequestSubscriptionRefresh(ctx context.Context, id SubscriptionI
 	return subscription, nil
 }
 
-// RequestAllSubscriptionsRefresh makes every Subscription outside its own
-// minGap due now and reports how many it refreshed.
-func (s *Store) RequestAllSubscriptionsRefresh(ctx context.Context, now time.Time, minGap time.Duration) (int, error) {
+// RequestAllSubscriptionsRefresh makes every Subscription in a Library the
+// filter can see, and outside its own minGap, due now. It reports how many it
+// refreshed; Subscriptions in Libraries the filter hides are neither touched
+// nor counted, so the count never reveals them.
+func (s *Store) RequestAllSubscriptionsRefresh(ctx context.Context, filter LibraryFilter, now time.Time, minGap time.Duration) (int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return 0, err
 	}
+	libraries, err := loadLibraries(ctx, s.catalogR)
+	if err != nil {
+		return 0, err
+	}
 	nowMS := now.UTC().UnixMilli()
+	args := []any{nowMS, nowMS, nowMS - minGap.Milliseconds()}
+	visible := 0
+	for _, library := range libraries {
+		if libraryVisible(library, filter) {
+			args = append(args, library.ID)
+			visible++
+		}
+	}
+	if visible == 0 {
+		return 0, nil
+	}
+	// #nosec G202 -- only generated placeholders are interpolated; every value is bound.
 	result, err := s.catalogW.ExecContext(ctx, `
 		UPDATE subscription SET next_poll_at_ms = ?, refresh_requested_at_ms = ?
-		WHERE refresh_requested_at_ms = 0 OR refresh_requested_at_ms <= ?
-	`, nowMS, nowMS, nowMS-minGap.Milliseconds())
+		WHERE (refresh_requested_at_ms = 0 OR refresh_requested_at_ms <= ?)
+		AND library_id IN (`+sqlPlaceholders(visible)+`)
+	`, args...)
 	if err != nil {
 		return 0, err
 	}

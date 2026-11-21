@@ -95,3 +95,51 @@ func hasJobKind(jobs []store.Job, kind store.JobKind) bool {
 	}
 	return false
 }
+
+// TestRefreshAllSubscriptionsHonoursLibraryScope pins the CORE-2955 review
+// fix: refresh-all neither refreshes nor counts a feed in a Library the
+// Manager cannot see, so the count never reveals that Library's feeds.
+func TestRefreshAllSubscriptionsHonoursLibraryScope(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	added := time.Now().UTC()
+	hiddenLibrary, err := st.CreateLibrary(ctx, "Hidden Feeds", false, "feedkit", "profile-managed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	visible, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local", FeedURL: "https://feeds.example.com/visible", Root: "/media/visible", Title: "Visible Feed",
+	}, added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: hiddenLibrary.ID, FeedURL: "https://feeds.example.com/hidden", Root: "/media/hidden", Title: "Hidden Feed",
+	}, added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := added.Add(time.Hour)
+	for _, id := range []store.SubscriptionID{visible.ID, hidden.ID} {
+		if err := st.RecordSubscriptionPollSuccess(ctx, id, later); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := newTestHandlerWithStore(st)
+
+	var all SubscriptionRefreshAllInfo
+	execGraph(t, handler, authorizeManager, `mutation { refreshAllSubscriptions { refreshed } }`, nil, "refreshAllSubscriptions", &all)
+	if all.Refreshed != 1 {
+		t.Fatalf("refresh all refreshed %d, want only the visible Library's feed", all.Refreshed)
+	}
+	now := time.Now().UTC()
+	for id, wantDue := range map[store.SubscriptionID]bool{visible.ID: true, hidden.ID: false} {
+		stored, err := st.Subscription(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := stored.Health.Due(now); got != wantDue {
+			t.Fatalf("subscription %s due = %v, want %v (health %+v)", id, got, wantDue, stored.Health)
+		}
+	}
+}

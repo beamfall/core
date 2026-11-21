@@ -231,7 +231,7 @@ func (fs *feedServer) item(guid, title, file string) string {
 // through the yield loop until it completes, the way the registry would.
 func runPoll(t *testing.T, st *store.Store, handler jobs.Handler) {
 	t.Helper()
-	if _, err := st.RequestAllSubscriptionsRefresh(context.Background(), time.Now().UTC(), 0); err != nil {
+	if _, err := st.RequestAllSubscriptionsRefresh(context.Background(), store.LibraryFilter{AllLibraries: true}, time.Now().UTC(), 0); err != nil {
 		t.Fatal(err)
 	}
 	drivePoll(t, st, handler)
