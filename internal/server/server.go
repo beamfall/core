@@ -1591,12 +1591,13 @@ func clientCanceled(ctx context.Context, err error) bool {
 }
 
 // writePlaybackScopeError answers a playback request whose credential did not
-// resolve to a scope. The access-schedule refusal is a distinct 403 carrying
-// the ACCESS_SCHEDULE_ENDED reason in both the X-Beamfall-Denial-Reason header
-// and the body's reason field; every other failure stays the generic 401
-// "invalid session" (CORE-2950).
+// resolve to a scope. An enrolled session's access-schedule refusal is a
+// distinct 403 carrying the ACCESS_SCHEDULE_ENDED reason in both the
+// X-Beamfall-Denial-Reason header and the body's reason field; every other
+// failure, a Profile-bound scoped key's schedule refusal included, stays the
+// generic 401 "invalid session" (CORE-2950).
 func writePlaybackScopeError(w http.ResponseWriter, r *http.Request, err error) {
-	if auth.AccessScheduleEnded(err) {
+	if auth.AccessScheduleReasonVisible(err, nil) {
 		w.Header().Set(auth.DenialReasonHeader, auth.DenialReasonAccessScheduleEnded)
 		writeJSON(w, http.StatusForbidden, map[string]string{
 			"error":  "access schedule ended",

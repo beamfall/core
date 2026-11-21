@@ -101,3 +101,65 @@ func TestStaleProfileTokenGetsGenericRefusalOutsideSchedule(t *testing.T) {
 		t.Fatalf("current Profile token: status = %d header = %q, want 403 %s", rec.Code, rec.Header().Get(auth.DenialReasonHeader), auth.DenialReasonAccessScheduleEnded)
 	}
 }
+
+type switchableDecisionResolver struct{ decisionID string }
+
+func (r *switchableDecisionResolver) Resolve(_ context.Context, _ string, _ streamtoken.DecisionWant) (string, bool, error) {
+	return r.decisionID, true, nil
+}
+
+// TestInvalidatedCompatDecisionTokenGetsGenericRefusalOutsideSchedule: a
+// matching Profile and device are not enough for the schedule reason. Once
+// the token's compatibility decision is invalidated it gets the route's
+// ordinary 401, exactly as it would inside the schedule.
+func TestInvalidatedCompatDecisionTokenGetsGenericRefusalOutsideSchedule(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	src := filepath.Join(t.TempDir(), "movie.bin")
+	if err := os.WriteFile(src, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetPrimaryMediaFile(ctx, "media-alpha", src); err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.Session(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	weekday := (int(time.Now().Weekday()) + 3) % 7
+	if err := st.SetProfileAccessWindows(ctx, "profile-managed", []store.ProfileAccessWindow{{Weekday: weekday, StartMinute: 0, EndMinute: 1440}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSessionProfile(ctx, session.ID, "profile-managed"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(100, 0).UTC()
+	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
+	resolver := &switchableDecisionResolver{decisionID: "decision-1"}
+	tokens.SetCompatDecisionResolver(resolver)
+	token, err := tokens.Issue(ctx, streamtoken.Grant{
+		Target:    streamtoken.TargetMediaDirect,
+		MediaID:   "media-alpha",
+		DeviceID:  session.DeviceID,
+		SessionID: session.ID,
+		ProfileID: "profile-managed",
+		ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(st, auth.NewService(st), tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
+	direct := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		handler.Direct(rec, httptest.NewRequest(http.MethodGet, "/api/media/direct/"+token, nil))
+		return rec
+	}
+
+	if rec := direct(); rec.Code != http.StatusForbidden || rec.Header().Get(auth.DenialReasonHeader) != auth.DenialReasonAccessScheduleEnded {
+		t.Fatalf("valid decision: status = %d header = %q, want 403 %s", rec.Code, rec.Header().Get(auth.DenialReasonHeader), auth.DenialReasonAccessScheduleEnded)
+	}
+	resolver.decisionID = "decision-2"
+	if rec := direct(); rec.Code != http.StatusUnauthorized || rec.Header().Get(auth.DenialReasonHeader) != "" {
+		t.Fatalf("invalidated decision: status = %d header = %q, want 401 and no reason", rec.Code, rec.Header().Get(auth.DenialReasonHeader))
+	}
+}

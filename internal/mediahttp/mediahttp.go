@@ -161,10 +161,11 @@ func (h *Handler) verifyAuthenticatedMediaGrant(ctx context.Context, authenticat
 	grant := authenticated.Grant()
 	scope, err := h.auth.Scope(ctx, grant.SessionID)
 	if err != nil {
-		if auth.AccessScheduleEnded(err) && !h.grantBindsLiveSession(ctx, grant) {
-			// The schedule refusal belongs to whichever Profile the session
-			// holds now. A token signed for another Profile or device gets
-			// the generic refusal, so it never learns that Profile's
+		if auth.AccessScheduleEnded(err) && !h.grantMaySeeScheduleReason(ctx, err, grant) {
+			// The schedule refusal belongs to the Profile the session held
+			// when the schedule was evaluated. A token signed for another
+			// Profile or device, or one whose own bindings no longer hold,
+			// gets the generic refusal and never learns that Profile's
 			// schedule state (CORE-2950).
 			return streamtoken.Grant{}, auth.Scope{}, errStreamTokenScopeMismatch
 		}
@@ -187,7 +188,8 @@ func (h *Handler) verifyAuthenticatedMediaGrant(ctx context.Context, authenticat
 // (CORE-2950). For every other failure it writes nothing and reports false,
 // and the route keeps its own status. The Stream Token verified before the
 // session was resolved, and verifyAuthenticatedMediaGrant surfaces the reason
-// only while the session is still bound to the grant's Profile and device, so
+// only when the session snapshot the schedule was evaluated against holds the
+// grant's Profile and device and the grant's other bindings still verify, so
 // it reaches only that Profile's own player.
 func refuseAccessScheduleEnded(w http.ResponseWriter, err error) bool {
 	if !auth.AccessScheduleEnded(err) {
@@ -202,12 +204,20 @@ func refuseAccessScheduleEnded(w http.ResponseWriter, err error) bool {
 // longer matches the live session.
 var errStreamTokenScopeMismatch = errors.New("stream token scope mismatch")
 
-// grantBindsLiveSession reports whether the session the grant names is still
-// bound to the grant's Profile and device. It is consulted only when scope
-// resolution failed on the access schedule, before that reason is surfaced.
-func (h *Handler) grantBindsLiveSession(ctx context.Context, grant streamtoken.Grant) bool {
-	session, err := h.store.Session(ctx, grant.SessionID)
-	return err == nil && session.ProfileID == grant.ProfileID && session.DeviceID == grant.DeviceID
+// grantMaySeeScheduleReason reports whether a grant refused on the access
+// schedule may carry that reason. The session snapshot the schedule was
+// evaluated against must hold the grant's session, Profile and device, and
+// the grant's compatibility decision and receiver binding must still verify,
+// exactly as they would have to before the grant serves bytes.
+func (h *Handler) grantMaySeeScheduleReason(ctx context.Context, err error, grant streamtoken.Grant) bool {
+	bound := auth.SessionBinding{SessionID: grant.SessionID, ProfileID: grant.ProfileID, DeviceID: grant.DeviceID}
+	if !auth.AccessScheduleReasonVisible(err, &bound) {
+		return false
+	}
+	if h.tokens.VerifyCompatDecision(ctx, grant) != nil {
+		return false
+	}
+	return verifyReceiverBinding(grant) == nil
 }
 
 // errUnverifiedReceiver refuses bytes for a receiver-bound grant whose receiver
