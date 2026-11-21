@@ -123,7 +123,10 @@ export function ImageViewerPage() {
     };
   }, []);
   const [toast, setToast] = useState<Toast | null>(null);
+  // A trash or restore in flight: one at a time, and no stepping meanwhile, so
+  // the queue carried in history always matches what the server holds.
   const trashing = useRef(false);
+  const streamRequest = useRef(0);
   const [clipPlaying, setClipPlaying] = useState(false);
   const video = useRef<HTMLVideoElement | null>(null);
   const [chromeIdle, setChromeIdle] = useState(false);
@@ -157,7 +160,9 @@ export function ImageViewerPage() {
     setOffset({ x: 0, y: 0 });
     setRotation(0);
     setClipPlaying(false);
-    // Leaving an item drops its stream, which ends its playback session.
+    // Leaving an item drops its stream, which ends its playback session, and
+    // supersedes a stream request still in flight.
+    streamRequest.current += 1;
     setOriginal((current) => (current && current.id !== mediaId ? null : current));
   }, [mediaId]);
 
@@ -196,7 +201,7 @@ export function ImageViewerPage() {
   );
   const step = useCallback(
     (target: PlayQueueItem | undefined, direction: "previous" | "next") => {
-      if (!target) return;
+      if (!target || trashing.current) return;
       stepping.current = direction;
       navigate(mediaPath("view", target.id), { replace: true, state: stateFor(target.title) });
     },
@@ -241,12 +246,14 @@ export function ImageViewerPage() {
   const ensureOriginal = useCallback(() => {
     if (!mediaId || !media || (original && original.id === mediaId)) return;
     const id = mediaId;
+    const request = ++streamRequest.current;
     setOriginal({ id, url: "", state: "loading" });
     fetchDirectStream(id, media.mediaClass || "image").then(
       (url) => {
-        if (currentId.current !== id) {
-          // The viewer moved on while the stream was being set up.
-          if (url) endPlayback(id);
+        if (request !== streamRequest.current) {
+          // Superseded. If the viewer also left the item, the session this
+          // request set up has no other owner to end it.
+          if (currentId.current !== id) endPlayback(id);
           return;
         }
         setOriginal((current) =>
@@ -254,6 +261,7 @@ export function ImageViewerPage() {
         );
       },
       (err) => {
+        if (request !== streamRequest.current) return;
         if (err instanceof ApiError && isRevealTerminalStatus(err.status)) {
           // The server ended the revealed identity: drop the image, reset once.
           setTerminal(true);
@@ -327,31 +335,32 @@ export function ImageViewerPage() {
     const before = navState.queue;
     const after = trashStepTarget(items, index);
     trashing.current = true;
-    trashMedia(id)
-      .then(
-        () => {
-          if (!mounted.current) return;
-          removedRef.current = new Set(removedRef.current).add(id);
-          setRemoved(removedRef.current);
-          setToast({ kind: "trashed", id, title, queue: before });
-          // With nothing left to step to, the viewer stays on the trashed
-          // item until its Undo toast goes, then closes.
-          if (currentId.current === id && after) step(after.target, after.direction);
-        },
-        () => {
-          if (mounted.current) setToast({ kind: "trashFailed", id, title });
-        },
-      )
-      .finally(() => {
+    trashMedia(id).then(
+      () => {
+        if (!mounted.current) return;
+        removedRef.current = new Set(removedRef.current).add(id);
+        setRemoved(removedRef.current);
+        setToast({ kind: "trashed", id, title, queue: before });
+        // With nothing left to step to, the viewer stays on the trashed
+        // item until its Undo toast goes, then closes.
         trashing.current = false;
-      });
+        if (currentId.current === id && after) step(after.target, after.direction);
+      },
+      () => {
+        trashing.current = false;
+        if (mounted.current) setToast({ kind: "trashFailed", id, title });
+      },
+    );
   }, [canTrash, index, items, media, mediaId, navState.queue, step]);
 
   const undoTrash = useCallback(
     (entry: Toast) => {
+      if (trashing.current) return;
+      trashing.current = true;
       setToast(null);
       restoreMedia(entry.id).then(
         () => {
+          trashing.current = false;
           if (!mounted.current) return;
           const left = new Set(removedRef.current);
           left.delete(entry.id);
@@ -364,6 +373,7 @@ export function ImageViewerPage() {
           });
         },
         () => {
+          trashing.current = false;
           if (mounted.current) setToast({ ...entry, kind: "restoreFailed" });
         },
       );
@@ -376,7 +386,7 @@ export function ImageViewerPage() {
   const dismissToast = useCallback(() => {
     setToast(null);
     if (
-      toast?.kind === "trashed" &&
+      (toast?.kind === "trashed" || toast?.kind === "restoreFailed") &&
       toast.id === currentId.current &&
       removedRef.current.has(toast.id)
     ) {
@@ -431,9 +441,9 @@ export function ImageViewerPage() {
           break;
         case "Delete":
         case "Backspace":
+          if (!canTrash) return;
           // A held key does not trash item after item.
-          if (!canTrash || event.repeat) return;
-          trash();
+          if (!event.repeat) trash();
           break;
         case "ArrowLeft":
         case "ArrowRight":
