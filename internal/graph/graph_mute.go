@@ -19,7 +19,7 @@ import (
 // management list, export, and clear-all are the My-Data citizen of §2.8.
 
 // MyMuteInfo is one "Not interested" entry the Profile has authored for itself:
-// the target species (entity|tag), the target id, whether the
+// the target species (entity|tag|media), the target id, whether the
 // Mute includes hierarchical descendants, and when it was set.
 type MyMuteInfo struct {
 	Kind               string `json:"kind"`
@@ -64,7 +64,7 @@ type MuteResult struct {
 }
 
 // setMute records a Mute on one Entity or Tag for the caller's OWN Profile.
-// `kind` is the closed vocabulary entity|tag; `targetID`
+// `kind` is the closed vocabulary entity|tag|media; `targetID`
 // is the Entity or Tag id; `includeDescendants` honors the hierarchical-category
 // case the enforcement predicate consumes. Own-Profile-only is
 // structural: scope.ProfileID is the only profile id passed to the store.
@@ -76,6 +76,7 @@ func (h *Handler) setMute(ctx context.Context, scope auth.Scope, req request) (M
 	if err := h.store.SetMute(ctx, scope.ProfileID, kind, targetID, includeDescendants, true); err != nil {
 		return MuteResult{}, err
 	}
+	h.muteChanged(ctx, scope)
 	return MuteResult{
 		Kind:               string(kind),
 		TargetID:           targetID,
@@ -97,11 +98,23 @@ func (h *Handler) clearMute(ctx context.Context, scope auth.Scope, req request) 
 	if err := h.store.SetMute(ctx, scope.ProfileID, kind, targetID, false, false); err != nil {
 		return MuteResult{}, err
 	}
+	h.muteChanged(ctx, scope)
 	return MuteResult{
 		Kind:     string(kind),
 		TargetID: targetID,
 		Muted:    false,
 	}, nil
+}
+
+// muteChanged tells the Profile's other sessions to refetch, since a Mute
+// changes what their shelves and browse show. Best-effort, like
+// itemActionDone: the write has committed and a missed event only delays the
+// refresh to the next load.
+func (h *Handler) muteChanged(ctx context.Context, scope auth.Scope) {
+	_ = h.store.AppendInvalidationEvent(ctx, store.InvalidationPayload{
+		ProfileID: scope.ProfileID,
+		Reason:    store.InvalidationReasonEngagementChanged,
+	}, time.Now().UTC())
 }
 
 // ClearAllMutesResult echoes the count of mutes cleared — the My-Data "clear
@@ -123,11 +136,12 @@ func (h *Handler) clearAllMutes(ctx context.Context, scope auth.Scope) (ClearAll
 	if err := h.store.ClearMutes(ctx, scope.ProfileID); err != nil {
 		return ClearAllMutesResult{}, err
 	}
+	h.muteChanged(ctx, scope)
 	return ClearAllMutesResult{Cleared: len(existing)}, nil
 }
 
 // parseMuteTarget reads and validates the shared set/clear target arguments: a
-// `kind` in the closed entity|tag vocabulary, a non-empty `targetID`, and the
+// `kind` in the closed entity|tag|media vocabulary, a non-empty `targetID`, and the
 // optional `includeDescendants` flag. An empty id or an out-of-vocabulary kind
 // is a stable client error (mirroring the store's own validation, surfaced here
 // as a client error so the client gets a 200-with-error rather than a generic
@@ -139,8 +153,8 @@ func parseMuteTarget(req request) (store.MuteKind, string, bool, error) {
 		return "", "", false, clientError("targetID is required")
 	}
 	kind := store.MuteKind(kindRaw)
-	if kind != store.MuteKindEntity && kind != store.MuteKindTag {
-		return "", "", false, clientError("kind must be entity or tag")
+	if !store.ValidMuteKind(kind) {
+		return "", "", false, clientError("kind must be entity, tag or media")
 	}
 	return kind, targetID, boolVar(req, "includeDescendants"), nil
 }

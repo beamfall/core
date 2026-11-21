@@ -375,6 +375,9 @@ func TestSetMuteValidates(t *testing.T) {
 	if err := st.SetMute(ctx, "", MuteKindEntity, "x", false, true); err == nil {
 		t.Fatal("empty profile must error")
 	}
+	if err := st.SetMute(ctx, "profile-1", MuteKindMedia, "x", false, true); err != nil {
+		t.Fatalf("media kind must be accepted: %v", err)
+	}
 	if err := st.SetMute(ctx, "profile-1", "bogus", "x", false, true); err == nil {
 		t.Fatal("invalid kind must error")
 	}

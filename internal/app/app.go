@@ -1299,6 +1299,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 			secrets:  secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")},
 		}
 	}
+	st.SetMuteParentRelations(plugins.EntityParentRelations)
 	graphHandler := graph.NewHandler(manifests, authService, st, plugins, graphOptions)
 	graphServer := serverGraphHandler{Handler: graphHandler}
 	srv := server.New(

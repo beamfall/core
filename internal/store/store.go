@@ -1116,6 +1116,10 @@ type Store struct {
 	// (CORE-2340, CORE-2383). Guarded by mu.
 	healthProfiler     LibraryHealthProfiler
 	healthArtworkProbe LibraryHealthArtworkProbe
+	// muteParentRelations names the relations a direct Entity Mute follows
+	// down to child Entities (app-injected from the active plugins; nil means
+	// a direct Mute reaches only the Entity's own Media).
+	muteParentRelations func() []string
 	// encDerivativePurgers are the app-injected seams that remove a purged
 	// encrypted Library's regenerable derivative ciphertext (CORE-2057).
 	// Guarded by mu; called only with mu released.
@@ -3600,6 +3604,19 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 		items, err = s.applyMuteFilterLocked(ctx, s.catalogR, query.ProfileID, filter, items)
 		if err != nil {
 			return nil, err
+		}
+		// Hide watched (CORE-2836): catalog shelves drop finished Media for a
+		// Profile that asked; its own engagement lists keep them.
+		if hideWatchedApplies(query.Kind) {
+			hide, err := s.profileHideWatchedLocked(ctx, query.ProfileID)
+			if err != nil {
+				return nil, err
+			}
+			if hide {
+				if items, err = s.dropWatchedLocked(ctx, query.ProfileID, items); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
 	if err := s.annotateRestrictedLocked(ctx, nil, items); err != nil {

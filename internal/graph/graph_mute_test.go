@@ -300,3 +300,35 @@ func TestSearchBadgesMutedItemsOnWire(t *testing.T) {
 		t.Errorf("unmuted co-resident item must not carry muted:true, got %#v", resp.Data.Search)
 	}
 }
+
+// TestSetMuteMediaKindHidesOneItemAndInvalidates covers CORE-2836: a viewer
+// hides a single Media item with kind "media", and every Mute write tells the
+// Profile's other sessions to refetch.
+func TestSetMuteMediaKindHidesOneItemAndInvalidates(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+
+	before := engagementInvalidations(t, st, "profile-default")
+	got := setMuteWire(t, handler, authorizeViewer, "media", "media-alpha", false)
+	if got.Kind != "media" || got.TargetID != "media-alpha" || !got.Muted {
+		t.Fatalf("setMute(media) = %#v", got)
+	}
+	if list := muteList(t, handler, authorizeViewer); len(list) != 1 || list[0].Kind != "media" {
+		t.Fatalf("mutes = %#v, want the one media Mute", list)
+	}
+	if n := engagementInvalidations(t, st, "profile-default"); n != before+1 {
+		t.Fatalf("invalidations after setMute = %d, want %d", n, before+1)
+	}
+	_, errs := post(t, handler,
+		`{"query":"mutation { clearMute(kind: \"media\", targetID: \"media-alpha\") { muted } }","variables":{"kind":"media","targetID":"media-alpha"}}`,
+		authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("clearMute errors = %#v", errs)
+	}
+	if n := engagementInvalidations(t, st, "profile-default"); n != before+2 {
+		t.Fatalf("invalidations after clearMute = %d, want %d", n, before+2)
+	}
+	if got := engagementInvalidations(t, st, "profile-managed"); got != 0 {
+		t.Fatalf("other Profile got %d invalidations, want 0", got)
+	}
+}
