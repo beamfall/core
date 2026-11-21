@@ -85,13 +85,26 @@ test.describe("poster size", () => {
       "aria-pressed",
       "true",
     );
-    const card = page.locator(".bf-shelf .bf-card").first();
+    // A hydrated media card (a link), not the loading skeleton's placeholder.
+    const card = page.locator(".bf-shelf a.bf-card").first();
     await expect(card).toBeVisible();
-    const cardWidth = () => card.evaluate((el) => el.getBoundingClientRect().width);
-    const largeWidth = await cardWidth();
+    const cardWidth = () => card.evaluate((el) => Math.round(el.getBoundingClientRect().width));
 
+    // Desktop widths, then the phone widths below the 760px breakpoint. Large
+    // keeps the shelf's earlier fixed width.
+    const widths = [
+      { viewport: 1240, Large: 164, Medium: 140, Small: 116 },
+      { viewport: 390, Large: 128, Medium: 108, Small: 92 },
+    ];
+    for (const { viewport, ...bySize } of widths) {
+      await page.setViewportSize({ width: viewport, height: 900 });
+      for (const [size, width] of Object.entries(bySize)) {
+        await control.getByRole("button", { name: `${size} posters` }).click();
+        await expect.poll(cardWidth, `${size} at ${viewport}px`).toBe(width);
+      }
+    }
+    await page.setViewportSize({ width: 1240, height: 900 });
     await control.getByRole("button", { name: "Small posters" }).click();
-    await expect.poll(cardWidth).toBeLessThan(largeWidth);
 
     await page.getByRole("link", { name: "Library", exact: true }).click();
     await expect(page.getByRole("button", { name: "Small posters" })).toHaveAttribute(
