@@ -27,7 +27,17 @@ function renderPage(locale: Locale = "en") {
   );
 }
 
-function server({ active = true, rejectSave = false, rejectSession = false } = {}) {
+function server({
+  active = true,
+  rejectSave = false,
+  rejectSession = false,
+  subtitleSave,
+}: {
+  active?: boolean;
+  rejectSave?: boolean;
+  rejectSession?: boolean;
+  subtitleSave?: Promise<void>;
+} = {}) {
   const profiles = [
     { id: "adult-a", name: "Alex", kind: "adult", entryPinSet: true },
     { id: "adult-b", name: "Sam", kind: "adult", entryPinSet: false },
@@ -59,6 +69,7 @@ function server({ active = true, rejectSave = false, rejectSession = false } = {
     }
     if (query.startsWith("mutation UpdateProfile")) {
       writes.push(variables);
+      if (query.includes("subtitleLanguages: $subtitleLanguages")) await subtitleSave;
       if (rejectSave) return Response.json({ errors: [{ message: "Server refusal" }] });
       const profile = profiles.find((p) => p.id === variables.profileID);
       if (!profile || !active)
@@ -219,6 +230,47 @@ describe("Manage profile settings", () => {
       { profileID: "adult-a", subtitleLanguages: [] },
     ]);
   });
+
+  it.each([false, true])(
+    "keeps settings open until a delayed subtitle save finishes (save rejected: %s)",
+    async (rejectSave) => {
+      const user = userEvent.setup();
+      let finishSave = () => {};
+      const subtitleSave = new Promise<void>((resolve) => {
+        finishSave = resolve;
+      });
+      const { writes } = server({ rejectSave, subtitleSave });
+      renderPage();
+      await user.click(screen.getByRole("button", { name: "Open settings" }));
+      const field = await screen.findByLabelText(STRINGS.en.manageProfileSubtitleLanguages);
+      await user.clear(field);
+      await user.type(field, "es");
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      expect(writes).toEqual([{ profileID: "adult-a", subtitleLanguages: ["es"] }]);
+
+      const done = screen.getByRole("button", { name: "Done" });
+      const otherProfile = screen.getByRole("button", { name: /^Jo/ });
+      expect(done).toBeDisabled();
+      expect(otherProfile).toBeDisabled();
+      await user.click(done);
+      await user.click(otherProfile);
+      expect(field).toBeVisible();
+      expect(field).toHaveValue("es");
+      expect(switchProfile).not.toHaveBeenCalled();
+
+      finishSave();
+      const result = rejectSave
+        ? STRINGS.en.manageProfileSubtitleLanguagesFailed
+        : STRINGS.en.manageProfileSubtitleLanguagesSaved;
+      expect(await screen.findByText(result)).toHaveAttribute(
+        "role",
+        rejectSave ? "alert" : "status",
+      );
+      expect(field).toHaveValue("es");
+      expect(done).toBeEnabled();
+      expect(otherProfile).toBeEnabled();
+    },
+  );
 
   it.each(["en", "fr", "de", "es", "pt"] as const)(
     "localizes both save errors in %s and retains the subtitle draft",

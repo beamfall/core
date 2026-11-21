@@ -97,8 +97,8 @@ export interface SessionState {
   relock: () => Promise<void>;
   /** Rebinds the session; `pin` is the target adult Profile's entry PIN. */
   switchProfile: (profileID: string, pin?: string) => Promise<void>;
-  /** Re-reads the roster in place (a renamed Profile, a new avatar). */
-  refreshProfiles: () => Promise<void>;
+  /** Re-reads the roster in place, applying any confirmed entry PIN before the read. */
+  refreshProfiles: (profileIDWithSavedEntryPin?: string) => Promise<void>;
   /**
    * Re-reads currentSession in place, inside the current identity epoch (a
    * Restrictions PIN set or changed). Nothing is cleared, so open pages keep
@@ -127,6 +127,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // no previous-epoch data is left on screen while the next epoch loads.
   const controllerRef = useRef<AbortController | null>(null);
   const refreshSeqRef = useRef(0);
+  const profileRefreshSeq = useRef(0);
 
   const beginEpoch = useCallback(() => {
     controllerRef.current?.abort();
@@ -328,10 +329,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [beginEpoch, loadEpoch],
   );
 
-  const refreshProfiles = useCallback(async () => {
+  const refreshProfiles = useCallback(async (profileIDWithSavedEntryPin?: string) => {
     const signal = controllerRef.current?.signal;
+    if (!signal || signal.aborted) return;
+    const seq = ++profileRefreshSeq.current;
+    if (profileIDWithSavedEntryPin !== undefined) {
+      setProfiles((current) =>
+        current.map((profile) =>
+          profile.id === profileIDWithSavedEntryPin ? { ...profile, entryPinSet: true } : profile,
+        ),
+      );
+    }
     const next = await fetchProfiles(signal);
-    if (!signal?.aborted) setProfiles(next);
+    if (!signal.aborted && seq === profileRefreshSeq.current) setProfiles(next);
   }, []);
 
   const refreshSession = useCallback(async () => {

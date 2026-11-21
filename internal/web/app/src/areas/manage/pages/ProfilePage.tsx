@@ -32,7 +32,7 @@ export function ProfilePage({
   const { profiles, session, isManager } = useSession();
   const [pinProfileID, setPinProfileID] = useState("");
   const [busy, setBusy] = useState(false);
-  const [savingPin, setSavingPin] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   const currentID = session?.profileID ?? "";
   const pinProfile = profiles.find((profile) => profile.id === pinProfileID);
@@ -63,7 +63,7 @@ export function ProfilePage({
                     variant={current ? "secondary" : "outline"}
                     size="sm"
                     className="w-full justify-start gap-2"
-                    disabled={busy || savingPin}
+                    disabled={busy || savingSettings}
                     aria-current={current ? "true" : undefined}
                     onClick={() => {
                       if (current) return;
@@ -88,7 +88,7 @@ export function ProfilePage({
         <ErrorLine message={error} />
       </ManageSection>
       {isManager && session?.profile === "adult" && (
-        <ProfileSettings savingPin={savingPin} setSavingPin={setSavingPin} />
+        <ProfileSettings saving={savingSettings} setSaving={setSavingSettings} />
       )}
       {pinProfile && (
         <ProfileSwitchPin
