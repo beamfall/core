@@ -121,6 +121,7 @@ export function SectionView({
               showYear={showsYear(item, repeated)}
               nameContainer={nameContainer}
               intrinsicArtwork={intrinsicArtwork}
+              quickPlay={containerClass !== "bf-stack"}
               focusAnchor={
                 navigationID
                   ? {

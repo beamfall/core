@@ -56,6 +56,7 @@ export function MediaItemCard({
   display = "poster",
   nameContainer = true,
   intrinsicArtwork = false,
+  quickPlay = true,
 }: {
   item: SourceItem;
   /** 1-based aria-posinset for grid a11y; omit outside a grid. */
@@ -84,6 +85,11 @@ export function MediaItemCard({
    */
   nameContainer?: boolean;
   intrinsicArtwork?: boolean;
+  /**
+   * Offer the poster's one-click Play (CORE-2826). Off for a stacked list or
+   * info row, which is already a row of its own (CORE-2881).
+   */
+  quickPlay?: boolean;
 }) {
   const navigate = useNavigate();
   const cardImageSizes = useCardImageSizes();
@@ -106,7 +112,8 @@ export function MediaItemCard({
   // A poster or thumbnail of playable Media gets a one-click Play beside More
   // (CORE-2826). Rows and play-on-activate cards already play, and a child
   // card's own Play button covers the rest.
-  const hasQuickPlay = isMedia && !item.locked && !isRow && !playOnActivate && !hasPlayButton;
+  const hasQuickPlay =
+    quickPlay && isMedia && !item.locked && !isRow && !playOnActivate && !hasPlayButton;
   const labelTitle = cardLabelTitle(
     item,
     heading,
