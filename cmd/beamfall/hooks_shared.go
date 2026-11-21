@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"path"
 	"strings"
 	"time"
 
@@ -197,27 +196,13 @@ func addPodcastHooks(hooks *app.Hooks) {
 		New: func(engine *scrape.Engine, secrets app.SecretSource, budgetFile string) graph.FeedSearcher {
 			endpoint, template, _ := feedDirectoryScraper("itunes-directory")
 			searcher := newFeedDirectorySearcher(engine, secrets, endpoint, template, budgetFile, time.Now)
-			searcher.lookup = func(link *url.URL) (string, bool) {
-				return appleDirectoryLookupURL(searcher.endpoint, link)
+			searcher.lookup = func(ctx context.Context, link *url.URL) ([]graph.FeedSearchResult, bool, error) {
+				found, matched, err := feeds.ResolveDirectoryLink(ctx, searcher, link)
+				return feedSearchResults(found), matched, err
 			}
 			return searcher
 		},
 	}
-}
-
-func appleDirectoryLookupURL(endpoint string, link *url.URL) (string, bool) {
-	if link.Hostname() != "podcasts.apple.com" {
-		return "", false
-	}
-	id, ok := strings.CutPrefix(path.Base(link.Path), "id")
-	if !ok || id == "" || strings.Trim(id, "0123456789") != "" {
-		return "", true
-	}
-	query := url.Values{"id": {id}}
-	if country, _, _ := strings.Cut(strings.TrimPrefix(link.Path, "/"), "/"); len(country) == 2 {
-		query.Set("country", country)
-	}
-	return endpoint + "/lookup?" + query.Encode(), true
 }
 
 type photosLocalExtractor struct{ inner *photos.LocalExtractor }
@@ -497,9 +482,13 @@ func (s *feedDirectorySearcher) searchExtendedDirectory(ctx context.Context, que
 	if err != nil {
 		return nil, err
 	}
-	out := make([]graph.FeedSearchResult, 0, len(results))
-	for _, feed := range results {
+	return feedSearchResults(results), nil
+}
+
+func feedSearchResults(found []feeds.Feed) []graph.FeedSearchResult {
+	out := make([]graph.FeedSearchResult, 0, len(found))
+	for _, feed := range found {
 		out = append(out, graph.FeedSearchResult{Title: feed.Title, FeedURL: feed.FeedURL, ArtworkURL: feed.ArtworkURL, Description: feed.Description})
 	}
-	return out, nil
+	return out
 }

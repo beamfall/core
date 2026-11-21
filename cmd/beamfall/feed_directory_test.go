@@ -293,10 +293,10 @@ func TestFeedDirectoryPersistsAdmissionBeforeRequest(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		index := requests.Add(1) - 1
-		var tokens [feedRequestsPerMin]time.Time
+		var tokens []time.Time
 		found, err := jsonstate.Load(budgetFile, &tokens)
-		if err != nil || !found || !tokens[index].Equal(now.Add(time.Minute)) {
-			t.Errorf("upstream received a request before its deadline was recorded: %v, %v, %v", found, tokens[index], err)
+		if err != nil || !found || len(tokens) != int(index)+1 || !tokens[index].Equal(now.Add(time.Minute)) {
+			t.Errorf("upstream received a request before its deadline was recorded: %v, %v, %v", found, tokens, err)
 		}
 		_, _ = io.WriteString(w, directoryFixture)
 	}))
@@ -318,6 +318,44 @@ func TestFeedDirectoryPersistsAdmissionBeforeRequest(t *testing.T) {
 	searcher.budgetFile = budgetFile
 	if _, err := searcher.SearchFeeds(t.Context(), "persisted"); err != nil || requests.Load() != 2 {
 		t.Fatalf("reservation after failed write = %v, %d upstream requests", err, requests.Load())
+	}
+}
+
+func TestFeedDirectoryRetriesBudgetLoad(t *testing.T) {
+	now := time.Unix(100, 0)
+	budgetFile := filepath.Join(t.TempDir(), "budget.json")
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		_, _ = io.WriteString(w, directoryFixture)
+	}))
+	defer server.Close()
+	// A directory at the state path makes the read fail, as an unreadable
+	// file would after startup.
+	if err := os.Mkdir(budgetFile, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	searcher := newFeedDirectorySearcher(scrape.New(scrape.WithInsecureLoopback()), nil, server.URL, "/search?term={query}", budgetFile, func() time.Time { return now })
+	if _, err := searcher.SearchFeeds(t.Context(), "unreadable"); err == nil || errors.Is(err, graph.ErrFeedSearchThrottled) || requests.Load() != 0 {
+		t.Fatalf("unreadable budget = %v, %d requests", err, requests.Load())
+	}
+
+	// Recovery keeps unexpired reservations and drops expired ones.
+	saved := []time.Time{now.Add(-time.Second)}
+	for range feedRequestsPerMin - 1 {
+		saved = append(saved, now.Add(30*time.Second))
+	}
+	if err := os.Remove(budgetFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := jsonstate.Save(budgetFile, saved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := searcher.SearchFeeds(t.Context(), "recovered"); err != nil || requests.Load() != 1 {
+		t.Fatalf("after recovery = %v, %d requests", err, requests.Load())
+	}
+	if _, err := searcher.SearchFeeds(t.Context(), "full"); !errors.Is(err, graph.ErrFeedSearchThrottled) || requests.Load() != 1 {
+		t.Fatalf("restored reservations = %v, %d requests", err, requests.Load())
 	}
 }
 

@@ -7,9 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -41,16 +38,18 @@ type feedDirectorySearcher struct {
 	endpoint string
 	template string
 	now      func() time.Time
-	lookup   func(*url.URL) (string, bool)
+	// lookup lets the owning plugin resolve a directory page link through
+	// this searcher's budgeted fetcher. matched=false falls back to discovery.
+	lookup func(context.Context, *url.URL) (results []graph.FeedSearchResult, matched bool, err error)
 
 	mu       sync.Mutex
 	cache    map[string]cachedFeedSearch
 	inFlight map[string]*feedSearchCall
 
-	budgetMu   sync.Mutex
-	budgetFile string
-	budgetErr  error
-	tokens     [feedRequestsPerMin]time.Time
+	budgetMu     sync.Mutex
+	budgetFile   string
+	budgetLoaded bool
+	reserved     []time.Time // refill deadlines of the tokens in use
 }
 
 type cachedFeedSearch struct {
@@ -67,7 +66,7 @@ type feedSearchCall struct {
 }
 
 func newFeedDirectorySearcher(engine feedDirectoryFetcher, secrets app.SecretSource, endpoint, template, budgetFile string, now func() time.Time) *feedDirectorySearcher {
-	s := &feedDirectorySearcher{
+	return &feedDirectorySearcher{
 		engine:     engine,
 		secrets:    secrets,
 		endpoint:   strings.TrimRight(endpoint, "/"),
@@ -77,14 +76,6 @@ func newFeedDirectorySearcher(engine feedDirectoryFetcher, secrets app.SecretSou
 		inFlight:   make(map[string]*feedSearchCall),
 		budgetFile: budgetFile,
 	}
-	var tokens []time.Time
-	found, err := jsonstate.Load(budgetFile, &tokens)
-	if err == nil && found && len(tokens) != len(s.tokens) {
-		err = errors.New("invalid feed request budget size")
-	}
-	s.budgetErr = err
-	copy(s.tokens[:], tokens)
-	return s
 }
 
 func (s *feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) ([]graph.FeedSearchResult, error) {
@@ -109,8 +100,13 @@ func (s *feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) (
 	link.RawFragment = ""
 	return s.searchCached(ctx, link.String(), func(ctx context.Context) ([]graph.FeedSearchResult, error) {
 		if s.lookup != nil {
-			if rawURL, matched := s.lookup(link); matched {
-				return s.lookupFeed(ctx, rawURL)
+			results, matched, err := s.lookup(ctx, link)
+			if matched {
+				if err != nil {
+					return nil, err
+				}
+				results = s.validFeedResults(results)
+				return results[:min(1, len(results))], nil
 			}
 		}
 		return s.discoverWebsiteFeed(ctx, link)
@@ -187,43 +183,31 @@ func (s *feedDirectorySearcher) cacheResultLocked(key string, results []graph.Fe
 func (s *feedDirectorySearcher) admitRequest() error {
 	s.budgetMu.Lock()
 	defer s.budgetMu.Unlock()
-	if s.budgetErr != nil {
-		return fmt.Errorf("load feed request budget: %w", s.budgetErr)
+	if !s.budgetLoaded {
+		// Load lazily so a read failure is retried by the next request
+		// instead of disabling search until restart. A file that does not
+		// decode is replaced: it can refund at most one minute of requests.
+		var saved []time.Time
+		if found, err := jsonstate.Load(s.budgetFile, &saved); err != nil && !found {
+			return fmt.Errorf("load feed request budget: %w", err)
+		} else if err != nil {
+			saved = nil
+		}
+		s.reserved, s.budgetLoaded = saved, true
 	}
 	// Each token refills one minute after use. Persist the new deadline
 	// before admission so a restart cannot refund a request already sent.
 	now := s.now()
-	for i, deadline := range s.tokens {
-		if now.Before(deadline) {
-			continue
-		}
-		updated := s.tokens
-		updated[i] = now.Add(time.Minute)
-		if err := saveFeedRequestBudget(s.budgetFile, updated); err != nil {
-			return fmt.Errorf("persist feed request budget: %w", err)
-		}
-		s.tokens = updated
-		return nil
+	active := slices.DeleteFunc(slices.Clone(s.reserved), func(deadline time.Time) bool { return !now.Before(deadline) })
+	if len(active) >= feedRequestsPerMin {
+		return graph.ErrFeedSearchThrottled
 	}
-	return graph.ErrFeedSearchThrottled
-}
-
-func saveFeedRequestBudget(path string, tokens [feedRequestsPerMin]time.Time) error {
-	if err := jsonstate.Save(path, tokens); err != nil {
-		return err
+	active = append(active, now.Add(time.Minute))
+	if err := jsonstate.Save(s.budgetFile, active); err != nil {
+		return fmt.Errorf("persist feed request budget: %w", err)
 	}
-	if runtime.GOOS == "windows" {
-		// Windows does not support syncing a directory handle. The synced
-		// file has already been published for subsequent process starts.
-		return nil
-	}
-	// Save syncs the new contents before renaming. Sync the containing
-	// directory to make the replacement itself durable before admission.
-	dir, err := os.Open(filepath.Dir(path)) // #nosec G304 -- the server data directory, opened only for sync.
-	if err != nil {
-		return err
-	}
-	return errors.Join(dir.Sync(), dir.Close())
+	s.reserved = active
+	return nil
 }
 
 // FetchDocument keeps the signed extended directory on the same budget,
@@ -254,18 +238,6 @@ func (s *feedDirectorySearcher) searchText(ctx context.Context, query string) ([
 		results = append(results, extended...)
 	}
 	return s.validFeedResults(results), nil
-}
-
-func (s *feedDirectorySearcher) lookupFeed(ctx context.Context, rawURL string) ([]graph.FeedSearchResult, error) {
-	if rawURL == "" {
-		return nil, nil
-	}
-	results, err := s.readITunesResults(ctx, rawURL)
-	if err != nil {
-		return nil, err
-	}
-	results = s.validFeedResults(results)
-	return results[:min(1, len(results))], nil
 }
 
 func (s *feedDirectorySearcher) validFeedResults(results []graph.FeedSearchResult) []graph.FeedSearchResult {

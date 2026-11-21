@@ -10,7 +10,7 @@ require (
 	github.com/beamfall/plugin-karaoke v0.1.11
 	github.com/beamfall/plugin-music v0.1.19
 	github.com/beamfall/plugin-photos v0.1.15
-	github.com/beamfall/plugin-podcasts v0.1.15
+	github.com/beamfall/plugin-podcasts v0.1.16-0.20261121204532-391c65384aae
 	github.com/beamfall/plugin-sdk v0.4.7
 	github.com/brutella/dnssd v1.2.14
 	github.com/fsnotify/fsnotify v1.10.1

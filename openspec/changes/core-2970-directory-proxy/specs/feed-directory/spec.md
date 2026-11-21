@@ -27,6 +27,12 @@ The server SHALL share in-flight searches by normalized key and cache successful
 - **THEN** unexpired reservations continue to count against the budget until their original deadlines
 - **AND** the server sends another upstream request only after durably recording its reservation
 
+#### Scenario: Budget file unreadable
+
+- **WHEN** the server cannot read its persisted upstream request reservations
+- **THEN** it refuses the upstream request without sending it
+- **AND** a later request retries the read and, once it succeeds, counts the unexpired reservations
+
 ### Requirement: Feed directory identity and credentials
 
 The server SHALL send `Beamfall/<version> (+https://beamfall.com/bot)` as the User-Agent on directory requests and feed polls, using the running release version. The optional extended directory SHALL receive requests only when the operator has supplied both its API key and secret.
@@ -48,7 +54,7 @@ The existing `searchFeeds` field SHALL accept absolute website URLs. Outbound di
 #### Scenario: Pasted Apple Podcasts show link
 
 - **WHEN** a show URL provides a numeric show ID and the iTunes lookup API supplies a usable feed
-- **THEN** the compiled plugin adapter uses the iTunes lookup API and the field returns that feed
+- **THEN** the plugin resolves it through the server's budgeted fetcher with the iTunes lookup API and the field returns that feed
 
 #### Scenario: Pasted website link
 

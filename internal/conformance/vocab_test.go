@@ -145,7 +145,6 @@ var vocabAllowedLines = map[string][]vocabAllowed{
 	"cmd/beamfall/hooks_shared.go": {
 		{"audiobook", `github.com/beamfall/plugin-audiobook`},
 		{"podcasts", `github.com/beamfall/plugin-podcasts`},
-		{"podcasts", `link.hostname() != "podcasts.apple.com"`},
 		{"podcast", `podcast-index-key`},
 		{"podcast", `podcast-index-secret`},
 	},
