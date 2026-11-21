@@ -77,6 +77,9 @@ export function GroupFixPanel({
   // The year the shown candidates were searched with: it picks the default
   // selection and the Suggested badge, so a corrected year wins over the folder.
   const [suggestedYear, setSuggestedYear] = useState<number | undefined>(undefined);
+  // The year the last title search used: null before any search, undefined
+  // for a search with no year. The naming hint follows it.
+  const [lastSearchYear, setLastSearchYear] = useState<number | undefined | null>(null);
   const searched = useRef(false);
   // Bumped on every selection; a preview answered for an older one is dropped.
   const selection = useRef(0);
@@ -86,7 +89,7 @@ export function GroupFixPanel({
   const problem = groupProblem(
     t,
     group,
-    suggestedYear && hint ? { ...hint, year: suggestedYear } : hint,
+    lastSearchYear === null || !hint ? hint : { ...hint, year: lastSearchYear },
   );
   const count = group.items.length;
 
@@ -112,6 +115,7 @@ export function GroupFixPanel({
       });
       setCandidates(scored);
       setSuggestedYear(searchYear);
+      setLastSearchYear(searchYear);
       const preferred = searchYear
         ? scored.find((candidate) => candidate.year === searchYear)
         : undefined;
@@ -122,6 +126,14 @@ export function GroupFixPanel({
       setBusy(false);
     }
   };
+
+  // A panel for another group replaces this one: its late answers are dropped.
+  useEffect(
+    () => () => {
+      selection.current++;
+    },
+    [],
+  );
 
   // The panel is keyed by group, so this runs once per group: the operator
   // lands on candidates already searched with the folder's name and year.

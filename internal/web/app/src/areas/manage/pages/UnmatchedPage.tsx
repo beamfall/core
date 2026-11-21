@@ -53,7 +53,11 @@ export function UnmatchedPage() {
   // The first file path of each group's first item, keyed by mediaID: it
   // drives the folder hint and the naming panel.
   const [paths, setPaths] = useState<Record<string, string>>({});
-  const pathsInFlight = useRef(new Set<string>());
+  // Lookups waiting to start, shared by every worker so the open group can
+  // move to the front; ids already started; workers running.
+  const pathQueue = useRef<string[]>([]);
+  const pathsStarted = useRef(new Set<string>());
+  const pathWorkers = useRef(0);
   // False when the queue holds more rows than one load reads.
   const [complete, setComplete] = useState(true);
   // True while a panel batch writes: switching groups or starting another
@@ -71,8 +75,10 @@ export function UnmatchedPage() {
       setComplete(queue.complete);
       setLibraries(libs);
       setLibraryID((current) => current || libs[0]?.id || "");
+      return true;
     } catch {
       setError(t("unmatchedUnavailable"));
+      return false;
     } finally {
       setLoading(false);
     }
@@ -87,38 +93,49 @@ export function UnmatchedPage() {
   // few at a time, the open group first, and each path shows as it arrives.
   const activeMediaID = active?.items[0]?.mediaID;
   useEffect(() => {
-    const ids = groups.map((group) => group.items[0]?.mediaID).filter((id): id is string => !!id);
-    if (activeMediaID) ids.unshift(activeMediaID);
-    const queue = [...new Set(ids)].filter(
-      (id) => !(id in paths) && !pathsInFlight.current.has(id),
-    );
-    if (queue.length === 0) return;
-    // Every queued id counts as in flight now, so a rerun of this effect
-    // while these workers drain starts no second lookup for the same id.
-    const inFlight = pathsInFlight.current;
-    for (const id of queue) inFlight.add(id);
+    const queue = pathQueue.current;
+    const started = pathsStarted.current;
+    for (const group of groups) {
+      const id = group.items[0]?.mediaID;
+      if (id && !(id in paths) && !started.has(id) && !queue.includes(id)) queue.push(id);
+    }
+    if (activeMediaID && queue.includes(activeMediaID)) {
+      queue.splice(queue.indexOf(activeMediaID), 1);
+      queue.unshift(activeMediaID);
+    }
     const worker = async () => {
+      pathWorkers.current++;
       for (let id = queue.shift(); id; id = queue.shift()) {
+        started.add(id);
         let path = "";
         try {
           path = (await fetchMediaFiles(id))[0]?.path ?? "";
         } catch {
           // Leave the path empty: the group renders without a folder hint.
         }
-        inFlight.delete(id);
         const found = path;
         const key = id;
         setPaths((prev) => (key in prev ? prev : { ...prev, [key]: found }));
       }
+      pathWorkers.current--;
     };
-    for (let n = 0; n < PATH_WORKERS; n++) void worker();
+    while (pathWorkers.current < Math.min(PATH_WORKERS, queue.length)) void worker();
   }, [groups, paths, activeMediaID]);
+
+  // After a write the rows on screen are stale. If the reload fails they are
+  // dropped, not left actionable, so no second batch runs against them.
+  const reloadAfterWrite = async () => {
+    if (!(await load())) {
+      setItems([]);
+      setComplete(true);
+    }
+    setWriting(false);
+  };
 
   const onFinished = async (message: string) => {
     setError("");
     setNotice("");
-    await load();
-    setWriting(false);
+    await reloadAfterWrite();
     if (message) setNotice(message);
   };
 
@@ -129,8 +146,7 @@ export function UnmatchedPage() {
     setError("");
     setWriting(true);
     const results = await Promise.allSettled(items.map((item) => dismissUnmatched(item.mediaID)));
-    await load();
-    setWriting(false);
+    await reloadAfterWrite();
     if (results.some((r) => r.status === "rejected")) setError(t("unmatchedUnavailable"));
   };
 
@@ -216,7 +232,7 @@ export function UnmatchedPage() {
         {loading && items.length === 0 ? (
           <EmptyLine message={t("loading")} />
         ) : groups.length === 0 ? (
-          <EmptyLine message={t("unmatchedEmpty")} />
+          !error && <EmptyLine message={t("unmatchedEmpty")} />
         ) : (
           <div className="grid gap-3 lg:grid-cols-[minmax(220px,0.8fr)_minmax(320px,1.4fr)]">
             <ul className="divide-y self-start rounded-md border border-border bg-card">

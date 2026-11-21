@@ -410,6 +410,53 @@ describe("UnmatchedPage", () => {
     );
   });
 
+  it("drops the stale rows when the reload after a batch fails", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openedOnGroup();
+    await screen.findByRole("button", { name: /Suggested/ });
+
+    vi.mocked(fetchUnmatchedQueuePages).mockRejectedValueOnce(new Error("offline"));
+    await user.click(screen.getByRole("button", { name: "Match all 3" }));
+    await screen.findByText("Could not load unmatched records.");
+    expect(screen.queryByRole("button", { name: "Match all 3" })).not.toBeInTheDocument();
+    expect(fixMatch).toHaveBeenCalledTimes(3);
+  });
+
+  it("looks up the opened group's path ahead of the others", async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 12 }, (_, n) => ({
+      ...below,
+      mediaID: `media-${n}`,
+      candidateID: `guess-${n}`,
+      candidateTitle: `Guess ${n}`,
+    }));
+    vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(queue(many));
+    const pending = new Map<string, () => void>();
+    vi.mocked(fetchMediaFiles).mockImplementation(
+      (mediaID) =>
+        new Promise((resolve) => {
+          pending.set(mediaID, () =>
+            resolve([
+              {
+                mediaID,
+                path: `/media/${mediaID}/file.mkv`,
+                contentFingerprint: "",
+                versionLabel: "",
+                partOrdinal: 0,
+              },
+            ]),
+          );
+        }),
+    );
+    renderPage();
+    await waitFor(() => expect(fetchMediaFiles).toHaveBeenCalledTimes(4));
+    await user.click(screen.getByRole("button", { name: /Guess 11/ }));
+    pending.get("media-1")?.();
+    await waitFor(() => expect(fetchMediaFiles).toHaveBeenCalledTimes(5));
+    expect(fetchMediaFiles).toHaveBeenLastCalledWith("media-11");
+  });
+
   it("explains instead of searching for a source with no catalog", async () => {
     vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(
       queue([{ ...below, scraperID: "manual", candidateID: "", candidateTitle: "" }]),
