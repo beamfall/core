@@ -1,10 +1,12 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import "@testing-library/jest-dom/vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { graphql, postJSON } from "@/lib/api";
 import { fetchClientPrefs, fetchSemanticCapability, searchResult } from "@/lib/graphql";
+import type { SearchResultResponse } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { notifyEngagementChanged } from "../actions/engagementSync";
 import { SearchPage } from "./SearchPage";
@@ -13,26 +15,41 @@ vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 vi.mock("../components/ViewerActions", () => ({ ViewerActions: () => null }));
-vi.mock("../components/MediaItemCard", () => ({
-  MediaItemCard: ({
-    item,
-    queue,
-    queueLockKnown,
-  }: {
-    item: { title: string };
-    queue?: { id: string }[];
-    queueLockKnown?: boolean;
-  }) => (
-    <li data-queue={queue?.map((entry) => entry.id).join(",")} data-lock-known={queueLockKnown}>
-      {item.title}
-    </li>
-  ),
+vi.mock("../components/MediaItemCard", async (importOriginal) => {
+  const { MediaItemCard } = await importOriginal<typeof import("../components/MediaItemCard")>();
+  return {
+    MediaItemCard: (props: ComponentProps<typeof MediaItemCard>) =>
+      props.item.id.startsWith("queue-menu-") ? (
+        <MediaItemCard {...props} />
+      ) : (
+        <li
+          data-queue={props.queue?.map((entry) => entry.id).join(",")}
+          data-lock-known={props.queueLockKnown}
+        >
+          {props.item.title}
+        </li>
+      ),
+  };
+});
+
+vi.mock("@/lib/session", () => ({
+  useViewerIdentity: () => "viewer-1",
+  useSession: () => ({ session: { profileID: "profile-a" }, revealed: false }),
+}));
+
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  graphql: vi.fn(),
+  postJSON: vi.fn(),
 }));
 
 vi.mock("@/lib/graphql", () => ({
   searchResult: vi.fn(),
   fetchSemanticCapability: vi.fn(),
   fetchClientPrefs: vi.fn(),
+  fetchMedia: vi.fn(async () => null),
+  fetchItemState: vi.fn(async () => null),
+  fetchMutes: vi.fn(async () => []),
 }));
 
 // Radix Select drives pointer-capture / scrollIntoView APIs that jsdom does not
@@ -70,6 +87,14 @@ function renderPage(entry = "/search") {
       </MemoryRouter>
     </I18nProvider>,
   );
+}
+
+function deferred<T>() {
+  let resolve!: (response: T) => void;
+  const response = new Promise<T>((finish) => {
+    resolve = finish;
+  });
+  return { response, resolve };
 }
 
 describe("SearchPage mode exposure", () => {
@@ -354,6 +379,162 @@ describe("keyword pagination (CORE-2321)", () => {
       offset: 50,
       limit: 50,
     });
+  });
+
+  it("applies a confirmed lock and drops unverified queue actions when refresh page two fails", async () => {
+    const user = userEvent.setup();
+    const track = {
+      id: "queue-menu-first",
+      title: "First track",
+      kind: "media",
+      mediaClass: "audio",
+      mode: "keyword" as const,
+      score: 0,
+      locked: false,
+    };
+    const second = { ...track, id: "queue-menu-second", title: "Second track" };
+    const filler = Array.from({ length: 49 }, (_, i) => ({
+      ...track,
+      id: `filler-${i}`,
+      title: `Other track ${i}`,
+    }));
+    const firstPage = {
+      mode: "keyword" as const,
+      restrictedResultsPresent: false,
+      items: [track, ...filler],
+      hasMore: true,
+    };
+    const emptyQueue = {
+      currentSession: { profileID: "profile-a", revealed: false },
+      sourceItems: [],
+    };
+    const queueRead = deferred<typeof emptyQueue>();
+    vi.mocked(graphql).mockReset().mockReturnValue(queueRead.response);
+    vi.mocked(postJSON)
+      .mockReset()
+      .mockResolvedValue({ data: { queueAdd: [track] } });
+    vi.mocked(searchResult)
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce({ ...firstPage, items: [second], hasMore: false })
+      .mockResolvedValueOnce({
+        ...firstPage,
+        items: [{ ...track, title: "First track refreshed", locked: true }, ...filler],
+      })
+      .mockRejectedValueOnce(new Error("Page two unavailable"));
+
+    renderPage("/search?q=track");
+    const firstMenu = await screen.findByRole("button", { name: "More actions for First track" });
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    const secondMenu = await screen.findByRole("button", { name: "More actions for Second track" });
+    await user.click(firstMenu);
+    const playNext = await screen.findByRole("menuitem", { name: "Play next" });
+    expect(playNext).toBeEnabled();
+    expect(screen.getByRole("menuitem", { name: "Add to queue" })).toBeEnabled();
+    await user.click(playNext);
+    await waitFor(() => expect(graphql).toHaveBeenCalledOnce());
+
+    await act(async () => notifyEngagementChanged());
+    expect(searchResult).toHaveBeenLastCalledWith("track", "keyword", expect.any(AbortSignal), {
+      offset: 50,
+      limit: 50,
+    });
+    await act(async () => queueRead.resolve(emptyQueue));
+    expect(postJSON).not.toHaveBeenCalled();
+    expect(await screen.findByRole("link", { name: "First track refreshed" })).toBeInTheDocument();
+    expect(screen.getByText("Other track 0")).toHaveAttribute("data-lock-known", "true");
+    await user.click(
+      screen.getByRole("button", { name: "More actions for First track refreshed" }),
+    );
+    await screen.findByRole("menuitem", { name: "Add to playlist" });
+    expect(screen.queryByRole("menuitem", { name: "Play next" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Add to queue" })).toBeNull();
+    await user.keyboard("{Escape}");
+    await user.click(secondMenu);
+    await screen.findByRole("menuitem", { name: "Add to playlist" });
+    expect(screen.queryByRole("menuitem", { name: "Play next" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Add to queue" })).toBeNull();
+  });
+
+  it.each(["page first", "refresh first"])(
+    "keeps queue eligibility from a newer Load more read when %s settles",
+    async (order) => {
+      const user = userEvent.setup();
+      const track = {
+        id: "first",
+        title: "First track",
+        kind: "media",
+        mediaClass: "audio",
+        mode: "keyword" as const,
+        score: 0,
+      };
+      const firstPage = {
+        mode: "keyword" as const,
+        restrictedResultsPresent: false,
+        items: [track],
+        hasMore: true,
+      };
+      const refresh = deferred<SearchResultResponse>();
+      const page = deferred<SearchResultResponse>();
+      vi.mocked(searchResult)
+        .mockResolvedValueOnce(firstPage)
+        .mockReturnValueOnce(refresh.response)
+        .mockReturnValueOnce(page.response);
+
+      renderPage("/search?q=track");
+      expect(await screen.findByText("First track")).toHaveAttribute("data-lock-known", "true");
+      act(() => notifyEngagementChanged());
+      await user.click(screen.getByRole("button", { name: "Load more" }));
+      expect(searchResult).toHaveBeenCalledTimes(3);
+      const finishRefresh = () =>
+        act(async () =>
+          refresh.resolve({ ...firstPage, items: [{ ...track, title: "Refreshed" }] }),
+        );
+      const finishPage = () =>
+        act(async () =>
+          page.resolve({
+            ...firstPage,
+            items: [{ ...track, id: "second", title: "Second track" }],
+            hasMore: false,
+          }),
+        );
+      if (order === "page first") {
+        await finishPage();
+        expect(screen.getByText("Second track")).toHaveAttribute("data-lock-known", "true");
+        await finishRefresh();
+      } else {
+        await finishRefresh();
+        await finishPage();
+      }
+      expect(screen.getByText("Refreshed")).toHaveAttribute("data-lock-known", "true");
+      expect(screen.getByText("Second track")).toHaveAttribute("data-lock-known", "true");
+    },
+  );
+
+  it("does not restore queue eligibility when an empty refresh beats the initial response", async () => {
+    const initial = deferred<SearchResultResponse>();
+    const empty = { mode: "keyword" as const, restrictedResultsPresent: false, items: [] };
+    vi.mocked(searchResult).mockReturnValueOnce(initial.response).mockResolvedValueOnce(empty);
+
+    renderPage("/search?q=track");
+    await waitFor(() => expect(searchResult).toHaveBeenCalledTimes(1));
+    await act(async () => notifyEngagementChanged());
+    expect(searchResult).toHaveBeenCalledTimes(2);
+    await act(async () =>
+      initial.resolve({
+        ...empty,
+        items: [
+          {
+            id: "omitted",
+            title: "Omitted",
+            kind: "media",
+            mediaClass: "audio",
+            mode: "keyword",
+            score: 0,
+          },
+        ],
+      }),
+    );
+    expect(await screen.findByText("Omitted")).toHaveAttribute("data-lock-known", "false");
   });
 
   it("does not mark a late page from before the refresh as unlocked", async () => {
