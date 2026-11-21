@@ -47,6 +47,10 @@ type ActiveSession struct {
 	// session and Media (CORE-2305). It is zero for grants recorded before
 	// activity was tracked.
 	LastActiveAt time.Time
+	// ProfileTied is set when grants of more than one Profile share the latest
+	// LastActiveAt, so the ledger cannot tell which Profile reported last and
+	// ProfileID is one of them (CORE-2682). A per-Profile reader drops the row.
+	ProfileTied bool
 }
 
 // LiveSessionActivityWindow is how long a playback with no new grant and no
@@ -164,10 +168,14 @@ func (s *Store) ActiveSessions(ctx context.Context, now time.Time, filter Librar
 		if r.expiresAt.After(entry.ExpiresAt) {
 			entry.ExpiresAt = r.expiresAt
 		}
-		if r.lastActive.After(entry.LastActiveAt) {
+		switch {
+		case r.lastActive.After(entry.LastActiveAt):
 			entry.LastActiveAt = r.lastActive
 			entry.ProfileID = r.profileID
 			entry.ProfileName = profileNames[r.profileID]
+			entry.ProfileTied = false
+		case r.lastActive.Equal(entry.LastActiveAt) && r.profileID != entry.ProfileID:
+			entry.ProfileTied = true
 		}
 	}
 
