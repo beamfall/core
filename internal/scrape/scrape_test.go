@@ -1789,3 +1789,68 @@ func TestLookupResolvesEntityMapRelationAttributesFiltersAndOrdinals(t *testing.
 		t.Fatalf("requests = %v, want the primary lookup plus one capped person lookup", paths)
 	}
 }
+
+func TestLookupRetries503OnlyWithRetryAfter(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		retryAfter   string
+		wantRequests int
+		wantErr      bool
+	}{
+		{name: "busy with Retry-After is retried", retryAfter: "1", wantRequests: 2},
+		{name: "plain 503 is surfaced", retryAfter: "", wantRequests: 1, wantErr: true},
+		{name: "Retry-After beyond the cap is surfaced", retryAfter: "3600", wantRequests: 1, wantErr: true},
+		{name: "overflowing Retry-After is surfaced", retryAfter: "10000000000", wantRequests: 1, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if requests == 1 {
+					if tc.retryAfter != "" {
+						w.Header().Set("Retry-After", tc.retryAfter)
+					}
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				fmt.Fprint(w, `{"name": "Vega Prime"}`)
+			}))
+			defer server.Close()
+
+			clock := newManualClock()
+			engine := New(WithInsecureLoopback())
+			engine.clock = clock
+			done := make(chan error, 1)
+			go func() {
+				_, err := engine.Lookup(context.Background(), plugin.ScraperSpec{
+					ID: "retrysource", Kind: "http-json", Endpoint: server.URL, LookupTemplate: "/{id}",
+					FieldMap: map[string]string{"title": "name"}, MinRequestIntervalMS: 1000,
+				}, "1")
+				done <- err
+			}()
+
+			if tc.wantRequests > 1 {
+				<-clock.waitCreated
+				if len(clock.waits) != 1 || clock.waits[0] != time.Second {
+					t.Fatalf("waits = %v, want one 1s Retry-After wait", clock.waits)
+				}
+				clock.advance(time.Second)
+				clock.releaseLast()
+			}
+			err := <-done
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "status 503") || !IsTransient(err) {
+					t.Fatalf("err = %v, want a transient surfaced 503", err)
+				}
+			} else if err != nil {
+				t.Fatalf("Lookup returned error: %v", err)
+			}
+			if requests != tc.wantRequests {
+				t.Fatalf("requests = %d, want %d", requests, tc.wantRequests)
+			}
+			if tc.wantRequests > 1 && !engine.lastRequest["retrysource"].Equal(clock.Now()) {
+				t.Fatalf("rate-limit anchor = %v, want the retry time %v", engine.lastRequest["retrysource"], clock.Now())
+			}
+		})
+	}
+}

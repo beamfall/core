@@ -55,7 +55,7 @@ func (e *Engine) FetchFeed(ctx context.Context, rawURL, etag, lastModified, auth
 		if sameOrigin && lastModified != "" {
 			req.Header.Set("If-Modified-Since", lastModified)
 		}
-		resp, err := e.requestWith429Retry(ctx, req, client.Do)
+		resp, err := e.requestWithRetry(ctx, req, client.Do)
 		if err != nil {
 			return FeedResult{}, sanitizedTransportError(current, err)
 		}

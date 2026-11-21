@@ -211,9 +211,14 @@ const (
 	// maxStreamRedirects bounds anonymous media-payload chains, which stack
 	// several measurement prefixes (each a hop) in front of the CDN.
 	maxStreamRedirects = 10
-	// retryAfterRetries is the small 429 cap: one initial request plus three
-	// retries, enough to respect etiquette without stalling forever.
+	// retryAfterRetries is the small retry cap for 429 and for 503 with
+	// Retry-After: one initial request plus three retries, enough to respect
+	// etiquette without stalling forever.
 	retryAfterRetries = 3
+	// maxRetryAfterWait bounds an honoured Retry-After. A provider asking for
+	// longer gets its error surfaced at once, so a walking caller ends its pass
+	// and requeues instead of holding a request open.
+	maxRetryAfterWait = 10 * time.Second
 	retryBackoffBase  = 25 * time.Millisecond
 	retryBackoffCap   = 250 * time.Millisecond
 	// maxCandidates bounds Search results — identification needs a short
@@ -1094,7 +1099,7 @@ func (e *Engine) fetchAuthorized(ctx context.Context, spec plugin.ScraperSpec, m
 		if payload != nil {
 			body = bytes.NewReader(payload)
 		}
-		return e.fetch(ctx, method, rawURL, body, contentType, authorize)
+		return e.fetch(withPace(ctx, spec), method, rawURL, body, contentType, authorize)
 	}
 	data, err := attempt()
 	var status *statusError
@@ -1254,7 +1259,7 @@ func (e *Engine) loginToken(ctx context.Context, spec plugin.ScraperSpec, secret
 	}
 	// The exchange itself carries no authorizer — the secret travels in the
 	// body — and passes the same SSRF gate and caps as every request.
-	response, err := e.fetch(ctx, http.MethodPost, spec.Endpoint+spec.Login.Path, bytes.NewReader(payload), "application/json", nil)
+	response, err := e.fetch(withPace(ctx, spec), http.MethodPost, spec.Endpoint+spec.Login.Path, bytes.NewReader(payload), "application/json", nil)
 	if err != nil {
 		return "", err
 	}
@@ -1304,7 +1309,7 @@ func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reade
 	if authorize != nil {
 		authorize(req)
 	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	resp, err := e.requestWithRetry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
 		return e.client.Do(attempt)
 	})
 	if err != nil {
@@ -1337,7 +1342,7 @@ func (e *Engine) wait(ctx context.Context, wait time.Duration, label string) err
 	}
 }
 
-func (e *Engine) requestWith429Retry(ctx context.Context, req *http.Request, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
+func (e *Engine) requestWithRetry(ctx context.Context, req *http.Request, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
 	var retryAfter string
 	for attempt := 0; ; attempt++ {
 		attemptReq, err := cloneRequestForRetry(ctx, req, attempt)
@@ -1348,22 +1353,45 @@ func (e *Engine) requestWith429Retry(ctx context.Context, req *http.Request, do 
 		if err != nil {
 			return nil, err
 		}
-		if resp.StatusCode != http.StatusTooManyRequests {
+		retryAfter = resp.Header.Get("Retry-After")
+		if !retryableStatus(resp.StatusCode, retryAfter) {
 			return resp, nil
 		}
-		retryAfter = resp.Header.Get("Retry-After")
 		resp.Body.Close()
-		if attempt >= retryAfterRetries {
-			return nil, &statusError{host: req.URL.Hostname(), code: resp.StatusCode, retryAfter: retryAfter}
-		}
 		wait := retryBackoff(attempt)
 		if parsed, ok := parseRetryAfter(retryAfter, e.clock.Now()); ok {
 			wait = parsed
 		}
+		if attempt >= retryAfterRetries || wait > maxRetryAfterWait {
+			return nil, &statusError{host: req.URL.Hostname(), code: resp.StatusCode, retryAfter: retryAfter}
+		}
 		if err := e.wait(ctx, wait, "retry wait"); err != nil {
 			return nil, err
 		}
+		// The retry is a real request: it claims the scraper's rate-limit
+		// slot so the request after it still keeps the interval.
+		if spec, ok := ctx.Value(paceKey{}).(plugin.ScraperSpec); ok {
+			if err := e.waitTurn(ctx, spec); err != nil {
+				return nil, err
+			}
+		}
 	}
+}
+
+// paceKey carries the scraper spec whose rate limit a request counts against,
+// so requestWithRetry can charge in-place retries to the same slot.
+type paceKey struct{}
+
+func withPace(ctx context.Context, spec plugin.ScraperSpec) context.Context {
+	return context.WithValue(ctx, paceKey{}, spec)
+}
+
+// retryableStatus reports whether a response is a short-lived refusal worth
+// retrying in place: rate limiting (429), or an overloaded server (503) that
+// says when to come back.
+func retryableStatus(code int, retryAfter string) bool {
+	return code == http.StatusTooManyRequests ||
+		(code == http.StatusServiceUnavailable && strings.TrimSpace(retryAfter) != "")
 }
 
 func cloneRequestForRetry(ctx context.Context, req *http.Request, attempt int) (*http.Request, error) {
@@ -1396,9 +1424,12 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 		return 0, false
 	}
 	if seconds, err := strconv.Atoi(value); err == nil && seconds >= 0 {
+		// Clamp before converting so a huge value cannot overflow into a
+		// negative Duration that slips under the honoured-wait cap.
+		seconds = min(seconds, math.MaxInt32)
 		return time.Duration(seconds) * time.Second, true
 	}
-	if when, err := time.Parse(http.TimeFormat, value); err == nil {
+	if when, err := http.ParseTime(value); err == nil {
 		wait := when.Sub(now)
 		if wait < 0 {
 			wait = 0
