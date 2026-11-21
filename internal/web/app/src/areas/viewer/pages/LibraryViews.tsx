@@ -376,7 +376,11 @@ function LibraryEntityGrid({
   const followsEngagement = browseFollowsEngagement(state, hideWatched.on === true);
   useEffect(() => {
     const toggled = seenHideRef.current !== hideWatched.version;
-    const hid = hiddenKeyMoved(seenHiddenKeyRef, hiddenKey);
+    const hid = hiddenKeyMoved(
+      seenHiddenKeyRef,
+      hiddenKey,
+      seenEpochRef.current !== engagementEpoch,
+    );
     if (seenEpochRef.current === engagementEpoch && !toggled && !hid) return;
     seenEpochRef.current = engagementEpoch;
     seenHideRef.current = hideWatched.version;
