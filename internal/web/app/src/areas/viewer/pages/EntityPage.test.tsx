@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router";
@@ -1490,6 +1490,14 @@ describe("EntityPage middle and top containers", () => {
 });
 
 describe("EntityPage radio", () => {
+  beforeEach(() => {
+    mocks.profileID = "p1";
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([{ ...related, mediaClass: "audio" }]);
+    vi.mocked(fetchMediaRows).mockResolvedValue({
+      m1: { id: "m1", title: "Track", mediaClass: "audio", favorited: false, credits: [] },
+    });
+  });
+
   it.each([
     ["person", "artist", "button"],
     ["person", "artist", "menuitem"],
@@ -1498,18 +1506,17 @@ describe("EntityPage radio", () => {
   ] as const)(
     "starts radio for a %s using the %s seed from its %s",
     async (archetype, seedKind, surface) => {
-      mocks.profileID = "p1";
       vi.mocked(fetchEntity).mockResolvedValue({ ...entity, kind: seedKind, archetype });
-      vi.mocked(fetchMediaForEntity).mockResolvedValue([{ ...related, mediaClass: "audio" }]);
-      vi.mocked(fetchMediaRows).mockResolvedValue({
-        m1: { id: "m1", title: "Track", mediaClass: "audio", favorited: false, credits: [] },
-      });
-      const fetchRadio = vi.fn(async (_path: string, _request: RequestInit) =>
-        Response.json({
-          data: {
-            stationStart: [{ id: "radio-track", mediaClass: "audio", title: "Radio Track" }],
-          },
-        }),
+      const fetchRadio = vi.fn(async (_path: string, request: RequestInit) =>
+        JSON.parse(String(request.body)).query.includes("stationGenerate(")
+          ? Response.json({
+              data: { stationGenerate: { candidates: [{ mediaID: "radio-track" }] } },
+            })
+          : Response.json({
+              data: {
+                stationStart: [{ id: "radio-track", mediaClass: "audio", title: "Radio Track" }],
+              },
+            }),
       );
       vi.stubGlobal("fetch", fetchRadio);
       renderEntity();
@@ -1521,8 +1528,8 @@ describe("EntityPage radio", () => {
       fireEvent.click(await screen.findByRole(surface, { name: "Start radio" }));
 
       expect(await screen.findByLabelText("player")).toHaveTextContent("radio-track");
-      expect(fetchRadio).toHaveBeenCalledTimes(1);
-      const [, request] = fetchRadio.mock.calls[0];
+      expect(fetchRadio).toHaveBeenCalledTimes(2);
+      const [, request] = fetchRadio.mock.calls[1];
       const operation = JSON.parse(String(request.body));
       expect(operation.query).toContain("stationStart(");
       expect(operation.variables).toEqual({
@@ -1531,6 +1538,22 @@ describe("EntityPage radio", () => {
         expectedProfileID: "p1",
         confirmReplace: false,
       });
+    },
+  );
+
+  it.each(["person", "container"])(
+    "hides radio for an audio %s when the server rejects its station seed",
+    async (archetype) => {
+      vi.mocked(fetchEntity).mockResolvedValue({ ...entity, archetype });
+      const fetchRadio = vi.fn(async () =>
+        Response.json({ errors: [{ message: "unknown station seed" }] }),
+      );
+      vi.stubGlobal("fetch", fetchRadio);
+      renderEntity();
+
+      await waitFor(() => expect(fetchRadio).toHaveBeenCalledOnce());
+      expect(screen.queryByRole("button", { name: "Start radio" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "More actions for Server title" })).toBeNull();
     },
   );
 });

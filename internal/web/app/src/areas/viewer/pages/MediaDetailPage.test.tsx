@@ -1500,6 +1500,8 @@ describe("MediaDetailPage", () => {
 });
 
 describe("MediaDetailPage radio", () => {
+  const available = { data: { stationGenerate: { candidates: [{ mediaID: "m1" }] } } };
+
   beforeEach(() => {
     mocks.session = { profileID: "p1" };
     vi.mocked(fetchMedia).mockResolvedValue({ ...media, mediaClass: "audio" });
@@ -1508,6 +1510,7 @@ describe("MediaDetailPage radio", () => {
   it("starts a track station from the page and confirms a non-empty queue", async () => {
     const requests = vi
       .fn<(_path: string, _request: RequestInit) => Promise<Response>>()
+      .mockResolvedValueOnce(Response.json(available))
       .mockResolvedValueOnce(
         Response.json({
           errors: [
@@ -1533,7 +1536,7 @@ describe("MediaDetailPage radio", () => {
     expect(screen.getByTestId("search")).toHaveTextContent("?playQueue=p1&t=0");
     expect(prompt).toHaveBeenCalledExactlyOnceWith("Replace the current play queue?");
     expect(
-      requests.mock.calls.map(([, request]) => JSON.parse(String(request.body)).variables),
+      requests.mock.calls.slice(1).map(([, request]) => JSON.parse(String(request.body)).variables),
     ).toEqual([
       { seedKind: "track", seedID: "m1", expectedProfileID: "p1", confirmReplace: false },
       { seedKind: "track", seedID: "m1", expectedProfileID: "p1", confirmReplace: true },
@@ -1551,7 +1554,7 @@ describe("MediaDetailPage radio", () => {
               },
             ],
           })
-        : Response.json({ data: {} }),
+        : Response.json(available),
     );
     vi.stubGlobal("fetch", requests);
     const prompt = vi.spyOn(window, "confirm").mockReturnValue(false);
@@ -1566,6 +1569,28 @@ describe("MediaDetailPage radio", () => {
       .filter(({ query }) => query.includes("mutation StartRadio"));
     expect(stationRequests.map(({ variables }) => variables.confirmReplace)).toEqual([false]);
     expect(screen.getByRole("heading", { name: "Server title" })).toBeInTheDocument();
+  });
+
+  it("hides radio on the page and in More for audio from an ineligible library", async () => {
+    const requests = vi.fn(async (_path: string, request: RequestInit) =>
+      JSON.parse(String(request.body)).query.includes("stationGenerate(")
+        ? Response.json({ data: { stationGenerate: { candidates: [] } } })
+        : Response.json({ data: {} }),
+    );
+    vi.stubGlobal("fetch", requests);
+    renderAt(["/media/m1"]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More actions for Server title" }));
+    await screen.findByRole("menuitem", { name: "Copy link" });
+    await waitFor(() =>
+      expect(
+        requests.mock.calls.filter(([, request]) =>
+          JSON.parse(String(request.body)).query.includes("stationGenerate("),
+        ),
+      ).toHaveLength(1),
+    );
+    expect(screen.queryByRole("button", { name: "Start radio" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Start radio" })).toBeNull();
   });
 
   it.each([
@@ -1585,7 +1610,10 @@ describe("MediaDetailPage radio", () => {
     const prompt = vi.spyOn(window, "confirm").mockReturnValue(false);
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => Response.json(reply)),
+      vi
+        .fn()
+        .mockResolvedValueOnce(Response.json(available))
+        .mockResolvedValueOnce(Response.json(reply)),
     );
     renderAt(["/media/m1"]);
 

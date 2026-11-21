@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { ApiError, getIdentityEpochSignal, graphql } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -12,6 +12,10 @@ const START_STATION = `mutation StartRadio(
 ) {
   stationStart(seedKind: $seedKind, seedID: $seedID, expectedProfileID: $expectedProfileID,
     confirmReplace: $confirmReplace) { id title locked mediaClass }
+}`;
+
+const CHECK_STATION = `query CheckRadio($seedKind: String!, $seedID: String!) {
+  stationGenerate(seedKind: $seedKind, seedID: $seedID) { candidates { mediaID } }
 }`;
 
 export type RadioSeed = "track" | "artist" | "album";
@@ -28,11 +32,13 @@ export function useStartRadio(seedKind: RadioSeed | undefined, seedID: string) {
   const profileID = session?.profileID;
   const epoch = getIdentityEpochSignal();
   const pending = useRef<AbortController | null>(null);
+  const [eligible, setEligible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<"radioEmpty" | "radioFailed">();
 
   // A completion for an old page, Profile or Reveal session cannot navigate.
   useLayoutEffect(() => {
+    setEligible(false);
     setBusy(false);
     setNotice(undefined);
     return () => {
@@ -41,8 +47,29 @@ export function useStartRadio(seedKind: RadioSeed | undefined, seedID: string) {
     };
   }, [seedKind, seedID, profileID, revealed, epoch]);
 
+  useEffect(() => {
+    if (!seedKind || !seedID || !profileID || epoch?.aborted) return;
+    // The preview applies the server's audio-station plugin, visibility and
+    // playback gates. General audio metadata does not imply station support.
+    const controller = new AbortController();
+    const signal = epoch ? AbortSignal.any([epoch, controller.signal]) : controller.signal;
+    void graphql<{ stationGenerate: { candidates: { mediaID: string }[] } }>(
+      CHECK_STATION,
+      { seedKind, seedID },
+      signal,
+      { adminUnlock: false },
+    ).then(
+      (result) => {
+        if (!signal.aborted) setEligible((result.stationGenerate?.candidates?.length ?? 0) > 0);
+      },
+      () => {},
+    );
+    return () => controller.abort();
+  }, [seedKind, seedID, profileID, revealed, epoch]);
+
   async function start() {
-    if (!seedKind || !seedID || !profileID || pending.current || epoch?.aborted) return;
+    if (!eligible || !seedKind || !seedID || !profileID || pending.current || epoch?.aborted)
+      return;
     const controller = new AbortController();
     pending.current = controller;
     const signal = epoch ? AbortSignal.any([epoch, controller.signal]) : controller.signal;
@@ -90,5 +117,5 @@ export function useStartRadio(seedKind: RadioSeed | undefined, seedID: string) {
     }
   }
 
-  return seedKind && seedID && profileID ? { start, busy, notice } : undefined;
+  return eligible && seedKind && seedID && profileID ? { start, busy, notice } : undefined;
 }

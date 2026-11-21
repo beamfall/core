@@ -7,6 +7,36 @@ import (
 	"time"
 )
 
+func TestMediaTextFieldByIDsStatementCountDoesNotScaleWithCandidates(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	ids := importCollectionMedia(t, st, 60)
+	if err := st.SetMediaFields(ctx, ids[0], []MediaField{
+		{Name: "genre", Type: EntityFieldText, Text: "Ambient"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	installCountingCatalogReader(t, st)
+	filter := LibraryFilter{AllLibraries: true}
+
+	measure := func(selected []MediaID) int64 {
+		t.Helper()
+		restrictedQueryCount.Store(0)
+		got, err := st.MediaTextFieldByIDs(ctx, selected, "genre", filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 || got[ids[0]] != "Ambient" {
+			t.Fatalf("named text values = %v, want Ambient for %s", got, ids[0])
+		}
+		return restrictedQueryCount.Load()
+	}
+	one, many := measure(ids[:1]), measure(ids)
+	if one == 0 || one != many {
+		t.Fatalf("statement count scaled with candidates: one=%d sixty=%d", one, many)
+	}
+}
+
 func TestEntityRelationRowsStatementCountDoesNotScaleWithPage(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

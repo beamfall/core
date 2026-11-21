@@ -31,6 +31,7 @@ vi.mock("../lib/playback", () => ({
 }));
 
 vi.mock("@/lib/session", () => ({
+  useSession: () => ({ session: null }),
   useViewerIdentity: () => "viewer-1",
 }));
 

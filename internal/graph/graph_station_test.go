@@ -46,6 +46,13 @@ func newStationTestHandler(t *testing.T, st *store.Store) *Handler {
 		MediaClasses:       []string{"audio"},
 		FeatureEligibility: []string{plugin.FeatureAudioStation},
 		Layouts:            []plugin.LayoutSpec{{ID: "home", Role: "browse"}},
+	}, {
+		ID:           "spoken",
+		Version:      "1.0.0",
+		DisplayName:  plugin.L("Spoken"),
+		MediaLabel:   plugin.L("Recording"),
+		MediaClasses: []string{"audio"},
+		Layouts:      []plugin.LayoutSpec{{ID: "home", Role: "browse"}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -216,6 +223,43 @@ func TestStationSealedSuppression(t *testing.T) {
 	}
 }
 
+func TestStationPreviewRejectsSeedsFromAudioLibraryWithoutCapability(t *testing.T) {
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	seedMusicFixture(t, st)
+	ctx := context.Background()
+	library, err := st.CreateLibrary(ctx, "Spoken", false, "spoken", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: "/spoken/a.flac", Title: "Recording", Container: "flac",
+		Codec: "flac", Class: store.MediaClassAudio, ContentFingerprint: "fp-spoken-a",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entity := store.Entity{ID: "spoken-entity", LibraryID: library.ID, Kind: "person", Title: "Narrator"}
+	if err := st.UpsertEntity(ctx, entity); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{
+		FromEntityID: entity.ID, ToMediaID: media.ID, Name: "credit",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, seed := range []stationSeed{
+		{kind: "track", id: string(media.ID)},
+		{kind: "artist", id: string(entity.ID)},
+		{kind: "album", id: string(entity.ID)},
+	} {
+		got, _, err := h.generateStation(ctx, defaultScope(), seed, stationRules{}, stationTuning{}, 1)
+		if err == nil || err.Error() != "unknown station seed" || len(got) != 0 {
+			t.Errorf("preview for %s seed = %v, %v, want unknown station seed", seed.kind, got, err)
+		}
+	}
+}
+
 // TestStationDebugReproducibility pins debug reproducibility: the same rank seed
 // yields the same order; a different seed may reorder.
 func TestStationDebugReproducibility(t *testing.T) {
@@ -378,8 +422,7 @@ func TestStationCatalogRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := st.SetMediaFields(ctx, fx.trackB, []store.MediaField{
-		{Name: "mood", Type: store.EntityFieldText, Text: "Calm"},
-		{Name: "genre", Type: store.EntityFieldText, Text: "Instrumental"},
+		{Name: "genre", Type: store.EntityFieldText, Text: " Instrumental "},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -392,9 +435,9 @@ func TestStationCatalogRules(t *testing.T) {
 		{"category genre", `{"genre":" ambient "}`, []string{string(fx.trackA)}},
 		{"text genre", `{"genre":"instrumental"}`, []string{string(fx.trackB)}},
 		{"whole value", `{"genre":"ambi"}`, nil},
-		{"decade and mood", `{"decade":2020,"mood":"calm"}`, []string{string(fx.trackB)}},
+		{"genre and decade", `{"genre":"instrumental","decade":2020}`, []string{string(fx.trackB)}},
 		{"rules intersect", `{"genre":"Ambient","decade":2020}`, nil},
-		{"missing mood", `{"decade":1990,"mood":"calm"}`, nil},
+		{"undeclared mood ignored", `{"decade":1990,"mood":"calm"}`, []string{string(fx.trackA)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var result StationGenerateResult

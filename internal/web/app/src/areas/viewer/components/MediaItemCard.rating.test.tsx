@@ -6,7 +6,10 @@ import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { MediaItemCard } from "./MediaItemCard";
 
-vi.mock("@/lib/session", () => ({ useViewerIdentity: () => "viewer-1" }));
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({ session: null }),
+  useViewerIdentity: () => "viewer-1",
+}));
 
 afterEach(cleanup);
 

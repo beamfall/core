@@ -9,19 +9,21 @@ import {
   ListPlus,
   MoreVertical,
   Play,
+  Radio,
   SquareArrowOutUpRight,
   UserRound,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Menu } from "@/components/ui/astryx-primitives";
-import { fetchMedia } from "@/lib/graphql";
+import { fetchEntity, fetchMedia } from "@/lib/graphql";
 import type { ItemTarget, MediaCredit } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { useItemActions, useItemHide } from "../actions";
 import { entityPath } from "../lib/entityAddress";
 import { moreWithLead } from "../lib/related";
+import { audioEntitySeed, type RadioSeed, useStartRadio } from "../lib/useStartRadio";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 
 const COPIED_RESET_MS = 2000;
@@ -39,6 +41,7 @@ export function MediaItemCardMenu({
   primaryLabel,
   isMedia,
   isAudio = false,
+  locked = false,
   credits,
   containerID,
   href,
@@ -51,6 +54,7 @@ export function MediaItemCardMenu({
   isMedia: boolean;
   /** The Media's class is "audio": the watched entry uses listening wording. */
   isAudio?: boolean;
+  locked?: boolean;
   /** Credit rows already read by the listing, when available. */
   credits?: readonly MediaCredit[];
   containerID?: string;
@@ -80,6 +84,20 @@ export function MediaItemCardMenu({
   const hide = useItemHide(target, title, { enabled: opened });
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioID = isAudio && isMedia && "mediaID" in target ? target.mediaID : undefined;
+  const entityID = isAudio && !isMedia && "entityID" in target ? target.entityID : undefined;
+  const [radioEntity, setRadioEntity] = useState<{
+    identity: string;
+    id: string;
+    seed: RadioSeed | undefined;
+  } | null>(null);
+  const entitySeed =
+    radioEntity && radioEntity.identity === identity && radioEntity.id === entityID
+      ? radioEntity.seed
+      : undefined;
+  const radio = useStartRadio(
+    opened && !locked ? (audioID ? "track" : entitySeed) : undefined,
+    audioID ?? entityID ?? "",
+  );
   const loadedCredits =
     creditRead && creditRead.identity === identity && creditRead.mediaID === audioID
       ? creditRead.credits
@@ -90,6 +108,21 @@ export function MediaItemCardMenu({
     (credit) => credit.archetype === "container" && credit.entityID,
   );
   const albumID = audioID && identity ? (albumCredit?.entityID ?? containerID) : undefined;
+
+  useEffect(() => {
+    if (!open || locked || !entityID || !identity) return;
+    if (radioEntity?.identity === identity && radioEntity.id === entityID) return;
+    const controller = new AbortController();
+    void fetchEntity(entityID, controller.signal).then(
+      (entity) => {
+        if (!controller.signal.aborted) {
+          setRadioEntity({ identity, id: entityID, seed: audioEntitySeed(entity?.archetype) });
+        }
+      },
+      () => {},
+    );
+    return () => controller.abort();
+  }, [open, locked, entityID, identity, radioEntity]);
 
   useEffect(() => {
     setCreditRead((read) =>
@@ -143,6 +176,11 @@ export function MediaItemCardMenu({
           {t("itemActionFailed")}
         </span>
       )}
+      {radio?.notice && (
+        <span role="status" className="bf-card-action-error">
+          {t(radio.notice)}
+        </span>
+      )}
       <Menu.Root
         onOpenChange={(open) => {
           setOpen(open);
@@ -166,6 +204,16 @@ export function MediaItemCardMenu({
                 <Menu.Item className="bf-card-menu-item" onClick={onDetails}>
                   <SquareArrowOutUpRight aria-hidden="true" size={15} />
                   {t("mediaDetailDetails")}
+                </Menu.Item>
+              )}
+              {radio && (
+                <Menu.Item
+                  className="bf-card-menu-item"
+                  disabled={radio.busy}
+                  onClick={() => void radio.start()}
+                >
+                  <Radio aria-hidden="true" size={15} />
+                  {t("radioStart")}
                 </Menu.Item>
               )}
               {artistID && (

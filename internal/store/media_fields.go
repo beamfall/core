@@ -461,6 +461,63 @@ func (s *Store) MediaFields(ctx context.Context, id MediaID, filter LibraryFilte
 	return s.mediaFieldsSQL(ctx, id)
 }
 
+// MediaTextFieldByIDs reads one named text field for visible Media, grouped by
+// catalog plane. Missing fields and invisible Media are omitted.
+func (s *Store) MediaTextFieldByIDs(ctx context.Context, ids []MediaID, field string, filter LibraryFilter) (map[MediaID]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	visible, err := s.visibleMediaBatchSQL(ctx, ids, filter)
+	if err != nil {
+		return nil, err
+	}
+	byReader := make(map[*sql.DB][]MediaID)
+	for id, media := range visible {
+		reader := s.catalogR
+		// The visibility batch includes encrypted rows only from open planes.
+		if db := s.encryptedDBs[media.LibraryID]; db != nil && db.state == "unsealed-registered" && db.reader != nil {
+			reader = db.reader
+		}
+		byReader[reader] = append(byReader[reader], id)
+	}
+	values := make(map[MediaID]string)
+	for reader, planeIDs := range byReader {
+		for start := 0; start < len(planeIDs); start += engagementChunkSize {
+			chunk := planeIDs[start:min(start+engagementChunkSize, len(planeIDs))]
+			args := make([]any, 1, len(chunk)+1)
+			args[0] = field
+			for _, id := range chunk {
+				args = append(args, id)
+			}
+			// #nosec G202 -- only generated placeholders are interpolated.
+			rows, err := reader.QueryContext(ctx, `
+				SELECT media_id, value FROM media_field_text
+				WHERE field = ? AND media_id IN (`+sqlPlaceholders(len(chunk))+`)`, args...)
+			if err != nil {
+				return nil, err
+			}
+			for rows.Next() {
+				var id MediaID
+				var value string
+				if err := rows.Scan(&id, &value); err != nil {
+					_ = rows.Close()
+					return nil, err
+				}
+				values[id] = value
+			}
+			if err := rows.Close(); err != nil {
+				return nil, err
+			}
+			if err := rows.Err(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return values, nil
+}
+
 // mediaFieldsSQL loads one Media item's field values from the four typed side
 // tables, sorted by field name for a deterministic shape. The side tables live
 // in the Media's own catalog plane (the global catalog or the per-Library

@@ -7,7 +7,10 @@ import { I18nProvider } from "@/lib/i18n";
 import { ContainerMediaRows } from "./ContainerMediaRows";
 
 const identity = JSON.stringify(["viewer", "p1", "adult", false]);
-vi.mock("@/lib/session", () => ({ useViewerIdentity: () => identity }));
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({ session: null }),
+  useViewerIdentity: () => identity,
+}));
 vi.mock("../player/preload", () => ({ preloadPlayer: vi.fn() }));
 
 function Probe({ label }: { label: string }) {

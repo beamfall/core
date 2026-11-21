@@ -10,7 +10,10 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
   fetchSourceItems: vi.fn(),
 }));
-vi.mock("@/lib/session", () => ({ useViewerIdentity: () => "viewer-1" }));
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({ session: null }),
+  useViewerIdentity: () => "viewer-1",
+}));
 vi.mock("../actions/engagementSync", () => ({ useEngagementEpoch: () => 0 }));
 vi.mock("./MediaItemCard", () => ({
   MediaItemCard: ({ item }: { item: SourceItem }) => <li>{item.title}</li>,

@@ -267,50 +267,39 @@ type stationRules struct {
 	MaxDurationSeconds int    `json:"maxDurationSeconds"`
 	Decade             *int   `json:"decade"`
 	Genre              string `json:"genre"`
-	Mood               string `json:"mood"`
 }
 
 func (h *Handler) filterStationMetadata(ctx context.Context, filter store.LibraryFilter, candidates []store.Media, rules stationRules) ([]store.Media, error) {
-	if rules.Genre == "" && rules.Mood == "" {
+	if rules.Genre == "" || len(candidates) == 0 {
 		return candidates, nil
 	}
-	var genres map[store.MediaID][]store.MediaEntityLink
-	if rules.Genre != "" {
-		ids := make([]store.MediaID, 0, len(candidates))
-		for _, candidate := range candidates {
-			ids = append(ids, candidate.ID)
-		}
-		var err error
-		genres, err = h.store.MediaEntityLinks(ctx, ids)
-		if err != nil {
-			return nil, err
-		}
+	ids := make([]store.MediaID, 0, len(candidates))
+	for _, candidate := range candidates {
+		ids = append(ids, candidate.ID)
+	}
+	genres, err := h.store.MediaEntityLinks(ctx, ids)
+	if err != nil {
+		return nil, err
 	}
 
+	matches := make(map[store.MediaID]bool)
+	misses := ids[:0]
+	for _, id := range ids {
+		if slices.ContainsFunc(genres[id], func(link store.MediaEntityLink) bool {
+			return link.Kind == "genre" && strings.EqualFold(link.Title, rules.Genre)
+		}) {
+			matches[id] = true
+		} else {
+			misses = append(misses, id)
+		}
+	}
+	textGenres, err := h.store.MediaTextFieldByIDs(ctx, misses, "genre", filter)
+	if err != nil {
+		return nil, err
+	}
 	kept := candidates[:0]
 	for _, candidate := range candidates {
-		genreMatched := rules.Genre == "" || slices.ContainsFunc(genres[candidate.ID], func(link store.MediaEntityLink) bool {
-			return link.Kind == "genre" && strings.EqualFold(link.Title, rules.Genre)
-		})
-		moodMatched := rules.Mood == ""
-		if !genreMatched || !moodMatched {
-			fields, err := h.store.MediaFields(ctx, candidate.ID, filter)
-			if errors.Is(err, store.ValidationError("media not found")) {
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
-			for _, field := range fields {
-				switch field.Name {
-				case "genre":
-					genreMatched = genreMatched || strings.EqualFold(strings.TrimSpace(field.Text), rules.Genre)
-				case "mood":
-					moodMatched = moodMatched || strings.EqualFold(strings.TrimSpace(field.Text), rules.Mood)
-				}
-			}
-		}
-		if genreMatched && moodMatched {
+		if matches[candidate.ID] || strings.EqualFold(strings.TrimSpace(textGenres[candidate.ID]), rules.Genre) {
 			kept = append(kept, candidate)
 		}
 	}
@@ -371,7 +360,6 @@ func parseStationRules(raw string) (stationRules, error) {
 		return stationRules{}, clientError("decade must be a positive multiple of ten")
 	}
 	r.Genre = strings.TrimSpace(r.Genre)
-	r.Mood = strings.TrimSpace(r.Mood)
 	return r, nil
 }
 

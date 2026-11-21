@@ -4,12 +4,59 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
+	"maps"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestMediaTextFieldByIDsUsesVisibleCatalogPlanes(t *testing.T) {
+	ctx := context.Background()
+	st, encrypted := seededEncryptedMedia(t, "batched-fields")
+	defer st.Close()
+
+	const clearID MediaID = "media-archive"
+	for id, value := range map[MediaID]string{clearID: "Ambient", encrypted.ID: "Instrumental"} {
+		if err := st.SetMediaFields(ctx, id, []MediaField{
+			{Name: "genre", Type: EntityFieldText, Text: value},
+			{Name: "unrelated", Type: EntityFieldText, Text: "Other"},
+			{Name: "rating", Type: EntityFieldNumber, Number: 4},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Put both visible IDs beyond the first visibility batch.
+	ids := make([]MediaID, engagementChunkSize+1)
+	for i := range ids {
+		ids[i] = MediaID(fmt.Sprintf("missing-%d", i))
+	}
+	ids = append(ids, clearID, encrypted.ID, clearID)
+	assertValues := func(filter LibraryFilter, want map[MediaID]string) {
+		t.Helper()
+		got, err := st.MediaTextFieldByIDs(ctx, ids, "genre", filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !maps.Equal(got, want) {
+			t.Fatalf("batched field values = %v, want %v", got, want)
+		}
+	}
+	revealed := LibraryFilter{AllLibraries: true, Revealed: true}
+	assertValues(revealed, map[MediaID]string{clearID: "Ambient", encrypted.ID: "Instrumental"})
+	assertValues(LibraryFilter{AllLibraries: true}, map[MediaID]string{encrypted.ID: "Instrumental"})
+	if err := st.SealEncryptedLibraryDB(ctx, encrypted.LibraryID, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatal(err)
+	}
+	assertValues(revealed, map[MediaID]string{clearID: "Ambient"})
+	if err := st.TrashMedia(ctx, clearID, revealed); err != nil {
+		t.Fatal(err)
+	}
+	assertValues(revealed, nil)
+}
 
 func TestEncryptedMediaFieldWritersStayInProtectedPlane(t *testing.T) {
 	ctx := context.Background()
