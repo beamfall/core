@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"math"
 	"strings"
 	"testing"
 )
@@ -172,5 +173,17 @@ func TestPlaceEntityRelationRenumbersAroundHiddenRows(t *testing.T) {
 
 	if err := st.PlaceEntityRelation(ctx, EntityRelation{FromEntityID: "group", Name: "contains", ToEntityID: "v1"}, -1, local); err == nil {
 		t.Fatal("negative position accepted")
+	}
+
+	// A stored number too large to count past is refused, not wrapped.
+	huge := math.MaxInt32 + 1
+	if err := st.UpsertEntityRelation(ctx, EntityRelation{FromEntityID: "group", Name: "contains", ToEntityID: "new", SortOrder: &huge}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PlaceEntityRelation(ctx, EntityRelation{FromEntityID: "group", Name: "contains", ToEntityID: "v3"}, 99, local); err == nil {
+		t.Fatal("placement past an oversized sort order accepted")
+	}
+	if ids, _ := order(); strings.Join(ids, ",") != "hidden,v3,v1,v2,new" {
+		t.Fatalf("after refused overflow order = %v", ids)
 	}
 }

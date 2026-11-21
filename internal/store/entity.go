@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -1888,6 +1889,9 @@ func (s *Store) PlaceEntityRelation(ctx context.Context, relation EntityRelation
 	}
 	visibleRows = append(visibleRows[:at], append([]placed{placedRow}, visibleRows[at:]...)...)
 	slices.Sort(slots)
+	if len(slots) > 0 && slots[len(slots)-1] > math.MaxInt32 {
+		return errors.New("relation sort order is too large to place rows after it")
+	}
 	for len(slots) < len(visibleRows) {
 		next := int64(0)
 		if len(slots) > 0 {
