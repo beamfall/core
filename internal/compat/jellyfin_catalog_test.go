@@ -23,8 +23,11 @@ var catalogInterop = map[string]Interop{catalogPlugin: {
 	MediaTypes:      map[string]string{"single": "Movie", "part": "Episode"},
 	KindTypes:       map[string]string{"group": "Series", "subgroup": "Season"},
 	ScopeTypes:      map[string]string{"scope-a": "tvshows"},
-	MemberRelations: map[string]bool{"member": true},
-	ParentRelations: map[string]bool{"member-of": true},
+	MemberRelations: map[string]bool{MemberRelationKey("subgroup", "member"): true},
+	ParentRelations: map[string]bool{
+		ParentRelationKey("subgroup", "member-of", "group"): true,
+		ParentRelationKey("subgroup", "next", "subgroup"):   true,
+	},
 	ProviderSchemes: map[string]string{"by-id": "tvdb"},
 }}
 
@@ -113,6 +116,10 @@ func newCatalogFixture(t *testing.T) catalogFixture {
 		t.Fatal(err)
 	}
 	if err := st.AddMediaExternalID(ctx, f.single, "unknown-scheme", "999"); err != nil {
+		t.Fatal(err)
+	}
+	// A stored value that is not a bare identifier is never echoed.
+	if err := st.AddMediaExternalID(ctx, f.single, "imdb", "https://example.invalid/tt1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetMediaMetadataProvenance(ctx, f.part2, catalogPlugin, "by-id", "777"); err != nil {
@@ -311,6 +318,18 @@ func TestJellyfinCatalogContainerChildren(t *testing.T) {
 	if got := itemIDs(narrowed.Items); !slices.Equal(got, []string{string(f.part3)}) {
 		t.Fatalf("episodes of part 2 = %v", got)
 	}
+	paged := decodeList(t, f.get(t, "Shows/"+string(f.group)+"/Episodes?StartIndex=1&Limit=1", http.StatusOK))
+	if got := itemIDs(paged.Items); !slices.Equal(got, []string{string(f.part1)}) || paged.TotalRecordCount != 3 || paged.StartIndex != 1 {
+		t.Fatalf("episode page = %v (total %d, start %d)", got, paged.TotalRecordCount, paged.StartIndex)
+	}
+	huge := decodeList(t, f.get(t, "Shows/"+string(f.group)+"/Episodes?StartIndex=9223372036854775807&Limit=1000", http.StatusOK))
+	if len(huge.Items) != 0 || huge.TotalRecordCount != 3 {
+		t.Fatalf("episode page past the end = %+v", huge)
+	}
+	// A seasonId that is no container under the item is a 404, not an empty list.
+	for _, id := range []string{"missing", string(f.single), string(f.part1), string(f.group)} {
+		f.get(t, "Shows/"+string(f.group)+"/Episodes?seasonId="+id, http.StatusNotFound)
+	}
 	// Only a visible top container answers; everything else is a uniform 404.
 	for _, id := range []string{string(f.sub1), string(f.single), "missing", string(f.hiddenItem)} {
 		f.get(t, "Shows/"+id+"/Seasons", http.StatusNotFound)
@@ -413,4 +432,189 @@ func TestJellyfinCatalogUsers(t *testing.T) {
 	// Opting out withdraws the Profile's compatibility sessions at once.
 	f.get(t, "Users", http.StatusUnauthorized)
 	f.get(t, "Users/profile-default/Images/Primary", http.StatusUnauthorized)
+}
+
+func TestJellyfinCatalogPagingNeverOverflows(t *testing.T) {
+	f := newCatalogFixture(t)
+	page := decodeList(t, f.get(t, "Items?ParentId="+string(f.library)+"&StartIndex=9223372036854775807&Limit=1000", http.StatusOK))
+	if len(page.Items) != 0 || page.TotalRecordCount != 2 || page.StartIndex != 2 {
+		t.Fatalf("page at the largest StartIndex = %+v", page)
+	}
+}
+
+// catalogPart adds one mapped member to the fixture's visible Library.
+func (f catalogFixture) catalogPart(t *testing.T, n int) store.MediaID {
+	t.Helper()
+	m, _, err := f.st.ImportMediaFile(t.Context(), store.ImportMediaFile{
+		LibraryID: f.library, Path: filepath.Join("/catalog", "extra", fmt.Sprint(n)+".mkv"), Title: fmt.Sprintf("Extra %d", n),
+		Container: "mkv", Codec: "h264", Class: store.MediaClassVideo, ContentFingerprint: fmt.Sprintf("catalog-extra-%d", n),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.UpsertMediaFields(t.Context(), m.ID, []store.MediaField{{Name: "class", Type: store.EntityFieldText, Text: "part"}}); err != nil {
+		t.Fatal(err)
+	}
+	return m.ID
+}
+
+func TestJellyfinCatalogParentRingTerminates(t *testing.T) {
+	f := newCatalogFixture(t)
+	ctx := t.Context()
+	const ring = 12
+	for i := range ring {
+		id := store.EntityID(fmt.Sprintf("entity-ring-%02d", i))
+		if err := f.st.UpsertEntity(ctx, store.Entity{ID: id, LibraryID: f.library, Kind: "subgroup", Title: string(id)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: id, Name: "member", ToMediaID: f.catalogPart(t, i), Cardinality: "one"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range ring {
+		from, to := store.EntityID(fmt.Sprintf("entity-ring-%02d", i)), store.EntityID(fmt.Sprintf("entity-ring-%02d", (i+1)%ring))
+		if err := f.st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: from, Name: "next", ToEntityID: to, Cardinality: "one"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	done := make(chan []byte, 1)
+	go func() {
+		rec := sendCompat(f.handler, seerrRequest(t, http.MethodGet, "Items?ParentId="+string(f.library), f.token))
+		done <- rec.Body.Bytes()
+	}()
+	select {
+	case body := <-done:
+		// The ring is broken at one link, so it lists as one more root.
+		if list := decodeList(t, body); list.TotalRecordCount != 3 {
+			t.Fatalf("library with a parent ring = %d roots, want 3: %s", list.TotalRecordCount, body)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("listing a Library with a parent ring never finished")
+	}
+}
+
+func TestJellyfinCatalogRelationsBindToTheirKind(t *testing.T) {
+	f := newCatalogFixture(t)
+	ctx := t.Context()
+	// "member" is declared on the subgroup kind only, so a group holding a
+	// Media by that name does not become its container.
+	part := f.catalogPart(t, 1)
+	if err := f.st.UpsertEntity(ctx, store.Entity{ID: "entity-direct", LibraryID: f.library, Kind: "group", Title: "Direct Group"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: "entity-direct", Name: "member", ToMediaID: part, Cardinality: "one"}); err != nil {
+		t.Fatal(err)
+	}
+	list := decodeList(t, f.get(t, "Items?ids="+string(part)+",entity-direct", http.StatusOK))
+	if got := itemIDs(list.Items); !slices.Equal(got, []string{string(part)}) || list.Items[0].SeriesID != "" {
+		t.Fatalf("item held by an undeclared relation = %+v", list.Items)
+	}
+}
+
+func TestJellyfinCatalogHidesTrashedMembersAndEmptyContainers(t *testing.T) {
+	f := newCatalogFixture(t)
+	// part3 is the only member of sub2: trashing it hides both.
+	if err := f.st.TrashMedia(t.Context(), f.part3, store.LibraryFilter{AllLibraries: true}); err != nil {
+		t.Fatal(err)
+	}
+	seasons := decodeList(t, f.get(t, "Shows/"+string(f.group)+"/Seasons", http.StatusOK))
+	if got := itemIDs(seasons.Items); !slices.Equal(got, []string{string(f.sub1)}) || seasons.TotalRecordCount != 1 {
+		t.Fatalf("seasons after trash = %v (total %d)", got, seasons.TotalRecordCount)
+	}
+	episodes := decodeList(t, f.get(t, "Shows/"+string(f.group)+"/Episodes", http.StatusOK))
+	if got := itemIDs(episodes.Items); !slices.Equal(got, []string{string(f.part2), string(f.part1)}) || episodes.TotalRecordCount != 2 {
+		t.Fatalf("episodes after trash = %v (total %d)", got, episodes.TotalRecordCount)
+	}
+	if list := decodeList(t, f.get(t, "Items?ids="+string(f.part3)+","+string(f.sub2), http.StatusOK)); len(list.Items) != 0 {
+		t.Fatalf("trashed item lookup = %+v", list.Items)
+	}
+	f.get(t, "Shows/"+string(f.group)+"/Episodes?seasonId="+string(f.sub2), http.StatusNotFound)
+}
+
+func TestJellyfinCatalogHidesAllowlistedRestrictedLibrary(t *testing.T) {
+	f := newCatalogFixture(t)
+	ctx := t.Context()
+	// Mapped, allowlisted and otherwise eligible: only Reveal hides it. The
+	// allowlist refuses a restricted Library, so restriction comes after.
+	lib, err := f.st.CreateLibraryWithRoots(ctx, "Veiled Shelf", false, catalogPlugin, "profile-default", []string{t.TempDir()}, "scope-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _, err := f.st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: lib.ID, Path: "/catalog/veiled/item.mkv", Title: "Veiled Single",
+		Container: "mkv", Codec: "h264", Class: store.MediaClassVideo, ContentFingerprint: "catalog-veiled",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.UpsertMediaFields(ctx, m.ID, []store.MediaField{{Name: "class", Type: store.EntityFieldText, Text: "single"}}); err != nil {
+		t.Fatal(err)
+	}
+	allow := []store.LibraryID{f.library, lib.ID}
+	if _, err := f.st.SetJellyfinCompatConfig(ctx, store.JellyfinCompatPatch{LibraryIDs: &allow}, store.JellyfinCompatConfig{}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.UpdateLibraryRestricted(ctx, lib.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		"Library/MediaFolders", "Items?ParentId=" + string(f.library), "Items?ids=" + string(m.ID),
+		"Items/Latest?ParentId=" + string(f.library), "Users",
+	} {
+		body := string(f.get(t, path, http.StatusOK))
+		for _, value := range []string{string(lib.ID), "Veiled Shelf", string(m.ID), "Veiled Single"} {
+			if strings.Contains(body, value) {
+				t.Fatalf("GET %s exposes %q: %s", path, value, body)
+			}
+		}
+	}
+	f.get(t, "Items?ParentId="+string(lib.ID), http.StatusNotFound)
+	f.get(t, "Items/Latest?ParentId="+string(lib.ID), http.StatusNotFound)
+}
+
+func TestJellyfinCatalogIndexCacheExpires(t *testing.T) {
+	f := newCatalogFixture(t)
+	now := time.Unix(1_000_000, 0)
+	f.handler.indexes.now = func() time.Time { return now }
+	libraries, filter, err := f.handler.catalogLibraries(t.Context(), auth.Scope{AllLibraries: true})
+	if err != nil || len(libraries) != 1 {
+		t.Fatalf("catalog libraries = %v, %v", libraries, err)
+	}
+	first, err := f.handler.libraryIndex(t.Context(), filter, libraries[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := f.handler.libraryIndex(t.Context(), filter, libraries[0]); again != first {
+		t.Fatal("a repeat read within the TTL rebuilt the index")
+	}
+	narrow := filter
+	narrow.Certification = []store.CertificationConstraint{{PluginID: catalogPlugin}}
+	if other, _ := f.handler.libraryIndex(t.Context(), narrow, libraries[0]); other == first {
+		t.Fatal("a different visibility filter reused another filter's index")
+	}
+	now = now.Add(catalogIndexTTL)
+	if expired, _ := f.handler.libraryIndex(t.Context(), filter, libraries[0]); expired == first {
+		t.Fatal("an index older than the TTL was reused")
+	}
+}
+
+func TestJellyfinProviderIDAndQueryValue(t *testing.T) {
+	for value, want := range map[string]bool{
+		"tt0111161": true, "12345": true, "a.b_c-d": true, "": false, "../x": false,
+		"https://example.invalid/1": false, "a b": false, strings.Repeat("9", catalogProviderIDMax+1): false,
+	} {
+		if got := validProviderID(value); got != want {
+			t.Errorf("validProviderID(%q) = %v, want %v", value, got, want)
+		}
+	}
+	query := map[string][]string{"parentid": {"lower"}, "PARENTID": {"upper"}, "ParentID": {"mixed"}}
+	for range 20 {
+		if got := queryValue(query, "ParentId"); got != "upper" {
+			t.Fatalf("queryValue without the exact key = %q, want the smallest key's value", got)
+		}
+	}
+	query["ParentId"] = []string{"exact"}
+	if got := queryValue(query, "ParentId"); got != "exact" {
+		t.Fatalf("queryValue = %q, want the exact key's value", got)
+	}
 }

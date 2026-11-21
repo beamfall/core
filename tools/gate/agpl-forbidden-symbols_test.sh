@@ -177,4 +177,20 @@ fi
 git -C "$TMP" rm -q --cached internal/server/people.ts
 rm "$TMP/internal/server/people.ts"
 
+# CORE-2681: the Plex import fixture may name Plex's account_id column on its
+# one CREATE TABLE line; any other line in that file naming it fails.
+fixture="$TMP/internal/store/foreignimport/foreignimporttest/foreignimporttest.go"
+mkdir -p "$(dirname "$fixture")"
+cat >"$fixture" <<'GO'
+		`CREATE TABLE metadata_item_settings (id INTEGER PRIMARY KEY, account_id INTEGER, guid TEXT, view_offset INTEGER, view_count INTEGER, last_viewed_at INTEGER, rating REAL)`,
+GO
+git -C "$TMP" add internal/store/foreignimport/foreignimporttest/foreignimporttest.go
+"$TMP/tools/gate/agpl-forbidden-symbols.sh" >/dev/null
+printf '%s\n' '		`CREATE TABLE accounts (id INTEGER PRIMARY KEY, account_id TEXT)`,' >>"$fixture"
+git -C "$TMP" add internal/store/foreignimport/foreignimporttest/foreignimporttest.go
+if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
+  echo "expected a second account_id line in the Plex fixture to fail" >&2
+  exit 1
+fi
+
 echo "agpl-forbidden-symbols_test: OK"

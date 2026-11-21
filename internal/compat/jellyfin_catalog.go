@@ -2,12 +2,15 @@ package compat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
@@ -26,14 +29,25 @@ type Interop struct {
 	// ScopeTypes maps a Library scope to a collection type.
 	ScopeTypes map[string]string
 	// MemberRelations are the relations by which a mapped container holds one
-	// Media item.
+	// Media item, keyed by MemberRelationKey.
 	MemberRelations map[string]bool
 	// ParentRelations are the relations by which a mapped container climbs to
-	// its parent mapped container.
+	// its parent mapped container, keyed by ParentRelationKey.
 	ParentRelations map[string]bool
 	// ProviderSchemes maps a scraper ID to the provider scheme of the
 	// candidate IDs it stores, for scrapers whose lookup is a by-ID lookup.
 	ProviderSchemes map[string]string
+}
+
+// MemberRelationKey keys a member relation by the container kind declaring it.
+func MemberRelationKey(holderKind, relation string) string {
+	return holderKind + "\x00" + relation
+}
+
+// ParentRelationKey keys a parent relation by the kind declaring it and the
+// kind it climbs to.
+func ParentRelationKey(childKind, relation, parentKind string) string {
+	return childKind + "\x00" + relation + "\x00" + parentKind
 }
 
 const (
@@ -48,6 +62,15 @@ const (
 	catalogLatestDefault  = 20
 	catalogLatestLimit    = 100
 	catalogParentDepth    = 8
+	catalogProviderIDMax  = 64
+
+	// catalogIndexTTL is how long a built index serves repeat reads for the
+	// same Library and visibility filter. The tools read one item per request
+	// across a whole Library, so rebuilding each time is quadratic per sync.
+	// Library eligibility, restriction and sealing are still checked on every
+	// request; only item-level changes lag by up to this long.
+	catalogIndexTTL     = 15 * time.Second
+	catalogIndexEntries = 32
 )
 
 // providerKeys are the ProviderIds keys the tools read, by lowercase scheme.
@@ -105,15 +128,16 @@ type catalogLibrary struct {
 // catalogNode is one item of a Library's compatibility tree: a visible Media
 // item (a leaf) or a mapped container that holds one.
 type catalogNode struct {
-	id, name, itemType, sortKey string
-	year                        int
-	index                       *int
-	width, height               int
-	leaf                        bool
-	order                       int64
-	parent, top                 *catalogNode
-	children                    []*catalogNode
-	providers                   map[string]string
+	id, kind, name, itemType string
+	sortKey                  string
+	year                     int
+	index                    *int
+	width, height            int
+	leaf                     bool
+	order                    int64
+	parent, top              *catalogNode
+	children                 []*catalogNode
+	providers                map[string]string
 }
 
 type catalogIndex struct {
@@ -158,6 +182,51 @@ func (h *Handler) catalogLibraries(ctx context.Context, scope auth.Scope) ([]cat
 		out = append(out, catalogLibrary{library: library, interop: interop, collection: collection})
 	}
 	return out, filter, nil
+}
+
+// indexCache holds recently built indexes by Library and visibility filter.
+// An index is never changed after it is built, so readers share it.
+type indexCache struct {
+	mu      sync.Mutex
+	now     func() time.Time
+	entries map[string]cachedIndex
+}
+
+type cachedIndex struct {
+	built time.Time
+	index *catalogIndex
+}
+
+// libraryIndex returns the Library's index, reusing one built for the same
+// filter within catalogIndexTTL.
+func (h *Handler) libraryIndex(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary) (*catalogIndex, error) {
+	fingerprint, err := json.Marshal(filter)
+	if err != nil {
+		return nil, err
+	}
+	key := string(lib.library.ID) + "\x00" + string(fingerprint)
+	c := &h.indexes
+	c.mu.Lock()
+	if c.now == nil {
+		c.now = time.Now
+	}
+	now := c.now()
+	if entry, ok := c.entries[key]; ok && now.Sub(entry.built) < catalogIndexTTL {
+		c.mu.Unlock()
+		return entry.index, nil
+	}
+	c.mu.Unlock()
+	index, err := h.buildIndex(ctx, filter, lib)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil || len(c.entries) >= catalogIndexEntries {
+		c.entries = map[string]cachedIndex{}
+	}
+	c.entries[key] = cachedIndex{built: now, index: index}
+	return index, nil
 }
 
 // buildIndex reads one Library's visible Media and arranges the mapped ones
@@ -224,20 +293,20 @@ func (h *Handler) attachContainers(ctx context.Context, lib catalogLibrary, inde
 			return node
 		}
 		node := &catalogNode{
-			id: string(link.EntityID), name: link.Title, itemType: interop.KindTypes[link.Kind],
+			id: string(link.EntityID), kind: link.Kind, name: link.Title, itemType: interop.KindTypes[link.Kind],
 			sortKey: link.Title, providers: map[string]string{},
 		}
 		containers[link.EntityID] = node
 		return node
 	}
-	mappedLink := func(link store.TitledEntityLink, relations map[string]bool) bool {
-		return link.LibraryID == lib.library.ID && relations[link.Relation] && interop.KindTypes[link.Kind] != ""
+	mappedLink := func(link store.TitledEntityLink) bool {
+		return link.LibraryID == lib.library.ID && interop.KindTypes[link.Kind] != ""
 	}
 	var frontier []store.EntityID
 	for _, id := range mapped {
 		leaf := index.byID[string(id)]
 		for _, link := range holders[id] {
-			if !mappedLink(link, interop.MemberRelations) {
+			if !mappedLink(link) || !interop.MemberRelations[MemberRelationKey(link.Kind, link.Relation)] {
 				continue
 			}
 			_, seen := containers[link.EntityID]
@@ -261,7 +330,7 @@ func (h *Handler) attachContainers(ctx context.Context, lib catalogLibrary, inde
 		for _, id := range frontier {
 			child := containers[id]
 			for _, link := range targets[id] {
-				if !mappedLink(link, interop.ParentRelations) {
+				if !mappedLink(link) || !interop.ParentRelations[ParentRelationKey(child.kind, link.Relation, link.Kind)] {
 					continue
 				}
 				_, seen := containers[link.EntityID]
@@ -308,9 +377,10 @@ func (h *Handler) attachContainers(ctx context.Context, lib catalogLibrary, inde
 }
 
 // climbsTo reports whether target is n or one of n's ancestors, so linking
-// target under n would make a cycle.
+// target under n would make a cycle. It walks the whole chain: a link is only
+// made when it closes no cycle, so every chain ends.
 func (n *catalogNode) climbsTo(target *catalogNode) bool {
-	for node, depth := n, 0; node != nil && depth <= catalogParentDepth+1; node, depth = node.parent, depth+1 {
+	for node := n; node != nil; node = node.parent {
 		if node == target {
 			return true
 		}
@@ -332,7 +402,7 @@ func (h *Handler) attachProviderIDs(ctx context.Context, lib catalogLibrary, ind
 	for _, id := range mapped {
 		leaf := index.byID[string(id)]
 		for _, externalID := range external[id] {
-			if key := providerKeys[strings.ToLower(externalID.Scheme)]; key != "" && externalID.Value != "" {
+			if key := providerKeys[strings.ToLower(externalID.Scheme)]; key != "" && validProviderID(externalID.Value) {
 				leaf.providers[key] = externalID.Value
 			}
 		}
@@ -343,7 +413,7 @@ func (h *Handler) attachProviderIDs(ctx context.Context, lib catalogLibrary, ind
 			if node.leaf {
 				record, ok := provenance[store.MediaID(node.id)]
 				key := providerKeys[lib.interop.ProviderSchemes[record.ScraperID]]
-				if ok && key != "" && record.CandidateID != "" && record.PluginID == *lib.library.PluginID {
+				if ok && key != "" && validProviderID(record.CandidateID) && record.PluginID == *lib.library.PluginID {
 					if _, set := node.top.providers[key]; !set {
 						node.top.providers[key] = record.CandidateID
 					}
@@ -354,6 +424,22 @@ func (h *Handler) attachProviderIDs(ctx context.Context, lib catalogLibrary, ind
 	}
 	walk(index.roots)
 	return nil
+}
+
+// validProviderID reports whether value is a bare provider identifier. A
+// stored value carrying a path, URL or other text is never echoed.
+func validProviderID(value string) bool {
+	if value == "" || len(value) > catalogProviderIDMax {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		switch c := value[i]; {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func ordinal(value float64) *int {
@@ -429,7 +515,7 @@ func (h *Handler) catalogScope(w http.ResponseWriter, r *http.Request) ([]catalo
 // findNode searches the eligible Libraries for one visible item.
 func (h *Handler) findNode(ctx context.Context, filter store.LibraryFilter, libraries []catalogLibrary, id string) (*catalogNode, error) {
 	for _, lib := range libraries {
-		index, err := h.buildIndex(ctx, filter, lib)
+		index, err := h.libraryIndex(ctx, filter, lib)
 		if err != nil {
 			return nil, err
 		}
@@ -496,7 +582,7 @@ func (h *Handler) itemsByID(w http.ResponseWriter, r *http.Request, filter store
 	}
 	found := map[string]*catalogNode{}
 	for _, lib := range libraries {
-		index, err := h.buildIndex(r.Context(), filter, lib)
+		index, err := h.libraryIndex(r.Context(), filter, lib)
 		if err != nil {
 			http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
 			return
@@ -522,7 +608,7 @@ func (h *Handler) libraryItems(w http.ResponseWriter, r *http.Request, filter st
 		http.NotFound(w, r)
 		return
 	}
-	index, err := h.buildIndex(r.Context(), filter, lib)
+	index, err := h.libraryIndex(r.Context(), filter, lib)
 	if err != nil {
 		http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
 		return
@@ -538,13 +624,19 @@ func (h *Handler) libraryItems(w http.ResponseWriter, r *http.Request, filter st
 			return !include[strings.ToLower(node.itemType)]
 		})
 	}
-	start := queryInt(query, "StartIndex", 0)
+	h.writePage(w, query, roots)
+}
+
+// writePage writes the StartIndex/Limit window of nodes with the full count.
+// Without a Limit the window is bounded by catalogUnboundedLimit.
+func (h *Handler) writePage(w http.ResponseWriter, query map[string][]string, nodes []*catalogNode) {
+	start := min(queryInt(query, "StartIndex", 0), len(nodes))
 	limit := catalogUnboundedLimit
-	if raw := queryValue(query, "Limit"); raw != "" {
-		limit = min(max(queryInt(query, "Limit", 0), 0), catalogPageLimit)
+	if queryValue(query, "Limit") != "" {
+		limit = min(queryInt(query, "Limit", 0), catalogPageLimit)
 	}
-	page := roots[min(start, len(roots)):min(start+limit, len(roots))]
-	writeJSON(w, itemList{Items: h.itemsJSON(page), TotalRecordCount: len(roots), StartIndex: start})
+	page := nodes[start : start+min(limit, len(nodes)-start)]
+	writeJSON(w, itemList{Items: h.itemsJSON(page), TotalRecordCount: len(nodes), StartIndex: start})
 }
 
 // latestItems serves Items/Latest?ParentId=: the newest visible Media items
@@ -560,7 +652,7 @@ func (h *Handler) latestItems(w http.ResponseWriter, r *http.Request, _ net.IP) 
 		http.NotFound(w, r)
 		return
 	}
-	index, err := h.buildIndex(r.Context(), filter, lib)
+	index, err := h.libraryIndex(r.Context(), filter, lib)
 	if err != nil {
 		http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
 		return
@@ -605,6 +697,10 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 		}
 	} else {
 		holder := queryValue(r.URL.Query(), "seasonId")
+		if holder != "" && !holdsContainer(node, holder) {
+			http.NotFound(w, r)
+			return
+		}
 		var walk func(*catalogNode)
 		walk = func(n *catalogNode) {
 			for _, child := range n.children {
@@ -619,8 +715,17 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 		}
 		walk(node)
 	}
-	items := h.itemsJSON(nodes)
-	writeJSON(w, itemList{Items: items, TotalRecordCount: len(items)})
+	h.writePage(w, r.URL.Query(), nodes)
+}
+
+// holdsContainer reports whether a container with the given ID sits under node.
+func holdsContainer(node *catalogNode, id string) bool {
+	for _, child := range node.children {
+		if !child.leaf && (child.id == id || holdsContainer(child, id)) {
+			return true
+		}
+	}
+	return false
 }
 
 // listUsers serves Users: the enabled Profiles opted in to compatibility
@@ -773,14 +878,23 @@ func registeredPath(path string) bool {
 }
 
 // queryValue reads a query parameter by case-insensitive name, as the tools
-// vary the case.
+// vary the case. The exact spelling wins; otherwise the lexically smallest
+// matching key does, so a request with several spellings reads one value
+// every time.
 func queryValue(query map[string][]string, name string) string {
+	if values := query[name]; len(values) > 0 {
+		return values[0]
+	}
+	best, found := "", false
 	for key, values := range query {
-		if strings.EqualFold(key, name) && len(values) > 0 {
-			return values[0]
+		if strings.EqualFold(key, name) && len(values) > 0 && (!found || key < best) {
+			best, found = key, true
 		}
 	}
-	return ""
+	if !found {
+		return ""
+	}
+	return query[best][0]
 }
 
 func queryInt(query map[string][]string, name string, fallback int) int {

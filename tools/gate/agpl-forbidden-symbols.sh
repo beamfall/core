@@ -57,11 +57,21 @@ allowed_match() {
   # cast order position (CORE-2503). Only that one file may name it, and only on
   # these exact lines, compared whole after trimming indentation: no pattern,
   # substring or subprocess decides it, so nothing can fail open (CORE-2551).
-  [[ "$file" == internal/web/app/src/areas/viewer/lib/people.ts ]] || return 1
+  #
+  # The Plex import fixture recreates Plex's own settings table, whose
+  # per-account watch-state column Plex names account_id: a foreign schema
+  # spelling, not Beamfall account code (CORE-2681). Only that one line passes.
   local trimmed="${line#"${line%%[![:space:]]*}"}"
-  case "$trimmed" in
-    'const cast = attribute(credit, "character") !== "" || attribute(credit, "billing") !== "";') return 0 ;;
-    'billing: _billing,') return 0 ;;
+  case "$file" in
+    internal/web/app/src/areas/viewer/lib/people.ts)
+      case "$trimmed" in
+        'const cast = attribute(credit, "character") !== "" || attribute(credit, "billing") !== "";') return 0 ;;
+        'billing: _billing,') return 0 ;;
+      esac ;;
+    internal/store/foreignimport/foreignimporttest/foreignimporttest.go)
+      case "$trimmed" in
+        '`CREATE TABLE metadata_item_settings (id INTEGER PRIMARY KEY, account_id INTEGER, guid TEXT, view_offset INTEGER, view_count INTEGER, last_viewed_at INTEGER, rating REAL)`,') return 0 ;;
+      esac ;;
   esac
   return 1
 }

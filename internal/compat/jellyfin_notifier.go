@@ -77,16 +77,17 @@ func (h *Handler) mediaUpdated(w http.ResponseWriter, r *http.Request, _ net.IP)
 		// server location: scan every eligible root instead.
 		paths = nil
 	}
-	if queue && h.enqueueRefresh != nil && h.allowRefresh() {
-		// The shared limiter admits at most one of these per interval.
-		ctx := context.WithoutCancel(r.Context())
+	// The shared limiter admits at most one of these per interval.
+	refresh := queue && h.enqueueRefresh != nil && h.allowRefresh()
+	ctx := context.WithoutCancel(r.Context())
+	w.WriteHeader(http.StatusNoContent)
+	if refresh {
 		h.background.Go(func() {
 			ctx, cancel := context.WithTimeout(ctx, refreshInterval)
 			defer cancel()
 			h.enqueueRefresh(ctx, scope, paths)
 		})
 	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // absolutePath reports whether path is a POSIX, drive-letter or UNC absolute
