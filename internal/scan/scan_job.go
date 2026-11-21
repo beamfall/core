@@ -105,6 +105,19 @@ func HandlerWithWorkerGovernor(st *store.Store, prober Prober, grabber FrameGrab
 	}
 }
 
+// JobLibraryDeleted reports whether a scan job's Library is gone or in the
+// trash. The registered handler checks it before playback admission and the
+// post-scan follow-ups, so a scan queued before its Library was deleted
+// completes without work or side effects (CORE-1279).
+func JobLibraryDeleted(ctx context.Context, st *store.Store, job store.Job) (bool, error) {
+	req, err := requestFromJobPayload(job.Payload)
+	if err != nil {
+		return false, err
+	}
+	live, err := st.LibraryLive(ctx, req.LibraryID)
+	return !live, err
+}
+
 // Scan walks a Library root and imports regular files by content fingerprint.
 func Scan(ctx context.Context, st *store.Store, prober Prober, grabber FrameGrabber, parsers map[string]FilenameParser, interactiveSidecarExts []string, identifier Identifier, req Request) (Result, error) {
 	return ScanWithLocalExtractors(ctx, st, prober, grabber, parsers, interactiveSidecarExts, identifier, nil, req)
