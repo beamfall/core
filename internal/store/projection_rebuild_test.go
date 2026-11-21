@@ -149,3 +149,27 @@ func TestProjectionRebuildRefusesUnloggedRows(t *testing.T) {
 		t.Fatal("rebuild accepted a projection row without a canonical event")
 	}
 }
+
+// A legacy progress row with no playback event that a Profile then removes
+// from Continue Watching has only a hide-continue event, which cannot recreate
+// it. Rebuild must refuse rather than delete the resume position.
+func TestProjectionRebuildRefusesUnloggedRowWithOnlyHideContinue(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	if _, err := st.eventsW.ExecContext(ctx, `
+		INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, play_count, updated_at_ms)
+		VALUES ('profile-default', 'media-alpha', 30, 120, 2, 1)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetContinueWatchingHidden(ctx, "profile-default", "media-alpha", true, itemOpenFilter); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.rebuildEngagementProjections(ctx); err == nil {
+		t.Fatal("rebuild accepted a row whose only canonical event is hide-continue")
+	}
+	progress, ok, err := st.PlaybackProgressFor(ctx, "profile-default", "media-alpha")
+	if err != nil || !ok || progress.PositionSeconds != 30 || progress.PlayCount != 2 {
+		t.Fatalf("refused rebuild changed the row: %+v ok=%v err=%v", progress, ok, err)
+	}
+}

@@ -87,12 +87,15 @@ func applyPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbac
 	}
 }
 
+// applyVersionMergeProjectionEvent copies a merged Media's progress onto the
+// survivor. A new survivor row keeps the merged row's Continue Watching
+// removal; an existing one keeps its own.
 func applyVersionMergeProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, watched, updated_at_ms,
 		  play_count, last_played_at_ms, provenance, occurred_at_ms, import_run_id, import_importer_id,
-		  import_match_method, event_time_ms, channel_context)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		  import_match_method, event_time_ms, channel_context, continue_hidden)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(profile_id, media_id) DO UPDATE SET
 		  play_count = playback_progress.play_count + excluded.play_count,
 		  last_played_at_ms = CASE
@@ -101,7 +104,8 @@ func applyVersionMergeProjectionEvent(ctx context.Context, tx *sql.Tx, event pla
 	`, event.ProfileID, event.MediaID, event.PositionSeconds, event.DurationSeconds,
 		boolToInt(event.Watched), event.UpdatedAtMS, event.PlayCount, event.LastPlayedAtMS,
 		event.Provenance, event.OccurredAtMS, nullString(event.ImportRunID), nullString(event.ImportImporterID),
-		nullString(event.ImportMatch), event.EventTimeMS, boolToInt(event.ChannelContext))
+		nullString(event.ImportMatch), event.EventTimeMS, boolToInt(event.ChannelContext),
+		boolToInt(event.ContinueHidden))
 	return err
 }
 
@@ -197,6 +201,10 @@ func (s *Store) rebuildEngagementProjections(ctx context.Context) error {
 	return tx.Commit()
 }
 
+// rejectUnloggedPlaybackProjections refuses a rebuild that would lose a row.
+// A hide-continue event only flips a flag on an existing row and never
+// creates one, so it does not count as the row's canonical base: a legacy row
+// whose only events are removals from Continue Watching is still unlogged.
 func rejectUnloggedPlaybackProjections(ctx context.Context, tx *sql.Tx) error {
 	var count int
 	err := tx.QueryRowContext(ctx, `
@@ -208,8 +216,9 @@ func rejectUnloggedPlaybackProjections(ctx context.Context, tx *sql.Tx) error {
 			WHERE event.kind = ?
 			  AND event.profile_id = projection.profile_id
 			  AND event.media_id = projection.media_id
+			  AND json_extract(event.payload, '$.operation') <> ?
 		)
-	`, playbackProjectionEventKind).Scan(&count)
+	`, playbackProjectionEventKind, playbackProjectionOperationHideContinue).Scan(&count)
 	if err != nil {
 		return fmt.Errorf("check playback projection base: %w", err)
 	}

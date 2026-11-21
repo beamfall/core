@@ -49,10 +49,14 @@ func (h *Handler) itemStateFor(ctx context.Context, scope auth.Scope, target sto
 	if err != nil {
 		return ItemStateInfo{}, itemActionError(err)
 	}
+	return itemStateInfo(state), nil
+}
+
+func itemStateInfo(state store.ItemState) ItemStateInfo {
 	return ItemStateInfo{
 		ID: state.ID, Kind: state.Kind,
 		Watched: state.Watched, Watchlisted: state.Watchlisted, Rating: state.Rating,
-	}, nil
+	}
 }
 
 // itemActionDone tells the Profile's other sessions to refetch and returns the
@@ -60,11 +64,15 @@ func (h *Handler) itemStateFor(ctx context.Context, scope auth.Scope, target sto
 // already committed, and a client that misses the event still reads the new
 // state on its next load.
 func (h *Handler) itemActionDone(ctx context.Context, scope auth.Scope, target store.ItemTarget) (ItemStateInfo, error) {
+	h.notifyEngagementChanged(ctx, scope)
+	return h.itemStateFor(ctx, scope, target)
+}
+
+func (h *Handler) notifyEngagementChanged(ctx context.Context, scope auth.Scope) {
 	_ = h.store.AppendInvalidationEvent(ctx, store.InvalidationPayload{
 		ProfileID: scope.ProfileID,
 		Reason:    store.InvalidationReasonEngagementChanged,
 	}, time.Now().UTC())
-	return h.itemStateFor(ctx, scope, target)
 }
 
 func (h *Handler) setWatched(ctx context.Context, scope auth.Scope, req request) (ItemStateInfo, error) {
@@ -124,10 +132,14 @@ func (h *Handler) setContinueWatchingHidden(ctx context.Context, scope auth.Scop
 	if mediaID == "" {
 		return ItemStateInfo{}, clientError("mediaID is required")
 	}
-	if err := h.store.SetContinueWatchingHidden(ctx, scope.ProfileID, mediaID, hidden, scope.LibraryFilter()); err != nil {
+	// The store reads the response state inside the write, so a library that
+	// locks after the commit cannot turn a saved removal into a reported failure.
+	state, err := h.store.SetContinueWatchingHidden(ctx, scope.ProfileID, mediaID, hidden, scope.LibraryFilter())
+	if err != nil {
 		return ItemStateInfo{}, itemActionError(err)
 	}
-	return h.itemActionDone(ctx, scope, store.ItemTarget{MediaID: mediaID})
+	h.notifyEngagementChanged(ctx, scope)
+	return itemStateInfo(state), nil
 }
 
 func (h *Handler) setRating(ctx context.Context, scope auth.Scope, req request) (ItemStateInfo, error) {
