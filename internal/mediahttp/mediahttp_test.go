@@ -2764,3 +2764,57 @@ func TestAssetsRejectsUnknownNames(t *testing.T) {
 		}
 	}
 }
+
+func TestHLSUnknownStreamFileIsNotFoundWithoutErrorLog(t *testing.T) {
+	// CORE-1369: a name the session can never serve answers 404, not a
+	// retryable 503, and does not log at ERROR.
+	st := storetest.Open(t)
+	src := filepath.Join(t.TempDir(), "movie.bin")
+	if err := os.WriteFile(src, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetPrimaryMediaFile(context.Background(), "media-alpha", src); err != nil {
+		t.Fatal(err)
+	}
+	authService := auth.NewService(st)
+	scope, err := authService.Scope(context.Background(), "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(100, 0).UTC()
+	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
+	token, err := tokens.Issue(context.Background(), streamtoken.Grant{
+		Target:    streamtoken.TargetMediaHLS,
+		MediaID:   "media-alpha",
+		DeviceID:  scope.DeviceID,
+		SessionID: scope.SessionID,
+		ProfileID: scope.ProfileID,
+		ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions := sessiontest.New(t, fakeHLSTranscoder{}, t.TempDir(), nil)
+	defer sessions.Close()
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions)
+	logs := captureDefaultLogger(t)
+
+	// The seeded 120 s source declares seg00000..seg00029 on the 720p rung.
+	for _, name := range []string{"720p/seg00030.m4s", "2160p/index.m3u8", "720p/notes.txt", "720p"} {
+		rec := httptest.NewRecorder()
+		handler.HLS(rec, httptest.NewRequest(http.MethodGet, "/api/media/hls/"+token+"/"+name, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s: status = %d, want 404: %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if strings.Contains(logs.String(), "level=ERROR") {
+		t.Fatalf("unknown stream files logged at ERROR:\n%s", logs.String())
+	}
+
+	// A real fault still answers 503 and logs at ERROR.
+	rec := httptest.NewRecorder()
+	writeLiveHLSError(rec, httptest.NewRequest(http.MethodGet, "/hls/720p/seg00000.m4s", nil), errors.New("encoder exited"))
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(logs.String(), "level=ERROR") {
+		t.Fatalf("encoder fault = %d, logs %q; want 503 logged at ERROR", rec.Code, logs.String())
+	}
+}

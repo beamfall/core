@@ -1088,11 +1088,11 @@ func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, sess
 	}
 	rungID, file, ok := strings.Cut(name, "/")
 	if !ok || !rungFileName.MatchString(file) {
-		return artifactObservation{}, errors.New("unknown stream file")
+		return artifactObservation{}, ErrUnknownStreamFile
 	}
 	rung, ok := session.rung(rungID)
 	if !ok {
-		return artifactObservation{}, errors.New("unknown stream file")
+		return artifactObservation{}, ErrUnknownStreamFile
 	}
 	path := filepath.Join(session.dir, rungID, file)
 
@@ -1116,7 +1116,7 @@ func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, sess
 		match := segmentName.FindStringSubmatch(file)
 		segment, _ = strconv.Atoi(match[1])
 		if session.durationSeconds > 0 && segment >= session.playlistSegmentCount(rung) {
-			return artifactObservation{}, errors.New("unknown stream file")
+			return artifactObservation{}, ErrUnknownStreamFile
 		}
 		return s.playlistSegment(ctx, key, session, rung, segment, budget)
 	}
