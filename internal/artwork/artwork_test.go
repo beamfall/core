@@ -593,42 +593,69 @@ func TestDeriveImageRegeneratesDerivativesFromAnOlderScaler(t *testing.T) {
 }
 
 func TestDeriveImageVersionBumpKeepsAnImportedPoster(t *testing.T) {
-	st := storetest.Open(t)
-	id, path := importImageFile(t, st, "still", "jpg")
-	scaler := &copyScaler{}
-	svc := NewService(st, scaler, t.TempDir())
-	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.ImportArtwork(context.Background(), id, SlotPoster, []byte("chosen poster")); err != nil {
-		t.Fatal(err)
-	}
-	// The marker is the one a pre-version scaler wrote; importing removed
-	// the buckets.
-	if err := os.WriteFile(svc.PosterPath(id)+".source-fingerprint", []byte("fingerprint-1\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	before := scaler.calls
-	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
-		t.Fatal(err)
-	}
-	if scaler.calls != before+2 {
-		t.Fatalf("scale calls = %d, want %d: the two buckets only", scaler.calls, before+2)
-	}
-	dir := filepath.Dir(svc.PosterPath(id))
-	for _, name := range []string{SlotPoster + ".jpg", SlotPoster + ".w400.jpg", SlotPoster + ".w1920.jpg"} {
-		// #nosec G304 -- the path is under the test-owned artwork root.
-		if data, err := os.ReadFile(filepath.Join(dir, name)); err != nil || string(data) != "chosen poster" {
-			t.Fatalf("%s = %q, %v; want the imported poster", name, data, err)
-		}
-	}
-	// The rebuilt buckets carry the current stamp: the next scan is a no-op.
-	before = scaler.calls
-	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
-		t.Fatal(err)
-	}
-	if scaler.calls != before {
-		t.Fatalf("scale calls = %d after a current rescan, want %d", scaler.calls, before)
+	for _, c := range []struct {
+		name    string
+		marker  string   // a bare fingerprint is the marker a pre-version scaler wrote
+		present []string // buckets already cached before the scan
+		scales  int
+	}{
+		{"pre-version, no buckets", "fingerprint-1", nil, 2},
+		{"pre-version, one bucket", "fingerprint-1", []string{"w400"}, 2},
+		{"pre-version, all buckets", "fingerprint-1", []string{"w400", "w1920"}, 2},
+		{"current, one bucket", imageDerivativeVersion + ":fingerprint-1", []string{"w400"}, 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			st := storetest.Open(t)
+			id, path := importImageFile(t, st, "still", "jpg")
+			scaler := &copyScaler{}
+			svc := NewService(st, scaler, t.TempDir())
+			if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+				t.Fatal(err)
+			}
+			// Importing removes the buckets.
+			if err := svc.ImportArtwork(context.Background(), id, SlotPoster, []byte("chosen poster")); err != nil {
+				t.Fatal(err)
+			}
+			marker := svc.PosterPath(id) + ".source-fingerprint"
+			if err := os.WriteFile(marker, []byte(c.marker+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Dir(svc.PosterPath(id))
+			content := "old scaler bucket"
+			if c.marker != "fingerprint-1" {
+				content = "chosen poster"
+			}
+			for _, bucket := range c.present {
+				if err := os.WriteFile(filepath.Join(dir, SlotPoster+"."+bucket+".jpg"), []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := scaler.calls
+			if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+				t.Fatal(err)
+			}
+			if scaler.calls != before+c.scales {
+				t.Fatalf("scale calls = %d, want %d", scaler.calls, before+c.scales)
+			}
+			for _, name := range []string{SlotPoster + ".jpg", SlotPoster + ".w400.jpg", SlotPoster + ".w1920.jpg"} {
+				// #nosec G304 -- the path is under the test-owned artwork root.
+				if data, err := os.ReadFile(filepath.Join(dir, name)); err != nil || string(data) != "chosen poster" {
+					t.Fatalf("%s = %q, %v; want the imported poster", name, data, err)
+				}
+			}
+			// #nosec G304 -- the path is under the test-owned artwork root.
+			if data, err := os.ReadFile(marker); err != nil || string(data) != imageDerivativeVersion+":fingerprint-1\n" {
+				t.Fatalf("marker = %q, %v; want the current stamp", data, err)
+			}
+			// The rebuilt buckets carry the current stamp: the next scan is a no-op.
+			before = scaler.calls
+			if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+				t.Fatal(err)
+			}
+			if scaler.calls != before {
+				t.Fatalf("scale calls = %d after a current rescan, want %d", scaler.calls, before)
+			}
+		})
 	}
 }
 

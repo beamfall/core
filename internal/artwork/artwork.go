@@ -754,7 +754,9 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 	var missing []string
 	if current {
 		for _, bucket := range buckets {
-			if !nonEmptyRegularFile(filepath.Join(filepath.Dir(poster), SlotPoster+"."+bucket+".jpg")) {
+			// Under a pre-version marker every bucket predates the current
+			// scaler, however new its modification time: rebuild them all.
+			if recorded != stamp || !nonEmptyRegularFile(filepath.Join(filepath.Dir(poster), SlotPoster+"."+bucket+".jpg")) {
 				missing = append(missing, bucket)
 			}
 		}

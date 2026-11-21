@@ -426,6 +426,45 @@ func TestInspectPNGAndWebPMetadata(t *testing.T) {
 	}
 }
 
+func TestPNGAndWebPMetadataReadsOnlyTheFirstChunks(t *testing.T) {
+	pad := make([]byte, 60000)
+	pngChunk := func(typ string, data []byte) []byte {
+		c := binary.BigEndian.AppendUint32(nil, uint32(len(data)))    // #nosec G115 -- small test chunk
+		return append(append(append(c, typ...), data...), 0, 0, 0, 0) // CRC is not checked
+	}
+	webpChunk := func(typ string, data []byte) []byte {
+		c := binary.LittleEndian.AppendUint32([]byte(typ), uint32(len(data))) // #nosec G115 -- small test chunk
+		return append(c, data...)
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, solidImage(4, 4, previewColour)); err != nil {
+		t.Fatal(err)
+	}
+	p := buf.Bytes()
+	pngMeta := pngChunk("eXIf", tiffWithOrientation(5))
+	webp := append([]byte("RIFF\x00\x00\x00\x00WEBPVP8X\x0a\x00\x00\x00"), make([]byte, 10)...)
+	webp = append(webp, webpChunk("EXIF", tiffWithOrientation(5))...)
+	for range 40 { // ≈4.8 MB of repeated metadata chunks per container
+		pngMeta = append(pngMeta, pngChunk("iCCP", pad)...)
+		pngMeta = append(pngMeta, pngChunk("eXIf", append(tiffWithOrientation(3), pad...))...)
+		webp = append(webp, webpChunk("ICCP", pad)...)
+		webp = append(webp, webpChunk("EXIF", append(tiffWithOrientation(3), pad...))...)
+	}
+	pngData := append(append(append([]byte{}, p[:33]...), pngMeta...), p[33:]...)
+	for _, c := range []struct {
+		name string
+		data []byte
+	}{{"a.png", pngData}, {"a.webp", webp}} {
+		r := &countingReaderAt{r: bytes.NewReader(c.data)}
+		if got := inspectStill(r, int64(len(c.data)), c.name).orientation; got != 5 {
+			t.Errorf("%s: orientation = %d, want 5 from the first Exif", c.name, got)
+		}
+		if r.read > 100_000 {
+			t.Errorf("%s: read %d bytes of metadata, want only the first Exif and ICC chunks and chunk headers", c.name, r.read)
+		}
+	}
+}
+
 var (
 	p3Colorants    = d50Colorants([3]chromaticity{{0.680, 0.320}, {0.265, 0.690}, {0.150, 0.060}})
 	adobeColorants = d50Colorants([3]chromaticity{{0.640, 0.330}, {0.210, 0.710}, {0.150, 0.060}})
