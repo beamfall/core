@@ -193,3 +193,32 @@ export function redactJobLogPayload(payload: string): string {
     payload,
   );
 }
+
+function redactJsonStrings(value: unknown): unknown {
+  if (typeof value === "string") return redactJobLogPayload(value);
+  if (Array.isArray(value)) return value.map(redactJsonStrings);
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, field]) => [key, redactJsonStrings(field)]),
+    );
+  }
+  return value;
+}
+
+/**
+ * A job event payload with every string blanked as redactJobLogPayload does,
+ * redacted after JSON decoding and before any formatting. Decoding first
+ * catches a secret that JSON escaping hides (`\u0026token=`) and keeps a
+ * credential pattern from consuming JSON delimiters; formatting afterwards
+ * cannot reshape a secret past the patterns. A payload that is not JSON is
+ * redacted as text.
+ */
+export function redactJobEventPayload(payload: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return redactJobLogPayload(payload);
+  }
+  return JSON.stringify(redactJsonStrings(parsed));
+}

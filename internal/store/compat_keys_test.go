@@ -240,8 +240,11 @@ func TestCompatIntegrationKeyLastUseRaceOutcomes(t *testing.T) {
 	later := now.Add(time.Hour)
 
 	refreshed := mint("Refreshed")
-	// The competing request's write lands first; this lookup's UPDATE then
-	// matches no row (its cutoff predicate fails) and must still authorize.
+	// A competing request's write lands between this lookup's read and its
+	// UPDATE; the trigger stands in for that window and forces the zero-row
+	// outcome. It pins that a zero-row update still authorizes and keeps the
+	// competing timestamp, not the UPDATE's cutoff predicate itself, which
+	// has no deterministic seam on the single writer connection.
 	competing := later.Add(-time.Second)
 	exec(fmt.Sprintf(`CREATE TEMP TRIGGER competing_last_use BEFORE UPDATE OF last_used_at_ms ON compat_integration_key
 		WHEN NEW.last_used_at_ms != %d
@@ -257,10 +260,18 @@ func TestCompatIntegrationKeyLastUseRaceOutcomes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	found := false
 	for _, key := range keys {
-		if key.Name == "Refreshed" && !key.LastUsedAt.Equal(competing) {
+		if key.Name != "Refreshed" {
+			continue
+		}
+		found = true
+		if !key.LastUsedAt.Equal(competing) {
 			t.Fatalf("last use = %v; want the competing request's %v", key.LastUsedAt, competing)
 		}
+	}
+	if !found {
+		t.Fatal("minted key missing from the key list")
 	}
 
 	revoked := mint("Revoked")

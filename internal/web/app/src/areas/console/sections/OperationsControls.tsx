@@ -46,6 +46,7 @@ import {
   fetchConsoleJobs,
   formatJobEventTime,
   jobRunSeconds,
+  redactJobEventPayload,
   redactJobLogPayload,
 } from "../lib/jobQueue";
 import { Section } from "../Section";
@@ -319,9 +320,9 @@ function JobLog({ jobID, version }: { jobID: string; version: number }) {
     <div className="console-card console-job-events">
       {lines.map(({ event: ev, pauses }) => {
         const at = new Date(ev.occurredAt);
-        // Redact before parsing: formatting a progress unit or message can
-        // reshape a secret past the patterns (bfj_ shown as "Bfj ...").
-        const payload = ev.payload ? redactJobLogPayload(ev.payload) : "";
+        // Redact the decoded fields before formatting: formatting a progress
+        // unit or message can reshape a secret past the patterns.
+        const payload = ev.payload ? redactJobEventPayload(ev.payload) : "";
         const detail =
           pauses > 0
             ? ""

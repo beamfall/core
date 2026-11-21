@@ -365,6 +365,8 @@ describe("OperationsControls", () => {
     // before formatting catches it; the suffix must never appear.
     const unitSecret = "unitsecret0123";
     const unitKey = `bfj_${unitSecret}`;
+    const escapedToken = "escaped-token-secret";
+    const tailToken = "tail-bearer-secret";
     const initialEvents: JobEventInfo[] = [
       {
         id: "1",
@@ -393,18 +395,34 @@ describe("OperationsControls", () => {
         payload: `{"type":"progress","current":1,"total":2,"unit":"files","message":"key ${compatKey}"}`,
       },
       {
+        id: "5",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:04Z",
+        type: "yielded",
+        payload: `{"status":"yielded","reason":"key ${apiKey}"}`,
+      },
+      {
         id: "6",
         jobID: "job-1",
         occurredAt: "2026-06-20T00:00:05Z",
         type: "progress",
         payload: `{"type":"progress","current":1,"total":2,"unit":"${unitKey}"}`,
       },
+      // Escaped "&" hides a token until decoding; a trailing credential
+      // must not break the payload into a raw JSON fragment.
       {
-        id: "5",
+        id: "7",
         jobID: "job-1",
-        occurredAt: "2026-06-20T00:00:04Z",
-        type: "yielded",
-        payload: `{"status":"yielded","reason":"key ${apiKey}"}`,
+        occurredAt: "2026-06-20T00:00:06Z",
+        type: "started",
+        payload: "worker=w3",
+      },
+      {
+        id: "8",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:07Z",
+        type: "progress",
+        payload: `{"type":"progress","current":2,"total":2,"unit":"files","message":"GET /x?a=1\\u0026token=${escapedToken} Bearer ${tailToken}"}`,
       },
     ];
     vi.mocked(fetchJobEvents)
@@ -424,9 +442,17 @@ describe("OperationsControls", () => {
     expect(await screen.findByText("Failed")).toBeVisible();
     expect(screen.getByText("Restricted")).toBeVisible();
     expect(screen.getByText("(redacted)")).toBeVisible();
-    expect(screen.getAllByText(/\[REDACTED\]/i).length).toBeGreaterThanOrEqual(3);
-    for (const leak of [restrictedName, token, host, streamID, compatKey, apiKey, unitSecret]) {
+    // Every progress row is visible on its own (no folding), and each one
+    // reads as a formatted line with its secret blanked.
+    expect(screen.getByText("1/2 files - key [REDACTED]")).toBeVisible();
+    expect(screen.getByText("key [REDACTED]")).toBeVisible();
+    expect(screen.getByText(/^1\/2 \[REDACTED\]/i)).toBeVisible();
+    expect(screen.getByText("2/2 files - GET /x?a=1[REDACTED] [REDACTED]")).toBeVisible();
+    const leaks = [restrictedName, token, host, streamID, compatKey, apiKey, unitSecret];
+    for (const leak of [...leaks, escapedToken, tailToken]) {
       expect(screen.queryByText(new RegExp(leak))).toBeNull();
+      // Titles carry the detail too.
+      expect(document.body.innerHTML).not.toContain(leak);
     }
     expect(fetchJobEvents).toHaveBeenCalledTimes(2);
   });

@@ -5,6 +5,7 @@ import {
   collapseJobLog,
   formatJobEventTime,
   jobRunSeconds,
+  redactJobEventPayload,
   redactJobLogPayload,
   unresolvedFailedJobs,
 } from "./jobQueue";
@@ -209,5 +210,28 @@ describe("redactJobLogPayload (CORE-2725)", () => {
     expect(out).not.toContain("bfk_abc_123");
     expect(out).not.toContain("bfj_");
     expect(out).toContain("done");
+  });
+});
+
+describe("redactJobEventPayload (CORE-2725)", () => {
+  it("redacts a token that JSON escaping hides until decoding", () => {
+    const out = redactJobEventPayload('{"message":"GET /x?a=1\\u0026token=hidden-secret"}');
+    expect(out).not.toContain("hidden-secret");
+    expect(JSON.parse(out).message).toContain("[REDACTED]");
+  });
+
+  it("keeps the payload parseable when a message ends in a credential", () => {
+    const out = redactJobEventPayload('{"type":"progress","message":"auth Bearer abc123"}');
+    expect(out).not.toContain("abc123");
+    expect(JSON.parse(out)).toEqual({ type: "progress", message: "auth [REDACTED]" });
+  });
+
+  it("redacts nested strings and leaves other values alone", () => {
+    const out = JSON.parse(redactJobEventPayload('{"a":[{"k":"bfj_x1"}],"n":3,"b":true}'));
+    expect(out).toEqual({ a: [{ k: "[REDACTED]" }], n: 3, b: true });
+  });
+
+  it("redacts a payload that is not JSON as text", () => {
+    expect(redactJobEventPayload("worker=w2 bfk_abc")).toBe("worker=w2 [REDACTED]");
   });
 });
