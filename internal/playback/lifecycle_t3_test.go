@@ -33,7 +33,7 @@ func TestT3FinalizedSegmentServesBeforeChildReap(t *testing.T) {
 				writeArtifact(t, dir, "private", mediaSegment())
 				writeArtifact(t, dir, "later", mediaSegment())
 				return []string{"sh", "-c", `sleep "$1"; mv "$2/private" "$2/seg00000.m4s"
-while [ ! -f "$2/next" ]; do sleep 0.02; done
+while [ -d "$2" ] && [ ! -f "$2/next" ]; do sleep 0.02; done
 mv "$2/later" "$2/seg00001.m4s"; exec sleep 60`,
 					"fixture", fmt.Sprintf("%.3f", delay.Seconds()), dir}
 			}}
@@ -1555,7 +1555,7 @@ fixture="$BEAMFALL_T3_FIXTURE"
 case " $* " in
   *" -h protocol=http "*)
     : > "$fixture/preparing"
-    while [ ! -f "$fixture/release" ]; do /bin/sleep 0.02; done
+    while [ -d "$fixture" ] && [ ! -f "$fixture/release" ]; do /bin/sleep 0.02; done
     printf '%s\n' '-max_redirects  maximum redirects'
     : > "$fixture/resolved"
     exit 0 ;;
@@ -2407,7 +2407,7 @@ fixture="$BEAMFALL_T3_FIXTURE"
 case " $* " in
   *" -version "*)
     printf started > "$fixture/identity"
-    while [ ! -f "$fixture/release" ]; do /bin/sleep 0.02; done
+    while [ -d "$fixture" ] && [ ! -f "$fixture/release" ]; do /bin/sleep 0.02; done
     printf '%s\n' 'ffmpeg version t3-hdr'
     printf done > "$fixture/resolved"
     exit 0 ;;
