@@ -14,12 +14,12 @@ import {
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 
-interface PinSaveState {
-  savingPin: boolean;
-  setSavingPin: (busy: boolean) => void;
+interface SettingsSaveState {
+  saving: boolean;
+  setSaving: (busy: boolean) => void;
 }
 
-export function ProfileSettings({ savingPin, setSavingPin }: PinSaveState) {
+export function ProfileSettings({ saving, setSaving }: SettingsSaveState) {
   const t = useT();
   const [open, setOpen] = useState(false);
   return (
@@ -31,7 +31,7 @@ export function ProfileSettings({ savingPin, setSavingPin }: PinSaveState) {
           size="sm"
           aria-expanded={open}
           data-setting="manage.profile.openSettings"
-          disabled={savingPin}
+          disabled={saving}
           onClick={() => setOpen(!open)}
         >
           {t(open ? "consoleProfilesDone" : "manageProfileSettingsOpen")}
@@ -46,14 +46,14 @@ export function ProfileSettings({ savingPin, setSavingPin }: PinSaveState) {
             submit: "manageUnlockSubmit",
           }}
         >
-          <SettingsForms savingPin={savingPin} setSavingPin={setSavingPin} />
+          <SettingsForms saving={saving} setSaving={setSaving} />
         </AdminGate>
       )}
     </ManageSection>
   );
 }
 
-function SettingsForms({ savingPin, setSavingPin }: PinSaveState) {
+function SettingsForms({ saving, setSaving }: SettingsSaveState) {
   const t = useT();
   const { session, refreshProfiles } = useSession();
   const { data, loading, failed, refresh } = useAsync(fetchProfileEntryPins);
@@ -89,7 +89,7 @@ function SettingsForms({ savingPin, setSavingPin }: PinSaveState) {
                 data-setting="manage.profile.entryPin"
                 className="block h-9 max-w-full rounded-md border border-input bg-background px-2 text-sm"
                 value={selected?.id ?? ""}
-                disabled={savingPin}
+                disabled={saving}
                 onChange={(event) => setSelectedID(event.target.value)}
               >
                 {!selected && (
@@ -109,10 +109,13 @@ function SettingsForms({ savingPin, setSavingPin }: PinSaveState) {
                 key={selected.id}
                 profileID={selected.id}
                 pinSet={selected.entryPinSet === true}
-                busy={savingPin}
-                setBusy={setSavingPin}
+                busy={saving}
+                setBusy={setSaving}
                 onSaved={async () => {
-                  await Promise.all([refresh(), refreshProfiles().catch(() => undefined)]);
+                  await Promise.all([
+                    refresh(),
+                    refreshProfiles(selected.id).catch(() => undefined),
+                  ]);
                 }}
               />
             )}
@@ -136,6 +139,8 @@ function SettingsForms({ savingPin, setSavingPin }: PinSaveState) {
           key={current.data.profileID}
           profileID={current.data.profileID}
           languages={current.data.subtitleLanguages ?? []}
+          saving={saving}
+          setSaving={setSaving}
         />
       )}
     </div>
@@ -240,7 +245,9 @@ function EntryPinForm({
 function SubtitleLanguagesForm({
   profileID,
   languages,
-}: {
+  saving,
+  setSaving,
+}: SettingsSaveState & {
   profileID: string;
   languages: string[];
 }) {
@@ -249,7 +256,6 @@ function SubtitleLanguagesForm({
   const [saved, setSaved] = useState(languages.join(", "));
   const [draft, setDraft] = useState(saved);
   const [result, setResult] = useState<"saved" | "failed" | null>(null);
-  const [busy, setBusy] = useState(false);
   const scope = useFormScope();
   const preferences = draft
     .split(",")
@@ -260,8 +266,8 @@ function SubtitleLanguagesForm({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const signal = scope.current?.signal;
-    if (busy || !changed || !signal || signal.aborted) return;
-    setBusy(true);
+    if (saving || !changed || !signal || signal.aborted) return;
+    setSaving(true);
     setResult(null);
     try {
       const next = (await setProfileSubtitleLanguages(profileID, preferences, signal)).join(", ");
@@ -273,7 +279,7 @@ function SubtitleLanguagesForm({
     } catch {
       if (!signal.aborted) setResult("failed");
     } finally {
-      if (!signal.aborted) setBusy(false);
+      setSaving(false);
     }
   }
 
@@ -289,13 +295,13 @@ function SubtitleLanguagesForm({
           aria-describedby="profile-subtitle-languages-help"
           className="max-w-sm"
           value={draft}
-          disabled={busy}
+          disabled={saving}
           onChange={(event) => {
             setDraft(event.target.value);
             setResult(null);
           }}
         />
-        <Button type="submit" size="sm" disabled={busy || !changed}>
+        <Button type="submit" size="sm" disabled={saving || !changed}>
           {t("save")}
         </Button>
       </div>

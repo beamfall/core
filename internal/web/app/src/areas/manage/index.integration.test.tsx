@@ -164,7 +164,7 @@ describe("Manage production identity boundary", () => {
   );
 });
 
-function installProfileServer(switchRefusal?: string) {
+function installProfileServer(switchRefusal?: string, rejectRosterRefresh = false) {
   const profiles = [
     { id: session.profileID, name: "Alex", kind: "adult" },
     { id: "profile-sam", name: "Sam", kind: "adult" },
@@ -173,6 +173,7 @@ function installProfileServer(switchRefusal?: string) {
   if (switchRefusal) pins.set("profile-sam", "2468");
   let currentID = session.profileID;
   const attempts: Record<string, unknown>[] = [];
+  const rejectedRosterRefresh = vi.fn();
 
   vi.stubGlobal(
     "fetch",
@@ -194,6 +195,15 @@ function installProfileServer(switchRefusal?: string) {
         });
       }
       if (query.startsWith("query Profiles")) {
+        if (
+          rejectRosterRefresh &&
+          pins.has("profile-sam") &&
+          query.includes("pictureURL") &&
+          rejectedRosterRefresh.mock.calls.length === 0
+        ) {
+          rejectedRosterRefresh();
+          throw new Error("Roster refresh failed");
+        }
         const roster = query.includes("entryPinSet")
           ? profiles.map((profile) => ({ ...profile, entryPinSet: pins.has(profile.id) }))
           : profiles;
@@ -227,51 +237,67 @@ function installProfileServer(switchRefusal?: string) {
       throw new Error(`Unexpected GraphQL request: ${query}`);
     }),
   );
-  return attempts;
+  return { attempts, rejectedRosterRefresh };
 }
 
 describe("Manage profile settings in the workspace", () => {
-  it("switches without a PIN until one is set for the same adult profile", async () => {
-    const attempts = installProfileServer();
-    const user = userEvent.setup();
-    render(<ManageHarness page="profile" />);
+  it.each([false, true])(
+    "switches with a PIN after setting it (roster refresh rejected: %s)",
+    async (rejectRosterRefresh) => {
+      const { attempts, rejectedRosterRefresh } = installProfileServer(
+        undefined,
+        rejectRosterRefresh,
+      );
+      const user = userEvent.setup();
+      render(<ManageHarness page="profile" />);
 
-    await user.click(await screen.findByRole("button", { name: "Sam" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /^Sam/ })).toHaveAttribute("aria-current", "true"),
-    );
-    await user.click(screen.getByRole("button", { name: "Alex" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /^Alex/ })).toHaveAttribute("aria-current", "true"),
-    );
-    const pinFreeSwitches = [{ profileID: "profile-sam" }, { profileID: session.profileID }];
-    expect(attempts).toEqual(pinFreeSwitches);
+      await user.click(await screen.findByRole("button", { name: "Sam" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /^Sam/ })).toHaveAttribute(
+          "aria-current",
+          "true",
+        ),
+      );
+      await user.click(screen.getByRole("button", { name: "Alex" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /^Alex/ })).toHaveAttribute(
+          "aria-current",
+          "true",
+        ),
+      );
+      const pinFreeSwitches = [{ profileID: "profile-sam" }, { profileID: session.profileID }];
+      expect(attempts).toEqual(pinFreeSwitches);
 
-    await user.click(await screen.findByRole("button", { name: "Open settings" }));
-    await user.selectOptions(await screen.findByLabelText("Profile"), "profile-sam");
-    await user.type(screen.getByLabelText("New PIN"), "2468");
-    await user.type(screen.getByLabelText("Confirm PIN"), "2468");
-    await user.click(screen.getByRole("button", { name: "Set PIN" }));
-    expect(await screen.findByText("PIN saved.")).toBeVisible();
+      await user.click(await screen.findByRole("button", { name: "Open settings" }));
+      await user.selectOptions(await screen.findByLabelText("Profile"), "profile-sam");
+      await user.type(screen.getByLabelText("New PIN"), "2468");
+      await user.type(screen.getByLabelText("Confirm PIN"), "2468");
+      await user.click(screen.getByRole("button", { name: "Set PIN" }));
+      expect(await screen.findByText("PIN saved.")).toBeVisible();
+      expect(rejectedRosterRefresh).toHaveBeenCalledTimes(Number(rejectRosterRefresh));
 
-    const sam = screen.getByRole("button", { name: "Sam" });
-    await user.click(sam);
-    expect(await screen.findByRole("dialog", { name: "Hi, Sam" })).toBeVisible();
-    expect(screen.getByLabelText("PIN", { exact: true })).toHaveValue("");
-    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(attempts).toEqual(pinFreeSwitches);
-    await user.click(sam);
-    await user.type(screen.getByLabelText("PIN", { exact: true }), "2468");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
+      const sam = screen.getByRole("button", { name: "Sam" });
+      await user.click(sam);
+      expect(await screen.findByRole("dialog", { name: "Hi, Sam" })).toBeVisible();
+      expect(screen.getByLabelText("PIN", { exact: true })).toHaveValue("");
+      expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(attempts).toEqual(pinFreeSwitches);
+      await user.click(sam);
+      await user.type(screen.getByLabelText("PIN", { exact: true }), "2468");
+      await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /^Sam/ })).toHaveAttribute("aria-current", "true"),
-    );
-    expect(attempts).toEqual([...pinFreeSwitches, { profileID: "profile-sam", pin: "2468" }]);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /^Sam/ })).toHaveAttribute(
+          "aria-current",
+          "true",
+        ),
+      );
+      expect(attempts).toEqual([...pinFreeSwitches, { profileID: "profile-sam", pin: "2468" }]);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    },
+  );
 
   it.each([
     ["profile PIN required", "fr", "whosWatchingPinWrong"],
@@ -280,7 +306,7 @@ describe("Manage profile settings in the workspace", () => {
   ] as const)(
     "keeps the localized switch error visible after session reload for %s",
     async (refusal, locale, reason) => {
-      const attempts = installProfileServer(refusal);
+      const { attempts } = installProfileServer(refusal);
       const user = userEvent.setup();
       const copy = STRINGS[locale];
       render(<ManageHarness page="profile" locale={locale} />);
