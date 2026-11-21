@@ -103,6 +103,11 @@ function rowFor(name: string) {
   return row;
 }
 
+// A long user-event flow: it runs in well under a second alone but can pass 5s
+// when the machine is oversubscribed (two vitest runs at once), so it gets its
+// own budget rather than a raised global timeout (CORE-2890).
+const SLOW_FLOW_TIMEOUT = 15_000;
+
 describe("Webhooks", () => {
   it("lists endpoints with their state and the delivery log by name", async () => {
     renderPage();
@@ -119,31 +124,35 @@ describe("Webhooks", () => {
     expect(within(logRow as HTMLElement).getByText("Failed · 5xx")).toBeVisible();
   });
 
-  it("adds a webhook with the chosen events and no secret for Discord", async () => {
-    const user = userEvent.setup();
-    renderPage();
-    await screen.findAllByText("Chat alerts");
+  it(
+    "adds a webhook with the chosen events and no secret for Discord",
+    async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findAllByText("Chat alerts");
 
-    await user.click(screen.getByRole("button", { name: "Add webhook" }));
-    expect(screen.queryByLabelText("Secret")).toBeNull();
-    await user.type(screen.getByLabelText("Name"), "Releases");
-    await user.type(screen.getByLabelText("URL"), "https://chat.example/hook/token");
-    await user.click(screen.getByRole("checkbox", { name: "Media added" }));
-    await user.click(screen.getByRole("button", { name: "Save webhook" }));
+      await user.click(screen.getByRole("button", { name: "Add webhook" }));
+      expect(screen.queryByLabelText("Secret")).toBeNull();
+      await user.type(screen.getByLabelText("Name"), "Releases");
+      await user.type(screen.getByLabelText("URL"), "https://chat.example/hook/token");
+      await user.click(screen.getByRole("checkbox", { name: "Media added" }));
+      await user.click(screen.getByRole("button", { name: "Save webhook" }));
 
-    await waitFor(() =>
-      expect(saveWebhook).toHaveBeenCalledWith({
-        name: "Releases",
-        format: "discord",
-        url: "https://chat.example/hook/token",
-        eventKinds: ["media.added"],
-        disabled: false,
-        allowPrivateNetwork: false,
-      }),
-    );
-    await waitFor(() => expect(fetchWebhooks).toHaveBeenCalledTimes(2));
-    expect(screen.queryByRole("button", { name: "Save webhook" })).toBeNull();
-  });
+      await waitFor(() =>
+        expect(saveWebhook).toHaveBeenCalledWith({
+          name: "Releases",
+          format: "discord",
+          url: "https://chat.example/hook/token",
+          eventKinds: ["media.added"],
+          disabled: false,
+          allowPrivateNetwork: false,
+        }),
+      );
+      await waitFor(() => expect(fetchWebhooks).toHaveBeenCalledTimes(2));
+      expect(screen.queryByRole("button", { name: "Save webhook" })).toBeNull();
+    },
+    SLOW_FLOW_TIMEOUT,
+  );
 
   it("keeps the saved URL and secret when an edit leaves them blank", async () => {
     const user = userEvent.setup();

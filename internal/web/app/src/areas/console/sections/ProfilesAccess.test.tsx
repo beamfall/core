@@ -129,6 +129,11 @@ afterEach(() => {
   setAdvancedSettings(false);
 });
 
+// A long user-event flow: it runs in well under a second alone but can pass 5s
+// when the machine is oversubscribed (two vitest runs at once), so it gets its
+// own budget rather than a raised global timeout (CORE-2890).
+const SLOW_FLOW_TIMEOUT = 15_000;
+
 describe("ProfilesAccess managed-Profile policy", () => {
   // CORE-2322: the picker's label says "Profile" once; the trigger and the
   // ceilings empty state ask for a choice instead of repeating it.
@@ -251,40 +256,44 @@ describe("ProfilesAccess managed-Profile policy", () => {
     await waitFor(() => expect(fetchEnforcedFilters).toHaveBeenCalledTimes(2));
   });
 
-  it("shows the reread remote cap when the profile is reselected mid-save (CORE-1853)", async () => {
-    let finishSave: (value: { id: string; remoteMaxBitrate: number }) => void = () => {};
-    vi.mocked(setProfileRemoteBitrateCap).mockReturnValue(
-      new Promise((resolve) => {
-        finishSave = resolve;
-      }),
-    );
-    const user = await pickProfile("Owner");
-    await choose(user, REMOTE_CAP, "4 Mbit/s · 720p");
-    // The control is locked while the save is in flight.
-    expect(screen.getByRole("combobox", { name: REMOTE_CAP })).toBeDisabled();
-    // Switch away and back before the save returns: the control remounts with
-    // the pre-save profiles payload.
-    for (const name of ["Kid", "Owner"]) {
-      await user.click(screen.getAllByRole("combobox")[0]);
-      await user.click(await screen.findByRole("option", { name }));
-    }
-    expect(await screen.findByRole("combobox", { name: REMOTE_CAP })).toHaveTextContent(
-      "12.5 Mbit/s",
-    );
-    const before = await fetchEnforcedFilters();
-    vi.mocked(fetchEnforcedFilters).mockResolvedValue({
-      ...before,
-      profiles: before.profiles.map((p) =>
-        p.id === "p1" ? { ...p, remoteMaxBitrate: 4_000_000 } : p,
-      ),
-    });
-    finishSave({ id: "p1", remoteMaxBitrate: 4_000_000 });
-    await waitFor(() =>
-      expect(screen.getByRole("combobox", { name: REMOTE_CAP })).toHaveTextContent(
-        "4 Mbit/s · 720p",
-      ),
-    );
-  });
+  it(
+    "shows the reread remote cap when the profile is reselected mid-save (CORE-1853)",
+    async () => {
+      let finishSave: (value: { id: string; remoteMaxBitrate: number }) => void = () => {};
+      vi.mocked(setProfileRemoteBitrateCap).mockReturnValue(
+        new Promise((resolve) => {
+          finishSave = resolve;
+        }),
+      );
+      const user = await pickProfile("Owner");
+      await choose(user, REMOTE_CAP, "4 Mbit/s · 720p");
+      // The control is locked while the save is in flight.
+      expect(screen.getByRole("combobox", { name: REMOTE_CAP })).toBeDisabled();
+      // Switch away and back before the save returns: the control remounts with
+      // the pre-save profiles payload.
+      for (const name of ["Kid", "Owner"]) {
+        await user.click(screen.getAllByRole("combobox")[0]);
+        await user.click(await screen.findByRole("option", { name }));
+      }
+      expect(await screen.findByRole("combobox", { name: REMOTE_CAP })).toHaveTextContent(
+        "12.5 Mbit/s",
+      );
+      const before = await fetchEnforcedFilters();
+      vi.mocked(fetchEnforcedFilters).mockResolvedValue({
+        ...before,
+        profiles: before.profiles.map((p) =>
+          p.id === "p1" ? { ...p, remoteMaxBitrate: 4_000_000 } : p,
+        ),
+      });
+      finishSave({ id: "p1", remoteMaxBitrate: 4_000_000 });
+      await waitFor(() =>
+        expect(screen.getByRole("combobox", { name: REMOTE_CAP })).toHaveTextContent(
+          "4 Mbit/s · 720p",
+        ),
+      );
+    },
+    SLOW_FLOW_TIMEOUT,
+  );
 
   it("clears the remote cap by choosing No limit", async () => {
     const user = await pickProfile("Owner");

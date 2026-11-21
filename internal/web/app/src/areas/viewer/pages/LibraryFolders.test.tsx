@@ -135,6 +135,14 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
+// A long user-event flow: it runs in well under a second alone but can pass 5s
+// when the machine is oversubscribed (two vitest runs at once), so it gets its
+// own budget rather than a raised global timeout (CORE-2890).
+const SLOW_FLOW_TIMEOUT = 15_000;
+// Its first render (and the re-render back to Media) can take over Testing
+// Library's 1s default under the same load.
+const FLOW_WAIT = { timeout: 5_000 };
+
 describe("library folder URL mapping (CORE-2359)", () => {
   it("round-trips the open folder through the search string", () => {
     expect(folderSearch()).toBe("?view=folders");
@@ -254,26 +262,30 @@ describe("Library folder view (CORE-2359)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("switches between the Media and Folders views with the view switcher", async () => {
-    vi.mocked(fetchLibraryFolder).mockImplementation(async (request) => folderFor(request));
-    vi.mocked(fetchLibraryItems).mockImplementation(async () => ({
-      total: 1,
-      items: [media("m1")],
-      facets: { groupings: [], decades: [], qualities: [] },
-      letters: [],
-    }));
-    const user = userEvent.setup();
-    renderAt("/n/archive/all");
+  it(
+    "switches between the Media and Folders views with the view switcher",
+    async () => {
+      vi.mocked(fetchLibraryFolder).mockImplementation(async (request) => folderFor(request));
+      vi.mocked(fetchLibraryItems).mockImplementation(async () => ({
+        total: 1,
+        items: [media("m1")],
+        facets: { groupings: [], decades: [], qualities: [] },
+        letters: [],
+      }));
+      const user = userEvent.setup();
+      renderAt("/n/archive/all");
 
-    expect(await screen.findByText("1 item")).toBeInTheDocument();
-    await user.click(await screen.findByRole("button", { name: "Folders" }));
-    expect(await screen.findByRole("list", { name: "Folders" })).toBeInTheDocument();
-    expect(screen.getByTestId("where")).toHaveTextContent("/n/archive/all?view=folders");
+      expect(await screen.findByText("1 item", {}, FLOW_WAIT)).toBeInTheDocument();
+      await user.click(await screen.findByRole("button", { name: "Folders" }));
+      expect(await screen.findByRole("list", { name: "Folders" }, FLOW_WAIT)).toBeInTheDocument();
+      expect(screen.getByTestId("where")).toHaveTextContent("/n/archive/all?view=folders");
 
-    await user.click(screen.getByRole("button", { name: "All items" }));
-    expect(await screen.findByText("1 item")).toBeInTheDocument();
-    expect(screen.getByTestId("where").textContent).toBe("/n/archive/all?view=media");
-  });
+      await user.click(screen.getByRole("button", { name: "All items" }));
+      expect(await screen.findByText("1 item", {}, FLOW_WAIT)).toBeInTheDocument();
+      expect(screen.getByTestId("where").textContent).toBe("/n/archive/all?view=media");
+    },
+    SLOW_FLOW_TIMEOUT,
+  );
 
   it("draws an open folder's items in the remembered layout with their subtitles (CORE-2386)", async () => {
     const episodes: SourceItem[] = [1, 2].map((index) => ({

@@ -1651,7 +1651,13 @@ describe("PlayerPage server Play Queue", () => {
     await screen.findByRole("heading", { name: catalogInfo.title });
     act(() => controls()?.onPlayMusicQueue?.());
     await waitFor(() => expect(location.search).toBe("?playQueue=profile-a"));
-    expect(graphql.mock.lastCall?.[0]).toMatch(/^query MusicQueueMedia\b/);
+    // The scoped read starts only after the queue read returns, which can land
+    // after the route change (CORE-2890).
+    await waitFor(() =>
+      expect(graphql.mock.calls.some(([query]) => /^query MusicQueueMedia\b/.test(query))).toBe(
+        true,
+      ),
+    );
     expect(screen.queryByRole("heading", { name: catalogInfo.title })).toBeNull();
     await act(async () =>
       readMedia.resolve({
