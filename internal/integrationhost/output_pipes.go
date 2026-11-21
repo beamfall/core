@@ -15,8 +15,8 @@ import (
 // output is cut off; after a failed one they are abandoned (CORE-2753). The
 // ffmpeg supervisor keeps its own copy: the two packages share no imports.
 type outputPipes struct {
-	readers []*os.File
-	writers []*os.File  // the child's ends, closed in the parent after Start
+	readers []io.ReadCloser
+	writers []io.Closer // the child's ends, closed in the parent after Start
 	dests   []io.Writer // where each reader is copied, once started
 	copies  sync.WaitGroup
 	mu      sync.Mutex
@@ -82,7 +82,7 @@ func (o *outputPipes) started() {
 	}
 }
 
-func (o *outputPipes) copy(w io.Writer, r *os.File) {
+func (o *outputPipes) copy(w io.Writer, r io.ReadCloser) {
 	defer o.copies.Done()
 	_, err := io.Copy(w, r)
 	// Close the read end, as exec does, so a child still writing after w

@@ -346,7 +346,7 @@ func (s *Store) applyMuteFilterLocked(ctx context.Context, relations *sql.DB, pr
 			continue
 		}
 		// An Entity card for a hidden container (or one under it) drops like
-		// its Media do, so a hidden show leaves an entity-items shelf too.
+		// its Media do, so a hidden container leaves an entity-items shelf too.
 		if _, hidden := reach.directEntities[string(item.ID)]; hidden && item.Kind == "entity" {
 			continue
 		}

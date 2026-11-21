@@ -5,6 +5,7 @@ package integrationhost
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
 	"testing"
 	"time"
@@ -46,7 +47,9 @@ func TestOutputPipesAbandonIgnoresHolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	holder := exec.Command("sleep", "30")
-	holder.ExtraFiles = pipes.writers
+	for _, w := range pipes.writers {
+		holder.ExtraFiles = append(holder.ExtraFiles, w.(*os.File))
+	}
 	if err := holder.Start(); err != nil {
 		t.Fatal(err)
 	}

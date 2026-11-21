@@ -296,6 +296,8 @@ var clientErrorRules = []clientErrorRule{
 	{code: ErrorCodeForbidden, prefix: "permission ", suffix: " is not approved"},
 	// A Library health dimension the Library's plugin cannot check (CORE-2383).
 	{code: ErrorCodeConflict, suffix: " is not applicable to this library"},
+	// An installed plugin built for an incompatible plugin SDK (CORE-2837).
+	{code: ErrorCodeConflict, prefix: "plugin does not support this server's plugin SDK: "},
 	{code: ErrorCodeInvalid, suffix: " required"},
 	{code: ErrorCodeInvalid, contains: " is required "},
 	{code: ErrorCodeInvalid, contains: " are required "},

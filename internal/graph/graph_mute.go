@@ -107,7 +107,7 @@ func (h *Handler) clearMute(ctx context.Context, scope auth.Scope, req request) 
 }
 
 // muteChanged tells the Profile's other sessions to refetch, since a Mute
-// changes what their shelves and browse show. Best-effort, like
+// changes what their shelves and browse list. Best-effort, like
 // itemActionDone: the write has committed and a missed event only delays the
 // refresh to the next load.
 func (h *Handler) muteChanged(ctx context.Context, scope auth.Scope) {
