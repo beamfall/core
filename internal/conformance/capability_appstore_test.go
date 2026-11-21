@@ -21,7 +21,7 @@ import (
 // (absent from the schema manifest) nor reachable (rejected as an unknown
 // top-level field). It is a TEST of the API, not merely UI suppression.
 func TestAppStoreSuppressesCapabilityControlAPI(t *testing.T) {
-	suppressed := []string{"capabilitystates", "setcapabilityenabled", "qbittorrentingest", "setqbittorrentingest", "jellyfincompat", "setjellyfincompat", "setprofileintegrationsignin"}
+	suppressed := []string{"capabilitystates", "setcapabilityenabled", "qbittorrentingest", "setqbittorrentingest", "jellyfincompat", "setjellyfincompat", "setprofileintegrationsignin", "jellyfincompatkeys", "createjellyfincompatkey", "revokejellyfincompatkey"}
 
 	// Not advertised: the field is absent from the dispatcher's schema manifest.
 	for _, field := range graph.SchemaManifest() {

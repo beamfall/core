@@ -596,8 +596,9 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "before", Kind: "string"},
 		{Name: "confirm", Kind: "boolean"},
 	},
-	"jellyfincompat":    {},
-	"qbittorrentingest": {},
+	"jellyfincompat":     {},
+	"jellyfincompatkeys": {},
+	"qbittorrentingest":  {},
 	"qualitypolicy": {
 		{Name: "libraryID", Kind: "string"},
 	},
@@ -946,6 +947,13 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"setprofilelibraries": {
 		{Name: "libraryIDs", Kind: "list"},
 		{Name: "profileID", Kind: "string"},
+	},
+	"createjellyfincompatkey": {
+		{Name: "name", Kind: "string"},
+		{Name: "profileID", Kind: "string"},
+	},
+	"revokejellyfincompatkey": {
+		{Name: "id", Kind: "string"},
 	},
 	"setjellyfincompat": {
 		{Name: "allowedCIDRs", Kind: "list", Optional: true},

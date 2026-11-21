@@ -2,7 +2,9 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
@@ -152,4 +154,124 @@ func (h *Handler) setProfileIntegrationSignIn(ctx context.Context, scope auth.Sc
 	}
 	_ = h.logActivity(ctx, scope, store.ActivityConfigUpdate, "profile-integration-sign-in", id, "")
 	return JellyfinCompatProfileInfo{ID: string(profile.ID), Name: profile.Name, IntegrationSignIn: profile.IntegrationSignIn}, nil
+}
+
+// JellyfinCompatKeyInfo is the Console view of one durable integration key
+// (ADR-0171 §2.4, CORE-2725). It never carries the token.
+type JellyfinCompatKeyInfo struct {
+	ID          string   `json:"id"`
+	ProfileID   string   `json:"profileID"`
+	ProfileName string   `json:"profileName"`
+	Name        string   `json:"name"`
+	Scopes      []string `json:"scopes"`
+	CreatedAt   string   `json:"createdAt"`
+	LastUsedAt  string   `json:"lastUsedAt,omitempty"`
+	RevokedAt   string   `json:"revokedAt,omitempty"`
+}
+
+// CreatedJellyfinCompatKeyInfo carries the key's token exactly once, from the
+// create mutation's response. It is never readable again.
+type CreatedJellyfinCompatKeyInfo struct {
+	Token string                `json:"token"`
+	Key   JellyfinCompatKeyInfo `json:"key"`
+}
+
+// jellyfinCompatKeyScopes is the fixed authority of a minted key: catalog
+// reads and library refresh, never the admin setup scope.
+var jellyfinCompatKeyScopes = []store.IntegrationScope{store.IntegrationScopeRead, store.IntegrationScopeRefresh}
+
+func (h *Handler) jellyfinCompatKeys(ctx context.Context) ([]JellyfinCompatKeyInfo, error) {
+	keys, err := h.store.CompatIntegrationKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names, err := h.profileNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	infos := make([]JellyfinCompatKeyInfo, 0, len(keys))
+	for _, key := range keys {
+		infos = append(infos, jellyfinCompatKeyInfo(key, names[key.ProfileID]))
+	}
+	return infos, nil
+}
+
+func (h *Handler) createJellyfinCompatKey(ctx context.Context, scope auth.Scope, req request) (CreatedJellyfinCompatKeyInfo, error) {
+	profileID := store.ProfileID(trimmedVariable(req, "profileID"))
+	name := trimmedVariable(req, "name")
+	if profileID == "" || name == "" {
+		return CreatedJellyfinCompatKeyInfo{}, clientError("profileID and name are required")
+	}
+	key, token, err := h.store.CreateCompatIntegrationKey(ctx, profileID, name, jellyfinCompatKeyScopes, time.Now().UTC())
+	if err != nil {
+		return CreatedJellyfinCompatKeyInfo{}, compatKeyClientError(err)
+	}
+	if err := h.logActivity(ctx, scope, store.ActivityKeyCreate, "integration-key", key.ID, ""); err != nil {
+		return CreatedJellyfinCompatKeyInfo{}, err
+	}
+	names, err := h.profileNames(ctx)
+	if err != nil {
+		return CreatedJellyfinCompatKeyInfo{}, err
+	}
+	return CreatedJellyfinCompatKeyInfo{Token: token, Key: jellyfinCompatKeyInfo(key, names[key.ProfileID])}, nil
+}
+
+func (h *Handler) revokeJellyfinCompatKey(ctx context.Context, scope auth.Scope, req request) (JellyfinCompatKeyInfo, error) {
+	id := trimmedVariable(req, "id")
+	if id == "" {
+		return JellyfinCompatKeyInfo{}, clientError("id is required")
+	}
+	key, err := h.store.RevokeCompatIntegrationKey(ctx, id, time.Now().UTC())
+	if err != nil {
+		return JellyfinCompatKeyInfo{}, compatKeyClientError(err)
+	}
+	if err := h.logActivity(ctx, scope, store.ActivityKeyRevoke, "integration-key", key.ID, ""); err != nil {
+		return JellyfinCompatKeyInfo{}, err
+	}
+	names, err := h.profileNames(ctx)
+	if err != nil {
+		return JellyfinCompatKeyInfo{}, err
+	}
+	return jellyfinCompatKeyInfo(key, names[key.ProfileID]), nil
+}
+
+func (h *Handler) profileNames(ctx context.Context) (map[store.ProfileID]string, error) {
+	profiles, err := h.store.Profiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[store.ProfileID]string, len(profiles))
+	for _, profile := range profiles {
+		names[profile.ID] = profile.Name
+	}
+	return names, nil
+}
+
+func compatKeyClientError(err error) error {
+	var verr store.ValidationError
+	if errors.As(err, &verr) {
+		return clientError(string(verr))
+	}
+	if errors.Is(err, store.ErrProfileDisabled) {
+		return clientError("only an enabled adult profile can hold an integration key")
+	}
+	return err
+}
+
+func jellyfinCompatKeyInfo(key store.CompatIntegrationKey, profileName string) JellyfinCompatKeyInfo {
+	scopes := make([]string, len(key.Scopes))
+	for i, s := range key.Scopes {
+		scopes[i] = string(s)
+	}
+	info := JellyfinCompatKeyInfo{
+		ID: key.ID, ProfileID: string(key.ProfileID), ProfileName: profileName, Name: key.Name,
+		Scopes: scopes, CreatedAt: key.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if !key.LastUsedAt.IsZero() {
+		info.LastUsedAt = key.LastUsedAt.UTC().Format(time.RFC3339)
+	}
+	if key.Revoked() {
+		info.RevokedAt = key.RevokedAt.UTC().Format(time.RFC3339)
+	}
+	return info
 }

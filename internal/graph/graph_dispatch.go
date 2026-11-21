@@ -198,6 +198,7 @@ var agentTokenDenied = map[string]bool{
 	"acknowledgebackupkey":        true,
 	"setjellyfincompat":           true,
 	"setprofileintegrationsignin": true,
+	"createjellyfincompatkey":     true,
 }
 
 // adminTokenMayRun reports whether the request authenticated with an admin API
@@ -559,6 +560,9 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"preplayclips":                       newFieldHandler("prePlayClips", "prePlayClips", fieldRead, roleSession|roleAdmin, 149),
 	"preplayqueue":                       newFieldHandler("prePlayQueue", "prePlayQueue", fieldRead, roleSession, 149),
 	"jellyfincompat":                     newFieldHandler("jellyfinCompat", "jellyfinCompat", fieldRead, roleSession|roleAdmin, 155),
+	"jellyfincompatkeys":                 newFieldHandler("jellyfinCompatKeys", "jellyfinCompatKeys", fieldRead, roleSession|roleAdmin, 155),
+	"createjellyfincompatkey":            newFieldHandler("createJellyfinCompatKey", "createJellyfinCompatKey", fieldMutation, roleSession|roleAdmin, 155),
+	"revokejellyfincompatkey":            newFieldHandler("revokeJellyfinCompatKey", "revokeJellyfinCompatKey", fieldMutation, roleSession|roleAdmin, 155),
 	"qbittorrentingest":                  newFieldHandler("qbittorrentIngest", "qbittorrentIngest", fieldRead, roleSession|roleAdmin, 106),
 	"qualitypolicy":                      newFieldHandler("qualityPolicy", "qualityPolicy", fieldRead, roleSession|roleAdmin, 50),
 	"queueadd":                           newFieldHandler("queueAdd", "queue", fieldMutation, roleSession, 30),
@@ -4396,9 +4400,27 @@ func dispatchFieldBlock155(dispatch *fieldDispatchContext) response {
 			return resp
 		}
 	}
+	if fields["createjellyfincompatkey"] {
+		result, err := h.createJellyfinCompatKey(ctx, scope, req)
+		if resp := resolveField(dispatch, "createjellyfincompatkey", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["revokejellyfincompatkey"] {
+		result, err := h.revokeJellyfinCompatKey(ctx, scope, req)
+		if resp := resolveField(dispatch, "revokejellyfincompatkey", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	if fields["jellyfincompat"] {
 		info, err := h.jellyfinCompatInfo(ctx)
 		if resp := resolveField(dispatch, "jellyfincompat", info, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["jellyfincompatkeys"] {
+		keys, err := h.jellyfinCompatKeys(ctx)
+		if resp := resolveField(dispatch, "jellyfincompatkeys", keys, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

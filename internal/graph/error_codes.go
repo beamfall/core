@@ -201,6 +201,8 @@ var clientErrorCodes = map[string]ErrorCode{
 	"only an adult profile can resolve an access request":              ErrorCodeForbidden,
 	"only an adult profile can respond to an extension request":        ErrorCodeForbidden,
 	"only an adult profile can revoke an access grant":                 ErrorCodeForbidden,
+	// CORE-2725: a compatibility integration key binds an enabled adult Profile.
+	"only an enabled adult profile can hold an integration key": ErrorCodeForbidden,
 	"profile PIN required":                                           ErrorCodeForbidden,
 	"profile has no reveal path":                                     ErrorCodeForbidden,
 	"profile is disabled":                                            ErrorCodeForbidden,
