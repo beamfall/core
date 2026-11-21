@@ -9,6 +9,7 @@ import { fetchSetupRequired } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import { SlideshowPage } from "../slideshow/SlideshowPage";
 import { HiddenUndoNotice, useEngagementEvents } from "./actions";
 import { SectionSkeleton } from "./components/HydratedSection";
 import { useScrollRestoration } from "./lib/useScrollRestoration";
@@ -180,6 +181,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/profiles" element={<ProfilePickerPage />} />
         <Route path="/settings" element={<ProfileSettingsPage />} />
         <Route path="/view/*" element={<ImageViewerPage />} />
+        <Route path="/slideshow" element={<SlideshowPage />} />
         <Route
           path="/watch/*"
           element={

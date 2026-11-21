@@ -8,6 +8,7 @@ import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
+import { SlideshowButton } from "../../slideshow/SlideshowButton";
 import {
   HideWatchedToggle,
   hiddenKeyMoved,
@@ -323,7 +324,8 @@ function LibraryBrowse({
   };
 
   // Titles repeated across the loaded pages show their year (CORE-2320).
-  const repeated = repeatedTitles([...pagesRef.current.values()].flat());
+  const loadedItems = [...pagesRef.current.values()].flat();
+  const repeated = repeatedTitles(loadedItems);
   const cells = [];
   for (let index = start; index < end; index += 1) {
     const pageIndex = Math.floor(index / LIBRARY_BROWSE_PAGE);
@@ -376,6 +378,7 @@ function LibraryBrowse({
                   <Shuffle aria-hidden />
                   {t("libraryBrowseShuffle")}
                 </Button>
+                <SlideshowButton source={{ kind: "all-items", libraryID }} items={loadedItems} />
               </div>
             </>
           }
