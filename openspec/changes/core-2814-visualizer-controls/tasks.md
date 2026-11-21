@@ -1,0 +1,7 @@
+- [ ] `off` visual choice; the audio stage mounts no Visualizer with it; Off in the settings select
+- [ ] The Visualizer publishes the visual on screen; next/previous step from it in catalog order, wrapping, calm-only under reduced motion; from Off they turn the visualizer on
+- [ ] Visualizer control in the audio transport (previous, on/off with the visual's name, next), audio items only, only where the browser can visualize
+- [ ] `V` / `Shift+V` in the shared shortcut table and the `?` sheet
+- [ ] Strings in every web locale
+- [ ] Unit tests: Off unmounts the visualizer, next/previous order with wrap and reduced motion, shortcuts, Off then next turns it on
+- [ ] Checked in the browser at desktop and phone widths, visualizer on and off
