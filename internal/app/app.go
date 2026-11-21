@@ -667,6 +667,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// CORE-2393: a live transcode preempts scans like generation.
 	scanHandler = scanYieldsToPlayback(resourceGovernor, logger, scanHandler)
 	jobRegistry.Register(scanpkg.JobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
+		// A scan queued before its Library was deleted completes at once:
+		// no playback wait, no walk and no post-scan follow-ups (CORE-1279).
+		if deleted, err := scanpkg.JobLibraryDeleted(ctx, st, job); err != nil || deleted {
+			return jobs.Result{}, err
+		}
 		floor, floorErr := st.MaxMediaInsertSeq(ctx)
 		if floorErr != nil {
 			logger.Warn("asset catch-up watermark failed; skipping catch-up", "error", floorErr)
