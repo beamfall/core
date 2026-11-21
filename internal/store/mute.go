@@ -803,8 +803,8 @@ func (s *Store) applyMuteFilterRolledUpLocked(ctx context.Context, relations *sq
 			out = append(out, item)
 			continue
 		}
-		// The card goes on standing only for the members that survived, so a
-		// later filter (Hide watched) judges the same members.
+		// A later filter (Hide watched) judges the card by the members that
+		// survived; rollUpMembers keeps them all for the Muted badge.
 		var members []MediaID
 		for _, member := range item.rollUpMembers {
 			if survivors[member] {
@@ -812,7 +812,7 @@ func (s *Store) applyMuteFilterRolledUpLocked(ctx context.Context, relations *sq
 			}
 		}
 		if len(members) > 0 {
-			item.rollUpMembers = members
+			item.visibleMembers = members
 			out = append(out, item)
 		}
 	}

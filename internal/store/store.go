@@ -885,10 +885,14 @@ type SourceItem struct {
 	// for (ContainerRollUp), so passive-rail mute filtering judges the
 	// container by its members exactly as the unrolled rail would.
 	rollUpMembers []MediaID
-	Kind          string
-	Title         string
-	Summary       string
-	Restricted    bool
+	// visibleMembers are the rollUpMembers the Profile's Mutes left, set by
+	// the mute pass, so Hide watched judges the card by the same members
+	// while the Muted badge still sees them all.
+	visibleMembers []MediaID
+	Kind           string
+	Title          string
+	Summary        string
+	Restricted     bool
 	// MediaClass is a media-kind item's playback class ("audio", "video"),
 	// set by AnnotateMediaClass; an entity item carries the class its linked
 	// Media share (CORE-2362). Empty for unknown or mixed classes.

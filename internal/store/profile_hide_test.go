@@ -231,6 +231,9 @@ func TestHideWatchedPagesAfterTheDrop(t *testing.T) {
 	if err := st.SetMute(ctx, profile, MuteKindMedia, string(all[2].ID), false, true); err != nil {
 		t.Fatal(err)
 	}
+	// Read in chunks of three, so pages span chunk edges.
+	defer func(chunk int) { profileFilteredChunk = chunk }(profileFilteredChunk)
+	profileFilteredChunk = 3
 	var paged []MediaID
 	for offset := 0; ; offset += 2 {
 		page := mustSourceItems(t, st, filter, SourceQuery{Kind: "all-items", ProfileID: profile, Limit: 2, Offset: offset})
@@ -268,8 +271,8 @@ func TestRolledUpCardNeedsOneMemberPassingBoth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(kept) != 1 || !slices.Equal(kept[0].rollUpMembers, []MediaID{finished}) {
-		t.Fatalf("after mute = %+v, want the card standing only for the finished member", kept)
+	if len(kept) != 1 || !slices.Equal(kept[0].visibleMembers, []MediaID{finished}) || len(kept[0].rollUpMembers) != 2 {
+		t.Fatalf("after mute = %+v, want the card showing only the finished member and keeping both for its badge", kept)
 	}
 	if got := dropWatched(kept, map[MediaID]bool{finished: true}); len(got) != 0 {
 		t.Fatalf("after hide watched = %+v, want the card gone", got)

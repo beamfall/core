@@ -76,12 +76,21 @@ func dropWatched(items []SourceItem, watched map[MediaID]bool) []SourceItem {
 			if watched[item.ID] {
 				continue
 			}
-		} else if len(item.rollUpMembers) > 0 && !slices.ContainsFunc(item.rollUpMembers, func(id MediaID) bool { return !watched[id] }) {
+		} else if members := cardMembers(item); len(members) > 0 && !slices.ContainsFunc(members, func(id MediaID) bool { return !watched[id] }) {
 			continue
 		}
 		out = append(out, item)
 	}
 	return out
+}
+
+// cardMembers returns the Media a rolled-up card stands for after the mute
+// pass: the survivors when it ran, else every member.
+func cardMembers(item SourceItem) []MediaID {
+	if item.visibleMembers != nil {
+		return item.visibleMembers
+	}
+	return item.rollUpMembers
 }
 
 // hiddenWatchedLocked returns the finished Media a Hide watched read leaves
@@ -102,8 +111,9 @@ func (s *Store) hiddenWatchedLocked(ctx context.Context, query SourceQuery) (map
 	return watched, nil
 }
 
-// maxProfileFilteredRead bounds how many raw items one filtered page reads.
-const maxProfileFilteredRead = 20000
+// profileFilteredChunk is how many raw items a filtered page reads at a time
+// (a variable so tests can page across chunks).
+var profileFilteredChunk = 500
 
 // profileSourceItemsLocked reads one page of a Source for a Profile.
 //
@@ -114,9 +124,11 @@ const maxProfileFilteredRead = 20000
 // (CORE-2836) drops finished Media from catalog shelves the same way. A
 // profile-less read or a text search passes through unchanged.
 //
-// With either filter in play the page is taken from the filtered list, read
-// from the top and widened until it holds offset+limit survivors or the Source
-// runs out, so a See All never ends early on a short page. The caller holds s.mu.
+// With either filter in play the page is taken from the filtered list: the
+// Source is read from the top in chunks, each raw item read and filtered once,
+// until offset+limit items survive or the Source runs out, so a See All never
+// ends early on a short page. A deep page still costs a scan of everything
+// above it. The caller holds s.mu.
 func (s *Store) profileSourceItemsLocked(ctx context.Context, filter LibraryFilter, query SourceQuery, limit, offset int) ([]SourceItem, error) {
 	if query.ProfileID == "" || strings.TrimSpace(query.Query) != "" {
 		return s.sourceItemsForKind(ctx, filter, query, limit, offset)
@@ -133,25 +145,28 @@ func (s *Store) profileSourceItemsLocked(ctx context.Context, filter LibraryFilt
 		return s.sourceItemsForKind(ctx, filter, query, limit, offset)
 	}
 	want := offset + limit
-	read := want + len(watched)
-	for {
-		read = min(read, maxProfileFilteredRead)
-		raw, err := s.sourceItemsForKind(ctx, filter, query, read, 0)
+	chunk := max(want, profileFilteredChunk)
+	kept := []SourceItem{}
+	for read := 0; len(kept) < want; {
+		raw, err := s.sourceItemsForKind(ctx, filter, query, chunk, read)
 		if err != nil {
 			return nil, err
 		}
-		kept, err := s.applyMuteFilterLocked(ctx, s.catalogR, query.ProfileID, filter, raw)
+		survivors, err := s.applyMuteFilterLocked(ctx, s.catalogR, query.ProfileID, filter, raw)
 		if err != nil {
 			return nil, err
 		}
 		if watched != nil {
-			kept = dropWatched(kept, watched)
+			survivors = dropWatched(survivors, watched)
 		}
-		if len(kept) >= want || len(raw) < read || read == maxProfileFilteredRead {
-			return pageOf(kept, limit, offset), nil
+		kept = append(kept, survivors...)
+		if len(raw) < chunk {
+			break
 		}
-		read *= 2
+		read += chunk
+		chunk = profileFilteredChunk
 	}
+	return pageOf(kept, limit, offset), nil
 }
 
 // profileHasMutesLocked reports whether the Profile has any Mute. The caller holds s.mu.
