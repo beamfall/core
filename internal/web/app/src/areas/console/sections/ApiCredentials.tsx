@@ -53,7 +53,7 @@ export function apiScopeLabel(scope: string, labels: Partial<Record<StringKey, s
 // The "copy this once" banner for a freshly minted secret (token or key). The
 // secret is never re-fetchable — the server returns it only on creation, so
 // this is the one moment the screen must be unmissable (beam keyline).
-function SecretBanner({ secret }: { secret: string }) {
+export function SecretBanner({ secret }: { secret: string }) {
   const t = useT();
   return (
     <div className="console-secret">

@@ -4,6 +4,7 @@ import { ACTIVITY_PAGE_SIZE, fetchActivityRecords } from "./activity";
 import {
   cancelJob,
   checkRemoteAccessReachability,
+  createJellyfinCompatKey,
   createProfile,
   createRetentionRule,
   deleteRetentionRule,
@@ -19,6 +20,7 @@ import {
   fetchEnforcedFilters,
   fetchHostMetrics,
   fetchJellyfinCompat,
+  fetchJellyfinCompatKeys,
   fetchLiveSessions,
   fetchPlaybackCache,
   fetchPlayHistory,
@@ -37,6 +39,7 @@ import {
   retryJob,
   revokeAllDevices,
   revokeDevice,
+  revokeJellyfinCompatKey,
   runEventsCompaction,
   saveWebhook,
   setConsoleConfig,
@@ -83,6 +86,26 @@ const DATA = {
     profiles: [],
   },
   setProfileIntegrationSignIn: { id: "p-1", name: "Alex", integrationSignIn: true },
+  jellyfinCompatKeys: [],
+  createJellyfinCompatKey: {
+    token: "bfj_x",
+    key: {
+      id: "key-1",
+      profileID: "p-1",
+      profileName: "Alex",
+      name: "Seerr",
+      scopes: [],
+      createdAt: "",
+    },
+  },
+  revokeJellyfinCompatKey: {
+    id: "key-1",
+    profileID: "p-1",
+    profileName: "Alex",
+    name: "Seerr",
+    scopes: [],
+    createdAt: "",
+  },
   setConsoleConfig: { backgroundWorkers: 2, viewerPairingCodesDisabled: true, plugins: [] },
   remoteAccess: { directHTTPS: null, relay: null, plainHTTPPublicWarning: false, endpoints: [] },
   setRemoteAccessPortMapping: {
@@ -563,5 +586,21 @@ describe("console GraphQL requests", () => {
       "setProfileIntegrationSignIn(profileID: $profileID, enabled: $enabled) { id name integrationSignIn }",
     );
     expect(recorded[4].variables).toEqual({ profileID: "p-1", enabled: false });
+  });
+
+  it("Jellyfin integration key reads and mutations bind only their arguments (CORE-2725)", async () => {
+    await fetchJellyfinCompatKeys();
+    await createJellyfinCompatKey("p-1", "Seerr");
+    await revokeJellyfinCompatKey("key-1");
+
+    const fields = "{ id profileID profileName name scopes createdAt lastUsedAt revokedAt }";
+    expect(recorded[0].query).toContain(`jellyfinCompatKeys ${fields}`);
+    expect(recorded[0].variables).toEqual({});
+    expect(recorded[1].query).toContain(
+      `createJellyfinCompatKey(profileID: $profileID, name: $name) { token key ${fields} }`,
+    );
+    expect(recorded[1].variables).toEqual({ profileID: "p-1", name: "Seerr" });
+    expect(recorded[2].query).toContain(`revokeJellyfinCompatKey(id: $id) ${fields}`);
+    expect(recorded[2].variables).toEqual({ id: "key-1" });
   });
 });

@@ -30,6 +30,18 @@ export const jellyfinCompatStrings = {
     jellyfinCompatProfilesHelp:
       "A tool signs in as one of these profiles. Turning a profile off signs it out of every compatibility tool at once.",
     jellyfinCompatProfilesEmpty: "No adult profiles.",
+    jellyfinCompatKeysHeading: "Integration keys",
+    jellyfinCompatKeysHelp:
+      "A key lets a tool such as Seerr or Radarr sign in as a profile until you revoke it, with no PIN and no expiry. Paste it into the tool's API key field. A key can read and refresh libraries; it can never change settings.",
+    jellyfinCompatKeysNoProfiles: "Turn on a profile above before you create a key.",
+    jellyfinCompatKeyName: "Key name",
+    jellyfinCompatKeyProfile: "Profile",
+    jellyfinCompatKeyCreate: "Create key",
+    jellyfinCompatKeysUnavailable: "Couldn't load the integration keys.",
+    jellyfinCompatKeysEmpty: "No integration keys yet.",
+    jellyfinCompatKeyCreateFailed: "Couldn't create the key: {reason}",
+    jellyfinCompatKeyRevokeFailed: "Couldn't revoke the key: {reason}",
+    jellyfinCompatKeyConfirmRevoke: "Revoke this key? The tool using it stops working at once.",
   },
   fr: {
     navJellyfinCompat: "Compatibilité Jellyfin",
@@ -60,6 +72,19 @@ export const jellyfinCompatStrings = {
     jellyfinCompatProfilesHelp:
       "Un outil se connecte avec l’un de ces profils. Désactiver un profil le déconnecte de tous les outils de compatibilité à la fois.",
     jellyfinCompatProfilesEmpty: "Aucun profil adulte.",
+    jellyfinCompatKeysHeading: "Clés d’intégration",
+    jellyfinCompatKeysHelp:
+      "Une clé permet à un outil comme Seerr ou Radarr de se connecter avec un profil jusqu’à ce que vous la révoquiez, sans code PIN ni expiration. Collez-la dans le champ de clé API de l’outil. Une clé peut lire et actualiser les bibliothèques ; elle ne peut jamais modifier les réglages.",
+    jellyfinCompatKeysNoProfiles: "Activez un profil ci-dessus avant de créer une clé.",
+    jellyfinCompatKeyName: "Nom de la clé",
+    jellyfinCompatKeyProfile: "Profil",
+    jellyfinCompatKeyCreate: "Créer une clé",
+    jellyfinCompatKeysUnavailable: "Impossible de charger les clés d’intégration.",
+    jellyfinCompatKeysEmpty: "Aucune clé d’intégration pour l’instant.",
+    jellyfinCompatKeyCreateFailed: "Impossible de créer la clé : {reason}",
+    jellyfinCompatKeyRevokeFailed: "Impossible de révoquer la clé : {reason}",
+    jellyfinCompatKeyConfirmRevoke:
+      "Révoquer cette clé ? L’outil qui l’utilise cesse de fonctionner immédiatement.",
   },
   de: {
     navJellyfinCompat: "Jellyfin-Kompatibilität",
@@ -90,6 +115,19 @@ export const jellyfinCompatStrings = {
     jellyfinCompatProfilesHelp:
       "Ein Werkzeug meldet sich mit einem dieser Profile an. Wird ein Profil ausgeschaltet, wird es sofort von allen Kompatibilitätswerkzeugen abgemeldet.",
     jellyfinCompatProfilesEmpty: "Keine Erwachsenenprofile.",
+    jellyfinCompatKeysHeading: "Integrationsschlüssel",
+    jellyfinCompatKeysHelp:
+      "Mit einem Schlüssel meldet sich ein Tool wie Seerr oder Radarr als Profil an, bis du ihn widerrufst – ohne PIN und ohne Ablauf. Füge ihn in das API-Schlüssel-Feld des Tools ein. Ein Schlüssel kann Mediatheken lesen und aktualisieren, aber nie Einstellungen ändern.",
+    jellyfinCompatKeysNoProfiles: "Aktiviere oben ein Profil, bevor du einen Schlüssel erstellst.",
+    jellyfinCompatKeyName: "Schlüsselname",
+    jellyfinCompatKeyProfile: "Profil",
+    jellyfinCompatKeyCreate: "Schlüssel erstellen",
+    jellyfinCompatKeysUnavailable: "Die Integrationsschlüssel konnten nicht geladen werden.",
+    jellyfinCompatKeysEmpty: "Noch keine Integrationsschlüssel.",
+    jellyfinCompatKeyCreateFailed: "Schlüssel konnte nicht erstellt werden: {reason}",
+    jellyfinCompatKeyRevokeFailed: "Schlüssel konnte nicht widerrufen werden: {reason}",
+    jellyfinCompatKeyConfirmRevoke:
+      "Diesen Schlüssel widerrufen? Das Tool, das ihn verwendet, funktioniert sofort nicht mehr.",
   },
   es: {
     navJellyfinCompat: "Compatibilidad con Jellyfin",
@@ -120,6 +158,19 @@ export const jellyfinCompatStrings = {
     jellyfinCompatProfilesHelp:
       "Una herramienta inicia sesión con uno de estos perfiles. Desactivar un perfil cierra su sesión en todas las herramientas de compatibilidad a la vez.",
     jellyfinCompatProfilesEmpty: "No hay perfiles de adulto.",
+    jellyfinCompatKeysHeading: "Claves de integración",
+    jellyfinCompatKeysHelp:
+      "Una clave permite que una herramienta como Seerr o Radarr inicie sesión con un perfil hasta que la revoques, sin PIN y sin caducidad. Pégala en el campo de clave de API de la herramienta. Una clave puede leer y actualizar bibliotecas, pero nunca cambiar ajustes.",
+    jellyfinCompatKeysNoProfiles: "Activa un perfil arriba antes de crear una clave.",
+    jellyfinCompatKeyName: "Nombre de la clave",
+    jellyfinCompatKeyProfile: "Perfil",
+    jellyfinCompatKeyCreate: "Crear clave",
+    jellyfinCompatKeysUnavailable: "No se pudieron cargar las claves de integración.",
+    jellyfinCompatKeysEmpty: "Aún no hay claves de integración.",
+    jellyfinCompatKeyCreateFailed: "No se pudo crear la clave: {reason}",
+    jellyfinCompatKeyRevokeFailed: "No se pudo revocar la clave: {reason}",
+    jellyfinCompatKeyConfirmRevoke:
+      "¿Revocar esta clave? La herramienta que la usa deja de funcionar al instante.",
   },
   pt: {
     navJellyfinCompat: "Compatibilidade com Jellyfin",
@@ -150,5 +201,18 @@ export const jellyfinCompatStrings = {
     jellyfinCompatProfilesHelp:
       "Uma ferramenta entra com um destes perfis. Desativar um perfil encerra a sessão dele em todas as ferramentas de compatibilidade de uma vez.",
     jellyfinCompatProfilesEmpty: "Nenhum perfil adulto.",
+    jellyfinCompatKeysHeading: "Chaves de integração",
+    jellyfinCompatKeysHelp:
+      "Uma chave permite que uma ferramenta como Seerr ou Radarr entre com um perfil até você revogá-la, sem PIN e sem expiração. Cole-a no campo de chave de API da ferramenta. Uma chave pode ler e atualizar bibliotecas, mas nunca alterar configurações.",
+    jellyfinCompatKeysNoProfiles: "Ative um perfil acima antes de criar uma chave.",
+    jellyfinCompatKeyName: "Nome da chave",
+    jellyfinCompatKeyProfile: "Perfil",
+    jellyfinCompatKeyCreate: "Criar chave",
+    jellyfinCompatKeysUnavailable: "Não foi possível carregar as chaves de integração.",
+    jellyfinCompatKeysEmpty: "Ainda não há chaves de integração.",
+    jellyfinCompatKeyCreateFailed: "Não foi possível criar a chave: {reason}",
+    jellyfinCompatKeyRevokeFailed: "Não foi possível revogar a chave: {reason}",
+    jellyfinCompatKeyConfirmRevoke:
+      "Revogar esta chave? A ferramenta que a usa para de funcionar imediatamente.",
   },
 } as const;
