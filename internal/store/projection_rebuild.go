@@ -208,14 +208,16 @@ func withMemoryTempStore(ctx context.Context, db *sql.DB, fn func(*sql.Conn) err
 	if err := conn.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&prior); err != nil {
 		return fmt.Errorf("read temp_store: %w", err)
 	}
-	if _, err := conn.ExecContext(ctx, `PRAGMA temp_store = MEMORY`); err != nil {
-		return fmt.Errorf("set temp_store: %w", err)
-	}
+	// Register the restore before the setter: a cancelled setter can still
+	// have applied MEMORY, and that connection must not reach the pool.
 	defer func() {
 		if _, err := conn.ExecContext(context.WithoutCancel(ctx), fmt.Sprintf("PRAGMA temp_store = %d", prior)); err != nil {
 			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		}
 	}()
+	if _, err := conn.ExecContext(ctx, `PRAGMA temp_store = MEMORY`); err != nil {
+		return fmt.Errorf("set temp_store: %w", err)
+	}
 	var mode int
 	if err := conn.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&mode); err != nil {
 		return fmt.Errorf("read temp_store: %w", err)
