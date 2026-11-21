@@ -45,6 +45,9 @@ func TestQueueAddResponseMatchesQueueReadAfterMute(t *testing.T) {
 	if !slices.EqualFunc(committed.Items, read, func(a, b SourceItem) bool { return a.ID == b.ID }) {
 		t.Fatalf("queueAdd response = %#v, want the same order as the queue read", committed.Items)
 	}
+	if committed.MediaID != newTarget || committed.Position == nil || *committed.Position != 0 {
+		t.Fatalf("committed placement = %s at %v, want %s at 0", committed.MediaID, committed.Position, newTarget)
+	}
 	query.Limit, query.Offset = 1, 1
 	if page := mustSourceItems(t, st, filter, query); len(page) != 1 || page[0].ID != target {
 		t.Fatalf("second visible page = %#v, want %s", page, target)
@@ -80,6 +83,9 @@ func TestQueueAddCommitsMutedTargetsWithoutReturningThem(t *testing.T) {
 		}
 		if len(committed.Items) != 1 || committed.Items[0].ID != "media-alpha" {
 			t.Fatalf("queue add response for muted target %s = %#v, want only media-alpha", id, committed.Items)
+		}
+		if committed.MediaID != id || committed.Position != nil {
+			t.Fatalf("committed placement for muted target %s = %s at %v", id, committed.MediaID, committed.Position)
 		}
 	}
 	assertQueueIDs(t, st, filter, profile, []MediaID{"media-alpha"})
@@ -139,6 +145,39 @@ func TestQueueAddMatchesQueueReadWithEncryptedCatalogMutes(t *testing.T) {
 			assertQueueIDs(t, st, filter, profile, want)
 		})
 	}
+}
+
+func TestQueueAddSkipsEncryptedReaderOutsideCurrentProfileGrants(t *testing.T) {
+	st, library, _, _, privateMedia := openEncryptedPackLibrary(t)
+	ctx := t.Context()
+	const profile = "profile-default"
+	const session = "session-revealed"
+	preflight := LibraryFilter{AllowedIDs: []LibraryID{library, "library-archive"}, Revealed: true}
+	for _, id := range []MediaID{privateMedia, "media-archive"} {
+		if _, err := st.Media(ctx, id, preflight); err != nil {
+			t.Fatalf("preflight for %s: %v", id, err)
+		}
+	}
+	if _, err := st.SetProfileLibraries(ctx, profile, []LibraryID{"library-archive"}); err != nil {
+		t.Fatal(err)
+	}
+	reader := st.encryptedDBs[library].reader
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var one int
+	if err := reader.QueryRowContext(ctx, "SELECT 1 FROM media WHERE id = ?", privateMedia).Scan(&one); err == nil {
+		t.Fatal("encrypted reader fault was not installed")
+	}
+
+	if _, err := st.QueueAddForProfile(ctx, profile, session, profile, "media-archive", nil, preflight, testQueueCertification); err != nil {
+		t.Fatalf("catalog add with inaccessible encrypted reader: %v", err)
+	}
+	if _, err := st.QueueAddForProfile(ctx, profile, session, profile, privateMedia, queueIntPtr(0), preflight, testQueueCertification); !errors.Is(err, ErrQueueMediaNotFound) {
+		t.Fatalf("inaccessible encrypted add = %v, want hidden-target refusal", err)
+	}
+	current := LibraryFilter{AllowedIDs: []LibraryID{"library-archive"}, Revealed: true}
+	assertQueueIDs(t, st, current, profile, []MediaID{"media-archive"})
 }
 
 func TestQueueAddRefusesInvalidatedRevealSession(t *testing.T) {

@@ -31,13 +31,9 @@ and its eligibility.
 
 ### Requirement: Queue adds report their committed placement
 
-After committing an add the server SHALL return the first page of at most 50
-visible items in committed order, even if optional card details cannot be read.
-A successful add SHALL also return a receipt in `extensions.queueAdds` with its
-top-level `responseKey`, target `mediaID`, and zero-based `position` in the full
-visible queue at commit. `position` is omitted when the committed target is muted.
-A later failure in the same operation SHALL preserve committed queue add data
-and receipts and identify the failed field by response key in the error path.
+The server SHALL return the committed queue's first page of up to 50 items and a
+receipt in `extensions.queueAdds` with the response key, target Media ID, and
+visible position. The response SHALL retain both after a later batch failure.
 
 #### Scenario: Card details fail after the queue transaction commits
 
@@ -48,7 +44,12 @@ and receipts and identify the failed field by response key in the error path.
 
 - **WHEN** `queueAdd` commits a visible target outside the first page
 - **THEN** the response stays bounded to the first page of the committed queue
-- **AND** the receipt identifies the target and its position beyond the page
+- **AND** the receipt identifies the target and its zero-based position in the full visible queue
+
+#### Scenario: The committed target is muted
+
+- **WHEN** `queueAdd` commits a muted target
+- **THEN** the receipt omits `position`
 
 #### Scenario: A later queue add alias is refused
 

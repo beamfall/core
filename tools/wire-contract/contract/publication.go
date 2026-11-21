@@ -55,6 +55,11 @@ type GraphQLErrorsContract struct {
 	Notes   []string `json:"notes,omitempty"`
 }
 
+type GraphQLResponseContract struct {
+	Extensions WireShape `json:"extensions"`
+	Notes      []string  `json:"notes"`
+}
+
 type WireShape struct {
 	Type     string      `json:"type"`
 	Fields   []WireField `json:"fields,omitempty"`
@@ -151,6 +156,18 @@ func buildGraphQLErrorsContract() GraphQLErrorsContract {
 			"UNAUTHENTICATED means no valid session or device credential; THROTTLED means attempt limiting refused the request and it may be retried later; INVALID means the request or an argument is malformed; CONFLICT means the target's current state does not allow the operation; INTERNAL means a server-side failure; its message is generic (the failed field name followed by \"unavailable\") and the cause stays in the server log.",
 			"extensions.reason, when present, is one of the closed vocabulary in reasons and refines extensions.code where a client must act differently on refusals that share a code. REVEAL_PIN_NOT_SET (FORBIDDEN): the step-up needs a reveal PIN and the Profile has none, so entering one cannot help. REVEAL_PIN_REQUIRED (FORBIDDEN): the request carried no reveal PIN. REVEAL_PIN_INCORRECT (FORBIDDEN): the reveal PIN does not match. myEngagement and deleteMyData use these. Absent means the error has no finer reason; clients must not infer one from the message text, and must treat an unknown reason as absent.",
 			"PROFILE_MISMATCH (CONFLICT): a Play Queue write named, in its optional expectedProfileID argument, a Profile the session is not bound to when the write applies (queueAdd, queueRemove, queueMove, queueClear, stationStart). Nothing was written; the client drops the write instead of retrying it.",
+		},
+	}
+}
+
+func buildGraphQLResponseContract() GraphQLResponseContract {
+	extensions := shapeOf(reflect.TypeOf(graph.GraphQLResponseExtensions{}))
+	extensions.Optional = true
+	return GraphQLResponseContract{
+		Extensions: extensions,
+		Notes: []string{
+			"extensions.queueAdds lists committed queueAdd mutations in execution order. Each receipt names the top-level responseKey (the alias, or queueAdd), the target mediaID, and its zero-based position in the full visible queue at commit, even outside the first page. A muted target omits position.",
+			"data[responseKey] retains the first queue page. If a later mutation fails, the response preserves earlier queueAdd pages and receipts, sets the failed response key to null, and identifies it in errors[].path. Refused adds have no receipt.",
 		},
 	}
 }

@@ -41516,6 +41516,49 @@
       "PROFILE_MISMATCH (CONFLICT): a Play Queue write named, in its optional expectedProfileID argument, a Profile the session is not bound to when the write applies (queueAdd, queueRemove, queueMove, queueClear, stationStart). Nothing was written; the client drops the write instead of retrying it."
     ]
   },
+  "graphqlResponse": {
+    "extensions": {
+      "type": "object",
+      "fields": [
+        {
+          "name": "queueAdds",
+          "shape": {
+            "type": "array",
+            "element": {
+              "type": "object",
+              "fields": [
+                {
+                  "name": "responseKey",
+                  "shape": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "name": "mediaID",
+                  "shape": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "name": "position",
+                  "shape": {
+                    "type": "integer",
+                    "optional": true
+                  }
+                }
+              ]
+            },
+            "optional": true
+          }
+        }
+      ],
+      "optional": true
+    },
+    "notes": [
+      "extensions.queueAdds lists committed queueAdd mutations in execution order. Each receipt names the top-level responseKey (the alias, or queueAdd), the target mediaID, and its zero-based position in the full visible queue at commit, even outside the first page. A muted target omits position.",
+      "data[responseKey] retains the first queue page. If a later mutation fails, the response preserves earlier queueAdd pages and receipts, sets the failed response key to null, and identifies it in errors[].path. Refused adds have no receipt."
+    ]
+  },
   "compatibility": {
     "versioning": "semantic-versioning",
     "incompatibleChange": "publish a new contract version; never overwrite an existing artifact",

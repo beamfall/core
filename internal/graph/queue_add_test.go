@@ -28,6 +28,7 @@ func TestQueueAddReturnsCommittedOrderWhenCardReadFails(t *testing.T) {
 		`mutation Add($mediaID: String!) { queueAdd(mediaID: $mediaID, position: 0) { id title restricted } }`,
 		map[string]any{"mediaID": "media-archive"})
 	got := committedQueuePage(t, resp, "queueAdd")
+	assertQueueAddReceipt(t, resp, "queueAdd", "media-archive", 0)
 	if !qaEqualIDs(got, "media-archive", "media-alpha") || got[0].Title == "" || !got[0].Restricted {
 		t.Fatalf("queueAdd fallback = %#v", got)
 	}
@@ -66,6 +67,7 @@ func TestQueueAddBoundsCardLookupsAndPreservesOffPageTail(t *testing.T) {
 	const add = `mutation Add($mediaID: String!) { tail: queueAdd(mediaID: $mediaID) { id title mediaClass artworkSlots } }`
 	resp := postGraphJSON(t, h, authorizeRevealed, add, map[string]any{"mediaID": target})
 	got := committedQueuePage(t, resp, "tail")
+	assertQueueAddReceipt(t, resp, "tail", store.MediaID(target), queued)
 	if !qaEqualIDs(got, want...) {
 		t.Fatalf("queueAdd returned %d rows, want the original %d-row first page", len(got), pageSize)
 	}
@@ -85,6 +87,7 @@ func TestQueueAddBoundsCardLookupsAndPreservesOffPageTail(t *testing.T) {
 
 	resp = postGraphJSON(t, h, authorizeRevealed, add, map[string]any{"mediaID": "media-archive"})
 	got = committedQueuePage(t, resp, "tail")
+	assertQueueAddReceipt(t, resp, "tail", "media-archive", queued+1)
 	if !qaEqualIDs(got, want...) || got[0].Title == "" {
 		t.Fatalf("queueAdd fallback returned %d rows, want the original first page with basic fields", len(got))
 	}
@@ -110,6 +113,17 @@ func committedQueuePage(t *testing.T, resp graphTestResponse, key string) []Sour
 		t.Fatal(err)
 	}
 	return items
+}
+
+func assertQueueAddReceipt(t *testing.T, resp graphTestResponse, key string, mediaID store.MediaID, position int) {
+	t.Helper()
+	if resp.Extensions == nil || len(resp.Extensions.QueueAdds) != 1 {
+		t.Fatalf("queueAdd extensions = %+v, want one receipt", resp.Extensions)
+	}
+	got := resp.Extensions.QueueAdds[0]
+	if got.ResponseKey != key || got.MediaID != mediaID || got.Position == nil || *got.Position != position {
+		t.Fatalf("queueAdd receipt = %+v, want %s at position %d for %s", got, mediaID, position, key)
+	}
 }
 
 func TestQueueAddReturnsLocalizedForbiddenForLockedMedia(t *testing.T) {
@@ -138,14 +152,18 @@ func TestQueueAddReturnsLocalizedForbiddenForLockedMedia(t *testing.T) {
 		resp.Errors[0].Extensions.Reason != "" || resp.Errors[0].Message != "Cet élément est verrouillé." {
 		t.Fatalf("queueAdd locked = %#v, want localized FORBIDDEN", resp.Errors)
 	}
+	if resp.Extensions != nil {
+		t.Fatalf("refused add returned extensions: %+v", resp.Extensions)
+	}
 	if got := pqQueue(t, st, pqDefault); len(got) != 0 {
 		t.Fatalf("locked target changed queue to %v", got)
 	}
 }
 
-func TestQueueAddKeepsCommittedAliasWhenLaterAliasIsRefused(t *testing.T) {
+func TestQueueAddKeepsOffPageTailReceiptWhenLaterAliasIsRefused(t *testing.T) {
 	// feature:play-queue
-	st := storetest.Open(t)
+	dir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dir)
 	h := newTestHandlerWithStore(st)
 	fx := seedMusicFixture(t, st)
 	h.auth.SetCertificationScales(map[string][]string{stationPluginID: {"low", "high"}})
@@ -159,26 +177,43 @@ func TestQueueAddKeepsCommittedAliasWhenLaterAliasIsRefused(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	const pageSize = 50
+	const queued = pageSize + 1
+	ids := storetest.SeedAudioMedia(t, dir, "library-local", queued)
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}}
+	if err := st.QueueReplaceWithStation(t.Context(), pqDefault, ids, false, filter); err != nil {
+		t.Fatalf("seed queue: %v", err)
+	}
 
 	resp := postGraphJSON(t, h, authorizeViewer, `
 		mutation Add($locked: String!) {
-			next: queueAdd(mediaID: "media-alpha", position: 0) { id }
-			tail: queueAdd(mediaID: $locked) { id }
+			tail: queueAdd(mediaID: "media-alpha") { id }
+			refused: queueAdd(mediaID: $locked, position: 0) { id }
 		}
 	`, map[string]any{"locked": fx.trackA})
 	if len(resp.Errors) != 1 || resp.Errors[0].Extensions.Code != ErrorCodeForbidden ||
-		!slices.Equal(resp.Errors[0].Path, []string{"tail"}) {
-		t.Fatalf("queueAdd errors = %+v, want FORBIDDEN at tail", resp.Errors)
+		!slices.Equal(resp.Errors[0].Path, []string{"refused"}) {
+		t.Fatalf("queueAdd errors = %+v, want FORBIDDEN at refused", resp.Errors)
 	}
+	assertQueueAddReceipt(t, resp, "tail", "media-alpha", queued)
 	var items []SourceItem
-	if err := json.Unmarshal(resp.Data["next"], &items); err != nil {
+	if err := json.Unmarshal(resp.Data["tail"], &items); err != nil {
 		t.Fatal(err)
 	}
-	if !qaEqualIDs(items, "media-alpha") || string(resp.Data["tail"]) != "null" {
-		t.Fatalf("queueAdd data = %v, want only next's committed page", resp.Data)
+	if len(items) != pageSize || string(resp.Data["refused"]) != "null" {
+		t.Fatalf("queueAdd data = %d tail rows and refused = %s, want first page and null", len(items), resp.Data["refused"])
 	}
-	if got := pqQueue(t, st, pqDefault); !slices.Equal(got, []string{"media-alpha"}) {
-		t.Fatalf("committed queue = %v, want [media-alpha]", got)
+	for i, item := range items {
+		if item.ID != string(ids[i]) {
+			t.Fatalf("committed page item %d = %s, want %s", i, item.ID, ids[i])
+		}
+	}
+	tail, err := st.SourceItems(t.Context(), filter, store.SourceQuery{Kind: "queue", ProfileID: pqDefault, Limit: 3, Offset: pageSize})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tail) != 2 || tail[0].ID != ids[pageSize] || tail[1].ID != "media-alpha" {
+		t.Fatalf("committed queue tail = %+v, want [%s media-alpha]", tail, ids[pageSize])
 	}
 }
 
@@ -242,15 +277,15 @@ func TestQueueAddResolvesProfileAfterSwitch(t *testing.T) {
 			for arg, value := range test.expected {
 				variables[arg] = value
 			}
-			items, err := h.queueAdd(ctx, scope, request{Variables: variables})
+			result, err := h.queueAdd(ctx, scope, request{Variables: variables})
 			if test.name == "explicit" {
 				pqWantMismatch(t, "queueAdd", []graphError{fieldGraphError(ctx, "queueAdd", err)})
 				if got := pqQueue(t, st, pqManaged); len(got) != 0 {
 					t.Fatalf("explicit precondition changed the new Profile's queue: %v", got)
 				}
 			} else {
-				if err != nil || !qaEqualIDs(items, "media-alpha") {
-					t.Fatalf("queueAdd after switch = %v, %v", qaIDs(items), err)
+				if err != nil || !qaEqualIDs(result.items, "media-alpha") {
+					t.Fatalf("queueAdd after switch = %v, %v", qaIDs(result.items), err)
 				}
 				if got := pqQueue(t, st, pqManaged); !slices.Equal(got, []string{"media-alpha"}) {
 					t.Fatalf("new Profile's queue = %v, want [media-alpha]", got)
@@ -288,8 +323,8 @@ func TestQueueAddUsesSwitchedProfilesEligibility(t *testing.T) {
 	}
 
 	add := func(id store.MediaID) ([]SourceItem, error) {
-		items, err := h.queueAdd(ctx, scope, request{Variables: map[string]any{"mediaID": string(id)}})
-		return items, err
+		result, err := h.queueAdd(ctx, scope, request{Variables: map[string]any{"mediaID": string(id)}})
+		return result.items, err
 	}
 	if _, err := add("media-archive"); err == nil || fieldGraphError(ctx, "queueAdd", err).Extensions.Code != ErrorCodeNotFound {
 		t.Fatalf("queueAdd retained the previous Profile's Reveal: %v", err)
