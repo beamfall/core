@@ -50,6 +50,14 @@ func TestWorkerShimPinsGroupUntilGuardianReady(t *testing.T) {
 	if err := syscall.Kill(pin, 0); err == nil {
 		t.Fatalf("shim pin %d still exists after readiness", pin)
 	}
+	// The shim released the guardian, so reap it here once it exits; left a
+	// zombie, it would sit in the group a later run checks.
+	_ = lifetimeW.Close()
+	guardian := waitForZombieChildInGroup(t, syscall.Getpgrp(), true)
+	var status syscall.WaitStatus
+	if _, err := syscall.Wait4(guardian, &status, 0, nil); err != nil {
+		t.Fatalf("reap guardian %d: %v", guardian, err)
+	}
 }
 
 // waitForZombieChildInGroup waits until a zombie child of this process is (or,

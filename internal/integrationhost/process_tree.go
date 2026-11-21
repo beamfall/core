@@ -54,25 +54,23 @@ func superviseWorker(ctx context.Context, cmd *exec.Cmd, onStart func()) error {
 		result = context.Cause(ctx)
 	}
 	retireErr := tree.retire(WorkerTerminationGrace, workerKillDeadline)
-	leaderExited := true
-	if canceled {
-		select {
-		case <-exited:
-		case <-time.After(workerKillDeadline):
-			if retireErr == nil {
-				retireErr = fmt.Errorf("direct worker was not reaped after tree retirement")
-			}
-			leaderExited = false
-			go func() { <-exited; _ = leader.reap() }()
+	// Reap the leader under the same bound on every path: when its exit could
+	// not be observed, or it outlived the kill, the wait could block forever.
+	reaped := make(chan error, 1)
+	go func() { <-exited; reaped <- leader.reap() }()
+	var waitErr error
+	select {
+	case waitErr = <-reaped:
+	case <-time.After(workerKillDeadline):
+		if retireErr == nil {
+			retireErr = errors.New("direct worker was not reaped after tree retirement")
 		}
 	}
-	if leaderExited {
-		if waitErr := leader.reap(); !canceled {
-			result = waitErr
+	if !canceled {
+		result = waitErr
+		if leader.observeErr != nil {
+			result = leader.observeErr
 		}
-	}
-	if !canceled && leader.observeErr != nil {
-		result = leader.observeErr
 	}
 	if retireErr != nil {
 		// A live member may still hold an output pipe; stop reading rather
@@ -104,12 +102,18 @@ type leaderWait struct {
 func (w *leaderWait) awaitExit() {
 	err := observeLeaderExit(w.cmd.Process.Pid)
 	switch {
-	case errors.Is(err, errors.ErrUnsupported):
+	case err == errLeaderObservationUnsupported:
 		_ = w.reap()
 	case err != nil:
 		w.observeErr = fmt.Errorf("observe worker exit: %w", err)
 	}
 }
+
+// errLeaderObservationUnsupported is returned only by a platform that never
+// observes the leader's exit. A Linux syscall error such as ENOSYS from a
+// seccomp filter must not match it, since reaping early frees the group ID
+// while retire still signals the group.
+var errLeaderObservationUnsupported = errors.New("leader exit observation unsupported")
 
 // reap reaps the leader once and returns its wait result. It must follow
 // awaitExit.

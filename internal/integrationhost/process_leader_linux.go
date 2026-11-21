@@ -5,6 +5,7 @@ package integrationhost
 import (
 	"bytes"
 	"errors"
+	"io/fs"
 	"os"
 	"strconv"
 	"syscall"
@@ -84,7 +85,9 @@ func exited(state byte) bool { return state == 'Z' || state == 'X' }
 func threadGroupRuns(dir string) bool {
 	tasks, err := os.ReadDir(dir + "/task")
 	if err != nil {
-		return false // the process has gone
+		// Only a process that has gone has no task list; any other failure
+		// counts as a live member, as a failed listing does.
+		return !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ESRCH)
 	}
 	for _, task := range tasks {
 		if state, _, ok := procStateAndGroup(dir + "/task/" + task.Name()); ok && !exited(state) {
