@@ -415,14 +415,57 @@ func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID
 	return err
 }
 
-// AliasSubscriptionEntryGUID adds a GUID for an existing receipt. It keeps
-// the original receipt and copies the path and timestamp so both GUIDs
-// refer to the same file and retention counts it once.
-func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionID, existingGUID, guid string) error {
+// SubscriptionMediaReceipt links a seen entry to the Media at its recorded path.
+type SubscriptionMediaReceipt struct {
+	GUID    string
+	Path    string
+	MediaID MediaID
+	Title   string
+}
+
+// SubscriptionMediaReceipts resolves receipts through every Part and Version
+// in the shared catalog. Trashed and missing files still count as seen when
+// the path identifies exactly one Media. Encrypted catalogs stay outside this
+// reconciliation because their Media metadata belongs to a separate plane.
+func (s *Store) SubscriptionMediaReceipts(ctx context.Context, id SubscriptionID) ([]SubscriptionMediaReceipt, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT se.guid, se.path, m.id, m.title
+		FROM subscription_seen_entry se
+		JOIN subscription sub ON sub.id = se.subscription_id
+		JOIN library l ON l.id = sub.library_id AND l.encrypted = 0
+		JOIN media_file mf ON mf.path = se.path
+		JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id
+		WHERE se.subscription_id = ? AND se.path <> ''
+		GROUP BY se.guid
+		HAVING COUNT(DISTINCT m.id) = 1
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var receipts []SubscriptionMediaReceipt
+	for rows.Next() {
+		var receipt SubscriptionMediaReceipt
+		if err := rows.Scan(&receipt.GUID, &receipt.Path, &receipt.MediaID, &receipt.Title); err != nil {
+			return nil, err
+		}
+		receipts = append(receipts, receipt)
+	}
+	return receipts, rows.Err()
+}
+
+// AliasSubscriptionEntryGUID adds a GUID while preserving the existing
+// receipt and its timestamp. The source must still resolve to the same Media.
+func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionID, existing SubscriptionMediaReceipt, guid string) error {
 	if id == "" {
 		return errors.New("subscription ID is required")
 	}
-	if strings.TrimSpace(existingGUID) == "" || strings.TrimSpace(guid) == "" {
+	if strings.TrimSpace(existing.GUID) == "" || strings.TrimSpace(guid) == "" {
 		return errors.New("entry GUID is required")
 	}
 	s.mu.RLock()
@@ -430,13 +473,30 @@ func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionI
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	result, err := s.catalogW.ExecContext(ctx, `
 		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
-		SELECT subscription_id, ?, seen_at_ms, path FROM subscription_seen_entry
-		WHERE subscription_id = ? AND guid = ?
+		SELECT se.subscription_id, ?, se.seen_at_ms, se.path
+		FROM subscription_seen_entry se
+		JOIN subscription sub ON sub.id = se.subscription_id
+		JOIN library l ON l.id = sub.library_id AND l.encrypted = 0
+		JOIN media_file mf ON mf.path = se.path
+		JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id
+		WHERE se.subscription_id = ? AND se.guid = ? AND se.path = ?
+		GROUP BY se.guid
+		HAVING COUNT(DISTINCT m.id) = 1 AND MIN(m.id) = ?
 		ON CONFLICT(subscription_id, guid) DO NOTHING
-	`, guid, id, existingGUID)
-	return err
+	`, guid, id, existing.GUID, existing.Path, existing.MediaID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // AssociateSubscriptionEntryMedia repairs feed identity for archived feed

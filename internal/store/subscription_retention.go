@@ -150,13 +150,14 @@ func (s *Store) keepLastNCandidates(ctx context.Context, subscription Subscripti
 		keep = *subscription.RetentionN
 	}
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT DISTINCT m.id, se.seen_at_ms
+		SELECT m.id
 		FROM subscription_seen_entry se
 		JOIN media_file mf ON mf.path = se.path AND mf.missing_at_ms IS NULL
 		JOIN media m ON m.id = mf.media_id AND m.library_id = ? AND m.trashed_at_ms IS NULL
 		WHERE se.subscription_id = ?
 		  AND se.path <> ''
-		ORDER BY se.seen_at_ms DESC, m.id
+		GROUP BY m.id
+		ORDER BY MAX(se.seen_at_ms) DESC, m.id
 	`, subscription.LibraryID, subscription.ID)
 	if err != nil {
 		return nil, err
@@ -166,8 +167,7 @@ func (s *Store) keepLastNCandidates(ctx context.Context, subscription Subscripti
 	index := 0
 	for rows.Next() {
 		var id MediaID
-		var seen int64
-		if err := rows.Scan(&id, &seen); err != nil {
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
 		favorited, err := s.mediaFavoritedByAny(ctx, id)

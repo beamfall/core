@@ -357,24 +357,40 @@ func atomEntryLink(item *xmlNode) string {
 
 var feedPublicationLayouts = append([]string{time.RFC3339Nano}, rfc822Layouts...)
 
+// RFC 822 §5.1 defines these offsets independently of the parser's location.
+var feedPublicationZoneOffsets = map[string]string{
+	"UT": "+0000", "UTC": "+0000", "GMT": "+0000", "Z": "+0000",
+	"EST": "-0500", "EDT": "-0400", "CST": "-0600", "CDT": "-0500",
+	"MST": "-0700", "MDT": "-0600", "PST": "-0800", "PDT": "-0700",
+}
+
 func (entry *FeedEntry) deriveGUID(link, published string) {
 	key := "link\x00" + link
-	if link == "" {
+	if link == "" || link == strings.TrimSpace(entry.EnclosureURL) {
 		title := strings.ToLower(strings.Join(strings.Fields(entry.Title), " "))
 		if title == "" && published == "" {
 			return
 		}
-		for _, layout := range feedPublicationLayouts {
-			if stamp, err := time.ParseInLocation(layout, published, time.UTC); err == nil {
-				published = stamp.UTC().Format(time.RFC3339Nano)
-				break
-			}
-		}
-		key = "title-date\x00" + title + "\x00" + published
+		key = "title-date\x00" + title + "\x00" + normalizeFeedPublication(published)
 	}
 	// Hash links as well as metadata so URL credentials stay out of receipts.
 	entry.GUID = fmt.Sprintf("urn:beamfall:feed-entry:%x", sha256.Sum256([]byte(key)))
 	entry.DerivedGUID = true
+}
+
+func normalizeFeedPublication(published string) string {
+	value := published
+	if i := strings.LastIndexByte(value, ' '); i >= 0 {
+		if offset, ok := feedPublicationZoneOffsets[strings.ToUpper(value[i+1:])]; ok {
+			value = value[:i+1] + offset
+		}
+	}
+	for _, layout := range feedPublicationLayouts {
+		if stamp, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
+			return stamp.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	return published
 }
 
 func childText(scope *xmlNode, name string) string {

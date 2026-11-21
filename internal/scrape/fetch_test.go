@@ -196,16 +196,17 @@ func TestParseFeedEntriesAtom(t *testing.T) {
 
 func TestFeedEntriesKeepDerivedGUIDsWhenEnclosuresRotate(t *testing.T) {
 	for _, tc := range []struct {
-		name, feed, link, published, equivalent, later string
+		name, feed, link, enclosureLink, published, equivalent, later string
 	}{
 		{
 			name: "RSS",
 			feed: `<rss><channel><item><title>{title}</title>{link}<pubDate>{date}</pubDate>
 				<enclosure url="{url}"/></item></channel></rss>`,
-			link:       `<link>https://example.test/entry</link>`,
-			published:  "Tue, 10 Nov 2026 12:00:00 GMT",
-			equivalent: "Tue, 10 Nov 2026 07:00:00 -0500",
-			later:      "Wed, 11 Nov 2026 12:00:00 GMT",
+			link:          `<link>https://example.test/entry</link>`,
+			enclosureLink: `<link>{url}</link>`,
+			published:     "Tue, 10 Nov 2026 07:00:00 EST",
+			equivalent:    "Tue, 10 Nov 2026 07:00:00 -0500",
+			later:         "Wed, 11 Nov 2026 12:00:00 GMT",
 		},
 		{
 			name: "Atom",
@@ -213,15 +214,17 @@ func TestFeedEntriesKeepDerivedGUIDsWhenEnclosuresRotate(t *testing.T) {
 				<link rel="enclosure" href="{url}"/>{link}
 				<link rel="self" href="https://example.test/ignore"/>
 				<updated>{url}</updated></entry></feed>`,
-			link:       `<link href="https://example.test/entry"/>`,
-			published:  "2026-11-10T12:00:00Z",
-			equivalent: "2026-11-10T07:00:00-05:00",
-			later:      "2026-11-11T12:00:00Z",
+			link:          `<link href="https://example.test/entry"/>`,
+			enclosureLink: `<link rel="alternate" href="{url}"/>`,
+			published:     "2026-11-10T12:00:00Z",
+			equivalent:    "2026-11-10T07:00:00-05:00",
+			later:         "2026-11-11T12:00:00Z",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			parse := func(title, link, date, enclosure string) FeedEntry {
 				t.Helper()
+				link = strings.ReplaceAll(link, "{url}", enclosure)
 				raw := strings.NewReplacer("{title}", title, "{link}", link, "{date}", date, "{url}", enclosure).Replace(tc.feed)
 				entries, err := ParseFeedEntries([]byte(raw))
 				if err != nil || len(entries) != 1 {
@@ -245,6 +248,11 @@ func TestFeedEntriesKeepDerivedGUIDsWhenEnclosuresRotate(t *testing.T) {
 			}
 			if later := parse("First Title", "", tc.later, nextURL); later.GUID == fromMetadata.GUID {
 				t.Errorf("different publication dates gave the same GUID: %q", later.GUID)
+			}
+			for _, enclosure := range []string{firstURL, nextURL} {
+				if entry := parse("First Title", tc.enclosureLink, tc.equivalent, enclosure); entry.GUID != fromMetadata.GUID {
+					t.Errorf("item link equal to the enclosure gave GUID %q, want metadata GUID %q", entry.GUID, fromMetadata.GUID)
+				}
 			}
 		})
 	}

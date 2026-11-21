@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -197,6 +198,10 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if err != nil {
 		return published, err
 	}
+	legacy, err := p.matchLegacyEntries(ctx, subscription.ID, entries, seen)
+	if err != nil {
+		return published, err
+	}
 	downloaded := 0
 	var firstErr error
 	for _, entry := range entries {
@@ -207,11 +212,8 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 			continue
 		}
 		var entryErr error
-		if entry.DerivedGUID && seen[entry.EnclosureURL] {
-			// Older pollers used the enclosure URL for entries without a
-			// GUID. Keep that receipt for rollback and persist the derived
-			// GUID before saving validators for this feed response.
-			entryErr = p.store.AliasSubscriptionEntryGUID(ctx, subscription.ID, entry.EnclosureURL, entry.GUID)
+		if receipt := legacy[entry.GUID]; receipt.GUID != "" {
+			entryErr = p.store.AliasSubscriptionEntryGUID(ctx, subscription.ID, receipt, entry.GUID)
 		} else {
 			entryErr = p.ingestEntry(ctx, subscription, entry, authHeader, now)
 			if entryErr == nil {
@@ -244,6 +246,99 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 		return published + downloaded, err
 	}
 	return published + downloaded, p.store.MarkSubscriptionPolled(ctx, subscription.ID, result.ETag, result.LastModified, now)
+}
+
+// matchLegacyEntries reconciles enclosure-keyed receipts before downloads.
+// Old receipts retain the file path but no publication metadata, so both the
+// feed entry and the stored receipt need an unambiguous title match.
+func (p *Poller) matchLegacyEntries(ctx context.Context, id store.SubscriptionID, entries []scrape.FeedEntry, seen map[string]bool) (map[string]store.SubscriptionMediaReceipt, error) {
+	if len(seen) == 0 {
+		return nil, nil
+	}
+	explicit := make(map[string]bool)
+	entriesByTitle := make(map[string]string)
+	var needsMatch bool
+	for _, entry := range entries {
+		if !entry.DerivedGUID {
+			explicit[entry.GUID] = true
+			continue
+		}
+		title := legacyEntryTitle(entry.Title)
+		if title == "" {
+			continue
+		}
+		needsMatch = needsMatch || !seen[entry.GUID]
+		if guid, exists := entriesByTitle[title]; exists && guid != entry.GUID {
+			entriesByTitle[title] = ""
+		} else {
+			entriesByTitle[title] = entry.GUID
+		}
+	}
+	if !needsMatch {
+		return nil, nil
+	}
+	legacyGUIDs := make(map[string]bool)
+	for guid := range seen {
+		if explicit[guid] {
+			continue
+		}
+		u, err := url.Parse(guid)
+		if err == nil && u.Host != "" && (u.Scheme == "http" || u.Scheme == "https") {
+			legacyGUIDs[guid] = true
+		}
+	}
+	if len(legacyGUIDs) == 0 {
+		return nil, nil
+	}
+	receipts, err := p.store.SubscriptionMediaReceipts(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	// An explicit GUID can be a URL. Also reserve files already associated
+	// with a stable receipt, even if its entry has since left the feed.
+	reservedPaths := make(map[string]bool)
+	for _, receipt := range receipts {
+		if !legacyGUIDs[receipt.GUID] {
+			reservedPaths[receipt.Path] = true
+		}
+	}
+	matches := make(map[string]store.SubscriptionMediaReceipt)
+	for _, receipt := range receipts {
+		if reservedPaths[receipt.Path] {
+			continue
+		}
+		// Ingest used the sanitized title as the filename. Keep that evidence
+		// when a scan or later metadata edit gave the Media a different title.
+		base := filepath.Base(receipt.Path)
+		stem := strings.TrimSuffix(base, filepath.Ext(base))
+		fileGUID, fileMatch := entriesByTitle[legacyEntryTitle(stem)]
+		titleGUID, titleMatch := entriesByTitle[legacyEntryTitle(receipt.Title)]
+		if fileMatch && titleMatch && fileGUID != titleGUID {
+			matches[fileGUID] = store.SubscriptionMediaReceipt{}
+			matches[titleGUID] = store.SubscriptionMediaReceipt{}
+			continue
+		}
+		guid := titleGUID
+		if fileMatch {
+			guid = fileGUID
+		}
+		if guid == "" || seen[guid] {
+			continue
+		}
+		if _, exists := matches[guid]; exists {
+			matches[guid] = store.SubscriptionMediaReceipt{}
+		} else {
+			matches[guid] = receipt
+		}
+	}
+	return matches, nil
+}
+
+func legacyEntryTitle(title string) string {
+	if name := sanitizeFilename(title); name != "" {
+		title = name
+	}
+	return strings.ToLower(strings.Join(strings.Fields(title), " "))
 }
 
 // ingestEntry lands one feed entry crash-durably. The payload stages first

@@ -596,6 +596,59 @@ func TestSubscriptionRetentionUsesFeedScopedSeenPath(t *testing.T) {
 	}
 }
 
+func TestSubscriptionRetentionCountsReassociatedAliasesOnce(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 18, 14, 0, 0, 0, time.UTC)
+	keep := 1
+	sub, err := st.AddSubscription(ctx, Subscription{
+		LibraryID: "library-local", FeedURL: "https://feeds.example.com/a.xml", Root: "/media/local/a",
+		RetentionKind: RetentionKeepLastN, RetentionN: &keep,
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	importEntry := func(name string) (MediaID, string) {
+		t.Helper()
+		path := sub.Root + "/" + name + ".mp3"
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: sub.LibraryID, Path: path, Title: name,
+			Container: "mp3", Codec: "mp3", Class: MediaClassAudio, ContentFingerprint: "fp-retention-" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return media.ID, path
+	}
+	aliased, aliasedPath := importEntry("aliased")
+	older, olderPath := importEntry("older")
+	legacyGUID := "https://cdn.example.com/aliased.mp3"
+	if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, legacyGUID, aliasedPath, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AliasSubscriptionEntryGUID(ctx, sub.ID, SubscriptionMediaReceipt{
+		GUID: legacyGUID, Path: aliasedPath, MediaID: aliased,
+	}, "derived-guid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, "older-guid", olderPath, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AssociateSubscriptionEntryMedia(ctx, sub.ID, "derived-guid", aliased, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if trashed, skipped, err := st.ApplySubscriptionRetentionPolicies(ctx); err != nil || skipped || trashed != 1 {
+		t.Fatalf("retention sweep = %d, %v, %v, want one Media trashed", trashed, skipped, err)
+	}
+	filter := LibraryFilter{Revealed: true, AllLibraries: true}
+	if _, err := st.Media(ctx, aliased, filter); err != nil {
+		t.Errorf("most recently associated Media was trashed: %v", err)
+	}
+	if _, err := st.Media(ctx, older, filter); !errors.Is(err, ValidationError("media not found")) {
+		t.Errorf("older Media lookup = %v, want media not found", err)
+	}
+}
+
 func TestMediaExternalIDsRoundTrip(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

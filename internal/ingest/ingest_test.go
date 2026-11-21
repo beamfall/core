@@ -493,9 +493,9 @@ func TestPollPreservesLegacyEnclosureIdentityAcrossRestartAndRotation(t *testing
 	dataDir := storetest.MigratedDataDir(t)
 	st := storetest.OpenAt(t, dataDir)
 	fs := newFeedServer(t)
-	fs.enclosures["original.mp3"] = []byte("original")
 	fs.enclosures["replacement.mp3"] = []byte("replacement")
-	fs.setFeed(fs.guidlessItem("First Entry", "original.mp3"))
+	fs.enclosures["after-restart.mp3"] = []byte("after restart")
+	fs.setFeed(fs.guidlessItem("First Entry", "replacement.mp3"))
 
 	root := t.TempDir()
 	sub, err := st.AddSubscription(ctx, store.Subscription{
@@ -530,8 +530,8 @@ func TestPollPreservesLegacyEnclosureIdentityAcrossRestartAndRotation(t *testing
 	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
 		t.Fatalf("legacy poll = %d, %v, want no download", count, err)
 	}
-	if hits := fs.hits("original.mp3"); hits != 0 {
-		t.Errorf("legacy enclosure requested %d times", hits)
+	if hits := fs.hits("replacement.mp3"); hits != 0 {
+		t.Errorf("rotated enclosure requested %d times on first upgraded poll", hits)
 	}
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
@@ -542,12 +542,12 @@ func TestPollPreservesLegacyEnclosureIdentityAcrossRestartAndRotation(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	fs.setFeed(fs.guidlessItem("First Entry", "replacement.mp3"))
+	fs.setFeed(fs.guidlessItem("First Entry", "after-restart.mp3"))
 	poller = NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))
 	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
 		t.Fatalf("poll after restart and rotation = %d, %v, want no download", count, err)
 	}
-	if hits := fs.hits("replacement.mp3"); hits != 0 {
+	if hits := fs.hits("after-restart.mp3"); hits != 0 {
 		t.Errorf("rotated enclosure requested %d times", hits)
 	}
 	if entries := dirEntries(t, root); len(entries) != 1 || entries[0] != "First Entry.mp3" {
@@ -556,6 +556,45 @@ func TestPollPreservesLegacyEnclosureIdentityAcrossRestartAndRotation(t *testing
 	if resolved, skipped, err := st.ReconcileSubscriptionSeenEntries(ctx); err != nil || resolved != 2 || skipped != 0 {
 		t.Errorf("reconciling original and derived GUIDs with existing Media = %d, %d, %v, want 2, 0, nil",
 			resolved, skipped, err)
+	}
+}
+
+func TestPollDoesNotAliasEnclosureMatchingExplicitGUID(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	fs := newFeedServer(t)
+	fs.enclosures["new.mp3"] = []byte("new payload")
+	fs.enclosures["explicit.mp3"] = []byte("explicit payload")
+	explicitGUID := fs.server.URL + "/files/new.mp3"
+	explicitItem := fs.item(explicitGUID, "Shared Title", "explicit.mp3")
+	fs.setFeed(explicitItem)
+	root := t.TempDir()
+	sub, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local", FeedURL: fs.server.URL + "/feed.xml", Root: root,
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	poller := NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))
+	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 1 {
+		t.Fatalf("explicit GUID poll = %d, %v, want one download", count, err)
+	}
+	if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: sub.LibraryID, Path: filepath.Join(root, "Shared Title.mp3"), Title: "Shared Title",
+		Container: "mp3", Codec: "mp3", Class: store.MediaClassAudio, ContentFingerprint: "explicit-entry-fingerprint",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fs.setFeed(fs.guidlessItem("Shared Title", "new.mp3") + explicitItem)
+	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 1 {
+		t.Fatalf("poll with enclosure/GUID collision = %d, %v, want one new download", count, err)
+	}
+	data, err := readTestFile(filepath.Join(root, "Shared Title-2.mp3"))
+	if err != nil || string(data) != "new payload" {
+		t.Fatalf("GUID-less entry file = %q, %v, want new payload", data, err)
+	}
+	if hits := fs.hits("explicit.mp3"); hits != 1 {
+		t.Errorf("explicit GUID enclosure requested %d times, want 1", hits)
 	}
 }
 
