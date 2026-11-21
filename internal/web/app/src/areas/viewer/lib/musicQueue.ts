@@ -1,8 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { getIdentityEpochSignal, graphql } from "@/lib/api";
 import type { GenericMediaInfo, SessionInfo } from "@/lib/graphql/types";
-import { openIdentityChanges } from "@/lib/identityChanges";
 import { useSession, useViewerIdentity } from "@/lib/session";
 
 export const MUSIC_QUEUE_PARAM = "playQueue";
@@ -76,216 +74,137 @@ export function musicQueueNeighbours(rows: MusicQueueRow[] | undefined, cursor: 
   };
 }
 
-type QueueScope = {
-  epoch: AbortSignal | undefined;
-  profileID: string;
-  revealed: boolean;
-  deviceRole: string | undefined;
-  profile: string | undefined;
-};
-// Undefined retires a superseded request. Null reports a completed, failed read.
-type RefreshResult = MusicQueueRow[] | null | undefined;
-type QueueRead = {
-  scope: QueueScope;
-  validation: typeof INITIAL_VALIDATION;
-  controller: AbortController;
-  signal: AbortSignal;
-  foreground: AbortController;
-  invalid?: boolean;
-  pending?: { controller: AbortController; promise: Promise<RefreshResult> };
-};
-type QueueResult = {
-  scope: QueueScope;
-  checked: boolean;
+type QueueIdentity = Pick<SessionInfo, "profileID" | "revealed"> &
+  Partial<Pick<SessionInfo, "deviceRole" | "profile">>;
+class QueueIdentityChanged extends Error {}
+
+async function readScoped<T>(
+  query: string,
+  variables: Record<string, unknown>,
+  expected: QueueIdentity,
+  signal: AbortSignal,
+): Promise<T> {
+  signal.throwIfAborted();
+  const data = await graphql<T & SessionResult>(query, variables, signal, { adminUnlock: false });
+  signal.throwIfAborted();
+  const live = data.currentSession;
+  if (
+    !live ||
+    live.profileID !== expected.profileID ||
+    live.revealed !== expected.revealed ||
+    live.deviceRole !== expected.deviceRole ||
+    live.profile !== expected.profile
+  ) {
+    throw new QueueIdentityChanged();
+  }
+  return data;
+}
+
+export interface MusicQueueView {
+  rows?: MusicQueueRow[];
   failed?: boolean;
   invalid?: boolean;
-  rows?: MusicQueueRow[];
-};
-const INITIAL_VALIDATION = { hidden: false };
+}
 
-export function useMusicQueue(enabled: boolean) {
-  const { session, revealed, refresh: refreshIdentity } = useSession();
+type RefreshResult = MusicQueueRow[] | null | undefined;
+
+/** The hosted player keeps this reader alive while its transport is docked. */
+export function useMusicQueue() {
+  const { session, revealed } = useSession();
   const identity = useViewerIdentity();
   const { profileID, deviceRole, profile } = session ?? {};
   const epoch = getIdentityEpochSignal();
-  // Only the live identity can reuse a snapshot across routes in the run.
   const scope = useMemo(
-    () =>
-      enabled && profileID ? { epoch, profileID, identity, revealed, deviceRole, profile } : null,
-    [enabled, epoch, profileID, identity, revealed, deviceRole, profile],
+    () => (profileID ? { epoch, identity, profileID, revealed, deviceRole, profile } : null),
+    [epoch, identity, profileID, revealed, deviceRole, profile],
   );
-  const active = useRef<QueueRead | null>(null);
-  const [result, setResult] = useState<QueueResult>();
-  const [validation, setValidation] = useState(INITIAL_VALIDATION);
-  const isCurrent = useCallback(
-    () =>
-      !!scope &&
-      active.current?.scope === scope &&
-      active.current.validation === validation &&
-      !active.current.invalid &&
-      !active.current.signal.aborted &&
-      scope.epoch === getIdentityEpochSignal(),
-    [scope, validation],
-  );
+  const active = useRef<{
+    scope: typeof scope;
+    signal: AbortSignal;
+    invalid?: boolean;
+    pending?: { controller: AbortController; promise: Promise<RefreshResult> };
+  }>(null);
+  const [result, setResult] = useState<MusicQueueView & { scope: typeof scope }>();
 
-  const readScoped = useCallback(
-    async <T>(
-      query: string,
-      vars: Record<string, unknown>,
-      signal: AbortSignal,
-      foreground: AbortSignal,
-    ) => {
-      signal.throwIfAborted();
-      const data = await graphql<T & SessionResult>(query, vars, signal);
-      signal.throwIfAborted();
-      foreground.throwIfAborted();
-      const read = active.current;
-      if (!read || !isCurrent()) throw new Error("Queue scope retired");
-      const live = data.currentSession;
-      const expected = read.scope;
-      if (
-        live?.profileID !== expected.profileID ||
-        live.revealed !== expected.revealed ||
-        live.deviceRole !== expected.deviceRole ||
-        live.profile !== expected.profile
-      ) {
-        read.invalid = true;
-        setResult({ scope: expected, checked: false, invalid: true });
-        // A different tab can change the shared cookie without retiring this tab's epoch.
-        void refreshIdentity();
-        throw new Error("Queue scope changed");
-      }
-      return data;
+  useLayoutEffect(() => {
+    setResult(undefined);
+    if (!scope) return;
+    const controller = new AbortController();
+    const signal = epoch ? AbortSignal.any([epoch, controller.signal]) : controller.signal;
+    active.current = { scope, signal };
+    return () => controller.abort();
+  }, [scope, epoch]);
+
+  const current = useCallback(() => {
+    const read = active.current;
+    return scope && read?.scope === scope && !read.signal.aborted && !read.invalid ? read : null;
+  }, [scope]);
+
+  const invalidate = useCallback(
+    (read: NonNullable<typeof active.current>) => {
+      read.invalid = true;
+      read.pending?.controller.abort();
+      setResult({ scope, invalid: true });
     },
-    [isCurrent, refreshIdentity],
+    [scope],
   );
 
   const refresh = useCallback(
     (fresh = false): Promise<RefreshResult> => {
-      const read = active.current;
-      if (!read || !isCurrent()) return Promise.resolve(undefined);
+      const read = current();
+      if (!scope || !read) return Promise.resolve(undefined);
       if (!fresh && read.pending) return read.pending.promise;
-      // An explicit Play or advance starts a read at the time of the action.
       read.pending?.controller.abort();
-      const request = new AbortController();
-      const signal = AbortSignal.any([read.signal, request.signal]);
-      const foreground = read.foreground.signal;
+      const controller = new AbortController();
+      const signal = AbortSignal.any([read.signal, controller.signal]);
       const promise = readMusicQueue((offset) =>
-        readScoped<Page>(
-          QUEUE_QUERY,
-          { query: "queue", limit: PAGE_SIZE, offset },
-          signal,
-          foreground,
-        ),
+        readScoped<Page>(QUEUE_QUERY, { query: "queue", limit: PAGE_SIZE, offset }, scope, signal),
       )
-        .catch(() => null)
+        .catch((error: unknown) => {
+          if (error instanceof QueueIdentityChanged && !signal.aborted && current() === read) {
+            invalidate(read);
+          }
+          return null;
+        })
         .then((rows) => {
-          if (signal.aborted || !isCurrent() || active.current !== read) return undefined;
+          if (signal.aborted || current() !== read) return undefined;
           read.pending = undefined;
-          // The old read settled, but only a post-focus read can answer its callers.
-          if (foreground.aborted) return refresh();
           setResult((previous) => ({
-            scope: read.scope,
-            checked: rows !== null || (previous?.scope === read.scope && previous.checked),
+            scope,
             failed: rows === null,
-            rows: rows ?? (previous?.scope === read.scope ? previous.rows : undefined),
+            rows: rows ?? (previous?.scope === scope ? previous.rows : undefined),
           }));
           return rows;
         });
-      read.pending = { controller: request, promise };
+      read.pending = { controller, promise };
       return promise;
     },
-    [isCurrent, readScoped],
+    [scope, current, invalidate],
   );
 
   const readMedia = useCallback(
     async (id: string, signal: AbortSignal) => {
-      const read = active.current;
-      if (!read || !isCurrent()) return null;
+      const read = current();
+      if (!scope || !read) return null;
+      const request = AbortSignal.any([read.signal, signal]);
       try {
         const { media } = await readScoped<{ media: GenericMediaInfo | null }>(
           MEDIA_QUERY,
           { id },
-          AbortSignal.any([read.signal, signal]),
-          read.foreground.signal,
+          scope,
+          request,
         );
-        return isCurrent() ? media : null;
-      } catch {
+        return current() === read ? media : null;
+      } catch (error) {
+        if (error instanceof QueueIdentityChanged && !request.aborted && current() === read) {
+          invalidate(read);
+        }
         return null;
       }
     },
-    [isCurrent, readScoped],
+    [scope, current, invalidate],
   );
 
-  useLayoutEffect(() => {
-    if (!scope || validation.hidden) return;
-    const controller = new AbortController();
-    const signal = scope.epoch
-      ? AbortSignal.any([controller.signal, scope.epoch])
-      : controller.signal;
-    active.current = { scope, validation, signal, controller, foreground: new AbortController() };
-    void refresh();
-    return () => controller.abort();
-  }, [scope, refresh, validation]);
-
-  useLayoutEffect(() => {
-    if (!scope) return;
-    const hideTitles = () => {
-      setResult((previous) =>
-        previous?.scope === scope && !previous.invalid
-          ? { scope, checked: previous.checked }
-          : previous,
-      );
-    };
-    const invalidate = (hidden?: boolean) => {
-      active.current?.controller.abort();
-      // Hide old titles before a restored document can be painted.
-      flushSync(() => {
-        hideTitles();
-        setValidation((previous) => ({ hidden: hidden ?? previous.hidden }));
-      });
-    };
-    const foreground = () => {
-      if (document.visibilityState === "hidden") return;
-      const read = active.current;
-      if (!read || !isCurrent()) {
-        invalidate(false);
-        return;
-      }
-      read.foreground.abort();
-      read.foreground = new AbortController();
-      flushSync(hideTitles);
-      void refresh();
-    };
-    const pagehide = () => invalidate(true);
-    const restore = (event: PageTransitionEvent) => {
-      if (event.persisted) foreground();
-    };
-    const channel = openIdentityChanges();
-    const identityChanged = () => invalidate();
-    channel?.addEventListener("message", identityChanged);
-    window.addEventListener("focus", foreground);
-    window.addEventListener("pagehide", pagehide);
-    window.addEventListener("pageshow", restore);
-    document.addEventListener("visibilitychange", foreground);
-    return () => {
-      channel?.close();
-      window.removeEventListener("focus", foreground);
-      window.removeEventListener("pagehide", pagehide);
-      window.removeEventListener("pageshow", restore);
-      document.removeEventListener("visibilitychange", foreground);
-    };
-  }, [scope, isCurrent, refresh]);
-
-  const scoped = scope && !scope.epoch?.aborted && result?.scope === scope ? result : undefined;
-  return {
-    rows: scoped?.rows,
-    failed: scoped?.failed ?? false,
-    checked: scoped?.checked ?? false,
-    validated: scoped?.rows !== undefined,
-    invalid: scoped?.invalid ?? false,
-    refresh,
-    isCurrent,
-    readMedia,
-  };
+  const view = scope && !scope.epoch?.aborted && result?.scope === scope ? result : undefined;
+  return { view, refresh, readMedia, isCurrent: current };
 }

@@ -40,7 +40,6 @@ import {
 } from "@/lib/graphql";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
-import { notifyIdentityChange } from "@/lib/identityChanges";
 import { RegisterProvider } from "@/lib/register";
 import { clearViewerCache } from "@/lib/viewerCache";
 import { STRINGS } from "@/strings";
@@ -1627,13 +1626,14 @@ describe("PlayerPage server Play Queue", () => {
     graphql.mockRestore();
     pause.mockRestore();
     vi.mocked(PlayerTransport).mockReset();
+    vi.mocked(useGaplessAudio).mockReset();
     vi.mocked(fetchMedia).mockResolvedValue(null);
   });
 
   it("starts a server run explicitly from ordinary audio playback without serializing titles", async () => {
     renderQueue(b.id, c.id, "?t=0");
     expect(readQueue).not.toHaveBeenCalled();
-    act(() => controls()?.onPlayMusicQueue?.(a.id));
+    act(() => controls()?.onPlayMusicQueue?.());
     await waitFor(() => expect(playingID()).toBe(a.id));
     expect(location.search).toBe("?playQueue=profile-a");
     expect(location.state).toEqual({ selectPartyTitle: true });
@@ -1649,8 +1649,9 @@ describe("PlayerPage server Play Queue", () => {
     );
     renderQueue(a.id, b.id, "?t=0");
     await screen.findByRole("heading", { name: catalogInfo.title });
-    act(() => controls()?.onPlayMusicQueue?.(a.id));
-    await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
+    act(() => controls()?.onPlayMusicQueue?.());
+    await waitFor(() => expect(location.search).toBe("?playQueue=profile-a"));
+    expect(graphql.mock.lastCall?.[0]).toMatch(/^query MusicQueueMedia\b/);
     expect(screen.queryByRole("heading", { name: catalogInfo.title })).toBeNull();
     await act(async () =>
       readMedia.resolve({
@@ -1914,70 +1915,67 @@ describe("PlayerPage server Play Queue", () => {
 
   it("starts the first queue row after docking while Play queue is pending", async () => {
     await mockWithRealTransport();
-    renderQueue(b.id, c.id, "?playQueue=profile-a", true);
+    renderQueue(b.id, c.id, "?t=0", true);
     fireEvent.click(await screen.findByRole("button", { name: STRINGS.en.musicQueueTitle }));
     const playQueue = await screen.findByRole("button", { name: STRINGS.en.musicQueuePlay });
     const pending = deferred<Awaited<ReturnType<typeof readQueue>>>();
     readQueue.mockReturnValueOnce(pending.promise);
     fireEvent.click(playQueue);
-    expect(readQueue).toHaveBeenCalledTimes(3);
+    expect(readQueue).toHaveBeenCalledTimes(2);
 
     await act(async () => go("/search"));
     await screen.findByRole("region", { name: "Now playing" });
-    await act(async () => pending.resolve({ sourceItems: rows, currentSession: serverSession }));
+    await act(async () =>
+      pending.resolve({ sourceItems: [locked, videoRow, c, a], currentSession: serverSession }),
+    );
 
-    expect(playingID()).toBe(a.id);
+    expect(playingID()).toBe(c.id);
     expect(location.pathname).toBe("/search");
     expect(screen.getByText("Search results")).toBeInTheDocument();
   });
 
-  it.each(["same identity", "relock", "profile switch"])(
-    "revalidates an ended advance across focus and docking with %s",
-    async (change) => {
-      const confirm = vi.fn();
-      vi.mocked(useGaplessAudio).mockReturnValue(confirm);
-      try {
-        renderQueue(b.id, c.id, "?playQueue=profile-a", true);
-        await waitFor(() => expect(playingID()).toBe(b.id));
-        type QueueResponse = Awaited<ReturnType<typeof readQueue>>;
-        const pending = deferred<QueueResponse>();
-        readQueue.mockReturnValueOnce(pending.promise);
-        fireEvent.ended(stageVideo());
-        await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
-        const currentSession =
-          change === "relock"
-            ? { ...serverSession, revealed: false }
-            : change === "profile switch"
-              ? { ...serverSession, profileID: "profile-b" }
-              : serverSession;
-        const fresh = deferred<QueueResponse>();
-        readQueue.mockReturnValueOnce(fresh.promise);
-        fireEvent.focus(window);
-        expect(readQueue).toHaveBeenCalledTimes(2);
-        await act(async () => go("/search"));
-        await screen.findByRole("region", { name: "Now playing" });
-        await act(async () =>
-          pending.resolve({ sourceItems: rows, currentSession: serverSession }),
-        );
-        expect(playingID()).toBe(b.id);
-        expect(confirm).not.toHaveBeenCalled();
-        expect(readQueue).toHaveBeenCalledTimes(3);
+  it("starts the queue after its panel closes while the read is pending", async () => {
+    await mockWithRealTransport();
+    renderQueue(b.id, c.id, "?t=0");
+    fireEvent.click(await screen.findByRole("button", { name: STRINGS.en.musicQueueTitle }));
+    const playQueue = await screen.findByRole("button", { name: STRINGS.en.musicQueuePlay });
+    const pending = deferred<Awaited<ReturnType<typeof readQueue>>>();
+    readQueue.mockReturnValueOnce(pending.promise);
+    fireEvent.click(playQueue);
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.dialogClose }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await act(async () => pending.resolve({ sourceItems: rows, currentSession: serverSession }));
+    expect(location.pathname).toBe(`/watch/${a.id}`);
+  });
 
-        await act(async () => fresh.resolve({ sourceItems: rows, currentSession }));
-        if (change === "same identity") {
-          expect(playingID()).toBe(c.id);
-          expect(confirm).toHaveBeenCalledExactlyOnceWith(c.id);
-        } else {
-          expect(screen.queryByRole("region", { name: "Now playing" })).not.toBeInTheDocument();
-          expect(confirm).not.toHaveBeenCalled();
-        }
-        expect(location.pathname).toBe("/search");
-        expect(readQueue).toHaveBeenCalledTimes(3);
-      } finally {
-        vi.mocked(useGaplessAudio).mockReset();
-      }
-    },
-  );
+  it("aborts a queued start when the identity relocks", async () => {
+    await mockWithRealTransport();
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    const view = renderQueue(b.id, c.id, "?t=0");
+    fireEvent.click(await screen.findByRole("button", { name: STRINGS.en.musicQueueTitle }));
+    const playQueue = await screen.findByRole("button", { name: STRINGS.en.musicQueuePlay });
+    const pending = deferred<Awaited<ReturnType<typeof readQueue>>>();
+    readQueue.mockReturnValueOnce(pending.promise);
+    fireEvent.click(playQueue);
+    const signal = graphql.mock.lastCall?.[2];
+    expect(signal?.aborted).toBe(false);
+
+    epoch.abort();
+    expect(signal?.aborted).toBe(true);
+    setIdentityEpochSignal(new AbortController().signal);
+    viewer.identity = "viewer-locked";
+    viewer.revealed = false;
+    const oldSession = serverSession;
+    serverSession = { profileID: "profile-a", revealed: false };
+    rows = [];
+    view.rerender();
+    await act(async () => pending.resolve({ sourceItems: [a, b], currentSession: oldSession }));
+
+    expect(location.pathname).toBe(`/watch/${b.id}`);
+    expect(location.search).toBe("?t=0");
+    expect(await screen.findByText(STRINGS.en.musicQueueEmpty)).toBeInTheDocument();
+  });
 
   it("keeps the docked track and retries when the ended read fails", async () => {
     renderQueue(b.id, c.id, "?playQueue=profile-a", true);
@@ -1993,35 +1991,6 @@ describe("PlayerPage server Play Queue", () => {
     expect(playingID()).toBe(b.id);
     fireEvent.click(within(alert).getByRole("button", { name: STRINGS.en.tryAgain }));
     await waitFor(() => expect(playingID()).toBe(c.id));
-    expect(location.pathname).toBe("/search");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("keeps a failed docked advance retryable after a successful focus refresh", async () => {
-    renderQueue(b.id, c.id, "?playQueue=profile-a", true);
-    await waitFor(() => expect(playingID()).toBe(b.id));
-    const video = stageVideo();
-    await act(async () => go("/search"));
-    await screen.findByRole("region", { name: "Now playing" });
-    readQueue.mockRejectedValueOnce(new Error("network"));
-    fireEvent.ended(video);
-    expect(await screen.findByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueReadFailed);
-
-    await act(async () => fireEvent.focus(window));
-    expect(readQueue).toHaveBeenCalledTimes(3);
-    expect(playingID()).toBe(b.id);
-    const pending = deferred<Awaited<ReturnType<typeof readQueue>>>();
-    readQueue.mockReturnValueOnce(pending.promise);
-    const retry = within(screen.getByRole("alert")).getByRole("button", {
-      name: STRINGS.en.tryAgain,
-    });
-    fireEvent.click(retry);
-    fireEvent.focus(window);
-    expect(screen.getByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueReadFailed);
-    expect(readQueue).toHaveBeenCalledTimes(4);
-    await act(async () => pending.resolve({ sourceItems: rows, currentSession: serverSession }));
-    await waitFor(() => expect(playingID()).toBe(c.id));
-    expect(readQueue).toHaveBeenCalledTimes(5);
     expect(location.pathname).toBe("/search");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -2059,71 +2028,23 @@ describe("PlayerPage server Play Queue", () => {
     );
   });
 
-  it.each(["broadcast", "focus", "pageshow"])(
-    "conceals now-playing details on %s until the live identity is checked",
-    async (trigger) => {
-      queueMedia = { id: b.id, title: "Restricted track", favorited: false, credits: [] };
-      renderQueue();
-      await waitFor(() => expect(controls()?.mediaTitle).toBe("Restricted track"));
-      expect(stageVideo().paused).toBe(true);
-      const pending = deferred<{
-        sourceItems: typeof rows;
-        currentSession: typeof serverSession;
-      }>();
-      readQueue.mockReturnValueOnce(pending.promise);
-
-      if (trigger === "broadcast") notifyIdentityChange();
-      else if (trigger === "focus") fireEvent.focus(window);
-      else {
-        fireEvent(window, new Event("pagehide"));
-        expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
-        fireEvent(window, new PageTransitionEvent("pageshow", { persisted: true }));
-      }
-      await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
-      expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
-      expect(controls()?.mediaTitle).toBe("");
-      const changed =
-        trigger === "focus"
-          ? { profileID: "profile-a", revealed: false }
-          : { profileID: "profile-b", revealed: true };
-      await act(async () => pending.resolve({ sourceItems: [], currentSession: changed }));
-      expect(viewer.refresh).toHaveBeenCalledOnce();
-      expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
-      expect(playingID()).toBe("");
-    },
-  );
-
   it("rejects now-playing metadata read under a different live profile", async () => {
     queueMedia = { id: b.id, title: "Other profile title", favorited: false, credits: [] };
     mediaSession = { profileID: "profile-b", revealed: true };
     renderQueue();
-    await waitFor(() => expect(viewer.refresh).toHaveBeenCalledOnce());
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      STRINGS.en.playerTerminalUnavailable,
+    );
     expect(document.body).not.toHaveTextContent("Other profile title");
     expect(playingID()).toBe("");
     expect(document.querySelector("video")).toBeNull();
   });
 
   it.each(["relock", "profile switch"])(
-    "refreshes the identity and drops now-playing details on a remote %s",
+    "aborts the ended advance and drops live titles on %s",
     async (change) => {
-      queueMedia = { id: b.id, title: "Restricted track", favorited: false, credits: [] };
-      renderQueue();
-      await waitFor(() => expect(controls()?.mediaTitle).toBe("Restricted track"));
-      serverSession =
-        change === "relock"
-          ? { profileID: "profile-a", revealed: false }
-          : { profileID: "profile-b", revealed: true };
-      fireEvent.ended(stageVideo());
-      await waitFor(() => expect(viewer.refresh).toHaveBeenCalledOnce());
-      expect(document.body).not.toHaveTextContent("Restricted track");
-      expect(location.pathname).toBe(`/watch/${b.id}`);
-      expect(playingID()).toBe("");
-    },
-  );
-
-  it.each(["relock", "profile switch"])(
-    "drops live titles and stale reads on %s",
-    async (change) => {
+      const confirm = vi.fn();
+      vi.mocked(useGaplessAudio).mockReturnValue(confirm);
       const oldEpoch = new AbortController();
       setIdentityEpochSignal(oldEpoch.signal);
       queueMedia = {
@@ -2143,8 +2064,11 @@ describe("PlayerPage server Play Queue", () => {
       readQueue.mockReturnValueOnce(finishing.promise);
       fireEvent.ended(stageVideo());
       await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
+      const endedSignal = graphql.mock.lastCall?.[2];
+      expect(endedSignal?.aborted).toBe(false);
       const newEpoch = new AbortController();
       oldEpoch.abort();
+      expect(endedSignal?.aborted).toBe(true);
       setIdentityEpochSignal(newEpoch.signal);
       const relocking = change === "relock";
       viewer.revealed = false;
@@ -2160,6 +2084,7 @@ describe("PlayerPage server Play Queue", () => {
       );
 
       expect(document.body).not.toHaveTextContent("Restricted track");
+      expect(confirm).not.toHaveBeenCalled();
       expect(location.pathname).toBe(`/watch/${b.id}`);
       if (relocking) {
         await waitFor(() => expect(playingID()).toBe(b.id));

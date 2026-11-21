@@ -3,10 +3,11 @@ import { useRef } from "react";
 import { Dialog } from "@/components/ui/astryx-primitives";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
-import { playableMusic, type useMusicQueue } from "../lib/musicQueue";
+import { type MusicQueueView, playableMusic } from "../lib/musicQueue";
 
 export function MusicQueuePanel({
   open,
+  onRetry,
   onOpenChange,
   onPlay,
   currentID,
@@ -14,13 +15,14 @@ export function MusicQueuePanel({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onPlay: (id: string) => void;
+  onPlay: () => void;
+  onRetry: () => void;
   currentID: string;
-  queue: ReturnType<typeof useMusicQueue>;
+  queue: MusicQueueView | undefined;
 }) {
   const t = useT();
   const anchorRef = useRef<HTMLDivElement | null>(null);
-  const { rows, failed, invalid, refresh, isCurrent } = queue;
+  const { rows, failed, invalid } = queue ?? {};
   const first = rows?.find(playableMusic);
 
   return (
@@ -42,7 +44,7 @@ export function MusicQueuePanel({
             ) : failed ? (
               <>
                 <p role="alert">{t("musicQueueReadFailed")}</p>
-                <Button size="sm" onClick={() => void refresh()}>
+                <Button size="sm" onClick={onRetry}>
                   {t("tryAgain")}
                 </Button>
               </>
@@ -60,16 +62,7 @@ export function MusicQueuePanel({
                   </ol>
                 )}
                 {first ? (
-                  <Button
-                    size="sm"
-                    onClick={async () => {
-                      const next = (await refresh(true))?.find(playableMusic);
-                      if (next && isCurrent()) {
-                        onOpenChange(false);
-                        onPlay(next.id);
-                      }
-                    }}
-                  >
+                  <Button size="sm" onClick={onPlay}>
                     {t("musicQueuePlay")}
                   </Button>
                 ) : (
