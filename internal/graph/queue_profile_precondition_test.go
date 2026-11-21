@@ -76,8 +76,8 @@ func TestEveryQueueMutationHonoursExpectedProfile(t *testing.T) {
 	st := storetest.Open(t)
 	h := newTestHandlerWithStore(st)
 	pqSwitchViewerToManaged(t, h)
-	if err := st.QueueAdd(t.Context(), pqManaged, "media-alpha", nil, store.LibraryFilter{AllLibraries: true}); err != nil {
-		t.Fatal(err)
+	if got := qaItems(t, h, qaAddAlpha, authorizeViewer, "queueAdd"); !qaEqualIDs(got, "media-alpha") {
+		t.Fatalf("seed queue = %v", qaIDs(got))
 	}
 	cases := map[string]string{
 		"queueRemove": `mutation M($expectedProfileID: String) { queueRemove(mediaID: "media-alpha", expectedProfileID: $expectedProfileID) { id } }`,
@@ -156,8 +156,8 @@ func TestBlankExpectedProfileIsRefusedOnEveryQueueMutation(t *testing.T) {
 	h := newStationTestHandler(t, st)
 	fx := seedMusicFixture(t, st)
 	pqSwitchViewerToManaged(t, h)
-	if err := st.QueueAdd(t.Context(), pqManaged, "media-alpha", nil, store.LibraryFilter{AllLibraries: true}); err != nil {
-		t.Fatal(err)
+	if got := qaItems(t, h, qaAddAlpha, authorizeViewer, "queueAdd"); !qaEqualIDs(got, "media-alpha") {
+		t.Fatalf("seed queue = %v", qaIDs(got))
 	}
 	// A second Media the managed Profile can see, so a queueAdd that slipped
 	// through would visibly change the queue.

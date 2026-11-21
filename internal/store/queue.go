@@ -19,34 +19,21 @@ const ErrQueueMediaNotFound = ValidationError("media not found")
 // ErrQueueMediaLocked reports a visible target blocked by certification.
 var ErrQueueMediaLocked = errors.New("media is locked")
 
-// QueueAddResult is the visible queue page and the scope at the commit point.
+// QueueAddResult is the visible queue prefix and scope at the commit point.
+// The prefix includes the added item when it is visible beyond the first page.
 type QueueAddResult struct {
 	Items  []SourceItem
 	Filter LibraryFilter
 }
 
-// QueueAdd inserts a Media item into a Profile's play queue. If the item is
-// already queued it is moved to the requested position. Add validates the
-// target through the caller's current visibility scope, and position is
-// interpreted against the entries the caller can see: restricted entries
-// already in the queue keep their slots — they are filtered from reads,
-// never deleted, and reappear on reveal.
-func (s *Store) QueueAdd(ctx context.Context, profileID ProfileID, mediaID MediaID, position *int, filter LibraryFilter) error {
-	_, err := s.queueAdd(ctx, profileID, "", mediaID, position, filter, nil)
-	return err
-}
-
-// QueueAddForProfile adds to a request's Profile queue using current store
-// authorization. resolveCertification maps current ceilings against the active
-// plugin scales and must not call back into the store.
+// QueueAddForProfile adds or moves an item in the Profile's Play Queue using
+// current store authorization. An empty sessionID is for sessionless scopes,
+// which cannot Reveal. resolveCertification maps current ceilings against the
+// active plugin scales and must not call back into the store.
 func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, sessionID SessionID, mediaID MediaID, position *int, filter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (QueueAddResult, error) {
 	if resolveCertification == nil {
 		return QueueAddResult{}, errors.New("queue add requires a certification resolver")
 	}
-	return s.queueAdd(ctx, profileID, sessionID, mediaID, position, filter, resolveCertification)
-}
-
-func (s *Store) queueAdd(ctx context.Context, profileID ProfileID, sessionID SessionID, mediaID MediaID, position *int, filter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (QueueAddResult, error) {
 	if profileID == "" || mediaID == "" {
 		return QueueAddResult{}, ValidationError("profile ID and media ID are required")
 	}
@@ -63,11 +50,9 @@ func (s *Store) queueAdd(ctx context.Context, profileID ProfileID, sessionID Ses
 		return QueueAddResult{}, err
 	}
 	defer tx.Rollback()
-	if resolveCertification != nil {
-		filter, err = s.queueAddFilterLocked(ctx, profileID, sessionID, filter, resolveCertification)
-		if err != nil {
-			return QueueAddResult{}, err
-		}
+	filter, err = s.queueAddFilterLocked(ctx, profileID, sessionID, filter, resolveCertification)
+	if err != nil {
+		return QueueAddResult{}, err
 	}
 	entries, err := queueEntries(ctx, tx, profileID)
 	if err != nil {
@@ -104,22 +89,26 @@ func (s *Store) queueAdd(ctx context.Context, profileID ProfileID, sessionID Ses
 		without = append(without, entry)
 	}
 	updated := insertAtVisiblePosition(without, queueEntry{mediaID: mediaID, addedAtMS: addedAt}, position, visible)
-	var restricted map[LibraryID]bool
+	items := make([]SourceItem, 0, len(updated))
+	for _, entry := range updated {
+		if m, ok := media[entry.mediaID]; ok {
+			items = append(items, queueSourceItem(m))
+		}
+	}
+	items, err = s.applyMuteFilterLocked(ctx, s.catalogR, profileID, filter, items)
+	if err != nil {
+		return QueueAddResult{}, err
+	}
+	// Preserve the target's index in the visible order for off-page adds.
+	targetIndex := slices.IndexFunc(items, func(item SourceItem) bool { return item.ID == mediaID })
+	items = pageOf(items, max(defaultSourceItemsLimit, targetIndex+1), 0)
 	if filter.Revealed {
-		restricted, err = s.restrictedLibraryIDsLocked(ctx)
+		restricted, err := s.restrictedLibraryIDsLocked(ctx)
 		if err != nil {
 			return QueueAddResult{}, err
 		}
-	}
-	items := make([]SourceItem, 0, min(len(updated), defaultSourceItemsLimit))
-	for _, entry := range updated {
-		if m, ok := media[entry.mediaID]; ok {
-			item := queueSourceItem(m)
-			item.Restricted = restricted[m.LibraryID]
-			items = append(items, item)
-			if len(items) == defaultSourceItemsLimit {
-				break
-			}
+		for i := range items {
+			items[i].Restricted = restricted[items[i].LibraryID]
 		}
 	}
 	if err := s.annotateLockedLocked(ctx, filter.Certification, items, filter.GrantedMediaIDs); err != nil {
@@ -135,7 +124,9 @@ func (s *Store) queueAdd(ctx context.Context, profileID ProfileID, sessionID Ses
 }
 
 func (s *Store) queueAddFilterLocked(ctx context.Context, profileID ProfileID, sessionID SessionID, filter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (LibraryFilter, error) {
-	if sessionID != "" {
+	if sessionID == "" {
+		filter.Revealed = false
+	} else {
 		session, err := s.sessionSQL(ctx, sessionID)
 		if err != nil {
 			return LibraryFilter{}, err
