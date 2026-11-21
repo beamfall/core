@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -55,16 +56,16 @@ func seedMediaAtPath(t *testing.T, st *store.Store, path, fingerprint, title str
 // registry (claim → handler → complete) and returns the completed Job.
 func runImport(t *testing.T, st *store.Store, source migrate.Source, profileID string, categories []string, now time.Time) store.Job {
 	t.Helper()
+	return runImportPayload(t, st, source, migrate.Payload{Categories: categories, ProfileID: profileID}, now)
+}
+
+func runImportPayload(t *testing.T, st *store.Store, source migrate.Source, payload migrate.Payload, now time.Time) store.Job {
+	t.Helper()
 	registry := jobs.NewRegistry(st, "test-worker")
 	registry.Register(migrate.JobKind, migrate.Handler(st, fixedResolver{source: source}))
 
-	payload, err := json.Marshal(migrate.Payload{
-		Version:    1,
-		PluginID:   filmtv.PluginID,
-		ImporterID: "nfo",
-		Categories: categories,
-		ProfileID:  profileID,
-	})
+	payload.Version, payload.PluginID, payload.ImporterID = 1, filmtv.PluginID, "nfo"
+	encoded, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +73,7 @@ func runImport(t *testing.T, st *store.Store, source migrate.Source, profileID s
 		Kind:      migrate.JobKind,
 		Class:     store.JobClassBackground,
 		DedupeKey: "filmtv:import",
-		Payload:   payload,
+		Payload:   encoded,
 		CreatedAt: now,
 	})
 	if err != nil {
@@ -181,12 +182,18 @@ func TestPlexImportAppliesWatchStateEndToEnd(t *testing.T) {
 
 	dbPath := foreignimporttest.WritePlexFixture(t, t.TempDir(), "/media/films/Watched.mkv", "/media/films/Resume.mkv")
 	source := filmtv.NewPlexSource(dbPath)
-	if got := source.Categories(); len(got) != 1 || got[0] != migrate.CategoryWatchState {
-		t.Fatalf("Plex source categories = %#v, want [watch-state]", got)
+	// filmtv v0.1.23 also advertises Plex ratings and collections (CORE-2676).
+	want := []string{migrate.CategoryWatchState, migrate.CategoryRatings, migrate.CategoryCollections}
+	if got := source.Categories(); !slices.Equal(got, want) {
+		t.Fatalf("Plex source categories = %#v, want %#v", got, want)
 	}
 
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	done := runImport(t, st, source, profileID, source.Categories(), now)
+	// The Plex source reads per account, so the run maps the fixture's account.
+	done := runImportPayload(t, st, source, migrate.Payload{
+		Categories:           []string{migrate.CategoryWatchState},
+		SourceUserProfileIDs: map[string]string{foreignimporttest.PlexFixtureAccount: profileID},
+	}, now)
 	if done.Progress.Current != 2 || done.Progress.Total != 2 {
 		t.Fatalf("Plex match rate = %d of %d, want 2 of 2", done.Progress.Current, done.Progress.Total)
 	}
