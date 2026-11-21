@@ -84,15 +84,20 @@ and SHALL NOT write an item already in that relation.
 
 `upsertEntityRelation` SHALL accept an optional `position`, refused together with `sortOrder`. With
 `position`, the server SHALL, in one transaction, put the row at that place among the rows the caller
-can see (after the last visible row when the position is past the end), number the relation's rows
-0..n-1, and keep the relative order of rows the caller cannot see. Only rows that exist are
-rewritten.
+can see (after the last visible row when the position is past the end) and renumber only those rows
+with strictly increasing numbers. Rows the caller cannot see SHALL NOT be rewritten.
+
+#### Scenario: Visible rows reuse their numbers
+
+- **WHEN** visible rows numbered 1 and 1 and an unnumbered visible row are reordered
+- **THEN** they take 1, 2 and 3 in their new order, so no stored number counts hidden rows
 
 #### Scenario: Unnumbered and hidden rows
 
 - **WHEN** a relation holds a hidden row, a numbered row and two unnumbered rows, and an unnumbered
   row is placed at position 0
-- **THEN** the hidden row stays first, the placed row follows it, and every row is numbered 0..3
+- **THEN** the hidden row keeps its number and stays first, and the visible rows read in their new
+  order with strictly increasing numbers
 
 #### Scenario: Both orderings given
 
@@ -108,17 +113,6 @@ the target, and SHALL refuse the call otherwise.
 
 - **WHEN** a caller places a row whose target it cannot see
 - **THEN** the call is refused and no row moves
-
-### Requirement: Filtered relation reads do not count hidden rows
-
-When a caller cannot see every row of a relation, `entityRelations` SHALL return each ranked row's
-`sortOrder` as its rank among the rows the caller sees. A relation the caller sees whole keeps its
-stored numbers.
-
-#### Scenario: A hidden row comes first
-
-- **WHEN** a relation holds a hidden row numbered 0 and visible rows numbered 1 to 3
-- **THEN** a read by that caller returns the visible rows numbered 0 to 2
 
 ### Requirement: Group changes save one at a time
 

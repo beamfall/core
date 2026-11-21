@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -1402,19 +1403,8 @@ func (s *Store) EntityRelationRows(ctx context.Context, entityID EntityID, relat
 	args = append(args, visibleArgs...)
 	args = append(args, limit, offset)
 	// #nosec G202 -- interpolated fragments are internally generated placeholders and closed certification SQL.
-	// When the filter hides some of a relation's rows, each row gets its rank
-	// among the ranked rows the filter sees instead of the stored number,
-	// which would count the hidden rows (CORE-2913). A relation the filter
-	// sees whole keeps its stored numbers.
 	rows, err := plane.reader.QueryContext(ctx, `
-		SELECT r.relation, r.attributes,
-		       CASE WHEN r.sort_order IS NULL
-		              OR COUNT(*) OVER (PARTITION BY r.relation) =
-		                 (SELECT COUNT(*) FROM entity_relation x
-		                  WHERE x.from_entity_id = r.from_entity_id AND x.relation = r.relation)
-		            THEN r.sort_order ELSE
-		         ROW_NUMBER() OVER (PARTITION BY r.relation, (r.sort_order IS NULL)
-		           ORDER BY r.sort_order, r.to_entity_id, r.to_media_id) - 1 END,
+		SELECT r.relation, r.attributes, r.sort_order,
 		       e.id, e.library_id, e.kind, e.title,
 		       m.id, m.library_id, m.title, m.summary, m.year,
 		       m.duration_seconds, m.container, m.codec, m.video_width,
@@ -1765,9 +1755,9 @@ func (s *Store) entityRelationVisibleSQLLocked(ctx context.Context, plane catalo
 
 // PlaceEntityRelation puts one relation row at a position among the rows of
 // its relation that the filter can see, adding the row when it is new, and
-// renumbers the whole relation 0..n-1 in one transaction. Rows the filter
-// hides keep their order relative to each other; a position at or past the
-// visible count places the row after the last visible row. Existing rows keep
+// renumbers the visible rows in one transaction. Rows the filter hides are
+// not rewritten; a position at or past the visible count places the row after
+// the last visible row. Existing rows keep
 // their attributes; only a new row takes relation.Attributes (CORE-2913).
 func (s *Store) PlaceEntityRelation(ctx context.Context, relation EntityRelation, position int, filter LibraryFilter) error {
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
@@ -1852,6 +1842,7 @@ func (s *Store) PlaceEntityRelation(ctx context.Context, relation EntityRelation
 		return err
 	}
 	var order []placed
+	var target sql.NullInt64
 	for rows.Next() {
 		var row placed
 		if err := rows.Scan(&row.toEntity, &row.toMedia, &row.sortOrder, &row.visible); err != nil {
@@ -1860,6 +1851,7 @@ func (s *Store) PlaceEntityRelation(ctx context.Context, relation EntityRelation
 		}
 		if (relation.ToEntityID != "" && row.toEntity.String == string(relation.ToEntityID)) ||
 			(relation.ToMediaID != "" && row.toMedia.String == string(relation.ToMediaID)) {
+			target = row.sortOrder
 			continue
 		}
 		order = append(order, row)
@@ -1870,32 +1862,56 @@ func (s *Store) PlaceEntityRelation(ctx context.Context, relation EntityRelation
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	var visibleAt []int
-	for i, row := range order {
-		if row.visible {
-			visibleAt = append(visibleAt, i)
+	// Renumber only the rows the filter sees: they take back the numbers they
+	// already hold, made strictly increasing, in their new order, and rows
+	// without a number (the placed row when new) take the next ones. Hidden
+	// rows keep their numbers, so nothing written counts them (CORE-2913).
+	var visibleRows []placed
+	var slots []int64
+	if target.Valid {
+		slots = append(slots, target.Int64)
+	}
+	for _, row := range order {
+		if !row.visible {
+			continue
+		}
+		visibleRows = append(visibleRows, row)
+		if row.sortOrder.Valid {
+			slots = append(slots, row.sortOrder.Int64)
 		}
 	}
-	slot := len(order)
-	switch {
-	case position < len(visibleAt):
-		slot = visibleAt[position]
-	case len(visibleAt) > 0:
-		slot = visibleAt[len(visibleAt)-1] + 1
+	at := min(position, len(visibleRows))
+	placedRow := placed{
+		toEntity:  sql.NullString{String: string(relation.ToEntityID), Valid: relation.ToEntityID != ""},
+		toMedia:   sql.NullString{String: string(relation.ToMediaID), Valid: relation.ToMediaID != ""},
+		sortOrder: target,
 	}
-	for i, row := range order {
-		want := i
-		if i >= slot {
-			want = i + 1
+	visibleRows = append(visibleRows[:at], append([]placed{placedRow}, visibleRows[at:]...)...)
+	slices.Sort(slots)
+	for len(slots) < len(visibleRows) {
+		next := int64(0)
+		if len(slots) > 0 {
+			next = slots[len(slots)-1] + 1
 		}
-		if row.sortOrder.Valid && row.sortOrder.Int64 == int64(want) {
+		slots = append(slots, next)
+	}
+	for i := 1; i < len(slots); i++ {
+		slots[i] = max(slots[i], slots[i-1]+1)
+	}
+	var slot int64
+	for i, row := range visibleRows {
+		if i == at {
+			slot = slots[i]
+			continue
+		}
+		if row.sortOrder.Valid && row.sortOrder.Int64 == slots[i] {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE entity_relation SET sort_order = ?
 			WHERE from_entity_id = ? AND relation = ?
 			  AND to_entity_id IS ? AND to_media_id IS ?
-		`, want, relation.FromEntityID, relation.Name, row.toEntity, row.toMedia); err != nil {
+		`, slots[i], relation.FromEntityID, relation.Name, row.toEntity, row.toMedia); err != nil {
 			return err
 		}
 	}

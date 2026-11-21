@@ -127,8 +127,8 @@ func TestPlaceEntityRelationRenumbersAroundHiddenRows(t *testing.T) {
 		}
 		ids, byID := []string{}, map[string]EntityRelationRow{}
 		for i, row := range rows {
-			if row.SortOrder == nil || *row.SortOrder != i {
-				t.Fatalf("row %d %s sortOrder = %v, want %d", i, row.ToEntity.ID, row.SortOrder, i)
+			if row.SortOrder == nil || (i > 0 && *row.SortOrder <= *rows[i-1].SortOrder) {
+				t.Fatalf("row %d %s sortOrder = %v, want a number above the row before", i, row.ToEntity.ID, row.SortOrder)
 			}
 			ids = append(ids, string(row.ToEntity.ID))
 			byID[string(row.ToEntity.ID)] = row
@@ -147,16 +147,13 @@ func TestPlaceEntityRelationRenumbersAroundHiddenRows(t *testing.T) {
 		t.Fatalf("v1 attributes = %v, want role=lead kept", byID["v1"].Attributes)
 	}
 
-	// A filtered read ranks only the rows it can see, so it does not count
-	// the hidden row ahead of them.
-	visibleRows, err := st.EntityRelationRows(ctx, "group", "contains", local)
-	if err != nil {
-		t.Fatal(err)
+	// The visible rows reuse the numbers they held, and the hidden row is
+	// not rewritten, so no stored number counts it.
+	if got := *byID["hidden"].SortOrder; got != 0 {
+		t.Fatalf("hidden sortOrder = %d, want 0 unchanged", got)
 	}
-	for i, row := range visibleRows {
-		if row.SortOrder == nil || *row.SortOrder != i {
-			t.Fatalf("filtered row %d %s sortOrder = %v, want %d", i, row.ToEntity.ID, row.SortOrder, i)
-		}
+	if got := *byID["v3"].SortOrder; got != 1 {
+		t.Fatalf("v3 sortOrder = %d, want 1 (the number v1 held)", got)
 	}
 	// A target the filter cannot see is refused and nothing moves.
 	if err := st.PlaceEntityRelation(ctx, EntityRelation{FromEntityID: "group", Name: "contains", ToEntityID: "hidden"}, 2, local); err == nil {

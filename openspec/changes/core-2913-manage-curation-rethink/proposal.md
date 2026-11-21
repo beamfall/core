@@ -34,8 +34,8 @@ rows that point *at* the open item. A link made on this page never shows up unde
   argument, so re-ordering a row the scanner wrote used to erase its attributes. The store upsert
   gains a `KeepAttributes` flag that the mutation sets; other writers are unchanged.
 - `upsertEntityRelation` gains an optional `position` argument. The server places the row at that
-  place among the rows the caller can see and renumbers the relation in one transaction, keeping
-  hidden rows' order. The page makes one write per move or add instead of renumbering rows itself,
+  place among the rows the caller can see and renumbers those rows in one transaction, leaving
+  hidden rows untouched. The page makes one write per move or add instead of renumbering rows itself,
   so a failure cannot leave a half-applied order. The argument is optional, so no wire golden moves.
 - `entityRelations` is read in pages (it already takes `limit`/`offset`), so ordering sees every row
   of a large group.
