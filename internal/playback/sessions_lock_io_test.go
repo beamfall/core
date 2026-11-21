@@ -163,7 +163,7 @@ func TestSessionsBlockedSessionIODoesNotStallOthers(t *testing.T) {
 			install: func(f fixture) {
 				f.s.removeDir = func(path string) error {
 					f.latch.park()
-					return os.RemoveAll(path)
+					return os.RemoveAll(path) // #nosec G703 -- path is the test-owned scratch dir.
 				}
 			},
 			block: func(t *testing.T, f fixture) func() error {
@@ -200,6 +200,33 @@ func TestSessionsBlockedSessionIODoesNotStallOthers(t *testing.T) {
 				}
 			},
 			block: func(_ *testing.T, f fixture) func() error { return createSlow(f) },
+		})
+	}
+	// ensureRung checks readiness before deciding to start an encoder, and again
+	// after a frontier scan when a seek lands past the produced window.
+	for check, stage := range []string{"initial check", "post-scan recheck"} {
+		cases = append(cases, ioCase{
+			name: "ensureRung artifact " + stage,
+			install: func(f fixture) {
+				var calls atomic.Int32
+				f.s.rungReady = func(session *hlsSession, path string) bool {
+					if session.key == f.slow && f.latch.armed.Load() && int(calls.Add(1)) == check+1 {
+						f.latch.park()
+					}
+					return session.artifactReady(path)
+				}
+			},
+			block: func(t *testing.T, f fixture) func() error {
+				f.latch.armed.Store(false)
+				if _, err := filePath720(f.s, f.slow, "720p/seg00000.m4s"); err != nil {
+					t.Fatal(err)
+				}
+				f.latch.armed.Store(true)
+				return func() error {
+					_, err := filePath720(f.s, f.slow, "720p/seg00012.m4s")
+					return err
+				}
+			},
 		})
 	}
 	for _, tc := range cases {
@@ -270,22 +297,14 @@ func TestSessionsSlowInitializationAllowsUnrelatedSessionsAndDrainsOnClose(t *te
 
 	closed := make(chan error, 1)
 	go func() { closed <- s.Close() }()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		s.mu.Lock()
-		closing := s.closed
-		s.mu.Unlock()
-		if closing {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("Close never started")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	// Close parks on offLockIdle only once teardowns are done and it is waiting
+	// for the in-flight initialization itself.
+	idle := waitScratchCloseBlocked(t, s)
 	select {
 	case err := <-closed:
 		t.Fatalf("Close returned before the slow initialization drained: %v", err)
+	case <-idle:
+		t.Fatal("Close saw off-lock work idle while initialization was parked")
 	case <-time.After(100 * time.Millisecond):
 	}
 	latch.open()
