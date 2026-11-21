@@ -31,8 +31,9 @@ Fixing them meant one search and one apply per row, and nothing explained the pr
 - `fixMatchCandidates` takes an optional `year` variable. When it is set, the search fills a
   scraper's `{year}` template slot (with the existing retry without the year) and the scorer
   gets it as `ParsedMedia.Year`.
-- A naming panel shows the file path, links to Manage → Rename and can rescan the group's items
-  afterwards (`bulkRescanUnmatchedSelected`).
+- A naming panel shows the file path and links to Manage → Libraries (folder rename) and
+  Manage → Rename (file rename). A per-group rescan is left out: the selected-rescan path today
+  resolves one library and does not reparse a renamed path, so it is a follow-up ticket.
 - Hide works per item and per group and says the item may come back on the next scan.
 
 No schema, wire-contract or migration change: `year` is an optional GraphQL variable read like the

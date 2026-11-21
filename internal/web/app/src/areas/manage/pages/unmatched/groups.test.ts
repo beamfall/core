@@ -83,4 +83,20 @@ describe("folderHint", () => {
     expect(folderHint("file.mkv")).toBeUndefined();
     expect(folderHint(undefined)).toBeUndefined();
   });
+  it("keeps the nearest folder over a dated grandparent", () => {
+    expect(folderHint("/archive/Collection (1990)/North (US)/part.mkv")).toMatchObject({
+      title: "North",
+      qualifier: "US",
+      year: undefined,
+    });
+  });
+
+  it("keeps a numbered title folder unless its parent is dated", () => {
+    expect(folderHint("/data/Alien 3/file.mkv")).toMatchObject({ title: "Alien 3" });
+    expect(folderHint("/data/Heat 2/Extras 1/file.mkv")).toMatchObject({ title: "Extras 1" });
+    expect(folderHint("/data/Heat (1995)/Extras 1/file.mkv")).toMatchObject({
+      title: "Heat",
+      year: 1995,
+    });
+  });
 });

@@ -96,22 +96,34 @@ const YEAR = /[([]\s*((?:18|19|20)\d{2})\s*[)\]]/;
 const BARE_TRAILING_YEAR = /[\s._-]((?:18|19|20)\d{2})$/;
 const QUALIFIER = /[([]\s*([^()[\]\d][^()[\]]{0,15}?)\s*[)\]]/;
 const ID_TAG = /[{[][a-z]+[-=][^}\]]+[}\]]/gi;
-// "Disc 2", "Part 03", "S01": a folder that only numbers its siblings says
-// nothing about the entry's name, so the walk goes one level higher.
+// "Alien 3", "Disc 2": a short word and a number. Such a folder may be a
+// title of its own or may only number its siblings, so it is skipped only
+// when its parent carries a year or the word is a common sibling marker.
 const NUMBERED_SUBFOLDER = /^\p{L}{1,12}[\s._-]*\d{1,3}$/u;
+const SIBLING_MARKER = /^(?:cd|dvd|disc|disk|part|pt|vol|volume|s)[\s._-]*\d{1,3}$/i;
 
 /**
- * folderHint reads the nearest ancestor folder of a file path that names the
- * entry: the first one carrying a year, else the first that is not a numbered
- * subfolder. It returns undefined for a path with no usable folder.
+ * folderHint reads the folder nearest a file path that names the entry. A
+ * numbered folder ("Disc 2") gives way to its parent when the parent carries a
+ * year or the folder is a common sibling marker; otherwise the nearest folder
+ * wins, so a dated grandparent never replaces it. It returns undefined for a
+ * path with no folder.
  */
 export function folderHint(path: string | undefined): FolderHint | undefined {
   if (!path) return undefined;
-  const parts = path.split(/[\\/]+/).filter(Boolean);
-  const folders = parts.slice(0, -1).reverse().slice(0, 3);
-  const folder =
-    folders.find((name) => parseFolderName(name).year !== undefined) ??
-    folders.find((name) => !NUMBERED_SUBFOLDER.test(name));
+  const folders = path
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .slice(0, -1)
+    .reverse()
+    .slice(0, 3);
+  let i = 0;
+  while (i + 1 < folders.length && NUMBERED_SUBFOLDER.test(folders[i])) {
+    const parent = parseFolderName(folders[i + 1]);
+    if (parent.year === undefined && !SIBLING_MARKER.test(folders[i])) break;
+    i++;
+  }
+  const folder = folders[i];
   if (!folder) return undefined;
   return parseFolderName(folder);
 }

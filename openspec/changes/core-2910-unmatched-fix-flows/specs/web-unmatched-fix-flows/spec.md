@@ -52,9 +52,16 @@ year, so equal titles with different years no longer tie.
 
 ### Requirement: Naming and hide actions are honest
 
-The page SHALL show a group's file path, link to Manage → Rename and offer to rescan the group's
-items. Hide SHALL be available per item and per group and SHALL say the item can return on the
-next scan.
+The page SHALL show a group's file path and link to Manage → Libraries (folder rename) and
+Manage → Rename (file rename). A group from a source with no catalog SHALL say so instead of
+offering a search. Hide SHALL be available per item and per group and SHALL say the item can
+return on the next scan. When the queue holds more rows than one load reads, the page SHALL say
+it shows only the first rows.
+
+#### Scenario: Source with no catalog
+
+- **WHEN** a group's scraper is the manual-only source
+- **THEN** the panel explains it cannot be searched and offers no search or candidate list
 
 #### Scenario: Hide a group
 

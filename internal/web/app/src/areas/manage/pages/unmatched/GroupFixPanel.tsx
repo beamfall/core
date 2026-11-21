@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   AlertDialog,
@@ -20,7 +20,6 @@ import {
   fixMatchCandidates,
   fixMatchPreview,
   identifyLookup,
-  runHealthBulkOpSelected,
 } from "@/lib/graphql";
 import type { FixMatchCandidateInfo, FixMatchFieldDiff } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -31,28 +30,39 @@ import { groupProblem, percent, reasonLabel } from "./reasons";
  * GroupFixPanel fixes every item of one UnmatchedGroup in one step
  * (CORE-2910). It opens with the folder's title and year already searched, so
  * the common fix is one click on "Match all"; a pasted catalog ID, a preview
- * that writes nothing, a naming fix and Hide stay one step away.
+ * that writes nothing, naming advice and Hide stay one step away.
  */
+
+/** The scraper id the queue records for a source with no catalog to search. */
+const MANUAL_SCRAPER_ID = "manual";
+
 export function GroupFixPanel({
   group,
   hint,
   path,
-  libraryID,
+  onWriteStart,
   onFinished,
   onError,
 }: {
   group: UnmatchedGroup;
   hint: FolderHint | undefined;
   path: string | undefined;
-  libraryID: string;
+  /**
+   * Called before a write starts. The page holds the panel on this group until
+   * onFinished, so a second panel for the same items cannot start a competing
+   * batch while the first is still writing.
+   */
+  onWriteStart: () => void;
   /** Called after any write so the page reloads from the server. */
   onFinished: (message: string) => void;
   onError: (message: string) => void;
 }) {
   const t = useT();
+  const hideNoteID = useId();
   const first = group.items[0];
   const source = { pluginID: group.pluginID, scraperID: group.scraperID };
-  const [query, setQuery] = useState(hint?.title || group.candidateTitle || first?.title || "");
+  const manual = group.scraperID === MANUAL_SCRAPER_ID;
+  const [query, setQuery] = useState(group.candidateTitle || hint?.title || first?.title || "");
   const [year, setYear] = useState(hint?.year ? String(hint.year) : "");
   const [candidates, setCandidates] = useState<FixMatchCandidateInfo[]>([]);
   const [selectedID, setSelectedID] = useState("");
@@ -60,33 +70,40 @@ export function GroupFixPanel({
   const [diff, setDiff] = useState<FixMatchFieldDiff[]>([]);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
+  // The year the shown candidates were searched with: it picks the default
+  // selection and the Suggested badge, so a corrected year wins over the folder.
+  const [suggestedYear, setSuggestedYear] = useState<number | undefined>(undefined);
   const searched = useRef(false);
+  // Bumped on every selection; a preview answered for an older one is dropped.
+  const selection = useRef(0);
 
   const problem = groupProblem(t, group, hint);
   const count = group.items.length;
-  const suggestedYear = hint?.year;
 
   // A new selection invalidates the preview: a diff for one entry next to
   // another entry's Match button would misreport what is about to be written.
   const select = (candidateID: string) => {
+    selection.current++;
     setSelectedID(candidateID);
     setDiff([]);
   };
 
   const runSearch = async (text: string, yearText: string) => {
-    if (!text.trim() || !first) return;
+    if (manual || !text.trim() || !first) return;
     const parsedYear = Number.parseInt(yearText, 10);
+    const searchYear = parsedYear > 0 ? parsedYear : undefined;
     setBusy(true);
     try {
       const scored = await fixMatchCandidates({
         mediaID: first.mediaID,
         ...source,
         query: text.trim(),
-        ...(parsedYear > 0 ? { year: parsedYear } : {}),
+        ...(searchYear ? { year: searchYear } : {}),
       });
       setCandidates(scored);
-      const preferred = suggestedYear
-        ? scored.find((candidate) => candidate.year === suggestedYear)
+      setSuggestedYear(searchYear);
+      const preferred = searchYear
+        ? scored.find((candidate) => candidate.year === searchYear)
         : undefined;
       select((preferred ?? scored[0])?.id ?? "");
     } catch {
@@ -113,6 +130,7 @@ export function GroupFixPanel({
     setBusy(true);
     try {
       const fetched = await identifyLookup({ mediaID: first.mediaID, ...source, candidateID });
+      setSuggestedYear(undefined);
       setCandidates([
         {
           ...fetched,
@@ -133,11 +151,15 @@ export function GroupFixPanel({
 
   const onPreview = async () => {
     if (!selectedID || !first) return;
+    const asked = selection.current;
     setBusy(true);
     try {
-      setDiff(
-        await fixMatchPreview({ mediaID: first.mediaID, ...source, candidateID: selectedID }),
-      );
+      const rows = await fixMatchPreview({
+        mediaID: first.mediaID,
+        ...source,
+        candidateID: selectedID,
+      });
+      if (asked === selection.current) setDiff(rows);
     } catch {
       onError(t("unmatchedUnavailable"));
     } finally {
@@ -149,6 +171,7 @@ export function GroupFixPanel({
   // names exactly which items are still unmatched.
   const onMatch = async () => {
     if (!selectedID) return;
+    onWriteStart();
     setBusy(true);
     const failed: string[] = [];
     let done = 0;
@@ -171,27 +194,11 @@ export function GroupFixPanel({
   };
 
   const hide = async (mediaIDs: string[]) => {
+    onWriteStart();
     setBusy(true);
     const results = await Promise.allSettled(mediaIDs.map((id) => dismissUnmatched(id)));
     setBusy(false);
     onFinished(results.some((r) => r.status === "rejected") ? t("unmatchedUnavailable") : "");
-  };
-
-  const onRescan = async () => {
-    if (!libraryID) return;
-    setBusy(true);
-    try {
-      const result = await runHealthBulkOpSelected(
-        "bulkRescanUnmatched",
-        libraryID,
-        group.items.map((item) => item.mediaID),
-      );
-      onFinished(`${result.affected} ${t("bulkOpsAffected")}`);
-    } catch {
-      onError(t("unmatchedUnavailable"));
-    } finally {
-      setBusy(false);
-    }
   };
 
   return (
@@ -202,141 +209,149 @@ export function GroupFixPanel({
       </div>
 
       <div className="space-y-3 p-3">
-        <form
-          className="flex flex-wrap gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void runSearch(query, year);
-          }}
-        >
-          <Input
-            className="min-w-0 flex-1 basis-48"
-            aria-label={t("unmatchedSearchLabel")}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <Input
-            className="w-24"
-            aria-label={t("unmatchedYearLabel")}
-            inputMode="numeric"
-            placeholder="YYYY"
-            value={year}
-            onChange={(e) => setYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
-          />
-          <Button type="submit" size="sm" variant="outline" disabled={busy || !query.trim()}>
-            {t("unmatchedSearch")}
-          </Button>
-        </form>
-
-        {candidates.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            {busy ? t("loading") : t("unmatchedNoCandidates")}
-          </p>
+        {manual ? (
+          <p className="text-xs text-muted-foreground">{t("unmatchedManualNoCatalog")}</p>
         ) : (
           <>
-            <p className="text-xs text-muted-foreground">{t("unmatchedPickHint")}</p>
-            <ul className="space-y-2">
-              {candidates.map((candidate) => (
-                <li key={candidate.id}>
-                  <button
-                    type="button"
-                    className="grid w-full gap-1 rounded-md border px-3 py-2 text-left hover:bg-muted/50 data-[active=true]:border-primary data-[active=true]:bg-muted/40"
-                    data-active={selectedID === candidate.id}
-                    aria-pressed={selectedID === candidate.id}
-                    onClick={() => select(candidate.id)}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="min-w-0 break-words text-sm font-medium text-foreground">
-                        {candidate.title}
-                        {candidate.year ? ` (${candidate.year})` : ""}
-                      </span>
-                      <span className="flex shrink-0 gap-1">
-                        {suggestedYear !== undefined && candidate.year === suggestedYear && (
-                          <Badge>{t("unmatchedSuggested")}</Badge>
-                        )}
-                        <Badge variant={candidate.scored ? "secondary" : "outline"}>
-                          {candidate.scored
-                            ? percent(candidate.confidence)
-                            : t("unmatchedCandidateUnscored")}
-                        </Badge>
-                      </span>
-                    </div>
-                    {candidate.reason && (
-                      <span className="text-xs text-muted-foreground">
-                        {reasonLabel(t, candidate.reason)}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" disabled={busy || !selectedID} onClick={() => void onMatch()}>
-            {count === 1 ? t("unmatchedApplyPin") : t("unmatchedMatchAll", { count })}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy || !selectedID}
-            onClick={() => void onPreview()}
-          >
-            {t("unmatchedPreviewLoad")}
-          </Button>
-          {progress && (
-            <span className="text-xs text-muted-foreground" role="status">
-              {progress}
-            </span>
-          )}
-        </div>
-
-        {diff.length > 0 && (
-          <dl className="grid gap-2 rounded-md border p-2">
-            {diff.map((row) => (
-              <div key={row.field} className="grid gap-0.5">
-                <dt className="text-xs text-muted-foreground">{row.field}</dt>
-                <dd className="break-words text-sm text-foreground">
-                  {row.changed ? (
-                    <>
-                      <span className="text-muted-foreground line-through">
-                        {row.current || "—"}
-                      </span>{" "}
-                      → <span className="font-medium">{row.proposed}</span>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">{t("unmatchedPreviewUnchanged")}</span>
-                  )}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        )}
-
-        <details className="rounded-md border px-3 py-2">
-          <summary className="cursor-pointer text-sm text-foreground">
-            {t("unmatchedKnowID")}
-          </summary>
-          <div className="mt-2 grid gap-1">
-            <p className="text-xs text-muted-foreground">{t("unmatchedPasteIDHint")}</p>
-            <div className="flex gap-2">
+            <form
+              className="flex flex-wrap gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void runSearch(query, year);
+              }}
+            >
               <Input
-                aria-label={t("unmatchedPasteIDLabel")}
-                value={pastedID}
-                onChange={(e) => setPastedID(e.target.value)}
+                className="min-w-0 flex-1 basis-48"
+                aria-label={t("unmatchedSearchLabel")}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
               />
+              <Input
+                className="w-24"
+                aria-label={t("unmatchedYearLabel")}
+                inputMode="numeric"
+                placeholder="YYYY"
+                value={year}
+                onChange={(e) => setYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              />
+              <Button type="submit" size="sm" variant="outline" disabled={busy || !query.trim()}>
+                {t("unmatchedSearch")}
+              </Button>
+            </form>
+
+            {candidates.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {busy ? t("loading") : t("unmatchedNoCandidates")}
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">{t("unmatchedPickHint")}</p>
+                <ul className="space-y-2">
+                  {candidates.map((candidate) => (
+                    <li key={candidate.id}>
+                      <button
+                        type="button"
+                        className="grid w-full gap-1 rounded-md border px-3 py-2 text-left hover:bg-muted/50 data-[active=true]:border-primary data-[active=true]:bg-muted/40"
+                        data-active={selectedID === candidate.id}
+                        aria-pressed={selectedID === candidate.id}
+                        onClick={() => select(candidate.id)}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="min-w-0 break-words text-sm font-medium text-foreground">
+                            {candidate.title}
+                            {candidate.year ? ` (${candidate.year})` : ""}
+                          </span>
+                          <span className="flex shrink-0 gap-1">
+                            {suggestedYear !== undefined && candidate.year === suggestedYear && (
+                              <Badge>{t("unmatchedSuggested")}</Badge>
+                            )}
+                            <Badge variant={candidate.scored ? "secondary" : "outline"}>
+                              {candidate.scored
+                                ? percent(candidate.confidence)
+                                : t("unmatchedCandidateUnscored")}
+                            </Badge>
+                          </span>
+                        </div>
+                        {candidate.reason && (
+                          <span className="text-xs text-muted-foreground">
+                            {reasonLabel(t, candidate.reason)}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" disabled={busy || !selectedID} onClick={() => void onMatch()}>
+                {count === 1 ? t("unmatchedApplyPin") : t("unmatchedMatchAll", { count })}
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
-                disabled={busy || !pastedID.trim()}
-                onClick={() => void onFetchByID()}
+                disabled={busy || !selectedID}
+                onClick={() => void onPreview()}
               >
-                {t("unmatchedPasteIDFetch")}
+                {t("unmatchedPreviewLoad")}
               </Button>
+              {progress && (
+                <span className="text-xs text-muted-foreground" role="status">
+                  {progress}
+                </span>
+              )}
             </div>
-          </div>
-        </details>
+
+            {diff.length > 0 && (
+              <dl className="grid gap-2 rounded-md border p-2">
+                {diff.map((row) => (
+                  <div key={row.field} className="grid gap-0.5">
+                    <dt className="text-xs text-muted-foreground">{row.field}</dt>
+                    <dd className="break-words text-sm text-foreground">
+                      {row.changed ? (
+                        <>
+                          <span className="text-muted-foreground line-through">
+                            {row.current || "—"}
+                          </span>{" "}
+                          → <span className="font-medium">{row.proposed}</span>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {t("unmatchedPreviewUnchanged")}
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+
+            <details className="rounded-md border px-3 py-2">
+              <summary className="cursor-pointer text-sm text-foreground">
+                {t("unmatchedKnowID")}
+              </summary>
+              <div className="mt-2 grid gap-1">
+                <p className="text-xs text-muted-foreground">{t("unmatchedPasteIDHint")}</p>
+                <div className="flex gap-2">
+                  <Input
+                    aria-label={t("unmatchedPasteIDLabel")}
+                    value={pastedID}
+                    onChange={(e) => setPastedID(e.target.value)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy || !pastedID.trim()}
+                    onClick={() => void onFetchByID()}
+                  >
+                    {t("unmatchedPasteIDFetch")}
+                  </Button>
+                </div>
+              </div>
+            </details>
+          </>
+        )}
 
         <div className="grid gap-2 border-t pt-3">
           <h4 className="text-sm font-semibold text-foreground">{t("unmatchedNamingHeading")}</h4>
@@ -346,25 +361,18 @@ export function GroupFixPanel({
           </code>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" asChild>
+              <Link to="/manage/libraries">{t("unmatchedOpenLibraries")}</Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild>
               <Link to="/manage/rename">{t("unmatchedOpenRename")}</Link>
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy || !libraryID}
-              onClick={() => void onRescan()}
-            >
-              {t("unmatchedRescanGroup")}
-            </Button>
-            {!libraryID && (
-              <span className="text-xs text-muted-foreground">
-                {t("unmatchedRescanNeedsLibrary")}
-              </span>
-            )}
           </div>
         </div>
 
         <div className="grid gap-2 border-t pt-3">
+          <p id={hideNoteID} className="text-xs text-muted-foreground">
+            {t("unmatchedHideBody")}
+          </p>
           <ul className="divide-y rounded-md border">
             {group.items.map((item) => (
               <li
@@ -379,6 +387,7 @@ export function GroupFixPanel({
                   variant="ghost"
                   disabled={busy}
                   aria-label={`${t("unmatchedHide")}: ${item.title || item.mediaID}`}
+                  aria-describedby={hideNoteID}
                   onClick={() => void hide([item.mediaID])}
                 >
                   {t("unmatchedHide")}

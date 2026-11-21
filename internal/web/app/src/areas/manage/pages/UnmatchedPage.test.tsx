@@ -7,7 +7,7 @@ import {
   dismissUnmatched,
   fetchLibraries,
   fetchMediaFiles,
-  fetchUnmatchedQueue,
+  fetchUnmatchedQueuePages,
   fetchUnmatchedRecords,
   fetchUnmatchedSuppressions,
   fixMatch,
@@ -15,19 +15,17 @@ import {
   fixMatchPreview,
   identifyLookup,
   runHealthBulkOp,
-  runHealthBulkOpSelected,
 } from "@/lib/graphql";
 import type { UnmatchedItemInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { UnmatchedPage } from "./UnmatchedPage";
 
 vi.mock("@/lib/graphql", () => ({
-  fetchUnmatchedQueue: vi.fn(),
+  fetchUnmatchedQueuePages: vi.fn(),
   fetchLibraries: vi.fn(),
   fetchMediaFiles: vi.fn(),
   dismissUnmatched: vi.fn(),
   runHealthBulkOp: vi.fn(),
-  runHealthBulkOpSelected: vi.fn(),
   fixMatch: vi.fn(),
   fixMatchCandidates: vi.fn(),
   fixMatchPreview: vi.fn(),
@@ -64,6 +62,8 @@ const below: UnmatchedItemInfo = {
   failureReason: "below-threshold",
 };
 
+const queue = (items: UnmatchedItemInfo[], complete = true) => ({ items, complete });
+
 const candidates = [
   {
     id: "outsider-2018",
@@ -89,7 +89,7 @@ const candidates = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(fetchUnmatchedQueue).mockResolvedValue([tied(1), below, tied(2), tied(3)]);
+  vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(queue([tied(1), below, tied(2), tied(3)]));
   vi.mocked(fetchLibraries).mockResolvedValue([
     {
       id: "lib-1",
@@ -106,7 +106,7 @@ beforeEach(() => {
       path:
         mediaID === "media-thing"
           ? "/media/The Thing/The Thing 2011.mkv"
-          : "/media/The Outsider (2020)/Season 1/part.mkv",
+          : "/media/The Outsider (2020)/Disc 1/part.mkv",
       contentFingerprint: "",
       versionLabel: "",
       partOrdinal: 0,
@@ -114,7 +114,6 @@ beforeEach(() => {
   ]);
   vi.mocked(dismissUnmatched).mockResolvedValue(true);
   vi.mocked(runHealthBulkOp).mockResolvedValue({ affected: 1 });
-  vi.mocked(runHealthBulkOpSelected).mockResolvedValue({ affected: 3 });
   vi.mocked(fixMatchCandidates).mockResolvedValue(candidates);
   vi.mocked(fixMatchPreview).mockResolvedValue([
     { field: "title", current: "Part 1", proposed: "The Outsider · 2020", changed: true },
@@ -201,7 +200,7 @@ describe("UnmatchedPage", () => {
     await openedOnGroup();
     await screen.findByRole("button", { name: /Suggested/ });
 
-    vi.mocked(fetchUnmatchedQueue).mockResolvedValue([below, tied(2)]);
+    vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(queue([below, tied(2)]));
     await user.click(screen.getByRole("button", { name: "Match all 3" }));
 
     await waitFor(() => expect(fixMatch).toHaveBeenCalledTimes(3));
@@ -214,7 +213,7 @@ describe("UnmatchedPage", () => {
       });
     }
     expect(await screen.findByText("Matched 2 of 3. Could not match: Part 2.")).toBeVisible();
-    expect(fetchUnmatchedQueue).toHaveBeenCalledTimes(2);
+    expect(fetchUnmatchedQueuePages).toHaveBeenCalledTimes(2);
   });
 
   it("previews without writing, and fetches a pasted ID as unscored", async () => {
@@ -279,23 +278,108 @@ describe("UnmatchedPage", () => {
     expect(fixMatch).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the path, links to Rename, and rescans just the group", async () => {
-    const user = userEvent.setup();
+  it("shows the path and links to Rename and Libraries", async () => {
     renderPage();
     await openedOnGroup();
 
-    expect(screen.getByText("/media/The Outsider (2020)/Season 1/part.mkv")).toBeVisible();
+    expect(screen.getByText("/media/The Outsider (2020)/Disc 1/part.mkv")).toBeVisible();
     expect(screen.getByRole("link", { name: "Open Rename" })).toHaveAttribute(
       "href",
       "/manage/rename",
     );
-    await user.click(screen.getByRole("button", { name: "Rescan these" }));
-    expect(runHealthBulkOpSelected).toHaveBeenCalledWith("bulkRescanUnmatched", "lib-1", [
-      "media-part-1",
-      "media-part-2",
-      "media-part-3",
-    ]);
-    expect(await screen.findByRole("status")).toHaveTextContent(/^3 /);
+    expect(screen.getByRole("link", { name: "Open Libraries" })).toHaveAttribute(
+      "href",
+      "/manage/libraries",
+    );
+    expect(screen.queryByRole("button", { name: "Rescan these" })).not.toBeInTheDocument();
+  });
+
+  it("selects the entry for the year that was searched, not the folder's", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openedOnGroup();
+    await screen.findByRole("button", { name: /The Outsider \(2020\).*Suggested/ });
+
+    const year = screen.getByLabelText("Year");
+    await user.clear(year);
+    await user.type(year, "2018");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    const suggested = await screen.findByRole("button", {
+      name: /The Outsider \(2018\).*Suggested/,
+    });
+    expect(suggested).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: /The Outsider \(2020\)/, pressed: false }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("drops a preview that arrives after the selection changed", async () => {
+    const user = userEvent.setup();
+    let release: (value: Awaited<ReturnType<typeof fixMatchPreview>>) => void = () => {};
+    vi.mocked(fixMatchPreview).mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    renderPage();
+    await openedOnGroup();
+    await screen.findByRole("button", { name: /Suggested/ });
+
+    await user.click(screen.getByRole("button", { name: "Preview changes" }));
+    await user.click(screen.getByRole("button", { name: /The Outsider \(2018\)/ }));
+    release([{ field: "title", current: "Part 1", proposed: "Stale preview", changed: true }]);
+    await waitFor(() => expect(fixMatchPreview).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Stale preview")).not.toBeInTheDocument();
+  });
+
+  it("locks the group list while a batch writes", async () => {
+    const user = userEvent.setup();
+    let finish: () => void = () => {};
+    vi.mocked(fixMatch).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () =>
+            resolve({ id: "media-part-1", title: "The Outsider", year: 2020, favorited: false });
+        }),
+    );
+    renderPage();
+    await openedOnGroup();
+    await screen.findByRole("button", { name: /Suggested/ });
+
+    await user.click(screen.getByRole("button", { name: "Match all 3" }));
+    await waitFor(() => expect(fixMatch).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: /The Thing.*1 item/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Clear queue" })).toBeDisabled();
+    vi.mocked(fixMatch).mockResolvedValue({
+      id: "media-part-2",
+      title: "The Outsider",
+      year: 2020,
+      favorited: false,
+    });
+    finish();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /The Thing.*1 item/ })).toBeEnabled(),
+    );
+  });
+
+  it("explains instead of searching for a source with no catalog", async () => {
+    vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(
+      queue([{ ...below, scraperID: "manual", candidateID: "", candidateTitle: "" }]),
+    );
+    renderPage();
+    expect(await screen.findByText(/This source has no catalog to search/)).toBeVisible();
+    expect(screen.queryByLabelText("Search title")).not.toBeInTheDocument();
+    expect(fixMatchCandidates).not.toHaveBeenCalled();
+    expect(screen.queryByText("Know the catalog ID?")).not.toBeInTheDocument();
+  });
+
+  it("says when the queue holds more rows than one load reads", async () => {
+    vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(queue([tied(1), below], false));
+    renderPage();
+    expect(
+      await screen.findByText("Showing the first 2 items. Fix or hide some to see the rest."),
+    ).toBeVisible();
   });
 
   it("hides one item, or the whole group after a confirm", async () => {
@@ -329,7 +413,7 @@ describe("UnmatchedPage", () => {
     await user.click(screen.getByRole("button", { name: "Clear queue" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText(/4 items/)).toBeVisible();
-    vi.mocked(fetchUnmatchedQueue).mockResolvedValue([below]);
+    vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(queue([below]));
     await user.click(within(dialog).getByRole("button", { name: "Clear queue" }));
 
     await waitFor(() => expect(dismissUnmatched).toHaveBeenCalledTimes(4));
@@ -341,7 +425,7 @@ describe("UnmatchedPage", () => {
   });
 
   it("shows the empty state", async () => {
-    vi.mocked(fetchUnmatchedQueue).mockResolvedValue([]);
+    vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(queue([]));
     renderPage();
     expect(await screen.findByText("No unmatched records.")).toBeVisible();
   });

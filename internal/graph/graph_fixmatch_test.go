@@ -442,8 +442,10 @@ func TestFixMatchCandidatesYearBreaksTie(t *testing.T) {
 		t.Fatalf("year 1980 top = %#v, want the 1980 candidate with no reason", got[0])
 	}
 
-	if _, err := handler.fixMatchCandidates(context.Background(), managerScope(), vars(map[string]any{"year": float64(-1)})); err == nil {
-		t.Fatal("negative year accepted, want a client error")
+	for _, bad := range []float64{-1, 0} {
+		if _, err := handler.fixMatchCandidates(context.Background(), managerScope(), vars(map[string]any{"year": bad})); err == nil {
+			t.Fatalf("year %v accepted, want a client error", bad)
+		}
 	}
 	if _, err := handler.fixMatchCandidates(context.Background(), managerScope(), vars(map[string]any{"year": 2020.5})); err == nil {
 		t.Fatal("fractional year accepted, want a client error")

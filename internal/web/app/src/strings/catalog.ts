@@ -40,7 +40,6 @@ import { migrationStrings } from "./migration";
 import { migrationCreateStrings } from "./migration-create";
 import { migrationFixmatchStrings } from "./migration-fixmatch";
 import { migrationUnmatchedStrings } from "./migration-unmatched";
-import { migrationUnmatchedGroupStrings } from "./migration-unmatched-groups";
 import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
 import { pathPickerStrings } from "./path-picker";
@@ -145,7 +144,6 @@ export const en = {
   ...migrationStrings.en,
   ...migrationUnmatchedStrings.en,
   ...migrationFixmatchStrings.en,
-  ...migrationUnmatchedGroupStrings.en,
   ...migrationCreateStrings.en,
   ...metadataManagementStrings.en,
   ...metadataManagementCurationStrings.en,
@@ -240,7 +238,6 @@ export const fr = {
   ...migrationStrings.fr,
   ...migrationUnmatchedStrings.fr,
   ...migrationFixmatchStrings.fr,
-  ...migrationUnmatchedGroupStrings.fr,
   ...migrationCreateStrings.fr,
   ...metadataManagementStrings.fr,
   ...metadataManagementCurationStrings.fr,
@@ -335,7 +332,6 @@ export const de = {
   ...migrationStrings.de,
   ...migrationUnmatchedStrings.de,
   ...migrationFixmatchStrings.de,
-  ...migrationUnmatchedGroupStrings.de,
   ...migrationCreateStrings.de,
   ...metadataManagementStrings.de,
   ...metadataManagementCurationStrings.de,
@@ -430,7 +426,6 @@ export const es = {
   ...migrationStrings.es,
   ...migrationUnmatchedStrings.es,
   ...migrationFixmatchStrings.es,
-  ...migrationUnmatchedGroupStrings.es,
   ...migrationCreateStrings.es,
   ...metadataManagementStrings.es,
   ...metadataManagementCurationStrings.es,
@@ -525,7 +520,6 @@ export const pt = {
   ...migrationStrings.pt,
   ...migrationUnmatchedStrings.pt,
   ...migrationFixmatchStrings.pt,
-  ...migrationUnmatchedGroupStrings.pt,
   ...migrationCreateStrings.pt,
   ...metadataManagementStrings.pt,
   ...metadataManagementCurationStrings.pt,

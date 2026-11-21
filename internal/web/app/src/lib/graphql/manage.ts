@@ -1608,17 +1608,35 @@ const UNMATCHED_OFFSET_MAX = 10_000;
  * (ADR-0003 §4), read page by page so grouping sees the whole queue.
  */
 export async function fetchUnmatchedQueue(): Promise<UnmatchedItemInfo[]> {
-  const out: UnmatchedItemInfo[] = [];
+  return (await fetchUnmatchedQueuePages()).items;
+}
+
+/**
+ * fetchUnmatchedQueuePages reads the queue page by page up to the server's
+ * offset ceiling. complete is false when rows remain past that ceiling. A row
+ * that shifts onto a later page while a scan inserts rows is kept once, so a
+ * batch never writes the same item twice.
+ */
+export async function fetchUnmatchedQueuePages(): Promise<{
+  items: UnmatchedItemInfo[];
+  complete: boolean;
+}> {
+  const items: UnmatchedItemInfo[] = [];
+  const seen = new Set<string>();
   for (let offset = 0; offset <= UNMATCHED_OFFSET_MAX; offset += UNMATCHED_PAGE) {
     const data = await graphql<{ unmatchedQueue: UnmatchedItemInfo[] | null }>(
       UNMATCHED_QUEUE_QUERY,
       { limit: UNMATCHED_PAGE, offset },
     );
     const page = data.unmatchedQueue ?? [];
-    out.push(...page);
-    if (page.length < UNMATCHED_PAGE) break;
+    for (const item of page) {
+      if (seen.has(item.mediaID)) continue;
+      seen.add(item.mediaID);
+      items.push(item);
+    }
+    if (page.length < UNMATCHED_PAGE) return { items, complete: true };
   }
-  return out;
+  return { items, complete: false };
 }
 
 const DISMISS_UNMATCHED_MUTATION =

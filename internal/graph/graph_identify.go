@@ -266,8 +266,8 @@ func (h *Handler) fixMatchCandidates(ctx context.Context, scope auth.Scope, req 
 	}
 	parsed := identify.ParsedMedia{Title: query}
 	if year != nil {
-		if *year < 0 {
-			return nil, clientError("year must not be negative")
+		if *year <= 0 {
+			return nil, clientError("year must be positive")
 		}
 		parsed.Year = *year
 	}

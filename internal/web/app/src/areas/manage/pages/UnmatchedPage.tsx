@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyLine, ErrorLine, ManageSection } from "@/components/beamfall/workbench";
 import {
   AlertDialog,
@@ -24,7 +24,7 @@ import {
   dismissUnmatched,
   fetchLibraries,
   fetchMediaFiles,
-  fetchUnmatchedQueue,
+  fetchUnmatchedQueuePages,
   runHealthBulkOp,
 } from "@/lib/graphql";
 import type { LibraryInfo, UnmatchedItemInfo } from "@/lib/graphql/types";
@@ -39,6 +39,8 @@ import { groupProblem } from "./unmatched/reasons";
 // against the same guess are fixed together. Each group says in plain words
 // what went wrong and opens on candidates already searched with its folder's
 // title and year.
+const PATH_WORKERS = 4;
+
 export function UnmatchedPage() {
   const t = useT();
   const [items, setItems] = useState<UnmatchedItemInfo[]>([]);
@@ -51,6 +53,12 @@ export function UnmatchedPage() {
   // The first file path of each group's first item, keyed by mediaID: it
   // drives the folder hint and the naming panel.
   const [paths, setPaths] = useState<Record<string, string>>({});
+  const pathsInFlight = useRef(new Set<string>());
+  // False when the queue holds more rows than one load reads.
+  const [complete, setComplete] = useState(true);
+  // True while a panel batch writes: switching groups or starting another
+  // batch then would race the reload that follows it.
+  const [writing, setWriting] = useState(false);
 
   const groups = useMemo(() => groupUnmatched(items), [items]);
   const active = groups.find((group) => group.key === activeKey) ?? groups[0];
@@ -58,8 +66,9 @@ export function UnmatchedPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [queue, libs] = await Promise.all([fetchUnmatchedQueue(), fetchLibraries()]);
-      setItems(queue);
+      const [queue, libs] = await Promise.all([fetchUnmatchedQueuePages(), fetchLibraries()]);
+      setItems(queue.items);
+      setComplete(queue.complete);
       setLibraries(libs);
       setLibraryID((current) => current || libs[0]?.id || "");
     } catch {
@@ -74,32 +83,40 @@ export function UnmatchedPage() {
   }, [load]);
 
   // Paths are a hint, never a requirement: a group whose file lookup fails
-  // still renders and fixes, it just has no folder suggestion.
+  // still renders and fixes, it just has no folder suggestion. Lookups run a
+  // few at a time, the open group first, and each path shows as it arrives.
+  const activeMediaID = active?.items[0]?.mediaID;
   useEffect(() => {
-    const missing = groups
-      .map((group) => group.items[0]?.mediaID)
-      .filter((id): id is string => !!id && !(id in paths));
-    if (missing.length === 0) return;
-    let cancelled = false;
-    void Promise.allSettled(missing.map((id) => fetchMediaFiles(id))).then((results) => {
-      if (cancelled) return;
-      setPaths((prev) => {
-        const next = { ...prev };
-        results.forEach((result, i) => {
-          next[missing[i]] = result.status === "fulfilled" ? (result.value[0]?.path ?? "") : "";
-        });
-        return next;
-      });
-    });
-    return () => {
-      cancelled = true;
+    const ids = groups.map((group) => group.items[0]?.mediaID).filter((id): id is string => !!id);
+    if (activeMediaID) ids.unshift(activeMediaID);
+    const queue = [...new Set(ids)].filter(
+      (id) => !(id in paths) && !pathsInFlight.current.has(id),
+    );
+    if (queue.length === 0) return;
+    const inFlight = pathsInFlight.current;
+    const worker = async () => {
+      for (let id = queue.shift(); id; id = queue.shift()) {
+        inFlight.add(id);
+        let path = "";
+        try {
+          path = (await fetchMediaFiles(id))[0]?.path ?? "";
+        } catch {
+          // Leave the path empty: the group renders without a folder hint.
+        }
+        inFlight.delete(id);
+        const found = path;
+        const key = id;
+        setPaths((prev) => (key in prev ? prev : { ...prev, [key]: found }));
+      }
     };
-  }, [groups, paths]);
+    for (let n = 0; n < PATH_WORKERS; n++) void worker();
+  }, [groups, paths, activeMediaID]);
 
   const onFinished = async (message: string) => {
     setError("");
     setNotice("");
     await load();
+    setWriting(false);
     if (message) setNotice(message);
   };
 
@@ -108,8 +125,10 @@ export function UnmatchedPage() {
   // reloaded from the server afterwards instead of trusting local state.
   const onClearQueue = async () => {
     setError("");
+    setWriting(true);
     const results = await Promise.allSettled(items.map((item) => dismissUnmatched(item.mediaID)));
     await load();
+    setWriting(false);
     if (results.some((r) => r.status === "rejected")) setError(t("unmatchedUnavailable"));
   };
 
@@ -156,7 +175,7 @@ export function UnmatchedPage() {
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="sm" disabled={items.length === 0}>
+                <Button variant="ghost" size="sm" disabled={items.length === 0 || writing}>
                   {t("unmatchedClearQueue")}
                 </Button>
               </AlertDialogTrigger>
@@ -187,6 +206,11 @@ export function UnmatchedPage() {
             {notice}
           </p>
         )}
+        {!complete && (
+          <p className="mb-2 text-sm text-muted-foreground" role="status">
+            {t("unmatchedTruncated", { count: items.length })}
+          </p>
+        )}
         {loading && items.length === 0 ? (
           <EmptyLine message={t("loading")} />
         ) : groups.length === 0 ? (
@@ -198,7 +222,7 @@ export function UnmatchedPage() {
                 const path = paths[group.items[0]?.mediaID ?? ""];
                 const hint = folderHint(path);
                 const name =
-                  hint?.title || group.candidateTitle || group.items[0]?.title || group.key;
+                  group.candidateTitle || hint?.title || group.items[0]?.title || group.key;
                 return (
                   <li key={group.key}>
                     <button
@@ -206,6 +230,7 @@ export function UnmatchedPage() {
                       className="grid w-full gap-1 px-3 py-2 text-left hover:bg-muted/50 data-[active=true]:bg-muted"
                       data-active={active?.key === group.key}
                       aria-current={active?.key === group.key ? "true" : undefined}
+                      disabled={writing}
                       onClick={() => setActiveKey(group.key)}
                     >
                       <span className="flex items-start justify-between gap-2">
@@ -235,7 +260,7 @@ export function UnmatchedPage() {
                 group={active}
                 hint={folderHint(activePath)}
                 path={activePath}
-                libraryID={libraryID}
+                onWriteStart={() => setWriting(true)}
                 onFinished={(message) => void onFinished(message)}
                 onError={setError}
               />
