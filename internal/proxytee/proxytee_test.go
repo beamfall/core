@@ -74,20 +74,21 @@ func TestProxyDiscardsFailedAndOversizedArchiveCopies(t *testing.T) {
 	token := h.proxyToken(t)
 	h.svc.archiveByteLimit = 4
 	for _, tc := range []struct {
-		name, wantBody string
-		body           io.Reader
+		name, wantBody, contentType string
+		body                        io.Reader
 	}{
-		{"overflow", "12345", strings.NewReader("12345")},
-		{"copy error", "123", io.MultiReader(strings.NewReader("123"), failedArchiveReader{})},
-		{"exact limit", "1234", strings.NewReader("1234")},
+		{"overflow", "12345", "audio/mpeg", strings.NewReader("12345")},
+		{"upstream read error", "123", "audio/mpeg", io.MultiReader(strings.NewReader("123"), failedArchiveReader{})},
+		{"MIME refusal", "1234", "text/html", strings.NewReader("1234")},
+		{"exact limit", "1234", "audio/mpeg", strings.NewReader("1234")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			size := int64(5)
-			if tc.name == "exact limit" {
+			if tc.name == "exact limit" || tc.name == "MIME refusal" {
 				size = 4
 			}
 			h.svc.origin = fixedOrigin{scrape.OriginResponse{
-				Body: io.NopCloser(tc.body), StatusCode: http.StatusOK, TotalSize: size,
+				Body: io.NopCloser(tc.body), StatusCode: http.StatusOK, TotalSize: size, ContentType: tc.contentType,
 			}}
 			rec := httptest.NewRecorder()
 			h.svc.ServeProxy(rec, httptest.NewRequest(http.MethodGet, "/api/media/proxy/"+token, nil))
@@ -102,6 +103,43 @@ func TestProxyDiscardsFailedAndOversizedArchiveCopies(t *testing.T) {
 				t.Fatalf("unexpected archive state: %v", err)
 			}
 		})
+	}
+}
+
+type disconnectingResponse struct {
+	*httptest.ResponseRecorder
+	writes int
+}
+
+func (w *disconnectingResponse) Write(p []byte) (int, error) {
+	w.writes++
+	if w.writes > 1 {
+		return 0, io.ErrClosedPipe
+	}
+	return w.ResponseRecorder.Write(p)
+}
+
+func TestProxyKeepsUnderCapPartialAfterClientDisconnect(t *testing.T) {
+	h := newHarness(t)
+	h.svc.archiveByteLimit = 8
+	h.svc.origin = fixedOrigin{scrape.OriginResponse{
+		Body:       io.NopCloser(io.MultiReader(strings.NewReader("123"), strings.NewReader("456"))),
+		StatusCode: http.StatusOK, TotalSize: 6, ContentType: "audio/mpeg",
+	}}
+	rec := &disconnectingResponse{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodGet, "/api/media/proxy/"+h.proxyToken(t), nil)
+	h.svc.ServeProxy(rec, req)
+	if rec.writes != 2 || rec.Body.String() != "123" {
+		t.Fatal("fixture did not disconnect after the first write")
+	}
+	if data, err := os.ReadFile(h.archivePath + ".partial"); err != nil || string(data) != "123" {
+		t.Fatalf("retained partial = %q, %v", data, err)
+	}
+	if _, err := os.Stat(h.archivePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("disconnected copy was promoted or stat failed: %v", err)
+	}
+	if provisional, err := h.store.MediaFileProvisional(t.Context(), h.mediaID); err != nil || !provisional {
+		t.Fatalf("provisional = %v, %v", provisional, err)
 	}
 }
 

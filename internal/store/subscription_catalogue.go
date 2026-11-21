@@ -103,9 +103,11 @@ func SubscriptionEntryMediaID(libraryID LibraryID, id SubscriptionID, guid strin
 	return ProvisionalMediaID(libraryID, SubscriptionEntryStreamKey(id, guid))
 }
 
+const opaqueFeedGUIDPrefix = "urn:beamfall:feed-entry:"
+
 func feedGUIDExternalID(guid string) string {
 	if u, err := url.Parse(guid); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
-		return fmt.Sprintf("urn:beamfall:feed-entry:%x", sha256.Sum256([]byte("guid\x00"+guid)))
+		return fmt.Sprintf("%s%x", opaqueFeedGUIDPrefix, sha256.Sum256([]byte("guid\x00"+guid)))
 	}
 	return guid
 }
@@ -127,6 +129,13 @@ func feedEntryFallbackTitle(guid string) string {
 // catalogue of a never-polled Subscription is stamped FirstSeenAt = AddedAt, so
 // the new-only policy downloads only entries that arrive after the follow.
 func (s *Store) UpsertSubscriptionCatalog(ctx context.Context, id SubscriptionID, entries []FeedCatalogEntry, now time.Time) ([]SubscriptionEntry, error) {
+	return s.UpsertSubscriptionCatalogWithInitialDownloads(ctx, id, entries, now, nil)
+}
+
+// UpsertSubscriptionCatalogWithInitialDownloads records the initial download
+// selection in the same transaction as the first catalogue. The selector runs
+// only for an empty catalogue. It may be nil when no initial selection is needed.
+func (s *Store) UpsertSubscriptionCatalogWithInitialDownloads(ctx context.Context, id SubscriptionID, entries []FeedCatalogEntry, now time.Time, selectInitial func() []string) ([]SubscriptionEntry, error) {
 	if id == "" {
 		return nil, errors.New("subscription ID is required")
 	}
@@ -149,7 +158,7 @@ func (s *Store) UpsertSubscriptionCatalog(ctx context.Context, id SubscriptionID
 	if encrypted != 0 {
 		return nil, ErrSubscriptionCatalogUnsupported
 	}
-	created, minted, err := s.upsertSubscriptionCatalogSQL(ctx, subscription, entries, now.UTC())
+	created, minted, err := s.upsertSubscriptionCatalogSQL(ctx, subscription, entries, now.UTC(), selectInitial)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +170,7 @@ func (s *Store) UpsertSubscriptionCatalog(ctx context.Context, id SubscriptionID
 	return created, nil
 }
 
-func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription Subscription, entries []FeedCatalogEntry, now time.Time) ([]SubscriptionEntry, []MediaID, error) {
+func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription Subscription, entries []FeedCatalogEntry, now time.Time, selectInitial func() []string) ([]SubscriptionEntry, []MediaID, error) {
 	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, nil, err
@@ -186,7 +195,15 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 		return nil, nil, err
 	}
 	firstSeen := now
-	if len(known) == 0 && subscription.LastPolledAt.IsZero() {
+	initialSelection := len(known) == 0 && selectInitial != nil && len(entries) > 0
+	var queued map[string]bool
+	if initialSelection {
+		queued = map[string]bool{}
+		for _, guid := range selectInitial() {
+			queued[guid] = true
+		}
+	}
+	if len(known) == 0 && (subscription.LastPolledAt.IsZero() || initialSelection) {
 		firstSeen = subscription.AddedAt
 	} else if firstSeen.UnixMilli() <= subscription.AddedAt.UnixMilli() {
 		firstSeen = subscription.AddedAt.Add(time.Millisecond)
@@ -234,6 +251,9 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 		if archived != "" {
 			row.MediaID, row.DownloadState, row.DownloadPath, row.Downloaded = archived, EntryDownloadDownloaded, path, true
 		} else {
+			if queued[guid] {
+				row.DownloadState = EntryDownloadQueued
+			}
 			row.MediaID = SubscriptionEntryMediaID(subscription.LibraryID, subscription.ID, guid)
 			inserted, err := insertSubscriptionEntryMediaTx(ctx, tx, subscription, row, entry)
 			if err != nil {
@@ -261,6 +281,11 @@ func (s *Store) upsertSubscriptionCatalogSQL(ctx context.Context, subscription S
 	}
 	if subscription.Title == "" && feedTitle != "" {
 		if _, err := tx.ExecContext(ctx, `UPDATE subscription SET title = ? WHERE id = ? AND title = ''`, feedTitle, subscription.ID); err != nil {
+			return nil, nil, err
+		}
+	}
+	if initialSelection && len(created) > 0 {
+		if err := recordInitialSubscriptionPollTx(ctx, tx, subscription.ID, now); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -382,12 +407,17 @@ func (s *Store) RecordInitialSubscriptionDownloads(ctx context.Context, id Subsc
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE subscription SET last_polled_at_ms = ?, etag = '', last_modified = '' WHERE id = ?
-	`, now.UnixMilli(), id); err != nil {
+	if err := recordInitialSubscriptionPollTx(ctx, tx, id, now); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+func recordInitialSubscriptionPollTx(ctx context.Context, tx *sql.Tx, id SubscriptionID, now time.Time) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE subscription SET last_polled_at_ms = ?, etag = '', last_modified = '' WHERE id = ?
+	`, now.UnixMilli(), id)
+	return err
 }
 
 // archivedSubscriptionMediaTx resolves a pre-catalogue download of guid: the

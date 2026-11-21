@@ -1412,9 +1412,10 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 // recognize the 401-means-expired-token case. Message unchanged from the old
 // flat error.
 type statusError struct {
-	host       string
-	code       int
-	retryAfter string
+	host                  string
+	code                  int
+	retryAfter            string
+	temporaryFeedRedirect bool
 }
 
 func (s *statusError) Error() string {
@@ -1422,13 +1423,15 @@ func (s *statusError) Error() string {
 }
 
 // IsTransient reports whether err is worth retrying later: rate limiting
-// (HTTP 429), a server error (5xx) or a network failure reaching the provider.
+// (HTTP 429), a server error (5xx), a missing temporary feed destination or a
+// network failure reaching the provider.
 // Callers that walk many lookups end their pass on it instead of recording a
 // miss.
 func IsTransient(err error) bool {
 	var status *statusError
 	if errors.As(err, &status) {
-		return status.code == http.StatusTooManyRequests || status.code >= http.StatusInternalServerError
+		return status.code == http.StatusTooManyRequests || status.code >= http.StatusInternalServerError ||
+			status.temporaryFeedRedirect && (status.code == http.StatusNotFound || status.code == http.StatusGone)
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr)

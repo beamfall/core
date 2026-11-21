@@ -3023,6 +3023,12 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		if err != nil {
 			return Media{}, MediaFile{}, false, err
 		}
+		if mediaID == "" {
+			mediaID, err = bindStagedSubscriptionEntryTx(ctx, tx, imported.LibraryID, imported.Path)
+			if err != nil {
+				return Media{}, MediaFile{}, false, err
+			}
+		}
 		boundEntry = mediaID != ""
 	}
 	if mediaID == "" {

@@ -120,6 +120,45 @@ func TestLatestDownloadsEveryArrivalAfterFirstPoll(t *testing.T) {
 	}
 }
 
+func TestLatestLimitsFirstCatalogueAfterPreviousPoll(t *testing.T) {
+	fs := newFeedServer(t)
+	st, sub, poller := healthFixture(t, fs.server.URL+"/feed.xml")
+	ctx := t.Context()
+	now := poller.now()
+	if err := st.RecordSubscriptionPollSuccess(ctx, sub, "", "", now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, store.SubscriptionPolicy{Policy: store.DownloadPolicyLatest, LatestN: 1}); err != nil {
+		t.Fatal(err)
+	}
+	sub = reloadSubscription(t, st, sub.ID)
+	entries, err := st.SubscriptionEntries(ctx, sub.ID)
+	if err != nil || len(entries) != 0 || sub.LastPolledAt.IsZero() {
+		t.Fatalf("expected a previously polled feed without catalogue entries: %v", err)
+	}
+	for _, name := range []string{"one.mp3", "two.mp3", "three.mp3"} {
+		fs.enclosures[name] = []byte(name)
+	}
+	initial := fs.item("g1", "One", "one.mp3") + fs.item("g2", "Two", "two.mp3")
+	fs.setFeed(initial)
+	advancePollClock(poller)
+	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 1 {
+		t.Fatalf("backfill downloaded %d entries, want one: %v", count, err)
+	}
+	entries, err = st.SubscriptionEntries(ctx, sub.ID)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("backfill catalogued %d entries, want two: %v", len(entries), err)
+	}
+	fs.setFeed(initial + fs.item("g3", "Three", "three.mp3"))
+	advancePollClock(poller)
+	if count, err := poller.pollSubscription(ctx, reloadSubscription(t, st, sub.ID)); err != nil || count != 1 {
+		t.Fatalf("next poll downloaded %d entries, want one: %v", count, err)
+	}
+	if fs.hits("one.mp3") != 1 || fs.hits("two.mp3") != 0 || fs.hits("three.mp3") != 1 {
+		t.Fatal("latest did not download just the top initial entry and the later arrival")
+	}
+}
+
 func TestEncryptedFeedPollRespectsDownloadPolicies(t *testing.T) {
 	for _, tc := range []struct {
 		policy        store.DownloadPolicy
@@ -248,6 +287,9 @@ func newStatusFeed(t *testing.T) *statusFeed {
 	mux.HandleFunc("/temporary.xml", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/feed.xml", http.StatusFound)
 	})
+	mux.HandleFunc("/permanent-prefix.xml", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/temporary.xml", http.StatusPermanentRedirect)
+	})
 	sf.server = httptest.NewServer(mux)
 	t.Cleanup(sf.server.Close)
 	return sf
@@ -257,6 +299,55 @@ func (sf *statusFeed) set(code int, body string) {
 	sf.mu.Lock()
 	defer sf.mu.Unlock()
 	sf.code, sf.body = code, body
+}
+
+func TestPollMovesToPermanentPrefixAfterTwoObservations(t *testing.T) {
+	sf := newStatusFeed(t)
+	sf.set(http.StatusOK, `<rss><channel><title>Feed</title></channel></rss>`)
+	st, sub, poller := healthFixture(t, sf.server.URL+"/permanent-prefix.xml")
+	for _, want := range []string{sub.FeedURL, sf.server.URL + "/temporary.xml"} {
+		if _, err := poller.pollSubscription(t.Context(), sub); err != nil {
+			t.Fatal(err)
+		}
+		sub = reloadSubscription(t, st, sub.ID)
+		if sub.FeedURL != want {
+			t.Fatal("poll did not honor the two-observation move to the permanent prefix")
+		}
+	}
+}
+
+func TestPollBacksOffTemporaryDestinationGoneOrMissing(t *testing.T) {
+	for _, tc := range []struct {
+		name, path string
+		status     int
+		retire     bool
+	}{
+		{"temporary gone", "/permanent-prefix.xml", http.StatusGone, false},
+		{"temporary missing", "/temporary.xml", http.StatusNotFound, false},
+		{"permanent gone", "/permanent.xml", http.StatusGone, true},
+		{"direct gone", "/feed.xml", http.StatusGone, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sf := newStatusFeed(t)
+			sf.set(tc.status, "")
+			st, sub, poller := healthFixture(t, sf.server.URL+tc.path)
+			now := time.Now().UTC().Truncate(time.Millisecond)
+			poller.now = func() time.Time { return now }
+			_, err := poller.pollSubscription(t.Context(), sub)
+			if status, ok := scrape.HTTPStatus(err); !ok || status != tc.status || scrape.IsTransient(err) == tc.retire {
+				t.Fatalf("status/transient classification = %d/%v", status, scrape.IsTransient(err))
+			}
+			health := reloadSubscription(t, st, sub.ID).Health
+			if tc.retire {
+				if health.RetiredAt.IsZero() {
+					t.Fatal("canonical 410 did not retire the feed")
+				}
+			} else if !health.RetiredAt.IsZero() || health.LastErrorClass != store.FeedErrorHTTP4xx ||
+				health.ConsecutiveFailures != 1 || !health.NextPollAt.Equal(now.Add(failureBackoffBase)) {
+				t.Fatalf("temporary destination did not back off: %+v", health)
+			}
+		})
+	}
 }
 
 func healthFixture(t *testing.T, feedURL string) (*store.Store, store.Subscription, *Poller) {

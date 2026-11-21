@@ -155,8 +155,8 @@ func TestFetchFeedRecordsPermanentRedirects(t *testing.T) {
 		t.Fatalf("301 = %q %q %v", result.PermanentURL, result.Data, err)
 	}
 	result, err = engine.FetchFeed(ctx, server.URL+"/permanent-then-temporary", "", "", "")
-	if err != nil || result.PermanentURL != "" || !result.RedirectedTemporarily {
-		t.Fatalf("308 then 302 = %q %v", result.PermanentURL, err)
+	if err != nil || result.PermanentURL != server.URL+"/moved-permanently" || !result.RedirectedTemporarily {
+		t.Fatalf("308 then 302 did not preserve the permanent prefix: %v", err)
 	}
 	result, err = engine.FetchFeed(ctx, server.URL+"/temporary", "", "", "")
 	if err != nil || result.PermanentURL != "" {

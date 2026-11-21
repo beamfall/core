@@ -167,12 +167,30 @@ func (s *Store) MediaIDsByExternalID(ctx context.Context, scheme string, value s
 		return nil, err
 	}
 	opaque, _ := (MediaExternalID{Scheme: scheme, Value: value}).PublicFeedIdentity("")
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT DISTINCT media_id
+	guid := value
+	if scheme == ProvisionalExternalIDScheme {
+		if _, suffix, ok := strings.Cut(value, "\x00"); ok {
+			guid = suffix
+		}
+	}
+	legacyLookup := (scheme == subscriptionFeedGUIDScheme || scheme == ProvisionalExternalIDScheme) &&
+		strings.HasPrefix(guid, opaqueFeedGUIDPrefix)
+	query := `
+		SELECT media_id, value
 		FROM media_external_id
 		WHERE scheme = ? AND value IN (?, ?)
 		ORDER BY media_id
-	`, scheme, opaque, value)
+	`
+	args := []any{scheme, opaque, value}
+	if legacyLookup {
+		// Old feed identifiers contain the original URL. Compare their public
+		// representation without exposing that stored value to the caller.
+		query = `
+			SELECT media_id, value FROM media_external_id WHERE scheme = ? ORDER BY media_id
+		`
+		args = []any{scheme}
+	}
+	rows, err := s.catalogR.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -180,10 +198,19 @@ func (s *Store) MediaIDsByExternalID(ctx context.Context, scheme string, value s
 	var ids []MediaID
 	for rows.Next() {
 		var id MediaID
-		if err := rows.Scan(&id); err != nil {
+		candidate := MediaExternalID{Scheme: scheme}
+		if err := rows.Scan(&id, &candidate.Value); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		if legacyLookup && candidate.Value != value {
+			public, _ := candidate.PublicFeedIdentity("")
+			if public != value {
+				continue
+			}
+		}
+		if len(ids) == 0 || ids[len(ids)-1] != id {
+			ids = append(ids, id)
+		}
 	}
 	return ids, rows.Err()
 }

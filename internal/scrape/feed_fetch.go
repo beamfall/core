@@ -10,10 +10,8 @@ import (
 	"strings"
 )
 
-// FeedResult is one Subscription feed fetch. PermanentURL is set only when
-// the fetch was redirected and every hop was permanent (301 or 308): it is
-// the URL the origin says the feed now lives at. A temporary hop (302, 303,
-// 307) is followed but never reported, so the Subscription keeps its URL.
+// FeedResult is one Subscription feed fetch. PermanentURL is the destination
+// of the last permanent hop (301 or 308) before any temporary redirect.
 type FeedResult struct {
 	ConditionalResult
 	PermanentURL          string
@@ -36,7 +34,8 @@ func (e *Engine) FetchFeed(ctx context.Context, rawURL, etag, lastModified, auth
 	credentialed := current.User != nil || strings.TrimSpace(authHeader) != ""
 	client := *e.client
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	permanent := true
+	var permanentURL string
+	temporary := false
 	for hop := 0; ; hop++ {
 		if err := e.vetURL(current); err != nil {
 			return FeedResult{}, err
@@ -70,7 +69,9 @@ func (e *Engine) FetchFeed(ctx context.Context, rawURL, etag, lastModified, auth
 				return FeedResult{}, refusedf("scrape: refused after %d redirects", maxRedirects)
 			}
 			if resp.StatusCode != http.StatusMovedPermanently && resp.StatusCode != http.StatusPermanentRedirect {
-				permanent = false
+				temporary = true
+			} else if !temporary {
+				permanentURL = next.String()
 			}
 			if (credentialed || next.User != nil) && normalizedRedirectOrigin(next) != origin {
 				return FeedResult{}, refusedf("scrape: refused cross-origin redirect")
@@ -79,15 +80,13 @@ func (e *Engine) FetchFeed(ctx context.Context, rawURL, etag, lastModified, auth
 			current = next
 			continue
 		}
-		result, err := e.readFeedResponse(current, resp, etag, lastModified)
+		result, err := e.readFeedResponse(current, resp, etag, lastModified, temporary)
 		_ = resp.Body.Close()
 		if err != nil {
 			return FeedResult{}, err
 		}
-		result.RedirectedTemporarily = !permanent
-		if hop > 0 && permanent {
-			result.PermanentURL = current.String()
-		}
+		result.RedirectedTemporarily = temporary
+		result.PermanentURL = permanentURL
 		return result, nil
 	}
 }
@@ -111,12 +110,12 @@ func redirectTarget(current *url.URL, resp *http.Response) (*url.URL, bool) {
 	return next, true
 }
 
-func (e *Engine) readFeedResponse(current *url.URL, resp *http.Response, etag, lastModified string) (FeedResult, error) {
+func (e *Engine) readFeedResponse(current *url.URL, resp *http.Response, etag, lastModified string, temporary bool) (FeedResult, error) {
 	if resp.StatusCode == http.StatusNotModified {
 		return FeedResult{ConditionalResult: ConditionalResult{ETag: etag, LastModified: lastModified, NotModified: true}}, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return FeedResult{}, &statusError{host: current.Hostname(), code: resp.StatusCode}
+		return FeedResult{}, &statusError{host: current.Hostname(), code: resp.StatusCode, temporaryFeedRedirect: temporary}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
 	if err != nil {

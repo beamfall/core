@@ -493,10 +493,11 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	defer origin.Body.Close()
 
+	contentType, archiveAllowed := proxyContentType(origin.ContentType)
 	// Exactly one full-resource request owns the archive writer. Range requests
 	// and concurrent peers remain client-only, so they cannot corrupt .partial.
 	var teeFile *os.File
-	if owner {
+	if owner && archiveAllowed {
 		teeFile, _ = s.openTee(st.teeRelative)
 	}
 	keepTee := false
@@ -513,7 +514,7 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
-	w.Header().Set("Content-Type", proxyContentType(origin.ContentType))
+	w.Header().Set("Content-Type", contentType)
 	if origin.AcceptRanges != "" {
 		w.Header().Set("Accept-Ranges", origin.AcceptRanges)
 	}
@@ -526,8 +527,13 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(w, origin.Body)
 		return
 	}
-	written, err := io.Copy(io.MultiWriter(w, teeFile), io.LimitReader(origin.Body, s.archiveByteLimit))
+	client := proxyClientWriter{Writer: w}
+	written, err := io.Copy(io.MultiWriter(&client, teeFile), io.LimitReader(origin.Body, s.archiveByteLimit))
 	if err != nil {
+		if client.failed || r.Context().Err() != nil {
+			_ = teeFile.Close()
+			keepTee = true
+		}
 		return
 	}
 	if written == s.archiveByteLimit {
@@ -539,6 +545,10 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !errors.Is(err, io.EOF) {
+			if r.Context().Err() != nil {
+				_ = teeFile.Close()
+				keepTee = true
+			}
 			return
 		}
 	}
@@ -564,14 +574,27 @@ func (s *Service) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	promoted = didPromote
 }
 
-func proxyContentType(raw string) string {
+// proxyClientWriter distinguishes a downstream write failure from a bad copy
+// of the origin response.
+type proxyClientWriter struct {
+	io.Writer
+	failed bool
+}
+
+func (w *proxyClientWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	w.failed = err != nil || n != len(p)
+	return n, err
+}
+
+func proxyContentType(raw string) (header string, archiveAllowed bool) {
 	mediaType, _, err := mime.ParseMediaType(raw)
 	if err == nil && (mediaType == "application/octet-stream" ||
 		strings.HasPrefix(mediaType, "audio/") || strings.HasPrefix(mediaType, "video/") ||
 		strings.HasPrefix(mediaType, "image/")) {
-		return raw
+		return raw, true
 	}
-	return "application/octet-stream"
+	return "application/octet-stream", raw == ""
 }
 
 // promote checks the completed tee for an existing content identity before moving it.

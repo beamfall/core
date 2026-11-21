@@ -45,13 +45,19 @@ func (p *Poller) catalogue(ctx context.Context, subscription store.Subscription,
 			FeedTitle:       document.Title,
 		}
 	}
-	_, err := p.store.UpsertSubscriptionCatalog(ctx, subscription.ID, rows, now)
-	encrypted := errors.Is(err, store.ErrSubscriptionCatalogUnsupported)
-	if err != nil && !encrypted {
-		return nil, false, err
-	}
 	policy, err := p.store.SubscriptionDownloadPolicy(ctx, subscription.ID)
 	if err != nil {
+		return nil, false, err
+	}
+	var selectInitial func() []string
+	if policy.Policy == store.DownloadPolicyLatest {
+		selectInitial = func() []string {
+			return selectByPolicy(policy, true, document.Serial, subscription.AddedAt, entries, nil)
+		}
+	}
+	_, err = p.store.UpsertSubscriptionCatalogWithInitialDownloads(ctx, subscription.ID, rows, now, selectInitial)
+	encrypted := errors.Is(err, store.ErrSubscriptionCatalogUnsupported)
+	if err != nil && !encrypted {
 		return nil, false, err
 	}
 	firstPoll := subscription.LastPolledAt.IsZero()

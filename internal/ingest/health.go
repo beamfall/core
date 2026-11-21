@@ -110,11 +110,11 @@ func isTLSError(err error) bool {
 }
 
 // recordFeedFailure records one failed poll with its backed-off next poll. A
-// 410 Gone retires the feed instead. The poll error is returned, joined with
+// 410 Gone at a permanent destination retires the feed. The poll error is returned, joined with
 // any error recording it.
 func (p *Poller) recordFeedFailure(ctx context.Context, subscription store.Subscription, class store.FeedErrorClass, cause error, now time.Time) error {
 	var err error
-	if status, ok := scrape.HTTPStatus(cause); ok && status == http.StatusGone {
+	if status, ok := scrape.HTTPStatus(cause); ok && status == http.StatusGone && !scrape.IsTransient(cause) {
 		err = p.store.RecordSubscriptionRetired(ctx, subscription, now)
 	} else {
 		next := now.Add(failureBackoff(subscription.Health.ConsecutiveFailures+1, p.jitter()))

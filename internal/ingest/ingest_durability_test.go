@@ -6,9 +6,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -73,6 +75,121 @@ func entrySeen(t *testing.T, st *store.Store, id store.SubscriptionID, guid stri
 		t.Fatal(err)
 	}
 	return seen[guid]
+}
+
+func TestPollPublishesWhenHardLinksAreUnsupported(t *testing.T) {
+	fs := newFeedServer(t)
+	st, sub, poller := healthFixture(t, fs.server.URL+"/feed.xml")
+	ctx := t.Context()
+	if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, store.SubscriptionPolicy{Policy: store.DownloadPolicyEverything}); err != nil {
+		t.Fatal(err)
+	}
+	fs.enclosures["one.mp3"] = []byte("first payload")
+	fs.enclosures["two.mp3"] = []byte("second payload")
+	first := fs.item("g1", "Track", "one.mp3")
+	fs.setFeed(first)
+	if err := os.WriteFile(filepath.Join(sub.Root, "Track.mp3"), []byte("existing file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	linkCalls := 0
+	poller.link = func(oldpath, newpath string) error {
+		linkCalls++
+		return &os.LinkError{Op: "link", Old: oldpath, New: newpath, Err: syscall.EOPNOTSUPP}
+	}
+	if count, err := poller.pollSubscription(ctx, sub); count != 1 || err != nil {
+		t.Fatalf("first poll = %d, %v", count, err)
+	}
+	path := filepath.Join(sub.Root, "Track-2.mp3")
+	entries, err := st.SubscriptionEntries(ctx, sub.ID)
+	if err != nil || len(entries) != 1 || entries[0].DownloadPath != path {
+		t.Fatalf("fallback publication did not record its diverted path: %v", err)
+	}
+	if data, err := readTestFile(path); err != nil || string(data) != "first payload" {
+		t.Fatalf("fallback file = %q, %v", data, err)
+	}
+	fs.setFeed(first + fs.item("g2", "Second Track", "two.mp3"))
+	advancePollClock(poller)
+	if count, err := poller.pollSubscription(ctx, reloadSubscription(t, st, sub.ID)); count != 1 || err != nil {
+		t.Fatalf("later poll = %d, %v", count, err)
+	}
+	if linkCalls != 2 || fs.hits("one.mp3") != 1 || fs.hits("two.mp3") != 1 || len(classifyRoot(t, sub.Root).staged) != 0 {
+		t.Fatal("fallback did not publish each entry once and clear its stage")
+	}
+}
+
+func TestScanBeforePublicationRecoveryKeepsEntryMedia(t *testing.T) {
+	fs := newFeedServer(t)
+	st := storetest.Open(t)
+	ctx := t.Context()
+	root := t.TempDir()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relativeRoot, err := filepath.Rel(cwd, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local", FeedURL: fs.server.URL + "/feed.xml", Root: relativeRoot,
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	poller := NewPoller(st, newTestEngine())
+	if err := st.SetSubscriptionDownloadPolicy(ctx, sub.ID, store.SubscriptionPolicy{Policy: store.DownloadPolicyEverything}); err != nil {
+		t.Fatal(err)
+	}
+	fs.enclosures["one.mp3"] = []byte("complete payload")
+	fs.setFeed(fs.item("g1", "First Track", "one.mp3"))
+	before, err := st.MediaIDsForLibrary(ctx, sub.LibraryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poller.fault = func(point string) error {
+		if point == "payload-linked" {
+			return errSimulatedCrash
+		}
+		return nil
+	}
+	if count, err := poller.pollSubscription(ctx, sub); count != 0 || !errors.Is(err, errSimulatedCrash) {
+		t.Fatalf("interrupted publication = %d, %v", count, err)
+	}
+	path := filepath.Join(root, "First Track.mp3")
+	state := classifyRoot(t, root)
+	if len(state.staged) != 1 || !slices.Equal(state.visible, []string{filepath.Base(path)}) {
+		t.Fatalf("interrupted publication state = %+v", state)
+	}
+	entries, err := st.SubscriptionEntries(ctx, sub.ID)
+	if err != nil || len(entries) != 1 || entries[0].DownloadPath != "" || entries[0].DownloadState != store.EntryDownloadQueued {
+		t.Fatalf("publication transaction did not roll back: %v", err)
+	}
+	entryMediaID := entries[0].MediaID
+	// Let the scan's file-stability check admit the published inode.
+	settled := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(path, settled, settled); err != nil {
+		t.Fatal(err)
+	}
+	scanned, err := scan.Scan(ctx, st, nil, nil, nil, nil, nil, scan.Request{LibraryID: sub.LibraryID, Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scanned.MediaImported != 1 {
+		t.Fatalf("scan did not import the visible file: %+v", scanned)
+	}
+	poller.fault = nil
+	if count, err := poller.pollSubscription(ctx, reloadSubscription(t, st, sub.ID)); count != 1 || err != nil {
+		t.Fatalf("publication recovery = %d, %v", count, err)
+	}
+	entries, err = st.SubscriptionEntries(ctx, sub.ID)
+	if err != nil || len(entries) != 1 || entries[0].MediaID != entryMediaID ||
+		entries[0].DownloadPath != path || entries[0].DownloadState != store.EntryDownloadDownloaded || !entries[0].Downloaded {
+		t.Fatalf("recovery did not preserve the entry's Media and mark it downloaded: %d entries, %v", len(entries), err)
+	}
+	after, err := st.MediaIDsForLibrary(ctx, sub.LibraryID)
+	if err != nil || len(after) != len(before)+1 || !slices.Contains(after, entryMediaID) || fs.hits("one.mp3") != 1 {
+		t.Fatalf("expected a single new Media and one enclosure fetch: Media %v, err %v", after, err)
+	}
 }
 
 // TestIngestKillMatrixConvergesAfterRestart kills the ingest protocol at
@@ -606,8 +723,8 @@ func TestStageArtifactNames(t *testing.T) {
 	if !ok {
 		t.Fatalf("stage key %q has no owner separator", key)
 	}
-	if len(owner) != stageOwnerBytes*2 {
-		t.Fatalf("owner stage-key width = %d hex characters, want %d", len(owner), stageOwnerBytes*2)
+	if len(owner) != 32 {
+		t.Fatalf("owner stage-key width = %d hex characters, want 32", len(owner))
 	}
 	if len(guidDigest) != sha256.Size*2 {
 		t.Fatalf("GUID stage-key digest width = %d hex characters, want %d", len(guidDigest), sha256.Size*2)

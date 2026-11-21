@@ -34,6 +34,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/beamfall/core/internal/jobs"
@@ -61,6 +62,7 @@ type Poller struct {
 	// cleanup — the same on-disk and receipt state a process kill at that
 	// boundary leaves behind.
 	fault func(point string) error
+	link  func(oldpath, newpath string) error
 	// now and jitter are the poll clock and backoff jitter source. Tests replace them.
 	now    func() time.Time
 	jitter func() float64
@@ -74,6 +76,7 @@ type Poller struct {
 func NewPoller(st *store.Store, engine *scrape.Engine) *Poller {
 	return &Poller{
 		store: st, engine: engine, logger: slog.Default(),
+		link:   os.Link,
 		now:    func() time.Time { return time.Now().UTC() },
 		jitter: rand.Float64, //nolint:gosec // G404: backoff jitter spreads retries; it is not a secret.
 	}
@@ -179,6 +182,11 @@ func Handler(p *Poller) jobs.Handler {
 // published, resumed crash residue included.
 func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscription) (int, error) {
 	now := p.now()
+	root, err := filepath.Abs(subscription.Root)
+	if err != nil {
+		return 0, err
+	}
+	subscription.Root = root
 	// Resolve the private-feed Authorization header from the secure store via
 	// the stored ref (invariant #5): the literal credential never lives in the
 	// catalog DB. An anonymous feed has an empty ref and resolves to "".
@@ -385,7 +393,7 @@ func (p *Poller) downloadToStage(ctx context.Context, root, key, base string, en
 func (p *Poller) publishStagedPayload(ctx context.Context, subscription store.Subscription, guid, staged string, now time.Time) error {
 	root := subscription.Root
 	err := p.store.PublishSubscriptionEntry(ctx, subscription.ID, guid, func() (string, error) {
-		path, err := linkStagedPayload(root, &staged)
+		path, err := linkStagedPayload(root, &staged, p.link)
 		if err != nil {
 			return "", err
 		}
@@ -397,8 +405,10 @@ func (p *Poller) publishStagedPayload(ctx context.Context, subscription store.Su
 	if err := p.enqueueScan(ctx, subscription, now); err != nil {
 		return err
 	}
-	if err := os.Remove(staged); err != nil {
-		return err
+	if staged != "" {
+		if err := os.Remove(staged); err != nil {
+			return err
+		}
 	}
 	if err := syncDir(root); err != nil {
 		return err
@@ -408,7 +418,7 @@ func (p *Poller) publishStagedPayload(ctx context.Context, subscription store.Su
 
 // linkStagedPayload encodes any diverted destination in the staged name
 // before linking. The staged inode then identifies our visible file on retry.
-func linkStagedPayload(root string, staged *string) (string, error) {
+func linkStagedPayload(root string, staged *string, link func(string, string) error) (string, error) {
 	key, base, ok := parseStageArtifact(filepath.Base(*staged), stagedSuffix)
 	if !ok {
 		return "", errors.New("ingest: malformed staged payload name")
@@ -433,8 +443,21 @@ func linkStagedPayload(root string, staged *string) (string, error) {
 		}
 	}
 	// Link refuses a concurrent claimant and leaves the stage for the next poll.
-	if err := os.Link(*staged, target); err != nil {
-		return "", err
+	if err := link(*staged, target); err != nil {
+		if !errors.Is(err, syscall.EOPNOTSUPP) && !errors.Is(err, syscall.ENOTSUP) &&
+			!errors.Is(err, syscall.EPERM) && !errors.Is(err, syscall.EXDEV) && !errors.Is(err, syscall.EMLINK) {
+			return "", err
+		}
+		if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
+			if err == nil {
+				return "", os.ErrExist
+			}
+			return "", err
+		}
+		if err := os.Rename(*staged, target); err != nil {
+			return "", err
+		}
+		*staged = ""
 	}
 	return target, syncDir(root)
 }
@@ -607,20 +630,17 @@ func availablePath(dir, name string) string {
 // name — the filesystem itself is the durable owner + GUID → destination
 // binding a resumed poll reads back after a crash.
 const (
-	stagePrefix     = ".ingest-"
-	stageSeparator  = "--"
-	partialSuffix   = ".partial"
-	stagedSuffix    = ".staged"
-	stageOwnerBytes = 16
+	stagePrefix    = store.SubscriptionStagePrefix
+	stageSeparator = store.SubscriptionStageSeparator
+	partialSuffix  = ".partial"
+	stagedSuffix   = store.SubscriptionStageSuffix
 )
 
 // stageKey derives a Subscription-owned staging namespace. The owner tag is
 // 128 bits and the GUID digest uses all 256 bits; the exact GUID bytes are
 // hashed without normalization.
 func stageKey(subscriptionID store.SubscriptionID, guid string) string {
-	ownerSum := sha256.Sum256([]byte(subscriptionID))
-	sum := sha256.Sum256([]byte(guid))
-	return hex.EncodeToString(ownerSum[:stageOwnerBytes]) + "." + hex.EncodeToString(sum[:])
+	return store.SubscriptionStageKey(subscriptionID, guid)
 }
 
 func stageKeyOwnedBy(key string, subscriptionID store.SubscriptionID) bool {
@@ -628,8 +648,7 @@ func stageKeyOwnedBy(key string, subscriptionID store.SubscriptionID) bool {
 	if !ok {
 		return false
 	}
-	ownerSum := sha256.Sum256([]byte(subscriptionID))
-	if owner != hex.EncodeToString(ownerSum[:stageOwnerBytes]) {
+	if owner != store.SubscriptionStageOwner(subscriptionID) {
 		return false
 	}
 	decodedGUID, err := hex.DecodeString(guidDigest)
@@ -637,7 +656,7 @@ func stageKeyOwnedBy(key string, subscriptionID store.SubscriptionID) bool {
 }
 
 func stageArtifactName(key, targetBase, suffix string) string {
-	return stagePrefix + key + stageSeparator + targetBase + suffix
+	return store.SubscriptionStageName(key, targetBase, suffix)
 }
 
 // parseStageArtifact splits a staging artifact name into its GUID key and

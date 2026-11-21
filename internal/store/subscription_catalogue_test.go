@@ -44,6 +44,35 @@ func catalogueEntries(n int) []FeedCatalogEntry {
 	return entries
 }
 
+func TestSubscriptionCatalogCommitsInitialSelectionWithRows(t *testing.T) {
+	st, sub, now := catalogueFixture(t)
+	ctx := t.Context()
+	earlierPoll := now.Add(time.Minute)
+	if err := st.RecordSubscriptionPollSuccess(ctx, sub, "", "", earlierPoll, earlierPoll.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	entries := catalogueEntries(2)
+	_, err := st.UpsertSubscriptionCatalogWithInitialDownloads(ctx, sub.ID, entries, now.Add(time.Hour), func() []string {
+		return []string{entries[0].GUID}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An interrupted poll only has the upsert transaction to recover from.
+	stored, err := st.SubscriptionEntries(ctx, sub.ID)
+	if err != nil || len(stored) != 2 || stored[0].DownloadState != EntryDownloadQueued ||
+		stored[1].DownloadState != EntryDownloadNone || !stored[1].FirstSeenAt.Equal(sub.AddedAt) {
+		t.Fatalf("initial queue did not commit with its catalogue: %v", err)
+	}
+	_, err = st.UpsertSubscriptionCatalogWithInitialDownloads(ctx, sub.ID, entries, now.Add(2*time.Hour), func() []string {
+		t.Fatal("initial selection was recomputed during retry")
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUpsertSubscriptionCatalogCreatesFileLessMediaIdempotently(t *testing.T) {
 	st, sub, now := catalogueFixture(t)
 	ctx := context.Background()
