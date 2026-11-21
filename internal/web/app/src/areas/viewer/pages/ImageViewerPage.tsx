@@ -127,6 +127,7 @@ export function ImageViewerPage() {
   // the queue carried in history always matches what the server holds.
   const trashing = useRef(false);
   const streamRequest = useRef(0);
+  const streamItem = useRef<string | undefined>(undefined);
   const [clipPlaying, setClipPlaying] = useState(false);
   const video = useRef<HTMLVideoElement | null>(null);
   const [chromeIdle, setChromeIdle] = useState(false);
@@ -162,8 +163,11 @@ export function ImageViewerPage() {
     setClipPlaying(false);
     // Leaving an item drops its stream, which ends its playback session, and
     // supersedes a stream request still in flight.
-    streamRequest.current += 1;
-    setOriginal((current) => (current && current.id !== mediaId ? null : current));
+    if (streamItem.current !== mediaId) {
+      streamItem.current = mediaId;
+      streamRequest.current += 1;
+      setOriginal((current) => (current && current.id !== mediaId ? null : current));
+    }
   }, [mediaId]);
 
   const queue = useMemo(
