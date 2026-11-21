@@ -155,9 +155,16 @@ func TestScanImportBindsDownloadToEntryMedia(t *testing.T) {
 	if media.ID != created[0].MediaID {
 		t.Fatalf("imported media %q, want entry media %q", media.ID, created[0].MediaID)
 	}
+	if err := st.SetSubscriptionAuthRef(ctx, sub.ID, "feed-auth-ref"); err != nil {
+		t.Fatal(err)
+	}
+	// Playback attaches the stream through these fields (pod/feed-play contract).
 	entry, owner, ok, err := st.SubscriptionEntryForMedia(ctx, media.ID)
-	if err != nil || !ok || owner.ID != sub.ID {
+	if err != nil || !ok || owner.ID != sub.ID || owner.LibraryID != sub.LibraryID || owner.AuthRef != "feed-auth-ref" {
 		t.Fatalf("SubscriptionEntryForMedia = %v %v %v", ok, owner.ID, err)
+	}
+	if entry.GUID != "guid-00" || entry.EnclosureURL != catalogueEntries(1)[0].EnclosureURL {
+		t.Fatal("SubscriptionEntryForMedia lost the entry GUID or enclosure")
 	}
 	if !entry.Downloaded || entry.DownloadState != EntryDownloadDownloaded || entry.Title != "Entry 00" {
 		t.Fatalf("bound entry = %+v, want downloaded with feed title", entry)
