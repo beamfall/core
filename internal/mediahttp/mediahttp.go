@@ -1414,10 +1414,7 @@ func (h *Handler) artworkCandidatePreviewPath(ctx context.Context, candidate sto
 	cacheID := artwork.CandidateCacheID(candidate.ID)
 	source := h.artwork.ArtworkPath(cacheID, artwork.SlotPoster)
 	if !regularFileExists(source) {
-		if h.artworkCandidateFetch == nil {
-			return "", errors.New("artwork candidate fetcher unavailable")
-		}
-		data, err := h.artworkCandidateFetch.FetchResource(ctx, candidate.SourceURL)
+		data, err := h.artworkCandidateSource(ctx, candidate)
 		if err != nil {
 			return "", err
 		}
@@ -1426,6 +1423,18 @@ func (h *Handler) artworkCandidatePreviewPath(ctx context.Context, candidate sto
 		}
 	}
 	return h.artwork.ArtworkDerivative(ctx, cacheID, artwork.SlotPoster, bucket)
+}
+
+// artworkCandidateSource returns a candidate's image: an upload's kept bytes
+// (CORE-2937), or the fetched SourceURL for a scraped candidate.
+func (h *Handler) artworkCandidateSource(ctx context.Context, candidate store.ArtworkCandidate) ([]byte, error) {
+	if artwork.IsUploadedSource(candidate.SourceURL) {
+		return h.artwork.UploadedCandidate(candidate.MediaID, candidate.SourceURL)
+	}
+	if h.artworkCandidateFetch == nil {
+		return nil, errors.New("artwork candidate fetcher unavailable")
+	}
+	return h.artworkCandidateFetch.FetchResource(ctx, candidate.SourceURL)
 }
 
 // artworkNotModified applies the content-addressed cache contract for an

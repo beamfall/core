@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,12 +112,15 @@ type EmbeddedArtworkExtractor interface {
 
 // Service generates and locates artwork files under dataDir/artwork.
 type Service struct {
-	store     *store.Store
-	grabber   FrameGrabber
-	scaler    ImageScaler
-	embedded  EmbeddedArtworkExtractor
-	dir       string
-	sealed    SealedPredicate
+	store    *store.Store
+	grabber  FrameGrabber
+	scaler   ImageScaler
+	embedded EmbeddedArtworkExtractor
+	dir      string
+	sealed   SealedPredicate
+	// uploadsMu serializes keeping uploaded originals, so two keeps of the
+	// same bytes never race on one file.
+	uploadsMu sync.Mutex
 	encrypted EncryptedPredicate
 	deriveMu  [64]derivativeLock
 	// entityRules declares which Entity kinds inherit a poster (inherit.go);
@@ -457,6 +461,114 @@ const candidatePrefix = "candidate-"
 // the cache directory addressable for the SweepCandidatePreviewCache reconciler.
 func CandidateCacheID(candidateID string) store.MediaID {
 	return store.MediaID(candidatePrefix + candidateID)
+}
+
+// UploadedSourcePrefix marks the synthetic SourceURL of an artwork candidate a
+// manager uploaded. It names the upload's SHA-256 and is never fetched over the
+// network: the original bytes stay in the owning Media's artwork directory
+// (KeepUploadedCandidate), so purging that Media's artwork removes them too.
+const UploadedSourcePrefix = "beamfall-upload://sha256/"
+
+// uploadedCandidateDir holds kept upload originals inside a Media's artwork
+// directory. Slot files and their derivatives are plain files beside it.
+const uploadedCandidateDir = "uploads"
+
+// ErrUploadedCandidateMissing reports that an uploaded candidate's original
+// bytes were never kept (an upload from before CORE-2937, or one into a Sealed
+// or encrypted Library) or no longer match the candidate's SourceURL.
+var ErrUploadedCandidateMissing = errors.New("uploaded artwork is no longer available")
+
+// UploadedSourceURL is the synthetic SourceURL for uploaded artwork bytes.
+func UploadedSourceURL(data []byte) string {
+	sum := sha256.Sum256(data)
+	return UploadedSourcePrefix + hex.EncodeToString(sum[:])
+}
+
+// IsUploadedSource reports whether a candidate SourceURL names an upload.
+func IsUploadedSource(sourceURL string) bool {
+	return strings.HasPrefix(sourceURL, UploadedSourcePrefix)
+}
+
+// uploadedCandidatePath is where an upload's original is kept, or "" when
+// sourceURL is not a well-formed upload source.
+func (s *Service) uploadedCandidatePath(id store.MediaID, sourceURL string) string {
+	digest, ok := strings.CutPrefix(sourceURL, UploadedSourcePrefix)
+	if !ok || len(digest) != sha256.Size*2 {
+		return ""
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		return ""
+	}
+	return filepath.Join(s.dir, filepath.Base(string(id)), uploadedCandidateDir, digest+".bin")
+}
+
+// KeepUploadedCandidate keeps an uploaded candidate's original bytes under the
+// owning Media so the candidate can be previewed and pinned again later
+// (CORE-2937). Media in a Sealed or encrypted Library keeps nothing, so no
+// plaintext copy lands on disk there. Originals are never removed one by one:
+// a kept file is content-addressed and harmless if its upload was rolled back,
+// and it goes with the Media's artwork directory (PurgeMediaArtwork).
+func (s *Service) KeepUploadedCandidate(ctx context.Context, id store.MediaID, data []byte) error {
+	if len(data) == 0 {
+		return errors.New("artwork data is empty")
+	}
+	if s.isSealed(ctx, id) || s.isEncrypted(ctx, id) {
+		return nil
+	}
+	sourceURL := UploadedSourceURL(data)
+	s.uploadsMu.Lock()
+	defer s.uploadsMu.Unlock()
+	if _, err := s.UploadedCandidate(id, sourceURL); err == nil {
+		return nil
+	}
+	dst := s.uploadedCandidatePath(id, sourceURL)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	// Checked on both sides of the rename, as ImportArtwork does, so a Library
+	// encrypted meanwhile keeps no plaintext original. The guard fails closed
+	// (a canceled request reads as protected), so a protected result only
+	// skips this original: the Media's other artwork is left to the
+	// encrypted-Library reconciler.
+	guard := func() error {
+		if s.isSealed(ctx, id) || s.isEncrypted(ctx, id) {
+			return errProtectedArtwork
+		}
+		return nil
+	}
+	if err := writeAtomicFile(dst, data, guard); err != nil {
+		if errors.Is(err, errProtectedArtwork) {
+			// writeAtomicFile tried to remove anything it published; make
+			// sure no plaintext original survived that.
+			if rmErr := os.Remove(dst); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+				return rmErr
+			}
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// UploadedCandidate returns the kept original of an uploaded candidate. It
+// fails with ErrUploadedCandidateMissing when none was kept or when the file
+// does not hash to the candidate's SourceURL.
+func (s *Service) UploadedCandidate(id store.MediaID, sourceURL string) ([]byte, error) {
+	path := s.uploadedCandidatePath(id, sourceURL)
+	if path == "" {
+		return nil, ErrUploadedCandidateMissing
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- path is built from a validated hex digest under the artwork dir
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrUploadedCandidateMissing
+		}
+		return nil, err
+	}
+	if len(data) == 0 || UploadedSourceURL(data) != sourceURL {
+		return nil, ErrUploadedCandidateMissing
+	}
+	return data, nil
 }
 
 // SweepCandidatePreviewCache reconciles the candidate-preview cache on disk

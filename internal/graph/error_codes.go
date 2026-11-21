@@ -165,6 +165,9 @@ var clientErrorCodes = map[string]ErrorCode{
 	// caller's filter hides or that does not exist.
 	"unknown library": ErrorCodeNotFound,
 	"unknown profile": ErrorCodeNotFound,
+	// An uploaded artwork candidate whose original bytes were never kept or
+	// were purged (CORE-2937): the client must upload the image again.
+	"uploaded artwork is no longer available; upload it again": ErrorCodeNotFound,
 
 	// "unknown <value>" for a closed vocabulary is a bad argument, not a
 	// missing record. Resolvers re-wrap store and push validation text into a

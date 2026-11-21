@@ -5304,7 +5304,7 @@ func (h *Handler) pinArtworkCandidate(ctx context.Context, scope auth.Scope, req
 	if !artwork.ValidSlot(slot) {
 		return ArtworkCandidateInfo{}, clientError("unknown artwork candidate")
 	}
-	if h.candidateFetch == nil || h.candidateImport == nil {
+	if h.candidateImport == nil {
 		return ArtworkCandidateInfo{}, clientError("artwork candidate pin unavailable")
 	}
 	candidate, err := h.store.ArtworkCandidate(ctx, candidateID, scope.LibraryFilter())
@@ -5315,7 +5315,7 @@ func (h *Handler) pinArtworkCandidate(ctx context.Context, scope auth.Scope, req
 	if err != nil {
 		return ArtworkCandidateInfo{}, clientError("unknown artwork candidate")
 	}
-	data, err := h.candidateFetch.FetchResource(ctx, candidate.SourceURL)
+	data, err := h.artworkCandidateBytes(ctx, candidate)
 	if err != nil {
 		return ArtworkCandidateInfo{}, err
 	}

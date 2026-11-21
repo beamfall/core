@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1181,5 +1182,87 @@ func TestImportArtworkClearsEmbeddedProvenance(t *testing.T) {
 	}
 	if !svc.IsImportedArtwork("media-alpha", SlotPoster) || svc.IsEmbeddedArtwork("media-alpha", SlotPoster) {
 		t.Fatal("provenance changed by refused imports")
+	}
+}
+
+// TestKeepUploadedCandidateRoundTripsAndVerifies: an uploaded candidate's bytes
+// come back only under the SourceURL they hash to (CORE-2937), live under the
+// owning Media, and go with that Media's artwork when it is purged.
+func TestKeepUploadedCandidateRoundTripsAndVerifies(t *testing.T) {
+	svc := NewService(storetest.Open(t), &fakeGrabber{}, t.TempDir())
+	ctx := context.Background()
+	data := []byte("uploaded poster bytes")
+	sourceURL := UploadedSourceURL(data)
+	if !IsUploadedSource(sourceURL) || IsUploadedSource("https://img.example.test/a.jpg") {
+		t.Fatalf("IsUploadedSource misclassifies %q", sourceURL)
+	}
+	if _, err := svc.UploadedCandidate("media-alpha", sourceURL); !errors.Is(err, ErrUploadedCandidateMissing) {
+		t.Fatalf("UploadedCandidate before keep = %v, want ErrUploadedCandidateMissing", err)
+	}
+	if err := svc.KeepUploadedCandidate(ctx, "media-alpha", data); err != nil {
+		t.Fatalf("KeepUploadedCandidate: %v", err)
+	}
+	if err := svc.KeepUploadedCandidate(ctx, "media-alpha", data); err != nil {
+		t.Fatalf("repeat KeepUploadedCandidate: %v", err)
+	}
+	got, err := svc.UploadedCandidate("media-alpha", sourceURL)
+	if err != nil || string(got) != string(data) {
+		t.Fatalf("UploadedCandidate = %q, %v; want the kept bytes", got, err)
+	}
+	path := svc.uploadedCandidatePath("media-alpha", sourceURL)
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("kept upload mode = %v, %v; want 0600", info, err)
+	}
+	if _, err := svc.UploadedCandidate("media-alpha", UploadedSourceURL([]byte("other"))); !errors.Is(err, ErrUploadedCandidateMissing) {
+		t.Fatalf("UploadedCandidate under another digest = %v, want ErrUploadedCandidateMissing", err)
+	}
+	for _, bad := range []string{"https://img.example.test/a.jpg", UploadedSourcePrefix + "../../x", UploadedSourcePrefix + strings.ToUpper(sourceURL[len(UploadedSourcePrefix):])} {
+		if _, err := svc.UploadedCandidate("media-alpha", bad); !errors.Is(err, ErrUploadedCandidateMissing) {
+			t.Fatalf("UploadedCandidate(%q) = %v, want ErrUploadedCandidateMissing", bad, err)
+		}
+	}
+	if _, err := svc.SweepCandidatePreviewCache(nil); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if _, err := svc.UploadedCandidate("media-alpha", sourceURL); err != nil {
+		t.Fatalf("candidate-preview sweep removed a kept upload: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.KeepUploadedCandidate(ctx, "media-alpha", data); err != nil {
+		t.Fatalf("KeepUploadedCandidate over a corrupt original: %v", err)
+	}
+	if got, err := svc.UploadedCandidate("media-alpha", sourceURL); err != nil || string(got) != string(data) {
+		t.Fatalf("UploadedCandidate after repair = %q, %v", got, err)
+	}
+	if err := svc.PurgeMediaArtwork("media-alpha"); err != nil {
+		t.Fatalf("PurgeMediaArtwork: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("purged Media kept its uploaded original: %v", err)
+	}
+}
+
+// TestKeepUploadedCandidateSkipsSealedAndEncryptedMedia: no plaintext upload
+// copy lands on disk for Media in a Sealed or encrypted Library.
+func TestKeepUploadedCandidateSkipsSealedAndEncryptedMedia(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		sealed    bool
+		encrypted bool
+	}{{name: "sealed", sealed: true}, {name: "encrypted", encrypted: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := NewService(storetest.Open(t), &fakeGrabber{}, t.TempDir())
+			svc.SetSealed(func(store.LibraryID) bool { return tc.sealed })
+			svc.SetEncrypted(func(store.LibraryID) bool { return tc.encrypted })
+			if err := svc.KeepUploadedCandidate(context.Background(), "media-alpha", []byte("plaintext")); err != nil {
+				t.Fatalf("KeepUploadedCandidate: %v", err)
+			}
+			if _, err := os.Stat(svc.uploadedCandidatePath("media-alpha", UploadedSourceURL([]byte("plaintext")))); !os.IsNotExist(err) {
+				t.Fatalf("plaintext upload kept for %s media: %v", tc.name, err)
+			}
+		})
 	}
 }
