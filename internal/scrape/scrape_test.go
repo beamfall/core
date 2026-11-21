@@ -1800,6 +1800,7 @@ func TestLookupRetries503OnlyWithRetryAfter(t *testing.T) {
 		{name: "busy with Retry-After is retried", retryAfter: "1", wantRequests: 2},
 		{name: "plain 503 is surfaced", retryAfter: "", wantRequests: 1, wantErr: true},
 		{name: "Retry-After beyond the cap is surfaced", retryAfter: "3600", wantRequests: 1, wantErr: true},
+		{name: "overflowing Retry-After is surfaced", retryAfter: "10000000000", wantRequests: 1, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requests := 0
@@ -1823,7 +1824,7 @@ func TestLookupRetries503OnlyWithRetryAfter(t *testing.T) {
 			go func() {
 				_, err := engine.Lookup(context.Background(), plugin.ScraperSpec{
 					ID: "retrysource", Kind: "http-json", Endpoint: server.URL, LookupTemplate: "/{id}",
-					FieldMap: map[string]string{"title": "name"},
+					FieldMap: map[string]string{"title": "name"}, MinRequestIntervalMS: 1000,
 				}, "1")
 				done <- err
 			}()
@@ -1846,6 +1847,9 @@ func TestLookupRetries503OnlyWithRetryAfter(t *testing.T) {
 			}
 			if requests != tc.wantRequests {
 				t.Fatalf("requests = %d, want %d", requests, tc.wantRequests)
+			}
+			if tc.wantRequests > 1 && !engine.lastRequest["retrysource"].Equal(clock.Now()) {
+				t.Fatalf("rate-limit anchor = %v, want the retry time %v", engine.lastRequest["retrysource"], clock.Now())
 			}
 		})
 	}

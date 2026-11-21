@@ -1095,7 +1095,7 @@ func (e *Engine) fetchAuthorized(ctx context.Context, spec plugin.ScraperSpec, m
 		if payload != nil {
 			body = bytes.NewReader(payload)
 		}
-		return e.fetch(ctx, method, rawURL, body, contentType, authorize)
+		return e.fetch(withPace(ctx, spec), method, rawURL, body, contentType, authorize)
 	}
 	data, err := attempt()
 	var status *statusError
@@ -1255,7 +1255,7 @@ func (e *Engine) loginToken(ctx context.Context, spec plugin.ScraperSpec, secret
 	}
 	// The exchange itself carries no authorizer — the secret travels in the
 	// body — and passes the same SSRF gate and caps as every request.
-	response, err := e.fetch(ctx, http.MethodPost, spec.Endpoint+spec.Login.Path, bytes.NewReader(payload), "application/json", nil)
+	response, err := e.fetch(withPace(ctx, spec), http.MethodPost, spec.Endpoint+spec.Login.Path, bytes.NewReader(payload), "application/json", nil)
 	if err != nil {
 		return "", err
 	}
@@ -1364,7 +1364,22 @@ func (e *Engine) requestWithRetry(ctx context.Context, req *http.Request, do fun
 		if err := e.wait(ctx, wait, "retry wait"); err != nil {
 			return nil, err
 		}
+		// The retry is a real request: it claims the scraper's rate-limit
+		// slot so the request after it still keeps the interval.
+		if spec, ok := ctx.Value(paceKey{}).(plugin.ScraperSpec); ok {
+			if err := e.waitTurn(ctx, spec); err != nil {
+				return nil, err
+			}
+		}
 	}
+}
+
+// paceKey carries the scraper spec whose rate limit a request counts against,
+// so requestWithRetry can charge in-place retries to the same slot.
+type paceKey struct{}
+
+func withPace(ctx context.Context, spec plugin.ScraperSpec) context.Context {
+	return context.WithValue(ctx, paceKey{}, spec)
 }
 
 // retryableStatus reports whether a response is a short-lived refusal worth
@@ -1405,9 +1420,12 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 		return 0, false
 	}
 	if seconds, err := strconv.Atoi(value); err == nil && seconds >= 0 {
+		// Clamp before converting so a huge value cannot overflow into a
+		// negative Duration that slips under the honoured-wait cap.
+		seconds = min(seconds, math.MaxInt32)
 		return time.Duration(seconds) * time.Second, true
 	}
-	if when, err := time.Parse(http.TimeFormat, value); err == nil {
+	if when, err := http.ParseTime(value); err == nil {
 		wait := when.Sub(now)
 		if wait < 0 {
 			wait = 0
