@@ -24,10 +24,12 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { mediaPath } from "../lib/mediaAddress";
 import {
+  convertedQueueProfile,
   MUSIC_QUEUE_PARAM,
   musicQueueNeighbours,
   playableMusic,
   registerMusicQueuePlayer,
+  rememberQueueConversion,
   serializeMusicQueue,
   useMusicQueue,
 } from "../lib/musicQueue";
@@ -127,6 +129,27 @@ export function PlayerPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const navigationType = useNavigationType();
+  const [initialEntryKey] = useState(newStartID);
+  const carriedKey = (location.state as { playbackKey?: unknown } | null)?.playbackKey;
+  const playbackKey =
+    typeof carriedKey === "string" && carriedKey
+      ? carriedKey
+      : location.key === "default"
+        ? initialEntryKey
+        : location.key;
+  useLayoutEffect(() => {
+    // A fresh BrowserRouter entry's default key is shared across documents.
+    // Save our start key in the watch state before the listener can dock it.
+    const historyState = window.history.state;
+    if (location.key === "default" && historyState?.idx === 0) {
+      const usr = historyState.usr;
+      if (typeof usr?.playbackKey === "string" && usr.playbackKey) return;
+      window.history.replaceState(
+        { ...historyState, usr: { ...(usr && typeof usr === "object" ? usr : {}), playbackKey } },
+        "",
+      );
+    }
+  }, [location.key, playbackKey]);
   // A readable address (CORE-2329) or a bare ID: the token names the item.
   const { id: mediaId } = useMediaAddress();
   const host = usePlayerHost();
@@ -143,7 +166,8 @@ export function PlayerPage() {
     };
   }, [location, navigationType]);
   const params = new URLSearchParams(location.search);
-  const skip = params.has("t") || params.has(MUSIC_QUEUE_PARAM);
+  const skip =
+    params.has("t") || params.has(MUSIC_QUEUE_PARAM) || !!convertedQueueProfile(playbackKey);
   const carried =
     !!location.state && (location.state as { skipPrePlay?: unknown }).skipPrePlay === true;
   const bypass = skip || carried || !mediaId || rejoiningPlayback;
@@ -183,8 +207,6 @@ export function PlayerPage() {
     );
   }
   if (mediaId && feature) {
-    const carriedKey = (location.state as { playbackKey?: unknown } | null)?.playbackKey;
-    const playbackKey = typeof carriedKey === "string" ? carriedKey : location.key;
     const entry = {
       mediaId,
       state: location.state,
@@ -269,7 +291,8 @@ function FeaturePlayer({
   const converted = useRef<typeof queueRoute | null>(null);
   const [conversion, setConversion] = useState<typeof queueRoute>();
   const convertedHere = conversion === queueRoute;
-  const queueProfile = routeQueueProfile ?? (convertedHere ? profileID : null);
+  const restoredQueueProfile = routeQueueProfile ?? convertedQueueProfile(playbackKey);
+  const queueProfile = restoredQueueProfile ?? (convertedHere ? profileID : null);
   const serverQueueRun = queueProfile != null;
   const queueMatchesProfile = !!profileID && queueProfile === profileID;
   const [musicQueueOpen, setMusicQueueOpen] = useState(false);
@@ -277,10 +300,11 @@ function FeaturePlayer({
     view: musicQueue,
     refresh: refreshMusicQueue,
     acceptRows,
+    invalidateIdentity,
     readMedia,
     isCurrent,
   } = useMusicQueue();
-  const queueAllowed = !serverQueueRun || (queueMatchesProfile && !musicQueue?.invalid);
+  const queueAllowed = !musicQueue?.invalid && (!serverQueueRun || queueMatchesProfile);
   const queueReady =
     queueAllowed && (!serverQueueRun || convertedHere || musicQueue?.rows !== undefined);
   const queueReadFailed = serverQueueRun && queueAllowed && musicQueue?.failed;
@@ -314,15 +338,19 @@ function FeaturePlayer({
   } | null>(null);
   const mediaReadIsCurrent =
     mediaRead?.route === queueRoute && mediaRead.server === serverQueueRun && !epoch?.aborted;
-  const queueTitlesAllowed = !serverQueueRun || queueReady;
+  const queueTitlesAllowed = queueAllowed && (!serverQueueRun || queueReady);
   const media = queueTitlesAllowed && mediaReadIsCurrent ? mediaRead.info : null;
 
   // The catalog card / hero (and Up Next) carry the Media title forward in nav
   // state, with the siblings it was shown with as the play queue. The media(id)
   // read below fills in the title for a deep link, plus artwork and credits.
-  const navState = readPlayerNavState(entry.state, routeQueueProfile !== null ? null : identity);
+  const catalogIdentity = restoredQueueProfile === null ? identity : null;
+  const navState = useMemo(
+    () => readPlayerNavState(entry.state, catalogIdentity),
+    [entry.state, catalogIdentity],
+  );
   const { queueIdentity } = navState;
-  const navTitle = (serverQueueRun ? "" : navState.title) || media?.title || "";
+  const navTitle = (queueAllowed && !serverQueueRun ? navState.title : "") || media?.title || "";
   // Docked, the browse page under the mini player names the tab (CORE-2322).
   // A Revealed session may be playing a restricted title, which stays out of
   // the browser history (tab titles are kept there).
@@ -539,11 +567,11 @@ function FeaturePlayer({
   };
   const stageReady = !mediaId || mediaReadIsCurrent || (playing && infoIsCurrent);
   const [heldStage, setHeldStage] = useState<StageItem | null>(null);
-  if (stageReady || serverQueueRun) {
-    const keep = showAudioStage && !serverQueueRun ? liveStage : null;
+  if (stageReady || serverQueueRun || !queueAllowed) {
+    const keep = showAudioStage && queueAllowed && !serverQueueRun ? liveStage : null;
     if (!sameStageItem(keep, heldStage)) setHeldStage(keep);
   }
-  const stage = serverQueueRun || stageReady || !heldStage ? liveStage : heldStage;
+  const stage = serverQueueRun || !queueAllowed || stageReady || !heldStage ? liveStage : heldStage;
 
   const { chromeHidden, reveal } = useChromeAutoHide({
     stageRef,
@@ -570,9 +598,11 @@ function FeaturePlayer({
             title,
             skipPrePlay: true,
             selectPartyTitle,
-            ...(catalogQueue
-              ? { queue: catalogQueue, queueIdentity, queueSource: navState.queueSource }
-              : {}),
+            playbackKey,
+            queue: catalogQueue,
+            queueIdentity,
+            queueSource: navState.queueSource,
+            playAllSource: navState.playAllSource,
           };
       if (docked && onAdvanceDocked) {
         const titleSelectionEpoch = selectPartyTitle ? hostTitleSelectionEpoch() : undefined;
@@ -581,7 +611,7 @@ function FeaturePlayer({
           state,
           search,
           titleSelectionEpoch,
-          playbackKey: newStartID(),
+          playbackKey: musicProfile ? newStartID() : playbackKey,
         });
         return;
       }
@@ -594,6 +624,8 @@ function FeaturePlayer({
       catalogQueue,
       queueIdentity,
       navState.queueSource,
+      navState.playAllSource,
+      playbackKey,
       docked,
       onAdvanceDocked,
     ],
@@ -684,7 +716,7 @@ function FeaturePlayer({
     };
   }, [queueRoute]);
 
-  const playAllSource = useRef<unknown>(null);
+  const playAllHandle = useRef<unknown>(null);
   const navStateRef = useRef(navState);
   useLayoutEffect(() => {
     navStateRef.current = navState;
@@ -724,7 +756,10 @@ function FeaturePlayer({
       scope: { profileID, revealed, deviceRole, profile },
       id: mediaId,
       cursor: queueRoute,
-      canEdit: () => activeQueueRoute.current === queueRoute && advancedFrom.current !== queueRoute,
+      canEdit: () =>
+        !!isCurrent() &&
+        activeQueueRoute.current === queueRoute &&
+        advancedFrom.current !== queueRoute,
       beginEdit: serverQueueRun
         ? undefined
         : () => {
@@ -738,30 +773,40 @@ function FeaturePlayer({
         ? undefined
         : async (signal) => {
             if (converted.current === queueRoute) return;
-            playAllSource.current = null;
-            const { queue, queueSource } = navStateRef.current;
+            playAllHandle.current = null;
+            const { queue, queueSource, playAllSource } = navStateRef.current;
+            if (playAllSource === null) throw new Error("Play all listing unavailable");
+            if (playAllSource) {
+              playAllHandle.current = playQueueHandle();
+              return playAllMusicIDs(playAllSource, signal);
+            }
             if (queueSource && typeof queueSource === "object") {
               const album = await readAlbumMusicIDs(queueSource.albumEntityID, signal);
               if (!album.includes(mediaId)) throw new Error("Album no longer contains the cursor");
               return album;
             }
             const source =
-              queueSource === undefined ? queue : catalogQueueSource(queueSource, epoch);
+              typeof queueSource === "string"
+                ? catalogQueueSource(queueSource, epoch)
+                : queueSource === null
+                  ? null
+                  : queue;
             if (source === null) throw new Error("Catalog queue source unavailable");
             if (source)
               return source.filter((row) => row.mediaClass === "audio").map((row) => row.id);
-            playAllSource.current = playQueueHandle();
-            return playAllMusicIDs(mediaId);
+            return [];
           },
       beginConversion: () => {
         // Mark the profile-bound run before dispatching the first mutation.
         // A reload during an ambiguous write must recover from server reads.
+        rememberQueueConversion(playbackKey, profileID);
         if (!docked) markQueueRoute(profileID);
-        leavePlayQueue(playAllSource.current);
-        playAllSource.current = null;
+        leavePlayQueue(playAllHandle.current);
+        playAllHandle.current = null;
         converted.current = queueRoute;
         setConversion(queueRoute);
       },
+      invalidateIdentity,
       receive: acceptRows,
     });
   }, [
@@ -774,10 +819,13 @@ function FeaturePlayer({
     profile,
     serverQueueRun,
     acceptRows,
+    invalidateIdentity,
+    isCurrent,
     queueRoute,
     epoch,
     docked,
     markQueueRoute,
+    playbackKey,
     cancelGaplessAdvance,
   ]);
 
@@ -794,14 +842,15 @@ function FeaturePlayer({
       return serializeMusicQueue(async () => {
         try {
           if (pendingQueueAction.current !== request || epoch?.aborted) return;
-          const usesServer = routeQueueProfile !== null || converted.current === queueRoute;
+          const usesServer = restoredQueueProfile !== null || converted.current === queueRoute;
           if (!usesServer && action !== "start") {
+            if (profileID && !isCurrent()) return;
             fromCatalog?.();
             return;
           }
           if (
             !profileID ||
-            (routeQueueProfile !== null && !queueMatchesProfile && action !== "start") ||
+            (restoredQueueProfile !== null && !queueMatchesProfile && action !== "start") ||
             !isCurrent()
           )
             return;
@@ -837,7 +886,7 @@ function FeaturePlayer({
     [
       profileID,
       queueMatchesProfile,
-      routeQueueProfile,
+      restoredQueueProfile,
       queueRoute,
       epoch,
       isCurrent,

@@ -1,6 +1,11 @@
 import { getIdentityEpochSignal } from "@/lib/api";
 import type { SourceItem } from "@/lib/graphql/types";
-import { fetchLibraryItems, type LibraryItemsRequest } from "./libraryBrowse";
+import {
+  browseStateParams,
+  fetchLibraryItems,
+  type LibraryItemsRequest,
+  parseBrowseState,
+} from "./libraryBrowse";
 
 // The client-owned play queue behind Play all / Shuffle (CORE-1190). The queue
 // is the library query that produced it plus the items read so far; later
@@ -21,7 +26,6 @@ interface PlayQueue {
   ids: string[];
   /** The titles the listing gave, by ID: the player's heading for each item. */
   titles: Map<string, string>;
-  audio: Set<string>;
   loading?: Promise<void>;
   /** Index of the item last handed to the player. */
   cursor: number;
@@ -64,7 +68,6 @@ export async function startPlayQueue(
     epoch,
     ids: [],
     titles: new Map(),
-    audio: new Set(),
     cursor: 0,
     total: 0,
     fetched: 0,
@@ -123,7 +126,6 @@ async function loadPage(queue: PlayQueue): Promise<void> {
     for (const item of more) {
       queue.ids.push(item.id);
       queue.titles.set(item.id, item.title || "");
-      if (item.mediaClass === "audio") queue.audio.add(item.id);
     }
     queue.done = !page.items.length || queue.fetched >= page.total;
     if (more.length || queue.done) return;
@@ -139,13 +141,58 @@ export function playQueueHandle(): unknown {
   return activeQueue();
 }
 
-/** Finish reading the Play all source before the first queue write. */
-export async function playAllMusicIDs(mediaID: string): Promise<string[]> {
-  const queue = activeQueue();
-  if (!queue || positionOf(queue, mediaID) < 0) return [];
-  while (!queue.done && activeQueue() === queue) await loadMore(queue);
-  if (activeQueue() !== queue) throw new Error("Play all source changed");
-  return queue.ids.filter((id) => queue.audio.has(id));
+/** A refetchable listing without the in-memory playback cursor or any rows. */
+export interface PlayAllSource {
+  libraryID: string;
+  filters: string;
+  shuffleSeed?: string;
+}
+
+export function playAllSource({
+  libraryID,
+  state,
+  shuffleSeed,
+}: PlayQueue["request"]): PlayAllSource {
+  return { libraryID, filters: browseStateParams(state).toString(), shuffleSeed };
+}
+
+export function readPlayAllSource(raw: unknown): PlayAllSource | undefined {
+  if (!raw || typeof raw !== "object") return;
+  const { libraryID, filters, shuffleSeed } = raw as Record<string, unknown>;
+  if (typeof libraryID !== "string" || !libraryID || typeof filters !== "string") return;
+  if (shuffleSeed !== undefined && typeof shuffleSeed !== "string") return;
+  return { libraryID, filters, shuffleSeed };
+}
+
+/** Read every live page before writing any part of the server queue. */
+export async function playAllMusicIDs(
+  source: PlayAllSource,
+  signal: AbortSignal,
+): Promise<string[]> {
+  const { libraryID, filters, shuffleSeed } = source;
+  const state = parseBrowseState(new URLSearchParams(filters));
+  const seen = new Set<string>();
+  const audio: string[] = [];
+  let total: number | undefined;
+  for (let offset = 0; ; offset += QUEUE_PAGE) {
+    signal.throwIfAborted();
+    const page = await fetchLibraryItems(
+      { libraryID, state, shuffleSeed, limit: QUEUE_PAGE, offset },
+      signal,
+    );
+    signal.throwIfAborted();
+    total ??= page.total;
+    if (total !== page.total || page.items.length !== Math.min(QUEUE_PAGE, total - offset)) {
+      throw new Error("Play all listing changed during pagination");
+    }
+    for (const item of page.items) {
+      const key = `${item.kind}:${item.id}`;
+      if (seen.has(key)) throw new Error("Play all listing changed during pagination");
+      seen.add(key);
+      if (playable(item) && item.mediaClass === "audio") audio.push(item.id);
+    }
+    if (offset + page.items.length === total) return audio;
+  }
 }
 
 /** The listed title of an item the active queue holds, or "". */

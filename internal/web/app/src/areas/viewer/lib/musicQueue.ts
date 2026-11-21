@@ -5,6 +5,22 @@ import { useSession, useViewerIdentity } from "@/lib/session";
 
 export const MUSIC_QUEUE_PARAM = "playQueue";
 
+const CONVERTED_QUEUE_KEY = "beamfall.musicQueue.conversion.";
+
+/** The current tab can return to an earlier watch entry after a docked edit. */
+export function convertedQueueProfile(playbackKey: string): string | null {
+  try {
+    return window.sessionStorage.getItem(CONVERTED_QUEUE_KEY + playbackKey);
+  } catch {
+    return null;
+  }
+}
+
+/** Let storage errors stop conversion before a mutation can reach the server. */
+export function rememberQueueConversion(playbackKey: string, profileID: string): void {
+  window.sessionStorage.setItem(CONVERTED_QUEUE_KEY + playbackKey, profileID);
+}
+
 export interface MusicQueueRow {
   id: string;
   title: string;
@@ -162,6 +178,7 @@ interface QueuePlayer {
   readCatalog?: (signal: AbortSignal) => Promise<readonly string[] | undefined>;
   beginEdit?: () => () => void;
   beginConversion?: () => void;
+  invalidateIdentity?: () => void;
   receive: (rows: MusicQueueRow[] | null) => void;
 }
 
@@ -209,6 +226,12 @@ export function editMusicQueue(scope: QueueIdentity, id: string, edit: MusicQueu
     const endEdit = active?.beginEdit?.();
     const sameCursor = (live: QueuePlayer | undefined) =>
       live === active || (active?.cursor !== undefined && live?.cursor === active.cursor);
+    const identityWasLost = (error: unknown) => {
+      if (signal.aborted || epoch !== getIdentityEpochSignal()) return true;
+      if (!(error instanceof QueueIdentityChanged)) return false;
+      forProfile()?.invalidateIdentity?.();
+      return true;
+    };
     try {
       let convert = false;
       let wrote = false;
@@ -251,7 +274,7 @@ export function editMusicQueue(scope: QueueIdentity, id: string, edit: MusicQueu
         if (edit === "next" && (convert || cursorIndex >= 0)) anchor = current;
         await write(id, position, true);
       } catch (error) {
-        if (error instanceof QueueIdentityChanged || signal.aborted) return "dropped";
+        if (identityWasLost(error)) return "dropped";
         if (!wrote) return "failed";
         // A rejected response may follow a committed write. The only recovery
         // after a write starts is a fresh read of the server's actual order.
@@ -261,7 +284,7 @@ export function editMusicQueue(scope: QueueIdentity, id: string, edit: MusicQueu
       try {
         rows = await readQueue(scope, signal);
       } catch (error) {
-        if (error instanceof QueueIdentityChanged || signal.aborted) return "dropped";
+        if (identityWasLost(error)) return "dropped";
         rows = null;
       }
       const live = forProfile();
@@ -329,6 +352,11 @@ export function useMusicQueue() {
     },
     [scope],
   );
+
+  const invalidateIdentity = useCallback(() => {
+    const read = current();
+    if (read) invalidate(read);
+  }, [current, invalidate]);
 
   const refresh = useCallback(
     (fresh = false): Promise<RefreshResult> => {
@@ -400,5 +428,5 @@ export function useMusicQueue() {
   );
 
   const view = scope && !scope.epoch?.aborted && result?.scope === scope ? result : undefined;
-  return { view, refresh, acceptRows, readMedia, isCurrent: current };
+  return { view, refresh, acceptRows, invalidateIdentity, readMedia, isCurrent: current };
 }

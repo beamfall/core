@@ -265,15 +265,18 @@ export async function fetchLibraryItems(
     signal,
   );
   const page = data.libraryItems;
+  if (!page || !Number.isSafeInteger(page.total) || !Array.isArray(page.items)) {
+    throw new Error("Library listing unavailable");
+  }
   return {
-    total: page?.total ?? 0,
-    items: page?.items ?? [],
+    total: page.total,
+    items: page.items,
     facets: {
-      groupings: page?.facets?.groupings ?? [],
-      decades: page?.facets?.decades ?? [],
-      qualities: page?.facets?.qualities ?? [],
+      groupings: page.facets?.groupings ?? [],
+      decades: page.facets?.decades ?? [],
+      qualities: page.facets?.qualities ?? [],
     },
-    letters: page?.letters ?? [],
+    letters: page.letters ?? [],
   };
 }
 
