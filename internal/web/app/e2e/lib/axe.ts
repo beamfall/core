@@ -69,3 +69,28 @@ export async function expectNoAxeViolations(page: Page): Promise<void> {
       .join("\n"),
   ).toEqual([]);
 }
+
+/**
+ * Runs only the named axe rules, whatever their impact, and returns their violations. For rules the
+ * default scan filters out (moderate impact, or WCAG 2.2 rules such as target-size).
+ */
+export async function runAxeRules(page: Page, rules: string[]): Promise<AxeViolation[]> {
+  await page.evaluate(axeSource);
+  return page.evaluate(async (ruleIDs) => {
+    const axe = (
+      window as unknown as {
+        axe: {
+          run: (
+            context: { exclude: string[][] },
+            options: { runOnly: { type: "rule"; values: string[] } },
+          ) => Promise<{ violations: AxeViolation[] }>;
+        };
+      }
+    ).axe;
+    const result = await axe.run(
+      { exclude: [["[data-base-ui-focus-guard]"]] },
+      { runOnly: { type: "rule", values: ruleIDs } },
+    );
+    return result.violations;
+  }, rules);
+}
