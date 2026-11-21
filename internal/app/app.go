@@ -4474,8 +4474,14 @@ func (o libraryMutationObserver) LibraryRootsChanged(ctx context.Context, librar
 	if o.watcher == nil {
 		return
 	}
-	for _, root := range roots {
-		_ = o.watcher.Observe(libraryID, root)
+	// The saved folder set is read inside SyncRoots, so overlapping edits end
+	// on the newest one and a removed folder stops being watched (CORE-1280).
+	load := func() ([]string, error) { return roots, nil }
+	if o.store != nil {
+		load = func() ([]string, error) { return o.store.LibraryRoots(ctx, libraryID) }
+	}
+	if err := o.watcher.SyncRoots(libraryID, load); err != nil {
+		o.logger.Warn("watcher sync after library folder change failed", "library", string(libraryID), "error", err)
 	}
 }
 
