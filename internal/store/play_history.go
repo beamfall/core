@@ -27,6 +27,11 @@ const (
 	// must reach to be Finished: this fraction of the item, or within the tail.
 	playFinishedFraction = 0.8
 	playFinishedTail     = 30
+	// playReportGapCap is the most one gap between consecutive progress
+	// reports adds to watched time (CORE-1307). Clients report every 10 to
+	// 15 seconds while playing and stay silent while paused, so a longer gap
+	// is a pause or a stall and counts only this much.
+	playReportGapCap = time.Minute
 )
 
 // PlayHistoryQuery narrows the play history. Zero fields do not filter.
@@ -88,6 +93,9 @@ type derivedPlay struct {
 	// only unwatched ones say how far playback got.
 	firstPos int
 	lastPos  int
+	// playedMS sums the gaps between the run's consecutive reports, each
+	// capped at playReportGapCap.
+	playedMS int64
 }
 
 // counts reports whether the run lasted long enough to be a play.
@@ -111,11 +119,12 @@ func (p derivedPlay) reachedEnd() bool {
 	return float64(reached) >= playFinishedFraction*float64(p.duration) || p.duration-reached <= playFinishedTail
 }
 
-// watchedSeconds is the wall-clock span of the play, never longer than the
-// item itself. Position deltas are not used: a finished play reports position
-// zero, and a seek would count as watching.
+// watchedSeconds is the wall-clock time between the play's reports, each gap
+// capped at playReportGapCap so a pause does not count, and never longer than
+// the item itself. Position deltas are not used: a finished play reports
+// position zero, and a seek would count as watching.
 func (p derivedPlay) watchedSeconds() int {
-	seconds := int((p.endMS - p.startMS) / 1000)
+	seconds := int(p.playedMS / 1000)
 	if p.duration > 0 && seconds > p.duration {
 		return p.duration
 	}
@@ -167,16 +176,19 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, sin
 			FROM raw
 		), run AS (
 			SELECT *, SUM(CASE WHEN prev_ms IS NULL OR at_ms - prev_ms > ? THEN 1 ELSE 0 END)
-			            OVER (PARTITION BY profile_id, media_id ORDER BY at_ms) AS run_no
+			            OVER (PARTITION BY profile_id, media_id ORDER BY at_ms) AS run_no,
+			       CASE WHEN prev_ms IS NULL OR at_ms - prev_ms > ? THEN 0
+			            ELSE MIN(at_ms - prev_ms, ?) END AS step_ms
 			FROM ev
 		)
 		SELECT profile_id, media_id, MIN(at_ms), MAX(at_ms), MAX(duration), MAX(watched),
 		       COALESCE(MIN(CASE WHEN watched = 0 THEN position END), 0),
-		       COALESCE(MAX(CASE WHEN watched = 0 THEN position END), 0)
+		       COALESCE(MAX(CASE WHEN watched = 0 THEN position END), 0),
+		       SUM(step_ms)
 		FROM run
 		GROUP BY profile_id, media_id, run_no
 		HAVING 1 = 1`
-	args = append(args, playGap.Milliseconds())
+	args = append(args, playGap.Milliseconds(), playGap.Milliseconds(), playReportGapCap.Milliseconds())
 	if !since.IsZero() {
 		query += ` AND MIN(at_ms) >= ?`
 		args = append(args, timeToMillis(since.UTC()))
@@ -195,7 +207,7 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, sin
 	for rows.Next() {
 		var p derivedPlay
 		var finished int
-		if err := rows.Scan(&p.profileID, &p.mediaID, &p.startMS, &p.endMS, &p.duration, &finished, &p.firstPos, &p.lastPos); err != nil {
+		if err := rows.Scan(&p.profileID, &p.mediaID, &p.startMS, &p.endMS, &p.duration, &finished, &p.firstPos, &p.lastPos, &p.playedMS); err != nil {
 			return err
 		}
 		if !p.counts() {
