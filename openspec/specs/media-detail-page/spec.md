@@ -53,9 +53,10 @@ SHALL read "Play" and no progress bar or Start over is shown.
 
 ### Requirement: Known progress offers Start over
 
-When the primary action reads "Resume", the page SHALL show a progress bar exposed as a
-progressbar with the percentage watched, and a secondary "Start over" action SHALL open the player
-from the beginning (`?t=0`).
+When the primary action reads "Resume", the Resume button SHALL carry a progress bar along its
+bottom edge, exposed as a progressbar with the percentage watched, and a secondary "Start over"
+action SHALL open the player from the beginning (`?t=0`). The page SHALL NOT draw the progress as a
+row of its own.
 
 #### Scenario: Known progress
 
@@ -82,13 +83,19 @@ error with a retry control.
 
 ### Requirement: Back navigation
 
-The page SHALL offer a labelled back control. It SHALL return to the previous page when the viewer
-arrived from one within the app, and to Home otherwise.
+The page SHALL offer a labelled back control at the top-left of the stage, inside it, so that the
+sticky top bar never covers it. It SHALL return to the previous page when the viewer arrived from
+one within the app, and to Home otherwise.
 
 #### Scenario: Back to the shelf
 
 - **WHEN** a viewer opened the page from Home and activates Back
 - **THEN** Home is shown again
+
+#### Scenario: Back inside the stage
+
+- **WHEN** the page renders an item
+- **THEN** the back control is a descendant of the stage, before the lockup
 
 ### Requirement: Poster cards open the page; rows and explicit Play buttons play
 
@@ -119,15 +126,32 @@ NOT show the shelf when no such section is cached or when the item is its only m
 
 ### Requirement: Facts row
 
-Under the title the page SHALL show a row of facts: the year, the runtime when the opening card
-carried a duration of at least a minute, the content rating, the community score, and the titles of
-up to three distinct credits whose kind has the category archetype. Unknown facts SHALL be omitted.
+Under the title the page SHALL show one meta line: the item's date or year, the runtime when it is
+at least a minute, the content rating and the community score, in that order. The date, runtime and
+score SHALL be text separated by dots; the content rating SHALL be a bordered badge, set apart by
+space rather than a dot. The stream badges follow. Unknown facts SHALL be omitted.
 
 #### Scenario: Facts from server and card
 
 - **WHEN** the item has year 2001, a rating "PG-13", one category credit "Drama" and the card
   carried a duration of 5400 seconds
-- **THEN** the facts row reads "2001", "1 h 30 min", "PG-13", "Drama" in that order
+- **THEN** the meta line reads "2001", "1 h 30 min", "PG-13" in that order and the category line
+  reads "Drama"
+
+### Requirement: Category line
+
+Under the meta line the page SHALL show the item's category-archetype credits as plain text links:
+grouped by kind in credit order, the first two kinds, at most two distinct credits of each, with
+the kinds separated by a dot and no count of the remaining credits. Credits of one kind are
+distinct by title. Each category
+credit with an entity id SHALL be a keyboard-focusable link to that Entity's page whose accessible
+name is the credit's title.
+
+#### Scenario: Category links without overflow chips
+
+- **WHEN** the item has two credits of one category kind and three of another
+- **THEN** the category line shows both credits of the first kind and the first two of the second,
+  shows no "+1", and each credit links to `/entity/<its entity id>`
 
 ### Requirement: Content rating and community score in the facts row
 
@@ -183,20 +207,44 @@ its detail page; otherwise it SHALL offer none.
 The header SHALL be one surface with no card nested inside it. When the item has a backdrop slot it
 SHALL be drawn behind the header under a gradient scrim of the root background and SHALL fade in by
 opacity only, with no transition under reduce-motion. The page SHALL draw no blur or ambient effect
-of its own. A long overview SHALL be clamped with a More control that expands it. At phone width the
-header SHALL be one column with the primary action full width.
+of its own. At phone width the header SHALL be one column with the primary action full width, and
+a poster (not a wide still) SHALL sit small beside the heading.
+
+#### Scenario: Backdrop under reduce-motion
+
+- **WHEN** the item has a backdrop slot and the viewer prefers reduced motion
+- **THEN** the backdrop is drawn behind the header under the scrim with no fade transition, and no
+  card is nested inside the header
+
+### Requirement: Copy column order
+
+The poster's top SHALL align with the top of the copy column. The copy column SHALL read in this
+order: parents and position, title, meta line, categories, overview, crew, actions. A long overview
+SHALL be clamped with a More control that expands it.
 
 #### Scenario: Long overview
 
 - **WHEN** the overview is longer than the clamp threshold
 - **THEN** it is clamped and a More control expands it and then reads Less
 
+#### Scenario: Overview before actions
+
+- **WHEN** the item has an overview
+- **THEN** the overview comes before the Play button in document order
+
 ### Requirement: The detail page carries the item's actions
 
 The web Media detail page SHALL show the calling Profile's watched, watchlist and rating controls for
 the Media item, acting on the `{mediaID}` target through the item-state API, and a More menu that
-offers Add to playlist and Copy link. Play or Resume SHALL stay the only accent-filled action. Each
-change SHALL show at once and SHALL come back from the server after a reload.
+offers Add to playlist and Copy link. Each change SHALL show at once and SHALL come back from the
+server after a reload.
+
+#### Scenario: Actions grouped with one accent
+
+- **WHEN** a viewer opens the detail page of a playable item
+- **THEN** the playback actions (Play or Resume, Start over, Next, Watch together, Play on and the
+  More menu) sit on one row, the track pickers follow, then the Profile's own controls drawn
+  quieter, and Play or Resume is the only accent-filled action
 
 #### Scenario: Mark watched and rate
 
@@ -284,15 +332,22 @@ in a wide frame when present, and the poster otherwise.
 
 ### Requirement: Air date and stream badges
 
-The facts row SHALL show the item's first date field as a date, the first Version's server
-resolution label as a resolution badge, an HDR badge when the first Version reports HDR, and the
-default audio track's codec and channel layout, each only when known.
+The meta line SHALL show the item's first date field as a date and, after the text facts, the shown
+Version's server resolution label as a resolution badge, an HDR badge when that Version reports
+HDR, and its default audio track's codec and channel layout, each only when known. Each badge SHALL
+appear once on the page.
 
 #### Scenario: A UHD HDR item
 
-- **WHEN** the item's first Version reports resolution `4K` and HDR10 and its default audio track is
+- **WHEN** the item's only Version reports resolution `4K` and HDR10 and its default audio track is
   E-AC-3 with 6 channels
-- **THEN** the facts row shows "4K", "HDR10" and "Dolby Digital Plus 5.1"
+- **THEN** the meta line shows "4K", "HDR10" and "Dolby Digital Plus 5.1", and no other "4K" or
+  "HDR10" badge is on the page
+
+#### Scenario: A Version pick changes the badges
+
+- **WHEN** an item has a 4K Version and a 1080p Version and the viewer picks the 1080p Version
+- **THEN** the meta line shows "1080p" and no "4K"
 
 ### Requirement: More in the nearest container
 
@@ -356,3 +411,32 @@ open the player through the card's play path with the card's queue.
 
 - **WHEN** a card is drawn as a list or table row, or its item is locked
 - **THEN** it shows no extra Play button
+
+### Requirement: Change poster control
+
+For a viewer who may edit metadata (a manager device on an adult Profile), the page SHALL offer a
+labelled "Change poster" control over the poster. It SHALL be reachable by keyboard, shown on focus
+and on hover, and stay visible where the device cannot hover. Other viewers SHALL NOT see it, nor
+SHALL it show when the frame holds a wide still instead of a poster.
+
+#### Scenario: Viewer without edit rights
+
+- **WHEN** a child Profile or a non-manager device opens the page
+- **THEN** no Change poster control is rendered
+
+### Requirement: Poster picker dialog
+
+The Change poster control SHALL open a dialog listing the item's poster candidates from the
+existing artwork candidates query, with the applied one marked. Choosing a candidate SHALL pin it
+through the existing pin mutation and reload the item, and focus SHALL return to the control when
+the dialog closes.
+
+#### Scenario: Admin picks a new poster
+
+- **WHEN** a manager on an adult Profile opens Change poster and chooses a candidate
+- **THEN** the candidate is pinned to the poster slot, the dialog closes and the item is reloaded
+
+#### Scenario: No candidates
+
+- **WHEN** the candidates query returns none
+- **THEN** the dialog says no candidates are available

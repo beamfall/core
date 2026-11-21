@@ -4,4 +4,4 @@
 - [x] 1.2 Localize setup copy in every shipped locale and update the catalog baselines.
 - [x] 1.3 Verify mapping, minimum length, TV remote warning and numeric PIN entry with focused Vitest tests.
 - [x] 1.4 Run web typecheck, web check and strict OpenSpec validation.
-- [ ] 1.5 Archive the OpenSpec change after landing.
+- [x] 1.5 Archive the OpenSpec change after landing.

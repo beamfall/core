@@ -3,4 +3,4 @@
 - [x] Loading, empty and error states announced; focus returns to the button on close
 - [x] Vitest, tsc, `npm run check`; strings re-hashed
 - [x] Browser check by mouse, keyboard and touch width
-- [ ] `openspec archive core-2933-poster-picker` after landing (after core-2930)
+- [x] `openspec archive core-2933-poster-picker` after landing (after core-2930)

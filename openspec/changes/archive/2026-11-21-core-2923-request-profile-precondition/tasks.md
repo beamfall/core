@@ -15,4 +15,4 @@
 ## 3. Land
 
 - [x] 3.1 `openspec validate --all --strict`
-- [ ] 3.2 Gate on the landing stack, then `openspec archive core-2923-request-profile-precondition`
+- [x] 3.2 Gate on the landing stack, then `openspec archive core-2923-request-profile-precondition`

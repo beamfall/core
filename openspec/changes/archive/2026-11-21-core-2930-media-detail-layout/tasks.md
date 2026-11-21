@@ -5,4 +5,4 @@
 - [x] Web: Play on matches the other quiet playback buttons
 - [x] Vitest, tsc, `npm run check`; strings re-hashed if keys change
 - [x] Browser check at 1440 and 390 wide
-- [ ] `openspec archive core-2930-media-detail-layout` after landing
+- [x] `openspec archive core-2930-media-detail-layout` after landing

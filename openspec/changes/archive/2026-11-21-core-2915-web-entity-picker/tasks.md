@@ -7,4 +7,4 @@
       Collections, Tags and Console Playback cache; update their tests (Curation deferred to
       after CORE-2913)
 - [x] 4. biome, tsc, vitest for touched files, strings tests; screenshots from a dev server
-- [ ] 5. Codex review to no P1/P2; land via the core landing owner; archive after landing
+- [x] 5. Codex review to no P1/P2; land via the core landing owner; archive after landing
