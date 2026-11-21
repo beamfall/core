@@ -1361,6 +1361,44 @@ func TestRetentionPurgeReconcilesCandidatePreviewCache(t *testing.T) {
 	}
 }
 
+// TestRetentionPurgeRemovesPurgedMediaArtwork: the trash purge removes the
+// artwork directory of each purged Media and leaves every other Media's alone
+// (CORE-1281).
+func TestRetentionPurgeRemovesPurgedMediaArtwork(t *testing.T) {
+	dataDir := t.TempDir()
+	st, err := store.Open(context.Background(), dataDir, store.Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	ctx := context.Background()
+	art := artwork.NewService(st, nil, dataDir)
+	posters := map[store.MediaID]string{}
+	for _, id := range []store.MediaID{"media-alpha", "media-archive"} {
+		posters[id] = art.ArtworkPath(id, artwork.SlotPoster)
+		if err := os.MkdirAll(filepath.Dir(posters[id]), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(posters[id], []byte("jpeg"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local", "library-archive"}, Revealed: true}
+	if err := st.TrashMedia(ctx, "media-alpha", filter); err != nil {
+		t.Fatal(err)
+	}
+	storetest.BackdateTrashedMedia(t, dataDir, "media-alpha", time.Now().UTC().Add(-store.TrashRetention-time.Hour))
+
+	runRetentionPurge(ctx, st, art, discardLogger())
+
+	if _, err := os.Stat(filepath.Dir(posters["media-alpha"])); !os.IsNotExist(err) {
+		t.Fatalf("purged Media artwork still on disk (%v): %s", err, posters["media-alpha"])
+	}
+	if _, err := os.Stat(posters["media-archive"]); err != nil {
+		t.Fatalf("live Media artwork removed: %v", err)
+	}
+}
+
 // writeCandidatePreview seeds a cached candidate preview file at the layout the
 // candidate-preview cache uses (candidate-<id>/poster.jpg under the artwork dir)
 // and returns its path.

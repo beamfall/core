@@ -2717,16 +2717,20 @@ func runRetentionPurge(ctx context.Context, st *store.Store, art *artwork.Servic
 		logger.Info("retention rules trashed media", "media", trashed)
 	}
 	trashPurgeSkipped := false
-	if purged, skipped, err := st.SweepPurgeTrashedBefore(ctx, time.Now().UTC().Add(-store.TrashRetention)); trashDisabledConfirmationRequired(skipped, err) {
+	purged, skipped, err := st.SweepPurgeTrashedBefore(ctx, time.Now().UTC().Add(-store.TrashRetention))
+	// Purged Media take their generated artwork with them, a failure part-way
+	// included (CORE-1281).
+	removePurgedMediaArtwork(art, logger, purged)
+	if trashDisabledConfirmationRequired(skipped, err) {
 		trashPurgeSkipped = true
 		logger.Info("trash purge skipped: confirmation required", "reason", "trash disabled", "skips", st.TrashDisabledSweepSkips())
 	} else if err != nil {
-		logger.Warn("trash purge failed", "media", purged, "error", err)
+		logger.Warn("trash purge failed", "media", len(purged), "error", err)
 	} else if skipped {
 		trashPurgeSkipped = true
 		logger.Info("trash purge skipped")
-	} else if purged > 0 {
-		logger.Info("trash purged", "media", purged)
+	} else if len(purged) > 0 {
+		logger.Info("trash purged", "media", len(purged))
 	}
 	// Deleted Libraries share the trashed-Media window and rules (CORE-1201):
 	// records and generated artwork go, the owner's files never do.
@@ -4531,6 +4535,25 @@ func (o libraryMutationObserver) LibraryPurged(ctx context.Context, purge store.
 		}
 	}
 	removePurgedLibraryArtwork(o.artwork, o.logger, purge)
+}
+
+// MediaPurged removes the generated artwork of trashed Media an owner purged
+// (CORE-1281).
+func (o libraryMutationObserver) MediaPurged(_ context.Context, ids []store.MediaID) {
+	removePurgedMediaArtwork(o.artwork, o.logger, ids)
+}
+
+// removePurgedMediaArtwork deletes the server-generated artwork directory of
+// each purged Media. It never touches the Media's own files.
+func removePurgedMediaArtwork(art *artwork.Service, logger *slog.Logger, ids []store.MediaID) {
+	if art == nil {
+		return
+	}
+	for _, id := range ids {
+		if err := art.PurgeMediaArtwork(id); err != nil {
+			logger.Warn("purged media artwork removal failed", "media", string(id), "error", err)
+		}
+	}
 }
 
 // removePurgedLibraryArtwork deletes the server-generated artwork of a purged

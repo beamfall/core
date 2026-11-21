@@ -365,6 +365,9 @@ type LibraryMutationObserver interface {
 	// LibraryPurged follows a permanent removal, so state kept outside the
 	// catalog for the removed Media and entities can go too.
 	LibraryPurged(context.Context, store.LibraryPurge)
+	// MediaPurged follows a purge of trashed Media, so state kept outside the
+	// catalog for them can go too (CORE-1281).
+	MediaPurged(context.Context, []store.MediaID)
 }
 
 type ScheduleUpdater interface {
@@ -4121,11 +4124,14 @@ func (h *Handler) purgeTrash(ctx context.Context, scope auth.Scope, req request)
 	if err != nil {
 		return BulkOpResult{}, clientError("before must be an RFC3339 date-time")
 	}
-	purged, err := h.store.PurgeTrashedBefore(ctx, before.UTC())
+	purged, err := h.store.PurgeTrashedMediaBefore(ctx, before.UTC())
+	if len(purged) > 0 && h.libraryObserver != nil {
+		h.libraryObserver.MediaPurged(ctx, purged)
+	}
 	if err != nil {
 		return BulkOpResult{}, err
 	}
-	return BulkOpResult{Affected: purged}, nil
+	return BulkOpResult{Affected: len(purged)}, nil
 }
 
 func (h *Handler) trashList(ctx context.Context, scope auth.Scope) ([]TrashEntry, error) {
