@@ -121,4 +121,6 @@ package store
 // search/fts/revealed at 39.970167 ms against 60 ms; performance-scale passed.
 // CORE-2675 adds 0126_integration_auth_attempt so integration Session
 // issuance and throttle settlement share a transaction, off the entity-query hot path.
-const schemaFreezeCatalogMigrations = 122
+// CORE-2725 adds 0127_compat_integration_key, read by digest on compatibility
+// requests and listed in the Console only, off the entity-query hot path.
+const schemaFreezeCatalogMigrations = 123

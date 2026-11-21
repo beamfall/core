@@ -1,10 +1,17 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
-import { fetchJellyfinCompat, setJellyfinCompat, setProfileIntegrationSignIn } from "@/lib/graphql";
-import type { JellyfinCompatInfo } from "@/lib/graphql/types";
+import {
+  createJellyfinCompatKey,
+  fetchJellyfinCompat,
+  fetchJellyfinCompatKeys,
+  revokeJellyfinCompatKey,
+  setJellyfinCompat,
+  setProfileIntegrationSignIn,
+} from "@/lib/graphql";
+import type { JellyfinCompatInfo, JellyfinCompatKeyInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { JellyfinCompat } from "./JellyfinCompat";
 
@@ -12,6 +19,9 @@ vi.mock("@/lib/graphql", () => ({
   fetchJellyfinCompat: vi.fn(),
   setJellyfinCompat: vi.fn(),
   setProfileIntegrationSignIn: vi.fn(),
+  fetchJellyfinCompatKeys: vi.fn(),
+  createJellyfinCompatKey: vi.fn(),
+  revokeJellyfinCompatKey: vi.fn(),
 }));
 
 const settings: JellyfinCompatInfo = {
@@ -25,8 +35,26 @@ const settings: JellyfinCompatInfo = {
   profiles: [{ id: "p-alex", name: "Alex", integrationSignIn: false }],
 };
 
+const seerrKey: JellyfinCompatKeyInfo = {
+  id: "key-1",
+  profileID: "p-alex",
+  profileName: "Alex",
+  name: "Seerr",
+  scopes: ["compat.read", "compat.refresh"],
+  createdAt: "2026-11-20T10:00:00Z",
+  lastUsedAt: "2026-11-20T11:30:00Z",
+};
+
+const optedIn: JellyfinCompatInfo = {
+  ...settings,
+  profiles: [{ id: "p-alex", name: "Alex", integrationSignIn: true }],
+};
+
 beforeEach(() => {
   vi.mocked(fetchJellyfinCompat).mockReset().mockResolvedValue(settings);
+  vi.mocked(fetchJellyfinCompatKeys).mockReset().mockResolvedValue([]);
+  vi.mocked(createJellyfinCompatKey).mockReset();
+  vi.mocked(revokeJellyfinCompatKey).mockReset();
   vi.mocked(setJellyfinCompat).mockReset();
   vi.mocked(setProfileIntegrationSignIn).mockReset();
 });
@@ -176,5 +204,133 @@ describe("JellyfinCompat", () => {
     expect(setProfileIntegrationSignIn).toHaveBeenCalledWith("p-alex", true);
     expect(setJellyfinCompat).not.toHaveBeenCalled();
     await waitFor(() => expect(alex).toBeChecked());
+  });
+
+  it("offers no key form until a profile is turned on", async () => {
+    renderPage();
+
+    expect(
+      await screen.findByText("Turn on a profile above before you create a key."),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create key" })).toBeNull();
+    expect(await screen.findByText("No integration keys yet.")).toBeVisible();
+  });
+
+  it("mints a key for an opted-in profile and shows its token once", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchJellyfinCompat).mockResolvedValue(optedIn);
+    vi.mocked(createJellyfinCompatKey).mockResolvedValueOnce({
+      token: `bfj_${"a".repeat(64)}`,
+      key: { ...seerrKey, lastUsedAt: undefined },
+    });
+    renderPage();
+
+    const create = await screen.findByRole("button", { name: "Create key" });
+    expect(create).toBeDisabled();
+    expect(screen.getByLabelText("Profile")).toHaveValue("p-alex");
+    vi.mocked(fetchJellyfinCompatKeys).mockResolvedValue([{ ...seerrKey, lastUsedAt: undefined }]);
+    await user.type(screen.getByLabelText("Key name"), " Seerr ");
+    await user.click(create);
+
+    expect(createJellyfinCompatKey).toHaveBeenCalledWith("p-alex", "Seerr");
+    expect(await screen.findByText(`bfj_${"a".repeat(64)}`)).toBeVisible();
+    expect(screen.getByText(/never be shown again/)).toBeVisible();
+    const row = (await screen.findByRole("cell", { name: "Seerr" })).closest("tr");
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByText("Never")).toBeVisible();
+    expect(screen.getByLabelText("Key name")).toHaveValue("");
+  });
+
+  it("mints one key however often the form is submitted while the mint is in flight", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchJellyfinCompat).mockResolvedValue(optedIn);
+    let finish: (value: Awaited<ReturnType<typeof createJellyfinCompatKey>>) => void = () => {};
+    vi.mocked(createJellyfinCompatKey).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderPage();
+
+    const input = await screen.findByLabelText("Key name");
+    await user.type(input, "Seerr");
+    // Two submits inside one act, before React commits the disabled button:
+    // only the in-flight ref can refuse the second.
+    const form = input.closest("form");
+    if (!form) throw new Error("key name input has no form");
+    act(() => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+    });
+    expect(createJellyfinCompatKey).toHaveBeenCalledTimes(1);
+    await user.type(input, "{Enter}");
+    expect(screen.getByRole("button", { name: "Create key" })).toBeDisabled();
+    finish({ token: `bfj_${"b".repeat(64)}`, key: { ...seerrKey, lastUsedAt: undefined } });
+    expect(await screen.findByText(`bfj_${"b".repeat(64)}`)).toBeVisible();
+    expect(createJellyfinCompatKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the server's refusal when a key cannot be minted", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchJellyfinCompat).mockResolvedValue(optedIn);
+    vi.mocked(createJellyfinCompatKey).mockRejectedValueOnce(
+      new ApiError("this profile already holds the most integration keys allowed", 200),
+    );
+    renderPage();
+
+    await user.type(await screen.findByLabelText("Key name"), "Radarr");
+    await user.click(screen.getByRole("button", { name: "Create key" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Couldn't create the key: this profile already holds the most integration keys allowed",
+    );
+    expect(screen.queryByText(/never be shown again/)).toBeNull();
+  });
+
+  it("lists keys with last use and revokes one behind a confirm", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchJellyfinCompat).mockResolvedValue(optedIn);
+    vi.mocked(fetchJellyfinCompatKeys).mockResolvedValue([seerrKey]);
+    vi.mocked(revokeJellyfinCompatKey).mockResolvedValueOnce({
+      ...seerrKey,
+      revokedAt: "2026-11-20T12:00:00Z",
+    });
+    renderPage();
+
+    expect(await screen.findByText("2026-11-20T11:30:00Z")).toBeVisible();
+    vi.mocked(fetchJellyfinCompatKeys).mockResolvedValue([
+      { ...seerrKey, revokedAt: "2026-11-20T12:00:00Z" },
+    ]);
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("The tool using it stops working at once.");
+    await user.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    expect(revokeJellyfinCompatKey).toHaveBeenCalledWith("key-1");
+    expect(await screen.findByText("Revoked")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Revoke" })).toBeNull();
+  });
+
+  it("reloads the key list when a profile is turned off", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchJellyfinCompat).mockResolvedValue(optedIn);
+    vi.mocked(fetchJellyfinCompatKeys).mockResolvedValue([seerrKey]);
+    vi.mocked(setProfileIntegrationSignIn).mockResolvedValueOnce({
+      id: "p-alex",
+      name: "Alex",
+      integrationSignIn: false,
+    });
+    renderPage();
+
+    await screen.findByText("2026-11-20T11:30:00Z");
+    expect(fetchJellyfinCompatKeys).toHaveBeenCalledTimes(1);
+    vi.mocked(fetchJellyfinCompatKeys).mockResolvedValue([
+      { ...seerrKey, revokedAt: "2026-11-20T12:00:00Z" },
+    ]);
+    await user.click(screen.getByRole("switch", { name: "Alex" }));
+
+    expect(await screen.findByText("Revoked")).toBeVisible();
+    expect(fetchJellyfinCompatKeys).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Turn on a profile above before you create a key.")).toBeVisible();
   });
 });

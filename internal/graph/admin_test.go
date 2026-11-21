@@ -207,6 +207,18 @@ func TestScopedAPIKeyLifecycle(t *testing.T) {
 		t.Fatal("apiKeys list leaks the full key secret")
 	}
 
+	// A mint batched with another field is refused before anything is
+	// minted: a later field's failure would discard the one-time secret.
+	_, errs = post(t, handler,
+		`{"query":"mutation C($name:String!,$scopes:[String!]!){ createApiKey(name:$name,scopes:$scopes){ key } revokeApiKey(id:\"missing\") }","variables":{"name":"Lost","scopes":["read-sessions"]}}`,
+		authorizeManager)
+	if len(errs) == 0 || !strings.Contains(errs[0].Message, "must be the only field") {
+		t.Fatalf("batched createApiKey errors = %#v, want refusal", errs)
+	}
+	if listed, _ := post(t, handler, `{"query":"query { apiKeys { id } }"}`, authorizeManager); strings.Count(string(listed["apiKeys"]), `"id"`) != 1 {
+		t.Fatalf("batched createApiKey minted a key: %s", listed["apiKeys"])
+	}
+
 	// An unknown scope is rejected (closed vocabulary, ADR-0040).
 	_, errs = post(t, handler,
 		`{"query":"mutation C($name:String!,$scopes:[String!]!){ createApiKey(name:$name,scopes:$scopes){ info { id } } }","variables":{"name":"Bad","scopes":["read-everything"]}}`,

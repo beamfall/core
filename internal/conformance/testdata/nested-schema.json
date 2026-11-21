@@ -4615,6 +4615,60 @@
     ]
   },
   {
+    "field": "createjellyfincompatkey",
+    "kind": "object",
+    "children": [
+      {
+        "name": "key",
+        "kind": "object",
+        "children": [
+          {
+            "name": "createdAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "lastUsedAt",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "name",
+            "kind": "scalar"
+          },
+          {
+            "name": "profileID",
+            "kind": "scalar"
+          },
+          {
+            "name": "profileName",
+            "kind": "scalar"
+          },
+          {
+            "name": "revokedAt",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "scopes",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          }
+        ]
+      },
+      {
+        "name": "token",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "createlibrary",
     "kind": "object",
     "children": [
@@ -9169,6 +9223,93 @@
       },
       {
         "name": "trustedProxyCIDRs",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      }
+    ]
+  },
+  {
+    "field": "jellyfincompatkeys",
+    "kind": "list",
+    "elem": {
+      "kind": "object",
+      "children": [
+        {
+          "name": "createdAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastUsedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "profileID",
+          "kind": "scalar"
+        },
+        {
+          "name": "profileName",
+          "kind": "scalar"
+        },
+        {
+          "name": "revokedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "scopes",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        }
+      ]
+    },
+    "children": [
+      {
+        "name": "createdAt",
+        "kind": "scalar"
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastUsedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "name",
+        "kind": "scalar"
+      },
+      {
+        "name": "profileID",
+        "kind": "scalar"
+      },
+      {
+        "name": "profileName",
+        "kind": "scalar"
+      },
+      {
+        "name": "revokedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "scopes",
         "kind": "list",
         "nullable": true,
         "elem": {
@@ -20788,6 +20929,50 @@
       {
         "name": "transcodesAborted",
         "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "revokejellyfincompatkey",
+    "kind": "object",
+    "children": [
+      {
+        "name": "createdAt",
+        "kind": "scalar"
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "lastUsedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "name",
+        "kind": "scalar"
+      },
+      {
+        "name": "profileID",
+        "kind": "scalar"
+      },
+      {
+        "name": "profileName",
+        "kind": "scalar"
+      },
+      {
+        "name": "revokedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "scopes",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
       }
     ]
   },

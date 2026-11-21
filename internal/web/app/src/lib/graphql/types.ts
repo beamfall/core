@@ -1912,6 +1912,24 @@ export interface JellyfinCompatUpdate {
   libraryIDs?: string[];
 }
 
+/** A compatibility integration key (graph.JellyfinCompatKeyInfo, CORE-2725). No secret. */
+export interface JellyfinCompatKeyInfo {
+  id: string;
+  profileID: string;
+  profileName: string;
+  name: string;
+  scopes: string[];
+  createdAt: string;
+  lastUsedAt?: string;
+  revokedAt?: string;
+}
+
+/** createJellyfinCompatKey's result: the token is returned once, here only. */
+export interface CreatedJellyfinCompatKeyInfo {
+  token: string;
+  key: JellyfinCompatKeyInfo;
+}
+
 // --- Admin session --------------------------------------------------------
 
 /** Admin Session state (graph.AdminSessionInfo, narrowed). */

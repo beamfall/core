@@ -1,22 +1,41 @@
-import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   ControlRow,
+  DataTable,
   EmptyState,
   ErrorLine,
   ErrorState,
   Fieldset,
   ManageField,
+  StatusChip,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { TableCell, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { fetchJellyfinCompat, setJellyfinCompat, setProfileIntegrationSignIn } from "@/lib/graphql";
-import type { JellyfinCompatInfo, JellyfinCompatUpdate } from "@/lib/graphql/types";
+import {
+  createJellyfinCompatKey,
+  fetchJellyfinCompat,
+  fetchJellyfinCompatKeys,
+  revokeJellyfinCompatKey,
+  setJellyfinCompat,
+  setProfileIntegrationSignIn,
+} from "@/lib/graphql";
+import type {
+  JellyfinCompatInfo,
+  JellyfinCompatProfileInfo,
+  JellyfinCompatUpdate,
+} from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
+import { SecretBanner } from "./ApiCredentials";
 
 // The Jellyfin-compatible API settings (ADR-0171, CORE-2683): the API that
 // automation tools (Seerr, Radarr, Sonarr) read. It is not a playback surface.
@@ -39,6 +58,154 @@ function errorReason(err: unknown): string {
   return err instanceof Error ? err.message : "";
 }
 
+const SELECT_CLASS =
+  "h-10 rounded-[var(--radius-control)] border border-input bg-transparent px-3 text-sm";
+
+// Integration keys (ADR-0171 §2.4, CORE-2725): durable, revocable credentials a
+// tool such as Seerr holds instead of a Profile PIN. Each is bound to an
+// opted-in Profile and can only read and refresh; the token shows once.
+function IntegrationKeys({
+  profiles,
+  revision,
+}: {
+  profiles: JellyfinCompatProfileInfo[];
+  revision: number;
+}) {
+  const t = useT();
+  const { data, loading, failed, refresh } = useAsync(fetchJellyfinCompatKeys);
+  const [name, setName] = useState("");
+  const [profileID, setProfileID] = useState("");
+  const [secret, setSecret] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  // A ref, not only state: a second Enter can land before the re-render that
+  // disables the button, and each submit mints a key whose token shows once.
+  const creatingRef = useRef(false);
+  const [creating, setCreating] = useState(false);
+  const eligible = profiles.filter((p) => p.integrationSignIn);
+  const selected = eligible.find((p) => p.id === profileID)?.id ?? eligible[0]?.id ?? "";
+
+  // Turning a Profile off revokes its keys server-side; show that.
+  useEffect(() => {
+    if (revision > 0) void refresh();
+  }, [revision, refresh]);
+
+  async function onCreate(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !selected || creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
+    setError("");
+    setSecret(null);
+    try {
+      const created = await createJellyfinCompatKey(selected, name.trim());
+      setSecret(created.token);
+      setName("");
+    } catch (err) {
+      setError(t("jellyfinCompatKeyCreateFailed", { reason: errorReason(err) }));
+      return;
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
+    }
+    await refresh();
+  }
+
+  async function revoke(id: string) {
+    setError("");
+    try {
+      await revokeJellyfinCompatKey(id);
+    } catch (err) {
+      setError(t("jellyfinCompatKeyRevokeFailed", { reason: errorReason(err) }));
+      throw err;
+    }
+    await refresh();
+  }
+
+  return (
+    <Fieldset
+      title="jellyfinCompatKeysHeading"
+      help="jellyfinCompatKeysHelp"
+      setting="console.jellyfinCompat.keys"
+    >
+      {eligible.length === 0 ? (
+        <EmptyState message="jellyfinCompatKeysNoProfiles" />
+      ) : (
+        <form onSubmit={onCreate} className="flex flex-wrap items-end gap-2">
+          <div className="min-w-48 flex-1 space-y-1.5">
+            <Label htmlFor="jellyfin-compat-key-name">{t("jellyfinCompatKeyName")}</Label>
+            <Input
+              id="jellyfin-compat-key-name"
+              value={name}
+              maxLength={128}
+              autoComplete="off"
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="jellyfin-compat-key-profile">{t("jellyfinCompatKeyProfile")}</Label>
+            <select
+              id="jellyfin-compat-key-profile"
+              className={`${SELECT_CLASS} block`}
+              value={selected}
+              onChange={(e) => setProfileID(e.target.value)}
+            >
+              {eligible.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button type="submit" disabled={!name.trim() || creating}>
+            <Plus className="console-nav-icon" aria-hidden />
+            {t("jellyfinCompatKeyCreate")}
+          </Button>
+        </form>
+      )}
+      {secret && <SecretBanner secret={secret} />}
+      <ErrorLine message={error} />
+      {loading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : failed || !data ? (
+        <ErrorState message="jellyfinCompatKeysUnavailable" />
+      ) : data.length === 0 ? (
+        <EmptyState message="jellyfinCompatKeysEmpty" />
+      ) : (
+        <DataTable
+          columns={[
+            { key: "name", label: t("jellyfinCompatKeyName") },
+            { key: "profile", label: t("jellyfinCompatKeyProfile") },
+            { key: "created", label: t("created") },
+            { key: "used", label: t("lastUsed") },
+            { key: "action", label: "" },
+          ]}
+        >
+          {data.map((key) => (
+            <TableRow key={key.id}>
+              <TableCell className="font-medium">{key.name}</TableCell>
+              <TableCell>{key.profileName || key.profileID}</TableCell>
+              <TableCell className="console-mono">{key.createdAt}</TableCell>
+              <TableCell className="console-mono">{key.lastUsedAt ?? t("never")}</TableCell>
+              <TableCell className="text-right">
+                {key.revokedAt ? (
+                  <StatusChip tone="red">{t("revoked")}</StatusChip>
+                ) : (
+                  <ConfirmButton
+                    size="sm"
+                    label={t("revoke")}
+                    confirm="jellyfinCompatKeyConfirmRevoke"
+                    onConfirm={() => revoke(key.id)}
+                  />
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </DataTable>
+      )}
+    </Fieldset>
+  );
+}
+
 export function JellyfinCompat() {
   const t = useT();
   const { data, loading, failed, setData } = useAsync(fetchJellyfinCompat);
@@ -50,6 +217,8 @@ export function JellyfinCompat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  // Bumped when a Profile is turned off, so the key list shows its keys revoked.
+  const [keyRevision, setKeyRevision] = useState(0);
 
   // Fill the network fields once, from the first load; later updates (a switch,
   // a library tick) must not overwrite networks the operator is still editing.
@@ -107,6 +276,7 @@ export function JellyfinCompat() {
         ...data,
         profiles: data.profiles.map((p) => (p.id === profile.id ? profile : p)),
       });
+      if (!enabled) setKeyRevision((r) => r + 1);
     } catch (err) {
       setError(t("jellyfinCompatSaveFailed", { reason: errorReason(err) }));
     } finally {
@@ -240,6 +410,8 @@ export function JellyfinCompat() {
           </Fieldset>
 
           <ErrorLine message={error} />
+
+          <IntegrationKeys profiles={data.profiles} revision={keyRevision} />
         </div>
       )}
     </Section>

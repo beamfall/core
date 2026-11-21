@@ -275,6 +275,11 @@
     "tier": "session"
   },
   {
+    "field": "createjellyfincompatkey",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "createlibrary",
     "effect": "write",
     "tier": "admin"
@@ -541,6 +546,11 @@
   },
   {
     "field": "jellyfincompat",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "jellyfincompatkeys",
     "effect": "read",
     "tier": "admin"
   },
@@ -1101,6 +1111,11 @@
   },
   {
     "field": "revokedevice",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "revokejellyfincompatkey",
     "effect": "write",
     "tier": "admin"
   },

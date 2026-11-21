@@ -5,6 +5,8 @@ import {
   collapseJobLog,
   formatJobEventTime,
   jobRunSeconds,
+  redactJobEventPayload,
+  redactJobLogPayload,
   unresolvedFailedJobs,
 } from "./jobQueue";
 
@@ -199,5 +201,59 @@ describe("formatJobEventTime (CORE-2352)", () => {
 
   it("is empty for a value that is not a date", () => {
     expect(formatJobEventTime("not a date", now, "en-US", "UTC")).toBe("");
+  });
+});
+
+describe("redactJobLogPayload (CORE-2725)", () => {
+  it("blanks developer keys and Jellyfin compat integration keys", () => {
+    const out = redactJobLogPayload("dev bfk_abc_123 compat bfj_" + "0".repeat(64) + " done");
+    expect(out).not.toContain("bfk_abc_123");
+    expect(out).not.toContain("bfj_");
+    expect(out).toContain("done");
+  });
+
+  it("blanks a token whose ampersand is JSON-escaped", () => {
+    const out = redactJobLogPayload('{"u":"/x?a=1\\u0026token=hidden-secret"}');
+    expect(out).not.toContain("hidden-secret");
+  });
+});
+
+describe("redactJobEventPayload (CORE-2725)", () => {
+  it("redacts a token that JSON escaping hides until decoding", () => {
+    const out = redactJobEventPayload('{"message":"GET /x?a=1\\u0026token=hidden-secret"}');
+    expect(out).not.toContain("hidden-secret");
+    expect(JSON.parse(out).message).toContain("[REDACTED]");
+  });
+
+  it("keeps the payload parseable when a message ends in a credential", () => {
+    const out = redactJobEventPayload('{"type":"progress","message":"auth Bearer abc123"}');
+    expect(out).not.toContain("abc123");
+    expect(JSON.parse(out)).toEqual({ type: "progress", message: "auth [REDACTED]" });
+  });
+
+  it("redacts nested strings and leaves other values alone", () => {
+    const out = JSON.parse(redactJobEventPayload('{"a":[{"k":"bfj_x1"}],"n":3,"b":true}'));
+    expect(out).toEqual({ a: [{ k: "[REDACTED]" }], n: 3, b: true });
+  });
+
+  it("redacts a credential hidden behind an escaped tab", () => {
+    expect(redactJobEventPayload('{"auth":"Bearer\\tplaceholder"}')).toBe('{"auth":"[REDACTED]"}');
+  });
+
+  it("keeps later fields, property names and number literals exactly", () => {
+    expect(
+      redactJobEventPayload('{"auth":"Bearer placeholder","bfj_k1":1,"recordID":9007199254740993}'),
+    ).toBe('{"auth":"[REDACTED]","[REDACTED]":1,"recordID":9007199254740993}');
+  });
+
+  it("finds string boundaries past escaped quotes and trailing backslashes", () => {
+    const payload = '{ "a": "say \\"hi\\"", "b": "dir\\\\" , "c": "Bearer next-field-secret" }';
+    expect(redactJobEventPayload(payload)).toBe(
+      '{ "a": "say \\"hi\\"", "b": "dir\\\\" , "c": "[REDACTED]" }',
+    );
+  });
+
+  it("redacts a payload that is not JSON as text", () => {
+    expect(redactJobEventPayload("worker=w2 bfk_abc")).toBe("worker=w2 [REDACTED]");
   });
 });

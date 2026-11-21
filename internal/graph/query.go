@@ -74,7 +74,22 @@ func prepareOperation(req request) (operationPlan, error) {
 			plan.occurrences = append(plan.occurrences, normalized)
 		}
 	}
+	if len(plan.occurrences) > 1 {
+		for _, occurrence := range plan.occurrences {
+			if oneTimeSecretFields[occurrence.canonical] {
+				return operationPlan{}, clientError(fmt.Sprintf("%s must be the only field in its mutation", fieldHandlerRegistry[occurrence.canonical].wireName))
+			}
+		}
+	}
 	return plan, nil
+}
+
+// oneTimeSecretFields return a credential exactly once. A later mutation
+// field's failure discards every earlier field's data, so batching one of
+// these with anything else could mint a secret nobody ever receives.
+var oneTimeSecretFields = map[string]bool{
+	"createapikey":            true,
+	"createjellyfincompatkey": true,
 }
 
 func (p operationPlan) fields() map[string]bool {

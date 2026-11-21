@@ -177,10 +177,11 @@ export function formatJobEventTime(
 }
 
 const jobLogSecretPatterns = [
-  /bfk_[A-Za-z0-9_-]+/gi,
+  /bf[kj]_[A-Za-z0-9_-]+/gi,
   /Bearer\s+\S+/gi,
   /Basic\s+\S+/gi,
-  /[?&]token=[^&\s"']+/gi,
+  // A JSON-encoded payload can carry "&" escaped as \u0026.
+  /(?:[?&]|\\u0026)token=[^&\s"']+/gi,
   /\/api\/media\/[^\s"']+/gi,
   /\/api\/pack\/[^\s"']+/gi,
   /https?:\/\/[^\s"']+/gi,
@@ -192,4 +193,28 @@ export function redactJobLogPayload(payload: string): string {
     (next, pattern) => next.replace(pattern, "[REDACTED]"),
     payload,
   );
+}
+
+const jsonStringLiteral = /"(?:[^"\\]|\\.)*"/g;
+
+/**
+ * A job event payload with every JSON string literal, property names
+ * included, decoded, redacted as redactJobLogPayload does and re-encoded,
+ * and the text between literals kept verbatim. Decoding first catches a
+ * secret that JSON escaping hides (`\u0026token=`, `Bearer\t...`); redacting
+ * one literal at a time keeps a credential pattern from consuming delimiters
+ * or later fields, and numbers stay exactly as stored. The result is safe to
+ * format and to show as is. A payload that is not JSON is redacted as text.
+ */
+export function redactJobEventPayload(payload: string): string {
+  try {
+    JSON.parse(payload);
+  } catch {
+    return redactJobLogPayload(payload);
+  }
+  return payload.replace(jsonStringLiteral, (literal) => {
+    const value = JSON.parse(literal) as string;
+    const redacted = redactJobLogPayload(value);
+    return redacted === value ? literal : JSON.stringify(redacted);
+  });
 }

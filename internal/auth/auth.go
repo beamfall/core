@@ -118,8 +118,13 @@ type Scope struct {
 	// session) or admin-scoped (no Profile, manager-class). Like the admin
 	// token, a scoped key is never a standing Reveal — Revealed stays false,
 	// so restricted content never reaches a key that cannot Reveal it.
-	APIKeyID          string
-	APIScopes         []store.APIScope
+	APIKeyID  string
+	APIScopes []store.APIScope
+	// IntegrationKeyID is set when a compatibility request authenticated with
+	// a durable integration key (ADR-0171 §2.4) instead of an integration
+	// Session; SessionID is then empty and SessionKind is still integration,
+	// so every native surface that refuses integration bearers refuses it too.
+	IntegrationKeyID  string
 	SessionID         store.SessionID
 	SessionKind       store.SessionKind
 	IntegrationScopes []store.IntegrationScope
@@ -733,37 +738,45 @@ func (s *Service) auditIntegrationAttempt(ctx context.Context, profile store.Pro
 const integrationAuditTimeout = 5 * time.Second
 
 // IntegrationScope authenticates an integration bearer for one closed compat
-// scope. Enrolled sessions and integrations lacking the bit fail closed.
+// scope. The bearer is either an integration Session or a durable integration
+// key (bfj_…, ADR-0171 §2.4); both pass the same scope, Profile and opt-in
+// checks. Enrolled sessions and integrations lacking the bit fail closed.
 func (s *Service) IntegrationScope(ctx context.Context, token string, required store.IntegrationScope) (Scope, error) {
-	session, err := s.integrationSession(ctx, token)
-	if err != nil {
-		return Scope{}, err
-	}
-	hasScope := false
-	for _, scope := range session.IntegrationScopes {
-		if scope == required {
-			hasScope = true
+	var bearer Scope
+	if strings.HasPrefix(token, store.CompatKeyPrefix) {
+		key, err := s.store.CompatIntegrationKeyByToken(ctx, token, s.now())
+		if err != nil {
+			return Scope{}, err
+		}
+		bearer = Scope{IntegrationKeyID: key.ID, ProfileID: key.ProfileID, IntegrationScopes: key.Scopes}
+	} else {
+		session, err := s.integrationSession(ctx, token)
+		if err != nil {
+			return Scope{}, err
+		}
+		bearer = Scope{
+			SessionID: session.ID, ProfileID: session.ProfileID, IntegrationScopes: session.IntegrationScopes,
+			Revealed: session.Revealed, ExpiresAt: session.ExpiresAt,
 		}
 	}
-	if !hasScope {
+	if !slices.Contains(bearer.IntegrationScopes, required) {
 		return Scope{}, errors.New("integration scope denied")
 	}
-	profile, err := s.store.Profile(ctx, session.ProfileID)
+	profile, err := s.store.Profile(ctx, bearer.ProfileID)
 	if err != nil || profile.Disabled || profile.Kind != store.ProfileAdult {
 		return Scope{}, errors.New("integration profile unavailable")
 	}
-	// Opt-out revokes integration sessions, but the check is repeated per
-	// request so a bearer that raced the revoke still fails closed (CORE-2683).
-	// The bounded admin setup session is the one session issued before opt-in.
-	if !profile.IntegrationSignIn && !slices.Contains(session.IntegrationScopes, store.IntegrationScopeSetup) {
+	// Opt-out revokes integration sessions and keys, but the check is repeated
+	// per request so a bearer that raced the revoke still fails closed
+	// (CORE-2683). The bounded admin setup session is the one bearer issued
+	// before opt-in; a key never holds the setup scope.
+	if !profile.IntegrationSignIn && !slices.Contains(bearer.IntegrationScopes, store.IntegrationScopeSetup) {
 		return Scope{}, errors.New("integration profile unavailable")
 	}
-	return Scope{
-		SessionID: session.ID, SessionKind: session.Kind, IntegrationScopes: session.IntegrationScopes,
-		ProfileID: profile.ID, Profile: profile.Kind, Revealed: session.Revealed,
-		ExpiresAt: session.ExpiresAt, LibraryIDs: profile.Library,
-		Certification: s.certificationConstraints(profile.CertificationCeilings),
-	}, nil
+	bearer.SessionKind = store.SessionKindIntegration
+	bearer.ProfileID, bearer.Profile, bearer.LibraryIDs = profile.ID, profile.Kind, profile.Library
+	bearer.Certification = s.certificationConstraints(profile.CertificationCeilings)
+	return bearer, nil
 }
 
 func (s *Service) integrationSession(ctx context.Context, token string) (store.Session, error) {

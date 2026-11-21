@@ -14,13 +14,13 @@ import (
 const Marker = "[REDACTED]"
 
 // secretPatterns matches known secret classes:
-//   - Beamfall API keys (bfk_…)
+//   - Beamfall API keys (bfk_…) and Jellyfin compat integration keys (bfj_…)
 //   - Authorization header values (Bearer …, Basic …)
 //   - URL query tokens (?token=…, &token=…)
 //   - Stream and pack content paths (/api/media/…, /api/pack/…)
 //   - Private endpoint URLs (http:// and https://)
 var secretPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)(bfk_[A-Za-z0-9_-]+)`),
+	regexp.MustCompile(`(?i)(bf[kj]_[A-Za-z0-9_-]+)`),
 	regexp.MustCompile(`(?i)(Bearer\s+\S+)`),
 	regexp.MustCompile(`(?i)(Basic\s+\S+)`),
 	regexp.MustCompile(`(?i)([?&]token=[^&\s"']+)`),

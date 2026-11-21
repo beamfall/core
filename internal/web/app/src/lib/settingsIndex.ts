@@ -257,6 +257,11 @@ export const SETTINGS_INDEX: SettingsPage[] = [
         label: "jellyfinCompatProfilesHeading",
         help: "jellyfinCompatProfilesHelp",
       },
+      {
+        id: "console.jellyfinCompat.keys",
+        label: "jellyfinCompatKeysHeading",
+        help: "jellyfinCompatKeysHelp",
+      },
     ],
   },
   {

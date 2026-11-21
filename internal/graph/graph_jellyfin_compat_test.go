@@ -150,3 +150,102 @@ func TestJellyfinCompatFieldsUnavailableWithoutController(t *testing.T) {
 		t.Fatalf("read without controller = %+v", resp)
 	}
 }
+
+type compatKeyResponse struct {
+	Data struct {
+		JellyfinCompatKeys      []JellyfinCompatKeyInfo      `json:"jellyfinCompatKeys"`
+		CreateJellyfinCompatKey CreatedJellyfinCompatKeyInfo `json:"createJellyfinCompatKey"`
+		RevokeJellyfinCompatKey JellyfinCompatKeyInfo        `json:"revokeJellyfinCompatKey"`
+	} `json:"data"`
+	Errors []struct{ Message string } `json:"errors"`
+}
+
+func decodeCompatKeys(t *testing.T, body []byte) compatKeyResponse {
+	t.Helper()
+	var resp compatKeyResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode: %v; body = %s", err, body)
+	}
+	return resp
+}
+
+// TestJellyfinCompatKeyConsoleFields covers CORE-2725: minting, listing and
+// revoking integration keys is Admin-Session gated and audited, a key holds
+// only the read and refresh scopes, the token is returned once and never
+// listed, and only an opted-in adult Profile can hold one.
+func TestJellyfinCompatKeyConsoleFields(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	const keyFields = `{ id profileID profileName name scopes createdAt lastUsedAt revokedAt }`
+	list := `query { jellyfinCompatKeys ` + keyFields + ` }`
+	mint := `mutation M($profileID: String!, $name: String!) { createJellyfinCompatKey(profileID: $profileID, name: $name) { token key ` + keyFields + ` } }`
+	revoke := `mutation R($id: String!) { revokeJellyfinCompatKey(id: $id) ` + keyFields + ` }`
+
+	if rec := postGraphQL(t, handler, authorizeManager, mint, map[string]any{"profileID": "profile-default", "name": "Seerr"}); !strings.Contains(rec.Body.String(), "admin session required") {
+		t.Fatalf("non-admin mint = %s", rec.Body.String())
+	}
+	openManagerAdminSession(t, st)
+	if resp := decodeCompatKeys(t, postGraphQL(t, handler, authorizeManager, mint, map[string]any{"profileID": "profile-default", "name": "Seerr"}).Body.Bytes()); len(resp.Errors) == 0 {
+		t.Fatalf("mint before opt-in accepted: %+v", resp.Data.CreateJellyfinCompatKey.Key)
+	}
+	child, err := st.CreateProfile(ctx, "Kid", store.ProfileManaged, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := decodeCompatKeys(t, postGraphQL(t, handler, authorizeManager, mint, map[string]any{"profileID": string(child.ID), "name": "Seerr"}).Body.Bytes()); len(resp.Errors) == 0 {
+		t.Fatalf("managed profile mint accepted: %+v", resp.Data.CreateJellyfinCompatKey.Key)
+	}
+	if _, err := st.SetProfileIntegrationSignIn(ctx, "profile-default", true); err != nil {
+		t.Fatal(err)
+	}
+	batched := `mutation B($profileID: String!, $name: String!, $id: String!) { createJellyfinCompatKey(profileID: $profileID, name: $name) { token } revokeJellyfinCompatKey(id: $id) { id } }`
+	if body := postGraphQL(t, handler, authorizeManager, batched, map[string]any{"profileID": "profile-default", "name": "Lost", "id": "missing"}).Body.String(); !strings.Contains(body, "must be the only field") {
+		t.Fatalf("batched mint = %s", body)
+	}
+	if keys, err := st.CompatIntegrationKeys(ctx); err != nil || len(keys) != 0 {
+		t.Fatalf("batched mint left keys %+v (err %v); want none minted", keys, err)
+	}
+	resp := decodeCompatKeys(t, postGraphQL(t, handler, authorizeManager, mint, map[string]any{"profileID": "profile-default", "name": "Seerr"}).Body.Bytes())
+	created := resp.Data.CreateJellyfinCompatKey
+	if len(resp.Errors) != 0 || !strings.HasPrefix(created.Token, store.CompatKeyPrefix) || created.Key.Name != "Seerr" || created.Key.RevokedAt != "" {
+		t.Fatalf("mint = %+v", resp)
+	}
+	if strings.Join(created.Key.Scopes, ",") != "compat.read,compat.refresh" {
+		t.Fatalf("minted scopes = %v; want read and refresh only", created.Key.Scopes)
+	}
+
+	listed := postGraphQL(t, handler, authorizeManager, list, nil).Body
+	if strings.Contains(listed.String(), created.Token) || strings.Contains(listed.String(), strings.TrimPrefix(created.Token, store.CompatKeyPrefix)) {
+		t.Fatal("key list carries the token")
+	}
+	resp = decodeCompatKeys(t, listed.Bytes())
+	if len(resp.Errors) != 0 || len(resp.Data.JellyfinCompatKeys) != 1 || resp.Data.JellyfinCompatKeys[0].ID != created.Key.ID || resp.Data.JellyfinCompatKeys[0].ProfileName == "" {
+		t.Fatalf("list = %+v", resp)
+	}
+
+	resp = decodeCompatKeys(t, postGraphQL(t, handler, authorizeManager, revoke, map[string]any{"id": created.Key.ID}).Body.Bytes())
+	if len(resp.Errors) != 0 || resp.Data.RevokeJellyfinCompatKey.RevokedAt == "" {
+		t.Fatalf("revoke = %+v", resp)
+	}
+	if _, err := st.CompatIntegrationKeyByToken(ctx, created.Token, time.Now()); err == nil {
+		t.Fatal("revoked key still resolves")
+	}
+	if resp := decodeCompatKeys(t, postGraphQL(t, handler, authorizeManager, revoke, map[string]any{"id": "missing"}).Body.Bytes()); len(resp.Errors) == 0 || !strings.Contains(resp.Errors[0].Message, "key not found") {
+		t.Fatalf("revoke missing = %+v", resp)
+	}
+
+	entries, err := st.ActivityEntries(ctx, store.ActivityQuery{Filter: store.LibraryFilter{Revealed: true, AllLibraries: true}, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audited := map[string]bool{}
+	for _, entry := range entries {
+		if entry.TargetType == "integration-key" && entry.TargetID == created.Key.ID {
+			audited[entry.Action] = true
+		}
+	}
+	if !audited[store.ActivityKeyCreate] || !audited[store.ActivityKeyRevoke] {
+		t.Fatalf("key audit = %v; want create and revoke", audited)
+	}
+}

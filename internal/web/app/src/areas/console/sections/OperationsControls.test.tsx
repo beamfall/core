@@ -359,6 +359,16 @@ describe("OperationsControls", () => {
     const token = "live-secret-token";
     const host = "private.internal";
     const streamID = "stream-secret";
+    const compatKey = "bfj_compatsecret0123";
+    const apiKey = "bfk_apisecret0123";
+    // A progress unit is humanised ("bfj_x" reads "Bfj x"), so only redaction
+    // before formatting catches it; the suffix must never appear.
+    const unitSecret = "unitsecret0123";
+    const unitKey = `bfj_${unitSecret}`;
+    const escapedToken = "escaped-token-secret";
+    const tailToken = "tail-bearer-secret";
+    const keySecret = "propertynamesecret";
+    const tabToken = "tab-bearer-secret";
     const initialEvents: JobEventInfo[] = [
       {
         id: "1",
@@ -377,6 +387,55 @@ describe("OperationsControls", () => {
         payload: `{"error":"Bearer ${token} https://${host}/api/media/direct/${streamID}/file.mp4"}`,
       },
       { id: "3", jobID: "job-1", occurredAt: "2026-06-20T00:00:02Z", type: "restricted" },
+      // A progress message or a status reason is shown as parsed, and must
+      // be redacted on that path too (CORE-2725).
+      {
+        id: "4",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:03Z",
+        type: "progress",
+        payload: `{"type":"progress","current":1,"total":2,"unit":"files","message":"key ${compatKey}"}`,
+      },
+      {
+        id: "5",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:04Z",
+        type: "yielded",
+        payload: `{"status":"yielded","reason":"key ${apiKey}"}`,
+      },
+      {
+        id: "6",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:05Z",
+        type: "progress",
+        payload: `{"type":"progress","current":1,"total":2,"unit":"${unitKey}"}`,
+      },
+      // Escaped "&" hides a token until decoding; a trailing credential
+      // must not break the payload into a raw JSON fragment.
+      {
+        id: "7",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:06Z",
+        type: "started",
+        payload: "worker=w3",
+      },
+      {
+        id: "8",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:07Z",
+        type: "progress",
+        payload: `{"type":"progress","current":2,"total":2,"unit":"files","message":"GET /x?a=1\\u0026token=${escapedToken} Bearer ${tailToken}"}`,
+      },
+      // A payload the formatter does not recognise shows as stored with each
+      // string literal redacted: property names and escaped whitespace are
+      // covered, later fields survive and digits are kept.
+      {
+        id: "9",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:08Z",
+        type: "started",
+        payload: `{"bfj_${keySecret}":1,"auth":"Bearer\\t${tabToken}","recordID":9007199254740993}`,
+      },
     ];
     vi.mocked(fetchJobEvents)
       .mockResolvedValueOnce(initialEvents)
@@ -395,9 +454,20 @@ describe("OperationsControls", () => {
     expect(await screen.findByText("Failed")).toBeVisible();
     expect(screen.getByText("Restricted")).toBeVisible();
     expect(screen.getByText("(redacted)")).toBeVisible();
-    expect(screen.getByText(/\[REDACTED\]/)).toBeVisible();
-    for (const leak of [restrictedName, token, host, streamID]) {
+    // Every progress row is visible on its own (no folding), and each one
+    // reads as a formatted line with its secret blanked.
+    expect(screen.getByText("1/2 files - key [REDACTED]")).toBeVisible();
+    expect(screen.getByText("key [REDACTED]")).toBeVisible();
+    expect(screen.getByText(/^1\/2 \[REDACTED\]/i)).toBeVisible();
+    expect(screen.getByText("2/2 files - GET /x?a=1[REDACTED] [REDACTED]")).toBeVisible();
+    expect(
+      screen.getByText('{"[REDACTED]":1,"auth":"[REDACTED]","recordID":9007199254740993}'),
+    ).toBeVisible();
+    const leaks = [restrictedName, token, host, streamID, compatKey, apiKey, unitSecret];
+    for (const leak of [...leaks, escapedToken, tailToken, keySecret, tabToken]) {
       expect(screen.queryByText(new RegExp(leak))).toBeNull();
+      // Titles carry the detail too.
+      expect(document.body.innerHTML).not.toContain(leak);
     }
     expect(fetchJobEvents).toHaveBeenCalledTimes(2);
   });

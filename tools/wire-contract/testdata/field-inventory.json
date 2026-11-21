@@ -673,6 +673,15 @@
       ]
     },
     {
+      "field": "createjellyfincompatkey",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "key",
+        "token"
+      ]
+    },
+    {
       "field": "createlibrary",
       "effect": "write",
       "tier": "admin",
@@ -1418,6 +1427,21 @@
         "libraries",
         "profiles",
         "trustedProxyCIDRs"
+      ]
+    },
+    {
+      "field": "jellyfincompatkeys",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "createdAt",
+        "id",
+        "lastUsedAt",
+        "name",
+        "profileID",
+        "profileName",
+        "revokedAt",
+        "scopes"
       ]
     },
     {
@@ -2954,6 +2978,21 @@
       "children": [
         "deviceID",
         "transcodesAborted"
+      ]
+    },
+    {
+      "field": "revokejellyfincompatkey",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "createdAt",
+        "id",
+        "lastUsedAt",
+        "name",
+        "profileID",
+        "profileName",
+        "revokedAt",
+        "scopes"
       ]
     },
     {

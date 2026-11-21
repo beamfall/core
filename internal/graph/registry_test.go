@@ -229,6 +229,9 @@ var originalScopedFields = []string{
 	"jellyfincompat",       // CORE-2683 (ADR-0171 §2.2-§2.4): compatibility Console settings
 	"setjellyfincompat",
 	"setprofileintegrationsignin",
+	"jellyfincompatkeys", // CORE-2725 (ADR-0171 §2.4): durable integration keys
+	"createjellyfincompatkey",
+	"revokejellyfincompatkey",
 	"encryptedlibrarystatus",    // ENC-2 (ADR-0045 §2.4): credential-free Sealed/Unsealed + mode read
 	"provisionencryptedlibrary", // ENC-2 (ADR-0045 §2.4): mint DEK + three wraps, Recovery Key once
 	"unsealencryptedlibrary",    // ENC-2 (ADR-0045 §2.4): passphrase/Recovery-Key unseal

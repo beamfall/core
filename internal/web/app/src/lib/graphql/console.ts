@@ -15,12 +15,14 @@ import type {
   CertificationCeilingResult,
   ConsoleConfigInfo,
   CreatedAPITokenInfo,
+  CreatedJellyfinCompatKeyInfo,
   CreatedScopedAPIKeyInfo,
   DeviceInfo,
   EnforcedFilterPlugin,
   EnforcedFilterProfile,
   HostMetricsInfo,
   JellyfinCompatInfo,
+  JellyfinCompatKeyInfo,
   JellyfinCompatProfileInfo,
   JellyfinCompatUpdate,
   JobEventInfo,
@@ -772,6 +774,54 @@ export async function setProfileIntegrationSignIn(
     signal,
   );
   return data.setProfileIntegrationSignIn;
+}
+
+const JELLYFIN_COMPAT_KEY_FIELDS =
+  "id profileID profileName name scopes createdAt lastUsedAt revokedAt";
+
+const JELLYFIN_COMPAT_KEYS_QUERY = `query JellyfinCompatKeys { jellyfinCompatKeys { ${JELLYFIN_COMPAT_KEY_FIELDS} } }`;
+
+/** JellyfinCompatKeys — every integration key, revoked ones included, newest first. */
+export async function fetchJellyfinCompatKeys(
+  signal?: AbortSignal,
+): Promise<JellyfinCompatKeyInfo[]> {
+  const data = await graphql<{ jellyfinCompatKeys: JellyfinCompatKeyInfo[] }>(
+    JELLYFIN_COMPAT_KEYS_QUERY,
+    {},
+    signal,
+  );
+  return data.jellyfinCompatKeys;
+}
+
+const CREATE_JELLYFIN_COMPAT_KEY_MUTATION = `mutation CreateJellyfinCompatKey($profileID: String!, $name: String!) { createJellyfinCompatKey(profileID: $profileID, name: $name) { token key { ${JELLYFIN_COMPAT_KEY_FIELDS} } } }`;
+
+/** CreateJellyfinCompatKey — mint a key for an opted-in Profile; the token is shown once. */
+export async function createJellyfinCompatKey(
+  profileID: string,
+  name: string,
+  signal?: AbortSignal,
+): Promise<CreatedJellyfinCompatKeyInfo> {
+  const data = await graphql<{ createJellyfinCompatKey: CreatedJellyfinCompatKeyInfo }>(
+    CREATE_JELLYFIN_COMPAT_KEY_MUTATION,
+    { profileID, name },
+    signal,
+  );
+  return data.createJellyfinCompatKey;
+}
+
+const REVOKE_JELLYFIN_COMPAT_KEY_MUTATION = `mutation RevokeJellyfinCompatKey($id: String!) { revokeJellyfinCompatKey(id: $id) { ${JELLYFIN_COMPAT_KEY_FIELDS} } }`;
+
+/** RevokeJellyfinCompatKey — the key stops working at once. */
+export async function revokeJellyfinCompatKey(
+  id: string,
+  signal?: AbortSignal,
+): Promise<JellyfinCompatKeyInfo> {
+  const data = await graphql<{ revokeJellyfinCompatKey: JellyfinCompatKeyInfo }>(
+    REVOKE_JELLYFIN_COMPAT_KEY_MUTATION,
+    { id },
+    signal,
+  );
+  return data.revokeJellyfinCompatKey;
 }
 
 // --- Admin API tokens (ADR-0013) ------------------------------------------

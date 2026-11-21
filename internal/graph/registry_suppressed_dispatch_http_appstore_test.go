@@ -26,6 +26,9 @@ func TestAppStoreSuppressedFieldsAreUnknownOverHTTP(t *testing.T) {
 		`query { jellyfinCompat { enabled } }`,
 		`mutation { setJellyfinCompat(enabled: true) { enabled } }`,
 		`mutation { setProfileIntegrationSignIn(profileID: "profile-default", enabled: true) { id } }`,
+		`query { jellyfinCompatKeys { id } }`,
+		`mutation { createJellyfinCompatKey(profileID: "profile-default", name: "Seerr") { token } }`,
+		`mutation { revokeJellyfinCompatKey(id: "missing") { id } }`,
 		`query { qbittorrentIngest { enabled } }`,
 		`query { capabilityStates { id } }`,
 	} {
