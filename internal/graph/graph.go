@@ -2788,20 +2788,18 @@ func (h *Handler) createLibrary(ctx context.Context, scope auth.Scope, req reque
 	if err := store.CheckLibraryRoots(roots); err != nil {
 		return LibraryInfo{}, localizeLibraryRootError(err)
 	}
-	grantTo := scope.ProfileID
-	if grantTo == "" {
-		// An admin API token or admin-scoped key carries no Profile, so its
-		// Library is granted to the server owner's Profile (CORE-2921).
-		owner, err := h.store.OwnerProfile(ctx)
+	var library store.Library
+	var err error
+	if scope.ProfileID == "" {
+		// An admin API token carries no Profile, so its Library is granted to
+		// the server owner's Profile (CORE-2921).
+		library, err = h.store.CreateOwnerLibraryWithRoots(ctx, title, restricted, pluginID, roots, familyScope)
 		if errors.Is(err, store.ErrNoOwnerProfile) {
 			return LibraryInfo{}, clientError("no owner Profile is designated to grant the library to")
 		}
-		if err != nil {
-			return LibraryInfo{}, err
-		}
-		grantTo = owner.ID
+	} else {
+		library, err = h.store.CreateLibraryWithRoots(ctx, title, restricted, pluginID, scope.ProfileID, roots, familyScope)
 	}
-	library, err := h.store.CreateLibraryWithRoots(ctx, title, restricted, pluginID, grantTo, roots, familyScope)
 	if err != nil {
 		return LibraryInfo{}, err
 	}
