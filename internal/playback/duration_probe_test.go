@@ -2,6 +2,7 @@ package playback
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -39,6 +40,11 @@ func TestInfoProbesAMissingRuntimeOnce(t *testing.T) {
 	sessions := newTestSessions(t, prober, t.TempDir(), nil)
 	defer sessions.Close()
 	service.SetSessions(sessions)
+	writes := 0
+	sessions.recordDuration = func(context.Context, store.LibraryID, store.MediaID, string, string, int) error {
+		writes++
+		return errors.New("test runtime write failure")
+	}
 
 	path := filepath.Join(t.TempDir(), "no-runtime.bin")
 	if err := os.WriteFile(path, []byte("beamfall bytes"), 0o600); err != nil {
@@ -75,6 +81,9 @@ func TestInfoProbesAMissingRuntimeOnce(t *testing.T) {
 	if got := prober.probeCount(); got != 1 {
 		t.Fatalf("probes = %d, want 1 (cached by content fingerprint)", got)
 	}
+	if writes != 1 {
+		t.Fatalf("write-back attempts = %d, want 1 even when the write fails", writes)
+	}
 }
 
 func TestInfoKeepsAStoredRuntimeWithoutProbing(t *testing.T) {
@@ -102,7 +111,7 @@ func probeDurationWithLibraryClaim(ctx context.Context, sessions *Sessions, fing
 		return 0
 	}
 	defer sessions.releaseLibrary(op)
-	return sessions.probedSourceDuration(sessions.libraryProbeContext(op), nil, op, fingerprint, path)
+	return sessions.probedSourceDuration(sessions.libraryProbeContext(op), nil, op, "", fingerprint, path)
 }
 
 func TestProbedDurationSecondsRemembersAMissForAWhile(t *testing.T) {

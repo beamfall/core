@@ -177,7 +177,7 @@ func (b *LiveBinding) ProbedDurationSeconds(ctx context.Context, fingerprint, pa
 	ctx, cancel := b.Context(op.ctx)
 	defer cancel()
 	ctx = b.probeContext(ctx, false)
-	return b.manager.probedSourceDuration(ctx, b, op, fingerprint, path)
+	return b.manager.probedSourceDuration(ctx, b, op, b.session.key.MediaID, fingerprint, path)
 }
 
 type probeOwner struct {

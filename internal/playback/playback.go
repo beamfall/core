@@ -665,6 +665,7 @@ func (s *Service) SetSessions(sessions *Sessions) {
 	s.sessions = sessions
 	if sessions != nil && s.store != nil {
 		sessions.sourceStore = s.store
+		sessions.recordDuration = s.store.SetProbedMediaDuration
 		sessions.SetKeyframeStore(s.store) // probe each audio-copy source once (CORE-0021)
 	}
 }

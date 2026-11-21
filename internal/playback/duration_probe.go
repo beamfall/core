@@ -3,6 +3,7 @@ package playback
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -50,7 +51,7 @@ type durationFlight struct {
 	seconds    int // winning positive held until the last overlapping probe finishes
 }
 
-func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBinding, op *libraryOperation, fingerprint, path string) int {
+func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBinding, op *libraryOperation, mediaID store.MediaID, fingerprint, path string) int {
 	if fingerprint == "" || path == "" || ctx.Err() != nil {
 		return 0
 	}
@@ -122,8 +123,18 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 		seconds = probe.DurationSeconds
 	}
 	valid := source.matches(captureSource(path, nil, s.statSource))
+	// Only the first positive result for this flight writes back. Keep the
+	// catalog I/O outside the Sessions lock while the Library claim is held.
+	var writeBack int
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer func() {
+		s.mu.Unlock()
+		if writeBack > 0 && s.recordDuration != nil && mediaID != "" {
+			if err := s.recordDuration(ctx, op.library, mediaID, fingerprint, path, writeBack); err != nil {
+				slog.WarnContext(ctx, "could not record probed runtime", "media", mediaID, "error", err)
+			}
+		}
+	}()
 	if s.durationFlights[path] != flight {
 		return 0
 	}
@@ -144,6 +155,8 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 		seconds = retained.seconds
 	case entry.generation == source.generation && entry.seconds > 0:
 		seconds = entry.seconds
+	default:
+		writeBack = seconds
 	}
 	flight.seconds = seconds
 	if seconds > 0 && retained != nil {
@@ -191,5 +204,5 @@ func (s *Service) probedDuration(ctx context.Context, op *libraryOperation, medi
 	if err != nil || encrypted {
 		return 0
 	}
-	return s.sessions.probedSourceDuration(ctx, nil, op, file.ContentFingerprint, file.Path)
+	return s.sessions.probedSourceDuration(ctx, nil, op, media.ID, file.ContentFingerprint, file.Path)
 }

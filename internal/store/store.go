@@ -2998,6 +2998,55 @@ func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (St
 	return s.mediaFileFingerprintByPath(ctx, path, "")
 }
 
+// SetProbedMediaDuration fills a missing runtime from the primary single-Part
+// Version's active file. A scan may have replaced the file or filled the runtime
+// while playback was probing it.
+func (s *Store) SetProbedMediaDuration(ctx context.Context, libraryID LibraryID, id MediaID, fingerprint, path string, seconds int) error {
+	if seconds <= 0 {
+		return nil
+	}
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	// Keep the chosen catalog writable only under the backing and unlock state
+	// observed here, including while a Library's backing is being changed.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return err
+	}
+	var trashed bool
+	if err := s.catalogR.QueryRowContext(ctx, `SELECT trashed_at_ms IS NOT NULL FROM library WHERE id = ?`, libraryID).Scan(&trashed); err != nil {
+		return err
+	}
+	if trashed {
+		return nil
+	}
+	_, err = plane.writer.ExecContext(ctx, `
+		WITH primary_file AS (
+			SELECT content_fingerprint, path, version_label, missing_at_ms
+			FROM media_file
+			WHERE media_id = ? AND part_ordinal = 0
+			ORDER BY version_label, missing_at_ms IS NOT NULL LIMIT 1
+		)
+		UPDATE media SET duration_seconds = ?
+		WHERE id = ? AND library_id = ? AND duration_seconds = 0 AND trashed_at_ms IS NULL
+		  AND EXISTS (
+			SELECT 1 FROM primary_file f
+			WHERE f.content_fingerprint = ? AND f.path = ? AND f.missing_at_ms IS NULL
+			  AND NOT EXISTS (
+				SELECT 1 FROM media_file p
+				WHERE p.media_id = media.id AND p.version_label = f.version_label AND p.part_ordinal > 0
+			  )
+		  )
+	`, id, seconds, id, libraryID, fingerprint, path)
+	return err
+}
+
 // LibraryFilePathsWithoutDuration returns the available first-part file
 // paths of the Library's non-image Media that hold no duration. Scan probes
 // these files even on its fast path, so a duration an earlier unprobed rescan
