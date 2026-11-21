@@ -1,5 +1,12 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { type GraphQLResult, getIdentityEpochSignal, graphql, postJSON } from "@/lib/api";
+import {
+  ApiError,
+  type GraphQLResult,
+  getIdentityEpochSignal,
+  graphql,
+  postJSON,
+  resetIdentityEpoch,
+} from "@/lib/api";
 import type { GenericMediaInfo, SessionInfo } from "@/lib/graphql/types";
 import { useSession, useViewerIdentity } from "@/lib/session";
 
@@ -106,6 +113,10 @@ const ADD_TRACK = `mutation AddMusicQueueTrack(
   queueAdd(mediaID: $mediaID, position: $position, expectedProfileID: $expectedProfileID) { id }
 }`;
 
+type AddTrackResult = Omit<GraphQLResult<{ queueAdd: { id: string }[] }>, "errors"> & {
+  errors?: { message: string; extensions?: { reason?: string } }[];
+};
+
 async function addTrack(
   mediaID: string,
   position: number | undefined,
@@ -113,11 +124,7 @@ async function addTrack(
   signal: AbortSignal,
 ) {
   signal.throwIfAborted();
-  const result = await postJSON<
-    Omit<GraphQLResult<{ queueAdd: { id: string }[] }>, "errors"> & {
-      errors?: { message: string; extensions?: { reason?: string } }[];
-    }
-  >(
+  const result = await postJSON<AddTrackResult>(
     "/api/graphql",
     {
       query: ADD_TRACK,
@@ -128,12 +135,27 @@ async function addTrack(
       },
     },
     signal,
-  );
+  ).catch((error: unknown): AddTrackResult => {
+    const payload = error instanceof ApiError ? error.payload : undefined;
+    // GraphQL can refuse the request with a non-2xx status as well.
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "errors" in payload &&
+      Array.isArray(payload.errors) &&
+      payload.errors.length
+    ) {
+      return { errors: payload.errors };
+    }
+    throw error;
+  });
   signal.throwIfAborted();
   if (result.errors?.some(({ extensions }) => extensions?.reason === "PROFILE_MISMATCH")) {
     throw new QueueIdentityChanged();
   }
-  if (result.errors?.length || !result.data?.queueAdd) throw new Error("Queue write failed");
+  if (result.errors?.length) return false;
+  if (!result.data?.queueAdd) throw new Error("Queue write failed");
+  return true;
 }
 
 let pending: Promise<void> | undefined;
@@ -229,6 +251,7 @@ export function editMusicQueue(
     invalidEditEpoch = epoch;
     if (player && sameIdentity(player.scope, scope)) player.server?.invalidateIdentity();
     notifyMusicQueueMenu();
+    if (!run) resetIdentityEpoch();
     return true;
   };
 
@@ -254,7 +277,8 @@ export function editMusicQueue(
     const index = withoutTarget.findIndex((row) => row.id === cursor);
     if (cursor !== undefined && index < 0) return "dropped";
     try {
-      await addTrack(id, edit === "next" ? index + 1 : undefined, scope, signal);
+      const accepted = await addTrack(id, edit === "next" ? index + 1 : undefined, scope, signal);
+      if (!accepted) return "failed";
     } catch (error) {
       if (identityWasLost(error)) return "dropped";
       // The write can commit even when its response is lost. Only read it back.

@@ -1,9 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PromotePage } from "@/areas/enroll/PromotePage";
+import { TrackList } from "@/areas/viewer/components/TrackList";
+import { editMusicQueue } from "@/areas/viewer/lib/musicQueue";
 import { usePlayer } from "@/areas/viewer/player/usePlayer";
 import { getIdentityEpochSignal } from "@/lib/api";
 import { fetchPlaybackMarkers } from "@/lib/graphql";
@@ -165,6 +167,27 @@ function PlayerChildProbe() {
       </button>
       {current.session ? <PlayerHarness /> : null}
     </>
+  );
+}
+
+function QueueBrowseProbe() {
+  const { manifest } = useSession();
+  return (
+    <TrackList
+      label="Browse tracks"
+      queue={[]}
+      rows={[
+        { number: 1, item: { id: "public", kind: "media", title: "Public track" } },
+        ...(manifest?.revealed
+          ? [
+              {
+                number: 2,
+                item: { id: "restricted", kind: "media" as const, title: "Restricted track" },
+              },
+            ]
+          : []),
+      ]}
+    />
   );
 }
 
@@ -401,6 +424,75 @@ describe("SessionProvider production identity wiring", () => {
     expect(getIdentityEpochSignal()).not.toBe(markerSignal);
     expect(getIdentityEpochSignal()?.aborted).toBe(false);
   });
+
+  it.each(["relock", "profile mismatch"])(
+    "clears revealed browse rows and pending idle edits after a queue %s",
+    async (loss) => {
+      const preflight = deferred<Response>();
+      let serverSession = session;
+      const readQueue = vi.fn(() => preflight.promise);
+      const addTrack = vi.fn(async () =>
+        jsonResponse({
+          errors: [{ message: "foreign profile", extensions: { reason: "PROFILE_MISMATCH" } }],
+        }),
+      );
+      vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input);
+        if (path === "/api/manifest") {
+          return Promise.resolve(
+            jsonResponse({
+              ...manifest,
+              profileID: serverSession.profileID,
+              revealed: serverSession.revealed,
+            }),
+          );
+        }
+        if (path === "/api/graphql") {
+          const query = queryFrom(init);
+          if (query.includes("CurrentSession")) {
+            return Promise.resolve(jsonResponse({ data: { currentSession: serverSession } }));
+          }
+          if (query.includes("query MusicQueue")) return readQueue();
+          if (query.includes("mutation AddMusicQueueTrack")) return addTrack();
+        }
+        return productionResponse(path, init);
+      });
+      render(
+        <SessionProvider>
+          <I18nProvider initialLocale="en">
+            <MemoryRouter>
+              <QueueBrowseProbe />
+            </MemoryRouter>
+          </I18nProvider>
+        </SessionProvider>,
+      );
+      expect(await screen.findByRole("link", { name: /Restricted track/ })).toBeInTheDocument();
+      const oldEpoch = getIdentityEpochSignal();
+
+      await act(async () => {
+        const first = editMusicQueue(session, "restricted", "tail");
+        const pending = editMusicQueue(session, "public", "next");
+        expect(readQueue).toHaveBeenCalledTimes(1);
+        serverSession = {
+          ...session,
+          revealed: false,
+          profileID: loss === "relock" ? session.profileID : "profile-beta",
+        };
+        preflight.resolve(
+          jsonResponse({
+            data: { currentSession: loss === "relock" ? serverSession : session, sourceItems: [] },
+          }),
+        );
+        await expect(Promise.all([first, pending])).resolves.toEqual(["dropped", "dropped"]);
+      });
+
+      expect(screen.queryByRole("link", { name: /Restricted track/ })).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /Public track/ })).toBeInTheDocument();
+      expect(oldEpoch?.aborted).toBe(true);
+      expect(readQueue).toHaveBeenCalledTimes(1);
+      expect(addTrack).toHaveBeenCalledTimes(loss === "relock" ? 0 : 1);
+    },
+  );
 
   // Distinct from the "expired Reveal" case above, which drives the transition
   // by clicking Refresh. Here the REAL Reveal-terminal response drives it: a

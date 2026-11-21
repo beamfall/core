@@ -131,6 +131,25 @@ describe("server Play Queue edits", () => {
     expect(receive).toHaveBeenLastCalledWith([track("playing"), track("target"), track("old")]);
   });
 
+  it.each([200, 401])(
+    "fails an HTTP %i GraphQL refusal even when the track is already at the tail",
+    async (status) => {
+      rows = [track("head"), track("target")];
+      const refusal = { errors: [{ message: "write refused" }] };
+      if (status === 200) {
+        vi.mocked(api.postJSON).mockResolvedValueOnce(refusal);
+      } else {
+        vi.mocked(api.postJSON).mockRejectedValueOnce(
+          new api.ApiError("write refused", status, refusal),
+        );
+      }
+
+      expect(await editMusicQueue(scope, "target", "tail")).toBe("failed");
+      expect(api.postJSON).toHaveBeenCalledTimes(1);
+      expect(reads).toBe(1);
+    },
+  );
+
   it("drops a PROFILE_MISMATCH without adopting or retrying the edit", async () => {
     rows = [track("playing")];
     const { receive, invalidateIdentity } = player("playing");
