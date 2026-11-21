@@ -44,7 +44,7 @@ docker buildx build --load --quiet --platform "linux/$arch" --target ffmpeg-runt
   --tag "$image" --file "$root/Dockerfile" "$root" >/dev/null
 
 CGO_ENABLED=0 GOOS=linux GOARCH="$arch" \
-  go test -c ./internal/ffmpeg -o "$tmp/ffmpeg.test"
+  go test -c -tags tonemap_conformance ./internal/ffmpeg -o "$tmp/ffmpeg.test"
 
 docker run --rm --name "$container" --platform "linux/$arch" \
   --volume "$tmp/ffmpeg.test:/work/ffmpeg.test:ro" \

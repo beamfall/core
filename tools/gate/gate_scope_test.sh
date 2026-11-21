@@ -937,8 +937,8 @@ fi
 cat >"$TMP/docker-bin/go" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "$#" == 5 && "$1 $2 $3 $4" == 'test -c ./internal/ffmpeg -o' ]]
-: >"$5"
+[[ "$#" == 7 && "$1 $2 $3 $4 $5 $6" == 'test -c -tags tonemap_conformance ./internal/ffmpeg -o' ]]
+: >"$7"
 EOF
 chmod +x "$TMP/docker-bin/go"
 : >"$TMP/tonemap-docker.log"
@@ -951,9 +951,10 @@ grep -Eq '^run --rm .*beamfall-ffmpeg-runtime:tonemap-' "$TMP/tonemap-docker.log
   || fail "standalone script did not run the loaded image"
 
 # The scope above is sound only while the conformance binary is built from
-# internal/ffmpeg alone: any other in-module package in its closure must be
+# internal/ffmpeg alone (with the tonemap_conformance tag the conformance
+# script builds with): any other in-module package in its closure must be
 # added to the tonemap scope.
-tonemap_closure="$(cd "$ROOT" && GOWORK=off GOFLAGS=-mod=mod go list -deps -test \
+tonemap_closure="$(cd "$ROOT" && GOWORK=off GOFLAGS=-mod=mod go list -deps -test -tags tonemap_conformance \
   -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/ffmpeg)" \
   || fail "could not list the internal/ffmpeg test closure"
 tonemap_foreign="$(grep '^github.com/beamfall/core/' <<<"$tonemap_closure" \

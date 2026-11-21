@@ -1,3 +1,9 @@
+// The tone-map conformance binary is built with this tag so its closure stays
+// internal/ffmpeg alone (tools/gate/gate_scope_test.sh); this playback-owner
+// test still runs in every ordinary go test.
+
+//go:build !tonemap_conformance
+
 package ffmpeg_test
 
 import (
