@@ -488,224 +488,130 @@ func TestPollDedupesGUIDLessEntryWhenEnclosureRotates(t *testing.T) {
 	}
 }
 
-func TestPollPreservesLegacyEnclosureIdentityAcrossRestartAndRotation(t *testing.T) {
-	ctx := context.Background()
-	dataDir := storetest.MigratedDataDir(t)
-	st := storetest.OpenAt(t, dataDir)
-	fs := newFeedServer(t)
-	fs.enclosures["replacement.mp3"] = []byte("replacement")
-	fs.enclosures["after-restart.mp3"] = []byte("after restart")
-	fs.setFeed(fs.guidlessItem("First Entry", "replacement.mp3"))
-
-	root := t.TempDir()
-	sub, err := st.AddSubscription(ctx, store.Subscription{
-		LibraryID: "library-local",
-		FeedURL:   fs.server.URL + "/feed.xml",
-		Root:      root,
-	}, time.Now().UTC())
-	if err != nil {
+// addLegacyReceipt records a receipt the way releases before GUID provenance
+// did: a GUID-less entry keyed by its enclosure URL, with its file on disk.
+func addLegacyReceipt(t *testing.T, st *store.Store, sub store.Subscription, guid, name string) {
+	t.Helper()
+	target := filepath.Join(sub.Root, name)
+	if err := os.WriteFile(target, []byte("legacy "+name), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	legacyGUID := fs.server.URL + "/files/original.mp3"
-	target := filepath.Join(root, "First Entry.mp3")
-	if err := os.WriteFile(target, []byte("previously ingested"), 0o600); err != nil {
+	if err := st.MarkSubscriptionEntrySeen(context.Background(), sub.ID, guid, target, time.Now().UTC()); err != nil {
 		t.Fatal(err)
-	}
-	if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-		LibraryID:          sub.LibraryID,
-		Path:               target,
-		Title:              "First Entry",
-		Container:          "mp3",
-		Codec:              "mp3",
-		Class:              store.MediaClassAudio,
-		ContentFingerprint: "legacy-entry-fingerprint",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, legacyGUID, target, time.Now().UTC()); err != nil {
-		t.Fatal(err)
-	}
-
-	poller := NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))
-	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
-		t.Fatalf("legacy poll = %d, %v, want no download", count, err)
-	}
-	if hits := fs.hits("replacement.mp3"); hits != 0 {
-		t.Errorf("rotated enclosure requested %d times on first upgraded poll", hits)
-	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	st = storetest.OpenAt(t, dataDir)
-	sub, err = st.Subscription(ctx, sub.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fs.setFeed(fs.guidlessItem("First Entry", "after-restart.mp3"))
-	poller = NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))
-	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
-		t.Fatalf("poll after restart and rotation = %d, %v, want no download", count, err)
-	}
-	if hits := fs.hits("after-restart.mp3"); hits != 0 {
-		t.Errorf("rotated enclosure requested %d times", hits)
-	}
-	if entries := dirEntries(t, root); len(entries) != 1 || entries[0] != "First Entry.mp3" {
-		t.Errorf("published files = %v, want only the original", entries)
-	}
-	if resolved, skipped, err := st.ReconcileSubscriptionSeenEntries(ctx); err != nil || resolved != 2 || skipped != 0 {
-		t.Errorf("reconciling original and derived GUIDs with existing Media = %d, %d, %v, want 2, 0, nil",
-			resolved, skipped, err)
 	}
 }
 
-func TestPollDefersRotatedLegacyEntryUntilPendingScanCompletes(t *testing.T) {
-	ctx := context.Background()
-	dataDir := storetest.MigratedDataDir(t)
-	st := storetest.OpenAt(t, dataDir)
-	fs := newFeedServer(t)
-	fs.enclosures["rotated.mp3"] = []byte("replacement")
-	fs.setFeed(fs.guidlessItem("First Entry", "rotated.mp3"))
-	root := t.TempDir()
-	now := time.Now().UTC()
-	sub, err := st.AddSubscription(ctx, store.Subscription{
-		LibraryID: "library-local", FeedURL: fs.server.URL + "/feed.xml", Root: root,
-	}, now)
+func queuedScans(t *testing.T, st *store.Store) int {
+	t.Helper()
+	queued, err := st.ListJobs(context.Background(), store.JobStatusQueued)
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(root, "First Entry.mp3")
-	if err := os.WriteFile(target, []byte("original pending import"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// Make the scanner's stability check deterministic across the restart.
-	fresh := now.Add(time.Hour)
-	if err := os.Chtimes(target, fresh, fresh); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, fs.server.URL+"/files/original.mp3", target, now); err != nil {
-		t.Fatal(err)
-	}
-	engine := scrape.New(scrape.WithInsecureLoopback())
-	if err := NewPoller(st, engine).enqueueScan(ctx, sub, now); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
-	st = storetest.OpenAt(t, dataDir)
-	poller := NewPoller(st, engine)
-	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
-		t.Fatalf("poll while scan is queued = %d, %v, want no download", count, err)
-	}
-	sub, err = st.Subscription(ctx, sub.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sub.ETag != "" {
-		t.Fatal("deferred poll saved a validator that would suppress reconciliation")
-	}
-	runScan := func() {
-		t.Helper()
-		job, err := st.ClaimNextJob(ctx, "scan-test", nil, time.Now().UTC())
-		if err != nil || job.Kind != scan.JobKind {
-			t.Fatalf("claim pending scan = %s, %v", job.Kind, err)
-		}
-		if _, err := scan.Handler(st, nil, nil, nil, nil, nil)(ctx, job); err != nil {
-			t.Fatalf("scan original: %v", err)
-		}
-		if err := st.CompleteJob(ctx, job.ID, job.LeaseOwner, time.Now().UTC()); err != nil {
-			t.Fatal(err)
+	scans := 0
+	for _, job := range queued {
+		if job.Kind == scan.JobKind {
+			scans++
 		}
 	}
-	runScan()
-	if receipts, err := st.SubscriptionMediaReceipts(ctx, sub.ID); err != nil || len(receipts) != 1 || receipts[0].MediaID != "" {
-		t.Fatalf("unsettled file receipts = %+v, %v, want one unresolved receipt", receipts, err)
-	}
-	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
-		t.Fatalf("poll after scan skipped unsettled file = %d, %v, want no download", count, err)
-	}
-	settled := now.Add(-time.Hour)
-	if err := os.Chtimes(target, settled, settled); err != nil {
-		t.Fatal(err)
-	}
-	runScan()
-	original, err := st.SubscriptionMediaReceipts(ctx, sub.ID)
-	if err != nil || len(original) != 1 || original[0].MediaID == "" {
-		t.Fatalf("original receipt after scan = %+v, %v, want one resolved receipt", original, err)
-	}
-	if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
-		t.Fatalf("poll after scan = %d, %v, want no download", count, err)
-	}
-	receipts, err := st.SubscriptionMediaReceipts(ctx, sub.ID)
-	if err != nil || len(receipts) != 2 {
-		t.Fatalf("original and derived receipts = %+v, %v, want two receipts", receipts, err)
-	}
-	for _, receipt := range receipts {
-		if receipt.MediaID != original[0].MediaID || receipt.Path != target {
-			t.Errorf("receipt = %+v, want the original Media and path", receipt)
-		}
-	}
-	if hits := fs.hits("rotated.mp3"); hits != 0 {
-		t.Fatalf("rotated enclosure requested %d times", hits)
-	}
+	return scans
 }
 
-func TestPollMatchesDistinctLegacyURLsBeforeSharedTitles(t *testing.T) {
-	for _, secondURL := range []string{"second.mp3", "second-rotated.mp3"} {
-		t.Run(secondURL, func(t *testing.T) {
+func TestPollReconcilesLegacyReceiptOnceByEnclosureURL(t *testing.T) {
+	for name, file := range map[string]string{
+		"exact URL":     "ep.mp3?token=a1",
+		"rotated token": "ep.mp3?token=b22",
+	} {
+		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			st := storetest.Open(t)
 			fs := newFeedServer(t)
-			fs.enclosures["first.mp3"] = []byte("first enclosure")
-			fs.enclosures[secondURL] = []byte("second enclosure")
-			root := t.TempDir()
+			fs.enclosures["ep.mp3"] = []byte("payload")
 			sub, err := st.AddSubscription(ctx, store.Subscription{
-				LibraryID: "library-local", FeedURL: fs.server.URL + "/feed.xml", Root: root,
+				LibraryID: "library-local", FeedURL: fs.server.URL + "/feed.xml", Root: t.TempDir(),
 			}, time.Now().UTC())
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, item := range []struct{ file, stem string }{{"first.mp3", "Shared Title"}, {"second.mp3", "Shared Title-2"}} {
-				target := filepath.Join(root, item.stem+".mp3")
-				if err := os.WriteFile(target, []byte(item.file), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-					LibraryID: sub.LibraryID, Path: target, Title: item.stem,
-					Container: "mp3", Codec: "mp3", Class: store.MediaClassAudio, ContentFingerprint: item.file,
-				}); err != nil {
-					t.Fatal(err)
-				}
-				if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, fs.server.URL+"/files/"+item.file, target, time.Now().UTC()); err != nil {
-					t.Fatal(err)
-				}
-			}
-			secondItem := strings.Replace(fs.guidlessItem("Shared Title", secondURL), "Tue, 10 Nov", "Wed, 11 Nov", 1)
-			fs.setFeed(fs.guidlessItem("Shared Title", "first.mp3") + secondItem)
+			addLegacyReceipt(t, st, sub, fs.server.URL+"/files/ep.mp3?token=a1", "Episode.mp3")
+			fs.setFeed(fs.guidlessItem("Episode", file))
 			poller := NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))
 			if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
 				t.Fatalf("first upgraded poll = %d, %v, want no download", count, err)
 			}
-			if fs.hits("first.mp3") != 0 || fs.hits(secondURL) != 0 {
-				t.Fatal("poll requested an already imported enclosure")
+			entries, err := scrape.ParseFeedEntries([]byte(fs.feed))
+			if err != nil || len(entries) != 1 || !entries[0].DerivedGUID {
+				t.Fatalf("fixture entries = %+v, %v", entries, err)
 			}
-			receipts, err := st.SubscriptionMediaReceipts(ctx, sub.ID)
+			if seen, err := st.SubscriptionSeenGUIDs(ctx, sub.ID); err != nil || !seen[entries[0].GUID] {
+				t.Fatalf("seen = %v, %v, want the derived GUID persisted", seen, err)
+			}
+			if legacy, err := st.SubscriptionLegacyReceipts(ctx, sub.ID); err != nil || len(legacy) != 0 {
+				t.Fatalf("legacy receipts after reconciliation = %v, %v, want none", legacy, err)
+			}
+			if sub, err = st.Subscription(ctx, sub.ID); err != nil || sub.ETag == "" {
+				t.Fatalf("subscription = %+v, %v, want validators stored", sub, err)
+			}
+			// The next poll matches by the persisted identity alone.
+			fs.setFeed(fs.guidlessItem("Episode", "ep.mp3?token=c333"))
+			if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
+				t.Fatalf("second poll = %d, %v, want no download", count, err)
+			}
+			if hits := fs.hits("ep.mp3"); hits != 0 {
+				t.Errorf("enclosure requested %d times, want 0", hits)
+			}
+			if scans := queuedScans(t, st); scans != 0 {
+				t.Errorf("scans queued = %d, want 0", scans)
+			}
+			if files := dirEntries(t, sub.Root); len(files) != 1 || files[0] != "Episode.mp3" {
+				t.Errorf("files = %v, want only the legacy file", files)
+			}
+		})
+	}
+}
+
+func TestPollTreatsWeakLegacyEvidenceAsNewEntries(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		receipts map[string]string // enclosure path and query → file name
+		items    [][2]string       // title, enclosure path and query
+	}{
+		{"two receipts share the path", map[string]string{"ep.mp3?token=a1": "A.mp3", "ep.mp3?token=b22": "B.mp3"},
+			[][2]string{{"Episode", "ep.mp3?token=c333"}}},
+		{"two entries share the path", map[string]string{"ep.mp3?token=a1": "A.mp3"},
+			[][2]string{{"Episode", "ep.mp3?token=b22"}, {"Bonus", "ep.mp3?token=c333"}}},
+		{"numeric title suffix", map[string]string{"session.mp3": "Session.mp3"},
+			[][2]string{{"Session-2", "session-2.mp3"}}},
+		{"same title, different path", map[string]string{"old.mp3": "Shared Title.mp3"},
+			[][2]string{{"Shared Title", "new.mp3"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			st := storetest.Open(t)
+			fs := newFeedServer(t)
+			sub, err := st.AddSubscription(ctx, store.Subscription{
+				LibraryID: "library-local", FeedURL: fs.server.URL + "/feed.xml", Root: t.TempDir(),
+			}, time.Now().UTC())
 			if err != nil {
 				t.Fatal(err)
 			}
-			entries, err := scrape.ParseFeedEntries([]byte(fs.feed))
-			if err != nil || len(entries) != 2 || entries[0].GUID == entries[1].GUID {
-				t.Fatalf("fixture entries = %+v, %v, want two distinct identities", entries, err)
+			for file, name := range tc.receipts {
+				addLegacyReceipt(t, st, sub, fs.server.URL+"/files/"+file, name)
 			}
-			paths := make(map[string]string)
-			for _, receipt := range receipts {
-				paths[receipt.GUID] = receipt.Path
+			feed := ""
+			for _, item := range tc.items {
+				fs.enclosures[strings.SplitN(item[1], "?", 2)[0]] = []byte("new " + item[0])
+				feed += fs.guidlessItem(item[0], item[1])
 			}
-			for i, legacyFile := range []string{"first.mp3", "second.mp3"} {
-				if got, want := paths[entries[i].GUID], paths[fs.server.URL+"/files/"+legacyFile]; got == "" || got != want {
-					t.Errorf("entry %d path = %q, want its original path %q", i, got, want)
-				}
+			fs.setFeed(feed)
+			poller := NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))
+			if count, err := poller.pollSubscription(ctx, sub); err != nil || count != len(tc.items) {
+				t.Fatalf("poll = %d, %v, want %d downloads", count, err, len(tc.items))
+			}
+			if sub, err = st.Subscription(ctx, sub.ID); err != nil {
+				t.Fatal(err)
+			}
+			if count, err := poller.pollSubscription(ctx, sub); err != nil || count != 0 {
+				t.Fatalf("second poll = %d, %v, want no download", count, err)
 			}
 		})
 	}
@@ -757,41 +663,6 @@ func TestPollDoesNotAliasEnclosureMatchingExplicitGUID(t *testing.T) {
 	}
 	if hits := fs.hits("explicit.mp3"); hits != 1 {
 		t.Errorf("explicit GUID enclosure requested %d times, want 1", hits)
-	}
-}
-
-func TestPollRequiresEnclosureEvidenceForHistoricalHTTPGUID(t *testing.T) {
-	ctx := context.Background()
-	st := storetest.Open(t)
-	fs := newFeedServer(t)
-	fs.enclosures["new.mp3"] = []byte("new payload")
-	fs.setFeed(fs.guidlessItem("Shared Title", "new.mp3"))
-	root := t.TempDir()
-	sub, err := st.AddSubscription(ctx, store.Subscription{
-		LibraryID: "library-local", FeedURL: fs.server.URL + "/feed.xml", Root: root,
-	}, time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	target := filepath.Join(root, "Shared Title.mp3")
-	if err := os.WriteFile(target, []byte("old payload"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-		LibraryID: sub.LibraryID, Path: target, Title: "Shared Title",
-		Container: "mp3", Codec: "mp3", Class: store.MediaClassAudio, ContentFingerprint: "historical-entry-fingerprint",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, fs.server.URL+"/items/old.mp3", target, time.Now().UTC()); err != nil {
-		t.Fatal(err)
-	}
-	if count, err := NewPoller(st, scrape.New(scrape.WithInsecureLoopback())).pollSubscription(ctx, sub); err != nil || count != 1 {
-		t.Fatalf("poll with title-only historical match = %d, %v, want one new download", count, err)
-	}
-	data, err := readTestFile(filepath.Join(root, "Shared Title-2.mp3"))
-	if err != nil || string(data) != "new payload" {
-		t.Fatalf("GUID-less entry file = %q, %v, want new payload", data, err)
 	}
 }
 

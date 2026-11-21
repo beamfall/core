@@ -626,9 +626,7 @@ func TestSubscriptionRetentionCountsReassociatedAliasesOnce(t *testing.T) {
 	if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, legacyGUID, aliasedPath, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AliasSubscriptionEntryGUID(ctx, sub.ID, SubscriptionMediaReceipt{
-		GUID: legacyGUID, Path: aliasedPath, MediaID: aliased,
-	}, "derived-guid"); err != nil {
+	if err := st.ReconcileLegacySubscriptionEntry(ctx, sub.ID, legacyGUID, "derived-guid"); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.MarkSubscriptionEntrySeen(ctx, sub.ID, "older-guid", olderPath, now.Add(time.Minute)); err != nil {

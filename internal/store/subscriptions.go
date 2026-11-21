@@ -427,60 +427,48 @@ func (s *Store) MarkSubscriptionEntrySeenWithSource(ctx context.Context, id Subs
 	return err
 }
 
-// SubscriptionMediaReceipt links a seen entry to the Media at its recorded path
-// when the path has been scanned.
-type SubscriptionMediaReceipt struct {
-	GUID       string
-	Path       string
-	MediaID    MediaID
-	Title      string
-	GUIDSource SubscriptionGUIDSource
-}
-
-// SubscriptionMediaReceipts resolves receipts through every Part and Version
-// in the shared catalog. Trashed and missing files still count as seen when
-// the path identifies exactly one Media. A receipt without a Media ID can
-// still be waiting for its scan. Encrypted catalogs stay outside this
-// reconciliation because their Media metadata belongs to a separate plane.
-func (s *Store) SubscriptionMediaReceipts(ctx context.Context, id SubscriptionID) ([]SubscriptionMediaReceipt, error) {
+// SubscriptionLegacyReceipts returns receipts recorded before GUID provenance
+// existed, keyed by GUID with their paths. Earlier releases keyed GUID-less
+// entries by enclosure URL. A receipt whose path a newer receipt already
+// claims has been reconciled and is left out.
+func (s *Store) SubscriptionLegacyReceipts(ctx context.Context, id SubscriptionID) (map[string]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT se.guid, se.path, COALESCE(MIN(m.id), ''), COALESCE(MIN(m.title), ''), se.guid_source
+		SELECT se.guid, se.path
 		FROM subscription_seen_entry se
-		JOIN subscription sub ON sub.id = se.subscription_id
-		JOIN library l ON l.id = sub.library_id AND l.encrypted = 0
-		LEFT JOIN media_file mf ON mf.path = se.path
-		LEFT JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id
-		WHERE se.subscription_id = ? AND se.path <> ''
-		GROUP BY se.guid
-		HAVING COUNT(DISTINCT m.id) <= 1
+		WHERE se.subscription_id = ? AND se.guid_source = 'unknown' AND se.path <> ''
+		  AND NOT EXISTS (
+			SELECT 1 FROM subscription_seen_entry claimed
+			WHERE claimed.subscription_id = se.subscription_id
+			  AND claimed.path = se.path AND claimed.guid_source <> 'unknown')
 	`, id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var receipts []SubscriptionMediaReceipt
+	receipts := make(map[string]string)
 	for rows.Next() {
-		var receipt SubscriptionMediaReceipt
-		if err := rows.Scan(&receipt.GUID, &receipt.Path, &receipt.MediaID, &receipt.Title, &receipt.GUIDSource); err != nil {
+		var guid, path string
+		if err := rows.Scan(&guid, &path); err != nil {
 			return nil, err
 		}
-		receipts = append(receipts, receipt)
+		receipts[guid] = path
 	}
 	return receipts, rows.Err()
 }
 
-// AliasSubscriptionEntryGUID adds a GUID while preserving the existing
-// receipt and its timestamp. The source must still resolve to the same Media.
-func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionID, existing SubscriptionMediaReceipt, guid string) error {
+// ReconcileLegacySubscriptionEntry records guid as a derived identity for the
+// file a legacy receipt names, keeping that receipt's path and timestamp, so
+// later polls match the entry without the legacy receipt.
+func (s *Store) ReconcileLegacySubscriptionEntry(ctx context.Context, id SubscriptionID, legacyGUID, guid string) error {
 	if id == "" {
 		return errors.New("subscription ID is required")
 	}
-	if strings.TrimSpace(existing.GUID) == "" || strings.TrimSpace(guid) == "" {
+	if strings.TrimSpace(legacyGUID) == "" || strings.TrimSpace(guid) == "" {
 		return errors.New("entry GUID is required")
 	}
 	s.mu.RLock()
@@ -490,17 +478,11 @@ func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionI
 	}
 	result, err := s.catalogW.ExecContext(ctx, `
 		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path, guid_source)
-		SELECT se.subscription_id, ?, se.seen_at_ms, se.path, 'derived'
-		FROM subscription_seen_entry se
-		JOIN subscription sub ON sub.id = se.subscription_id
-		JOIN library l ON l.id = sub.library_id AND l.encrypted = 0
-		JOIN media_file mf ON mf.path = se.path
-		JOIN media m ON m.id = mf.media_id AND m.library_id = sub.library_id
-		WHERE se.subscription_id = ? AND se.guid = ? AND se.path = ? AND se.guid_source = 'unknown'
-		GROUP BY se.guid
-		HAVING COUNT(DISTINCT m.id) = 1 AND MIN(m.id) = ?
+		SELECT subscription_id, ?, seen_at_ms, path, 'derived'
+		FROM subscription_seen_entry
+		WHERE subscription_id = ? AND guid = ? AND guid_source = 'unknown'
 		ON CONFLICT(subscription_id, guid) DO NOTHING
-	`, guid, id, existing.GUID, existing.Path, existing.MediaID)
+	`, guid, id, legacyGUID)
 	if err != nil {
 		return err
 	}
