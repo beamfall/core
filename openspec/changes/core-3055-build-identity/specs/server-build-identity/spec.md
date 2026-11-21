@@ -3,9 +3,9 @@
 ### Requirement: Core reports its build version and date
 
 Core builds SHALL carry a version and report a build date as a second-precision UTC RFC3339
-timestamp when available. `beamfall version` and the capabilities object in `GET /health`
-SHALL expose that identity. The health response SHALL retain the enabled capability IDs in
-the report and provide the build identity even when the server is not ready.
+timestamp when available. `beamfall version` and top-level `version`, `commit` and `buildDate` fields in `GET /health`
+SHALL expose that identity. The health response SHALL keep `capabilities` as the list of enabled IDs,
+unchanged in shape, and provide the build identity even when the server is not ready.
 
 #### Scenario: Reproducible release timestamp
 

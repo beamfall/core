@@ -7,8 +7,8 @@ and the CLI.
 
 - Stamp Docker, release and Makefile builds with a UTC date. Use Go's VCS timestamp as the
   fallback for source builds and omit the date when no timestamp is available.
-- Expose the build identity in `beamfall version` and in the capabilities object under
-  `/health`. The object includes the existing enabled capability IDs.
+- Expose the build identity in `beamfall version` and as top-level fields under
+  `/health`; its `capabilities` field keeps its existing shape, the list of enabled IDs.
 - Show the version and localized date in the shared desktop and tablet top bar.
 
 ## Impact

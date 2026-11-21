@@ -46,7 +46,7 @@ it("shares a not-ready health response across shells and remounts", async () => 
   const build = { version: "v1.2.3", commit, buildDate };
   const fetchHealth = vi
     .fn()
-    .mockResolvedValue(new Response(JSON.stringify({ capabilities: build }), { status: 503 }));
+    .mockResolvedValue(new Response(JSON.stringify({ capabilities: [], ...build }), { status: 503 }));
   vi.stubGlobal("fetch", fetchHealth);
 
   const first = renderHook(useServerBuild);

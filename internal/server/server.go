@@ -260,6 +260,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	if err != nil {
 		panic(fmt.Errorf("invalid release first-party build catalog: %w", err))
 	}
+	defaultCapabilities := capabilities.EnabledIDs(nil)
 	report := capabilities.Current()
 	s := &Server{
 		mux:             http.NewServeMux(),
@@ -280,7 +281,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 			BuildDate: report.BuildDate,
 			BuildTags: report.BuildTags,
 		},
-		capabilities: report.Capabilities,
+		capabilities: append([]string(nil), defaultCapabilities...),
 		baseURL:      baseURL,
 		knownProxies: knownProxies,
 	}
@@ -1120,9 +1121,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	}
 	_, ffmpegErr := lookPath("ffmpeg")
 	_, ffprobeErr := lookPath("ffprobe")
-	report := s.buildIdentity
-	report.Capabilities = s.capabilities
-	writeJSON(w, status, map[string]any{
+	body := map[string]any{
 		"status":       summary,
 		"live":         true,
 		"ready":        ready,
@@ -1131,9 +1130,16 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		"buildSHA":     s.buildSHA,
 		"seedProfile":  s.seedProfile,
 		"seedVersion":  s.seedVersion,
-		"capabilities": report,
+		"capabilities": s.capabilities,
 		"features":     serverFeatures,
-	})
+		"version":      s.buildIdentity.Version,
+		"commit":       s.buildIdentity.Commit,
+	}
+	// buildDate is omitted, never invented, when the binary carries none.
+	if s.buildIdentity.BuildDate != "" {
+		body["buildDate"] = s.buildIdentity.BuildDate
+	}
+	writeJSON(w, status, body)
 }
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {

@@ -279,9 +279,8 @@ func TestHealthDistinguishesReadyFromLive(t *testing.T) {
 	if ready["seedVersion"] != store.AcceptanceSeedVersion {
 		t.Fatalf("ready body seedVersion = %v, want %s", ready["seedVersion"], store.AcceptanceSeedVersion)
 	}
-	report, _ := ready["capabilities"].(map[string]any)
-	if ids, ok := report["capabilities"].([]any); !ok || !slices.Equal(ids, []any{"conversion", "rename"}) {
-		t.Fatalf("ready body capabilities = %v, want report with conversion and rename", ready["capabilities"])
+	if ids, ok := ready["capabilities"].([]any); !ok || !slices.Equal(ids, []any{"conversion", "rename"}) {
+		t.Fatalf("ready body capabilities = %v, want [conversion rename]", ready["capabilities"])
 	}
 
 	// Not-ready store: still live, but not ready, 503.
@@ -326,13 +325,15 @@ func TestHealthReportsBuildIdentity(t *testing.T) {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 			}
 			body := decodeHealth(t, rec.Body.String())
-			report, ok := body["capabilities"].(map[string]any)
-			if !ok || report["version"] != version || report["commit"] != commit {
-				t.Fatalf("health capabilities = %v, want version %q and commit %q", body["capabilities"], version, commit)
+			if body["version"] != version || body["commit"] != commit {
+				t.Fatalf("health version/commit = %v/%v, want %q/%q", body["version"], body["commit"], version, commit)
 			}
-			got, present := report["buildDate"]
+			if _, isList := body["capabilities"].([]any); !isList {
+				t.Fatalf("health capabilities = %T, want the enabled-ID list (shape unchanged)", body["capabilities"])
+			}
+			got, present := body["buildDate"]
 			if date == "" && present || date != "" && got != date {
-				t.Fatalf("health capabilities.buildDate = %v (present %v), want %q (omitted when empty)", got, present, date)
+				t.Fatalf("health buildDate = %v (present %v), want %q (omitted when empty)", got, present, date)
 			}
 		})
 	}

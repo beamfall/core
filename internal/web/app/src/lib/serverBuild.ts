@@ -15,9 +15,8 @@ async function fetchServerBuild(): Promise<ServerBuild | null> {
     const response = await fetch("/health", { credentials: "same-origin", cache: "no-store" });
     // Readiness does not affect the identity of the running build.
     if (!response.ok && response.status !== 503) return null;
-    const body: { capabilities?: { version?: unknown; commit?: unknown; buildDate?: unknown } } =
+    const report: { version?: unknown; commit?: unknown; buildDate?: unknown } | null =
       await response.json();
-    const report = body?.capabilities;
     if (typeof report?.version !== "string" || !report.version) return null;
     return {
       version: report.version,
