@@ -740,7 +740,12 @@ func TestSubscriptionTitleRejectsURLs(t *testing.T) {
 		"http://other.test/x?y=z": "",
 		"FEEDS.example.test":      "",
 		"other.example.test":      "other.example.test",
-		long:                      long[:2*maxSubscriptionTitleRunes],
+		"//feeds.example.test/private?token=secret":                  "",
+		"feeds.example.test/private?token=secret":                    "",
+		"Daily News (https://feeds.example.test/x.xml?sig=abc) feed": "",
+		"Daily News — listen at //cdn.example.test/a?sig=abc":        "",
+		"Mr. Robot: Season 1 / Part 2":                               "Mr. Robot: Season 1 / Part 2",
+		long:                                                         long[:2*maxSubscriptionTitleRunes],
 	} {
 		if got := SubscriptionTitle(title, feedURL); got != want {
 			t.Errorf("SubscriptionTitle(%q) = %q, want %q", title, got, want)

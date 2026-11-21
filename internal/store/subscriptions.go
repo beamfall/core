@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -350,7 +351,7 @@ func SubscriptionTitle(title, feedURL string) string {
 	if title == "" || title == strings.TrimSpace(feedURL) {
 		return ""
 	}
-	if u, err := url.Parse(title); err == nil && u.Scheme != "" && u.Host != "" {
+	if containsURL(title) {
 		return ""
 	}
 	if feed, err := url.Parse(feedURL); err == nil && feed.Hostname() != "" && strings.EqualFold(title, feed.Hostname()) {
@@ -360,6 +361,22 @@ func SubscriptionTitle(title, feedURL string) string {
 		title = strings.TrimSpace(string(runes[:maxSubscriptionTitleRunes]))
 	}
 	return title
+}
+
+// hostPathPattern matches a scheme-less URL: a dotted host, an optional port,
+// then a path or query.
+var hostPathPattern = regexp.MustCompile(`(?i)^[a-z0-9-]+(\.[a-z0-9-]+)+(:[0-9]+)?[/?]`)
+
+// containsURL reports whether any word of title is a URL, with or without a
+// scheme, so a signed feed URL inside prose never becomes a visible title.
+func containsURL(title string) bool {
+	for _, word := range strings.Fields(title) {
+		word = strings.Trim(word, "()[]<>\"'.,;:!")
+		if strings.Contains(word, "://") || strings.HasPrefix(word, "//") || hostPathPattern.MatchString(word) {
+			return true
+		}
+	}
+	return false
 }
 
 // FillSubscriptionTitle sets the Subscription's title only while it is empty,
