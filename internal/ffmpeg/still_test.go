@@ -832,6 +832,8 @@ func TestHEIFColourResolvesThePrimaryItemsProperty(t *testing.T) {
 		{"association in a later ipma", [][]byte{srgb, p3}, [][]byte{{0, 0, 0, 1, 0, 2, 1, 0x81}, {0, 0, 0, 1, 0, 1, 1, 0x82}}, nil, true},
 		{"grid inherits the first tile", [][]byte{p3}, [][]byte{{0, 0, 0, 1, 0, 2, 1, 0x81}}, box("dimg", []byte{0, 1, 0, 2, 0, 2, 0, 3}), true},
 		{"grid without a dimg reference", [][]byte{p3}, [][]byte{{0, 0, 0, 1, 0, 2, 1, 0x81}}, nil, false},
+		{"empty ICC does not hide nclx", [][]byte{box("colr", []byte("prof")), p3}, [][]byte{{0, 0, 0, 1, 0, 1, 2, 0x81, 0x82}}, nil, true},
+		{"no ipma takes the first colr", [][]byte{p3}, nil, nil, true},
 	}
 	for _, c := range cases {
 		if got := heifColourOf(t, c.props, c.ipmas, c.iref); got.converts() != c.want {
@@ -848,6 +850,11 @@ func TestJPEGMetadataReadsOnlyWhatItKeeps(t *testing.T) {
 		segs = append(segs, xmp, dupICC)
 	}
 	segs = append(segs, exifSegment(6), exifSegment(3))
+	// Only the first Exif counts, even when it has no orientation.
+	noOrientation := withSegments(encodeJPEG(t, solidImage(16, 16, previewColour)), exifSegment(0), exifSegment(6))
+	if o, _, _ := jpegMetadataAt(bytes.NewReader(noOrientation), int64(len(noOrientation))); o != 0 {
+		t.Fatalf("orientation = %d from a second Exif, want 0", o)
+	}
 	jpg := withSegments(encodeJPEG(t, solidImage(16, 16, previewColour)), segs...)
 	r := &countingReaderAt{r: bytes.NewReader(jpg)}
 	orientation, icc, complete := jpegMetadataAt(r, int64(len(jpg)))

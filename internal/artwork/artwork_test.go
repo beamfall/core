@@ -599,13 +599,8 @@ func TestDeriveImageVersionBumpKeepsAnImportedPoster(t *testing.T) {
 	if err := svc.ImportArtwork(context.Background(), id, SlotPoster, []byte("chosen poster")); err != nil {
 		t.Fatal(err)
 	}
-	// The lazy path has rebuilt the buckets from the import, and the marker
-	// is the one a pre-version scaler wrote.
-	for _, bucket := range []string{"w400", "w1920"} {
-		if err := os.WriteFile(filepath.Join(filepath.Dir(svc.PosterPath(id)), SlotPoster+"."+bucket+".jpg"), []byte("bucket"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	// The marker is the one a pre-version scaler wrote; importing removed
+	// the buckets.
 	if err := os.WriteFile(svc.PosterPath(id)+".source-fingerprint", []byte("fingerprint-1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -613,12 +608,23 @@ func TestDeriveImageVersionBumpKeepsAnImportedPoster(t *testing.T) {
 	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
 		t.Fatal(err)
 	}
-	if scaler.calls != before {
-		t.Fatalf("scale calls = %d, want the imported poster kept", scaler.calls)
+	if scaler.calls != before+2 {
+		t.Fatalf("scale calls = %d, want %d: the two buckets only", scaler.calls, before+2)
 	}
-	// #nosec G304 -- the poster path is under the test-owned artwork root.
-	if data, err := os.ReadFile(svc.PosterPath(id)); err != nil || string(data) != "chosen poster" {
-		t.Fatalf("poster = %q, %v; want the imported poster", data, err)
+	dir := filepath.Dir(svc.PosterPath(id))
+	for _, name := range []string{SlotPoster + ".jpg", SlotPoster + ".w400.jpg", SlotPoster + ".w1920.jpg"} {
+		// #nosec G304 -- the path is under the test-owned artwork root.
+		if data, err := os.ReadFile(filepath.Join(dir, name)); err != nil || string(data) != "chosen poster" {
+			t.Fatalf("%s = %q, %v; want the imported poster", name, data, err)
+		}
+	}
+	// The rebuilt buckets carry the current stamp: the next scan is a no-op.
+	before = scaler.calls
+	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+		t.Fatal(err)
+	}
+	if scaler.calls != before {
+		t.Fatalf("scale calls = %d after a current rescan, want %d", scaler.calls, before)
 	}
 }
 

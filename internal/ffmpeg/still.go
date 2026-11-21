@@ -413,7 +413,7 @@ func heifColour(r io.ReaderAt, size int64, top []bmffBox) stillColour {
 		}
 	}
 	primary, hasPrimary := heifPrimaryItem(r, size, metaBoxes)
-	if !hasPrimary {
+	if _, hasIPMA := findBox(iprpBoxes, "ipma", nil); !hasPrimary || !hasIPMA {
 		if box, ok := colrs[first]; ok {
 			return colrColour(readSpan(r, size, box.payload, maxICCBytes+4))
 		}
@@ -450,7 +450,11 @@ func heifItemColr(r io.ReaderAt, size int64, iprpBoxes []bmffBox, colrs map[int]
 			}
 			switch string(readPrefix(r, size, box.payload, 4)) {
 			case "prof", "rICC":
-				return box, true
+				// A profile too short for an ICC header is malformed, not a
+				// profile the decoder would apply.
+				if box.payload.length >= 4+128 {
+					return box, true
+				}
 			case "nclx":
 				if !found {
 					nclx, found = box, true

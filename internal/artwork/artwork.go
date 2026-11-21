@@ -616,16 +616,16 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 	// A pre-version marker (the bare fingerprint) still covers a poster the
 	// user imported over the generated one: the version bump regenerates only
 	// what the scaler made, never a selection.
-	current := recorded == stamp || (recorded == fingerprint && !regularFileExists(generatedMarkerPath(poster)))
-	if err == nil && current && nonEmptyRegularFile(poster) {
-		fresh := true
+	imported := !regularFileExists(generatedMarkerPath(poster))
+	current := err == nil && nonEmptyRegularFile(poster) && (recorded == stamp || (recorded == fingerprint && imported))
+	var missing []string
+	if current {
 		for _, bucket := range buckets {
 			if !nonEmptyRegularFile(filepath.Join(filepath.Dir(poster), SlotPoster+"."+bucket+".jpg")) {
-				fresh = false
-				break
+				missing = append(missing, bucket)
 			}
 		}
-		if fresh {
+		if len(missing) == 0 {
 			return nil
 		}
 	}
@@ -640,6 +640,11 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 			return errProtectedArtwork
 		}
 		return nil
+	}
+	if current && imported {
+		// The user's poster for this source stays: rebuild only the buckets
+		// that importing it removed, from the poster itself.
+		return s.deriveBucketsFrom(ctx, id, poster, missing, marker, stamp, guard)
 	}
 	err = s.scaleImageAtomic(ctx, path, posterWidth, poster, guard)
 	s.versions.forget(poster)
@@ -656,9 +661,16 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 		}
 		return err
 	}
+	return s.deriveBucketsFrom(ctx, id, path, buckets, marker, stamp, guard)
+}
+
+// deriveBucketsFrom scales src into the poster's named width buckets, then
+// records stamp as the derivatives' source fingerprint.
+func (s *Service) deriveBucketsFrom(ctx context.Context, id store.MediaID, src string, buckets []string, marker, stamp string, guard func() error) error {
+	dir := filepath.Dir(marker)
 	for _, bucket := range buckets {
-		dst := filepath.Join(filepath.Dir(poster), SlotPoster+"."+bucket+".jpg")
-		if err := s.scaleImageAtomic(ctx, path, bucketWidths[bucket], dst, guard); err != nil {
+		dst := filepath.Join(dir, SlotPoster+"."+bucket+".jpg")
+		if err := s.scaleImageAtomic(ctx, src, bucketWidths[bucket], dst, guard); err != nil {
 			if errors.Is(err, errProtectedArtwork) {
 				return s.PurgeMediaArtwork(id)
 			}
