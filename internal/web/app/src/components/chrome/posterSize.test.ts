@@ -232,13 +232,51 @@ describe("poster size roaming with the Profile (CORE-2914)", () => {
     );
     renderHook(() => usePosterSizeRoot("p1"));
 
-    // Another tab picks Small and saves it.
+    // Another tab picks Small and saves it; the read lands before this tab
+    // hears the storage event.
     localStorage.setItem(POSTER_SIZE_KEY, "small");
-    window.dispatchEvent(new StorageEvent("storage", { key: POSTER_SIZE_KEY, newValue: "small" }));
     resolveRead(saved("large"));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(readPosterSize()).toBe("small");
     expect(setClientPref).not.toHaveBeenCalled();
+  });
+
+  it("does not let a read finishing during a Console visit undo a pick made there", async () => {
+    localStorage.setItem(POSTER_SIZE_KEY, "medium");
+    let resolveRead: (prefs: { key: string; value: string }[]) => void = () => {};
+    vi.mocked(fetchClientPrefs).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+    );
+    const { rerender } = renderHook(({ id }) => usePosterSizeRoot(id), {
+      initialProps: { id: "p1" as string | null },
+    });
+    rerender({ id: null });
+    setPosterSize("small");
+    resolveRead(saved("large"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(readPosterSize()).toBe("small");
+    expect(setClientPref).not.toHaveBeenCalled();
+  });
+
+  it("reads the Profile again in a new identity epoch", async () => {
+    setIdentityEpochSignal(new AbortController().signal);
+    vi.mocked(fetchClientPrefs).mockResolvedValueOnce(saved("large"));
+    const { rerender } = renderHook(({ id }) => usePosterSizeRoot(id), {
+      initialProps: { id: "p1" as string | null },
+    });
+    await waitFor(() => expect(readPosterSize()).toBe("large"));
+
+    // A session refresh: no Profile while the next epoch loads, then the same one.
+    rerender({ id: null });
+    setIdentityEpochSignal(new AbortController().signal);
+    vi.mocked(fetchClientPrefs).mockResolvedValueOnce(saved("small"));
+    rerender({ id: "p1" });
+
+    await waitFor(() => expect(readPosterSize()).toBe("small"));
+    expect(fetchClientPrefs).toHaveBeenCalledTimes(2);
   });
 });
