@@ -446,7 +446,11 @@ type orderedSourceEndStore struct {
 	calls                                       atomic.Int32
 	firstCallback, firstReturned, reaperStarted chan struct{}
 	release                                     <-chan struct{}
-	staged                                      atomic.Bool
+	// staged records that the first source's own observation was persisted. A
+	// busy TryLock makes production retry through a later call, so any call for
+	// the first fingerprint counts.
+	staged           atomic.Bool
+	firstFingerprint atomic.Pointer[string]
 }
 
 func TestT3PathlessEncryptedItemsKeepIndependentEOFObservations(t *testing.T) {
@@ -501,16 +505,29 @@ func TestT3PathlessEncryptedItemsKeepIndependentEOFObservations(t *testing.T) {
 func (s *orderedSourceEndStore) ObserveSourceEnd(ctx context.Context, id store.MediaID, path, fingerprint, generation string, observe func() (float64, bool)) error {
 	switch s.calls.Add(1) {
 	case 1:
+		s.firstFingerprint.Store(&fingerprint)
 		defer close(s.firstReturned)
 		return s.sourceEndObserver.ObserveSourceEnd(ctx, id, path, fingerprint, generation, func() (float64, bool) {
 			close(s.firstCallback)
 			<-s.release
 			end, ok := observe()
-			s.staged.Store(ok)
+			if ok {
+				s.staged.Store(true)
+			}
 			return end, ok
 		})
 	case 2:
 		close(s.reaperStarted)
+	}
+	if first := s.firstFingerprint.Load(); first != nil && *first == fingerprint {
+		inner := observe
+		observe = func() (float64, bool) {
+			end, ok := inner()
+			if ok {
+				s.staged.Store(true)
+			}
+			return end, ok
+		}
 	}
 	return s.sourceEndObserver.ObserveSourceEnd(ctx, id, path, fingerprint, generation, observe)
 }

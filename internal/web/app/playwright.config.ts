@@ -11,7 +11,10 @@ import { defineConfig, devices } from "@playwright/test";
 const E2E_PORT = Number(process.env.BEAMFALL_E2E_PORT ?? 8830);
 const baseURL = process.env.BEAMFALL_E2E_URL ?? `http://127.0.0.1:${E2E_PORT}`;
 const suite = process.env.BEAMFALL_WEB_E2E_SUITE ?? "full";
-const globalTimeout = suite === "smoke" ? 10 * 60_000 : 30 * 60_000;
+// The smoke suite runs in about 9.7 minutes on an idle Mac, so a 10 minute
+// budget timed out under gate load and reported the unrun tests as uncovered
+// UI states (CORE-2788). Twenty minutes leaves room for a loaded host.
+const globalTimeout = suite === "smoke" ? 20 * 60_000 : 30 * 60_000;
 
 // Keyed by port so two concurrent runs never overwrite each other's
 // storageStates or harness manifest. global-setup derives the same path.
