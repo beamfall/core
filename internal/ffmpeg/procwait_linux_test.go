@@ -40,6 +40,37 @@ func TestGroupListsLiveMemberSeesRunningNotZombie(t *testing.T) {
 	}
 }
 
+// TestGroupListsLiveMemberSeesALiveMemberBesideAZombieLeader covers the
+// shape every sweep inspects: the leader has exited, unreaped, while a member
+// it started still runs. The sweep must KILL that member and then end clean.
+func TestGroupListsLiveMemberSeesALiveMemberBesideAZombieLeader(t *testing.T) {
+	// #nosec G204 -- fixed shell and test-owned script.
+	cmd := exec.Command("/bin/sh", "-c", "sleep 30 & exit 0")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := cmd.Process.Pid
+	t.Cleanup(func() { _ = cmd.Wait() })
+	if err := waitForProcessExit(pid); err != nil {
+		t.Fatal(err)
+	}
+	if !groupListsLiveMember(pid) {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		t.Fatal("a running member beside the zombie leader was not listed as live")
+	}
+	if err := sweepExitedGroup(pid); err != nil {
+		t.Fatalf("sweep left the member: %v", err)
+	}
+}
+
+func BenchmarkGroupListsLiveMember(b *testing.B) {
+	pgid := syscall.Getpgrp()
+	for b.Loop() {
+		groupListsLiveMember(pgid)
+	}
+}
+
 func TestParseProcStatTakesFieldsAfterTheLastParen(t *testing.T) {
 	state, pgid, ok := parseProcStat([]byte("42 (a) b) (c) S 1 77 77 0"))
 	if !ok || state != 'S' || pgid != 77 {
@@ -73,11 +104,17 @@ func TestSuperviseReportsAPipeHolderTheKillCannotEnd(t *testing.T) {
 	cmd := exec.Command("/bin/sh", "-c",
 		`setsid /bin/sh -c 'echo $$ > "$1"; exec sleep 30' sh "$1" &
 		while [ ! -s "$1" ]; do :; done; printf ok`, "sh", pidFile)
-	t.Cleanup(func() { killHolder(t, pidFile) })
 
+	// Cleanups run last-in first: the holder dies, which frees a drain still
+	// blocked on it; the cancel ends the run if the fixture itself stalled;
+	// the join then finishes before the lister is restored.
+	ctx, cancel := context.WithCancel(context.Background())
 	var out bytes.Buffer
 	done := make(chan error, 1)
-	go func() { done <- supervise(context.Background(), cmd, &out, nil) }()
+	finished := make(chan struct{})
+	go func() { done <- supervise(ctx, cmd, &out, nil); close(finished) }()
+	t.Cleanup(func() { cancel(); <-finished })
+	t.Cleanup(func() { killHolder(t, pidFile) })
 	select {
 	case err := <-done:
 		if !errors.Is(err, errGroupSurvived) {

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"strconv"
+	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -32,9 +33,14 @@ const groupQuietProbes = 1
 // groupListsLiveMember scans /proc for a member of group pgid that is not a
 // zombie, or a zombie main thread whose process still runs other threads. A
 // member in uninterruptible I/O shows as live until the I/O ends and the
-// pending KILL takes it. A failed /proc listing counts as a live member. This mirrors
-// integrationhost's scan; ffmpeg is a leaf package and cannot import it.
+// pending KILL takes it. A failed /proc listing, or a stat read that fails for
+// any reason but the process having gone or being another user's, counts as a
+// live member. This mirrors integrationhost's scan; ffmpeg is a leaf package
+// and cannot import it.
 func groupListsLiveMember(pgid int) bool {
+	if !procIsOurs() {
+		return false // the pids in this /proc are not ours to compare
+	}
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return true
@@ -44,10 +50,11 @@ func groupListsLiveMember(pgid int) bool {
 			continue
 		}
 		dir := "/proc/" + entry.Name()
-		// A process gone since the listing, or one whose stat cannot be read,
-		// is skipped: it cannot be told apart from an unrelated process.
 		stat, err := os.ReadFile(dir + "/stat") // #nosec G304 -- a /proc entry this package built
 		if err != nil {
+			if procPresent(err) && !procHidden(err) {
+				return true // cannot tell this process is not a member
+			}
 			continue
 		}
 		state, group, ok := parseProcStat(stat)
@@ -56,6 +63,21 @@ func groupListsLiveMember(pgid int) bool {
 		}
 	}
 	return false
+}
+
+// procIsOurs reports whether /proc belongs to this process's PID namespace,
+// so the pgids it lists are the ones this process sees. A /proc inherited
+// from an ancestor namespace numbers processes differently; the sweep then
+// cannot tell members apart and is skipped, as it was before CORE-2821.
+var procIsOurs = sync.OnceValue(func() bool {
+	self, err := os.Readlink("/proc/self")
+	return err == nil && self == strconv.Itoa(os.Getpid())
+})
+
+// procHidden reports a stat read refused for another user's process, as
+// hidepid allows. The supervisor's own descendants stay readable to it.
+func procHidden(err error) bool {
+	return errors.Is(err, fs.ErrPermission)
 }
 
 func procExited(state byte) bool { return state == 'Z' || state == 'X' }
