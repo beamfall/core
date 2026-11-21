@@ -230,6 +230,47 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
       // The editor's Details section renders only once the seeded Media has loaded.
       await expect(page.getByRole("heading", { level: 3, name: "Details" })).toBeVisible();
       return;
+    case "/party":
+      // No live session: the host page shows its start form.
+      await routeOperation(page, "PartySession", { data: { partySession: null } });
+      await page.goto("/web/party");
+      await expect(page.getByRole("heading", { level: 1, name: "Karaoke party" })).toBeVisible();
+      return;
+    case "/party/stage/:sessionID":
+      // Between songs: the stage shows the join code and nothing plays.
+      await routeOperation(page, "PartyScreenRegister", {
+        data: {
+          partyScreenRegister: {
+            id: "screen-fixture",
+            name: "Pop-out stage",
+            kind: "popout",
+            carrier: "local",
+            lead: true,
+            ticker: true,
+            offsetMS: 0,
+            rttMS: 0,
+            reportedAt: "",
+          },
+        },
+      });
+      await routeOperation(page, "PartyScreenReport", { data: { partyScreenReport: true } });
+      await routeOperation(page, "PartyStage", {
+        data: {
+          partyStage: {
+            sessionID: "party-fixture",
+            serverNowMS: Date.now(),
+            current: null,
+            playback: null,
+            upNext: [],
+            ticker: true,
+            joinCode: "QZXW",
+            joinPath: "/web/join/QZXW",
+          },
+        },
+      });
+      await page.goto("/web/party/stage/party-fixture");
+      await expect(page.getByText("QZXW", { exact: true })).toBeVisible();
+      return;
     case "/watch/*":
       await page.goto("/web/watch/media-alpha");
       await expect(page.getByRole("button", { name: "Back" }).first()).toBeVisible();

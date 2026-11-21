@@ -23,6 +23,7 @@ export * from "./auth";
 export * from "./console";
 export * from "./feeds";
 export * from "./manage";
+export * from "./party";
 export type * from "./types";
 export * from "./viewer";
 export * from "./watchparty";

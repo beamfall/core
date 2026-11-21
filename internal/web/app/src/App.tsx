@@ -44,7 +44,8 @@ const PromotePage = lazyRoute(() =>
 // resolved lazy content back ~300 ms after a fallback was shown). Never
 // rejects; a failed chunk falls through to the route's own error boundary.
 export function preloadInitialRoute(pathname: string): Promise<unknown> {
-  const area = /^\/(setup|enroll|promote|manage|console)(\/|$)/.exec(pathname)?.[1];
+  // "party" (CORE-1662) is a Viewer route: matched here, it still resolves to ViewerArea.
+  const area = /^\/(setup|enroll|promote|manage|console|party)(\/|$)/.exec(pathname)?.[1];
   const route =
     area === "setup"
       ? SetupWizard

@@ -54,6 +54,8 @@ export const VIEWER_ROUTES = Object.freeze([
   "/settings",
   "/view/*",
   "/slideshow",
+  "/party",
+  "/party/stage/:sessionID",
   "/watch/*",
 ]);
 
@@ -788,6 +790,7 @@ export const UI_STATE_GAPS = Object.freeze({
   "/notifications#empty:page": NO_EMPTY_FIXTURE,
   "/notifications@mobile": VIEWER_HEADER_OVERFLOW,
   "/remote@mobile": VIEWER_HEADER_OVERFLOW,
+  "/party@mobile": VIEWER_HEADER_OVERFLOW,
   "/profiles#empty:unavailable": NO_EMPTY_FIXTURE,
   "/profiles#error:failure-alert": NO_ERROR_FIXTURE,
   "/profiles#error:pin": NO_ERROR_FIXTURE,

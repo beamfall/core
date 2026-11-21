@@ -41,6 +41,8 @@ import { migrationFixmatchStrings } from "./migration-fixmatch";
 import { migrationUnmatchedStrings } from "./migration-unmatched";
 import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
+import { partyHostStrings } from "./party-host";
+import { partyHostLiveStrings } from "./party-host-live";
 import { pickerStrings } from "./pickers";
 import { playbackStrings } from "./playback";
 import { playbackChapterStrings } from "./playback-chapters";
@@ -180,6 +182,8 @@ export const en = {
   ...activityPluginStrings.en,
   ...workbenchPageStrings.en,
   ...appearanceStrings.en,
+  ...partyHostStrings.en,
+  ...partyHostLiveStrings.en,
 } as const;
 
 export const fr = {
@@ -273,6 +277,8 @@ export const fr = {
   ...activityPluginStrings.fr,
   ...workbenchPageStrings.fr,
   ...appearanceStrings.fr,
+  ...partyHostStrings.fr,
+  ...partyHostLiveStrings.fr,
 } as const;
 
 export const de = {
@@ -366,6 +372,8 @@ export const de = {
   ...activityPluginStrings.de,
   ...workbenchPageStrings.de,
   ...appearanceStrings.de,
+  ...partyHostStrings.de,
+  ...partyHostLiveStrings.de,
 } as const;
 
 export const es = {
@@ -459,6 +467,8 @@ export const es = {
   ...activityPluginStrings.es,
   ...workbenchPageStrings.es,
   ...appearanceStrings.es,
+  ...partyHostStrings.es,
+  ...partyHostLiveStrings.es,
 } as const;
 
 export const pt = {
@@ -552,4 +562,6 @@ export const pt = {
   ...activityPluginStrings.pt,
   ...workbenchPageStrings.pt,
   ...appearanceStrings.pt,
+  ...partyHostStrings.pt,
+  ...partyHostLiveStrings.pt,
 } as const;
