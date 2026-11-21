@@ -16,15 +16,26 @@ follow the Profile to its other devices.
   `subtitleLanguages`, `subtitleMode` and `preferSDH`.
 - Every other `updateProfile` argument (name, kind, disabled, stream cap, remote bitrate cap,
   transcode gate, entry PIN), and any write to another Profile, still requires an Admin Session.
-- `updateProfile` stays listed as a Console field; the schema manifest tier and the privileged
-  audit trail are unchanged, so a self-service write is still audited.
+- The exception is evaluated on the field's effective arguments: an argument bound to a variable of
+  any name counts under the argument's name, and an operation variable no `updateProfile` argument
+  binds is ignored by both the authorization check and the resolver.
+- A self-service write updates only the columns it supplies, so it cannot undo a concurrent Admin
+  change to another Profile column.
+- A self-service reply lists only the Library grants the caller can see; an unrevealed session
+  learns no restricted Library ID.
+- `updateProfile` stays listed as a Console field and keeps its default `admin` tier in the schema
+  manifest; the four-field self-service exception is documented on the manifest tier rather than
+  changing it. The privileged audit trail still records every `updateProfile` occurrence, now under
+  the actor whose scope that occurrence ran under (after a `switchProfile` earlier in the batch, the
+  new Profile).
 
 ## Non-goals
 
 - A new mutation or wire field. Clients keep calling `updateProfile` with the same arguments.
 - A server field for the subtitle look (size, colour, edge). It is stored on the client today; moving
   it to the server is separate work.
-- Client changes. The macOS Viewer's local-only fallback is a beamfall-apple follow-up.
+- Client changes. The macOS Viewer moves to the server write on beamfall-apple under the same ticket.
+- Publishing a contract version; the lander does that.
 
 ## Capabilities
 
@@ -38,8 +49,10 @@ None.
 
 ## Impact
 
-- Code: `internal/graph/graph_dispatch.go` (authorization exception), `internal/graph/graph.go`
-  (authorization probes carry the field's input).
+- Code: `internal/graph/graph_dispatch.go` (authorization exception), `internal/graph/query.go`
+  (effective `updateProfile` arguments), `internal/graph/graph.go` (authorization probes carry the
+  field's input, per-occurrence audit actor, filtered reply), `internal/store` (supplied-column
+  Profile writes).
 - Failure modes: the exception widens to a policy field or another Profile. The exception accepts
   only the four track arguments and the session's own Profile ID, and tests cover each refusal.
 - Rollback: revert the commit; `updateProfile` returns to Admin Session only.

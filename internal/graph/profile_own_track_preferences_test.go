@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/beamfall/core/internal/observability"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -63,6 +64,37 @@ func TestNonAdminSessionWritesOwnTrackPreferences(t *testing.T) {
 		!slices.Equal(session.SubtitleLanguages, []string{"en"}) ||
 		session.SubtitleMode != "always" || !session.PreferSDH {
 		t.Fatalf("currentSession on another device = %#v, want the written track preferences", session)
+	}
+
+	// The reply lists only the Library grants the caller can see: the
+	// unrevealed viewer's Profile holds the restricted library-archive.
+	assertOwnWriteLibraryIDs(t, handler, authorizeViewer, []string{"library-local"})
+	assertOwnWriteLibraryIDs(t, handler, authorizeRevealed, []string{"library-local", "library-archive"})
+
+	// A variable of any name binding profileID is the same write: authorization
+	// and the resolver read the same effective arguments.
+	body = ownTrackPreferenceBody(t,
+		`mutation U($id: String!, $langs: [String!]) { updateProfile(profileID: $id, audioLanguages: $langs) { id audioLanguages } }`,
+		map[string]any{"id": "profile-default", "langs": []string{"fr"}})
+	data, errs = post(t, handler, body, authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("renamed-variable own write errors = %#v", errs)
+	}
+	if err := json.Unmarshal(data["updateProfile"], &written); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(written.AudioLanguages, []string{"fr"}) {
+		t.Fatalf("renamed-variable own write = %#v, want [fr]", written)
+	}
+
+	// An operation variable no argument binds counts for nothing: the first
+	// occurrence of the two-target batch is allowed on its own, so refusing the
+	// batch rests on its second target alone.
+	body = ownTrackPreferenceBody(t,
+		`mutation U($profileID: String!, $other: String!) { mine: updateProfile(profileID: $profileID, audioLanguages: ["de"]) { id } }`,
+		map[string]any{"profileID": "profile-default", "other": "profile-managed"})
+	if _, errs := post(t, handler, body, authorizeViewer); len(errs) != 0 {
+		t.Fatalf("own write with an unbound variable errors = %#v", errs)
 	}
 
 	// A managed Profile writes its own track preferences the same way.
@@ -163,5 +195,52 @@ func TestNonAdminSessionCannotWriteOtherProfileFields(t *testing.T) {
 	}
 	if !reflect.DeepEqual(pinsAfter, pinsBefore) {
 		t.Errorf("entry PINs changed by a refused write: %v, want %v", pinsAfter, pinsBefore)
+	}
+}
+
+func assertOwnWriteLibraryIDs(t *testing.T, handler *Handler, authorize func(*http.Request), want []string) {
+	t.Helper()
+	body := ownTrackPreferenceBody(t,
+		`mutation U($profileID: String!) { updateProfile(profileID: $profileID, preferSDH: true) { libraryIDs } }`,
+		map[string]any{"profileID": "profile-default"})
+	data, errs := post(t, handler, body, authorize)
+	if len(errs) != 0 {
+		t.Fatalf("own write errors = %#v", errs)
+	}
+	var reply struct {
+		LibraryIDs []string `json:"libraryIDs"`
+	}
+	if err := json.Unmarshal(data["updateProfile"], &reply); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(reply.LibraryIDs, want) {
+		t.Fatalf("serialized libraryIDs = %s, want %v", data["updateProfile"], want)
+	}
+}
+
+// TestOwnTrackPreferenceAuditNamesProfileAfterSwitch pins CORE-1937: after an
+// Admin Session switches Profile, the updateProfile audit record names the
+// Profile the write ran as, not the one the request arrived with.
+func TestOwnTrackPreferenceAuditNamesProfileAfterSwitch(t *testing.T) {
+	st := storetest.Open(t)
+	openManagerAdminSession(t, st)
+	handler := newTestHandlerWithStore(st)
+	audit := &recordingAudit{}
+	handler.SetAuditRecorder(audit)
+
+	body := ownTrackPreferenceBody(t,
+		`mutation M($profileID: String!) { switchProfile(profileID: $profileID) { profileID } updateProfile(profileID: $profileID, subtitleMode: "off") { id subtitleMode } }`,
+		map[string]any{"profileID": "profile-managed"})
+	if data, errs := post(t, handler, body, authorizeManager); len(errs) != 0 {
+		t.Fatalf("switch then own write: data=%v errors=%#v", data, errs)
+	}
+	var finished []observability.AuditRecord
+	for _, record := range audit.records {
+		if record.Operation == "graphql:updateprofile" && record.Outcome == observability.AuditSuccess {
+			finished = append(finished, record)
+		}
+	}
+	if len(finished) != 1 || finished[0].Actor.ProfileID != "profile-managed" || finished[0].Actor.SessionID != "session-manager" {
+		t.Fatalf("updateProfile audit = %+v (all: %+v), want one success naming profile-managed", finished, audit.records)
 	}
 }

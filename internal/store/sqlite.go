@@ -1659,27 +1659,67 @@ func profileDisabled(ctx context.Context, q queryRower, id ProfileID) (bool, err
 	return disabled != 0, nil
 }
 
-// updateProfileSettingsSQL writes the policy column set from the
-// already-merged Profile. The integration sign-in opt-in is written only when
-// integrationSignIn is set, so an unrelated edit racing an opt-out cannot write
-// a stale opt-in back; setting it false revokes the integration sessions and
+// updateProfileSettingsSQL writes the columns settings supplies, taking each
+// value from the already-merged Profile. Columns settings leaves nil are not
+// written, so a write that read the row before a concurrent edit (an Admin
+// change of kind, disabled or stream policy racing a Profile's own track
+// preference write, CORE-1937) cannot put the stale values back. Setting the
+// integration sign-in opt-in false revokes the integration sessions and
 // integration keys, so opting back in does not revive either.
-func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile, integrationSignIn *bool) error {
-	audioLanguages, err := encodeLanguages(profile.AudioLanguages)
-	if err != nil {
-		return err
+func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile, settings ProfileSettings) error {
+	var sets []string
+	var args []any
+	set := func(column string, value any) {
+		sets = append(sets, column+" = ?")
+		args = append(args, value)
 	}
-	subtitleLanguages, err := encodeLanguages(profile.SubtitleLanguages)
-	if err != nil {
-		return err
+	if settings.Name != nil {
+		set("name", profile.Name)
 	}
-	var maxStreams any
-	if profile.MaxConcurrentStreams != nil {
-		maxStreams = *profile.MaxConcurrentStreams
+	if settings.Kind != nil {
+		set("kind", profile.Kind)
 	}
-	var optIn any
-	if integrationSignIn != nil {
-		optIn = boolInt(*integrationSignIn)
+	if settings.MaxConcurrentStreams != nil {
+		var maxStreams any
+		if profile.MaxConcurrentStreams != nil {
+			maxStreams = *profile.MaxConcurrentStreams
+		}
+		set("max_concurrent_streams", maxStreams)
+	}
+	if settings.TranscodeAllowed != nil {
+		set("transcode_allowed", boolInt(profile.TranscodeAllowed))
+	}
+	if settings.Disabled != nil {
+		set("disabled", boolInt(profile.Disabled))
+	}
+	if settings.AudioLanguages != nil {
+		audioLanguages, err := encodeLanguages(profile.AudioLanguages)
+		if err != nil {
+			return err
+		}
+		set("audio_languages", audioLanguages)
+	}
+	if settings.SubtitleLanguages != nil {
+		subtitleLanguages, err := encodeLanguages(profile.SubtitleLanguages)
+		if err != nil {
+			return err
+		}
+		set("subtitle_languages", subtitleLanguages)
+	}
+	if settings.SubtitleMode != nil {
+		set("subtitle_mode", profile.SubtitleMode)
+	}
+	if settings.PreferSDH != nil {
+		set("prefer_sdh", boolInt(profile.PreferSDH))
+	}
+	if settings.IntegrationSignIn != nil {
+		set("integration_sign_in", boolInt(*settings.IntegrationSignIn))
+	}
+	if settings.RemoteMaxBitrate != nil {
+		set("remote_max_bitrate", profile.RemoteMaxBitrate)
+	}
+	if len(sets) == 0 {
+		return nil
 	}
 	// One transaction: an opt-out whose session or key revocation failed
 	// must not leave the Profile opted out with live keys a later opt-in
@@ -1689,15 +1729,8 @@ func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile, i
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	_, err = tx.ExecContext(ctx, `
-		UPDATE profile SET name = ?, kind = ?, max_concurrent_streams = ?, transcode_allowed = ?,
-		       disabled = ?, audio_languages = ?, subtitle_languages = ?,
-		       subtitle_mode = ?, prefer_sdh = ?, integration_sign_in = COALESCE(?, integration_sign_in),
-		       remote_max_bitrate = ?
-		WHERE id = ?`,
-		profile.Name, profile.Kind, maxStreams, boolInt(profile.TranscodeAllowed), boolInt(profile.Disabled),
-		audioLanguages, subtitleLanguages, profile.SubtitleMode, boolInt(profile.PreferSDH), optIn,
-		profile.RemoteMaxBitrate, profile.ID)
+	// #nosec G202 -- every column name above is a fixed literal; values are bound.
+	_, err = tx.ExecContext(ctx, "UPDATE profile SET "+strings.Join(sets, ", ")+" WHERE id = ?", append(args, profile.ID)...)
 	if err != nil {
 		return err
 	}
@@ -1707,7 +1740,7 @@ func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile, i
 			WHERE profile_id = ? AND library_id IN (SELECT id FROM library WHERE is_restricted = 1)`,
 			profile.ID)
 	}
-	if err == nil && integrationSignIn != nil && !*integrationSignIn {
+	if err == nil && settings.IntegrationSignIn != nil && !*settings.IntegrationSignIn {
 		_, err = tx.ExecContext(ctx, `DELETE FROM auth_session WHERE profile_id = ? AND kind = ?`, profile.ID, SessionKindIntegration)
 		if err == nil {
 			_, err = tx.ExecContext(ctx, `UPDATE compat_integration_key SET revoked_at_ms = ? WHERE profile_id = ? AND revoked_at_ms = 0`, timeToMillis(time.Now()), profile.ID)

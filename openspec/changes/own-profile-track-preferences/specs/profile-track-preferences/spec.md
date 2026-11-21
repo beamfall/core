@@ -27,3 +27,28 @@ argument, and any write to another Profile, SHALL still require an Admin Session
   or in a second `updateProfile` occurrence of the same operation
 - **THEN** the reply is `admin session required`
 - **AND** neither Profile changes
+
+#### Scenario: A renamed variable binding is the same write
+
+- **WHEN** a session without an Admin Session binds its own Profile ID through a variable of another
+  name (`profileID: $id`) and sets only track preferences
+- **THEN** the write succeeds, because authorization and the resolver read the same effective
+  arguments
+
+#### Scenario: A self-service write keeps a concurrent Admin change
+
+- **WHEN** a Profile's own track preference write and an Admin change to its kind, disabled flag or
+  stream cap race
+- **THEN** both writes survive, because each write updates only the columns it supplies
+
+#### Scenario: A self-service reply hides restricted Library grants
+
+- **WHEN** an unrevealed session writes its own track preferences and its Profile holds a restricted
+  Library grant
+- **THEN** the reply's `libraryIDs` omits the restricted Library
+
+#### Scenario: The audit names the Profile the write ran as
+
+- **WHEN** an Admin Session switches to another Profile and then writes that Profile's track
+  preferences in the same operation
+- **THEN** the privileged audit record for `updateProfile` names the Profile switched to

@@ -1523,7 +1523,7 @@ func dispatchFieldBlock038(dispatch *fieldDispatchContext) response {
 	req := dispatch.req
 	fields := dispatch.fields
 	if fields["updateprofile"] {
-		profile, err := h.updateProfile(ctx, req)
+		profile, err := h.updateProfile(ctx, scope, req)
 		if resp := resolveField(dispatch, "updateprofile", profile, err); len(resp.Errors) > 0 {
 			return resp
 		}

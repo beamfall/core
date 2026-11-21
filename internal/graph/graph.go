@@ -1558,7 +1558,11 @@ func (h *Handler) recordPrivilegedResults(ctx context.Context, plan operationPla
 			continue
 		}
 		outcome := privilegedOperationOutcome(occurrence.responseKey, resp)
-		errs = append(errs, h.recordPrivilegedAudit(ctx, []string{occurrence.canonical}, actor, outcome))
+		occurrenceActor := actor
+		if effective, ok := resp.privilegedActors[occurrence.responseKey]; ok {
+			occurrenceActor = effective
+		}
+		errs = append(errs, h.recordPrivilegedAudit(ctx, []string{occurrence.canonical}, occurrenceActor, outcome))
 	}
 	return errors.Join(errs...)
 }
@@ -1639,6 +1643,19 @@ func selectedFieldDispatchOrders(fields map[string]bool) fieldDispatchPlan {
 
 func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, plan operationPlan) response {
 	out := response{Data: map[string]any{}, privilegedOutcomes: map[string]observability.AuditOutcome{}}
+	// Each privileged occurrence is audited under the scope it last ran or
+	// was refused under; one never reached keeps the latest scope.
+	actors := map[string]observability.AuditActor{}
+	finish := func(resp response) response {
+		for _, occurrence := range plan.occurrences {
+			if _, ok := actors[occurrence.responseKey]; !ok && adminFields[occurrence.canonical] {
+				actors[occurrence.responseKey] = privilegedAuditActor(scope)
+			}
+		}
+		resp = completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+		resp.privilegedActors = actors
+		return resp
+	}
 	// Authorize the whole operation before any resolver runs. This keeps a later
 	// privileged occurrence from turning an earlier mutation into a partial,
 	// unauthorized batch.
@@ -1650,7 +1667,7 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 		}
 		for _, order := range selectedFieldDispatchOrders(probe.fields) {
 			if resp := authorizeDispatchOrder(&probe, order); len(resp.Errors) > 0 {
-				return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+				return finish(resp)
 			}
 		}
 	}
@@ -1658,10 +1675,15 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 	for _, occurrence := range plan.occurrences {
 		if mutated {
 			refreshed, resp := h.reauthorizeAfterMutation(ctx, scope, occurrence)
-			if len(resp.Errors) > 0 {
-				return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+			if refreshed.SessionID != "" || len(resp.Errors) == 0 {
+				scope = refreshed
 			}
-			scope = refreshed
+			if len(resp.Errors) > 0 {
+				return finish(resp)
+			}
+		}
+		if adminFields[occurrence.canonical] {
+			actors[occurrence.responseKey] = privilegedAuditActor(scope)
 		}
 		occurrenceRequest := req
 		occurrenceRequest.Variables = occurrence.input
@@ -1681,7 +1703,7 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 			if len(resp.Errors) > 0 {
 				// Mutation errors abort with no data. Read errors are accumulated by
 				// readField and do not reach this branch.
-				return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+				return finish(resp)
 			}
 		}
 		for key, value := range dispatch.data {
@@ -1690,7 +1712,7 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 		out.Errors = append(out.Errors, dispatch.errs...)
 		mutated = mutated || mutationFields[occurrence.canonical]
 	}
-	return completePrivilegedOutcomes(out, plan, out.privilegedOutcomes)
+	return finish(out)
 }
 
 // reauthorizeAfterMutation re-resolves a session scope after an earlier
@@ -1718,7 +1740,8 @@ func (h *Handler) reauthorizeAfterMutation(ctx context.Context, scope auth.Scope
 	}
 	for _, order := range selectedFieldDispatchOrders(probe.fields) {
 		if resp := authorizeDispatchOrder(&probe, order); len(resp.Errors) > 0 {
-			return auth.Scope{}, resp
+			// The refreshed scope names who was refused, for the audit.
+			return refreshed, resp
 		}
 	}
 	return refreshed, response{}
@@ -2509,7 +2532,7 @@ func (h *Handler) createProfile(ctx context.Context, scope auth.Scope, req reque
 // in execute, except a session writing only its own Profile's track
 // preferences, CORE-1937 — see ownTrackPreferenceWrite). Disabling a Profile refuses new sessions and hides it from
 // pickers; engagement history stays untouched.
-func (h *Handler) updateProfile(ctx context.Context, req request) (ProfileInfo, error) {
+func (h *Handler) updateProfile(ctx context.Context, scope auth.Scope, req request) (ProfileInfo, error) {
 	profileID := trimmedVariable(req, "profileID")
 	if profileID == "" {
 		return ProfileInfo{}, clientError("profileID is required")
@@ -2556,7 +2579,35 @@ func (h *Handler) updateProfile(ctx context.Context, req request) (ProfileInfo, 
 			return ProfileInfo{}, err
 		}
 	}
-	return profileInfo(profile), nil
+	info := profileInfo(profile)
+	if !scope.Admin {
+		// Only the own-track-preference write (CORE-1937) runs without an
+		// Admin Session. Its reply lists only the Library grants the caller
+		// can see, so an unrevealed session learns no restricted Library ID.
+		if info.LibraryIDs, err = h.visibleLibraryIDs(ctx, scope, info.LibraryIDs); err != nil {
+			return ProfileInfo{}, err
+		}
+	}
+	return info, nil
+}
+
+// visibleLibraryIDs keeps the Library IDs the scope can currently see, in order.
+func (h *Handler) visibleLibraryIDs(ctx context.Context, scope auth.Scope, ids []string) ([]string, error) {
+	libraries, err := h.store.Libraries(ctx, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	visible := make(map[string]bool, len(libraries))
+	for _, library := range libraries {
+		visible[string(library.ID)] = true
+	}
+	kept := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if visible[id] {
+			kept = append(kept, id)
+		}
+	}
+	return kept, nil
 }
 
 func (h *Handler) setProfileLibraries(ctx context.Context, scope auth.Scope, req request) (ProfileInfo, error) {
@@ -6510,7 +6561,11 @@ type SchemaField struct {
 	// Tier is the required authorization tier: "public" (serverInfo only),
 	// "admin" (adminFields — the ADR-0007 §4 Console mutation class), or
 	// "session" (any other scoped field; finer manager-role gating is a
-	// dispatcher-runtime concern not declared in these registries).
+	// dispatcher-runtime concern not declared in these registries). A field
+	// keeps its declared tier when the dispatcher grants a narrower runtime
+	// exception: updateProfile stays "admin", although a session may write its
+	// own Profile's audioLanguages, subtitleLanguages, subtitleMode and
+	// preferSDH without an Admin Session (CORE-1937, ownTrackPreferenceWrite).
 	Tier string `json:"tier"`
 }
 
@@ -6553,6 +6608,10 @@ type response struct {
 	Errors               []graphError                          `json:"errors,omitempty"`
 	authorizationRefused bool                                  `json:"-"`
 	privilegedOutcomes   map[string]observability.AuditOutcome `json:"-"`
+	// privilegedActors names, per privileged occurrence response key, the
+	// actor whose scope that occurrence was authorized or run under: a
+	// switchProfile earlier in the batch changes it (CORE-1937).
+	privilegedActors map[string]observability.AuditActor `json:"-"`
 }
 
 // MarshalJSON distinguishes an intentionally empty successful data object
