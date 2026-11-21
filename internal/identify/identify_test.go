@@ -79,7 +79,8 @@ type fakeCandidateStore struct {
 		pluginID  string
 		scraperID string
 	}
-	applied []string
+	applied      []string
+	priorApplied map[string]bool
 }
 
 func (f *fakeCandidateStore) UpsertArtworkCandidate(_ context.Context, mediaID store.MediaID, slot, sourceURL, pluginID, scraperID string) error {
@@ -96,6 +97,15 @@ func (f *fakeCandidateStore) UpsertArtworkCandidate(_ context.Context, mediaID s
 func (f *fakeCandidateStore) MarkArtworkCandidateApplied(_ context.Context, candidateID string) error {
 	f.applied = append(f.applied, candidateID)
 	return nil
+}
+
+// ArtworkCandidates lists one applied candidate for each slot in
+// priorApplied, standing in for an earlier fetch or pin.
+func (f *fakeCandidateStore) ArtworkCandidates(_ context.Context, mediaID store.MediaID, slot string, _ store.LibraryFilter) ([]store.ArtworkCandidate, error) {
+	if !f.priorApplied[slot] {
+		return nil, nil
+	}
+	return []store.ArtworkCandidate{{MediaID: mediaID, Slot: slot, Applied: true}}, nil
 }
 
 func demoBundles(spec plugin.ScraperSpec) fakeBundles {
@@ -432,10 +442,28 @@ type fakeArtwork struct {
 	embeddedCalls int
 	sidecarLocked map[string]bool
 	embeddedSlot  map[string]bool
+	importedSlot  map[string]bool
+	// underLock runs inside ImportArtworkIf before its condition, standing
+	// in for an import that held the directory lock first.
+	underLock func(f *fakeArtwork)
 }
 
 func (f *fakeArtwork) IsEmbeddedArtwork(_ store.MediaID, slot string) bool {
 	return f.has[slot] && f.embeddedSlot[slot]
+}
+
+func (f *fakeArtwork) IsImportedArtwork(_ store.MediaID, slot string) bool {
+	return f.has[slot] && f.importedSlot[slot]
+}
+
+func (f *fakeArtwork) ImportArtworkIf(ctx context.Context, id store.MediaID, slot string, data []byte, ok func() bool) (bool, error) {
+	if f.underLock != nil {
+		f.underLock(f)
+	}
+	if !ok() {
+		return false, nil
+	}
+	return true, f.ImportArtwork(ctx, id, slot, data)
 }
 
 func (f *fakeArtwork) IsArtworkLocked(_ store.MediaID, slot string) bool {
@@ -1741,7 +1769,9 @@ func (s *classStore) MediaClass(context.Context, store.MediaID) (store.MediaClas
 // TestApplyPosterPrecedenceByMediaClass is the CORE-2901 regression: a cover
 // embedded in a video file yields to the provider poster unless the slot is
 // locked, while audio keeps its embedded cover and a video keeps a poster that
-// was fetched or supplied rather than extracted.
+// was fetched or supplied rather than extracted. A video poster with no
+// provenance marker yields unless an applied candidate shows it was fetched
+// or pinned.
 func TestApplyPosterPrecedenceByMediaClass(t *testing.T) {
 	const posterURL = "https://img.example.test/p/42.jpg"
 	cases := []struct {
@@ -1751,13 +1781,19 @@ func TestApplyPosterPrecedenceByMediaClass(t *testing.T) {
 		generated    bool
 		manualLock   bool
 		sidecarLock  bool
+		imported     bool // the current poster came through ImportArtwork
+		priorApplied bool // the slot has an applied candidate
+		pinDuring    bool // a pin finishes while the provider poster is fetched
 		fetchFails   bool
 		wantApplied  bool
 		wantEmbedded int
 	}{
 		{name: "video embedded cover yields", class: store.MediaClassVideo, embedded: true, wantApplied: true},
 		{name: "video generated poster yields without embedded import", class: store.MediaClassVideo, generated: true, wantApplied: true},
-		{name: "video supplied poster keeps", class: store.MediaClassVideo},
+		{name: "video imported poster keeps", class: store.MediaClassVideo, imported: true},
+		{name: "video unmarked poster with an applied candidate keeps", class: store.MediaClassVideo, priorApplied: true},
+		{name: "video unmarked poster without a candidate yields", class: store.MediaClassVideo, wantApplied: true},
+		{name: "video pin during fetch keeps", class: store.MediaClassVideo, embedded: true, pinDuring: true},
 		{name: "video manual lock keeps", class: store.MediaClassVideo, embedded: true, manualLock: true},
 		{name: "video sidecar lock keeps", class: store.MediaClassVideo, embedded: true, sidecarLock: true},
 		{name: "video failed fetch falls back to embedded", class: store.MediaClassVideo, generated: true, fetchFails: true, wantEmbedded: 1},
@@ -1780,11 +1816,18 @@ func TestApplyPosterPrecedenceByMediaClass(t *testing.T) {
 				embedded:      true,
 				embeddedSlot:  map[string]bool{artwork.SlotPoster: tc.embedded},
 				sidecarLocked: map[string]bool{artwork.SlotPoster: tc.sidecarLock},
+				importedSlot:  map[string]bool{artwork.SlotPoster: tc.imported},
+			}
+			if tc.pinDuring {
+				art.underLock = func(f *fakeArtwork) {
+					f.embeddedSlot[artwork.SlotPoster] = false
+					f.importedSlot[artwork.SlotPoster] = true
+				}
 			}
 			metadata := &classStore{class: tc.class, artworkLockStore: artworkLockStore{
 				manual: map[string]bool{store.ArtworkLockField(artwork.SlotPoster): tc.manualLock},
 			}}
-			candidates := &fakeCandidateStore{}
+			candidates := &fakeCandidateStore{priorApplied: map[string]bool{artwork.SlotPoster: tc.priorApplied}}
 			service := identify.NewService(engine, demoBundles(plugin.ScraperSpec{ID: "lookup"}), metadata)
 			service.SetArtwork(fetcher, art)
 			service.SetArtworkCandidates(candidates)
@@ -1796,7 +1839,8 @@ func TestApplyPosterPrecedenceByMediaClass(t *testing.T) {
 				t.Fatalf("embedded imports = %d, want %d", art.embeddedCalls, tc.wantEmbedded)
 			}
 			if !tc.wantApplied {
-				if art.calls != 0 || len(candidates.applied) != 0 || (!tc.fetchFails && fetcher.calls != 0) {
+				fetchedForNothing := !tc.fetchFails && !tc.pinDuring && fetcher.calls != 0
+				if art.calls != 0 || len(candidates.applied) != 0 || fetchedForNothing {
 					t.Fatalf("kept poster replaced: fetches=%d imports=%d applied=%v", fetcher.calls, art.calls, candidates.applied)
 				}
 				return

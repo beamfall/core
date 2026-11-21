@@ -297,6 +297,17 @@ func (s *Service) IsEmbeddedArtwork(id store.MediaID, slot string) bool {
 // import over the slot removes it.
 func embeddedMarkerPath(path string) string { return path + ".embedded" }
 
+// IsImportedArtwork reports whether a present slot holds artwork stored
+// through ImportArtwork or a manual pick: fetched, pinned, uploaded or
+// integration-supplied. Local sidecar artwork carries its lock instead.
+func (s *Service) IsImportedArtwork(id store.MediaID, slot string) bool {
+	return s.HasArtwork(id, slot) && regularFileExists(importedMarkerPath(s.ArtworkPath(id, slot)))
+}
+
+// importedMarkerPath marks a slot stored through importMediaArtwork. Slots
+// imported before the marker existed have none.
+func importedMarkerPath(path string) string { return path + ".imported" }
+
 // HasEntityPoster reports whether a poster file exists for the Entity.
 func (s *Service) HasEntityPoster(id store.EntityID) bool {
 	_, ok := s.EntityArtworkVersion(id, SlotPoster)
@@ -888,7 +899,9 @@ func (s *Service) GeneratePoster(ctx context.Context, id store.MediaID) error {
 // ImportEmbeddedPoster extracts an attached picture from the primary media
 // file and marks it embedded (IsEmbeddedArtwork). Identify keeps it over
 // fetched artwork for audio and image Media; for video it is only a fallback
-// the provider poster replaces.
+// the provider poster replaces. It fills only a missing or generated poster,
+// checked under the directory lock, so it never replaces artwork another
+// import stored first.
 func (s *Service) ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (bool, error) {
 	if s.embedded == nil || s.isSealed(ctx, id) || s.isEncrypted(ctx, id) {
 		return false, nil
@@ -902,6 +915,9 @@ func (s *Service) ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (b
 		return false, err
 	}
 	defer unlock()
+	if s.HasArtwork(id, SlotPoster) && !s.IsGeneratedArtwork(id, SlotPoster) {
+		return false, nil
+	}
 	return s.importEmbeddedPoster(ctx, id, file.Path)
 }
 
@@ -925,8 +941,10 @@ func (s *Service) importEmbeddedPoster(ctx context.Context, id store.MediaID, sr
 	if err != nil || !found {
 		return false, err
 	}
-	if err := os.Remove(generatedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, err
+	for _, marker := range []string{generatedMarkerPath(dst), importedMarkerPath(dst)} {
+		if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
 	}
 	if err := os.WriteFile(embeddedMarkerPath(dst), nil, 0o600); err != nil {
 		return false, err
@@ -1112,44 +1130,96 @@ func (s *Service) ImportPoster(ctx context.Context, id store.MediaID, data []byt
 // is refused with a *SlotLockedError (ADR-0072), so the caller does not mark
 // its candidate applied; ImportManualArtwork is the manual-pick bypass.
 func (s *Service) ImportArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error {
-	return s.importMediaArtwork(ctx, id, slot, data, true)
+	_, err := s.importMediaArtwork(ctx, id, slot, data, true, nil)
+	return err
 }
 
-func (s *Service) importMediaArtwork(ctx context.Context, id store.MediaID, slot string, data []byte, honourLock bool) error {
+// ImportArtworkIf is ImportArtwork that first asks ok, under the slot's
+// directory lock, whether the import should still happen, so a decision made
+// before a slow fetch cannot overwrite artwork another import stored in the
+// meantime. It reports whether the bytes were stored. ok runs with the lock
+// held and must not call back into the artwork Service's importers.
+func (s *Service) ImportArtworkIf(ctx context.Context, id store.MediaID, slot string, data []byte, ok func() bool) (bool, error) {
+	return s.importMediaArtwork(ctx, id, slot, data, true, ok)
+}
+
+func (s *Service) importMediaArtwork(ctx context.Context, id store.MediaID, slot string, data []byte, honourLock bool, ok func() bool) (bool, error) {
 	if !ValidSlot(slot) {
-		return fmt.Errorf("unknown artwork slot %q", slot)
+		return false, fmt.Errorf("unknown artwork slot %q", slot)
 	}
 	// Sealed Libraries get no plaintext poster on disk (ADR-0098 area 2): skip the
 	// import fail-closed so no plaintext artwork file is written.
 	if s.isSealed(ctx, id) {
-		return nil
+		return false, nil
 	}
 	// Encrypted Libraries fail closed even while Unsealed: the
 	// imported slot is a plaintext artwork derivative of the user's Media with no
 	// encrypted-plane write path yet, so refuse rather than write it to disk.
 	if s.isEncrypted(ctx, id) {
-		return nil
+		return false, nil
 	}
 	dst := s.ArtworkPath(id, slot)
 	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer unlock()
 	if lock, locked := readSlotLock(dst); honourLock && locked {
-		return &SlotLockedError{Slot: slot, Source: lock.Source}
+		return false, &SlotLockedError{Slot: slot, Source: lock.Source}
+	}
+	if ok != nil && !ok() {
+		return false, nil
+	}
+	// Mark the slot imported before publishing: an interrupted import then
+	// leaves the slot kept rather than marked as replaceable embedded or
+	// generated artwork.
+	restore, err := markImported(dst)
+	if err != nil {
+		return false, err
 	}
 	if err := s.importArtwork(ctx, dst, string(id), slot, data); err != nil {
-		return err
+		restore()
+		return false, err
 	}
 	s.recordDominantColor(dst, slot)
-	return removeProvenanceMarkers(dst)
+	return true, nil
 }
 
-// removeProvenanceMarkers drops the generated and embedded markers once
-// imported or supplied artwork replaces the slot file.
-func removeProvenanceMarkers(dst string) error {
+// markImported writes the imported marker and drops the generated and
+// embedded ones. restore puts the previous markers back for a failed import.
+func markImported(dst string) (restore func(), err error) {
+	previous := map[string]bool{}
+	for _, marker := range []string{generatedMarkerPath(dst), embeddedMarkerPath(dst), importedMarkerPath(dst)} {
+		previous[marker] = regularFileExists(marker)
+	}
+	restore = func() {
+		for marker, existed := range previous {
+			if existed {
+				_ = os.WriteFile(marker, nil, 0o600)
+			} else {
+				_ = os.Remove(marker)
+			}
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(importedMarkerPath(dst), nil, 0o600); err != nil {
+		return nil, err
+	}
 	for _, marker := range []string{generatedMarkerPath(dst), embeddedMarkerPath(dst)} {
+		if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+			restore()
+			return nil, err
+		}
+	}
+	return restore, nil
+}
+
+// removeProvenanceMarkers drops the generated, embedded and imported markers
+// once local sidecar artwork, which its lock identifies, replaces the slot.
+func removeProvenanceMarkers(dst string) error {
+	for _, marker := range []string{generatedMarkerPath(dst), embeddedMarkerPath(dst), importedMarkerPath(dst)} {
 		if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -1273,7 +1343,7 @@ func (s *Service) removeLegacyOverlay(dst, legacy, slot string) {
 	if _, err := os.Lstat(lockMarkerPath(dst)); err != nil {
 		_ = os.Rename(lockMarkerPath(legacy), lockMarkerPath(dst))
 	}
-	for _, path := range []string{legacy, generatedMarkerPath(legacy), lockMarkerPath(legacy)} {
+	for _, path := range []string{legacy, generatedMarkerPath(legacy), embeddedMarkerPath(legacy), importedMarkerPath(legacy), lockMarkerPath(legacy)} {
 		_ = os.Remove(path)
 	}
 	for bucket := range bucketWidths {

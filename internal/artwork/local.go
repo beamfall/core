@@ -119,7 +119,8 @@ func (s *Service) IsEntityArtworkLocked(id store.EntityID, slot string) bool {
 // replaces locked local artwork. The lock marker is kept: an unchanged sidecar
 // does not take the slot back, and an edited sidecar still does.
 func (s *Service) ImportManualArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error {
-	return s.importMediaArtwork(ctx, id, slot, data, false)
+	_, err := s.importMediaArtwork(ctx, id, slot, data, false, nil)
+	return err
 }
 
 // ImportLocalArtwork imports a curated sidecar image file into a Media slot

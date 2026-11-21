@@ -1163,4 +1163,23 @@ func TestImportArtworkClearsEmbeddedProvenance(t *testing.T) {
 	if svc.IsEmbeddedArtwork("media-alpha", SlotPoster) {
 		t.Fatal("fetched poster still marked embedded")
 	}
+	if !svc.IsImportedArtwork("media-alpha", SlotPoster) {
+		t.Fatal("fetched poster not marked imported")
+	}
+	// The embedded cover fills only a missing or generated poster.
+	if found, err := svc.ImportEmbeddedPoster(context.Background(), "media-alpha"); err != nil || found {
+		t.Fatalf("ImportEmbeddedPoster over a fetched poster = %v, %v; want false, nil", found, err)
+	}
+	// A conditional import that no longer wants the slot leaves it alone.
+	stored, err := svc.ImportArtworkIf(context.Background(), "media-alpha", SlotPoster, []byte("late poster"), func() bool { return false })
+	if err != nil || stored {
+		t.Fatalf("ImportArtworkIf with a false condition = %v, %v; want false, nil", stored, err)
+	}
+	poster, err := os.ReadFile(svc.PosterPath("media-alpha"))
+	if err != nil || string(poster) != "fetched poster" {
+		t.Fatalf("poster = %q, %v; want the fetched poster", poster, err)
+	}
+	if !svc.IsImportedArtwork("media-alpha", SlotPoster) || svc.IsEmbeddedArtwork("media-alpha", SlotPoster) {
+		t.Fatal("provenance changed by refused imports")
+	}
 }
