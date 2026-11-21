@@ -396,9 +396,10 @@ func (s *Store) SubscriptionSeenGUIDs(ctx context.Context, id SubscriptionID) (m
 	return seen, rows.Err()
 }
 
-// MarkSubscriptionEntrySeen records one ingested feed-entry GUID and the
-// absolute path where its enclosure landed. Re-marking an already-seen GUID
-// is a no-op, except that a back-catalogue marker can gain a download receipt.
+// MarkSubscriptionEntrySeen records one ingested feed-entry GUID. The path
+// may be empty while a durable staged download awaits publication. Re-marking
+// an already-seen GUID is a no-op, except that a back-catalogue marker can
+// gain a download receipt.
 func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID, guid string, path string, now time.Time) error {
 	if id == "" {
 		return errors.New("subscription ID is required")
@@ -419,6 +420,42 @@ func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID
 		WHERE subscription_seen_entry.path = '' AND subscription_seen_entry.seen_at_ms = 0
 	`, id, guid, now.UTC().UnixMilli(), path)
 	return err
+}
+
+// PublishSubscriptionEntry records the published path in both the receipt and
+// the optional catalogue row. It holds the catalogue writer during publish
+// so a concurrent scan import sees the binding when it writes the Media.
+func (s *Store) PublishSubscriptionEntry(ctx context.Context, id SubscriptionID, guid string, publish func() (string, error)) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	path, err := publish()
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `
+		UPDATE subscription_seen_entry SET path = ? WHERE subscription_id = ? AND guid = ?
+	`, path, id, guid)
+	if err != nil {
+		return err
+	}
+	if err := requireOneRow(result, ValidationError("subscription receipt not found")); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE subscription_entry SET download_state = 'queued', download_path = ?
+		WHERE subscription_id = ? AND guid = ? AND download_path <> ?
+	`, path, id, guid, path); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // AliasSubscriptionEntryGUID adds a GUID for an existing receipt. It keeps

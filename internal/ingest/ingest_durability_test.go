@@ -393,53 +393,134 @@ func TestSharedRootSweepPreservesOtherSubscriptionReceipt(t *testing.T) {
 	}
 }
 
-// TestResumeDivertsInsteadOfClobbering crashes between acknowledgement and
-// publication, lets a foreign file claim the acknowledged destination, and
-// asserts the resumed publication diverts to the next generation instead of
-// overwriting.
-func TestResumeDivertsInsteadOfClobbering(t *testing.T) {
+func TestPublishCollisionKeepsUnrelatedFile(t *testing.T) {
+	for _, tc := range []struct{ name, crashAt string }{
+		{"normal", ""},
+		{"recovery after receipt", "receipt-recorded"},
+		{"recovery after link", "payload-linked"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testPublishCollision(t, tc.crashAt)
+		})
+	}
+}
+
+func testPublishCollision(t *testing.T, crashAt string) {
+	t.Helper()
 	st := storetest.Open(t)
 	ctx := context.Background()
 	fs := newFeedServer(t)
 	fs.enclosures["one.mp3"] = []byte("resumed-payload")
 	fs.setFeed(fs.item("guid-1", "First Entry", "one.mp3"))
 	root := t.TempDir()
-	if _, err := addDownloadAllSubscription(ctx, st, store.Subscription{
-		LibraryID: "library-local",
-		FeedURL:   fs.server.URL + "/feed.xml",
-		Root:      root,
-	}, time.Now().UTC()); err != nil {
+	keep := 1
+	sub, err := addDownloadAllSubscription(ctx, st, store.Subscription{
+		LibraryID:     "library-local",
+		FeedURL:       fs.server.URL + "/feed.xml",
+		Root:          root,
+		RetentionKind: store.RetentionKeepLastN,
+		RetentionN:    &keep,
+	}, time.Now().UTC())
+	if err != nil {
 		t.Fatal(err)
 	}
 
+	original := filepath.Join(root, "First Entry.mp3")
+	diverted := filepath.Join(root, "First Entry-2.mp3")
 	poller := NewPoller(st, newTestEngine())
+	reachedReceipt := false
 	poller.fault = func(point string) error {
 		if point == "receipt-recorded" {
+			if !entrySeen(t, st, sub.ID, "guid-1") || len(classifyRoot(t, root).staged) != 1 {
+				t.Fatal("collision requires an acknowledged staged payload")
+			}
+			entries, err := st.SubscriptionEntries(ctx, sub.ID)
+			if err != nil || len(entries) != 1 || entries[0].DownloadPath != "" {
+				t.Error("catalogue exposed a path before publication")
+			}
+			reachedReceipt = true
+			if err := os.WriteFile(original, []byte("foreign"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if point == crashAt {
 			return errSimulatedCrash
 		}
 		return nil
 	}
-	runPoll(t, st, Handler(poller))
-
-	if err := os.WriteFile(filepath.Join(root, "First Entry.mp3"), []byte("foreign"), 0o600); err != nil {
-		t.Fatal(err)
+	count, err := poller.pollSubscription(ctx, sub)
+	if !reachedReceipt {
+		t.Fatalf("poll did not reach receipt: %v", err)
+	}
+	if crashAt != "" {
+		if count != 0 || !errors.Is(err, errSimulatedCrash) {
+			t.Fatalf("interrupted poll = %d, %v", count, err)
+		}
+		poller = NewPoller(st, newTestEngine())
+		count, err = poller.pollSubscription(ctx, sub)
+	}
+	if count != 1 || err != nil || fs.hits("one.mp3") != 1 {
+		t.Fatalf("publication = %d, %v, enclosure requests = %d", count, err, fs.hits("one.mp3"))
+	}
+	if files := dirEntries(t, root); len(files) != 2 {
+		t.Fatalf("publication left extra files: %v", files)
 	}
 	poller.fault = nil
-	runPoll(t, st, Handler(poller))
 
-	foreign, err := readTestFile(filepath.Join(root, "First Entry.mp3"))
+	entries, err := st.SubscriptionEntries(ctx, sub.ID)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("catalogue entries = %d, %v", len(entries), err)
+	}
+	entry := entries[0]
+	if entry.DownloadPath != diverted {
+		t.Errorf("download path = %q, want %q", entry.DownloadPath, diverted)
+	}
+	importFile := func(path, fingerprint string) store.MediaID {
+		t.Helper()
+		media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: sub.LibraryID, Path: path, Title: filepath.Base(path),
+			Container: "mp3", Codec: "mp3", ContentFingerprint: fingerprint, Class: store.MediaClassAudio,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return media.ID
+	}
+	foreignID := importFile(original, "foreign-fingerprint")
+	if foreignID == entry.MediaID {
+		t.Error("unrelated file bound to the entry's Media")
+	}
+	downloadID := importFile(diverted, "download-fingerprint")
+	if downloadID != entry.MediaID {
+		t.Errorf("diverted file bound to %q, want %q", downloadID, entry.MediaID)
+	}
+	if data, err := readTestFile(diverted); err != nil || string(data) != "resumed-payload" {
+		t.Fatalf("diverted payload = %q, %v", data, err)
+	}
+
+	fs.enclosures["two.mp3"] = []byte("newer-payload")
+	fs.setFeed(fs.item("guid-2", "Newer Entry", "two.mp3"))
+	advancePollClock(poller)
+	if count, err := poller.pollSubscription(ctx, sub); count != 1 || err != nil {
+		t.Fatalf("newer download = %d, %v", count, err)
+	}
+	importFile(filepath.Join(root, "Newer Entry.mp3"), "newer-fingerprint")
+	if trashed, skipped, err := st.ApplySubscriptionRetentionPolicies(ctx); trashed != 1 || skipped || err != nil {
+		t.Fatalf("retention = %d, %v, %v, want one item trashed", trashed, skipped, err)
+	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{sub.LibraryID}, Revealed: true}
+	if _, err := st.Media(ctx, foreignID, filter); err != nil {
+		t.Errorf("unrelated Media unavailable after retention: %v", err)
+	}
+	if _, err := st.Media(ctx, downloadID, filter); !errors.Is(err, store.ValidationError("media not found")) {
+		t.Errorf("diverted download still available after retention: %v", err)
+	}
+	foreign, err := readTestFile(original)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(foreign) != "foreign" {
-		t.Fatalf("foreign file clobbered: %q", foreign)
-	}
-	diverted, err := readTestFile(filepath.Join(root, "First Entry-2.mp3"))
-	if err != nil {
-		t.Fatalf("diverted publication: %v (dir: %v)", err, dirEntries(t, root))
-	}
-	if string(diverted) != "resumed-payload" {
-		t.Fatalf("diverted payload = %q", diverted)
+		t.Errorf("unrelated file content after retention = %q", foreign)
 	}
 }
 

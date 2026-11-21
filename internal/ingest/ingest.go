@@ -13,8 +13,8 @@
 // Downloads are crash-durable. Each enclosure lands through a staged
 // protocol — write to a GUID-keyed partial, file sync, atomic rename to a
 // staged name, directory sync — before the seen-entry receipt commits, and
-// the receipt binds the exact source GUID bytes (never normalized) to the
-// destination the payload publishes under. Every crash point is resumed or
+// publication binds the receipt's exact source GUID bytes (never normalized)
+// to the visible destination. Every crash point is resumed or
 // compensated idempotently on the next poll: incomplete partials are
 // deleted and re-downloaded, acknowledged staged payloads are published,
 // unacknowledged staged payloads are reused when the feed still lists their
@@ -281,15 +281,9 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 
 // ingestEntry lands one feed entry crash-durably. The payload stages first
 // (write → file sync → atomic rename → directory sync), then the receipt
-// commits, binding the exact source GUID bytes — never normalized — to the
-// chosen destination, and only then does the staged payload publish under
-// its visible name. Every boundary in between either resumes from the
-// staged payload or retries the download on the next poll; bytes that could
-// still be lost are never acknowledged.
-//
-// A catalogued entry records its target path (download state queued) before
-// any byte is fetched, so the scan import of that file binds to the entry's
-// existing Media instead of minting a new one.
+// acknowledges the staged payload by exact source GUID. The destination is
+// recorded once the payload is published. Every boundary in between either
+// resumes from the staged payload or retries the download on the next poll.
 func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscription, entry scrape.FeedEntry, authHeader string, catalogued bool, now time.Time) error {
 	if err := os.MkdirAll(subscription.Root, 0o755); err != nil {
 		return err
@@ -299,11 +293,10 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 	if err != nil {
 		return err
 	}
-	markQueued := func(target string) error {
-		if !catalogued {
-			return nil
+	if catalogued {
+		if err := p.store.SetSubscriptionEntryDownload(ctx, subscription.ID, entry.GUID, store.EntryDownloadQueued, ""); err != nil {
+			return err
 		}
-		return p.store.SetSubscriptionEntryDownload(ctx, subscription.ID, entry.GUID, store.EntryDownloadQueued, target)
 	}
 	if staged == "" {
 		// The feed credential is scoped to the feed origin: the enclosure URL
@@ -315,9 +308,6 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 			enclosureAuth = authHeader
 		}
 		target := availablePath(subscription.Root, entryFilename(entry))
-		if err := markQueued(target); err != nil {
-			return err
-		}
 		staged, err = p.downloadToStage(ctx, subscription.Root, key, filepath.Base(target), entry, enclosureAuth)
 		if err != nil {
 			if catalogued {
@@ -328,41 +318,14 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 			return err
 		}
 	}
-	_, targetBase, ok := parseStageArtifact(filepath.Base(staged), stagedSuffix)
-	if !ok {
-		return errors.New("ingest: malformed staged payload name")
-	}
-	target := filepath.Join(subscription.Root, targetBase)
-	if err := markQueued(target); err != nil {
-		return err
-	}
-	// The receipt is the durable acknowledgement: it commits only after the
-	// staged payload would survive a crash.
-	if err := p.store.MarkSubscriptionEntrySeen(ctx, subscription.ID, entry.GUID, target, now); err != nil {
+	// Acknowledge the durable stage without exposing a path to scan or retention.
+	if err := p.store.MarkSubscriptionEntrySeen(ctx, subscription.ID, entry.GUID, "", now); err != nil {
 		return err
 	}
 	if err := p.faultAt("receipt-recorded"); err != nil {
 		return err
 	}
-	// Enqueue the deduped scan before publication: if the process dies
-	// between here and the visible rename, the queued scan plus the staged
-	// resume still import the payload. The post-publication enqueue below
-	// covers a scan worker that claimed this job before the visible name
-	// existed; while the first job is still queued the two dedupe to one.
-	if err := p.enqueueScan(ctx, subscription, now); err != nil {
-		return err
-	}
-	publishedAt, err := p.publishStagedPayload(subscription.Root, staged)
-	if err != nil {
-		return err
-	}
-	if publishedAt != target {
-		// The staged name was taken meanwhile; rebind to the diverted path.
-		if err := markQueued(publishedAt); err != nil {
-			return err
-		}
-	}
-	return p.enqueueScan(ctx, subscription, now)
+	return p.publishStagedPayload(ctx, subscription, entry.GUID, staged, now)
 }
 
 // downloadToStage streams the enclosure into a GUID-keyed partial file and
@@ -417,26 +380,63 @@ func (p *Poller) downloadToStage(ctx context.Context, root, key, base string, en
 	return staged, nil
 }
 
-// publishStagedPayload atomically renames a staged payload to its visible
-// destination and syncs the directory. The destination encoded at stage
-// time is preferred; if something else claimed that name since, the payload
-// diverts to the next free name rather than clobbering.
-func (p *Poller) publishStagedPayload(root, staged string) (string, error) {
-	_, targetBase, ok := parseStageArtifact(filepath.Base(staged), stagedSuffix)
+// publishStagedPayload keeps the stage until both paths and the scan job are
+// durable. A retry can recognize a link created before an interrupted commit.
+func (p *Poller) publishStagedPayload(ctx context.Context, subscription store.Subscription, guid, staged string, now time.Time) error {
+	root := subscription.Root
+	err := p.store.PublishSubscriptionEntry(ctx, subscription.ID, guid, func() (string, error) {
+		path, err := linkStagedPayload(root, &staged)
+		if err != nil {
+			return "", err
+		}
+		return path, p.faultAt("payload-linked")
+	})
+	if err != nil {
+		return err
+	}
+	if err := p.enqueueScan(ctx, subscription, now); err != nil {
+		return err
+	}
+	if err := os.Remove(staged); err != nil {
+		return err
+	}
+	if err := syncDir(root); err != nil {
+		return err
+	}
+	return p.faultAt("payload-published")
+}
+
+// linkStagedPayload encodes any diverted destination in the staged name
+// before linking. The staged inode then identifies our visible file on retry.
+func linkStagedPayload(root string, staged *string) (string, error) {
+	key, base, ok := parseStageArtifact(filepath.Base(*staged), stagedSuffix)
 	if !ok {
 		return "", errors.New("ingest: malformed staged payload name")
 	}
-	target := availablePath(root, targetBase)
-	if err := os.Rename(staged, target); err != nil {
+	info, err := os.Lstat(*staged)
+	if err != nil {
 		return "", err
 	}
-	if err := syncDir(root); err != nil {
+	target := filepath.Join(root, base)
+	if existing, err := os.Lstat(target); err == nil && os.SameFile(info, existing) {
+		return target, syncDir(root)
+	}
+	target = availablePath(root, base)
+	stageForTarget := filepath.Join(root, stageArtifactName(key, filepath.Base(target), stagedSuffix))
+	if stageForTarget != *staged {
+		if err := os.Rename(*staged, stageForTarget); err != nil {
+			return "", err
+		}
+		*staged = stageForTarget
+		if err := syncDir(root); err != nil {
+			return "", err
+		}
+	}
+	// Link refuses a concurrent claimant and leaves the stage for the next poll.
+	if err := os.Link(*staged, target); err != nil {
 		return "", err
 	}
-	if err := p.faultAt("payload-published"); err != nil {
-		return "", err
-	}
-	return target, nil
+	return target, syncDir(root)
 }
 
 // resumeStagedPayloads publishes staged payloads whose receipt is already
@@ -452,25 +452,23 @@ func (p *Poller) resumeStagedPayloads(ctx context.Context, subscription store.Su
 	if len(staged) == 0 {
 		return 0, nil
 	}
-	seenKeys := make(map[string]bool, len(seen))
+	seenKeys := make(map[string]string, len(seen))
 	for guid := range seen {
-		seenKeys[stageKey(subscription.ID, guid)] = true
+		seenKeys[stageKey(subscription.ID, guid)] = guid
 	}
 	published := 0
 	for _, name := range staged {
 		key, _, ok := parseStageArtifact(name, stagedSuffix)
-		if !ok || !seenKeys[key] {
+		guid, seen := seenKeys[key]
+		if !ok || !seen {
 			continue
 		}
-		if _, err := p.publishStagedPayload(subscription.Root, filepath.Join(subscription.Root, name)); err != nil {
+		if err := p.publishStagedPayload(ctx, subscription, guid, filepath.Join(subscription.Root, name), now); err != nil {
 			return published, err
 		}
 		published++
 	}
-	if published == 0 {
-		return 0, nil
-	}
-	return published, p.enqueueScan(ctx, subscription, now)
+	return published, nil
 }
 
 // faultAt is the crash seam described on Poller.fault; production leaves
