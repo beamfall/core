@@ -62,6 +62,20 @@ type inventoryState struct {
 	Entries       []InventoryEntry `json:"entries"`
 }
 
+// IncompatiblePlugin is an intact inventory entry that Core keeps but does not
+// load because its SDK range excludes the plugin SDK Core embeds. A plugin-sdk
+// bump leaves such entries behind; staging a compatible version replaces them.
+type IncompatiblePlugin struct {
+	Bundle   Bundle
+	Standing PluginStanding
+}
+
+// Reason states the SDK mismatch for logs and operator surfaces.
+func (p IncompatiblePlugin) Reason() string {
+	return fmt.Sprintf("plugin %s %s supports plugin SDK [%s, %s]; this server embeds %s",
+		p.Bundle.ID, p.Bundle.Version, p.Bundle.SDKFloor, p.Bundle.SDKCeiling, sdk.Version)
+}
+
 type Inventory struct {
 	dir        string
 	executable []Bundle
@@ -78,7 +92,7 @@ func OpenInventory(dir string, executable []Bundle) (*Inventory, error) {
 		executable: append([]Bundle(nil), executable...),
 		active:     state,
 	}
-	if _, err := inventory.validate(state); err != nil {
+	if _, _, err := inventory.validate(state); err != nil {
 		return nil, fmt.Errorf("validate last-good plugin inventory: %w", err)
 	}
 	return inventory, nil
@@ -87,6 +101,9 @@ func OpenInventory(dir string, executable []Bundle) (*Inventory, error) {
 func (i *Inventory) Stage(req StageBundleRequest) (InventoryEntry, error) {
 	bundle, err := decodeInventoryBundle(req.Artifact)
 	if err != nil {
+		return InventoryEntry{}, err
+	}
+	if err := requireEmbeddedSDK(bundle); err != nil {
 		return InventoryEntry{}, err
 	}
 	digest := sha256.Sum256(req.Artifact)
@@ -115,7 +132,7 @@ func (i *Inventory) Stage(req StageBundleRequest) (InventoryEntry, error) {
 		target = cloneInventoryState(i.active)
 	}
 	target.Entries = upsertInventoryEntry(target.Entries, bundle.ID, entry)
-	if _, err := i.validate(target); err != nil {
+	if _, _, err := i.validate(target); err != nil {
 		return InventoryEntry{}, err
 	}
 	if err := saveInventoryState(i.stagedPath(), target); err != nil {
@@ -126,8 +143,9 @@ func (i *Inventory) Stage(req StageBundleRequest) (InventoryEntry, error) {
 
 // Apply validates and promotes staged declarative bundles. Any candidate error
 // returns the prior last-good bundle set plus a warning, so startup can continue.
+// The returned set omits incompatible entries; Incompatible lists them.
 func (i *Inventory) Apply() ([]Bundle, bool, error) {
-	current, err := i.validate(i.active)
+	current, _, err := i.validate(i.active)
 	if err != nil {
 		return nil, false, err
 	}
@@ -138,7 +156,7 @@ func (i *Inventory) Apply() ([]Bundle, bool, error) {
 	if !found {
 		return current, false, nil
 	}
-	candidate, err := i.validate(staged)
+	candidate, _, err := i.validate(staged)
 	if err != nil {
 		return current, false, fmt.Errorf("reject staged plugin inventory: %w", err)
 	}
@@ -150,6 +168,13 @@ func (i *Inventory) Apply() ([]Bundle, bool, error) {
 		return candidate, true, fmt.Errorf("remove applied plugin inventory: %w", err)
 	}
 	return candidate, true, nil
+}
+
+// Incompatible lists the active inventory entries Core keeps but does not load
+// because their SDK range excludes the embedded plugin SDK.
+func (i *Inventory) Incompatible() ([]IncompatiblePlugin, error) {
+	_, incompatible, err := i.validate(i.active)
+	return incompatible, err
 }
 
 func (i *Inventory) ActiveStandings() (map[ID]PluginStanding, error) {
@@ -164,33 +189,52 @@ func (i *Inventory) ActiveStandings() (map[ID]PluginStanding, error) {
 	return standings, nil
 }
 
-func (i *Inventory) validate(state inventoryState) ([]Bundle, error) {
+// validate checks an inventory state and returns the bundle set Core loads plus
+// the entries it keeps without loading. Any integrity failure (schema, digest,
+// origin, trust, provenance, bundle declaration, ID or kind collision) fails
+// closed. An intact entry whose SDK range excludes the embedded SDK is not an
+// integrity failure: it is returned as incompatible so a plugin-sdk bump never
+// stops startup or blocks a compatible staged replacement.
+func (i *Inventory) validate(state inventoryState) ([]Bundle, []IncompatiblePlugin, error) {
 	if state.SchemaVersion != inventorySchemaVersion {
-		return nil, fmt.Errorf("plugin inventory schema %d, want %d", state.SchemaVersion, inventorySchemaVersion)
+		return nil, nil, fmt.Errorf("plugin inventory schema %d, want %d", state.SchemaVersion, inventorySchemaVersion)
 	}
 	executable := normalizedBundleVersions(i.executable)
-	staged := make([]Bundle, 0, len(state.Entries))
+	recorded := make([]Bundle, 0, len(state.Entries))
+	loadable := make([]Bundle, 0, len(state.Entries))
+	var incompatible []IncompatiblePlugin
 	for _, entry := range state.Entries {
 		bundle, err := validateInventoryEntry(entry)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		staged = append(staged, bundle)
-	}
-	if err := validateInventoryAdditions(executable, staged); err != nil {
-		return nil, err
-	}
-	bundles := append(executable, staged...)
-	for _, bundle := range bundles {
+		recorded = append(recorded, bundle)
 		if !sdk.CompatibleWithSDK(bundle, sdk.Version) {
-			return nil, fmt.Errorf("%w: plugin %s supports SDK [%s,%s], Core embeds %s",
-				ErrInventoryIncompatible, bundle.ID, bundle.SDKFloor, bundle.SDKCeiling, sdk.Version)
+			incompatible = append(incompatible, IncompatiblePlugin{
+				Bundle:   bundle,
+				Standing: PluginStanding{Provenance: entry.Provenance, TrustState: entry.Trust.State},
+			})
+			continue
+		}
+		loadable = append(loadable, bundle)
+	}
+	// Incompatible entries still hold their plugin ID and kind names: they are
+	// part of the recorded inventory and come back once replaced.
+	if err := validateInventoryAdditions(executable, recorded); err != nil {
+		return nil, nil, err
+	}
+	// The executable-owned set is compiled in, so an SDK mismatch there is a
+	// build defect and stays fatal.
+	for _, bundle := range executable {
+		if err := requireEmbeddedSDK(bundle); err != nil {
+			return nil, nil, err
 		}
 	}
+	bundles := append(executable, loadable...)
 	if _, err := NewRegistry(bundles); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return bundles, nil
+	return bundles, incompatible, nil
 }
 
 // validateInventoryAdditions enforces the SDK's cross-bundle rules over the
@@ -265,11 +309,17 @@ func decodeInventoryBundle(raw []byte) (Bundle, error) {
 	if err := sdk.ValidateBundle(bundle); err != nil {
 		return Bundle{}, err
 	}
+	return bundle, nil
+}
+
+// requireEmbeddedSDK rejects a bundle whose SDK range excludes the embedded
+// plugin SDK. Staging applies it to every new artifact.
+func requireEmbeddedSDK(bundle Bundle) error {
 	if !sdk.CompatibleWithSDK(bundle, sdk.Version) {
-		return Bundle{}, fmt.Errorf("%w: plugin %s supports SDK [%s,%s], Core embeds %s",
+		return fmt.Errorf("%w: plugin %s supports SDK [%s,%s], Core embeds %s",
 			ErrInventoryIncompatible, bundle.ID, bundle.SDKFloor, bundle.SDKCeiling, sdk.Version)
 	}
-	return bundle, nil
+	return nil
 }
 
 func validateStageIdentity(bundle Bundle, digest string, req StageBundleRequest) error {

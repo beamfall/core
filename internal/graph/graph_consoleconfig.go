@@ -225,7 +225,44 @@ func (h *Handler) consoleConfig(ctx context.Context, _ auth.Scope, _ request) (C
 			info.Plugins = append(info.Plugins, pluginInfo)
 		}
 	}
+	for _, incompatible := range h.incompatiblePlugins {
+		if h.pluginSuppressed(incompatible.Bundle.ID) {
+			continue
+		}
+		pluginInfo, err := h.incompatiblePluginInfo(ctx, incompatible)
+		if err != nil {
+			return ConsoleConfigInfo{}, err
+		}
+		info.Plugins = append(info.Plugins, pluginInfo)
+	}
 	return info, nil
+}
+
+// incompatiblePluginInfo lists a stored plugin Core did not load because its SDK
+// range excludes the embedded plugin SDK: inactive, with the reason as a status
+// row, and with no runnable actions or scrapers.
+func (h *Handler) incompatiblePluginInfo(ctx context.Context, incompatible plugin.IncompatiblePlugin) (PluginActivationInfo, error) {
+	bundle := incompatible.Bundle
+	pluginInfo, err := h.pluginActivationInfo(ctx, string(bundle.ID), bundle, incompatible.Standing, false)
+	if err != nil {
+		return PluginActivationInfo{}, err
+	}
+	pluginInfo.Status = []PluginStatusInfo{
+		{ID: "activation", Label: plugin.L("Activation"), State: "disabled"},
+		{ID: "sdk-compatibility", Label: plugin.L("Plugin SDK"), State: "incompatible", Detail: incompatible.Reason()},
+	}
+	pluginInfo.Actions = []PluginActionDescriptor{}
+	pluginInfo.Scrapers = []PluginScraperInfo{}
+	return pluginInfo, nil
+}
+
+func (h *Handler) incompatiblePlugin(id plugin.ID) (plugin.IncompatiblePlugin, bool) {
+	for _, incompatible := range h.incompatiblePlugins {
+		if incompatible.Bundle.ID == id && !h.pluginSuppressed(id) {
+			return incompatible, true
+		}
+	}
+	return plugin.IncompatiblePlugin{}, false
 }
 
 func (h *Handler) pluginActivationInfo(ctx context.Context, pluginID string, bundle plugin.Bundle, standing plugin.PluginStanding, active bool) (PluginActivationInfo, error) {
@@ -674,6 +711,9 @@ func (h *Handler) setPluginActive(ctx context.Context, scope auth.Scope, req req
 	}
 	if !ok {
 		return ConsoleConfigInfo{}, clientError("active is required")
+	}
+	if incompatible, found := h.incompatiblePlugin(plugin.ID(pluginID)); found {
+		return ConsoleConfigInfo{}, clientError("plugin does not support this server's plugin SDK: " + incompatible.Reason())
 	}
 	plugins := h.consolePlugins()
 	if plugins == nil {
