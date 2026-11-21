@@ -313,7 +313,7 @@ func TestPluginBoundLibraryGetsPluginLayout(t *testing.T) {
 	}
 	var node NavigationNode
 	for _, n := range document.Navigation {
-		if n.ID == "library-library-starlogs" {
+		if n.ID == "library-starlogs" {
 			node = n
 		}
 	}
@@ -936,5 +936,81 @@ func TestLibrarySummaryIcon(t *testing.T) {
 	}
 	if strings.Contains(string(bare), "icon") {
 		t.Fatalf("summary without an icon serializes the key: %s", bare)
+	}
+}
+
+// TestLibraryNodeIDsCarryThePrefixOnceAndLegacyIDsResolve pins CORE-2343. A
+// Library's node ID is its Library ID, which already starts "library-", and a
+// stored override that names a node by its old doubled ID still applies.
+func TestLibraryNodeIDsCarryThePrefixOnceAndLegacyIDsResolve(t *testing.T) {
+	service, authService := newTestService(t)
+	ctx := context.Background()
+	for _, title := range []string{"Films", "Shows", "Library Films"} {
+		if _, err := service.store.CreateLibrary(ctx, title, false, "", "profile-default"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scope, err := authService.Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	doc, err := service.Document(ctx, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes := map[string]NavigationNode{}
+	for _, n := range doc.Navigation {
+		if n.LibraryID == "" {
+			continue
+		}
+		if n.ID != n.LibraryID {
+			t.Errorf("Library %s node ID = %q, want the Library ID", n.LibraryID, n.ID)
+		}
+		nodes[n.ID] = n
+	}
+	for _, id := range []string{"library-films", "library-shows", "library-library-films"} {
+		if _, ok := nodes[id]; !ok {
+			t.Fatalf("no node %q in %#v", id, doc.Navigation)
+		}
+	}
+
+	override := store.NavOverrideData{
+		// Saved before CORE-2343: the doubled IDs of the local and Shows nodes.
+		HiddenNodeIDs: []string{"library-library-local"},
+		NodeOrder:     []string{"library-library-shows", "home"},
+		NodeLabelOverrides: map[string]map[string]string{
+			// A live node's own ID, not an alias for Films.
+			"library-library-films": {"en": "Cinema"},
+			// Named both ways: the current ID wins.
+			"library-library-shows": {"en": "Series"},
+			"library-shows":         {"en": "TV"},
+		},
+	}
+	if err := service.store.SetNavOverride(ctx, "server", nil, override, time.Unix(1, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	doc, err = service.Document(ctx, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	titles := map[string]string{}
+	for _, n := range doc.Navigation {
+		titles[n.ID] = n.Title.Resolve("")
+	}
+	if _, shown := titles["library-local"]; shown {
+		t.Errorf("legacy hidden ID did not hide the local Library's node: %v", titles)
+	}
+	if got := titles["library-library-films"]; got != "Cinema" {
+		t.Errorf("Library Films node title = %q, want Cinema", got)
+	}
+	if got := titles["library-films"]; got != "Films" {
+		t.Errorf("Films node title = %q, want Films (the label belongs to another node)", got)
+	}
+	if got := titles["library-shows"]; got != "TV" {
+		t.Errorf("Shows node title = %q, want TV", got)
+	}
+	if len(doc.Navigation) < 2 || doc.Navigation[0].ID != "library-shows" || doc.Navigation[1].ID != "home" {
+		t.Errorf("legacy order not applied: %v", doc.Navigation)
 	}
 }

@@ -11,7 +11,7 @@ import (
 // NavOverrideData is the operator-editable override blob for the Navigation
 // Manifest and Layout (WEB-5J / ADR-0061 §Layout editor).
 type NavOverrideData struct {
-	// HiddenNodeIDs suppresses nav nodes by ID ("ambient", "library-<id>", etc.).
+	// HiddenNodeIDs suppresses nav nodes by ID ("ambient", a Library node ID such as "library-films", etc.).
 	HiddenNodeIDs []string `json:"hiddenNodeIDs,omitempty"`
 	// NodeOrder, if non-empty, defines the canonical node order. IDs not listed
 	// are appended in their default order after the listed ones.

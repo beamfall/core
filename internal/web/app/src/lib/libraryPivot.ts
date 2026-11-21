@@ -9,6 +9,7 @@ export const LIBRARY_PIVOT_PATHS = ["", "/all", "/collections", "/categories"] a
 export type LibraryPivotPath = (typeof LIBRARY_PIVOT_PATHS)[number];
 
 const PIVOT_KEY = "beamfall.libraryPivot.";
+const LIBRARY_NODE_PREFIX = "library-";
 
 /** The pivot an address under a Library node shows. */
 export function pivotOfPath(pathname: string): LibraryPivotPath {
@@ -19,7 +20,12 @@ export function pivotOfPath(pathname: string): LibraryPivotPath {
 export function readLibraryPivot(nodeID: string): LibraryPivotPath {
   let stored: string | null = null;
   try {
-    stored = window.localStorage.getItem(PIVOT_KEY + nodeID);
+    // A pivot remembered before CORE-2343 sits under the node's old doubled ID.
+    stored =
+      window.localStorage.getItem(PIVOT_KEY + nodeID) ??
+      (nodeID.startsWith(LIBRARY_NODE_PREFIX)
+        ? window.localStorage.getItem(PIVOT_KEY + LIBRARY_NODE_PREFIX + nodeID)
+        : null);
   } catch {
     // A blocked store falls back to Recommended.
   }
