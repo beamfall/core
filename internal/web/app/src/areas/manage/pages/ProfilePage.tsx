@@ -3,6 +3,7 @@ import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/b
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
+import { ProfileSettings } from "./ProfileSettings";
 
 // Profile picker (ADR-0004, ported from index.html profile-view): switch the
 // session's bound Profile. Managed Profiles carry a quiet hint (they have no
@@ -11,7 +12,7 @@ import { useSession } from "@/lib/session";
 // spine reloads everything on success.
 export function ProfilePage() {
   const t = useT();
-  const { profiles, session, switchProfile } = useSession();
+  const { profiles, session, isManager, switchProfile } = useSession();
   const [error, setError] = useState("");
   const [busyID, setBusyID] = useState("");
 
@@ -31,36 +32,39 @@ export function ProfilePage() {
   };
 
   return (
-    <ManageSection>
-      {profiles.length === 0 ? (
-        <EmptyLine message={t("profileUnavailable")} />
-      ) : (
-        <ul className="space-y-1.5">
-          {profiles.map((profile) => {
-            const current = profile.id === currentID;
-            return (
-              <li key={profile.id}>
-                <Button
-                  type="button"
-                  variant={current ? "secondary" : "outline"}
-                  size="sm"
-                  className="w-full justify-start gap-2"
-                  disabled={busyID === profile.id}
-                  aria-current={current ? "true" : undefined}
-                  onClick={() => onSwitch(profile.id)}
-                >
-                  <span className="font-semibold">{profile.name}</span>
-                  {profile.kind === "managed" && (
-                    <StatusBadge state="restricted">{t("managed")}</StatusBadge>
-                  )}
-                  {current && <span className="ml-auto text-xs text-[var(--accent)]">●</span>}
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      <ErrorLine message={error} />
-    </ManageSection>
+    <div className="space-y-5">
+      <ManageSection>
+        {profiles.length === 0 ? (
+          <EmptyLine message={t("profileUnavailable")} />
+        ) : (
+          <ul className="space-y-1.5">
+            {profiles.map((profile) => {
+              const current = profile.id === currentID;
+              return (
+                <li key={profile.id}>
+                  <Button
+                    type="button"
+                    variant={current ? "secondary" : "outline"}
+                    size="sm"
+                    className="w-full justify-start gap-2"
+                    disabled={busyID === profile.id}
+                    aria-current={current ? "true" : undefined}
+                    onClick={() => onSwitch(profile.id)}
+                  >
+                    <span className="font-semibold">{profile.name}</span>
+                    {profile.kind === "managed" && (
+                      <StatusBadge state="restricted">{t("managed")}</StatusBadge>
+                    )}
+                    {current && <span className="ml-auto text-xs text-[var(--accent)]">●</span>}
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <ErrorLine message={error} />
+      </ManageSection>
+      {isManager && session?.profile === "adult" && <ProfileSettings />}
+    </div>
   );
 }

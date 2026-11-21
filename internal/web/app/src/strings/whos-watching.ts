@@ -10,8 +10,7 @@ export const whosWatchingStrings = {
     whosWatchingTileAriaPin: "{name}, needs a PIN",
     whosWatchingPinTitle: "Hi, {name}",
     whosWatchingPinLead: "Enter this profile's PIN to continue.",
-    whosWatchingPinWrong:
-      "That PIN didn't work. Try again. If this profile has no PIN yet, the owner can set one in Console.",
+    whosWatchingPinWrong: "That PIN didn't work. Try again or ask the owner for help.",
     whosWatchingPinThrottled: "Too many tries. Wait a moment, then try again.",
     whosWatchingContinue: "Continue",
     whosWatchingBack: "Choose another profile",
@@ -66,7 +65,7 @@ export const whosWatchingStrings = {
     whosWatchingPinTitle: "Bonjour, {name}",
     whosWatchingPinLead: "Saisissez le code PIN de ce profil pour continuer.",
     whosWatchingPinWrong:
-      "Ce code PIN n'a pas fonctionné. Réessayez. Si ce profil n'a pas encore de code PIN, le propriétaire peut en définir un dans la Console.",
+      "Ce code PIN n'a pas fonctionné. Réessayez ou demandez de l’aide au propriétaire.",
     whosWatchingPinThrottled: "Trop d'essais. Patientez un instant, puis réessayez.",
     whosWatchingContinue: "Continuer",
     whosWatchingBack: "Choisir un autre profil",
@@ -121,7 +120,7 @@ export const whosWatchingStrings = {
     whosWatchingPinTitle: "Hallo, {name}",
     whosWatchingPinLead: "Gib die PIN dieses Profils ein, um fortzufahren.",
     whosWatchingPinWrong:
-      "Diese PIN hat nicht funktioniert. Versuch es noch einmal. Hat das Profil noch keine PIN, kann der Besitzer in der Konsole eine festlegen.",
+      "Diese PIN hat nicht funktioniert. Versuchen Sie es erneut oder bitten Sie den Besitzer um Hilfe.",
     whosWatchingPinThrottled: "Zu viele Versuche. Warte einen Moment und versuch es dann erneut.",
     whosWatchingContinue: "Weiter",
     whosWatchingBack: "Anderes Profil wählen",
@@ -176,7 +175,7 @@ export const whosWatchingStrings = {
     whosWatchingPinTitle: "Hola, {name}",
     whosWatchingPinLead: "Introduce el PIN de este perfil para continuar.",
     whosWatchingPinWrong:
-      "Ese PIN no ha funcionado. Inténtalo de nuevo. Si este perfil aún no tiene PIN, el propietario puede definir uno en la Consola.",
+      "Ese PIN no ha funcionado. Inténtalo de nuevo o pide ayuda al propietario.",
     whosWatchingPinThrottled: "Demasiados intentos. Espera un momento y vuelve a intentarlo.",
     whosWatchingContinue: "Continuar",
     whosWatchingBack: "Elegir otro perfil",
@@ -230,8 +229,7 @@ export const whosWatchingStrings = {
     whosWatchingTileAriaPin: "{name}, exige PIN",
     whosWatchingPinTitle: "Olá, {name}",
     whosWatchingPinLead: "Digite o PIN deste perfil para continuar.",
-    whosWatchingPinWrong:
-      "Esse PIN não funcionou. Tente de novo. Se este perfil ainda não tem PIN, o proprietário pode definir um no Console.",
+    whosWatchingPinWrong: "Esse PIN não funcionou. Tente novamente ou peça ajuda ao proprietário.",
     whosWatchingPinThrottled: "Muitas tentativas. Aguarde um instante e tente de novo.",
     whosWatchingContinue: "Continuar",
     whosWatchingBack: "Escolher outro perfil",
