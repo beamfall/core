@@ -82,11 +82,15 @@ export function profileHeaders(): Record<string, string> {
   return expectedProfileID ? { [PROFILE_HEADER]: expectedProfileID } : {};
 }
 
-/** Whether a refusal says the session is bound to another Profile than the request named. */
+/**
+ * Whether a refusal says the session is bound to another Profile than the
+ * request named. A REST refusal is a 409; a GraphQL mutation that found the
+ * switch only at its write answers 200 with the reason on its error.
+ */
 function isProfileMismatch(status: number, payload: unknown): boolean {
-  if (status !== 409 || typeof payload !== "object" || payload === null) return false;
+  if (typeof payload !== "object" || payload === null) return false;
   const body = payload as { reason?: unknown; errors?: { extensions?: { reason?: unknown } }[] };
-  if (body.reason === "PROFILE_MISMATCH") return true;
+  if (status === 409 && body.reason === "PROFILE_MISMATCH") return true;
   return body.errors?.some((error) => error?.extensions?.reason === "PROFILE_MISMATCH") ?? false;
 }
 
@@ -283,7 +287,9 @@ async function requestJSON<T>(
       noteProfileRefusal(sentProfile, response.status, payload);
       throw new ApiError(`${method} ${path} failed`, response.status, payload);
     }
-    return parseJSONBody<T>(bytes, path, response.status);
+    const body = parseJSONBody<T>(bytes, path, response.status);
+    noteProfileRefusal(sentProfile, response.status, body);
+    return body;
   });
   try {
     return await Promise.race([transport, deadline]);
@@ -398,7 +404,7 @@ export function postKeepalive(
       body: JSON.stringify(body),
     })
       .then(async (response) => {
-        if (response.status !== 409) return;
+        if (!response.ok && response.status !== 409) return;
         noteProfileRefusal(profile ?? undefined, response.status, await response.json());
       })
       .catch(() => {});

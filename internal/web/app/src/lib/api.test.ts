@@ -353,6 +353,27 @@ describe("request Profile precondition (CORE-2923)", () => {
     expect(profileHeaders()).toEqual({ "X-Beamfall-Profile": "profile-a" });
   });
 
+  it("reloads on a GraphQL mutation that found the switch only at its write", async () => {
+    // The scope check passed, then the switch landed before the write took its
+    // lock: the resolver refuses with HTTP 200 and the reason on its error.
+    const fetchMock = vi.fn(async () => Response.json(graphMismatch));
+    vi.stubGlobal("fetch", fetchMock);
+    const onMismatch = vi.fn();
+    setProfileMismatchHandler(onMismatch);
+    setExpectedProfile("profile-a");
+
+    await expect(graphql("mutation { reveal }")).rejects.toThrow();
+    expect(onMismatch).toHaveBeenCalledTimes(1);
+
+    postKeepalive("/api/graphql", {});
+    await vi.waitFor(() => expect(onMismatch).toHaveBeenCalledTimes(2));
+
+    // An ordinary GraphQL error is not a Profile refusal.
+    fetchMock.mockImplementation(async () => Response.json({ errors: [{ message: "nope" }] }));
+    await expect(graphql("mutation { reveal }")).rejects.toThrow();
+    expect(onMismatch).toHaveBeenCalledTimes(2);
+  });
+
   it("names the Profile a keepalive was opened for, and reloads on its refusal", async () => {
     const fetchMock = vi.fn(async () => Response.json(graphMismatch, { status: 409 }));
     vi.stubGlobal("fetch", fetchMock);
