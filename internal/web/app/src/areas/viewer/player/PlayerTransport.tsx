@@ -127,6 +127,8 @@ export function PlayerTransport({
   onPlayMusicQueue,
   musicQueue,
   onMusicQueueOpenChange,
+  onRetryMusicQueue,
+  musicQueueOpen = false,
   serverQueueNextID,
   onStop,
   onRemoteStop,
@@ -170,7 +172,9 @@ export function PlayerTransport({
   /** Play the queue's next item; the control is hidden when absent. */
   onNextInQueue?: () => void;
   /** Start the active Profile's server queue on the first playable row. */
-  onPlayMusicQueue?: (id: string) => void;
+  onPlayMusicQueue?: () => void;
+  onRetryMusicQueue?: () => void;
+  musicQueueOpen?: boolean;
   musicQueue?: React.ComponentProps<typeof MusicQueuePanel>["queue"];
   onMusicQueueOpenChange?: (open: boolean) => void;
   /** Suppress prefetch of playback-info's next item when the server queue excludes it. */
@@ -228,7 +232,8 @@ export function PlayerTransport({
   const [pipActive, setPipActive] = useState(false);
   const [pipFailure, setPipFailure] = useState<"request" | "exit" | null>(null);
   const [gestureFeedback, setGestureFeedback] = useState<GestureFeedback | null>(null);
-  const [openKey, setOpenKey] = useState<OpenKey>(null);
+  const [otherOpenKey, setOtherOpenKey] = useState<Exclude<OpenKey, "musicQueue">>(null);
+  const openKey = musicQueueOpen ? "musicQueue" : otherOpenKey;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chaptersOpen, setChaptersOpen] = useState(false);
   const [buffered, setBuffered] = useState(0);
@@ -256,16 +261,16 @@ export function PlayerTransport({
   useEffect(() => {
     onMenuOpenChange?.(settingsOpen || chaptersOpen || openKey !== null);
   }, [openKey, settingsOpen, chaptersOpen, onMenuOpenChange]);
-  const musicQueueOpen = openKey === "musicQueue" && !!onPlayMusicQueue;
-  useEffect(() => {
-    onMusicQueueOpenChange?.(musicQueueOpen);
-  }, [musicQueueOpen, onMusicQueueOpenChange]);
 
-  const closeSettings = useCallback((restoreFocus: boolean) => {
-    setSettingsOpen(false);
-    setOpenKey(null);
-    if (restoreFocus) settingsButtonRef.current?.focus();
-  }, []);
+  const closeSettings = useCallback(
+    (restoreFocus: boolean) => {
+      setSettingsOpen(false);
+      setOtherOpenKey(null);
+      onMusicQueueOpenChange?.(false);
+      if (restoreFocus) settingsButtonRef.current?.focus();
+    },
+    [onMusicQueueOpenChange],
+  );
 
   // Opening settings moves focus to its first row; a press outside the sheet
   // (and outside its portalled listboxes) closes it.
@@ -294,9 +299,18 @@ export function PlayerTransport({
     [onMusicQueueOpenChange],
   );
 
-  const setOpen = useCallback((key: Exclude<OpenKey, null>, open: boolean) => {
-    setOpenKey((prev) => (open ? key : prev === key ? null : prev));
-  }, []);
+  const setOpen = useCallback(
+    (key: Exclude<OpenKey, null>, open: boolean) => {
+      if (key === "musicQueue") {
+        onMusicQueueOpenChange?.(open);
+        if (open) setOtherOpenKey(null);
+      } else {
+        if (open) onMusicQueueOpenChange?.(false);
+        setOtherOpenKey((prev) => (open ? key : prev === key ? null : prev));
+      }
+    },
+    [onMusicQueueOpenChange],
+  );
 
   const subtitle = useSubtitleStyling({
     videoRef,
@@ -594,7 +608,7 @@ export function PlayerTransport({
     onNextInQueue,
     onHelp: () => {
       setSettingsOpen(false);
-      setOpenKey("shortcuts");
+      setOpen("shortcuts", true);
     },
   });
 
@@ -1014,11 +1028,12 @@ export function PlayerTransport({
 
           <span aria-hidden="true" className="bf-transport-spacer" />
 
-          {onPlayMusicQueue && musicQueue && (
+          {onPlayMusicQueue && onRetryMusicQueue && (
             <MusicQueuePanel
-              open={openKey === "musicQueue"}
+              open={musicQueueOpen}
               onOpenChange={(open) => setOpen("musicQueue", open)}
               onPlay={onPlayMusicQueue}
+              onRetry={onRetryMusicQueue}
               currentID={mediaID}
               queue={musicQueue}
             />
