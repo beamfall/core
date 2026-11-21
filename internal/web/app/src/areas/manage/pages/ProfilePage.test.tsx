@@ -233,23 +233,23 @@ describe("Manage profile settings", () => {
     await user.selectOptions(await screen.findByLabelText("Profile"), "adult-b");
     expect(field).toHaveAccessibleName(label);
     await user.clear(field);
-    await user.type(field, "es, fr-CA , en");
+    await user.type(field, "es, fr-CA , ja");
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Subtitle languages saved.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Done" }));
     await user.click(screen.getByRole("button", { name: "Open settings" }));
     const reopened = await screen.findByRole("textbox", { name: label });
-    expect(reopened).toHaveValue("es, fr-CA, en");
+    expect(reopened).toHaveValue("es, fr-CA, ja");
     await user.clear(reopened);
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Subtitle languages saved.")).toBeInTheDocument();
     expect(refreshSession.mock.calls).toEqual([
-      [{ profileID: "adult-a", subtitleLanguages: ["es", "fr-CA", "en"] }],
+      [{ profileID: "adult-a", subtitleLanguages: ["es", "fr-CA", "ja"] }],
       [{ profileID: "adult-a", subtitleLanguages: [] }],
     ]);
     expect(writes).toEqual([
-      { profileID: "adult-a", subtitleLanguages: ["es", "fr-CA", "en"] },
+      { profileID: "adult-a", subtitleLanguages: ["es", "fr-CA", "ja"] },
       { profileID: "adult-a", subtitleLanguages: [] },
     ]);
   });
@@ -295,7 +295,7 @@ describe("Manage profile settings", () => {
     },
   );
 
-  it.each(["en", "fr", "de", "es", "pt"] as const)(
+  it.each(Object.keys(STRINGS) as Locale[])(
     "localizes both save errors in %s and retains the subtitle draft",
     async (locale) => {
       const user = userEvent.setup();
