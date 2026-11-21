@@ -17,14 +17,16 @@ the choice reaches only part of the app.
 
 ## What changes
 
-- Web only. Every Library pivot's heading row (Recommended, Library, Collections, Categories)
-  shows the same Small / Medium / Large control whenever its pivots show.
+- Web only. Every Library pivot (Recommended, Library, Collections, Categories) shows the same
+  Small / Medium / Large control whenever its pivots show, in every Library view mode.
 - One preference sets every viewer thumbnail surface through custom properties under the root's
   `data-poster-size`: the poster grids' column floors (Library grid, search, See All, Collection,
   Entity and Profile pages), shelf card width on Home, Recommended and detail rows (desktop
   116 / 140 / 164px, phone 92 / 108 / 128px), the Collections poster grid, the Categories cards,
-  the Collection and Category tiles on the pivots, and the cast row. Large keeps every surface's
-  current size, so the default render does not change.
+  the Collection and Category tiles on the pivots, the cast row, the List view's thumbnails and the
+  detail page's Media rows. Large keeps every surface's current size, so the default render does
+  not change. On a phone the Categories cards stop at three columns: a fourth leaves a card too
+  short for its title.
 - Storage is unchanged and already app-wide: one `beamfall.posterSize` value per browser, shared by
   every page and synced across tabs. It was never per Library, so there is nothing to migrate.
 

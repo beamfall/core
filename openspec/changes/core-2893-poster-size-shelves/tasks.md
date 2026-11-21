@@ -7,5 +7,7 @@
 - [x] Unit test for the control on the Collections and Categories pivots; Playwright spec for a
       pivot choice reaching Home's shelves
 - [x] Screenshots of Categories, Collections and Home at 1440 and 390 reviewed
+- [x] Web: control in every Library view mode; List thumbnails and detail Media rows follow the
+      preference; Playwright samples every surface's size at Large and Small, 1440 and 390
 - [ ] `make gate` (lander)
 - [ ] `openspec archive core-2893-poster-size-shelves` after landing

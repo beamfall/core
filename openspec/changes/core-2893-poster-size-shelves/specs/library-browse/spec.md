@@ -4,7 +4,7 @@
 
 The web viewer SHALL keep one Small, Medium or Large poster size preference for the whole app.
 Every Library pivot (Recommended, Library, Collections, Categories) SHALL offer the control for it
-whenever it shows its pivots, and a change on any page SHALL reach every page.
+whenever it shows its pivots, in every view mode, and a change on any page SHALL reach every page.
 
 #### Scenario: One choice across pivots
 
@@ -20,7 +20,8 @@ whenever it shows its pivots, and a change on any page SHALL reach every page.
 
 Every viewer thumbnail surface SHALL draw at the size the poster size preference sets: poster
 grids, shelf cards on Home, Recommended and detail rows, the Collections poster grid, the
-Categories cards, the pivot tiles and the cast row. Large SHALL keep each surface's prior size.
+Categories cards, the pivot tiles, the cast row, List thumbnails and detail Media rows. Large
+SHALL keep each surface's prior size.
 
 #### Scenario: Smaller shelf posters on Recommended
 
