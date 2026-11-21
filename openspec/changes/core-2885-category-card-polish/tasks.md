@@ -1,0 +1,7 @@
+- [x] OpenSpec change (this change)
+- [ ] Web: cover mosaic and tinted name fallback for art-less featured cards
+- [ ] Web: singular unit name for one-counts from `libraryEntities.kinds`, item-count fallback
+- [ ] Web: denser responsive grid with one card shape; vitest coverage
+- [ ] Rendered check at desktop and phone widths in light and dark themes (scratch, not committed)
+- [ ] `make gate` via `corvint-tasks gate run` (lander)
+- [ ] `openspec archive core-2885-category-card-polish` after landing
