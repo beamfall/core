@@ -67,4 +67,40 @@ test.describe("poster size", () => {
     await expect.poll(() => gridColumns(page)).toBe(largeColumns);
     expect(errors, errors.join("\n")).toEqual([]);
   });
+
+  // CORE-2893: the Recommended pivot carries the same control, and its shelf
+  // cards narrow with the size. The choice is the one the Library pivot reads.
+  test("the Recommended pivot's shelves follow the poster size", async ({ page }) => {
+    const errors = collectFatalErrors(page);
+    await page.goto("/web/");
+    const link = page.locator('a[href*="/n/library-"]').first();
+    await link.waitFor({ state: "attached" });
+    const href = await link.getAttribute("href");
+    expect(href, "a seeded library node link on the home page").toBeTruthy();
+    await page.goto(`${href}`);
+    await expect(page.getByRole("navigation", { name: "Library views" })).toBeVisible();
+
+    const control = page.getByRole("group", { name: "Poster size" });
+    await expect(control.getByRole("button", { name: "Large posters" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const card = page.locator(".bf-shelf .bf-card").first();
+    await expect(card).toBeVisible();
+    const cardWidth = () => card.evaluate((el) => el.getBoundingClientRect().width);
+    const largeWidth = await cardWidth();
+
+    await control.getByRole("button", { name: "Small posters" }).click();
+    await expect.poll(cardWidth).toBeLessThan(largeWidth);
+
+    await page.getByRole("link", { name: "Library", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Small posters" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // Back to the default so later specs on this browser see Large.
+    await page.getByRole("button", { name: "Large posters" }).click();
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
 });
