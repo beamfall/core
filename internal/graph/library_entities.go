@@ -238,9 +238,10 @@ func (h *Handler) libraryEntities(ctx context.Context, scope auth.Scope, req req
 	if !ok || totals.Totals[resp.Kind] == 0 {
 		return resp, nil
 	}
+	// Kinds stays empty: the kind was totalled above, so the page read skips
+	// a second count (CORE-2894).
 	result, err := h.store.LibraryEntities(ctx, filter, store.LibraryEntitiesQuery{
 		LibraryID:     libraryID,
-		Kinds:         []string{resp.Kind},
 		Kind:          resp.Kind,
 		ChildKinds:    plan.childKinds(resp.Kind),
 		ParentKinds:   plan.parentKinds(listed),

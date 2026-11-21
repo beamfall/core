@@ -113,18 +113,7 @@ func (s *Store) ReadEntityCardDetails(ctx context.Context, filter LibraryFilter,
 				args = append(args, id)
 			}
 			args = append(args, libraryArgs...)
-			// #nosec G202 -- only generated placeholders are interpolated.
-			rows, err := reader.QueryContext(ctx, `
-				SELECT source.id, source.library_id, source.kind, d.value_ms, target.kind, target.title
-				FROM entity source
-				LEFT JOIN entity_field_date d ON d.entity_id = source.id AND d.field = ?
-				LEFT JOIN entity_relation r ON r.from_entity_id = source.id AND r.to_entity_id IS NOT NULL
-				LEFT JOIN entity target ON target.id = r.to_entity_id
-					AND target.library_id = source.library_id AND target.trashed_at_ms IS NULL
-				WHERE source.id IN (`+sqlPlaceholders(len(chunk))+`) AND source.trashed_at_ms IS NULL
-					AND source.library_id IN (`+libraryPlaceholders+`)
-				GROUP BY source.id, target.id
-				ORDER BY source.id, MIN(r.sort_order) IS NULL, MIN(r.sort_order), target.title COLLATE NOCASE, target.id`, args...)
+			rows, err := reader.QueryContext(ctx, entityCardDetailsSQL(len(chunk), libraryPlaceholders), args...)
 			if err != nil {
 				return nil, err
 			}
@@ -160,4 +149,23 @@ func (s *Store) ReadEntityCardDetails(ctx context.Context, filter LibraryFilter,
 		}
 	}
 	return details, nil
+}
+
+// entityCardDetailsSQL reads each card Entity's release date and linked
+// Entities, binding the date field, then ids, then the visible Library ids.
+// The unary + keeps SQLite seeking source by the id list: planned on
+// library_id it reads every Entity in the visible Libraries (CORE-2894).
+func entityCardDetailsSQL(ids int, libraryPlaceholders string) string {
+	// #nosec G202 -- only generated placeholders are interpolated.
+	return `
+		SELECT source.id, source.library_id, source.kind, d.value_ms, target.kind, target.title
+		FROM entity source
+		LEFT JOIN entity_field_date d ON d.entity_id = source.id AND d.field = ?
+		LEFT JOIN entity_relation r ON r.from_entity_id = source.id AND r.to_entity_id IS NOT NULL
+		LEFT JOIN entity target ON target.id = r.to_entity_id
+			AND target.library_id = source.library_id AND target.trashed_at_ms IS NULL
+		WHERE source.id IN (` + sqlPlaceholders(ids) + `) AND source.trashed_at_ms IS NULL
+			AND +source.library_id IN (` + libraryPlaceholders + `)
+		GROUP BY source.id, target.id
+		ORDER BY source.id, MIN(r.sort_order) IS NULL, MIN(r.sort_order), target.title COLLATE NOCASE, target.id`
 }
