@@ -56,7 +56,13 @@ function respond(items: SearchResultItem[]) {
   } as SearchResultResponse);
 }
 
-function Single({ onChange, kind }: { onChange: (id: string) => void; kind?: "media" | "any" }) {
+function Single({
+  onChange,
+  kind,
+}: {
+  onChange: (id: string) => void;
+  kind?: "media" | "entity" | "any";
+}) {
   const [value, setValue] = useState("");
   return (
     <>
@@ -126,7 +132,31 @@ describe("EntityPicker", () => {
       "href",
       "/manage/items/m-1",
     );
-    expect(screen.getByRole("link", { name: "Open" })).toBeInTheDocument();
+    // Open goes to the detail page, not the player.
+    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "/media/m-1");
+  });
+
+  it("drops the previous query's rows while the next search loads", async () => {
+    respond([mediaRow]);
+    wrap(<Single onChange={vi.fn()} />);
+    const input = screen.getByRole("combobox");
+    await userEvent.type(input, "harbor");
+    await screen.findByRole("option", { name: /Harbor Lights/ });
+    tracked().mockReturnValue(new Promise(() => {}));
+    await userEvent.type(input, "x");
+    expect(await screen.findByText("Searching…")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Harbor Lights/ })).toBeNull();
+  });
+
+  it("pages past rows of the wrong kind to find matches", async () => {
+    const media = Array.from({ length: 16 }, (_, i) => ({ ...mediaRow, id: `m-${i}` }));
+    tracked()
+      .mockResolvedValueOnce({ mode: "keyword", items: media, hasMore: true })
+      .mockResolvedValueOnce({ mode: "keyword", items: [entityRow], hasMore: false });
+    wrap(<Single onChange={vi.fn()} kind="entity" />);
+    await userEvent.type(screen.getByRole("combobox"), "harbor");
+    expect(await screen.findByRole("option", { name: /Harbor Series/ })).toBeInTheDocument();
+    expect(tracked().mock.calls[1]?.[3]).toEqual({ offset: 16, limit: 16 });
   });
 
   it("offers Entity rows when kind is any, without an edit link", async () => {
@@ -172,6 +202,7 @@ describe("EntityPicker", () => {
     await userEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(onChange).toHaveBeenLastCalledWith("");
     expect(screen.queryByTestId("entity-picker-selected")).toBeNull();
+    expect(screen.getByRole("combobox")).toHaveFocus();
   });
 });
 

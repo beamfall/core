@@ -1,5 +1,5 @@
 import { ExternalLink, Pencil, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type Ref, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { artworkBucketURL, artworkSlotURL } from "@/areas/viewer/lib/artwork";
 import { artFrameClass } from "@/areas/viewer/lib/cardArt";
@@ -27,12 +27,16 @@ export type EntityPickerKind = "media" | "entity" | "any";
 
 const SEARCH_DEBOUNCE_MS = 120;
 const SEARCH_LIMIT = 8;
+// searchResult has no kind filter, so a kind-scoped picker pages until it has
+// enough rows of that kind or this many rows have been scanned.
+const SEARCH_PAGE = 16;
+const SEARCH_SCAN_MAX = 64;
 
 type Option = { type: "item"; item: SearchResultItem } | { type: "raw"; ids: string[] };
 
 type SearchState =
   | { status: "idle" }
-  | { status: "loading"; items: SearchResultItem[] }
+  | { status: "loading" }
   | { status: "ready"; items: SearchResultItem[] }
   | { status: "error" };
 
@@ -49,22 +53,27 @@ function useEntitySearch(term: string, kind: EntityPickerKind): SearchState {
       setState({ status: "idle" });
       return;
     }
-    setState((prev) => ({
-      status: "loading",
-      items: prev.status === "ready" || prev.status === "loading" ? prev.items : [],
-    }));
+    // Rows from an earlier query are dropped while this one loads, so Enter
+    // can never commit a row that does not match the text in the input.
+    setState({ status: "loading" });
     const controller = new AbortController();
+    const run = async () => {
+      const items: SearchResultItem[] = [];
+      for (let offset = 0; offset < SEARCH_SCAN_MAX; offset += SEARCH_PAGE) {
+        const res = await searchResult(query, "keyword", controller.signal, {
+          offset,
+          limit: SEARCH_PAGE,
+        });
+        const page = res.items ?? [];
+        items.push(...page.filter((item) => kind === "any" || item.kind === kind));
+        if (items.length >= SEARCH_LIMIT || !res.hasMore || page.length === 0) break;
+      }
+      return items.slice(0, SEARCH_LIMIT);
+    };
     const timer = setTimeout(() => {
-      searchResult(query, "keyword", controller.signal, {
-        offset: 0,
-        limit: SEARCH_LIMIT * 2,
-      }).then(
-        (res) => {
-          if (controller.signal.aborted) return;
-          const items = (res.items ?? [])
-            .filter((item) => kind === "any" || item.kind === kind)
-            .slice(0, SEARCH_LIMIT);
-          setState({ status: "ready", items });
+      run().then(
+        (items) => {
+          if (!controller.signal.aborted) setState({ status: "ready", items });
         },
         () => {
           if (!controller.signal.aborted) setState({ status: "error" });
@@ -116,6 +125,7 @@ interface SearchBoxProps {
   disabled?: boolean;
   ariaLabel?: string;
   className?: string;
+  inputRef?: Ref<HTMLInputElement>;
   onPick: (ids: string[], item?: SearchResultItem) => void;
 }
 
@@ -126,6 +136,7 @@ function EntitySearchBox({
   disabled,
   ariaLabel,
   className,
+  inputRef,
   onPick,
 }: SearchBoxProps) {
   const { t } = useI18n();
@@ -136,9 +147,7 @@ function EntitySearchBox({
 
   const options = useMemo<Option[]>(() => {
     const rows: Option[] =
-      search.status === "ready" || search.status === "loading"
-        ? search.items.map((item) => ({ type: "item", item }))
-        : [];
+      search.status === "ready" ? search.items.map((item) => ({ type: "item", item })) : [];
     const ids = splitIDs(query);
     // A single picker takes one pasted token; text with spaces is a title search.
     if (ids.length > 0 && (multiple || ids.length === 1)) rows.push({ type: "raw", ids });
@@ -174,6 +183,7 @@ function EntitySearchBox({
     >
       <div ref={anchorRef} className={cn("w-72", className)}>
         <Combobox.Input
+          ref={inputRef}
           id={id}
           aria-label={ariaLabel}
           placeholder={t("entityPickerPlaceholder")}
@@ -237,7 +247,7 @@ function EntitySearchBox({
 
 /** Where Open takes an ID the picker has no search row for. */
 function rawOpenPath(id: string, kind: EntityPickerKind): string {
-  return kind === "entity" ? entityPath(id) : mediaPath("watch", id);
+  return kind === "entity" ? entityPath(id) : mediaPath("media", id);
 }
 
 /** Manage's edit surface for a Media ID; Entities have none yet. */
@@ -256,7 +266,14 @@ function PickedLinks({
 }) {
   const { t } = useI18n();
   const isMedia = item ? item.kind === "media" : kind === "media";
-  const openPath = item ? searchRowOpenPath(item) : kind === "any" ? "" : rawOpenPath(id, kind);
+  // Open goes to the item's detail page, not the player.
+  const openPath = item
+    ? item.kind === "media"
+      ? mediaPath("media", item.id)
+      : searchRowOpenPath(item)
+    : kind === "any"
+      ? ""
+      : rawOpenPath(id, kind);
   return (
     <>
       {openPath && (
@@ -309,6 +326,7 @@ export function EntityPicker({
   const { t } = useI18n();
   const rowDetail = useRowDetail();
   const [picked, setPicked] = useState<SearchResultItem | undefined>();
+  const inputRef = useRef<HTMLInputElement>(null);
   const item = picked && picked.id === value ? picked : undefined;
 
   return (
@@ -320,6 +338,7 @@ export function EntityPicker({
         disabled={disabled}
         ariaLabel={ariaLabel}
         className={className}
+        inputRef={inputRef}
         onPick={(ids, row) => {
           setPicked(row);
           onChange(ids[0] ?? "", row);
@@ -353,6 +372,7 @@ export function EntityPicker({
             onClick={() => {
               setPicked(undefined);
               onChange("");
+              inputRef.current?.focus();
             }}
           >
             <X aria-hidden="true" className="size-4" />
@@ -385,6 +405,7 @@ export function EntityMultiPicker({
 }: EntityMultiPickerProps) {
   const { t } = useI18n();
   const [known, setKnown] = useState<Map<string, SearchResultItem>>(() => new Map());
+  const inputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="space-y-2">
@@ -395,6 +416,7 @@ export function EntityMultiPicker({
         disabled={disabled}
         ariaLabel={ariaLabel}
         className={className}
+        inputRef={inputRef}
         onPick={(ids, row) => {
           if (row) setKnown((prev) => new Map(prev).set(row.id, row));
           const next = [...value];
@@ -420,7 +442,10 @@ export function EntityMultiPicker({
                   className="size-6"
                   aria-label={t("entityPickerRemove", { title })}
                   disabled={disabled}
-                  onClick={() => onChange(value.filter((other) => other !== picked))}
+                  onClick={() => {
+                    onChange(value.filter((other) => other !== picked));
+                    inputRef.current?.focus();
+                  }}
                 >
                   <X aria-hidden="true" className="size-3" />
                 </Button>

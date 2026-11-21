@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -38,12 +38,17 @@ export function ArtworkPage() {
   // undefined = loading, null = unavailable, array = candidates.
   const [slots, setSlots] = useState<Record<string, ArtworkCandidate[] | null | undefined>>({});
   const [error, setError] = useState("");
+  // Only slots from the newest load may land, so a slow earlier pick cannot
+  // fill the grid under a different Media ID.
+  const loadSeq = useRef(0);
 
   const loadSlot = async (id: string, slot: string) => {
+    const seq = loadSeq.current;
     try {
       const candidates = await fetchArtworkCandidates(id, slot);
-      setSlots((prev) => ({ ...prev, [slot]: candidates }));
+      if (seq === loadSeq.current) setSlots((prev) => ({ ...prev, [slot]: candidates }));
     } catch {
+      if (seq !== loadSeq.current) return;
       setSlots((prev) => ({ ...prev, [slot]: null }));
       setError(t("artworkCandidatesUnavailable"));
     }
@@ -53,6 +58,7 @@ export function ArtworkPage() {
     setError("");
     const id = (picked ?? mediaID).trim();
     if (!id) return;
+    loadSeq.current++;
     setLoadedID(id);
     setSlots({}); // every slot reads as undefined → "loading" until each lands
     await Promise.all(SLOTS.map(({ slot }) => loadSlot(id, slot)));
@@ -80,6 +86,11 @@ export function ArtworkPage() {
             onChange={(id) => {
               setMediaID(id);
               if (id) void onLoad(id);
+              else {
+                loadSeq.current++;
+                setLoadedID("");
+                setSlots({});
+              }
             }}
           />
         </div>

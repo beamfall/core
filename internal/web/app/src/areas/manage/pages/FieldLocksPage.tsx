@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
@@ -32,23 +32,38 @@ function fieldLabel(t: (key: StringKey) => string, field: string): string {
 export function FieldLocksPage() {
   const t = useT();
   const [mediaID, setMediaID] = useState("");
+  // The Media ID the shown locks belong to; toggles write to it.
+  const [loadedID, setLoadedID] = useState("");
   const [locks, setLocks] = useState<FieldLockInfo[] | null>(null);
   const [error, setError] = useState("");
+  // Only the newest load may land, so a slow earlier pick cannot replace it.
+  const loadSeq = useRef(0);
 
   const onLoad = async (picked?: string) => {
     setError("");
     const id = (picked ?? mediaID).trim();
     if (!id) return;
+    const seq = ++loadSeq.current;
     try {
-      setLocks(await fetchMediaFieldLocks(id));
+      const next = await fetchMediaFieldLocks(id);
+      if (seq !== loadSeq.current) return;
+      setLoadedID(id);
+      setLocks(next);
     } catch {
-      setError(t("fieldLocksUnavailable"));
+      if (seq === loadSeq.current) setError(t("fieldLocksUnavailable"));
     }
+  };
+
+  const onClear = () => {
+    loadSeq.current++;
+    setLoadedID("");
+    setLocks(null);
   };
 
   const onToggle = async (lock: FieldLockInfo) => {
     setError("");
-    const id = mediaID.trim();
+    const id = loadedID;
+    if (!id) return;
     try {
       setLocks(await setMediaFieldLock(id, lock.field, !lock.locked));
     } catch {
@@ -67,6 +82,7 @@ export function FieldLocksPage() {
             onChange={(id) => {
               setMediaID(id);
               if (id) void onLoad(id);
+              else onClear();
             }}
           />
         </div>

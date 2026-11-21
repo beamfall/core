@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
@@ -26,19 +26,18 @@ export function EntityPage() {
   const [entity, setEntity] = useState<EntityInfo | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  // Only the newest load may land, so a slow earlier pick cannot replace it.
+  const loadSeq = useRef(0);
 
   const onLoad = async (picked?: string) => {
     setError("");
     const id = (picked ?? entityID).trim();
     if (!id) return;
-    try {
-      const result = await fetchEntity(id);
-      setEntity(result);
-      setLoaded(true);
-    } catch {
-      setEntity(null);
-      setLoaded(true);
-    }
+    const seq = ++loadSeq.current;
+    const result = await fetchEntity(id).catch(() => null);
+    if (seq !== loadSeq.current) return;
+    setEntity(result);
+    setLoaded(true);
   };
 
   return (
@@ -48,11 +47,16 @@ export function EntityPage() {
           <Label htmlFor="entity-id">{t("fieldLocksMediaLabel")}</Label>
           <EntityPicker
             id="entity-id"
-            kind="any"
+            kind="entity"
             value={entityID}
             onChange={(id) => {
               setEntityID(id);
               if (id) void onLoad(id);
+              else {
+                loadSeq.current++;
+                setEntity(null);
+                setLoaded(false);
+              }
             }}
           />
         </div>

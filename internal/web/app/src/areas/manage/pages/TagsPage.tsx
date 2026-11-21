@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Segmented } from "@/areas/console/Segmented";
 import { EntityMultiPicker, EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
@@ -360,24 +360,33 @@ function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: 
   const [targetID, setTargetID] = useState("");
   const [assignment, setAssignment] = useState<TagAssignmentInfo | null>(null);
   const [addTagID, setAddTagID] = useState("");
+  // Only the newest load may land, so a slow earlier pick cannot replace it.
+  const loadSeq = useRef(0);
 
   const onLoad = async (picked?: string) => {
     onError("");
     const id = (picked ?? targetID).trim();
     if (!id) return;
+    const seq = ++loadSeq.current;
     try {
-      setAssignment(await fetchTagAssignments(targetType, id));
+      const next = await fetchTagAssignments(targetType, id);
+      if (seq === loadSeq.current) setAssignment(next);
     } catch {
-      onError(t("tagsUnavailable"));
+      if (seq === loadSeq.current) onError(t("tagsUnavailable"));
     }
   };
 
+  const onUnload = () => {
+    loadSeq.current++;
+    setAssignment(null);
+  };
+
+  // Writes go to the target whose assignments are shown, not the input text.
   const onAssign = async () => {
     onError("");
-    const id = targetID.trim();
-    if (!id || !addTagID) return;
+    if (!assignment || !addTagID) return;
     try {
-      setAssignment(await assignTag(addTagID, targetType, id));
+      setAssignment(await assignTag(addTagID, assignment.targetType, assignment.targetID));
       setAddTagID("");
     } catch {
       onError(t("tagsUnavailable"));
@@ -386,10 +395,9 @@ function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: 
 
   const onUnassign = async (tagID: string) => {
     onError("");
-    const id = targetID.trim();
-    if (!id) return;
+    if (!assignment) return;
     try {
-      setAssignment(await unassignTag(tagID, targetType, id));
+      setAssignment(await unassignTag(tagID, assignment.targetType, assignment.targetID));
     } catch {
       onError(t("tagsUnavailable"));
     }
@@ -446,6 +454,7 @@ function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: 
                 onChange={(id) => {
                   setTargetID(id);
                   if (id) void onLoad(id);
+                  else onUnload();
                 }}
               />
             )}
