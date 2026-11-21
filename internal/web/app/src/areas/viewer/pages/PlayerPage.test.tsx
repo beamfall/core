@@ -1534,6 +1534,8 @@ describe("PlayerPage server Play Queue", () => {
   let graphql: MockInstance<typeof api.graphql>;
   let pause: MockInstance<HTMLMediaElement["pause"]>;
   let location: ReturnType<typeof useLocation>;
+  let go: NavigateFunction;
+  const restart = vi.fn();
 
   const controls = () => vi.mocked(PlayerTransport).mock.lastCall?.[0];
   const playingID = () => vi.mocked(usePlayer).mock.lastCall?.[0];
@@ -1548,10 +1550,11 @@ describe("PlayerPage server Play Queue", () => {
 
   function LocationProbe() {
     location = useLocation();
+    go = useNavigate();
     return null;
   }
 
-  function renderQueue(id = b.id, nextID = c.id, search = "?playQueue=profile-a") {
+  function renderQueue(id = b.id, nextID = c.id, search = "?playQueue=profile-a", hosted = false) {
     const videoRef: { current: HTMLVideoElement | null } = { current: null };
     vi.mocked(usePlayer).mockImplementation((mediaID) => ({
       videoRef,
@@ -1572,18 +1575,22 @@ describe("PlayerPage server Play Queue", () => {
           : null,
       }),
       retry: vi.fn(),
-      restart: vi.fn(),
+      restart,
       switchToHls: vi.fn(() => false as const),
       adjustment: DEFAULT_ADJUSTMENT,
       adjust: vi.fn(),
     }));
+    const routes = () => (
+      <Routes>
+        <Route path="/watch/*" element={<PlayerPage />} />
+        <Route path="/search" element={<p>Search results</p>} />
+      </Routes>
+    );
     const tree = () => (
       <I18nProvider>
         <MemoryRouter initialEntries={[`/watch/${id}${search}`]}>
           <LocationProbe />
-          <Routes>
-            <Route path="/watch/*" element={<PlayerPage />} />
-          </Routes>
+          {hosted ? <PlayerHost>{routes()}</PlayerHost> : routes()}
         </MemoryRouter>
       </I18nProvider>
     );
@@ -1597,6 +1604,7 @@ describe("PlayerPage server Play Queue", () => {
     vi.mocked(useGaplessAudio).mockClear();
     vi.mocked(fetchPrePlayQueue).mockClear();
     viewer.refresh.mockClear();
+    restart.mockClear();
     rows = [a, locked, b, videoRow, c];
     serverSession = { profileID: "profile-a", revealed: true };
     queueMedia = null;
@@ -1900,7 +1908,100 @@ describe("PlayerPage server Play Queue", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await act(async () => pending.resolve({ sourceItems: rows, currentSession: serverSession }));
     expect(playingID()).toBe(b.id);
+    expect(restart).toHaveBeenCalledExactlyOnceWith(0);
     expect(screen.queryByText(STRINGS.en.musicQueueReadFailed)).not.toBeInTheDocument();
+  });
+
+  it.each(["same identity", "relock", "profile switch"])(
+    "revalidates an ended advance across focus and docking with %s",
+    async (change) => {
+      const confirm = vi.fn();
+      vi.mocked(useGaplessAudio).mockReturnValue(confirm);
+      try {
+        renderQueue(b.id, c.id, "?playQueue=profile-a", true);
+        await waitFor(() => expect(playingID()).toBe(b.id));
+        type QueueResponse = Awaited<ReturnType<typeof readQueue>>;
+        const first = deferred<QueueResponse>();
+        const replacement = deferred<QueueResponse>();
+        readQueue.mockReturnValueOnce(first.promise).mockReturnValueOnce(replacement.promise);
+        fireEvent.ended(stageVideo());
+        await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
+        fireEvent.focus(window);
+        await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(3));
+        await act(async () => go("/search"));
+        await screen.findByRole("region", { name: "Now playing" });
+        const currentSession =
+          change === "relock"
+            ? { ...serverSession, revealed: false }
+            : change === "profile switch"
+              ? { ...serverSession, profileID: "profile-b" }
+              : serverSession;
+        await act(async () => replacement.resolve({ sourceItems: rows, currentSession }));
+        await act(async () => first.resolve({ sourceItems: rows, currentSession: serverSession }));
+        if (change === "same identity") {
+          expect(playingID()).toBe(c.id);
+          expect(confirm).toHaveBeenCalledExactlyOnceWith(c.id);
+        } else {
+          expect(screen.queryByRole("region", { name: "Now playing" })).not.toBeInTheDocument();
+          expect(confirm).not.toHaveBeenCalled();
+        }
+        expect(location.pathname).toBe("/search");
+        expect(readQueue).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.mocked(useGaplessAudio).mockReset();
+      }
+    },
+  );
+
+  it("keeps the docked track and retries when the ended read fails", async () => {
+    renderQueue(b.id, c.id, "?playQueue=profile-a", true);
+    await waitFor(() => expect(playingID()).toBe(b.id));
+    const video = stageVideo();
+    await act(async () => go("/search"));
+    await screen.findByRole("region", { name: "Now playing" });
+    readQueue.mockRejectedValueOnce(new Error("network"));
+    fireEvent.ended(video);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(STRINGS.en.musicQueueReadFailed);
+    expect(stageVideo()).toBe(video);
+    expect(playingID()).toBe(b.id);
+    fireEvent.click(within(alert).getByRole("button", { name: STRINGS.en.tryAgain }));
+    await waitFor(() => expect(playingID()).toBe(c.id));
+    expect(location.pathname).toBe("/search");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows the scoped metadata credit in playback details", async () => {
+    await mockWithRealTransport();
+    const metadataAttribution = {
+      providerName: { en: "Fixture source" },
+      text: { en: "Metadata provided by Fixture" },
+      url: "https://fixture.example.test/",
+    };
+    graphql.mockImplementation(async (query) => {
+      if (query.startsWith("query MusicQueueMedia")) {
+        return {
+          media: {
+            id: b.id,
+            title: "Track B",
+            credits: [],
+            metadataAttribution: query.includes("metadataAttribution { providerName text url }")
+              ? metadataAttribution
+              : undefined,
+          },
+          currentSession: serverSession,
+        };
+      }
+      return readQueue();
+    });
+    renderQueue();
+    await screen.findByRole("heading", { name: "Track B", level: 1 });
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.playbackSettings }));
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.playbackDetails }));
+    expect(await screen.findByRole("link", { name: metadataAttribution.text.en })).toHaveAttribute(
+      "href",
+      metadataAttribution.url,
+    );
   });
 
   it.each(["broadcast", "focus", "pageshow"])(
