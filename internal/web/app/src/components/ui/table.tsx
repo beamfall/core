@@ -1,6 +1,7 @@
 import type * as React from "react";
 import { useEffect, useRef, useState } from "react";
 
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 // useHorizontalOverflow reports whether the element is wider than its box, so a
@@ -25,6 +26,9 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   // A table wider than the viewport scrolls sideways; keyboard users reach the
   // hidden columns by focusing the container and using the arrow keys (CORE-0290,
   // WCAG 2.1.1, axe scrollable-region-focusable).
+  // While it scrolls, the container is a named region so a screen reader says what the
+  // new tab stop is.
+  const t = useT();
   const [containerRef, overflowing] = useHorizontalOverflow<HTMLDivElement>();
   return (
     <div
@@ -32,6 +36,8 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
       data-slot="table-container"
       className="relative w-full overflow-x-auto"
       tabIndex={overflowing ? 0 : undefined}
+      role={overflowing ? "region" : undefined}
+      aria-label={overflowing ? (props["aria-label"] ?? t("tableScrollRegion")) : undefined}
     >
       <table
         data-slot="table"

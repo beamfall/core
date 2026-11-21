@@ -246,9 +246,9 @@ test.describe("ADR-0100 a11y real-browser parity pass", () => {
   });
 });
 
-// CORE-0290 (design audit CWEB-19, CWEB-20): every scrollable region can take keyboard focus, and
-// every interactive target is at least 24x24 CSS px (WCAG 2.2 SC 2.5.8), on the surfaces the audit
-// measured, at desktop and phone width.
+// CORE-0290 (design audit CWEB-20): every scrollable region can take keyboard focus on the surfaces
+// the audit measured, at desktop and phone width. The axe target-size rule rides along, but it
+// accepts small targets with enough spacing, so it does not prove 24x24 hit areas (CWEB-19).
 test.describe("targets and scrollable regions", () => {
   for (const viewport of [
     { width: 1440, height: 900 },
@@ -275,6 +275,10 @@ test.describe("targets and scrollable regions", () => {
           await expect(page.locator('a[data-focus-section^="recent"]').first()).toBeVisible();
         } else {
           await page.waitForLoadState("networkidle");
+        }
+        // Closed disclosures (the Libraries file tools hold the folder tree) hide regions from axe.
+        for (const summary of await page.locator("details:not([open]) > summary").all()) {
+          if (await summary.isVisible()) await summary.click();
         }
         await settleAnimations(page);
         const violations = await runAxeRules(page, ["scrollable-region-focusable", "target-size"]);
