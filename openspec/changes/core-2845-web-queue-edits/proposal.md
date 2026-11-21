@@ -9,8 +9,10 @@ to a server-queue run for their current Profile.
 - Keep Play queue as the explicit start of a server-queue run. The `?playQueue=<profileID>` route
   identifies that run. Album and Play all continue to use their catalog playback paths.
 - Serialize edits with server-queue advances and confirm placements with a scoped server reread.
+- Add an optional Reveal precondition to queueAdd so a relock can refuse the write at commit time.
 
 ## Impact
 
-The web viewer uses the existing Play Queue reads and mutations. Catalog conversion, including
+The web viewer uses existing Play Queue reads and supplies the new precondition on queueAdd.
+Existing clients may omit it. Catalog conversion, including
 complete Play all and album reads, disc ordering, and partial-import recovery, is follow-up work.

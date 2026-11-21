@@ -29,7 +29,7 @@ and presence of any active cursor. It SHALL skip the write for a known locked ta
 ### Requirement: Queue edits are serialized with server advancement
 
 The viewer SHALL serialize each edit through its confirming reread with server-queue advancement.
-An edit SHALL issue one queueAdd with the expected Profile ID. A Profile mismatch or relock SHALL
+An edit SHALL issue one queueAdd with the expected Profile ID and Reveal state. A Profile mismatch or relock SHALL
 drop the edit and invalidate the scoped reader. The viewer SHALL confirm placement from a server
 reread after a successful or lost response and SHALL never replay the mutation. When the reread
 fails, the viewer SHALL keep established audio attached and require a fresh read before advancing.
@@ -39,7 +39,38 @@ fails, the viewer SHALL keep established audio attached and require a fresh read
 - **WHEN** the listener requests Next while Add to queue is awaiting confirmation
 - **THEN** advancement waits for the edit and uses a fresh server read to resolve the next track
 
+#### Scenario: Next begins before a menu edit
+
+- **WHEN** the listener makes an edit while Next is reading the queue
+- **THEN** the edit waits and uses the cursor reached by Next for the same server-queue run
+
 #### Scenario: The queue write commits and its response is lost
 
 - **WHEN** a write commits and the response is lost
 - **THEN** the viewer rereads the queue and acknowledges the edit only if the placement is confirmed
+
+### Requirement: Queue addition can require an unchanged Reveal state
+
+The queueAdd mutation SHALL accept an optional boolean `expectedRevealed`. When supplied, the
+server SHALL compare it with the request scope and keep the session's Reveal state and Profile
+binding stable from validation through the queue write. A Reveal mismatch SHALL return
+`CONFLICT` with reason `REVEAL_STATE_MISMATCH` and leave the stored queue unchanged. Omission
+SHALL preserve the existing queueAdd behavior.
+
+#### Scenario: Another tab relocks after preflight
+
+- **WHEN** a listener reads the queue while Revealed and another tab relocks the same session
+  before their queueAdd applies
+- **THEN** a queueAdd carrying `expectedRevealed: true` is refused even for a Media still visible
+  after relock
+- **AND** the viewer drops the edit and invalidates the scoped reader
+
+### Requirement: Overlapping search reads preserve the latest row lock state
+
+The viewer SHALL resolve overlapping search responses for a row by request order. A later
+refresh page that observes a lock SHALL supersede an older Load more response for the same row.
+
+#### Scenario: A row moves between pages during a refresh
+
+- **WHEN** a refresh page returns a locked row that an earlier Load more request saw unlocked
+- **THEN** the row stays locked regardless of which response settles first
