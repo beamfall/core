@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/beamfall/core/internal/serverrole"
@@ -17,12 +18,23 @@ import (
 // Media as a Version (CORE-2490).
 const opKindMergeVersion = "merge-version"
 
-// VersionMerge reports a version merge: the Media that kept the title and the
-// Media folded into it, now trashed. BatchID is "" when nothing merged.
+// ErrVersionMergeEngagementPending means the catalog committed and playback
+// recovery is pending. The scan must stop before attempting another merge.
+var ErrVersionMergeEngagementPending = errors.New("engagement pending")
+
+// VersionMerge reports the selected survivor and the Media folded into it,
+// now trashed. BatchID is "" when nothing merged.
 type VersionMerge struct {
 	BatchID  string
 	Survivor MediaID
 	Merged   []MediaID
+}
+
+// VersionMergeOptions selects a survivor and allows placement without
+// derived labels when the caller has verified a sampled and legacy copy.
+type VersionMergeOptions struct {
+	Survivor     MediaID
+	VerifiedCopy *VersionCopyPair
 }
 
 // versionMergeFacts are the Media row's probe facts, which describe its first
@@ -41,6 +53,10 @@ type versionMergeItemState struct {
 	Survivor    MediaID `json:"survivor"`
 	Fingerprint string  `json:"fingerprint"`
 	Label       string  `json:"label"`
+	// MovedFiles records the losing Media's original Version labels for a
+	// verified-copy merge. Older batches moved one unlabelled file.
+	MovedFiles   map[string]string `json:"movedFiles,omitempty"`
+	MissingFiles []string          `json:"missingFiles,omitempty"`
 	// Relabels maps a survivor file's fingerprint to the label it held before
 	// the merge, for each part-0 file the merge relabelled.
 	Relabels      map[string]string `json:"relabels,omitempty"`
@@ -55,6 +71,10 @@ type versionMergeItemState struct {
 	// Queue holds the queue entries for the merged Media the merge pointed
 	// at the survivor.
 	Queue []queueMove `json:"queue,omitempty"`
+	// The catalog commit makes a verified merge eligible for engagement
+	// recovery. The append-only activity entry acknowledges the events commit.
+	EngagementLibraryID LibraryID `json:"engagementLibraryId,omitempty"`
+	SurvivorInsertSeq   int64     `json:"survivorInsertSeq,omitempty"`
 }
 
 // versionMergeRestored is a merged Media an undo put back.
@@ -82,22 +102,35 @@ type versionMergeCandidate struct {
 // that never overwrite the survivor's own values. Collections and tags are
 // copied in the merge's catalog transaction; favourites, ratings, watchlist
 // entries and watch progress are copied, and queue entries repointed, in an
-// events transaction that commits just before it, so a failed copy rolls the
-// merge back for the next scan to retry. Should the catalog commit fail after
-// the events commit, the queue moves are reverted in their own events
-// transaction and the other copies, being idempotent, stay for the retry.
-// Copies stay on undo, as an entity merge's do; undo repoints queue entries.
+// events transaction. A verified merge commits the catalog journal first so
+// playback stays untouched on catalog failure and can recover on reopen
+// after an events failure. Copies stay on undo, as an entity merge's do;
+// undo repoints queue entries.
 //
 // It does nothing for an encrypted Library (its catalog lives on its own
 // plane), when trash is disabled (the merged Media could not be undone), for
 // fewer than two candidates, or for a Media a merge of this kind already
 // folded and the user undid. An Extra, or a Media in any Media relation (an
 // explicit edition-of cut, an extra-of parent or child), is never a candidate:
-// those are separate Media on purpose. A file no derived label tells apart
-// stays on its own Media.
-func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, mediaIDs []MediaID, now time.Time) (VersionMerge, error) {
+// those are separate Media on purpose. The default merge requires distinct
+// derived labels. A verified copy can use ordinal labels, keeps the requested
+// sampled Media first, and combines the two Media's playback progress.
+func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, mediaIDs []MediaID, now time.Time, opts ...VersionMergeOptions) (VersionMerge, error) {
 	if libraryID == "" {
 		return VersionMerge{}, errors.New("library ID is required")
+	}
+	var options VersionMergeOptions
+	if len(opts) > 1 {
+		return VersionMerge{}, errors.New("only one set of Version merge options is supported")
+	}
+	if len(opts) == 1 {
+		options = opts[0]
+	}
+	verified := options.VerifiedCopy
+	if verified != nil && (len(mediaIDs) != 2 || options.Survivor != verified.Sample.MediaID ||
+		!slices.Contains(mediaIDs, verified.Sample.MediaID) || !slices.Contains(mediaIDs, verified.Legacy.MediaID) ||
+		verified.Sample.MediaID == verified.Legacy.MediaID) {
+		return VersionMerge{}, errors.New("invalid verified Version copy pair")
 	}
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
 		return VersionMerge{}, err
@@ -105,8 +138,14 @@ func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, med
 	if err := s.guardAuthority(serverrole.FaceEngagement); err != nil {
 		return VersionMerge{}, err
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	if verified != nil {
+		// Keep undo and user writes outside the catalog commit and inline retry.
+		s.mu.Lock()
+		defer s.mu.Unlock()
+	} else {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+	}
 	if err := s.guardLocked(); err != nil {
 		return VersionMerge{}, err
 	}
@@ -114,7 +153,7 @@ func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, med
 		return VersionMerge{}, nil
 	}
 	var encrypted int
-	if err := s.catalogR.QueryRowContext(ctx, `SELECT encrypted FROM library WHERE id = ?`, libraryID).Scan(&encrypted); err != nil {
+	if err := s.catalogR.QueryRowContext(ctx, `SELECT encrypted FROM library WHERE id = ? AND trashed_at_ms IS NULL`, libraryID).Scan(&encrypted); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return VersionMerge{}, nil
 		}
@@ -142,10 +181,14 @@ func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, med
 	if len(candidates) < 2 {
 		return VersionMerge{}, nil
 	}
-	survivor := candidates[0]
-	for _, c := range candidates[1:] {
-		if c.files > survivor.files || (c.files == survivor.files && c.rowid < survivor.rowid) {
-			survivor = c
+	survivor := selectVersionMergeSurvivor(candidates, options.Survivor)
+	if survivor.id == "" {
+		return VersionMerge{}, nil
+	}
+	if verified != nil {
+		current, err := verifiedCopyStillCurrentTx(ctx, tx, *verified)
+		if err != nil || !current {
+			return VersionMerge{}, err
 		}
 	}
 	if err := insertBatchTx(ctx, tx, batchID, opKindMergeVersion, now); err != nil {
@@ -154,10 +197,10 @@ func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, med
 	result := VersionMerge{BatchID: batchID, Survivor: survivor.id}
 	var states []versionMergeItemState
 	for _, loser := range candidates {
-		if loser.id == survivor.id || !loser.single {
+		if loser.id == survivor.id || (verified == nil && !loser.single) {
 			continue
 		}
-		state, merged, err := mergeVersionTx(ctx, tx, survivor.id, loser, now)
+		state, merged, err := mergeVersionTx(ctx, tx, survivor.id, loser, now, verified != nil)
 		if err != nil {
 			return VersionMerge{}, err
 		}
@@ -167,15 +210,25 @@ func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, med
 		}
 	}
 	if len(result.Merged) == 0 {
-		return VersionMerge{}, nil
+		return VersionMerge{Survivor: survivor.id}, nil
 	}
 
+	if verified != nil {
+		states[0].EngagementLibraryID = libraryID
+		if err := tx.QueryRowContext(ctx, `SELECT seq FROM media_insert_seq WHERE media_id = ?`, survivor.id).
+			Scan(&states[0].SurvivorInsertSeq); err != nil {
+			return VersionMerge{}, err
+		}
+		if err := s.stageVersionMergePlayback(ctx, batchID, result.Merged[0], survivor.id); err != nil {
+			return VersionMerge{}, err
+		}
+	}
 	etx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
 		return VersionMerge{}, err
 	}
 	defer etx.Rollback()
-	if err := copyVersionMergeEngagementTx(ctx, etx, libraryID, batchID, survivor.id, result.Merged, states, now); err != nil {
+	if err := copyVersionMergeEngagementTx(ctx, etx, libraryID, batchID, survivor.id, result.Merged, states, now, verified != nil); err != nil {
 		return VersionMerge{}, err
 	}
 	for i, id := range result.Merged {
@@ -187,10 +240,24 @@ func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, med
 			return VersionMerge{}, err
 		}
 	}
-	if err := etx.Commit(); err != nil {
+	var engagementErr error
+	if verified != nil {
+		if err := tx.Commit(); err != nil {
+			return VersionMerge{}, fmt.Errorf("version merge %s: catalog commit failed: %w", batchID, err)
+		}
+		if err := etx.Commit(); err != nil {
+			if retryErr := s.finishVersionCopyEngagement(ctx, batchID, libraryID, now); retryErr != nil {
+				engagementErr = fmt.Errorf("version merge %s: %w: %w", batchID, ErrVersionMergeEngagementPending, errors.Join(err, retryErr))
+			}
+		}
+		if engagementErr == nil {
+			if err := clearVersionCopyEngagement(ctx, s.catalogW, batchID); err != nil {
+				slog.Warn("could not clear completed Version merge engagement", "batch", batchID, "error", err)
+			}
+		}
+	} else if err := etx.Commit(); err != nil {
 		return VersionMerge{}, err
-	}
-	if err := tx.Commit(); err != nil {
+	} else if err := tx.Commit(); err != nil {
 		moved := make([]versionMergeRestored, len(states))
 		for i, state := range states {
 			moved[i] = versionMergeRestored{result.Merged[i], state}
@@ -211,7 +278,25 @@ func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, med
 		slog.Warn("media outbox event append failed", "kind", MediaEventUpdated, "media", survivor.id, "error", eventErr)
 	}
 
-	return result, nil
+	return result, engagementErr
+}
+
+func selectVersionMergeSurvivor(candidates []versionMergeCandidate, preferred MediaID) versionMergeCandidate {
+	if preferred != "" {
+		for _, candidate := range candidates {
+			if candidate.id == preferred {
+				return candidate
+			}
+		}
+		return versionMergeCandidate{}
+	}
+	survivor := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if candidate.files > survivor.files || (candidate.files == survivor.files && candidate.rowid < survivor.rowid) {
+			survivor = candidate
+		}
+	}
+	return survivor
 }
 
 // versionMergeCandidatesTx loads the live Media of libraryID among ids, in
@@ -241,6 +326,9 @@ func versionMergeCandidatesTx(ctx context.Context, tx *sql.Tx, libraryID Library
 			FROM media m
 			WHERE m.id = ? AND m.library_id = ? AND m.trashed_at_ms IS NULL AND m.extra = 0
 			  AND NOT EXISTS (SELECT 1 FROM media_relation r WHERE r.from_media_id = m.id OR r.to_media_id = m.id)
+			  AND NOT EXISTS (SELECT 1 FROM op_batch_item
+			                  WHERE json_extract(prior_state, '$.engagementLibraryId') IS NOT NULL
+			                    AND json_extract(prior_state, '$.survivor') = m.id)
 		`, opKindMergeVersion, id, libraryID).Scan(&c.rowid, &c.facts.Container, &c.facts.Codec,
 			&c.facts.DurationSeconds, &c.facts.VideoWidth, &c.facts.VideoHeight, &c.files, &undone)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -273,22 +361,42 @@ func versionMergeCandidatesTx(ctx context.Context, tx *sql.Tx, libraryID Library
 // copies its collection and tag memberships and trashes it. merged is false,
 // with nothing written, when no derived label tells the file from the
 // survivor's Versions.
-func mergeVersionTx(ctx context.Context, tx *sql.Tx, survivor MediaID, loser versionMergeCandidate, now time.Time) (versionMergeItemState, bool, error) {
-	state := versionMergeItemState{Survivor: survivor, Fingerprint: loser.file.ContentFingerprint}
+func mergeVersionTx(ctx context.Context, tx *sql.Tx, survivor MediaID, loser versionMergeCandidate, now time.Time, verifiedCopy bool) (versionMergeItemState, bool, error) {
+	state := versionMergeItemState{Survivor: survivor}
 	priorFirst, err := firstVersionFingerprintSQL(ctx, tx, survivor)
 	if err != nil {
 		return state, false, err
 	}
 	state.PriorFirst = priorFirst
+	if verifiedCopy {
+		state.MovedFiles, state.MissingFiles, err = placeMergedVersionsTx(ctx, tx, survivor, loser.id, priorFirst)
+		if err != nil || len(state.MovedFiles) == 0 {
+			return state, false, err
+		}
+	} else if err := placeDerivedMergedVersionTx(ctx, tx, loser, &state); err != nil {
+		if errors.Is(err, ErrVersionSlotTaken) {
+			return state, false, nil
+		}
+		return state, false, err
+	}
+	if err := finishVersionMergeTx(ctx, tx, loser.id, &state, now); err != nil {
+		return state, false, err
+	}
+	return state, true, nil
+}
+
+func placeDerivedMergedVersionTx(ctx context.Context, tx *sql.Tx, loser versionMergeCandidate, state *versionMergeItemState) error {
+	survivor, priorFirst := state.Survivor, state.PriorFirst
+	state.Fingerprint = loser.file.ContentFingerprint
 	priorLabels, err := partZeroLabelsTx(ctx, tx, survivor)
 	if err != nil {
-		return state, false, err
+		return err
 	}
 	if err := tx.QueryRowContext(ctx, `
 		SELECT container, codec, duration_seconds, video_width, video_height FROM media WHERE id = ?
 	`, survivor).Scan(&state.SurvivorFacts.Container, &state.SurvivorFacts.Codec,
 		&state.SurvivorFacts.DurationSeconds, &state.SurvivorFacts.VideoWidth, &state.SurvivorFacts.VideoHeight); err != nil {
-		return state, false, err
+		return err
 	}
 	file := ImportMediaFile{
 		Path:                loser.file.Path,
@@ -305,16 +413,13 @@ func mergeVersionTx(ctx context.Context, tx *sql.Tx, survivor MediaID, loser ver
 		AnchorFingerprint: priorFirst,
 		DeriveLabels:      true,
 	}, priorFirst)
-	if errors.Is(err, ErrVersionSlotTaken) {
-		return state, false, nil
-	}
 	if err != nil {
-		return state, false, err
+		return err
 	}
 	state.Label = label
 	afterLabels, err := partZeroLabelsTx(ctx, tx, survivor)
 	if err != nil {
-		return state, false, err
+		return err
 	}
 	for fingerprint, prior := range priorLabels {
 		if afterLabels[fingerprint] != prior {
@@ -328,11 +433,14 @@ func mergeVersionTx(ctx context.Context, tx *sql.Tx, survivor MediaID, loser ver
 		UPDATE media_file SET media_id = ?, version_label = ?
 		WHERE content_fingerprint = ? AND media_id = ?
 	`, survivor, label, loser.file.ContentFingerprint, loser.id); err != nil {
-		return state, false, err
+		return err
 	}
-	if err := refreshFirstVersionFactsTx(ctx, tx, survivor, file, priorFirst); err != nil {
-		return state, false, err
-	}
+	return refreshFirstVersionFactsTx(ctx, tx, survivor, file, priorFirst)
+}
+
+func finishVersionMergeTx(ctx context.Context, tx *sql.Tx, loser MediaID, state *versionMergeItemState, now time.Time) error {
+	survivor := state.Survivor
+	var err error
 	if state.Collections, err = copyMediaMembershipTx(ctx, tx, `
 		SELECT collection_id FROM collection_media AS c
 		WHERE media_id = ? AND NOT EXISTS (
@@ -342,8 +450,8 @@ func mergeVersionTx(ctx context.Context, tx *sql.Tx, survivor MediaID, loser ver
 		INSERT INTO collection_media(collection_id, media_id, sort_order, added_at_ms)
 		SELECT collection_id, ?, sort_order, added_at_ms FROM collection_media
 		WHERE collection_id = ? AND media_id = ?
-	`, loser.id, survivor); err != nil {
-		return state, false, err
+	`, loser, survivor); err != nil {
+		return err
 	}
 	if state.Tags, err = copyMediaMembershipTx(ctx, tx, `
 		SELECT tag_id FROM media_tag AS t
@@ -353,15 +461,13 @@ func mergeVersionTx(ctx context.Context, tx *sql.Tx, survivor MediaID, loser ver
 	`, `
 		INSERT INTO media_tag(tag_id, media_id)
 		SELECT tag_id, ? FROM media_tag WHERE tag_id = ? AND media_id = ?
-	`, loser.id, survivor); err != nil {
-		return state, false, err
+	`, loser, survivor); err != nil {
+		return err
 	}
-	if _, err := tx.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 		UPDATE media SET trashed_at_ms = ? WHERE id = ? AND trashed_at_ms IS NULL
-	`, timeToMillis(now), loser.id); err != nil {
-		return state, false, err
-	}
-	return state, true, nil
+	`, timeToMillis(now), loser)
+	return err
 }
 
 // partZeroLabelsTx maps each part-0 file of the Media to its Version label.
@@ -413,13 +519,10 @@ func copyMediaMembershipTx(ctx context.Context, tx *sql.Tx, list, insert string,
 
 // copyVersionMergeEngagementTx copies each merged Media's per-Profile state
 // onto the survivor in the events transaction tx, never overwriting a value
-// the survivor holds: favourites, ratings and watchlist entries by INSERT OR
-// IGNORE; watch progress, for a Profile with none on the survivor, through a
-// playback projection event so a projection rebuild replays it (a copied
-// event counts as one play in derived play history); queue entries by
-// repointing, recorded in states for undo. It also records the merge in the
-// activity log.
-func copyVersionMergeEngagementTx(ctx context.Context, tx *sql.Tx, libraryID LibraryID, batchID string, survivor MediaID, merged []MediaID, states []versionMergeItemState, now time.Time) error {
+// the survivor holds. For verified copies, both Media share a timeline so
+// playback progress and counts combine. Queue entries are repointed and
+// recorded in states for undo. The merge also goes in the activity log.
+func copyVersionMergeEngagementTx(ctx context.Context, tx *sql.Tx, libraryID LibraryID, batchID string, survivor MediaID, merged []MediaID, states []versionMergeItemState, now time.Time, verifiedCopy bool) error {
 	for i, loser := range merged {
 		for _, stmt := range []string{
 			`INSERT OR IGNORE INTO media_favorite(profile_id, media_id, favorited_at_ms)
@@ -435,8 +538,20 @@ func copyVersionMergeEngagementTx(ctx context.Context, tx *sql.Tx, libraryID Lib
 				return err
 			}
 		}
-		if err := copyVersionMergeProgressTx(ctx, tx, loser, survivor); err != nil {
-			return err
+		if verifiedCopy {
+			if err := applyPendingVersionMergePlayback(ctx, tx, batchID); err != nil {
+				return err
+			}
+		} else {
+			progress, err := versionMergeProgressEventsTx(ctx, tx, loser, survivor, false)
+			if err != nil {
+				return err
+			}
+			for _, event := range progress {
+				if err := recordVersionMergeProgressTx(ctx, tx, event); err != nil {
+					return err
+				}
+			}
 		}
 		moves, err := moveQueueEntriesTx(ctx, tx, loser, survivor)
 		if err != nil {
@@ -453,30 +568,29 @@ func copyVersionMergeEngagementTx(ctx context.Context, tx *sql.Tx, libraryID Lib
 	})
 }
 
-// copyVersionMergeProgressTx copies from's watch progress onto to for each
-// Profile with no progress row on to.
-func copyVersionMergeProgressTx(ctx context.Context, tx *sql.Tx, from, to MediaID) error {
+// Only verified copies combine plays when the survivor already has progress.
+func versionMergeProgressEventsTx(ctx context.Context, tx *sql.Tx, from, to MediaID, verifiedCopy bool) ([]playbackProjectionEvent, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT profile_id, position_seconds, duration_seconds, watched, updated_at_ms, play_count,
 		  last_played_at_ms, provenance, occurred_at_ms, COALESCE(import_run_id, ''),
 		  COALESCE(import_importer_id, ''), COALESCE(import_match_method, ''), event_time_ms, channel_context
 		FROM playback_progress AS p
-		WHERE media_id = ? AND NOT EXISTS (
-		  SELECT 1 FROM playback_progress WHERE profile_id = p.profile_id AND media_id = ?)
+		WHERE media_id = ? AND (? OR NOT EXISTS (
+		  SELECT 1 FROM playback_progress WHERE profile_id = p.profile_id AND media_id = ?))
 		ORDER BY profile_id
-	`, from, to)
+	`, from, verifiedCopy, to)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var events []playbackProjectionEvent
 	for rows.Next() {
-		event := playbackProjectionEvent{Operation: playbackProjectionOperationProgress, MediaID: string(to)}
+		event := playbackProjectionEvent{Operation: playbackProjectionOperationVersionMerge, MediaID: string(to)}
 		var watched, channel int
 		var lastPlayed, occurred, eventTime sql.NullInt64
 		if err := rows.Scan(&event.ProfileID, &event.PositionSeconds, &event.DurationSeconds, &watched,
 			&event.UpdatedAtMS, &event.PlayCount, &lastPlayed, &event.Provenance, &occurred,
 			&event.ImportRunID, &event.ImportImporterID, &event.ImportMatch, &eventTime, &channel); err != nil {
-			return errors.Join(err, rows.Close())
+			return nil, errors.Join(err, rows.Close())
 		}
 		event.Watched = watched != 0
 		event.ChannelContext = channel != 0
@@ -487,17 +601,35 @@ func copyVersionMergeProgressTx(ctx context.Context, tx *sql.Tx, from, to MediaI
 		events = append(events, event)
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return nil, err
+	}
+	if verifiedCopy {
+		for i := range events {
+			event := &events[i]
+			var copied int
+			if err := tx.QueryRowContext(ctx, `
+				SELECT COALESCE((
+					SELECT json_extract(payload, '$.explicitCount') FROM engagement_event
+					WHERE profile_id = ? AND media_id = ? AND kind = ?
+					  AND json_extract(payload, '$.mergedFromMediaId') = ?
+					ORDER BY rowid DESC LIMIT 1
+				), 0)
+			`, event.ProfileID, to, playbackProjectionEventKind, from).Scan(&copied); err != nil {
+				return nil, err
+			}
+			event.PlayCount = max(0, event.ExplicitCount-copied)
+			event.ExplicitCount = max(event.ExplicitCount, copied)
+			event.MergedFromMediaID = string(from)
+		}
+	}
+	return events, nil
+}
+
+func recordVersionMergeProgressTx(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
+	if err := appendPlaybackProjectionEvent(ctx, tx, event); err != nil {
 		return err
 	}
-	for _, event := range events {
-		if err := appendPlaybackProjectionEvent(ctx, tx, event); err != nil {
-			return err
-		}
-		if err := applyPlaybackProjectionEvent(ctx, tx, event); err != nil {
-			return err
-		}
-	}
-	return nil
+	return applyPlaybackProjectionEvent(ctx, tx, event)
 }
 
 func nullInt64Ptr(v sql.NullInt64) *int64 {
@@ -559,12 +691,27 @@ func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filte
 		`UPDATE op_batch SET undone_at_ms = ? WHERE id = ?`, timeToMillis(now), batchID); err != nil {
 		return BulkOpBatch{}, err
 	}
+	if err := clearVersionCopyEngagement(ctx, tx, batchID); err != nil {
+		return BulkOpBatch{}, err
+	}
 	etx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
 		return BulkOpBatch{}, err
 	}
 	defer etx.Rollback()
-	for _, r := range done {
+	// Only the original activity entry certifies the planned queue moves.
+	// Playback-only recovery uses the batch ID as its activity operation ID.
+	var queueMoved bool
+	if err := etx.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM activity_entry WHERE action = ? AND target_id = ? AND operation_id IS NULL)
+	`, ActivityMediaMerge, batchID).Scan(&queueMoved); err != nil {
+		return BulkOpBatch{}, err
+	}
+	for i := range done {
+		r := &done[i]
+		if !queueMoved {
+			r.state.Queue = nil
+		}
 		for _, m := range r.state.Queue {
 			if err := repointQueueEntryTx(ctx, etx, m, r.state.Survivor, r.loser); err != nil {
 				return BulkOpBatch{}, err
@@ -577,6 +724,9 @@ func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filte
 	if err := tx.Commit(); err != nil {
 		return BulkOpBatch{}, errors.Join(fmt.Errorf("version merge %s undo: catalog commit failed: %w", batchID, err),
 			s.revertQueueMovesLocked(ctx, done, false))
+	}
+	if _, err := s.eventsW.ExecContext(ctx, `DELETE FROM version_merge_playback WHERE batch_id = ?`, batchID); err != nil {
+		slog.Warn("could not clear undone Version merge engagement", "batch", batchID, "error", err)
 	}
 
 	updated := map[MediaID]bool{}
@@ -622,30 +772,18 @@ func (s *Store) revertQueueMovesLocked(ctx context.Context, items []versionMerge
 // undoVersionMergeItemTx puts one merged Media back as it was before the
 // merge, and the survivor back as it was before this Media joined it.
 func undoVersionMergeItemTx(ctx context.Context, tx *sql.Tx, loser MediaID, state versionMergeItemState) error {
-	var owner MediaID
-	var missing bool
-	err := tx.QueryRowContext(ctx, `
-		SELECT media_id, missing_at_ms IS NOT NULL FROM media_file WHERE content_fingerprint = ?
-	`, state.Fingerprint).Scan(&owner, &missing)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && owner != state.Survivor) {
-		return ValidationError("a merged Version's file has left its title; the merge cannot be undone")
-	}
-	if err != nil {
-		return err
-	}
-	if missing {
-		// A replacement in place would stay behind on the survivor, and the
-		// restored Media would hold no live file.
-		return ValidationError("a merged Version's file is missing or was replaced; the merge cannot be undone")
-	}
 	firstBefore, err := firstVersionFingerprintSQL(ctx, tx, state.Survivor)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE media_file SET media_id = ?, version_label = '' WHERE content_fingerprint = ? AND media_id = ?
-	`, loser, state.Fingerprint, state.Survivor); err != nil {
-		return err
+	files := state.MovedFiles
+	if len(files) == 0 {
+		files = map[string]string{state.Fingerprint: ""}
+	}
+	for fingerprint, label := range files {
+		if err := undoVersionMergeFileTx(ctx, tx, loser, state.Survivor, fingerprint, label, slices.Contains(state.MissingFiles, fingerprint)); err != nil {
+			return err
+		}
 	}
 	for fingerprint, label := range state.Relabels {
 		if _, err := tx.ExecContext(ctx, `
@@ -671,6 +809,29 @@ func undoVersionMergeItemTx(ctx context.Context, tx *sql.Tx, loser MediaID, stat
 	return err
 }
 
+func undoVersionMergeFileTx(ctx context.Context, tx *sql.Tx, loser, survivor MediaID, fingerprint, label string, wasMissing bool) error {
+	var owner MediaID
+	var missing bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT media_id, missing_at_ms IS NOT NULL FROM media_file WHERE content_fingerprint = ?
+	`, fingerprint).Scan(&owner, &missing)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && owner != survivor) {
+		return ValidationError("a merged Version's file has left its title; the merge cannot be undone")
+	}
+	if err != nil {
+		return err
+	}
+	if missing && !wasMissing {
+		// A replacement in place would stay behind on the survivor, and the
+		// restored Media would hold no live file.
+		return ValidationError("a merged Version's file is missing or was replaced; the merge cannot be undone")
+	}
+	_, err = tx.ExecContext(ctx, `
+		UPDATE media_file SET media_id = ?, version_label = ? WHERE content_fingerprint = ? AND media_id = ?
+	`, loser, label, fingerprint, survivor)
+	return err
+}
+
 // restoreVersionMergeFactsTx brings the survivor's probe facts back in line
 // with its first Version once a merged file has left; firstBefore was first
 // just before it left. When the first Version is again the one first before
@@ -679,6 +840,14 @@ func undoVersionMergeItemTx(ctx context.Context, tx *sql.Tx, loser MediaID, stat
 // as refreshFirstVersionFactsTx does for a first file the store holds no facts
 // for. Merges undone out of order thus never restore stale facts.
 func restoreVersionMergeFactsTx(ctx context.Context, tx *sql.Tx, state versionMergeItemState, firstBefore string) error {
+	if len(state.MovedFiles) != 0 {
+		// The verified-copy merge never changed the first Version's facts.
+		if _, moved := state.MovedFiles[firstBefore]; !moved {
+			return nil
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE media SET video_width = 0, video_height = 0 WHERE id = ?`, state.Survivor)
+		return err
+	}
 	first, err := firstVersionFingerprintSQL(ctx, tx, state.Survivor)
 	if err != nil {
 		return err

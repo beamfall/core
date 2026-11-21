@@ -331,7 +331,8 @@ type jobCheckpoint struct {
 	// VersionMedia lists the Version Media the scan walked so far; the
 	// finished scan counts each one still Unmatched once, however its
 	// Versions are spread across directories and passes (CORE-2194).
-	VersionMedia []string `json:"version_media,omitempty"`
+	VersionMedia     []string `json:"version_media,omitempty"`
+	SplitVersionDirs []string `json:"split_version_dirs,omitempty"`
 	// CountedVersionMedia lists the Version Media a finished walk already
 	// counted, kept by the complete checkpoint: a job reclaimed after a crash
 	// before it completed resumes from there and may walk a new Version of

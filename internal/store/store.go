@@ -632,9 +632,10 @@ type ImportMediaFile struct {
 	Summary             string
 	ContentFingerprint  string
 	DurationSecondsHint int
-	// KeepProbeFacts marks an unchanged rescan that ran no probe: the
-	// existing first Version's duration, container, codec and frame size stay
-	// as they are instead of taking this import's path-derived placeholders.
+	// KeepProbeFacts marks an import that ran no successful probe: when the
+	// file is still the first Version's content, its duration, container,
+	// codec and frame size stay as they are instead of taking this import's
+	// path-derived placeholders. New files still take the placeholders.
 	KeepProbeFacts bool
 	// VideoWidthHint/VideoHeightHint carry the probed frame size; 0 when the
 	// probe was unavailable (re-scans without FFmpeg keep the stored values).

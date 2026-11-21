@@ -224,6 +224,7 @@ func (s *scanWalkState) noteFile(path string, note func(*fileTally)) {
 // (retryAutoIdentify).
 func (s *scanWalkState) resumeCheckpoint() jobCheckpoint {
 	checkpoint := s.result.checkpoint("scanning")
+	checkpoint.SplitVersionDirs = pendingIDs(s.splitVersionDirs)
 	carry := func(path string) {
 		tally := s.tallies[path]
 		if tally.added {

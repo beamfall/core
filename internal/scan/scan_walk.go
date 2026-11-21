@@ -53,12 +53,16 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		directoryPreflights: map[string]*contextualDirectoryPreflight{},
 		versionAnchors:      map[string]versionAnchor{},
 		versionDirsSeeded:   map[string]bool{},
+		splitVersionDirs:    map[string]bool{},
 		sidecars:            newSidecarDiscovery(interactiveSidecarExts),
 		pendingCompletions:  make([]*completedFile, 0, workers),
 		containerArt:        map[store.EntityID]*containerArtChoice{},
 		localReleases:       map[localArtSlot]bool{},
 		localMatched:        map[localArtSlot]bool{},
 		startedAt:           time.Now(),
+	}
+	for _, dir := range checkpoint.SplitVersionDirs {
+		state.splitVersionDirs[dir] = true
 	}
 	// Local sidecar artwork (CORE-0359) rides on the artwork service handed in
 	// as the ImageDeriver; the container seam rides on the Identifier.
@@ -110,6 +114,10 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		return Result{}, err
 	}
 	state.extrasRoot = extrasRoot
+	state.legacyReservations, err = st.MissingLegacyVersionFingerprints(ctx, req.LibraryID)
+	if err != nil {
+		return state.stopped(err)
+	}
 	if state.result.totalFiles == 0 {
 		// Only media-named regular files are stat'ed: on a slow share a stat
 		// of every sidecar and folder costs as much as the listing itself.
@@ -169,7 +177,6 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 			return state.stopped(err)
 		}
 	}
-	state.countUnmatchedVersions()
 	state.applyDeferredArtwork()
 	// Walk errors are best-effort, but an unavailable root must fail the scan
 	// even when the plugin declaration prevents retirement of existing Media.
@@ -204,6 +211,18 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 	if err := linkExtraRelationsForLibrary(ctx, st, req.LibraryID, state.extrasRoot); err != nil {
 		return Result{}, err
 	}
+	unverified, err := state.mergeVerifiedCopies()
+	if err != nil {
+		return state.stopped(err)
+	}
+	// A failed candidate read leaves no safe set for title grouping.
+	if unverified != nil {
+		err = state.mergeSplitVersions(unverified)
+	}
+	if err != nil {
+		return state.stopped(err)
+	}
+	state.countUnmatchedVersions()
 	return state.result, nil
 }
 

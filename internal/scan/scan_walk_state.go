@@ -38,10 +38,11 @@ type scanWalkState struct {
 	legacyParserPaths map[string]struct{}
 	// durationlessPaths are the unchanged files probed on the fast path
 	// because their Media holds no duration.
-	durationlessPaths map[string]struct{}
-	req               Request
-	checkpoint        jobCheckpoint
-	scanStarted       time.Time
+	durationlessPaths  map[string]struct{}
+	legacyReservations map[string][]store.StoredFingerprint
+	req                Request
+	checkpoint         jobCheckpoint
+	scanStarted        time.Time
 	// completedFingerprints maps the bytes of each file this pass completed
 	// to its Media (keepCountedMediaBeforeMove, CORE-2197).
 	completedFingerprints map[string]store.MediaID
@@ -58,6 +59,7 @@ type scanWalkState struct {
 	directoryPreflights map[string]*contextualDirectoryPreflight
 	versionAnchors      map[string]versionAnchor
 	versionDirsSeeded   map[string]bool
+	splitVersionDirs    map[string]bool
 	sidecars            *sidecarDiscovery
 	deriveCtx           context.Context
 	cancelDerivations   context.CancelFunc
@@ -197,7 +199,7 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 		return
 	}
 	defer s.releaseBudget()
-	task.fill(ctx, s.st, s.prober, s.grabber)
+	task.fill(ctx, s.st, s.prober, s.grabber, s.legacyReservations[task.path])
 	verified := task.err == nil
 	if task.err == errUnstableSample {
 		// The worker's normal fast-path lookup only sees the public catalog.

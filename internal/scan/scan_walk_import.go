@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -211,19 +212,20 @@ func (s *scanWalkState) retryAutoIdentify(path string, mediaID store.MediaID, fi
 	return nil
 }
 
-// legacyComparison checks a legacy fingerprint once when the recorded stats
-// allow reuse at its original path but leave one or both values unknown.
-func (task *workerTask) legacyComparison(ctx context.Context) store.SampleFingerprintCheck {
-	stored := task.stored
-	if !stored.OK || !strings.HasPrefix(stored.ContentFingerprint, "sha256:") ||
-		(stored.SizeBytes != 0 && !stored.ModTime.IsZero()) ||
-		(stored.SizeBytes != 0 && stored.SizeBytes != task.info.size) ||
-		(!stored.ModTime.IsZero() && !store.MediaFileModTimeMatches(stored.ModTime, task.info.modTime)) {
+// A changed timestamp alone cannot replace a legacy identity. Compare the
+// digest whenever the cheap path missed and the bytes could still match.
+func (task *workerTask) legacyComparison(ctx context.Context, reservations []store.StoredFingerprint) store.SampleFingerprintCheck {
+	eligible := func(fp store.StoredFingerprint) bool {
+		return (fp.SizeBytes == 0 || fp.SizeBytes == task.info.size) && strings.HasPrefix(fp.ContentFingerprint, "sha256:")
+	}
+	if !eligible(task.stored) && !slices.ContainsFunc(reservations, eligible) {
 		return nil
 	}
 	return func(file io.Reader, sample string) (string, error) {
 		full, err := store.HashMediaFileContentReader(ctx, file)
-		if err != nil || full == stored.ContentFingerprint {
+		if err != nil || (eligible(task.stored) && full == task.stored.ContentFingerprint) || slices.ContainsFunc(reservations, func(fp store.StoredFingerprint) bool {
+			return eligible(fp) && full == fp.ContentFingerprint
+		}) {
 			return full, err
 		}
 		return sample, nil
@@ -255,6 +257,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	hasVideo := task.probe.hasVideo
 	hasAudio := task.probe.hasAudio
 	probeSucceeded := task.probe.succeeded
+	imported.KeepProbeFacts = !probeSucceeded && !isImage
 	var probeTags map[string]string
 	var probeChapters []ffmpeg.ProbeChapter
 	if probeSucceeded {

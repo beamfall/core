@@ -55,6 +55,10 @@ type fixtureDescriptor struct {
 
 const fixtureMediaTable = "media"
 
+// Open consumes or discards these staging rows. Recovery tests supply real
+// pending batches, while the backup fixture covers the empty table's shape.
+const fixtureVersionMergePlaybackTable = "version_merge_playback"
+
 func TestBackupFixtureSeedCoversEveryDurableTable(t *testing.T) {
 	ctx := context.Background()
 	output := os.Getenv("BEAMFALL_BACKUP_FIXTURE_DIR")
@@ -385,6 +389,9 @@ func seedEveryDurableFixtureTable(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	for _, table := range tables {
+		if table == fixtureVersionMergePlaybackTable {
+			continue
+		}
 		var count int
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+quoteFixtureIdentifier(table)).Scan(&count); err != nil {
 			return err
@@ -688,7 +695,7 @@ func assertFixtureDatabase(ctx context.Context, db *sql.DB) error {
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+quoteFixtureIdentifier(table)).Scan(&count); err != nil {
 			return err
 		}
-		if count == 0 {
+		if count == 0 && table != fixtureVersionMergePlaybackTable {
 			return fmt.Errorf("durable table %s is empty", table)
 		}
 	}

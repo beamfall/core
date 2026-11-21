@@ -102,7 +102,7 @@ func (s *Store) ImportMediaFileVersion(ctx context.Context, req MediaVersionImpo
 	if err != nil {
 		return MediaFile{}, err
 	}
-	file, err := importMediaFileVersionSQL(ctx, plane, req, now)
+	file, err := importMediaFileVersionSQL(ctx, plane, req, now, !s.trashDisabled && !plane.encrypted)
 	if err != nil {
 		return MediaFile{}, err
 	}
@@ -114,7 +114,7 @@ func (s *Store) ImportMediaFileVersion(ctx context.Context, req MediaVersionImpo
 	return file, nil
 }
 
-func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req MediaVersionImport, now time.Time) (MediaFile, error) {
+func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req MediaVersionImport, now time.Time, verifyCopies bool) (MediaFile, error) {
 	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return MediaFile{}, err
@@ -135,19 +135,6 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 	if err != nil {
 		return MediaFile{}, err
 	}
-	if req.AnchorLabel != "" {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE media_file SET version_label = ?
-			WHERE content_fingerprint = ? AND media_id = ? AND version_label = '' AND part_ordinal = 0
-			  AND missing_at_ms IS NULL
-			  AND NOT EXISTS (
-			    SELECT 1 FROM media_file
-			    WHERE media_id = ? AND version_label = ? AND part_ordinal = 0 AND missing_at_ms IS NULL)
-		`, req.AnchorLabel, req.AnchorFingerprint, req.MediaID, req.MediaID, req.AnchorLabel); err != nil {
-			return MediaFile{}, err
-		}
-	}
-
 	imported := req.File
 	file := MediaFile{
 		MediaID:            req.MediaID,
@@ -172,7 +159,7 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 	case err == nil && existingMedia != req.MediaID:
 		return MediaFile{}, fmt.Errorf("%w: bytes belong to another media", ErrVersionNotAttached)
 	case err == nil:
-		// The same bytes re-scanned: keep the slot they already hold. A
+		// The same bytes re-scanned: keep both Version labels. A
 		// missing row cannot come back over a live file holding its slot.
 		file.VersionLabel, file.PartOrdinal = existingLabel, existingPart
 		if existingMissing.Valid {
@@ -184,17 +171,50 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 			return MediaFile{}, err
 		}
 	case errors.Is(err, sql.ErrNoRows):
-		// New bytes without a parsed label at the path of one of the Media's
-		// files replace that file in place and keep its slot, which may hold
-		// a derived label (CORE-2473).
+		// Import a possible copy separately so the post-walk pass can
+		// verify it and choose the sampled Media as the survivor.
+		if verifyCopies && strings.HasPrefix(imported.ContentFingerprint, "sample1:") && imported.OSHash != "" {
+			var possibleCopy bool
+			if err := tx.QueryRowContext(ctx, `
+				SELECT EXISTS (SELECT 1 FROM media_file
+				  WHERE media_id = ? AND missing_at_ms IS NULL AND content_fingerprint GLOB 'sha256:*'
+				    AND path <> ? AND oshash = ? AND size_bytes = ?)
+			`, req.MediaID, imported.Path, imported.OSHash, imported.SizeBytes).Scan(&possibleCopy); err != nil {
+				return MediaFile{}, err
+			}
+			if possibleCopy {
+				return MediaFile{}, ErrVersionNotAttached
+			}
+		}
+		// New bytes without a parsed label keep the slot of the file they
+		// replace in place, which may hold a derived label (CORE-2473).
 		replacedLabel, replaced, err := replacedVersionLabelTx(ctx, tx, req.MediaID, imported.Path, imported.ContentFingerprint)
 		if err != nil {
 			return MediaFile{}, err
 		}
-		switch {
-		case replaced && req.Label == "":
+		if replaced && req.Label == "" {
 			file.VersionLabel = replacedLabel
-		case req.DeriveLabels:
+		}
+		if req.AnchorLabel != "" {
+			// A sampled anchor with a legacy copy keeps the default slot
+			// unless the incoming Version needs it.
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE media_file AS anchor SET version_label = ?
+				WHERE content_fingerprint = ? AND media_id = ? AND version_label = '' AND part_ordinal = 0
+				  AND missing_at_ms IS NULL
+				  AND NOT EXISTS (
+				    SELECT 1 FROM media_file
+				    WHERE media_id = anchor.media_id AND version_label = ? AND part_ordinal = 0 AND missing_at_ms IS NULL)
+				  AND (? = '' OR NOT EXISTS (
+				    SELECT 1 FROM media_file legacy
+				    WHERE legacy.media_id = anchor.media_id AND legacy.part_ordinal = 0 AND legacy.path <> anchor.path
+				      AND anchor.content_fingerprint GLOB 'sample1:*' AND legacy.content_fingerprint GLOB 'sha256:*'
+				      AND anchor.oshash <> '' AND anchor.oshash = legacy.oshash AND anchor.size_bytes = legacy.size_bytes))
+			`, req.AnchorLabel, req.AnchorFingerprint, req.MediaID, req.AnchorLabel, file.VersionLabel); err != nil {
+				return MediaFile{}, err
+			}
+		}
+		if req.DeriveLabels && !replaced {
 			label, err := placeDerivedVersionTx(ctx, tx, req, priorFirst)
 			if err != nil {
 				return MediaFile{}, err

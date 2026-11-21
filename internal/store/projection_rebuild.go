@@ -11,29 +11,31 @@ import (
 const (
 	playbackProjectionEventKind = "core.playback-progress.v1"
 
-	playbackProjectionOperationProgress = "progress"
-	playbackProjectionOperationImport   = "import"
-	playbackProjectionOperationMark     = "mark"
+	playbackProjectionOperationProgress     = "progress"
+	playbackProjectionOperationImport       = "import"
+	playbackProjectionOperationMark         = "mark"
+	playbackProjectionOperationVersionMerge = "merge-version"
 )
 
 type playbackProjectionEvent struct {
-	Operation        string `json:"operation"`
-	ProfileID        string `json:"profileId"`
-	MediaID          string `json:"mediaId"`
-	PositionSeconds  int    `json:"positionSeconds"`
-	DurationSeconds  int    `json:"durationSeconds"`
-	Watched          bool   `json:"watched"`
-	UpdatedAtMS      int64  `json:"updatedAtMs"`
-	PlayCount        int    `json:"playCount"`
-	ExplicitCount    int    `json:"explicitCount"`
-	LastPlayedAtMS   *int64 `json:"lastPlayedAtMs"`
-	Provenance       string `json:"provenance"`
-	OccurredAtMS     *int64 `json:"occurredAtMs"`
-	ImportRunID      string `json:"importRunId"`
-	ImportImporterID string `json:"importImporterId"`
-	ImportMatch      string `json:"importMatch"`
-	EventTimeMS      *int64 `json:"eventTimeMs"`
-	ChannelContext   bool   `json:"channelContext"`
+	Operation         string `json:"operation"`
+	ProfileID         string `json:"profileId"`
+	MediaID           string `json:"mediaId"`
+	PositionSeconds   int    `json:"positionSeconds"`
+	DurationSeconds   int    `json:"durationSeconds"`
+	Watched           bool   `json:"watched"`
+	UpdatedAtMS       int64  `json:"updatedAtMs"`
+	PlayCount         int    `json:"playCount"`
+	ExplicitCount     int    `json:"explicitCount"`
+	LastPlayedAtMS    *int64 `json:"lastPlayedAtMs"`
+	Provenance        string `json:"provenance"`
+	OccurredAtMS      *int64 `json:"occurredAtMs"`
+	ImportRunID       string `json:"importRunId"`
+	ImportImporterID  string `json:"importImporterId"`
+	ImportMatch       string `json:"importMatch"`
+	EventTimeMS       *int64 `json:"eventTimeMs"`
+	ChannelContext    bool   `json:"channelContext"`
+	MergedFromMediaID string `json:"mergedFromMediaId,omitempty"`
 }
 
 func appendPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
@@ -74,9 +76,29 @@ func applyPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbac
 		return applyImportedPlayProjectionEvent(ctx, tx, event)
 	case playbackProjectionOperationMark:
 		return applyMarkProjectionEvent(ctx, tx, event)
+	case playbackProjectionOperationVersionMerge:
+		return applyVersionMergeProjectionEvent(ctx, tx, event)
 	default:
 		return fmt.Errorf("unknown playback projection operation %q", event.Operation)
 	}
+}
+
+func applyVersionMergeProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, watched, updated_at_ms,
+		  play_count, last_played_at_ms, provenance, occurred_at_ms, import_run_id, import_importer_id,
+		  import_match_method, event_time_ms, channel_context)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(profile_id, media_id) DO UPDATE SET
+		  play_count = playback_progress.play_count + excluded.play_count,
+		  last_played_at_ms = CASE
+		    WHEN playback_progress.last_played_at_ms IS NULL OR excluded.last_played_at_ms > playback_progress.last_played_at_ms
+		    THEN excluded.last_played_at_ms ELSE playback_progress.last_played_at_ms END
+	`, event.ProfileID, event.MediaID, event.PositionSeconds, event.DurationSeconds,
+		boolToInt(event.Watched), event.UpdatedAtMS, event.PlayCount, event.LastPlayedAtMS,
+		event.Provenance, event.OccurredAtMS, nullString(event.ImportRunID), nullString(event.ImportImporterID),
+		nullString(event.ImportMatch), event.EventTimeMS, boolToInt(event.ChannelContext))
+	return err
 }
 
 func applyProgressProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {

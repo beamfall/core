@@ -1640,7 +1640,8 @@ func TestScanFoldsParserIndexedLeafFolderIntoOrderedParts(t *testing.T) {
 		t.Fatalf("CreateLibrary: %v", err)
 	}
 
-	result, err := Scan(context.Background(), st, nil, nil, map[string]FilenameParser{audiobook.PluginID: ordinalParser{}}, nil, nil, Request{
+	prober := fakeProber{probe: ffmpeg.Probe{Container: "mp3", AudioCodec: "mp3", DurationSeconds: 145}}
+	result, err := Scan(context.Background(), st, prober, nil, map[string]FilenameParser{audiobook.PluginID: ordinalParser{}}, nil, nil, Request{
 		LibraryID: library.ID,
 		Root:      root,
 	})
@@ -1662,6 +1663,14 @@ func TestScanFoldsParserIndexedLeafFolderIntoOrderedParts(t *testing.T) {
 		t.Fatalf("source items = %#v, want one Book Media", items)
 	}
 	mediaID := items[0].ID
+	assertProbeFacts := func() {
+		t.Helper()
+		media, err := st.Media(t.Context(), mediaID, store.LibraryFilter{AllLibraries: true})
+		if err != nil || media.Codec != "mp3" || media.Class != store.MediaClassAudio || media.DurationSeconds == 0 {
+			t.Fatalf("multipart probe facts = %+v, err = %v", media, err)
+		}
+	}
+	assertProbeFacts()
 	files, err := st.MediaFilesForMedia(context.Background(), items[0].ID, store.LibraryFilter{AllowedIDs: []store.LibraryID{library.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -1686,6 +1695,7 @@ func TestScanFoldsParserIndexedLeafFolderIntoOrderedParts(t *testing.T) {
 	if result.FilesSeen != 3 || result.MediaImported != 1 {
 		t.Fatalf("second result = files %d media %d, want 3 files / 1 Media", result.FilesSeen, result.MediaImported)
 	}
+	assertProbeFacts()
 	files, err = st.MediaFilesForMedia(context.Background(), mediaID, store.LibraryFilter{AllowedIDs: []store.LibraryID{library.ID}})
 	if err != nil {
 		t.Fatal(err)
