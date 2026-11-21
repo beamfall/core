@@ -8,7 +8,16 @@ import {
   useLocation,
   useNavigate,
 } from "react-router";
-import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type Mock,
+  type MockInstance,
+  vi,
+} from "vitest";
 import * as api from "@/lib/api";
 import { ApiError, setIdentityEpochSignal } from "@/lib/api";
 import {
@@ -29,6 +38,7 @@ import {
   watchPartyAutoSkip,
   watchPartyTransport,
 } from "@/lib/graphql";
+import type { GenericMediaInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { RegisterProvider } from "@/lib/register";
 import { clearViewerCache } from "@/lib/viewerCache";
@@ -72,12 +82,14 @@ const viewer = vi.hoisted(() => ({
   profileID: "profile-a",
   revealed: true,
   identity: "viewer-1",
+  refresh: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/session", () => ({
   useSession: () => ({
     profiles: [],
     revealed: viewer.revealed,
     session: { profileID: viewer.profileID },
+    refresh: viewer.refresh,
   }),
   useViewerIdentity: () => viewer.identity,
 }));
@@ -1511,7 +1523,13 @@ describe("PlayerPage server Play Queue", () => {
   const locked = { id: "track-locked", title: "Locked", mediaClass: "audio", locked: true };
   const videoRow = { id: "film", title: "Film", mediaClass: "video" };
   let rows = [a, locked, b, videoRow, c];
-  let readQueue: MockInstance<typeof api.graphql>;
+  let serverSession = { profileID: "profile-a", revealed: true };
+  let queueMedia: GenericMediaInfo | null;
+  let mediaSession: typeof serverSession | undefined;
+  let readQueue: Mock<
+    () => Promise<{ sourceItems: typeof rows; currentSession: typeof serverSession }>
+  >;
+  let graphql: MockInstance<typeof api.graphql>;
   let pause: MockInstance<HTMLMediaElement["pause"]>;
   let location: ReturnType<typeof useLocation>;
 
@@ -1564,23 +1582,23 @@ describe("PlayerPage server Play Queue", () => {
     return { rerender: () => view.rerender(tree()) };
   }
 
-  function approachEnd() {
-    const video = stageVideo();
-    Object.defineProperties(video, {
-      duration: { configurable: true, value: 60 },
-      paused: { configurable: true, value: false },
-    });
-    video.currentTime = 58;
-    fireEvent.timeUpdate(video);
-  }
-
   beforeEach(() => {
     vi.mocked(usePlayer).mockReset();
     vi.mocked(PlayerTransport).mockClear();
     vi.mocked(useGaplessAudio).mockClear();
     vi.mocked(fetchPrePlayQueue).mockClear();
+    viewer.refresh.mockClear();
     rows = [a, locked, b, videoRow, c];
-    readQueue = vi.spyOn(api, "graphql").mockImplementation(async () => ({ sourceItems: rows }));
+    serverSession = { profileID: "profile-a", revealed: true };
+    queueMedia = null;
+    mediaSession = undefined;
+    readQueue = vi.fn(async () => ({ sourceItems: rows, currentSession: serverSession }));
+    graphql = vi.spyOn(api, "graphql").mockImplementation(async (query) => {
+      if (query.startsWith("query MusicQueueMedia")) {
+        return { media: queueMedia, currentSession: mediaSession ?? serverSession };
+      }
+      return readQueue();
+    });
     pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
   });
 
@@ -1589,7 +1607,7 @@ describe("PlayerPage server Play Queue", () => {
     viewer.revealed = true;
     viewer.identity = "viewer-1";
     setIdentityEpochSignal();
-    readQueue.mockRestore();
+    graphql.mockRestore();
     pause.mockRestore();
     vi.mocked(fetchMedia).mockResolvedValue(null);
   });
@@ -1602,6 +1620,36 @@ describe("PlayerPage server Play Queue", () => {
     expect(location.search).toBe("?playQueue=profile-a");
     expect(location.state).toEqual({ selectPartyTitle: true });
     expect(vi.mocked(usePlayer).mock.lastCall?.[3]).toBe(b.id);
+  });
+
+  it("waits for scoped metadata when starting a queue on the currently playing track", async () => {
+    const catalogInfo = { id: a.id, title: "Catalog track title", favorited: false, credits: [] };
+    vi.mocked(fetchMedia).mockResolvedValueOnce(catalogInfo);
+    const readMedia = deferred<{ media: GenericMediaInfo; currentSession: typeof serverSession }>();
+    graphql.mockImplementation(async (query) =>
+      query.startsWith("query MusicQueueMedia") ? readMedia.promise : readQueue(),
+    );
+    renderQueue(a.id, b.id, "?t=0");
+    await screen.findByRole("heading", { name: catalogInfo.title });
+    act(() => controls()?.onPlayMusicQueue?.(a.id));
+    await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
+    expect(screen.queryByRole("heading", { name: catalogInfo.title })).toBeNull();
+    await act(async () =>
+      readMedia.resolve({
+        media: { ...catalogInfo, title: "Scoped title" },
+        currentSession: serverSession,
+      }),
+    );
+    expect(screen.getByRole("heading", { name: "Scoped title" })).toBeInTheDocument();
+  });
+
+  it("waits for a successful queue read before starting the requested route", async () => {
+    readQueue.mockRejectedValueOnce(new Error("network"));
+    renderQueue();
+    expect(await screen.findByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueReadFailed);
+    expect(playingID()).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: STRINGS.en.tryAgain }));
+    await waitFor(() => expect(playingID()).toBe(b.id));
   });
 
   it("reloads at B using only the route and moves Next to C", async () => {
@@ -1658,47 +1706,110 @@ describe("PlayerPage server Play Queue", () => {
     const d = { id: "track-d", title: "D", mediaClass: "audio" };
     renderQueue();
     await waitFor(() => expect(vi.mocked(usePlayer).mock.lastCall?.[3]).toBe(c.id));
+    expect(gapless()?.advanceID).toBe(c.id);
+    const verify = gapless()?.verifyNext;
+    expect(verify).toBeTypeOf("function");
     rows = [a, b, d, c];
-    approachEnd();
+    await act(async () => expect(await verify?.(c.id)).toBe(false));
     await waitFor(() => expect(vi.mocked(usePlayer).mock.lastCall?.[3]).toBe(d.id));
     expect(gapless()?.next).toBeUndefined();
     expect(gapless()?.enabled).toBe(false);
     fireEvent.ended(stageVideo());
     await waitFor(() => expect(playingID()).toBe(d.id));
-    expect(vi.mocked(useGaplessAudio).mock.calls.some(([args]) => args.advanceID === c.id)).toBe(
-      false,
-    );
   });
 
-  it.each(["Next", "ended"])("uses the verified gapless successor on %s", async (trigger) => {
+  it.each(["Next", "ended"])("revalidates a verified gapless successor on %s", async (trigger) => {
     renderQueue();
     await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
-    expect(gapless()?.enabled).toBe(false);
-    approachEnd();
-    await waitFor(() => expect(gapless()?.enabled).toBe(true));
+    expect(gapless()?.enabled).toBe(true);
     expect(gapless()?.advanceID).toBe(c.id);
+    const verify = gapless()?.verifyNext;
+    await act(async () => expect(await verify?.(c.id)).toBe(true));
     if (trigger === "Next") act(() => controls()?.onNextInQueue?.());
     else fireEvent.ended(stageVideo());
     await waitFor(() => expect(playingID()).toBe(c.id));
-    expect(readQueue).toHaveBeenCalledTimes(3);
+    expect(readQueue).toHaveBeenCalledTimes(4);
   });
+
+  it.each(["Next", "ended"])("stops on %s if B is removed after verifying C", async (trigger) => {
+    renderQueue();
+    await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
+    const verify = gapless()?.verifyNext;
+    await act(async () => expect(await verify?.(c.id)).toBe(true));
+    rows = [a, c];
+    if (trigger === "Next") act(() => controls()?.onNextInQueue?.());
+    else fireEvent.ended(stageVideo());
+    await waitFor(() => expect(controls()?.onNextInQueue).toBeUndefined());
+    expect(readQueue).toHaveBeenCalledTimes(3);
+    expect(location.pathname).toBe(`/watch/${b.id}`);
+    expect(playingID()).toBe(b.id);
+  });
+
+  it("makes a new ended read while the scheduling verification is still pending", async () => {
+    renderQueue();
+    await waitFor(() => expect(controls()?.onNextInQueue).toBeTypeOf("function"));
+    const pending = deferred<{ sourceItems: typeof rows; currentSession: typeof serverSession }>();
+    readQueue.mockReturnValueOnce(pending.promise);
+    const verification = gapless()?.verifyNext?.(c.id);
+    await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
+    rows = [a, c];
+    fireEvent.ended(stageVideo());
+    await waitFor(() => expect(controls()?.onNextInQueue).toBeUndefined());
+    await act(async () => {
+      pending.resolve({ sourceItems: [a, b, c], currentSession: serverSession });
+      expect(await verification).toBe(false);
+    });
+    expect(readQueue).toHaveBeenCalledTimes(3);
+    expect(location.pathname).toBe(`/watch/${b.id}`);
+  });
+
+  it("rejects now-playing metadata read under a different live profile", async () => {
+    queueMedia = { id: b.id, title: "Other profile title", favorited: false, credits: [] };
+    mediaSession = { profileID: "profile-b", revealed: true };
+    renderQueue();
+    await waitFor(() => expect(viewer.refresh).toHaveBeenCalledOnce());
+    expect(document.body).not.toHaveTextContent("Other profile title");
+    expect(playingID()).toBe("");
+    expect(controls()).toBeUndefined();
+  });
+
+  it.each(["relock", "profile switch"])(
+    "refreshes the identity and drops now-playing details on a remote %s",
+    async (change) => {
+      queueMedia = { id: b.id, title: "Restricted track", favorited: false, credits: [] };
+      renderQueue();
+      await waitFor(() => expect(controls()?.mediaTitle).toBe("Restricted track"));
+      serverSession =
+        change === "relock"
+          ? { profileID: "profile-a", revealed: false }
+          : { profileID: "profile-b", revealed: true };
+      fireEvent.ended(stageVideo());
+      await waitFor(() => expect(viewer.refresh).toHaveBeenCalledOnce());
+      expect(document.body).not.toHaveTextContent("Restricted track");
+      expect(location.pathname).toBe(`/watch/${b.id}`);
+      expect(playingID()).toBe("");
+    },
+  );
 
   it.each(["relock", "profile switch"])(
     "drops live titles and stale reads on %s",
     async (change) => {
       const oldEpoch = new AbortController();
       setIdentityEpochSignal(oldEpoch.signal);
-      vi.mocked(fetchMedia).mockResolvedValueOnce({
+      queueMedia = {
         id: b.id,
         title: "Restricted track",
         favorited: false,
         credits: [],
-      });
+      };
       const view = renderQueue();
       await waitFor(() => expect(controls()?.mediaTitle).toBe("Restricted track"));
       expect(screen.getByRole("heading", { name: "Restricted track" })).toBeInTheDocument();
 
-      const finishing = deferred<{ sourceItems: typeof rows }>();
+      const finishing = deferred<{
+        sourceItems: typeof rows;
+        currentSession: typeof serverSession;
+      }>();
       readQueue.mockReturnValueOnce(finishing.promise);
       fireEvent.ended(stageVideo());
       await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
@@ -1709,9 +1820,14 @@ describe("PlayerPage server Play Queue", () => {
       viewer.revealed = false;
       viewer.profileID = relocking ? "profile-a" : "profile-b";
       viewer.identity = relocking ? "viewer-locked" : "viewer-other";
+      const oldSession = serverSession;
+      serverSession = { profileID: viewer.profileID, revealed: false };
+      queueMedia = null;
       rows = [];
       view.rerender();
-      await act(async () => finishing.resolve({ sourceItems: [a, b, c] }));
+      await act(async () =>
+        finishing.resolve({ sourceItems: [a, b, c], currentSession: oldSession }),
+      );
 
       expect(document.body).not.toHaveTextContent("Restricted track");
       expect(location.pathname).toBe(`/watch/${b.id}`);

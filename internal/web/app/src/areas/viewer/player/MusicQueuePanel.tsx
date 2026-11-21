@@ -58,10 +58,12 @@ export function MusicQueuePanel({
                 {first ? (
                   <Button
                     size="sm"
-                    onClick={() => {
-                      if (!isCurrent()) return;
-                      onOpenChange(false);
-                      onPlay(first.id);
+                    onClick={async () => {
+                      const next = (await refresh())?.find(playableMusic);
+                      if (next && isCurrent()) {
+                        onOpenChange(false);
+                        onPlay(next.id);
+                      }
                     }}
                   >
                     {t("musicQueuePlay")}
