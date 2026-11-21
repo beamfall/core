@@ -337,6 +337,65 @@ func (s *Store) RemoveSubscription(ctx context.Context, id SubscriptionID) (Subs
 	return removed, nil
 }
 
+// maxSubscriptionTitleRunes caps a Subscription title taken from imported or
+// fetched data.
+const maxSubscriptionTitleRunes = 256
+
+// SubscriptionTitle returns title trimmed and capped for use as a Subscription
+// title, or "" when it is a URL, the feed URL or the feed's host. OPML writers
+// fill outline text with the feed URL or host when a feed has no title, and a
+// feed URL can carry a bearer token that viewers would then see as the title.
+func SubscriptionTitle(title, feedURL string) string {
+	title = strings.TrimSpace(title)
+	if title == "" || title == strings.TrimSpace(feedURL) {
+		return ""
+	}
+	if u, err := url.Parse(title); err == nil && u.Scheme != "" && u.Host != "" {
+		return ""
+	}
+	if feed, err := url.Parse(feedURL); err == nil && feed.Hostname() != "" && strings.EqualFold(title, feed.Hostname()) {
+		return ""
+	}
+	if runes := []rune(title); len(runes) > maxSubscriptionTitleRunes {
+		title = strings.TrimSpace(string(runes[:maxSubscriptionTitleRunes]))
+	}
+	return title
+}
+
+// FillSubscriptionTitle sets the Subscription's title only while it is empty,
+// so a poll can name a feed imported without a title but never overwrites
+// one. title passes through SubscriptionTitle first; a title it rejects is a
+// no-op. Reports whether the title was set.
+func (s *Store) FillSubscriptionTitle(ctx context.Context, id SubscriptionID, title string) (bool, error) {
+	if id == "" {
+		return false, errors.New("subscription ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var feedURL string
+	if err := s.catalogW.QueryRowContext(ctx, `SELECT feed_url FROM subscription WHERE id = ?`, id).Scan(&feedURL); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, ErrSubscriptionNotFound
+		}
+		return false, err
+	}
+	title = SubscriptionTitle(title, feedURL)
+	if title == "" {
+		return false, nil
+	}
+	result, err := s.catalogW.ExecContext(ctx, `
+		UPDATE subscription SET title = ? WHERE id = ? AND COALESCE(title, '') = ''
+	`, title, id)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected > 0, err
+}
+
 // MarkSubscriptionPolled records a completed poll: the poll time and the
 // conditional-GET validators the next poll sends.
 func (s *Store) MarkSubscriptionPolled(ctx context.Context, id SubscriptionID, etag, lastModified string, now time.Time) error {

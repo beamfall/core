@@ -111,7 +111,7 @@ func (s *Server) subscriptionOPML(ctx context.Context, filter store.LibraryFilte
 			outline := subscriptionOutline{Type: "rss", Text: sub.Title, Title: sub.Title, XMLURL: feedURL}
 			if !public {
 				// A private feed's stored title can name its subscriber, and
-				// its URL can carry a token that an importer would show as the
+				// its URL can carry a token that an importer would display as the
 				// title. OPML requires text, so use the host.
 				outline.Text = host
 				outline.Title = ""

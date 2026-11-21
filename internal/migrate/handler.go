@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -1125,7 +1124,7 @@ func getOrCreateSubscription(ctx context.Context, st Store, payload Payload, sub
 		LibraryID: store.LibraryID(strings.TrimSpace(payload.LibraryID)),
 		FeedURL:   sub.FeedURL,
 		Root:      root,
-		Title:     subscriptionImportTitle(sub.Title, sub.FeedURL),
+		Title:     store.SubscriptionTitle(sub.Title, sub.FeedURL),
 	}, now)
 	if err != nil {
 		return store.Subscription{}, err
@@ -1134,24 +1133,6 @@ func getOrCreateSubscription(ctx context.Context, st Store, payload Payload, sub
 		return store.Subscription{}, err
 	}
 	return added, nil
-}
-
-// subscriptionImportTitle drops an imported title that is a URL or the feed's
-// own host. OPML outlines must have text, so writers put the feed URL or host
-// there when a feed has no title, and a feed URL can carry a bearer token that
-// viewers would then see as the title. The empty title is left for the feed.
-func subscriptionImportTitle(title, feedURL string) string {
-	title = strings.TrimSpace(title)
-	if title == "" || title == strings.TrimSpace(feedURL) {
-		return ""
-	}
-	if u, err := url.Parse(title); err == nil && u.Scheme != "" && u.Host != "" {
-		return ""
-	}
-	if feed, err := url.Parse(feedURL); err == nil && feed.Hostname() != "" && strings.EqualFold(title, feed.Hostname()) {
-		return ""
-	}
-	return title
 }
 
 func applyItemState(ctx context.Context, st Store, payload Payload, runID string, state ItemState, now time.Time) error {

@@ -404,7 +404,8 @@ func TestSubscriptionExportByteLimit(t *testing.T) {
 		t.Fatalf("export size = %d bytes, want %d", len(body), limit)
 	}
 	imported := importSubscriptionOPML(t, body)
-	if len(imported) != 2 || imported[smallURL] != "Small" || imported[feedURL] != title {
+	// The importer caps stored titles, so compare with the capped title.
+	if len(imported) != 2 || imported[smallURL] != "Small" || imported[feedURL] != store.SubscriptionTitle(title, feedURL) {
 		t.Fatal("pinned importer did not recover both URLs and titles from the exact-limit export")
 	}
 	st["second"][0].FeedURL += "x"

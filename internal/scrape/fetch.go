@@ -279,16 +279,48 @@ type FeedEntry struct {
 // identity; entries with neither are skipped (nothing to download, nothing
 // to key on).
 func ParseFeedEntries(data []byte) ([]FeedEntry, error) {
+	feed, err := ParseFeed(data)
+	return feed.Entries, err
+}
+
+// Feed is a parsed RSS or Atom document: the channel title and its entries.
+type Feed struct {
+	// Title is the RSS <channel><title> or Atom <feed><title>, trimmed; ""
+	// when the feed has none. Entry titles never stand in for it.
+	Title   string
+	Entries []FeedEntry
+}
+
+// ParseFeed parses an RSS or Atom document into its title and entries; the
+// entries follow ParseFeedEntries' rules.
+func ParseFeed(data []byte) (Feed, error) {
 	root, err := parseXML(data)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: invalid feed document: %w", err)
+		return Feed{}, fmt.Errorf("scrape: invalid feed document: %w", err)
+	}
+	var feed Feed
+	if channels := findElements([]*xmlNode{root}, "channel"); len(channels) > 0 {
+		feed.Title = directChildText(channels[0], "title")
+	} else if feeds := findElements([]*xmlNode{root}, "feed"); len(feeds) > 0 {
+		feed.Title = directChildText(feeds[0], "title")
 	}
 	if items := findElements([]*xmlNode{root}, "item"); len(items) > 0 {
-		return rssEntries(items), nil
+		feed.Entries = rssEntries(items)
+		return feed, nil
 	}
 	// No <item> elements: either an Atom feed or an empty RSS one — Atom's
 	// <entry> lookup returns the empty list for both.
-	return atomEntries(findElements([]*xmlNode{root}, "entry")), nil
+	feed.Entries = atomEntries(findElements([]*xmlNode{root}, "entry"))
+	return feed, nil
+}
+
+func directChildText(parent *xmlNode, name string) string {
+	for _, child := range parent.children {
+		if child.name == name {
+			return strings.TrimSpace(child.text)
+		}
+	}
+	return ""
 }
 
 func rssEntries(items []*xmlNode) []FeedEntry {

@@ -193,10 +193,18 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if result.NotModified {
 		return published, p.store.MarkSubscriptionPolled(ctx, subscription.ID, result.ETag, result.LastModified, now)
 	}
-	entries, err := scrape.ParseFeedEntries(result.Data)
+	feed, err := scrape.ParseFeed(result.Data)
 	if err != nil {
 		return published, err
 	}
+	// A Subscription imported without a title takes the feed's own title;
+	// a stored title is never overwritten.
+	if subscription.Title == "" && feed.Title != "" {
+		if _, err := p.store.FillSubscriptionTitle(ctx, subscription.ID, feed.Title); err != nil {
+			return published, err
+		}
+	}
+	entries := feed.Entries
 	downloaded := 0
 	var firstErr error
 	for _, entry := range entries {

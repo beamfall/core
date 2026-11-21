@@ -33,6 +33,8 @@ and other download failures.
 - **WHEN** an imported OPML outline's text or title is a URL, the feed URL itself, or the feed's host
 - **THEN** the importer stores the Subscription with an empty title instead, so a token in the URL
   never reaches viewers as the title
+- **AND** the next poll that parses the feed sets the empty title from the feed's channel title,
+  trimmed, capped and never a URL, while a stored non-empty title is never overwritten
 
 #### Scenario: Never export credentials or the server's URL
 

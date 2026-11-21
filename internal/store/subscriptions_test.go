@@ -727,3 +727,66 @@ func TestSubscriptionRetentionPolicyRoundTrip(t *testing.T) {
 		t.Fatal("unknown retention kind succeeded, want validation error")
 	}
 }
+
+func TestSubscriptionTitleRejectsURLs(t *testing.T) {
+	const feedURL = "https://feeds.example.test/private/feed.xml?token=test-only-token"
+	long := strings.Repeat("é", maxSubscriptionTitleRunes+10)
+	for title, want := range map[string]string{
+		"":                        "",
+		"  Daily News  ":          "Daily News",
+		"Daily: News":             "Daily: News",
+		feedURL:                   "",
+		"  " + feedURL + " ":      "",
+		"http://other.test/x?y=z": "",
+		"FEEDS.example.test":      "",
+		"other.example.test":      "other.example.test",
+		long:                      long[:2*maxSubscriptionTitleRunes],
+	} {
+		if got := SubscriptionTitle(title, feedURL); got != want {
+			t.Errorf("SubscriptionTitle(%q) = %q, want %q", title, got, want)
+		}
+	}
+}
+
+func TestFillSubscriptionTitleOnlyFillsEmptyTitles(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+	untitled, err := st.AddSubscription(ctx, Subscription{LibraryID: "library-local", FeedURL: "https://feeds.example.test/a.xml?token=test-only", Root: "/media/local/a"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	titled, err := st.AddSubscription(ctx, Subscription{LibraryID: "library-local", FeedURL: "https://feeds.example.test/b.xml", Root: "/media/local/b", Title: "Kept"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct {
+		id    SubscriptionID
+		title string
+		set   bool
+	}{
+		{untitled.ID, untitled.FeedURL, false},
+		{untitled.ID, "  Feed Title ", true},
+		{untitled.ID, "Later Title", false},
+		{titled.ID, "Feed Title", false},
+	} {
+		set, err := st.FillSubscriptionTitle(ctx, step.id, step.title)
+		if err != nil || set != step.set {
+			t.Fatalf("FillSubscriptionTitle(%s, %q) = %v, %v; want %v", step.id, step.title, set, err, step.set)
+		}
+	}
+	listed, err := st.Subscriptions(ctx, "library-local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	titles := map[SubscriptionID]string{}
+	for _, sub := range listed {
+		titles[sub.ID] = sub.Title
+	}
+	if titles[untitled.ID] != "Feed Title" || titles[titled.ID] != "Kept" {
+		t.Fatalf("titles = %#v", titles)
+	}
+	if _, err := st.FillSubscriptionTitle(ctx, "subscription-missing", "Title"); !errors.Is(err, ErrSubscriptionNotFound) {
+		t.Fatalf("missing Subscription error = %v", err)
+	}
+}
