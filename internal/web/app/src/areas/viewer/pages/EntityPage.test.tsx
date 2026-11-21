@@ -437,6 +437,15 @@ describe("EntityPage container lockup", () => {
     expect(primary).toHaveAccessibleName("Play S1 E3, Third part");
     unmount();
 
+    // Label in name holds where the verb trails: the spoken name still starts
+    // with the visible label (CORE-2826).
+    const { container: deRoot, unmount: unmountDe } = renderEntity(undefined, "de");
+    await act(async () => {});
+    const dePrimary = deRoot.querySelector(".bg-primary");
+    expect(dePrimary).toHaveTextContent(/^S1 E3 abspielen$/);
+    expect(dePrimary).toHaveAccessibleName("S1 E3 abspielen, Third part");
+    unmountDe();
+
     vi.mocked(fetchMediaForEntity).mockResolvedValue([{ ...children[1], subtitle: "S1 · E2" }]);
     const resumed = renderEntity();
     await act(async () => {});

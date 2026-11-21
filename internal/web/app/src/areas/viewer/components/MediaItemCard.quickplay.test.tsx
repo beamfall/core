@@ -111,4 +111,17 @@ describe("MediaItemCard one-click Play", () => {
     renderCard({ showPlayButton: true });
     expect(screen.getAllByRole("button", { name: /^Play Alpha$/ })).toHaveLength(1);
   });
+
+  it("names the item it plays when the card is headed by its container", () => {
+    renderCard({
+      item: item({
+        title: "Reunion",
+        subtitle: "S1 · E3",
+        container: { id: "e-orbit", title: "Orbit" },
+      }),
+    });
+    expect(
+      screen.getByRole("button", { name: "Play Orbit, S1 · E3, Reunion" }),
+    ).toBeInTheDocument();
+  });
 });
