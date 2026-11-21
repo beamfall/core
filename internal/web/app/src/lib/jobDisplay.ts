@@ -15,6 +15,7 @@ const JOB_KIND_LABELS: Record<string, StringKey> = {
   "events-compaction": "jobKindEventsCompaction",
   "database-backup": "jobKindDatabaseBackup",
   "artwork-sweep": "jobKindArtworkSweep",
+  "entity-enrichment": "jobKindEntityEnrichment",
   "asset-sweep": "jobKindAssetSweep",
   "decode-verify": "jobKindDecodeVerify",
   "skip-detect-sweep": "jobKindSkipDetectSweep",
@@ -39,6 +40,7 @@ const JOB_KIND_DESCRIPTIONS: Record<string, StringKey> = {
   "events-compaction": "jobKindDescEventsCompaction",
   "database-backup": "jobKindDescDatabaseBackup",
   "artwork-sweep": "jobKindDescArtworkSweep",
+  "entity-enrichment": "jobKindDescEntityEnrichment",
   "asset-sweep": "jobKindDescAssetSweep",
   "decode-verify": "jobKindDescDecodeVerify",
   "skip-detect-sweep": "jobKindDescSkipDetectSweep",
@@ -77,6 +79,7 @@ const JOB_PROGRESS_MESSAGE_LABELS: Record<string, StringKey> = {
   "Verifying decode integrity": "jobProgressMessageVerifyingDecodeIntegrity",
   "Detecting skip-segments": "jobProgressMessageDetectingSkipSegments",
   "Refreshing metadata": "jobProgressMessageRefreshingMetadata",
+  "Enriching catalog": "jobProgressMessageEnrichingCatalog",
 };
 
 function lookup(labels: LabelSource, key: StringKey): string {
