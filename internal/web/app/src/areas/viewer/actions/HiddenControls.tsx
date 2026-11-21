@@ -25,12 +25,9 @@ const NOTICE_MS = 8000;
  */
 export function HiddenUndoNotice({ profileID }: { profileID?: string }) {
   const notice = useHiddenNotice();
-  const boundRef = useRef(profileID);
-  useEffect(() => {
-    if (boundRef.current === profileID) return;
-    boundRef.current = profileID;
-    clearHiddenNotice();
-  }, [profileID]);
+  // The cleanup runs when the bound Profile changes and when the viewer
+  // remounts for another Profile, so a notice never outlives its Profile.
+  useEffect(() => clearHiddenNotice, [profileID]);
   return notice ? <UndoNotice notice={notice} /> : null;
 }
 

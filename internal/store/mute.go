@@ -24,11 +24,19 @@ func ValidMuteKind(kind MuteKind) bool {
 	return kind == MuteKindEntity || kind == MuteKindTag || kind == MuteKindMedia
 }
 
-// SetMuteParentRelations installs the app's source of plugin-declared parent
-// relations (same-Kind parents and container roll-up parents), which a direct
+// MuteTreeEdge is one step a direct Entity Mute follows down an Entity
+// hierarchy: a child Entity linked to its parent by Relation. With no Kinds the
+// step is a same-Kind parent; otherwise the child must be of ChildKind and the
+// parent of ParentKind, as a plugin declared it.
+type MuteTreeEdge struct {
+	Relation, ChildKind, ParentKind string
+}
+
+// SetMuteParentRelations installs the app's source of plugin-declared tree
+// steps (same-Kind parents and container roll-up parents), which a direct
 // Entity Mute follows down to child Entities so hiding a container hides
 // everything under it.
-func (s *Store) SetMuteParentRelations(fn func() []string) {
+func (s *Store) SetMuteParentRelations(fn func() []MuteTreeEdge) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.muteParentRelations = fn
@@ -498,30 +506,36 @@ func (s *Store) mutedTargetsLocked(ctx context.Context, profileID ProfileID) ([]
 // from_entity_id -> to_entity_id. The relations may cross Kinds (a container
 // held by a container of another Kind), so the walk does not compare Kinds.
 // Seeds are not included. No relation means no tree.
-func entityTreeDescendants(ctx context.Context, relations *sql.DB, seeds, parentRelations []string) (map[string]struct{}, error) {
+func entityTreeDescendants(ctx context.Context, relations *sql.DB, seeds []string, edges []MuteTreeEdge) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
-	if len(seeds) == 0 || len(parentRelations) == 0 {
+	if len(seeds) == 0 || len(edges) == 0 {
 		return out, nil
 	}
-	args := make([]any, 0, len(seeds)+len(parentRelations))
+	args := make([]any, 0, len(seeds)+3*len(edges))
 	for _, id := range seeds {
 		args = append(args, id)
 	}
-	for _, relation := range parentRelations {
-		args = append(args, relation)
+	steps := make([]string, 0, len(edges))
+	for _, edge := range edges {
+		if edge.ChildKind == "" && edge.ParentKind == "" {
+			steps = append(steps, "(r.relation = ? AND child.kind = subtree.kind)")
+			args = append(args, edge.Relation)
+			continue
+		}
+		steps = append(steps, "(r.relation = ? AND child.kind = ? AND subtree.kind = ?)")
+		args = append(args, edge.Relation, edge.ChildKind, edge.ParentKind)
 	}
 	seedIn := strings.TrimSuffix(strings.Repeat("?, ", len(seeds)), ", ")
-	relationIn := strings.TrimSuffix(strings.Repeat("?, ", len(parentRelations)), ", ")
-	// #nosec G202 -- only generated placeholders are interpolated.
+	// #nosec G202 -- only generated placeholders and fixed clauses are interpolated.
 	rows, err := relations.QueryContext(ctx, `
-		WITH RECURSIVE subtree(id, depth) AS (
-			SELECT id, 0 FROM entity WHERE id IN (`+seedIn+`)
+		WITH RECURSIVE subtree(id, kind, depth) AS (
+			SELECT id, kind, 0 FROM entity WHERE id IN (`+seedIn+`)
 			UNION
-			SELECT child.id, subtree.depth + 1
+			SELECT child.id, child.kind, subtree.depth + 1
 			FROM entity_relation r
 			JOIN subtree ON subtree.id = r.to_entity_id
 			JOIN entity child ON child.id = r.from_entity_id
-			WHERE r.relation IN (`+relationIn+`)
+			WHERE (`+strings.Join(steps, " OR ")+`)
 				AND subtree.depth < `+strconv.Itoa(muteDescendantDepthCap)+`
 		)
 		SELECT DISTINCT id FROM subtree WHERE depth > 0
@@ -789,11 +803,17 @@ func (s *Store) applyMuteFilterRolledUpLocked(ctx context.Context, relations *sq
 			out = append(out, item)
 			continue
 		}
+		// The card goes on standing only for the members that survived, so a
+		// later filter (Hide watched) judges the same members.
+		var members []MediaID
 		for _, member := range item.rollUpMembers {
 			if survivors[member] {
-				out = append(out, item)
-				break
+				members = append(members, member)
 			}
+		}
+		if len(members) > 0 {
+			item.rollUpMembers = members
+			out = append(out, item)
 		}
 	}
 	return out, nil

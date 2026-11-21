@@ -49,7 +49,7 @@ func TestMuteMediaKindHidesOneItem(t *testing.T) {
 func TestMuteDirectEntityReachesTree(t *testing.T) {
 	ctx := context.Background()
 	st := openSeeded(t)
-	st.SetMuteParentRelations(func() []string { return []string{"part-of"} })
+	st.SetMuteParentRelations(func() []MuteTreeEdge { return []MuteTreeEdge{{Relation: "part-of"}} })
 	const profile ProfileID = "profile-default"
 
 	episode := muteMediaInLibrary(t, st, "library-local", "tree-episode")
@@ -108,11 +108,14 @@ func TestMuteDirectEntityReachesTree(t *testing.T) {
 }
 
 // TestMuteDirectEntityCrossesKinds covers CORE-2836: a container held by a
-// container of another Kind (a roll-up parent) is still under the hidden one.
+// container of another Kind (a roll-up parent) is still under the hidden one,
+// and a same-named relation between other Kinds is not followed.
 func TestMuteDirectEntityCrossesKinds(t *testing.T) {
 	ctx := context.Background()
 	st := openSeeded(t)
-	st.SetMuteParentRelations(func() []string { return []string{"held-by"} })
+	st.SetMuteParentRelations(func() []MuteTreeEdge {
+		return []MuteTreeEdge{{Relation: "held-by", ChildKind: "widget", ParentKind: "group"}}
+	})
 	const profile ProfileID = "profile-default"
 
 	item := muteMediaInLibrary(t, st, "library-local", "cross-item")
@@ -130,9 +133,28 @@ func TestMuteDirectEntityCrossesKinds(t *testing.T) {
 	if err := st.SetMute(ctx, profile, MuteKindEntity, "entity-top", false, true); err != nil {
 		t.Fatal(err)
 	}
+	// A group held by a widget is an undeclared step: hiding that widget
+	// leaves the group's Media alone.
+	other := muteMediaInLibrary(t, st, "library-local", "cross-other")
+	if err := st.UpsertEntity(ctx, Entity{ID: "entity-assoc", LibraryID: "library-local", Kind: "group", Title: "Assoc"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntity(ctx, widgetEntity("entity-anchor", "library-local")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntityRelation(ctx, EntityRelation{FromEntityID: "entity-assoc", Name: "held-by", ToEntityID: "entity-anchor"}); err != nil {
+		t.Fatal(err)
+	}
+	muteRelate(t, st, "entity-assoc", other)
+	if err := st.SetMute(ctx, profile, MuteKindEntity, "entity-anchor", false, true); err != nil {
+		t.Fatal(err)
+	}
 	all := mediaIDSet(mustSourceItems(t, st, LibraryFilter{AllLibraries: true}, SourceQuery{Kind: "all-items", ProfileID: profile, Limit: 200}))
 	if all[item] {
 		t.Fatalf("all-items = %v, want the item under the hidden container gone", all)
+	}
+	if !all[other] {
+		t.Fatalf("all-items = %v, want the item under an undeclared step kept", all)
 	}
 }
 
@@ -190,18 +212,23 @@ func TestHideWatchedPagesAfterTheDrop(t *testing.T) {
 	st := openSeeded(t)
 	const profile ProfileID = "profile-default"
 	filter := LibraryFilter{AllLibraries: true}
-	for _, name := range []string{"page-a", "page-b", "page-c", "page-d", "page-e"} {
+	for _, name := range []string{"page-a", "page-b", "page-c", "page-d", "page-e", "page-f"} {
 		muteMediaInLibrary(t, st, "library-local", name)
 	}
 	all := mustSourceItems(t, st, filter, SourceQuery{Kind: "all-items", ProfileID: profile, Limit: 200})
-	if len(all) < 4 {
-		t.Fatalf("seed has %d items, want at least 4", len(all))
+	if len(all) < 6 {
+		t.Fatalf("seed has %d items, want at least 6", len(all))
 	}
 	// Finish the first two in shelf order.
 	for _, item := range all[:2] {
 		mustReport(t, st, profile, item.ID, 120, 120, true)
 	}
 	if err := st.SetClientPref(ctx, profile, ProfileHideWatchedPrefKey, "on", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// And hide the third: both filters shorten the read, and the pages
+	// still cover every visible item.
+	if err := st.SetMute(ctx, profile, MuteKindMedia, string(all[2].ID), false, true); err != nil {
 		t.Fatal(err)
 	}
 	var paged []MediaID
@@ -215,10 +242,36 @@ func TestHideWatchedPagesAfterTheDrop(t *testing.T) {
 		}
 	}
 	want := []MediaID{}
-	for _, item := range all[2:] {
+	for _, item := range all[3:] {
 		want = append(want, item.ID)
 	}
 	if !slices.Equal(paged, want) {
 		t.Fatalf("paged = %v, want %v", paged, want)
+	}
+}
+
+// TestRolledUpCardNeedsOneMemberPassingBoth covers CORE-2836: a rolled-up card
+// whose one member is hidden and other is finished shows nothing, so it drops.
+func TestRolledUpCardNeedsOneMemberPassingBoth(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	const profile ProfileID = "profile-default"
+	finished := muteMediaInLibrary(t, st, "library-local", "roll-finished")
+	hidden := muteMediaInLibrary(t, st, "library-local", "roll-hidden")
+	if err := st.SetMute(ctx, profile, MuteKindMedia, string(hidden), false, true); err != nil {
+		t.Fatal(err)
+	}
+	card := SourceItem{ID: "entity-card", Kind: "entity", rollUpMembers: []MediaID{finished, hidden}}
+	st.mu.RLock()
+	kept, err := st.applyMuteFilterLocked(ctx, st.catalogR, profile, LibraryFilter{AllLibraries: true}, []SourceItem{card})
+	st.mu.RUnlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept) != 1 || !slices.Equal(kept[0].rollUpMembers, []MediaID{finished}) {
+		t.Fatalf("after mute = %+v, want the card standing only for the finished member", kept)
+	}
+	if got := dropWatched(kept, map[MediaID]bool{finished: true}); len(got) != 0 {
+		t.Fatalf("after hide watched = %+v, want the card gone", got)
 	}
 }

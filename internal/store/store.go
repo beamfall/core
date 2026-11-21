@@ -1116,10 +1116,10 @@ type Store struct {
 	// (CORE-2340, CORE-2383). Guarded by mu.
 	healthProfiler     LibraryHealthProfiler
 	healthArtworkProbe LibraryHealthArtworkProbe
-	// muteParentRelations names the relations a direct Entity Mute follows
-	// down to child Entities (app-injected from the active plugins; nil means
-	// a direct Mute reaches only the Entity's own Media).
-	muteParentRelations func() []string
+	// muteParentRelations names the steps a direct Entity Mute follows down
+	// to child Entities (app-injected from the active plugins; nil means a
+	// direct Mute reaches only the Entity's own Media).
+	muteParentRelations func() []MuteTreeEdge
 	// encDerivativePurgers are the app-injected seams that remove a purged
 	// encrypted Library's regenerable derivative ciphertext (CORE-2057).
 	// Guarded by mu; called only with mu released.
@@ -3590,31 +3590,9 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 		}
 		filter = narrowed
 	}
-	// Hide watched (CORE-2836): catalog shelves drop finished Media for a
-	// Profile that asked; its own engagement lists keep them. The drop pages
-	// over the filtered list, so a See All never ends early on a short page.
-	watched, readLimit, readOffset, err := s.hideWatchedWindowLocked(ctx, query, limit, offset)
+	items, err := s.profileSourceItemsLocked(ctx, filter, query, limit, offset)
 	if err != nil {
 		return nil, err
-	}
-	items, err := s.sourceItemsForKind(ctx, filter, query, readLimit, readOffset)
-	if err != nil {
-		return nil, err
-	}
-	// Per-Profile Mute: an implicit negative Source predicate
-	// applied here, at Source evaluation, so every passive-discovery rail above
-	// is filtered uniformly. It is deliberately NOT applied in SearchMedia or
-	// any direct media fetch — a muted target stays searchable and playable
-	// (§2.2). A profile-less rail (e.g. an unauthenticated all-items scan) has no
-	// mute list to apply, so it passes through unchanged.
-	if query.ProfileID != "" && strings.TrimSpace(query.Query) == "" {
-		items, err = s.applyMuteFilterLocked(ctx, s.catalogR, query.ProfileID, filter, items)
-		if err != nil {
-			return nil, err
-		}
-		if watched != nil {
-			items = pageOf(dropWatched(items, watched), limit, offset)
-		}
 	}
 	if err := s.annotateRestrictedLocked(ctx, nil, items); err != nil {
 		return nil, err

@@ -84,24 +84,82 @@ func dropWatched(items []SourceItem, watched map[MediaID]bool) []SourceItem {
 	return out
 }
 
-// hideWatchedWindow returns the Media a Hide watched page leaves out, and the
-// raw window to read so that, once they are dropped, the page still holds
-// limit items from offset onward: every finished Media ahead of the window
-// could shift it, so the read starts at the top and runs that many further.
-// No hide, or nothing finished, keeps the window as asked. The caller holds s.mu.
-func (s *Store) hideWatchedWindowLocked(ctx context.Context, query SourceQuery, limit, offset int) (watched map[MediaID]bool, readLimit, readOffset int, err error) {
-	if query.ProfileID == "" || strings.TrimSpace(query.Query) != "" || !hideWatchedApplies(query.Kind) {
-		return nil, limit, offset, nil
+// hiddenWatchedLocked returns the finished Media a Hide watched read leaves
+// out: nil when the Profile does not hide watched, the Source is one of its own
+// engagement lists, or nothing is finished. The caller holds s.mu.
+func (s *Store) hiddenWatchedLocked(ctx context.Context, query SourceQuery) (map[MediaID]bool, error) {
+	if !hideWatchedApplies(query.Kind) {
+		return nil, nil
 	}
 	hide, err := s.profileHideWatchedLocked(ctx, query.ProfileID)
 	if err != nil || !hide {
-		return nil, limit, offset, err
+		return nil, err
 	}
-	watched, err = s.watchedMediaLocked(ctx, query.ProfileID)
+	watched, err := s.watchedMediaLocked(ctx, query.ProfileID)
 	if err != nil || len(watched) == 0 {
-		return nil, limit, offset, err
+		return nil, err
 	}
-	return watched, offset + limit + len(watched), 0, nil
+	return watched, nil
+}
+
+// maxProfileFilteredRead bounds how many raw items one filtered page reads.
+const maxProfileFilteredRead = 20000
+
+// profileSourceItemsLocked reads one page of a Source for a Profile.
+//
+// Per-Profile Mute (ADR-0054) is an implicit negative Source predicate applied
+// here, at Source evaluation, so every passive-discovery rail is filtered
+// uniformly. It is deliberately NOT applied in SearchMedia or any direct media
+// fetch: a muted target stays searchable and playable (§2.2). Hide watched
+// (CORE-2836) drops finished Media from catalog shelves the same way. A
+// profile-less read or a text search passes through unchanged.
+//
+// With either filter in play the page is taken from the filtered list, read
+// from the top and widened until it holds offset+limit survivors or the Source
+// runs out, so a See All never ends early on a short page. The caller holds s.mu.
+func (s *Store) profileSourceItemsLocked(ctx context.Context, filter LibraryFilter, query SourceQuery, limit, offset int) ([]SourceItem, error) {
+	if query.ProfileID == "" || strings.TrimSpace(query.Query) != "" {
+		return s.sourceItemsForKind(ctx, filter, query, limit, offset)
+	}
+	watched, err := s.hiddenWatchedLocked(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	muted, err := s.profileHasMutesLocked(ctx, query.ProfileID)
+	if err != nil {
+		return nil, err
+	}
+	if watched == nil && !muted {
+		return s.sourceItemsForKind(ctx, filter, query, limit, offset)
+	}
+	want := offset + limit
+	read := want + len(watched)
+	for {
+		read = min(read, maxProfileFilteredRead)
+		raw, err := s.sourceItemsForKind(ctx, filter, query, read, 0)
+		if err != nil {
+			return nil, err
+		}
+		kept, err := s.applyMuteFilterLocked(ctx, s.catalogR, query.ProfileID, filter, raw)
+		if err != nil {
+			return nil, err
+		}
+		if watched != nil {
+			kept = dropWatched(kept, watched)
+		}
+		if len(kept) >= want || len(raw) < read || read == maxProfileFilteredRead {
+			return pageOf(kept, limit, offset), nil
+		}
+		read *= 2
+	}
+}
+
+// profileHasMutesLocked reports whether the Profile has any Mute. The caller holds s.mu.
+func (s *Store) profileHasMutesLocked(ctx context.Context, profileID ProfileID) (bool, error) {
+	var found bool
+	err := s.eventsR.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM profile_mute WHERE profile_id = ?)`, profileID).Scan(&found)
+	return found, err
 }
 
 // pageOf returns items[offset : offset+limit], clamped.

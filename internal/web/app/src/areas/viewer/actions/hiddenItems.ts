@@ -108,7 +108,7 @@ export function useHiddenKey(): string | null {
       mutes === null
         ? null
         : mutes
-            .map((mute) => `${mute.kind}:${mute.targetID}`)
+            .map((mute) => `${mute.kind}:${mute.targetID}:${mute.includeDescendants}`)
             .sort()
             .join("|"),
     [mutes],
