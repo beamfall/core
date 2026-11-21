@@ -255,10 +255,11 @@ function FeaturePlayer({
     () => musicQueueNeighbours(musicQueue?.rows, mediaId),
     [musicQueue?.rows, mediaId],
   );
-  const queueRoute = useMemo(
-    () => ({ mediaId, queueProfile, identity, epoch, revealed, profileID }),
-    [mediaId, queueProfile, identity, epoch, revealed, profileID],
+  const queueRun = useMemo(
+    () => ({ queueProfile, identity, epoch, revealed, profileID, cursor: "" }),
+    [queueProfile, identity, epoch, revealed, profileID],
   );
+  const queueRoute = useMemo(() => ({ mediaId, queueRun }), [mediaId, queueRun]);
 
   const needsInitialQueueRead = serverQueueRun && queueMatchesProfile && !musicQueue;
   useEffect(() => {
@@ -629,13 +630,14 @@ function FeaturePlayer({
 
   useLayoutEffect(() => {
     if (!profileID || !mediaId) return;
+    queueRun.cursor = mediaId;
     return registerMusicQueuePlayer({
-      id: mediaId,
       scope: { profileID, revealed, deviceRole, profile },
       server:
         queueMatchesProfile && queueAllowed
           ? {
-              canEdit: () => activeQueueRoute.current === queueRoute && !!isCurrent(),
+              run: queueRun,
+              canEdit: () => !!isCurrent(),
               invalidateIdentity,
               receive: acceptRows,
             }
@@ -647,7 +649,7 @@ function FeaturePlayer({
     revealed,
     deviceRole,
     profile,
-    queueRoute,
+    queueRun,
     queueAllowed,
     queueMatchesProfile,
     isCurrent,
@@ -687,12 +689,15 @@ function FeaturePlayer({
               restart(0);
               if (queueMatchesProfile) return;
             }
+            if (queueMatchesProfile) queueRun.cursor = first.id;
             activeQueueRoute.current = null;
             playItemRef.current(first.id, "", true, profileID);
           } else {
             const neighbours = musicQueueNeighbours(rows, mediaId);
             const target = (action === "previous" ? neighbours.previous : neighbours.next)?.id;
             if (!target) return;
+            // A waiting edit can start before React commits the new watch route.
+            queueRun.cursor = target;
             activeQueueRoute.current = null;
             if (action === "ended") confirmGaplessAdvance(target);
             playItemRef.current(target, "", true, profileID);
@@ -706,6 +711,7 @@ function FeaturePlayer({
       profileID,
       queueMatchesProfile,
       queueRoute,
+      queueRun,
       isCurrent,
       refreshMusicQueue,
       mediaId,

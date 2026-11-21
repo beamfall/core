@@ -537,6 +537,84 @@ describe("keyword pagination (CORE-2321)", () => {
     expect(await screen.findByText("Omitted")).toHaveAttribute("data-lock-known", "false");
   });
 
+  it.each([
+    ["locked", "page first"],
+    ["locked", "refresh first"],
+    ["omitted", "page first"],
+    ["omitted", "refresh first"],
+  ])("keeps a row ineligible when a newer refresh reports it %s: %s", async (state, order) => {
+    const user = userEvent.setup();
+    const track = {
+      id: "queue-menu-moving",
+      title: "Moving track",
+      kind: "media",
+      mediaClass: "audio",
+      mode: "keyword" as const,
+      score: 0,
+      locked: false,
+    };
+    const first = { ...track, id: "first", title: "First track" };
+    const second = { ...track, id: "second", title: "Second track" };
+    const page = {
+      mode: "keyword" as const,
+      restrictedResultsPresent: false,
+      items: [first],
+      hasMore: true,
+    };
+    const refreshFirst = deferred<SearchResultResponse>();
+    const refreshSecond = deferred<SearchResultResponse>();
+    const more = deferred<SearchResultResponse>();
+    vi.mocked(searchResult)
+      .mockResolvedValueOnce(page)
+      .mockResolvedValueOnce({ ...page, items: [second, track] })
+      .mockReturnValueOnce(refreshFirst.response)
+      .mockReturnValueOnce(more.response)
+      .mockReturnValueOnce(refreshSecond.response);
+
+    renderPage("/search?q=track");
+    await screen.findByText(first.title);
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await screen.findByRole("button", { name: "More actions for Moving track" });
+    act(() => notifyEngagementChanged());
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    expect(searchResult).toHaveBeenLastCalledWith("track", "keyword", expect.any(AbortSignal), {
+      offset: 3,
+    });
+    await act(async () => refreshFirst.resolve(page));
+    expect(searchResult).toHaveBeenLastCalledWith("track", "keyword", expect.any(AbortSignal), {
+      offset: 1,
+      limit: 50,
+    });
+    const finishPage = () =>
+      act(async () => more.resolve({ ...page, items: [track], hasMore: false }));
+    const finishRefresh = () =>
+      act(async () =>
+        refreshSecond.resolve({
+          ...page,
+          items:
+            state === "locked" ? [{ ...track, title: "Locked moving track", locked: true }] : [],
+          hasMore: false,
+        }),
+      );
+    if (order === "page first") {
+      await finishPage();
+      await finishRefresh();
+    } else {
+      await finishRefresh();
+      await finishPage();
+    }
+    const menu = screen.getByRole("button", {
+      name:
+        state === "locked"
+          ? "More actions for Locked moving track"
+          : "More actions for Moving track",
+    });
+    await user.click(menu);
+    await screen.findByRole("menuitem", { name: "Add to playlist" });
+    expect(screen.queryByRole("menuitem", { name: "Play next" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Add to queue" })).toBeNull();
+  });
+
   it("does not mark a late page from before the refresh as unlocked", async () => {
     const user = userEvent.setup();
     const first = {

@@ -8,7 +8,12 @@ const track = (id: string): MusicQueueRow => ({ id, title: id, mediaClass: "audi
 describe("server Play Queue edits", () => {
   let rows: MusicQueueRow[];
   let reads: number;
-  const writes: { mediaID: string; position?: number; expectedProfileID: string }[] = [];
+  const writes: {
+    mediaID: string;
+    position?: number;
+    expectedProfileID: string;
+    expectedRevealed: boolean;
+  }[] = [];
   let afterWrite: (id: string) => void;
   let dispose: (() => void) | undefined;
 
@@ -31,9 +36,10 @@ describe("server Play Queue edits", () => {
         variables: (typeof writes)[number];
       };
       expect(query).toContain(
-        "queueAdd(mediaID: $mediaID, position: $position, expectedProfileID: $expectedProfileID)",
+        "expectedProfileID: $expectedProfileID, expectedRevealed: $expectedRevealed",
       );
       expect(variables.expectedProfileID).toBe(scope.profileID);
+      expect(variables.expectedRevealed).toBe(scope.revealed);
       writes.push(variables);
       rows = rows.filter((row) => row.id !== variables.mediaID);
       rows.splice(variables.position ?? rows.length, 0, track(variables.mediaID));
@@ -52,9 +58,8 @@ describe("server Play Queue edits", () => {
     const receive = vi.fn<(rows: MusicQueueRow[] | null) => void>();
     const invalidateIdentity = vi.fn();
     dispose = registerMusicQueuePlayer({
-      id,
       scope,
-      server: { canEdit: () => true, invalidateIdentity, receive },
+      server: { run: { cursor: id }, canEdit: () => true, invalidateIdentity, receive },
     });
     return { receive, invalidateIdentity };
   }
@@ -77,8 +82,8 @@ describe("server Play Queue edits", () => {
     expect(await editMusicQueue(scope, "next", "next")).toBe("confirmed");
     expect(rows.map((row) => row.id)).toEqual(["next", "first"]);
     expect(writes).toEqual([
-      { mediaID: "first", expectedProfileID: scope.profileID },
-      { mediaID: "next", position: 0, expectedProfileID: scope.profileID },
+      { mediaID: "first", expectedProfileID: scope.profileID, expectedRevealed: false },
+      { mediaID: "next", position: 0, expectedProfileID: scope.profileID, expectedRevealed: false },
     ]);
     expect(reads).toBe(4);
   });

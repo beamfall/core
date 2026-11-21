@@ -22,34 +22,39 @@ func TestRunWhileSessionBoundRefusesAnotherProfile(t *testing.T) {
 	}
 }
 
-// A rebind cannot commit while a bound write is between its check and its
-// return, so the write never lands after the session moved on (CORE-2177).
-func TestRunWhileSessionBoundHoldsRebindsOff(t *testing.T) {
+// A Profile or Reveal change cannot commit while a guarded write is between
+// its precondition check and its return.
+func TestRunWhileSessionMatchesHoldsScopeChangesOff(t *testing.T) {
 	st := openSeeded(t)
 	ctx := t.Context()
-	for name, rebind := range map[string]func() error{
+	for name, change := range map[string]func() error{
 		"SetSessionProfile": func() error { return st.SetSessionProfile(ctx, "session-default", "profile-managed") },
 		"SetSessionProfileWithEntryPIN": func() error {
 			return st.SetSessionProfileWithEntryPIN(ctx, "session-default", "profile-managed", "")
 		},
+		"Relock": func() error { return st.SetSessionRevealed(ctx, "session-default", false) },
 	} {
 		if err := st.SetSessionProfile(ctx, "session-default", "profile-default"); err != nil {
 			t.Fatal(err)
 		}
-		rebound := make(chan error, 1)
-		err := st.RunWhileSessionBound(ctx, "session-default", "profile-default", func() error {
-			go func() { rebound <- rebind() }()
+		revealed := true
+		if err := st.SetSessionRevealed(ctx, "session-default", revealed); err != nil {
+			t.Fatal(err)
+		}
+		changed := make(chan error, 1)
+		err := st.RunWhileSessionMatches(ctx, "session-default", "profile-default", &revealed, func() error {
+			go func() { changed <- change() }()
 			select {
-			case err := <-rebound:
-				t.Errorf("%s committed inside the bound write: %v", name, err)
+			case err := <-changed:
+				t.Fatalf("%s returned inside the guarded write: %v", name, err)
 			case <-time.After(100 * time.Millisecond):
 			}
 			session, err := st.Session(ctx, "session-default")
 			if err != nil {
 				return err
 			}
-			if session.ProfileID != "profile-default" {
-				t.Errorf("%s: binding moved to %s inside the bound write", name, session.ProfileID)
+			if session.ProfileID != "profile-default" || !session.Revealed {
+				t.Errorf("%s: session changed to Profile %s, Revealed %v inside the guarded write", name, session.ProfileID, session.Revealed)
 			}
 			return nil
 		})
@@ -57,12 +62,12 @@ func TestRunWhileSessionBoundHoldsRebindsOff(t *testing.T) {
 			t.Fatal(err)
 		}
 		select {
-		case err := <-rebound:
+		case err := <-changed:
 			if err != nil {
-				t.Fatalf("%s after the bound write: %v", name, err)
+				t.Fatalf("%s after the guarded write: %v", name, err)
 			}
 		case <-time.After(5 * time.Second):
-			t.Fatalf("%s never ran after the bound write returned", name)
+			t.Fatalf("%s never ran after the guarded write returned", name)
 		}
 	}
 }

@@ -246,10 +246,62 @@ func TestQueueWriteResolvedBeforeSwitchIsRefusedAfterIt(t *testing.T) {
 	}
 	req := request{Variables: map[string]any{"expectedProfileID": pqDefault}}
 	ran := false
-	err := h.withExpectedProfile(t.Context(), scope, req, func() error { ran = true; return nil })
+	err := h.withExpectedSession(t.Context(), scope, req, nil, func() error { ran = true; return nil })
 	if !errors.Is(err, errProfileMismatch) || ran {
-		t.Fatalf("withExpectedProfile err = %v, ran = %v; want mismatch and no write", err, ran)
+		t.Fatalf("withExpectedSession err = %v, ran = %v; want mismatch and no write", err, ran)
 	}
+}
+
+func TestQueueAddRefusesRelockAfterPreflight(t *testing.T) {
+	// feature:play-queue
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	if err := st.SetSessionRevealed(t.Context(), "session-default", true); err != nil {
+		t.Fatal(err)
+	}
+	data, errs := post(t, h, `{"query":"{ currentSession { profileID revealed } }"}`, authorizeViewer)
+	var session SessionInfo
+	if len(errs) != 0 || json.Unmarshal(data["currentSession"], &session) != nil || session.ProfileID != pqDefault || !session.Revealed {
+		t.Fatalf("preflight session = %#v, errors = %#v", data["currentSession"], errs)
+	}
+	if got := qaIDs(qaReadQueue(t, h, authorizeViewer)); len(got) != 0 {
+		t.Fatalf("preflight queue = %v, want empty", got)
+	}
+	if _, errs := post(t, h, `{"query":"mutation { relock { revealed } }"}`, authorizeViewer); len(errs) != 0 {
+		t.Fatalf("relock errors = %#v", errs)
+	}
+
+	const query = `mutation Add($mediaID: String!, $expectedProfileID: String!, $expectedRevealed: Boolean!) {
+		queueAdd(mediaID: $mediaID, expectedProfileID: $expectedProfileID, expectedRevealed: $expectedRevealed) { id }
+	}`
+	vars := map[string]any{"mediaID": "media-alpha", "expectedProfileID": pqDefault, "expectedRevealed": true}
+	checkQueue := func(want ...string) {
+		t.Helper()
+		if got := pqQueue(t, st, pqDefault); !slices.Equal(got, want) {
+			t.Fatalf("stored queue = %v, want %v", got, want)
+		}
+	}
+	resp := postGraphJSON(t, h, authorizeViewer, query, vars)
+	checkQueue()
+	if len(resp.Errors) != 1 || resp.Errors[0].Extensions.Code != ErrorCodeConflict || resp.Errors[0].Extensions.Reason != ErrorReasonRevealStateMismatch {
+		t.Fatalf("relocked add errors = %#v, want one CONFLICT / REVEAL_STATE_MISMATCH", resp.Errors)
+	}
+
+	// A request which resolved its scope before Relock must also fail at apply time.
+	scope := auth.Scope{SessionID: "session-default", ProfileID: pqDefault, Revealed: true}
+	_, err := h.queueOps(t.Context(), scope, map[string]bool{"queueadd": true}, request{Variables: vars})
+	var reasoned reasonedClientError
+	checkQueue()
+	if !errors.As(err, &reasoned) || reasoned.reason != ErrorReasonRevealStateMismatch {
+		t.Fatalf("add with a stale resolved scope = %v, want REVEAL_STATE_MISMATCH", err)
+	}
+
+	vars["expectedRevealed"] = false
+	resp = postGraphJSON(t, h, authorizeViewer, query, vars)
+	if len(resp.Errors) != 0 {
+		t.Fatalf("add while locked errors = %#v", resp.Errors)
+	}
+	checkQueue("media-alpha")
 }
 
 // pqPost is a goroutine-safe GraphQL post: it reports failures instead of

@@ -80,6 +80,9 @@ const (
 	// Profile the session is no longer bound to (CORE-2177). Nothing was
 	// written; the client drops the write instead of retrying it.
 	ErrorReasonProfileMismatch ErrorReason = "PROFILE_MISMATCH"
+	// ErrorReasonRevealStateMismatch: the queueAdd expected a different
+	// Reveal state. Nothing was written.
+	ErrorReasonRevealStateMismatch ErrorReason = "REVEAL_STATE_MISMATCH"
 )
 
 // ErrorReasons returns the closed reason vocabulary in its documented order.
@@ -89,6 +92,7 @@ func ErrorReasons() []ErrorReason {
 		ErrorReasonRevealPINRequired,
 		ErrorReasonRevealPINIncorrect,
 		ErrorReasonProfileMismatch,
+		ErrorReasonRevealStateMismatch,
 	}
 }
 
@@ -233,6 +237,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"the previous offline pack build is still finishing; retry shortly":                            ErrorCodeConflict,
 	"queue has items; pass confirmReplace to replace it":                                           ErrorCodeConflict,
 	"the session is bound to another profile":                                                      ErrorCodeConflict,
+	"the session's reveal state changed":                                                           ErrorCodeConflict,
 	"session has no active playback":                                                               ErrorCodeConflict,
 	"scan preview token was already used":                                                          ErrorCodeConflict,
 	"scan preview token has expired":                                                               ErrorCodeConflict,

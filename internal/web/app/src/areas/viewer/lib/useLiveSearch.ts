@@ -39,6 +39,7 @@ interface Settled {
 interface SearchRowRead {
   item: SearchResultItem;
   epoch: number;
+  order: number;
   lockKnown: boolean;
 }
 
@@ -63,6 +64,7 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
   const moreController = useRef<AbortController | null>(null);
   const epoch = useEngagementEpoch();
   const seenEpoch = useRef(epoch);
+  const requestOrder = useRef(0);
 
   useEffect(() => {
     moreController.current?.abort();
@@ -78,12 +80,12 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
     setPending(request);
     setSettled((prev) => ({ ...prev, rowReads: NOTHING.rowReads }));
     const controller = new AbortController();
-    const settle = (response: SearchResultResponse | null, readEpoch: number) => {
+    const settle = (response: SearchResultResponse | null, readEpoch: number, order: number) => {
       if (controller.signal.aborted) return;
       setSettled((prev) => {
         if (!response) return { ...NOTHING, items: [], resultTerm: term, failed: true };
         const rowReads = new Map(prev.rowReads);
-        recordPage(rowReads, response, readEpoch);
+        recordPage(rowReads, response, readEpoch, order);
         return {
           items: response.items.map((item) => rowReads.get(rowKey(item))?.item ?? item),
           rowReads,
@@ -98,9 +100,10 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
     };
     const timer = setTimeout(() => {
       const readEpoch = seenEpoch.current;
+      const order = ++requestOrder.current;
       searchResult(term, mode, controller.signal).then(
-        (res) => settle(res, readEpoch),
-        () => settle(null, readEpoch),
+        (res) => settle(res, readEpoch, order),
+        () => settle(null, readEpoch, order),
       );
     }, SEARCH_DEBOUNCE_MS);
     return () => {
@@ -112,37 +115,48 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
 
   // A watched, watchlist or rating change leaves the shown rows stale. Ask again
   // and swap each verified row in place, keeping the order on screen.
-  const loadedOffset = useRef(0);
+  const loadedSearch = useRef(settled);
   useEffect(() => {
-    loadedOffset.current = settled.nextOffset;
-  }, [settled.nextOffset]);
+    loadedSearch.current = settled;
+  }, [settled]);
   useEffect(() => {
     if (seenEpoch.current === epoch) return;
     seenEpoch.current = epoch;
     if (!term) return;
     const controller = new AbortController();
-    const loaded = loadedOffset.current;
+    const loaded = loadedSearch.current;
+    const beforeRefresh = requestOrder.current;
     async function refreshLoadedPages() {
       const fresh = new Map<string, SearchRowRead>();
       let offset = 0;
+      let order = beforeRefresh;
       let requestMode = mode;
       do {
+        order = ++requestOrder.current;
         const res = await searchResult(term, requestMode, controller.signal, {
           offset,
           limit: 50,
         }).catch(() => null);
         if (controller.signal.aborted) return;
         if (!res) break;
-        recordPage(fresh, res, epoch);
+        recordPage(fresh, res, epoch, order);
         offset += res.items.length;
         if (res.mode !== "keyword" || !res.hasMore || res.items.length === 0) break;
         requestMode = "keyword";
-      } while (offset < loaded);
+      } while (offset < loaded.nextOffset);
+      // Previously loaded rows absent from the refresh stay visible, but an
+      // older overlapping page must not restore their queue eligibility.
+      if (loaded.resultTerm === term) {
+        for (const item of loaded.items ?? []) {
+          const key = rowKey(item);
+          if (!fresh.has(key)) fresh.set(key, { item, epoch, order, lockKnown: false });
+        }
+      }
       setSettled((prev) => {
         const rowReads = new Map(fresh);
-        // Keep reads started after this refresh began, even if they finished first.
+        // Retain overlapping reads when no newer refresh page covered their row.
         for (const [key, read] of prev.rowReads) {
-          if (read.epoch >= epoch) rowReads.set(key, read);
+          if (read.order > (fresh.get(key)?.order ?? beforeRefresh)) rowReads.set(key, read);
         }
         return {
           ...prev,
@@ -173,13 +187,14 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
     setLoadingMore(true);
     setMoreFailed(false);
     const offset = settled.nextOffset;
+    const order = ++requestOrder.current;
     searchResult(term, "keyword", controller.signal, { offset })
       .then(
         (res) => {
           if (controller.signal.aborted) return;
           setSettled((prev) => {
             const rowReads = new Map(prev.rowReads);
-            recordPage(rowReads, res, epoch);
+            recordPage(rowReads, res, epoch, order);
             return {
               ...prev,
               items: mergeSearchPages(
@@ -220,12 +235,13 @@ function recordPage(
   reads: Map<string, SearchRowRead>,
   page: SearchResultResponse,
   epoch: number,
+  order: number,
 ): void {
   for (const item of page.items) {
     const key = rowKey(item);
     const previous = reads.get(key);
-    if (!previous || previous.epoch <= epoch) {
-      reads.set(key, { item, epoch, lockKnown: page.mode === "keyword" });
+    if (!previous || previous.order < order) {
+      reads.set(key, { item, epoch, order, lockKnown: page.mode === "keyword" });
     }
   }
 }

@@ -1648,7 +1648,7 @@ describe("PlayerPage server Play Queue", () => {
     const confirmation = deferred<Awaited<ReturnType<typeof readQueue>>>();
     const mutation = vi.spyOn(api, "postJSON").mockImplementation(async (_, request) => {
       expect(request).toMatchObject({
-        variables: { mediaID: c.id, expectedProfileID: "profile-a" },
+        variables: { mediaID: c.id, expectedProfileID: "profile-a", expectedRevealed: true },
       });
       await write.promise;
       const result = commitQueueWrite(c.id);
@@ -1706,7 +1706,41 @@ describe("PlayerPage server Play Queue", () => {
     expect(mutation).not.toHaveBeenCalled();
   });
 
-  it.each(["read", "write", "confirmation", "relock"])(
+  it.each(["tail", "next"] as const)(
+    "edits the same server run at its new cursor when Next starts before %s",
+    async (edit) => {
+      rows = [b, a, videoRow];
+      renderQueue(b.id, a.id, "?playQueue=profile-a", true);
+      await waitFor(() => expect(playingID()).toBe(b.id));
+      const nextRead = deferred<Awaited<ReturnType<typeof readQueue>>>();
+      readQueue.mockReturnValueOnce(nextRead.promise);
+      const mutation = vi.spyOn(api, "postJSON").mockImplementation(async (_, request) => {
+        expect(request).toMatchObject({
+          variables: { mediaID: c.id, position: edit === "next" ? 2 : undefined },
+        });
+        return commitQueueWrite(c.id, edit === "next" ? 2 : undefined);
+      });
+
+      act(() => controls()?.onNextInQueue?.());
+      await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
+      const queuedEdit = editMusicQueue(serverSession, c.id, edit);
+      expect(mutation).not.toHaveBeenCalled();
+      await act(async () => {
+        nextRead.resolve({ sourceItems: rows, currentSession: serverSession });
+        expect(await queuedEdit).toBe("confirmed");
+      });
+
+      await waitFor(() => expect(playingID()).toBe(a.id));
+      expect(readQueue).toHaveBeenCalledTimes(4);
+      expect(mutation).toHaveBeenCalledOnce();
+      expect(rows.map((row) => row.id)).toEqual(
+        edit === "next" ? [b.id, a.id, c.id, videoRow.id] : [b.id, a.id, videoRow.id, c.id],
+      );
+      expect(gapless()?.advanceID).toBe(c.id);
+    },
+  );
+
+  it.each(["read", "write", "confirmation", "relock", "relock during write"])(
     "removes a docked title when an edit loses its server identity during %s",
     async (during) => {
       queueMedia = { id: b.id, title: "Retired profile title", favorited: false, credits: [] };
@@ -1722,6 +1756,12 @@ describe("PlayerPage server Play Queue", () => {
         if (during === "write") {
           return {
             errors: [{ message: "profile switched", extensions: { reason: "PROFILE_MISMATCH" } }],
+          };
+        }
+        if (during === "relock during write") {
+          serverSession = { ...serverSession, revealed: false };
+          return {
+            errors: [{ message: "relocked", extensions: { reason: "REVEAL_STATE_MISMATCH" } }],
           };
         }
         serverSession = foreign;
@@ -1740,6 +1780,10 @@ describe("PlayerPage server Play Queue", () => {
         expect(screen.queryByRole("region", { name: "Now playing" })).not.toBeInTheDocument();
         expect(screen.queryByText(queueMedia.title)).not.toBeInTheDocument();
         expect(mutation).toHaveBeenCalledTimes(during === "read" || during === "relock" ? 0 : 1);
+        if (during === "relock during write") {
+          expect(readQueue).toHaveBeenCalledTimes(2);
+          expect(rows.some((row) => row.id === "requested")).toBe(false);
+        }
       } finally {
         mutation.mockRestore();
       }

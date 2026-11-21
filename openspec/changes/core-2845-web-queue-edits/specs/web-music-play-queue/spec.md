@@ -28,11 +28,11 @@ and presence of any active cursor. It SHALL skip the write for a known locked ta
 
 ### Requirement: Queue edits are serialized with server advancement
 
-The viewer SHALL serialize each edit through its confirming reread with server-queue advancement.
-An edit SHALL issue one queueAdd with the expected Profile ID and Reveal state. A Profile mismatch or relock SHALL
-drop the edit and invalidate the scoped reader. The viewer SHALL confirm placement from a server
-reread after a successful or lost response and SHALL never replay the mutation. When the reread
-fails, the viewer SHALL keep established audio attached and require a fresh read before advancing.
+The viewer SHALL serialize each edit and its confirming reread with server-queue advancement.
+An edit SHALL issue one queueAdd with the expected Profile ID and Reveal state. A Profile mismatch
+or relock SHALL drop the edit and invalidate the reader. The viewer SHALL confirm placement by
+rereading, even after a lost response, and SHALL never replay the write. If the reread fails,
+audio SHALL stay attached and advancement SHALL require a fresh read.
 
 #### Scenario: A delayed append overlaps Next
 

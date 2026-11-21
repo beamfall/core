@@ -101,15 +101,18 @@ function readQueue(scope: QueueIdentity, signal: AbortSignal): Promise<MusicQueu
 }
 
 const ADD_TRACK = `mutation AddMusicQueueTrack(
-  $mediaID: String!, $position: Int, $expectedProfileID: String!
+  $mediaID: String!, $position: Int, $expectedProfileID: String!, $expectedRevealed: Boolean!
 ) {
-  queueAdd(mediaID: $mediaID, position: $position, expectedProfileID: $expectedProfileID) { id }
+  queueAdd(
+    mediaID: $mediaID, position: $position,
+    expectedProfileID: $expectedProfileID, expectedRevealed: $expectedRevealed
+  ) { id }
 }`;
 
 async function addTrack(
   mediaID: string,
   position: number | undefined,
-  expectedProfileID: string,
+  scope: QueueIdentity,
   signal: AbortSignal,
 ) {
   signal.throwIfAborted();
@@ -119,11 +122,23 @@ async function addTrack(
     }
   >(
     "/api/graphql",
-    { query: ADD_TRACK, variables: { mediaID, position, expectedProfileID } },
+    {
+      query: ADD_TRACK,
+      variables: {
+        mediaID,
+        position,
+        expectedProfileID: scope.profileID,
+        expectedRevealed: scope.revealed,
+      },
+    },
     signal,
   );
   signal.throwIfAborted();
-  if (result.errors?.some((error) => error.extensions?.reason === "PROFILE_MISMATCH")) {
+  if (
+    result.errors?.some(({ extensions }) =>
+      ["PROFILE_MISMATCH", "REVEAL_STATE_MISMATCH"].includes(extensions?.reason ?? ""),
+    )
+  ) {
     throw new QueueIdentityChanged();
   }
   if (result.errors?.length || !result.data?.queueAdd) throw new Error("Queue write failed");
@@ -147,9 +162,9 @@ export function serializeMusicQueue<T>(work: () => T | Promise<T>): Promise<T> {
 
 interface QueuePlayer {
   scope: QueueIdentity;
-  id: string;
   /** Set only for a server-queue route belonging to this profile. */
   server?: {
+    run: { cursor: string };
     canEdit: () => boolean;
     invalidateIdentity: () => void;
     receive: (rows: MusicQueueRow[] | null) => void;
@@ -189,7 +204,7 @@ export function musicQueueMenuState(scope: QueueIdentity | undefined, id: string
   if (!scope?.profileID || getIdentityEpochSignal()?.aborted) return "hidden";
   if (!player) return "enabled";
   if (!sameIdentity(player.scope, scope) || !player.server?.canEdit()) return "hidden";
-  return player.id === id ? "disabled" : "enabled";
+  return player.server.run.cursor === id ? "disabled" : "enabled";
 }
 
 export type MusicQueueEdit = "next" | "tail";
@@ -203,12 +218,12 @@ export function editMusicQueue(
 ) {
   if (musicQueueMenuState(scope, id) !== "enabled")
     return Promise.resolve<QueueEditResult>("dropped");
-  const active = player;
+  const run = player?.server?.run;
   const epoch = getIdentityEpochSignal();
   const signal = epoch ?? new AbortController().signal;
   const sameEpoch = () => !signal.aborted && epoch === getIdentityEpochSignal();
   const canEdit = () =>
-    sameEpoch() && player === active && musicQueueMenuState(scope, id) === "enabled";
+    sameEpoch() && player?.server?.run === run && musicQueueMenuState(scope, id) === "enabled";
   const identityWasLost = (error: unknown) => {
     if (!sameEpoch()) return true;
     if (!(error instanceof QueueIdentityChanged)) return false;
@@ -218,26 +233,27 @@ export function editMusicQueue(
 
   return serializeMusicQueue(async (): Promise<QueueEditResult> => {
     if (!canEdit() || !isTargetUnlocked()) return "dropped";
+    const cursor = run?.cursor;
+    const stillAtCursor = () => canEdit() && run?.cursor === cursor;
     let before: MusicQueueRow[];
     try {
       before = await readQueue(scope, signal);
     } catch (error) {
-      if (identityWasLost(error) || !canEdit()) return "dropped";
-      active?.server?.receive(null);
+      if (identityWasLost(error) || !stillAtCursor()) return "dropped";
+      player?.server?.receive(null);
       return "failed";
     }
-    if (!canEdit()) return "dropped";
-    active?.server?.receive(before);
+    if (!stillAtCursor()) return "dropped";
+    player?.server?.receive(before);
     if (!isTargetUnlocked() || before.some((row) => row.id === id && !playableMusic(row))) {
       return "dropped";
     }
 
-    const cursor = active?.id;
     const withoutTarget = before.filter((row) => row.id !== id);
     const index = withoutTarget.findIndex((row) => row.id === cursor);
     if (cursor !== undefined && index < 0) return "dropped";
     try {
-      await addTrack(id, edit === "next" ? index + 1 : undefined, scope.profileID, signal);
+      await addTrack(id, edit === "next" ? index + 1 : undefined, scope, signal);
     } catch (error) {
       if (identityWasLost(error)) return "dropped";
       // The write can commit even when its response is lost. Only read it back.
@@ -251,8 +267,8 @@ export function editMusicQueue(
       if (identityWasLost(error)) return "dropped";
       after = null;
     }
-    if (!canEdit()) return "dropped";
-    active?.server?.receive(after);
+    if (!stillAtCursor()) return "dropped";
+    player?.server?.receive(after);
     if (!after) return "failed";
 
     const current = after.findIndex((row) => row.id === cursor);

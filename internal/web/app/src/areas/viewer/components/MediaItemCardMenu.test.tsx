@@ -226,12 +226,16 @@ describe("MediaItemCardMenu Play Queue", () => {
 
   it.each(["catalog", "different profile"])("hides queue actions during %s playback", (run) => {
     const dispose = musicQueue.registerMusicQueuePlayer({
-      id: "currently-playing",
       scope: { profileID: run === "catalog" ? "profile-a" : "profile-b", revealed: false },
       server:
         run === "catalog"
           ? undefined
-          : { canEdit: () => true, invalidateIdentity: () => {}, receive: () => {} },
+          : {
+              run: { cursor: "currently-playing" },
+              canEdit: () => true,
+              invalidateIdentity: () => {},
+              receive: () => {},
+            },
     });
     try {
       renderMenu(true, undefined, "en", [], true);
@@ -244,9 +248,13 @@ describe("MediaItemCardMenu Play Queue", () => {
 
   it("disables both edits for the current track", () => {
     const dispose = musicQueue.registerMusicQueuePlayer({
-      id: "t1",
       scope: { profileID: "profile-a", revealed: false },
-      server: { canEdit: () => true, invalidateIdentity: () => {}, receive: () => {} },
+      server: {
+        run: { cursor: "t1" },
+        canEdit: () => true,
+        invalidateIdentity: () => {},
+        receive: () => {},
+      },
     });
     try {
       renderMenu(true, undefined, "en", [], true);
