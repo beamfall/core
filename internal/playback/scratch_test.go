@@ -1041,15 +1041,18 @@ func waitScratchCloseBlocked(t *testing.T, s *Sessions) <-chan struct{} {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		s.mu.Lock()
-		idle := s.offLockIdle
-		s.mu.Unlock()
-		if idle != nil {
-			return idle
+		// TryLock so a Close that wrongly waits while holding Sessions.mu
+		// fails at the deadline instead of hanging until the package timeout.
+		if s.mu.TryLock() {
+			idle := s.offLockIdle
+			s.mu.Unlock()
+			if idle != nil {
+				return idle
+			}
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatal("Close did not wait for scratch ownership")
+	t.Fatal("Close did not wait for scratch ownership without holding Sessions.mu")
 	return nil
 }
 
