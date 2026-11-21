@@ -428,7 +428,7 @@ named "Remove <filter>", with a Clear all control that clears the filters and th
 
 ### Requirement: Category counts use the visible browse unit
 
-The Categories pivot SHALL count distinct outermost container IDs when every visible member of a category belongs to the same plugin-declared browse container kind. It SHALL name that unit using the plugin's browse label. Raw Media counts SHALL remain available. A category of loose Media, mixed units, or a kind without a browse label SHALL retain its item count. Visibility filtering SHALL precede counting.
+The Categories pivot SHALL count distinct outermost container IDs when every visible member of a category belongs to the same plugin-declared browse container kind. A category of loose Media, mixed units, or a kind without a browse label SHALL retain its item count. Raw Media counts SHALL remain available, and visibility filtering SHALL precede counting.
 
 #### Scenario: Several children of two containers
 
@@ -439,6 +439,15 @@ The Categories pivot SHALL count distinct outermost container IDs when every vis
 
 - **WHEN** a category contains three visible Media without containers
 - **THEN** its tile shows three items
+
+### Requirement: Category count labels use the plugin's names
+
+A container count SHALL be named with the plugin's browse label for that kind, and with the plugin's singular display name when the count takes the display locale's singular form. Without a singular name, a singular count SHALL read as an item count.
+
+#### Scenario: One container
+
+- **WHEN** a category's visible Media all belong to one outermost container of a kind whose plugin declares a singular display name
+- **THEN** its tile shows one with the singular display name, not the plural browse label
 
 ### Requirement: Relation-based Entity browse eligibility
 
@@ -475,3 +484,73 @@ storage or an unknown stored value SHALL fall back to Recommended.
 
 - **WHEN** browser storage throws on read
 - **THEN** the sidebar link opens `/n/:nodeId`
+
+### Requirement: Categories pivot cards have a designed fallback
+
+Every featured Categories card SHALL keep one shape whatever its artwork. A card without a backdrop SHALL show a mosaic of up to four distinct container covers from the items it reads, and without covers SHALL show a surface tinted from the Library accent and a theme palette tone chosen deterministically from the value's name, with the value's name set large in the theme's primary text colour. The featured grid SHALL show at least two cards per row at phone widths without horizontal scrolling.
+
+#### Scenario: A value without artwork
+
+- **WHEN** a featured value's items carry no backdrop and no cover
+- **THEN** its card shows the tinted surface with the value's name and count
+- **AND** the same name gets the same tint on every visit
+
+#### Scenario: A value with container covers only
+
+- **WHEN** a featured value's items carry no backdrop and belong to four containers with covers
+- **THEN** its card shows those four covers as a mosaic under the label
+
+### Requirement: Web poster size is one app-wide preference offered on every pivot
+
+The web viewer SHALL keep one Small, Medium or Large poster size preference for the whole app.
+Every Library pivot (Recommended, Library, Collections, Categories) SHALL offer the control for it
+whenever it shows its pivots, in every view mode, and a change on any page SHALL reach every page.
+
+#### Scenario: One choice across pivots
+
+- **WHEN** a viewer picks Medium on the Recommended pivot and opens the Library pivot
+- **THEN** the Library pivot's control shows Medium and its grid draws at Medium
+
+#### Scenario: A choice on any pivot reaches Home
+
+- **WHEN** a viewer picks Small on a Library's Categories pivot and opens Home
+- **THEN** Home's shelf cards draw at the Small width
+
+### Requirement: Every web thumbnail surface follows the poster size
+
+Every viewer thumbnail surface SHALL draw at the size the poster size preference sets: poster
+grids, shelf cards on Home, Recommended and detail rows, the Collections poster grid, the
+Categories cards, the pivot tiles, the cast row, List thumbnails and detail Media rows. Large
+SHALL keep each surface's prior size.
+
+#### Scenario: Smaller shelf posters on Recommended
+
+- **WHEN** a viewer picks Small on a Library's Recommended pivot
+- **THEN** that page's shelf cards draw narrower than at Large
+
+#### Scenario: Large keeps today's render
+
+- **WHEN** a viewer has never picked a size
+- **THEN** every thumbnail surface draws at the size it had before this change
+
+### Requirement: The web poster size roams with the Profile
+
+The web viewer SHALL save a poster size pick to the signed-in Profile as the per-Profile client
+preference `web.poster-size`, and SHALL draw a Profile's saved size in any browser once that
+Profile's preferences load. A Profile with no saved size SHALL keep the browser's own value, and
+the web viewer SHALL NOT write a size to a Profile the viewer did not pick it under.
+
+#### Scenario: A pick follows the Profile to another browser
+
+- **WHEN** a viewer picks Small in one browser and signs in to the same Profile in another
+- **THEN** the other browser draws Small once the Profile's preferences load
+
+#### Scenario: No saved size keeps the browser's value
+
+- **WHEN** a Profile with no saved size opens the viewer in a browser whose value is Medium
+- **THEN** the viewer draws Medium and saves nothing to the Profile
+
+#### Scenario: A Profile switch drops a queued save
+
+- **WHEN** a save is still queued as the identity changes (Profile switch, reveal or relock)
+- **THEN** the save is not sent under the new session
