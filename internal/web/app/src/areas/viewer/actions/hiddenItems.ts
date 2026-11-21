@@ -115,12 +115,26 @@ export function useHiddenKey(): string | null {
   );
 }
 
+// Stands in for the first key when engagement changed before it loaded.
+const UNSEEN_CHANGE = "\u0000unseen-change";
+
 /**
  * Whether a hide changed since the last call: seen holds the key last
- * observed and is updated. The first loaded key is only recorded.
+ * observed and is updated. The first loaded key is only recorded, unless
+ * `engaged` reported an engagement change while the key was still loading:
+ * a hide made then lands in that first key, after the browse read its pages,
+ * so the first key counts as moved (CORE-2854).
  */
-export function hiddenKeyMoved(seen: { current: string | null }, key: string | null): boolean {
-  if (key === null || seen.current === key) return false;
+export function hiddenKeyMoved(
+  seen: { current: string | null },
+  key: string | null,
+  engaged = false,
+): boolean {
+  if (key === null) {
+    if (engaged && seen.current === null) seen.current = UNSEEN_CHANGE;
+    return false;
+  }
+  if (seen.current === key) return false;
   const moved = seen.current !== null;
   seen.current = key;
   return moved;

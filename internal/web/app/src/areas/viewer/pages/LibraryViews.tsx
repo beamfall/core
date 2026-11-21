@@ -54,7 +54,10 @@ const ENTITY_MAX_RENDERED = 240;
 // Enough Media to tell an audio-only Library from the facets read.
 const FACETS_SAMPLE = 24;
 
-type Plan = { page: LibraryEntitiesPage; limit: number; stateKey: string } | "failed" | null;
+type Plan =
+  | { page: LibraryEntitiesPage; limit: number; stateKey: string; epoch: number }
+  | "failed"
+  | null;
 /** The Library's filter values before any filter, and whether it is all audio. */
 type LibraryFacets = { facets: LibraryItemsFacets; audioOnly: boolean | null };
 
@@ -90,6 +93,13 @@ export function LibraryViews({
   // again later (after the Media view, say) reads afresh, since watched state
   // or ratings may have changed what the query returns since.
   const seedTakenRef = useRef(false);
+  // A hide or watched change made while the opening read is in flight makes
+  // that page stale before any grid sees it (CORE-2854): the grid starts at
+  // the newer epoch, so it would never read again. The seed records the epoch
+  // its read began under and is refused once the epoch has moved.
+  const engagementEpoch = useEngagementEpoch();
+  const epochRef = useRef(engagementEpoch);
+  epochRef.current = engagementEpoch;
 
   // One read per Library learns its kinds. It already asks for the first page
   // of the kind the URL names (or of the first kind), so that grid paints from
@@ -102,6 +112,7 @@ export function LibraryViews({
     const state = parseBrowseState(params);
     const stateKey = browseStateParams(state).toString();
     const controller = new AbortController();
+    const epoch = epochRef.current;
     fetchLibraryEntities(
       {
         libraryID,
@@ -112,7 +123,7 @@ export function LibraryViews({
       },
       controller.signal,
     )
-      .then((page) => setPlan({ page, limit, stateKey }))
+      .then((page) => setPlan({ page, limit, stateKey, epoch }))
       .catch(() => {
         if (!controller.signal.aborted) setPlan("failed");
       });
@@ -164,7 +175,7 @@ export function LibraryViews({
   if (!view?.kind || plan === null || plan === "failed") return media(switcher);
   const seed = plan.limit === LIBRARY_ENTITY_PAGE && plan.page.kind === view.kind ? plan : null;
   const takeSeed = () => {
-    if (!seed || seedTakenRef.current) return null;
+    if (!seed || seedTakenRef.current || seed.epoch !== engagementEpoch) return null;
     seedTakenRef.current = true;
     return seed;
   };
@@ -384,7 +395,11 @@ function LibraryEntityGrid({
   const followsEngagement = browseFollowsEngagement(state, hideWatched.on === true);
   useEffect(() => {
     const toggled = seenHideRef.current !== hideWatched.version;
-    const hid = hiddenKeyMoved(seenHiddenKeyRef, hiddenKey);
+    const hid = hiddenKeyMoved(
+      seenHiddenKeyRef,
+      hiddenKey,
+      seenEpochRef.current !== engagementEpoch,
+    );
     if (seenEpochRef.current === engagementEpoch && !toggled && !hid) return;
     seenEpochRef.current = engagementEpoch;
     seenHideRef.current = hideWatched.version;
