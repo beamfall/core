@@ -1,0 +1,10 @@
+- [ ] Web: `/view/*` route and `ImageViewerPage` (CORE-0542)
+- [ ] Web: image cards, quick Play and detail-page Play open the viewer
+- [ ] Web: watch route replaces itself with `/view` for an image
+- [ ] Web: preview first, original on zoom after decode, undecodable notice
+- [ ] Web: arrows, buttons and swipe through image queue items; zoom, pan, rotate, favourite, info, close
+- [ ] Web: image glyph for image items without artwork
+- [ ] Strings in every shipped locale
+- [ ] Vitest: routing, redirect, stepping, decode fallback, favourite, unknown item
+- [ ] Browser check against a Photos library
+- [ ] `openspec archive core-0542-web-image-viewer` after landing
