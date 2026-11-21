@@ -25,8 +25,10 @@ item.
 ### Requirement: Continue Watching removal Undo and failure
 
 Undo SHALL call `setContinueWatchingHidden` with `hidden: false` and return the card to the row. A
-removed card SHALL stay off the row until a read of the row no longer lists it. A failed write SHALL
-return the card and report the failure in the notice, with no Undo.
+removed card SHALL stay off each row until that row holds a read started after the write settled,
+and that read's answer SHALL stand. A failed write SHALL return the card and report the failure in
+the notice, with no Undo. A removal or Undo started under one Profile SHALL NOT notify or write
+under another.
 
 #### Scenario: Undo
 
@@ -37,3 +39,13 @@ return the card and report the failure in the notice, with no Undo.
 
 - **WHEN** the removal cannot be saved
 - **THEN** the card returns to the row and the notice says the change did not save, with no Undo
+
+#### Scenario: Played again
+
+- **WHEN** a read of the row started after the removal settled lists the card again
+- **THEN** the card shows on that row
+
+#### Scenario: Profile switch
+
+- **WHEN** the Profile changes while a removal is pending, or before its Undo
+- **THEN** no notice shows for the new Profile and the Undo writes nothing

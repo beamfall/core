@@ -170,6 +170,8 @@ export interface HiddenNotice {
   title: string;
   /** The change itself did not save: the notice says so and offers no Undo. */
   failed?: boolean;
+  /** The identity epoch the change was made in: an Undo from another writes nothing. */
+  epoch?: AbortSignal;
 }
 
 let notice: HiddenNotice | null = null;

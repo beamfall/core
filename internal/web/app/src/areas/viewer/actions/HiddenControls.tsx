@@ -40,7 +40,7 @@ export function HiddenUndoNotice({ profileID }: { profileID?: string }) {
 
 function undo(notice: HiddenNotice): Promise<void> {
   if (notice.kind === "continue" && "mediaID" in notice.target) {
-    return restoreToContinueWatching(notice.target.mediaID);
+    return restoreToContinueWatching(notice.target.mediaID, notice.epoch);
   }
   return unhideItem(notice.target);
 }

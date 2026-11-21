@@ -9,7 +9,6 @@
 export {
   removeFromContinueWatching,
   restoreToContinueWatching,
-  settleContinueWatching,
   useContinueWatchingRemoved,
 } from "./continueWatching";
 export {

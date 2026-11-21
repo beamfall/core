@@ -283,4 +283,42 @@ describe("HydratedSection Continue Watching removal (CORE-2017)", () => {
     expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
     expect(onHydrationStateChange).toHaveBeenLastCalledWith("empty");
   });
+
+  it("shows each row the server's answer to a read started after the write", async () => {
+    const continueRow = (id: string): Section => ({
+      ...section,
+      id,
+      title: { en: id },
+      source: { kind: "continue-watching" } as Section["source"],
+    });
+    const other: SourceItem = { ...item, id: "media-2", title: "Other item" };
+    const reads: Record<string, Array<(items: SourceItem[]) => void>> = { all: [], filtered: [] };
+    vi.mocked(fetchSectionItems).mockImplementation(
+      (s) => new Promise((resolve) => reads[s.id].push(resolve)),
+    );
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <HydratedSection section={continueRow("all")} libraryID="" entityID="" />
+          <HydratedSection section={continueRow("filtered")} libraryID="" entityID="" />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    await act(async () => {
+      reads.all[0]([item]);
+      reads.filtered[0]([other]);
+    });
+    expect(await screen.findByRole("link", { name: /^Visible item/ })).toBeVisible();
+    await act(() => removeFromContinueWatching("media-1", "Visible item"));
+    expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
+    // Both rows revalidate after the write. A filtered row that never listed
+    // the card answers first: the other row keeps it out.
+    expect(reads.all).toHaveLength(2);
+    expect(reads.filtered).toHaveLength(2);
+    await act(async () => reads.filtered[1]([other]));
+    expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
+    // The card's own row lists it again (it was played since): show it.
+    await act(async () => reads.all[1]([item]));
+    expect(screen.getByRole("link", { name: /^Visible item/ })).toBeVisible();
+  });
 });

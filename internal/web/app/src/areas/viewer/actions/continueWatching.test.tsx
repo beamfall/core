@@ -1,13 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setIdentityEpochSignal } from "@/lib/api";
 import { setContinueWatchingHidden } from "@/lib/graphql";
-import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import {
   clearContinueWatchingRemoved,
+  continueWatchingKeepsOut,
+  continueWatchingReadSeq,
   removeFromContinueWatching,
-  settleContinueWatching,
   useContinueWatchingRemoved,
 } from "./continueWatching";
 import { HiddenUndoNotice } from "./HiddenControls";
@@ -31,24 +32,41 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   act(() => clearContinueWatchingRemoved());
+  setIdentityEpochSignal();
 });
 
-function item(id: string): SourceItem {
-  return { id, kind: "media", title: id } as SourceItem;
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 describe("removeFromContinueWatching", () => {
-  it("drops the card at once and keeps it out until a fresh read confirms", async () => {
+  it("keeps the card out of reads that started before its write settled", async () => {
+    const write = deferred<typeof state>();
+    vi.mocked(setContinueWatchingHidden).mockReturnValue(write.promise);
     const { result } = renderHook(() => useContinueWatchingRemoved());
-    await act(() => removeFromContinueWatching("m1", "Pilot"));
+    const before = continueWatchingReadSeq();
+    let removal!: Promise<void>;
+    act(() => {
+      removal = removeFromContinueWatching("m1", "Pilot");
+    });
     expect(setContinueWatchingHidden).toHaveBeenCalledWith("m1", true);
-    expect(result.current.has("m1")).toBe(true);
-    // A read started before the write still lists it: the card stays out.
-    act(() => settleContinueWatching([item("m1"), item("m2")]));
-    expect(result.current.has("m1")).toBe(true);
-    // The server's row no longer lists it: playing it again can bring it back.
-    act(() => settleContinueWatching([item("m2")]));
-    expect(result.current.has("m1")).toBe(false);
+    // In flight: no read can bring the card back yet.
+    const during = continueWatchingReadSeq();
+    expect(continueWatchingKeepsOut(result.current, "m1", during)).toBe(true);
+    await act(async () => {
+      write.resolve(state);
+      await removal;
+    });
+    // Reads started before the write settled stay overridden; a read started
+    // after it is the server's answer, whatever it lists.
+    expect(continueWatchingKeepsOut(result.current, "m1", before)).toBe(true);
+    expect(continueWatchingKeepsOut(result.current, "m1", during)).toBe(true);
+    expect(continueWatchingKeepsOut(result.current, "m1", continueWatchingReadSeq())).toBe(false);
+    expect(continueWatchingKeepsOut(result.current, "m2", before)).toBe(false);
   });
 
   it("puts the card back and says so when the write fails", async () => {
@@ -97,5 +115,50 @@ describe("Continue Watching Undo", () => {
     );
     expect(result.current.size).toBe(0);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("drops a removal that settles after a Profile switch, and its notice", async () => {
+    setIdentityEpochSignal(new AbortController().signal);
+    const write = deferred<typeof state>();
+    vi.mocked(setContinueWatchingHidden).mockReturnValue(write.promise);
+    const { rerender } = render(
+      <I18nProvider initialLocale="en">
+        <HiddenUndoNotice profileID="p1" />
+      </I18nProvider>,
+    );
+    const { result } = renderHook(() => useContinueWatchingRemoved());
+    let removal!: Promise<void>;
+    act(() => {
+      removal = removeFromContinueWatching("m1", "Pilot");
+    });
+    // The Profile changes while the write is pending.
+    setIdentityEpochSignal(new AbortController().signal);
+    rerender(
+      <I18nProvider initialLocale="en">
+        <HiddenUndoNotice profileID="p2" />
+      </I18nProvider>,
+    );
+    await act(async () => {
+      write.resolve(state);
+      await removal;
+    });
+    expect(result.current.size).toBe(0);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("writes nothing when Undo is pressed after the Profile changed", async () => {
+    setIdentityEpochSignal(new AbortController().signal);
+    render(
+      <I18nProvider initialLocale="en">
+        <HiddenUndoNotice />
+      </I18nProvider>,
+    );
+    await act(() => removeFromContinueWatching("m1", "Pilot"));
+    vi.mocked(setContinueWatchingHidden).mockClear();
+    // The epoch moves without the notice being cleared (it outlived its Profile).
+    setIdentityEpochSignal(new AbortController().signal);
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await vi.waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    expect(setContinueWatchingHidden).not.toHaveBeenCalled();
   });
 });

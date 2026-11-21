@@ -10,7 +10,11 @@ import {
   viewerCacheEntries,
   writeViewerCache,
 } from "@/lib/viewerCache";
-import { settleContinueWatching, useContinueWatchingRemoved } from "../actions/continueWatching";
+import {
+  continueWatchingKeepsOut,
+  continueWatchingReadSeq,
+  useContinueWatchingRemoved,
+} from "../actions/continueWatching";
 import { useEngagementEpoch } from "../actions/engagementSync";
 import { foldNewShelf, groupsNewByContainer } from "../lib/containerGroups";
 import { fetchSectionItems } from "../lib/sections";
@@ -92,16 +96,20 @@ export function HydratedSection({
   const [items, setItems] = useState<SourceItem[] | null>(
     () => readViewerCache<SourceItem[]>(identity, cacheKey) ?? null,
   );
-  // Cards removed from Continue Watching here leave the row at once, before
-  // the server's read confirms it (CORE-2017).
+  // Cards removed from Continue Watching here leave the row at once, and stay
+  // out until this row holds a read that started after the removal's write
+  // (CORE-2017). Cached items carry no read sequence, so -1.
   const continueRow = section.source?.kind === "continue-watching";
   const removed = useContinueWatchingRemoved();
+  const [itemsSeq, setItemsSeq] = useState(-1);
 
   useEffect(() => {
     let alive = true;
     const controller = new AbortController();
     const cached = readViewerCache<SourceItem[]>(identity, cacheKey);
     setItems(cached ?? null);
+    setItemsSeq(-1);
+    const readSeq = continueWatchingReadSeq();
     // A cached empty Section stays hidden but reports "loading" until the
     // server confirms it: it may have filled since (a Profile started something
     // that Continue Watching now holds), and the Layout must not act on a stale
@@ -132,8 +140,8 @@ export function HydratedSection({
         if (!alive) return;
         window.clearTimeout(timeout);
         writeViewerCache(identity, cacheKey, next);
-        if (section.source?.kind === "continue-watching") settleContinueWatching(next);
         setItems(next);
+        setItemsSeq(readSeq);
         onHydrationStateChange?.(next.length ? "visible" : "empty");
       })
       .catch((err: unknown) => {
@@ -160,11 +168,13 @@ export function HydratedSection({
   // page lists its items as they are.
   const shown = useMemo(() => {
     const kept =
-      items && continueRow && removed.size ? items.filter((item) => !removed.has(item.id)) : items;
+      items && continueRow && removed.size
+        ? items.filter((item) => !continueWatchingKeepsOut(removed, item.id, itemsSeq))
+        : items;
     return kept && !entityID && groupsNewByContainer(section)
       ? foldNewShelf(kept, (count) => t("cardNewCount", { count }))
       : kept;
-  }, [items, continueRow, removed, entityID, section, t]);
+  }, [items, itemsSeq, continueRow, removed, entityID, section, t]);
   // A row emptied by removals reads as empty to the Layout, as a served empty
   // row does, and as visible again when an Undo brings a card back.
   const removedAll = Boolean(items?.length) && shown?.length === 0;
