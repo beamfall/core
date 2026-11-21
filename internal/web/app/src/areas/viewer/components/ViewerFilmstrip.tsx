@@ -37,7 +37,11 @@ export function ViewerFilmstrip({
   useEffect(() => {
     const active = new AbortController();
     controller.current = active;
-    return () => active.abort();
+    return () => {
+      active.abort();
+      // Aborted reads are asked again if the strip mounts again (Strict Mode).
+      requested.current.clear();
+    };
   }, []);
 
   useEffect(() => {

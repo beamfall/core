@@ -57,16 +57,22 @@ export function isClipClass(mediaClass: string | undefined): boolean {
  * opened with, minus any trashed in this visit. An item of another known class
  * (a track, say) is stepped over; an item whose class is unknown is kept,
  * since a queue listed from a Photos source may not carry classes and the
- * viewer redirects or steps over a non-viewable item on arrival.
+ * viewer redirects or steps over a non-viewable item on arrival. The current
+ * item (keep) stays whatever its class, so an item that turns out not to be
+ * viewable still has neighbours to step on to.
  */
 export function viewerItems(
   queue: readonly PlayQueueItem[] | undefined,
   removed?: ReadonlySet<string>,
+  keep?: string,
 ): PlayQueueItem[] {
   return (queue ?? []).filter(
     (item) =>
       !removed?.has(item.id) &&
-      (!item.mediaClass || isImageClass(item.mediaClass) || isClipClass(item.mediaClass)),
+      (item.id === keep ||
+        !item.mediaClass ||
+        isImageClass(item.mediaClass) ||
+        isClipClass(item.mediaClass)),
   );
 }
 
@@ -83,7 +89,7 @@ export function viewerNeighbours(
   position: number;
   total: number;
 } {
-  const items = viewerItems(queue, removed);
+  const items = viewerItems(queue, removed, id);
   const index = items.findIndex((item) => item.id === id);
   if (index < 0) return { items, index, position: 0, total: 0 };
   return {

@@ -65,7 +65,13 @@ import {
 
 type Loaded = { id: string; media: GenericMediaInfo | null };
 type Original = { id: string; url: string; state: "loading" | "ready" | "failed" };
-type Toast = { kind: "trashed" | "trashFailed" | "restoreFailed"; id: string; title: string };
+type Toast = {
+  kind: "trashed" | "trashFailed" | "restoreFailed";
+  id: string;
+  title: string;
+  /** The queue as it was before the trash, which Undo puts back. */
+  queue?: PlayQueueItem[];
+};
 
 const SWIPE_PX = 48;
 const PAN_PX = 64;
@@ -107,6 +113,15 @@ export function ImageViewerPage() {
   const [learned, setLearned] = useState<Record<string, string>>({});
   // Items trashed during this visit, left out of stepping until restored.
   const [removed, setRemoved] = useState<ReadonlySet<string>>(() => new Set());
+  const removedRef = useRef<ReadonlySet<string>>(removed);
+  // False once the viewer has gone, so a late trash or restore does not reopen it.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [toast, setToast] = useState<Toast | null>(null);
   const trashing = useRef(false);
   const [clipPlaying, setClipPlaying] = useState(false);
@@ -142,6 +157,8 @@ export function ImageViewerPage() {
     setOffset({ x: 0, y: 0 });
     setRotation(0);
     setClipPlaying(false);
+    // Leaving an item drops its stream, which ends its playback session.
+    setOriginal((current) => (current && current.id !== mediaId ? null : current));
   }, [mediaId]);
 
   const queue = useMemo(
@@ -153,9 +170,10 @@ export function ImageViewerPage() {
     mediaId ?? "",
     removed,
   );
+  const trashedHere = !!mediaId && removed.has(mediaId);
   // A clip is viewable here only as part of the viewer's queue; a video opened
   // at /view on its own belongs to the player.
-  const clip = !!media && isClipClass(media.mediaClass) && index >= 0;
+  const clip = !!media && isClipClass(media.mediaClass) && (index >= 0 || trashedHere);
   const viewable = !!media && (isImageClass(media.mediaClass) || clip);
 
   useDocumentTitle(revealed ? null : media?.title || "", t("brand"));
@@ -164,10 +182,12 @@ export function ImageViewerPage() {
   // An item the server classes as something else plays where it belongs.
   const wrongClass = !!media && !viewable;
   const stateFor = useCallback(
-    (title: string): PlayerNavState => {
+    (title: string, base = navState.queue): PlayerNavState => {
       const state: PlayerNavState = { title };
-      if (navState.queue && navState.queueIdentity) {
-        state.queue = navState.queue;
+      if (base && navState.queueIdentity) {
+        // Trashed items leave the carried queue too, so a reload does not bring them back.
+        const gone = removedRef.current;
+        state.queue = gone.size ? base.filter((item) => !gone.has(item.id)) : base;
         state.queueIdentity = navState.queueIdentity;
       }
       return state;
@@ -223,10 +243,16 @@ export function ImageViewerPage() {
     const id = mediaId;
     setOriginal({ id, url: "", state: "loading" });
     fetchDirectStream(id, media.mediaClass || "image").then(
-      (url) =>
+      (url) => {
+        if (currentId.current !== id) {
+          // The viewer moved on while the stream was being set up.
+          if (url) endPlayback(id);
+          return;
+        }
         setOriginal((current) =>
           current?.id === id ? { id, url, state: url ? "loading" : "failed" } : current,
-        ),
+        );
+      },
       (err) => {
         if (err instanceof ApiError && isRevealTerminalStatus(err.status)) {
           // The server ended the revealed identity: drop the image, reset once.
@@ -293,51 +319,76 @@ export function ImageViewerPage() {
   // server trash, step on, and offer Undo.
   const canTrash = isManager;
   const trash = useCallback(() => {
-    if (!canTrash || !mediaId || !media || trashing.current) return;
+    if (!canTrash || !mediaId || !media || trashing.current || removedRef.current.has(mediaId)) {
+      return;
+    }
     const id = mediaId;
     const title = media.title || "";
+    const before = navState.queue;
     const after = trashStepTarget(items, index);
     trashing.current = true;
     trashMedia(id)
       .then(
         () => {
-          setRemoved((current) => new Set(current).add(id));
-          setToast({ kind: "trashed", id, title });
-          if (currentId.current !== id) return;
-          if (after) step(after.target, after.direction);
-          else close();
+          if (!mounted.current) return;
+          removedRef.current = new Set(removedRef.current).add(id);
+          setRemoved(removedRef.current);
+          setToast({ kind: "trashed", id, title, queue: before });
+          // With nothing left to step to, the viewer stays on the trashed
+          // item until its Undo toast goes, then closes.
+          if (currentId.current === id && after) step(after.target, after.direction);
         },
-        () => setToast({ kind: "trashFailed", id, title }),
+        () => {
+          if (mounted.current) setToast({ kind: "trashFailed", id, title });
+        },
       )
       .finally(() => {
         trashing.current = false;
       });
-  }, [canTrash, close, index, items, media, mediaId, step]);
+  }, [canTrash, index, items, media, mediaId, navState.queue, step]);
 
   const undoTrash = useCallback(
     (entry: Toast) => {
       setToast(null);
       restoreMedia(entry.id).then(
         () => {
-          setRemoved((current) => {
-            const left = new Set(current);
-            left.delete(entry.id);
-            return left;
-          });
+          if (!mounted.current) return;
+          const left = new Set(removedRef.current);
+          left.delete(entry.id);
+          removedRef.current = left;
+          setRemoved(left);
           stepping.current = null;
-          navigate(mediaPath("view", entry.id), { replace: true, state: stateFor(entry.title) });
+          navigate(mediaPath("view", entry.id), {
+            replace: true,
+            state: stateFor(entry.title, entry.queue ?? navState.queue),
+          });
         },
-        () => setToast({ ...entry, kind: "restoreFailed" }),
+        () => {
+          if (mounted.current) setToast({ ...entry, kind: "restoreFailed" });
+        },
       );
     },
-    [navigate, stateFor],
+    [navigate, navState.queue, stateFor],
   );
+
+  // Dismissing the toast of a trashed item the viewer is still on (the last
+  // one) closes the viewer.
+  const dismissToast = useCallback(() => {
+    setToast(null);
+    if (
+      toast?.kind === "trashed" &&
+      toast.id === currentId.current &&
+      removedRef.current.has(toast.id)
+    ) {
+      close();
+    }
+  }, [close, toast]);
 
   useEffect(() => {
     if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), TOAST_MS);
+    const timer = window.setTimeout(dismissToast, TOAST_MS);
     return () => window.clearTimeout(timer);
-  }, [toast]);
+  }, [toast, dismissToast]);
 
   // The chrome hides after the pointer has been idle, and any pointer move or
   // key brings it back.
@@ -380,7 +431,8 @@ export function ImageViewerPage() {
           break;
         case "Delete":
         case "Backspace":
-          if (!canTrash) return;
+          // A held key does not trash item after item.
+          if (!canTrash || event.repeat) return;
           trash();
           break;
         case "ArrowLeft":
@@ -560,7 +612,7 @@ export function ImageViewerPage() {
             type="button"
             className="bf-image-viewer-button"
             onClick={trash}
-            disabled={!media}
+            disabled={!media || trashedHere}
             aria-label={t("imageViewerTrash")}
           >
             <Trash2 aria-hidden />
@@ -779,7 +831,7 @@ export function ImageViewerPage() {
           <button
             type="button"
             className="bf-image-viewer-button"
-            onClick={() => setToast(null)}
+            onClick={dismissToast}
             aria-label={t("imageViewerDismiss")}
           >
             <X aria-hidden />

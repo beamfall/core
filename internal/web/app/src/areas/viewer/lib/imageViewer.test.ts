@@ -27,6 +27,13 @@ describe("imageViewer helpers", () => {
     expect(around.items.map((item) => item.id)).toEqual(["a", "clip", "b", "c"]);
   });
 
+  it("keeps the current item whatever its class so it can be stepped over", () => {
+    const around = viewerNeighbours(queue, "track");
+    expect(around.index).toBe(1);
+    expect(around.previous?.id).toBe("a");
+    expect(around.next?.id).toBe("clip");
+  });
+
   it("leaves trashed items out of stepping", () => {
     const around = viewerNeighbours(queue, "b", new Set(["clip"]));
     expect(around.previous?.id).toBe("a");
