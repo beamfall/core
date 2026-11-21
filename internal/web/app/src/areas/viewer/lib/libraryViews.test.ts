@@ -3,6 +3,7 @@ import { DEFAULT_BROWSE_STATE, parseBrowseState } from "./libraryBrowse";
 import { FOLDER_VIEW } from "./libraryFolders";
 import {
   entityCardLine,
+  type LibraryEntityChildKind,
   type LibraryEntityItem,
   libraryCategorySearch,
   libraryEntitiesVariables,
@@ -95,7 +96,7 @@ describe("library views (CORE-2362)", () => {
 
   it("counts a card's children by kind in the plugin's singular and plural words (CORE-2891)", () => {
     const count = (n: number) => `${n} items`;
-    const kinds = [
+    const kinds: LibraryEntityChildKind[] = [
       {
         kind: "record",
         kindDisplayName: { en: "Record", fr: "Disque" },
