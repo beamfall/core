@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -37,7 +38,7 @@ func TestQueueAddReturnsCommittedOrderWhenCardReadFails(t *testing.T) {
 	}
 }
 
-func TestQueueAddReturnsOffPageTailWhenCardReadFails(t *testing.T) {
+func TestQueueAddBoundsCardLookupsAndPreservesOffPageTail(t *testing.T) {
 	// feature:play-queue
 	dir := storetest.MigratedDataDir(t)
 	st := storetest.OpenAt(t, dir)
@@ -45,8 +46,15 @@ func TestQueueAddReturnsOffPageTailWhenCardReadFails(t *testing.T) {
 	ctx := t.Context()
 	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local", "library-archive"}, Revealed: true}
 	const pageSize = 50
-	want := make([]string, 0, pageSize+1)
-	for i := range pageSize {
+	const queued = pageSize + 3
+	locator := &countingArtworkLocator{
+		fakeArtworkLocator: fakeArtworkLocator{media: map[store.MediaID]map[string]bool{}},
+		calls:              map[string]int{},
+	}
+	h.SetArtwork(locator)
+	want := make([]string, 0, queued+2)
+	var target store.MediaID
+	for i := range queued + 1 {
 		key := fmt.Sprintf("%02d-queue-tail", i)
 		media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
 			LibraryID: "library-local", Path: "/queue/" + key + ".flac", Title: key, ContentFingerprint: key,
@@ -55,23 +63,46 @@ func TestQueueAddReturnsOffPageTailWhenCardReadFails(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		locator.media[media.ID] = map[string]bool{artwork.SlotPoster: true}
+		want = append(want, string(media.ID))
+		if i == queued {
+			target = media.ID
+			break
+		}
 		if _, err := st.QueueAddForProfile(ctx, pqDefault, "session-revealed", media.ID, nil, filter, h.auth.CertificationConstraints); err != nil {
 			t.Fatal(err)
 		}
-		want = append(want, string(media.ID))
 	}
-	if got := pqQueue(t, st, pqDefault); !slices.Equal(got, want) {
-		t.Fatalf("seed queue = %v, want %v", got, want)
-	}
-	breakQueueCardRead(t, st, dir)
 
+	const add = `mutation Add($mediaID: String!) { queueAdd(mediaID: $mediaID) { id title restricted mediaClass artworkSlots } }`
 	var got []SourceItem
-	execGraph(t, h, authorizeRevealed,
-		`mutation Add($mediaID: String!) { queueAdd(mediaID: $mediaID) { id title restricted } }`,
-		map[string]any{"mediaID": "media-archive"}, "queueAdd", &got)
+	execGraph(t, h, authorizeRevealed, add, map[string]any{"mediaID": string(target)}, "queueAdd", &got)
+	if !qaEqualIDs(got, want...) || got[queued].ID != string(target) {
+		t.Fatalf("queueAdd IDs = %v, want %v with target at index %d", qaIDs(got), want, queued)
+	}
+	for i, item := range got {
+		enriched := i < pageSize || i == queued
+		if item.Title == "" || (item.MediaClass == string(store.MediaClassAudio)) != enriched ||
+			(item.ArtworkSlots[artwork.SlotPoster] != "") != enriched {
+			t.Errorf("queueAdd row %d = %#v, want title and enriched=%t", i, item, enriched)
+		}
+	}
+	for _, slot := range artwork.KnownSlots {
+		if calls := locator.calls[slot]; calls != pageSize+1 {
+			t.Errorf("artwork lookup count for %s = %d, want %d", slot, calls, pageSize+1)
+		}
+	}
+
+	breakQueueCardRead(t, st, dir)
+	clear(locator.calls)
+
+	execGraph(t, h, authorizeRevealed, add, map[string]any{"mediaID": "media-archive"}, "queueAdd", &got)
 	want = append(want, "media-archive")
-	if !qaEqualIDs(got, want...) || got[pageSize].Title == "" || !got[pageSize].Restricted {
+	if !qaEqualIDs(got, want...) || got[queued+1].Title == "" || !got[queued+1].Restricted {
 		t.Fatalf("queueAdd tail fallback IDs = %v, want %v with the restricted tail card", qaIDs(got), want)
+	}
+	if len(locator.calls) != 0 {
+		t.Errorf("queueAdd fallback made artwork lookups: %v", locator.calls)
 	}
 	stored, err := st.SourceItems(ctx, filter, store.SourceQuery{Kind: "queue", ProfileID: pqDefault, Limit: len(want)})
 	if err != nil {

@@ -39,23 +39,23 @@ func TestQueueAddResponseMatchesQueueReadAfterMute(t *testing.T) {
 	}
 	query := SourceQuery{Kind: "queue", ProfileID: profile}
 	read := mustSourceItems(t, st, filter, query)
-	if len(read) != 2 || read[0].ID != target || read[1].ID != newTarget {
+	if len(read) != 2 || read[0].ID != newTarget || read[1].ID != target {
 		t.Fatalf("queue read after mute = %#v", read)
 	}
 	if !slices.EqualFunc(committed.Items, read, func(a, b SourceItem) bool { return a.ID == b.ID }) {
 		t.Fatalf("queueAdd response = %#v, want the same order as the queue read", committed.Items)
 	}
 	query.Limit, query.Offset = 1, 1
-	if page := mustSourceItems(t, st, filter, query); len(page) != 1 || page[0].ID != newTarget {
-		t.Fatalf("second visible page = %#v, want %s", page, newTarget)
+	if page := mustSourceItems(t, st, filter, query); len(page) != 1 || page[0].ID != target {
+		t.Fatalf("second visible page = %#v, want %s", page, target)
 	}
 	if err := st.SetMute(ctx, profile, MuteKindMedia, "media-alpha", false, false); err != nil {
 		t.Fatal(err)
 	}
-	assertQueueIDs(t, st, filter, profile, []MediaID{"media-alpha", target, newTarget})
+	assertQueueIDs(t, st, filter, profile, []MediaID{"media-alpha", newTarget, target})
 }
 
-func TestQueueAddRefusesMutedTargetBeforeWriting(t *testing.T) {
+func TestQueueAddCommitsMutedTargetsWithoutReturningThem(t *testing.T) {
 	st := openSeeded(t)
 	ctx := t.Context()
 	const profile = "profile-default"
@@ -72,18 +72,26 @@ func TestQueueAddRefusesMutedTargetBeforeWriting(t *testing.T) {
 		if err := st.SetMute(ctx, profile, MuteKindMedia, string(id), false, true); err != nil {
 			t.Fatal(err)
 		}
-		_, err := st.QueueAddForProfile(ctx, profile, session, id, queueIntPtr(0), filter, testQueueCertification)
-		if !errors.Is(err, ErrQueueMediaNotFound) {
-			t.Errorf("queue add for muted target %s = %v, want hidden-target refusal", id, err)
+	}
+	for _, id := range []MediaID{queued, unqueued} {
+		committed, err := st.QueueAddForProfile(ctx, profile, session, id, queueIntPtr(0), filter, testQueueCertification)
+		if err != nil {
+			t.Fatalf("queue add for muted target %s: %v", id, err)
 		}
+		if len(committed.Items) != 1 || committed.Items[0].ID != "media-alpha" {
+			t.Fatalf("queue add response for muted target %s = %#v, want only media-alpha", id, committed.Items)
+		}
+	}
+	assertQueueIDs(t, st, filter, profile, []MediaID{"media-alpha"})
+	for _, id := range []MediaID{queued, unqueued} {
 		if err := st.SetMute(ctx, profile, MuteKindMedia, string(id), false, false); err != nil {
 			t.Fatal(err)
 		}
 	}
-	assertQueueIDs(t, st, filter, profile, []MediaID{"media-alpha", queued})
+	assertQueueIDs(t, st, filter, profile, []MediaID{unqueued, queued, "media-alpha"})
 }
 
-func TestQueueAddFiltersEncryptedCatalogMutes(t *testing.T) {
+func TestQueueAddMatchesQueueReadWithEncryptedCatalogMutes(t *testing.T) {
 	for _, kind := range []MuteKind{MuteKindEntity, MuteKindTag} {
 		t.Run(string(kind), func(t *testing.T) {
 			st, library, _, entity, muted := openEncryptedPackLibrary(t)
@@ -103,21 +111,20 @@ func TestQueueAddFiltersEncryptedCatalogMutes(t *testing.T) {
 			if err := st.SetMute(ctx, profile, kind, string(entity.ID), false, true); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := st.QueueAddForProfile(ctx, profile, session, muted, nil, filter, testQueueCertification); !errors.Is(err, ErrQueueMediaNotFound) {
-				t.Errorf("queue add for muted encrypted target = %v, want hidden-target refusal", err)
+			if _, err := st.QueueAddForProfile(ctx, profile, session, muted, nil, filter, testQueueCertification); err != nil {
+				t.Fatalf("queue add for muted encrypted target: %v", err)
 			}
 			committed, err := st.QueueAddForProfile(ctx, profile, session, "media-archive", queueIntPtr(1), filter, testQueueCertification)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(committed.Items) != 2 || committed.Items[0].ID != other.ID || committed.Items[1].ID != "media-archive" {
-				t.Errorf("committed order = %#v, want [%s media-archive]", committed.Items, other.ID)
+			// Like the queue read, the response resolves entity and tag mutes
+			// against the main catalog, where this encrypted relation is absent.
+			want := []MediaID{other.ID, "media-archive", muted}
+			if !slices.EqualFunc(committed.Items, want, func(item SourceItem, id MediaID) bool { return item.ID == id }) {
+				t.Errorf("committed response = %#v, want %v", committed.Items, want)
 			}
-			assertQueueIDs(t, st, filter, profile, []MediaID{other.ID, "media-archive"})
-			if err := st.SetMute(ctx, profile, kind, string(entity.ID), false, false); err != nil {
-				t.Fatal(err)
-			}
-			assertQueueIDs(t, st, filter, profile, []MediaID{muted, other.ID, "media-archive"})
+			assertQueueIDs(t, st, filter, profile, want)
 			cipher := copyEncryptedLibraryDBCipher{}
 			if err := st.SealEncryptedLibraryDB(ctx, library, cipher); err != nil {
 				t.Fatal(err)
@@ -129,7 +136,7 @@ func TestQueueAddFiltersEncryptedCatalogMutes(t *testing.T) {
 			if err := st.UnsealEncryptedLibraryDB(ctx, library, cipher); err != nil {
 				t.Fatal(err)
 			}
-			assertQueueIDs(t, st, filter, profile, []MediaID{muted, other.ID, "media-archive"})
+			assertQueueIDs(t, st, filter, profile, want)
 		})
 	}
 }

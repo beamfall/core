@@ -1221,7 +1221,7 @@ func (h *Handler) annotateBylines(ctx context.Context, filter store.LibraryFilte
 	return nil
 }
 
-func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
+func basicSourceItem(item store.SourceItem, revealed bool) SourceItem {
 	resp := SourceItem{
 		ID:                 string(item.ID),
 		LibraryID:          string(item.LibraryID),
@@ -1242,11 +1242,16 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		AudienceScore:      item.AudienceScore,
 		AudienceScoreLabel: plugin.LocaleString(item.AudienceScoreLabel),
 		AudienceScoreVotes: item.AudienceScoreVotes,
-		Container:          h.sourceItemContainer(item),
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
 	}
+	return resp
+}
+
+func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
+	resp := basicSourceItem(item, revealed)
+	resp.Container = h.sourceItemContainer(item)
 	if h.artwork == nil {
 		return resp
 	}
@@ -4518,14 +4523,24 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 		case err != nil:
 			return nil, err
 		}
-		// Card reads can fail after commit. Keep the committed order and basic
-		// fields from the transaction, even if enrichment partially succeeds.
-		items := slices.Clone(committed.Items)
-		if err := h.annotateCardsForProfile(ctx, scope.ProfileID, committed.Filter, items); err != nil {
-			slog.DebugContext(ctx, "queueAdd card details unavailable", "error", err)
-			items = committed.Items
+		items, pageLength := committed.Items, committed.PageLength
+		cards := slices.Clone(items[:pageLength])
+		last := len(items) - 1
+		if len(items) > pageLength {
+			cards = append(cards, items[last])
 		}
-		data["queueadd"] = h.queueResponse(items, committed.Filter.Revealed)
+		// Apply card details only after all reads succeed. On failure the
+		// committed projection still carries the order and basic fields.
+		if err := h.annotateCardsForProfile(ctx, scope.ProfileID, committed.Filter, cards); err != nil {
+			slog.DebugContext(ctx, "queueAdd card details unavailable", "error", err)
+			pageLength = 0
+		} else {
+			copy(items[:pageLength], cards)
+			if len(items) > pageLength {
+				items[last] = cards[pageLength]
+			}
+		}
+		data["queueadd"] = h.queueResponse(items, committed.Filter.Revealed, pageLength)
 	}
 	if fields["queueremove"] {
 		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
@@ -4587,13 +4602,19 @@ func (h *Handler) queueItems(ctx context.Context, scope auth.Scope) ([]SourceIte
 	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
-	return h.queueResponse(items, scope.Revealed), nil
+	return h.queueResponse(items, scope.Revealed, len(items)), nil
 }
 
-func (h *Handler) queueResponse(items []store.SourceItem, revealed bool) []SourceItem {
+// queueResponse attaches artwork to the enriched page and its optional off-page
+// target at the end of the prefix. A zero page length renders basic rows only.
+func (h *Handler) queueResponse(items []store.SourceItem, revealed bool, pageLength int) []SourceItem {
 	resp := make([]SourceItem, len(items))
 	for i, item := range items {
-		resp[i] = h.sourceItem(item, revealed)
+		if i < pageLength || (pageLength > 0 && i == len(items)-1) {
+			resp[i] = h.sourceItem(item, revealed)
+		} else {
+			resp[i] = basicSourceItem(item, revealed)
+		}
 	}
 	return resp
 }

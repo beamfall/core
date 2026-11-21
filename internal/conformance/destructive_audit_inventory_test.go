@@ -174,7 +174,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"ProfilesGrantedLibrary":                  {},
 	"PromotePendingAITag":                     {},
 	"QualityPolicyForLibrary":                 {},
-	"QueueAdd":                                {},
+	"QueueAddForProfile":                      {},
 	"QueueClear":                              {},
 	"QueueMove":                               {},
 	"QueueRemove":                             {},

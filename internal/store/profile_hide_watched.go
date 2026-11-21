@@ -130,9 +130,7 @@ var profileFilteredChunk = 500
 // ends early on a short page. A deep page still costs a scan of everything
 // above it. The caller holds s.mu.
 func (s *Store) profileSourceItemsLocked(ctx context.Context, filter LibraryFilter, query SourceQuery, limit, offset int) ([]SourceItem, error) {
-	// The queue applies its catalog-aware mute filter before paging so reads
-	// and queueAdd count positions the same way.
-	if query.Kind == "queue" || query.ProfileID == "" || strings.TrimSpace(query.Query) != "" {
+	if query.ProfileID == "" || strings.TrimSpace(query.Query) != "" {
 		return s.sourceItemsForKind(ctx, filter, query, limit, offset)
 	}
 	watched, err := s.hiddenWatchedLocked(ctx, query)
