@@ -24,6 +24,7 @@ function entity(patch: Partial<LibraryEntityItem>): LibraryEntityItem {
     kind: "entity",
     title: "One",
     childCount: 0,
+    childCounts: [],
     mediaCount: 0,
     parents: [],
     ...patch,
@@ -83,11 +84,46 @@ describe("library views (CORE-2362)", () => {
             { id: "p3", title: "Second" },
           ],
         }),
+        [],
+        "en",
         count,
       ),
     ).toBe("First, Second");
-    expect(entityCardLine(entity({ mediaCount: 4 }), count)).toBe("4 items");
-    expect(entityCardLine(entity({}), count)).toBe("");
+    expect(entityCardLine(entity({ mediaCount: 4 }), [], "en", count)).toBe("4 items");
+    expect(entityCardLine(entity({}), [], "en", count)).toBe("");
+  });
+
+  it("counts a card's children by kind in the plugin's singular and plural words (CORE-2891)", () => {
+    const count = (n: number) => `${n} items`;
+    const kinds = [
+      {
+        kind: "record",
+        kindDisplayName: { en: "Record", fr: "Disque" },
+        kindPluralDisplayName: { en: "Records", fr: "Disques" },
+      },
+      { kind: "sleeve", kindDisplayName: { en: "Sleeve" } },
+    ];
+    const four = entity({ mediaCount: 47, childCounts: [{ kind: "record", count: 4 }] });
+    expect(entityCardLine(four, kinds, "en", count)).toBe("4 Records");
+    expect(entityCardLine(four, kinds, "fr", count)).toBe("4 Disques");
+    const one = entity({ mediaCount: 9, childCounts: [{ kind: "record", count: 1 }] });
+    expect(entityCardLine(one, kinds, "en", count)).toBe("1 Record");
+    const mixed = entity({
+      childCounts: [
+        { kind: "record", count: 2 },
+        { kind: "sleeve", count: 3 },
+      ],
+    });
+    expect(entityCardLine(mixed, kinds, "en", count)).toBe("2 Records · 3 Sleeve");
+    // A kind the response does not name is skipped, and none left means the Media count.
+    const unknown = entity({ mediaCount: 3, childCounts: [{ kind: "gone", count: 2 }] });
+    expect(entityCardLine(unknown, kinds, "en", count)).toBe("3 items");
+    // Parents still win over children.
+    const under = entity({
+      childCounts: [{ kind: "record", count: 4 }],
+      parents: [{ id: "p", title: "Parent" }],
+    });
+    expect(entityCardLine(under, kinds, "en", count)).toBe("Parent");
   });
 });
 

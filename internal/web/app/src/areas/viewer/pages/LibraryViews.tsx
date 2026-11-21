@@ -38,6 +38,7 @@ import {
   LIBRARY_ENTITY_PAGE,
   LIBRARY_VIEW_PARAM,
   type LibraryEntitiesPage,
+  type LibraryEntityChildKind,
   type LibraryEntityItem,
   type LibraryView,
   libraryViews,
@@ -290,12 +291,14 @@ function LibraryEntityGrid({
   switcher: ReactNode;
 }) {
   const t = useT();
+  const displayLocale = useDisplayLocale();
   const [searchParams, setSearchParams] = useSearchParams();
   const state = useMemo(() => parseBrowseState(searchParams), [searchParams]);
   const stateKey = browseStateParams(state).toString();
   const takeSeedRef = useRef(takeSeed);
   const [total, setTotal] = useState<number | null>(null);
   const [letters, setLetters] = useState<LibraryItemsLetter[]>([]);
+  const [childKinds, setChildKinds] = useState<LibraryEntityChildKind[]>([]);
   const [failed, setFailed] = useState(false);
   const [loadedTick, setLoadedTick] = useState(0);
   const [retryTick, setRetryTick] = useState(0);
@@ -320,7 +323,10 @@ function LibraryEntityGrid({
           pendingRef.current.delete(pageIndex);
           pagesRef.current.set(pageIndex, page.items);
           setTotal(page.total);
-          if (pageIndex === 0) setLetters(page.letters);
+          if (pageIndex === 0) {
+            setLetters(page.letters);
+            setChildKinds(page.childKinds ?? []);
+          }
           setLoadedTick((tick) => tick + 1);
         })
         .catch(() => {
@@ -347,6 +353,7 @@ function LibraryEntityGrid({
       pagesRef.current = new Map([[0, opening.page.items]]);
       setTotal(opening.page.total);
       setLetters(opening.page.letters);
+      setChildKinds(opening.page.childKinds ?? []);
       setLoadedTick((tick) => tick + 1);
       return;
     }
@@ -422,7 +429,7 @@ function LibraryEntityGrid({
       item ? (
         <MediaItemCard
           key={item.id}
-          item={{ ...item, summary: entityCardLine(item, count) }}
+          item={{ ...item, summary: entityCardLine(item, childKinds, displayLocale, count) }}
           posInSet={index + 1}
           setSize={itemCount}
         />

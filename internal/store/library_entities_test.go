@@ -98,12 +98,18 @@ func TestLibraryEntitiesListsKindWithCounts(t *testing.T) {
 	if alpha.ChildCount != 2 || alpha.MediaCount != 7 {
 		t.Fatalf("Alpha counts = %d children / %d media, want 2 / 7", alpha.ChildCount, alpha.MediaCount)
 	}
+	if want := map[string]int{"lid": 2}; !reflect.DeepEqual(alpha.ChildCounts, want) {
+		t.Fatalf("Alpha child counts = %v, want %v", alpha.ChildCounts, want)
+	}
 	if want := []LibraryEntityRef{{ID: "entity-maker-m", Title: "Em"}, {ID: "entity-maker-z", Title: "Zed"}}; !reflect.DeepEqual(alpha.Parents, want) {
 		t.Fatalf("Alpha parents = %+v, want %+v", alpha.Parents, want)
 	}
 	beta := got.Items[1]
 	if beta.ChildCount != 0 || beta.MediaCount != 0 || len(beta.Parents) != 1 || beta.Parents[0].Title != "Zed" {
 		t.Fatalf("beta = %+v, want no counts and parent Zed", beta)
+	}
+	if len(beta.ChildCounts) != 0 {
+		t.Fatalf("beta child counts = %v, want none", beta.ChildCounts)
 	}
 
 	// Paging keeps the total.
