@@ -111,10 +111,15 @@ export async function fetchLibraryEntities(
   const page = data.libraryEntities;
   return {
     kinds: page?.kinds ?? [],
+    childKinds: page?.childKinds ?? [],
     allLabel: page?.allLabel,
     kind: page?.kind ?? "",
     total: page?.total ?? 0,
-    items: (page?.items ?? []).map((item) => ({ ...item, parents: item.parents ?? [] })),
+    items: (page?.items ?? []).map((item) => ({
+      ...item,
+      childCounts: item.childCounts ?? [],
+      parents: item.parents ?? [],
+    })),
     letters: page?.letters ?? [],
   };
 }
