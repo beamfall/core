@@ -721,7 +721,6 @@ describe("Console Libraries add (CORE-1156)", () => {
     for (const name of [
       "Films",
       "TV Shows",
-      "Mixed",
       "Music",
       "Photos",
       "Audiobooks",

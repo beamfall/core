@@ -41,12 +41,13 @@ interface ScopePreset {
 }
 
 // Mirror of the Film & TV plugin's declared family scopes (plugin-filmtv
-// bundle.go FamilyScopes), in the order setup has always offered them.
+// bundle.go FamilyScopes). Its catch-all "mixed" scope guesses movie vs episode
+// per file and is not offered for new libraries (CORE-2927); the plugin still
+// applies it to existing Mixed libraries and to calls that leave the scope out.
 const SCOPE_PRESETS: Record<string, readonly ScopePreset[]> = {
   filmtv: [
     { value: "films", label: "setupTypeFilms", icon: Film },
     { value: "tvshows", label: "setupTypeTVShows", icon: Tv },
-    { value: "mixed", label: "setupTypeMixed", icon: Clapperboard },
   ],
 };
 
@@ -60,6 +61,12 @@ const PLUGIN_ICON_NAMES: Record<string, string> = {
   familyarchive: "people",
   karaoke: "mic",
 };
+
+/**
+ * Scopes a plugin still serves for existing libraries but that the add-library
+ * pickers no longer offer (CORE-2927: Films and TV Shows replace Mixed).
+ */
+const HIDDEN_SCOPES: Readonly<Record<string, readonly string[]>> = { filmtv: ["mixed"] };
 
 /** The symbol for a plugin, for lists of plugins and the types they offer. */
 export function pluginIcon(pluginID: string): LucideIcon {
@@ -76,7 +83,8 @@ export function libraryTypeOptions(
   return plugins.flatMap((plugin): LibraryTypeOption[] => {
     const pluginLabel = displayString(plugin.displayName, locale) || plugin.id;
     const icon = pluginIcon(plugin.id);
-    const served = plugin.familyScopes ?? [];
+    const hidden = HIDDEN_SCOPES[plugin.id] ?? [];
+    const served = (plugin.familyScopes ?? []).filter((scope) => !hidden.includes(scope.value));
     if (served.length > 0) {
       return served.map((scope) => ({
         key: `${plugin.id}/${scope.value}`,
