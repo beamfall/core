@@ -3,7 +3,6 @@ package graph
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"slices"
 	"testing"
@@ -51,18 +50,9 @@ func TestQueueAddBoundsCardLookupsAndPreservesOffPageTail(t *testing.T) {
 		calls:              map[string]int{},
 	}
 	h.SetArtwork(locator)
-	ids := make([]store.MediaID, 0, queued+1)
-	for i := range queued + 1 {
-		key := fmt.Sprintf("%05d-queue-tail", i)
-		media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-			LibraryID: "library-local", Path: "/queue/" + key + ".flac", Title: key, ContentFingerprint: key,
-			Container: "flac", Codec: "flac", Class: store.MediaClassAudio,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		locator.media[media.ID] = map[string]bool{artwork.SlotPoster: true}
-		ids = append(ids, media.ID)
+	ids := storetest.SeedAudioMedia(t, dir, "library-local", queued+1)
+	for _, id := range ids[:pageSize] {
+		locator.media[id] = map[string]bool{artwork.SlotPoster: true}
 	}
 	if err := st.QueueReplaceWithStation(ctx, pqDefault, ids[:queued], false, filter); err != nil {
 		t.Fatalf("seed queue: %v", err)

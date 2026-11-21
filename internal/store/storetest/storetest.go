@@ -240,6 +240,37 @@ func RejectIntegrationIPSettlement(t testing.TB, dataDir string) {
 	}
 }
 
+// SeedAudioMedia creates catalog rows for tests that need a large visible set
+// without requiring playable files. It returns the IDs in fixture order.
+func SeedAudioMedia(t testing.TB, dataDir string, libraryID store.LibraryID, count int) []store.MediaID {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(dataDir, "db", "catalog.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	result, err := db.ExecContext(t.Context(), `
+		WITH RECURSIVE fixture(n) AS (
+			SELECT 0 WHERE ?1 > 0
+			UNION ALL SELECT n + 1 FROM fixture WHERE n + 1 < ?1
+		)
+		INSERT INTO media(id, library_id, title, duration_seconds, container, codec, media_class)
+		SELECT printf('fixture-audio-%05d', n), ?2, printf('Fixture audio %05d', n), 60, 'flac', 'flac', 'audio'
+		FROM fixture
+	`, count, libraryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := result.RowsAffected(); err != nil || rows != int64(count) {
+		t.Fatalf("seeded %d audio rows, want %d: %v", rows, count, err)
+	}
+	ids := make([]store.MediaID, count)
+	for i := range ids {
+		ids[i] = store.MediaID(fmt.Sprintf("fixture-audio-%05d", i))
+	}
+	return ids
+}
+
 // BreakEngagementRead verifies the seeded engagement projection works, then
 // makes its playback-progress read fail without changing the queue fixture.
 func BreakEngagementRead(t testing.TB, st *store.Store, dataDir string, profileID store.ProfileID) {
