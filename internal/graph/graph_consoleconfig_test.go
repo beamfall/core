@@ -1230,3 +1230,126 @@ func TestConsoleListsSDKIncompatiblePluginInactive(t *testing.T) {
 		t.Fatal("incompatible plugin entered the live registry")
 	}
 }
+
+// An SDK-incompatible stored plugin stays manageable: its config can be saved
+// and cleared, and uninstall purges its data and deactivates it, while
+// activation is still refused (CORE-2839).
+func TestConsoleConfiguresAndUninstallsSDKIncompatiblePlugin(t *testing.T) {
+	// feature:console-config
+	st := storetest.Open(t)
+	ctx := context.Background()
+	shipped := newConsoleHandler(t, st).plugins
+	demo, ok := shipped.Bundle("demo")
+	if !ok {
+		t.Fatal("demo bundle missing from the test registry")
+	}
+	plain, ok := shipped.Bundle("plain")
+	if !ok {
+		t.Fatal("plain bundle missing from the test registry")
+	}
+	live, err := newTestPluginRegistry([]plugin.Bundle{plain})
+	if err != nil {
+		t.Fatalf("live registry: %v", err)
+	}
+	legacy := demo
+	legacy.ID = "legacy"
+	legacy.SDKFloor, legacy.SDKCeiling = "0.1.0", "0.1.0"
+	handler := NewHandler(
+		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, nil),
+		auth.NewService(st),
+		st,
+		live,
+		Options{ShippedPlugins: live, IncompatiblePlugins: []plugin.IncompatiblePlugin{{
+			Bundle:   legacy,
+			Standing: plugin.PluginStanding{Provenance: plugin.ProvenanceSideloaded, TrustState: plugin.PluginUnsigned},
+		}}},
+	)
+	openManagerAdminSession(t, st)
+	legacyInfo := func(cfg ConsoleConfigInfo) PluginActivationInfo {
+		t.Helper()
+		for _, p := range cfg.Plugins {
+			if p.ID == "legacy" {
+				return p
+			}
+		}
+		t.Fatalf("plugins = %#v, want legacy listed", cfg.Plugins)
+		return PluginActivationInfo{}
+	}
+
+	data, errs := post(t, handler,
+		`{"query":"mutation($pluginID:String!,$values:JSON!){ setPluginConfig(pluginID:$pluginID, values:$values){ plugins { id active config { name value configured } } } }","variables":{"pluginID":"legacy","values":{"mode":"apply","limit":12}}}`,
+		authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("setPluginConfig(incompatible) errors = %#v", errs)
+	}
+	var cfg ConsoleConfigInfo
+	mustUnmarshal(t, data["setPluginConfig"], &cfg)
+	info := legacyInfo(cfg)
+	values := map[string]PluginConfigFieldInfo{}
+	for _, field := range info.Config {
+		values[field.Name] = field
+	}
+	if info.Active || values["mode"].Value != "apply" || !values["mode"].Configured || values["limit"].Value != "12" {
+		t.Fatalf("legacy after setPluginConfig = active %v, config %#v", info.Active, values)
+	}
+	_, errs = post(t, handler,
+		`{"query":"mutation($pluginID:String!,$clear:[String!]){ setPluginConfig(pluginID:$pluginID, clear:$clear){ plugins { id } } }","variables":{"pluginID":"legacy","clear":["limit"]}}`,
+		authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("setPluginConfig(incompatible, clear) errors = %#v", errs)
+	}
+	stored, err := st.PluginConfigValues(ctx, "legacy")
+	if err != nil || stored["mode"] != "apply" || stored["limit"] != "" {
+		t.Fatalf("stored legacy config = %#v, %v; want mode kept and limit cleared", stored, err)
+	}
+	_, errs = post(t, handler,
+		`{"query":"mutation($pluginID:String!,$values:JSON!){ setPluginConfig(pluginID:$pluginID, values:$values){ plugins { id } } }","variables":{"pluginID":"legacy","values":{"ghost":"x"}}}`,
+		authorizeManager)
+	if len(errs) == 0 || !strings.Contains(errs[0].Message, "unknown plugin config field") {
+		t.Fatalf("setPluginConfig(incompatible, undeclared field) errors = %#v", errs)
+	}
+
+	library, err := st.CreateLibrary(ctx, "Legacy", false, "legacy", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntity(ctx, store.Entity{ID: "legacy-widget", LibraryID: library.ID, Kind: "widget", Title: "Legacy"}); err != nil {
+		t.Fatal(err)
+	}
+	data, errs = post(t, handler,
+		`{"query":"mutation U($pluginID: String!, $confirm: Boolean!){ uninstallPluginData(pluginID:$pluginID, confirm:$confirm){ purged plugins { id active status { id state } } } }","variables":{"pluginID":"legacy","confirm":true}}`,
+		authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("uninstallPluginData(incompatible) errors = %#v", errs)
+	}
+	var result UninstallPluginDataResult
+	mustUnmarshal(t, data["uninstallPluginData"], &result)
+	if result.Purged != 1 {
+		t.Fatalf("purged = %d, want 1", result.Purged)
+	}
+	info = legacyInfo(result.ConsoleConfigInfo)
+	var stillIncompatible bool
+	for _, status := range info.Status {
+		stillIncompatible = stillIncompatible || (status.ID == "sdk-compatibility" && status.State == "incompatible")
+	}
+	if info.Active || !stillIncompatible {
+		t.Fatalf("legacy after uninstall = %#v, want inactive and still incompatible", info)
+	}
+	if active, err := st.PluginActivation(ctx, "legacy"); err != nil || active {
+		t.Fatalf("stored legacy activation = %v, %v; want deactivated", active, err)
+	}
+
+	_, errs = post(t, handler,
+		`{"query":"mutation A($pluginID: String!, $active: Boolean!){ setPluginActive(pluginID:$pluginID, active:$active){ plugins { id } } }","variables":{"pluginID":"legacy","active":true}}`,
+		authorizeManager)
+	if len(errs) == 0 || !strings.Contains(errs[0].Message, "plugin SDK") {
+		t.Fatalf("setPluginActive(incompatible) errors = %#v, want an SDK refusal", errs)
+	}
+	handler.SetSuppressedPlugins([]plugin.ID{"legacy"})
+	_, errs = post(t, handler,
+		`{"query":"mutation($pluginID:String!,$values:JSON!){ setPluginConfig(pluginID:$pluginID, values:$values){ plugins { id } } }","variables":{"pluginID":"legacy","values":{"mode":"apply"}}}`,
+		authorizeManager)
+	if len(errs) == 0 || !strings.Contains(errs[0].Message, "unknown plugin") {
+		t.Fatalf("setPluginConfig(suppressed incompatible) errors = %#v, want unknown-plugin refusal", errs)
+	}
+}

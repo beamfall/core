@@ -256,6 +256,21 @@ func (h *Handler) incompatiblePluginInfo(ctx context.Context, incompatible plugi
 	return pluginInfo, nil
 }
 
+// consoleManagedBundle resolves a plugin the Console can configure or uninstall:
+// one this server ships, loaded or deactivated, or a stored plugin left
+// unloaded because its SDK range excludes the embedded plugin SDK. Suppressed
+// plugins are unknown.
+func (h *Handler) consoleManagedBundle(id plugin.ID) (plugin.Bundle, bool) {
+	if incompatible, found := h.incompatiblePlugin(id); found {
+		return incompatible.Bundle, true
+	}
+	plugins := h.consolePlugins()
+	if plugins == nil || h.pluginSuppressed(id) {
+		return plugin.Bundle{}, false
+	}
+	return plugins.Bundle(id)
+}
+
 func (h *Handler) incompatiblePlugin(id plugin.ID) (plugin.IncompatiblePlugin, bool) {
 	for _, incompatible := range h.incompatiblePlugins {
 		if incompatible.Bundle.ID == id && !h.pluginSuppressed(id) {
@@ -740,8 +755,9 @@ func (h *Handler) setPluginActive(ctx context.Context, scope auth.Scope, req req
 // data. It is the explicit, operator-confirmed purge — distinct from
 // deactivation, which leaves data inert and reversible — so it
 // requires `confirm: true` (invariant #6: destructive ops are confirmed). The
-// plugin must be one this server ships so its declared Entity Kinds are
-// resolvable; it may already be deactivated. Admin-Session-gated in execute.
+// plugin must be one this server ships, or a stored plugin left unloaded by an
+// SDK mismatch, so its declared Entity Kinds are resolvable; it may already be
+// deactivated. Admin-Session-gated in execute.
 func (h *Handler) uninstallPluginData(ctx context.Context, scope auth.Scope, req request) (UninstallPluginDataResult, error) {
 	pluginID := trimmedVariable(req, "pluginID")
 	if pluginID == "" {
@@ -750,15 +766,8 @@ func (h *Handler) uninstallPluginData(ctx context.Context, scope auth.Scope, req
 	if !boolVar(req, "confirm") {
 		return UninstallPluginDataResult{}, clientError("uninstall is destructive and must be confirmed (confirm: true)")
 	}
-	plugins := h.consolePlugins()
-	if plugins == nil {
-		return UninstallPluginDataResult{}, clientError("unknown plugin")
-	}
-	bundle, found := plugins.Bundle(plugin.ID(pluginID))
+	bundle, found := h.consoleManagedBundle(plugin.ID(pluginID))
 	if !found {
-		return UninstallPluginDataResult{}, clientError("unknown plugin")
-	}
-	if h.pluginSuppressed(plugin.ID(pluginID)) {
 		return UninstallPluginDataResult{}, clientError("unknown plugin")
 	}
 	kinds := make([]string, 0, len(bundle.EntityKinds))
@@ -804,15 +813,8 @@ func (h *Handler) setPluginConfig(ctx context.Context, scope auth.Scope, req req
 	if pluginID == "" {
 		return ConsoleConfigInfo{}, clientError("pluginID is required")
 	}
-	plugins := h.consolePlugins()
-	if plugins == nil {
-		return ConsoleConfigInfo{}, clientError("unknown plugin")
-	}
-	bundle, found := plugins.Bundle(plugin.ID(pluginID))
+	bundle, found := h.consoleManagedBundle(plugin.ID(pluginID))
 	if !found {
-		return ConsoleConfigInfo{}, clientError("unknown plugin")
-	}
-	if h.pluginSuppressed(plugin.ID(pluginID)) {
 		return ConsoleConfigInfo{}, clientError("unknown plugin")
 	}
 	rawValues := anyMapVar(req, "values")
