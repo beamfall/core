@@ -103,8 +103,9 @@ export function PlayOnButton({
     <div className="bf-play-on" onKeyDown={onKeyDown}>
       <Button
         ref={trigger}
-        variant="outline"
-        size="sm"
+        variant="ghost"
+        size="lg"
+        className="bf-detail-secondary"
         aria-label={t("playOnLabel", { title })}
         aria-expanded={open}
         aria-controls={menuID}

@@ -248,16 +248,6 @@
   text-decoration-color: currentColor;
 }
 
-[data-register="viewer"] .bf-detail-progress {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(320px, 100%);
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 16px;
-}
-
 [data-register="viewer"] .bf-detail-progress-track {
   height: 4px;
   border-radius: var(--radius-control);
@@ -354,7 +344,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   [data-register="viewer"] .bf-detail-backdrop img,
-  [data-register="viewer"] .bf-detail-back {
+  [data-register="viewer"] .bf-detail-back,
+  [data-register="viewer"] .bf-media-detail .bf-detail-categories a {
     transition: none;
   }
 }
@@ -490,21 +481,6 @@
   }
 }
 
-/* Resolution and HDR badges of the Version on screen (CORE-2485). */
-[data-register="viewer"] .bf-detail-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-[data-register="viewer"] .bf-detail-badges [data-slot="badge"] {
-  color: var(--text-secondary);
-  letter-spacing: 0.02em;
-}
-
 /* Version, Audio and Subtitles pickers under the action row (CORE-2442). */
 [data-register="viewer"] .bf-detail-tracks {
   display: flex;
@@ -558,4 +534,211 @@
 [data-register="viewer"] .bf-detail-crew a:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* Media detail reading order (CORE-2930). Scoped to the media page: the Entity
+ * page shares the stage but keeps its own facts chips. Back sits inside the
+ * stage, the poster tops out with the copy, the facts read as one quiet line,
+ * the categories as linked text, and the actions settle into three groups:
+ * playback, track pickers, then the Profile's own controls. */
+[data-register="viewer"] .bf-media-detail .bf-detail-stage[data-backdrop] {
+  padding-top: clamp(16px, 3vw, 32px);
+}
+
+[data-register="viewer"] .bf-media-detail .bf-detail-stage > .bf-detail-back {
+  margin-bottom: 24px;
+  border-color: transparent;
+  background: color-mix(in oklab, var(--bg-root) 55%, transparent);
+}
+
+/* Over a backdrop, Back leaves the artwork room to show above the lockup. */
+[data-register="viewer"] .bf-media-detail .bf-detail-stage[data-backdrop] > .bf-detail-back {
+  margin-bottom: clamp(24px, 8vw, 120px);
+}
+
+[data-register="viewer"] .bf-media-detail .bf-detail-stage > .bf-detail-back:hover {
+  background: var(--control-bg-hover);
+}
+
+[data-register="viewer"] .bf-media-detail .bf-detail-lockup {
+  align-items: start;
+  gap: clamp(20px, 3vw, 40px);
+}
+
+[data-register="viewer"] .bf-media-detail .bf-detail-copy {
+  gap: 20px;
+}
+
+[data-register="viewer"] .bf-media-detail .bf-detail-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+[data-register="viewer"] .bf-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-register="viewer"]
+  .bf-detail-meta
+  > li:not([data-variant="stream"])
+  + li:not([data-variant="stream"], [data-variant="rating"])::before {
+  content: "·";
+  margin-inline: 8px;
+  color: var(--text-muted);
+}
+
+/* A bordered badge separates itself; a dot would land inside its border. */
+[data-register="viewer"] .bf-detail-meta > li + li[data-variant="rating"] {
+  margin-inline-start: 10px;
+}
+
+[data-register="viewer"] .bf-detail-meta > li[data-variant="score"] {
+  color: var(--text-primary);
+}
+
+[data-register="viewer"] .bf-detail-meta > li[data-variant="rating"],
+[data-register="viewer"] .bf-detail-meta > li[data-variant="stream"] {
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+[data-register="viewer"] .bf-detail-meta > li[data-variant="rating"] {
+  color: var(--text-primary);
+}
+
+[data-register="viewer"] .bf-detail-meta > li[data-variant="stream"] {
+  border-color: var(--border-subtle);
+}
+
+/* The format badges stand apart from the facts, and from each other. */
+[data-register="viewer"]
+  .bf-detail-meta
+  > li:not([data-variant="stream"])
+  + li[data-variant="stream"] {
+  margin-inline-start: 12px;
+}
+
+[data-register="viewer"] .bf-detail-meta > li[data-variant="stream"] + li[data-variant="stream"] {
+  margin-inline-start: 6px;
+}
+
+[data-register="viewer"] .bf-detail-categories {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+[data-register="viewer"] .bf-detail-categories a {
+  color: var(--text-secondary);
+  border-radius: var(--radius-control);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition: text-decoration-color var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-detail-categories a:hover {
+  color: var(--text-primary);
+  text-decoration-color: currentColor;
+}
+
+[data-register="viewer"] .bf-detail-categories a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-detail-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+[data-register="viewer"] .bf-media-detail .bf-detail-actions {
+  gap: 4px 8px;
+}
+
+/* Resume carries the progress along its bottom edge, inside its corners. */
+[data-register="viewer"] .bf-detail-resume {
+  position: relative;
+  display: inline-flex;
+}
+
+[data-register="viewer"] .bf-detail-resume .bf-detail-progress-track {
+  position: absolute;
+  inset: auto 10px 5px;
+  height: 3px;
+  background: color-mix(in oklab, var(--bg-root) 35%, transparent);
+  pointer-events: none;
+}
+
+[data-register="viewer"] .bf-detail-resume .bf-detail-progress-fill {
+  background: currentColor;
+  color: var(--bg-root);
+}
+
+/* Play on keeps its menu under the trigger; an idle status takes no room. */
+[data-register="viewer"] .bf-media-detail .bf-play-on-status:empty {
+  display: none;
+}
+
+[data-register="viewer"] .bf-media-detail .bf-detail-track {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The Profile's own controls: present, quieter than playback. */
+[data-register="viewer"] .bf-detail-item-actions .bf-item-action {
+  min-height: 36px;
+  padding: 0 12px;
+  border-color: var(--border-subtle);
+}
+
+@media (max-width: 640px) {
+  [data-register="viewer"] .bf-media-detail .bf-detail-stage > .bf-detail-back,
+  [data-register="viewer"] .bf-media-detail .bf-detail-stage[data-backdrop] > .bf-detail-back {
+    margin-bottom: 16px;
+  }
+  [data-register="viewer"] .bf-media-detail .bf-detail-copy {
+    gap: 16px;
+  }
+  [data-register="viewer"] .bf-media-detail .bf-detail-controls {
+    align-items: stretch;
+  }
+  [data-register="viewer"] .bf-media-detail .bf-detail-resume {
+    flex-basis: 100%;
+  }
+  [data-register="viewer"] .bf-media-detail .bf-detail-resume .bf-detail-play {
+    flex: 1 1 auto;
+  }
+  /* Watch together, Play on and More share one row under Play. */
+  [data-register="viewer"] .bf-media-detail .bf-detail-actions .bf-detail-secondary {
+    padding-inline: 8px;
+  }
+  [data-register="viewer"] .bf-media-detail .bf-detail-track {
+    flex: 1 1 100%;
+  }
+  [data-register="viewer"] .bf-media-detail .bf-detail-track > :last-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 }

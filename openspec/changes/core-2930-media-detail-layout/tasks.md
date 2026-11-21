@@ -1,8 +1,8 @@
-- [ ] Web: Back inside the stage; poster top-aligned; less backdrop padding (CORE-2930)
-- [ ] Web: one meta line (date, runtime, rating badge, score) and stream badges from the shown Version, once
-- [ ] Web: categories as plain text links, no "+N"
-- [ ] Web: overview before the actions; actions in playback, tracks and personal groups; progress on Resume
-- [ ] Web: Play on matches the other quiet playback buttons
-- [ ] Vitest, tsc, `npm run check`; strings re-hashed if keys change
-- [ ] Browser check at 1440 and 390 wide
+- [x] Web: Back inside the stage; poster top-aligned; less backdrop padding (CORE-2930)
+- [x] Web: one meta line (date, runtime, rating badge, score) and stream badges from the shown Version, once
+- [x] Web: categories as plain text links, no "+N"
+- [x] Web: overview before the actions; actions in playback, tracks and personal groups; progress on Resume
+- [x] Web: Play on matches the other quiet playback buttons
+- [x] Vitest, tsc, `npm run check`; strings re-hashed if keys change
+- [x] Browser check at 1440 and 390 wide
 - [ ] `openspec archive core-2930-media-detail-layout` after landing

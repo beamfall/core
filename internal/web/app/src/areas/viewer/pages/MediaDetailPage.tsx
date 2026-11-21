@@ -49,7 +49,6 @@ import { castHasDetail, creditsWithJob } from "../lib/people";
 import { streamFacts } from "../lib/streamFacts";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
-  type CategoryFacts,
   type DetailScore,
   detailCreditRows,
   detailFacts,
@@ -294,7 +293,9 @@ export function MediaDetailPage() {
     runtimeSeconds: facts.runtimeSeconds,
     dateField: facts.date?.name,
   });
-  const factItems: FactItem[] = [
+  // One quiet meta line (CORE-2930): text facts, then the shown Version's
+  // stream badges, each once.
+  const metaItems: FactItem[] = [
     {
       key: "year",
       text: facts.date
@@ -304,19 +305,18 @@ export function MediaDetailPage() {
           : "",
     },
     { key: "runtime", text: facts.runtimeSeconds ? formatRuntime(facts.runtimeSeconds, t) : "" },
-    ...streamFacts(versions, {
-      mono: t("trackChannelsMono"),
-      stereo: t("trackChannelsStereo"),
-      channels: (count) => t("trackChannelsCount", { count }),
-    }),
     { key: "rating", text: facts.rating ?? "", variant: "rating" as const },
     ...scoreFact(facts.score, locale, t),
-    ...facts.categories.flatMap((group) => categoryFacts(group, t)),
   ].filter((item) => item.text !== "");
+  const version = shownVersion(versions, trackPicks, profileID, mediaId);
+  const streamBadges = streamFacts(version, {
+    mono: t("trackChannelsMono"),
+    stereo: t("trackChannelsStereo"),
+    channels: (count) => t("trackChannelsCount", { count }),
+  });
+  const categories = facts.categories.filter((group) => group.shown.length > 0);
   const creditRows = media ? detailCreditRows(media.credits) : [];
-  const fileFacts = media
-    ? versionFileFacts(shownVersion(versions, trackPicks, profileID, mediaId), t, locale)
-    : [];
+  const fileFacts = media ? versionFileFacts(version, t, locale) : [];
   const hasDetails = creditRows.length > 0 || fields.length > 0 || fileFacts.length > 0;
   // Until the item arrives, the stage keeps the space its backdrop, facts
   // and overview will take, so they do not push the page down (CORE-2509).
@@ -330,66 +330,103 @@ export function MediaDetailPage() {
   // The nearest container's other items, in its order (CORE-2469).
   const moreIn = context.items.filter((item) => item.id !== mediaId);
 
+  const meta = metaItems.length > 0 || streamBadges.length > 0;
+
   return (
     <AppShell actions={<ViewerActions />}>
-      <article className="bf-detail" aria-labelledby={TITLE_ID}>
-        {back}
+      <article className="bf-detail bf-media-detail" aria-labelledby={TITLE_ID}>
         <section className="bf-detail-stage" data-backdrop={backdrop || reserving ? "" : undefined}>
           {backdrop && <DetailBackdrop key={backdrop} url={backdrop} />}
+          {/* Inside the stage, so the sticky top bar never covers it (CORE-2930). */}
+          {back}
           <div className="bf-detail-lockup" data-wide={still ? "" : undefined}>
             <DetailPoster key={poster} url={poster} mediaClass={card?.mediaClass} wide={!!still} />
             <div className="bf-detail-copy">
-              {parents.length > 0 && (
-                <nav className="bf-detail-parents" aria-label={t("mediaDetailPartOf")}>
-                  <ol>
-                    {parents.map((parent) => (
-                      <li key={parent.id}>
-                        <Link to={`/entity/${encodeURIComponent(parent.id)}`}>{parent.title}</Link>
+              <header className="bf-detail-heading">
+                {parents.length > 0 && (
+                  <nav className="bf-detail-parents" aria-label={t("mediaDetailPartOf")}>
+                    <ol>
+                      {parents.map((parent) => (
+                        <li key={parent.id}>
+                          <Link to={`/entity/${encodeURIComponent(parent.id)}`}>
+                            {parent.title}
+                          </Link>
+                        </li>
+                      ))}
+                    </ol>
+                  </nav>
+                )}
+                {ordered && (
+                  <p className="bf-detail-position">
+                    <Link to={`/entity/${encodeURIComponent(ordered.container.id)}`}>
+                      {ordered.containerText}
+                    </Link>
+                    {ordered.itemText && <span>{` · ${ordered.itemText}`}</span>}
+                  </p>
+                )}
+                <h1 id={TITLE_ID} className="bf-page-title">
+                  {heading}
+                </h1>
+                {people.length > 0 && (
+                  <p className="bf-detail-people">
+                    {people.map((person, index) => (
+                      <span key={person.id}>
+                        {index > 0 && ", "}
+                        <Link to={`/entity/${encodeURIComponent(person.id)}`}>{person.title}</Link>
+                      </span>
+                    ))}
+                  </p>
+                )}
+                {reserving && !meta && <FactsPlaceholder />}
+                {meta && (
+                  <ul className="bf-detail-meta" aria-label={t("mediaDetailFacts")}>
+                    {metaItems.map((item) => (
+                      <li key={item.key} data-variant={item.variant}>
+                        {item.spoken ? (
+                          <>
+                            <span aria-hidden="true">{item.text}</span>
+                            <span className="sr-only">{item.spoken}</span>
+                          </>
+                        ) : (
+                          item.text
+                        )}
                       </li>
                     ))}
-                  </ol>
-                </nav>
-              )}
-              {ordered && (
-                <p className="bf-detail-position">
-                  <Link to={`/entity/${encodeURIComponent(ordered.container.id)}`}>
-                    {ordered.containerText}
-                  </Link>
-                  {ordered.itemText && <span>{` · ${ordered.itemText}`}</span>}
-                </p>
-              )}
-              <h1 id={TITLE_ID} className="bf-page-title">
-                {heading}
-              </h1>
-              {people.length > 0 && (
-                <p className="bf-detail-people">
-                  {people.map((person, index) => (
-                    <span key={person.id}>
-                      {index > 0 && ", "}
-                      <Link to={`/entity/${encodeURIComponent(person.id)}`}>{person.title}</Link>
-                    </span>
-                  ))}
-                </p>
-              )}
-              {reserving && factItems.length === 0 && <FactsPlaceholder />}
-              {factItems.length > 0 && (
-                <ul className="bf-detail-facts" aria-label={t("mediaDetailFacts")}>
-                  {factItems.map((item) => (
-                    <li key={item.key} className="bf-detail-fact" data-variant={item.variant}>
-                      {item.to ? (
-                        <Link to={item.to}>{item.text}</Link>
-                      ) : item.spoken ? (
-                        <>
-                          <span aria-hidden="true">{item.text}</span>
-                          <span className="sr-only">{item.spoken}</span>
-                        </>
-                      ) : (
-                        item.text
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
+                    {streamBadges.map((badge) => (
+                      <li key={badge.key} data-variant="stream">
+                        {badge.text}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {categories.length > 0 && (
+                  <p className="bf-detail-categories">
+                    {categories.map((group, groupIndex) => (
+                      <span key={group.kind}>
+                        {groupIndex > 0 && (
+                          <span className="bf-detail-sep" aria-hidden="true">
+                            {" · "}
+                          </span>
+                        )}
+                        {group.shown.map((credit, index) => (
+                          <span key={credit.entityID || credit.title}>
+                            {index > 0 && ", "}
+                            {credit.entityID ? (
+                              <Link to={`/entity/${encodeURIComponent(credit.entityID)}`}>
+                                {credit.title}
+                              </Link>
+                            ) : (
+                              credit.title
+                            )}
+                          </span>
+                        ))}
+                      </span>
+                    ))}
+                  </p>
+                )}
+              </header>
+              {summary && <DetailOverview key={summary} text={summary} />}
+              {reserving && !summary && <OverviewPlaceholder />}
               {crewLines.length > 0 && (
                 <dl className="bf-detail-crew">
                   {crewLines.map((line) => (
@@ -409,98 +446,98 @@ export function MediaDetailPage() {
                   ))}
                 </dl>
               )}
-              {progress && (
-                <div className="bf-detail-progress">
-                  <div
-                    className="bf-detail-progress-track"
-                    role="progressbar"
-                    aria-label={progressText}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={progress.percent}
-                    aria-valuetext={progressText}
-                  >
-                    <div
-                      className="bf-detail-progress-fill"
-                      style={{ width: `${progress.percent}%` }}
+              <div className="bf-detail-controls">
+                <div className="bf-detail-actions">
+                  {/* The one accent-filled action on the page; Resume carries
+                      the progress along its bottom edge (CORE-2930). */}
+                  <span className="bf-detail-resume">
+                    <button
+                      type="button"
+                      className={`${buttonVariants({ size: "lg" })} bf-detail-play`}
+                      aria-label={t(progress ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", {
+                        title,
+                      })}
+                      onClick={() => watch(false)}
+                      onPointerEnter={preloadPlayer}
+                      onFocus={preloadPlayer}
+                    >
+                      <Play aria-hidden />
+                      {progress ? t("mediaDetailResume") : t("play")}
+                    </button>
+                    {progress && (
+                      <span
+                        className="bf-detail-progress-track"
+                        role="progressbar"
+                        aria-label={progressText}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={progress.percent}
+                        aria-valuetext={progressText}
+                      >
+                        <span
+                          className="bf-detail-progress-fill"
+                          style={{ width: `${progress.percent}%` }}
+                        />
+                      </span>
+                    )}
+                  </span>
+                  {progress && (
+                    <button
+                      type="button"
+                      className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
+                      aria-label={t("mediaDetailStartOverLabel", { title })}
+                      onClick={() => watch(true)}
+                    >
+                      <RotateCcw aria-hidden />
+                      {t("mediaDetailStartOver")}
+                    </button>
+                  )}
+                  {next && (
+                    <Link
+                      to={mediaPath("media", next.id)}
+                      state={mediaLinkState(next, identity)}
+                      className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
+                      aria-label={t("mediaDetailNextLabel", { title: next.title })}
+                    >
+                      {t("mediaDetailNext")}
+                      <ChevronRight aria-hidden />
+                    </Link>
+                  )}
+                  {mediaId && (
+                    <WatchTogetherButton
+                      mediaID={mediaId}
+                      title={title}
+                      positionSeconds={progress?.positionSeconds}
                     />
-                  </div>
-                  <span aria-hidden>{progressText}</span>
+                  )}
+                  {mediaId && (
+                    <PlayOnButton
+                      mediaID={mediaId}
+                      title={title}
+                      positionSeconds={progress?.positionSeconds}
+                    />
+                  )}
+                  {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} />}
                 </div>
-              )}
-              <div className="bf-detail-actions">
-                {/* The one accent-filled action on the page. */}
-                <button
-                  type="button"
-                  className={`${buttonVariants({ size: "lg" })} bf-detail-play`}
-                  aria-label={t(progress ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", {
-                    title,
-                  })}
-                  onClick={() => watch(false)}
-                  onPointerEnter={preloadPlayer}
-                  onFocus={preloadPlayer}
-                >
-                  <Play aria-hidden />
-                  {progress ? t("mediaDetailResume") : t("play")}
-                </button>
-                {progress && (
-                  <button
-                    type="button"
-                    className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
-                    aria-label={t("mediaDetailStartOverLabel", { title })}
-                    onClick={() => watch(true)}
-                  >
-                    <RotateCcw aria-hidden />
-                    {t("mediaDetailStartOver")}
-                  </button>
-                )}
-                {mediaId && (
-                  <WatchTogetherButton
+                {media && (
+                  <MediaTrackPickers
                     mediaID={mediaId}
-                    title={title}
-                    positionSeconds={progress?.positionSeconds}
+                    versions={versions}
+                    picks={trackPicks}
+                    onPick={setTrackPicks}
                   />
                 )}
-                {next && (
-                  <Link
-                    to={mediaPath("media", next.id)}
-                    state={mediaLinkState(next, identity)}
-                    className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
-                    aria-label={t("mediaDetailNextLabel", { title: next.title })}
-                  >
-                    {t("mediaDetailNext")}
-                    <ChevronRight aria-hidden />
-                  </Link>
-                )}
+                {/* The Profile's own state for this item (CORE-2436), keyed so a
+                    route change to another item starts from that item's state. */}
                 {mediaId && (
-                  <PlayOnButton
-                    mediaID={mediaId}
-                    title={title}
-                    positionSeconds={progress?.positionSeconds}
+                  <ItemActions
+                    key={mediaId}
+                    target={{ mediaID: mediaId }}
+                    isAudio={(media?.mediaClass ?? card?.mediaClass) === "audio"}
+                    className="bf-detail-item-actions"
                   />
                 )}
-                {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} />}
               </div>
-              {media && (
-                <MediaTrackPickers
-                  mediaID={mediaId}
-                  versions={versions}
-                  picks={trackPicks}
-                  onPick={setTrackPicks}
-                />
-              )}
-              {/* The Profile's own state for this item (CORE-2436), keyed so a
-                  route change to another item starts from that item's state. */}
-              {mediaId && (
-                <ItemActions
-                  key={mediaId}
-                  target={{ mediaID: mediaId }}
-                  isAudio={(media?.mediaClass ?? card?.mediaClass) === "audio"}
-                  className="bf-detail-item-actions"
-                />
-              )}
-              {summary && <DetailOverview key={summary} text={summary} />}
-              {reserving && !summary && <OverviewPlaceholder />}
               {status === "failed" && !media && retry}
             </div>
           </div>
@@ -613,35 +650,12 @@ function orderedPosition(
   return { container, containerText, itemText };
 }
 
-/**
- * One chip of the facts row; `spoken` replaces `text` for assistive
- * technology, and a chip with `to` is a link to that page.
- */
+/** One fact of the meta line; `spoken` replaces `text` for assistive technology. */
 interface FactItem {
   key: string;
   text: string;
-  variant?: "rating" | "score" | "link";
+  variant?: "rating" | "score";
   spoken?: string;
-  to?: string;
-}
-
-/** One category kind's chips, each linked to its Entity, then "+N" for the rest (CORE-2504). */
-function categoryFacts(group: CategoryFacts, t: ReturnType<typeof useT>): FactItem[] {
-  const chips: FactItem[] = group.shown.map((credit) => ({
-    key: `category:${group.kind}:${credit.entityID || credit.title}`,
-    text: credit.title,
-    ...(credit.entityID
-      ? { variant: "link" as const, to: `/entity/${encodeURIComponent(credit.entityID)}` }
-      : {}),
-  }));
-  if (group.more > 0) {
-    chips.push({
-      key: `category:${group.kind}:more`,
-      text: `+${group.more}`,
-      spoken: t("mediaDetailMoreCount", { count: group.more }),
-    });
-  }
-  return chips;
 }
 
 /** The community score chip (CORE-2399): "★ 7.3", spoken with its source and vote count. */
@@ -756,13 +770,13 @@ function DetailPoster({
   );
 }
 
-/** The facts row's space while the item loads. */
+/** The meta line's space while the item loads. */
 function FactsPlaceholder() {
   return (
-    <div className="bf-detail-facts" aria-hidden>
-      <Skeleton className="h-6 w-12" />
-      <Skeleton className="h-6 w-16" />
-      <Skeleton className="h-6 w-20" />
+    <div className="bf-detail-meta" aria-hidden>
+      <Skeleton className="h-5 w-12" />
+      <Skeleton className="h-5 w-16" />
+      <Skeleton className="h-5 w-20" />
     </div>
   );
 }
@@ -780,7 +794,7 @@ function OverviewPlaceholder() {
 
 /**
  * The page before anything is known, in the stage's shape (CORE-2509):
- * backdrop space, poster, title, facts, actions, item actions and overview,
+ * backdrop space, poster, title, meta line, overview, actions and item actions,
  * so the stage does not grow when the item paints.
  */
 function DetailSkeleton({ label }: { label: string }) {
@@ -797,9 +811,9 @@ function DetailSkeleton({ label }: { label: string }) {
         <div className="bf-detail-copy" aria-hidden>
           <Skeleton className="h-9 w-3/4" />
           <FactsPlaceholder />
+          <OverviewPlaceholder />
           <Skeleton className="h-11 w-28" />
           <Skeleton className="h-9 w-48" />
-          <OverviewPlaceholder />
         </div>
       </div>
     </div>
