@@ -11,7 +11,9 @@ import (
 
 // waitForProcessExit blocks until pid, an unreaped child of this process, has
 // exited. kqueue may report ESRCH once the child is already a zombie. An
-// unreaped child's pid cannot be reused, so ESRCH means it has already exited.
+// unreaped child's pid cannot be reused, so ESRCH from a pid that is still a
+// zombie means it has already exited; ESRCH from a pid that is gone, or was
+// never a child, stays an error (CORE-0661).
 func waitForProcessExit(pid int) error {
 	if pid < 0 {
 		return syscall.EINVAL
@@ -34,7 +36,7 @@ func waitForProcessExit(pid int) error {
 			continue
 		}
 		if err == syscall.ESRCH {
-			return nil // already exited before the watch was registered
+			return exitedBeforeWatch(pid)
 		}
 		if err != nil {
 			return err
@@ -50,10 +52,21 @@ func waitForProcessExit(pid int) error {
 			if errno := syscall.Errno(eventErrno); errno != syscall.ESRCH {
 				return errno
 			}
-			return nil // already exited before the watch was registered
+			return exitedBeforeWatch(pid)
 		}
 		return nil
 	}
+}
+
+// exitedBeforeWatch reports whether a pid kqueue answered ESRCH for exited
+// before the watch was registered: it is then an unreaped zombie. Anything
+// else, such as a pid that no longer exists, keeps the ESRCH.
+func exitedBeforeWatch(pid int) error {
+	proc, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil || int(proc.Proc.P_pid) != pid || proc.Proc.P_stat != zombieState {
+		return syscall.ESRCH
+	}
+	return nil
 }
 
 // groupQuietProbes is how many listings in a row must find no live member
