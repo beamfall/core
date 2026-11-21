@@ -311,33 +311,54 @@ func (s *Store) trashedMediaSQL(ctx context.Context, filter LibraryFilter) ([]Tr
 	return entries, nil
 }
 
-// hideUnseenMergeSurvivors drops the merge explanation from an entry whose
-// survivor is above the caller's certification ceiling, so trash never names
-// a Media the caller cannot see (CORE-2916). A Version merge never runs in an
+// hideUnseenMergeSurvivors redacts the survivor of a merge whose survivor is
+// above the caller's certification ceiling, so trash never names a Media the
+// caller cannot see (CORE-2916). The entry keeps its merge batch: it is still
+// a merge to undo, not a deletion to restore. A Version merge never runs in an
 // encrypted Library, so the survivor is always in the shared catalog.
 func (s *Store) hideUnseenMergeSurvivors(ctx context.Context, entries []TrashedMedia, filter LibraryFilter) error {
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	if certClause == "" {
 		return nil
 	}
+	unique := map[MediaID]bool{}
 	survivors := []any{}
 	for _, entry := range entries {
-		if entry.Merge != nil {
+		if entry.Merge != nil && !unique[entry.Merge.Survivor] {
+			unique[entry.Merge.Survivor] = true
 			survivors = append(survivors, entry.Merge.Survivor)
 		}
 	}
-	if len(survivors) == 0 {
-		return nil
+	seen := map[MediaID]bool{}
+	for start := 0; start < len(survivors); start += survivorLookupChunk {
+		chunk := survivors[start:min(start+survivorLookupChunk, len(survivors))]
+		if err := s.visibleSurvivors(ctx, chunk, certClause, certArgs, seen); err != nil {
+			return err
+		}
 	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(survivors)), ", ")
+	for i := range entries {
+		if merge := entries[i].Merge; merge != nil && !seen[merge.Survivor] {
+			redacted := *merge
+			redacted.Survivor, redacted.SurvivorTitle = "", ""
+			entries[i].Merge = &redacted
+		}
+	}
+	return nil
+}
+
+// survivorLookupChunk bounds the survivor ids bound in one query, well under
+// SQLite's variable limit whatever the certification clause adds.
+const survivorLookupChunk = 500
+
+func (s *Store) visibleSurvivors(ctx context.Context, ids []any, certClause string, certArgs []any, seen map[MediaID]bool) error {
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(ids)), ", ")
+	args := append(append([]any{}, ids...), certArgs...)
 	rows, err := s.catalogR.QueryContext(ctx,
-		`SELECT m.id FROM media m WHERE m.id IN (`+placeholders+`)`+certClause,
-		append(survivors, certArgs...)...)
+		`SELECT m.id FROM media m WHERE m.id IN (`+placeholders+`)`+certClause, args...)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	seen := map[MediaID]bool{}
 	for rows.Next() {
 		var id MediaID
 		if err := rows.Scan(&id); err != nil {
@@ -345,15 +366,7 @@ func (s *Store) hideUnseenMergeSurvivors(ctx context.Context, entries []TrashedM
 		}
 		seen[id] = true
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for i := range entries {
-		if entries[i].Merge != nil && !seen[entries[i].Merge.Survivor] {
-			entries[i].Merge = nil
-		}
-	}
-	return nil
+	return rows.Err()
 }
 
 // purgeableTrashedMediaSelect is the inner selection of Media eligible for a

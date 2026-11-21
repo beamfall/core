@@ -278,12 +278,17 @@ function MergedSection({
                 {entries.map((entry) => entry.title).join(", ")}
               </TableCell>
               <TableCell>
-                <Link
-                  to={itemLink(merge.survivorID)}
-                  className="underline-offset-2 hover:underline"
-                >
-                  {merge.survivorTitle || merge.survivorID}
-                </Link>
+                {merge.survivorID ? (
+                  <Link
+                    to={itemLink(merge.survivorID)}
+                    className="underline-offset-2 hover:underline"
+                  >
+                    {merge.survivorTitle || merge.survivorID}
+                  </Link>
+                ) : (
+                  // The server redacts a survivor above this Profile's ratings ceiling.
+                  t("trashMergedHiddenSurvivor")
+                )}
                 <div className="text-xs text-muted-foreground">{t("trashMergedAsVersion")}</div>
               </TableCell>
               <TableCell className="manage-cell-num">{formatDateTime(merge.mergedAt)}</TableCell>
@@ -294,7 +299,8 @@ function MergedSection({
                   size="sm"
                   disabled={busy !== ""}
                   aria-label={t("trashUndoMergeNamed", {
-                    title: merge.survivorTitle || merge.survivorID,
+                    title:
+                      merge.survivorTitle || merge.survivorID || t("trashMergedHiddenSurvivor"),
                   })}
                   onClick={() => onUndo(merge.batchID)}
                 >
@@ -324,21 +330,29 @@ function DuplicateCopiesSection({ reloadKey }: { reloadKey: number }) {
   const [sets, setSets] = useState<DuplicateCopySet[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const loadGeneration = useRef(0);
 
+  // A generation guard keeps a slower, older request (from before an undone
+  // merge) from overwriting the latest report.
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     setError("");
     setLoading(true);
     try {
-      setSets(await fetchDuplicateCopies());
+      const next = await fetchDuplicateCopies();
+      if (loadGeneration.current === generation) setSets(next);
     } catch {
-      setError(t("duplicateCopiesUnavailable"));
+      if (loadGeneration.current === generation) setError(t("duplicateCopiesUnavailable"));
     } finally {
-      setLoading(false);
+      if (loadGeneration.current === generation) setLoading(false);
     }
   }, [t]);
 
   useEffect(() => {
     void load();
+    return () => {
+      loadGeneration.current += 1;
+    };
   }, [load, reloadKey]);
 
   return (

@@ -177,6 +177,65 @@ describe("TrashPage", () => {
     await waitFor(() => expect(fetchDuplicateCopies).toHaveBeenCalledTimes(2));
   });
 
+  it("keeps a merge with a redacted survivor as a merge, without a link", async () => {
+    const merge = {
+      batchID: "batch-2",
+      survivorID: "",
+      survivorTitle: "",
+      mergedAt: "2026-11-20T10:00:00Z",
+    };
+    vi.mocked(fetchTrashList).mockResolvedValue([
+      { id: "m-a", title: "Folded copy", trashedAt: merge.mergedAt, mergedInto: merge },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText("Another item")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Restore" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Undo merge into Another item" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the latest duplicate report when an older request resolves last", async () => {
+    const merge = {
+      batchID: "batch-1",
+      survivorID: "media-keep",
+      survivorTitle: "Harbour Lights",
+      mergedAt: "2026-11-20T10:00:00Z",
+    };
+    vi.mocked(fetchTrashList).mockResolvedValue([
+      { id: "m-a", title: "Harbour Lights copy", trashedAt: merge.mergedAt, mergedInto: merge },
+    ]);
+    const set = (path: string) => ({
+      mediaID: "media-keep",
+      title: "Harbour Lights",
+      libraryID: "lib-1",
+      copies: [
+        { path, sizeBytes: 1, label: "" },
+        { path: `${path}.2`, sizeBytes: 1, label: "" },
+      ],
+    });
+    let resolveStale: (value: ReturnType<typeof set>[]) => void = () => {};
+    vi.mocked(fetchDuplicateCopies)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveStale = resolve;
+          }),
+      )
+      .mockResolvedValueOnce([set("/media/after-undo.mkv")]);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "Undo merge into Harbour Lights" }));
+    await waitFor(() => expect(fetchDuplicateCopies).toHaveBeenCalledTimes(2));
+    resolveStale([set("/media/before-undo.mkv")]);
+    await user.click(screen.getByText("Duplicate copies on disk"));
+
+    expect(await screen.findByText("/media/after-undo.mkv")).toBeInTheDocument();
+    expect(screen.queryByText("/media/before-undo.mkv")).not.toBeInTheDocument();
+  });
+
   it("says no deleted items, not an empty Trash, when only merges remain", async () => {
     const merge = {
       batchID: "batch-1",

@@ -191,8 +191,8 @@ func rateMedia(t *testing.T, st *Store, id MediaID, value string) {
 }
 
 // TestMergeSurvivorAboveTheCeilingIsNotNamed: a caller whose certification
-// ceiling hides the survivor sees the folded Media without the merge
-// explanation (CORE-2916).
+// ceiling hides the survivor still sees the folded Media as a merge, with the
+// survivor redacted (CORE-2916).
 func TestMergeSurvivorAboveTheCeilingIsNotNamed(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()
@@ -207,8 +207,8 @@ func TestMergeSurvivorAboveTheCeilingIsNotNamed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Merge != nil {
-		t.Fatalf("trash under the ceiling = %+v, want the entry without its survivor", entries)
+	if len(entries) != 1 || entries[0].Merge == nil || entries[0].Merge.Survivor != "" || entries[0].Merge.SurvivorTitle != "" || entries[0].Merge.BatchID == "" {
+		t.Fatalf("trash under the ceiling = %+v, want the merge batch with its survivor redacted", entries)
 	}
 	open := LibraryFilter{Revealed: true, AllLibraries: true, Certification: []CertificationConstraint{{PluginID: "photos", Allowed: []string{"low", "high"}}}}
 	if entries, err = st.TrashedMediaList(ctx, open); err != nil || len(entries) != 1 || entries[0].Merge == nil || entries[0].Merge.Survivor != keep {
