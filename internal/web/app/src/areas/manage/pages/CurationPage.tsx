@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { ArrowDown, ArrowUp } from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import {
   EmptyLine,
   ErrorLine,
@@ -6,7 +8,6 @@ import {
   ManageTable,
   StatusBadge,
 } from "@/components/beamfall/workbench";
-import { Tabs } from "@/components/ui/astryx-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { displayString } from "@/lib/display";
 import {
   fetchEntity,
   fetchEntityRelations,
@@ -25,524 +27,654 @@ import {
   fetchMediaFiles,
   fetchMediaRelations,
   linkMediaRelation,
+  searchResult,
   upsertEntityRelation,
 } from "@/lib/graphql";
 import type {
-  EntityFieldInfo,
   EntityRelationDetail,
   MediaFileDetail,
   MediaRelationDetail,
+  SearchResultItem,
 } from "@/lib/graphql/types";
-import { useT } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n";
 
 type SubjectType = "media" | "entity";
 
-// A loaded curation subject: a Media or Entity, with the substrate's
-// reveal-filtered reads materialized. Relations are only meaningful for an
-// Entity (entityRelations); files/extras only for a Media. The wire entity is
-// Media; "kind" is a plugin display discriminant, never a schema type
-// (HARD invariant #1/#2).
-type Subject = {
-  type: SubjectType;
+// Manage › Versions & links (CORE-2913; WEB-5B, ADR-0001/0005/0009/0061). One
+// page for the structure around a catalog subject that no other Manage page
+// edits: a Media item's backing files, its Extras and alternate Editions
+// (mediaFiles / mediaRelations / linkMediaRelation), and the ordered items
+// linked to an Entity (entityRelations / upsertEntityRelation). The subject is
+// found by catalog search and kept in the URL (?open=<id>&as=media|entity) so a
+// reload reopens it. Fields are edited on Item metadata, not here. Every write
+// is manager-gated and reveal-filtered server-side; this surface is only an
+// affordance. Server strings render as React text only (never HTML, ADR-0012
+// §5). "kind" is a plugin display discriminant, never a schema type.
+export function CurationPage() {
+  const { t } = useI18n();
+  const [params, setParams] = useSearchParams();
+  const openID = params.get("open")?.trim() ?? "";
+  const openType: SubjectType = params.get("as") === "entity" ? "entity" : "media";
+
+  const open = (item: SearchResultItem) => {
+    setParams({ open: item.id, as: item.entityKind ? "entity" : "media" });
+  };
+  const close = () => setParams({});
+
+  if (!openID) {
+    return (
+      <ManageSection title={t("curationFindHeading")} lead={t("curationFindLead")}>
+        <ul className="mb-4 list-disc space-y-1 pl-5 text-sm text-[var(--text-muted)]">
+          <li>{t("curationJobFiles")}</li>
+          <li>{t("curationJobLinks")}</li>
+          <li>{t("curationJobOrder")}</li>
+        </ul>
+        <ItemSearch
+          id="curation-find"
+          label={t("curationSearchLabel")}
+          actionLabel={t("curationOpen")}
+          onPick={open}
+        />
+      </ManageSection>
+    );
+  }
+  return openType === "entity" ? (
+    <EntityView key={openID} id={openID} onClose={close} />
+  ) : (
+    <MediaView key={openID} id={openID} onClose={close} />
+  );
+}
+
+// --- Catalog search picker ---------------------------------------------------
+
+// Keyword catalog search (reveal-filtered server-side) with one action per
+// result. `mediaOnly` hides Entity rows where only a Media item can be linked.
+function ItemSearch({
+  id,
+  label,
+  actionLabel,
+  onPick,
+  mediaOnly = false,
+  excludeID,
+}: {
   id: string;
+  label: string;
+  actionLabel: string;
+  onPick: (item: SearchResultItem) => void | Promise<void>;
+  mediaOnly?: boolean;
+  excludeID?: string;
+}) {
+  const { t, displayLocale } = useI18n();
+  const [term, setTerm] = useState("");
+  const [results, setResults] = useState<SearchResultItem[] | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const request = useRef<AbortController | null>(null);
+
+  useEffect(() => () => request.current?.abort(), []);
+
+  const onSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const query = term.trim();
+    if (!query) return;
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    setError("");
+    setBusy(true);
+    try {
+      const response = await searchResult(query, "keyword", controller.signal, { offset: 0 });
+      if (controller.signal.aborted) return;
+      setResults(
+        response.items.filter((item) => item.id !== excludeID && !(mediaOnly && item.entityKind)),
+      );
+    } catch {
+      if (controller.signal.aborted) return;
+      setResults(null);
+      setError(t("curationSearchFailed"));
+    } finally {
+      if (!controller.signal.aborted) setBusy(false);
+    }
+  };
+
+  const kindLabel = (item: SearchResultItem) => {
+    if (item.entityKind) {
+      return displayString(item.entityKindDisplayName, displayLocale) || t("curationKindEntity");
+    }
+    return t("curationKindMedia");
+  };
+
+  return (
+    <div>
+      <form className="flex flex-wrap items-end gap-3" onSubmit={onSubmit}>
+        <div className="min-w-48 grow space-y-1">
+          <Label htmlFor={id}>{label}</Label>
+          <Input
+            id={id}
+            type="search"
+            value={term}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={t("curationSearchPlaceholder")}
+            onChange={(e) => setTerm(e.target.value)}
+          />
+        </div>
+        <Button type="submit" variant="outline" disabled={!term.trim() || busy}>
+          {t("curationSearchSubmit")}
+        </Button>
+      </form>
+      <ErrorLine message={error} />
+      {results && results.length === 0 && <EmptyLine message={t("curationSearchNoResults")} />}
+      {results && results.length > 0 && (
+        <ul className="mt-3 divide-y divide-[var(--line-soft)] rounded-md border border-[var(--line-soft)]">
+          {results.map((item) => (
+            <li key={item.id} className="flex items-center justify-between gap-3 px-3 py-2">
+              <div className="min-w-0">
+                <div className="break-words text-sm font-medium text-[var(--text-primary)]">
+                  {item.title || item.id}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
+                  <StatusBadge state={item.entityKind ? "cyan" : "neutral"}>
+                    {kindLabel(item)}
+                  </StatusBadge>
+                  {item.year ? <span>{item.year}</span> : null}
+                  {item.libraryTitle ? <span>{item.libraryTitle}</span> : null}
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label={`${actionLabel}: ${item.title || item.id}`}
+                onClick={() => void onPick(item)}
+              >
+                {actionLabel}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// --- Open subject header -------------------------------------------------------
+
+function SubjectHeader({
+  title,
+  kind,
+  editHref,
+  onClose,
+}: {
   title: string;
   kind: string;
-  fields: EntityFieldInfo[];
-  relations: EntityRelationDetail[];
+  editHref?: string;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <ManageSection>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="break-words text-base font-semibold text-[var(--text-primary)]">
+            {title}
+          </h2>
+          <StatusBadge state="cyan">{kind}</StatusBadge>
+        </div>
+        <div className="flex items-center gap-2">
+          {editHref && (
+            <Button asChild variant="outline" size="sm">
+              <Link to={editHref}>{t("curationEditDetails")}</Link>
+            </Button>
+          )}
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+            {t("curationChooseAnother")}
+          </Button>
+        </div>
+      </div>
+    </ManageSection>
+  );
+}
+
+function LoadState({
+  state,
+  onClose,
+}: {
+  state: "loading" | "missing" | "failed";
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  if (state === "loading") return <EmptyLine message={t("curationLoading")} />;
+  return (
+    <ManageSection>
+      {state === "missing" ? (
+        <EmptyLine message={t("curationNotFound")} />
+      ) : (
+        <ErrorLine message={t("curationUnavailable")} />
+      )}
+      <Button type="button" variant="outline" size="sm" className="mt-3" onClick={onClose}>
+        {t("curationChooseAnother")}
+      </Button>
+    </ManageSection>
+  );
+}
+
+// --- Media item: files, extras, editions ---------------------------------------
+
+type MediaDetail = {
+  title: string;
   files: MediaFileDetail[];
   extras: MediaRelationDetail[];
+  editions: MediaRelationDetail[];
 };
 
-// Manage Curation editor (WEB-5B, ADR-0001/0005/0061): the generic,
-// domain-agnostic curation surface. Open a Media or Entity by ID and review its
-// plugin-declared fields, the ordered relation rows (reorderable via
-// upsertEntityRelation), the backing Versions/Parts (mediaFiles), and the
-// Extras/Editions relations (mediaRelations / linkMediaRelation). Every write is
-// manager-gated and reveal-filtered server-side; this surface is only an
-// affordance. Server strings render as React text only (never HTML, ADR-0012 §5).
-export function CurationPage() {
-  const t = useT();
-  const [subjectType, setSubjectType] = useState<SubjectType>("media");
-  const [subjectID, setSubjectID] = useState("");
-  const [subject, setSubject] = useState<Subject | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState("");
+function MediaView({ id, onClose }: { id: string; onClose: () => void }) {
+  const { t } = useI18n();
+  const [detail, setDetail] = useState<MediaDetail | "loading" | "failed">("loading");
+  const [saveError, setSaveError] = useState("");
 
-  const load = async (type: SubjectType, id: string) => {
-    setError("");
-    if (type === "entity") {
-      const entity = await fetchEntity(id);
-      if (!entity) {
-        setSubject(null);
-        setLoaded(true);
-        return;
-      }
-      const relations = await fetchEntityRelations(id);
-      setSubject({
-        type,
-        id,
-        title: entity.title,
-        kind: entity.kind,
-        fields: entity.fields,
-        relations,
-        files: [],
-        extras: [],
-      });
-      setLoaded(true);
-      return;
-    }
-    // Media subject: fields + backing files + Extras/Editions relations.
+  const load = useCallback(async () => {
     const [fields, files, extras, editions] = await Promise.all([
       fetchMediaFields(id),
       fetchMediaFiles(id),
       fetchMediaRelations(id, "extra-of"),
       fetchMediaRelations(id, "edition-of"),
     ]);
-    const title = fields.find((f) => f.name === "title")?.value ?? id;
-    setSubject({
-      type,
-      id,
-      title,
-      kind: "",
-      fields,
-      relations: [],
-      files,
-      extras: [...extras, ...editions],
-    });
-    setLoaded(true);
-  };
+    const title = fields.find((f) => f.name === "title")?.value || id;
+    setDetail({ title, files, extras, editions });
+  }, [id]);
 
-  const onLoad = async () => {
-    const id = subjectID.trim();
-    if (!id) return;
+  useEffect(() => {
+    load().catch(() => setDetail("failed"));
+  }, [load]);
+
+  if (detail === "loading" || detail === "failed") {
+    return <LoadState state={detail} onClose={onClose} />;
+  }
+
+  // The picked item points AT the open one: from = extra/edition, to = this
+  // item. That is the direction scan writes and mediaRelations reads.
+  const link = async (relation: "extra-of" | "edition-of", picked: SearchResultItem) => {
+    setSaveError("");
     try {
-      await load(subjectType, id);
+      await linkMediaRelation(picked.id, relation, id);
+      await load();
     } catch {
-      setSubject(null);
-      setLoaded(true);
-      setError(t("curationUnavailable"));
+      setSaveError(t("curationSaveFailed"));
     }
-  };
-
-  const reload = () => {
-    if (subject)
-      void load(subject.type, subject.id).catch(() => setError(t("curationUnavailable")));
   };
 
   return (
     <div className="space-y-4">
-      <ManageSection>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="curation-type">{t("curationSubjectType")}</Label>
-            <Select value={subjectType} onValueChange={(v) => setSubjectType(v as SubjectType)}>
-              <SelectTrigger id="curation-type" className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="media">{t("curationSubjectMedia")}</SelectItem>
-                <SelectItem value="entity">{t("curationSubjectEntity")}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grow space-y-1">
-            <Label htmlFor="curation-id">{t("curationSubjectID")}</Label>
-            <Input
-              id="curation-id"
-              value={subjectID}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => setSubjectID(e.target.value)}
-            />
-          </div>
-          <Button type="button" variant="outline" onClick={onLoad} disabled={!subjectID.trim()}>
-            {t("fieldLocksLoad")}
-          </Button>
-        </div>
-        <ErrorLine message={error} />
-        {loaded && !subject && (
-          <p className="mt-3 text-sm text-muted-foreground">{t("curationNotFound")}</p>
+      <SubjectHeader
+        title={detail.title}
+        kind={t("curationKindMedia")}
+        editHref={`/manage/items/${encodeURIComponent(id)}`}
+        onClose={onClose}
+      />
+      <ErrorLine message={saveError} />
+
+      <ManageSection
+        title={t("curationFilesHeading")}
+        lead={t("curationFilesLead")}
+        actions={<StatusBadge state="neutral">{detail.files.length}</StatusBadge>}
+      >
+        {detail.files.length === 0 ? (
+          <EmptyLine message={t("curationNoFiles")} />
+        ) : (
+          <ManageTable>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("curationVersionLabel")}</TableHead>
+                <TableHead>{t("curationPartOrdinal")}</TableHead>
+                <TableHead>{t("curationFilePath")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {detail.files.map((file) => (
+                <TableRow key={`${file.versionLabel}-${file.partOrdinal}-${file.path}`}>
+                  <TableCell className="manage-cell-primary">
+                    {file.versionLabel || t("curationDefaultVersion")}
+                  </TableCell>
+                  <TableCell className="manage-cell-num text-[var(--text-muted)]">
+                    {file.partOrdinal}
+                  </TableCell>
+                  <TableCell className="manage-cell-num break-all text-[var(--text-muted)]">
+                    {file.path}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </ManageTable>
         )}
-        {!loaded && <EmptyLine message={t("curationEmpty")} />}
       </ManageSection>
 
-      {subject && (
-        <>
-          <FieldsSection subject={subject} />
-          <RelationsSection subject={subject} onError={setError} onChange={reload} />
-          <FilesSection subject={subject} onError={setError} onChange={reload} />
-        </>
-      )}
+      <LinkedMediaSection
+        id="curation-extra"
+        title={t("curationExtrasHeading")}
+        lead={t("curationExtrasLead")}
+        empty={t("curationNoExtras")}
+        addLabel={t("curationAddExtra")}
+        actionLabel={t("curationLinkAsExtra")}
+        rows={detail.extras}
+        subjectID={id}
+        onPick={(picked) => link("extra-of", picked)}
+      />
+      <LinkedMediaSection
+        id="curation-edition"
+        title={t("curationEditionsHeading")}
+        lead={t("curationEditionsLead")}
+        empty={t("curationNoEditions")}
+        addLabel={t("curationAddEdition")}
+        actionLabel={t("curationLinkAsEdition")}
+        rows={detail.editions}
+        subjectID={id}
+        onPick={(picked) => link("edition-of", picked)}
+      />
     </div>
   );
 }
 
-// --- Fields ---------------------------------------------------------------
-
-function FieldsSection({ subject }: { subject: Subject }) {
-  const t = useT();
+function LinkedMediaSection({
+  id,
+  title,
+  lead,
+  empty,
+  addLabel,
+  actionLabel,
+  rows,
+  subjectID,
+  onPick,
+}: {
+  id: string;
+  title: string;
+  lead: string;
+  empty: string;
+  addLabel: string;
+  actionLabel: string;
+  rows: MediaRelationDetail[];
+  subjectID: string;
+  onPick: (picked: SearchResultItem) => Promise<void>;
+}) {
+  const [adding, setAdding] = useState(false);
   return (
     <ManageSection
-      title={t("curationFieldsHeading")}
+      title={title}
+      lead={lead}
       actions={
-        <StatusBadge state="cyan">
-          {subject.kind ||
-            t(subject.type === "media" ? "curationSubjectMedia" : "curationSubjectEntity")}
-        </StatusBadge>
+        <>
+          <StatusBadge state="neutral">{rows.length}</StatusBadge>
+          {!adding && (
+            <Button type="button" size="sm" variant="outline" onClick={() => setAdding(true)}>
+              {addLabel}
+            </Button>
+          )}
+        </>
       }
     >
-      <div className="mb-2 text-sm font-semibold text-[var(--text-primary)]">{subject.title}</div>
-      {subject.fields.length === 0 ? (
-        <EmptyLine message={t("curationNoFields")} />
+      {rows.length === 0 ? (
+        <EmptyLine message={empty} />
       ) : (
-        <ManageTable>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("curationFieldName")}</TableHead>
-              <TableHead>{t("curationFieldType")}</TableHead>
-              <TableHead>{t("curationFieldValue")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {subject.fields.map((field) => (
-              <TableRow key={field.name}>
-                <TableCell className="manage-cell-primary">{field.name}</TableCell>
-                <TableCell className="text-[var(--text-muted)] manage-cell-num">
-                  {field.type}
-                </TableCell>
-                <TableCell className="text-[var(--text-muted)]">{field.value}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </ManageTable>
+        <ul className="divide-y divide-[var(--line-soft)]">
+          {rows.map((row) => (
+            <li key={row.media.id} className="py-2 text-sm">
+              <Link
+                className="manage-cell-primary hover:underline"
+                to={`/manage/curation?open=${encodeURIComponent(row.media.id)}&as=media`}
+              >
+                {row.media.title || row.media.id}
+              </Link>
+              {row.media.year ? (
+                <span className="ml-2 text-[var(--text-muted)]">{row.media.year}</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+      {adding && (
+        <div className="mt-3 border-t border-[var(--line-soft)] pt-3">
+          <ItemSearch
+            id={id}
+            label={addLabel}
+            actionLabel={actionLabel}
+            mediaOnly
+            excludeID={subjectID}
+            onPick={async (picked) => {
+              await onPick(picked);
+              setAdding(false);
+            }}
+          />
+        </div>
       )}
     </ManageSection>
   );
 }
 
-// --- Ordered relations (Entity subjects) ----------------------------------
+// --- Entity: ordered linked items ----------------------------------------------
 
-function RelationsSection({
-  subject,
-  onError,
-  onChange,
-}: {
-  subject: Subject;
-  onError: (message: string) => void;
-  onChange: () => void;
-}) {
-  const t = useT();
-  const [relation, setRelation] = useState("");
-  const [targetID, setTargetID] = useState("");
-  const [order, setOrder] = useState("");
+type EntityDetail = { title: string; kind: string; rows: EntityRelationDetail[] };
 
-  if (subject.type !== "entity") {
-    return (
-      <ManageSection title={t("curationRelationsHeading")}>
-        <EmptyLine message={t("curationRelationsEntityOnly")} />
-      </ManageSection>
-    );
-  }
+function targetID(row: EntityRelationDetail): string {
+  return (row.targetKind === "entity" ? row.entity?.id : row.media?.id) ?? "";
+}
+
+function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
+  const { t } = useI18n();
+  const [detail, setDetail] = useState<EntityDetail | "loading" | "missing" | "failed">("loading");
+  const [saveError, setSaveError] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [newRelation, setNewRelation] = useState("");
+
+  const load = useCallback(async () => {
+    const entity = await fetchEntity(id);
+    if (!entity) {
+      setDetail("missing");
+      return;
+    }
+    const rows = await fetchEntityRelations(id);
+    setDetail({ title: entity.title || id, kind: entity.kind, rows });
+  }, [id]);
+
+  useEffect(() => {
+    load().catch(() => setDetail("failed"));
+  }, [load]);
+
+  if (typeof detail === "string") return <LoadState state={detail} onClose={onClose} />;
+
+  const rows = detail.rows;
+  const relationNames = [...new Set(rows.map((row) => row.relation))];
+  const relation = newRelation.trim() || relationNames[0] || "";
 
   // Reorder swaps this row's sortOrder with its neighbour by re-upserting both,
-  // keyed by relation+target. The server is the order authority; we reload after.
+  // keyed by relation+target. The server is the order authority; reload after.
   const move = async (index: number, dir: -1 | 1) => {
-    onError("");
-    const rows = subject.relations;
+    setSaveError("");
     const a = rows[index];
     const b = rows[index + dir];
     if (!a || !b) return;
     const aOrder = a.sortOrder ?? index;
     const bOrder = b.sortOrder ?? index + dir;
     try {
-      await upsertEntityRelation({
-        fromEntityID: subject.id,
-        relation: a.relation,
-        toEntityID: a.targetKind === "entity" ? a.entity?.id : null,
-        toMediaID: a.targetKind === "media" ? a.media?.id : null,
-        sortOrder: bOrder,
-      });
-      await upsertEntityRelation({
-        fromEntityID: subject.id,
-        relation: b.relation,
-        toEntityID: b.targetKind === "entity" ? b.entity?.id : null,
-        toMediaID: b.targetKind === "media" ? b.media?.id : null,
-        sortOrder: aOrder,
-      });
-      onChange();
+      for (const [row, sortOrder] of [
+        [a, bOrder],
+        [b, aOrder],
+      ] as const) {
+        await upsertEntityRelation({
+          fromEntityID: id,
+          relation: row.relation,
+          toEntityID: row.targetKind === "entity" ? targetID(row) : null,
+          toMediaID: row.targetKind === "media" ? targetID(row) : null,
+          sortOrder,
+        });
+      }
+      await load();
     } catch {
-      onError(t("curationUnavailable"));
+      setSaveError(t("curationSaveFailed"));
     }
   };
 
-  const onAdd = async () => {
-    onError("");
-    const rel = relation.trim();
-    const target = targetID.trim();
-    if (!rel || !target) return;
-    const parsed = order.trim() === "" ? null : Number(order.trim());
+  // New items go after the last one.
+  const add = async (picked: SearchResultItem) => {
+    setSaveError("");
+    if (!relation) return;
+    const last = rows.reduce((max, row, i) => Math.max(max, row.sortOrder ?? i), -1);
     try {
       await upsertEntityRelation({
-        fromEntityID: subject.id,
-        relation: rel,
-        toMediaID: target,
-        sortOrder: parsed,
+        fromEntityID: id,
+        relation,
+        toEntityID: picked.entityKind ? picked.id : null,
+        toMediaID: picked.entityKind ? null : picked.id,
+        sortOrder: last + 1,
       });
-      setTargetID("");
-      setOrder("");
-      onChange();
+      setAdding(false);
+      setNewRelation("");
+      await load();
     } catch {
-      onError(t("curationUnavailable"));
-    }
-  };
-
-  const targetLabel = (row: EntityRelationDetail): { text: string; kind: string } => {
-    if (row.targetKind === "entity") {
-      return { text: row.entity?.title ?? row.entity?.id ?? "", kind: t("curationKindEntity") };
-    }
-    return { text: row.media?.title ?? row.media?.id ?? "", kind: t("curationKindMedia") };
-  };
-
-  return (
-    <ManageSection
-      title={t("curationRelationsHeading")}
-      actions={<StatusBadge state="neutral">{subject.relations.length}</StatusBadge>}
-    >
-      {subject.relations.length === 0 ? (
-        <EmptyLine message={t("curationNoRelations")} />
-      ) : (
-        <ManageTable>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("curationRelationOrder")}</TableHead>
-              <TableHead>{t("curationRelationName")}</TableHead>
-              <TableHead>{t("curationRelationTarget")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {subject.relations.map((row, i) => {
-              const label = targetLabel(row);
-              return (
-                <TableRow key={`${row.relation}-${row.entity?.id ?? row.media?.id ?? i}`}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <div className="flex flex-col">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          aria-label={t("curationRelationMoveUp")}
-                          disabled={i === 0}
-                          onClick={() => move(i, -1)}
-                          className="h-4 px-1 leading-none"
-                        >
-                          ▲
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          aria-label={t("curationRelationMoveDown")}
-                          disabled={i === subject.relations.length - 1}
-                          onClick={() => move(i, 1)}
-                          className="h-4 px-1 leading-none"
-                        >
-                          ▼
-                        </Button>
-                      </div>
-                      <span className="manage-cell-num text-[var(--text-muted)]">
-                        {row.sortOrder ?? i}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="manage-cell-num">{row.relation}</TableCell>
-                  <TableCell>
-                    <span className="manage-cell-primary">{label.text}</span>{" "}
-                    <StatusBadge state="neutral">{label.kind}</StatusBadge>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </ManageTable>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-[var(--line-soft)] pt-3">
-        <div className="space-y-1">
-          <Label htmlFor="curation-rel-name">{t("curationRelationName")}</Label>
-          <Input
-            id="curation-rel-name"
-            value={relation}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setRelation(e.target.value)}
-            className="w-32"
-          />
-        </div>
-        <div className="grow space-y-1">
-          <Label htmlFor="curation-rel-target">{t("curationTargetMediaID")}</Label>
-          <Input
-            id="curation-rel-target"
-            value={targetID}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setTargetID(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="curation-rel-order">{t("curationRelationOrder")}</Label>
-          <Input
-            id="curation-rel-order"
-            type="number"
-            value={order}
-            onChange={(e) => setOrder(e.target.value)}
-            className="w-20"
-          />
-        </div>
-        <Button type="button" onClick={onAdd} disabled={!relation.trim() || !targetID.trim()}>
-          {t("curationAddRelation")}
-        </Button>
-      </div>
-    </ManageSection>
-  );
-}
-
-// --- Versions / Parts / Extras (Media subjects) ---------------------------
-
-function FilesSection({
-  subject,
-  onError,
-  onChange,
-}: {
-  subject: Subject;
-  onError: (message: string) => void;
-  onChange: () => void;
-}) {
-  const t = useT();
-  const [tab, setTab] = useState<"versions" | "extras">("versions");
-  const [relation, setRelation] = useState<"extra-of" | "edition-of">("extra-of");
-  const [extraID, setExtraID] = useState("");
-
-  if (subject.type !== "media") {
-    return (
-      <ManageSection title={t("curationFilesHeading")}>
-        <EmptyLine message={t("curationFilesMediaOnly")} />
-      </ManageSection>
-    );
-  }
-
-  const onLink = async () => {
-    onError("");
-    const id = extraID.trim();
-    if (!id) return;
-    try {
-      await linkMediaRelation(subject.id, relation, id);
-      setExtraID("");
-      onChange();
-    } catch {
-      onError(t("curationUnavailable"));
+      setSaveError(t("curationSaveFailed"));
     }
   };
 
   return (
-    <Tabs.Root value={tab} onValueChange={(value) => setTab(value as "versions" | "extras")}>
+    <div className="space-y-4">
+      <SubjectHeader
+        title={detail.title}
+        kind={detail.kind || t("curationKindEntity")}
+        onClose={onClose}
+      />
+      <ErrorLine message={saveError} />
       <ManageSection
-        title={t("curationFilesHeading")}
+        title={t("curationMembersHeading")}
+        lead={t("curationMembersLead")}
         actions={
-          <Tabs.List aria-label={t("curationFilesHeading")} className="manage-tabs">
-            <Tabs.Tab value="versions" className="manage-tab">
-              {t("curationTabVersions")}
-            </Tabs.Tab>
-            <Tabs.Tab value="extras" className="manage-tab">
-              {t("curationTabExtras")}
-            </Tabs.Tab>
-          </Tabs.List>
+          <>
+            <StatusBadge state="neutral">{rows.length}</StatusBadge>
+            {!adding && (
+              <Button type="button" size="sm" variant="outline" onClick={() => setAdding(true)}>
+                {t("curationAddMember")}
+              </Button>
+            )}
+          </>
         }
       >
-        <Tabs.Panel value="versions">
-          {subject.files.length === 0 ? (
-            <EmptyLine message={t("curationNoFiles")} />
-          ) : (
-            <ManageTable>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("curationVersionLabel")}</TableHead>
-                  <TableHead>{t("curationPartOrdinal")}</TableHead>
-                  <TableHead>{t("curationFilePath")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {subject.files.map((file) => (
-                  <TableRow key={`${file.versionLabel}-${file.partOrdinal}-${file.path}`}>
-                    <TableCell className="manage-cell-primary">{file.versionLabel}</TableCell>
-                    <TableCell className="manage-cell-num text-[var(--text-muted)]">
-                      {file.partOrdinal}
+        {rows.length === 0 ? (
+          <EmptyLine message={t("curationNoMembers")} />
+        ) : (
+          <ManageTable>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-24">{t("curationRelationOrder")}</TableHead>
+                <TableHead>{t("curationRelationTarget")}</TableHead>
+                <TableHead>{t("curationRelationName")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row, i) => {
+                const name =
+                  (row.targetKind === "entity" ? row.entity?.title : row.media?.title) ||
+                  targetID(row);
+                return (
+                  <TableRow key={`${row.relation}-${targetID(row) || i}`}>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <span className="manage-cell-num w-6 text-[var(--text-muted)]">
+                          {i + 1}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          aria-label={`${t("curationRelationMoveUp")}: ${name}`}
+                          disabled={i === 0}
+                          onClick={() => void move(i, -1)}
+                        >
+                          <ArrowUp className="size-4" aria-hidden />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          aria-label={`${t("curationRelationMoveDown")}: ${name}`}
+                          disabled={i === rows.length - 1}
+                          onClick={() => void move(i, 1)}
+                        >
+                          <ArrowDown className="size-4" aria-hidden />
+                        </Button>
+                      </div>
                     </TableCell>
-                    <TableCell className="manage-cell-num text-[var(--text-muted)]">
-                      {file.path}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </ManageTable>
-          )}
-        </Tabs.Panel>
-        <Tabs.Panel value="extras">
-          {subject.extras.length === 0 ? (
-            <EmptyLine message={t("curationNoExtras")} />
-          ) : (
-            <ManageTable>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("curationExtraRelation")}</TableHead>
-                  <TableHead>{t("curationRelationTarget")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {subject.extras.map((row, i) => (
-                  <TableRow key={`${row.relation}-${row.media.id}-${i}`}>
-                    <TableCell className="manage-cell-num">{row.relation}</TableCell>
                     <TableCell className="manage-cell-primary">
-                      {row.media.title || row.media.id}
+                      {row.targetKind === "media" && row.media ? (
+                        <Link
+                          className="hover:underline"
+                          to={`/manage/curation?open=${encodeURIComponent(row.media.id)}&as=media`}
+                        >
+                          {name}
+                        </Link>
+                      ) : row.entity ? (
+                        <Link
+                          className="hover:underline"
+                          to={`/manage/curation?open=${encodeURIComponent(row.entity.id)}&as=entity`}
+                        >
+                          {name}
+                        </Link>
+                      ) : (
+                        name
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge state="neutral">{row.relation}</StatusBadge>
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </ManageTable>
-          )}
-        </Tabs.Panel>
-
-        <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-[var(--line-soft)] pt-3">
-          <div className="space-y-1">
-            <Label htmlFor="curation-extra-rel">{t("curationExtraRelation")}</Label>
-            <Select
-              value={relation}
-              onValueChange={(v) => setRelation(v as "extra-of" | "edition-of")}
-            >
-              <SelectTrigger id="curation-extra-rel" className="w-36">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="extra-of">extra-of</SelectItem>
-                <SelectItem value="edition-of">edition-of</SelectItem>
-              </SelectContent>
-            </Select>
+                );
+              })}
+            </TableBody>
+          </ManageTable>
+        )}
+        {adding && (
+          <div className="mt-3 space-y-3 border-t border-[var(--line-soft)] pt-3">
+            {relationNames.length > 1 && (
+              <div className="max-w-xs space-y-1">
+                <Label htmlFor="curation-member-relation">{t("curationRelationName")}</Label>
+                <Select value={relation} onValueChange={setNewRelation}>
+                  <SelectTrigger id="curation-member-relation">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {relationNames.map((name) => (
+                      <SelectItem key={name} value={name}>
+                        {name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {relationNames.length === 0 && (
+              <div className="max-w-xs space-y-1">
+                <Label htmlFor="curation-member-relation">{t("curationRelationName")}</Label>
+                <Input
+                  id="curation-member-relation"
+                  value={newRelation}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(e) => setNewRelation(e.target.value)}
+                />
+                <p className="text-xs text-[var(--text-muted)]">{t("curationRelationNameHint")}</p>
+              </div>
+            )}
+            {relation ? (
+              <ItemSearch
+                id="curation-member"
+                label={t("curationAddMember")}
+                actionLabel={t("curationAddToGroup")}
+                excludeID={id}
+                onPick={add}
+              />
+            ) : null}
           </div>
-          <div className="grow space-y-1">
-            <Label htmlFor="curation-extra-id">{t("curationExtraMediaID")}</Label>
-            <Input
-              id="curation-extra-id"
-              value={extraID}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => setExtraID(e.target.value)}
-            />
-          </div>
-          <Button type="button" onClick={onLink} disabled={!extraID.trim()}>
-            {t("curationLinkExtra")}
-          </Button>
-        </div>
+        )}
       </ManageSection>
-    </Tabs.Root>
+    </div>
   );
 }
