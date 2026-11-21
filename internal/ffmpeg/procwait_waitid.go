@@ -69,28 +69,31 @@ func groupListsLiveMember(pgid int) bool {
 }
 
 // procNamespace reports whether /proc belongs to this process's PID
-// namespace, so the pgids it lists are the ones this process sees. A /proc
-// inherited from an ancestor namespace numbers processes differently, even
-// where this process's own pid happens to match; the sweep then cannot tell
-// members apart and is skipped, as it was before CORE-2821. NStgid lists one
-// id per namespace from the one /proc belongs to down to this process's own,
-// so a single entry proves they are the same. known is false when the check
-// itself failed; it is made on every scan, so a passing failure does not
-// switch the sweep off for the life of the process.
+// namespace, so the pgids it lists are the ones this process sees. Where it
+// does not, the sweep cannot tell members apart and is skipped, as it was
+// before CORE-2821: no procfs mounted at /proc, or one from another namespace
+// (an ancestor's numbers processes differently even where this process's own
+// pid happens to match, and one this process is not in has no /proc/self).
+// known is false when the check itself failed; it is made on every scan, so a
+// passing failure does not switch the sweep off for the life of the process.
 func procNamespace() (ours, known bool) {
+	var fsInfo unix.Statfs_t
+	if err := unix.Statfs("/proc", &fsInfo); err != nil {
+		return false, errors.Is(err, unix.ENOENT)
+	}
+	if fsInfo.Type != unix.PROC_SUPER_MAGIC {
+		return false, true
+	}
 	pid := strconv.Itoa(os.Getpid())
 	status, err := os.ReadFile("/proc/self/status")
 	if errors.Is(err, fs.ErrNotExist) {
-		return false, true // this process is not in the namespace /proc shows
+		return false, true
 	}
 	if err != nil {
 		return false, false
 	}
-	for _, line := range bytes.Split(status, []byte("\n")) {
-		if rest, found := bytes.CutPrefix(line, []byte("NStgid:")); found {
-			ids := bytes.Fields(rest)
-			return len(ids) == 1 && string(ids[0]) == pid, true
-		}
+	if ours, found := nstgidIsOurs(status, pid); found {
+		return ours, true
 	}
 	// Kernels before 4.1 have no NStgid; compare the pid /proc gives us.
 	self, err := os.Readlink("/proc/self")
@@ -98,6 +101,19 @@ func procNamespace() (ours, known bool) {
 		return false, false
 	}
 	return self == pid, true
+}
+
+// nstgidIsOurs reads the NStgid line of a /proc/<pid>/status. It lists one id
+// per namespace from the one /proc belongs to down to the process's own, so a
+// single entry equal to pid proves the two are the same namespace.
+func nstgidIsOurs(status []byte, pid string) (ours, found bool) {
+	for _, line := range bytes.Split(status, []byte("\n")) {
+		if rest, ok := bytes.CutPrefix(line, []byte("NStgid:")); ok {
+			ids := bytes.Fields(rest)
+			return len(ids) == 1 && string(ids[0]) == pid, true
+		}
+	}
+	return false, false
 }
 
 // procHidden reports a stat read refused for another user's process, as

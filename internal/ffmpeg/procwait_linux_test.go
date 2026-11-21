@@ -77,17 +77,29 @@ func TestGroupListsLiveMemberSeesALiveMemberBesideAZombieLeader(t *testing.T) {
 // BenchmarkGroupListsLiveMember measures the full /proc traversal a clean
 // reap makes: no process has pgid -1, so the scan never stops early.
 func BenchmarkGroupListsLiveMember(b *testing.B) {
+	if ours, known := procNamespace(); !known || !ours {
+		b.Skip("/proc is not this process's PID namespace")
+	}
 	for b.Loop() {
 		groupListsLiveMember(-1)
 	}
 }
 
-func TestProcNamespaceIsOursOnAPlainHost(t *testing.T) {
-	ours, known := procNamespace()
-	if !known {
-		t.Fatal("the namespace check failed on a readable /proc")
+func TestNStgidIsOursNeedsOneEntryEqualToThePid(t *testing.T) {
+	for _, tc := range []struct {
+		status      string
+		ours, found bool
+	}{
+		{"Name:\tx\nNStgid:\t42\nNSpid:\t42\n", true, true},
+		{"Name:\tx\nNStgid:\t42\t7\n", false, true}, // /proc of an ancestor namespace
+		{"NStgid:\t43\n", false, true},
+		{"Name:\tx\nTgid:\t42\n", false, false}, // a kernel before 4.1
+	} {
+		ours, found := nstgidIsOurs([]byte(tc.status), "42")
+		if ours != tc.ours || found != tc.found {
+			t.Errorf("nstgidIsOurs(%q) = %v, %v; want %v, %v", tc.status, ours, found, tc.ours, tc.found)
+		}
 	}
-	t.Logf("procNamespace ours=%v", ours)
 }
 
 func TestParseProcStatTakesFieldsAfterTheLastParen(t *testing.T) {
