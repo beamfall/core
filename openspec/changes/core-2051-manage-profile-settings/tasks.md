@@ -1,0 +1,4 @@
+- [x] Confirm each setting's existing web surface and server read/write support.
+- [ ] Add the owner-only entry PIN and current Profile subtitle language forms to Manage.
+- [ ] Update user documentation and the picker and playback copy.
+- [ ] Verify rendering, saves, and failure handling in focused web checks.
