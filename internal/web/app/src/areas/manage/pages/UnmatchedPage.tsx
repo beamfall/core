@@ -93,10 +93,12 @@ export function UnmatchedPage() {
       (id) => !(id in paths) && !pathsInFlight.current.has(id),
     );
     if (queue.length === 0) return;
+    // Every queued id counts as in flight now, so a rerun of this effect
+    // while these workers drain starts no second lookup for the same id.
     const inFlight = pathsInFlight.current;
+    for (const id of queue) inFlight.add(id);
     const worker = async () => {
       for (let id = queue.shift(); id; id = queue.shift()) {
-        inFlight.add(id);
         let path = "";
         try {
           path = (await fetchMediaFiles(id))[0]?.path ?? "";
@@ -260,6 +262,7 @@ export function UnmatchedPage() {
                 group={active}
                 hint={folderHint(activePath)}
                 path={activePath}
+                locked={writing}
                 onWriteStart={() => setWriting(true)}
                 onFinished={(message) => void onFinished(message)}
                 onError={setError}

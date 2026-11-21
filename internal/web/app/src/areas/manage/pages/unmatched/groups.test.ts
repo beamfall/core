@@ -99,4 +99,12 @@ describe("folderHint", () => {
       year: 1995,
     });
   });
+
+  it("climbs past a numbered folder under a qualified parent or a sibling marker", () => {
+    expect(folderHint("/media/Northwind (US)/Season 2/file.mkv")).toMatchObject({
+      title: "Northwind",
+      qualifier: "US",
+    });
+    expect(folderHint("/media/Northwind/Book 2/file.mkv")).toMatchObject({ title: "Northwind" });
+  });
 });

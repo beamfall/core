@@ -98,9 +98,11 @@ const QUALIFIER = /[([]\s*([^()[\]\d][^()[\]]{0,15}?)\s*[)\]]/;
 const ID_TAG = /[{[][a-z]+[-=][^}\]]+[}\]]/gi;
 // "Alien 3", "Disc 2": a short word and a number. Such a folder may be a
 // title of its own or may only number its siblings, so it is skipped only
-// when its parent carries a year or the word is a common sibling marker.
+// when its parent carries a year or qualifier, or the word is a common
+// sibling marker.
 const NUMBERED_SUBFOLDER = /^\p{L}{1,12}[\s._-]*\d{1,3}$/u;
-const SIBLING_MARKER = /^(?:cd|dvd|disc|disk|part|pt|vol|volume|s)[\s._-]*\d{1,3}$/i;
+const SIBLING_MARKER =
+  /^(?:cd|dvd|disc|disk|part|pt|vol|volume|book|chapter|series|season|s)[\s._-]*\d{1,3}$/i;
 
 /**
  * folderHint reads the folder nearest a file path that names the entry. A
@@ -120,7 +122,8 @@ export function folderHint(path: string | undefined): FolderHint | undefined {
   let i = 0;
   while (i + 1 < folders.length && NUMBERED_SUBFOLDER.test(folders[i])) {
     const parent = parseFolderName(folders[i + 1]);
-    if (parent.year === undefined && !SIBLING_MARKER.test(folders[i])) break;
+    const named = parent.year !== undefined || parent.qualifier !== undefined;
+    if (!named && !SIBLING_MARKER.test(folders[i])) break;
     i++;
   }
   const folder = folders[i];

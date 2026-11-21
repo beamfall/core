@@ -363,6 +363,53 @@ describe("UnmatchedPage", () => {
     );
   });
 
+  it("keeps the panel locked until the reload after a batch", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openedOnGroup();
+    await screen.findByRole("button", { name: /Suggested/ });
+
+    let reload: (value: ReturnType<typeof queue>) => void = () => {};
+    vi.mocked(fetchUnmatchedQueuePages).mockReturnValueOnce(
+      new Promise((resolve) => {
+        reload = resolve;
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Match all 3" }));
+    await waitFor(() => expect(fixMatch).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fetchUnmatchedQueuePages).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: "Match all 3" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Hide all 3" })).toBeDisabled();
+    reload(queue([below]));
+    await screen.findByRole("button", { name: "Apply + pin" });
+    expect(fixMatch).toHaveBeenCalledTimes(3);
+  });
+
+  it("searches the folder's title ahead of the failed catalog guess", async () => {
+    vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(
+      queue([{ ...below, candidateTitle: "The Arrival" }]),
+    );
+    vi.mocked(fetchMediaFiles).mockResolvedValue([
+      {
+        mediaID: "media-thing",
+        path: "/media/Arrival (2016)/file.mkv",
+        contentFingerprint: "",
+        versionLabel: "",
+        partOrdinal: 0,
+      },
+    ]);
+    renderPage();
+    await waitFor(() =>
+      expect(fixMatchCandidates).toHaveBeenCalledWith({
+        mediaID: "media-thing",
+        pluginID: "filmtv",
+        scraperID: "tmdb",
+        query: "Arrival",
+        year: 2016,
+      }),
+    );
+  });
+
   it("explains instead of searching for a source with no catalog", async () => {
     vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(
       queue([{ ...below, scraperID: "manual", candidateID: "", candidateTitle: "" }]),

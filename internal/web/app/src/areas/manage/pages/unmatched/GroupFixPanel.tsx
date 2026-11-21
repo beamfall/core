@@ -40,6 +40,7 @@ export function GroupFixPanel({
   group,
   hint,
   path,
+  locked,
   onWriteStart,
   onFinished,
   onError,
@@ -47,6 +48,8 @@ export function GroupFixPanel({
   group: UnmatchedGroup;
   hint: FolderHint | undefined;
   path: string | undefined;
+  /** True while any write on the page runs or its reload is pending. */
+  locked: boolean;
   /**
    * Called before a write starts. The page holds the panel on this group until
    * onFinished, so a second panel for the same items cannot start a competing
@@ -62,13 +65,14 @@ export function GroupFixPanel({
   const first = group.items[0];
   const source = { pluginID: group.pluginID, scraperID: group.scraperID };
   const manual = group.scraperID === MANUAL_SCRAPER_ID;
-  const [query, setQuery] = useState(group.candidateTitle || hint?.title || first?.title || "");
+  const [query, setQuery] = useState(hint?.title || group.candidateTitle || first?.title || "");
   const [year, setYear] = useState(hint?.year ? String(hint.year) : "");
   const [candidates, setCandidates] = useState<FixMatchCandidateInfo[]>([]);
   const [selectedID, setSelectedID] = useState("");
   const [pastedID, setPastedID] = useState("");
   const [diff, setDiff] = useState<FixMatchFieldDiff[]>([]);
   const [busy, setBusy] = useState(false);
+  const blocked = busy || locked;
   const [progress, setProgress] = useState("");
   // The year the shown candidates were searched with: it picks the default
   // selection and the Suggested badge, so a corrected year wins over the folder.
@@ -77,7 +81,13 @@ export function GroupFixPanel({
   // Bumped on every selection; a preview answered for an older one is dropped.
   const selection = useRef(0);
 
-  const problem = groupProblem(t, group, hint);
+  // Once a search ran with a corrected year, the hint names that year, not
+  // the folder's.
+  const problem = groupProblem(
+    t,
+    group,
+    suggestedYear && hint ? { ...hint, year: suggestedYear } : hint,
+  );
   const count = group.items.length;
 
   // A new selection invalidates the preview: a diff for one entry next to
@@ -161,7 +171,7 @@ export function GroupFixPanel({
       });
       if (asked === selection.current) setDiff(rows);
     } catch {
-      onError(t("unmatchedUnavailable"));
+      if (asked === selection.current) onError(t("unmatchedUnavailable"));
     } finally {
       setBusy(false);
     }
@@ -234,7 +244,7 @@ export function GroupFixPanel({
                 value={year}
                 onChange={(e) => setYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
               />
-              <Button type="submit" size="sm" variant="outline" disabled={busy || !query.trim()}>
+              <Button type="submit" size="sm" variant="outline" disabled={blocked || !query.trim()}>
                 {t("unmatchedSearch")}
               </Button>
             </form>
@@ -285,13 +295,13 @@ export function GroupFixPanel({
             )}
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" disabled={busy || !selectedID} onClick={() => void onMatch()}>
+              <Button size="sm" disabled={blocked || !selectedID} onClick={() => void onMatch()}>
                 {count === 1 ? t("unmatchedApplyPin") : t("unmatchedMatchAll", { count })}
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                disabled={busy || !selectedID}
+                disabled={blocked || !selectedID}
                 onClick={() => void onPreview()}
               >
                 {t("unmatchedPreviewLoad")}
@@ -342,7 +352,7 @@ export function GroupFixPanel({
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={busy || !pastedID.trim()}
+                    disabled={blocked || !pastedID.trim()}
                     onClick={() => void onFetchByID()}
                   >
                     {t("unmatchedPasteIDFetch")}
@@ -355,7 +365,7 @@ export function GroupFixPanel({
 
         <div className="grid gap-2 border-t pt-3">
           <h4 className="text-sm font-semibold text-foreground">{t("unmatchedNamingHeading")}</h4>
-          <p className="text-xs text-muted-foreground">{t("unmatchedNamingLead")}</p>
+          {!manual && <p className="text-xs text-muted-foreground">{t("unmatchedNamingLead")}</p>}
           <code className="break-all rounded bg-muted px-2 py-1 text-xs text-foreground">
             {path || t("unmatchedNoPath")}
           </code>
@@ -385,7 +395,7 @@ export function GroupFixPanel({
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={busy}
+                  disabled={blocked}
                   aria-label={`${t("unmatchedHide")}: ${item.title || item.mediaID}`}
                   aria-describedby={hideNoteID}
                   onClick={() => void hide([item.mediaID])}
@@ -398,7 +408,7 @@ export function GroupFixPanel({
           {count > 1 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="sm" variant="ghost" className="justify-self-start" disabled={busy}>
+                <Button size="sm" variant="ghost" className="justify-self-start" disabled={blocked}>
                   {t("unmatchedHideAll", { count })}
                 </Button>
               </AlertDialogTrigger>
