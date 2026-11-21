@@ -249,13 +249,14 @@ interface Props {
   /** The stream the element plays; a direct-play stream of the item by default. */
   stream?: PlaybackStream;
   enabled?: boolean;
+  verifyNext?: (id: string) => Promise<boolean>;
 }
 
-function render(element: HTMLVideoElement) {
+function render(element: HTMLVideoElement, verifyNext?: Props["verifyNext"]) {
   // Stable, as the player's own ref is.
   const videoRef = { current: element };
   return renderHook(
-    ({ mediaID, next, stream, enabled = true }: Props) =>
+    ({ mediaID, next, stream, enabled = true, verifyNext }: Props) =>
       useGaplessAudio({
         videoRef,
         mediaID,
@@ -263,8 +264,9 @@ function render(element: HTMLVideoElement) {
         next,
         advanceID: next.mediaID,
         enabled,
+        verifyNext,
       }),
-    { initialProps: { mediaID: "m1", next: nextItem("m2") } as Props },
+    { initialProps: { mediaID: "m1", next: nextItem("m2"), verifyNext } as Props },
   );
 }
 
@@ -282,6 +284,52 @@ function holdNextFetch(): () => void {
 }
 
 describe("useGaplessAudio", () => {
+  it("prepares early and schedules only after late server authorization", async () => {
+    const element = playing();
+    Object.defineProperty(element, "duration", { value: 60 });
+    element.currentTime = 29;
+    const answerFetch = holdNextFetch();
+    let authorize: (approved: boolean) => void = () => {};
+    const verifyNext = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          authorize = resolve;
+        }),
+    );
+    render(element, verifyNext);
+    expect(fetch).not.toHaveBeenCalled();
+
+    element.currentTime = 30;
+    element.dispatchEvent(new Event("timeupdate"));
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    element.currentTime = 34;
+    answerFetch();
+    await vi.waitFor(() => expect(contexts[0].decodeAudioData).toHaveBeenCalledOnce());
+    expect(verifyNext).not.toHaveBeenCalled();
+    expect(sources).toHaveLength(0);
+
+    element.currentTime = 59.2;
+    element.dispatchEvent(new Event("timeupdate"));
+    expect(verifyNext).toHaveBeenCalledExactlyOnceWith("m2");
+    expect(sources).toHaveLength(0);
+    authorize(true);
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    expect(sources[0].start.mock.calls[0][0]).toBeCloseTo(5.8, 9);
+  });
+
+  it("cancels a scheduled successor when the advance no longer names it", async () => {
+    const element = playing();
+    const hook = render(element, async () => true);
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    const finish = hook.result.current();
+    expect(finish).toBeTypeOf("function");
+    finish?.("m3");
+    expect(sources[0].stop).toHaveBeenCalledOnce();
+    expect(sources[0].disconnect).toHaveBeenCalledOnce();
+    element.dispatchEvent(new Event("timeupdate"));
+    expect(sources).toHaveLength(1);
+  });
+
   it("starts the next track where the element ends and mutes the element from its end", async () => {
     const element = playing();
     render(element);

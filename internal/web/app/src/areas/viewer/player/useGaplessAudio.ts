@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { PlaybackGapless, PlaybackNext, PlaybackStream } from "../lib/playback";
 import { holdMute, listenerMuted, muteHeld, releaseMute } from "./listenerMute";
 import { audioContextCtor, audioDelayHolds } from "./useAudioDelay";
@@ -40,6 +40,8 @@ export const START_WAIT_SECONDS = 2;
 const JOIN_AHEAD_SECONDS = 1;
 /** A join scheduled closer than this to now is left to the element advance. */
 const JOIN_MARGIN_SECONDS = 0.05;
+/** Time for a server queue read before the bridge has to schedule the join. */
+const VERIFY_AHEAD_SECONDS = 3;
 /** How far the silent element may drift from what is heard. */
 export const SYNC_TOLERANCE_SECONDS = 0.25;
 /**
@@ -456,6 +458,8 @@ function arm(bridge: Bridge, video: HTMLMediaElement, mediaID: string): boolean 
  * Joins the next track to the current one without a gap. `enabled` is the
  * player's verdict that the current item is a playing music track the join may
  * follow; `advanceID` is the item the player advances to when it ends.
+ * The returned function suspends scheduling during an advance. Its callback
+ * keeps a scheduled join only if it matches the confirmed successor.
  */
 export function useGaplessAudio({
   videoRef,
@@ -464,6 +468,7 @@ export function useGaplessAudio({
   next,
   advanceID,
   enabled,
+  verifyNext,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   mediaID: string;
@@ -473,11 +478,14 @@ export function useGaplessAudio({
   next?: PlaybackNext;
   advanceID?: string;
   enabled: boolean;
+  /** Scheduling authorization for a mutable playback order. Decoding can start earlier. */
+  verifyNext?: (id: string) => Promise<boolean>;
 }) {
   const mediaIDRef = useRef(mediaID);
   mediaIDRef.current = mediaID;
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
+  const suspendJoinRef = useRef<() => (keepID?: string) => void>(null);
 
   // A new item: the decoded track it names carries on (the element now
   // shadows it); any other item takes the sound back.
@@ -725,8 +733,22 @@ export function useGaplessAudio({
     const controller = new AbortController();
     let decoding = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let verification: { approved: boolean } | undefined;
+    let suspended = false;
 
     const remaining = () => video.duration - video.currentTime;
+    const cancelNext = () => {
+      if (!segmentFor(bridge, nextID)) return;
+      cancel(bridge, nextID);
+      if (bridge.segments.length === 0 && !bridge.pending) handBack(video);
+    };
+    const suspendJoin = () => {
+      suspended = true;
+      return (keepID?: string) => {
+        if (nextID !== keepID && nextID !== mediaIDRef.current) cancelNext();
+      };
+    };
+    suspendJoinRef.current = suspendJoin;
 
     const prepare = async () => {
       decoding = true;
@@ -739,48 +761,70 @@ export function useGaplessAudio({
 
     const join = () => {
       const track = bridge.tracks.get(nextID);
-      if (!track || segmentFor(bridge, nextID)) return;
+      if (suspended || !track || segmentFor(bridge, nextID)) return;
       // A suspended context would start the track late; a delay line would not line up.
       if (bridge.context.state !== "running" || audioDelayHolds(video)) return;
       const current = segmentFor(bridge, mediaIDRef.current);
-      if (current) {
-        // Decoded to decoded: chained on the clock, to the sample.
-        schedule(bridge, nextID, track.buffer, track.trim, current.start + current.duration, video);
-        return;
-      }
       // A held element is not heard: its own decoded track starts first.
-      if (muteHeld(video) || bridge.pending) return;
-      if (video.paused || video.seeking || bridge.stalled || video.playbackRate !== 1) return;
+      if (
+        !current &&
+        (muteHeld(video) ||
+          bridge.pending ||
+          video.paused ||
+          video.seeking ||
+          bridge.stalled ||
+          video.playbackRate !== 1)
+      )
+        return;
       // The decoded track starts where the element's declared padding begins;
       // the element's own padding plays out beneath it.
-      const endsIn = remaining() - padding;
-      if (!Number.isFinite(endsIn)) return;
-      if (endsIn > JOIN_AHEAD_SECONDS) {
+      const now = bridge.context.currentTime;
+      const at = current ? current.start + current.duration : now + remaining() - padding;
+      const endsIn = at - now;
+      if (!Number.isFinite(endsIn) || ((!current || verifyNext) && endsIn < JOIN_MARGIN_SECONDS))
+        return;
+      const ahead =
+        verifyNext && !verification?.approved ? VERIFY_AHEAD_SECONDS : JOIN_AHEAD_SECONDS;
+      if ((!current || verifyNext) && endsIn > ahead) {
         clearTimeout(timer);
-        timer = setTimeout(check, (endsIn - JOIN_AHEAD_SECONDS) * 1000);
+        timer = setTimeout(check, (endsIn - ahead) * 1000);
         return;
       }
-      if (endsIn < JOIN_MARGIN_SECONDS) return;
-      schedule(
-        bridge,
-        nextID,
-        track.buffer,
-        track.trim,
-        bridge.context.currentTime + endsIn,
-        video,
-      );
+      if (verifyNext && !verification?.approved) {
+        if (verification) return;
+        const attempt = { approved: false };
+        verification = attempt;
+        void verifyNext(nextID).then(
+          (approved) => {
+            if (!approved || attempt !== verification) return;
+            attempt.approved = true;
+            check();
+          },
+          () => {},
+        );
+        return;
+      }
+      schedule(bridge, nextID, track.buffer, track.trim, at, video);
     };
 
+    const onPause = () => {
+      if (!video.ended) verification = undefined;
+    };
+    const onSeeking = () => {
+      if (!bridge.ownSeek) verification = undefined;
+    };
     // A join timed by the element's position no longer holds once it stalls.
     // Not yet heard, it is cancelled and scheduled again when the element plays.
     const onStall = () => {
+      if (segmentFor(bridge, mediaIDRef.current)) return;
+      verification = undefined;
       const segment = segmentFor(bridge, nextID);
-      if (!segment || segmentFor(bridge, mediaIDRef.current)) return;
+      if (!segment) return;
       if (segment.start > bridge.context.currentTime) cancel(bridge, nextID);
     };
 
     const check = () => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || suspended) return;
       // The track heard and the next are the most held at once.
       const due = remaining() <= PREPARE_AHEAD_SECONDS;
       if (!decoding && !bridge.tracks.has(nextID) && heldTracks(bridge) < 2 && due) void prepare();
@@ -789,23 +833,27 @@ export function useGaplessAudio({
 
     video.addEventListener("timeupdate", check);
     video.addEventListener("playing", check);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("seeking", onSeeking);
     video.addEventListener("waiting", onStall);
     video.addEventListener("stalled", onStall);
     check();
     return () => {
       controller.abort();
       clearTimeout(timer);
+      if (suspendJoinRef.current === suspendJoin) suspendJoinRef.current = null;
       video.removeEventListener("timeupdate", check);
       video.removeEventListener("playing", check);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("seeking", onSeeking);
       video.removeEventListener("waiting", onStall);
       video.removeEventListener("stalled", onStall);
       // A next item replaced or removed must not play; one that became the
       // current item plays on.
       if (nextID === nextIDRef.current || nextID === mediaIDRef.current) return;
-      if (!segmentFor(bridge, nextID)) return;
-      cancel(bridge, nextID);
-      // Nothing decoded left to hear: the element is heard.
-      if (bridge.segments.length === 0 && !bridge.pending) handBack(video);
+      cancelNext();
     };
-  }, [enabled, videoRef, nextID, nextURL, nextTrim, padding]);
+  }, [enabled, videoRef, nextID, nextURL, nextTrim, padding, verifyNext]);
+
+  return useCallback(() => suspendJoinRef.current?.(), []);
 }
