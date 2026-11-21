@@ -51,22 +51,24 @@ func gaplessArgs(path string, durationSeconds int) []string {
 
 // probeGapless runs the gapless probe and merges its facts into probe's audio
 // streams. It is best effort: a failure leaves the streams without gapless
-// facts, which every consumer reads as "not declared".
-func (r *Runner) probeGapless(ctx context.Context, path string, probe *Probe) {
+// facts, which every consumer reads as "not declared". It returns only a
+// process group that survived its kill.
+func (r *Runner) probeGapless(ctx context.Context, path string, probe *Probe) error {
 	ffprobePath, err := r.resolveProbe(ctx)
 	if err != nil {
-		return
+		return nil
 	}
 	cmd := r.hardenedCommand(ctx, ffprobePath, readConfinement(path).ReadOnly, nil, gaplessArgs(path, probe.DurationSeconds))
 	stdout, _, err := r.run(ctx, cmd)
 	if err != nil {
-		return
+		return survivedError(err)
 	}
 	facts, err := parseGapless(stdout)
 	if err != nil {
-		return
+		return nil
 	}
 	applyGapless(probe, facts)
+	return nil
 }
 
 // gaplessFacts is what the gapless probe learned about one audio stream.

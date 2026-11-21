@@ -486,7 +486,7 @@ func (r *Runner) Probe(ctx context.Context, path string) (Probe, error) {
 	stdout, stderr, err := r.run(ctx, cmd)
 	if err != nil {
 		if detail := captureDetail(stdout, stderr, nil); detail != "" {
-			return Probe{}, fmt.Errorf("ffprobe: %s", detail)
+			return Probe{}, errors.Join(fmt.Errorf("ffprobe: %s", detail), survivedError(err))
 		}
 		return Probe{}, fmt.Errorf("ffprobe: %w", err)
 	}
@@ -495,7 +495,9 @@ func (r *Runner) Probe(ctx context.Context, path string) (Probe, error) {
 		return Probe{}, err
 	}
 	if !probe.HasVideo && probe.AudioCodec != "" {
-		r.probeGapless(ctx, path, &probe)
+		if err := r.probeGapless(ctx, path, &probe); err != nil {
+			return Probe{}, fmt.Errorf("ffprobe gapless: %w", err)
+		}
 	}
 	return probe, nil
 }
@@ -529,7 +531,7 @@ func (r *Runner) FrameGrab(ctx context.Context, src string, atSeconds float64, w
 		"-y", "--", out.Path,
 	)
 	if detail, err := r.runDetail(ctx, cmd); err != nil {
-		return fmt.Errorf("ffmpeg frame grab: %s", detail)
+		return errors.Join(fmt.Errorf("ffmpeg frame grab: %s", detail), survivedError(err))
 	}
 	return out.publish(dst)
 }
@@ -569,7 +571,7 @@ func (r *Runner) ExtractEmbeddedArtwork(ctx context.Context, src string, width i
 	)
 	if detail, runErr := r.runDetail(ctx, cmd); runErr != nil {
 		err = runErr
-		return false, fmt.Errorf("ffmpeg embedded artwork: %s", detail)
+		return false, errors.Join(fmt.Errorf("ffmpeg embedded artwork: %s", detail), survivedError(runErr))
 	}
 	if err = out.publish(dst); err != nil {
 		return false, err
@@ -612,7 +614,7 @@ func (r *Runner) ScaleImage(ctx context.Context, src string, width int, dst stri
 	args = append(args, "-f", "image2", "-y", "--", out.Path)
 	cmd := r.generationCommand(ctx, transformConfinement(src, out.Path), ffmpegPath, args...)
 	if detail, err := r.runDetail(ctx, cmd); err != nil {
-		return fmt.Errorf("ffmpeg image scale: %s", detail)
+		return errors.Join(fmt.Errorf("ffmpeg image scale: %s", detail), survivedError(err))
 	}
 	return out.publish(dst)
 }
@@ -653,12 +655,14 @@ func (r *Runner) SpriteSheets(ctx context.Context, src string, intervalSeconds, 
 		)
 		conf := transformConfinement(src, dstPattern).withGPU(pass.accel)
 		if detail, err := r.runDetail(ctx, r.generationCommand(ctx, conf, ffmpegPath, args...)); err != nil {
-			return fmt.Errorf("ffmpeg sprite sheets: %s", detail)
+			return errors.Join(fmt.Errorf("ffmpeg sprite sheets: %s", detail), survivedError(err))
 		}
 		return nil
 	}
 	for _, pass := range r.spriteSheetPasses() {
-		if err = run(pass); err == nil || ctx.Err() != nil {
+		// A pass whose group survived its kill is not retried: the next pass
+		// would run beside the survivor.
+		if err = run(pass); err == nil || ctx.Err() != nil || errors.Is(err, errGroupSurvived) {
 			return err
 		}
 	}
@@ -756,7 +760,7 @@ func (r *Runner) SampleClip(ctx context.Context, src string, offsets []float64, 
 		"-y", "--", out.Path,
 	)
 	if detail, err := r.runDetail(ctx, cmd); err != nil {
-		return fmt.Errorf("ffmpeg sample clip: %s", detail)
+		return errors.Join(fmt.Errorf("ffmpeg sample clip: %s", detail), survivedError(err))
 	}
 	return out.publish(dst)
 }
@@ -865,10 +869,14 @@ func (r *Runner) LoudnessMeasure(ctx context.Context, src string) (integratedLUF
 	// parseable track-gain tag is authoritative — the file was tagged by a trusted
 	// analyser, so honoring it avoids a full decode (ADR-0098: "reads trusted
 	// ReplayGain/R128-style tags when present").
-	if probe, perr := r.Probe(ctx, src); perr == nil {
+	probe, perr := r.Probe(ctx, src)
+	if perr == nil {
 		if stats, ok := loudnessFromTags(probe.Tags); ok {
 			return stats.IntegratedLUFS, stats.LoudnessRangeLU, stats.TruePeakDBTP, stats.FromTags, nil
 		}
+	} else if errors.Is(perr, errGroupSurvived) {
+		// The decode would run beside the surviving probe.
+		return 0, 0, 0, false, perr
 	}
 	ffmpegPath, lookErr := exec.LookPath("ffmpeg")
 	if lookErr != nil {
@@ -896,7 +904,7 @@ func (r *Runner) LoudnessMeasure(ctx context.Context, src string) (integratedLUF
 		if detail == "" {
 			detail = runErr.Error()
 		}
-		return 0, 0, 0, false, fmt.Errorf("ffmpeg loudness analysis: %s", detail)
+		return 0, 0, 0, false, errors.Join(fmt.Errorf("ffmpeg loudness analysis: %s", detail), survivedError(runErr))
 	}
 	stats, ok := parseEBUR128Summary(output.String())
 	if !ok {
@@ -1065,7 +1073,7 @@ func (r *Runner) WaveformAmplitudes(ctx context.Context, src string) ([]float64,
 	)
 	stdout, stderr, err := r.run(ctx, cmd)
 	if err != nil {
-		return nil, fmt.Errorf("ffmpeg waveform analysis: %s", captureDetail(stdout, stderr, err))
+		return nil, errors.Join(fmt.Errorf("ffmpeg waveform analysis: %s", captureDetail(stdout, stderr, err)), survivedError(err))
 	}
 	amps := parseWaveformAmplitudes(string(stdout) + string(stderr))
 	if len(amps) == 0 {
@@ -1141,7 +1149,7 @@ func (r *Runner) SilenceSpans(ctx context.Context, src string) ([][2]float64, er
 	// suppress them; the supervisor captures stderr where the events appear.
 	stdout, stderr, err := r.run(ctx, cmd)
 	if err != nil {
-		return nil, fmt.Errorf("ffmpeg silence analysis: %s", captureDetail(stdout, stderr, err))
+		return nil, errors.Join(fmt.Errorf("ffmpeg silence analysis: %s", captureDetail(stdout, stderr, err)), survivedError(err))
 	}
 	return parseSilenceSpans(string(stdout) + string(stderr)), nil
 }
@@ -1232,7 +1240,7 @@ func (r *Runner) ExtractSubtitleToWebVTT(ctx context.Context, src string, stream
 		"-y", "--", out.Path,
 	)
 	if detail, err := r.runDetail(ctx, cmd); err != nil {
-		return fmt.Errorf("ffmpeg subtitle convert: %s", detail)
+		return errors.Join(fmt.Errorf("ffmpeg subtitle convert: %s", detail), survivedError(err))
 	}
 	return out.publish(dst)
 }
@@ -1296,7 +1304,7 @@ func (r *Runner) ExtractSubtitlesToWebVTT(ctx context.Context, src string, outpu
 	}
 	cmd := r.generationCommand(ctx, transformConfinement(src, paths...), ffmpegPath, args...)
 	if detail, err := r.runDetail(ctx, cmd); err != nil {
-		return fmt.Errorf("ffmpeg subtitle convert: %s", detail)
+		return errors.Join(fmt.Errorf("ffmpeg subtitle convert: %s", detail), survivedError(err))
 	}
 	for i, streamIndex := range indices {
 		if err := reserved[i].publish(outputs[streamIndex]); err != nil {

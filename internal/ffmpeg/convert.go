@@ -264,7 +264,7 @@ func (r *Runner) Convert(ctx context.Context, src, dst string, profile ConvertPr
 	args = append(args, "-f", format, "-y", "--", out.Path)
 	cmd := r.convertCommand(ctx, transformConfinement(src, out.Path), ffmpegPath, args...)
 	if detail, err := r.runDetail(ctx, cmd); err != nil {
-		return fmt.Errorf("ffmpeg convert: %s", detail)
+		return errors.Join(fmt.Errorf("ffmpeg convert: %s", detail), survivedError(err))
 	}
 	// A source swapped mid-run makes the output a transcode of something the
 	// caller never authorised, so the artifact is discarded rather than published.

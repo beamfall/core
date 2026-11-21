@@ -33,6 +33,19 @@ const captureLimitBytes = 16 << 20
 // exceeds captureLimitBytes; the child's process tree has been killed and reaped.
 var ErrOutputOverflow = errors.New("ffmpeg: process output exceeded the bounded capture limit")
 
+// errGroupSurvived reports a process group that still had a live member when
+// the macOS kill sweep gave up.
+var errGroupSurvived = errors.New("ffmpeg: process group survived SIGKILL")
+
+// survivedError returns err when it reports a surviving process group, else
+// nil, so callers that replace err with a diagnostic keep that failure.
+func survivedError(err error) error {
+	if errors.Is(err, errGroupSurvived) {
+		return err
+	}
+	return nil
+}
+
 // boundedBuffer captures up to limit bytes and, the first time a write would
 // exceed the cap, marks itself overflowed and fires onOverflow exactly once
 // (asynchronously, so a Write from an exec copy goroutine never blocks on the
@@ -98,9 +111,15 @@ func (r *Runner) run(ctx context.Context, cmd *exec.Cmd) (stdout, stderr []byte,
 	if out.overflowed() || errb.overflowed() {
 		// Fail closed: the child overran the capture cap and its tree has been
 		// killed; report the overflow regardless of the exit/kill error.
-		return out.bytes(), errb.bytes(), ErrOutputOverflow
+		return out.bytes(), errb.bytes(), overflowError(runErr)
 	}
 	return out.bytes(), errb.bytes(), runErr
+}
+
+// overflowError reports an output overflow, keeping a failed group kill
+// visible to callers.
+func overflowError(runErr error) error {
+	return errors.Join(ErrOutputOverflow, survivedError(runErr))
 }
 
 // runWith is the core supervisor loop: it applies the parent-loss death signal
@@ -148,12 +167,15 @@ func supervise(ctx context.Context, cmd *exec.Cmd, stdout, stderr io.Writer) err
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	go func() { done <- reapGroup(cmd) }()
 
 	select {
 	case <-ctx.Done():
 		killProcessGroup(cmd)
-		<-done // always reap: no orphaned transcode survives a cancel/timeout
+		// always reap: no orphaned transcode survives a cancel/timeout
+		if reapErr := <-done; errors.Is(reapErr, errGroupSurvived) {
+			return errors.Join(ctx.Err(), reapErr)
+		}
 		return ctx.Err()
 	case waitErr := <-done:
 		return waitErr

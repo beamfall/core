@@ -194,10 +194,10 @@ func (r *Runner) runPipeCmdWith(ctx context.Context, cmd *exec.Cmd, in PipeInput
 	}
 	runErr := r.runWith(ctx, cmd, stdout, stderr)
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return fmt.Errorf("%s interrupted: %w", what, ctxErr)
+		return errors.Join(fmt.Errorf("%s interrupted: %w", what, ctxErr), survivedError(runErr))
 	}
 	if stderr.overflowed() || (boundedOut != nil && boundedOut.overflowed()) {
-		return ErrOutputOverflow
+		return overflowError(runErr)
 	}
 	if runErr == nil {
 		return nil
@@ -206,7 +206,7 @@ func (r *Runner) runPipeCmdWith(ctx context.Context, cmd *exec.Cmd, in PipeInput
 	if len(detail) > pipeStderrLimit {
 		detail = detail[len(detail)-pipeStderrLimit:]
 	}
-	return fmt.Errorf("%s: %s", what, redactPipeDetail(captureDetail(nil, detail, runErr), in))
+	return errors.Join(fmt.Errorf("%s: %s", what, redactPipeDetail(captureDetail(nil, detail, runErr), in)), survivedError(runErr))
 }
 
 func pipeReadTimeout(in PipeInput) time.Duration {
