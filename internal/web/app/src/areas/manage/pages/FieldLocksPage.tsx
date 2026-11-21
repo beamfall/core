@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
   ErrorLine,
@@ -7,7 +8,6 @@ import {
   StatusBadge,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchMediaFieldLocks, setMediaFieldLock } from "@/lib/graphql";
@@ -35,9 +35,9 @@ export function FieldLocksPage() {
   const [locks, setLocks] = useState<FieldLockInfo[] | null>(null);
   const [error, setError] = useState("");
 
-  const onLoad = async () => {
+  const onLoad = async (picked?: string) => {
     setError("");
-    const id = mediaID.trim();
+    const id = (picked ?? mediaID).trim();
     if (!id) return;
     try {
       setLocks(await fetchMediaFieldLocks(id));
@@ -58,19 +58,25 @@ export function FieldLocksPage() {
 
   return (
     <ManageSection>
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <div className="space-y-1">
           <Label htmlFor="field-locks-media">{t("fieldLocksMediaLabel")}</Label>
-          <Input
+          <EntityPicker
             id="field-locks-media"
             value={mediaID}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setMediaID(e.target.value)}
-            className="w-72"
+            onChange={(id) => {
+              setMediaID(id);
+              if (id) void onLoad(id);
+            }}
           />
         </div>
-        <Button type="button" variant="outline" onClick={onLoad} disabled={!mediaID.trim()}>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-6"
+          onClick={() => void onLoad()}
+          disabled={!mediaID.trim()}
+        >
           {t("fieldLocksLoad")}
         </Button>
       </div>

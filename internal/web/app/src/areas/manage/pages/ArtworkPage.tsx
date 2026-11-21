@@ -1,7 +1,7 @@
 import { useState } from "react";
+import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fetchArtworkCandidates, pinArtworkCandidate } from "@/lib/graphql";
 import type { ArtworkCandidate } from "@/lib/graphql/types";
@@ -49,9 +49,9 @@ export function ArtworkPage() {
     }
   };
 
-  const onLoad = async () => {
+  const onLoad = async (picked?: string) => {
     setError("");
-    const id = mediaID.trim();
+    const id = (picked ?? mediaID).trim();
     if (!id) return;
     setLoadedID(id);
     setSlots({}); // every slot reads as undefined → "loading" until each lands
@@ -71,19 +71,25 @@ export function ArtworkPage() {
 
   return (
     <ManageSection>
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <div className="space-y-1">
           <Label htmlFor="artwork-media">{t("fieldLocksMediaLabel")}</Label>
-          <Input
+          <EntityPicker
             id="artwork-media"
             value={mediaID}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setMediaID(e.target.value)}
-            className="w-72"
+            onChange={(id) => {
+              setMediaID(id);
+              if (id) void onLoad(id);
+            }}
           />
         </div>
-        <Button type="button" variant="outline" onClick={onLoad} disabled={!mediaID.trim()}>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-6"
+          onClick={() => void onLoad()}
+          disabled={!mediaID.trim()}
+        >
           {t("fieldLocksLoad")}
         </Button>
       </div>

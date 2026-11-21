@@ -8,6 +8,12 @@ import { I18nProvider } from "@/lib/i18n";
 import { BulkOpsPage } from "./BulkOpsPage";
 
 vi.mock("@/lib/graphql", () => ({
+  searchResult: vi.fn(async () => ({
+    mode: "keyword",
+    items: [],
+    hasMore: false,
+    restrictedResultsPresent: false,
+  })),
   bulkEditApply: vi.fn(),
   fetchMutes: vi.fn(async () => []),
   setMute: vi.fn(async () => undefined),
@@ -72,7 +78,7 @@ describe("BulkOpsPage", () => {
 
     await user.type(
       screen.getByLabelText("Media IDs (comma-separated)"),
-      `${input(link)}, media-2`,
+      `${input(link)}, media-2{Enter}`,
     );
     await user.type(screen.getByLabelText("Field name"), "year");
     await user.type(screen.getByLabelText("Value"), "1982");
@@ -90,7 +96,10 @@ describe("BulkOpsPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText("Media IDs (comma-separated)"), "media-1, media-2");
+    await user.type(
+      screen.getByLabelText("Media IDs (comma-separated)"),
+      "media-1, media-2{Enter}",
+    );
     await user.type(screen.getByLabelText("Field name"), "year");
     await user.type(screen.getByLabelText("Value"), "1982");
 
@@ -103,7 +112,7 @@ describe("BulkOpsPage", () => {
 
     // An input edit after the preview stales it: Apply is withdrawn until a
     // fresh preview matches the form again.
-    await user.type(screen.getByLabelText("Media IDs (comma-separated)"), ", media-3");
+    await user.type(screen.getByLabelText("Media IDs (comma-separated)"), ", media-3{Enter}");
     expect(apply).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Preview" }));
     await waitFor(() => expect(apply).toBeEnabled());

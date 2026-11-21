@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Segmented } from "@/areas/console/Segmented";
+import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
   ErrorLine,
@@ -150,24 +151,22 @@ export function MarkersPage() {
           ) : undefined
         }
       >
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-start gap-3">
           <div className="grow space-y-1">
             <Label htmlFor="markers-media-id">{t("markersMediaID")}</Label>
-            <Input
+            <EntityPicker
               id="markers-media-id"
               value={mediaInput}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => setMediaInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onLoad();
+              onChange={(id) => {
+                setMediaInput(id);
+                if (id) void load(id);
               }}
             />
           </div>
-          <Button type="button" variant="outline" onClick={onLoad}>
+          <Button type="button" variant="outline" className="mt-6" onClick={onLoad}>
             {t("markersLoad")}
           </Button>
-          <Button type="button" onClick={onCreate} disabled={!mediaID}>
+          <Button type="button" className="mt-6" onClick={onCreate} disabled={!mediaID}>
             {t("markersNew")}
           </Button>
         </div>

@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Segmented } from "@/areas/console/Segmented";
+import { EntityMultiPicker, EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
   ErrorLine,
@@ -360,9 +361,9 @@ function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: 
   const [assignment, setAssignment] = useState<TagAssignmentInfo | null>(null);
   const [addTagID, setAddTagID] = useState("");
 
-  const onLoad = async () => {
+  const onLoad = async (picked?: string) => {
     onError("");
-    const id = targetID.trim();
+    const id = (picked ?? targetID).trim();
     if (!id) return;
     try {
       setAssignment(await fetchTagAssignments(targetType, id));
@@ -411,7 +412,7 @@ function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: 
       }
     >
       <div className="space-y-3">
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-start gap-3">
           <div className="space-y-1">
             <Label htmlFor="assign-target-type">{t("tagTargetType")}</Label>
             <Select value={targetType} onValueChange={(v) => setTargetType(v as TagTargetType)}>
@@ -429,15 +430,33 @@ function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: 
           </div>
           <div className="grow space-y-1">
             <Label htmlFor="assign-target-id">{t("tagTargetID")}</Label>
-            <Input
-              id="assign-target-id"
-              value={targetID}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => setTargetID(e.target.value)}
-            />
+            {targetType === "marker" ? (
+              <Input
+                id="assign-target-id"
+                value={targetID}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => setTargetID(e.target.value)}
+              />
+            ) : (
+              <EntityPicker
+                id="assign-target-id"
+                kind={targetType}
+                value={targetID}
+                onChange={(id) => {
+                  setTargetID(id);
+                  if (id) void onLoad(id);
+                }}
+              />
+            )}
           </div>
-          <Button type="button" variant="outline" onClick={onLoad} disabled={!targetID.trim()}>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-6"
+            onClick={() => void onLoad()}
+            disabled={!targetID.trim()}
+          >
             {t("tagLoad")}
           </Button>
         </div>
@@ -556,7 +575,7 @@ function BulkSection({ tags, onError }: { tags: TagInfo[]; onError: (message: st
       }
     >
       <div className="space-y-3">
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-start gap-3">
           <div className="space-y-1">
             <Label htmlFor="bulk-target-type">{t("tagTargetType")}</Label>
             <Select value={targetType} onValueChange={(v) => setTargetType(v as TagTargetType)}>
@@ -574,13 +593,22 @@ function BulkSection({ tags, onError }: { tags: TagInfo[]; onError: (message: st
           </div>
           <div className="grow space-y-1">
             <Label htmlFor="bulk-target-ids">{t("tagBulkTargetIDs")}</Label>
-            <Input
-              id="bulk-target-ids"
-              value={targetIDs}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => setTargetIDs(e.target.value)}
-            />
+            {targetType === "marker" ? (
+              <Input
+                id="bulk-target-ids"
+                value={targetIDs}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => setTargetIDs(e.target.value)}
+              />
+            ) : (
+              <EntityMultiPicker
+                id="bulk-target-ids"
+                kind={targetType}
+                value={idList()}
+                onChange={(ids) => setTargetIDs(ids.join(","))}
+              />
+            )}
           </div>
         </div>
 

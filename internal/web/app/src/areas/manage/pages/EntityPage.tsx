@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
   ErrorLine,
@@ -7,7 +8,6 @@ import {
   StatusBadge,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchEntity } from "@/lib/graphql";
@@ -27,9 +27,9 @@ export function EntityPage() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
 
-  const onLoad = async () => {
+  const onLoad = async (picked?: string) => {
     setError("");
-    const id = entityID.trim();
+    const id = (picked ?? entityID).trim();
     if (!id) return;
     try {
       const result = await fetchEntity(id);
@@ -43,19 +43,26 @@ export function EntityPage() {
 
   return (
     <ManageSection>
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <div className="space-y-1">
           <Label htmlFor="entity-id">{t("fieldLocksMediaLabel")}</Label>
-          <Input
+          <EntityPicker
             id="entity-id"
+            kind="any"
             value={entityID}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setEntityID(e.target.value)}
-            className="w-72"
+            onChange={(id) => {
+              setEntityID(id);
+              if (id) void onLoad(id);
+            }}
           />
         </div>
-        <Button type="button" variant="outline" onClick={onLoad} disabled={!entityID.trim()}>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-6"
+          onClick={() => void onLoad()}
+          disabled={!entityID.trim()}
+        >
           {t("fieldLocksLoad")}
         </Button>
       </div>
