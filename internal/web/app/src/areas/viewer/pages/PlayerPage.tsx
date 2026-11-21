@@ -73,7 +73,7 @@ import { UpNextCard } from "../player/UpNextCard";
 import { type PartySeekAutoSkip, useAutoSkip } from "../player/useAutoSkip";
 import { useCaptionLoad } from "../player/useCaptionLoad";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
-import { decodableStream, useGaplessAudio } from "../player/useGaplessAudio";
+import { decodableStream, handBack, useGaplessAudio } from "../player/useGaplessAudio";
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
@@ -603,7 +603,7 @@ function FeaturePlayer({
     route: typeof queueRoute;
   }>();
   const retryAction = failedAction?.route === queueRoute && !epoch?.aborted && failedAction.action;
-  const actionRequest = useRef(0);
+  const pendingQueueAction = useRef<{ action: QueueAction } | null>(null);
   const activeQueueRoute = useRef(queueRoute);
   const playItemRef = useRef(playItem);
   useLayoutEffect(() => {
@@ -612,7 +612,7 @@ function FeaturePlayer({
   useLayoutEffect(() => {
     activeQueueRoute.current = queueRoute;
     return () => {
-      actionRequest.current++;
+      pendingQueueAction.current = null;
     };
   }, [queueRoute]);
 
@@ -626,9 +626,12 @@ function FeaturePlayer({
       ) {
         return;
       }
-      const request = ++actionRequest.current;
+      const request = { action };
+      pendingQueueAction.current = request;
       const rows = await refreshMusicQueue(true);
-      if (rows === undefined || request !== actionRequest.current || !isCurrent()) return;
+      if (pendingQueueAction.current !== request) return;
+      pendingQueueAction.current = null;
+      if (rows === undefined || !isCurrent()) return;
       if (rows === null) {
         setFailedAction({ action, route: queueRoute });
         return;
@@ -721,8 +724,16 @@ function FeaturePlayer({
   useLayoutEffect(() => {
     const video = videoRef.current;
     if (!isAudio || !playing || !video || partyLeads) return;
-    const advance = serverQueueRun ? () => void runQueueAction("ended") : playNext;
-    if (!advance) return;
+    if (!serverQueueRun && !playNext) return;
+    const advance = () => {
+      // Let the explicit start finish its read before changing tracks.
+      if (pendingQueueAction.current?.action === "start") {
+        if (!serverQueueRun) handBack(video);
+        return;
+      }
+      if (serverQueueRun) void runQueueAction("ended");
+      else playNext?.();
+    };
     video.addEventListener("ended", advance);
     return () => video.removeEventListener("ended", advance);
   }, [isAudio, playing, partyLeads, serverQueueRun, runQueueAction, playNext, videoRef]);
