@@ -86,13 +86,20 @@ function lookup(labels: LabelSource, key: StringKey): string {
   return typeof labels === "function" ? labels(key) : (labels[key] ?? key);
 }
 
+// A closed-vocabulary wire token: lowercase words joined by ".", "_" or "-"
+// ("yielded", "scan-root-unavailable", "playback.precompute").
+const WIRE_TOKEN = /^[a-z0-9]+(?:[._-]+[a-z0-9]+)*$/;
+
+/**
+ * Reads an enum-like wire token this client has no label for as words
+ * ("waiting_for_media" → "Waiting for media"). Anything else is free text the
+ * server wrote (a message, an error, a path, a title) and is shown as sent,
+ * case kept (CORE-2342).
+ */
 function humanizeWireValue(value: string): string {
-  const words = String(value || "")
-    .trim()
-    .replace(/[._-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-  if (!words) return "";
+  const trimmed = String(value || "").trim();
+  if (!WIRE_TOKEN.test(trimmed)) return trimmed;
+  const words = trimmed.replace(/[._-]+/g, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 

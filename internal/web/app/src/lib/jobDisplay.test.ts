@@ -168,6 +168,38 @@ describe("job purpose and target", () => {
     expect(jobTargetDetail({})).toBe("");
   });
 
+  it("humanizes only enum-like wire tokens and keeps free text as sent (CORE-2342)", () => {
+    expect(jobStatusLabel("yielded", labels)).toBe("Paused");
+    expect(jobEventLabel("scan-root-unavailable", labels)).toBe("Folder unavailable");
+    expect(jobStatusLabel("awaiting.remote_peer", labels)).toBe("Awaiting remote peer");
+    expect(jobEventLabel("Scan root /Volumes/Media/Films is offline", labels)).toBe(
+      "Scan root /Volumes/Media/Films is offline",
+    );
+    expect(jobKindLabel("  Fetch from TheTVDB  ", labels)).toBe("Fetch from TheTVDB");
+    expect(jobStatusLabel("HTTP_TIMEOUT", labels)).toBe("HTTP_TIMEOUT");
+    expect(
+      jobProgressRead(
+        {
+          current: 0,
+          total: 0,
+          unit: "",
+          message: "Reading /Volumes/Media/Films/Alien (1979)",
+        },
+        labels,
+        "en",
+      ),
+    ).toBe("Reading /Volumes/Media/Films/Alien (1979)");
+    expect(jobProgressRead({ current: 2, total: 0, unit: "MB", message: "" }, labels, "en")).toBe(
+      "2 MB",
+    );
+    expect(
+      jobEventDetail({
+        type: "failed",
+        payload: JSON.stringify({ status: "failed", reason: "Scan root /Volumes/Media missing" }),
+      }),
+    ).toBe("Scan root /Volumes/Media missing");
+  });
+
   it("humanizes dotted kinds it has no label for", () => {
     expect(jobKindLabel("plugin.thing-run", labels)).toBe("Plugin thing run");
   });
