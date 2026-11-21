@@ -1133,15 +1133,15 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 		// Every rung below judges the negotiated Version by its own file facts.
 		media = versionFacts(media, file, streams, !alternate)
 	}
-	// A Media stored without a runtime (its container declared none) is
-	// probed on demand, so the timeline and a live session's playlist cover
-	// the whole file instead of ending where the encoder is (CORE-2314).
-	if media.DurationSeconds <= 0 && len(parts) <= 1 {
-		if seconds := s.probedDuration(ctx, op, media, file); seconds > 0 {
-			media.DurationSeconds = seconds
-			timeline.DurationSeconds = seconds
-		}
+	// The catalog runtime belongs to the primary Version. Probe single-Part
+	// alternatives and files whose runtime is missing on demand (CORE-2314).
+	if alternate {
+		media.DurationSeconds = 0
 	}
+	if media.DurationSeconds <= 0 && len(parts) <= 1 {
+		media.DurationSeconds = s.probedDuration(ctx, op, media, file, !alternate)
+	}
+	timeline.DurationSeconds = media.DurationSeconds
 	barred := unknownHeightBarred(media, profile, alternate || versioned || len(versions) > 0)
 	// Resolution badges (CORE-2485) describe the negotiated file as judged
 	// above, so an alternate Version's unknown frame size stays unlabelled.

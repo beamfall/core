@@ -17,8 +17,8 @@ func TestSetProbedMediaDurationKeepsScannedRuntime(t *testing.T) {
 	if _, _, err := st.ImportMediaFile(ctx, imported); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetProbedMediaDuration(ctx, media.LibraryID, media.ID, file.ContentFingerprint, file.Path, 7152); err != nil {
-		t.Fatal(err)
+	if updated, err := st.SetProbedMediaDuration(ctx, media.LibraryID, media.ID, file.ContentFingerprint, file.Path, 7152); updated || err != nil {
+		t.Fatalf("write-back = %v, %v; want false, nil", updated, err)
 	}
 	got, err := st.Media(ctx, media.ID, LibraryFilter{AllLibraries: true})
 	if err != nil || got.DurationSeconds != 120 {
@@ -51,8 +51,8 @@ func TestSetProbedMediaDurationSkipsAlternateVersionsAndParts(t *testing.T) {
 	}
 	check := func(id MediaID, file MediaFile, want int) {
 		t.Helper()
-		if err := st.SetProbedMediaDuration(ctx, libraryID, id, file.ContentFingerprint, file.Path, 7152); err != nil {
-			t.Fatal(err)
+		if updated, err := st.SetProbedMediaDuration(ctx, libraryID, id, file.ContentFingerprint, file.Path, 7152); updated != (want > 0) || err != nil {
+			t.Fatalf("write-back for %s = %v, %v; want %v, nil", file.Path, updated, err, want > 0)
 		}
 		got, err := st.Media(ctx, id, LibraryFilter{AllLibraries: true})
 		if err != nil || got.DurationSeconds != want {
@@ -90,11 +90,11 @@ func TestSetProbedMediaDurationUsesUnlockedEncryptedCatalog(t *testing.T) {
 	if err := st.SealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
 		t.Fatal(err)
 	}
-	setDuration := func() error {
+	setDuration := func() (bool, error) {
 		return st.SetProbedMediaDuration(ctx, libraryID, media.ID, file.ContentFingerprint, file.Path, 7152)
 	}
-	if err := setDuration(); !errors.Is(err, ErrEncryptedLibraryDBDisabled) {
-		t.Fatalf("sealed write error = %v, want %v", err, ErrEncryptedLibraryDBDisabled)
+	if updated, err := setDuration(); updated || !errors.Is(err, ErrEncryptedLibraryDBDisabled) {
+		t.Fatalf("sealed write = %v, %v; want false, %v", updated, err, ErrEncryptedLibraryDBDisabled)
 	}
 	if err := st.UnsealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
 		t.Fatal(err)
@@ -107,8 +107,8 @@ func TestSetProbedMediaDurationUsesUnlockedEncryptedCatalog(t *testing.T) {
 		}
 	}
 	readDuration(0)
-	if err := setDuration(); err != nil {
-		t.Fatal(err)
+	if updated, err := setDuration(); !updated || err != nil {
+		t.Fatalf("unsealed write = %v, %v; want true, nil", updated, err)
 	}
 	if err := st.SealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
 		t.Fatal(err)

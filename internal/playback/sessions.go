@@ -505,7 +505,7 @@ type Sessions struct {
 	durationProbes    map[string]durationProbeEntry
 	durationRetained  map[durationKey]*retainedDuration
 	durationFlights   map[string]*durationFlight
-	recordDuration    func(context.Context, store.LibraryID, store.MediaID, string, string, int) error
+	recordDuration    func(context.Context, store.LibraryID, store.MediaID, string, string, int) (bool, error)
 	incompleteSources incompleteSourceCache
 	sourceOwners      map[sourceOwnerKey]*sourceGenerationOwner
 	sourceClaimOrder  uint64

@@ -6,18 +6,121 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
 )
+
+type versionRuntimeTranscoder struct {
+	fakeHLSTranscoder
+	durations map[string]int
+}
+
+func (f versionRuntimeTranscoder) Probe(_ context.Context, path string) (ffmpeg.Probe, error) {
+	return ffmpeg.Probe{DurationSeconds: f.durations[path]}, nil
+}
+
+func TestHLSAndPlaybackInfoUseSelectedVersionRuntime(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	dir := t.TempDir()
+	file := func(name string) store.MediaFile {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fingerprint, err := store.HashMediaFileContent(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return store.MediaFile{Path: path, ContentFingerprint: fingerprint}
+	}
+	primary, alternate := file("primary.mkv"), file("alternate.mkv")
+	streams := []store.MediaFileStream{{Index: 0, Type: "video", Codec: "h264"}}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: "library-local", Title: "Runtime fixture", Class: store.MediaClassVideo,
+		Container: "mkv", Codec: "h264", Path: primary.Path, ContentFingerprint: primary.ContentFingerprint,
+		VideoWidthHint: 1280, VideoHeightHint: 720, Streams: streams,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alternate.VersionLabel = "Alternate"
+	if err := st.AddMediaFileVersion(ctx, media.ID, alternate, streams); err != nil {
+		t.Fatal(err)
+	}
+	authService := auth.NewService(st)
+	scope, err := authService.Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := streamtoken.NewService([]byte("version-runtime-test"), nil)
+	const primarySeconds, alternateSeconds = 45, 93
+	transcoder := versionRuntimeTranscoder{durations: map[string]int{primary.Path: primarySeconds, alternate.Path: alternateSeconds}}
+	sessions := sessiontest.New(t, transcoder, t.TempDir(), nil)
+	service := playback.NewService(st, tokens, nil)
+	service.SetSessions(sessions)
+	request := playback.InfoRequest{MediaID: string(media.ID)}
+	first, err := service.Info(ctx, scope, request)
+	if err != nil || first.Timeline.DurationSeconds != primarySeconds || len(first.Versions) != 2 || !first.Versions[0].Selected {
+		t.Fatalf("primary playback runtime = %d, Versions = %+v, error = %v", first.Timeline.DurationSeconds, first.Versions, err)
+	}
+	checkCatalog := func() {
+		t.Helper()
+		stored, err := st.Media(ctx, media.ID, scope.LibraryFilter())
+		if err != nil || stored.DurationSeconds != primarySeconds {
+			t.Fatalf("catalog runtime = %d, %v; want %d", stored.DurationSeconds, err, primarySeconds)
+		}
+	}
+	checkCatalog()
+	request.SelectedVersion = first.Versions[1].ID
+	second, err := service.Info(ctx, scope, request)
+	if err != nil || second.Timeline.DurationSeconds != alternateSeconds || len(second.Versions) != 2 || !second.Versions[1].Selected {
+		t.Fatalf("alternate playback runtime = %d, Versions = %+v, error = %v", second.Timeline.DurationSeconds, second.Versions, err)
+	}
+	if len(second.Streams) == 0 || second.Streams[0].Kind != "hls" {
+		t.Fatalf("alternate streams = %+v; want live HLS", second.Streams)
+	}
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions)
+	token := second.Streams[0].Token
+	master := fetchCastHLS(handler, token, "master.m3u8")
+	var variant string
+	for line := range strings.SplitSeq(master.Body.String(), "\n") {
+		if strings.HasSuffix(line, "/index.m3u8") {
+			variant = line
+			break
+		}
+	}
+	if master.Code != http.StatusOK || variant == "" {
+		t.Fatalf("HLS master = %d %q; want a live variant", master.Code, master.Body.String())
+	}
+	playlist := fetchCastHLS(handler, token, variant)
+	var seconds float64
+	for line := range strings.SplitSeq(playlist.Body.String(), "\n") {
+		if length, ok := strings.CutPrefix(line, "#EXTINF:"); ok {
+			value, err := strconv.ParseFloat(strings.TrimSuffix(length, ","), 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seconds += value
+		}
+	}
+	if playlist.Code != http.StatusOK || seconds != alternateSeconds {
+		t.Fatalf("HLS variant = %d, %.3f seconds; want %d seconds\n%s", playlist.Code, seconds, alternateSeconds, playlist.Body.String())
+	}
+	checkCatalog()
+}
 
 // TestDirectServesNegotiatedVersionFile: the direct URL of a non-primary
 // Version serves that Version's bytes, and a signed file fingerprint that

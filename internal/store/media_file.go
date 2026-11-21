@@ -1,10 +1,37 @@
 package store
 
 import (
+	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// MediaFileMatchesFingerprint checks the catalog fingerprint against the file
+// generation captured by playback, using the catalog's fingerprint format.
+func MediaFileMatchesFingerprint(ctx context.Context, path, generation, fingerprint string) (bool, error) {
+	sampled := strings.HasPrefix(fingerprint, "sample1:")
+	if !sampled && !strings.HasPrefix(fingerprint, "sha256:") {
+		return false, nil
+	}
+	file, err := openRegularMediaFileFollowing(path)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || SourceFileGeneration(info) != generation {
+		return false, err
+	}
+	var actual string
+	if sampled {
+		actual, err = SampleMediaFileContentAt(ctx, file, info.Size())
+	} else {
+		actual, err = HashMediaFileContentReader(ctx, file)
+	}
+	return actual == fingerprint, err
+}
 
 // openRegularMediaFile opens a media file within its parent directory, so a
 // symlink cannot lead outside it, and accepts only a regular file.

@@ -3000,33 +3000,33 @@ func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (St
 
 // SetProbedMediaDuration fills a missing runtime from the primary single-Part
 // Version's active file. A scan may have replaced the file or filled the runtime
-// while playback was probing it.
-func (s *Store) SetProbedMediaDuration(ctx context.Context, libraryID LibraryID, id MediaID, fingerprint, path string, seconds int) error {
+// while playback was probing it. The result reports whether a row changed.
+func (s *Store) SetProbedMediaDuration(ctx context.Context, libraryID LibraryID, id MediaID, fingerprint, path string, seconds int) (bool, error) {
 	if seconds <= 0 {
-		return nil
+		return false, nil
 	}
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
-		return err
+		return false, err
 	}
 	// Keep the chosen catalog writable only under the backing and unlock state
 	// observed here, including while a Library's backing is being changed.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.guardLocked(); err != nil {
-		return err
+		return false, err
 	}
 	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	var trashed bool
 	if err := s.catalogR.QueryRowContext(ctx, `SELECT trashed_at_ms IS NOT NULL FROM library WHERE id = ?`, libraryID).Scan(&trashed); err != nil {
-		return err
+		return false, err
 	}
 	if trashed {
-		return nil
+		return false, nil
 	}
-	_, err = plane.writer.ExecContext(ctx, `
+	result, err := plane.writer.ExecContext(ctx, `
 		WITH primary_file AS (
 			SELECT content_fingerprint, path, version_label, missing_at_ms
 			FROM media_file
@@ -3044,7 +3044,11 @@ func (s *Store) SetProbedMediaDuration(ctx context.Context, libraryID LibraryID,
 			  )
 		  )
 	`, id, seconds, id, libraryID, fingerprint, path)
-	return err
+	if err != nil {
+		return false, err
+	}
+	updated, err := result.RowsAffected()
+	return updated > 0, err
 }
 
 // LibraryFilePathsWithoutDuration returns the available first-part file
