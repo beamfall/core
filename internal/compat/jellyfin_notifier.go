@@ -6,6 +6,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/beamfall/core/internal/store"
 )
@@ -22,22 +24,6 @@ func (h *Handler) systemConfiguration(w http.ResponseWriter, r *http.Request, _ 
 		return
 	}
 	writeJSON(w, struct{}{})
-}
-
-type itemList struct {
-	Items            []struct{} `json:"Items"`
-	TotalRecordCount int        `json:"TotalRecordCount"`
-	StartIndex       int        `json:"StartIndex"`
-}
-
-// emptyItems serves the media folder and item path lookups. It never lists
-// Libraries or server paths: the tools then post their own mapped path to
-// Library/Media/Updated, or fall back to Library/Refresh (ADR-0171 §2.8).
-func (h *Handler) emptyItems(w http.ResponseWriter, r *http.Request, _ net.IP) {
-	if _, ok := h.integrationScope(w, r, integrationToken(r.Header), store.IntegrationScopeRead); !ok {
-		return
-	}
-	writeJSON(w, itemList{Items: []struct{}{}})
 }
 
 // adminNotification authenticates the caller and then refuses: Beamfall has
@@ -85,7 +71,13 @@ func (h *Handler) mediaUpdated(w http.ResponseWriter, r *http.Request, _ net.IP)
 			paths = append(paths, update.Path)
 		}
 	}
-	if len(paths) > 0 && h.enqueueRefresh != nil && h.allowRefresh() {
+	queue := len(paths) > 0
+	if queue && !slices.ContainsFunc(paths, absolutePath) {
+		// Lidarr posts paths relative to its own root folder, which name no
+		// server location: scan every eligible root instead.
+		paths = nil
+	}
+	if queue && h.enqueueRefresh != nil && h.allowRefresh() {
 		// The shared limiter admits at most one of these per interval.
 		ctx := context.WithoutCancel(r.Context())
 		h.background.Go(func() {
@@ -95,6 +87,19 @@ func (h *Handler) mediaUpdated(w http.ResponseWriter, r *http.Request, _ net.IP)
 		})
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// absolutePath reports whether path is a POSIX, drive-letter or UNC absolute
+// path, whichever platform the tool runs on.
+func absolutePath(path string) bool {
+	switch {
+	case strings.HasPrefix(path, "/"), strings.HasPrefix(path, `\\`):
+		return true
+	case len(path) >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/'):
+		c := path[0] | 0x20
+		return c >= 'a' && c <= 'z'
+	}
+	return false
 }
 
 func writeJSON(w http.ResponseWriter, value any) {
