@@ -1028,7 +1028,14 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 	if !ok {
 		return
 	}
-	found, err := h.findNodes(r.Context(), filter, libraries, []string{id})
+	holder := ""
+	ids := []string{id}
+	if leaves {
+		if holder = queryValue(r.URL.Query(), "seasonId"); holder != "" {
+			ids = append(ids, holder)
+		}
+	}
+	found, err := h.findNodes(r.Context(), filter, libraries, ids)
 	if err != nil {
 		http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
 		return
@@ -1040,7 +1047,6 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 	var nodes []*catalogNode
-	holder := ""
 	if !leaves {
 		for _, child := range node.children {
 			if !child.leaf {
@@ -1048,11 +1054,14 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 			}
 		}
 	} else {
-		holder = queryValue(r.URL.Query(), "seasonId")
-		if nodes, ok = containerLeaves(node, holder); !ok {
-			http.NotFound(w, r)
-			return
+		var held *catalogNode
+		if holder != "" {
+			if held = containerUnder(node, found[holder].node); held == nil {
+				http.NotFound(w, r)
+				return
+			}
 		}
+		nodes = containerLeaves(node, held)
 	}
 	if nodes, err = h.visibleNodes(r.Context(), filter, hit.lib, nodes); err != nil {
 		http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
@@ -1079,22 +1088,32 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 	h.writePage(w, r.URL.Query(), nodes)
 }
 
-// containerLeaves returns every leaf under node or, given a holder, only the
-// leaves that container holds directly, so a per-season request checks no
-// other season's rows (CORE-2817). ok is false when holder names no container
-// under node.
-func containerLeaves(node *catalogNode, holder string) (leaves []*catalogNode, ok bool) {
-	if holder != "" {
-		held := findContainer(node, holder)
-		if held == nil {
-			return nil, false
+// containerUnder returns candidate when it is a container strictly under
+// top, found by walking up from it so no sibling season is read, or nil.
+func containerUnder(top, candidate *catalogNode) *catalogNode {
+	if candidate == nil || candidate.leaf {
+		return nil
+	}
+	for p := candidate.parent; p != nil; p = p.parent {
+		if p == top {
+			return candidate
 		}
+	}
+	return nil
+}
+
+// containerLeaves returns every leaf under top or, given a held container,
+// only the leaves it holds directly, so a per-season request reads no other
+// season's rows (CORE-2817).
+func containerLeaves(top, held *catalogNode) []*catalogNode {
+	var leaves []*catalogNode
+	if held != nil {
 		for _, child := range held.children {
 			if child.leaf {
 				leaves = append(leaves, child)
 			}
 		}
-		return leaves, true
+		return leaves
 	}
 	var walk func(*catalogNode)
 	walk = func(n *catalogNode) {
@@ -1106,24 +1125,8 @@ func containerLeaves(node *catalogNode, holder string) (leaves []*catalogNode, o
 			}
 		}
 	}
-	walk(node)
-	return leaves, true
-}
-
-// findContainer returns the container with the given ID under node, or nil.
-func findContainer(node *catalogNode, id string) *catalogNode {
-	for _, child := range node.children {
-		if child.leaf {
-			continue
-		}
-		if child.id == id {
-			return child
-		}
-		if found := findContainer(child, id); found != nil {
-			return found
-		}
-	}
-	return nil
+	walk(top)
+	return leaves
 }
 
 // listUsers serves Users: the enabled Profiles opted in to compatibility
