@@ -886,3 +886,39 @@ func TestJellyfinProviderIDAndQueryValue(t *testing.T) {
 		t.Fatalf("queryValue = %q, want the exact key's value", got)
 	}
 }
+
+// TestContainerLeavesReadsOnlyTheRequestedSeason is the CORE-2817 check: an
+// Episodes request narrowed by seasonId hands visibility checks only that
+// season's leaves, however many seasons the container holds.
+func TestContainerLeavesReadsOnlyTheRequestedSeason(t *testing.T) {
+	const seasons, perSeason = 40, 25
+	show := &catalogNode{id: "show"}
+	for s := range seasons {
+		season := &catalogNode{id: fmt.Sprintf("season-%d", s), parent: show}
+		show.children = append(show.children, season)
+		for e := range perSeason {
+			season.children = append(season.children,
+				&catalogNode{id: fmt.Sprintf("s%d-e%d", s, e), leaf: true, parent: season})
+		}
+	}
+	// A loose leaf on the show itself belongs to no season.
+	show.children = append(show.children, &catalogNode{id: "special", leaf: true, parent: show})
+
+	leaves, ok := containerLeaves(show, "season-17")
+	if !ok || len(leaves) != perSeason {
+		t.Fatalf("season-17 read %d leaves (ok %v), want %d", len(leaves), ok, perSeason)
+	}
+	for _, leaf := range leaves {
+		if leaf.parent.id != "season-17" {
+			t.Fatalf("season-17 read %s of %s", leaf.id, leaf.parent.id)
+		}
+	}
+	if all, ok := containerLeaves(show, ""); !ok || len(all) != seasons*perSeason+1 {
+		t.Fatalf("the unnarrowed request read %d leaves (ok %v), want %d", len(all), ok, seasons*perSeason+1)
+	}
+	for _, holder := range []string{"missing", "s3-e4", "show"} {
+		if _, ok := containerLeaves(show, holder); ok {
+			t.Fatalf("holder %q was accepted as a season", holder)
+		}
+	}
+}

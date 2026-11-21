@@ -1049,23 +1049,10 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 		}
 	} else {
 		holder = queryValue(r.URL.Query(), "seasonId")
-		if holder != "" && !holdsContainer(node, holder) {
+		if nodes, ok = containerLeaves(node, holder); !ok {
 			http.NotFound(w, r)
 			return
 		}
-		var walk func(*catalogNode)
-		walk = func(n *catalogNode) {
-			for _, child := range n.children {
-				if child.leaf {
-					if holder == "" || (child.parent != nil && child.parent.id == holder) {
-						nodes = append(nodes, child)
-					}
-					continue
-				}
-				walk(child)
-			}
-		}
-		walk(node)
 	}
 	if nodes, err = h.visibleNodes(r.Context(), filter, hit.lib, nodes); err != nil {
 		http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
@@ -1092,14 +1079,51 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 	h.writePage(w, r.URL.Query(), nodes)
 }
 
-// holdsContainer reports whether a container with the given ID sits under node.
-func holdsContainer(node *catalogNode, id string) bool {
-	for _, child := range node.children {
-		if !child.leaf && (child.id == id || holdsContainer(child, id)) {
-			return true
+// containerLeaves returns every leaf under node or, given a holder, only the
+// leaves that container holds directly, so a per-season request checks no
+// other season's rows (CORE-2817). ok is false when holder names no container
+// under node.
+func containerLeaves(node *catalogNode, holder string) (leaves []*catalogNode, ok bool) {
+	if holder != "" {
+		held := findContainer(node, holder)
+		if held == nil {
+			return nil, false
+		}
+		for _, child := range held.children {
+			if child.leaf {
+				leaves = append(leaves, child)
+			}
+		}
+		return leaves, true
+	}
+	var walk func(*catalogNode)
+	walk = func(n *catalogNode) {
+		for _, child := range n.children {
+			if child.leaf {
+				leaves = append(leaves, child)
+			} else {
+				walk(child)
+			}
 		}
 	}
-	return false
+	walk(node)
+	return leaves, true
+}
+
+// findContainer returns the container with the given ID under node, or nil.
+func findContainer(node *catalogNode, id string) *catalogNode {
+	for _, child := range node.children {
+		if child.leaf {
+			continue
+		}
+		if child.id == id {
+			return child
+		}
+		if found := findContainer(child, id); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 // listUsers serves Users: the enabled Profiles opted in to compatibility
