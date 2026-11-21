@@ -119,7 +119,10 @@ func (h *Handler) compatSessionID(session store.SessionID, media store.MediaID) 
 
 // itemCounts serves Items/Counts: how many visible items of each declared
 // item type the eligible Libraries hold, filtered before counting. Each field
-// is the item type followed by "Count"; core names no item type.
+// is the item type followed by "Count", and every type an eligible Library
+// declares is present, at zero when it holds none; core names no item type.
+// It counts current copies of the index's nodes, so an item trashed, hidden or
+// unmapped since the index was built is never counted.
 func (h *Handler) itemCounts(w http.ResponseWriter, r *http.Request, _ net.IP) {
 	libraries, filter, ok := h.catalogScope(w, r)
 	if !ok {
@@ -127,12 +130,27 @@ func (h *Handler) itemCounts(w http.ResponseWriter, r *http.Request, _ net.IP) {
 	}
 	counts := map[string]int{}
 	for _, lib := range libraries {
+		for _, types := range []map[string]string{lib.interop.MediaTypes, lib.interop.KindTypes} {
+			for _, itemType := range types {
+				if itemType != "" {
+					counts[itemType+"Count"] += 0
+				}
+			}
+		}
 		index, err := h.libraryIndex(r.Context(), filter, lib)
 		if err != nil {
 			http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
 			return
 		}
+		nodes := make([]*catalogNode, 0, len(index.byID))
 		for _, node := range index.byID {
+			nodes = append(nodes, node)
+		}
+		if nodes, err = h.visibleNodes(r.Context(), filter, lib, nodes); err != nil {
+			http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
+			return
+		}
+		for _, node := range nodes {
 			if node.itemType != "" {
 				counts[node.itemType+"Count"]++
 			}

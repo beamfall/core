@@ -4346,7 +4346,7 @@ func (h *Handler) RecordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 // ones included, since an ambient play still holds a stream. Best-effort: the
 // dashboard is advisory, so a failed touch must not fail the report.
 func (h *Handler) notePlaybackActivity(ctx context.Context, scope auth.Scope, mediaID store.MediaID) {
-	_ = h.store.TouchStreamTokenActivity(ctx, scope.SessionID, mediaID, time.Now().UTC())
+	_ = h.store.TouchStreamTokenActivity(ctx, scope.SessionID, scope.ProfileID, mediaID, time.Now().UTC())
 }
 
 // recordPlaybackProgress writes one non-ambient position report for an already
