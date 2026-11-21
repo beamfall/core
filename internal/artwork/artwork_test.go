@@ -124,6 +124,9 @@ func TestGeneratePosterPrefersEmbeddedArtwork(t *testing.T) {
 	if svc.IsGeneratedArtwork("media-alpha", SlotPoster) {
 		t.Fatal("embedded poster carried generated provenance")
 	}
+	if !svc.IsEmbeddedArtwork("media-alpha", SlotPoster) {
+		t.Fatal("embedded poster lost its embedded provenance")
+	}
 	poster, err := os.ReadFile(svc.PosterPath("media-alpha"))
 	if err != nil || string(poster) != "embedded jpeg" {
 		t.Fatalf("poster = %q, %v", poster, err)
@@ -1138,5 +1141,26 @@ func TestImportCandidateArtworkBypassesSealedGate(t *testing.T) {
 	}
 	if svc.HasPoster(other) {
 		t.Fatal("Media-gated ImportArtwork wrote a poster for an unresolvable synthetic ID; sealed gate not fail-closed")
+	}
+}
+
+// TestImportArtworkClearsEmbeddedProvenance (CORE-2901): fetched artwork over
+// an embedded cover is no longer marked embedded, so identify keeps it.
+func TestImportArtworkClearsEmbeddedProvenance(t *testing.T) {
+	st := storetest.Open(t)
+	setPrimaryFile(t, st, "media-alpha")
+	svc := NewService(st, &fakeGrabber{embedded: true}, t.TempDir())
+	found, err := svc.ImportEmbeddedPoster(context.Background(), "media-alpha")
+	if err != nil || !found {
+		t.Fatalf("ImportEmbeddedPoster = %v, %v; want true, nil", found, err)
+	}
+	if !svc.IsEmbeddedArtwork("media-alpha", SlotPoster) {
+		t.Fatal("embedded poster not marked embedded")
+	}
+	if err := svc.ImportArtwork(context.Background(), "media-alpha", SlotPoster, []byte("fetched poster")); err != nil {
+		t.Fatal(err)
+	}
+	if svc.IsEmbeddedArtwork("media-alpha", SlotPoster) {
+		t.Fatal("fetched poster still marked embedded")
 	}
 }

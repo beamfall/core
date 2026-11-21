@@ -287,6 +287,16 @@ func (s *Service) IsGeneratedArtwork(id store.MediaID, slot string) bool {
 
 func generatedMarkerPath(path string) string { return path + ".generated" }
 
+// IsEmbeddedArtwork reports whether a present slot holds the cover extracted
+// from the Media file itself rather than fetched or supplied artwork.
+func (s *Service) IsEmbeddedArtwork(id store.MediaID, slot string) bool {
+	return s.HasArtwork(id, slot) && regularFileExists(embeddedMarkerPath(s.ArtworkPath(id, slot)))
+}
+
+// embeddedMarkerPath marks a poster extracted from the Media file; any other
+// import over the slot removes it.
+func embeddedMarkerPath(path string) string { return path + ".embedded" }
+
 // HasEntityPoster reports whether a poster file exists for the Entity.
 func (s *Service) HasEntityPoster(id store.EntityID) bool {
 	_, ok := s.EntityArtworkVersion(id, SlotPoster)
@@ -876,7 +886,9 @@ func (s *Service) GeneratePoster(ctx context.Context, id store.MediaID) error {
 }
 
 // ImportEmbeddedPoster extracts an attached picture from the primary media
-// file. It is imported provenance, so fetched artwork must not replace it.
+// file and marks it embedded (IsEmbeddedArtwork). Identify keeps it over
+// fetched artwork for audio and image Media; for video it is only a fallback
+// the provider poster replaces.
 func (s *Service) ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (bool, error) {
 	if s.embedded == nil || s.isSealed(ctx, id) || s.isEncrypted(ctx, id) {
 		return false, nil
@@ -914,6 +926,9 @@ func (s *Service) importEmbeddedPoster(ctx context.Context, id store.MediaID, sr
 		return false, err
 	}
 	if err := os.Remove(generatedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	if err := os.WriteFile(embeddedMarkerPath(dst), nil, 0o600); err != nil {
 		return false, err
 	}
 	for bucket := range bucketWidths {
@@ -1128,8 +1143,16 @@ func (s *Service) importMediaArtwork(ctx context.Context, id store.MediaID, slot
 		return err
 	}
 	s.recordDominantColor(dst, slot)
-	if err := os.Remove(generatedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	return removeProvenanceMarkers(dst)
+}
+
+// removeProvenanceMarkers drops the generated and embedded markers once
+// imported or supplied artwork replaces the slot file.
+func removeProvenanceMarkers(dst string) error {
+	for _, marker := range []string{generatedMarkerPath(dst), embeddedMarkerPath(dst)} {
+		if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	return nil
 }

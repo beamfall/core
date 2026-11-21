@@ -158,7 +158,7 @@ func (s *Service) copyAdoptedSlot(src, dst, slot string) error {
 	if err != nil {
 		return err
 	}
-	for _, mark := range []func(string) string{lockMarkerPath, generatedMarkerPath} {
+	for _, mark := range []func(string) string{lockMarkerPath, generatedMarkerPath, embeddedMarkerPath} {
 		if _, err := copyAdoptedMark(mark(src), mark(dst), true); err != nil {
 			return err
 		}
