@@ -274,9 +274,16 @@ export function LibrarySidebar({
           setSaving(true);
           setSaveFailed(null);
           const choice = { order: draft.order, hidden: [...draft.hidden] };
+          // An untouched default order is not stored, so a later change to
+          // the defaults still reaches this Profile (CORE-2880).
+          const personalChoice = isDefaultPersonalOrder(draft.order)
+            ? { ...choice, order: [] }
+            : choice;
           try {
             await onSavePrefs(
-              group === "libraries" ? { ...prefs, ...choice } : { ...prefs, personal: choice },
+              group === "libraries"
+                ? { ...prefs, ...choice }
+                : { ...prefs, personal: personalChoice },
             );
             leaveEditing(group);
           } catch {
@@ -586,4 +593,11 @@ function monogram(title: string, long: boolean): string {
   // first two characters.
   const next = words.length > 1 ? (Array.from(words[1])[0]?.toUpperCase() ?? "") : second;
   return first.toUpperCase() + next;
+}
+
+function isDefaultPersonalOrder(order: string[]): boolean {
+  return (
+    order.length === PERSONAL_ENTRIES.length &&
+    PERSONAL_ENTRIES.every((entry, index) => order[index] === entry.id)
+  );
 }
