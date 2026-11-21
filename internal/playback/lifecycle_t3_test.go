@@ -1580,9 +1580,18 @@ fi
 			s.SetTranscodeCap(1)
 			slow := newSlowStop(s)
 			defer slow.unblock()
-			// Release the shared help child even if an assertion fails.
+			// Release the shared help child even if an assertion fails, then wait for it to
+			// write its last file so t.TempDir cleanup cannot race that write (CORE-2819).
 			defer func() {
 				_ = os.WriteFile(filepath.Join(fixture, "release"), []byte("release"), 0o600)
+				if _, err := os.Stat(filepath.Join(fixture, "preparing")); err != nil {
+					return
+				}
+				for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+					if _, err := os.Stat(filepath.Join(fixture, "resolved")); err == nil {
+						return
+					}
+				}
 			}()
 			victim, target, third := SessionKey{SessionID: "victim"}, SessionKey{SessionID: "target"}, SessionKey{SessionID: "third"}
 			plain := func(key SessionKey) error {
