@@ -64,8 +64,8 @@ const entity: EntityInfo = {
   fields: [{ name: "Year", type: "string", value: "2001", label: { en: "Year" } }],
 };
 // The row menu renders after a click; under a loaded full gate it can take longer than the
-// 1s Testing Library default to appear (CORE-2806).
-const MENU_WAIT = { timeout: 5000 };
+// 1s Testing Library default to appear (CORE-2806), and past 5s too (CORE-2883).
+const MENU_WAIT = { timeout: 10_000 };
 // A test that waits on the menu needs a budget above that wait plus its render: at Vitest's
 // 5s default, a slow menu timed out the whole test before the wait could finish (CORE-2883).
 const MENU_TEST_TIMEOUT = 15_000;
