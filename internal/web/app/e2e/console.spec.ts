@@ -172,6 +172,27 @@ test.describe("console", () => {
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
+  test("a failed admin-session read shows a retryable error, not the lock form", async ({
+    page,
+  }) => {
+    // CORE-0258: the first AdminSession read answers 500; Retry reads the real session.
+    let failed = false;
+    await page.route("**/api/graphql", async (route) => {
+      const query = (route.request().postDataJSON() as { query?: string } | null)?.query ?? "";
+      if (!failed && /\bquery AdminSession\b/.test(query)) {
+        failed = true;
+        await route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
+        return;
+      }
+      await route.fallback();
+    });
+    await page.goto("/web/console");
+    await expect(page.getByRole("alert")).toContainText("Could not reach the server.");
+    await expect(page.getByLabel("Admin password")).toHaveCount(0);
+    await page.getByRole("button", { name: "Retry" }).click();
+    await expect(page.getByRole("navigation", { name: "Console" })).toBeVisible();
+  });
+
   test("accessibility variant: Console supports high contrast", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await page.emulateMedia({ forcedColors: "active", contrast: "more" });
