@@ -3,6 +3,10 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
 )
 
 // AnnotateMediaClass sets MediaClass on each media-kind SourceItem from its
@@ -10,8 +14,10 @@ import (
 // for a card with no artwork (CORE-1492), and Year from its stored year, so a
 // card can state it without a detail read (CORE-2269). An entity item takes
 // the class its directly linked, untrashed Media share, so a card for a
-// container of audio frames its art like its tracks (CORE-2362); one whose
-// Media mix classes, or that links none, keeps an empty class. The scoped
+// container of audio frames its art like its tracks (CORE-2362); one that
+// links no Media of its own takes the class of its linked Entities' Media
+// instead. One whose Media mix classes, or that reaches none, keeps an empty
+// class. The scoped
 // Source read sets Entity years separately. Media whose class is unknown
 // keep an empty class and Media with no year keep 0. Certification,
 // AudienceScore and AudienceScoreVotes come from the core-conventional rating fields (see
@@ -98,14 +104,73 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 }
 
 // entityMediaClassesLocked maps each Entity to the one class its directly
-// linked, untrashed Media share. An Entity whose Media mix classes, or include
-// one of unknown class, maps to nothing. Caller holds s.mu.
+// linked, untrashed Media share. An Entity with no Media of its own takes the
+// class of the Media linked to its linked Entities instead, so an artist whose
+// tracks all hang off an album still frames its card square. An Entity whose
+// Media mix classes, or include one of unknown class, maps to nothing. Caller
+// holds s.mu.
 func (s *Store) entityMediaClassesLocked(ctx context.Context, ids []MediaID) (map[MediaID]MediaClass, error) {
-	type span struct{ low, high MediaClass }
-	spans := map[MediaID]span{}
 	if len(ids) == 0 {
 		return map[MediaID]MediaClass{}, nil
 	}
+	spans, err := s.entityMediaClassSpansLocked(ctx, ids, entityDirectMediaClassSQL)
+	if err != nil {
+		return nil, err
+	}
+	var bare []MediaID
+	for _, id := range ids {
+		if _, ok := spans[id]; !ok {
+			bare = append(bare, id)
+		}
+	}
+	if len(bare) > 0 {
+		linked, err := s.entityMediaClassSpansLocked(ctx, bare, entityLinkedMediaClassSQL)
+		if err != nil {
+			return nil, err
+		}
+		maps.Copy(spans, linked)
+	}
+	classes := make(map[MediaID]MediaClass, len(spans))
+	for id, span := range spans {
+		if span.low != "" && span.low == span.high {
+			classes[id] = span.low
+		}
+	}
+	return classes, nil
+}
+
+type mediaClassSpan struct{ low, high MediaClass }
+
+// entityDirectMediaClassSQL spans the classes of each Entity's directly linked Media.
+const entityDirectMediaClassSQL = `
+				SELECT r.from_entity_id, MIN(m.media_class), MAX(m.media_class)
+				FROM entity_relation r
+				JOIN media m ON m.id = r.to_media_id
+				WHERE r.from_entity_id IN (%[1]s) AND m.trashed_at_ms IS NULL
+				GROUP BY r.from_entity_id`
+
+// entityLinkedMediaClassSQL spans the classes of the Media linked to each
+// Entity's linked, untrashed Entities, following the link either way.
+const entityLinkedMediaClassSQL = `
+				WITH linked(item_id, other_id) AS (
+					SELECT from_entity_id, to_entity_id FROM entity_relation
+					WHERE from_entity_id IN (%[1]s) AND to_entity_id IS NOT NULL
+					UNION
+					SELECT to_entity_id, from_entity_id FROM entity_relation
+					WHERE to_entity_id IN (%[1]s)
+				)
+				SELECT linked.item_id, MIN(m.media_class), MAX(m.media_class)
+				FROM linked
+				JOIN entity e ON e.id = linked.other_id AND e.trashed_at_ms IS NULL
+				JOIN entity_relation r ON r.from_entity_id = linked.other_id
+				JOIN media m ON m.id = r.to_media_id
+				WHERE linked.other_id <> linked.item_id AND m.trashed_at_ms IS NULL
+				GROUP BY linked.item_id`
+
+// entityMediaClassSpansLocked runs a class-span query over every open catalog
+// plane, widening each Entity's span across planes. Caller holds s.mu.
+func (s *Store) entityMediaClassSpansLocked(ctx context.Context, ids []MediaID, query string) (map[MediaID]mediaClassSpan, error) {
+	spans := map[MediaID]mediaClassSpan{}
 	for _, reader := range s.openCatalogReadersLocked() {
 		for start := 0; start < len(ids); start += engagementChunkSize {
 			chunk := ids[start:min(start+engagementChunkSize, len(ids))]
@@ -113,13 +178,10 @@ func (s *Store) entityMediaClassesLocked(ctx context.Context, ids []MediaID) (ma
 			for i, id := range chunk {
 				args[i] = id
 			}
-			// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
-			rows, err := reader.QueryContext(ctx, `
-				SELECT r.from_entity_id, MIN(m.media_class), MAX(m.media_class)
-				FROM entity_relation r
-				JOIN media m ON m.id = r.to_media_id
-				WHERE r.from_entity_id IN (`+sqlPlaceholders(len(chunk))+`) AND m.trashed_at_ms IS NULL
-				GROUP BY r.from_entity_id`, args...)
+			// The placeholders appear once per IN clause, so bind the IDs for each.
+			bound := slices.Repeat(args, strings.Count(query, "%[1]s"))
+			// #nosec G201 G202 -- only generated placeholders are interpolated; IDs are bound args.
+			rows, err := reader.QueryContext(ctx, fmt.Sprintf(query, sqlPlaceholders(len(chunk))), bound...)
 			if err != nil {
 				return nil, err
 			}
@@ -133,7 +195,7 @@ func (s *Store) entityMediaClassesLocked(ctx context.Context, ids []MediaID) (ma
 				if seen, ok := spans[id]; ok {
 					low, high = min(low, seen.low), max(high, seen.high)
 				}
-				spans[id] = span{low: low, high: high}
+				spans[id] = mediaClassSpan{low: low, high: high}
 			}
 			if err := rows.Close(); err != nil {
 				return nil, err
@@ -143,13 +205,7 @@ func (s *Store) entityMediaClassesLocked(ctx context.Context, ids []MediaID) (ma
 			}
 		}
 	}
-	classes := make(map[MediaID]MediaClass, len(spans))
-	for id, span := range spans {
-		if span.low != "" && span.low == span.high {
-			classes[id] = span.low
-		}
-	}
-	return classes, nil
+	return spans, nil
 }
 
 // annotateEntityYearsLocked sets each Entity card's year from its earliest
