@@ -74,7 +74,10 @@ const (
 	// libraryIndex and visibleNodes.
 	catalogIndexTTL     = 15 * time.Second
 	catalogIndexEntries = 32
-	catalogIndexBuilds  = 2
+	// catalogAbsentLimit bounds the misses one index remembers, so a caller
+	// probing unmapped IDs cannot grow it or the copy each rebuild carries.
+	catalogAbsentLimit = 256
+	catalogIndexBuilds = 2
 )
 
 // providerKeys are the ProviderIds keys the tools read, by lowercase scheme.
@@ -175,6 +178,9 @@ func (x *catalogIndex) markAbsent(ids []string) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	for _, id := range ids {
+		if len(x.absent) >= catalogAbsentLimit {
+			return
+		}
 		if x.byID[id] == nil {
 			if x.absent == nil {
 				x.absent = map[string]bool{}
