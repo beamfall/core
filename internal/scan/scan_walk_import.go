@@ -132,7 +132,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, authoritative)
 	}
 	if s.isParsedPart(parsed, parsedOK) {
-		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), task.probe.value.Chapters, task.probe.succeeded); err != nil {
+		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), task.probe.value.Chapters, task.probe.succeeded, probedTags(task.probe.succeeded, task.probe.value.Tags)); err != nil {
 			return err
 		}
 		return s.ctx.Err()
@@ -309,7 +309,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		}
 	})
 	if s.isParsedPart(parsed, parsedOK) {
-		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded); err != nil {
+		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded, probeTags); err != nil {
 			return err
 		}
 		return s.ctx.Err()
@@ -409,6 +409,14 @@ func (s *scanWalkState) hydrateMetadata(media store.Media, path, fingerprint str
 		Metadata:           metadata,
 		ContentFingerprint: fingerprint,
 	})
+}
+
+// probedTags is a probe's tags, or nil when the file was not probed.
+func probedTags(succeeded bool, tags map[string]string) map[string]string {
+	if !succeeded {
+		return nil
+	}
+	return tags
 }
 
 func mediaClassFromProbe(probe ffmpeg.Probe) store.MediaClass {

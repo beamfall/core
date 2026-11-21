@@ -399,4 +399,7 @@ type parsedPartImport struct {
 	markerTitle   string
 	probeChapters []ffmpeg.ProbeChapter
 	probed        bool
+	// tags are the part's embedded metadata; the group hydrates from its
+	// first part's.
+	tags map[string]string
 }

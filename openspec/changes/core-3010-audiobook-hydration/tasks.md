@@ -1,3 +1,4 @@
 - [x] Add `audiobookHydrationMapper` and register it when the audiobook bundle is active
 - [x] Focused test: registration, marker, declared-vocabulary plan
 - [x] Repin plugin-audiobook to v0.1.17
+- [x] Hydrate part groups from their first probed part (scan)
