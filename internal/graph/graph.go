@@ -6195,6 +6195,8 @@ var mutationFields = map[string]bool{
 	"addsubscription":                    true,
 	"removesubscription":                 true,
 	"setsubscriptionretention":           true,
+	"refreshsubscription":                true, // CORE-2955: follower manual feed refresh, rate-limited
+	"refreshallsubscriptions":            true, // CORE-2955: Manager refresh of every feed
 	"runjob":                             true,
 	"runeventscompaction":                true,
 	"jobcancel":                          true,
