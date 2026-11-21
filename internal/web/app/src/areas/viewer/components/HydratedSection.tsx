@@ -97,7 +97,11 @@ export function HydratedSection({
     const controller = new AbortController();
     const cached = readViewerCache<SourceItem[]>(identity, cacheKey);
     setItems(cached ?? null);
-    onHydrationStateChange?.(cached ? (cached.length ? "visible" : "empty") : "loading");
+    // A cached empty Section stays hidden but reports "loading" until the
+    // server confirms it: it may have filled since (a Profile started something
+    // that Continue Watching now holds), and the Layout must not act on a stale
+    // "empty" (CORE-2825).
+    onHydrationStateChange?.(cached?.length ? "visible" : "loading");
     const abandon = () => {
       alive = false;
       window.clearTimeout(timeout);
@@ -105,7 +109,11 @@ export function HydratedSection({
     };
     const fail = () => {
       onConnectionLost?.();
-      if (cached) return;
+      if (cached?.length) return;
+      if (cached) {
+        onHydrationStateChange?.("empty");
+        return;
+      }
       setItems([]);
       onHydrationStateChange?.("failed");
     };
