@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 )
@@ -261,15 +262,7 @@ func certificationFilterSQL(constraints []CertificationConstraint, playbackGate 
 	var clause strings.Builder
 	var args []any
 	// Pre-build the grant escape hatch (shared across all constraint clauses).
-	var grantClause string
-	var grantArgs []any
-	if len(grantedIDs) > 0 {
-		ph := strings.TrimSuffix(strings.Repeat("?, ", len(grantedIDs)), ", ")
-		grantClause = "\n		       OR m.id IN (" + ph + ")"
-		for _, id := range grantedIDs {
-			grantArgs = append(grantArgs, id)
-		}
-	}
+	grantClause, grantArg := grantedMediaClause(grantedIDs)
 	for _, constraint := range ordered {
 		// Locked constraints skip the exclusion clause on browse paths so that
 		// locked-but-visible Media appears in results; the byte gate always
@@ -296,11 +289,27 @@ func certificationFilterSQL(constraints []CertificationConstraint, playbackGate 
 		}
 		if grantClause != "" {
 			clause.WriteString(grantClause)
-			args = append(args, grantArgs...)
+			args = append(args, grantArg)
 		}
 		clause.WriteString(")")
 	}
 	return clause.String(), args
+}
+
+// grantedMediaClause renders the AccessGrant escape hatch of a certification
+// clause. The granted ids bind as one JSON array read through json_each, so a
+// Profile with any number of grants stays under SQLite's bound-variable limit
+// (CORE-2931). It returns "" when nothing is granted.
+func grantedMediaClause(grantedIDs []MediaID) (string, any) {
+	if len(grantedIDs) == 0 {
+		return "", nil
+	}
+	encoded, err := json.Marshal(grantedIDs)
+	if err != nil {
+		// A []MediaID is a string slice and always encodes; fail closed.
+		return "", nil
+	}
+	return "\n\t\t       OR m.id IN (SELECT value FROM json_each(?))", string(encoded)
 }
 
 // planeCertificationFilterSQL renders certification clauses for a query
@@ -312,6 +321,7 @@ func planeCertificationFilterSQL(pluginID string, constraints []CertificationCon
 	}
 	ordered := append([]CertificationConstraint(nil), constraints...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].PluginID < ordered[j].PluginID })
+	grantClause, grantArg := grantedMediaClause(grantedIDs)
 	var clause strings.Builder
 	var args []any
 	for _, constraint := range ordered {
@@ -333,12 +343,9 @@ func planeCertificationFilterSQL(pluginID string, constraints []CertificationCon
 		       OR NOT EXISTS (SELECT 1 FROM media_field_text cf WHERE cf.media_id = m.id
 		                      AND cf.field = '` + certificationField + `')`)
 		}
-		if len(grantedIDs) > 0 {
-			placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(grantedIDs)), ", ")
-			clause.WriteString("\n\t\t       OR m.id IN (" + placeholders + ")")
-			for _, id := range grantedIDs {
-				args = append(args, id)
-			}
+		if grantClause != "" {
+			clause.WriteString(grantClause)
+			args = append(args, grantArg)
 		}
 		clause.WriteString(")")
 	}
