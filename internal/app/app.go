@@ -4231,7 +4231,7 @@ func registerBuiltInSchedules(ctx context.Context, st *store.Store, service *sch
 	if composesPictures && precomputeBudgetBytes > 0 && precomputeCacheRoot != "" {
 		service.Register(singleJobSchedule(playback.ComposedSweepJobKind, schedulepkg.Every(1, schedulepkg.Hours)))
 	}
-	service.Register(singleJobSchedule(ingest.PollJobKind, schedulepkg.Every(1, schedulepkg.Hours)))
+	service.Register(singleJobSchedule(ingest.PollJobKind, schedulepkg.Every(int(ingest.MinPollInterval/time.Minute), schedulepkg.Minutes)))
 	service.Register(singleJobSchedule(qbittorrent.PollJobKind, schedulepkg.Every(5, schedulepkg.Minutes)))
 	// Decode-verify sampling: weekly on Sunday at 05:00,
 	// heavy I/O / low urgency. Disableable like every seeded Schedule; the

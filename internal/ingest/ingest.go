@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -43,9 +44,10 @@ import (
 // PollJobKind is the durable job that polls every Subscription.
 const PollJobKind store.JobKind = "subscription-poll"
 
-// DefaultPollInterval is the cadence the composition root re-arms the poll
-// job at (ADR-0030 §7: hourly default). The ADR-0032 Scheduler owns
-// user-editable cadence later; this constant is the seed value.
+// DefaultPollInterval is how long a healthy Subscription waits between polls
+// (ADR-0030 §7: hourly default), clamped to [MinPollInterval,
+// MaxPollInterval]. The poll job itself runs every MinPollInterval and polls
+// only the Subscriptions that are due (ADR-0238 §2.2).
 const DefaultPollInterval = time.Hour
 
 // downloadBudgetBytes caps one enclosure download. Feeds advertise lengths
@@ -63,11 +65,19 @@ type Poller struct {
 	// cleanup — the same on-disk and receipt state a process kill at that
 	// boundary leaves behind.
 	fault func(point string) error
+	// now and jitter are the clock and the backoff jitter source (a uniform
+	// sample in [0, 1)); tests replace them.
+	now    func() time.Time
+	jitter func() float64
 }
 
 // NewPoller creates a Poller over the shared hardened scrape engine.
 func NewPoller(st *store.Store, engine *scrape.Engine) *Poller {
-	return &Poller{store: st, engine: engine, logger: slog.Default()}
+	return &Poller{
+		store: st, engine: engine, logger: slog.Default(),
+		now:    func() time.Time { return time.Now().UTC() },
+		jitter: rand.Float64, //nolint:gosec // G404: backoff jitter spreads retries; it is not a secret.
+	}
 }
 
 // SetLogger overrides the default logger; nil restores slog.Default().
@@ -128,6 +138,9 @@ func Handler(p *Poller) jobs.Handler {
 			if ctx.Err() != nil {
 				break
 			}
+			if !subscription.Health.Due(p.now()) {
+				continue
+			}
 			downloaded, err := p.pollSubscription(ctx, subscription)
 			checkpoint.Downloaded += downloaded
 			if err != nil {
@@ -167,13 +180,13 @@ func Handler(p *Poller) jobs.Handler {
 // anything new arrived. Returns how many enclosures were published,
 // resumed crash residue included.
 func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscription) (int, error) {
-	now := time.Now().UTC()
+	now := p.now()
 	// Resolve the private-feed Authorization header from the secure store via
 	// the stored ref (invariant #5): the literal credential never lives in the
 	// catalog DB. An anonymous feed has an empty ref and resolves to "".
 	authHeader, err := p.engine.Credential(subscription.AuthRef)
 	if err != nil {
-		return 0, err
+		return 0, p.recordFeedFailure(ctx, subscription, store.FeedErrorAuth, err, now)
 	}
 	seen, err := p.store.SubscriptionSeenGUIDs(ctx, subscription.ID)
 	if err != nil {
@@ -186,15 +199,24 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if err != nil {
 		return 0, err
 	}
-	result, err := p.engine.FetchConditionalAuth(ctx, subscription.FeedURL, subscription.ETag, subscription.LastModified, authHeader)
+	result, err := p.engine.FetchFeed(ctx, subscription.FeedURL, subscription.ETag, subscription.LastModified, authHeader)
 	if err != nil {
-		return published, err
+		if ctx.Err() != nil {
+			return published, err
+		}
+		return published, p.recordFeedFailure(ctx, subscription, classifyFeedError(err), err, now)
 	}
 	if result.NotModified {
-		return published, p.store.MarkSubscriptionPolled(ctx, subscription.ID, result.ETag, result.LastModified, now)
+		if err := p.observeMove(ctx, subscription, result, now); err != nil {
+			return published, err
+		}
+		return published, p.markPolled(ctx, subscription, result.ETag, result.LastModified, now)
 	}
 	entries, err := scrape.ParseFeedEntries(result.Data)
 	if err != nil {
+		return published, p.recordFeedFailure(ctx, subscription, store.FeedErrorParse, err, now)
+	}
+	if err := p.observeMove(ctx, subscription, result, now); err != nil {
 		return published, err
 	}
 	downloaded := 0
@@ -221,7 +243,7 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	// but only a fully clean poll may store the new validators — otherwise a
 	// 304 on the next poll would skip the entries that failed this time.
 	if firstErr != nil {
-		if err := p.store.MarkSubscriptionPolled(ctx, subscription.ID, "", "", now); err != nil {
+		if err := p.markPolled(ctx, subscription, "", "", now); err != nil {
 			return published + downloaded, err
 		}
 		return published + downloaded, firstErr
@@ -232,7 +254,7 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	if err := sweepStaleArtifacts(subscription.Root, subscription.ID); err != nil {
 		return published + downloaded, err
 	}
-	return published + downloaded, p.store.MarkSubscriptionPolled(ctx, subscription.ID, result.ETag, result.LastModified, now)
+	return published + downloaded, p.markPolled(ctx, subscription, result.ETag, result.LastModified, now)
 }
 
 // ingestEntry lands one feed entry crash-durably. The payload stages first

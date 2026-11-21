@@ -25,6 +25,7 @@ import (
 	"github.com/beamfall/core/internal/config"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/identify"
+	"github.com/beamfall/core/internal/ingest"
 	"github.com/beamfall/core/internal/integrationhost"
 	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/manifest"
@@ -3223,7 +3224,38 @@ type SubscriptionInfo struct {
 	Followed      bool   `json:"followed"`
 	RetentionKind string `json:"retentionKind"`
 	RetentionN    *int   `json:"retentionN"`
+	// Feed health (ADR-0238 §2.2). healthStatus is ok, failing, warning
+	// (failing for seven days or more) or retired (the origin answered 410);
+	// lastErrorClass is the closed class of the latest failure, never its text.
+	HealthStatus   string `json:"healthStatus"`
+	LastErrorClass string `json:"lastErrorClass"`
+	FailingSince   string `json:"failingSince,omitempty"`
+	NextPollAt     string `json:"nextPollAt,omitempty"`
+	RetiredAt      string `json:"retiredAt,omitempty"`
+	MovedAt        string `json:"movedAt,omitempty"`
 }
+
+// SubscriptionRefreshInfo is the viewer-safe refreshSubscription echo: the
+// Subscription's identity, display title and feed health. Like FollowInfo it
+// never carries feedURL or root.
+type SubscriptionRefreshInfo struct {
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	HealthStatus   string `json:"healthStatus"`
+	LastErrorClass string `json:"lastErrorClass"`
+	FailingSince   string `json:"failingSince,omitempty"`
+	NextPollAt     string `json:"nextPollAt,omitempty"`
+}
+
+// SubscriptionRefreshAllInfo reports how many Subscriptions a Refresh all
+// made due.
+type SubscriptionRefreshAllInfo struct {
+	Refreshed int `json:"refreshed"`
+}
+
+// subscriptionRefreshGap is the minimum time between two manual refreshes of
+// one Subscription (ADR-0238 §2.2).
+const subscriptionRefreshGap = 5 * time.Minute
 
 type SubscriptionEntryAssociationInfo struct {
 	SubscriptionID         string `json:"subscriptionID"`
@@ -3250,7 +3282,96 @@ func (h *Handler) subscriptionInfo(ctx context.Context, scope auth.Scope, subscr
 		Followed:      followed,
 		RetentionKind: string(subscription.RetentionKind),
 		RetentionN:    subscription.RetentionN,
+
+		HealthStatus:   string(subscription.Health.Status(time.Now().UTC())),
+		LastErrorClass: string(subscription.Health.LastErrorClass),
+		FailingSince:   formatOptionalTime(subscription.Health.FailingSince),
+		NextPollAt:     formatOptionalTime(subscription.Health.NextPollAt),
+		RetiredAt:      formatOptionalTime(subscription.Health.RetiredAt),
+		MovedAt:        formatOptionalTime(subscription.Health.MovedAt),
 	}, nil
+}
+
+// refreshSubscription makes one Subscription due for polling now, a retired
+// one included, and enqueues the poll job. A Manager may refresh any
+// Subscription in a Library it can see; anyone else only one they follow.
+// One refresh per Subscription per subscriptionRefreshGap.
+func (h *Handler) refreshSubscription(ctx context.Context, scope auth.Scope, req request) (SubscriptionRefreshInfo, error) {
+	id := store.SubscriptionID(trimmedVariable(req, "id"))
+	if id == "" {
+		return SubscriptionRefreshInfo{}, clientError("id is required")
+	}
+	subscription, err := h.store.Subscription(ctx, id)
+	if err != nil {
+		return SubscriptionRefreshInfo{}, clientError("unknown subscription")
+	}
+	visible, err := h.visibleLibrary(ctx, scope, subscription.LibraryID)
+	if err != nil {
+		return SubscriptionRefreshInfo{}, err
+	}
+	if !visible {
+		return SubscriptionRefreshInfo{}, clientError("unknown subscription")
+	}
+	if scope.DeviceRole != store.DeviceRoleManager {
+		followed, err := h.store.SubscriptionFollowed(ctx, scope.ProfileID, id)
+		if err != nil {
+			return SubscriptionRefreshInfo{}, err
+		}
+		if !followed {
+			return SubscriptionRefreshInfo{}, clientError("unknown subscription")
+		}
+	}
+	now := time.Now().UTC()
+	refreshed, err := h.store.RequestSubscriptionRefresh(ctx, id, now, subscriptionRefreshGap)
+	if errors.Is(err, store.ErrSubscriptionRefreshRateLimited) {
+		return SubscriptionRefreshInfo{}, clientError("subscription was refreshed recently; try again later")
+	}
+	if errors.Is(err, store.ErrSubscriptionNotFound) {
+		return SubscriptionRefreshInfo{}, clientError("unknown subscription")
+	}
+	if err != nil {
+		return SubscriptionRefreshInfo{}, err
+	}
+	if err := h.enqueueSubscriptionPoll(ctx, now); err != nil {
+		return SubscriptionRefreshInfo{}, err
+	}
+	health := refreshed.Health
+	return SubscriptionRefreshInfo{
+		ID:             string(refreshed.ID),
+		Title:          refreshed.Title,
+		HealthStatus:   string(health.Status(now)),
+		LastErrorClass: string(health.LastErrorClass),
+		FailingSince:   formatOptionalTime(health.FailingSince),
+		NextPollAt:     formatOptionalTime(health.NextPollAt),
+	}, nil
+}
+
+// refreshAllSubscriptions (manager-gated in execute) makes every
+// Subscription outside its refresh gap due now and enqueues the poll job.
+func (h *Handler) refreshAllSubscriptions(ctx context.Context, _ auth.Scope, _ request) (SubscriptionRefreshAllInfo, error) {
+	now := time.Now().UTC()
+	refreshed, err := h.store.RequestAllSubscriptionsRefresh(ctx, now, subscriptionRefreshGap)
+	if err != nil {
+		return SubscriptionRefreshAllInfo{}, err
+	}
+	if refreshed > 0 {
+		if err := h.enqueueSubscriptionPoll(ctx, now); err != nil {
+			return SubscriptionRefreshAllInfo{}, err
+		}
+	}
+	return SubscriptionRefreshAllInfo{Refreshed: refreshed}, nil
+}
+
+// enqueueSubscriptionPoll enqueues the deduped poll job. A poll already
+// queued picks the refresh up; one already running reaches it on its next
+// run.
+func (h *Handler) enqueueSubscriptionPoll(ctx context.Context, now time.Time) error {
+	job, err := ingest.NewPollJob(now)
+	if err != nil {
+		return err
+	}
+	_, err = h.store.EnqueueJob(ctx, job)
+	return err
 }
 
 // visibleLibrary reports whether the scope can currently see the Library —

@@ -625,6 +625,10 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "kind", Kind: "string"},
 		{Name: "mediaID", Kind: "string", Optional: true},
 	},
+	"refreshallsubscriptions": {},
+	"refreshsubscription": {
+		{Name: "id", Kind: "string"},
+	},
 	"refreshmediametadata": {
 		{Name: "mediaID", Kind: "string"},
 	},

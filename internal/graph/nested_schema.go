@@ -213,6 +213,8 @@ var resultTypes = map[string]any{
 	"scrobblestatus":                     ScrobbleStatusInfo{},      // MUSIC-7: admin diagnostic object
 	"setclientpref":                      ClientPrefInfo{},
 	"setfollow":                          FollowInfo{},
+	"refreshsubscription":                SubscriptionRefreshInfo{},
+	"refreshallsubscriptions":            SubscriptionRefreshAllInfo{},
 	"associatesubscriptionentry":         SubscriptionEntryAssociationInfo{},
 	"setmute":                            MuteResult{},
 	"clearmute":                          MuteResult{},
