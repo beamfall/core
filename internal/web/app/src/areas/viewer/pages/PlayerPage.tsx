@@ -416,16 +416,16 @@ function FeaturePlayer({
     !!identity &&
     !!profileID &&
     (infoIsCurrent ? isAudio : entryClass === "audio" || !!navState.musicRun);
-  const writeMusicCursor = (run: string, cursor: MusicQueueCursor) => {
+  const writeMusicCursor = (run: string, cursor: MusicQueueCursor, adopted: boolean) => {
     const nextEntry = {
       ...entry,
       state: {
         ...(entry.state && typeof entry.state === "object" ? entry.state : {}),
         title: undefined,
-        queue: undefined,
-        queueIdentity: undefined,
+        selectPartyTitle: false,
+        ...(adopted && { queue: undefined, queueIdentity: undefined }),
         musicRun: run,
-        musicAdopted: true,
+        musicAdopted: adopted,
         musicCursor: cursor,
         musicNextID: undefined,
         musicIdentity: identity,
@@ -454,7 +454,7 @@ function FeaturePlayer({
     catalog: musicAudio ? (queue ?? playAll ?? []) : [],
     catalogIncomplete: !!playAll && hasUnloadedPlayAllTracks(mediaId),
     fullCatalog: playAll ? () => finishPlayAllTracks(mediaId) : undefined,
-    onQueueEdit: writeMusicCursor,
+    onCursorChange: writeMusicCursor,
   });
   // Before playback-info answers, a queue entry that reports its class already
   // routes a track to the audio stage instead of an empty video frame
@@ -564,7 +564,7 @@ function FeaturePlayer({
           musicNextID: music.nextID,
           musicCursor: music.cursor,
           musicIdentity: identity,
-          musicProfileID: music.adopted ? profileID : undefined,
+          musicProfileID: music.cursor ? profileID : undefined,
         }),
       };
       if (docked && onAdvanceDocked) {
@@ -636,7 +636,7 @@ function FeaturePlayer({
     }
     playItem(item.id, "", true, {
       run: music.run,
-      adopted: music.adopted,
+      adopted: advance.adopted,
       nextID: revealed ? undefined : advance.nextID,
       cursor: advance.cursor,
     });

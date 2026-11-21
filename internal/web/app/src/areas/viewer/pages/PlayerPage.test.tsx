@@ -1708,7 +1708,7 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
     expect(transport()?.mediaID).toBe("media-next");
   });
 
-  it("restores the adopted playback cursor and history on reload with an empty queue cache", async () => {
+  it("restores a server queue's cursor on reload before its first edit", async () => {
     enableAllTracks();
     const firstEpoch = new AbortController();
     const newEpoch = new AbortController();
@@ -1716,15 +1716,13 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
     setIdentityEpochSignal(firstEpoch.signal);
     const graph = vi.spyOn(api, "graphql").mockResolvedValue({ sourceItems: orderedTracks });
     try {
-      const firstView = renderAdvance({
-        musicRun: "reloaded-run",
-        musicAdopted: true,
-        musicIdentity: viewer.identity,
-      });
+      const firstView = renderAdvance({});
       await waitFor(() => expect(transport()?.musicQueue?.next?.id).toBe("media-next"));
       fireEvent.ended(presentFirstFrame());
       await waitFor(() => expect(transport()?.mediaID).toBe("media-next"));
       const state = firstView.location().state;
+      expect(state.musicAdopted).toBe(true);
+      expect(state.musicProfileID).toBe("profile-a");
       expect(state.musicCursor).toEqual({
         currentID: "media-next",
         playedIDs: ["media-alpha"],
@@ -1751,6 +1749,62 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
       expect(transport()?.musicQueue?.previous).toBeUndefined();
       fireEvent.ended(presentFirstFrame());
       await waitFor(() => expect(transport()?.mediaID).toBe("media-third"));
+    } finally {
+      act(() => lockedEpoch.abort());
+      setIdentityEpochSignal();
+    }
+  });
+
+  it("restores repeat-one and shuffled order after reload and same-profile relock", async () => {
+    enableAllTracks();
+    const firstEpoch = new AbortController();
+    const reloadEpoch = new AbortController();
+    const lockedEpoch = new AbortController();
+    setIdentityEpochSignal(firstEpoch.signal);
+    const fourth = { id: "media-fourth", title: "Delta", mediaClass: "audio" };
+    const graph = vi
+      .spyOn(api, "graphql")
+      .mockResolvedValue({ sourceItems: [...orderedTracks, fourth] });
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      const firstView = renderAdvance({
+        musicRun: "saved-modes",
+        musicAdopted: true,
+        musicIdentity: viewer.identity,
+      });
+      await waitFor(() => expect(transport()?.musicQueue?.next?.id).toBe("media-next"));
+      act(() => transport()?.musicQueue?.cycleRepeat());
+      act(() => transport()?.musicQueue?.cycleRepeat());
+      act(() => transport()?.musicQueue?.toggleShuffle());
+      expect(transport()?.musicQueue?.next?.id).toBe("media-third");
+      const state = firstView.location().state;
+      expect(state.musicCursor).toMatchObject({
+        repeat: "one",
+        shuffledIDs: ["media-third", fourth.id, "media-next"],
+      });
+      firstView.unmount();
+      firstEpoch.abort();
+      setIdentityEpochSignal(reloadEpoch.signal);
+
+      const reloaded = renderAdvance(state);
+      await waitFor(() => expect(transport()?.musicQueue?.next?.id).toBe("media-third"));
+      expect(transport()?.musicQueue?.shuffled).toBe(true);
+      expect(transport()?.musicQueue?.repeat).toBe("one");
+      fireEvent.ended(presentFirstFrame());
+      expect(restart).toHaveBeenCalledWith(0);
+      expect(transport()?.mediaID).toBe("media-alpha");
+
+      viewer = { identity: "relocked", revealed: false };
+      graph.mockResolvedValue({ sourceItems: [orderedTracks[0], orderedTracks[1], fourth] });
+      act(() => reloadEpoch.abort());
+      setIdentityEpochSignal(lockedEpoch.signal);
+      reloaded.rerender();
+      await waitFor(() => expect(transport()?.musicQueue?.next?.id).toBe(fourth.id));
+      expect(transport()?.musicQueue?.shuffled).toBe(true);
+      expect(transport()?.musicQueue?.repeat).toBe("one");
+      act(() => transport()?.musicQueue?.toggleShuffle());
+      expect(transport()?.musicQueue?.next?.id).toBe("media-next");
+      expect(reloaded.location().state.musicCursor.shuffledIDs).toBeUndefined();
     } finally {
       act(() => lockedEpoch.abort());
       setIdentityEpochSignal();

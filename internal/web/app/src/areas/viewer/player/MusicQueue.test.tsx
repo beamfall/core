@@ -54,22 +54,34 @@ type Operation = { query: string; variables: Record<string, unknown> };
 let rows: (PlayQueueItem & { locked?: boolean })[];
 let requests: Operation[];
 let rejectWrite: string | undefined;
-let beforeWrite: (() => void) | undefined;
+let beforeWrite: ((field: string) => void | Promise<void>) | undefined;
+let beforeQueueRead: ((offset: number) => boolean | Promise<boolean>) | undefined;
 let mediaReadError: string | undefined;
 let libraryTracks: PlayQueueItem[];
 let libraryReadError: boolean;
+let libraryPage: Promise<void> | undefined;
 let epoch: AbortController;
 
 const writes = () => requests.filter(({ query }) => /queue(Add|Move|Remove|Clear)\(/.test(query));
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 beforeEach(() => {
   rows = [];
   requests = [];
   rejectWrite = undefined;
   beforeWrite = undefined;
+  beforeQueueRead = undefined;
   mediaReadError = undefined;
   libraryTracks = [];
   libraryReadError = false;
+  libraryPage = undefined;
   epoch = new AbortController();
   setIdentityEpochSignal(epoch.signal);
   vi.stubGlobal(
@@ -82,10 +94,13 @@ beforeEach(() => {
       if (query.includes("sourceItems(")) {
         expect(variables.query).toBe("queue");
         const offset = Number(variables.offset);
+        if (beforeQueueRead && !(await beforeQueueRead(offset)))
+          return Response.json({}, { status: 503 });
         return response({ sourceItems: rows.slice(offset, offset + Number(variables.limit)) });
       }
       if (query.includes("libraryItems(")) {
         const offset = Number(variables.offset);
+        if (offset && libraryPage) await libraryPage;
         if (offset && libraryReadError) return Response.json({}, { status: 503 });
         return response({
           libraryItems: {
@@ -106,7 +121,7 @@ beforeEach(() => {
       }
       const field = query.match(/(queueAdd|queueMove|queueRemove|queueClear)\(/)?.[1];
       if (field) {
-        beforeWrite?.();
+        if (beforeWrite) await beforeWrite(field);
         expect(variables.expectedProfileID).toBe(profileID);
         if (rejectWrite)
           return Response.json({
@@ -166,7 +181,7 @@ function Player({ catalog = [current] }: { catalog?: PlayQueueItem[] }) {
     catalogIncomplete: hasUnloadedPlayAllTracks(item.id),
     fullCatalog: playAll ? () => finishPlayAllTracks(item.id) : undefined,
     adopted: false,
-    onQueueEdit: () => {},
+    onCursorChange: () => {},
   });
   return (
     <div ref={stageRef}>
@@ -305,6 +320,30 @@ describe("music queue controls", () => {
     expect(button("Play queue")).toHaveFocus();
   });
 
+  it("reconciles a removal after playback advances within the same catalog run", async () => {
+    const removal = deferred<void>();
+    beforeWrite = (field) => (field === "queueRemove" ? removal.promise : undefined);
+    const user = setup({ catalog: [current, first, second, extra] });
+    await user.click(button("Play queue"));
+    expect(titles()).toEqual(["Beta", "Gamma", "Delta"]);
+    await user.click(button("Remove from queue: Gamma"));
+    await waitFor(() => expect(writes().at(-1)?.query).toContain("queueRemove("));
+    expect(writes().at(-1)?.variables).toMatchObject({ mediaID: second.id });
+    expect(rows.map(({ id }) => id)).toContain(second.id);
+
+    await user.click(button("Next"));
+    expect(panel()).toHaveTextContent("Now playing Beta");
+    await act(async () => removal.resolve());
+
+    expect(rows.map(({ id }) => id)).toEqual([first.id, extra.id]);
+    expect(titles()).toEqual(["Delta"]);
+    await user.click(button("Next"));
+    expect(panel()).toHaveTextContent("Now playing Delta");
+    await user.click(button("Previous"));
+    expect(panel()).toHaveTextContent("Now playing Beta");
+    expect(titles()).toEqual(["Delta"]);
+  });
+
   it("clears only the captured upcoming tracks when another device appends a row", async () => {
     rows = [first, second];
     const video = { ...track("video"), mediaClass: "video" };
@@ -410,6 +449,49 @@ describe("music queue controls", () => {
     expect(writes()).toHaveLength(0);
   });
 
+  it("restores catalog order after shuffled Next and Previous", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const user = setup({ catalog: [current, first, second, extra] });
+    await user.click(button("Play queue"));
+    await user.click(button("Shuffle queue"));
+    expect(titles()).toEqual(["Gamma", "Delta", "Beta"]);
+    await user.click(button("Next"));
+    expect(panel()).toHaveTextContent("Now playing Gamma");
+    await user.click(button("Previous"));
+    expect(panel()).toHaveTextContent("Now playing Alpha");
+    expect(titles()).toEqual(["Gamma", "Delta", "Beta"]);
+    await user.click(button("Shuffle queue"));
+    expect(titles()).toEqual(["Beta", "Gamma", "Delta"]);
+  });
+
+  it("blocks saving until a full queue read succeeds, including after a later page fails", async () => {
+    rows = [
+      ...Array.from({ length: 200 }, (_, index) => ({ ...track(`locked-${index}`), locked: true })),
+      first,
+    ];
+    const page = deferred<boolean>();
+    beforeQueueRead = (offset) => (offset === 200 ? page.promise : true);
+    const user = setup();
+    await user.click(button("Play queue"));
+    await waitFor(() =>
+      expect(requests.some(({ variables }) => variables.offset === 200)).toBe(true),
+    );
+    const save = button("Save queue as playlist");
+    expect(save).toBeDisabled();
+    await user.click(save);
+    expect(screen.queryByRole("textbox", { name: "Playlist name" })).not.toBeInTheDocument();
+
+    await act(async () => page.resolve(false));
+    expect(await screen.findByText("Couldn’t load the play queue.")).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    expect(requests.some(({ query }) => query.includes("createCollection("))).toBe(false);
+
+    beforeQueueRead = undefined;
+    await act(() => updateMusicQueue(profileID, { kind: "refresh" }));
+    expect(save).toBeEnabled();
+    expect(titles()).toEqual(["Beta"]);
+  });
+
   it("saves the displayed queue order via the playlist name form", async () => {
     rows = [second, first];
     const user = setup();
@@ -477,9 +559,16 @@ describe("music queue controls", () => {
     expect(button("Shuffle queue")).toHaveAttribute("aria-pressed", "false");
 
     libraryReadError = false;
+    const page = deferred<void>();
+    libraryPage = page.promise;
     vi.spyOn(Math, "random").mockReturnValueOnce(0).mockReturnValue(0.999);
     await user.click(button("Shuffle queue"));
+    expect(button("Shuffle queue")).toBeDisabled();
+    await user.click(button("Repeat off"));
+    expect(button("Repeat all")).toBeInTheDocument();
+    await act(async () => page.resolve());
     await waitFor(() => expect(titles()[0]).toBe("song-200"));
+    expect(button("Repeat all")).toBeInTheDocument();
     expect(panel()).toHaveTextContent("Now playing Alpha");
     await user.click(button("Shuffle queue"));
     expect(titles()).toEqual(libraryTracks.slice(1).map(({ title }) => title));

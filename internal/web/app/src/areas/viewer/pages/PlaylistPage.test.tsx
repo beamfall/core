@@ -8,6 +8,7 @@ import { fetchMediaRows } from "@/lib/graphql/browse";
 import type { CollectionInfo, GenericMediaInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { fetchEntryLocks } from "../lib/collections";
+import { MusicQueueProfile } from "../lib/musicQueue";
 import type { PlayerNavState } from "../lib/watchQueue";
 import { PlaylistPage } from "./PlaylistPage";
 
@@ -45,7 +46,7 @@ const playlist: CollectionInfo = {
 };
 
 function row(id: string, title: string): GenericMediaInfo {
-  return { id, title, durationSeconds: 60 } as GenericMediaInfo;
+  return { id, title, durationSeconds: 60, mediaClass: "audio" } as GenericMediaInfo;
 }
 
 function WatchProbe() {
@@ -61,12 +62,14 @@ function WatchProbe() {
 function renderPage() {
   render(
     <I18nProvider>
-      <MemoryRouter initialEntries={["/playlists/pl-1"]}>
-        <Routes>
-          <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
-          <Route path="/watch/*" element={<WatchProbe />} />
-        </Routes>
-      </MemoryRouter>
+      <MusicQueueProfile.Provider value="profile-1">
+        <MemoryRouter initialEntries={["/playlists/pl-1"]}>
+          <Routes>
+            <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
+            <Route path="/watch/*" element={<WatchProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </MusicQueueProfile.Provider>
     </I18nProvider>,
   );
 }
@@ -105,7 +108,16 @@ describe("PlaylistPage locked entries (CORE-1876)", () => {
     expect(locked).toBeDisabled();
     expect(fetchEntryLocks).toHaveBeenCalledWith("pl-1", 3, expect.any(AbortSignal));
 
-    await userEvent.click(screen.getByRole("button", { name: "Play all" }));
+    expect(
+      screen.queryByRole("button", { name: "More actions for Second tone" }),
+    ).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    screen.getByRole("button", { name: "More actions for First tone" }).focus();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("menuitem", { name: "Play next" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Add to queue" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Play all" }));
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/m-1|m-1,m-3");
   });
 
@@ -143,6 +155,7 @@ describe("PlaylistPage locked entries (CORE-1876)", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Play all" })).toBeInTheDocument(),
     );
+    expect(screen.queryByRole("button", { name: /More actions for/ })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Play all" }));
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/m-1|m-1,m-2,m-3");
   });

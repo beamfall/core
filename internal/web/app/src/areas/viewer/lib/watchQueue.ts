@@ -62,11 +62,17 @@ export interface PlayerNavState {
   musicCursor?: MusicQueueCursor;
 }
 
-/** An adopted queue's playback position. History state stores IDs only. */
+export type RepeatMode = "off" | "all" | "one";
+
+/** A music queue's playback position and local modes. Titles stay out of history. */
 export interface MusicQueueCursor {
   currentID: string;
   playedIDs: string[];
   requeuedIDs: string[];
+  repeat?: RepeatMode;
+  shuffledIDs?: string[];
+  catalogAnchor?: string;
+  catalogCycleIDs?: string[];
 }
 
 /** A new playback-start identity for {@link PlayerNavState.startID}. */
@@ -216,8 +222,12 @@ export function readPlayerNavState(
   // The cursor contains only IDs, so the same profile can keep its position
   // across relock. Titles and pre-minted next candidates stay identity-scoped.
   const sameMusicProfile = !!identity && !!profileID && raw.musicProfileID === profileID;
-  const musicAdopted = raw.musicAdopted === true && (sameMusicViewer || sameMusicProfile);
-  const musicCursor = musicAdopted ? readMusicCursor(raw.musicCursor) : undefined;
+  const legacyMusicViewer = sameMusicViewer && raw.musicProfileID === undefined;
+  const musicAdopted = raw.musicAdopted === true && (sameMusicProfile || legacyMusicViewer);
+  const musicCursor =
+    sameMusicProfile || (musicAdopted && legacyMusicViewer)
+      ? readMusicCursor(raw.musicCursor)
+      : undefined;
   return {
     title,
     queue,
@@ -235,13 +245,22 @@ export function readPlayerNavState(
 
 function readMusicCursor(raw: unknown): MusicQueueCursor | undefined {
   if (!raw || typeof raw !== "object") return undefined;
-  const { currentID, playedIDs, requeuedIDs } = raw as Partial<MusicQueueCursor>;
+  const { currentID, playedIDs, requeuedIDs, repeat, shuffledIDs, catalogAnchor, catalogCycleIDs } =
+    raw as Partial<MusicQueueCursor>;
   if (typeof currentID !== "string" || !Array.isArray(playedIDs) || !Array.isArray(requeuedIDs))
     return undefined;
   return {
     currentID,
     playedIDs: playedIDs.filter((id) => typeof id === "string"),
     requeuedIDs: requeuedIDs.filter((id) => typeof id === "string"),
+    ...(repeat === "off" || repeat === "all" || repeat === "one" ? { repeat } : {}),
+    ...(Array.isArray(shuffledIDs)
+      ? { shuffledIDs: shuffledIDs.filter((id) => typeof id === "string") }
+      : {}),
+    ...(typeof catalogAnchor === "string" ? { catalogAnchor } : {}),
+    ...(Array.isArray(catalogCycleIDs)
+      ? { catalogCycleIDs: catalogCycleIDs.filter((id) => typeof id === "string") }
+      : {}),
   };
 }
 

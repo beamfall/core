@@ -169,7 +169,7 @@ export function MusicQueuePanel({
         <Button
           variant="outline"
           size="sm"
-          disabled={busy || saving}
+          disabled={!music.readyToSave || saving}
           onClick={() => {
             setSaved(false);
             setSaving(true);
@@ -181,6 +181,7 @@ export function MusicQueuePanel({
       {saving && (
         <SaveQueueForm
           completeOrder={music.completeOrder}
+          ready={music.readyToSave}
           isManager={isManager}
           onClose={(success) => {
             close.current?.focus();
@@ -200,10 +201,12 @@ export function MusicQueuePanel({
 
 function SaveQueueForm({
   completeOrder,
+  ready,
   isManager,
   onClose,
 }: {
   completeOrder: () => Promise<readonly PlayQueueItem[]>;
+  ready: boolean;
   isManager: boolean;
   onClose: (success: boolean) => void;
 }) {
@@ -218,14 +221,13 @@ function SaveQueueForm({
   useEffect(() => input.current?.focus(), []);
 
   async function save() {
-    if (!name.trim() || busy) return;
+    if ((!ready && !playlistID) || !name.trim() || busy) return;
     const epoch = getIdentityEpochSignal();
     setBusy(true);
     setError(undefined);
     try {
-      const tracks = queue ?? (await completeOrder());
+      const tracks = playlistID && queue ? queue : await completeOrder();
       if (epoch?.aborted) return;
-      if (!queue) setQueue(tracks);
       let id = playlistID;
       if (!id) {
         const libraries = new Set(
@@ -239,6 +241,7 @@ function SaveQueueForm({
         const playlist = await createPlaylist([...libraries][0], name);
         id = playlist.id;
         setPlaylistID(id);
+        setQueue(tracks);
       }
       if (epoch?.aborted) return;
       await addCollectionMedia(
@@ -283,7 +286,11 @@ function SaveQueueForm({
       )}
       <div className="flex flex-wrap gap-2">
         {isManager && (
-          <Button type="submit" size="sm" disabled={busy || !name.trim()}>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={busy || !name.trim() || (!ready && !playlistID)}
+          >
             {t("playlistSave")}
           </Button>
         )}

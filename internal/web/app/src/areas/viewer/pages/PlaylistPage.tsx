@@ -147,7 +147,10 @@ export function PlaylistPage() {
               {listed.map((entry, index) => {
                 const position = order.indexOf(entry.id);
                 const path = mediaPath("media", entry.id);
-                const musicMenu = entry.mediaClass === "audio" && lockOf(entry.id) === false;
+                const musicMenu =
+                  entry.mediaClass === "audio" &&
+                  locks !== "unknown" &&
+                  locks?.get(entry.id) === false;
                 return (
                   <li key={entry.id} className="bf-track">
                     <button

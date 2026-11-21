@@ -66,6 +66,7 @@ interface ActiveMusic {
   requeued: readonly string[];
   loadContinuation: () => Promise<readonly PlayQueueItem[]>;
   isCurrent: () => boolean;
+  isSameRun: () => boolean;
   commitEdit: (intent: QueueEdit) => void;
 }
 
@@ -176,13 +177,16 @@ export function updateMusicQueue(
     };
     const editing = intent.kind !== "refresh";
     if (editing) publish({ ...snapshot, busy: true, notice: undefined });
+    else publish({ ...snapshot, loaded: false });
     let dirty = false;
     let reconciled = [...snapshot.rows];
     try {
       const rows = await readQueue(bound.epoch);
       if (!live()) return;
       if (intent.kind === "refresh") {
-        publish({ ...snapshot, rows, loaded: true });
+        const notice =
+          snapshot.notice?.key === "musicQueueLoadFailed" ? undefined : snapshot.notice;
+        publish({ ...snapshot, rows, loaded: true, notice });
         return;
       }
       reconciled = [...rows];
@@ -265,8 +269,10 @@ export function updateMusicQueue(
         }
       }
       if (!live()) return;
-      if (active && activeMusic === player && active.isCurrent()) active.commitEdit(intent);
-      publish({ ...snapshot, rows: reconciled, loaded: true });
+      // Playback can advance while the server writes. Adopt the result for
+      // the same run using its latest position and history.
+      if (active && activeMusic === player && active.isSameRun()) active.commitEdit(intent);
+      publish({ ...snapshot, rows: reconciled });
       const nextRows = dirty ? await readQueue(bound.epoch) : rows;
       if (!live()) return;
       const notice =
@@ -285,11 +291,12 @@ export function updateMusicQueue(
       }
       // A request can fail after the server applied it. Re-read instead of
       // restoring an old order or repeating a write.
-      const rows = dirty ? await readQueue(bound.epoch).catch(() => reconciled) : snapshot.rows;
+      const fullRows = dirty ? await readQueue(bound.epoch).catch(() => undefined) : undefined;
       if (live())
         publish({
           ...snapshot,
-          rows,
+          rows: fullRows ?? (dirty ? reconciled : snapshot.rows),
+          loaded: !!fullRows,
           busy: false,
           notice: { key: editing ? "musicQueueWriteFailed" : "musicQueueLoadFailed" },
         });
