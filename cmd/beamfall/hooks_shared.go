@@ -110,6 +110,9 @@ func addMusicHooks(hooks *app.Hooks) {
 			{Relation: "appears-on", ExcludeMediaRelation: "album-track"},
 		},
 	})
+	if spec, ok := music.AlbumGenreScraper(); ok {
+		hooks.EntityEnrichments = append(hooks.EntityEnrichments, musicAlbumGenreEnrichment(spec))
+	}
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.LastfmImporterID}] = func(_ []string, path string) migrate.Source { return music.NewLastfmSource(path) }
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.ListenBrainzImporterID}] = func(_ []string, path string) migrate.Source { return music.NewListenBrainzSource(path) }
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.NavidromeImporterID}] = func(categories []string, path string) migrate.Source {
@@ -130,6 +133,50 @@ func addMusicHooks(hooks *app.Hooks) {
 			},
 		})
 	}
+}
+
+// musicAlbumGenreEnrichment looks each album's release group up on
+// MusicBrainz and classifies its tracks under the voted genres (CORE-2884),
+// so albums whose files carry no usable genre tag still reach Categories.
+func musicAlbumGenreEnrichment(spec plugin.ScraperSpec) app.EntityEnrichment {
+	return app.EntityEnrichment{
+		PluginID:        music.PluginID,
+		Key:             "album-genres",
+		Kind:            "album",
+		MediaRelation:   "album-track",
+		ContextRelation: "album-artist",
+		TargetKind:      "genre",
+		Relation:        music.AlbumGenreRelation,
+		Spec:            spec,
+		Query: func(s app.EnrichmentSubject) string {
+			return music.AlbumGenreQuery(s.Title, s.Fields["musicbrainz-release-id"], s.Context)
+		},
+		Pick: func(s app.EnrichmentSubject, results []scrape.Result) (string, bool) {
+			candidates := make([]music.AlbumCandidate, 0, len(results))
+			for _, r := range results {
+				candidates = append(candidates, music.AlbumCandidate{ID: r.ID, Title: resultText(r.Fields["title"]), Artist: resultText(r.Fields["artist"])})
+			}
+			return music.PickAlbumCandidate(s.Title, s.Fields["musicbrainz-release-id"], s.Context, candidates)
+		},
+		Names: func(r scrape.Result) []string {
+			entities := make([]music.AlbumGenreEntity, 0, len(r.Entities))
+			for _, e := range r.Entities {
+				entities = append(entities, music.AlbumGenreEntity{Relation: e.Relation, Name: e.Name, Count: e.Fields["count"]})
+			}
+			return music.SelectAlbumGenres(music.AlbumGenreVotes(entities))
+		},
+	}
+}
+
+// resultText reads a scraped field as text; absent or non-text values are "".
+func resultText(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprint(v)
 }
 
 func addPodcastHooks(hooks *app.Hooks) {

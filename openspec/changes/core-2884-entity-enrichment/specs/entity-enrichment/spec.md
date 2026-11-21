@@ -28,8 +28,8 @@ replace the relation rows of every member Media under the enrichment's relation 
 ### Requirement: Entity enrichment pacing
 
 The job SHALL record each entity check, skip matched entities thereafter and retry unmatched ones
-after 30 days. When the provider reports rate limiting or a server error it SHALL end the pass and
-requeue it later.
+after 30 days. When the provider reports rate limiting or a server error, or cannot be reached, it
+SHALL end the pass and requeue it later.
 
 #### Scenario: Provider rate-limits the pass
 

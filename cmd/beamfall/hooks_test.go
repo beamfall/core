@@ -95,7 +95,7 @@ func TestProductionHookAdaptersPreservePluginOutputs(t *testing.T) {
 	hydration := mapper.MapHydration(map[string]string{
 		"TITLE": "Track", "ALBUM": "Record", "TRACK": "2/12", "DISC": "1",
 		"DATE": "2024-05-06", "ARTIST": "Artist", "ALBUMARTIST": "Album Artist",
-		"GENRE": "Genre", "MUSICBRAINZ_TRACKID": "recording-id",
+		"GENRE": "Ambient", "MUSICBRAINZ_TRACKID": "recording-id",
 	}, "/music/track.flac")
 	wantFields := map[string]string{"title": "Track", "album": "Record", "musicbrainz-recording-id": "recording-id"}
 	for _, field := range hydration.MediaFields {
@@ -150,7 +150,7 @@ func TestProductionHookAdaptersPreservePluginOutputs(t *testing.T) {
 	if relation := relations["album-artist"]; relation.ToEntity == nil || relation.ToEntity.Title != "Album Artist" || relation.RequiresRelation != "album-track" {
 		t.Fatalf("album-artist relation = %+v", relation)
 	}
-	if relation := relations["classifies"]; relation.From.Kind != "genre" || relation.From.Title != "Genre" {
+	if relation := relations["classifies"]; relation.From.Kind != "genre" || relation.From.Title != "Ambient" {
 		t.Fatalf("classifies relation = %+v", relation)
 	}
 	for _, enabled := range []bool{false, true} {
