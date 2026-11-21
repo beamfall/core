@@ -59,8 +59,9 @@ func bindStagedSubscriptionEntryTx(ctx context.Context, tx *sql.Tx, libraryID Li
 		if err := rows.Scan(&id, &root, &guid, &mediaID); err != nil {
 			return "", err
 		}
-		root, err = filepath.Abs(root)
-		if err != nil || root != dir {
+		// Compare directories by identity, not spelling: a case-insensitive
+		// volume reaches one directory under several names.
+		if !sameDirectory(root, dir) {
 			continue
 		}
 		if visible == nil {
@@ -82,4 +83,16 @@ func bindStagedSubscriptionEntryTx(ctx context.Context, tx *sql.Tx, libraryID Li
 		return mediaID, err
 	}
 	return "", rows.Err()
+}
+
+func sameDirectory(a, b string) bool {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	ai, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bi, err := os.Stat(b)
+	return err == nil && os.SameFile(ai, bi)
 }

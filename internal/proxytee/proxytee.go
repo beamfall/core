@@ -590,6 +590,7 @@ func (w *proxyClientWriter) Write(p []byte) (int, error) {
 func proxyContentType(raw string) (header string, archiveAllowed bool) {
 	mediaType, _, err := mime.ParseMediaType(raw)
 	if err == nil && (mediaType == "application/octet-stream" ||
+		mediaType == "application/ogg" || mediaType == "application/mp4" ||
 		strings.HasPrefix(mediaType, "audio/") || strings.HasPrefix(mediaType, "video/") ||
 		strings.HasPrefix(mediaType, "image/")) {
 		return raw, true

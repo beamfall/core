@@ -27,6 +27,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"math/rand/v2"
 	"os"
@@ -448,13 +449,12 @@ func linkStagedPayload(root string, staged *string, link func(string, string) er
 			!errors.Is(err, syscall.EPERM) && !errors.Is(err, syscall.EXDEV) && !errors.Is(err, syscall.EMLINK) {
 			return "", err
 		}
-		if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
-			if err == nil {
-				return "", os.ErrExist
-			}
+		// No hard links: copy into an exclusively created target so a
+		// concurrent claimant is never overwritten, then drop the stage.
+		if err := copyExclusive(*staged, target); err != nil {
 			return "", err
 		}
-		if err := os.Rename(*staged, target); err != nil {
+		if err := os.Remove(*staged); err != nil {
 			return "", err
 		}
 		*staged = ""
@@ -775,4 +775,30 @@ func syncDir(dir string) error {
 		return syncErr
 	}
 	return closeErr
+}
+
+// copyExclusive copies src to a newly created dst (O_EXCL), syncing it; a
+// failed copy removes the partial dst it created.
+func copyExclusive(src, dst string) (err error) {
+	in, err := os.Open(src) // #nosec G304 -- staged payload path under the Subscription root
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) // #nosec G304 G302 -- sanitized target under the Subscription root; 0644 as an ordinary Library media file
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			_ = os.Remove(dst)
+		}
+	}()
+	if _, err = io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
 }
