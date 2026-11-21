@@ -767,3 +767,206 @@
     min-width: 0;
   }
 }
+
+/* Quick poster picker (CORE-2933). A quiet pill on the poster's bottom edge for
+ * viewers who may edit metadata: it surfaces on hover or keyboard focus, stays
+ * shown where the device cannot hover, and is icon-only on the phone's small
+ * poster (its accessible name stays the full label). */
+[data-register="viewer"] .bf-media-detail .bf-detail-poster {
+  position: relative;
+}
+
+[data-register="viewer"] .bf-detail-poster-edit {
+  position: absolute;
+  inset-inline: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklab, var(--bg-root) 82%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-detail-poster-edit svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+[data-register="viewer"] .bf-detail-poster:hover .bf-detail-poster-edit,
+[data-register="viewer"] .bf-detail-poster:focus-within .bf-detail-poster-edit,
+[data-register="viewer"] .bf-detail-poster-edit[aria-expanded="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+[data-register="viewer"] .bf-detail-poster-edit:hover {
+  background: var(--bg-root);
+}
+
+[data-register="viewer"] .bf-detail-poster-edit:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (hover: none) {
+  [data-register="viewer"] .bf-detail-poster-edit {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-register="viewer"] .bf-detail-poster-edit {
+    transform: none;
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  [data-register="viewer"] .bf-detail-poster-edit {
+    inset-inline: auto 4px;
+    bottom: 4px;
+    min-width: 36px;
+    padding: 0;
+  }
+  [data-register="viewer"] .bf-detail-poster-edit > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+[data-register="viewer"] .bf-poster-picker-note {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+[data-register="viewer"] .bf-poster-picker-note[data-tone="danger"] {
+  color: var(--state-danger);
+}
+
+[data-register="viewer"] .bf-poster-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 16px;
+  max-height: min(60vh, 560px);
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-poster-picker-option {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+[data-register="viewer"] .bf-poster-picker-option:disabled {
+  cursor: progress;
+}
+
+[data-register="viewer"] .bf-poster-picker-option:disabled:not([aria-busy]) .bf-poster-picker-art {
+  opacity: 0.5;
+}
+
+[data-register="viewer"] .bf-poster-picker-art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+  transition:
+    box-shadow var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-poster-picker-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+[data-register="viewer"] .bf-poster-picker-option:hover .bf-poster-picker-art {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+[data-register="viewer"] .bf-poster-picker-option:focus-visible {
+  outline: none;
+}
+
+[data-register="viewer"] .bf-poster-picker-option:focus-visible .bf-poster-picker-art {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-poster-picker-option[aria-current] .bf-poster-picker-art {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+[data-register="viewer"] .bf-poster-picker-applied {
+  position: absolute;
+  inset-inline-start: 6px;
+  top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 6px;
+  border-radius: var(--radius-control);
+  background: var(--bg-root);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+[data-register="viewer"] .bf-poster-picker-applied svg {
+  width: 12px;
+  height: 12px;
+}
+
+[data-register="viewer"] .bf-poster-picker-missing {
+  padding: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+[data-register="viewer"] .bf-poster-picker-source {
+  overflow: hidden;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

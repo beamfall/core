@@ -1,5 +1,5 @@
-import { ArrowLeft, ChevronRight, Play, RotateCcw } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { ArrowLeft, ChevronRight, ImageUp, Play, RotateCcw } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { buttonVariants } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import {
 } from "../components/MediaTrackPickers";
 import { NotAvailable } from "../components/NotAvailable";
 import { PosterGlyph } from "../components/PosterGlyph";
+import { PosterPickerDialog } from "../components/PosterPickerDialog";
 import { SectionView } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { WatchTogetherButton } from "../components/WatchTogetherButton";
@@ -192,7 +193,11 @@ export function MediaDetailPage() {
   // Read alongside the item, once, for the pickers, the facts row's stream
   // badges (CORE-2469) and Details (CORE-2509).
   const versions = useMediaTracks(mediaId, attempt);
-  const profileID = useSession().session?.profileID;
+  const { session, isManager } = useSession();
+  const profileID = session?.profileID;
+  // The same edit gate as the metadata editor: a manager device on an adult
+  // Profile (CORE-2905, CORE-2933).
+  const canEditArtwork = isManager && session?.profile === "adult";
 
   function goBack() {
     // "default" is the entry the app was loaded on: nothing in-app to return to.
@@ -347,7 +352,16 @@ export function MediaDetailPage() {
           {/* Inside the stage, so the sticky top bar never covers it (CORE-2930). */}
           {back}
           <div className="bf-detail-lockup" data-wide={still ? "" : undefined}>
-            <DetailPoster key={poster} url={poster} mediaClass={card?.mediaClass} wide={!!still} />
+            <DetailPoster
+              url={poster}
+              mediaClass={card?.mediaClass}
+              wide={!!still}
+              edit={
+                canEditArtwork && !still && mediaId
+                  ? { mediaID: mediaId, title, onChanged: () => setAttempt((n) => n + 1) }
+                  : undefined
+              }
+            />
             <div className="bf-detail-copy">
               <header className="bf-detail-heading">
                 {parents.length > 0 && (
@@ -751,29 +765,66 @@ function DetailPoster({
   url,
   mediaClass,
   wide = false,
+  edit,
 }: {
   url: string;
   mediaClass?: string;
   wide?: boolean;
+  /** Offered to viewers who may edit metadata (CORE-2933). */
+  edit?: { mediaID: string; title: string; onChanged: () => void };
 }) {
-  const [failed, setFailed] = useState(false);
+  const t = useT();
+  const [picking, setPicking] = useState(false);
+  const editRef = useRef<HTMLButtonElement>(null);
   const frame = wide ? "bf-poster bf-poster-wide" : artFrameClass({ mediaClass });
   return (
     <div className={`${frame} bf-detail-poster`}>
-      {url && !failed ? (
-        <img
-          alt=""
-          decoding="async"
-          src={artworkBucketURL(url, wide ? "w640" : "w320")}
-          srcSet={artworkSrcSet(url, POSTER_BUCKETS)}
-          sizes={wide ? STILL_SIZES : POSTER_SIZES}
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        // The same glyph a card draws when it has no artwork.
-        <PosterGlyph mediaClass={mediaClass} />
+      {/* Keyed by URL so a new poster resets the failed state, while the
+          edit control keeps its focus across the reload a pin triggers. */}
+      <PosterArt key={url} url={url} mediaClass={mediaClass} wide={wide} />
+      {edit && (
+        <>
+          <button
+            ref={editRef}
+            type="button"
+            className="bf-detail-poster-edit"
+            aria-label={t("mediaDetailChangePosterLabel", { title: edit.title })}
+            aria-haspopup="dialog"
+            aria-expanded={picking}
+            onClick={() => setPicking(true)}
+          >
+            <ImageUp aria-hidden />
+            <span>{t("mediaDetailChangePoster")}</span>
+          </button>
+          {picking && (
+            <PosterPickerDialog
+              mediaID={edit.mediaID}
+              title={edit.title}
+              returnFocus={editRef}
+              onChanged={edit.onChanged}
+              onClose={() => setPicking(false)}
+            />
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+function PosterArt({ url, mediaClass, wide }: { url: string; mediaClass?: string; wide: boolean }) {
+  const [failed, setFailed] = useState(false);
+  return url && !failed ? (
+    <img
+      alt=""
+      decoding="async"
+      src={artworkBucketURL(url, wide ? "w640" : "w320")}
+      srcSet={artworkSrcSet(url, POSTER_BUCKETS)}
+      sizes={wide ? STILL_SIZES : POSTER_SIZES}
+      onError={() => setFailed(true)}
+    />
+  ) : (
+    // The same glyph a card draws when it has no artwork.
+    <PosterGlyph mediaClass={mediaClass} />
   );
 }
 
