@@ -180,7 +180,8 @@ const jobLogSecretPatterns = [
   /bf[kj]_[A-Za-z0-9_-]+/gi,
   /Bearer\s+\S+/gi,
   /Basic\s+\S+/gi,
-  /[?&]token=[^&\s"']+/gi,
+  // A JSON-encoded payload can carry "&" escaped as \u0026.
+  /(?:[?&]|\\u0026)token=[^&\s"']+/gi,
   /\/api\/media\/[^\s"']+/gi,
   /\/api\/pack\/[^\s"']+/gi,
   /https?:\/\/[^\s"']+/gi,
@@ -206,12 +207,14 @@ function redactJsonStrings(value: unknown): unknown {
 }
 
 /**
- * A job event payload with every string blanked as redactJobLogPayload does,
- * redacted after JSON decoding and before any formatting. Decoding first
- * catches a secret that JSON escaping hides (`\u0026token=`) and keeps a
- * credential pattern from consuming JSON delimiters; formatting afterwards
- * cannot reshape a secret past the patterns. A payload that is not JSON is
- * redacted as text.
+ * A job event payload with every string value blanked as redactJobLogPayload
+ * does, redacted after JSON decoding, for jobEventDetail to format. Decoding
+ * first catches a secret that JSON escaping hides and keeps a credential
+ * pattern from consuming JSON delimiters; formatting afterwards cannot reshape
+ * a secret past the patterns. Property names and number literals are not
+ * kept faithfully, so never display this output as is: show a payload the
+ * formatter does not recognise through redactJobLogPayload. A payload that is
+ * not JSON is redacted as text.
  */
 export function redactJobEventPayload(payload: string): string {
   let parsed: unknown;

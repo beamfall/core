@@ -211,6 +211,11 @@ describe("redactJobLogPayload (CORE-2725)", () => {
     expect(out).not.toContain("bfj_");
     expect(out).toContain("done");
   });
+
+  it("blanks a token whose ampersand is JSON-escaped", () => {
+    const out = redactJobLogPayload('{"u":"/x?a=1\\u0026token=hidden-secret"}');
+    expect(out).not.toContain("hidden-secret");
+  });
 });
 
 describe("redactJobEventPayload (CORE-2725)", () => {

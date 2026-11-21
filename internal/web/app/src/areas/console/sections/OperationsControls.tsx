@@ -320,14 +320,15 @@ function JobLog({ jobID, version }: { jobID: string; version: number }) {
     <div className="console-card console-job-events">
       {lines.map(({ event: ev, pauses }) => {
         const at = new Date(ev.occurredAt);
-        // Redact the decoded fields before formatting: formatting a progress
-        // unit or message can reshape a secret past the patterns.
-        const payload = ev.payload ? redactJobEventPayload(ev.payload) : "";
+        // The formatter reads decoded fields that were redacted first, since
+        // formatting a unit or message can reshape a secret past the
+        // patterns. A payload it does not recognise shows as redacted text.
         const detail =
           pauses > 0
             ? ""
-            : payload
-              ? (jobEventDetail({ ...ev, payload }, t) ?? payload)
+            : ev.payload
+              ? (jobEventDetail({ ...ev, payload: redactJobEventPayload(ev.payload) }, t) ??
+                redactJobLogPayload(ev.payload))
               : t("jobLogPayloadRedacted");
         const label =
           pauses > 0 ? t("jobLogPauseCycles", { count: pauses }) : jobEventLabel(ev.type, t);
