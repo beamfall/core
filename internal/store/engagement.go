@@ -64,9 +64,9 @@ const watchedThreshold = 0.95
 // playedThreshold marks audio media played: min(80%, track end).
 const playedThreshold = 0.8
 
-// resumeFinishRemainingSeconds marks resume-eligible audio (audiobooks,
-// podcasts) played only once this little is left: a fraction threshold would
-// fire with hours to go in a long book and reset its resume position.
+// resumeFinishRemainingSeconds marks resume-eligible audio (long spoken-word
+// Media) played only once this little is left: a fraction threshold would
+// fire with hours to go in a long item and reset its resume position.
 const resumeFinishRemainingSeconds = 30
 
 // resumeFloorSeconds hides barely-started playback from Continue Watching.

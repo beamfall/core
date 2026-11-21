@@ -4884,21 +4884,13 @@ func (h *Handler) queueAdd(ctx context.Context, scope auth.Scope, req request) (
 	if err := v.Err(); err != nil {
 		return queueAddResult{}, err
 	}
-	committed, err := h.auth.AddToQueue(ctx, scope, expected, mediaID, position)
-	switch {
-	case errors.Is(err, store.ErrQueueMediaNotFound):
-		return queueAddResult{}, clientError("unknown media")
-	case errors.Is(err, store.ErrQueueMediaLocked):
-		return queueAddResult{}, &l10n.Error{Key: l10n.QueueMediaLocked, Err: clientError("This item is locked.")}
-	case errors.Is(err, store.ErrSessionProfileMismatch):
-		return queueAddResult{}, errProfileMismatch
-	case errors.Is(err, store.ErrProfileDisabled):
-		return queueAddResult{}, clientError("profile is disabled")
-	case errors.Is(err, store.ErrDeviceRevoked), errors.Is(err, store.ErrSessionExpired),
-		errors.Is(err, store.ErrSessionNotFound), errors.Is(err, store.ErrQueueProfileOutsideSchedule):
-		return queueAddResult{}, clientError("invalid session")
-	case err != nil:
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
 		return queueAddResult{}, err
+	}
+	committed, err := h.auth.AddToQueue(ctx, scope, expected, mediaID, position, filter)
+	if err != nil {
+		return queueAddResult{}, queueWriteError(err)
 	}
 
 	// Keep the committed projection intact if optional card reads fail.
@@ -4914,13 +4906,17 @@ func (h *Handler) queueAdd(ctx context.Context, scope auth.Scope, req request) (
 }
 
 func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
 	data := map[string]any{}
 	if fields["queueremove"] {
 		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
 		if mediaID == "" {
 			return nil, clientError("mediaID is required")
 		}
-		if err := h.store.QueueRemove(ctx, scope.ProfileID, mediaID, scope.LibraryFilter()); err != nil {
+		if err := h.store.QueueRemove(ctx, scope.ProfileID, mediaID, filter); err != nil {
 			return nil, err
 		}
 		items, err := h.queueItems(ctx, scope)
@@ -4942,7 +4938,7 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 		if !ok {
 			return nil, clientError("position is required")
 		}
-		if err := h.store.QueueMove(ctx, scope.ProfileID, mediaID, int(number), scope.LibraryFilter()); err != nil {
+		if err := h.store.QueueMove(ctx, scope.ProfileID, mediaID, int(number), filter); err != nil {
 			return nil, err
 		}
 		items, err := h.queueItems(ctx, scope)
@@ -4952,7 +4948,7 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 		data["queuemove"] = items
 	}
 	if fields["queueclear"] {
-		if err := h.store.QueueClear(ctx, scope.ProfileID, scope.LibraryFilter()); err != nil {
+		if err := h.store.QueueClear(ctx, scope.ProfileID, filter); err != nil {
 			return nil, err
 		}
 		items, err := h.queueItems(ctx, scope)
@@ -4965,7 +4961,11 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 }
 
 func (h *Handler) queueItems(ctx context.Context, scope auth.Scope) ([]SourceItem, error) {
-	items, err := h.store.SourceItems(ctx, scope.LibraryFilter(), store.SourceQuery{
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	items, err := h.store.SourceItems(ctx, filter, store.SourceQuery{
 		Kind:      "queue",
 		ProfileID: scope.ProfileID,
 	})
@@ -6253,6 +6253,7 @@ var queryFields = map[string]bool{
 	"trashedmarkers":         true,
 	"itemstate":              true,
 	"metadatacredits":        true,
+	"playqueue":              true,
 	"sourceitems":            true,
 	"libraryentities":        true,
 	"libraryitems":           true,
@@ -6396,6 +6397,13 @@ var mutationFields = map[string]bool{
 	"setrating":                          true,
 	"setcontinuewatchinghidden":          true,
 	"setfavorite":                        true,
+	"queueaddmany":                       true,
+	"queuemoveentry":                     true,
+	"queueremoveentry":                   true,
+	"queueplaynext":                      true,
+	"queuesetcurrent":                    true,
+	"queuesetshuffle":                    true,
+	"queuesetrepeat":                     true,
 	"queueadd":                           true,
 	"queueremove":                        true,
 	"queuemove":                          true,

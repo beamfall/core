@@ -2015,6 +2015,7 @@
         "playbackProgress",
         "profile",
         "queue",
+        "queueState",
         "ratings",
         "savedFilters",
         "schema",
@@ -2246,6 +2247,18 @@
       ]
     },
     {
+      "field": "playqueue",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
       "field": "playstats",
       "effect": "read",
       "tier": "admin",
@@ -2425,6 +2438,18 @@
       ]
     },
     {
+      "field": "queueaddmany",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
       "field": "queueclear",
       "effect": "write",
       "tier": "session",
@@ -2485,6 +2510,30 @@
       ]
     },
     {
+      "field": "queuemoveentry",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
+      "field": "queueplaynext",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
       "field": "queueremove",
       "effect": "write",
       "tier": "session",
@@ -2512,6 +2561,54 @@
         "summary",
         "title",
         "year"
+      ]
+    },
+    {
+      "field": "queueremoveentry",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
+      "field": "queuesetcurrent",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
+      "field": "queuesetrepeat",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
+      "field": "queuesetshuffle",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
       ]
     },
     {

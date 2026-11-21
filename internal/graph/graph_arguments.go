@@ -610,6 +610,14 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"qualitypolicy": {
 		{Name: "libraryID", Kind: "string"},
 	},
+	"playqueue":        {},
+	"queueaddmany":     fieldArguments["queueaddmany"],
+	"queuemoveentry":   fieldArguments["queuemoveentry"],
+	"queueremoveentry": fieldArguments["queueremoveentry"],
+	"queueplaynext":    fieldArguments["queueplaynext"],
+	"queuesetcurrent":  fieldArguments["queuesetcurrent"],
+	"queuesetshuffle":  fieldArguments["queuesetshuffle"],
+	"queuesetrepeat":   fieldArguments["queuesetrepeat"],
 	"queueadd": {
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "mediaID", Kind: "string"},

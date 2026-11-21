@@ -130,6 +130,7 @@ var resultTypes = map[string]any{
 	"skipdetectionenabled":          SkipDetectionInfo{},
 	"notifications":                 NotificationInfo{},
 	"extensionrequest":              ExtensionRequestInfo{},
+	"playqueue":                     PlayQueueInfo{},
 	// ADR-0113 §2.2: per-title access request reads.
 	"accessrequest":         AccessRequestInfo{},
 	"pendingaccessrequests": AccessRequestInfo{},
@@ -203,6 +204,13 @@ var resultTypes = map[string]any{
 	"setrating":                          ItemStateInfo{},
 	"setcontinuewatchinghidden":          ItemStateInfo{},
 	"setfavorite":                        MediaInfo{},
+	"queueaddmany":                       PlayQueueInfo{},
+	"queuemoveentry":                     PlayQueueInfo{},
+	"queueremoveentry":                   PlayQueueInfo{},
+	"queueplaynext":                      PlayQueueInfo{},
+	"queuesetcurrent":                    PlayQueueInfo{},
+	"queuesetshuffle":                    PlayQueueInfo{},
+	"queuesetrepeat":                     PlayQueueInfo{},
 	"queueadd":                           SourceItem{},
 	"queueremove":                        SourceItem{},
 	"queuemove":                          SourceItem{},
@@ -419,7 +427,38 @@ var fieldArguments = map[string][]NestedArgument{
 	"searchfeeds":       {{Name: "query", Kind: "string"}},
 	"preplayqueue":      {{Name: "mediaID", Kind: "string"}},
 	"searchresult":      {{Name: "limit", Kind: "int", Optional: true}, searchModeArgument(), {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}},
-	"sourceitems":       sourceArguments(),
+	"queueaddmany": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "mediaIDs", Kind: "list", Elem: &NestedArgument{Kind: "string"}},
+		{Name: "placement", Kind: "string", Enum: []string{"end", "next"}},
+	},
+	"queuemoveentry": {
+		{Name: "entryID", Kind: "string"},
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "position", Kind: "number"},
+	},
+	"queueremoveentry": {
+		{Name: "entryID", Kind: "string"},
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+	},
+	"queueplaynext": {
+		{Name: "entryID", Kind: "string"},
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+	},
+	"queuesetcurrent": {
+		{Name: "entryID", Kind: "string", Optional: true},
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "positionMS", Kind: "number"},
+	},
+	"queuesetshuffle": {
+		{Name: "enabled", Kind: "boolean"},
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+	},
+	"queuesetrepeat": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "mode", Kind: "string", Enum: []string{"all", "off", "one"}},
+	},
+	"sourceitems": sourceArguments(),
 }
 
 func serverLogsArguments() []NestedArgument {

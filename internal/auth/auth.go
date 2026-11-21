@@ -273,8 +273,16 @@ func (s *Service) CertificationConstraints(ceilings []store.ProfileCertification
 }
 
 // AddToQueue checks the authenticated scope again in the queue write transaction.
-func (s *Service) AddToQueue(ctx context.Context, scope Scope, expectedProfileID store.ProfileID, mediaID store.MediaID, position *int) (store.QueueAddResult, error) {
-	return s.store.QueueAddForProfile(ctx, scope.ProfileID, scope.SessionID, expectedProfileID, mediaID, position, scope.LibraryFilter(), s.now, s.CertificationConstraints)
+func (s *Service) AddToQueue(ctx context.Context, scope Scope, expectedProfileID store.ProfileID, mediaID store.MediaID, position *int, filter store.LibraryFilter) (store.QueueAddResult, error) {
+	return s.store.QueueAddForProfile(ctx, scope.ProfileID, scope.SessionID, expectedProfileID, mediaID, position, filter, s.now, s.CertificationConstraints)
+}
+
+// QueueWriteAuthorization supplies policy for writes that target queue Media.
+func (s *Service) QueueWriteAuthorization(scope Scope, expected store.ProfileID, filter store.LibraryFilter) store.QueueWriteAuthorization {
+	return store.QueueWriteAuthorization{
+		ProfileID: scope.ProfileID, SessionID: scope.SessionID, ExpectedProfileID: expected,
+		Filter: filter, Now: s.now, ResolveCertification: s.CertificationConstraints,
+	}
 }
 
 // ScopeFromRequest resolves HTTP credentials into a Scope. A Bearer credential

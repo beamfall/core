@@ -820,11 +820,13 @@ func TestPlayQueueWritesStayBehindQueueAPI(t *testing.T) {
 	}
 	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	allowed := map[string]bool{
-		filepath.Join(root, "internal", "store", "queue.go"):                            true,
-		filepath.Join(root, "internal", "store", "engagement_prune.go"):                 true,
-		filepath.Join(root, "internal", "store", "engagement_prune_test.go"):            true,
-		filepath.Join(root, "internal", "store", "engagement_test.go"):                  true,
-		filepath.Join(root, "internal", "store", "migrate", "events", "0008_queue.sql"): true,
+		filepath.Join(root, "internal", "store", "queue.go"):                                       true,
+		filepath.Join(root, "internal", "store", "engagement_prune.go"):                            true,
+		filepath.Join(root, "internal", "store", "engagement_prune_test.go"):                       true,
+		filepath.Join(root, "internal", "store", "engagement_test.go"):                             true,
+		filepath.Join(root, "internal", "store", "migrate", "events", "0008_queue.sql"):            true,
+		filepath.Join(root, "internal", "store", "migrate", "events", "0026_play_queue_state.sql"): true,
+		filepath.Join(root, "internal", "store", "queue_state_test.go"):                            true,
 	}
 	err := filepath.WalkDir(filepath.Join(root, "internal"), func(path string, entry os.DirEntry, err error) error {
 		if err != nil {

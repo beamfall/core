@@ -208,17 +208,20 @@ var clientErrorCodes = map[string]ErrorCode{
 	"unknown push platform": ErrorCodeInvalid,
 	// Two ways to order one relation row at once.
 	"give sortOrder or position, not both": ErrorCodeInvalid,
+	"media is not queued":                  ErrorCodeInvalid,
 	"unknown artwork slot":                 ErrorCodeInvalid,
 	"unknown delete scope":                 ErrorCodeInvalid,
 	"unknown engagement kind":              ErrorCodeInvalid,
 	"unknown family scope":                 ErrorCodeInvalid,
-	"unknown importer":                     ErrorCodeInvalid,
-	"unknown lifecycle action":             ErrorCodeInvalid,
-	"unknown or non-flippable capability":  ErrorCodeInvalid,
-	"unknown permission":                   ErrorCodeInvalid,
-	"unknown plugin action":                ErrorCodeInvalid,
-	"unknown plugin config field":          ErrorCodeInvalid,
-	"unknown transport command":            ErrorCodeInvalid,
+	// An admin token creating a Library on a server with no owner Profile (CORE-2921).
+	"no owner Profile is designated to grant the library to": ErrorCodeConflict,
+	"unknown importer":                    ErrorCodeInvalid,
+	"unknown lifecycle action":            ErrorCodeInvalid,
+	"unknown or non-flippable capability": ErrorCodeInvalid,
+	"unknown permission":                  ErrorCodeInvalid,
+	"unknown plugin action":               ErrorCodeInvalid,
+	"unknown plugin config field":         ErrorCodeInvalid,
+	"unknown transport command":           ErrorCodeInvalid,
 
 	"subscription was refreshed recently; try again later": ErrorCodeThrottled,
 
