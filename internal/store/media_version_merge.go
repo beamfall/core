@@ -659,7 +659,9 @@ func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filte
 	}
 	defer tx.Rollback()
 
-	var done []versionMergeRestored
+	// Check every item before replaying any, so a hidden item reads as not
+	// found rather than surfacing another item's file error first.
+	var pending []versionMergeRestored
 	for i := len(items) - 1; i >= 0; i-- {
 		item := items[i]
 		var state versionMergeItemState
@@ -682,10 +684,22 @@ func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filte
 		} else if err != nil {
 			return BulkOpBatch{}, err
 		}
-		if err := undoVersionMergeItemTx(ctx, tx, item.MediaID, state); err != nil {
+		// The caller must also pass the certification ceiling for the folded
+		// item and the survivor: Trash names neither when one is hidden, and
+		// an undo would rewrite the survivor's Versions and metadata.
+		if ok, err := certifiedMediaTx(ctx, tx, filter, item.MediaID, state.Survivor); err != nil {
+			return BulkOpBatch{}, err
+		} else if !ok {
+			return BulkOpBatch{}, ValidationError("batch not found")
+		}
+		pending = append(pending, versionMergeRestored{item.MediaID, state})
+	}
+	var done []versionMergeRestored
+	for _, r := range pending {
+		if err := undoVersionMergeItemTx(ctx, tx, r.loser, r.state); err != nil {
 			return BulkOpBatch{}, err
 		}
-		done = append(done, versionMergeRestored{item.MediaID, state})
+		done = append(done, r)
 	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE op_batch SET undone_at_ms = ? WHERE id = ?`, timeToMillis(now), batchID); err != nil {
@@ -862,4 +876,26 @@ func restoreVersionMergeFactsTx(ctx context.Context, tx *sql.Tx, state versionMe
 		_, err = tx.ExecContext(ctx, `UPDATE media SET video_width = 0, video_height = 0 WHERE id = ?`, state.Survivor)
 	}
 	return err
+}
+
+// certifiedMediaTx reports whether every id passes the caller's
+// certification ceiling and access grants. A merge runs only on the shared
+// catalog, so the shared-catalog clause applies.
+func certifiedMediaTx(ctx context.Context, tx *sql.Tx, filter LibraryFilter, ids ...MediaID) (bool, error) {
+	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	if certClause == "" {
+		return true, nil
+	}
+	for _, id := range ids {
+		var found bool
+		args := append([]any{id}, certArgs...)
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM media m WHERE m.id = ?`+certClause+`)`, args...).Scan(&found); err != nil {
+			return false, err
+		}
+		if !found {
+			return false, nil
+		}
+	}
+	return true, nil
 }

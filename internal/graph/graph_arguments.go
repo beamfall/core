@@ -1121,7 +1121,8 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"trashedmarkers": {
 		{Name: "mediaID", Kind: "string"},
 	},
-	"trashlist": {},
+	"trashlist":       {},
+	"duplicatecopies": {},
 	"trashmedia": {
 		{Name: "mediaID", Kind: "string"},
 	},

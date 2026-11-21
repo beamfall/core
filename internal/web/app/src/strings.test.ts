@@ -136,6 +136,7 @@ const SHIPPED = new Set(
 // merged with the CORE-2884 entity enrichment job labels.
 // merged with the CORE-2927 Mixed type removal and the CORE-2917 tag tidy copy.
 // merged with the CORE-2910 Unmatched fix flows copy.
+// merged with the CORE-2916 Trash merged copies and duplicate copies copy and the library scan activity actor.
 const BASE_SERIALIZED_LENGTH = 940_167;
 const BASE_REGISTRY_SHA256 = "c19d3dbaef0d1c81ab3fe5181739ce71dcc95333579912ef885a29c8b6c8744c";
 const BASE_KEY_ORDER_SHA256 = "d2e449111b43ac5f9109f7b4f58c763d96fc91879919789c12ccc7bedfa85f0c";

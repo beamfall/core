@@ -691,6 +691,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"transitiongroup":                    newFieldHandler("transitionGroup", "transitionGroup", fieldMutation, roleSession, 134),
 	"trashedmarkers":                     newFieldHandler("trashedMarkers", "markers", fieldRead, roleSession|roleManager, 13),
 	"trashlist":                          newFieldHandler("trashList", "trash", fieldRead, roleSession|roleManager, 35),
+	"duplicatecopies":                    newFieldHandler("duplicateCopies", "trash", fieldRead, roleSession|roleManager, 35),
 	"trashedlibraries":                   newFieldHandler("trashedLibraries", "trashedLibraries", fieldRead, roleSession|roleAdmin, 148),
 	"trashmedia":                         newFieldHandler("trashMedia", "trashMedia", fieldMutation, roleSession|roleManager, 35),
 	"unassigntag":                        newFieldHandler("unassignTag", "unassignTag", fieldMutation, roleSession|roleManager, 36),
@@ -1362,7 +1363,7 @@ func dispatchFieldBlock035(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
-	if fields["trashmedia"] || fields["restoremedia"] || fields["trashlist"] || fields["purgetrash"] {
+	if fields["trashmedia"] || fields["restoremedia"] || fields["trashlist"] || fields["purgetrash"] || fields["duplicatecopies"] {
 		if fields["trashmedia"] {
 			entries, err := h.trashMedia(ctx, scope, req)
 			if resp := resolveField(dispatch, "trashmedia", entries, err); len(resp.Errors) > 0 {
@@ -1384,6 +1385,12 @@ func dispatchFieldBlock035(dispatch *fieldDispatchContext) response {
 		if fields["purgetrash"] {
 			result, err := h.purgeTrash(ctx, scope, req)
 			if resp := resolveField(dispatch, "purgetrash", result, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["duplicatecopies"] {
+			sets, err := h.duplicateCopies(ctx, scope)
+			if resp := resolveField(dispatch, "duplicatecopies", sets, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}

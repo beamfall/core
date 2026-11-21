@@ -73,6 +73,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"CreateTag":                               {},
 	"Device":                                  {},
 	"DevicePushTokensForProfile":              {},
+	"DuplicateCopies":                         {},
 	"EncryptedLibraryBackupRotationArtifacts": {},
 	"EndPlayback":                             {},
 	"EngagementEventAggregateFor":             {},
