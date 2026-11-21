@@ -79,6 +79,7 @@ import { setupFinishStrings } from "./setup-finish";
 import { setupLibraryStrings } from "./setup-library";
 import { sharedStateStrings } from "./shared-states";
 import { sidebarStrings } from "./sidebar";
+import { slideshowStrings } from "./slideshow";
 import { stagedRestoreStrings } from "./staged-restore";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
 import { trackMenuStrings } from "./track-menu";
@@ -184,6 +185,7 @@ export const en = {
   ...activityPluginStrings.en,
   ...workbenchPageStrings.en,
   ...appearanceStrings.en,
+  ...slideshowStrings.en,
 } as const;
 
 export const fr = {
@@ -279,6 +281,7 @@ export const fr = {
   ...activityPluginStrings.fr,
   ...workbenchPageStrings.fr,
   ...appearanceStrings.fr,
+  ...slideshowStrings.fr,
 } as const;
 
 export const de = {
@@ -374,6 +377,7 @@ export const de = {
   ...activityPluginStrings.de,
   ...workbenchPageStrings.de,
   ...appearanceStrings.de,
+  ...slideshowStrings.de,
 } as const;
 
 export const es = {
@@ -469,6 +473,7 @@ export const es = {
   ...activityPluginStrings.es,
   ...workbenchPageStrings.es,
   ...appearanceStrings.es,
+  ...slideshowStrings.es,
 } as const;
 
 export const pt = {
@@ -564,4 +569,5 @@ export const pt = {
   ...activityPluginStrings.pt,
   ...workbenchPageStrings.pt,
   ...appearanceStrings.pt,
+  ...slideshowStrings.pt,
 } as const;

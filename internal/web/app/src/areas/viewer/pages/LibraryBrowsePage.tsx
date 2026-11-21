@@ -8,6 +8,7 @@ import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
+import { SlideshowButton } from "../../slideshow/SlideshowButton";
 import {
   HideWatchedToggle,
   hiddenKeyMoved,
@@ -375,6 +376,10 @@ function LibraryBrowse({
                   <Shuffle aria-hidden />
                   {t("libraryBrowseShuffle")}
                 </Button>
+                <SlideshowButton
+                  source={{ kind: "all-items", libraryID }}
+                  items={pagesRef.current.get(0)}
+                />
               </div>
             </>
           }
