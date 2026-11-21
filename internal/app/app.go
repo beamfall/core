@@ -309,6 +309,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		cfg.StreamTokenKey = conformanceStreamTokenKey()
 		readClock = func() time.Time { return time.Unix(0, 0).UTC() }
 	}
+	readClock = simClock(readClock)
 	if len(cfg.StreamTokenKey) == 0 {
 		return nil, errors.New("stream token key is required")
 	}
