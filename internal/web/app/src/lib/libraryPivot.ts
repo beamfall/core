@@ -4,8 +4,9 @@ import { nodePath } from "./nodePath";
 // It is a per-viewer convenience, so it lives in this browser only; a blocked or
 // cleared store, or a value that is no longer a pivot, means Recommended.
 
-/** Each pivot's sub-path under the Library's address; "" is Recommended. */
-export const LIBRARY_PIVOT_PATHS = ["", "/all", "/collections", "/categories"] as const;
+/** Each pivot's sub-path under the Library's address; "" is Recommended and
+ * "/feeds" is Following (CORE-2957). */
+export const LIBRARY_PIVOT_PATHS = ["", "/all", "/collections", "/categories", "/feeds"] as const;
 export type LibraryPivotPath = (typeof LIBRARY_PIVOT_PATHS)[number];
 
 const PIVOT_KEY = "beamfall.libraryPivot.";

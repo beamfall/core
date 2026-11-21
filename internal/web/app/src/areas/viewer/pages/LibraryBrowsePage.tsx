@@ -352,6 +352,7 @@ function LibraryBrowse({
       <div className="flex flex-col gap-5">
         <LibraryHeader
           nodeID={nodeID}
+          libraryID={libraryID}
           heading={heading}
           aside={
             <>

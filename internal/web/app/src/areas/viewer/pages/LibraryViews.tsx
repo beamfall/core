@@ -151,7 +151,12 @@ export function LibraryViews({
   }
   if (plan === null && requested !== MEDIA_VIEW) {
     return (
-      <EntityPageFrame nodeID={nodeID} heading={displayString(title, displayLocale)} status="">
+      <EntityPageFrame
+        nodeID={nodeID}
+        libraryID={libraryID}
+        heading={displayString(title, displayLocale)}
+        status=""
+      >
         <p className="text-sm text-[var(--text-muted)]">{t("loading")}</p>
       </EntityPageFrame>
     );
@@ -235,11 +240,13 @@ export function LibraryViewSwitcher({
 
 function EntityPageFrame({
   nodeID,
+  libraryID,
   heading,
   status,
   children,
 }: {
   nodeID: string;
+  libraryID: string;
   heading: string;
   status: string;
   children: ReactNode;
@@ -249,6 +256,7 @@ function EntityPageFrame({
       <div className="flex flex-col gap-5">
         <LibraryHeader
           nodeID={nodeID}
+          libraryID={libraryID}
           heading={heading}
           aside={
             <p role="status" className="text-sm text-[var(--text-muted)]">
@@ -442,7 +450,7 @@ function LibraryEntityGrid({
   const status =
     total === null ? (failed ? "" : t("loading")) : t("libraryBrowseCount", { count: total });
   return (
-    <EntityPageFrame nodeID={nodeID} heading={heading} status={status}>
+    <EntityPageFrame nodeID={nodeID} libraryID={libraryID} heading={heading} status={status}>
       <LibraryBrowseToolbar
         state={state}
         facets={facets.facets}
