@@ -293,19 +293,21 @@ function MergedSection({
               </TableCell>
               <TableCell className="manage-cell-num">{formatDateTime(merge.mergedAt)}</TableCell>
               <TableCell className="text-right">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={busy !== ""}
-                  aria-label={t("trashUndoMergeNamed", {
-                    title:
-                      merge.survivorTitle || merge.survivorID || t("trashMergedHiddenSurvivor"),
-                  })}
-                  onClick={() => onUndo(merge.batchID)}
-                >
-                  {busy === merge.batchID ? t("trashUndoMergeBusy") : t("trashUndoMerge")}
-                </Button>
+                {/* The server refuses Undo on a survivor the caller cannot see. */}
+                {merge.survivorID ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy !== ""}
+                    aria-label={t("trashUndoMergeNamed", {
+                      title: merge.survivorTitle || merge.survivorID,
+                    })}
+                    onClick={() => onUndo(merge.batchID)}
+                  >
+                    {busy === merge.batchID ? t("trashUndoMergeBusy") : t("trashUndoMerge")}
+                  </Button>
+                ) : null}
               </TableCell>
             </TableRow>
           ))}

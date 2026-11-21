@@ -177,7 +177,7 @@ describe("TrashPage", () => {
     await waitFor(() => expect(fetchDuplicateCopies).toHaveBeenCalledTimes(2));
   });
 
-  it("keeps a merge with a redacted survivor as a merge, without a link", async () => {
+  it("keeps a merge with a redacted survivor as a merge, without a link or Undo", async () => {
     const merge = {
       batchID: "batch-2",
       survivorID: "",
@@ -191,9 +191,8 @@ describe("TrashPage", () => {
 
     expect(await screen.findByText("Another item")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Restore" })).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Undo merge into Another item" }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Undo merge/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Another item").closest("a")).toBeNull();
   });
 
   it("keeps the latest duplicate report when an older request resolves last", async () => {

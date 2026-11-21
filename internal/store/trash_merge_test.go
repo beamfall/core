@@ -210,9 +210,16 @@ func TestMergeSurvivorAboveTheCeilingIsNotNamed(t *testing.T) {
 	if len(entries) != 1 || entries[0].Merge == nil || entries[0].Merge.Survivor != "" || entries[0].Merge.SurvivorTitle != "" || entries[0].Merge.BatchID == "" {
 		t.Fatalf("trash under the ceiling = %+v, want the merge batch with its survivor redacted", entries)
 	}
+	batch := entries[0].Merge.BatchID
+	if _, err := st.UndoBatch(ctx, batch, ceiling, time.Now().UTC()); err == nil || err.Error() != "batch not found" {
+		t.Fatalf("undo under the ceiling err = %v, want batch not found", err)
+	}
 	open := LibraryFilter{Revealed: true, AllLibraries: true, Certification: []CertificationConstraint{{PluginID: "photos", Allowed: []string{"low", "high"}}}}
 	if entries, err = st.TrashedMediaList(ctx, open); err != nil || len(entries) != 1 || entries[0].Merge == nil || entries[0].Merge.Survivor != keep {
 		t.Fatalf("trash with the survivor allowed = %+v, %v", entries, err)
+	}
+	if _, err := st.UndoBatch(ctx, batch, open, time.Now().UTC()); err != nil {
+		t.Fatalf("undo with the survivor allowed: %v", err)
 	}
 }
 
