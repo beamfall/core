@@ -120,8 +120,11 @@ export function MediaItemCard({
     showYear && !featureAudioDetails,
     featureAudioDetails ? subline : lead,
   );
+  // An image opens straight in the image viewer (CORE-0542): it has no
+  // playback for a detail page to start.
+  const isImage = isMedia && item.mediaClass === "image";
   // The page the card's own activation opens (and the More menu's copied link).
-  const path = `/${isMedia ? (playOnActivate ? "watch" : "media") : "entity"}/${encodeURIComponent(item.id)}`;
+  const path = `/${isMedia ? (isImage ? "view" : playOnActivate ? "watch" : "media") : "entity"}/${encodeURIComponent(item.id)}`;
   const primaryLabel = isMedia
     ? t(state.progressPercent === undefined ? "play" : "cardResume")
     : t("cardOpen");
@@ -205,12 +208,12 @@ export function MediaItemCard({
   }
 
   function play() {
-    navigate(mediaPath("watch", item.id), { state: playState() });
+    navigate(mediaPath(isImage ? "view" : "watch", item.id), { state: playState() });
   }
 
   // The navigation state the card's link carries to the page it opens.
   function linkState(): unknown {
-    if (isMedia && playOnActivate) return playState();
+    if (isMedia && (playOnActivate || isImage)) return playState();
     if (isMedia) {
       const link = mediaLinkState(item, identity, focusAnchor?.section);
       return link ? { ...link, ...queueState() } : undefined;

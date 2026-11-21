@@ -21,6 +21,7 @@ import { consoleOperationsJobsStrings } from "./console-operations-jobs";
 import { consoleOperationsOpsStrings } from "./console-operations-ops";
 import { consoleOverviewAttentionStrings } from "./console-overview-attention";
 import { customizationStrings } from "./customization";
+import { imageViewerStrings } from "./image-viewer";
 import { itemActionStrings } from "./item-actions";
 import { itemMetadataStrings } from "./item-metadata";
 import { karaokeStrings } from "./karaoke";
@@ -162,6 +163,7 @@ export const en = {
   ...libraryTrashStrings.en,
   ...mediaDetailStrings.en,
   ...karaokeStrings.en,
+  ...imageViewerStrings.en,
   ...restrictionsSetupStrings.en,
   ...remoteControlStrings.en,
   ...webhookStrings.en,
@@ -256,6 +258,7 @@ export const fr = {
   ...libraryTrashStrings.fr,
   ...mediaDetailStrings.fr,
   ...karaokeStrings.fr,
+  ...imageViewerStrings.fr,
   ...restrictionsSetupStrings.fr,
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
@@ -350,6 +353,7 @@ export const de = {
   ...libraryTrashStrings.de,
   ...mediaDetailStrings.de,
   ...karaokeStrings.de,
+  ...imageViewerStrings.de,
   ...restrictionsSetupStrings.de,
   ...remoteControlStrings.de,
   ...webhookStrings.de,
@@ -444,6 +448,7 @@ export const es = {
   ...libraryTrashStrings.es,
   ...mediaDetailStrings.es,
   ...karaokeStrings.es,
+  ...imageViewerStrings.es,
   ...restrictionsSetupStrings.es,
   ...remoteControlStrings.es,
   ...webhookStrings.es,
@@ -538,6 +543,7 @@ export const pt = {
   ...libraryTrashStrings.pt,
   ...mediaDetailStrings.pt,
   ...karaokeStrings.pt,
+  ...imageViewerStrings.pt,
   ...restrictionsSetupStrings.pt,
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,
