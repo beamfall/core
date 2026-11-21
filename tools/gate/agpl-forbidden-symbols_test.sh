@@ -193,4 +193,28 @@ if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/a
   exit 1
 fi
 
+git -C "$TMP" rm -q --cached internal/store/foreignimport/foreignimporttest/foreignimporttest.go
+rm "$fixture"
+"$TMP/tools/gate/agpl-forbidden-symbols.sh" >/dev/null
+
+# CORE-2681: the gate fails closed. A tracked file it cannot read, or a tree git
+# cannot list, is a failure, never a clean scan.
+# root reads any file, so the unreadable case runs only as another user.
+if [[ "$(id -u)" -ne 0 ]]; then
+  chmod 000 "$TMP/internal/server/server.go"
+  if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
+    chmod 644 "$TMP/internal/server/server.go"
+    echo "expected an unreadable tracked file to fail" >&2
+    exit 1
+  fi
+  chmod 644 "$TMP/internal/server/server.go"
+  grep -q 'cannot scan internal/server/server.go' /tmp/agpl-forbidden.err
+fi
+mkdir -p "$TMP/not-a-repo"
+if BEAMFALL_GATE_ROOT="$TMP/not-a-repo" GIT_CEILING_DIRECTORIES="$TMP" "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
+  echo "expected a tree git cannot list to fail" >&2
+  exit 1
+fi
+grep -q 'cannot list tracked files' /tmp/agpl-forbidden.err
+
 echo "agpl-forbidden-symbols_test: OK"

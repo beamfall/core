@@ -1,11 +1,13 @@
 package compat
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -580,31 +582,76 @@ func TestJellyfinCatalogIndexCacheExpires(t *testing.T) {
 	if err != nil || len(libraries) != 1 {
 		t.Fatalf("catalog libraries = %v, %v", libraries, err)
 	}
-	first, err := f.handler.libraryIndex(t.Context(), filter, libraries[0])
-	if err != nil {
-		t.Fatal(err)
+	read := func(filter store.LibraryFilter) *catalogIndex {
+		t.Helper()
+		index, err := f.handler.libraryIndex(t.Context(), filter, libraries[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return index
 	}
-	if again, _ := f.handler.libraryIndex(t.Context(), filter, libraries[0]); again != first {
+	first := read(filter)
+	if first.byID[string(f.single)] == nil || first.byID[string(f.part3)] == nil {
+		t.Fatal("the first index is missing visible items")
+	}
+	if read(filter) != first {
 		t.Fatal("a repeat read within the TTL rebuilt the index")
 	}
 	narrow := filter
 	narrow.Certification = []store.CertificationConstraint{{PluginID: catalogPlugin}}
-	if other, _ := f.handler.libraryIndex(t.Context(), narrow, libraries[0]); other == first {
+	if read(narrow) == first {
 		t.Fatal("a different visibility filter reused another filter's index")
 	}
+	// A visibility change applies on the next read, even inside the TTL.
+	if err := f.st.TrashMedia(t.Context(), f.part3, store.LibraryFilter{AllLibraries: true}); err != nil {
+		t.Fatal(err)
+	}
+	trashed := read(filter)
+	if trashed == first || trashed.byID[string(f.part3)] != nil || trashed.byID[string(f.single)] == nil {
+		t.Fatal("a cached index still served an item trashed after it was built")
+	}
 	now = now.Add(catalogIndexTTL)
-	if expired, _ := f.handler.libraryIndex(t.Context(), filter, libraries[0]); expired == first {
+	if read(filter) == trashed {
 		t.Fatal("an index older than the TTL was reused")
 	}
 }
 
+func TestJellyfinCatalogIndexCacheEvictsOldest(t *testing.T) {
+	var c indexCache
+	now := time.Unix(1_000_000, 0)
+	c.now = func() time.Time { return now }
+	var visible [sha256.Size]byte
+	indexes := map[string]*catalogIndex{}
+	for i := range catalogIndexEntries + 1 {
+		key := strconv.Itoa(i)
+		indexes[key] = &catalogIndex{}
+		c.store(key, visible, indexes[key])
+		now = now.Add(time.Millisecond)
+	}
+	if len(c.entries) != catalogIndexEntries || c.lookup("0", visible) != nil {
+		t.Fatalf("entries = %d, oldest kept = %v", len(c.entries), c.lookup("0", visible) != nil)
+	}
+	for i := 1; i <= catalogIndexEntries; i++ {
+		key := strconv.Itoa(i)
+		if c.lookup(key, visible) != indexes[key] {
+			t.Fatalf("entry %s was evicted before the oldest", key)
+		}
+	}
+}
+
 func TestJellyfinProviderIDAndQueryValue(t *testing.T) {
-	for value, want := range map[string]bool{
-		"tt0111161": true, "12345": true, "a.b_c-d": true, "": false, "../x": false,
-		"https://example.invalid/1": false, "a b": false, strings.Repeat("9", catalogProviderIDMax+1): false,
+	for _, tc := range []struct {
+		key, value string
+		want       bool
+	}{
+		{"Imdb", "tt0111161", true}, {"Imdb", "0111161", false}, {"Imdb", "tt", false}, {"Imdb", "ttx1", false},
+		{"Tmdb", "12345", true}, {"Tvdb", "81189", true}, {"AniDB", "1", true}, {"Tmdb", "tt0111161", false},
+		{"Tmdb", "", false}, {"Tmdb", "../x", false}, {"Tmdb", "private-recording.mkv", false},
+		{"Tmdb", "a.b_c-d", false}, {"Tmdb", "https://example.invalid/1", false}, {"Tmdb", "1 2", false},
+		{"Tmdb", strings.Repeat("9", catalogProviderIDMax+1), false},
 	} {
-		if got := validProviderID(value); got != want {
-			t.Errorf("validProviderID(%q) = %v, want %v", value, got, want)
+		if got := validProviderID(tc.key, tc.value); got != tc.want {
+			t.Errorf("validProviderID(%q, %q) = %v, want %v", tc.key, tc.value, got, tc.want)
 		}
 	}
 	query := map[string][]string{"parentid": {"lower"}, "PARENTID": {"upper"}, "ParentID": {"mixed"}}
