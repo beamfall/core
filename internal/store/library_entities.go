@@ -14,7 +14,9 @@ const maxLibraryEntityParents = 3
 // (CORE-2362). Kinds lists every kind to total, ChildKinds the kinds whose
 // linked Entities count as an item's children, and ParentKinds the kinds whose
 // linked Entities name an item's parents. The caller derives all three from
-// the Library plugin's declarations; the store never chooses a kind itself.
+// the Library plugin's declarations; the store never chooses a kind itself. A
+// Kind left out of Kinds is listed without being counted first, for a caller
+// that already totalled it (CORE-2894).
 type LibraryEntitiesQuery struct {
 	LibraryID   LibraryID
 	Kinds       []string
@@ -138,7 +140,7 @@ func (s *Store) LibraryEntities(ctx context.Context, filter LibraryFilter, query
 		return empty, err
 	}
 	result := LibraryEntitiesResult{Totals: totals, Total: totals[query.Kind], Items: []LibraryEntity{}, Letters: []LibraryBrowseLetter{}}
-	if query.Kind == "" || result.Total == 0 {
+	if query.Kind == "" || (slices.Contains(query.Kinds, query.Kind) && result.Total == 0) {
 		return result, nil
 	}
 	candidates, err := libraryEntityCandidates(ctx, reader, query, restricted)
@@ -311,13 +313,7 @@ func libraryEntityMediaCounts(ctx context.Context, reader *sql.DB, certify func(
 		args = append(args, chunk...)
 		args = append(args, libraryID)
 		args = append(args, certArgs...)
-		// #nosec G202 -- only generated placeholders and closed certification SQL are interpolated.
-		rows, err := reader.QueryContext(ctx, `
-			SELECT r.from_entity_id, m.id
-			FROM entity_relation r
-			JOIN media m ON m.id = r.to_media_id
-			WHERE r.from_entity_id IN (`+sqlPlaceholders(len(chunk))+`)
-				AND m.trashed_at_ms IS NULL AND m.library_id = ?`+certClause, args...)
+		rows, err := reader.QueryContext(ctx, libraryEntityMediaCountsSQL(len(chunk), certClause), args...)
 		if err != nil {
 			return err
 		}
@@ -346,4 +342,19 @@ func libraryEntityMediaCounts(ctx context.Context, reader *sql.DB, certify func(
 		result.Items[at].MediaCount = len(media[id])
 	}
 	return nil
+}
+
+// libraryEntityMediaCountsSQL selects each owner's visible Media for owners
+// bound first, then the Library id and certClause's args. CROSS JOIN keeps r
+// outermost, seeking the owners' relations by from_entity_id: with a bound id
+// list SQLite otherwise walks every Media in the Library and probes its
+// relations (CORE-2894).
+func libraryEntityMediaCountsSQL(owners int, certClause string) string {
+	// #nosec G202 -- only generated placeholders and closed certification SQL are interpolated.
+	return `
+		SELECT r.from_entity_id, m.id
+		FROM entity_relation r
+		CROSS JOIN media m ON m.id = r.to_media_id
+		WHERE r.from_entity_id IN (` + sqlPlaceholders(owners) + `)
+			AND m.trashed_at_ms IS NULL AND m.library_id = ?` + certClause
 }
