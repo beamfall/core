@@ -210,7 +210,7 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 
 	candidates = filterLibraryBrowseText(candidates, query.Text)
 	for i := range query.EntityFilters {
-		related, err := libraryBrowseCandidates(ctx, reader, certify, visible, &query.EntityFilters[i])
+		related, err := libraryBrowseCandidates(ctx, reader, certify, visible, &query.EntityFilters[i], nil)
 		if err != nil {
 			return empty, err
 		}
@@ -266,7 +266,7 @@ func (s *Store) annotateLibraryItemsLocked(ctx context.Context, reader *sql.DB, 
 	return nil
 }
 
-func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func() (string, []any), visible []LibraryID, entityFilter *EntityFilter) ([]libraryBrowseCandidate, error) {
+func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func() (string, []any), visible []LibraryID, entityFilter *EntityFilter, only []MediaID) ([]libraryBrowseCandidate, error) {
 	placeholders := make([]string, len(visible))
 	args := make([]any, 0, len(visible))
 	for i, id := range visible {
@@ -277,6 +277,14 @@ func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func()
 	args = append(args, entityArgs...)
 	certClause, certArgs := certify()
 	args = append(args, certArgs...)
+	// only, when set, narrows the read to those Media.
+	onlyClause := ""
+	if len(only) > 0 {
+		onlyClause = " AND m.id IN (" + sqlPlaceholders(len(only)) + ")"
+		for _, id := range only {
+			args = append(args, string(id))
+		}
+	}
 	// #nosec G202 -- interpolated fragments are internally generated placeholders and closed filter SQL.
 	rows, err := reader.QueryContext(ctx, `
 		SELECT m.id, m.title, m.duration_seconds, COALESCE(m.year, 0), m.video_width, m.video_height, m.rowid
@@ -284,7 +292,7 @@ func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func()
 		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
 		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+`
 		  AND (NOT EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id)
-		       OR EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id AND f.missing_at_ms IS NULL))`+entityClause+certClause+`
+		       OR EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id AND f.missing_at_ms IS NULL))`+entityClause+certClause+onlyClause+`
 	`, args...)
 	if err != nil {
 		return nil, err
@@ -801,11 +809,10 @@ type libraryVisibleSet struct {
 	candidates []libraryBrowseCandidate
 }
 
-// libraryVisibleSetLocked reads the visible, unmuted Media of the one Library
-// a narrowed filter allows. Visibility (reveal, allow-list, certification,
-// trash, extras, per-Profile Mute) is the all-items Source's, so every Library
-// view built on it hides exactly what a rail would hide. The caller holds s.mu.
-func (s *Store) libraryVisibleSetLocked(ctx context.Context, filter LibraryFilter, profileID ProfileID) (libraryVisibleSet, error) {
+// libraryVisibleScopeLocked selects the Libraries a narrowed filter shows,
+// with the plane to read them from and its certification clause, without
+// reading any Media. The caller holds s.mu.
+func (s *Store) libraryVisibleScopeLocked(ctx context.Context, filter LibraryFilter) (libraryVisibleSet, error) {
 	set := libraryVisibleSet{reader: s.catalogR}
 	libraries, err := loadLibraries(ctx, s.catalogR)
 	if err != nil {
@@ -839,11 +846,20 @@ func (s *Store) libraryVisibleSetLocked(ctx context.Context, filter LibraryFilte
 		}
 		set.visible = append(set.visible, library.ID)
 	}
-	if len(set.visible) == 0 {
-		return set, nil
+	return set, nil
+}
+
+// libraryVisibleSetLocked reads the visible, unmuted Media of the one Library
+// a narrowed filter allows. Visibility (reveal, allow-list, certification,
+// trash, extras, per-Profile Mute) is the all-items Source's, so every Library
+// view built on it hides exactly what a rail would hide. The caller holds s.mu.
+func (s *Store) libraryVisibleSetLocked(ctx context.Context, filter LibraryFilter, profileID ProfileID) (libraryVisibleSet, error) {
+	set, err := s.libraryVisibleScopeLocked(ctx, filter)
+	if err != nil || len(set.visible) == 0 {
+		return set, err
 	}
 
-	candidates, err := libraryBrowseCandidates(ctx, set.reader, set.certify, set.visible, nil)
+	candidates, err := libraryBrowseCandidates(ctx, set.reader, set.certify, set.visible, nil, nil)
 	if err != nil {
 		return libraryVisibleSet{}, err
 	}

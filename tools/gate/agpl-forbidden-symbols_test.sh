@@ -209,6 +209,15 @@ if [[ "$(id -u)" -ne 0 ]]; then
   fi
   chmod 644 "$TMP/internal/server/server.go"
   grep -q 'cannot scan internal/server/server.go' /tmp/agpl-forbidden.err
+  # A parent directory it cannot search hides whether the file is there.
+  chmod 000 "$TMP/internal/server"
+  if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
+    chmod 755 "$TMP/internal/server"
+    echo "expected a tracked file under an unsearchable directory to fail" >&2
+    exit 1
+  fi
+  chmod 755 "$TMP/internal/server"
+  grep -q 'cannot scan internal/server/server.go' /tmp/agpl-forbidden.err
 fi
 mkdir -p "$TMP/not-a-repo"
 if BEAMFALL_GATE_ROOT="$TMP/not-a-repo" GIT_CEILING_DIRECTORIES="$TMP" "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then

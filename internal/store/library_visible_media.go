@@ -57,6 +57,86 @@ func (s *Store) LibraryVisibleMedia(ctx context.Context, filter LibraryFilter, l
 	return items, nil
 }
 
+// LibraryVisibleMediaIDs reports which of ids LibraryVisibleMedia would return
+// for the same filter and Library, reading only those rows.
+func (s *Store) LibraryVisibleMediaIDs(ctx context.Context, filter LibraryFilter, libraryID LibraryID, ids []MediaID) (map[MediaID]bool, error) {
+	visible := map[MediaID]bool{}
+	filter, ok := narrowLibraryFilter(filter, libraryID)
+	if !ok || len(ids) == 0 {
+		return visible, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	set, err := s.libraryVisibleScopeLocked(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	if len(set.visible) == 0 || set.reader != s.catalogR {
+		return visible, nil
+	}
+	for start := 0; start < len(ids); start += engagementChunkSize {
+		chunk := ids[start:min(start+engagementChunkSize, len(ids))]
+		candidates, err := libraryBrowseCandidates(ctx, set.reader, set.certify, set.visible, nil, chunk)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range candidates {
+			visible[c.item.ID] = true
+		}
+	}
+	return visible, nil
+}
+
+// CatalogItemLibraries returns the Library holding each given ID that names a
+// catalog-plane Media or Entity, trashed or not. It confirms no visibility.
+func (s *Store) CatalogItemLibraries(ctx context.Context, ids []string) (map[string]LibraryID, error) {
+	owners := map[string]LibraryID{}
+	if len(ids) == 0 {
+		return owners, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	for start := 0; start < len(ids); start += engagementChunkSize {
+		chunk := ids[start:min(start+engagementChunkSize, len(ids))]
+		args := make([]any, 0, 2*len(chunk))
+		for range 2 {
+			for _, id := range chunk {
+				args = append(args, id)
+			}
+		}
+		placeholders := sqlPlaceholders(len(chunk))
+		// #nosec G201 -- only generated placeholders are interpolated; IDs are bound args.
+		rows, err := s.catalogR.QueryContext(ctx, fmt.Sprintf(
+			`SELECT id, library_id FROM media WHERE id IN (%s) UNION ALL SELECT id, library_id FROM entity WHERE id IN (%s)`,
+			placeholders, placeholders), args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			var library LibraryID
+			if err := rows.Scan(&id, &library); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			owners[id] = library
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return owners, nil
+}
+
 // MediaMetadataProvenanceBatch returns the stored metadata provenance of each
 // given catalog-plane Media that has one.
 func (s *Store) MediaMetadataProvenanceBatch(ctx context.Context, ids []MediaID) (map[MediaID]MediaMetadataProvenance, error) {
