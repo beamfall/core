@@ -68,4 +68,41 @@ describe("Hero entity navigation", () => {
     expect(img).toHaveAttribute("sizes", "100vw");
     expect(img).toHaveAttribute("fetchpriority", "high");
   });
+
+  it("names an episode's show and shows its details once", () => {
+    const section = { title: "Featured" } as unknown as Section;
+    const item = {
+      id: "m2",
+      kind: "media",
+      title: "S34E09 · Episode 9",
+      summary: "49 min",
+      year: 2026,
+      certification: "TV-14",
+      audienceScore: 7.4,
+      durationSeconds: 2930,
+      subtitle: { en: "S34 · E9 · Episode 9" },
+      container: { id: "e2", title: "The Graham Norton Show" },
+    } as unknown as SourceItem;
+    const { container } = render(
+      <I18nProvider>
+        <MemoryRouter>
+          <Hero section={section} item={item} />
+          <LocationState />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("The Graham Norton Show");
+    expect(screen.getByText("S34 · E9 · Episode 9")).toBeInTheDocument();
+    const facts = [...(container.querySelector(".bf-hero-facts")?.children ?? [])].map(
+      (fact) => fact.textContent,
+    );
+    expect(facts).toEqual(["2026", "TV-14", "49 min", "★ 7.4Audience score 7.4"]);
+    // The server's runtime summary repeats a fact, so it is not shown twice.
+    expect(container.querySelector(".bf-hero-summary")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button"));
+    const state = JSON.parse(screen.getByTestId("state").textContent || "null");
+    expect(state).toEqual({ title: "The Graham Norton Show · S34 · E9 · Episode 9" });
+  });
 });

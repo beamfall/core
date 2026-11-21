@@ -42,7 +42,8 @@ export function showsAudioEntityDetails(item: SourceItem): boolean {
  * The line under a card's title: the plugin's subtitle first, which tells
  * siblings apart (CORE-1226), then its year when the title repeats in the
  * list, then who made it (an audio card's byline, CORE-2362), then its
- * summary, never repeating a part. A card headed by its container leads with
+ * summary, never repeating a part. An audio card names who made it first,
+ * ahead of its album. A card headed by its container leads with
  * the item's own name instead (cardHeading). Audio Entity cards prefer their
  * credits and known year when available.
  */
@@ -57,7 +58,12 @@ export function cardSubline(
   if (showsAudioEntityDetails(item)) {
     return [byline, year].filter(Boolean).join(" · ");
   }
-  const parts = [lead, showYear ? year : "", byline, item.summary];
+  // A listener reads who made a track before its album, so an audio card
+  // names its artist first and a long album title cannot crowd it out.
+  const parts =
+    item.mediaClass === "audio"
+      ? [byline, lead, showYear ? year : "", item.summary]
+      : [lead, showYear ? year : "", byline, item.summary];
   return [...new Set(parts.filter(Boolean))].join(" · ");
 }
 

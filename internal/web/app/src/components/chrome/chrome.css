@@ -1504,7 +1504,7 @@
   position: relative;
   width: 100%;
   aspect-ratio: 21 / 9;
-  max-height: 480px;
+  max-height: 340px;
   border-radius: var(--radius-surface);
   overflow: hidden;
   background: color-mix(in oklab, var(--library-accent, var(--accent)) 8%, var(--bg-surface));
@@ -1536,19 +1536,43 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  gap: 10px;
-  padding: 28px 32px;
-  max-width: 60%;
+  gap: 6px;
+  padding: 24px 28px;
+  max-width: 55%;
 }
 
 [data-register="viewer"] .bf-hero-title {
-  /* Display: 40/48, 650 (type roles). */
+  /* Title 2: 30/36 (type roles); the hero shares the page with rows. */
   margin: 0;
-  font-size: 40px;
-  line-height: 48px;
+  font-size: 30px;
+  line-height: 36px;
   font-weight: 600;
   letter-spacing: 0;
   color: var(--text-primary);
+}
+
+[data-register="viewer"] .bf-hero-lead {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+/* Year, rating, score and runtime, separated by middots. */
+[data-register="viewer"] .bf-hero-facts {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+[data-register="viewer"] .bf-hero-facts > span + span::before {
+  content: "·";
+  margin-right: 10px;
 }
 
 [data-register="viewer"] .bf-hero-summary {
@@ -1572,7 +1596,8 @@
 
 @media (max-width: 760px) {
   [data-register="viewer"] .bf-hero {
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 16 / 10;
+    max-height: 300px;
   }
   [data-register="viewer"] .bf-hero-scrim {
     background: linear-gradient(
@@ -1586,8 +1611,11 @@
     padding: 20px;
   }
   [data-register="viewer"] .bf-hero-title {
-    font-size: 30px;
-    line-height: 36px;
+    font-size: 24px;
+    line-height: 30px;
+  }
+  [data-register="viewer"] .bf-hero-summary {
+    display: none;
   }
 }
 

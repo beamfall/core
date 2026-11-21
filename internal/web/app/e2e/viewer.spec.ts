@@ -115,11 +115,14 @@ test.describe("viewer", () => {
       }
       if (variables.kind !== "recently-added") return route.fallback();
       if (variables.libraryID === "library-extra") await firstHeroReady;
-      const firstLibrary = artwork.map(({ id }) => ({
+      // The featured (first) item carries the facts the hero lists under its
+      // title: year, rating and runtime.
+      const firstLibrary = artwork.map(({ id }, index) => ({
         id,
         kind: "media",
         title: id,
         artwork: { poster: `/core-1154-art/${id}` },
+        ...(index === 0 ? { year: 2026, certification: "TV-14", durationSeconds: 2930 } : {}),
       }));
       const secondLibrary = [
         {

@@ -64,14 +64,27 @@ describe("cardHeading for audio (CORE-2824)", () => {
     const { heading, lead } = cardHeading(track, true);
     expect(heading).toBe("Lantern");
     expect(lead).toBe("Paper Moons");
-    expect(cardSubline(track, false, "en", lead)).toBe("Paper Moons · Nightglass");
+    expect(cardSubline(track, false, "en", lead)).toBe("Nightglass · Paper Moons");
+  });
+
+  it("names the artist before a long album title so truncation keeps it", () => {
+    const longAlbum = {
+      ...track,
+      container: { id: "album", title: "The Slim Shady LP (Expanded Edition)" },
+      byline: ["Eminem"],
+      summary: "5 min",
+    } as SourceItem;
+    const { lead } = cardHeading(longAlbum, true);
+    expect(cardSubline(longAlbum, false, "en", lead)).toBe(
+      "Eminem · The Slim Shady LP (Expanded Edition) · 5 min",
+    );
   });
 
   it("keeps the album as the lead when the track has a subtitle", () => {
     const withSubtitle = { ...track, subtitle: "Track 1" } as SourceItem;
     const { heading, lead } = cardHeading(withSubtitle, true);
     expect({ heading, lead }).toEqual({ heading: "Lantern", lead: "Paper Moons" });
-    expect(cardSubline(withSubtitle, false, "en", lead)).toBe("Paper Moons · Nightglass");
+    expect(cardSubline(withSubtitle, false, "en", lead)).toBe("Nightglass · Paper Moons");
   });
 
   it("heads an audio episode by its own title under its show", () => {

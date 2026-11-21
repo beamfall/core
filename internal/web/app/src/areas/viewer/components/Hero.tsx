@@ -7,9 +7,13 @@ import type { Section, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
+import { cardByline } from "../lib/cardArt";
+import { cardRating } from "../lib/cardState";
+import { cardHeading } from "../lib/cardTitles";
 import { entityLinkState } from "../lib/entityPreview";
 import { mediaPath } from "../lib/mediaAddress";
 import { rememberRenderFocus } from "../lib/renderFocus";
+import { runtimeParts } from "../lib/viewerFields";
 
 // Hero Section, ported from the vanilla buildHero (app.js): one prominent
 // featured item (the Source's first item) — a wide full-bleed frame with a
@@ -17,6 +21,13 @@ import { rememberRenderFocus } from "../lib/renderFocus";
 // title), a Display-size title, an optional summary, and exactly one focusable
 // primary action (no autoplay). Absent artwork leaves the accent-tinted
 // surface fallback.
+//
+// An item a container holds (an episode in its show) is headed by the
+// container's title with the item's own line under it, as cards are
+// (cardHeading), followed by a facts row: who made it, year, rating, score
+// and runtime.
+// The summary is dropped when it only repeats a fact, such as a server
+// runtime summary ("49 min").
 export function Hero({
   section,
   item,
@@ -36,13 +47,25 @@ export function Hero({
   const background =
     artwork?.url ?? (artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "poster"));
   const isMedia = item.kind === "media";
+  const { heading, lead } = cardHeading(item, true, displayLocale);
+  const rating = cardRating(item, displayLocale, t);
+  const runtime = item.durationSeconds ? heroRuntime(item.durationSeconds, t) : "";
+  const facts = [
+    cardByline(item),
+    item.year && item.year > 0 ? String(item.year) : "",
+    rating?.text ?? "",
+    runtime,
+  ].filter(Boolean);
+  const summary = item.summary?.trim() ?? "";
+  const showSummary = !!summary && summary !== lead && !facts.includes(summary);
+  const showFacts = facts.length > 0 || !!rating?.score;
 
   function activate() {
     if (isMedia) {
       // Carry the title forward so the player's info overlay can name the Media
       // (the playback-info wire does not report it).
       navigate(mediaPath("watch", item.id), {
-        state: { title: item.title },
+        state: { title: lead && lead !== heading ? `${heading} · ${lead}` : heading },
       });
     } else {
       navigate(`/entity/${encodeURIComponent(item.id)}`, {
@@ -68,8 +91,22 @@ export function Hero({
         <div aria-hidden className="bf-hero-scrim" />
         <div className="bf-hero-copy">
           <span className="sr-only">{displayString(section.title, displayLocale)}</span>
-          <h2 className="bf-hero-title">{item.title}</h2>
-          {item.summary && <p className="bf-hero-summary">{item.summary}</p>}
+          <h2 className="bf-hero-title">{heading}</h2>
+          {lead && <p className="bf-hero-lead">{lead}</p>}
+          {showFacts && (
+            <p className="bf-hero-facts">
+              {facts.map((fact) => (
+                <span key={fact}>{fact}</span>
+              ))}
+              {rating?.score && (
+                <span>
+                  <span aria-hidden>★ {rating.score}</span>
+                  <span className="sr-only">{t("cardAudienceScore", { score: rating.score })}</span>
+                </span>
+              )}
+            </p>
+          )}
+          {showSummary && <p className="bf-hero-summary">{summary}</p>}
           <button
             type="button"
             onClick={activate}
@@ -95,4 +132,12 @@ export function Hero({
       </div>
     </section>
   );
+}
+
+function heroRuntime(seconds: number, t: ReturnType<typeof useT>): string {
+  if (seconds < 60) return "";
+  const { hours, minutes } = runtimeParts(seconds);
+  return hours > 0
+    ? t("mediaDetailRuntimeHours", { hours, minutes })
+    : t("mediaDetailRuntimeMinutes", { minutes });
 }
