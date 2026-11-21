@@ -86,11 +86,11 @@ func TestEndPlaybackKeepsMyDataTokens(t *testing.T) {
 	assertTokens("after the ended grant expires", expires, 0)
 }
 
-// TestActiveSessionsKeepProfilesApart covers CORE-2682: a Profile switch keeps
-// the session, so grants one session holds for one Media under two Profiles
-// are two playbacks, and a progress report touches only the reporting
-// Profile's grants.
-func TestActiveSessionsKeepProfilesApart(t *testing.T) {
+// TestActiveSessionsFollowLatestProfile covers CORE-2682: a Profile switch
+// keeps the session, so a session's grants for one Media stay one playback that
+// names the Profile whose grant was active last, and a progress report touches
+// only the reporting Profile's grants.
+func TestActiveSessionsFollowLatestProfile(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -101,34 +101,22 @@ func TestActiveSessionsKeepProfilesApart(t *testing.T) {
 	if err := st.RecordStreamToken(ctx, "session-default", "profile-default", "device-tv", "media-hls", "media-alpha", false, expires); err != nil {
 		t.Fatal(err)
 	}
-	lastActive := func() map[ProfileID]time.Time {
+	playing := func(profile ProfileID, at time.Time) {
 		t.Helper()
+		if err := st.TouchStreamTokenActivity(ctx, "session-default", profile, "media-alpha", at); err != nil {
+			t.Fatal(err)
+		}
 		active, err := st.ActiveSessions(ctx, now, profileDefaultFilter(true))
 		if err != nil {
 			t.Fatal(err)
 		}
-		out := map[ProfileID]time.Time{}
-		for _, a := range active {
-			if _, dup := out[a.ProfileID]; dup {
-				t.Fatalf("Profile %s listed twice: %+v", a.ProfileID, active)
-			}
-			out[a.ProfileID] = a.LastActiveAt
+		if len(active) != 1 || active[0].ProfileID != profile || !active[0].LastActiveAt.Equal(at.Truncate(time.Millisecond)) {
+			t.Fatalf("live playbacks = %+v, want one naming %s active at %v", active, profile, at)
 		}
-		return out
+		if !active[0].Transcoding {
+			t.Fatalf("collapsed playback lost the HLS flag: %+v", active[0])
+		}
 	}
-	before := lastActive()
-	if len(before) != 2 {
-		t.Fatalf("live playbacks = %v, want one per Profile", before)
-	}
-	later := now.Add(time.Minute)
-	if err := st.TouchStreamTokenActivity(ctx, "session-default", "profile-default", "media-alpha", later); err != nil {
-		t.Fatal(err)
-	}
-	after := lastActive()
-	if !after["profile-default"].Equal(later.Truncate(time.Millisecond)) {
-		t.Fatalf("reporting Profile's activity = %v, want %v", after["profile-default"], later)
-	}
-	if !after["profile-managed"].Equal(before["profile-managed"]) {
-		t.Fatalf("other Profile's activity moved: %v -> %v", before["profile-managed"], after["profile-managed"])
-	}
+	playing("profile-default", now.Add(time.Minute))
+	playing("profile-managed", now.Add(2*time.Minute))
 }

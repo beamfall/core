@@ -123,20 +123,20 @@ func (s *Store) ActiveSessions(ctx context.Context, now time.Time, filter Librar
 		return nil, err
 	}
 
-	// Collapse to one row per (session, media, Profile); OR the HLS flag across
-	// targets so a session that probed direct then fell back to transcode reads
-	// as transcoding, and keep the latest expiry seen. The Profile is part of
-	// the key because a Profile switch keeps the session (CORE-2682): grants
-	// one session holds under two Profiles are two playbacks, never merged.
+	// Collapse to one row per (session, media); OR the HLS flag across targets
+	// so a session that probed direct then fell back to transcode reads as
+	// transcoding, and keep the latest expiry seen. A Profile switch keeps the
+	// session (CORE-2682), so the row names the Profile of its most recently
+	// active grant: progress touches only the reporting Profile's grants, which
+	// makes that the Profile now playing.
 	type key struct {
 		session SessionID
 		media   MediaID
-		profile ProfileID
 	}
 	collapsed := map[key]*ActiveSession{}
 	order := make([]key, 0, len(rows))
 	for _, r := range rows {
-		k := key{r.sessionID, r.mediaID, r.profileID}
+		k := key{r.sessionID, r.mediaID}
 		entry, ok := collapsed[k]
 		if !ok {
 			info := sessionInfo[r.sessionID]
@@ -166,6 +166,8 @@ func (s *Store) ActiveSessions(ctx context.Context, now time.Time, filter Librar
 		}
 		if r.lastActive.After(entry.LastActiveAt) {
 			entry.LastActiveAt = r.lastActive
+			entry.ProfileID = r.profileID
+			entry.ProfileName = profileNames[r.profileID]
 		}
 	}
 
