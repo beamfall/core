@@ -41,12 +41,13 @@ interface ScopePreset {
 }
 
 // Mirror of the Film & TV plugin's declared family scopes (plugin-filmtv
-// bundle.go FamilyScopes), in the order setup has always offered them.
+// bundle.go FamilyScopes). Its catch-all "mixed" scope guesses movie vs episode
+// per file and is not offered for new libraries (CORE-2927); the plugin still
+// applies it to existing Mixed libraries and to calls that leave the scope out.
 const SCOPE_PRESETS: Record<string, readonly ScopePreset[]> = {
   filmtv: [
     { value: "films", label: "setupTypeFilms", icon: Film },
     { value: "tvshows", label: "setupTypeTVShows", icon: Tv },
-    { value: "mixed", label: "setupTypeMixed", icon: Clapperboard },
   ],
 };
 

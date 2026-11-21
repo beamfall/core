@@ -20,12 +20,11 @@ describe("libraryTypeOptions (CORE-1156)", () => {
     expect(options.map((o) => [o.key, o.pluginID, o.familyScope, o.label, o.pluginLabel])).toEqual([
       ["filmtv/films", "filmtv", "films", "Films", "Film & TV"],
       ["filmtv/tvshows", "filmtv", "tvshows", "TV Shows", "Film & TV"],
-      ["filmtv/mixed", "filmtv", "mixed", "Mixed", "Film & TV"],
       ["photos", "photos", null, "Photos", "Photos"],
       ["comics", "comics", null, "Comics", "Comics"],
     ]);
-    expect(options[3].icon).toBe(Camera);
-    expect(options[4].icon).toBe(Blocks);
+    expect(options[2].icon).toBe(Camera);
+    expect(options[3].icon).toBe(Blocks);
   });
 
   it("prefers family scopes the server publishes over the presets", () => {
