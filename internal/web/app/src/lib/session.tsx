@@ -110,6 +110,8 @@ const SessionContext = createContext<SessionState | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<SessionInfo | null>(null);
+  const sessionRef = useRef<SessionInfo | null>(null);
+  sessionRef.current = session;
   const [manifest, setManifest] = useState<NavigationManifest | null>(null);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -344,23 +346,31 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!signal.aborted && seq === profileRefreshSeq.current) setProfiles(next);
   }, []);
 
-  const refreshSession = useCallback<SessionState["refreshSession"]>(async (confirmed) => {
-    const signal = controllerRef.current?.signal;
-    if (!signal || signal.aborted) return;
-    const seq = ++sessionRefreshSeq.current;
-    if (confirmed) {
-      setSession((current) =>
-        current?.profileID === confirmed.profileID
-          ? { ...current, subtitleLanguages: confirmed.subtitleLanguages }
-          : current,
-      );
-    }
-    const next = await fetchCurrentSession(signal);
-    // A load that cleared the session owns the next value; never resurrect it.
-    if (!signal.aborted && seq === sessionRefreshSeq.current) {
-      setSession((current) => (current ? next : current));
-    }
-  }, []);
+  const refreshSession = useCallback<SessionState["refreshSession"]>(
+    async (confirmed) => {
+      const signal = controllerRef.current?.signal;
+      if (!signal || signal.aborted) return;
+      const seq = ++sessionRefreshSeq.current;
+      if (confirmed) {
+        setSession((current) =>
+          current?.profileID === confirmed.profileID
+            ? { ...current, subtitleLanguages: confirmed.subtitleLanguages }
+            : current,
+        );
+      }
+      const next = await fetchCurrentSession(signal);
+      // A load that cleared the session owns the next value; never resurrect it.
+      if (signal.aborted || seq !== sessionRefreshSeq.current || !sessionRef.current) return;
+      // Another tab switched Profiles meanwhile: the manifest and viewer cache
+      // belong to the old Profile, so take the full identity reload instead.
+      if (next.profileID !== sessionRef.current.profileID) {
+        await load();
+        return;
+      }
+      setSession(next);
+    },
+    [load],
+  );
 
   const value = useMemo<SessionState>(
     () => ({

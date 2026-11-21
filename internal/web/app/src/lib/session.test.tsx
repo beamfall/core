@@ -1303,4 +1303,33 @@ describe("SessionProvider identity-epoch fetch lifecycle", () => {
     expect(screen.getByTestId("manifest")).toHaveTextContent("p1-revealed-epoch-home");
     expect(vi.mocked(fetchManifest)).toHaveBeenCalledTimes(1);
   });
+
+  it("takes the full identity reload when another tab switched Profiles during a re-read", async () => {
+    vi.mocked(fetchCurrentSession).mockResolvedValue(p1Session);
+    const user = userEvent.setup();
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("manifest")).toHaveTextContent("p1-revealed-epoch-home"),
+    );
+
+    const next = deferred<SessionInfo>();
+    vi.mocked(fetchCurrentSession).mockReturnValueOnce(next.promise);
+    vi.mocked(fetchCurrentSession).mockResolvedValue(p2Session);
+    vi.mocked(fetchManifest).mockResolvedValue(p2Manifest);
+    vi.mocked(fetchProfiles).mockResolvedValue(p2Roster);
+    await user.click(screen.getByRole("button", { name: "Refresh session" }));
+    await act(async () => {
+      next.resolve(p2Session);
+      await next.promise;
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("manifest")).toHaveTextContent("p2-current-epoch-home"),
+    );
+    expect(screen.getByTestId("profile")).toHaveTextContent("p2");
+    expect(vi.mocked(fetchManifest)).toHaveBeenCalledTimes(2);
+  });
 });
