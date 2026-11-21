@@ -125,4 +125,6 @@ package store
 // requests and listed in the Console only, off the entity-query hot path.
 // CORE-2884 adds 0128_entity_enrichment, keyed by entity and read only by the
 // background enrichment job, off the entity-query hot path.
-const schemaFreezeCatalogMigrations = 124
+// CORE-2968 adds 0129_subscription_seen_feed_position, read by Subscription
+// retention and off the entity-query hot path.
+const schemaFreezeCatalogMigrations = 125

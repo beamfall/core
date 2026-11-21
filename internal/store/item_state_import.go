@@ -83,10 +83,13 @@ func (s *Store) ReplayItemStateImports(ctx context.Context, now time.Time) (int,
 		if !complete {
 			continue
 		}
-		if err := s.markItemStateImportApplied(ctx, row, now); err != nil {
+		marked, err := s.markItemStateImportApplied(ctx, row, now)
+		if err != nil {
 			return applied, err
 		}
-		applied++
+		if marked {
+			applied++
+		}
 	}
 	return applied, nil
 }
@@ -207,17 +210,22 @@ func (s *Store) applyImportedItemProgress(ctx context.Context, row pendingItemSt
 	})
 }
 
-func (s *Store) markItemStateImportApplied(ctx context.Context, row pendingItemStateImport, now time.Time) error {
+// A replay of a previously unstarred row must leave a newer star pending.
+func (s *Store) markItemStateImportApplied(ctx context.Context, row pendingItemStateImport, now time.Time) (bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return err
+		return false, err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	result, err := s.catalogW.ExecContext(ctx, `
 		UPDATE item_state_import
 		SET applied_at_ms = ?, applied_media_id = ?
 		WHERE profile_id = ? AND subscription_id = ? AND item_guid = ?
-		  AND applied_at_ms = 0
-	`, timeToMillis(now.UTC()), row.MediaID, row.ProfileID, row.SubscriptionID, row.ItemGUID)
-	return err
+		  AND applied_at_ms = 0 AND starred = ?
+	`, timeToMillis(now.UTC()), row.MediaID, row.ProfileID, row.SubscriptionID, row.ItemGUID, boolToInt(row.Starred))
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected != 0, err
 }

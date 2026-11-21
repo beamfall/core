@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -128,6 +129,244 @@ func TestSubscriptionRetentionSkipsTrashedLibrary(t *testing.T) {
 		}
 	}
 	sweepSubscriptionRetention(t, st, 1)
+}
+
+func TestSubscriptionRetentionWaitsForFollowersOfEveryLinkedSubscription(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	filter := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+	first, media := subscriptionRetentionFixture(t, st, RetentionDeleteAfterPlayed, nil, 1)
+	second, err := st.AddSubscription(ctx, Subscription{
+		LibraryID: first.LibraryID, FeedURL: "https://feeds.example.com/second.xml",
+		Root: "/media/local/second", RetentionKind: RetentionDeleteAfterPlayed,
+	}, first.AddedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(second.Root, "alternate.mp3")
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{
+		MediaID: media[0], Label: "Alternate",
+		File: ImportMediaFile{
+			LibraryID: second.LibraryID, Path: path, Title: "Alternate", Class: MediaClassAudio,
+			Container: "mp3", Codec: "mp3", ContentFingerprint: HashMediaFilePath(path),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkSubscriptionEntrySeen(ctx, second.ID, "alternate", path, first.AddedAt); err != nil {
+		t.Fatal(err)
+	}
+	other, err := st.CreateProfile(ctx, "Second Subscription Follower", ProfileAdult, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for profile, subscriptionID := range map[ProfileID]SubscriptionID{
+		"profile-default": first.ID, other.ID: second.ID,
+	} {
+		if err := st.SetFollow(ctx, profile, subscriptionID, true, first.AddedAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	finish := func(profile ProfileID) {
+		t.Helper()
+		if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+			ProfileID: profile, MediaID: media[0], PositionSeconds: 120, DurationSeconds: 120,
+		}, true, ResumePolicy{Class: MediaClassAudio}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	finish("profile-default")
+	sweepSubscriptionRetention(t, st, 0)
+	if _, err := st.Media(ctx, media[0], filter); err != nil {
+		t.Fatal(err)
+	}
+	finish(other.ID)
+	sweepSubscriptionRetention(t, st, 1)
+	sweepSubscriptionRetention(t, st, 0)
+	if err := st.RestoreMedia(ctx, media[0], filter); err != nil {
+		t.Fatal(err)
+	}
+	files, err := st.MediaFilesForMedia(ctx, media[0], filter)
+	if err != nil || len(files) != 2 {
+		t.Fatalf("restored files = %v, want both Versions: %v", files, err)
+	}
+}
+
+func TestSubscriptionRetentionRecordsOneActorlessActivityPerMove(t *testing.T) {
+	st := openSeeded(t)
+	keep := 1
+	sub, media := subscriptionRetentionFixture(t, st, RetentionKeepLastN, &keep, 3)
+	sweepSubscriptionRetention(t, st, 2)
+	sweepSubscriptionRetention(t, st, 0)
+	entries, err := st.ActivityEntries(t.Context(), ActivityQuery{
+		Filter: LibraryFilter{AllowedIDs: []LibraryID{sub.LibraryID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[MediaID]int{}
+	for _, entry := range entries {
+		if entry.Action != ActivityMediaTrash {
+			continue
+		}
+		if entry.TargetType != "media" || entry.LibraryID != sub.LibraryID || entry.SessionID != "" ||
+			entry.DeviceID != "" || entry.ProfileID != "" || entry.TokenID != "" || entry.APIKeyID != "" {
+			t.Fatalf("unexpected retention activity: %+v", entry)
+		}
+		counts[MediaID(entry.TargetID)]++
+	}
+	if len(counts) != 2 || counts[media[0]] != 1 || counts[media[1]] != 1 {
+		t.Fatalf("activity counts = %v, want one for each moved Media", counts)
+	}
+}
+
+func TestSubscriptionRetentionProtectsPendingStars(t *testing.T) {
+	for _, kind := range []RetentionKind{RetentionKeepLastN, RetentionDeleteAfterPlayed} {
+		t.Run(string(kind), func(t *testing.T) {
+			st := openSeeded(t)
+			ctx := t.Context()
+			const profile ProfileID = "profile-default"
+			var limit *int
+			if kind == RetentionKeepLastN {
+				keep := 1
+				limit = &keep
+			}
+			sub, media := subscriptionRetentionFixture(t, st, kind, limit, 3)
+			// Protect the newest item. For keep-last-N it must also be
+			// omitted from the count so the middle item survives. Protect
+			// the oldest item too to exercise a normally doomed target.
+			for _, index := range []int{0, 2} {
+				if err := st.RecordItemStateImport(ctx, ItemStateImport{
+					ProfileID: profile, SubscriptionID: sub.ID, Source: "fixture",
+					ItemGUID: fmt.Sprintf("item-%d", index), Starred: true,
+				}, sub.AddedAt); err != nil {
+					t.Fatal(err)
+				}
+				favorite, err := st.MediaFavorited(ctx, profile, media[index])
+				if err != nil || favorite {
+					t.Fatalf("favorite before replay = %t, %v", favorite, err)
+				}
+			}
+			wantTrashed := 0
+			if kind == RetentionDeleteAfterPlayed {
+				wantTrashed = 1
+				if err := st.SetFollow(ctx, profile, sub.ID, true, sub.AddedAt); err != nil {
+					t.Fatal(err)
+				}
+				for _, id := range media {
+					if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+						ProfileID: profile, MediaID: id, PositionSeconds: 120, DurationSeconds: 120,
+					}, true, ResumePolicy{Class: MediaClassAudio}); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			sweepSubscriptionRetention(t, st, wantTrashed)
+			if applied, err := st.ReplayItemStateImports(ctx, sub.AddedAt.Add(time.Minute)); err != nil || applied != 2 {
+				t.Fatalf("replay = %d, %v, want two imports", applied, err)
+			}
+			for _, index := range []int{0, 2} {
+				favorite, err := st.MediaFavorited(ctx, profile, media[index])
+				if err != nil || !favorite {
+					t.Fatalf("favorite after replay = %t, %v", favorite, err)
+				}
+			}
+			sweepSubscriptionRetention(t, st, 0)
+		})
+	}
+}
+
+func TestSubscriptionRetentionStaleReplayPreservesPendingStar(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	keep := 1
+	sub, media := subscriptionRetentionFixture(t, st, RetentionKeepLastN, &keep, 2)
+	state := ItemStateImport{
+		ProfileID: "profile-default", SubscriptionID: sub.ID, Source: "fixture", ItemGUID: "item-0",
+	}
+	if err := st.RecordItemStateImport(ctx, state, sub.AddedAt); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := st.pendingItemStateImports(ctx)
+	if err != nil || len(pending) != 1 || pending[0].MediaID != media[0] {
+		t.Fatalf("pending before re-import = %v, %v", pending, err)
+	}
+	state.Starred = true
+	if err := st.RecordItemStateImport(ctx, state, sub.AddedAt); err != nil {
+		t.Fatal(err)
+	}
+	if marked, err := st.markItemStateImportApplied(ctx, pending[0], sub.AddedAt.Add(time.Minute)); err != nil || marked {
+		t.Fatalf("stale replay marked = %t, %v", marked, err)
+	}
+	sweepSubscriptionRetention(t, st, 0)
+}
+
+func TestSubscriptionRetentionAllowsReadsAndRechecksBeforeTrash(t *testing.T) {
+	st := openSeeded(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	keep := 1
+	sub, media := subscriptionRetentionFixture(t, st, RetentionKeepLastN, &keep, 2)
+	filter := LibraryFilter{AllowedIDs: []LibraryID{sub.LibraryID}}
+
+	// Reserve the catalog writer so the sweep finishes planning and then
+	// waits before its write. The reader and events writer are independent.
+	writer, err := st.catalogW.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	done := make(chan struct{})
+	var sweepErr error
+	waits := st.catalogW.Stats().WaitCount
+	go func() {
+		defer close(done)
+		moved, skipped, err := st.ApplySubscriptionRetentionPolicies(ctx)
+		if err != nil || skipped || moved != 0 {
+			sweepErr = fmt.Errorf("retention sweep = %d, %v, %v, want 0, false, nil", moved, skipped, err)
+		}
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for st.catalogW.Stats().WaitCount == waits {
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			t.Fatal("sweep did not reach the catalog writer")
+		}
+	}
+
+	// Read an unrelated Profile and land a rescue after planning. A sweep
+	// that holds an exclusive Store lock prevents both from finishing.
+	if _, err := st.Profile(ctx, "profile-default"); err != nil {
+		t.Fatalf("unrelated Profile read during retention: %v", err)
+	}
+	if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+		ProfileID: "profile-default", MediaID: media[1], PositionSeconds: 30, DurationSeconds: 120,
+	}, false, ResumePolicy{Class: MediaClassAudio}); err != nil {
+		t.Fatalf("unrelated playback update during retention: %v", err)
+	}
+	if err := st.SetMediaFavorite(ctx, "profile-default", media[0], true, filter); err != nil {
+		t.Fatalf("favorite during retention: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+		if sweepErr != nil {
+			t.Fatal(sweepErr)
+		}
+	case <-ctx.Done():
+		t.Fatal("sweep did not finish")
+	}
+	if _, err := st.Media(ctx, media[0], filter); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func subscriptionRetentionFixture(t *testing.T, st *Store, kind RetentionKind, keep *int, count int) (Subscription, []MediaID) {

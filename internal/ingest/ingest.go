@@ -199,14 +199,14 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	}
 	downloaded := 0
 	var firstErr error
-	for _, entry := range entries {
+	for position, entry := range entries {
 		if ctx.Err() != nil {
 			return published + downloaded, ctx.Err()
 		}
 		if entry.EnclosureURL == "" || seen[entry.GUID] {
 			continue
 		}
-		if err := p.ingestEntry(ctx, subscription, entry, authHeader, now); err != nil {
+		if err := p.ingestEntry(ctx, subscription, entry, authHeader, now, position); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -242,7 +242,7 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 // its visible name. Every boundary in between either resumes from the
 // staged payload or retries the download on the next poll; bytes that could
 // still be lost are never acknowledged.
-func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscription, entry scrape.FeedEntry, authHeader string, now time.Time) error {
+func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscription, entry scrape.FeedEntry, authHeader string, now time.Time, position int) error {
 	if err := os.MkdirAll(subscription.Root, 0o755); err != nil {
 		return err
 	}
@@ -272,7 +272,7 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 	target := filepath.Join(subscription.Root, targetBase)
 	// The receipt is the durable acknowledgement: it commits only after the
 	// staged payload would survive a crash.
-	if err := p.store.MarkSubscriptionEntrySeen(ctx, subscription.ID, entry.GUID, target, now); err != nil {
+	if err := p.store.MarkSubscriptionFeedEntrySeen(ctx, subscription.ID, entry.GUID, target, now, position); err != nil {
 		return err
 	}
 	if err := p.faultAt("receipt-recorded"); err != nil {

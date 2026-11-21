@@ -395,6 +395,16 @@ func (s *Store) SubscriptionSeenGUIDs(ctx context.Context, id SubscriptionID) (m
 // absolute path where its enclosure landed. Re-marking an already-seen GUID
 // is a no-op, including path preservation.
 func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID, guid string, path string, now time.Time) error {
+	return s.markSubscriptionEntrySeen(ctx, id, guid, path, now, nil)
+}
+
+// MarkSubscriptionFeedEntrySeen records the entry's zero-based position in the
+// fetched feed in the same durable receipt as its path.
+func (s *Store) MarkSubscriptionFeedEntrySeen(ctx context.Context, id SubscriptionID, guid string, path string, now time.Time, position int) error {
+	return s.markSubscriptionEntrySeen(ctx, id, guid, path, now, &position)
+}
+
+func (s *Store) markSubscriptionEntrySeen(ctx context.Context, id SubscriptionID, guid string, path string, now time.Time, position *int) error {
 	if id == "" {
 		return errors.New("subscription ID is required")
 	}
@@ -408,10 +418,10 @@ func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID
 		return err
 	}
 	_, err := s.catalogW.ExecContext(ctx, `
-		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path, feed_position)
+		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(subscription_id, guid) DO NOTHING
-	`, id, guid, now.UTC().UnixMilli(), path)
+	`, id, guid, now.UTC().UnixMilli(), path, position)
 	return err
 }
 
