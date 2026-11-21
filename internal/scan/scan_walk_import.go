@@ -298,7 +298,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		}
 	})
 	if s.isParsedPart(parsed, parsedOK) {
-		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded, true, probeTags); err != nil {
+		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded, probeSucceeded, probeTags); err != nil {
 			return err
 		}
 		return s.ctx.Err()
