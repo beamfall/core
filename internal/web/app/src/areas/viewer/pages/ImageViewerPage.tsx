@@ -13,6 +13,7 @@ import {
 import { type PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { MAIN_CONTENT_ID } from "@/components/chrome/SkipLink";
+import { ApiError, resetIdentityEpoch } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import { useDocumentTitle } from "@/lib/documentTitle";
 import type { EntityFieldInfo, GenericMediaInfo } from "@/lib/graphql/types";
@@ -30,7 +31,7 @@ import {
 } from "../lib/imageViewer";
 import { mediaPath } from "../lib/mediaAddress";
 import { fetchMedia, fetchMediaDetailFields } from "../lib/mediaDetail";
-import { endPlayback } from "../lib/playback";
+import { endPlayback, isRevealTerminalStatus } from "../lib/playback";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import "./image-viewer.css";
 import { fieldDisplayValue, viewerFacingFields } from "../lib/viewerFields";
@@ -47,6 +48,7 @@ type Loaded = { id: string; media: GenericMediaInfo | null };
 type Original = { id: string; url: string; state: "loading" | "ready" | "failed" };
 
 const SWIPE_PX = 48;
+const PAN_PX = 64;
 
 export function ImageViewerPage() {
   const t = useT();
@@ -69,6 +71,10 @@ export function ImageViewerPage() {
   const drag = useRef<{ x: number; y: number; ox: number; oy: number; moved: boolean } | null>(
     null,
   );
+  // The direction of the last step, so a neighbour that turns out not to be an
+  // image is stepped over instead of opened in the player.
+  const stepping = useRef<"previous" | "next" | null>(null);
+  const [terminal, setTerminal] = useState(false);
 
   const media = loaded && loaded.id === mediaId ? loaded.media : null;
   const resolved = !!loaded && loaded.id === mediaId;
@@ -96,16 +102,41 @@ export function ImageViewerPage() {
     setRotation(0);
   }, [mediaId]);
 
-  useDocumentTitle(revealed ? null : media?.title || navState.title || "", t("brand"));
+  useDocumentTitle(revealed ? null : media?.title || "", t("brand"));
   useCanonicalMediaAddress("view", media, isImageClass(media?.mediaClass));
 
   // An item the server classes as something else plays where it belongs.
   const wrongClass = !!media && !isImageClass(media.mediaClass);
+  const { previous, next, position, total } = imageNeighbours(navState.queue, mediaId ?? "");
+  const step = useCallback(
+    (target: PlayQueueItem | undefined, direction: "previous" | "next") => {
+      if (!target) return;
+      stepping.current = direction;
+      const state: PlayerNavState = { title: target.title };
+      if (navState.queue && navState.queueIdentity) {
+        state.queue = navState.queue;
+        state.queueIdentity = navState.queueIdentity;
+      }
+      navigate(mediaPath("view", target.id), { replace: true, state });
+    },
+    [navigate, navState.queue, navState.queueIdentity],
+  );
   useEffect(() => {
-    if (wrongClass && mediaId) {
-      navigate(mediaPath("watch", mediaId), { replace: true, state: location.state });
+    if (media && !wrongClass) stepping.current = null;
+  }, [media, wrongClass]);
+  useEffect(() => {
+    if (!wrongClass || !mediaId) return;
+    const direction = stepping.current;
+    if (direction) {
+      // Stepped onto an unclassified clip: keep going, or turn back at the end.
+      const onward = direction === "next" ? next : previous;
+      const back = direction === "next" ? previous : next;
+      if (onward) step(onward, direction);
+      else step(back, direction === "next" ? "previous" : "next");
+      return;
     }
-  }, [wrongClass, mediaId, navigate, location.state]);
+    navigate(mediaPath("watch", mediaId), { replace: true, state: location.state });
+  }, [wrongClass, mediaId, navigate, location.state, next, previous, step]);
 
   // The original's stream is a playback session on the server: close it when
   // the viewer leaves this item.
@@ -124,8 +155,14 @@ export function ImageViewerPage() {
         setOriginal((current) =>
           current?.id === id ? { id, url, state: url ? "loading" : "failed" } : current,
         ),
-      () =>
-        setOriginal((current) => (current?.id === id ? { id, url: "", state: "failed" } : current)),
+      (err) => {
+        if (err instanceof ApiError && isRevealTerminalStatus(err.status)) {
+          // The server ended the revealed identity: drop the image, reset once.
+          setTerminal(true);
+          resetIdentityEpoch();
+        }
+        setOriginal((current) => (current?.id === id ? { id, url: "", state: "failed" } : current));
+      },
     );
   }, [mediaId, original]);
 
@@ -139,25 +176,13 @@ export function ImageViewerPage() {
     [ensureOriginal],
   );
 
-  const { previous, next, position, total } = imageNeighbours(navState.queue, mediaId ?? "");
-  const step = useCallback(
-    (target: PlayQueueItem | undefined) => {
-      if (!target) return;
-      const state: PlayerNavState = { title: target.title };
-      if (navState.queue && navState.queueIdentity) {
-        state.queue = navState.queue;
-        state.queueIdentity = navState.queueIdentity;
-      }
-      navigate(mediaPath("view", target.id), { replace: true, state });
-    },
-    [navigate, navState.queue, navState.queueIdentity],
-  );
-
   const close = useCallback(() => {
-    // "default" is the entry the app was loaded on: nothing in-app to return to.
-    if (location.key !== "default") navigate(-1);
-    else navigate("/");
-  }, [location.key, navigate]);
+    // React Router numbers its history entries; idx 0 is where the app was
+    // loaded (a replaced shared link included), so there is nothing to go back to.
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (idx > 0) navigate(-1);
+    else navigate("/", { replace: true });
+  }, [navigate]);
 
   const favorited = favorite && favorite.id === mediaId ? favorite.value : !!media?.favorited;
   const toggleFavorite = useCallback(() => {
@@ -192,11 +217,21 @@ export function ImageViewerPage() {
       if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
       switch (event.key) {
         case "ArrowLeft":
-          step(previous);
-          break;
         case "ArrowRight":
-          step(next);
+        case "ArrowUp":
+        case "ArrowDown": {
+          const horizontal = event.key === "ArrowLeft" || event.key === "ArrowRight";
+          if (scale > 1) {
+            // Zoomed in, the arrows pan the image instead of stepping.
+            const sign = event.key === "ArrowLeft" || event.key === "ArrowUp" ? 1 : -1;
+            setOffset((o) =>
+              horizontal ? { x: o.x + sign * PAN_PX, y: o.y } : { x: o.x, y: o.y + sign * PAN_PX },
+            );
+          } else if (event.key === "ArrowLeft") step(previous, "previous");
+          else if (event.key === "ArrowRight") step(next, "next");
+          else return;
           break;
+        }
         case "z":
         case "Z":
         case "+":
@@ -205,6 +240,7 @@ export function ImageViewerPage() {
           break;
         case "0":
           zoomTo(1);
+          setRotation(0);
           break;
         case "r":
         case "R":
@@ -232,6 +268,8 @@ export function ImageViewerPage() {
   }, [close, infoOpen, next, previous, scale, step, toggleFavorite, zoomTo]);
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
+    // A press on a stage control stays a click on that control.
+    if ((event.target as HTMLElement | null)?.closest("button")) return;
     drag.current = { x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y, moved: false };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   }
@@ -249,11 +287,12 @@ export function ImageViewerPage() {
     if (!start || scale > 1) return;
     const dx = event.clientX - start.x;
     if (Math.abs(dx) >= SWIPE_PX && Math.abs(dx) > Math.abs(event.clientY - start.y)) {
-      step(dx < 0 ? next : previous);
+      if (dx < 0) step(next, "next");
+      else step(previous, "previous");
     }
   }
 
-  if (mediaId === "" || (resolved && !media)) {
+  if (mediaId === "" || terminal || (resolved && !media)) {
     return (
       <main
         id={MAIN_CONTENT_ID}
@@ -269,7 +308,7 @@ export function ImageViewerPage() {
   const derivative = poster ? artworkBucketURL(poster, "w1280") : "";
   const originalHere = original && original.id === mediaId ? original : null;
   const showOriginal = originalHere?.state === "ready";
-  const title = media?.title || navState.title || "";
+  const title = media?.title || "";
   const shownFields =
     fields && fields.id === mediaId
       ? viewerFacingFields(fields.list, { title: media?.title, year: media?.year })
@@ -404,7 +443,7 @@ export function ImageViewerPage() {
               type="button"
               className="bf-image-viewer-button bf-image-viewer-step"
               data-side="previous"
-              onClick={() => step(previous)}
+              onClick={() => step(previous, "previous")}
               aria-label={t("imageViewerPrevious")}
             >
               <ChevronLeft aria-hidden />
@@ -415,7 +454,7 @@ export function ImageViewerPage() {
               type="button"
               className="bf-image-viewer-button bf-image-viewer-step"
               data-side="next"
-              onClick={() => step(next)}
+              onClick={() => step(next, "next")}
               aria-label={t("imageViewerNext")}
             >
               <ChevronRight aria-hidden />
