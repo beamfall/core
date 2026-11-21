@@ -1546,7 +1546,7 @@ func (s *Store) sessionSQL(ctx context.Context, id SessionID) (Session, error) {
 		"SELECT id, device_id, profile_id, revealed, expires_at_ms, admin_until_ms, kind, integration_scopes FROM auth_session WHERE id = ?", id,
 	).Scan(&session.ID, &deviceID, &session.ProfileID, &revealed, &expires, &adminUntil, &kind, &integrationScopes)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Session{}, errors.New("session not found")
+		return Session{}, ErrSessionNotFound
 	}
 	if err != nil {
 		return Session{}, err

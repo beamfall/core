@@ -13,14 +13,14 @@ type queueEntry struct {
 	addedAtMS int64
 }
 
-// ErrQueueMediaNotFound covers missing targets and targets hidden from the caller.
+// ErrQueueMediaNotFound covers missing targets and targets hidden from the queue.
 const ErrQueueMediaNotFound = ValidationError("media not found")
 
 // ErrQueueMediaLocked reports a visible target blocked by certification.
 var ErrQueueMediaLocked = errors.New("media is locked")
 
 // QueueAddResult is the visible queue prefix and scope at the commit point.
-// The prefix includes the added item when it is visible beyond the first page.
+// The prefix includes the added item even when it lies beyond the first page.
 type QueueAddResult struct {
 	Items  []SourceItem
 	Filter LibraryFilter
@@ -50,7 +50,12 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 		return QueueAddResult{}, err
 	}
 	defer tx.Rollback()
-	filter, err = s.queueAddFilterLocked(ctx, profileID, sessionID, filter, resolveCertification)
+	session, err := s.queueAddSessionLocked(ctx, profileID, sessionID)
+	if err != nil {
+		return QueueAddResult{}, err
+	}
+	filter.Revealed = filter.Revealed && session.Revealed
+	filter, err = s.queueAddFilterLocked(ctx, profileID, filter, resolveCertification)
 	if err != nil {
 		return QueueAddResult{}, err
 	}
@@ -58,16 +63,16 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 	if err != nil {
 		return QueueAddResult{}, err
 	}
-	media, err := s.visibleQueueMedia(ctx, entries, filter, mediaID)
+	visibleItems, err := s.unmutedQueueItemsLocked(ctx, profileID, entries, filter, mediaID)
 	if err != nil {
 		return QueueAddResult{}, err
 	}
-	target, ok := media[mediaID]
+	target, ok := visibleItems[mediaID]
 	if !ok {
 		return QueueAddResult{}, ErrQueueMediaNotFound
 	}
 	// Check the target even when its committed position would be off-page.
-	check := []SourceItem{queueSourceItem(target)}
+	check := []SourceItem{target}
 	if err := s.annotateLockedLocked(ctx, filter.Certification, check, filter.GrantedMediaIDs); err != nil {
 		return QueueAddResult{}, err
 	}
@@ -77,8 +82,8 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 
 	addedAt := timeToMillis(time.Now().UTC())
 	without := make([]queueEntry, 0, len(entries))
-	visible := make(map[MediaID]bool, len(media))
-	for id := range media {
+	visible := make(map[MediaID]bool, len(visibleItems))
+	for id := range visibleItems {
 		visible[id] = true
 	}
 	for _, entry := range entries {
@@ -89,16 +94,7 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 		without = append(without, entry)
 	}
 	updated := insertAtVisiblePosition(without, queueEntry{mediaID: mediaID, addedAtMS: addedAt}, position, visible)
-	items := make([]SourceItem, 0, len(updated))
-	for _, entry := range updated {
-		if m, ok := media[entry.mediaID]; ok {
-			items = append(items, queueSourceItem(m))
-		}
-	}
-	items, err = s.applyMuteFilterLocked(ctx, s.catalogR, profileID, filter, items)
-	if err != nil {
-		return QueueAddResult{}, err
-	}
+	items := orderedQueueItems(updated, visibleItems)
 	// Preserve the target's index in the visible order for off-page adds.
 	targetIndex := slices.IndexFunc(items, func(item SourceItem) bool { return item.ID == mediaID })
 	items = pageOf(items, max(defaultSourceItemsLimit, targetIndex+1), 0)
@@ -117,26 +113,41 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 	if err := replaceQueue(ctx, tx, profileID, updated); err != nil {
 		return QueueAddResult{}, err
 	}
+	// Time can advance during queue reconstruction while the session row is stable.
+	if !session.ExpiresAt.IsZero() && !time.Now().Before(session.ExpiresAt) {
+		return QueueAddResult{}, ErrSessionExpired
+	}
 	if err := tx.Commit(); err != nil {
 		return QueueAddResult{}, err
 	}
 	return QueueAddResult{Items: items, Filter: filter}, nil
 }
 
-func (s *Store) queueAddFilterLocked(ctx context.Context, profileID ProfileID, sessionID SessionID, filter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (LibraryFilter, error) {
+func (s *Store) queueAddSessionLocked(ctx context.Context, profileID ProfileID, sessionID SessionID) (Session, error) {
 	if sessionID == "" {
-		filter.Revealed = false
-	} else {
-		session, err := s.sessionSQL(ctx, sessionID)
-		if err != nil {
-			return LibraryFilter{}, err
-		}
-		if session.ProfileID != profileID {
-			return LibraryFilter{}, ErrSessionProfileMismatch
-		}
-		// Rechecking can only narrow the request's Reveal authority.
-		filter.Revealed = filter.Revealed && session.Revealed
+		return Session{}, nil
 	}
+	session, err := s.sessionSQL(ctx, sessionID)
+	if err != nil {
+		return Session{}, err
+	}
+	if session.ProfileID != profileID {
+		return Session{}, ErrSessionProfileMismatch
+	}
+	if !session.ExpiresAt.IsZero() && !time.Now().Before(session.ExpiresAt) {
+		return Session{}, ErrSessionExpired
+	}
+	device, err := s.deviceSQL(ctx, session.DeviceID)
+	if err != nil {
+		return Session{}, err
+	}
+	if device.Revoked {
+		return Session{}, ErrDeviceRevoked
+	}
+	return session, nil
+}
+
+func (s *Store) queueAddFilterLocked(ctx context.Context, profileID ProfileID, filter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (LibraryFilter, error) {
 	profile, err := s.profileSQL(ctx, profileID)
 	if err != nil {
 		return LibraryFilter{}, err
@@ -334,6 +345,53 @@ func (s *Store) visibleQueueMedia(ctx context.Context, entries []queueEntry, fil
 	return s.visibleMediaBatchSQL(ctx, ids, filter)
 }
 
+// unmutedQueueItemsLocked resolves mutes on each visible item's catalog plane.
+// The result is used for both placement and paging, while storage retains the
+// entries that the current scope or mute list hides.
+func (s *Store) unmutedQueueItemsLocked(ctx context.Context, profileID ProfileID, entries []queueEntry, filter LibraryFilter, extra ...MediaID) (map[MediaID]SourceItem, error) {
+	media, err := s.visibleQueueMedia(ctx, entries, filter, extra...)
+	if err != nil {
+		return nil, err
+	}
+	readers := make(map[LibraryID]*sql.DB)
+	byReader := make(map[*sql.DB][]SourceItem)
+	for _, m := range media {
+		reader, known := readers[m.LibraryID]
+		if !known {
+			plane, err := s.catalogPlaneForLibraryLocked(ctx, m.LibraryID)
+			if err != nil && !errors.Is(err, ErrEncryptedLibraryDBDisabled) {
+				return nil, err
+			}
+			reader = plane.reader
+			readers[m.LibraryID] = reader
+		}
+		if reader != nil {
+			byReader[reader] = append(byReader[reader], queueSourceItem(m))
+		}
+	}
+	visible := make(map[MediaID]SourceItem, len(media))
+	for reader, items := range byReader {
+		kept, err := s.applyMuteFilterLocked(ctx, reader, profileID, filter, items)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range kept {
+			visible[item.ID] = item
+		}
+	}
+	return visible, nil
+}
+
+func orderedQueueItems(entries []queueEntry, visible map[MediaID]SourceItem) []SourceItem {
+	items := make([]SourceItem, 0, len(visible))
+	for _, entry := range entries {
+		if item, ok := visible[entry.mediaID]; ok {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
 // insertAtVisiblePosition inserts entry so it lands at index position among
 // the entries the caller can see (nil or past-the-end position = the end of
 // the queue). Hidden entries keep their slots; the caller's position
@@ -366,49 +424,15 @@ func insertAtVisiblePosition(entries []queueEntry, entry queueEntry, position *i
 }
 
 func (s *Store) queueItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
-	rows, err := s.eventsR.QueryContext(ctx, `
-		SELECT media_id
-		FROM play_queue
-		WHERE profile_id = ?
-		ORDER BY position
-	`, profileID)
+	entries, err := queueEntries(ctx, s.eventsR, profileID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var ids []MediaID
-	for rows.Next() {
-		var id MediaID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	visible, err := s.visibleMediaBatchSQL(ctx, ids, filter)
+	visible, err := s.unmutedQueueItemsLocked(ctx, profileID, entries, filter)
 	if err != nil {
 		return nil, err
 	}
-	items := []SourceItem{}
-	visibleIndex := 0
-	for _, id := range ids {
-		media, ok := visible[id]
-		if !ok {
-			continue
-		}
-		if visibleIndex < offset {
-			visibleIndex++
-			continue
-		}
-		items = append(items, queueSourceItem(media))
-		visibleIndex++
-		if len(items) >= limit {
-			break
-		}
-	}
-	return items, nil
+	return pageOf(orderedQueueItems(entries, visible), limit, offset), nil
 }
 
 func queueSourceItem(media Media) SourceItem {
@@ -519,8 +543,10 @@ func repointQueueEntryTx(ctx context.Context, tx *sql.Tx, m queueMove, from, to 
 	return err
 }
 
-func queueEntries(ctx context.Context, tx *sql.Tx, profileID ProfileID) ([]queueEntry, error) {
-	rows, err := tx.QueryContext(ctx, `
+func queueEntries(ctx context.Context, db interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, profileID ProfileID) ([]queueEntry, error) {
+	rows, err := db.QueryContext(ctx, `
 		SELECT media_id, added_at_ms
 		FROM play_queue
 		WHERE profile_id = ?

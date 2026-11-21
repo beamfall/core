@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 )
 
 func queueAddFixture(ctx context.Context, st *Store, profileID ProfileID, mediaID MediaID, position *int, filter LibraryFilter) error {
@@ -31,8 +32,8 @@ func TestQueueAddResponseMatchesQueueReadAfterMute(t *testing.T) {
 	if err := st.SetMute(ctx, profile, MuteKindMedia, "media-alpha", false, true); err != nil {
 		t.Fatal(err)
 	}
-	newTarget := importQueueMedia(t, st, "queue-after-mute-tail")
-	committed, err := st.QueueAddForProfile(ctx, profile, session, newTarget, nil, filter, testQueueCertification)
+	newTarget := importQueueMedia(t, st, "queue-after-mute-next")
+	committed, err := st.QueueAddForProfile(ctx, profile, session, newTarget, queueIntPtr(1), filter, testQueueCertification)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,10 +45,132 @@ func TestQueueAddResponseMatchesQueueReadAfterMute(t *testing.T) {
 	if !slices.EqualFunc(committed.Items, read, func(a, b SourceItem) bool { return a.ID == b.ID }) {
 		t.Fatalf("queueAdd response = %#v, want the same order as the queue read", committed.Items)
 	}
+	query.Limit, query.Offset = 1, 1
+	if page := mustSourceItems(t, st, filter, query); len(page) != 1 || page[0].ID != newTarget {
+		t.Fatalf("second visible page = %#v, want %s", page, newTarget)
+	}
 	if err := st.SetMute(ctx, profile, MuteKindMedia, "media-alpha", false, false); err != nil {
 		t.Fatal(err)
 	}
 	assertQueueIDs(t, st, filter, profile, []MediaID{"media-alpha", target, newTarget})
+}
+
+func TestQueueAddRefusesMutedTargetBeforeWriting(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	const profile = "profile-default"
+	const session = "session-default"
+	filter := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+	queued := importQueueMedia(t, st, "queue-muted-existing")
+	unqueued := importQueueMedia(t, st, "queue-muted-new")
+	for _, id := range []MediaID{"media-alpha", queued} {
+		if _, err := st.QueueAddForProfile(ctx, profile, session, id, nil, filter, testQueueCertification); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []MediaID{queued, unqueued} {
+		if err := st.SetMute(ctx, profile, MuteKindMedia, string(id), false, true); err != nil {
+			t.Fatal(err)
+		}
+		_, err := st.QueueAddForProfile(ctx, profile, session, id, queueIntPtr(0), filter, testQueueCertification)
+		if !errors.Is(err, ErrQueueMediaNotFound) {
+			t.Errorf("queue add for muted target %s = %v, want hidden-target refusal", id, err)
+		}
+		if err := st.SetMute(ctx, profile, MuteKindMedia, string(id), false, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertQueueIDs(t, st, filter, profile, []MediaID{"media-alpha", queued})
+}
+
+func TestQueueAddFiltersEncryptedCatalogMutes(t *testing.T) {
+	for _, kind := range []MuteKind{MuteKindEntity, MuteKindTag} {
+		t.Run(string(kind), func(t *testing.T) {
+			st, library, _, entity, muted := openEncryptedPackLibrary(t)
+			ctx := t.Context()
+			const profile = "profile-default"
+			const session = "session-revealed"
+			filter := LibraryFilter{AllowedIDs: []LibraryID{library, "library-archive"}, Revealed: true}
+			other, _, err := st.ImportMediaFile(ctx, encryptedImport(library, "sha256:enc-queue-visible", "/enc/queue-visible.mkv"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, id := range []MediaID{muted, other.ID} {
+				if _, err := st.QueueAddForProfile(ctx, profile, session, id, nil, filter, testQueueCertification); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := st.SetMute(ctx, profile, kind, string(entity.ID), false, true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.QueueAddForProfile(ctx, profile, session, muted, nil, filter, testQueueCertification); !errors.Is(err, ErrQueueMediaNotFound) {
+				t.Errorf("queue add for muted encrypted target = %v, want hidden-target refusal", err)
+			}
+			committed, err := st.QueueAddForProfile(ctx, profile, session, "media-archive", queueIntPtr(1), filter, testQueueCertification)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(committed.Items) != 2 || committed.Items[0].ID != other.ID || committed.Items[1].ID != "media-archive" {
+				t.Errorf("committed order = %#v, want [%s media-archive]", committed.Items, other.ID)
+			}
+			assertQueueIDs(t, st, filter, profile, []MediaID{other.ID, "media-archive"})
+			if err := st.SetMute(ctx, profile, kind, string(entity.ID), false, false); err != nil {
+				t.Fatal(err)
+			}
+			assertQueueIDs(t, st, filter, profile, []MediaID{muted, other.ID, "media-archive"})
+			cipher := copyEncryptedLibraryDBCipher{}
+			if err := st.SealEncryptedLibraryDB(ctx, library, cipher); err != nil {
+				t.Fatal(err)
+			}
+			assertQueueIDs(t, st, filter, profile, []MediaID{"media-archive"})
+			if _, err := st.QueueAddForProfile(ctx, profile, session, muted, nil, filter, testQueueCertification); !errors.Is(err, ErrQueueMediaNotFound) {
+				t.Errorf("queue add for sealed target = %v, want hidden-target refusal", err)
+			}
+			if err := st.UnsealEncryptedLibraryDB(ctx, library, cipher); err != nil {
+				t.Fatal(err)
+			}
+			assertQueueIDs(t, st, filter, profile, []MediaID{muted, other.ID, "media-archive"})
+		})
+	}
+}
+
+func TestQueueAddRefusesInvalidatedRevealSession(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		invalidate func(context.Context, *Store) error
+		want       error
+	}{
+		{"revoked device", func(ctx context.Context, st *Store) error { return st.RevokeDevice(ctx, "device-tv") }, ErrDeviceRevoked},
+		{"expired session", func(ctx context.Context, st *Store) error {
+			_, err := st.catalogW.ExecContext(ctx, `UPDATE auth_session SET expires_at_ms = ? WHERE id = 'session-revealed'`, timeToMillis(time.Now().Add(-time.Minute)))
+			return err
+		}, ErrSessionExpired},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			st := openSeeded(t)
+			ctx := t.Context()
+			const profile = "profile-default"
+			const sessionID = "session-revealed"
+			filter := LibraryFilter{AllowedIDs: []LibraryID{"library-local", "library-archive"}, Revealed: true}
+			if _, err := st.Media(ctx, "media-archive", filter); err != nil {
+				t.Fatalf("preflight: %v", err)
+			}
+			if _, err := st.QueueAddForProfile(ctx, profile, sessionID, "media-alpha", nil, filter, testQueueCertification); err != nil {
+				t.Fatal(err)
+			}
+			if err := test.invalidate(ctx, st); err != nil {
+				t.Fatal(err)
+			}
+			session, err := st.Session(ctx, sessionID)
+			if err != nil || !session.Revealed {
+				t.Fatalf("fixture must retain Reveal: session = %#v, err = %v", session, err)
+			}
+			if _, err := st.QueueAddForProfile(ctx, profile, sessionID, "media-archive", queueIntPtr(0), filter, testQueueCertification); !errors.Is(err, test.want) {
+				t.Errorf("queue add after invalidation = %v, want %v", err, test.want)
+			}
+			assertQueueIDs(t, st, filter, profile, []MediaID{"media-alpha"})
+		})
+	}
 }
 
 func TestQueueAddWithoutSessionCannotUseReveal(t *testing.T) {

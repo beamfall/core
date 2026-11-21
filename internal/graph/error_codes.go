@@ -212,7 +212,8 @@ var clientErrorCodes = map[string]ErrorCode{
 	"session not controllable":                                       ErrorCodeForbidden,
 	"retry the offline pack build from the device that requested it": ErrorCodeForbidden,
 
-	"device revoked": ErrorCodeUnauthenticated,
+	"device revoked":  ErrorCodeUnauthenticated,
+	"invalid session": ErrorCodeUnauthenticated,
 
 	"access request already resolved":                                                              ErrorCodeConflict,
 	"no backup key is waiting to be saved":                                                         ErrorCodeConflict,

@@ -4480,6 +4480,9 @@ func (h *Handler) queueOps(ctx context.Context, scope auth.Scope, fields map[str
 		data, err = h.applyQueueOps(ctx, scope, fields, req)
 		return err
 	})
+	if errors.Is(err, store.ErrDeviceRevoked) || errors.Is(err, store.ErrSessionExpired) || errors.Is(err, store.ErrSessionNotFound) {
+		return nil, clientError("invalid session")
+	}
 	if err != nil {
 		return nil, err
 	}

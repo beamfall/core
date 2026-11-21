@@ -281,6 +281,12 @@ const (
 // IntegrationSetupTTL is the longest life of an admin setup Session.
 const IntegrationSetupTTL = 15 * time.Minute
 
+// ErrSessionNotFound reports that no session exists for the requested ID.
+var ErrSessionNotFound = errors.New("session not found")
+
+// ErrSessionExpired reports that the request's session has expired.
+var ErrSessionExpired = errors.New("session expired")
+
 // IntegrationSetupAttemptKey names the throttle lane of an admin setup
 // sign-in for the owner Profile.
 func IntegrationSetupAttemptKey(owner ProfileID) string {
@@ -3661,8 +3667,7 @@ func (s *Store) homeLibraryFilterLocked(ctx context.Context, filter LibraryFilte
 }
 
 // sourceItemsForKind dispatches one bounded manifest Source kind to its SQL
-// projection. It runs under the read lock SourceItems holds; the per-Profile
-// Mute predicate is layered on its result by SourceItems, not here.
+// projection under the read lock SourceItems holds.
 func (s *Store) sourceItemsForKind(ctx context.Context, filter LibraryFilter, query SourceQuery, limit, offset int) ([]SourceItem, error) {
 	switch query.Kind {
 	case "smart-collection":

@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -131,5 +132,40 @@ func TestQueueAddReturnsLocalizedForbiddenForLockedMedia(t *testing.T) {
 	}
 	if got := pqQueue(t, st, pqDefault); len(got) != 0 {
 		t.Fatalf("locked target changed queue to %v", got)
+	}
+}
+
+func TestQueueAddRefusesInvalidatedRevealScope(t *testing.T) {
+	// feature:play-queue
+	for _, test := range []struct {
+		name       string
+		invalidate func(context.Context, *store.Store) error
+	}{
+		{"revoked device", func(ctx context.Context, st *store.Store) error { return st.RevokeDevice(ctx, "device-tv") }},
+		{"terminated session", func(ctx context.Context, st *store.Store) error { return st.TerminateSession(ctx, "session-revealed") }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			st := storetest.Open(t)
+			h := newTestHandlerWithStore(st)
+			ctx := t.Context()
+			scope, err := h.auth.Scope(ctx, "session-revealed")
+			if err != nil || !scope.Revealed {
+				t.Fatalf("resolve revealed scope: %v (revealed = %v)", err, scope.Revealed)
+			}
+			if err := test.invalidate(ctx, st); err != nil {
+				t.Fatal(err)
+			}
+			for _, expected := range []any{nil, string(scope.ProfileID)} {
+				_, err := h.queueOps(ctx, scope, map[string]bool{"queueadd": true}, request{Variables: map[string]any{
+					"mediaID": "media-archive", "expectedProfileID": expected,
+				}})
+				if got := fieldGraphError(ctx, "queueAdd", err); got.Extensions.Code != ErrorCodeUnauthenticated || got.Message != "invalid session" {
+					t.Errorf("queueAdd with expectedProfileID %v = %#v, want UNAUTHENTICATED", expected, got)
+				}
+			}
+			if got := pqQueue(t, st, pqDefault); len(got) != 0 {
+				t.Fatalf("invalidated session changed queue to %v", got)
+			}
+		})
 	}
 }
