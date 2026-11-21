@@ -598,7 +598,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	artworkService := artwork.NewService(st, artworkGrabber, cfg.DataDir)
 	// Plugin wirings declare which Entity kinds borrow a poster from their own
 	// Media when no provider supplied one; the artwork sweep applies them.
-	artworkService.SetEntityPosterRules(activeEntityPosterRules(executablePlugins, hooks.EntityPosterRules, logger))
+	// Category kinds without a declared rule derive a mosaic from what they
+	// group (CORE-3059). The conformance corpus keeps its seeded artwork
+	// byte-stable, so it gets declared rules only.
+	posterRules := activeEntityPosterRules(executablePlugins, hooks.EntityPosterRules, logger)
+	if !conformanceMode {
+		posterRules = withCategoryPosterRules(executablePlugins, posterRules)
+	}
+	artworkService.SetEntityPosterRules(posterRules)
 	// Plugin wirings declare per-Entity provider lookups; the enrichment job
 	// runs them after scans and at boot (CORE-2884). The conformance corpus
 	// never reaches a provider.
