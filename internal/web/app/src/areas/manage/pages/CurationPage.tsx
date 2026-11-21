@@ -548,6 +548,9 @@ function isUnknownEntity(err: unknown): boolean {
   );
 }
 
+/** A position past any relation's end; the server places the row last. */
+const APPEND_POSITION = 2_147_483_647;
+
 function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
   const { t } = useI18n();
   const [detail, setDetail] = useState<EntityDetail | "loading" | "missing" | "failed">("loading");
@@ -643,7 +646,9 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
         relation,
         toEntityID: isEntity(picked) ? picked.id : null,
         toMediaID: isEntity(picked) ? null : picked.id,
-        position: relationSize.get(relation) ?? 0,
+        // Past the end: the server appends after the last item it holds now,
+        // not after the last one this page loaded.
+        position: APPEND_POSITION,
       });
       setAdding(false);
       setNewRelation("");

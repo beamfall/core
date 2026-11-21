@@ -1402,8 +1402,19 @@ func (s *Store) EntityRelationRows(ctx context.Context, entityID EntityID, relat
 	args = append(args, visibleArgs...)
 	args = append(args, limit, offset)
 	// #nosec G202 -- interpolated fragments are internally generated placeholders and closed certification SQL.
+	// When the filter hides some of a relation's rows, each row gets its rank
+	// among the ranked rows the filter sees instead of the stored number,
+	// which would count the hidden rows (CORE-2913). A relation the filter
+	// sees whole keeps its stored numbers.
 	rows, err := plane.reader.QueryContext(ctx, `
-		SELECT r.relation, r.attributes, r.sort_order,
+		SELECT r.relation, r.attributes,
+		       CASE WHEN r.sort_order IS NULL
+		              OR COUNT(*) OVER (PARTITION BY r.relation) =
+		                 (SELECT COUNT(*) FROM entity_relation x
+		                  WHERE x.from_entity_id = r.from_entity_id AND x.relation = r.relation)
+		            THEN r.sort_order ELSE
+		         ROW_NUMBER() OVER (PARTITION BY r.relation, (r.sort_order IS NULL)
+		           ORDER BY r.sort_order, r.to_entity_id, r.to_media_id) - 1 END,
 		       e.id, e.library_id, e.kind, e.title,
 		       m.id, m.library_id, m.title, m.summary, m.year,
 		       m.duration_seconds, m.container, m.codec, m.video_width,
@@ -1796,6 +1807,31 @@ func (s *Store) PlaceEntityRelation(ctx context.Context, relation EntityRelation
 		return err
 	}
 	defer tx.Rollback()
+	// Recheck inside the transaction that the filter still sees the source
+	// and the target: one hidden or trashed since the resolver's check must
+	// not be moved.
+	seen := func(toEntity, toMedia string) (bool, error) {
+		var ok bool
+		seenArgs := append(append([]any{}, visibleArgs...), nullableString(toEntity), nullableString(toMedia))
+		// #nosec G202 -- interpolated fragments are internally generated placeholders and closed certification SQL.
+		err := tx.QueryRowContext(ctx, `
+			SELECT `+visible+`
+			FROM (SELECT ? AS to_entity_id, ? AS to_media_id) r
+			LEFT JOIN entity e ON e.id = r.to_entity_id AND e.trashed_at_ms IS NULL
+			LEFT JOIN media m ON m.id = r.to_media_id AND m.trashed_at_ms IS NULL
+		`, seenArgs...).Scan(&ok)
+		return ok, err
+	}
+	for _, target := range [][2]string{
+		{string(relation.FromEntityID), ""},
+		{string(relation.ToEntityID), string(relation.ToMediaID)},
+	} {
+		if ok, err := seen(target[0], target[1]); err != nil {
+			return err
+		} else if !ok {
+			return errVisibleEntityNotFound
+		}
+	}
 	type placed struct {
 		toEntity, toMedia sql.NullString
 		sortOrder         sql.NullInt64

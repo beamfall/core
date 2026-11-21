@@ -147,6 +147,25 @@ func TestPlaceEntityRelationRenumbersAroundHiddenRows(t *testing.T) {
 		t.Fatalf("v1 attributes = %v, want role=lead kept", byID["v1"].Attributes)
 	}
 
+	// A filtered read ranks only the rows it can see, so it does not count
+	// the hidden row ahead of them.
+	visibleRows, err := st.EntityRelationRows(ctx, "group", "contains", local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, row := range visibleRows {
+		if row.SortOrder == nil || *row.SortOrder != i {
+			t.Fatalf("filtered row %d %s sortOrder = %v, want %d", i, row.ToEntity.ID, row.SortOrder, i)
+		}
+	}
+	// A target the filter cannot see is refused and nothing moves.
+	if err := st.PlaceEntityRelation(ctx, EntityRelation{FromEntityID: "group", Name: "contains", ToEntityID: "hidden"}, 2, local); err == nil {
+		t.Fatal("hidden target placed")
+	}
+	if ids, _ := order(); strings.Join(ids, ",") != "hidden,v3,v1,v2" {
+		t.Fatalf("after refused move order = %v", ids)
+	}
+
 	if err := st.PlaceEntityRelation(ctx, EntityRelation{FromEntityID: "group", Name: "contains", ToEntityID: "new"}, 99, local); err != nil {
 		t.Fatal(err)
 	}

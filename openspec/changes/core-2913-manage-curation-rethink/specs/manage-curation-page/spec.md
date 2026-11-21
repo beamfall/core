@@ -71,8 +71,9 @@ and SHALL NOT write an item already in that relation.
 
 #### Scenario: Manager adds an item to a group
 
-- **WHEN** the group's relation shows two items and the manager adds item C
-- **THEN** the page calls `upsertEntityRelation` once for C with position 2
+- **WHEN** the manager adds item C to a group
+- **THEN** the page calls `upsertEntityRelation` once for C with a position past the end, so C goes
+  after the last item the server holds even if another manager added one since the page loaded
 
 #### Scenario: Item already in the group
 
@@ -97,6 +98,27 @@ rewritten.
 
 - **WHEN** a call gives both `sortOrder` and `position`
 - **THEN** it is refused as invalid and nothing is written
+
+### Requirement: Placement rechecks visibility
+
+The server SHALL recheck inside the placement transaction that the caller still sees the source and
+the target, and SHALL refuse the call otherwise.
+
+#### Scenario: Target hidden from the caller
+
+- **WHEN** a caller places a row whose target it cannot see
+- **THEN** the call is refused and no row moves
+
+### Requirement: Filtered relation reads do not count hidden rows
+
+When a caller cannot see every row of a relation, `entityRelations` SHALL return each ranked row's
+`sortOrder` as its rank among the rows the caller sees. A relation the caller sees whole keeps its
+stored numbers.
+
+#### Scenario: A hidden row comes first
+
+- **WHEN** a relation holds a hidden row numbered 0 and visible rows numbered 1 to 3
+- **THEN** a read by that caller returns the visible rows numbered 0 to 2
 
 ### Requirement: Group changes save one at a time
 

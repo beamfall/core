@@ -339,7 +339,7 @@ describe("CurationPage", () => {
       relation: "contains",
       toEntityID: null,
       toMediaID: "media-c",
-      position: 2,
+      position: 2_147_483_647,
     });
     expect(upsertEntityRelation).toHaveBeenCalledTimes(1);
   });
@@ -378,7 +378,7 @@ describe("CurationPage", () => {
     await user.click(await screen.findByRole("button", { name: "Add to group: Sub Group" }));
 
     expect(upsertEntityRelation).toHaveBeenCalledWith(
-      expect.objectContaining({ toEntityID: "entity-2", toMediaID: null, position: 2 }),
+      expect.objectContaining({ toEntityID: "entity-2", toMediaID: null, position: 2_147_483_647 }),
     );
   });
 
@@ -402,7 +402,7 @@ describe("CurationPage", () => {
 
     await waitFor(() => expect(upsertEntityRelation).toHaveBeenCalledTimes(1));
     expect(upsertEntityRelation).toHaveBeenCalledWith(
-      expect.objectContaining({ toMediaID: "media-c", position: 2 }),
+      expect.objectContaining({ toMediaID: "media-c", position: 2_147_483_647 }),
     );
   });
 
