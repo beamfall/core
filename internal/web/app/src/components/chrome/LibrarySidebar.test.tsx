@@ -502,6 +502,20 @@ describe("LibrarySidebar Your stuff group (CORE-2827)", () => {
     });
   });
 
+  it("keeps a stored order when an entry it lists first is re-pinned", async () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    const stored = { order: ["history", "playlists", "favorites"], hidden: ["history"] };
+    renderSidebar({ prefs: { order: [], hidden: [], personal: stored }, onSavePrefs: save });
+    fireEvent.click(screen.getByRole("button", { name: "Edit your stuff" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pin History" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0].personal).toEqual({
+      order: ["history", "playlists", "favorites"],
+      hidden: [],
+    });
+  });
+
   it("reorders and unpins the group in its own editor and keeps the library choice", async () => {
     const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
     const { container } = renderSidebar({ prefs: { order: ["a"], hidden: [] }, onSavePrefs: save });

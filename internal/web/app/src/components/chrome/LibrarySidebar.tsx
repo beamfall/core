@@ -274,16 +274,14 @@ export function LibrarySidebar({
           setSaving(true);
           setSaveFailed(null);
           const choice = { order: draft.order, hidden: [...draft.hidden] };
-          // An order the Profile never chose is not stored, so a later change
-          // to the defaults still reaches it (CORE-2880). Pin toggles leave
-          // the draft order alone; only a move, or a stored order, is a choice.
-          const unmoved =
-            (prefs.personal?.order.length ?? 0) === 0 &&
-            sameOrder(
-              draft.order,
-              startDraft(personal.pinned, personal.unpinned, personalIDOf).order,
-            );
-          const personalChoice = unmoved ? { ...choice, order: [] } : choice;
+          // Only a move changes the stored order: pin toggles keep whatever
+          // order was stored, or none, so a later change to the defaults
+          // still reaches an order the Profile never chose (CORE-2880).
+          const moved = !sameOrder(
+            draft.order,
+            startDraft(personal.pinned, personal.unpinned, personalIDOf).order,
+          );
+          const personalChoice = moved ? choice : { ...choice, order: prefs.personal?.order ?? [] };
           try {
             await onSavePrefs(
               group === "libraries"
