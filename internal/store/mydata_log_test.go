@@ -54,7 +54,7 @@ func TestMyEngagementLogHighCardinalityUsesBoundedChunks(t *testing.T) {
 			_ = eventsTx.Rollback()
 			t.Fatal(err)
 		}
-		queueRows = append(queueRows, queueEntry{mediaID: id, addedAtMS: atMS})
+		queueRows = append(queueRows, queueEntry{id: string(id), mediaID: id, addedAtMS: atMS})
 		for rank, kind := range []MyEngagementEventKind{MyEventPlay, MyEventFavorite, MyEventQueue} {
 			expected = append(expected, myEngagementRankedEvent{
 				rank: rank,
@@ -64,7 +64,11 @@ func TestMyEngagementLogHighCardinalityUsesBoundedChunks(t *testing.T) {
 			})
 		}
 	}
-	if err := replaceQueue(ctx, eventsTx, profile, queueRows); err != nil {
+	duplicate := queueRows[0]
+	duplicate.id += "-earlier"
+	duplicate.addedAtMS--
+	queueRows = append(queueRows, duplicate)
+	if err := saveQueue(ctx, eventsTx, profile, queueSnapshot{entries: queueRows, repeat: QueueRepeatOff}, nil); err != nil {
 		_ = catalogTx.Rollback()
 		_ = eventsTx.Rollback()
 		t.Fatal(err)

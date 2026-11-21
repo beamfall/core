@@ -830,6 +830,11 @@
     "tier": "admin"
   },
   {
+    "field": "playqueue",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "playstats",
     "effect": "read",
     "tier": "admin"
@@ -900,6 +905,11 @@
     "tier": "session"
   },
   {
+    "field": "queueaddmany",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "queueclear",
     "effect": "write",
     "tier": "session"
@@ -910,7 +920,37 @@
     "tier": "session"
   },
   {
+    "field": "queuemoveentry",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queueplaynext",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "queueremove",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queueremoveentry",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queuesetcurrent",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queuesetrepeat",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queuesetshuffle",
     "effect": "write",
     "tier": "session"
   },

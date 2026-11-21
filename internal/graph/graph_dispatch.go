@@ -565,6 +565,14 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"revokejellyfincompatkey":            newFieldHandler("revokeJellyfinCompatKey", "revokeJellyfinCompatKey", fieldMutation, roleSession|roleAdmin, 155),
 	"qbittorrentingest":                  newFieldHandler("qbittorrentIngest", "qbittorrentIngest", fieldRead, roleSession|roleAdmin, 106),
 	"qualitypolicy":                      newFieldHandler("qualityPolicy", "qualityPolicy", fieldRead, roleSession|roleAdmin, 50),
+	"playqueue":                          newFieldHandler("playQueue", "queue", fieldRead, roleSession, 30),
+	"queueaddmany":                       newFieldHandler("queueAddMany", "queue", fieldMutation, roleSession, 30),
+	"queuemoveentry":                     newFieldHandler("queueMoveEntry", "queue", fieldMutation, roleSession, 30),
+	"queueremoveentry":                   newFieldHandler("queueRemoveEntry", "queue", fieldMutation, roleSession, 30),
+	"queueplaynext":                      newFieldHandler("queuePlayNext", "queue", fieldMutation, roleSession, 30),
+	"queuesetcurrent":                    newFieldHandler("queueSetCurrent", "queue", fieldMutation, roleSession, 30),
+	"queuesetshuffle":                    newFieldHandler("queueSetShuffle", "queue", fieldMutation, roleSession, 30),
+	"queuesetrepeat":                     newFieldHandler("queueSetRepeat", "queue", fieldMutation, roleSession, 30),
 	"queueadd":                           newFieldHandler("queueAdd", "queue", fieldMutation, roleSession, 30),
 	"queueclear":                         newFieldHandler("queueClear", "queue", fieldMutation, roleSession, 30),
 	"queuemove":                          newFieldHandler("queueMove", "queue", fieldMutation, roleSession, 30),
@@ -1280,6 +1288,17 @@ func dispatchFieldBlock030(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
+	if fields["playqueue"] {
+		result, err := h.playQueue(ctx, scope)
+		return resolveField(dispatch, "playqueue", result, err)
+	}
+	if fields["queueaddmany"] || fields["queuemoveentry"] || fields["queueremoveentry"] || fields["queueplaynext"] ||
+		fields["queuesetcurrent"] || fields["queuesetshuffle"] || fields["queuesetrepeat"] {
+		field := requestedField(fields, "queueaddmany", "queuemoveentry", "queueremoveentry", "queueplaynext",
+			"queuesetcurrent", "queuesetshuffle", "queuesetrepeat")
+		result, err := h.writePlayQueue(ctx, scope, fields, req)
+		return resolveField(dispatch, field, result, err)
+	}
 	if fields["queueadd"] || fields["queueremove"] || fields["queuemove"] || fields["queueclear"] {
 		result, err := h.queueOps(ctx, scope, fields, req)
 		if err != nil {

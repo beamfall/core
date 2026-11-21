@@ -301,14 +301,63 @@ func TestBackupFixtureCorpusDrill(t *testing.T) {
 	if report.MediaReconciliation.Severity != "clean" {
 		t.Fatalf("fixture media reconciliation = %#v", report.MediaReconciliation)
 	}
+	currentSchema := expected.SchemaFingerprint == fixtureSchemaFingerprint(
+		schemaFreezeCatalogMigrations, schemaFreezeEventsMigrations, schemaFreezeEncryptedLibraryMigrations)
+	if !currentSchema {
+		if err := verifyHistoricalFixture(ctx, restoreDir, descriptor.EncryptedLibraryIDs, expected); err != nil {
+			t.Fatalf("verify restored snapshot before migration: %v", err)
+		}
+	}
+
 	restored, err := Open(ctx, restoreDir, Options{EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("boot restored fixture: %v", err)
 	}
 	defer restored.Close()
-	if err := verifyFixtureExpectations(ctx, restored, expected); err != nil {
-		t.Fatal(err)
+	if currentSchema {
+		if err := verifyFixtureExpectations(ctx, restored, expected); err != nil {
+			t.Fatal(err)
+		}
+		return
 	}
+	for _, id := range descriptor.EncryptedLibraryIDs {
+		if err := restored.UnsealEncryptedLibraryDB(ctx, LibraryID(id), copyEncryptedLibraryDBCipher{}); err != nil {
+			t.Fatalf("boot restored fixture library %s: %v", id, err)
+		}
+	}
+}
+
+func verifyHistoricalFixture(ctx context.Context, restoreDir string, encryptedIDs []string, expected fixtureExpectations) error {
+	dbDir := filepath.Join(restoreDir, "db")
+	paths := map[string]string{
+		"catalog": filepath.Join(dbDir, "catalog.db"),
+		"events":  filepath.Join(dbDir, "events.db"),
+	}
+	// The corpus wraps synthetic SQLite snapshots in the encrypted Backup Set.
+	// Its copy cipher leaves the inner encrypted Library snapshots readable.
+	layout := Store{encryptedDBRoot: filepath.Join(dbDir, "encrypted-library")}
+	for _, id := range encryptedIDs {
+		paths["encrypted:"+id] = layout.encryptedLibraryDBPaths(LibraryID(id)).ciphertext
+	}
+	databases := make(map[string]*sql.DB, len(paths))
+	for label, path := range paths {
+		db, err := openSQLiteReader(path)
+		if err != nil {
+			return fmt.Errorf("open %s: %w", label, err)
+		}
+		defer db.Close()
+		databases[label] = db
+	}
+	actual, err := collectFixtureDatabaseExpectations(ctx, databases)
+	if err != nil {
+		return err
+	}
+	var encryptedVersion int
+	for _, id := range encryptedIDs {
+		encryptedVersion = max(encryptedVersion, actual.SchemaVersions["encrypted:"+id])
+	}
+	actual.SchemaFingerprint = fixtureSchemaFingerprint(actual.SchemaVersions["catalog"], actual.SchemaVersions["events"], encryptedVersion)
+	return compareFixtureExpectations(ctx, databases, actual, expected)
 }
 
 func prepareFixtureMediaReferences(ctx context.Context, db *sql.DB) error {
@@ -716,13 +765,30 @@ func assertFixtureDatabase(ctx context.Context, db *sql.DB) error {
 }
 
 func collectFixtureExpectations(ctx context.Context, st *Store) (fixtureExpectations, error) {
-	expectations := fixtureExpectations{
-		SchemaFingerprint: fixtureSchemaFingerprint(),
-		Tables:            map[string]fixtureTableExpectation{},
-		SchemaVersions:    migrationTargetVersions(),
-		FixturePolicy:     map[string]int{"months": 12, "minimumRecentReleases": 3},
+	expectations, err := collectFixtureDatabaseExpectations(ctx, fixtureDatabases(st))
+	if err != nil {
+		return fixtureExpectations{}, err
 	}
-	for label, db := range fixtureDatabases(st) {
+	expectations.SchemaFingerprint = fixtureSchemaFingerprint(
+		schemaFreezeCatalogMigrations, schemaFreezeEventsMigrations, schemaFreezeEncryptedLibraryMigrations)
+	expectations.FixturePolicy = map[string]int{"months": 12, "minimumRecentReleases": 3}
+	for database, version := range migrationTargetVersions() {
+		expectations.SchemaVersions[database] = version
+	}
+	return expectations, nil
+}
+
+func collectFixtureDatabaseExpectations(ctx context.Context, databases map[string]*sql.DB) (fixtureExpectations, error) {
+	expectations := fixtureExpectations{
+		Tables:         map[string]fixtureTableExpectation{},
+		SchemaVersions: map[string]int{},
+	}
+	for label, db := range databases {
+		version, err := userVersion(ctx, db)
+		if err != nil {
+			return fixtureExpectations{}, err
+		}
+		expectations.SchemaVersions[label] = version
 		tables, err := durableFixtureTables(ctx, db)
 		if err != nil {
 			return fixtureExpectations{}, err
@@ -764,13 +830,6 @@ func collectFixtureExpectations(ctx context.Context, st *Store) (fixtureExpectat
 			}
 			expectations.Tables[label+"."+table] = fixtureTableExpectation{Rows: count, Checksum: hex.EncodeToString(hash.Sum(nil))}
 		}
-		if strings.HasPrefix(label, "encrypted:") {
-			version, err := userVersion(ctx, db)
-			if err != nil {
-				return fixtureExpectations{}, err
-			}
-			expectations.SchemaVersions[label] = version
-		}
 	}
 	return expectations, nil
 }
@@ -789,6 +848,10 @@ func verifyFixtureExpectations(ctx context.Context, st *Store, expected fixtureE
 	if err != nil {
 		return err
 	}
+	return compareFixtureExpectations(ctx, fixtureDatabases(st), actual, expected)
+}
+
+func compareFixtureExpectations(ctx context.Context, databases map[string]*sql.DB, actual, expected fixtureExpectations) error {
 	if actual.SchemaFingerprint != expected.SchemaFingerprint {
 		return fmt.Errorf("schema fingerprint got %s, want %s", actual.SchemaFingerprint, expected.SchemaFingerprint)
 	}
@@ -814,7 +877,7 @@ func verifyFixtureExpectations(ctx context.Context, st *Store, expected fixtureE
 			return fmt.Errorf("%s unexpected after restore", table)
 		}
 	}
-	for _, db := range fixtureDatabases(st) {
+	for _, db := range databases {
 		if err := assertFixtureDatabase(ctx, db); err != nil {
 			return err
 		}
@@ -822,15 +885,15 @@ func verifyFixtureExpectations(ctx context.Context, st *Store, expected fixtureE
 	return nil
 }
 
-func fixtureSchemaFingerprint() string {
+func fixtureSchemaFingerprint(catalog, events, encrypted int) string {
 	raw, _ := json.Marshal(struct {
 		Catalog          int `json:"catalog"`
 		Events           int `json:"events"`
 		EncryptedLibrary int `json:"encryptedLibrary"`
 	}{
-		Catalog:          schemaFreezeCatalogMigrations,
-		Events:           schemaFreezeEventsMigrations,
-		EncryptedLibrary: schemaFreezeEncryptedLibraryMigrations,
+		Catalog:          catalog,
+		Events:           events,
+		EncryptedLibrary: encrypted,
 	})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])

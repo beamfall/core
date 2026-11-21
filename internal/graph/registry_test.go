@@ -237,7 +237,15 @@ var originalScopedFields = []string{
 	"unsealencryptedlibrary",    // ENC-2 (ADR-0045 §2.4): passphrase/Recovery-Key unseal
 	"sealencryptedlibrary",      // ENC-2 (ADR-0045 §2.4): drop in-memory DEK
 	"rewrapencryptedlibrary",    // ENC-7 (ADR-0117): rotate DEK + Recovery Key after compromise
+	"playqueue",
 	"queueadd",
+	"queueaddmany",
+	"queuemoveentry",
+	"queueremoveentry",
+	"queueplaynext",
+	"queuesetcurrent",
+	"queuesetshuffle",
+	"queuesetrepeat",
 	"queueclear",
 	"queuemove",
 	"queueremove",
