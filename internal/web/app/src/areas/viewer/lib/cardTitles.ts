@@ -72,7 +72,10 @@ export function cardSubline(
  *
  * Audio is the exception (CORE-2824): a listener scans for the song, so an
  * audio item keeps its own title as the heading and leads with its container
- * (the album) instead.
+ * (the album), never with a subtitle such as "Track 1" that would push the
+ * album out. An audio episode's title is meaningful too, so it reads the same
+ * way under its show; codes like S01E01 belong to video episodes, which keep
+ * the container heading.
  */
 export function cardHeading(
   item: SourceItem,
@@ -82,7 +85,7 @@ export function cardHeading(
   const subtitle = displayString(item.subtitle, locale);
   const container = item.container?.title.trim();
   if (nameContainer && container && item.mediaClass === "audio") {
-    return { heading: item.title, lead: subtitle || container };
+    return { heading: item.title, lead: container };
   }
   if (nameContainer && container) {
     return { heading: container, lead: subtitle || item.title };

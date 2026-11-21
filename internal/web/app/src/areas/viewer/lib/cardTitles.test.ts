@@ -67,10 +67,23 @@ describe("cardHeading for audio (CORE-2824)", () => {
     expect(cardSubline(track, false, "en", lead)).toBe("Paper Moons · Nightglass");
   });
 
-  it("keeps a track's subtitle as its lead when it has one", () => {
-    expect(cardHeading({ ...track, subtitle: "Track 1" }, true)).toEqual({
-      heading: "Lantern",
-      lead: "Track 1",
+  it("keeps the album as the lead when the track has a subtitle", () => {
+    const withSubtitle = { ...track, subtitle: "Track 1" } as SourceItem;
+    const { heading, lead } = cardHeading(withSubtitle, true);
+    expect({ heading, lead }).toEqual({ heading: "Lantern", lead: "Paper Moons" });
+    expect(cardSubline(withSubtitle, false, "en", lead)).toBe("Paper Moons · Nightglass");
+  });
+
+  it("heads an audio episode by its own title under its show", () => {
+    const audioEpisode = {
+      ...item("p", "The Long Count"),
+      mediaClass: "audio",
+      subtitle: "Episode 212",
+      container: { id: "podcast", title: "Deep Time" },
+    } as SourceItem;
+    expect(cardHeading(audioEpisode, true)).toEqual({
+      heading: "The Long Count",
+      lead: "Deep Time",
     });
   });
 

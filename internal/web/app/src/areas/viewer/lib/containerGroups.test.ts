@@ -93,7 +93,7 @@ describe("foldNewShelf (CORE-2823)", () => {
     expect(foldNewShelf(films, label)).toHaveLength(NEW_SHELF_CARDS);
   });
 
-  it("counts only unfinished items, or all of them when every one is finished", () => {
+  it("counts only unfinished items, and names no count when every one is finished", () => {
     const done = (item: SourceItem): SourceItem => ({ ...item, engagement: { completed: true } });
     const [partly, allDone] = foldNewShelf(
       [
@@ -106,6 +106,7 @@ describe("foldNewShelf (CORE-2823)", () => {
       label,
     );
     expect(partly).toMatchObject({ id: "show-Alpha", subtitle: "2 new" });
-    expect(allDone).toMatchObject({ id: "show-Beta", subtitle: "2 new" });
+    expect(allDone).toMatchObject({ id: "show-Beta" });
+    expect(allDone.subtitle).toBeUndefined();
   });
 });

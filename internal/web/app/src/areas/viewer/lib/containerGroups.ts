@@ -49,11 +49,13 @@ export function groupByContainer(
     }
     if (placed.has(container.id)) continue;
     placed.add(container.id);
+    const left = unfinished.get(container.id);
     grouped.push({
       id: container.id,
       kind: "entity",
       title: container.title,
-      subtitle: countLabel(unfinished.get(container.id) || count),
+      // Nothing left to watch is nothing new: a fully finished group names no count.
+      subtitle: left ? countLabel(left) : undefined,
       artwork: container.artwork,
       mediaClass: item.mediaClass,
     });
