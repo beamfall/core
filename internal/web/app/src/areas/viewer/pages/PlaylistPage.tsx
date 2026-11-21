@@ -26,9 +26,9 @@ import "../components/listening.css";
 // player's queue. Member titles come from each Media's own read, so a member
 // the acting Profile cannot see is simply not listed. A member locked by the
 // Profile's certification ceiling is listed but cannot play, and Play all
-// leaves it out of the queue (CORE-1876). A muted member has no lock state (the
-// feed drops it), so it stays out of the queue too and plays only on its own,
-// where the server's ceiling check still applies.
+// leaves it out of the queue (CORE-1876). Unknown lock state fails closed
+// (CORE-2843): a member with no lock entry (a muted one, which the feed drops)
+// or a playlist whose lock read failed cannot play and stays out of Play all.
 export function PlaylistPage() {
   const t = useT();
   const navigate = useNavigate();
@@ -70,8 +70,7 @@ export function PlaylistPage() {
   }, [orderKey]);
 
   // Lock state is per Profile, so it reloads when the playlist or its members
-  // change. Nothing plays until it is known; if the read fails, playback still
-  // meets the server's own ceiling check.
+  // change. Nothing plays until it is known, and nothing plays if the read fails.
   useEffect(() => {
     setLocks(null);
     if (!orderKey) return;
@@ -92,9 +91,9 @@ export function PlaylistPage() {
         ? { id, title: row.title, mediaClass: row.mediaClass }
         : { id, title: row.title };
     });
-  const lockOf = (id: string): boolean | undefined =>
-    locks === "unknown" ? false : locks?.get(id);
-  const queue = locks ? listed.filter((entry) => lockOf(entry.id) === false) : [];
+  // Only a member the lock feed reports unlocked may play.
+  const playable = (id: string): boolean => locks instanceof Map && locks.get(id) === false;
+  const queue = listed.filter((entry) => playable(entry.id));
 
   function play(entry: PlayQueueItem) {
     const inQueue = queue.some((item) => item.id === entry.id);
@@ -151,7 +150,7 @@ export function PlaylistPage() {
                       type="button"
                       className="bf-track-row"
                       aria-label={t("trackPlay", { title: entry.title })}
-                      disabled={locks === null || lockOf(entry.id) === true}
+                      disabled={!playable(entry.id)}
                       onClick={() => play(entry)}
                     >
                       <span className="bf-track-number">{index + 1}</span>
