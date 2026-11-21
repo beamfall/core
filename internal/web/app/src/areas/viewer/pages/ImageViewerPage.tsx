@@ -5,29 +5,38 @@ import {
   ImageIcon,
   Info,
   LoaderCircle,
+  Pause,
+  Play,
   RotateCw,
+  Trash2,
   X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { type PointerEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { MAIN_CONTENT_ID } from "@/components/chrome/SkipLink";
 import { ApiError, resetIdentityEpoch } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import { useDocumentTitle } from "@/lib/documentTitle";
+import { restoreMedia } from "@/lib/graphql";
 import type { EntityFieldInfo, GenericMediaInfo } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { NotAvailable } from "../components/NotAvailable";
+import { ViewerFilmstrip } from "../components/ViewerFilmstrip";
 import { artworkBucketURL } from "../lib/artwork";
 import {
   clampZoom,
-  fetchImageOriginal,
-  imageNeighbours,
+  fetchDirectStream,
+  filmstripWindow,
+  isClipClass,
   isImageClass,
   nextZoom,
   setMediaFavorite,
+  trashMedia,
+  trashStepTarget,
+  viewerNeighbours,
 } from "../lib/imageViewer";
 import { mediaPath } from "../lib/mediaAddress";
 import { fetchMedia, fetchMediaDetailFields } from "../lib/mediaDetail";
@@ -35,20 +44,39 @@ import { endPlayback, isRevealTerminalStatus } from "../lib/playback";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import "./image-viewer.css";
 import { fieldDisplayValue, viewerFacingFields } from "../lib/viewerFields";
-import { type PlayerNavState, type PlayQueueItem, readPlayerNavState } from "../lib/watchQueue";
+import {
+  type PlayerNavState,
+  type PlayQueueItem,
+  readPlayerNavState,
+  withQueueClasses,
+} from "../lib/watchQueue";
 
 // The web image viewer (/view/:address, CORE-0542, photos design §3.1 W3).
 // It shows the poster derivative at once and fetches the original through the
 // image playback posture (a direct stream) on the first zoom; the original
 // replaces the derivative only once it has decoded, so a RAW or HEIC original
 // the browser cannot draw leaves the derivative up with a notice. Prev and
-// next step through the image items of the queue the opening card carried.
+// next, swipes and the filmstrip step through the images and camera-roll clips
+// of the queue the opening card carried (CORE-2978); a clip plays muted and
+// inline from its direct stream (CORE-2977). On a manager device, Delete moves
+// the item to the server trash and offers Undo. The chrome (bar, step buttons,
+// filmstrip) hides when the pointer goes idle; show and hide are plain CSS,
+// with no transition (effects come only from Oscillux).
 
 type Loaded = { id: string; media: GenericMediaInfo | null };
 type Original = { id: string; url: string; state: "loading" | "ready" | "failed" };
+type Toast = {
+  kind: "trashed" | "trashFailed" | "restoreFailed";
+  id: string;
+  title: string;
+  /** The queue as it was before the trash, which Undo puts back. */
+  queue?: PlayQueueItem[];
+};
 
 const SWIPE_PX = 48;
 const PAN_PX = 64;
+const CHROME_IDLE_MS = 3000;
+const TOAST_MS = 8000;
 
 export function ImageViewerPage() {
   const t = useT();
@@ -56,12 +84,18 @@ export function ImageViewerPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const identity = useViewerIdentity();
-  const { revealed } = useSession();
+  const { revealed, isManager } = useSession();
   const { id: mediaId } = useMediaAddress();
-  const navState = readPlayerNavState(location.state, identity);
+  const navState = useMemo(
+    () => readPlayerNavState(location.state, identity),
+    [location.state, identity],
+  );
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState(false);
   const [favorite, setFavorite] = useState<{ id: string; value: boolean } | null>(null);
+  // Items whose favourite change is in flight: a second toggle waits for the first.
+  const [favoritePending, setFavoritePending] = useState<ReadonlySet<string>>(() => new Set());
+  const favoriteInFlight = useRef(new Set<string>());
   const [original, setOriginal] = useState<Original | null>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -75,6 +109,32 @@ export function ImageViewerPage() {
   // image is stepped over instead of opened in the player.
   const stepping = useRef<"previous" | "next" | null>(null);
   const [terminal, setTerminal] = useState(false);
+  // Classes the filmstrip learned for queue items that did not carry one.
+  const [learned, setLearned] = useState<Record<string, string>>({});
+  // Items trashed during this visit, left out of stepping until restored.
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(() => new Set());
+  const removedRef = useRef<ReadonlySet<string>>(removed);
+  // False once the viewer has gone, so a late trash or restore does not reopen it.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const [toast, setToast] = useState<Toast | null>(null);
+  // A trash or restore in flight: one at a time, and no stepping meanwhile, so
+  // the queue carried in history always matches what the server holds.
+  const trashing = useRef(false);
+  const streamRequest = useRef(0);
+  const streamItem = useRef<string | undefined>(undefined);
+  const [clipPlaying, setClipPlaying] = useState(false);
+  const video = useRef<HTMLVideoElement | null>(null);
+  const [chromeIdle, setChromeIdle] = useState(false);
+  const [overChrome, setOverChrome] = useState(false);
+  const idleTimer = useRef<number | undefined>(undefined);
+  const currentId = useRef(mediaId);
+  currentId.current = mediaId;
 
   const media = loaded && loaded.id === mediaId ? loaded.media : null;
   const resolved = !!loaded && loaded.id === mediaId;
@@ -100,27 +160,68 @@ export function ImageViewerPage() {
     setScale(1);
     setOffset({ x: 0, y: 0 });
     setRotation(0);
+    setClipPlaying(false);
+    // Leaving an item drops its stream, which ends its playback session, and
+    // supersedes a stream request still in flight.
+    if (streamItem.current !== mediaId) {
+      streamItem.current = mediaId;
+      streamRequest.current += 1;
+      setOriginal((current) => (current && current.id !== mediaId ? null : current));
+    }
   }, [mediaId]);
 
+  const queue = useMemo(
+    () => (navState.queue ? withQueueClasses(navState.queue, learned) : undefined),
+    [navState.queue, learned],
+  );
+  const { items, index, previous, next, position, total } = viewerNeighbours(
+    queue,
+    mediaId ?? "",
+    removed,
+  );
+  const trashedHere = !!mediaId && removed.has(mediaId);
+  // A clip is viewable here only as part of the viewer's queue; a video opened
+  // at /view on its own belongs to the player.
+  const clip = !!media && isClipClass(media.mediaClass) && (index >= 0 || trashedHere);
+  const viewable = !!media && (isImageClass(media.mediaClass) || clip);
+
   useDocumentTitle(revealed ? null : media?.title || "", t("brand"));
-  useCanonicalMediaAddress("view", media, isImageClass(media?.mediaClass));
+  useCanonicalMediaAddress("view", media, viewable);
 
   // An item the server classes as something else plays where it belongs.
-  const wrongClass = !!media && !isImageClass(media.mediaClass);
-  const { previous, next, position, total } = imageNeighbours(navState.queue, mediaId ?? "");
-  const step = useCallback(
-    (target: PlayQueueItem | undefined, direction: "previous" | "next") => {
-      if (!target) return;
-      stepping.current = direction;
-      const state: PlayerNavState = { title: target.title };
-      if (navState.queue && navState.queueIdentity) {
-        state.queue = navState.queue;
+  const wrongClass = !!media && !viewable;
+  const stateFor = useCallback(
+    (title: string, base = navState.queue): PlayerNavState => {
+      const state: PlayerNavState = { title };
+      if (base && navState.queueIdentity) {
+        // Trashed items leave the carried queue too, so a reload does not bring them back.
+        const gone = removedRef.current;
+        state.queue = gone.size ? base.filter((item) => !gone.has(item.id)) : base;
         state.queueIdentity = navState.queueIdentity;
       }
-      navigate(mediaPath("view", target.id), { replace: true, state });
+      return state;
     },
-    [navigate, navState.queue, navState.queueIdentity],
+    [navState.queue, navState.queueIdentity],
   );
+  const step = useCallback(
+    (target: PlayQueueItem | undefined, direction: "previous" | "next") => {
+      if (!target || trashing.current) return;
+      stepping.current = direction;
+      navigate(mediaPath("view", target.id), { replace: true, state: stateFor(target.title) });
+    },
+    [navigate, stateFor],
+  );
+  const jump = useCallback(
+    (target: PlayQueueItem) => {
+      const from = items.findIndex((item) => item.id === mediaId);
+      const to = items.findIndex((item) => item.id === target.id);
+      step(target, to < from ? "previous" : "next");
+    },
+    [items, mediaId, step],
+  );
+  const learnClass = useCallback((id: string, mediaClass: string) => {
+    setLearned((current) => (current[id] ? current : { ...current, [id]: mediaClass }));
+  }, []);
   useEffect(() => {
     if (media && !wrongClass) stepping.current = null;
   }, [media, wrongClass]);
@@ -147,15 +248,24 @@ export function ImageViewerPage() {
   }, [originalID]);
 
   const ensureOriginal = useCallback(() => {
-    if (!mediaId || (original && original.id === mediaId)) return;
+    if (!mediaId || !media || (original && original.id === mediaId)) return;
     const id = mediaId;
+    const request = ++streamRequest.current;
     setOriginal({ id, url: "", state: "loading" });
-    fetchImageOriginal(id).then(
-      (url) =>
+    fetchDirectStream(id, media.mediaClass || "image").then(
+      (url) => {
+        if (request !== streamRequest.current) {
+          // Superseded. If the viewer also left the item, the session this
+          // request set up has no other owner to end it.
+          if (currentId.current !== id) endPlayback(id);
+          return;
+        }
         setOriginal((current) =>
           current?.id === id ? { id, url, state: url ? "loading" : "failed" } : current,
-        ),
+        );
+      },
       (err) => {
+        if (request !== streamRequest.current) return;
         if (err instanceof ApiError && isRevealTerminalStatus(err.status)) {
           // The server ended the revealed identity: drop the image, reset once.
           setTerminal(true);
@@ -164,16 +274,29 @@ export function ImageViewerPage() {
         setOriginal((current) => (current?.id === id ? { id, url: "", state: "failed" } : current));
       },
     );
-  }, [mediaId, original]);
+  }, [media, mediaId, original]);
+
+  // A clip loads its stream on arrival and starts muted.
+  useEffect(() => {
+    if (clip) ensureOriginal();
+  }, [clip, ensureOriginal]);
+
+  const toggleClip = useCallback(() => {
+    const element = video.current;
+    if (!element) return;
+    if (element.paused) element.play()?.catch(() => setClipPlaying(false));
+    else element.pause();
+  }, []);
 
   const zoomTo = useCallback(
     (next: number) => {
+      if (clip) return;
       const clamped = clampZoom(next);
       setScale(clamped);
       if (clamped === 1) setOffset({ x: 0, y: 0 });
       else ensureOriginal();
     },
-    [ensureOriginal],
+    [clip, ensureOriginal],
   );
 
   const close = useCallback(() => {
@@ -186,15 +309,113 @@ export function ImageViewerPage() {
 
   const favorited = favorite && favorite.id === mediaId ? favorite.value : !!media?.favorited;
   const toggleFavorite = useCallback(() => {
-    if (!mediaId || !media) return;
+    if (!mediaId || !media || favoriteInFlight.current.has(mediaId)) return;
     const id = mediaId;
     const wanted = !favorited;
+    favoriteInFlight.current.add(id);
+    setFavoritePending(new Set(favoriteInFlight.current));
     setFavorite({ id, value: wanted });
-    setMediaFavorite(id, wanted).then(
-      (stored) => setFavorite((current) => (current?.id === id ? { id, value: stored } : current)),
-      () => setFavorite((current) => (current?.id === id ? { id, value: !wanted } : current)),
-    );
+    setMediaFavorite(id, wanted)
+      .then(
+        (stored) =>
+          setFavorite((current) => (current?.id === id ? { id, value: stored } : current)),
+        () => setFavorite((current) => (current?.id === id ? { id, value: !wanted } : current)),
+      )
+      .finally(() => {
+        favoriteInFlight.current.delete(id);
+        setFavoritePending(new Set(favoriteInFlight.current));
+      });
   }, [favorited, media, mediaId]);
+
+  // Trash (manager role, as the trashMedia mutation is): move the item to the
+  // server trash, step on, and offer Undo.
+  const canTrash = isManager;
+  const trash = useCallback(() => {
+    if (!canTrash || !mediaId || !media || trashing.current || removedRef.current.has(mediaId)) {
+      return;
+    }
+    const id = mediaId;
+    const title = media.title || "";
+    const before = navState.queue;
+    const after = trashStepTarget(items, index);
+    trashing.current = true;
+    trashMedia(id).then(
+      () => {
+        if (!mounted.current) return;
+        removedRef.current = new Set(removedRef.current).add(id);
+        setRemoved(removedRef.current);
+        setToast({ kind: "trashed", id, title, queue: before });
+        // With nothing left to step to, the viewer stays on the trashed
+        // item until its Undo toast goes, then closes.
+        trashing.current = false;
+        if (currentId.current === id && after) step(after.target, after.direction);
+      },
+      () => {
+        trashing.current = false;
+        if (mounted.current) setToast({ kind: "trashFailed", id, title });
+      },
+    );
+  }, [canTrash, index, items, media, mediaId, navState.queue, step]);
+
+  const undoTrash = useCallback(
+    (entry: Toast) => {
+      if (trashing.current) return;
+      trashing.current = true;
+      setToast(null);
+      restoreMedia(entry.id).then(
+        () => {
+          trashing.current = false;
+          if (!mounted.current) return;
+          const left = new Set(removedRef.current);
+          left.delete(entry.id);
+          removedRef.current = left;
+          setRemoved(left);
+          stepping.current = null;
+          navigate(mediaPath("view", entry.id), {
+            replace: true,
+            state: stateFor(entry.title, entry.queue ?? navState.queue),
+          });
+        },
+        () => {
+          trashing.current = false;
+          if (mounted.current) setToast({ ...entry, kind: "restoreFailed" });
+        },
+      );
+    },
+    [navigate, navState.queue, stateFor],
+  );
+
+  // Dismissing the toast of a trashed item the viewer is still on (the last
+  // one) closes the viewer.
+  const dismissToast = useCallback(() => {
+    setToast(null);
+    if (
+      (toast?.kind === "trashed" || toast?.kind === "restoreFailed") &&
+      toast.id === currentId.current &&
+      removedRef.current.has(toast.id)
+    ) {
+      close();
+    }
+  }, [close, toast]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(dismissToast, TOAST_MS);
+    return () => window.clearTimeout(timer);
+  }, [toast, dismissToast]);
+
+  // The chrome hides after the pointer has been idle, and any pointer move or
+  // key brings it back.
+  const wakeChrome = useCallback(() => {
+    setChromeIdle(false);
+    window.clearTimeout(idleTimer.current);
+    idleTimer.current = window.setTimeout(() => setChromeIdle(true), CHROME_IDLE_MS);
+  }, []);
+  useEffect(() => {
+    wakeChrome();
+    return () => window.clearTimeout(idleTimer.current);
+  }, [wakeChrome]);
+  const chromeHidden = chromeIdle && !overChrome && !infoOpen && !toast;
 
   useEffect(() => {
     if (!infoOpen || !mediaId || fields?.id === mediaId) return;
@@ -212,10 +433,22 @@ export function ImageViewerPage() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      wakeChrome();
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
       switch (event.key) {
+        case " ":
+          // Space on a focused control presses it; elsewhere it plays a clip.
+          if (!clip || target?.closest("button, a")) return;
+          toggleClip();
+          break;
+        case "Delete":
+        case "Backspace":
+          if (!canTrash) return;
+          // A held key does not trash item after item.
+          if (!event.repeat) trash();
+          break;
         case "ArrowLeft":
         case "ArrowRight":
         case "ArrowUp":
@@ -265,7 +498,21 @@ export function ImageViewerPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [close, infoOpen, next, previous, scale, step, toggleFavorite, zoomTo]);
+  }, [
+    canTrash,
+    clip,
+    close,
+    infoOpen,
+    next,
+    previous,
+    scale,
+    step,
+    toggleClip,
+    toggleFavorite,
+    trash,
+    wakeChrome,
+    zoomTo,
+  ]);
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
     // A press on a stage control stays a click on that control.
@@ -313,6 +560,8 @@ export function ImageViewerPage() {
     fields && fields.id === mediaId
       ? viewerFacingFields(fields.list, { title: media?.title, year: media?.year })
       : null;
+  const strip = filmstripWindow(items, index);
+  const clipFailed = clip && originalHere?.state === "failed";
 
   return (
     <main
@@ -320,8 +569,14 @@ export function ImageViewerPage() {
       className="bf-image-viewer"
       aria-label={t("imageViewerRegion")}
       data-zoomed={scale > 1 ? "true" : undefined}
+      data-chrome={chromeHidden ? "hidden" : undefined}
+      onPointerMove={wakeChrome}
     >
-      <header className="bf-image-viewer-bar">
+      <header
+        className="bf-image-viewer-bar"
+        onPointerEnter={() => setOverChrome(true)}
+        onPointerLeave={() => setOverChrome(false)}
+      >
         <button
           type="button"
           className="bf-image-viewer-button"
@@ -336,27 +591,52 @@ export function ImageViewerPage() {
             <p>{t("imageViewerPosition", { position: String(position), total: String(total) })}</p>
           )}
         </div>
-        <button
-          type="button"
-          className="bf-image-viewer-button"
-          onClick={() => zoomTo(scale > 1 ? 1 : nextZoom(scale))}
-          aria-label={t(scale > 1 ? "imageViewerZoomReset" : "imageViewerZoomIn")}
-        >
-          {scale > 1 ? <ZoomOut aria-hidden /> : <ZoomIn aria-hidden />}
-        </button>
-        <button
-          type="button"
-          className="bf-image-viewer-button"
-          onClick={() => setRotation((value) => (value + 90) % 360)}
-          aria-label={t("imageViewerRotate")}
-        >
-          <RotateCw aria-hidden />
-        </button>
+        {clip ? (
+          <button
+            type="button"
+            className="bf-image-viewer-button"
+            onClick={toggleClip}
+            disabled={originalHere?.state !== "ready"}
+            aria-label={t(clipPlaying ? "imageViewerPause" : "imageViewerPlay")}
+          >
+            {clipPlaying ? <Pause aria-hidden /> : <Play aria-hidden />}
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="bf-image-viewer-button"
+              onClick={() => zoomTo(scale > 1 ? 1 : nextZoom(scale))}
+              aria-label={t(scale > 1 ? "imageViewerZoomReset" : "imageViewerZoomIn")}
+            >
+              {scale > 1 ? <ZoomOut aria-hidden /> : <ZoomIn aria-hidden />}
+            </button>
+            <button
+              type="button"
+              className="bf-image-viewer-button"
+              onClick={() => setRotation((value) => (value + 90) % 360)}
+              aria-label={t("imageViewerRotate")}
+            >
+              <RotateCw aria-hidden />
+            </button>
+          </>
+        )}
+        {canTrash && (
+          <button
+            type="button"
+            className="bf-image-viewer-button"
+            onClick={trash}
+            disabled={!media || trashedHere}
+            aria-label={t("imageViewerTrash")}
+          >
+            <Trash2 aria-hidden />
+          </button>
+        )}
         <button
           type="button"
           className="bf-image-viewer-button"
           onClick={toggleFavorite}
-          disabled={!media}
+          disabled={!media || favoritePending.has(mediaId ?? "")}
           aria-pressed={favorited}
           aria-label={t(favorited ? "imageViewerUnfavorite" : "imageViewerFavorite")}
         >
@@ -398,7 +678,33 @@ export function ImageViewerPage() {
             {derivative && !showOriginal && (
               <img key={derivative} src={derivative} alt={title} draggable={false} />
             )}
-            {originalHere?.url && originalHere.state !== "failed" && (
+            {clip && originalHere?.url && originalHere.state !== "failed" && (
+              <video
+                key={originalHere.url}
+                ref={video}
+                src={originalHere.url}
+                aria-label={title}
+                hidden={!showOriginal}
+                muted
+                playsInline
+                autoPlay
+                data-original="true"
+                onPlay={() => setClipPlaying(true)}
+                onPause={() => setClipPlaying(false)}
+                onEnded={() => setClipPlaying(false)}
+                onLoadedData={() =>
+                  setOriginal((current) =>
+                    current?.url === originalHere.url ? { ...current, state: "ready" } : current,
+                  )
+                }
+                onError={() =>
+                  setOriginal((current) =>
+                    current?.url === originalHere.url ? { ...current, state: "failed" } : current,
+                  )
+                }
+              />
+            )}
+            {!clip && originalHere?.url && originalHere.state !== "failed" && (
               <img
                 key={originalHere.url}
                 src={originalHere.url}
@@ -427,16 +733,33 @@ export function ImageViewerPage() {
               />
             )}
           </div>
-          {(!resolved || (scale > 1 && originalHere?.state === "loading")) && !failed && (
-            <div className="bf-image-viewer-status" role="status">
-              <LoaderCircle aria-hidden className="size-6 animate-spin" />
-              <span className="sr-only">{t("imageViewerLoading")}</span>
+          {(!resolved ||
+            ((scale > 1 || clip) && (!originalHere || originalHere.state === "loading"))) &&
+            !failed && (
+              <div className="bf-image-viewer-status" role="status">
+                <LoaderCircle aria-hidden className="size-6 animate-spin" />
+                <span className="sr-only">{t("imageViewerLoading")}</span>
+              </div>
+            )}
+          {clipFailed ? (
+            <div className="bf-image-viewer-notice" role="status">
+              <p>{t("imageViewerClipUnavailable")}</p>
+              <button
+                type="button"
+                className="bf-image-viewer-text-button"
+                onClick={() =>
+                  navigate(mediaPath("watch", mediaId ?? ""), { state: location.state })
+                }
+              >
+                {t("imageViewerOpenInPlayer")}
+              </button>
             </div>
-          )}
-          {(failed || originalHere?.state === "failed") && (
-            <p className="bf-image-viewer-notice" role="status">
-              {t("imageViewerOriginalUnavailable")}
-            </p>
+          ) : (
+            (failed || originalHere?.state === "failed") && (
+              <p className="bf-image-viewer-notice" role="status">
+                {t("imageViewerOriginalUnavailable")}
+              </p>
+            )
           )}
           {previous && (
             <button
@@ -459,6 +782,21 @@ export function ImageViewerPage() {
             >
               <ChevronRight aria-hidden />
             </button>
+          )}
+          {strip.length > 1 && (
+            <div
+              className="bf-image-viewer-filmstrip-dock"
+              onPointerEnter={() => setOverChrome(true)}
+              onPointerLeave={() => setOverChrome(false)}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <ViewerFilmstrip
+                items={strip}
+                currentId={mediaId ?? ""}
+                onSelect={jump}
+                onClass={learnClass}
+              />
+            </div>
           )}
         </div>
 
@@ -483,6 +821,37 @@ export function ImageViewerPage() {
           </aside>
         )}
       </div>
+
+      {toast && (
+        <div className="bf-image-viewer-toast" role="status">
+          <p>
+            {t(
+              toast.kind === "trashed"
+                ? "imageViewerTrashed"
+                : toast.kind === "trashFailed"
+                  ? "imageViewerTrashFailed"
+                  : "imageViewerRestoreFailed",
+            )}
+          </p>
+          {toast.kind === "trashed" && (
+            <button
+              type="button"
+              className="bf-image-viewer-text-button"
+              onClick={() => undoTrash(toast)}
+            >
+              {t("imageViewerUndo")}
+            </button>
+          )}
+          <button
+            type="button"
+            className="bf-image-viewer-button"
+            onClick={dismissToast}
+            aria-label={t("imageViewerDismiss")}
+          >
+            <X aria-hidden />
+          </button>
+        </div>
+      )}
     </main>
   );
 }
