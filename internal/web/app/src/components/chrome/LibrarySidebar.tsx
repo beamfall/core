@@ -277,10 +277,7 @@ export function LibrarySidebar({
           // Only a move changes the stored order: pin toggles keep whatever
           // order was stored, or none, so a later change to the defaults
           // still reaches an order the Profile never chose (CORE-2880).
-          const moved = !sameOrder(
-            draft.order,
-            startDraft(personal.pinned, personal.unpinned, personalIDOf).order,
-          );
+          const moved = !sameOrder(draft.order, draft.start);
           const personalChoice = moved ? choice : { ...choice, order: prefs.personal?.order ?? [] };
           try {
             await onSavePrefs(
@@ -401,13 +398,13 @@ export function LibrarySidebar({
 interface EditDraft {
   order: string[];
   hidden: Set<string>;
+  /** The order the editor opened with; a draft still in it moved nothing. */
+  start: string[];
 }
 
 function startDraft<T>(pinned: T[], unpinned: T[], libraryIDOf: (entry: T) => string): EditDraft {
-  return {
-    order: [...pinned, ...unpinned].map(libraryIDOf),
-    hidden: new Set(unpinned.map(libraryIDOf)),
-  };
+  const order = [...pinned, ...unpinned].map(libraryIDOf);
+  return { order, hidden: new Set(unpinned.map(libraryIDOf)), start: order };
 }
 
 /** Move one entry of a list from one index to another. */
