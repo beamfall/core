@@ -62,6 +62,11 @@ func (s *Store) trashMediaReporting(ctx context.Context, id MediaID, filter Libr
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	return s.trashMediaReportingLocked(ctx, id, filter, now)
+}
+
+// trashMediaReportingLocked requires s.mu and an open Store.
+func (s *Store) trashMediaReportingLocked(ctx context.Context, id MediaID, filter LibraryFilter, now time.Time) (bool, error) {
 	media, err := s.visibleMediaSQL(ctx, id, filter)
 	if err != nil {
 		return false, err

@@ -62,6 +62,17 @@ func (s *Store) SubscriptionFollowed(ctx context.Context, profileID ProfileID, s
 }
 
 func (s *Store) ReconcileSubscriptionSeenEntries(ctx context.Context) (int, int, error) {
+	affected, skippedBlank, err := s.reconcileSubscriptionSeenPaths(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	if _, err := s.ReplayItemStateImports(ctx, time.Now().UTC()); err != nil {
+		return 0, 0, err
+	}
+	return affected, skippedBlank, nil
+}
+
+func (s *Store) reconcileSubscriptionSeenPaths(ctx context.Context) (int, int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
@@ -90,15 +101,12 @@ func (s *Store) ReconcileSubscriptionSeenEntries(ctx context.Context) (int, int,
 	if err != nil {
 		return 0, 0, err
 	}
-	if _, err := s.ReplayItemStateImports(ctx, time.Now().UTC()); err != nil {
-		return 0, 0, err
-	}
 	return int(affected), skippedBlank, nil
 }
 
 // ApplySubscriptionRetentionPolicies runs the autonomous retention sweep:
 // every Media a Subscription's retention policy condemns is routed through
-// TrashMedia (never hard-deleted). With trash disabled (hard invariant 6:
+// the TrashMedia path (never hard-deleted). With trash disabled (hard invariant 5:
 // autonomous destruction is sanctioned only while trash is on) the whole
 // sweep refuses with ErrTrashDisabledConfirmationRequired, skipped is true,
 // the skip counter increments once per sweep, and no TrashMedia call is made.
@@ -108,7 +116,16 @@ func (s *Store) ApplySubscriptionRetentionPolicies(ctx context.Context) (trashed
 		s.trashDisabledSweepSkips.Add(1)
 		return 0, true, ErrTrashDisabledConfirmationRequired
 	}
-	subscriptions, err := s.AllSubscriptions(ctx)
+	// Keep policy, follows, playback and favorites stable through the trash writes.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.guardLocked(); err != nil {
+		return 0, false, err
+	}
+	// Subscription retention uses the shared catalog and its restorable Trash.
+	subscriptions, err := s.querySubscriptions(ctx, subscriptionColumns+`
+		WHERE library_id IN (SELECT id FROM library WHERE trashed_at_ms IS NULL AND encrypted = 0)
+		ORDER BY id`)
 	if err != nil {
 		return 0, false, err
 	}
@@ -129,10 +146,13 @@ func (s *Store) ApplySubscriptionRetentionPolicies(ctx context.Context) (trashed
 		}
 		filter := LibraryFilter{AllowedIDs: []LibraryID{subscription.LibraryID}, Revealed: true}
 		for _, id := range ids {
-			if err := s.TrashMedia(ctx, id, filter); err != nil {
+			moved, err := s.trashMediaReportingLocked(ctx, id, filter, time.Now().UTC())
+			if err != nil {
 				return trashed, false, err
 			}
-			trashed++
+			if moved {
+				trashed++
+			}
 		}
 	}
 	return trashed, false, nil
@@ -150,13 +170,14 @@ func (s *Store) keepLastNCandidates(ctx context.Context, subscription Subscripti
 		keep = *subscription.RetentionN
 	}
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT DISTINCT m.id, se.seen_at_ms
+		SELECT m.id
 		FROM subscription_seen_entry se
 		JOIN media_file mf ON mf.path = se.path AND mf.missing_at_ms IS NULL
 		JOIN media m ON m.id = mf.media_id AND m.library_id = ? AND m.trashed_at_ms IS NULL
 		WHERE se.subscription_id = ?
 		  AND se.path <> ''
-		ORDER BY se.seen_at_ms DESC, m.id
+		GROUP BY m.id
+		ORDER BY MAX(se.seen_at_ms) DESC, m.id
 	`, subscription.LibraryID, subscription.ID)
 	if err != nil {
 		return nil, err
@@ -166,8 +187,7 @@ func (s *Store) keepLastNCandidates(ctx context.Context, subscription Subscripti
 	index := 0
 	for rows.Next() {
 		var id MediaID
-		var seen int64
-		if err := rows.Scan(&id, &seen); err != nil {
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
 		favorited, err := s.mediaFavoritedByAny(ctx, id)
