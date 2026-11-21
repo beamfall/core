@@ -89,6 +89,8 @@ describe("Library Collections pivot (CORE-2437)", () => {
       "/collections/library-films/c1",
       "/collections/library-films/c2",
     ]);
+    // The class the app-wide poster size sizes (CORE-2893).
+    expect(tiles[0].closest("ul")).toHaveClass("bf-tile-grid");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Films");
     const pivots = within(screen.getByRole("navigation", { name: "Library views" }));
     expect(pivots.getByRole("link", { name: "Collections" })).toHaveAttribute(
@@ -236,6 +238,8 @@ describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
       libraryID: "library-films",
     });
     expect(drama).toHaveAttribute("href", "/n/library-films/all?group.genre=Drama&view=media");
+    // The class the app-wide poster size sizes (CORE-2893).
+    expect(drama.closest("ul")).toHaveClass("bf-category-grid");
     // A featured grouping keeps a single-item value.
     expect(screen.getByRole("link", { name: "Sci-Fi 1 item" })).toHaveAttribute(
       "href",

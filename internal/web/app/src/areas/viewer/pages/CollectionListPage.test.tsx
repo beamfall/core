@@ -82,6 +82,8 @@ describe("CollectionListPage", () => {
 
     const link = await screen.findByRole("link", { name: "Weekend set" });
     expect(link).toHaveAttribute("href", "/collections/lib-a/c1");
+    // The class the app-wide poster size sizes (CORE-2893).
+    expect(link.closest("ul")).toHaveClass("bf-collection-grid");
     const group = screen.getByRole("region", { name: "Videos" });
     expect(within(group).getByText("3 items")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Home clips" })).toBeNull();
