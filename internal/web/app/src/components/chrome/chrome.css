@@ -923,34 +923,41 @@
 }
 
 /* Poster size (CORE-2468): the root's data-poster-size sets the grids' column
- * floors, so one choice reaches every viewer grid. Large is the original size. */
+ * floors and the shelves' card width (CORE-2893), so one choice reaches every
+ * viewer grid and shelf. Large is the original size. */
 [data-register="viewer"] {
   --bf-grid-min: 150px;
   --bf-grid-wide-min: 220px;
+  --bf-shelf-card: 164px;
 }
 
 [data-register="viewer"][data-poster-size="medium"] {
   --bf-grid-min: 130px;
   --bf-grid-wide-min: 190px;
+  --bf-shelf-card: 140px;
 }
 
 [data-register="viewer"][data-poster-size="small"] {
   --bf-grid-min: 110px;
   --bf-grid-wide-min: 160px;
+  --bf-shelf-card: 116px;
 }
 
 @media (max-width: 760px) {
   [data-register="viewer"] {
     --bf-grid-min: 96px;
     --bf-grid-wide-min: 150px;
+    --bf-shelf-card: 128px;
   }
   [data-register="viewer"][data-poster-size="medium"] {
     --bf-grid-min: 84px;
     --bf-grid-wide-min: 130px;
+    --bf-shelf-card: 108px;
   }
   [data-register="viewer"][data-poster-size="small"] {
     --bf-grid-min: 72px;
     --bf-grid-wide-min: 110px;
+    --bf-shelf-card: 92px;
   }
 }
 
@@ -993,9 +1000,8 @@
   cursor: pointer;
 }
 
-[data-register="viewer"] .bf-shelf .bf-card,
-[data-register="viewer"] .bf-grid .bf-card {
-  width: 164px;
+[data-register="viewer"] .bf-shelf .bf-card {
+  width: var(--bf-shelf-card);
 }
 
 [data-register="viewer"] .bf-grid .bf-card {
@@ -1120,12 +1126,12 @@
 }
 
 /* Small posters take the phone's card type so two title lines still fit. */
-[data-register="viewer"][data-poster-size="small"] .bf-grid .bf-card-title {
+[data-register="viewer"][data-poster-size="small"] :is(.bf-grid, .bf-shelf) .bf-card-title {
   font-size: 13px;
   line-height: 18px;
 }
 
-[data-register="viewer"][data-poster-size="small"] .bf-grid .bf-card-sub {
+[data-register="viewer"][data-poster-size="small"] :is(.bf-grid, .bf-shelf) .bf-card-sub {
   font-size: 12px;
   line-height: 16px;
 }
@@ -1160,9 +1166,6 @@
   }
   [data-register="viewer"] .bf-grid {
     gap: 20px 12px;
-  }
-  [data-register="viewer"] .bf-shelf .bf-card {
-    width: 128px;
   }
   [data-register="viewer"] .bf-grid .bf-card {
     width: 100%;
