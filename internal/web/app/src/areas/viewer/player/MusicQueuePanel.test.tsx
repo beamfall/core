@@ -74,7 +74,7 @@ describe("MusicQueuePanel", () => {
       .mockImplementationOnce(async () => page(firstPage))
       .mockImplementationOnce(async () =>
         page([
-          firstPage[199],
+          { ...firstPage[199], locked: true },
           { id: "track-201", title: "Private title", mediaClass: "audio", locked: true },
           { id: "track-202", title: "Track 202", mediaClass: "audio" },
         ]),
@@ -86,8 +86,9 @@ describe("MusicQueuePanel", () => {
     const displayed = within(panel).getAllByRole("listitem");
     expect(displayed).toHaveLength(202);
     expect(displayed[0]).toHaveTextContent("Film");
-    expect(displayed[199]).toHaveTextContent("Track 200");
+    expect(displayed[199]).toHaveTextContent(STRINGS.en.musicQueueLockedItem);
     expect(displayed[200]).toHaveTextContent(STRINGS.en.musicQueueLockedItem);
+    expect(screen.queryByText("Track 200")).toBeNull();
     expect(screen.queryByText("Private title")).toBeNull();
     expect(requests.mock.calls).toHaveLength(2);
     for (const [index, [path, request]] of requests.mock.calls.entries()) {
@@ -105,7 +106,7 @@ describe("MusicQueuePanel", () => {
     const firstPage = Array.from({ length: 200 }, (_, i) => ({
       id: `film-${i + 1}`,
       title: `Film ${i + 1}`,
-      mediaClass: "video",
+      mediaClass: i === 199 ? "audio" : "video",
     }));
     const requests = vi
       .fn()
@@ -114,7 +115,10 @@ describe("MusicQueuePanel", () => {
       )
       .mockImplementationOnce(async () => page(firstPage))
       .mockImplementationOnce(async () =>
-        page([firstPage[199], { id: "new-first", title: "New first track", mediaClass: "audio" }]),
+        page([
+          { ...firstPage[199], locked: true },
+          { id: "new-first", title: "New first track", mediaClass: "audio" },
+        ]),
       );
     vi.stubGlobal("fetch", requests);
     const onPlay = renderQueuePanel();

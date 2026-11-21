@@ -587,8 +587,6 @@ function FeaturePlayer({
   useEffect(() => {
     if (serverQueueRun && musicQueueOpen) void refreshMusicQueue();
   }, [serverQueueRun, musicQueueOpen, refreshMusicQueue]);
-  const startMusicQueue =
-    profileID && !partyLeads ? (id: string) => playItem(id, "", true, profileID) : undefined;
   // Decode early, then let the ended read authorize both the sound and the route.
   const confirmGaplessAdvance = useGaplessAudio({
     videoRef,
@@ -616,35 +614,46 @@ function FeaturePlayer({
       ? failedMove
       : undefined;
   const moveRequest = useRef(0);
+  const queueMoveCallbacks = useRef({ playItem, isCurrent: musicQueueIsCurrent });
+  useLayoutEffect(() => {
+    queueMoveCallbacks.current = { playItem, isCurrent: musicQueueIsCurrent };
+  }, [playItem, musicQueueIsCurrent]);
   useLayoutEffect(() => {
     return () => {
       moveRequest.current++;
     };
   }, [mediaId, queueProfile]);
+  const startMusicQueue =
+    profileID && !partyLeads
+      ? (id: string) => {
+          moveRequest.current++;
+          setFailedMove(undefined);
+          if (id === mediaId) {
+            restart(0);
+            if (queueProfile === profileID) return;
+          }
+          playItem(id, "", true, profileID);
+        }
+      : undefined;
   const moveInMusicQueue = useCallback(
-    async (direction: "next" | "previous", ended = false) => {
+    (direction: "next" | "previous", ended = false) => {
       if (!queueProfile || !musicQueueIsCurrent()) return;
       const request = ++moveRequest.current;
       setFailedMove(undefined);
-      const rows = await refreshMusicQueue(true);
-      if (rows === undefined || request !== moveRequest.current || !musicQueueIsCurrent()) return;
-      if (rows === null) {
-        setFailedMove({ direction, ended, mediaId, isCurrent: musicQueueIsCurrent });
-        return;
-      }
-      const target = musicQueueNeighbours(rows, mediaId)[direction]?.id;
-      if (!target) return;
-      if (ended) confirmGaplessAdvance(target);
-      playItem(target, "", true, queueProfile);
+      void refreshMusicQueue(true, (rows) => {
+        const { isCurrent, playItem } = queueMoveCallbacks.current;
+        if (request !== moveRequest.current || !isCurrent()) return;
+        if (rows === null) {
+          setFailedMove({ direction, ended, mediaId, isCurrent });
+          return;
+        }
+        const target = musicQueueNeighbours(rows, mediaId)[direction]?.id;
+        if (!target) return;
+        if (ended) confirmGaplessAdvance(target);
+        playItem(target, "", true, queueProfile);
+      });
     },
-    [
-      musicQueueIsCurrent,
-      playItem,
-      queueProfile,
-      refreshMusicQueue,
-      mediaId,
-      confirmGaplessAdvance,
-    ],
+    [musicQueueIsCurrent, queueProfile, refreshMusicQueue, mediaId, confirmGaplessAdvance],
   );
   const playNext = useMemo(() => {
     if (partyLeads) return undefined;
@@ -700,7 +709,7 @@ function FeaturePlayer({
     onAdvance: advanceToNext,
     onAutoAdvance: (next) => noteAutoAdvance(next.mediaID),
   });
-  useEffect(() => {
+  useLayoutEffect(() => {
     const video = videoRef.current;
     if (!isAudio || !playing || !video || partyLeads) return;
     const advance = serverQueueRun ? () => void moveInMusicQueue("next", true) : playNext;
@@ -768,8 +777,8 @@ function FeaturePlayer({
 
   // The host keeps an audio Media playing once the watch route closes
   // (CORE-1633); anything else stops with the route. Docked, a terminal block,
-  // a failure the mini player cannot offer a way out of, or an advance into a
-  // Media that is not audio ends playback instead.
+  // a playback error, or an advance into a Media that is not audio ends
+  // playback instead.
   const audioMedia = state.info ? isAudio : entryClass === "audio" || advancing;
   useEffect(() => {
     onAudioChange?.(audioMedia);
@@ -777,7 +786,6 @@ function FeaturePlayer({
   const dockedEnds =
     docked &&
     (!queueAllowed ||
-      queueReadFailed ||
       state.phase === "terminal" ||
       state.phase === "message" ||
       (infoIsCurrent && state.info?.mediaClass !== "audio"));

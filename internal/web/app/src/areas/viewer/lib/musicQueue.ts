@@ -27,6 +27,7 @@ const MEDIA_QUERY = `query MusicQueueMedia($id: String!) {
   media(id: $id) {
     id title mediaClass libraryID artworkSlots
     credits { entityID title kind kindDisplayName archetype relation attributes artworkSlots }
+    metadataAttribution { providerName text url }
   }
 }`;
 
@@ -44,7 +45,11 @@ async function readMusicQueue(
     for (let offset = 0; ; offset += PAGE_SIZE - 1) {
       // An explicit read includes muted rows; playback skips locked and non-audio rows.
       const { sourceItems } = await readPage(offset);
-      if (offset > 0 && sourceItems[0]?.id !== rows.at(-1)?.id) continue attempts;
+      if (offset > 0) {
+        const overlap = sourceItems[0];
+        if (!overlap || overlap.id !== rows.at(-1)?.id) continue attempts;
+        rows[rows.length - 1] = overlap;
+      }
       const additions = offset === 0 ? sourceItems : sourceItems.slice(1);
       for (const row of additions) {
         if (ids.has(row.id)) continue attempts;
@@ -87,6 +92,7 @@ type QueueRead = {
   signal: AbortSignal;
   invalid?: boolean;
   pending?: { controller: AbortController; promise: Promise<RefreshResult> };
+  complete?: (rows: MusicQueueRow[] | null) => void;
 };
 type QueueResult = {
   scope: QueueScope;
@@ -149,11 +155,12 @@ export function useMusicQueue(enabled: boolean) {
   );
 
   const refresh = useCallback(
-    (fresh = false) => {
+    (fresh = false, complete?: QueueRead["complete"]) => {
       const read = active.current;
       if (!read || !isCurrent()) return Promise.resolve(undefined);
       if (!fresh && read.pending) return read.pending.promise;
       // An explicit Play or advance starts a read at the time of the action.
+      if (fresh) read.complete = complete;
       read.pending?.controller.abort();
       const request = new AbortController();
       const signal = AbortSignal.any([read.signal, request.signal]);
@@ -170,6 +177,9 @@ export function useMusicQueue(enabled: boolean) {
             failed: rows === null,
             rows: rows ?? (previous?.scope === read.scope ? previous.rows : undefined),
           }));
+          const finish = read.complete;
+          read.complete = undefined;
+          finish?.(rows);
           return rows;
         });
       read.pending = { controller: request, promise };
@@ -202,7 +212,10 @@ export function useMusicQueue(enabled: boolean) {
     const signal = scope.epoch
       ? AbortSignal.any([controller.signal, scope.epoch])
       : controller.signal;
-    active.current = { scope, validation, signal, controller };
+    // Revalidation can replace the read while an advance is waiting for it.
+    const previous = active.current;
+    const complete = previous?.scope === scope && !previous.invalid ? previous.complete : undefined;
+    active.current = { scope, validation, signal, controller, complete };
     void refresh();
     return () => controller.abort();
   }, [scope, refresh, validation]);
