@@ -246,6 +246,13 @@ describe("redactJobEventPayload (CORE-2725)", () => {
     ).toBe('{"auth":"[REDACTED]","[REDACTED]":1,"recordID":9007199254740993}');
   });
 
+  it("finds string boundaries past escaped quotes and trailing backslashes", () => {
+    const payload = '{ "a": "say \\"hi\\"", "b": "dir\\\\" , "c": "Bearer next-field-secret" }';
+    expect(redactJobEventPayload(payload)).toBe(
+      '{ "a": "say \\"hi\\"", "b": "dir\\\\" , "c": "[REDACTED]" }',
+    );
+  });
+
   it("redacts a payload that is not JSON as text", () => {
     expect(redactJobEventPayload("worker=w2 bfk_abc")).toBe("worker=w2 [REDACTED]");
   });
