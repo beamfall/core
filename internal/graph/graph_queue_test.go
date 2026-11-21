@@ -91,6 +91,48 @@ func TestPlayQueueLegacyReadsDeduplicateBeforePagination(t *testing.T) {
 	}
 }
 
+func TestPlayQueueLegacyPositionsCountDistinctMedia(t *testing.T) {
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	a, b := "media-alpha", "media-archive"
+	third, err := st.CreateManualMedia(t.Context(), store.ManualMedia{LibraryID: "library-local", Title: "Third queue item"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := string(third)
+
+	for _, tc := range []struct {
+		name, field, target string
+		initial, want       []string
+	}{
+		{"move", "queueMove", b, []string{a, a, b, c}, []string{a, c, b}},
+		{"add queued media", "queueAdd", b, []string{a, a, b, c}, []string{a, c, b}},
+		{"add new media", "queueAdd", b, []string{a, a, c}, []string{a, c, b}},
+		{"move duplicate media", "queueMove", a, []string{a, b, a, c}, []string{b, c, a}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			qaItems(t, h, qaClear, authorizeRevealed, "queueClear")
+			var state PlayQueueInfo
+			execGraph(t, h, authorizeRevealed, `mutation ($ids: [String!]!) { queueAddMany(mediaIDs: $ids, placement: "end") `+queueStateSelection+" }",
+				map[string]any{"ids": tc.initial}, "queueAddMany", &state)
+
+			query := fmt.Sprintf(`mutation { %s(mediaID: %q, position: 2) { id } }`, tc.field, tc.target)
+			var items []SourceItem
+			execGraph(t, h, authorizeRevealed, query, nil, tc.field, &items)
+			if !qaEqualIDs(items, tc.want...) {
+				t.Fatalf("%s response = %v, want %v", tc.field, qaIDs(items), tc.want)
+			}
+			var updated PlayQueueInfo
+			execGraph(t, h, authorizeRevealed, "{ playQueue "+queueStateSelection+" }", nil, "playQueue", &updated)
+			for _, entry := range state.Entries {
+				if !slices.ContainsFunc(updated.Entries, func(e PlayQueueEntryInfo) bool { return e.ID == entry.ID }) {
+					t.Fatalf("%s lost queue entry %s", tc.field, entry.ID)
+				}
+			}
+		})
+	}
+}
+
 func TestPlayQueueStateAcrossDevicesAndVisibility(t *testing.T) {
 	// feature:play-queue
 	h := newTestHandlerWithStore(storetest.Open(t))

@@ -65,8 +65,8 @@ func (q *queueSnapshot) activeOrder() *[]queueEntry {
 	return &q.entries
 }
 
-// QueueAdd preserves the Media-addressed behavior for existing clients. An
-// already queued Media moves its first visible entry to the requested index.
+// QueueAdd preserves the Media-addressed behavior for existing clients.
+// Numeric positions count distinct visible Media, as legacy reads do.
 func (s *Store) QueueAdd(ctx context.Context, profileID ProfileID, mediaID MediaID, position *int, filter LibraryFilter) error {
 	return s.updateQueue(ctx, profileID, filter, []MediaID{mediaID}, func(q *queueSnapshot, visible map[MediaID]Media) error {
 		if _, ok := visible[mediaID]; !ok {
@@ -75,14 +75,14 @@ func (s *Store) QueueAdd(ctx context.Context, profileID ProfileID, mediaID Media
 		order := q.activeOrder()
 		for i, entry := range *order {
 			if entry.mediaID == mediaID {
-				*order = insertQueueEntries(slices.Delete(*order, i, i+1), []queueEntry{entry}, position, visible)
+				*order = insertLegacyQueueEntry(slices.Delete(*order, i, i+1), entry, position, visible)
 				return nil
 			}
 		}
-		entries := newQueueEntries([]MediaID{mediaID})
-		q.entries = insertQueueEntries(q.entries, entries, position, visible)
+		entry := newQueueEntries([]MediaID{mediaID})[0]
+		q.entries = insertLegacyQueueEntry(q.entries, entry, position, visible)
 		if q.shuffle {
-			q.shuffled = insertQueueEntries(q.shuffled, entries, position, visible)
+			q.shuffled = insertLegacyQueueEntry(q.shuffled, entry, position, visible)
 		}
 		return nil
 	})
@@ -210,10 +210,13 @@ func (s *Store) queueMoveEntry(ctx context.Context, profileID ProfileID, target 
 				return nil
 			}
 			remaining := slices.Delete(*order, i, i+1)
-			if position == nil {
+			switch {
+			case position == nil:
 				*order = addQueueEntries(remaining, []queueEntry{entry}, q.currentID, QueueNext, visible)
-			} else {
-				*order = insertQueueEntries(remaining, []queueEntry{entry}, position, visible)
+			case target.entryID == "":
+				*order = insertLegacyQueueEntry(remaining, entry, position, visible)
+			default:
+				*order = insertQueueEntry(remaining, entry, *position, visible)
 			}
 			return nil
 		}
@@ -385,21 +388,48 @@ func (s *Store) visibleQueueMedia(ctx context.Context, entries []queueEntry, fil
 	return s.visibleMediaBatchSQL(ctx, ids, filter)
 }
 
-// insertQueueEntries inserts at a numeric index counted among visible entries.
-func insertQueueEntries(order, entries []queueEntry, position *int, visible map[MediaID]Media) []queueEntry {
-	if position != nil {
-		target := max(0, *position)
-		for i, entry := range order {
-			if _, ok := visible[entry.mediaID]; !ok {
-				continue
-			}
+// insertLegacyQueueEntry counts the first visible occurrence of each other
+// Media. Carry any earlier duplicates of the moved Media with it so the
+// legacy read sees its first occurrence at the requested position.
+func insertLegacyQueueEntry(order []queueEntry, entry queueEntry, position *int, visible map[MediaID]Media) []queueEntry {
+	if position == nil {
+		return append(order, entry)
+	}
+	target := max(0, *position)
+	seen := make(map[MediaID]bool)
+	reordered := make([]queueEntry, 0, len(order)+1)
+	moved := []queueEntry{entry}
+	for i, candidate := range order {
+		if candidate.mediaID == entry.mediaID {
+			moved = append(moved, candidate)
+			continue
+		}
+		if _, ok := visible[candidate.mediaID]; ok && !seen[candidate.mediaID] {
 			if target == 0 {
-				return slices.Insert(order, i, entries...)
+				reordered = append(reordered, moved...)
+				return append(reordered, order[i:]...)
 			}
+			seen[candidate.mediaID] = true
 			target--
 		}
+		reordered = append(reordered, candidate)
 	}
-	return append(order, entries...)
+	return append(reordered, moved...)
+}
+
+// insertQueueEntry counts each visible entry, including duplicate Media.
+func insertQueueEntry(order []queueEntry, entry queueEntry, position int, visible map[MediaID]Media) []queueEntry {
+	target := max(0, position)
+	for i, candidate := range order {
+		if _, ok := visible[candidate.mediaID]; !ok {
+			continue
+		}
+		if target == 0 {
+			return slices.Insert(order, i, entry)
+		}
+		target--
+	}
+	return append(order, entry)
 }
 
 func (s *Store) PlayQueue(ctx context.Context, profileID ProfileID, filter LibraryFilter) (PlayQueue, error) {
