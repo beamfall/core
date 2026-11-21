@@ -8,6 +8,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
+	"github.com/beamfall/core/internal/playback"
 	scanpkg "github.com/beamfall/core/internal/scan"
 	schedulepkg "github.com/beamfall/core/internal/schedule"
 	"github.com/beamfall/core/internal/store"
@@ -138,7 +139,8 @@ func TestLibraryObserverSchedulesALibraryCreatedAtRuntime(t *testing.T) {
 	if err := scheduler.Reconcile(ctx, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	observer := libraryMutationObserver{store: st, schedule: scheduler, wake: wake, logger: discardLogger()}
+	precompute := newLibraryPrecomputeSchedules(st, t.TempDir(), 1<<40)
+	observer := libraryMutationObserver{store: st, schedule: scheduler, precompute: precompute, wake: wake, logger: discardLogger()}
 
 	library, err := st.CreateLibrary(ctx, "Films", false, "", "profile-default")
 	if err != nil {
@@ -150,6 +152,12 @@ func TestLibraryObserverSchedulesALibraryCreatedAtRuntime(t *testing.T) {
 	row, err := st.Schedule(ctx, scheduleID)
 	if err != nil || row.Orphaned || !row.Enabled {
 		t.Fatalf("schedule of a library created at runtime = %+v, %v; want live and enabled", row, err)
+	}
+	// The precompute Schedule has no row until Reconcile writes one; it
+	// starts disabled (CORE-2326).
+	precomputeRow, err := st.Schedule(ctx, playback.PrecomputeScheduleID(library.ID))
+	if err != nil || precomputeRow.Orphaned || precomputeRow.Enabled {
+		t.Fatalf("precompute schedule of a library created at runtime = %+v, %v; want stored and disabled", precomputeRow, err)
 	}
 	if err := scheduler.Tick(ctx, time.Now().UTC().Add(13*time.Hour)); err != nil {
 		t.Fatal(err)
