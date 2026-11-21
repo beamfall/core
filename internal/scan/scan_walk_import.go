@@ -131,7 +131,10 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		}
 		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, authoritative)
 	}
-	if s.isParsedPart(parsed, parsedOK) {
+	// A file with extracted local metadata imports on its own, like a still:
+	// a queued part or an attached version would drop it.
+	standalone := imported.Class == store.MediaClassImage || len(task.local) > 0
+	if !standalone && s.isParsedPart(parsed, parsedOK) {
 		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), task.probe.value.Chapters, task.probe.succeeded); err != nil {
 			return err
 		}
@@ -140,7 +143,10 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	if err := s.flushPendingPartsUnlessImage(imported.Class == store.MediaClassImage); err != nil {
 		return err
 	}
-	versionKey := s.versionGroupKey(imported, parsed, parsedOK)
+	versionKey := ""
+	if !standalone {
+		versionKey = s.versionGroupKey(imported, parsed, parsedOK)
+	}
 	if mediaID, attached, err := s.attachVersion(versionKey, imported, parsed); err != nil || attached {
 		if err != nil {
 			return err
@@ -308,16 +314,22 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			t.added = true
 		}
 	})
-	if s.isParsedPart(parsed, parsedOK) {
+	// A file with extracted local metadata imports on its own, like a still:
+	// a queued part or an attached version would drop it.
+	standalone := isImage || len(task.local) > 0
+	if !standalone && s.isParsedPart(parsed, parsedOK) {
 		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded); err != nil {
 			return err
 		}
 		return s.ctx.Err()
 	}
-	if err := s.flushPendingPartsUnlessImage(isImage); err != nil {
+	if err := s.flushPendingPartsUnlessImage(standalone); err != nil {
 		return err
 	}
-	versionKey := s.versionGroupKey(imported, parsed, parsedOK)
+	versionKey := ""
+	if !standalone {
+		versionKey = s.versionGroupKey(imported, parsed, parsedOK)
+	}
 	if mediaID, attached, err := s.attachVersion(versionKey, imported, parsed); err != nil || attached {
 		if err != nil {
 			return err

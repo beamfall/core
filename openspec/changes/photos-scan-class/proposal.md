@@ -14,3 +14,4 @@ fields, and extractors could not tell a clip from a still.
   video stream. Audio-only and unprobed non-image files are not offered to extractors.
 - Extracted fields are applied for any file that produced local metadata, not only stills.
 - Unchanged files that take the unprobed fast path are not re-extracted until they change.
+- A file with extracted local metadata imports standalone (not as a queued part or attached version), so its metadata is applied.
