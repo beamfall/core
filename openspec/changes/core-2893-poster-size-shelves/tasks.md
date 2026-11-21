@@ -1,6 +1,6 @@
-- [ ] Web: poster size control on the Recommended pivot's heading row
-- [ ] Web: shelf card width follows the poster size (desktop and phone)
-- [ ] Unit test for the control on the Recommended pivot; Playwright spec for shelf card width
-- [ ] Screenshots at 1440 and 390 widths reviewed
+- [x] Web: poster size control on the Recommended pivot's heading row
+- [x] Web: shelf card width follows the poster size (desktop and phone)
+- [x] Unit test for the control on the Recommended pivot; Playwright spec for shelf card width
+- [x] Screenshots at 1440 and 390 widths reviewed
 - [ ] `make gate` (lander)
 - [ ] `openspec archive core-2893-poster-size-shelves` after landing
