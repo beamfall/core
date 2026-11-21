@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
@@ -154,6 +154,33 @@ describe("ProfilesAccess managed-Profile policy", () => {
     expect(setAccessSchedule).toHaveBeenCalledWith("p2", [
       { weekday: 0, startMinute: 0, endMinute: 1440 },
     ]);
+  });
+
+  it("ignores a late schedule save after switching Profile (CORE-0756)", async () => {
+    let finish: (() => void) | undefined;
+    vi.mocked(setAccessSchedule).mockImplementationOnce(
+      (profileID, windows) =>
+        new Promise((resolve) => {
+          finish = () => resolve({ profileID, windows });
+        }),
+    );
+    vi.mocked(fetchAccessSchedule).mockImplementation(async (profileID) => ({
+      profileID,
+      windows: [],
+    }));
+    const user = await pickProfile("Kid");
+    await user.click(await screen.findByRole("button", { name: "Add window" }));
+    await user.click(screen.getByRole("button", { name: "Save schedule" }));
+    await waitFor(() => expect(finish).toBeDefined());
+
+    await user.click(screen.getAllByRole("combobox")[0]);
+    await user.click(await screen.findByRole("option", { name: "Owner" }));
+    await waitFor(() => expect(fetchAccessSchedule).toHaveBeenCalledWith("p1", expect.anything()));
+    await act(async () => finish?.());
+
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Save schedule" }));
+    expect(setAccessSchedule).toHaveBeenLastCalledWith("p1", []);
   });
 
   it("applies certification ceilings through setCertificationCeiling", async () => {

@@ -289,14 +289,18 @@ function CeilingRow({
 // means "always allowed"; windows are weekday + start/end minute-of-day.
 function AccessScheduleEditor({ profileID }: { profileID: string }) {
   const t = useT();
-  const { data, failed, setData } = useAsync(
+  const { data, failed, mutate, replace } = useAsync(
     (signal) => fetchAccessSchedule(profileID, signal),
     [profileID],
   );
   const windows = data?.windows ?? [];
 
+  // Edits and the save response share useAsync's fence (CORE-0756): an edit
+  // discards a save still in flight, and a Profile switch or an ended Admin
+  // Session drops its response, so a late save for one Profile can never
+  // repaint the windows shown (and later saved) for another.
   function update(next: AccessWindowInput[]) {
-    setData({ profileID, windows: next });
+    mutate({ profileID, windows: next });
   }
 
   function addWindow() {
@@ -313,8 +317,9 @@ function AccessScheduleEditor({ profileID }: { profileID: string }) {
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    const saved = await setAccessSchedule(profileID, windows);
-    setData(saved);
+    // The save is not aborted on a switch, only its response is ignored: the
+    // write belongs to the Profile it was made for.
+    await replace(() => setAccessSchedule(profileID, windows));
   }
 
   if (failed) return <ErrorState message="accessSchedulesUnavailable" />;
