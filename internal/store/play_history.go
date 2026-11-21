@@ -28,9 +28,9 @@ const (
 	playFinishedFraction = 0.8
 	playFinishedTail     = 30
 	// playReportGapCap is the most one gap between consecutive progress
-	// reports adds to watched time (CORE-1307). Clients report every 10 to
-	// 15 seconds while playing and stay silent while paused, so a longer gap
-	// is a pause or a stall and counts only this much.
+	// reports adds to watched time when the reports do not say how far
+	// playback moved (CORE-1307): a watched report carries position zero.
+	// Clients report every 10 to 15 seconds while playing.
 	playReportGapCap = time.Minute
 )
 
@@ -93,8 +93,7 @@ type derivedPlay struct {
 	// only unwatched ones say how far playback got.
 	firstPos int
 	lastPos  int
-	// playedMS sums the gaps between the run's consecutive reports, each
-	// capped at playReportGapCap.
+	// playedMS is how long the run actually played; see playedStepMS.
 	playedMS int64
 }
 
@@ -119,10 +118,8 @@ func (p derivedPlay) reachedEnd() bool {
 	return float64(reached) >= playFinishedFraction*float64(p.duration) || p.duration-reached <= playFinishedTail
 }
 
-// watchedSeconds is the wall-clock time between the play's reports, each gap
-// capped at playReportGapCap so a pause does not count, and never longer than
-// the item itself. Position deltas are not used: a finished play reports
-// position zero, and a seek would count as watching.
+// watchedSeconds is how long the play actually played, never longer than the
+// item itself (see playedStepMS).
 func (p derivedPlay) watchedSeconds() int {
 	seconds := int(p.playedMS / 1000)
 	if p.duration > 0 && seconds > p.duration {
@@ -140,6 +137,19 @@ const playedAtMS = `CASE
 		WHEN COALESCE(json_extract(payload, '$.eventTimeMs'), 0) BETWEEN 1 AND occurred_at_ms
 		THEN json_extract(payload, '$.eventTimeMs')
 		ELSE occurred_at_ms END`
+
+// playedStepMS is how much one report adds to its run's watched time
+// (CORE-1307): the wall-clock gap since the previous report, but no more than
+// the position advanced over it, so a pause counts nothing whether the client
+// stays silent or keeps reporting the same position, and a forward seek counts
+// only the time it took. When either report gives no position (a watched
+// report stores zero, and so does a client that sends none), the gap counts up
+// to playReportGapCap. The first report of a run adds nothing.
+const playedStepMS = `CASE
+		WHEN prev_ms IS NULL OR at_ms - prev_ms > ? THEN 0
+		WHEN watched = 0 AND prev_watched = 0 AND (position > 0 OR prev_position > 0)
+		THEN MIN(at_ms - prev_ms, MAX(position - prev_position, 0) * 1000)
+		ELSE MIN(at_ms - prev_ms, ?) END`
 
 // derivedPlaysLocked lists the plays that started in [since, until), newest
 // first, each measured whole even when it runs past either bound. A zero bound
@@ -172,13 +182,14 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, sin
 	}
 	query += `
 		), ev AS (
-			SELECT *, LAG(at_ms) OVER (PARTITION BY profile_id, media_id ORDER BY at_ms) AS prev_ms
+			SELECT *, LAG(at_ms) OVER w AS prev_ms, LAG(position) OVER w AS prev_position,
+			       LAG(watched) OVER w AS prev_watched
 			FROM raw
+			WINDOW w AS (PARTITION BY profile_id, media_id ORDER BY at_ms)
 		), run AS (
 			SELECT *, SUM(CASE WHEN prev_ms IS NULL OR at_ms - prev_ms > ? THEN 1 ELSE 0 END)
 			            OVER (PARTITION BY profile_id, media_id ORDER BY at_ms) AS run_no,
-			       CASE WHEN prev_ms IS NULL OR at_ms - prev_ms > ? THEN 0
-			            ELSE MIN(at_ms - prev_ms, ?) END AS step_ms
+			       ` + playedStepMS + ` AS step_ms
 			FROM ev
 		)
 		SELECT profile_id, media_id, MIN(at_ms), MAX(at_ms), MAX(duration), MAX(watched),
