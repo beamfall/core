@@ -19,9 +19,7 @@ import (
 // TestGroupListsLiveMemberSeesRunningNotZombie checks the Linux /proc scan:
 // a running member is live, and the same member as an unreaped zombie is not.
 func TestGroupListsLiveMemberSeesRunningNotZombie(t *testing.T) {
-	if ours, known := procNamespace(); !known || !ours {
-		t.Skip("/proc is not this process's PID namespace")
-	}
+	requireOwnProc(t)
 	cmd := exec.Command("sleep", "30")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -57,9 +55,7 @@ func TestGroupListsLiveMemberSeesALiveMemberBesideAZombieLeader(t *testing.T) {
 	// The unreaped leader holds the pgid until Wait, so the KILL here cannot
 	// reach a group that reused it.
 	t.Cleanup(func() { _ = syscall.Kill(-pid, syscall.SIGKILL); _ = cmd.Wait() })
-	if ours, known := procNamespace(); !known || !ours {
-		t.Skip("/proc is not this process's PID namespace")
-	}
+	requireOwnProc(t)
 	if err := waitForProcessExit(pid); err != nil {
 		t.Fatal(err)
 	}
@@ -167,5 +163,19 @@ func killHolder(t *testing.T, pidFile string) {
 	}
 	if pid, err := strconv.Atoi(strings.TrimSpace(string(raw))); err == nil && pid > 0 {
 		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
+}
+
+// requireOwnProc skips on a /proc this process cannot sweep by, and fails if
+// the namespace check could not decide, so an always-inconclusive check
+// cannot pass by skipping every live test.
+func requireOwnProc(t *testing.T) {
+	t.Helper()
+	ours, known := procNamespace()
+	if !known {
+		t.Fatal("the /proc namespace check was inconclusive")
+	}
+	if !ours {
+		t.Skip("/proc is not this process's PID namespace")
 	}
 }
