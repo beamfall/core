@@ -11,7 +11,9 @@ import { useT } from "@/lib/i18n";
 import {
   asFeedURL,
   DEFAULT_LATEST_N,
+  errorClassKey,
   FOLLOW_POLICIES,
+  followErrorClass,
   policyHintKey,
   policyLabelKey,
 } from "../../lib/feeds";
@@ -41,13 +43,14 @@ export function FeedFollowPanel({
   const [policy, setPolicy] = useState<string>("latest");
   const [following, setFollowing] = useState<string | null>(null);
   const [followed, setFollowed] = useState<Set<string>>(() => new Set());
-  const [followFailed, setFollowFailed] = useState(false);
+  // null: no failure; "" a failure without a classified cause.
+  const [followFailed, setFollowFailed] = useState<string | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const value = input.trim();
     if (!value) return;
-    setFollowFailed(false);
+    setFollowFailed(null);
     const feedURL = asFeedURL(value);
     if (feedURL) {
       setState({ kind: "address", feedURL });
@@ -64,7 +67,7 @@ export function FeedFollowPanel({
 
   async function follow(feedURL: string) {
     setFollowing(feedURL);
-    setFollowFailed(false);
+    setFollowFailed(null);
     try {
       const subscription = await followFeed(feedURL, {
         libraryID,
@@ -73,8 +76,8 @@ export function FeedFollowPanel({
       });
       setFollowed((prev) => new Set(prev).add(feedURL));
       onFollowed(subscription);
-    } catch {
-      setFollowFailed(true);
+    } catch (err) {
+      setFollowFailed(followErrorClass(err));
     } finally {
       setFollowing(null);
     }
@@ -150,9 +153,10 @@ export function FeedFollowPanel({
             {t("feedsNoResults", { query: state.query })}
           </p>
         )}
-        {followFailed && (
+        {followFailed !== null && (
           <p role="alert" className="m-0 text-sm text-[var(--state-danger)]">
             {t("feedsFollowFailed")}
+            {followFailed && <> {t(errorClassKey(followFailed))}.</>}
           </p>
         )}
       </div>

@@ -154,6 +154,17 @@ describe("FeedFollowPanel", () => {
     await user.click(await screen.findByRole("button", { name: "Follow Feed address" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not follow this feed");
   });
+
+  it("names the cause when the server classified a refused follow", async () => {
+    const user = userEvent.setup();
+    vi.mocked(followFeed).mockRejectedValue(new ApiError("feed could not be read: http-4xx", 200));
+    wrap(<FeedFollowPanel libraryID="lib-1" onFollowed={vi.fn()} />);
+    await user.type(screen.getByRole("searchbox"), "https://example.org/feed.xml{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Follow Feed address" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not follow this feed. Check the address and try again. The server refused the request.",
+    );
+  });
 });
 
 describe("FeedHealth", () => {

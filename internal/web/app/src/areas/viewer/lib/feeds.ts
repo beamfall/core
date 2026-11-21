@@ -59,6 +59,15 @@ export function errorClassKey(errorClass: string | null | undefined): StringKey 
   return (errorClass && ERROR_CLASS_LABELS[errorClass]) || "feedsErrorUnknown";
 }
 
+/** The cause class of a refused follow: the server answers "feed could not
+ * be read: <class>" with the same classes as lastErrorClass. "" when the
+ * error carries no known class. */
+export function followErrorClass(err: unknown): string {
+  const message = err instanceof Error ? err.message : "";
+  const match = /feed could not be read: ([a-z0-9-]+)/.exec(message);
+  return match && ERROR_CLASS_LABELS[match[1]] ? match[1] : "";
+}
+
 /** How loudly a feed's health shows: quiet for ok and pending, a failure
  * line for failing, amber for warning, its own state for retired. */
 export type HealthTone = "quiet" | "failing" | "warning" | "retired";
