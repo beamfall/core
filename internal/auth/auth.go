@@ -245,12 +245,12 @@ func (s *Service) SetCertificationScales(scales map[string][]string) {
 	s.certificationScales = scales
 }
 
-// certificationConstraints resolves a Profile's stored ceilings against the
+// CertificationConstraints resolves a Profile's stored ceilings against the
 // wired scales: the allowed set is the scale prefix up to and including the
 // ceiling. A ceiling whose plugin scale is unknown, or whose value is not on
 // the scale, yields an empty allowed set — fail-closed, consistent with the
 // unrated-blocked-by-default posture.
-func (s *Service) certificationConstraints(ceilings []store.ProfileCertificationCeiling) []store.CertificationConstraint {
+func (s *Service) CertificationConstraints(ceilings []store.ProfileCertificationCeiling) []store.CertificationConstraint {
 	if len(ceilings) == 0 {
 		return nil
 	}
@@ -270,6 +270,11 @@ func (s *Service) certificationConstraints(ceilings []store.ProfileCertification
 		constraints = append(constraints, constraint)
 	}
 	return constraints
+}
+
+// AddToQueue checks the authenticated scope again in the queue write transaction.
+func (s *Service) AddToQueue(ctx context.Context, scope Scope, expectedProfileID store.ProfileID, mediaID store.MediaID, position *int) (store.QueueAddResult, error) {
+	return s.store.QueueAddForProfile(ctx, scope.ProfileID, scope.SessionID, expectedProfileID, mediaID, position, scope.LibraryFilter(), s.now, s.CertificationConstraints)
 }
 
 // ScopeFromRequest resolves HTTP credentials into a Scope. A Bearer credential
@@ -401,7 +406,7 @@ func (s *Service) ScopeFromScopedKey(ctx context.Context, key string) (Scope, er
 	scope.ProfileID = profile.ID
 	scope.Profile = profile.Kind
 	scope.LibraryIDs = profile.Library
-	scope.Certification = s.certificationConstraints(profile.CertificationCeilings)
+	scope.Certification = s.CertificationConstraints(profile.CertificationCeilings)
 	if profile.Kind == store.ProfileManaged {
 		scope.GrantedMediaIDs, _ = s.store.GrantedMediaIDsForProfile(ctx, profile.ID)
 	}
@@ -435,7 +440,7 @@ func (s *Service) ReauthorizeProfileScope(ctx context.Context, scope Scope, prof
 	if !scope.AllLibraries {
 		scope.LibraryIDs = append([]store.LibraryID(nil), profile.Library...)
 	}
-	scope.Certification = s.certificationConstraints(profile.CertificationCeilings)
+	scope.Certification = s.CertificationConstraints(profile.CertificationCeilings)
 	scope.GrantedMediaIDs = nil
 	if profile.Kind == store.ProfileManaged {
 		scope.GrantedMediaIDs, _ = s.store.GrantedMediaIDsForProfile(ctx, profile.ID)
@@ -574,7 +579,7 @@ func (s *Service) scope(ctx context.Context, sessionID store.SessionID, credenti
 		AdminUntil:        adminUntil,
 		ExpiresAt:         session.ExpiresAt,
 		LibraryIDs:        profile.Library,
-		Certification:     s.certificationConstraints(profile.CertificationCeilings),
+		Certification:     s.CertificationConstraints(profile.CertificationCeilings),
 		GrantedMediaIDs:   grantedIDs,
 	}, nil
 }
@@ -804,7 +809,7 @@ func (s *Service) IntegrationScope(ctx context.Context, token string, required s
 	}
 	bearer.SessionKind = store.SessionKindIntegration
 	bearer.ProfileID, bearer.Profile, bearer.LibraryIDs = profile.ID, profile.Kind, profile.Library
-	bearer.Certification = s.certificationConstraints(profile.CertificationCeilings)
+	bearer.Certification = s.CertificationConstraints(profile.CertificationCeilings)
 	return bearer, nil
 }
 

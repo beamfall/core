@@ -20,6 +20,7 @@ type fieldDispatchContext struct {
 	privilegedOutcomes map[string]observability.AuditOutcome
 	canonical          string
 	responseKey        string
+	queueAddReceipt    *QueueAddReceipt
 }
 
 type fieldDispatchFunc func(*fieldDispatchContext) response
@@ -1281,10 +1282,18 @@ func dispatchFieldBlock030(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
-	if fields["queueadd"] || fields["queueremove"] || fields["queuemove"] || fields["queueclear"] {
+	if fields["queueadd"] {
+		result, err := h.queueAdd(ctx, scope, req)
+		if err == nil {
+			result.receipt.ResponseKey = dispatch.responseKey
+			dispatch.queueAddReceipt = &result.receipt
+		}
+		return resolveField(dispatch, "queueadd", result.items, err)
+	}
+	if fields["queueremove"] || fields["queuemove"] || fields["queueclear"] {
 		result, err := h.queueOps(ctx, scope, fields, req)
 		if err != nil {
-			return resolveField(dispatch, requestedField(fields, "queueadd", "queueremove", "queuemove", "queueclear"), any(nil), err)
+			return resolveField(dispatch, requestedField(fields, "queueremove", "queuemove", "queueclear"), any(nil), err)
 		}
 		for field, value := range result {
 			if resp := resolveField(dispatch, field, value, nil); len(resp.Errors) > 0 {

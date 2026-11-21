@@ -1487,7 +1487,16 @@ func scanLibrary(rows *sql.Rows, extra ...any) (Library, error) {
 	return library, nil
 }
 
-func loadLibraries(ctx context.Context, db *sql.DB) ([]Library, error) {
+type rowsQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+type sqlReader interface {
+	queryRower
+	rowsQueryer
+}
+
+func loadLibraries(ctx context.Context, db rowsQueryer) ([]Library, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT `+libraryColumns+`
 		FROM library WHERE trashed_at_ms IS NULL ORDER BY rowid`, libraryIconConfigPrefix)
@@ -1520,9 +1529,13 @@ func (s *Store) libraryByIDLocked(ctx context.Context, id LibraryID) (Library, e
 }
 
 func (s *Store) deviceSQL(ctx context.Context, id DeviceID) (Device, error) {
+	return readDevice(ctx, s.catalogR, id)
+}
+
+func readDevice(ctx context.Context, q queryRower, id DeviceID) (Device, error) {
 	var device Device
 	var revoked int
-	err := s.catalogR.QueryRowContext(ctx,
+	err := q.QueryRowContext(ctx,
 		"SELECT id, name, role, distribution_class, device_surface, secret_hash, revoked FROM device WHERE id = ?", id,
 	).Scan(&device.ID, &device.Name, &device.Role, &device.DistributionClass, &device.Surface, &device.SecretHash, &revoked)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1536,17 +1549,21 @@ func (s *Store) deviceSQL(ctx context.Context, id DeviceID) (Device, error) {
 }
 
 func (s *Store) sessionSQL(ctx context.Context, id SessionID) (Session, error) {
+	return readSession(ctx, s.catalogR, id)
+}
+
+func readSession(ctx context.Context, q queryRower, id SessionID) (Session, error) {
 	var session Session
 	var revealed int
 	var deviceID, kind sql.NullString
 	var expires sql.NullInt64
 	var adminUntil sql.NullInt64
 	var integrationScopes string
-	err := s.catalogR.QueryRowContext(ctx,
+	err := q.QueryRowContext(ctx,
 		"SELECT id, device_id, profile_id, revealed, expires_at_ms, admin_until_ms, kind, integration_scopes FROM auth_session WHERE id = ?", id,
 	).Scan(&session.ID, &deviceID, &session.ProfileID, &revealed, &expires, &adminUntil, &kind, &integrationScopes)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Session{}, errors.New("session not found")
+		return Session{}, ErrSessionNotFound
 	}
 	if err != nil {
 		return Session{}, err
@@ -1588,11 +1605,15 @@ func (s *Store) sessionSQL(ctx context.Context, id SessionID) (Session, error) {
 }
 
 func (s *Store) profileSQL(ctx context.Context, id ProfileID) (Profile, error) {
+	return readProfile(ctx, s.catalogR, id)
+}
+
+func readProfile(ctx context.Context, q sqlReader, id ProfileID) (Profile, error) {
 	var profile Profile
 	var maxStreams sql.NullInt64
 	var transcodeAllowed, disabled, preferSDH, isOwner, integrationSignIn int
 	var audioLanguages, subtitleLanguages string
-	err := s.catalogR.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT id, name, kind, max_concurrent_streams, transcode_allowed,
 		       disabled, audio_languages, subtitle_languages, subtitle_mode, prefer_sdh,
 		       created_at_ms, is_owner, integration_sign_in, remote_max_bitrate
@@ -1621,7 +1642,7 @@ func (s *Store) profileSQL(ctx context.Context, id ProfileID) (Profile, error) {
 	if profile.SubtitleLanguages, err = decodeLanguages(subtitleLanguages); err != nil {
 		return Profile{}, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx,
+	rows, err := q.QueryContext(ctx,
 		"SELECT library_id FROM profile_library WHERE profile_id = ? ORDER BY position", id,
 	)
 	if err != nil {
@@ -1639,7 +1660,7 @@ func (s *Store) profileSQL(ctx context.Context, id ProfileID) (Profile, error) {
 		return Profile{}, err
 	}
 	rows.Close()
-	if profile.CertificationCeilings, err = s.certificationCeilingsSQL(ctx, id); err != nil {
+	if profile.CertificationCeilings, err = readCertificationCeilings(ctx, q, id); err != nil {
 		return Profile{}, err
 	}
 	return profile, nil
@@ -1832,9 +1853,29 @@ func (s *Store) visibleMediaSQLFrom(ctx context.Context, db *sql.DB, id MediaID,
 	return media, nil
 }
 
+type mediaReaders struct {
+	catalog   rowsQueryer
+	encrypted func(LibraryID) rowsQueryer
+}
+
+func (s *Store) encryptedMediaReaderLocked(id LibraryID) rowsQueryer {
+	if db := s.encryptedDBs[id]; db != nil && db.state == "unsealed-registered" && db.reader != nil {
+		return db.reader
+	}
+	return nil
+}
+
+func (s *Store) mediaReadersLocked() mediaReaders {
+	return mediaReaders{catalog: s.catalogR, encrypted: s.encryptedMediaReaderLocked}
+}
+
 func (s *Store) visibleMediaBatchSQL(ctx context.Context, ids []MediaID, filter LibraryFilter) (map[MediaID]Media, error) {
+	return visibleMediaBatch(ctx, s.mediaReadersLocked(), ids, filter)
+}
+
+func visibleMediaBatch(ctx context.Context, readers mediaReaders, ids []MediaID, filter LibraryFilter) (map[MediaID]Media, error) {
 	visible := make(map[MediaID]Media, len(ids))
-	err := s.eachVisibleMediaSQL(ctx, ids, filter, visibleMediaColumns, scanVisibleMedia, func(media Media) {
+	err := eachVisibleMedia(ctx, readers, ids, filter, visibleMediaColumns, scanVisibleMedia, func(media Media) {
 		visible[media.ID] = media
 	})
 	if err != nil {
@@ -1847,7 +1888,7 @@ func (s *Store) visibleMediaBatchSQL(ctx context.Context, ids []MediaID, filter 
 // reading only each Media's id and Library.
 func (s *Store) visibleMediaIDsSQL(ctx context.Context, ids []MediaID, filter LibraryFilter) (map[MediaID]struct{}, error) {
 	visible := make(map[MediaID]struct{}, len(ids))
-	err := s.eachVisibleMediaSQL(ctx, ids, filter, "m.id, m.library_id", func(rows *sql.Rows) (Media, error) {
+	err := eachVisibleMedia(ctx, s.mediaReadersLocked(), ids, filter, "m.id, m.library_id", func(rows *sql.Rows) (Media, error) {
 		var media Media
 		err := rows.Scan(&media.ID, &media.LibraryID)
 		return media, err
@@ -1876,15 +1917,15 @@ func scanVisibleMedia(rows *sql.Rows) (Media, error) {
 	return media, nil
 }
 
-// eachVisibleMediaSQL reads the untrashed Media among ids that the filter's
+// eachVisibleMedia reads the untrashed Media among ids that the filter's
 // Libraries and certification rules admit, from the catalog and every open
-// Encrypted Library, selecting columns and handing each row scanned by scan to
+// Encrypted Library readers can open, selecting columns and handing each row scanned by scan to
 // emit.
-func (s *Store) eachVisibleMediaSQL(ctx context.Context, ids []MediaID, filter LibraryFilter, columns string, scan func(*sql.Rows) (Media, error), emit func(Media)) error {
+func eachVisibleMedia(ctx context.Context, readers mediaReaders, ids []MediaID, filter LibraryFilter, columns string, scan func(*sql.Rows) (Media, error), emit func(Media)) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	libraries, err := loadLibraries(ctx, s.catalogR)
+	libraries, err := loadLibraries(ctx, readers.catalog)
 	if err != nil {
 		return err
 	}
@@ -1898,7 +1939,7 @@ func (s *Store) eachVisibleMediaSQL(ctx context.Context, ids []MediaID, filter L
 			}
 		}
 	}
-	read := func(db *sql.DB, query string, args []any, admit func(Media) bool) error {
+	read := func(db rowsQueryer, query string, args []any, admit func(Media) bool) error {
 		rows, err := db.QueryContext(ctx, query, args...)
 		if err != nil {
 			return err
@@ -1926,7 +1967,7 @@ func (s *Store) eachVisibleMediaSQL(ctx context.Context, ids []MediaID, filter L
 		}
 		args = append(args, certArgs...)
 		// #nosec G202 -- columns is a fixed column list; only generated placeholders and closed certification SQL are interpolated.
-		err := read(s.catalogR, `
+		err := read(readers.catalog, `
 			SELECT `+columns+`
 			FROM media m
 			WHERE m.id IN (`+placeholders+`)
@@ -1936,8 +1977,13 @@ func (s *Store) eachVisibleMediaSQL(ctx context.Context, ids []MediaID, filter L
 			return err
 		}
 
-		for libraryID, db := range s.encryptedDBs {
-			if !visibleLibraries[libraryID] || db == nil || db.state != "unsealed-registered" || db.reader == nil {
+		for _, library := range libraries {
+			libraryID := library.ID
+			if !library.Encrypted || !visibleLibraries[libraryID] {
+				continue
+			}
+			reader := readers.encrypted(libraryID)
+			if reader == nil {
 				continue
 			}
 			planeCertClause, planeCertArgs := planeCertificationFilterSQL(libraryPlugins[libraryID], filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
@@ -1948,7 +1994,7 @@ func (s *Store) eachVisibleMediaSQL(ctx context.Context, ids []MediaID, filter L
 			args = append(args, libraryID)
 			args = append(args, planeCertArgs...)
 			// #nosec G202 -- columns is a fixed column list; only generated placeholders and closed certification SQL are interpolated.
-			err := read(db.reader, `
+			err := read(reader, `
 				SELECT `+columns+`
 				FROM media m
 				WHERE m.id IN (`+placeholders+`)

@@ -187,6 +187,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"cannot change the current device role":                     ErrorCodeForbidden,
 	"incorrect passphrase or recovery key":                      ErrorCodeForbidden,
 	"managed profiles require guardian or operator data delete": ErrorCodeForbidden,
+	"This item is locked.":                                      ErrorCodeForbidden,
 	"not a member of this group":                                ErrorCodeForbidden,
 	"not a member of this party":                                ErrorCodeForbidden,
 	"not the party host":                                        ErrorCodeForbidden,
@@ -211,7 +212,8 @@ var clientErrorCodes = map[string]ErrorCode{
 	"session not controllable":                                       ErrorCodeForbidden,
 	"retry the offline pack build from the device that requested it": ErrorCodeForbidden,
 
-	"device revoked": ErrorCodeUnauthenticated,
+	"device revoked":  ErrorCodeUnauthenticated,
+	"invalid session": ErrorCodeUnauthenticated,
 
 	"access request already resolved":                                                              ErrorCodeConflict,
 	"no backup key is waiting to be saved":                                                         ErrorCodeConflict,

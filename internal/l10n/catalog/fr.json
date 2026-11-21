@@ -8,6 +8,7 @@
   "notification.extension_request.title": "Demande de temps supplémentaire",
   "notification.watch_party_invite.title": "Invitation Watch Party",
   "notification.watch_party_request.title": "Demande de déplacement Watch Party",
+  "queue.media_locked": "Cet élément est verrouillé.",
   "setup.lan_hint.finish_setup": "Ouvrez Beamfall avec son adresse IP pour terminer la configuration sans le jeton de configuration.",
   "setup.lan_hint.sign_in": "Ouvrez Beamfall avec son adresse IP pour vous connecter avec le mot de passe administrateur.",
   "watch_party.participant_fallback": "Participant",

@@ -165,7 +165,7 @@ func TestProvisionalPromotionPreservesQueueResumeAndAvailability(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProvisionalMedia: %v", err)
 	}
-	if err := st.QueueAdd(ctx, "profile-default", mediaID, nil, filter); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", mediaID, nil, filter); err != nil {
 		t.Fatalf("QueueAdd provisional: %v", err)
 	}
 	if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{

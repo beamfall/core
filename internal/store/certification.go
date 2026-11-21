@@ -17,6 +17,10 @@ import (
 // never marked locked. Items in grantedIDs are skipped (ACCESS-3, ADR-0113
 // §2.3): an active AccessGrant bypasses the ceiling for that item.
 func (s *Store) annotateLockedLocked(ctx context.Context, constraints []CertificationConstraint, items []SourceItem, grantedIDs []MediaID) error {
+	return annotateLocked(ctx, s.mediaReadersLocked(), constraints, items, grantedIDs)
+}
+
+func annotateLocked(ctx context.Context, readers mediaReaders, constraints []CertificationConstraint, items []SourceItem, grantedIDs []MediaID) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -51,7 +55,7 @@ func (s *Store) annotateLockedLocked(ctx context.Context, constraints []Certific
 	if len(ids) == 0 {
 		return nil
 	}
-	libraries, err := loadLibraries(ctx, s.catalogR)
+	libraries, err := loadLibraries(ctx, readers.catalog)
 	if err != nil {
 		return err
 	}
@@ -63,13 +67,12 @@ func (s *Store) annotateLockedLocked(ctx context.Context, constraints []Certific
 		if library.PluginID != nil {
 			pluginID = *library.PluginID
 		}
-		reader := s.catalogR
+		reader := readers.catalog
 		if library.Encrypted {
-			db := s.encryptedDBs[library.ID]
-			if db == nil || db.state != "unsealed-registered" || db.reader == nil {
+			reader = readers.encrypted(library.ID)
+			if reader == nil {
 				continue
 			}
-			reader = db.reader
 		}
 		for _, c := range locked {
 			if c.PluginID != pluginID {
@@ -208,9 +211,9 @@ func (s *Store) ClearProfileCertificationCeiling(ctx context.Context, id Profile
 	return s.profileSQL(ctx, id)
 }
 
-// certificationCeilingsSQL loads a Profile's ceilings, plugin-sorted.
-func (s *Store) certificationCeilingsSQL(ctx context.Context, id ProfileID) ([]ProfileCertificationCeiling, error) {
-	rows, err := s.catalogR.QueryContext(ctx, `
+// readCertificationCeilings loads a Profile's ceilings, plugin-sorted.
+func readCertificationCeilings(ctx context.Context, q rowsQueryer, id ProfileID) ([]ProfileCertificationCeiling, error) {
+	rows, err := q.QueryContext(ctx, `
 		SELECT plugin_id, ceiling, allow_unrated, filter_visibility
 		FROM profile_certification_ceiling
 		WHERE profile_id = ? ORDER BY plugin_id`, id)
