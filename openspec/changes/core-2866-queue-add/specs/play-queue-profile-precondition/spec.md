@@ -24,12 +24,20 @@ and its eligibility.
 - **WHEN** a managed Profile's access window and any session extension no longer admit the current server time at the write
 - **THEN** `queueAdd` returns `UNAUTHENTICATED` and the Play Queue is unchanged
 
+#### Scenario: An inaccessible encrypted Library cannot be read
+
+- **WHEN** the target is in the catalog and an unsealed encrypted Library outside the current Profile's visible Libraries has a read failure
+- **THEN** the server resolves the target without reading that Library
+
 ### Requirement: Queue adds report their committed placement
 
 After committing an add the server SHALL return the first page of at most 50
 visible items in committed order, even if optional card details cannot be read.
+A successful add SHALL also return a receipt in `extensions.queueAdds` with its
+top-level `responseKey`, target `mediaID`, and zero-based `position` in the full
+visible queue at commit. `position` is omitted when the committed target is muted.
 A later failure in the same operation SHALL preserve committed queue add data
-and identify the failed field by response key in the error path.
+and receipts and identify the failed field by response key in the error path.
 
 #### Scenario: Card details fail after the queue transaction commits
 
@@ -40,9 +48,10 @@ and identify the failed field by response key in the error path.
 
 - **WHEN** `queueAdd` commits a visible target outside the first page
 - **THEN** the response stays bounded to the first page of the committed queue
+- **AND** the receipt identifies the target and its position beyond the page
 
 #### Scenario: A later queue add alias is refused
 
 - **WHEN** the first `queueAdd` alias commits and a later alias is refused
-- **THEN** `data` includes the committed alias's queue page
+- **THEN** `data` includes the committed alias's queue page and `extensions.queueAdds` includes its receipt
 - **AND** the response includes a typed error with the refused alias as its path

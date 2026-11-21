@@ -13,3 +13,5 @@ whether the queue changed.
 - Check the target's current eligibility inside the queue write transaction.
 - Reuse the existing GraphQL error vocabulary for definitive refusals.
 - Return the committed queue order even when optional card details cannot be read.
+- Include a placement receipt for each committed add in the GraphQL response extensions.
+- Resolve catalog targets first and route to encrypted Library databases only when eligible.
