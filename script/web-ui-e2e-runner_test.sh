@@ -46,22 +46,26 @@ KILL_WAIT_TICKS=$((600 * ceiling_scale))
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/beamfall-web-e2e-runner-test.XXXXXX")"
 ACTIVE_PIDS=()
 ACTIVE_GROUPS=()
-CURRENT_CASE_METADATA=""
+CURRENT_CASE_DIR=""
 PASS=0
 FAIL=0
 
 cleanup() {
   local pgid pid
   trap - EXIT INT TERM
-  # CORE-0014: the supervisor moves each tracked command into its own session, which the runner
-  # group kill below never reaches. A finished case was already reaped and checked; only the case
-  # in flight (the selftest itself was interrupted) can still own live sessions. Its records are
-  # fresh, so a recycled pid cannot stand in for one of them.
-  if [[ -n "${CURRENT_CASE_METADATA}" ]]; then reap_case_processes "${CURRENT_CASE_METADATA}"; fi
   for pgid in "${ACTIVE_GROUPS[@]+"${ACTIVE_GROUPS[@]}"}"; do
     kill -KILL -- "-${pgid}" 2>/dev/null || true
     wait "${pgid}" 2>/dev/null || true
   done
+  # CORE-0014: the full runner and the supervisor move commands into their own sessions, which the
+  # runner group kill above never reaches. A finished case was already reaped and checked; only the
+  # case in flight (the selftest itself was interrupted) can still own live sessions. The launcher
+  # is stopped first, and a second pass catches a session recorded while the first one ran.
+  if [[ -n "${CURRENT_CASE_DIR}" ]]; then
+    reap_case_processes "${CURRENT_CASE_DIR}"
+    sleep 0.2
+    reap_case_processes "${CURRENT_CASE_DIR}"
+  fi
   for pid in "${ACTIVE_PIDS[@]+"${ACTIVE_PIDS[@]}"}"; do
     kill -KILL "${pid}" 2>/dev/null || true
     wait "${pid}" 2>/dev/null || true
@@ -72,18 +76,16 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Process groups recorded by a case: every *.group file, and the group of every live *.pid. Never the
-# selftest's own group; never looked up by command name (concurrent copies of this test share names).
+# Process groups a case recorded at launch: every metadata/*.group file and the full runner's
+# output/runner-process-group. Recorded by the process itself when it started, never looked up later
+# from a pid that may have been recycled, nor by command name (concurrent copies of this test share
+# names). Never the selftest's own group.
 case_groups() {
-  local metadata="$1" file pgid own
+  local case_dir="$1" file pgid own
   own="$(ps -o pgid= -p "$$" | tr -d ' ')"
-  for file in "${metadata}"/*.group "${metadata}"/*.pid; do
+  for file in "${case_dir}"/metadata/*.group "${case_dir}/output/runner-process-group"; do
     [[ -s "${file}" ]] || continue
-    if [[ "${file}" == *.group ]]; then
-      pgid="$(<"${file}")"
-    else
-      pgid="$(ps -o pgid= -p "$(<"${file}")" 2>/dev/null | tr -d ' ' || true)"
-    fi
+    pgid="$(tr -d ' \n' <"${file}")"
     if [[ "${pgid}" =~ ^[0-9]+$ && "${pgid}" -gt 1 && "${pgid}" != "${own}" ]]; then
       printf '%s\n' "${pgid}"
     fi
@@ -94,15 +96,13 @@ group_alive() {
   ps -A -o pgid= | awk -v g="$1" '$1 == g { found = 1 } END { exit !found }'
 }
 
-# SIGKILLs every process a case recorded, by group and by pid. A SIGKILLed runner skips its EXIT
-# trap, so this is the only path that stops the sessions its supervisor created.
+# SIGKILLs every process group a case recorded. Each fake process records its own group, so the
+# groups cover every recorded pid. A SIGKILLed runner skips its EXIT trap, so this is the only path
+# that stops the sessions its supervisor created.
 reap_case_processes() {
-  local metadata="$1" pgid file
-  for pgid in $(case_groups "${metadata}"); do
+  local case_dir="$1" pgid
+  for pgid in $(case_groups "${case_dir}"); do
     kill -KILL -- "-${pgid}" 2>/dev/null || true
-  done
-  for file in "${metadata}"/*.pid; do
-    if [[ -s "${file}" ]]; then kill -KILL "$(<"${file}")" 2>/dev/null || true; fi
   done
 }
 
@@ -221,6 +221,7 @@ trap '' INT TERM
 role="$1"
 metadata="$2"
 printf '%s\n' "$$" >"${metadata}/${role}.pid"
+ps -o pgid= -p "$$" | tr -d ' ' >"${metadata}/${role}.group"
 if [[ "${BEAMFALL_RUNNER_TEST_MODE:?}" == success || "${BEAMFALL_RUNNER_TEST_MODE}" == slow ]]; then
   bash -c 'printf "%s\n" "$$" >"$1"; sleep 0.05' \
     "${role}-child" "${metadata}/${role}-child.pid" &
@@ -343,7 +344,7 @@ run_case() {
     runner_timeout_seconds="${SLOW_STALL_SECONDS}"
   fi
   mkdir -p "${case_dir}/metadata" "${case_dir}/output"
-  CURRENT_CASE_METADATA="${case_dir}/metadata"
+  CURRENT_CASE_DIR="${case_dir}"
 
   local leftover_pid=""
   local sibling_pid=""
@@ -420,11 +421,11 @@ except ProcessLookupError:
   forget_pid "${watchdog_pid}"
 
   local case_groups_before
-  case_groups_before="$(case_groups "${case_dir}/metadata")"
+  case_groups_before="$(case_groups "${case_dir}")"
   if [[ -e "${case_dir}/harness-timeout" ]]; then
     bad "${runner_name} ${mode} exceeded the independent test deadline"
     # The deadline SIGKILLed the runner's group only: stop the supervised sessions it left behind.
-    reap_case_processes "${case_dir}/metadata"
+    reap_case_processes "${case_dir}"
   fi
 
   if [[ "${status}" -eq "${expected}" ]]; then
@@ -440,15 +441,19 @@ except ProcessLookupError:
     assert_process_gone "${pid}" "${runner_name} ${mode} $(basename "${pid_file}")"
   done
   # CORE-0014: no process group the case started survives it.
+  local group_survived=0
   for pgid in ${case_groups_before}; do
     deadline=$((SECONDS + EXIT_WAIT_SECONDS))
     while group_alive "${pgid}" && [[ "${SECONDS}" -lt "${deadline}" ]]; do sleep 0.02; done
     if group_alive "${pgid}"; then
       bad "${runner_name} ${mode} process group ${pgid} survived"
+      group_survived=1
     else
       ok "${runner_name} ${mode} process group ${pgid} retired"
     fi
   done
+  # A detected leak is a failure, not a reason to leave the group running past the selftest.
+  if [[ "${group_survived}" -eq 1 ]]; then reap_case_processes "${case_dir}"; fi
   if kill -0 "${sentinel_pid}" 2>/dev/null; then
     ok "${runner_name} ${mode} leaves unrelated process"
   else
@@ -481,7 +486,7 @@ except ProcessLookupError:
   fi
   kill -KILL -- "-${runner_pid}" 2>/dev/null || true
   forget_group "${runner_pid}"
-  CURRENT_CASE_METADATA=""
+  CURRENT_CASE_DIR=""
 }
 
 # CORE-0941: a progressing run (its first invocation alone longer than the stall budget) still passes
