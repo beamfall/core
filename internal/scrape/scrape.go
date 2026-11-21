@@ -208,9 +208,14 @@ const (
 	defaultMaxResponseBytes = 5 << 20
 	defaultTimeout          = 15 * time.Second
 	maxRedirects            = 3
-	// retryAfterRetries is the small 429 cap: one initial request plus three
-	// retries, enough to respect etiquette without stalling forever.
+	// retryAfterRetries is the small retry cap for 429 and for 503 with
+	// Retry-After: one initial request plus three retries, enough to respect
+	// etiquette without stalling forever.
 	retryAfterRetries = 3
+	// maxRetryAfterWait bounds an honoured Retry-After. A provider asking for
+	// longer gets its error surfaced at once, so a walking caller ends its pass
+	// and requeues instead of holding a request open.
+	maxRetryAfterWait = 10 * time.Second
 	retryBackoffBase  = 25 * time.Millisecond
 	retryBackoffCap   = 250 * time.Millisecond
 	// maxCandidates bounds Search results — identification needs a short
@@ -1300,7 +1305,7 @@ func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reade
 	if authorize != nil {
 		authorize(req)
 	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	resp, err := e.requestWithRetry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
 		return e.client.Do(attempt)
 	})
 	if err != nil {
@@ -1333,7 +1338,7 @@ func (e *Engine) wait(ctx context.Context, wait time.Duration, label string) err
 	}
 }
 
-func (e *Engine) requestWith429Retry(ctx context.Context, req *http.Request, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
+func (e *Engine) requestWithRetry(ctx context.Context, req *http.Request, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
 	var retryAfter string
 	for attempt := 0; ; attempt++ {
 		attemptReq, err := cloneRequestForRetry(ctx, req, attempt)
@@ -1344,22 +1349,30 @@ func (e *Engine) requestWith429Retry(ctx context.Context, req *http.Request, do 
 		if err != nil {
 			return nil, err
 		}
-		if resp.StatusCode != http.StatusTooManyRequests {
+		retryAfter = resp.Header.Get("Retry-After")
+		if !retryableStatus(resp.StatusCode, retryAfter) {
 			return resp, nil
 		}
-		retryAfter = resp.Header.Get("Retry-After")
 		resp.Body.Close()
-		if attempt >= retryAfterRetries {
-			return nil, &statusError{host: req.URL.Hostname(), code: resp.StatusCode, retryAfter: retryAfter}
-		}
 		wait := retryBackoff(attempt)
 		if parsed, ok := parseRetryAfter(retryAfter, e.clock.Now()); ok {
 			wait = parsed
+		}
+		if attempt >= retryAfterRetries || wait > maxRetryAfterWait {
+			return nil, &statusError{host: req.URL.Hostname(), code: resp.StatusCode, retryAfter: retryAfter}
 		}
 		if err := e.wait(ctx, wait, "retry wait"); err != nil {
 			return nil, err
 		}
 	}
+}
+
+// retryableStatus reports whether a response is a short-lived refusal worth
+// retrying in place: rate limiting (429), or an overloaded server (503) that
+// says when to come back.
+func retryableStatus(code int, retryAfter string) bool {
+	return code == http.StatusTooManyRequests ||
+		(code == http.StatusServiceUnavailable && strings.TrimSpace(retryAfter) != "")
 }
 
 func cloneRequestForRetry(ctx context.Context, req *http.Request, attempt int) (*http.Request, error) {

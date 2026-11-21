@@ -43,7 +43,7 @@ func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[s
 			req.Header.Set(name, value)
 		}
 	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	resp, err := e.requestWithRetry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
 		return e.client.Do(attempt)
 	})
 	if err != nil {
@@ -96,7 +96,7 @@ func (e *Engine) FetchConditionalAuth(ctx context.Context, rawURL, etag, lastMod
 	if lastModified != "" {
 		req.Header.Set("If-Modified-Since", lastModified)
 	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	resp, err := e.requestWithRetry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
 		return e.client.Do(attempt)
 	})
 	if err != nil {
@@ -149,7 +149,7 @@ func (e *Engine) DownloadResourceAuth(ctx context.Context, rawURL string, dst io
 	if strings.TrimSpace(authHeader) != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	resp, err := e.requestWithRetry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
 		return e.streamClient.Do(attempt)
 	})
 	if err != nil {
