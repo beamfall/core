@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"testing"
@@ -56,18 +57,33 @@ func TestMyEngagementLogHighCardinalityUsesBoundedChunks(t *testing.T) {
 		}
 		queueRows = append(queueRows, queueEntry{id: string(id), mediaID: id, addedAtMS: atMS})
 		for rank, kind := range []MyEngagementEventKind{MyEventPlay, MyEventFavorite, MyEventQueue} {
+			var entryID string
+			if kind == MyEventQueue {
+				entryID = string(id)
+			}
 			expected = append(expected, myEngagementRankedEvent{
-				rank: rank,
+				rank: rank, entryID: entryID,
 				event: MyEngagementEvent{
 					Kind: kind, MediaID: id, LibraryID: "library-local", OccurredAt: at,
 				},
 			})
 		}
 	}
-	duplicate := queueRows[0]
-	duplicate.id += "-earlier"
-	duplicate.addedAtMS--
-	queueRows = append(queueRows, duplicate)
+	// More than one chunk for a single Media, including entries with the
+	// same timestamp, requires the keyset to advance by entry ID.
+	for i := range myEngagementLogChunkSize + 1 {
+		duplicate := queueRows[0]
+		duplicate.id += fmt.Sprintf("-%04d", i)
+		duplicate.addedAtMS -= int64(i / 2)
+		queueRows = append(queueRows, duplicate)
+		expected = append(expected, myEngagementRankedEvent{
+			rank: 2, entryID: duplicate.id,
+			event: MyEngagementEvent{
+				Kind: MyEventQueue, MediaID: duplicate.mediaID, LibraryID: "library-local",
+				OccurredAt: millisToTime(duplicate.addedAtMS),
+			},
+		})
+	}
 	if err := saveQueue(ctx, eventsTx, profile, queueSnapshot{entries: queueRows, repeat: QueueRepeatOff}, nil); err != nil {
 		_ = catalogTx.Rollback()
 		_ = eventsTx.Rollback()
@@ -81,28 +97,47 @@ func TestMyEngagementLogHighCardinalityUsesBoundedChunks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var after MediaID
-	chunks := 0
+	readTx, err := st.eventsR.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readTx.Rollback()
+	var after myEngagementRankedEvent
+	seen := make(map[string]bool, len(queueRows))
+	chunks, total := 0, 0
 	for {
-		ids, events, err := st.myEngagementChunkLocked(ctx, profile, after, MyEngagementLogQuery{})
+		ids, events, err := myEngagementChunk(ctx, readTx, profile, after, MyEngagementLogQuery{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(ids) == 0 {
 			break
 		}
-		if len(ids) > myEngagementLogIDChunk || len(events) > myEngagementLogIDChunk*3 {
+		if len(ids) > myEngagementLogChunkSize || len(events) > myEngagementLogChunkSize {
 			t.Fatalf("chunk %d materialized %d ids / %d events", chunks, len(ids), len(events))
 		}
-		after = ids[len(ids)-1]
+		for _, event := range events {
+			if event.event.Kind != MyEventQueue {
+				continue
+			}
+			if event.entryID == "" || seen[event.entryID] {
+				t.Fatalf("missing or repeated cursor entry ID %q", event.entryID)
+			}
+			seen[event.entryID] = true
+		}
+		after = events[len(events)-1]
 		chunks++
+		total += len(events)
 	}
-	if chunks != 3 {
-		t.Fatalf("chunks = %d, want 3", chunks)
+	if want := (len(expected) + myEngagementLogChunkSize - 1) / myEngagementLogChunkSize; chunks != want || total != len(expected) || len(seen) != len(queueRows) {
+		t.Fatalf("scanned %d chunks, %d events, %d queue entries; want %d, %d, %d", chunks, total, len(seen), want, len(expected), len(queueRows))
+	}
+	if err := readTx.Rollback(); err != nil {
+		t.Fatal(err)
 	}
 
 	sort.Slice(expected, func(i, j int) bool { return myEngagementBefore(expected[i], expected[j]) })
-	query := MyEngagementLogQuery{Limit: 37, Offset: 511}
+	query := MyEngagementLogQuery{Limit: 37, Offset: len(expected) - 463}
 	page, err := st.MyEngagementLog(ctx, profile, LibraryFilter{AllLibraries: true}, query)
 	if err != nil {
 		t.Fatal(err)

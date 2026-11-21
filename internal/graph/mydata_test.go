@@ -1,11 +1,14 @@
 package graph
 
 import (
+	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -60,7 +63,7 @@ func mydataSeedEngagement(t *testing.T, handler *Handler, authorize func(*http.R
 func mydataReadEngagement(t *testing.T, handler *Handler, authorize func(*http.Request)) MyEngagementExportInfo {
 	t.Helper()
 	data, errs := post(t, handler,
-		`{"query":"query Q($pin: String){ myEngagement(pin: $pin){ schema playbackProgress { mediaID } favorites { mediaID } queue { mediaID } watchlist { targetKind targetID addedAt } ratings { targetKind targetID rating ratedAt } } }","variables":{"pin":"1234"}}`,
+		`{"query":"query Q($pin: String){ myEngagement(pin: $pin){ schema complete playbackProgress { mediaID } favorites { mediaID } queue { id mediaID addedAt } queueState { currentEntryID positionMS shuffle shuffledEntryIDs repeatMode } watchlist { targetKind targetID addedAt } ratings { targetKind targetID rating ratedAt } } }","variables":{"pin":"1234"}}`,
 		authorize)
 	if len(errs) != 0 {
 		t.Fatalf("myEngagement errors = %#v", errs)
@@ -68,6 +71,84 @@ func mydataReadEngagement(t *testing.T, handler *Handler, authorize func(*http.R
 	var export MyEngagementExportInfo
 	mustUnmarshal(t, data["myEngagement"], &export)
 	return export
+}
+
+func TestMyEngagementExportQueueStateMatchesVisiblePlayQueue(t *testing.T) {
+	h := newTestHandler(t)
+	var state PlayQueueInfo
+	write := func(field, args string) {
+		t.Helper()
+		query := fmt.Sprintf("mutation { %s(%s) %s }", field, args, queueStateSelection)
+		execGraph(t, h, authorizeRevealed, query, nil, field, &state)
+	}
+	write("queueAddMany", `mediaIDs: ["media-alpha", "media-archive", "media-alpha"], placement: "end"`)
+	if len(state.Entries) != 3 {
+		t.Fatalf("seed queue = %+v", state.Entries)
+	}
+	canonical := slices.Clone(state.Entries)
+	write("queueSetCurrent", fmt.Sprintf("entryID: %q, positionMS: 42500", canonical[1].ID))
+	write("queueSetShuffle", "enabled: true")
+	write("queueSetRepeat", `mode: "one"`)
+
+	assertExport := func(authorize func(*http.Request), wantCanonical []PlayQueueEntryInfo, complete bool) {
+		t.Helper()
+		var playQueue PlayQueueInfo
+		execGraph(t, h, authorize, "{ playQueue "+queueStateSelection+" }", nil, "playQueue", &playQueue)
+		export := mydataReadEngagement(t, h, authorize)
+		if export.Complete != complete || len(export.Queue) != len(wantCanonical) {
+			t.Fatalf("export complete = %t, queue = %+v", export.Complete, export.Queue)
+		}
+		for i, want := range wantCanonical {
+			got := export.Queue[i]
+			if got.ID != want.ID || got.MediaID != string(want.MediaID) || got.AddedAt == "" {
+				t.Fatalf("export entry %d = %+v, want %+v with added time", i, got, want)
+			}
+		}
+		wantOrder := make([]string, len(playQueue.Entries))
+		for i, entry := range playQueue.Entries {
+			wantOrder[i] = entry.ID
+		}
+		got := export.QueueState
+		if !got.Shuffle || got.RepeatMode != store.QueueRepeatOne || got.PositionMS != playQueue.PositionMS ||
+			(got.CurrentEntryID == nil) != (playQueue.CurrentEntryID == nil) ||
+			(got.CurrentEntryID != nil && *got.CurrentEntryID != *playQueue.CurrentEntryID) ||
+			!slices.Equal(got.ShuffledEntryIDs, wantOrder) {
+			t.Fatalf("export queue state = %+v, playQueue = %+v", got, playQueue)
+		}
+	}
+	assertExport(authorizeRevealed, canonical, true)
+	assertExport(authorizeViewer, []PlayQueueEntryInfo{canonical[0], canonical[2]}, true)
+
+	// The shipped viewer's export query selects the original queue fields.
+	// The download still receives the complete export payload.
+	var download MyEngagementExportInfo
+	execGraph(t, h, authorizeRevealed, `{ myEngagement(pin: "1234") { schema exportedAt queue { mediaID addedAt } } }`,
+		nil, "myEngagement", &download)
+	if len(download.Queue) != 3 || download.Queue[1].ID != canonical[1].ID || download.QueueState.PositionMS != 42500 {
+		t.Fatalf("legacy export query lost queue state: %+v, %+v", download.Queue, download.QueueState)
+	}
+	for offset := range 2 {
+		var log MyEngagementLogInfo
+		query := fmt.Sprintf(`{ myEngagementLog(limit: 1, offset: %d) { total events { kind mediaID occurredAt } } }`, offset)
+		execGraph(t, h, authorizeViewer, query, nil, "myEngagementLog", &log)
+		if log.Total != 2 || len(log.Events) != 1 || log.Events[0].Kind != "queue" ||
+			log.Events[0].MediaID != "media-alpha" || log.Events[0].OccurredAt != download.Queue[0].AddedAt {
+			t.Fatalf("log page %d lost or changed a visible queue occurrence: %+v", offset, log)
+		}
+	}
+
+	manager := libencrypt.NewManagerWithParams(newMemSecretStore(), libencrypt.TestArgon2Params)
+	if _, err := manager.Provision("library-archive", libencrypt.UnsealModePassphrase, "test passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	manager.Seal("library-archive")
+	h.SetLibEncrypt(manager)
+	assertExport(authorizeRevealed, []PlayQueueEntryInfo{canonical[0], canonical[2]}, false)
+	var log MyEngagementLogInfo
+	execGraph(t, h, authorizeRevealed, `{ myEngagementLog { total events { mediaID } } }`, nil, "myEngagementLog", &log)
+	if log.Total != 2 || len(log.Events) != 2 || log.Events[0].MediaID != "media-alpha" || log.Events[1].MediaID != "media-alpha" {
+		t.Fatalf("sealed queue leaked into engagement log: %+v", log)
+	}
 }
 
 // TestMyDataSummaryAggregatesOwnVisibleData asserts ADR-0036 §2.2 layer 1: the

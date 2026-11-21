@@ -23,10 +23,18 @@ type PlayQueueInfo struct {
 }
 
 func (h *Handler) playQueue(ctx context.Context, scope auth.Scope) (PlayQueueInfo, error) {
-	queue, err := h.store.PlayQueue(ctx, scope.ProfileID, scope.LibraryFilter())
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
 	if err != nil {
 		return PlayQueueInfo{}, err
 	}
+	queue, err := h.store.PlayQueue(ctx, scope.ProfileID, filter)
+	if err != nil {
+		return PlayQueueInfo{}, err
+	}
+	return playQueueInfo(queue), nil
+}
+
+func playQueueInfo(queue store.PlayQueue) PlayQueueInfo {
 	result := PlayQueueInfo{
 		Entries: make([]PlayQueueEntryInfo, len(queue.Entries)), CurrentEntryID: queue.CurrentEntryID,
 		PositionMS: queue.PositionMS, Shuffle: queue.Shuffle, RepeatMode: queue.RepeatMode,
@@ -34,10 +42,22 @@ func (h *Handler) playQueue(ctx context.Context, scope auth.Scope) (PlayQueueInf
 	for i, entry := range queue.Entries {
 		result.Entries[i] = PlayQueueEntryInfo{ID: entry.ID, MediaID: entry.Item.ID}
 	}
-	return result, nil
+	return result
 }
 
 func (h *Handler) writePlayQueue(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (PlayQueueInfo, error) {
+	if fields["queueaddmany"] {
+		var queue store.PlayQueue
+		err := h.withExpectedProfile(ctx, scope, req, func() error {
+			var err error
+			queue, err = h.addQueueEntries(ctx, scope, req)
+			return err
+		})
+		if err != nil {
+			return PlayQueueInfo{}, err
+		}
+		return playQueueInfo(queue), nil
+	}
 	err := h.withExpectedProfile(ctx, scope, req, func() error {
 		return h.applyPlayQueueWrite(ctx, scope, fields, req)
 	})
@@ -47,20 +67,29 @@ func (h *Handler) writePlayQueue(ctx context.Context, scope auth.Scope, fields m
 	return h.playQueue(ctx, scope)
 }
 
-func (h *Handler) applyPlayQueueWrite(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) error {
-	profile, filter := scope.ProfileID, scope.LibraryFilter()
-	if fields["queueaddmany"] {
-		v := newVars(req)
-		values, _ := v.StringList("mediaIDs", "Media IDs")
-		if err := v.Err(); err != nil {
-			return err
-		}
-		ids := make([]store.MediaID, len(values))
-		for i, id := range values {
-			ids[i] = store.MediaID(strings.TrimSpace(id))
-		}
-		return h.store.QueueAddMany(ctx, profile, ids, store.QueuePlacement(trimmedVariable(req, "placement")), filter)
+func (h *Handler) addQueueEntries(ctx context.Context, scope auth.Scope, req request) (store.PlayQueue, error) {
+	v := newVars(req)
+	values, _ := v.StringList("mediaIDs", "Media IDs")
+	if err := v.Err(); err != nil {
+		return store.PlayQueue{}, err
 	}
+	ids := make([]store.MediaID, len(values))
+	for i, id := range values {
+		ids[i] = store.MediaID(strings.TrimSpace(id))
+	}
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return store.PlayQueue{}, err
+	}
+	return h.store.QueueAddMany(ctx, scope.ProfileID, ids, store.QueuePlacement(trimmedVariable(req, "placement")), filter)
+}
+
+func (h *Handler) applyPlayQueueWrite(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) error {
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return err
+	}
+	profile := scope.ProfileID
 	if fields["queuemoveentry"] {
 		position, err := queueInteger(req, "position", math.MaxInt32)
 		if err != nil {

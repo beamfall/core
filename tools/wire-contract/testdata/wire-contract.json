@@ -17352,6 +17352,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
                 "name": "mediaID",
                 "kind": "scalar"
               }
@@ -17363,8 +17367,43 @@
               "kind": "scalar"
             },
             {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
               "name": "mediaID",
               "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "queueState",
+          "kind": "object",
+          "children": [
+            {
+              "name": "currentEntryID",
+              "kind": "scalar",
+              "nullable": true
+            },
+            {
+              "name": "positionMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "repeatMode",
+              "kind": "scalar"
+            },
+            {
+              "name": "shuffle",
+              "kind": "scalar"
+            },
+            {
+              "name": "shuffledEntryIDs",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             }
           ]
         },

@@ -90,11 +90,12 @@ func (s *Store) QueueAdd(ctx context.Context, profileID ProfileID, mediaID Media
 
 // QueueAddMany inserts a batch atomically. The next placement inserts after
 // the current visible entry, or at the front of the visible queue.
-func (s *Store) QueueAddMany(ctx context.Context, profileID ProfileID, mediaIDs []MediaID, placement QueuePlacement, filter LibraryFilter) error {
+func (s *Store) QueueAddMany(ctx context.Context, profileID ProfileID, mediaIDs []MediaID, placement QueuePlacement, filter LibraryFilter) (PlayQueue, error) {
 	if len(mediaIDs) == 0 || (placement != QueueEnd && placement != QueueNext) {
-		return ValidationError("invalid queue placement or empty media list")
+		return PlayQueue{}, ValidationError("invalid queue placement or empty media list")
 	}
-	return s.updateQueue(ctx, profileID, filter, mediaIDs, func(q *queueSnapshot, visible map[MediaID]Media) error {
+	var result PlayQueue
+	err := s.updateQueueWithResult(ctx, profileID, filter, mediaIDs, &result, func(q *queueSnapshot, visible map[MediaID]Media) error {
 		for _, id := range mediaIDs {
 			if _, ok := visible[id]; !ok {
 				return ValidationError("media not found")
@@ -107,6 +108,7 @@ func (s *Store) QueueAddMany(ctx context.Context, profileID ProfileID, mediaIDs 
 		}
 		return nil
 	})
+	return result, err
 }
 
 func newQueueEntries(ids []MediaID) []queueEntry {
@@ -320,6 +322,10 @@ func (s *Store) QueueClear(ctx context.Context, profileID ProfileID, filter Libr
 }
 
 func (s *Store) updateQueue(ctx context.Context, profileID ProfileID, filter LibraryFilter, extra []MediaID, mutate func(*queueSnapshot, map[MediaID]Media) error) error {
+	return s.updateQueueWithResult(ctx, profileID, filter, extra, nil, mutate)
+}
+
+func (s *Store) updateQueueWithResult(ctx context.Context, profileID ProfileID, filter LibraryFilter, extra []MediaID, result *PlayQueue, mutate func(*queueSnapshot, map[MediaID]Media) error) error {
 	if profileID == "" {
 		return ValidationError("profile ID is required")
 	}
@@ -348,7 +354,17 @@ func (s *Store) updateQueue(ctx context.Context, profileID ProfileID, filter Lib
 	if err := saveQueue(ctx, tx, profileID, q, original); err != nil {
 		return err
 	}
-	return tx.Commit()
+	var snapshot PlayQueue
+	if result != nil {
+		snapshot = q.playQueue(visible)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if result != nil {
+		*result = snapshot
+	}
+	return nil
 }
 
 func (s *Store) visibleQueueMedia(ctx context.Context, entries []queueEntry, filter LibraryFilter, extra []MediaID) (map[MediaID]Media, error) {
@@ -398,12 +414,7 @@ func (s *Store) PlayQueue(ctx context.Context, profileID ProfileID, filter Libra
 // readPlayQueue is called with the Store read lock held. The events read
 // transaction binds the entry order and playback state to the same snapshot.
 func (s *Store) readPlayQueue(ctx context.Context, profileID ProfileID, filter LibraryFilter) (PlayQueue, error) {
-	tx, err := s.eventsR.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return PlayQueue{}, err
-	}
-	defer tx.Rollback()
-	q, err := loadQueue(ctx, tx, profileID)
+	q, err := s.readQueueSnapshot(ctx, profileID)
 	if err != nil {
 		return PlayQueue{}, err
 	}
@@ -411,7 +422,33 @@ func (s *Store) readPlayQueue(ctx context.Context, profileID ProfileID, filter L
 	if err != nil {
 		return PlayQueue{}, err
 	}
+	return q.playQueue(visible), nil
+}
+
+func (s *Store) readQueueSnapshot(ctx context.Context, profileID ProfileID) (queueSnapshot, error) {
+	tx, err := s.eventsR.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return queueSnapshot{}, err
+	}
+	defer tx.Rollback()
+	return loadQueue(ctx, tx, profileID)
+}
+
+func (q *queueSnapshot) visibleCurrent(visible map[MediaID]Media) (*string, int64) {
+	for _, entry := range q.entries {
+		if entry.id == q.currentID {
+			if _, ok := visible[entry.mediaID]; ok {
+				return &entry.id, q.positionMS
+			}
+			break
+		}
+	}
+	return nil, 0
+}
+
+func (q *queueSnapshot) playQueue(visible map[MediaID]Media) PlayQueue {
 	result := PlayQueue{Entries: []PlayQueueEntry{}, Shuffle: q.shuffle, RepeatMode: q.repeat}
+	result.CurrentEntryID, result.PositionMS = q.visibleCurrent(visible)
 	for _, entry := range *q.activeOrder() {
 		media, ok := visible[entry.mediaID]
 		if !ok {
@@ -421,12 +458,8 @@ func (s *Store) readPlayQueue(ctx context.Context, profileID ProfileID, filter L
 			ID: media.ID, Kind: "media", Title: media.Title, LibraryID: media.LibraryID,
 			Summary: mediaDurationSummary(media.DurationSeconds),
 		}})
-		if entry.id == q.currentID {
-			result.CurrentEntryID = &entry.id
-			result.PositionMS = q.positionMS
-		}
 	}
-	return result, nil
+	return result
 }
 
 func (s *Store) queueItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
@@ -434,25 +467,49 @@ func (s *Store) queueItemsSQL(ctx context.Context, profileID ProfileID, filter L
 	if err != nil {
 		return nil, err
 	}
-	start := min(offset, len(queue.Entries))
-	page := queue.Entries[start : start+min(limit, len(queue.Entries)-start)]
-	items := make([]SourceItem, len(page))
-	for i, entry := range page {
-		items[i] = entry.Item
+	// Legacy clients identify rows by Media ID. Apply pagination to the
+	// first occurrence of each visible Media in playback order.
+	items := make([]SourceItem, 0, min(limit, len(queue.Entries)))
+	seen := make(map[MediaID]bool, len(queue.Entries))
+	for _, entry := range queue.Entries {
+		if len(items) == limit {
+			break
+		}
+		if seen[entry.Item.ID] {
+			continue
+		}
+		seen[entry.Item.ID] = true
+		if offset > 0 {
+			offset--
+			continue
+		}
+		items = append(items, entry.Item)
 	}
 	return items, nil
 }
 
-// myQueueRows returns every queued entry for the Profile in queue order,
-// unfiltered. My Data reveal-filters the whole export centrally, so
-// this read deliberately returns hidden entries too; it lives here, not in
-// mydata.go, because the play_queue table is firewalled behind the queue API
-// (see TestPlayQueueWritesStayBehindQueueAPI). The caller (ExportMyEngagement)
-// holds s.mu and has guarded; this reads via eventsR like the other My Data
-// projection reads.
+func (q *queueSnapshot) export(visible map[MediaID]Media) ([]MyQueueEntry, MyQueueState) {
+	entries := []MyQueueEntry{}
+	state := MyQueueState{Shuffle: q.shuffle, RepeatMode: q.repeat, ShuffledEntryIDs: []string{}}
+	state.CurrentEntryID, state.PositionMS = q.visibleCurrent(visible)
+	for _, entry := range q.entries {
+		if _, ok := visible[entry.mediaID]; ok {
+			entries = append(entries, MyQueueEntry{ID: entry.id, MediaID: entry.mediaID, AddedAt: millisToTime(entry.addedAtMS)})
+		}
+	}
+	for _, entry := range q.shuffled {
+		if _, ok := visible[entry.mediaID]; ok {
+			state.ShuffledEntryIDs = append(state.ShuffledEntryIDs, entry.id)
+		}
+	}
+	return entries, state
+}
+
+// myQueueRows reads the unfiltered canonical order for My Data Summary.
+// Its caller holds the Store read lock and applies visibility.
 func (s *Store) myQueueRows(ctx context.Context, profileID ProfileID) ([]MyQueueEntry, error) {
 	rows, err := s.eventsR.QueryContext(ctx, `
-		SELECT media_id, added_at_ms
+		SELECT entry_id, media_id, added_at_ms
 		FROM play_queue
 		WHERE profile_id = ?
 		ORDER BY position
@@ -465,7 +522,7 @@ func (s *Store) myQueueRows(ctx context.Context, profileID ProfileID) ([]MyQueue
 	for rows.Next() {
 		var row MyQueueEntry
 		var at int64
-		if err := rows.Scan(&row.MediaID, &at); err != nil {
+		if err := rows.Scan(&row.ID, &row.MediaID, &at); err != nil {
 			return nil, err
 		}
 		row.AddedAt = millisToTime(at)
@@ -645,13 +702,10 @@ func saveQueue(ctx context.Context, tx *sql.Tx, profileID ProfileID, q queueSnap
 	return nil
 }
 
-// myEngagementChunkLocked keyset-pages the Profile's matching engagement IDs
-// and their rows in one events query. It lives in the queue API because the
-// combined projection includes queue rows; callers resolve only this bounded
-// ID chunk through the catalog before advancing the keyset. For duplicate
-// queue entries the log projects the latest addition of each Media in range,
-// keeping the number of rows per Media bounded.
-func (s *Store) myEngagementChunkLocked(ctx context.Context, profileID ProfileID, after MediaID, query MyEngagementLogQuery) ([]MediaID, []myEngagementRankedEvent, error) {
+// myEngagementChunk pages engagement rows before resolving Media
+// visibility. The queue entry ID keeps the cursor unique even when a single
+// Media has enough additions to span several chunks.
+func myEngagementChunk(ctx context.Context, tx *sql.Tx, profileID ProfileID, after myEngagementRankedEvent, query MyEngagementLogQuery) ([]MediaID, []myEngagementRankedEvent, error) {
 	args := []any{profileID, profileID, profileID}
 	dateWhere := "1 = 1"
 	if !query.From.IsZero() {
@@ -662,47 +716,34 @@ func (s *Store) myEngagementChunkLocked(ctx context.Context, profileID ProfileID
 		dateWhere += ` AND occurred_at_ms <= ?`
 		args = append(args, timeToMillis(query.To))
 	}
-	args = append(args, after, myEngagementLogIDChunk)
+	args = append(args, after.event.MediaID, after.rank, after.entryID, myEngagementLogChunkSize)
 	// #nosec G202 -- dateWhere is assembled only from fixed timestamp predicates.
-	rows, err := s.eventsR.QueryContext(ctx, `
-		WITH engagement_rows(kind, rank, media_id, occurred_at_ms) AS (
-			SELECT 'play', 0, media_id, updated_at_ms FROM playback_progress WHERE profile_id = ?
+	rows, err := tx.QueryContext(ctx, `
+		WITH engagement_rows(kind, rank, media_id, occurred_at_ms, entry_id) AS (
+			SELECT 'play', 0, media_id, updated_at_ms, '' FROM playback_progress WHERE profile_id = ?
 			UNION ALL
-			SELECT 'favorite', 1, media_id, favorited_at_ms FROM media_favorite WHERE profile_id = ?
+			SELECT 'favorite', 1, media_id, favorited_at_ms, '' FROM media_favorite WHERE profile_id = ?
 			UNION ALL
-			SELECT 'queue', 2, media_id, added_at_ms FROM play_queue WHERE profile_id = ?
-		),
-		matching AS (
-			SELECT kind, rank, media_id, occurred_at_ms
-			FROM engagement_rows
-			WHERE `+dateWhere+`
-		),
-		next_ids AS (
-			SELECT media_id
-			FROM matching
-			WHERE media_id > ?
-			GROUP BY media_id
-			ORDER BY media_id
-			LIMIT ?
+			SELECT 'queue', 2, media_id, added_at_ms, entry_id FROM play_queue WHERE profile_id = ?
 		)
-		SELECT m.kind, m.rank, m.media_id, MAX(m.occurred_at_ms)
-		FROM matching m
-		JOIN next_ids n ON n.media_id = m.media_id
-		GROUP BY m.media_id, m.rank, m.kind
-		ORDER BY m.media_id, m.rank
+		SELECT kind, rank, media_id, occurred_at_ms, entry_id
+		FROM engagement_rows
+		WHERE `+dateWhere+` AND (media_id, rank, entry_id) > (?, ?, ?)
+		ORDER BY media_id, rank, entry_id
+		LIMIT ?
 	`, args...)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer rows.Close()
-	ids := make([]MediaID, 0, myEngagementLogIDChunk)
-	events := make([]myEngagementRankedEvent, 0, myEngagementLogIDChunk*3)
+	ids := make([]MediaID, 0, myEngagementLogChunkSize)
+	events := make([]myEngagementRankedEvent, 0, myEngagementLogChunkSize)
 	var previous MediaID
 	for rows.Next() {
 		var kind string
 		var ranked myEngagementRankedEvent
 		var occurredAt int64
-		if err := rows.Scan(&kind, &ranked.rank, &ranked.event.MediaID, &occurredAt); err != nil {
+		if err := rows.Scan(&kind, &ranked.rank, &ranked.event.MediaID, &occurredAt, &ranked.entryID); err != nil {
 			return nil, nil, err
 		}
 		if ranked.event.MediaID != previous {

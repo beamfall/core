@@ -60,6 +60,37 @@ func TestPlayQueueEntryOperations(t *testing.T) {
 	}
 }
 
+func TestPlayQueueLegacyReadsDeduplicateBeforePagination(t *testing.T) {
+	h := newTestHandlerWithStore(storetest.Open(t))
+	var state PlayQueueInfo
+	execGraph(t, h, authorizeRevealed, `mutation {
+		queueAddMany(mediaIDs: ["media-alpha", "media-alpha", "media-archive", "media-alpha", "media-archive"], placement: "end")
+	`+queueStateSelection+" }", nil, "queueAddMany", &state)
+	if len(state.Entries) != 5 {
+		t.Fatalf("entry-based response lost duplicates: %+v", state.Entries)
+	}
+
+	page := func(limit, offset int, want ...string) {
+		t.Helper()
+		var items []SourceItem
+		query := fmt.Sprintf(`{ sourceItems(kind: "queue", limit: %d, offset: %d) { id } }`, limit, offset)
+		execGraph(t, h, authorizeRevealed, query, nil, "sourceItems", &items)
+		if !qaEqualIDs(items, want...) {
+			t.Fatalf("queue page (limit %d, offset %d) = %v, want %v", limit, offset, qaIDs(items), want)
+		}
+	}
+	page(2, 0, "media-alpha", "media-archive")
+	page(2, 2)
+	page(1, 0, "media-alpha")
+	page(1, 1, "media-archive")
+	page(1, 2)
+
+	items := qaItems(t, h, qaAddArchive, authorizeRevealed, "queueAdd")
+	if !qaEqualIDs(items, "media-alpha", "media-archive") {
+		t.Fatalf("legacy queueAdd response = %v", qaIDs(items))
+	}
+}
+
 func TestPlayQueueStateAcrossDevicesAndVisibility(t *testing.T) {
 	// feature:play-queue
 	h := newTestHandlerWithStore(storetest.Open(t))
