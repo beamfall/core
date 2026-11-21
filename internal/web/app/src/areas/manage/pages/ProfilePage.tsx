@@ -1,6 +1,17 @@
-import { useState } from "react";
+import { type FormEvent, useId, useRef, useState } from "react";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { ProfileSettings } from "./ProfileSettings";
@@ -10,26 +21,30 @@ import { ProfileSettings } from "./ProfileSettings";
 // reveal path — the hint explains its absence). The current binding is marked
 // and never re-switched. Switching always relocks server-side; the session
 // spine reloads everything on success.
-export function ProfilePage() {
+export function ProfilePage({
+  onSwitch,
+  error,
+}: {
+  onSwitch: (id: string, pin?: string) => Promise<void>;
+  error: string;
+}) {
   const t = useT();
-  const { profiles, session, isManager, switchProfile } = useSession();
-  const [error, setError] = useState("");
-  const [busyID, setBusyID] = useState("");
+  const { profiles, session, isManager } = useSession();
+  const [pinProfileID, setPinProfileID] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const currentID = session?.profileID ?? "";
+  const pinProfile = profiles.find((profile) => profile.id === pinProfileID);
 
-  const onSwitch = async (id: string) => {
-    if (id === currentID) return;
-    setError("");
-    setBusyID(id);
+  async function switchTo(id: string, pin?: string) {
+    setPinProfileID("");
+    setBusy(true);
     try {
-      await switchProfile(id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("couldNotSwitchProfile"));
+      await onSwitch(id, pin);
     } finally {
-      setBusyID("");
+      setBusy(false);
     }
-  };
+  }
 
   return (
     <div className="space-y-5">
@@ -47,9 +62,13 @@ export function ProfilePage() {
                     variant={current ? "secondary" : "outline"}
                     size="sm"
                     className="w-full justify-start gap-2"
-                    disabled={busyID === profile.id}
+                    disabled={busy}
                     aria-current={current ? "true" : undefined}
-                    onClick={() => onSwitch(profile.id)}
+                    onClick={() => {
+                      if (current) return;
+                      if (profile.kind === "managed") void switchTo(profile.id);
+                      else setPinProfileID(profile.id);
+                    }}
                   >
                     <span className="font-semibold">{profile.name}</span>
                     {profile.kind === "managed" && (
@@ -65,6 +84,67 @@ export function ProfilePage() {
         <ErrorLine message={error} />
       </ManageSection>
       {isManager && session?.profile === "adult" && <ProfileSettings />}
+      {pinProfile && (
+        <ProfileSwitchPin
+          name={pinProfile.name}
+          onClose={() => setPinProfileID("")}
+          onSubmit={(pin) => void switchTo(pinProfile.id, pin)}
+        />
+      )}
     </div>
+  );
+}
+
+function ProfileSwitchPin({
+  name,
+  onClose,
+  onSubmit,
+}: {
+  name: string;
+  onClose: () => void;
+  onSubmit: (pin: string) => void;
+}) {
+  const t = useT();
+  const id = useId();
+  const input = useRef<HTMLInputElement>(null);
+  const [pin, setPin] = useState("");
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = pin.trim();
+    if (value) onSubmit(value);
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent initialFocus={input} showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{t("whosWatchingPinTitle", { name })}</DialogTitle>
+          <DialogDescription>{t("whosWatchingPinLead")}</DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={submit}>
+          <div className="space-y-1">
+            <Label htmlFor={id}>{t("pin")}</Label>
+            <Input
+              ref={input}
+              id={id}
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              value={pin}
+              onChange={(event) => setPin(event.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <DialogClose render={<Button type="button" variant="outline" />}>
+              {t("cancel")}
+            </DialogClose>
+            <Button type="submit" disabled={!pin.trim()}>
+              {t("whosWatchingContinue")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

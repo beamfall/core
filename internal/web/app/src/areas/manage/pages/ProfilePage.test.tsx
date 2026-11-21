@@ -16,11 +16,12 @@ const session = {
   revealed: false,
 };
 const refreshSession = vi.fn(async () => {});
+const switchProfile = vi.fn(async () => {});
 
 function renderPage(locale: Locale = "en") {
   return render(
     <I18nProvider initialLocale={locale}>
-      <ProfilePage />
+      <ProfilePage onSwitch={switchProfile} error="" />
     </I18nProvider>,
   );
 }
@@ -87,15 +88,30 @@ async function enterPin(
 describe("Manage profile settings", () => {
   beforeEach(() => {
     refreshSession.mockClear();
+    switchProfile.mockClear();
     vi.mocked(useSession).mockReturnValue({
       isManager: true,
       session,
-      profiles: [],
+      profiles: [
+        { id: "adult-a", name: "Alex", kind: "adult" },
+        { id: "managed-a", name: "Jo", kind: "managed" },
+      ],
       refreshSession,
     } as unknown as SessionState);
   });
 
   afterEach(() => vi.unstubAllGlobals());
+
+  it("keeps the current profile selected and switches to a managed profile without a PIN", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: /^Alex/ }));
+    expect(switchProfile).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: /^Jo/ }));
+    expect(switchProfile).toHaveBeenCalledExactlyOnceWith("managed-a", undefined);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 
   it("requires an Admin Session before reading or displaying settings", async () => {
     const user = userEvent.setup();

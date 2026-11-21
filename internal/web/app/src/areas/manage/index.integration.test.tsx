@@ -1,12 +1,13 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NavigationManifest, SessionInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { RegisterProvider } from "@/lib/register";
 import { SessionProvider, useSession } from "@/lib/session";
+import { type Locale, STRINGS } from "@/strings";
 import { ManageArea } from ".";
 
 const session: SessionInfo = {
@@ -114,14 +115,16 @@ function RefreshProbe() {
   );
 }
 
-function ManageHarness() {
+function ManageHarness({ page = "libraries", locale = "en" }: { page?: string; locale?: Locale }) {
   return (
-    <MemoryRouter initialEntries={["/libraries"]}>
-      <I18nProvider initialLocale="en">
+    <MemoryRouter initialEntries={[`/manage/${page}`]}>
+      <I18nProvider initialLocale={locale}>
         <RegisterProvider>
           <SessionProvider>
             <RefreshProbe />
-            <ManageArea />
+            <Routes>
+              <Route path="/manage/*" element={<ManageArea />} />
+            </Routes>
           </SessionProvider>
         </RegisterProvider>
       </I18nProvider>
@@ -157,6 +160,155 @@ describe("Manage production identity boundary", () => {
       expect(screen.queryByRole("navigation", { name: "Manage" })).not.toBeInTheDocument();
       expect(held.every((request) => request.signal.aborted)).toBe(true);
       expect(held.every((request) => request.aborted.mock.calls.length === 1)).toBe(true);
+    },
+  );
+});
+
+function installProfileServer(switchRefusal?: string) {
+  const profiles = [
+    { id: session.profileID, name: "Alex", kind: "adult", entryPinSet: true },
+    { id: "profile-sam", name: "Sam", kind: "adult", entryPinSet: false },
+  ];
+  let currentID = session.profileID;
+  let samPin = "";
+  const attempts: Record<string, unknown>[] = [];
+
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/compat/handshake") {
+        return jsonResponse({ decision: "compatible", messageClass: "compat-compatible" });
+      }
+      if (path === "/api/manifest") return jsonResponse({ ...manifest, profileID: currentID });
+      if (path !== "/api/graphql") throw new Error(`Unexpected request: ${path}`);
+
+      const { query, variables } = JSON.parse(String(init?.body)) as {
+        query: string;
+        variables: Record<string, unknown>;
+      };
+      if (query.startsWith("query CurrentSession")) {
+        return jsonResponse({
+          data: { currentSession: { ...session, profileID: currentID, subtitleLanguages: ["en"] } },
+        });
+      }
+      if (query.startsWith("query Profiles")) return jsonResponse({ data: { profiles } });
+      if (query.startsWith("query AdminSession")) {
+        return jsonResponse({ data: { adminSession: { active: true } } });
+      }
+      if (query.startsWith("query SetupState")) {
+        return jsonResponse({ data: { setupState: { adminPasswordSet: true } } });
+      }
+      if (query.startsWith("query CapabilityStates")) {
+        return jsonResponse({ data: { capabilityStates: [] } });
+      }
+      if (query.startsWith("query Notifications")) {
+        return jsonResponse({ data: { notifications: [] } });
+      }
+      if (query.startsWith("mutation UpdateProfile") && variables.profileID === "profile-sam") {
+        samPin = String(variables.entryPIN);
+        profiles[1].entryPinSet = true;
+        return jsonResponse({ data: { updateProfile: { id: "profile-sam" } } });
+      }
+      if (query.startsWith("mutation SwitchProfile")) {
+        attempts.push(variables);
+        if (switchRefusal || !samPin || variables.pin !== samPin) {
+          return jsonResponse({ errors: [{ message: switchRefusal ?? "profile PIN required" }] });
+        }
+        currentID = String(variables.profileID);
+        return jsonResponse({ data: { switchProfile: { profileID: currentID, revealed: false } } });
+      }
+      throw new Error(`Unexpected GraphQL request: ${query}`);
+    }),
+  );
+  return attempts;
+}
+
+describe("Manage profile settings in the workspace", () => {
+  it("sets another adult profile's PIN and sends it only after the visitor submits the PIN prompt", async () => {
+    const attempts = installProfileServer();
+    const user = userEvent.setup();
+    render(<ManageHarness page="profile" />);
+
+    await user.click(await screen.findByRole("button", { name: "Open settings" }));
+    await user.selectOptions(await screen.findByLabelText("Profile"), "profile-sam");
+    await user.type(screen.getByLabelText("New PIN"), "2468");
+    await user.type(screen.getByLabelText("Confirm PIN"), "2468");
+    await user.click(screen.getByRole("button", { name: "Set PIN" }));
+    expect(await screen.findByText("PIN saved.")).toBeVisible();
+
+    const sam = screen.getByRole("button", { name: "Sam" });
+    await user.click(sam);
+    expect(await screen.findByRole("dialog", { name: "Hi, Sam" })).toBeVisible();
+    expect(screen.getByLabelText("PIN", { exact: true })).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(attempts).toEqual([]);
+    await user.click(sam);
+    await user.type(screen.getByLabelText("PIN", { exact: true }), "2468");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Sam/ })).toHaveAttribute("aria-current", "true"),
+    );
+    expect(attempts).toEqual([{ profileID: "profile-sam", pin: "2468" }]);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["profile PIN required", "fr", "whosWatchingPinWrong"],
+    ["profile PIN attempts throttled", "de", "whosWatchingPinThrottled"],
+    ["server refusal", "es", "couldNotSwitchProfile"],
+  ] as const)(
+    "keeps the localized switch error visible after session reload for %s",
+    async (refusal, locale, reason) => {
+      const attempts = installProfileServer(refusal);
+      const user = userEvent.setup();
+      const copy = STRINGS[locale];
+      render(<ManageHarness page="profile" locale={locale} />);
+
+      const sam = await screen.findByRole("button", { name: "Sam" });
+      await user.click(sam);
+      await user.type(screen.getByLabelText(copy.pin, { exact: true }), "0000");
+      await user.click(screen.getByRole("button", { name: copy.whosWatchingContinue }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(copy[reason]);
+      expect(screen.getByRole("button", { name: "Sam" })).not.toBe(sam);
+      expect(attempts).toEqual([{ profileID: "profile-sam", pin: "0000" }]);
+      await user.click(screen.getByRole("button", { name: "Sam" }));
+      expect(screen.getByLabelText(copy.pin, { exact: true })).toHaveValue("");
+    },
+  );
+
+  it.each([
+    ["Profile PIN", /^Profile PIN /, "combobox", "Profile"],
+    [
+      "subtitle languages",
+      /^Preferred subtitle languages for your current profile /,
+      "textbox",
+      STRINGS.en.manageProfileSubtitleLanguages,
+    ],
+  ] as const)(
+    "finds %s, focuses the opener, and focuses the control when opened",
+    async (query, result, role, field) => {
+      installProfileServer();
+      const user = userEvent.setup();
+      render(<ManageHarness page="profile" />);
+
+      const search = await screen.findByRole("searchbox", { name: "Search settings" });
+      await user.type(search, query);
+      const link = screen.getByRole("link", { name: result });
+      expect(link).toHaveAttribute("href", "/manage/profile");
+      await user.click(link);
+      const opener = screen.getByRole("button", { name: "Open settings" });
+      await waitFor(() => expect(opener).toHaveFocus(), { timeout: 3000 });
+      await user.click(opener);
+
+      const control = await screen.findByRole(role, { name: field });
+      expect(control).toBeVisible();
+      await user.type(search, query);
+      await user.click(screen.getByRole("link", { name: result }));
+      await waitFor(() => expect(control).toHaveFocus());
     },
   );
 });
