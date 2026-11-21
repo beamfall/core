@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,8 +171,7 @@ func (h *Handler) pinUploadedArtwork(ctx context.Context, scope auth.Scope, medi
 		return clientError("artwork upload unavailable")
 	}
 	const slot = artwork.SlotPoster
-	sum := sha256.Sum256(data)
-	sourceURL := "beamfall-upload://sha256/" + hex.EncodeToString(sum[:])
+	sourceURL := artwork.UploadedSourceURL(data)
 	candidateID := store.ArtworkCandidateID(mediaID, slot, sourceURL)
 	candidates, err := h.store.ArtworkCandidates(ctx, mediaID, slot, scope.LibraryFilter())
 	if err != nil {
@@ -179,6 +179,8 @@ func (h *Handler) pinUploadedArtwork(ctx context.Context, scope auth.Scope, medi
 	}
 	for _, candidate := range candidates {
 		if candidate.ID == candidateID && candidate.Applied {
+			// The same bytes again: keep them in case an earlier upload kept none.
+			h.keepUploadedCandidate(ctx, mediaID, data)
 			return nil
 		}
 	}
@@ -188,6 +190,8 @@ func (h *Handler) pinUploadedArtwork(ctx context.Context, scope auth.Scope, medi
 	if err := h.store.UpsertArtworkCandidate(ctx, mediaID, slot, sourceURL, "", ""); err != nil {
 		return err
 	}
+	// Kept only once a candidate row names these bytes.
+	h.keepUploadedCandidate(ctx, mediaID, data)
 	if err := h.store.MarkArtworkCandidateApplied(ctx, candidateID); err != nil {
 		return err
 	}
@@ -247,6 +251,49 @@ func (h *Handler) PrepareUploadedArtwork(
 	return h.prepareUploadedArtwork(ctx, scope, media, slot, data)
 }
 
+// uploadedCandidateKeeper is the optional ArtworkCandidateImporter extension
+// that keeps an uploaded candidate's original bytes and returns them, so the
+// candidate can be previewed and pinned again without a network fetch
+// (CORE-2937). *artwork.Service satisfies it.
+type uploadedCandidateKeeper interface {
+	KeepUploadedCandidate(ctx context.Context, id store.MediaID, data []byte) error
+	UploadedCandidate(id store.MediaID, sourceURL string) ([]byte, error)
+}
+
+// keepUploadedCandidate keeps an upload's original when the importer can. It
+// is best effort: the upload itself has already been applied, so a failed keep
+// only means a later re-pin asks for the upload again, and it never adds a
+// failure point that would roll the applied artwork back.
+func (h *Handler) keepUploadedCandidate(ctx context.Context, mediaID store.MediaID, data []byte) {
+	keeper, ok := h.candidateImport.(uploadedCandidateKeeper)
+	if !ok {
+		return
+	}
+	if err := keeper.KeepUploadedCandidate(ctx, mediaID, data); err != nil {
+		slog.Warn("keeping uploaded artwork original failed", "media_id", mediaID, "error", err)
+	}
+}
+
+// artworkCandidateBytes returns a candidate's image: an upload's kept bytes,
+// or the fetched SourceURL for a scraped candidate.
+func (h *Handler) artworkCandidateBytes(ctx context.Context, candidate store.ArtworkCandidate) ([]byte, error) {
+	if !artwork.IsUploadedSource(candidate.SourceURL) {
+		if h.candidateFetch == nil {
+			return nil, clientError("artwork candidate pin unavailable")
+		}
+		return h.candidateFetch.FetchResource(ctx, candidate.SourceURL)
+	}
+	keeper, ok := h.candidateImport.(uploadedCandidateKeeper)
+	if !ok {
+		return nil, clientError("artwork candidate pin unavailable")
+	}
+	data, err := keeper.UploadedCandidate(candidate.MediaID, candidate.SourceURL)
+	if errors.Is(err, artwork.ErrUploadedCandidateMissing) {
+		return nil, clientError("uploaded artwork is no longer available; upload it again")
+	}
+	return data, err
+}
+
 type uploadedArtworkImporter interface {
 	ArtworkCandidateImporter
 	ArtworkPath(store.MediaID, string) string
@@ -263,9 +310,9 @@ func (h *Handler) prepareUploadedArtwork(
 	if !ok {
 		return store.ArtworkCandidateApply{}, store.ValidationError("artwork upload unavailable")
 	}
-	sum := sha256.Sum256(data)
-	sourceURL := "beamfall-upload://sha256/" + hex.EncodeToString(sum[:])
+	sourceURL := artwork.UploadedSourceURL(data)
 	artworkPath := importer.ArtworkPath(media.ID, slot)
+	h.keepAppliedUploadedCandidate(ctx, scope.LibraryFilter(), media.ID, slot, sourceURL, data)
 	return store.ArtworkCandidateApply{
 		MediaID:   media.ID,
 		Slot:      slot,
@@ -284,9 +331,28 @@ func (h *Handler) prepareUploadedArtwork(
 			if err != nil {
 				return nil, err
 			}
-			return snapshot.restore, importer.ImportArtwork(ctx, media.ID, slot, data)
+			if err := importer.ImportArtwork(ctx, media.ID, slot, data); err != nil {
+				return snapshot.restore, err
+			}
+			// Kept only once the import succeeded. A candidate write that
+			// rolls back leaves the content-addressed original behind; no
+			// candidate names it, and it goes with the Media's artwork.
+			h.keepUploadedCandidate(ctx, media.ID, data)
+			return snapshot.restore, nil
 		},
 	}, nil
+}
+
+// keepAppliedUploadedCandidate keeps the bytes of an upload that matches the
+// slot's already-applied candidate. ApplyArtworkCandidate does nothing for that
+// candidate, so this is how a repeat upload restores an original that an
+// earlier upload never kept.
+func (h *Handler) keepAppliedUploadedCandidate(ctx context.Context, filter store.LibraryFilter, mediaID store.MediaID, slot, sourceURL string, data []byte) {
+	candidate, err := h.store.ArtworkCandidate(ctx, store.ArtworkCandidateID(mediaID, slot, sourceURL), filter)
+	if err != nil || !candidate.Applied {
+		return
+	}
+	h.keepUploadedCandidate(ctx, mediaID, data)
 }
 
 type uploadedArtworkSnapshot struct {
