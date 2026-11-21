@@ -4455,10 +4455,13 @@ type libraryMutationObserver struct {
 
 func (o libraryMutationObserver) LibraryCreated(ctx context.Context, libraryID store.LibraryID, roots []string) {
 	if o.schedule != nil {
+		// Reconcile, not Reload: the new Library's schedule has no stored
+		// row yet, and only Reconcile writes one, so a Reload left it unfired
+		// until the next restart (CORE-1284).
 		o.schedule.Register(scanScheduleSpec(o.store, libraryID))
 		o.precompute.register(o.schedule, libraryID)
-		if err := o.schedule.Reload(ctx); err != nil {
-			o.logger.Warn("schedule reload after library create failed", "library", string(libraryID), "error", err)
+		if err := o.schedule.Reconcile(ctx, time.Now().UTC()); err != nil {
+			o.logger.Warn("schedule reconcile after library create failed", "library", string(libraryID), "error", err)
 		}
 	}
 	o.LibraryRootsChanged(ctx, libraryID, roots)

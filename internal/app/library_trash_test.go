@@ -127,6 +127,38 @@ func TestLibraryObserverStopsAtDeleteAndResumesAtRestore(t *testing.T) {
 	}
 }
 
+// CORE-1284: a Library created while the server runs gets a scan schedule
+// that fires without a restart.
+func TestLibraryObserverSchedulesALibraryCreatedAtRuntime(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	wake := newJobWake()
+	scheduler := schedulepkg.NewService(wakingScheduleStore{Store: st, wake: wake})
+	// The scheduler a running server started with, before the Library existed.
+	if err := scheduler.Reconcile(ctx, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	observer := libraryMutationObserver{store: st, schedule: scheduler, wake: wake, logger: discardLogger()}
+
+	library, err := st.CreateLibrary(ctx, "Films", false, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	observer.LibraryCreated(ctx, library.ID, nil)
+
+	scheduleID := schedulepkg.ScanScheduleID(library.ID)
+	row, err := st.Schedule(ctx, scheduleID)
+	if err != nil || row.Orphaned || !row.Enabled {
+		t.Fatalf("schedule of a library created at runtime = %+v, %v; want live and enabled", row, err)
+	}
+	if err := scheduler.Tick(ctx, time.Now().UTC().Add(13*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, fired, err := st.LatestScheduleOccurrence(ctx, scheduleID); err != nil || !fired {
+		t.Fatalf("schedule of a library created at runtime did not fire (fired %v, err %v)", fired, err)
+	}
+}
+
 // A purge leaves nothing running for the Library and tolerates one that was
 // never stopped, as after a delete made by an older server process.
 func TestLibraryObserverPurgeForgetsWatchAndSchedule(t *testing.T) {
