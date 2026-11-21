@@ -8,7 +8,7 @@ Managers need a portable copy of their feed Subscriptions for import into anothe
 
 ## What Changes
 
-- Add a Manager-session HTTP download at `GET /api/subscriptions/export.opml` covering all Libraries visible to the session.
-- Export OPML 2.0 with feed URLs and titles. Omit authenticated Subscriptions by default. The `includePrivate=true` option includes their exportable feed URLs and titles. Always omit URLs with userinfo, fragments, or recognized credential query parameters.
-- Add an Export OPML link to the Manager Subscriptions page for the default download.
+- Add a Manager-session HTTP download at `GET /api/subscriptions/export.opml` covering visible, unsealed Libraries.
+- Export OPML 2.0 with feed URLs and titles. Omit authenticated Subscriptions and URLs with userinfo, a query string, or a fragment. Limit the document to 10,000 outlines and 64 MiB.
+- Add an Export OPML action to the Manager Subscriptions page with localized failure messages.
 - Register the additive HTTP route in the management contract. Per-Profile Follow export is deferred to work after CORE-2957.
