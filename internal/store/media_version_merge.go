@@ -849,7 +849,8 @@ func undoVersionMergeFileTx(ctx context.Context, tx *sql.Tx, loser, survivor Med
 // restoreVersionMergeFactsTx brings the survivor's probe facts back in line
 // with its first Version once a merged file has left; firstBefore was first
 // just before it left. When the first Version is again the one first before
-// the merge, its snapshot facts return. Otherwise, if the departed file was
+// the merge, its snapshot facts return, preserving the current runtime if the
+// primary fingerprint stayed the same. Otherwise, if the departed file was
 // first (so the row's facts were its), the row stops claiming its frame size,
 // as refreshFirstVersionFactsTx does for a first file the store holds no facts
 // for. Merges undone out of order thus never restore stale facts.
@@ -870,8 +871,10 @@ func restoreVersionMergeFactsTx(ctx context.Context, tx *sql.Tx, state versionMe
 	case first == state.PriorFirst:
 		facts := state.SurvivorFacts
 		_, err = tx.ExecContext(ctx, `
-			UPDATE media SET container = ?, codec = ?, duration_seconds = ?, video_width = ?, video_height = ? WHERE id = ?
-		`, facts.Container, facts.Codec, facts.DurationSeconds, facts.VideoWidth, facts.VideoHeight, state.Survivor)
+			UPDATE media SET container = ?, codec = ?,
+				duration_seconds = CASE WHEN ? THEN duration_seconds ELSE ? END,
+				video_width = ?, video_height = ? WHERE id = ?
+		`, facts.Container, facts.Codec, first == firstBefore, facts.DurationSeconds, facts.VideoWidth, facts.VideoHeight, state.Survivor)
 	case firstBefore == state.Fingerprint:
 		_, err = tx.ExecContext(ctx, `UPDATE media SET video_width = 0, video_height = 0 WHERE id = ?`, state.Survivor)
 	}

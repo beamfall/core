@@ -207,6 +207,24 @@ func BackdateTrashedMedia(t testing.TB, dataDir string, id store.MediaID, when t
 	}
 }
 
+// RemoveMediaPart removes a Part from the local fixture catalog to model a
+// Version changing while a playback probe is running.
+func RemoveMediaPart(t testing.TB, dataDir string, file store.MediaFile) {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(dataDir, "db", "catalog.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	result, err := db.ExecContext(t.Context(), `DELETE FROM media_file WHERE media_id = ? AND content_fingerprint = ? AND part_ordinal > 0`, file.MediaID, file.ContentFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := result.RowsAffected(); err != nil || rows != 1 {
+		t.Fatalf("removed %d fixture Parts: %v", rows, err)
+	}
+}
+
 // BackdateStreamTokenActivity moves every stream-token ledger row of one
 // session back to when, as if its player had gone quiet then (CORE-2305). It
 // lives under internal/store so storage-driver access stays inside the store

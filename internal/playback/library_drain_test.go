@@ -312,7 +312,7 @@ func TestT4DurationOwnership(t *testing.T) {
 				requestA := make(chan error, 1)
 				go func() {
 					if caller == "HLS" {
-						if seconds := binding.ProbedDurationSeconds(t.Context(), "source", src); seconds != 0 {
+						if seconds := binding.ProbedDurationSeconds(t.Context(), "source", src, true); seconds != 0 {
 							requestA <- fmt.Errorf("cut-off HLS duration = %d", seconds)
 							return
 						}
