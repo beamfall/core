@@ -200,7 +200,7 @@ func TestTuneChannelDeniedWhenLibraryNotVisible(t *testing.T) {
 
 	// Seed an existing Play Queue so the denial can be proven to leave it
 	// untouched rather than replacing it with an empty one.
-	if err := st.QueueReplaceWithStation(ctx, "profile-default", mediaIDs[:2], false, ownerFilter); err != nil {
+	if err := st.QueueReplaceWithStation(ctx, "profile-default", mediaIDs[:2], "", false, ownerFilter); err != nil {
 		t.Fatal(err)
 	}
 	before := mustSourceItems(t, st, ownerFilter, SourceQuery{Kind: "queue", ProfileID: "profile-default"})

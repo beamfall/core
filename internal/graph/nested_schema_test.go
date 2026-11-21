@@ -154,7 +154,7 @@ func TestNestedSchemaSourceItemShape(t *testing.T) {
 	if si.Kind != "object" {
 		t.Fatalf("sourceItems kind = %q, want object", si.Kind)
 	}
-	want := []string{"artwork", "artworkSlots", "audienceScore", "audienceScoreLabel", "audienceScoreVotes", "byline", "certification", "container", "durationSeconds", "engagement", "id", "index", "kind", "libraryID", "locked", "mediaClass", "muted", "restricted", "sequence", "subtitle", "summary", "title", "year"}
+	want := []string{"artwork", "artworkSlots", "audienceScore", "audienceScoreLabel", "audienceScoreVotes", "byline", "certification", "container", "durationSeconds", "engagement", "id", "index", "kind", "libraryID", "locked", "mediaClass", "muted", "restricted", "sequence", "stationReason", "subtitle", "summary", "title", "year"}
 	if got := childNames(si.Children); !slices.Equal(got, want) {
 		t.Fatalf("sourceItems fields = %v, want %v", got, want)
 	}
@@ -192,6 +192,7 @@ func TestNestedSchemaSourceItemOptionalFields(t *testing.T) {
 		"locked":             true,
 		"muted":              true,
 		"restricted":         true,
+		"stationReason":      true,
 		"summary":            true,
 		"title":              false,
 		"year":               true,

@@ -1159,6 +1159,11 @@
         "optional": true
       },
       {
+        "name": "stationReason",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "subtitle",
         "kind": "map",
         "optional": true,
@@ -6484,6 +6489,11 @@
                     "optional": true
                   },
                   {
+                    "name": "stationReason",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "subtitle",
                     "kind": "map",
                     "optional": true,
@@ -6680,6 +6690,11 @@
                 },
                 {
                   "name": "sequence",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "stationReason",
                   "kind": "scalar",
                   "optional": true
                 },
@@ -6920,6 +6935,11 @@
                   "optional": true
                 },
                 {
+                  "name": "stationReason",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
                   "name": "subtitle",
                   "kind": "map",
                   "optional": true,
@@ -7116,6 +7136,11 @@
               },
               {
                 "name": "sequence",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "stationReason",
                 "kind": "scalar",
                 "optional": true
               },
@@ -9850,6 +9875,11 @@
               "optional": true
             },
             {
+              "name": "stationReason",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "subtitle",
               "kind": "map",
               "optional": true,
@@ -10082,6 +10112,11 @@
           },
           {
             "name": "sequence",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "stationReason",
             "kind": "scalar",
             "optional": true
           },
@@ -10480,6 +10515,11 @@
               "optional": true
             },
             {
+              "name": "stationReason",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "subtitle",
               "kind": "map",
               "optional": true,
@@ -10676,6 +10716,11 @@
           },
           {
             "name": "sequence",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "stationReason",
             "kind": "scalar",
             "optional": true
           },
@@ -11209,6 +11254,11 @@
               "optional": true
             },
             {
+              "name": "stationReason",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "subtitle",
               "kind": "map",
               "optional": true,
@@ -11405,6 +11455,11 @@
           },
           {
             "name": "sequence",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "stationReason",
             "kind": "scalar",
             "optional": true
           },
@@ -12919,6 +12974,11 @@
       },
       {
         "name": "sequence",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "stationReason",
         "kind": "scalar",
         "optional": true
       },
@@ -17784,6 +17844,11 @@
         "optional": true
       },
       {
+        "name": "stationReason",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "subtitle",
         "kind": "map",
         "optional": true,
@@ -17983,6 +18048,11 @@
       },
       {
         "name": "sequence",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "stationReason",
         "kind": "scalar",
         "optional": true
       },
@@ -18190,6 +18260,11 @@
         "optional": true
       },
       {
+        "name": "stationReason",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "subtitle",
         "kind": "map",
         "optional": true,
@@ -18389,6 +18464,11 @@
       },
       {
         "name": "sequence",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "stationReason",
         "kind": "scalar",
         "optional": true
       },
@@ -18846,6 +18926,11 @@
       },
       {
         "name": "sequence",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "stationReason",
         "kind": "scalar",
         "optional": true
       },
@@ -21582,6 +21667,11 @@
         "optional": true
       },
       {
+        "name": "stationReason",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "subtitle",
         "kind": "map",
         "optional": true,
@@ -21788,6 +21878,11 @@
       },
       {
         "name": "sequence",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "stationReason",
         "kind": "scalar",
         "optional": true
       },
@@ -22094,6 +22189,11 @@
               "optional": true
             },
             {
+              "name": "stationReason",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "subtitle",
               "kind": "map",
               "optional": true,
@@ -22327,6 +22427,11 @@
           },
           {
             "name": "sequence",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "stationReason",
             "kind": "scalar",
             "optional": true
           },
@@ -30309,6 +30414,11 @@
         "optional": true
       },
       {
+        "name": "stationReason",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "subtitle",
         "kind": "map",
         "optional": true,
@@ -30980,6 +31090,11 @@
       },
       {
         "name": "sequence",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "stationReason",
         "kind": "scalar",
         "optional": true
       },

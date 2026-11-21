@@ -335,7 +335,7 @@ export async function getJSON<T = unknown>(
 
 export interface GraphQLResult<T> {
   data?: T;
-  errors?: { message: string }[];
+  errors?: { message: string; extensions?: { code?: string; reason?: string } }[];
 }
 
 /** Issue a GraphQL operation against /api/graphql. Honors an optional
@@ -369,7 +369,7 @@ export async function graphql<T = unknown>(
   if (unlock && needsAdminSession(result) && (await unlock())) result = await send();
   if (result.errors?.length) {
     const messages = result.errors.map((e) => e.message);
-    throw new ApiError(messages.join("; "), graphqlErrorStatus(messages));
+    throw new ApiError(messages.join("; "), graphqlErrorStatus(messages), result.errors);
   }
   if (result.data === undefined) {
     throw new ApiError("GraphQL response had no data", 200);

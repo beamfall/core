@@ -1640,6 +1640,21 @@ describe("PlayerPage server Play Queue", () => {
     expect(vi.mocked(usePlayer).mock.lastCall?.[3]).toBe(b.id);
   });
 
+  it("reloads the server queue for a new radio start on the same track", async () => {
+    renderQueue(b.id);
+    await waitFor(() => expect(vi.mocked(usePlayer).mock.lastCall?.[3]).toBe(c.id));
+    rows = [b, a];
+    act(() =>
+      go(`/watch/${b.id}?playQueue=profile-a&t=0`, {
+        state: { startID: "new-station" },
+      }),
+    );
+
+    await waitFor(() => expect(vi.mocked(usePlayer).mock.lastCall?.[3]).toBe(a.id));
+    expect(playingID()).toBe(b.id);
+    expect(readQueue).toHaveBeenCalledTimes(2);
+  });
+
   it("waits for scoped metadata when starting a queue on the currently playing track", async () => {
     const catalogInfo = { id: a.id, title: "Catalog track title", favorited: false, credits: [] };
     vi.mocked(fetchMedia).mockResolvedValueOnce(catalogInfo);

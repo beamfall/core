@@ -236,8 +236,15 @@ function FeaturePlayer({
   const queueProfile = params.get(MUSIC_QUEUE_PARAM);
   const serverQueueRun = queueProfile !== null;
   const queueMatchesProfile = !!profileID && queueProfile === profileID;
+  const carriedNav = readPlayerNavState(entry.state, identity);
+  const { startID } = carriedNav;
   const [musicQueueOpen, setMusicQueueOpen] = useState(false);
-  const { view: musicQueue, refresh: refreshMusicQueue, readMedia, isCurrent } = useMusicQueue();
+  const {
+    view: musicQueue,
+    refresh: refreshMusicQueue,
+    readMedia,
+    isCurrent,
+  } = useMusicQueue(serverQueueRun ? startID : undefined);
   const queueAllowed = !serverQueueRun || (queueMatchesProfile && !musicQueue?.invalid);
   const queueReady = queueAllowed && (!serverQueueRun || musicQueue?.rows !== undefined);
   const queueReadFailed = serverQueueRun && queueAllowed && musicQueue?.failed;
@@ -278,7 +285,7 @@ function FeaturePlayer({
   // The catalog card / hero (and Up Next) carry the Media title forward in nav
   // state, with the siblings it was shown with as the play queue. The media(id)
   // read below fills in the title for a deep link, plus artwork and credits.
-  const navState = serverQueueRun ? {} : readPlayerNavState(entry.state, identity);
+  const navState = serverQueueRun ? {} : carriedNav;
   const queueIdentity = navState.queueIdentity;
   const navTitle = navState.title || media?.title || "";
   // Docked, the browse page under the mini player names the tab (CORE-2322).
@@ -348,7 +355,7 @@ function FeaturePlayer({
     declaredNextID,
     selectedVersion,
     navState.tracks,
-    navState.startID,
+    startID,
     entry.titleSelectionEpoch === undefined,
   );
   // A new Version is another file: remember it, then reload at the playhead.
@@ -816,12 +823,15 @@ function FeaturePlayer({
   // Back to the full player from the mini player: the watch route for the
   // same entry, which re-attaches to the playing engine.
   const openFullPlayer = useCallback(() => {
-    const carried =
-      !serverQueueRun && entry.state && typeof entry.state === "object" ? entry.state : {};
+    const carried = serverQueueRun
+      ? { startID }
+      : entry.state && typeof entry.state === "object"
+        ? entry.state
+        : {};
     navigate(`${mediaPath("watch", mediaId)}${entry.search}`, {
       state: { ...carried, skipPrePlay: true, selectPartyTitle: false },
     });
-  }, [navigate, mediaId, entry.state, entry.search, serverQueueRun]);
+  }, [navigate, mediaId, entry.state, entry.search, serverQueueRun, startID]);
 
   // Queue metadata comes from an uncached read for this route and identity.
   useEffect(() => {

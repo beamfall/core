@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   identity: null as string | null,
   layouts: [] as Layout[],
   revealed: false,
+  profileID: undefined as string | undefined,
 }));
 
 vi.mock("@/lib/graphql", () => ({
@@ -41,7 +42,11 @@ vi.mock("@/lib/graphql", () => ({
 }));
 vi.mock("@/lib/graphql/browse", () => ({ fetchMediaRows: vi.fn() }));
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({ manifest: { layouts: mocks.layouts }, revealed: mocks.revealed }),
+  useSession: () => ({
+    manifest: { layouts: mocks.layouts },
+    revealed: mocks.revealed,
+    session: mocks.profileID ? { profileID: mocks.profileID } : null,
+  }),
   useViewerIdentity: () => mocks.identity,
 }));
 vi.mock("../player/preload", () => ({ preloadPlayer: vi.fn() }));
@@ -145,6 +150,8 @@ afterEach(() => {
   cleanup();
   clearViewerCache();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  mocks.profileID = undefined;
 });
 
 describe("EntityPage instant paint", () => {
@@ -1480,4 +1487,50 @@ describe("EntityPage middle and top containers", () => {
     expect(screen.getByRole("heading", { level: 1, name: "The Whole" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Related" })).toBeNull();
   });
+});
+
+describe("EntityPage radio", () => {
+  it.each([
+    ["person", "artist", "button"],
+    ["person", "artist", "menuitem"],
+    ["container", "album", "button"],
+    ["container", "album", "menuitem"],
+  ] as const)(
+    "starts radio for a %s using the %s seed from its %s",
+    async (archetype, seedKind, surface) => {
+      mocks.profileID = "p1";
+      vi.mocked(fetchEntity).mockResolvedValue({ ...entity, kind: seedKind, archetype });
+      vi.mocked(fetchMediaForEntity).mockResolvedValue([{ ...related, mediaClass: "audio" }]);
+      vi.mocked(fetchMediaRows).mockResolvedValue({
+        m1: { id: "m1", title: "Track", mediaClass: "audio", favorited: false, credits: [] },
+      });
+      const fetchRadio = vi.fn(async (_path: string, _request: RequestInit) =>
+        Response.json({
+          data: {
+            stationStart: [{ id: "radio-track", mediaClass: "audio", title: "Radio Track" }],
+          },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchRadio);
+      renderEntity();
+
+      await screen.findByRole("button", { name: "Start radio" });
+      if (surface === "menuitem") {
+        fireEvent.click(screen.getByRole("button", { name: "More actions for Server title" }));
+      }
+      fireEvent.click(await screen.findByRole(surface, { name: "Start radio" }));
+
+      expect(await screen.findByLabelText("player")).toHaveTextContent("radio-track");
+      expect(fetchRadio).toHaveBeenCalledTimes(1);
+      const [, request] = fetchRadio.mock.calls[0];
+      const operation = JSON.parse(String(request.body));
+      expect(operation.query).toContain("stationStart(");
+      expect(operation.variables).toEqual({
+        seedKind,
+        seedID: "e1",
+        expectedProfileID: "p1",
+        confirmReplace: false,
+      });
+    },
+  );
 });

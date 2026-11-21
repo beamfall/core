@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -252,11 +253,11 @@ func TestStationMutationsWireUp(t *testing.T) {
 	// stationStart on an empty queue: materializes the artist-seed window.
 	var started []SourceItem
 	execGraph(t, h, authorizeViewer,
-		`mutation Start($seedKind: String!, $seedID: String!, $seed: String!) { stationStart(seedKind: $seedKind, seedID: $seedID, seed: $seed) { id } }`,
+		`mutation Start($seedKind: String!, $seedID: String!, $seed: String!) { stationStart(seedKind: $seedKind, seedID: $seedID, seed: $seed) { id stationReason } }`,
 		map[string]any{"seedKind": "artist", "seedID": string(fx.artistID), "seed": "pin"},
 		"stationStart", &started)
-	if len(started) == 0 {
-		t.Fatal("stationStart materialized an empty queue")
+	if len(started) != 2 || started[0].StationReason != "artist" || started[1].StationReason != "artist" {
+		t.Fatalf("stationStart results = %+v, want two entries with artist reasons", started)
 	}
 
 	// Now the visible queue is non-empty: a second start without confirmReplace is
@@ -264,8 +265,8 @@ func TestStationMutationsWireUp(t *testing.T) {
 	resp := postGraphJSON(t, h, authorizeViewer,
 		`mutation Start($seedKind: String!, $seedID: String!) { stationStart(seedKind: $seedKind, seedID: $seedID) { id } }`,
 		map[string]any{"seedKind": "track", "seedID": string(fx.trackA)})
-	if len(resp.Errors) == 0 {
-		t.Fatal("expected needs-confirmation error on second start without confirmReplace")
+	if len(resp.Errors) != 1 || resp.Errors[0].Extensions.Reason != ErrorReasonQueueReplaceConfirmation {
+		t.Fatalf("second start without confirmation = %+v, want queue replacement refusal", resp.Errors)
 	}
 
 	// confirmReplace=true commits the replacement.
@@ -276,6 +277,23 @@ func TestStationMutationsWireUp(t *testing.T) {
 		"stationStart", &replaced)
 	if !sourceItemsContain(replaced, string(fx.trackA)) {
 		t.Fatalf("confirmed replace missing seed track: %v", sourceItemIDs(replaced))
+	}
+
+	// A confirmed start with no matches must leave the existing queue intact.
+	const noMatches = `mutation Start($seedID: String!, $rulesJSON: String!) {
+		stationStart(seedKind: "track", seedID: $seedID, rulesJSON: $rulesJSON, confirmReplace: true) { id }
+	}`
+	var empty []SourceItem
+	execGraph(t, h, authorizeViewer, noMatches, map[string]any{
+		"seedID": string(fx.trackA), "rulesJSON": `{"decade":2020}`,
+	}, "stationStart", &empty)
+	if len(empty) != 0 {
+		t.Fatalf("no-match start returned %v", sourceItemIDs(empty))
+	}
+	var queued []SourceItem
+	execGraph(t, h, authorizeViewer, `{ sourceItems(kind: "queue", query: "queue") { id stationReason } }`, nil, "sourceItems", &queued)
+	if len(queued) != 1 || queued[0].ID != string(fx.trackA) || queued[0].StationReason != "track" {
+		t.Fatalf("queue after no-match start = %+v, want the previous track and its reason", queued)
 	}
 
 	// stationSave persists inputs (never an order).
@@ -342,6 +360,69 @@ func TestStationHardFilterBeforeRankingAndTuningRankingOnly(t *testing.T) {
 	ids := candidateIDs(ordered)
 	if len(ids) != 2 || ids[0] != string(fx.trackB) {
 		t.Fatalf("preferRecent did not rank trackB (2020) first: %v", ids)
+	}
+}
+
+func TestStationCatalogRules(t *testing.T) {
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	ctx := context.Background()
+	genre := store.Entity{ID: "genre-ambient", LibraryID: fx.libraryID, Kind: "genre", Title: "Ambient"}
+	if err := st.UpsertEntity(ctx, genre); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{
+		FromEntityID: genre.ID, ToMediaID: fx.trackA, Name: "classifies",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetMediaFields(ctx, fx.trackB, []store.MediaField{
+		{Name: "mood", Type: store.EntityFieldText, Text: "Calm"},
+		{Name: "genre", Type: store.EntityFieldText, Text: "Instrumental"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		rules string
+		want  []string
+	}{
+		{"category genre", `{"genre":" ambient "}`, []string{string(fx.trackA)}},
+		{"text genre", `{"genre":"instrumental"}`, []string{string(fx.trackB)}},
+		{"whole value", `{"genre":"ambi"}`, nil},
+		{"decade and mood", `{"decade":2020,"mood":"calm"}`, []string{string(fx.trackB)}},
+		{"rules intersect", `{"genre":"Ambient","decade":2020}`, nil},
+		{"missing mood", `{"decade":1990,"mood":"calm"}`, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var result StationGenerateResult
+			execGraph(t, h, authorizeViewer, `query Preview($seedID: String!, $rulesJSON: String!) {
+				stationGenerate(seedKind: "artist", seedID: $seedID, rulesJSON: $rulesJSON)
+					{ candidates { mediaID explanation } }
+			}`, map[string]any{"seedID": string(fx.artistID), "rulesJSON": tc.rules}, "stationGenerate", &result)
+			if got := candidateIDs(result.Candidates); !slices.Equal(got, tc.want) {
+				t.Fatalf("candidates for %s = %v, want %v", tc.rules, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStationDecadeBounds(t *testing.T) {
+	rules, err := parseStationRules(`{"decade":1990}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, year := range []int{0, 1989, 1990, 1999, 2000} {
+		if got, want := rules.admits(store.Media{Year: year}), year >= 1990 && year <= 1999; got != want {
+			t.Errorf("decade 1990 admits %d = %v, want %v", year, got, want)
+		}
+	}
+	for _, raw := range []string{`{"decade":0}`, `{"decade":1999}`, `{"decade":-1990}`} {
+		if _, err := parseStationRules(raw); err == nil {
+			t.Errorf("parseStationRules(%s) accepted an invalid decade", raw)
+		}
 	}
 }
 

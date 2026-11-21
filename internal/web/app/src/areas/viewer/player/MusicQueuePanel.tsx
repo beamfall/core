@@ -5,6 +5,21 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import { type MusicQueueView, playableMusic } from "../lib/musicQueue";
 
+function stationReasonKey(reason: string | undefined) {
+  switch (reason) {
+    case "track":
+      return "radioReasonTrack";
+    case "artist":
+      return "radioReasonArtist";
+    case "album":
+      return "radioReasonAlbum";
+    case "genre":
+      return "radioReasonGenre";
+    case "collection":
+      return "radioReasonCollection";
+  }
+}
+
 export function MusicQueuePanel({
   open,
   onRetry,
@@ -54,11 +69,15 @@ export function MusicQueuePanel({
               <>
                 {rows.length > 0 && (
                   <ol className="m-0 grid max-h-[min(45vh,20rem)] list-inside list-decimal gap-2 overflow-auto p-0">
-                    {rows.map((row) => (
-                      <li key={row.id} aria-current={row.id === currentID ? "true" : undefined}>
-                        {row.locked ? t("musicQueueLockedItem") : row.title}
-                      </li>
-                    ))}
+                    {rows.map((row) => {
+                      const reason = row.locked ? undefined : stationReasonKey(row.stationReason);
+                      return (
+                        <li key={row.id} aria-current={row.id === currentID ? "true" : undefined}>
+                          {row.locked ? t("musicQueueLockedItem") : row.title}
+                          {reason && <small className="block">{t(reason)}</small>}
+                        </li>
+                      );
+                    })}
                   </ol>
                 )}
                 {first ? (

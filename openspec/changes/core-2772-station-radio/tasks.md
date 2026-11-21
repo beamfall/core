@@ -1,6 +1,6 @@
 # CORE-2772 checklist
 
-- [ ] Apply and test the catalog rules in station generation.
-- [ ] Persist and expose localized queue selection reasons.
-- [ ] Add and test Start radio on the viewer pages and menus.
-- [ ] Regenerate changed contract artifacts and run focused checks.
+- [x] Apply and test the catalog rules in station generation.
+- [x] Persist and expose localized queue selection reasons.
+- [x] Add and test Start radio on the viewer pages and menus.
+- [x] Regenerate changed contract artifacts and run focused checks.

@@ -10,6 +10,7 @@ export interface MusicQueueRow {
   title: string;
   mediaClass: string;
   locked?: boolean;
+  stationReason?: string;
 }
 
 const PAGE_SIZE = 200;
@@ -17,7 +18,7 @@ const SESSION_FIELDS = "currentSession { profileID revealed deviceRole profile }
 const QUEUE_QUERY = `query MusicQueue($query: String, $limit: Int, $offset: Int) {
   ${SESSION_FIELDS}
   sourceItems(kind: "queue", query: $query, limit: $limit, offset: $offset) {
-    id title mediaClass locked
+    id title mediaClass locked stationReason
   }
 }`;
 const MEDIA_QUERY = `query MusicQueueMedia($id: String!) {
@@ -109,14 +110,15 @@ export interface MusicQueueView {
 type RefreshResult = MusicQueueRow[] | null | undefined;
 
 /** The hosted player keeps this reader alive while its transport is docked. */
-export function useMusicQueue() {
+export function useMusicQueue(startID?: string) {
   const { session, revealed } = useSession();
   const identity = useViewerIdentity();
   const { profileID, deviceRole, profile } = session ?? {};
   const epoch = getIdentityEpochSignal();
   const scope = useMemo(
-    () => (profileID ? { epoch, identity, profileID, revealed, deviceRole, profile } : null),
-    [epoch, identity, profileID, revealed, deviceRole, profile],
+    () =>
+      profileID ? { epoch, identity, profileID, revealed, deviceRole, profile, startID } : null,
+    [epoch, identity, profileID, revealed, deviceRole, profile, startID],
   );
   const active = useRef<{
     scope: typeof scope;

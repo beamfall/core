@@ -904,6 +904,7 @@ type SourceItem struct {
 	// AnnotateMediaClass in the same read so a list row can state it
 	// (CORE-2386); 0 for entities and for Media with no known runtime.
 	DurationSeconds int
+	StationReason   string
 	// Certification and AudienceScore are a media-kind item's display rating
 	// and 0-10 audience score, set by AnnotateMediaClass in the same read;
 	// empty and nil for entities and for Media without them (CORE-2398).

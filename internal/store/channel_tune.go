@@ -130,7 +130,7 @@ func (s *Store) TuneChannel(ctx context.Context, profileID ProfileID, channelID 
 	for i, item := range ordered {
 		mediaIDs[i] = item.ID
 	}
-	if err := s.QueueReplaceWithStation(ctx, profileID, mediaIDs, confirmReplace, filter); err != nil {
+	if err := s.QueueReplaceWithStation(ctx, profileID, mediaIDs, "", confirmReplace, filter); err != nil {
 		return nil, err
 	}
 	return s.SourceItems(ctx, filter, SourceQuery{Kind: "queue", ProfileID: profileID})

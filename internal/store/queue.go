@@ -8,8 +8,9 @@ import (
 )
 
 type queueEntry struct {
-	mediaID   MediaID
-	addedAtMS int64
+	mediaID       MediaID
+	addedAtMS     int64
+	stationReason string
 }
 
 // QueueAdd inserts a Media item into a Profile's play queue. If the item is
@@ -30,15 +31,17 @@ func (s *Store) QueueAdd(ctx context.Context, profileID ProfileID, mediaID Media
 			return nil, ValidationError("media not found")
 		}
 		addedAt := timeToMillis(time.Now().UTC())
+		reason := ""
 		without := make([]queueEntry, 0, len(entries))
 		for _, entry := range entries {
 			if entry.mediaID == mediaID {
 				addedAt = entry.addedAtMS
+				reason = entry.stationReason
 				continue
 			}
 			without = append(without, entry)
 		}
-		return insertAtVisiblePosition(without, queueEntry{mediaID: mediaID, addedAtMS: addedAt}, position, visible), nil
+		return insertAtVisiblePosition(without, queueEntry{mediaID: mediaID, addedAtMS: addedAt, stationReason: reason}, position, visible), nil
 	})
 }
 
@@ -111,15 +114,28 @@ var ErrQueueReplaceNeedsConfirm = errors.New("queue replacement needs confirmati
 // it makes no change and returns ErrQueueReplaceNeedsConfirm so the client can
 // prompt. An empty visible queue needs no confirmation.
 //
-// mediaIDs are trusted to already be visible to the caller (the Station
-// generator collects candidates through the same LibraryFilter, sealed-free);
-// any id that is not currently visible to this caller is dropped defensively so
-// a stale window can never inject an item the caller cannot itself read.
-func (s *Store) QueueReplaceWithStation(ctx context.Context, profileID ProfileID, mediaIDs []MediaID, confirmReplace bool, filter LibraryFilter) error {
+// mediaIDs are checked again at replacement time. A generated station carries
+// a reason code and requires at least one candidate that still passes the
+// playback visibility filter. Channel tuning passes an empty reason.
+func (s *Store) QueueReplaceWithStation(ctx context.Context, profileID ProfileID, mediaIDs []MediaID, reason string, confirmReplace bool, filter LibraryFilter) error {
 	if profileID == "" {
 		return ValidationError("profile ID is required")
 	}
-	return s.updateQueue(ctx, profileID, filter, mediaIDs, func(entries []queueEntry, visible map[MediaID]bool) ([]queueEntry, error) {
+	visibilityIDs := mediaIDs
+	if reason != "" {
+		visibilityIDs = nil
+	}
+	return s.updateQueue(ctx, profileID, filter, visibilityIDs, func(entries []queueEntry, visible map[MediaID]bool) ([]queueEntry, error) {
+		var stationMedia map[MediaID]Media
+		if reason != "" {
+			playback := filter
+			playback.PlaybackGate = true
+			var err error
+			stationMedia, err = s.visibleMediaBatchSQL(ctx, mediaIDs, playback)
+			if err != nil {
+				return nil, err
+			}
+		}
 		hidden := make([]queueEntry, 0, len(entries))
 		visibleCount := 0
 		for _, entry := range entries {
@@ -129,18 +145,22 @@ func (s *Store) QueueReplaceWithStation(ctx context.Context, profileID ProfileID
 			}
 			hidden = append(hidden, entry)
 		}
-		if visibleCount > 0 && !confirmReplace {
-			return nil, ErrQueueReplaceNeedsConfirm
-		}
 		addedAt := timeToMillis(time.Now().UTC())
 		updated := hidden
 		seen := make(map[MediaID]bool, len(mediaIDs))
 		for _, id := range mediaIDs {
-			if id == "" || seen[id] || !visible[id] {
+			_, playable := stationMedia[id]
+			if id == "" || seen[id] || (reason != "" && !playable) || (reason == "" && !visible[id]) {
 				continue
 			}
 			seen[id] = true
-			updated = append(updated, queueEntry{mediaID: id, addedAtMS: addedAt})
+			updated = append(updated, queueEntry{mediaID: id, addedAtMS: addedAt, stationReason: reason})
+		}
+		if reason != "" && len(updated) == len(hidden) {
+			return nil, ValidationError("media not found")
+		}
+		if visibleCount > 0 && !confirmReplace {
+			return nil, ErrQueueReplaceNeedsConfirm
 		}
 		return updated, nil
 	})
@@ -244,7 +264,7 @@ func insertAtVisiblePosition(entries []queueEntry, entry queueEntry, position *i
 
 func (s *Store) queueItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
 	rows, err := s.eventsR.QueryContext(ctx, `
-		SELECT media_id
+		SELECT media_id, station_reason
 		FROM play_queue
 		WHERE profile_id = ?
 		ORDER BY position
@@ -254,12 +274,15 @@ func (s *Store) queueItemsSQL(ctx context.Context, profileID ProfileID, filter L
 	}
 	defer rows.Close()
 	var ids []MediaID
+	reasons := map[MediaID]string{}
 	for rows.Next() {
 		var id MediaID
-		if err := rows.Scan(&id); err != nil {
+		var reason string
+		if err := rows.Scan(&id, &reason); err != nil {
 			return nil, err
 		}
 		ids = append(ids, id)
+		reasons[id] = reason
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -279,7 +302,7 @@ func (s *Store) queueItemsSQL(ctx context.Context, profileID ProfileID, filter L
 			visibleIndex++
 			continue
 		}
-		items = append(items, SourceItem{ID: media.ID, Kind: "media", Title: media.Title, LibraryID: media.LibraryID, Summary: mediaDurationSummary(media.DurationSeconds)})
+		items = append(items, SourceItem{ID: media.ID, Kind: "media", Title: media.Title, LibraryID: media.LibraryID, Summary: mediaDurationSummary(media.DurationSeconds), StationReason: reasons[id]})
 		visibleIndex++
 		if len(items) >= limit {
 			break
@@ -391,7 +414,7 @@ func repointQueueEntryTx(ctx context.Context, tx *sql.Tx, m queueMove, from, to 
 
 func queueEntries(ctx context.Context, tx *sql.Tx, profileID ProfileID) ([]queueEntry, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT media_id, added_at_ms
+		SELECT media_id, added_at_ms, station_reason
 		FROM play_queue
 		WHERE profile_id = ?
 		ORDER BY position
@@ -403,7 +426,7 @@ func queueEntries(ctx context.Context, tx *sql.Tx, profileID ProfileID) ([]queue
 	var entries []queueEntry
 	for rows.Next() {
 		var entry queueEntry
-		if err := rows.Scan(&entry.mediaID, &entry.addedAtMS); err != nil {
+		if err := rows.Scan(&entry.mediaID, &entry.addedAtMS, &entry.stationReason); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
@@ -420,9 +443,9 @@ func replaceQueue(ctx context.Context, tx *sql.Tx, profileID ProfileID, entries 
 			return errors.New("queue entry media ID is required")
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO play_queue(profile_id, position, media_id, added_at_ms)
-			VALUES (?, ?, ?, ?)
-		`, profileID, position, entry.mediaID, entry.addedAtMS); err != nil {
+			INSERT INTO play_queue(profile_id, position, media_id, added_at_ms, station_reason)
+			VALUES (?, ?, ?, ?, ?)
+		`, profileID, position, entry.mediaID, entry.addedAtMS, entry.stationReason); err != nil {
 			return err
 		}
 	}

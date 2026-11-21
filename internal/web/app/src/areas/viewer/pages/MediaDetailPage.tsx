@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronRight, Play, RotateCcw } from "lucide-react";
+import { ArrowLeft, ChevronRight, Play, Radio, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -48,6 +48,7 @@ import {
 import { castHasDetail, creditsWithJob } from "../lib/people";
 import { streamFacts } from "../lib/streamFacts";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
+import { useStartRadio } from "../lib/useStartRadio";
 import {
   type CategoryFacts,
   type DetailScore,
@@ -169,6 +170,10 @@ export function MediaDetailPage() {
   // Between a route change and the effect, state still holds the previous item.
   const current = detail?.media.id === mediaId ? detail : null;
   const media = current?.media;
+  const radio = useStartRadio(
+    media?.mediaClass === "audio" && !card?.locked ? "track" : undefined,
+    mediaId,
+  );
   useCanonicalMediaAddress("media", media ?? null, confirmed);
   const context = useContainerContext(media, mediaId);
   // Audio names its people under the title, unless a credit carries a headshot
@@ -479,7 +484,18 @@ export function MediaDetailPage() {
                     positionSeconds={progress?.positionSeconds}
                   />
                 )}
-                {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} />}
+                {radio && (
+                  <button
+                    type="button"
+                    className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
+                    disabled={radio.busy}
+                    onClick={() => void radio.start()}
+                  >
+                    <Radio aria-hidden />
+                    {t("radioStart")}
+                  </button>
+                )}
+                {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} radio={radio} />}
               </div>
               {media && (
                 <MediaTrackPickers

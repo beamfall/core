@@ -30,7 +30,7 @@ func TestQueueReplaceWithStationConfirmationAndHiddenPreservation(t *testing.T) 
 
 	// From a RELOCKED session, media-archive is hidden. Its only visible item is
 	// media-alpha, so a replace without confirmation is refused.
-	err := st.QueueReplaceWithStation(ctx, "profile-default", []MediaID{"media-alpha"}, false, relocked)
+	err := st.QueueReplaceWithStation(ctx, "profile-default", []MediaID{"media-alpha"}, "track", false, relocked)
 	if !errors.Is(err, ErrQueueReplaceNeedsConfirm) {
 		t.Fatalf("replace without confirm = %v, want ErrQueueReplaceNeedsConfirm", err)
 	}
@@ -38,7 +38,7 @@ func TestQueueReplaceWithStationConfirmationAndHiddenPreservation(t *testing.T) 
 	// Confirm the replace from the relocked session. The hidden media-archive
 	// must SURVIVE; the visible window is media-alpha (the only visible candidate
 	// the relocked filter admits). Order: hidden entries kept at front.
-	if err := st.QueueReplaceWithStation(ctx, "profile-default", []MediaID{"media-alpha"}, true, relocked); err != nil {
+	if err := st.QueueReplaceWithStation(ctx, "profile-default", []MediaID{"media-alpha"}, "artist", true, relocked); err != nil {
 		t.Fatal(err)
 	}
 	// A revealed read sees both: the preserved hidden archive AND the new alpha.
@@ -59,7 +59,7 @@ func TestQueueReplaceWithStationConfirmationAndHiddenPreservation(t *testing.T) 
 	if err := st.QueueClear(ctx, "profile-default", relocked); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueReplaceWithStation(ctx, "profile-default", []MediaID{"media-alpha"}, false, relocked); err != nil {
+	if err := st.QueueReplaceWithStation(ctx, "profile-default", []MediaID{"media-alpha"}, "track", false, relocked); err != nil {
 		t.Fatalf("replace of empty visible queue = %v, want nil", err)
 	}
 }
@@ -76,7 +76,7 @@ func TestQueueReplaceWithStationDropsInvisibleAndDedupes(t *testing.T) {
 	// media-archive is invisible to a relocked session; media-alpha is visible and
 	// appears twice. The installed queue must be exactly [media-alpha].
 	err := st.QueueReplaceWithStation(ctx, "profile-default",
-		[]MediaID{"media-alpha", "media-archive", "media-alpha"}, true, relocked)
+		[]MediaID{"media-alpha", "media-archive", "media-alpha"}, "album", true, relocked)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,4 +105,47 @@ func containsID(ids []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestStationQueueReasonSurvivesReopen(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	opts := Options{SeedDevelopmentData: true}
+	st, err := Open(ctx, dir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revealed := profileDefaultFilter(true)
+	relocked := profileDefaultFilter(false)
+	const profile = "profile-default"
+	if err := st.QueueReplaceWithStation(ctx, profile, []MediaID{"media-archive"}, "album", false, revealed); err != nil {
+		_ = st.Close()
+		t.Fatal(err)
+	}
+	if err := st.QueueReplaceWithStation(ctx, profile, []MediaID{"media-alpha"}, "artist", false, relocked); err != nil {
+		_ = st.Close()
+		t.Fatal(err)
+	}
+	if err := st.QueueReplaceWithStation(ctx, profile, []MediaID{"media-archive"}, "track", true, relocked); !errors.Is(err, ValidationError("media not found")) {
+		_ = st.Close()
+		t.Fatalf("attempt to replace with invisible candidates = %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err = Open(ctx, dir, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	query := SourceQuery{Kind: "queue", ProfileID: profile}
+	items, err := st.SourceItems(ctx, relocked, query)
+	if err != nil || len(items) != 1 || items[0].ID != "media-alpha" || items[0].StationReason != "artist" {
+		t.Fatalf("relocked queue = %+v, %v", items, err)
+	}
+	items, err = st.SourceItems(ctx, revealed, query)
+	if err != nil || len(items) != 2 || items[0].ID != "media-archive" || items[0].StationReason != "album" {
+		t.Fatalf("revealed queue = %+v, %v", items, err)
+	}
 }

@@ -2864,6 +2864,11 @@
           "optional": true
         },
         {
+          "name": "stationReason",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "subtitle",
           "kind": "map",
           "optional": true,
@@ -8415,6 +8420,11 @@
                       "optional": true
                     },
                     {
+                      "name": "stationReason",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
                       "name": "subtitle",
                       "kind": "map",
                       "optional": true,
@@ -8611,6 +8621,11 @@
                   },
                   {
                     "name": "sequence",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "stationReason",
                     "kind": "scalar",
                     "optional": true
                   },
@@ -8851,6 +8866,11 @@
                     "optional": true
                   },
                   {
+                    "name": "stationReason",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "subtitle",
                     "kind": "map",
                     "optional": true,
@@ -9047,6 +9067,11 @@
                 },
                 {
                   "name": "sequence",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "stationReason",
                   "kind": "scalar",
                   "optional": true
                 },
@@ -11966,6 +11991,11 @@
                 "optional": true
               },
               {
+                "name": "stationReason",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "subtitle",
                 "kind": "map",
                 "optional": true,
@@ -12198,6 +12228,11 @@
             },
             {
               "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "stationReason",
               "kind": "scalar",
               "optional": true
             },
@@ -12596,6 +12631,11 @@
                 "optional": true
               },
               {
+                "name": "stationReason",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "subtitle",
                 "kind": "map",
                 "optional": true,
@@ -12792,6 +12832,11 @@
             },
             {
               "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "stationReason",
               "kind": "scalar",
               "optional": true
             },
@@ -13325,6 +13370,11 @@
                 "optional": true
               },
               {
+                "name": "stationReason",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "subtitle",
                 "kind": "map",
                 "optional": true,
@@ -13521,6 +13571,11 @@
             },
             {
               "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "stationReason",
               "kind": "scalar",
               "optional": true
             },
@@ -15035,6 +15090,11 @@
         },
         {
           "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "stationReason",
           "kind": "scalar",
           "optional": true
         },
@@ -20129,6 +20189,11 @@
           "optional": true
         },
         {
+          "name": "stationReason",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "subtitle",
           "kind": "map",
           "optional": true,
@@ -20328,6 +20393,11 @@
         },
         {
           "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "stationReason",
           "kind": "scalar",
           "optional": true
         },
@@ -20535,6 +20605,11 @@
           "optional": true
         },
         {
+          "name": "stationReason",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "subtitle",
           "kind": "map",
           "optional": true,
@@ -20734,6 +20809,11 @@
         },
         {
           "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "stationReason",
           "kind": "scalar",
           "optional": true
         },
@@ -21191,6 +21271,11 @@
         },
         {
           "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "stationReason",
           "kind": "scalar",
           "optional": true
         },
@@ -24090,6 +24175,11 @@
           "optional": true
         },
         {
+          "name": "stationReason",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "subtitle",
           "kind": "map",
           "optional": true,
@@ -24296,6 +24386,11 @@
         },
         {
           "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "stationReason",
           "kind": "scalar",
           "optional": true
         },
@@ -24602,6 +24697,11 @@
                 "optional": true
               },
               {
+                "name": "stationReason",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "subtitle",
                 "kind": "map",
                 "optional": true,
@@ -24835,6 +24935,11 @@
             },
             {
               "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "stationReason",
               "kind": "scalar",
               "optional": true
             },
@@ -33215,6 +33320,11 @@
           "optional": true
         },
         {
+          "name": "stationReason",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "subtitle",
           "kind": "map",
           "optional": true,
@@ -33886,6 +33996,11 @@
         },
         {
           "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "stationReason",
           "kind": "scalar",
           "optional": true
         },
@@ -41506,7 +41621,8 @@
       "REVEAL_PIN_NOT_SET",
       "REVEAL_PIN_REQUIRED",
       "REVEAL_PIN_INCORRECT",
-      "PROFILE_MISMATCH"
+      "PROFILE_MISMATCH",
+      "QUEUE_REPLACE_CONFIRMATION"
     ],
     "notes": [
       "Every entry in a GraphQL response's errors array carries extensions.code from the closed vocabulary in codes. Clients branch on the code, never on the message text; growing the vocabulary is a deliberate wire-contract change.",

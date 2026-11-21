@@ -80,6 +80,8 @@ const (
 	// Profile the session is no longer bound to (CORE-2177). Nothing was
 	// written; the client drops the write instead of retrying it.
 	ErrorReasonProfileMismatch ErrorReason = "PROFILE_MISMATCH"
+	// ErrorReasonQueueReplaceConfirmation prompts before replacing the visible queue.
+	ErrorReasonQueueReplaceConfirmation ErrorReason = "QUEUE_REPLACE_CONFIRMATION"
 )
 
 // ErrorReasons returns the closed reason vocabulary in its documented order.
@@ -89,6 +91,7 @@ func ErrorReasons() []ErrorReason {
 		ErrorReasonRevealPINRequired,
 		ErrorReasonRevealPINIncorrect,
 		ErrorReasonProfileMismatch,
+		ErrorReasonQueueReplaceConfirmation,
 	}
 }
 
@@ -156,6 +159,7 @@ func errorCode(err error) ErrorCode {
 // clientErrorCodes pins the client error messages no rule below classifies,
 // or that a rule would classify wrongly. A message here wins over every rule.
 var clientErrorCodes = map[string]ErrorCode{
+	"decade must be a positive multiple of ten": ErrorCodeInvalid,
 	// §6 denial-of-existence: content the caller cannot see answers exactly
 	// as content that does not exist.
 	"cannot host a party for content you cannot see":                   ErrorCodeNotFound,

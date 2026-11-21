@@ -103,7 +103,8 @@ package store
 //
 // Events 0024 (CORE-2762) stages Version merge playback for recovery and
 // Profile erasure without changing entity queries.
+// Events 0025 (CORE-2772) records selection reasons alongside queue entries.
 const (
-	schemaFreezeEventsMigrations           = 24
+	schemaFreezeEventsMigrations           = 25
 	schemaFreezeEncryptedLibraryMigrations = 11
 )

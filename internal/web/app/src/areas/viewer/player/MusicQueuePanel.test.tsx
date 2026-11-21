@@ -38,13 +38,13 @@ function QueueButton({ onPlay }: { onPlay: () => void }) {
   );
 }
 
-function renderQueuePanel(onPlay = vi.fn()) {
+function renderQueuePanel(onPlay = vi.fn(), locale: keyof typeof STRINGS = "en") {
   render(
-    <I18nProvider initialLocale="en">
+    <I18nProvider initialLocale={locale}>
       <QueueButton onPlay={onPlay} />
     </I18nProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: STRINGS.en.musicQueueTitle }));
+  fireEvent.click(screen.getByRole("button", { name: STRINGS[locale].musicQueueTitle }));
   return onPlay;
 }
 
@@ -100,6 +100,42 @@ describe("MusicQueuePanel", () => {
       expect(body.variables).toEqual({ query: "queue", limit: 200, offset: index * 199 });
     }
     expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  it("renders localized station reasons only on visible generated entries", async () => {
+    const reasons = ["track", "artist", "album", "genre", "collection"];
+    const request = vi.fn(async (_path: string, input: RequestInit) => {
+      expect(JSON.parse(String(input.body)).query).toContain("stationReason");
+      return page([
+        ...reasons.map((reason) => ({
+          id: reason,
+          title: `Item ${reason}`,
+          mediaClass: "audio",
+          stationReason: reason,
+        })),
+        { id: "ordinary", title: "Ordinary", mediaClass: "audio" },
+        {
+          id: "locked",
+          title: "Private",
+          mediaClass: "audio",
+          locked: true,
+          stationReason: "album",
+        },
+      ]);
+    });
+    vi.stubGlobal("fetch", request);
+    renderQueuePanel(vi.fn(), "fr");
+    const rows = await screen.findAllByRole("listitem");
+
+    expect(rows).toHaveLength(7);
+    expect(rows[0]).toHaveTextContent(STRINGS.fr.radioReasonTrack);
+    expect(rows[1]).toHaveTextContent(STRINGS.fr.radioReasonArtist);
+    expect(rows[2]).toHaveTextContent(STRINGS.fr.radioReasonAlbum);
+    expect(rows[3]).toHaveTextContent(STRINGS.fr.radioReasonGenre);
+    expect(rows[4]).toHaveTextContent(STRINGS.fr.radioReasonCollection);
+    expect(rows[5]).toHaveTextContent(/^Ordinary$/);
+    expect(rows[6]).toHaveTextContent(STRINGS.fr.musicQueueLockedItem);
+    expect(rows[6]).not.toHaveTextContent(STRINGS.fr.radioReasonAlbum);
   });
 
   it("restarts all pages when a removal shifts the next page", async () => {

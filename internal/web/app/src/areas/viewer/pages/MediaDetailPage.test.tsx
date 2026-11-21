@@ -177,6 +177,8 @@ afterEach(() => {
   mocks.itemCalls = [];
   mocks.session = null;
   window.localStorage.clear();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("MediaDetailPage", () => {
@@ -1494,5 +1496,102 @@ describe("MediaDetailPage", () => {
       fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
       expect(navState()).toEqual({ title: "Server title" });
     });
+  });
+});
+
+describe("MediaDetailPage radio", () => {
+  beforeEach(() => {
+    mocks.session = { profileID: "p1" };
+    vi.mocked(fetchMedia).mockResolvedValue({ ...media, mediaClass: "audio" });
+  });
+
+  it("starts a track station from the page and confirms a non-empty queue", async () => {
+    const requests = vi
+      .fn<(_path: string, _request: RequestInit) => Promise<Response>>()
+      .mockResolvedValueOnce(
+        Response.json({
+          errors: [
+            {
+              message: "Queue needs confirmation",
+              extensions: { code: "CONFLICT", reason: "QUEUE_REPLACE_CONFIRMATION" },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          data: { stationStart: [{ id: "m1", mediaClass: "audio", title: "Track" }] },
+        }),
+      );
+    vi.stubGlobal("fetch", requests);
+    const prompt = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderAt(["/media/m1"]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start radio" }));
+
+    expect(await screen.findByTestId("path")).toHaveTextContent("/watch/m1");
+    expect(screen.getByTestId("search")).toHaveTextContent("?playQueue=p1&t=0");
+    expect(prompt).toHaveBeenCalledExactlyOnceWith("Replace the current play queue?");
+    expect(
+      requests.mock.calls.map(([, request]) => JSON.parse(String(request.body)).variables),
+    ).toEqual([
+      { seedKind: "track", seedID: "m1", expectedProfileID: "p1", confirmReplace: false },
+      { seedKind: "track", seedID: "m1", expectedProfileID: "p1", confirmReplace: true },
+    ]);
+  });
+
+  it("offers Start radio in the track menu and keeps the queue when the user cancels", async () => {
+    const requests = vi.fn(async (_path: string, request: RequestInit) =>
+      JSON.parse(String(request.body)).query.includes("mutation StartRadio")
+        ? Response.json({
+            errors: [
+              {
+                message: "Queue needs confirmation",
+                extensions: { code: "CONFLICT", reason: "QUEUE_REPLACE_CONFIRMATION" },
+              },
+            ],
+          })
+        : Response.json({ data: {} }),
+    );
+    vi.stubGlobal("fetch", requests);
+    const prompt = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderAt(["/media/m1"]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More actions for Server title" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Start radio" }));
+
+    await waitFor(() => expect(prompt).toHaveBeenCalledOnce());
+    const stationRequests = requests.mock.calls
+      .map(([, request]) => JSON.parse(String(request.body)))
+      .filter(({ query }) => query.includes("mutation StartRadio"));
+    expect(stationRequests.map(({ variables }) => variables.confirmReplace)).toEqual([false]);
+    expect(screen.getByRole("heading", { name: "Server title" })).toBeInTheDocument();
+  });
+
+  it.each([
+    [{ data: { stationStart: [] } }, "No tracks are available for this station."],
+    [
+      {
+        errors: [
+          {
+            message: "Profile changed",
+            extensions: { code: "CONFLICT", reason: "PROFILE_MISMATCH" },
+          },
+        ],
+      },
+      "Couldn’t start radio. Try again.",
+    ],
+  ])("shows a localized notice when a station cannot start", async (reply, message) => {
+    const prompt = vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(reply)),
+    );
+    renderAt(["/media/m1"]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start radio" }));
+
+    expect(await screen.findByText(message)).toHaveAttribute("role", "status");
+    expect(prompt).not.toHaveBeenCalled();
   });
 });

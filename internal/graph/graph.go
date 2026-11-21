@@ -153,6 +153,8 @@ type SourceItem struct {
 	// state it without a detail read (CORE-2386). Absent for entities and for
 	// Media with no known runtime.
 	DurationSeconds int `json:"durationSeconds,omitempty"`
+	// StationReason is the seed kind for a generated queue entry. Clients localize it.
+	StationReason string `json:"stationReason,omitempty"`
 	// Certification and AudienceScore are a media-kind item's display rating
 	// (PG-13, TV-MA) and 0-10 audience score from the core-conventional
 	// plugin fields, so a card can state them without a detail read
@@ -1232,6 +1234,7 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		Byline:             item.Byline,
 		Subtitle:           plugin.LocaleString(item.Subtitle),
 		DurationSeconds:    item.DurationSeconds,
+		StationReason:      item.StationReason,
 		Sequence:           item.Sequence,
 		Index:              item.Index,
 		Certification:      item.Certification,

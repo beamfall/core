@@ -1,4 +1,4 @@
-import { ArrowLeft, Play, Shuffle } from "lucide-react";
+import { ArrowLeft, Play, Radio, Shuffle } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -24,6 +24,7 @@ import { DetailBackdrop, DetailOverview } from "../components/DetailStage";
 import { EntityMediaBrowse } from "../components/EntityMediaBrowse";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
+import { MediaDetailMoreMenu } from "../components/MediaDetailMoreMenu";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { NotAvailable } from "../components/NotAvailable";
 import type { SeeAllTarget } from "../components/SectionView";
@@ -61,6 +62,7 @@ import {
 import { mediaPath } from "../lib/mediaAddress";
 import { seeAllTargetFor } from "../lib/seeall";
 import { audioQueue, containerTrackRows, isAudioListing, playState } from "../lib/trackList";
+import { audioEntitySeed, useStartRadio } from "../lib/useStartRadio";
 import { fieldDisplayValue, formatScore } from "../lib/viewerFields";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
@@ -197,6 +199,10 @@ export function EntityPage() {
   // The listed Media once known to be all audio: what Shuffle plays, and for a
   // container the sign to name its people under the title.
   const isAudio = isAudioListing(fallback ?? NO_ITEMS, listing.rows ?? {});
+  const radio = useStartRadio(
+    isAudio && entity?.id === entityId ? audioEntitySeed(entity.archetype) : undefined,
+    entityId,
+  );
   const listeningTracks = useMemo(() => {
     if (trackOrder) return trackOrder;
     if (entity?.archetype !== "person" || !listedItems || !listing.rows || !isAudio) return null;
@@ -620,6 +626,20 @@ export function EntityPage() {
                             })}
                       </span>
                     </p>
+                  </div>
+                )}
+                {entity && radio && (
+                  <div className="bf-detail-actions">
+                    <button
+                      type="button"
+                      className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
+                      disabled={radio.busy}
+                      onClick={() => void radio.start()}
+                    >
+                      <Radio aria-hidden />
+                      {t("radioStart")}
+                    </button>
+                    <MediaDetailMoreMenu entityID={entityId} title={entity.title} radio={radio} />
                   </div>
                 )}
                 {entity && (

@@ -223,7 +223,7 @@ func TestGraphQLErrorCodeVocabularyIsClosed(t *testing.T) {
 // declaration, a struct literal, an assignment or a return. No code may convert
 // a value into an ErrorReason either, since a runtime string escapes that check.
 func TestGraphQLErrorReasonVocabularyIsClosed(t *testing.T) {
-	want := []graph.ErrorReason{"REVEAL_PIN_NOT_SET", "REVEAL_PIN_REQUIRED", "REVEAL_PIN_INCORRECT", "PROFILE_MISMATCH"}
+	want := []graph.ErrorReason{"REVEAL_PIN_NOT_SET", "REVEAL_PIN_REQUIRED", "REVEAL_PIN_INCORRECT", "PROFILE_MISMATCH", "QUEUE_REPLACE_CONFIRMATION"}
 	got := graph.ErrorReasons()
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("ErrorReasons() = %v, want %v", got, want)

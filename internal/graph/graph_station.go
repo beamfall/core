@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"hash/fnv"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -48,13 +49,10 @@ type stationSeed struct {
 	id   string
 }
 
-// StationCandidate is the wire shape for one generated Station item. It is a
-// Station-specific type, deliberately NOT the shared SourceItem (whose wire
-// shape is pinned by TestNestedSchemaSourceItemShape) — it carries an
-// Explanation, which SourceItem does not and must not. The Explanation is a
-// product-safe string: it never reveals another Profile's behavior, a hidden /
-// Sealed / restricted Library name, provider secrets, or a raw score vector
-// (ADR-0098 §Stations).
+// StationCandidate is the wire shape for one generated Station preview item.
+// Explanation is the product-safe preview text. Queue entries carry the
+// corresponding seed kind so the viewer can localize the reason.
+// Neither form encodes private catalog or ranking data.
 type StationCandidate struct {
 	MediaID     string `json:"mediaID"`
 	LibraryID   string `json:"libraryID,omitempty"`
@@ -100,16 +98,16 @@ func (h *Handler) generateStation(ctx context.Context, scope auth.Scope, seed st
 	//    it can never appear in the window or an explanation. (The SEALED / HIDDEN
 	//    / RESTRICTED / non-music suppression is an additional hard filter already
 	//    enforced upstream by sealedFreeStationFilter + the per-read LibraryFilter.)
-	//    The declarative rule vocabulary MUSIC-1 will hydrate (genre, mood, decade
-	//    Entity predicates) layers onto this same pass; the field predicates wired
-	//    today (year / duration, present on every Media) make the pass execute now.
 	kept := candidates[:0]
 	for _, m := range candidates {
-		if rules.admits(m) {
+		if m.Class == store.MediaClassAudio && rules.admits(m) {
 			kept = append(kept, m)
 		}
 	}
-	candidates = kept
+	candidates, err = h.filterStationMetadata(ctx, filter, kept, rules)
+	if err != nil {
+		return nil, "", err
+	}
 	// 4. Rank: deterministic given rankSeed (debug reproducibility), then tuning
 	//    hints bias the order. Tuning is RANKING-ONLY — it reorders the post-filter
 	//    set and can never admit an item rule.admits already rejected (the rejected
@@ -161,12 +159,11 @@ func (h *Handler) sealedFreeStationFilter(ctx context.Context, scope auth.Scope)
 	// AllLibraries is deliberately false: the Station only ever sees the explicit
 	// sealed-free music set, never the AllLibraries sentinel. Certification bounds
 	// from the caller's scope are preserved.
-	return store.LibraryFilter{
-		AllowedIDs:    allowed,
-		AllLibraries:  false,
-		Revealed:      scope.Revealed,
-		Certification: scope.Certification,
-	}, nil
+	filter := scope.LibraryFilter()
+	filter.AllowedIDs = allowed
+	filter.AllLibraries = false
+	filter.PlaybackGate = true
+	return filter, nil
 }
 
 // collectStationCandidates gathers candidate Media (full rows, so the hard
@@ -261,22 +258,72 @@ func stationRankKey(id store.MediaID, rankSeed uint64) uint64 {
 	return hsh.Sum64()
 }
 
-// stationRules is the parsed, EXECUTING hard Source filter (ADR-0098: hard
-// filters apply before ranking). The predicates wired today read fields present
-// on every Media (year, duration); the declarative rule vocabulary MUSIC-1 will
-// hydrate (genre/mood/decade Entity predicates) layers onto the same admits()
-// pass. A nil/zero field means "no constraint on that axis".
+// stationRules contains hard filters applied before ranking. Zero values leave
+// the corresponding catalog field unconstrained.
 type stationRules struct {
-	MinYear            int `json:"minYear"`
-	MaxYear            int `json:"maxYear"`
-	MinDurationSeconds int `json:"minDurationSeconds"`
-	MaxDurationSeconds int `json:"maxDurationSeconds"`
+	MinYear            int    `json:"minYear"`
+	MaxYear            int    `json:"maxYear"`
+	MinDurationSeconds int    `json:"minDurationSeconds"`
+	MaxDurationSeconds int    `json:"maxDurationSeconds"`
+	Decade             *int   `json:"decade"`
+	Genre              string `json:"genre"`
+	Mood               string `json:"mood"`
+}
+
+func (h *Handler) filterStationMetadata(ctx context.Context, filter store.LibraryFilter, candidates []store.Media, rules stationRules) ([]store.Media, error) {
+	if rules.Genre == "" && rules.Mood == "" {
+		return candidates, nil
+	}
+	var genres map[store.MediaID][]store.MediaEntityLink
+	if rules.Genre != "" {
+		ids := make([]store.MediaID, 0, len(candidates))
+		for _, candidate := range candidates {
+			ids = append(ids, candidate.ID)
+		}
+		var err error
+		genres, err = h.store.MediaEntityLinks(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	kept := candidates[:0]
+	for _, candidate := range candidates {
+		genreMatched := rules.Genre == "" || slices.ContainsFunc(genres[candidate.ID], func(link store.MediaEntityLink) bool {
+			return link.Kind == "genre" && strings.EqualFold(link.Title, rules.Genre)
+		})
+		moodMatched := rules.Mood == ""
+		if !genreMatched || !moodMatched {
+			fields, err := h.store.MediaFields(ctx, candidate.ID, filter)
+			if errors.Is(err, store.ValidationError("media not found")) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			for _, field := range fields {
+				switch field.Name {
+				case "genre":
+					genreMatched = genreMatched || strings.EqualFold(strings.TrimSpace(field.Text), rules.Genre)
+				case "mood":
+					moodMatched = moodMatched || strings.EqualFold(strings.TrimSpace(field.Text), rules.Mood)
+				}
+			}
+		}
+		if genreMatched && moodMatched {
+			kept = append(kept, candidate)
+		}
+	}
+	return kept, nil
 }
 
 // admits reports whether a Media passes every hard filter. An item it rejects is
 // removed from the candidate set before ranking, so it can never reach the
 // window or an explanation.
 func (r stationRules) admits(m store.Media) bool {
+	if r.Decade != nil && m.Year/10 != *r.Decade/10 {
+		return false
+	}
 	if r.MinYear > 0 && (m.Year == 0 || m.Year < r.MinYear) {
 		return false
 	}
@@ -310,7 +357,7 @@ func (t stationTuning) bias(m store.Media) int {
 }
 
 // parseStationRules / parseStationTuning decode the opaque JSON inputs. Unknown
-// fields are ignored (forward-compatible with MUSIC-1's richer vocabulary);
+// fields are ignored for forward compatibility;
 // malformed JSON yields a client error.
 func parseStationRules(raw string) (stationRules, error) {
 	var r stationRules
@@ -320,6 +367,11 @@ func parseStationRules(raw string) (stationRules, error) {
 	if err := json.Unmarshal([]byte(raw), &r); err != nil {
 		return stationRules{}, clientError("rulesJSON is not valid JSON")
 	}
+	if r.Decade != nil && (*r.Decade <= 0 || *r.Decade%10 != 0) {
+		return stationRules{}, clientError("decade must be a positive multiple of ten")
+	}
+	r.Genre = strings.TrimSpace(r.Genre)
+	r.Mood = strings.TrimSpace(r.Mood)
 	return r, nil
 }
 
@@ -446,15 +498,18 @@ func (h *Handler) stationStart(ctx context.Context, scope auth.Scope, req reques
 	if err != nil {
 		return nil, err
 	}
+	if len(candidates) == 0 {
+		return []SourceItem{}, nil
+	}
 	mediaIDs := make([]store.MediaID, len(candidates))
 	for i, c := range candidates {
 		mediaIDs[i] = store.MediaID(c.MediaID)
 	}
 	err = h.withExpectedProfile(ctx, scope, req, func() error {
-		return h.store.QueueReplaceWithStation(ctx, scope.ProfileID, mediaIDs, boolVar(req, "confirmReplace"), scope.LibraryFilter())
+		return h.store.QueueReplaceWithStation(ctx, scope.ProfileID, mediaIDs, seed.kind, boolVar(req, "confirmReplace"), scope.LibraryFilter())
 	})
 	if errors.Is(err, store.ErrQueueReplaceNeedsConfirm) {
-		return nil, clientError("queue has items; pass confirmReplace to replace it")
+		return nil, reasonedClientError{message: "queue has items; pass confirmReplace to replace it", reason: ErrorReasonQueueReplaceConfirmation}
 	}
 	if err != nil {
 		return nil, err
