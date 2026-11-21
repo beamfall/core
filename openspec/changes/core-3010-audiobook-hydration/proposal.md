@@ -9,7 +9,7 @@ narrators, series or genres (ADR-0055 amendment A).
 - `cmd/beamfall` registers an audiobook `HydrationMapper` that adapts the plugin's plan to
   `app.HydrationPlan`, sets the `audiobook-hydrated` marker and writes no Media fields.
 - Person, Series and Genre titles fold, so spelling variants resolve to one Entity.
-- `go.mod` pins `github.com/beamfall/plugin-audiobook` v0.1.16.
+- `go.mod` pins `github.com/beamfall/plugin-audiobook` v0.1.17.
 
 ## Impact
 Audiobook Libraries only. No wire or schema change.
