@@ -71,6 +71,18 @@ grep -q 'empty-fixture contains no scannable files' "$TMP/check.err"
 assert_fails "expected malformed target to fail" --target "apple:missing-path"
 grep -q 'malformed target' "$TMP/check.err"
 
+# CORE-1514: the default matrix reads the closed apps from
+# beamfall-apple-mobile-tv once it exists, else from the pre-split beamfall-apple.
+mkdir -p "$TMP/ws/beamfall-apple/Apps/BeamfallMobile"
+printf 'import SwiftUI\n' >"$TMP/ws/beamfall-apple/Apps/BeamfallMobile/App.swift"
+BEAMFALL_WORKSPACE_ROOT="$TMP/ws" "$ROOT/script/app-store-firewall-static-check.sh" >"$TMP/check.out"
+grep -q 'PASS beamfall-iphone' "$TMP/check.out"
+mkdir -p "$TMP/ws/beamfall-apple-mobile-tv/Apps/BeamfallPad"
+printf 'import SwiftUI\n' >"$TMP/ws/beamfall-apple-mobile-tv/Apps/BeamfallPad/App.swift"
+BEAMFALL_WORKSPACE_ROOT="$TMP/ws" "$ROOT/script/app-store-firewall-static-check.sh" >"$TMP/check.out"
+grep -q 'PASS beamfall-ipad' "$TMP/check.out"
+grep -Fq "SKIP beamfall-iphone (missing $TMP/ws/beamfall-apple-mobile-tv/Apps/BeamfallMobile)" "$TMP/check.out"
+
 cat >"$TMP/apple/Leak.swift" <<'SWIFT'
 let forbidden = "RADARR"
 SWIFT

@@ -147,4 +147,24 @@ for surface in core-web beamfall-web beamfall-macos beamfall-apple-tv beamfall-a
   fi
 done
 
+if ! grep -q "SKIP beamfall-apple-tv-closed" <<<"$default_output"; then
+  echo "client-drm-eme-check_test: default matrix did not report the absent closed Apple repo" >&2
+  exit 1
+fi
+
+# CORE-1514: after the CORE-1066 split the closed tvOS code lives in
+# beamfall-apple-mobile-tv, and a forbidden reference there fails the matrix.
+mkdir -p "$TMP/workspace/beamfall-apple-mobile-tv/Sources/BeamfallTV"
+printf 'import AVFoundation\nlet player = AVPlayer()\n' > "$TMP/workspace/beamfall-apple-mobile-tv/Sources/BeamfallTV/Player.swift"
+split_output="$(BEAMFALL_WORKSPACE_ROOT="$TMP/workspace" "$CHECK")"
+if ! grep -q "PASS beamfall-apple-tv-closed" <<<"$split_output"; then
+  echo "client-drm-eme-check_test: default matrix omitted the present closed Apple repo" >&2
+  exit 1
+fi
+printf 'let key = "com.apple.fps.1_0"\n' > "$TMP/workspace/beamfall-apple-mobile-tv/Sources/BeamfallTV/Keys.swift"
+if BEAMFALL_WORKSPACE_ROOT="$TMP/workspace" "$CHECK" >/dev/null 2>&1; then
+  echo "client-drm-eme-check_test: a FairPlay reference in the closed Apple repo passed" >&2
+  exit 1
+fi
+
 echo "client-drm-eme-check_test: all assertions passed"

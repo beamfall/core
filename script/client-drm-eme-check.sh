@@ -28,6 +28,14 @@ add_default_targets() {
   # path-only split would create false negatives at the shared-code boundary.
   targets+=("apple:beamfall-macos:$WORKSPACE_ROOT/beamfall-apple")
   targets+=("apple:beamfall-apple-tv:$WORKSPACE_ROOT/beamfall-apple")
+  # The closed tvOS app and BeamfallTV move to beamfall-apple-mobile-tv with
+  # CORE-1066 and still link the shared Sources above. Before the split the
+  # repo is absent and beamfall-apple holds that code, so absence is a SKIP.
+  if [[ -d "$WORKSPACE_ROOT/beamfall-apple-mobile-tv" ]]; then
+    targets+=("apple:beamfall-apple-tv-closed:$WORKSPACE_ROOT/beamfall-apple-mobile-tv")
+  else
+    echo "client-drm-eme-check: SKIP beamfall-apple-tv-closed (missing $WORKSPACE_ROOT/beamfall-apple-mobile-tv)"
+  fi
   targets+=("android:beamfall-android-tv:$WORKSPACE_ROOT/beamfall-android")
 }
 if [[ "$#" -gt 0 ]]; then
