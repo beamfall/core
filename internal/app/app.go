@@ -351,6 +351,17 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		_ = st.Close()
 		return nil, fmt.Errorf("load active plugin inventory standing: %w", err)
 	}
+	// A plugin-sdk bump can leave stored plugins outside the embedded SDK range.
+	// They stay in the inventory, unloaded, and the Console lists them.
+	incompatiblePlugins, err := inventory.Incompatible()
+	if err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("load incompatible plugin inventory: %w", err)
+	}
+	for _, incompatible := range incompatiblePlugins {
+		logger.Warn("stored plugin not loaded: SDK range excludes the embedded plugin SDK",
+			"plugin", incompatible.Bundle.ID, "reason", incompatible.Reason())
+	}
 	// Enforce the Console's plugin-activation overrides (migration 0035): the
 	// `setpluginactive` mutation persists a per-bundle active/inactive override
 	// keyed on the plugin Bundle ID, and the Console reads it back — but a
@@ -1255,6 +1266,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		AuditRecorder:                observability.NewAuditLogger(logger),
 		ObservabilityController:      observabilityController,
 		ShippedPlugins:               shippedPlugins,
+		IncompatiblePlugins:          incompatiblePlugins,
 		HardwareAcceleration:         cfg.HardwareAcceleration,
 		Identify:                     identifyService,
 		Artwork:                      artworkService,

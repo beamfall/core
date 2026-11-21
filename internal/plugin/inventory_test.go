@@ -378,3 +378,177 @@ func bundleIDs(bundles []Bundle) []ID {
 	}
 	return ids
 }
+
+// A plugin-sdk bump can leave an intact last-good entry outside the embedded
+// SDK range (CORE-2837). Startup keeps the entry on disk, does not load it, and
+// lists it as incompatible; staging another plugin carries it forward.
+func TestInventoryKeepsSDKIncompatibleLastGoodInactive(t *testing.T) {
+	dir := t.TempDir()
+	base := inventoryBundle("compiled")
+	legacy := inventoryBundle("legacy")
+	legacy.SDKCeiling = "0.1.0"
+	other := inventoryBundle("other")
+	writeLastGoodInventory(t, dir, sideloadedInventoryEntry(t, legacy), sideloadedInventoryEntry(t, other))
+	lastGood, err := os.ReadFile(filepath.Join(dir, "last-good.json")) // #nosec G304 -- path is composed beneath this test's own t.TempDir().
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inventory, err := OpenInventory(dir, []Bundle{base})
+	if err != nil {
+		t.Fatalf("OpenInventory with an SDK-incompatible last-good entry: %v", err)
+	}
+	bundles, applied, err := inventory.Apply()
+	if err != nil || applied {
+		t.Fatalf("Apply = applied %v, error %v", applied, err)
+	}
+	if !hasInventoryBundle(bundles, base.ID) || !hasInventoryBundle(bundles, other.ID) || hasInventoryBundle(bundles, legacy.ID) {
+		t.Fatalf("loaded bundles = %v, want compiled and other without legacy", bundleIDs(bundles))
+	}
+	incompatible, err := inventory.Incompatible()
+	if err != nil || len(incompatible) != 1 || incompatible[0].Bundle.ID != legacy.ID {
+		t.Fatalf("Incompatible = %#v, %v; want legacy", incompatible, err)
+	}
+	wantStanding := PluginStanding{Provenance: ProvenanceSideloaded, TrustState: PluginUnsigned}
+	if incompatible[0].Standing != wantStanding {
+		t.Fatalf("incompatible standing = %#v, want %#v", incompatible[0].Standing, wantStanding)
+	}
+	if reason := incompatible[0].Reason(); !strings.Contains(reason, "[0.1.0, 0.1.0]") || !strings.Contains(reason, sdk.Version) {
+		t.Fatalf("Reason = %q, want the range and the embedded SDK", reason)
+	}
+	if _, err := inventory.ActiveStandings(); err != nil {
+		t.Fatalf("ActiveStandings: %v", err)
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "last-good.json")) // #nosec G304 -- path is composed beneath this test's own t.TempDir().
+	if err != nil || !bytes.Equal(after, lastGood) {
+		t.Fatalf("last-good changed at startup: %v", err)
+	}
+
+	third := inventoryBundle("third")
+	if _, err := inventory.Stage(sideloadRequest(t, third, inventoryArtifact(t, third))); err != nil {
+		t.Fatalf("Stage beside an incompatible entry: %v", err)
+	}
+	restarted, err := OpenInventory(dir, []Bundle{base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundles, applied, err = restarted.Apply()
+	if err != nil || !applied || !hasInventoryBundle(bundles, third.ID) || hasInventoryBundle(bundles, legacy.ID) {
+		t.Fatalf("Apply = bundles %v, applied %v, error %v", bundleIDs(bundles), applied, err)
+	}
+	if incompatible, err := restarted.Incompatible(); err != nil || len(incompatible) != 1 || incompatible[0].Bundle.ID != legacy.ID {
+		t.Fatalf("Incompatible after staging another plugin = %#v, %v; want legacy kept", incompatible, err)
+	}
+}
+
+// A compatible version staged for an incompatible last-good plugin replaces it
+// by plugin ID and loads at the next Apply (CORE-2837).
+func TestInventoryAppliesCompatibleReplacementForIncompatibleLastGood(t *testing.T) {
+	dir := t.TempDir()
+	base := inventoryBundle("compiled")
+	legacy := inventoryBundle("legacy")
+	legacy.SDKCeiling = "0.1.0"
+	writeLastGoodInventory(t, dir, sideloadedInventoryEntry(t, legacy))
+
+	inventory, err := OpenInventory(dir, []Bundle{base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := inventoryBundle("legacy")
+	replacement.Version = "2.0.0"
+	if _, err := inventory.Stage(sideloadRequest(t, replacement, inventoryArtifact(t, replacement))); err != nil {
+		t.Fatalf("Stage compatible replacement: %v", err)
+	}
+	staged, _, err := readInventoryState(inventory.stagedPath())
+	if err != nil || len(staged.Entries) != 1 {
+		t.Fatalf("staged entries = %d, %v; want the replacement only", len(staged.Entries), err)
+	}
+
+	restarted, err := OpenInventory(dir, []Bundle{base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundles, applied, err := restarted.Apply()
+	if err != nil || !applied {
+		t.Fatalf("Apply = applied %v, error %v", applied, err)
+	}
+	var loaded Bundle
+	for _, bundle := range bundles {
+		if bundle.ID == replacement.ID {
+			loaded = bundle
+		}
+	}
+	if loaded.Version != replacement.Version {
+		t.Fatalf("loaded bundles = %v, legacy version %q; want replacement %q", bundleIDs(bundles), loaded.Version, replacement.Version)
+	}
+	if incompatible, err := restarted.Incompatible(); err != nil || len(incompatible) != 0 {
+		t.Fatalf("Incompatible after replacement = %#v, %v; want none", incompatible, err)
+	}
+}
+
+// SDK incompatibility never excuses an integrity failure: a tampered or
+// colliding incompatible entry still fails closed.
+func TestInventoryIncompatibleEntryStillFailsClosedOnIntegrity(t *testing.T) {
+	base := inventoryBundle("compiled")
+	legacy := inventoryBundle("legacy")
+	legacy.SDKCeiling = "0.1.0"
+	tests := []struct {
+		name    string
+		wantErr error
+		entries func(t *testing.T) []InventoryEntry
+	}{
+		{"digest mismatch", ErrInventoryIdentity, func(t *testing.T) []InventoryEntry {
+			entry := sideloadedInventoryEntry(t, legacy)
+			entry.ArtifactSHA256 = strings.Repeat("0", 64)
+			return []InventoryEntry{entry}
+		}},
+		{"unknown origin", nil, func(t *testing.T) []InventoryEntry {
+			entry := sideloadedInventoryEntry(t, legacy)
+			entry.Origin = "elsewhere"
+			return []InventoryEntry{entry}
+		}},
+		{"duplicate plugin id", nil, func(t *testing.T) []InventoryEntry {
+			replacement := legacy
+			replacement.SDKCeiling = sdk.Version
+			return []InventoryEntry{sideloadedInventoryEntry(t, legacy), sideloadedInventoryEntry(t, replacement)}
+		}},
+		{"compiled id collision", nil, func(t *testing.T) []InventoryEntry {
+			colliding := legacy
+			colliding.ID = base.ID
+			return []InventoryEntry{sideloadedInventoryEntry(t, colliding)}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeLastGoodInventory(t, dir, test.entries(t)...)
+			_, err := OpenInventory(dir, []Bundle{base})
+			if err == nil {
+				t.Fatal("OpenInventory accepted an invalid incompatible entry")
+			}
+			if test.wantErr != nil && !errors.Is(err, test.wantErr) {
+				t.Fatalf("OpenInventory error = %v, want %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func sideloadedInventoryEntry(t *testing.T, bundle Bundle) InventoryEntry {
+	t.Helper()
+	artifact := inventoryArtifact(t, bundle)
+	return InventoryEntry{
+		Artifact:       artifact,
+		ArtifactSHA256: artifactDigest(artifact),
+		Trust:          trustAssessment(PluginUnsigned),
+		Provenance:     ProvenanceSideloaded,
+		Origin:         BundleOriginSideloaded,
+	}
+}
+
+func writeLastGoodInventory(t *testing.T, dir string, entries ...InventoryEntry) {
+	t.Helper()
+	state := inventoryState{SchemaVersion: inventorySchemaVersion, Entries: entries}
+	if err := saveInventoryState(filepath.Join(dir, "last-good.json"), state); err != nil {
+		t.Fatal(err)
+	}
+}

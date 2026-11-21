@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -257,6 +258,137 @@ func stageTestBundle(t *testing.T, dataDir string, executable []plugin.Bundle, b
 		},
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A plugin-sdk bump can leave an intact last-good entry outside the embedded
+// SDK range. Core still starts, leaves that plugin unloaded and keeps its
+// record (CORE-2837).
+func TestSDKIncompatibleLastGoodPluginDoesNotBlockBoot(t *testing.T) {
+	ctx := context.Background()
+	cfg := testConfig(t)
+	base := testBundle(testPathPluginID)
+	legacy := testBundle("legacy")
+	writeIncompatibleLastGood(t, cfg.DataDir, []plugin.Bundle{base}, legacy)
+	lastGoodPath := filepath.Join(cfg.DataDir, "plugins", "inventory", "last-good.json")
+	lastGood, err := os.ReadFile(lastGoodPath) // #nosec G304 -- path is composed beneath this test's own t.TempDir().
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	beamfall, err := New(ctx, cfg, nil, []plugin.Bundle{base})
+	if err != nil {
+		t.Fatalf("New with an SDK-incompatible last-good plugin: %v", err)
+	}
+	defer beamfall.Close()
+	if _, ok := beamfall.plugins.Bundle(base.ID); !ok {
+		t.Fatal("compiled bundle missing")
+	}
+	if _, ok := beamfall.plugins.Bundle(legacy.ID); ok {
+		t.Fatal("SDK-incompatible bundle loaded")
+	}
+	after, err := os.ReadFile(lastGoodPath) // #nosec G304 -- path is composed beneath this test's own t.TempDir().
+	if err != nil || !bytes.Equal(after, lastGood) {
+		t.Fatalf("last-good inventory changed at boot: %v", err)
+	}
+}
+
+// A compatible version staged for an SDK-incompatible last-good plugin applies
+// at boot and replaces it (CORE-2837).
+func TestCompatibleStagedReplacementForIncompatiblePluginAppliesAtBoot(t *testing.T) {
+	ctx := context.Background()
+	cfg := testConfig(t)
+	base := testBundle(testPathPluginID)
+	legacy := testBundle("legacy")
+	writeIncompatibleLastGood(t, cfg.DataDir, []plugin.Bundle{base}, legacy)
+	replacement := testBundle("legacy")
+	replacement.Version = "2.0.0"
+	stageTestBundle(t, cfg.DataDir, []plugin.Bundle{base}, replacement)
+
+	beamfall, err := New(ctx, cfg, nil, []plugin.Bundle{base})
+	if err != nil {
+		t.Fatalf("New with a compatible staged replacement: %v", err)
+	}
+	defer beamfall.Close()
+	loaded, ok := beamfall.plugins.Bundle(replacement.ID)
+	if !ok || loaded.Version != replacement.Version {
+		t.Fatalf("replacement bundle = %#v, %v; want version %s loaded", loaded.Version, ok, replacement.Version)
+	}
+}
+
+// SDK incompatibility does not soften integrity checks: a tampered
+// incompatible last-good entry still stops boot.
+func TestTamperedIncompatibleLastGoodPluginFailsBoot(t *testing.T) {
+	ctx := context.Background()
+	cfg := testConfig(t)
+	base := testBundle(testPathPluginID)
+	writeIncompatibleLastGood(t, cfg.DataDir, []plugin.Bundle{base}, testBundle("legacy"))
+	path := filepath.Join(cfg.DataDir, "plugins", "inventory", "last-good.json")
+	state := readTestInventory(t, path)
+	state.Entries[0].ArtifactSHA256 = hex.EncodeToString(make([]byte, sha256.Size))
+	writeTestInventory(t, path, state)
+
+	beamfall, err := New(ctx, cfg, nil, []plugin.Bundle{base})
+	if err == nil {
+		_ = beamfall.Close()
+		t.Fatal("New accepted a tampered incompatible last-good entry")
+	}
+	if !errors.Is(err, plugin.ErrInventoryIdentity) {
+		t.Fatalf("New error = %v, want %v", err, plugin.ErrInventoryIdentity)
+	}
+}
+
+type testInventoryState struct {
+	SchemaVersion int                     `json:"schema_version"`
+	Entries       []plugin.InventoryEntry `json:"entries"`
+}
+
+// writeIncompatibleLastGood stages bundle, then rewrites it as the last-good
+// inventory with an SDK ceiling below the embedded SDK, as an older server
+// would have left it.
+func writeIncompatibleLastGood(t *testing.T, dataDir string, executable []plugin.Bundle, bundle plugin.Bundle) {
+	t.Helper()
+	stageTestBundle(t, dataDir, executable, bundle)
+	dir := filepath.Join(dataDir, "plugins", "inventory")
+	state := readTestInventory(t, filepath.Join(dir, "staged.json"))
+	if len(state.Entries) != 1 {
+		t.Fatalf("staged entries = %d, want 1", len(state.Entries))
+	}
+	bundle.SDKFloor, bundle.SDKCeiling = "0.1.0", "0.1.0"
+	raw, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(raw)
+	state.Entries[0].Artifact = raw
+	state.Entries[0].ArtifactSHA256 = hex.EncodeToString(sum[:])
+	writeTestInventory(t, filepath.Join(dir, "last-good.json"), state)
+	if err := os.Remove(filepath.Join(dir, "staged.json")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readTestInventory(t *testing.T, path string) testInventoryState {
+	t.Helper()
+	raw, err := os.ReadFile(path) // #nosec G304 -- path is composed beneath this test's own t.TempDir().
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state testInventoryState
+	if err := json.Unmarshal(raw, &state); err != nil {
+		t.Fatal(err)
+	}
+	return state
+}
+
+func writeTestInventory(t *testing.T, path string, state testInventoryState) {
+	t.Helper()
+	raw, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

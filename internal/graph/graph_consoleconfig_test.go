@@ -1158,3 +1158,75 @@ func TestSetConsoleConfigSessionLifetimes(t *testing.T) {
 		t.Fatal("an Admin Session of 2 minutes was accepted")
 	}
 }
+
+// A stored plugin Core did not load because its SDK range excludes the
+// embedded plugin SDK is listed inactive with the reason, and activation is
+// refused (CORE-2837).
+func TestConsoleListsSDKIncompatiblePluginInactive(t *testing.T) {
+	// feature:console-config
+	st := storetest.Open(t)
+	shipped := newConsoleHandler(t, st).plugins
+	plain, ok := shipped.Bundle("plain")
+	if !ok {
+		t.Fatal("plain bundle missing from the test registry")
+	}
+	live, err := newTestPluginRegistry([]plugin.Bundle{plain})
+	if err != nil {
+		t.Fatalf("live registry: %v", err)
+	}
+	legacy := plain
+	legacy.ID = "legacy"
+	legacy.SDKFloor, legacy.SDKCeiling = "0.1.0", "0.1.0"
+	incompatible := plugin.IncompatiblePlugin{
+		Bundle:   legacy,
+		Standing: plugin.PluginStanding{Provenance: plugin.ProvenanceSideloaded, TrustState: plugin.PluginUnsigned},
+	}
+	handler := NewHandler(
+		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, nil),
+		auth.NewService(st),
+		st,
+		live,
+		Options{ShippedPlugins: live, IncompatiblePlugins: []plugin.IncompatiblePlugin{incompatible}},
+	)
+	openManagerAdminSession(t, st)
+
+	data, errs := post(t, handler,
+		`{"query":"query { consoleConfig { plugins { id active status { id state detail } actions { id } } } }"}`,
+		authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("consoleConfig errors = %#v", errs)
+	}
+	var cfg ConsoleConfigInfo
+	mustUnmarshal(t, data["consoleConfig"], &cfg)
+	var listed *PluginActivationInfo
+	for i := range cfg.Plugins {
+		if cfg.Plugins[i].ID == "legacy" {
+			listed = &cfg.Plugins[i]
+		}
+	}
+	if listed == nil {
+		t.Fatalf("plugins = %#v, want legacy listed", cfg.Plugins)
+	}
+	if listed.Active || len(listed.Actions) != 0 {
+		t.Fatalf("legacy = active %v, actions %#v; want inactive with no actions", listed.Active, listed.Actions)
+	}
+	var sdkStatus PluginStatusInfo
+	for _, status := range listed.Status {
+		if status.ID == "sdk-compatibility" {
+			sdkStatus = status
+		}
+	}
+	if sdkStatus.State != "incompatible" || !strings.Contains(sdkStatus.Detail, "[0.1.0, 0.1.0]") {
+		t.Fatalf("legacy status = %#v, want an incompatible SDK row naming the range", listed.Status)
+	}
+
+	_, errs = post(t, handler,
+		`{"query":"mutation A($pluginID: String!, $active: Boolean!){ setPluginActive(pluginID:$pluginID, active:$active){ plugins { id } } }","variables":{"pluginID":"legacy","active":true}}`,
+		authorizeManager)
+	if len(errs) == 0 || !strings.Contains(errs[0].Message, "plugin SDK") {
+		t.Fatalf("setPluginActive(incompatible) errors = %#v, want an SDK refusal", errs)
+	}
+	if _, loaded := handler.plugins.Bundle("legacy"); loaded {
+		t.Fatal("incompatible plugin entered the live registry")
+	}
+}

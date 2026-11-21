@@ -400,7 +400,11 @@ type Options struct {
 	// ShippedPlugins is every plugin this server ships, including bundles a
 	// Console override keeps out of the live registry. The Console reads it so
 	// a deactivated plugin stays listed and can be activated again.
-	ShippedPlugins               *plugin.Registry
+	ShippedPlugins *plugin.Registry
+	// IncompatiblePlugins are stored plugins Core keeps but did not load
+	// because their SDK range excludes the embedded plugin SDK. The Console
+	// lists them inactive with the reason and refuses to activate them.
+	IncompatiblePlugins          []plugin.IncompatiblePlugin
 	HardwareAcceleration         config.HardwareAccelReport
 	Identify                     *identify.Service
 	Artwork                      ArtworkLocator
@@ -559,6 +563,8 @@ type Handler struct {
 	// shippedPlugins is the Console's view of every shipped plugin; nil means
 	// the live registry is the whole set.
 	shippedPlugins *plugin.Registry
+	// incompatiblePlugins are stored plugins left unloaded by an SDK mismatch.
+	incompatiblePlugins []plugin.IncompatiblePlugin
 	// transcodeTerminator aborts a Session's in-flight transcodes when its
 	// device key is revoked (ADR-0012 §7 — revocation kills live transports, not
 	// just future requests). Satisfied by *playback.Sessions. Nil (the default)
@@ -824,6 +830,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	if o.ShippedPlugins != nil {
 		h.shippedPlugins = o.ShippedPlugins
 	}
+	h.incompatiblePlugins = append([]plugin.IncompatiblePlugin(nil), o.IncompatiblePlugins...)
 	if len(o.SuppressedPlugins) > 0 {
 		h.suppressedPlugins = make(map[plugin.ID]bool, len(o.SuppressedPlugins))
 		for _, id := range o.SuppressedPlugins {
