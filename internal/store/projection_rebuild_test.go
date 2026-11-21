@@ -234,3 +234,36 @@ func TestProjectionRebuildVerifiesReplayAgainstExistingRows(t *testing.T) {
 		})
 	}
 }
+
+// The rebuild's snapshot table and EXCEPT run with temp_store=MEMORY on their
+// own connection, and the pooled writer keeps its own setting afterwards.
+func TestProjectionRebuildKeepsTempDataInMemory(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	var prior int
+	if err := st.eventsW.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&prior); err != nil {
+		t.Fatal(err)
+	}
+	if prior == sqliteTempStoreMemory {
+		t.Fatalf("writer already defaults to temp_store=MEMORY; the reset check proves nothing")
+	}
+	var during int
+	if err := withMemoryTempStore(ctx, st.eventsW, func(conn *sql.Conn) error {
+		return conn.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&during)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if during != sqliteTempStoreMemory {
+		t.Fatalf("rebuild connection temp_store = %d, want %d", during, sqliteTempStoreMemory)
+	}
+	if err := st.rebuildEngagementProjections(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var after int
+	if err := st.eventsW.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != prior {
+		t.Fatalf("pooled writer temp_store = %d after rebuild, want %d", after, prior)
+	}
+}

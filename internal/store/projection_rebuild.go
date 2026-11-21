@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -186,7 +187,50 @@ func (s *Store) rebuildEngagementProjections(ctx context.Context) error {
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	tx, err := s.eventsW.BeginTx(ctx, nil)
+	return withMemoryTempStore(ctx, s.eventsW, func(conn *sql.Conn) error {
+		return replayPlaybackProjection(ctx, conn)
+	})
+}
+
+// withMemoryTempStore runs fn on a dedicated connection with
+// temp_store=MEMORY, so the rebuild's snapshot table and its EXCEPT never
+// spill Profile IDs or playback history into the system temp directory,
+// outside the protected database directory. The previous setting is restored
+// before the connection goes back to the pool; a connection that cannot be
+// restored is discarded instead.
+func withMemoryTempStore(ctx context.Context, db *sql.DB, fn func(*sql.Conn) error) error {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	var prior int
+	if err := conn.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&prior); err != nil {
+		return fmt.Errorf("read temp_store: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, `PRAGMA temp_store = MEMORY`); err != nil {
+		return fmt.Errorf("set temp_store: %w", err)
+	}
+	defer func() {
+		if _, err := conn.ExecContext(context.WithoutCancel(ctx), fmt.Sprintf("PRAGMA temp_store = %d", prior)); err != nil {
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
+	}()
+	var mode int
+	if err := conn.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&mode); err != nil {
+		return fmt.Errorf("read temp_store: %w", err)
+	}
+	if mode != sqliteTempStoreMemory {
+		return fmt.Errorf("temp_store is %d on the rebuild connection, want %d (MEMORY)", mode, sqliteTempStoreMemory)
+	}
+	return fn(conn)
+}
+
+// sqliteTempStoreMemory is PRAGMA temp_store's value for MEMORY.
+const sqliteTempStoreMemory = 2
+
+func replayPlaybackProjection(ctx context.Context, conn *sql.Conn) error {
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
