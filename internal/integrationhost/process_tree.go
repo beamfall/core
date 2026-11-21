@@ -23,13 +23,19 @@ func superviseWorker(ctx context.Context, cmd *exec.Cmd, onStart func()) error {
 		return fmt.Errorf("integrationhost: prepare worker containment: %w", err)
 	}
 	defer tree.close()
+	pipes, err := newOutputPipes(cmd)
+	if err != nil {
+		return fmt.Errorf("integrationhost: worker output pipes: %w", err)
+	}
 	if err := tree.start(); err != nil {
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 		}
+		pipes.abandon()
 		return fmt.Errorf("integrationhost: launch worker: %w", err)
 	}
+	pipes.started()
 	if onStart != nil {
 		onStart()
 	}
@@ -56,7 +62,13 @@ func superviseWorker(ctx context.Context, cmd *exec.Cmd, onStart func()) error {
 		}
 	}
 	if retireErr != nil {
+		// A live member may still hold an output pipe; stop reading rather
+		// than wait for it.
+		pipes.abandon()
 		return fmt.Errorf("integrationhost: retire worker tree: %w", retireErr)
+	}
+	if copyErr := pipes.drain(); result == nil {
+		result = copyErr
 	}
 	return result
 }

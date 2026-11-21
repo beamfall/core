@@ -200,17 +200,24 @@ func superviseGroup(ctx context.Context, group *processGroup, stdout, stderr io.
 		}
 		defer probe.finish()
 	}
+	pipes, err := newOutputPipes(cmd)
+	if err != nil {
+		return fmt.Errorf("ffmpeg: output pipes: %w", err)
+	}
 	if startErr := cmd.Start(); startErr != nil {
+		pipes.abandon()
 		return fmt.Errorf("ffmpeg: start failed: %w", startErr)
 	}
+	pipes.started()
 	if bound && !probe.handoff() {
 		group.kill()
 		_ = group.wait()
+		pipes.abandon()
 		return context.Canceled
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- reapGroup(group) }()
+	go func() { done <- pipes.finish(reapGroup(group)) }()
 
 	select {
 	case <-ctx.Done():
