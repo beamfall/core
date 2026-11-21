@@ -1280,8 +1280,47 @@
   opacity: 1;
 }
 
+/* One-click Play on a poster card (CORE-2826): the accent twin of the More
+ * trigger, just inside it, shown on the same hover and focus. */
+[data-register="viewer"] .bf-card-quickplay {
+  position: absolute;
+  top: 6px;
+  right: 42px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-card-quickplay::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+[data-register="viewer"] .bf-card-shell:hover .bf-card-quickplay,
+[data-register="viewer"] .bf-card-shell:focus-within .bf-card-quickplay {
+  opacity: 1;
+}
+
+[data-register="viewer"] .bf-card-quickplay:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 @media (hover: none) {
-  [data-register="viewer"] .bf-card-more {
+  [data-register="viewer"] .bf-card-more,
+  [data-register="viewer"] .bf-card-quickplay {
     opacity: 1;
   }
 }
@@ -2238,7 +2277,8 @@
     transform: none;
   }
   [data-register="viewer"] .bf-card-play,
-  [data-register="viewer"] .bf-card-more {
+  [data-register="viewer"] .bf-card-more,
+  [data-register="viewer"] .bf-card-quickplay {
     transition: none;
   }
 }

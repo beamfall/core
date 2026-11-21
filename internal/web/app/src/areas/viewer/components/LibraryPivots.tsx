@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router";
+import { useEffect } from "react";
+import { NavLink, useLocation } from "react-router";
 import { useT } from "@/lib/i18n";
+import { type LibraryPivotPath, pivotOfPath, writeLibraryPivot } from "@/lib/libraryPivot";
 import { nodePath } from "@/lib/nodePath";
 import type { StringKey } from "@/strings";
 
@@ -8,8 +10,9 @@ import type { StringKey } from "@/strings";
 // Layout), Library (the full browse), Collections and Categories. Each is a
 // link with its own address, so a pivot can be shared and reached with Back;
 // NavLink marks the open one with aria-current="page", which also drives its
-// selected look.
-const PIVOTS: { path: string; label: StringKey }[] = [
+// selected look. The pivot shown is remembered per Library (CORE-2826), so the
+// sidebar can reopen it.
+const PIVOTS: { path: LibraryPivotPath; label: StringKey }[] = [
   { path: "", label: "libraryPivotRecommended" },
   { path: "/all", label: "libraryPivotLibrary" },
   { path: "/collections", label: "libraryPivotCollections" },
@@ -18,6 +21,10 @@ const PIVOTS: { path: string; label: StringKey }[] = [
 
 export function LibraryPivots({ nodeID }: { nodeID: string }) {
   const t = useT();
+  const { pathname } = useLocation();
+  useEffect(() => {
+    writeLibraryPivot(nodeID, pivotOfPath(pathname));
+  }, [nodeID, pathname]);
   return (
     <nav aria-label={t("libraryPivotsLabel")} className="bf-pivots">
       {PIVOTS.map((pivot) => (

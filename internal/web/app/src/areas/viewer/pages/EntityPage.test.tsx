@@ -423,6 +423,28 @@ describe("EntityPage container lockup", () => {
     expect(primary).toHaveTextContent("Play");
   });
 
+  // CORE-2826: the primary button names the child it plays by its plugin ordinal.
+  it("names the next-up child's ordinal on the primary button", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(container);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      { ...children[0], subtitle: "S1 · E1 · First part" },
+      { ...child("c3", "Third part"), subtitle: "S1 · E3 · Third part" },
+    ]);
+    const { container: root, unmount } = renderEntity();
+    await act(async () => {});
+    const primary = root.querySelector(".bg-primary");
+    expect(primary).toHaveTextContent(/^Play S1 E3$/);
+    expect(primary).toHaveAccessibleName("Play S1 E3, Third part");
+    unmount();
+
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([{ ...children[1], subtitle: "S1 · E2" }]);
+    const resumed = renderEntity();
+    await act(async () => {});
+    const resume = resumed.container.querySelector(".bg-primary");
+    expect(resume).toHaveTextContent(/^Resume S1 E2$/);
+    expect(resume).toHaveAccessibleName("Resume S1 E2, Second part");
+  });
+
   it("lists the children as numbered links in order with runtime, progress and watched state", async () => {
     vi.mocked(fetchEntity).mockResolvedValue(container);
     vi.mocked(fetchMediaForEntity).mockResolvedValue(children);

@@ -16,11 +16,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { displayString } from "@/lib/display";
 import type { LibrarySummary, NavigationNode } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { libraryIcon } from "@/lib/libraryIcons";
+import { pivotOfPath, rememberedLibraryPath } from "@/lib/libraryPivot";
 import { nodePath } from "@/lib/nodePath";
 import { applySidebarPrefs, EMPTY_SIDEBAR_PREFS, type SidebarLibraryPrefs } from "./sidebarPrefs";
 
@@ -76,6 +77,7 @@ export function LibrarySidebar({
   onSavePrefs?: (prefs: SidebarLibraryPrefs) => Promise<void>;
 }) {
   const t = useT();
+  const { pathname } = useLocation();
   const displayLocale = useDisplayLocale();
   const accents = new Map(libraries.map((library) => [library.id, library.accent]));
   const icons = new Map(libraries.map((library) => [library.id, libraryIcon(library.icon)]));
@@ -123,7 +125,15 @@ export function LibrarySidebar({
     return (
       <li key={node.id}>
         <Link
-          to={nodePath(node.id)}
+          // A Library reopens on the pivot last used there (CORE-2826); the
+          // open one keeps the pivot on screen, which is stored only after render.
+          to={
+            !node.libraryID
+              ? nodePath(node.id)
+              : active
+                ? nodePath(node.id, pivotOfPath(pathname))
+                : rememberedLibraryPath(node.id)
+          }
           aria-current={active ? "page" : undefined}
           className={"bf-side-link" + (active ? " is-active" : "")}
           title={collapsed && !drawer ? title : undefined}
