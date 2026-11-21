@@ -80,6 +80,15 @@ type fakeCandidateStore struct {
 		scraperID string
 	}
 	applied []string
+	// pinned lists slots whose current image is an applied candidate.
+	pinned map[string]bool
+}
+
+func (f *fakeCandidateStore) ArtworkCandidates(_ context.Context, mediaID store.MediaID, slot string, _ store.LibraryFilter) ([]store.ArtworkCandidate, error) {
+	if !f.pinned[slot] {
+		return nil, nil
+	}
+	return []store.ArtworkCandidate{{ID: "pinned", MediaID: mediaID, Slot: slot, Applied: true}}, nil
 }
 
 func (f *fakeCandidateStore) UpsertArtworkCandidate(_ context.Context, mediaID store.MediaID, slot, sourceURL, pluginID, scraperID string) error {
@@ -430,6 +439,11 @@ type fakeArtwork struct {
 	generated     map[string]bool
 	embedded      bool
 	embeddedCalls int
+	sidecarLocked map[string]bool
+}
+
+func (f *fakeArtwork) IsArtworkLocked(_ store.MediaID, slot string) bool {
+	return f.sidecarLocked[slot]
 }
 
 type importedArtwork struct {
@@ -1715,4 +1729,82 @@ func TestApplyIdentifiedMediaTitleSource(t *testing.T) {
 			t.Errorf("title = %v after %d hook calls, want S03E01 and none", st.metadata.Title, titles.identifyCalls)
 		}
 	})
+}
+
+// classStore is a metadata store that reports the Media class and manual
+// artwork locks.
+type classStore struct {
+	artworkLockStore
+	class store.MediaClass
+}
+
+func (s *classStore) MediaClass(context.Context, store.MediaID) (store.MediaClass, error) {
+	return s.class, nil
+}
+
+// TestApplyPosterPrecedenceByMediaClass is the CORE-2901 regression: a cover
+// embedded in a video file yields to the provider poster unless the slot is
+// locked or holds an applied candidate, while audio keeps its embedded cover.
+func TestApplyPosterPrecedenceByMediaClass(t *testing.T) {
+	const posterURL = "https://img.example.test/p/42.jpg"
+	cases := []struct {
+		name         string
+		class        store.MediaClass
+		generated    bool
+		manualLock   bool
+		sidecarLock  bool
+		pinned       bool
+		wantApplied  bool
+		wantEmbedded int
+	}{
+		{name: "video embedded cover yields", class: store.MediaClassVideo, wantApplied: true},
+		{name: "video generated poster yields without embedded import", class: store.MediaClassVideo, generated: true, wantApplied: true},
+		{name: "video manual lock keeps", class: store.MediaClassVideo, manualLock: true},
+		{name: "video sidecar lock keeps", class: store.MediaClassVideo, sidecarLock: true},
+		{name: "video pinned candidate keeps", class: store.MediaClassVideo, pinned: true},
+		{name: "audio embedded cover keeps", class: store.MediaClassAudio},
+		{name: "audio generated poster takes embedded", class: store.MediaClassAudio, generated: true, wantEmbedded: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := &fakeEngine{lookupResult: scrape.Result{
+				Fields:  map[string]any{"title": "Blue Harvest"},
+				Artwork: map[string]string{artwork.SlotPoster: posterURL},
+			}}
+			fetcher := &fakeFetcher{data: []byte("provider-poster")}
+			art := &fakeArtwork{
+				has:           map[string]bool{artwork.SlotPoster: true},
+				generated:     map[string]bool{artwork.SlotPoster: tc.generated},
+				embedded:      true,
+				sidecarLocked: map[string]bool{artwork.SlotPoster: tc.sidecarLock},
+			}
+			metadata := &classStore{class: tc.class, artworkLockStore: artworkLockStore{
+				manual: map[string]bool{store.ArtworkLockField(artwork.SlotPoster): tc.manualLock},
+			}}
+			candidates := &fakeCandidateStore{pinned: map[string]bool{artwork.SlotPoster: tc.pinned}}
+			service := identify.NewService(engine, demoBundles(plugin.ScraperSpec{ID: "lookup"}), metadata)
+			service.SetArtwork(fetcher, art)
+			service.SetArtworkCandidates(candidates)
+
+			if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+				t.Fatal(err)
+			}
+			if art.embeddedCalls != tc.wantEmbedded {
+				t.Fatalf("embedded imports = %d, want %d", art.embeddedCalls, tc.wantEmbedded)
+			}
+			if !tc.wantApplied {
+				if fetcher.calls != 0 || art.calls != 0 || len(candidates.applied) != 0 {
+					t.Fatalf("kept poster replaced: fetches=%d imports=%d applied=%v", fetcher.calls, art.calls, candidates.applied)
+				}
+				return
+			}
+			if art.calls != 1 || string(art.data) != "provider-poster" {
+				t.Fatalf("provider poster not imported: imports=%d data=%q", art.calls, art.data)
+			}
+			wantID := store.ArtworkCandidateID("media-alpha", artwork.SlotPoster, posterURL)
+			if len(candidates.applied) != 1 || candidates.applied[0] != wantID {
+				t.Fatalf("applied candidates = %v, want [%s]", candidates.applied, wantID)
+			}
+		})
+	}
 }

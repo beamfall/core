@@ -96,6 +96,31 @@ type embeddedArtworkStore interface {
 	ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (bool, error)
 }
 
+// sidecarLockReader reports a slot locked by a local sidecar marker;
+// *artwork.Service satisfies it. ImportArtwork refuses such a slot anyway,
+// so the probe only saves the fetch.
+type sidecarLockReader interface {
+	IsArtworkLocked(id store.MediaID, slot string) bool
+}
+
+// mediaClassReader reads a Media item's playback class; *store.Store
+// satisfies it.
+type mediaClassReader interface {
+	MediaClass(ctx context.Context, id store.MediaID) (store.MediaClass, error)
+}
+
+// artworkCandidateReader lists a slot's artwork candidates;
+// *store.Store satisfies it.
+type artworkCandidateReader interface {
+	ArtworkCandidates(ctx context.Context, mediaID store.MediaID, slot string, filter store.LibraryFilter) ([]store.ArtworkCandidate, error)
+}
+
+var (
+	_ sidecarLockReader      = (*artwork.Service)(nil)
+	_ mediaClassReader       = (*store.Store)(nil)
+	_ artworkCandidateReader = (*store.Store)(nil)
+)
+
 // FieldStore is the Media field write seam; *store.Store satisfies it.
 // Upsert (not full-replace) semantics: fields other writers set survive.
 // Identification writes at the operator (identified) tier so a manual edit is
@@ -962,17 +987,7 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 		if s.artworkLocked(ctx, mediaID, slot) {
 			continue // an admin pinned this slot: keep their artwork
 		}
-		if slot == artwork.SlotPoster && (!s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)) {
-			if embedded, ok := s.artwork.(embeddedArtworkStore); ok {
-				found, err := embedded.ImportEmbeddedPoster(ctx, mediaID)
-				if err != nil {
-					slog.Debug("identify: embedded artwork import failed", "media", string(mediaID), "error", err.Error())
-				} else if found {
-					continue
-				}
-			}
-		}
-		if slot == artwork.SlotPoster && s.artwork.HasArtwork(mediaID, slot) && !s.artwork.IsGeneratedArtwork(mediaID, slot) {
+		if slot == artwork.SlotPoster && !s.posterTakesProviderArtwork(ctx, mediaID) {
 			continue
 		}
 		data, err := s.fetcher.FetchResource(ctx, rawURL)
@@ -994,6 +1009,75 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 			}
 		}
 	}
+}
+
+// posterTakesProviderArtwork reports whether a fetched provider poster
+// should replace the Media item's current poster. A missing or generated
+// poster always yields; for audio and image Media a cover embedded in the
+// file is imported first and wins. For video Media (CORE-2901) the embedded
+// cover is only a fallback before a frame grab: a release group's cover
+// yields to the provider poster unless the slot is sidecar-locked or holds a
+// candidate an operator applied or pinned.
+func (s *Service) posterTakesProviderArtwork(ctx context.Context, mediaID store.MediaID) bool {
+	const slot = artwork.SlotPoster
+	replaceable := !s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)
+	if s.mediaIsVideo(ctx, mediaID) {
+		if locks, ok := s.artwork.(sidecarLockReader); ok && locks.IsArtworkLocked(mediaID, slot) {
+			return false
+		}
+		return replaceable || !s.posterCandidateApplied(ctx, mediaID)
+	}
+	if !replaceable {
+		return false
+	}
+	if embedded, ok := s.artwork.(embeddedArtworkStore); ok {
+		found, err := embedded.ImportEmbeddedPoster(ctx, mediaID)
+		if err != nil {
+			slog.Debug("identify: embedded artwork import failed", "media", string(mediaID), "error", err.Error())
+		} else if found {
+			return false
+		}
+	}
+	return true
+}
+
+// mediaIsVideo reports whether mediaID is video-class Media. A store that
+// cannot say, or a failed read, is treated as not video, which keeps the
+// embedded-cover precedence.
+func (s *Service) mediaIsVideo(ctx context.Context, mediaID store.MediaID) bool {
+	classes, ok := s.store.(mediaClassReader)
+	if !ok {
+		return false
+	}
+	class, err := classes.MediaClass(ctx, mediaID)
+	if err != nil {
+		slog.Debug("identify: media class read failed", "media", string(mediaID), "error", err.Error())
+		return false
+	}
+	return class == store.MediaClassVideo
+}
+
+// posterCandidateApplied reports whether the current poster came from an
+// applied artwork candidate: a provider poster applied earlier, or one an
+// operator pinned or uploaded. An embedded cover is never a candidate. A
+// candidate store that cannot say, or a failed read, counts as applied, so
+// the current poster is kept.
+func (s *Service) posterCandidateApplied(ctx context.Context, mediaID store.MediaID) bool {
+	reader, ok := s.candidates.(artworkCandidateReader)
+	if !ok {
+		return true
+	}
+	candidates, err := reader.ArtworkCandidates(ctx, mediaID, artwork.SlotPoster, store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		slog.Debug("identify: artwork candidate read failed", "media", string(mediaID), "error", err.Error())
+		return true
+	}
+	for _, candidate := range candidates {
+		if candidate.Applied {
+			return true
+		}
+	}
+	return false
 }
 
 // artworkLocked reports whether an admin locked one artwork slot. A failed
