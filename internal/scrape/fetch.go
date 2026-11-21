@@ -25,6 +25,12 @@ type ConditionalResult struct {
 	ETag         string
 	LastModified string
 	NotModified  bool
+	// PermanentRedirect is the URL reached through permanent (301/308)
+	// redirects only, before any temporary one; "" when the first hop was
+	// not permanent. It is set even when the fetch fails, including when the
+	// redirect itself was refused as cross-origin. Secret class like the
+	// feed URL: never logged.
+	PermanentRedirect string
 }
 
 func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[string]string) ([]byte, error) {
@@ -98,30 +104,34 @@ func (e *Engine) FetchConditionalAuth(ctx context.Context, rawURL, etag, lastMod
 	if lastModified != "" {
 		req.Header.Set("If-Modified-Since", lastModified)
 	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	record := &redirectRecord{}
+	resp, err := e.requestWith429Retry(withRedirectRecord(ctx, record), req, func(attempt *http.Request) (*http.Response, error) {
+		*record = redirectRecord{}
 		return e.client.Do(attempt)
 	})
+	moved := ConditionalResult{PermanentRedirect: record.target}
 	if err != nil {
-		return ConditionalResult{}, sanitizedTransportError(parsed, err)
+		return moved, sanitizedTransportError(parsed, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotModified {
-		return ConditionalResult{ETag: etag, LastModified: lastModified, NotModified: true}, nil
+		return ConditionalResult{ETag: etag, LastModified: lastModified, NotModified: true, PermanentRedirect: record.target}, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return ConditionalResult{}, &statusError{host: parsed.Hostname(), code: resp.StatusCode}
+		return moved, &statusError{host: parsed.Hostname(), code: resp.StatusCode}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
 	if err != nil {
-		return ConditionalResult{}, fmt.Errorf("scrape: reading response: %w", err)
+		return moved, fmt.Errorf("scrape: reading response: %w", err)
 	}
 	if int64(len(data)) > e.maxResponseBytes {
-		return ConditionalResult{}, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
+		return moved, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
 	}
 	return ConditionalResult{
-		Data:         data,
-		ETag:         resp.Header.Get("ETag"),
-		LastModified: resp.Header.Get("Last-Modified"),
+		Data:              data,
+		ETag:              resp.Header.Get("ETag"),
+		LastModified:      resp.Header.Get("Last-Modified"),
+		PermanentRedirect: record.target,
 	}, nil
 }
 
@@ -275,6 +285,29 @@ type FeedEntry struct {
 	EnclosureURL string
 	// EnclosureType is the declared MIME type ("" when the feed omits it).
 	EnclosureType string
+	// EnclosureLength is the declared byte length (0 when absent or invalid).
+	EnclosureLength int64
+	// Description is the entry summary ("" when absent).
+	Description string
+	// PublishedAt is the parsed publication time (zero when absent or
+	// unparseable).
+	PublishedAt time.Time
+	// DurationSeconds is itunes:duration as seconds (0 when absent).
+	DurationSeconds int64
+}
+
+// FeedDocument is a parsed feed: channel metadata plus its entries in
+// document order.
+type FeedDocument struct {
+	Title string
+	// Serial is true when the channel declares itunes:type "serial": its
+	// entries are meant to be consumed in order from the first.
+	Serial bool
+	// NewFeedURL is the channel's declared new location (a direct child named
+	// new-feed-url or newFeedUrl in any namespace: the iTunes and Index
+	// extensions), "" when absent. Secret class: never logged.
+	NewFeedURL string
+	Entries    []FeedEntry
 }
 
 // ParseFeedEntries extracts every entry's GUID, title, and enclosure from an
@@ -282,28 +315,105 @@ type FeedEntry struct {
 // identity need an enclosure and derive their GUID from the item link or
 // publication metadata (ADR-0030 §3).
 func ParseFeedEntries(data []byte) ([]FeedEntry, error) {
+	document, err := ParseFeed(data)
+	if err != nil {
+		return nil, err
+	}
+	return document.Entries, nil
+}
+
+// ParseFeed parses an RSS or Atom document into its channel metadata and
+// entries (see ParseFeedEntries for entry identity).
+func ParseFeed(data []byte) (FeedDocument, error) {
 	root, err := parseXML(data)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: invalid feed document: %w", err)
+		return FeedDocument{}, fmt.Errorf("scrape: invalid feed document: %w", err)
+	}
+	var document FeedDocument
+	channel := root
+	if channels := findElements([]*xmlNode{root}, "channel"); len(channels) > 0 {
+		channel = channels[0]
+	} else if feeds := findElements([]*xmlNode{root}, "feed"); len(feeds) > 0 {
+		channel = feeds[0]
+	}
+	document.Title = directChildText(channel, "title")
+	document.Serial = strings.EqualFold(directChildText(channel, "itunes:type"), "serial")
+	for _, child := range channel.children {
+		local := child.name[strings.LastIndexByte(child.name, ':')+1:]
+		if local == "new-feed-url" || local == "newFeedUrl" {
+			if document.NewFeedURL = strings.TrimSpace(child.text); document.NewFeedURL != "" {
+				break
+			}
+		}
 	}
 	if items := findElements([]*xmlNode{root}, "item"); len(items) > 0 {
-		return rssEntries(items), nil
+		document.Entries = rssEntries(items)
+		return document, nil
 	}
 	// No <item> elements: either an Atom feed or an empty RSS one — Atom's
 	// <entry> lookup returns the empty list for both.
-	return atomEntries(findElements([]*xmlNode{root}, "entry")), nil
+	document.Entries = atomEntries(findElements([]*xmlNode{root}, "entry"))
+	return document, nil
+}
+
+// directChildText is the trimmed text of scope's first direct child named
+// name, so channel metadata never picks up an entry's element.
+func directChildText(scope *xmlNode, name string) string {
+	for _, child := range scope.children {
+		if child.name == name {
+			return strings.TrimSpace(child.text)
+		}
+	}
+	return ""
+}
+
+func parseFeedTime(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	for _, layout := range feedPublicationLayouts {
+		if stamp, err := time.Parse(layout, value); err == nil {
+			return stamp.UTC()
+		}
+	}
+	return time.Time{}
+}
+
+func parseFeedDuration(value string) int64 {
+	seconds, ok := secondsFromClock(value)
+	if !ok {
+		return 0
+	}
+	n, _ := strconv.ParseInt(seconds, 10, 64)
+	return n
+}
+
+func parseEnclosureLength(value string) int64 {
+	n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 func rssEntries(items []*xmlNode) []FeedEntry {
 	entries := make([]FeedEntry, 0, len(items))
 	for _, item := range items {
 		entry := FeedEntry{
-			GUID:  childText(item, "guid"),
-			Title: childText(item, "title"),
+			GUID:            childText(item, "guid"),
+			Title:           childText(item, "title"),
+			Description:     childText(item, "description"),
+			PublishedAt:     parseFeedTime(childText(item, "pubDate")),
+			DurationSeconds: parseFeedDuration(childText(item, "itunes:duration")),
+		}
+		if entry.Description == "" {
+			entry.Description = childText(item, "itunes:summary")
 		}
 		if enclosures := findElements([]*xmlNode{item}, "enclosure"); len(enclosures) > 0 {
 			entry.EnclosureURL = enclosures[0].attrs["url"]
 			entry.EnclosureType = enclosures[0].attrs["type"]
+			entry.EnclosureLength = parseEnclosureLength(enclosures[0].attrs["length"])
 		}
 		if entry.GUID == "" && entry.EnclosureURL != "" {
 			entry.deriveGUID(childText(item, "link"), childText(item, "pubDate"))
@@ -322,13 +432,20 @@ func atomEntries(items []*xmlNode) []FeedEntry {
 	entries := make([]FeedEntry, 0, len(items))
 	for _, item := range items {
 		entry := FeedEntry{
-			GUID:  childText(item, "id"),
-			Title: childText(item, "title"),
+			GUID:            childText(item, "id"),
+			Title:           childText(item, "title"),
+			Description:     childText(item, "summary"),
+			PublishedAt:     parseFeedTime(childText(item, "published")),
+			DurationSeconds: parseFeedDuration(childText(item, "itunes:duration")),
+		}
+		if entry.PublishedAt.IsZero() {
+			entry.PublishedAt = parseFeedTime(childText(item, "updated"))
 		}
 		for _, link := range findElements([]*xmlNode{item}, "link") {
 			if link.attrs["rel"] == "enclosure" {
 				entry.EnclosureURL = link.attrs["href"]
 				entry.EnclosureType = link.attrs["type"]
+				entry.EnclosureLength = parseEnclosureLength(link.attrs["length"])
 				break
 			}
 		}

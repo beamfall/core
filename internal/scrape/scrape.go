@@ -1430,6 +1430,15 @@ func IsTransient(err error) bool {
 	return errors.As(err, &netErr)
 }
 
+// HTTPStatus returns the HTTP status code of a non-2xx response error.
+func HTTPStatus(err error) (int, bool) {
+	var status *statusError
+	if errors.As(err, &status) {
+		return status.code, true
+	}
+	return 0, false
+}
+
 func decodeJSON(data []byte) (any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
