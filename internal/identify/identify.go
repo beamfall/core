@@ -96,6 +96,53 @@ type embeddedArtworkStore interface {
 	ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (bool, error)
 }
 
+// sidecarLockReader reports a slot locked by a local sidecar marker;
+// *artwork.Service satisfies it. ImportArtwork refuses such a slot anyway,
+// so the probe only saves the fetch.
+type sidecarLockReader interface {
+	IsArtworkLocked(id store.MediaID, slot string) bool
+}
+
+// embeddedArtworkReader tells a poster extracted from the Media file apart
+// from fetched or supplied artwork; *artwork.Service satisfies it.
+type embeddedArtworkReader interface {
+	IsEmbeddedArtwork(id store.MediaID, slot string) bool
+}
+
+// importedArtworkReader reports artwork stored through ImportArtwork or a
+// manual pick; *artwork.Service satisfies it.
+type importedArtworkReader interface {
+	IsImportedArtwork(id store.MediaID, slot string) bool
+}
+
+// conditionalArtworkStore rechecks an import decision under the slot's
+// directory lock; *artwork.Service satisfies it.
+type conditionalArtworkStore interface {
+	ImportArtworkIf(ctx context.Context, id store.MediaID, slot string, data []byte, ok func() bool) (bool, error)
+}
+
+// appliedCandidateReader lists a slot's artwork candidates; *store.Store
+// satisfies it.
+type appliedCandidateReader interface {
+	ArtworkCandidates(ctx context.Context, mediaID store.MediaID, slot string, filter store.LibraryFilter) ([]store.ArtworkCandidate, error)
+}
+
+// mediaClassReader reads a Media item's playback class; *store.Store
+// satisfies it.
+type mediaClassReader interface {
+	MediaClass(ctx context.Context, id store.MediaID) (store.MediaClass, error)
+}
+
+var (
+	_ embeddedArtworkStore    = (*artwork.Service)(nil)
+	_ embeddedArtworkReader   = (*artwork.Service)(nil)
+	_ importedArtworkReader   = (*artwork.Service)(nil)
+	_ conditionalArtworkStore = (*artwork.Service)(nil)
+	_ sidecarLockReader       = (*artwork.Service)(nil)
+	_ appliedCandidateReader  = (*store.Store)(nil)
+	_ mediaClassReader        = (*store.Store)(nil)
+)
+
 // FieldStore is the Media field write seam; *store.Store satisfies it.
 // Upsert (not full-replace) semantics: fields other writers set survive.
 // Identification writes at the operator (identified) tier so a manual edit is
@@ -969,28 +1016,39 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 		if s.artworkLocked(ctx, mediaID, slot) {
 			continue // an admin pinned this slot: keep their artwork
 		}
-		if slot == artwork.SlotPoster && (!s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)) {
-			if embedded, ok := s.artwork.(embeddedArtworkStore); ok {
-				found, err := embedded.ImportEmbeddedPoster(ctx, mediaID)
-				if err != nil {
-					slog.Debug("identify: embedded artwork import failed", "media", string(mediaID), "error", err.Error())
-				} else if found {
-					continue
-				}
-			}
-		}
-		if slot == artwork.SlotPoster && s.artwork.HasArtwork(mediaID, slot) && !s.artwork.IsGeneratedArtwork(mediaID, slot) {
+		video := slot == artwork.SlotPoster && s.mediaIsVideo(ctx, mediaID)
+		if slot == artwork.SlotPoster && !s.posterTakesProviderArtwork(ctx, mediaID, video) {
 			continue
 		}
 		data, err := s.fetcher.FetchResource(ctx, rawURL)
 		if err != nil {
 			slog.Debug("identify: artwork fetch failed",
 				"media", string(mediaID), "slot", slot, "error", err.Error())
+			s.embeddedPosterFallback(ctx, mediaID, video)
 			continue
 		}
-		if err := s.artwork.ImportArtwork(ctx, mediaID, slot, data); err != nil {
+		// A lock, pin or upload may land during the fetch, so the decision is
+		// made again under the slot's directory lock.
+		stillWanted := func() bool {
+			if s.artworkLocked(ctx, mediaID, slot) {
+				return false
+			}
+			switch {
+			case video:
+				return s.videoPosterReplaceable(ctx, mediaID)
+			case slot == artwork.SlotPoster:
+				return !s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)
+			}
+			return true
+		}
+		imported, err := s.importArtworkIf(ctx, mediaID, slot, data, stillWanted)
+		if err != nil {
 			slog.Debug("identify: artwork import failed",
 				"media", string(mediaID), "slot", slot, "error", err.Error())
+			s.embeddedPosterFallback(ctx, mediaID, video)
+			continue
+		}
+		if !imported {
 			continue
 		}
 		if s.candidates != nil {
@@ -1001,6 +1059,126 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 			}
 		}
 	}
+}
+
+// posterTakesProviderArtwork reports whether a fetched provider poster
+// should replace the Media item's current poster. A missing or generated
+// poster always yields; for audio and image Media a cover embedded in the
+// file is imported first and wins. For video Media (CORE-2901) the embedded
+// cover is only a fallback before a frame grab, so it yields too.
+func (s *Service) posterTakesProviderArtwork(ctx context.Context, mediaID store.MediaID, video bool) bool {
+	if video {
+		return s.videoPosterReplaceable(ctx, mediaID)
+	}
+	if s.artwork.HasArtwork(mediaID, artwork.SlotPoster) && !s.artwork.IsGeneratedArtwork(mediaID, artwork.SlotPoster) {
+		return false
+	}
+	return !s.importEmbeddedPoster(ctx, mediaID)
+}
+
+// videoPosterReplaceable reports whether a fetched provider poster should
+// replace a video's current poster. A sidecar lock keeps it, as does artwork
+// stored through ImportArtwork or a manual pick (fetched, pinned, uploaded,
+// integration-supplied). A missing poster, a frame grab and the file's
+// embedded cover yield. A poster with no provenance marker predates the
+// markers or was kept when its sidecar went away (local-artwork spec: a
+// scrape may replace it); it yields unless an applied candidate shows it was
+// fetched or pinned. Integration posters from before the markers have no
+// candidate, so they are replaced once.
+func (s *Service) videoPosterReplaceable(ctx context.Context, mediaID store.MediaID) bool {
+	const slot = artwork.SlotPoster
+	if locks, ok := s.artwork.(sidecarLockReader); ok && locks.IsArtworkLocked(mediaID, slot) {
+		return false
+	}
+	if !s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot) {
+		return true
+	}
+	if embedded, ok := s.artwork.(embeddedArtworkReader); ok && embedded.IsEmbeddedArtwork(mediaID, slot) {
+		return true
+	}
+	imported, ok := s.artwork.(importedArtworkReader)
+	if !ok || imported.IsImportedArtwork(mediaID, slot) {
+		return false
+	}
+	return !s.hasAppliedCandidate(ctx, mediaID, slot)
+}
+
+// hasAppliedCandidate reports whether one of the slot's candidates is marked
+// applied. A store that cannot say, or a failed read, counts as applied, so
+// the poster is kept.
+func (s *Service) hasAppliedCandidate(ctx context.Context, mediaID store.MediaID, slot string) bool {
+	reader, ok := s.candidates.(appliedCandidateReader)
+	if !ok {
+		return true
+	}
+	candidates, err := reader.ArtworkCandidates(ctx, mediaID, slot, store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		slog.Debug("identify: artwork candidate read failed", "media", string(mediaID), "slot", slot, "error", err.Error())
+		return true
+	}
+	for _, candidate := range candidates {
+		if candidate.Applied {
+			return true
+		}
+	}
+	return false
+}
+
+// importArtworkIf stores fetched artwork when stillWanted holds, rechecked
+// under the slot's directory lock when the artwork store supports it, and
+// reports whether it was stored.
+func (s *Service) importArtworkIf(ctx context.Context, mediaID store.MediaID, slot string, data []byte, stillWanted func() bool) (bool, error) {
+	if conditional, ok := s.artwork.(conditionalArtworkStore); ok {
+		return conditional.ImportArtworkIf(ctx, mediaID, slot, data, stillWanted)
+	}
+	if !stillWanted() {
+		return false, nil
+	}
+	return true, s.artwork.ImportArtwork(ctx, mediaID, slot, data)
+}
+
+// embeddedPosterFallback imports a video's embedded cover when the provider
+// poster could not be stored and the slot holds nothing better than a frame
+// grab. ImportEmbeddedPoster repeats the slot check under the directory lock.
+func (s *Service) embeddedPosterFallback(ctx context.Context, mediaID store.MediaID, video bool) {
+	if !video || s.artworkLocked(ctx, mediaID, artwork.SlotPoster) {
+		return
+	}
+	if s.artwork.HasArtwork(mediaID, artwork.SlotPoster) && !s.artwork.IsGeneratedArtwork(mediaID, artwork.SlotPoster) {
+		return
+	}
+	s.importEmbeddedPoster(ctx, mediaID)
+}
+
+// importEmbeddedPoster imports the cover embedded in the Media file and
+// reports whether one landed.
+func (s *Service) importEmbeddedPoster(ctx context.Context, mediaID store.MediaID) bool {
+	embedded, ok := s.artwork.(embeddedArtworkStore)
+	if !ok {
+		return false
+	}
+	found, err := embedded.ImportEmbeddedPoster(ctx, mediaID)
+	if err != nil {
+		slog.Debug("identify: embedded artwork import failed", "media", string(mediaID), "error", err.Error())
+		return false
+	}
+	return found
+}
+
+// mediaIsVideo reports whether mediaID is video-class Media. A store that
+// cannot say, or a failed read, is treated as not video, which keeps the
+// embedded-cover precedence.
+func (s *Service) mediaIsVideo(ctx context.Context, mediaID store.MediaID) bool {
+	classes, ok := s.store.(mediaClassReader)
+	if !ok {
+		return false
+	}
+	class, err := classes.MediaClass(ctx, mediaID)
+	if err != nil {
+		slog.Debug("identify: media class read failed", "media", string(mediaID), "error", err.Error())
+		return false
+	}
+	return class == store.MediaClassVideo
 }
 
 // artworkLocked reports whether an admin locked one artwork slot. A failed

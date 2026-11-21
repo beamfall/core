@@ -301,7 +301,7 @@ type uploadedArtworkFileSnapshot struct {
 }
 
 func captureUploadedArtwork(path string) (uploadedArtworkSnapshot, error) {
-	paths := []string{path, path + ".generated"}
+	paths := []string{path, path + ".generated", path + ".embedded", path + ".imported"}
 	derivatives, err := uploadedArtworkDerivativePaths(path)
 	if err != nil {
 		return uploadedArtworkSnapshot{}, err
