@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import {
+  CATEGORY_TONES,
+  categoryCovers,
   categoryInitial,
+  categoryTone,
   categoryValues,
   FEATURED_MAX,
   foldForSearch,
   groupByInitial,
   planCategories,
   runBounded,
+  singularLabel,
   TOP_COUNT,
   takeCategoryArt,
 } from "./libraryCategories";
+import type { LibraryEntityKind } from "./libraryViews";
 
 function many(prefix: string, n: number) {
   return Array.from({ length: n }, (_, i) => `${prefix} ${String(i).padStart(3, "0")}`);
@@ -105,6 +110,63 @@ describe("takeCategoryArt (CORE-2505)", () => {
     // c's backdrop is b's, and a and b are used: nothing left.
     expect(takeCategoryArt([a, c], used)).toBe("");
     expect(takeCategoryArt([item("d", { poster: "/d-post" })], used)).toBe("/d-post");
+  });
+});
+
+describe("category card fallbacks (CORE-2885)", () => {
+  const kinds: LibraryEntityKind[] = [
+    { kind: "a", label: { en: "Units", fr: "Unités" }, kindDisplayName: { en: "Unit" }, total: 2 },
+    { kind: "b", label: { en: "Sets" }, kindDisplayName: {}, total: 1 },
+  ];
+
+  it("finds the singular by the browse label, every locale matching", () => {
+    expect(singularLabel({ en: "Units", fr: "Unités" }, kinds)).toEqual({ en: "Unit" });
+    expect(singularLabel({ en: "Units" }, kinds)).toBeUndefined();
+    expect(singularLabel({ en: "Sets" }, kinds)).toBeUndefined();
+    expect(singularLabel({}, kinds)).toBeUndefined();
+  });
+
+  it("keeps the Media count behind a container count", () => {
+    const [entry] = categoryValues(
+      {
+        kind: "genre",
+        values: ["x"],
+        counts: [9],
+        browseCounts: [1],
+        browseLabels: [{ en: "Units", fr: "Unités" }],
+      },
+      kinds,
+    );
+    expect(entry).toEqual({
+      value: "x",
+      count: 1,
+      label: { en: "Units", fr: "Unités" },
+      labelOne: { en: "Unit" },
+      items: 9,
+    });
+  });
+
+  it("takes distinct container covers in mosaic shapes of one, two or four", () => {
+    const item = (container?: string) =>
+      ({
+        id: container ?? "loose",
+        kind: "media",
+        title: "",
+        container: container
+          ? { id: container, title: "", artwork: { poster: container } }
+          : undefined,
+      }) as unknown as SourceItem;
+    expect(categoryCovers([item("a"), item(), item("a")])).toEqual(["a"]);
+    expect(categoryCovers(["a", "b", "c"].map(item))).toEqual(["a", "b"]);
+    expect(categoryCovers(["a", "b", "c", "d", "e"].map(item))).toEqual(["a", "b", "c", "d"]);
+    expect(categoryCovers([])).toEqual([]);
+  });
+
+  it("picks the same tone for the same name, folding case and accents", () => {
+    expect(categoryTone("Électro")).toBe(categoryTone("electro "));
+    const tones = new Set(many("Value", 50).map(categoryTone));
+    expect(tones.size).toBeGreaterThan(3);
+    for (const tone of tones) expect(tone).toBeLessThan(CATEGORY_TONES);
   });
 });
 
