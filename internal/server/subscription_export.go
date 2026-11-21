@@ -101,7 +101,7 @@ func (s *Server) subscriptionOPML(ctx context.Context, filter store.LibraryFilte
 			return nil, err
 		}
 		for _, sub := range subscriptions {
-			feedURL, public, ok := s.exportableFeedURL(sub, requestHostname)
+			feedURL, host, public, ok := s.exportableFeedURL(sub, requestHostname)
 			if !ok || (!public && !includePrivate) {
 				continue
 			}
@@ -110,8 +110,10 @@ func (s *Server) subscriptionOPML(ctx context.Context, filter store.LibraryFilte
 			}
 			outline := subscriptionOutline{Type: "rss", Text: sub.Title, Title: sub.Title, XMLURL: feedURL}
 			if !public {
-				// A private feed's stored title can name its subscriber.
-				outline.Text = feedURL
+				// A private feed's stored title can name its subscriber, and
+				// its URL can carry a token that an importer would show as the
+				// title. OPML requires text, so use the host.
+				outline.Text = host
 				outline.Title = ""
 			}
 			if err := encoder.Encode(outline); err != nil {
@@ -124,24 +126,24 @@ func (s *Server) subscriptionOPML(ctx context.Context, filter store.LibraryFilte
 	return body.Bytes(), nil
 }
 
-// exportableFeedURL returns the Subscription's feed URL and whether the feed
-// is public. The store records no directory provenance for Subscriptions, so
-// the only positive evidence of a public feed is a clean URL: http(s), no
-// AuthRef, userinfo, query or fragment. Every other feed is unclassified; its
+// exportableFeedURL returns the Subscription's feed URL, its host and whether
+// the feed is public. The store records no directory provenance for
+// Subscriptions, so the only positive evidence of a public feed is a clean
+// URL: http(s), no AuthRef, userinfo, query or fragment. Every other feed is unclassified; its
 // URL is returned complete, with only userinfo removed, so it re-imports as
 // the same feed. ok is false for a feed that is never exported: one on this
 // server's own host, or one whose URL is not an absolute http(s) URL.
-func (s *Server) exportableFeedURL(sub store.Subscription, requestHostname string) (feedURL string, public, ok bool) {
+func (s *Server) exportableFeedURL(sub store.Subscription, requestHostname string) (feedURL, host string, public, ok bool) {
 	u, err := url.Parse(sub.FeedURL)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return "", false, false
+		return "", "", false, false
 	}
 	if sameHostname(u.Hostname(), requestHostname) || (s.baseURL != nil && sameHostname(u.Hostname(), s.baseURL.Hostname())) {
-		return "", false, false
+		return "", "", false, false
 	}
 	public = sub.AuthRef == "" && u.User == nil && u.RawQuery == "" && !u.ForceQuery && u.Fragment == ""
 	u.User = nil
-	return u.String(), public, true
+	return u.String(), u.Hostname(), public, true
 }
 
 // sameHostname compares hostnames case-insensitively, ignoring a trailing dot,

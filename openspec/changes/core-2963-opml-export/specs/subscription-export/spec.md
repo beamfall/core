@@ -24,9 +24,15 @@ and other download failures.
 
 - **WHEN** a Manager downloads the export with `includePrivate=true`
 - **THEN** it also includes unclassified Subscriptions and those with an authentication reference
-- **AND** each such outline carries the complete feed URL with only userinfo removed, uses the URL as
-  its text and omits the stored title, so feeds that differ only in a query parameter import as
-  distinct Subscriptions
+- **AND** each such outline carries the complete feed URL with only userinfo removed, uses the URL's
+  host as its text and omits the stored title, so feeds that differ only in a query parameter import
+  as distinct Subscriptions
+
+#### Scenario: Never import a URL as a title
+
+- **WHEN** an imported OPML outline's text or title is a URL, the feed URL itself, or the feed's host
+- **THEN** the importer stores the Subscription with an empty title instead, so a token in the URL
+  never reaches viewers as the title
 
 #### Scenario: Never export credentials or the server's URL
 

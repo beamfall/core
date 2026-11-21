@@ -110,12 +110,31 @@ func TestSubscriptionExportOPML(t *testing.T) {
 	if !maps.Equal(imported, wantPublic) {
 		t.Fatalf("round-trip Subscriptions = %#v, want %#v", imported, wantPublic)
 	}
+	// The importer must keep every opt-in URL intact without turning the
+	// outline text, or any URL, into the title viewers see.
+	wantImported := maps.Clone(wantPublic)
+	for _, feedURL := range []string{queryURL, aliceURL, bobURL, fragmentURL, tokenURL, privateURL} {
+		wantImported[feedURL] = ""
+	}
+	wantImported["https://feeds.example.test/basic.xml"] = ""
 	imported = importSubscriptionOPML(t, private.Body.Bytes())
-	for _, feedURL := range append(slices.Collect(maps.Keys(wantPublic)), aliceURL, bobURL, queryURL, privateURL) {
-		if _, ok := imported[feedURL]; !ok {
-			t.Fatalf("opt-in round trip lost %s: %#v", feedURL, imported)
+	if !maps.Equal(imported, wantImported) {
+		t.Fatalf("opt-in round-trip Subscriptions = %#v, want %#v", imported, wantImported)
+	}
+	for _, title := range imported {
+		if strings.ContainsAny(title, "?/#") || strings.Contains(title, "feeds.example.test") || strings.Contains(title, "7Qm4zN8vL2cR6tXp") {
+			t.Fatalf("imported title %q exposes a feed URL", title)
 		}
 	}
+}
+
+func subscriptionURLHost(t *testing.T, feedURL string) string {
+	t.Helper()
+	u, err := url.Parse(feedURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.Hostname()
 }
 
 func assertSubscriptionExportOmits(t *testing.T, body string, forbidden ...string) {
@@ -128,7 +147,8 @@ func assertSubscriptionExportOmits(t *testing.T, body string, forbidden ...strin
 }
 
 // assertSubscriptionOutlines checks an export holds exactly the public
-// URL-to-title outlines plus private outlines that use the URL as their text.
+// URL-to-title outlines plus private outlines that use the URL's host as their
+// text.
 func assertSubscriptionOutlines(t *testing.T, body []byte, public map[string]string, private []string) {
 	t.Helper()
 	var document struct {
@@ -149,7 +169,7 @@ func assertSubscriptionOutlines(t *testing.T, body []byte, public map[string]str
 			t.Fatalf("outline type = %q", outline.Type)
 		case isPublic && (outline.Text != title || outline.Title != title):
 			t.Fatalf("public outline %#v, want title %q", outline, title)
-		case !isPublic && (!slices.Contains(private, outline.XMLURL) || outline.Text != outline.XMLURL || outline.Title != ""):
+		case !isPublic && (!slices.Contains(private, outline.XMLURL) || outline.Text != subscriptionURLHost(t, outline.XMLURL) || outline.Title != ""):
 			t.Fatalf("unexpected private outline %#v", outline)
 		}
 	}
