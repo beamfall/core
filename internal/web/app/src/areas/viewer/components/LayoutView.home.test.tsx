@@ -182,11 +182,8 @@ describe("Viewer Home", () => {
       expect.objectContaining({ libraryID: "", home: true }),
       expect.anything(),
     );
-    const heroArt = container.querySelector(".bf-hero img");
-    expect(heroArt).toHaveAttribute("src", "/visible?bucket=w1280");
-    if (!heroArt) throw new Error("Expected hero artwork");
-    fireEvent.load(heroArt);
-    expect(screen.getByRole("heading", { name: visible.title })).toBeVisible();
+    // Continue Watching has an item, so it leads Home and no feature covers it.
+    expect(container.querySelector(".bf-hero")).toBeNull();
 
     fireEvent.click(within(shelf.parentElement ?? shelf).getByRole("button", { name: "See all" }));
     expect(await screen.findByRole("heading", { name: "Library One" })).toBeVisible();
@@ -284,7 +281,7 @@ describe("Viewer Home", () => {
     }
   });
 
-  it("pages populated libraries within the Section budget alongside the hero", async () => {
+  it("pages populated libraries within the Section budget", async () => {
     const populated = Array.from({ length: 25 }, (_, i) => ({
       id: `library-${i + 1}`,
       title: `Library ${i + 1}`,
@@ -309,9 +306,9 @@ describe("Viewer Home", () => {
     expect(screen.getByRole("list", { name: "Library 23" })).toBeVisible();
     expect(screen.queryByRole("list", { name: "Library 24" })).toBeNull();
 
-    fireEvent.load(container.querySelector(".bf-hero img") as HTMLImageElement);
+    expect(container.querySelector(".bf-hero")).toBeNull();
     expect(container.querySelectorAll(".bf-section:not([hidden])")).toHaveLength(
-      MAX_RENDERED_SECTIONS + 1,
+      MAX_RENDERED_SECTIONS,
     );
 
     next.focus();
@@ -322,7 +319,7 @@ describe("Viewer Home", () => {
     expect(screen.getByRole("list", { name: "Library 24" })).toBeVisible();
     expect(screen.getByRole("list", { name: "Library 25" })).toBeVisible();
     expect(screen.getByRole("list", { name: "Reprendre la lecture" })).toBeVisible();
-    expect(container.querySelectorAll(".bf-section:not([hidden])")).toHaveLength(4);
+    expect(container.querySelectorAll(".bf-section:not([hidden])")).toHaveLength(3);
 
     fireEvent.click(previous);
     expect(screen.getByRole("list", { name: "Library 1" })).toBeVisible();
@@ -543,6 +540,46 @@ describe("Viewer Home", () => {
     }
   });
 
+  it("leads with Continue Watching instead of a feature when a Profile has items to resume", async () => {
+    const recent = newItem("Recent item", { artworkSlots: { backdrop: "/recent" } });
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, context) => {
+      if (section.id === "continue") return [newItem("In progress")];
+      return context.libraryID === "one" ? [recent] : [];
+    });
+
+    const { container } = renderHome();
+    const keepWatching = await screen.findByRole("list", { name: "Reprendre la lecture" });
+    await screen.findByRole("list", { name: "Library One" });
+    expect(container.querySelector(".bf-hero")).toBeNull();
+    expect(container.querySelector(".bf-section:not([hidden])")).toContainElement(keepWatching);
+  });
+
+  it("holds the feature until Continue Watching settles empty", async () => {
+    const recent = newItem("Recent item", { artworkSlots: { backdrop: "/recent" } });
+    let settleContinue!: (items: SourceItem[]) => void;
+    const pendingContinue = new Promise<SourceItem[]>((resolve) => {
+      settleContinue = resolve;
+    });
+    vi.mocked(fetchSectionItems).mockImplementation(async (section, context) => {
+      if (section.id === "continue") return pendingContinue;
+      return context.libraryID === "one" ? [recent] : [];
+    });
+
+    const { container } = renderHome();
+    await screen.findByRole("list", { name: "Library One" });
+    // Neither the feature nor its placeholder (also .bf-hero) shows yet.
+    expect(container.querySelector(".bf-hero")).toBeNull();
+
+    await act(async () => settleContinue([]));
+    const heroArt = await waitFor(() => {
+      const img = container.querySelector(".bf-hero img");
+      expect(img).toHaveAttribute("src", "/recent?bucket=w1280");
+      return img as HTMLImageElement;
+    });
+    fireEvent.load(heroArt);
+    expect(screen.getByRole("heading", { name: recent.title })).toBeVisible();
+  });
+
   it("keeps all 24 manifest sections when the hero loads from the final shelf", async () => {
     const [keepWatching, recent] = layout.sections;
     const sections = [
@@ -550,6 +587,7 @@ describe("Viewer Home", () => {
         ...keepWatching,
         id: `section-${index + 1}`,
         title: `Shelf ${index + 1}`,
+        source: { kind: "section-items" },
       })),
       recent,
     ];

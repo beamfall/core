@@ -69,7 +69,7 @@ export function LayoutView({
   // field → value selections, keyed by the filter-bar that owns them.
   const [filterSelections, setFilterSelections] = useState<Record<string, FieldFilters>>({});
 
-  const { sections, homeRecent, homeHero } = useMemo(() => {
+  const { sections, homeRecent, homeHero, homeContinue } = useMemo(() => {
     const known = (layout?.sections || []).filter((s) => SECTION_KINDS.has(s.kind));
     const sections = known.slice(0, MAX_RENDERED_SECTIONS);
     const homeRecent = home && !libraryID ? findHomeRecentSection(sections) : undefined;
@@ -77,11 +77,14 @@ export function LayoutView({
       homeRecent && !sections.some((section) => section.kind === "hero")
         ? { ...homeRecent, id: `${homeRecent.id}:featured`, kind: "hero", title: t("homeFeatured") }
         : undefined;
+    const homeContinue = homeHero
+      ? sections.find((section) => section.source?.kind === "continue-watching")
+      : undefined;
     if (known.length > MAX_RENDERED_SECTIONS) {
       // The diagnostic omits Section ids, titles, counts, and Reveal state.
       console.warn("Beamfall rendering diagnostic: SectionLimitExceeded");
     }
-    return { sections, homeRecent, homeHero };
+    return { sections, homeRecent, homeHero, homeContinue };
   }, [layout, home, libraryID, t]);
 
   // Map each filter-bar to the index of the section it narrows: the next
@@ -114,12 +117,18 @@ export function LayoutView({
   const reportConnectionLost = useCallback(() => setConnectionLost(true), []);
   const recentFilters = homeRecent ? extraFiltersForIndex(sections.indexOf(homeRecent)) : null;
   const recentFeed = useHomeRecent(homeRecent, recentFilters, attempt, reportConnectionLost);
-  const feature = useHomeArtwork(homeHero ? recentFeed.heroItems : [], recentFeed.epoch);
+  const hydrationStates = hydration.layout === layout ? hydration.states : {};
+  // A Profile with something to resume sees Continue Watching first, above the
+  // fold, not a newest-arrival feature (CORE-2825). The feature waits for that
+  // shelf to settle, so it never appears and then vanishes.
+  const continueState = homeContinue ? hydrationStates[homeContinue.id] : "empty";
+  const featured = continueState === "empty" || continueState === "failed" ? homeHero : undefined;
+  const feature = useHomeArtwork(featured ? recentFeed.heroItems : [], recentFeed.epoch);
   // Replace the manifest's Recent slot with one slot per visible library.
   const maxRecentShelves = MAX_RENDERED_SECTIONS - sections.length + 1;
   const [artworkWaitExpired, setArtworkWaitExpired] = useState<string>();
   const waitingForArtwork = Boolean(
-    homeHero && (feature ? !feature.artwork.ready : recentFeed.pending),
+    featured && (feature ? !feature.artwork.ready : recentFeed.pending),
   );
   const waitToFocus = waitingForArtwork && artworkWaitExpired !== recentFeed.epoch;
   useEffect(() => {
@@ -137,7 +146,6 @@ export function LayoutView({
     () => sections.filter((section) => section.kind !== "filter-bar"),
     [sections],
   );
-  const hydrationStates = hydration.layout === layout ? hydration.states : {};
   const stateFor = (section: Section) =>
     section === homeRecent ? recentFeed.state : hydrationStates[section.id];
   const allHydrated = hydratable.every((section) => {
@@ -253,12 +261,12 @@ export function LayoutView({
           {t("connectionLost")}
         </div>
       )}
-      {homeHero &&
+      {featured &&
         !aggregateEmpty &&
         (feature ? (
           <Hero
             key={JSON.stringify([recentFeed.epoch, feature.item.id, feature.artwork.url])}
-            section={homeHero}
+            section={featured}
             item={feature.item}
             artwork={feature.artwork}
             navigationID={feature.artwork.ready ? navigationID : undefined}
