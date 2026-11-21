@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
@@ -10,6 +10,7 @@ import {
   viewerCacheEntries,
   writeViewerCache,
 } from "@/lib/viewerCache";
+import { settleContinueWatching, useContinueWatchingRemoved } from "../actions/continueWatching";
 import { useEngagementEpoch } from "../actions/engagementSync";
 import { foldNewShelf, groupsNewByContainer } from "../lib/containerGroups";
 import { fetchSectionItems } from "../lib/sections";
@@ -91,6 +92,10 @@ export function HydratedSection({
   const [items, setItems] = useState<SourceItem[] | null>(
     () => readViewerCache<SourceItem[]>(identity, cacheKey) ?? null,
   );
+  // Cards removed from Continue Watching here leave the row at once, before
+  // the server's read confirms it (CORE-2017).
+  const continueRow = section.source?.kind === "continue-watching";
+  const removed = useContinueWatchingRemoved();
 
   useEffect(() => {
     let alive = true;
@@ -127,6 +132,7 @@ export function HydratedSection({
         if (!alive) return;
         window.clearTimeout(timeout);
         writeViewerCache(identity, cacheKey, next);
+        if (section.source?.kind === "continue-watching") settleContinueWatching(next);
         setItems(next);
         onHydrationStateChange?.(next.length ? "visible" : "empty");
       })
@@ -152,13 +158,24 @@ export function HydratedSection({
 
   // Newly added items fold under their container (CORE-2524); a container's own
   // page lists its items as they are.
-  const shown = useMemo(
-    () =>
-      items && !entityID && groupsNewByContainer(section)
-        ? foldNewShelf(items, (count) => t("cardNewCount", { count }))
-        : items,
-    [items, entityID, section, t],
-  );
+  const shown = useMemo(() => {
+    const kept =
+      items && continueRow && removed.size ? items.filter((item) => !removed.has(item.id)) : items;
+    return kept && !entityID && groupsNewByContainer(section)
+      ? foldNewShelf(kept, (count) => t("cardNewCount", { count }))
+      : kept;
+  }, [items, continueRow, removed, entityID, section, t]);
+  // A row emptied by removals reads as empty to the Layout, as a served empty
+  // row does, and as visible again when an Undo brings a card back.
+  const removedAll = Boolean(items?.length) && shown?.length === 0;
+  const reportRemoved = useRef(false);
+  useEffect(() => {
+    if (!continueRow || reportRemoved.current === removedAll) return;
+    reportRemoved.current = removedAll;
+    onHydrationStateChange?.(shown?.length ? "visible" : "empty");
+    // onHydrationStateChange is a fresh closure per Layout render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [continueRow, removedAll]);
 
   if (shown === null) {
     return <SectionSkeleton hero={section.kind === "hero"} />;

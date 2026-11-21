@@ -4,6 +4,14 @@
 //   <ItemActions target={itemTargetFor(item)} />        the ready-made controls
 //   useItemActions(itemTargetFor(item), { enabled })    state + actions for a custom menu
 //   useItemHide(target, title, { enabled })             Hide for this Profile (CORE-2836)
+//   removeFromContinueWatching(mediaID, title)          off Continue Watching, progress kept (CORE-2017)
+
+export {
+  removeFromContinueWatching,
+  restoreToContinueWatching,
+  settleContinueWatching,
+  useContinueWatchingRemoved,
+} from "./continueWatching";
 export {
   notifyEngagementChanged,
   useEngagementEpoch,

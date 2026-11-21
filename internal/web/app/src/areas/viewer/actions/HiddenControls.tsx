@@ -5,6 +5,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import "../remote/remote.css";
 import "./hidden.css";
+import { clearContinueWatchingRemoved, restoreToContinueWatching } from "./continueWatching";
 import {
   clearHiddenNotice,
   dismissHiddenNotice,
@@ -18,17 +19,30 @@ import {
 const NOTICE_MS = 8000;
 
 /**
- * The Undo notice shown after a hide. Mount once per viewer session. It waits
- * while the pointer or focus is on it, so nobody loses the Undo mid-reach.
- * Pass the bound Profile: a switch drops the notice, so one Profile never sees,
- * or undoes, another's hide.
+ * The Undo notice shown after a hide or a removal from Continue Watching.
+ * Mount once per viewer session. It waits while the pointer or focus is on it,
+ * so nobody loses the Undo mid-reach. Pass the bound Profile: a switch drops
+ * the notice, so one Profile never sees, or undoes, another's change.
  */
 export function HiddenUndoNotice({ profileID }: { profileID?: string }) {
   const notice = useHiddenNotice();
   // The cleanup runs when the bound Profile changes and when the viewer
   // remounts for another Profile, so a notice never outlives its Profile.
-  useEffect(() => clearHiddenNotice, [profileID]);
+  useEffect(
+    () => () => {
+      clearHiddenNotice();
+      clearContinueWatchingRemoved();
+    },
+    [profileID],
+  );
   return notice ? <UndoNotice notice={notice} /> : null;
+}
+
+function undo(notice: HiddenNotice): Promise<void> {
+  if (notice.kind === "continue" && "mediaID" in notice.target) {
+    return restoreToContinueWatching(notice.target.mediaID);
+  }
+  return unhideItem(notice.target);
 }
 
 function UndoNotice({ notice }: { notice: HiddenNotice }) {
@@ -40,8 +54,8 @@ function UndoNotice({ notice }: { notice: HiddenNotice }) {
   const id = notice.id;
 
   useEffect(() => {
-    setFailed(false);
-  }, [id]);
+    setFailed(Boolean(notice.failed));
+  }, [id, notice.failed]);
 
   useEffect(() => {
     if (held) return;
@@ -73,20 +87,26 @@ function UndoNotice({ notice }: { notice: HiddenNotice }) {
       }}
     >
       <p className="bf-remote-message-text m-0 min-w-0 flex-1">
-        {failed ? t("itemActionFailed") : t("itemHiddenNotice", { title: notice.title })}
+        {failed
+          ? t("itemActionFailed")
+          : t(notice.kind === "continue" ? "itemContinueRemovedNotice" : "itemHiddenNotice", {
+              title: notice.title,
+            })}
       </p>
-      <button
-        type="button"
-        className="bf-hidden-notice-undo"
-        onClick={() => {
-          unhideItem(notice.target).then(
-            () => dismissHiddenNotice(notice.id),
-            () => setFailed(true),
-          );
-        }}
-      >
-        {t("itemHideUndo")}
-      </button>
+      {!notice.failed && (
+        <button
+          type="button"
+          className="bf-hidden-notice-undo"
+          onClick={() => {
+            undo(notice).then(
+              () => dismissHiddenNotice(notice.id),
+              () => setFailed(true),
+            );
+          }}
+        >
+          {t("itemHideUndo")}
+        </button>
+      )}
       <button
         type="button"
         className="bf-remote-message-dismiss"

@@ -6,6 +6,10 @@ import { ApiError } from "@/lib/api";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
+import {
+  clearContinueWatchingRemoved,
+  removeFromContinueWatching,
+} from "../actions/continueWatching";
 import { fetchSectionItems } from "../lib/sections";
 import { HydratedSection, SECTION_LOAD_TIMEOUT_MS, sectionCacheKey } from "./HydratedSection";
 
@@ -15,6 +19,17 @@ vi.mock("../lib/sections", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/sections")>();
   return { ...actual, fetchSectionItems: vi.fn() };
 });
+
+vi.mock("@/lib/graphql", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/graphql")>()),
+  setContinueWatchingHidden: vi.fn(async () => ({
+    id: "media-1",
+    kind: "media",
+    watched: false,
+    watchlisted: false,
+    rating: 0,
+  })),
+}));
 
 // No identity by default: the state-family cases run uncached, as without a
 // SessionProvider. The cache cases bind one explicitly.
@@ -233,5 +248,39 @@ describe("HydratedSection identity-scoped cache", () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement());
     expect(readViewerCache(identity, key)).toBeUndefined();
     expect(readViewerCache(identity, "entity:other")).toBeUndefined();
+  });
+});
+
+describe("HydratedSection Continue Watching removal (CORE-2017)", () => {
+  afterEach(() => act(() => clearContinueWatchingRemoved()));
+
+  it("drops a removed card at once and empties the row when it was the last", async () => {
+    const continueRow: Section = {
+      ...section,
+      id: "sec-continue",
+      title: { en: "Continue Watching" },
+      source: { kind: "continue-watching" } as Section["source"],
+    };
+    vi.mocked(fetchSectionItems).mockResolvedValue([item]);
+    const onHydrationStateChange = vi.fn();
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <HydratedSection
+            section={continueRow}
+            libraryID=""
+            entityID=""
+            onHydrationStateChange={onHydrationStateChange}
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(await screen.findByRole("link", { name: /^Visible item/ })).toBeVisible();
+    // The revalidation the removal starts never settles, so only the local
+    // removal can take the card off the row.
+    vi.mocked(fetchSectionItems).mockReturnValue(new Promise(() => {}));
+    await act(() => removeFromContinueWatching("media-1", "Visible item"));
+    expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
+    expect(onHydrationStateChange).toHaveBeenLastCalledWith("empty");
   });
 });

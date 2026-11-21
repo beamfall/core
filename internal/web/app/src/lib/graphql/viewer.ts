@@ -630,6 +630,24 @@ export async function setWatchlisted(
   return data.setWatchlisted;
 }
 
+const SET_CONTINUE_WATCHING_HIDDEN_MUTATION = `mutation SetContinueWatchingHidden($mediaID: ID!, $hidden: Boolean!) { setContinueWatchingHidden(mediaID: $mediaID, hidden: $hidden) { ${ITEM_STATE_FIELDS} } }`;
+
+/**
+ * SetContinueWatchingHidden — take one Media off the calling Profile's Continue
+ * Watching row, or put it back (CORE-2039). The resume position is kept, and
+ * playing the Media again returns it to the row.
+ */
+export async function setContinueWatchingHidden(
+  mediaID: string,
+  hidden: boolean,
+): Promise<ItemStateInfo> {
+  const data = await graphql<{ setContinueWatchingHidden: ItemStateInfo }>(
+    SET_CONTINUE_WATCHING_HIDDEN_MUTATION,
+    { mediaID, hidden },
+  );
+  return data.setContinueWatchingHidden;
+}
+
 const SET_RATING_MUTATION = `mutation SetRating($mediaID: ID, $entityID: ID, $rating: Int!) { setRating(mediaID: $mediaID, entityID: $entityID, rating: $rating) { ${ITEM_STATE_FIELDS} } }`;
 
 /** SetRating — set the calling Profile's rating (1–10); 0 clears it. */
