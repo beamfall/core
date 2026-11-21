@@ -810,6 +810,9 @@ func (h *Handler) catalogScope(w http.ResponseWriter, r *http.Request) ([]catalo
 type catalogHit struct {
 	node *catalogNode
 	lib  catalogLibrary
+	// index is the Library index node came from, so a related ID can be
+	// resolved in the same snapshot without reading the Library again.
+	index *catalogIndex
 }
 
 // findNodes finds the indexed items with the given IDs, without confirming
@@ -848,7 +851,7 @@ func (h *Handler) findNodes(ctx context.Context, filter store.LibraryFilter, lib
 		}
 		for _, id := range wanted {
 			if node := index.byID[id]; node != nil {
-				found[id] = catalogHit{node: node, lib: lib}
+				found[id] = catalogHit{node: node, lib: lib, index: index}
 			}
 		}
 	}
@@ -877,7 +880,7 @@ func (h *Handler) lookupNodes(ctx context.Context, filter store.LibraryFilter, l
 			return nil, err
 		}
 		for _, node := range nodes {
-			found[node.id] = catalogHit{node: node, lib: lib}
+			found[node.id] = catalogHit{node: node, lib: lib, index: hits[node.id].index}
 		}
 	}
 	return found, nil
@@ -1028,14 +1031,7 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 	if !ok {
 		return
 	}
-	holder := ""
-	ids := []string{id}
-	if leaves {
-		if holder = queryValue(r.URL.Query(), "seasonId"); holder != "" {
-			ids = append(ids, holder)
-		}
-	}
-	found, err := h.findNodes(r.Context(), filter, libraries, ids)
+	found, err := h.findNodes(r.Context(), filter, libraries, []string{id})
 	if err != nil {
 		http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
 		return
@@ -1047,6 +1043,7 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 	var nodes []*catalogNode
+	holder := ""
 	if !leaves {
 		for _, child := range node.children {
 			if !child.leaf {
@@ -1055,8 +1052,10 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 		}
 	} else {
 		var held *catalogNode
-		if holder != "" {
-			if held = containerUnder(node, found[holder].node); held == nil {
+		// The season is looked up in the show's own index: an ID from any
+		// other Library, or one that index lacks, is no season of this show.
+		if holder = queryValue(r.URL.Query(), "seasonId"); holder != "" {
+			if held = containerUnder(node, hit.index.byID[holder]); held == nil {
 				http.NotFound(w, r)
 				return
 			}
