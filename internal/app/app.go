@@ -599,6 +599,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// Plugin wirings declare which Entity kinds borrow a poster from their own
 	// Media when no provider supplied one; the artwork sweep applies them.
 	artworkService.SetEntityPosterRules(activeEntityPosterRules(executablePlugins, hooks.EntityPosterRules, logger))
+	// Plugin wirings declare per-Entity provider lookups; the enrichment job
+	// runs them after scans and at boot (CORE-2884). The conformance corpus
+	// never reaches a provider.
+	var entityEnrichments []EntityEnrichment
+	if !conformanceMode {
+		entityEnrichments = activeEntityEnrichments(executablePlugins, hooks.EntityEnrichments, logger)
+	}
 	jobRegistry := jobs.NewRegistry(st, "beamfall-server")
 	jobRegistry.SetLogger(logger)
 	// A completed scan re-arms the artwork sweep so new imports get posters
@@ -676,6 +683,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		}
 		if err == nil {
 			enqueueArtworkSweep(ctx, st, logger, jobWake)
+			enqueueEntityEnrichment(ctx, st, logger, jobWake, entityEnrichments)
 			skipDetection.enqueue(ctx, string(job.ID))
 			// Populate the vector store for any newly scanned/identified Media
 			// (ADR-0041 §2.3 post-scan pipeline). No-op unless a semantic provider
@@ -777,6 +785,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		return nil, err
 	}
 	enqueueArtworkSweep(ctx, st, logger, jobWake)
+	enqueueEntityEnrichment(ctx, st, logger, jobWake, entityEnrichments)
 	skipDetection.enqueueBoot(ctx)
 	authService := auth.NewServiceWithClock(st, readClock)
 	authService.SetIntegrationAttemptSecret(cfg.StreamTokenKey)
@@ -926,6 +935,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// Library-wide metadata refresh (CORE-1136): network-bound provider
 	// lookups, paced per item, so it stays outside the resource governor.
 	jobRegistry.Register(identify.RefreshJobKind, identify.RefreshJobHandler(st, identifyService, identify.RefreshJobPace))
+	// Network-bound and paced by the scraper, so it takes no generation slot.
+	jobRegistry.Register(identify.EnrichmentJobKind, identify.EnrichmentHandler(st, scrapeEngine, entityEnrichments, logger))
 	// Construct the confined proxy archive before native root observation starts.
 	// A malformed/replaced archive root therefore cannot leak watcher resources.
 	proxyTee, err := proxytee.New(
@@ -4331,6 +4342,10 @@ var (
 // subtitle route probes for at run time; without it every text track of a file
 // is extracted in its own pass (CORE-2315).
 var _ mediahttp.BatchSubtitleConverter = (*ffmpeg.Runner)(nil)
+
+// The same runner must keep the styled ASS/SSA extraction and font attachment
+// reads the styled subtitle route probes for (CORE-1719).
+var _ mediahttp.StyledSubtitleConverter = (*ffmpeg.Runner)(nil)
 
 type appOperationDBCipher struct{ cipher libencrypt.OperationCipher }
 

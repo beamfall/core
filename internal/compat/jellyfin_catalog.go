@@ -247,8 +247,9 @@ type cachedIndex struct {
 // libraryIndex returns the Library's index, reusing one built for the same
 // filter within catalogIndexTTL while the store still reports the same visible
 // items. The visible set is read on every request, so certification, trash and
-// Reveal changes apply at once; only container links, ordinals and provider
-// IDs of unchanged items can lag. At most catalogIndexBuilds reads or builds
+// Reveal changes apply at once; only container links, ordinals, provider IDs
+// and item types of unchanged items can lag. Reads that go through
+// visibleNodes recheck containers and item types. At most catalogIndexBuilds reads or builds
 // run at once, and a request that waited finds the index the one ahead of it
 // built.
 func (h *Handler) libraryIndex(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary) (*catalogIndex, error) {
@@ -321,8 +322,9 @@ func indexKey(filter store.LibraryFilter, lib catalogLibrary) (string, error) {
 }
 
 // visibleNodes returns current copies of the nodes that still have a visible
-// item: a leaf the store still reports visible, or a container that is still
-// an untrashed Entity of the Library and holds one. A node under a container
+// item: a leaf the store still reports visible whose item type field still
+// maps to an item type, or a container that is still an untrashed Entity of
+// the Library and holds one. A node under a container
 // that is no longer such an Entity is dropped until the index is rebuilt. Each
 // copy carries the item's current title, year and dimensions; a container's
 // year is the earliest of its visible leaves'. It reads only
@@ -363,6 +365,13 @@ func (h *Handler) visibleNodes(ctx context.Context, filter store.LibraryFilter, 
 	if err != nil {
 		return nil, err
 	}
+	fields, err := h.store.MediaCardFieldValues(ctx, ids, []string{lib.interop.MediaField})
+	if err != nil {
+		return nil, err
+	}
+	itemType := func(id string) string {
+		return lib.interop.MediaTypes[fields[store.MediaID(id)][lib.interop.MediaField].Text]
+	}
 	titles, err := h.store.LibraryLiveEntityTitles(ctx, lib.library.ID, entities)
 	if err != nil {
 		return nil, err
@@ -371,13 +380,16 @@ func (h *Handler) visibleNodes(ctx context.Context, filter store.LibraryFilter, 
 		_, ok := titles[store.EntityID(n.id)]
 		return ok
 	}
-	var holdsVisible func(*catalogNode) bool
-	holdsVisible = func(n *catalogNode) bool {
+	shown := func(n *catalogNode) bool {
 		if n.leaf {
 			_, ok := media[store.MediaID(n.id)]
-			return ok
+			return ok && itemType(n.id) != ""
 		}
-		return live(n) && slices.ContainsFunc(n.children, holdsVisible)
+		return live(n)
+	}
+	var holdsVisible func(*catalogNode) bool
+	holdsVisible = func(n *catalogNode) bool {
+		return shown(n) && (n.leaf || slices.ContainsFunc(n.children, holdsVisible))
 	}
 	var kept []*catalogNode
 	for _, n := range nodes {
@@ -396,28 +408,29 @@ func (h *Handler) visibleNodes(ctx context.Context, filter store.LibraryFilter, 
 			m := media[store.MediaID(n.id)]
 			current.name, current.sortKey, current.year = m.Title, m.TitleKey(), m.Year
 			current.width, current.height = m.Width, m.Height
+			current.itemType = itemType(n.id)
 		} else {
 			current.name = titles[store.EntityID(n.id)]
 			current.sortKey = current.name
-			current.year = earliestYear(n, media, live)
+			current.year = earliestYear(n, media, shown)
 		}
 		kept = append(kept, &current)
 	}
 	return kept, nil
 }
 
-// earliestYear returns the earliest year among the visible leaves under n
-// reached through live containers only, the year a container carries.
-func earliestYear(n *catalogNode, media map[store.MediaID]store.VisibleMedia, live func(*catalogNode) bool) int {
+// earliestYear returns the earliest year among the shown leaves under n
+// reached through shown containers only, the year a container carries.
+func earliestYear(n *catalogNode, media map[store.MediaID]store.VisibleMedia, shown func(*catalogNode) bool) int {
 	if n.leaf {
 		return media[store.MediaID(n.id)].Year
 	}
 	year := 0
 	for _, child := range n.children {
-		if !child.leaf && !live(child) {
+		if !shown(child) {
 			continue
 		}
-		if y := earliestYear(child, media, live); y > 0 && (year == 0 || y < year) {
+		if y := earliestYear(child, media, shown); y > 0 && (year == 0 || y < year) {
 			year = y
 		}
 	}

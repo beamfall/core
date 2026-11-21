@@ -1,6 +1,19 @@
 // Continues settings-help-manage.ts (CORE-2445), split to keep each string file under 20 KB.
 export const settingsHelpManage2Strings = {
   en: {
+    manageProfileSettings: "Profile settings",
+    manageProfileSettingsOpen: "Open settings",
+    manageProfileEntryPin: "Profile PIN",
+    manageProfileEntryPinHelp:
+      "An adult profile can require a PIN when someone switches to it. Set or change that PIN here.",
+    manageProfileChoose: "Choose a profile",
+    manageProfileEntryPinUnavailable: "Profile PIN settings are unavailable.",
+    manageProfileSubtitleLanguages: "Preferred subtitle languages for your current profile",
+    manageProfileSubtitleLanguagesHelp:
+      "Enter language codes in order of preference, separated by commas, such as en, fr-CA. Leave blank to clear your choices.",
+    manageProfileSubtitleLanguagesSaved: "Subtitle languages saved.",
+    manageProfileSubtitleLanguagesFailed: "Could not save subtitle languages. Try again.",
+    manageProfileSubtitleLanguagesUnavailable: "Could not load subtitle languages.",
     manageRenamePrefixHelp:
       'Text added to the start of each name, together with a number. Put {n} where the number goes, for example "Part {n} - ". Without {n}, the number follows your text and a space. Start at and Number digits only apply when this is filled in.',
     manageBulkMediaIdsHelp:
@@ -31,6 +44,20 @@ export const settingsHelpManage2Strings = {
     manageLibConsoleLink: "Open library settings",
   },
   fr: {
+    manageProfileSettings: "Paramètres du profil",
+    manageProfileSettingsOpen: "Ouvrir les paramètres",
+    manageProfileEntryPin: "Code PIN du profil",
+    manageProfileEntryPinHelp:
+      "Un profil adulte peut demander un code PIN lorsque quelqu’un le sélectionne. Définissez ou modifiez ce code ici.",
+    manageProfileChoose: "Choisir un profil",
+    manageProfileEntryPinUnavailable: "Les paramètres du code PIN du profil sont indisponibles.",
+    manageProfileSubtitleLanguages: "Langues de sous-titres préférées pour votre profil actuel",
+    manageProfileSubtitleLanguagesHelp:
+      "Saisissez les codes de langue par ordre de préférence, séparés par des virgules, par exemple fr-CA, en. Laissez le champ vide pour effacer vos choix.",
+    manageProfileSubtitleLanguagesSaved: "Langues de sous-titres enregistrées.",
+    manageProfileSubtitleLanguagesFailed:
+      "Impossible d’enregistrer les langues de sous-titres. Réessayez.",
+    manageProfileSubtitleLanguagesUnavailable: "Impossible de charger les langues de sous-titres.",
     manageRenamePrefixHelp:
       "Texte ajouté au début de chaque nom, avec un numéro. Placez {n} là où va le numéro, par exemple « Partie {n} - ». Sans {n}, le numéro suit votre texte et une espace. Commencer à et Chiffres du numéro ne s'appliquent que si ce champ est rempli.",
     manageBulkMediaIdsHelp:
@@ -61,6 +88,21 @@ export const settingsHelpManage2Strings = {
     manageLibConsoleLink: "Ouvrir les réglages de bibliothèque",
   },
   de: {
+    manageProfileSettings: "Profileinstellungen",
+    manageProfileSettingsOpen: "Einstellungen öffnen",
+    manageProfileEntryPin: "Profil-PIN",
+    manageProfileEntryPinHelp:
+      "Beim Wechsel zu einem Erwachsenenprofil kann eine PIN erforderlich sein. Legen Sie diese PIN hier fest oder ändern Sie sie.",
+    manageProfileChoose: "Profil auswählen",
+    manageProfileEntryPinUnavailable: "Die Einstellungen für die Profil-PIN sind nicht verfügbar.",
+    manageProfileSubtitleLanguages: "Bevorzugte Untertitelsprachen für Ihr aktuelles Profil",
+    manageProfileSubtitleLanguagesHelp:
+      "Geben Sie Sprachcodes in der gewünschten Reihenfolge ein, durch Kommas getrennt, zum Beispiel de, en. Lassen Sie das Feld leer, um die Auswahl zu löschen.",
+    manageProfileSubtitleLanguagesSaved: "Untertitelsprachen gespeichert.",
+    manageProfileSubtitleLanguagesFailed:
+      "Die Untertitelsprachen konnten nicht gespeichert werden. Versuchen Sie es erneut.",
+    manageProfileSubtitleLanguagesUnavailable:
+      "Die Untertitelsprachen konnten nicht geladen werden.",
     manageRenamePrefixHelp:
       "Text, der zusammen mit einer Nummer an den Anfang jedes Namens gesetzt wird. Setzen Sie {n} dorthin, wo die Nummer stehen soll, zum Beispiel „Teil {n} - “. Ohne {n} folgt die Nummer Ihrem Text und einem Leerzeichen. Beginnen bei und Stellen der Nummer gelten nur, wenn dieses Feld ausgefüllt ist.",
     manageBulkMediaIdsHelp:
@@ -91,6 +133,20 @@ export const settingsHelpManage2Strings = {
     manageLibConsoleLink: "Bibliothekseinstellungen öffnen",
   },
   es: {
+    manageProfileSettings: "Ajustes del perfil",
+    manageProfileSettingsOpen: "Abrir ajustes",
+    manageProfileEntryPin: "PIN del perfil",
+    manageProfileEntryPinHelp:
+      "Un perfil de adulto puede pedir un PIN al cambiar a él. Configura o cambia ese PIN aquí.",
+    manageProfileChoose: "Elegir un perfil",
+    manageProfileEntryPinUnavailable: "Los ajustes del PIN del perfil no están disponibles.",
+    manageProfileSubtitleLanguages: "Idiomas de subtítulos preferidos para tu perfil actual",
+    manageProfileSubtitleLanguagesHelp:
+      "Introduce los códigos de idioma en orden de preferencia, separados por comas, por ejemplo es, en. Deja el campo vacío para borrar tus preferencias.",
+    manageProfileSubtitleLanguagesSaved: "Idiomas de subtítulos guardados.",
+    manageProfileSubtitleLanguagesFailed:
+      "No se pudieron guardar los idiomas de subtítulos. Inténtalo de nuevo.",
+    manageProfileSubtitleLanguagesUnavailable: "No se pudieron cargar los idiomas de subtítulos.",
     manageRenamePrefixHelp:
       "Texto que se añade al principio de cada nombre junto con un número. Pon {n} donde va el número, por ejemplo «Parte {n} - ». Sin {n}, el número sigue a tu texto y a un espacio. Empezar en y Dígitos del número solo se aplican si este campo está relleno.",
     manageBulkMediaIdsHelp:
@@ -121,6 +177,20 @@ export const settingsHelpManage2Strings = {
     manageLibConsoleLink: "Abrir ajustes de biblioteca",
   },
   pt: {
+    manageProfileSettings: "Configurações do perfil",
+    manageProfileSettingsOpen: "Abrir configurações",
+    manageProfileEntryPin: "PIN do perfil",
+    manageProfileEntryPinHelp:
+      "Um perfil de adulto pode exigir um PIN ao mudar para ele. Defina ou altere esse PIN aqui.",
+    manageProfileChoose: "Escolher um perfil",
+    manageProfileEntryPinUnavailable: "As configurações do PIN do perfil não estão disponíveis.",
+    manageProfileSubtitleLanguages: "Idiomas de legenda preferidos para o seu perfil atual",
+    manageProfileSubtitleLanguagesHelp:
+      "Digite os códigos de idioma em ordem de preferência, separados por vírgulas, como pt, en. Deixe o campo em branco para limpar suas escolhas.",
+    manageProfileSubtitleLanguagesSaved: "Idiomas de legenda salvos.",
+    manageProfileSubtitleLanguagesFailed:
+      "Não foi possível salvar os idiomas de legenda. Tente novamente.",
+    manageProfileSubtitleLanguagesUnavailable: "Não foi possível carregar os idiomas de legenda.",
     manageRenamePrefixHelp:
       "Texto acrescentado ao início de cada nome, junto com um número. Ponha {n} onde fica o número, por exemplo «Parte {n} - ». Sem {n}, o número segue o seu texto e um espaço. Começar em e Dígitos do número só se aplicam quando este campo está preenchido.",
     manageBulkMediaIdsHelp:

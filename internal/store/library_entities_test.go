@@ -98,12 +98,18 @@ func TestLibraryEntitiesListsKindWithCounts(t *testing.T) {
 	if alpha.ChildCount != 2 || alpha.MediaCount != 7 {
 		t.Fatalf("Alpha counts = %d children / %d media, want 2 / 7", alpha.ChildCount, alpha.MediaCount)
 	}
+	if want := map[string]int{"lid": 2}; !reflect.DeepEqual(alpha.ChildCounts, want) {
+		t.Fatalf("Alpha child counts = %v, want %v", alpha.ChildCounts, want)
+	}
 	if want := []LibraryEntityRef{{ID: "entity-maker-m", Title: "Em"}, {ID: "entity-maker-z", Title: "Zed"}}; !reflect.DeepEqual(alpha.Parents, want) {
 		t.Fatalf("Alpha parents = %+v, want %+v", alpha.Parents, want)
 	}
 	beta := got.Items[1]
 	if beta.ChildCount != 0 || beta.MediaCount != 0 || len(beta.Parents) != 1 || beta.Parents[0].Title != "Zed" {
 		t.Fatalf("beta = %+v, want no counts and parent Zed", beta)
+	}
+	if len(beta.ChildCounts) != 0 {
+		t.Fatalf("beta child counts = %v, want none", beta.ChildCounts)
 	}
 
 	// Paging keeps the total.
@@ -356,6 +362,53 @@ func TestAnnotateMediaClassEntityTakesSharedClass(t *testing.T) {
 	for i, item := range items {
 		if item.MediaClass != want[i] || (item.Kind == "entity" && item.Year != 0) {
 			t.Errorf("%s class = %q year = %d, want %q and no year", item.ID, item.MediaClass, item.Year, want[i])
+		}
+	}
+}
+
+// TestAnnotateMediaClassEntityFallsBackToLinkedEntities pins that an Entity
+// with no Media of its own takes the class its linked Entities' Media share,
+// following the link either way, so an artist whose tracks all hang off one
+// album frames its card square like its neighbours. Its own Media, when it has
+// any, still decide alone, and linked Media that mix classes leave it empty.
+func TestAnnotateMediaClassEntityFallsBackToLinkedEntities(t *testing.T) {
+	st, lib, _, _ := libraryEntitiesFixture(t)
+	ctx := context.Background()
+	video, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: lib.ID, Path: "/shelf/clip.mkv", Title: "Clip", Container: "matroska", Codec: "h264",
+		Class: MediaClassVideo, ContentFingerprint: "fp-clip",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upsertRelatedEntity(t, st, "entity-shelf-audio", lib.ID, "shelf", "Audio shelf")
+	upsertRelatedEntity(t, st, "entity-shelf-mixed", lib.ID, "shelf", "Mixed shelf")
+	upsertRelatedEntity(t, st, "entity-shelf-own", lib.ID, "shelf", "Own shelf")
+	upsertRelatedEntity(t, st, "entity-lid-video", lib.ID, "lid", "Video lid")
+	relateEntities(t, st,
+		EntityRelation{FromEntityID: "entity-lid-video", Name: "holds", ToMediaID: video.ID},
+		EntityRelation{FromEntityID: "entity-shelf-audio", Name: "shelves", ToEntityID: "entity-lid-1"},
+		EntityRelation{FromEntityID: "entity-shelf-mixed", Name: "shelves", ToEntityID: "entity-lid-1"},
+		EntityRelation{FromEntityID: "entity-shelf-mixed", Name: "shelves", ToEntityID: "entity-lid-video"},
+		EntityRelation{FromEntityID: "entity-shelf-own", Name: "holds", ToMediaID: video.ID},
+		EntityRelation{FromEntityID: "entity-shelf-own", Name: "shelves", ToEntityID: "entity-lid-1"},
+	)
+	items := []SourceItem{
+		{ID: "entity-shelf-audio", Kind: "entity"},
+		{ID: "entity-maker-m", Kind: "entity"},
+		{ID: "entity-shelf-mixed", Kind: "entity"},
+		{ID: "entity-shelf-own", Kind: "entity"},
+		{ID: "entity-box-b", Kind: "entity"},
+	}
+	if err := st.AnnotateMediaClass(ctx, items); err != nil {
+		t.Fatal(err)
+	}
+	// shelf-audio links lid-1 forward; maker-m is linked from box-a, so the
+	// link runs backward; box-b reaches only maker-z, which holds no Media.
+	want := []MediaClass{MediaClassAudio, MediaClassAudio, "", MediaClassVideo, ""}
+	for i, item := range items {
+		if item.MediaClass != want[i] {
+			t.Errorf("%s class = %q, want %q", item.ID, item.MediaClass, want[i])
 		}
 	}
 }

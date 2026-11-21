@@ -228,6 +228,8 @@ export interface ProfileSummary {
   id: string;
   name: string;
   kind: string;
+  /** Whether switching into this Profile requires an entry PIN. */
+  entryPinSet?: boolean;
   /** The chosen avatar token; empty or absent means a generated avatar. */
   avatar?: string;
   /**

@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readPosterSize } from "@/components/chrome/posterSize";
 import type { Layout, NavigationManifest, Section } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import type { HomeLibrarySeeAllState, SeeAllContext } from "../lib/seeall";
@@ -239,6 +240,32 @@ describe("BrowsePage readable node address", () => {
     fireEvent.click(screen.getByRole("button", { name: "settle empty" }));
 
     expect(screen.queryByRole("navigation", { name: "Library views" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Poster size" })).toBeNull();
+  });
+
+  it("offers the poster size on the Recommended pivot, shared with the Library pivot (CORE-2893)", () => {
+    localStorage.clear();
+    renderAt("/n/library-films", { manifest: doubled, loading: false });
+
+    const control = within(screen.getByRole("group", { name: "Poster size" }));
+    expect(control.getByRole("button", { name: "Large posters" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(control.getByRole("button", { name: "Small posters" }));
+    expect(control.getByRole("button", { name: "Small posters" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // The same per-browser choice the Library pivot's toolbar reads.
+    expect(readPosterSize()).toBe("small");
+    localStorage.clear();
+  });
+
+  it("keeps the poster size off Home, which has no pivots (CORE-2893)", () => {
+    renderAt("/", { manifest: doubled, loading: false });
+
+    expect(screen.queryByRole("group", { name: "Poster size" })).toBeNull();
   });
 
   it("moves an old raw-ID link to the readable address", () => {

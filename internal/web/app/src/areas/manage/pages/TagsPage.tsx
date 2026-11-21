@@ -1,16 +1,18 @@
-import { X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { CornerDownRight, FolderInput, Pencil, Trash2, X } from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Segmented } from "@/areas/console/Segmented";
 import {
   EmptyLine,
   ErrorLine,
+  ManageField,
+  ManageInlineForm,
   ManageSection,
   ManageTable,
   StatusBadge,
+  TableSkeletonRows,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -18,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   assignTag,
@@ -36,7 +37,7 @@ import { useT } from "@/lib/i18n";
 import { formatDateTime } from "../lib/schedule";
 
 // Tag manager (WEB-5D / ADR-0061): the manager surface for first-class,
-// domain-agnostic Core Tags. Four surfaces — a hierarchy tree
+// domain-agnostic Core Tags. Four surfaces — a hierarchy table
 // (create/rename/reparent/soft-delete), single assign/unassign, bulk
 // add/remove/replace, and restore of soft-deleted Tags. Every mutation routes
 // through the substrate's manager-gated GraphQL; the server is the authority.
@@ -49,6 +50,9 @@ const BULK_MODES: TagBulkMode[] = ["add", "remove", "replace"];
 // Radix Select forbids an empty-string item value, so "no parent" rides a
 // sentinel that maps back to undefined at the call site.
 const NO_PARENT = "__none__";
+
+// Indent per tree level, in px, on top of the cell's own padding.
+const INDENT = 20;
 
 /** Order live tags as a parent-then-children tree, with depth for indent. */
 function treeOrder(tags: TagInfo[]): { tag: TagInfo; depth: number }[] {
@@ -80,10 +84,14 @@ function treeOrder(tags: TagInfo[]): { tag: TagInfo; depth: number }[] {
   return out;
 }
 
+const submit = (action: () => void) => (event: FormEvent) => {
+  event.preventDefault();
+  action();
+};
+
 export function TagsPage() {
   const t = useT();
   const [tags, setTags] = useState<TagInfo[]>([]);
-  const [showTrashed, setShowTrashed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -91,7 +99,7 @@ export function TagsPage() {
     setError("");
     setLoading(true);
     try {
-      // Always fetch including trashed so the live tree and the Deleted table
+      // Always fetch including trashed so the live table and the Deleted table
       // share one query; the live filter happens client-side in treeOrder.
       setTags(await fetchTags(true));
     } catch {
@@ -120,36 +128,49 @@ export function TagsPage() {
           </>
         }
       >
-        <TagTree tags={liveTags} loading={loading} onChanged={load} onError={setError} />
+        <TagTable tags={liveTags} loading={loading} onChanged={load} onError={setError} />
         <ErrorLine message={error} />
+        <CreateTagForm tags={liveTags} onChanged={load} onError={setError} />
       </ManageSection>
 
-      <AssignSection tags={liveTags} onError={setError} />
+      <AssignSection tags={liveTags} />
 
-      <BulkSection tags={liveTags} onError={setError} />
+      <BulkSection tags={liveTags} />
 
       <ManageSection
         title={t("tagsDeletedHeading")}
-        actions={
-          <div className="flex items-center gap-2">
-            <Switch id="tags-show-trashed" checked={showTrashed} onCheckedChange={setShowTrashed} />
-            <Label htmlFor="tags-show-trashed" className="text-sm">
-              {showTrashed ? t("tagHideTrashed") : t("tagShowTrashed")}
-            </Label>
-          </div>
-        }
+        lead={t("tagsCount", { count: trashedTags.length })}
+        collapsible
       >
-        {showTrashed ? (
-          <TrashedTable tags={trashedTags} onChanged={load} onError={setError} />
-        ) : (
-          <p className="manage-empty">{t("tagShowTrashed")}</p>
-        )}
+        <TrashedTable tags={trashedTags} onChanged={load} onError={setError} />
       </ManageSection>
     </div>
   );
 }
 
-function TagTree({
+/** A removable tag pill: the shared chip for assigned and bulk-selected tags. */
+function TagChip({ name, onRemove }: { name: string; onRemove: () => void }) {
+  const t = useT();
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded-full border bg-muted/50 py-0.5 pl-3 pr-1 text-sm">
+      <span className="truncate" title={name}>
+        {name}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label={`${t("tagUnassign")} ${name}`}
+        className="size-6 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
+        onClick={onRemove}
+      >
+        <X aria-hidden />
+      </Button>
+    </span>
+  );
+}
+
+function TagTable({
   tags,
   loading,
   onChanged,
@@ -161,8 +182,6 @@ function TagTree({
   onError: (message: string) => void;
 }) {
   const t = useT();
-  const [name, setName] = useState("");
-  const [parentID, setParentID] = useState(NO_PARENT);
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editParent, setEditParent] = useState(NO_PARENT);
@@ -172,21 +191,7 @@ function TagTree({
 
   const rows = useMemo(() => treeOrder(tags), [tags]);
 
-  const onCreate = async () => {
-    onError("");
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    try {
-      await createTag(trimmed, parentID === NO_PARENT ? undefined : parentID);
-      setName("");
-      setParentID(NO_PARENT);
-      await onChanged();
-    } catch {
-      onError(t("tagsUnavailable"));
-    }
-  };
-
-  const beginEdit = (tag: TagInfo, focus: "name" | "parent" = "name") => {
+  const beginEdit = (tag: TagInfo, focus: "name" | "parent") => {
     setEditing(tag.id);
     setEditName(tag.name);
     setEditParent(tag.parentTagID ?? NO_PARENT);
@@ -216,104 +221,191 @@ function TagTree({
     }
   };
 
-  // A reparent target list excludes the tag itself (no self-parenting); deeper
-  // cycle rejection is the server's job.
-  const parentOptions = (exclude?: string) => tags.filter((tag) => tag.id !== exclude);
+  if (!loading && rows.length === 0) {
+    return <EmptyLine message={t("tagsEmpty")} />;
+  }
 
   return (
-    <div className="space-y-3">
-      {!loading && rows.length === 0 ? (
-        <EmptyLine message={t("tagsEmpty")} />
-      ) : (
-        <div className="space-y-1">
-          {rows.map(({ tag, depth }) =>
+    <ManageTable>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t("tagsHeading")}</TableHead>
+          <TableHead className="w-24 text-right">{t("tagUsesHeading")}</TableHead>
+          <TableHead className="w-32 text-right">
+            <span className="sr-only">{t("tagActionsHeading")}</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {loading && rows.length === 0 ? (
+          <TableSkeletonRows columns={3} rows={3} />
+        ) : (
+          rows.map(({ tag, depth }) =>
             editing === tag.id ? (
-              <div
-                key={tag.id}
-                className="flex flex-wrap items-end gap-2 py-1"
-                style={{ paddingLeft: depth * 18 }}
-              >
-                <Input
-                  aria-label={t("tagRename")}
-                  value={editName}
-                  autoFocus={editFocus === "name"}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-48"
-                />
-                <Select value={editParent} onValueChange={setEditParent}>
-                  <SelectTrigger
-                    className="w-40"
-                    aria-label={t("tagMove")}
-                    autoFocus={editFocus === "parent"}
+              <TableRow key={tag.id} data-selected>
+                <TableCell colSpan={3}>
+                  <form
+                    className="flex flex-wrap items-center gap-2"
+                    style={{ paddingLeft: depth * INDENT }}
+                    onSubmit={submit(() => void onSaveEdit(tag))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") setEditing(null);
+                    }}
                   >
-                    <SelectValue placeholder={t("tagNoParent")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NO_PARENT}>{t("tagNoParent")}</SelectItem>
-                    {parentOptions(tag.id).map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button type="button" size="sm" onClick={() => onSaveEdit(tag)}>
-                  {t("tagSave")}
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => setEditing(null)}>
-                  {t("cancel")}
-                </Button>
-              </div>
+                    <Input
+                      aria-label={t("tagRename")}
+                      value={editName}
+                      autoFocus={editFocus === "name"}
+                      autoComplete="off"
+                      spellCheck={false}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="h-8 min-w-0 flex-1 basis-48"
+                    />
+                    <Select value={editParent} onValueChange={setEditParent}>
+                      <SelectTrigger
+                        className="h-8 w-44"
+                        aria-label={t("tagMove")}
+                        autoFocus={editFocus === "parent"}
+                      >
+                        <SelectValue placeholder={t("tagNoParent")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_PARENT}>{t("tagNoParent")}</SelectItem>
+                        {tags
+                          .filter((p) => p.id !== tag.id)
+                          .map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <span className="ml-auto flex gap-2">
+                      <Button type="submit" size="sm" disabled={!editName.trim()}>
+                        {t("tagSave")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setEditing(null)}
+                      >
+                        {t("cancel")}
+                      </Button>
+                    </span>
+                  </form>
+                </TableCell>
+              </TableRow>
             ) : (
-              <div
-                key={tag.id}
-                className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50"
-                style={{ paddingLeft: depth * 18 + 8 }}
-              >
-                <span className="flex min-w-0 items-center gap-2 text-sm">
-                  {depth > 0 && <span className="text-muted-foreground">└</span>}
-                  <span className="truncate">{tag.name}</span>
+              <TableRow key={tag.id}>
+                <TableCell className="manage-cell-primary max-w-0">
                   <span
-                    className="manage-count"
-                    aria-label={t("tagAssignmentCountAria", {
-                      count: tag.assignmentCount ?? 0,
-                    })}
+                    className="flex min-w-0 items-center gap-1.5"
+                    style={{ paddingLeft: depth > 0 ? (depth - 1) * INDENT : 0 }}
                   >
-                    {tag.assignmentCount ?? 0}
+                    {depth > 0 && (
+                      <CornerDownRight
+                        aria-hidden
+                        className="size-3.5 shrink-0 text-muted-foreground"
+                      />
+                    )}
+                    <span className="truncate" title={tag.name}>
+                      {tag.name}
+                    </span>
                   </span>
-                </span>
-                <span className="flex shrink-0 gap-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => beginEdit(tag, "name")}
-                  >
-                    {t("tagRename")}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => beginEdit(tag, "parent")}
-                  >
-                    {t("tagMove")}
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => onDelete(tag)}>
-                    {t("tagDelete")}
-                  </Button>
-                </span>
-              </div>
+                </TableCell>
+                <TableCell
+                  className="manage-cell-num text-right"
+                  aria-label={t("tagAssignmentCountAria", { count: tag.assignmentCount ?? 0 })}
+                >
+                  {tag.assignmentCount ?? 0}
+                </TableCell>
+                <TableCell className="text-right">
+                  <span className="inline-flex gap-0.5">
+                    <RowAction
+                      label={t("tagRename")}
+                      icon={Pencil}
+                      onClick={() => beginEdit(tag, "name")}
+                    />
+                    <RowAction
+                      label={t("tagMove")}
+                      icon={FolderInput}
+                      onClick={() => beginEdit(tag, "parent")}
+                    />
+                    <RowAction
+                      label={t("tagDelete")}
+                      icon={Trash2}
+                      danger
+                      onClick={() => void onDelete(tag)}
+                    />
+                  </span>
+                </TableCell>
+              </TableRow>
             ),
-          )}
-        </div>
-      )}
+          )
+        )}
+      </TableBody>
+    </ManageTable>
+  );
+}
 
-      <div className="flex flex-wrap items-end gap-3 border-t pt-3">
-        <div className="grow space-y-1">
-          <Label htmlFor="tag-new-name">{t("tagNewLabel")}</Label>
+function RowAction({
+  label,
+  icon: Icon,
+  danger = false,
+  onClick,
+}: {
+  label: string;
+  icon: typeof Pencil;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      aria-label={label}
+      title={label}
+      className={danger ? "text-muted-foreground hover:text-destructive" : "text-muted-foreground"}
+      onClick={onClick}
+    >
+      <Icon aria-hidden />
+    </Button>
+  );
+}
+
+function CreateTagForm({
+  tags,
+  onChanged,
+  onError,
+}: {
+  tags: TagInfo[];
+  onChanged: () => Promise<void> | void;
+  onError: (message: string) => void;
+}) {
+  const t = useT();
+  const [name, setName] = useState("");
+  const [parentID, setParentID] = useState(NO_PARENT);
+
+  const onCreate = async () => {
+    onError("");
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      await createTag(trimmed, parentID === NO_PARENT ? undefined : parentID);
+      setName("");
+      setParentID(NO_PARENT);
+      await onChanged();
+    } catch {
+      onError(t("tagsUnavailable"));
+    }
+  };
+
+  return (
+    <form className="manage-add-row mt-3 pt-3" onSubmit={submit(() => void onCreate())}>
+      <ManageInlineForm>
+        <ManageField id="tag-new-name" label={t("tagNewLabel")} className="min-w-48 flex-1">
           <Input
             id="tag-new-name"
             value={name}
@@ -322,28 +414,27 @@ function TagTree({
             placeholder={t("tagNamePlaceholder")}
             onChange={(e) => setName(e.target.value)}
           />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="tag-new-parent">{t("tagParentLabel")}</Label>
+        </ManageField>
+        <ManageField id="tag-new-parent" label={t("tagParentLabel")}>
           <Select value={parentID} onValueChange={setParentID}>
-            <SelectTrigger id="tag-new-parent" className="w-44">
+            <SelectTrigger id="tag-new-parent" className="w-48">
               <SelectValue placeholder={t("tagNoParent")} />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NO_PARENT}>{t("tagNoParent")}</SelectItem>
-              {parentOptions().map((p) => (
+              {tags.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <Button type="button" onClick={onCreate} disabled={!name.trim()}>
+        </ManageField>
+        <Button type="submit" disabled={!name.trim()}>
           {t("tagCreate")}
         </Button>
-      </div>
-    </div>
+      </ManageInlineForm>
+    </form>
   );
 }
 
@@ -353,45 +444,82 @@ function targetTypeLabel(t: ReturnType<typeof useT>, type: TagTargetType) {
   return t("tagTargetMarker");
 }
 
-function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: string) => void }) {
+function TargetTypeField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: TagTargetType;
+  onChange: (value: TagTargetType) => void;
+}) {
+  const t = useT();
+  return (
+    <ManageField id={id} label={t("tagTargetType")}>
+      <Select value={value} onValueChange={(v) => onChange(v as TagTargetType)}>
+        <SelectTrigger id={id} className="w-40">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {TARGET_TYPES.map((type) => (
+            <SelectItem key={type} value={type}>
+              {targetTypeLabel(t, type)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </ManageField>
+  );
+}
+
+function AssignSection({ tags }: { tags: TagInfo[] }) {
   const t = useT();
   const [targetType, setTargetType] = useState<TagTargetType>("media");
   const [targetID, setTargetID] = useState("");
   const [assignment, setAssignment] = useState<TagAssignmentInfo | null>(null);
   const [addTagID, setAddTagID] = useState("");
+  const [error, setError] = useState("");
 
-  const onLoad = async () => {
-    onError("");
-    const id = targetID.trim();
-    if (!id) return;
+  // The loaded panel belongs to the target it was loaded for; changing the
+  // target drops it, and a response that arrives after a change is ignored,
+  // so an assign or unassign never lands on a different target.
+  const generation = useRef(0);
+  const changeTarget = (type: TagTargetType, id: string) => {
+    generation.current += 1;
+    setTargetType(type);
+    setTargetID(id);
+    setAssignment(null);
+    setAddTagID("");
+  };
+
+  const run = async (action: () => Promise<TagAssignmentInfo>) => {
+    const started = generation.current;
+    setError("");
     try {
-      setAssignment(await fetchTagAssignments(targetType, id));
+      const next = await action();
+      if (started !== generation.current) return false;
+      setAssignment(next);
+      return true;
     } catch {
-      onError(t("tagsUnavailable"));
+      if (started === generation.current) setError(t("tagsUnavailable"));
+      return false;
     }
   };
 
+  const id = targetID.trim();
+  const onLoad = () => {
+    if (id) void run(() => fetchTagAssignments(targetType, id));
+  };
+  // Mutations go to the target the panel was loaded for, not the inputs.
   const onAssign = async () => {
-    onError("");
-    const id = targetID.trim();
-    if (!id || !addTagID) return;
-    try {
-      setAssignment(await assignTag(addTagID, targetType, id));
-      setAddTagID("");
-    } catch {
-      onError(t("tagsUnavailable"));
-    }
+    if (!assignment || !addTagID) return;
+    const { targetType: type, targetID: loaded } = assignment;
+    if (await run(() => assignTag(addTagID, type, loaded))) setAddTagID("");
   };
-
-  const onUnassign = async (tagID: string) => {
-    onError("");
-    const id = targetID.trim();
-    if (!id) return;
-    try {
-      setAssignment(await unassignTag(tagID, targetType, id));
-    } catch {
-      onError(t("tagsUnavailable"));
-    }
+  const onUnassign = (tagID: string) => {
+    if (!assignment) return;
+    const { targetType: type, targetID: loaded } = assignment;
+    void run(() => unassignTag(tagID, type, loaded));
   };
 
   const assigned = assignment?.tags ?? [];
@@ -404,118 +532,89 @@ function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: 
       lead={t("tagAssignLead")}
       actions={
         assignment ? (
-          <StatusBadge state="green">
-            {assigned.length} {t("tagBulkAffected")}
-          </StatusBadge>
+          <span className="manage-count">{t("tagsCount", { count: assigned.length })}</span>
         ) : undefined
       }
     >
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="assign-target-type">{t("tagTargetType")}</Label>
-            <Select value={targetType} onValueChange={(v) => setTargetType(v as TagTargetType)}>
-              <SelectTrigger id="assign-target-type" className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TARGET_TYPES.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    {targetTypeLabel(t, type)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grow space-y-1">
-            <Label htmlFor="assign-target-id">{t("tagTargetID")}</Label>
+      <form onSubmit={submit(onLoad)}>
+        <ManageInlineForm>
+          <TargetTypeField
+            id="assign-target-type"
+            value={targetType}
+            onChange={(type) => changeTarget(type, targetID)}
+          />
+          <ManageField id="assign-target-id" label={t("tagTargetID")} className="min-w-48 flex-1">
             <Input
               id="assign-target-id"
               value={targetID}
               autoComplete="off"
               spellCheck={false}
-              onChange={(e) => setTargetID(e.target.value)}
+              className="manage-mono"
+              onChange={(e) => changeTarget(targetType, e.target.value)}
             />
-          </div>
-          <Button type="button" variant="outline" onClick={onLoad} disabled={!targetID.trim()}>
+          </ManageField>
+          <Button type="submit" variant="outline" disabled={!id}>
             {t("tagLoad")}
           </Button>
-        </div>
+        </ManageInlineForm>
+      </form>
 
-        {assignment &&
-          (assigned.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t("tagNoneAssigned")}</p>
+      {assignment && (
+        <div className="manage-add-row mt-3 space-y-3 pt-3">
+          {assigned.length === 0 ? (
+            <EmptyLine message={t("tagNoneAssigned")} />
           ) : (
             <div className="flex flex-wrap gap-2">
               {assigned.map((tag) => (
-                <span
-                  key={tag.id}
-                  className="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 py-1 pl-3 pr-1.5 text-sm"
-                >
-                  {tag.name}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`${t("tagUnassign")} ${tag.name}`}
-                    className="size-6 text-muted-foreground hover:bg-transparent hover:text-destructive"
-                    onClick={() => onUnassign(tag.id)}
-                  >
-                    <X aria-hidden />
-                  </Button>
-                </span>
+                <TagChip key={tag.id} name={tag.name} onRemove={() => onUnassign(tag.id)} />
               ))}
             </div>
-          ))}
-
-        {assignment && (
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="grow space-y-1">
-              <Label htmlFor="assign-add-tag">{t("tagAssign")}</Label>
-              <Select value={addTagID} onValueChange={setAddTagID}>
-                <SelectTrigger id="assign-add-tag">
-                  <SelectValue placeholder={t("tagChooseTag")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {available.map((tag) => (
-                    <SelectItem key={tag.id} value={tag.id}>
-                      {tag.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="button" onClick={onAssign} disabled={!addTagID}>
-              {t("tagAssign")}
-            </Button>
-          </div>
-        )}
-      </div>
+          )}
+          <form onSubmit={submit(() => void onAssign())}>
+            <ManageInlineForm>
+              <ManageField id="assign-add-tag" label={t("tagAssign")} className="min-w-48 flex-1">
+                <Select value={addTagID} onValueChange={setAddTagID}>
+                  <SelectTrigger id="assign-add-tag">
+                    <SelectValue placeholder={t("tagChooseTag")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {available.map((tag) => (
+                      <SelectItem key={tag.id} value={tag.id}>
+                        {tag.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </ManageField>
+              <Button type="submit" disabled={!addTagID}>
+                {t("tagAssign")}
+              </Button>
+            </ManageInlineForm>
+          </form>
+        </div>
+      )}
+      <ErrorLine message={error} />
     </ManageSection>
   );
 }
 
-function BulkSection({ tags, onError }: { tags: TagInfo[]; onError: (message: string) => void }) {
+function BulkSection({ tags }: { tags: TagInfo[] }) {
   const t = useT();
   const [mode, setMode] = useState<TagBulkMode>("add");
   const [targetType, setTargetType] = useState<TagTargetType>("media");
   const [targetIDs, setTargetIDs] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<string[]>([]);
   const [affected, setAffected] = useState<number | null>(null);
+  const [error, setError] = useState("");
 
-  const idList = () =>
-    targetIDs
-      .split(",")
-      .map((id) => id.trim())
-      .filter(Boolean);
+  const idList = targetIDs
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
 
   const toggle = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setAffected(null);
+    setSelected((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
   };
 
   const modeLabel = (m: TagBulkMode) =>
@@ -525,92 +624,55 @@ function BulkSection({ tags, onError }: { tags: TagInfo[]; onError: (message: st
         ? t("tagBulkModeRemove")
         : t("tagBulkModeReplace");
 
+  const canApply = idList.length > 0 && selected.length > 0;
+
   const onApply = async () => {
-    onError("");
-    const ids = idList();
-    const tagIDs = [...selected];
-    if (ids.length === 0 || tagIDs.length === 0) return;
+    setError("");
+    if (!canApply) return;
     try {
-      const result = await bulkAssignTags(tagIDs, targetType, ids, mode);
+      const result = await bulkAssignTags(selected, targetType, idList, mode);
       setAffected(result.affected);
     } catch {
-      onError(t("tagsUnavailable"));
+      setError(t("tagsUnavailable"));
     }
   };
 
-  const canApply = idList().length > 0 && selected.size > 0;
+  const byID = new Map(tags.map((tag) => [tag.id, tag]));
+  const chosen = selected.flatMap((id) => byID.get(id) ?? []);
   // Tags not yet in the selection — the add-picker offers only these.
-  const available = tags.filter((tag) => !selected.has(tag.id));
+  const available = tags.filter((tag) => !selected.includes(tag.id));
 
   return (
-    <ManageSection
-      title={t("tagBulkHeading")}
-      lead={t("tagBulkLead")}
-      actions={
-        <Segmented
-          label={t("tagBulkHeading")}
-          value={mode}
-          onChange={setMode}
-          options={BULK_MODES.map((m) => ({ value: m, label: modeLabel(m) }))}
-        />
-      }
-    >
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="bulk-target-type">{t("tagTargetType")}</Label>
-            <Select value={targetType} onValueChange={(v) => setTargetType(v as TagTargetType)}>
-              <SelectTrigger id="bulk-target-type" className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TARGET_TYPES.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    {targetTypeLabel(t, type)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grow space-y-1">
-            <Label htmlFor="bulk-target-ids">{t("tagBulkTargetIDs")}</Label>
+    <ManageSection title={t("tagBulkHeading")} lead={t("tagBulkLead")}>
+      <form className="space-y-3" onSubmit={submit(() => void onApply())}>
+        <ManageInlineForm>
+          <TargetTypeField id="bulk-target-type" value={targetType} onChange={setTargetType} />
+          <ManageField
+            id="bulk-target-ids"
+            label={t("tagBulkTargetIDs")}
+            className="min-w-48 flex-1"
+          >
             <Input
               id="bulk-target-ids"
               value={targetIDs}
               autoComplete="off"
               spellCheck={false}
-              onChange={(e) => setTargetIDs(e.target.value)}
+              className="manage-mono"
+              onChange={(e) => {
+                setAffected(null);
+                setTargetIDs(e.target.value);
+              }}
             />
-          </div>
-        </div>
+          </ManageField>
+        </ManageInlineForm>
 
-        <div className="space-y-2">
-          <Label htmlFor="bulk-add-tag">{t("tagsHeading")}</Label>
+        <ManageField id="bulk-add-tag" label={t("tagsHeading")}>
           <div className="flex flex-wrap items-center gap-2">
-            {[...selected].map((id) => {
-              const tag = tags.find((tg) => tg.id === id);
-              if (!tag) return null;
-              return (
-                <span
-                  key={id}
-                  className="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 py-1 pl-3 pr-1.5 text-sm"
-                >
-                  {tag.name}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`${t("tagUnassign")} ${tag.name}`}
-                    className="size-6 text-muted-foreground hover:bg-transparent hover:text-destructive"
-                    onClick={() => toggle(id)}
-                  >
-                    <X aria-hidden />
-                  </Button>
-                </span>
-              );
-            })}
+            {chosen.map((tag) => (
+              <TagChip key={tag.id} name={tag.name} onRemove={() => toggle(tag.id)} />
+            ))}
             <Select value="" onValueChange={toggle}>
-              <SelectTrigger id="bulk-add-tag" className="w-44">
+              <SelectTrigger id="bulk-add-tag" className="w-48">
                 <SelectValue placeholder={t("tagChooseTag")} />
               </SelectTrigger>
               <SelectContent>
@@ -622,19 +684,31 @@ function BulkSection({ tags, onError }: { tags: TagInfo[]; onError: (message: st
               </SelectContent>
             </Select>
           </div>
-        </div>
+        </ManageField>
 
-        <div className="flex items-center gap-3">
-          <Button type="button" onClick={onApply} disabled={!canApply}>
-            {t("tagBulkApply")}
-          </Button>
-          {affected !== null && (
-            <StatusBadge state="green">
-              {t("tagBulkApplied")} · {affected} {t("tagBulkAffected")}
-            </StatusBadge>
-          )}
+        <div className="manage-add-row flex flex-wrap items-center gap-3 pt-3">
+          <Segmented
+            label={t("tagBulkHeading")}
+            value={mode}
+            onChange={(m) => {
+              setAffected(null);
+              setMode(m);
+            }}
+            options={BULK_MODES.map((m) => ({ value: m, label: modeLabel(m) }))}
+          />
+          <span className="ml-auto flex items-center gap-3">
+            {affected !== null && (
+              <StatusBadge state="green">
+                {t("tagBulkApplied")} · {affected} {t("tagBulkAffected")}
+              </StatusBadge>
+            )}
+            <Button type="submit" disabled={!canApply}>
+              {t("tagBulkApply")}
+            </Button>
+          </span>
         </div>
-      </div>
+      </form>
+      <ErrorLine message={error} />
     </ManageSection>
   );
 }
@@ -669,14 +743,20 @@ function TrashedTable({
       <TableHeader>
         <TableRow>
           <TableHead>{t("tagsHeading")}</TableHead>
-          <TableHead>{t("tagDeletedAt")}</TableHead>
-          <TableHead className="text-right">{t("tagRestore")}</TableHead>
+          <TableHead className="w-48">{t("tagDeletedAt")}</TableHead>
+          <TableHead className="w-32 text-right">
+            <span className="sr-only">{t("tagActionsHeading")}</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {tags.map((tag) => (
           <TableRow key={tag.id}>
-            <TableCell className="manage-cell-primary">{tag.name}</TableCell>
+            <TableCell className="manage-cell-primary max-w-0">
+              <span className="block truncate" title={tag.name}>
+                {tag.name}
+              </span>
+            </TableCell>
             <TableCell className="manage-cell-num">
               {tag.trashedAt ? formatDateTime(tag.trashedAt) : ""}
             </TableCell>

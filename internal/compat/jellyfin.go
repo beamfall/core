@@ -32,6 +32,8 @@ var jellyfinRoutes = map[jellyfinRoute]func(*Handler, http.ResponseWriter, *http
 	{http.MethodGet, Prefix + "System/Configuration"}:      (*Handler).systemConfiguration,
 	{http.MethodGet, Prefix + "Items"}:                     (*Handler).items,
 	{http.MethodGet, Prefix + "Items/Latest"}:              (*Handler).latestItems,
+	{http.MethodGet, Prefix + "Items/Counts"}:              (*Handler).itemCounts,
+	{http.MethodGet, Prefix + "Sessions"}:                  (*Handler).sessions,
 	{http.MethodGet, Prefix + "Users"}:                     (*Handler).listUsers,
 	{http.MethodPost, Prefix + "Auth/Keys"}:                (*Handler).createAPIKey,
 	{http.MethodGet, Prefix + "Auth/Keys"}:                 (*Handler).listAPIKeys,
@@ -100,6 +102,7 @@ type Handler struct {
 	sealed         func(store.LibraryID) bool
 	interop        map[string]Interop
 	indexes        indexCache
+	sessionsNow    func() time.Time // the Sessions clock; nil means time.Now
 	refreshMu      sync.Mutex
 	background     sync.WaitGroup // media update scans queued after the response
 	nextRefresh    time.Time

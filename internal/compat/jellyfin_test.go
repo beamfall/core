@@ -25,6 +25,8 @@ func TestJellyfinRouteInventory(t *testing.T) {
 		{http.MethodGet, Prefix + "System/Configuration"},
 		{http.MethodGet, Prefix + "Items"},
 		{http.MethodGet, Prefix + "Items/Latest"},
+		{http.MethodGet, Prefix + "Items/Counts"},
+		{http.MethodGet, Prefix + "Sessions"},
 		{http.MethodGet, Prefix + "Users"},
 		{http.MethodPost, Prefix + "Auth/Keys"},
 		{http.MethodGet, Prefix + "Auth/Keys"},
@@ -43,6 +45,18 @@ func TestJellyfinRouteInventory(t *testing.T) {
 	for route, serve := range jellyfinRoutes {
 		if !slices.Contains(want, route) || serve == nil {
 			t.Errorf("unexpected compat route %s %s", route.method, route.path)
+		}
+		// Sessions are read-only (ADR-0171 §2.3): nothing under Sessions/
+		// but sign-out, and no socket.
+		lower := strings.ToLower(route.path)
+		if strings.HasPrefix(lower, strings.ToLower(Prefix+"Sessions/")) && route.path != Prefix+"Sessions/Logout" {
+			t.Errorf("session-control route %s %s registered", route.method, route.path)
+		}
+		if route.path == Prefix+"Sessions" && route.method != http.MethodGet {
+			t.Errorf("session route %s %s registered", route.method, route.path)
+		}
+		if strings.Contains(lower, "socket") || strings.Contains(lower, "quickconnect") {
+			t.Errorf("out-of-scope route %s %s registered", route.method, route.path)
 		}
 	}
 }
@@ -65,6 +79,23 @@ func TestJellyfinUnregisteredRoutesFallThrough(t *testing.T) {
 		{http.MethodGet, "Items/item-id/PlaybackInfo"},
 		{http.MethodPost, "Items/item-id/PlaybackInfo"},
 		{http.MethodPost, "Sessions/Playing"},
+		{http.MethodPost, "Sessions"},
+		{http.MethodDelete, "Sessions"},
+		{http.MethodGet, "Sessions/session-id"},
+		{http.MethodPost, "Sessions/session-id/Playing/Pause"},
+		{http.MethodPost, "Sessions/session-id/Playing/Unpause"},
+		{http.MethodPost, "Sessions/session-id/Playing/Stop"},
+		{http.MethodPost, "Sessions/session-id/Command"},
+		{http.MethodPost, "Sessions/session-id/Message"},
+		{http.MethodPost, "Sessions/session-id/System/Restart"},
+		{http.MethodPost, "Sessions/Playing/Progress"},
+		{http.MethodPost, "Sessions/Playing/Stopped"},
+		{http.MethodGet, "Sessions/"},
+		{http.MethodGet, "emby/Sessions"},
+		{http.MethodGet, "mediabrowser/Sessions"},
+		{http.MethodGet, "socket"},
+		{http.MethodGet, "QuickConnect/Initiate"},
+		{http.MethodPost, "Items/Counts"},
 		{http.MethodGet, "Users/AuthenticateByName"},
 		{http.MethodDelete, "Sessions/Logout"},
 		{http.MethodPost, "Users/AuthenticateByName/"},

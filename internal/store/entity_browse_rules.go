@@ -12,6 +12,9 @@ type EntityBrowseSource struct {
 }
 
 // entityBrowseSourceSQL builds the eligibility predicate for the Entity alias e.
+// Each subquery is a CROSS JOIN so SQLite keeps the relation as the outer loop
+// and seeks it by e.id: left free, the planner can walk every source-kind
+// Entity of the Library for each row of e instead (CORE-2887).
 func entityBrowseSourceSQL(sources []EntityBrowseSource) (string, []any) {
 	if len(sources) == 0 {
 		return "", nil
@@ -21,7 +24,7 @@ func entityBrowseSourceSQL(sources []EntityBrowseSource) (string, []any) {
 	for _, source := range sources {
 		if source.FromKind != "" {
 			clauses = append(clauses, `EXISTS (
-				SELECT 1 FROM entity_relation r JOIN entity src ON src.id = r.from_entity_id
+				SELECT 1 FROM entity_relation r CROSS JOIN entity src ON src.id = r.from_entity_id
 				WHERE r.to_entity_id = e.id AND r.relation = ?
 					AND src.kind = ? AND src.library_id = e.library_id AND src.trashed_at_ms IS NULL
 			)`)
@@ -37,7 +40,7 @@ func entityBrowseSourceSQL(sources []EntityBrowseSource) (string, []any) {
 			// An existing relation still identifies the Media's grouping when
 			// its source is in Trash and can be restored.
 			clause += ` AND NOT EXISTS (
-				SELECT 1 FROM entity_relation incoming JOIN entity src ON src.id = incoming.from_entity_id
+				SELECT 1 FROM entity_relation incoming CROSS JOIN entity src ON src.id = incoming.from_entity_id
 				WHERE incoming.to_media_id = m.id AND incoming.relation = ? AND src.library_id = e.library_id
 			)`
 			args = append(args, source.ExcludeMediaRelation)

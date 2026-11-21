@@ -1,5 +1,5 @@
-/* The Categories pivot (CORE-2505). Featured values are landscape cards on the
- * Library accent surface, with a backdrop when one loads under a token scrim;
+/* The Categories pivot (CORE-2505, CORE-2885). Featured values are 3:2 cards:
+ * a backdrop or a mosaic of covers under a token scrim, else a tinted surface;
  * long-tail values are chips (chrome.css .bf-chip). Spacing 4/8/12/16 and
  * --radius-card only; motion is the token hover and focus ring, removed under
  * reduce-motion. No effect code: visual effects belong to Oscillux. */
@@ -73,24 +73,27 @@
   color: var(--text-primary);
 }
 
+/* A dense grid of one card shape (CORE-2885): dozens of values fit a screen,
+ * two to a row on a phone. */
 [data-register="viewer"] .bf-category-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--bf-category-min)), 1fr));
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 [data-register="viewer"] .bf-category-card {
+  --bf-category-tone: var(--library-accent, var(--accent));
   position: relative;
   display: flex;
   align-items: flex-end;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 3 / 2;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
-  background: color-mix(in oklab, var(--library-accent, var(--accent)) 22%, var(--bg-surface));
+  background: color-mix(in oklab, var(--library-accent, var(--accent)) 12%, var(--bg-surface));
   color: var(--on-scrim);
   text-decoration: none;
   transition:
@@ -108,23 +111,95 @@
   outline-offset: 3px;
 }
 
-[data-register="viewer"] .bf-category-art {
-  position: absolute;
-  inset: 0;
+[data-register="viewer"] .bf-category-art,
+[data-register="viewer"] .bf-category-mosaic img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform var(--duration-normal) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-category-art {
+  position: absolute;
+  inset: 0;
+}
+
+[data-register="viewer"] .bf-category-card:hover .bf-category-art,
+[data-register="viewer"] .bf-category-card:hover .bf-category-mosaic img {
+  transform: scale(1.04);
+}
+
+/* Covers of the value's containers: one, two side by side, or four. */
+[data-register="viewer"] .bf-category-mosaic {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+[data-register="viewer"] .bf-category-mosaic img {
+  display: block;
+  min-height: 0;
+}
+
+[data-register="viewer"] .bf-category-mosaic[data-count="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+[data-register="viewer"] .bf-category-mosaic[data-count="4"] {
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+/* No artwork: a surface tinted by a palette tone the name picks (TS
+ * categoryTone, CATEGORY_TONES = 7), mixed with the Library accent so the
+ * page stays one family, and the name set large in the theme's text colour. */
+[data-register="viewer"] .bf-category-card[data-tone="0"] {
+  --bf-category-tone: var(--amber-500);
+}
+[data-register="viewer"] .bf-category-card[data-tone="1"] {
+  --bf-category-tone: var(--beam-500);
+}
+[data-register="viewer"] .bf-category-card[data-tone="2"] {
+  --bf-category-tone: var(--green-500);
+}
+[data-register="viewer"] .bf-category-card[data-tone="3"] {
+  --bf-category-tone: var(--cyan-500);
+}
+[data-register="viewer"] .bf-category-card[data-tone="4"] {
+  --bf-category-tone: var(--iris-500);
+}
+[data-register="viewer"] .bf-category-card[data-tone="5"] {
+  --bf-category-tone: var(--red-500);
+}
+[data-register="viewer"] .bf-category-card[data-tone="6"] {
+  --bf-category-tone: var(--brand-cyan-500);
+}
+
+[data-register="viewer"] .bf-category-card[data-fill="tint"] {
+  --bf-category-hue: color-mix(
+    in oklab,
+    var(--bf-category-tone) 65%,
+    var(--library-accent, var(--accent))
+  );
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--bf-category-hue) 36%, var(--bg-surface)),
+    color-mix(in oklab, var(--bf-category-hue) 10%, var(--bg-surface))
+  );
+  color: var(--text-primary);
 }
 
 /* A scrim under the label keeps the name legible on any backdrop: it is held
  * opaque under both text lines and fades only across the top padding. */
 [data-register="viewer"] .bf-category-label {
-  --bf-category-fade: 32px;
+  --bf-category-fade: 28px;
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
   width: 100%;
+  min-width: 0;
   padding: var(--bf-category-fade) 12px 12px;
   background: linear-gradient(
     to top,
@@ -134,17 +209,38 @@
   );
 }
 
+[data-register="viewer"] .bf-category-card[data-fill="tint"] .bf-category-label {
+  padding: 12px;
+  background: none;
+}
+
 [data-register="viewer"] .bf-category-card .bf-category-name {
-  font-size: 18px;
-  line-height: 24px;
+  font-size: 16px;
+  line-height: 20px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+[data-register="viewer"] .bf-category-card[data-fill="tint"] .bf-category-name {
+  display: -webkit-box;
+  font-size: 20px;
+  line-height: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 [data-register="viewer"] .bf-category-card .bf-category-count {
   color: var(--on-scrim-muted);
+}
+
+[data-register="viewer"] .bf-category-card[data-fill="tint"] .bf-category-count {
+  color: var(--text-secondary);
 }
 
 [data-register="viewer"] .bf-category-count {
@@ -198,14 +294,21 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-register="viewer"] .bf-category-card {
+  [data-register="viewer"] .bf-category-card,
+  [data-register="viewer"] .bf-category-art,
+  [data-register="viewer"] .bf-category-mosaic img {
     transition: none;
+  }
+
+  [data-register="viewer"] .bf-category-card:hover .bf-category-art,
+  [data-register="viewer"] .bf-category-card:hover .bf-category-mosaic img {
+    transform: none;
   }
 }
 
 @media (max-width: 760px) {
   [data-register="viewer"] .bf-category-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(var(--bf-category-cols), minmax(0, 1fr));
     gap: 8px;
   }
 
@@ -214,9 +317,18 @@
     padding: var(--bf-category-fade) 8px 8px;
   }
 
+  [data-register="viewer"] .bf-category-card[data-fill="tint"] .bf-category-label {
+    padding: 8px;
+  }
+
   [data-register="viewer"] .bf-category-card .bf-category-name {
     font-size: 15px;
     line-height: 20px;
+  }
+
+  [data-register="viewer"] .bf-category-card[data-fill="tint"] .bf-category-name {
+    font-size: 17px;
+    line-height: 21px;
   }
 
   [data-register="viewer"] .bf-category-filter {

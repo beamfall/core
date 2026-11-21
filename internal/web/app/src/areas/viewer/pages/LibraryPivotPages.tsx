@@ -10,6 +10,7 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
 import { LibraryHeader } from "../components/LibraryPivots";
+import { PosterSizeControl } from "../components/PosterSizeControl";
 import { ViewerActions } from "../components/ViewerActions";
 import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
 import { sortCollections } from "../lib/collections";
@@ -17,12 +18,15 @@ import { DEFAULT_BROWSE_STATE, fetchLibraryItems } from "../lib/libraryBrowse";
 import {
   type CategoryPlan,
   type CategoryValue,
+  categoryCovers,
+  categoryTone,
   groupByInitial,
+  mosaicCovers,
   planCategories,
   runBounded,
   takeCategoryArt,
 } from "../lib/libraryCategories";
-import { libraryCategorySearch } from "../lib/libraryViews";
+import { fetchLibraryEntities, libraryCategorySearch } from "../lib/libraryViews";
 import "./library-categories.css";
 
 export type LibraryPivotName = "collections" | "categories";
@@ -63,7 +67,12 @@ export function LibraryPivotPage({ pivot }: { pivot: LibraryPivotName }) {
   return (
     <AppShell actions={<ViewerActions />}>
       <div className="flex flex-col gap-5">
-        <LibraryHeader nodeID={node.id} heading={displayString(node.title, displayLocale)} />
+        {/* The app-wide poster size, on every pivot's heading row (CORE-2893). */}
+        <LibraryHeader
+          nodeID={node.id}
+          heading={displayString(node.title, displayLocale)}
+          aside={<PosterSizeControl className="ml-auto" />}
+        />
         {pivot === "collections" ? (
           <LibraryCollections key={node.libraryID} libraryID={node.libraryID} />
         ) : (
@@ -166,21 +175,24 @@ function LibraryCollections({ libraryID }: { libraryID: string }) {
 function LibraryCategories({ libraryID, nodeID }: { libraryID: string; nodeID: string }) {
   const t = useT();
   const [searchParams] = useSearchParams();
-  const read = useCallback(
-    async (): Promise<CategoryPlan[]> =>
-      planCategories(
-        (
-          await fetchLibraryItems({
-            libraryID,
-            state: DEFAULT_BROWSE_STATE,
-            limit: 1,
-            offset: 0,
-            categoryCounts: true,
-          })
-        ).facets.groupings,
+  const read = useCallback(async (): Promise<CategoryPlan[]> => {
+    // The kinds only name a container count of one in the singular; without
+    // them the page still renders (CORE-2885).
+    const [page, kinds] = await Promise.all([
+      fetchLibraryItems({
+        libraryID,
+        state: DEFAULT_BROWSE_STATE,
+        limit: 1,
+        offset: 0,
+        categoryCounts: true,
+      }),
+      fetchLibraryEntities({ libraryID, limit: 1, offset: 0 }).then(
+        (entities) => entities.kinds,
+        () => [],
       ),
-    [libraryID],
-  );
+    ]);
+    return planCategories(page.facets.groupings, kinds);
+  }, [libraryID]);
   const { value: plans, failed, retry } = useRetryableRead(read);
   const listed = plans?.find((plan) => plan.kind === searchParams.get("kind"));
 
@@ -228,14 +240,23 @@ function jumpTo(event: MouseEvent<HTMLAnchorElement>, id: string) {
 
 const ART_READS_AT_ONCE = 4;
 const artKey = (kind: string, value: string) => `${kind}\u0000${value}`;
-const ART_CANDIDATES = 6;
+const ART_CANDIDATES = 12;
+
+/** A featured card's artwork: a backdrop, else the covers for its mosaic. */
+interface CategoryArt {
+  backdrop: string;
+  covers: string[];
+}
+
+const NO_ART: CategoryArt = { backdrop: "", covers: [] };
 
 /**
- * The backdrop for each featured value, read from its best rated items, four
- * reads at a time. A tile takes its art once every tile before it has settled,
- * so no two tiles show the same picture and none changes after it appears.
+ * The art for each featured value, read from its best rated items, four reads
+ * at a time. A tile takes its backdrop once every tile before it has settled,
+ * so no two tiles show the same backdrop and none changes after it appears; a
+ * tile with no backdrop takes up to four of its items' container covers.
  */
-function useCategoryArt(libraryID: string, plans: CategoryPlan[]): Map<string, string> {
+function useCategoryArt(libraryID: string, plans: CategoryPlan[]): Map<string, CategoryArt> {
   const featured = useMemo(
     () =>
       plans
@@ -281,12 +302,14 @@ function useCategoryArt(libraryID: string, plans: CategoryPlan[]): Map<string, s
   }, [libraryID, featured]);
 
   return useMemo(() => {
-    const art = new Map<string, string>();
+    const art = new Map<string, CategoryArt>();
     const used = new Set<string>();
     for (const [index, { kind, value }] of featured.entries()) {
       if (settled[index] === undefined) break;
-      const url = takeCategoryArt(settled[index] ?? [], used);
-      if (url) art.set(artKey(kind, value), url);
+      const items = settled[index] ?? [];
+      const backdrop = takeCategoryArt(items, used);
+      const covers = backdrop ? [] : categoryCovers(items);
+      if (backdrop || covers.length > 0) art.set(artKey(kind, value), { backdrop, covers });
     }
     return art;
   }, [featured, settled]);
@@ -356,7 +379,7 @@ function CategoryOverview({
                     <CategoryCard
                       to={categoryLink(nodeID, plan.kind, entry.value)}
                       entry={entry}
-                      art={art.get(artKey(plan.kind, entry.value)) ?? ""}
+                      art={art.get(artKey(plan.kind, entry.value)) ?? NO_ART}
                     />
                   </li>
                 ))}
@@ -386,6 +409,13 @@ function CategoryOverview({
   );
 }
 
+const ART_SIZES = "(max-width: 760px) 50vw, 240px";
+
+/**
+ * One featured value: its backdrop under a scrim, else a mosaic of its
+ * containers' covers, else a surface tinted by a palette tone its name picks,
+ * with the name set large (CORE-2885). Every card keeps one shape.
+ */
 function CategoryCard({
   to,
   entry,
@@ -393,23 +423,47 @@ function CategoryCard({
 }: {
   to: ReturnType<typeof categoryLink>;
   entry: CategoryValue;
-  art: string;
+  art: CategoryArt;
 }) {
-  const [broken, setBroken] = useState("");
-  const shown = art && art !== broken ? art : "";
+  const [broken, setBroken] = useState<ReadonlySet<string>>(() => new Set());
+  const drop = (url: string) => setBroken((prev) => new Set(prev).add(url));
+  const backdrop = art.backdrop && !broken.has(art.backdrop) ? art.backdrop : "";
+  const covers = backdrop ? [] : mosaicCovers(art.covers.filter((url) => !broken.has(url)));
+  const fill = backdrop ? "art" : covers.length > 0 ? "mosaic" : "tint";
   return (
-    <Link className="bf-category-card" to={to}>
-      {shown && (
+    <Link
+      className="bf-category-card"
+      to={to}
+      data-fill={fill}
+      data-tone={fill === "tint" ? categoryTone(entry.value) : undefined}
+    >
+      {backdrop && (
         <img
           className="bf-category-art"
-          src={artworkBucketURL(shown, "w640")}
-          srcSet={artworkSrcSet(shown, ["w320", "w640", "w1280"])}
-          sizes="(max-width: 760px) 50vw, 320px"
+          src={artworkBucketURL(backdrop, "w640")}
+          srcSet={artworkSrcSet(backdrop, ["w320", "w640", "w1280"])}
+          sizes={ART_SIZES}
           alt=""
           loading="lazy"
           decoding="async"
-          onError={() => setBroken(shown)}
+          onError={() => drop(backdrop)}
         />
+      )}
+      {covers.length > 0 && (
+        <span className="bf-category-mosaic" data-count={covers.length}>
+          {covers.map((url) => (
+            <img
+              key={url}
+              src={artworkBucketURL(url, "w320")}
+              srcSet={artworkSrcSet(url, ["w320", "w640"])}
+              sizes={covers.length === 1 ? ART_SIZES : "(max-width: 760px) 25vw, 120px"}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onError={() => drop(url)}
+            />
+          ))}
+        </span>
       )}
       <span className="bf-category-label">
         <span className="bf-category-name">{entry.value}</span>
@@ -516,15 +570,22 @@ function CategoryIndex({ plan, nodeID }: { plan: CategoryPlan; nodeID: string })
   );
 }
 
+/**
+ * A value's count: containers under the plugin's name for them, singular for
+ * one in the display locale; with no singular name, a container count of one
+ * shows its items instead (CORE-2885).
+ */
 function CategoryCount({ entry }: { entry: CategoryValue }) {
   const t = useT();
   const locale = useDisplayLocale();
-  const label = displayString(entry.label, locale);
+  const count = entry.count ?? 0;
+  const one = new Intl.PluralRules(locale).select(count) === "one";
+  const label = displayString(one ? entry.labelOne : entry.label, locale);
   return label ? (
     <>
-      {new Intl.NumberFormat(locale).format(entry.count ?? 0)} {label}
+      {new Intl.NumberFormat(locale).format(count)} {label}
     </>
   ) : (
-    <>{t("libraryCategoriesItemCount", { count: entry.count ?? 0 })}</>
+    <>{t("libraryCategoriesItemCount", { count: entry.label ? (entry.items ?? count) : count })}</>
   );
 }

@@ -1,6 +1,8 @@
+import { displayString } from "@/lib/display";
 import type { DisplayString, SourceItem } from "@/lib/graphql/types";
 import { artworkSlotURL } from "./artwork";
 import type { LibraryItemsGrouping } from "./libraryBrowse";
+import type { LibraryEntityKind } from "./libraryViews";
 
 // The Categories pivot's plan (CORE-2505). A grouping with few values (genres)
 // is featured as artwork tiles; a long-tail one (studios, networks) shows its
@@ -17,7 +19,12 @@ export interface CategoryValue {
   value: string;
   /** The items that carry the value, when the server reports counts. */
   count?: number;
+  /** The plugin's (plural) name for the unit `count` counts, when it is a container. */
   label?: DisplayString;
+  /** The plugin's singular name for that unit, for a count of one (CORE-2885). */
+  labelOne?: DisplayString;
+  /** The Media count behind a container count. */
+  items?: number;
 }
 
 export interface CategoryPlan {
@@ -29,8 +36,36 @@ export interface CategoryPlan {
   top: CategoryValue[];
 }
 
+/** A display string's non-empty entries, keyed by locale, in a comparable form. */
+function displayKey(value: DisplayString): string {
+  const entries = typeof value === "string" ? [["", value]] : Object.entries(value);
+  return JSON.stringify(entries.filter(([, text]) => text).sort(([x], [y]) => (x < y ? -1 : 1)));
+}
+
+/**
+ * The singular name of the container kind a browse label names. The server
+ * labels a container count with the kind's browse Section title, the same
+ * title `libraryEntities` reports as that kind's `label` beside its display
+ * name, so the label finds the kind (CORE-2885).
+ */
+export function singularLabel(
+  label: DisplayString,
+  kinds: readonly LibraryEntityKind[],
+): DisplayString | undefined {
+  const key = displayKey(label);
+  if (key === "[]") return undefined;
+  const kind = kinds.find(
+    (entry) =>
+      entry.label && displayString(entry.kindDisplayName) && displayKey(entry.label) === key,
+  );
+  return kind?.kindDisplayName;
+}
+
 /** Pairs each value with its count; counts that do not line up are dropped. */
-export function categoryValues(grouping: LibraryItemsGrouping): CategoryValue[] {
+export function categoryValues(
+  grouping: LibraryItemsGrouping,
+  kinds: readonly LibraryEntityKind[] = [],
+): CategoryValue[] {
   const counts = grouping.counts?.length === grouping.values.length ? grouping.counts : undefined;
   const browse =
     grouping.browseCounts?.length === grouping.values.length &&
@@ -38,18 +73,27 @@ export function categoryValues(grouping: LibraryItemsGrouping): CategoryValue[] 
   return grouping.values.map((value, i) => {
     const label = browse ? grouping.browseLabels?.[i] : undefined;
     if (label && Object.values(label).some(Boolean)) {
-      return { value, count: grouping.browseCounts?.[i], label };
+      return {
+        value,
+        count: grouping.browseCounts?.[i],
+        label,
+        labelOne: singularLabel(label, kinds),
+        items: counts?.[i],
+      };
     }
     return counts ? { value, count: counts[i] } : { value };
   });
 }
 
 /** Featured groupings lead, each kind keeping the server's order; empty kinds are left out. */
-export function planCategories(groupings: LibraryItemsGrouping[]): CategoryPlan[] {
+export function planCategories(
+  groupings: LibraryItemsGrouping[],
+  kinds: readonly LibraryEntityKind[] = [],
+): CategoryPlan[] {
   const plans = groupings
     .filter((grouping) => grouping.values.length > 0)
     .map((grouping): CategoryPlan => {
-      const values = categoryValues(grouping);
+      const values = categoryValues(grouping, kinds);
       const featured = values.length <= FEATURED_MAX;
       return {
         kind: grouping.kind,
@@ -120,6 +164,40 @@ export function takeCategoryArt(items: SourceItem[], used: Set<string>): string 
     }
   }
   return "";
+}
+
+/** How many covers a card's mosaic shows: one, two side by side, or four. */
+export const MOSAIC_MAX = 4;
+
+/**
+ * The distinct container covers among a value's items, for the mosaic a card
+ * without a backdrop shows: four when there are four, else two, else one.
+ */
+export function categoryCovers(items: SourceItem[]): string[] {
+  const covers: string[] = [];
+  for (const item of items) {
+    const url = item.container?.artwork?.poster ?? "";
+    if (url && !covers.includes(url)) covers.push(url);
+    if (covers.length === MOSAIC_MAX) break;
+  }
+  return mosaicCovers(covers);
+}
+
+/** Trims covers to a mosaic shape: four, two or one. */
+export function mosaicCovers(covers: string[]): string[] {
+  return covers.slice(0, covers.length >= MOSAIC_MAX ? MOSAIC_MAX : Math.min(covers.length, 2));
+}
+
+/** How many palette tones a card without artwork is tinted from (library-categories.css). */
+export const CATEGORY_TONES = 7;
+
+/** The palette tone for a value without artwork: the same for the same name. */
+export function categoryTone(value: string): number {
+  let hash = 0;
+  for (const char of foldForSearch(value.trim())) {
+    hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0;
+  }
+  return hash % CATEGORY_TONES;
 }
 
 /**

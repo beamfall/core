@@ -288,7 +288,7 @@ export async function probeCapabilityProfile(deps: ProbeDeps = {}): Promise<Capa
     directCodecs,
     videoCodecs,
     audioCodecs,
-    subtitleFormats: ["srt", "webvtt"],
+    subtitleFormats: ["srt", "webvtt", "ass"],
     downstreamAudio,
   };
   if (hdrFormats.length > 0) {

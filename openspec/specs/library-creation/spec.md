@@ -10,12 +10,14 @@ Lets an operator add a library from the web console, choosing a name, plugin bun
 The web app SHALL derive the media types offered when creating a library from the server's plugin
 list, in one shared module used by both the first-run setup wizard and Console > Libraries. Every
 installed plugin SHALL appear, labelled with its server-provided display name. A plugin that
-declares family scopes SHALL appear once per scope instead.
+declares family scopes SHALL appear once per offered scope instead. For the Film & TV plugin the
+offered scopes SHALL be Films and TV Shows; its catch-all Mixed scope SHALL NOT be offered.
 
 #### Scenario: Every installed plugin is offered
 
 - **WHEN** the server reports the Film & TV, Music, Photos and Karaoke plugins
-- **THEN** both setup and Console offer Films, TV Shows, Mixed, Music, Photos and Karaoke
+- **THEN** both setup and Console offer Films, TV Shows, Music, Photos and Karaoke, and neither
+  offers Mixed
 
 ### Requirement: Console creates a library with a type and a folder in one action
 

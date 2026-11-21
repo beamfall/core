@@ -1,0 +1,8 @@
+- [x] `internal/store`: `LibraryEntity.ChildCounts` per child kind
+- [x] `internal/graph`: `childKinds` on the response and `childCounts` on each item
+- [x] Store and graph tests; wire goldens regenerated with `make regen-wire-goldens`
+- [x] Web: Entity card line from child counts with plugin labels and plural rules; vitest coverage
+- [x] Checked in the browser preview with a screenshot
+- [ ] Wire contract published as a new version (lander)
+- [ ] `make gate`
+- [ ] `openspec archive core-2891-entity-child-counts` after landing

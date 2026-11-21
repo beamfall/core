@@ -9,6 +9,7 @@ import { useSession } from "@/lib/session";
 import { SectionSkeleton } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
 import { LibraryHeader } from "../components/LibraryPivots";
+import { PosterSizeControl } from "../components/PosterSizeControl";
 import type { SeeAllTarget } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { type HomeLibrarySeeAllState, seeAllTargetFor } from "../lib/seeall";
@@ -78,11 +79,13 @@ export function BrowsePage() {
       {node && libraryID ? (
         // A Library node leads with its name and the pivots between its views
         // (CORE-2437): these hubs are the Recommended pivot. An empty Library
-        // offers no way into empty views (CORE-2322).
+        // offers no way into empty views (CORE-2322). Its shelves follow the
+        // poster size, so the Library pivot's size control is here too (CORE-2893).
         <div className="pb-6">
           <LibraryHeader
             nodeID={node.id}
             heading={displayString(node.title, displayLocale)}
+            aside={emptyNode !== node.id && <PosterSizeControl className="ml-auto" />}
             pivots={emptyNode !== node.id}
           />
         </div>

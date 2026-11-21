@@ -15,6 +15,8 @@ export const consoleOperationsJobsStrings = {
     jobKindDescEventsCompaction:
       "Prunes disposable events.db rows older than the retention cutoff.",
     jobKindDescDatabaseBackup: "Writes a backup of the server databases.",
+    jobKindDescEntityEnrichment:
+      "Looks up details such as genres from online sources for items whose files lack them.",
     jobKindDescArtworkSweep: "Fills in missing posters and artwork across your libraries.",
     jobKindDescAssetSweep:
       "Creates missing thumbnails, previews and other images when the server has spare capacity.",
@@ -72,6 +74,8 @@ export const consoleOperationsJobsStrings = {
     jobKindDescEventsCompaction:
       "Purge les lignes jetables d’events.db antérieures à la limite de conservation.",
     jobKindDescDatabaseBackup: "Écrit une sauvegarde des bases de données du serveur.",
+    jobKindDescEntityEnrichment:
+      "Recherche en ligne des informations comme les genres pour les éléments dont les fichiers n’en ont pas.",
     jobKindDescArtworkSweep:
       "Complète les affiches et illustrations manquantes dans vos bibliothèques.",
     jobKindDescAssetSweep:
@@ -130,6 +134,8 @@ export const consoleOperationsJobsStrings = {
     jobKindDescEventsCompaction:
       "Entfernt verzichtbare Zeilen aus events.db, die älter als die Aufbewahrungsgrenze sind.",
     jobKindDescDatabaseBackup: "Schreibt eine Sicherung der Server-Datenbanken.",
+    jobKindDescEntityEnrichment:
+      "Sucht online nach Angaben wie Genres für Einträge, deren Dateien keine enthalten.",
     jobKindDescArtworkSweep: "Ergänzt fehlende Poster und Artworks in deinen Bibliotheken.",
     jobKindDescAssetSweep:
       "Erstellt fehlende Vorschaubilder, Vorschauen und andere Bilder, wenn der Server freie Kapazität hat.",
@@ -188,6 +194,8 @@ export const consoleOperationsJobsStrings = {
     jobKindDescEventsCompaction:
       "Purga las filas prescindibles de events.db anteriores al límite de retención.",
     jobKindDescDatabaseBackup: "Escribe una copia de seguridad de las bases de datos del servidor.",
+    jobKindDescEntityEnrichment:
+      "Busca en línea datos como los géneros para los elementos cuyos archivos no los tienen.",
     jobKindDescArtworkSweep: "Completa los pósteres e ilustraciones que faltan en tus bibliotecas.",
     jobKindDescAssetSweep:
       "Crea las miniaturas, vistas previas y otras imágenes que faltan cuando el servidor tiene capacidad libre.",
@@ -245,6 +253,8 @@ export const consoleOperationsJobsStrings = {
     jobKindDescEventsCompaction:
       "Remove as linhas descartáveis de events.db anteriores ao limite de retenção.",
     jobKindDescDatabaseBackup: "Grava um backup dos bancos de dados do servidor.",
+    jobKindDescEntityEnrichment:
+      "Busca on-line dados como gêneros para os itens cujos arquivos não os têm.",
     jobKindDescArtworkSweep: "Preenche pôsteres e artes que faltam nas suas bibliotecas.",
     jobKindDescAssetSweep:
       "Cria as miniaturas, prévias e outras imagens que faltam quando o servidor tem capacidade livre.",

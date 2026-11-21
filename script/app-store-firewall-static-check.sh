@@ -24,12 +24,19 @@ TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/beamfall-app-store-firewall.XXXXXX")"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
 add_default_targets() {
-  targets+=("apple:beamfall-iphone:$WORKSPACE_ROOT/beamfall-apple/Apps/BeamfallMobile")
-  targets+=("apple:beamfall-ipad:$WORKSPACE_ROOT/beamfall-apple/Apps/BeamfallPad")
-  targets+=("apple:beamfall-tvos:$WORKSPACE_ROOT/beamfall-apple/Apps/BeamfallTV")
-  targets+=("apple:beamfall-apple-policy:$WORKSPACE_ROOT/beamfall-apple/Sources/BeamfallAppStorePolicy")
-  targets+=("apple:beamfall-mobile:$WORKSPACE_ROOT/beamfall-apple/Sources/BeamfallMobile")
-  targets+=("apple:beamfall-tv:$WORKSPACE_ROOT/beamfall-apple/Sources/BeamfallTV")
+  # The closed iPhone, iPad and tvOS apps move to beamfall-apple-mobile-tv with
+  # CORE-1066. Read them there when it is checked out, else from the pre-split
+  # beamfall-apple; an absent root is a SKIP in this default mode.
+  local store_apps="$WORKSPACE_ROOT/beamfall-apple"
+  if [[ -d "$WORKSPACE_ROOT/beamfall-apple-mobile-tv" ]]; then
+    store_apps="$WORKSPACE_ROOT/beamfall-apple-mobile-tv"
+  fi
+  targets+=("apple:beamfall-iphone:$store_apps/Apps/BeamfallMobile")
+  targets+=("apple:beamfall-ipad:$store_apps/Apps/BeamfallPad")
+  targets+=("apple:beamfall-tvos:$store_apps/Apps/BeamfallTV")
+  targets+=("apple:beamfall-apple-policy:$store_apps/Sources/BeamfallAppStorePolicy")
+  targets+=("apple:beamfall-mobile:$store_apps/Sources/BeamfallMobile")
+  targets+=("apple:beamfall-tv:$store_apps/Sources/BeamfallTV")
   targets+=("android:beamfall-android-mobile:$WORKSPACE_ROOT/beamfall-android/app-mobile/src/main")
   targets+=("android:beamfall-android-tv:$WORKSPACE_ROOT/beamfall-android/app-tv/src/main")
   targets+=("roku:beamfall-roku:$WORKSPACE_ROOT/beamfall-roku")

@@ -370,14 +370,10 @@ func (h *Handler) Assets(w http.ResponseWriter, r *http.Request) {
 		encryptedClassGeneratedAsset, file.ContentFingerprint+"/"+name, false)
 }
 
-// Subtitles serves a WebVTT subtitle sidecar for a signed token URL (ADR-0010
-// §5). The path is /api/media/subtitle/<token>/<streamIndex>.vtt where
-// streamIndex is the absolute ffprobe stream index of a muxed text subtitle.
-// The sidecar bytes join Reveal exactly like the other media targets: the
-// token is re-verified against the live session scope on every fetch, so a
-// relock or device revocation stops serving the sidecar. The converted WebVTT
-// is cached on disk keyed by content fingerprint + stream index, so repeat
-// fetches (and seeks) skip the ffmpeg conversion.
+// Subtitles serves a signed muxed subtitle resource under
+// /api/media/subtitle/<token>/<streamIndex>.<format> (ADR-0010 §5).
+// WebVTT uses the existing conversion cache. Styled ASS and its font
+// attachments share the same live, file- and track-bound grant.
 func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 	w = MarkStreamTokenResponseNonStorable(w)
 	rest := strings.TrimPrefix(r.URL.Path, "/api/media/subtitle/")
@@ -386,8 +382,9 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing stream token", http.StatusUnauthorized)
 		return
 	}
-	streamIndex, ok := parseSubtitleName(name)
-	if !ok {
+	trackName, resource, hasResource := strings.Cut(name, "/")
+	streamIndex, format, ok := parseSidecarName(trackName)
+	if !ok || (hasResource && (format != "ass" || resource == "")) {
 		http.Error(w, "unknown subtitle", http.StatusNotFound)
 		return
 	}
@@ -401,7 +398,7 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "stream ended", h.endedSubtitleStatus(r.Context(), token))
 		return
 	}
-	if grant.SubtitleStreamIndex != 0 && grant.SubtitleStreamIndex != streamIndex+1 {
+	if grant.SubtitleStreamIndex != 0 && grant.SubtitleStreamIndex-1 != streamIndex {
 		http.Error(w, "unknown subtitle", http.StatusNotFound)
 		return
 	}
@@ -414,27 +411,7 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
 	}
-	var file store.MediaFile
-	if grant.SubtitleFileFingerprint == "" {
-		// Compatibility for tokens minted before exact-file binding: those grants
-		// always addressed the primary file. Newly minted grants never take this
-		// branch.
-		file, err = h.store.PrimaryMediaFile(r.Context(), grant.MediaID, scope.PlaybackFilter())
-	} else {
-		files, filesErr := h.store.MediaFilesForMedia(r.Context(), grant.MediaID, scope.PlaybackFilter())
-		if filesErr == nil {
-			for _, candidate := range files {
-				if candidate.ContentFingerprint == grant.SubtitleFileFingerprint {
-					file = candidate
-					break
-				}
-			}
-		}
-		if filesErr != nil || file.ContentFingerprint == "" {
-			http.Error(w, "unknown subtitle", http.StatusNotFound)
-			return
-		}
-	}
+	file, err := h.grantFile(r.Context(), grant.MediaID, grant.SubtitleFileFingerprint, scope.PlaybackFilter())
 	if err != nil {
 		http.Error(w, "unknown subtitle", http.StatusNotFound)
 		return
@@ -446,6 +423,10 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 	library, err := h.mediaLibrary(r.Context(), media.LibraryID, scope.PlaybackFilter())
 	if err != nil {
 		http.Error(w, "media unavailable", http.StatusNotFound)
+		return
+	}
+	if format == "ass" {
+		h.serveStyledSubtitle(w, r, grant, token, library, file, resource)
 		return
 	}
 	if library.Encrypted {
@@ -483,7 +464,7 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// subtitleSourceStillVisible re-resolves an encrypted subtitle's Media and
+// subtitleSourceStillVisible re-resolves a subtitle's Media and
 // source file under the session's current scope. The grant verifying is not
 // enough: it checks identity and Reveal, while a removed Library grant or a
 // tightened certification ceiling only shows in the refreshed playback filter.
@@ -628,21 +609,6 @@ func hardenExtractedWebVTT(cacheDir, staged string, dst rootedPath) error {
 		return err
 	}
 	return nil
-}
-
-// parseSubtitleName parses a "<streamIndex>.vtt" sidecar name into its stream
-// index. Only the .vtt extension is accepted, and the index must be a
-// non-negative integer.
-func parseSubtitleName(name string) (int, bool) {
-	base, ok := strings.CutSuffix(name, ".vtt")
-	if !ok || base == "" {
-		return 0, false
-	}
-	index, err := strconv.Atoi(base)
-	if err != nil || index < 0 {
-		return 0, false
-	}
-	return index, true
 }
 
 // parseSidecarName parses a "<index>.<ext>" sidecar request name into its

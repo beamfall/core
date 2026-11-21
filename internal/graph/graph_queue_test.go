@@ -27,30 +27,30 @@ func TestPlayQueueEntryOperations(t *testing.T) {
 		t.Fatalf("invalid entry IDs: %+v", state.Entries)
 	}
 
-	write := func(field, args string) PlayQueueInfo {
+	write := func(field, operation string) PlayQueueInfo {
 		t.Helper()
 		var state PlayQueueInfo
-		execGraph(t, h, authorizeRevealed, "mutation { "+field+"("+args+") "+queueStateSelection+" }", nil, field, &state)
+		execGraph(t, h, authorizeRevealed, operation+" "+queueStateSelection+" }", nil, field, &state)
 		return state
 	}
-	assertPlayQueueOrder(t, write("queueMoveEntry", fmt.Sprintf("entryID: %q, position: 0", duplicate)), duplicate, a, b)
-	state = write("queueSetCurrent", fmt.Sprintf("entryID: %q, positionMS: 90500", duplicate))
+	assertPlayQueueOrder(t, write("queueMoveEntry", fmt.Sprintf(`mutation { queueMoveEntry(entryID: %q, position: 0)`, duplicate)), duplicate, a, b)
+	state = write("queueSetCurrent", fmt.Sprintf(`mutation { queueSetCurrent(entryID: %q, positionMS: 90500)`, duplicate))
 	if state.CurrentEntryID == nil || *state.CurrentEntryID != duplicate || state.PositionMS != 90500 {
 		t.Fatalf("current state = %+v", state)
 	}
-	assertPlayQueueOrder(t, write("queuePlayNext", fmt.Sprintf("entryID: %q", b)), duplicate, b, a)
-	state = write("queueAddMany", `mediaIDs: ["media-alpha", "media-archive"], placement: "next"`)
+	assertPlayQueueOrder(t, write("queuePlayNext", fmt.Sprintf(`mutation { queuePlayNext(entryID: %q)`, b)), duplicate, b, a)
+	state = write("queueAddMany", `mutation { queueAddMany(mediaIDs: ["media-alpha", "media-archive"], placement: "next")`)
 	if len(state.Entries) != 5 || state.Entries[1].MediaID != "media-alpha" || state.Entries[2].MediaID != "media-archive" {
 		t.Fatalf("next batch = %+v", state.Entries)
 	}
 	nextA, nextB := state.Entries[1].ID, state.Entries[2].ID
 	assertPlayQueueOrder(t, state, duplicate, nextA, nextB, b, a)
-	state = write("queueRemoveEntry", fmt.Sprintf("entryID: %q", duplicate))
+	state = write("queueRemoveEntry", fmt.Sprintf(`mutation { queueRemoveEntry(entryID: %q)`, duplicate))
 	assertPlayQueueOrder(t, state, nextA, nextB, b, a)
 	if state.CurrentEntryID != nil || state.PositionMS != 0 {
 		t.Fatalf("removing current entry left cursor = %+v", state)
 	}
-	assertPlayQueueOrder(t, write("queuePlayNext", fmt.Sprintf("entryID: %q", a)), a, nextA, nextB, b)
+	assertPlayQueueOrder(t, write("queuePlayNext", fmt.Sprintf(`mutation { queuePlayNext(entryID: %q)`, a)), a, nextA, nextB, b)
 
 	qaItems(t, h, qaClear, authorizeRevealed, "queueClear")
 	var cleared PlayQueueInfo

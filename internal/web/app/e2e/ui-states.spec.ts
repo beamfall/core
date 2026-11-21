@@ -66,6 +66,25 @@ const FIXTURE_COLLECTION = {
   members: [],
 };
 
+// The development seed has no Tags; the tag manager reads this small tree, a long name included.
+const FIXTURE_TAGS = [
+  { id: "tag-fav", name: "Favorites", assignmentCount: 42 },
+  { id: "tag-week", name: "This week", parentTagID: "tag-fav", assignmentCount: 5 },
+  {
+    id: "tag-long",
+    name: "A deliberately long tag name that has to truncate instead of pushing the row actions off",
+    assignmentCount: 1280,
+  },
+  { id: "tag-arc", name: "Archive", assignmentCount: 96 },
+  { id: "tag-old", name: "Holiday 2025", trashedAt: "2026-11-01T09:30:00Z", assignmentCount: 0 },
+].map((tag) => ({
+  parentTagID: null,
+  trashedAt: null,
+  createdAt: "2026-10-01T00:00:00Z",
+  updatedAt: "2026-10-01T00:00:00Z",
+  ...tag,
+}));
+
 const FIXTURE_ENTITY = {
   id: "entity-fixture",
   kind: "category",
@@ -224,6 +243,66 @@ test.describe("UI state inventory in-page states", () => {
     coverUiStates(testInfo, "/console/history#error:table", "/console/history#error:rankings");
   });
 
+  test("tag manager selects, empty and error states", async ({ page }, testInfo) => {
+    await routeOperation(page, "Tags", { data: { tags: FIXTURE_TAGS } });
+    await routeOperation(page, "TagAssignments", {
+      data: {
+        tagAssignments: {
+          targetType: "media",
+          targetID: "media-alpha",
+          libraryID: "library-fixture",
+          tags: [FIXTURE_TAGS[0]],
+        },
+      },
+    });
+    await gotoScreen(page, "/manage/tags");
+    await expect(page.getByRole("cell", { name: "Favorites" })).toBeVisible();
+
+    const openSelect = async (name: string, option: string) => {
+      await page.getByRole("combobox", { name }).click();
+      await expect(page.getByRole("option", { name: option })).toBeVisible();
+      await page.keyboard.press("Escape");
+    };
+    await openSelect("Parent", "No parent");
+    await page.getByRole("button", { name: "Move" }).first().click();
+    await openSelect("Move", "No parent");
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("combobox", { name: "Target type" }).first().click();
+    await expect(page.getByRole("option", { name: "Media" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.getByLabel("Target ID", { exact: true }).fill("media-alpha");
+    await page.getByLabel("Target ID", { exact: true }).press("Enter");
+    await expect(page.getByRole("button", { name: "Unassign Favorites" })).toBeVisible();
+    await openSelect("Assign", "Archive");
+    await page.getByRole("combobox", { name: "Target type" }).last().click();
+    await expect(page.getByRole("option", { name: "Media" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await openSelect("Tags", "Archive");
+    coverUiStates(
+      testInfo,
+      "/manage/tags#select:create-parent",
+      "/manage/tags#select:edit-parent",
+      "/manage/tags#select:assign-target-type",
+      "/manage/tags#select:assign-tag",
+      "/manage/tags#select:bulk-target-type",
+      "/manage/tags#select:bulk-tag-toggle",
+    );
+
+    await page.unrouteAll({ behavior: "wait" });
+    await routeOperation(page, "Tags", { data: { tags: [] } });
+    await page.reload();
+    await expect(page.getByText("No tags yet.")).toBeVisible();
+    await page.getByText("Deleted tags", { exact: true }).click();
+    await expect(page.getByText("No deleted tags.")).toBeVisible();
+    coverUiStates(testInfo, "/manage/tags#empty:tree", "/manage/tags#empty:trashed");
+
+    await page.unrouteAll({ behavior: "wait" });
+    await routeOperation(page, "Tags", { errors: [{ message: "unavailable" }] });
+    await page.reload();
+    await expect(page.getByText("Tags are unavailable right now.")).toBeVisible();
+    coverUiStates(testInfo, "/manage/tags#error:unavailable");
+  });
+
   test("an entity deep link that resolves to nothing shows not available", async ({
     page,
   }, testInfo) => {
@@ -376,6 +455,15 @@ test.describe("UI state inventory goldens", () => {
       await expect(page.locator("main")).toHaveScreenshot("viewer-search-prompt.png", shot);
     }
     coverUiStates(testInfo, "/search");
+  });
+
+  test("tag manager golden", async ({ page }, testInfo) => {
+    await routeOperation(page, "Tags", { data: { tags: FIXTURE_TAGS } });
+    await page.goto("/web/manage/tags");
+    await expect(page.getByRole("cell", { name: "Favorites" })).toBeVisible();
+    if (onVisualParityHost(testInfo, "manage-tags.png")) {
+      await expect(page.locator("main")).toHaveScreenshot("manage-tags.png", shot);
+    }
   });
 
   test("setup first step golden", async ({ page }, testInfo) => {

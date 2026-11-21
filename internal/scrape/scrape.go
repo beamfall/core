@@ -1417,6 +1417,19 @@ func (s *statusError) Error() string {
 	return fmt.Sprintf("scrape: %s returned status %d", s.host, s.code)
 }
 
+// IsTransient reports whether err is worth retrying later: rate limiting
+// (HTTP 429), a server error (5xx) or a network failure reaching the provider.
+// Callers that walk many lookups end their pass on it instead of recording a
+// miss.
+func IsTransient(err error) bool {
+	var status *statusError
+	if errors.As(err, &status) {
+		return status.code == http.StatusTooManyRequests || status.code >= http.StatusInternalServerError
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
+}
+
 func decodeJSON(data []byte) (any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()

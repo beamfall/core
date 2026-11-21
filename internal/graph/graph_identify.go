@@ -260,25 +260,35 @@ func (h *Handler) fixMatchCandidates(ctx context.Context, scope auth.Scope, req 
 	if query == "" && mediaID == "" {
 		return nil, clientError("query or mediaID is required")
 	}
+	year, err := optionalInt(req, "year")
+	if err != nil {
+		return nil, err
+	}
+	parsed := identify.ParsedMedia{Title: query}
+	if year != nil {
+		if *year <= 0 {
+			return nil, clientError("year must be positive")
+		}
+		parsed.Year = *year
+	}
 	if mediaID != "" {
 		if _, err := h.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter()); err != nil {
 			return nil, clientError("unknown media")
 		}
 	}
-	candidates, err := h.identify.Search(ctx, pluginID, scraperID, query, store.MediaID(mediaID))
+	candidates, err := h.identify.SearchYear(ctx, pluginID, scraperID, query, store.MediaID(mediaID), parsed.Year)
 	if err != nil {
 		return nil, err
 	}
-	return h.scoreFixMatchCandidates(pluginID, scraperID, query, candidates), nil
+	return h.scoreFixMatchCandidates(pluginID, scraperID, parsed, candidates), nil
 }
 
-// scoreFixMatchCandidates scores every candidate against the operator's query as
-// the parsed guess, orders them best-first, and stamps each with its taxonomy
+// scoreFixMatchCandidates scores every candidate against the operator's query
+// (and year, when given) as the parsed guess, orders them best-first, and stamps each with its taxonomy
 // reason. The tie rule mirrors identify.bestCandidate's fail-closed posture: a
 // top score shared by two or more candidates is "ambiguous", so the Console
 // never presents a coin-flip as a confident answer.
-func (h *Handler) scoreFixMatchCandidates(pluginID, scraperID, query string, candidates []identify.Candidate) []FixMatchCandidateInfo {
-	parsed := identify.ParsedMedia{Title: query}
+func (h *Handler) scoreFixMatchCandidates(pluginID, scraperID string, parsed identify.ParsedMedia, candidates []identify.Candidate) []FixMatchCandidateInfo {
 	decisions := make([]identify.MatchDecision, len(candidates))
 	for i, candidate := range candidates {
 		decisions[i] = h.identify.ScoreMatch(pluginID, candidate, parsed)

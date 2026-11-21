@@ -42,7 +42,7 @@ describe("PosterSizeControl (CORE-2468)", () => {
 
   it("stores the choice, marks the root element and shrinks the image hint", async () => {
     renderControl();
-    renderHook(() => usePosterSizeRoot());
+    renderHook(() => usePosterSizeRoot(null));
     const hint = renderHook(() => useCardImageSizes());
     expect(hint.result.current).toBe("300px");
 

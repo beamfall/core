@@ -67,6 +67,8 @@ describe("ContainerMediaRows (CORE-2510)", () => {
     expect(within(rows[0]).getByText(/^E1 · 45 min/)).toBeInTheDocument();
     expect(within(rows[0]).getAllByText("Countdown")).toHaveLength(1);
     expect(within(rows[0]).getByText("The crew counts down.")).toHaveClass("bf-row-summary");
+    // The class the app-wide poster size sizes (CORE-2893).
+    expect(rows[0].querySelector(".bf-row-link > .bf-row-thumb")).not.toBeNull();
     expect(within(rows[0]).getByText("Watched")).toBeInTheDocument();
     expect(within(rows[1]).getByText("E2 · 50 min")).toBeInTheDocument();
     expect(within(rows[1]).getByRole("progressbar", { hidden: true })).toHaveAttribute(

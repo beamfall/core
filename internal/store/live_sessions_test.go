@@ -65,7 +65,7 @@ func TestEndPlaybackKeepsMyDataTokens(t *testing.T) {
 	assertLive("after end", "session-managed")
 	assertTokens("after end", now, 2)
 
-	if err := st.TouchStreamTokenActivity(ctx, "session-default", "media-alpha", now.Add(time.Second)); err != nil {
+	if err := st.TouchStreamTokenActivity(ctx, "session-default", "profile-default", "media-alpha", now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	assertLive("after a late progress report", "session-managed")
@@ -84,4 +84,56 @@ func TestEndPlaybackKeepsMyDataTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertTokens("after the ended grant expires", expires, 0)
+}
+
+// TestActiveSessionsFollowLatestProfile covers CORE-2682: a Profile switch
+// keeps the session, so a session's grants for one Media stay one playback that
+// names the Profile whose grant was active last, and a progress report touches
+// only the reporting Profile's grants.
+func TestActiveSessionsFollowLatestProfile(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	expires := now.Add(time.Hour)
+	if err := st.RecordStreamToken(ctx, "session-default", "profile-managed", "device-tv", "media-direct", "media-alpha", false, expires); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordStreamToken(ctx, "session-default", "profile-default", "device-tv", "media-hls", "media-alpha", false, expires); err != nil {
+		t.Fatal(err)
+	}
+	playing := func(profile ProfileID, at time.Time) {
+		t.Helper()
+		if err := st.TouchStreamTokenActivity(ctx, "session-default", profile, "media-alpha", at); err != nil {
+			t.Fatal(err)
+		}
+		active, err := st.ActiveSessions(ctx, now, profileDefaultFilter(true))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(active) != 1 || active[0].ProfileID != profile || !active[0].LastActiveAt.Equal(at.Truncate(time.Millisecond)) {
+			t.Fatalf("live playbacks = %+v, want one naming %s active at %v", active, profile, at)
+		}
+		if !active[0].Transcoding || active[0].ProfileTied {
+			t.Fatalf("collapsed playback lost the HLS flag or is tied: %+v", active[0])
+		}
+	}
+	playing("profile-default", now.Add(time.Minute))
+	playing("profile-managed", now.Add(2*time.Minute))
+
+	// Both Profiles reporting within one millisecond leave the ledger unable to
+	// name the last reporter, so the row says so.
+	tie := now.Add(3 * time.Minute)
+	for _, profile := range []ProfileID{"profile-managed", "profile-default"} {
+		if err := st.TouchStreamTokenActivity(ctx, "session-default", profile, "media-alpha", tie); err != nil {
+			t.Fatal(err)
+		}
+	}
+	active, err := st.ActiveSessions(ctx, now, profileDefaultFilter(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 1 || !active[0].ProfileTied {
+		t.Fatalf("live playbacks after a same-millisecond switch = %+v, want one tied row", active)
+	}
+	playing("profile-default", tie.Add(time.Second))
 }

@@ -1022,35 +1022,74 @@
   scroll-snap-align: start;
 }
 
-/* Poster size (CORE-2468): the root's data-poster-size sets the grids' column
- * floors, so one choice reaches every viewer grid. Large is the original size. */
+/* Poster size (CORE-2468): one app-wide choice. The root's data-poster-size
+ * sets every viewer thumbnail surface (CORE-2893): the grids' column floors,
+ * the shelves' card width, the Collections poster grid, the Categories cards,
+ * the Collection and Category tiles on the pivots, the cast row, the List
+ * view's thumbnails and the detail page's Media rows. Large is the original
+ * size of each. */
 [data-register="viewer"] {
   --bf-grid-min: 150px;
   --bf-grid-wide-min: 220px;
+  --bf-shelf-card: 164px;
+  --bf-collection-min: 150px;
+  --bf-category-min: 168px;
+  --bf-category-cols: 2;
+  --bf-tile-min: 180px;
+  --bf-cast-card: 120px;
+  --bf-list-thumb: 48px;
+  --bf-row-thumb: 240px;
 }
 
 [data-register="viewer"][data-poster-size="medium"] {
   --bf-grid-min: 130px;
   --bf-grid-wide-min: 190px;
+  --bf-shelf-card: 140px;
+  --bf-collection-min: 130px;
+  --bf-category-min: 140px;
+  --bf-category-cols: 3;
+  --bf-tile-min: 150px;
+  --bf-cast-card: 104px;
+  --bf-list-thumb: 40px;
+  --bf-row-thumb: 200px;
 }
 
 [data-register="viewer"][data-poster-size="small"] {
   --bf-grid-min: 110px;
   --bf-grid-wide-min: 160px;
+  --bf-shelf-card: 116px;
+  --bf-collection-min: 110px;
+  --bf-category-min: 120px;
+  --bf-category-cols: 3;
+  --bf-tile-min: 120px;
+  --bf-cast-card: 88px;
+  --bf-list-thumb: 32px;
+  --bf-row-thumb: 160px;
 }
 
+/* Phones: --bf-category-cols is the Categories column count there. Small's
+ * collection and tile floors sit low enough to add a column on a 390px phone.
+ * Categories stop at three columns at Medium and Small: a fourth leaves an
+ * 80px card too short for its 15px title (20px line) and count line. */
 @media (max-width: 760px) {
   [data-register="viewer"] {
     --bf-grid-min: 96px;
     --bf-grid-wide-min: 150px;
+    --bf-shelf-card: 128px;
+    --bf-collection-min: 112px;
   }
   [data-register="viewer"][data-poster-size="medium"] {
     --bf-grid-min: 84px;
     --bf-grid-wide-min: 130px;
+    --bf-shelf-card: 108px;
+    --bf-collection-min: 96px;
   }
   [data-register="viewer"][data-poster-size="small"] {
     --bf-grid-min: 72px;
     --bf-grid-wide-min: 110px;
+    --bf-shelf-card: 92px;
+    --bf-collection-min: 76px;
+    --bf-tile-min: 110px;
   }
 }
 
@@ -1093,9 +1132,8 @@
   cursor: pointer;
 }
 
-[data-register="viewer"] .bf-shelf .bf-card,
-[data-register="viewer"] .bf-grid .bf-card {
-  width: 164px;
+[data-register="viewer"] .bf-shelf .bf-card {
+  width: var(--bf-shelf-card);
 }
 
 [data-register="viewer"] .bf-grid .bf-card {
@@ -1220,12 +1258,12 @@
 }
 
 /* Small posters take the phone's card type so two title lines still fit. */
-[data-register="viewer"][data-poster-size="small"] .bf-grid .bf-card-title {
+[data-register="viewer"][data-poster-size="small"] :is(.bf-grid, .bf-shelf) .bf-card-title {
   font-size: 13px;
   line-height: 18px;
 }
 
-[data-register="viewer"][data-poster-size="small"] .bf-grid .bf-card-sub {
+[data-register="viewer"][data-poster-size="small"] :is(.bf-grid, .bf-shelf) .bf-card-sub {
   font-size: 12px;
   line-height: 16px;
 }
@@ -1260,9 +1298,6 @@
   }
   [data-register="viewer"] .bf-grid {
     gap: 20px 12px;
-  }
-  [data-register="viewer"] .bf-shelf .bf-card {
-    width: 128px;
   }
   [data-register="viewer"] .bf-grid .bf-card {
     width: 100%;
@@ -1506,7 +1541,7 @@
 }
 
 [data-register="viewer"] .bf-stack .bf-poster {
-  width: 48px;
+  width: var(--bf-list-thumb);
   flex: none;
   border-radius: var(--radius-control);
 }
@@ -2076,7 +2111,7 @@
 /* Category and collection tiles on the Library pivots. */
 [data-register="viewer"] .bf-tile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--bf-tile-min)), 1fr));
   gap: 8px;
   margin: 0;
   padding: 0;

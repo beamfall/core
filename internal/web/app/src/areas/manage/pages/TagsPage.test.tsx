@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -11,6 +11,7 @@ import {
   fetchTags,
   restoreTag,
   unassignTag,
+  updateTag,
 } from "@/lib/graphql";
 import type { TagInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
@@ -81,6 +82,7 @@ beforeEach(() => {
   });
   vi.mocked(deleteTag).mockResolvedValue({ ...favorites, trashedAt: "1" });
   vi.mocked(restoreTag).mockResolvedValue({ ...trashed, trashedAt: undefined });
+  vi.mocked(updateTag).mockResolvedValue({ ...archive, name: "Kept" });
   vi.mocked(fetchTagAssignments).mockResolvedValue({
     targetType: "media",
     targetID: "media-7f3a",
@@ -174,6 +176,32 @@ describe("TagsPage", () => {
     expect(unassignTag).toHaveBeenCalledWith("tag-fav", "media", "media-7f3a");
   });
 
+  it("drops an assignment response that arrives after the target changed", async () => {
+    let resolveFirst: (value: Awaited<ReturnType<typeof fetchTagAssignments>>) => void = () => {};
+    vi.mocked(fetchTagAssignments).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveFirst = resolve)),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await ready();
+
+    const target = screen.getByLabelText("Target ID");
+    await user.type(target, "media-a{Enter}");
+    await user.clear(target);
+    await user.type(target, "media-b");
+    await act(async () => {
+      resolveFirst({
+        targetType: "media",
+        targetID: "media-a",
+        libraryID: "lib-1",
+        tags: [favorites],
+      });
+    });
+
+    expect(fetchTagAssignments).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Unassign Favorites" })).not.toBeInTheDocument();
+  });
+
   it("bulk-assigns selected tags across targets in the chosen mode", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -204,12 +232,42 @@ describe("TagsPage", () => {
     renderPage();
     await ready();
 
-    await user.click(screen.getByRole("switch"));
+    // Deleted tags fold away behind their heading until opened.
+    expect(screen.getByText("Holiday 2025")).not.toBeVisible();
+    await user.click(screen.getByText("Deleted tags"));
     expect(await screen.findByText("Holiday 2025")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Restore" }));
 
     expect(restoreTag).toHaveBeenCalledWith("tag-old");
     await waitFor(() => expect(fetchTags).toHaveBeenCalledTimes(2));
+  });
+
+  it("renames a tag with Enter and cancels an edit with Escape", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await ready();
+
+    const [rename] = screen.getAllByRole("button", { name: "Rename" });
+    await user.click(rename);
+    const field = screen.getByRole("textbox", { name: "Rename" });
+    await user.keyboard("{Escape}");
+    expect(field).not.toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: "Rename" })[0]);
+    await user.clear(screen.getByRole("textbox", { name: "Rename" }));
+    await user.type(screen.getByRole("textbox", { name: "Rename" }), "Kept{Enter}");
+    expect(updateTag).toHaveBeenCalledWith("tag-arc", "Kept", undefined);
+  });
+
+  it("keeps an assign failure inside the assign section", async () => {
+    vi.mocked(fetchTagAssignments).mockRejectedValue(new Error("boom"));
+    const user = userEvent.setup();
+    renderPage();
+    await ready();
+
+    await user.type(screen.getByLabelText("Target ID"), "media-1{Enter}");
+    const alert = await screen.findByRole("alert");
+    expect(alert.closest("[data-slot='card']")).toHaveTextContent("Assign");
   });
 
   it("shows the unavailable error when the query fails", async () => {

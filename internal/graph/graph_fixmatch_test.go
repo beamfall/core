@@ -401,3 +401,53 @@ func newScoredFixMatchHandler(t *testing.T, scores map[string]float64) *Handler 
 	handler.SetIdentify(service)
 	return handler
 }
+
+// yearScorer gives every candidate the same title score and adds a little when
+// the candidate's year equals the parsed year, so only a year can break a tie.
+type yearScorer struct{}
+
+func (yearScorer) Score(candidate sdk.Candidate, parsed sdk.ParsedMedia) float64 {
+	if parsed.Year != 0 && candidate.Year == parsed.Year {
+		return 0.95
+	}
+	return 0.9
+}
+
+// TestFixMatchCandidatesYearBreaksTie is CORE-2910: equal titles tie without a
+// year, and the operator's year makes the matching candidate the clear answer.
+func TestFixMatchCandidatesYearBreaksTie(t *testing.T) {
+	handler := newScoredFixMatchHandler(t, nil)
+	handler.identify.RegisterScorer("demo", yearScorer{}, 0.75)
+	vars := func(extra map[string]any) request {
+		v := map[string]any{"pluginID": "demo", "scraperID": "lookup", "query": "blue harvest"}
+		for k, val := range extra {
+			v[k] = val
+		}
+		return request{Variables: v}
+	}
+
+	got, err := handler.fixMatchCandidates(context.Background(), managerScope(), vars(nil))
+	if err != nil {
+		t.Fatalf("fixMatchCandidates without year: %v", err)
+	}
+	if got[0].Reason != store.UnmatchedReasonAmbiguous {
+		t.Fatalf("no-year top reason = %q, want ambiguous", got[0].Reason)
+	}
+
+	got, err = handler.fixMatchCandidates(context.Background(), managerScope(), vars(map[string]any{"year": float64(1980)}))
+	if err != nil {
+		t.Fatalf("fixMatchCandidates with year: %v", err)
+	}
+	if got[0].ID != "weak" || got[0].Year != 1980 || got[0].Reason != "" {
+		t.Fatalf("year 1980 top = %#v, want the 1980 candidate with no reason", got[0])
+	}
+
+	for _, bad := range []float64{-1, 0} {
+		if _, err := handler.fixMatchCandidates(context.Background(), managerScope(), vars(map[string]any{"year": bad})); err == nil {
+			t.Fatalf("year %v accepted, want a client error", bad)
+		}
+	}
+	if _, err := handler.fixMatchCandidates(context.Background(), managerScope(), vars(map[string]any{"year": 2020.5})); err == nil {
+		t.Fatal("fractional year accepted, want a client error")
+	}
+}

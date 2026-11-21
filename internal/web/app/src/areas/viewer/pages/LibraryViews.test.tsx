@@ -65,6 +65,7 @@ function entitiesPage(request: LibraryEntitiesRequest): LibraryEntitiesPage {
             title: "Maker A",
             mediaClass: "audio",
             childCount: 1,
+            childCounts: [{ kind: "record", count: 1 }],
             mediaCount: 3,
             parents: [],
           },
@@ -74,6 +75,7 @@ function entitiesPage(request: LibraryEntitiesRequest): LibraryEntitiesPage {
             title: "Maker B",
             mediaClass: "audio",
             childCount: 0,
+            childCounts: [],
             mediaCount: 1,
             parents: [],
           },
@@ -85,12 +87,14 @@ function entitiesPage(request: LibraryEntitiesRequest): LibraryEntitiesPage {
             title: "Record One",
             mediaClass: "audio",
             childCount: 0,
+            childCounts: [],
             mediaCount: 3,
             parents: [{ id: "m1", title: "Maker A" }],
           },
         ];
   return {
     kinds: KINDS,
+    childKinds: [],
     allLabel: { en: "Library" },
     kind,
     total: items.length,
@@ -224,6 +228,7 @@ describe("Library views (CORE-2362)", () => {
   it("opens on the Media view, with Folders beside it, when the Library has no browse kinds", async () => {
     vi.mocked(fetchLibraryEntities).mockResolvedValue({
       kinds: [],
+      childKinds: [],
       kind: "",
       total: 0,
       items: [],
@@ -277,6 +282,7 @@ function longKindPage(request: LibraryEntitiesRequest): LibraryEntitiesPage {
   );
   return {
     kinds: KINDS,
+    childKinds: [],
     allLabel: { en: "Library" },
     kind: request.kind ?? "maker",
     total: titles.length,
@@ -285,6 +291,7 @@ function longKindPage(request: LibraryEntitiesRequest): LibraryEntitiesPage {
       kind: "entity",
       title,
       childCount: 0,
+      childCounts: [],
       mediaCount: 1,
       parents: [],
     })),

@@ -2,12 +2,14 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { readPosterSize } from "@/components/chrome/posterSize";
 import { type CollectionInfo, fetchCollections } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { expectNoAxeViolations, expectNoPositiveTabindex } from "@/test/axe";
 import { fetchLibraryItems } from "../lib/libraryBrowse";
+import { fetchLibraryEntities, type LibraryEntityKind } from "../lib/libraryViews";
 import { LibraryPivotPage } from "./LibraryPivotPages";
 
 vi.mock("@/lib/graphql", async (importOriginal) => {
@@ -17,6 +19,10 @@ vi.mock("@/lib/graphql", async (importOriginal) => {
 vi.mock("../lib/libraryBrowse", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/libraryBrowse")>();
   return { ...actual, fetchLibraryItems: vi.fn() };
+});
+vi.mock("../lib/libraryViews", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/libraryViews")>();
+  return { ...actual, fetchLibraryEntities: vi.fn() };
 });
 // The server names a Library's node "library-" + the Library's ID, and real
 // Library IDs already start "library-", so the readable address drops one
@@ -68,10 +74,24 @@ function renderAt(path: string) {
   );
 }
 
+function serveKinds(kinds: LibraryEntityKind[]) {
+  vi.mocked(fetchLibraryEntities).mockResolvedValue({
+    kinds,
+    kind: kinds[0]?.kind ?? "",
+    total: 0,
+    items: [],
+    letters: [],
+    childKinds: [],
+  });
+}
+
+beforeEach(() => serveKinds([]));
+
 afterEach(() => {
   cleanup();
   vi.mocked(fetchCollections).mockReset();
   vi.mocked(fetchLibraryItems).mockReset();
+  vi.mocked(fetchLibraryEntities).mockReset();
 });
 
 describe("Library Collections pivot (CORE-2437)", () => {
@@ -88,6 +108,8 @@ describe("Library Collections pivot (CORE-2437)", () => {
       "/collections/library-films/c1",
       "/collections/library-films/c2",
     ]);
+    // The class the app-wide poster size sizes (CORE-2893).
+    expect(tiles[0].closest("ul")).toHaveClass("bf-tile-grid");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Films");
     const pivots = within(screen.getByRole("navigation", { name: "Library views" }));
     expect(pivots.getByRole("link", { name: "Collections" })).toHaveAttribute(
@@ -100,15 +122,16 @@ describe("Library Collections pivot (CORE-2437)", () => {
     );
   });
 
-  it("passes axe and walks the pivots, then the tiles, by keyboard", async () => {
+  it("passes axe and walks the poster size, the pivots, then the tiles, by keyboard", async () => {
     vi.mocked(fetchCollections).mockResolvedValue([collection("c1", "Classics", 1)]);
     const { container } = renderAt("/n/library-films/collections");
     const tile = await screen.findByRole("link", { name: /Classics/ });
 
     await expectNoAxeViolations(container);
     expectNoPositiveTabindex(container);
+    const size = within(screen.getByRole("group", { name: "Poster size" }));
     const pivots = within(screen.getByRole("navigation", { name: "Library views" }));
-    const order = [...pivots.getAllByRole("link"), tile];
+    const order = [...size.getAllByRole("button"), ...pivots.getAllByRole("link"), tile];
     for (const link of order) {
       await userEvent.tab();
       expect(link).toHaveFocus();
@@ -179,6 +202,33 @@ function withArt(id: string, backdrop: string): SourceItem {
   return { id, kind: "media", title: id, artworkSlots: { backdrop } } as unknown as SourceItem;
 }
 
+// One app-wide poster size: the Collections and Categories pivots offer the
+// same control as the other pivots, and a choice on one is the choice on all.
+describe("Library pivots poster size (CORE-2893)", () => {
+  it("offers the app-wide poster size on the Collections and Categories pivots", async () => {
+    localStorage.clear();
+    onTestFinished(() => localStorage.clear());
+    vi.mocked(fetchCollections).mockResolvedValue([]);
+    renderAt("/n/library-films/collections");
+    const size = within(screen.getByRole("group", { name: "Poster size" }));
+    expect(size.getByRole("button", { name: "Large posters" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await userEvent.click(size.getByRole("button", { name: "Small posters" }));
+    expect(readPosterSize()).toBe("small");
+    cleanup();
+
+    serveCategories([]);
+    renderAt("/n/library-films/categories");
+    expect(
+      within(screen.getByRole("group", { name: "Poster size" })).getByRole("button", {
+        name: "Small posters",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
 describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
   it("counts outermost containers with the plugin label, keeping loose item counts (CORE-2552)", async () => {
     serveCategories([
@@ -195,6 +245,73 @@ describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
     expect(screen.getByRole("link", { name: "Loose 3 items" })).toBeInTheDocument();
   });
 
+  it("names a container count of one in the plugin's singular, else counts its items (CORE-2885)", async () => {
+    serveKinds([
+      { kind: "show", label: { en: "Shows" }, kindDisplayName: { en: "Show" }, total: 4 },
+    ]);
+    serveCategories([
+      {
+        kind: "genre",
+        values: ["Drama", "Noir", "Western"],
+        counts: [12, 5, 3],
+        browseCounts: [2, 1, 1],
+        browseLabels: [{ en: "Shows" }, { en: "Shows" }, { en: "Seasons" }],
+      },
+    ]);
+    renderAt("/n/library-films/categories");
+    expect(await screen.findByRole("link", { name: "Drama 2 Shows" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Noir 1 Show" })).toBeInTheDocument();
+    // No singular for the label: the count of one shows its items, never "1 Seasons".
+    expect(screen.getByRole("link", { name: "Western 3 items" })).toBeInTheDocument();
+  });
+
+  it("keeps the page when the kinds read fails (CORE-2885)", async () => {
+    vi.mocked(fetchLibraryEntities).mockRejectedValue(new Error("offline"));
+    serveCategories([
+      {
+        kind: "genre",
+        values: ["Noir"],
+        counts: [5],
+        browseCounts: [1],
+        browseLabels: [{ en: "Shows" }],
+      },
+    ]);
+    renderAt("/n/library-films/categories");
+    expect(await screen.findByRole("link", { name: "Noir 5 items" })).toBeInTheDocument();
+  });
+
+  it("gives an art-less card its covers' mosaic, else a tint its name picks (CORE-2885)", async () => {
+    const cover = (id: string, container: string) =>
+      ({
+        id,
+        kind: "media",
+        title: id,
+        container: { id: container, title: container, artwork: { poster: `/cover/${container}` } },
+      }) as unknown as SourceItem;
+    serveCategories([{ kind: "genre", values: ["Jazz", "Ambient", "Folk"], counts: [5, 3, 1] }], {
+      "genre=Jazz": ["a", "b", "b", "c", "d", "e"].map((c, i) => cover(`j${i}`, c)),
+      "genre=Ambient": [cover("a1", "x"), cover("a2", "y"), cover("a3", "z")],
+    });
+    const { container } = renderAt("/n/library-films/categories");
+
+    const jazz = await screen.findByRole("link", { name: "Jazz 5 items" });
+    await vi.waitFor(() => expect(jazz).toHaveAttribute("data-fill", "mosaic"));
+    expect([...jazz.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
+      "/cover/a?bucket=w320",
+      "/cover/b?bucket=w320",
+      "/cover/c?bucket=w320",
+      "/cover/d?bucket=w320",
+    ]);
+    // Three covers make a pair: a mosaic is one, two or four.
+    const ambient = screen.getByRole("link", { name: "Ambient 3 items" });
+    expect(ambient.querySelectorAll("img")).toHaveLength(2);
+    const folk = screen.getByRole("link", { name: "Folk 1 item" });
+    await vi.waitFor(() => expect(folk).toHaveAttribute("data-fill", "tint"));
+    expect(folk).toHaveAttribute("data-tone", expect.stringMatching(/^[0-6]$/));
+    expect(folk.querySelector("img")).toBeNull();
+    await expectNoAxeViolations(container);
+  });
+
   it("tiles a featured grouping's values with counts and opens the filtered Media view", async () => {
     serveCategories([
       { kind: "genre", title: { en: "Genre" }, values: ["Drama", "Sci-Fi"], counts: [12, 1] },
@@ -207,6 +324,8 @@ describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
       libraryID: "library-films",
     });
     expect(drama).toHaveAttribute("href", "/n/library-films/all?group.genre=Drama&view=media");
+    // The class the app-wide poster size sizes (CORE-2893).
+    expect(drama.closest("ul")).toHaveClass("bf-category-grid");
     // A featured grouping keeps a single-item value.
     expect(screen.getByRole("link", { name: "Sci-Fi 1 item" })).toHaveAttribute(
       "href",

@@ -10,7 +10,8 @@ splitting would fork all of that and break cross-family entities. A Library boun
 plugin declares a **family scope** — **Films**, **TV Shows**, or **Mixed** — at creation:
 Films / TV Shows set the `class` field (movie / episode) deterministically so identification
 never has to guess the family, while **Mixed** holds a combined folder tree where the parse
-stage classifies movie vs episode per file. Declares the Kinds below; a Movie and an Episode
+stage classifies movie vs episode per file. Mixed is the plugin's default scope and still applies
+to existing Mixed libraries, but the add-library picker offers only Films and TV Shows (CORE-2927). Declares the Kinds below; a Movie and an Episode
 are **Media** (display labels via the Navigation Manifest), never Entities.
 _Avoid_: separate "Movies plugin"/"TV plugin", "Movie"/"Episode" as schema identifiers.
 

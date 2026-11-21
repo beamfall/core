@@ -240,7 +240,7 @@ describe("SetupWizard first scan", () => {
     renderSetupWizard();
 
     await screen.findByRole("heading", { name: "Create your first Library" });
-    for (const name of ["Films", "TV Shows", "Mixed", "Music", "Photos", "Karaoke"]) {
+    for (const name of ["Films", "TV Shows", "Music", "Photos", "Karaoke"]) {
       expect(await screen.findByRole("radio", { name })).toBeInTheDocument();
     }
     await user.click(screen.getByRole("radio", { name: "Photos" }));

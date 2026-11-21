@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
@@ -1196,6 +1196,36 @@ describe("SessionProvider identity-epoch fetch lifecycle", () => {
     expect(screen.getByTestId("manifest")).toHaveTextContent("p1-second-home");
   });
 
+  it("keeps a confirmed entry PIN when an older roster refresh resolves after a failed refresh", async () => {
+    vi.mocked(fetchCurrentSession).mockResolvedValue(p1Session);
+    const { result } = renderHook(useSession, { wrapper: SessionProvider });
+    await waitFor(() => expect(result.current.profiles).toEqual(p1Roster));
+
+    const stale = deferred<ProfileSummary[]>();
+    const refreshError = new Error("Roster refresh failed");
+    vi.mocked(fetchProfiles).mockReturnValueOnce(stale.promise).mockRejectedValueOnce(refreshError);
+    const olderRefresh = result.current.refreshProfiles();
+    await act(async () => {
+      await expect(result.current.refreshProfiles(p1Session.profileID)).rejects.toThrow(
+        refreshError,
+      );
+    });
+    expect(result.current.profiles[0]).toMatchObject({
+      id: p1Session.profileID,
+      entryPinSet: true,
+    });
+
+    await act(async () => {
+      stale.resolve(p1Roster);
+      await olderRefresh;
+    });
+    expect(result.current.profiles[0]).toMatchObject({
+      id: p1Session.profileID,
+      entryPinSet: true,
+    });
+    expect(result.current.profiles[1]).toEqual(p1Roster[1]);
+  });
+
   it("re-reads the manifest inside the epoch on request without clearing session state", async () => {
     vi.mocked(fetchCurrentSession).mockResolvedValue(p1Session);
     const user = userEvent.setup();
@@ -1272,5 +1302,34 @@ describe("SessionProvider identity-epoch fetch lifecycle", () => {
     expect(screen.getByTestId("profile")).toHaveTextContent("p1");
     expect(screen.getByTestId("manifest")).toHaveTextContent("p1-revealed-epoch-home");
     expect(vi.mocked(fetchManifest)).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes the full identity reload when another tab switched Profiles during a re-read", async () => {
+    vi.mocked(fetchCurrentSession).mockResolvedValue(p1Session);
+    const user = userEvent.setup();
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("manifest")).toHaveTextContent("p1-revealed-epoch-home"),
+    );
+
+    const next = deferred<SessionInfo>();
+    vi.mocked(fetchCurrentSession).mockReturnValueOnce(next.promise);
+    vi.mocked(fetchCurrentSession).mockResolvedValue(p2Session);
+    vi.mocked(fetchManifest).mockResolvedValue(p2Manifest);
+    vi.mocked(fetchProfiles).mockResolvedValue(p2Roster);
+    await user.click(screen.getByRole("button", { name: "Refresh session" }));
+    await act(async () => {
+      next.resolve(p2Session);
+      await next.promise;
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("manifest")).toHaveTextContent("p2-current-epoch-home"),
+    );
+    expect(screen.getByTestId("profile")).toHaveTextContent("p2");
+    expect(vi.mocked(fetchManifest)).toHaveBeenCalledTimes(2);
   });
 });

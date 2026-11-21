@@ -47,6 +47,10 @@ type ActiveSession struct {
 	// session and Media (CORE-2305). It is zero for grants recorded before
 	// activity was tracked.
 	LastActiveAt time.Time
+	// ProfileTied is set when grants of more than one Profile share the latest
+	// LastActiveAt, so the ledger cannot tell which Profile reported last and
+	// ProfileID is one of them (CORE-2682). A per-Profile reader drops the row.
+	ProfileTied bool
 }
 
 // LiveSessionActivityWindow is how long a playback with no new grant and no
@@ -125,7 +129,10 @@ func (s *Store) ActiveSessions(ctx context.Context, now time.Time, filter Librar
 
 	// Collapse to one row per (session, media); OR the HLS flag across targets
 	// so a session that probed direct then fell back to transcode reads as
-	// transcoding. Keyed by session+media; keep the latest expiry seen.
+	// transcoding, and keep the latest expiry seen. A Profile switch keeps the
+	// session (CORE-2682), so the row names the Profile of its most recently
+	// active grant: progress touches only the reporting Profile's grants, which
+	// makes that the Profile now playing.
 	type key struct {
 		session SessionID
 		media   MediaID
@@ -161,8 +168,14 @@ func (s *Store) ActiveSessions(ctx context.Context, now time.Time, filter Librar
 		if r.expiresAt.After(entry.ExpiresAt) {
 			entry.ExpiresAt = r.expiresAt
 		}
-		if r.lastActive.After(entry.LastActiveAt) {
+		switch {
+		case r.lastActive.After(entry.LastActiveAt):
 			entry.LastActiveAt = r.lastActive
+			entry.ProfileID = r.profileID
+			entry.ProfileName = profileNames[r.profileID]
+			entry.ProfileTied = false
+		case r.lastActive.Equal(entry.LastActiveAt) && r.profileID != entry.ProfileID:
+			entry.ProfileTied = true
 		}
 	}
 
@@ -348,14 +361,15 @@ func (s *Store) TerminateSession(ctx context.Context, id SessionID) error {
 	return nil
 }
 
-// TouchStreamTokenActivity records playback activity for one session and Media
-// (CORE-2305): a progress report keeps the session's media grants on the
-// live-sessions dashboard. A session with no grant for the Media updates
-// nothing, which is not an error. The clock only moves forward, and a grant
+// TouchStreamTokenActivity records playback activity for one session, Profile
+// and Media (CORE-2305): a progress report keeps the session's media grants on
+// the live-sessions dashboard. Only the reporting Profile's grants move, since a
+// Profile switch keeps the session (CORE-2682). A session with no grant for the
+// Media updates nothing, which is not an error. The clock only moves forward, and a grant
 // whose playback was ended stays ended (a late report after EndPlayback does
 // not revive it).
-func (s *Store) TouchStreamTokenActivity(ctx context.Context, sessionID SessionID, mediaID MediaID, now time.Time) error {
-	if sessionID == "" || mediaID == "" {
+func (s *Store) TouchStreamTokenActivity(ctx context.Context, sessionID SessionID, profileID ProfileID, mediaID MediaID, now time.Time) error {
+	if sessionID == "" || profileID == "" || mediaID == "" {
 		return nil
 	}
 	s.mu.RLock()
@@ -365,9 +379,9 @@ func (s *Store) TouchStreamTokenActivity(ctx context.Context, sessionID SessionI
 	}
 	_, err := s.eventsW.ExecContext(ctx, `
 		UPDATE stream_token_ledger SET last_active_ms = MAX(last_active_ms, ?)
-		WHERE session_id = ? AND media_id = ? AND target IN ('media-direct', 'media-hls')
+		WHERE session_id = ? AND profile_id = ? AND media_id = ? AND target IN ('media-direct', 'media-hls')
 		  AND last_active_ms >= 0
-	`, timeToMillis(now), sessionID, mediaID)
+	`, timeToMillis(now), sessionID, profileID, mediaID)
 	return err
 }
 

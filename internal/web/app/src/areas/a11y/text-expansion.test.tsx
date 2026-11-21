@@ -215,7 +215,10 @@ const CLIP_UTILITY =
 // `console-mono truncate` span on the job row; the job name now wraps.
 // 2026-11-18 (CORE-2438): -1 → 30. The viewer Collections list became a poster
 // grid; the collection name under each collage wraps instead of truncating.
-const CLIP_BASELINE = 30;
+// 2026-11-21 (CORE-2917): +2 → 32. The Manage Tags table layout adds `truncate` on the
+// tag name in the table row and in the merge picker (the old row span moved). CSS
+// ellipsis only; the full name stays in the DOM and a `title`, and row actions name it.
+const CLIP_BASELINE = 32;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

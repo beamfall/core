@@ -335,3 +335,62 @@ scenarios:
 		t.Errorf("expected valid waiver to pass, got: %v", waiverErr)
 	}
 }
+
+// TestScanRootsAcrossTheAppleSplit covers CORE-1514: the closed iPhone, iPad
+// and tvOS code moves from beamfall-apple to beamfall-apple-mobile-tv. Before
+// the split the old repo still credits those targets; after it they need the
+// closed repo, and without it they are unassessable with a SKIP line rather
+// than scored against the open half alone.
+func TestScanRootsAcrossTheAppleSplit(t *testing.T) {
+	for _, tc := range []struct {
+		name                          string
+		preSplit, closedPresent       bool
+		wantTVOS, wantMacOS, wantSkip bool
+		wantClosedProof               bool
+	}{
+		{name: "pre-split layout", preSplit: true, wantTVOS: true, wantMacOS: true},
+		{name: "split, closed repo present", closedPresent: true, wantTVOS: true, wantMacOS: true, wantClosedProof: true},
+		{name: "split, closed repo absent", wantMacOS: true, wantSkip: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			open := filepath.Join(root, "beamfall-apple")
+			closed := filepath.Join(root, "beamfall-apple-mobile-tv")
+			writeSwift(t, filepath.Join(open, "Sources", "Shared.swift"), "// scenario:open-proof")
+			if tc.preSplit {
+				writeSwift(t, filepath.Join(open, "Apps", "BeamfallMobile", "App.swift"), "// scenario:closed-proof")
+			}
+			if tc.closedPresent {
+				writeSwift(t, filepath.Join(closed, "Apps", "BeamfallTV", "App.swift"), "// scenario:closed-proof")
+			}
+			jobs := []scanJob{
+				{dir: open, suffixes: []string{".swift"}, targets: []string{"tvos", "macos"}},
+				{dir: closed, suffixes: []string{".swift"}, targets: []string{"tvos"}, requiredUnless: filepath.Join(open, "Apps", "BeamfallMobile")},
+			}
+			var out strings.Builder
+			covered, assessable := scanRoots(jobs, &out)
+			if assessable["tvos"] != tc.wantTVOS || assessable["macos"] != tc.wantMacOS {
+				t.Fatalf("assessable = %v, want tvos=%v macos=%v", assessable, tc.wantTVOS, tc.wantMacOS)
+			}
+			if skipped := strings.Contains(out.String(), "SKIP "+closed); skipped != tc.wantSkip {
+				t.Fatalf("output %q: SKIP line = %v, want %v", out.String(), skipped, tc.wantSkip)
+			}
+			if tc.wantTVOS && !covered["tvos"]["open-proof"] {
+				t.Fatal("the open repo's marker stopped crediting tvos")
+			}
+			if got := covered["tvos"]["closed-proof"] && !covered["macos"]["closed-proof"]; tc.wantClosedProof && !got {
+				t.Fatalf("closed-repo marker coverage = %v, want tvos only", covered)
+			}
+		})
+	}
+}
+
+func writeSwift(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}

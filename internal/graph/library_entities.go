@@ -27,26 +27,48 @@ type LibraryEntityParent struct {
 	Title string `json:"title"`
 }
 
+// LibraryEntityChildKind is one kind whose linked Entities count as a listed
+// Entity's children, with the plugin's singular and plural display names, so
+// a client can say "4 Albums" without core naming the kind (CORE-2891).
+type LibraryEntityChildKind struct {
+	Kind                  string              `json:"kind"`
+	KindDisplayName       plugin.LocaleString `json:"kindDisplayName,omitempty"`
+	KindPluralDisplayName plugin.LocaleString `json:"kindPluralDisplayName,omitempty"`
+}
+
+// LibraryEntityChildCount is how many visible linked Entities of one child
+// kind a listed Entity has.
+type LibraryEntityChildCount struct {
+	Kind  string `json:"kind"`
+	Count int    `json:"count"`
+}
+
 // LibraryEntityItem is one listed Entity card. ChildCount counts its linked
-// Entities of the kinds that declare a relation to its kind; MediaCount counts
-// the distinct visible Media linked to it or to one of those children.
+// Entities of the kinds that declare a relation to its kind, and ChildCounts
+// splits that count by kind, in the response's ChildKinds order, leaving out
+// kinds it has none of; MediaCount counts the distinct visible Media linked
+// to it or to one of those children.
 type LibraryEntityItem struct {
 	SourceItem
-	ChildCount int                   `json:"childCount"`
-	MediaCount int                   `json:"mediaCount"`
-	Parents    []LibraryEntityParent `json:"parents"`
+	ChildCount  int                       `json:"childCount"`
+	ChildCounts []LibraryEntityChildCount `json:"childCounts"`
+	MediaCount  int                       `json:"mediaCount"`
+	Parents     []LibraryEntityParent     `json:"parents"`
 }
 
 // LibraryEntitiesResponse is one page of a Library's Entities of one kind
 // (CORE-2362). Kinds lists every kind the caller can browse the Library by;
 // AllLabel is the plugin's title for its unfiltered Media grid; Kind is the
 // kind listed and Total its count after the browse filters (CORE-2440).
+// ChildKinds names the kinds whose linked Entities count as the listed kind's
+// children (CORE-2891).
 type LibraryEntitiesResponse struct {
-	Kinds    []LibraryEntityKind `json:"kinds"`
-	AllLabel plugin.LocaleString `json:"allLabel,omitempty"`
-	Kind     string              `json:"kind"`
-	Total    int                 `json:"total"`
-	Items    []LibraryEntityItem `json:"items"`
+	Kinds      []LibraryEntityKind      `json:"kinds"`
+	ChildKinds []LibraryEntityChildKind `json:"childKinds"`
+	AllLabel   plugin.LocaleString      `json:"allLabel,omitempty"`
+	Kind       string                   `json:"kind"`
+	Total      int                      `json:"total"`
+	Items      []LibraryEntityItem      `json:"items"`
 	// Letters lists, for a title sort, the offset where each title initial
 	// starts in the filtered set and its count, as libraryItems does; other
 	// sorts answer an empty list.
@@ -54,7 +76,7 @@ type LibraryEntitiesResponse struct {
 }
 
 func emptyLibraryEntities() LibraryEntitiesResponse {
-	return LibraryEntitiesResponse{Kinds: []LibraryEntityKind{}, Items: []LibraryEntityItem{}, Letters: []LibraryItemsLetter{}}
+	return LibraryEntitiesResponse{Kinds: []LibraryEntityKind{}, ChildKinds: []LibraryEntityChildKind{}, Items: []LibraryEntityItem{}, Letters: []LibraryItemsLetter{}}
 }
 
 // libraryBrowsePlan is what a Library's plugin declares for browsing it by
@@ -238,12 +260,25 @@ func (h *Handler) libraryEntities(ctx context.Context, scope auth.Scope, req req
 	if !ok || totals.Totals[resp.Kind] == 0 {
 		return resp, nil
 	}
+	// Kinds stays empty: the kind was totalled above, so the page read skips
+	// a second count (CORE-2894).
+	parentKinds := plan.parentKinds(listed)
+	childKinds := plan.childKinds(resp.Kind)
+	for _, name := range childKinds {
+		// A kind that is also a parent counts as a parent, as the store does.
+		if slices.Contains(parentKinds, name) {
+			continue
+		}
+		child, _ := declaredKind(plan.declared, name)
+		resp.ChildKinds = append(resp.ChildKinds, LibraryEntityChildKind{
+			Kind: name, KindDisplayName: child.DisplayName, KindPluralDisplayName: child.PluralDisplayName,
+		})
+	}
 	result, err := h.store.LibraryEntities(ctx, filter, store.LibraryEntitiesQuery{
 		LibraryID:     libraryID,
-		Kinds:         []string{resp.Kind},
 		Kind:          resp.Kind,
-		ChildKinds:    plan.childKinds(resp.Kind),
-		ParentKinds:   plan.parentKinds(listed),
+		ChildKinds:    childKinds,
+		ParentKinds:   parentKinds,
 		BrowseSources: sources,
 		Browse:        browse,
 		Limit:         limit,
@@ -269,11 +304,18 @@ func (h *Handler) libraryEntities(ctx context.Context, scope auth.Scope, req req
 		for j, parent := range item.Parents {
 			parents[j] = LibraryEntityParent{ID: string(parent.ID), Title: parent.Title}
 		}
+		childCounts := []LibraryEntityChildCount{}
+		for _, child := range resp.ChildKinds {
+			if count := item.ChildCounts[child.Kind]; count > 0 {
+				childCounts = append(childCounts, LibraryEntityChildCount{Kind: child.Kind, Count: count})
+			}
+		}
 		resp.Items[i] = LibraryEntityItem{
-			SourceItem: h.sourceItem(cards[i], scope.Revealed),
-			ChildCount: item.ChildCount,
-			MediaCount: item.MediaCount,
-			Parents:    parents,
+			SourceItem:  h.sourceItem(cards[i], scope.Revealed),
+			ChildCount:  item.ChildCount,
+			ChildCounts: childCounts,
+			MediaCount:  item.MediaCount,
+			Parents:     parents,
 		}
 	}
 	return resp, nil

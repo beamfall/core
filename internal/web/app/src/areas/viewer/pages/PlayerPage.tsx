@@ -437,7 +437,15 @@ function FeaturePlayer({
       ? adjustmentApplied(state.info, adjustment)
       : null;
   const showSpinner = useMediaLoading(videoRef, state.phase === "loading" || playing);
-  const captionLoad = useCaptionLoad(videoRef);
+  const [videoNode, setVideoNode] = useState<HTMLVideoElement | null>(null);
+  const bindVideo = useCallback(
+    (node: HTMLVideoElement | null) => {
+      videoRef.current = node;
+      setVideoNode(node);
+    },
+    [videoRef],
+  );
+  const captionLoad = useCaptionLoad(videoNode);
   const isAudio = state.info?.mediaClass === "audio";
   // Before playback-info answers, a queue entry that reports its class already
   // routes a track to the audio stage instead of an empty video frame
@@ -1032,7 +1040,7 @@ function FeaturePlayer({
             className={"bf-player-stage" + (playing && chromeHidden ? " is-chrome-hidden" : "")}
           >
             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-            <video ref={videoRef} playsInline controls={false} poster={videoPoster || undefined} />
+            <video ref={bindVideo} playsInline controls={false} poster={videoPoster || undefined} />
             {showAudioStage && (
               <AudioStage
                 key={serverQueueRun ? (media ? mediaId : "") : undefined}

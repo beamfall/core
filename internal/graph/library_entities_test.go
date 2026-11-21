@@ -17,8 +17,9 @@ import (
 const libraryEntitiesTestQuery = `query($libraryID: String!, $kind: String, $limit: Int, $offset: Int) {
 	libraryEntities(libraryID: $libraryID, kind: $kind, limit: $limit, offset: $offset) {
 		kinds { kind label kindDisplayName archetype total }
+		childKinds { kind kindDisplayName kindPluralDisplayName }
 		allLabel kind total
-		items { id kind title mediaClass byline year childCount mediaCount parents { id title } }
+		items { id kind title mediaClass byline year childCount childCounts { kind count } mediaCount parents { id title } }
 	}
 }`
 
@@ -37,7 +38,7 @@ func shelfBundle() plugin.Bundle {
 				Relations: []plugin.RelationSpec{{Name: "made", ToKind: plugin.MediaKindName}}},
 			{Name: "box", Archetype: "container", DisplayName: plugin.LocaleString{"en": "Box", "fr": "Boîte"},
 				Relations: []plugin.RelationSpec{{Name: "holds", ToKind: plugin.MediaKindName}, {Name: "box-maker", ToKind: "maker"}}},
-			{Name: "lid", Archetype: "container", DisplayName: plugin.L("Lid"),
+			{Name: "lid", Archetype: "container", DisplayName: plugin.L("Lid"), PluralDisplayName: plugin.L("Lids"),
 				Relations: []plugin.RelationSpec{{Name: "lid-of", ToKind: "box"}, {Name: "lid-holds", ToKind: plugin.MediaKindName}}},
 			{Name: "tag", Archetype: "category", DisplayName: plugin.L("Tag"),
 				Relations: []plugin.RelationSpec{{Name: "tags", ToKind: plugin.MediaKindName}}},
@@ -203,6 +204,11 @@ func TestLibraryEntitiesMusicArtistBrowse(t *testing.T) {
 		!slices.Equal(libraryEntityTitles(resp.Items), []string{"Earth, Wind & Fire", "Tyler, The Creator"}) {
 		t.Fatalf("Artists browse = %+v", resp)
 	}
+	// The music plugin, not core, names an artist's child kind.
+	if len(resp.ChildKinds) != 1 || resp.ChildKinds[0].Kind != "album" ||
+		resp.ChildKinds[0].KindPluralDisplayName.Resolve("en") == "" {
+		t.Fatalf("artist child kinds = %+v, want the plugin-named album kind", resp.ChildKinds)
+	}
 }
 
 func TestSourceItemsMusicArtistsHomeShelf(t *testing.T) {
@@ -283,6 +289,18 @@ func TestLibraryEntitiesPagesAKindWithCountsAndParents(t *testing.T) {
 	alpha, beta := first.Items[0], second.Items[0]
 	if alpha.ID != "entity-box-a" || alpha.ChildCount != 2 || alpha.MediaCount != 4 || alpha.MediaClass != "audio" {
 		t.Fatalf("first box = %+v, want Alpha Quill with 2 lids, 4 audio pieces", alpha)
+	}
+	// The lid kind is box's only child kind; maker is a parent, not a child,
+	// though it relates to box too. The labels are the plugin's.
+	if len(first.ChildKinds) != 1 || first.ChildKinds[0].Kind != "lid" ||
+		first.ChildKinds[0].KindDisplayName.Resolve("en") != "Lid" || first.ChildKinds[0].KindPluralDisplayName.Resolve("en") != "Lids" {
+		t.Fatalf("box child kinds = %+v, want only lid named Lid/Lids", first.ChildKinds)
+	}
+	if got := []LibraryEntityChildCount{{Kind: "lid", Count: 2}}; !slices.Equal(alpha.ChildCounts, got) {
+		t.Fatalf("Alpha Quill child counts = %+v, want %+v", alpha.ChildCounts, got)
+	}
+	if beta.ChildCounts == nil || len(beta.ChildCounts) != 0 {
+		t.Fatalf("beta child counts = %#v, want an empty list", beta.ChildCounts)
 	}
 	if got := []LibraryEntityParent{{ID: "entity-maker-m", Title: "Em"}, {ID: "entity-maker-z", Title: "Zed"}}; !slices.Equal(alpha.Parents, got) {
 		t.Fatalf("Alpha Quill parents = %+v, want %+v in relation order", alpha.Parents, got)

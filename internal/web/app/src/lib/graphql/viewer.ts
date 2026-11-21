@@ -103,7 +103,7 @@ export async function fetchCurrentSession(signal?: AbortSignal): Promise<Session
   );
 }
 
-const PROFILES_QUERY = "query Profiles { profiles { id name kind avatar pictureURL } }";
+const PROFILES_QUERY = "query Profiles { profiles { id name kind avatar pictureURL entryPinSet } }";
 
 /** Profiles — the profile-picker roster. */
 export async function fetchProfiles(signal?: AbortSignal): Promise<ProfileSummary[]> {
@@ -116,7 +116,7 @@ const SWITCH_PROFILE_MUTATION =
 
 /**
  * SwitchProfile — rebind the session to another Profile (always relocks).
- * An adult Profile needs its entry PIN; the PIN goes into this call and
+ * A protected adult Profile needs its entry PIN; the PIN goes into this call and
  * nowhere else.
  */
 export async function switchProfile(

@@ -136,7 +136,9 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 		Kind:            "performer",
 		KindDisplayName: plugin.L("Performer"),
 		Archetype:       "person",
-		Items:           []SourceItem{{ID: "entity-performer", LibraryID: string(library.ID), Kind: "entity", Title: "The Performer"}},
+		// The Performer has no Media of its own, so it takes the class its
+		// linked Records' Media share (CORE-2889).
+		Items: []SourceItem{{ID: "entity-performer", LibraryID: string(library.ID), Kind: "entity", Title: "The Performer", MediaClass: "video"}},
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("record relatedEntities = %#v, want %#v", got, want)

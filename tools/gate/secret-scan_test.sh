@@ -422,8 +422,10 @@ grep -Fq "$shared_common_dir" "$TMP/shared-identity.err" ||
   fail "shared-identity failure did not name the common Git directory"
 echo "secret-scan_test: RED-PROOF required labels rejected worktrees sharing one Git identity"
 
+MOBILE_TV="$WORKSPACE/beamfall-apple-mobile-tv"
 complete_output="$(make -s -C "$ROOT" secret-scan-release \
   APPLE_RELEASE_REPO="$APPLE" \
+  APPLE_MOBILE_TV_REPO="$MOBILE_TV" \
   ANDROID_RELEASE_REPO="$ANDROID")"
 for repo in "$CORE" "$APPLE" "$ANDROID"; do
   label="${repo##*/}"
@@ -432,7 +434,62 @@ for repo in "$CORE" "$APPLE" "$ANDROID"; do
 done
 grep -Fq 'PASS complete required-tree coverage targets=3' <<<"$complete_output" ||
   fail "distinct repositories did not report complete required-tree coverage"
+grep -Fq 'SKIP beamfall-apple-mobile-tv' <<<"$complete_output" ||
+  fail "secret-scan-release did not report the absent beamfall-apple-mobile-tv"
 echo "secret-scan_test: GREEN-PROOF real secret-scan-release Makefile target reported complete distinct-repository coverage"
+default_required_output="$(BEAMFALL_WORKSPACE_ROOT="$WORKSPACE" "$CORE/tools/gate/secret-scan.py" --require-repos)" ||
+  fail "the default required matrix failed on the absent beamfall-apple-mobile-tv"
+grep -Fq 'SKIP beamfall-apple-mobile-tv' <<<"$default_required_output" ||
+  fail "the default required matrix did not report the absent beamfall-apple-mobile-tv"
+grep -Fq 'PASS complete required-tree coverage targets=3' <<<"$default_required_output" ||
+  fail "the default required matrix did not scan the three present trees"
+echo "secret-scan_test: GREEN-PROOF default required matrix skips the absent beamfall-apple-mobile-tv"
+if "$CORE/tools/gate/secret-scan.py" --require-repos --target "beamfall-apple-mobile-tv:$MOBILE_TV" \
+  >"$TMP/explicit-mobile-tv.out" 2>"$TMP/explicit-mobile-tv.err"; then
+  fail "an explicitly required absent beamfall-apple-mobile-tv passed"
+fi
+grep -Fq 'FAIL beamfall-apple-mobile-tv missing required repo' "$TMP/explicit-mobile-tv.err" ||
+  fail "an explicitly required absent beamfall-apple-mobile-tv was not reported"
+echo "secret-scan_test: RED-PROOF an explicitly required beamfall-apple-mobile-tv still fails when absent"
+
+# CORE-1514: once the closed Apple repo exists it is a fourth required tree.
+init_repo "$MOBILE_TV"
+printf 'closed app\n' >"$MOBILE_TV/README.md"
+git -C "$MOBILE_TV" add README.md
+split_output="$(make -s -C "$ROOT" secret-scan-release \
+  APPLE_RELEASE_REPO="$APPLE" \
+  APPLE_MOBILE_TV_REPO="$MOBILE_TV" \
+  ANDROID_RELEASE_REPO="$ANDROID")"
+grep -Fq 'PASS beamfall-apple-mobile-tv ' <<<"$split_output" ||
+  fail "secret-scan-release omitted the present beamfall-apple-mobile-tv"
+grep -Fq 'PASS complete required-tree coverage targets=4' <<<"$split_output" ||
+  fail "the split layout did not report four required trees"
+echo "secret-scan_test: GREEN-PROOF secret-scan-release scans beamfall-apple-mobile-tv when present"
+
+# A file the split moved keeps its beamfall-apple allowlist entry; any other
+# path in the closed repo is still a finding.
+mkdir -p "$MOBILE_TV/$apple_corpus_relative/next-contract"
+printf 'token = "%s"\n' "$seeded_value" >"$MOBILE_TV/$apple_fixture_relative"
+git -C "$MOBILE_TV" add "$apple_fixture_relative"
+printf 'beamfall-apple\t%s\tprovider-github\t%s\n' \
+  "$apple_fixture_relative" "$apple_secret_digest" >>"$CORE/tools/gate/secret-scan-allowlist.txt"
+git -C "$CORE" add tools/gate/secret-scan-allowlist.txt
+moved_output="$(BEAMFALL_WORKSPACE_ROOT="$WORKSPACE" "$CORE/tools/gate/secret-scan.py")" ||
+  fail "a moved allowlisted beamfall-apple file was blocked in beamfall-apple-mobile-tv"
+grep -Fq 'PASS beamfall-apple-mobile-tv ' <<<"$moved_output" ||
+  fail "the alias scan omitted beamfall-apple-mobile-tv"
+printf 'token = "%s"\n' "$seeded_value" >"$MOBILE_TV/live-credential.txt"
+git -C "$MOBILE_TV" add live-credential.txt
+if BEAMFALL_WORKSPACE_ROOT="$WORKSPACE" "$CORE/tools/gate/secret-scan.py" \
+  >"$TMP/alias-live.out" 2>"$TMP/alias-live.err"; then
+  fail "the beamfall-apple alias suppressed an unlisted beamfall-apple-mobile-tv path"
+fi
+grep -Fq 'beamfall-apple-mobile-tv:live-credential.txt:1 rule=provider-github' "$TMP/alias-live.err" ||
+  fail "the unlisted beamfall-apple-mobile-tv finding was not reported"
+cp "$ROOT/tools/gate/secret-scan-allowlist.txt" "$CORE/tools/gate/secret-scan-allowlist.txt"
+git -C "$CORE" add tools/gate/secret-scan-allowlist.txt
+echo "secret-scan_test: GREEN-PROOF beamfall-apple allowlist entries cover files moved to beamfall-apple-mobile-tv, and only those"
+rm -rf "$MOBILE_TV"
 
 mv "$ANDROID" "$WORKSPACE/beamfall-android.absent"
 skip_output="$(BEAMFALL_WORKSPACE_ROOT="$WORKSPACE" "$CORE/tools/gate/secret-scan.py")"
@@ -650,6 +707,7 @@ git -C "$CORE" rm -q -f composite.txt
 mv "$ANDROID" "$WORKSPACE/beamfall-android.absent"
 if make -s -C "$ROOT" secret-scan-release \
   APPLE_RELEASE_REPO="$APPLE" \
+  APPLE_MOBILE_TV_REPO="$MOBILE_TV" \
   ANDROID_RELEASE_REPO="$ANDROID" \
   >"$TMP/release.out" 2>"$TMP/release.err"; then
   fail "release secret scan accepted a missing client tree"
@@ -667,6 +725,7 @@ printf '%s\n' \
   '  if [[ "$target" == "secret-scan-release" ]]; then' \
   '    exec "$SECRET_SCAN_REAL_MAKE" -s -C "$SECRET_SCAN_ROOT" secret-scan-release \' \
   '      APPLE_RELEASE_REPO="$APPLE_RELEASE_REPO" \' \
+  '      APPLE_MOBILE_TV_REPO="$APPLE_MOBILE_TV_REPO" \' \
   '      ANDROID_RELEASE_REPO="$ANDROID_RELEASE_REPO"' \
   '  fi' \
   'done' >"$aggregate_make"
@@ -679,6 +738,7 @@ if SECRET_SCAN_REAL_MAKE="$(command -v make)" \
   make -s -C "$ROOT" store-release-test-gates \
   "MAKE=$aggregate_make" \
   APPLE_RELEASE_REPO="$APPLE" \
+  APPLE_MOBILE_TV_REPO="$MOBILE_TV" \
   ANDROID_RELEASE_REPO="$ANDROID" \
   >"$TMP/release-aggregate.out" 2>"$TMP/release-aggregate.err"; then
   fail "store-release-test-gates did not enforce secret-scan-release for beamfall-android"

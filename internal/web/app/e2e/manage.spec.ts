@@ -420,7 +420,7 @@ test.describe("manage", () => {
     await expect(
       page
         .getByText("No unmatched records.")
-        .or(page.getByRole("button", { name: "Dismiss" }).first()),
+        .or(page.getByRole("button", { name: /^Hide/ }).first()),
     ).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });

@@ -84,6 +84,12 @@ server-side backup, and `beamfall restore` restores one while the server is stop
 Each Profile has its own library access, rating ceilings, concurrent stream limit, transcode
 permission, and preferred audio and subtitle languages, stored and enforced on the server.
 
+In the web app, open **Manage › Switch profile › Profile settings** and unlock with the admin
+password. Pick an adult Profile to set or change the PIN used to enter that Profile. Use
+**Preferred subtitle languages for your current profile** to edit the list. Enter language codes
+such as `en, fr-CA` in order of preference, or clear the field to remove your preferences, then save.
+To unlock restricted content, use the separate PIN in **Manage › Show restricted content**.
+
 ### Organizing and browsing
 
 Collections, Tags, Markers, saved filters, and smart collections; full-text search;

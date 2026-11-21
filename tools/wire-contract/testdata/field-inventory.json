@@ -1591,6 +1591,7 @@
       "tier": "session",
       "children": [
         "allLabel",
+        "childKinds",
         "items",
         "kind",
         "kinds",

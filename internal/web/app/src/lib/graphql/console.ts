@@ -916,6 +916,40 @@ export async function createAPIKey(
 // (CreateProfile / UpdateProfile cases) rather than app.js — same VERBATIM
 // discipline, against the server-tested shape.
 
+export async function fetchProfileEntryPins(signal?: AbortSignal) {
+  const data = await graphql<{
+    profiles: { id: string; name: string; kind: string; entryPinSet?: boolean }[] | null;
+  }>("query Profiles { profiles { id name kind entryPinSet } }", {}, signal);
+  return data.profiles ?? [];
+}
+
+export async function setProfileEntryPin(
+  profileID: string,
+  entryPIN: string,
+  signal?: AbortSignal,
+) {
+  await graphql(
+    "mutation UpdateProfile($profileID: String!, $entryPIN: String!) { updateProfile(profileID: $profileID, entryPIN: $entryPIN) { id } }",
+    { profileID, entryPIN },
+    signal,
+    { adminUnlock: false },
+  );
+}
+
+export async function setProfileSubtitleLanguages(
+  profileID: string,
+  subtitleLanguages: string[],
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const data = await graphql<{ updateProfile: { subtitleLanguages: string[] } }>(
+    "mutation UpdateProfile($profileID: String!, $subtitleLanguages: [String!]!) { updateProfile(profileID: $profileID, subtitleLanguages: $subtitleLanguages) { subtitleLanguages } }",
+    { profileID, subtitleLanguages },
+    signal,
+    { adminUnlock: false },
+  );
+  return data.updateProfile.subtitleLanguages;
+}
+
 const PROFILES_ADMIN_QUERY =
   "query Profiles { profiles { id name kind libraryIDs avatar pictureURL } }";
 
