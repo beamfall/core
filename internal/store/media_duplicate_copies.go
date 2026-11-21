@@ -80,6 +80,7 @@ func (s *Store) DuplicateCopies(ctx context.Context, filter LibraryFilter) ([]Du
 
 func duplicateCopiesSQL(ctx context.Context, reader *sql.DB, libraryID LibraryID, certClause string, certArgs []any) ([]DuplicateCopySet, error) {
 	args := append([]any{libraryID}, certArgs...)
+	// #nosec G202 -- only the closed certification clause is interpolated; every value is a bound arg.
 	rows, err := reader.QueryContext(ctx, `
 		SELECT m.id, m.title, m.library_id, f.oshash, f.size_bytes, f.path, f.version_label
 		FROM media m

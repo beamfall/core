@@ -929,19 +929,6 @@ export async function fetchProfileEntryPins(signal?: AbortSignal) {
   return data.profiles ?? [];
 }
 
-export async function setProfileEntryPin(
-  profileID: string,
-  entryPIN: string,
-  signal?: AbortSignal,
-) {
-  await graphql(
-    "mutation UpdateProfile($profileID: String!, $entryPIN: String!) { updateProfile(profileID: $profileID, entryPIN: $entryPIN) { id } }",
-    { profileID, entryPIN },
-    signal,
-    { adminUnlock: false },
-  );
-}
-
 export async function setProfileSubtitleLanguages(
   profileID: string,
   subtitleLanguages: string[],
@@ -1031,18 +1018,23 @@ export async function updateProfile(
 }
 
 const SET_PROFILE_ENTRY_PIN_MUTATION =
-  "mutation SetProfileEntryPin($profileID: String!, $entryPIN: String!) { updateProfile(profileID: $profileID, entryPIN: $entryPIN) { id } }";
+  "mutation UpdateProfile($profileID: String!, $entryPIN: String!) { updateProfile(profileID: $profileID, entryPIN: $entryPIN) { id } }";
 
-/** Set an adult Profile's entry PIN separately from other Profile settings. */
+/**
+ * Set an adult Profile's entry PIN separately from other Profile settings. The Manage self-service
+ * page passes `{ adminUnlock: false }` so a challenge fails instead of prompting for admin unlock.
+ */
 export async function setProfileEntryPin(
   profileID: string,
   entryPIN: string,
   signal?: AbortSignal,
+  options?: { adminUnlock?: boolean },
 ): Promise<void> {
   await graphql<{ updateProfile: { id: string } }>(
     SET_PROFILE_ENTRY_PIN_MUTATION,
     { profileID, entryPIN },
     signal,
+    options,
   );
 }
 

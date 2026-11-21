@@ -353,6 +353,7 @@ const survivorLookupChunk = 500
 func (s *Store) visibleSurvivors(ctx context.Context, ids []any, certClause string, certArgs []any, seen map[MediaID]bool) error {
 	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(ids)), ", ")
 	args := append(append([]any{}, ids...), certArgs...)
+	// #nosec G202 -- only generated placeholders and the closed certification clause are interpolated.
 	rows, err := s.catalogR.QueryContext(ctx,
 		`SELECT m.id FROM media m WHERE m.id IN (`+placeholders+`)`+certClause, args...)
 	if err != nil {
