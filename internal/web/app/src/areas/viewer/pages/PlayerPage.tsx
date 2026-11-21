@@ -614,11 +614,13 @@ function FeaturePlayer({
   }>();
   const retryMove = failedMove?.route === queueRoute && !epoch?.aborted ? failedMove : undefined;
   const moveRequest = useRef(0);
+  const activeQueueRoute = useRef(queueRoute);
   const playItemRef = useRef(playItem);
   useLayoutEffect(() => {
     playItemRef.current = playItem;
   }, [playItem]);
   useLayoutEffect(() => {
+    activeQueueRoute.current = queueRoute;
     return () => {
       moveRequest.current++;
     };
@@ -626,13 +628,14 @@ function FeaturePlayer({
   const startMusicQueue =
     profileID && !partyLeads
       ? (id: string) => {
+          if (activeQueueRoute.current !== queueRoute) return;
           moveRequest.current++;
           setFailedMove(undefined);
           if (id === mediaId) {
             restart(0);
             if (queueProfile === profileID) return;
           }
-          playItem(id, "", true, profileID);
+          playItemRef.current(id, "", true, profileID);
         }
       : undefined;
   const moveInMusicQueue = useCallback(

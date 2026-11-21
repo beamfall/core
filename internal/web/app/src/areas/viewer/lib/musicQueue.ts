@@ -90,6 +90,7 @@ type QueueRead = {
   validation: typeof INITIAL_VALIDATION;
   controller: AbortController;
   signal: AbortSignal;
+  foreground: AbortController;
   invalid?: boolean;
   pending?: { controller: AbortController; promise: Promise<RefreshResult> };
 };
@@ -128,10 +129,16 @@ export function useMusicQueue(enabled: boolean) {
   );
 
   const readScoped = useCallback(
-    async <T>(query: string, vars: Record<string, unknown>, signal: AbortSignal) => {
+    async <T>(
+      query: string,
+      vars: Record<string, unknown>,
+      signal: AbortSignal,
+      foreground: AbortSignal,
+    ) => {
       signal.throwIfAborted();
       const data = await graphql<T & SessionResult>(query, vars, signal);
       signal.throwIfAborted();
+      foreground.throwIfAborted();
       const read = active.current;
       if (!read || !isCurrent()) throw new Error("Queue scope retired");
       const live = data.currentSession;
@@ -154,7 +161,7 @@ export function useMusicQueue(enabled: boolean) {
   );
 
   const refresh = useCallback(
-    (fresh = false) => {
+    (fresh = false): Promise<RefreshResult> => {
       const read = active.current;
       if (!read || !isCurrent()) return Promise.resolve(undefined);
       if (!fresh && read.pending) return read.pending.promise;
@@ -162,13 +169,21 @@ export function useMusicQueue(enabled: boolean) {
       read.pending?.controller.abort();
       const request = new AbortController();
       const signal = AbortSignal.any([read.signal, request.signal]);
+      const foreground = read.foreground.signal;
       const promise = readMusicQueue((offset) =>
-        readScoped<Page>(QUEUE_QUERY, { query: "queue", limit: PAGE_SIZE, offset }, signal),
+        readScoped<Page>(
+          QUEUE_QUERY,
+          { query: "queue", limit: PAGE_SIZE, offset },
+          signal,
+          foreground,
+        ),
       )
         .catch(() => null)
         .then((rows) => {
           if (signal.aborted || !isCurrent() || active.current !== read) return undefined;
           read.pending = undefined;
+          // The old read settled, but only a post-focus read can answer its callers.
+          if (foreground.aborted) return refresh();
           setResult((previous) => ({
             scope: read.scope,
             checked: rows !== null || (previous?.scope === read.scope && previous.checked),
@@ -192,6 +207,7 @@ export function useMusicQueue(enabled: boolean) {
           MEDIA_QUERY,
           { id },
           AbortSignal.any([read.signal, signal]),
+          read.foreground.signal,
         );
         return isCurrent() ? media : null;
       } catch {
@@ -207,7 +223,7 @@ export function useMusicQueue(enabled: boolean) {
     const signal = scope.epoch
       ? AbortSignal.any([controller.signal, scope.epoch])
       : controller.signal;
-    active.current = { scope, validation, signal, controller };
+    active.current = { scope, validation, signal, controller, foreground: new AbortController() };
     void refresh();
     return () => controller.abort();
   }, [scope, refresh, validation]);
@@ -231,12 +247,14 @@ export function useMusicQueue(enabled: boolean) {
     };
     const foreground = () => {
       if (document.visibilityState === "hidden") return;
-      if (!isCurrent()) {
+      const read = active.current;
+      if (!read || !isCurrent()) {
         invalidate(false);
         return;
       }
+      read.foreground.abort();
+      read.foreground = new AbortController();
       flushSync(hideTitles);
-      // The pending read already checks the live identity and supplies its caller's result.
       void refresh();
     };
     const pagehide = () => invalidate(true);

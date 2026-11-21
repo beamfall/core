@@ -1912,6 +1912,25 @@ describe("PlayerPage server Play Queue", () => {
     expect(screen.queryByText(STRINGS.en.musicQueueReadFailed)).not.toBeInTheDocument();
   });
 
+  it("starts the first queue row after docking while Play queue is pending", async () => {
+    await mockWithRealTransport();
+    renderQueue(b.id, c.id, "?playQueue=profile-a", true);
+    fireEvent.click(await screen.findByRole("button", { name: STRINGS.en.musicQueueTitle }));
+    const playQueue = await screen.findByRole("button", { name: STRINGS.en.musicQueuePlay });
+    const pending = deferred<Awaited<ReturnType<typeof readQueue>>>();
+    readQueue.mockReturnValueOnce(pending.promise);
+    fireEvent.click(playQueue);
+    expect(readQueue).toHaveBeenCalledTimes(3);
+
+    await act(async () => go("/search"));
+    await screen.findByRole("region", { name: "Now playing" });
+    await act(async () => pending.resolve({ sourceItems: rows, currentSession: serverSession }));
+
+    expect(playingID()).toBe(a.id);
+    expect(location.pathname).toBe("/search");
+    expect(screen.getByText("Search results")).toBeInTheDocument();
+  });
+
   it.each(["same identity", "relock", "profile switch"])(
     "revalidates an ended advance across focus and docking with %s",
     async (change) => {
@@ -1925,17 +1944,26 @@ describe("PlayerPage server Play Queue", () => {
         readQueue.mockReturnValueOnce(pending.promise);
         fireEvent.ended(stageVideo());
         await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
-        fireEvent.focus(window);
-        expect(readQueue).toHaveBeenCalledTimes(2);
-        await act(async () => go("/search"));
-        await screen.findByRole("region", { name: "Now playing" });
         const currentSession =
           change === "relock"
             ? { ...serverSession, revealed: false }
             : change === "profile switch"
               ? { ...serverSession, profileID: "profile-b" }
               : serverSession;
-        await act(async () => pending.resolve({ sourceItems: rows, currentSession }));
+        const fresh = deferred<QueueResponse>();
+        readQueue.mockReturnValueOnce(fresh.promise);
+        fireEvent.focus(window);
+        expect(readQueue).toHaveBeenCalledTimes(2);
+        await act(async () => go("/search"));
+        await screen.findByRole("region", { name: "Now playing" });
+        await act(async () =>
+          pending.resolve({ sourceItems: rows, currentSession: serverSession }),
+        );
+        expect(playingID()).toBe(b.id);
+        expect(confirm).not.toHaveBeenCalled();
+        expect(readQueue).toHaveBeenCalledTimes(3);
+
+        await act(async () => fresh.resolve({ sourceItems: rows, currentSession }));
         if (change === "same identity") {
           expect(playingID()).toBe(c.id);
           expect(confirm).toHaveBeenCalledExactlyOnceWith(c.id);
@@ -1944,7 +1972,7 @@ describe("PlayerPage server Play Queue", () => {
           expect(confirm).not.toHaveBeenCalled();
         }
         expect(location.pathname).toBe("/search");
-        expect(readQueue).toHaveBeenCalledTimes(2);
+        expect(readQueue).toHaveBeenCalledTimes(3);
       } finally {
         vi.mocked(useGaplessAudio).mockReset();
       }
@@ -1993,7 +2021,7 @@ describe("PlayerPage server Play Queue", () => {
     expect(readQueue).toHaveBeenCalledTimes(4);
     await act(async () => pending.resolve({ sourceItems: rows, currentSession: serverSession }));
     await waitFor(() => expect(playingID()).toBe(c.id));
-    expect(readQueue).toHaveBeenCalledTimes(4);
+    expect(readQueue).toHaveBeenCalledTimes(5);
     expect(location.pathname).toBe("/search");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
