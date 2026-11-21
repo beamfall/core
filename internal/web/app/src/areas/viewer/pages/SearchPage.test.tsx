@@ -14,8 +14,18 @@ vi.mock("@/components/chrome/AppShell", () => ({
 }));
 vi.mock("../components/ViewerActions", () => ({ ViewerActions: () => null }));
 vi.mock("../components/MediaItemCard", () => ({
-  MediaItemCard: ({ item, queue }: { item: { title: string }; queue?: { id: string }[] }) => (
-    <li data-queue={queue?.map((entry) => entry.id).join(",")}>{item.title}</li>
+  MediaItemCard: ({
+    item,
+    queue,
+    queueLockKnown,
+  }: {
+    item: { title: string };
+    queue?: { id: string }[];
+    queueLockKnown?: boolean;
+  }) => (
+    <li data-queue={queue?.map((entry) => entry.id).join(",")} data-lock-known={queueLockKnown}>
+      {item.title}
+    </li>
   ),
 }));
 
@@ -245,6 +255,32 @@ describe("SearchPage mode exposure", () => {
 
     expect(await screen.findByText("Hit, Finished")).toBeInTheDocument();
     expect(vi.mocked(searchResult).mock.calls.at(-1)?.slice(0, 2)).toEqual(["hello", "keyword"]);
+  });
+
+  it("hides queue actions on a row refreshed from semantic results after keyword fallback", async () => {
+    vi.mocked(fetchSemanticCapability).mockResolvedValue([
+      { libraryID: "l1", pluginActive: true, state: "ready" },
+    ]);
+    const track = { id: "m1", kind: "media", title: "Hit", mediaClass: "audio", score: 0 };
+    vi.mocked(searchResult).mockResolvedValue({
+      mode: "keyword",
+      items: [{ ...track, mode: "keyword" }],
+      restrictedResultsPresent: false,
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByLabelText("Search by"));
+    await user.click(await screen.findByRole("option", { name: "Similar meaning" }));
+    await user.type(screen.getByLabelText("Search"), "Hit");
+    expect(await screen.findByText("Hit")).toHaveAttribute("data-lock-known", "true");
+
+    vi.mocked(searchResult).mockResolvedValue({
+      mode: "semantic",
+      items: [{ ...track, title: "Hit refreshed", mode: "semantic" }],
+      restrictedResultsPresent: false,
+    });
+    act(() => notifyEngagementChanged());
+    expect(await screen.findByText("Hit refreshed")).toHaveAttribute("data-lock-known", "false");
   });
 });
 

@@ -467,6 +467,7 @@ export function useGaplessAudio({
   advanceID,
   enabled,
   waitForAdvance = false,
+  canScheduleAdvance,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   mediaID: string;
@@ -477,12 +478,16 @@ export function useGaplessAudio({
   advanceID?: string;
   enabled: boolean;
   waitForAdvance?: boolean;
+  canScheduleAdvance?: () => boolean;
 }) {
   const mediaIDRef = useRef(mediaID);
   mediaIDRef.current = mediaID;
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
   const confirmAdvanceRef = useRef<(id: string) => void>(null);
+  const cancelAdvanceRef = useRef<() => void>(null);
+  const canScheduleAdvanceRef = useRef(canScheduleAdvance);
+  canScheduleAdvanceRef.current = canScheduleAdvance;
   const waitForAdvanceRef = useRef(waitForAdvance);
   waitForAdvanceRef.current = waitForAdvance;
 
@@ -750,6 +755,7 @@ export function useGaplessAudio({
       shadow(video);
     };
     confirmAdvanceRef.current = confirmAdvance;
+    cancelAdvanceRef.current = cancelNext;
 
     const prepare = async () => {
       decoding = true;
@@ -762,7 +768,13 @@ export function useGaplessAudio({
 
     const join = () => {
       const track = bridge.tracks.get(nextID);
-      if (waitForAdvance || !track || segmentFor(bridge, nextID)) return;
+      if (
+        waitForAdvance ||
+        canScheduleAdvanceRef.current?.() === false ||
+        !track ||
+        segmentFor(bridge, nextID)
+      )
+        return;
       // A suspended context would start the track late; a delay line would not line up.
       if (bridge.context.state !== "running" || audioDelayHolds(video)) return;
       const current = segmentFor(bridge, mediaIDRef.current);
@@ -817,6 +829,7 @@ export function useGaplessAudio({
       controller.abort();
       clearTimeout(timer);
       if (confirmAdvanceRef.current === confirmAdvance) confirmAdvanceRef.current = null;
+      if (cancelAdvanceRef.current === cancelNext) cancelAdvanceRef.current = null;
       video.removeEventListener("timeupdate", check);
       video.removeEventListener("playing", check);
       video.removeEventListener("waiting", onStall);
@@ -832,5 +845,7 @@ export function useGaplessAudio({
     };
   }, [enabled, mediaID, videoRef, nextID, nextURL, nextTrim, padding, waitForAdvance]);
 
-  return useCallback((id: string) => confirmAdvanceRef.current?.(id), []);
+  const confirmAdvance = useCallback((id: string) => confirmAdvanceRef.current?.(id), []);
+  const cancelAdvance = useCallback(() => cancelAdvanceRef.current?.(), []);
+  return { confirmAdvance, cancelAdvance };
 }

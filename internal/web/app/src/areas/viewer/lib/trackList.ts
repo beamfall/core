@@ -1,3 +1,4 @@
+import { fetchMediaForEntity } from "@/lib/graphql";
 import type { MediaRow } from "@/lib/graphql/browse";
 import type {
   EntityInfo,
@@ -203,6 +204,14 @@ export function audioQueue(items: readonly SourceItem[]): PlayQueueItem[] {
   return playQueueOf(items.map((item) => ({ ...item, mediaClass: AUDIO_CLASS })));
 }
 
+/** Refetch a windowed album in its listing order without using cached titles or locks. */
+export async function readAlbumMusicIDs(entityID: string, signal: AbortSignal): Promise<string[]> {
+  const items = await fetchMediaForEntity(entityID, signal);
+  return albumTrackRows(items, {}, new Set()).flatMap(({ item }) =>
+    item.mediaClass === AUDIO_CLASS && !item.locked ? [item.id] : [],
+  );
+}
+
 /** Consecutive rows that share a group, in order; one ungrouped run when none is grouped. */
 export function trackGroups(tracks: readonly TrackRow[]): { group?: number; rows: TrackRow[] }[] {
   const out: { group?: number; rows: TrackRow[] }[] = [];
@@ -281,6 +290,7 @@ export function playState(
   identity: string | null | undefined,
   queue: readonly PlayQueueItem[],
   item: { id: string; title: string },
+  albumEntityID?: string,
 ): PlayerNavState {
-  return { title: item.title, ...catalogQueueState(identity, queue, item.id) };
+  return { title: item.title, ...catalogQueueState(identity, queue, item.id, true, albumEntityID) };
 }

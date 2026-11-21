@@ -428,7 +428,12 @@ export function EntityPage() {
     if (!nextUp) return;
     const { item } = nextUp;
     navigate(mediaPath("watch", item.id), {
-      state: playState(identity, fallbackQueue ?? [], item),
+      state: playState(
+        identity,
+        fallbackQueue ?? [],
+        item,
+        directNext && trackOrder ? entityId : undefined,
+      ),
     });
   }
 

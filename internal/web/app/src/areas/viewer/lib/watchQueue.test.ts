@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { unavailableReasonMessage } from "./playback";
 import {
+  catalogQueueState,
   newStartID,
   playQueueOf,
   queueNeighbours,
@@ -76,6 +77,17 @@ describe("watchQueue (CORE-1143)", () => {
     ).toBeUndefined();
     expect(readPlayerNavState({ queue }, "v").queue).toBeUndefined();
     expect(readPlayerNavState({ queue, queueIdentity: "v" }, null).queue).toBeUndefined();
+  });
+
+  it("restores a windowed album reference only for the viewer who listed it", () => {
+    const album = Array.from({ length: 530 }, (_, i) => ({ id: `m${i}`, title: `Track ${i}` }));
+    const state = JSON.parse(
+      JSON.stringify(catalogQueueState("revealed", album, "m0", true, "e1")),
+    );
+    expect(readPlayerNavState(state, "revealed").queueSource).toEqual({ albumEntityID: "e1" });
+    expect(readPlayerNavState(state, "locked").queueSource).toBeUndefined();
+    state.queueSource = { albumEntityID: 1 };
+    expect(readPlayerNavState(state, "revealed").queueSource).toBeNull();
   });
 });
 

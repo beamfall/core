@@ -57,7 +57,7 @@ export function EntityMediaBrowse({
     );
   }
   const tracks = containerTrackRows(entity, items, rows);
-  if (tracks) return <ContainerTracks tracks={tracks} />;
+  if (tracks && entity) return <ContainerTracks tracks={tracks} albumEntityID={entity.id} />;
   if (entity && rows && entity.archetype === "person" && isAudioListing(items, rows))
     return <PersonListening entity={entity} items={items} rows={rows} />;
   if (entity?.archetype === "person") return <PersonFilmography items={items} />;
@@ -92,7 +92,7 @@ function PersonFilmography({ items }: { items: SourceItem[] }) {
   );
 }
 
-function ContainerTracks({ tracks }: { tracks: TrackRow[] }) {
+function ContainerTracks({ tracks, albumEntityID }: { tracks: TrackRow[]; albumEntityID: string }) {
   const t = useT();
   // One queue in display order, so playback runs on across groups.
   const queue = audioQueue(tracks.map((track) => track.item));
@@ -103,12 +103,25 @@ function ContainerTracks({ tracks }: { tracks: TrackRow[] }) {
       </h2>
       {trackGroups(tracks).map(({ group, rows: groupRows }) => {
         if (group === undefined)
-          return <TrackList key="all" rows={groupRows} queue={queue} label={t("trackListLabel")} />;
+          return (
+            <TrackList
+              key="all"
+              rows={groupRows}
+              queue={queue}
+              label={t("trackListLabel")}
+              albumEntityID={albumEntityID}
+            />
+          );
         const heading = t("trackGroupLabel", { number: group });
         return (
           <div key={group} className="bf-track-group">
             <h3 className="bf-track-group-title">{heading}</h3>
-            <TrackList rows={groupRows} queue={queue} label={heading} />
+            <TrackList
+              rows={groupRows}
+              queue={queue}
+              label={heading}
+              albumEntityID={albumEntityID}
+            />
           </div>
         );
       })}

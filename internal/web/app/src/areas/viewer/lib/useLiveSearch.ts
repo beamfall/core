@@ -16,7 +16,7 @@ export interface LiveSearch {
   items: SearchResultItem[] | null;
   /** The query `items` answers; lags `term` while loading. */
   resultTerm: string;
-  /** The mode the server actually served for `items`. */
+  /** The mode the server served for the initial results. Each row keeps its own mode. */
   servedMode: SearchMode | null;
   failed: boolean;
   hasMore?: boolean;
@@ -75,7 +75,7 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
       searchResult(term, mode, controller.signal).then(
         (res) =>
           settle({
-            items: res.items,
+            items: res.items.map((item) => ({ ...item, mode: res.mode })),
             resultTerm: term,
             servedMode: res.mode,
             failed: false,
@@ -114,7 +114,7 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
       do {
         const res = await searchResult(term, requestMode, controller.signal, { offset, limit: 50 });
         if (controller.signal.aborted) return;
-        for (const item of res.items) fresh.set(rowKey(item), item);
+        for (const item of res.items) fresh.set(rowKey(item), { ...item, mode: res.mode });
         offset += res.items.length;
         if (res.mode !== "keyword" || !res.hasMore || res.items.length === 0) break;
         requestMode = "keyword";
@@ -150,7 +150,10 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
           if (controller.signal.aborted) return;
           setSettled((prev) => ({
             ...prev,
-            items: mergeSearchPages(prev.items ?? [], res.items),
+            items: mergeSearchPages(
+              prev.items ?? [],
+              res.items.map((item) => ({ ...item, mode: res.mode })),
+            ),
             nextOffset: offset + res.items.length,
             hasMore: res.mode === "keyword" && res.hasMore === true && res.items.length > 0,
           }));

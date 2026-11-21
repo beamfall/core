@@ -58,10 +58,12 @@ import {
   SUBTITLE_APPEARANCE_KEYS,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
+import { readAlbumMusicIDs } from "../lib/trackList";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
   catalogQueueSource,
+  newStartID,
   type PlayQueueItem,
   queueNeighbours,
   queueOfClass,
@@ -181,7 +183,15 @@ export function PlayerPage() {
     );
   }
   if (mediaId && feature) {
-    const entry = { mediaId, state: location.state, search: location.search, titleSelectionEpoch };
+    const carriedKey = (location.state as { playbackKey?: unknown } | null)?.playbackKey;
+    const playbackKey = typeof carriedKey === "string" ? carriedKey : location.key;
+    const entry = {
+      mediaId,
+      state: location.state,
+      search: location.search,
+      titleSelectionEpoch,
+      playbackKey,
+    };
     return host ? <AttachToHost host={host} entry={entry} /> : <FeaturePlayer entry={entry} />;
   }
   if (current) {
@@ -211,10 +221,10 @@ function AttachToHost({
   host: NonNullable<ReturnType<typeof usePlayerHost>>;
   entry: WatchEntry;
 }) {
-  const { mediaId, state, search, titleSelectionEpoch } = entry;
+  const { mediaId, state, search, titleSelectionEpoch, playbackKey } = entry;
   useLayoutEffect(() => {
-    host.attach({ mediaId, state, search, titleSelectionEpoch });
-  }, [host, mediaId, state, search, titleSelectionEpoch]);
+    host.attach({ mediaId, state, search, titleSelectionEpoch, playbackKey });
+  }, [host, mediaId, state, search, titleSelectionEpoch, playbackKey]);
   useLayoutEffect(() => () => host.detach(), [host]);
   return null;
 }
@@ -242,17 +252,19 @@ function FeaturePlayer({
   const epoch = getIdentityEpochSignal();
   const params = new URLSearchParams(entry.search);
   const routeQueueProfile = params.get(MUSIC_QUEUE_PARAM);
+  // A queue conversion or mini player reattachment carries the same playback
+  // key. A catalog link creates a new start even when it names the same Media.
+  const { playbackKey } = entry;
   const queueRoute = useMemo(
     () => ({
       mediaId,
-      routeQueueProfile,
       identity,
       epoch,
       revealed,
       profileID,
-      selection: entry.titleSelectionEpoch,
+      playbackKey,
     }),
-    [mediaId, routeQueueProfile, identity, epoch, revealed, profileID, entry.titleSelectionEpoch],
+    [mediaId, identity, epoch, revealed, profileID, playbackKey],
   );
   const converted = useRef<typeof queueRoute | null>(null);
   const [conversion, setConversion] = useState<typeof queueRoute>();
@@ -278,7 +290,8 @@ function FeaturePlayer({
     [musicQueue?.rows, mediaId],
   );
 
-  const needsInitialQueueRead = serverQueueRun && queueMatchesProfile && !musicQueue;
+  const needsInitialQueueRead =
+    serverQueueRun && queueMatchesProfile && !convertedHere && !musicQueue;
   useEffect(() => {
     if (needsInitialQueueRead) void refreshMusicQueue();
   }, [needsInitialQueueRead, refreshMusicQueue]);
@@ -296,9 +309,11 @@ function FeaturePlayer({
   // never shows the previous item's title, artwork or credits.
   const [mediaRead, setMediaRead] = useState<{
     route: typeof queueRoute;
+    server: boolean;
     info: GenericMediaInfo | null;
   } | null>(null);
-  const mediaReadIsCurrent = mediaRead?.route === queueRoute && !epoch?.aborted;
+  const mediaReadIsCurrent =
+    mediaRead?.route === queueRoute && mediaRead.server === serverQueueRun && !epoch?.aborted;
   const queueTitlesAllowed = !serverQueueRun || queueReady;
   const media = queueTitlesAllowed && mediaReadIsCurrent ? mediaRead.info : null;
 
@@ -306,11 +321,7 @@ function FeaturePlayer({
   // state, with the siblings it was shown with as the play queue. The media(id)
   // read below fills in the title for a deep link, plus artwork and credits.
   const navState = readPlayerNavState(entry.state, routeQueueProfile !== null ? null : identity);
-  const { queueIdentity, queueSource } = navState;
-  const fullCatalog = useMemo(() => {
-    if (queueSource === undefined) return undefined;
-    return catalogQueueSource(queueSource, epoch);
-  }, [queueSource, epoch]);
+  const { queueIdentity } = navState;
   const navTitle = (serverQueueRun ? "" : navState.title) || media?.title || "";
   // Docked, the browse page under the mini player names the tab (CORE-2322).
   // A Revealed session may be playing a restricted title, which stays out of
@@ -565,7 +576,13 @@ function FeaturePlayer({
           };
       if (docked && onAdvanceDocked) {
         const titleSelectionEpoch = selectPartyTitle ? hostTitleSelectionEpoch() : undefined;
-        onAdvanceDocked({ mediaId: id, state, search, titleSelectionEpoch });
+        onAdvanceDocked({
+          mediaId: id,
+          state,
+          search,
+          titleSelectionEpoch,
+          playbackKey: newStartID(),
+        });
         return;
       }
       navigate(`${mediaPath("watch", id)}${search}`, { replace: true, state });
@@ -625,22 +642,27 @@ function FeaturePlayer({
       ? reportedNext
       : undefined
     : admissibleNext(reportedNext, catalogQueue, playingClass, learnedClasses);
-  // Decode early, then let the ended read authorize both the sound and the route.
-  const confirmGaplessAdvance = useGaplessAudio({
-    videoRef,
-    mediaID: mediaId || "",
-    stream: state.stream,
-    next: serverQueueRun ? issuedNext : reportedNext,
-    advanceID: nextInQueue?.id ?? issuedNext?.mediaID,
-    enabled:
-      playing &&
-      showAudioStage &&
-      !karaokeSong &&
-      !partyLeads &&
-      state.mediaID === (mediaId || "") &&
-      (serverQueueRun ? !!issuedNext : !!(nextInQueue || issuedNext?.streams)),
-    waitForAdvance: true,
-  });
+  const editingCatalog = useRef<typeof queueRoute | null>(null);
+  // Catalog joins use normal gapless scheduling. Once an edit begins, only
+  // a confirmed advance can play the successor.
+  const { confirmAdvance: confirmGaplessAdvance, cancelAdvance: cancelGaplessAdvance } =
+    useGaplessAudio({
+      videoRef,
+      mediaID: mediaId || "",
+      stream: state.stream,
+      next: serverQueueRun ? issuedNext : reportedNext,
+      advanceID: nextInQueue?.id ?? issuedNext?.mediaID,
+      enabled:
+        playing &&
+        showAudioStage &&
+        !karaokeSong &&
+        !partyLeads &&
+        state.mediaID === (mediaId || "") &&
+        (serverQueueRun ? !!issuedNext : !!(nextInQueue || issuedNext?.streams)),
+      waitForAdvance: serverQueueRun,
+      canScheduleAdvance: () =>
+        editingCatalog.current !== queueRoute && converted.current !== queueRoute,
+    });
   type QueueAction = "start" | "next" | "previous" | "ended";
   const [failedAction, setFailedAction] = useState<{
     action: QueueAction;
@@ -667,6 +689,31 @@ function FeaturePlayer({
   useLayoutEffect(() => {
     navStateRef.current = navState;
   }, [navState]);
+  const markedQueueEntry = useRef<string | null>(null);
+  const markQueueRoute = useCallback(
+    (queueProfileID: string) => {
+      if (markedQueueEntry.current === location.key) return;
+      const search = new URLSearchParams(entry.search);
+      search.set(MUSIC_QUEUE_PARAM, queueProfileID);
+      navigate(`${mediaPath("watch", mediaId)}?${search}`, {
+        replace: true,
+        state: {
+          tracks: navStateRef.current.tracks,
+          startID: navStateRef.current.startID,
+          playbackKey,
+          selectPartyTitle: false,
+        },
+      });
+      markedQueueEntry.current = location.key;
+    },
+    [entry.search, location.key, mediaId, navigate, playbackKey],
+  );
+  useLayoutEffect(() => {
+    // Back can reattach a run whose conversion began on the mini player.
+    if (convertedHere && !docked && routeQueueProfile === null && queueProfile) {
+      markQueueRoute(queueProfile);
+    }
+  }, [convertedHere, docked, routeQueueProfile, queueProfile, markQueueRoute]);
   const { deviceRole, profile } = session ?? {};
   const audioCursor = infoIsCurrent
     ? isAudio
@@ -676,33 +723,51 @@ function FeaturePlayer({
     return registerMusicQueuePlayer({
       scope: { profileID, revealed, deviceRole, profile },
       id: mediaId,
+      cursor: queueRoute,
       canEdit: () => activeQueueRoute.current === queueRoute && advancedFrom.current !== queueRoute,
+      beginEdit: serverQueueRun
+        ? undefined
+        : () => {
+            editingCatalog.current = queueRoute;
+            cancelGaplessAdvance();
+            return () => {
+              if (editingCatalog.current === queueRoute) editingCatalog.current = null;
+            };
+          },
       readCatalog: serverQueueRun
         ? undefined
-        : async () => {
+        : async (signal) => {
             if (converted.current === queueRoute) return;
-            const state = navStateRef.current;
-            if (fullCatalog === null) throw new Error("Catalog queue source unavailable");
-            const source = fullCatalog ?? state.queue;
+            playAllSource.current = null;
+            const { queue, queueSource } = navStateRef.current;
+            if (queueSource && typeof queueSource === "object") {
+              const album = await readAlbumMusicIDs(queueSource.albumEntityID, signal);
+              if (!album.includes(mediaId)) throw new Error("Album no longer contains the cursor");
+              return album;
+            }
+            const source =
+              queueSource === undefined ? queue : catalogQueueSource(queueSource, epoch);
+            if (source === null) throw new Error("Catalog queue source unavailable");
             if (source)
               return source.filter((row) => row.mediaClass === "audio").map((row) => row.id);
             playAllSource.current = playQueueHandle();
             return playAllMusicIDs(mediaId);
           },
-      receive: (rows, convert) => {
-        acceptRows(rows);
-        if (!convert) return;
+      beginConversion: () => {
+        // Mark the profile-bound run before dispatching the first mutation.
+        // A reload during an ambiguous write must recover from server reads.
+        if (!docked) markQueueRoute(profileID);
         leavePlayQueue(playAllSource.current);
         playAllSource.current = null;
         converted.current = queueRoute;
         setConversion(queueRoute);
       },
+      receive: acceptRows,
     });
   }, [
     profileID,
     mediaId,
     audioCursor,
-    fullCatalog,
     queueAllowed,
     revealed,
     deviceRole,
@@ -710,6 +775,10 @@ function FeaturePlayer({
     serverQueueRun,
     acceptRows,
     queueRoute,
+    epoch,
+    docked,
+    markQueueRoute,
+    cancelGaplessAdvance,
   ]);
 
   const runQueueAction = useCallback(
@@ -793,10 +862,23 @@ function FeaturePlayer({
   );
   const playNext = useMemo(() => {
     if (partyLeads) return undefined;
-    if (serverQueueRun) return nextInQueue ? () => void runQueueAction("next") : undefined;
+    if (serverQueueRun)
+      return nextInQueue || (convertedHere && !musicQueue?.rows)
+        ? () => void runQueueAction("next")
+        : undefined;
     if (!nextInQueue && !issuedNext?.streams) return undefined;
     return isAudio ? () => void runQueueAction("next", catalogNext) : () => catalogNext();
-  }, [partyLeads, serverQueueRun, nextInQueue, issuedNext, isAudio, runQueueAction, catalogNext]);
+  }, [
+    partyLeads,
+    serverQueueRun,
+    nextInQueue,
+    convertedHere,
+    musicQueue?.rows,
+    issuedNext,
+    isAudio,
+    runQueueAction,
+    catalogNext,
+  ]);
   // A card queue names its own previous item; without one, a Play all queue
   // that holds this item may (stepping back keeps that queue going).
   const playAllPrevious = useMemo(
@@ -937,6 +1019,7 @@ function FeaturePlayer({
         ...carried,
         tracks: navState.tracks,
         startID: navState.startID,
+        playbackKey,
         skipPrePlay: true,
         selectPartyTitle: false,
       },
@@ -950,39 +1033,7 @@ function FeaturePlayer({
     queueProfile,
     navState.tracks,
     navState.startID,
-  ]);
-
-  useEffect(() => {
-    if (
-      !convertedHere ||
-      !queueProfile ||
-      docked ||
-      routeQueueProfile !== null ||
-      !musicQueue?.rows ||
-      pendingQueueAction.current ||
-      advancedFrom.current === queueRoute
-    )
-      return;
-    // The same Media keeps playing while a reload can now enter the server run.
-    // A queued Next will write the server route itself.
-    const search = new URLSearchParams(entry.search);
-    search.set(MUSIC_QUEUE_PARAM, queueProfile);
-    navigate(`${location.pathname}?${search}`, {
-      replace: true,
-      state: { tracks: navState.tracks, startID: navState.startID, selectPartyTitle: false },
-    });
-  }, [
-    convertedHere,
-    docked,
-    entry.search,
-    location.pathname,
-    musicQueue?.rows,
-    navState.tracks,
-    navState.startID,
-    navigate,
-    queueProfile,
-    queueRoute,
-    routeQueueProfile,
+    playbackKey,
   ]);
 
   // Queue metadata comes from an uncached read for this route and identity.
@@ -991,7 +1042,7 @@ function FeaturePlayer({
     const controller = new AbortController();
     const settle = (info: GenericMediaInfo | null) => {
       if (!controller.signal.aborted && !epoch?.aborted) {
-        setMediaRead({ route: queueRoute, info });
+        setMediaRead({ route: queueRoute, server: serverQueueRun, info });
       }
     };
     const read = serverQueueRun ? readMedia : fetchMedia;

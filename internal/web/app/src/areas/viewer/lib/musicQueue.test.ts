@@ -53,18 +53,18 @@ describe("server Play Queue edits", () => {
   });
 
   function player(id: string, readCatalog?: () => Promise<string[]>) {
-    const receive = vi.fn<(rows: MusicQueueRow[] | null, convert: boolean) => void>();
+    const receive = vi.fn<(rows: MusicQueueRow[] | null) => void>();
+    const cursor = {};
     dispose = registerMusicQueuePlayer({
       id,
       scope,
+      cursor,
       readCatalog,
-      receive: (next, convert) => {
-        receive(next, convert);
-        if (convert) {
-          dispose?.();
-          dispose = registerMusicQueuePlayer({ id, scope, receive });
-        }
+      beginConversion: () => {
+        dispose?.();
+        dispose = registerMusicQueuePlayer({ id, scope, cursor, receive });
       },
+      receive,
     });
     return receive;
   }
@@ -77,7 +77,7 @@ describe("server Play Queue edits", () => {
     expect(await editMusicQueue(scope, "target", "tail")).toBe("confirmed");
     expect(rows.map((row) => row.id)).toEqual(["head", "playing", "after", "target"]);
     expect(reads).toBe(4);
-    expect(receive).toHaveBeenLastCalledWith(rows, false);
+    expect(receive).toHaveBeenLastCalledWith(rows);
     expect(await editMusicQueue(scope, "playing", "tail")).toBe("dropped");
     expect(writes).toHaveLength(2);
   });
@@ -91,7 +91,8 @@ describe("server Play Queue edits", () => {
     rows = [track("old-1"), track(current), track(album[3].id), track("old-2")];
     expect(state.queueSource).toEqual(expect.any(String));
     const source = vi.fn(async () => {
-      const full = catalogQueueSource(state.queueSource ?? null, undefined);
+      const key = state.queueSource;
+      const full = catalogQueueSource(typeof key === "string" ? key : null, undefined);
       if (!full) throw new Error("Missing catalog source");
       return full.map((row) => row.id);
     });
@@ -103,7 +104,7 @@ describe("server Play Queue edits", () => {
       ...kept,
       ...album.map((row) => row.id).filter((id) => !kept.includes(id)),
     ]);
-    expect(receive).toHaveBeenLastCalledWith(rows, true);
+    expect(receive).toHaveBeenLastCalledWith(rows);
     expect(await editMusicQueue(scope, album[529].id, "tail")).toBe("confirmed");
     expect(source).toHaveBeenCalledTimes(1);
     expect(reads).toBeGreaterThan(4);
@@ -118,10 +119,7 @@ describe("server Play Queue edits", () => {
     };
     expect(await editMusicQueue(scope, "new", "next")).toBe("failed");
     expect(writes.map((write) => write.mediaID)).toEqual(["playing", "played", "failed"]);
-    expect(receive).toHaveBeenLastCalledWith(
-      [track("playing"), track("old"), track("played")],
-      true,
-    );
+    expect(receive).toHaveBeenLastCalledWith([track("playing"), track("old"), track("played")]);
     expect(await editMusicQueue(scope, "later", "tail")).toBe("confirmed");
     expect(source).toHaveBeenCalledTimes(1);
     expect(writes.map((write) => write.mediaID)).toEqual(["playing", "played", "failed", "later"]);
@@ -137,10 +135,7 @@ describe("server Play Queue edits", () => {
     expect(await editMusicQueue(scope, "target", "next")).toBe("confirmed");
     expect(writes).toHaveLength(1);
     expect(reads).toBe(2);
-    expect(receive).toHaveBeenLastCalledWith(
-      [track("playing"), track("target"), track("old")],
-      false,
-    );
+    expect(receive).toHaveBeenLastCalledWith([track("playing"), track("target"), track("old")]);
   });
 
   it("drops a PROFILE_MISMATCH without adopting or retrying the edit", async () => {

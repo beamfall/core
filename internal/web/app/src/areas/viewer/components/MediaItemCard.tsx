@@ -51,6 +51,7 @@ export function MediaItemCard({
   focusAnchor,
   queue,
   queueLockKnown = true,
+  queueSourceLockKnown = queueLockKnown,
   playOnActivate,
   showPlayButton = false,
   showYear = false,
@@ -68,6 +69,8 @@ export function MediaItemCard({
   queue?: PlayQueueItem[];
   /** False for a listing that does not establish certification lock state. */
   queueLockKnown?: boolean;
+  /** Whether every sibling is from a listing that establishes lock state. */
+  queueSourceLockKnown?: boolean;
   /** A list row plays at once; a poster opens the Media detail page (CORE-1144). */
   playOnActivate?: boolean;
   /** Child Media have a Play button alongside the detail link. */
@@ -180,7 +183,7 @@ export function MediaItemCard({
   // stream), bound to the viewer identity. A one-item queue still goes, so it
   // ends an earlier Play all queue. The detail page forwards it to its Play.
   function queueState() {
-    return catalogQueueState(identity, queue, item.id, queueLockKnown);
+    return catalogQueueState(identity, queue, item.id, queueSourceLockKnown);
   }
 
   // Carry the title forward so the player's info overlay can name the Media

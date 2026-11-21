@@ -154,11 +154,15 @@ export function serializeMusicQueue<T>(work: () => T | Promise<T>): Promise<T> {
 interface QueuePlayer {
   scope: QueueIdentity;
   id: string;
+  /** Stays stable if this cursor re-registers during a conversion. */
+  cursor?: object;
   /** False while a navigation is replacing the cursor. */
   canEdit?: () => boolean;
   /** Present until this catalog run starts using the server. */
-  readCatalog?: () => Promise<readonly string[] | undefined>;
-  receive: (rows: MusicQueueRow[] | null, convert: boolean) => void;
+  readCatalog?: (signal: AbortSignal) => Promise<readonly string[] | undefined>;
+  beginEdit?: () => () => void;
+  beginConversion?: () => void;
+  receive: (rows: MusicQueueRow[] | null) => void;
 }
 
 let player: QueuePlayer | undefined;
@@ -194,73 +198,86 @@ export function editMusicQueue(scope: QueueIdentity, id: string, edit: MusicQueu
   return serializeMusicQueue(async (): Promise<QueueEditResult> => {
     if (signal.aborted || epoch !== getIdentityEpochSignal()) return "dropped";
     const forProfile = () =>
-      player?.scope.profileID === scope.profileID && player.scope.revealed === scope.revealed
+      player?.scope.profileID === scope.profileID &&
+      player.scope.revealed === scope.revealed &&
+      player.scope.deviceRole === scope.deviceRole &&
+      player.scope.profile === scope.profile
         ? player
         : undefined;
-    let active: QueuePlayer | undefined;
-    let convert = false;
-    let wrote = false;
-    let requested = false;
-    let anchor: string | undefined;
+    const active = forProfile();
+    if (active?.id === id) return "dropped";
+    const endEdit = active?.beginEdit?.();
+    const sameCursor = (live: QueuePlayer | undefined) =>
+      live === active || (active?.cursor !== undefined && live?.cursor === active.cursor);
     try {
-      if (forProfile()?.id === id) return "dropped";
-      const rows = await readQueue(scope, signal);
-      active = forProfile();
-      const current = active?.id;
-      if (current === id) return "dropped";
-      const canWrite = () => forProfile()?.id === current && active?.canEdit?.() !== false;
-      if (!canWrite()) return "failed";
+      let convert = false;
+      let wrote = false;
+      let requested = false;
+      let anchor: string | undefined;
+      try {
+        const rows = await readQueue(scope, signal);
+        const current = active?.id;
+        const reader = forProfile();
+        if (!sameCursor(reader) || reader?.canEdit?.() === false) return "failed";
 
-      const catalog = await active?.readCatalog?.();
-      const withoutTarget = rows.filter((row) => row.id !== id);
-      const write = (mediaID: string, position?: number, placement = false) => {
-        if (!canWrite()) throw new Error("Playback cursor changed");
-        wrote = true;
-        if (placement) requested = true;
-        return addTrack(mediaID, position, scope.profileID, signal);
-      };
+        const catalog = await reader?.readCatalog?.(signal);
+        const withoutTarget = rows.filter((row) => row.id !== id);
+        const write = (mediaID: string, position?: number, placement = false) => {
+          signal.throwIfAborted();
+          const live = forProfile();
+          if (!sameCursor(live) || live?.canEdit?.() === false) {
+            throw new Error("Playback cursor changed");
+          }
+          if (!wrote && convert) live?.beginConversion?.();
+          wrote = true;
+          if (placement) requested = true;
+          return addTrack(mediaID, position, scope.profileID, signal);
+        };
 
-      if (current && catalog) {
-        convert = true;
-        if (rows[0]?.id !== current) await write(current, 0);
-        const queued = new Set(rows.map((row) => row.id));
-        queued.add(current);
-        for (const mediaID of catalog) {
-          if (queued.has(mediaID)) continue;
-          await write(mediaID);
-          queued.add(mediaID);
+        if (current && catalog) {
+          convert = true;
+          if (rows[0]?.id !== current) await write(current, 0);
+          const queued = new Set(rows.map((row) => row.id));
+          queued.add(current);
+          for (const mediaID of catalog) {
+            if (queued.has(mediaID)) continue;
+            await write(mediaID);
+            queued.add(mediaID);
+          }
         }
+
+        const cursorIndex = withoutTarget.findIndex((row) => row.id === current);
+        const position = edit === "tail" ? undefined : convert ? 1 : cursorIndex + 1;
+        if (edit === "next" && (convert || cursorIndex >= 0)) anchor = current;
+        await write(id, position, true);
+      } catch (error) {
+        if (error instanceof QueueIdentityChanged || signal.aborted) return "dropped";
+        if (!wrote) return "failed";
+        // A rejected response may follow a committed write. The only recovery
+        // after a write starts is a fresh read of the server's actual order.
       }
 
-      const cursorIndex = withoutTarget.findIndex((row) => row.id === current);
-      const position = edit === "tail" ? undefined : convert ? 1 : cursorIndex + 1;
-      if (edit === "next" && (convert || cursorIndex >= 0)) anchor = current;
-      await write(id, position, true);
-    } catch (error) {
-      if (error instanceof QueueIdentityChanged || signal.aborted) return "dropped";
-      if (!wrote) return "failed";
-      // A rejected response may follow a committed write. The only recovery
-      // after a write starts is a fresh read of the server's actual order.
-    }
+      let rows: MusicQueueRow[] | null;
+      try {
+        rows = await readQueue(scope, signal);
+      } catch (error) {
+        if (error instanceof QueueIdentityChanged || signal.aborted) return "dropped";
+        rows = null;
+      }
+      const live = forProfile();
+      if (live && sameCursor(live) && live.canEdit?.() !== false) {
+        live.receive(rows);
+      }
+      if (!rows || !requested) return "failed";
 
-    let rows: MusicQueueRow[] | null;
-    try {
-      rows = await readQueue(scope, signal);
-    } catch (error) {
-      if (error instanceof QueueIdentityChanged || signal.aborted) return "dropped";
-      rows = null;
+      const cursor = rows.findIndex((row) => row.id === anchor);
+      if ((anchor && cursor < 0) || (convert && rows[0]?.id !== active?.id)) return "failed";
+      const placed = edit === "tail" ? rows.at(-1) : rows[cursor + 1];
+      if (placed?.id !== id || !playableMusic(placed)) return "failed";
+      return "confirmed";
+    } finally {
+      endEdit?.();
     }
-    const live = forProfile();
-    if (active && live?.id === active.id && live.canEdit?.() !== false) {
-      live.receive(rows, convert);
-    }
-    if (!rows || !requested) return "failed";
-
-    const cursor = rows.findIndex((row) => row.id === anchor);
-    if ((anchor && cursor < 0) || (convert && rows[0]?.id !== active?.id)) return "failed";
-    const placed = edit === "tail" ? rows.at(-1) : rows[cursor + 1];
-    if (placed?.id !== id || !playableMusic(placed)) return "failed";
-    return "confirmed";
   });
 }
 
@@ -350,7 +367,11 @@ export function useMusicQueue() {
       if (!read) return;
       read.pending?.controller.abort();
       read.pending = undefined;
-      setResult({ scope, failed: rows === null, rows: rows ?? undefined });
+      setResult((previous) => ({
+        scope,
+        failed: rows === null,
+        rows: rows ?? (previous?.scope === scope ? previous.rows : undefined),
+      }));
     },
     [scope, current],
   );

@@ -895,6 +895,34 @@ describe("EntityPage audio container order", () => {
     expect(playerState()).toEqual({ mediaId: "d1t1", queue: ["d1t1", "d1t2", "d2t1"] });
   });
 
+  it.each(["hero", "row"])(
+    "carries a refetchable source from a large album's %s Play",
+    async (start) => {
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(
+        Array.from({ length: 530 }, (_, i) => ({
+          id: `track-${i + 1}`,
+          kind: "media",
+          title: `Track ${i + 1}`,
+          mediaClass: "audio",
+          index: i + 1,
+        })),
+      );
+      const { container } = renderEntity();
+      const list = await screen.findByRole("list", { name: "Tracks" });
+      const play =
+        start === "hero"
+          ? container.querySelector(".bg-primary")
+          : within(list).getByRole("button", { name: "Play Track 1" });
+      expect(play).toHaveAccessibleName("Play Track 1");
+      fireEvent.click(play!);
+      const player = screen.getByRole("status", { name: "player" }).textContent ?? "";
+      const state = JSON.parse(player.slice("track-1 ".length));
+      expect(state.queue).toHaveLength(500);
+      expect(state.queueIdentity).toBe(identity);
+      expect(state.queueSource).toEqual({ albumEntityID: record.id });
+    },
+  );
+
   it.each(["title", "More"])("opens the second disc track's detail through %s", async (entry) => {
     renderEntity();
     const disc = within(await screen.findByRole("list", { name: "Disc 2" }));

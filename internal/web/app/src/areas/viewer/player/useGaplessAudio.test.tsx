@@ -250,13 +250,14 @@ interface Props {
   stream?: PlaybackStream;
   enabled?: boolean;
   waitForAdvance?: boolean;
+  canScheduleAdvance?: () => boolean;
 }
 
 function render(element: HTMLVideoElement, waitForAdvance = false) {
   // Stable, as the player's own ref is.
   const videoRef = { current: element };
   return renderHook(
-    ({ mediaID, next, stream, enabled = true, waitForAdvance }: Props) =>
+    ({ mediaID, next, stream, enabled = true, waitForAdvance, canScheduleAdvance }: Props) =>
       useGaplessAudio({
         videoRef,
         mediaID,
@@ -265,6 +266,7 @@ function render(element: HTMLVideoElement, waitForAdvance = false) {
         advanceID: next.mediaID,
         enabled,
         waitForAdvance,
+        canScheduleAdvance,
       }),
     { initialProps: { mediaID: "m1", next: nextItem("m2"), waitForAdvance } as Props },
   );
@@ -302,9 +304,9 @@ describe("useGaplessAudio", () => {
 
     element.currentTime = 60;
     element.dispatchEvent(new Event("ended"));
-    hook.result.current("m3");
+    hook.result.current.confirmAdvance("m3");
     expect(sources).toHaveLength(0);
-    hook.result.current("m2");
+    hook.result.current.confirmAdvance("m2");
     expect(sources).toHaveLength(1);
     expect(sources[0].start.mock.calls[0][0]).toBe(5);
   });
@@ -318,6 +320,24 @@ describe("useGaplessAudio", () => {
     expect(sources[0].disconnect).toHaveBeenCalledOnce();
     element.dispatchEvent(new Event("timeupdate"));
     expect(sources).toHaveLength(1);
+  });
+
+  it("cancels a scheduled successor synchronously while a catalog edit is pending", async () => {
+    const element = playing();
+    let editing = false;
+    const hook = render(element);
+    hook.rerender({ mediaID: "m1", next: nextItem("m2"), canScheduleAdvance: () => !editing });
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+
+    editing = true;
+    hook.result.current.cancelAdvance();
+    expect(sources[0].stop).toHaveBeenCalledOnce();
+    element.dispatchEvent(new Event("timeupdate"));
+    expect(sources).toHaveLength(1);
+
+    editing = false;
+    element.dispatchEvent(new Event("timeupdate"));
+    expect(sources).toHaveLength(2);
   });
 
   it("starts the next track where the element ends and mutes the element from its end", async () => {
