@@ -263,7 +263,7 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `webhook` | store, jsonstate |
 | `watcher` | store |
 | `schedule` | store |
-| `manifest` | store, plugin, auth |
+| `manifest` | store, plugin, auth, l10n |
 | `graphquery` | — |
 | `graphshape` | — |
 | `graph` | any capability above (incl. store, graphquery); never server, app |

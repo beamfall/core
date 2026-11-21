@@ -1,14 +1,14 @@
 {
   "locked-adult/graph-contract.json": "9e3d2cc6e933b2721956170efdf9f1c24dbc33d4632debaa0664920e70809970",
-  "locked-adult/manifest.json": "93b529df53dd7f8f6a76bd1e8aaa0c8a4f7596d2a57ea865823c52a6d389f6b6",
+  "locked-adult/manifest.json": "60e24e001e6bafcc650dbcc1ddd0511f4f507ade54d4b88f0fb4b281202c6b5b",
   "locked-adult/playback-info.json": "fc8a41745c3f602e6101e50e6d26a9743fc55630a684e928a579a9cdc6a9881e",
   "managed-child/graph-contract.json": "3f83972f7e05245616c88232b9840b2c6e21971a8119e9e5ae1e1828408e32fa",
-  "managed-child/manifest.json": "a4b46690c94dd6f82100091ebb5a5bf5df71ed092b0284f0c055fa7a2e3060ba",
+  "managed-child/manifest.json": "fc27dd5541c1165033275833f2675ad636439ab79e628639c3f2496b3b38ab9e",
   "managed-child/playback-info.json": "aba0c9fce553db45c299c87811f07f7fed3548225ccf830bcaf48ed44a5fd2dd",
   "manager/graph-contract.json": "d139595c609ba9feba9c905a670874bfc41d3bcb078a8c309e7d0a77e2592013",
-  "manager/manifest.json": "93b529df53dd7f8f6a76bd1e8aaa0c8a4f7596d2a57ea865823c52a6d389f6b6",
+  "manager/manifest.json": "60e24e001e6bafcc650dbcc1ddd0511f4f507ade54d4b88f0fb4b281202c6b5b",
   "manager/playback-info.json": "4b4a64a1ac26db6a5f8a721a10a8c4665d7b232eb614533c8a0869c561256936",
   "revealed-adult/graph-contract.json": "515bc79ead34ba15afbddab012c7d69d21047b63e03cc89accce5cba55815856",
-  "revealed-adult/manifest.json": "250a2fa31b8f06255f196cf0e10f1c93fa9a3f0b38568e1847f0989740d9f78e",
+  "revealed-adult/manifest.json": "a85bec18b24806e1ae21b7a77a77bf188b7f4c24acaa834a8e8c807f14c44aa9",
   "revealed-adult/playback-info.json": "bfbb3d8bfaea77f4ebc76c2e7ae6b12b9dd1ae70c131b05df9eb8c38759e7e78"
 }

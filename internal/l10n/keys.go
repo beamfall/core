@@ -29,3 +29,7 @@ const (
 	SetupLANHintFinishSetup Key = "setup.lan_hint.finish_setup"
 	SetupLANHintSignIn      Key = "setup.lan_hint.sign_in"
 )
+
+// Home shelf titles added after CORE-2102, rendered into every shipped locale
+// of the manifest's LocaleString (CORE-2822).
+const ManifestShelfNextUp Key = "manifest.shelf.next_up"

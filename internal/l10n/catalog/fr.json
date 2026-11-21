@@ -3,6 +3,7 @@
   "library_root.missing": "Le dossier {path} n’existe pas sur le serveur.",
   "library_root.not_folder": "{path} est un fichier, pas un dossier.",
   "library_root.unreadable": "Le serveur n’a pas l’autorisation de lire {path}.",
+  "manifest.shelf.next_up": "À suivre",
   "notification.access_request.title": "Accès demandé",
   "notification.extension_request.title": "Demande de temps supplémentaire",
   "notification.watch_party_invite.title": "Invitation Watch Party",

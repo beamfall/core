@@ -3,6 +3,7 @@
   "library_root.missing": "A pasta {path} não existe no servidor.",
   "library_root.not_folder": "{path} é um arquivo, não uma pasta.",
   "library_root.unreadable": "O servidor não tem permissão para ler {path}.",
+  "manifest.shelf.next_up": "A seguir",
   "notification.access_request.title": "Acesso solicitado",
   "notification.extension_request.title": "Mais tempo solicitado",
   "notification.watch_party_invite.title": "Convite Watch Party",

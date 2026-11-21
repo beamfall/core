@@ -18,6 +18,21 @@
         },
         {
           "artworkSlot": "poster",
+          "id": "next-up",
+          "kind": "shelf",
+          "source": {
+            "kind": "next-up"
+          },
+          "title": {
+            "de": "Als Nächstes",
+            "en": "Up Next",
+            "es": "A continuación",
+            "fr": "À suivre",
+            "pt": "A seguir"
+          }
+        },
+        {
+          "artworkSlot": "poster",
           "id": "watchlist",
           "kind": "shelf",
           "source": {

@@ -122,6 +122,32 @@ func TestHomeLayoutIncludesProfileScopedMostPlayedRail(t *testing.T) {
 	}
 }
 
+// Home follows ADR-0028 §9: Up Next sits right after Continue Watching
+// (CORE-2822), so the next item after a finished one is one click away.
+func TestHomeLayoutPutsUpNextAfterContinueWatching(t *testing.T) {
+	service, authService := newTestService(t)
+	scope, err := authService.Scope(context.Background(), "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := service.Document(context.Background(), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := layoutByID(doc, "layout-home")
+	if len(home.Sections) < 2 {
+		t.Fatalf("home sections = %#v", home.Sections)
+	}
+	if got := home.Sections[0].Source.Kind; got != "continue-watching" {
+		t.Fatalf("first home source = %q, want continue-watching", got)
+	}
+	upNext := home.Sections[1]
+	if upNext.ID != "next-up" || upNext.Kind != "shelf" || upNext.Source.Kind != "next-up" ||
+		upNext.Title.Resolve("") != "Up Next" {
+		t.Fatalf("second home section = %#v", upNext)
+	}
+}
+
 func TestDocumentListsDemoSeedLibraries(t *testing.T) {
 	st, err := store.Open(context.Background(), t.TempDir(), store.Options{SeedProfile: store.SeedProfileDemo})
 	if err != nil {

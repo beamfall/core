@@ -81,7 +81,7 @@ var archWhitelist = map[string][]string{
 
 	"watcher":      {"store"},
 	"schedule":     {"store"},
-	"manifest":     {"store", "plugin", "auth"},
+	"manifest":     {"store", "plugin", "auth", "l10n"},
 	"web":          {},                     // leaf; the go:embed shim only
 	"remoteaccess": {"config"},             // direct-HTTPS/ACME + relay carrier; reads config, owns autocert (ADR-0012/0018/0025)
 	"moderation":   {"store", "jsonstate"}, // App Store Guideline 1.2 UGC substrate (NATIVEMGR-4): file-backed report/block/contact store; imports store only for its ProfileID/DeviceID id types (no schema/graph)

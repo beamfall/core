@@ -3,6 +3,7 @@
   "library_root.missing": "Den Ordner {path} gibt es auf dem Server nicht.",
   "library_root.not_folder": "{path} ist eine Datei, kein Ordner.",
   "library_root.unreadable": "Der Server hat keine Berechtigung, {path} zu lesen.",
+  "manifest.shelf.next_up": "Als Nächstes",
   "notification.access_request.title": "Zugriff angefragt",
   "notification.extension_request.title": "Mehr Zeit angefragt",
   "notification.watch_party_invite.title": "Watch-Party-Einladung",

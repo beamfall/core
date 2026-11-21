@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/store"
 )
@@ -372,6 +373,16 @@ func applyLayoutOverride(layouts []Layout, o store.NavOverrideData) []Layout {
 	return out
 }
 
+// catalogTitle renders a catalog key into every shipped locale, so a title
+// added after CORE-2102 carries its translations on the wire.
+func catalogTitle(key l10n.Key) plugin.LocaleString {
+	title := plugin.LocaleString{}
+	for _, locale := range l10n.Shipped() {
+		title[locale] = l10n.Text(locale, key, nil)
+	}
+	return title
+}
+
 // homeLayout is the generic core layout for Libraries with no plugin bound.
 func homeLayout() Layout {
 	return Layout{
@@ -383,6 +394,17 @@ func homeLayout() Layout {
 				Title:       plugin.LocaleString{"en": "Continue Watching", "fr": "Reprendre la lecture"},
 				ArtworkSlot: "poster",
 				Source:      SourceSpec{Kind: "continue-watching"},
+			},
+			// The next unwatched item of each recently engaged ordered
+			// container (ADR-0028 §9, CORE-2822). A separate shelf, not merged
+			// into Continue Watching: next-up yields nothing for a container
+			// whose frontier is resumable, so each container shows once.
+			{
+				ID:          "next-up",
+				Kind:        "shelf",
+				Title:       catalogTitle(l10n.ManifestShelfNextUp),
+				ArtworkSlot: "poster",
+				Source:      SourceSpec{Kind: "next-up"},
 			},
 			{
 				ID:          "watchlist",
