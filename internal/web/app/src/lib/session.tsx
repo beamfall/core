@@ -392,8 +392,11 @@ export function useViewerIdentity(): string | null {
   return viewerIdentityKey(useContext(SessionContext)?.session ?? null);
 }
 
-export function useSession(): SessionState {
+export function useSession(): SessionState;
+export function useSession(options: { optional: true }): SessionState | null;
+export function useSession(options?: { optional: true }): SessionState | null {
   const ctx = useContext(SessionContext);
-  if (!ctx) throw new Error("useSession must be used within <SessionProvider>");
+  if (!ctx && !options?.optional)
+    throw new Error("useSession must be used within <SessionProvider>");
   return ctx;
 }

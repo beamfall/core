@@ -28,7 +28,7 @@ export function audioEntitySeed(archetype: string | undefined): RadioSeed | unde
 export function useStartRadio(seedKind: RadioSeed | undefined, seedID: string) {
   const t = useT();
   const navigate = useNavigate();
-  const { session, revealed } = useSession();
+  const { session, revealed } = useSession({ optional: true }) ?? {};
   const profileID = session?.profileID;
   const epoch = getIdentityEpochSignal();
   const pending = useRef<AbortController | null>(null);

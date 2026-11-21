@@ -7,7 +7,10 @@ import { I18nProvider } from "@/lib/i18n";
 import { readMediaPreview } from "../lib/mediaDetail";
 import { SectionView } from "./SectionView";
 
-vi.mock("@/lib/session", () => ({ useViewerIdentity: () => "viewer-1" }));
+vi.mock("@/lib/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/session")>()),
+  useViewerIdentity: () => "viewer-1",
+}));
 vi.mock("../player/preload", () => ({ preloadPlayer: vi.fn() }));
 vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),

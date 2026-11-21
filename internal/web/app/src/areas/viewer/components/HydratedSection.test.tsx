@@ -18,7 +18,8 @@ vi.mock("../lib/sections", async (importOriginal) => {
 
 // No identity by default: the state-family cases run uncached, as without a
 // SessionProvider. The cache cases bind one explicitly.
-vi.mock("@/lib/session", () => ({
+vi.mock("@/lib/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/session")>()),
   useViewerIdentity: () => identityMock.identity,
 }));
 

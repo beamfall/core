@@ -19,7 +19,8 @@ vi.mock("@/lib/graphql/browse", () => ({
   fetchMediaRows: vi.fn(),
 }));
 
-vi.mock("@/lib/session", () => ({
+vi.mock("@/lib/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/session")>()),
   useViewerIdentity: () => "viewer-1",
 }));
 

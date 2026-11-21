@@ -44,6 +44,30 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("opens an audio card menu without a session and leaves radio unavailable", async () => {
+  const requests = vi.fn<typeof fetch>(async () =>
+    Response.json({ data: { itemState: null, mutes: [] } }),
+  );
+  vi.stubGlobal("fetch", requests);
+  const track: SourceItem = { ...items(1)[0], mediaClass: "audio" };
+
+  render(
+    <I18nProvider initialLocale="en">
+      <MemoryRouter>
+        <SectionView section={grid} items={[track]} />
+      </MemoryRouter>
+    </I18nProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "More actions for Item 0" }));
+
+  expect(await screen.findByRole("menuitem", { name: "Mark played" })).toBeInTheDocument();
+  expect(screen.queryByRole("menuitem", { name: "Start radio" })).toBeNull();
+  expect(requests).not.toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ body: expect.stringContaining("stationGenerate(") }),
+  );
+});
+
 // CORE-1213: a grid hydrates a bounded first page, so one that fills it must
 // lead to the paged See All grid instead of silently stopping.
 describe("SectionView grid See All", () => {
