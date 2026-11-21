@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,7 +58,7 @@ func TestInfoProbesAMissingRuntimeOnce(t *testing.T) {
 	if err := os.WriteFile(path, []byte("beamfall bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fingerprint, err := store.HashMediaFileContent(path)
+	fingerprint, err := store.SampleMediaFileContentChecked(t.Context(), path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,6 +98,90 @@ func TestInfoProbesAMissingRuntimeOnce(t *testing.T) {
 	}
 }
 
+func TestInfoReturnsBeforeLegacyRuntimeVerification(t *testing.T) {
+	for _, name := range []string{"matching", "replaced"} {
+		t.Run(name, func(t *testing.T) {
+			service, st, scope := capabilityTestService(t)
+			prober := &probingTranscoder{duration: 180}
+			sessions := newTestSessions(t, prober, t.TempDir(), nil)
+			service.SetSessions(sessions)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			path := filepath.Join(t.TempDir(), "legacy.mkv")
+			seedScratchFile(t, path)
+			fingerprint, err := store.HashMediaFileContent(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: "library-local", Path: path, Title: "Legacy runtime", Container: "mkv",
+				Class: store.MediaClassVideo, Codec: "h264", ContentFingerprint: fingerprint,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if name == "replaced" {
+				if err := os.WriteFile(path, []byte("different source"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			verificationStarted, release := scratchLatch(t)
+			defer release.open()
+			var verifications atomic.Int32
+			sessions.matchDurationFile = func(ctx context.Context, path, generation, fingerprint string) (bool, error) {
+				if verifications.Add(1) == 1 {
+					close(verificationStarted)
+				}
+				<-release.ch
+				return store.MediaFileMatchesFingerprint(ctx, path, generation, fingerprint)
+			}
+			play := func() <-chan int {
+				result := make(chan int, 1)
+				go func() {
+					info, err := service.Info(ctx, scope, InfoRequest{MediaID: string(media.ID)})
+					if err != nil {
+						t.Errorf("Info: %v", err)
+					}
+					result <- info.Timeline.DurationSeconds
+				}()
+				return result
+			}
+			first := play()
+			waitScratchSignal(t, verificationStarted)
+			for _, result := range []<-chan int{first, play()} {
+				if got := testResult(t, result); got != 180 {
+					t.Fatalf("playback runtime = %d, want 180 while verification is blocked", got)
+				}
+			}
+			cancel() // The completed requests no longer own the write.
+			checkStored := func(want int) {
+				t.Helper()
+				got, err := st.Media(t.Context(), media.ID, scope.LibraryFilter())
+				if err != nil || got.DurationSeconds != want {
+					t.Fatalf("stored runtime = %d, %v; want %d", got.DurationSeconds, err, want)
+				}
+			}
+			checkStored(0)
+			sessions.mu.Lock()
+			if sessions.libraryChanged == nil {
+				sessions.libraryChanged = make(chan struct{})
+			}
+			retired := sessions.libraryChanged
+			sessions.mu.Unlock()
+			release.open()
+			waitScratchSignal(t, retired)
+			want := 180
+			if name == "replaced" {
+				want = 0
+			}
+			checkStored(want)
+			if got := verifications.Load(); got != 1 || prober.probeCount() != 1 {
+				t.Fatalf("got %d verifications and %d probes, want one each", got, prober.probeCount())
+			}
+		})
+	}
+}
+
 func TestInfoPersistsCachedRuntimeAfterVersionMergeUndo(t *testing.T) {
 	ctx := t.Context()
 	service, st, scope := capabilityTestService(t)
@@ -110,7 +195,7 @@ func TestInfoPersistsCachedRuntimeAfterVersionMergeUndo(t *testing.T) {
 		if err := os.WriteFile(path, []byte(name), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		fingerprint, err := store.HashMediaFileContent(path)
+		fingerprint, err := store.SampleMediaFileContentChecked(ctx, path, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,8 +218,9 @@ func TestInfoPersistsCachedRuntimeAfterVersionMergeUndo(t *testing.T) {
 	}
 	filter := scope.LibraryFilter()
 	files, err := st.MediaFilesForMedia(ctx, primary.ID, filter)
-	if err != nil || len(files) != 2 || filepath.Base(files[1].Path) != "Runtime Fixture.2026.2160p.WEB-DL.mkv" {
-		t.Fatalf("merged files = %+v, %v; want the second source as the alternate", files, err)
+	if err != nil || len(files) != 2 || filepath.Base(files[0].Path) != "Runtime Fixture.2026.1080p.Remux.mkv" ||
+		filepath.Base(files[1].Path) != "Runtime Fixture.2026.2160p.WEB-DL.mkv" {
+		t.Fatalf("merged files = %+v, %v; want the survivor's original source as primary", files, err)
 	}
 	play := func(id store.MediaID, version string) {
 		t.Helper()
@@ -147,12 +233,19 @@ func TestInfoPersistsCachedRuntimeAfterVersionMergeUndo(t *testing.T) {
 	if got, err := st.Media(ctx, primary.ID, filter); err != nil || got.DurationSeconds != 0 {
 		t.Fatalf("survivor runtime = %d, %v; want 0 after alternate playback", got.DurationSeconds, err)
 	}
+	play(primary.ID, "")
+	if got, err := st.Media(ctx, primary.ID, filter); err != nil || got.DurationSeconds != 180 {
+		t.Fatalf("survivor runtime = %d, %v; want 180 after primary playback", got.DurationSeconds, err)
+	}
 	if _, err := st.UndoBatch(ctx, merge.BatchID, filter, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
+	if got, err := st.Media(ctx, primary.ID, filter); err != nil || got.DurationSeconds != 180 {
+		t.Fatalf("survivor runtime = %d, %v; want 180 after undo", got.DurationSeconds, err)
+	}
 	play(other.ID, "")
-	if got, err := st.Media(ctx, other.ID, filter); err != nil || got.DurationSeconds != 180 || prober.probeCount() != 1 {
-		t.Fatalf("restored runtime = %d, %v with %d probes; want 180 with one probe", got.DurationSeconds, err, prober.probeCount())
+	if got, err := st.Media(ctx, other.ID, filter); err != nil || got.DurationSeconds != 180 || prober.probeCount() != 2 {
+		t.Fatalf("restored runtime = %d, %v with %d probes; want 180 with one probe per source", got.DurationSeconds, err, prober.probeCount())
 	}
 }
 

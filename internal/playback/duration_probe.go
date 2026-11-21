@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -195,6 +196,18 @@ func (s *Sessions) persistProbedDuration(ctx context.Context, op *libraryOperati
 		s.mu.Unlock()
 		return
 	}
+	// Legacy fingerprints read the entire file. Give that write-back its
+	// own claim so it outlives the request and is still joined by Drain and Close.
+	var background *libraryOperation
+	if state == 0 && strings.HasPrefix(target.fingerprint, "sha256:") {
+		var err error
+		background, err = s.claimLibraryLocked(context.WithoutCancel(op.ctx), op.library, op.stamp)
+		if err != nil {
+			s.mu.Unlock()
+			return
+		}
+		source.owner.users++
+	}
 	if entry.writes == nil {
 		entry.writes = make(map[durationWriteTarget]durationWriteState)
 		s.durationProbes[source.path] = entry
@@ -202,29 +215,49 @@ func (s *Sessions) persistProbedDuration(ctx context.Context, op *libraryOperati
 	entry.writes[target] = durationWritePending
 	s.mu.Unlock()
 
+	if background != nil {
+		go func() {
+			defer s.releaseLibrary(background)
+			defer s.releaseSource(source)
+			s.writeProbedDuration(background.ctx, background, source, target, seconds, entry.writes, false)
+		}()
+		return
+	}
+	s.writeProbedDuration(ctx, op, source, target, seconds, entry.writes, state == durationWriteVerified)
+}
+
+func (s *Sessions) writeProbedDuration(ctx context.Context, op *libraryOperation, source sourceCapture, target durationWriteTarget, seconds int, writes map[durationWriteTarget]durationWriteState, verified bool) {
 	// Verify the bytes without holding the Sessions lock. The Library claim
 	// stays held through the write, and the store rechecks catalog eligibility.
-	verified := state == durationWriteVerified
 	var err error
 	if !verified {
-		verified, err = store.MediaFileMatchesFingerprint(ctx, source.path, source.generation, target.fingerprint)
+		match := s.matchDurationFile
+		if match == nil {
+			match = store.MediaFileMatchesFingerprint
+		}
+		verified, err = match(ctx, source.path, source.generation, target.fingerprint)
 	}
-	stable := source.matches(captureSource(source.path, nil, s.statSource))
+	stable := ctx.Err() == nil && source.matches(captureSource(source.path, nil, s.statSource))
 	var updated bool
 	if err == nil && verified && stable {
-		updated, err = s.recordDuration(ctx, target.library, target.media, target.fingerprint, source.path, seconds)
+		s.mu.Lock()
+		current := s.libraryOperationErrorLocked(op) == nil && !source.supersededLocked() && source.owner.durationGeneration == source.generation
+		s.mu.Unlock()
+		if current {
+			updated, err = s.recordDuration(ctx, target.library, target.media, target.fingerprint, source.path, seconds)
+		}
 	}
 	s.mu.Lock()
 	switch {
 	case updated && err == nil:
-		entry.writes[target] = durationWriteComplete
+		writes[target] = durationWriteComplete
 	case stable && verified:
 		// A later request may find the same catalog file eligible for writing.
-		entry.writes[target] = durationWriteVerified
+		writes[target] = durationWriteVerified
 	case stable && err == nil:
-		entry.writes[target] = durationWriteMismatch
+		writes[target] = durationWriteMismatch
 	default:
-		delete(entry.writes, target)
+		delete(writes, target)
 	}
 	s.mu.Unlock()
 	if err != nil {

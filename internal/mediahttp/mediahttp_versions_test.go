@@ -40,7 +40,7 @@ func TestHLSAndPlaybackInfoUseSelectedVersionRuntime(t *testing.T) {
 		if err := os.WriteFile(path, []byte(name), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		fingerprint, err := store.HashMediaFileContent(path)
+		fingerprint, err := store.SampleMediaFileContentChecked(ctx, path, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
