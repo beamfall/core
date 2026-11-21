@@ -133,11 +133,12 @@ export function RenamePage() {
     setError("");
     setNotice("");
     setBusy(true);
+    const generation = loadGenerationRef.current;
     try {
       const result = await batchRenameManagedPaths(loadedFrom.libraryID, renames);
       setLastBatchID(result.batchID);
       setNotice(t("renameApplied").replace("{count}", String(result.affected)));
-      await onReloadAfterChange(loadedFrom);
+      await onReloadAfterChange(loadedFrom, generation);
     } catch (err) {
       setError(err instanceof ApiError && err.message ? err.message : t("renameApplyFailed"));
     } finally {
@@ -150,11 +151,12 @@ export function RenamePage() {
     setError("");
     setNotice("");
     setBusy(true);
+    const generation = loadGenerationRef.current;
     try {
       const result = await undoBatchRename(lastBatchID);
       setNotice(t("renameReverted").replace("{count}", String(result.affected)));
       setLastBatchID(null);
-      if (loadedFrom) await onReloadAfterChange(loadedFrom);
+      if (loadedFrom) await onReloadAfterChange(loadedFrom, generation);
     } catch {
       setError(t("renameUndoFailed"));
     } finally {
@@ -164,8 +166,12 @@ export function RenamePage() {
 
   // After a rename/undo the on-disk basenames changed; reload so the preview
   // reflects the current truth rather than stale source names.
-  const onReloadAfterChange = async (selection: { libraryID: string; folder: string }) => {
-    const generation = loadGenerationRef.current;
+  // `generation` is the load generation when the rename or undo started: a
+  // Load files begun meanwhile owns the preview, so this reload is dropped.
+  const onReloadAfterChange = async (
+    selection: { libraryID: string; folder: string },
+    generation: number,
+  ) => {
     try {
       const tree = await fetchFolderTree(selection.libraryID, selection.folder, 1);
       if (generation !== loadGenerationRef.current) return;
