@@ -3,6 +3,8 @@ import {
   Circle,
   CircleCheck,
   Disc3,
+  Eye,
+  EyeOff,
   Link2,
   ListPlus,
   MoreVertical,
@@ -17,7 +19,7 @@ import { fetchMedia } from "@/lib/graphql";
 import type { ItemTarget, MediaCredit } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
-import { useItemActions } from "../actions";
+import { useItemActions, useItemHide } from "../actions";
 import { entityPath } from "../lib/entityAddress";
 import { moreWithLead } from "../lib/related";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
@@ -29,7 +31,8 @@ const COPIED_RESET_MS = 2000;
 // come from the primitive. The Profile's watched state loads when the menu
 // first opens, so a grid of cards costs no extra requests. A failed load or
 // action is reported on the card itself, because the popup has closed by then;
-// opening the menu again retries a failed load. Audio Media read "played"
+// opening the menu again retries a failed load. Hide takes the item out of
+// this Profile's browsing (CORE-2836). Audio Media read "played"
 // rather than "watched"; a Media item can be added to a playlist (CORE-1635).
 export function MediaItemCardMenu({
   title,
@@ -74,6 +77,7 @@ export function MediaItemCardMenu({
     enabled: opened,
   });
   const watched = state?.watched ?? false;
+  const hide = useItemHide(target, title, { enabled: opened });
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioID = isAudio && isMedia && "mediaID" in target ? target.mediaID : undefined;
   const loadedCredits =
@@ -134,7 +138,7 @@ export function MediaItemCardMenu({
 
   return (
     <>
-      {failed && (
+      {(failed || hide.failed) && (
         <span role="status" className="bf-card-action-error">
           {t("itemActionFailed")}
         </span>
@@ -200,6 +204,18 @@ export function MediaItemCardMenu({
                   {t("addToPlaylist")}
                 </Menu.Item>
               )}
+              <Menu.Item
+                className="bf-card-menu-item"
+                disabled={hide.pending || hide.hidden === null}
+                onClick={() => void hide.toggle()}
+              >
+                {hide.hidden ? (
+                  <Eye aria-hidden="true" size={15} />
+                ) : (
+                  <EyeOff aria-hidden="true" size={15} />
+                )}
+                {t(hide.hidden ? "itemUnhide" : "itemHide")}
+              </Menu.Item>
               <Menu.Item className="bf-card-menu-item" closeOnClick={false} onClick={copyLink}>
                 {copied ? (
                   <Check aria-hidden="true" size={15} />

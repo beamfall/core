@@ -118,11 +118,14 @@ export function browseQuery(raw: string | null | undefined): string {
 
 /**
  * Whether a watched-state or rating change can reorder or refilter a read in
- * this state, so the read starts over instead of refreshing its cards.
+ * this state, so the read starts over instead of refreshing its cards. With
+ * the Profile's Hide watched on, a read that names no watch filter drops what
+ * the Profile finishes, so it follows engagement too.
  */
-export function browseFollowsEngagement(state: LibraryBrowseState): boolean {
+export function browseFollowsEngagement(state: LibraryBrowseState, hideWatched = false): boolean {
   return (
     state.watch !== "" ||
+    hideWatched ||
     state.minRating > 0 ||
     state.sort === "rating" ||
     LIBRARY_WATCHING_SORTS.includes(state.sort)

@@ -30,6 +30,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/graphql", () => ({
   fetchEntity: vi.fn(),
+  fetchMutes: vi.fn(async () => []),
+  setMute: vi.fn(async () => undefined),
+  clearMute: vi.fn(async () => undefined),
+  clearAllMutes: vi.fn(async () => 0),
   fetchItemState: vi.fn(),
   fetchMedia: vi.fn(),
   fetchMediaForEntity: vi.fn(),

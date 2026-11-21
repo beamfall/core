@@ -4,10 +4,13 @@ import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addCollectionMedia,
+  clearMute,
   fetchCollections,
   fetchItemState,
   fetchMedia,
+  fetchMutes,
   fetchTagAssignments,
+  setMute,
 } from "@/lib/graphql";
 import type { MediaCredit } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
@@ -17,6 +20,10 @@ import { MediaItemCardMenu } from "./MediaItemCardMenu";
 vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
   addCollectionMedia: vi.fn(),
+  fetchMutes: vi.fn(async () => []),
+  setMute: vi.fn(async () => undefined),
+  clearMute: vi.fn(async () => undefined),
+  clearAllMutes: vi.fn(async () => 0),
   fetchCollections: vi.fn(),
   fetchItemState: vi.fn(),
   fetchMedia: vi.fn(),
@@ -174,5 +181,28 @@ describe("MediaItemCardMenu wording", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Test List/ }));
     await vi.waitFor(() => expect(addCollectionMedia).toHaveBeenCalledWith("p1", ["t1"]));
     expect(await screen.findByRole("status")).toHaveTextContent("Test List");
+  });
+});
+
+describe("MediaItemCardMenu hide (CORE-2836)", () => {
+  beforeEach(() => {
+    vi.mocked(setMute).mockClear();
+    vi.mocked(clearMute).mockClear();
+  });
+
+  it("hides the item for this Profile through a media Mute", async () => {
+    vi.mocked(fetchMutes).mockResolvedValue([]);
+    renderMenu(false);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Hide" }));
+    await vi.waitFor(() => expect(setMute).toHaveBeenCalledWith("media", "t1"));
+  });
+
+  it("offers Unhide for an item the Profile already hid", async () => {
+    vi.mocked(fetchMutes).mockResolvedValue([
+      { kind: "media", targetID: "t1", includeDescendants: false, mutedAt: "2026-11-20T00:00:00Z" },
+    ]);
+    renderMenu(false);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Unhide" }));
+    await vi.waitFor(() => expect(clearMute).toHaveBeenCalledWith("media", "t1"));
   });
 });

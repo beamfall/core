@@ -15,6 +15,14 @@ vi.mock("../lib/libraryBrowse", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/libraryBrowse")>();
   return { ...actual, fetchLibraryItems: vi.fn() };
 });
+vi.mock("@/lib/graphql", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/graphql")>();
+  return {
+    ...actual,
+    fetchClientPrefs: vi.fn(async () => []),
+    setClientPref: vi.fn(async () => undefined),
+  };
+});
 vi.mock("@/lib/session", () => ({
   useSession: () => ({
     loading: false,
@@ -408,6 +416,32 @@ describe("Library browse", () => {
       }),
     );
     expect(screen.getByTestId("where")).not.toHaveTextContent("rated=");
+  });
+
+  it("starts an unfiltered read over when Hide watched flips, so the count follows (CORE-2836)", async () => {
+    const user = userEvent.setup();
+    let hiding = false;
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) =>
+      hiding
+        ? { ...pageFor(request), total: 3, items: pageFor(request).items.slice(0, 3) }
+        : pageFor(request),
+    );
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "Hide watched" });
+    await waitFor(() => expect(toggle).toBeEnabled());
+
+    hiding = true;
+    await user.click(toggle);
+    expect(await screen.findByText("3 items")).toBeInTheDocument();
   });
 
   it("reloads when engagement changes under a query that depends on it, and refreshes cards in place otherwise", async () => {

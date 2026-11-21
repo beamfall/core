@@ -1,0 +1,26 @@
+/* Hide (CORE-2836): the Undo notice reuses the remote message surface. */
+
+[data-register="viewer"] .bf-hidden-notice {
+  align-items: center;
+}
+
+[data-register="viewer"] .bf-hidden-notice-undo {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+[data-register="viewer"] .bf-hidden-notice-undo:hover {
+  background: var(--control-bg-hover);
+}
+
+[data-register="viewer"] .bf-hidden-notice-undo:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

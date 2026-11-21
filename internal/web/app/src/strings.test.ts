@@ -124,39 +124,40 @@ const SHIPPED = new Set(
 // updated for CORE-2572 first-start duration and attempt labels.
 // updated for the CORE-2453 workflow capability tips.
 // updated for the CORE-2585 Restrictions setup subtitle.
+// updated for the CORE-2836 Hide, Hide watched, Hidden items and hidden-empty copy.
 // Merged with the CORE-1154 Home hero and library pagination labels.
 // merged with the CORE-2734 sidebar resize handle label and hint.
 // merged with the CORE-2764/2765/2768 music wording and the CORE-1803/1871 Watch Party copy.
 // merged with the CORE-2683 Jellyfin compatibility copy, and its base-path and setup sign-in copy.
-const BASE_SERIALIZED_LENGTH = 915_953;
-const BASE_REGISTRY_SHA256 = "7421ade2a43f3c2f0c04f94f21ca6745becd903ea903745da6333ff718667788";
-const BASE_KEY_ORDER_SHA256 = "1cc63ada8f2e165de5fa33ce81100a54208ebce450e32854e83c130bab0bcd44";
-const BASE_PLACEHOLDER_SHA256 = "356cd6b853eef904ebc3b151be0aa5b67f28b111c8ca360e432a11df80081bd2";
+const BASE_SERIALIZED_LENGTH = 919_272;
+const BASE_REGISTRY_SHA256 = "f90f165284662fca739674ca1d957af08deba59c78d6591d3ff39d2dfc9a41b7";
+const BASE_KEY_ORDER_SHA256 = "016b01eac87af2556a5a3d98550166f947c7aaad7fc0c6275a9bf5ef3cc3bedc";
+const BASE_PLACEHOLDER_SHA256 = "62da8b7d2cf661f39e8aa9b58031d4dcea029f6319988214196d94d5e1084220";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 2_965,
-    partialSha256: "94ef5d4c2272796307ad697b3a489d90acd95592e8105d5f3e459c6afb9ee67e",
-    resolvedSha256: "fc9d4c87bb6eeaec9589dd14520093750ad25b72363ba1879fa954607284d82b",
+    partialCount: 2_978,
+    partialSha256: "4ab347f0a7243632bd6323404ec676f7abffcc42cd29bf6be41e9ea835e3fee7",
+    resolvedSha256: "128ffa429cfac055a9457b4a4c1d3f68b84a40602a549f43ba8df189926bc6ea",
   },
   fr: {
-    partialCount: 2_965,
-    partialSha256: "05c6d362de0d0f7c43082d112ed9c2a984a6ed86b0ca6e7735a35aa3b87799d7",
-    resolvedSha256: "41f2fb498d803fa581d5fc3a28483d8b19933aba17c4ee4195daa211ad6df754",
+    partialCount: 2_978,
+    partialSha256: "96c35dacf0bbcb2fd0d4cdb04093f01461fe3ee8ee5c8b54d179ce20ea8e3715",
+    resolvedSha256: "99820761ee3c09e04d9eedf122ef254b7a25cc816c2d998aef6015e2a45ad497",
   },
   de: {
-    partialCount: 2_965,
-    partialSha256: "37c3577a0ed930d22f244a74675d49731b42f3c7e84382876bd6d260d118a1d6",
-    resolvedSha256: "aeb969084429c7943aaf1d2e7258571d2bc3ac20c9b483b91d436a329737e08d",
+    partialCount: 2_978,
+    partialSha256: "a80d4dd32a7642e5a707bc38f06bc59bcc01d46657754dac0fb728be4664692f",
+    resolvedSha256: "175c66041b9204e0b3afe0a53b7d2b3553b0238bb9753430dd86e27ee5397c4a",
   },
   es: {
-    partialCount: 2_965,
-    partialSha256: "384f68b7e9ba7e9809a63257964eeb7e8580828d3fd35e0d9f76ecd9bf668ee0",
-    resolvedSha256: "1ed9bcea6f66f4a12f79bdc35ac5a3f7d4282d330222ca452d3a2630b3f047e9",
+    partialCount: 2_978,
+    partialSha256: "51106fbcff2ba68050f2186f778c416006bc35fc6d9a71be485bbbf7edeb8d1a",
+    resolvedSha256: "394fcff45d819c74f9447697563fc2667300b603b1cb12533d42645c0d106225",
   },
   pt: {
-    partialCount: 2_965,
-    partialSha256: "4dd10b04f49320c56898c1f9e63690bd9232223dcca3b3201e8f00575fee5814",
-    resolvedSha256: "078ad2d70ae20c80f5db29d5532f17ba4511b95b63f1b17cafc1384cf9579bad",
+    partialCount: 2_978,
+    partialSha256: "3283415fe867199798836f29466be1a5d62cf98a8628740e267a9a48bc649fa7",
+    resolvedSha256: "b60be6c7bd2fb2ba47e267786b69413c00f59666b9e6a9c80c186e1a286a9511",
   },
 } as const satisfies Record<
   Locale,

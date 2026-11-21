@@ -20,7 +20,7 @@ item, keeps a muted Entity in an unfiltered Entity browse, and has no web UI.
   Next, Recently Added and every library browse.
 - Entity browse drops an Entity the Profile has muted directly, filtered or not.
 - Changing a Mute tells the Profile's other sessions to refetch.
-- A server-read client pref `profile.hideWatched` (`"1"` on, absent or anything else off) removes
+- A server-read client pref `profile.hide-watched` (`"on"` on, absent or anything else off) removes
   Media the Profile has finished from catalog shelves and from library browse when the browse names
   no watch filter. The Profile's own lists (Continue Watching, Up Next, Recently/Most Played,
   Watchlist, Favorites, Rated, Queue) and an explicit watch filter ignore it.

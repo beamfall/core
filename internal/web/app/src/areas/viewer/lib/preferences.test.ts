@@ -28,6 +28,7 @@ describe("resolvePreferences", () => {
       stillWatchingAfter: STILL_WATCHING_DEFAULT,
       prePlayEnabled: false,
       prePlayExtras: PRE_PLAY_EXTRAS_DEFAULT,
+      hideWatched: false,
     });
   });
 
@@ -38,6 +39,13 @@ describe("resolvePreferences", () => {
     ]);
     expect(prefs.prePlayEnabled).toBe(true);
     expect(prefs.prePlayExtras).toBe("4");
+  });
+
+  it("reads Hide watched only from the on value", () => {
+    expect(resolvePreferences([{ key: PREF_KEYS.hideWatched, value: "on" }]).hideWatched).toBe(
+      true,
+    );
+    expect(resolvePreferences([{ key: PREF_KEYS.hideWatched, value: "" }]).hideWatched).toBe(false);
     expect(resolvePreferences([{ key: PREF_KEYS.prePlayExtras, value: "9" }]).prePlayExtras).toBe(
       PRE_PLAY_EXTRAS_DEFAULT,
     );

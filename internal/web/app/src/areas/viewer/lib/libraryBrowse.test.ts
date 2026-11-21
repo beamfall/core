@@ -81,6 +81,12 @@ describe("library browse sorts and year range (CORE-2443)", () => {
     }
   });
 
+  it("restarts an unfiltered read on an engagement change while Hide watched is on (CORE-2836)", () => {
+    expect(browseFollowsEngagement(read(""), true)).toBe(true);
+    expect(browseFollowsEngagement(read("sort=year"), true)).toBe(true);
+    expect(browseFollowsEngagement(read(""), false)).toBe(false);
+  });
+
   it("reads the release-date, audience-score and plays sorts", () => {
     for (const sort of ["release-date", "audience-score", "plays"] as const) {
       expect(read(`sort=${sort}`).sort).toBe(sort);

@@ -18,6 +18,10 @@ import { MediaItemCard, PREVIEW_DWELL_MS } from "./MediaItemCard";
 vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
   fetchEntity: vi.fn(),
+  fetchMutes: vi.fn(async () => []),
+  setMute: vi.fn(async () => undefined),
+  clearMute: vi.fn(async () => undefined),
+  clearAllMutes: vi.fn(async () => 0),
   fetchItemState: vi.fn(),
   setWatched: vi.fn(),
 }));

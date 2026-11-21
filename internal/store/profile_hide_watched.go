@@ -9,9 +9,9 @@ import (
 // ProfileHideWatchedPrefKey is the reserved per-Profile preference that hides
 // Media the Profile has finished from catalog shelves and from library browse
 // that names no watch filter (CORE-2836). It lives in profile_client_prefs so
-// every client shares it and it needs no schema change. "1" turns it on; any
+// every client shares it and it needs no schema change. "on" turns it on, matching the other boolean prefs; any
 // other value, or no row, leaves it off.
-const ProfileHideWatchedPrefKey = "profile.hideWatched"
+const ProfileHideWatchedPrefKey = "profile.hide-watched"
 
 // profileHideWatchedLocked reports whether profileID has hide watched on. The
 // caller holds s.mu.
@@ -26,7 +26,7 @@ func (s *Store) profileHideWatchedLocked(ctx context.Context, profileID ProfileI
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
-	return value == "1", err
+	return value == "on", err
 }
 
 // hideWatchedApplies reports whether a Source kind is a catalog shelf that

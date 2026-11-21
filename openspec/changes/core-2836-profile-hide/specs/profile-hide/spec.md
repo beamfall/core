@@ -46,7 +46,7 @@ Setting, clearing or clearing all Mutes SHALL append an engagement invalidation 
 
 ### Requirement: A Profile can hide watched Media
 
-When the Profile's `profile.hideWatched` client pref is `"1"`, the server SHALL omit Media the
+When the Profile's `profile.hide-watched` client pref is `"on"`, the server SHALL omit Media the
 Profile has finished from catalog shelves and from library browse that names no watch filter, and
 SHALL omit Entities whose reached Media are all finished. The Profile's own engagement lists and an
 explicit watch filter SHALL ignore the pref.

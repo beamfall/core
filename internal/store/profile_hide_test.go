@@ -94,7 +94,7 @@ func TestMuteDirectEntityReachesTree(t *testing.T) {
 	}
 }
 
-// TestHideWatchedPref covers CORE-2836: with profile.hideWatched on, catalog
+// TestHideWatchedPref covers CORE-2836: with profile.hide-watched on, catalog
 // shelves and unfiltered browse drop finished Media; the Profile's own lists
 // and an explicit watch filter keep them.
 func TestHideWatchedPref(t *testing.T) {
@@ -120,7 +120,7 @@ func TestHideWatchedPref(t *testing.T) {
 	if !shelf()[finished] || !browse("")[finished] {
 		t.Fatal("pref off: finished Media must show")
 	}
-	if err := st.SetClientPref(ctx, profile, ProfileHideWatchedPrefKey, "1", time.Now()); err != nil {
+	if err := st.SetClientPref(ctx, profile, ProfileHideWatchedPrefKey, "on", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if got := shelf(); got[finished] || !got[fresh] {
