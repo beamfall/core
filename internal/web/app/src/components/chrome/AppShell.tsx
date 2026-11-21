@@ -11,7 +11,7 @@ import { findNodeBySlug } from "@/lib/nodePath";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
-import { LibrarySidebar, type SidebarGroup, sidebarGroupListId } from "./LibrarySidebar";
+import { LibrarySidebar, type SidebarGroup, sidebarGroupId } from "./LibrarySidebar";
 import { PhoneTabBar } from "./PhoneTabBar";
 import { usePosterSizeRoot } from "./posterSize";
 import { SidebarResizer } from "./SidebarResizer";
@@ -132,13 +132,15 @@ export function AppShell({
     setDrawerGroup(group);
     setDrawerOpen(true);
   }
-  // A tab opens the drawer with focus on its group's first entry.
+  // A tab opens the drawer with focus on its group's first entry, or on the
+  // group's own control (More, Edit) when every entry is unpinned.
   function drawerInitialFocus(): HTMLElement | true {
     if (!drawerGroup) return true;
+    const group = document.getElementById(sidebarGroupId(sidebarId, drawerGroup));
     return (
-      document
-        .getElementById(sidebarGroupListId(sidebarId, drawerGroup))
-        ?.querySelector<HTMLElement>("a") ?? true
+      group?.querySelector<HTMLElement>("ul a") ??
+      group?.querySelector<HTMLElement>("a, button") ??
+      true
     );
   }
   function toggleSidebar() {
@@ -156,17 +158,14 @@ export function AppShell({
 
   // The active nav tab: a manifest node whose route matches the current path.
   // Home ("/") is the aggregate first layout node; "/n/:id" binds the named one.
+  const homeNodeId = (manifest?.navigation || []).find((n) => n.view === "layout")?.id ?? "";
   const activeNodeId = (() => {
     const match = location.pathname.match(/^\/n\/([^/]+)/);
     if (match) {
       const segment = decodeURIComponent(match[1]);
       return findNodeBySlug(manifest?.navigation || [], segment)?.id ?? segment;
     }
-    if (location.pathname === "/") {
-      const first = (manifest?.navigation || []).find((n) => n.view === "layout");
-      return first?.id ?? "";
-    }
-    return "";
+    return location.pathname === "/" ? homeNodeId : "";
   })();
 
   const unreadLabel =
@@ -319,6 +318,7 @@ export function AppShell({
       {tabBar && (
         <PhoneTabBar
           pathname={location.pathname}
+          onHome={homeNodeId !== "" && activeNodeId === homeNodeId}
           sidebarId={sidebarId}
           drawerGroup={drawerOpen ? drawerGroup : null}
           showPersonal={sidebarEditable}

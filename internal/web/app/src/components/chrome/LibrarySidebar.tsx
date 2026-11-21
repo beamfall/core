@@ -50,8 +50,8 @@ const PERSONAL_ICONS: Record<PersonalEntry["id"], LucideIcon> = {
 
 export type SidebarGroup = "libraries" | "personal";
 
-/** The element ID of a sidebar group's list, for moving focus into it. */
-export function sidebarGroupListId(sidebarId: string, group: SidebarGroup): string {
+/** The element ID of a sidebar group (heading, tools and list), for moving focus into it. */
+export function sidebarGroupId(sidebarId: string, group: SidebarGroup): string {
   return `${sidebarId}-${group}`;
 }
 
@@ -314,7 +314,7 @@ export function LibrarySidebar({
       <nav aria-label={t("navLabel")}>
         <ul className="bf-side-list">{aggregates.map(item)}</ul>
         {libraryNodes.length > 0 && (
-          <>
+          <div id={sidebarGroupId(id, "libraries")}>
             <div className="bf-side-heading-row">
               <h2 className="bf-side-heading">{t("libraries")}</h2>
               {canEdit &&
@@ -330,9 +330,7 @@ export function LibrarySidebar({
               })
             ) : (
               <>
-                <ul id={sidebarGroupListId(id, "libraries")} className="bf-side-list">
-                  {pinned.map(item)}
-                </ul>
+                <ul className="bf-side-list">{pinned.map(item)}</ul>
                 {unpinned.length > 0 && (
                   <>
                     <button
@@ -359,10 +357,10 @@ export function LibrarySidebar({
               </>
             )}
             {saveError("libraries")}
-          </>
+          </div>
         )}
         {showPersonal && (
-          <>
+          <div id={sidebarGroupId(id, "personal")}>
             <div className="bf-side-heading-row">
               <h2 className="bf-side-heading">{t("yourStuff")}</h2>
               {canEditAny &&
@@ -377,12 +375,10 @@ export function LibrarySidebar({
                   return key ? t(key) : entryID;
                 })
               : personal.pinned.length > 0 && (
-                  <ul id={sidebarGroupListId(id, "personal")} className="bf-side-list">
-                    {personal.pinned.map(personalItem)}
-                  </ul>
+                  <ul className="bf-side-list">{personal.pinned.map(personalItem)}</ul>
                 )}
             {saveError("personal")}
-          </>
+          </div>
         )}
       </nav>
     </aside>

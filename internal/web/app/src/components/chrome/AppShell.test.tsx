@@ -3,9 +3,11 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchClientPrefs } from "@/lib/graphql/viewer";
 import { I18nProvider } from "@/lib/i18n";
 import { expectNoAxeViolations } from "@/test/axe";
 import { AppShell } from "./AppShell";
+import { resetSidebarPrefsCache } from "./sidebarPrefs";
 
 vi.mock("@/lib/graphql", () => ({
   fetchNotifications: vi.fn().mockResolvedValue([]),
@@ -399,6 +401,39 @@ describe("AppShell library sidebar", () => {
       const drawer = await screen.findByRole("dialog", { name: "Navigation" });
       const playlists = within(drawer).getByRole("link", { name: "Playlists" });
       await waitFor(() => expect(playlists).toHaveFocus());
+    });
+
+    it("marks Home, not Libraries, at Home's own node address (CORE-2827)", () => {
+      renderShell("/n/home");
+      const tabs = screen.getByRole("navigation", { name: "Main sections" });
+      expect(within(tabs).getByRole("link", { name: "Home" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(within(tabs).getByRole("button", { name: "Libraries" })).not.toHaveClass("is-active");
+    });
+
+    it("focuses Your stuff, not Home, when every entry is unpinned (CORE-2827)", async () => {
+      sessionState.signedIn = true;
+      resetSidebarPrefsCache();
+      vi.mocked(fetchClientPrefs).mockResolvedValueOnce([
+        {
+          key: "web.sidebar-libraries",
+          value: JSON.stringify({
+            order: [],
+            hidden: [],
+            personal: { order: [], hidden: ["playlists", "favorites", "history"] },
+          }),
+        },
+      ]);
+      const user = userEvent.setup();
+      renderShell("/search");
+      const tabs = screen.getByRole("navigation", { name: "Main sections" });
+      await user.click(within(tabs).getByRole("button", { name: "Your stuff" }));
+      const drawer = await screen.findByRole("dialog", { name: "Navigation" });
+      await waitFor(() =>
+        expect(within(drawer).getByRole("button", { name: /Edit Your stuff/i })).toHaveFocus(),
+      );
     });
 
     it("closes when a destination is chosen", async () => {
