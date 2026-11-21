@@ -98,16 +98,18 @@ func toolHasMaxRedirectsContext(ctx context.Context, toolPath string) (bool, err
 	supported, err := entry.wait(ctx, func() (bool, error) {
 		help, err := run(context.Background(), toolPath)
 		if errors.Is(err, errGroupSurvived) {
+			// Evicted here, not by a waiter, so the next job asks again
+			// even when every waiter of this one gave up first.
+			maxRedirectsMu.Lock()
+			if maxRedirectsByTool[key] == entry {
+				delete(maxRedirectsByTool, key)
+			}
+			maxRedirectsMu.Unlock()
 			return false, err
 		}
 		return err != nil || bytes.Contains(help, []byte(maxRedirectsOption+" ")), nil
 	})
 	if errors.Is(err, errGroupSurvived) {
-		maxRedirectsMu.Lock()
-		if maxRedirectsByTool[key] == entry {
-			delete(maxRedirectsByTool, key)
-		}
-		maxRedirectsMu.Unlock()
 		return false, err
 	}
 	return supported, nil

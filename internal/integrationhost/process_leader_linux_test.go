@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"strconv"
 	"testing"
 )
 
@@ -28,7 +29,7 @@ func TestLeaderStaysReservedThroughRetire(t *testing.T) {
 	leader.awaitExit()
 	assertZombieLeader := func(when string) {
 		t.Helper()
-		state, group, ok := procStateAndGroup(pid)
+		state, group, ok := procStateAndGroup("/proc/" + strconv.Itoa(pid))
 		if !ok || state != 'Z' || group != pid {
 			t.Fatalf("%s: leader %d = state %q group %d present %v, want an unreaped zombie leading its group", when, pid, state, group, ok)
 		}
@@ -45,7 +46,7 @@ func TestLeaderStaysReservedThroughRetire(t *testing.T) {
 	if err := leader.reap(); !errors.As(err, &exitErr) || exitErr.ExitCode() != 3 {
 		t.Fatalf("reap = %v, want exit status 3", err)
 	}
-	if _, _, ok := procStateAndGroup(pid); ok {
+	if _, _, ok := procStateAndGroup("/proc/" + strconv.Itoa(pid)); ok {
 		t.Fatalf("leader %d still present after reap", pid)
 	}
 }
@@ -74,5 +75,14 @@ func TestParseProcStat(t *testing.T) {
 		if state != tc.state || pgid != tc.pgid || ok != tc.ok {
 			t.Errorf("parseProcStat(%q) = %q %d %v, want %q %d %v", tc.line, state, pgid, ok, tc.state, tc.pgid, tc.ok)
 		}
+	}
+}
+
+func TestThreadGroupRunsSeesARunningThread(t *testing.T) {
+	if !threadGroupRuns("/proc/self") {
+		t.Fatal("this running process reported no running thread")
+	}
+	if threadGroupRuns("/proc/0") {
+		t.Fatal("a missing process reported a running thread")
 	}
 }

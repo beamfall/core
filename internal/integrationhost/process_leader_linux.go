@@ -67,18 +67,38 @@ func groupListsLiveMember(pgid int) bool {
 		if err != nil || pid <= 0 {
 			continue
 		}
-		state, group, ok := procStateAndGroup(pid)
-		if ok && group == pgid && state != 'Z' && state != 'X' {
+		dir := "/proc/" + entry.Name()
+		state, group, ok := procStateAndGroup(dir)
+		if ok && group == pgid && (!exited(state) || threadGroupRuns(dir)) {
 			return true
 		}
 	}
 	return false
 }
 
-// procStateAndGroup reads the state and process group of pid from
-// /proc/<pid>/stat. ok is false once the process has gone.
-func procStateAndGroup(pid int) (state byte, pgid int, ok bool) {
-	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+func exited(state byte) bool { return state == 'Z' || state == 'X' }
+
+// threadGroupRuns reports whether a process whose main thread is a zombie
+// still has a running thread: a main thread that called pthread_exit shows as
+// a zombie while the rest of the process runs on.
+func threadGroupRuns(dir string) bool {
+	tasks, err := os.ReadDir(dir + "/task")
+	if err != nil {
+		return false // the process has gone
+	}
+	for _, task := range tasks {
+		if state, _, ok := procStateAndGroup(dir + "/task/" + task.Name()); ok && !exited(state) {
+			return true
+		}
+	}
+	return false
+}
+
+// procStateAndGroup reads the state and process group from dir/stat, for a
+// /proc/<pid> or /proc/<pid>/task/<tid> directory. ok is false once the
+// process or thread has gone.
+func procStateAndGroup(dir string) (state byte, pgid int, ok bool) {
+	stat, err := os.ReadFile(dir + "/stat") // #nosec G304 -- a /proc entry this package built
 	if err != nil {
 		return 0, 0, false
 	}

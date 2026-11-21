@@ -27,19 +27,15 @@ func TestWorkerShimPinsGroupUntilGuardianReady(t *testing.T) {
 	}
 	defer func() { _ = lifetimeR.Close(); _ = lifetimeW.Close() }()
 
-	// The stand-in guardian reports readiness only once the test lets it.
+	// The stand-in guardian reports readiness only once the test lets it, and
+	// exits when the deferred close of lifetimeW ends its lifetime pipe (fd 3).
 	// #nosec G204 -- fixed shell; the FIFO is in this test's private directory.
-	cmd := exec.Command("/bin/sh", "-c", `read -r _ < "$0"; printf '\245' >&4; exec /bin/sleep 30`, release)
+	cmd := exec.Command("/bin/sh", "-c", `read -r _ < "$0"; printf '\245' >&4; exec 4>&-; read -r _ <&3`, release)
 	started := make(chan error, 1)
 	go func() { started <- startWorkerShimGuardianProcess(lifetimeR, cmd, 10*time.Second) }()
-	t.Cleanup(func() {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-	})
 
 	pin := waitForZombieChildInGroup(t, syscall.Getpgrp(), true)
-	f, err := os.OpenFile(release, os.O_WRONLY, 0)
+	f, err := os.OpenFile(release, os.O_WRONLY, 0) // #nosec G304 -- this test's own FIFO
 	if err != nil {
 		t.Fatal(err)
 	}

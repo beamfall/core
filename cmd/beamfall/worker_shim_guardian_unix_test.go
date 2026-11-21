@@ -180,10 +180,11 @@ func TestWorkerShimGuardianKillsMidForkChildren(t *testing.T) {
 	artifact := filepath.Join(dir, "worker")
 	// The worker holds the witness FIFO named by $1 open, so every process it
 	// forks does too, and reports readiness once TERM is ignored. Each child is
-	// killed at once and would end by itself after 3 s anyway, so only a child
-	// forked while the guardian's KILL lands outlives the loop, and the test
-	// never signals a group it may no longer own.
-	script := "#!/bin/sh\ntrap '' TERM\nexec 9>\"$1\"\nprintf r >&9\nwhile :; do /bin/sleep 3 & kill -9 $!; done\n"
+	// killed at once and would end by itself after 10 s anyway, so only a
+	// child forked while the guardian's KILL lands outlives the loop, and the
+	// test never signals a group it may no longer own. 10 s is well past the
+	// witness's EOF wait, so a missed child cannot expire inside it.
+	script := "#!/bin/sh\ntrap '' TERM\nexec 9>\"$1\"\nprintf r >&9\nwhile :; do /bin/sleep 10 & kill -9 $!; done\n"
 	if err := os.WriteFile(artifact, []byte(script), 0o700); err != nil { //nolint:gosec // test artifact must be executable
 		t.Fatalf("write artifact: %v", err)
 	}

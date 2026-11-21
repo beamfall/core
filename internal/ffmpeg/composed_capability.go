@@ -204,7 +204,10 @@ var (
 // A failed listing is kept too (and fails closed in the exported checks): an
 // unresolvable binary keys its own bucket, and a changed binary a new one.
 func capabilitiesForCurrentBuild(ctx context.Context) (capabilities, error) {
-	key := currentFFmpegIdentityKey(ctx)
+	key, err := currentFFmpegIdentityKey(ctx)
+	if err != nil {
+		return capabilities{}, err
+	}
 	capabilitiesMu.Lock()
 	entry, ok := capabilitiesByBuild[key]
 	if !ok {

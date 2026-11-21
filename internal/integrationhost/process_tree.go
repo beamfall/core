@@ -2,6 +2,7 @@ package integrationhost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"time"
@@ -70,6 +71,9 @@ func superviseWorker(ctx context.Context, cmd *exec.Cmd, onStart func()) error {
 			result = waitErr
 		}
 	}
+	if !canceled && leader.observeErr != nil {
+		result = leader.observeErr
+	}
 	if retireErr != nil {
 		// A live member may still hold an output pipe; stop reading rather
 		// than wait for it.
@@ -85,17 +89,25 @@ func superviseWorker(ctx context.Context, cmd *exec.Cmd, onStart func()) error {
 // leaderWait reaps the direct worker only after retire is done where the
 // platform can observe its exit without reaping it, so its process ID, which
 // is the group ID, stays reserved while retire signals the group (CORE-2750).
-// Elsewhere it reaps at exit, as before.
+// Where observation is unsupported, the group is pinned another way and the
+// leader is reaped at exit, as before.
 type leaderWait struct {
-	cmd    *exec.Cmd
-	reaped bool
-	err    error
+	cmd        *exec.Cmd
+	reaped     bool
+	err        error
+	observeErr error
 }
 
-// awaitExit returns once the leader has exited, reaped or not.
+// awaitExit returns once the leader has exited, or at once if observing it
+// failed. The leader is then left unreaped, still reserving the group ID, so
+// retire can kill it and the group safely before it is reaped.
 func (w *leaderWait) awaitExit() {
-	if observeLeaderExit(w.cmd.Process.Pid) != nil {
+	err := observeLeaderExit(w.cmd.Process.Pid)
+	switch {
+	case errors.Is(err, errors.ErrUnsupported):
 		_ = w.reap()
+	case err != nil:
+		w.observeErr = fmt.Errorf("observe worker exit: %w", err)
 	}
 }
 

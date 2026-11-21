@@ -810,9 +810,18 @@ func ResolveFFmpegIdentity(ctx context.Context) (FFmpegIdentity, error) {
 		}
 		build := resolvedIdentity.build
 		resolvedIdentity.Unlock()
-		return build.wait(context.Background(), func() (FFmpegIdentity, error) {
+		identity, err := build.wait(context.Background(), func() (FFmpegIdentity, error) {
 			return readFFmpegIdentity(context.Background(), path)
 		})
+		if errors.Is(err, errGroupSurvived) {
+			// Not a fact about the binary: the next call reads it again.
+			resolvedIdentity.Lock()
+			if resolvedIdentity.build == build {
+				resolvedIdentity.stat = ""
+			}
+			resolvedIdentity.Unlock()
+		}
+		return identity, err
 	})
 }
 
@@ -875,9 +884,11 @@ func ToneMapCapabilityFor(backend HWAccel, class TransferClass) ToneMapProbe {
 }
 
 func toneMapCapabilityFor(ctx context.Context, backend HWAccel, class TransferClass) ToneMapProbe {
-	entry := toneMapVerdictEntryFor(toneMapVerdictKey{
-		backend: backend, class: class, identity: currentFFmpegIdentityKey(ctx),
-	})
+	identity, err := currentFFmpegIdentityKey(ctx)
+	if err != nil {
+		return survivorToneMapProbe(backend, class)
+	}
+	entry := toneMapVerdictEntryFor(toneMapVerdictKey{backend: backend, class: class, identity: identity})
 	verdict, _ := entry.wait(ctx, func() (ToneMapProbe, error) {
 		return ProbeToneMap(context.Background(), ToneMapOptions{Backend: backend, Class: class}), nil
 	})
@@ -895,14 +906,25 @@ func toneMapVerdictEntryFor(key toneMapVerdictKey) *toneMapVerdictEntry {
 	return entry
 }
 
-// currentFFmpegIdentityKey never fails the caller: an unresolvable binary keys
-// its own bucket, and the probe that runs under it fails closed anyway.
-func currentFFmpegIdentityKey(ctx context.Context) string {
+// currentFFmpegIdentityKey keys the capability caches by the resolved binary.
+// An unresolvable binary keys its own bucket, and the probe that runs under it
+// fails closed anyway. The one error returned is a version run that left a
+// surviving process group: no probe may start beside it (CORE-2757).
+func currentFFmpegIdentityKey(ctx context.Context) (string, error) {
 	identity, err := ResolveFFmpegIdentity(ctx)
-	if err != nil {
-		return "unresolved"
+	if errors.Is(err, errGroupSurvived) {
+		return "", err
 	}
-	return identity.String()
+	if err != nil {
+		return "unresolved", nil
+	}
+	return identity.String(), nil
+}
+
+// survivorToneMapProbe is the verdict when no probe could start because an
+// earlier run left a surviving process group. It is not cached.
+func survivorToneMapProbe(backend HWAccel, class TransferClass) ToneMapProbe {
+	return ToneMapProbe{Status: ToneMapUnsupported, Failure: ToneMapFailureInconclusive, Backend: backend, Class: class}
 }
 
 // ToneMapCapability returns this process's SOFTWARE tone-map verdict over the

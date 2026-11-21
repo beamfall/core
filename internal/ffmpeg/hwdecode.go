@@ -238,7 +238,11 @@ func DeviceDecodeCapabilityFor(backend HWAccel, class TransferClass) ToneMapProb
 }
 
 func deviceDecodeCapabilityFor(ctx context.Context, backend HWAccel, class TransferClass) ToneMapProbe {
-	key := toneMapVerdictKey{backend: backend, class: class, identity: currentFFmpegIdentityKey(ctx)}
+	identity, err := currentFFmpegIdentityKey(ctx)
+	if err != nil {
+		return survivorToneMapProbe(backend, class)
+	}
+	key := toneMapVerdictKey{backend: backend, class: class, identity: identity}
 	deviceDecodeVerdictMu.Lock()
 	entry, cached := deviceDecodeVerdicts[key]
 	if !cached {

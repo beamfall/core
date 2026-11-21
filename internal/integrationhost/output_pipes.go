@@ -1,7 +1,6 @@
 package integrationhost
 
 import (
-	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -85,7 +84,12 @@ func (o *outputPipes) started() {
 
 func (o *outputPipes) copy(w io.Writer, r *os.File) {
 	defer o.copies.Done()
-	if _, err := io.Copy(w, r); err != nil && !errors.Is(err, os.ErrClosed) {
+	_, err := io.Copy(w, r)
+	// Close the read end, as exec does, so a child still writing after w
+	// failed gets EPIPE rather than blocking on a full pipe. An error from a
+	// read end abandon closed is never reported: drain does not follow abandon.
+	_ = r.Close()
+	if err != nil {
 		o.mu.Lock()
 		if o.copyErr == nil {
 			o.copyErr = err

@@ -231,8 +231,10 @@ func superviseGroup(ctx context.Context, group *processGroup, stdout, stderr io.
 	pipes.started()
 	if bound && !probe.handoff() {
 		group.kill()
-		_ = group.wait()
-		pipes.abandon()
+		// reapGroup sweeps and reports a survivor, as a cancel does.
+		if reapErr := pipes.finish(reapGroup(group)); errors.Is(reapErr, errGroupSurvived) {
+			return errors.Join(context.Canceled, reapErr)
+		}
 		return context.Canceled
 	}
 
