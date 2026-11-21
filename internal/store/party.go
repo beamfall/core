@@ -29,6 +29,9 @@ const (
 	PartyMaxGuestWaiting = 3
 	// PartyUpNext is how many waiting entries a stage screen shows.
 	PartyUpNext = 3
+	// PartyGuestTokenPrefix marks a guest capability. It never authenticates
+	// any route other than the guest party routes.
+	PartyGuestTokenPrefix = "bfg_"
 
 	partyRecentLimit    = 20
 	partyRemovedWindow  = 10 * time.Minute
@@ -158,8 +161,11 @@ type PartyView struct {
 	Recent            []PartyEntryView
 	Removed           []PartyEntryView
 	Skipped           []PartyEntryView
-	Participants      []PartyParticipantView
-	Screens           []PartyScreenView
+	// Declined carries declined requests for the guest view; the host view
+	// does not list them.
+	Declined     []PartyEntryView
+	Participants []PartyParticipantView
+	Screens      []PartyScreenView
 }
 
 // PartyStageView is what a stage screen renders.
@@ -566,7 +572,7 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 		var row partyParticipantRow
 		var guest, host int
 		if err := rows.Scan(&row.id, &row.name, &guest, &host, &row.removedAtMS); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return partyState{}, err
 		}
 		row.guest, row.host = guest == 1, host == 1
@@ -586,7 +592,7 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 		var row partyEntryRow
 		if err := rows.Scan(&row.id, &row.participantID, &row.mediaID, &row.state, &row.pin,
 			&row.addedAtMS, &row.currentAtMS, &row.playedAtMS, &row.finishedAtMS, &row.removedAtMS); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return partyState{}, err
 		}
 		state.entries = append(state.entries, row)
@@ -606,7 +612,7 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 		var ticker int
 		if err := rows.Scan(&row.id, &row.profileID, &row.name, &row.kind, &row.carrier, &ticker, &row.offsetMS, &row.rttMS,
 			&row.registeredAtMS, &row.reportedAtMS); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return partyState{}, err
 		}
 		row.ticker = ticker == 1
@@ -623,7 +629,7 @@ func loadPartyState(ctx context.Context, q partyQuerier, session PartySession, n
 
 func closeRows(rows *sql.Rows) error {
 	if err := rows.Err(); err != nil {
-		rows.Close()
+		_ = rows.Close()
 		return err
 	}
 	return rows.Close()
@@ -772,6 +778,8 @@ func (s *Store) buildPartyViewLocked(ctx context.Context, state partyState, nowM
 			view.Recent = append(view.Recent, entryView(entry))
 		case PartyEntrySkipped:
 			view.Skipped = append(view.Skipped, entryView(entry))
+		case PartyEntryDeclined:
+			view.Declined = append(view.Declined, entryView(entry))
 		case PartyEntryRemoved:
 			if entry.removedAtMS >= removedSince {
 				view.Removed = append(view.Removed, entryView(entry))
@@ -1558,7 +1566,7 @@ func (s *Store) partyMediaLastCurrent(ctx context.Context, sessionID string) (ma
 		var id MediaID
 		var atMS int64
 		if err := rows.Scan(&id, &atMS); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		out[id] = millisToTime(atMS)

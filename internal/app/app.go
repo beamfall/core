@@ -1407,6 +1407,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// reveal-filtered catalog/session reads, while scan-job construction lives
 	// here at the composition root since server cannot import internal/scan.
 	srv.SetV1Store(st)
+	srv.SetPartyGuestStore(st)
 	scanEnqueue := v1ScanEnqueuer(st, jobWake)
 	srv.SetV1ScanEnqueuer(scanEnqueue)
 	srv.SetV1ProgressRecorder(graphHandler)

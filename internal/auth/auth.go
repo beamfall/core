@@ -285,6 +285,11 @@ func (s *Service) QueueWriteAuthorization(scope Scope, expected store.ProfileID,
 	}
 }
 
+// errPartyGuestCredential refuses a party guest token (bfg_) presented as any
+// other credential: it authenticates only the guest party routes, which read it
+// from their own header.
+var errPartyGuestCredential = errors.New("party guest token is not an API credential")
+
 // ScopeFromRequest resolves HTTP credentials into a Scope. A Bearer credential
 // wins when present — a scoped developer key (ADR-0040, bfk_ prefix) routes to
 // the scoped-key path, anything else to the admin API token; then
@@ -304,6 +309,10 @@ func (s *Service) ScopeFromRequest(ctx context.Context, r *http.Request) (Scope,
 func (s *Service) scopeFromCredential(ctx context.Context, r *http.Request) (Scope, error) {
 	if bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		token := strings.TrimSpace(bearer)
+		if strings.HasPrefix(token, store.PartyGuestTokenPrefix) {
+			noteCredentialRefusal(ctx, RefusalAPITokenInvalid)
+			return Scope{}, errPartyGuestCredential
+		}
 		if strings.HasPrefix(token, store.ScopedKeyPrefix) {
 			return s.ScopeFromScopedKey(ctx, token)
 		}
@@ -312,6 +321,9 @@ func (s *Service) scopeFromCredential(ctx context.Context, r *http.Request) (Sco
 	sessionID := store.SessionID(r.Header.Get(SessionHeader))
 	if sessionID == "" {
 		return s.scopeFromCookies(ctx, r)
+	}
+	if strings.HasPrefix(string(sessionID), store.PartyGuestTokenPrefix) {
+		return Scope{}, errPartyGuestCredential
 	}
 	deviceID := store.DeviceID(r.Header.Get(DeviceHeader))
 	deviceSecret := r.Header.Get(DeviceSecretHeader)
@@ -353,6 +365,10 @@ func (s *Service) scopeFromCookies(ctx context.Context, r *http.Request) (Scope,
 // contract is per-session and PIN-gated — a standing credential is never a
 // standing reveal), no Profile, no Library grants beyond the hidden world.
 func (s *Service) ScopeFromAPIToken(ctx context.Context, token string) (Scope, error) {
+	if strings.HasPrefix(token, store.PartyGuestTokenPrefix) {
+		noteCredentialRefusal(ctx, RefusalAPITokenInvalid)
+		return Scope{}, errPartyGuestCredential
+	}
 	verified, err := s.store.VerifyAPIToken(ctx, token, s.now())
 	if err != nil {
 		noteCredentialRefusal(ctx, RefusalAPITokenInvalid)

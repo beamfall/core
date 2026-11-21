@@ -764,6 +764,31 @@
     },
     {
       "method": "POST",
+      "pattern": "/api/party/join",
+      "note": "Join a party session as a guest with its join code"
+    },
+    {
+      "method": "GET",
+      "pattern": "/api/party/guest",
+      "note": "Read the party session as its guest sees it"
+    },
+    {
+      "method": "GET",
+      "pattern": "/api/party/guest/search",
+      "note": "Search the party session's Media as a guest"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/party/guest/request",
+      "note": "Request a Media entry as a party guest"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/party/guest/cancel",
+      "note": "Cancel a party guest's own pending or waiting entry"
+    },
+    {
+      "method": "POST",
       "pattern": "/api/pairing-requests",
       "note": "Request device pairing: returns a short code for an administrator to approve"
     },
