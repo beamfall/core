@@ -1,0 +1,7 @@
+.bf-music-queue-notice {
+  pointer-events: none;
+}
+
+body:has(.bf-mini-player) .bf-remote-message.bf-music-queue-notice {
+  bottom: calc(16px + var(--bf-mini-height));
+}

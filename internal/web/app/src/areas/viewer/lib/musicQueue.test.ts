@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "@/lib/api";
-import { editMusicQueue, type MusicQueueRow, registerMusicQueuePlayer } from "./musicQueue";
+import {
+  editMusicQueue,
+  type MusicQueueRow,
+  musicQueueMenuState,
+  registerMusicQueuePlayer,
+} from "./musicQueue";
 
 const scope = { profileID: "profile-a", revealed: false, deviceRole: "viewer", profile: "adult" };
 const track = (id: string): MusicQueueRow => ({ id, title: id, mediaClass: "audio" });
@@ -17,6 +22,7 @@ describe("server Play Queue edits", () => {
   let dispose: (() => void) | undefined;
 
   beforeEach(() => {
+    api.setIdentityEpochSignal(new AbortController().signal);
     rows = [];
     reads = 0;
     writes.length = 0;
@@ -50,6 +56,7 @@ describe("server Play Queue edits", () => {
     dispose?.();
     dispose = undefined;
     vi.restoreAllMocks();
+    api.setIdentityEpochSignal();
   });
 
   function player(id: string) {
@@ -136,4 +143,34 @@ describe("server Play Queue edits", () => {
     expect(receive).toHaveBeenCalledExactlyOnceWith(rows);
     expect(invalidateIdentity).toHaveBeenCalledOnce();
   });
+
+  it.each(["relock", "profile mismatch"])(
+    "invalidates pending idle edits after a %s even if the server restores the old identity",
+    async (loss) => {
+      const idleScope = { ...scope, revealed: true };
+      const read = vi.mocked(api.graphql).mockImplementation(async () => ({
+        currentSession: idleScope,
+        sourceItems: rows,
+      }));
+      if (loss === "relock") {
+        read.mockResolvedValueOnce({ currentSession: scope, sourceItems: [] });
+      } else {
+        vi.mocked(api.postJSON).mockResolvedValueOnce({
+          errors: [{ message: "foreign profile", extensions: { reason: "PROFILE_MISMATCH" } }],
+        });
+      }
+
+      const first = editMusicQueue(idleScope, "first", "next");
+      const pending = editMusicQueue(idleScope, "pending", "tail");
+      expect(await first).toBe("dropped");
+      expect(await pending).toBe("dropped");
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(api.postJSON).toHaveBeenCalledTimes(loss === "relock" ? 0 : 1);
+      expect(musicQueueMenuState(idleScope, "pending")).toBe("hidden");
+
+      api.setIdentityEpochSignal(new AbortController().signal);
+      expect(await editMusicQueue(idleScope, "fresh", "next")).toBe("confirmed");
+      expect(rows.map((row) => row.id)).toEqual(["fresh"]);
+    },
+  );
 });

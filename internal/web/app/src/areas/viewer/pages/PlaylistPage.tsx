@@ -8,6 +8,7 @@ import { fetchMediaRows } from "@/lib/graphql/browse";
 import type { CollectionInfo, GenericMediaInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { useEngagementEpoch } from "../actions/engagementSync";
 import { MediaItemCardMenu } from "../components/MediaItemCardMenu";
 import { ViewerActions } from "../components/ViewerActions";
 import { fetchEntryLocks } from "../lib/collections";
@@ -36,6 +37,7 @@ export function PlaylistPage() {
   const { playlistId = "" } = useParams();
   const { manifest, isManager } = useSession();
   const identity = useViewerIdentity();
+  const engagementEpoch = useEngagementEpoch();
   const libraryKey = (manifest?.libraries ?? []).map((library) => library.id).join("\n");
   const [playlist, setPlaylist] = useState<CollectionInfo | null | undefined>(undefined);
   const [rows, setRows] = useState<Record<string, GenericMediaInfo>>({});
@@ -63,7 +65,7 @@ export function PlaylistPage() {
 
   const order = useMemo(() => (playlist ? memberOrder(playlist) : []), [playlist]);
   const orderKey = order.join("\n");
-  const lockKey = JSON.stringify([identity, playlistId, orderKey]);
+  const lockKey = JSON.stringify([identity, playlistId, orderKey, engagementEpoch]);
   const locks = lockRead?.key === lockKey ? lockRead.result : null;
 
   useEffect(() => {
@@ -75,9 +77,8 @@ export function PlaylistPage() {
     return () => controller.abort();
   }, [orderKey]);
 
-  // Lock state is per Profile, so it reloads when the playlist or its members
-  // change. Nothing plays until it is known; if the read fails, playback still
-  // meets the server's own ceiling check.
+  // The lock feed omits hidden members. Reload every page when the playlist
+  // changes or an engagement invalidation reports a possible hide or unhide.
   useEffect(() => {
     setLockRead(undefined);
     if (!orderKey) return;

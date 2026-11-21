@@ -1,12 +1,14 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchCollections } from "@/lib/graphql";
+import * as api from "@/lib/api";
+import { clearMute, fetchCollections, fetchMutes, setMute } from "@/lib/graphql";
 import { fetchMediaRows } from "@/lib/graphql/browse";
 import type { CollectionInfo, GenericMediaInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { unhideItem } from "../actions/hiddenItems";
 import { fetchEntryLocks } from "../lib/collections";
 import type { PlayerNavState } from "../lib/watchQueue";
 import { PlaylistPage } from "./PlaylistPage";
@@ -14,6 +16,8 @@ import { PlaylistPage } from "./PlaylistPage";
 vi.mock("@/lib/session", () => ({
   useSession: () => ({
     isManager: false,
+    session: { profileID: "profile-a" },
+    revealed: false,
     manifest: {
       libraries: [{ id: "lib-a", title: "Sounds", pluginID: null, previewClips: false }],
     },
@@ -22,7 +26,15 @@ vi.mock("@/lib/session", () => ({
 }));
 vi.mock("@/lib/graphql", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/graphql")>();
-  return { ...actual, fetchCollections: vi.fn() };
+  return {
+    ...actual,
+    clearMute: vi.fn(async () => {}),
+    fetchCollections: vi.fn(),
+    fetchItemState: vi.fn(async () => null),
+    fetchMedia: vi.fn(async () => null),
+    fetchMutes: vi.fn(async () => []),
+    setMute: vi.fn(async () => {}),
+  };
 });
 vi.mock("@/lib/graphql/browse", () => ({ fetchMediaRows: vi.fn() }));
 vi.mock("../lib/collections", () => ({ fetchEntryLocks: vi.fn() }));
@@ -85,6 +97,7 @@ afterEach(() => {
   vi.mocked(fetchCollections).mockReset();
   vi.mocked(fetchMediaRows).mockReset();
   vi.mocked(fetchEntryLocks).mockReset();
+  vi.restoreAllMocks();
 });
 
 describe("PlaylistPage locked entries (CORE-1876)", () => {
@@ -149,6 +162,64 @@ describe("PlaylistPage locked entries (CORE-1876)", () => {
     expect(
       screen.queryByRole("button", { name: "More actions for Third tone" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("refreshes every lock page after Hide and Unhide before restoring queue actions", async () => {
+    const locks = await vi.importActual<typeof import("../lib/collections")>("../lib/collections");
+    vi.mocked(fetchEntryLocks).mockImplementation(locks.fetchEntryLocks);
+    const lastOffset = locks.COLLECTION_PAGE;
+    const members = Array.from({ length: lastOffset + 1 }, (_, sortOrder) => ({
+      mediaID: sortOrder === 0 ? "m-1" : sortOrder === lastOffset ? "m-2" : `filler-${sortOrder}`,
+      sortOrder,
+    }));
+    vi.mocked(fetchCollections).mockResolvedValue([
+      { ...playlist, memberCount: members.length, members },
+    ]);
+    vi.mocked(fetchMediaRows).mockResolvedValue({
+      "m-1": { ...row("m-1", "First tone"), mediaClass: "audio" },
+      "m-2": { ...row("m-2", "Second tone"), mediaClass: "audio" },
+    });
+    const sourceItems = (id: string) => [{ id, locked: false }];
+    let readLastPage = Promise.resolve({ sourceItems: sourceItems("m-2") });
+    const rangeReads: number[] = [];
+    vi.spyOn(api, "graphql").mockImplementation(async (query, variables) => {
+      expect(query).toContain("query CollectionLocks");
+      const offset = Number(variables?.offset);
+      rangeReads.push(offset);
+      return offset === 0 ? { sourceItems: sourceItems("m-1") } : readLastPage;
+    });
+    vi.mocked(fetchMutes).mockResolvedValue([]);
+    const menuFor = (title: string) => ({ name: `More actions for ${title}` });
+    const firstMenu = menuFor("First tone");
+    const secondMenu = menuFor("Second tone");
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", secondMenu));
+    expect(screen.getByRole("menuitem", { name: "Play next" })).toBeEnabled();
+    expect(screen.getByRole("menuitem", { name: "Add to queue" })).toBeEnabled();
+    let finishHiddenPage!: (page: { sourceItems: ReturnType<typeof sourceItems> }) => void;
+    readLastPage = new Promise((resolve) => {
+      finishHiddenPage = resolve;
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Hide" }));
+    expect(setMute).toHaveBeenCalledWith("media", "m-2");
+    await waitFor(() => expect(rangeReads).toEqual([0, lastOffset, 0, lastOffset]));
+    expect(screen.queryByRole("button", firstMenu)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", secondMenu)).not.toBeInTheDocument();
+
+    await act(async () => finishHiddenPage({ sourceItems: [] }));
+    expect(screen.getByRole("button", firstMenu)).toBeInTheDocument();
+    expect(screen.queryByRole("button", secondMenu)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play Second tone" })).toBeEnabled();
+
+    readLastPage = Promise.resolve({ sourceItems: sourceItems("m-2") });
+    // Undo and the Hidden items page both use this same Unhide action.
+    await act(() => unhideItem({ mediaID: "m-2" }));
+    expect(clearMute).toHaveBeenCalledWith("media", "m-2");
+    expect(rangeReads).toEqual([0, lastOffset, 0, lastOffset, 0, lastOffset]);
+    fireEvent.click(await screen.findByRole("button", secondMenu));
+    expect(screen.getByRole("menuitem", { name: "Play next" })).toBeEnabled();
+    expect(screen.getByRole("menuitem", { name: "Add to queue" })).toBeEnabled();
   });
 
   it("plays a muted entry on its own, without the playlist queue", async () => {

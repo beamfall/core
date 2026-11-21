@@ -164,22 +164,27 @@ interface QueuePlayer {
 }
 
 let player: QueuePlayer | undefined;
-const playerListeners = new Set<() => void>();
+let invalidEditEpoch: AbortSignal | undefined | null = null;
+const menuListeners = new Set<() => void>();
+
+function notifyMusicQueueMenu() {
+  for (const listener of menuListeners) listener();
+}
 
 export function registerMusicQueuePlayer(next: QueuePlayer) {
   player = next;
-  for (const listener of playerListeners) listener();
+  notifyMusicQueueMenu();
   return () => {
     if (player !== next) return;
     player = undefined;
-    for (const listener of playerListeners) listener();
+    notifyMusicQueueMenu();
   };
 }
 
-export function subscribeMusicQueuePlayer(listener: () => void) {
-  playerListeners.add(listener);
+export function subscribeMusicQueueMenu(listener: () => void) {
+  menuListeners.add(listener);
   return () => {
-    playerListeners.delete(listener);
+    menuListeners.delete(listener);
   };
 }
 
@@ -193,7 +198,8 @@ function sameIdentity(a: QueueIdentity, b: QueueIdentity): boolean {
 }
 
 export function musicQueueMenuState(scope: QueueIdentity | undefined, id: string) {
-  if (!scope?.profileID || getIdentityEpochSignal()?.aborted) return "hidden";
+  const epoch = getIdentityEpochSignal();
+  if (!scope?.profileID || epoch?.aborted || epoch === invalidEditEpoch) return "hidden";
   if (!player) return "enabled";
   if (!sameIdentity(player.scope, scope) || !player.server?.canEdit()) return "hidden";
   return player.server.run.cursor === id ? "disabled" : "enabled";
@@ -219,7 +225,10 @@ export function editMusicQueue(
   const identityWasLost = (error: unknown) => {
     if (!sameEpoch()) return true;
     if (!(error instanceof QueueIdentityChanged)) return false;
+    // Pending edits share this session even when no reader is mounted.
+    invalidEditEpoch = epoch;
     if (player && sameIdentity(player.scope, scope)) player.server?.invalidateIdentity();
+    notifyMusicQueueMenu();
     return true;
   };
 

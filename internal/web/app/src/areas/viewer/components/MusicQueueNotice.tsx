@@ -3,6 +3,7 @@ import { getIdentityEpochSignal } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { MusicQueueEdit, QueueEditResult } from "../lib/musicQueue";
 import "../remote/remote.css";
+import "./music-queue-notice.css";
 
 type Notice = {
   result: Exclude<QueueEditResult, "dropped">;
@@ -47,7 +48,7 @@ export function MusicQueueNotice() {
 
   if (!current || current.epoch?.aborted || current.epoch !== getIdentityEpochSignal()) return null;
   return (
-    <div className="bf-remote-message" data-register="viewer" role="status">
+    <div className="bf-remote-message bf-music-queue-notice" data-register="viewer" role="status">
       <p className="bf-remote-message-text">
         {t(
           current.result === "failed"

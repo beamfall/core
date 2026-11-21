@@ -27,7 +27,7 @@ import {
   editMusicQueue,
   type MusicQueueEdit,
   musicQueueMenuState,
-  subscribeMusicQueuePlayer,
+  subscribeMusicQueueMenu,
 } from "../lib/musicQueue";
 import { moreWithLead } from "../lib/related";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
@@ -275,7 +275,7 @@ function MusicQueueMenuItems({
   const t = useT();
   const { session, revealed } = useSession();
   const scope = session ? { ...session, revealed } : undefined;
-  const queueState = useSyncExternalStore(subscribeMusicQueuePlayer, () =>
+  const queueState = useSyncExternalStore(subscribeMusicQueueMenu, () =>
     musicQueueMenuState(scope, mediaID),
   );
 
