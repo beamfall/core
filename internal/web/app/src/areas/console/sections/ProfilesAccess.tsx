@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 import {
   EmptyState,
   ErrorState,
@@ -289,17 +289,31 @@ function CeilingRow({
 // means "always allowed"; windows are weekday + start/end minute-of-day.
 function AccessScheduleEditor({ profileID }: { profileID: string }) {
   const t = useT();
-  const { data, failed, mutate, replace } = useAsync(
+  const { data, failed, mutate, refresh, replace } = useAsync(
     (signal) => fetchAccessSchedule(profileID, signal),
     [profileID],
   );
   const windows = data?.windows ?? [];
+  // Editing waits for the Profile's schedule: an edit discards the load in
+  // flight, so a draft begun before it lands would start from no windows and
+  // a save would erase the stored ones.
+  const ready = data !== null;
+  // Which Profile is selected, how many times the selection changed, and how
+  // many edits were made since. A save that resolves after the admin left and
+  // came back has its response dropped, so it reloads (unless a new draft
+  // began) rather than leave a fetch that raced the write on screen.
+  const selection = useRef({ profileID, switches: 0, edits: 0 });
+  if (selection.current.profileID !== profileID) {
+    selection.current = { profileID, switches: selection.current.switches + 1, edits: 0 };
+  }
 
   // Edits and the save response share useAsync's fence (CORE-0756): an edit
   // discards a save still in flight, and a Profile switch or an ended Admin
   // Session drops its response, so a late save for one Profile can never
   // repaint the windows shown (and later saved) for another.
   function update(next: AccessWindowInput[]) {
+    if (!ready) return;
+    selection.current.edits++;
     mutate({ profileID, windows: next });
   }
 
@@ -319,7 +333,13 @@ function AccessScheduleEditor({ profileID }: { profileID: string }) {
     e.preventDefault();
     // The save is not aborted on a switch, only its response is ignored: the
     // write belongs to the Profile it was made for.
+    if (!ready) return;
+    const switches = selection.current.switches;
     await replace(() => setAccessSchedule(profileID, windows));
+    const now = selection.current;
+    if (now.profileID === profileID && now.switches !== switches && now.edits === 0) {
+      void refresh();
+    }
   }
 
   if (failed) return <ErrorState message="accessSchedulesUnavailable" />;
@@ -383,10 +403,10 @@ function AccessScheduleEditor({ profileID }: { profileID: string }) {
         ))
       )}
       <div className="flex gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={addWindow}>
+        <Button type="button" size="sm" variant="outline" onClick={addWindow} disabled={!ready}>
           {t("accessScheduleAddWindow")}
         </Button>
-        <Button type="submit" size="sm">
+        <Button type="submit" size="sm" disabled={!ready}>
           {t("accessScheduleSave")}
         </Button>
       </div>

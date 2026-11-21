@@ -183,6 +183,38 @@ describe("ProfilesAccess managed-Profile policy", () => {
     expect(setAccessSchedule).toHaveBeenLastCalledWith("p1", []);
   });
 
+  it("reloads a Profile's schedule when its save lands after returning to it (CORE-0756)", async () => {
+    let finish: (() => void) | undefined;
+    let stored: { weekday: number; startMinute: number; endMinute: number }[] = [];
+    vi.mocked(setAccessSchedule).mockImplementationOnce(
+      (profileID, windows) =>
+        new Promise((resolve) => {
+          finish = () => {
+            stored = windows;
+            resolve({ profileID, windows });
+          };
+        }),
+    );
+    vi.mocked(fetchAccessSchedule).mockImplementation(async (profileID) => ({
+      profileID,
+      windows: profileID === "p2" ? stored : [],
+    }));
+    const user = await pickProfile("Kid");
+    await user.click(await screen.findByRole("button", { name: "Add window" }));
+    await user.click(screen.getByRole("button", { name: "Save schedule" }));
+    await waitFor(() => expect(finish).toBeDefined());
+
+    await user.click(screen.getAllByRole("combobox")[0]);
+    await user.click(await screen.findByRole("option", { name: "Owner" }));
+    await user.click(screen.getAllByRole("combobox")[0]);
+    await user.click(await screen.findByRole("option", { name: "Kid" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add window" })).toBeEnabled());
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+
+    await act(async () => finish?.());
+    expect(await screen.findByRole("button", { name: "Remove" })).toBeInTheDocument();
+  });
+
   it("applies certification ceilings through setCertificationCeiling", async () => {
     vi.mocked(fetchEnforcedFilters).mockResolvedValue({
       profiles: [
