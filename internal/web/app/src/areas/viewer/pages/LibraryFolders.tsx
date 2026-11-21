@@ -102,6 +102,7 @@ export function LibraryFolders({
       <div className="flex flex-col gap-5">
         <LibraryHeader
           nodeID={nodeID}
+          libraryID={libraryID}
           heading={heading}
           aside={
             <p role="status" className="text-sm text-[var(--text-muted)]">

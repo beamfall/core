@@ -20,6 +20,7 @@ import { EntityPage } from "./pages/EntityPage";
 import { FavoritesPage } from "./pages/FavoritesPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LibraryBrowsePage } from "./pages/LibraryBrowsePage";
+import { FeedCataloguePage, LibraryFeedsPage } from "./pages/LibraryFeedsPage";
 import { LibraryPivotPage } from "./pages/LibraryPivotPages";
 import { MediaDetailPage } from "./pages/MediaDetailPage";
 import { MyDataPage } from "./pages/MyDataPage";
@@ -158,6 +159,8 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
         <Route path="/n/:nodeId/collections" element={<LibraryPivotPage pivot="collections" />} />
         <Route path="/n/:nodeId/categories" element={<LibraryPivotPage pivot="categories" />} />
+        <Route path="/n/:nodeId/feeds" element={<LibraryFeedsPage />} />
+        <Route path="/n/:nodeId/feeds/:subscriptionId" element={<FeedCataloguePage />} />
         <Route path="/entity/:entityId" element={<EntityPage />} />
         <Route path="/media/*" element={<MediaDetailPage />} />
         <Route path="/credits/*" element={<CastCrewPage />} />
