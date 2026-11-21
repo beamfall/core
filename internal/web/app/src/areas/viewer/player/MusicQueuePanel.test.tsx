@@ -129,6 +129,31 @@ describe("MusicQueuePanel", () => {
     ).toEqual([0, 0, 199]);
   });
 
+  it("starts playback when focus revalidates during the Play queue read", async () => {
+    let answer!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      answer = resolve;
+    });
+    const refreshedRows = [
+      { id: "film", title: "Film", mediaClass: "video" },
+      { id: "new", title: "New first track", mediaClass: "audio" },
+    ];
+    const requests = vi
+      .fn(async () => page(refreshedRows))
+      .mockResolvedValueOnce(page([{ id: "old", title: "Old first track", mediaClass: "audio" }]))
+      .mockReturnValueOnce(pending);
+    vi.stubGlobal("fetch", requests);
+    const onPlay = renderQueuePanel();
+    fireEvent.click(await screen.findByRole("button", { name: STRINGS.en.musicQueuePlay }));
+    expect(requests).toHaveBeenCalledTimes(2);
+
+    fireEvent.focus(window);
+    expect(screen.queryByText("Old first track")).not.toBeInTheDocument();
+    await act(async () => answer(page(refreshedRows)));
+    expect(onPlay).toHaveBeenCalledExactlyOnceWith("new");
+    expect(requests).toHaveBeenCalledTimes(2);
+  });
+
   it("restarts all pages when a removal shifts the next page", async () => {
     const original = Array.from({ length: 202 }, (_, i) => ({
       id: `track-${i + 1}`,

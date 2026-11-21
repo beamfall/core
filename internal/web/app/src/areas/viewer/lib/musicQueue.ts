@@ -92,7 +92,6 @@ type QueueRead = {
   signal: AbortSignal;
   invalid?: boolean;
   pending?: { controller: AbortController; promise: Promise<RefreshResult> };
-  complete?: (rows: MusicQueueRow[] | null) => void;
 };
 type QueueResult = {
   scope: QueueScope;
@@ -155,12 +154,11 @@ export function useMusicQueue(enabled: boolean) {
   );
 
   const refresh = useCallback(
-    (fresh = false, complete?: QueueRead["complete"]) => {
+    (fresh = false) => {
       const read = active.current;
       if (!read || !isCurrent()) return Promise.resolve(undefined);
       if (!fresh && read.pending) return read.pending.promise;
       // An explicit Play or advance starts a read at the time of the action.
-      if (fresh) read.complete = complete;
       read.pending?.controller.abort();
       const request = new AbortController();
       const signal = AbortSignal.any([read.signal, request.signal]);
@@ -177,9 +175,6 @@ export function useMusicQueue(enabled: boolean) {
             failed: rows === null,
             rows: rows ?? (previous?.scope === read.scope ? previous.rows : undefined),
           }));
-          const finish = read.complete;
-          read.complete = undefined;
-          finish?.(rows);
           return rows;
         });
       read.pending = { controller: request, promise };
@@ -212,30 +207,37 @@ export function useMusicQueue(enabled: boolean) {
     const signal = scope.epoch
       ? AbortSignal.any([controller.signal, scope.epoch])
       : controller.signal;
-    // Revalidation can replace the read while an advance is waiting for it.
-    const previous = active.current;
-    const complete = previous?.scope === scope && !previous.invalid ? previous.complete : undefined;
-    active.current = { scope, validation, signal, controller, complete };
+    active.current = { scope, validation, signal, controller };
     void refresh();
     return () => controller.abort();
   }, [scope, refresh, validation]);
 
   useLayoutEffect(() => {
     if (!scope) return;
+    const hideTitles = () => {
+      setResult((previous) =>
+        previous?.scope === scope && !previous.invalid
+          ? { scope, checked: previous.checked }
+          : previous,
+      );
+    };
     const invalidate = (hidden?: boolean) => {
       active.current?.controller.abort();
       // Hide old titles before a restored document can be painted.
       flushSync(() => {
-        setResult((previous) =>
-          previous?.scope === scope && !previous.invalid
-            ? { scope, checked: previous.checked }
-            : previous,
-        );
+        hideTitles();
         setValidation((previous) => ({ hidden: hidden ?? previous.hidden }));
       });
     };
     const foreground = () => {
-      if (document.visibilityState !== "hidden") invalidate(false);
+      if (document.visibilityState === "hidden") return;
+      if (!isCurrent()) {
+        invalidate(false);
+        return;
+      }
+      flushSync(hideTitles);
+      // The pending read already checks the live identity and supplies its caller's result.
+      void refresh();
     };
     const pagehide = () => invalidate(true);
     const restore = (event: PageTransitionEvent) => {
@@ -255,7 +257,7 @@ export function useMusicQueue(enabled: boolean) {
       window.removeEventListener("pageshow", restore);
       document.removeEventListener("visibilitychange", foreground);
     };
-  }, [scope]);
+  }, [scope, isCurrent, refresh]);
 
   const scoped = scope && !scope.epoch?.aborted && result?.scope === scope ? result : undefined;
   return {
