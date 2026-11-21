@@ -242,6 +242,26 @@ describe("poster size roaming with the Profile (CORE-2914)", () => {
     expect(setClientPref).not.toHaveBeenCalled();
   });
 
+  it("lets another tab's changes win even when they end on the starting value", async () => {
+    localStorage.setItem(POSTER_SIZE_KEY, "medium");
+    let resolveRead: (prefs: { key: string; value: string }[]) => void = () => {};
+    vi.mocked(fetchClientPrefs).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+    );
+    renderHook(() => usePosterSizeRoot("p1"));
+
+    for (const size of ["small", "medium"]) {
+      localStorage.setItem(POSTER_SIZE_KEY, size);
+      window.dispatchEvent(new StorageEvent("storage", { key: POSTER_SIZE_KEY, newValue: size }));
+    }
+    resolveRead(saved("large"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(readPosterSize()).toBe("medium");
+  });
+
   it("does not let a read finishing during a Console visit undo a pick made there", async () => {
     localStorage.setItem(POSTER_SIZE_KEY, "medium");
     let resolveRead: (prefs: { key: string; value: string }[]) => void = () => {};
