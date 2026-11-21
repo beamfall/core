@@ -218,3 +218,43 @@ func TestDiagnosticsBundle(t *testing.T) {
 		t.Fatalf("cpu profile errors = %#v, want the allowed list", errs)
 	}
 }
+
+// TestAgentTokenCreateLibraryGrantsOwner (CORE-2921): an agent token has no
+// Profile, so createLibrary grants the new Library to the owner's Profile
+// instead of failing with "profile ID is required".
+func TestAgentTokenCreateLibraryGrantsOwner(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	const body = `{"query":"mutation { createLibrary(title: \"Agent Library\") { id title } }"}`
+	if _, errs := post(t, handler, body, tokenAuthorizer(t, st, store.APITokenAccessAgent)); len(errs) != 1 || !strings.Contains(errs[0].Message, "no owner Profile") {
+		t.Fatalf("createLibrary with no owner errors = %#v, want the no-owner refusal", errs)
+	}
+	if err := st.SetProfileOwner(t.Context(), "profile-default"); err != nil {
+		t.Fatalf("SetProfileOwner: %v", err)
+	}
+	owner, err := st.OwnerProfile(t.Context())
+	if err != nil {
+		t.Fatalf("OwnerProfile: %v", err)
+	}
+	data, errs := post(t, handler, body, tokenAuthorizer(t, st, store.APITokenAccessAgent))
+	if len(errs) != 0 {
+		t.Fatalf("agent token createLibrary errors = %#v", errs)
+	}
+	var created LibraryInfo
+	if err := json.Unmarshal(data["createLibrary"], &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Title != "Agent Library" || created.ID == "" {
+		t.Fatalf("createLibrary = %+v", created)
+	}
+	granted, err := st.Profile(t.Context(), owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(granted.Library, store.LibraryID(created.ID)) {
+		t.Fatalf("owner %s libraries = %v, want %s granted", owner.ID, granted.Library, created.ID)
+	}
+	if !strings.Contains(agentCatalogGuide, "granted to the server owner's Profile") {
+		t.Fatal("agent catalog guide does not say which Profile a token-created Library is granted to")
+	}
+}

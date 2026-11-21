@@ -32,6 +32,7 @@ const agentCatalogGuide = `Beamfall GraphQL for agents.
 POST /api/graphql with {"query": "...", "variables": {...}} and "Authorization: Bearer <token>".
 Mint a token offline with the server stopped: beamfall token create --name <n> --access cli|diagnostics|agent.
 Tiers: cli runs the operator CLI fields; diagnostics also runs every admin read plus jobCancel and jobRetry; agent also runs admin mutations except minting credentials and transferring ownership.
+A token has no Profile: a Library it creates with createLibrary is granted to the server owner's Profile.
 Each field below lists its kind, whether it needs an Admin Session, the token tiers that may run it, its arguments and its top-level result fields. Each argument reads "name: kind", marked optional when the field runs without it; an empty list means the field takes none. Select result fields in braces, for example: query { jobs { id status } }.
 A refused field answers "admin session required". Every response carries an X-Beamfall-Request-Id header; pass it to serverLogs(requestId: ...) or diagnosticsBundle to find the matching log lines.
 Debug: serverLogs(limit, contains, level, requestId) and diagnosticsBundle(profiles: ["goroutine","heap","allocs","block","mutex","threadcreate"]).`
