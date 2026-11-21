@@ -104,6 +104,11 @@ type Service struct {
 	cancel      context.CancelFunc
 	closed      bool
 	disabled    bool
+	// syncMu orders SyncRoots calls, so the last one applies the newest saved
+	// folder set. allowed holds the folder set SyncRoots last applied to a
+	// Library; Observe refuses a root outside it (CORE-1280).
+	syncMu  sync.Mutex
+	allowed map[store.LibraryID][]string
 }
 
 type rootKey struct {
@@ -220,6 +225,12 @@ func (s *Service) Observe(libraryID store.LibraryID, root string) Status {
 		s.mu.Unlock()
 		return Status{Error: "live watcher disabled; using scheduled scans"}
 	}
+	if allowed, ok := s.allowed[libraryID]; ok && !withinRoots(allowed, root) {
+		// A scan resolved before the folder left the Library must not
+		// re-arm its watch.
+		s.mu.Unlock()
+		return Status{Error: "folder is not part of the library"}
+	}
 	if state, ok := s.roots[key]; ok {
 		status := state.status()
 		s.mu.Unlock()
@@ -285,18 +296,51 @@ func (s *Service) Status(libraryID store.LibraryID) Status {
 // deleted Library's folders raise no further scan jobs. A later Observe of the
 // same root starts a fresh watch.
 func (s *Service) Forget(libraryID store.LibraryID) error {
+	s.mu.Lock()
+	delete(s.allowed, libraryID)
+	s.mu.Unlock()
 	return s.forgetRoots(libraryID, func(string) bool { return false })
 }
 
-// Retain stops watching every root of a Library that is not in roots, so a
-// folder removed from the Library raises no further scan jobs (CORE-1280).
-// Roots in the set are left as they are; Observe starts any that are new.
-func (s *Service) Retain(libraryID store.LibraryID, roots []string) error {
+// SyncRoots makes a Library's watches match its saved folder set: load reads
+// that set, a root no longer in it stops being watched, so a removed folder
+// raises no further scan jobs, and a new one starts (CORE-1280). Calls are
+// serialized and load runs inside, so overlapping edits end on the newest set.
+func (s *Service) SyncRoots(libraryID store.LibraryID, load func() ([]string, error)) error {
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+	roots, err := load()
+	if err != nil {
+		return err
+	}
+	cleaned := make([]string, 0, len(roots))
 	keep := make(map[string]bool, len(roots))
 	for _, root := range roots {
-		keep[filepath.Clean(root)] = true
+		root = filepath.Clean(root)
+		cleaned = append(cleaned, root)
+		keep[root] = true
 	}
-	return s.forgetRoots(libraryID, func(root string) bool { return keep[root] })
+	s.mu.Lock()
+	if s.allowed == nil {
+		s.allowed = map[store.LibraryID][]string{}
+	}
+	s.allowed[libraryID] = cleaned
+	s.mu.Unlock()
+	err = s.forgetRoots(libraryID, func(root string) bool { return keep[root] })
+	for _, root := range cleaned {
+		_ = s.Observe(libraryID, root)
+	}
+	return err
+}
+
+// withinRoots reports whether root is one of roots or lies under one.
+func withinRoots(roots []string, root string) bool {
+	for _, allowed := range roots {
+		if root == allowed || strings.HasPrefix(root, strings.TrimSuffix(allowed, string(filepath.Separator))+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // forgetRoots stops and drops every watched root of a Library that keep

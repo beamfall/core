@@ -2,6 +2,7 @@ package watcher
 
 import (
 	"context"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -76,7 +77,7 @@ func TestForgetStopsOneLibraryAndObserveResumesIt(t *testing.T) {
 
 // A folder removed from a Library stops being watched while the Library's
 // other folders, and other Libraries, keep their watches (CORE-1280).
-func TestRetainStopsRemovedRootsOnly(t *testing.T) {
+func TestSyncRootsStopsRemovedRootsOnly(t *testing.T) {
 	filmsRoot, extrasRoot, otherRoot := t.TempDir(), t.TempDir(), t.TempDir()
 	var scans atomic.Int32
 	service := NewService(Options{
@@ -91,8 +92,8 @@ func TestRetainStopsRemovedRootsOnly(t *testing.T) {
 	service.Observe("library-other", otherRoot)
 	extrasState, _ := service.rootStateForTest("library-films", extrasRoot)
 
-	if err := service.Retain("library-films", []string{filmsRoot + "/"}); err != nil {
-		t.Fatalf("Retain: %v", err)
+	if err := service.SyncRoots("library-films", func() ([]string, error) { return []string{filmsRoot + "/"}, nil }); err != nil {
+		t.Fatalf("SyncRoots: %v", err)
 	}
 	if _, ok := service.rootStateForTest("library-films", extrasRoot); ok {
 		t.Fatal("removed root is still watched")
@@ -104,6 +105,17 @@ func TestRetainStopsRemovedRootsOnly(t *testing.T) {
 		if state, ok := service.rootStateForTest(kept.library, kept.root); !ok || !state.status().Active {
 			t.Fatalf("%s %s lost its watch", kept.library, kept.root)
 		}
+	}
+	// A scan that resolved the removed folder before the edit cannot re-arm it,
+	// while a folder under a kept root still can be watched.
+	if status := service.Observe("library-films", extrasRoot); status.Active {
+		t.Fatalf("Observe of a removed root = %#v, want refused", status)
+	}
+	if _, ok := service.rootStateForTest("library-films", extrasRoot); ok {
+		t.Fatal("Observe re-armed a removed root")
+	}
+	if status := service.Observe("library-films", filepath.Join(filmsRoot, "Sub")); status.Error == "folder is not part of the library" {
+		t.Fatalf("Observe under a kept root = %#v, want allowed", status)
 	}
 	extrasState.handleEvent(fsnotify.Event{Name: extrasRoot + "/new.mp4", Op: fsnotify.Create})
 	time.Sleep(60 * time.Millisecond)
