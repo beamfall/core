@@ -158,7 +158,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	if err := s.refreshParserFields(media.ID, refresh); err != nil {
 		return err
 	}
-	if imported.Class == store.MediaClassImage {
+	if len(task.local) > 0 {
 		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
 			return err
 		}
@@ -348,7 +348,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	}
 	s.committed = path
 	s.rememberVersionAnchor(versionKey, media.ID, fingerprint, parsed)
-	if isImage {
+	if len(task.local) > 0 {
 		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
 			return err
 		}
