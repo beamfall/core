@@ -96,22 +96,9 @@ test.describe("viewer", () => {
         });
       }
       if (!query.startsWith("query SourceItems(")) return route.fallback();
+      // A Profile with nothing to resume: Home leads with the feature (CORE-2825).
       if (variables.kind === "continue-watching") {
-        return route.fulfill({
-          json: {
-            data: {
-              sourceItems: [
-                {
-                  id: "in-progress",
-                  kind: "media",
-                  title: "In progress",
-                  artworkSlots: { poster: "/core-1154-art/landscape" },
-                  engagement: { positionSeconds: 120, durationSeconds: 240 },
-                },
-              ],
-            },
-          },
-        });
+        return route.fulfill({ json: { data: { sourceItems: [] } } });
       }
       if (variables.kind !== "recently-added") return route.fallback();
       if (variables.libraryID === "library-extra") await firstHeroReady;
@@ -155,7 +142,7 @@ test.describe("viewer", () => {
     await expect(page.locator(".bf-hero img")).toHaveAttribute("src", /\/core-1154-art\/square/);
     await expect(page.locator(".bf-hero")).toBeVisible();
     releaseSecondLibrary();
-    await expect(page.getByRole("list", { name: "Continue Watching" })).toBeVisible();
+    await expect(page.getByRole("list", { name: "Continue Watching" })).toHaveCount(0);
     const shelf = page
       .getByRole("list")
       .filter({ has: page.getByRole("link", { name: "square" }) });
@@ -237,6 +224,43 @@ test.describe("viewer", () => {
       visiblePosition = position;
     }
     expect(visiblePosition).toBeGreaterThan(60);
+  });
+
+  test("Home leads with Continue Watching above the fold when a Profile has items to resume", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.route("**/api/graphql", async (route) => {
+      const { query, variables } = route.request().postDataJSON();
+      if (!query.startsWith("query SourceItems(")) return route.fallback();
+      if (variables.kind === "continue-watching") {
+        return route.fulfill({
+          json: {
+            data: {
+              sourceItems: [
+                {
+                  id: "in-progress",
+                  kind: "media",
+                  title: "In progress",
+                  engagement: { positionSeconds: 120, durationSeconds: 240 },
+                },
+              ],
+            },
+          },
+        });
+      }
+      return route.fallback();
+    });
+
+    await page.goto("/web/");
+    const keepWatching = page.getByRole("list", { name: "Continue Watching" });
+    await expect(keepWatching).toBeVisible();
+    await expect(page.locator(".bf-hero")).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("list").first()).toHaveAccessibleName(
+      "Continue Watching",
+    );
+    const box = await keepWatching.boundingBox();
+    expect(box && box.y + box.height).toBeLessThanOrEqual(900);
   });
 
   test("accessibility variant: Viewer supports large text", async ({ page }) => {
