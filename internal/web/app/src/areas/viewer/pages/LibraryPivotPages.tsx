@@ -10,6 +10,7 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
 import { LibraryHeader } from "../components/LibraryPivots";
+import { PosterSizeControl } from "../components/PosterSizeControl";
 import { ViewerActions } from "../components/ViewerActions";
 import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
 import { sortCollections } from "../lib/collections";
@@ -63,7 +64,12 @@ export function LibraryPivotPage({ pivot }: { pivot: LibraryPivotName }) {
   return (
     <AppShell actions={<ViewerActions />}>
       <div className="flex flex-col gap-5">
-        <LibraryHeader nodeID={node.id} heading={displayString(node.title, displayLocale)} />
+        {/* The app-wide poster size, on every pivot's heading row (CORE-2893). */}
+        <LibraryHeader
+          nodeID={node.id}
+          heading={displayString(node.title, displayLocale)}
+          aside={<PosterSizeControl className="ml-auto" />}
+        />
         {pivot === "collections" ? (
           <LibraryCollections key={node.libraryID} libraryID={node.libraryID} />
         ) : (

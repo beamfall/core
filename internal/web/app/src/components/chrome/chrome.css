@@ -922,42 +922,65 @@
   scroll-snap-align: start;
 }
 
-/* Poster size (CORE-2468): the root's data-poster-size sets the grids' column
- * floors and the shelves' card width (CORE-2893), so one choice reaches every
- * viewer grid and shelf. Large is the original size. */
+/* Poster size (CORE-2468): one app-wide choice. The root's data-poster-size
+ * sets every viewer thumbnail surface (CORE-2893): the grids' column floors,
+ * the shelves' card width, the Collections poster grid, the Categories cards,
+ * the Collection and Category tiles on the pivots, and the cast row. Large is
+ * the original size of each. */
 [data-register="viewer"] {
   --bf-grid-min: 150px;
   --bf-grid-wide-min: 220px;
   --bf-shelf-card: 164px;
+  --bf-collection-min: 150px;
+  --bf-category-min: 240px;
+  --bf-category-cols: 2;
+  --bf-tile-min: 180px;
+  --bf-cast-card: 120px;
 }
 
 [data-register="viewer"][data-poster-size="medium"] {
   --bf-grid-min: 130px;
   --bf-grid-wide-min: 190px;
   --bf-shelf-card: 140px;
+  --bf-collection-min: 130px;
+  --bf-category-min: 200px;
+  --bf-category-cols: 3;
+  --bf-tile-min: 150px;
+  --bf-cast-card: 104px;
 }
 
 [data-register="viewer"][data-poster-size="small"] {
   --bf-grid-min: 110px;
   --bf-grid-wide-min: 160px;
   --bf-shelf-card: 116px;
+  --bf-collection-min: 110px;
+  --bf-category-min: 170px;
+  --bf-category-cols: 3;
+  --bf-tile-min: 120px;
+  --bf-cast-card: 88px;
 }
 
+/* Phones: --bf-category-cols is the Categories column count there. Small's
+ * collection and tile floors sit low enough to add a column on a 390px phone. */
 @media (max-width: 760px) {
   [data-register="viewer"] {
     --bf-grid-min: 96px;
     --bf-grid-wide-min: 150px;
     --bf-shelf-card: 128px;
+    --bf-collection-min: 112px;
   }
   [data-register="viewer"][data-poster-size="medium"] {
     --bf-grid-min: 84px;
     --bf-grid-wide-min: 130px;
     --bf-shelf-card: 108px;
+    --bf-collection-min: 96px;
   }
   [data-register="viewer"][data-poster-size="small"] {
     --bf-grid-min: 72px;
     --bf-grid-wide-min: 110px;
     --bf-shelf-card: 92px;
+    --bf-collection-min: 76px;
+    --bf-tile-min: 110px;
   }
 }
 
@@ -1897,7 +1920,7 @@
 /* Category and collection tiles on the Library pivots. */
 [data-register="viewer"] .bf-tile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--bf-tile-min)), 1fr));
   gap: 8px;
   margin: 0;
   padding: 0;

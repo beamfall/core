@@ -3,6 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { readPosterSize } from "@/components/chrome/posterSize";
 import { type CollectionInfo, fetchCollections } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
@@ -100,15 +101,16 @@ describe("Library Collections pivot (CORE-2437)", () => {
     );
   });
 
-  it("passes axe and walks the pivots, then the tiles, by keyboard", async () => {
+  it("passes axe and walks the poster size, the pivots, then the tiles, by keyboard", async () => {
     vi.mocked(fetchCollections).mockResolvedValue([collection("c1", "Classics", 1)]);
     const { container } = renderAt("/n/library-films/collections");
     const tile = await screen.findByRole("link", { name: /Classics/ });
 
     await expectNoAxeViolations(container);
     expectNoPositiveTabindex(container);
+    const size = within(screen.getByRole("group", { name: "Poster size" }));
     const pivots = within(screen.getByRole("navigation", { name: "Library views" }));
-    const order = [...pivots.getAllByRole("link"), tile];
+    const order = [...size.getAllByRole("button"), ...pivots.getAllByRole("link"), tile];
     for (const link of order) {
       await userEvent.tab();
       expect(link).toHaveFocus();
@@ -178,6 +180,33 @@ function serveCategories(groupings: Grouping[], art: Record<string, SourceItem[]
 function withArt(id: string, backdrop: string): SourceItem {
   return { id, kind: "media", title: id, artworkSlots: { backdrop } } as unknown as SourceItem;
 }
+
+// One app-wide poster size: the Collections and Categories pivots offer the
+// same control as the other pivots, and a choice on one is the choice on all.
+describe("Library pivots poster size (CORE-2893)", () => {
+  it("offers the app-wide poster size on the Collections and Categories pivots", async () => {
+    localStorage.clear();
+    onTestFinished(() => localStorage.clear());
+    vi.mocked(fetchCollections).mockResolvedValue([]);
+    renderAt("/n/library-films/collections");
+    const size = within(screen.getByRole("group", { name: "Poster size" }));
+    expect(size.getByRole("button", { name: "Large posters" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await userEvent.click(size.getByRole("button", { name: "Small posters" }));
+    expect(readPosterSize()).toBe("small");
+    cleanup();
+
+    serveCategories([]);
+    renderAt("/n/library-films/categories");
+    expect(
+      within(screen.getByRole("group", { name: "Poster size" })).getByRole("button", {
+        name: "Small posters",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+});
 
 describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
   it("counts outermost containers with the plugin label, keeping loose item counts (CORE-2552)", async () => {

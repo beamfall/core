@@ -75,7 +75,7 @@
 
 [data-register="viewer"] .bf-category-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--bf-category-min)), 1fr));
   gap: 16px;
   margin: 0;
   padding: 0;
@@ -205,7 +205,7 @@
 
 @media (max-width: 760px) {
   [data-register="viewer"] .bf-category-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(var(--bf-category-cols), minmax(0, 1fr));
     gap: 8px;
   }
 
