@@ -1597,15 +1597,46 @@ export async function fetchImportStatus(jobID: string, signal?: AbortSignal): Pr
 }
 
 const UNMATCHED_QUEUE_QUERY =
-  "query UnmatchedQueue { unmatchedQueue { mediaID title pluginID scraperID confidence threshold candidateID candidateTitle queuedAt failureReason } }";
+  "query UnmatchedQueue($limit: Int, $offset: Int) { unmatchedQueue(limit: $limit, offset: $offset) { mediaID title pluginID scraperID confidence threshold candidateID candidateTitle queuedAt failureReason } }";
 
-/** UnmatchedQueue — items the scanner or importer could not match (ADR-0003 §4). */
+/** The server's unmatchedQueue page cap and offset ceiling. */
+const UNMATCHED_PAGE = 200;
+const UNMATCHED_OFFSET_MAX = 10_000;
+
+/**
+ * UnmatchedQueue — every item the scanner or importer could not match
+ * (ADR-0003 §4), read page by page so grouping sees the whole queue.
+ */
 export async function fetchUnmatchedQueue(): Promise<UnmatchedItemInfo[]> {
-  const data = await graphql<{ unmatchedQueue: UnmatchedItemInfo[] | null }>(
-    UNMATCHED_QUEUE_QUERY,
-    {},
-  );
-  return data.unmatchedQueue ?? [];
+  return (await fetchUnmatchedQueuePages()).items;
+}
+
+/**
+ * fetchUnmatchedQueuePages reads the queue page by page up to the server's
+ * offset ceiling. complete is false when rows remain past that ceiling. A row
+ * that shifts onto a later page while a scan inserts rows is kept once, so a
+ * batch never writes the same item twice.
+ */
+export async function fetchUnmatchedQueuePages(): Promise<{
+  items: UnmatchedItemInfo[];
+  complete: boolean;
+}> {
+  const items: UnmatchedItemInfo[] = [];
+  const seen = new Set<string>();
+  for (let offset = 0; offset <= UNMATCHED_OFFSET_MAX; offset += UNMATCHED_PAGE) {
+    const data = await graphql<{ unmatchedQueue: UnmatchedItemInfo[] | null }>(
+      UNMATCHED_QUEUE_QUERY,
+      { limit: UNMATCHED_PAGE, offset },
+    );
+    const page = data.unmatchedQueue ?? [];
+    for (const item of page) {
+      if (seen.has(item.mediaID)) continue;
+      seen.add(item.mediaID);
+      items.push(item);
+    }
+    if (page.length < UNMATCHED_PAGE) return { items, complete: true };
+  }
+  return { items, complete: false };
 }
 
 const DISMISS_UNMATCHED_MUTATION =
@@ -1653,14 +1684,18 @@ export async function fixMatch(vars: {
 // --- Fix Match full contract (METAPARITY-4, ADR-0068 §A) -------------------
 
 const FIX_MATCH_CANDIDATES_QUERY =
-  "query FixMatchCandidates($mediaID: String!, $pluginID: String!, $scraperID: String!, $query: String!) { fixMatchCandidates(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, query: $query) { id title summary year pluginID scraperID confidence threshold scored reason } }";
+  "query FixMatchCandidates($mediaID: String!, $pluginID: String!, $scraperID: String!, $query: String!, $year: Int) { fixMatchCandidates(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, query: $query, year: $year) { id title summary year pluginID scraperID confidence threshold scored reason } }";
 
-/** FixMatchCandidates — candidates scored against the operator's query, best first. */
+/**
+ * FixMatchCandidates — candidates scored against the operator's query, best
+ * first. A year fills the scraper's year slot and scores with it (CORE-2910).
+ */
 export async function fixMatchCandidates(vars: {
   mediaID: string;
   pluginID: string;
   scraperID: string;
   query: string;
+  year?: number;
 }): Promise<FixMatchCandidateInfo[]> {
   const data = await graphql<{ fixMatchCandidates: FixMatchCandidateInfo[] | null }>(
     FIX_MATCH_CANDIDATES_QUERY,

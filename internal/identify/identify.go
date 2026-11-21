@@ -320,6 +320,13 @@ func (s *Service) Search(ctx context.Context, pluginID, scraperID, query string,
 	return s.search(ctx, pluginID, scraperID, query, mediaID, 0)
 }
 
+// SearchYear is Search with a year the operator supplied, filling a
+// SearchTemplate's {year} slot with the same no-results retry without it.
+// A year of zero or less behaves exactly like Search.
+func (s *Service) SearchYear(ctx context.Context, pluginID, scraperID, query string, mediaID store.MediaID, year int) ([]Candidate, error) {
+	return s.search(ctx, pluginID, scraperID, query, mediaID, max(year, 0))
+}
+
 // search is Search with the item's year when identification knows it (zero
 // when not), substituted for a SearchTemplate's {year}. A year-filtered
 // search that finds nothing runs once more without the year: a file's year
