@@ -13,7 +13,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -167,7 +166,11 @@ func (r *Runner) runPipeToolWith(ctx context.Context, port int, in PipeInput, to
 	if err != nil {
 		return fmt.Errorf("%s is not available: %w", tool, err)
 	}
-	cmd, err := r.pipeCommand(ctx, runtime.GOOS, port, toolPath, pipeArgsForToolContext(ctx, toolPath, args))
+	toolArgs, err := pipeArgsForToolContext(ctx, toolPath, args)
+	if err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	cmd, err := r.pipeCommand(ctx, runtime.GOOS, port, toolPath, toolArgs)
 	if err != nil {
 		return err
 	}
@@ -182,17 +185,16 @@ func (r *Runner) runPipeCmd(ctx context.Context, cmd *exec.Cmd, in PipeInput, wh
 }
 
 func (r *Runner) runPipeCmdWith(ctx context.Context, cmd *exec.Cmd, in PipeInput, what string, stdout io.Writer, stderr *boundedBuffer) error {
-	var killOnce sync.Once
-	kill := func() { killOnce.Do(func() { killProcessGroup(cmd) }) }
+	group := newProcessGroup(cmd)
 	if stderr == nil {
 		stderr = &boundedBuffer{limit: pipeStderrLimit}
 	}
-	stderr.onOverflow = kill
+	stderr.onOverflow = group.kill
 	boundedOut, _ := stdout.(*boundedBuffer)
 	if boundedOut != nil && boundedOut.onOverflow == nil {
-		boundedOut.onOverflow = kill
+		boundedOut.onOverflow = group.kill
 	}
-	runErr := r.runWith(ctx, cmd, stdout, stderr)
+	runErr := superviseGroup(ctx, group, stdout, stderr)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return errors.Join(fmt.Errorf("%s interrupted: %w", what, ctxErr), survivedError(runErr))
 	}

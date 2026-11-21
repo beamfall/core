@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -49,11 +48,10 @@ func (r *Runner) ProbeKeyframes(ctx context.Context, src string) (KeyframeIndex,
 	}, inputProtocolArgs()...), "--", src)
 	cmd := r.hardenedCommand(ctx, ffprobePath, readConfinement(src).ReadOnly, nil, args)
 	parser := &keyframeParser{}
-	var once sync.Once
-	kill := func() { once.Do(func() { killProcessGroup(cmd) }) }
-	stderr := &boundedBuffer{limit: captureLimitBytes, onOverflow: kill}
-	parser.onFail = kill
-	runErr := r.runWith(ctx, cmd, parser, stderr)
+	group := newProcessGroup(cmd)
+	stderr := &boundedBuffer{limit: captureLimitBytes, onOverflow: group.kill}
+	parser.onFail = group.kill
+	runErr := superviseGroup(ctx, group, parser, stderr)
 	if stderr.overflowed() {
 		return KeyframeIndex{}, overflowError(runErr)
 	}

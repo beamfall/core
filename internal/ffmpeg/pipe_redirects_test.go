@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,7 +49,7 @@ func TestPipeArgsForToolKeepsRedirectGuardWhenSupported(t *testing.T) {
 		return []byte(httpHelpWithMaxRedirects), nil
 	})
 	args := pipeProbeArgs("http://127.0.0.1:1234/src", time.Second)
-	got := pipeArgsForTool("/opt/ffmpeg-9/ffprobe", args)
+	got := mustPipeArgs(t, "/opt/ffmpeg-9/ffprobe", args)
 	if !slices.Equal(got, args) {
 		t.Fatalf("argv changed on a build with -max_redirects:\n got %q\nwant %q", got, args)
 	}
@@ -63,7 +64,7 @@ func TestPipeArgsForToolDropsRedirectGuardOnlyWhenUnsupported(t *testing.T) {
 	})
 	profile := ConvertProfile{Name: "t", Container: "mp4", VideoCodec: "libx264", AudioCodec: "aac"}
 	args := pipeArgs("http://127.0.0.1:1234/src", time.Second, profile)
-	got := pipeArgsForTool("/usr/bin/ffmpeg", args)
+	got := mustPipeArgs(t, "/usr/bin/ffmpeg", args)
 	if slices.Contains(got, "-max_redirects") {
 		t.Fatalf("argv kept -max_redirects on a build without it: %q", got)
 	}
@@ -76,7 +77,7 @@ func TestPipeArgsForToolDropsRedirectGuardOnlyWhenUnsupported(t *testing.T) {
 			t.Fatalf("argv lost %s: %q", pair[0], got)
 		}
 	}
-	_ = pipeArgsForTool("/usr/bin/ffmpeg", args)
+	_ = mustPipeArgs(t, "/usr/bin/ffmpeg", args)
 	if *calls != 1 {
 		t.Fatalf("help probed %d times for one tool, want 1", *calls)
 	}
@@ -87,7 +88,7 @@ func TestPipeArgsForToolKeepsGuardWhenListingFails(t *testing.T) {
 		return nil, errors.New("exit status 1")
 	})
 	args := pipeProbeArgs("http://127.0.0.1:1234/src", time.Second)
-	if got := pipeArgsForTool("/broken/ffprobe", args); !slices.Equal(got, args) {
+	if got := mustPipeArgs(t, "/broken/ffprobe", args); !slices.Equal(got, args) {
 		t.Fatalf("a failed listing dropped the guard: %q", got)
 	}
 }
@@ -102,7 +103,7 @@ func TestPipeArgsForToolAcceptedByRealBinary(t *testing.T) {
 			t.Skipf("%s not on PATH", tool)
 		}
 		withHTTPProtocolHelp(t, defaultHTTPProtocolHelp)
-		args := append([]string{"-hide_banner", "-v", "error"}, pipeArgsForTool(path, pipeInputOptions(time.Second))...)
+		args := append([]string{"-hide_banner", "-v", "error"}, mustPipeArgs(t, path, pipeInputOptions(time.Second))...)
 		args = append(args, "-i", "http://127.0.0.1:9/src")
 		if tool == "ffmpeg" {
 			args = append(args, "-f", "null", "-")
@@ -138,7 +139,7 @@ func TestPipeArgsReprobeWhenToolReplacedInPlace(t *testing.T) {
 		return []byte(help), nil
 	})
 	args := pipeInputOptions(time.Second)
-	if got := pipeArgsForTool(tool, args); !hasPair(got, maxRedirectsOption, "0") {
+	if got := mustPipeArgs(t, tool, args); !hasPair(got, maxRedirectsOption, "0") {
 		t.Fatalf("supported build lost the guard: %v", got)
 	}
 	// Replace the binary at the same path with a build that lacks the option.
@@ -146,10 +147,43 @@ func TestPipeArgsReprobeWhenToolReplacedInPlace(t *testing.T) {
 	if err := os.WriteFile(tool, []byte("new build"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := pipeArgsForTool(tool, args); slices.Contains(got, maxRedirectsOption) {
+	if got := mustPipeArgs(t, tool, args); slices.Contains(got, maxRedirectsOption) {
 		t.Fatalf("replaced unsupported build kept the guard: %v", got)
 	}
 	if *calls != 2 {
 		t.Fatalf("probes = %d, want 2 (one per binary identity)", *calls)
+	}
+}
+
+func mustPipeArgs(t *testing.T, toolPath string, args []string) []string {
+	t.Helper()
+	got, err := pipeArgsForToolContext(context.Background(), toolPath, args)
+	if err != nil {
+		t.Fatalf("pipeArgsForToolContext(%s) = %v", toolPath, err)
+	}
+	return got
+}
+
+// TestPipeArgsForToolFailsOnSurvivorAndAsksAgain injects a surviving group
+// through the help runner: no argv comes back, so no pipe job starts, and the
+// survivor is not cached as a verdict (CORE-2757).
+func TestPipeArgsForToolFailsOnSurvivorAndAsksAgain(t *testing.T) {
+	survived := true
+	calls := withHTTPProtocolHelp(t, func(context.Context, string) ([]byte, error) {
+		if survived {
+			return nil, fmt.Errorf("%w: process group 7", errGroupSurvived)
+		}
+		return []byte(httpHelpWithMaxRedirects), nil
+	})
+	args := pipeProbeArgs("http://127.0.0.1:1234/src", time.Second)
+	if got, err := pipeArgsForToolContext(t.Context(), "/usr/bin/ffprobe", args); !errors.Is(err, errGroupSurvived) || got != nil {
+		t.Fatalf("pipeArgsForToolContext = %q, %v; want no argv and the survivor", got, err)
+	}
+	survived = false
+	if got := mustPipeArgs(t, "/usr/bin/ffprobe", args); !slices.Equal(got, args) {
+		t.Fatalf("argv after the survivor cleared = %q, want %q", got, args)
+	}
+	if *calls != 2 {
+		t.Fatalf("help probed %d times, want 2: a survivor is not a cached verdict", *calls)
 	}
 }

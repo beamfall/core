@@ -180,10 +180,11 @@ func TestWorkerShimGuardianKillsMidForkChildren(t *testing.T) {
 	artifact := filepath.Join(dir, "worker")
 	// The worker holds the witness FIFO named by $1 open, so every process it
 	// forks does too, and reports readiness once TERM is ignored. Each child is
-	// killed at once and would end by itself after 3 s anyway, so only a child
-	// forked while the guardian's KILL lands outlives the loop, and the test
-	// never signals a group it may no longer own.
-	script := "#!/bin/sh\ntrap '' TERM\nexec 9>\"$1\"\nprintf r >&9\nwhile :; do /bin/sleep 3 & kill -9 $!; done\n"
+	// killed at once and would end by itself after 10 s anyway, so only a
+	// child forked while the guardian's KILL lands outlives the loop, and the
+	// test never signals a group it may no longer own. 10 s is well past the
+	// witness's EOF wait, so a missed child cannot expire inside it.
+	script := "#!/bin/sh\ntrap '' TERM\nexec 9>\"$1\"\nprintf r >&9\nwhile :; do /bin/sleep 10 & kill -9 $!; done\n"
 	if err := os.WriteFile(artifact, []byte(script), 0o700); err != nil { //nolint:gosec // test artifact must be executable
 		t.Fatalf("write artifact: %v", err)
 	}
@@ -283,7 +284,10 @@ func runGuardedForkingWorker(beamfall, artifact, witness string) (outlived bool,
 	select {
 	case err := <-ready:
 		if err != nil {
+			// The shim may not have started its guardian yet, so dropping the
+			// lifetime pipe alone cannot end it.
 			_ = lifetimeW.Close()
+			_ = cmd.Process.Kill()
 			<-waitErr
 			return false, fmt.Errorf("worker readiness: %w", err)
 		}
@@ -292,6 +296,7 @@ func runGuardedForkingWorker(beamfall, artifact, witness string) (outlived bool,
 		return false, fmt.Errorf("%w: shim exited: %v: %s", errWorkerNotReady, err, readStderr(stderr))
 	case <-time.After(10 * time.Second):
 		_ = lifetimeW.Close()
+		_ = cmd.Process.Kill()
 		err := <-waitErr
 		return false, fmt.Errorf("worker never became ready: %v: %s", err, readStderr(stderr))
 	}
@@ -313,6 +318,8 @@ func runGuardedForkingWorker(beamfall, artifact, witness string) (outlived bool,
 		<-waitErr
 		return false, fmt.Errorf("guardian did not kill worker group %d", cmd.Process.Pid)
 	}
+	// The shim's own KILL can reap it while the guardian is still sweeping, so
+	// the witness gets the guardian's whole deadline plus scheduling slack.
 	select {
 	case err := <-eof:
 		eof <- err // for joinWitnessReader
@@ -320,7 +327,7 @@ func runGuardedForkingWorker(beamfall, artifact, witness string) (outlived bool,
 			return false, fmt.Errorf("witness read: %w", err)
 		}
 		return false, nil
-	case <-time.After(time.Second):
+	case <-time.After(workerShimGuardianKillDeadline + time.Second):
 		return true, nil
 	}
 }

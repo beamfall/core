@@ -478,6 +478,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// softwareTranscodeCap is the automatic cap with the hardware switch off;
 	// 0 (conformance mode) keeps the configured cap.
 	softwareTranscodeCap := 0
+	// A supervised FFmpeg run whose process group outlived the kill sweep is
+	// logged here even when a capability probe read it as a missing feature
+	// (CORE-2757).
+	ffmpeg.SetGroupSurvivorReporter(func(err error) {
+		logger.Error("ffmpeg process group survived SIGKILL", "error", err)
+	})
 	if !conformanceMode {
 		var configured ffmpeg.HWAccel
 		if accel, ok := ffmpeg.HWAccelFromString(transcodePolicy.Device); ok {

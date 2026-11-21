@@ -16,6 +16,7 @@ package ffmpeg
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -415,6 +416,10 @@ func ProbeHardwareAccel(ctx context.Context, opts HWAccelOptions) HWAccelResult 
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithTimeout(ctx, totalTimeout)
 	defer cancel()
+	// A probe whose process group survived the kill sweep stops every chain:
+	// no further encode starts beside it (CORE-2757).
+	ctx, stop := context.WithCancelCause(ctx)
+	defer stop(nil)
 
 	goos := opts.GOOS
 	if goos == "" {
@@ -439,7 +444,7 @@ func ProbeHardwareAccel(ctx context.Context, opts HWAccelOptions) HWAccelResult 
 			continue
 		}
 		wg.Go(func() {
-			probes[i] = probeHWAccelCandidate(ctx, runner, candidate, timeout, opts.ConfiguredPreference == candidate)
+			probes[i] = probeHWAccelCandidate(ctx, stopOnSurvivor(runner, stop), candidate, timeout, opts.ConfiguredPreference == candidate)
 		})
 	}
 	wg.Wait()
@@ -492,6 +497,18 @@ func probeFollowUpEncoder(ctx context.Context, runner HWAccelRunner, encoder str
 		return false
 	}
 	return probeOneHWAccel(ctx, runner, HWAccelEncode{Encoder: encoder, LowPower: lowPower}, timeout) == nil
+}
+
+// stopOnSurvivor wraps runner so a run that leaves a surviving process group
+// cancels the whole probe with it as the cause.
+func stopOnSurvivor(runner HWAccelRunner, stop context.CancelCauseFunc) HWAccelRunner {
+	return func(ctx context.Context, encode HWAccelEncode) error {
+		err := runner(ctx, encode)
+		if errors.Is(err, errGroupSurvived) {
+			stop(err)
+		}
+		return err
+	}
 }
 
 func probeOneHWAccel(ctx context.Context, runner HWAccelRunner, encode HWAccelEncode, timeout time.Duration) error {

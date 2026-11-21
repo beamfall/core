@@ -26,7 +26,8 @@ func groupTarget(pgid int) int {
 }
 
 // pinProcessGroup returns an empty pin: outside XNU one group KILL reaches
-// every member, so callers rely on the pins they already hold.
+// every member, so callers rely on the pins they already hold. A supervised
+// worker's unreaped leader is its pin (observeLeaderExit).
 func pinProcessGroup(int) (*ProcessGroupPin, error) { return &ProcessGroupPin{}, nil }
 
 // killProcessGroup sends one group KILL: outside XNU a fork racing it is
@@ -36,10 +37,4 @@ func killProcessGroup(pgid int, _ bool, _ time.Duration) error {
 		return err
 	}
 	return nil
-}
-
-// processGroupHasLiveMember reports whether group pgid has a member. Linux
-// counts zombies until they are reaped.
-func processGroupHasLiveMember(pgid int) bool {
-	return !errors.Is(syscall.Kill(groupTarget(pgid), 0), syscall.ESRCH)
 }
