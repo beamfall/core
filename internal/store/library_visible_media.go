@@ -57,10 +57,10 @@ func (s *Store) LibraryVisibleMedia(ctx context.Context, filter LibraryFilter, l
 	return items, nil
 }
 
-// LibraryVisibleMediaIDs reports which of ids LibraryVisibleMedia would return
-// for the same filter and Library, reading only those rows.
-func (s *Store) LibraryVisibleMediaIDs(ctx context.Context, filter LibraryFilter, libraryID LibraryID, ids []MediaID) (map[MediaID]bool, error) {
-	visible := map[MediaID]bool{}
+// LibraryVisibleMediaItems returns the rows LibraryVisibleMedia would return
+// for those of ids it would return, reading only those rows.
+func (s *Store) LibraryVisibleMediaItems(ctx context.Context, filter LibraryFilter, libraryID LibraryID, ids []MediaID) (map[MediaID]VisibleMedia, error) {
+	visible := map[MediaID]VisibleMedia{}
 	filter, ok := narrowLibraryFilter(filter, libraryID)
 	if !ok || len(ids) == 0 {
 		return visible, nil
@@ -84,10 +84,59 @@ func (s *Store) LibraryVisibleMediaIDs(ctx context.Context, filter LibraryFilter
 			return nil, err
 		}
 		for _, c := range candidates {
-			visible[c.item.ID] = true
+			visible[c.item.ID] = VisibleMedia{
+				ID: c.item.ID, Title: c.item.Title, SortTitle: c.sortTitle,
+				Year: c.year, Width: c.width, Height: c.height, Order: c.rowID,
+			}
 		}
 	}
 	return visible, nil
+}
+
+// LibraryLiveEntityTitles returns the title of each given catalog-plane Entity
+// of the Library that is not trashed. Visibility of the Media an Entity holds
+// is left to the caller.
+func (s *Store) LibraryLiveEntityTitles(ctx context.Context, libraryID LibraryID, ids []EntityID) (map[EntityID]string, error) {
+	titles := map[EntityID]string{}
+	if len(ids) == 0 {
+		return titles, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	for start := 0; start < len(ids); start += engagementChunkSize {
+		chunk := ids[start:min(start+engagementChunkSize, len(ids))]
+		args := make([]any, 0, len(chunk)+1)
+		args = append(args, libraryID)
+		for _, id := range chunk {
+			args = append(args, string(id))
+		}
+		// #nosec G201 -- only generated placeholders are interpolated; IDs are bound args.
+		rows, err := s.catalogR.QueryContext(ctx, fmt.Sprintf(
+			`SELECT id, title FROM entity WHERE +library_id = ? AND trashed_at_ms IS NULL AND id IN (%s)`,
+			sqlPlaceholders(len(chunk))), args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id EntityID
+			var title string
+			if err := rows.Scan(&id, &title); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			titles[id] = title
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return titles, nil
 }
 
 // CatalogItemLibraries returns the Library holding each given ID that names a
