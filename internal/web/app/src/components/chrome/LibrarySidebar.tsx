@@ -274,11 +274,19 @@ export function LibrarySidebar({
           setSaving(true);
           setSaveFailed(null);
           const choice = { order: draft.order, hidden: [...draft.hidden] };
-          // An untouched default order is not stored, so a later change to
-          // the defaults still reaches this Profile (CORE-2880).
-          const personalChoice = isDefaultPersonalOrder(draft.order)
-            ? { ...choice, order: [] }
-            : choice;
+          // An order the Profile never chose is not stored, so a later change
+          // to the defaults still reaches it (CORE-2880). Pin toggles leave
+          // the draft order alone; only a move, or a stored order, is a choice.
+          const unmoved =
+            (prefs.personal?.order.length ?? 0) === 0 &&
+            sameOrder(
+              draft.order,
+              startDraft(personal.pinned, personal.unpinned, personalIDOf).order,
+            );
+          const personalChoice =
+            unmoved || sameOrder(draft.order, PERSONAL_ENTRIES.map(personalIDOf))
+              ? { ...choice, order: [] }
+              : choice;
           try {
             await onSavePrefs(
               group === "libraries"
@@ -595,9 +603,6 @@ function monogram(title: string, long: boolean): string {
   return first.toUpperCase() + next;
 }
 
-function isDefaultPersonalOrder(order: string[]): boolean {
-  return (
-    order.length === PERSONAL_ENTRIES.length &&
-    PERSONAL_ENTRIES.every((entry, index) => order[index] === entry.id)
-  );
+function sameOrder(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
 }

@@ -760,36 +760,33 @@ describe.each(["list", "grid"] as const)(
         expect(screen.getByRole("status", { name: destination })).toHaveTextContent(/^m1\b/);
         expect(queueWindow.mock.calls.filter(([, id]) => id === "m1")).toHaveLength(1);
       },
-    );
-
-    it(
-      "tabs from detail through direct Play to More and plays from the focused button",
-      async () => {
-        const user = userEvent.setup();
-        renderEntity();
-        const children = within(await screen.findByRole("list", { name: "Children" }));
-        const link = children.getByRole("link", { name: /Related item/ });
-        const play = children.getByRole("button", { name: "Play Related item" });
-        const more = children.getByRole("button", { name: "More actions for Related item" });
-        const locked = children.getByRole("link", { name: /Locked child/ });
-
-        link.focus();
-        await user.tab();
-        expect(play).toHaveFocus();
-        await user.tab();
-        expect(more).toHaveFocus();
-        await user.tab();
-        expect(locked).toHaveFocus();
-        expect(within(locked.closest("li")!).queryByRole("button")).toBeNull();
-        await user.tab({ shift: true });
-        await user.tab({ shift: true });
-        expect(play).toHaveFocus();
-        await user.keyboard("{Enter}");
-
-        expect(screen.getByRole("status", { name: "player" })).toHaveTextContent(/^m1\b/);
-      },
       MENU_TEST_TIMEOUT,
     );
+
+    it("tabs from detail through direct Play to More and plays from the focused button", async () => {
+      const user = userEvent.setup();
+      renderEntity();
+      const children = within(await screen.findByRole("list", { name: "Children" }));
+      const link = children.getByRole("link", { name: /Related item/ });
+      const play = children.getByRole("button", { name: "Play Related item" });
+      const more = children.getByRole("button", { name: "More actions for Related item" });
+      const locked = children.getByRole("link", { name: /Locked child/ });
+
+      link.focus();
+      await user.tab();
+      expect(play).toHaveFocus();
+      await user.tab();
+      expect(more).toHaveFocus();
+      await user.tab();
+      expect(locked).toHaveFocus();
+      expect(within(locked.closest("li")!).queryByRole("button")).toBeNull();
+      await user.tab({ shift: true });
+      await user.tab({ shift: true });
+      expect(play).toHaveFocus();
+      await user.keyboard("{Enter}");
+
+      expect(screen.getByRole("status", { name: "player" })).toHaveTextContent(/^m1\b/);
+    });
   },
 );
 

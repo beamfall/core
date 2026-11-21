@@ -34,7 +34,10 @@ describe("chrome focus styles in forced-colors mode", () => {
 // inset.
 describe("phone tab bar safe-area insets", () => {
   it.each([
-    [".bf-tabbar", /padding:[^;]*env\(safe-area-inset-bottom, 0px\)/],
+    [
+      ".bf-tabbar",
+      /padding: 0 env\(safe-area-inset-right, 0px\) env\(safe-area-inset-bottom, 0px\)\s+env\(safe-area-inset-left, 0px\);/,
+    ],
     [
       ".bf-shell.has-tabbar .bf-content",
       /padding-bottom: calc\(var\(--bf-tabbar-height\) \+ env\(safe-area-inset-bottom, 0px\)\)/,
