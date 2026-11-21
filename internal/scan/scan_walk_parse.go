@@ -220,6 +220,16 @@ func (s *scanWalkState) flushPendingParts() error {
 	if err := ensurePartBoundaryMarkers(s.ctx, s.st, s.prober, parts, media.ID, now()); err != nil {
 		return err
 	}
+	// A multi-part Media hydrates from its first part's tags and path under
+	// the single-file rule: when that part is new or changed on disk, or
+	// during the one-time backfill of Media the marker does not cover.
+	if first.hydrate {
+		if err := s.hydrateMetadata(media, first.imported.Path, first.imported.ContentFingerprint, first.tags); err != nil {
+			return err
+		}
+	} else if err := s.backfillHydration(media, first.imported.Path, first.imported.ContentFingerprint); err != nil {
+		return err
+	}
 	// The group's Unmatched count rides on its last part in walk order, which
 	// part numbers need not follow. A scan stopped before reporting that part
 	// walks it again on resume and re-imports it with the rest as a group,
@@ -295,7 +305,7 @@ func appendParsedStructuralMediaFields(fields []store.MediaField, parsed ParsedM
 	return fields
 }
 
-func (s *scanWalkState) queueParsedPart(imported store.ImportMediaFile, parsed ParsedMedia, refresh store.ParserFieldRefresh, markerTitle string, probeChapters []ffmpeg.ProbeChapter, probed bool) error {
+func (s *scanWalkState) queueParsedPart(imported store.ImportMediaFile, parsed ParsedMedia, refresh store.ParserFieldRefresh, markerTitle string, probeChapters []ffmpeg.ProbeChapter, probed, hydrate bool, tags map[string]string) error {
 	key := s.parsedPartKey(parsed)
 	if len(s.pendingParts) > 0 && s.pendingParts[len(s.pendingParts)-1].key != key {
 		if err := s.flushPendingParts(); err != nil {
@@ -310,6 +320,8 @@ func (s *scanWalkState) queueParsedPart(imported store.ImportMediaFile, parsed P
 		markerTitle:   markerTitle,
 		probeChapters: append([]ffmpeg.ProbeChapter(nil), probeChapters...),
 		probed:        probed,
+		hydrate:       hydrate,
+		tags:          tags,
 	})
 	return nil
 }

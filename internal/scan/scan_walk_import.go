@@ -132,7 +132,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, authoritative)
 	}
 	if s.isParsedPart(parsed, parsedOK) {
-		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), task.probe.value.Chapters, task.probe.succeeded); err != nil {
+		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), task.probe.value.Chapters, task.probe.succeeded, false, nil); err != nil {
 			return err
 		}
 		return s.ctx.Err()
@@ -167,19 +167,8 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		return err
 	}
 	s.noteVersion(versionKey, path, media.ID)
-	if _, stale := s.backfillStale[media.ID]; stale && s.metadataHydrator != nil && s.prober != nil {
-		if media.Class == store.MediaClassImage {
-			if err := s.hydrateMetadata(media, path, stored.ContentFingerprint, nil); err != nil {
-				return err
-			}
-		} else if probe, probeErr := s.prober.Probe(s.ctx, path); probeErr != nil {
-			slog.Warn("scan: metadata backfill probe failed, skipping hydration", "path", path, "error", probeErr.Error())
-		} else {
-			media.Class = mediaClassFromProbe(probe)
-			if err := s.hydrateMetadata(media, path, stored.ContentFingerprint, probe.Tags); err != nil {
-				return err
-			}
-		}
+	if err := s.backfillHydration(media, path, stored.ContentFingerprint); err != nil {
+		return err
 	}
 	if err := s.queueCompletion(path, media.ID, stored.ContentFingerprint, imported.Class == store.MediaClassImage); err != nil {
 		return err
@@ -309,7 +298,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		}
 	})
 	if s.isParsedPart(parsed, parsedOK) {
-		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded); err != nil {
+		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded, probeSucceeded, probeTags); err != nil {
 			return err
 		}
 		return s.ctx.Err()
@@ -409,6 +398,24 @@ func (s *scanWalkState) hydrateMetadata(media store.Media, path, fingerprint str
 		Metadata:           metadata,
 		ContentFingerprint: fingerprint,
 	})
+}
+
+// backfillHydration hydrates an unchanged file's Media once when the
+// one-time backfill found its marker missing.
+func (s *scanWalkState) backfillHydration(media store.Media, path, fingerprint string) error {
+	if _, stale := s.backfillStale[media.ID]; !stale || s.metadataHydrator == nil || s.prober == nil {
+		return nil
+	}
+	if media.Class == store.MediaClassImage {
+		return s.hydrateMetadata(media, path, fingerprint, nil)
+	}
+	probe, err := s.prober.Probe(s.ctx, path)
+	if err != nil {
+		slog.Warn("scan: metadata backfill probe failed, skipping hydration", "path", path, "error", err.Error())
+		return nil
+	}
+	media.Class = mediaClassFromProbe(probe)
+	return s.hydrateMetadata(media, path, fingerprint, probe.Tags)
 }
 
 func mediaClassFromProbe(probe ffmpeg.Probe) store.MediaClass {

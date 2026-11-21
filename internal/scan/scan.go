@@ -399,4 +399,9 @@ type parsedPartImport struct {
 	markerTitle   string
 	probeChapters []ffmpeg.ProbeChapter
 	probed        bool
+	// hydrate is set when the part is new or changed on disk, as a single
+	// file must be to hydrate; tags are then its embedded metadata. The group
+	// hydrates from its first part's.
+	hydrate bool
+	tags    map[string]string
 }

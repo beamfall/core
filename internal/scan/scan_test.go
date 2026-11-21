@@ -3336,3 +3336,77 @@ func TestScanCataloguesCompanionNamedImagesInImageLibrary(t *testing.T) {
 		}
 	}
 }
+
+// CORE-3010: a Media made of numbered Parts hydrates once, from its first
+// Part's tags and path; a fast-path rescan of the unchanged group does not
+// hydrate it again.
+func TestScanHydratesPartGroupFromFirstPart(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, root, "Author/Novel/2 - Second.m4b", []byte("second grouped audiobook bytes"))
+	writeScanFile(t, root, "Author/Novel/1 - First.m4b", []byte("first grouped audiobook bytes"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(context.Background(), "Audiobooks", false, audiobook.PluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prober := &countingProber{probe: ffmpeg.Probe{Container: "m4b", AudioCodec: "aac", DurationSeconds: 120, Tags: map[string]string{"album_artist": "A. Writer"}}}
+	hydrator := &fakeMetadataHydrator{capability: MetadataHydrationCapability{
+		MediaClasses: []store.MediaClass{store.MediaClassAudio},
+		MarkerField:  "audiobook-hydrated",
+	}}
+	parsers := map[string]FilenameParser{audiobook.PluginID: ordinalParser{}}
+	hydrators := map[string]MetadataHydrator{audiobook.PluginID: hydrator}
+	result, err := ScanWithMetadataHydration(context.Background(), st, prober, nil, parsers, nil, nil, nil, hydrators, Request{LibraryID: library.ID, Root: root})
+	if err != nil {
+		t.Fatalf("Scan returned error: %v", err)
+	}
+	if len(hydrator.calls) != 1 {
+		t.Fatalf("hydrator calls = %d, want 1 for the group", len(hydrator.calls))
+	}
+	call := hydrator.calls[0]
+	if call.MediaID != result.Files[0].MediaID || filepath.Base(call.Path) != "1 - First.m4b" || call.Metadata["album_artist"] != "A. Writer" {
+		t.Fatalf("group hydration input = %+v, want the first Part's path and tags", call)
+	}
+
+	if _, err := ScanWithMetadataHydration(context.Background(), st, &countingProber{}, nil, parsers, nil, nil, nil, hydrators, Request{LibraryID: library.ID, Root: root}); err != nil {
+		t.Fatalf("fast-path Scan returned error: %v", err)
+	}
+	if len(hydrator.calls) != 1 {
+		t.Fatalf("hydrator calls after unchanged rescan = %d, want still 1", len(hydrator.calls))
+	}
+}
+
+// CORE-3010: a multi-part Media imported before its hydrator existed is
+// hydrated once from its first Part by the backfill, and not by a normal
+// scan of the unchanged group.
+func TestScanBackfillHydratesPartGroupLackingMarker(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	writeScanFile(t, root, "Author/Novel/1 - First.m4b", []byte("first backfill audiobook bytes"))
+	writeScanFile(t, root, "Author/Novel/2 - Second.m4b", []byte("second backfill audiobook bytes"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(ctx, "Audiobooks", false, audiobook.PluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prober := fakeProber{probe: ffmpeg.Probe{Container: "m4b", AudioCodec: "aac", DurationSeconds: 120, Tags: map[string]string{"album_artist": "A. Writer"}}}
+	parsers := map[string]FilenameParser{audiobook.PluginID: ordinalParser{}}
+	if _, err := ScanWithMetadataHydration(ctx, st, prober, nil, parsers, nil, nil, nil, nil, Request{LibraryID: library.ID, Root: root}); err != nil {
+		t.Fatalf("first scan: %v", err)
+	}
+	capability := MetadataHydrationCapability{MediaClasses: []store.MediaClass{store.MediaClassAudio}, MarkerField: "audiobook-hydrated"}
+	normal := &markingMetadataHydrator{st: st, capability: capability}
+	if _, err := ScanWithMetadataHydration(ctx, st, prober, nil, parsers, nil, nil, nil, map[string]MetadataHydrator{audiobook.PluginID: normal}, Request{LibraryID: library.ID, Root: root}); err != nil {
+		t.Fatalf("normal scan: %v", err)
+	}
+	if len(normal.calls) != 0 {
+		t.Fatalf("normal scan hydrated %d Media, want 0", len(normal.calls))
+	}
+	backfill := &markingMetadataHydrator{st: st, capability: capability}
+	if _, err := ScanWithMetadataHydration(ctx, st, prober, nil, parsers, nil, nil, nil, map[string]MetadataHydrator{audiobook.PluginID: backfill}, Request{LibraryID: library.ID, Root: root, Backfill: true}); err != nil {
+		t.Fatalf("backfill scan: %v", err)
+	}
+	if len(backfill.calls) != 1 {
+		t.Fatalf("backfill hydrated %d Media, want 1 for the group", len(backfill.calls))
+	}
+}
