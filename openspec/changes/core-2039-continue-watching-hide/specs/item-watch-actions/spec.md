@@ -31,11 +31,11 @@ survive a projection rebuild and SHALL NOT change another Profile's Source.
 - **WHEN** the playback projection is rebuilt from the engagement event log after a removal
 - **THEN** the Media is still off the `continue-watching` Source with the same resume position
 
-#### Scenario: Unlogged row
+#### Scenario: Replay would change a row
 
-- **WHEN** a rebuild finds a progress row whose first logged event only updates it (a removal or
-  an unwatched mark) rather than creating it
-- **THEN** the rebuild is refused and the row is left as it was
+- **WHEN** replaying the engagement event log would change or drop any existing progress row on
+  any column (for example a legacy row the log never created)
+- **THEN** the rebuild is refused and every row is left as it was
 
 ### Requirement: Continue Watching removal honours the expected Profile
 

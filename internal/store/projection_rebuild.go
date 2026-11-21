@@ -71,32 +71,19 @@ func eventOccurredAtMS(event playbackProjectionEvent) int64 {
 }
 
 func applyPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
-	apply, _, err := playbackProjectionReplay(event)
-	if err != nil {
-		return err
-	}
-	return apply(ctx, tx, event)
-}
-
-// playbackProjectionReplay is the one replay switch: it returns how event
-// applies to playback_progress and whether that replay can insert the row
-// (an INSERT or upsert) rather than only update an existing one. The rebuild
-// guard reads insertsRow from here, so the two cannot drift.
-func playbackProjectionReplay(event playbackProjectionEvent) (apply func(context.Context, *sql.Tx, playbackProjectionEvent) error, insertsRow bool, err error) {
 	switch event.Operation {
 	case playbackProjectionOperationProgress:
-		return applyProgressProjectionEvent, true, nil
+		return applyProgressProjectionEvent(ctx, tx, event)
 	case playbackProjectionOperationImport:
-		return applyImportedPlayProjectionEvent, true, nil
+		return applyImportedPlayProjectionEvent(ctx, tx, event)
 	case playbackProjectionOperationMark:
-		// Unwatched is an UPDATE only; watched upserts.
-		return applyMarkProjectionEvent, event.Watched, nil
+		return applyMarkProjectionEvent(ctx, tx, event)
 	case playbackProjectionOperationVersionMerge:
-		return applyVersionMergeProjectionEvent, true, nil
+		return applyVersionMergeProjectionEvent(ctx, tx, event)
 	case playbackProjectionOperationHideContinue:
-		return applyHideContinueProjectionEvent, false, nil
+		return applyHideContinueProjectionEvent(ctx, tx, event)
 	default:
-		return nil, false, fmt.Errorf("unknown playback projection operation %q", event.Operation)
+		return fmt.Errorf("unknown playback projection operation %q", event.Operation)
 	}
 }
 
@@ -181,10 +168,18 @@ func applyImportedPlayProjectionEvent(ctx context.Context, tx *sql.Tx, event pla
 	return err
 }
 
-// rebuildEngagementProjections discards every materialized projection derived
-// from engagement_event and replays the frozen canonical log in insertion
-// order. It is deliberately internal until operator-facing reconciliation and
+// rebuildEngagementProjections replays the frozen canonical log in insertion
+// order into playback_progress and verifies the result before committing it.
+// It is deliberately internal until operator-facing reconciliation and
 // reporting are built.
+//
+// The replay runs through the live appliers against the real table inside
+// one transaction, so it sees the same constraints, defaults and conflict
+// rules as a live write. Every existing row must come back identical on every
+// column; a missing or different row means the log cannot reproduce it (a
+// legacy row, or a live write whose effect depended on state the log does not
+// hold), and the rebuild is refused. The refusal rolls the transaction back,
+// so no row changes. Pairs the log holds but the table lost are restored.
 func (s *Store) rebuildEngagementProjections(ctx context.Context) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -200,8 +195,13 @@ func (s *Store) rebuildEngagementProjections(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := rejectUnloggedPlaybackProjections(ctx, tx, events); err != nil {
-		return err
+	for _, stmt := range []string{
+		`DROP TABLE IF EXISTS temp.playback_progress_rebuild_base`,
+		`CREATE TEMP TABLE playback_progress_rebuild_base AS SELECT * FROM playback_progress`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("snapshot playback_progress projection: %w", err)
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_progress`); err != nil {
 		return fmt.Errorf("clear playback_progress projection: %w", err)
@@ -211,53 +211,25 @@ func (s *Store) rebuildEngagementProjections(ctx context.Context) error {
 			return fmt.Errorf("rebuild playback_progress event %d: %w", i, err)
 		}
 	}
+	// The snapshot has the table's own column list and one row per pair, so
+	// each row EXCEPT leaves is a pair the replay changed or lost.
+	var changed int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM (
+			SELECT * FROM temp.playback_progress_rebuild_base
+			EXCEPT
+			SELECT * FROM playback_progress
+		)
+	`).Scan(&changed); err != nil {
+		return fmt.Errorf("verify playback_progress rebuild: %w", err)
+	}
+	if changed > 0 {
+		return fmt.Errorf("playback_progress rebuild refused: replay would change %d existing rows", changed)
+	}
+	if _, err := tx.ExecContext(ctx, `DROP TABLE temp.playback_progress_rebuild_base`); err != nil {
+		return fmt.Errorf("drop playback_progress snapshot: %w", err)
+	}
 	return tx.Commit()
-}
-
-// rejectUnloggedPlaybackProjections refuses a rebuild that would lose a row.
-// events is the canonical log in replay order. A row is reconstructible only
-// when an event whose replay inserts it comes before anything that merely
-// updates it: an unwatched mark or a hide-continue applied first would touch
-// nothing. A legacy row with no such base is refused, whatever was logged
-// after it (a same-position heartbeat included), rather than deleted.
-func rejectUnloggedPlaybackProjections(ctx context.Context, tx *sql.Tx, events []playbackProjectionEvent) error {
-	type pair struct{ profileID, mediaID string }
-	// replayed[p] is true once replay has inserted p, false when an
-	// update-only event reached p first.
-	replayed := map[pair]bool{}
-	for _, event := range events {
-		p := pair{event.ProfileID, event.MediaID}
-		if _, seen := replayed[p]; seen {
-			continue
-		}
-		_, insertsRow, err := playbackProjectionReplay(event)
-		if err != nil {
-			return err
-		}
-		replayed[p] = insertsRow
-	}
-	rows, err := tx.QueryContext(ctx, `SELECT profile_id, media_id FROM playback_progress`)
-	if err != nil {
-		return fmt.Errorf("check playback projection base: %w", err)
-	}
-	defer rows.Close()
-	count := 0
-	for rows.Next() {
-		var p pair
-		if err := rows.Scan(&p.profileID, &p.mediaID); err != nil {
-			return err
-		}
-		if !replayed[p] {
-			count++
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if count > 0 {
-		return fmt.Errorf("playback_progress rebuild refused: %d projection rows have no canonical event that recreates them", count)
-	}
-	return nil
 }
 
 func loadPlaybackProjectionEvents(ctx context.Context, tx *sql.Tx) ([]playbackProjectionEvent, error) {
