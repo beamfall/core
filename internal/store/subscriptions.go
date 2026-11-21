@@ -372,8 +372,12 @@ var hostPathPattern = regexp.MustCompile(`(?i)^([a-z0-9-]+(\.[a-z0-9-]+)+|\[[0-9
 func containsURL(title string) bool {
 	for _, word := range strings.Fields(title) {
 		word = strings.Trim(word, "()<>\"'.,;:!")
-		if strings.Contains(word, "://") || (strings.HasPrefix(word, "//") && len(word) > 2) || hostPathPattern.MatchString(word) {
-			return true
+		// Check the word as written, so a bracketed IPv6 host stays intact,
+		// and with brackets stripped, so a bracketed dotted host is exposed.
+		for _, w := range []string{word, strings.Trim(word, "[]")} {
+			if strings.Contains(w, "://") || (strings.HasPrefix(w, "//") && len(w) > 2) || hostPathPattern.MatchString(w) {
+				return true
+			}
 		}
 	}
 	return false
