@@ -86,8 +86,8 @@ permission, and preferred audio and subtitle languages, stored and enforced on t
 
 In the web app, open **Manage › Switch profile › Profile settings** and unlock with the admin
 password. Pick an adult Profile to set or change the PIN used to enter that Profile. Use
-**Preferred subtitle languages** to edit your current Profile's list. Enter language codes such
-as `en, fr-CA` in order of preference, or clear the field to remove your preferences, then save.
+**Preferred subtitle languages for your current profile** to edit the list. Enter language codes
+such as `en, fr-CA` in order of preference, or clear the field to remove your preferences, then save.
 To unlock restricted content, use the separate PIN in **Manage › Restrictions**.
 
 ### Organizing and browsing

@@ -105,7 +105,9 @@ describe("Manage profile settings", () => {
 
     expect(await screen.findByText("Admin password needed")).toBeInTheDocument();
     expect(screen.queryByLabelText("New PIN")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Preferred subtitle languages")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(STRINGS.en.manageProfileSubtitleLanguages),
+    ).not.toBeInTheDocument();
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(writes).toEqual([]);
   });
@@ -164,9 +166,11 @@ describe("Manage profile settings", () => {
     const { writes } = server();
     renderPage();
     await user.click(screen.getByRole("button", { name: "Open settings" }));
-    const field = await screen.findByLabelText("Preferred subtitle languages");
+    const label = "Preferred subtitle languages for your current profile";
+    const field = await screen.findByRole("textbox", { name: label });
     expect(field).toHaveValue("fr-CA, en");
     await user.selectOptions(await screen.findByLabelText("Profile"), "adult-b");
+    expect(field).toHaveAccessibleName(label);
     await user.clear(field);
     await user.type(field, "es, fr-CA , en");
     await user.click(screen.getByRole("button", { name: "Save" }));
@@ -174,7 +178,7 @@ describe("Manage profile settings", () => {
 
     await user.click(screen.getByRole("button", { name: "Done" }));
     await user.click(screen.getByRole("button", { name: "Open settings" }));
-    const reopened = await screen.findByLabelText("Preferred subtitle languages");
+    const reopened = await screen.findByRole("textbox", { name: label });
     expect(reopened).toHaveValue("es, fr-CA, en");
     await user.clear(reopened);
     await user.click(screen.getByRole("button", { name: "Save" }));
