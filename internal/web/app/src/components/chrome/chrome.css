@@ -1070,7 +1070,7 @@
 /* Phones: --bf-category-cols is the Categories column count there. Small's
  * collection and tile floors sit low enough to add a column on a 390px phone.
  * Categories stop at three columns at Medium and Small: a fourth leaves an
- * 80px card too short for its 18px title and count. */
+ * 80px card too short for its 15px title (20px line) and count line. */
 @media (max-width: 760px) {
   [data-register="viewer"] {
     --bf-grid-min: 96px;

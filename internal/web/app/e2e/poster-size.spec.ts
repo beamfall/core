@@ -143,24 +143,28 @@ test.describe("poster size", () => {
 
   // The app-wide control stays on the Library pivot in List view, where it
   // sizes the row thumbnails.
-  test("the Library pivot offers the control in List view and sizes its thumbnails", async ({
-    page,
-  }) => {
-    const errors = collectFatalErrors(page);
-    await openLibraryGrid(page);
-    const control = page.getByRole("group", { name: "Poster size" });
-    await page.getByRole("button", { name: "List", exact: true }).click();
-    await expect(control).toBeVisible();
-    const thumb = page.locator(".bf-stack .bf-poster").first();
-    await expect(thumb).toBeVisible();
-    await expect.poll(() => thumb.evaluate((el) => el.getBoundingClientRect().width)).toBe(48);
-    await control.getByRole("button", { name: "Small posters" }).click();
-    await expect.poll(() => thumb.evaluate((el) => el.getBoundingClientRect().width)).toBe(32);
+  for (const width of [1440, 390]) {
+    test(`the Library pivot offers the control in List view and sizes its thumbnails at ${width}`, async ({
+      page,
+    }) => {
+      const errors = collectFatalErrors(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openLibraryGrid(page);
+      await page.setViewportSize({ width, height: 900 });
+      const control = page.getByRole("group", { name: "Poster size" });
+      await page.getByRole("button", { name: "List", exact: true }).click();
+      await expect(control).toBeVisible();
+      const thumb = page.locator(".bf-stack .bf-poster").first();
+      await expect(thumb).toBeVisible();
+      await expect.poll(() => thumb.evaluate((el) => el.getBoundingClientRect().width)).toBe(48);
+      await control.getByRole("button", { name: "Small posters" }).click();
+      await expect.poll(() => thumb.evaluate((el) => el.getBoundingClientRect().width)).toBe(32);
 
-    await control.getByRole("button", { name: "Large posters" }).click();
-    await page.getByRole("button", { name: "Posters", exact: true }).click();
-    expect(errors, errors.join("\n")).toEqual([]);
-  });
+      await control.getByRole("button", { name: "Large posters" }).click();
+      await page.getByRole("button", { name: "Posters", exact: true }).click();
+      expect(errors, errors.join("\n")).toEqual([]);
+    });
+  }
 });
 
 // The seeded library has no Collections, Categories or cast, so this samples
