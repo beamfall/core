@@ -1052,8 +1052,8 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 		}
 	} else {
 		var held *catalogNode
-		// The season is looked up in the show's own index: an ID from any
-		// other Library, or one that index lacks, is no season of this show.
+		// The holder is looked up in the top container's own index: an ID from
+		// any other Library, or one that index lacks, is not held under it.
 		if holder = queryValue(r.URL.Query(), "seasonId"); holder != "" {
 			if held = containerUnder(node, hit.index.byID[holder]); held == nil {
 				http.NotFound(w, r)
@@ -1088,7 +1088,7 @@ func (h *Handler) containerChildren(w http.ResponseWriter, r *http.Request, id s
 }
 
 // containerUnder returns candidate when it is a container strictly under
-// top, found by walking up from it so no sibling season is read, or nil.
+// top, found by walking up from it so no sibling container is read, or nil.
 func containerUnder(top, candidate *catalogNode) *catalogNode {
 	if candidate == nil || candidate.leaf {
 		return nil
@@ -1102,8 +1102,8 @@ func containerUnder(top, candidate *catalogNode) *catalogNode {
 }
 
 // containerLeaves returns every leaf under top or, given a held container,
-// only the leaves it holds directly, so a per-season request reads no other
-// season's rows (CORE-2817).
+// only the leaves it holds directly, so a per-container request reads no other
+// container's rows (CORE-2817).
 func containerLeaves(top, held *catalogNode) []*catalogNode {
 	var leaves []*catalogNode
 	if held != nil {
