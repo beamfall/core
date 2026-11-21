@@ -49,7 +49,11 @@ export function Hero({
   const isMedia = item.kind === "media";
   const { heading, lead } = cardHeading(item, true, displayLocale);
   const rating = cardRating(item, displayLocale, t);
-  const runtime = item.durationSeconds ? heroRuntime(item.durationSeconds, t) : "";
+  const seconds = item.durationSeconds ?? 0;
+  // The server writes a Media item's running time as its summary; that line is
+  // the runtime fact for a clip under a minute and is never repeated after it.
+  const durationSummary = serverDurationSummary(seconds);
+  const runtime = seconds >= 60 ? heroRuntime(seconds, t) : durationSummary;
   const facts = [
     cardByline(item),
     item.year && item.year > 0 ? String(item.year) : "",
@@ -57,7 +61,8 @@ export function Hero({
     runtime,
   ].filter(Boolean);
   const summary = item.summary?.trim() ?? "";
-  const showSummary = !!summary && summary !== lead && !facts.includes(summary);
+  const showSummary =
+    !!summary && summary !== lead && summary !== durationSummary && !facts.includes(summary);
   const showFacts = facts.length > 0 || !!rating?.score;
 
   function activate() {
@@ -134,8 +139,13 @@ export function Hero({
   );
 }
 
+/** Mirrors the store's mediaDurationSummary: seconds under a minute, else minutes rounded up. */
+function serverDurationSummary(seconds: number): string {
+  if (seconds <= 0) return "";
+  return seconds < 60 ? `${seconds} sec` : `${Math.ceil(seconds / 60)} min`;
+}
+
 function heroRuntime(seconds: number, t: ReturnType<typeof useT>): string {
-  if (seconds < 60) return "";
   const { hours, minutes } = runtimeParts(seconds);
   return hours > 0
     ? t("mediaDetailRuntimeHours", { hours, minutes })

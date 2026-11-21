@@ -105,4 +105,40 @@ describe("Hero entity navigation", () => {
     const state = JSON.parse(screen.getByTestId("state").textContent || "null");
     expect(state).toEqual({ title: "The Graham Norton Show · S34 · E9 · Episode 9" });
   });
+
+  it("shows a runtime once whatever the server's rounding, and a clip's seconds", () => {
+    const section = { title: "Featured" } as unknown as Section;
+    const facts = (item: Partial<SourceItem>) => {
+      const { container, unmount } = render(
+        <I18nProvider>
+          <MemoryRouter>
+            <Hero
+              section={section}
+              item={{ id: "m", kind: "media", title: "Film", ...item } as SourceItem}
+            />
+          </MemoryRouter>
+        </I18nProvider>,
+      );
+      const shown = {
+        facts: [...(container.querySelector(".bf-hero-facts")?.children ?? [])].map(
+          (f) => f.textContent,
+        ),
+        summary: container.querySelector(".bf-hero-summary")?.textContent ?? null,
+      };
+      unmount();
+      return shown;
+    };
+    expect(facts({ durationSeconds: 5400, summary: "90 min" })).toEqual({
+      facts: ["1 h 30 min"],
+      summary: null,
+    });
+    expect(facts({ durationSeconds: 61, summary: "2 min" })).toEqual({
+      facts: ["1 min"],
+      summary: null,
+    });
+    expect(facts({ durationSeconds: 44, summary: "44 sec" })).toEqual({
+      facts: ["44 sec"],
+      summary: null,
+    });
+  });
 });

@@ -1505,6 +1505,10 @@
   width: 100%;
   aspect-ratio: 21 / 9;
   max-height: 340px;
+  /* Floors the frame at the clamped copy's height (two title lines, one lead,
+   * one facts line, two summary lines and the action), so a narrow window
+   * never clips the title. */
+  min-height: 280px;
   border-radius: var(--radius-surface);
   overflow: hidden;
   background: color-mix(in oklab, var(--library-accent, var(--accent)) 8%, var(--bg-surface));
@@ -1549,6 +1553,10 @@
   font-weight: 600;
   letter-spacing: 0;
   color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 [data-register="viewer"] .bf-hero-lead {
@@ -1557,14 +1565,19 @@
   font-size: 17px;
   line-height: 24px;
   font-weight: 500;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* Year, rating, score and runtime, separated by middots. */
 [data-register="viewer"] .bf-hero-facts {
   margin: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0 10px;
+  overflow: hidden;
+  white-space: nowrap;
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 20px;
@@ -1596,8 +1609,10 @@
 
 @media (max-width: 760px) {
   [data-register="viewer"] .bf-hero {
-    aspect-ratio: 16 / 10;
+    aspect-ratio: 4 / 3;
     max-height: 300px;
+    /* Two title lines, the lead, the facts and the action. */
+    min-height: 232px;
   }
   [data-register="viewer"] .bf-hero-scrim {
     background: linear-gradient(
