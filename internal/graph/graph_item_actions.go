@@ -21,12 +21,14 @@ type ItemStateInfo struct {
 
 // itemTarget reads the mediaID / entityID pair every item action takes.
 // Exactly one must be set; the store enforces that. An Entity target reaches
-// its descendants only along the parent relations the active plugins declare.
+// its descendants only along the parent relations and container nestings the
+// plugins declare, so marking a container marks the Media of its parts.
 func (h *Handler) itemTarget(req request) store.ItemTarget {
 	return store.ItemTarget{
 		MediaID:         store.MediaID(trimmedVariable(req, "mediaID")),
 		EntityID:        store.EntityID(trimmedVariable(req, "entityID")),
 		ParentRelations: h.plugins.EntityParentRelations(),
+		ContainerNests:  h.containerNests,
 	}
 }
 

@@ -31,6 +31,20 @@ type ItemTarget struct {
 	// under, as the active plugins declare them. An Entity target reaches its
 	// descendants only along these; with none it covers its own Media alone.
 	ParentRelations []string
+	// ContainerNests names the declared links from one container Kind to
+	// another container Kind it nests in (a part to its whole). An Entity
+	// target also reaches a child of another Kind along these, within the same
+	// Library and only by the nestings of that Library's plugin.
+	ContainerNests []ContainerNest
+}
+
+// ContainerNest is one nesting link a plugin declares: an Entity of
+// ChildKind relates under Relation to the Entity of ParentKind that holds it.
+type ContainerNest struct {
+	PluginID   string
+	ChildKind  string
+	Relation   string
+	ParentKind string
 }
 
 func (t ItemTarget) kindAndID() (string, string, error) {
@@ -71,7 +85,7 @@ func (s *Store) itemTargetMediaLocked(ctx context.Context, target ItemTarget, fi
 		}
 		return []itemMedia{{id: media.ID, durationSeconds: media.DurationSeconds}}, nil
 	}
-	return s.entityTreeMediaLocked(ctx, target.EntityID, target.ParentRelations, filter)
+	return s.entityTreeMediaLocked(ctx, target.EntityID, target.ParentRelations, target.ContainerNests, filter)
 }
 
 // itemTargetVisibleLocked is the visibility check for actions that store the
@@ -86,13 +100,14 @@ func (s *Store) itemTargetVisibleLocked(ctx context.Context, target ItemTarget, 
 }
 
 // entityTreeMediaLocked returns the visible non-Extra Media an Entity relates
-// to, directly or through its same-Kind child Entities at any depth. A child
-// links to its parent (identify.applyEntityParent), so descendants are the
+// to, directly or through its child Entities at any depth. A child links to
+// its parent (identify.applyEntityParent), so descendants are the
 // from_entity_id of rows whose target is already in the tree. Only same-Kind
-// edges under a declared parent relation are followed, as in
-// DepthAwareMediaCount, so an ordinary link between two Entities never widens
-// the mark.
-func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, parentRelations []string, filter LibraryFilter) ([]itemMedia, error) {
+// edges under a declared parent relation, as in DepthAwareMediaCount, and
+// same-Library edges matching a declared container nesting, as in a card's
+// remaining count, are followed, so an ordinary link between two Entities
+// never widens the mark.
+func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, parentRelations []string, nests []ContainerNest, filter LibraryFilter) ([]itemMedia, error) {
 	// An Encrypted Library keeps its Entities, relations and Media in its own
 	// catalog plane, so the tree is read from the plane that holds the root.
 	plane, err := s.catalogPlaneForEntityLocked(ctx, entityID)
@@ -106,14 +121,30 @@ func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, pa
 	if err != nil {
 		return nil, err
 	}
-	var libArgs []any
+	nestPlugins := map[string]bool{}
+	for _, nest := range nests {
+		nestPlugins[nest.PluginID] = true
+	}
+	// Each visible Library follows only its own plugin's nestings: one row per
+	// such Library naming its plugin, one per declaration of a plugin in use.
+	var libArgs, nestLibraryArgs, nestArgs []any
+	usedPlugins := map[string]bool{}
 	planePluginID := ""
 	for _, library := range libraries {
 		if libraryVisible(library, filter) {
 			libArgs = append(libArgs, library.ID)
+			if library.PluginID != nil && nestPlugins[*library.PluginID] {
+				nestLibraryArgs = append(nestLibraryArgs, library.ID, *library.PluginID)
+				usedPlugins[*library.PluginID] = true
+			}
 		}
 		if library.ID == plane.libraryID && library.PluginID != nil {
 			planePluginID = *library.PluginID
+		}
+	}
+	for _, nest := range nests {
+		if usedPlugins[nest.PluginID] {
+			nestArgs = append(nestArgs, nest.PluginID, nest.ChildKind, nest.Relation, nest.ParentKind)
 		}
 	}
 	if len(libArgs) == 0 {
@@ -130,7 +161,12 @@ func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, pa
 	if len(parentRelations) > 0 {
 		relationIn = strings.TrimSuffix(strings.Repeat("?, ", len(parentRelations)), ", ")
 	}
-	args := make([]any, 0, 1+len(parentRelations)+len(libArgs)*2+len(certArgs))
+	// The nestings are rows of two tables, so their number never deepens the
+	// expression or multiplies; with none they are empty: same-Kind edges only.
+	nestLibraryRows, nestRows := valuesRows(len(nestLibraryArgs)/2, 2), valuesRows(len(nestArgs)/4, 4)
+	args := make([]any, 0, len(nestLibraryArgs)+len(nestArgs)+1+len(parentRelations)+len(libArgs)*2+len(certArgs))
+	args = append(args, nestLibraryArgs...)
+	args = append(args, nestArgs...)
 	args = append(args, entityID)
 	for _, relation := range parentRelations {
 		args = append(args, relation)
@@ -138,7 +174,7 @@ func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, pa
 	args = append(args, libArgs...)
 	args = append(args, libArgs...)
 	args = append(args, certArgs...)
-	rows, err := plane.reader.QueryContext(ctx, entityTreeMediaSQL(relationIn, libIn, certClause), args...)
+	rows, err := plane.reader.QueryContext(ctx, entityTreeMediaSQL(nestLibraryRows, nestRows, relationIn, libIn, certClause), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -154,25 +190,48 @@ func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, pa
 	return media, rows.Err()
 }
 
+// valuesRows is a placeholder VALUES list of n rows of width columns, or an
+// empty row source of that width when n is 0.
+func valuesRows(n, width int) string {
+	row := "(" + strings.TrimSuffix(strings.Repeat("?, ", width), ", ") + ")"
+	if n == 0 {
+		return "SELECT " + strings.TrimSuffix(strings.Repeat("NULL, ", width), ", ") + " WHERE 0"
+	}
+	return "VALUES " + strings.TrimSuffix(strings.Repeat(row+", ", n), ", ")
+}
+
 // entityTreeMediaSQL reads the Media under an Entity tree. Its arguments are
-// the root id, the parent relations, the visible Library ids twice and the
-// certification arguments. CROSS JOIN keeps SQLite walking out from the tree:
-// with the Library lists bound, the planner otherwise starts from a scan of
-// every Entity or Media in those Libraries.
-func entityTreeMediaSQL(relationIn, libIn, certClause string) string {
+// the nesting Library rows (Library id, plugin id), the nesting rows (plugin
+// id, child Kind, relation, parent Kind), the root id, the parent relations,
+// the visible Library ids twice and the certification arguments. Each
+// recursive arm seeks relations by target and name, so a container with many
+// unrelated incoming links is not scanned. CROSS JOIN keeps SQLite walking out
+// from the tree: with the Library lists bound, the planner otherwise starts
+// from a scan of every Entity or Media in those Libraries.
+func entityTreeMediaSQL(nestLibraryRows, nestRows, relationIn, libIn, certClause string) string {
 	// #nosec G202 -- interpolated fragments are generated placeholders and closed certification SQL.
 	return `
-		WITH RECURSIVE subtree(id, kind) AS (
-			SELECT id, kind FROM entity WHERE id = ? AND trashed_at_ms IS NULL
+		WITH RECURSIVE nest_library(library_id, plugin_id) AS (` + nestLibraryRows + `),
+		nest(plugin_id, child_kind, relation, parent_kind) AS (` + nestRows + `),
+		subtree(id, kind, library_id) AS (
+			SELECT id, kind, library_id FROM entity WHERE id = ? AND trashed_at_ms IS NULL
 			UNION
-			SELECT child.id, child.kind
+			SELECT child.id, child.kind, child.library_id
 			FROM subtree
 			CROSS JOIN entity_relation r ON r.to_entity_id = subtree.id
 			CROSS JOIN entity child ON child.id = r.from_entity_id
-			WHERE child.kind = subtree.kind
-				AND r.relation IN (` + relationIn + `)
+			WHERE child.kind = subtree.kind AND r.relation IN (` + relationIn + `)
 				AND child.trashed_at_ms IS NULL
 				AND child.library_id IN (` + libIn + `)
+			UNION
+			SELECT child.id, child.kind, child.library_id
+			FROM subtree
+			CROSS JOIN nest_library nl ON nl.library_id = subtree.library_id
+			CROSS JOIN nest n ON n.plugin_id = nl.plugin_id AND n.parent_kind = subtree.kind
+			CROSS JOIN entity_relation r ON r.to_entity_id = subtree.id AND r.relation = n.relation
+			CROSS JOIN entity child ON child.id = r.from_entity_id
+			WHERE child.kind = n.child_kind AND child.library_id = subtree.library_id
+				AND child.trashed_at_ms IS NULL
 		)
 		SELECT m.id, MAX(m.duration_seconds)
 		FROM subtree
