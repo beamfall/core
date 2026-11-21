@@ -7,4 +7,4 @@
 - [x] Write extra and edition links as `picked -> open item`.
 - [x] Group view: ordered items with move up/down and search-picked "Add an item" appended at the end.
 - [x] Update CurationPage tests; run biome, tsc, vitest and the strings tests.
-- [ ] Screenshots from a local dev server.
+- [x] Screenshots from a local dev server.

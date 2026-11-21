@@ -3,10 +3,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/api";
 import {
   fetchEntity,
   fetchEntityRelations,
-  fetchMediaFields,
+  fetchMedia,
   fetchMediaFiles,
   fetchMediaRelations,
   linkMediaRelation,
@@ -31,7 +32,7 @@ beforeEach(() => {
 });
 
 vi.mock("@/lib/graphql", () => ({
-  fetchMediaFields: vi.fn(),
+  fetchMedia: vi.fn(),
   fetchMediaFiles: vi.fn(),
   fetchMediaRelations: vi.fn(),
   fetchEntity: vi.fn(),
@@ -46,12 +47,11 @@ function hit(id: string, title: string, entityKind?: string): SearchResultItem {
 }
 
 beforeEach(() => {
-  vi.mocked(fetchMediaFields)
+  vi.mocked(fetchMedia)
     .mockReset()
-    .mockResolvedValue([
-      { name: "title", type: "string", value: "The Film" },
-      { name: "year", type: "int", value: "2024" },
-    ]);
+    .mockResolvedValue({ id: "media-1", title: "The Film" } as Awaited<
+      ReturnType<typeof fetchMedia>
+    >);
   vi.mocked(fetchMediaFiles)
     .mockReset()
     .mockResolvedValue([
@@ -251,10 +251,26 @@ describe("CurationPage", () => {
   });
 
   it("says so when the open item cannot be loaded", async () => {
-    vi.mocked(fetchMediaFields).mockRejectedValue(new Error("boom"));
+    vi.mocked(fetchMedia).mockRejectedValue(new Error("boom"));
     renderPage("/?open=media-1&as=media");
     expect(await screen.findByText("Could not load it. Try again.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Choose another" })).toBeVisible();
+  });
+
+  it("says so when an item no longer exists", async () => {
+    vi.mocked(fetchMediaFiles).mockRejectedValue(new ApiError("unknown media", 200));
+    renderPage("/?open=media-1&as=media");
+    expect(
+      await screen.findByText("That item or group no longer exists, or is hidden from you."),
+    ).toBeVisible();
+  });
+
+  it("says so when the server has no such item", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(null);
+    renderPage("/?open=media-1&as=media");
+    expect(
+      await screen.findByText("That item or group no longer exists, or is hidden from you."),
+    ).toBeVisible();
   });
 
   it("says so when a group no longer exists", async () => {

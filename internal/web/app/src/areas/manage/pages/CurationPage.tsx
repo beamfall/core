@@ -19,11 +19,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ApiError } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import {
   fetchEntity,
   fetchEntityRelations,
-  fetchMediaFields,
+  fetchMedia,
   fetchMediaFiles,
   fetchMediaRelations,
   linkMediaRelation,
@@ -268,27 +269,40 @@ type MediaDetail = {
   editions: MediaRelationDetail[];
 };
 
+// The server answers a missing or hidden item with this message (no oracle).
+function isUnknownMedia(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.status === 200 &&
+    err.message.toLowerCase().includes("unknown media")
+  );
+}
+
 function MediaView({ id, onClose }: { id: string; onClose: () => void }) {
   const { t } = useI18n();
-  const [detail, setDetail] = useState<MediaDetail | "loading" | "failed">("loading");
+  const [detail, setDetail] = useState<MediaDetail | "loading" | "missing" | "failed">("loading");
   const [saveError, setSaveError] = useState("");
 
   const load = useCallback(async () => {
-    const [fields, files, extras, editions] = await Promise.all([
-      fetchMediaFields(id),
+    const [media, files, extras, editions] = await Promise.all([
+      fetchMedia(id),
       fetchMediaFiles(id),
       fetchMediaRelations(id, "extra-of"),
       fetchMediaRelations(id, "edition-of"),
     ]);
-    const title = fields.find((f) => f.name === "title")?.value || id;
+    if (!media) {
+      setDetail("missing");
+      return;
+    }
+    const title = media.title || id;
     setDetail({ title, files, extras, editions });
   }, [id]);
 
   useEffect(() => {
-    load().catch(() => setDetail("failed"));
+    load().catch((err) => setDetail(isUnknownMedia(err) ? "missing" : "failed"));
   }, [load]);
 
-  if (detail === "loading" || detail === "failed") {
+  if (detail === "loading" || detail === "missing" || detail === "failed") {
     return <LoadState state={detail} onClose={onClose} />;
   }
 
@@ -339,7 +353,7 @@ function MediaView({ id, onClose }: { id: string; onClose: () => void }) {
                   <TableCell className="manage-cell-num text-[var(--text-muted)]">
                     {file.partOrdinal}
                   </TableCell>
-                  <TableCell className="manage-cell-num break-all text-[var(--text-muted)]">
+                  <TableCell className="manage-cell-num whitespace-normal break-all">
                     {file.path}
                   </TableCell>
                 </TableRow>
