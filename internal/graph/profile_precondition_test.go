@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
@@ -70,5 +71,59 @@ func TestScopeResolvedBeforeSwitchCannotRevealOrEndPlaybackAfterIt(t *testing.T)
 	err = h.endPlayback(ctx, scope, request{Variables: map[string]any{"mediaId": "media-alpha"}})
 	if !errors.Is(err, errProfileMismatch) {
 		t.Fatalf("endPlayback err = %v, want the Profile mismatch", err)
+	}
+}
+
+// blockingTerminator holds an ended playback's transcode teardown open until
+// released, standing in for an encoder that is slow to exit.
+type blockingTerminator struct {
+	waiting chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingTerminator) TerminateSession(store.SessionID) int { return 0 }
+
+func (b *blockingTerminator) DetachPlayback(store.SessionID, store.MediaID) (int, func()) {
+	return 1, func() {
+		close(b.waiting)
+		<-b.release
+	}
+}
+
+// Ending a playback detaches its transcode under the session's Profile binding
+// but waits for the encoder after releasing it, so a slow encoder cannot stall
+// a Profile switch on any session (CORE-2923).
+func TestEndPlaybackTeardownDoesNotHoldTheProfileBinding(t *testing.T) {
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	term := &blockingTerminator{waiting: make(chan struct{}), release: make(chan struct{})}
+	h.SetTranscodeTerminator(term)
+	scope := auth.Scope{SessionID: "session-default", ProfileID: "profile-default"}
+
+	ended := make(chan error, 1)
+	go func() {
+		ended <- h.endPlayback(t.Context(), scope, request{Variables: map[string]any{"mediaId": "media-alpha"}})
+	}()
+	select {
+	case <-term.waiting:
+	case <-time.After(5 * time.Second):
+		t.Fatal("endPlayback never reached the transcode teardown")
+	}
+
+	switched := make(chan error, 1)
+	go func() { switched <- st.SetSessionProfile(t.Context(), "session-default", "profile-managed") }()
+	select {
+	case err := <-switched:
+		if err != nil {
+			t.Fatalf("SetSessionProfile: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		close(term.release)
+		t.Fatal("Profile switch waited for the ended playback's encoder")
+	}
+
+	close(term.release)
+	if err := <-ended; err != nil {
+		t.Fatalf("endPlayback: %v", err)
 	}
 }

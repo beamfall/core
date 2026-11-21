@@ -14,7 +14,7 @@ import (
 // transcodes each session runs; TerminateSession stops and reports them, and a
 // session with none is the zero-stop no-op the real manager returns. aborted
 // records, in call order, the sessions that had something to stop, and
-// playbacks records every TerminatePlayback call.
+// playbacks records every DetachPlayback call.
 type fakeTerminator struct {
 	live      map[store.SessionID]int
 	aborted   []store.SessionID
