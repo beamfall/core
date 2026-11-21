@@ -27,7 +27,9 @@ import (
 const fakeSourcePath = "testdata/fake-source.txt"
 
 type fakeTranscoder struct {
-	holdChild     bool
+	holdChild bool
+	// launch, when set, starts each held child in place of the default.
+	launch        func(ctx context.Context) (*ffmpeg.HLSProcess, error)
 	mu            sync.Mutex
 	starts        []string
 	segmentStarts []int
@@ -71,6 +73,9 @@ func (f *fakeTranscoder) StartHLSSegments(ctx context.Context, src, dir string, 
 func (f *fakeTranscoder) child(ctx context.Context) (*ffmpeg.HLSProcess, error) {
 	if !f.holdChild {
 		return &ffmpeg.HLSProcess{}, nil
+	}
+	if f.launch != nil {
+		return f.launch(ctx)
 	}
 	return ffmpeg.StartHLSCommand(exec.CommandContext(ctx, "sleep", "60"))
 }
