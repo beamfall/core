@@ -75,6 +75,7 @@ var resultTypes = map[string]any{
 	"preplayclips":           PrePlayClipsInfo{},
 	"media":                  MediaInfo{},
 	"trashlist":              TrashEntry{},
+	"duplicatecopies":        DuplicateCopySetInfo{},
 	"tags":                   TagInfo{},
 	"tagassignments":         TagAssignmentInfo{},
 	"libraries":              LibraryInfo{},

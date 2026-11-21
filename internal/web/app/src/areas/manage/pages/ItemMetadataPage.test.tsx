@@ -18,6 +18,12 @@ import { I18nProvider } from "@/lib/i18n";
 import { ItemMetadataPage } from "./ItemMetadataPage";
 
 vi.mock("@/lib/graphql", () => ({
+  searchResult: vi.fn(async () => ({
+    mode: "keyword",
+    items: [],
+    hasMore: false,
+    restrictedResultsPresent: false,
+  })),
   bulkEditApply: vi.fn(),
   editMediaMetadata: vi.fn(),
   fetchArtworkCandidates: vi.fn(),
@@ -99,7 +105,7 @@ describe("ItemMetadataPage", () => {
 
   it("opens the item named in the route", async () => {
     renderAt("/manage/items");
-    await userEvent.type(screen.getByLabelText("Media ID"), "media-1");
+    await userEvent.type(screen.getByLabelText("Media ID"), "media-1{Enter}");
     await userEvent.click(screen.getByRole("button", { name: "Load" }));
     expect(await screen.findByLabelText("Title")).toHaveValue("Sample Item");
     expect(fetchMediaMetadata).toHaveBeenCalledWith("media-1");

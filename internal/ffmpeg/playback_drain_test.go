@@ -194,7 +194,7 @@ fi
 						ch <- err
 						return
 					}
-					if got := binding.ProbedDurationSeconds(t.Context(), "source", src); got != expectDuration {
+					if got := binding.ProbedDurationSeconds(t.Context(), "source", src, true); got != expectDuration {
 						ch <- fmt.Errorf("duration = %d, want %d", got, expectDuration)
 						return
 					}

@@ -339,7 +339,7 @@ func (s *Server) promoteWebDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 	var req pairing.PromoteRequest
@@ -394,7 +394,7 @@ func (s *Server) logoutWebDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 	if scope.SessionID == "" {
@@ -529,7 +529,7 @@ func (s *Server) setSignInSecurityMode(w http.ResponseWriter, r *http.Request) {
 	}
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 	var req signInSecurityRequest

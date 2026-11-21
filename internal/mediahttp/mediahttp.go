@@ -1106,12 +1106,28 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	shape.AudioSource = playback.AudioSourceStream(streams, audioStreamIndex)
 	shape.LibraryID = media.LibraryID
 	shape.Encrypted = secure
-	// A Media stored without a runtime is probed on demand so a new session
-	// writes a VOD playlist covering the whole file (CORE-2314). An Encrypted
-	// Library's file is ciphertext on disk and is never probed in place.
-	durationSeconds := media.DurationSeconds
+	// The catalog runtime describes the primary file. Other files need their
+	// own runtime for live playlist geometry (CORE-2314).
+	factsFingerprint, _, err := h.store.MediaFactsFingerprint(r.Context(), media.ID)
+	if ended() {
+		return
+	}
+	if err != nil {
+		http.Error(w, "media unavailable", http.StatusNotFound)
+		return
+	}
+	primary := file.PartOrdinal == 0 && file.ContentFingerprint == factsFingerprint
+	durationSeconds := 0
+	if primary {
+		durationSeconds = media.DurationSeconds
+	}
 	if durationSeconds <= 0 && secure == nil {
-		durationSeconds = binding.ProbedDurationSeconds(r.Context(), file.ContentFingerprint, file.Path)
+		persist := false
+		if primary {
+			multipart, err := h.store.MediaVersionHasAdditionalParts(r.Context(), media.ID, file.VersionLabel)
+			persist = err == nil && !multipart
+		}
+		durationSeconds = binding.ProbedDurationSeconds(r.Context(), file.ContentFingerprint, file.Path, persist)
 	}
 	r = r.WithContext(requestCtx)
 	artifact, err := binding.ArtifactShaped(requestCtx, file.Path, durationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
@@ -1398,10 +1414,7 @@ func (h *Handler) artworkCandidatePreviewPath(ctx context.Context, candidate sto
 	cacheID := artwork.CandidateCacheID(candidate.ID)
 	source := h.artwork.ArtworkPath(cacheID, artwork.SlotPoster)
 	if !regularFileExists(source) {
-		if h.artworkCandidateFetch == nil {
-			return "", errors.New("artwork candidate fetcher unavailable")
-		}
-		data, err := h.artworkCandidateFetch.FetchResource(ctx, candidate.SourceURL)
+		data, err := h.artworkCandidateSource(ctx, candidate)
 		if err != nil {
 			return "", err
 		}
@@ -1410,6 +1423,18 @@ func (h *Handler) artworkCandidatePreviewPath(ctx context.Context, candidate sto
 		}
 	}
 	return h.artwork.ArtworkDerivative(ctx, cacheID, artwork.SlotPoster, bucket)
+}
+
+// artworkCandidateSource returns a candidate's image: an upload's kept bytes
+// (CORE-2937), or the fetched SourceURL for a scraped candidate.
+func (h *Handler) artworkCandidateSource(ctx context.Context, candidate store.ArtworkCandidate) ([]byte, error) {
+	if artwork.IsUploadedSource(candidate.SourceURL) {
+		return h.artwork.UploadedCandidate(candidate.MediaID, candidate.SourceURL)
+	}
+	if h.artworkCandidateFetch == nil {
+		return nil, errors.New("artwork candidate fetcher unavailable")
+	}
+	return h.artworkCandidateFetch.FetchResource(ctx, candidate.SourceURL)
 }
 
 // artworkNotModified applies the content-addressed cache contract for an

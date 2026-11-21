@@ -165,28 +165,35 @@ var clientErrorCodes = map[string]ErrorCode{
 	// caller's filter hides or that does not exist.
 	"unknown library": ErrorCodeNotFound,
 	"unknown profile": ErrorCodeNotFound,
+	// An uploaded artwork candidate whose original bytes were never kept or
+	// were purged (CORE-2937): the client must upload the image again.
+	"uploaded artwork is no longer available; upload it again": ErrorCodeNotFound,
 
 	// "unknown <value>" for a closed vocabulary is a bad argument, not a
 	// missing record. Resolvers re-wrap store and push validation text into a
 	// clientError, so these are pinned here as well as by the store rules.
-	"unknown push platform":               ErrorCodeInvalid,
-	"unknown artwork slot":                ErrorCodeInvalid,
-	"unknown delete scope":                ErrorCodeInvalid,
-	"unknown engagement kind":             ErrorCodeInvalid,
-	"unknown family scope":                ErrorCodeInvalid,
-	"unknown importer":                    ErrorCodeInvalid,
-	"unknown lifecycle action":            ErrorCodeInvalid,
-	"unknown or non-flippable capability": ErrorCodeInvalid,
-	"unknown permission":                  ErrorCodeInvalid,
-	"unknown plugin action":               ErrorCodeInvalid,
-	"unknown plugin config field":         ErrorCodeInvalid,
-	"unknown transport command":           ErrorCodeInvalid,
+	"unknown push platform": ErrorCodeInvalid,
+	// Two ways to order one relation row at once.
+	"give sortOrder or position, not both": ErrorCodeInvalid,
+	"media is not queued":                  ErrorCodeInvalid,
+	"unknown artwork slot":                 ErrorCodeInvalid,
+	"unknown delete scope":                 ErrorCodeInvalid,
+	"unknown engagement kind":              ErrorCodeInvalid,
+	"unknown family scope":                 ErrorCodeInvalid,
+	"unknown importer":                     ErrorCodeInvalid,
+	"unknown lifecycle action":             ErrorCodeInvalid,
+	"unknown or non-flippable capability":  ErrorCodeInvalid,
+	"unknown permission":                   ErrorCodeInvalid,
+	"unknown plugin action":                ErrorCodeInvalid,
+	"unknown plugin config field":          ErrorCodeInvalid,
+	"unknown transport command":            ErrorCodeInvalid,
 
 	"admin password rejected":                                   ErrorCodeForbidden,
 	"adult profile or manager role required":                    ErrorCodeForbidden,
 	"cannot change the current device role":                     ErrorCodeForbidden,
 	"incorrect passphrase or recovery key":                      ErrorCodeForbidden,
 	"managed profiles require guardian or operator data delete": ErrorCodeForbidden,
+	"This item is locked.":                                      ErrorCodeForbidden,
 	"not a member of this group":                                ErrorCodeForbidden,
 	"not a member of this party":                                ErrorCodeForbidden,
 	"not the party host":                                        ErrorCodeForbidden,
@@ -211,7 +218,8 @@ var clientErrorCodes = map[string]ErrorCode{
 	"session not controllable":                                       ErrorCodeForbidden,
 	"retry the offline pack build from the device that requested it": ErrorCodeForbidden,
 
-	"device revoked": ErrorCodeUnauthenticated,
+	"device revoked":  ErrorCodeUnauthenticated,
+	"invalid session": ErrorCodeUnauthenticated,
 
 	"access request already resolved":                                                              ErrorCodeConflict,
 	"no backup key is waiting to be saved":                                                         ErrorCodeConflict,

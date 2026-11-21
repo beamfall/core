@@ -31,7 +31,9 @@ ceiling_scale=$((ceiling_scale * scale))
 HANG_RUNNER_TIMEOUT_SECONDS=$((10 * scale))
 # Stall budget for the slow case. The first fake npm invocation keeps beating for longer than
 # this; the runner's own silent steps between invocations (node, python) must fit within it.
-SLOW_STALL_SECONDS=$((20 * scale))
+# Load-scaled like the ceilings: on an overloaded host those silent steps alone can outrun a
+# fixed budget, and the slow case then fails as a stall it never had.
+SLOW_STALL_SECONDS=$((20 * ceiling_scale))
 # Ceilings. Runner timer for cases that must not time out (success, failure, leftover, livesibling):
 LONG_RUNNER_TIMEOUT_SECONDS=$((60 * ceiling_scale))
 # Independent backstop that SIGKILLs a case's whole process group; also bounds readiness waits.

@@ -6,7 +6,13 @@
 // Every query/mutation string is copied VERBATIM from internal/web/static/app.js
 // (contract-tested server-side).
 
-import { type GraphQLOptions, graphql } from "@/lib/api";
+import {
+  type GraphQLOptions,
+  getExpectedProfile,
+  graphql,
+  noteProfileRefusal,
+  profileHeaders,
+} from "@/lib/api";
 import type {
   AccessScheduleInfo,
   AccessWindowInput,
@@ -923,19 +929,6 @@ export async function fetchProfileEntryPins(signal?: AbortSignal) {
   return data.profiles ?? [];
 }
 
-export async function setProfileEntryPin(
-  profileID: string,
-  entryPIN: string,
-  signal?: AbortSignal,
-) {
-  await graphql(
-    "mutation UpdateProfile($profileID: String!, $entryPIN: String!) { updateProfile(profileID: $profileID, entryPIN: $entryPIN) { id } }",
-    { profileID, entryPIN },
-    signal,
-    { adminUnlock: false },
-  );
-}
-
 export async function setProfileSubtitleLanguages(
   profileID: string,
   subtitleLanguages: string[],
@@ -1024,6 +1017,27 @@ export async function updateProfile(
   return data.updateProfile;
 }
 
+const SET_PROFILE_ENTRY_PIN_MUTATION =
+  "mutation UpdateProfile($profileID: String!, $entryPIN: String!) { updateProfile(profileID: $profileID, entryPIN: $entryPIN) { id } }";
+
+/**
+ * Set an adult Profile's entry PIN separately from other Profile settings. The Manage self-service
+ * page passes `{ adminUnlock: false }` so a challenge fails instead of prompting for admin unlock.
+ */
+export async function setProfileEntryPin(
+  profileID: string,
+  entryPIN: string,
+  signal?: AbortSignal,
+  options?: { adminUnlock?: boolean },
+): Promise<void> {
+  await graphql<{ updateProfile: { id: string } }>(
+    SET_PROFILE_ENTRY_PIN_MUTATION,
+    { profileID, entryPIN },
+    signal,
+    options,
+  );
+}
+
 const REORDER_PROFILES_MUTATION =
   "mutation ReorderProfiles($profileIDs: [String!]!) { reorderProfiles(profileIDs: $profileIDs) { id } }";
 
@@ -1065,16 +1079,18 @@ export async function setProfileAvatar(
 }
 
 async function profilePictureRequest(url: string, init: RequestInit): Promise<string> {
+  const sentProfile = getExpectedProfile();
   const response = await fetch(url, {
     ...init,
     credentials: "same-origin",
-    headers: { "X-Beamfall-Csrf": "1" },
+    headers: { "X-Beamfall-Csrf": "1", ...profileHeaders() },
   });
   const body = (await response.json().catch(() => null)) as {
     pictureURL?: string;
     error?: string;
   } | null;
   if (!response.ok) {
+    noteProfileRefusal(sentProfile, response.status, body);
     throw new Error(body?.error || `profile picture request failed (${response.status})`);
   }
   return body?.pictureURL ?? "";

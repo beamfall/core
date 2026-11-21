@@ -21,10 +21,10 @@ func TestQueueReplaceWithStationConfirmationAndHiddenPreservation(t *testing.T) 
 
 	// Seed a queue with a VISIBLE item (media-alpha, library-local) and a HIDDEN
 	// item (media-archive, library-archive — only visible when revealed).
-	if err := st.QueueAdd(ctx, "profile-default", "media-archive", nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-archive", nil, revealed); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueAdd(ctx, "profile-default", "media-alpha", nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-alpha", nil, revealed); err != nil {
 		t.Fatal(err)
 	}
 

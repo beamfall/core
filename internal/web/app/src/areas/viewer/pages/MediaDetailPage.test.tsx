@@ -339,7 +339,25 @@ describe("MediaDetailPage", () => {
     const bar = screen.getByRole("progressbar");
     expect(bar).toHaveAttribute("aria-valuenow", "25");
     expect(bar).toHaveAttribute("aria-valuetext", "25% complete");
-    expect(screen.getByRole("button", { name: "Resume Server title" })).toHaveTextContent("Resume");
+    const resume = screen.getByRole("button", { name: "Resume Server title" });
+    expect(resume).toHaveTextContent("Resume");
+    // The bar rides Resume's edge, beside the button, with no row of its own
+    // and no visible percentage (CORE-2930).
+    expect(bar.parentElement).toBe(resume.parentElement);
+    expect(screen.queryByText("25% complete")).toBeNull();
+  });
+
+  it("reads back, title, facts and overview before the actions (CORE-2930)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    renderAt(["/media/m1"]);
+    const title = await screen.findByRole("heading", { level: 1, name: "Server title" });
+    const stage = title.closest("section") as HTMLElement;
+    // Back sits inside the stage, ahead of the lockup, clear of the top bar.
+    const back = within(stage).getByRole("button", { name: "Back" });
+    expect(back.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const overview = stage.querySelector(".bf-detail-overview") as HTMLElement;
+    const play = within(stage).getByRole("button", { name: "Play Server title" });
+    expect(overview.compareDocumentPosition(play) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("ends on the generic not-available surface for an unknown or hidden item", async () => {
@@ -467,7 +485,7 @@ describe("MediaDetailPage", () => {
     ).toEqual(["People", "Extras", "More with Ada Lead", "Related"]);
   });
 
-  it("links category chips to their Entity, two per kind with +N for the rest (CORE-2504)", async () => {
+  it("links category text to their Entity, two per kind with no +N (CORE-2504, CORE-2930)", async () => {
     const category = (entityID: string, title: string, kind: string) => ({
       entityID,
       title,
@@ -490,25 +508,20 @@ describe("MediaDetailPage", () => {
     await screen.findByRole("heading", { level: 1, name: "Server title" });
 
     const facts = screen.getByRole("list", { name: "About this item" });
-    expect(Array.from(facts.querySelectorAll("li"), (li) => li.textContent)).toEqual([
-      "2001",
-      "Drama",
-      "Biography",
-      "Universal Pictures",
-      "DreamWorks Pictures",
-      "+11 more",
-    ]);
-    const links = within(facts).getAllByRole("link");
+    expect(Array.from(facts.querySelectorAll("li"), (li) => li.textContent)).toEqual(["2001"]);
+    const line = document.querySelector(".bf-detail-categories") as HTMLElement;
+    expect(line).toHaveTextContent("Drama, Biography · Universal Pictures, DreamWorks Pictures");
+    expect(line).not.toHaveTextContent("+");
+    const links = within(line).getAllByRole("link");
     expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
       ["Drama", "/entity/g1"],
       ["Biography", "/entity/g2"],
       ["Universal Pictures", "/entity/s1"],
       ["DreamWorks Pictures", "/entity/s2"],
     ]);
-    // Keyboard-reachable, and the chip keeps its look around the link.
+    // Keyboard-reachable.
     links[2].focus();
     expect(links[2]).toHaveFocus();
-    expect(links[2].closest("li")).toHaveClass("bf-detail-fact");
     // Details lists every credit of each kind, the overflow included.
     const details = screen.getByRole("heading", { level: 2, name: "Details" }).closest("section");
     expect(
@@ -601,8 +614,11 @@ describe("MediaDetailPage", () => {
     vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
     renderAt(["/media/m1"]);
     const skeleton = screen.getByRole("status", { name: "Loading..." });
-    expect(skeleton).toHaveAttribute("data-backdrop", "");
-    expect(skeleton.querySelector(".bf-detail-facts")).not.toBeNull();
+    const skeletonStage = skeleton.closest(".bf-detail-stage");
+    expect(skeletonStage).toHaveAttribute("data-backdrop", "");
+    // Back already sits inside the stage, where the loaded page keeps it (CORE-2930).
+    expect(skeletonStage?.querySelector(":scope > .bf-detail-back")).not.toBeNull();
+    expect(skeleton.querySelector(".bf-detail-meta")).not.toBeNull();
     expect(skeleton.querySelector(".bf-detail-overview")).not.toBeNull();
     cleanup();
 
@@ -610,7 +626,7 @@ describe("MediaDetailPage", () => {
     renderAt([{ pathname: "/media/m1", state: mediaLinkState(card, identity) }]);
     const stage = screen.getByRole("heading", { level: 1, name: "Card title" }).closest("section");
     expect(stage).toHaveAttribute("data-backdrop", "");
-    expect(stage?.querySelector(".bf-detail-facts")).not.toBeNull();
+    expect(stage?.querySelector(".bf-detail-meta")).not.toBeNull();
     expect(stage?.querySelector(".bf-detail-overview")).not.toBeNull();
   });
 
@@ -700,8 +716,8 @@ describe("MediaDetailPage", () => {
       "2001",
       "1 h 30 min",
       "PG-13",
-      "Drama",
     ]);
+    expect(document.querySelector(".bf-detail-categories")).toHaveTextContent(/^Drama$/);
     const details = screen.getByRole("heading", { level: 2, name: "Details" }).closest("section");
     expect(details).toHaveTextContent("Tagline");
     expect(details).toHaveTextContent("A line");
@@ -1305,6 +1321,35 @@ describe("MediaDetailPage", () => {
       expect(facts).toEqual(expect.arrayContaining(["4K", "HDR10", "Dolby Digital Plus 5.1"]));
       expect(facts[0]).toMatch(/2008/);
       expect(facts).not.toContain("2001");
+      // Each format reads once on the page (CORE-2930).
+      expect(screen.getAllByText("4K")).toHaveLength(1);
+      expect(screen.getAllByText("HDR10")).toHaveLength(1);
+    });
+
+    it("takes the format badges from the Version on screen (CORE-2930)", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue(ordered);
+      const uhd = {
+        id: "va",
+        label: "",
+        hdr: "hdr10",
+        resolution: "4K",
+        audioTracks: [{ streamIndex: 1, codec: "aac", channels: 2 }],
+        captionTracks: [],
+      };
+      vi.mocked(fetchMediaTracks).mockResolvedValue([
+        uhd,
+        { ...uhd, id: "vb", label: "HD", hdr: undefined, resolution: "1080p" },
+      ]);
+      renderAt(["/media/m1"]);
+      fireEvent.change(await screen.findByRole("combobox", { name: "Version" }), {
+        target: { value: "vb" },
+      });
+      const facts = Array.from(
+        screen.getByRole("list", { name: "About this item" }).querySelectorAll("li"),
+        (li) => li.textContent,
+      );
+      expect(facts).toContain("1080p");
+      expect(facts).not.toContain("4K");
     });
 
     it("lists the rest of its container in a More in rail that the closing rows leave out", async () => {

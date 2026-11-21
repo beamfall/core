@@ -89,7 +89,7 @@ func (s *Server) groupCalibrate(w http.ResponseWriter, r *http.Request) {
 	// business calibrating into a group.
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 	if scope.ProfileID == "" {

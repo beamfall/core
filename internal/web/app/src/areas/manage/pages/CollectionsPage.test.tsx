@@ -18,6 +18,12 @@ import { I18nProvider } from "@/lib/i18n";
 import { CollectionsPage } from "./CollectionsPage";
 
 vi.mock("@/lib/graphql", () => ({
+  searchResult: vi.fn(async () => ({
+    mode: "keyword",
+    items: [],
+    hasMore: false,
+    restrictedResultsPresent: false,
+  })),
   fetchCollections: vi.fn(),
   createCollection: vi.fn(),
   updateCollection: vi.fn(),
@@ -172,7 +178,7 @@ describe("CollectionsPage", () => {
 
     await user.type(
       screen.getByLabelText("Add Media IDs (comma or space separated)"),
-      "media-aaa, media-bbb",
+      "media-aaa, media-bbb{Enter}",
     );
     await user.click(screen.getByRole("button", { name: "Add members" }));
 

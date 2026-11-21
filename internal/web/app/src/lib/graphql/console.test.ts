@@ -46,6 +46,7 @@ import {
   setDeviceRole,
   setExtensionPreauthorization,
   setJellyfinCompat,
+  setProfileEntryPin,
   setProfileIntegrationSignIn,
   setProfileLibraries,
   setProfileRemoteBitrateCap,
@@ -396,6 +397,15 @@ describe("console GraphQL requests", () => {
       name: "Kids",
       kind: "managed",
     });
+  });
+
+  it("sends the entry PIN as a string in a separate profile update", async () => {
+    await setProfileEntryPin("p-1", "246824");
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].query).toContain(
+      "updateProfile(profileID: $profileID, entryPIN: $entryPIN)",
+    );
+    expect(recorded[0].variables).toEqual({ profileID: "p-1", entryPIN: "246824" });
   });
 
   it("setProfileLibraries sends SetProfileLibraries(profileID, libraryIDs)", async () => {

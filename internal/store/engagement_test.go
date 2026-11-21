@@ -678,13 +678,13 @@ func TestPlayQueueRenumbersAndMovesWithinProfile(t *testing.T) {
 	extraA := importQueueMedia(t, st, "queue-a")
 	extraB := importQueueMedia(t, st, "queue-b")
 
-	if err := st.QueueAdd(ctx, "profile-default", "media-alpha", nil, filter); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-alpha", nil, filter); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueAdd(ctx, "profile-default", extraA, nil, filter); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", extraA, nil, filter); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueAdd(ctx, "profile-default", extraB, queueIntPtr(1), filter); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", extraB, queueIntPtr(1), filter); err != nil {
 		t.Fatal(err)
 	}
 	assertQueueIDs(t, st, filter, "profile-default", []MediaID{"media-alpha", extraB, extraA})
@@ -694,7 +694,7 @@ func TestPlayQueueRenumbersAndMovesWithinProfile(t *testing.T) {
 	}
 	assertQueueIDs(t, st, filter, "profile-default", []MediaID{"media-alpha", extraB, extraA})
 
-	if err := st.QueueAdd(ctx, "profile-default", "media-alpha", nil, filter); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-alpha", nil, filter); err != nil {
 		t.Fatal(err)
 	}
 	assertQueueIDs(t, st, filter, "profile-default", []MediaID{extraB, extraA, "media-alpha"})
@@ -716,13 +716,13 @@ func TestPlayQueueIsPerProfileAndRevealFilteredWithoutMutation(t *testing.T) {
 	revealed := LibraryFilter{AllowedIDs: []LibraryID{"library-local", "library-archive"}, Revealed: true}
 	hidden := LibraryFilter{AllowedIDs: []LibraryID{"library-local", "library-archive"}}
 
-	if err := st.QueueAdd(ctx, "profile-default", "media-alpha", nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-alpha", nil, revealed); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueAdd(ctx, "profile-default", "media-archive", nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-archive", nil, revealed); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueAdd(ctx, "profile-managed", "media-alpha", nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-managed", "media-alpha", nil, revealed); err != nil {
 		t.Fatal(err)
 	}
 
@@ -735,7 +735,7 @@ func TestPlayQueueIsPerProfileAndRevealFilteredWithoutMutation(t *testing.T) {
 
 func TestPlayQueueAddValidatesMediaVisibility(t *testing.T) {
 	st := openSeeded(t)
-	err := st.QueueAdd(context.Background(), "profile-default", "media-archive", nil, LibraryFilter{
+	err := queueAddFixture(context.Background(), st, "profile-default", "media-archive", nil, LibraryFilter{
 		AllowedIDs: []LibraryID{"library-local", "library-archive"},
 	})
 	if err == nil {
@@ -750,10 +750,10 @@ func TestPlayQueueMutationsCannotTouchHiddenEntries(t *testing.T) {
 	revealed := LibraryFilter{AllowedIDs: []LibraryID{"library-local", "library-archive"}, Revealed: true}
 	hidden := LibraryFilter{AllowedIDs: []LibraryID{"library-local", "library-archive"}}
 
-	if err := st.QueueAdd(ctx, "profile-default", "media-archive", nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-archive", nil, revealed); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueAdd(ctx, "profile-default", "media-alpha", nil, revealed); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", "media-alpha", nil, revealed); err != nil {
 		t.Fatal(err)
 	}
 
@@ -791,7 +791,7 @@ func TestPlayQueuePositionsCountVisibleEntries(t *testing.T) {
 	extraB := importQueueMedia(t, st, "queue-pos-b")
 
 	for _, id := range []MediaID{"media-archive", extraA, extraB} {
-		if err := st.QueueAdd(ctx, "profile-default", id, nil, revealed); err != nil {
+		if err := queueAddFixture(ctx, st, "profile-default", id, nil, revealed); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -806,7 +806,7 @@ func TestPlayQueuePositionsCountVisibleEntries(t *testing.T) {
 
 	// Add-at-position counts visible slots the same way.
 	extraC := importQueueMedia(t, st, "queue-pos-c")
-	if err := st.QueueAdd(ctx, "profile-default", extraC, queueIntPtr(1), hidden); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", extraC, queueIntPtr(1), hidden); err != nil {
 		t.Fatal(err)
 	}
 	assertQueueIDs(t, st, hidden, "profile-default", []MediaID{extraB, extraC, extraA})

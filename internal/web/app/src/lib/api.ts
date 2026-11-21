@@ -48,6 +48,68 @@ function requestSignal(signal?: AbortSignal): AbortSignal | undefined {
   return AbortSignal.any([identityEpochSignal, signal]);
 }
 
+// The Profile this tab shows (CORE-2923). Every tab shares one session
+// cookie, so after another tab switches Profile the server would otherwise
+// apply this tab's requests to the new Profile. Each request names the Profile
+// it was made for, and the server refuses one that no longer matches.
+const PROFILE_HEADER = "X-Beamfall-Profile";
+let expectedProfileID: string | undefined;
+let profileMismatchHandler: (() => void) | undefined;
+
+/**
+ * Name the Profile this tab shows on every request from now on; no argument
+ * while an identity is loading or none is signed in, so the request names none.
+ */
+export function setExpectedProfile(profileID?: string): void {
+  expectedProfileID = profileID || undefined;
+}
+
+/**
+ * Register what a refusal for a Profile this tab still shows does (the session
+ * spine reloads its identity). Call with no argument to unregister.
+ */
+export function setProfileMismatchHandler(handler?: () => void): void {
+  profileMismatchHandler = handler;
+}
+
+/** The Profile this tab's requests name, if any. */
+export function getExpectedProfile(): string | undefined {
+  return expectedProfileID;
+}
+
+/** The Profile header for a request made outside the helpers below. */
+export function profileHeaders(): Record<string, string> {
+  return expectedProfileID ? { [PROFILE_HEADER]: expectedProfileID } : {};
+}
+
+/**
+ * Whether a refusal says the session is bound to another Profile than the
+ * request named. A REST refusal is a 409; a GraphQL mutation that found the
+ * switch only at its write answers 200 with the reason on its error.
+ */
+function isProfileMismatch(status: number, payload: unknown): boolean {
+  if (typeof payload !== "object" || payload === null) return false;
+  const body = payload as { reason?: unknown; errors?: { extensions?: { reason?: unknown } }[] };
+  if (status === 409 && body.reason === "PROFILE_MISMATCH") return true;
+  if (!Array.isArray(body.errors)) return false;
+  return body.errors.some((error) => error?.extensions?.reason === "PROFILE_MISMATCH");
+}
+
+/**
+ * React to a refused request made for `sentProfile`. Only a refusal for the
+ * Profile this tab still shows reloads it: one that arrives after the tab
+ * moved on to another identity belongs to the old one.
+ */
+export function noteProfileRefusal(
+  sentProfile: string | undefined,
+  status: number,
+  payload: unknown,
+): void {
+  if (sentProfile === undefined || sentProfile !== expectedProfileID) return;
+  if (!isProfileMismatch(status, payload)) return;
+  profileMismatchHandler?.();
+}
+
 let requestGuard: ((path: string) => void) | undefined;
 
 /** Install the app-wide guard that can stop normal API use after terminal compatibility. */
@@ -211,13 +273,24 @@ async function requestJSON<T>(
   const transportSignal = callerSignal
     ? AbortSignal.any([callerSignal, deadlineController.signal])
     : deadlineController.signal;
-  const requestInit = { ...init, signal: transportSignal };
+  const sentProfile = expectedProfileID;
+  const requestInit: RequestInit = { ...init, signal: transportSignal };
+  if (sentProfile !== undefined) {
+    requestInit.headers = {
+      ...(init.headers as Record<string, string> | undefined),
+      ...profileHeaders(),
+    };
+  }
   const transport = Promise.resolve(fetch(path, requestInit)).then(async (response) => {
     const bytes = await readResponseBytes(response, path, config.maxResponseBytes);
     if (!response.ok) {
-      throw new ApiError(`${method} ${path} failed`, response.status, parseErrorPayload(bytes));
+      const payload = parseErrorPayload(bytes);
+      noteProfileRefusal(sentProfile, response.status, payload);
+      throw new ApiError(`${method} ${path} failed`, response.status, payload);
     }
-    return parseJSONBody<T>(bytes, path, response.status);
+    const body = parseJSONBody<T>(bytes, path, response.status);
+    noteProfileRefusal(sentProfile, response.status, body);
+    return body;
   });
   try {
     return await Promise.race([transport, deadline]);
@@ -309,17 +382,32 @@ export async function postJSON<T = unknown>(
 /**
  * POST JSON with keepalive, so the request outlives the page that sent it: a
  * pagehide handler uses it to tell the server the viewer left. Fire and
- * forget; the response is never read.
+ * forget, except that a Profile refusal still reloads a tab that is open.
+ * `profile` names the Profile the request is made for: an unmount that runs
+ * after this tab moved on passes the Profile it opened with, so it can never
+ * act on the Profile the session moved to (CORE-2923); null names none.
  */
-export function postKeepalive(path: string, body: unknown): void {
+export function postKeepalive(
+  path: string,
+  body: unknown,
+  profile: string | null | undefined = expectedProfileID,
+): void {
   try {
     void fetch(path, {
       method: "POST",
       credentials: "same-origin",
       keepalive: true,
-      headers: { "Content-Type": "application/json", [CSRF_HEADER]: "1" },
+      headers: {
+        "Content-Type": "application/json",
+        [CSRF_HEADER]: "1",
+        ...(profile ? { [PROFILE_HEADER]: profile } : {}),
+      },
       body: JSON.stringify(body),
-    }).catch(() => {});
+    })
+      .then(async (response) => {
+        noteProfileRefusal(profile ?? undefined, response.status, await response.json());
+      })
+      .catch(() => {});
   } catch {
     // A page being torn down may refuse new requests; the server's expiry covers it.
   }
@@ -468,5 +556,14 @@ export function subscribeEvents(
   onError?: (err: Event) => void,
   onState?: (state: EventStreamState) => void,
 ): () => void {
-  return openEventStream("/api/events", { onEvent, onError, onState });
+  return openEventStream("/api/events", {
+    onEvent,
+    onError,
+    onState,
+    // Each connection names the Profile this tab shows, and the server ends a
+    // stream whose session moved to another one; the refused reconnect reloads
+    // the tab (CORE-2923).
+    headers: profileHeaders,
+    onRefused: (sent, status, payload) => noteProfileRefusal(sent[PROFILE_HEADER], status, payload),
+  });
 }

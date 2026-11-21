@@ -281,6 +281,12 @@ const (
 // IntegrationSetupTTL is the longest life of an admin setup Session.
 const IntegrationSetupTTL = 15 * time.Minute
 
+// ErrSessionNotFound reports that no session exists for the requested ID.
+var ErrSessionNotFound = errors.New("session not found")
+
+// ErrSessionExpired reports that the request's session has expired.
+var ErrSessionExpired = errors.New("session expired")
+
 // IntegrationSetupAttemptKey names the throttle lane of an admin setup
 // sign-in for the owner Profile.
 func IntegrationSetupAttemptKey(owner ProfileID) string {
@@ -2998,6 +3004,59 @@ func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (St
 	return s.mediaFileFingerprintByPath(ctx, path, "")
 }
 
+// SetProbedMediaDuration fills a missing runtime from the primary single-Part
+// Version's active file. A scan may have replaced the file or filled the runtime
+// while playback was probing it. The result reports whether a row changed.
+func (s *Store) SetProbedMediaDuration(ctx context.Context, libraryID LibraryID, id MediaID, fingerprint, path string, seconds int) (bool, error) {
+	if seconds <= 0 {
+		return false, nil
+	}
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return false, err
+	}
+	// Keep the chosen catalog writable only under the backing and unlock state
+	// observed here, including while a Library's backing is being changed.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return false, err
+	}
+	var trashed bool
+	if err := s.catalogR.QueryRowContext(ctx, `SELECT trashed_at_ms IS NOT NULL FROM library WHERE id = ?`, libraryID).Scan(&trashed); err != nil {
+		return false, err
+	}
+	if trashed {
+		return false, nil
+	}
+	result, err := plane.writer.ExecContext(ctx, `
+		WITH primary_file AS (
+			SELECT content_fingerprint, path, version_label, missing_at_ms
+			FROM media_file
+			WHERE media_id = ? AND part_ordinal = 0
+			ORDER BY version_label, missing_at_ms IS NOT NULL LIMIT 1
+		)
+		UPDATE media SET duration_seconds = ?
+		WHERE id = ? AND library_id = ? AND duration_seconds = 0 AND trashed_at_ms IS NULL
+		  AND EXISTS (
+			SELECT 1 FROM primary_file f
+			WHERE f.content_fingerprint = ? AND f.path = ? AND f.missing_at_ms IS NULL
+			  AND NOT EXISTS (
+				SELECT 1 FROM media_file p
+				WHERE p.media_id = media.id AND p.version_label = f.version_label AND p.part_ordinal > 0
+			  )
+		  )
+	`, id, seconds, id, libraryID, fingerprint, path)
+	if err != nil {
+		return false, err
+	}
+	updated, err := result.RowsAffected()
+	return updated > 0, err
+}
+
 // LibraryFilePathsWithoutDuration returns the available first-part file
 // paths of the Library's non-image Media that hold no duration. Scan probes
 // these files even on its fast path, so a duration an earlier unprobed rescan
@@ -3546,6 +3605,8 @@ func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata Me
 	return nil
 }
 
+const defaultSourceItemsLimit = 50
+
 // SourceItems returns visible Media rows for a bounded manifest Source.
 func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query SourceQuery) ([]SourceItem, error) {
 	switch query.Kind {
@@ -3575,7 +3636,7 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 	}
 	limit := query.Limit
 	if limit <= 0 {
-		limit = 50
+		limit = defaultSourceItemsLimit
 	}
 	if limit > 200 {
 		limit = 200
@@ -3659,8 +3720,7 @@ func (s *Store) homeLibraryFilterLocked(ctx context.Context, filter LibraryFilte
 }
 
 // sourceItemsForKind dispatches one bounded manifest Source kind to its SQL
-// projection. It runs under the read lock SourceItems holds; the per-Profile
-// Mute predicate is layered on its result by SourceItems, not here.
+// projection under the read lock SourceItems holds.
 func (s *Store) sourceItemsForKind(ctx context.Context, filter LibraryFilter, query SourceQuery, limit, offset int) ([]SourceItem, error) {
 	switch query.Kind {
 	case "smart-collection":
@@ -3815,11 +3875,11 @@ func libraryVisible(library Library, filter LibraryFilter) bool {
 	return true
 }
 
-// restrictedLibraryIDsLocked returns the set of restricted-Library IDs. Library
+// restrictedLibraryIDs returns the set of restricted-Library IDs. Library
 // metadata (including is_restricted) lives in the catalog plane even for
 // encrypted Libraries, so a single catalog read is authoritative.
-func (s *Store) restrictedLibraryIDsLocked(ctx context.Context) (map[LibraryID]bool, error) {
-	libraries, err := loadLibraries(ctx, s.catalogR)
+func restrictedLibraryIDs(ctx context.Context, q rowsQueryer) (map[LibraryID]bool, error) {
+	libraries, err := loadLibraries(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -3849,7 +3909,7 @@ func (s *Store) annotateRestrictedLocked(ctx context.Context, restricted map[Lib
 	}
 	if restricted == nil {
 		var err error
-		restricted, err = s.restrictedLibraryIDsLocked(ctx)
+		restricted, err = restrictedLibraryIDs(ctx, s.catalogR)
 		if err != nil {
 			return err
 		}

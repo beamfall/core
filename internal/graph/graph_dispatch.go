@@ -20,6 +20,7 @@ type fieldDispatchContext struct {
 	privilegedOutcomes map[string]observability.AuditOutcome
 	canonical          string
 	responseKey        string
+	queueAddReceipt    *QueueAddReceipt
 }
 
 type fieldDispatchFunc func(*fieldDispatchContext) response
@@ -699,6 +700,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"transitiongroup":                    newFieldHandler("transitionGroup", "transitionGroup", fieldMutation, roleSession, 134),
 	"trashedmarkers":                     newFieldHandler("trashedMarkers", "markers", fieldRead, roleSession|roleManager, 13),
 	"trashlist":                          newFieldHandler("trashList", "trash", fieldRead, roleSession|roleManager, 35),
+	"duplicatecopies":                    newFieldHandler("duplicateCopies", "trash", fieldRead, roleSession|roleManager, 35),
 	"trashedlibraries":                   newFieldHandler("trashedLibraries", "trashedLibraries", fieldRead, roleSession|roleAdmin, 148),
 	"trashmedia":                         newFieldHandler("trashMedia", "trashMedia", fieldMutation, roleSession|roleManager, 35),
 	"unassigntag":                        newFieldHandler("unassignTag", "unassignTag", fieldMutation, roleSession|roleManager, 36),
@@ -1299,10 +1301,18 @@ func dispatchFieldBlock030(dispatch *fieldDispatchContext) response {
 		result, err := h.writePlayQueue(ctx, scope, fields, req)
 		return resolveField(dispatch, field, result, err)
 	}
-	if fields["queueadd"] || fields["queueremove"] || fields["queuemove"] || fields["queueclear"] {
+	if fields["queueadd"] {
+		result, err := h.queueAdd(ctx, scope, req)
+		if err == nil {
+			result.receipt.ResponseKey = dispatch.responseKey
+			dispatch.queueAddReceipt = &result.receipt
+		}
+		return resolveField(dispatch, "queueadd", result.items, err)
+	}
+	if fields["queueremove"] || fields["queuemove"] || fields["queueclear"] {
 		result, err := h.queueOps(ctx, scope, fields, req)
 		if err != nil {
-			return resolveField(dispatch, requestedField(fields, "queueadd", "queueremove", "queuemove", "queueclear"), any(nil), err)
+			return resolveField(dispatch, requestedField(fields, "queueremove", "queuemove", "queueclear"), any(nil), err)
 		}
 		for field, value := range result {
 			if resp := resolveField(dispatch, field, value, nil); len(resp.Errors) > 0 {
@@ -1381,7 +1391,7 @@ func dispatchFieldBlock035(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
-	if fields["trashmedia"] || fields["restoremedia"] || fields["trashlist"] || fields["purgetrash"] {
+	if fields["trashmedia"] || fields["restoremedia"] || fields["trashlist"] || fields["purgetrash"] || fields["duplicatecopies"] {
 		if fields["trashmedia"] {
 			entries, err := h.trashMedia(ctx, scope, req)
 			if resp := resolveField(dispatch, "trashmedia", entries, err); len(resp.Errors) > 0 {
@@ -1403,6 +1413,12 @@ func dispatchFieldBlock035(dispatch *fieldDispatchContext) response {
 		if fields["purgetrash"] {
 			result, err := h.purgeTrash(ctx, scope, req)
 			if resp := resolveField(dispatch, "purgetrash", result, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["duplicatecopies"] {
+			sets, err := h.duplicateCopies(ctx, scope)
+			if resp := resolveField(dispatch, "duplicatecopies", sets, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}

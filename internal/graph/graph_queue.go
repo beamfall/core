@@ -2,10 +2,12 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"math"
 	"strings"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -46,15 +48,13 @@ func playQueueInfo(queue store.PlayQueue) PlayQueueInfo {
 }
 
 func (h *Handler) writePlayQueue(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (PlayQueueInfo, error) {
-	if fields["queueaddmany"] {
-		var queue store.PlayQueue
-		err := h.withExpectedProfile(ctx, scope, req, func() error {
-			var err error
-			queue, err = h.addQueueEntries(ctx, scope, req)
-			return err
-		})
+	if fields["queueaddmany"] || fields["queueplaynext"] {
+		queue, err := h.writeAuthorizedPlayQueue(ctx, scope, fields, req)
+		if fields["queueplaynext"] && errors.Is(err, store.ErrQueueMediaNotFound) {
+			return PlayQueueInfo{}, clientError("media is not queued")
+		}
 		if err != nil {
-			return PlayQueueInfo{}, err
+			return PlayQueueInfo{}, queueWriteError(err)
 		}
 		return playQueueInfo(queue), nil
 	}
@@ -67,21 +67,50 @@ func (h *Handler) writePlayQueue(ctx context.Context, scope auth.Scope, fields m
 	return h.playQueue(ctx, scope)
 }
 
-func (h *Handler) addQueueEntries(ctx context.Context, scope auth.Scope, req request) (store.PlayQueue, error) {
-	v := newVars(req)
-	values, _ := v.StringList("mediaIDs", "Media IDs")
-	if err := v.Err(); err != nil {
+func (h *Handler) writeAuthorizedPlayQueue(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (store.PlayQueue, error) {
+	expected, err := checkExpectedProfile(scope, req)
+	if err != nil {
 		return store.PlayQueue{}, err
-	}
-	ids := make([]store.MediaID, len(values))
-	for i, id := range values {
-		ids[i] = store.MediaID(strings.TrimSpace(id))
 	}
 	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
 	if err != nil {
 		return store.PlayQueue{}, err
 	}
-	return h.store.QueueAddMany(ctx, scope.ProfileID, ids, store.QueuePlacement(trimmedVariable(req, "placement")), filter)
+	authorization := h.auth.QueueWriteAuthorization(scope, expected, filter)
+	if fields["queueplaynext"] {
+		return h.store.QueuePlayNext(ctx, authorization, trimmedVariable(req, "entryID"))
+	}
+	if fields["queueaddmany"] {
+		v := newVars(req)
+		values, _ := v.StringList("mediaIDs", "Media IDs")
+		if err := v.Err(); err != nil {
+			return store.PlayQueue{}, err
+		}
+		ids := make([]store.MediaID, len(values))
+		for i, id := range values {
+			ids[i] = store.MediaID(strings.TrimSpace(id))
+		}
+		return h.store.QueueAddMany(ctx, authorization, ids, store.QueuePlacement(trimmedVariable(req, "placement")))
+	}
+	return store.PlayQueue{}, clientError("invalid queue mutation")
+}
+
+func queueWriteError(err error) error {
+	switch {
+	case errors.Is(err, store.ErrQueueMediaNotFound):
+		return clientError("unknown media")
+	case errors.Is(err, store.ErrQueueMediaLocked):
+		return &l10n.Error{Key: l10n.QueueMediaLocked, Err: clientError("This item is locked.")}
+	case errors.Is(err, store.ErrSessionProfileMismatch):
+		return errProfileMismatch
+	case errors.Is(err, store.ErrProfileDisabled):
+		return clientError("profile is disabled")
+	case errors.Is(err, store.ErrDeviceRevoked), errors.Is(err, store.ErrSessionExpired),
+		errors.Is(err, store.ErrSessionNotFound), errors.Is(err, store.ErrQueueProfileOutsideSchedule):
+		return clientError("invalid session")
+	default:
+		return err
+	}
 }
 
 func (h *Handler) applyPlayQueueWrite(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) error {
@@ -99,9 +128,6 @@ func (h *Handler) applyPlayQueueWrite(ctx context.Context, scope auth.Scope, fie
 	}
 	if fields["queueremoveentry"] {
 		return h.store.QueueRemoveEntry(ctx, profile, trimmedVariable(req, "entryID"), filter)
-	}
-	if fields["queueplaynext"] {
-		return h.store.QueuePlayNext(ctx, profile, trimmedVariable(req, "entryID"), filter)
 	}
 	if fields["queuesetcurrent"] {
 		positionMS, err := queueInteger(req, "positionMS", 1<<53-1)

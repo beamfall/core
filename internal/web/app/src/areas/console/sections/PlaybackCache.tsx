@@ -1,8 +1,8 @@
 import { RefreshCw } from "lucide-react";
 import { useState } from "react";
+import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import { EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   evictPlaybackRenditionCache,
@@ -129,13 +129,12 @@ export function PlaybackCache() {
               <div className="console-control-label">{t("playbackCachePrecompute")}</div>
               <p className="console-control-help">{t("playbackCachePrecomputeHelp")}</p>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Input
+            <div className="flex shrink-0 items-start gap-2">
+              <EntityPicker
                 value={mediaID}
-                onChange={(e) => setMediaID(e.target.value)}
-                placeholder={t("playbackCacheMediaPlaceholder")}
-                aria-label={t("playbackCacheMediaPlaceholder")}
-                className="w-36"
+                onChange={setMediaID}
+                ariaLabel={t("playbackCacheMediaPlaceholder")}
+                className="w-72"
               />
               <Button
                 size="sm"

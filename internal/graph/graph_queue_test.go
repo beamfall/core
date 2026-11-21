@@ -60,6 +60,45 @@ func TestPlayQueueEntryOperations(t *testing.T) {
 	}
 }
 
+func TestPlayQueueNewWritesRefuseLockedMedia(t *testing.T) {
+	// feature:play-queue
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	fx := seedMusicFixture(t, st)
+	h.auth.SetCertificationScales(map[string][]string{stationPluginID: {"low", "high"}})
+	const add = `mutation ($ids: [String!]!) { queueAddMany(mediaIDs: $ids, placement: "end") ` + queueStateSelection + " }"
+	var before PlayQueueInfo
+	execGraph(t, h, authorizeViewer, add, map[string]any{"ids": []string{"media-alpha", string(fx.trackA)}}, "queueAddMany", &before)
+	if len(before.Entries) != 2 || before.Entries[1].MediaID != fx.trackA {
+		t.Fatalf("seed queue = %+v", before)
+	}
+	if err := st.SetMediaFields(t.Context(), fx.trackA, []store.MediaField{
+		{Name: "certification", Type: store.EntityFieldText, Text: "high"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetProfileCertificationCeiling(t.Context(), pqDefault, store.ProfileCertificationCeiling{
+		PluginID: stationPluginID, Ceiling: "low", FilterVisibility: "locked",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertRefused := func(query string, vars map[string]any) {
+		t.Helper()
+		resp := postGraphJSON(t, h, authorizeViewer, query, vars)
+		if len(resp.Errors) != 1 || resp.Errors[0].Extensions.Code != ErrorCodeForbidden {
+			t.Fatalf("queue write returned %+v, want FORBIDDEN", resp.Errors)
+		}
+		var after PlayQueueInfo
+		execGraph(t, h, authorizeViewer, "{ playQueue "+queueStateSelection+" }", nil, "playQueue", &after)
+		if !reflect.DeepEqual(before, after) {
+			t.Fatalf("refused write changed queue from %+v to %+v", before, after)
+		}
+	}
+	assertRefused(add, map[string]any{"ids": []string{"media-alpha", string(fx.trackA)}})
+	assertRefused(`mutation ($id: String!) { queuePlayNext(entryID: $id) `+queueStateSelection+" }",
+		map[string]any{"id": before.Entries[1].ID})
+}
+
 func TestPlayQueueLegacyReadsDeduplicateBeforePagination(t *testing.T) {
 	h := newTestHandlerWithStore(storetest.Open(t))
 	var state PlayQueueInfo

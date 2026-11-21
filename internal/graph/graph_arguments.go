@@ -1129,7 +1129,8 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"trashedmarkers": {
 		{Name: "mediaID", Kind: "string"},
 	},
-	"trashlist": {},
+	"trashlist":       {},
+	"duplicatecopies": {},
 	"trashmedia": {
 		{Name: "mediaID", Kind: "string"},
 	},
@@ -1231,6 +1232,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"upsertentityrelation": {
 		{Name: "fromEntityID", Kind: "string"},
+		{Name: "position", Kind: "number", Optional: true},
 		{Name: "relation", Kind: "string"},
 		{Name: "sortOrder", Kind: "number", Optional: true},
 		{Name: "toEntityID", Kind: "string", Optional: true},

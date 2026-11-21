@@ -358,7 +358,7 @@ func TestUndoVersionMergeLeavesARequeuedSurvivorEntry(t *testing.T) {
 		}
 		return queue.Entries
 	}
-	if _, err := st.QueueAddMany(ctx, profile, []MediaID{keep, drop, drop}, QueueEnd, filter); err != nil {
+	if _, err := st.QueueAddMany(ctx, testQueueWriteAuthorization(profile, filter), []MediaID{keep, drop, drop}, QueueEnd); err != nil {
 		t.Fatal(err)
 	}
 	original := read()
@@ -380,7 +380,7 @@ func TestUndoVersionMergeLeavesARequeuedSurvivorEntry(t *testing.T) {
 	if err := st.QueueRemoveEntry(ctx, profile, original[1].ID, filter); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.QueueAddMany(ctx, profile, []MediaID{keep}, QueueEnd, filter); err != nil {
+	if _, err := st.QueueAddMany(ctx, testQueueWriteAuthorization(profile, filter), []MediaID{keep}, QueueEnd); err != nil {
 		t.Fatal(err)
 	}
 	requeued := read()

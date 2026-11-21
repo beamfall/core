@@ -65,50 +65,34 @@ func (q *queueSnapshot) activeOrder() *[]queueEntry {
 	return &q.entries
 }
 
-// QueueAdd preserves the Media-addressed behavior for existing clients.
+// addLegacy preserves the Media-addressed behavior for existing clients.
 // Numeric positions count distinct visible Media, as legacy reads do.
-func (s *Store) QueueAdd(ctx context.Context, profileID ProfileID, mediaID MediaID, position *int, filter LibraryFilter) error {
-	return s.updateQueue(ctx, profileID, filter, []MediaID{mediaID}, func(q *queueSnapshot, visible map[MediaID]Media) error {
-		if _, ok := visible[mediaID]; !ok {
-			return ValidationError("media not found")
+func (q *queueSnapshot) addLegacy(mediaID MediaID, position *int, visible map[MediaID]Media, addedAt time.Time) {
+	order := q.activeOrder()
+	for i, entry := range *order {
+		if entry.mediaID == mediaID {
+			*order = moveLegacyQueueEntry(*order, i, position, visible)
+			return
 		}
-		order := q.activeOrder()
-		for i, entry := range *order {
-			if entry.mediaID == mediaID {
-				*order = moveLegacyQueueEntry(*order, i, position, visible)
-				return nil
-			}
-		}
-		entry := newQueueEntries([]MediaID{mediaID})[0]
-		q.entries = insertLegacyQueueEntry(q.entries, entry, position, visible)
-		if q.shuffle {
-			q.shuffled = insertLegacyQueueEntry(q.shuffled, entry, position, visible)
-		}
-		return nil
-	})
+	}
+	entry := newQueueEntries([]MediaID{mediaID})[0]
+	entry.addedAtMS = timeToMillis(addedAt)
+	q.entries = insertLegacyQueueEntry(q.entries, entry, position, visible)
+	if q.shuffle {
+		q.shuffled = insertLegacyQueueEntry(q.shuffled, entry, position, visible)
+	}
 }
 
-// QueueAddMany inserts a batch atomically. The next placement inserts after
-// the current visible entry, or at the front of the visible queue.
-func (s *Store) QueueAddMany(ctx context.Context, profileID ProfileID, mediaIDs []MediaID, placement QueuePlacement, filter LibraryFilter) (PlayQueue, error) {
-	if len(mediaIDs) == 0 || (placement != QueueEnd && placement != QueueNext) {
-		return PlayQueue{}, ValidationError("invalid queue placement or empty media list")
+func validQueueBatch(mediaIDs []MediaID, placement QueuePlacement) bool {
+	return len(mediaIDs) > 0 && (placement == QueueEnd || placement == QueueNext)
+}
+
+func (q *queueSnapshot) addMany(mediaIDs []MediaID, placement QueuePlacement, visible map[MediaID]Media) {
+	entries := newQueueEntries(mediaIDs)
+	q.entries = addQueueEntries(q.entries, entries, q.currentID, placement, visible)
+	if q.shuffle {
+		q.shuffled = addQueueEntries(q.shuffled, entries, q.currentID, placement, visible)
 	}
-	var result PlayQueue
-	err := s.updateQueueWithResult(ctx, profileID, filter, mediaIDs, &result, func(q *queueSnapshot, visible map[MediaID]Media) error {
-		for _, id := range mediaIDs {
-			if _, ok := visible[id]; !ok {
-				return ValidationError("media not found")
-			}
-		}
-		entries := newQueueEntries(mediaIDs)
-		q.entries = addQueueEntries(q.entries, entries, q.currentID, placement, visible)
-		if q.shuffle {
-			q.shuffled = addQueueEntries(q.shuffled, entries, q.currentID, placement, visible)
-		}
-		return nil
-	})
-	return result, err
 }
 
 func newQueueEntries(ids []MediaID) []queueEntry {
@@ -194,35 +178,34 @@ func (s *Store) QueueMoveEntry(ctx context.Context, profileID ProfileID, entryID
 	return s.queueMoveEntry(ctx, profileID, queueTarget{entryID: entryID}, &position, filter)
 }
 
-// QueuePlayNext moves an existing entry immediately after the current entry.
-func (s *Store) QueuePlayNext(ctx context.Context, profileID ProfileID, entryID string, filter LibraryFilter) error {
-	return s.queueMoveEntry(ctx, profileID, queueTarget{entryID: entryID}, nil, filter)
-}
-
 func (s *Store) queueMoveEntry(ctx context.Context, profileID ProfileID, target queueTarget, position *int, filter LibraryFilter) error {
 	return s.updateQueue(ctx, profileID, filter, nil, func(q *queueSnapshot, visible map[MediaID]Media) error {
-		order := q.activeOrder()
-		for i, entry := range *order {
-			if !target.matches(entry, visible) {
-				continue
-			}
-			if position == nil && entry.id == q.currentID {
-				return nil
-			}
-			if target.entryID == "" {
-				*order = moveLegacyQueueEntry(*order, i, position, visible)
-				return nil
-			}
-			remaining := slices.Delete(*order, i, i+1)
-			if position == nil {
-				*order = addQueueEntries(remaining, []queueEntry{entry}, q.currentID, QueueNext, visible)
-			} else {
-				*order = insertQueueEntry(remaining, entry, *position, visible)
-			}
+		return q.moveEntry(target, position, visible)
+	})
+}
+
+func (q *queueSnapshot) moveEntry(target queueTarget, position *int, visible map[MediaID]Media) error {
+	order := q.activeOrder()
+	for i, entry := range *order {
+		if !target.matches(entry, visible) {
+			continue
+		}
+		if position == nil && entry.id == q.currentID {
 			return nil
 		}
-		return ValidationError("media is not queued")
-	})
+		if target.entryID == "" {
+			*order = moveLegacyQueueEntry(*order, i, position, visible)
+			return nil
+		}
+		remaining := slices.Delete(*order, i, i+1)
+		if position == nil {
+			*order = addQueueEntries(remaining, []queueEntry{entry}, q.currentID, QueueNext, visible)
+		} else {
+			*order = insertQueueEntry(remaining, entry, *position, visible)
+		}
+		return nil
+	}
+	return ValidationError("media is not queued")
 }
 
 func (s *Store) QueueSetCurrent(ctx context.Context, profileID ProfileID, entryID string, positionMS int64, filter LibraryFilter) error {
@@ -326,10 +309,6 @@ func (s *Store) QueueClear(ctx context.Context, profileID ProfileID, filter Libr
 }
 
 func (s *Store) updateQueue(ctx context.Context, profileID ProfileID, filter LibraryFilter, extra []MediaID, mutate func(*queueSnapshot, map[MediaID]Media) error) error {
-	return s.updateQueueWithResult(ctx, profileID, filter, extra, nil, mutate)
-}
-
-func (s *Store) updateQueueWithResult(ctx context.Context, profileID ProfileID, filter LibraryFilter, extra []MediaID, result *PlayQueue, mutate func(*queueSnapshot, map[MediaID]Media) error) error {
 	if profileID == "" {
 		return ValidationError("profile ID is required")
 	}
@@ -358,20 +337,14 @@ func (s *Store) updateQueueWithResult(ctx context.Context, profileID ProfileID, 
 	if err := saveQueue(ctx, tx, profileID, q, original); err != nil {
 		return err
 	}
-	var snapshot PlayQueue
-	if result != nil {
-		snapshot = q.playQueue(visible)
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	if result != nil {
-		*result = snapshot
-	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *Store) visibleQueueMedia(ctx context.Context, entries []queueEntry, filter LibraryFilter, extra []MediaID) (map[MediaID]Media, error) {
+	return s.visibleMediaBatchSQL(ctx, queueMediaIDs(entries, extra), filter)
+}
+
+func queueMediaIDs(entries []queueEntry, extra []MediaID) []MediaID {
 	seen := make(map[MediaID]bool, len(entries)+len(extra))
 	ids := make([]MediaID, 0, len(entries)+len(extra))
 	for _, entry := range entries {
@@ -386,7 +359,7 @@ func (s *Store) visibleQueueMedia(ctx context.Context, entries []queueEntry, fil
 			ids = append(ids, id)
 		}
 	}
-	return s.visibleMediaBatchSQL(ctx, ids, filter)
+	return ids
 }
 
 func moveLegacyQueueEntry(order []queueEntry, index int, position *int, visible map[MediaID]Media) []queueEntry {
@@ -503,10 +476,7 @@ func (q *queueSnapshot) playQueue(visible map[MediaID]Media) PlayQueue {
 		if !ok {
 			continue
 		}
-		result.Entries = append(result.Entries, PlayQueueEntry{ID: entry.id, Item: SourceItem{
-			ID: media.ID, Kind: "media", Title: media.Title, LibraryID: media.LibraryID,
-			Summary: mediaDurationSummary(media.DurationSeconds),
-		}})
+		result.Entries = append(result.Entries, PlayQueueEntry{ID: entry.id, Item: queueSourceItem(media)})
 	}
 	return result
 }
@@ -807,4 +777,11 @@ func myEngagementChunk(ctx context.Context, tx *sql.Tx, profileID ProfileID, aft
 		return nil, nil, err
 	}
 	return ids, events, nil
+}
+
+func queueSourceItem(media Media) SourceItem {
+	return SourceItem{
+		ID: media.ID, Kind: "media", Title: media.Title, LibraryID: media.LibraryID,
+		Summary: mediaDurationSummary(media.DurationSeconds),
+	}
 }

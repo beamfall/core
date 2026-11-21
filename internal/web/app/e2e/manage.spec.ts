@@ -125,18 +125,39 @@ async function mockCuration(page: Page): Promise<void> {
     if (route.request().method() !== "POST") return route.fallback();
     const body = route.request().postDataJSON() as {
       query?: string;
-      variables?: { relation?: string };
+      variables?: { query?: string; relation?: string };
     };
     const query = body.query ?? "";
-    if (query.includes("query MediaFields")) {
+    if (query.includes("query SearchResult")) {
+      const items =
+        body.variables?.query === "nothing"
+          ? []
+          : [
+              { id: "visual-media", kind: "media", title: "Visual parity media", year: 2026 },
+              {
+                id: "visual-group",
+                kind: "entity",
+                title: "Visual group",
+                entityKind: "group",
+                entityKindDisplayName: "Group",
+              },
+            ];
       return route.fulfill({
         json: {
           data: {
-            mediaFields: [
-              { name: "title", type: "string", value: "Visual parity media", label: "Title" },
-            ],
+            searchResult: {
+              mode: "keyword",
+              hasMore: false,
+              restrictedResultsPresent: false,
+              items,
+            },
           },
         },
+      });
+    }
+    if (query.includes("query Media(")) {
+      return route.fulfill({
+        json: { data: { media: { id: "visual-media", title: "Visual parity media" } } },
       });
     }
     if (query.includes("query MediaFiles")) {
@@ -159,21 +180,50 @@ async function mockCuration(page: Page): Promise<void> {
       });
     }
     if (query.includes("query MediaRelations")) {
+      // One extra and no editions, so the Editions empty state shows.
       const relation = body.variables?.relation ?? "extra-of";
-      return route.fulfill({
-        json: {
-          data: {
-            mediaRelations: [
+      const mediaRelations =
+        relation === "extra-of"
+          ? [
               {
                 relation,
                 media: {
-                  id: `visual-${relation}`,
-                  title: relation === "extra-of" ? "Visual extra" : "Visual edition",
+                  id: "visual-extra",
+                  title: "Visual extra",
                   summary: "",
                   year: 2026,
                   favorited: false,
                 },
               },
+            ]
+          : [];
+      return route.fulfill({ json: { data: { mediaRelations } } });
+    }
+    if (query.includes("query Entity(")) {
+      return route.fulfill({
+        json: {
+          data: {
+            entity: { id: "visual-group", kind: "group", title: "Visual group", fields: [] },
+          },
+        },
+      });
+    }
+    if (query.includes("query EntityRelations")) {
+      const row = (relation: string, id: string, title: string, sortOrder: number) => ({
+        relation,
+        targetKind: "media",
+        sortOrder,
+        attributes: {},
+        entity: null,
+        media: { id, title, summary: "", year: 2026, favorited: false },
+      });
+      return route.fulfill({
+        json: {
+          data: {
+            entityRelations: [
+              row("member", "visual-one", "Visual one", 0),
+              row("member", "visual-two", "Visual two", 1),
+              row("featured", "visual-three", "Visual three", 0),
             ],
           },
         },
@@ -227,40 +277,57 @@ test.describe("manage", () => {
     await expectVisualParity(page, testInfo, "manage-smart-tab-focused-selected");
   });
 
-  test("visual parity covers Curation tabs and shared Select states", async ({
+  // CORE-2913 redesigned Curation as "Versions & links": search for an item, then edit its
+  // files, extras and editions, or a group's ordered items. The four golden names predate it and
+  // stay because the archived manifest pins them (archived-visual-parity.ts); each now records the
+  // nearest state of the new page: the search picker, the Files list, the Extras list and the
+  // group's link-type Select.
+  test("visual parity covers Curation search, linked items and the link-type Select", async ({
     page,
   }, testInfo) => {
     await mockCuration(page);
     await gotoManage(page, "curation");
 
-    const subjectType = page.getByRole("combobox", { name: "Subject type" });
-    await openSelectState(page, subjectType, "Media");
+    const search = page.getByLabel("Search the catalog");
+    await search.fill("nothing");
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await expect(page.getByText("Nothing in the catalog matches that search.")).toBeVisible();
+    coverUiStates(testInfo, "/manage/curation#empty:search");
+
+    await search.fill("visual");
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    const openMedia = page.getByRole("button", { name: "Open: Visual parity media" });
+    await openMedia.focus();
+    await expect(openMedia).toBeFocused();
     await expectVisualParity(
       page,
       testInfo,
       "manage-curation-subject-select-open-focused-selected",
     );
-    await page.keyboard.press("Escape");
 
-    await page.getByLabel("Subject ID").fill("visual-media");
-    await page.getByRole("button", { name: "Load" }).click();
+    await openMedia.click();
+    await expect(page).toHaveURL(/open=visual-media&as=media/);
     await expect(page.getByText("/media/visual-parity.mp4")).toBeVisible();
-
-    const versions = page.getByRole("tab", { name: "Versions", exact: true });
-    const extras = page.getByRole("tab", { name: "Extras", exact: true });
-    await expect(versions).toHaveAttribute("aria-selected", "true");
-    await versions.focus();
-    await expect(versions).toBeFocused();
+    await expect(page.getByText("No alternate editions are linked to this item.")).toBeVisible();
+    coverUiStates(testInfo, "/manage/curation#empty:editions");
+    const editDetails = page.getByRole("link", { name: "Edit details" });
+    await editDetails.focus();
+    await expect(editDetails).toBeFocused();
     await expectVisualParity(page, testInfo, "manage-curation-versions-tab-focused-selected");
 
-    await extras.click();
-    await expect(extras).toHaveAttribute("aria-selected", "true");
-    await extras.focus();
-    await expect(extras).toBeFocused();
+    const addExtra = page.getByRole("button", { name: "Add an extra" });
+    await addExtra.click();
+    const extraSearch = page.getByLabel("Add an extra");
+    await expect(extraSearch).toBeVisible();
+    await extraSearch.focus();
+    await expect(extraSearch).toBeFocused();
     await expectVisualParity(page, testInfo, "manage-curation-extras-tab-focused-selected");
 
-    const relation = page.getByRole("combobox", { name: "Relation" });
-    await selectAndReopen(page, relation, "edition-of");
+    await page.goto("/web/manage/curation?open=visual-group&as=entity");
+    await expect(page.getByText("Visual three")).toBeVisible();
+    await page.getByRole("button", { name: "Add an item" }).click();
+    const relation = page.getByRole("combobox", { name: "Link type" });
+    await selectAndReopen(page, relation, "featured");
     await expectVisualParity(
       page,
       testInfo,

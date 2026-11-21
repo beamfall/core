@@ -11,7 +11,15 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
+
+func testQueueWriteAuthorization(profile ProfileID, filter LibraryFilter) QueueWriteAuthorization {
+	return QueueWriteAuthorization{
+		ProfileID: profile, SessionID: "session-revealed", ExpectedProfileID: profile,
+		Filter: filter, Now: time.Now, ResolveCertification: testQueueCertification,
+	}
+}
 
 func TestPlayQueueMigrationPreservesExistingRows(t *testing.T) {
 	ctx := t.Context()
@@ -108,7 +116,7 @@ func TestPlayQueueStateSurvivesStoreRestartAndPrivacyDeletion(t *testing.T) {
 		return state
 	}
 
-	if _, err := st.QueueAddMany(ctx, profile, []MediaID{"media-alpha", "media-archive", "media-alpha"}, QueueEnd, filter); err != nil {
+	if _, err := st.QueueAddMany(ctx, testQueueWriteAuthorization(profile, filter), []MediaID{"media-alpha", "media-archive", "media-alpha"}, QueueEnd); err != nil {
 		t.Fatal(err)
 	}
 	entry := read().Entries[1]
@@ -163,7 +171,7 @@ func TestPlayQueueConcurrentBatchesStayIntact(t *testing.T) {
 	var writers sync.WaitGroup
 	for range batches {
 		writers.Go(func() {
-			state, err := st.QueueAddMany(ctx, profile, []MediaID{"media-alpha", "media-archive"}, QueueEnd, filter)
+			state, err := st.QueueAddMany(ctx, testQueueWriteAuthorization(profile, filter), []MediaID{"media-alpha", "media-archive"}, QueueEnd)
 			if err != nil {
 				t.Error(err)
 				return
@@ -211,7 +219,7 @@ func TestPlayQueueBatchReturnsWriteSnapshotWithoutEventsReader(t *testing.T) {
 	if _, err := st.PlayQueue(ctx, profile, filter); err == nil {
 		t.Fatal("closed events reader still serves playQueue")
 	}
-	response, err := st.QueueAddMany(ctx, profile, []MediaID{"media-alpha", "media-alpha"}, QueueEnd, filter)
+	response, err := st.QueueAddMany(ctx, testQueueWriteAuthorization(profile, filter), []MediaID{"media-alpha", "media-alpha"}, QueueEnd)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +246,7 @@ func TestPlayQueueBatchRollsBackPartialInsert(t *testing.T) {
 	filter := LibraryFilter{AllLibraries: true, Revealed: true}
 	const profile = "profile-default"
 
-	before, err := st.QueueAddMany(ctx, profile, []MediaID{"media-alpha"}, QueueEnd, filter)
+	before, err := st.QueueAddMany(ctx, testQueueWriteAuthorization(profile, filter), []MediaID{"media-alpha"}, QueueEnd)
 	if err != nil || len(before.Entries) != 1 {
 		t.Fatalf("seed queue = %+v, %v", before, err)
 	}
@@ -249,7 +257,7 @@ func TestPlayQueueBatchRollsBackPartialInsert(t *testing.T) {
 	`); err != nil {
 		t.Fatal(err)
 	}
-	failed, err := st.QueueAddMany(ctx, profile, []MediaID{"media-alpha", "media-archive"}, QueueEnd, filter)
+	failed, err := st.QueueAddMany(ctx, testQueueWriteAuthorization(profile, filter), []MediaID{"media-alpha", "media-archive"}, QueueEnd)
 	if err == nil || !strings.Contains(err.Error(), "synthetic queue insert failure") || failed.Entries != nil {
 		t.Fatalf("failed add response = %+v, %v", failed, err)
 	}

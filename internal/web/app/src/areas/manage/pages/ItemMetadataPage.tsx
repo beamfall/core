@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -140,8 +141,8 @@ export function ItemMetadataPage() {
     setInfo((prev) => (prev ? { ...prev, locks } : prev));
   };
 
-  const onOpen = () => {
-    const id = idInput.trim();
+  const onOpen = (picked?: string) => {
+    const id = (picked ?? idInput).trim();
     if (id) navigate(`/manage/items/${encodeURIComponent(id)}`);
   };
 
@@ -288,28 +289,29 @@ export function ItemMetadataPage() {
 
   return (
     <ManageSection>
-      <form
-        className="flex flex-wrap items-end gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onOpen();
-        }}
-      >
+      <div className="flex flex-wrap items-start gap-3">
         <div className="space-y-1">
           <Label htmlFor="item-metadata-media">{t("fieldLocksMediaLabel")}</Label>
-          <Input
+          <EntityPicker
             id="item-metadata-media"
             value={idInput}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setIdInput(e.target.value)}
-            className="w-72"
+            hideSummary
+            onChange={(id) => {
+              setIdInput(id);
+              if (id) onOpen(id);
+            }}
           />
         </div>
-        <Button type="submit" variant="outline" disabled={!idInput.trim()}>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-6"
+          disabled={!idInput.trim()}
+          onClick={() => onOpen()}
+        >
           {t("fieldLocksLoad")}
         </Button>
-      </form>
+      </div>
 
       <div className="mt-4 space-y-6">
         {!mediaID ? (

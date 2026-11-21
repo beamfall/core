@@ -420,6 +420,11 @@
     "tier": "session"
   },
   {
+    "field": "duplicatecopies",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "editmediametadata",
     "effect": "write",
     "tier": "session"
