@@ -188,17 +188,22 @@ func (s *feedDirectorySearcher) admitRequest() error {
 		// instead of disabling search until restart. A file that does not
 		// decode is replaced: it can refund at most one minute of requests.
 		var saved []time.Time
-		if found, err := jsonstate.Load(s.budgetFile, &saved); err != nil && !found {
+		found, err := jsonstate.Load(s.budgetFile, &saved)
+		if err != nil && !found {
 			return fmt.Errorf("load feed request budget: %w", err)
-		} else if err != nil {
+		}
+		if err != nil {
 			saved = nil
 		}
 		s.reserved, s.budgetLoaded = saved, true
 	}
 	// Each token refills one minute after use. Persist the new deadline
 	// before admission so a restart cannot refund a request already sent.
+	// A deadline beyond one minute comes from a clock that moved back.
 	now := s.now()
-	active := slices.DeleteFunc(slices.Clone(s.reserved), func(deadline time.Time) bool { return !now.Before(deadline) })
+	active := slices.DeleteFunc(slices.Clone(s.reserved), func(deadline time.Time) bool {
+		return !now.Before(deadline) || deadline.After(now.Add(time.Minute))
+	})
 	if len(active) >= feedRequestsPerMin {
 		return graph.ErrFeedSearchThrottled
 	}

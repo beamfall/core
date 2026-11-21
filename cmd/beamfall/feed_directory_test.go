@@ -357,6 +357,14 @@ func TestFeedDirectoryRetriesBudgetLoad(t *testing.T) {
 	if _, err := searcher.SearchFeeds(t.Context(), "full"); !errors.Is(err, graph.ErrFeedSearchThrottled) || requests.Load() != 1 {
 		t.Fatalf("restored reservations = %v, %d requests", err, requests.Load())
 	}
+
+	if err := os.WriteFile(budgetFile, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	searcher = newFeedDirectorySearcher(searcher.engine, nil, server.URL, "/search?term={query}", budgetFile, func() time.Time { return now })
+	if _, err := searcher.SearchFeeds(t.Context(), "corrupt"); err != nil || requests.Load() != 2 {
+		t.Fatalf("corrupt budget = %v, %d requests", err, requests.Load())
+	}
 }
 
 type directoryTestSecrets map[string]string
