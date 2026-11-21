@@ -421,15 +421,15 @@ func TestPlayHistoryCountsOnlyRealPlaysAndFinishesNearTheEnd(t *testing.T) {
 }
 
 func TestPlayHistoryDoesNotCountPauses(t *testing.T) {
-	// CORE-1307: clients stay silent while paused, so a 20-minute pause
-	// between reports adds at most playReportGapCap, not 20 minutes.
+	// CORE-1307: a pause adds nothing to watched time, whether the client
+	// stays silent while paused or keeps reporting the same position.
 	st := openSeeded(t)
 	ctx := context.Background()
 	all := LibraryFilter{AllLibraries: true}
 	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
 
-	// Five minutes played, a 20-minute pause, five more minutes, then a
-	// watched report 15 seconds later.
+	// Silent client: five minutes played, a 20-minute pause, five more
+	// minutes, then a watched report 15 seconds later.
 	resume := day.Add(25 * time.Minute)
 	progressAtPosition(t, st, "profile-default", "media-alpha", day, 0, false)
 	playing(t, st, "profile-default", "media-alpha", day, day.Add(5*time.Minute), time.Time{}, 0, 3600)
@@ -439,19 +439,28 @@ func TestPlayHistoryDoesNotCountPauses(t *testing.T) {
 	progressAtPosition(t, st, "profile-default", "media-alpha", resume.Add(5*time.Minute), 600, false)
 	progressAt(t, st, "profile-default", "media-alpha", resume.Add(5*time.Minute+15*time.Second), true)
 
+	// Reporting client: the same position every 10 seconds through a
+	// 20-minute pause, then a report that arrived five minutes after the one
+	// before it (a slow request) but advanced the position five minutes.
+	other := day.Add(2 * time.Hour)
+	progressAtPosition(t, st, "profile-managed", "media-alpha", other, 100, false)
+	for step := 10 * time.Second; step <= 20*time.Minute; step += 10 * time.Second {
+		progressAtPosition(t, st, "profile-managed", "media-alpha", other.Add(step), 100, false)
+	}
+	progressAtPosition(t, st, "profile-managed", "media-alpha", other.Add(25*time.Minute), 400, false)
+
 	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := 600 + int(playReportGapCap/time.Second) + 15
-	if len(plays) != 1 || plays[0].WatchedSeconds != want {
-		t.Fatalf("plays = %#v, want one play of %ds", plays, want)
+	if len(plays) != 2 || plays[0].WatchedSeconds != 300 || plays[1].WatchedSeconds != 615 {
+		t.Fatalf("plays = %#v, want 300s (reporting client) and 615s (silent client)", plays)
 	}
 	stats, err := st.PlayStats(ctx, all, day.Add(-time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(stats.Items) != 1 || stats.Items[0].WatchedSeconds != want {
-		t.Fatalf("item ranking = %#v, want %ds", stats.Items, want)
+	if len(stats.Items) != 1 || stats.Items[0].WatchedSeconds != 915 {
+		t.Fatalf("item ranking = %#v, want 915s", stats.Items)
 	}
 }
