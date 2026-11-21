@@ -128,6 +128,11 @@ TEXT_ONLY_RULES = {
     "credential-url",
 }
 
+# A repository split moves files with their paths intact, so the closed Apple
+# repo (CORE-1066) honours the digest-bound entries recorded under the repo
+# the files came from. Path, rule and digest must still match exactly.
+ALLOWLIST_LABEL_ALIASES = {"beamfall-apple-mobile-tv": ("beamfall-apple",)}
+
 NON_ALLOWLISTABLE_RULES = {
     "private-key",
     "private-key-pgp",
@@ -163,8 +168,26 @@ def default_targets() -> list[tuple[str, Path]]:
     return [
         ("beamfall", CORE_ROOT),
         ("beamfall-apple", workspace / "beamfall-apple"),
+        ("beamfall-apple-mobile-tv", workspace / "beamfall-apple-mobile-tv"),
         ("beamfall-android", workspace / "beamfall-android"),
     ]
+
+
+# The closed Apple repo exists only after the CORE-1066 split; before it the
+# public beamfall-apple holds that code, so the default matrix skips it.
+OPTIONAL_DEFAULT_LABELS = {"beamfall-apple-mobile-tv"}
+
+
+def drop_absent_optional_defaults(
+    targets: list[tuple[str, Path]],
+) -> list[tuple[str, Path]]:
+    kept = []
+    for label, root in targets:
+        if label in OPTIONAL_DEFAULT_LABELS and not root.is_dir():
+            print(f"secret-scan: SKIP {label} (missing {root})")
+            continue
+        kept.append((label, root))
+    return kept
 
 
 def parse_targets(values: list[str]) -> list[tuple[str, Path]]:
@@ -565,7 +588,10 @@ def findings(
             seen_spans.add(span)
             secret = match.group(secret_group)
             digest = fingerprint(secret)
-            allowlisted = (label, relative, rule, digest) in allowlist
+            allowlisted = any(
+                (allow_label, relative, rule, digest) in allowlist
+                for allow_label in (label, *ALLOWLIST_LABEL_ALIASES.get(label, ()))
+            )
             if rule not in NON_ALLOWLISTABLE_RULES and allowlisted:
                 continue
             line = data.count(b"\n", 0, match.start()) + 1
@@ -662,6 +688,8 @@ def main() -> int:
         print(f"secret-scan: {error}", file=sys.stderr)
         return 2
     require_all = args.require_repos
+    if require_all and not args.target:
+        targets = drop_absent_optional_defaults(targets)
     if require_all:
         missing = [(label, root) for label, root in targets if not root.is_dir()]
         for label, root in missing:

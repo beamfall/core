@@ -111,11 +111,20 @@ type ratchetTarget struct {
 }
 
 // scanJob maps a source root + file extension to the targets a marker there
-// credits. A root that does not exist on disk makes its targets unassessable.
+// credits. A root that does not exist on disk credits nothing. A target is
+// assessable when some root crediting it exists and no required root for it
+// is absent.
+//
+// requiredUnless marks a root the targets need: when it is absent they are
+// unassessable, unless the requiredUnless path exists, which means the code it
+// would hold still lives in an older layout another job scans. The closed
+// iPhone, iPad and tvOS apps move from beamfall-apple to beamfall-apple-mobile-tv
+// with CORE-1066; until then beamfall-apple still holds them.
 type scanJob struct {
-	dir     string
-	ext     string
-	targets []string
+	dir            string
+	ext            string
+	targets        []string
+	requiredUnless string
 }
 
 var scanJobs = []scanJob{
@@ -125,6 +134,7 @@ var scanJobs = []scanJob{
 	{dir: "internal/web/app", ext: ".spec.ts", targets: []string{"web"}},
 	{dir: "internal/web/app", ext: ".spec.tsx", targets: []string{"web"}},
 	{dir: "../beamfall-apple", ext: ".swift", targets: []string{"tvos", "iphone", "ipad", "macos"}},
+	{dir: "../beamfall-apple-mobile-tv", ext: ".swift", targets: []string{"tvos", "iphone", "ipad"}, requiredUnless: "../beamfall-apple/Apps/BeamfallMobile"},
 	{dir: "../beamfall-android", ext: ".kt", targets: []string{"androidtv", "androidmobile"}},
 	{dir: "../beamfall-windows", ext: ".cs", targets: []string{"windows"}},
 }
@@ -179,23 +189,7 @@ func run(options runOptions, stdout, stderr io.Writer) int {
 	}
 
 	// covered[target] = set of feature ids proven for that target.
-	covered := map[string]map[string]bool{}
-	assessable := map[string]bool{}
-	for _, job := range scanJobs {
-		if _, statErr := os.Stat(job.dir); statErr != nil {
-			continue // root absent — its targets stay unassessable
-		}
-		ids := scanMarkers(job.dir, job.ext)
-		for _, tgt := range job.targets {
-			assessable[tgt] = true
-			if covered[tgt] == nil {
-				covered[tgt] = map[string]bool{}
-			}
-			for id := range ids {
-				covered[tgt][id] = true
-			}
-		}
-	}
+	covered, assessable := scanRoots(scanJobs, stdout)
 
 	// Tally.
 	var applicable, ok, miss, unassessable int
@@ -550,6 +544,42 @@ func presentList(targets []string, assessable map[string]bool) string {
 
 // scanMarkers walks dir and returns the set of feature ids referenced by a
 // `feature:<id>` marker in any file whose name ends with ext.
+// scanRoots scans every present root and returns the proven feature ids per
+// target and the assessable targets. An absent required root makes its targets
+// unassessable and says so on stdout.
+func scanRoots(jobs []scanJob, stdout io.Writer) (covered map[string]map[string]bool, assessable map[string]bool) {
+	covered = map[string]map[string]bool{}
+	assessable = map[string]bool{}
+	missingRequired := map[string]bool{}
+	for _, job := range jobs {
+		if _, statErr := os.Stat(job.dir); statErr != nil {
+			if job.requiredUnless != "" {
+				if _, oldErr := os.Stat(job.requiredUnless); oldErr != nil {
+					fmt.Fprintf(stdout, "SKIP %s: root absent, %s unassessable\n", job.dir, strings.Join(job.targets, ", "))
+					for _, tgt := range job.targets {
+						missingRequired[tgt] = true
+					}
+				}
+			}
+			continue // root absent — it credits nothing
+		}
+		ids := scanMarkers(job.dir, job.ext)
+		for _, tgt := range job.targets {
+			assessable[tgt] = true
+			if covered[tgt] == nil {
+				covered[tgt] = map[string]bool{}
+			}
+			for id := range ids {
+				covered[tgt][id] = true
+			}
+		}
+	}
+	for tgt := range missingRequired {
+		delete(assessable, tgt)
+	}
+	return covered, assessable
+}
+
 func scanMarkers(dir, ext string) map[string]bool {
 	ids := map[string]bool{}
 	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {

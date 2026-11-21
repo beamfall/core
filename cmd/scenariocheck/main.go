@@ -6,6 +6,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -40,10 +41,17 @@ type tally struct {
 	Unassessable int
 }
 
+// scanJob maps a source root and file suffixes to the targets a marker there
+// credits. An absent root credits nothing. requiredUnless marks a root its
+// targets need: absent, they are unassessable unless the requiredUnless path
+// exists, which means the code still lives in the pre-split layout another job
+// scans (the closed iPhone, iPad and tvOS apps leave beamfall-apple for
+// beamfall-apple-mobile-tv with CORE-1066).
 type scanJob struct {
-	dir      string
-	suffixes []string
-	targets  []string
+	dir            string
+	suffixes       []string
+	targets        []string
+	requiredUnless string
 }
 
 var scanJobs = []scanJob{
@@ -52,6 +60,7 @@ var scanJobs = []scanJob{
 	{dir: "script", suffixes: []string{".sh", ".py"}, targets: []string{"server"}},
 	{dir: "internal/web/app", suffixes: []string{".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"}, targets: []string{"web"}},
 	{dir: "../beamfall-apple", suffixes: []string{".swift"}, targets: []string{"tvos", "iphone", "ipad", "macos"}},
+	{dir: "../beamfall-apple-mobile-tv", suffixes: []string{".swift"}, targets: []string{"tvos", "iphone", "ipad"}, requiredUnless: "../beamfall-apple/Apps/BeamfallMobile"},
 	{dir: "../beamfall-android", suffixes: []string{".kt"}, targets: []string{"androidtv", "androidmobile"}},
 	{dir: "../beamfall-windows", suffixes: []string{".cs"}, targets: []string{"windows"}},
 }
@@ -69,23 +78,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	covered := map[string]map[string]bool{}
-	assessable := map[string]bool{}
-	for _, job := range scanJobs {
-		if _, statErr := os.Stat(job.dir); statErr != nil {
-			continue
-		}
-		ids := scanMarkers(job)
-		for _, tgt := range job.targets {
-			assessable[tgt] = true
-			if covered[tgt] == nil {
-				covered[tgt] = map[string]bool{}
-			}
-			for id := range ids {
-				covered[tgt][id] = true
-			}
-		}
-	}
+	covered, assessable := scanRoots(scanJobs, os.Stdout)
 
 	var proven, missing, blocked []string
 	var releaseFailures []string
@@ -187,6 +180,42 @@ func printList(name string, values []string) {
 	for _, value := range values {
 		fmt.Printf("  %s\n", value)
 	}
+}
+
+// scanRoots scans every present root and returns the proven scenario ids per
+// target and the assessable targets. An absent required root makes its targets
+// unassessable and says so on w.
+func scanRoots(jobs []scanJob, w io.Writer) (covered map[string]map[string]bool, assessable map[string]bool) {
+	covered = map[string]map[string]bool{}
+	assessable = map[string]bool{}
+	missingRequired := map[string]bool{}
+	for _, job := range jobs {
+		if _, statErr := os.Stat(job.dir); statErr != nil {
+			if job.requiredUnless != "" {
+				if _, oldErr := os.Stat(job.requiredUnless); oldErr != nil {
+					fmt.Fprintf(w, "SKIP %s: root absent, %s unassessable\n", job.dir, strings.Join(job.targets, ", "))
+					for _, tgt := range job.targets {
+						missingRequired[tgt] = true
+					}
+				}
+			}
+			continue
+		}
+		ids := scanMarkers(job)
+		for _, tgt := range job.targets {
+			assessable[tgt] = true
+			if covered[tgt] == nil {
+				covered[tgt] = map[string]bool{}
+			}
+			for id := range ids {
+				covered[tgt][id] = true
+			}
+		}
+	}
+	for tgt := range missingRequired {
+		delete(assessable, tgt)
+	}
+	return covered, assessable
 }
 
 func scanMarkers(job scanJob) map[string]bool {

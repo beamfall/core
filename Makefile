@@ -275,6 +275,14 @@ ui-catalog-record:
 APPLE_CATALOG_REPO ?= ../beamfall-apple/ui-catalog
 ANDROID_CATALOG_REPO ?= ../beamfall-android/ui-catalog
 APPLE_RELEASE_REPO ?= ../beamfall-apple
+# The closed iPhone, iPad and tvOS apps and their modules move to
+# beamfall-apple-mobile-tv with CORE-1066. The store release checks read them
+# there when that repo exists, else from the pre-split APPLE_RELEASE_REPO, where
+# --require-repos still fails closed once the split has removed them.
+APPLE_MOBILE_TV_REPO ?= ../beamfall-apple-mobile-tv
+# A quoted shell test, since $(wildcard) splits a path at spaces.
+APPLE_MOBILE_TV_PRESENT := $(shell test -d "$(APPLE_MOBILE_TV_REPO)" && echo 1)
+APPLE_STORE_APPS_REPO ?= $(if $(APPLE_MOBILE_TV_PRESENT),$(APPLE_MOBILE_TV_REPO),$(APPLE_RELEASE_REPO))
 ANDROID_RELEASE_REPO ?= ../beamfall-android
 APPLE_CATALOG_MANIFEST ?= $(APPLE_CATALOG_REPO)/manifest.json
 APPLE_VOICEOVER_EVIDENCE ?= $(APPLE_CATALOG_REPO)/voiceover-evidence.json
@@ -357,13 +365,14 @@ app-store-binary-firewall-check:
 		name=$${input%%=*}; path=$${input#*=}; \
 		test -n "$$path" && test -f "$$path" || { echo "$$name must name a release archive" >&2; exit 2; }; \
 	done
+	@echo "app-store-binary-firewall-check: closed Apple apps from $(APPLE_STORE_APPS_REPO)"
 	@script/app-store-firewall-static-check.sh --require-repos \
-		--target "apple:beamfall-iphone:$(APPLE_RELEASE_REPO)/Apps/BeamfallMobile" \
-		--target "apple:beamfall-ipad:$(APPLE_RELEASE_REPO)/Apps/BeamfallPad" \
-		--target "apple:beamfall-tvos:$(APPLE_RELEASE_REPO)/Apps/BeamfallTV" \
-		--target "apple:beamfall-apple-policy:$(APPLE_RELEASE_REPO)/Sources/BeamfallAppStorePolicy" \
-		--target "apple:beamfall-mobile:$(APPLE_RELEASE_REPO)/Sources/BeamfallMobile" \
-		--target "apple:beamfall-tv:$(APPLE_RELEASE_REPO)/Sources/BeamfallTV" \
+		--target "apple:beamfall-iphone:$(APPLE_STORE_APPS_REPO)/Apps/BeamfallMobile" \
+		--target "apple:beamfall-ipad:$(APPLE_STORE_APPS_REPO)/Apps/BeamfallPad" \
+		--target "apple:beamfall-tvos:$(APPLE_STORE_APPS_REPO)/Apps/BeamfallTV" \
+		--target "apple:beamfall-apple-policy:$(APPLE_STORE_APPS_REPO)/Sources/BeamfallAppStorePolicy" \
+		--target "apple:beamfall-mobile:$(APPLE_STORE_APPS_REPO)/Sources/BeamfallMobile" \
+		--target "apple:beamfall-tv:$(APPLE_STORE_APPS_REPO)/Sources/BeamfallTV" \
 		--target "android:beamfall-android-mobile:$(ANDROID_RELEASE_REPO)/app-mobile/src/main" \
 		--target "android:beamfall-android-tv:$(ANDROID_RELEASE_REPO)/app-tv/src/main" \
 		--target "archive:beamfall-iphone:$(APPLE_IPHONE_IPA)" \
@@ -372,10 +381,15 @@ app-store-binary-firewall-check:
 		--target "archive:beamfall-android-mobile:$(ANDROID_MOBILE_AAB)" \
 		--target "archive:beamfall-android-tv:$(ANDROID_TV_AAB)"
 
+# The closed Apple repo is scanned when present. Absent, the pre-split
+# beamfall-apple still holds that code, and after the split the firewall check
+# fails the store release on the missing apps.
 secret-scan-release:
+	@$(if $(APPLE_MOBILE_TV_PRESENT),,echo "secret-scan: SKIP beamfall-apple-mobile-tv (missing $(APPLE_MOBILE_TV_REPO))")
 	@tools/gate/secret-scan.py --require-repos \
 		--target "beamfall:$(CURDIR)" \
 		--target "beamfall-apple:$(APPLE_RELEASE_REPO)" \
+		$(if $(APPLE_MOBILE_TV_PRESENT),--target "beamfall-apple-mobile-tv:$(APPLE_MOBILE_TV_REPO)") \
 		--target "beamfall-android:$(ANDROID_RELEASE_REPO)"
 
 # The waiver guard is the only prerequisite so it cannot run alongside the
