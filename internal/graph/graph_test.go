@@ -704,12 +704,16 @@ func newTestPluginRegistry(bundles []plugin.Bundle) (*plugin.Registry, error) {
 }
 
 func newTestHandlerWithStore(st *store.Store) *Handler {
-	return NewHandler(
+	h := NewHandler(
 		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, nil),
 		auth.NewService(st),
 		st,
 		nil,
 	)
+	// The feed catalogue is an in-memory fake in graph tests
+	// (graph_feeds_test.go); the store owns its own catalogue tests.
+	h.feedCatalogue = newFakeSubscriptionCatalogue()
+	return h
 }
 
 func authorizeViewer(req *http.Request) {

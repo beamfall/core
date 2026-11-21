@@ -93,6 +93,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"ImportManagedFile":                       {},
 	"IntegrationArtifactRoot":                 {},
 	"IntegrationWorker":                       {},
+	"GetOrCreateSubscription":                 {},
 	"Job":                                     {},
 	"JellyfinCompatSelectableLibraries":       {},
 	"CompatIntegrationKeys":                   {},
