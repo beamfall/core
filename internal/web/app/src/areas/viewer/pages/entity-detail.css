@@ -378,7 +378,7 @@
 
 [data-register="viewer"] .bf-row-thumb {
   position: relative;
-  flex: 0 0 240px;
+  flex: 0 0 var(--bf-row-thumb);
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: var(--radius-card);
@@ -463,7 +463,8 @@
     flex-basis: 100%;
     gap: 12px;
   }
+  /* 120px at Large, as before the poster size reached these rows (CORE-2893). */
   [data-register="viewer"] .bf-row-thumb {
-    flex-basis: 120px;
+    flex-basis: calc(var(--bf-row-thumb) * 0.5);
   }
 }

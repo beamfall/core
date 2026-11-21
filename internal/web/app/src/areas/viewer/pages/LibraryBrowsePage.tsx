@@ -388,7 +388,8 @@ function LibraryBrowse({
           leading={switcher}
           trailing={
             <>
-              {(viewMode === "poster" || viewMode === "thumbnail") && <PosterSizeControl />}
+              {/* App-wide (CORE-2893), so offered in every view mode; List sizes its thumbnails by it too. */}
+              <PosterSizeControl />
               <LibraryDisplayToggle mode={viewMode} onChange={chooseViewMode} />
               <HideWatchedToggle />
             </>

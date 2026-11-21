@@ -1025,8 +1025,9 @@
 /* Poster size (CORE-2468): one app-wide choice. The root's data-poster-size
  * sets every viewer thumbnail surface (CORE-2893): the grids' column floors,
  * the shelves' card width, the Collections poster grid, the Categories cards,
- * the Collection and Category tiles on the pivots, and the cast row. Large is
- * the original size of each. */
+ * the Collection and Category tiles on the pivots, the cast row, the List
+ * view's thumbnails and the detail page's Media rows. Large is the original
+ * size of each. */
 [data-register="viewer"] {
   --bf-grid-min: 150px;
   --bf-grid-wide-min: 220px;
@@ -1036,6 +1037,8 @@
   --bf-category-cols: 2;
   --bf-tile-min: 180px;
   --bf-cast-card: 120px;
+  --bf-list-thumb: 48px;
+  --bf-row-thumb: 240px;
 }
 
 [data-register="viewer"][data-poster-size="medium"] {
@@ -1047,6 +1050,8 @@
   --bf-category-cols: 3;
   --bf-tile-min: 150px;
   --bf-cast-card: 104px;
+  --bf-list-thumb: 40px;
+  --bf-row-thumb: 200px;
 }
 
 [data-register="viewer"][data-poster-size="small"] {
@@ -1058,10 +1063,14 @@
   --bf-category-cols: 3;
   --bf-tile-min: 120px;
   --bf-cast-card: 88px;
+  --bf-list-thumb: 32px;
+  --bf-row-thumb: 160px;
 }
 
 /* Phones: --bf-category-cols is the Categories column count there. Small's
- * collection and tile floors sit low enough to add a column on a 390px phone. */
+ * collection and tile floors sit low enough to add a column on a 390px phone.
+ * Categories stop at three columns at Medium and Small: a fourth leaves an
+ * 80px card too short for its 18px title and count. */
 @media (max-width: 760px) {
   [data-register="viewer"] {
     --bf-grid-min: 96px;
@@ -1532,7 +1541,7 @@
 }
 
 [data-register="viewer"] .bf-stack .bf-poster {
-  width: 48px;
+  width: var(--bf-list-thumb);
   flex: none;
   border-radius: var(--radius-control);
 }
