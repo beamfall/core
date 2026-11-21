@@ -2071,8 +2071,10 @@ func TestHLSSessionRecreatedForModeShapingChange(t *testing.T) {
 	if code := degradedFetch(issue(false, false), "/720p/seg00000.m4s"); code != http.StatusOK {
 		t.Fatalf("standard seg status = %d, want 200", code)
 	}
-	if code := degradedFetch(issue(false, true), "/720p/seg00000.m4s"); code != http.StatusServiceUnavailable {
-		t.Fatalf("degraded wrong-rung seg status = %d, want %d", code, http.StatusServiceUnavailable)
+	// A rung the degraded ladder never declares is a name the session can never
+	// serve: 404, not a retryable 503 (CORE-1369).
+	if code := degradedFetch(issue(false, true), "/720p/seg00000.m4s"); code != http.StatusNotFound {
+		t.Fatalf("degraded wrong-rung seg status = %d, want %d", code, http.StatusNotFound)
 	}
 	if code := degradedFetch(issue(false, true), "/480p/seg00000.m4s"); code != http.StatusOK {
 		t.Fatalf("degraded seg status = %d, want 200", code)

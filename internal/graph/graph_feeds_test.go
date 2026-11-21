@@ -227,7 +227,7 @@ func TestFollowFeedNeverEchoesTheFeedURL(t *testing.T) {
 		t.Fatalf("probe error leaked the feed URL: %s", body)
 	}
 
-	credentialed := "https://user:hush@feeds.example.com/private.xml" // #nosec G101 -- test fixture, not a credential
+	credentialed := "https://u:p@feeds.example.com/private.xml" // #nosec G101 -- test fixture, not a credential
 	body, resp = rawGraph(t, fx.handler, authorizeViewer, followFeedMutation,
 		map[string]any{"feedURL": credentialed, "libraryID": "library-local"})
 	wantGraphError(t, resp, ErrorCodeInvalid, "feedURL must be a public http or https address")

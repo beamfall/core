@@ -39,7 +39,7 @@ func TestSubscriptionExportOPML(t *testing.T) {
 		privateURL   = "https://feeds.example.test/private.xml"
 		privateRef   = "test-only-auth-reference"
 		privateTitle = "Private feed for test-only-subscriber"
-		userinfoURL  = "https://test-only-feed-user:test-only-feed-pass@feeds.example.test/basic.xml" //nolint:gosec // synthetic feed credential for the exclusion test
+		userinfoURL  = "https://u:p@feeds.example.test/basic.xml" //nolint:gosec // synthetic feed credential for the exclusion test
 		hiddenURL    = "https://feeds.example.test/hidden.xml"
 		serverURL    = "https://canonical.example.test:8443/internal.xml"
 		requestURL   = "https://SERVER.example.test./local.xml"
