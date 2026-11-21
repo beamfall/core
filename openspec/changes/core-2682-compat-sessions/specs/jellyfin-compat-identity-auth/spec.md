@@ -23,6 +23,14 @@ ID and name, the playing item's title, type and runtime, and the play position.
 - **WHEN** an opted-in Profile plays an item of a Reveal-restricted, sealed or unmapped Library
 - **THEN** `GET /Sessions` does not list that playback
 
+#### Scenario: A device switched Profiles while playing the same item
+
+- **WHEN** one device session played an item under a Profile that has not opted in, then switched
+  to an opted-in Profile that is now reporting progress for the same item
+- **THEN** `GET /Sessions` lists one playback, under the opted-in Profile, and drops it once the
+  other Profile reports progress again, or while both Profiles' latest reports share a millisecond
+  and the last reporter cannot be told apart
+
 #### Scenario: The player stopped reporting
 
 - **WHEN** a playback has ended or reported no activity within the activity window

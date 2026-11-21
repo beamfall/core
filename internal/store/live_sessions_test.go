@@ -113,10 +113,27 @@ func TestActiveSessionsFollowLatestProfile(t *testing.T) {
 		if len(active) != 1 || active[0].ProfileID != profile || !active[0].LastActiveAt.Equal(at.Truncate(time.Millisecond)) {
 			t.Fatalf("live playbacks = %+v, want one naming %s active at %v", active, profile, at)
 		}
-		if !active[0].Transcoding {
-			t.Fatalf("collapsed playback lost the HLS flag: %+v", active[0])
+		if !active[0].Transcoding || active[0].ProfileTied {
+			t.Fatalf("collapsed playback lost the HLS flag or is tied: %+v", active[0])
 		}
 	}
 	playing("profile-default", now.Add(time.Minute))
 	playing("profile-managed", now.Add(2*time.Minute))
+
+	// Both Profiles reporting within one millisecond leave the ledger unable to
+	// name the last reporter, so the row says so.
+	tie := now.Add(3 * time.Minute)
+	for _, profile := range []ProfileID{"profile-managed", "profile-default"} {
+		if err := st.TouchStreamTokenActivity(ctx, "session-default", profile, "media-alpha", tie); err != nil {
+			t.Fatal(err)
+		}
+	}
+	active, err := st.ActiveSessions(ctx, now, profileDefaultFilter(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 1 || !active[0].ProfileTied {
+		t.Fatalf("live playbacks after a same-millisecond switch = %+v, want one tied row", active)
+	}
+	playing("profile-default", tie.Add(time.Second))
 }

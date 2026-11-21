@@ -241,6 +241,26 @@ func TestJellyfinSessionsFollowTheProfileNowPlaying(t *testing.T) {
 	if got, body := f.sessions(t); len(got) != 0 {
 		t.Fatalf("sessions after the opted-out Profile played again = %s, want none", body)
 	}
+	// Both Profiles reporting within one millisecond: the last reporter is
+	// unknown, so the playback is not listed under either. Default holds the
+	// direct grant here, which the ledger reads first.
+	expires := time.Now().Add(time.Hour)
+	if err := f.st.RecordStreamToken(ctx, "session-default", "profile-default", "device-tv", "media-direct", f.single, false, expires); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.RecordStreamToken(ctx, "session-default", other.ID, "device-tv", "media-hls", f.single, false, expires); err != nil {
+		t.Fatal(err)
+	}
+	tie := time.Now().Add(3 * time.Second)
+	touch("profile-default", tie)
+	touch(other.ID, tie)
+	if got, body := f.sessions(t); len(got) != 0 {
+		t.Fatalf("sessions after a same-millisecond switch = %s, want none", body)
+	}
+	touch("profile-default", tie.Add(time.Second))
+	if got, body := f.sessions(t); len(got) != 1 || got[0].UserName != "Default" {
+		t.Fatalf("sessions after Default reported again = %s, want Default's playback", body)
+	}
 }
 
 func (f catalogFixture) counts(t *testing.T) map[string]int {
