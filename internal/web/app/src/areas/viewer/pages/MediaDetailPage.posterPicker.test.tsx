@@ -122,14 +122,14 @@ afterEach(() => {
 });
 
 describe("MediaDetailPage poster picker (CORE-2933)", () => {
-  it("is not offered to a non-manager device or a child Profile", async () => {
+  it("is not offered to a non-manager device or a managed Profile", async () => {
     mocks.isManager = false;
     renderPage();
     expect(await editControl()).toBeNull();
     cleanup();
 
     mocks.isManager = true;
-    mocks.session = { profileID: "p2", profile: "child" };
+    mocks.session = { profileID: "p2", profile: "managed" };
     renderPage();
     expect(await editControl()).toBeNull();
   });
@@ -145,20 +145,29 @@ describe("MediaDetailPage poster picker (CORE-2933)", () => {
     expect(fetchArtworkCandidates).toHaveBeenCalledWith("m1", "poster");
 
     const applied = await within(dialog).findByRole("button", {
-      name: "Use the poster from tmdb / posters",
+      name: "Use poster 1, from tmdb / posters",
     });
     expect(applied).toHaveAttribute("aria-current", "true");
     expect(within(applied).getByText("Applied")).toBeInTheDocument();
     // Only a relative preview URL becomes an image; an absolute one never loads.
-    const other = within(dialog).getByRole("button", { name: "Use the poster from fanart" });
+    const other = within(dialog).getByRole("button", { name: "Use poster 2, from fanart" });
     expect(other.querySelector("img")).toBeNull();
     await expectNoAxeViolations(dialog);
 
     expect(fetchMedia).toHaveBeenCalledTimes(1);
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      artworkSlots: { poster: "/api/media/artwork/m1/poster?v=2" },
+    });
     fireEvent.click(other);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(pinArtworkCandidate).toHaveBeenCalledWith("m1", "poster", "c2");
     await waitFor(() => expect(fetchMedia).toHaveBeenCalledTimes(2));
+    // The new poster replaces the old one and focus stays on the control.
+    await waitFor(() =>
+      expect(document.querySelector(".bf-detail-poster img")?.getAttribute("src")).toContain("v=2"),
+    );
+    expect(document.activeElement).toBe(await editControl());
   });
 
   it("says when there are no candidates, and keeps the dialog open when a pin fails", async () => {
@@ -177,10 +186,32 @@ describe("MediaDetailPage poster picker (CORE-2933)", () => {
     fireEvent.click((await editControl()) as HTMLElement);
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(
-      await within(dialog).findByRole("button", { name: "Use the poster from fanart" }),
+      await within(dialog).findByRole("button", { name: "Use poster 2, from fanart" }),
     );
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("Could not update artwork.");
     expect(fetchMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it("cannot be dismissed while a pin is in flight", async () => {
+    let finish: (value: ArtworkCandidate) => void = () => {};
+    vi.mocked(pinArtworkCandidate).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderPage();
+    fireEvent.click((await editControl()) as HTMLElement);
+    const dialog = await screen.findByRole("dialog");
+    const other = await within(dialog).findByRole("button", { name: "Use poster 2, from fanart" });
+    fireEvent.click(other);
+    expect(other).toHaveAttribute("aria-busy", "true");
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    finish({ ...candidates[1], applied: true });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(fetchMedia).toHaveBeenCalledTimes(2));
   });
 
   it("announces when the candidates cannot be loaded", async () => {

@@ -13,6 +13,7 @@ import { candidateProvenance, isRelativePreviewURL } from "@/lib/artworkCandidat
 import { fetchArtworkCandidates, pinArtworkCandidate } from "@/lib/graphql";
 import type { ArtworkCandidate } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { artworkBucketURL } from "../lib/artwork";
 
 // Quick poster picker on the detail page (CORE-2933). The same candidates and
 // pin mutation the Manage artwork screen uses (ADR-0009): no second artwork
@@ -74,7 +75,9 @@ export function PosterPickerDialog({
     <Dialog
       open
       onOpenChange={(next) => {
-        if (!next) onClose();
+        // A pin in flight keeps the dialog open, so its result can only close
+        // this dialog and never a later one.
+        if (!next && pinning === null) onClose();
       }}
     >
       <DialogContent className="bf-poster-picker sm:max-w-2xl" finalFocus={returnFocus}>
@@ -99,7 +102,8 @@ export function PosterPickerDialog({
         )}
         {candidates && candidates.length > 0 && (
           <ul className="bf-poster-picker-grid">
-            {candidates.map((candidate) => {
+            {candidates.map((candidate, index) => {
+              const n = index + 1;
               const source = candidateProvenance(candidate);
               return (
                 <li key={candidate.id}>
@@ -111,14 +115,19 @@ export function PosterPickerDialog({
                     disabled={pinning !== null}
                     aria-label={
                       source
-                        ? t("mediaDetailUsePosterFrom", { source })
-                        : t("mediaDetailUseThisPoster")
+                        ? t("mediaDetailUsePosterFrom", { n, source })
+                        : t("mediaDetailUsePosterNumber", { n })
                     }
                     onClick={() => void choose(candidate)}
                   >
                     <span className="bf-poster-picker-art">
                       {isRelativePreviewURL(candidate.previewURL) ? (
-                        <img src={candidate.previewURL} alt="" loading="lazy" decoding="async" />
+                        <img
+                          src={artworkBucketURL(candidate.previewURL, "w320")}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                        />
                       ) : (
                         <span className="bf-poster-picker-missing">
                           {t("artworkPreviewUnavailable")}
@@ -148,7 +157,7 @@ export function PosterPickerDialog({
           </p>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={pinning !== null}>
             {t("cancel")}
           </Button>
         </DialogFooter>
