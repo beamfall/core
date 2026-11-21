@@ -419,6 +419,51 @@ describe("Viewer Home", () => {
     expect(screen.queryByRole("list", { name: "Ajouts récents" })).toBeNull();
   });
 
+  it("leads with Continue Watching even when the layout orders it after Recent (CORE-2825)", async () => {
+    // One aggregate Recent shelf rather than a shelf per library.
+    vi.mocked(fetchHomeLibraries).mockResolvedValue(null);
+    const [keepWatching, recent] = layout.sections;
+    vi.mocked(fetchSectionItems).mockImplementation(async (section) =>
+      section.id === "continue"
+        ? [newItem("Resume me")]
+        : [newItem("Fresh item", { artworkSlots: { backdrop: "/fresh" } })],
+    );
+
+    const { container } = renderHome({ ...layout, sections: [recent, keepWatching] });
+    await screen.findByRole("list", { name: "Reprendre la lecture" });
+    await screen.findByRole("list", { name: "Ajouts récents" });
+    expect(container.querySelector(".bf-hero")).toBeNull();
+    expect(screen.getAllByRole("list")[0]).toHaveAccessibleName("Reprendre la lecture");
+  });
+
+  it("holds the hero while a Continue shelf cached empty revalidates (CORE-2825)", async () => {
+    // One aggregate Recent shelf rather than a shelf per library.
+    vi.mocked(fetchHomeLibraries).mockResolvedValue(null);
+    const feature = newItem("Featured", { artworkSlots: { backdrop: "/feature" } });
+    vi.mocked(fetchSectionItems).mockImplementation(async (section) =>
+      section.id === "continue" ? [] : [feature],
+    );
+    const first = renderHome();
+    await screen.findByRole("list", { name: "Ajouts récents" });
+    await waitFor(() => expect(first.container.querySelector(".bf-hero img")).not.toBeNull());
+    first.unmount();
+
+    let resolveContinue!: (items: SourceItem[]) => void;
+    const pendingContinue = new Promise<SourceItem[]>((resolve) => {
+      resolveContinue = resolve;
+    });
+    vi.mocked(fetchSectionItems).mockImplementation(async (section) =>
+      section.id === "continue" ? pendingContinue : [feature],
+    );
+    const second = renderHome();
+    await screen.findByRole("list", { name: "Ajouts récents" });
+    expect(second.container.querySelector(".bf-hero")).toBeNull();
+
+    await act(async () => resolveContinue([newItem("Resume me")]));
+    await screen.findByRole("list", { name: "Reprendre la lecture" });
+    expect(second.container.querySelector(".bf-hero")).toBeNull();
+  });
+
   it("features artwork from a visible shelf when another shelf has none", async () => {
     const feature = newItem("Visible artwork", { artworkSlots: { backdrop: "/older" } });
     vi.mocked(fetchSectionItems).mockImplementation(async (section, context) => {

@@ -160,6 +160,15 @@ export function LayoutView({
     aggregateEmpty && hydratable.some((section) => stateFor(section) === "failed");
 
   const settledEmpty = aggregateEmpty && !aggregateFailed;
+  // Home renders Continue Watching ahead of every other shelf, whatever order
+  // the Layout lists them in, so items to resume lead the page (CORE-2825).
+  // A Section a filter bar targets keeps its place beside the bar.
+  const renderOrder = (() => {
+    const ordered = sections.map((section, index) => ({ section, index }));
+    const at = homeContinue ? sections.indexOf(homeContinue) : -1;
+    if (at <= 0 || [...filterTargets.values()].includes(at)) return ordered;
+    return [ordered[at], ...ordered.filter((_, i) => i !== at)];
+  })();
   useEffect(() => {
     onEmptyChange?.(settledEmpty);
   }, [onEmptyChange, settledEmpty]);
@@ -281,7 +290,7 @@ export function LayoutView({
           <HiddenAwareEmpty fallback={<LibraryEmpty />} />
         )
       ) : (
-        sections.map((section, index) => {
+        renderOrder.map(({ section, index }) => {
           if (section.kind === "filter-bar") {
             // A filter-bar with no options or no adjacent target collapses (ADR-0014).
             const target = filterTargets.get(index);
