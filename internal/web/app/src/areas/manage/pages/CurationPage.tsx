@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
   ErrorLine,
@@ -113,8 +112,8 @@ export function CurationPage() {
     setLoaded(true);
   };
 
-  const onLoad = async (picked?: string) => {
-    const id = (picked ?? subjectID).trim();
+  const onLoad = async () => {
+    const id = subjectID.trim();
     if (!id) return;
     try {
       await load(subjectType, id);
@@ -133,7 +132,7 @@ export function CurationPage() {
   return (
     <div className="space-y-4">
       <ManageSection>
-        <div className="flex flex-wrap items-start gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
             <Label htmlFor="curation-type">{t("curationSubjectType")}</Label>
             <Select value={subjectType} onValueChange={(v) => setSubjectType(v as SubjectType)}>
@@ -148,23 +147,15 @@ export function CurationPage() {
           </div>
           <div className="grow space-y-1">
             <Label htmlFor="curation-id">{t("curationSubjectID")}</Label>
-            <EntityPicker
+            <Input
               id="curation-id"
-              kind={subjectType}
               value={subjectID}
-              onChange={(id) => {
-                setSubjectID(id);
-                if (id) void onLoad(id);
-              }}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => setSubjectID(e.target.value)}
             />
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-6"
-            onClick={() => void onLoad()}
-            disabled={!subjectID.trim()}
-          >
+          <Button type="button" variant="outline" onClick={onLoad} disabled={!subjectID.trim()}>
             {t("fieldLocksLoad")}
           </Button>
         </div>
@@ -376,7 +367,7 @@ function RelationsSection({
         </ManageTable>
       )}
 
-      <div className="mt-3 flex flex-wrap items-start gap-3 border-t border-[var(--line-soft)] pt-3">
+      <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-[var(--line-soft)] pt-3">
         <div className="space-y-1">
           <Label htmlFor="curation-rel-name">{t("curationRelationName")}</Label>
           <Input
@@ -390,7 +381,13 @@ function RelationsSection({
         </div>
         <div className="grow space-y-1">
           <Label htmlFor="curation-rel-target">{t("curationTargetMediaID")}</Label>
-          <EntityPicker id="curation-rel-target" value={targetID} onChange={setTargetID} />
+          <Input
+            id="curation-rel-target"
+            value={targetID}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => setTargetID(e.target.value)}
+          />
         </div>
         <div className="space-y-1">
           <Label htmlFor="curation-rel-order">{t("curationRelationOrder")}</Label>
@@ -402,12 +399,7 @@ function RelationsSection({
             className="w-20"
           />
         </div>
-        <Button
-          type="button"
-          className="mt-6"
-          onClick={onAdd}
-          disabled={!relation.trim() || !targetID.trim()}
-        >
+        <Button type="button" onClick={onAdd} disabled={!relation.trim() || !targetID.trim()}>
           {t("curationAddRelation")}
         </Button>
       </div>
@@ -520,7 +512,7 @@ function FilesSection({
           )}
         </Tabs.Panel>
 
-        <div className="mt-3 flex flex-wrap items-start gap-3 border-t border-[var(--line-soft)] pt-3">
+        <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-[var(--line-soft)] pt-3">
           <div className="space-y-1">
             <Label htmlFor="curation-extra-rel">{t("curationExtraRelation")}</Label>
             <Select
@@ -538,9 +530,15 @@ function FilesSection({
           </div>
           <div className="grow space-y-1">
             <Label htmlFor="curation-extra-id">{t("curationExtraMediaID")}</Label>
-            <EntityPicker id="curation-extra-id" value={extraID} onChange={setExtraID} />
+            <Input
+              id="curation-extra-id"
+              value={extraID}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => setExtraID(e.target.value)}
+            />
           </div>
-          <Button type="button" className="mt-6" onClick={onLink} disabled={!extraID.trim()}>
+          <Button type="button" onClick={onLink} disabled={!extraID.trim()}>
             {t("curationLinkExtra")}
           </Button>
         </div>

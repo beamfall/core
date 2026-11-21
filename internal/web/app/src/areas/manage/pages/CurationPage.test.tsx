@@ -1,7 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchEntity,
@@ -29,12 +28,6 @@ beforeEach(() => {
 });
 
 vi.mock("@/lib/graphql", () => ({
-  searchResult: vi.fn(async () => ({
-    mode: "keyword",
-    items: [],
-    hasMore: false,
-    restrictedResultsPresent: false,
-  })),
   fetchMediaFields: vi.fn(),
   fetchMediaFiles: vi.fn(),
   fetchMediaRelations: vi.fn(),
@@ -111,15 +104,13 @@ beforeEach(() => {
 function renderPage() {
   return render(
     <I18nProvider>
-      <MemoryRouter>
-        <CurationPage />
-      </MemoryRouter>
+      <CurationPage />
     </I18nProvider>,
   );
 }
 
 async function loadMedia(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText("Subject ID"), "media-1{Enter}");
+  await user.type(screen.getByLabelText("Subject ID"), "media-1");
   await user.click(screen.getByRole("button", { name: "Load" }));
 }
 
@@ -149,7 +140,7 @@ describe("CurationPage", () => {
     await loadMedia(user);
     await screen.findByText("/media/part-1.mkv");
 
-    await user.type(screen.getByLabelText("Extra Media ID"), "media-x{Enter}");
+    await user.type(screen.getByLabelText("Extra Media ID"), "media-x");
     await user.click(screen.getByRole("button", { name: "Link extra" }));
 
     expect(linkMediaRelation).toHaveBeenCalledWith("media-1", "extra-of", "media-x");
@@ -161,7 +152,7 @@ describe("CurationPage", () => {
 
     await user.click(screen.getByLabelText("Subject type"));
     await user.click(await screen.findByRole("option", { name: "Entity" }));
-    await user.type(screen.getByLabelText("Subject ID"), "entity-1{Enter}");
+    await user.type(screen.getByLabelText("Subject ID"), "entity-1");
     await user.click(screen.getByRole("button", { name: "Load" }));
 
     expect(await screen.findByText("Part One")).toBeVisible();
