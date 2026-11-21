@@ -849,6 +849,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "key", Kind: "string"},
 		{Name: "value", Kind: "string", Optional: true},
 	},
+	"setcontinuewatchinghidden": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "hidden", Kind: "boolean"},
+		{Name: "mediaID", Kind: "string"},
+	},
 	"setconsoleconfig": {
 		{Name: "adminSessionMinutes", Kind: "number", Optional: true},
 		{Name: "backgroundWorkers", Kind: "number", Optional: true},

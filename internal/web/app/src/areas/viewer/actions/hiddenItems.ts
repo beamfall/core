@@ -34,7 +34,7 @@ export async function hideItem(target: ItemTarget, title: string): Promise<void>
   const { kind, targetID } = muteFor(target);
   await setMute(kind, targetID);
   notifyEngagementChanged();
-  announceHidden({ target, title });
+  announceUndo({ kind: "hidden", target, title });
 }
 
 /** Show a hidden target again. */
@@ -161,8 +161,19 @@ export function useItemHide(target: ItemTarget, title: string, { enabled = true 
 
 export interface HiddenNotice {
   id: number;
+  /**
+   * What the Undo reverses: "hidden" is a Hide (a Mute), "continue" a removal
+   * from Continue Watching (CORE-2017).
+   */
+  kind: "hidden" | "continue";
   target: ItemTarget;
   title: string;
+  /** The change itself did not save: the notice says so and offers no Undo. */
+  failed?: boolean;
+  /** The identity epoch the change was made in: an Undo from another writes nothing. */
+  epoch?: AbortSignal;
+  /** The Profile the change was made for: the server refuses an Undo for another. */
+  profileID?: string;
 }
 
 let notice: HiddenNotice | null = null;
@@ -174,7 +185,8 @@ function emitNotice(next: HiddenNotice | null): void {
   for (const listener of noticeListeners) listener();
 }
 
-function announceHidden(next: Omit<HiddenNotice, "id">): void {
+/** Show the Undo notice for a change just made, replacing any earlier one. */
+export function announceUndo(next: Omit<HiddenNotice, "id">): void {
   noticeSeq += 1;
   emitNotice({ ...next, id: noticeSeq });
 }
@@ -189,7 +201,7 @@ export function clearHiddenNotice(): void {
   if (notice) emitNotice(null);
 }
 
-/** The most recent hide, until it is undone, dismissed or times out. */
+/** The most recent undoable change, until it is undone, dismissed or times out. */
 export function useHiddenNotice(): HiddenNotice | null {
   return useSyncExternalStore(
     (listener) => {

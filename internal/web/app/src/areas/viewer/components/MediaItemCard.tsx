@@ -57,6 +57,7 @@ export function MediaItemCard({
   nameContainer = true,
   intrinsicArtwork = false,
   quickPlay = true,
+  continueWatching = false,
 }: {
   item: SourceItem;
   /** 1-based aria-posinset for grid a11y; omit outside a grid. */
@@ -90,6 +91,8 @@ export function MediaItemCard({
    * info row, which is already a row of its own (CORE-2881).
    */
   quickPlay?: boolean;
+  /** The card is on the Continue Watching row: its menu offers to leave it (CORE-2017). */
+  continueWatching?: boolean;
 }) {
   const navigate = useNavigate();
   const cardImageSizes = useCardImageSizes();
@@ -285,6 +288,7 @@ export function MediaItemCard({
       containerID={item.container?.id}
       href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
       target={itemTargetFor(item)}
+      continueWatching={continueWatching}
       onPrimary={isMedia ? play : open}
       onDetails={
         isMedia

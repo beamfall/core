@@ -88,6 +88,17 @@ func TestBackupFixtureSeedCoversEveryDurableTable(t *testing.T) {
 			t.Fatalf("%s fixture coverage: %v", label, err)
 		}
 	}
+	// One progress row is removed from Continue Watching, so the expectation
+	// checksums prove the flag survives backup and restore (CORE-2039).
+	if _, err := st.eventsW.ExecContext(ctx, `
+		UPDATE playback_progress SET continue_hidden = 1
+		WHERE rowid = (SELECT min(rowid) FROM playback_progress)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if n := fixtureContinueHiddenRows(t, st.eventsW); n != 1 {
+		t.Fatalf("fixture seed has %d rows removed from Continue Watching, want 1", n)
+	}
 	if output == "" {
 		return
 	}
@@ -160,6 +171,18 @@ func TestBackupFixtureSeedCoversEveryDurableTable(t *testing.T) {
 	if err := verifyFixtureExpectations(ctx, restored, expectations); err != nil {
 		t.Fatalf("generated fixture drill: %v", err)
 	}
+	if n := fixtureContinueHiddenRows(t, restored.eventsR); n != 1 {
+		t.Fatalf("restored fixture has %d rows removed from Continue Watching, want 1", n)
+	}
+}
+
+func fixtureContinueHiddenRows(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM playback_progress WHERE continue_hidden = 1`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
 
 // TestBackupRestoreDrillDetectsRowChecksumCorruption pins the drill to the

@@ -103,7 +103,11 @@ package store
 //
 // Events 0024 (CORE-2762) stages Version merge playback for recovery and
 // Profile erasure without changing entity queries.
+//
+// Events 0025 (CORE-2039) adds playback_progress.continue_hidden so a Profile
+// can remove an item from Continue Watching and keep its resume position; it
+// is read only by the continue-watching Source, off the entity-query hot path.
 const (
-	schemaFreezeEventsMigrations           = 24
+	schemaFreezeEventsMigrations           = 25
 	schemaFreezeEncryptedLibraryMigrations = 11
 )

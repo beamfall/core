@@ -634,6 +634,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setcapabilityenabled":               newFieldHandler("setCapabilityEnabled", "setCapabilityEnabled", fieldMutation, roleSession|roleAdmin, 67),
 	"setcertificationceiling":            newFieldHandler("setCertificationCeiling", "setCertificationCeiling", fieldMutation, roleSession|roleAdmin, 40),
 	"setclientpref":                      newFieldHandler("setClientPref", "setClientPref", fieldMutation, roleSession, 42),
+	"setcontinuewatchinghidden":          newFieldHandler("setContinueWatchingHidden", "setContinueWatchingHidden", fieldMutation, roleSession, 146),
 	"setconsoleconfig":                   newFieldHandler("setConsoleConfig", "setConsoleConfig", fieldMutation, roleSession|roleAdmin, 66),
 	"setdevicerole":                      newFieldHandler("setDeviceRole", "setDeviceRole", fieldMutation, roleSession|roleAdmin, 145),
 	"setextensionpreauthorization":       newFieldHandler("setExtensionPreauthorization", "setExtensionPreauthorization", fieldMutation, roleSession|roleAdmin, 96),
@@ -4169,6 +4170,12 @@ func dispatchFieldBlock146(dispatch *fieldDispatchContext) response {
 	if fields["setrating"] {
 		state, err := h.setRating(ctx, scope, req)
 		if resp := resolveField(dispatch, "setrating", state, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setcontinuewatchinghidden"] {
+		state, err := h.setContinueWatchingHidden(ctx, scope, req)
+		if resp := resolveField(dispatch, "setcontinuewatchinghidden", state, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

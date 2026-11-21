@@ -25606,6 +25606,32 @@
     ]
   },
   {
+    "field": "setcontinuewatchinghidden",
+    "kind": "object",
+    "children": [
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "rating",
+        "kind": "scalar"
+      },
+      {
+        "name": "watched",
+        "kind": "scalar"
+      },
+      {
+        "name": "watchlisted",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "setdevicerole",
     "kind": "object",
     "children": [
