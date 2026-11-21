@@ -5,6 +5,8 @@ package ffmpeg
 import (
 	"errors"
 	"fmt"
+	"syscall"
+	"time"
 )
 
 var hlsExitObserver = waitForProcessExit
@@ -45,4 +47,49 @@ func reapError(what string, observeErr, sweepErr, waitErr error) error {
 		errs = append(errs, fmt.Errorf("ffmpeg: kill %s group: %w", what, sweepErr))
 	}
 	return errors.Join(errs...)
+}
+
+const (
+	groupSweepDeadline = time.Second
+	groupSweepInterval = 2 * time.Millisecond
+)
+
+// groupLister reports whether one listing of group pgid finds a member that
+// is not a zombie; a test replaces it to stand in for a member KILL cannot
+// end.
+var groupLister = groupListsLiveMember
+
+// sweepExitedGroup repeats the group KILL while the group still has a live
+// member. XNU can miss a child that is mid-fork when the first group KILL
+// lands, leaving it running and orphaned to launchd (CORE-2716). On Linux the
+// first KILL reaches every member, but a member in uninterruptible I/O lives
+// on, holding the output pipes, until the I/O ends (CORE-2821). The caller
+// holds the group leader pgid as an unreaped zombie, so the group ID cannot be
+// reused during the sweep. It returns errGroupSurvived, after reporting it, if
+// a live member remains at the deadline.
+func sweepExitedGroup(pgid int) error {
+	deadline := time.Now().Add(groupSweepDeadline)
+	for groupHasLiveMember(pgid) {
+		if time.Now().After(deadline) {
+			return reportGroupSurvivor(fmt.Errorf("%w: process group %d", errGroupSurvived, pgid))
+		}
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		time.Sleep(groupSweepInterval)
+	}
+	return nil
+}
+
+// groupHasLiveMember lists group pgid until groupQuietProbes listings in a
+// row find no member that is not a zombie. A failed listing counts as a live
+// member.
+func groupHasLiveMember(pgid int) bool {
+	for i := range groupQuietProbes {
+		if groupLister(pgid) {
+			return true
+		}
+		if i+1 < groupQuietProbes {
+			time.Sleep(groupSweepInterval)
+		}
+	}
+	return false
 }
