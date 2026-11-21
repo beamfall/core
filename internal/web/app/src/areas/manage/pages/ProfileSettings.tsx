@@ -14,7 +14,12 @@ import {
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 
-export function ProfileSettings() {
+interface PinSaveState {
+  savingPin: boolean;
+  setSavingPin: (busy: boolean) => void;
+}
+
+export function ProfileSettings({ savingPin, setSavingPin }: PinSaveState) {
   const t = useT();
   const [open, setOpen] = useState(false);
   return (
@@ -26,6 +31,7 @@ export function ProfileSettings() {
           size="sm"
           aria-expanded={open}
           data-setting="manage.profile.openSettings"
+          disabled={savingPin}
           onClick={() => setOpen(!open)}
         >
           {t(open ? "consoleProfilesDone" : "manageProfileSettingsOpen")}
@@ -40,23 +46,22 @@ export function ProfileSettings() {
             submit: "manageUnlockSubmit",
           }}
         >
-          <SettingsForms />
+          <SettingsForms savingPin={savingPin} setSavingPin={setSavingPin} />
         </AdminGate>
       )}
     </ManageSection>
   );
 }
 
-function SettingsForms() {
+function SettingsForms({ savingPin, setSavingPin }: PinSaveState) {
   const t = useT();
-  const { session } = useSession();
+  const { session, refreshProfiles } = useSession();
   const { data, loading, failed, refresh } = useAsync(fetchProfileEntryPins);
   const current = useAsync(fetchCurrentSession);
   const adults = data?.filter(
     (profile) => profile.kind === "adult" && typeof profile.entryPinSet === "boolean",
   );
   const [selectedID, setSelectedID] = useState("");
-  const [savingPin, setSavingPin] = useState(false);
   const selected = adults?.find((profile) => profile.id === (selectedID || session?.profileID));
 
   return (
@@ -106,7 +111,9 @@ function SettingsForms() {
                 pinSet={selected.entryPinSet === true}
                 busy={savingPin}
                 setBusy={setSavingPin}
-                onSaved={refresh}
+                onSaved={async () => {
+                  await Promise.all([refresh(), refreshProfiles().catch(() => undefined)]);
+                }}
               />
             )}
           </>
@@ -181,8 +188,8 @@ function EntryPinForm({
     try {
       await setProfileEntryPin(profileID, value, signal);
       if (signal.aborted) return;
-      setResult("saved");
       await onSaved();
+      if (!signal.aborted) setResult("saved");
     } catch {
       if (!signal.aborted) setResult("failed");
     } finally {
