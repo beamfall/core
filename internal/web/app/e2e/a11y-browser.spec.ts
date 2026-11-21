@@ -1,5 +1,5 @@
 import { seedViewerFocusSections } from "./fixtures/viewer-focus-sections";
-import { expectNoAxeViolations, runAxe } from "./lib/axe";
+import { expectNoAxeViolations, runAxe, runAxeRules } from "./lib/axe";
 import {
   applyLargeText,
   collectFatalErrors,
@@ -244,4 +244,48 @@ test.describe("ADR-0100 a11y real-browser parity pass", () => {
       await expect(page.locator("h1")).not.toBeEmpty();
     }
   });
+});
+
+// CORE-0290 (design audit CWEB-19, CWEB-20): every scrollable region can take keyboard focus, and
+// every interactive target is at least 24x24 CSS px (WCAG 2.2 SC 2.5.8), on the surfaces the audit
+// measured, at desktop and phone width.
+test.describe("targets and scrollable regions", () => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    for (const path of [
+      "/web/console/plugins",
+      "/web/console/activity",
+      "/web/console/config",
+      "/web/manage/libraries",
+      "/web/manage/trash",
+      "/web/",
+    ]) {
+      test(`${path} at ${viewport.width}px`, async ({ page }) => {
+        const errors = collectFatalErrors(page);
+        await page.setViewportSize(viewport);
+        if (path === "/web/") {
+          // Home keeps a connection open, so wait for its seeded shelves, not network idle.
+          await seedViewerFocusSections(page);
+        }
+        await page.goto(path);
+        await expect(page.locator("#root")).not.toBeEmpty();
+        if (path === "/web/") {
+          await expect(page.locator('a[data-focus-section^="recent"]').first()).toBeVisible();
+        } else {
+          await page.waitForLoadState("networkidle");
+        }
+        await settleAnimations(page);
+        const violations = await runAxeRules(page, ["scrollable-region-focusable", "target-size"]);
+        expect(
+          violations,
+          violations
+            .map((v) => `${v.id}: ${JSON.stringify(v.nodes.map((node) => node.target))}`)
+            .join("\n"),
+        ).toEqual([]);
+        expect(errors, errors.join("\n")).toEqual([]);
+      });
+    }
+  }
 });
