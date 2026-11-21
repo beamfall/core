@@ -19,6 +19,7 @@ import { CollectionPage } from "./pages/CollectionPage";
 import { EntityPage } from "./pages/EntityPage";
 import { FavoritesPage } from "./pages/FavoritesPage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { ImageViewerPage } from "./pages/ImageViewerPage";
 import { LibraryBrowsePage } from "./pages/LibraryBrowsePage";
 import { FeedCataloguePage, LibraryFeedsPage } from "./pages/LibraryFeedsPage";
 import { LibraryPivotPage } from "./pages/LibraryPivotPages";
@@ -134,6 +135,7 @@ export function ViewerArea() {
     profiles.length > 1 &&
     location.pathname !== "/profiles" &&
     !location.pathname.startsWith("/watch/") &&
+    !location.pathname.startsWith("/view/") &&
     !profilePickedThisTab()
   ) {
     return <Navigate to="/profiles" state={{ from: location }} replace />;
@@ -177,6 +179,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/remote" element={<RemotePage />} />
         <Route path="/profiles" element={<ProfilePickerPage />} />
         <Route path="/settings" element={<ProfileSettingsPage />} />
+        <Route path="/view/*" element={<ImageViewerPage />} />
         <Route
           path="/watch/*"
           element={
