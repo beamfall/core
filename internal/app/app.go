@@ -1578,6 +1578,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	graphHandler.SetJellyfinCompatController(compatSettings)
 	srv.SetProxyTee(proxyTee.ServeProxy)
+	playbackInfo.SetFeedStreams(feedStreamRegistrar{tee: proxyTee})
 	app := &App{
 		cfg:                    cfg,
 		store:                  st,

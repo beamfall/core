@@ -318,6 +318,42 @@ func (s *Service) Register(ctx context.Context, reg Registration) (store.MediaID
 	return mediaID, nil
 }
 
+// EnsureRegistered returns the Media ID of a live stream already registered
+// for reg's origin, and otherwise registers one. Unlike Register it never waits
+// on, or replaces, a stream that is serving the same origin, so a repeat play
+// while the first full fetch is still teeing keeps that fetch. An empty
+// ArchivePath is chosen beneath the archive root from the Media ID.
+func (s *Service) EnsureRegistered(ctx context.Context, reg Registration) (store.MediaID, error) {
+	stableID := store.ProvisionalMediaID(reg.LibraryID, reg.GUID)
+	if current, ok := s.lookup(stableID); ok && current.originURL == reg.OriginURL {
+		return stableID, nil
+	}
+	if reg.ArchivePath == "" {
+		reg.ArchivePath = s.archivePathFor(stableID, reg.Container)
+	}
+	mediaID, err := s.Register(ctx, reg)
+	var busy *RegistrationBusyError
+	if errors.As(err, &busy) {
+		// A promotion still owns the slot; the stream it holds keeps serving.
+		if _, ok := s.lookup(stableID); ok {
+			return stableID, nil
+		}
+	}
+	return mediaID, err
+}
+
+// archivePathFor names a stream's archive copy: one file per Media ID directly
+// beneath the archive root, with an extension taken from a safe container name.
+func (s *Service) archivePathFor(mediaID store.MediaID, container string) string {
+	ext := "bin"
+	if container != "" && len(container) <= 8 && strings.IndexFunc(container, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	}) < 0 {
+		ext = container
+	}
+	return filepath.Join(s.archiveDir, string(mediaID)+"."+ext)
+}
+
 func (s *Service) releaseRegistration(mediaID store.MediaID, slot *streamSlot) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -271,3 +271,28 @@ func SetLibraryPlugin(t testing.TB, dataDir string, id store.LibraryID, pluginID
 		t.Fatalf("set library plugin: %v", err)
 	}
 }
+
+// SeedFilelessGUIDMedia inserts a catalogued audio Media with no media_file,
+// keyed by the provisional GUID External ID, the shape a feed catalogue gives an
+// entry before it is played or downloaded. The ID is
+// store.ProvisionalMediaID(libraryID, guid). It lives under internal/store so
+// storage-driver access stays inside the store boundary.
+func SeedFilelessGUIDMedia(t testing.TB, dataDir string, libraryID store.LibraryID, guid, title string) store.MediaID {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(dataDir, "db", "catalog.db"))
+	if err != nil {
+		t.Fatalf("open catalog fixture: %v", err)
+	}
+	defer db.Close()
+	mediaID := store.ProvisionalMediaID(libraryID, guid)
+	if _, err := db.Exec(`
+		INSERT INTO media(id, library_id, title, duration_seconds, container, codec, media_class, mutated_by)
+		VALUES (?, ?, ?, 1800, 'mp3', 'mp3', 'audio', 'scan')
+	`, mediaID, libraryID, title); err != nil {
+		t.Fatalf("seed file-less media: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)`, mediaID, store.ProvisionalExternalIDScheme, guid); err != nil {
+		t.Fatalf("seed file-less media external ID: %v", err)
+	}
+	return mediaID
+}
