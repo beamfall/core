@@ -5,7 +5,6 @@ package ffmpeg
 import (
 	"errors"
 	"fmt"
-	"os/exec"
 )
 
 var hlsExitObserver = waitForProcessExit
@@ -24,11 +23,12 @@ func (p *HLSProcess) waitForExit() error {
 // unreaped (zombie) leader keeps the group ID reserved, so neither the group
 // KILL nor the macOS sweep can reach a reused group (CORE-2716). Members still
 // running after a natural exit are killed too, as HLSProcess already does.
-func reapGroup(cmd *exec.Cmd) error {
-	observeErr := waitForProcessExit(cmd.Process.Pid)
-	killProcessGroup(cmd)
-	sweepErr := sweepExitedGroup(cmd.Process.Pid)
-	return reapError("process", observeErr, sweepErr, cmd.Wait())
+func reapGroup(group *processGroup) error {
+	pid := group.cmd.Process.Pid
+	observeErr := waitForProcessExit(pid)
+	group.kill()
+	sweepErr := sweepExitedGroup(pid)
+	return reapError("process", observeErr, sweepErr, group.wait())
 }
 
 // reapError reports observer and sweep failures, both when both occur, ahead

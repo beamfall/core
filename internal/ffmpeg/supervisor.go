@@ -103,11 +103,10 @@ func (b *boundedBuffer) overflowed() bool {
 // leaves an orphan. A start failure is wrapped; an overflow returns
 // ErrOutputOverflow; otherwise the child's own exit error is returned.
 func (r *Runner) run(ctx context.Context, cmd *exec.Cmd) (stdout, stderr []byte, err error) {
-	var killOnce sync.Once
-	kill := func() { killOnce.Do(func() { killProcessGroup(cmd) }) }
-	out := &boundedBuffer{limit: captureLimitBytes, onOverflow: kill}
-	errb := &boundedBuffer{limit: captureLimitBytes, onOverflow: kill}
-	runErr := r.runWith(ctx, cmd, out, errb)
+	group := newProcessGroup(cmd)
+	out := &boundedBuffer{limit: captureLimitBytes, onOverflow: group.kill}
+	errb := &boundedBuffer{limit: captureLimitBytes, onOverflow: group.kill}
+	runErr := superviseGroup(ctx, group, out, errb)
 	if out.overflowed() || errb.overflowed() {
 		// Fail closed: the child overran the capture cap and its tree has been
 		// killed; report the overflow regardless of the exit/kill error.
@@ -134,6 +133,43 @@ func (r *Runner) runWith(ctx context.Context, cmd *exec.Cmd, stdout, stderr io.W
 	return supervise(ctx, cmd, stdout, stderr)
 }
 
+// processGroup serialises signals to a supervised child's process group
+// against the reap of its leader. Once the leader is reaped its group ID may
+// be reused, so a kill that arrives later, such as an overflow callback
+// running after the supervisor returned, does nothing (CORE-2749).
+type processGroup struct {
+	cmd    *exec.Cmd
+	mu     sync.Mutex
+	reaped bool
+}
+
+func newProcessGroup(cmd *exec.Cmd) *processGroup {
+	return &processGroup{cmd: cmd}
+}
+
+// signalProcessGroup is the group kill processGroup.kill sends; a test seam.
+var signalProcessGroup = killProcessGroup
+
+// kill SIGKILLs the group while its leader is still unreaped, and is a no-op
+// before Start and after the reap.
+func (g *processGroup) kill() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.reaped || g.cmd.Process == nil {
+		return
+	}
+	signalProcessGroup(g.cmd)
+}
+
+// wait reaps the leader. It bars further kills first, so no kill can race
+// with the reap.
+func (g *processGroup) wait() error {
+	g.mu.Lock()
+	g.reaped = true
+	g.mu.Unlock()
+	return g.cmd.Wait()
+}
+
 // supervise is the package-level supervisor loop shared by Runner.run/runWith
 // and the package-level hardware-accel probe. It applies the parent-loss death
 // signal (Linux) and a dedicated process group, streams the child's output into
@@ -142,6 +178,13 @@ func (r *Runner) runWith(ctx context.Context, cmd *exec.Cmd, stdout, stderr io.W
 // survives. A start failure is wrapped; otherwise the child's own exit error (or
 // ctx.Err() on cancellation) is returned.
 func supervise(ctx context.Context, cmd *exec.Cmd, stdout, stderr io.Writer) error {
+	return superviseGroup(ctx, newProcessGroup(cmd), stdout, stderr)
+}
+
+// superviseGroup is supervise for a caller that also kills group from its
+// own callbacks, such as a bounded writer's overflow.
+func superviseGroup(ctx context.Context, group *processGroup, stdout, stderr io.Writer) error {
+	cmd := group.cmd
 	applySysProcAttr(cmd)      // Linux Pdeathsig: reap the child if the server dies (parent loss)
 	configureProcessGroup(cmd) // own process group: a kill takes the whole tree, not just the leader
 	cmd.Stdout = stdout
@@ -161,17 +204,17 @@ func supervise(ctx context.Context, cmd *exec.Cmd, stdout, stderr io.Writer) err
 		return fmt.Errorf("ffmpeg: start failed: %w", startErr)
 	}
 	if bound && !probe.handoff() {
-		killProcessGroup(cmd)
-		_ = cmd.Wait()
+		group.kill()
+		_ = group.wait()
 		return context.Canceled
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- reapGroup(cmd) }()
+	go func() { done <- reapGroup(group) }()
 
 	select {
 	case <-ctx.Done():
-		killProcessGroup(cmd)
+		group.kill()
 		// always reap: no orphaned transcode survives a cancel/timeout
 		if reapErr := <-done; errors.Is(reapErr, errGroupSurvived) {
 			return errors.Join(ctx.Err(), reapErr)

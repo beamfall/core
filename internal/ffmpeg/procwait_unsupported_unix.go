@@ -2,12 +2,10 @@
 
 package ffmpeg
 
-import "os/exec"
-
 func (*HLSProcess) waitForExit() error {
 	return ffmpeg_on_Unix_requires_Linux_or_macOS
 }
 
-func reapGroup(*exec.Cmd) error {
+func reapGroup(*processGroup) error {
 	return ffmpeg_on_Unix_requires_Linux_or_macOS
 }

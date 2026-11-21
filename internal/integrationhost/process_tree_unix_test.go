@@ -383,14 +383,17 @@ func TestRetireKillsMidForkChildren(t *testing.T) {
 		workers = 8
 		rounds  = 40
 	)
-	var survived atomic.Int64
+	var survived, exercised atomic.Int64
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for range rounds {
-				outlived, retireErr, err := retireForkingTree()
+				outlived, ready, retireErr, err := retireForkingTree()
+				if ready {
+					exercised.Add(1)
+				}
 				// Off macOS a PID 1 that leaves orphans unreaped can hold
 				// zombies in the group past the deadline; the witness still
 				// decides survival there.
@@ -411,6 +414,11 @@ func TestRetireKillsMidForkChildren(t *testing.T) {
 	if n := survived.Load(); n > 0 {
 		t.Fatalf("%d of %d retired worker trees kept a live member", n, workers*rounds)
 	}
+	// Fewer retires after the readiness byte means the test stopped testing
+	// the race.
+	if n := exercised.Load(); n < workers*rounds*3/4 {
+		t.Fatalf("only %d of %d rounds retired a tree that was forking", n, workers*rounds)
+	}
 }
 
 // retireForkingTree starts a TERM-ignoring worker that forks as fast as it
@@ -419,12 +427,13 @@ func TestRetireKillsMidForkChildren(t *testing.T) {
 // the read end reaches EOF only once all of them have exited; zombies hold no
 // descriptors. Children end by themselves after a few seconds, so the test
 // never signals a group it may no longer own. A retire error is reported apart
-// from the witness result.
-func retireForkingTree() (outlived bool, retireErr, err error) {
-	const script = `trap '' TERM; i=0; while [ $i -lt 200 ]; do sleep 3 & i=$((i+1)); done; wait`
+// from the witness result. The worker writes a readiness byte after its first
+// fork; retire waits for it, and ready reports whether it came.
+func retireForkingTree() (outlived, ready bool, retireErr, err error) {
+	const script = `trap '' TERM; sleep 3 & printf r >&3; i=1; while [ $i -lt 200 ]; do sleep 3 & i=$((i+1)); done; wait`
 	r, w, err := os.Pipe()
 	if err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 	defer r.Close()
 	// #nosec G204 -- fixed shell and test-owned script.
@@ -436,17 +445,24 @@ func retireForkingTree() (outlived bool, retireErr, err error) {
 	}
 	_ = w.Close()
 	if err != nil {
-		return false, nil, fmt.Errorf("start worker tree: %w", err)
+		return false, false, nil, fmt.Errorf("start worker tree: %w", err)
 	}
 	waitDone := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(waitDone) }()
-	//nolint:gosec // jitter only, not security
-	time.Sleep(time.Duration(rand.IntN(20000)) * time.Microsecond)
+	var b [1]byte
+	if err := r.SetReadDeadline(time.Now().Add(5 * time.Second)); err == nil {
+		_, readErr := io.ReadFull(r, b[:])
+		ready = readErr == nil
+	}
+	if ready {
+		//nolint:gosec // jitter only, not security
+		time.Sleep(time.Duration(rand.IntN(20000)) * time.Microsecond)
+	}
 	retireErr = tree.retire(0, workerKillDeadline)
 	<-waitDone
 	if err := r.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-		return false, nil, err
+		return false, ready, nil, err
 	}
 	_, readErr := io.Copy(io.Discard, r)
-	return readErr != nil, retireErr, nil
+	return readErr != nil, ready, retireErr, nil
 }
