@@ -8,10 +8,12 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // Fixtures here are built in-test: real JPEG streams from image/jpeg, wrapped
@@ -149,7 +151,7 @@ func (b *tiffBuilder) build() []byte {
 			binary.LittleEndian.PutUint16(e[2:], f.typ)
 			switch {
 			case f.blob > 0 && f.typ == 7:
-				binary.LittleEndian.PutUint32(e[4:], uint32(len(b.blobs[f.blob-1])))
+				binary.LittleEndian.PutUint32(e[4:], uint32(len(b.blobs[f.blob-1]))) // #nosec G115 -- test blobs are small
 				binary.LittleEndian.PutUint32(e[8:], blobOffsets[f.blob-1])
 			case f.blob > 0:
 				binary.LittleEndian.PutUint32(e[4:], 1)
@@ -300,8 +302,8 @@ func rawFixtures(t *testing.T) []rawFixture {
 	rafJPEG := withSegments(preview, exifSegment(6))
 	raf := make([]byte, 160)
 	copy(raf, "FUJIFILMCCD-RAW 0201FF383501")
-	binary.BigEndian.PutUint32(raf[84:], uint32(len(raf)))
-	binary.BigEndian.PutUint32(raf[88:], uint32(len(rafJPEG)))
+	binary.BigEndian.PutUint32(raf[84:], uint32(len(raf)))     // #nosec G115 -- small test header
+	binary.BigEndian.PutUint32(raf[88:], uint32(len(rafJPEG))) // #nosec G115 -- small test preview
 	raf = append(raf, rafJPEG...)
 	fixtures = append(fixtures, rawFixture{ext: "raf", data: raf, orientation: 6})
 
@@ -329,7 +331,7 @@ func box(typ string, payload ...[]byte) []byte {
 		body = append(body, p...)
 	}
 	b := make([]byte, 8, 8+len(body))
-	binary.BigEndian.PutUint32(b, uint32(8+len(body)))
+	binary.BigEndian.PutUint32(b, uint32(8+len(body))) // #nosec G115 -- test boxes are small
 	copy(b[4:], typ)
 	return append(b, body...)
 }
@@ -338,7 +340,7 @@ func box(typ string, payload ...[]byte) []byte {
 // with orientation) and THMB, the top-level preview uuid with PRVW, then mdat.
 func cr3Fixture(preview, thumb []byte, orientation int) []byte {
 	prvwHeader := make([]byte, 16)
-	binary.BigEndian.PutUint32(prvwHeader[12:], uint32(len(preview)))
+	binary.BigEndian.PutUint32(prvwHeader[12:], uint32(len(preview))) // #nosec G115 -- small test preview
 	meta := box("uuid", cr3MetadataUUID, box("CMT1", tiffWithOrientation(orientation)), box("THMB", make([]byte, 16), thumb))
 	return append(append(append(
 		box("ftyp", []byte("crx \x00\x00\x00\x01crx isom")),
@@ -362,9 +364,6 @@ func TestInspectStillPicksEmbeddedPreview(t *testing.T) {
 				t.Fatalf("orientation = %d, want %d", src.orientation, fx.orientation)
 			}
 			// Extension-blind: importers pass sources without one.
-			if fx.ext != "arw" && fx.ext != "nef" && fx.ext != "nrw" && fx.ext != "pef" && fx.ext != "srw" && fx.ext != "3fr" {
-				return
-			}
 			blind := inspectStill(bytes.NewReader(fx.data), int64(len(fx.data)), "frame.import.tmp")
 			if blind.preview == nil {
 				t.Fatalf("preview not found without the extension hint")
@@ -409,7 +408,7 @@ func TestInspectPNGAndWebPMetadata(t *testing.T) {
 	p := buf.Bytes()
 	exif := tiffWithOrientation(5)
 	chunk := make([]byte, 8)
-	binary.BigEndian.PutUint32(chunk, uint32(len(exif)))
+	binary.BigEndian.PutUint32(chunk, uint32(len(exif))) // #nosec G115 -- small test chunk
 	copy(chunk[4:], "eXIf")
 	chunk = append(append(chunk, exif...), 0, 0, 0, 0) // CRC is not checked
 	withExif := append(append(append([]byte{}, p[:33]...), chunk...), p[33:]...)
@@ -420,7 +419,7 @@ func TestInspectPNGAndWebPMetadata(t *testing.T) {
 	webp := []byte("RIFF\x00\x00\x00\x00WEBP")
 	vp8x := append([]byte("VP8X\x0a\x00\x00\x00"), make([]byte, 10)...)
 	exifChunk := []byte("EXIF\x00\x00\x00\x00")
-	binary.LittleEndian.PutUint32(exifChunk[4:], uint32(len(exif)))
+	binary.LittleEndian.PutUint32(exifChunk[4:], uint32(len(exif))) // #nosec G115 -- small test chunk
 	webp = append(append(append(webp, vp8x...), exifChunk...), exif...)
 	if got := inspectStill(bytes.NewReader(webp), int64(len(webp)), "a.webp").orientation; got != 5 {
 		t.Fatalf("WebP EXIF orientation = %d, want 5", got)
@@ -610,13 +609,16 @@ var (
 
 func TestScaleImageConvertsDisplayP3ToSRGB(t *testing.T) {
 	requireFFmpeg(t)
-	src := withSegments(encodeJPEG(t, solidImage(32, 32, p3Source)), iccSegment(buildDisplayICC("Display P3", p3Colorants)))
-	img, out := scaleToJPEG(t, "wide.jpg", src, 320)
-	if c := img.At(16, 16); !near(c, p3SourceInSRGB, 3) {
-		t.Fatalf("converted pixel = %v, want ≈%v", rgbOf(c), p3SourceInSRGB)
-	}
-	if _, icc := jpegMetadata(out); !bytes.Equal(icc, srgbICC) {
-		t.Fatalf("derivative profile is %d bytes, want the sRGB profile", len(icc))
+	// 31 wide: the colorspace filter refuses odd sizes, so the scale rounds.
+	for _, w := range []int{32, 31} {
+		src := withSegments(encodeJPEG(t, solidImage(w, 20, p3Source)), iccSegment(buildDisplayICC("Display P3", p3Colorants)))
+		img, out := scaleToJPEG(t, "wide.jpg", src, 320)
+		if c := img.At(10, 10); !near(c, p3SourceInSRGB, 3) {
+			t.Fatalf("width %d: converted pixel = %v, want ≈%v", w, rgbOf(c), p3SourceInSRGB)
+		}
+		if _, icc := jpegMetadata(out); !bytes.Equal(icc, srgbICC) {
+			t.Fatalf("width %d: derivative profile is %d bytes, want the sRGB profile", w, len(icc))
+		}
 	}
 }
 
@@ -656,5 +658,141 @@ func TestScaleImageConvertsDisplayP3HEIC(t *testing.T) {
 	}
 	if _, icc := jpegMetadata(out); !bytes.Equal(icc, srgbICC) {
 		t.Fatalf("derivative profile is %d bytes, want the sRGB profile", len(icc))
+	}
+}
+
+// fullBox is an ISO BMFF full box with version 0 and the given flags.
+func fullBox(typ string, flags uint32, payload ...[]byte) []byte {
+	vf := make([]byte, 4)
+	binary.BigEndian.PutUint32(vf, flags)
+	return box(typ, append([][]byte{vf}, payload...)...)
+}
+
+func be32(v int) []byte {
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, uint32(v)) // #nosec G115 -- test offsets and sizes are small
+	return b
+}
+
+// cr3TrackFixture is a CR3 whose PRVW is a usable 1100×700 preview while one
+// moov track's first sample, in mdat, is a larger 1300×900 JPEG; a second
+// track points at non-JPEG (CRX-like) bytes.
+func cr3TrackFixture(t *testing.T) []byte {
+	prvw := encodeJPEG(t, solidImage(1100, 700, thumbColour))
+	full := encodeJPEG(t, solidImage(1300, 900, previewColour))
+	sensor := bytes.Repeat([]byte{0x12, 0x34}, 512)
+	layout := func(fullOff, sensorOff int) []byte {
+		trak := func(off, size int) []byte {
+			stbl := box("stbl", fullBox("stsz", 0, be32(0), be32(1), be32(size)), fullBox("stco", 0, be32(1), be32(off)))
+			return box("trak", box("mdia", box("minf", stbl)))
+		}
+		prvwHeader := make([]byte, 16)
+		binary.BigEndian.PutUint32(prvwHeader[12:], uint32(len(prvw))) // #nosec G115 -- small test preview
+		var b []byte
+		b = append(b, box("ftyp", []byte("crx \x00\x00\x00\x01crx isom"))...)
+		b = append(b, box("moov", trak(sensorOff, len(sensor)), trak(fullOff, len(full)))...)
+		b = append(b, box("uuid", cr3PreviewUUID, make([]byte, 8), box("PRVW", prvwHeader, prvw))...)
+		return append(b, box("mdat", sensor, full)...)
+	}
+	probe := layout(0, 0)
+	mdat := len(probe) - len(sensor) - len(full)
+	return layout(mdat+len(sensor), mdat)
+}
+
+func TestInspectCR3PrefersTheFullSizeJPEGTrack(t *testing.T) {
+	data := cr3TrackFixture(t)
+	src := inspectStill(bytes.NewReader(data), int64(len(data)), "frame.cr3")
+	shape, ok := validJPEG(src.preview)
+	if !ok || shape.width != 1300 || shape.height != 900 {
+		t.Fatalf("preview = %+v %v, want the 1300x900 track JPEG", shape, ok)
+	}
+}
+
+// heifFixture is a HEIF whose ipco holds an sRGB nclx (index 1) and a Display
+// P3 nclx (index 2); item 1 is associated with index 2, item 2 with index 1.
+func heifFixture(primary int) []byte {
+	nclx := func(primaries, transfer uint16) []byte {
+		b := []byte("nclx\x00\x00\x00\x00\x00\x01\x80")
+		binary.BigEndian.PutUint16(b[4:], primaries)
+		binary.BigEndian.PutUint16(b[6:], transfer)
+		return box("colr", b)
+	}
+	pitm := make([]byte, 2)
+	binary.BigEndian.PutUint16(pitm, uint16(primary)) // #nosec G115 -- 1 or 2
+	ipma := []byte{0, 0, 0, 2, 0, 1, 1, 0x82, 0, 2, 1, 0x01}
+	meta := fullBox("meta", 0,
+		fullBox("pitm", 0, pitm),
+		box("iprp", box("ipco", nclx(1, 13), nclx(12, 13)), fullBox("ipma", 0, ipma)))
+	return append(box("ftyp", []byte("heic\x00\x00\x00\x00mif1heic")), meta...)
+}
+
+func TestHEIFColourFollowsThePrimaryItem(t *testing.T) {
+	for primary, want := range map[int]bool{1: true, 2: false} {
+		data := heifFixture(primary)
+		src := inspectStill(bytes.NewReader(data), int64(len(data)), "a.heic")
+		if src.colour.converts() != want {
+			t.Fatalf("primary item %d: colour %+v converts = %v, want %v", primary, src.colour, !want, want)
+		}
+	}
+}
+
+func TestInspectJPEGFindsLateEXIF(t *testing.T) {
+	filler := segment(0xE0, make([]byte, 60000))
+	var prefix [][]byte
+	for range 48 { // ≈2.9 MB of other header segments before the Exif
+		prefix = append(prefix, filler)
+	}
+	jpg := encodeJPEG(t, solidImage(16, 16, previewColour))
+	data := withSegments(jpg, append(prefix, exifSegment(6))...)
+	if src := inspectStill(bytes.NewReader(data), int64(len(data)), "a.jpg"); src.orientation != 6 {
+		t.Fatalf("orientation = %d, want 6 from the late Exif segment", src.orientation)
+	}
+	// A header that cannot be walked to the scan leaves orientation to FFmpeg.
+	cut := data[:2+len(filler)/2]
+	if src := inspectStill(bytes.NewReader(cut), int64(len(cut)), "a.jpg"); src.orientation != 0 {
+		t.Fatalf("orientation = %d for an unwalkable header, want 0 (FFmpeg decides)", src.orientation)
+	}
+}
+
+type countingReaderAt struct {
+	r    io.ReaderAt
+	read int
+}
+
+func (c *countingReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	n, err := c.r.ReadAt(p, off)
+	c.read += n
+	return n, err
+}
+
+func TestBestPreviewReadsEachSpanOnce(t *testing.T) {
+	jpg := encodeJPEG(t, solidImage(1200, 800, previewColour))
+	spans := make([]byteSpan, 1000)
+	for i := range spans {
+		spans[i] = byteSpan{0, int64(len(jpg))}
+	}
+	r := &countingReaderAt{r: bytes.NewReader(jpg)}
+	if bestPreview(r, int64(len(jpg)), spans) == nil {
+		t.Fatal("no preview")
+	}
+	if r.read > 2*len(jpg) {
+		t.Fatalf("read %d bytes for a %d-byte span named 1000 times", r.read, len(jpg))
+	}
+}
+
+func TestBestPreviewScanIsBoundedOnNestedCandidates(t *testing.T) {
+	// Every 7-byte unit is a header segment whose payload is another SOI, so
+	// each candidate's walk runs to the end of the buffer.
+	unit := []byte{0xFF, 0xE0, 0x00, 0x05, 0xFF, 0xD8, 0xFF}
+	data := append([]byte{0xFF, 0xD8}, bytes.Repeat(unit, (8<<20)/len(unit))...)
+	done := make(chan struct{})
+	go func() {
+		bestPreview(bytes.NewReader(data), int64(len(data)), nil)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the fallback scan did not finish: its validation work is unbounded")
 	}
 }

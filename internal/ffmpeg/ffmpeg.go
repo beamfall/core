@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"unicode"
 )
@@ -657,9 +658,10 @@ func stillFilters(still stillSource, width int, convert bool) string {
 		return strings.Join(append(filters, fmt.Sprintf("scale=min(%d\\,iw):-2", width)), ",")
 	}
 	// Full-range BT.601 YUV is what the colorspace filter and the JPEG encoder
-	// share, so the conversion happens once, on the scaled pixels.
+	// share, so the conversion happens once, on the scaled pixels. The colorspace
+	// filter refuses odd frame sizes, so the width is rounded down to even too.
 	filters = append(filters,
-		fmt.Sprintf("scale=w=min(%d\\,iw):h=-2:out_color_matrix=bt601:out_range=full", width),
+		fmt.Sprintf("scale=w=max(2\\,trunc(min(%d\\,iw)/2)*2):h=-2:out_color_matrix=bt601:out_range=full", width),
 		"format=yuv444p",
 		fmt.Sprintf("colorspace=iprimaries=%s:itrc=%s:ispace=bt470bg:irange=pc:primaries=bt709:trc=srgb:space=bt470bg:range=pc",
 			still.colour.primaries, still.colour.transfer),
@@ -669,8 +671,18 @@ func stillFilters(still stillSource, width int, convert bool) string {
 
 // inspectStillFile inspects src through one descriptor. An unreadable source is
 // an error; an unrecognised one is the zero stillSource (direct decode).
+//
+// The open is confined like FFmpeg's own read: through an os.Root on src's
+// directory (transformConfinement's read grant), so a symlink leading out of it
+// is refused, and nonblocking, so a FIFO swapped in for the source cannot hang
+// the worker before the descriptor is found not to be a regular file.
 func inspectStillFile(src string) (stillSource, error) {
-	f, err := os.Open(src) // #nosec G304 -- src is the caller's image path, the same path FFmpeg is about to read.
+	root, err := os.OpenRoot(dirOf(src))
+	if err != nil {
+		return stillSource{}, fmt.Errorf("opening image: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	f, err := root.OpenFile(filepath.Base(src), os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return stillSource{}, fmt.Errorf("opening image: %w", err)
 	}

@@ -38,6 +38,7 @@ type tiffReader struct {
 	size  int64
 	order binary.ByteOrder
 	base  int64 // file offset of the TIFF header
+	magic uint16
 }
 
 // newTIFFReader accepts classic TIFF byte orders with the standard magic (42)
@@ -56,12 +57,13 @@ func newTIFFReader(r io.ReaderAt, base, size int64) (*tiffReader, int64, bool) {
 	default:
 		return nil, 0, false
 	}
-	switch order.Uint16(head[2:]) {
+	magic := order.Uint16(head[2:])
+	switch magic {
 	case 42, 0x4F52, 0x5352, 0x55:
 	default:
 		return nil, 0, false
 	}
-	return &tiffReader{r: r, size: size, order: order, base: base}, int64(order.Uint32(head[4:])), true
+	return &tiffReader{r: r, size: size, order: order, base: base, magic: magic}, int64(order.Uint32(head[4:])), true
 }
 
 func (t *tiffReader) ifd(off int64) (map[uint16]tiffEntry, int64, bool) {
@@ -151,7 +153,7 @@ type byteSpan struct{ off, length int64 }
 type tiffScan struct {
 	orientation int
 	icc         byteSpan
-	raw         bool // a sensor-data IFD, DNGVersion or CR2 signature was seen
+	raw         bool // a RAW header magic, sensor-data IFD, DNGVersion or CR2 signature was seen
 	previews    []byteSpan
 }
 
@@ -165,6 +167,8 @@ func scanTIFF(r io.ReaderAt, base, size int64) (tiffScan, bool) {
 		return tiffScan{}, false
 	}
 	var scan tiffScan
+	// The ORF and RW2 header magics are RAW signatures on their own.
+	scan.raw = t.magic != 42
 	if sig := make([]byte, 2); base == 0 {
 		if _, err := r.ReadAt(sig, 8); err == nil && string(sig) == "CR" {
 			scan.raw = true

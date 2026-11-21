@@ -566,6 +566,28 @@ func TestDeriveImageIsFingerprintResumableAndRegeneratesChangedSource(t *testing
 	}
 }
 
+func TestDeriveImageRegeneratesDerivativesFromAnOlderScaler(t *testing.T) {
+	st := storetest.Open(t)
+	id, path := importImageFile(t, st, "still", "jpg")
+	scaler := &copyScaler{}
+	svc := NewService(st, scaler, t.TempDir())
+	if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+		t.Fatal(err)
+	}
+	// A marker written before imageDerivativeVersion held the bare fingerprint.
+	if err := os.WriteFile(svc.PosterPath(id)+".source-fingerprint", []byte("fingerprint-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := svc.DeriveImage(context.Background(), id, path, "fingerprint-1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if scaler.calls != 6 {
+		t.Fatalf("scale calls = %d, want one regeneration for the unversioned marker", scaler.calls)
+	}
+}
+
 func TestDeriveImageWritesNothingForProtectedLibrary(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

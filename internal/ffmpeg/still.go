@@ -30,6 +30,11 @@ const (
 	// previewScanBytes bounds the fallback byte scan for JPEG previews that no
 	// container structure points at (ORF maker notes, unusual layouts).
 	previewScanBytes = 64 << 20
+	// previewScanWork bounds the bytes the fallback scan's JPEG validation may
+	// examine in all, since overlapping candidates can each walk a long suffix.
+	previewScanWork = 4 * previewScanBytes
+	// maxPreviewReadBytes bounds the structured preview bytes read for one source.
+	maxPreviewReadBytes = 256 << 20
 	// smallPreviewSide is the long side below which the structured previews are
 	// considered thumbnails, so the fallback scan runs.
 	smallPreviewSide = 1024
@@ -91,10 +96,12 @@ func inspectStill(r io.ReaderAt, size int64, name string) stillSource {
 }
 
 func inspectJPEGFile(r io.ReaderAt, size int64) stillSource {
-	// Header segments hold the metadata; 1 MiB plus the ICC cap covers them.
-	head := readSpan(r, size, byteSpan{0, min(size, maxICCBytes+1<<20)}, maxPreviewBytes)
-	orientation, icc := jpegMetadata(head)
-	return stillSource{orientation: max(orientation, 1), colour: iccColour(icc)}
+	orientation, icc, complete := jpegMetadataAt(r, size)
+	if complete {
+		// Every header segment was read, so no orientation tag means upright.
+		orientation = max(orientation, 1)
+	}
+	return stillSource{orientation: orientation, colour: iccColour(icc)}
 }
 
 func inspectTIFF(r io.ReaderAt, size int64, hintRAW bool) stillSource {
@@ -127,7 +134,9 @@ func rawStill(r io.ReaderAt, size int64, spans []byteSpan, orientation int) stil
 
 // bestPreview returns the largest valid preview among the structured spans,
 // falling back to a bounded scan of the file when none is at least
-// smallPreviewSide on its long side.
+// smallPreviewSide on its long side. Spans are read once each, only when they
+// start with a JPEG SOI, and within maxPreviewReadBytes in all; the scan's
+// validation work is bounded by previewScanWork.
 func bestPreview(r io.ReaderAt, size int64, spans []byteSpan) []byte {
 	var best []byte
 	var bestShape jpegShape
@@ -138,20 +147,35 @@ func bestPreview(r io.ReaderAt, size int64, spans []byteSpan) []byte {
 		}
 		best, bestShape = b[:shape.length], shape
 	}
+	seen := map[byteSpan]bool{}
+	budget := int64(maxPreviewReadBytes)
+	soi := make([]byte, 3)
 	for _, span := range spans {
-		consider(readSpan(r, size, span, maxPreviewBytes))
+		if seen[span] || span.length > budget {
+			continue
+		}
+		seen[span] = true
+		if _, err := r.ReadAt(soi, span.off); err != nil || !bytes.Equal(soi, jpegSOI) {
+			continue
+		}
+		if b := readSpan(r, size, span, maxPreviewBytes); b != nil {
+			budget -= int64(len(b))
+			consider(b)
+		}
 	}
 	if max(bestShape.width, bestShape.height) >= smallPreviewSide {
 		return best
 	}
 	buf := readSpan(r, size, byteSpan{0, min(size, previewScanBytes)}, previewScanBytes)
-	for pos := 0; pos+3 <= len(buf); {
-		i := bytes.Index(buf[pos:], []byte{0xFF, 0xD8, 0xFF})
+	work := 0
+	for pos := 0; pos+3 <= len(buf) && work < previewScanWork; {
+		i := bytes.Index(buf[pos:], jpegSOI)
 		if i < 0 {
 			break
 		}
 		start := pos + i
-		shape, ok := validJPEG(buf[start:min(len(buf), start+maxPreviewBytes)])
+		shape, walked, ok := walkJPEG(buf[start:min(len(buf), start+maxPreviewBytes)])
+		work += walked
 		if !ok {
 			pos = start + 3
 			continue
@@ -164,6 +188,8 @@ func bestPreview(r io.ReaderAt, size int64, spans []byteSpan) []byte {
 	}
 	return best
 }
+
+var jpegSOI = []byte{0xFF, 0xD8, 0xFF}
 
 // inspectRAF reads a Fujifilm RAF: a big-endian header whose bytes 84–91 give
 // the offset and length of the embedded JPEG (with its own EXIF).
@@ -260,20 +286,34 @@ func inspectBMFF(r io.ReaderAt, size int64) stillSource {
 }
 
 // inspectCR3 reads a Canon CR3: the PRVW preview JPEG in its top-level preview
-// uuid box, and IFD0 orientation from the CMT1 TIFF in moov's metadata uuid box.
+// uuid box, the full-size JPEG track in mdat, and IFD0 orientation from the
+// CMT1 TIFF in moov's metadata uuid box.
 func inspectCR3(r io.ReaderAt, size int64, top []bmffBox) stillSource {
 	var spans []byteSpan
 	if box, ok := findBox(top, "uuid", cr3PreviewUUID); ok && box.payload.length > 8 {
 		// The payload is 8 bytes of header, then the PRVW box; its JPEG
 		// starts at the first SOI inside it.
 		prvw := readSpan(r, size, box.payload, maxPreviewBytes)
-		if i := bytes.Index(prvw, []byte{0xFF, 0xD8, 0xFF}); i >= 0 {
+		if i := bytes.Index(prvw, jpegSOI); i >= 0 {
 			spans = append(spans, byteSpan{box.payload.off + int64(i), box.payload.length - int64(i)})
 		}
 	}
 	orientation := 0
 	if moov, ok := findBox(top, "moov", nil); ok {
-		if meta, ok := findBox(bmffBoxes(r, moov.payload), "uuid", cr3MetadataUUID); ok {
+		children := bmffBoxes(r, moov.payload)
+		// Each track's first sample is a candidate too: one of them is the
+		// full-size JPEG (the others are CRX sensor data, which fails the SOI
+		// check before it is read).
+		tracks := 0
+		for _, trak := range children {
+			if trak.typ == "trak" && tracks < 8 {
+				tracks++
+				if span, ok := firstSample(r, trak); ok {
+					spans = append(spans, span)
+				}
+			}
+		}
+		if meta, ok := findBox(children, "uuid", cr3MetadataUUID); ok {
 			if cmt1, ok := findBox(bmffBoxes(r, meta.payload), "CMT1", nil); ok {
 				if scan, ok := scanTIFF(r, cmt1.payload.off, cmt1.payload.off+cmt1.payload.length); ok {
 					orientation = scan.orientation
@@ -284,41 +324,187 @@ func inspectCR3(r io.ReaderAt, size int64, top []bmffBox) stillSource {
 	return rawStill(r, size, spans, orientation)
 }
 
-// heifColour reads the first colr property of a HEIF/AVIF item (meta → iprp →
-// ipco). Orientation is left to FFmpeg, which applies irot/imir itself.
+// firstSample returns the span of a track's first sample, from its sample
+// table: the first chunk offset (stco or co64) and the first sample size (stsz).
+func firstSample(r io.ReaderAt, trak bmffBox) (byteSpan, bool) {
+	box := trak
+	for _, typ := range []string{"mdia", "minf", "stbl"} {
+		next, ok := findBox(bmffBoxes(r, box.payload), typ, nil)
+		if !ok {
+			return byteSpan{}, false
+		}
+		box = next
+	}
+	stbl := bmffBoxes(r, box.payload)
+	stsz, ok := findBox(stbl, "stsz", nil)
+	if !ok {
+		return byteSpan{}, false
+	}
+	// stsz: version/flags, sample_size, sample_count, then per-sample sizes
+	// when sample_size is 0.
+	head := make([]byte, 16)
+	n, _ := r.ReadAt(head, stsz.payload.off)
+	if n < 12 || stsz.payload.length < 12 || binary.BigEndian.Uint32(head[8:]) == 0 {
+		return byteSpan{}, false
+	}
+	length := binary.BigEndian.Uint32(head[4:])
+	if length == 0 {
+		if n < 16 || stsz.payload.length < 16 {
+			return byteSpan{}, false
+		}
+		length = binary.BigEndian.Uint32(head[12:])
+	}
+	var off int64
+	if stco, ok := findBox(stbl, "stco", nil); ok {
+		if n, _ := r.ReadAt(head[:12], stco.payload.off); n < 12 || stco.payload.length < 12 || binary.BigEndian.Uint32(head[4:]) == 0 {
+			return byteSpan{}, false
+		}
+		off = int64(binary.BigEndian.Uint32(head[8:]))
+	} else if co64, ok := findBox(stbl, "co64", nil); ok {
+		if n, _ := r.ReadAt(head, co64.payload.off); n < 16 || co64.payload.length < 16 || binary.BigEndian.Uint32(head[4:]) == 0 {
+			return byteSpan{}, false
+		}
+		v := binary.BigEndian.Uint64(head[8:])
+		if v > 1<<62 {
+			return byteSpan{}, false
+		}
+		off = int64(v) // #nosec G115 -- bounded just above
+	} else {
+		return byteSpan{}, false
+	}
+	return byteSpan{off, int64(length)}, length > 0
+}
+
+// heifColour reads the colr property associated with a HEIF/AVIF file's
+// primary item (meta → pitm, iprp → ipco/ipma); other items (thumbnails, depth
+// or gain maps) can carry a different one. Without pitm or ipma the first colr
+// is used. Orientation is left to FFmpeg, which applies irot/imir itself.
 func heifColour(r io.ReaderAt, size int64, top []bmffBox) stillColour {
 	meta, ok := findBox(top, "meta", nil)
 	if !ok || meta.payload.length < 4 {
 		return stillColour{}
 	}
 	// meta is a full box: skip version and flags.
-	iprp, ok := findBox(bmffBoxes(r, byteSpan{meta.payload.off + 4, meta.payload.length - 4}), "iprp", nil)
+	metaBoxes := bmffBoxes(r, byteSpan{meta.payload.off + 4, meta.payload.length - 4})
+	iprp, ok := findBox(metaBoxes, "iprp", nil)
 	if !ok {
 		return stillColour{}
 	}
-	ipco, ok := findBox(bmffBoxes(r, iprp.payload), "ipco", nil)
+	iprpBoxes := bmffBoxes(r, iprp.payload)
+	ipco, ok := findBox(iprpBoxes, "ipco", nil)
 	if !ok {
 		return stillColour{}
 	}
-	for _, box := range bmffBoxes(r, ipco.payload) {
-		if box.typ != "colr" {
-			continue
-		}
-		colr := readSpan(r, size, box.payload, maxICCBytes+4)
-		if len(colr) < 4 {
-			continue
-		}
-		switch string(colr[:4]) {
-		case "prof", "rICC":
-			return iccColour(colr[4:])
-		case "nclx":
-			if len(colr) < 8 {
-				return stillColour{}
+	// Property indices in ipma are 1-based positions in ipco.
+	colrs := map[int]bmffBox{}
+	first := 0
+	for i, box := range bmffBoxes(r, ipco.payload) {
+		if box.typ == "colr" {
+			colrs[i+1] = box
+			if first == 0 {
+				first = i + 1
 			}
+		}
+	}
+	index := first
+	primary, hasPrimary := heifPrimaryItem(r, size, metaBoxes)
+	if ipma, ok := findBox(iprpBoxes, "ipma", nil); ok && hasPrimary {
+		index = 0
+		for _, p := range heifAssociations(r, size, ipma, primary) {
+			if _, ok := colrs[p]; ok {
+				index = p
+				break
+			}
+		}
+	}
+	box, ok := colrs[index]
+	if !ok {
+		return stillColour{}
+	}
+	colr := readSpan(r, size, box.payload, maxICCBytes+4)
+	if len(colr) < 4 {
+		return stillColour{}
+	}
+	switch string(colr[:4]) {
+	case "prof", "rICC":
+		return iccColour(colr[4:])
+	case "nclx":
+		if len(colr) >= 8 {
 			return colourFromNCLX(binary.BigEndian.Uint16(colr[4:]), binary.BigEndian.Uint16(colr[6:]))
 		}
 	}
 	return stillColour{}
+}
+
+// heifPrimaryItem reads the pitm box's item ID.
+func heifPrimaryItem(r io.ReaderAt, size int64, metaBoxes []bmffBox) (uint32, bool) {
+	pitm, ok := findBox(metaBoxes, "pitm", nil)
+	if !ok {
+		return 0, false
+	}
+	b := readSpan(r, size, pitm.payload, 16)
+	switch {
+	case len(b) >= 6 && b[0] == 0:
+		return uint32(binary.BigEndian.Uint16(b[4:])), true
+	case len(b) >= 8:
+		return binary.BigEndian.Uint32(b[4:]), true
+	}
+	return 0, false
+}
+
+// heifAssociations returns the 1-based ipco property indices an ipma box
+// associates with item.
+func heifAssociations(r io.ReaderAt, size int64, ipma bmffBox, item uint32) []int {
+	b := readSpan(r, size, ipma.payload, 1<<20)
+	if len(b) < 8 {
+		return nil
+	}
+	version, wide := b[0], b[3]&1 == 1
+	count := binary.BigEndian.Uint32(b[4:])
+	pos := 8
+	for e := uint32(0); e < count; e++ {
+		var id uint32
+		if version < 1 {
+			if pos+2 > len(b) {
+				return nil
+			}
+			id = uint32(binary.BigEndian.Uint16(b[pos:]))
+			pos += 2
+		} else {
+			if pos+4 > len(b) {
+				return nil
+			}
+			id = binary.BigEndian.Uint32(b[pos:])
+			pos += 4
+		}
+		if pos >= len(b) {
+			return nil
+		}
+		n := int(b[pos])
+		pos++
+		width := 1
+		if wide {
+			width = 2
+		}
+		if pos+n*width > len(b) {
+			return nil
+		}
+		if id != item {
+			pos += n * width
+			continue
+		}
+		indices := make([]int, 0, n)
+		for range n {
+			if wide {
+				indices = append(indices, int(binary.BigEndian.Uint16(b[pos:])&0x7FFF))
+			} else {
+				indices = append(indices, int(b[pos]&0x7F))
+			}
+			pos += width
+		}
+		return indices
+	}
+	return nil
 }
 
 // inspectPNG reads iCCP (unless an sRGB chunk declares sRGB) and eXIf from the
@@ -326,7 +512,7 @@ func heifColour(r io.ReaderAt, size int64, top []bmffBox) stillColour {
 func inspectPNG(r io.ReaderAt, size int64) stillSource {
 	src := stillSource{orientation: 1}
 	var icc []byte
-	isSRGB := false
+	isSRGB, sawICCP := false, false
 	pos := int64(8)
 	for range 4096 {
 		head := make([]byte, 8)
@@ -338,7 +524,11 @@ func inspectPNG(r io.ReaderAt, size int64) stillSource {
 		data := byteSpan{pos + 8, length}
 		switch typ {
 		case "iCCP":
-			icc = pngICC(readSpan(r, size, data, maxICCBytes))
+			// PNG allows one iCCP; only the first is inflated.
+			if !sawICCP {
+				sawICCP = true
+				icc = pngICC(readSpan(r, size, data, maxICCBytes))
+			}
 		case "sRGB":
 			isSRGB = true
 		case "eXIf":
