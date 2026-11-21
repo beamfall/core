@@ -92,6 +92,8 @@ export function MarkersPage() {
   const [error, setError] = useState("");
   // Only the newest load may land, so a slow earlier pick cannot replace it.
   const loadSeq = useRef(0);
+  // The Media ID the page is for, set when a load starts; a finished create reloads only if it still matches.
+  const targetRef = useRef("");
 
   const load = useCallback(
     async (id: string) => {
@@ -99,6 +101,15 @@ export function MarkersPage() {
       const target = id.trim();
       if (!target) return;
       const seq = ++loadSeq.current;
+      if (target !== targetRef.current) {
+        // A new item: hide the old one's rows so New and row actions cannot write to it mid-load.
+        targetRef.current = target;
+        setMediaID("");
+        setMarkers([]);
+        setTrashed([]);
+        setSelected(new Set());
+        setLoaded(false);
+      }
       try {
         const [live, dead] = await Promise.all([fetchMarkers(target), fetchTrashedMarkers(target)]);
         if (seq !== loadSeq.current) return;
@@ -117,6 +128,7 @@ export function MarkersPage() {
   // Clearing the picker unloads the page so New cannot target the old item.
   const unload = () => {
     loadSeq.current++;
+    targetRef.current = "";
     setMediaID("");
     setMarkers([]);
     setTrashed([]);
@@ -128,14 +140,15 @@ export function MarkersPage() {
   const reload = useCallback(() => void load(mediaID), [load, mediaID]);
 
   const onCreate = async () => {
-    if (!mediaID) return;
+    const id = mediaID;
+    if (!id) return;
     setError("");
-    const seq = loadSeq.current;
     try {
-      await createMarker(mediaID, blankDraft());
-      if (seq === loadSeq.current) await load(mediaID);
+      await createMarker(id, blankDraft());
+      // Reload even if another reload ran meanwhile: it may have read before this create committed.
+      if (targetRef.current === id) await load(id);
     } catch {
-      if (seq === loadSeq.current) setError(t("markersSaveFailed"));
+      if (targetRef.current === id) setError(t("markersSaveFailed"));
     }
   };
 
