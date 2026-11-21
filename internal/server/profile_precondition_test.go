@@ -132,6 +132,28 @@ func TestStaleProfileHeaderRefusesRESTWriteBeforeHandler(t *testing.T) {
 // switches the shared session to B, and a reconnect still naming A is refused
 // with the mismatch, so the tab learns to reload instead of reading B's events
 // (CORE-2923). A stream naming no Profile is the control: it keeps streaming.
+// A switch that lands after the route's precondition passed reaches the
+// handler's own scope resolution, which answers with the same refusal rather
+// than a 401 that would send the tab to enrol again (CORE-2923).
+func TestStaleProfileHeaderAtHandlerScopeIsRefusedNotUnauthorized(t *testing.T) {
+	srv, st := newTestServerWithStore(t)
+	if err := st.SetSessionProfile(context.Background(), "session-default", "profile-managed"); err != nil {
+		t.Fatalf("SetSessionProfile: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/manifest", nil)
+	authorizeViewerCookies(req)
+	req.Header.Set(auth.ProfileHeader, "profile-default")
+	rec := httptest.NewRecorder()
+	srv.manifestDocument(rec, req)
+	var refusal profileMismatchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &refusal); err != nil {
+		t.Fatalf("decode refusal: %v: %s", err, rec.Body.String())
+	}
+	if rec.Code != http.StatusConflict || refusal.Reason != profileMismatchReason {
+		t.Fatalf("handler scope mismatch = %d %s, want 409 PROFILE_MISMATCH", rec.Code, rec.Body.String())
+	}
+}
+
 func TestStaleProfileHeaderEndsEventStream(t *testing.T) {
 	srv, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -161,6 +183,7 @@ func TestStaleProfileHeaderEndsEventStream(t *testing.T) {
 	lines := func(resp *http.Response, streamCtx context.Context) <-chan string {
 		out := make(chan string, 64)
 		go func() {
+			defer close(out)
 			defer resp.Body.Close()
 			scanner := bufio.NewScanner(resp.Body)
 			for scanner.Scan() {
@@ -199,7 +222,20 @@ func TestStaleProfileHeaderEndsEventStream(t *testing.T) {
 		t.Fatalf("append event 2: %v", err)
 	}
 	waitForEvent(t, control, "media.created", "post-switch event on the control stream")
-	assertNoEvent(t, bound, "media.created", 750*time.Millisecond)
+	// The server ends the bound stream rather than only filtering it, so the
+	// browser reconnects and hears the refusal below.
+	deadline := time.After(5 * time.Second)
+	for open := true; open; {
+		select {
+		case event, ok := <-bound:
+			if ok && event == "media.created" {
+				t.Fatalf("bound stream delivered %q after the switch", event)
+			}
+			open = ok
+		case <-deadline:
+			t.Fatal("bound stream still open after the switch, want it ended")
+		}
+	}
 
 	staleResp, cancelStale := connect("profile-default")
 	defer cancelStale()

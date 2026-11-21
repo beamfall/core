@@ -1,6 +1,11 @@
 package server
 
-import "net/http"
+import (
+	"errors"
+	"net/http"
+
+	"github.com/beamfall/core/internal/auth"
+)
 
 // The refusal a request made for another Profile gets (CORE-2923). The code
 // and reason are the wire values internal/graph's expectedProfileID refusal
@@ -49,4 +54,16 @@ func writeProfileMismatch(w http.ResponseWriter, r *http.Request) {
 		Code:   profileMismatchCode,
 		Reason: profileMismatchReason,
 	})
+}
+
+// writeScopeError answers a request whose scope did not resolve. A Profile
+// mismatch is the refusal above, so a switch that lands after the route's
+// precondition still tells the tab to reload rather than to enrol again; any
+// other failure is the route's 401.
+func writeScopeError(w http.ResponseWriter, r *http.Request, err error, message string) {
+	if errors.Is(err, auth.ErrProfileMismatch) {
+		writeProfileMismatch(w, r)
+		return
+	}
+	writeError(w, r, http.StatusUnauthorized, message)
 }

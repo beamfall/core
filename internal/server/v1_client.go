@@ -46,7 +46,7 @@ func (s *Server) SetV1ProgressRecorder(recorder V1ProgressRecorder) {
 func (s *Server) v1Caller(w http.ResponseWriter, r *http.Request, required store.APIScope) (auth.Scope, bool) {
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid credential")
+		writeScopeError(w, r, err, "invalid credential")
 		return auth.Scope{}, false
 	}
 	if scope.IsEnrolledDeviceSession() || scope.HasAPIScope(required) {
@@ -61,7 +61,7 @@ func (s *Server) v1Caller(w http.ResponseWriter, r *http.Request, required store
 func (s *Server) v1DeviceSession(w http.ResponseWriter, r *http.Request) (auth.Scope, bool) {
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, "invalid credential")
+		writeScopeError(w, r, err, "invalid credential")
 		return auth.Scope{}, false
 	}
 	if !scope.IsEnrolledDeviceSession() {

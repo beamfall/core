@@ -143,13 +143,17 @@ func (h *Handler) endPlayback(ctx context.Context, scope auth.Scope, req request
 	if scope.SessionID == "" {
 		return nil
 	}
-	if err := h.store.EndPlayback(ctx, scope.SessionID, store.MediaID(mediaID)); err != nil {
-		return err
-	}
-	if h.transcodeTerminator != nil {
-		h.transcodeTerminator.TerminatePlayback(scope.SessionID, store.MediaID(mediaID))
-	}
-	return nil
+	// A player's cleanup can arrive after another tab switched the session and
+	// started the same Media there; it must not end that Profile's playback.
+	return h.whileScopeProfile(ctx, scope, func() error {
+		if err := h.store.EndPlayback(ctx, scope.SessionID, store.MediaID(mediaID)); err != nil {
+			return err
+		}
+		if h.transcodeTerminator != nil {
+			h.transcodeTerminator.TerminatePlayback(scope.SessionID, store.MediaID(mediaID))
+		}
+		return nil
+	})
 }
 
 // TerminateSessionResult echoes the terminated session id (ADR-0007 §4 "kill

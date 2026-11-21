@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -38,5 +39,36 @@ func TestStaleProfileHeaderRefusedAtGraphScopeResolution(t *testing.T) {
 		if err != nil || len(prefs) != 0 {
 			t.Fatalf("ClientPrefs(%s) = %+v, %v after a refused write, want none", profile, prefs, err)
 		}
+	}
+}
+
+// A Reveal whose PIN was verified for one Profile, or a player's cleanup for
+// one, must not apply after another tab switched the session to another
+// Profile between the request's scope and its write (CORE-2923).
+func TestScopeResolvedBeforeSwitchCannotRevealOrEndPlaybackAfterIt(t *testing.T) {
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	ctx := t.Context()
+	if err := st.SetProfileRevealPIN(ctx, "profile-default", "2468"); err != nil {
+		t.Fatalf("SetProfileRevealPIN: %v", err)
+	}
+	scope := auth.Scope{SessionID: "session-default", ProfileID: "profile-default"}
+	if err := st.SetSessionProfile(ctx, "session-default", "profile-managed"); err != nil {
+		t.Fatalf("SetSessionProfile: %v", err)
+	}
+
+	_, err := h.revealOps(ctx, scope, map[string]bool{"reveal": true},
+		request{Variables: map[string]any{"pin": "2468"}})
+	if !errors.Is(err, errProfileMismatch) {
+		t.Fatalf("reveal err = %v, want the Profile mismatch", err)
+	}
+	session, err := st.Session(ctx, "session-default")
+	if err != nil || session.Revealed {
+		t.Fatalf("session after a refused reveal = %+v, %v; want it still locked", session, err)
+	}
+
+	err = h.endPlayback(ctx, scope, request{Variables: map[string]any{"mediaId": "media-alpha"}})
+	if !errors.Is(err, errProfileMismatch) {
+		t.Fatalf("endPlayback err = %v, want the Profile mismatch", err)
 	}
 }
