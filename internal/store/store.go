@@ -2171,6 +2171,27 @@ func (s *Store) LibraryRestricted(ctx context.Context, id LibraryID) (bool, erro
 	return restricted != 0, nil
 }
 
+// LibraryLive reports whether a Library exists and is not in the trash. A job
+// queued before its Library was deleted uses it to exit without work
+// (CORE-1279).
+func (s *Store) LibraryLive(ctx context.Context, id LibraryID) (bool, error) {
+	if id == "" {
+		return false, errors.New("library ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var live int
+	err := s.catalogR.QueryRowContext(ctx,
+		"SELECT EXISTS (SELECT 1 FROM library WHERE id = ? AND trashed_at_ms IS NULL)", id).Scan(&live)
+	if err != nil {
+		return false, err
+	}
+	return live != 0, nil
+}
+
 // LibraryPreviewClips reports the Library's preview-clip toggle.
 func (s *Store) LibraryPreviewClips(ctx context.Context, id LibraryID) (bool, error) {
 	if id == "" {

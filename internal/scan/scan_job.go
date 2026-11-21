@@ -157,6 +157,16 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 	if err != nil {
 		return jobs.Result{}, err
 	}
+	// A scan queued before its Library was deleted, or resumed after, has
+	// nothing to import into: it completes without work rather than walking
+	// a folder no live Library owns (CORE-1279).
+	live, err := st.LibraryLive(ctx, req.LibraryID)
+	if err != nil {
+		return jobs.Result{}, err
+	}
+	if !live {
+		return jobs.Result{}, nil
+	}
 	// A Library folder that is gone or unreadable fails the job before any
 	// work, every time it is claimed: the walk would only skip it file by file
 	// and the job would keep coming back. The job records why, so the Console
