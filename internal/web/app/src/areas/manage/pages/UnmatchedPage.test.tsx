@@ -457,6 +457,17 @@ describe("UnmatchedPage", () => {
     expect(fetchMediaFiles).toHaveBeenLastCalledWith("media-11");
   });
 
+  it("reloads the queue after a rescan", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openedOnGroup();
+    vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(queue([below]));
+    await user.click(screen.getByRole("button", { name: "Rescan all unmatched" }));
+    await waitFor(() => expect(runHealthBulkOp).toHaveBeenCalledWith("rescanUnmatched", "lib-1"));
+    await screen.findByRole("button", { name: "Apply + pin" });
+    expect(screen.queryByRole("button", { name: "Match all 3" })).not.toBeInTheDocument();
+  });
+
   it("explains instead of searching for a source with no catalog", async () => {
     vi.mocked(fetchUnmatchedQueuePages).mockResolvedValue(
       queue([{ ...below, scraperID: "manual", candidateID: "", candidateTitle: "" }]),

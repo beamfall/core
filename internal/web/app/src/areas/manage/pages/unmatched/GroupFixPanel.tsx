@@ -83,6 +83,12 @@ export function GroupFixPanel({
   const searched = useRef(false);
   // Bumped on every selection; a preview answered for an older one is dropped.
   const selection = useRef(0);
+  // False once a panel for another group replaces this one: its late
+  // failures are not reported against the new group.
+  const live = useRef(true);
+  const report = (message: string) => {
+    if (live.current) onError(message);
+  };
 
   // Once a search ran with a corrected year, the hint names that year, not
   // the folder's.
@@ -121,19 +127,21 @@ export function GroupFixPanel({
         : undefined;
       select((preferred ?? scored[0])?.id ?? "");
     } catch {
-      onError(t("unmatchedUnavailable"));
+      report(t("unmatchedUnavailable"));
     } finally {
       setBusy(false);
     }
   };
 
   // A panel for another group replaces this one: its late answers are dropped.
-  useEffect(
-    () => () => {
+  // Setting live on mount keeps a development double mount working.
+  useEffect(() => {
+    live.current = true;
+    return () => {
       selection.current++;
-    },
-    [],
-  );
+      live.current = false;
+    };
+  }, []);
 
   // The panel is keyed by group, so this runs once per group: the operator
   // lands on candidates already searched with the folder's name and year.
@@ -165,7 +173,7 @@ export function GroupFixPanel({
       ]);
       select(fetched.id || candidateID);
     } catch {
-      onError(t("unmatchedPasteIDFailed"));
+      report(t("unmatchedPasteIDFailed"));
     } finally {
       setBusy(false);
     }
@@ -183,7 +191,7 @@ export function GroupFixPanel({
       });
       if (asked === selection.current) setDiff(rows);
     } catch {
-      if (asked === selection.current) onError(t("unmatchedUnavailable"));
+      if (asked === selection.current) report(t("unmatchedUnavailable"));
     } finally {
       setBusy(false);
     }

@@ -67,20 +67,26 @@ export function UnmatchedPage() {
   const groups = useMemo(() => groupUnmatched(items), [items]);
   const active = groups.find((group) => group.key === activeKey) ?? groups[0];
 
+  // Only the latest load applies its answer: an older one finishing late
+  // would put back rows a write has since changed.
+  const loads = useRef(0);
   const load = useCallback(async () => {
+    const mine = ++loads.current;
     setLoading(true);
     try {
       const [queue, libs] = await Promise.all([fetchUnmatchedQueuePages(), fetchLibraries()]);
+      if (mine !== loads.current) return true;
       setItems(queue.items);
       setComplete(queue.complete);
       setLibraries(libs);
       setLibraryID((current) => current || libs[0]?.id || "");
       return true;
     } catch {
+      if (mine !== loads.current) return true;
       setError(t("unmatchedUnavailable"));
       return false;
     } finally {
-      setLoading(false);
+      if (mine === loads.current) setLoading(false);
     }
   }, [t]);
 
@@ -119,7 +125,7 @@ export function UnmatchedPage() {
       }
       pathWorkers.current--;
     };
-    while (pathWorkers.current < Math.min(PATH_WORKERS, queue.length)) void worker();
+    while (pathWorkers.current < PATH_WORKERS && queue.length > 0) void worker();
   }, [groups, paths, activeMediaID]);
 
   // After a write the rows on screen are stale. If the reload fails they are
@@ -156,6 +162,7 @@ export function UnmatchedPage() {
     setNotice("");
     try {
       const result = await runHealthBulkOp("rescanUnmatched", libraryID);
+      await load();
       setNotice(`${result.affected} ${t("bulkOpsAffected")}`);
     } catch {
       setError(t("unmatchedUnavailable"));
@@ -186,7 +193,7 @@ export function UnmatchedPage() {
             <Button
               variant="outline"
               size="sm"
-              disabled={!libraryID}
+              disabled={!libraryID || writing}
               onClick={() => void onRescan()}
             >
               {t("unmatchedRescan")}
