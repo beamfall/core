@@ -208,8 +208,13 @@ var errStreamTokenScopeMismatch = errors.New("stream token scope mismatch")
 // schedule may carry that reason. The session snapshot the schedule was
 // evaluated against must hold the grant's session, Profile and device, and
 // the grant's compatibility decision and receiver binding must still verify,
-// exactly as they would have to before the grant serves bytes.
+// exactly as they would have to before the grant serves bytes. A restricted
+// grant never qualifies: Reveal holds only for an adult Profile, and a Profile
+// under an access schedule is never one, so the grant fails Reveal on its own.
 func (h *Handler) grantMaySeeScheduleReason(ctx context.Context, err error, grant streamtoken.Grant) bool {
+	if grant.Restricted {
+		return false
+	}
 	bound := auth.SessionBinding{SessionID: grant.SessionID, ProfileID: grant.ProfileID, DeviceID: grant.DeviceID}
 	if !auth.AccessScheduleReasonVisible(err, &bound) {
 		return false
@@ -449,7 +454,7 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		if refuseAccessScheduleEnded(w, err) {
 			return
 		}
-		http.Error(w, "stream ended", h.endedSubtitleStatus(r.Context(), token))
+		http.Error(w, "stream ended", h.endedSubtitleStatus(r.Context(), token, err))
 		return
 	}
 	if grant.SubtitleStreamIndex != 0 && grant.SubtitleStreamIndex-1 != streamIndex {
@@ -583,9 +588,12 @@ func (h *Handler) subtitleSidecarPath(ctx context.Context, fingerprint, srcPath 
 
 // endedSubtitleStatus maps a failed subtitle grant verification to its status:
 // 410 when the token itself still authenticates (signature, expiry, target) but
-// its session no longer resolves to a scope, 401 for every other failure.
-func (h *Handler) endedSubtitleStatus(ctx context.Context, token string) int {
-	if h.tokens == nil {
+// its session no longer resolves to a scope, 401 for every other failure. A
+// grant refused on its own bindings stays 401 even when the session is outside
+// its access schedule, so the status never tells a stale token that session's
+// schedule state (CORE-2950).
+func (h *Handler) endedSubtitleStatus(ctx context.Context, token string, verifyErr error) int {
+	if h.tokens == nil || errors.Is(verifyErr, errStreamTokenScopeMismatch) {
 		return http.StatusUnauthorized
 	}
 	grant, err := h.tokens.UnverifiedGrant(token, streamtoken.TargetMediaSubtitle)

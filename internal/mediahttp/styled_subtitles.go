@@ -104,7 +104,7 @@ func (h *Handler) serveStyledSubtitle(w http.ResponseWriter, r *http.Request, gr
 		if refuseAccessScheduleEnded(w, err) {
 			return
 		}
-		http.Error(w, "stream ended", h.endedSubtitleStatus(r.Context(), token))
+		http.Error(w, "stream ended", h.endedSubtitleStatus(r.Context(), token, err))
 		return
 	}
 	if h.sealed != nil && h.sealed(library.ID) ||

@@ -163,3 +163,98 @@ func TestInvalidatedCompatDecisionTokenGetsGenericRefusalOutsideSchedule(t *test
 		t.Fatalf("invalidated decision: status = %d header = %q, want 401 and no reason", rec.Code, rec.Header().Get(auth.DenialReasonHeader))
 	}
 }
+
+// TestRestrictedTokenGetsGenericRefusalOutsideSchedule: a restricted Stream
+// Token fails Reveal on its own once its Profile is managed, so a matching
+// session, Profile and device do not earn it the schedule reason. It gets the
+// route's ordinary 401 with no reason header.
+func TestRestrictedTokenGetsGenericRefusalOutsideSchedule(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	src := filepath.Join(t.TempDir(), "movie.bin")
+	if err := os.WriteFile(src, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetPrimaryMediaFile(ctx, "media-alpha", src); err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.Session(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	weekday := (int(time.Now().Weekday()) + 3) % 7
+	if err := st.SetProfileAccessWindows(ctx, "profile-managed", []store.ProfileAccessWindow{{Weekday: weekday, StartMinute: 0, EndMinute: 1440}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSessionProfile(ctx, session.ID, "profile-managed"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(100, 0).UTC()
+	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
+	token, err := tokens.Issue(ctx, streamtoken.Grant{
+		Target:     streamtoken.TargetMediaDirect,
+		MediaID:    "media-alpha",
+		DeviceID:   session.DeviceID,
+		SessionID:  session.ID,
+		ProfileID:  "profile-managed",
+		Restricted: true,
+		ExpiresAt:  now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(st, auth.NewService(st), tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
+	rec := httptest.NewRecorder()
+	handler.Direct(rec, httptest.NewRequest(http.MethodGet, "/api/media/direct/"+token, nil))
+	if rec.Code != http.StatusUnauthorized || rec.Header().Get(auth.DenialReasonHeader) != "" {
+		t.Fatalf("restricted token: status = %d header = %q, want 401 and no reason", rec.Code, rec.Header().Get(auth.DenialReasonHeader))
+	}
+}
+
+// TestStaleSubtitleTokenStatusHidesScheduleState: a subtitle token signed for
+// another Profile gets the same generic refusal whether the session's current
+// Profile is inside or outside its access schedule, so the status code never
+// tells it that Profile's schedule state.
+func TestStaleSubtitleTokenStatusHidesScheduleState(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	authService := auth.NewService(st)
+	scope, err := authService.Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(100, 0).UTC()
+	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
+	staleToken, err := tokens.Issue(ctx, streamtoken.Grant{
+		Target:    streamtoken.TargetMediaSubtitle,
+		MediaID:   "media-alpha",
+		DeviceID:  scope.DeviceID,
+		SessionID: scope.SessionID,
+		ProfileID: scope.ProfileID,
+		ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSessionProfile(ctx, scope.SessionID, "profile-managed"); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
+	subtitle := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		handler.Subtitles(rec, httptest.NewRequest(http.MethodGet, "/api/media/subtitle/"+staleToken+"/2.vtt", nil))
+		return rec
+	}
+
+	inside := subtitle()
+	weekday := (int(time.Now().Weekday()) + 3) % 7
+	if err := st.SetProfileAccessWindows(ctx, "profile-managed", []store.ProfileAccessWindow{{Weekday: weekday, StartMinute: 0, EndMinute: 1440}}); err != nil {
+		t.Fatal(err)
+	}
+	outside := subtitle()
+	for name, rec := range map[string]*httptest.ResponseRecorder{"inside schedule": inside, "outside schedule": outside} {
+		if rec.Code != http.StatusUnauthorized || rec.Header().Get(auth.DenialReasonHeader) != "" {
+			t.Fatalf("stale subtitle token %s: status = %d header = %q, want 401 and no reason", name, rec.Code, rec.Header().Get(auth.DenialReasonHeader))
+		}
+	}
+}
