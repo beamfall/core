@@ -11,6 +11,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // ErrSubscriptionNotFound means no Subscription exists with the given ID.
@@ -371,8 +374,18 @@ var urlPattern = regexp.MustCompile(`(?i)://|//[^\s/]|[\p{L}\p{M}\p{N}_-]+([.。
 
 // containsURL reports whether title contains a URL, with or without a scheme,
 // so a signed feed URL inside prose never becomes a visible title.
+// containsURL reports whether title holds anything that reads as a URL. It
+// matches on the NFKC form with format characters and variation selectors
+// removed, so compatibility and IDNA-ignored variants of URL syntax are caught
+// as one class instead of one code point at a time.
 func containsURL(title string) bool {
-	return urlPattern.MatchString(title)
+	folded := strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Variation_Selector, r) {
+			return -1
+		}
+		return r
+	}, norm.NFKC.String(title))
+	return urlPattern.MatchString(folded)
 }
 
 // FillSubscriptionTitle sets the Subscription's title only while it is empty,
