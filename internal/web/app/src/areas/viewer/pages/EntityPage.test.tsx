@@ -634,17 +634,28 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     MENU_TEST_TIMEOUT,
   );
 
-  it("shows the localized action error on the child whose menu failed to load", async () => {
-    vi.mocked(fetchItemState).mockRejectedValueOnce(new Error("offline"));
-    renderEntity(undefined, "fr");
-    const link = await screen.findByRole("link", { name: /Related item/ });
-    const row = within(link.closest("li")!);
-    fireEvent.click(row.getByRole("button", { name: "Plus d’actions pour Related item" }));
+  it(
+    "shows the localized action error on the child whose menu failed to load",
+    async () => {
+      // Every load of this child's state fails: a one-shot rejection can land on a load the
+      // menu aborts and reruns, and the rerun then succeeds (CORE-2883).
+      const loaded = vi.mocked(fetchItemState).getMockImplementation();
+      vi.mocked(fetchItemState).mockImplementation((target, signal) =>
+        "mediaID" in target && target.mediaID === "m1"
+          ? Promise.reject(new Error("offline"))
+          : loaded!(target, signal),
+      );
+      renderEntity(undefined, "fr");
+      const link = await screen.findByRole("link", { name: /Related item/ });
+      const row = within(link.closest("li")!);
+      fireEvent.click(row.getByRole("button", { name: "Plus d’actions pour Related item" }));
 
-    const message = "Échec de l'enregistrement. Réessayez.";
-    expect(await row.findByText(message)).toHaveAttribute("role", "status");
-    expect(screen.getAllByText(message)).toHaveLength(1);
-  });
+      const message = "Échec de l'enregistrement. Réessayez.";
+      expect(await row.findByText(message, {}, MENU_WAIT)).toHaveAttribute("role", "status");
+      expect(screen.getAllByText(message)).toHaveLength(1);
+    },
+    MENU_TEST_TIMEOUT,
+  );
 
   it("orders child controls as link, Play, More and excludes locked playback", async () => {
     const { container } = renderEntity();
