@@ -255,6 +255,11 @@ func (s *Service) CertificationConstraints(ceilings []store.ProfileCertification
 	return constraints
 }
 
+// AddToQueue checks the authenticated scope again in the queue write transaction.
+func (s *Service) AddToQueue(ctx context.Context, scope Scope, expectedProfileID store.ProfileID, mediaID store.MediaID, position *int) (store.QueueAddResult, error) {
+	return s.store.QueueAddForProfile(ctx, scope.ProfileID, scope.SessionID, expectedProfileID, mediaID, position, scope.LibraryFilter(), s.now, s.CertificationConstraints)
+}
+
 // ScopeFromRequest resolves HTTP credentials into a Scope. A Bearer credential
 // wins when present — a scoped developer key (ADR-0040, bfk_ prefix) routes to
 // the scoped-key path, anything else to the admin API token; then

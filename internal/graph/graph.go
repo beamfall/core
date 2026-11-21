@@ -4530,7 +4530,7 @@ func (h *Handler) queueAdd(ctx context.Context, scope auth.Scope, req request) (
 	if err := v.Err(); err != nil {
 		return queueAddResult{}, err
 	}
-	committed, err := h.store.QueueAddForProfile(ctx, scope.ProfileID, scope.SessionID, expected, mediaID, position, scope.LibraryFilter(), h.auth.CertificationConstraints)
+	committed, err := h.auth.AddToQueue(ctx, scope, expected, mediaID, position)
 	switch {
 	case errors.Is(err, store.ErrQueueMediaNotFound):
 		return queueAddResult{}, clientError("unknown media")

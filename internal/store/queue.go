@@ -35,9 +35,10 @@ type QueueAddResult struct {
 // QueueAddForProfile adds or moves an item in the Profile's Play Queue using
 // current store authorization. A nonempty expectedProfileID pins the write
 // to that Profile. An empty sessionID is for sessionless scopes, which
-// cannot Reveal. resolveCertification maps current ceilings against the
-// active plugin scales and must not call back into the store.
-func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, sessionID SessionID, expectedProfileID ProfileID, mediaID MediaID, position *int, filter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (QueueAddResult, error) {
+// cannot Reveal. authNow supplies the clock used to authorize the request.
+// resolveCertification maps current ceilings against the active plugin scales
+// and must not call back into the store.
+func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, sessionID SessionID, expectedProfileID ProfileID, mediaID MediaID, position *int, filter LibraryFilter, authNow func() time.Time, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (QueueAddResult, error) {
 	if resolveCertification == nil {
 		return QueueAddResult{}, errors.New("queue add requires a certification resolver")
 	}
@@ -52,10 +53,10 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 	if err := s.guardLocked(); err != nil {
 		return QueueAddResult{}, err
 	}
-	return s.queueAddWithWriter(ctx, profileID, sessionID, expectedProfileID, mediaID, position, filter, resolveCertification, "")
+	return s.queueAddWithWriter(ctx, profileID, sessionID, expectedProfileID, mediaID, position, filter, authNow, resolveCertification, "")
 }
 
-func (s *Store) queueAddWithWriter(ctx context.Context, scopeProfileID ProfileID, sessionID SessionID, expectedProfileID ProfileID, mediaID MediaID, position *int, scopeFilter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint, privateID LibraryID) (QueueAddResult, error) {
+func (s *Store) queueAddWithWriter(ctx context.Context, scopeProfileID ProfileID, sessionID SessionID, expectedProfileID ProfileID, mediaID MediaID, position *int, scopeFilter LibraryFilter, authNow func() time.Time, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint, privateID LibraryID) (QueueAddResult, error) {
 	writer, err := s.openQueueWriter(ctx, privateID)
 	if err != nil {
 		return QueueAddResult{}, err
@@ -111,7 +112,7 @@ func (s *Store) queueAddWithWriter(ctx context.Context, scopeProfileID ProfileID
 	} else {
 		filter.GrantedMediaIDs = nil
 	}
-	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, s.serverNow()); err != nil {
+	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, authNow()); err != nil {
 		return QueueAddResult{}, err
 	}
 	filter = queueAddFilter(profile, rebound, filter)
@@ -126,7 +127,7 @@ func (s *Store) queueAddWithWriter(ctx context.Context, scopeProfileID ProfileID
 			if err := tx.Rollback(); err != nil {
 				return QueueAddResult{}, err
 			}
-			return s.queueAddWithWriter(ctx, scopeProfileID, sessionID, expectedProfileID, mediaID, position, scopeFilter, resolveCertification, targetLibrary)
+			return s.queueAddWithWriter(ctx, scopeProfileID, sessionID, expectedProfileID, mediaID, position, scopeFilter, authNow, resolveCertification, targetLibrary)
 		}
 	}
 	filter.Certification = resolveCertification(profile.CertificationCeilings)
@@ -202,13 +203,13 @@ func (s *Store) queueAddWithWriter(ctx context.Context, scopeProfileID ProfileID
 	}
 	// A deadline can pass while building the page or rewriting the queue even though
 	// the policy rows are stable. Check just before writing and before commit.
-	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, s.serverNow()); err != nil {
+	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, authNow()); err != nil {
 		return QueueAddResult{}, err
 	}
 	if err := replaceQueue(ctx, tx, profileID, updated); err != nil {
 		return QueueAddResult{}, err
 	}
-	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, s.serverNow()); err != nil {
+	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, authNow()); err != nil {
 		return QueueAddResult{}, err
 	}
 	if err := tx.Commit(); err != nil {
