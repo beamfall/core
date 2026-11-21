@@ -1,4 +1,5 @@
 {
+  "feed_search.invalid_url": "Saisissez une URL de site web valide.",
   "feed_search.throttled": "Trop de recherches de flux. Réessayez dans un instant.",
   "library_root.cant_open": "Le serveur ne peut pas ouvrir {path}.",
   "library_root.missing": "Le dossier {path} n’existe pas sur le serveur.",

@@ -36,11 +36,27 @@ func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[s
 // ErrDocumentThrottled reports a document request refused by the upstream.
 var ErrDocumentThrottled = errors.New("scrape: upstream throttled document request")
 
-// CheckDocumentURL applies the pre-dial rules for directory documents and
-// discovered feeds. The hardened dialer checks the resolved address on fetch.
+var documentQueryKeySeparators = strings.NewReplacer("-", "", "_", "", ".", "")
+
+// CheckDocumentURL applies the polling pre-dial rules and rejects credentials
+// in public directory and discovery URLs. The dialer checks addresses on fetch.
 func (e *Engine) CheckDocumentURL(u *url.URL) error {
 	if u.User != nil {
 		return errors.New("scrape: refused URL with user credentials")
+	}
+	params, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return errors.New("scrape: refused invalid URL query")
+	}
+	for key := range params {
+		switch documentQueryKeySeparators.Replace(strings.ToLower(key)) {
+		case "token", "accesstoken", "refreshtoken", "authtoken", "bearertoken", "idtoken", "apitoken", "oauthtoken",
+			"securitytoken", "sessiontoken", "jwt", "auth", "authorization", "credential", "credentials",
+			"apikey", "key", "accesskey", "accesskeyid", "subscriptionkey", "secret", "clientsecret", "oauthtokensecret",
+			"password", "passwd", "sessionid", "sig", "signature", "xamzcredential", "xamzsecuritytoken", "xamzsignature",
+			"xgoogcredential", "xgoogsignature":
+			return errors.New("scrape: refused URL with query credentials")
+		}
 	}
 	return e.vetURL(u)
 }

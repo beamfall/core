@@ -137,3 +137,28 @@ func TestSearchFeedsThrottleIsLocalized(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchFeedsInvalidURLIsLocalized(t *testing.T) {
+	handler := newTestHandler(t)
+	handler.SetFeedSearcher(feedSearchFunc(func(context.Context, string) ([]FeedSearchResult, error) {
+		return nil, ErrFeedSearchInvalidURL
+	}))
+	body := `{"query":"{ searchFeeds(query:\"https:/example.org/feed?token=x\") { feedURL } }"}`
+	for locale, want := range map[string]string{
+		"en": "Enter a valid website URL.",
+		"de": "Gib eine gültige Website-URL ein.",
+		"es": "Introduce una URL de sitio web válida.",
+		"fr": "Saisissez une URL de site web valide.",
+		"pt": "Introduza um URL de site válido.",
+	} {
+		t.Run(locale, func(t *testing.T) {
+			_, errs := post(t, handler, body, func(req *http.Request) {
+				authorizeViewer(req)
+				*req = *req.WithContext(l10n.WithLocale(req.Context(), locale))
+			})
+			if len(errs) != 1 || errs[0].Message != want || errs[0].Extensions.Code != ErrorCodeInvalid {
+				t.Fatalf("errors = %+v, want INVALID with %q", errs, want)
+			}
+		})
+	}
+}

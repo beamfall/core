@@ -1,4 +1,5 @@
 {
+  "feed_search.invalid_url": "Enter a valid website URL.",
   "feed_search.throttled": "Too many feed searches. Try again shortly.",
   "library_root.cant_open": "The server can't open {path}.",
   "library_root.missing": "The folder {path} doesn't exist on the server.",

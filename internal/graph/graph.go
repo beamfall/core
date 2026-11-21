@@ -1018,6 +1018,9 @@ type FeedSearcher interface {
 // ErrFeedSearchThrottled reports that the directory could not admit a request.
 var ErrFeedSearchThrottled = clientError("feed search throttled")
 
+// ErrFeedSearchInvalidURL reports a malformed URL entered for feed discovery.
+var ErrFeedSearchInvalidURL = clientError("invalid feed discovery URL")
+
 type feedSearchFunc func(context.Context, string) ([]FeedSearchResult, error)
 
 func (fn feedSearchFunc) SearchFeeds(ctx context.Context, query string) ([]FeedSearchResult, error) {
@@ -3553,6 +3556,9 @@ func (h *Handler) searchFeeds(ctx context.Context, scope auth.Scope, req request
 	results, err := h.feedSearcher.SearchFeeds(ctx, query)
 	if errors.Is(err, ErrFeedSearchThrottled) {
 		return nil, &l10n.Error{Key: l10n.FeedSearchThrottled, Err: ErrFeedSearchThrottled}
+	}
+	if errors.Is(err, ErrFeedSearchInvalidURL) {
+		return nil, &l10n.Error{Key: l10n.FeedSearchInvalidURL, Err: ErrFeedSearchInvalidURL}
 	}
 	if err != nil {
 		return nil, err

@@ -1,4 +1,5 @@
 {
+  "feed_search.invalid_url": "Introduza um URL de site válido.",
   "feed_search.throttled": "Demasiadas pesquisas de feeds. Tente novamente dentro de instantes.",
   "library_root.cant_open": "O servidor não consegue abrir {path}.",
   "library_root.missing": "A pasta {path} não existe no servidor.",

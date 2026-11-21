@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
-	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -40,6 +39,7 @@ type feedDirectorySearcher struct {
 
 	mu        sync.Mutex
 	cache     map[string]cachedFeedSearch
+	inFlight  map[string]*feedSearchCall
 	tokens    [feedRequestsPerMin]time.Time
 	nextToken int
 }
@@ -47,6 +47,12 @@ type feedDirectorySearcher struct {
 type cachedFeedSearch struct {
 	results []graph.FeedSearchResult
 	expires time.Time
+}
+
+type feedSearchCall struct {
+	done    chan struct{}
+	results []graph.FeedSearchResult
+	err     error
 }
 
 func newFeedDirectorySearcher(engine feedDirectoryFetcher, secrets app.SecretSource, endpoint, template string, now func() time.Time) *feedDirectorySearcher {
@@ -57,19 +63,20 @@ func newFeedDirectorySearcher(engine feedDirectoryFetcher, secrets app.SecretSou
 		template: template,
 		now:      now,
 		cache:    make(map[string]cachedFeedSearch),
+		inFlight: make(map[string]*feedSearchCall),
 	}
 }
 
 func (s *feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) ([]graph.FeedSearchResult, error) {
 	query = strings.TrimSpace(query)
 	link, err := url.Parse(query)
-	if err != nil || !link.IsAbs() || link.Host == "" {
+	if err != nil || !link.IsAbs() || link.Hostname() == "" {
 		text := strings.Join(strings.Fields(query), " ")
 		key := strings.ToLower(text)
-		if strings.HasPrefix(key, "https://") || strings.HasPrefix(key, "http://") {
-			return nil, errors.New("invalid feed discovery URL")
+		if strings.HasPrefix(key, "https:") || strings.HasPrefix(key, "http:") {
+			return nil, graph.ErrFeedSearchInvalidURL
 		}
-		return s.searchCached(key, func() ([]graph.FeedSearchResult, error) {
+		return s.searchCached(ctx, key, func() ([]graph.FeedSearchResult, error) {
 			return s.searchText(ctx, text)
 		})
 	}
@@ -80,43 +87,46 @@ func (s *feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) (
 	link.Host = strings.ToLower(link.Host)
 	link.Fragment = ""
 	link.RawFragment = ""
-	return s.searchCached(link.String(), func() ([]graph.FeedSearchResult, error) {
-		if link.Hostname() == "podcasts.apple.com" {
-			return s.lookupAppleFeed(ctx, link)
-		}
+	return s.searchCached(ctx, link.String(), func() ([]graph.FeedSearchResult, error) {
 		return s.discoverWebsiteFeed(ctx, link)
 	})
 }
 
-func (s *feedDirectorySearcher) searchCached(key string, search func() ([]graph.FeedSearchResult, error)) ([]graph.FeedSearchResult, error) {
-	if cached, ok := s.cachedResult(key); ok {
-		return cached, nil
+func (s *feedDirectorySearcher) searchCached(ctx context.Context, key string, search func() ([]graph.FeedSearchResult, error)) ([]graph.FeedSearchResult, error) {
+	s.mu.Lock()
+	if entry, ok := s.cache[key]; ok && s.now().Before(entry.expires) {
+		s.mu.Unlock()
+		return slices.Clone(entry.results), nil
 	}
+	if call := s.inFlight[key]; call != nil {
+		s.mu.Unlock()
+		select {
+		case <-call.done:
+			return slices.Clone(call.results), call.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	delete(s.cache, key)
+	call := &feedSearchCall{done: make(chan struct{})}
+	s.inFlight[key] = call
+	s.mu.Unlock()
+
 	results, err := search()
+	s.mu.Lock()
 	if err == nil {
-		s.cacheResult(key, results)
+		s.cacheResultLocked(key, results)
 	}
-	return results, err
+	// Closing done publishes the result to waiters. Every caller gets a copy.
+	call.results, call.err = results, err
+	delete(s.inFlight, key)
+	close(call.done)
+	s.mu.Unlock()
+	return slices.Clone(results), err
 }
 
-func (s *feedDirectorySearcher) cachedResult(key string) ([]graph.FeedSearchResult, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	entry, ok := s.cache[key]
-	if !ok {
-		return nil, false
-	}
-	if !s.now().Before(entry.expires) {
-		delete(s.cache, key)
-		return nil, false
-	}
-	return slices.Clone(entry.results), true
-}
-
-func (s *feedDirectorySearcher) cacheResult(key string, results []graph.FeedSearchResult) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, exists := s.cache[key]; !exists && len(s.cache) >= feedSearchCacheSize {
+func (s *feedDirectorySearcher) cacheResultLocked(key string, results []graph.FeedSearchResult) {
+	if len(s.cache) >= feedSearchCacheSize {
 		var oldestKey string
 		var oldest time.Time
 		for candidate, entry := range s.cache {
@@ -126,7 +136,7 @@ func (s *feedDirectorySearcher) cacheResult(key string, results []graph.FeedSear
 		}
 		delete(s.cache, oldestKey)
 	}
-	s.cache[key] = cachedFeedSearch{results: slices.Clone(results), expires: s.now().Add(feedSearchTTL)}
+	s.cache[key] = cachedFeedSearch{results: results, expires: s.now().Add(feedSearchTTL)}
 }
 
 func (s *feedDirectorySearcher) admitRequest() error {
@@ -170,31 +180,11 @@ func (s *feedDirectorySearcher) searchText(ctx context.Context, query string) ([
 	if extended, err := s.searchExtendedDirectory(ctx, query); err == nil {
 		results = append(results, extended...)
 	}
+	results = slices.DeleteFunc(results, func(result graph.FeedSearchResult) bool {
+		feed, err := url.Parse(result.FeedURL)
+		return err != nil || s.engine.CheckDocumentURL(feed) != nil
+	})
 	return results, nil
-}
-
-func (s *feedDirectorySearcher) lookupAppleFeed(ctx context.Context, link *url.URL) ([]graph.FeedSearchResult, error) {
-	id, ok := strings.CutPrefix(path.Base(link.Path), "id")
-	if !ok || id == "" || strings.Trim(id, "0123456789") != "" {
-		return nil, nil
-	}
-	if s.endpoint == "" {
-		return nil, errors.New("feed directory scraper is not registered")
-	}
-	query := url.Values{"id": {id}}
-	if country, _, _ := strings.Cut(strings.TrimPrefix(link.Path, "/"), "/"); len(country) == 2 {
-		query.Set("country", country)
-	}
-	results, err := s.readITunesResults(ctx, s.endpoint+"/lookup?"+query.Encode())
-	if err != nil {
-		return nil, err
-	}
-	for _, result := range results {
-		if feed, err := url.Parse(result.FeedURL); err == nil && s.engine.CheckDocumentURL(feed) == nil {
-			return []graph.FeedSearchResult{result}, nil
-		}
-	}
-	return nil, nil
 }
 
 func (s *feedDirectorySearcher) readITunesResults(ctx context.Context, rawURL string) ([]graph.FeedSearchResult, error) {
@@ -225,26 +215,55 @@ func (s *feedDirectorySearcher) discoverWebsiteFeed(ctx context.Context, link *u
 	if err != nil {
 		return nil, err
 	}
-	tokens := html.NewTokenizer(bytes.NewReader(data))
-	for {
-		switch tokens.Next() {
-		case html.ErrorToken:
-			return nil, nil
-		case html.StartTagToken, html.SelfClosingTagToken:
-			token := tokens.Token()
-			if token.DataAtom != atom.Link {
-				continue
-			}
-			href := rssAlternateLink(token.Attr)
-			if href == "" {
-				continue
-			}
-			feed, err := page.Parse(href)
-			if err == nil && s.engine.CheckDocumentURL(feed) == nil {
-				return []graph.FeedSearchResult{{Title: page.Hostname(), FeedURL: feed.String()}}, nil
-			}
+	document, err := html.Parse(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	base := documentBaseURL(document, page)
+	for node := range document.Descendants() {
+		if !isDocumentElement(node, atom.Link) {
+			continue
+		}
+		href := rssAlternateLink(node.Attr)
+		if href == "" {
+			continue
+		}
+		feed, err := base.Parse(href)
+		if err == nil && s.engine.CheckDocumentURL(feed) == nil {
+			return []graph.FeedSearchResult{{Title: page.Hostname(), FeedURL: feed.String()}}, nil
 		}
 	}
+	return nil, nil
+}
+
+func documentBaseURL(document *html.Node, page *url.URL) *url.URL {
+	for node := range document.Descendants() {
+		if !isDocumentElement(node, atom.Base) {
+			continue
+		}
+		for _, attr := range node.Attr {
+			if attr.Key != "href" {
+				continue
+			}
+			if base, err := page.Parse(strings.TrimSpace(attr.Val)); err == nil && base.Scheme != "data" && base.Scheme != "javascript" {
+				return base
+			}
+			return page
+		}
+	}
+	return page
+}
+
+func isDocumentElement(node *html.Node, tag atom.Atom) bool {
+	if node.Type != html.ElementNode || node.DataAtom != tag || node.Namespace != "" {
+		return false
+	}
+	for ancestor := range node.Ancestors() {
+		if ancestor.DataAtom == atom.Template && ancestor.Namespace == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func rssAlternateLink(attrs []html.Attribute) string {

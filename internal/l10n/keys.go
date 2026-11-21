@@ -7,7 +7,10 @@ type Key string
 
 const WorkflowCapabilityDisabled Key = "workflow.capability_disabled"
 
-const FeedSearchThrottled Key = "feed_search.throttled"
+const (
+	FeedSearchInvalidURL Key = "feed_search.invalid_url"
+	FeedSearchThrottled  Key = "feed_search.throttled"
+)
 
 // Notification inbox titles, rendered per request from the notification kind.
 const (
