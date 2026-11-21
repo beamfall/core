@@ -38,3 +38,33 @@ describe("fetchSectionItems Home scope", () => {
     }
   });
 });
+
+// A Source's declared seed (random order) and value (resume-progress and
+// availability bands) echo back on sourceItems; neither is sent when the
+// Source declares neither (CORE-0203).
+describe("fetchSectionItems Source seed and value", () => {
+  it("sends the declared seed and value", async () => {
+    await fetchSectionItems(
+      { ...section, source: { kind: "random", seed: "s1" } },
+      { libraryID: "lib-a", entityID: "" },
+    );
+    await fetchSectionItems(
+      { ...section, source: { kind: "resume-progress", value: "started" } },
+      { libraryID: "lib-a", entityID: "" },
+    );
+
+    const [[random], [banded]] = vi.mocked(fetchSourceItems).mock.calls;
+    expect(random).toMatchObject({ kind: "random", seed: "s1" });
+    expect(random).not.toHaveProperty("value");
+    expect(banded).toMatchObject({ kind: "resume-progress", value: "started" });
+    expect(banded).not.toHaveProperty("seed");
+  });
+
+  it("sends neither when the Source declares neither", async () => {
+    await fetchSectionItems(section, { libraryID: "lib-a", entityID: "" });
+
+    const [[vars]] = vi.mocked(fetchSourceItems).mock.calls;
+    expect(vars).not.toHaveProperty("seed");
+    expect(vars).not.toHaveProperty("value");
+  });
+});
