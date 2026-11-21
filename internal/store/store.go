@@ -3546,6 +3546,8 @@ func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata Me
 	return nil
 }
 
+const defaultSourceItemsLimit = 50
+
 // SourceItems returns visible Media rows for a bounded manifest Source.
 func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query SourceQuery) ([]SourceItem, error) {
 	switch query.Kind {
@@ -3575,7 +3577,7 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 	}
 	limit := query.Limit
 	if limit <= 0 {
-		limit = 50
+		limit = defaultSourceItemsLimit
 	}
 	if limit > 200 {
 		limit = 200

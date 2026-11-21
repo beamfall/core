@@ -7,6 +7,8 @@ type Key string
 
 const WorkflowCapabilityDisabled Key = "workflow.capability_disabled"
 
+const QueueMediaLocked Key = "queue.media_locked"
+
 // Notification inbox titles, rendered per request from the notification kind.
 const (
 	NotificationAccessRequestTitle    Key = "notification.access_request.title"

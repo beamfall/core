@@ -187,6 +187,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"cannot change the current device role":                     ErrorCodeForbidden,
 	"incorrect passphrase or recovery key":                      ErrorCodeForbidden,
 	"managed profiles require guardian or operator data delete": ErrorCodeForbidden,
+	"This item is locked.":                                      ErrorCodeForbidden,
 	"not a member of this group":                                ErrorCodeForbidden,
 	"not a member of this party":                                ErrorCodeForbidden,
 	"not the party host":                                        ErrorCodeForbidden,

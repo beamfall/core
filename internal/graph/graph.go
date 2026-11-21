@@ -1112,10 +1112,14 @@ func (h *Handler) SetUpdateChecker(checker UpdateChecker, serverVersion string) 
 // does not carry: each media item's class (for its placeholder), its
 // container, and the acting Profile's engagement.
 func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []store.SourceItem) error {
+	return h.annotateCardsForProfile(ctx, scope.ProfileID, scope.LibraryFilter(), items)
+}
+
+func (h *Handler) annotateCardsForProfile(ctx context.Context, profileID store.ProfileID, filter store.LibraryFilter, items []store.SourceItem) error {
 	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
 		return err
 	}
-	if err := h.annotateBylines(ctx, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateBylines(ctx, filter, items); err != nil {
 		return err
 	}
 	if err := h.annotateContainers(ctx, items); err != nil {
@@ -1125,7 +1129,7 @@ func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []s
 		return err
 	}
 	h.annotateScoreLabels(ctx, items)
-	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items, h.engagementContainers)
+	return h.store.AnnotateEngagement(ctx, profileID, filter, items, h.engagementContainers)
 }
 
 // cardBylineArchetype is the Entity archetype whose linked titles an audio
@@ -4498,14 +4502,27 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 		if err := v.Err(); err != nil {
 			return nil, err
 		}
-		if err := h.store.QueueAdd(ctx, scope.ProfileID, mediaID, position, scope.LibraryFilter()); err != nil {
+		committed, err := h.store.QueueAddForProfile(ctx, scope.ProfileID, scope.SessionID, mediaID, position, scope.LibraryFilter(), h.auth.CertificationConstraints)
+		switch {
+		case errors.Is(err, store.ErrQueueMediaNotFound):
 			return nil, clientError("unknown media")
-		}
-		items, err := h.queueItems(ctx, scope)
-		if err != nil {
+		case errors.Is(err, store.ErrQueueMediaLocked):
+			return nil, &l10n.Error{Key: l10n.QueueMediaLocked, Err: clientError("This item is locked.")}
+		case errors.Is(err, store.ErrSessionProfileMismatch):
+			return nil, errProfileMismatch
+		case errors.Is(err, store.ErrProfileDisabled):
+			return nil, clientError("profile is disabled")
+		case err != nil:
 			return nil, err
 		}
-		data["queueadd"] = items
+		// Card reads can fail after commit. Keep the committed order and basic
+		// fields from the transaction, even if enrichment partially succeeds.
+		items := slices.Clone(committed.Items)
+		if err := h.annotateCardsForProfile(ctx, scope.ProfileID, committed.Filter, items); err != nil {
+			slog.DebugContext(ctx, "queueAdd card details unavailable", "error", err)
+			items = committed.Items
+		}
+		data["queueadd"] = h.queueResponse(items, committed.Filter.Revealed)
 	}
 	if fields["queueremove"] {
 		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
@@ -4567,11 +4584,15 @@ func (h *Handler) queueItems(ctx context.Context, scope auth.Scope) ([]SourceIte
 	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
+	return h.queueResponse(items, scope.Revealed), nil
+}
+
+func (h *Handler) queueResponse(items []store.SourceItem, revealed bool) []SourceItem {
 	resp := make([]SourceItem, len(items))
 	for i, item := range items {
-		resp[i] = h.sourceItem(item, scope.Revealed)
+		resp[i] = h.sourceItem(item, revealed)
 	}
-	return resp, nil
+	return resp
 }
 
 // IdentifyCandidate is the wire shape for one scraper search candidate

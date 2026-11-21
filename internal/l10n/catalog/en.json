@@ -8,6 +8,7 @@
   "notification.extension_request.title": "More time requested",
   "notification.watch_party_invite.title": "Watch Party invitation",
   "notification.watch_party_request.title": "Watch Party seek request",
+  "queue.media_locked": "This item is locked.",
   "setup.lan_hint.finish_setup": "Open Beamfall by its IP address to finish setup without the setup token.",
   "setup.lan_hint.sign_in": "Open Beamfall by its IP address to sign in with the admin password.",
   "watch_party.participant_fallback": "Participant",
