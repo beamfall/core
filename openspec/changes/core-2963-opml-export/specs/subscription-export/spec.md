@@ -3,8 +3,8 @@
 ### Requirement: Manager Subscriptions can be downloaded as OPML
 
 The server SHALL allow a Manager session to download OPML 2.0 for eligible Subscriptions from the
-initial list of visible Libraries after excluding sealed Libraries. The export SHALL include feed URLs
-and public titles as RSS outlines. The Manager
+initial list of visible Libraries after excluding sealed Libraries. The export SHALL read every
+Subscription from the store and include feed URLs and public titles as RSS outlines. The Manager
 Subscriptions page SHALL offer the download and display localized messages for an expired session
 and other download failures.
 
@@ -13,17 +13,24 @@ and other download failures.
 - **WHEN** a Manager downloads the export and imports it into a fresh store
 - **THEN** the imported Subscriptions have the same public feed URLs and titles as the export source
 
-#### Scenario: Require positive evidence that a feed URL is shareable
+#### Scenario: Leave private feeds out by default
+
+- **WHEN** a Subscription has an authentication reference, userinfo in its URL, or a query parameter
+  whose name or value looks like a secret (for example `token`, `key`, `passkey`, or a long opaque
+  value)
+- **THEN** the server treats it as private and skips it by default
+- **AND** includes it only with `includePrivate=true`, using the URL as the outline text and omitting
+  the stored title
+
+#### Scenario: Never export credentials or the server's URL
 
 - **WHEN** a Manager requests either download mode
-- **THEN** the server only exports URLs explicitly approved as shareable in `BEAMFALL_SUBSCRIPTION_EXPORT_URLS`, a whitespace-separated list of exact, credential-free feed URLs
-- **AND** the server excludes URLs containing userinfo, a query string, or a fragment and URLs on the server's own host
-
-#### Scenario: Include a private feed by request
-
-- **WHEN** a Subscription uses header authentication and its URL is shareable
-- **THEN** the server skips it by default and includes it only with `includePrivate=true`
-- **AND** the private outline uses the URL as its text and omits the stored title, authentication reference, and credentials
+- **THEN** no outline contains an authentication reference, URL userinfo, a secret query parameter or
+  a fragment
+- **AND** the server skips feeds whose path holds an opaque secret such as a UUID, since the secret
+  cannot be removed
+- **AND** the server skips feeds on its own request host or `BEAMFALL_BASE_URL` host, comparing IP
+  literals as addresses so every spelling of one address matches
 
 #### Scenario: Exclude sealed Libraries
 

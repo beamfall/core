@@ -38216,7 +38216,7 @@
       {
         "method": "GET",
         "pattern": "/api/subscriptions/export.opml",
-        "note": "Download Subscriptions with approved shareable URLs in visible, unsealed Libraries as OPML 2.0. Use includePrivate=true to include authenticated feed URLs without their stored titles.",
+        "note": "Download every Subscription in visible, unsealed Libraries as OPML 2.0, without credentials or feeds on this server. Private feeds (an auth reference, URL userinfo or a secret query parameter) are left out unless includePrivate=true, and their outlines omit the stored title.",
         "authorization": "manager-session",
         "success": {
           "status": 200,

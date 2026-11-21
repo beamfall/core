@@ -109,7 +109,6 @@ type Server struct {
 	artworkImport       ArtworkImporter
 	artworkApply        artworkApplyStore
 	subscriptionExport  subscriptionExportStore
-	subscriptionURLs    map[string]struct{}
 	subscriptionSealed  func(store.LibraryID) bool
 	profilePictures     profilePictureStore
 	compat              *compatState
@@ -284,11 +283,6 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 		capabilities:    append([]string(nil), defaultCapabilities...),
 		baseURL:         baseURL,
 		knownProxies:    knownProxies,
-
-		subscriptionURLs: make(map[string]struct{}),
-	}
-	for _, feedURL := range strings.Fields(os.Getenv("BEAMFALL_SUBSCRIPTION_EXPORT_URLS")) {
-		s.subscriptionURLs[feedURL] = struct{}{}
 	}
 	for _, opt := range opts {
 		opt(s)

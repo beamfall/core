@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,25 +29,24 @@ func TestSubscriptionExportOPML(t *testing.T) {
 	const (
 		publicURL    = "https://feeds.example.test/public.xml"
 		untitledURL  = "https://feeds.example.test/untitled.xml"
+		queryURL     = "https://feeds.example.test/query.xml?format=xml&page=2"
+		slugURL      = "https://feeds.example.test/shows/The-Best-Cooking-Podcast-of-2024-and-Beyond/feed.xml"
+		objectIDURL  = "https://feeds.example.test/public/shows/5e7b777ba085cbe7192b0607"
+		fragmentURL  = "https://feeds.example.test/fragment.xml#section"
 		privateURL   = "https://feeds.example.test/private.xml"
 		privateRef   = "test-only-auth-reference"
-		privateTitle = "Private feed test-only-title-token"
+		privateTitle = "Private feed for test-only-subscriber"
+		userinfoURL  = "https://test-only-feed-user:test-only-feed-pass@feeds.example.test/basic.xml" //nolint:gosec // synthetic feed credential for the exclusion test
+		tokenURL     = "https://feeds.example.test/token.xml?format=xml&token=test-only-feed-token"   //nolint:gosec // synthetic feed URL for the credential exclusion test
+		passkeyURL   = "https://feeds.example.test/passkey.xml?PassKey=test-only-feed-passkey"        //nolint:gosec // synthetic feed URL for the credential exclusion test
+		opaqueURL    = "https://feeds.example.test/opaque.xml?u=Zt9q4XWm%2BbR7k/Lp3%3D&lang=en;session=test-only-feed-session"
+		uuidPathURL  = "https://feeds.example.test/private/0f8fad5b-d9cb-469f-a165-70867728950e.rss"
+		opaquePath   = "https://feeds.example.test/episodes/aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY.xml"
 		hiddenURL    = "https://feeds.example.test/hidden.xml"
-		passkeyURL   = "https://feeds.example.test/passkey.xml?passkey=test-only-feed-passkey" //nolint:gosec // synthetic feed URL for the credential exclusion test
-		queryURL     = "https://feeds.example.test/query.xml?format=xml"
-		emptyQuery   = "https://feeds.example.test/empty-query.xml?"
-		fragmentURL  = "https://feeds.example.test/fragment.xml#section"
-		userinfoURL  = "https://test-only-feed-user@feeds.example.test/basic.xml"
 		serverURL    = "https://canonical.example.test:8443/internal.xml"
 		requestURL   = "https://SERVER.example.test./local.xml"
-		pathTokenURL = "https://feeds.example.test/weekly-digest/feed.xml" //nolint:gosec // synthetic path credential for the exclusion test
-		privatePath  = "https://feeds.example.test/early-access/feed.xml"
 	)
 	t.Setenv("BEAMFALL_BASE_URL", "https://canonical.example.test")
-	t.Setenv("BEAMFALL_SUBSCRIPTION_EXPORT_URLS", strings.Join([]string{
-		publicURL, untitledURL, privateURL, hiddenURL, passkeyURL, queryURL, emptyQuery,
-		fragmentURL, userinfoURL, serverURL, requestURL,
-	}, "\n"))
 	srv, st := newTestServerWithStore(t)
 	ctx := t.Context()
 	now := time.Unix(0, 0).UTC()
@@ -61,19 +61,20 @@ func TestSubscriptionExportOPML(t *testing.T) {
 	for _, sub := range []store.Subscription{
 		{LibraryID: "library-local", FeedURL: publicURL, Title: `Daily & <News> "Live"`},
 		{LibraryID: second.ID, FeedURL: untitledURL},
+		{LibraryID: "library-local", FeedURL: queryURL, Title: "Query"},
+		{LibraryID: "library-local", FeedURL: slugURL, Title: "Slug"},
+		{LibraryID: "library-local", FeedURL: objectIDURL, Title: "Object ID"},
+		{LibraryID: "library-local", FeedURL: fragmentURL, Title: "Fragment"},
 		{LibraryID: second.ID, FeedURL: privateURL, Title: privateTitle, AuthRef: privateRef},
+		{LibraryID: "library-local", FeedURL: userinfoURL, Title: privateTitle},
+		{LibraryID: "library-local", FeedURL: tokenURL, Title: privateTitle},
+		{LibraryID: "library-local", FeedURL: passkeyURL, Title: privateTitle},
+		{LibraryID: "library-local", FeedURL: opaqueURL, Title: privateTitle},
+		{LibraryID: "library-local", FeedURL: uuidPathURL, Title: privateTitle},
+		{LibraryID: second.ID, FeedURL: opaquePath, Title: privateTitle, AuthRef: privateRef},
 		{LibraryID: "library-archive", FeedURL: hiddenURL, Title: "Restricted feed"},
-		{LibraryID: "library-local", FeedURL: "https://feeds.example.test/token.xml?token=test-only-feed-token"},
-		{LibraryID: "library-local", FeedURL: passkeyURL},
-		{LibraryID: second.ID, FeedURL: passkeyURL, AuthRef: privateRef},
-		{LibraryID: "library-local", FeedURL: queryURL},
-		{LibraryID: "library-local", FeedURL: emptyQuery},
-		{LibraryID: "library-local", FeedURL: fragmentURL},
-		{LibraryID: "library-local", FeedURL: userinfoURL},
-		{LibraryID: "library-local", FeedURL: serverURL},
-		{LibraryID: "library-local", FeedURL: requestURL},
-		{LibraryID: "library-local", FeedURL: pathTokenURL},
-		{LibraryID: second.ID, FeedURL: privatePath, AuthRef: privateRef},
+		{LibraryID: "library-local", FeedURL: serverURL, Title: "Own server"},
+		{LibraryID: second.ID, FeedURL: requestURL, Title: "Request host", AuthRef: privateRef},
 	} {
 		sub.Root = "/test-only/download/root"
 		if _, err := st.AddSubscription(ctx, sub, now); err != nil {
@@ -94,9 +95,9 @@ func TestSubscriptionExportOPML(t *testing.T) {
 	private := downloadSubscriptionOPML(t, srv, "?includePrivate=true")
 	for _, download := range []*httptest.ResponseRecorder{public, private} {
 		for _, forbidden := range []string{
-			"AuthRef", privateRef, privateTitle, hiddenURL, "test-only-feed-", "passkey", "query.xml", "fragment.xml", "<!--",
-			"canonical.example.test", "server.example.test", "test-only/download/root", "dev-manager-secret",
-			"weekly-digest", "early-access",
+			"AuthRef", privateRef, privateTitle, hiddenURL, "test-only-feed-", "passkey=", "token=", "Zt9q4XWm", "session=",
+			"@", "#section", "<!--", "0f8fad5b", "aB3dE5fG7h", "canonical.example.test", "server.example.test",
+			"test-only/download/root", "dev-manager-secret",
 		} {
 			if strings.Contains(strings.ToLower(download.Body.String()), strings.ToLower(forbidden)) {
 				t.Fatalf("download contains %q", forbidden)
@@ -104,36 +105,87 @@ func TestSubscriptionExportOPML(t *testing.T) {
 		}
 	}
 
+	wantPublic := map[string]string{
+		publicURL:   `Daily & <News> "Live"`,
+		untitledURL: "",
+		queryURL:    "Query",
+		slugURL:     "Slug",
+		objectIDURL: "Object ID",
+		"https://feeds.example.test/fragment.xml": "Fragment",
+	}
+	assertSubscriptionOutlines(t, public.Body.Bytes(), wantPublic, nil)
+	wantPrivate := []string{
+		privateURL,
+		"https://feeds.example.test/basic.xml",
+		"https://feeds.example.test/token.xml?format=xml",
+		"https://feeds.example.test/passkey.xml",
+		"https://feeds.example.test/opaque.xml",
+	}
+	assertSubscriptionOutlines(t, private.Body.Bytes(), wantPublic, wantPrivate)
+
+	imported := importSubscriptionOPML(t, public.Body.Bytes())
+	if !maps.Equal(imported, wantPublic) {
+		t.Fatalf("round-trip Subscriptions = %#v, want %#v", imported, wantPublic)
+	}
+}
+
+// assertSubscriptionOutlines checks an export holds exactly the public
+// URL-to-title outlines plus private outlines that use the URL as their text.
+func assertSubscriptionOutlines(t *testing.T, body []byte, public map[string]string, private []string) {
+	t.Helper()
 	var document struct {
 		XMLName  xml.Name              `xml:"opml"`
 		Version  string                `xml:"version,attr"`
 		Outlines []subscriptionOutline `xml:"body>outline"`
 	}
-	if err := xml.Unmarshal(public.Body.Bytes(), &document); err != nil {
+	if err := xml.Unmarshal(body, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.Version != "2.0" || len(document.Outlines) != 2 {
-		t.Fatalf("expected two OPML 2.0 outlines, got %#v", document)
+	if document.Version != "2.0" || len(document.Outlines) != len(public)+len(private) {
+		t.Fatalf("expected %d OPML 2.0 outlines, got %#v", len(public)+len(private), document)
 	}
 	for _, outline := range document.Outlines {
-		if outline.Type != "rss" || outline.XMLURL == privateURL {
-			t.Fatalf("unexpected public outline: %#v", outline)
+		title, isPublic := public[outline.XMLURL]
+		switch {
+		case outline.Type != "rss":
+			t.Fatalf("outline type = %q", outline.Type)
+		case isPublic && (outline.Text != title || outline.Title != title):
+			t.Fatalf("public outline %#v, want title %q", outline, title)
+		case !isPublic && (!slices.Contains(private, outline.XMLURL) || outline.Text != outline.XMLURL || outline.Title != ""):
+			t.Fatalf("unexpected private outline %#v", outline)
 		}
 	}
-	document.Outlines = nil
-	if err := xml.Unmarshal(private.Body.Bytes(), &document); err != nil {
+}
+
+func TestSubscriptionExportExcludesOwnHostIPLiterals(t *testing.T) {
+	const otherURL = "http://[2001:db8::3]/other.xml"
+	srv := newTestServer(t)
+	baseURL, err := url.Parse("https://[2001:db8:0:0:0:0:0:1]:8443")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(document.Outlines) != 3 || !slices.ContainsFunc(document.Outlines, func(outline subscriptionOutline) bool {
-		return outline.Type == "rss" && outline.XMLURL == privateURL && outline.Text == privateURL && outline.Title == ""
-	}) {
-		t.Fatalf("expected the private URL as the third feed without its stored title, got %#v", document.Outlines)
+	srv.baseURL = baseURL
+	srv.subscriptionExport = subscriptionLimitStore{"first": {
+		// The compressed spelling of the expanded base URL address.
+		{FeedURL: "http://[2001:db8::1]/base.xml", Title: "Base"},
+		// The expanded spelling of the compressed request host address.
+		{FeedURL: "https://[2001:0db8:0000:0000:0000:0000:0000:0002]/request.xml", Title: "Request"},
+		{FeedURL: "http://[::ffff:192.0.2.10]/mapped.xml", Title: "Mapped"},
+		{FeedURL: otherURL, Title: "Other"},
+	}}
+	for _, requestHost := range []string{"[2001:db8::2]:8080", "[2001:0db8:0:0:0:0:0:2]"} {
+		body, err := srv.subscriptionOPML(t.Context(), store.LibraryFilter{}, true, requestHost)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertSubscriptionOutlines(t, body, map[string]string{otherURL: "Other", "http://[::ffff:192.0.2.10]/mapped.xml": "Mapped"}, nil)
 	}
-
-	imported := importSubscriptionOPML(t, public.Body.Bytes())
-	want := map[string]string{publicURL: `Daily & <News> "Live"`, untitledURL: ""}
-	if !maps.Equal(imported, want) {
-		t.Fatalf("round-trip Subscriptions = %#v, want %#v", imported, want)
+	body, err := srv.subscriptionOPML(t.Context(), store.LibraryFilter{}, true, "192.0.2.10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(body, []byte("mapped.xml")) {
+		t.Fatalf("export included the IPv4-mapped spelling of the request host: %s", body)
 	}
 }
 
@@ -175,7 +227,6 @@ func (s subscriptionTestSecrets) SetSecret(ref, value string) error {
 func TestSubscriptionExportRespectsRuntimeSeal(t *testing.T) {
 	const libraryID = "library-local"
 	const feedURL = "https://feeds.example.test/sealable.xml"
-	t.Setenv("BEAMFALL_SUBSCRIPTION_EXPORT_URLS", feedURL)
 	srv, st := newTestServerWithStore(t)
 	_, err := st.AddSubscription(t.Context(), store.Subscription{
 		LibraryID: libraryID, FeedURL: feedURL, Root: t.TempDir(),
@@ -210,7 +261,6 @@ func TestSubscriptionExportExcludesLibraryRestoredAfterEnumeration(t *testing.T)
 	const visibleURL = "https://feeds.example.test/visible.xml"
 	const restoredURL = "https://feeds.example.test/restored.xml"
 	const restoredTitle = "Sealed Library feed"
-	t.Setenv("BEAMFALL_SUBSCRIPTION_EXPORT_URLS", visibleURL+" "+restoredURL)
 	srv, st := newTestServerWithStore(t)
 	ctx := t.Context()
 	restored, err := st.CreateLibrary(ctx, "Restored Library", false, "", "profile-default")
@@ -271,29 +321,38 @@ func (s subscriptionLimitStore) Subscriptions(_ context.Context, id store.Librar
 
 func TestSubscriptionExportOutlineLimit(t *testing.T) {
 	const limit = 10_000
-	subs := make([]store.Subscription, limit+1)
-	approved := make(map[string]struct{}, len(subs))
-	for i := range limit + 1 {
-		feedURL := fmt.Sprintf("https://feeds.example.test/feed-%d.xml", i)
-		subs[i] = store.Subscription{FeedURL: feedURL, Title: fmt.Sprintf("Feed %d", i)}
-		approved[feedURL] = struct{}{}
+	srv, st := newTestServerWithStore(t)
+	ctx := t.Context()
+	now := time.Unix(0, 0).UTC()
+	addFeed := func(i int) store.Subscription {
+		t.Helper()
+		sub, err := st.AddSubscription(ctx, store.Subscription{
+			LibraryID: "library-local", Root: "/test-only/download/root",
+			FeedURL: fmt.Sprintf("https://feeds.example.test/feed-%d.xml", i), Title: fmt.Sprintf("Feed %d", i),
+		}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sub
 	}
-	st := subscriptionLimitStore{"first": subs[:limit]}
-	srv := newTestServer(t)
-	srv.subscriptionExport = st
-	srv.subscriptionURLs = approved
+	subs := make([]store.Subscription, limit)
+	for i := range limit {
+		subs[i] = addFeed(i)
+	}
 	body := downloadSubscriptionOPML(t, srv, "").Body.Bytes()
+	// Check the limit before the slow import: the test client's provisional
+	// compatibility record expires in wall-clock time.
+	addFeed(limit)
+	assertSubscriptionExportLimitError(t, srv)
 	imported := importSubscriptionOPML(t, body)
 	if len(imported) != limit {
 		t.Fatalf("pinned importer stored %d Subscriptions, want %d", len(imported), limit)
 	}
-	for _, sub := range subs[:limit] {
+	for _, sub := range subs {
 		if got := imported[sub.FeedURL]; got != sub.Title {
 			t.Fatalf("round-trip title for %s = %q, want %q", sub.FeedURL, got, sub.Title)
 		}
 	}
-	st["second"] = subs[limit:]
-	assertSubscriptionExportLimitError(t, srv)
 }
 
 func TestSubscriptionExportByteLimit(t *testing.T) {
@@ -322,7 +381,6 @@ func TestSubscriptionExportByteLimit(t *testing.T) {
 	}
 	srv := newTestServer(t)
 	srv.subscriptionExport = st
-	srv.subscriptionURLs = map[string]struct{}{smallURL: {}, feedURL: {}, feedURL + "x": {}}
 	body := downloadSubscriptionOPML(t, srv, "").Body.Bytes()
 	if len(body) != limit {
 		t.Fatalf("export size = %d bytes, want %d", len(body), limit)
@@ -340,7 +398,7 @@ func assertSubscriptionExportLimitError(t *testing.T, srv *Server) {
 	rec := requestSubscriptionOPML(srv, "")
 	if rec.Code != http.StatusInternalServerError || rec.Header().Get("Content-Disposition") != "" ||
 		!strings.Contains(rec.Body.String(), "could not export subscriptions") || strings.Contains(rec.Body.String(), "<opml") {
-		t.Fatalf("expected an error without an attachment, got status %d and %d body bytes", rec.Code, rec.Body.Len())
+		t.Fatalf("expected an error without an attachment, got status %d: %.200s", rec.Code, rec.Body.String())
 	}
 }
 
