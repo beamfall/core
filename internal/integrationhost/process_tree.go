@@ -40,25 +40,34 @@ func superviseWorker(ctx context.Context, cmd *exec.Cmd, onStart func()) error {
 		onStart()
 	}
 
-	waitDone := make(chan error, 1)
-	go func() { waitDone <- cmd.Wait() }()
+	leader := &leaderWait{cmd: cmd}
+	exited := make(chan struct{})
+	go func() { leader.awaitExit(); close(exited) }()
 
 	var result error
 	canceled := false
 	select {
-	case result = <-waitDone:
+	case <-exited:
 	case <-ctx.Done():
 		canceled = true
 		result = context.Cause(ctx)
 	}
 	retireErr := tree.retire(WorkerTerminationGrace, workerKillDeadline)
+	leaderExited := true
 	if canceled {
 		select {
-		case <-waitDone:
+		case <-exited:
 		case <-time.After(workerKillDeadline):
 			if retireErr == nil {
 				retireErr = fmt.Errorf("direct worker was not reaped after tree retirement")
 			}
+			leaderExited = false
+			go func() { <-exited; _ = leader.reap() }()
+		}
+	}
+	if leaderExited {
+		if waitErr := leader.reap(); !canceled {
+			result = waitErr
 		}
 	}
 	if retireErr != nil {
@@ -71,4 +80,30 @@ func superviseWorker(ctx context.Context, cmd *exec.Cmd, onStart func()) error {
 		result = copyErr
 	}
 	return result
+}
+
+// leaderWait reaps the direct worker only after retire is done where the
+// platform can observe its exit without reaping it, so its process ID, which
+// is the group ID, stays reserved while retire signals the group (CORE-2750).
+// Elsewhere it reaps at exit, as before.
+type leaderWait struct {
+	cmd    *exec.Cmd
+	reaped bool
+	err    error
+}
+
+// awaitExit returns once the leader has exited, reaped or not.
+func (w *leaderWait) awaitExit() {
+	if observeLeaderExit(w.cmd.Process.Pid) != nil {
+		_ = w.reap()
+	}
+}
+
+// reap reaps the leader once and returns its wait result. It must follow
+// awaitExit.
+func (w *leaderWait) reap() error {
+	if !w.reaped {
+		w.err, w.reaped = w.cmd.Wait(), true
+	}
+	return w.err
 }

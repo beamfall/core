@@ -1,0 +1,105 @@
+//go:build linux
+
+package integrationhost
+
+import (
+	"bytes"
+	"errors"
+	"os"
+	"strconv"
+	"syscall"
+	"time"
+
+	"golang.org/x/sys/unix"
+)
+
+// observeLeaderExit blocks until process pid has exited and leaves it
+// unreaped. The zombie keeps the worker's process group ID reserved while
+// retire signals the group, so no signal can reach a group that reused the ID
+// (CORE-2750).
+func observeLeaderExit(pid int) error {
+	var info unix.Siginfo
+	for {
+		err := unix.Waitid(unix.P_PID, pid, &info, unix.WEXITED|unix.WNOWAIT, nil)
+		if !errors.Is(err, syscall.EINTR) {
+			return err
+		}
+	}
+}
+
+const (
+	// processGroupProbeInterval spaces the listings that confirm a group has
+	// no live member.
+	processGroupProbeInterval = 2 * time.Millisecond
+	// processGroupQuietProbes is how many listings in a row must find no live
+	// member before a group counts as empty.
+	processGroupQuietProbes = 3
+)
+
+// processGroupHasLiveMember reports whether group pgid has a member that is
+// not a zombie. A zombie member is the reserved leader or a reaped-soon child,
+// not work still running, so it does not hold up retire. Several listings in
+// a row must agree, since /proc is read one directory entry at a time and a
+// parent exiting during a listing can hide a child it forked meanwhile. A
+// failed listing counts as a live member.
+func processGroupHasLiveMember(pgid int) bool {
+	if errors.Is(syscall.Kill(groupTarget(pgid), 0), syscall.ESRCH) {
+		return false
+	}
+	for i := range processGroupQuietProbes {
+		if groupListsLiveMember(pgid) {
+			return true
+		}
+		if i+1 < processGroupQuietProbes {
+			time.Sleep(processGroupProbeInterval)
+		}
+	}
+	return false
+}
+
+func groupListsLiveMember(pgid int) bool {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return true
+	}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid <= 0 {
+			continue
+		}
+		state, group, ok := procStateAndGroup(pid)
+		if ok && group == pgid && state != 'Z' && state != 'X' {
+			return true
+		}
+	}
+	return false
+}
+
+// procStateAndGroup reads the state and process group of pid from
+// /proc/<pid>/stat. ok is false once the process has gone.
+func procStateAndGroup(pid int) (state byte, pgid int, ok bool) {
+	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return 0, 0, false
+	}
+	return parseProcStat(stat)
+}
+
+// parseProcStat takes the state and pgrp fields from a /proc/<pid>/stat line,
+// "pid (comm) state ppid pgrp ...". comm may itself hold ") ", so the fields
+// start after the last ')'.
+func parseProcStat(stat []byte) (state byte, pgid int, ok bool) {
+	end := bytes.LastIndexByte(stat, ')')
+	if end < 0 {
+		return 0, 0, false
+	}
+	fields := bytes.Fields(stat[end+1:])
+	if len(fields) < 3 || len(fields[0]) != 1 {
+		return 0, 0, false
+	}
+	pgid, err := strconv.Atoi(string(fields[2]))
+	if err != nil {
+		return 0, 0, false
+	}
+	return fields[0][0], pgid, true
+}

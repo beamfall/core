@@ -1,0 +1,10 @@
+//go:build !linux
+
+package integrationhost
+
+import "errors"
+
+// observeLeaderExit is unsupported here: macOS pins the group with a zombie
+// child instead, and Windows retires a job object rather than a group, so the
+// leader is reaped as soon as it exits.
+func observeLeaderExit(int) error { return errors.ErrUnsupported }
