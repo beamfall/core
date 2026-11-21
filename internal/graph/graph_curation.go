@@ -227,7 +227,14 @@ func (h *Handler) upsertEntityRelation(ctx context.Context, scope auth.Scope, re
 	if err != nil {
 		return RelationWriteResult{}, err
 	}
-	if err := h.store.UpsertEntityRelation(ctx, store.EntityRelation{
+	position, err := optionalInt(req, "position")
+	if err != nil {
+		return RelationWriteResult{}, err
+	}
+	if sortOrder != nil && position != nil {
+		return RelationWriteResult{}, clientError("give sortOrder or position, not both")
+	}
+	row := store.EntityRelation{
 		FromEntityID: fromEntityID,
 		Name:         relation,
 		ToEntityID:   toEntityID,
@@ -236,7 +243,15 @@ func (h *Handler) upsertEntityRelation(ctx context.Context, scope auth.Scope, re
 		// The mutation carries no attributes, so re-ordering or re-adding a
 		// row must not erase the ones ingest wrote (CORE-2913).
 		KeepAttributes: true,
-	}); err != nil {
+	}
+	if position != nil {
+		// Place among the rows this caller can see and renumber the whole
+		// relation in one transaction (CORE-2913).
+		err = h.store.PlaceEntityRelation(ctx, row, *position, scope.LibraryFilter())
+	} else {
+		err = h.store.UpsertEntityRelation(ctx, row)
+	}
+	if err != nil {
 		return RelationWriteResult{}, clientError(err.Error())
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityEntityRelation, "entity", string(fromEntityID), source.LibraryID); err != nil {

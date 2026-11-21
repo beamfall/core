@@ -64,34 +64,55 @@ and sections for the other subject type SHALL NOT be rendered.
 ### Requirement: Group items are ordered and appended
 
 The group view SHALL read every relation row of the group and move each row only among the rows
-of its own relation. A move or an add SHALL renumber that relation's rows 0..n-1 where they differ.
-"Add an item" SHALL append the picked item after the last one, using an existing link type of the
-group or a typed one, and SHALL NOT rewrite an item already in that relation.
+of its own relation. A move or an add SHALL be one `upsertEntityRelation` call with `position`, the
+row's place among that relation's rows; the page SHALL NOT renumber rows itself. "Add an item" SHALL
+place the picked item after the last one, using an existing link type of the group or a typed one,
+and SHALL NOT write an item already in that relation.
 
 #### Scenario: Manager adds an item to a group
 
-- **WHEN** the group's relation holds items numbered 0 and 1 and the manager adds item C
-- **THEN** the page upserts the relation to C with sort order 2 and rewrites nothing else
-
-#### Scenario: Unnumbered items
-
-- **WHEN** a relation holds an item numbered 0 and an unnumbered one, and the manager adds item C
-- **THEN** the unnumbered item is written as 1 and C as 2
+- **WHEN** the group's relation shows two items and the manager adds item C
+- **THEN** the page calls `upsertEntityRelation` once for C with position 2
 
 #### Scenario: Item already in the group
 
 - **WHEN** the manager picks an item already in the chosen relation
 - **THEN** the page says so and writes nothing
 
+### Requirement: Placing a relation row renumbers atomically
+
+`upsertEntityRelation` SHALL accept an optional `position`, refused together with `sortOrder`. With
+`position`, the server SHALL, in one transaction, put the row at that place among the rows the caller
+can see (after the last visible row when the position is past the end), number the relation's rows
+0..n-1, and keep the relative order of rows the caller cannot see. Only rows that exist are
+rewritten.
+
+#### Scenario: Unnumbered and hidden rows
+
+- **WHEN** a relation holds a hidden row, a numbered row and two unnumbered rows, and an unnumbered
+  row is placed at position 0
+- **THEN** the hidden row stays first, the placed row follows it, and every row is numbered 0..3
+
+#### Scenario: Both orderings given
+
+- **WHEN** a call gives both `sortOrder` and `position`
+- **THEN** it is refused as invalid and nothing is written
+
 ### Requirement: Group changes save one at a time
 
 The group view SHALL save one change at a time, with its controls disabled meanwhile, and SHALL
-reload after every save, including one that failed partway.
+reload after every save, including a failed one. If that reload fails, the view SHALL show that the
+group could not be loaded instead of rows that can still be edited.
 
-#### Scenario: A move fails partway
+#### Scenario: A move fails
 
-- **WHEN** the first of two renumbering writes succeeds and the second fails
+- **WHEN** the placement write fails
 - **THEN** the page says the change was not saved and shows the order the server now holds
+
+#### Scenario: The reload fails
+
+- **WHEN** the reload after a change fails
+- **THEN** the page shows that the group could not be loaded and no move controls remain
 
 ### Requirement: Re-ordering keeps relation attributes
 

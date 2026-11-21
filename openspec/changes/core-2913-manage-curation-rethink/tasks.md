@@ -9,5 +9,5 @@
 - [x] Update CurationPage tests; run biome, tsc, vitest and the strings tests.
 - [x] Screenshots from a local dev server.
 - [x] Keep relation attributes on `upsertEntityRelation`; read group relations in pages.
-- [x] Renumber within a relation on move and add; one save at a time; reload after failures.
+- [x] Server-side `position` placement: one atomic write per move or add; one save at a time; a failed reload shows the unavailable state.
 - [x] Search picker pages with "More results"; route results by the wire `kind`.

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -79,5 +80,81 @@ func TestRelatedEntitiesUsesDeclaredOrdinalWithoutRelationSortOrder(t *testing.T
 				}
 			}
 		})
+	}
+}
+
+// TestPlaceEntityRelationRenumbersAroundHiddenRows covers the Manage group
+// re-order (CORE-2913): a placement counts only the rows the caller sees,
+// renumbers the whole relation densely in one write, keeps the hidden rows'
+// order and every existing row's attributes, and appends a new row past the
+// last visible one.
+func TestPlaceEntityRelationRenumbersAroundHiddenRows(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	other, err := st.CreateLibrary(ctx, "Other", false, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []Entity{
+		{ID: "group", LibraryID: "library-local", Kind: "container", Title: "Group"},
+		{ID: "hidden", LibraryID: other.ID, Kind: "container", Title: "Hidden"},
+		{ID: "v1", LibraryID: "library-local", Kind: "container", Title: "V1"},
+		{ID: "v2", LibraryID: "library-local", Kind: "container", Title: "V2"},
+		{ID: "v3", LibraryID: "library-local", Kind: "container", Title: "V3"},
+		{ID: "new", LibraryID: "library-local", Kind: "container", Title: "New"},
+	} {
+		if err := st.UpsertEntity(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	zero, one := 0, 1
+	for _, rel := range []EntityRelation{
+		{FromEntityID: "group", Name: "contains", ToEntityID: "hidden", SortOrder: &zero},
+		{FromEntityID: "group", Name: "contains", ToEntityID: "v1", SortOrder: &one, Attributes: map[string]string{"role": "lead"}},
+		{FromEntityID: "group", Name: "contains", ToEntityID: "v2"},
+		{FromEntityID: "group", Name: "contains", ToEntityID: "v3"},
+	} {
+		if err := st.UpsertEntityRelation(ctx, rel); err != nil {
+			t.Fatal(err)
+		}
+	}
+	local := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+	order := func() ([]string, map[string]EntityRelationRow) {
+		t.Helper()
+		rows, err := st.EntityRelationRows(ctx, "group", "contains", LibraryFilter{AllLibraries: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids, byID := []string{}, map[string]EntityRelationRow{}
+		for i, row := range rows {
+			if row.SortOrder == nil || *row.SortOrder != i {
+				t.Fatalf("row %d %s sortOrder = %v, want %d", i, row.ToEntity.ID, row.SortOrder, i)
+			}
+			ids = append(ids, string(row.ToEntity.ID))
+			byID[string(row.ToEntity.ID)] = row
+		}
+		return ids, byID
+	}
+
+	if err := st.PlaceEntityRelation(ctx, EntityRelation{FromEntityID: "group", Name: "contains", ToEntityID: "v3"}, 0, local); err != nil {
+		t.Fatal(err)
+	}
+	ids, byID := order()
+	if got, want := strings.Join(ids, ","), "hidden,v3,v1,v2"; got != want {
+		t.Fatalf("after move order = %s, want %s", got, want)
+	}
+	if byID["v1"].Attributes["role"] != "lead" {
+		t.Fatalf("v1 attributes = %v, want role=lead kept", byID["v1"].Attributes)
+	}
+
+	if err := st.PlaceEntityRelation(ctx, EntityRelation{FromEntityID: "group", Name: "contains", ToEntityID: "new"}, 99, local); err != nil {
+		t.Fatal(err)
+	}
+	if ids, _ := order(); strings.Join(ids, ",") != "hidden,v3,v1,v2,new" {
+		t.Fatalf("after append order = %v", ids)
+	}
+
+	if err := st.PlaceEntityRelation(ctx, EntityRelation{FromEntityID: "group", Name: "contains", ToEntityID: "v1"}, -1, local); err == nil {
+		t.Fatal("negative position accepted")
 	}
 }

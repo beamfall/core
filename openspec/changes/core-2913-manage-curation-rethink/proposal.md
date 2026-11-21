@@ -33,11 +33,15 @@ rows that point *at* the open item. A link made on this page never shows up unde
 - `upsertEntityRelation` keeps an existing row's attributes. The mutation has no attributes
   argument, so re-ordering a row the scanner wrote used to erase its attributes. The store upsert
   gains a `KeepAttributes` flag that the mutation sets; other writers are unchanged.
+- `upsertEntityRelation` gains an optional `position` argument. The server places the row at that
+  place among the rows the caller can see and renumbers the relation in one transaction, keeping
+  hidden rows' order. The page makes one write per move or add instead of renumbering rows itself,
+  so a failure cannot leave a half-applied order. The argument is optional, so no wire golden moves.
 - `entityRelations` is read in pages (it already takes `limit`/`offset`), so ordering sees every row
   of a large group.
 
 ## Non-goals
 
-- Schema changes: every field and argument the page needs already exists.
+- New fields or types: the one addition is the optional `position` argument above.
 - Unlinking an extra, edition or group item: there is no mutation for it yet.
 - Changing the Item metadata, Entities, Unmatched or Tags pages.

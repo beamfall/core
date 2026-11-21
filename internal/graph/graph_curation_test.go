@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/beamfall/core/internal/artwork"
@@ -344,6 +345,54 @@ func TestUpsertEntityRelationKeepsAttributes(t *testing.T) {
 		if row.Attributes["role"] != want || row.SortOrder == nil || *row.SortOrder != 5 {
 			t.Fatalf("row %#v: attributes=%v sortOrder=%v, want role=%s sortOrder=5", row, row.Attributes, row.SortOrder, want)
 		}
+	}
+}
+
+// TestUpsertEntityRelationPositionPlacesAndRenumbers covers the position
+// argument (CORE-2913): it moves a row among the relation's rows in one write,
+// renumbers the rest and keeps their attributes, and refuses a request that
+// also gives sortOrder.
+func TestUpsertEntityRelationPositionPlacesAndRenumbers(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	handler := newTestHandlerWithStore(st)
+	for _, id := range []store.EntityID{"entity-group", "entity-a", "entity-b", "entity-c"} {
+		if err := st.UpsertEntity(ctx, store.Entity{ID: id, LibraryID: "library-local", Kind: "container", Title: string(id)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, rel := range []store.EntityRelation{
+		{FromEntityID: "entity-group", Name: "contains", ToEntityID: "entity-a", Attributes: map[string]string{"role": "lead"}},
+		{FromEntityID: "entity-group", Name: "contains", ToEntityID: "entity-b"},
+		{FromEntityID: "entity-group", Name: "contains", ToEntityID: "entity-c"},
+	} {
+		if err := st.UpsertEntityRelation(ctx, rel); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const mutation = `{"query":"mutation($fromEntityID:String!,$relation:String!,$toEntityID:String,$position:Int,$sortOrder:Int){ upsertEntityRelation(fromEntityID:$fromEntityID, relation:$relation, toEntityID:$toEntityID, position:$position, sortOrder:$sortOrder){ targetID } }","variables":{"fromEntityID":"entity-group","relation":"contains","toEntityID":"entity-c",`
+	if body := graphPost(t, handler, authorizeManager, mutation+`"position":0}}`); bytes.Contains(body, []byte(`"errors"`)) {
+		t.Fatalf("place = %s", body)
+	}
+	rows, err := st.EntityRelationRows(ctx, "entity-group", "contains", store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{}
+	for i, row := range rows {
+		if row.SortOrder == nil || *row.SortOrder != i {
+			t.Fatalf("row %d sortOrder = %v, want %d", i, row.SortOrder, i)
+		}
+		got = append(got, string(row.ToEntity.ID))
+	}
+	if strings.Join(got, ",") != "entity-c,entity-a,entity-b" {
+		t.Fatalf("order = %v", got)
+	}
+	if rows[1].Attributes["role"] != "lead" {
+		t.Fatalf("entity-a attributes = %v, want role=lead kept", rows[1].Attributes)
+	}
+	if body := graphPost(t, handler, authorizeManager, mutation+`"position":0,"sortOrder":1}}`); !bytes.Contains(body, []byte("not both")) {
+		t.Fatalf("position with sortOrder = %s, want refusal", body)
 	}
 }
 

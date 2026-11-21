@@ -229,26 +229,19 @@ describe("CurationPage", () => {
 
     expect(await screen.findByText("Part One")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Move down: Part One" }));
-    await waitFor(() => expect(upsertEntityRelation).toHaveBeenCalledTimes(2));
-    expect(upsertEntityRelation).toHaveBeenCalledWith({
-      fromEntityID: "entity-1",
-      relation: "contains",
-      toEntityID: null,
-      toMediaID: "media-b",
-      sortOrder: 0,
-    });
+    // One write: the server places the row and renumbers the relation.
+    await waitFor(() => expect(upsertEntityRelation).toHaveBeenCalledTimes(1));
     expect(upsertEntityRelation).toHaveBeenCalledWith({
       fromEntityID: "entity-1",
       relation: "contains",
       toEntityID: null,
       toMediaID: "media-a",
-      sortOrder: 1,
+      position: 1,
     });
-    // The whole relation is read, in pages, before it is renumbered.
     expect(fetchEntityRelations).toHaveBeenCalledWith("entity-1", null, { limit: 200, offset: 0 });
   });
 
-  it("numbers unranked items so a move takes effect", async () => {
+  it("moves an unranked item by its place in the list", async () => {
     const user = userEvent.setup();
     vi.mocked(fetchEntityRelations).mockResolvedValue([
       row("media-a", "Part One", null),
@@ -257,12 +250,9 @@ describe("CurationPage", () => {
     renderPage("/?open=entity-1&as=entity");
 
     await user.click(await screen.findByRole("button", { name: "Move down: Part One" }));
-    await waitFor(() => expect(upsertEntityRelation).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(upsertEntityRelation).toHaveBeenCalledTimes(1));
     expect(upsertEntityRelation).toHaveBeenCalledWith(
-      expect.objectContaining({ toMediaID: "media-b", sortOrder: 0 }),
-    );
-    expect(upsertEntityRelation).toHaveBeenCalledWith(
-      expect.objectContaining({ toMediaID: "media-a", sortOrder: 1 }),
+      expect.objectContaining({ toMediaID: "media-a", position: 1 }),
     );
   });
 
@@ -291,16 +281,26 @@ describe("CurationPage", () => {
     });
   });
 
-  it("reloads after a move fails partway", async () => {
+  it("reloads after a move fails", async () => {
     const user = userEvent.setup();
-    vi.mocked(upsertEntityRelation)
-      .mockResolvedValueOnce({ relation: "contains", sourceID: "entity-1", targetID: "media-b" })
-      .mockRejectedValueOnce(new Error("boom"));
+    vi.mocked(upsertEntityRelation).mockRejectedValueOnce(new Error("boom"));
     renderPage("/?open=entity-1&as=entity");
 
     await user.click(await screen.findByRole("button", { name: "Move down: Part One" }));
     expect(await screen.findByText("That change was not saved. Try again.")).toBeVisible();
     expect(fetchEntityRelations).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops editing when the reload after a change fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchEntityRelations)
+      .mockResolvedValueOnce([row("media-a", "Part One", 0), row("media-b", "Part Two", 1)])
+      .mockRejectedValueOnce(new Error("offline"));
+    renderPage("/?open=entity-1&as=entity");
+
+    await user.click(await screen.findByRole("button", { name: "Move down: Part One" }));
+    expect(await screen.findByText("Could not load it. Try again.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Move up: Part Two" })).toBeNull();
   });
 
   it("disables the controls while a change is saving", async () => {
@@ -339,9 +339,8 @@ describe("CurationPage", () => {
       relation: "contains",
       toEntityID: null,
       toMediaID: "media-c",
-      sortOrder: 2,
+      position: 2,
     });
-    // Already numbered 0 and 1, so nothing else is rewritten.
     expect(upsertEntityRelation).toHaveBeenCalledTimes(1);
   });
 
@@ -379,11 +378,11 @@ describe("CurationPage", () => {
     await user.click(await screen.findByRole("button", { name: "Add to group: Sub Group" }));
 
     expect(upsertEntityRelation).toHaveBeenCalledWith(
-      expect.objectContaining({ toEntityID: "entity-2", toMediaID: null, sortOrder: 2 }),
+      expect.objectContaining({ toEntityID: "entity-2", toMediaID: null, position: 2 }),
     );
   });
 
-  it("numbers unranked items before adding one after them", async () => {
+  it("adds after unranked items with one write", async () => {
     const user = userEvent.setup();
     vi.mocked(fetchEntityRelations).mockResolvedValue([
       row("media-a", "Part One", 0),
@@ -401,15 +400,10 @@ describe("CurationPage", () => {
     await search(user, "Add an item", "three");
     await user.click(await screen.findByRole("button", { name: "Add to group: Part Three" }));
 
-    await waitFor(() => expect(upsertEntityRelation).toHaveBeenCalledTimes(2));
-    expect(vi.mocked(upsertEntityRelation).mock.calls[0][0]).toMatchObject({
-      toMediaID: "media-b",
-      sortOrder: 1,
-    });
-    expect(vi.mocked(upsertEntityRelation).mock.calls[1][0]).toMatchObject({
-      toMediaID: "media-c",
-      sortOrder: 2,
-    });
+    await waitFor(() => expect(upsertEntityRelation).toHaveBeenCalledTimes(1));
+    expect(upsertEntityRelation).toHaveBeenCalledWith(
+      expect.objectContaining({ toMediaID: "media-c", position: 2 }),
+    );
   });
 
   it("loads more search results on request", async () => {

@@ -526,7 +526,7 @@ function targetID(row: EntityRelationDetail): string {
 }
 
 // entityRelations pages at most 200 rows and refuses offsets past 10,000; the
-// editor needs every row to number a relation, so it reads until a short page.
+// list reads until a short page.
 const RELATION_PAGE = 200;
 const RELATION_OFFSET_MAX = 10_000;
 
@@ -580,28 +580,21 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
   if (typeof detail === "string") return <LoadState state={detail} onClose={onClose} />;
 
   const rows = detail.rows;
-  const relationNames = [...new Set(rows.map((row) => row.relation))];
+  // Each row's place within its own relation, and each relation's size, in
+  // one pass over the loaded rows.
+  const relationSize = new Map<string, number>();
+  const positionOf = new Map<EntityRelationDetail, number>();
+  for (const row of rows) {
+    const n = relationSize.get(row.relation) ?? 0;
+    positionOf.set(row, n);
+    relationSize.set(row.relation, n + 1);
+  }
+  const relationNames = [...relationSize.keys()];
   const relation = newRelation.trim() || relationNames[0] || "";
-  const rowsOf = (name: string) => rows.filter((row) => row.relation === name);
 
-  // Writes the given rows' positions as 0..n-1, skipping rows already there.
-  // Renumbering the whole relation makes tied or unnumbered positions (which
-  // the server lists last) explicit, so a move or append always takes effect.
-  const writeOrder = async (ordered: EntityRelationDetail[]) => {
-    for (const [sortOrder, row] of ordered.entries()) {
-      if (row.sortOrder === sortOrder) continue;
-      await upsertEntityRelation({
-        fromEntityID: id,
-        relation: row.relation,
-        toEntityID: row.targetKind === "entity" ? targetID(row) : null,
-        toMediaID: row.targetKind === "media" ? targetID(row) : null,
-        sortOrder,
-      });
-    }
-  };
-
-  // One save at a time; always reload, so a write that failed partway shows
-  // the order the server actually holds.
+  // One save at a time. The server places the row and renumbers the whole
+  // relation in one write; the reload then shows what it holds. A reload that
+  // fails leaves nothing stale to edit: the view falls back to "unavailable".
   const save = async (write: () => Promise<void>) => {
     if (inFlight.current) return;
     inFlight.current = true;
@@ -615,7 +608,7 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
     try {
       await load();
     } catch {
-      setSaveError(t("curationSaveFailed"));
+      setDetail("failed");
     } finally {
       inFlight.current = false;
       setSaving(false);
@@ -625,30 +618,32 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
   // Moves a row one place within its own relation.
   const move = (row: EntityRelationDetail, dir: -1 | 1) =>
     save(async () => {
-      const ordered = rowsOf(row.relation);
-      const from = ordered.indexOf(row);
-      const to = from + dir;
-      if (from < 0 || to < 0 || to >= ordered.length) return;
-      [ordered[from], ordered[to]] = [ordered[to], ordered[from]];
-      await writeOrder(ordered);
+      const to = (positionOf.get(row) ?? 0) + dir;
+      if (to < 0 || to >= (relationSize.get(row.relation) ?? 0)) return;
+      await upsertEntityRelation({
+        fromEntityID: id,
+        relation: row.relation,
+        toEntityID: row.targetKind === "entity" ? targetID(row) : null,
+        toMediaID: row.targetKind === "media" ? targetID(row) : null,
+        position: to,
+      });
     });
 
-  // New items go after the last one in the chosen relation.
+  // New items go after the last one in the chosen relation; a position past
+  // the end appends.
   const add = async (picked: SearchResultItem) => {
     if (!relation) return;
-    const existing = rowsOf(relation);
-    if (existing.some((row) => targetID(row) === picked.id)) {
+    if (rows.some((row) => row.relation === relation && targetID(row) === picked.id)) {
       setSaveError(t("curationAlreadyMember"));
       return;
     }
     await save(async () => {
-      await writeOrder(existing);
       await upsertEntityRelation({
         fromEntityID: id,
         relation,
         toEntityID: isEntity(picked) ? picked.id : null,
         toMediaID: isEntity(picked) ? null : picked.id,
-        sortOrder: existing.length,
+        position: relationSize.get(relation) ?? 0,
       });
       setAdding(false);
       setNewRelation("");
@@ -696,8 +691,8 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
             </TableHeader>
             <TableBody>
               {rows.map((row, i) => {
-                const siblings = rowsOf(row.relation);
-                const position = siblings.indexOf(row);
+                const position = positionOf.get(row) ?? 0;
+                const last = (relationSize.get(row.relation) ?? 0) - 1;
                 const name =
                   (row.targetKind === "entity" ? row.entity?.title : row.media?.title) ||
                   targetID(row);
@@ -725,7 +720,7 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
                           size="icon"
                           className="size-7"
                           aria-label={`${t("curationRelationMoveDown")}: ${name}`}
-                          disabled={saving || position === siblings.length - 1}
+                          disabled={saving || position === last}
                           onClick={() => void move(row, 1)}
                         >
                           <ArrowDown className="size-4" aria-hidden />
