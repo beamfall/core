@@ -15,7 +15,7 @@ const (
 	syntheticFilterListing = `Filters:
   T.. = Timeline support
   ... = Slice threading
- ------
+  | = Source or sink filter
  ... color             |->V       Provide a uniformly colored input.
  T.C scale             V->V       Scale the input video size.
  ... pad               V->V       Pad the input video.
@@ -56,12 +56,15 @@ func TestParseComponentList(t *testing.T) {
 			t.Errorf("filters missing %q", name)
 		}
 	}
-	// Legend rows sit above the separator and are not components.
+	// Legend rows are not components; -filters prints no dashed separator.
 	if filters["="] || filters["Timeline"] || len(filters) != 13 {
 		t.Errorf("filters = %v, want the thirteen listed names only", filters)
 	}
-	if parsed := parseComponentList("no separator here\n ... ass V->V x\n"); len(parsed) != 0 {
-		t.Errorf("listing without a separator parsed %v, want nothing", parsed)
+	if parsed := parseComponentList("ffmpeg: unrecognized option\n ... ass V->V x\n"); len(parsed) != 0 {
+		t.Errorf("output without a listing header parsed %v, want nothing", parsed)
+	}
+	if encoders := parseComponentList(syntheticEncoderListing); !encoders["libx264"] || !encoders["aac"] || len(encoders) != 2 {
+		t.Errorf("encoders = %v, want libx264 and aac only", encoders)
 	}
 }
 

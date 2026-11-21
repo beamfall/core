@@ -127,18 +127,20 @@ func composedRecipeArgv(timedText bool, rendition Rendition) [][]string {
 }
 
 // parseComponentList reads the names out of `ffmpeg -filters` or `ffmpeg
-// -encoders` output: every line after the legend's dashed separator is a flags
-// column followed by the component name.
+// -encoders` output: after the "Filters:" or "Encoders:" header, every row is a
+// flags column followed by the component name. Legend rows ("T.. = Timeline
+// support") and the dashed separator `-encoders` prints are skipped; `-filters`
+// prints no separator, so the separator cannot mark where the rows begin.
 func parseComponentList(output string) map[string]bool {
 	names := map[string]bool{}
 	listing := false
 	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(line)
 		if !listing {
-			listing = len(fields) == 1 && strings.Trim(fields[0], "-") == "" && strings.HasPrefix(fields[0], "--")
+			listing = len(fields) == 1 && strings.HasSuffix(fields[0], ":")
 			continue
 		}
-		if len(fields) >= 2 {
+		if len(fields) >= 2 && fields[1] != "=" {
 			names[fields[1]] = true
 		}
 	}
