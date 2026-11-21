@@ -58,7 +58,7 @@ func prepareOperation(req request) (operationPlan, error) {
 		if occurrence.Aliased {
 			responseKey = occurrence.ResponseKey
 		}
-		normalized := operationOccurrence{canonical: occurrence.Canonical, responseKey: responseKey, input: effectiveArguments(occurrence.Canonical, occurrence.Input)}
+		normalized := operationOccurrence{canonical: occurrence.Canonical, responseKey: responseKey, input: effectiveArguments(occurrence)}
 		if prior, exists := byResponseKey[responseKey]; exists {
 			if prior.occurrence.canonical != normalized.canonical || !graphquery.EquivalentInputs(prior.occurrence.input, normalized.input) {
 				return operationPlan{}, clientError(fmt.Sprintf("conflicting selections for response key %q", responseKey))
@@ -84,30 +84,24 @@ func prepareOperation(req request) (operationPlan, error) {
 	return plan, nil
 }
 
-// argumentBoundFields resolve only their declared arguments. Their
-// authorization reads the effective arguments (CORE-1937: updateProfile's
+// argumentBoundFields resolve only the arguments the document binds on
+// them. Their authorization reads those arguments (CORE-1937: updateProfile's
 // own-track-preference exception), so the authorization probe and the
-// resolver must see one normalized set: an argument bound to a variable of
-// any name (`profileID: $id`) counts under the argument's name, and an
-// operation variable no argument of this field binds counts for nothing.
+// resolver must see one set: an argument bound to a variable of any name
+// (`profileID: $id`) counts under the argument's name, and an operation
+// variable no argument of this field references counts for nothing, even
+// when it shares an argument's name.
 var argumentBoundFields = map[string]bool{
 	"updateprofile": true,
 }
 
-// effectiveArguments narrows an argument-bound field's occurrence input to
-// its declared arguments; every other field keeps the full input.
-func effectiveArguments(canonical string, input map[string]any) map[string]any {
-	if !argumentBoundFields[canonical] {
-		return input
+// effectiveArguments is an argument-bound field's explicit argument
+// bindings; every other field keeps the full input.
+func effectiveArguments(occurrence graphquery.Occurrence) map[string]any {
+	if !argumentBoundFields[occurrence.Canonical] {
+		return occurrence.Input
 	}
-	declared := fieldArgumentRegistry[canonical]
-	effective := make(map[string]any, len(declared))
-	for _, argument := range declared {
-		if value, ok := input[argument.Name]; ok {
-			effective[argument.Name] = value
-		}
-	}
-	return effective
+	return occurrence.Arguments
 }
 
 // oneTimeSecretFields return a credential exactly once. A later mutation

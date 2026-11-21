@@ -40,6 +40,8 @@ const (
 // Occurrence is one included top-level field occurrence in document order.
 // Input is an occurrence-owned resolver-variable map: request variables plus
 // materialized operation defaults, overlaid by this field's arguments.
+// Arguments holds only the arguments the field binds in the document, each
+// under its argument name, with variable references resolved.
 type Occurrence struct {
 	Name        string
 	Canonical   string
@@ -47,6 +49,7 @@ type Occurrence struct {
 	Aliased     bool
 	Included    bool
 	Input       map[string]any
+	Arguments   map[string]any
 }
 
 // Operation is the selected, validated executable operation.
@@ -251,12 +254,14 @@ func (c *occurrenceCollector) collect(selections ast.SelectionSet, parentInclude
 				return fmt.Errorf("field %q: %w", selection.Name, err)
 			}
 			input := cloneMap(c.variables)
+			arguments := make(map[string]any, len(selection.Arguments))
 			for _, argument := range selection.Arguments {
 				value, err := decodeValue(argument.Value, c.variables)
 				if err != nil {
 					return fmt.Errorf("field %q argument %q is invalid", selection.Name, argument.Name)
 				}
 				input[argument.Name] = value
+				arguments[argument.Name] = value
 			}
 			responseKey := selection.Name
 			aliased := selection.Alias != "" && selection.Alias != selection.Name
@@ -270,6 +275,7 @@ func (c *occurrenceCollector) collect(selections ast.SelectionSet, parentInclude
 				Aliased:     aliased,
 				Included:    parentIncluded && included,
 				Input:       input,
+				Arguments:   arguments,
 			})
 			if len(c.occurrences) > maxExpandedOccurrences {
 				return fmt.Errorf("GraphQL expanded field work exceeds %d", maxExpandedOccurrences)

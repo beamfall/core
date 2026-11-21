@@ -175,7 +175,7 @@ func ownTrackPreferenceWrite(dispatch *fieldDispatchContext) bool {
 	if store.ProfileID(trimmedVariable(dispatch.req, "profileID")) != scope.ProfileID {
 		return false
 	}
-	// The input holds only updateProfile's declared arguments
+	// The input holds only the arguments the document binds on updateProfile
 	// (effectiveArguments), so this table names every one but profileID:
 	// true for a track preference, false for a Profile policy field.
 	writes := false

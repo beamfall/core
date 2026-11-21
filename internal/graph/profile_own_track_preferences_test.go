@@ -12,6 +12,10 @@ import (
 	"github.com/beamfall/core/internal/store/storetest"
 )
 
+// updateProfileAllArguments binds every updateProfile argument to the
+// variable of the same name; a variable left out of a request reads as absent.
+const updateProfileAllArguments = `mutation UpdateProfile($profileID: String!, $name: String, $kind: String, $disabled: Boolean, $maxConcurrentStreams: Int, $remoteMaxBitrate: Int, $transcodeAllowed: Boolean, $entryPIN: String, $audioLanguages: [String!], $subtitleLanguages: [String!], $subtitleMode: String, $preferSDH: Boolean) { updateProfile(profileID: $profileID, name: $name, kind: $kind, disabled: $disabled, maxConcurrentStreams: $maxConcurrentStreams, remoteMaxBitrate: $remoteMaxBitrate, transcodeAllowed: $transcodeAllowed, entryPIN: $entryPIN, audioLanguages: $audioLanguages, subtitleLanguages: $subtitleLanguages, subtitleMode: $subtitleMode, preferSDH: $preferSDH) { id name kind maxConcurrentStreams disabled audioLanguages } }`
+
 const ownTrackPreferenceMutation = `mutation UpdateTrackPreferences($profileID: String!, $audioLanguages: [String!], $subtitleLanguages: [String!], $subtitleMode: String, $preferSDH: Boolean) { updateProfile(profileID: $profileID, audioLanguages: $audioLanguages, subtitleLanguages: $subtitleLanguages, subtitleMode: $subtitleMode, preferSDH: $preferSDH) { id audioLanguages subtitleLanguages subtitleMode preferSDH } }`
 
 func ownTrackPreferenceBody(t *testing.T, query string, variables map[string]any) string {
@@ -97,6 +101,36 @@ func TestNonAdminSessionWritesOwnTrackPreferences(t *testing.T) {
 		t.Fatalf("own write with an unbound variable errors = %#v", errs)
 	}
 
+	// An operation variable named like an argument the field does not bind is
+	// not that argument: an unbound $subtitleMode leaves the stored mode
+	// alone, and an unbound $name does not turn the write into a Console one.
+	body = ownTrackPreferenceBody(t,
+		`mutation U($profileID: String!, $subtitleMode: String) { updateProfile(profileID: $profileID, audioLanguages: ["it"]) { id audioLanguages subtitleMode } }`,
+		map[string]any{"profileID": "profile-default", "subtitleMode": "smart"})
+	data, errs = post(t, handler, body, authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("own write with an unbound subtitleMode errors = %#v", errs)
+	}
+	if err := json.Unmarshal(data["updateProfile"], &written); err != nil {
+		t.Fatal(err)
+	}
+	if written.SubtitleMode != "always" || !slices.Equal(written.AudioLanguages, []string{"it"}) {
+		t.Fatalf("own write with an unbound subtitleMode = %#v, want mode always kept, audio [it]", written)
+	}
+	body = ownTrackPreferenceBody(t,
+		`mutation U($profileID: String!, $name: String) { updateProfile(profileID: $profileID, preferSDH: false) { id name preferSDH } }`,
+		map[string]any{"profileID": "profile-default", "name": "Renamed"})
+	data, errs = post(t, handler, body, authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("own write with an unbound name errors = %#v", errs)
+	}
+	if err := json.Unmarshal(data["updateProfile"], &written); err != nil {
+		t.Fatal(err)
+	}
+	if written.Name == "Renamed" || written.PreferSDH {
+		t.Fatalf("own write with an unbound name = %#v, want the name kept and preferSDH false", written)
+	}
+
 	// A managed Profile writes its own track preferences the same way.
 	body = ownTrackPreferenceBody(t, ownTrackPreferenceMutation, map[string]any{
 		"profileID":    "profile-managed",
@@ -127,7 +161,7 @@ func TestNonAdminSessionCannotWriteOtherProfileFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updateAll := `mutation U($profileID: String!) { updateProfile(profileID: $profileID) { id } }`
+	updateAll := updateProfileAllArguments
 	cases := map[string]string{
 		"own name": ownTrackPreferenceBody(t, updateAll, map[string]any{
 			"profileID": "profile-default", "name": "Renamed",
