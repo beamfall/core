@@ -225,7 +225,10 @@ var originalScopedFields = []string{
 	"purgetrash",
 	"qualitypolicy",
 	"qbittorrentingest",
-	"setqbittorrentingest",      // FEAT-10 (ADR-0020 §6): runtime ingest reconfigure
+	"setqbittorrentingest", // FEAT-10 (ADR-0020 §6): runtime ingest reconfigure
+	"jellyfincompat",       // CORE-2683 (ADR-0171 §2.2-§2.4): compatibility Console settings
+	"setjellyfincompat",
+	"setprofileintegrationsignin",
 	"encryptedlibrarystatus",    // ENC-2 (ADR-0045 §2.4): credential-free Sealed/Unsealed + mode read
 	"provisionencryptedlibrary", // ENC-2 (ADR-0045 §2.4): mint DEK + three wraps, Recovery Key once
 	"unsealencryptedlibrary",    // ENC-2 (ADR-0045 §2.4): passphrase/Recovery-Key unseal
@@ -452,6 +455,9 @@ func TestFieldHandlerRegistryMatchesDispatch(t *testing.T) {
 	usedOrders := map[fieldDispatchOrder]bool{}
 	for name := range dispatch {
 		registered, ok := fieldHandlerRegistry[name]
+		if !ok && suppressedDispatchFields[name] {
+			continue
+		}
 		if !ok {
 			t.Errorf("dispatched field %q is missing from fieldHandlerRegistry", name)
 			continue
@@ -488,8 +494,10 @@ func TestFieldHandlerRegistryMatchesDispatch(t *testing.T) {
 			t.Errorf("fieldHandlerRegistry contains stale field %q with no fields[%q] dispatch", name, name)
 		}
 	}
+	// An App Store build prunes the suppressed fields, which can leave their
+	// dispatch runs unreferenced; the default build checks every run is used.
 	for order, run := range fieldDispatchRuns {
-		if run != nil && !usedOrders[fieldDispatchOrder(order)] {
+		if run != nil && !usedOrders[fieldDispatchOrder(order)] && len(suppressedDispatchFields) == 0 {
 			t.Errorf("fieldDispatchRuns[%d] is not referenced by any field", order)
 		}
 		if run == nil && usedOrders[fieldDispatchOrder(order)] {
@@ -930,7 +938,7 @@ func TestAPITokenTiersBoundConsoleFields(t *testing.T) {
 		}
 	}
 	for field := range agentTokenDenied {
-		if !adminFields[field] {
+		if !adminFields[field] && !suppressedDispatchFields[field] {
 			t.Errorf("agentTokenDenied %q is not a Console field", field)
 		}
 	}

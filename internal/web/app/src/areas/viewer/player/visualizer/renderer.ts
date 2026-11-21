@@ -24,6 +24,21 @@ const TOKEN = 65025;
 const MAX_FLASH_HZ = 3;
 // The longest interval one frame credits the limiter with: a luma token's refill (limit).
 const CREDIT_MS = 1000 / (2 * MAX_FLASH_HZ);
+// The limiter's coverage interval and a recency unit (Oscillux shaders/limiter/common.glsl): a
+// stamp is recent while it is at most 5 units old, so its clock may age a stamp the coverage
+// interval and one unit more.
+const COVERAGE_MS = 1000 / 15;
+const UNIT_MS = 16 * TICK_MS;
+
+/**
+ * The share of a draw interval the limiter is credited with when a frame is painted late
+ * (CORE-2744): its clock runs slower by lagMs, the bound on the lag of the frames of about the
+ * last second, a second, and by enough that a stamp under the coverage interval old on screen is
+ * within the 5 units recency reaches, with recentLagMs the bound for the last coverage interval.
+ */
+function creditScale(lagMs: number, recentLagMs: number): number {
+  return Math.min(1000 / (1000 + lagMs), (COVERAGE_MS + UNIT_MS) / (COVERAGE_MS + recentLagMs));
+}
 /** The limiter's grant state with every budget just spent: two luma tokens of deficit (bit 8 of x
  * carries one), a red token and no credit (Oscillux shaders/limiter/grant.glsl). */
 const SPENT = new Uint32Array([256, TOKEN, TOKEN, 0]);
@@ -744,6 +759,8 @@ export class Renderer {
     shownMs = frameMs,
     slotWidth = width * texel,
     slotHeight = height * texel,
+    lagMs = 0,
+    recentLagMs = lagMs,
   ): void {
     if (!this.visual) return;
     const gl = this.gl;
@@ -755,10 +772,10 @@ export class Renderer {
     const still = sameGeometry(last, want);
     this.asked = want;
     this.want = last;
-    // The fade and the black run on the time the limiter is credited with, shownMs up to one
-    // token's refill a frame, so the fall's grant has come by the end of the fade whatever the
-    // frame rate (Codex rounds 18, 22).
-    const shownS = Math.min(shownMs, CREDIT_MS) / 1000;
+    // The fade and the black run on the time the limiter is credited with, the credited share
+    // of shownMs up to one token's refill a frame, so the fall's grant has come by the end of
+    // the fade whatever the frame rate and paint lag (Codex rounds 18, 22; CORE-2744).
+    const shownS = Math.min(shownMs * creditScale(lagMs, recentLagMs), CREDIT_MS) / 1000;
     let size = this.size;
     let started = false;
     if (size && this.fadeLeft > 0) {
@@ -870,7 +887,7 @@ export class Renderer {
         started,
       };
     }
-    this.limit(size, shownMs);
+    this.limit(size, shownMs, lagMs, recentLagMs);
 
     // 4. The limited frame to the canvas.
     this.showLimited(size);
@@ -1246,16 +1263,29 @@ export class Renderer {
     block.set([0, 0, 0, 1, this.presented++ % 16777216, 0, 0, 0], POST_FLOAT);
   }
 
-  private limit(size: Size, frameMs: number): void {
+  private limit(size: Size, shownMs: number, lagMs: number, recentLagMs: number): void {
     const gl = this.gl;
     const L = size.limiter;
-    this.clockMs += frameMs;
+    // shownMs is the time between draws. lagMs bounds how late any frame of about the last
+    // second was painted after its draw, and recentLagMs any of the last coverage interval (the
+    // host holds its largest recent refreshes), so a run of frames was on screen its draw time
+    // to within those either way (CORE-2744). The limiter is given time it cannot overstate:
+    // - its clock (tick and refill) runs slower by lagMs a second, and by enough that a stamp
+    //   under the coverage interval old on screen is within the 5 units recency reaches. A span
+    //   the clock counts as a second or more was then a second or more on screen, so lateness
+    //   cannot crowd a seventh transition into a second, and only about a refresh in a second is
+    //   held, not the half of all time a per-frame lower bound held;
+    // - deltaMs, which clears every stamp when it is over the coverage interval, is the
+    //   interval less recentLagMs, the least this frame can have been shown.
+    const creditMs = shownMs * creditScale(lagMs, recentLagMs);
+    const deltaMs = Math.max(0, shownMs - recentLagMs);
+    this.clockMs += creditMs;
     // The interval up to a host write of the grant state cannot refill the deficit it wrote.
     // The fraction of a unit carries to the next frame, so the refill keeps the exact rate. A
     // token is TOKEN - 1 units of credit, so a carried fraction cannot finish one early (Codex
     // round 16).
     if (this.limiterSpent) this.refillCarry = 0;
-    const refillMs = this.limiterSpent ? 0 : frameMs;
+    const refillMs = this.limiterSpent ? 0 : creditMs;
     const earned =
       this.refillCarry +
       Math.min(1, Math.max(0, (2 * MAX_FLASH_HZ * refillMs) / 1000)) * (TOKEN - 1);
@@ -1268,7 +1298,7 @@ export class Renderer {
       L.window.limit,
       refill,
       tick,
-      frameMs,
+      deltaMs,
       0,
       0,
     ]);

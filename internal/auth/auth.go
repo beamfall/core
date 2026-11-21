@@ -752,6 +752,12 @@ func (s *Service) IntegrationScope(ctx context.Context, token string, required s
 	if err != nil || profile.Disabled || profile.Kind != store.ProfileAdult {
 		return Scope{}, errors.New("integration profile unavailable")
 	}
+	// Opt-out revokes integration sessions, but the check is repeated per
+	// request so a bearer that raced the revoke still fails closed (CORE-2683).
+	// The bounded admin setup session is the one session issued before opt-in.
+	if !profile.IntegrationSignIn && !slices.Contains(session.IntegrationScopes, store.IntegrationScopeSetup) {
+		return Scope{}, errors.New("integration profile unavailable")
+	}
 	return Scope{
 		SessionID: session.ID, SessionKind: session.Kind, IntegrationScopes: session.IntegrationScopes,
 		ProfileID: profile.ID, Profile: profile.Kind, Revealed: session.Revealed,

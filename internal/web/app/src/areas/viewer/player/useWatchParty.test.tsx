@@ -5,7 +5,7 @@ import { useWatchParty } from "./useWatchParty";
 import { markViewerIntent } from "./viewerIntent";
 import {
   followLeadParty,
-  leavePartyOnPageHide,
+  pendingPartyTransport,
   reportLeadPosition,
   reportPartyDrift,
   resumeFollowedParty,
@@ -21,16 +21,20 @@ let party: WatchPartyState;
 vi.mock("./watchPartyStore", () => ({
   getWatchParty: () => party,
   useWatchPartyState: () => party,
-  sendPartyTransport: vi.fn(async () => {}),
+  sendPartyTransport: vi.fn(async () => true),
   startWatchParty: vi.fn(async () => true),
-  leaveParty: vi.fn(async () => {}),
-  leavePartyOnPageHide: vi.fn(),
+  leaveParty: vi.fn(async () => true),
   reportPartyDrift: vi.fn(() => true),
   reportLeadPosition: vi.fn(() => true),
+  rememberLeadPauseIntent: vi.fn(),
   partyNowMS: () => Date.now() + party.offsetMS,
   followLeadParty: vi.fn(async () => null),
   resumeFollowedParty: vi.fn(async () => null),
   watchForLeadParty: vi.fn(() => () => {}),
+  pendingPartyTransport: vi.fn(() => undefined),
+  submittedPartyTitleSwitch: () => undefined,
+  getPartyTransportEpoch: () => 1,
+  PARTY_TRANSPORT_TIMEOUT_MS: 15_000,
 }));
 
 let homeNetwork = false;
@@ -83,12 +87,39 @@ function mount(video: FakeVideo) {
   );
 }
 
+function deferredTransport() {
+  let resolve!: (applied: boolean) => void;
+  const promise = new Promise<boolean>((finish) => {
+    resolve = finish;
+  });
+  vi.mocked(sendPartyTransport).mockReturnValueOnce(promise);
+  return resolve;
+}
+
+function samplesPlayhead(positionMS: number) {
+  return expect.toSatisfy(
+    (sample: unknown) => typeof sample === "function" && sample() === positionMS,
+  );
+}
+
+function holdTransport(positionMS: number, seekProtectedUntil: number) {
+  vi.mocked(pendingPartyTransport).mockReturnValue({
+    itemId: "m1",
+    positionMS,
+    playing: false,
+    epoch: 1,
+    seekProtectedUntil,
+  });
+}
+
 describe("useWatchParty local transport", () => {
   beforeEach(() => {
     vi.mocked(sendPartyTransport).mockClear();
+    vi.mocked(pendingPartyTransport).mockReset();
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -114,7 +145,10 @@ describe("useWatchParty local transport", () => {
     // The viewer presses Play straight after.
     fireEvent.pointerDown(document.body);
     video.play();
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 0, false);
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", {
+      playheadMS: samplesPlayhead(0),
+      playing: true,
+    });
     view.unmount();
   });
 
@@ -125,7 +159,11 @@ describe("useWatchParty local transport", () => {
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
     video.currentTime = 30;
     video.dispatchEvent(new Event("seeked"));
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 30_000, true);
+    expect(sendPartyTransport).toHaveBeenCalledWith(
+      "m1",
+      { positionMS: 30_000 },
+      expect.any(Number),
+    );
     view.unmount();
   });
 
@@ -142,9 +180,116 @@ describe("useWatchParty local transport", () => {
     markViewerIntent();
     video.currentTime = 45;
     video.dispatchEvent(new Event("seeked"));
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 45_000, true);
+    expect(sendPartyTransport).toHaveBeenCalledWith(
+      "m1",
+      { positionMS: 45_000 },
+      expect.any(Number),
+    );
     view.unmount();
   });
+
+  it("keeps a seek taking over three seconds until the party acknowledges it (CORE-1805)", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+    const timeline = { item: "m1", positionMS: 0, presentAtMS: 0, paused: true };
+    party = { ...activeParty(timeline), isHost: true };
+    const video = new FakeVideo();
+    const view = mount(video);
+    const finish = deferredTransport();
+    vi.advanceTimersByTime(1);
+    markViewerIntent();
+    video.currentTime = 45;
+    video.seeking = true;
+    video.dispatchEvent(new Event("seeking"));
+    act(() => vi.advanceTimersByTime(3100));
+    expect(sendPartyTransport).not.toHaveBeenCalled();
+
+    video.seeking = false;
+    video.dispatchEvent(new Event("seeked"));
+    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith(
+      "m1",
+      { positionMS: 45_000 },
+      15_001,
+    );
+    holdTransport(45_000, 15_001);
+    act(() => vi.advanceTimersByTime(500));
+    expect(video.currentTime).toBe(45);
+
+    await act(async () => {
+      party = { ...party, timeline: { ...timeline, positionMS: 45_000 } };
+      vi.mocked(pendingPartyTransport).mockReturnValue(undefined);
+      finish(true);
+      view.rerender();
+    });
+    act(() => vi.advanceTimersByTime(500));
+    expect(video.currentTime).toBe(45);
+  });
+
+  it("resumes drift correction when a seek receives no new anchor (CORE-1805)", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
+    const video = new FakeVideo();
+    mount(video);
+    vi.advanceTimersByTime(1);
+    markViewerIntent();
+    video.currentTime = 45;
+    video.dispatchEvent(new Event("seeking"));
+    await act(async () => video.dispatchEvent(new Event("seeked")));
+    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith(
+      "m1",
+      { positionMS: 45_000 },
+      15_001,
+    );
+    holdTransport(45_000, 15_001);
+    act(() => vi.advanceTimersByTime(500));
+    expect(video.currentTime).toBe(45);
+    act(() => vi.advanceTimersByTime(15_000));
+    expect(video.currentTime).toBe(0);
+  });
+
+  it.each([0, 60])(
+    "keeps the latest seek to %i seconds through an earlier acknowledgement (CORE-1805)",
+    async (target) => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+      const timeline = { item: "m1", positionMS: 0, presentAtMS: 0, paused: true };
+      party = { ...activeParty(timeline), isHost: true };
+      const video = new FakeVideo();
+      const view = mount(video);
+      const resolveFirst = deferredTransport();
+      const resolveSecond = deferredTransport();
+      for (const seconds of [30, target]) {
+        vi.advanceTimersByTime(1);
+        markViewerIntent();
+        video.currentTime = seconds;
+        video.dispatchEvent(new Event("seeking"));
+        video.dispatchEvent(new Event("seeked"));
+        holdTransport(seconds * 1000, performance.now() + 15_000);
+      }
+      expect(vi.mocked(sendPartyTransport).mock.calls).toEqual([
+        ["m1", { positionMS: 30_000 }, 15_001],
+        ["m1", { positionMS: target * 1000 }, 15_002],
+      ]);
+
+      const publish = (positionMS: number) => {
+        party = { ...party, timeline: { ...timeline, positionMS } };
+        view.rerender();
+      };
+      await act(async () => {
+        publish(30_000);
+        resolveFirst(true);
+      });
+      act(() => vi.advanceTimersByTime(3100));
+      expect(video.currentTime).toBe(target);
+
+      await act(async () => {
+        vi.mocked(pendingPartyTransport).mockReturnValue(undefined);
+        publish(target * 1000);
+        resolveSecond(true);
+      });
+      expect(video.currentTime).toBe(target);
+      act(() => publish(70_000));
+      expect(video.currentTime).toBe(70);
+    },
+  );
 
   it("ignores autoplay after an unrelated long touch gesture", () => {
     party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
@@ -172,20 +317,11 @@ describe("useWatchParty local transport", () => {
     // useMediaSession's play handler marks the intent, then plays.
     markViewerIntent();
     video.play();
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 0, false);
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", {
+      playheadMS: samplesPlayhead(0),
+      playing: true,
+    });
     view.unmount();
-  });
-});
-
-describe("useWatchParty page exit", () => {
-  it("leaves the party when the tab is closed or navigated away", () => {
-    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
-    const view = mount(new FakeVideo());
-    window.dispatchEvent(new Event("pagehide"));
-    expect(leavePartyOnPageHide).toHaveBeenCalledTimes(1);
-    view.unmount();
-    window.dispatchEvent(new Event("pagehide"));
-    expect(leavePartyOnPageHide).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -226,13 +362,19 @@ describe("useWatchParty drift and advance (CORE-1766)", () => {
       ...activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true }),
       isHost: true,
     };
+    const initialProps: { mediaId: string; titleSelectionEpoch?: number } = { mediaId: "m1" };
     const host = renderHook(
-      ({ mediaId }) => useWatchParty({ videoRef, attached: true, mediaId, onFollow }),
-      { initialProps: { mediaId: "m1" } },
+      ({ mediaId, titleSelectionEpoch }) =>
+        useWatchParty({ videoRef, attached: true, mediaId, titleSelectionEpoch, onFollow }),
+      { initialProps },
     );
     // The host's Up Next takes its player to the next item.
-    host.rerender({ mediaId: "m2" });
-    expect(sendPartyTransport).toHaveBeenCalledWith("m2", 0, false);
+    host.rerender({ mediaId: "m2", titleSelectionEpoch: 1 });
+    expect(sendPartyTransport).toHaveBeenCalledWith("m2", {
+      positionMS: 0,
+      playing: true,
+      selection: expect.any(AbortSignal),
+    });
     expect(onFollow).not.toHaveBeenCalled();
     host.unmount();
 
@@ -411,26 +553,32 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       const view = mount(video);
       fireEvent.pointerDown(document.body);
       video.play();
-      expect(sendPartyTransport).toHaveBeenCalledWith("m1", 0, false);
+      expect(sendPartyTransport).toHaveBeenCalledWith("m1", {
+        playheadMS: samplesPlayhead(0),
+        playing: true,
+      });
 
       fireEvent.keyDown(document.body, { key: "ArrowRight" });
       video.currentTime = 30;
       video.dispatchEvent(new Event("seeked"));
-      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 30_000, false);
+      expect(sendPartyTransport).toHaveBeenLastCalledWith(
+        "m1",
+        { positionMS: 30_000 },
+        expect.any(Number),
+      );
       view.unmount();
     });
 
-    it("starts a lead party from this player, then puts its position on the timeline", async () => {
+    it("passes the lead and host-only options through on start (CORE-1858)", async () => {
       party = idle();
-      const video = playing(42);
-      const view = mount(video);
+      const view = mount(playing(42));
 
       await expect(view.result.current.start(false, true)).resolves.toBe(true);
-      expect(startWatchParty).toHaveBeenCalledWith("m1", 42_000, false, true);
-      expect(sendPartyTransport).toHaveBeenCalledWith("m1", 42_000, false);
+      expect(startWatchParty).toHaveBeenCalledWith("m1", expect.any(Function), false, true);
+      expect(sendPartyTransport).not.toHaveBeenCalled();
 
       await view.result.current.start(false);
-      expect(startWatchParty).toHaveBeenLastCalledWith("m1", 42_000, false);
+      expect(startWatchParty).toHaveBeenLastCalledWith("m1", expect.any(Function), false, false);
       view.unmount();
     });
   });
@@ -506,7 +654,10 @@ describe("useWatchParty lead party (CORE-2245)", () => {
 
       video.readyState = 2;
       video.dispatchEvent(new Event("waiting"));
-      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 20_000, true);
+      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", {
+        playheadMS: samplesPlayhead(20_000),
+        playing: false,
+      });
       vi.mocked(reportLeadPosition).mockClear();
       act(() => {
         vi.advanceTimersByTime(1000);
@@ -517,7 +668,10 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       view.rerender();
       video.readyState = 4;
       video.dispatchEvent(new Event("playing"));
-      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 20_000, false);
+      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", {
+        playheadMS: samplesPlayhead(20_000),
+        playing: true,
+      });
       view.unmount();
     });
 
@@ -528,7 +682,10 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       video.currentTime = 20;
       const view = mount(video);
       video.pause();
-      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 20_000, true);
+      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", {
+        playheadMS: samplesPlayhead(20_000),
+        playing: false,
+      });
       view.unmount();
     });
 

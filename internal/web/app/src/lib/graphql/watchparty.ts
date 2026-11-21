@@ -54,6 +54,9 @@ const ACCEPT_WATCH_PARTY_MUTATION =
 const WATCH_PARTY_TRANSPORT_MUTATION =
   "mutation WatchPartyTransport($partyID: String!, $item: String!, $positionMS: Int!, $paused: Boolean) { watchPartyTransport(partyID: $partyID, item: $item, positionMS: $positionMS, paused: $paused) { item positionMS presentAtMS } }";
 
+const WATCH_PARTY_AUTO_SKIP_MUTATION =
+  "mutation WatchPartyAutoSkip($partyID: String!, $item: String!, $positionMS: Int!) { watchPartyAutoSkip(partyID: $partyID, item: $item, positionMS: $positionMS) { partyID applied item positionMS presentAtMS } }";
+
 const REQUEST_WATCH_PARTY_TRANSPORT_MUTATION =
   "mutation RequestWatchPartyTransport($partyID: String!, $item: String!, $positionMS: Int!, $paused: Boolean) { requestWatchPartyTransport(partyID: $partyID, item: $item, positionMS: $positionMS, paused: $paused) { partyID approved } }";
 
@@ -122,6 +125,18 @@ export async function watchPartyTransport(vars: {
     vars,
   );
   return data.watchPartyTransport;
+}
+
+/** Move the shared anchor when the caller is allowed to auto-skip. */
+export async function watchPartyAutoSkip(vars: {
+  partyID: string;
+  item: string;
+  positionMS: number;
+}): Promise<WatchPartyAnchor & { partyID: string; applied: boolean }> {
+  const data = await graphql<{
+    watchPartyAutoSkip: WatchPartyAnchor & { partyID: string; applied: boolean };
+  }>(WATCH_PARTY_AUTO_SKIP_MUTATION, vars);
+  return data.watchPartyAutoSkip;
 }
 
 /** RequestWatchPartyTransport — a member asks; a relaxed party applies it. */

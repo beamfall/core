@@ -1252,6 +1252,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		HardwareAcceleration:         cfg.HardwareAcceleration,
 		Identify:                     identifyService,
 		Artwork:                      artworkService,
+		EntityBrowseSources:          activeEntityBrowseRules(executablePlugins, hooks.EntityBrowseRules, logger),
 		StreamTokens:                 tokenService,
 		ArtworkCandidateFetcher:      scrapeEngine,
 		ArtworkCandidateImporter:     artworkService,
@@ -1512,20 +1513,26 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		graphHandler.SetScrobbleStatusSource(scrobbleStatusSource{dispatcher: scrobbleDispatcher})
 		graphHandler.SetOutboundMetadataResolver(newScrobbleMetadataResolver(st, executablePlugins))
 	}
-	// CORE-2683 owns the operator allowlist; until then, no Library is eligible.
-	compatEligible := func(context.Context, store.LibraryID) bool { return false }
 	compatHandler, err := compat.New(compat.Config{
 		Enabled: cfg.JellyfinCompat.Enabled, AllowedCIDRs: cfg.JellyfinCompat.AllowedCIDRs,
 		TrustedProxyCIDRs: cfg.JellyfinCompat.TrustedProxyCIDRs,
 		ServerID:          discovery.ServerID(offlinePackPin), ServerName: cfg.ServerName,
 		ReleaseVersion: capabilities.ReleaseVersion,
 		SetupRequired:  pairingService.SetupRequired,
-		EnqueueRefresh: compatLibraryRefresher(st, jobWake, sealedPredicate, compatEligible, logger),
+		EnqueueRefresh: compatLibraryRefresher(st, jobWake, sealedPredicate, st.JellyfinCompatEligibleLibraries, logger),
 	}, authService, nil)
 	if err != nil {
 		return nil, err
 	}
 	compatHandler.SetRelayedRequestPredicate(server.RequestFromRelay)
+	compatSettings, err := compat.NewSettingsController(ctx, st, store.JellyfinCompatConfig{
+		Enabled: cfg.JellyfinCompat.Enabled, AllowedCIDRs: cfg.JellyfinCompat.AllowedCIDRs,
+		TrustedProxyCIDRs: cfg.JellyfinCompat.TrustedProxyCIDRs,
+	}, compatHandler)
+	if err != nil {
+		return nil, err
+	}
+	graphHandler.SetJellyfinCompatController(compatSettings)
 	srv.SetProxyTee(proxyTee.ServeProxy)
 	app := &App{
 		cfg:                    cfg,
@@ -3018,8 +3025,15 @@ func v1ScanEnqueuer(st *store.Store, wake *jobWake) server.V1ScanEnqueuer {
 // compatLibraryRefresher queues scans for the eligible Library roots visible to
 // the integration scope. A nil paths slice selects every eligible root; a
 // non-nil slice selects only the roots equal to or containing one of the paths.
-func compatLibraryRefresher(st *store.Store, wake *jobWake, sealed func(store.LibraryID) bool, eligible func(context.Context, store.LibraryID) bool, logger *slog.Logger) func(context.Context, auth.Scope, []string) {
+func compatLibraryRefresher(st *store.Store, wake *jobWake, sealed func(store.LibraryID) bool, eligible func(context.Context) (map[store.LibraryID]bool, error), logger *slog.Logger) func(context.Context, auth.Scope, []string) {
 	return func(ctx context.Context, scope auth.Scope, paths []string) {
+		// The operator allowlist (CORE-2683) is read once per refresh, so a Library
+		// restricted or trashed after it was allowlisted is out of reach at once.
+		allowed, err := eligible(ctx)
+		if err != nil {
+			logger.WarnContext(ctx, "compat refresh allowlist unavailable", "error", err)
+			return
+		}
 		filter := scope.LibraryFilter()
 		filter.Revealed = false
 		libraries, err := st.Libraries(ctx, filter)
@@ -3029,7 +3043,7 @@ func compatLibraryRefresher(st *store.Store, wake *jobWake, sealed func(store.Li
 		}
 		matched := false
 		for _, library := range libraries {
-			if sealed(library.ID) || !eligible(ctx, library.ID) {
+			if sealed(library.ID) || !allowed[library.ID] {
 				continue
 			}
 			roots, err := st.LibraryRoots(ctx, library.ID)

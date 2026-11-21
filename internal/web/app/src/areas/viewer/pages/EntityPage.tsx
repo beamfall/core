@@ -195,14 +195,17 @@ export function EntityPage() {
   );
   // The listed Media once known to be all audio: what Shuffle plays, and for a
   // container the sign to name its people under the title.
+  const isAudio = isAudioListing(fallback ?? NO_ITEMS, listing.rows ?? {});
   const listeningTracks = useMemo(() => {
     if (trackOrder) return trackOrder;
-    if (entity?.archetype !== "person" || !listedItems || !listing.rows) return null;
-    if (!isAudioListing(listedItems, listing.rows)) return null;
+    if (entity?.archetype !== "person" || !listedItems || !listing.rows || !isAudio) return null;
     return listedItems.filter((item) => item.kind === "media");
-  }, [trackOrder, entity, listedItems, listing.rows]);
+  }, [trackOrder, entity, listedItems, listing.rows, isAudio]);
   const people = trackOrder ? entityPeople(entity) : [];
   const unwatched = unwatchedCount(fallback);
+  const remainingLabel = t(isAudio ? "cardUnplayed" : "entityDetailUnwatched", {
+    count: unwatched,
+  });
   const factItems = [
     { key: "kind", text: kindLabel ?? "", className: "bf-entity-kind" },
     { key: "year", text: facts.year ? String(facts.year) : "" },
@@ -241,9 +244,7 @@ export function EntityPage() {
         : []),
     ]),
     // Without a poster to carry it, the unwatched count is a chip.
-    ...(!photo && unwatched > 0
-      ? [{ key: "unwatched", text: t("entityDetailUnwatched", { count: unwatched }) }]
-      : []),
+    ...(!photo && unwatched > 0 ? [{ key: "unwatched", text: remainingLabel }] : []),
   ].filter((item) => item.text !== "");
   const itemCount = (count: number) => t("entityDetailItemCount", { count });
   // A middle-level parent heads its own children with their count; an audio
@@ -497,9 +498,7 @@ export function EntityPage() {
                   {unwatched > 0 && (
                     <span className="bf-card-badge bf-entity-unwatched">
                       <span aria-hidden="true">{unwatched}</span>
-                      <span className="sr-only">
-                        {t("entityDetailUnwatched", { count: unwatched })}
-                      </span>
+                      <span className="sr-only">{remainingLabel}</span>
                     </span>
                   )}
                 </div>
@@ -612,16 +611,20 @@ export function EntityPage() {
                       </button>
                     )}
                     <p className="bf-entity-next">
-                      <span className="bf-entity-ondeck">{t("entityDetailOnDeck")}</span>
+                      <span className="bf-entity-ondeck">
+                        {t(isAudio ? "entityDetailUpNext" : "entityDetailOnDeck")}
+                      </span>
                       <span>
-                        {t("entityDetailNextUp", {
-                          title: nextUpName(nextUp.item, displayLocale),
-                        })}
+                        {isAudio
+                          ? nextUpName(nextUp.item, displayLocale)
+                          : t("entityDetailNextUp", {
+                              title: nextUpName(nextUp.item, displayLocale),
+                            })}
                       </span>
                     </p>
                   </div>
                 )}
-                {entity && <ItemActions target={{ entityID: entityId }} />}
+                {entity && <ItemActions target={{ entityID: entityId }} isAudio={isAudio} />}
                 {summary && <DetailOverview text={summary} id="bf-entity-overview" />}
                 {fields.length > 0 && (
                   <dl className="bf-metadata">

@@ -1,5 +1,8 @@
+import { jellyfinCompatStrings } from "./jellyfin-compat";
+
 export const consoleAccessStrings = {
   en: {
+    ...jellyfinCompatStrings.en,
     consoleHeading: "Console",
     consoleOverviewHeading: "Overview",
     consoleOverviewLead: "Server status, attention queue, and first-run progress.",
@@ -46,6 +49,7 @@ export const consoleAccessStrings = {
     enforcedFiltersPickProfile: "Choose a profile above to set its rating ceilings.",
   },
   fr: {
+    ...jellyfinCompatStrings.fr,
     consoleHeading: "Console",
     consoleOverviewHeading: "Vue d’ensemble",
     consoleOverviewLead:
@@ -94,6 +98,7 @@ export const consoleAccessStrings = {
       "Choisissez un profil ci-dessus pour définir ses plafonds de classification.",
   },
   de: {
+    ...jellyfinCompatStrings.de,
     consoleHeading: "Konsole",
     consoleOverviewHeading: "Übersicht",
     consoleOverviewLead: "Serverstatus, Aufgabenliste und Fortschritt der Ersteinrichtung.",
@@ -140,6 +145,7 @@ export const consoleAccessStrings = {
       "Wähle oben ein Profil, um seine Altersfreigabe-Grenzen festzulegen.",
   },
   es: {
+    ...jellyfinCompatStrings.es,
     consoleHeading: "Consola",
     consoleOverviewHeading: "Resumen",
     consoleOverviewLead:
@@ -187,6 +193,7 @@ export const consoleAccessStrings = {
     enforcedFiltersPickProfile: "Elige un perfil arriba para fijar sus límites de clasificación.",
   },
   pt: {
+    ...jellyfinCompatStrings.pt,
     consoleHeading: "Console",
     consoleOverviewHeading: "Visão geral",
     consoleOverviewLead:

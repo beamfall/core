@@ -1314,54 +1314,6 @@ func decodeRelationAttributes(raw sql.NullString) (map[string]string, error) {
 	return attributes, nil
 }
 
-// entityItemsSQL backs the "entity-items" Source kind: instances of one
-// declared kind across every visible Library, ordered by title.
-func (s *Store) entityItemsSQL(ctx context.Context, filter LibraryFilter, kind string, limit, offset int) ([]SourceItem, error) {
-	libraries, err := loadLibraries(ctx, s.catalogR)
-	if err != nil {
-		return nil, err
-	}
-	var visible []LibraryID
-	for _, library := range libraries {
-		if libraryVisible(library, filter) {
-			visible = append(visible, library.ID)
-		}
-	}
-	if len(visible) == 0 {
-		return []SourceItem{}, nil
-	}
-	placeholders := make([]string, len(visible))
-	args := make([]any, 0, len(visible)+2)
-	args = append(args, kind)
-	for i, id := range visible {
-		placeholders[i] = "?"
-		args = append(args, id)
-	}
-	args = append(args, limit, offset)
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT id, title, library_id FROM entity
-		WHERE kind = ? AND library_id IN (`+strings.Join(placeholders, ", ")+`)
-			AND trashed_at_ms IS NULL
-		ORDER BY title COLLATE NOCASE, id
-		LIMIT ? OFFSET ?
-	`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []SourceItem{}
-	for rows.Next() {
-		var id EntityID
-		var title string
-		var libraryID LibraryID
-		if err := rows.Scan(&id, &title, &libraryID); err != nil {
-			return nil, err
-		}
-		items = append(items, SourceItem{ID: MediaID(id), Kind: "entity", Title: title, LibraryID: libraryID})
-	}
-	return items, rows.Err()
-}
-
 // RelatedEntities returns the Entities the given Entity points at through one
 // relation name (the entity→entity read path: container children, links).
 // The source Entity must be visible; far-side Entities in libraries the

@@ -21,6 +21,8 @@ type LibraryEntitiesQuery struct {
 	Kind        string
 	ChildKinds  []string
 	ParentKinds []string
+	// BrowseSources restricts each named kind to Entities matching any source.
+	BrowseSources map[string][]EntityBrowseSource
 	// Browse sorts and filters the listed kind the way LibraryBrowse sorts and
 	// filters Media (CORE-2440); its LibraryID, FacetEntityKinds, Limit and
 	// Offset are ignored. The zero value lists in title order, unfiltered.
@@ -46,9 +48,9 @@ type LibraryEntity struct {
 }
 
 // LibraryEntitiesResult is one page of a Library's Entities of one kind.
-// Totals counts every requested kind's Entities in the Library; Total is the
-// listed kind's count after the browse filters. Letters is where each title
-// initial starts in the filtered set, for a title sort only.
+// Totals counts eligible Entities per kind. Total is the listed kind's count
+// after the browse filters. Letters is where each title initial starts in the
+// filtered set, for a title sort only.
 type LibraryEntitiesResult struct {
 	Totals  map[string]int
 	Total   int
@@ -126,7 +128,7 @@ func (s *Store) LibraryEntities(ctx context.Context, filter LibraryFilter, query
 		return empty, nil
 	}
 
-	totals, err := libraryEntityTotals(ctx, reader, query.LibraryID, query.Kinds)
+	totals, err := libraryEntityTotals(ctx, reader, query)
 	if err != nil {
 		return empty, err
 	}
@@ -134,7 +136,7 @@ func (s *Store) LibraryEntities(ctx context.Context, filter LibraryFilter, query
 	if query.Kind == "" || result.Total == 0 {
 		return result, nil
 	}
-	candidates, err := libraryEntityCandidates(ctx, reader, query.LibraryID, query.Kind, restricted)
+	candidates, err := libraryEntityCandidates(ctx, reader, query, restricted)
 	if err != nil {
 		return empty, err
 	}
@@ -170,21 +172,29 @@ func (s *Store) LibraryEntities(ctx context.Context, filter LibraryFilter, query
 	return result, nil
 }
 
-// libraryEntityTotals counts the Library's untrashed Entities of each kind.
-func libraryEntityTotals(ctx context.Context, reader *sql.DB, libraryID LibraryID, kinds []string) (map[string]int, error) {
+// libraryEntityTotals counts the Library's eligible untrashed Entities of each kind.
+func libraryEntityTotals(ctx context.Context, reader *sql.DB, query LibraryEntitiesQuery) (map[string]int, error) {
 	totals := map[string]int{}
-	if len(kinds) == 0 {
+	if len(query.Kinds) == 0 {
 		return totals, nil
 	}
-	args := make([]any, 0, 1+len(kinds))
-	args = append(args, libraryID)
-	for _, kind := range kinds {
+	args := make([]any, 0, 1+len(query.Kinds))
+	args = append(args, query.LibraryID)
+	for _, kind := range query.Kinds {
 		args = append(args, kind)
 	}
-	// #nosec G202 -- only generated placeholders are interpolated; kinds are bound args.
+	var eligibility string
+	for _, kind := range query.Kinds {
+		if clause, sourceArgs := entityBrowseSourceSQL(query.BrowseSources[kind]); clause != "" {
+			eligibility += ` AND (e.kind <> ? OR ` + clause + `)`
+			args = append(args, kind)
+			args = append(args, sourceArgs...)
+		}
+	}
+	// #nosec G202 -- interpolated SQL is built from fixed fragments and placeholders.
 	rows, err := reader.QueryContext(ctx, `
-		SELECT kind, COUNT(*) FROM entity
-		WHERE library_id = ? AND trashed_at_ms IS NULL AND kind IN (`+sqlPlaceholders(len(kinds))+`)
+		SELECT kind, COUNT(*) FROM entity e
+		WHERE library_id = ? AND trashed_at_ms IS NULL AND kind IN (`+sqlPlaceholders(len(query.Kinds))+`)`+eligibility+`
 		GROUP BY kind
 	`, args...)
 	if err != nil {

@@ -28,8 +28,8 @@ func entityFiltersArgument() NestedArgument {
 	}}
 }
 
-// sourceItemsWithEntityFilters is the Graph-to-store boundary for Entity field
-// filters. Other Source kinds ignore the shared optional argument.
+// sourceItemsWithEntityFilters attaches field filters and plugin browse rules
+// to entity-items Sources.
 func (h *Handler) sourceItemsWithEntityFilters(ctx context.Context, filter store.LibraryFilter, req request, query store.SourceQuery) ([]store.SourceItem, error) {
 	if query.Kind != "entity-items" {
 		return h.store.SourceItems(ctx, filter, query)
@@ -39,6 +39,12 @@ func (h *Handler) sourceItemsWithEntityFilters(ctx context.Context, filter store
 		return nil, err
 	}
 	query.EntityFieldFilters = filters
+	query.EntityBrowseSources = make(map[string][]store.EntityBrowseSource)
+	for pluginID, rules := range h.entityBrowseSources {
+		if sources := rules[query.EntityKind]; len(sources) > 0 {
+			query.EntityBrowseSources[string(pluginID)] = sources
+		}
+	}
 	return h.store.SourceItems(ctx, filter, query)
 }
 

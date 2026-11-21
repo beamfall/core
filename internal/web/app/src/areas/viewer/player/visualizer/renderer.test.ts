@@ -1184,6 +1184,78 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(blocks.at(-1)?.[5]).toBe(33);
   });
 
+  // CORE-2744 (Codex P1): deltaMs clears every stamp over the coverage interval, so it is the
+  // least the frame can have been shown: draws 70 ms apart on a 100 Hz display may paint 60 ms
+  // apart, and the stamps of the frame before stay recent.
+  it("ages the stamps by the interval less the paint lag", () => {
+    const { renderer, draw, blocks } = make();
+    draw(64, 36);
+    renderer.draw(64, 36, 0.07, silentFrame(), false, 70, 1, 70, 64, 36, 10);
+    expect(blocks.at(-1)?.[5]).toBe(60);
+  });
+
+  // CORE-2744 (Codex P2): the clock runs slower by the lag a second, so a span it counts as a
+  // second (six refills) was a second on screen however late the first frame of it was painted.
+  it("slows the limiter's clock by the paint lag a second", () => {
+    const { renderer, draw } = make();
+    draw(640, 360);
+    const r = renderer as unknown as { clockMs: number };
+    const start = r.clockMs;
+    const lag = 1000 / 59.94;
+    for (let i = 0; i < 30; i++) {
+      renderer.draw(
+        640,
+        360,
+        1 / 29.97,
+        silentFrame(),
+        false,
+        1000 / 29.97,
+        1,
+        1000 / 29.97,
+        640,
+        360,
+        lag,
+      );
+    }
+    const drawnMs = 30 * (1000 / 29.97);
+    expect(r.clockMs - start).toBeCloseTo((drawnMs * 1000) / (1000 + lag), 6);
+  });
+
+  // A lag over one recency unit slows the clock further, so a stamp under the coverage interval
+  // old on screen is never more than the 5 units recency reaches on the clock.
+  it("keeps a stamp the coverage interval old within reach at a slow refresh", () => {
+    const { renderer, draw } = make();
+    draw(640, 360);
+    const r = renderer as unknown as { clockMs: number };
+    const start = r.clockMs;
+    const lag = 1000 / 30;
+    renderer.draw(
+      640,
+      360,
+      0.1,
+      silentFrame(),
+      false,
+      1000 / 15 + lag,
+      1,
+      1000 / 15 + lag,
+      640,
+      360,
+      lag,
+    );
+    expect(r.clockMs - start).toBeCloseTo(1000 / 15 + 1000 / 60, 6);
+  });
+
+  it("runs the fade on the time the limiter is credited with", () => {
+    const { r, renderer, draw } = make();
+    draw(640, 360);
+    const lag = 1000 / 30;
+    renderer.draw(640, 360, 0.1, silentFrame(), false, 100, 1, 100, 320, 180, lag);
+    const left = r.fadeLeft as number;
+    renderer.draw(640, 360, 0.1, silentFrame(), false, 100, 1, 100, 320, 180, lag);
+    const scale = Math.min(1000 / (1000 + lag), (1000 / 15 + 1000 / 60) / (1000 / 15 + lag));
+    expect(left - (r.fadeLeft as number)).toBeCloseTo(Math.min(100 * scale, 1000 / 6) / 1000, 6);
+  });
+
   it("refills from the intervals after the frame that started", () => {
     const { draw, blocks } = make();
     draw(800, 450, 0.1);

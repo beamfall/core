@@ -21,17 +21,20 @@ export function Hero({
   section,
   item,
   navigationID,
+  artwork,
 }: {
   section: Section;
   item: SourceItem;
   navigationID?: string;
+  artwork?: { url: string; ready: boolean; onLoad: () => void; onError: () => void };
 }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
   const identity = useViewerIdentity();
   const [imageFailed, setImageFailed] = useState(false);
-  const background = artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "poster");
+  const background =
+    artwork?.url ?? (artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "poster"));
   const isMedia = item.kind === "media";
 
   function activate() {
@@ -49,7 +52,7 @@ export function Hero({
   }
 
   return (
-    <section className="bf-section">
+    <section className="bf-section" hidden={artwork && !artwork.ready}>
       <div className="bf-hero">
         {background && !imageFailed && (
           <img
@@ -58,7 +61,8 @@ export function Hero({
             src={artworkBucketURL(background, "w1280")}
             srcSet={artworkSrcSet(background, ["w640", "w1280"])}
             sizes="100vw"
-            onError={() => setImageFailed(true)}
+            onLoad={artwork?.onLoad}
+            onError={artwork?.onError ?? (() => setImageFailed(true))}
           />
         )}
         <div aria-hidden className="bf-hero-scrim" />

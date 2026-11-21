@@ -1636,9 +1636,11 @@ func profileDisabled(ctx context.Context, q queryRower, id ProfileID) (bool, err
 	return disabled != 0, nil
 }
 
-// updateProfileSettingsSQL writes the full policy column set from the
-// already-merged Profile.
-func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile) error {
+// updateProfileSettingsSQL writes the policy column set from the
+// already-merged Profile. The integration sign-in opt-in is written only when
+// integrationSignIn is set, so an unrelated edit racing an opt-out cannot write
+// a stale opt-in back; setting it false revokes the integration sessions.
+func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile, integrationSignIn *bool) error {
 	audioLanguages, err := encodeLanguages(profile.AudioLanguages)
 	if err != nil {
 		return err
@@ -1651,13 +1653,18 @@ func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile) e
 	if profile.MaxConcurrentStreams != nil {
 		maxStreams = *profile.MaxConcurrentStreams
 	}
+	var optIn any
+	if integrationSignIn != nil {
+		optIn = boolInt(*integrationSignIn)
+	}
 	_, err = s.catalogW.ExecContext(ctx, `
 		UPDATE profile SET name = ?, kind = ?, max_concurrent_streams = ?, transcode_allowed = ?,
 		       disabled = ?, audio_languages = ?, subtitle_languages = ?,
-		       subtitle_mode = ?, prefer_sdh = ?, integration_sign_in = ?, remote_max_bitrate = ?
+		       subtitle_mode = ?, prefer_sdh = ?, integration_sign_in = COALESCE(?, integration_sign_in),
+		       remote_max_bitrate = ?
 		WHERE id = ?`,
 		profile.Name, profile.Kind, maxStreams, boolInt(profile.TranscodeAllowed), boolInt(profile.Disabled),
-		audioLanguages, subtitleLanguages, profile.SubtitleMode, boolInt(profile.PreferSDH), boolInt(profile.IntegrationSignIn),
+		audioLanguages, subtitleLanguages, profile.SubtitleMode, boolInt(profile.PreferSDH), optIn,
 		profile.RemoteMaxBitrate, profile.ID)
 	if err != nil {
 		return err
@@ -1668,7 +1675,7 @@ func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile) e
 			WHERE profile_id = ? AND library_id IN (SELECT id FROM library WHERE is_restricted = 1)`,
 			profile.ID)
 	}
-	if err == nil && !profile.IntegrationSignIn {
+	if err == nil && integrationSignIn != nil && !*integrationSignIn {
 		_, err = s.catalogW.ExecContext(ctx, `DELETE FROM auth_session WHERE profile_id = ? AND kind = ?`, profile.ID, SessionKindIntegration)
 	}
 	return err
@@ -2958,7 +2965,7 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		if err != nil {
 			return Media{}, MediaFile{}, false, err
 		}
-		keepProbeFacts = first != "" && first != imported.ContentFingerprint
+		keepProbeFacts = first != "" && (imported.KeepProbeFacts || first != imported.ContentFingerprint)
 	}
 	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, imported, plane.encrypted, keepProbeFacts)
 	if err != nil {
@@ -3191,7 +3198,16 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 		}
 	}
 
-	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, ordered[0].File, plane.encrypted, false)
+	primary := ordered[0].File
+	keepProbeFacts := false
+	if primary.KeepProbeFacts {
+		first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
+		if err != nil {
+			return Media{}, nil, false, err
+		}
+		keepProbeFacts = first == primary.ContentFingerprint
+	}
+	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, primary, plane.encrypted, keepProbeFacts)
 	if err != nil {
 		return Media{}, nil, false, err
 	}

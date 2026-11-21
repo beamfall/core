@@ -251,6 +251,8 @@ type Group struct {
 	// §2.5). Ephemeral like everything else here; consumed on accept. Nil for an
 	// Ambient Group.
 	invites map[store.ProfileID]Invite
+	// A host removed after stream expiry can rejoin as a member from the same session.
+	expiredHosts map[store.SessionID]store.ProfileID
 	// paused is the Watch Party timeline's paused state. While paused the
 	// anchor does not advance (PartyAnchor reports position as-is). A party
 	// forms paused at position zero on its content; the host's transitions set

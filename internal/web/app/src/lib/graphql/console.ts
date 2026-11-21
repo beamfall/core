@@ -20,6 +20,9 @@ import type {
   EnforcedFilterPlugin,
   EnforcedFilterProfile,
   HostMetricsInfo,
+  JellyfinCompatInfo,
+  JellyfinCompatProfileInfo,
+  JellyfinCompatUpdate,
   JobEventInfo,
   JobInfo,
   LiveSessionInfo,
@@ -720,6 +723,55 @@ export async function fetchQBittorrentIngest(signal?: AbortSignal): Promise<QBit
     signal,
   );
   return data.qbittorrentIngest;
+}
+
+// --- Jellyfin-compatible API settings (ADR-0171, CORE-2683) -----------------
+
+const JELLYFIN_COMPAT_FIELDS =
+  "enabled allowedCIDRs trustedProxyCIDRs libraries { id title allowed } profiles { id name integrationSignIn }";
+
+const JELLYFIN_COMPAT_QUERY = `query JellyfinCompat { jellyfinCompat { ${JELLYFIN_COMPAT_FIELDS} } }`;
+
+/** JellyfinCompat — the compatibility API settings, shareable Libraries and adult Profiles. */
+export async function fetchJellyfinCompat(signal?: AbortSignal): Promise<JellyfinCompatInfo> {
+  const data = await graphql<{ jellyfinCompat: JellyfinCompatInfo }>(
+    JELLYFIN_COMPAT_QUERY,
+    {},
+    signal,
+  );
+  return data.jellyfinCompat;
+}
+
+const SET_JELLYFIN_COMPAT_MUTATION = `mutation SetJellyfinCompat($enabled: Boolean, $allowedCIDRs: [String!], $trustedProxyCIDRs: [String!], $libraryIDs: [String!]) { setJellyfinCompat(enabled: $enabled, allowedCIDRs: $allowedCIDRs, trustedProxyCIDRs: $trustedProxyCIDRs, libraryIDs: $libraryIDs) { ${JELLYFIN_COMPAT_FIELDS} } }`;
+
+/** SetJellyfinCompat — change only the given settings; the server normalizes CIDRs. */
+export async function setJellyfinCompat(
+  update: JellyfinCompatUpdate,
+  signal?: AbortSignal,
+): Promise<JellyfinCompatInfo> {
+  const data = await graphql<{ setJellyfinCompat: JellyfinCompatInfo }>(
+    SET_JELLYFIN_COMPAT_MUTATION,
+    { ...update },
+    signal,
+  );
+  return data.setJellyfinCompat;
+}
+
+const SET_PROFILE_INTEGRATION_SIGN_IN_MUTATION =
+  "mutation SetProfileIntegrationSignIn($profileID: String!, $enabled: Boolean!) { setProfileIntegrationSignIn(profileID: $profileID, enabled: $enabled) { id name integrationSignIn } }";
+
+/** SetProfileIntegrationSignIn — opt one Profile in or out; off signs it out of every tool. */
+export async function setProfileIntegrationSignIn(
+  profileID: string,
+  enabled: boolean,
+  signal?: AbortSignal,
+): Promise<JellyfinCompatProfileInfo> {
+  const data = await graphql<{ setProfileIntegrationSignIn: JellyfinCompatProfileInfo }>(
+    SET_PROFILE_INTEGRATION_SIGN_IN_MUTATION,
+    { profileID, enabled },
+    signal,
+  );
+  return data.setProfileIntegrationSignIn;
 }
 
 // --- Admin API tokens (ADR-0013) ------------------------------------------

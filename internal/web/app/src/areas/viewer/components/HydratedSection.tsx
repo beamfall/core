@@ -169,6 +169,7 @@ export function HydratedSection({
       navigationID={navigationID}
       showPlayButton={Boolean(entityID) && section.source?.kind === "entity-media"}
       nameContainer={!entityID}
+      intrinsicArtwork={home}
     />
   );
 }

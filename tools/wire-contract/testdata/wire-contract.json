@@ -543,6 +543,11 @@
       "tier": "session"
     },
     {
+      "field": "jellyfincompat",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
       "field": "job",
       "effect": "read",
       "tier": "admin"
@@ -1263,6 +1268,11 @@
       "tier": "session"
     },
     {
+      "field": "setjellyfincompat",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "setlibraryaiindexing",
       "effect": "write",
       "tier": "admin"
@@ -1329,6 +1339,11 @@
     },
     {
       "field": "setprofileavatar",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
+      "field": "setprofileintegrationsignin",
       "effect": "write",
       "tier": "admin"
     },
@@ -10733,6 +10748,104 @@
         {
           "name": "watchlisted",
           "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "jellyfincompat",
+      "kind": "object",
+      "children": [
+        {
+          "name": "allowedCIDRs",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "enabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "allowed",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "allowed",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "profiles",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "integrationSignIn",
+                "kind": "scalar"
+              },
+              {
+                "name": "name",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "integrationSignIn",
+              "kind": "scalar"
+            },
+            {
+              "name": "name",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "trustedProxyCIDRs",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         }
       ]
     },
@@ -27097,6 +27210,104 @@
       ]
     },
     {
+      "field": "setjellyfincompat",
+      "kind": "object",
+      "children": [
+        {
+          "name": "allowedCIDRs",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "enabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "allowed",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "allowed",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "profiles",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "integrationSignIn",
+                "kind": "scalar"
+              },
+              {
+                "name": "name",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "integrationSignIn",
+              "kind": "scalar"
+            },
+            {
+              "name": "name",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "trustedProxyCIDRs",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        }
+      ]
+    },
+    {
       "field": "setlibraryaiindexing",
       "kind": "object",
       "children": [
@@ -31604,6 +31815,24 @@
         },
         {
           "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "setprofileintegrationsignin",
+      "kind": "object",
+      "children": [
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "integrationSignIn",
+          "kind": "scalar"
+        },
+        {
+          "name": "name",
           "kind": "scalar"
         }
       ]
@@ -38352,6 +38581,10 @@
         "effect": "write"
       },
       {
+        "field": "jellyfincompat",
+        "effect": "read"
+      },
+      {
         "field": "job",
         "effect": "read"
       },
@@ -38584,6 +38817,10 @@
         "effect": "write"
       },
       {
+        "field": "setjellyfincompat",
+        "effect": "write"
+      },
+      {
         "field": "setlibraryaiindexing",
         "effect": "write"
       },
@@ -38625,6 +38862,10 @@
       },
       {
         "field": "setprofileavatar",
+        "effect": "write"
+      },
+      {
+        "field": "setprofileintegrationsignin",
         "effect": "write"
       },
       {

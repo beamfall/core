@@ -28,12 +28,23 @@ export function showsYear(item: SourceItem, repeated: ReadonlySet<string>): bool
   return !!item.year && item.year > 0 && repeated.has(titleKey(item.title));
 }
 
+/** Whether the card has audio Entity credits or a year to feature under its title. */
+export function showsAudioEntityDetails(item: SourceItem): boolean {
+  return (
+    item.kind === "entity" &&
+    item.mediaClass === "audio" &&
+    !item.locked &&
+    ((item.year ?? 0) > 0 || item.byline?.some(Boolean) === true)
+  );
+}
+
 /**
  * The line under a card's title: the plugin's subtitle first, which tells
  * siblings apart (CORE-1226), then its year when the title repeats in the
  * list, then who made it (an audio card's byline, CORE-2362), then its
  * summary, never repeating a part. A card headed by its container leads with
- * the item's own name instead (cardHeading).
+ * the item's own name instead (cardHeading). Audio Entity cards prefer their
+ * credits and known year when available.
  */
 export function cardSubline(
   item: SourceItem,
@@ -41,12 +52,12 @@ export function cardSubline(
   locale = "en",
   lead = displayString(item.subtitle, locale),
 ): string {
-  const parts = [
-    lead,
-    showYear && item.year ? String(item.year) : "",
-    cardByline(item),
-    item.summary,
-  ];
+  const byline = cardByline(item);
+  const year = item.year && item.year > 0 ? String(item.year) : "";
+  if (showsAudioEntityDetails(item)) {
+    return [byline, year].filter(Boolean).join(" · ");
+  }
+  const parts = [lead, showYear ? year : "", byline, item.summary];
   return [...new Set(parts.filter(Boolean))].join(" · ");
 }
 

@@ -24,6 +24,8 @@ export interface WatchEntry {
   mediaId: string;
   state: unknown;
   search: string;
+  /** Epoch at which the host selected this title, if this entry is a selection. */
+  titleSelectionEpoch?: number;
 }
 
 export interface PlayerHostControls {

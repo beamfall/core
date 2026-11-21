@@ -36,6 +36,9 @@ type scanWalkState struct {
 	// legacyParserPaths are the unchanged files probed on the fast path so
 	// their parse settles legacy parser fields (CORE-2554).
 	legacyParserPaths map[string]struct{}
+	// durationlessPaths are the unchanged files probed on the fast path
+	// because their Media holds no duration.
+	durationlessPaths map[string]struct{}
 	req               Request
 	checkpoint        jobCheckpoint
 	scanStarted       time.Time
@@ -195,6 +198,7 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 	}
 	defer s.releaseBudget()
 	task.fill(ctx, s.st, s.prober, s.grabber)
+	verified := task.err == nil
 	if task.err == errUnstableSample {
 		// The worker's normal fast-path lookup only sees the public catalog.
 		// Resolve unstable paths in this scan's library before reusing a row.
@@ -208,8 +212,12 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 	}
 	if task.err == nil && task.fastPath {
 		// An unchanged file whose Media still holds legacy parser fields is
-		// probed once, so its parse can settle them (CORE-2554).
-		if _, legacy := s.legacyParserPaths[task.path]; legacy {
+		// probed once, so its parse can settle them (CORE-2554). One whose
+		// Media holds no duration is probed so the import fills it, unless
+		// its sample could not be verified against the stored bytes.
+		_, legacy := s.legacyParserPaths[task.path]
+		_, durationless := s.durationlessPaths[task.path]
+		if legacy || durationless && verified {
 			task.probeFile(ctx, s.prober)
 		}
 	}

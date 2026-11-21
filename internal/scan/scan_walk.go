@@ -98,6 +98,13 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		}
 		state.legacyParserPaths = legacy
 	}
+	if prober != nil {
+		durationless, err := st.LibraryFilePathsWithoutDuration(ctx, req.LibraryID)
+		if err != nil {
+			return Result{}, err
+		}
+		state.durationlessPaths = durationless
+	}
 	extrasRoot, err := extrasRootFor(ctx, st, req.LibraryID, req.Root)
 	if err != nil {
 		return Result{}, err

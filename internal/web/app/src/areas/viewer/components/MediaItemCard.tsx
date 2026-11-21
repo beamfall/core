@@ -11,7 +11,7 @@ import { activateLink } from "../lib/activateLink";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { artFrameClass } from "../lib/cardArt";
 import { cardAccessibleName, cardRating, cardState } from "../lib/cardState";
-import { cardHeading, cardSubline } from "../lib/cardTitles";
+import { cardHeading, cardSubline, showsAudioEntityDetails } from "../lib/cardTitles";
 import { entityLinkState } from "../lib/entityPreview";
 import type { LibraryViewMode } from "../lib/libraryBrowse";
 import { mediaPath } from "../lib/mediaAddress";
@@ -34,9 +34,9 @@ const CARD_BUCKETS = ["w320", "w640"] as const;
 // One catalog card, ported from the vanilla renderItem (app.js). Generic by
 // invariant #1: the wire entity is Media and `kind` is a plugin display
 // discriminant — a "media" item plays, anything else opens entity detail. The
-// poster sits in a fixed frame (2:3, or square for audio: cardArt.ts) whose tinted
-// fallback (with a muted glyph) shows when artwork is absent or fails to load, so
-// layout never shifts. Titles and
+// poster uses a 2:3 or square frame (cardArt.ts) until its artwork loads.
+// Home cards then fit the artwork's natural ratio. A tinted glyph fallback
+// shows when artwork is absent or fails to load. Titles and
 // summaries render as React text only (invariant #5 / ADR-0012 §5).
 //
 // The card link is the only control that carries the item's name: its
@@ -55,6 +55,7 @@ export function MediaItemCard({
   showYear = false,
   display = "poster",
   nameContainer = true,
+  intrinsicArtwork = false,
 }: {
   item: SourceItem;
   /** 1-based aria-posinset for grid a11y; omit outside a grid. */
@@ -82,6 +83,7 @@ export function MediaItemCard({
    * inside a container's own page, where it goes without saying.
    */
   nameContainer?: boolean;
+  intrinsicArtwork?: boolean;
 }) {
   const navigate = useNavigate();
   const cardImageSizes = useCardImageSizes();
@@ -89,7 +91,7 @@ export function MediaItemCard({
   const t = useT();
   const displayLocale = useDisplayLocale();
   const location = useLocation();
-  const [imageFailed, setImageFailed] = useState(false);
+  const [failedPoster, setFailedPoster] = useState("");
   const [previewClip, setPreviewClip] = useState("");
   const isMedia = item.kind === "media";
   const hasPlayButton = showPlayButton && isMedia && !item.locked;
@@ -98,6 +100,7 @@ export function MediaItemCard({
   const isTable = display === "table";
   const { heading, lead } = cardHeading(item, nameContainer, displayLocale);
   const subline = cardSubline(item, showYear || isTable, displayLocale, lead);
+  const featureAudioDetails = showsAudioEntityDetails(item);
   const isRow = display === "list" || isTable;
   const wide = display === "thumbnail";
   // The page the card's own activation opens (and the More menu's copied link).
@@ -107,7 +110,11 @@ export function MediaItemCard({
     : t("cardOpen");
   const poster = wide
     ? artworkSlotURL(item, "thumb") || artworkSlotURL(item, "poster")
-    : artworkSlotURL(item, "poster") || artworkSlotURL(item, "thumb");
+    : artworkSlotURL(item, "poster") ||
+      artworkSlotURL(item, "thumb") ||
+      (intrinsicArtwork ? artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "banner") : "");
+  const frameClass = wide ? "bf-poster bf-poster-wide" : artFrameClass(item);
+  const showArtwork = poster && failedPoster !== poster;
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewRequestRef = useRef(0);
@@ -258,6 +265,7 @@ export function MediaItemCard({
       primaryLabel={primaryLabel}
       isMedia={isMedia}
       isAudio={item.mediaClass === "audio"}
+      containerID={item.container?.id}
       href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
       target={itemTargetFor(item)}
       onPrimary={isMedia ? play : open}
@@ -286,7 +294,15 @@ export function MediaItemCard({
         state={showPlayButton ? undefined : linkState()}
         onClick={showPlayButton ? (event) => activateLink(event, open) : undefined}
         aria-label={cardAccessibleName(
-          { ...item, title: cardLabelTitle(item, heading, showYear, lead) },
+          {
+            ...item,
+            title: cardLabelTitle(
+              item,
+              heading,
+              showYear && !featureAudioDetails,
+              featureAudioDetails ? subline : lead,
+            ),
+          },
           state,
           rating,
         )}
@@ -307,16 +323,21 @@ export function MediaItemCard({
           </span>
         )}
         {!isTable && (
-          <div className={wide ? "bf-poster bf-poster-wide" : artFrameClass(item)}>
-            {poster && !imageFailed ? (
+          <div
+            className={
+              intrinsicArtwork && showArtwork ? `${frameClass} bf-poster-intrinsic` : frameClass
+            }
+          >
+            {showArtwork ? (
               <img
+                key={poster}
                 alt=""
                 loading="lazy"
                 decoding="async"
                 src={artworkBucketURL(poster, "w320")}
                 srcSet={artworkSrcSet(poster, CARD_BUCKETS)}
                 sizes={cardImageSizes}
-                onError={() => setImageFailed(true)}
+                onError={() => setFailedPoster(poster)}
               />
             ) : (
               <PosterGlyph mediaClass={item.mediaClass} />

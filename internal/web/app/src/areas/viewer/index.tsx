@@ -153,7 +153,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
   return (
     <PlayerHost key={profileID}>
       <Routes key={profileID}>
-        <Route path="/" element={<BrowsePage home />} />
+        <Route path="/" element={<BrowsePage />} />
         <Route path="/n/:nodeId" element={<BrowsePage />} />
         <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
         <Route path="/n/:nodeId/collections" element={<LibraryPivotPage pivot="collections" />} />

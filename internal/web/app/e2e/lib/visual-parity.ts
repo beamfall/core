@@ -94,7 +94,7 @@ export async function expectVisualParity(
   page: Page,
   testInfo: TestInfo,
   name: string,
-  options: { archivedSubject?: Locator; mask?: Locator[] } = {},
+  options: { archivedSubject?: Locator; mask?: Locator[]; liveOnly?: boolean } = {},
 ): Promise<void> {
   const fileName = `${name}.png`;
   await waitForSplashHandoff(page);
@@ -117,6 +117,7 @@ export async function expectVisualParity(
     threshold: 0.2,
     mask: options.mask,
   });
+  if (options.liveOnly) return;
   await expectArchivedVisualParity(options.archivedSubject ?? page, testInfo, name);
   await testInfo.attach(`visual-parity-state:${testInfo.project.name}/${fileName}`, {
     body: "passed",

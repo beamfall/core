@@ -9062,6 +9062,104 @@
     ]
   },
   {
+    "field": "jellyfincompat",
+    "kind": "object",
+    "children": [
+      {
+        "name": "allowedCIDRs",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "enabled",
+        "kind": "scalar"
+      },
+      {
+        "name": "libraries",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "allowed",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "allowed",
+            "kind": "scalar"
+          },
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "profiles",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "integrationSignIn",
+              "kind": "scalar"
+            },
+            {
+              "name": "name",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "integrationSignIn",
+            "kind": "scalar"
+          },
+          {
+            "name": "name",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "trustedProxyCIDRs",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      }
+    ]
+  },
+  {
     "field": "job",
     "kind": "object",
     "children": [
@@ -25422,6 +25520,104 @@
     ]
   },
   {
+    "field": "setjellyfincompat",
+    "kind": "object",
+    "children": [
+      {
+        "name": "allowedCIDRs",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "enabled",
+        "kind": "scalar"
+      },
+      {
+        "name": "libraries",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "allowed",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "allowed",
+            "kind": "scalar"
+          },
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "profiles",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "integrationSignIn",
+              "kind": "scalar"
+            },
+            {
+              "name": "name",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "integrationSignIn",
+            "kind": "scalar"
+          },
+          {
+            "name": "name",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "trustedProxyCIDRs",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      }
+    ]
+  },
+  {
     "field": "setlibraryaiindexing",
     "kind": "object",
     "children": [
@@ -29929,6 +30125,24 @@
       },
       {
         "name": "remoteMaxBitrate",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "setprofileintegrationsignin",
+    "kind": "object",
+    "children": [
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "integrationSignIn",
+        "kind": "scalar"
+      },
+      {
+        "name": "name",
         "kind": "scalar"
       }
     ]

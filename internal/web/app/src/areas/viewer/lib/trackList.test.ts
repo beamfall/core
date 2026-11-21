@@ -247,7 +247,15 @@ describe("person page split", () => {
 
   it("ranks top tracks by the profile feed, then server order, capped", () => {
     const profileTop = [media("other", "Elsewhere"), media("t3", "Track Three")];
-    expect(topTracks(items, profileTop).map((item) => item.id)).toEqual(["t3", "t1", "t2"]);
-    expect(topTracks(items, profileTop, 2).map((item) => item.id)).toEqual(["t3", "t1"]);
+    const ranking = topTracks(items, profileTop);
+    expect(ranking.hasPlays).toBe(true);
+    expect(ranking.tracks.map((item) => item.id)).toEqual(["t3", "t1", "t2"]);
+    expect(topTracks(items, profileTop, 2).tracks.map((item) => item.id)).toEqual(["t3", "t1"]);
+  });
+
+  it("keeps server order when none of the listed tracks have known plays", () => {
+    const ranking = topTracks(items, [media("other", "Elsewhere")]);
+    expect(ranking.hasPlays).toBe(false);
+    expect(ranking.tracks.map((item) => item.id)).toEqual(["t1", "t2", "t3"]);
   });
 });

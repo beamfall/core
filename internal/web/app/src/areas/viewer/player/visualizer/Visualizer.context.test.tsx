@@ -269,6 +269,25 @@ it("passes the time since the last draw after a playback pause", async () => {
   expect(renderer.draw.mock.lastCall?.[5]).toBe(300);
 });
 
+// A hidden page usually gets no animation frames, so the first one after it would span the
+// whole time hidden: the limiter would take that for a paint lag and hold the frame.
+it("times the first draw after the page is hidden as a first draw", async () => {
+  const { videoRef } = mount();
+  await waitFor(() => expect(pending.size).toBe(1));
+  const renderer = made.renderers[0];
+  Object.defineProperty(videoRef.current, "readyState", { value: 3 });
+  vi.spyOn(videoRef.current, "paused", "get").mockReturnValue(false);
+  step(16);
+  step(32);
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  step(10032);
+  expect(renderer.draw).toHaveBeenCalledTimes(3);
+  expect(renderer.draw.mock.lastCall?.[5]).toBeCloseTo(1000 / 60);
+  // The limiter is credited none of the break.
+  expect(renderer.draw.mock.lastCall?.[7]).toBe(0);
+  expect(renderer.draw.mock.lastCall?.[10]).toBeCloseTo(1000 / 15);
+});
+
 // Oscillux's visuals are tuned per 60 Hz step: a 120 Hz display stepped their feedback and
 // trails twice as fast, smearing them.
 it("steps the visual at 60 Hz at most on a faster display", async () => {
@@ -483,7 +502,7 @@ describe("Visualizer resize before paint", () => {
       reportCss(400, 300);
       step(16);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
       renderer.shown = { width: 800, height: 600, texel: 1, visibleWidth: 800, visibleHeight: 600 };
       const asked = observes;
 
@@ -505,7 +524,7 @@ describe("Visualizer resize before paint", () => {
       expect(renderer.draw).toHaveBeenCalledTimes(2);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
       expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
     } finally {
       setRatio(ratio);
     }
@@ -526,7 +545,7 @@ describe("Visualizer resize before paint", () => {
       step(16);
       paint([400, 300], [800, 600]);
       expect(renderer.draw).toHaveBeenCalledOnce();
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
 
       setRatio(1);
       step(32);
@@ -537,7 +556,7 @@ describe("Visualizer resize before paint", () => {
       expect(renderer.draw).toHaveBeenCalledTimes(2);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
       expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
     } finally {
       setRatio(ratio);
     }
@@ -569,7 +588,7 @@ describe("Visualizer resize before paint", () => {
       expect(renderer.draw).toHaveBeenCalledTimes(2);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
       expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
       // It goes on drawing: the ratio counts as reported.
       step(96);
       expect(renderer.draw).toHaveBeenCalledTimes(3);
@@ -677,7 +696,7 @@ describe("Visualizer resize before paint", () => {
       step(144);
       expect(renderer.draw).toHaveBeenCalledOnce();
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([800, 600]);
 
       // A ratio left before its report and come back to is asked for again, from the start.
       setRatio(1);
@@ -840,13 +859,13 @@ describe("Visualizer resize before paint", () => {
       step(32);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([1, 120]);
       expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([1, 120]);
+      expect(renderer.draw.mock.lastCall?.slice(8, 10)).toEqual([1, 120]);
     } finally {
       Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: ratio });
     }
   });
 
-  it("times the limiter by the shorter of the frame and draw intervals", async () => {
+  it("times the limiter by the wall-clock interval between draws", async () => {
     mount();
     await waitFor(() => expect(pending.size).toBe(1));
     const renderer = made.renderers[0];
@@ -855,100 +874,38 @@ describe("Visualizer resize before paint", () => {
     clock.mockReturnValue(183);
     step(183);
     expect(renderer.draw.mock.lastCall?.[5]).toBe(183);
-    expect(renderer.draw.mock.lastCall?.[7]).toBe(16.5);
+    expect(renderer.draw.mock.lastCall?.[7]).toBe(33);
     clock.mockRestore();
   });
 
-  // CORE-2737: callbacks run late and then on time, so the time between draws jitters below a
-  // refresh while the vsync timestamps stay steady. The jitter must not pin the bound at 4 ms.
-  it("bounds the refresh by the frame timestamps, not the jittery draw intervals", async () => {
-    mount();
+  // CORE-2744: the limiter's clock keeps real time at the 60 Hz step on a 120 Hz display, late
+  // callbacks and all. Half of each interval ran it at half speed and held ragged areas.
+  it("credits the limiter real time at the 60 Hz step on a 120 Hz display", async () => {
+    const { videoRef } = mount();
     await waitFor(() => expect(pending.size).toBe(1));
     const renderer = made.renderers[0];
-    const period = 1000 / 60;
+    Object.defineProperty(videoRef.current, "readyState", { value: 3 });
+    vi.spyOn(videoRef.current, "paused", "get").mockReturnValue(false);
+    const tick = 1000 / 120;
     const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-    step(0);
-    for (let i = 1; i <= 20; i++) {
-      // Every fifth callback runs 14 ms late, so the next draw follows it by under 3 ms.
-      clock.mockReturnValue(i * period + (i % 5 === 0 ? 14 : 0));
-      step(i * period);
+    for (let i = 1; i <= 600; i++) {
+      // Vsync timestamps, with callbacks that run up to 6 ms late.
+      clock.mockReturnValue(i * tick + ((i * 7) % 13) * 0.5);
+      step(i * tick);
     }
-    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(period / 2);
+    const calls = renderer.draw.mock.calls;
+    expect(calls.length).toBe(300);
+    const credited = calls.slice(1).reduce((sum, call) => sum + call[7], 0);
+    const elapsed = 599 * tick;
+    expect(credited / elapsed).toBeGreaterThan(0.95);
+    expect(credited / elapsed).toBeLessThan(1.05);
+    // The paint-lag bound passed with it is the display's refresh plus a margin, not the draw
+    // interval.
+    expect(calls.at(-1)?.[10]).toBeCloseTo(tick + 2, 6);
     clock.mockRestore();
   });
 
-  // Codex round 19: a frame painted late and the next on time are shown one refresh apart.
-  it("never times the limiter past the shortest draw interval seen", async () => {
-    mount();
-    await waitFor(() => expect(pending.size).toBe(1));
-    const renderer = made.renderers[0];
-    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-    step(0);
-    clock.mockReturnValue(16);
-    step(16);
-    expect(renderer.draw.mock.lastCall?.[7]).toBe(8);
-    clock.mockReturnValue(132);
-    step(132);
-    expect(renderer.draw.mock.lastCall?.[5]).toBe(116);
-    expect(renderer.draw.mock.lastCall?.[7]).toBe(16);
-    // A callback burst closer than any display refreshes does not shrink the floor below 4 ms.
-    clock.mockReturnValue(133);
-    step(133);
-    clock.mockReturnValue(149);
-    step(149);
-    expect(renderer.draw.mock.lastCall?.[7]).toBe(4);
-    clock.mockRestore();
-  });
-
-  // Codex round 28: a bound measured again from the last draws over-credits a late frame once
-  // the page draws slower than the display refreshes, so the bound is the shortest interval
-  // since the loop started. A cadence that slows from 60 Hz to 30 Hz keeps the 60 Hz bound.
-  it("keeps the shortest draw interval after the cadence slows from 60 Hz to 30 Hz", async () => {
-    mount();
-    await waitFor(() => expect(pending.size).toBe(1));
-    const renderer = made.renderers[0];
-    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-    let now = 0;
-    const frames = (count: number, period: number) => {
-      for (let i = 0; i < count; i++) {
-        now += period;
-        clock.mockReturnValue(now);
-        step(now);
-      }
-    };
-    step(0);
-    frames(100, 1000 / 60);
-    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(500 / 60);
-    frames(200, 1000 / 30);
-    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(1000 / 60);
-    // A frame three refreshes late was on screen for one refresh at least.
-    frames(1, 4000 / 60);
-    frames(1, 1000 / 60);
-    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(500 / 60);
-    clock.mockRestore();
-  });
-
-  // Codex round 21: animation frames at every other refresh (59.94 Hz drawn at 29.97 Hz) look
-  // like a 29.97 Hz display, and a frame painted one refresh late is shown for one refresh.
-  it("times the limiter by half the interval when the refresh may be half of it", async () => {
-    mount();
-    await waitFor(() => expect(pending.size).toBe(1));
-    const renderer = made.renderers[0];
-    const period = 2000 / 59.94;
-    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-    step(0);
-    clock.mockReturnValue(period);
-    step(period);
-    clock.mockReturnValue(2 * period);
-    step(2 * period);
-    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(1000 / 59.94);
-    clock.mockRestore();
-  });
-
-  // Codex round 20: a host that only ever draws slower than its display cannot measure the
-  // refresh, so a late paint could follow its predecessor by one refresh; no frame is assumed shown
-  // for longer than a 24 Hz refresh.
-  it("never times the limiter past a 24 Hz refresh when it draws slowly", async () => {
+  it("credits a slow page the time between its draws", async () => {
     mount();
     await waitFor(() => expect(pending.size).toBe(1));
     const renderer = made.renderers[0];
@@ -957,7 +914,8 @@ describe("Visualizer resize before paint", () => {
     clock.mockReturnValue(100);
     step(100);
     expect(renderer.draw.mock.lastCall?.[5]).toBe(100);
-    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(1000 / 24);
+    expect(renderer.draw.mock.lastCall?.[7]).toBe(100);
+    expect(renderer.draw.mock.lastCall?.[10]).toBe(102);
     clock.mockRestore();
   });
 });

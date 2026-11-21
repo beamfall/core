@@ -495,6 +495,7 @@ export function MediaDetailPage() {
                 <ItemActions
                   key={mediaId}
                   target={{ mediaID: mediaId }}
+                  isAudio={(media?.mediaClass ?? card?.mediaClass) === "audio"}
                   className="bf-detail-item-actions"
                 />
               )}

@@ -39,7 +39,7 @@ test.describe("ADR-0100 a11y real-browser parity pass", () => {
   test("Viewer card text hierarchy maintains AA contrast on dark backgrounds", async ({ page }) => {
     await seedViewerFocusSections(page);
     await page.goto("/web/");
-    await expect(page.locator('a[data-focus-section="recent"]').first()).toBeVisible();
+    await expect(page.locator('a[data-focus-section^="recent"]').first()).toBeVisible();
 
     const result = await page.evaluate(() => {
       const root = document.documentElement;
@@ -111,7 +111,7 @@ test.describe("ADR-0100 a11y real-browser parity pass", () => {
       await page.goto(surface.path);
       await expect(page.locator("#root")).not.toBeEmpty();
       if (surface.name === "Viewer") {
-        await expect(page.locator('a[data-focus-section="recent"]').first()).toBeVisible();
+        await expect(page.locator('a[data-focus-section^="recent"]').first()).toBeVisible();
         await expect(
           page.locator('a[data-focus-section="your-most-played"]').first(),
         ).toBeVisible();

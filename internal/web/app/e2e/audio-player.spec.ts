@@ -26,7 +26,11 @@ test("audio keeps playing in the mini player while browsing to search and back",
   const video = await startTrackOne(page);
 
   // Back to Browse, then to search, all in-app: playback must never stop.
-  await page.getByRole("button", { name: "Back", exact: true }).click();
+  // The controls fade after 3 s of playback and a loaded host can get there
+  // first; focusing Back reveals them, as it would for a keyboard user.
+  const backButton = page.getByRole("button", { name: "Back", exact: true });
+  await backButton.focus();
+  await backButton.click();
   await expect(page).toHaveURL(/\/web\/?$/);
   const search = page
     .getByRole("searchbox", { name: "Search" })

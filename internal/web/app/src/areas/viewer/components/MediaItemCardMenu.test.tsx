@@ -1,12 +1,15 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addCollectionMedia,
   fetchCollections,
   fetchItemState,
+  fetchMedia,
   fetchTagAssignments,
 } from "@/lib/graphql";
+import type { MediaCredit } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import type { Locale } from "@/strings";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
@@ -16,6 +19,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   addCollectionMedia: vi.fn(),
   fetchCollections: vi.fn(),
   fetchItemState: vi.fn(),
+  fetchMedia: vi.fn(),
   fetchTagAssignments: vi.fn(),
 }));
 
@@ -25,6 +29,7 @@ vi.mock("@/lib/session", () => ({
 }));
 
 beforeEach(() => {
+  vi.mocked(fetchMedia).mockReset().mockResolvedValue(null);
   vi.mocked(fetchItemState).mockReset().mockResolvedValue({
     id: "t1",
     kind: "media",
@@ -57,21 +62,50 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-function renderMenu(isAudio: boolean, onDetails?: () => void, locale: Locale = "en") {
+const artist: MediaCredit = {
+  entityID: "artist/adele",
+  title: "Adele",
+  archetype: "person",
+  kind: "performer",
+  relation: "credit",
+};
+const album: MediaCredit = {
+  entityID: "record-21",
+  title: "21",
+  archetype: "container",
+  kind: "record",
+  relation: "credit",
+};
+
+function CurrentPath() {
+  return <output aria-label="Current path">{useLocation().pathname}</output>;
+}
+
+function renderMenu(
+  isAudio: boolean,
+  onDetails?: () => void,
+  locale: Locale = "en",
+  credits?: readonly MediaCredit[],
+) {
   render(
     <I18nProvider initialLocale={locale}>
-      <MediaItemCardMenu
-        title="Track One"
-        primaryLabel="Play"
-        isMedia
-        isAudio={isAudio}
-        href="https://example.test/watch/t1"
-        target={{ mediaID: "t1" }}
-        onPrimary={() => {}}
-        onDetails={onDetails}
-      />
+      <MemoryRouter>
+        <MediaItemCardMenu
+          title="Track One"
+          primaryLabel="Play"
+          isMedia
+          isAudio={isAudio}
+          credits={credits}
+          href="https://example.test/watch/t1"
+          target={{ mediaID: "t1" }}
+          onPrimary={() => {}}
+          onDetails={onDetails}
+        />
+        <CurrentPath />
+      </MemoryRouter>
     </I18nProvider>,
   );
+  expect(fetchMedia).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button"));
 }
 
@@ -99,6 +133,39 @@ describe("MediaItemCardMenu wording", () => {
     renderMenu(false);
     expect(await screen.findByRole("menuitem", { name: "Mark watched" })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Mark played" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["Go to artist", "/entity/artist%2Fadele"],
+    ["Go to album", "/entity/record-21"],
+  ])("navigates with %s using credits already loaded by the listing", async (label, path) => {
+    renderMenu(true, undefined, "en", [artist, album]);
+    const link = await screen.findByRole("menuitem", { name: label });
+    expect(link).toHaveAttribute("href", path);
+    fireEvent.click(link);
+    expect(screen.getByLabelText("Current path")).toHaveTextContent(path);
+    expect(fetchMedia).not.toHaveBeenCalled();
+  });
+
+  it("loads credits when an audio card opens and omits an unlinked destination", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      id: "t1",
+      title: "Track One",
+      favorited: false,
+      mediaClass: "audio",
+      credits: [artist],
+    });
+    renderMenu(true);
+    expect(await screen.findByRole("menuitem", { name: "Go to artist" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Go to album" })).toBeNull();
+    expect(fetchMedia).toHaveBeenCalledWith("t1", expect.any(AbortSignal));
+  });
+
+  it("keeps video menus free of audio destinations", async () => {
+    renderMenu(false, undefined, "en", [artist, album]);
+    await screen.findByRole("menuitem", { name: "Mark watched" });
+    expect(screen.queryByRole("menuitem", { name: /^Go to/ })).toBeNull();
+    expect(fetchMedia).not.toHaveBeenCalled();
   });
 
   it("adds the Media to a playlist from the menu", async () => {

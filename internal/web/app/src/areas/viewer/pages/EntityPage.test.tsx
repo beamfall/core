@@ -4,7 +4,13 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchEntity, fetchItemState, fetchMediaForEntity, fetchSourceItems } from "@/lib/graphql";
+import {
+  fetchEntity,
+  fetchItemState,
+  fetchMedia,
+  fetchMediaForEntity,
+  fetchSourceItems,
+} from "@/lib/graphql";
 import { fetchMediaRows, type MediaRow } from "@/lib/graphql/browse";
 import type { EntityInfo, Layout, Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
@@ -25,6 +31,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/graphql", () => ({
   fetchEntity: vi.fn(),
   fetchItemState: vi.fn(),
+  fetchMedia: vi.fn(),
   fetchMediaForEntity: vi.fn(),
   fetchSourceItems: vi.fn(),
 }));
@@ -52,6 +59,10 @@ const entity: EntityInfo = {
   title: "Server title",
   fields: [{ name: "Year", type: "string", value: "2001", label: { en: "Year" } }],
 };
+// The row menu renders after a click; under a loaded full gate it can take longer than the
+// 1s Testing Library default to appear (CORE-2806).
+const MENU_WAIT = { timeout: 5000 };
+
 const related: SourceItem = {
   id: "m1",
   kind: "media",
@@ -111,6 +122,7 @@ beforeEach(() => {
   mocks.identity = identity;
   mocks.layouts = [];
   vi.mocked(fetchEntity).mockReset();
+  vi.mocked(fetchMedia).mockReset().mockResolvedValue(null);
   vi.mocked(fetchItemState).mockReset().mockResolvedValue({
     id: "m1",
     kind: "media",
@@ -382,6 +394,8 @@ describe("EntityPage container lockup", () => {
     expect(filled[0]).toBe(resume);
     expect(resume).toHaveClass("h-11");
     expect(screen.getByText("Next up: Second part")).toBeInTheDocument();
+    expect(screen.getByText("On deck")).toBeInTheDocument();
+    expect(screen.getByText("2 unwatched")).toBeInTheDocument();
 
     fireEvent.click(resume);
     const player = screen.getByRole("status", { name: "player" }).textContent ?? "";
@@ -529,7 +543,7 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     const queueWindow = vi.spyOn(watchQueue, "queueWindow");
     renderEntity();
     fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
-    const details = await screen.findByRole("menuitem", { name: "Details" });
+    const details = await screen.findByRole("menuitem", { name: "Details" }, MENU_WAIT);
     expect(queueWindow).not.toHaveBeenCalled();
     fireEvent.click(details);
     expect(screen.getByRole("status", { name: "detail" })).toHaveTextContent("m1");
@@ -544,7 +558,9 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     renderEntity();
     fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
 
-    expect(await screen.findByRole("menuitem", { name: "Mark played" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("menuitem", { name: "Mark played" }, MENU_WAIT),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Mark watched" })).toBeNull();
   });
 
@@ -556,7 +572,7 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     expect(queueWindow).not.toHaveBeenCalled();
     if (entry === "menu") {
       fireEvent.click(row.getByRole("button", { name: "More actions for Related item" }));
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Play" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Play" }, MENU_WAIT));
     } else {
       fireEvent.click(row.getByRole("button", { name: "Play Related item" }));
     }
@@ -687,7 +703,7 @@ describe.each(["list", "grid"] as const)(
           fireEvent.click(
             within(children).getByRole("button", { name: "More actions for Related item" }),
           );
-          fireEvent.click(await screen.findByRole("menuitem", { name: entry }));
+          fireEvent.click(await screen.findByRole("menuitem", { name: entry }, MENU_WAIT));
         }
 
         const destination = entry === "Play" ? "player" : "detail";
@@ -885,7 +901,7 @@ describe("EntityPage audio container order", () => {
       fireEvent.click(within(link).getByText("Second Disc Opener"));
     } else {
       fireEvent.click(disc.getByRole("button", { name: "More actions for Second Disc Opener" }));
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Details" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Details" }, MENU_WAIT));
     }
 
     const output = screen.getByRole("status", { name: "detail" }).textContent!;
@@ -1006,6 +1022,23 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
       t3: row("t3", "Third Song", 3, [maker]),
     });
   });
+
+  it.each([false, true])(
+    "uses listening wording for an audio container with poster %s",
+    async (poster) => {
+      vi.mocked(fetchEntity).mockResolvedValue({
+        ...record,
+        artworkSlots: poster ? { poster: "/a/album" } : {},
+      });
+      renderEntity();
+      await act(async () => {});
+
+      expect(screen.getByText("3 unplayed")).toBeInTheDocument();
+      expect(screen.getByText("Up next", { exact: true })).toBeInTheDocument();
+      expect(screen.queryByText("3 unwatched")).toBeNull();
+      expect(screen.queryByText("On deck")).toBeNull();
+    },
+  );
 
   it("lists the tracks in order with artist and duration instead of the Layout's rows", async () => {
     renderEntity();

@@ -178,6 +178,10 @@
       "effect": "write"
     },
     {
+      "field": "jellyfincompat",
+      "effect": "read"
+    },
+    {
       "field": "job",
       "effect": "read"
     },
@@ -410,6 +414,10 @@
       "effect": "write"
     },
     {
+      "field": "setjellyfincompat",
+      "effect": "write"
+    },
+    {
       "field": "setlibraryaiindexing",
       "effect": "write"
     },
@@ -451,6 +459,10 @@
     },
     {
       "field": "setprofileavatar",
+      "effect": "write"
+    },
+    {
+      "field": "setprofileintegrationsignin",
       "effect": "write"
     },
     {

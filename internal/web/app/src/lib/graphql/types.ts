@@ -1871,6 +1871,37 @@ export interface QBittorrentIngestInfo {
   status: QBittorrentStatusEntry[];
 }
 
+/** One Library the Jellyfin-compatible API may share (graph.JellyfinCompatLibraryInfo). */
+export interface JellyfinCompatLibraryInfo {
+  id: string;
+  title: string;
+  allowed: boolean;
+}
+
+/** One enabled adult Profile and its integration sign-in opt-in (graph.JellyfinCompatProfileInfo). */
+export interface JellyfinCompatProfileInfo {
+  id: string;
+  name: string;
+  integrationSignIn: boolean;
+}
+
+/** The Jellyfin-compatible API settings (graph.JellyfinCompatInfo, CORE-2683). */
+export interface JellyfinCompatInfo {
+  enabled: boolean;
+  allowedCIDRs: string[];
+  trustedProxyCIDRs: string[];
+  libraries: JellyfinCompatLibraryInfo[];
+  profiles: JellyfinCompatProfileInfo[];
+}
+
+/** A setJellyfinCompat patch: only the given fields change. */
+export interface JellyfinCompatUpdate {
+  enabled?: boolean;
+  allowedCIDRs?: string[];
+  trustedProxyCIDRs?: string[];
+  libraryIDs?: string[];
+}
+
 // --- Admin session --------------------------------------------------------
 
 /** Admin Session state (graph.AdminSessionInfo, narrowed). */

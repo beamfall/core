@@ -3,9 +3,12 @@
 package conformance
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/beamfall/core/internal/capabilities"
+	"github.com/beamfall/core/internal/compat"
 	"github.com/beamfall/core/internal/graph"
 )
 
@@ -18,7 +21,7 @@ import (
 // (absent from the schema manifest) nor reachable (rejected as an unknown
 // top-level field). It is a TEST of the API, not merely UI suppression.
 func TestAppStoreSuppressesCapabilityControlAPI(t *testing.T) {
-	suppressed := []string{"capabilitystates", "setcapabilityenabled", "qbittorrentingest", "setqbittorrentingest"}
+	suppressed := []string{"capabilitystates", "setcapabilityenabled", "qbittorrentingest", "setqbittorrentingest", "jellyfincompat", "setjellyfincompat", "setprofileintegrationsignin"}
 
 	// Not advertised: the field is absent from the dispatcher's schema manifest.
 	for _, field := range graph.SchemaManifest() {
@@ -47,5 +50,31 @@ func TestAppStoreOmitsPowertoolsCapabilities(t *testing.T) {
 	}
 	if len(report.CapabilityStates) != 0 {
 		t.Fatalf("App Store binary capability states = %#v, want none", report.CapabilityStates)
+	}
+}
+
+// TestAppStoreForcesCompatRoutesOff covers CORE-2683: an App Store binary keeps
+// the compatibility route group off whatever the bootstrap flags or stored
+// Console settings say.
+func TestAppStoreForcesCompatRoutesOff(t *testing.T) {
+	handler, err := compat.New(compat.Config{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := func() int {
+		req := httptest.NewRequest(http.MethodGet, compat.Prefix+"System/Info/Public", nil)
+		req.RemoteAddr = "127.0.0.1:1234"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := status(); code != http.StatusNotFound {
+		t.Fatalf("enabled on an App Store build: status = %d, want 404", code)
+	}
+	if err := handler.Apply(compat.Settings{Enabled: true, AllowedCIDRs: []string{"127.0.0.0/8"}}); err != nil {
+		t.Fatal(err)
+	}
+	if code := status(); code != http.StatusNotFound {
+		t.Fatalf("applied on an App Store build: status = %d, want 404", code)
 	}
 }

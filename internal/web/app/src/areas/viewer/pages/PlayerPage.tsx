@@ -1,6 +1,6 @@
 import { AlertCircle, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useLocation, useNavigate, useNavigationType } from "react-router";
 import { MAIN_CONTENT_ID, SkipLink } from "@/components/chrome/SkipLink";
 import { Button } from "@/components/ui/button";
 import { getIdentityEpochSignal } from "@/lib/api";
@@ -64,7 +64,7 @@ import { PrePlayStage } from "../player/PrePlayStage";
 import { SkippedOverlay } from "../player/SkippedOverlay";
 import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
 import { UpNextCard } from "../player/UpNextCard";
-import { useAutoSkip } from "../player/useAutoSkip";
+import { type PartySeekAutoSkip, useAutoSkip } from "../player/useAutoSkip";
 import { useCaptionLoad } from "../player/useCaptionLoad";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
 import { decodableStream, useGaplessAudio } from "../player/useGaplessAudio";
@@ -75,7 +75,16 @@ import { useStillWatching } from "../player/useStillWatching";
 import { useUpNext } from "../player/useUpNext";
 import { useWatchParty } from "../player/useWatchParty";
 import { WatchPartyPanel, WatchPartySyncIndicator } from "../player/WatchPartyPanel";
-import { watchPartyDefersUpNext } from "../player/watchPartyStore";
+import {
+  getPartyTransportEpoch,
+  getWatchParty,
+  watchPartyDefersUpNext,
+} from "../player/watchPartyStore";
+
+function hostTitleSelectionEpoch(): number | undefined {
+  const { status, isHost } = getWatchParty();
+  return status === "active" && isHost ? getPartyTransportEpoch() : undefined;
+}
 
 // The player (/watch/*), ported from the vanilla play() + player view
 // (app.js / index.html). Negotiates playback-info, routes to direct play or
@@ -101,13 +110,26 @@ export function PlayerPage() {
   const t = useT();
   const location = useLocation();
   const navigate = useNavigate();
+  const navigationType = useNavigationType();
   // A readable address (CORE-2329) or a bare ID: the token names the item.
   const { id: mediaId } = useMediaAddress();
   const host = usePlayerHost();
+  const { titleSelectionEpoch, rejoiningPlayback } = useMemo(() => {
+    // Catalog playback pushes an entry. Player advances replace it and carry
+    // the selection explicitly. Back, Forward and reload restore playback.
+    const state = location.state as { selectPartyTitle?: boolean } | null;
+    const selectsTitle =
+      navigationType !== "POP" && (state?.selectPartyTitle ?? navigationType === "PUSH");
+    const titleSelectionEpoch = selectsTitle ? hostTitleSelectionEpoch() : undefined;
+    return {
+      titleSelectionEpoch,
+      rejoiningPlayback: titleSelectionEpoch === undefined && getWatchParty().status === "active",
+    };
+  }, [location, navigationType]);
   const skip = new URLSearchParams(location.search).has("t");
   const carried =
     !!location.state && (location.state as { skipPrePlay?: unknown }).skipPrePlay === true;
-  const bypass = skip || carried || !mediaId;
+  const bypass = skip || carried || !mediaId || rejoiningPlayback;
   const [decided, setDecided] = useState<{ mediaId: string; items: PrePlayItem[] } | null>(null);
 
   useEffect(() => {
@@ -144,7 +166,7 @@ export function PlayerPage() {
     );
   }
   if (mediaId && feature) {
-    const entry = { mediaId, state: location.state, search: location.search };
+    const entry = { mediaId, state: location.state, search: location.search, titleSelectionEpoch };
     return host ? <AttachToHost host={host} entry={entry} /> : <FeaturePlayer entry={entry} />;
   }
   if (current) {
@@ -174,10 +196,10 @@ function AttachToHost({
   host: NonNullable<ReturnType<typeof usePlayerHost>>;
   entry: WatchEntry;
 }) {
-  const { mediaId, state, search } = entry;
+  const { mediaId, state, search, titleSelectionEpoch } = entry;
   useLayoutEffect(() => {
-    host.attach({ mediaId, state, search });
-  }, [host, mediaId, state, search]);
+    host.attach({ mediaId, state, search, titleSelectionEpoch });
+  }, [host, mediaId, state, search, titleSelectionEpoch]);
   useLayoutEffect(() => () => host.detach(), [host]);
   return null;
 }
@@ -287,6 +309,7 @@ function FeaturePlayer({
     selectedVersion,
     navState.tracks,
     navState.startID,
+    entry.titleSelectionEpoch === undefined,
   );
   // A new Version is another file: remember it, then reload at the playhead.
   const selectVersion = useCallback(
@@ -451,10 +474,16 @@ function FeaturePlayer({
   // Docked in the mini player, the advance stays on the page the listener is
   // browsing.
   const playItem = useCallback(
-    (id: string, title: string) => {
-      const state = { title, skipPrePlay: true, ...(queue ? { queue, queueIdentity } : {}) };
+    (id: string, title: string, selectPartyTitle = true) => {
+      const state = {
+        title,
+        skipPrePlay: true,
+        selectPartyTitle,
+        ...(queue ? { queue, queueIdentity } : {}),
+      };
       if (docked && onAdvanceDocked) {
-        onAdvanceDocked({ mediaId: id, state, search: "" });
+        const titleSelectionEpoch = selectPartyTitle ? hostTitleSelectionEpoch() : undefined;
+        onAdvanceDocked({ mediaId: id, state, search: "", titleSelectionEpoch });
         return;
       }
       navigate(mediaPath("watch", id), { replace: true, state });
@@ -464,12 +493,17 @@ function FeaturePlayer({
 
   // Watch Party (CORE-1677): the party moves every member's player to the
   // title it is on and keeps the <video> on its shared timeline.
-  const followParty = useCallback((id: string) => playItem(id, ""), [playItem]);
+  const followParty = useCallback((id: string) => playItem(id, "", false), [playItem]);
+  const playerAttached = state.phase !== "message" && state.phase !== "terminal";
+  const partySeekAutoSkip = useRef<PartySeekAutoSkip | null>(null);
   const watchParty = useWatchParty({
     videoRef,
-    attached: state.phase !== "message" && state.phase !== "terminal",
+    attached: playerAttached,
     mediaId: mediaId || "",
+    titleSelectionEpoch: entry.titleSelectionEpoch,
     onFollow: followParty,
+    songScale,
+    partySeekAutoSkip,
   });
   // A party member's Up Next and autoplay defer to the party (CORE-1766).
   const partyLeads = watchPartyDefersUpNext(watchParty.party);
@@ -566,6 +600,7 @@ function FeaturePlayer({
   // separate end-of-file auto-advance above.
   const autoSkip = useAutoSkip({
     videoRef,
+    attached: playerAttached,
     markers: state.markers,
     mediaID: mediaId || "",
     prefs: {
@@ -574,6 +609,9 @@ function FeaturePlayer({
       credits: resolvedPrefs.autoSkipCredits,
     },
     songScale,
+    autoSkipLead: watchParty.autoSkipLead,
+    seekToPartySkip: watchParty.seekToPartySkip,
+    partySeekAutoSkip,
   });
 
   // Browser Media Session (ADR-0084 §43): mirror transport state to the OS and
@@ -631,7 +669,7 @@ function FeaturePlayer({
   const openFullPlayer = useCallback(() => {
     const carried = entry.state && typeof entry.state === "object" ? entry.state : {};
     navigate(`${mediaPath("watch", mediaId)}${entry.search}`, {
-      state: { ...carried, skipPrePlay: true },
+      state: { ...carried, skipPrePlay: true, selectPartyTitle: false },
     });
   }, [navigate, mediaId, entry.state, entry.search]);
 

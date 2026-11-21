@@ -1,13 +1,16 @@
 package store
 
-import "context"
+import (
+	"context"
+	"maps"
+	"slices"
+	"strings"
+)
 
-// entityItemsFilteredSQL applies registered Entity field filters to the
-// multi-Library, offset-paginated entity-items Source query. Callers hold s.mu.
-func (s *Store) entityItemsFilteredSQL(ctx context.Context, filter LibraryFilter, kind string, filters []EntityField, limit, offset int) ([]SourceItem, error) {
-	if len(filters) == 0 {
-		return s.entityItemsSQL(ctx, filter, kind, limit, offset)
-	}
+// entityItemsSQL returns one declared kind across visible Libraries, ordered
+// by title, with field filters and browse rules applied before pagination.
+// Callers hold s.mu.
+func (s *Store) entityItemsSQL(ctx context.Context, filter LibraryFilter, query SourceQuery, limit, offset int) ([]SourceItem, error) {
 	visible, err := s.visibleLibraryIDsLocked(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -15,21 +18,33 @@ func (s *Store) entityItemsFilteredSQL(ctx context.Context, filter LibraryFilter
 	if len(visible) == 0 {
 		return []SourceItem{}, nil
 	}
-	joins, joinArgs, err := s.entityFilterJoins(kind, entityKindOptionsFilters(EntityKindOptions{Filters: filters}))
+	joins, args, err := s.entityFilterJoins(query.EntityKind, query.EntityFieldFilters)
 	if err != nil {
 		return nil, err
 	}
 	libraries, libraryArgs := libraryIDPlaceholders(visible)
-	args := make([]any, 0, len(joinArgs)+len(libraryArgs)+3)
-	args = append(args, joinArgs...)
-	args = append(args, kind)
+	args = append(args, query.EntityKind)
 	args = append(args, libraryArgs...)
+	var browse strings.Builder
+	if len(query.EntityBrowseSources) > 0 {
+		joins = ` JOIN library l ON l.id = e.library_id` + joins
+		for _, pluginID := range slices.Sorted(maps.Keys(query.EntityBrowseSources)) {
+			predicate, sourceArgs := entityBrowseSourceSQL(query.EntityBrowseSources[pluginID])
+			if predicate == "" {
+				continue
+			}
+			// IS NOT also admits Libraries whose plugin_id is NULL.
+			browse.WriteString(` AND (l.plugin_id IS NOT ? OR ` + predicate + `)`)
+			args = append(args, pluginID)
+			args = append(args, sourceArgs...)
+		}
+	}
 	args = append(args, limit, offset)
-	//nolint:gosec // G202: joins and placeholders are generated internally; values remain bound.
+	//nolint:gosec // G202: SQL fragments are generated internally; values remain bound.
 	rows, err := s.catalogR.QueryContext(ctx, `
 		SELECT e.id, e.title, e.library_id FROM entity e`+joins+`
 		WHERE e.kind = ? AND e.library_id IN (`+libraries+`)
-			AND e.trashed_at_ms IS NULL
+			AND e.trashed_at_ms IS NULL`+browse.String()+`
 		ORDER BY e.title COLLATE NOCASE, e.id
 		LIMIT ? OFFSET ?
 	`, args...)

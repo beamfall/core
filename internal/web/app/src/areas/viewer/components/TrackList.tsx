@@ -73,6 +73,8 @@ export function TrackList({
                   primaryLabel={t("play")}
                   isMedia
                   isAudio
+                  credits={row.credits}
+                  containerID={item.container?.id}
                   href={
                     new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin)
                       .href
