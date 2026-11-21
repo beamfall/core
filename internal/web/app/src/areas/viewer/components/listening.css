@@ -94,6 +94,13 @@
   padding-right: 8px;
 }
 
+[data-register="viewer"] .bf-track-tools .bf-card-more {
+  position: relative;
+  inset: auto;
+  align-self: center;
+  opacity: 1;
+}
+
 [data-register="viewer"] .bf-list-toolbar {
   display: flex;
   flex-wrap: wrap;

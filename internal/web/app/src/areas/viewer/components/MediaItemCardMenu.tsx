@@ -5,12 +5,13 @@ import {
   Disc3,
   Link2,
   ListPlus,
+  ListStart,
   MoreVertical,
   Play,
   SquareArrowOutUpRight,
   UserRound,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Menu } from "@/components/ui/astryx-primitives";
 import { fetchMedia } from "@/lib/graphql";
@@ -19,6 +20,7 @@ import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { useItemActions } from "../actions";
 import { entityPath } from "../lib/entityAddress";
+import { MusicQueueProfile, updateMusicQueue } from "../lib/musicQueue";
 import { moreWithLead } from "../lib/related";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 
@@ -36,6 +38,7 @@ export function MediaItemCardMenu({
   primaryLabel,
   isMedia,
   isAudio = false,
+  locked = false,
   credits,
   containerID,
   href,
@@ -48,6 +51,7 @@ export function MediaItemCardMenu({
   isMedia: boolean;
   /** The Media's class is "audio": the watched entry uses listening wording. */
   isAudio?: boolean;
+  locked?: boolean;
   /** Credit rows already read by the listing, when available. */
   credits?: readonly MediaCredit[];
   containerID?: string;
@@ -61,6 +65,7 @@ export function MediaItemCardMenu({
 }) {
   const t = useT();
   const identity = useViewerIdentity();
+  const profileID = useContext(MusicQueueProfile);
   const [copied, setCopied] = useState(false);
   const [opened, setOpened] = useState(false);
   const [open, setOpen] = useState(false);
@@ -194,6 +199,28 @@ export function MediaItemCardMenu({
                 )}
                 {watchedLabel}
               </Menu.Item>
+              {audioID && profileID && !locked && (
+                <>
+                  <Menu.Item
+                    className="bf-card-menu-item"
+                    onClick={() =>
+                      void updateMusicQueue(profileID, { kind: "next", mediaID: audioID, title })
+                    }
+                  >
+                    <ListStart aria-hidden="true" size={15} />
+                    {t("musicQueuePlayNext")}
+                  </Menu.Item>
+                  <Menu.Item
+                    className="bf-card-menu-item"
+                    onClick={() =>
+                      void updateMusicQueue(profileID, { kind: "append", mediaID: audioID, title })
+                    }
+                  >
+                    <ListPlus aria-hidden="true" size={15} />
+                    {t("musicQueueAppend")}
+                  </Menu.Item>
+                </>
+              )}
               {isMedia && "mediaID" in target && (
                 <Menu.Item className="bf-card-menu-item" onClick={() => setAddOpen(true)}>
                   <ListPlus aria-hidden="true" size={15} />

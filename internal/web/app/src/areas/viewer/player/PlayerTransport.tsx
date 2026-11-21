@@ -7,16 +7,20 @@ import {
   ChevronsRight,
   Gauge,
   Layers,
+  ListMusic,
   Maximize,
   Minimize,
   MonitorPlay,
   Pause,
   PictureInPicture2,
   Play,
+  Repeat,
+  Repeat1,
   RotateCcw,
   RotateCw,
   Settings,
   Share2,
+  Shuffle,
   SkipBack,
   SkipForward,
   Timer,
@@ -61,12 +65,14 @@ import { ChapterList } from "./ChapterList";
 import { CastControl } from "./cast/CastControl";
 import { InfoOverlay } from "./InfoOverlay";
 import { listenerMuted, setListenerMuted } from "./listenerMute";
+import { MusicQueuePanel } from "./MusicQueuePanel";
 import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { TrackMotionSettings } from "./TrackMotionSettings";
 import { type MenuRow, TransportMenu } from "./TransportMenu";
 import { useAudioDelay } from "./useAudioDelay";
 import { useLiveTracks } from "./useLiveTracks";
+import type { MusicPlayback } from "./useMusicPlayback";
 import type { PlayerState, SwitchResult } from "./usePlayer";
 import { usePlayerShortcuts } from "./usePlayerShortcuts";
 import { useSubtitleAppearance } from "./useSubtitleAppearance";
@@ -122,6 +128,7 @@ export function PlayerTransport({
   onShare,
   onPreviousInQueue,
   onNextInQueue,
+  musicQueue,
   onStop,
   onRemoteStop,
   onRemoteRestart,
@@ -163,6 +170,7 @@ export function PlayerTransport({
   onPreviousInQueue?: () => void;
   /** Play the queue's next item; the control is hidden when absent. */
   onNextInQueue?: () => void;
+  musicQueue?: MusicPlayback;
   /** Leaves the player when another device sends stop; without it stop only pauses. */
   onStop?: () => void;
   /** Stop requested by another device; falls back to onStop. */
@@ -219,6 +227,10 @@ export function PlayerTransport({
   const [openKey, setOpenKey] = useState<OpenKey>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chaptersOpen, setChaptersOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const showingQueue = queueOpen && !!musicQueue;
+  const queueButton = useRef<HTMLButtonElement>(null);
+  const queueID = useId();
   const [buffered, setBuffered] = useState(0);
   const [hover, setHover] = useState<{ left: number; time: number } | null>(null);
   const narrow = useNarrowViewport();
@@ -242,8 +254,8 @@ export function PlayerTransport({
 
   // Report open/closed up so the stage can keep chrome visible while a menu is up.
   useEffect(() => {
-    onMenuOpenChange?.(settingsOpen || chaptersOpen || openKey !== null);
-  }, [openKey, settingsOpen, chaptersOpen, onMenuOpenChange]);
+    onMenuOpenChange?.(settingsOpen || chaptersOpen || openKey !== null || showingQueue);
+  }, [openKey, settingsOpen, chaptersOpen, showingQueue, onMenuOpenChange]);
 
   const closeSettings = useCallback((restoreFocus: boolean) => {
     setSettingsOpen(false);
@@ -911,6 +923,50 @@ export function PlayerTransport({
             )}
           </div>
 
+          {musicQueue && (
+            <>
+              <button
+                type="button"
+                onClick={musicQueue.cycleRepeat}
+                aria-label={t(
+                  musicQueue.repeat === "one"
+                    ? "musicQueueRepeatOne"
+                    : musicQueue.repeat === "all"
+                      ? "musicQueueRepeatAll"
+                      : "musicQueueRepeatOff",
+                )}
+                data-active={musicQueue.repeat !== "off"}
+                className="bf-control is-icon bf-queue-mode"
+              >
+                {musicQueue.repeat === "one" ? <Repeat1 aria-hidden /> : <Repeat aria-hidden />}
+              </button>
+              <button
+                type="button"
+                onClick={musicQueue.toggleShuffle}
+                aria-label={t("musicQueueShuffle")}
+                aria-pressed={musicQueue.shuffled}
+                data-active={musicQueue.shuffled}
+                className="bf-control is-icon bf-queue-mode"
+              >
+                <Shuffle aria-hidden />
+              </button>
+              <button
+                ref={queueButton}
+                type="button"
+                aria-label={t("musicQueueTitle")}
+                aria-expanded={queueOpen}
+                aria-controls={queueOpen ? queueID : undefined}
+                onClick={() => {
+                  closeSettings(false);
+                  setChaptersOpen(false);
+                  setQueueOpen(!queueOpen);
+                }}
+                className="bf-control is-icon"
+              >
+                <ListMusic aria-hidden />
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={() => seekTo(previousChapter)}
@@ -1007,7 +1063,11 @@ export function PlayerTransport({
             <button
               ref={settingsButtonRef}
               type="button"
-              onClick={() => (settingsOpen ? closeSettings(false) : setSettingsOpen(true))}
+              onClick={() => {
+                setQueueOpen(false);
+                if (settingsOpen) closeSettings(false);
+                else setSettingsOpen(true);
+              }}
               aria-label={t("playbackSettings")}
               aria-haspopup="dialog"
               aria-expanded={settingsOpen}
@@ -1220,6 +1280,18 @@ export function PlayerTransport({
           them) but outside the glass sheet (a backdrop-filter ancestor would
           break their fixed positioning). */}
       <div ref={layerRef} className="bf-transport-layer" />
+      {queueOpen && musicQueue && (
+        <MusicQueuePanel
+          id={queueID}
+          mediaID={mediaID}
+          profileID={profileID}
+          music={musicQueue}
+          onClose={() => {
+            setQueueOpen(false);
+            queueButton.current?.focus();
+          }}
+        />
+      )}
       <ShortcutHelpOverlay
         open={openKey === "shortcuts"}
         onOpenChange={(open) => setOpen("shortcuts", open)}

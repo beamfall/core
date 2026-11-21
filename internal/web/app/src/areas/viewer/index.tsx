@@ -11,6 +11,8 @@ import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { useEngagementEvents } from "./actions";
 import { SectionSkeleton } from "./components/HydratedSection";
+import { MusicQueueNotice } from "./components/MusicQueueNotice";
+import { MusicQueueProfile } from "./lib/musicQueue";
 import { useScrollRestoration } from "./lib/useScrollRestoration";
 import { BrowsePage } from "./pages/BrowsePage";
 import { CastCrewPage } from "./pages/CastCrewPage";
@@ -151,40 +153,43 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
   // mini player, while the listener browses (CORE-1633). Keyed like the routes:
   // a Profile switch ends playback.
   return (
-    <PlayerHost key={profileID}>
-      <Routes key={profileID}>
-        <Route path="/" element={<BrowsePage />} />
-        <Route path="/n/:nodeId" element={<BrowsePage />} />
-        <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
-        <Route path="/n/:nodeId/collections" element={<LibraryPivotPage pivot="collections" />} />
-        <Route path="/n/:nodeId/categories" element={<LibraryPivotPage pivot="categories" />} />
-        <Route path="/entity/:entityId" element={<EntityPage />} />
-        <Route path="/media/*" element={<MediaDetailPage />} />
-        <Route path="/credits/*" element={<CastCrewPage />} />
-        <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
-        <Route path="/collections" element={<CollectionListPage />} />
-        <Route path="/collections/:libraryId/:collectionId" element={<CollectionPage />} />
-        <Route path="/search" element={<SearchPage />} />
-        <Route path="/mydata" element={<MyDataPage />} />
-        <Route path="/favorites" element={<FavoritesPage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/playlists" element={<PlaylistsPage />} />
-        <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
-        <Route path="/notifications" element={<NotificationsPage />} />
-        <Route path="/remote" element={<RemotePage />} />
-        <Route path="/profiles" element={<ProfilePickerPage />} />
-        <Route path="/settings" element={<ProfileSettingsPage />} />
-        <Route
-          path="/watch/*"
-          element={
-            <Suspense fallback={<div className="min-h-screen bg-scrim" />}>
-              <LazyPlayerPage />
-            </Suspense>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-      <RemoteMessage message={remote.message} onDismiss={remote.dismissMessage} />
-    </PlayerHost>
+    <MusicQueueProfile.Provider value={profileID}>
+      <PlayerHost key={profileID}>
+        <Routes key={profileID}>
+          <Route path="/" element={<BrowsePage />} />
+          <Route path="/n/:nodeId" element={<BrowsePage />} />
+          <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          <Route path="/n/:nodeId/collections" element={<LibraryPivotPage pivot="collections" />} />
+          <Route path="/n/:nodeId/categories" element={<LibraryPivotPage pivot="categories" />} />
+          <Route path="/entity/:entityId" element={<EntityPage />} />
+          <Route path="/media/*" element={<MediaDetailPage />} />
+          <Route path="/credits/*" element={<CastCrewPage />} />
+          <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
+          <Route path="/collections" element={<CollectionListPage />} />
+          <Route path="/collections/:libraryId/:collectionId" element={<CollectionPage />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/mydata" element={<MyDataPage />} />
+          <Route path="/favorites" element={<FavoritesPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/playlists" element={<PlaylistsPage />} />
+          <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/remote" element={<RemotePage />} />
+          <Route path="/profiles" element={<ProfilePickerPage />} />
+          <Route path="/settings" element={<ProfileSettingsPage />} />
+          <Route
+            path="/watch/*"
+            element={
+              <Suspense fallback={<div className="min-h-screen bg-scrim" />}>
+                <LazyPlayerPage />
+              </Suspense>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+        <RemoteMessage message={remote.message} onDismiss={remote.dismissMessage} />
+        <MusicQueueNotice profileID={profileID} />
+      </PlayerHost>
+    </MusicQueueProfile.Provider>
   );
 }

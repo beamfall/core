@@ -1,6 +1,7 @@
 import { getIdentityEpochSignal } from "@/lib/api";
 import type { SourceItem } from "@/lib/graphql/types";
 import { fetchLibraryItems, type LibraryItemsRequest } from "./libraryBrowse";
+import type { PlayQueueItem } from "./watchQueue";
 
 // The client-owned play queue behind Play all / Shuffle (CORE-1190). The queue
 // is the library query that produced it plus the items read so far; later
@@ -19,14 +20,15 @@ interface PlayQueue {
   request: Omit<LibraryItemsRequest, "limit" | "offset">;
   epoch: AbortSignal | undefined;
   ids: string[];
-  /** The titles the listing gave, by ID: the player's heading for each item. */
-  titles: Map<string, string>;
+  /** The titles and media classes supplied by the listing. */
+  items: Map<string, PlayQueueItem>;
   /** Index of the item last handed to the player. */
   cursor: number;
   /** Size of the set, and how far into it the server was read, at the last page. */
   total: number;
   fetched: number;
   done: boolean;
+  loading?: Promise<void>;
 }
 
 let current: PlayQueue | null = null;
@@ -61,7 +63,7 @@ export async function startPlayQueue(
     request,
     epoch,
     ids: [],
-    titles: new Map(),
+    items: new Map(),
     cursor: 0,
     total: 0,
     fetched: 0,
@@ -81,7 +83,7 @@ export async function startPlayQueue(
   const first = queue.ids[0];
   if (first === undefined || !live()) return null;
   current = queue;
-  return { id: first, title: queue.titles.get(first) ?? "" };
+  return { id: first, title: queue.items.get(first)?.title ?? "" };
 }
 
 /**
@@ -92,7 +94,14 @@ export async function startPlayQueue(
  * smaller still, then scans forward past IDs it already holds, so nothing is
  * skipped and nothing repeats.
  */
-async function loadMore(queue: PlayQueue): Promise<void> {
+function loadMore(queue: PlayQueue): Promise<void> {
+  queue.loading ??= readMore(queue).finally(() => {
+    queue.loading = undefined;
+  });
+  return queue.loading;
+}
+
+async function readMore(queue: PlayQueue): Promise<void> {
   let offset = queue.fetched;
   // Progress writes land independently of these reads, so the set can shrink
   // again between a read and its retry: step back every time it does. The
@@ -112,7 +121,11 @@ async function loadMore(queue: PlayQueue): Promise<void> {
     const more = page.items.filter((item) => playable(item) && !seen.has(item.id));
     for (const item of more) {
       queue.ids.push(item.id);
-      queue.titles.set(item.id, item.title || "");
+      queue.items.set(item.id, {
+        id: item.id,
+        title: item.title || "",
+        mediaClass: item.mediaClass,
+      });
     }
     queue.done = !page.items.length || queue.fetched >= page.total;
     if (more.length || queue.done) return;
@@ -130,7 +143,7 @@ export function playQueueHandle(): unknown {
 
 /** The listed title of an item the active queue holds, or "". */
 export function playQueueTitle(mediaID: string): string {
-  return activeQueue()?.titles.get(mediaID) ?? "";
+  return activeQueue()?.items.get(mediaID)?.title ?? "";
 }
 
 /**
@@ -152,6 +165,23 @@ function positionOf(queue: PlayQueue, mediaID: string): number {
   return -1;
 }
 
+/** The Play all tracks read so far, including the currently playing item. */
+export function playAllTracks(mediaID: string): PlayQueueItem[] | undefined {
+  const queue = activeQueue();
+  if (!queue || positionOf(queue, mediaID) < 0) return undefined;
+  return [...queue.items.values()].filter(
+    ({ mediaClass }) => !mediaClass || mediaClass === "audio",
+  );
+}
+
+/** Finish reading the Play all snapshot before turning it into an editable queue. */
+export async function finishPlayAllTracks(mediaID: string): Promise<PlayQueueItem[] | undefined> {
+  const queue = activeQueue();
+  if (!queue || positionOf(queue, mediaID) < 0) return undefined;
+  while (!queue.done && activeQueue() === queue) await loadMore(queue);
+  return activeQueue() === queue ? playAllTracks(mediaID) : undefined;
+}
+
 /**
  * The queue item before mediaID, or null when no active queue holds mediaID
  * at its current or next place or it is the queue's first item. Playing it
@@ -163,7 +193,7 @@ export function previousInPlayQueue(mediaID: string): PlayQueueStart | null {
   const index = positionOf(queue, mediaID);
   const previous = index > 0 ? queue.ids[index - 1] : undefined;
   if (previous === undefined) return null;
-  return { id: previous, title: queue.titles.get(previous) ?? "" };
+  return { id: previous, title: queue.items.get(previous)?.title ?? "" };
 }
 
 /**

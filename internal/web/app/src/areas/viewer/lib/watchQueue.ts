@@ -19,6 +19,7 @@ export interface PlayQueueItem {
    * listed it (search results report it) or learned from playback-info.
    */
   mediaClass?: string;
+  libraryID?: string;
 }
 
 /**
@@ -52,6 +53,12 @@ export interface PlayerNavState {
    * Opening the full player from the mini player carries it unchanged.
    */
   startID?: string;
+  /** Identifies an advance within the hosted music player. */
+  musicRun?: string;
+  /** The server queue supplies the continuation of this playback start. */
+  musicAdopted?: boolean;
+  /** Playback-info may pre-mint this candidate for a gapless handoff. */
+  musicNextID?: string;
 }
 
 /** A new playback-start identity for {@link PlayerNavState.startID}. */
@@ -164,6 +171,10 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
     queueIdentity?: unknown;
     tracks?: unknown;
     startID?: unknown;
+    musicRun?: unknown;
+    musicAdopted?: unknown;
+    musicNextID?: unknown;
+    musicIdentity?: unknown;
   };
   const title = typeof raw.title === "string" ? raw.title : undefined;
   const sameViewer = !!identity && raw.queueIdentity === identity;
@@ -184,9 +195,15 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
           )
       : undefined;
   const tracks = readStartTracks(raw.tracks);
+  const sameMusicViewer = !!identity && raw.musicIdentity === identity;
   return {
     title,
     queue,
+    ...(sameMusicViewer && typeof raw.musicRun === "string" ? { musicRun: raw.musicRun } : {}),
+    ...(sameMusicViewer && raw.musicAdopted === true ? { musicAdopted: true } : {}),
+    ...(sameMusicViewer && typeof raw.musicNextID === "string"
+      ? { musicNextID: raw.musicNextID }
+      : {}),
     ...(queue ? { queueIdentity: identity as string } : {}),
     ...(tracks ? { tracks } : {}),
     ...(typeof raw.startID === "string" && raw.startID ? { startID: raw.startID } : {}),

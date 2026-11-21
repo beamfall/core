@@ -8,6 +8,7 @@ import { fetchMediaRows } from "@/lib/graphql/browse";
 import type { CollectionInfo, GenericMediaInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { MediaItemCardMenu } from "../components/MediaItemCardMenu";
 import { ViewerActions } from "../components/ViewerActions";
 import { fetchEntryLocks } from "../lib/collections";
 import { mediaPath } from "../lib/mediaAddress";
@@ -145,6 +146,8 @@ export function PlaylistPage() {
             <ol className="bf-track-list" aria-label={playlist.name}>
               {listed.map((entry, index) => {
                 const position = order.indexOf(entry.id);
+                const path = mediaPath("media", entry.id);
+                const musicMenu = entry.mediaClass === "audio" && lockOf(entry.id) === false;
                 return (
                   <li key={entry.id} className="bf-track">
                     <button
@@ -162,38 +165,63 @@ export function PlaylistPage() {
                         {formatDuration(rows[entry.id]?.durationSeconds)}
                       </span>
                     </button>
-                    {isManager && (
-                      <span className="bf-track-tools">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={t("playlistMoveUp", { title: entry.title })}
-                          disabled={busy || position === 0}
-                          onClick={() => void change(() => moveInPlaylist(playlist, position, -1))}
-                        >
-                          <ArrowUp aria-hidden size={16} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={t("playlistMoveDown", { title: entry.title })}
-                          disabled={busy || position === order.length - 1}
-                          onClick={() => void change(() => moveInPlaylist(playlist, position, 1))}
-                        >
-                          <ArrowDown aria-hidden size={16} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={t("playlistRemoveTrack", { title: entry.title })}
-                          disabled={busy}
-                          onClick={() =>
-                            void change(() => removeMediaFromPlaylist(playlist.id, entry.id))
-                          }
-                        >
-                          <X aria-hidden size={16} />
-                        </Button>
-                      </span>
+                    {(isManager || musicMenu) && (
+                      <div className="bf-track-tools">
+                        {musicMenu && (
+                          <MediaItemCardMenu
+                            title={entry.title}
+                            primaryLabel={t("play")}
+                            isMedia
+                            isAudio
+                            href={
+                              new URL(
+                                `${import.meta.env.BASE_URL}${path.slice(1)}`,
+                                window.location.origin,
+                              ).href
+                            }
+                            target={{ mediaID: entry.id }}
+                            onPrimary={() => play(entry)}
+                            onDetails={() => navigate(path)}
+                          />
+                        )}
+                        {isManager && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={t("playlistMoveUp", { title: entry.title })}
+                              disabled={busy || position === 0}
+                              onClick={() =>
+                                void change(() => moveInPlaylist(playlist, position, -1))
+                              }
+                            >
+                              <ArrowUp aria-hidden size={16} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={t("playlistMoveDown", { title: entry.title })}
+                              disabled={busy || position === order.length - 1}
+                              onClick={() =>
+                                void change(() => moveInPlaylist(playlist, position, 1))
+                              }
+                            >
+                              <ArrowDown aria-hidden size={16} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={t("playlistRemoveTrack", { title: entry.title })}
+                              disabled={busy}
+                              onClick={() =>
+                                void change(() => removeMediaFromPlaylist(playlist.id, entry.id))
+                              }
+                            >
+                              <X aria-hidden size={16} />
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     )}
                   </li>
                 );

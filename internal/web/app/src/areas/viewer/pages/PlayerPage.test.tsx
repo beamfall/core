@@ -1499,6 +1499,7 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
   const audio = { mediaClass: "audio" } as PlayerState["info"];
   const videoRef: { current: HTMLVideoElement | null } = { current: null };
   let states: Record<string, PlayerState> = {};
+  const restart = vi.fn();
   let releaseNext: (info: never) => void = () => undefined;
 
   function track(id: string, title: string, artist: string) {
@@ -1511,6 +1512,7 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
   }
 
   beforeEach(() => {
+    restart.mockClear();
     vi.mocked(usePlayer).mockReset();
     vi.mocked(PlayerTransport).mockClear();
     states = {
@@ -1522,7 +1524,7 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
       hlsRef: { current: null },
       state: states[mediaID] ?? playerState({ phase: "loading", mediaID: undefined }),
       retry: vi.fn(),
-      restart: vi.fn(),
+      restart,
       switchToHls: vi.fn(() => false as const),
       adjustment: DEFAULT_ADJUSTMENT,
       adjust: vi.fn(),
@@ -1617,6 +1619,40 @@ describe("PlayerPage audio advance (CORE-2363)", () => {
     });
     rerender();
     expect(document.querySelector(".bf-audio-stage")).toBeNull();
+  });
+
+  it("restarts at item end for repeat-one while an explicit Next still advances", async () => {
+    renderAdvance();
+    await screen.findByText("Ann");
+    const video = presentFirstFrame();
+    const transport = () => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+    act(() => transport()?.musicQueue?.cycleRepeat());
+    act(() => transport()?.musicQueue?.cycleRepeat());
+    expect(transport()?.musicQueue?.repeat).toBe("one");
+
+    fireEvent.ended(video);
+    expect(restart).toHaveBeenCalledWith(0);
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[0]).toBe("media-alpha");
+    act(() => transport()?.onNextInQueue?.());
+    await waitFor(() => expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[0]).toBe("media-next"));
+  });
+
+  it("advances naturally with repeat off and wraps at item end with repeat-all", async () => {
+    states["media-next"] = playerState({ phase: "playing", mediaID: "media-next", info: audio });
+    renderAdvance();
+    await screen.findByText("Ann");
+    const video = presentFirstFrame();
+    const transport = () => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+    expect(transport()?.musicQueue?.repeat).toBe("off");
+    fireEvent.ended(video);
+    await waitFor(() => expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[0]).toBe("media-next"));
+
+    fireEvent.ended(video);
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[0]).toBe("media-next");
+    act(() => transport()?.musicQueue?.cycleRepeat());
+    expect(transport()?.musicQueue?.repeat).toBe("all");
+    fireEvent.ended(video);
+    await waitFor(() => expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[0]).toBe("media-prev"));
   });
 
   it("shows a small cue, not a cover, while an audio item loads", () => {

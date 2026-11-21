@@ -1371,3 +1371,39 @@
     filter: none !important;
   }
 }
+
+.bf-music-queue {
+  position: absolute;
+  right: 16px;
+  bottom: 110px;
+  z-index: 6;
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100% - 32px));
+  max-height: min(65dvh, 540px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+  padding: 12px;
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 16%, transparent);
+  border-radius: var(--radius-surface);
+  background: var(--scrim);
+  color: var(--on-scrim);
+}
+
+.bf-transport .bf-queue-mode[data-active="true"] {
+  color: var(--accent);
+}
+
+.bf-transport .bf-music-queue .bf-control[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .bf-music-queue {
+    right: 12px;
+    bottom: 96px;
+    width: calc(100% - 24px);
+  }
+}

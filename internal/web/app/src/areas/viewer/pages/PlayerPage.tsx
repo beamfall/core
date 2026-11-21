@@ -31,7 +31,7 @@ import {
   sameAdjustment,
   songSecondsPerStreamSecond,
 } from "../lib/playback";
-import { previousInPlayQueue } from "../lib/playQueue";
+import { finishPlayAllTracks, playAllTracks, previousInPlayQueue } from "../lib/playQueue";
 import {
   resolvePreferences,
   type SkipInterval,
@@ -70,6 +70,7 @@ import { useChromeAutoHide } from "../player/useChromeAutoHide";
 import { decodableStream, useGaplessAudio } from "../player/useGaplessAudio";
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
+import { useMusicPlayback } from "../player/useMusicPlayback";
 import { usePlayer } from "../player/usePlayer";
 import { useStillWatching } from "../player/useStillWatching";
 import { useUpNext } from "../player/useUpNext";
@@ -260,10 +261,12 @@ function FeaturePlayer({
     [navQueue, learnedClasses],
   );
   const entryClass = classedQueue?.find((item) => item.id === mediaId)?.mediaClass;
-  const declaredNextID = classedQueue
-    ? (queueNeighbours(queueOfClass(classedQueue, entryClass, mediaId || ""), mediaId || "").next
-        ?.id ?? "")
-    : undefined;
+  const declaredNextID = navState.musicAdopted
+    ? (navState.musicNextID ?? "")
+    : classedQueue
+      ? (queueNeighbours(queueOfClass(classedQueue, entryClass, mediaId || ""), mediaId || "").next
+          ?.id ?? "")
+      : undefined;
   // The Version this profile picked for this Media (CORE-1676): a pick made in
   // this player during this playback start, else the one the detail page sent
   // with its track picks (CORE-2442; "" is Auto), else a pick made in this
@@ -396,6 +399,49 @@ function FeaturePlayer({
   const showSpinner = useMediaLoading(videoRef, state.phase === "loading" || playing);
   const captionLoad = useCaptionLoad(videoRef);
   const isAudio = state.info?.mediaClass === "audio";
+  const musicAudio =
+    !!identity &&
+    !!profileID &&
+    (infoIsCurrent ? isAudio : entryClass === "audio" || !!navState.musicRun);
+  const markMusicQueueAdopted = () => {
+    const nextEntry = {
+      ...entry,
+      state: {
+        ...(entry.state && typeof entry.state === "object" ? entry.state : {}),
+        queue: undefined,
+        queueIdentity: undefined,
+        musicAdopted: true,
+        musicIdentity: identity,
+      },
+    };
+    if (docked) onAdvanceDocked?.(nextEntry);
+    else {
+      navigate(`${location.pathname}${location.search}${location.hash}`, {
+        replace: true,
+        state: nextEntry.state,
+      });
+    }
+  };
+  const playAll =
+    musicAudio && !queue && !navState.musicAdopted ? playAllTracks(mediaId) : undefined;
+  const music = useMusicPlayback({
+    current: { id: mediaId, title: navTitle, mediaClass: "audio" },
+    audio: musicAudio,
+    identity,
+    profileID,
+    startID: navState.startID,
+    continuing: navState.musicRun,
+    adopted: navState.musicAdopted === true,
+    catalog: musicAudio ? (queue ?? playAll ?? []) : [],
+    fullCatalog: playAll
+      ? async () => {
+          const tracks = await finishPlayAllTracks(mediaId);
+          const index = tracks?.findIndex(({ id }) => id === mediaId) ?? -1;
+          return tracks?.slice(index + 1);
+        }
+      : undefined,
+    onAdopt: markMusicQueueAdopted,
+  });
   // Before playback-info answers, a queue entry that reports its class already
   // routes a track to the audio stage instead of an empty video frame
   // (CORE-1309). A song whose composed picture is served shows the picture
@@ -435,10 +481,11 @@ function FeaturePlayer({
   const artworkURL = media
     ? media.artworkSlots?.poster || media.artworkSlots?.thumb || media.artworkSlots?.backdrop || ""
     : "";
-  const queueIndex = queue && mediaId ? queue.findIndex((item) => item.id === mediaId) : -1;
+  const displayQueue = musicAudio ? music.order : queue;
+  const queueIndex = displayQueue?.findIndex((item) => item.id === mediaId) ?? -1;
   const queuePosition =
-    queue && queue.length > 1 && queueIndex >= 0
-      ? t("queuePosition", { position: queueIndex + 1, total: queue.length })
+    displayQueue && displayQueue.length > 1 && queueIndex >= 0
+      ? t("queuePosition", { position: queueIndex + 1, total: displayQueue.length })
       : "";
   // The words and picture the audio stage and the mini player show. Until the
   // next item's data arrives (its media read, or its playback starting) they
@@ -474,12 +521,23 @@ function FeaturePlayer({
   // Docked in the mini player, the advance stays on the page the listener is
   // browsing.
   const playItem = useCallback(
-    (id: string, title: string, selectPartyTitle = true) => {
+    (
+      id: string,
+      title: string,
+      selectPartyTitle = true,
+      music?: { run: string; adopted: boolean; nextID?: string },
+    ) => {
       const state = {
         title,
         skipPrePlay: true,
         selectPartyTitle,
         ...(queue ? { queue, queueIdentity } : {}),
+        ...(music && {
+          musicRun: music.run,
+          musicAdopted: music.adopted,
+          musicNextID: music.nextID,
+          musicIdentity: identity,
+        }),
       };
       if (docked && onAdvanceDocked) {
         const titleSelectionEpoch = selectPartyTitle ? hostTitleSelectionEpoch() : undefined;
@@ -488,7 +546,7 @@ function FeaturePlayer({
       }
       navigate(mediaPath("watch", id), { replace: true, state });
     },
-    [navigate, queue, queueIdentity, docked, onAdvanceDocked],
+    [navigate, queue, queueIdentity, docked, onAdvanceDocked, identity],
   );
 
   // Watch Party (CORE-1677): the party moves every member's player to the
@@ -529,23 +587,41 @@ function FeaturePlayer({
   // the declared next item, so a card queue's issuance of another class stays
   // on the info document after the queue dropped it.
   const issuedNext = admissibleNext(state.info?.next, queue, playingClass, learnedClasses);
-  const playNext = useMemo(() => {
+  const musicNext = musicAudio ? music.next : undefined;
+  const musicPrevious = musicAudio ? music.previous : undefined;
+  const goToMusicItem = (item: PlayQueueItem, wrap = false) => {
+    if (item.id === mediaId) {
+      if (wrap) restart(0);
+      return;
+    }
+    const nextID = music.prepareAdvance(item.id, wrap);
+    playItem(item.id, item.title, true, {
+      run: music.run,
+      adopted: music.adopted,
+      nextID: revealed ? undefined : nextID,
+    });
+  };
+  const playNext = (() => {
     if (partyLeads) return undefined;
+    if (musicNext) return () => goToMusicItem(musicNext, music.upcoming.length === 0);
+    if (musicAudio && (music.adopted || (music.containsCurrent && !playAll))) return undefined;
     if (nextInQueue) return () => goToQueueItem(nextInQueue);
     if (issuedNext?.streams) return () => advanceToNext(issuedNext);
     return undefined;
-  }, [partyLeads, nextInQueue, issuedNext, goToQueueItem, advanceToNext]);
+  })();
   // A card queue names its own previous item; without one, a Play all queue
   // that holds this item may (stepping back keeps that queue going).
   const playAllPrevious = useMemo(
     () => (queue || !mediaId ? null : previousInPlayQueue(mediaId)),
     [queue, mediaId],
   );
-  const playPrevious = useMemo(() => {
+  const playPrevious = (() => {
+    if (musicPrevious) return () => goToMusicItem(musicPrevious);
+    if (musicAudio && music.adopted) return undefined;
     if (previousInQueue) return () => goToQueueItem(previousInQueue);
     if (playAllPrevious) return () => playItem(playAllPrevious.id, playAllPrevious.title);
     return undefined;
-  }, [previousInQueue, playAllPrevious, goToQueueItem, playItem]);
+  })();
 
   // Audio moves straight on to the next item when one ends (no countdown card,
   // which suits a film or an episode, not a track).
@@ -569,10 +645,24 @@ function FeaturePlayer({
   });
   useEffect(() => {
     const video = videoRef.current;
-    if (!isAudio || !playing || !video || !playNext) return;
-    video.addEventListener("ended", playNext);
-    return () => video.removeEventListener("ended", playNext);
-  }, [isAudio, playing, playNext, videoRef]);
+    if (!isAudio || !infoIsCurrent || !playing || !video || partyLeads) return;
+    const onEnded = () => {
+      if (musicAudio && music.repeat === "one") restart(0);
+      else playNext?.();
+    };
+    video.addEventListener("ended", onEnded);
+    return () => video.removeEventListener("ended", onEnded);
+  }, [
+    isAudio,
+    infoIsCurrent,
+    playing,
+    partyLeads,
+    musicAudio,
+    music.repeat,
+    playNext,
+    restart,
+    videoRef,
+  ]);
   // Album tracks join without a gap (CORE-1634): the item the end of this
   // track advances to is decoded ahead and scheduled to start where it stops.
   useGaplessAudio({
@@ -580,11 +670,12 @@ function FeaturePlayer({
     mediaID: mediaId || "",
     stream: state.stream,
     next: state.info?.next ?? undefined,
-    advanceID: nextInQueue?.id ?? issuedNext?.mediaID,
+    advanceID: musicNext?.id ?? nextInQueue?.id ?? issuedNext?.mediaID,
     enabled:
       playing &&
       showAudioStage &&
       !karaokeSong &&
+      (!musicAudio || music.repeat !== "one") &&
       state.mediaID === (mediaId || "") &&
       playNext !== undefined,
   });
@@ -957,6 +1048,7 @@ function FeaturePlayer({
                 onShare={shareAt}
                 onPreviousInQueue={playPrevious}
                 onNextInQueue={playNext}
+                musicQueue={musicAudio && profileID && !partyLeads ? music : undefined}
                 onStop={back}
                 onRemoteStop={stopRemotely}
                 onRemoteRestart={restart}
