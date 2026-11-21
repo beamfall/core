@@ -133,6 +133,43 @@ func TestPlayQueueLegacyPositionsCountDistinctMedia(t *testing.T) {
 	}
 }
 
+func TestPlayQueueLegacySamePositionPreservesEntryOrder(t *testing.T) {
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	a, b := "media-alpha", "media-archive"
+	third, err := st.CreateManualMedia(t.Context(), store.ManualMedia{LibraryID: "library-local", Title: "Third queue item"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := string(third)
+
+	for _, field := range []string{"queueMove", "queueAdd"} {
+		t.Run(field, func(t *testing.T) {
+			qaItems(t, h, qaClear, authorizeRevealed, "queueClear")
+			var initial PlayQueueInfo
+			execGraph(t, h, authorizeRevealed, `mutation ($ids: [String!]!) { queueAddMany(mediaIDs: $ids, placement: "end") `+queueStateSelection+" }",
+				map[string]any{"ids": []string{a, b, b, a, c}}, "queueAddMany", &initial)
+			if len(initial.Entries) != 5 {
+				t.Fatalf("expected five entries, got %+v", initial.Entries)
+			}
+			want := make([]string, len(initial.Entries))
+			for i, entry := range initial.Entries {
+				want[i] = entry.ID
+			}
+
+			query := fmt.Sprintf(`mutation { %s(mediaID: %q, position: 1) { id } }`, field, b)
+			var items []SourceItem
+			execGraph(t, h, authorizeRevealed, query, nil, field, &items)
+			if !qaEqualIDs(items, a, b, c) {
+				t.Fatalf("%s response = %v", field, qaIDs(items))
+			}
+			var updated PlayQueueInfo
+			execGraph(t, h, authorizeRevealed, "{ playQueue "+queueStateSelection+" }", nil, "playQueue", &updated)
+			assertPlayQueueOrder(t, updated, want...)
+		})
+	}
+}
+
 func TestPlayQueueStateAcrossDevicesAndVisibility(t *testing.T) {
 	// feature:play-queue
 	h := newTestHandlerWithStore(storetest.Open(t))

@@ -75,7 +75,7 @@ func (s *Store) QueueAdd(ctx context.Context, profileID ProfileID, mediaID Media
 		order := q.activeOrder()
 		for i, entry := range *order {
 			if entry.mediaID == mediaID {
-				*order = insertLegacyQueueEntry(slices.Delete(*order, i, i+1), entry, position, visible)
+				*order = moveLegacyQueueEntry(*order, i, position, visible)
 				return nil
 			}
 		}
@@ -209,13 +209,14 @@ func (s *Store) queueMoveEntry(ctx context.Context, profileID ProfileID, target 
 			if position == nil && entry.id == q.currentID {
 				return nil
 			}
+			if target.entryID == "" {
+				*order = moveLegacyQueueEntry(*order, i, position, visible)
+				return nil
+			}
 			remaining := slices.Delete(*order, i, i+1)
-			switch {
-			case position == nil:
+			if position == nil {
 				*order = addQueueEntries(remaining, []queueEntry{entry}, q.currentID, QueueNext, visible)
-			case target.entryID == "":
-				*order = insertLegacyQueueEntry(remaining, entry, position, visible)
-			default:
+			} else {
 				*order = insertQueueEntry(remaining, entry, *position, visible)
 			}
 			return nil
@@ -386,6 +387,24 @@ func (s *Store) visibleQueueMedia(ctx context.Context, entries []queueEntry, fil
 		}
 	}
 	return s.visibleMediaBatchSQL(ctx, ids, filter)
+}
+
+func moveLegacyQueueEntry(order []queueEntry, index int, position *int, visible map[MediaID]Media) []queueEntry {
+	if position != nil {
+		// The target is the first occurrence of its Media in playback order.
+		// Compare its legacy index before regrouping any duplicate entries.
+		seen := make(map[MediaID]bool)
+		for _, entry := range order[:index] {
+			if _, ok := visible[entry.mediaID]; ok {
+				seen[entry.mediaID] = true
+			}
+		}
+		if len(seen) == max(0, *position) {
+			return order
+		}
+	}
+	entry := order[index]
+	return insertLegacyQueueEntry(slices.Delete(order, index, index+1), entry, position, visible)
 }
 
 // insertLegacyQueueEntry counts the first visible occurrence of each other
