@@ -151,11 +151,12 @@ func TestProjectionRebuildRefusesUnloggedRows(t *testing.T) {
 }
 
 // A legacy progress row with no playback event that a Profile then removes
-// from Continue Watching has only a hide-continue event, which cannot recreate
-// it. Rebuild must refuse rather than delete the resume position.
+// from Continue Watching has only events that update it, which cannot
+// recreate it. Rebuild must refuse rather than delete the row.
 func TestProjectionRebuildRefusesUnloggedRowHiddenBeforeAnyLoggedPlayback(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
+		markFirst bool
 		heartbeat bool
 	}{
 		{name: "only hide-continue"},
@@ -163,6 +164,8 @@ func TestProjectionRebuildRefusesUnloggedRowHiddenBeforeAnyLoggedPlayback(t *tes
 		// it: replaying would apply the hide to nothing, then recreate the
 		// row visible.
 		{name: "hide then heartbeat", heartbeat: true},
+		// An unwatched mark replays as an UPDATE only, so it is no base.
+		{name: "mark watched=false, then hide", markFirst: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := openSeeded(t)
@@ -172,6 +175,19 @@ func TestProjectionRebuildRefusesUnloggedRowHiddenBeforeAnyLoggedPlayback(t *tes
 				VALUES ('profile-default', 'media-alpha', 30, 120, 2, 1)
 			`); err != nil {
 				t.Fatal(err)
+			}
+			if tc.markFirst {
+				if _, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{MediaID: "media-alpha"}, false, itemOpenFilter); err != nil {
+					t.Fatal(err)
+				}
+				var marks int
+				if err := st.eventsR.QueryRowContext(ctx, `
+					SELECT COUNT(*) FROM engagement_event
+					WHERE profile_id = 'profile-default' AND media_id = 'media-alpha'
+					  AND json_extract(payload, '$.operation') = ?
+				`, playbackProjectionOperationMark).Scan(&marks); err != nil || marks != 1 {
+					t.Fatalf("unwatched mark logged %d mark events, want 1 (err %v)", marks, err)
+				}
 			}
 			if _, err := st.SetContinueWatchingHidden(ctx, "profile-default", "media-alpha", true, itemOpenFilter); err != nil {
 				t.Fatal(err)
@@ -186,12 +202,18 @@ func TestProjectionRebuildRefusesUnloggedRowHiddenBeforeAnyLoggedPlayback(t *tes
 					t.Fatal("same-position heartbeat cleared the hide")
 				}
 			}
+			before, ok, err := st.PlaybackProgressFor(ctx, "profile-default", "media-alpha")
+			if err != nil || !ok {
+				t.Fatalf("seeded row missing: ok=%v err=%v", ok, err)
+			}
 			if err := st.rebuildEngagementProjections(ctx); err == nil {
 				t.Fatal("rebuild accepted a row hidden before any logged playback")
 			}
 			progress, ok, err := st.PlaybackProgressFor(ctx, "profile-default", "media-alpha")
-			if err != nil || !ok || progress.PositionSeconds != 30 || progress.PlayCount != 2 {
-				t.Fatalf("refused rebuild changed the row: %+v ok=%v err=%v", progress, ok, err)
+			if err != nil || !ok || progress.PositionSeconds != before.PositionSeconds ||
+				progress.PlayCount != before.PlayCount || progress.Watched != before.Watched ||
+				!progress.UpdatedAt.Equal(before.UpdatedAt) {
+				t.Fatalf("refused rebuild changed the row: %+v (before %+v) ok=%v err=%v", progress, before, ok, err)
 			}
 			if !continueHidden(t, st, "profile-default", "media-alpha") {
 				t.Fatal("refused rebuild cleared the hide")

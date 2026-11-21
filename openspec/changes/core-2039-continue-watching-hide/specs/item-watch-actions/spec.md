@@ -33,8 +33,8 @@ survive a projection rebuild and SHALL NOT change another Profile's Source.
 
 #### Scenario: Unlogged row
 
-- **WHEN** a rebuild finds a progress row with no logged event that creates it before its first
-  removal
+- **WHEN** a rebuild finds a progress row whose first logged event only updates it (a removal or
+  an unwatched mark) rather than creating it
 - **THEN** the rebuild is refused and the row is left as it was
 
 ### Requirement: Continue Watching removal honours the expected Profile

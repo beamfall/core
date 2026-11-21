@@ -71,19 +71,32 @@ func eventOccurredAtMS(event playbackProjectionEvent) int64 {
 }
 
 func applyPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
+	apply, _, err := playbackProjectionReplay(event)
+	if err != nil {
+		return err
+	}
+	return apply(ctx, tx, event)
+}
+
+// playbackProjectionReplay is the one replay switch: it returns how event
+// applies to playback_progress and whether that replay can insert the row
+// (an INSERT or upsert) rather than only update an existing one. The rebuild
+// guard reads insertsRow from here, so the two cannot drift.
+func playbackProjectionReplay(event playbackProjectionEvent) (apply func(context.Context, *sql.Tx, playbackProjectionEvent) error, insertsRow bool, err error) {
 	switch event.Operation {
 	case playbackProjectionOperationProgress:
-		return applyProgressProjectionEvent(ctx, tx, event)
+		return applyProgressProjectionEvent, true, nil
 	case playbackProjectionOperationImport:
-		return applyImportedPlayProjectionEvent(ctx, tx, event)
+		return applyImportedPlayProjectionEvent, true, nil
 	case playbackProjectionOperationMark:
-		return applyMarkProjectionEvent(ctx, tx, event)
+		// Unwatched is an UPDATE only; watched upserts.
+		return applyMarkProjectionEvent, event.Watched, nil
 	case playbackProjectionOperationVersionMerge:
-		return applyVersionMergeProjectionEvent(ctx, tx, event)
+		return applyVersionMergeProjectionEvent, true, nil
 	case playbackProjectionOperationHideContinue:
-		return applyHideContinueProjectionEvent(ctx, tx, event)
+		return applyHideContinueProjectionEvent, false, nil
 	default:
-		return fmt.Errorf("unknown playback projection operation %q", event.Operation)
+		return nil, false, fmt.Errorf("unknown playback projection operation %q", event.Operation)
 	}
 }
 
@@ -183,11 +196,11 @@ func (s *Store) rebuildEngagementProjections(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
-	if err := rejectUnloggedPlaybackProjections(ctx, tx); err != nil {
-		return err
-	}
 	events, err := loadPlaybackProjectionEvents(ctx, tx)
 	if err != nil {
+		return err
+	}
+	if err := rejectUnloggedPlaybackProjections(ctx, tx, events); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_progress`); err != nil {
@@ -202,39 +215,47 @@ func (s *Store) rebuildEngagementProjections(ctx context.Context) error {
 }
 
 // rejectUnloggedPlaybackProjections refuses a rebuild that would lose a row.
-// A hide-continue event only flips a flag on an existing row and never
-// creates one, so a row is reconstructible only when an event that creates it
-// comes before its first hide-continue. A legacy row hidden before any logged
-// playback (later heartbeats included) is refused rather than replayed with
-// the hide applied to nothing.
-func rejectUnloggedPlaybackProjections(ctx context.Context, tx *sql.Tx) error {
-	var count int
-	err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM playback_progress AS projection
-		WHERE NOT EXISTS (
-			SELECT 1
-			FROM engagement_event AS base
-			WHERE base.kind = ?
-			  AND base.profile_id = projection.profile_id
-			  AND base.media_id = projection.media_id
-			  AND json_extract(base.payload, '$.operation') <> ?
-			  AND NOT EXISTS (
-				SELECT 1
-				FROM engagement_event AS hide
-				WHERE hide.kind = base.kind
-				  AND hide.profile_id = base.profile_id
-				  AND hide.media_id = base.media_id
-				  AND json_extract(hide.payload, '$.operation') = ?
-				  AND hide.rowid < base.rowid
-			  )
-		)
-	`, playbackProjectionEventKind, playbackProjectionOperationHideContinue, playbackProjectionOperationHideContinue).Scan(&count)
+// events is the canonical log in replay order. A row is reconstructible only
+// when an event whose replay inserts it comes before anything that merely
+// updates it: an unwatched mark or a hide-continue applied first would touch
+// nothing. A legacy row with no such base is refused, whatever was logged
+// after it (a same-position heartbeat included), rather than deleted.
+func rejectUnloggedPlaybackProjections(ctx context.Context, tx *sql.Tx, events []playbackProjectionEvent) error {
+	type pair struct{ profileID, mediaID string }
+	// replayed[p] is true once replay has inserted p, false when an
+	// update-only event reached p first.
+	replayed := map[pair]bool{}
+	for _, event := range events {
+		p := pair{event.ProfileID, event.MediaID}
+		if _, seen := replayed[p]; seen {
+			continue
+		}
+		_, insertsRow, err := playbackProjectionReplay(event)
+		if err != nil {
+			return err
+		}
+		replayed[p] = insertsRow
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT profile_id, media_id FROM playback_progress`)
 	if err != nil {
 		return fmt.Errorf("check playback projection base: %w", err)
 	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var p pair
+		if err := rows.Scan(&p.profileID, &p.mediaID); err != nil {
+			return err
+		}
+		if !replayed[p] {
+			count++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
 	if count > 0 {
-		return fmt.Errorf("playback_progress rebuild refused: %d projection rows have no canonical event", count)
+		return fmt.Errorf("playback_progress rebuild refused: %d projection rows have no canonical event that recreates them", count)
 	}
 	return nil
 }
