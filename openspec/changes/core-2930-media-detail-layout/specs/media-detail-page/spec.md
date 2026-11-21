@@ -32,8 +32,9 @@ one within the app, and to Home otherwise.
 ### Requirement: Facts row
 
 Under the title the page SHALL show one meta line: the item's date or year, the runtime when it is
-at least a minute, the content rating and the community score, in that order and as text separated
-by dots, followed by the stream badges. Under the meta line it SHALL show the item's
+at least a minute, the content rating and the community score, in that order. The date, runtime and
+score SHALL be text separated by dots; the content rating SHALL be a bordered badge, set apart by
+space rather than a dot. The stream badges follow. Under the meta line it SHALL show the item's
 category-archetype credits as plain text links: grouped by kind in credit order, the first two
 kinds, at most two distinct credits of each, with the kinds separated by a dot and no count of the
 remaining credits, which Details lists. Category credits of one kind are distinct by title: a name
@@ -62,7 +63,8 @@ opacity only, with no transition under reduce-motion. The page SHALL draw no blu
 of its own. The poster's top SHALL align with the top of the copy column. The copy column SHALL read
 in this order: parents and position, title, meta line, categories, overview, crew, actions. A long
 overview SHALL be clamped with a More control that expands it. At phone width the header SHALL be
-one column with the primary action full width.
+one column with the primary action full width, and a poster (not a wide still) SHALL sit small
+beside the heading.
 
 #### Scenario: Long overview
 

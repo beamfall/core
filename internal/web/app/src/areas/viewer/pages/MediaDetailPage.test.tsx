@@ -614,7 +614,10 @@ describe("MediaDetailPage", () => {
     vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
     renderAt(["/media/m1"]);
     const skeleton = screen.getByRole("status", { name: "Loading..." });
-    expect(skeleton).toHaveAttribute("data-backdrop", "");
+    const skeletonStage = skeleton.closest(".bf-detail-stage");
+    expect(skeletonStage).toHaveAttribute("data-backdrop", "");
+    // Back already sits inside the stage, where the loaded page keeps it (CORE-2930).
+    expect(skeletonStage?.querySelector(":scope > .bf-detail-back")).not.toBeNull();
     expect(skeleton.querySelector(".bf-detail-meta")).not.toBeNull();
     expect(skeleton.querySelector(".bf-detail-overview")).not.toBeNull();
     cleanup();

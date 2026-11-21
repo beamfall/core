@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronRight, Play, RotateCcw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { buttonVariants } from "@/components/ui/button";
@@ -256,10 +256,17 @@ export function MediaDetailPage() {
   if (!title) {
     return (
       <AppShell actions={<ViewerActions />}>
-        <div className="bf-detail">
-          {back}
-          {status === "failed" ? retry : <DetailSkeleton label={t("loading")} />}
-        </div>
+        {status === "failed" ? (
+          <div className="bf-detail">
+            {back}
+            {retry}
+          </div>
+        ) : (
+          // Back sits where the loaded stage puts it, so it does not move when the item paints.
+          <div className="bf-detail bf-media-detail">
+            <DetailSkeleton label={t("loading")} back={back} />
+          </div>
+        )}
       </AppShell>
     );
   }
@@ -797,16 +804,11 @@ function OverviewPlaceholder() {
  * backdrop space, poster, title, meta line, overview, actions and item actions,
  * so the stage does not grow when the item paints.
  */
-function DetailSkeleton({ label }: { label: string }) {
+function DetailSkeleton({ label, back }: { label: string; back?: ReactNode }) {
   return (
-    <div
-      className="bf-detail-stage"
-      data-backdrop=""
-      role="status"
-      aria-busy="true"
-      aria-label={label}
-    >
-      <div className="bf-detail-lockup">
+    <div className="bf-detail-stage" data-backdrop="">
+      {back}
+      <div className="bf-detail-lockup" role="status" aria-busy="true" aria-label={label}>
         <Skeleton aria-hidden className="bf-detail-poster aspect-[2/3]" />
         <div className="bf-detail-copy" aria-hidden>
           <Skeleton className="h-9 w-3/4" />

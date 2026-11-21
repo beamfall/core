@@ -256,6 +256,7 @@
 }
 
 [data-register="viewer"] .bf-detail-progress-fill {
+  display: block;
   height: 100%;
   border-radius: inherit;
   background: var(--accent);
@@ -649,7 +650,7 @@
   color: var(--text-secondary);
   border-radius: var(--radius-control);
   text-decoration: underline;
-  text-decoration-color: transparent;
+  text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
   text-underline-offset: 3px;
   transition: text-decoration-color var(--duration-fast) var(--ease-standard);
 }
@@ -695,9 +696,15 @@
   color: var(--bg-root);
 }
 
-/* Play on keeps its menu under the trigger; an idle status takes no room. */
+/* Play on keeps its menu under the trigger; an idle status takes no room but
+ * stays in the accessibility tree, so its first announcement is heard. */
 [data-register="viewer"] .bf-media-detail .bf-play-on-status:empty {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 [data-register="viewer"] .bf-media-detail .bf-detail-track {
@@ -720,6 +727,24 @@
   }
   [data-register="viewer"] .bf-media-detail .bf-detail-copy {
     gap: 16px;
+  }
+  /* A small poster beside the title; what follows the heading spans the width. */
+  [data-register="viewer"] .bf-media-detail .bf-detail-lockup:not([data-wide]) {
+    grid-template-columns: 96px minmax(0, 1fr);
+    align-items: start;
+  }
+  [data-register="viewer"] .bf-media-detail .bf-detail-lockup:not([data-wide]) .bf-detail-poster {
+    width: 96px;
+  }
+  [data-register="viewer"] .bf-media-detail .bf-detail-lockup:not([data-wide]) > .bf-detail-copy {
+    display: contents;
+  }
+  [data-register="viewer"]
+    .bf-media-detail
+    .bf-detail-lockup:not([data-wide])
+    > .bf-detail-copy
+    > :not(.bf-detail-heading) {
+    grid-column: 1 / -1;
   }
   [data-register="viewer"] .bf-media-detail .bf-detail-controls {
     align-items: stretch;
