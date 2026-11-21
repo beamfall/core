@@ -53,6 +53,9 @@ function emit() {
 
 function onStorage(event: StorageEvent) {
   if (event.key !== null && event.key !== POSTER_SIZE_KEY) return;
+  // Another tab's change is newer than a read still in flight here, even one
+  // that ends on the value the read began with.
+  if (sync?.state === "loading") sync.picked = true;
   emit();
 }
 
@@ -86,7 +89,7 @@ interface ProfileSync {
   state: "loading" | "loaded" | "failed";
   // A Viewer shell for this Profile is mounted: only then does a pick save.
   active: boolean;
-  // A pick was made in this tab since this Profile's read began.
+  // A pick was made since this Profile's read began, here or in another tab.
   picked: boolean;
   // Saves run one after another, in pick order, so the Profile ends on the
   // last pick.
