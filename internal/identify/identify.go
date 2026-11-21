@@ -1023,7 +1023,16 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 		// A lock, pin or upload may land during the fetch, so the decision is
 		// made again under the slot's directory lock.
 		stillWanted := func() bool {
-			return !s.artworkLocked(ctx, mediaID, slot) && (!video || s.videoPosterReplaceable(ctx, mediaID))
+			if s.artworkLocked(ctx, mediaID, slot) {
+				return false
+			}
+			switch {
+			case video:
+				return s.videoPosterReplaceable(ctx, mediaID)
+			case slot == artwork.SlotPoster:
+				return !s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)
+			}
+			return true
 		}
 		imported, err := s.importArtworkIf(ctx, mediaID, slot, data, stillWanted)
 		if err != nil {

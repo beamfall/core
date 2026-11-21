@@ -1784,6 +1784,8 @@ func TestApplyPosterPrecedenceByMediaClass(t *testing.T) {
 		imported     bool // the current poster came through ImportArtwork
 		priorApplied bool // the slot has an applied candidate
 		pinDuring    bool // a pin finishes while the provider poster is fetched
+		coverDuring  bool // another identify stores the embedded cover meanwhile
+		noEmbedded   bool // ImportEmbeddedPoster finds no cover to store
 		fetchFails   bool
 		wantApplied  bool
 		wantEmbedded int
@@ -1799,6 +1801,7 @@ func TestApplyPosterPrecedenceByMediaClass(t *testing.T) {
 		{name: "video failed fetch falls back to embedded", class: store.MediaClassVideo, generated: true, fetchFails: true, wantEmbedded: 1},
 		{name: "audio embedded cover keeps", class: store.MediaClassAudio, embedded: true},
 		{name: "audio generated poster takes embedded", class: store.MediaClassAudio, generated: true, wantEmbedded: 1},
+		{name: "audio cover stored during fetch keeps", class: store.MediaClassAudio, generated: true, noEmbedded: true, coverDuring: true, wantEmbedded: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1813,10 +1816,13 @@ func TestApplyPosterPrecedenceByMediaClass(t *testing.T) {
 			art := &fakeArtwork{
 				has:           map[string]bool{artwork.SlotPoster: true},
 				generated:     map[string]bool{artwork.SlotPoster: tc.generated},
-				embedded:      true,
+				embedded:      !tc.noEmbedded,
 				embeddedSlot:  map[string]bool{artwork.SlotPoster: tc.embedded},
 				sidecarLocked: map[string]bool{artwork.SlotPoster: tc.sidecarLock},
 				importedSlot:  map[string]bool{artwork.SlotPoster: tc.imported},
+			}
+			if tc.coverDuring {
+				art.underLock = func(f *fakeArtwork) { f.generated[artwork.SlotPoster] = false }
 			}
 			if tc.pinDuring {
 				art.underLock = func(f *fakeArtwork) {
@@ -1839,7 +1845,7 @@ func TestApplyPosterPrecedenceByMediaClass(t *testing.T) {
 				t.Fatalf("embedded imports = %d, want %d", art.embeddedCalls, tc.wantEmbedded)
 			}
 			if !tc.wantApplied {
-				fetchedForNothing := !tc.fetchFails && !tc.pinDuring && fetcher.calls != 0
+				fetchedForNothing := !tc.fetchFails && !tc.pinDuring && !tc.coverDuring && fetcher.calls != 0
 				if art.calls != 0 || len(candidates.applied) != 0 || fetchedForNothing {
 					t.Fatalf("kept poster replaced: fetches=%d imports=%d applied=%v", fetcher.calls, art.calls, candidates.applied)
 				}

@@ -1170,54 +1170,21 @@ func (s *Service) importMediaArtwork(ctx context.Context, id store.MediaID, slot
 	if ok != nil && !ok() {
 		return false, nil
 	}
-	// Mark the slot imported before publishing: an interrupted import then
-	// leaves the slot kept rather than marked as replaceable embedded or
-	// generated artwork.
-	restore, err := markImported(dst)
-	if err != nil {
-		return false, err
-	}
 	if err := s.importArtwork(ctx, dst, string(id), slot, data); err != nil {
-		restore()
 		return false, err
 	}
 	s.recordDominantColor(dst, slot)
-	return true, nil
-}
-
-// markImported writes the imported marker and drops the generated and
-// embedded ones. restore puts the previous markers back for a failed import.
-func markImported(dst string) (restore func(), err error) {
-	previous := map[string]bool{}
-	for _, marker := range []string{generatedMarkerPath(dst), embeddedMarkerPath(dst), importedMarkerPath(dst)} {
-		previous[marker] = regularFileExists(marker)
+	// The marker follows the bytes: an interruption before it leaves the new
+	// image looking replaceable, so a later scrape fetches again, rather than
+	// leaving the old embedded cover or frame grab looking imported for good.
+	if err := removeProvenanceMarkers(dst); err != nil {
+		return false, err
 	}
-	restore = func() {
-		for marker, existed := range previous {
-			if existed {
-				_ = os.WriteFile(marker, nil, 0o600)
-			} else {
-				_ = os.Remove(marker)
-			}
-		}
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(importedMarkerPath(dst), nil, 0o600); err != nil {
-		return nil, err
-	}
-	for _, marker := range []string{generatedMarkerPath(dst), embeddedMarkerPath(dst)} {
-		if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
-			restore()
-			return nil, err
-		}
-	}
-	return restore, nil
+	return true, os.WriteFile(importedMarkerPath(dst), nil, 0o600)
 }
 
 // removeProvenanceMarkers drops the generated, embedded and imported markers
-// once local sidecar artwork, which its lock identifies, replaces the slot.
+// once new artwork replaces the slot file.
 func removeProvenanceMarkers(dst string) error {
 	for _, marker := range []string{generatedMarkerPath(dst), embeddedMarkerPath(dst), importedMarkerPath(dst)} {
 		if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
