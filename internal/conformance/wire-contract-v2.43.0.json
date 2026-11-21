@@ -838,11 +838,6 @@
       "tier": "admin"
     },
     {
-      "field": "playqueue",
-      "effect": "read",
-      "tier": "session"
-    },
-    {
       "field": "playstats",
       "effect": "read",
       "tier": "admin"
@@ -913,11 +908,6 @@
       "tier": "session"
     },
     {
-      "field": "queueaddmany",
-      "effect": "write",
-      "tier": "session"
-    },
-    {
       "field": "queueclear",
       "effect": "write",
       "tier": "session"
@@ -928,37 +918,7 @@
       "tier": "session"
     },
     {
-      "field": "queuemoveentry",
-      "effect": "write",
-      "tier": "session"
-    },
-    {
-      "field": "queueplaynext",
-      "effect": "write",
-      "tier": "session"
-    },
-    {
       "field": "queueremove",
-      "effect": "write",
-      "tier": "session"
-    },
-    {
-      "field": "queueremoveentry",
-      "effect": "write",
-      "tier": "session"
-    },
-    {
-      "field": "queuesetcurrent",
-      "effect": "write",
-      "tier": "session"
-    },
-    {
-      "field": "queuesetrepeat",
-      "effect": "write",
-      "tier": "session"
-    },
-    {
-      "field": "queuesetshuffle",
       "effect": "write",
       "tier": "session"
     },
@@ -17533,10 +17493,6 @@
                 "kind": "scalar"
               },
               {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
                 "name": "mediaID",
                 "kind": "scalar"
               }
@@ -17548,43 +17504,8 @@
               "kind": "scalar"
             },
             {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
               "name": "mediaID",
               "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "queueState",
-          "kind": "object",
-          "children": [
-            {
-              "name": "currentEntryID",
-              "kind": "scalar",
-              "nullable": true
-            },
-            {
-              "name": "positionMS",
-              "kind": "scalar"
-            },
-            {
-              "name": "repeatMode",
-              "kind": "scalar"
-            },
-            {
-              "name": "shuffle",
-              "kind": "scalar"
-            },
-            {
-              "name": "shuffledEntryIDs",
-              "kind": "list",
-              "nullable": true,
-              "elem": {
-                "kind": "scalar"
-              }
             }
           ]
         },
@@ -19428,57 +19349,6 @@
       ]
     },
     {
-      "field": "playqueue",
-      "kind": "object",
-      "children": [
-        {
-          "name": "currentEntryID",
-          "kind": "scalar",
-          "nullable": true
-        },
-        {
-          "name": "entries",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "positionMS",
-          "kind": "scalar"
-        },
-        {
-          "name": "repeatMode",
-          "kind": "scalar"
-        },
-        {
-          "name": "shuffle",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
       "field": "playstats",
       "kind": "object",
       "children": [
@@ -20465,79 +20335,6 @@
       ]
     },
     {
-      "field": "queueaddmany",
-      "kind": "object",
-      "arguments": [
-        {
-          "name": "expectedProfileID",
-          "kind": "string",
-          "optional": true
-        },
-        {
-          "name": "mediaIDs",
-          "kind": "list",
-          "elem": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "placement",
-          "kind": "string",
-          "enum": [
-            "end",
-            "next"
-          ]
-        }
-      ],
-      "children": [
-        {
-          "name": "currentEntryID",
-          "kind": "scalar",
-          "nullable": true
-        },
-        {
-          "name": "entries",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "positionMS",
-          "kind": "scalar"
-        },
-        {
-          "name": "repeatMode",
-          "kind": "scalar"
-        },
-        {
-          "name": "shuffle",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
       "field": "queueclear",
       "kind": "object",
       "children": [
@@ -20944,134 +20741,6 @@
       ]
     },
     {
-      "field": "queuemoveentry",
-      "kind": "object",
-      "arguments": [
-        {
-          "name": "entryID",
-          "kind": "string"
-        },
-        {
-          "name": "expectedProfileID",
-          "kind": "string",
-          "optional": true
-        },
-        {
-          "name": "position",
-          "kind": "number"
-        }
-      ],
-      "children": [
-        {
-          "name": "currentEntryID",
-          "kind": "scalar",
-          "nullable": true
-        },
-        {
-          "name": "entries",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "positionMS",
-          "kind": "scalar"
-        },
-        {
-          "name": "repeatMode",
-          "kind": "scalar"
-        },
-        {
-          "name": "shuffle",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "queueplaynext",
-      "kind": "object",
-      "arguments": [
-        {
-          "name": "entryID",
-          "kind": "string"
-        },
-        {
-          "name": "expectedProfileID",
-          "kind": "string",
-          "optional": true
-        }
-      ],
-      "children": [
-        {
-          "name": "currentEntryID",
-          "kind": "scalar",
-          "nullable": true
-        },
-        {
-          "name": "entries",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "positionMS",
-          "kind": "scalar"
-        },
-        {
-          "name": "repeatMode",
-          "kind": "scalar"
-        },
-        {
-          "name": "shuffle",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
       "field": "queueremove",
       "kind": "object",
       "children": [
@@ -21271,264 +20940,6 @@
           "name": "year",
           "kind": "scalar",
           "optional": true
-        }
-      ]
-    },
-    {
-      "field": "queueremoveentry",
-      "kind": "object",
-      "arguments": [
-        {
-          "name": "entryID",
-          "kind": "string"
-        },
-        {
-          "name": "expectedProfileID",
-          "kind": "string",
-          "optional": true
-        }
-      ],
-      "children": [
-        {
-          "name": "currentEntryID",
-          "kind": "scalar",
-          "nullable": true
-        },
-        {
-          "name": "entries",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "positionMS",
-          "kind": "scalar"
-        },
-        {
-          "name": "repeatMode",
-          "kind": "scalar"
-        },
-        {
-          "name": "shuffle",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "queuesetcurrent",
-      "kind": "object",
-      "arguments": [
-        {
-          "name": "entryID",
-          "kind": "string",
-          "optional": true
-        },
-        {
-          "name": "expectedProfileID",
-          "kind": "string",
-          "optional": true
-        },
-        {
-          "name": "positionMS",
-          "kind": "number"
-        }
-      ],
-      "children": [
-        {
-          "name": "currentEntryID",
-          "kind": "scalar",
-          "nullable": true
-        },
-        {
-          "name": "entries",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "positionMS",
-          "kind": "scalar"
-        },
-        {
-          "name": "repeatMode",
-          "kind": "scalar"
-        },
-        {
-          "name": "shuffle",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "queuesetrepeat",
-      "kind": "object",
-      "arguments": [
-        {
-          "name": "expectedProfileID",
-          "kind": "string",
-          "optional": true
-        },
-        {
-          "name": "mode",
-          "kind": "string",
-          "enum": [
-            "all",
-            "off",
-            "one"
-          ]
-        }
-      ],
-      "children": [
-        {
-          "name": "currentEntryID",
-          "kind": "scalar",
-          "nullable": true
-        },
-        {
-          "name": "entries",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "positionMS",
-          "kind": "scalar"
-        },
-        {
-          "name": "repeatMode",
-          "kind": "scalar"
-        },
-        {
-          "name": "shuffle",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "queuesetshuffle",
-      "kind": "object",
-      "arguments": [
-        {
-          "name": "enabled",
-          "kind": "boolean"
-        },
-        {
-          "name": "expectedProfileID",
-          "kind": "string",
-          "optional": true
-        }
-      ],
-      "children": [
-        {
-          "name": "currentEntryID",
-          "kind": "scalar",
-          "nullable": true
-        },
-        {
-          "name": "entries",
-          "kind": "list",
-          "nullable": true,
-          "elem": {
-            "kind": "object",
-            "children": [
-              {
-                "name": "id",
-                "kind": "scalar"
-              },
-              {
-                "name": "mediaID",
-                "kind": "scalar"
-              }
-            ]
-          },
-          "children": [
-            {
-              "name": "id",
-              "kind": "scalar"
-            },
-            {
-              "name": "mediaID",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
-          "name": "positionMS",
-          "kind": "scalar"
-        },
-        {
-          "name": "repeatMode",
-          "kind": "scalar"
-        },
-        {
-          "name": "shuffle",
-          "kind": "scalar"
         }
       ]
     },
