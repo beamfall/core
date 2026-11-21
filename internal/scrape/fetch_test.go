@@ -3,8 +3,10 @@ package scrape
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -37,13 +39,13 @@ func TestParseFeedEntries(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("len(entries) = %d, want 2: %+v", len(entries), entries)
 	}
-	if entries[0].GUID != "guid-first" || entries[0].Title != "First Entry" ||
+	if entries[0].GUID != "guid-first" || entries[0].DerivedGUID || entries[0].Title != "First Entry" ||
 		entries[0].EnclosureURL != "https://cdn.example.com/first.mp3" ||
 		entries[0].EnclosureType != "audio/mpeg" {
 		t.Fatalf("entries[0] = %+v", entries[0])
 	}
-	// No <guid>: the enclosure URL is the last-resort identity.
-	if entries[1].GUID != "https://cdn.example.com/second.m4a" || entries[1].EnclosureType != "audio/mp4" {
+	if entries[1].GUID == "" || entries[1].GUID == entries[1].EnclosureURL ||
+		!entries[1].DerivedGUID || entries[1].EnclosureType != "audio/mp4" {
 		t.Fatalf("entries[1] = %+v", entries[1])
 	}
 
@@ -183,14 +185,107 @@ func TestParseFeedEntriesAtom(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("entries = %#v, want 2 (identity-less entry skipped)", entries)
 	}
-	if entries[0].GUID != "urn:uuid:entry-one" || entries[0].Title != "First Entry" {
+	if entries[0].GUID != "urn:uuid:entry-one" || entries[0].DerivedGUID || entries[0].Title != "First Entry" {
 		t.Fatalf("entries[0] = %#v", entries[0])
 	}
 	if entries[0].EnclosureURL != "https://media.example.test/one.mp3" || entries[0].EnclosureType != "audio/mpeg" {
 		t.Fatalf("entries[0] enclosure = %#v", entries[0])
 	}
-	// Atom entries without <id> fall back to the enclosure URL, like RSS.
-	if entries[1].GUID != "https://media.example.test/two.mp3" {
+	if entries[1].GUID == "" || entries[1].GUID == entries[1].EnclosureURL || !entries[1].DerivedGUID {
 		t.Fatalf("entries[1] = %#v", entries[1])
+	}
+}
+
+func TestFeedEntriesKeepDerivedGUIDsWhenEnclosuresRotate(t *testing.T) {
+	for _, tc := range []struct {
+		name, feed, link, published, equivalent, later string
+	}{
+		{
+			name: "RSS",
+			feed: `<rss><channel><item><title>{title}</title>{link}<pubDate>{date}</pubDate>
+				<enclosure url="{url}"/></item></channel></rss>`,
+			link:       `<link>https://example.test/entry</link>`,
+			published:  "Tue, 10 Nov 2026 12:00:00 GMT",
+			equivalent: "Tue, 10 Nov 2026 07:00:00 -0500",
+			later:      "Wed, 11 Nov 2026 12:00:00 GMT",
+		},
+		{
+			name: "Atom",
+			feed: `<feed><entry><title>{title}</title><published>{date}</published>
+				<link rel="enclosure" href="{url}"/>{link}
+				<link rel="self" href="https://example.test/ignore"/>
+				<updated>{url}</updated></entry></feed>`,
+			link:       `<link href="https://example.test/entry"/>`,
+			published:  "2026-11-10T12:00:00Z",
+			equivalent: "2026-11-10T07:00:00-05:00",
+			later:      "2026-11-11T12:00:00Z",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parse := func(title, link, date, enclosure string) FeedEntry {
+				t.Helper()
+				raw := strings.NewReplacer("{title}", title, "{link}", link, "{date}", date, "{url}", enclosure).Replace(tc.feed)
+				entries, err := ParseFeedEntries([]byte(raw))
+				if err != nil || len(entries) != 1 {
+					t.Fatalf("ParseFeedEntries = %v, %v, want one entry", entries, err)
+				}
+				entry := entries[0]
+				if !entry.DerivedGUID || entry.GUID == "" || entry.GUID == enclosure || entry.EnclosureURL != enclosure {
+					t.Fatalf("invalid derived identity or enclosure: %+v", entry)
+				}
+				return entry
+			}
+			const firstURL = "https://cdn.example.test/first.mp3"
+			const nextURL = "https://cdn.example.test/replacement.mp3"
+			fromLink := parse("First Title", tc.link, tc.published, firstURL)
+			if rotated := parse("Edited Title", tc.link, tc.later, nextURL); rotated.GUID != fromLink.GUID {
+				t.Errorf("same item link gave different GUIDs: %q and %q", fromLink.GUID, rotated.GUID)
+			}
+			fromMetadata := parse("First Title", "", tc.published, firstURL)
+			if rotated := parse(" FIRST   title ", "", tc.equivalent, nextURL); rotated.GUID != fromMetadata.GUID {
+				t.Errorf("equivalent metadata gave different GUIDs: %q and %q", fromMetadata.GUID, rotated.GUID)
+			}
+			if later := parse("First Title", "", tc.later, nextURL); later.GUID == fromMetadata.GUID {
+				t.Errorf("different publication dates gave the same GUID: %q", later.GUID)
+			}
+		})
+	}
+}
+
+// TestDownloadResourceStreamRedirects: enclosures bounce through measurement
+// hosts, so an anonymous payload fetch follows a cross-origin redirect, while
+// a credentialed one stays pinned to its origin (CORE-0745).
+func TestDownloadResourceStreamRedirects(t *testing.T) {
+	var cdnHits int
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cdnHits++
+		_, _ = w.Write([]byte("payload"))
+	}))
+	defer cdn.Close()
+	// Four measurement hops (more than maxRedirects) before the CDN.
+	tracker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hop, _ := strconv.Atoi(r.URL.Query().Get("hop"))
+		if hop < 4 {
+			http.Redirect(w, r, fmt.Sprintf("/file.mp3?hop=%d", hop+1), http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, cdn.URL+"/file.mp3", http.StatusFound)
+	}))
+	defer tracker.Close()
+
+	engine := New(WithInsecureLoopback())
+	var sink bytes.Buffer
+	if _, err := engine.DownloadResource(context.Background(), tracker.URL+"/file.mp3", &sink, 100); err != nil {
+		t.Fatalf("anonymous cross-origin redirect: %v", err)
+	}
+	if sink.String() != "payload" || cdnHits != 1 {
+		t.Fatalf("got %q after %d CDN hits", sink.String(), cdnHits)
+	}
+	sink.Reset()
+	if _, err := engine.DownloadResourceAuth(context.Background(), tracker.URL+"/file.mp3", &sink, 100, "Bearer secret"); err == nil {
+		t.Fatal("credentialed cross-origin redirect succeeded, want refusal")
+	}
+	if cdnHits != 1 {
+		t.Fatalf("credentialed redirect reached the other origin (%d hits)", cdnHits)
 	}
 }

@@ -94,6 +94,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"ImportManagedFile":                       {},
 	"IntegrationArtifactRoot":                 {},
 	"IntegrationWorker":                       {},
+	"GetOrCreateSubscription":                 {},
 	"Job":                                     {},
 	"JellyfinCompatSelectableLibraries":       {},
 	"CompatIntegrationKeys":                   {},
@@ -111,6 +112,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"LibraryPluginID":                         {},
 	"LibraryRestricted":                       {},
 	"LibraryRoots":                            {},
+	"LibraryVisibleMediaItems":                {}, // read-only per-Media visibility check for the feed catalogue
 	"LibraryVisible":                          {},
 	"LinkMediaRelation":                       {},
 	"ListDevices":                             {},
@@ -189,6 +191,8 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"RelatedEntityGroups":                     {},
 	"RemoveCollectionMedia":                   {},
 	"RemoveSubscription":                      {},
+	"RequestAllSubscriptionsRefresh":          {}, // updates poll cadence only
+	"RequestSubscriptionRefresh":              {}, // updates poll cadence and fetch validators
 	"ReorderCollectionMedia":                  {},
 	"ResetNavOverride":                        {},
 	"ResetUnmatchedSuppression":               {},

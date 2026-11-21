@@ -220,7 +220,10 @@ var clientErrorCodes = map[string]ErrorCode{
 	"unknown plugin config field":          ErrorCodeInvalid,
 	"unknown transport command":            ErrorCodeInvalid,
 
+	"subscription was refreshed recently; try again later": ErrorCodeThrottled,
+
 	"admin password rejected":                                   ErrorCodeForbidden,
+	"adult profile required to follow feeds":                    ErrorCodeForbidden,
 	"adult profile or manager role required":                    ErrorCodeForbidden,
 	"cannot change the current device role":                     ErrorCodeForbidden,
 	"incorrect passphrase or recovery key":                      ErrorCodeForbidden,
@@ -338,6 +341,8 @@ var clientErrorRules = []clientErrorRule{
 	{code: ErrorCodeConflict, suffix: " is not applicable to this library"},
 	// An installed plugin built for an incompatible plugin SDK (CORE-2837).
 	{code: ErrorCodeConflict, prefix: "plugin does not support this server's plugin SDK: "},
+	// A feed probe failure carries only its failure class (CORE-2953).
+	{code: ErrorCodeInvalid, prefix: "feed could not be read: "},
 	{code: ErrorCodeInvalid, suffix: " required"},
 	{code: ErrorCodeInvalid, contains: " is required "},
 	{code: ErrorCodeInvalid, contains: " are required "},

@@ -175,14 +175,25 @@
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]
@@ -1270,6 +1281,35 @@
         "name",
         "path",
         "size"
+      ]
+    },
+    {
+      "field": "followfeed",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
+        "feedURL",
+        "followed",
+        "hasAuth",
+        "healthStatus",
+        "id",
+        "lastErrorClass",
+        "lastPolledAt",
+        "libraryID",
+        "movedAt",
+        "nextPollAt",
+        "retentionKind",
+        "retentionN",
+        "retiredAt",
+        "root",
+        "title"
       ]
     },
     {
@@ -2488,6 +2528,14 @@
       ]
     },
     {
+      "field": "refreshallsubscriptions",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "refreshed"
+      ]
+    },
+    {
       "field": "refreshlibrarymetadata",
       "effect": "write",
       "tier": "admin",
@@ -2518,6 +2566,19 @@
         "summary",
         "title",
         "year"
+      ]
+    },
+    {
+      "field": "refreshsubscription",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "failingSince",
+        "healthStatus",
+        "id",
+        "lastErrorClass",
+        "nextPollAt",
+        "title"
       ]
     },
     {
@@ -2636,14 +2697,25 @@
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]
@@ -3870,19 +3942,59 @@
       ]
     },
     {
+      "field": "setsubscriptiondownloadpolicy",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
+        "feedURL",
+        "followed",
+        "hasAuth",
+        "healthStatus",
+        "id",
+        "lastErrorClass",
+        "lastPolledAt",
+        "libraryID",
+        "movedAt",
+        "nextPollAt",
+        "retentionKind",
+        "retentionN",
+        "retiredAt",
+        "root",
+        "title"
+      ]
+    },
+    {
       "field": "setsubscriptionretention",
       "effect": "write",
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]
@@ -4118,19 +4230,44 @@
       ]
     },
     {
+      "field": "subscriptionentries",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "availability",
+        "downloadState",
+        "enclosureLength",
+        "feedPosition",
+        "mediaID",
+        "publishedAt",
+        "title"
+      ]
+    },
+    {
       "field": "subscriptions",
       "effect": "read",
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]

@@ -1079,6 +1079,55 @@ export interface SubscriptionInfo {
   retentionN: number | null;
 }
 
+/** Feed health (CORE-2955). `healthStatus` is ok, failing, warning after
+ * seven days of failure, or retired. `lastErrorClass` is a closed class. */
+export interface SubscriptionHealth {
+  healthStatus: string;
+  lastErrorClass?: string | null;
+  failingSince?: string | null;
+  nextPollAt?: string | null;
+}
+
+/** A followed feed as the feed home shows it (graph.SubscriptionInfo, the
+ * CORE-2957 selection). Never selects feedURL: it is secret-class. */
+export interface FeedSubscription extends SubscriptionHealth {
+  id: string;
+  libraryID: string;
+  title: string;
+  downloadPolicy: string;
+  downloadLatestN: number;
+  lastPolledAt?: string | null;
+  entryCount: number;
+  downloadedCount: number;
+  catalogBytes: number;
+}
+
+/** The viewer-safe refreshSubscription response. */
+export interface SubscriptionRefreshInfo extends SubscriptionHealth {
+  id: string;
+  title: string;
+}
+
+/** One searchFeeds result (graph.FeedSearchResult). */
+export interface FeedSearchResult {
+  title: string;
+  feedURL: string;
+  artworkURL?: string | null;
+  description?: string | null;
+}
+
+/** One catalogue entry of a Subscription (graph.SubscriptionEntryInfo).
+ * `mediaID` is a Media id the ordinary play path accepts, downloaded or not. */
+export interface SubscriptionEntry {
+  mediaID: string;
+  title: string;
+  publishedAt?: string | null;
+  feedPosition: number;
+  enclosureLength: number;
+  downloadState: string;
+  availability: string;
+}
+
 /** The setSubscriptionRetention result. */
 export interface SubscriptionRetentionResult {
   id: string;

@@ -56,6 +56,8 @@ type Subscription struct {
 	LastModified  string
 	RetentionKind RetentionKind
 	RetentionN    *int
+	// Health is the poller's record of how the feed is fetching (CORE-2955).
+	Health SubscriptionHealth
 }
 
 // SubscriptionEntryAssociation is a feed-scoped association between one
@@ -375,7 +377,10 @@ func (s *Store) SubscriptionSeenGUIDs(ctx context.Context, id SubscriptionID) (m
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `SELECT guid FROM subscription_seen_entry WHERE subscription_id = ?`, id)
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT guid FROM subscription_seen_entry
+		WHERE subscription_id = ? AND (path <> '' OR seen_at_ms <> 0)
+	`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -391,9 +396,10 @@ func (s *Store) SubscriptionSeenGUIDs(ctx context.Context, id SubscriptionID) (m
 	return seen, rows.Err()
 }
 
-// MarkSubscriptionEntrySeen records one ingested feed-entry GUID and the
-// absolute path where its enclosure landed. Re-marking an already-seen GUID
-// is a no-op, including path preservation.
+// MarkSubscriptionEntrySeen records one ingested feed-entry GUID. The path
+// may be empty while a durable staged download awaits publication. Re-marking
+// an already-seen GUID is a no-op, except that a back-catalogue marker can
+// gain a download receipt.
 func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID, guid string, path string, now time.Time) error {
 	if id == "" {
 		return errors.New("subscription ID is required")
@@ -410,8 +416,70 @@ func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID
 	_, err := s.catalogW.ExecContext(ctx, `
 		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
 		VALUES (?, ?, ?, ?)
-		ON CONFLICT(subscription_id, guid) DO NOTHING
+		ON CONFLICT(subscription_id, guid) DO UPDATE SET seen_at_ms = excluded.seen_at_ms, path = excluded.path
+		WHERE subscription_seen_entry.path = '' AND subscription_seen_entry.seen_at_ms = 0
 	`, id, guid, now.UTC().UnixMilli(), path)
+	return err
+}
+
+// PublishSubscriptionEntry records the published path in both the receipt and
+// the optional catalogue row. It holds the catalogue writer during publish
+// so a concurrent scan import sees the binding when it writes the Media.
+func (s *Store) PublishSubscriptionEntry(ctx context.Context, id SubscriptionID, guid string, publish func() (string, error)) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	path, err := publish()
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `
+		UPDATE subscription_seen_entry SET path = ? WHERE subscription_id = ? AND guid = ?
+	`, path, id, guid)
+	if err != nil {
+		return err
+	}
+	if err := requireOneRow(result, ValidationError("subscription receipt not found")); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE subscription_entry SET download_state = 'queued', download_path = ?
+		WHERE subscription_id = ? AND guid = ? AND download_path <> ?
+	`, path, id, guid, path); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// AliasSubscriptionEntryGUID adds a GUID for an existing receipt. It keeps
+// the original receipt and copies the path and timestamp so both GUIDs
+// refer to the same file and retention counts it once.
+func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionID, existingGUID, guid string) error {
+	if id == "" {
+		return errors.New("subscription ID is required")
+	}
+	if strings.TrimSpace(existingGUID) == "" || strings.TrimSpace(guid) == "" {
+		return errors.New("entry GUID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err := s.catalogW.ExecContext(ctx, `
+		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
+		SELECT subscription_id, ?, seen_at_ms, path FROM subscription_seen_entry
+		WHERE subscription_id = ? AND guid = ?
+		ON CONFLICT(subscription_id, guid) DO UPDATE SET seen_at_ms = excluded.seen_at_ms, path = excluded.path
+		WHERE subscription_seen_entry.path = '' AND subscription_seen_entry.seen_at_ms = 0
+	`, guid, id, existingGUID)
 	return err
 }
 
@@ -532,7 +600,7 @@ func (s *Store) upsertSubscriptionEntryAssociationLocked(ctx context.Context, id
 	_, err = s.catalogW.ExecContext(ctx, `
 		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
 		VALUES (?, ?, ?)
-	`, mediaID, subscriptionFeedGUIDScheme, guid)
+	`, mediaID, subscriptionFeedGUIDScheme, feedGUIDExternalID(guid))
 	return err
 }
 
@@ -549,7 +617,7 @@ func pathWithinRoot(root, path string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
-const subscriptionColumns = `SELECT id, library_id, feed_url, auth_ref, root, title, added_at_ms, last_polled_at_ms, etag, last_modified, retention_kind, retention_n FROM subscription`
+const subscriptionColumns = `SELECT id, library_id, feed_url, auth_ref, root, title, added_at_ms, last_polled_at_ms, etag, last_modified, retention_kind, retention_n, ` + subscriptionHealthColumns + ` FROM subscription`
 
 func (s *Store) querySubscriptions(ctx context.Context, query string, args ...any) ([]Subscription, error) {
 	rows, err := s.catalogR.QueryContext(ctx, query, args...)
@@ -580,11 +648,14 @@ func scanSubscriptionRow(scan func(...any) error) (Subscription, error) {
 	var subscription Subscription
 	var addedMS, polledMS int64
 	var retentionN sql.NullInt64
-	if err := scan(&subscription.ID, &subscription.LibraryID, &subscription.FeedURL, &subscription.AuthRef,
+	var health subscriptionHealthRow
+	dest := []any{&subscription.ID, &subscription.LibraryID, &subscription.FeedURL, &subscription.AuthRef,
 		&subscription.Root, &subscription.Title, &addedMS, &polledMS,
-		&subscription.ETag, &subscription.LastModified, &subscription.RetentionKind, &retentionN); err != nil {
+		&subscription.ETag, &subscription.LastModified, &subscription.RetentionKind, &retentionN}
+	if err := scan(append(dest, health.dest()...)...); err != nil {
 		return Subscription{}, err
 	}
+	subscription.Health = health.health()
 	if subscription.RetentionKind == "" {
 		subscription.RetentionKind = RetentionKeepAll
 	}

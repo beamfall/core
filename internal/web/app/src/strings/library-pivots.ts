@@ -1,3 +1,5 @@
+import { feedStrings } from "./feeds";
+
 export const libraryPivotStrings = {
   en: {
     // CORE-2437 — pivot tabs under a Library's name.
@@ -30,6 +32,8 @@ export const libraryPivotStrings = {
     libraryBrowseSortButton: "Sort by {field}, {direction}",
     libraryBrowseOrderLabel: "Order",
     libraryBrowseFiltersDone: "Done",
+    // The Following pivot's own screens (CORE-2957).
+    ...feedStrings.en,
   },
   fr: {
     libraryPivotsLabel: "Vues de la bibliothèque",
@@ -59,6 +63,8 @@ export const libraryPivotStrings = {
     libraryBrowseSortButton: "Trier par {field}, {direction}",
     libraryBrowseOrderLabel: "Ordre",
     libraryBrowseFiltersDone: "Terminé",
+    // The Following pivot's own screens (CORE-2957).
+    ...feedStrings.fr,
   },
   de: {
     libraryPivotsLabel: "Bibliotheksansichten",
@@ -88,6 +94,8 @@ export const libraryPivotStrings = {
     libraryBrowseSortButton: "Sortieren nach {field}, {direction}",
     libraryBrowseOrderLabel: "Reihenfolge",
     libraryBrowseFiltersDone: "Fertig",
+    // The Following pivot's own screens (CORE-2957).
+    ...feedStrings.de,
   },
   es: {
     libraryPivotsLabel: "Vistas de la biblioteca",
@@ -117,6 +125,8 @@ export const libraryPivotStrings = {
     libraryBrowseSortButton: "Ordenar por {field}, {direction}",
     libraryBrowseOrderLabel: "Orden",
     libraryBrowseFiltersDone: "Listo",
+    // The Following pivot's own screens (CORE-2957).
+    ...feedStrings.es,
   },
   pt: {
     libraryPivotsLabel: "Vistas da biblioteca",
@@ -146,5 +156,7 @@ export const libraryPivotStrings = {
     libraryBrowseSortButton: "Ordenar por {field}, {direction}",
     libraryBrowseOrderLabel: "Ordem",
     libraryBrowseFiltersDone: "Concluído",
+    // The Following pivot's own screens (CORE-2957).
+    ...feedStrings.pt,
   },
 } as const;

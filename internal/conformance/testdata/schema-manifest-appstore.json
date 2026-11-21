@@ -480,6 +480,11 @@
     "tier": "session"
   },
   {
+    "field": "followfeed",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "formgroup",
     "effect": "write",
     "tier": "session"
@@ -890,12 +895,22 @@
     "tier": "session"
   },
   {
+    "field": "refreshallsubscriptions",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "refreshlibrarymetadata",
     "effect": "write",
     "tier": "admin"
   },
   {
     "field": "refreshmediametadata",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "refreshsubscription",
     "effect": "write",
     "tier": "session"
   },
@@ -1350,6 +1365,11 @@
     "tier": "admin"
   },
   {
+    "field": "setsubscriptiondownloadpolicy",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "setsubscriptionretention",
     "effect": "write",
     "tier": "session"
@@ -1427,6 +1447,11 @@
   {
     "field": "stationstart",
     "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "subscriptionentries",
+    "effect": "read",
     "tier": "session"
   },
   {

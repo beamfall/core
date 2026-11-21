@@ -208,6 +208,9 @@ const (
 	defaultMaxResponseBytes = 5 << 20
 	defaultTimeout          = 15 * time.Second
 	maxRedirects            = 3
+	// maxStreamRedirects bounds anonymous media-payload chains, which stack
+	// several measurement prefixes (each a hop) in front of the CDN.
+	maxStreamRedirects = 10
 	// retryAfterRetries is the small 429 cap: one initial request plus three
 	// retries, enough to respect etiquette without stalling forever.
 	retryAfterRetries = 3
@@ -241,8 +244,9 @@ type Engine struct {
 	maxResponseBytes int64
 	insecureLoopback bool
 	client           *http.Client
-	// streamClient serves DownloadResource: same hardened dialer and redirect
-	// pinning, but no whole-request timeout — media-sized bodies outlive any
+	// streamClient serves DownloadResource and OpenOriginRange: same hardened
+	// dialer, redirect pinning only for credentialed requests (see
+	// checkStreamRedirect), and no whole-request timeout — media-sized bodies outlive any
 	// fixed wall clock, and ctx bounds the download instead.
 	streamClient *http.Client
 	clock        requestClock
@@ -317,7 +321,7 @@ func New(opts ...Option) *Engine {
 	e.streamClient = &http.Client{
 		// No Timeout: it covers the whole body read, which would cut large
 		// downloads short. Headers/TLS/dial stay capped via the transport.
-		CheckRedirect: e.checkRedirect,
+		CheckRedirect: e.checkStreamRedirect,
 		Transport:     transport,
 	}
 	return e
@@ -1282,14 +1286,14 @@ func (e *Engine) invalidateToken(spec plugin.ScraperSpec) {
 func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reader, contentType string, authorize func(*http.Request)) ([]byte, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: invalid request URL: %w", err)
+		return nil, fmt.Errorf("scrape: invalid request URL")
 	}
 	if err := e.vetURL(parsed); err != nil {
 		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, method, parsed.String(), body)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: %w", err)
+		return nil, safeFetchError("building request", err)
 	}
 	// Source etiquette: every request identifies the app (MusicBrainz
 	// rejects or throttles UA-less clients).
@@ -1312,7 +1316,7 @@ func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reade
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("scrape: reading response: %w", err)
+		return nil, safeFetchError("reading response", err)
 	}
 	if int64(len(data)) > e.maxResponseBytes {
 		return nil, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
@@ -1408,9 +1412,10 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 // recognize the 401-means-expired-token case. Message unchanged from the old
 // flat error.
 type statusError struct {
-	host       string
-	code       int
-	retryAfter string
+	host                  string
+	code                  int
+	retryAfter            string
+	temporaryFeedRedirect bool
 }
 
 func (s *statusError) Error() string {
@@ -1418,16 +1423,27 @@ func (s *statusError) Error() string {
 }
 
 // IsTransient reports whether err is worth retrying later: rate limiting
-// (HTTP 429), a server error (5xx) or a network failure reaching the provider.
+// (HTTP 429), a server error (5xx), a missing temporary feed destination or a
+// network failure reaching the provider.
 // Callers that walk many lookups end their pass on it instead of recording a
 // miss.
 func IsTransient(err error) bool {
 	var status *statusError
 	if errors.As(err, &status) {
-		return status.code == http.StatusTooManyRequests || status.code >= http.StatusInternalServerError
+		return status.code == http.StatusTooManyRequests || status.code >= http.StatusInternalServerError ||
+			status.temporaryFeedRedirect && (status.code == http.StatusNotFound || status.code == http.StatusGone)
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr)
+}
+
+// HTTPStatus returns the HTTP status code of a non-2xx response error.
+func HTTPStatus(err error) (int, bool) {
+	var status *statusError
+	if errors.As(err, &status) {
+		return status.code, true
+	}
+	return 0, false
 }
 
 func decodeJSON(data []byte) (any, error) {
