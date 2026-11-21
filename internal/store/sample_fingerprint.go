@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 )
 
 const (
@@ -21,7 +20,7 @@ const (
 // the sample and the same open file, before the final path verification.
 func SampleMediaFileContentChecked(ctx context.Context, path string, check SampleFingerprintCheck) (string, error) {
 	return SampleMediaFileContentFrom(ctx, path, func() (SampleFile, error) {
-		return os.OpenInRoot(filepath.Dir(path), filepath.Base(path))
+		return openRegularMediaFile(path)
 	}, check)
 }
 

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -4062,7 +4061,7 @@ func HashMediaFileContentContext(ctx context.Context, path string) (string, erro
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	file, err := os.Open(path)
+	file, err := openRegularMediaFileFollowing(path)
 	if err != nil {
 		return "", err
 	}
