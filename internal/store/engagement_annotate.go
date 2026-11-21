@@ -224,7 +224,7 @@ func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string
 	if len(all) == 0 {
 		return raw, nil
 	}
-	visible, err := s.visibleMediaBatchSQL(ctx, all, filter)
+	visible, err := s.visibleMediaIDsSQL(ctx, all, filter)
 	if err != nil {
 		return nil, err
 	}

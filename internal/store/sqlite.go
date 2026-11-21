@@ -1833,13 +1833,60 @@ func (s *Store) visibleMediaSQLFrom(ctx context.Context, db *sql.DB, id MediaID,
 }
 
 func (s *Store) visibleMediaBatchSQL(ctx context.Context, ids []MediaID, filter LibraryFilter) (map[MediaID]Media, error) {
-	if len(ids) == 0 {
-		return map[MediaID]Media{}, nil
-	}
 	visible := make(map[MediaID]Media, len(ids))
-	libraries, err := loadLibraries(ctx, s.catalogR)
+	err := s.eachVisibleMediaSQL(ctx, ids, filter, visibleMediaColumns, scanVisibleMedia, func(media Media) {
+		visible[media.ID] = media
+	})
 	if err != nil {
 		return nil, err
+	}
+	return visible, nil
+}
+
+// visibleMediaIDsSQL answers which of ids visibleMediaBatchSQL would return,
+// reading only each Media's id and Library.
+func (s *Store) visibleMediaIDsSQL(ctx context.Context, ids []MediaID, filter LibraryFilter) (map[MediaID]struct{}, error) {
+	visible := make(map[MediaID]struct{}, len(ids))
+	err := s.eachVisibleMediaSQL(ctx, ids, filter, "m.id, m.library_id", func(rows *sql.Rows) (Media, error) {
+		var media Media
+		err := rows.Scan(&media.ID, &media.LibraryID)
+		return media, err
+	}, func(media Media) {
+		visible[media.ID] = struct{}{}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return visible, nil
+}
+
+const visibleMediaColumns = `m.id, m.library_id, m.title, m.summary, m.year, m.duration_seconds, m.container, m.codec, m.video_width, m.video_height, m.media_class, m.mutated_by`
+
+func scanVisibleMedia(rows *sql.Rows) (Media, error) {
+	var media Media
+	var summary sql.NullString
+	var year sql.NullInt64
+	var mutatedBy sql.NullString
+	if err := rows.Scan(&media.ID, &media.LibraryID, &media.Title, &summary, &year, &media.DurationSeconds, &media.Container, &media.Codec, &media.VideoWidth, &media.VideoHeight, &media.Class, &mutatedBy); err != nil {
+		return Media{}, err
+	}
+	media.Summary = summary.String
+	media.Year = int(year.Int64)
+	media.MutatedBy = mutationSourceFromDB(mutatedBy.String)
+	return media, nil
+}
+
+// eachVisibleMediaSQL reads the untrashed Media among ids that the filter's
+// Libraries and certification rules admit, from the catalog and every open
+// Encrypted Library, selecting columns and handing each row scanned by scan to
+// emit.
+func (s *Store) eachVisibleMediaSQL(ctx context.Context, ids []MediaID, filter LibraryFilter, columns string, scan func(*sql.Rows) (Media, error), emit func(Media)) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	libraries, err := loadLibraries(ctx, s.catalogR)
+	if err != nil {
+		return err
 	}
 	visibleLibraries := map[LibraryID]bool{}
 	libraryPlugins := map[LibraryID]string{}
@@ -1851,48 +1898,43 @@ func (s *Store) visibleMediaBatchSQL(ctx context.Context, ids []MediaID, filter 
 			}
 		}
 	}
+	read := func(db *sql.DB, query string, args []any, admit func(Media) bool) error {
+		rows, err := db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			media, err := scan(rows)
+			if err != nil {
+				return err
+			}
+			if admit(media) {
+				emit(media)
+			}
+		}
+		return rows.Err()
+	}
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	const chunkSize = 500
 	for start := 0; start < len(ids); start += chunkSize {
 		chunk := ids[start:min(start+chunkSize, len(ids))]
-		placeholders := make([]string, len(chunk))
+		placeholders := sqlPlaceholders(len(chunk))
 		args := make([]any, 0, len(chunk)+len(certArgs))
-		for i, id := range chunk {
-			placeholders[i] = "?"
+		for _, id := range chunk {
 			args = append(args, id)
 		}
 		args = append(args, certArgs...)
-		rows, err := s.catalogR.QueryContext(ctx, `
-			SELECT m.id, m.library_id, m.title, m.summary, m.year, m.duration_seconds, m.container, m.codec, m.video_width, m.video_height, m.media_class, l.is_restricted, m.mutated_by
-			FROM media m JOIN library l ON l.id = m.library_id
-			WHERE m.id IN (`+strings.Join(placeholders, ", ")+`)
+		// #nosec G202 -- columns is a fixed column list; only generated placeholders and closed certification SQL are interpolated.
+		err := read(s.catalogR, `
+			SELECT `+columns+`
+			FROM media m
+			WHERE m.id IN (`+placeholders+`)
 			  AND m.trashed_at_ms IS NULL`+certClause+`
-		`, args...)
+		`, args, func(media Media) bool { return visibleLibraries[media.LibraryID] })
 		if err != nil {
-			return nil, err
+			return err
 		}
-		for rows.Next() {
-			var media Media
-			var summary sql.NullString
-			var year sql.NullInt64
-			var restricted int
-			var mutatedBy sql.NullString
-			if err := rows.Scan(&media.ID, &media.LibraryID, &media.Title, &summary, &year, &media.DurationSeconds, &media.Container, &media.Codec, &media.VideoWidth, &media.VideoHeight, &media.Class, &restricted, &mutatedBy); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			media.Summary = summary.String
-			media.Year = int(year.Int64)
-			media.MutatedBy = mutationSourceFromDB(mutatedBy.String)
-			if visibleLibraries[media.LibraryID] {
-				visible[media.ID] = media
-			}
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		rows.Close()
 
 		for libraryID, db := range s.encryptedDBs {
 			if !visibleLibraries[libraryID] || db == nil || db.state != "unsealed-registered" || db.reader == nil {
@@ -1905,38 +1947,20 @@ func (s *Store) visibleMediaBatchSQL(ctx context.Context, ids []MediaID, filter 
 			}
 			args = append(args, libraryID)
 			args = append(args, planeCertArgs...)
-			rows, err := db.reader.QueryContext(ctx, `
-				SELECT m.id, m.library_id, m.title, m.summary, m.year, m.duration_seconds, m.container, m.codec, m.video_width, m.video_height, m.media_class, m.mutated_by
+			// #nosec G202 -- columns is a fixed column list; only generated placeholders and closed certification SQL are interpolated.
+			err := read(db.reader, `
+				SELECT `+columns+`
 				FROM media m
-				WHERE m.id IN (`+strings.Join(placeholders, ", ")+`)
+				WHERE m.id IN (`+placeholders+`)
 				  AND m.library_id = ?
 				  AND m.trashed_at_ms IS NULL`+planeCertClause+`
-			`, args...)
+			`, args, func(Media) bool { return true })
 			if err != nil {
-				return nil, err
+				return err
 			}
-			for rows.Next() {
-				var media Media
-				var summary sql.NullString
-				var year sql.NullInt64
-				var mutatedBy sql.NullString
-				if err := rows.Scan(&media.ID, &media.LibraryID, &media.Title, &summary, &year, &media.DurationSeconds, &media.Container, &media.Codec, &media.VideoWidth, &media.VideoHeight, &media.Class, &mutatedBy); err != nil {
-					rows.Close()
-					return nil, err
-				}
-				media.Summary = summary.String
-				media.Year = int(year.Int64)
-				media.MutatedBy = mutationSourceFromDB(mutatedBy.String)
-				visible[media.ID] = media
-			}
-			if err := rows.Err(); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			rows.Close()
 		}
 	}
-	return visible, nil
+	return nil
 }
 
 func (s *Store) primaryMediaFileSQL(ctx context.Context, id MediaID) (MediaFile, error) {
