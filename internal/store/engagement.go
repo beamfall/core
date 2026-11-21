@@ -785,22 +785,26 @@ func boolToInt(value bool) int {
 // item, chosen by its most recently engaged container.
 //
 // Distinct from continue-watching by construction (the ADR's separate-shelves
-// ruling — Plex's merged On Deck is the cautionary tale): a group with any
-// resumable non-extra child (continue-watching's predicate, including its
-// exclusion of a child with a recorded premature EOF) yields nothing here, so
-// one container never appears on both shelves and the shelf never advances
-// beyond what the Profile has finished. The group covers the parent's own
-// direct children and every container nested under it, not only the ordered
-// siblings. An incomplete child is never the frontier. Barely-started children
-// (under the resume floor) and channel-context plays count as unwatched,
-// mirroring continue-watching, so no item falls between the two shelves.
+// ruling — Plex's merged On Deck is the cautionary tale). Disjointness is
+// derived from Continue Watching itself, bottom up: its items, walked upward
+// through ordered relations, mark the containers it holds (nextUpHeldSQL).
+// A group yields nothing when the engaged container, any container above it,
+// or any of its siblings is held, so one container never appears on both
+// shelves and the shelf never advances beyond what the Profile has finished.
+// Because the held set starts from Continue Watching's own items, the
+// resumable predicate (resume floor, channel plays, Extras, incomplete
+// sources, visibility) can never drift from that shelf's. Barely-started
+// children (under the resume floor) and channel-context plays count as
+// unwatched, so no item falls between the two shelves. A child with a
+// recorded premature EOF is never the frontier.
 //
 // A container is an Entity of a kind registered with the Container posture
 // (EntityKindPolicy, lowered from the container archetype), and its ordered
 // relation rows (those carrying a sort_order) are the play-next order. The
-// parent and siblings must be live (untrashed) container kinds too. Other relations carry a
-// sort_order (credit billing, the index of a scraped list), so the kind, not
-// the sort_order, decides membership (CORE-2822).
+// parent, siblings and every entity on an upward walk must be live
+// (untrashed) container kinds in a Library visible under the filter. Other
+// relations carry a sort_order (credit billing, the index of a scraped
+// list), so the kind, not the sort_order, decides membership (CORE-2822).
 //
 // Engagement rows live in the events database and relations in the catalog,
 // so the composition happens here rather than in one SQL statement. Child
@@ -892,6 +896,24 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 		return containers[i] < containers[j]
 	})
 
+	// A group whose containers Continue Watching holds yields nothing, so the
+	// two shelves stay disjoint by construction (see nextUpHeldSQL).
+	libraries, err := s.visibleLibraryIDsLocked(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	if len(libraries) == 0 {
+		return []SourceItem{}, nil
+	}
+	held, err := s.nextUpHeldSQL(ctx, profileID, filter, containerKinds, libraries)
+	if err != nil {
+		return nil, err
+	}
+	ancestors, err := s.nextUpAncestorsSQL(ctx, containers, containerKinds, libraries)
+	if err != nil {
+		return nil, err
+	}
+
 	// Per group, the frontier, decided by its most recently engaged
 	// container. The same Media fronting two groups (a child in its
 	// container and in an ordered Collection) appears once, for the most
@@ -900,25 +922,25 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 	seenGroup := map[EntityID]bool{}
 	seen := map[MediaID]bool{}
 	for _, containerID := range containers {
-		group, siblings, err := s.nextUpGroupSQL(ctx, containerID, containerKinds)
+		up := ancestors[containerID]
+		if len(up) == 0 {
+			continue // container hidden under the filter never reaches the wire
+		}
+		group, siblings, err := s.nextUpGroupSQL(ctx, containerID, containerKinds, libraries)
 		if err != nil {
 			return nil, err
 		}
 		if seenGroup[group] {
 			continue
 		}
-		nested, err := s.nextUpNestedSQL(ctx, group, containerKinds)
-		if err != nil {
-			return nil, err
-		}
-		frontier, visible, err := s.nextUpFrontierSQL(ctx, profileID, filter, containerID, siblings, append([]EntityID{group}, nested...))
-		if err != nil {
-			return nil, err
-		}
-		if !visible {
-			continue // container hidden under the filter never reaches the wire
-		}
 		seenGroup[group] = true
+		if anyHeld(held, up) || anyHeld(held, siblings) {
+			continue
+		}
+		frontier, err := s.nextUpFrontierSQL(ctx, profileID, filter, containerID, siblings)
+		if err != nil {
+			return nil, err
+		}
 		if frontier == nil || seen[frontier.ID] {
 			continue
 		}
@@ -938,17 +960,146 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 	return items, nil
 }
 
+// nextUpMaxDepth bounds the upward walk through ordered container relations
+// (part, whole, the whole's own parent, ...). Real hierarchies are two or
+// three levels deep; the bound also stops a relation cycle.
+const nextUpMaxDepth = 8
+
+func anyHeld(held map[EntityID]bool, ids []EntityID) bool {
+	for _, id := range ids {
+		if held[id] {
+			return true
+		}
+	}
+	return false
+}
+
+// nextUpHeldSQL returns the containers Continue Watching holds: every live,
+// visible container of a registered kind that reaches one of the Profile's
+// continue-watching items through ordered relations, at any depth up to
+// nextUpMaxDepth. The walk starts from continue-watching's own items, so the
+// resumable predicate (resume floor, channel plays, Extras, incomplete
+// sources, Media visibility) is Continue Watching's by construction, and it
+// stops at a hidden or trashed entity. A next-up group touching this set is
+// on Continue Watching and yields nothing here.
+func (s *Store) nextUpHeldSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, kinds []string, libraries []LibraryID) (map[EntityID]bool, error) {
+	resumable, err := s.inProgressItemsSQL(ctx, profileID, filter, -1, 0)
+	if err != nil {
+		return nil, err
+	}
+	held := map[EntityID]bool{}
+	kindPlaceholders, kindArgs := entityKindPlaceholders(kinds)
+	libraryPlaceholders, libraryArgs := libraryIDPlaceholders(libraries)
+	for start := 0; start < len(resumable); start += engagementChunkSize {
+		chunk := resumable[start:min(start+engagementChunkSize, len(resumable))]
+		args := make([]any, 0, len(chunk)+2*(len(kindArgs)+len(libraryArgs))+1)
+		for _, item := range chunk {
+			args = append(args, item.ID)
+		}
+		args = append(args, kindArgs...)
+		args = append(args, libraryArgs...)
+		base := `SELECT er.to_media_id, er.from_entity_id, 1
+			FROM entity_relation er
+			JOIN entity c ON c.id = er.from_entity_id
+			WHERE er.sort_order IS NOT NULL AND er.to_media_id IN (` + sqlPlaceholders(len(chunk)) + `)
+			  AND c.kind IN (` + kindPlaceholders + `) AND c.trashed_at_ms IS NULL
+			  AND c.library_id IN (` + libraryPlaceholders + `)`
+		err := s.nextUpWalkSQL(ctx, base, args, kindPlaceholders, libraryPlaceholders, kindArgs, libraryArgs, func(_ string, id EntityID) {
+			held[id] = true
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return held, nil
+}
+
+// nextUpAncestorsSQL returns, per container, the container itself and every
+// live, visible container of a registered kind above it through ordered
+// relations (up to nextUpMaxDepth). A hidden or trashed container maps to
+// nothing.
+func (s *Store) nextUpAncestorsSQL(ctx context.Context, containers []EntityID, kinds []string, libraries []LibraryID) (map[EntityID][]EntityID, error) {
+	ancestors := map[EntityID][]EntityID{}
+	kindPlaceholders, kindArgs := entityKindPlaceholders(kinds)
+	libraryPlaceholders, libraryArgs := libraryIDPlaceholders(libraries)
+	for start := 0; start < len(containers); start += engagementChunkSize {
+		chunk := containers[start:min(start+engagementChunkSize, len(containers))]
+		args := make([]any, 0, len(chunk)+2*(len(kindArgs)+len(libraryArgs))+1)
+		for _, id := range chunk {
+			args = append(args, id)
+		}
+		args = append(args, kindArgs...)
+		args = append(args, libraryArgs...)
+		base := `SELECT e.id, e.id, 0
+			FROM entity e
+			WHERE e.id IN (` + sqlPlaceholders(len(chunk)) + `)
+			  AND e.kind IN (` + kindPlaceholders + `) AND e.trashed_at_ms IS NULL
+			  AND e.library_id IN (` + libraryPlaceholders + `)`
+		err := s.nextUpWalkSQL(ctx, base, args, kindPlaceholders, libraryPlaceholders, kindArgs, libraryArgs, func(seed string, id EntityID) {
+			ancestors[EntityID(seed)] = append(ancestors[EntityID(seed)], id)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return ancestors, nil
+}
+
+// nextUpWalkSQL runs one bounded upward walk. base selects the starting
+// (seed, entity, depth) rows; each step follows an ordered relation from an
+// entity to a live container of a registered kind in a visible Library, so
+// the walk stops at a hidden or trashed entity. visit receives each distinct
+// (seed, entity) pair.
+func (s *Store) nextUpWalkSQL(ctx context.Context, base string, baseArgs []any, kindPlaceholders, libraryPlaceholders string, kindArgs, libraryArgs []any, visit func(seed string, id EntityID)) error {
+	args := make([]any, 0, len(baseArgs)+1+len(kindArgs)+len(libraryArgs))
+	args = append(args, baseArgs...)
+	args = append(args, nextUpMaxDepth)
+	args = append(args, kindArgs...)
+	args = append(args, libraryArgs...)
+	// #nosec G202 -- only generated placeholders are interpolated; every value is a bound arg.
+	rows, err := s.catalogR.QueryContext(ctx, `
+		WITH RECURSIVE up(seed, id, depth) AS (
+			`+base+`
+			UNION
+			SELECT up.seed, er.to_entity_id, up.depth + 1
+			FROM up
+			JOIN entity_relation er ON er.from_entity_id = up.id
+			JOIN entity p ON p.id = er.to_entity_id
+			WHERE up.depth < ? AND er.sort_order IS NOT NULL
+			  AND p.kind IN (`+kindPlaceholders+`) AND p.trashed_at_ms IS NULL
+			  AND p.library_id IN (`+libraryPlaceholders+`)
+		)
+		SELECT DISTINCT seed, id FROM up ORDER BY seed, id
+	`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var seed string
+		var id EntityID
+		if err := rows.Scan(&seed, &id); err != nil {
+			return err
+		}
+		visit(seed, id)
+	}
+	return rows.Err()
+}
+
 // nextUpGroupSQL returns the next-up group of an ordered container: when the
 // container relates to a parent container through an ordered relation, the
 // parent and every container related to it the same way, in sort order (the
 // container among them); otherwise the container alone. kinds are the
 // registered container kinds; an ordered link to any other kind (a credited
-// person, a category) is never a parent. A trashed parent or sibling takes no
-// part, as in every other catalog read.
-func (s *Store) nextUpGroupSQL(ctx context.Context, containerID EntityID, kinds []string) (EntityID, []EntityID, error) {
+// person, a category) is never a parent. A trashed parent or sibling, or one in
+// a Library hidden under the filter, takes no part.
+func (s *Store) nextUpGroupSQL(ctx context.Context, containerID EntityID, kinds []string, libraries []LibraryID) (EntityID, []EntityID, error) {
 	kindPlaceholders, kindArgs := entityKindPlaceholders(kinds)
+	libraryPlaceholders, libraryArgs := libraryIDPlaceholders(libraries)
 	args := append([]any{containerID}, kindArgs...)
+	args = append(args, libraryArgs...)
 	args = append(args, kindArgs...)
+	args = append(args, libraryArgs...)
 	// #nosec G202 -- only generated placeholders are interpolated; every value is a bound arg.
 	rows, err := s.catalogR.QueryContext(ctx, `
 		WITH parent AS (
@@ -957,6 +1108,7 @@ func (s *Store) nextUpGroupSQL(ctx context.Context, containerID EntityID, kinds 
 			JOIN entity p ON p.id = er.to_entity_id
 			WHERE er.from_entity_id = ? AND er.sort_order IS NOT NULL
 			  AND p.kind IN (`+kindPlaceholders+`) AND p.trashed_at_ms IS NULL
+			  AND p.library_id IN (`+libraryPlaceholders+`)
 			ORDER BY er.relation, er.to_entity_id
 			LIMIT 1
 		)
@@ -965,7 +1117,7 @@ func (s *Store) nextUpGroupSQL(ctx context.Context, containerID EntityID, kinds 
 		JOIN entity_relation sibling
 		  ON sibling.to_entity_id = parent.to_entity_id AND sibling.relation = parent.relation
 		JOIN entity s ON s.id = sibling.from_entity_id AND s.kind IN (`+kindPlaceholders+`)
-		  AND s.trashed_at_ms IS NULL
+		  AND s.trashed_at_ms IS NULL AND s.library_id IN (`+libraryPlaceholders+`)
 		WHERE sibling.sort_order IS NOT NULL
 		ORDER BY sibling.sort_order, sibling.from_entity_id
 	`, args...)
@@ -991,165 +1143,104 @@ func (s *Store) nextUpGroupSQL(ctx context.Context, containerID EntityID, kinds 
 	return group, siblings, nil
 }
 
-// nextUpNestedSQL returns every live container of a registered kind that
-// relates to group through an ordered relation: group's nested containers,
-// whichever relation links them. With group's own direct children they make
-// up the scope of the group's resumable check.
-func (s *Store) nextUpNestedSQL(ctx context.Context, group EntityID, kinds []string) ([]EntityID, error) {
-	kindPlaceholders, kindArgs := entityKindPlaceholders(kinds)
-	args := append([]any{group}, kindArgs...)
-	// #nosec G202 -- only generated placeholders are interpolated; every value is a bound arg.
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT DISTINCT er.from_entity_id
-		FROM entity_relation er
-		JOIN entity c ON c.id = er.from_entity_id
-		WHERE er.to_entity_id = ? AND er.sort_order IS NOT NULL
-		  AND c.kind IN (`+kindPlaceholders+`) AND c.trashed_at_ms IS NULL
-		ORDER BY er.from_entity_id
-	`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var nested []EntityID
-	for rows.Next() {
-		var id EntityID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		nested = append(nested, id)
-	}
-	return nested, rows.Err()
-}
-
 // nextUpFrontierSQL finds the frontier of containerID within its ordered
 // siblings: its first visible non-extra, complete child the Profile has not
-// watched, else the first such child of a later sibling. It is nil when the
-// Profile has any resumable child (continue-watching's predicate) among the
-// siblings' children or the scope entities' children (the group parent's
-// direct children and its nested containers'), and visible is false when the
-// container itself is hidden under the filter.
-func (s *Store) nextUpFrontierSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, containerID EntityID, siblings, scope []EntityID) (frontier *SourceItem, visible bool, err error) {
-	// Extras are excluded from next-up by default: a trailer sharing the
-	// container must never be picked as the frontier child.
-	// mediaForEntitySQL is the shared funnel (also the explicit "extras of
-	// X" Source), so the exclusion is applied here at the shelf, not in it.
-	var ordered []SourceItem // children of containerID and later siblings
-	var childIDs []MediaID
+// watched, else the first such child of a later sibling, reading one sibling
+// at a time and stopping at the first hit.
+func (s *Store) nextUpFrontierSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, containerID EntityID, siblings []EntityID) (*SourceItem, error) {
 	after := false
 	for _, sibling := range siblings {
+		if sibling == containerID {
+			after = true
+		}
+		if !after {
+			continue
+		}
 		children, err := s.mediaForEntitySQL(ctx, sibling, filter, -1, 0, nil)
 		if errors.Is(err, errVisibleEntityNotFound) {
 			continue
 		}
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
-		if sibling == containerID {
-			visible, after = true, true
+		frontier, err := s.nextUpFirstUnwatchedSQL(ctx, profileID, children)
+		if err != nil || frontier != nil {
+			return frontier, err
 		}
-		for _, child := range children {
-			childIDs = append(childIDs, child.ID)
-			if after {
-				ordered = append(ordered, child)
+	}
+	return nil, nil
+}
+
+// nextUpFirstUnwatchedSQL returns the first of children, in order, that is not
+// an Extra, not watched in the Profile's full progress (no recency window) and
+// not an incomplete source. Extras are excluded from next-up by default: a
+// trailer sharing the container must never be picked as the frontier child.
+// mediaForEntitySQL is the shared funnel (also the explicit "extras of X"
+// Source), so the exclusion is applied here at the shelf, not in it. A shelf
+// offers no Version choice, so a child with a recorded premature EOF is
+// skipped, as Continue Watching skips it. Children are checked in bounded
+// chunks, and only the remaining candidates are stat-checked for EOF.
+func (s *Store) nextUpFirstUnwatchedSQL(ctx context.Context, profileID ProfileID, children []SourceItem) (*SourceItem, error) {
+	for start := 0; start < len(children); start += engagementChunkSize {
+		chunk := children[start:min(start+engagementChunkSize, len(children))]
+		ids := make([]MediaID, len(chunk))
+		for i := range chunk {
+			ids[i] = chunk[i].ID
+		}
+		extras, err := s.extraMediaIDsSQL(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		watched, err := s.nextUpWatchedSQL(ctx, profileID, ids)
+		if err != nil {
+			return nil, err
+		}
+		var candidates []MediaID
+		for _, id := range ids {
+			if !extras[id] && !watched[id] {
+				candidates = append(candidates, id)
+			}
+		}
+		incomplete, err := s.incompleteMediaIDsSQL(ctx, candidates)
+		if err != nil {
+			return nil, err
+		}
+		for i := range chunk {
+			id := chunk[i].ID
+			if !extras[id] && !watched[id] && !incomplete[id] {
+				return &chunk[i], nil
 			}
 		}
 	}
-	if !visible {
-		return nil, false, nil
-	}
-	// The resumable check covers the whole group: a paused direct child of the
-	// parent, or a paused child of any nested container, keeps the group on
-	// continue-watching and off this shelf.
-	inSiblings := make(map[EntityID]bool, len(siblings))
-	for _, sibling := range siblings {
-		inSiblings[sibling] = true
-	}
-	for _, entity := range scope {
-		if inSiblings[entity] {
-			continue
-		}
-		inSiblings[entity] = true
-		children, err := s.mediaForEntitySQL(ctx, entity, filter, -1, 0, nil)
-		if errors.Is(err, errVisibleEntityNotFound) {
-			continue
-		}
-		if err != nil {
-			return nil, false, err
-		}
-		for _, child := range children {
-			childIDs = append(childIDs, child.ID)
-		}
-	}
-	extras, err := s.extraMediaIDsSQL(ctx, childIDs)
-	if err != nil {
-		return nil, false, err
-	}
-	// Continue-watching drops a child with a recorded premature EOF, so the
-	// same child is never resumable here either; and a shelf offers no
-	// Version choice, so it is never a frontier.
-	incomplete, err := s.incompleteMediaIDsSQL(ctx, childIDs)
-	if err != nil {
-		return nil, false, err
-	}
-	watched, resumable, err := s.nextUpProgressSQL(ctx, profileID, childIDs)
-	if err != nil {
-		return nil, false, err
-	}
-	for _, id := range childIDs {
-		if resumable[id] && !extras[id] && !incomplete[id] {
-			return nil, true, nil
-		}
-	}
-	for i := range ordered {
-		id := ordered[i].ID
-		if !extras[id] && !incomplete[id] && !watched[id] {
-			return &ordered[i], true, nil
-		}
-	}
-	return nil, true, nil
+	return nil, nil
 }
 
-// nextUpProgressSQL reads the Profile's full progress over ids, with no
-// recency window: which are watched, and which are resumable by
-// continue-watching's predicate (inProgressItemsSQL).
-func (s *Store) nextUpProgressSQL(ctx context.Context, profileID ProfileID, ids []MediaID) (watched, resumable map[MediaID]bool, err error) {
-	watched, resumable = map[MediaID]bool{}, map[MediaID]bool{}
-	for start := 0; start < len(ids); start += engagementChunkSize {
-		chunk := ids[start:min(start+engagementChunkSize, len(ids))]
-		args := make([]any, 0, len(chunk)+2)
-		args = append(args, resumeFloorSeconds, profileID)
-		for _, id := range chunk {
-			args = append(args, id)
-		}
-		// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
-		rows, err := s.eventsR.QueryContext(ctx, `
-			SELECT media_id, watched, position_seconds >= ? AND channel_context = 0
-			FROM playback_progress
-			WHERE profile_id = ? AND media_id IN (`+sqlPlaceholders(len(chunk))+`)
-		`, args...)
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := scanNextUpProgress(rows, watched, resumable); err != nil {
-			return nil, nil, err
-		}
+// nextUpWatchedSQL reads which of ids (at most engagementChunkSize) the
+// Profile has watched, from its full progress with no recency window.
+func (s *Store) nextUpWatchedSQL(ctx context.Context, profileID ProfileID, ids []MediaID) (map[MediaID]bool, error) {
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, profileID)
+	for _, id := range ids {
+		args = append(args, id)
 	}
-	return watched, resumable, nil
-}
-
-func scanNextUpProgress(rows *sql.Rows, watched, resumable map[MediaID]bool) error {
+	// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
+	rows, err := s.eventsR.QueryContext(ctx, `
+		SELECT media_id FROM playback_progress
+		WHERE profile_id = ? AND watched = 1 AND media_id IN (`+sqlPlaceholders(len(ids))+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
+	watched := map[MediaID]bool{}
 	for rows.Next() {
 		var id MediaID
-		var isWatched, pastFloor bool
-		if err := rows.Scan(&id, &isWatched, &pastFloor); err != nil {
-			return err
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
 		}
-		watched[id] = isWatched
-		resumable[id] = !isWatched && pastFloor
+		watched[id] = true
 	}
-	return rows.Err()
+	return watched, rows.Err()
 }
 
 // playedItemsSQL backs the recently-played and most-played Source kinds:

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1312,6 +1313,123 @@ func TestNextUpDoesNotGroupUnderATrashedParent(t *testing.T) {
 	}
 	if items := nextUp(t, st, filter, "profile-default"); len(items) != 0 {
 		t.Fatalf("next-up across a trashed parent = %#v, want empty", items)
+	}
+}
+
+func TestNextUpWalksEveryLevelUpFromContinueWatching(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	// entity-root holds direct children and entity-mid; entity-mid holds
+	// entity-leaf, which holds its own children.
+	direct := nextUpFixture(t, st, "entity-root", "r-")
+	leaf := nextUpFixture(t, st, "entity-leaf", "l-")
+	nextUpParent(t, st, "entity-mid", "entity-leaf")
+	nextUpParent(t, st, "entity-root", "entity-mid")
+
+	// A paused leaf child, then a finished direct child of the root (the
+	// root is the most recently engaged): the root is held two levels up
+	// from Continue Watching's item, so next-up yields nothing.
+	mustReport(t, st, "profile-default", leaf[0], 45, 120, false)
+	if _, err := st.eventsW.ExecContext(ctx, `UPDATE playback_progress SET updated_at_ms = updated_at_ms - 60000 WHERE media_id = ?`, leaf[0]); err != nil {
+		t.Fatal(err)
+	}
+	mustReport(t, st, "profile-default", direct[0], 120, 120, true)
+	if items := nextUp(t, st, filter, "profile-default"); len(items) != 0 {
+		t.Fatalf("next-up with a paused child two levels down = %#v, want empty", items)
+	}
+	cw, err := st.SourceItems(ctx, filter, SourceQuery{Kind: "continue-watching", ProfileID: "profile-default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cw) != 1 || cw[0].ID != leaf[0] {
+		t.Fatalf("continue-watching = %#v, want %q", cw, leaf[0])
+	}
+}
+
+func TestNextUpIgnoresAParentHiddenUnderTheFilter(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+	a := nextUpFixture(t, st, "entity-a", "a-")
+	b := nextUpFixture(t, st, "entity-b", "b-")
+	// Both parts link to a parent in a Library the filter excludes, through
+	// different ordered relations.
+	if err := st.UpsertEntity(ctx, widgetEntity("entity-hidden-parent", "library-archive")); err != nil {
+		t.Fatal(err)
+	}
+	order := 1
+	for _, link := range []EntityRelation{
+		{FromEntityID: "entity-a", Name: "part-of", ToEntityID: "entity-hidden-parent", SortOrder: &order},
+		{FromEntityID: "entity-b", Name: "volume-of", ToEntityID: "entity-hidden-parent", SortOrder: &order},
+	} {
+		if err := st.UpsertEntityRelation(ctx, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// B is paused (on Continue Watching) and A's first child finished: the
+	// hidden parent ties nothing together, so A's next child is offered.
+	mustReport(t, st, "profile-default", b[0], 45, 120, false)
+	if _, err := st.eventsW.ExecContext(ctx, `UPDATE playback_progress SET updated_at_ms = updated_at_ms - 60000 WHERE media_id = ?`, b[0]); err != nil {
+		t.Fatal(err)
+	}
+	mustReport(t, st, "profile-default", a[0], 120, 120, true)
+	items := nextUp(t, st, filter, "profile-default")
+	if len(items) != 1 || items[0].ID != a[1] {
+		t.Fatalf("next-up beside a hidden parent = %#v, want exactly %q", items, a[1])
+	}
+}
+
+func TestNextUpHandlesAVeryLargeGroup(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	ids := nextUpFixture(t, st, "entity-big", "big-")
+
+	// Clone the last child into enough further children that one IN list
+	// over every child would pass SQLite's 32766-variable limit.
+	const clones = 33000
+	columnRows, err := st.catalogR.QueryContext(ctx, `SELECT name FROM pragma_table_info('media')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var columns, values []string
+	for columnRows.Next() {
+		var name string
+		if err := columnRows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		columns = append(columns, name)
+		if name == "id" {
+			values = append(values, "media.id || '-' || seq.clone_n")
+		} else {
+			values = append(values, "media."+name)
+		}
+	}
+	if err := errors.Join(columnRows.Err(), columnRows.Close()); err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G202 -- only the media table's own column names are interpolated; values are bound args.
+	if _, err := st.catalogW.ExecContext(ctx, `
+		WITH RECURSIVE seq(clone_n) AS (SELECT 1 UNION ALL SELECT clone_n + 1 FROM seq WHERE clone_n < ?)
+		INSERT INTO media (`+strings.Join(columns, ", ")+`)
+		SELECT `+strings.Join(values, ", ")+` FROM media, seq WHERE media.id = ?
+	`, clones, ids[2]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `
+		WITH RECURSIVE seq(clone_n) AS (SELECT 1 UNION ALL SELECT clone_n + 1 FROM seq WHERE clone_n < ?)
+		INSERT INTO entity_relation (from_entity_id, relation, to_media_id, sort_order)
+		SELECT 'entity-big', 'linked', ? || '-' || clone_n, 3 + clone_n FROM seq
+	`, clones, ids[2]); err != nil {
+		t.Fatal(err)
+	}
+
+	mustReport(t, st, "profile-default", ids[0], 120, 120, true)
+	items := nextUp(t, st, filter, "profile-default")
+	if len(items) != 1 || items[0].ID != ids[1] {
+		t.Fatalf("next-up in a very large group = %#v, want exactly %q", items, ids[1])
 	}
 }
 
