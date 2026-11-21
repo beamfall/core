@@ -323,7 +323,7 @@ function JobLog({ jobID, version }: { jobID: string; version: number }) {
           pauses > 0
             ? ""
             : ev.payload
-              ? (jobEventDetail(ev, t) ?? redactJobLogPayload(ev.payload))
+              ? redactJobLogPayload(jobEventDetail(ev, t) ?? ev.payload)
               : t("jobLogPayloadRedacted");
         const label =
           pauses > 0 ? t("jobLogPauseCycles", { count: pauses }) : jobEventLabel(ev.type, t);

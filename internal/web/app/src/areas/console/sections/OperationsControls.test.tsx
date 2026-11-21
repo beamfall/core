@@ -359,6 +359,8 @@ describe("OperationsControls", () => {
     const token = "live-secret-token";
     const host = "private.internal";
     const streamID = "stream-secret";
+    const compatKey = "bfj_compatsecret0123";
+    const apiKey = "bfk_apisecret0123";
     const initialEvents: JobEventInfo[] = [
       {
         id: "1",
@@ -377,6 +379,22 @@ describe("OperationsControls", () => {
         payload: `{"error":"Bearer ${token} https://${host}/api/media/direct/${streamID}/file.mp4"}`,
       },
       { id: "3", jobID: "job-1", occurredAt: "2026-06-20T00:00:02Z", type: "restricted" },
+      // A progress message or a status reason is shown as parsed, and must
+      // be redacted on that path too (CORE-2725).
+      {
+        id: "4",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:03Z",
+        type: "progress",
+        payload: `{"type":"progress","current":1,"total":2,"unit":"files","message":"key ${compatKey}"}`,
+      },
+      {
+        id: "5",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:04Z",
+        type: "yielded",
+        payload: `{"status":"yielded","reason":"key ${apiKey}"}`,
+      },
     ];
     vi.mocked(fetchJobEvents)
       .mockResolvedValueOnce(initialEvents)
@@ -395,8 +413,8 @@ describe("OperationsControls", () => {
     expect(await screen.findByText("Failed")).toBeVisible();
     expect(screen.getByText("Restricted")).toBeVisible();
     expect(screen.getByText("(redacted)")).toBeVisible();
-    expect(screen.getByText(/\[REDACTED\]/)).toBeVisible();
-    for (const leak of [restrictedName, token, host, streamID]) {
+    expect(screen.getAllByText(/\[REDACTED\]/)).toHaveLength(3);
+    for (const leak of [restrictedName, token, host, streamID, compatKey, apiKey]) {
       expect(screen.queryByText(new RegExp(leak))).toBeNull();
     }
     expect(fetchJobEvents).toHaveBeenCalledTimes(2);

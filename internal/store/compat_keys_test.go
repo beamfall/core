@@ -157,3 +157,91 @@ func TestCompatIntegrationKeyRevokedByProfileSettingsOptOut(t *testing.T) {
 		t.Fatalf("key after settings opt-out: %v; want ErrCompatKeyInvalid", err)
 	}
 }
+
+// A settings opt-out whose key revocation fails rolls the whole opt-out back,
+// so the Profile is never left opted out with keys a later opt-in revives.
+func TestProfileSettingsOptOutRollsBackWhenKeyRevocationFails(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	now := time.UnixMilli(1_800_000_000_000).UTC()
+	if _, err := st.SetProfileIntegrationSignIn(ctx, "profile-default", true); err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := st.CreateCompatIntegrationKey(ctx, "profile-default", "Seerr", []IntegrationScope{IntegrationScopeRead}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `
+		CREATE TEMP TRIGGER fail_key_revoke BEFORE UPDATE OF revoked_at_ms ON compat_integration_key
+		BEGIN SELECT RAISE(ABORT, 'injected revoke failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	off := false
+	if _, err := st.UpdateProfileSettings(ctx, "profile-default", ProfileSettings{IntegrationSignIn: &off}); err == nil {
+		t.Fatal("opt-out succeeded despite the injected revoke failure")
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `DROP TRIGGER fail_key_revoke`); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := st.Profile(ctx, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !profile.IntegrationSignIn {
+		t.Fatal("profile left opted out after a failed opt-out")
+	}
+	if _, err := st.CompatIntegrationKeyByToken(ctx, token, now); err != nil {
+		t.Fatalf("key after rolled-back opt-out: %v; want it still valid", err)
+	}
+}
+
+// TestCompatIntegrationKeyLastUseRaceOutcomes drives the zero-row branch of
+// the last-use write both ways: a refresh another request already recorded
+// still authorizes, and a revoke committed between the lookup's read and its
+// write refuses. A temp trigger on the writer connection makes the UPDATE
+// match no row; the second case also revokes the key from inside it.
+func TestCompatIntegrationKeyLastUseRaceOutcomes(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	now := time.UnixMilli(1_800_000_000_000).UTC()
+	if _, err := st.SetProfileIntegrationSignIn(ctx, "profile-default", true); err != nil {
+		t.Fatal(err)
+	}
+	mint := func(name string) string {
+		t.Helper()
+		_, token, err := st.CreateCompatIntegrationKey(ctx, "profile-default", name, []IntegrationScope{IntegrationScopeRead}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return token
+	}
+	exec := func(query string) {
+		t.Helper()
+		if _, err := st.catalogW.ExecContext(ctx, query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	later := now.Add(time.Hour)
+
+	refreshed := mint("Refreshed")
+	exec(`CREATE TEMP TRIGGER skip_last_use BEFORE UPDATE OF last_used_at_ms ON compat_integration_key
+		BEGIN SELECT RAISE(IGNORE); END`)
+	if _, err := st.CompatIntegrationKeyByToken(ctx, refreshed, later); err != nil {
+		t.Fatalf("lookup after a competing refresh: %v; want it authorized", err)
+	}
+	exec(`DROP TRIGGER skip_last_use`)
+
+	revoked := mint("Revoked")
+	exec(`CREATE TEMP TRIGGER revoke_mid_lookup BEFORE UPDATE OF last_used_at_ms ON compat_integration_key
+		BEGIN
+			UPDATE compat_integration_key SET revoked_at_ms = 1 WHERE id = OLD.id;
+			SELECT RAISE(IGNORE);
+		END`)
+	if _, err := st.CompatIntegrationKeyByToken(ctx, revoked, later); !errors.Is(err, ErrCompatKeyInvalid) {
+		t.Fatalf("lookup revoked mid-flight: %v; want ErrCompatKeyInvalid", err)
+	}
+	exec(`DROP TRIGGER revoke_mid_lookup`)
+	if _, err := st.CompatIntegrationKeyByToken(ctx, revoked, later); !errors.Is(err, ErrCompatKeyInvalid) {
+		t.Fatalf("revoked key resolves afterwards: %v", err)
+	}
+}

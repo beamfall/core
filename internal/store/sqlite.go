@@ -1662,7 +1662,15 @@ func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile, i
 	if integrationSignIn != nil {
 		optIn = boolInt(*integrationSignIn)
 	}
-	_, err = s.catalogW.ExecContext(ctx, `
+	// One transaction: an opt-out whose session or key revocation failed
+	// must not leave the Profile opted out with live keys a later opt-in
+	// would revive.
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.ExecContext(ctx, `
 		UPDATE profile SET name = ?, kind = ?, max_concurrent_streams = ?, transcode_allowed = ?,
 		       disabled = ?, audio_languages = ?, subtitle_languages = ?,
 		       subtitle_mode = ?, prefer_sdh = ?, integration_sign_in = COALESCE(?, integration_sign_in),
@@ -1675,18 +1683,21 @@ func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile, i
 		return err
 	}
 	if profile.Kind == ProfileManaged {
-		_, err = s.catalogW.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			DELETE FROM profile_library
 			WHERE profile_id = ? AND library_id IN (SELECT id FROM library WHERE is_restricted = 1)`,
 			profile.ID)
 	}
 	if err == nil && integrationSignIn != nil && !*integrationSignIn {
-		_, err = s.catalogW.ExecContext(ctx, `DELETE FROM auth_session WHERE profile_id = ? AND kind = ?`, profile.ID, SessionKindIntegration)
+		_, err = tx.ExecContext(ctx, `DELETE FROM auth_session WHERE profile_id = ? AND kind = ?`, profile.ID, SessionKindIntegration)
 		if err == nil {
-			_, err = s.catalogW.ExecContext(ctx, `UPDATE compat_integration_key SET revoked_at_ms = ? WHERE profile_id = ? AND revoked_at_ms = 0`, timeToMillis(time.Now()), profile.ID)
+			_, err = tx.ExecContext(ctx, `UPDATE compat_integration_key SET revoked_at_ms = ? WHERE profile_id = ? AND revoked_at_ms = 0`, timeToMillis(time.Now()), profile.ID)
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // encodeLanguages stores an ordered language list as a JSON array ("[]" when empty).

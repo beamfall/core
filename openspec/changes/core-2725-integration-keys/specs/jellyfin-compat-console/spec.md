@@ -53,6 +53,17 @@ credential it carries.
 - **WHEN** a request to the native GraphQL API presents an integration key as its bearer
 - **THEN** the request is not authenticated
 
+### Requirement: A key mint is the only field of its operation
+
+The server SHALL refuse a mutation operation that carries `createJellyfinCompatKey` with any other
+field, before minting anything, so a failure in another field can never discard a token that is
+shown only once.
+
+#### Scenario: A mint batched with another field
+
+- **WHEN** one mutation operation carries `createJellyfinCompatKey` and another field
+- **THEN** the operation is refused and no key exists afterwards
+
 ## MODIFIED Requirements
 
 ### Requirement: App Store binaries carry no compatibility surface

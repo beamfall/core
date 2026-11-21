@@ -199,6 +199,13 @@ func TestJellyfinCompatKeyConsoleFields(t *testing.T) {
 	if _, err := st.SetProfileIntegrationSignIn(ctx, "profile-default", true); err != nil {
 		t.Fatal(err)
 	}
+	batched := `mutation B($profileID: String!, $name: String!, $id: String!) { createJellyfinCompatKey(profileID: $profileID, name: $name) { token } revokeJellyfinCompatKey(id: $id) { id } }`
+	if body := postGraphQL(t, handler, authorizeManager, batched, map[string]any{"profileID": "profile-default", "name": "Lost", "id": "missing"}).Body.String(); !strings.Contains(body, "must be the only field") {
+		t.Fatalf("batched mint = %s", body)
+	}
+	if keys, err := st.CompatIntegrationKeys(ctx); err != nil || len(keys) != 0 {
+		t.Fatalf("batched mint left keys %+v (err %v); want none minted", keys, err)
+	}
 	resp := decodeCompatKeys(t, postGraphQL(t, handler, authorizeManager, mint, map[string]any{"profileID": "profile-default", "name": "Seerr"}).Body.Bytes())
 	created := resp.Data.CreateJellyfinCompatKey
 	if len(resp.Errors) != 0 || !strings.HasPrefix(created.Token, store.CompatKeyPrefix) || created.Key.Name != "Seerr" || created.Key.RevokedAt != "" {
