@@ -97,6 +97,10 @@ export interface SourceSpec {
   fieldFilters?: FieldFilters;
   /** Narrows to the Media related to one named entity; echoed back verbatim. */
   entityFilter?: EntityFilter | null;
+  /** Pins a "random" Source's shuffle order; echoed back verbatim. Omitted when none. */
+  seed?: string;
+  /** Selects a valued Source's band (resume-progress, availability); echoed back verbatim. */
+  value?: string;
 }
 
 /** A Source's entity-relation filter (manifest.EntityFilter). */

@@ -174,7 +174,7 @@ export async function relock(signalOrCommitted?: AbortSignal | (() => void)): Pr
 // --- Catalog: Section feeds (sourceItems) ---------------------------------
 
 const SOURCE_ITEMS_QUERY =
-  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $entityID: String, $excludeEditionGroupOf: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int, $home: Boolean) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, entityID: $entityID, excludeEditionGroupOf: $excludeEditionGroupOf, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset, home: $home) { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $entityID: String, $excludeEditionGroupOf: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int, $home: Boolean, $seed: String, $value: String) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, entityID: $entityID, excludeEditionGroupOf: $excludeEditionGroupOf, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset, home: $home, seed: $seed, value: $value) { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** Variables for one Section feed query (the Source context + paging cursor). */
 export interface SourceItemsVars {
@@ -192,6 +192,9 @@ export interface SourceItemsVars {
   offset: number;
   /** Home hydration: the server leaves out Libraries a manager hid from Home (CORE-2360). */
   home?: boolean;
+  /** The Source's declared seed or value, echoed from the manifest; omitted when it declares none. */
+  seed?: string;
+  value?: string;
 }
 
 /**

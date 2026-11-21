@@ -70,7 +70,14 @@ export function LayoutView({
   const [filterSelections, setFilterSelections] = useState<Record<string, FieldFilters>>({});
 
   const { sections, homeRecent, homeHero, homeContinue } = useMemo(() => {
-    const known = (layout?.sections || []).filter((s) => SECTION_KINDS.has(s.kind));
+    const all = layout?.sections || [];
+    const known = all.filter((s) => SECTION_KINDS.has(s.kind));
+    // Unknown kinds are still dropped, but each distinct one is named once
+    // (CORE-0203), like Apple's unknownSectionKind. The kind is plugin
+    // vocabulary; the diagnostic carries no Section ids, titles or Reveal state.
+    for (const kind of new Set(all.map((s) => s.kind).filter((k) => !SECTION_KINDS.has(k)))) {
+      console.warn(`Beamfall rendering diagnostic: UnknownSectionKind ${kind}`);
+    }
     const sections = known.slice(0, MAX_RENDERED_SECTIONS);
     const homeRecent = home && !libraryID ? findHomeRecentSection(sections) : undefined;
     const homeHero: Section | undefined =
