@@ -13,6 +13,7 @@ import type {
 export const CAPTION_TRACK_ATTRIBUTE = "data-bf-caption";
 /** Holds a caption <track>'s WebVTT URL until the track is first shown. */
 const CAPTION_SOURCE_ATTRIBUTE = "data-bf-caption-src";
+export const STYLED_CAPTION_SOURCE_ATTRIBUTE = "data-bf-caption-ass";
 
 /** A muxed picture-based subtitle stream: shown only by burning it into the video. */
 export function isBurnInCaption(track: PlaybackCaptionTrack): boolean {
@@ -379,7 +380,9 @@ function captionElements(video: HTMLVideoElement): HTMLTrackElement[] {
 
 /** Removes the <track> elements attachCaptionElements added. */
 export function removeCaptionElements(video: HTMLVideoElement): void {
-  for (const element of captionElements(video)) element.remove();
+  const elements = captionElements(video);
+  for (const element of elements) element.remove();
+  if (elements.length) showCaptionElement(video, null);
 }
 
 /**
@@ -405,7 +408,20 @@ export function attachCaptionElements(
     element.kind = "subtitles";
     element.label = captionElementLabel(track, locale);
     if (track.language && track.language !== "und") element.srclang = track.language;
-    element.setAttribute(CAPTION_SOURCE_ATTRIBUTE, track.url);
+    const format = track.format.toLowerCase();
+    const styled = format === "ass" || format === "ssa";
+    const muxed = styled && captionKind(track) === "muxed" && track.url.endsWith(".vtt");
+    const rawSidecar = styled && captionKind(track) === "sidecar" && track.url.endsWith(".ass");
+    if (muxed || rawSidecar) {
+      element.setAttribute(
+        STYLED_CAPTION_SOURCE_ATTRIBUTE,
+        muxed ? track.url.slice(0, -4) + ".ass" : track.url,
+      );
+    }
+    element.setAttribute(
+      CAPTION_SOURCE_ATTRIBUTE,
+      rawSidecar ? track.url.slice(0, -4) + ".vtt" : track.url,
+    );
     element.setAttribute(CAPTION_TRACK_ATTRIBUTE, track.id);
     video.appendChild(element);
     if (element.track) element.track.mode = "disabled";
@@ -423,12 +439,23 @@ export const CAPTION_SHOWN_EVENT = "bf-caption-shown";
 export function showCaptionElement(video: HTMLVideoElement, id: string | null): void {
   for (const element of captionElements(video)) {
     const shown = element.getAttribute(CAPTION_TRACK_ATTRIBUTE) === id;
-    const source = element.getAttribute(CAPTION_SOURCE_ATTRIBUTE);
-    if (shown && source && !element.getAttribute("src")) element.src = source;
-    if (!element.track) continue;
-    element.track.mode = shown ? "showing" : "disabled";
+    if (!shown) {
+      if (element.track) element.track.mode = "disabled";
+    } else if (element.hasAttribute(STYLED_CAPTION_SOURCE_ATTRIBUTE) && !element.src) {
+      // Keep the selection identifiable while the styled renderer starts.
+      if (element.track) element.track.mode = "hidden";
+    } else {
+      startNativeCaption(element);
+    }
   }
   video.dispatchEvent(new CustomEvent<string | null>(CAPTION_SHOWN_EVENT, { detail: id }));
+}
+
+/** Start (or restore) the selected track's native WebVTT presentation. */
+export function startNativeCaption(element: HTMLTrackElement): void {
+  const source = element.getAttribute(CAPTION_SOURCE_ATTRIBUTE);
+  if (source && !element.src) element.src = source;
+  if (element.track) element.track.mode = "showing";
 }
 
 /** The <track> element for a caption id, if one is attached. */
@@ -452,19 +479,24 @@ export function reloadCaptionElement(video: HTMLVideoElement, id: string): void 
   fresh.kind = failed.kind;
   fresh.label = failed.label;
   if (failed.srclang) fresh.srclang = failed.srclang;
-  for (const name of [CAPTION_SOURCE_ATTRIBUTE, CAPTION_TRACK_ATTRIBUTE]) {
+  for (const name of [
+    CAPTION_SOURCE_ATTRIBUTE,
+    CAPTION_TRACK_ATTRIBUTE,
+    STYLED_CAPTION_SOURCE_ATTRIBUTE,
+  ]) {
     const value = failed.getAttribute(name);
     if (value !== null) fresh.setAttribute(name, value);
   }
   failed.replaceWith(fresh);
-  if (fresh.track) fresh.track.mode = "disabled";
+  startNativeCaption(fresh);
   showCaptionElement(video, id);
 }
 
 /** The id of the caption track showing now, or null. */
 export function shownCaptionElement(video: HTMLVideoElement): string | null {
   for (const element of captionElements(video)) {
-    if (element.track?.mode === "showing") return element.getAttribute(CAPTION_TRACK_ATTRIBUTE);
+    if (element.track && element.track.mode !== "disabled")
+      return element.getAttribute(CAPTION_TRACK_ATTRIBUTE);
   }
   return null;
 }

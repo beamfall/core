@@ -2,8 +2,30 @@ import "@testing-library/jest-dom/vitest";
 import { act, render, screen } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { attachCaptionElements, captionElement, showCaptionElement } from "./streamTracks";
+import {
+  attachCaptionElements,
+  captionElement,
+  showCaptionElement,
+  shownCaptionElement,
+} from "./streamTracks";
 import { type CaptionProbe, probeCaptionSource, useCaptionLoad } from "./useCaptionLoad";
+
+const { loadStyledCaptionModule, startStyledCaption } = vi.hoisted(() => ({
+  loadStyledCaptionModule: vi.fn(),
+  startStyledCaption: vi.fn(
+    async (
+      _video: HTMLVideoElement,
+      _url: string,
+      _signal: AbortSignal,
+      _onError: () => void,
+    ) => {},
+  ),
+}));
+
+vi.mock("./styledCaptionRenderer", () => {
+  loadStyledCaptionModule();
+  return { startStyledCaption };
+});
 
 const videoRef = createRef<HTMLVideoElement>();
 // The server's answer to the failed track: seconds to wait while it is still
@@ -195,5 +217,100 @@ describe("probeCaptionSource (CORE-2315)", () => {
       vi.fn(async () => new Response("WEBVTT\n", { status: 200 })),
     );
     await expect(probeCaptionSource("/s")).resolves.toBe(0);
+  });
+});
+
+describe("styled caption selection", () => {
+  const styledTrack = {
+    id: "muxed-ass",
+    format: "ass",
+    streamIndex: 2,
+    url: "/api/media/subtitle/grant/2.vtt",
+  };
+  const sidecarTrack = {
+    id: "sidecar-ssa",
+    format: "ssa",
+    url: "/api/media/sidecar/grant/0.ass",
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal("Worker", class {});
+    Object.defineProperty(HTMLCanvasElement.prototype, "transferControlToOffscreen", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    startStyledCaption.mockClear();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    Reflect.deleteProperty(HTMLCanvasElement.prototype, "transferControlToOffscreen");
+  });
+
+  it("does not evaluate the renderer module for a non-ASS pick", async () => {
+    const video = setup();
+    attachCaptionElements(
+      video,
+      [styledTrack, { id: "plain", format: "srt", url: "/plain.vtt" }],
+      "en",
+    );
+    await act(async () => showCaptionElement(video, "plain"));
+    expect(loadStyledCaptionModule).not.toHaveBeenCalled();
+    expect(startStyledCaption).not.toHaveBeenCalled();
+    expect(captionElement(video, "plain")?.getAttribute("src")).toBe("/plain.vtt");
+    expect(captionElement(video, styledTrack.id)?.getAttribute("src")).toBeNull();
+  });
+
+  it("loads on ASS selection and aborts the renderer when captions are turned off", async () => {
+    const video = setup();
+    attachCaptionElements(video, [styledTrack], "en");
+    const track = captionElement(video, styledTrack.id);
+    // jsdom does not expose TextTrack on HTMLTrackElement.
+    Object.defineProperty(track, "track", { value: { mode: "disabled" } });
+    expect(startStyledCaption).not.toHaveBeenCalled();
+    await act(async () => showCaptionElement(video, styledTrack.id));
+    expect(loadStyledCaptionModule).toHaveBeenCalledOnce();
+    expect(startStyledCaption).toHaveBeenCalledWith(
+      video,
+      "/api/media/subtitle/grant/2.ass",
+      expect.any(AbortSignal),
+      expect.any(Function),
+    );
+    expect(captionElement(video, styledTrack.id)?.getAttribute("src")).toBeNull();
+    expect(shownCaptionElement(video)).toBe(styledTrack.id);
+    expect(status()).toBe("loaded");
+    const signal = startStyledCaption.mock.calls[0]?.[2];
+    act(() => showCaptionElement(video, null));
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("uses WebVTT when SSA initialization rejects", async () => {
+    const video = setup();
+    attachCaptionElements(video, [sidecarTrack], "en");
+    startStyledCaption.mockRejectedValueOnce(new Error("WASM failed"));
+    await act(async () => showCaptionElement(video, sidecarTrack.id));
+    expect(startStyledCaption.mock.calls[0]?.[1]).toBe(sidecarTrack.url);
+    expect(captionElement(video, sidecarTrack.id)?.getAttribute("src")).toBe(
+      "/api/media/sidecar/grant/0.vtt",
+    );
+    expect(status()).toBe("loading");
+  });
+
+  it("uses WebVTT after a started worker fails", async () => {
+    const video = setup();
+    attachCaptionElements(video, [styledTrack], "en");
+    await act(async () => showCaptionElement(video, styledTrack.id));
+    const onError = startStyledCaption.mock.calls[0]?.[3];
+    expect(onError).toBeTypeOf("function");
+    act(() => onError?.());
+    expect(captionElement(video, styledTrack.id)?.getAttribute("src")).toBe(styledTrack.url);
+  });
+
+  it("uses WebVTT without asking for the renderer when workers are unavailable", async () => {
+    vi.stubGlobal("Worker", undefined);
+    const video = setup();
+    attachCaptionElements(video, [styledTrack], "en");
+    await act(async () => showCaptionElement(video, styledTrack.id));
+    expect(startStyledCaption).not.toHaveBeenCalled();
+    expect(captionElement(video, styledTrack.id)?.getAttribute("src")).toBe(styledTrack.url);
   });
 });
