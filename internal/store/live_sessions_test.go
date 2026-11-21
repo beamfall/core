@@ -65,7 +65,7 @@ func TestEndPlaybackKeepsMyDataTokens(t *testing.T) {
 	assertLive("after end", "session-managed")
 	assertTokens("after end", now, 2)
 
-	if err := st.TouchStreamTokenActivity(ctx, "session-default", "media-alpha", now.Add(time.Second)); err != nil {
+	if err := st.TouchStreamTokenActivity(ctx, "session-default", "profile-default", "media-alpha", now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	assertLive("after a late progress report", "session-managed")
@@ -84,4 +84,51 @@ func TestEndPlaybackKeepsMyDataTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertTokens("after the ended grant expires", expires, 0)
+}
+
+// TestActiveSessionsKeepProfilesApart covers CORE-2682: a Profile switch keeps
+// the session, so grants one session holds for one Media under two Profiles
+// are two playbacks, and a progress report touches only the reporting
+// Profile's grants.
+func TestActiveSessionsKeepProfilesApart(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	expires := now.Add(time.Hour)
+	if err := st.RecordStreamToken(ctx, "session-default", "profile-managed", "device-tv", "media-direct", "media-alpha", false, expires); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordStreamToken(ctx, "session-default", "profile-default", "device-tv", "media-hls", "media-alpha", false, expires); err != nil {
+		t.Fatal(err)
+	}
+	lastActive := func() map[ProfileID]time.Time {
+		t.Helper()
+		active, err := st.ActiveSessions(ctx, now, profileDefaultFilter(true))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[ProfileID]time.Time{}
+		for _, a := range active {
+			if _, dup := out[a.ProfileID]; dup {
+				t.Fatalf("Profile %s listed twice: %+v", a.ProfileID, active)
+			}
+			out[a.ProfileID] = a.LastActiveAt
+		}
+		return out
+	}
+	before := lastActive()
+	if len(before) != 2 {
+		t.Fatalf("live playbacks = %v, want one per Profile", before)
+	}
+	later := now.Add(time.Minute)
+	if err := st.TouchStreamTokenActivity(ctx, "session-default", "profile-default", "media-alpha", later); err != nil {
+		t.Fatal(err)
+	}
+	after := lastActive()
+	if !after["profile-default"].Equal(later.Truncate(time.Millisecond)) {
+		t.Fatalf("reporting Profile's activity = %v, want %v", after["profile-default"], later)
+	}
+	if !after["profile-managed"].Equal(before["profile-managed"]) {
+		t.Fatalf("other Profile's activity moved: %v -> %v", before["profile-managed"], after["profile-managed"])
+	}
 }

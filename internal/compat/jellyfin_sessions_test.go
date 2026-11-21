@@ -199,3 +199,94 @@ func TestJellyfinItemCountsAreFiltered(t *testing.T) {
 		}
 	}
 }
+
+// A Profile switch keeps the session, so one session can hold grants for the
+// same item under an opted-out and an opted-in Profile: only the opted-in
+// Profile's playback is listed, under its own name.
+func TestJellyfinSessionsKeepSwitchedProfilesApart(t *testing.T) {
+	f := newCatalogFixture(t)
+	ctx := t.Context()
+	other, err := f.st.CreateProfile(ctx, "Opted Out", store.ProfileAdult, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The opted-out grant sorts first (media-direct before media-hls).
+	if err := f.st.RecordStreamToken(ctx, "session-default", other.ID, "device-tv", "media-direct", f.single, false, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got, body := f.sessions(t); len(got) != 0 {
+		t.Fatalf("opted-out playback listed: %s", body)
+	}
+	f.play(t, "session-default", "profile-default", f.single, 30, 7200)
+	got, body := f.sessions(t)
+	if len(got) != 1 || got[0].UserName != "Default" || got[0].PlayState.PositionTicks != 30*ticksPerSecond {
+		t.Fatalf("sessions = %s, want only Default's playback", body)
+	}
+}
+
+func (f catalogFixture) counts(t *testing.T) map[string]int {
+	t.Helper()
+	var counts map[string]int
+	body := f.get(t, "Items/Counts", http.StatusOK)
+	if err := json.Unmarshal(body, &counts); err != nil {
+		t.Fatal(err)
+	}
+	return counts
+}
+
+// Counts and Sessions read current rows through a warm index: an item whose
+// type field no longer maps, or a container trashed since the index was
+// built, drops at once, and every declared item type stays present at zero.
+func TestJellyfinCountsAndSessionsReadCurrentRows(t *testing.T) {
+	f := newCatalogFixture(t)
+	ctx := t.Context()
+	now := time.Unix(1_000_000, 0)
+	f.handler.indexes.now = func() time.Time { return now }
+	f.play(t, "session-movie", "profile-default", f.single, 30, 7200)
+	if got := f.counts(t); got["MovieCount"] != 1 {
+		t.Fatalf("counts = %v", got)
+	}
+	if got, body := f.sessions(t); len(got) != 1 {
+		t.Fatalf("sessions = %s, want the movie", body)
+	}
+	var key string
+	for key = range f.handler.indexes.entries {
+	}
+	warm := f.handler.indexes.recent(key)
+
+	if err := f.st.UpsertMediaFields(ctx, f.single, []store.MediaField{{Name: "class", Type: store.EntityFieldText, Text: "not-declared"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, body := f.sessions(t); len(got) != 0 {
+		t.Fatalf("sessions after unmapping = %s, want none", body)
+	}
+	if err := f.st.TrashEntity(ctx, f.sub1, store.LibraryFilter{AllLibraries: true}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"MovieCount": 0, "EpisodeCount": 1, "SeriesCount": 1, "SeasonCount": 1}
+	if got := f.counts(t); !mapsEqual(got, want) {
+		t.Fatalf("counts after unmapping and season trash = %v, want %v", got, want)
+	}
+	if err := f.st.TrashEntity(ctx, f.group, store.LibraryFilter{AllLibraries: true}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	want = map[string]int{"MovieCount": 0, "EpisodeCount": 0, "SeriesCount": 0, "SeasonCount": 0}
+	if got := f.counts(t); !mapsEqual(got, want) {
+		t.Fatalf("counts with nothing visible = %v, want %v", got, want)
+	}
+	if f.handler.indexes.recent(key) != warm {
+		t.Fatal("the reads rebuilt the index, so the warm path went untested")
+	}
+}
+
+func mapsEqual(got, want map[string]int) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for k, v := range want {
+		if n, ok := got[k]; !ok || n != v {
+			return false
+		}
+	}
+	return true
+}
