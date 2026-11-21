@@ -26,7 +26,9 @@ export function cardState(item: SourceItem, t: Translate): CardState {
   if (state.completed) {
     return { finished: true, label: t("cardFinished") };
   }
-  if (state.remainingCount && state.remainingCount > 0) {
+  // Audio containers carry no count (CORE-2835): nobody works through an
+  // album as a queue to finish, and untouched it is only the track count.
+  if (state.remainingCount && state.remainingCount > 0 && item.mediaClass !== "audio") {
     return {
       finished: false,
       remainingCount: state.remainingCount,

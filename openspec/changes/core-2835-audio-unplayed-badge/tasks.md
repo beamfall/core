@@ -1,0 +1,4 @@
+- [x] Skip the remaining count for audio containers in `cardState.ts` and `EntityPage.tsx`
+- [x] Restyle `.bf-card-badge` as a translucent pill
+- [x] Update card and Entity page tests
+- [x] Verify the album card in the web viewer

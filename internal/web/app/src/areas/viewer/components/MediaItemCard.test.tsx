@@ -653,6 +653,16 @@ describe("MediaItemCard accessible name", () => {
     expect(container.querySelector(".bf-card-badge")).toHaveTextContent(/^3 unplayed$/);
   });
 
+  it("leaves the remaining count off an audio container (CORE-2835)", () => {
+    const { container } = renderCard({
+      kind: "entity",
+      mediaClass: "audio",
+      engagement: { totalCount: 8, remainingCount: 3 },
+    });
+    expect(screen.getByRole("link", { name: "Alpha" })).toBeInTheDocument();
+    expect(container.querySelector(".bf-card-badge")).toBeNull();
+  });
+
   it("never leaves a card button without an accessible name", () => {
     renderCard({ engagement: { completed: true } });
     for (const button of screen.getAllByRole("button")) {
