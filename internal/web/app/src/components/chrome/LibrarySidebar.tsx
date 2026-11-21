@@ -20,7 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 import { displayString } from "@/lib/display";
 import type { LibrarySummary, NavigationNode } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
@@ -114,11 +114,10 @@ export function LibrarySidebar({
   onSavePrefs?: (prefs: SidebarLibraryPrefs) => Promise<void>;
   /** Show the signed-in Profile's "Your stuff" group. */
   showPersonal?: boolean;
-  /** The current route path, to mark the active "Your stuff" entry. */
+  /** The current route path: marks the active "Your stuff" entry and keeps the open Library's pivot. */
   pathname?: string;
 }) {
   const t = useT();
-  const { pathname } = useLocation();
   const displayLocale = useDisplayLocale();
   const accents = new Map(libraries.map((library) => [library.id, library.accent]));
   const icons = new Map(libraries.map((library) => [library.id, libraryIcon(library.icon)]));
