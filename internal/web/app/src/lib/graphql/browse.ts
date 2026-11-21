@@ -25,6 +25,13 @@ export const INDEX_FIELD = "index";
 export interface MediaRow extends GenericMediaInfo {
   sequence?: number;
   index?: number;
+  /**
+   * Set only on a row built from its listing item instead of a media(id) read
+   * (CORE-2922): the credited people's names the server put on the item, and
+   * the container holding it. Such a row carries no `credits`.
+   */
+  byline?: readonly string[];
+  container?: { id: string; title: string };
 }
 
 function positiveNumber(value: string | undefined): number | undefined {
