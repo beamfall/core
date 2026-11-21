@@ -52,6 +52,33 @@ describe("card titles (CORE-2320)", () => {
   });
 });
 
+describe("cardHeading for audio (CORE-2824)", () => {
+  const track = {
+    ...item("t", "Lantern"),
+    mediaClass: "audio",
+    container: { id: "album", title: "Paper Moons" },
+    byline: ["Nightglass"],
+  } as SourceItem;
+
+  it("heads a track by its own title and leads with the album", () => {
+    const { heading, lead } = cardHeading(track, true);
+    expect(heading).toBe("Lantern");
+    expect(lead).toBe("Paper Moons");
+    expect(cardSubline(track, false, "en", lead)).toBe("Paper Moons · Nightglass");
+  });
+
+  it("keeps a track's subtitle as its lead when it has one", () => {
+    expect(cardHeading({ ...track, subtitle: "Track 1" }, true)).toEqual({
+      heading: "Lantern",
+      lead: "Track 1",
+    });
+  });
+
+  it("leaves video items headed by their container", () => {
+    expect(cardHeading({ ...track, mediaClass: "video" }, true).heading).toBe("Paper Moons");
+  });
+});
+
 describe("cardHeading (CORE-2524)", () => {
   const episode = {
     ...item("e", "S01E02 · Earthfall"),

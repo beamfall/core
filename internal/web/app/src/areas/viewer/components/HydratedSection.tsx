@@ -11,7 +11,7 @@ import {
   writeViewerCache,
 } from "@/lib/viewerCache";
 import { useEngagementEpoch } from "../actions/engagementSync";
-import { groupByContainer, groupsNewByContainer } from "../lib/containerGroups";
+import { foldNewShelf, groupsNewByContainer } from "../lib/containerGroups";
 import { fetchSectionItems } from "../lib/sections";
 import { Hero } from "./Hero";
 import { SectionView, type SeeAllTarget } from "./SectionView";
@@ -147,7 +147,7 @@ export function HydratedSection({
   const shown = useMemo(
     () =>
       items && !entityID && groupsNewByContainer(section)
-        ? groupByContainer(items, (count) => t("cardNewCount", { count }))
+        ? foldNewShelf(items, (count) => t("cardNewCount", { count }))
         : items,
     [items, entityID, section, t],
   );

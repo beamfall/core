@@ -18,6 +18,7 @@ import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
+import { groupByContainer, groupsNewByContainer } from "../lib/containerGroups";
 import {
   fetchSectionItems,
   findHomeRecentSection,
@@ -126,7 +127,7 @@ function SeeAllResults({
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
 
-  const [items, setItems] = useState<SourceItem[]>([]);
+  const [loaded, setItems] = useState<SourceItem[]>([]);
   const [libraryTitle, setLibraryTitle] = useState<HomeLibrary["title"]>();
   const [hasMore, setHasMore] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -136,6 +137,16 @@ function SeeAllResults({
   const generationRef = useRef(0);
   const engagementEpoch = useEngagementEpoch();
   const seenEpochRef = useRef(engagementEpoch);
+  // A new-items shelf's See All folds the same way the shelf does (CORE-2823),
+  // over everything paged in so far, so a container split across pages still
+  // reads as one card.
+  const items = useMemo(
+    () =>
+      ctx && groupsNewByContainer(ctx.section)
+        ? groupByContainer(loaded, (count) => t("cardNewCount", { count }))
+        : loaded,
+    [ctx, loaded, t],
+  );
   const gridRef = useRef<HTMLUListElement | null>(null);
   const gridWindow = useVirtualGrid({
     gridRef,

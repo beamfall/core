@@ -15,7 +15,7 @@ import {
 } from "@/lib/viewerCache";
 import { useEngagementEpoch } from "../actions/engagementSync";
 import { artworkSlotURL } from "../lib/artwork";
-import { groupByContainer } from "../lib/containerGroups";
+import { foldNewShelf, groupByContainer } from "../lib/containerGroups";
 import { fetchSectionItems } from "../lib/sections";
 import {
   SECTION_LOAD_TIMEOUT_MS,
@@ -237,7 +237,7 @@ export function HomeRecentShelves({
   const pageLibraries = populated.slice(page * maxShelves, (page + 1) * maxShelves);
   const seeAll = buildSeeAll?.(section);
   const groupItems = (items: SourceItem[]) =>
-    groupByContainer(items, (count) => t("cardNewCount", { count }));
+    foldNewShelf(items, (count) => t("cardNewCount", { count }));
   if (fallbackItems.length) {
     return (
       <SectionView

@@ -69,6 +69,10 @@ export function cardSubline(
  * the item's code in both. Inside the container's own page the container goes
  * without saying, so nameContainer is false there and the card keeps its own
  * title.
+ *
+ * Audio is the exception (CORE-2824): a listener scans for the song, so an
+ * audio item keeps its own title as the heading and leads with its container
+ * (the album) instead.
  */
 export function cardHeading(
   item: SourceItem,
@@ -77,6 +81,9 @@ export function cardHeading(
 ): { heading: string; lead: string } {
   const subtitle = displayString(item.subtitle, locale);
   const container = item.container?.title.trim();
+  if (nameContainer && container && item.mediaClass === "audio") {
+    return { heading: item.title, lead: subtitle || container };
+  }
   if (nameContainer && container) {
     return { heading: container, lead: subtitle || item.title };
   }
