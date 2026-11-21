@@ -90,6 +90,14 @@ describe("applyPlayerCommand", () => {
     return { video, target: { video: () => video, ...overrides } as RemotePlayerTarget };
   }
 
+  it("seeks to the song position under an applied tempo (CORE-1828)", () => {
+    // At tempo 0.8 a stream second covers 1.25 song seconds, so song second
+    // 100 sits at stream second 80.
+    const { video, target: t } = target({ songScale: 1.25 });
+    expect(applyPlayerCommand({ command: "seek", positionMs: 100_000 }, t)).toBe(true);
+    expect(video.currentTime).toBeCloseTo(80);
+  });
+
   it("drives the video element for transport verbs", () => {
     const { video, target: t } = target();
     expect(applyPlayerCommand({ command: "pause" }, t)).toBe(true);

@@ -103,6 +103,11 @@ export interface RemotePlayerTarget {
   stop?: () => void;
   /** Sets this player up afresh at a position in seconds (undefined: saved progress). */
   restart?: (atSeconds?: number) => void;
+  /**
+   * Song seconds per stream second under an applied tempo (CORE-1659); 1 or
+   * absent when unadjusted. Remote positions are song time.
+   */
+  songScale?: number;
 }
 
 // Another client's track ids are not this player's; only a plain index applies.
@@ -162,7 +167,10 @@ export function applyPlayerCommand(
     }
     case "seek": {
       if (!video || command.positionMs === undefined) return false;
-      const at = command.positionMs / 1000;
+      // A remote position is song time; an adjusted stream covers songScale
+      // song seconds per stream second (CORE-1828).
+      const scale = target.songScale && target.songScale > 0 ? target.songScale : 1;
+      const at = command.positionMs / 1000 / scale;
       // Before metadata the player's own opening seek is still to come; seek
       // after it so the newer position wins.
       cancelDeferredSeek();
