@@ -774,6 +774,18 @@ func TestIndexCacheCarriesAbsentIDs(t *testing.T) {
 	}
 }
 
+func TestIndexAbsentIsBounded(t *testing.T) {
+	x := &catalogIndex{}
+	ids := make([]string, catalogAbsentLimit+10)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("missing-%d", i)
+	}
+	x.markAbsent(ids)
+	if got := len(x.absentIDs()); got != catalogAbsentLimit {
+		t.Fatalf("absent IDs = %d, want %d", got, catalogAbsentLimit)
+	}
+}
+
 func TestJellyfinCatalogLookupWithoutLibraries(t *testing.T) {
 	var h Handler
 	found, err := h.lookupNodes(t.Context(), store.LibraryFilter{}, nil, []string{"any"})
