@@ -10,10 +10,17 @@ export async function startStyledCaption(
   video: HTMLVideoElement,
   source: string,
   signal: AbortSignal,
-  onWorkerError: () => void,
+  onRendererError: () => void,
 ): Promise<void> {
   const url = new URL(source, document.baseURI);
-  const subContent = await (await fetchCaption(url, signal)).text();
+  const bytes = await (await fetchCaption(url, signal)).arrayBuffer();
+  let subContent: string;
+  try {
+    subContent = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    // Raw sidecars preserve their original encoding on the wire.
+    subContent = new TextDecoder("windows-1252").decode(bytes);
+  }
   const fonts: string[] = [];
   if (url.pathname.includes("/api/media/subtitle/")) {
     url.pathname += "/fonts";
@@ -34,18 +41,33 @@ export async function startStyledCaption(
     const renderer = new JASSUB({ canvas, subContent, fonts, queryFonts: false });
     const worker = renderer._worker;
     const dispose = () => {
-      worker.removeEventListener("error", onWorkerError);
-      worker.removeEventListener("messageerror", onWorkerError);
+      worker.removeEventListener("error", onRendererError);
+      worker.removeEventListener("messageerror", onRendererError);
       // destroy() waits on an RPC, which may never finish after a worker failure.
       void renderer.destroy().catch(() => {});
       worker.terminate();
     };
     signal.addEventListener("abort", dispose, { once: true });
-    worker.addEventListener("error", onWorkerError);
-    worker.addEventListener("messageerror", onWorkerError);
+    worker.addEventListener("error", onRendererError);
+    worker.addEventListener("messageerror", onRendererError);
     await renderer.ready;
     signal.throwIfAborted();
+    // JASSUB 2.5.36 logs rejected draws without surfacing them. Wrap the
+    // local RPC proxy so assignments never modify methods in the worker.
+    const remote = renderer.renderer;
+    const draw = async (...args: Parameters<typeof remote._draw>) => {
+      try {
+        await remote._draw(...args);
+      } catch (error) {
+        if (!signal.aborted) onRendererError();
+        throw error;
+      }
+    };
+    renderer.renderer = new Proxy(remote, {
+      get: (target, key) => (key === "_draw" ? draw : Reflect.get(target, key)),
+    });
     await renderer.setVideo(video);
+    signal.throwIfAborted();
     if (video.paused && video.videoWidth > 0 && video.videoHeight > 0) {
       await renderer.manualRender(
         {

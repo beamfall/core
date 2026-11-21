@@ -261,4 +261,14 @@ GET /source/ffmpeg, with its SHA-256 in the X-Checksum-SHA256 header.
 
 -------------------------------------------------------------------------------
 
+23. rvfc-polyfill 1.0.8 (GPL-3.0)
+    Author: ThaUnknown. Bundled through JASSUB as the requestVideoFrameCallback
+    polyfill. The exact corresponding JavaScript source and full GNU General
+    Public License version 3 are in the upstream 1.0.8 package (index.js and
+    LICENSE): https://registry.npmjs.org/rvfc-polyfill/-/rvfc-polyfill-1.0.8.tgz
+    https://github.com/ThaUnknown/rvfc-polyfill
+    https://www.gnu.org/licenses/gpl-3.0.txt
+
+-------------------------------------------------------------------------------
+
 End of NOTICE.
