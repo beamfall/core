@@ -493,6 +493,11 @@
       "tier": "session"
     },
     {
+      "field": "followfeed",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "formgroup",
       "effect": "write",
       "tier": "session"
@@ -929,6 +934,11 @@
     },
     {
       "field": "refreshmediametadata",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "refreshsubscription",
       "effect": "write",
       "tier": "session"
     },
@@ -1413,6 +1423,11 @@
       "tier": "admin"
     },
     {
+      "field": "setsubscriptiondownloadpolicy",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "setsubscriptionretention",
       "effect": "write",
       "tier": "session"
@@ -1490,6 +1505,11 @@
     {
       "field": "stationstart",
       "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "subscriptionentries",
+      "effect": "read",
       "tier": "session"
     },
     {
@@ -2382,6 +2402,26 @@
           "optional": true
         },
         {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
+        },
+        {
           "name": "feedURL",
           "kind": "scalar"
         },
@@ -2392,6 +2432,36 @@
         {
           "name": "hasAuth",
           "kind": "scalar"
+        },
+        {
+          "name": "health",
+          "kind": "object",
+          "children": [
+            {
+              "name": "failingSince",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastErrorClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastSuccessAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "nextPollAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "id",
@@ -9935,6 +10005,109 @@
         },
         {
           "name": "size",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "followfeed",
+      "kind": "object",
+      "children": [
+        {
+          "name": "addedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "feedURL",
+          "kind": "scalar"
+        },
+        {
+          "name": "followed",
+          "kind": "scalar"
+        },
+        {
+          "name": "hasAuth",
+          "kind": "scalar"
+        },
+        {
+          "name": "health",
+          "kind": "object",
+          "children": [
+            {
+              "name": "failingSince",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastErrorClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastSuccessAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "nextPollAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastPolledAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar"
+        },
+        {
+          "name": "retentionKind",
+          "kind": "scalar"
+        },
+        {
+          "name": "retentionN",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "root",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
           "kind": "scalar"
         }
       ]
@@ -21066,6 +21239,109 @@
       ]
     },
     {
+      "field": "refreshsubscription",
+      "kind": "object",
+      "children": [
+        {
+          "name": "addedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "feedURL",
+          "kind": "scalar"
+        },
+        {
+          "name": "followed",
+          "kind": "scalar"
+        },
+        {
+          "name": "hasAuth",
+          "kind": "scalar"
+        },
+        {
+          "name": "health",
+          "kind": "object",
+          "children": [
+            {
+              "name": "failingSince",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastErrorClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastSuccessAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "nextPollAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastPolledAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar"
+        },
+        {
+          "name": "retentionKind",
+          "kind": "scalar"
+        },
+        {
+          "name": "retentionN",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "root",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "registerdevicepushtoken",
       "kind": "object",
       "children": [
@@ -21673,6 +21949,26 @@
           "optional": true
         },
         {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
+        },
+        {
           "name": "feedURL",
           "kind": "scalar"
         },
@@ -21683,6 +21979,36 @@
         {
           "name": "hasAuth",
           "kind": "scalar"
+        },
+        {
+          "name": "health",
+          "kind": "object",
+          "children": [
+            {
+              "name": "failingSince",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastErrorClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastSuccessAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "nextPollAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "id",
@@ -32721,13 +33047,33 @@
       ]
     },
     {
-      "field": "setsubscriptionretention",
+      "field": "setsubscriptiondownloadpolicy",
       "kind": "object",
       "children": [
         {
           "name": "addedAt",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
         },
         {
           "name": "feedURL",
@@ -32740,6 +33086,139 @@
         {
           "name": "hasAuth",
           "kind": "scalar"
+        },
+        {
+          "name": "health",
+          "kind": "object",
+          "children": [
+            {
+              "name": "failingSince",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastErrorClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastSuccessAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "nextPollAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastPolledAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar"
+        },
+        {
+          "name": "retentionKind",
+          "kind": "scalar"
+        },
+        {
+          "name": "retentionN",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "root",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "setsubscriptionretention",
+      "kind": "object",
+      "children": [
+        {
+          "name": "addedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "feedURL",
+          "kind": "scalar"
+        },
+        {
+          "name": "followed",
+          "kind": "scalar"
+        },
+        {
+          "name": "hasAuth",
+          "kind": "scalar"
+        },
+        {
+          "name": "health",
+          "kind": "object",
+          "children": [
+            {
+              "name": "failingSince",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastErrorClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastSuccessAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "nextPollAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "id",
@@ -34027,6 +34506,41 @@
       ]
     },
     {
+      "field": "subscriptionentries",
+      "kind": "object",
+      "children": [
+        {
+          "name": "availability",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadState",
+          "kind": "scalar"
+        },
+        {
+          "name": "enclosureLength",
+          "kind": "scalar"
+        },
+        {
+          "name": "feedPosition",
+          "kind": "scalar"
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "publishedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "subscriptions",
       "kind": "object",
       "children": [
@@ -34034,6 +34548,26 @@
           "name": "addedAt",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
         },
         {
           "name": "feedURL",
@@ -34046,6 +34580,36 @@
         {
           "name": "hasAuth",
           "kind": "scalar"
+        },
+        {
+          "name": "health",
+          "kind": "object",
+          "children": [
+            {
+              "name": "failingSince",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastErrorClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "lastSuccessAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "nextPollAt",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "state",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "id",

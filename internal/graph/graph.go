@@ -512,7 +512,13 @@ type Handler struct {
 	jobRunner       JobRunner
 	governor        GovernorStatusProvider
 	feedSearcher    FeedSearcher
-	prePlayPolicy   PrePlayPolicy
+	feedProber      FeedProber
+	feedErrorClass  func(error) store.FeedErrorClass
+	feedPoller      SubscriptionPoller
+	// feedCatalogue overrides the store's feed-catalogue reads and writes;
+	// nil uses the store (graph_feeds.go).
+	feedCatalogue subscriptionCatalogue
+	prePlayPolicy PrePlayPolicy
 	// playbackCache wires the precomputed-playback-rendition cache controls:
 	// explicit operator generation, on-demand eviction, and the
 	// cache-health snapshot the Console surfaces. Nil (the default) reports the
@@ -3223,6 +3229,16 @@ type SubscriptionInfo struct {
 	Followed      bool   `json:"followed"`
 	RetentionKind string `json:"retentionKind"`
 	RetentionN    *int   `json:"retentionN"`
+	// DownloadPolicy and DownloadLatestN are the Subscription's download
+	// policy (graph_feeds.go). Health, EntryCount, DownloadedCount and
+	// CatalogBytes come from the feed catalogue; CatalogBytes sums the
+	// enclosure lengths the feed declares.
+	DownloadPolicy  string                 `json:"downloadPolicy"`
+	DownloadLatestN int                    `json:"downloadLatestN"`
+	Health          SubscriptionHealthInfo `json:"health"`
+	EntryCount      int                    `json:"entryCount"`
+	DownloadedCount int                    `json:"downloadedCount"`
+	CatalogBytes    int64                  `json:"catalogBytes"`
 }
 
 type SubscriptionEntryAssociationInfo struct {
@@ -3234,6 +3250,16 @@ type SubscriptionEntryAssociationInfo struct {
 }
 
 func (h *Handler) subscriptionInfo(ctx context.Context, scope auth.Scope, subscription store.Subscription) (SubscriptionInfo, error) {
+	info, err := h.subscriptionBaseInfo(ctx, scope, subscription)
+	if err != nil {
+		return SubscriptionInfo{}, err
+	}
+	return h.withSubscriptionCatalogue(ctx, info, subscription)
+}
+
+// subscriptionBaseInfo is the Subscription row and the caller's follow state,
+// without the feed catalogue (a removed Subscription has none).
+func (h *Handler) subscriptionBaseInfo(ctx context.Context, scope auth.Scope, subscription store.Subscription) (SubscriptionInfo, error) {
 	followed, err := h.store.SubscriptionFollowed(ctx, scope.ProfileID, subscription.ID)
 	if err != nil {
 		return SubscriptionInfo{}, err
@@ -3357,7 +3383,7 @@ func (h *Handler) removeSubscription(ctx context.Context, scope auth.Scope, req 
 	if removed.AuthRef != "" && h.subscriptionSecrets != nil {
 		_ = h.subscriptionSecrets.SetSecret(removed.AuthRef, "")
 	}
-	return h.subscriptionInfo(ctx, scope, removed)
+	return h.subscriptionBaseInfo(ctx, scope, removed)
 }
 
 // subscriptions lists a visible Library's feed Subscriptions.
@@ -5869,6 +5895,7 @@ var queryFields = map[string]bool{
 	"navoverride":            true, // WEB-5J (ADR-0061 §Layout editor): current nav/layout override blob
 	"navoverridehistory":     true, // WEB-5J (ADR-0061 §Layout editor): audit log of prior overrides
 	"subscriptions":          true,
+	"subscriptionentries":    true, // CORE-2957: catalogued feed entries, no enclosure URL
 	"jobs":                   true,
 	"job":                    true,
 	"jobevents":              true,
@@ -6074,6 +6101,9 @@ var mutationFields = map[string]bool{
 	"addsubscription":                    true,
 	"removesubscription":                 true,
 	"setsubscriptionretention":           true,
+	"setsubscriptiondownloadpolicy":      true, // CORE-2957: manager-gated download policy
+	"followfeed":                         true, // CORE-2953: adult or manager follows a public feed
+	"refreshsubscription":                true, // CORE-2955: rate-limited manual refresh
 	"runjob":                             true,
 	"runeventscompaction":                true,
 	"jobcancel":                          true,

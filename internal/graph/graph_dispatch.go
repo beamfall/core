@@ -626,6 +626,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"search":                             newFieldHandler("search", "search", fieldRead, roleSession, 19),
 	"searchentities":                     newFieldHandler("searchEntities", "searchEntities", fieldRead, roleSession, 22),
 	"searchfeeds":                        newFieldHandler("searchFeeds", "searchFeeds", fieldRead, roleSession, 23),
+	"followfeed":                         newFieldHandler("followFeed", "followFeed", fieldMutation, roleSession, 23),
+	"refreshsubscription":                newFieldHandler("refreshSubscription", "refreshSubscription", fieldMutation, roleSession, 23),
 	"searchresult":                       newFieldHandler("searchResult", "searchResult", fieldRead, roleSession, 20),
 	"semanticcapability":                 newFieldHandler("semanticCapability", "semanticCapability", fieldRead, roleSession, 21),
 	"serverinfo":                         newFieldHandler("serverInfo", "", fieldRead, rolePublic, 0),
@@ -665,6 +667,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setpreplayclips":                    newFieldHandler("setPrePlayClips", "setPrePlayClips", fieldMutation, roleSession|roleAdmin, 149),
 	"setskipdetectionenabled":            newFieldHandler("setSkipDetectionEnabled", "setSkipDetectionEnabled", fieldMutation, roleSession|roleAdmin, 78),
 	"setsubscriptionretention":           newFieldHandler("setSubscriptionRetention", "setSubscriptionRetention", fieldMutation, roleSession|roleManager, 54),
+	"setsubscriptiondownloadpolicy":      newFieldHandler("setSubscriptionDownloadPolicy", "setSubscriptionDownloadPolicy", fieldMutation, roleSession|roleManager, 54),
 	"settranscodeconfig":                 newFieldHandler("setTranscodeConfig", "setTranscodeConfig", fieldMutation, roleSession|roleAdmin, 69),
 	"setwatched":                         newFieldHandler("setWatched", "setWatched", fieldMutation, roleSession, 146),
 	"setwatchlisted":                     newFieldHandler("setWatchlisted", "setWatchlisted", fieldMutation, roleSession, 146),
@@ -681,6 +684,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"stationsave":                        newFieldHandler("stationSave", "stationSave", fieldMutation, roleSession, 32),
 	"stationstart":                       newFieldHandler("stationStart", "stationStart", fieldMutation, roleSession, 31),
 	"subscriptions":                      newFieldHandler("subscriptions", "subscriptions", fieldRead, roleSession|roleManager, 54),
+	"subscriptionentries":                newFieldHandler("subscriptionEntries", "subscriptionEntries", fieldRead, roleSession, 23),
 	"switchprofile":                      newFieldHandler("switchProfile", "switchProfile", fieldMutation, roleSession, 3),
 	"syncofflinepackprogress":            newFieldHandler("syncOfflinePackProgress", "syncOfflinePackProgress", fieldMutation, roleSession, 120),
 	"tagassignments":                     newFieldHandler("tagAssignments", "tagAssignments", fieldRead, roleSession|roleManager, 36),
@@ -1160,6 +1164,24 @@ func dispatchFieldBlock023(dispatch *fieldDispatchContext) response {
 	if fields["searchfeeds"] {
 		items, err := h.searchFeeds(ctx, scope, req)
 		if resp := resolveField(dispatch, "searchfeeds", items, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["followfeed"] {
+		subscription, err := h.followFeed(ctx, scope, req)
+		if resp := resolveField(dispatch, "followfeed", subscription, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["refreshsubscription"] {
+		subscription, err := h.refreshSubscription(ctx, scope, req)
+		if resp := resolveField(dispatch, "refreshsubscription", subscription, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["subscriptionentries"] {
+		entries, err := h.subscriptionEntries(ctx, scope, req)
+		if resp := resolveField(dispatch, "subscriptionentries", entries, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
@@ -1772,7 +1794,7 @@ func dispatchFieldBlock054(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
-	if fields["addsubscription"] || fields["removesubscription"] || fields["subscriptions"] || fields["setsubscriptionretention"] || fields["associatesubscriptionentry"] {
+	if fields["addsubscription"] || fields["removesubscription"] || fields["subscriptions"] || fields["setsubscriptionretention"] || fields["setsubscriptiondownloadpolicy"] || fields["associatesubscriptionentry"] {
 		if fields["addsubscription"] {
 			subscription, err := h.addSubscription(ctx, scope, req)
 			if resp := resolveField(dispatch, "addsubscription", subscription, err); len(resp.Errors) > 0 {
@@ -1794,6 +1816,12 @@ func dispatchFieldBlock054(dispatch *fieldDispatchContext) response {
 		if fields["setsubscriptionretention"] {
 			subscription, err := h.setSubscriptionRetention(ctx, scope, req)
 			if resp := resolveField(dispatch, "setsubscriptionretention", subscription, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["setsubscriptiondownloadpolicy"] {
+			subscription, err := h.setSubscriptionDownloadPolicy(ctx, scope, req)
+			if resp := resolveField(dispatch, "setsubscriptiondownloadpolicy", subscription, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}

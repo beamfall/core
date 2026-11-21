@@ -173,9 +173,15 @@
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
         "feedURL",
         "followed",
         "hasAuth",
+        "health",
         "id",
         "lastPolledAt",
         "libraryID",
@@ -1257,6 +1263,30 @@
         "name",
         "path",
         "size"
+      ]
+    },
+    {
+      "field": "followfeed",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "feedURL",
+        "followed",
+        "hasAuth",
+        "health",
+        "id",
+        "lastPolledAt",
+        "libraryID",
+        "retentionKind",
+        "retentionN",
+        "root",
+        "title"
       ]
     },
     {
@@ -2508,6 +2538,30 @@
       ]
     },
     {
+      "field": "refreshsubscription",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "feedURL",
+        "followed",
+        "hasAuth",
+        "health",
+        "id",
+        "lastPolledAt",
+        "libraryID",
+        "retentionKind",
+        "retentionN",
+        "root",
+        "title"
+      ]
+    },
+    {
       "field": "registerdevicepushtoken",
       "effect": "write",
       "tier": "session",
@@ -2623,9 +2677,15 @@
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
         "feedURL",
         "followed",
         "hasAuth",
+        "health",
         "id",
         "lastPolledAt",
         "libraryID",
@@ -3844,14 +3904,44 @@
       ]
     },
     {
+      "field": "setsubscriptiondownloadpolicy",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "feedURL",
+        "followed",
+        "hasAuth",
+        "health",
+        "id",
+        "lastPolledAt",
+        "libraryID",
+        "retentionKind",
+        "retentionN",
+        "root",
+        "title"
+      ]
+    },
+    {
       "field": "setsubscriptionretention",
       "effect": "write",
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
         "feedURL",
         "followed",
         "hasAuth",
+        "health",
         "id",
         "lastPolledAt",
         "libraryID",
@@ -4092,14 +4182,34 @@
       ]
     },
     {
+      "field": "subscriptionentries",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "availability",
+        "downloadState",
+        "enclosureLength",
+        "feedPosition",
+        "mediaID",
+        "publishedAt",
+        "title"
+      ]
+    },
+    {
       "field": "subscriptions",
       "effect": "read",
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
         "feedURL",
         "followed",
         "hasAuth",
+        "health",
         "id",
         "lastPolledAt",
         "libraryID",
