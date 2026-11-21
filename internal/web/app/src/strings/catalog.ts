@@ -21,10 +21,8 @@ import { consoleOperationsJobsStrings } from "./console-operations-jobs";
 import { consoleOperationsOpsStrings } from "./console-operations-ops";
 import { consoleOverviewAttentionStrings } from "./console-overview-attention";
 import { customizationStrings } from "./customization";
-import { imageViewerStrings } from "./image-viewer";
 import { itemActionStrings } from "./item-actions";
 import { itemMetadataStrings } from "./item-metadata";
-import { karaokeStrings } from "./karaoke";
 import { libraryHealthStrings } from "./library-health";
 import { libraryMetadataRefreshStrings } from "./library-metadata-refresh";
 import { libraryOperationsStrings } from "./library-operations";
@@ -34,7 +32,7 @@ import { listeningStrings } from "./listening";
 import { managedFileStrings } from "./managed-files";
 import { managedFileLibrariesStrings } from "./managed-files-libraries";
 import { managedFileOptionsStrings } from "./managed-files-options";
-import { mediaDetailStrings } from "./media-detail";
+import { mediaPageStrings } from "./media-pages";
 import { metadataManagementStrings } from "./metadata-management";
 import { metadataManagementCurationStrings } from "./metadata-management-curation";
 import { migrationStrings } from "./migration";
@@ -161,9 +159,7 @@ export const en = {
   ...playerRecoveryStrings.en,
   ...watchPartyStrings.en,
   ...libraryTrashStrings.en,
-  ...mediaDetailStrings.en,
-  ...karaokeStrings.en,
-  ...imageViewerStrings.en,
+  ...mediaPageStrings.en,
   ...restrictionsSetupStrings.en,
   ...remoteControlStrings.en,
   ...webhookStrings.en,
@@ -256,9 +252,7 @@ export const fr = {
   ...playerRecoveryStrings.fr,
   ...watchPartyStrings.fr,
   ...libraryTrashStrings.fr,
-  ...mediaDetailStrings.fr,
-  ...karaokeStrings.fr,
-  ...imageViewerStrings.fr,
+  ...mediaPageStrings.fr,
   ...restrictionsSetupStrings.fr,
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
@@ -351,9 +345,7 @@ export const de = {
   ...playerRecoveryStrings.de,
   ...watchPartyStrings.de,
   ...libraryTrashStrings.de,
-  ...mediaDetailStrings.de,
-  ...karaokeStrings.de,
-  ...imageViewerStrings.de,
+  ...mediaPageStrings.de,
   ...restrictionsSetupStrings.de,
   ...remoteControlStrings.de,
   ...webhookStrings.de,
@@ -446,9 +438,7 @@ export const es = {
   ...playerRecoveryStrings.es,
   ...watchPartyStrings.es,
   ...libraryTrashStrings.es,
-  ...mediaDetailStrings.es,
-  ...karaokeStrings.es,
-  ...imageViewerStrings.es,
+  ...mediaPageStrings.es,
   ...restrictionsSetupStrings.es,
   ...remoteControlStrings.es,
   ...webhookStrings.es,
@@ -541,9 +531,7 @@ export const pt = {
   ...playerRecoveryStrings.pt,
   ...watchPartyStrings.pt,
   ...libraryTrashStrings.pt,
-  ...mediaDetailStrings.pt,
-  ...karaokeStrings.pt,
-  ...imageViewerStrings.pt,
+  ...mediaPageStrings.pt,
   ...restrictionsSetupStrings.pt,
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,
