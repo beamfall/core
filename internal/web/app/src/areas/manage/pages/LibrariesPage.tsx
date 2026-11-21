@@ -641,8 +641,16 @@ function FolderTree({
   const t = useT();
   const isSyntheticRoot = !entry.path;
   const isFolder = entry.kind === "folder";
-  const childCount = entry.children?.length ?? 0;
-  const meta = isFolder ? t("folderItemCount", { count: childCount }) : formatNodeSize(entry.size);
+  // The server's tree is depth-bounded and omits children it did not read, so
+  // an absent list means the count is unknown, not zero (CORE-1140): such a
+  // folder shows no count rather than a false "0 items".
+  const loaded = entry.children;
+  const childCount = loaded?.length ?? 0;
+  const meta = isFolder
+    ? loaded
+      ? t("folderItemCount", { count: childCount })
+      : ""
+    : formatNodeSize(entry.size);
 
   return (
     <>
