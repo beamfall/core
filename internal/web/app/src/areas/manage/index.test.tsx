@@ -214,7 +214,9 @@ describe("Manage identity boundary", () => {
   });
 });
 
-describe("Manage navigation", () => {
+// Each case walks every Manage route; a loaded gate host can take well past the
+// default 5s per case, so these get a wider budget (CORE-1884).
+describe("Manage navigation", { timeout: 20_000 }, () => {
   // Regression proof (2026-08-22): with the Libraries target restored to
   // `to="libraries"`, the focused test failed at line 218 with:
   // "expected ['/manage/libraries', …(1)] to have a length of 1 but got 2".

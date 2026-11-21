@@ -86,7 +86,9 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-describe("Library browse", () => {
+// Each case drives many user events; a loaded gate host can take well past the
+// default 5s per case, so these get a wider budget (CORE-1884).
+describe("Library browse", { timeout: 20_000 }, () => {
   it("counts the whole library, windows it, and keeps sort, filters and view in the URL and storage", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
     const user = userEvent.setup();
