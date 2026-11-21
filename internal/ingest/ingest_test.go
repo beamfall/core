@@ -519,7 +519,7 @@ func queuedScans(t *testing.T, st *store.Store) int {
 func TestPollReconcilesLegacyReceiptOnceByEnclosureURL(t *testing.T) {
 	for name, file := range map[string]string{
 		"exact URL":     "ep.mp3?sig=a1",
-		"rotated token": "ep.mp3?sig=b22",
+		"rotated query": "ep.mp3?sig=b22",
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
