@@ -2,8 +2,10 @@ package compat
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"slices"
@@ -67,10 +69,11 @@ const (
 	// catalogIndexTTL is how long a built index serves repeat reads for the
 	// same Library and visibility filter. The tools read one item per request
 	// across a whole Library, so rebuilding each time is quadratic per sync.
-	// Library eligibility, restriction and sealing are still checked on every
-	// request; only item-level changes lag by up to this long.
+	// Library eligibility, restriction and sealing and each item's visibility
+	// are still checked on every request; see libraryIndex.
 	catalogIndexTTL     = 15 * time.Second
 	catalogIndexEntries = 32
+	catalogIndexBuilds  = 2
 )
 
 // providerKeys are the ProviderIds keys the tools read, by lowercase scheme.
@@ -190,15 +193,22 @@ type indexCache struct {
 	mu      sync.Mutex
 	now     func() time.Time
 	entries map[string]cachedIndex
+	slots   chan struct{}
 }
 
 type cachedIndex struct {
-	built time.Time
-	index *catalogIndex
+	built   time.Time
+	visible [sha256.Size]byte
+	index   *catalogIndex
 }
 
 // libraryIndex returns the Library's index, reusing one built for the same
-// filter within catalogIndexTTL.
+// filter within catalogIndexTTL while the store still reports the same visible
+// items. The visible set is read on every request, so certification, trash and
+// Reveal changes apply at once; only container links, ordinals and provider
+// IDs of unchanged items can lag. At most catalogIndexBuilds reads or builds
+// run at once, and a request that waited finds the index the one ahead of it
+// built.
 func (h *Handler) libraryIndex(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary) (*catalogIndex, error) {
 	fingerprint, err := json.Marshal(filter)
 	if err != nil {
@@ -206,37 +216,97 @@ func (h *Handler) libraryIndex(ctx context.Context, filter store.LibraryFilter, 
 	}
 	key := string(lib.library.ID) + "\x00" + string(fingerprint)
 	c := &h.indexes
-	c.mu.Lock()
-	if c.now == nil {
-		c.now = time.Now
-	}
-	now := c.now()
-	if entry, ok := c.entries[key]; ok && now.Sub(entry.built) < catalogIndexTTL {
-		c.mu.Unlock()
-		return entry.index, nil
-	}
-	c.mu.Unlock()
-	index, err := h.buildIndex(ctx, filter, lib)
+	release, err := c.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
+	media, err := h.store.LibraryVisibleMedia(ctx, filter, lib.library.ID)
+	if err != nil {
+		return nil, err
+	}
+	visible := visibleFingerprint(media)
+	if index := c.lookup(key, visible); index != nil {
+		return index, nil
+	}
+	index, err := h.buildIndex(ctx, media, lib)
+	if err != nil {
+		return nil, err
+	}
+	c.store(key, visible, index)
+	return index, nil
+}
+
+func (c *indexCache) acquire(ctx context.Context) (func(), error) {
+	c.mu.Lock()
+	if c.slots == nil {
+		c.slots = make(chan struct{}, catalogIndexBuilds)
+	}
+	slots := c.slots
+	c.mu.Unlock()
+	select {
+	case slots <- struct{}{}:
+		return func() { <-slots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (c *indexCache) clock() time.Time {
+	if c.now == nil {
+		c.now = time.Now
+	}
+	return c.now()
+}
+
+func (c *indexCache) lookup(key string, visible [sha256.Size]byte) *catalogIndex {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.entries == nil || len(c.entries) >= catalogIndexEntries {
+	entry, ok := c.entries[key]
+	if !ok || entry.visible != visible || c.clock().Sub(entry.built) >= catalogIndexTTL {
+		return nil
+	}
+	return entry.index
+}
+
+// store keeps index under key, evicting the oldest entry when full.
+func (c *indexCache) store(key string, visible [sha256.Size]byte, index *catalogIndex) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
 		c.entries = map[string]cachedIndex{}
 	}
-	c.entries[key] = cachedIndex{built: now, index: index}
-	return index, nil
+	if _, ok := c.entries[key]; !ok && len(c.entries) >= catalogIndexEntries {
+		oldest := ""
+		for k, entry := range c.entries {
+			if oldest == "" || entry.built.Before(c.entries[oldest].built) {
+				oldest = k
+			}
+		}
+		delete(c.entries, oldest)
+	}
+	c.entries[key] = cachedIndex{built: c.clock(), visible: visible, index: index}
+}
+
+// visibleFingerprint digests every field of the visible items that an index
+// carries, so any visibility or card change forces a rebuild.
+func visibleFingerprint(media []store.VisibleMedia) [sha256.Size]byte {
+	digest := sha256.New()
+	for _, m := range media {
+		_, _ = fmt.Fprintf(digest, "%q %q %q %d %d %d %d\n", m.ID, m.Title, m.SortTitle, m.Year, m.Width, m.Height, m.Order)
+	}
+	var sum [sha256.Size]byte
+	digest.Sum(sum[:0])
+	return sum
 }
 
 // buildIndex reads one Library's visible Media and arranges the mapped ones
 // under their mapped containers. Visibility is decided by the store before
 // anything here counts or pages.
-func (h *Handler) buildIndex(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary) (*catalogIndex, error) {
+func (h *Handler) buildIndex(ctx context.Context, media []store.VisibleMedia, lib catalogLibrary) (*catalogIndex, error) {
 	index := &catalogIndex{byID: map[string]*catalogNode{}}
-	media, err := h.store.LibraryVisibleMedia(ctx, filter, lib.library.ID)
-	if err != nil || len(media) == 0 {
-		return index, err
+	if len(media) == 0 {
+		return index, nil
 	}
 	interop := lib.interop
 	ids := make([]store.MediaID, len(media))
@@ -402,7 +472,7 @@ func (h *Handler) attachProviderIDs(ctx context.Context, lib catalogLibrary, ind
 	for _, id := range mapped {
 		leaf := index.byID[string(id)]
 		for _, externalID := range external[id] {
-			if key := providerKeys[strings.ToLower(externalID.Scheme)]; key != "" && validProviderID(externalID.Value) {
+			if key := providerKeys[strings.ToLower(externalID.Scheme)]; key != "" && validProviderID(key, externalID.Value) {
 				leaf.providers[key] = externalID.Value
 			}
 		}
@@ -413,7 +483,7 @@ func (h *Handler) attachProviderIDs(ctx context.Context, lib catalogLibrary, ind
 			if node.leaf {
 				record, ok := provenance[store.MediaID(node.id)]
 				key := providerKeys[lib.interop.ProviderSchemes[record.ScraperID]]
-				if ok && key != "" && validProviderID(record.CandidateID) && record.PluginID == *lib.library.PluginID {
+				if ok && key != "" && validProviderID(key, record.CandidateID) && record.PluginID == *lib.library.PluginID {
 					if _, set := node.top.providers[key]; !set {
 						node.top.providers[key] = record.CandidateID
 					}
@@ -426,16 +496,21 @@ func (h *Handler) attachProviderIDs(ctx context.Context, lib catalogLibrary, ind
 	return nil
 }
 
-// validProviderID reports whether value is a bare provider identifier. A
-// stored value carrying a path, URL or other text is never echoed.
-func validProviderID(value string) bool {
+// validProviderID reports whether value has the form of an identifier of the
+// provider the key names: digits, or tt and digits for Imdb. A stored value
+// carrying a path, file name, URL or other text is never echoed.
+func validProviderID(key, value string) bool {
+	if key == "Imdb" {
+		var ok bool
+		if value, ok = strings.CutPrefix(value, "tt"); !ok {
+			return false
+		}
+	}
 	if value == "" || len(value) > catalogProviderIDMax {
 		return false
 	}
 	for i := 0; i < len(value); i++ {
-		switch c := value[i]; {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '_', c == '-':
-		default:
+		if value[i] < '0' || value[i] > '9' {
 			return false
 		}
 	}
@@ -582,6 +657,9 @@ func (h *Handler) itemsByID(w http.ResponseWriter, r *http.Request, filter store
 	}
 	found := map[string]*catalogNode{}
 	for _, lib := range libraries {
+		if len(found) == len(wanted) {
+			break
+		}
 		index, err := h.libraryIndex(r.Context(), filter, lib)
 		if err != nil {
 			http.Error(w, "compatibility catalog unavailable", http.StatusInternalServerError)
