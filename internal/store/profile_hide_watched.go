@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
+	"strings"
 )
 
 // ProfileHideWatchedPrefKey is the reserved per-Profile preference that hides
@@ -43,13 +45,9 @@ func hideWatchedApplies(kind string) bool {
 	return true
 }
 
-// dropWatchedLocked removes from items the Media profileID has finished.
-// Entity items pass through: their finished state is judged by browse, not
-// here. The caller holds s.mu.
-func (s *Store) dropWatchedLocked(ctx context.Context, profileID ProfileID, items []SourceItem) ([]SourceItem, error) {
-	if len(items) == 0 {
-		return items, nil
-	}
+// watchedMediaLocked returns the Media profileID has finished. The caller
+// holds s.mu.
+func (s *Store) watchedMediaLocked(ctx context.Context, profileID ProfileID) (map[MediaID]bool, error) {
 	rows, err := s.eventsR.QueryContext(ctx, `
 		SELECT media_id FROM playback_progress WHERE profile_id = ? AND watched <> 0
 	`, profileID)
@@ -65,17 +63,53 @@ func (s *Store) dropWatchedLocked(ctx context.Context, profileID ProfileID, item
 		}
 		watched[id] = true
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	return watched, rows.Err()
+}
+
+// dropWatched removes the finished Media from items. A rolled-up container
+// card drops once every Media it stands for is finished; any other Entity
+// card passes through, since browse judges its finished state.
+func dropWatched(items []SourceItem, watched map[MediaID]bool) []SourceItem {
 	out := make([]SourceItem, 0, len(items))
 	for _, item := range items {
-		if item.Kind != "entity" && watched[item.ID] {
+		if item.Kind != "entity" {
+			if watched[item.ID] {
+				continue
+			}
+		} else if len(item.rollUpMembers) > 0 && !slices.ContainsFunc(item.rollUpMembers, func(id MediaID) bool { return !watched[id] }) {
 			continue
 		}
 		out = append(out, item)
 	}
-	return out, nil
+	return out
+}
+
+// hideWatchedWindow returns the Media a Hide watched page leaves out, and the
+// raw window to read so that, once they are dropped, the page still holds
+// limit items from offset onward: every finished Media ahead of the window
+// could shift it, so the read starts at the top and runs that many further.
+// No hide, or nothing finished, keeps the window as asked. The caller holds s.mu.
+func (s *Store) hideWatchedWindowLocked(ctx context.Context, query SourceQuery, limit, offset int) (watched map[MediaID]bool, readLimit, readOffset int, err error) {
+	if query.ProfileID == "" || strings.TrimSpace(query.Query) != "" || !hideWatchedApplies(query.Kind) {
+		return nil, limit, offset, nil
+	}
+	hide, err := s.profileHideWatchedLocked(ctx, query.ProfileID)
+	if err != nil || !hide {
+		return nil, limit, offset, err
+	}
+	watched, err = s.watchedMediaLocked(ctx, query.ProfileID)
+	if err != nil || len(watched) == 0 {
+		return nil, limit, offset, err
+	}
+	return watched, offset + limit + len(watched), 0, nil
+}
+
+// pageOf returns items[offset : offset+limit], clamped.
+func pageOf(items []SourceItem, limit, offset int) []SourceItem {
+	if offset >= len(items) {
+		return []SourceItem{}
+	}
+	return items[offset:min(len(items), offset+limit)]
 }
 
 // effectiveBrowseWatchLocked returns the watch filter a browse runs with: the

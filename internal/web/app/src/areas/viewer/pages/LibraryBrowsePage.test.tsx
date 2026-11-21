@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fetchMutes } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { notifyEngagementChanged } from "../actions/engagementSync";
@@ -20,6 +21,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => {
   return {
     ...actual,
     fetchClientPrefs: vi.fn(async () => []),
+    fetchMutes: vi.fn(async () => []),
     setClientPref: vi.fn(async () => undefined),
   };
 });
@@ -442,6 +444,32 @@ describe("Library browse", () => {
     hiding = true;
     await user.click(toggle);
     expect(await screen.findByText("3 items")).toBeInTheDocument();
+  });
+
+  it("starts the read over when the Profile's hidden items change, so the count follows (CORE-2836)", async () => {
+    let hidden = false;
+    vi.mocked(fetchMutes).mockImplementation(async () =>
+      hidden ? ([{ kind: "media", targetID: "media-0" }] as never) : [],
+    );
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) =>
+      hidden ? { ...pageFor(request), total: TOTAL - 1 } : pageFor(request),
+    );
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    await waitFor(() => expect(fetchMutes).toHaveBeenCalled());
+
+    hidden = true;
+    act(() => notifyEngagementChanged());
+    expect(await screen.findByText("1,199 items")).toBeInTheDocument();
+    vi.mocked(fetchMutes).mockImplementation(async () => []);
   });
 
   it("reloads when engagement changes under a query that depends on it, and refreshes cards in place otherwise", async () => {

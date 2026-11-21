@@ -27,6 +27,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => {
   return {
     ...actual,
     fetchClientPrefs: vi.fn(async () => []),
+    fetchMutes: vi.fn(async () => []),
     setClientPref: vi.fn(async () => undefined),
   };
 });

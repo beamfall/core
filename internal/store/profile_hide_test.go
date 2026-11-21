@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 )
@@ -92,6 +93,47 @@ func TestMuteDirectEntityReachesTree(t *testing.T) {
 	if ids["entity-show"] || ids["entity-season"] || !ids["entity-unrelated"] {
 		t.Fatalf("entity browse = %v, want show and season hidden", ids)
 	}
+
+	// An entity-items shelf drops the hidden container's card too.
+	cards := []SourceItem{{ID: "entity-show", Kind: "entity"}, {ID: "entity-unrelated", Kind: "entity"}}
+	st.mu.RLock()
+	kept, err := st.applyMuteFilterLocked(ctx, st.catalogR, profile, filter, cards)
+	st.mu.RUnlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept) != 1 || kept[0].ID != "entity-unrelated" {
+		t.Fatalf("entity shelf = %v, want only entity-unrelated", kept)
+	}
+}
+
+// TestMuteDirectEntityCrossesKinds covers CORE-2836: a container held by a
+// container of another Kind (a roll-up parent) is still under the hidden one.
+func TestMuteDirectEntityCrossesKinds(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	st.SetMuteParentRelations(func() []string { return []string{"held-by"} })
+	const profile ProfileID = "profile-default"
+
+	item := muteMediaInLibrary(t, st, "library-local", "cross-item")
+	top := Entity{ID: "entity-top", LibraryID: "library-local", Kind: "group", Title: "Top"}
+	if err := st.UpsertEntity(ctx, top); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntity(ctx, widgetEntity("entity-inner", "library-local")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntityRelation(ctx, EntityRelation{FromEntityID: "entity-inner", Name: "held-by", ToEntityID: "entity-top"}); err != nil {
+		t.Fatal(err)
+	}
+	muteRelate(t, st, "entity-inner", item)
+	if err := st.SetMute(ctx, profile, MuteKindEntity, "entity-top", false, true); err != nil {
+		t.Fatal(err)
+	}
+	all := mediaIDSet(mustSourceItems(t, st, LibraryFilter{AllLibraries: true}, SourceQuery{Kind: "all-items", ProfileID: profile, Limit: 200}))
+	if all[item] {
+		t.Fatalf("all-items = %v, want the item under the hidden container gone", all)
+	}
 }
 
 // TestHideWatchedPref covers CORE-2836: with profile.hide-watched on, catalog
@@ -138,5 +180,45 @@ func TestHideWatchedPref(t *testing.T) {
 	}
 	if !mediaIDSet(mustSourceItems(t, st, filter, SourceQuery{Kind: "all-items", ProfileID: "profile-other", Limit: 200}))[finished] {
 		t.Fatal("another Profile is unaffected")
+	}
+}
+
+// TestHideWatchedPagesAfterTheDrop covers CORE-2836: a Hide watched shelf
+// pages over what is left, so finished Media never cut a See All short.
+func TestHideWatchedPagesAfterTheDrop(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	const profile ProfileID = "profile-default"
+	filter := LibraryFilter{AllLibraries: true}
+	for _, name := range []string{"page-a", "page-b", "page-c", "page-d", "page-e"} {
+		muteMediaInLibrary(t, st, "library-local", name)
+	}
+	all := mustSourceItems(t, st, filter, SourceQuery{Kind: "all-items", ProfileID: profile, Limit: 200})
+	if len(all) < 4 {
+		t.Fatalf("seed has %d items, want at least 4", len(all))
+	}
+	// Finish the first two in shelf order.
+	for _, item := range all[:2] {
+		mustReport(t, st, profile, item.ID, 120, 120, true)
+	}
+	if err := st.SetClientPref(ctx, profile, ProfileHideWatchedPrefKey, "on", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var paged []MediaID
+	for offset := 0; ; offset += 2 {
+		page := mustSourceItems(t, st, filter, SourceQuery{Kind: "all-items", ProfileID: profile, Limit: 2, Offset: offset})
+		for _, item := range page {
+			paged = append(paged, item.ID)
+		}
+		if len(page) < 2 {
+			break
+		}
+	}
+	want := []MediaID{}
+	for _, item := range all[2:] {
+		want = append(want, item.ID)
+	}
+	if !slices.Equal(paged, want) {
+		t.Fatalf("paged = %v, want %v", paged, want)
 	}
 }

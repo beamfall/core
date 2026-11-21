@@ -8,7 +8,13 @@ import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
-import { HideWatchedToggle, useEngagementEpoch, useHideWatched } from "../actions";
+import {
+  HideWatchedToggle,
+  hiddenKeyMoved,
+  useEngagementEpoch,
+  useHiddenKey,
+  useHideWatched,
+} from "../actions";
 import { LibraryBrowseEmpty, LibraryBrowseToolbar } from "../components/LibraryBrowseToolbar";
 import { LibraryDisplayToggle, useLibraryViewMode } from "../components/LibraryDisplayToggle";
 import { LibraryLetterRail } from "../components/LibraryLetterRail";
@@ -187,14 +193,17 @@ function LibraryBrowse({
   // returns, so that read starts over too.
   const hideWatched = useHideWatched();
   const seenHideRef = useRef(hideWatched.version);
+  const hiddenKey = useHiddenKey();
+  const seenHiddenKeyRef = useRef<string | null>(null);
   const unfiltered = state.watch === "";
   const followsEngagement = browseFollowsEngagement(state, hideWatched.on === true);
   useEffect(() => {
     const toggled = seenHideRef.current !== hideWatched.version;
-    if (seenEpochRef.current === engagementEpoch && !toggled) return;
+    const hid = hiddenKeyMoved(seenHiddenKeyRef, hiddenKey);
+    if (seenEpochRef.current === engagementEpoch && !toggled && !hid) return;
     seenEpochRef.current = engagementEpoch;
     seenHideRef.current = hideWatched.version;
-    if (!followsEngagement && !(toggled && unfiltered)) {
+    if (!followsEngagement && !hid && !(toggled && unfiltered)) {
       // Order and membership hold, but the cards' watched marks are stale:
       // re-read the pages already loaded and swap them in place.
       const generation = generationRef.current;
@@ -221,7 +230,7 @@ function LibraryBrowse({
     // The first page carries the count, so an empty result can gain an item.
     loadPage(0);
     setRefreshTick((tick) => tick + 1);
-  }, [engagementEpoch, hideWatched.version, followsEngagement, unfiltered, loadPage]);
+  }, [engagementEpoch, hideWatched.version, hiddenKey, followsEngagement, unfiltered, loadPage]);
 
   const itemCount = total ?? 0;
   const listRef = useRef<HTMLUListElement | null>(null);

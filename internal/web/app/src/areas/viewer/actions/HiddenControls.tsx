@@ -6,6 +6,7 @@ import { useT } from "@/lib/i18n";
 import "../remote/remote.css";
 import "./hidden.css";
 import {
+  clearHiddenNotice,
   dismissHiddenNotice,
   type HiddenNotice,
   unhideItem,
@@ -19,9 +20,17 @@ const NOTICE_MS = 8000;
 /**
  * The Undo notice shown after a hide. Mount once per viewer session. It waits
  * while the pointer or focus is on it, so nobody loses the Undo mid-reach.
+ * Pass the bound Profile: a switch drops the notice, so one Profile never sees,
+ * or undoes, another's hide.
  */
-export function HiddenUndoNotice() {
+export function HiddenUndoNotice({ profileID }: { profileID?: string }) {
   const notice = useHiddenNotice();
+  const boundRef = useRef(profileID);
+  useEffect(() => {
+    if (boundRef.current === profileID) return;
+    boundRef.current = profileID;
+    clearHiddenNotice();
+  }, [profileID]);
   return notice ? <UndoNotice notice={notice} /> : null;
 }
 

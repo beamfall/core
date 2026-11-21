@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   clearAllMutes,
   clearMute,
@@ -95,6 +95,37 @@ export function useHiddenItems({ enabled = true } = {}): HiddenItems {
   return { mutes, failed, isHidden, unhideAll };
 }
 
+/**
+ * A key that changes whenever the Profile's hidden items change, here or on
+ * another client; null until the list has loaded. A browse that keeps its
+ * pages across engagement changes starts over when it moves, since a hide
+ * can drop any card from any read.
+ */
+export function useHiddenKey(): string | null {
+  const { mutes } = useHiddenItems();
+  return useMemo(
+    () =>
+      mutes === null
+        ? null
+        : mutes
+            .map((mute) => `${mute.kind}:${mute.targetID}`)
+            .sort()
+            .join("|"),
+    [mutes],
+  );
+}
+
+/**
+ * Whether a hide changed since the last call: seen holds the key last
+ * observed and is updated. The first loaded key is only recorded.
+ */
+export function hiddenKeyMoved(seen: { current: string | null }, key: string | null): boolean {
+  if (key === null || seen.current === key) return false;
+  const moved = seen.current !== null;
+  seen.current = key;
+  return moved;
+}
+
 export interface ItemHide {
   /** Null until the Profile's hidden list has loaded. */
   hidden: boolean | null;
@@ -151,6 +182,11 @@ function announceHidden(next: Omit<HiddenNotice, "id">): void {
 /** Dismiss the Undo notice, if it still shows the given hide. */
 export function dismissHiddenNotice(id: number): void {
   if (notice?.id === id) emitNotice(null);
+}
+
+/** Drop the Undo notice outright: the Profile it belonged to is no longer bound. */
+export function clearHiddenNotice(): void {
+  if (notice) emitNotice(null);
 }
 
 /** The most recent hide, until it is undone, dismissed or times out. */

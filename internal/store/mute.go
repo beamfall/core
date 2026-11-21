@@ -25,8 +25,9 @@ func ValidMuteKind(kind MuteKind) bool {
 }
 
 // SetMuteParentRelations installs the app's source of plugin-declared parent
-// relations, which a direct Entity Mute follows down to child Entities so
-// hiding a container hides everything under it.
+// relations (same-Kind parents and container roll-up parents), which a direct
+// Entity Mute follows down to child Entities so hiding a container hides
+// everything under it.
 func (s *Store) SetMuteParentRelations(fn func() []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -309,7 +310,7 @@ func (s *Store) applyMuteFilterLocked(ctx context.Context, relations *sql.DB, pr
 	}
 	directlyMuted := reach.directlyMuted
 	broadlyMuted := reach.broadlyMuted
-	if len(directlyMuted) == 0 && len(broadlyMuted) == 0 {
+	if len(directlyMuted) == 0 && len(broadlyMuted) == 0 && len(reach.directEntities) == 0 {
 		return items, nil
 	}
 
@@ -334,6 +335,11 @@ func (s *Store) applyMuteFilterLocked(ctx context.Context, relations *sql.DB, pr
 	out := items[:0:0]
 	for _, item := range items {
 		if directlyMuted[item.ID] {
+			continue
+		}
+		// An Entity card for a hidden container (or one under it) drops like
+		// its Media do, so a hidden show leaves an entity-items shelf too.
+		if _, hidden := reach.directEntities[string(item.ID)]; hidden && item.Kind == "entity" {
 			continue
 		}
 		if broadlyMuted[item.ID] && !protected[item.ID] {
@@ -488,9 +494,10 @@ func (s *Store) mutedTargetsLocked(ctx context.Context, profileID ProfileID) ([]
 }
 
 // entityTreeDescendants returns the child Entities below the seeds along the
-// given parent relations: the same-kind tree the item actions walk, where a
-// child relates to its parent by from_entity_id -> to_entity_id. Seeds are
-// not included. No relation means no tree.
+// given parent relations, where a child relates to its parent by
+// from_entity_id -> to_entity_id. The relations may cross Kinds (a container
+// held by a container of another Kind), so the walk does not compare Kinds.
+// Seeds are not included. No relation means no tree.
 func entityTreeDescendants(ctx context.Context, relations *sql.DB, seeds, parentRelations []string) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
 	if len(seeds) == 0 || len(parentRelations) == 0 {
@@ -507,15 +514,14 @@ func entityTreeDescendants(ctx context.Context, relations *sql.DB, seeds, parent
 	relationIn := strings.TrimSuffix(strings.Repeat("?, ", len(parentRelations)), ", ")
 	// #nosec G202 -- only generated placeholders are interpolated.
 	rows, err := relations.QueryContext(ctx, `
-		WITH RECURSIVE subtree(id, kind, depth) AS (
-			SELECT id, kind, 0 FROM entity WHERE id IN (`+seedIn+`)
+		WITH RECURSIVE subtree(id, depth) AS (
+			SELECT id, 0 FROM entity WHERE id IN (`+seedIn+`)
 			UNION
-			SELECT child.id, child.kind, subtree.depth + 1
+			SELECT child.id, subtree.depth + 1
 			FROM entity_relation r
 			JOIN subtree ON subtree.id = r.to_entity_id
 			JOIN entity child ON child.id = r.from_entity_id
-			WHERE child.kind = subtree.kind
-				AND r.relation IN (`+relationIn+`)
+			WHERE r.relation IN (`+relationIn+`)
 				AND subtree.depth < `+strconv.Itoa(muteDescendantDepthCap)+`
 		)
 		SELECT DISTINCT id FROM subtree WHERE depth > 0
@@ -761,10 +767,7 @@ func hasRollUpMembers(items []SourceItem) bool {
 func (s *Store) applyMuteFilterRolledUpLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, filter LibraryFilter, items []SourceItem) ([]SourceItem, error) {
 	flat := make([]SourceItem, 0, len(items))
 	for _, item := range items {
-		if len(item.rollUpMembers) == 0 {
-			flat = append(flat, SourceItem{ID: item.ID, Kind: item.Kind})
-			continue
-		}
+		flat = append(flat, SourceItem{ID: item.ID, Kind: item.Kind})
 		for _, member := range item.rollUpMembers {
 			flat = append(flat, SourceItem{ID: member, Kind: "media"})
 		}
@@ -779,10 +782,11 @@ func (s *Store) applyMuteFilterRolledUpLocked(ctx context.Context, relations *sq
 	}
 	out := []SourceItem{}
 	for _, item := range items {
+		if !survivors[item.ID] {
+			continue // the card itself is hidden
+		}
 		if len(item.rollUpMembers) == 0 {
-			if survivors[item.ID] {
-				out = append(out, item)
-			}
+			out = append(out, item)
 			continue
 		}
 		for _, member := range item.rollUpMembers {

@@ -1299,7 +1299,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 			secrets:  secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")},
 		}
 	}
-	st.SetMuteParentRelations(plugins.EntityParentRelations)
+	st.SetMuteParentRelations(func() []string {
+		// Hiding a container follows both hierarchies a plugin declares: a
+		// same-Kind parent and a container roll-up parent of another Kind.
+		_, rollUpParents := plugins.ContainerRollUpRelations()
+		relations := append(plugins.EntityParentRelations(), rollUpParents...)
+		slices.Sort(relations)
+		return slices.Compact(relations)
+	})
 	graphHandler := graph.NewHandler(manifests, authService, st, plugins, graphOptions)
 	graphServer := serverGraphHandler{Handler: graphHandler}
 	srv := server.New(

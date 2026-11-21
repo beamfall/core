@@ -57,6 +57,18 @@ describe("HiddenUndoNotice", () => {
     await vi.waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
   });
 
+  it("drops the notice when another Profile is bound", async () => {
+    const { rerender } = renderIn(<HiddenUndoNotice profileID="p1" />);
+    await act(() => hideItem({ mediaID: "m1" }, "Pilot"));
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    rerender(
+      <I18nProvider initialLocale="en">
+        <HiddenUndoNotice profileID="p2" />
+      </I18nProvider>,
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("dismisses itself after a while", async () => {
     vi.useFakeTimers();
     renderIn(<HiddenUndoNotice />);

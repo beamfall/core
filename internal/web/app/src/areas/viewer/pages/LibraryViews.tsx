@@ -5,7 +5,13 @@ import { Button } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import type { DisplayString } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
-import { HideWatchedToggle, useEngagementEpoch, useHideWatched } from "../actions";
+import {
+  HideWatchedToggle,
+  hiddenKeyMoved,
+  useEngagementEpoch,
+  useHiddenKey,
+  useHideWatched,
+} from "../actions";
 import { LibraryBrowseEmpty, LibraryBrowseToolbar } from "../components/LibraryBrowseToolbar";
 import { LibraryLetterRail } from "../components/LibraryLetterRail";
 import { LibraryHeader } from "../components/LibraryPivots";
@@ -357,15 +363,18 @@ function LibraryEntityGrid({
   const seenEpochRef = useRef(engagementEpoch);
   const hideWatched = useHideWatched();
   const seenHideRef = useRef(hideWatched.version);
+  const hiddenKey = useHiddenKey();
+  const seenHiddenKeyRef = useRef<string | null>(null);
   const unfiltered = state.watch === "";
   const followsEngagement = browseFollowsEngagement(state, hideWatched.on === true);
   useEffect(() => {
     const toggled = seenHideRef.current !== hideWatched.version;
-    if (seenEpochRef.current === engagementEpoch && !toggled) return;
+    const hid = hiddenKeyMoved(seenHiddenKeyRef, hiddenKey);
+    if (seenEpochRef.current === engagementEpoch && !toggled && !hid) return;
     seenEpochRef.current = engagementEpoch;
     seenHideRef.current = hideWatched.version;
-    if (followsEngagement || (toggled && unfiltered)) setRetryTick((tick) => tick + 1);
-  }, [engagementEpoch, hideWatched.version, followsEngagement, unfiltered]);
+    if (followsEngagement || hid || (toggled && unfiltered)) setRetryTick((tick) => tick + 1);
+  }, [engagementEpoch, hideWatched.version, hiddenKey, followsEngagement, unfiltered]);
 
   const itemCount = total ?? 0;
   const listRef = useRef<HTMLUListElement | null>(null);

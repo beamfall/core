@@ -3590,7 +3590,14 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 		}
 		filter = narrowed
 	}
-	items, err := s.sourceItemsForKind(ctx, filter, query, limit, offset)
+	// Hide watched (CORE-2836): catalog shelves drop finished Media for a
+	// Profile that asked; its own engagement lists keep them. The drop pages
+	// over the filtered list, so a See All never ends early on a short page.
+	watched, readLimit, readOffset, err := s.hideWatchedWindowLocked(ctx, query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.sourceItemsForKind(ctx, filter, query, readLimit, readOffset)
 	if err != nil {
 		return nil, err
 	}
@@ -3605,18 +3612,8 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 		if err != nil {
 			return nil, err
 		}
-		// Hide watched (CORE-2836): catalog shelves drop finished Media for a
-		// Profile that asked; its own engagement lists keep them.
-		if hideWatchedApplies(query.Kind) {
-			hide, err := s.profileHideWatchedLocked(ctx, query.ProfileID)
-			if err != nil {
-				return nil, err
-			}
-			if hide {
-				if items, err = s.dropWatchedLocked(ctx, query.ProfileID, items); err != nil {
-					return nil, err
-				}
-			}
+		if watched != nil {
+			items = pageOf(dropWatched(items, watched), limit, offset)
 		}
 	}
 	if err := s.annotateRestrictedLocked(ctx, nil, items); err != nil {

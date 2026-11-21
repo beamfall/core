@@ -11,7 +11,15 @@ export {
 } from "./engagementSync";
 export { HiddenUndoNotice, HideWatchedToggle } from "./HiddenControls";
 export type { HiddenItems, ItemHide } from "./hiddenItems";
-export { hideItem, unhideItem, useHiddenItems, useHideWatched, useItemHide } from "./hiddenItems";
+export {
+  hiddenKeyMoved,
+  hideItem,
+  unhideItem,
+  useHiddenItems,
+  useHiddenKey,
+  useHideWatched,
+  useItemHide,
+} from "./hiddenItems";
 export { ItemActions } from "./ItemActions";
 export type { ItemActions as ItemActionsState } from "./useItemActions";
 export { itemTargetFor, useItemActions } from "./useItemActions";

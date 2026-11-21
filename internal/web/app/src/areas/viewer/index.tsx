@@ -185,7 +185,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <RemoteMessage message={remote.message} onDismiss={remote.dismissMessage} />
-      <HiddenUndoNotice />
+      <HiddenUndoNotice profileID={profileID} />
     </PlayerHost>
   );
 }
