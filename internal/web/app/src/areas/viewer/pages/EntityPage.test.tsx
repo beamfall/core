@@ -510,8 +510,15 @@ describe("EntityPage container lockup", () => {
     vi.mocked(fetchEntity).mockResolvedValue({
       ...container,
       relatedEntities: [
-        { kind: "member", archetype: "person", items: [box("p1", 1)] },
-        { kind: "part", archetype: "container", items: [box("b1", 0), box("b2", 2)] },
+        // A parent container sorting first never stands in for a child (CORE-2036).
+        { kind: "anthology", direction: "parent", archetype: "container", items: [box("top", 2)] },
+        { kind: "member", direction: "parent", archetype: "person", items: [box("p1", 1)] },
+        {
+          kind: "part",
+          direction: "child",
+          archetype: "container",
+          items: [box("b1", 0), box("b2", 2)],
+        },
       ],
     });
     vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) =>
@@ -522,6 +529,7 @@ describe("EntityPage container lockup", () => {
     await act(async () => {});
 
     expect(fetchMediaForEntity).toHaveBeenCalledWith("b2", expect.any(AbortSignal));
+    expect(fetchMediaForEntity).not.toHaveBeenCalledWith("top", expect.any(AbortSignal));
     expect(root.querySelectorAll(".bg-primary")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Resume Second part" }));
     const player = screen.getByRole("status", { name: "player" }).textContent ?? "";

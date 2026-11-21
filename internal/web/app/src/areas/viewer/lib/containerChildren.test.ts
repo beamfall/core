@@ -72,15 +72,21 @@ describe("nextUpChildContainer", () => {
 
   it("picks the first container with children left, skipping other archetypes", () => {
     const next = nextUpChildContainer([
-      { archetype: "person", items: [box("p")] },
-      { archetype: "container", items: [box("s1", 0), box("s2", 3), box("s3", 5)] },
+      { archetype: "person", direction: "child", items: [box("p")] },
+      {
+        archetype: "container",
+        direction: "child",
+        items: [box("s1", 0), box("s2", 3), box("s3", 5)],
+      },
     ]);
     expect(next?.id).toBe("s2");
   });
 
   it("falls back to the first when every child container is finished", () => {
     expect(
-      nextUpChildContainer([{ archetype: "container", items: [box("s1", 0), box("s2", 0)] }])?.id,
+      nextUpChildContainer([
+        { archetype: "container", direction: "child", items: [box("s1", 0), box("s2", 0)] },
+      ])?.id,
     ).toBe("s1");
   });
 
@@ -88,21 +94,44 @@ describe("nextUpChildContainer", () => {
     const finished = box("s1", undefined, { engagement: { totalCount: 4 } });
     const completed = box("s2", undefined, { engagement: { completed: true } });
     expect(
-      nextUpChildContainer([{ archetype: "container", items: [finished, completed, box("s3", 2)] }])
-        ?.id,
+      nextUpChildContainer([
+        { archetype: "container", direction: "child", items: [finished, completed, box("s3", 2)] },
+      ])?.id,
     ).toBe("s3");
     expect(
-      nextUpChildContainer([{ archetype: "container", items: [box("s1"), box("s2", 2)] }])?.id,
+      nextUpChildContainer([
+        { archetype: "container", direction: "child", items: [box("s1"), box("s2", 2)] },
+      ])?.id,
     ).toBe("s1");
   });
 
   it("skips locked children and returns null without a container group", () => {
     expect(
       nextUpChildContainer([
-        { archetype: "container", items: [box("s1", 2, { locked: true }), box("s2", 2)] },
+        {
+          archetype: "container",
+          direction: "child",
+          items: [box("s1", 2, { locked: true }), box("s2", 2)],
+        },
       ])?.id,
     ).toBe("s2");
-    expect(nextUpChildContainer([{ archetype: "person", items: [box("p")] }])).toBeNull();
+    expect(
+      nextUpChildContainer([{ archetype: "person", direction: "child", items: [box("p")] }]),
+    ).toBeNull();
     expect(nextUpChildContainer(undefined)).toBeNull();
+  });
+
+  it("reads only child groups, even when a parent container group sorts first (CORE-2036)", () => {
+    // A middle container in a parent -> middle -> child tree: the parent's
+    // kind sorts first, but only the child group may be played through.
+    const groups = [
+      { archetype: "container", direction: "parent" as const, items: [box("top", 4)] },
+      { archetype: "container", direction: "child" as const, items: [box("c1", 0), box("c2", 1)] },
+    ];
+    expect(nextUpChildContainer(groups)?.id).toBe("c2");
+    expect(nextUpChildContainer(groups.slice(0, 1))).toBeNull();
+    expect(
+      nextUpChildContainer([{ archetype: "container", items: [box("unknown", 1)] }]),
+    ).toBeNull();
   });
 });

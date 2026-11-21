@@ -1,4 +1,4 @@
-import type { SourceItem } from "@/lib/graphql/types";
+import type { RelatedEntityDirection, SourceItem } from "@/lib/graphql/types";
 import { artworkSlotURL } from "./artwork";
 import { resumeProgress } from "./mediaDetail";
 
@@ -53,16 +53,24 @@ export function childThumbURL(item: SourceItem): string {
 
 /**
  * The child container a container with no Media of its own plays next: the
- * first related group whose archetype is a container, then its first item with
- * children left to finish, else (all finished) its first. Null when there is
- * no such group. Only read when the Entity has no direct Media. Related groups
- * carry no relation direction, so in a tree three or more containers deep a
- * parent group sorting first could stand in for a child (CORE-2036).
+ * first related child group whose archetype is a container, then its first item
+ * with children left to finish, else (all finished) its first. Parent groups
+ * never count, so in a tree three or more containers deep a parent sorting first
+ * cannot stand in for a child (CORE-2036). Null when there is no such group.
+ * Only read when the Entity has no direct Media.
  */
 export function nextUpChildContainer(
-  groups: readonly { archetype?: string; items: readonly SourceItem[] }[] | undefined,
+  groups:
+    | readonly {
+        archetype?: string;
+        direction?: RelatedEntityDirection;
+        items: readonly SourceItem[];
+      }[]
+    | undefined,
 ): SourceItem | null {
-  const group = groups?.find((g) => g.archetype === "container" && g.items.length > 0);
+  const group = groups?.find(
+    (g) => g.direction === "child" && g.archetype === "container" && g.items.length > 0,
+  );
   if (!group) return null;
   const items = group.items.filter((item) => !item.locked);
   return items.find(hasChildrenLeft) ?? items[0] ?? null;

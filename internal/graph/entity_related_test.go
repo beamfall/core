@@ -19,7 +19,7 @@ import (
 
 // TestEntityQueryListsRelatedEntityGroups pins the entity(id) related groups
 // (CORE-1210): Entity-to-Entity relations in both directions, grouped by
-// kind with the kind's declared display name, items as entity Source items,
+// kind and direction (CORE-2036) with the kind's declared display name, items as entity Source items,
 // and no groups for an Entity linked only to Media.
 func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 	st := storetest.Open(t)
@@ -94,7 +94,7 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 
 	read := func(id string) EntityDetailInfo {
 		t.Helper()
-		body := []byte(`{"query":"query($id:String!) { entity(id: $id) { id kind title relatedEntities { kind kindDisplayName kindPluralDisplayName items { id kind title libraryID } } } }","variables":{"id":"` + id + `"}}`)
+		body := []byte(`{"query":"query($id:String!) { entity(id: $id) { id kind title relatedEntities { kind direction kindDisplayName kindPluralDisplayName items { id kind title libraryID } } } }","variables":{"id":"` + id + `"}}`)
 		req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
 		authorizeViewer(req)
 		rec := httptest.NewRecorder()
@@ -117,7 +117,9 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 
 	got := read("entity-performer").RelatedEntities
 	want := []RelatedEntityGroupInfo{{
-		Kind:                  "record",
+		Kind: "record",
+		// The Records point at the Performer, so they are its children.
+		Direction:             store.RelatedEntityChild,
 		KindDisplayName:       plugin.L("Record"),
 		KindPluralDisplayName: plugin.L("Records"),
 		Archetype:             "container",
@@ -134,6 +136,7 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 	got = read("entity-record-a").RelatedEntities
 	want = []RelatedEntityGroupInfo{{
 		Kind:            "performer",
+		Direction:       store.RelatedEntityParent,
 		KindDisplayName: plugin.L("Performer"),
 		Archetype:       "person",
 		// The Performer has no Media of its own, so it takes the class its
