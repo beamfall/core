@@ -287,34 +287,41 @@ func (s *Store) RequestSubscriptionRefresh(ctx context.Context, id SubscriptionI
 // RequestAllSubscriptionsRefresh makes every Subscription in a Library the
 // filter can see, and outside its own minGap, due now. It reports how many it
 // refreshed; Subscriptions in Libraries the filter hides are neither touched
-// nor counted, so the count never reveals them.
+// nor counted, so the count never reveals them. Visibility (trash, grant,
+// restriction and seal, as libraryVisible decides it) is checked inside the
+// UPDATE itself, so a Library hidden concurrently is never refreshed.
 func (s *Store) RequestAllSubscriptionsRefresh(ctx context.Context, filter LibraryFilter, now time.Time, minGap time.Duration) (int, error) {
+	if len(filter.AllowedIDs) == 0 && !filter.AllLibraries {
+		return 0, nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return 0, err
 	}
-	libraries, err := loadLibraries(ctx, s.catalogR)
-	if err != nil {
-		return 0, err
-	}
 	nowMS := now.UTC().UnixMilli()
 	args := []any{nowMS, nowMS, nowMS - minGap.Milliseconds()}
-	visible := 0
-	for _, library := range libraries {
-		if libraryVisible(library, filter) {
-			args = append(args, library.ID)
-			visible++
+	visible := `SELECT id FROM library WHERE trashed_at_ms IS NULL`
+	if len(filter.AllowedIDs) > 0 {
+		visible += ` AND id IN (` + sqlPlaceholders(len(filter.AllowedIDs)) + `)`
+		for _, id := range filter.AllowedIDs {
+			args = append(args, id)
 		}
 	}
-	if visible == 0 {
-		return 0, nil
+	if !filter.Revealed {
+		visible += ` AND is_restricted = 0`
 	}
-	// #nosec G202 -- only generated placeholders are interpolated; every value is bound.
+	if len(filter.SealedIDs) > 0 {
+		visible += ` AND id NOT IN (` + sqlPlaceholders(len(filter.SealedIDs)) + `)`
+		for _, id := range filter.SealedIDs {
+			args = append(args, id)
+		}
+	}
+	// #nosec G202 -- only generated placeholders and closed clauses are interpolated; every value is bound.
 	result, err := s.catalogW.ExecContext(ctx, `
 		UPDATE subscription SET next_poll_at_ms = ?, refresh_requested_at_ms = ?
 		WHERE (refresh_requested_at_ms = 0 OR refresh_requested_at_ms <= ?)
-		AND library_id IN (`+sqlPlaceholders(visible)+`)
+		AND library_id IN (`+visible+`)
 	`, args...)
 	if err != nil {
 		return 0, err

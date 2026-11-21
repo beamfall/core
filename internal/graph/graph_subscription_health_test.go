@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -141,5 +142,56 @@ func TestRefreshAllSubscriptionsHonoursLibraryScope(t *testing.T) {
 		if got := stored.Health.Due(now); got != wantDue {
 			t.Fatalf("subscription %s due = %v, want %v (health %+v)", id, got, wantDue, stored.Health)
 		}
+	}
+}
+
+// TestRefreshAllSubscriptionsSkipsSealedLibrary pins the CORE-2955 delta
+// review: a Library the Manager is granted but which is Sealed is hidden, so
+// refresh-all neither refreshes nor counts its feeds.
+func TestRefreshAllSubscriptionsSkipsSealedLibrary(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	added := time.Now().UTC()
+	sealedLibrary, err := st.CreateLibrary(ctx, "Sealed Feeds", false, "feedkit", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	visible, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local", FeedURL: "https://feeds.example.com/open", Root: "/media/open", Title: "Open Feed",
+	}, added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: sealedLibrary.ID, FeedURL: "https://feeds.example.com/sealed", Root: "/media/sealed", Title: "Sealed Feed",
+	}, added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := added.Add(time.Hour)
+	for _, id := range []store.SubscriptionID{visible.ID, sealed.ID} {
+		if err := st.RecordSubscriptionPollSuccess(ctx, id, later); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := newTestHandlerWithStore(st)
+	mgr := libencrypt.NewManagerWithParams(newMemSecretStore(), libencrypt.TestArgon2Params)
+	handler.SetLibEncrypt(mgr)
+	if _, err := mgr.Provision(string(sealedLibrary.ID), libencrypt.UnsealModeAuto, ""); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Seal(string(sealedLibrary.ID))
+
+	var all SubscriptionRefreshAllInfo
+	execGraph(t, handler, authorizeManager, `mutation { refreshAllSubscriptions { refreshed } }`, nil, "refreshAllSubscriptions", &all)
+	if all.Refreshed != 1 {
+		t.Fatalf("refresh all refreshed %d, want only the unsealed Library's feed", all.Refreshed)
+	}
+	stored, err := st.Subscription(ctx, sealed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Health.Due(time.Now().UTC()) {
+		t.Fatalf("sealed Library's feed was refreshed: %+v", stored.Health)
 	}
 }

@@ -3352,7 +3352,11 @@ func (h *Handler) refreshSubscription(ctx context.Context, scope auth.Scope, req
 // nor counted.
 func (h *Handler) refreshAllSubscriptions(ctx context.Context, scope auth.Scope, _ request) (SubscriptionRefreshAllInfo, error) {
 	now := time.Now().UTC()
-	refreshed, err := h.store.RequestAllSubscriptionsRefresh(ctx, scope.LibraryFilter(), now, subscriptionRefreshGap)
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return SubscriptionRefreshAllInfo{}, err
+	}
+	refreshed, err := h.store.RequestAllSubscriptionsRefresh(ctx, filter, now, subscriptionRefreshGap)
 	if err != nil {
 		return SubscriptionRefreshAllInfo{}, err
 	}
