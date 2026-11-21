@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -236,6 +237,27 @@ func RejectIntegrationIPSettlement(t testing.TB, dataDir string) {
 		WHEN OLD.action = 'integration.login' AND OLD.key LIKE 'ip:%' AND NEW.success = 1
 		BEGIN SELECT RAISE(ABORT, 'fixture settlement failure'); END`); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// BreakEngagementRead verifies the seeded engagement projection works, then
+// makes its playback-progress read fail without changing the queue fixture.
+func BreakEngagementRead(t testing.TB, st *store.Store, dataDir string, profileID store.ProfileID) {
+	t.Helper()
+	items := []store.SourceItem{{ID: "media-alpha", Kind: "media"}}
+	if err := st.AnnotateEngagement(t.Context(), profileID, store.LibraryFilter{}, items, nil); err != nil {
+		t.Fatalf("verify engagement fixture: %v", err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(dataDir, "db", "events.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(t.Context(), "ALTER TABLE playback_progress RENAME TO unavailable_playback_progress"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AnnotateEngagement(t.Context(), profileID, store.LibraryFilter{}, items, nil); err == nil || !strings.Contains(err.Error(), "no such table: playback_progress") {
+		t.Fatalf("fault did not reach the engagement read: %v", err)
 	}
 }
 

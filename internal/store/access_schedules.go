@@ -51,6 +51,10 @@ func (s *Store) ProfileAccessWindows(ctx context.Context, profileID ProfileID) (
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
+	return s.profileAccessWindowsLocked(ctx, profileID)
+}
+
+func (s *Store) profileAccessWindowsLocked(ctx context.Context, profileID ProfileID) ([]ProfileAccessWindow, error) {
 	rows, err := s.catalogR.QueryContext(ctx, `
 		SELECT weekday, start_minute, end_minute
 		FROM profile_access_schedules

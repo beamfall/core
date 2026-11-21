@@ -1692,6 +1692,12 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 		for key, value := range dispatch.data {
 			out.Data[key] = value
 		}
+		if dispatch.queueAddPlacement != nil {
+			if out.Extensions == nil {
+				out.Extensions = &responseExtensions{QueueAdd: map[string]queueAddPlacement{}}
+			}
+			out.Extensions.QueueAdd[occurrence.responseKey] = *dispatch.queueAddPlacement
+		}
 		out.Errors = append(out.Errors, dispatch.errs...)
 		mutated = mutated || mutationFields[occurrence.canonical]
 	}
@@ -4494,54 +4500,61 @@ func (h *Handler) queueOps(ctx context.Context, scope auth.Scope, fields map[str
 	return data, nil
 }
 
+type queueAddPlacement struct {
+	MediaID  string `json:"mediaID"`
+	Position int    `json:"position"`
+}
+
+func (h *Handler) queueAdd(ctx context.Context, scope auth.Scope, req request) ([]SourceItem, *queueAddPlacement, error) {
+	expected, err := checkExpectedProfile(scope, req)
+	if err != nil {
+		return nil, nil, err
+	}
+	mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
+	if mediaID == "" {
+		return nil, nil, clientError("mediaID is required")
+	}
+	var position *int
+	v := newVars(req)
+	if value, ok := v.Number("position"); ok {
+		p := int(value)
+		position = &p
+	}
+	if err := v.Err(); err != nil {
+		return nil, nil, err
+	}
+	committed, err := h.store.QueueAddForProfile(ctx, scope.ProfileID, scope.SessionID, expected, mediaID, position, scope.LibraryFilter(), h.auth.CertificationConstraints)
+	switch {
+	case errors.Is(err, store.ErrQueueMediaNotFound):
+		return nil, nil, clientError("unknown media")
+	case errors.Is(err, store.ErrQueueMediaLocked):
+		return nil, nil, &l10n.Error{Key: l10n.QueueMediaLocked, Err: clientError("This item is locked.")}
+	case errors.Is(err, store.ErrSessionProfileMismatch):
+		return nil, nil, errProfileMismatch
+	case errors.Is(err, store.ErrProfileDisabled):
+		return nil, nil, clientError("profile is disabled")
+	case errors.Is(err, store.ErrDeviceRevoked), errors.Is(err, store.ErrSessionExpired),
+		errors.Is(err, store.ErrSessionNotFound), errors.Is(err, store.ErrQueueProfileOutsideSchedule):
+		return nil, nil, clientError("invalid session")
+	case err != nil:
+		return nil, nil, err
+	}
+
+	var placement *queueAddPlacement
+	if committed.Position != nil {
+		placement = &queueAddPlacement{MediaID: string(mediaID), Position: *committed.Position}
+	}
+	// Keep the committed projection intact if optional card reads fail.
+	cards := slices.Clone(committed.Items)
+	if err := h.annotateCardsForProfile(ctx, committed.ProfileID, committed.Filter, cards); err != nil {
+		slog.DebugContext(ctx, "queueAdd card details unavailable", "error", err)
+		return h.queueResponse(committed.Items, committed.Filter.Revealed, false), placement, nil
+	}
+	return h.queueResponse(cards, committed.Filter.Revealed, true), placement, nil
+}
+
 func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
 	data := map[string]any{}
-	if fields["queueadd"] {
-		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
-		if mediaID == "" {
-			return nil, clientError("mediaID is required")
-		}
-		var position *int
-		v := newVars(req)
-		if value, ok := v.Number("position"); ok {
-			p := int(value)
-			position = &p
-		}
-		if err := v.Err(); err != nil {
-			return nil, err
-		}
-		committed, err := h.store.QueueAddForProfile(ctx, scope.ProfileID, scope.SessionID, mediaID, position, scope.LibraryFilter(), h.auth.CertificationConstraints)
-		switch {
-		case errors.Is(err, store.ErrQueueMediaNotFound):
-			return nil, clientError("unknown media")
-		case errors.Is(err, store.ErrQueueMediaLocked):
-			return nil, &l10n.Error{Key: l10n.QueueMediaLocked, Err: clientError("This item is locked.")}
-		case errors.Is(err, store.ErrSessionProfileMismatch):
-			return nil, errProfileMismatch
-		case errors.Is(err, store.ErrProfileDisabled):
-			return nil, clientError("profile is disabled")
-		case err != nil:
-			return nil, err
-		}
-		items, pageLength := committed.Items, committed.PageLength
-		cards := slices.Clone(items[:pageLength])
-		last := len(items) - 1
-		if len(items) > pageLength {
-			cards = append(cards, items[last])
-		}
-		// Apply card details only after all reads succeed. On failure the
-		// committed projection still carries the order and basic fields.
-		if err := h.annotateCardsForProfile(ctx, scope.ProfileID, committed.Filter, cards); err != nil {
-			slog.DebugContext(ctx, "queueAdd card details unavailable", "error", err)
-			pageLength = 0
-		} else {
-			copy(items[:pageLength], cards)
-			if len(items) > pageLength {
-				items[last] = cards[pageLength]
-			}
-		}
-		data["queueadd"] = h.queueResponse(items, committed.Filter.Revealed, pageLength)
-	}
 	if fields["queueremove"] {
 		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
 		if mediaID == "" {
@@ -4602,15 +4615,14 @@ func (h *Handler) queueItems(ctx context.Context, scope auth.Scope) ([]SourceIte
 	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
-	return h.queueResponse(items, scope.Revealed, len(items)), nil
+	return h.queueResponse(items, scope.Revealed, true), nil
 }
 
-// queueResponse attaches artwork to the enriched page and its optional off-page
-// target at the end of the prefix. A zero page length renders basic rows only.
-func (h *Handler) queueResponse(items []store.SourceItem, revealed bool, pageLength int) []SourceItem {
+// queueResponse attaches artwork only when the page's card reads succeeded.
+func (h *Handler) queueResponse(items []store.SourceItem, revealed, enriched bool) []SourceItem {
 	resp := make([]SourceItem, len(items))
 	for i, item := range items {
-		if i < pageLength || (pageLength > 0 && i == len(items)-1) {
+		if enriched {
 			resp[i] = h.sourceItem(item, revealed)
 		} else {
 			resp[i] = basicSourceItem(item, revealed)
@@ -6586,9 +6598,14 @@ type request struct {
 
 type response struct {
 	Data                 map[string]any                        `json:"data,omitempty"`
+	Extensions           *responseExtensions                   `json:"extensions,omitempty"`
 	Errors               []graphError                          `json:"errors,omitempty"`
 	authorizationRefused bool                                  `json:"-"`
 	privilegedOutcomes   map[string]observability.AuditOutcome `json:"-"`
+}
+
+type responseExtensions struct {
+	QueueAdd map[string]queueAddPlacement `json:"queueAdd,omitempty"`
 }
 
 // MarshalJSON distinguishes an intentionally empty successful data object
@@ -6596,10 +6613,11 @@ type response struct {
 // data member must be absent.
 func (r response) MarshalJSON() ([]byte, error) {
 	type wireResponse struct {
-		Data   json.RawMessage `json:"data,omitempty"`
-		Errors []graphError    `json:"errors,omitempty"`
+		Data       json.RawMessage     `json:"data,omitempty"`
+		Errors     []graphError        `json:"errors,omitempty"`
+		Extensions *responseExtensions `json:"extensions,omitempty"`
 	}
-	wire := wireResponse{Errors: r.Errors}
+	wire := wireResponse{Errors: r.Errors, Extensions: r.Extensions}
 	if r.Data != nil {
 		data, err := json.Marshal(r.Data)
 		if err != nil {

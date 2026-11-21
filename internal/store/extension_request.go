@@ -322,6 +322,10 @@ func (s *Store) ActiveExtensionGrant(ctx context.Context, profileID ProfileID, s
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
+	return s.activeExtensionGrantLocked(ctx, profileID, sessionID, now)
+}
+
+func (s *Store) activeExtensionGrantLocked(ctx context.Context, profileID ProfileID, sessionID SessionID, now time.Time) (bool, error) {
 	var count int
 	err := s.catalogR.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM extension_request

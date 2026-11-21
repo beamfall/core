@@ -13,7 +13,7 @@ func queueAddFixture(ctx context.Context, st *Store, profileID ProfileID, mediaI
 	if profileID == "profile-default" {
 		sessionID = "session-revealed"
 	}
-	_, err := st.QueueAddForProfile(ctx, profileID, sessionID, mediaID, position, filter, testQueueCertification)
+	_, err := st.QueueAddForProfile(ctx, profileID, sessionID, "", mediaID, position, filter, testQueueCertification)
 	return err
 }
 
@@ -25,7 +25,7 @@ func TestQueueAddResponseMatchesQueueReadAfterMute(t *testing.T) {
 	filter := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
 	target := importQueueMedia(t, st, "queue-after-mute")
 	for _, id := range []MediaID{"media-alpha", target} {
-		if _, err := st.QueueAddForProfile(ctx, profile, session, id, nil, filter, testQueueCertification); err != nil {
+		if _, err := st.QueueAddForProfile(ctx, profile, session, "", id, nil, filter, testQueueCertification); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -33,7 +33,7 @@ func TestQueueAddResponseMatchesQueueReadAfterMute(t *testing.T) {
 		t.Fatal(err)
 	}
 	newTarget := importQueueMedia(t, st, "queue-after-mute-next")
-	committed, err := st.QueueAddForProfile(ctx, profile, session, newTarget, queueIntPtr(1), filter, testQueueCertification)
+	committed, err := st.QueueAddForProfile(ctx, profile, session, "", newTarget, queueIntPtr(1), filter, testQueueCertification)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestQueueAddCommitsMutedTargetsWithoutReturningThem(t *testing.T) {
 	queued := importQueueMedia(t, st, "queue-muted-existing")
 	unqueued := importQueueMedia(t, st, "queue-muted-new")
 	for _, id := range []MediaID{"media-alpha", queued} {
-		if _, err := st.QueueAddForProfile(ctx, profile, session, id, nil, filter, testQueueCertification); err != nil {
+		if _, err := st.QueueAddForProfile(ctx, profile, session, "", id, nil, filter, testQueueCertification); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -74,7 +74,7 @@ func TestQueueAddCommitsMutedTargetsWithoutReturningThem(t *testing.T) {
 		}
 	}
 	for _, id := range []MediaID{queued, unqueued} {
-		committed, err := st.QueueAddForProfile(ctx, profile, session, id, queueIntPtr(0), filter, testQueueCertification)
+		committed, err := st.QueueAddForProfile(ctx, profile, session, "", id, queueIntPtr(0), filter, testQueueCertification)
 		if err != nil {
 			t.Fatalf("queue add for muted target %s: %v", id, err)
 		}
@@ -104,17 +104,17 @@ func TestQueueAddMatchesQueueReadWithEncryptedCatalogMutes(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, id := range []MediaID{muted, other.ID} {
-				if _, err := st.QueueAddForProfile(ctx, profile, session, id, nil, filter, testQueueCertification); err != nil {
+				if _, err := st.QueueAddForProfile(ctx, profile, session, "", id, nil, filter, testQueueCertification); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if err := st.SetMute(ctx, profile, kind, string(entity.ID), false, true); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := st.QueueAddForProfile(ctx, profile, session, muted, nil, filter, testQueueCertification); err != nil {
+			if _, err := st.QueueAddForProfile(ctx, profile, session, "", muted, nil, filter, testQueueCertification); err != nil {
 				t.Fatalf("queue add for muted encrypted target: %v", err)
 			}
-			committed, err := st.QueueAddForProfile(ctx, profile, session, "media-archive", queueIntPtr(1), filter, testQueueCertification)
+			committed, err := st.QueueAddForProfile(ctx, profile, session, "", "media-archive", queueIntPtr(1), filter, testQueueCertification)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -130,7 +130,7 @@ func TestQueueAddMatchesQueueReadWithEncryptedCatalogMutes(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertQueueIDs(t, st, filter, profile, []MediaID{"media-archive"})
-			if _, err := st.QueueAddForProfile(ctx, profile, session, muted, nil, filter, testQueueCertification); !errors.Is(err, ErrQueueMediaNotFound) {
+			if _, err := st.QueueAddForProfile(ctx, profile, session, "", muted, nil, filter, testQueueCertification); !errors.Is(err, ErrQueueMediaNotFound) {
 				t.Errorf("queue add for sealed target = %v, want hidden-target refusal", err)
 			}
 			if err := st.UnsealEncryptedLibraryDB(ctx, library, cipher); err != nil {
@@ -162,7 +162,7 @@ func TestQueueAddRefusesInvalidatedRevealSession(t *testing.T) {
 			if _, err := st.Media(ctx, "media-archive", filter); err != nil {
 				t.Fatalf("preflight: %v", err)
 			}
-			if _, err := st.QueueAddForProfile(ctx, profile, sessionID, "media-alpha", nil, filter, testQueueCertification); err != nil {
+			if _, err := st.QueueAddForProfile(ctx, profile, sessionID, "", "media-alpha", nil, filter, testQueueCertification); err != nil {
 				t.Fatal(err)
 			}
 			if err := test.invalidate(ctx, st); err != nil {
@@ -172,7 +172,7 @@ func TestQueueAddRefusesInvalidatedRevealSession(t *testing.T) {
 			if err != nil || !session.Revealed {
 				t.Fatalf("fixture must retain Reveal: session = %#v, err = %v", session, err)
 			}
-			if _, err := st.QueueAddForProfile(ctx, profile, sessionID, "media-archive", queueIntPtr(0), filter, testQueueCertification); !errors.Is(err, test.want) {
+			if _, err := st.QueueAddForProfile(ctx, profile, sessionID, "", "media-archive", queueIntPtr(0), filter, testQueueCertification); !errors.Is(err, test.want) {
 				t.Errorf("queue add after invalidation = %v, want %v", err, test.want)
 			}
 			assertQueueIDs(t, st, filter, profile, []MediaID{"media-alpha"})
@@ -184,7 +184,7 @@ func TestQueueAddWithoutSessionCannotUseReveal(t *testing.T) {
 	st := openSeeded(t)
 	const profile = "profile-default"
 	filter := LibraryFilter{AllowedIDs: []LibraryID{"library-archive"}, Revealed: true}
-	_, err := st.QueueAddForProfile(t.Context(), profile, "", "media-archive", nil, filter, testQueueCertification)
+	_, err := st.QueueAddForProfile(t.Context(), profile, "", "", "media-archive", nil, filter, testQueueCertification)
 	if !errors.Is(err, ErrQueueMediaNotFound) {
 		t.Fatalf("queue add without a Reveal session = %v, want hidden-target refusal", err)
 	}
@@ -209,7 +209,7 @@ func TestQueueAddRefusesAfterRelock(t *testing.T) {
 	}
 
 	for _, position := range []*int{queueIntPtr(0), nil} {
-		_, err := st.QueueAddForProfile(ctx, profile, session, "media-archive", position, preflight, testQueueCertification)
+		_, err := st.QueueAddForProfile(ctx, profile, session, "", "media-archive", position, preflight, testQueueCertification)
 		if !errors.Is(err, ErrQueueMediaNotFound) {
 			t.Fatalf("queue add after relock = %v, want hidden-target refusal", err)
 		}
@@ -233,13 +233,13 @@ func TestQueueAddChecksCurrentCertification(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := st.QueueAddForProfile(ctx, profile, session, ids["low"], nil, preflight, testQueueCertification); err != nil {
+	if _, err := st.QueueAddForProfile(ctx, profile, session, "", ids["low"], nil, preflight, testQueueCertification); err != nil {
 		t.Fatalf("queue eligible media: %v", err)
 	}
 	if err := queueAddFixture(ctx, st, profile, "media-alpha", nil, preflight); err != nil {
 		t.Fatal(err)
 	}
-	_, err := st.QueueAddForProfile(ctx, profile, session, ids["high"], queueIntPtr(0), preflight, testQueueCertification)
+	_, err := st.QueueAddForProfile(ctx, profile, session, "", ids["high"], queueIntPtr(0), preflight, testQueueCertification)
 	if !errors.Is(err, ErrQueueMediaLocked) {
 		t.Fatalf("queue add after ceiling change = %v, want locked-target refusal", err)
 	}
@@ -250,7 +250,7 @@ func TestQueueAddChecksCurrentCertification(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = st.QueueAddForProfile(ctx, profile, session, ids["low"], nil, preflight, testQueueCertification)
+	_, err = st.QueueAddForProfile(ctx, profile, session, "", ids["low"], nil, preflight, testQueueCertification)
 	if !errors.Is(err, ErrQueueMediaLocked) {
 		t.Fatalf("queue add after recertification = %v, want locked-target refusal", err)
 	}

@@ -19,20 +19,25 @@ const ErrQueueMediaNotFound = ValidationError("media not found")
 // ErrQueueMediaLocked reports a visible target blocked by certification.
 var ErrQueueMediaLocked = errors.New("media is locked")
 
-// QueueAddResult is the visible queue prefix and scope at the commit point.
-// PageLength counts the first page. Any remaining items extend the prefix
-// through a visible off-page target.
+// ErrQueueProfileOutsideSchedule reports a switched Profile that cannot use
+// the session at the current time.
+var ErrQueueProfileOutsideSchedule = errors.New("profile access not allowed at this time")
+
+// QueueAddResult is the visible first page and scope at the commit point.
+// Position is the target's zero-based visible position, nil if filtered out.
 type QueueAddResult struct {
-	Items      []SourceItem
-	Filter     LibraryFilter
-	PageLength int
+	Items     []SourceItem
+	Filter    LibraryFilter
+	ProfileID ProfileID
+	Position  *int
 }
 
 // QueueAddForProfile adds or moves an item in the Profile's Play Queue using
-// current store authorization. An empty sessionID is for sessionless scopes,
-// which cannot Reveal. resolveCertification maps current ceilings against the
+// current store authorization. A nonempty expectedProfileID pins the write
+// to that Profile. An empty sessionID is for sessionless scopes, which
+// cannot Reveal. resolveCertification maps current ceilings against the
 // active plugin scales and must not call back into the store.
-func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, sessionID SessionID, mediaID MediaID, position *int, filter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (QueueAddResult, error) {
+func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, sessionID SessionID, expectedProfileID ProfileID, mediaID MediaID, position *int, filter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (QueueAddResult, error) {
 	if resolveCertification == nil {
 		return QueueAddResult{}, errors.New("queue add requires a certification resolver")
 	}
@@ -52,12 +57,21 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 		return QueueAddResult{}, err
 	}
 	defer tx.Rollback()
-	session, err := s.queueAddSessionLocked(ctx, profileID, sessionID)
+	session, err := s.queueAddSessionLocked(ctx, sessionID)
 	if err != nil {
 		return QueueAddResult{}, err
 	}
+	var reboundSession SessionID
 	filter.Revealed = filter.Revealed && session.Revealed
-	filter, err = s.queueAddFilterLocked(ctx, profileID, filter, resolveCertification)
+	if sessionID != "" && session.ProfileID != profileID {
+		profileID = session.ProfileID
+		reboundSession = sessionID
+		filter.Revealed = session.Revealed
+	}
+	if expectedProfileID != "" && expectedProfileID != profileID {
+		return QueueAddResult{}, ErrSessionProfileMismatch
+	}
+	filter, err = s.queueAddFilterLocked(ctx, profileID, reboundSession, filter, resolveCertification)
 	if err != nil {
 		return QueueAddResult{}, err
 	}
@@ -107,9 +121,9 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 	if err != nil {
 		return QueueAddResult{}, err
 	}
-	// Preserve the target's index in the visible order for off-page adds.
+	// Capture placement before truncating the visible order to the first page.
 	targetIndex := slices.IndexFunc(items, func(item SourceItem) bool { return item.ID == mediaID })
-	items = pageOf(items, max(defaultSourceItemsLimit, targetIndex+1), 0)
+	items = slices.Clone(pageOf(items, defaultSourceItemsLimit, 0))
 	if filter.Revealed {
 		restricted, err := s.restrictedLibraryIDsLocked(ctx)
 		if err != nil {
@@ -132,19 +146,20 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 	if err := tx.Commit(); err != nil {
 		return QueueAddResult{}, err
 	}
-	return QueueAddResult{Items: items, Filter: filter, PageLength: min(defaultSourceItemsLimit, len(items))}, nil
+	result := QueueAddResult{Items: items, Filter: filter, ProfileID: profileID}
+	if targetIndex >= 0 {
+		result.Position = &targetIndex
+	}
+	return result, nil
 }
 
-func (s *Store) queueAddSessionLocked(ctx context.Context, profileID ProfileID, sessionID SessionID) (Session, error) {
+func (s *Store) queueAddSessionLocked(ctx context.Context, sessionID SessionID) (Session, error) {
 	if sessionID == "" {
 		return Session{}, nil
 	}
 	session, err := s.sessionSQL(ctx, sessionID)
 	if err != nil {
 		return Session{}, err
-	}
-	if session.ProfileID != profileID {
-		return Session{}, ErrSessionProfileMismatch
 	}
 	if !session.ExpiresAt.IsZero() && !time.Now().Before(session.ExpiresAt) {
 		return Session{}, ErrSessionExpired
@@ -159,7 +174,7 @@ func (s *Store) queueAddSessionLocked(ctx context.Context, profileID ProfileID, 
 	return session, nil
 }
 
-func (s *Store) queueAddFilterLocked(ctx context.Context, profileID ProfileID, filter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (LibraryFilter, error) {
+func (s *Store) queueAddFilterLocked(ctx context.Context, profileID ProfileID, reboundSession SessionID, filter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (LibraryFilter, error) {
 	profile, err := s.profileSQL(ctx, profileID)
 	if err != nil {
 		return LibraryFilter{}, err
@@ -167,7 +182,17 @@ func (s *Store) queueAddFilterLocked(ctx context.Context, profileID ProfileID, f
 	if profile.Disabled {
 		return LibraryFilter{}, ErrProfileDisabled
 	}
-	if !filter.AllLibraries {
+	if reboundSession != "" {
+		// The request was authorized for a different Profile. Derive this
+		// Profile's grants and check its access schedule before using them.
+		if profile.Kind == ProfileManaged {
+			if err := s.checkQueueAddAccessScheduleLocked(ctx, profileID, reboundSession); err != nil {
+				return LibraryFilter{}, err
+			}
+		}
+		filter.AllLibraries = false
+		filter.AllowedIDs = profile.Library
+	} else if !filter.AllLibraries {
 		allowed := make([]LibraryID, 0, len(filter.AllowedIDs))
 		for _, id := range filter.AllowedIDs {
 			if slices.Contains(profile.Library, id) {
@@ -183,6 +208,25 @@ func (s *Store) queueAddFilterLocked(ctx context.Context, profileID ProfileID, f
 		filter.GrantedMediaIDs, err = s.grantedMediaIDsForProfileLocked(ctx, profileID)
 	}
 	return filter, err
+}
+
+func (s *Store) checkQueueAddAccessScheduleLocked(ctx context.Context, profileID ProfileID, sessionID SessionID) error {
+	windows, err := s.profileAccessWindowsLocked(ctx, profileID)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	if AllowedAt(windows, now.Local()) {
+		return nil
+	}
+	granted, err := s.activeExtensionGrantLocked(ctx, profileID, sessionID, now)
+	if err != nil {
+		return err
+	}
+	if !granted {
+		return ErrQueueProfileOutsideSchedule
+	}
+	return nil
 }
 
 // QueueRemove removes one visible Media item from a Profile's play queue and

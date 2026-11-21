@@ -2,13 +2,12 @@ package graph
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/l10n"
@@ -24,12 +23,12 @@ func TestQueueAddReturnsCommittedOrderWhenCardReadFails(t *testing.T) {
 	if got := qaItems(t, h, qaAddAlpha, authorizeRevealed, "queueAdd"); !qaEqualIDs(got, "media-alpha") {
 		t.Fatalf("seed queue = %v", qaIDs(got))
 	}
-	breakQueueCardRead(t, st, dir)
+	storetest.BreakEngagementRead(t, st, dir, pqDefault)
 
-	var got []SourceItem
-	execGraph(t, h, authorizeRevealed,
+	resp := postGraphJSON(t, h, authorizeRevealed,
 		`mutation Add($mediaID: String!) { queueAdd(mediaID: $mediaID, position: 0) { id title restricted } }`,
-		map[string]any{"mediaID": "media-archive"}, "queueAdd", &got)
+		map[string]any{"mediaID": "media-archive"})
+	got := committedQueuePage(t, resp, "queueAdd", "media-archive", 0)
 	if !qaEqualIDs(got, "media-archive", "media-alpha") || got[0].Title == "" || !got[0].Restricted {
 		t.Fatalf("queueAdd fallback = %#v", got)
 	}
@@ -46,16 +45,15 @@ func TestQueueAddBoundsCardLookupsAndPreservesOffPageTail(t *testing.T) {
 	ctx := t.Context()
 	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local", "library-archive"}, Revealed: true}
 	const pageSize = 50
-	const queued = pageSize + 3
+	const queued = 10_000
 	locator := &countingArtworkLocator{
 		fakeArtworkLocator: fakeArtworkLocator{media: map[store.MediaID]map[string]bool{}},
 		calls:              map[string]int{},
 	}
 	h.SetArtwork(locator)
-	want := make([]string, 0, queued+2)
-	var target store.MediaID
+	ids := make([]store.MediaID, 0, queued+1)
 	for i := range queued + 1 {
-		key := fmt.Sprintf("%02d-queue-tail", i)
+		key := fmt.Sprintf("%05d-queue-tail", i)
 		media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
 			LibraryID: "library-local", Path: "/queue/" + key + ".flac", Title: key, ContentFingerprint: key,
 			Container: "flac", Codec: "flac", Class: store.MediaClassAudio,
@@ -64,75 +62,68 @@ func TestQueueAddBoundsCardLookupsAndPreservesOffPageTail(t *testing.T) {
 			t.Fatal(err)
 		}
 		locator.media[media.ID] = map[string]bool{artwork.SlotPoster: true}
-		want = append(want, string(media.ID))
-		if i == queued {
-			target = media.ID
-			break
-		}
-		if _, err := st.QueueAddForProfile(ctx, pqDefault, "session-revealed", media.ID, nil, filter, h.auth.CertificationConstraints); err != nil {
-			t.Fatal(err)
-		}
+		ids = append(ids, media.ID)
 	}
+	if err := st.QueueReplaceWithStation(ctx, pqDefault, ids[:queued], false, filter); err != nil {
+		t.Fatalf("seed queue: %v", err)
+	}
+	want := make([]string, pageSize)
+	for i, id := range ids[:pageSize] {
+		want[i] = string(id)
+	}
+	target := string(ids[queued])
 
-	const add = `mutation Add($mediaID: String!) { queueAdd(mediaID: $mediaID) { id title restricted mediaClass artworkSlots } }`
-	var got []SourceItem
-	execGraph(t, h, authorizeRevealed, add, map[string]any{"mediaID": string(target)}, "queueAdd", &got)
-	if !qaEqualIDs(got, want...) || got[queued].ID != string(target) {
-		t.Fatalf("queueAdd IDs = %v, want %v with target at index %d", qaIDs(got), want, queued)
+	const add = `mutation Add($mediaID: String!) { tail: queueAdd(mediaID: $mediaID) { id title mediaClass artworkSlots } }`
+	resp := postGraphJSON(t, h, authorizeRevealed, add, map[string]any{"mediaID": target})
+	got := committedQueuePage(t, resp, "tail", target, queued)
+	if !qaEqualIDs(got, want...) {
+		t.Fatalf("queueAdd returned %d rows, want the original %d-row first page", len(got), pageSize)
 	}
 	for i, item := range got {
-		enriched := i < pageSize || i == queued
-		if item.Title == "" || (item.MediaClass == string(store.MediaClassAudio)) != enriched ||
-			(item.ArtworkSlots[artwork.SlotPoster] != "") != enriched {
-			t.Errorf("queueAdd row %d = %#v, want title and enriched=%t", i, item, enriched)
+		if item.Title == "" || item.MediaClass != string(store.MediaClassAudio) || item.ArtworkSlots[artwork.SlotPoster] == "" {
+			t.Errorf("queueAdd row %d = %#v, want enriched card", i, item)
 		}
 	}
 	for _, slot := range artwork.KnownSlots {
-		if calls := locator.calls[slot]; calls != pageSize+1 {
-			t.Errorf("artwork lookup count for %s = %d, want %d", slot, calls, pageSize+1)
+		if calls := locator.calls[slot]; calls != pageSize {
+			t.Errorf("artwork lookup count for %s = %d, want %d", slot, calls, pageSize)
 		}
 	}
 
-	breakQueueCardRead(t, st, dir)
+	storetest.BreakEngagementRead(t, st, dir, pqDefault)
 	clear(locator.calls)
 
-	execGraph(t, h, authorizeRevealed, add, map[string]any{"mediaID": "media-archive"}, "queueAdd", &got)
-	want = append(want, "media-archive")
-	if !qaEqualIDs(got, want...) || got[queued+1].Title == "" || !got[queued+1].Restricted {
-		t.Fatalf("queueAdd tail fallback IDs = %v, want %v with the restricted tail card", qaIDs(got), want)
+	resp = postGraphJSON(t, h, authorizeRevealed, add, map[string]any{"mediaID": "media-archive"})
+	got = committedQueuePage(t, resp, "tail", "media-archive", queued+1)
+	if !qaEqualIDs(got, want...) || got[0].Title == "" {
+		t.Fatalf("queueAdd fallback returned %d rows, want the original first page with basic fields", len(got))
 	}
 	if len(locator.calls) != 0 {
 		t.Errorf("queueAdd fallback made artwork lookups: %v", locator.calls)
 	}
-	stored, err := st.SourceItems(ctx, filter, store.SourceQuery{Kind: "queue", ProfileID: pqDefault, Limit: len(want)})
+	stored, err := st.SourceItems(ctx, filter, store.SourceQuery{Kind: "queue", ProfileID: pqDefault, Limit: 3, Offset: queued})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.EqualFunc(stored, want, func(item store.SourceItem, id string) bool { return string(item.ID) == id }) {
-		t.Fatalf("stored queue = %#v, want %v", stored, want)
+	if len(stored) != 2 || stored[0].ID != store.MediaID(target) || stored[1].ID != "media-archive" {
+		t.Fatalf("stored queue tail = %#v, want [%s media-archive]", stored, target)
 	}
 }
 
-func breakQueueCardRead(t *testing.T, st *store.Store, dir string) {
+func committedQueuePage(t *testing.T, resp graphTestResponse, key, target string, position int) []SourceItem {
 	t.Helper()
-	items := []store.SourceItem{{ID: "media-alpha", Kind: "media"}}
-	if err := st.AnnotateEngagement(t.Context(), pqDefault, store.LibraryFilter{}, items, nil); err != nil {
-		t.Fatalf("verify engagement fixture: %v", err)
+	if len(resp.Errors) != 0 {
+		t.Fatalf("queueAdd errors = %+v", resp.Errors)
 	}
-
-	// Break only the engagement read used to enrich the queue response.
-	// The queue writer and independent verification use the store's queue API.
-	db, err := sql.Open("sqlite", filepath.Join(dir, "db", "events.db"))
-	if err != nil {
+	want := queueAddPlacement{MediaID: target, Position: position}
+	if resp.Extensions == nil || resp.Extensions.QueueAdd[key] != want {
+		t.Fatalf("queueAdd extensions = %#v, want %s: %+v", resp.Extensions, key, want)
+	}
+	var items []SourceItem
+	if err := json.Unmarshal(resp.Data[key], &items); err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	if _, err := db.ExecContext(t.Context(), "ALTER TABLE playback_progress RENAME TO unavailable_playback_progress"); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.AnnotateEngagement(t.Context(), pqDefault, store.LibraryFilter{}, items, nil); err == nil || !strings.Contains(err.Error(), "no such table: playback_progress") {
-		t.Fatalf("fault did not reach the engagement read: %v", err)
-	}
+	return items
 }
 
 func TestQueueAddReturnsLocalizedForbiddenForLockedMedia(t *testing.T) {
@@ -187,7 +178,7 @@ func TestQueueAddRefusesInvalidatedRevealScope(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, expected := range []any{nil, string(scope.ProfileID)} {
-				_, err := h.queueOps(ctx, scope, map[string]bool{"queueadd": true}, request{Variables: map[string]any{
+				_, _, err := h.queueAdd(ctx, scope, request{Variables: map[string]any{
 					"mediaID": "media-archive", "expectedProfileID": expected,
 				}})
 				if got := fieldGraphError(ctx, "queueAdd", err); got.Extensions.Code != ErrorCodeUnauthenticated || got.Message != "invalid session" {
@@ -198,5 +189,99 @@ func TestQueueAddRefusesInvalidatedRevealScope(t *testing.T) {
 				t.Fatalf("invalidated session changed queue to %v", got)
 			}
 		})
+	}
+}
+
+func TestQueueAddResolvesProfileAfterSwitch(t *testing.T) {
+	// feature:play-queue
+	for _, test := range []struct {
+		name     string
+		expected map[string]any
+	}{
+		{name: "omitted"},
+		{name: "null", expected: map[string]any{"expectedProfileID": nil}},
+		{name: "explicit", expected: map[string]any{"expectedProfileID": pqDefault}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			st := storetest.Open(t)
+			h := newTestHandlerWithStore(st)
+			ctx := t.Context()
+			scope, err := h.auth.Scope(ctx, "session-default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetSessionProfile(ctx, scope.SessionID, pqManaged); err != nil {
+				t.Fatal(err)
+			}
+			variables := map[string]any{"mediaID": "media-alpha"}
+			for arg, value := range test.expected {
+				variables[arg] = value
+			}
+			items, placement, err := h.queueAdd(ctx, scope, request{Variables: variables})
+			if test.name == "explicit" {
+				pqWantMismatch(t, "queueAdd", []graphError{fieldGraphError(ctx, "queueAdd", err)})
+				if got := pqQueue(t, st, pqManaged); len(got) != 0 {
+					t.Fatalf("explicit precondition changed the new Profile's queue: %v", got)
+				}
+			} else {
+				if err != nil || !qaEqualIDs(items, "media-alpha") ||
+					placement == nil || *placement != (queueAddPlacement{MediaID: "media-alpha", Position: 0}) {
+					t.Fatalf("queueAdd after switch = %v, %+v, %v", qaIDs(items), placement, err)
+				}
+				if got := pqQueue(t, st, pqManaged); !slices.Equal(got, []string{"media-alpha"}) {
+					t.Fatalf("new Profile's queue = %v, want [media-alpha]", got)
+				}
+			}
+			if got := pqQueue(t, st, pqDefault); len(got) != 0 {
+				t.Fatalf("old Profile's queue changed: %v", got)
+			}
+		})
+	}
+}
+
+func TestQueueAddUsesSwitchedProfilesEligibility(t *testing.T) {
+	// feature:play-queue
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	ctx := t.Context()
+	scope, err := h.auth.Scope(ctx, "session-revealed")
+	if err != nil || !scope.Revealed {
+		t.Fatalf("resolve revealed scope: %v (revealed = %v)", err, scope.Revealed)
+	}
+	library, err := st.CreateLibrary(ctx, "Managed library", false, "", pqManaged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: "/managed/item.mkv", Title: "Managed item", ContentFingerprint: "queue-managed",
+		Container: "matroska", Codec: "h264", Class: store.MediaClassVideo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSessionProfile(ctx, scope.SessionID, pqManaged); err != nil {
+		t.Fatal(err)
+	}
+
+	add := func(id store.MediaID) ([]SourceItem, error) {
+		items, _, err := h.queueAdd(ctx, scope, request{Variables: map[string]any{"mediaID": string(id)}})
+		return items, err
+	}
+	if _, err := add("media-archive"); err == nil || fieldGraphError(ctx, "queueAdd", err).Extensions.Code != ErrorCodeNotFound {
+		t.Fatalf("queueAdd retained the previous Profile's Reveal: %v", err)
+	}
+	if items, err := add(media.ID); err != nil || !qaEqualIDs(items, string(media.ID)) {
+		t.Fatalf("queueAdd with the new Profile's library grant = %v, %v", qaIDs(items), err)
+	}
+	if err := st.SetProfileAccessWindows(ctx, pqManaged, []store.ProfileAccessWindow{
+		{Weekday: (int(time.Now().Weekday()) + 3) % 7, StartMinute: 0, EndMinute: 1440},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := add("media-alpha"); err == nil || fieldGraphError(ctx, "queueAdd", err).Extensions.Code != ErrorCodeUnauthenticated {
+		t.Fatalf("queueAdd outside the new Profile's schedule = %v, want UNAUTHENTICATED", err)
+	}
+	if got := pqQueue(t, st, pqManaged); !slices.Equal(got, []string{string(media.ID)}) {
+		t.Fatalf("new Profile's queue = %v, want [%s]", got, media.ID)
 	}
 }
