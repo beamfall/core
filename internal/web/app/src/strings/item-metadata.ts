@@ -41,6 +41,20 @@ export const itemMetadataStrings = {
     itemMetadataRefreshFailed: "Could not refresh this item.",
     itemMetadataRefreshNeedsMatch: "Identify this item with Fix Match before refreshing it.",
     itemMetadataEditLink: "Edit",
+    itemMetadataRevert: "Revert to provider",
+    itemMetadataRevertField: "Revert {field} to provider",
+    itemMetadataReverted: "Reverted. The provider's value is back.",
+    itemMetadataRevertedUnlocked: "Unlocked. The provider's value returns on the next refresh.",
+    itemMetadataRevertFailed: "Could not revert this field.",
+    itemMetadataArtworkUpload: "Upload",
+    itemMetadataArtworkUploadSlot: "Upload {slot}",
+    itemMetadataArtworkUploaded: "Uploaded. This slot is now locked.",
+    itemMetadataArtworkUploadFailed: "Could not upload this image. Use a JPEG, PNG or WebP file.",
+    itemMetadataArtworkCurrent: "Current",
+    itemMetadataArtworkCurrentAlt: "Current {slot}",
+    itemMetadataEditDetails: "Edit details",
+    itemMetadataDialogTitle: "Edit {title}",
+    itemMetadataDialogClose: "Done",
   },
   fr: {
     itemMetadataHeading: "Modifier l’élément",
@@ -84,6 +98,22 @@ export const itemMetadataStrings = {
     itemMetadataRefreshNeedsMatch:
       "Identifiez cet élément avec Corriger l’association avant de l’actualiser.",
     itemMetadataEditLink: "Modifier",
+    itemMetadataRevert: "Revenir au fournisseur",
+    itemMetadataRevertField: "Rétablir {field} depuis le fournisseur",
+    itemMetadataReverted: "Rétabli. La valeur du fournisseur est revenue.",
+    itemMetadataRevertedUnlocked:
+      "Déverrouillé. La valeur du fournisseur reviendra à la prochaine actualisation.",
+    itemMetadataRevertFailed: "Impossible de rétablir ce champ.",
+    itemMetadataArtworkUpload: "Importer",
+    itemMetadataArtworkUploadSlot: "Importer {slot}",
+    itemMetadataArtworkUploaded: "Importée. Cet emplacement est maintenant verrouillé.",
+    itemMetadataArtworkUploadFailed:
+      "Impossible d’importer cette image. Utilisez un fichier JPEG, PNG ou WebP.",
+    itemMetadataArtworkCurrent: "Actuelle",
+    itemMetadataArtworkCurrentAlt: "{slot} actuelle",
+    itemMetadataEditDetails: "Modifier les détails",
+    itemMetadataDialogTitle: "Modifier {title}",
+    itemMetadataDialogClose: "Terminé",
   },
   de: {
     itemMetadataHeading: "Element bearbeiten",
@@ -128,6 +158,22 @@ export const itemMetadataStrings = {
     itemMetadataRefreshNeedsMatch:
       "Identifiziere dieses Element mit „Zuordnung korrigieren“, bevor du es aktualisierst.",
     itemMetadataEditLink: "Bearbeiten",
+    itemMetadataRevert: "Auf Anbieter zurücksetzen",
+    itemMetadataRevertField: "{field} auf Anbieter zurücksetzen",
+    itemMetadataReverted: "Zurückgesetzt. Der Wert des Anbieters ist wieder da.",
+    itemMetadataRevertedUnlocked:
+      "Entsperrt. Der Wert des Anbieters kehrt bei der nächsten Aktualisierung zurück.",
+    itemMetadataRevertFailed: "Dieses Feld konnte nicht zurückgesetzt werden.",
+    itemMetadataArtworkUpload: "Hochladen",
+    itemMetadataArtworkUploadSlot: "{slot} hochladen",
+    itemMetadataArtworkUploaded: "Hochgeladen. Dieser Platz ist jetzt gesperrt.",
+    itemMetadataArtworkUploadFailed:
+      "Das Bild konnte nicht hochgeladen werden. Verwende eine JPEG-, PNG- oder WebP-Datei.",
+    itemMetadataArtworkCurrent: "Aktuell",
+    itemMetadataArtworkCurrentAlt: "Aktuelles Bild: {slot}",
+    itemMetadataEditDetails: "Details bearbeiten",
+    itemMetadataDialogTitle: "{title} bearbeiten",
+    itemMetadataDialogClose: "Fertig",
   },
   es: {
     itemMetadataHeading: "Editar elemento",
@@ -171,6 +217,22 @@ export const itemMetadataStrings = {
     itemMetadataRefreshNeedsMatch:
       "Identifica este elemento con Corregir coincidencia antes de actualizarlo.",
     itemMetadataEditLink: "Editar",
+    itemMetadataRevert: "Volver al proveedor",
+    itemMetadataRevertField: "Restablecer {field} desde el proveedor",
+    itemMetadataReverted: "Restablecido. El valor del proveedor ha vuelto.",
+    itemMetadataRevertedUnlocked:
+      "Desbloqueado. El valor del proveedor volverá en la próxima actualización.",
+    itemMetadataRevertFailed: "No se pudo restablecer este campo.",
+    itemMetadataArtworkUpload: "Subir",
+    itemMetadataArtworkUploadSlot: "Subir {slot}",
+    itemMetadataArtworkUploaded: "Subida. Este espacio ya está bloqueado.",
+    itemMetadataArtworkUploadFailed:
+      "No se pudo subir esta imagen. Usa un archivo JPEG, PNG o WebP.",
+    itemMetadataArtworkCurrent: "Actual",
+    itemMetadataArtworkCurrentAlt: "{slot} actual",
+    itemMetadataEditDetails: "Editar detalles",
+    itemMetadataDialogTitle: "Editar {title}",
+    itemMetadataDialogClose: "Listo",
   },
   pt: {
     itemMetadataHeading: "Editar item",
@@ -214,5 +276,21 @@ export const itemMetadataStrings = {
     itemMetadataRefreshNeedsMatch:
       "Identifique este item com Corrigir correspondência antes de atualizá-lo.",
     itemMetadataEditLink: "Editar",
+    itemMetadataRevert: "Voltar ao fornecedor",
+    itemMetadataRevertField: "Restaurar {field} a partir do fornecedor",
+    itemMetadataReverted: "Restaurado. O valor do fornecedor voltou.",
+    itemMetadataRevertedUnlocked:
+      "Desbloqueado. O valor do fornecedor volta na próxima atualização.",
+    itemMetadataRevertFailed: "Não foi possível restaurar este campo.",
+    itemMetadataArtworkUpload: "Enviar",
+    itemMetadataArtworkUploadSlot: "Enviar {slot}",
+    itemMetadataArtworkUploaded: "Enviada. Este espaço está agora bloqueado.",
+    itemMetadataArtworkUploadFailed:
+      "Não foi possível enviar esta imagem. Use um ficheiro JPEG, PNG ou WebP.",
+    itemMetadataArtworkCurrent: "Atual",
+    itemMetadataArtworkCurrentAlt: "{slot} atual",
+    itemMetadataEditDetails: "Editar detalhes",
+    itemMetadataDialogTitle: "Editar {title}",
+    itemMetadataDialogClose: "Concluído",
   },
 } as const;

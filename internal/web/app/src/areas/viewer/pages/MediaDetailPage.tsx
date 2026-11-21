@@ -614,7 +614,13 @@ export function MediaDetailPage() {
                     <MediaDetailMoreMenu
                       mediaID={mediaId}
                       title={title}
+                      artwork={{
+                        poster: artworkSlotURL(art as SourceItem, "poster"),
+                        backdrop,
+                        thumb: artworkSlotURL(art as SourceItem, "thumb"),
+                      }}
                       onSubtitleAdded={() => setTracksRefresh((n) => n + 1)}
+                      onEdited={() => setAttempt((n) => n + 1)}
                     />
                   )}
                 </div>

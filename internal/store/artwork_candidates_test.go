@@ -124,6 +124,9 @@ func TestApplyArtworkCandidateRetryConverges(t *testing.T) {
 	if imports != 1 || rollbacks != 0 {
 		t.Fatalf("imports=%d rollbacks=%d, want one import and no rollback", imports, rollbacks)
 	}
+	if !posterLocked(t, st) {
+		t.Fatal("uploaded poster slot is not locked")
+	}
 	candidates, err := st.ArtworkCandidates(ctx, "media-alpha", "poster", LibraryFilter{AllLibraries: true})
 	if err != nil {
 		t.Fatal(err)
@@ -300,6 +303,55 @@ func TestApplyArtworkCandidateActivityFailureRestoresPriorState(t *testing.T) {
 	if len(candidates) != 1 || candidates[0].SourceURL != priorURL || !candidates[0].Applied {
 		t.Fatalf("candidates after activity failure = %#v, want only prior applied", candidates)
 	}
+	if posterLocked(t, st) {
+		t.Fatal("failed apply left the poster slot locked")
+	}
+}
+
+// TestApplyArtworkCandidateRelocksAfterRevert covers a re-upload of the same
+// image after "revert to provider" cleared the lock: the apply is a no-op on
+// files but the slot is a manual pick again.
+func TestApplyArtworkCandidateRelocksAfterRevert(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	apply := ArtworkCandidateApply{
+		MediaID:   "media-alpha",
+		Slot:      "poster",
+		SourceURL: "beamfall-upload://sha256/relock",
+		Activity:  ActivityEntry{OccurredAt: time.Unix(100, 0).UTC(), LibraryID: "library-local"},
+		ApplyArtwork: func() (func() error, error) {
+			return func() error { return nil }, nil
+		},
+	}
+	if err := st.ApplyArtworkCandidate(ctx, apply); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetMediaFieldLock(ctx, "media-alpha", ArtworkLockField("poster"), false, LibraryFilter{AllLibraries: true}); err != nil {
+		t.Fatal(err)
+	}
+	if posterLocked(t, st) {
+		t.Fatal("unlock did not clear the poster lock")
+	}
+	if err := st.ApplyArtworkCandidate(ctx, apply); err != nil {
+		t.Fatal(err)
+	}
+	if !posterLocked(t, st) {
+		t.Fatal("re-upload did not lock the poster slot again")
+	}
+}
+
+func posterLocked(t *testing.T, st *Store) bool {
+	t.Helper()
+	locks, err := st.MediaFieldLocks(context.Background(), "media-alpha", LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lock := range locks {
+		if lock.Field == ArtworkLockField("poster") {
+			return lock.Locked
+		}
+	}
+	return false
 }
 
 func TestApplyArtworkCandidateCloseDuringImportRollsBack(t *testing.T) {

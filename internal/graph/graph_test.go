@@ -4409,6 +4409,18 @@ type fakeArtworkImporter struct {
 	}
 }
 
+// fakeManualArtworkImporter also offers the manual-pick import, which a pin
+// or an upload must prefer (ADR-0072).
+type fakeManualArtworkImporter struct {
+	fakeArtworkImporter
+	manual int
+}
+
+func (f *fakeManualArtworkImporter) ImportManualArtwork(ctx context.Context, mediaID store.MediaID, slot string, data []byte) error {
+	f.manual++
+	return f.ImportArtwork(ctx, mediaID, slot, data)
+}
+
 func (f *fakeArtworkImporter) ImportArtwork(_ context.Context, mediaID store.MediaID, slot string, data []byte) error {
 	f.imports = append(f.imports, struct {
 		mediaID store.MediaID
@@ -4502,7 +4514,7 @@ func TestPinArtworkCandidateFetchesImportsMarksAndAudits(t *testing.T) {
 		t.Fatal(err)
 	}
 	fetcher := &fakeArtworkCandidateFetcher{data: []byte("new poster bytes")}
-	importer := &fakeArtworkImporter{}
+	importer := &fakeManualArtworkImporter{}
 	handler := newTestHandlerWithStore(st)
 	handler.SetArtworkCandidateServices(fetcher, importer)
 	candidateID := store.ArtworkCandidateID("media-alpha", artwork.SlotPoster, bURL)
@@ -4518,6 +4530,22 @@ func TestPinArtworkCandidateFetchesImportsMarksAndAudits(t *testing.T) {
 	if len(importer.imports) != 1 || importer.imports[0].mediaID != "media-alpha" ||
 		importer.imports[0].slot != artwork.SlotPoster || importer.imports[0].data != "new poster bytes" {
 		t.Fatalf("imports = %#v", importer.imports)
+	}
+	if importer.manual != 1 {
+		t.Fatalf("manual imports = %d, want the pin imported as a manual pick", importer.manual)
+	}
+	locks, err := st.MediaFieldLocks(ctx, "media-alpha", store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	posterLocked := false
+	for _, lock := range locks {
+		if lock.Field == store.ArtworkLockField(artwork.SlotPoster) {
+			posterLocked = lock.Locked
+		}
+	}
+	if !posterLocked {
+		t.Fatalf("locks = %#v, want the pinned poster slot locked", locks)
 	}
 	candidates, err := st.ArtworkCandidates(ctx, "media-alpha", artwork.SlotPoster, store.LibraryFilter{AllLibraries: true})
 	if err != nil {
