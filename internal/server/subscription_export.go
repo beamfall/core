@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/beamfall/core/internal/store"
@@ -22,7 +23,7 @@ const (
 	subscriptionOPMLEnd         = "</body></opml>\n"
 )
 
-var errSubscriptionOPMLLimit = errors.New("subscription OPML byte limit reached")
+var errSubscriptionOPMLLimit = errors.New("subscription OPML exceeds import limits")
 
 type subscriptionExportStore interface {
 	Libraries(context.Context, store.LibraryFilter) ([]store.Library, error)
@@ -33,7 +34,7 @@ type subscriptionOutline struct {
 	XMLName xml.Name `xml:"outline"`
 	Type    string   `xml:"type,attr"`
 	Text    string   `xml:"text,attr"`
-	Title   string   `xml:"title,attr"`
+	Title   string   `xml:"title,attr,omitempty"`
 	XMLURL  string   `xml:"xmlUrl,attr"`
 }
 
@@ -64,7 +65,8 @@ func (s *Server) exportSubscriptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := s.subscriptionOPML(ctx, scope.LibraryFilter())
+	includePrivate := r.URL.Query().Get("includePrivate") == "true"
+	body, err := s.subscriptionOPML(ctx, scope.LibraryFilter(), includePrivate, r.Host)
 	if err != nil {
 		writeError(w, r, http.StatusInternalServerError, "could not export subscriptions")
 		return
@@ -75,64 +77,67 @@ func (s *Server) exportSubscriptions(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-func (s *Server) subscriptionOPML(ctx context.Context, filter store.LibraryFilter) ([]byte, error) {
+func (s *Server) subscriptionOPML(ctx context.Context, filter store.LibraryFilter, includePrivate bool, requestHost string) ([]byte, error) {
 	libraries, err := s.subscriptionExport.Libraries(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 	if s.subscriptionSealed != nil {
-		for _, lib := range libraries {
-			if s.subscriptionSealed(lib.ID) {
-				filter.SealedIDs = append(filter.SealedIDs, lib.ID)
-			}
-		}
-		if len(filter.SealedIDs) != 0 {
-			libraries, err = s.subscriptionExport.Libraries(ctx, filter)
-			if err != nil {
-				return nil, err
-			}
-		}
+		// A fresh query could admit a restored Library whose seal was never checked.
+		libraries = slices.DeleteFunc(libraries, func(lib store.Library) bool {
+			return s.subscriptionSealed(lib.ID)
+		})
 	}
+	requestHostname := (&url.URL{Host: requestHost}).Hostname()
 
 	var body bytes.Buffer
 	body.WriteString(subscriptionOPMLStart)
 	encoder := xml.NewEncoder(subscriptionOPMLWriter{body: &body})
 	count := 0
-export:
 	for _, library := range libraries {
 		subscriptions, err := s.subscriptionExport.Subscriptions(ctx, library.ID)
 		if err != nil {
 			return nil, err
 		}
 		for _, sub := range subscriptions {
-			if sub.AuthRef != "" || !exportableSubscriptionURL(sub.FeedURL) {
+			private := sub.AuthRef != ""
+			if (private && !includePrivate) || !s.exportableSubscriptionURL(sub.FeedURL, requestHostname) {
 				continue
 			}
-			start := body.Len()
-			err := encoder.Encode(subscriptionOutline{
-				Type: "rss", Text: sub.Title, Title: sub.Title, XMLURL: sub.FeedURL,
-			})
-			if errors.Is(err, errSubscriptionOPMLLimit) {
-				// A partially encoded outline cannot be included in the document.
-				body.Truncate(start)
-				break export
+			if count == maxSubscriptionOPMLOutlines {
+				return nil, errSubscriptionOPMLLimit
 			}
-			if err != nil {
+			outline := subscriptionOutline{
+				Type: "rss", Text: sub.Title, Title: sub.Title, XMLURL: sub.FeedURL,
+			}
+			if private {
+				outline.Text = sub.FeedURL
+				outline.Title = ""
+			}
+			if err := encoder.Encode(outline); err != nil {
 				return nil, err
 			}
 			count++
-			if count == maxSubscriptionOPMLOutlines || body.Len()+len(subscriptionOPMLEnd) == maxSubscriptionOPMLBytes {
-				break export
-			}
 		}
 	}
 	body.WriteString(subscriptionOPMLEnd)
 	return body.Bytes(), nil
 }
 
-// Feed URL query parameters can carry credentials under arbitrary names.
-func exportableSubscriptionURL(raw string) bool {
+// Credentials can look like ordinary path segments. Require explicit approval
+// of the entire URL and exclude URL components commonly used for credentials.
+func (s *Server) exportableSubscriptionURL(raw, requestHostname string) bool {
+	if _, approved := s.subscriptionURLs[raw]; !approved {
+		return false
+	}
 	u, err := url.Parse(raw)
-	return err == nil && u.Hostname() != "" && (u.Scheme == "http" || u.Scheme == "https") &&
-		u.User == nil && u.RawQuery == "" && !u.ForceQuery && !strings.Contains(raw, "#")
+	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") ||
+		u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(raw, "#") {
+		return false
+	}
+	hostname := strings.TrimSuffix(u.Hostname(), ".")
+	if strings.EqualFold(hostname, strings.TrimSuffix(requestHostname, ".")) {
+		return false
+	}
+	return s.baseURL == nil || !strings.EqualFold(hostname, strings.TrimSuffix(s.baseURL.Hostname(), "."))
 }
