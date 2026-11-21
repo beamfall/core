@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { DECLARED_LOCALE_TAGS, LOCALE_DECLARATION } from "./l10n/locales";
 import {
@@ -136,6 +138,10 @@ const SHIPPED = new Set(
 // merged with the CORE-2884 entity enrichment job labels.
 // merged with the CORE-2927 Mixed type removal and the CORE-2917 tag tidy copy.
 // merged with the CORE-2910 Unmatched fix flows copy.
+//
+// After a catalog change (or a merge conflict in these constants: take either side), add a
+// provenance line above and run `npm run strings:rerecord` (CORE-2455). It rewrites only the
+// BASE_* constants below from the current catalogs, then runs this file.
 const BASE_SERIALIZED_LENGTH = 940_167;
 const BASE_REGISTRY_SHA256 = "c19d3dbaef0d1c81ab3fe5181739ce71dcc95333579912ef885a29c8b6c8744c";
 const BASE_KEY_ORDER_SHA256 = "d2e449111b43ac5f9109f7b4f58c763d96fc91879919789c12ccc7bedfa85f0c";
@@ -251,6 +257,100 @@ function placeholderInventory(table: StringTable): Record<string, string[]> {
   }
   return inventory;
 }
+
+interface Baselines {
+  serializedLength: number;
+  registrySha256: string;
+  keyOrderSha256: string;
+  placeholderSha256: string;
+  catalogs: Record<Locale, { partialCount: number; partialSha256: string; resolvedSha256: string }>;
+}
+
+/** The ratchet values the current catalogs produce, as the BASE_* constants record them. */
+function currentBaselines(): Baselines {
+  const serialized = JSON.stringify(STRINGS);
+  return {
+    serializedLength: serialized.length,
+    registrySha256: sha256(serialized),
+    keyOrderSha256: sha256(JSON.stringify(Object.keys(en))),
+    placeholderSha256: sha256(JSON.stringify(placeholderInventory(STRINGS.en))),
+    catalogs: Object.fromEntries(
+      LOCALES.map((locale) => [
+        locale,
+        {
+          partialCount: Object.keys(PARTIAL_CATALOGS[locale]).length,
+          partialSha256: sha256(sortedSerialization(PARTIAL_CATALOGS[locale])),
+          resolvedSha256: sha256(JSON.stringify(STRINGS[locale])),
+        },
+      ]),
+    ) as Baselines["catalogs"],
+  };
+}
+
+function digitGroups(value: number): string {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, "_");
+}
+
+/** This file's source with its BASE_* constants rewritten to `values`; nothing else changes. */
+function rerecordBaselines(source: string, values: Baselines): string {
+  const catalogs = LOCALES.map((locale) => {
+    const entry = values.catalogs[locale];
+    return [
+      `  ${locale}: {`,
+      `    partialCount: ${digitGroups(entry.partialCount)},`,
+      `    partialSha256: "${entry.partialSha256}",`,
+      `    resolvedSha256: "${entry.resolvedSha256}",`,
+      "  },",
+    ].join("\n");
+  }).join("\n");
+  const replacements: [RegExp, string][] = [
+    [
+      /^const BASE_SERIALIZED_LENGTH = [\d_]+;$/m,
+      `const BASE_SERIALIZED_LENGTH = ${digitGroups(values.serializedLength)};`,
+    ],
+    [
+      /^const BASE_REGISTRY_SHA256 = "[0-9a-f]+";$/m,
+      `const BASE_REGISTRY_SHA256 = "${values.registrySha256}";`,
+    ],
+    [
+      /^const BASE_KEY_ORDER_SHA256 = "[0-9a-f]+";$/m,
+      `const BASE_KEY_ORDER_SHA256 = "${values.keyOrderSha256}";`,
+    ],
+    [
+      /^const BASE_PLACEHOLDER_SHA256 = "[0-9a-f]+";$/m,
+      `const BASE_PLACEHOLDER_SHA256 = "${values.placeholderSha256}";`,
+    ],
+    [
+      /^const BASE_CATALOGS = \{\n[\s\S]*?\n\} as const satisfies/m,
+      `const BASE_CATALOGS = {\n${catalogs}\n} as const satisfies`,
+    ],
+  ];
+  let next = source;
+  for (const [pattern, replacement] of replacements) {
+    if (!pattern.test(next)) throw new Error(`strings.test.ts: no match for ${pattern}`);
+    next = next.replace(pattern, () => replacement);
+  }
+  return next;
+}
+
+describe("strings baseline re-record (CORE-2455)", () => {
+  // Runs only under `npm run strings:rerecord`; a plain test run never rewrites anything.
+  it.runIf(process.env.STRINGS_RERECORD === "1")("rerecords the BASE_* constants", () => {
+    const path = fileURLToPath(import.meta.url);
+    writeFileSync(path, rerecordBaselines(readFileSync(path, "utf8"), currentBaselines()));
+  });
+
+  it("rewrites only the constants, and the recorded file matches the current catalogs", () => {
+    const source = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const values = currentBaselines();
+    const rewritten = rerecordBaselines(source, values);
+    // The committed file already holds the current values, so a re-record is a no-op.
+    expect(rewritten).toBe(source);
+    const changed = rerecordBaselines(source, { ...values, registrySha256: "0".repeat(64) });
+    expect(changed).not.toBe(source);
+    expect(changed.replace("0".repeat(64), values.registrySha256)).toBe(source);
+  });
+});
 
 describe("localized string assembly", () => {
   it("matches the pre-split JSON serialization exactly", () => {
