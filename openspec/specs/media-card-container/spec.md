@@ -55,3 +55,15 @@ before the items it holds, then the items' sequence and index.
 - **WHEN** the viewer searches a container's exact title and the result holds that container and
   three of its items
 - **THEN** the container row comes first and its items follow in sequence, then index, order
+
+### Requirement: Audio cards are headed by their own title
+
+Outside the container's own page, a card for an audio Media item held by a container SHALL be
+headed by the item's own title and lead with the container's title; a subtitle such as a track
+number SHALL NOT replace the container. Video items held by a container SHALL keep the container's
+title as the heading.
+
+#### Scenario: A track on Home
+
+- **WHEN** a track "Shallows" on album "Low Tide" by "Nightglass" appears on Home
+- **THEN** its card is headed "Shallows" with the line "Low Tide · Nightglass"
