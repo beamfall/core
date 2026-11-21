@@ -560,6 +560,223 @@ vec3 tonemap(vec3 x) {
     return pow(clamp(x, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
 }
 
+// SPDX-License-Identifier: AGPL-3.0-only
+// Shared helpers for the Oscillux originals, joined after library.glsl: the
+// beat-locked flight speed, the eased roll, the detail level the host can
+// afford and a few common shapes. Every function is a pure function of its
+// arguments, so all targets agree.
+
+// Speed profile, in distance per beat, over a 32-beat cycle: cruise, build,
+// burst, a hard brake, a slow breakdown drift, then a build to a final burst.
+float osBeatSpeed(float n) {
+    float k = mod(n, 32.0);
+    if (k < 4.0) return 1.0;
+    if (k < 8.0) return 1.0 + 0.3 * (k - 3.0);
+    if (k < 12.0) return 3.5;
+    if (k < 13.0) return 1.6;
+    if (k < 14.0) return 0.45;
+    if (k < 20.0) return 0.9 + 0.1 * (k - 14.0);
+    if (k < 24.0) return 0.6;
+    if (k < 28.0) return 1.5 + 0.75 * (k - 24.0);
+    if (k < 31.0) return 4.5;
+    return 2.4;
+}
+
+// The flight state is a pure function of the uniforms, so every target and
+// frame rate computes the same camera. Within a beat the speed ramps linearly
+// from this beat's value to the next one's, so velocity never jumps and the
+// distance is its exact integral. x = distance, y = speed in beats' units.
+vec2 osFlight(VisualUniforms u, float cruise, float surge) {
+    float n = floor(u.beatCount);
+    float cycle = 0.0;
+    float before = 0.0;
+    float k0 = n - mod(n, 32.0);
+    for (int i = 0; i < 32; i++) {
+        float k = k0 + float(i);
+        float seg = 0.5 * (osBeatSpeed(k) + osBeatSpeed(k + 1.0));
+        cycle += seg;
+        before += k < n ? seg : 0.0;
+    }
+    float ph = saturate(u.beatPhase);
+    float v0 = osBeatSpeed(n);
+    float v1 = osBeatSpeed(n + 1.0);
+    float beats = floor(n / 32.0) * cycle + before + v0 * ph + 0.5 * (v1 - v0) * ph * ph;
+    float v = mix(v0, v1, ph);
+    // A fifth of the motion is steady; the rest follows the profile, so a burst
+    // runs about four times cruise and a brake drops to about half.
+    return vec2(u.time * cruise * 0.2 + beats * (cruise * 0.4 + surge), v);
+}
+
+// Detail the host can afford: 1, the default, down to 0. Hosts lower it with
+// presentation1.y, a reduction in [0, 1], to hold their frame rate.
+float osDetail(VisualUniforms u) { return 1.0 - saturate(u.presentation1.y); }
+
+// Bank angle: every eight beats the roll picks a new side (a golden-angle
+// walk) and eases toward it across the whole span, so it never stops and starts.
+float osBank(VisualUniforms u, float amount) {
+    float b = (u.beatCount + saturate(u.beatPhase)) / 8.0;
+    float k = floor(b);
+    return amount * mix(sin(k * 2.39996), sin((k + 1.0) * 2.39996), smoothstep(0.0, 1.0, b - k));
+}
+
+// Ray direction for a camera at ro looking at ta, rolled by roll, with
+// focal length fov (larger is narrower). p is the centred pixel position.
+vec3 osCamera(vec3 ro, vec3 ta, float roll, float fov, vec2 p) {
+    vec3 fw = normalize(ta - ro);
+    vec3 up = vec3(sin(roll), cos(roll), 0.0);
+    vec3 rt = normalize(cross(fw, up));
+    vec3 cu = cross(rt, fw);
+    return normalize(p.x * rt + p.y * cu + fov * fw);
+}
+
+float osBox(vec3 p, vec3 b) {
+    vec3 q = abs(p) - b;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+// Smooth union with blend radius k.
+float osSmin(float a, float b, float k) {
+    float h = saturate(0.5 + 0.5 * (b - a) / k);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// Round a march step count from a detail-scaled float, so every target
+// agrees on the count.
+int osSteps(float lo, float hi, float detail) { return int(mix(lo, hi, detail) + 0.5); }
+
+// ---- vivid palettes ----
+// In the hosts' free palette mode (palette.x < 0) the originals read this set
+// instead of the library's: sixteen loops of five saturated stops in linear
+// light, each a few hue families with a contrasting accent. palette.z tours
+// them, cross-fading from one to the next, and also walks t by a quarter loop
+// per palette (four whole loops per tour, so the wrap is seamless), so a visual
+// that reads only a narrow range of t still meets every stop. Manifest mode
+// (palette.x >= 0) keeps the library palettes, so reference renders do not
+// change.
+const vec3 OS_PAL[80] = vec3[80](
+    vec3(1.000, 0.033, 0.133), vec3(1.000, 0.262, 0.010), vec3(1.000, 0.807, 0.010), vec3(0.033, 1.000, 0.262), vec3(0.000, 0.578, 1.000), // 0 tropicPunch
+    vec3(0.000, 0.784, 1.000), vec3(0.027, 0.105, 1.000), vec3(0.479, 0.022, 1.000), vec3(1.000, 0.027, 0.309), vec3(1.000, 0.323, 0.014), // 1 synthSunset
+    vec3(0.000, 1.000, 0.578), vec3(0.000, 0.392, 1.000), vec3(1.000, 0.078, 0.366), vec3(1.000, 0.434, 0.000), vec3(1.000, 0.102, 0.037), // 2 lagoonPop
+    vec3(0.565, 1.000, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.000, 0.100), vec3(0.000, 1.000, 0.195), // 3 acidCitrus
+    vec3(0.000, 0.871, 1.000), vec3(0.000, 0.133, 1.000), vec3(1.000, 0.047, 0.000), vec3(1.000, 0.552, 0.000), vec3(1.000, 0.000, 0.156), // 4 iceFire
+    vec3(0.000, 1.000, 0.332), vec3(0.000, 0.658, 1.000), vec3(0.047, 0.102, 0.991), vec3(1.000, 0.823, 0.000), vec3(0.328, 1.000, 0.000), // 5 electricMint
+    vec3(1.000, 0.347, 0.000), vec3(1.000, 0.074, 0.000), vec3(0.791, 0.000, 0.195), vec3(0.144, 0.000, 0.905), vec3(0.000, 0.539, 1.000), // 6 mangoBerry
+    vec3(1.000, 0.050, 0.371), vec3(1.000, 0.347, 0.050), vec3(1.000, 0.784, 0.050), vec3(0.050, 1.000, 0.434), vec3(0.050, 0.479, 1.000), // 7 candyShop
+    vec3(0.000, 1.000, 0.235), vec3(0.000, 0.745, 0.565), vec3(0.000, 0.296, 1.000), vec3(0.254, 0.024, 1.000), vec3(1.000, 0.028, 0.631), // 8 aurora
+    vec3(1.000, 0.014, 0.014), vec3(1.000, 0.144, 0.000), vec3(1.000, 0.479, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.000, 0.212), // 9 lavaLamp
+    vec3(0.784, 1.000, 0.000), vec3(0.000, 1.000, 0.133), vec3(0.000, 0.694, 1.000), vec3(0.000, 0.080, 1.000), vec3(1.000, 0.434, 0.000), // 10 cyberLime
+    vec3(1.000, 0.102, 0.114), vec3(1.000, 0.026, 0.301), vec3(0.397, 0.045, 1.000), vec3(0.026, 0.198, 1.000), vec3(0.000, 0.807, 0.565), // 11 coralReef
+    vec3(1.000, 0.631, 0.000), vec3(1.000, 0.254, 0.000), vec3(1.000, 0.044, 0.044), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.871, 0.074), // 12 goldRush
+    vec3(0.000, 0.010, 1.000), vec3(0.000, 0.283, 1.000), vec3(0.000, 0.913, 0.658), vec3(0.328, 1.000, 0.000), vec3(1.000, 0.791, 0.000), // 13 deepNeon
+    vec3(1.000, 0.195, 0.565), vec3(0.571, 0.205, 1.000), vec3(0.195, 0.392, 1.000), vec3(0.195, 1.000, 0.745), vec3(1.000, 0.871, 0.195), // 14 bubbleTea
+    vec3(1.000, 0.000, 0.091), vec3(0.133, 0.000, 1.000), vec3(0.000, 0.451, 1.000), vec3(0.000, 1.000, 0.665), vec3(0.468, 1.000, 0.000) // 15 neonTokyo
+);
+const float OS_PAL_COUNT = 16.0;
+
+// Linear mix that keeps the endpoints' channel range, so a blend between two
+// saturated colours stays saturated instead of passing through grey.
+vec3 osVividMix(vec3 a, vec3 b, float w) {
+    vec3 m = mix(a, b, w);
+    float lo = min(m.r, min(m.g, m.b)), hi = max(m.r, max(m.g, m.b));
+    float tlo = mix(min(a.r, min(a.g, a.b)), min(b.r, min(b.g, b.b)), w);
+    float thi = mix(max(a.r, max(a.g, a.b)), max(b.r, max(b.g, b.b)), w);
+    return tlo + (m - lo) * ((thi - tlo) / max(hi - lo, 1e-3));
+}
+
+vec3 osPalLoop(float t, int idx) {
+    float f = fract(t) * 5.0;
+    int i = int(floor(f));
+    i = clamp(i, 0, 4);
+    int j = i == 4 ? 0 : i + 1;
+    return osVividMix(OS_PAL[idx * 5 + i], OS_PAL[idx * 5 + j], smoothstep(0.0, 1.0, f - float(i)));
+}
+
+vec3 osPalVisual(float t, VisualUniforms u) {
+    if (u.palette.x >= 0.0) return palVisual(t, u);
+    float phase = u.palette.z;
+    int a = int(mod(floor(phase), OS_PAL_COUNT));
+    int b = int(mod(float(a + 1), OS_PAL_COUNT));
+    float blend = smoothstep(0.18, 0.82, fract(phase));
+    float nudge = phase * 0.25 + u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    return osVividMix(osPalLoop(t + nudge, a), osPalLoop(t + nudge, b), blend);
+}
+
+// The calm visuals' audio response, 0..0.25: the music's level, which rises
+// and falls with the song, scaled by the sensitivity. Not the kick: a calm
+// visual's light never jumps on the beat.
+float osCalmBreath(VisualUniforms u) {
+    return 0.25 * saturate(u.level) * (0.5 + 0.5 * u.sensitivity);
+}
+
+// The calm visuals' palette read: the visual's own library palette `own`
+// (its manifest palette) at t, with no beat or spectral nudge. Under the vivid
+// palette tour (palette.x < 0) a calm visual keeps `own`: the tour moves
+// through sixteen neon palettes of very different brightness every few
+// seconds, which turns a moonlit sea orange and swells the light, so vivid
+// leaves a calm visual only its present-pass saturation. A host's manifest
+// palette (palette.x >= 0) still replaces it.
+vec3 osPalCalm(float t, int own, VisualUniforms u) {
+    return palByIndex(t, u.palette.x >= 0.0 ? int(floor(u.palette.x + 0.5)) : own);
+}
+
+// The library's palette roles, reading osPalVisual.
+vec3 osPalRoleTrace(float t, VisualUniforms u) { return osPalVisual(t + 0.03 * u.beatPhase, u); }
+vec3 osPalRoleBass(float t, VisualUniforms u) {
+    vec3 hot = osPalVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 body = osPalVisual(t + 0.10, u);
+    return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
+}
+vec3 osPalRoleTreble(float t, VisualUniforms u) {
+    vec3 spark = osPalVisual(0.62 + t * 0.28 + 0.10 * u.spectralCentroid, u);
+    return peakWhite(spark, u.treble * u.onset * 0.14);
+}
+vec3 osPalRolePeak(float t, VisualUniforms u) {
+    return peakWhite(osPalVisual(t + 0.08 * u.spectralCentroid, u), saturate(u.onset * 0.18 + u.bassImpact * 0.10));
+}
+vec3 osPalRoleFog(float t, VisualUniforms u) {
+    vec3 c = osPalVisual(t + 0.04 * u.spectralCentroid, u);
+    return mix(vec3(luma(c) * 0.62), c, 0.42);
+}
+vec3 osPalRoleRim(float t, VisualUniforms u) {
+    return mix(osPalVisual(t, u), osPalRolePeak(t + 0.18, u), 0.35 + 0.35 * u.flux);
+}
+
+// Every original finishes through osOffRed. The present pass grades with the vivid saturation
+// and vibrance (palette.rs), which pushes a nearly pure red past the 0.8 red share at which the
+// flash limiter counts saturated red and holds it. Where green plus blue is under 0.55 of red
+// (linear light), both rise by half the difference, so the graded red presents under a 0.77
+// share. Near black the present dither can still split a dim red into a saturated-red byte
+// triple such as (1, 0, 0), so a dim colour becomes exactly grey and a dim red loses its excess
+// over green and blue, which then ramps back in (limiter-red-expire-black, design.md section 3;
+// tools/shader/test-originals-red.mjs). A quality measure: the frame limiter carries the safety
+// claim. NaN becomes 0 by a boolean select, exact on targets honouring IEEE NaN.
+const float OS_GREY_BELOW = 0.006;  // below it the colour becomes exactly grey
+const float OS_RED_FROM = 0.012;    // below it red is at most the larger of green and blue
+const float OS_RED_FULL = 0.05;     // red's excess is whole from here, and red returned as it stands
+vec3 osOffRed(vec3 c) {
+    c = mix(c, vec3(0.0), notEqual(c, c));      // NaN -> 0
+    c = clamp(c, vec3(0.0), vec3(16.0));
+    float s = c.g + c.b, t = 0.55 * c.r;        // gated on the rounded sum and product, so a
+    if (s < t) c += vec3(0.0, 0.5 * (t - s), 0.5 * (t - s));  // colour that meets the share is kept
+    float m = max(c.r, max(c.g, c.b));
+    if (m < OS_GREY_BELOW) return vec3(luma(c));  // three identical channels
+    float p = max(c.g, c.b);
+    if (c.r > p && m < OS_RED_FULL) {           // no saturated red byte from the present dither
+        float w = clamp((m - OS_RED_FROM) / (OS_RED_FULL - OS_RED_FROM), 0.0, 1.0);
+        c.r = w <= 0.0 ? p : p + w * (c.r - p);  // red equal to a partner below OS_RED_FROM
+    }
+    return c;
+}
+
+// Everything joined after this file reads the vivid set through the usual names.
+#define palVisual osPalVisual
+#define palRoleTrace osPalRoleTrace
+#define palRoleBass osPalRoleBass
+#define palRoleTreble osPalRoleTreble
+#define palRolePeak osPalRolePeak
+#define palRoleFog osPalRoleFog
+#define palRoleRim osPalRoleRim
+
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
@@ -574,89 +791,303 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     return sanitizeColor(max(sanitizeColor(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
-// Memory Tunnel — flying down a corridor whose floor and ceiling are paved
-// with framed photo prints. Each tile shows the whole photo, lit by a pulsing
-// horizon; beats send a wave of colour racing down the corridor.
+// Memory Tunnel.
+// A flight down a long, dark gallery hall hung with backlit photo prints.
+// The prints are staggered along both walls, each showing its own slowly
+// drifting crop of the photo. Far away they are faded palette duotones, and
+// they develop into full colour as they approach, like memories coming back.
+// Every print spills its own colour onto the charcoal walls, the soft ceiling
+// and the polished floor, which mirrors the whole hall; coloured haze hangs in
+// the air. Calm under loud music: the flight runs at a slow, steady pace, the
+// roll sways gently and prints dim as they pass beside the camera, so bright
+// prints never sweep past fast enough to flash. Audio drives the light only:
+// the smoothed level warms the lightboxes and breathes in the ceiling
+// diffuser, a modest band term lights the slim ledge under each print, and
+// the ledges swell only faintly after each beat.
 // param0 = Flight ; param1 = Depth ; param2 = Pulse
 
-vec3 visual(vec2 uv, VisualUniforms u) {
-    vec2 p = motionCentered(uv, u);
-    p.x *= 0.92;
-    float far = mix(4.2, 7.0, u.param1);
-    float pulseAmt = mix(0.4, 1.5, u.param2);
+const float MT_HW = 1.9;      // half width of the hall
+const float MT_FLOOR = -1.1;  // floor height
+const float MT_CEIL = 1.55;   // ceiling height
+const float MT_PZ = 3.4;      // print pitch along each wall
+const float MT_PW = 1.15;     // print half length along the wall
+const float MT_PY0 = -0.5;    // print bottom
+const float MT_PY1 = 0.98;    // print top
 
-    // beat count that glides forward over each beat and never jumps back at the
-    // wrap; an eased glide (not a kick) so the whole lattice of high-contrast
-    // prints never lurches at once under loud music
-    float beatSurge = floor(u.beatCount) + smoothstep(0.0, 1.0, u.beatPhase);
-    // beat swell: ~180 ms attack, released to zero by the wrap, so nothing
-    // steps on the beat
-    float swell = smoothstep(0.0, 0.36, u.beatPhase)
-                * (1.0 - smoothstep(0.36, 1.0, u.beatPhase));
+// The palette read once at five stops, blended locally.
+struct MtPal { vec3 c0; vec3 c1; vec3 c2; vec3 c3; vec3 c4; };
 
-    float z = 1.0 / max(0.13, abs(p.y) + 0.22);
-    float lane = p.x * z;
-    float depth = z + u.time * (0.38 + u.param0) + beatSurge * 0.15;
-
-    // tile lattice — slim frames around each photo print
-    float cellPhaseX = lane * 1.6 + 0.5;
-    float cellX = fract(cellPhaseX);
-    float cellPhaseZ = depth * 0.55;
-    float cellZ = fract(cellPhaseZ);
-    // frames keep a slim on-screen width: near the camera a cell spans a big
-    // slice of the screen, so a fixed cell-space width became thick bands that
-    // swept the frame edges as the corridor flowed
-    float frameX = aaLineCyclic(cellPhaseX, 0.012 * clamp(z / 2.5, 0.3, 1.0));
-    float frameZ = aaLineCyclic(cellPhaseZ, 0.016 * clamp(z * z / 5.0, 0.15, 1.0));
-    float frame = max(frameX, frameZ);
-
-    // fog window: fade in near camera, out toward the horizon
-    float fog = smoothstep(0.0, 0.9, z) * smoothstep(far, 1.0, z);
-
-    // each tile carries the full photo (small inset margin)
-    vec2 tileUV = clamp((vec2(cellX, cellZ) - 0.06) / 0.88, 0.0, 1.0);
-    // ceiling tiles flip so prints hang the right way up
-    if (p.y > 0.0) { tileUV.y = 1.0 - tileUV.y; }
-    vec3 photo = max(IMG(photoCover(clamp(tileUV, 0.001, 0.999), u.resolution, IMGSIZE)).rgb, vec3(0.0));
-    // richer prints: push saturation and contrast so the corridor stays vivid
-    float photoLum = dot(photo, vec3(0.2126, 0.7152, 0.0722));
-    photo = max(mix(vec3(photoLum), photo, 1.35), vec3(0.0));
-    photo = photo * photo * 1.6;
-
-    // beat pulse: a bright wave races down the corridor from the horizon
-    float wave = fract(depth * 0.15 - u.beatPhase);
-    float pulse = exp(-wave * wave * 18.0) * (0.45 + 0.30 * swell) * pulseAmt;
-
-    // the wave sweeps every print once a beat, so it shifts their hue, not
-    // their brightness; the slim frames carry a little of its light
-    float interior = (1.0 - frame);
-    vec3 waveTint = palVisual(fract(0.30 + depth * 0.05), u);
-    waveTint /= max(dot(waveTint, vec3(0.2126, 0.7152, 0.0722)), 0.05);
-    vec3 lit = mix(vec3(1.0), clamp(waveTint, 0.0, 3.0), clamp(pulse * 0.45, 0.0, 0.6));
-    vec3 col = photo * lit * interior * fog * (0.30 + 0.05 * u.level);
-
-    // slim glowing frames between prints — never louder than the prints
-    col += palVisual(fract(depth * 0.07 + lane * 0.05 + 0.12 * pulse), u) * frame * fog
-         * (0.24 + 0.06 * u.level + 0.14 * pulse);
-
-    // luminous horizon at the vanishing line; it spans the frame and the bloom
-    // spreads it, so an instant kick here flashed the whole middle of the screen:
-    // it glows steadily, and the beat swells it gently and turns its hue
-    float horizon = exp(-abs(p.y) * 20.0) * (0.60 + 0.08 * swell) * pulseAmt;
-    col += palVisual(0.58 + u.spectralCentroid * 0.2 + 0.05 * swell, u) * horizon * 0.35;
-    // hot core right at the vanishing point
-    col += peakWhite(palVisual(0.62, u), 0.36 + 0.06 * swell)
-         * exp(-(p.x * p.x * 6.0 + p.y * p.y * 90.0) * 2.5) * (0.47 + 0.08 * swell);
-
-    col *= 0.22 + 0.78 * smoothstep(1.55, 0.30, length(p));
-    // colour floor: dim red stripes and gold frame tails keep some green and
-    // blue, so nothing settles into pure saturated red
-    col.g = max(col.g, col.r * 0.15);
-    col.b = max(col.b, col.r * 0.20);
-    col = feedbackTrail(col, uv, min(u.trailDecay, 0.68),
-                        0.003 + 0.002 * u.bassImpact, 0.001);
-    return col; // LINEAR HDR — post chain tonemaps
+MtPal mtPalLoad(VisualUniforms u) {
+    MtPal P;
+    P.c0 = palVisual(0.0, u);
+    P.c1 = palVisual(0.26, u);
+    P.c2 = palVisual(0.52, u);
+    P.c3 = palVisual(0.78, u);
+    P.c4 = palVisual(0.999, u);
+    return P;
 }
+
+// Clamped, not wrapped: an offset never snaps across the palette's ends.
+vec3 mtPal(MtPal P, float t) {
+    t = clamp(t, 0.0, 1.0) * 4.0;
+    vec3 c = mix(P.c0, P.c1, smoothstep(0.0, 1.0, t));
+    c = mix(c, P.c2, smoothstep(1.0, 2.0, t));
+    c = mix(c, P.c3, smoothstep(2.0, 3.0, t));
+    return mix(c, P.c4, smoothstep(3.0, 4.0, t));
+}
+
+// Distance to the nearest surface of the hall from inside, and which one:
+// 0 the wall at -x, 1 the wall at +x, 2 the ceiling, 3 the floor.
+float mtHit(vec3 ro, vec3 rd, out float face) {
+    float rx = rd.x >= 0.0 ? max(rd.x, 1e-4) : min(rd.x, -1e-4);
+    float tx = ((rx > 0.0 ? MT_HW : -MT_HW) - ro.x) / rx;
+    float ty = rd.y > 0.0 ? (MT_CEIL - ro.y) / max(rd.y, 1e-4) : (MT_FLOOR - ro.y) / min(rd.y, -1e-4);
+    face = tx < ty ? (rx < 0.0 ? 0.0 : 1.0) : (rd.y > 0.0 ? 2.0 : 3.0);
+    return min(tx, ty);
+}
+
+// Per-print crop: span and offset of the drifting cover-fit window.
+void mtCrop(vec2 cell, out vec2 span, out vec2 off, VisualUniforms u) {
+    float h1 = hash21(cell + 1.3);
+    float h2 = hash21(cell + 7.7);
+    float h3 = hash21(cell + 3.1);
+    vec2 isz = max(IMGSIZE, vec2(1.0));
+    float ai = isz.x / isz.y;
+    float at = (2.0 * MT_PW) / (MT_PY1 - MT_PY0);
+    vec2 cov = at > ai ? vec2(1.0, ai / at) : vec2(at / ai, 1.0);
+    span = cov * mix(0.5, 0.95, h1);
+    float ph = mod(u.time, 600.0) * 0.05 + h3 * 6.2832;
+    off = (1.0 - span) * (0.5 + 0.5 * vec2(sin(ph + h2 * 6.2832), cos(ph * 0.8 + h1 * 6.2832)));
+}
+
+// The average colour a print throws into the room, in linear light.
+vec3 mtPrintAvg(vec2 cell, VisualUniforms u) {
+    vec2 span, off;
+    mtCrop(cell, span, off, u);
+    vec3 c = IMG(clamp(off + 0.5 * span, vec2(0.001), vec2(0.999))).rgb;
+    c = max(c, vec3(0.0));
+    return c * c + 0.02;
+}
+
+// Print centre z for wall w at row index i (the walls are staggered).
+float mtPrintZ(float i, float w) { return (i + 0.5 * w) * MT_PZ; }
+
+// Light leaving a wall point. w is 0 for the wall at -x and 1 for +x.
+// lk: x = camera z, y = pulse, z = the accent hue offset, w = how much the
+// prints passing close to the camera dim.
+vec3 mtWall(vec3 pos, float w, float t, vec4 lk, float detail,
+            bool cheap, MtPal P, VisualUniforms u) {
+    float zl = pos.z / MT_PZ - 0.5 * w;
+    float row = floor(zl + 0.5);
+    float zr = (zl - row) * MT_PZ;              // along the wall from the print centre
+    vec2 cell = vec2(w, mod(row, 512.0));
+    float y = pos.y;
+
+    // charcoal wall, lit by the spill of this print and the ceiling
+    vec2 dq = vec2(max(abs(zr) - MT_PW, 0.0), max(max(MT_PY0 - y, y - MT_PY1), 0.0));
+    float dp = length(dq);
+    vec3 avg = mtPrintAvg(cell, u);
+    float bassW = 1.0 + 0.15 * saturate(u.level);
+    // the spill is the print's own colour pushed toward the hall's accent, so
+    // the walls between prints carry colour rather than a grey wash
+    vec3 spill = mix(avg, luma(avg) * mtPal(P, 0.04 + lk.z) * 2.2, 0.45);
+    vec3 col = spill * exp(-dp * 4.0) * 0.13 * bassW + mtPal(P, 0.0) * 0.012;
+    col += mtPal(P, 0.97 + 0.5 * lk.z) * 0.012 * smoothstep(0.2, 1.55, y);
+    // a faint vertical panel joint between prints
+    float jz = abs(abs(zr) - 0.5 * MT_PZ);
+    col *= 1.0 - 0.6 * (1.0 - smoothstep(0.0, 0.01 + fwidth(zr) * 1.5, jz));
+    col += mtPal(P, 0.0) * 0.004;
+
+    // slim ledge under the print, lit by a spectrum band (eased toward the
+    // level) and swelling softly just after each beat
+    float ledge = (1.0 - smoothstep(0.0, 0.012 + fwidth(y) * 1.5, abs(y - (MT_PY0 - 0.08))))
+                * step(abs(zr), MT_PW);
+    float bp = saturate(u.beatPhase);
+    float lift = 0.9 + 0.1 * lk.y * smoothstep(0.0, 0.3, bp) * (1.0 - bp) * (1.0 - bp) * 2.0;
+    float lvl = mix(saturate(u.level), band(u, int(mod(row * 5.0 + w * 23.0, 48.0)) + 4), 0.2) * lift;
+    vec3 ledgeCol = mtPal(P, (mod(row + w, 2.0) < 1.0 ? 0.97 : 0.27) + lk.z);
+    col += peakWhite(ledgeCol, 0.15) * ledge * (0.5 + 0.8 * lvl);
+    // the ledge washes the wall below it in its colour
+    col += ledgeCol * exp(-max(MT_PY0 - 0.08 - y, 0.0) * 5.0) * step(y, MT_PY0 - 0.08)
+         * smoothstep(MT_PW + 0.3, MT_PW - 0.3, abs(zr)) * 0.05 * (0.5 + 0.7 * lvl);
+
+    // the print itself: a thin bright frame around a backlit image
+    vec2 pr = vec2(zr / (2.0 * MT_PW) + 0.5, (y - MT_PY0) / (MT_PY1 - MT_PY0));
+    vec2 fw = max(vec2(fwidth(pr.x), fwidth(pr.y)), vec2(1e-4));
+    vec2 box = smoothstep(vec2(0.0), fw * 1.5, pr) * smoothstep(vec2(1.0), vec2(1.0) - fw * 1.5, pr);
+    float inside = box.x * box.y;
+    vec2 fd = min(pr, 1.0 - pr) * vec2(2.0 * MT_PW, MT_PY1 - MT_PY0);
+    float frame = inside * (1.0 - smoothstep(0.0, 0.025 + 1.5 * max(fwidth(fd.x), fwidth(fd.y)), min(fd.x, fd.y)));
+    float halo = (1.0 - inside) * exp(-dp * 30.0);
+    if (inside < 0.001 && halo < 0.002) return col;
+
+    vec2 span, off;
+    mtCrop(cell, span, off, u);
+    vec2 iv = clamp(pr, 0.0, 1.0);
+    vec2 pv = w < 0.5 ? vec2(1.0 - iv.x, 1.0 - iv.y) : vec2(iv.x, 1.0 - iv.y);
+    vec2 iuv = clamp(off + pv * span, vec2(0.001), vec2(0.999));
+    vec3 photo;
+    float far = smoothstep(5.0, 16.0, t);
+    if (cheap) {
+        photo = avg;
+    } else {
+        vec3 ph0 = max(IMG(iuv).rgb, vec3(0.0));
+        photo = mix(ph0 * ph0, avg, far * mix(0.85, 1.0, 1.0 - detail));
+    }
+    // develop: far prints are palette duotones, near ones their true colour
+    float lg = luma(photo);
+    float h2 = hash21(cell + 7.7);
+    float hl = h2 < 0.35 ? 0.27 : (h2 < 0.7 ? 0.75 : 0.5);
+    hl = h2 > 0.88 ? 0.97 : hl;
+    vec3 duo = mix(mtPal(P, 0.0) * 0.05, mtPal(P, hl + lk.z) * 1.2, smoothstep(0.01, 0.6, lg));
+    float develop = smoothstep(14.0, 4.0, t);
+    // split tone: the shadows of a developed print keep the palette's violet
+    // end, the highlights their own colour
+    vec3 near = photo * 1.2;
+    near = mix(near, lg * mtPal(P, 0.1 + 0.5 * lk.z) * 2.4, 0.45 * (1.0 - smoothstep(0.05, 0.5, lg)));
+    near = mix(near, duo, 0.14) + mtPal(P, 0.0) * 0.012;
+    photo = mix(duo, near, develop);
+    // backlight falls off toward the frame; every print has its own exposure
+    vec2 cq = pr - 0.5;
+    float back = 1.0 - 0.4 * dot(cq, cq) * 2.0;
+    float expo = mix(0.7, 1.15, hash21(cell + 3.1));
+    // the prints passing at the edge of view dim, so the frame's brightness
+    // swings less as they go by
+    float nearDim = mix(1.0, 0.25 + 0.75 * smoothstep(2.0, 12.0, t), lk.w);
+    vec3 lit = photo * back * expo * bassW * nearDim;
+    col = mix(col, lit, inside);
+    col += peakWhite(mix(avg * 2.0, ledgeCol, 0.45), 0.15) * (frame * 0.35 + halo * 0.2) * nearDim;
+    // glass cover: the ceiling diffuser glides over it at grazing angles
+    col += mtPal(P, 0.74) * inside * 0.02;
+    return col;
+}
+
+// Ceiling: a long soft diffuser between dark coffers, tinted by the prints.
+vec3 mtCeil(vec3 pos, vec4 lk, MtPal P, VisualUniforms u) {
+    float x = pos.x;
+    float zl = pos.z / MT_PZ;
+    float cz = fract(zl) - 0.5;
+    // a frosted lamp between each pair of prints: bright core, soft falloff
+    float pane = smoothstep(0.9, 0.82, abs(x)) * smoothstep(0.2, 0.17, abs(cz));
+    float core = exp(-(x * x * 1.6 + cz * cz * 60.0));
+    float diff = pane * (0.35 + 0.65 * core);
+    float breath = 0.9 + 0.2 * saturate(u.level);
+    // the lamps alternate between two of the palette's colours down the hall
+    float lc = mod(floor(zl), 2.0);
+    vec3 lamp = mtPal(P, (lc < 0.5 ? 0.76 : 0.97) + lk.z);
+    vec3 c = peakWhite(lamp, 0.25 * core) * diff * 0.13 * breath + mtPal(P, 0.0) * 0.008;
+    c += mtPal(P, 0.27 + lk.z) * pane * (1.0 - core) * 0.03;
+    c += lamp * exp(-abs(cz) * 10.0) * smoothstep(1.4, 0.5, abs(x)) * 0.014 * breath;
+    // spill from the nearest print on each wall
+    float r0 = floor(zl + 0.5);
+    float r1 = floor(zl);
+    vec3 s0 = mtPrintAvg(vec2(0.0, mod(r0, 512.0)), u);
+    vec3 s1 = mtPrintAvg(vec2(1.0, mod(r1, 512.0)), u);
+    c += s0 * exp(-(MT_HW + x) * 2.5) * 0.07 + s1 * exp(-(MT_HW - x) * 2.5) * 0.07;
+    return c;
+}
+
+vec3 osBody(vec2 uv, VisualUniforms u) {
+    vec2 p = centered(uv, u.resolution);
+    p.y = -p.y;
+    float detail = osDetail(u);
+    float pulse = mix(0.4, 1.6, u.param2);
+    float tt = mod(u.time, 600.0);
+
+    // a slow, steady flight: bright prints sweeping past fast would flash
+    float cruise = mix(1.6, 6.0, u.param0);
+    float zc = mod(10.08 + mod(u.time, 36000.0) * cruise * 0.15, MT_PZ * 512.0);
+    // every eight beats the hall's accent eases to a new place on the palette
+    MtPal P = mtPalLoad(u);
+    float b8 = (u.beatCount + saturate(u.beatPhase)) / 8.0;
+    float k8 = floor(b8);
+    float acc = 0.1 * mix(sin(k8 * 2.39996), sin((k8 + 1.0) * 2.39996), smoothstep(0.0, 1.0, b8 - k8));
+    vec4 lk = vec4(zc, pulse, acc, 0.7);
+
+    // slow eased drift off the axis; audio never moves the camera
+    vec3 ro = vec3(0.4 * sin(tt * 0.13), 0.15 + 0.15 * sin(tt * 0.093 + 1.1), zc);
+    vec3 ta = vec3(0.55 * sin(tt * 0.13 + 0.9), 0.05 + 0.1 * sin(tt * 0.07), zc + 7.0);
+    float fov = 1.05;
+    vec3 rd = osCamera(ro, ta, 0.1 * sin(mod(u.time, 628.31853) * 0.05), fov, p);
+
+    float face;
+    float t = mtHit(ro, rd, face);
+    vec3 pos = ro + rd * t;
+    float tAll = t;
+    vec3 col;
+    if (face < 1.5) {
+        col = mtWall(pos, face, t, lk, detail, false, P, u);
+    } else if (face < 2.5) {
+        col = mtCeil(pos, lk, P, u);
+    } else {
+        // polished floor: a soft mirror of the hall, rippled by faint tile seams
+        vec2 tile = pos.xz / vec2(0.95, 0.95);
+        vec2 tf = abs(fract(tile) - 0.5);
+        float seam = 1.0 - smoothstep(0.47, 0.49, max(tf.x, tf.y)) ;
+        vec3 rr = vec3(rd.x, -rd.y, rd.z);
+        float f2;
+        float t2 = mtHit(pos, rr, f2);
+        vec3 p2 = pos + rr * t2;
+        vec3 refl;
+        bool cheap = detail < 0.5;
+        if (f2 < 1.5) refl = mtWall(p2, f2, t + t2, lk, detail, cheap, P, u);
+        else refl = mtCeil(p2, lk, P, u);
+        float fres = 0.22 + 0.6 * pow(1.0 - saturate(-rd.y), 5.0);
+        refl *= exp(-t2 * 0.06);
+        // colour spill pooling on the floor below each print
+        float zl = pos.z / MT_PZ;
+        float r0 = floor(zl + 0.5);
+        float r1 = floor(zl);
+        float z0 = abs(pos.z - mtPrintZ(r0, 0.0));
+        float z1 = abs(pos.z - mtPrintZ(r1, 1.0));
+        vec3 s0 = mtPrintAvg(vec2(0.0, mod(r0, 512.0)), u);
+        vec3 s1 = mtPrintAvg(vec2(1.0, mod(r1, 512.0)), u);
+        vec3 spill = s0 * exp(-(MT_HW + pos.x) * 2.2) * smoothstep(MT_PW + 0.8, 0.0, z0)
+                   + s1 * exp(-(MT_HW - pos.x) * 2.2) * smoothstep(MT_PW + 0.8, 0.0, z1);
+        col = refl * fres * mix(0.55, 1.0, seam) + spill * 0.12 + mtPal(P, 0.0) * 0.006;
+        tAll = t + 0.4 * t2;
+    }
+
+    // coloured haze: palette fog, warmed by the spill of the prints around the camera
+    float fogK = mix(0.085, 0.035, u.param1);
+    float fog = 1.0 - exp(-tAll * fogK);
+    float zl = ro.z / MT_PZ;
+    vec3 hz = mtPrintAvg(vec2(0.0, mod(floor(zl + 1.5), 512.0)), u) + mtPrintAvg(vec2(1.0, mod(floor(zl + 1.0), 512.0)), u);
+    vec3 fogCol = mtPal(P, 0.02 + 0.08 * u.spectralCentroid + acc) * 0.05 + hz * 0.012;
+    col = mix(col, fogCol, fog);
+    // dust motes drifting in the air, catching the light of the prints
+    int nM = osSteps(3.0, 8.0, detail);
+    float mz0 = floor(zc / 1.3) + 1.0;
+    for (int k = 0; k < 8; k++) {
+        if (k >= nM) break;
+        float mid = mz0 + float(k);
+        float tm = (mid * 1.3 - ro.z) / max(rd.z, 0.05);
+        if (tm > tAll) break;
+        vec2 mp = ro.xy + rd.xy * tm;
+        vec2 g = mp * 2.2 + vec2(0.0, tt * 0.05) + hash22(vec2(mod(mid, 256.0), 1.0)) * 7.0;
+        vec2 c = floor(g);
+        vec2 h = hash22(c + mod(mid, 256.0) * 3.7);
+        vec2 dv = (g - c - 0.15 - 0.7 * h) / 2.2;
+        float px = tm * 2.0 / (u.resolution.y * fov);
+        float mw = max(0.006, px) * (1.0 + 2.5 * smoothstep(2.5, 0.4, tm));
+        float mote = exp(-dot(dv, dv) / (mw * mw)) * (0.006 / mw) * step(0.8, h.x);
+        float side = smoothstep(0.0, MT_HW, abs(mp.x));
+        vec3 mc = mix(mtPal(P, 0.74), mtPal(P, h.y < 0.5 ? 0.27 : 0.97), 0.5 * h.y);
+        col += mc * mote * (0.3 + 0.9 * side) * (0.85 + 0.15 * sin(tt * 0.6 + h.y * 30.0)) * exp(-tm * 0.12)
+             * smoothstep(0.2, 0.8, tm);
+    }
+
+    // light at the end of the hall
+    float exitDot = saturate(rd.z);
+    vec3 exitCol = peakWhite(mtPal(P, 0.75 + acc), 0.3);
+    col += exitCol * (pow(exitDot, 300.0) * 0.6 + pow(exitDot, 30.0) * 0.06) * (0.9 + 0.15 * saturate(u.level));
+
+    col *= 1.0 - 0.3 * smoothstep(0.9, 2.0, length(p));
+    return col; // LINEAR HDR
+}
+
+// Reds stay off saturated red through the vivid present (common.glsl).
+vec3 visual(vec2 uv, VisualUniforms u) { return osOffRed(osBody(uv, u)); }
 
 in vec2 vUV;
 layout(location=0) out vec4 fragColor;

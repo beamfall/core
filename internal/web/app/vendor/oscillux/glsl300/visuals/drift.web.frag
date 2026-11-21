@@ -560,6 +560,223 @@ vec3 tonemap(vec3 x) {
     return pow(clamp(x, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
 }
 
+// SPDX-License-Identifier: AGPL-3.0-only
+// Shared helpers for the Oscillux originals, joined after library.glsl: the
+// beat-locked flight speed, the eased roll, the detail level the host can
+// afford and a few common shapes. Every function is a pure function of its
+// arguments, so all targets agree.
+
+// Speed profile, in distance per beat, over a 32-beat cycle: cruise, build,
+// burst, a hard brake, a slow breakdown drift, then a build to a final burst.
+float osBeatSpeed(float n) {
+    float k = mod(n, 32.0);
+    if (k < 4.0) return 1.0;
+    if (k < 8.0) return 1.0 + 0.3 * (k - 3.0);
+    if (k < 12.0) return 3.5;
+    if (k < 13.0) return 1.6;
+    if (k < 14.0) return 0.45;
+    if (k < 20.0) return 0.9 + 0.1 * (k - 14.0);
+    if (k < 24.0) return 0.6;
+    if (k < 28.0) return 1.5 + 0.75 * (k - 24.0);
+    if (k < 31.0) return 4.5;
+    return 2.4;
+}
+
+// The flight state is a pure function of the uniforms, so every target and
+// frame rate computes the same camera. Within a beat the speed ramps linearly
+// from this beat's value to the next one's, so velocity never jumps and the
+// distance is its exact integral. x = distance, y = speed in beats' units.
+vec2 osFlight(VisualUniforms u, float cruise, float surge) {
+    float n = floor(u.beatCount);
+    float cycle = 0.0;
+    float before = 0.0;
+    float k0 = n - mod(n, 32.0);
+    for (int i = 0; i < 32; i++) {
+        float k = k0 + float(i);
+        float seg = 0.5 * (osBeatSpeed(k) + osBeatSpeed(k + 1.0));
+        cycle += seg;
+        before += k < n ? seg : 0.0;
+    }
+    float ph = saturate(u.beatPhase);
+    float v0 = osBeatSpeed(n);
+    float v1 = osBeatSpeed(n + 1.0);
+    float beats = floor(n / 32.0) * cycle + before + v0 * ph + 0.5 * (v1 - v0) * ph * ph;
+    float v = mix(v0, v1, ph);
+    // A fifth of the motion is steady; the rest follows the profile, so a burst
+    // runs about four times cruise and a brake drops to about half.
+    return vec2(u.time * cruise * 0.2 + beats * (cruise * 0.4 + surge), v);
+}
+
+// Detail the host can afford: 1, the default, down to 0. Hosts lower it with
+// presentation1.y, a reduction in [0, 1], to hold their frame rate.
+float osDetail(VisualUniforms u) { return 1.0 - saturate(u.presentation1.y); }
+
+// Bank angle: every eight beats the roll picks a new side (a golden-angle
+// walk) and eases toward it across the whole span, so it never stops and starts.
+float osBank(VisualUniforms u, float amount) {
+    float b = (u.beatCount + saturate(u.beatPhase)) / 8.0;
+    float k = floor(b);
+    return amount * mix(sin(k * 2.39996), sin((k + 1.0) * 2.39996), smoothstep(0.0, 1.0, b - k));
+}
+
+// Ray direction for a camera at ro looking at ta, rolled by roll, with
+// focal length fov (larger is narrower). p is the centred pixel position.
+vec3 osCamera(vec3 ro, vec3 ta, float roll, float fov, vec2 p) {
+    vec3 fw = normalize(ta - ro);
+    vec3 up = vec3(sin(roll), cos(roll), 0.0);
+    vec3 rt = normalize(cross(fw, up));
+    vec3 cu = cross(rt, fw);
+    return normalize(p.x * rt + p.y * cu + fov * fw);
+}
+
+float osBox(vec3 p, vec3 b) {
+    vec3 q = abs(p) - b;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+// Smooth union with blend radius k.
+float osSmin(float a, float b, float k) {
+    float h = saturate(0.5 + 0.5 * (b - a) / k);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// Round a march step count from a detail-scaled float, so every target
+// agrees on the count.
+int osSteps(float lo, float hi, float detail) { return int(mix(lo, hi, detail) + 0.5); }
+
+// ---- vivid palettes ----
+// In the hosts' free palette mode (palette.x < 0) the originals read this set
+// instead of the library's: sixteen loops of five saturated stops in linear
+// light, each a few hue families with a contrasting accent. palette.z tours
+// them, cross-fading from one to the next, and also walks t by a quarter loop
+// per palette (four whole loops per tour, so the wrap is seamless), so a visual
+// that reads only a narrow range of t still meets every stop. Manifest mode
+// (palette.x >= 0) keeps the library palettes, so reference renders do not
+// change.
+const vec3 OS_PAL[80] = vec3[80](
+    vec3(1.000, 0.033, 0.133), vec3(1.000, 0.262, 0.010), vec3(1.000, 0.807, 0.010), vec3(0.033, 1.000, 0.262), vec3(0.000, 0.578, 1.000), // 0 tropicPunch
+    vec3(0.000, 0.784, 1.000), vec3(0.027, 0.105, 1.000), vec3(0.479, 0.022, 1.000), vec3(1.000, 0.027, 0.309), vec3(1.000, 0.323, 0.014), // 1 synthSunset
+    vec3(0.000, 1.000, 0.578), vec3(0.000, 0.392, 1.000), vec3(1.000, 0.078, 0.366), vec3(1.000, 0.434, 0.000), vec3(1.000, 0.102, 0.037), // 2 lagoonPop
+    vec3(0.565, 1.000, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.000, 0.100), vec3(0.000, 1.000, 0.195), // 3 acidCitrus
+    vec3(0.000, 0.871, 1.000), vec3(0.000, 0.133, 1.000), vec3(1.000, 0.047, 0.000), vec3(1.000, 0.552, 0.000), vec3(1.000, 0.000, 0.156), // 4 iceFire
+    vec3(0.000, 1.000, 0.332), vec3(0.000, 0.658, 1.000), vec3(0.047, 0.102, 0.991), vec3(1.000, 0.823, 0.000), vec3(0.328, 1.000, 0.000), // 5 electricMint
+    vec3(1.000, 0.347, 0.000), vec3(1.000, 0.074, 0.000), vec3(0.791, 0.000, 0.195), vec3(0.144, 0.000, 0.905), vec3(0.000, 0.539, 1.000), // 6 mangoBerry
+    vec3(1.000, 0.050, 0.371), vec3(1.000, 0.347, 0.050), vec3(1.000, 0.784, 0.050), vec3(0.050, 1.000, 0.434), vec3(0.050, 0.479, 1.000), // 7 candyShop
+    vec3(0.000, 1.000, 0.235), vec3(0.000, 0.745, 0.565), vec3(0.000, 0.296, 1.000), vec3(0.254, 0.024, 1.000), vec3(1.000, 0.028, 0.631), // 8 aurora
+    vec3(1.000, 0.014, 0.014), vec3(1.000, 0.144, 0.000), vec3(1.000, 0.479, 0.000), vec3(1.000, 0.791, 0.000), vec3(1.000, 0.000, 0.212), // 9 lavaLamp
+    vec3(0.784, 1.000, 0.000), vec3(0.000, 1.000, 0.133), vec3(0.000, 0.694, 1.000), vec3(0.000, 0.080, 1.000), vec3(1.000, 0.434, 0.000), // 10 cyberLime
+    vec3(1.000, 0.102, 0.114), vec3(1.000, 0.026, 0.301), vec3(0.397, 0.045, 1.000), vec3(0.026, 0.198, 1.000), vec3(0.000, 0.807, 0.565), // 11 coralReef
+    vec3(1.000, 0.631, 0.000), vec3(1.000, 0.254, 0.000), vec3(1.000, 0.044, 0.044), vec3(1.000, 0.195, 0.000), vec3(1.000, 0.871, 0.074), // 12 goldRush
+    vec3(0.000, 0.010, 1.000), vec3(0.000, 0.283, 1.000), vec3(0.000, 0.913, 0.658), vec3(0.328, 1.000, 0.000), vec3(1.000, 0.791, 0.000), // 13 deepNeon
+    vec3(1.000, 0.195, 0.565), vec3(0.571, 0.205, 1.000), vec3(0.195, 0.392, 1.000), vec3(0.195, 1.000, 0.745), vec3(1.000, 0.871, 0.195), // 14 bubbleTea
+    vec3(1.000, 0.000, 0.091), vec3(0.133, 0.000, 1.000), vec3(0.000, 0.451, 1.000), vec3(0.000, 1.000, 0.665), vec3(0.468, 1.000, 0.000) // 15 neonTokyo
+);
+const float OS_PAL_COUNT = 16.0;
+
+// Linear mix that keeps the endpoints' channel range, so a blend between two
+// saturated colours stays saturated instead of passing through grey.
+vec3 osVividMix(vec3 a, vec3 b, float w) {
+    vec3 m = mix(a, b, w);
+    float lo = min(m.r, min(m.g, m.b)), hi = max(m.r, max(m.g, m.b));
+    float tlo = mix(min(a.r, min(a.g, a.b)), min(b.r, min(b.g, b.b)), w);
+    float thi = mix(max(a.r, max(a.g, a.b)), max(b.r, max(b.g, b.b)), w);
+    return tlo + (m - lo) * ((thi - tlo) / max(hi - lo, 1e-3));
+}
+
+vec3 osPalLoop(float t, int idx) {
+    float f = fract(t) * 5.0;
+    int i = int(floor(f));
+    i = clamp(i, 0, 4);
+    int j = i == 4 ? 0 : i + 1;
+    return osVividMix(OS_PAL[idx * 5 + i], OS_PAL[idx * 5 + j], smoothstep(0.0, 1.0, f - float(i)));
+}
+
+vec3 osPalVisual(float t, VisualUniforms u) {
+    if (u.palette.x >= 0.0) return palVisual(t, u);
+    float phase = u.palette.z;
+    int a = int(mod(floor(phase), OS_PAL_COUNT));
+    int b = int(mod(float(a + 1), OS_PAL_COUNT));
+    float blend = smoothstep(0.18, 0.82, fract(phase));
+    float nudge = phase * 0.25 + u.beatPhase * 0.015 + u.spectralCentroid * 0.08;
+    return osVividMix(osPalLoop(t + nudge, a), osPalLoop(t + nudge, b), blend);
+}
+
+// The calm visuals' audio response, 0..0.25: the music's level, which rises
+// and falls with the song, scaled by the sensitivity. Not the kick: a calm
+// visual's light never jumps on the beat.
+float osCalmBreath(VisualUniforms u) {
+    return 0.25 * saturate(u.level) * (0.5 + 0.5 * u.sensitivity);
+}
+
+// The calm visuals' palette read: the visual's own library palette `own`
+// (its manifest palette) at t, with no beat or spectral nudge. Under the vivid
+// palette tour (palette.x < 0) a calm visual keeps `own`: the tour moves
+// through sixteen neon palettes of very different brightness every few
+// seconds, which turns a moonlit sea orange and swells the light, so vivid
+// leaves a calm visual only its present-pass saturation. A host's manifest
+// palette (palette.x >= 0) still replaces it.
+vec3 osPalCalm(float t, int own, VisualUniforms u) {
+    return palByIndex(t, u.palette.x >= 0.0 ? int(floor(u.palette.x + 0.5)) : own);
+}
+
+// The library's palette roles, reading osPalVisual.
+vec3 osPalRoleTrace(float t, VisualUniforms u) { return osPalVisual(t + 0.03 * u.beatPhase, u); }
+vec3 osPalRoleBass(float t, VisualUniforms u) {
+    vec3 hot = osPalVisual(0.03 + t * 0.18 + 0.04 * u.beatPhase, u);
+    vec3 body = osPalVisual(t + 0.10, u);
+    return mix(body, hot, 0.62 + 0.25 * u.bassImpact);
+}
+vec3 osPalRoleTreble(float t, VisualUniforms u) {
+    vec3 spark = osPalVisual(0.62 + t * 0.28 + 0.10 * u.spectralCentroid, u);
+    return peakWhite(spark, u.treble * u.onset * 0.14);
+}
+vec3 osPalRolePeak(float t, VisualUniforms u) {
+    return peakWhite(osPalVisual(t + 0.08 * u.spectralCentroid, u), saturate(u.onset * 0.18 + u.bassImpact * 0.10));
+}
+vec3 osPalRoleFog(float t, VisualUniforms u) {
+    vec3 c = osPalVisual(t + 0.04 * u.spectralCentroid, u);
+    return mix(vec3(luma(c) * 0.62), c, 0.42);
+}
+vec3 osPalRoleRim(float t, VisualUniforms u) {
+    return mix(osPalVisual(t, u), osPalRolePeak(t + 0.18, u), 0.35 + 0.35 * u.flux);
+}
+
+// Every original finishes through osOffRed. The present pass grades with the vivid saturation
+// and vibrance (palette.rs), which pushes a nearly pure red past the 0.8 red share at which the
+// flash limiter counts saturated red and holds it. Where green plus blue is under 0.55 of red
+// (linear light), both rise by half the difference, so the graded red presents under a 0.77
+// share. Near black the present dither can still split a dim red into a saturated-red byte
+// triple such as (1, 0, 0), so a dim colour becomes exactly grey and a dim red loses its excess
+// over green and blue, which then ramps back in (limiter-red-expire-black, design.md section 3;
+// tools/shader/test-originals-red.mjs). A quality measure: the frame limiter carries the safety
+// claim. NaN becomes 0 by a boolean select, exact on targets honouring IEEE NaN.
+const float OS_GREY_BELOW = 0.006;  // below it the colour becomes exactly grey
+const float OS_RED_FROM = 0.012;    // below it red is at most the larger of green and blue
+const float OS_RED_FULL = 0.05;     // red's excess is whole from here, and red returned as it stands
+vec3 osOffRed(vec3 c) {
+    c = mix(c, vec3(0.0), notEqual(c, c));      // NaN -> 0
+    c = clamp(c, vec3(0.0), vec3(16.0));
+    float s = c.g + c.b, t = 0.55 * c.r;        // gated on the rounded sum and product, so a
+    if (s < t) c += vec3(0.0, 0.5 * (t - s), 0.5 * (t - s));  // colour that meets the share is kept
+    float m = max(c.r, max(c.g, c.b));
+    if (m < OS_GREY_BELOW) return vec3(luma(c));  // three identical channels
+    float p = max(c.g, c.b);
+    if (c.r > p && m < OS_RED_FULL) {           // no saturated red byte from the present dither
+        float w = clamp((m - OS_RED_FROM) / (OS_RED_FULL - OS_RED_FROM), 0.0, 1.0);
+        c.r = w <= 0.0 ? p : p + w * (c.r - p);  // red equal to a partner below OS_RED_FROM
+    }
+    return c;
+}
+
+// Everything joined after this file reads the vivid set through the usual names.
+#define palVisual osPalVisual
+#define palRoleTrace osPalRoleTrace
+#define palRoleBass osPalRoleBass
+#define palRoleTreble osPalRoleTreble
+#define palRolePeak osPalRolePeak
+#define palRoleFog osPalRoleFog
+#define palRoleRim osPalRoleRim
+
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
@@ -574,121 +791,290 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
     return sanitizeColor(max(sanitizeColor(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
-// Drift / procedural liquid-glass caustics.
-// Layered caustic ribbons drifting at three depths behind dark glass; a lens
-// ring floats in the middle, refracting and pulsing with bass. Amplitude
-// swells the whole light field; the artwork remains a low-frequency tint.
-// Beat response is one smooth swell on beatPhase (~180 ms attack, zero at the
-// wrap) instead of instant-attack kick/bassImpact/flux, and every colour keeps
-// G+B a fair share of R, so the visual stays within the source flash budget
-// (no saturated-red area, <= 6 large-area luma transitions a second).
-// param0 Defocus/Flow ; param1 Lens Pulse ; param2 Edge Spectra
+// Drift.
+// A macro shot of liquid-glass droplets drifting over a caustic pool in the
+// dark. The pool light is two crossing caustic nets (the walls of churning,
+// curved Voronoi cells) with sharp white-hot cores, spectral fringes and a
+// wandering focus that thickens some lines and thins others. The droplets
+// merge and part, wobble as they go, magnify and split the net beneath them,
+// carry studio-softbox reflections, hot glints and beaded bubbles, and throw
+// focused spots and soft shadows onto the floor. Everything moves on a slow,
+// steady clock, so the fine bright lines never sweep fast. Once a bar a ripple
+// ring runs out across the pool, gently bending and brightening the caustics.
+// The beat barely swells the droplets and the level softly lifts their inner
+// glow, colour lanes riding the floor each shift hue with their own band, and
+// the level (not the treble) lights the glints and bubbles, so nothing sparks
+// on the hits. The
+// artwork becomes the low-frequency tint of the glass and the light it lets
+// through.
+// Its colours come from its own palette, unnudged by beat or centroid, so the host's vivid
+// palette tour never swells the light across the frame.
+// param0 = Flow (drift speed) ; param1 = Lens Pulse (bass swell) ; param2 = Edge Spectra (dispersion)
 
-vec3 visual(vec2 uv, VisualUniforms u) {
-    vec2 p = motionCentered(uv, u);
-    float ar = u.resolution.x / max(u.resolution.y, 1.0);
-
-    // Continuous beat swell: rises over ~180 ms at 120 bpm, releases slowly,
-    // and is zero on both sides of the beat wrap.
-    float bp = u.beatPhase;
-    float sw = smoothstep(0.0, 0.36, bp) * (1.0 - smoothstep(0.40, 1.0, bp));
-    float bassSw = sw * (0.45 + 0.55 * u.bass);
-    // Light swell centred on the hit: rises over ~150 ms into the beat and
-    // eases off over the same, smooth through the wrap. Scaled by the slow
-    // level only, so the kick's instant jumps never step it.
-    float hitDist = min(bp, 1.0 - bp);
-    float pk = (1.0 - smoothstep(0.0, 0.30, hitDist)) * (0.55 + 0.45 * u.level);
-
-    float flowAmt = mix(0.05, 0.24, u.param0);
-    float lensPulse = mix(0.00, 0.09, u.param1) * bassSw;
-    float spectra = mix(0.15, 1.0, u.param2);
-
-    vec2 flow = p;
-    flow += 0.12 * vec2(
-        fbm(p * 1.35 + vec2(u.time * flowAmt, -u.time * flowAmt * 0.35)),
-        fbm(rot2(0.7) * p * 1.15 + vec2(-u.time * flowAmt * 0.42, u.time * flowAmt))
-    ) - 0.06;
-    flow += normalize(p + 1e-5) * lensPulse * dot(p, p);
-
-    // A smooth image is only tint. It never supplies full-frame brightness.
-    vec3 tint = IMG(photoCover(uv * 0.22 + 0.39, u.resolution, IMGSIZE)).rgb;
-    vec3 base = mix(vec3(0.010, 0.017, 0.024), tint * 0.12, 0.28);
-
-    float r = length(p);
-    float centralShadow = 1.0 - 0.38 * exp(-r * r * 2.7);
-    float vignette = 1.0 - mix(0.60, 0.80, u.param2) * smoothstep(0.42, 1.35, r);
-    base *= centralShadow * max(vignette, 0.0) * (0.75 + 0.45 * u.level);
-
-    float swell = 0.95 + 0.45 * u.level + 0.32 * pk; // whole light field breathes
-
-    vec3 glow = vec3(0.0);
-
-    // Three depth layers of caustic ribbons: far (dim, slow, thin) -> near
-    // (bright, faster, wider). 6 lanes per layer.
-    for (int i = 0; i < 18; i++) {
-        float fi = float(i);
-        int layer = i / 6;
-        float fl = float(layer);
-        float depth = mix(1.0, 0.42, fl * 0.5);        // near=1 .. far=0.42
-        float scale = mix(1.0, 1.9, fl * 0.5);         // far layers compressed
-        float laneSeed = hash11(fi * 2.17 + fl * 9.4);
-
-        float phase = fi * 1.37
-                    + u.time * (0.05 + 0.022 * hash11(fi * 4.3)) * depth * (1.0 + u.level);
-        vec2 q = rot2(mix(-0.42, 0.46, hash11(fi * 8.1))) * flow * scale;
-        // parallax slide per layer
-        q.x += u.time * flowAmt * (0.5 - fl * 0.45);
-
-        float curve = sin(q.x * (1.2 + fi * 0.11) + phase) * 0.20
-                    + sin(q.x * (2.6 + fi * 0.07) - phase * 0.71) * 0.06;
-        float lane = q.y - curve - mix(-0.85, 0.85, laneSeed);
-        float width = mix(0.0028, 0.0095, hash11(fi * 5.31)) * (1.0 + fl * 0.9);
-        float line = aaLine(lane, width);
-        float halo = exp(-abs(lane) * mix(90.0, 40.0, fl * 0.5)) * 0.35;
-
-        float window = smoothstep(1.35, 0.25, abs(q.x) * 0.7);
-
-        float energy = bandAt(u, fract(fi / 18.0 + 0.04 * sin(u.time * 0.13 + fi)));
-        vec3 lineCol = palVisual(fract(fi / 18.0 + 0.30 * fl + 0.12 * u.spectralCentroid
-                                       + 0.015 * u.time), u);
-        lineCol = accentize(lineCol, u.accent, 0.12);
-        glow += lineCol * (line + halo) * window
-              * (0.35 + energy * 1.05) * depth * swell * 0.55;
-    }
-
-    // Lens ring: thin bright rim + faint refracted inner sheen.
-    float rimR = 0.34 + 0.045 * bassSw;
-    float rim = aaLine(r - rimR, 0.0035);
-    float rimHalo = exp(-abs(r - rimR) * 26.0) * 0.30;
-    vec3 rimCol = palVisual(0.55 + 0.12 * u.spectralCentroid, u);
-    glow += rimCol * (rim + rimHalo) * (0.90 + 0.50 * pk) * swell;
-    // interior sheen — the lens gathers the caustic light
-    float inner = smoothstep(rimR, rimR * 0.25, r);
-    glow += palRoleFog(0.45 + 0.1 * u.spectralCentroid, u)
-          * inner * (0.06 + 0.14 * u.level + 0.08 * bassSw);
-
-    // Tiny glints on the lens edge; they reseed each beat while the swell is zero.
-    for (int i = 0; i < 10; i++) {
-        float fi = float(i);
-        float a = fi / 10.0 * 6.2831853 + hash11(fi * 0.57) * 0.4;
-        float rr = 0.30 + 0.12 * hash11(fi * 1.91 + floor(u.beatCount));
-        vec2 sp = vec2(cos(a) * rr / max(ar, 1e-3), sin(a) * rr);
-        float d = length(p - sp);
-        float spark = min(2.2, 0.00030 / (d * d + 0.00040));
-        glow += palHeatIce(fi / 10.0 + 0.1 * u.spectralCentroid) * spark
-              * sw * (0.35 + 0.4 * u.treble) * spectra;
-    }
-
-    vec3 trailedGlow = feedbackTrail(glow, uv,
-                                     min(u.trailDecay, 0.50),
-                                     0.0015 + 0.004 * bassSw,
-                                     0.0015 * sin(u.time * 0.2));
-    vec3 col = base + trailedGlow;
-    // Colour floor: reds lean crimson (blue, a touch of green), so dim red
-    // tails never round to pure saturated red yet keep their saturation.
-    col.gb = max(col.gb, col.r * vec2(0.08, 0.42));
-    return col;
+// The palette read: the visual's own palette (8) with no beat or spectral
+// nudge and no palette tour, so the host's vivid tour never swells the light;
+// a host's manifest palette still replaces it. The fog tint is rebuilt on it.
+vec3 drPalSteady(float t, VisualUniforms u) { return osPalCalm(t, 8, u); }
+vec3 drPalSteadyFog(float t, VisualUniforms u) {
+    vec3 c = drPalSteady(t, u);
+    return mix(vec3(luma(c) * 0.62), c, 0.42);
 }
+
+// The palette, read once per pixel at fixed stops and blended locally.
+struct DrPal { vec3 h0; vec3 h1; vec3 h2; vec3 teal; vec3 g0; vec3 g1; };
+
+vec3 drHue(DrPal P, float t) {
+    return t < 0.5 ? mix(P.h0, P.h1, t * 2.0) : mix(P.h1, P.h2, t * 2.0 - 1.0);
+}
+
+// One layer of the caustic net: the walls of a churning Voronoi pattern, where
+// the light under a rippled surface focuses into lines. Returns the gap to the
+// nearest wall (F2 - F1). The cell points trace Lissajous loops on whole
+// multiples of ang, so the clock wraps without a seam.
+float drNet(vec2 q, float ang, float k) {
+    vec2 ip = floor(q);
+    vec2 fp = q - ip;
+    float f1 = 9.0, f2 = 9.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 o = vec2(float(x), float(y));
+            vec2 h = hash22(ip + o);
+            vec2 pt = o + 0.5 + 0.36 * sin(vec2(ang, ang * k) + 6.2831853 * h);
+            vec2 d = pt - fp;
+            float dd = dot(d, d);
+            f2 = min(f2, max(f1, dd));
+            f1 = min(f1, dd);
+        }
+    }
+    return sqrt(f2) - sqrt(f1);
+}
+
+// The lit pool under the droplets, in floor coordinates: two crossing caustic
+// nets with sharp white-hot cores and spectral fringes, bent and brightened by
+// the ripple ring (rip = source, front radius, strength). scroll is how far
+// the floor has drifted.
+vec3 drPool(vec2 f, float scroll, float ang, float w, float dsp, vec4 rip, vec3 tint, DrPal P, float acc, VisualUniforms u) {
+    vec2 rv = f - rip.xy;
+    float rr = length(rv);
+    float rx = (rr - rip.z) / 0.24;
+    float env = exp(-rx * rx) * rip.w;
+    float crest = env * max(sin(rx * 5.0 + 1.2), 0.0);
+    f += rv / max(rr, 1e-3) * env * 0.012 * sin(rx * 5.0);
+    vec2 q = f * 1.05;
+    q += 0.42 * sin(q.yx * 1.3 + vec2(ang, -ang));     // bend the walls into curves
+    // the focus wanders: some stretches of the net gather light into thick
+    // bright lines, others thin out to faint threads
+    float m = vnoise(f * 0.75 + 0.7 * vec2(sin(ang), cos(ang)) + 11.0);
+    m = m * m * (3.0 - 2.0 * m);
+    w *= 0.6 + 0.9 * m;
+    float e1 = drNet(q, ang, 2.0);
+    float e2 = drNet(mat2(0.8, -0.6, 0.6, 0.8) * q * 1.43 + 7.3, -ang, 1.0);
+    // a Lorentzian line: a sharp core with a long soft glow; red runs a little
+    // wider than blue, which leaves spectral fringes on every line
+    vec3 sc = vec3(1.0 - dsp, 1.0, 1.0 + dsp);
+    vec3 a1 = e1 * sc / w;
+    vec3 a2 = e2 * sc / (w * 1.25);
+    vec3 l1 = 1.0 / (1.0 + a1 * a1);
+    vec3 l2 = 1.0 / (1.0 + a2 * a2);
+    float mm = 0.25 + 1.5 * m;
+    // colour lanes that ride along with the floor, each shifting hue with its
+    // own band; the overall level, not the band, sets their light
+    float lane = 0.5 + 0.5 * sin(f.x * 0.55 + 0.6 * sin(f.y * 0.8));
+    float b = u.level;
+    vec3 hue = drHue(P, saturate(lane + 0.12 * (bandAt(u, lane) - u.level))) * tint; // the main net: rose to gold
+    vec3 hue2 = P.teal * tint * (1.3 + 2.2 * acc);         // the finer net: teal, flaring faintly on the beat
+    vec3 x12 = l1 * l2;
+    vec3 c = hue * l1 + hue2 * 0.42 * l2 + peakWhite(hue, 0.6) * 1.6 * x12;   // crossings focus white-hot
+    // light pool: brightest mid-frame, falling to black at the edges (in view
+    // space, so it never drifts away with the floor)
+    vec2 fv = (f - vec2(scroll, 0.0)) * vec2(0.42, 0.75);
+    float pool = exp(-dot(fv, fv));
+    vec3 col = c * mm * (0.9 + 0.15 * b);
+    col *= 1.0 + 0.12 * env + 0.15 * crest;
+    col += peakWhite(hue, 0.4) * crest * 0.1;             // the crest catches the light
+    // the faint wide glow of light scattered in the water
+    col += mix(P.g0, P.g1, lane) * tint * 0.018 * (0.8 + 0.3 * u.level);
+    return col * pool;
+}
+
+vec3 osBody(vec2 uv, VisualUniforms u) {
+    vec2 p = centered(uv, u.resolution);
+    p.y = -p.y;
+    float detail = osDetail(u);
+    float px = 2.0 / max(u.resolution.y, 1.0);
+
+    float flow = mix(0.5, 1.6, u.param0);
+    float swellK = mix(0.0, 0.16, u.param1);
+    float disp = mix(0.15, 1.0, u.param2);
+
+    // a slow, steady clock: fine bright caustic lines must never sweep fast
+    float fl = mod(u.time, 36000.0) * flow * 0.06;
+    float ang = mod(fl * 0.5, 6.2831853);              // the caustic clock, wrapped
+    float drift = mod(fl * 0.09, 480.0);
+
+    // The artwork as a soft, zoomed tint; never a picture, never the brightness.
+    vec3 art = IMG(photoCover(uv * 0.2 + 0.4, u.resolution, IMGSIZE)).rgb;
+    vec3 tint = mix(vec3(1.0), art / max(max(art.r, max(art.g, art.b)), 0.08), 0.45);
+
+    DrPal P;
+    P.h0 = drPalSteady(0.38, u);
+    P.h1 = drPalSteady(0.56, u);
+    P.h2 = drPalSteady(0.74, u);
+    P.teal = drPalSteady(0.95, u);
+    P.g0 = drPalSteady(0.1, u);
+    P.g1 = drPalSteady(0.3, u);
+    vec3 pal6 = drPalSteady(0.6, u);
+    // the complementary accent: the cool net flares on the downbeats, softer
+    // on the offbeats
+    float bp = saturate(u.beatPhase);
+    float bSw = smoothstep(0.0, 0.3, bp) * (1.0 - bp) * (1.0 - bp) * 2.0;
+    float acc = 0.02 * bSw * (mod(u.beatCount, 2.0) < 1.0 ? 1.0 : 0.5);
+
+    // a gentle studio perspective on the floor: the top recedes
+    float persp = 1.0 / (1.25 - 0.3 * p.y);
+    vec2 f = vec2(p.x, p.y + 0.4) * persp * 1.6 + vec2(drift * 0.5, 0.0);
+
+    // caustic line width in floor units, never thinner than about a pixel
+    float lw = max(0.022, 2.6 * px);
+
+    // a ripple ring once a bar: a drop of light falls into the pool, the ring
+    // runs out across the floor, gently bending and brightening the caustics.
+    float b4 = (mod(u.beatCount, 4.0) + bp) * 0.25;
+    float bar = floor(u.beatCount / 4.0);
+    vec2 rh = hash22(vec2(mod(bar, 512.0), 4.1));
+    vec2 rsrc = vec2(drift * 0.5 + (rh.x - 0.5) * 2.2, 0.45 + (rh.y - 0.5) * 0.9);
+    float ramp = (1.0 - b4) * (1.0 - b4) * smoothstep(0.0, 0.15, b4) * (0.15 + 0.02 * bSw);
+    vec4 rip = vec4(rsrc, 0.05 + 2.6 * b4, ramp);
+    // the next drop of light: over the bar's last beat a bead gathers where the
+    // next ring will start, tightening and brightening until it lands
+    vec2 nh = hash22(vec2(mod(bar + 1.0, 512.0), 4.1));
+    vec2 nsrc = vec2(drift * 0.5 + (nh.x - 0.5) * 2.2, 0.45 + (nh.y - 0.5) * 0.9);
+    float gather = smoothstep(0.72, 1.0, b4);
+
+    // ---- droplets: a smooth gaussian metaball field ----
+    const float DR_THR = 0.42;
+    vec2 L2 = normalize(vec2(-0.55, 0.8));
+    float F = 0.0;
+    vec2 G = vec2(0.0);
+    float shadow = 0.0;
+    float focus = 0.0;
+    int nDrops = osSteps(4.0, 6.0, detail);
+    float span = 5.0;
+    float dc = mod(fl * 0.21, 6283.1853);            // the droplets' own orbit clock
+    for (int k = 0; k < 6; k++) {
+        if (k >= nDrops) break;
+        float fk = float(k);
+        vec2 h = hash22(vec2(fk * 3.17, 9.1));
+        float sp = 0.45 + 1.1 * h.x;
+        float x = mod(h.y * span - drift * sp, span) - span * 0.5;
+        float bob = sin(mod(dc * (0.6 + 0.7 * h.y) + fk * 2.1, 6.2831853));
+        vec2 c = vec2(x, mix(-0.5, 0.4, fract(h.x * 3.7 + fk * 0.37)) + 0.26 * bob);
+        float b = mix(u.level, bandAt(u, 0.1 + 0.12 * fk), 0.2);
+        float r = mix(0.21, 0.4, h.y) * (1.0 + swellK * (0.05 * bSw + 0.25 * b));
+        vec2 d = p - c;
+        // the surface wobbles: a slow squash that breathes with the mids and
+        // jolts on the bass, never at rest between beats
+        float wa = mod(drift * 3.0 * sp + fk * 1.7, 6.2831853);
+        float wob = (0.05 + 0.03 * b + 0.01 * bSw) * sin(wa * 2.0 + 1.5707963 * mod(u.time, 4.0));
+        vec2 wd = vec2(cos(wa), sin(wa));
+        vec2 dq = d + wd * dot(d, wd) * wob;
+        float e = exp(-dot(dq, dq) / (r * r));
+        F += e;
+        G += -2.0 * d / (r * r) * e;
+        // floor shadow and the focused spot of light the droplet throws
+        vec2 ds = d + L2 * r * 0.85;
+        shadow += exp(-dot(ds, ds) / (r * r * 0.9));
+        vec2 df = d + L2 * r * 1.0;
+        focus += exp(-dot(df, df) / (r * r * 0.035)) * (0.95 + 0.15 * b);
+    }
+
+    // ---- the floor seen directly (outside the glass) ----
+    vec3 pool = drPool(f, drift * 0.5, ang, lw, 0.06, rip, tint, P, acc, u);
+    vec3 col = vec3(0.0015, 0.002, 0.003) + pool;
+    col *= 1.0 - 0.75 * saturate(shadow) * (1.0 - smoothstep(DR_THR - 0.1, DR_THR, F));
+    vec3 focusC = pal6 * tint;
+    col += focusC * focus * (0.12 + 0.6 * luma(pool)) * (0.85 + 0.3 * u.level);
+    if (gather > 0.0) {
+        vec2 bd = f - nsrc;
+        float bw = 0.004 + 0.02 * (1.0 - gather);
+        float bead = exp(-dot(bd, bd) / bw) * gather * gather;
+        col += peakWhite(P.h2, 0.6) * bead * 0.9 + P.h1 * exp(-dot(bd, bd) * 6.0) * gather * 0.12;
+    }
+
+    // ---- the glass ----
+    float gl = length(G);
+    float sd = (F - DR_THR) / max(gl, 1e-3);           // ~signed distance to the surface
+    float cover = smoothstep(-px, px, sd);
+    if (cover > 0.0) {
+        float th = sqrt(max(F - DR_THR, 0.0));
+        vec2 gh = G * 0.5 / max(th, 0.06);              // slope of the height field
+        vec3 n = normalize(vec3(-gh * 0.11, 1.0));
+        float ndv = saturate(n.z);
+        vec2 off = n.xy * (0.55 + 0.35 * th) - p * 0.12; // refraction plus lens magnification
+        // the lens magnifies the net, so its lines run wider and split further
+        vec3 refr = drPool(f + off, drift * 0.5, ang, lw * 1.4, 0.08 + 0.3 * disp, rip, tint, P, acc, u);
+        // the glass is a tinted, slightly absorbing body
+        vec3 absorb = mix(mix(P.h0, P.h2, 0.47), art, 0.5);
+        vec3 trans = exp(-th * 2.2 * (1.0 - clamp(absorb, 0.0, 1.0)));
+        vec3 g = refr * 1.35 * trans;
+        // inner glow, pulsing with bass and the beat
+        g += drPalSteady(0.3, u) * trans * th * (0.14 + 0.06 * bSw);
+        // studio reflection: two softboxes and a floor bounce
+        vec3 rd = reflect(vec3(0.0, 0.0, -1.0), n);
+        float box1 = smoothstep(0.12, 0.0, abs(rd.x + 0.38)) * smoothstep(0.1, 0.35, rd.y);
+        float box2 = smoothstep(0.06, 0.0, abs(rd.y - 0.52)) * smoothstep(0.55, 0.2, abs(rd.x - 0.2));
+        float fres = 0.04 + 0.96 * pow(1.0 - ndv, 4.0);
+        vec3 env = vec3(1.0, 0.97, 0.93) * (box1 * 1.6 + box2 * 1.1) + drPalSteady(0.6, u) * 0.4 * smoothstep(0.0, -0.4, rd.y);
+        g += env * (0.08 + 0.9 * fres);
+        // spectral edges: dispersion fringe right at the silhouette
+        float edge = exp(-sd / (px * 2.0 + 0.012));
+        vec3 spec = hsv2rgb(vec3(fract(0.55 + 2.2 * sd + 0.15 * u.spectralCentroid), 0.85, 1.0));
+        g += spec * edge * disp * (0.65 + 0.1 * u.level);
+        // key-light specular
+        vec3 Lk = normalize(vec3(-0.45, 0.6, 0.66));
+        float sp = pow(saturate(dot(rd, Lk)), 160.0);
+        g += vec3(2.6, 2.45, 2.3) * sp * (1.0 + 0.2 * u.level);
+        // micro-bubbles caught in the glass, twinkling with the treble
+        vec2 bq = (p + vec2(drift * 0.9, 0.0)) * 15.0;
+        vec2 bc = floor(bq);
+        vec2 bh = hash22(mod(bc, 512.0) + 3.0);
+        vec2 bd = (bq - bc - 0.3 - 0.4 * bh) / 15.0;
+        float br = (0.004 + 0.007 * bh.y);
+        float bl = length(bd);
+        // a hollow bead: bright rim, a pin glint offset toward the key light
+        float bub = smoothstep(px * 1.2, 0.0, abs(bl - br)) * 0.6
+                  + exp(-dot(bd - vec2(-0.4, 0.5) * br, bd - vec2(-0.4, 0.5) * br) / (px * px * 0.8));
+        bub *= step(0.93, bh.x) * smoothstep(0.0, 0.3, th);
+        g += peakWhite(pal6, 0.5) * bub * (0.32 + 0.12 * u.level * bh.y);
+        col = mix(col, g, cover);
+    }
+
+    // ---- out-of-focus motes in front ----
+    int nMotes = osSteps(4.0, 10.0, detail);
+    vec3 m0 = drPalSteady(0.5, u) * tint;
+    vec3 m1 = drPalSteady(0.9, u) * tint;
+    for (int k = 0; k < 10; k++) {
+        if (k >= nMotes) break;
+        float fk = float(k);
+        vec2 h = hash22(vec2(fk * 7.31, 2.7));
+        float x = mod(h.x * 5.0 - drift * (2.2 + 1.2 * h.y), 5.0) - 2.5;
+        vec2 c = vec2(x, mix(-0.95, 0.95, fract(h.y * 5.7)) + 0.05 * sin(mod(drift * 2.0 + fk, 6.2831853)));
+        float r = mix(0.04, 0.13, h.y);
+        float dd = length(p - c);
+        float disc = smoothstep(r, r - 0.012, dd);
+        float ring = smoothstep(r, r - 0.01, dd) * smoothstep(r - 0.035, r - 0.008, dd);
+        float b = bandAt(u, fract(h.x * 3.3));
+        vec3 mc = mix(m0, m1, h.y);
+        col += mc * (disc * 0.05 + ring * 0.06) * (0.7 + 0.8 * b);
+    }
+
+    // lens vignette
+    float vig = 1.0 - 0.55 * smoothstep(0.6, 1.9, length(p * vec2(0.8, 1.0)));
+    return col * vig; // LINEAR HDR — post chain tonemaps
+}
+
+// Reds stay off saturated red through the vivid present (common.glsl).
+vec3 visual(vec2 uv, VisualUniforms u) { return osOffRed(osBody(uv, u)); }
 
 in vec2 vUV;
 layout(location=0) out vec4 fragColor;
