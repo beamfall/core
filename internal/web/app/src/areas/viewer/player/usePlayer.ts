@@ -1,6 +1,12 @@
 import Hls from "hls.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, getIdentityEpochSignal, graphql, resetIdentityEpoch } from "@/lib/api";
+import {
+  ApiError,
+  getExpectedProfile,
+  getIdentityEpochSignal,
+  graphql,
+  resetIdentityEpoch,
+} from "@/lib/api";
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker, ReportPlaybackVars } from "@/lib/graphql/types";
 import {
@@ -611,9 +617,11 @@ export function usePlayer(
   useEffect(() => {
     if (!mediaID) return;
     let ended = false;
+    // The Profile this player opened for (null: none); see endPlayback.
+    const profile = getExpectedProfile() ?? null;
     const onPageHide = () => {
       ended = true;
-      endPlayback(mediaID);
+      endPlayback(mediaID, profile);
     };
     const onPageShow = (event: PageTransitionEvent) => {
       if (!event.persisted || !ended) return;
@@ -626,7 +634,7 @@ export function usePlayer(
     return () => {
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("pageshow", onPageShow);
-      if (!ended) endPlayback(mediaID);
+      if (!ended) endPlayback(mediaID, profile);
     };
   }, [mediaID]);
 

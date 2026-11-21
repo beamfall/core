@@ -1280,7 +1280,7 @@ describe("SessionProvider names its Profile on requests (CORE-2923)", () => {
     errors: [{ message: "x", extensions: { code: "CONFLICT", reason: "PROFILE_MISMATCH" } }],
   };
 
-  it("names the Profile it read, and none while a switch is loading", async () => {
+  it("names the Profile it read on a switch, and none while the switch is loading", async () => {
     const switched = deferred<SessionInfo>();
     vi.mocked(fetchCurrentSession)
       .mockResolvedValueOnce(p1Session)
@@ -1294,8 +1294,15 @@ describe("SessionProvider names its Profile on requests (CORE-2923)", () => {
     await waitFor(() => expect(screen.getByTestId("profile")).toHaveTextContent("p1"));
     expect(getExpectedProfile()).toBe("p1");
 
+    let namedBySwitch: string | undefined = "unset";
+    vi.mocked(switchProfileMutation).mockImplementationOnce(async () => {
+      namedBySwitch = getExpectedProfile();
+      return p2Session;
+    });
     await user.click(screen.getByRole("button", { name: "Switch" }));
-    // The switch mutation and the reads after it name no Profile.
+    // The switch mutation still names the Profile this tab shows, so a stale
+    // tab's switch is refused; the reads after it name none.
+    expect(namedBySwitch).toBe("p1");
     expect(getExpectedProfile()).toBeUndefined();
     await act(async () => {
       switched.resolve(p2Session);
@@ -1329,6 +1336,25 @@ describe("SessionProvider names its Profile on requests (CORE-2923)", () => {
     // A late refusal for p1 arrives after the tab moved on: nothing reloads.
     act(() => noteProfileRefusal("p1", 409, mismatch));
     expect(fetchCurrentSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("names the shown Profile on the Reveal mutation, so a stale tab's PIN is refused", async () => {
+    vi.mocked(fetchCurrentSession).mockResolvedValue(p1Session);
+    let namedByReveal: string | undefined = "unset";
+    vi.mocked(revealMutation).mockImplementationOnce(async () => {
+      namedByReveal = getExpectedProfile();
+      return { revealed: true } as Awaited<ReturnType<typeof revealMutation>>;
+    });
+    const user = userEvent.setup();
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(getExpectedProfile()).toBe("p1"));
+    await user.click(screen.getByRole("button", { name: "Reveal" }));
+    await waitFor(() => expect(revealMutation).toHaveBeenCalled());
+    expect(namedByReveal).toBe("p1");
   });
 
   it("ignores refusals that are not a Profile mismatch", async () => {

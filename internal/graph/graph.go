@@ -1342,6 +1342,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if auditErr := h.recordPrivilegedAudit(r.Context(), privilegedNames, observability.AuditActor{}, observability.AuditRefused); auditErr != nil {
 				slog.Error("privileged refusal audit failed", "error", auditErr)
 			}
+			if errors.Is(err, auth.ErrProfileMismatch) {
+				// The session moved to another Profile after the route's
+				// precondition passed (CORE-2923): the same refusal it gives.
+				w.Header().Set("Cache-Control", "no-store")
+				refusal := newGraphError(errorCode(errProfileMismatch), errProfileMismatch.Error())
+				refusal.Extensions.Reason = errorReason(errProfileMismatch)
+				writeJSON(w, http.StatusConflict, response{Errors: []graphError{refusal}})
+				return
+			}
 			writeGraphError(w, http.StatusUnauthorized, ErrorCodeUnauthenticated, "invalid session")
 			return
 		}

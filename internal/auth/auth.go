@@ -41,6 +41,10 @@ const (
 	ProfileHeader = "X-Beamfall-Profile"
 )
 
+// ErrProfileMismatch is ScopeFromRequest's refusal of a request whose
+// ProfileHeader names a Profile other than the one its session is bound to.
+var ErrProfileMismatch = errors.New("the session is bound to another profile")
+
 // ProfileMismatch reports whether r names, in ProfileHeader, a Profile other
 // than the one scope is bound to. An absent or blank header names none.
 func ProfileMismatch(r *http.Request, scope Scope) bool {
@@ -272,7 +276,19 @@ func (s *Service) certificationConstraints(ceilings []store.ProfileCertification
 // wins when present — a scoped developer key (ADR-0040, bfk_ prefix) routes to
 // the scoped-key path, anything else to the admin API token; then
 // the X-Beamfall-* headers; then the browser cookie credential.
+//
+// Every resolution checks ProfileHeader, so a handler that resolves the scope
+// again after a wrapper checked it still never acts for a Profile the request
+// was not made for (CORE-2923): a mismatch is ErrProfileMismatch.
 func (s *Service) ScopeFromRequest(ctx context.Context, r *http.Request) (Scope, error) {
+	scope, err := s.scopeFromCredential(ctx, r)
+	if err == nil && ProfileMismatch(r, scope) {
+		return Scope{}, ErrProfileMismatch
+	}
+	return scope, err
+}
+
+func (s *Service) scopeFromCredential(ctx context.Context, r *http.Request) (Scope, error) {
 	if bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		token := strings.TrimSpace(bearer)
 		if strings.HasPrefix(token, store.ScopedKeyPrefix) {

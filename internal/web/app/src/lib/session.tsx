@@ -136,9 +136,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const controller = new AbortController();
     controllerRef.current = controller;
     setIdentityEpochSignal(controller.signal);
-    // Requests of the next epoch name no Profile until its session is read,
-    // so the Profile switch itself and the reads after it are never refused.
-    setExpectedProfile();
     clearViewerCache();
     setSession(null);
     setManifest(null);
@@ -151,6 +148,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const loadEpoch = useCallback(async (signal: AbortSignal) => {
     const current = () => !signal.aborted;
+    // The reads of a new epoch name no Profile until the session is read, so a
+    // reload after another tab's switch is never refused. A mutation that opens
+    // the epoch (Reveal, relock, a Profile switch) runs before this and still
+    // names the Profile this tab shows, so a stale tab's PIN or switch is
+    // refused instead of acting on the Profile the session moved to.
+    setExpectedProfile();
     try {
       const { compatibility, renewed } = await handshakeRenewingOnce(signal);
       if (!current()) return;
@@ -263,7 +266,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // another Profile (CORE-2923): read the identity again, so this tab shows
     // the Profile the session is bound to instead of acting as the old one.
     // api.ts calls this only for the Profile this tab still shows, and the new
-    // epoch names none until it has read the session, so it cannot loop.
+    // epoch's loadEpoch names none until it has read the session, so it cannot loop.
     setProfileMismatchHandler(() => {
       void load();
     });

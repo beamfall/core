@@ -15,6 +15,7 @@ import {
   setExpectedProfile,
   setIdentityEpochSignal,
   setProfileMismatchHandler,
+  subscribeEvents,
 } from "./api";
 
 afterEach(() => {
@@ -350,6 +351,46 @@ describe("request Profile precondition (CORE-2923)", () => {
     }
     expect(headersOf(fetchMock, 2)?.["X-Beamfall-Csrf"]).toBe("1");
     expect(profileHeaders()).toEqual({ "X-Beamfall-Profile": "profile-a" });
+  });
+
+  it("names the Profile a keepalive was opened for, and reloads on its refusal", async () => {
+    const fetchMock = vi.fn(async () => Response.json(graphMismatch, { status: 409 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const onMismatch = vi.fn();
+    setProfileMismatchHandler(onMismatch);
+    setExpectedProfile("profile-a");
+
+    // A player unmounting after this tab moved on names the Profile it opened
+    // for, or none, never the current one.
+    postKeepalive("/api/graphql", {}, "profile-old");
+    postKeepalive("/api/graphql", {}, null);
+    expect(headersOf(fetchMock, 0)?.["X-Beamfall-Profile"]).toBe("profile-old");
+    expect(headersOf(fetchMock, 1)?.["X-Beamfall-Profile"]).toBeUndefined();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onMismatch).not.toHaveBeenCalled();
+
+    // A keepalive for the shown Profile that is refused reloads the tab.
+    postKeepalive("/api/graphql", {});
+    await vi.waitFor(() => expect(onMismatch).toHaveBeenCalledTimes(1));
+  });
+
+  it("names the shown Profile on every event stream connection, and reloads on its refusal", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { error: "profile mismatch", code: "CONFLICT", reason: "PROFILE_MISMATCH" },
+        { status: 409 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const onMismatch = vi.fn();
+    setProfileMismatchHandler(onMismatch);
+    setExpectedProfile("profile-a");
+
+    const close = subscribeEvents(() => {});
+    await vi.waitFor(() => expect(onMismatch).toHaveBeenCalledTimes(1));
+    close();
+    expect(headersOf(fetchMock)?.["X-Beamfall-Profile"]).toBe("profile-a");
   });
 
   it("throws a typed 409 and asks the spine to reload when the shown Profile is refused", async () => {

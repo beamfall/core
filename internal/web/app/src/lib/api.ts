@@ -375,17 +375,33 @@ export async function postJSON<T = unknown>(
 /**
  * POST JSON with keepalive, so the request outlives the page that sent it: a
  * pagehide handler uses it to tell the server the viewer left. Fire and
- * forget; the response is never read.
+ * forget, except that a Profile refusal still reloads a tab that is open.
+ * `profile` names the Profile the request is made for: an unmount that runs
+ * after this tab moved on passes the Profile it opened with, so it can never
+ * act on the Profile the session moved to (CORE-2923); null names none.
  */
-export function postKeepalive(path: string, body: unknown): void {
+export function postKeepalive(
+  path: string,
+  body: unknown,
+  profile: string | null | undefined = expectedProfileID,
+): void {
   try {
     void fetch(path, {
       method: "POST",
       credentials: "same-origin",
       keepalive: true,
-      headers: { "Content-Type": "application/json", [CSRF_HEADER]: "1", ...profileHeaders() },
+      headers: {
+        "Content-Type": "application/json",
+        [CSRF_HEADER]: "1",
+        ...(profile ? { [PROFILE_HEADER]: profile } : {}),
+      },
       body: JSON.stringify(body),
-    }).catch(() => {});
+    })
+      .then(async (response) => {
+        if (response.status !== 409) return;
+        noteProfileRefusal(profile ?? undefined, response.status, await response.json());
+      })
+      .catch(() => {});
   } catch {
     // A page being torn down may refuse new requests; the server's expiry covers it.
   }
@@ -534,5 +550,14 @@ export function subscribeEvents(
   onError?: (err: Event) => void,
   onState?: (state: EventStreamState) => void,
 ): () => void {
-  return openEventStream("/api/events", { onEvent, onError, onState });
+  return openEventStream("/api/events", {
+    onEvent,
+    onError,
+    onState,
+    // Each connection names the Profile this tab shows, and the server ends a
+    // stream whose session moved to another one; the refused reconnect reloads
+    // the tab (CORE-2923).
+    headers: profileHeaders,
+    onRefused: (sent, status, payload) => noteProfileRefusal(sent[PROFILE_HEADER], status, payload),
+  });
 }

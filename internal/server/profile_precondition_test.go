@@ -1,12 +1,14 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
@@ -123,5 +125,90 @@ func TestStaleProfileHeaderRefusesRESTWriteBeforeHandler(t *testing.T) {
 	srv.ServeHTTP(rec, profileRequest("/api/media/subtitle-pin", `{}`, "profile-default"))
 	if rec.Code == http.StatusConflict {
 		t.Fatalf("matching REST write = 409: %s", rec.Body.String())
+	}
+}
+
+// An event stream opened for Profile A stops delivering once another tab
+// switches the shared session to B, and a reconnect still naming A is refused
+// with the mismatch, so the tab learns to reload instead of reading B's events
+// (CORE-2923). A stream naming no Profile is the control: it keeps streaming.
+func TestStaleProfileHeaderEndsEventStream(t *testing.T) {
+	srv, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	now := time.Unix(0, 0).UTC()
+	httpSrv := httptest.NewServer(srv)
+	defer httpSrv.Close()
+
+	connect := func(profile string) (*http.Response, context.CancelFunc) {
+		streamCtx, cancel := context.WithCancel(ctx)
+		req, err := http.NewRequestWithContext(streamCtx, http.MethodGet, httpSrv.URL+"/api/events", nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("X-Beamfall-Session", "session-default")
+		req.Header.Set("X-Beamfall-Device", "device-tv")
+		req.Header.Set("X-Beamfall-Device-Secret", "dev-tv-secret")
+		if profile != "" {
+			req.Header.Set(auth.ProfileHeader, profile)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			cancel()
+			t.Fatalf("connect: %v", err)
+		}
+		return resp, cancel
+	}
+	lines := func(resp *http.Response, streamCtx context.Context) <-chan string {
+		out := make(chan string, 64)
+		go func() {
+			defer resp.Body.Close()
+			scanner := bufio.NewScanner(resp.Body)
+			for scanner.Scan() {
+				if rest, ok := strings.CutPrefix(scanner.Text(), "event: "); ok {
+					select {
+					case out <- rest:
+					case <-streamCtx.Done():
+						return
+					}
+				}
+			}
+		}()
+		return out
+	}
+
+	boundResp, cancelBound := connect("profile-default")
+	defer cancelBound()
+	if boundResp.StatusCode != http.StatusOK {
+		t.Fatalf("bound connect = %d, want 200", boundResp.StatusCode)
+	}
+	bound := lines(boundResp, ctx)
+	controlResp, cancelControl := connect("")
+	defer cancelControl()
+	control := lines(controlResp, ctx)
+
+	if err := st.AppendMediaEvent(ctx, "media.updated", "media-alpha", nil, now); err != nil {
+		t.Fatalf("append event 1: %v", err)
+	}
+	waitForEvent(t, bound, "media.updated", "pre-switch event on the bound stream")
+	waitForEvent(t, control, "media.updated", "pre-switch event on the control stream")
+
+	if err := st.SetSessionProfile(ctx, "session-default", "profile-managed"); err != nil {
+		t.Fatalf("SetSessionProfile: %v", err)
+	}
+	if err := st.AppendMediaEvent(ctx, "media.created", "media-alpha", nil, now); err != nil {
+		t.Fatalf("append event 2: %v", err)
+	}
+	waitForEvent(t, control, "media.created", "post-switch event on the control stream")
+	assertNoEvent(t, bound, "media.created", 750*time.Millisecond)
+
+	staleResp, cancelStale := connect("profile-default")
+	defer cancelStale()
+	defer staleResp.Body.Close()
+	var refusal profileMismatchResponse
+	if err := json.NewDecoder(staleResp.Body).Decode(&refusal); err != nil {
+		t.Fatalf("decode reconnect refusal: %v", err)
+	}
+	if staleResp.StatusCode != http.StatusConflict || refusal.Reason != profileMismatchReason {
+		t.Fatalf("stale reconnect = %d %+v, want 409 PROFILE_MISMATCH", staleResp.StatusCode, refusal)
 	}
 }
