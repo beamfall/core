@@ -3,22 +3,24 @@ import { useRef } from "react";
 import { Dialog } from "@/components/ui/astryx-primitives";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
-import { playableMusic, useMusicQueue } from "../lib/musicQueue";
+import { playableMusic, type useMusicQueue } from "../lib/musicQueue";
 
 export function MusicQueuePanel({
   open,
   onOpenChange,
   onPlay,
   currentID,
+  queue,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPlay: (id: string) => void;
   currentID: string;
+  queue: ReturnType<typeof useMusicQueue>;
 }) {
   const t = useT();
   const anchorRef = useRef<HTMLDivElement | null>(null);
-  const { rows, settled, refresh, isCurrent } = useMusicQueue(open);
+  const { rows, failed, invalid, refresh, isCurrent } = queue;
   const first = rows?.find(playableMusic);
 
   return (
@@ -35,15 +37,17 @@ export function MusicQueuePanel({
               </Dialog.Close>
               <Dialog.Title render={<h3 />}>{t("musicQueueTitle")}</Dialog.Title>
             </div>
-            {!settled ? (
-              <p role="status">{t("loading")}</p>
-            ) : !rows ? (
+            {invalid ? (
+              <p role="alert">{t("playerTerminalUnavailable")}</p>
+            ) : failed ? (
               <>
                 <p role="alert">{t("musicQueueReadFailed")}</p>
                 <Button size="sm" onClick={() => void refresh()}>
                   {t("tryAgain")}
                 </Button>
               </>
+            ) : !rows ? (
+              <p role="status">{t("loading")}</p>
             ) : (
               <>
                 {rows.length > 0 && (
@@ -59,7 +63,7 @@ export function MusicQueuePanel({
                   <Button
                     size="sm"
                     onClick={async () => {
-                      const next = (await refresh())?.find(playableMusic);
+                      const next = (await refresh(true))?.find(playableMusic);
                       if (next && isCurrent()) {
                         onOpenChange(false);
                         onPlay(next.id);

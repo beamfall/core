@@ -125,6 +125,8 @@ export function PlayerTransport({
   onPreviousInQueue,
   onNextInQueue,
   onPlayMusicQueue,
+  musicQueue,
+  onMusicQueueOpenChange,
   serverQueueNextID,
   onStop,
   onRemoteStop,
@@ -169,6 +171,8 @@ export function PlayerTransport({
   onNextInQueue?: () => void;
   /** Start the active Profile's server queue on the first playable row. */
   onPlayMusicQueue?: (id: string) => void;
+  musicQueue?: React.ComponentProps<typeof MusicQueuePanel>["queue"];
+  onMusicQueueOpenChange?: (open: boolean) => void;
   /** Suppress prefetch of playback-info's next item when the server queue excludes it. */
   serverQueueNextID?: string;
   /** Leaves the player when another device sends stop; without it stop only pauses. */
@@ -252,6 +256,10 @@ export function PlayerTransport({
   useEffect(() => {
     onMenuOpenChange?.(settingsOpen || chaptersOpen || openKey !== null);
   }, [openKey, settingsOpen, chaptersOpen, onMenuOpenChange]);
+  const musicQueueOpen = openKey === "musicQueue" && !!onPlayMusicQueue;
+  useEffect(() => {
+    onMusicQueueOpenChange?.(musicQueueOpen);
+  }, [musicQueueOpen, onMusicQueueOpenChange]);
 
   const closeSettings = useCallback((restoreFocus: boolean) => {
     setSettingsOpen(false);
@@ -278,7 +286,13 @@ export function PlayerTransport({
   // Unmounting with a menu open must release the auto-hide suppression.
   const onMenuOpenChangeRef = useRef(onMenuOpenChange);
   onMenuOpenChangeRef.current = onMenuOpenChange;
-  useEffect(() => () => onMenuOpenChangeRef.current?.(false), []);
+  useEffect(
+    () => () => {
+      onMenuOpenChangeRef.current?.(false);
+      onMusicQueueOpenChange?.(false);
+    },
+    [onMusicQueueOpenChange],
+  );
 
   const setOpen = useCallback((key: Exclude<OpenKey, null>, open: boolean) => {
     setOpenKey((prev) => (open ? key : prev === key ? null : prev));
@@ -1000,12 +1014,13 @@ export function PlayerTransport({
 
           <span aria-hidden="true" className="bf-transport-spacer" />
 
-          {onPlayMusicQueue && (
+          {onPlayMusicQueue && musicQueue && (
             <MusicQueuePanel
               open={openKey === "musicQueue"}
               onOpenChange={(open) => setOpen("musicQueue", open)}
               onPlay={onPlayMusicQueue}
               currentID={mediaID}
+              queue={musicQueue}
             />
           )}
           {onShare && (

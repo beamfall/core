@@ -23,7 +23,12 @@ import type {
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { mediaPath } from "../lib/mediaAddress";
-import { MUSIC_QUEUE_PARAM, playableMusic, useMusicQueue } from "../lib/musicQueue";
+import {
+  MUSIC_QUEUE_PARAM,
+  musicQueueNeighbours,
+  playableMusic,
+  useMusicQueue,
+} from "../lib/musicQueue";
 import {
   adjustmentApplied,
   hasPicture,
@@ -231,13 +236,16 @@ function FeaturePlayer({
   const queueProfile = params.get(MUSIC_QUEUE_PARAM);
   const serverQueueRun = queueProfile !== null;
   const queueMatchesProfile = !!profileID && queueProfile === profileID;
-  const musicQueue = useMusicQueue(serverQueueRun && queueMatchesProfile, mediaId);
+  const [musicQueueOpen, setMusicQueueOpen] = useState(false);
+  const musicQueue = useMusicQueue(serverQueueRun ? queueMatchesProfile : musicQueueOpen);
   const queueAllowed = !serverQueueRun || (queueMatchesProfile && !musicQueue.invalid);
   const queueReady = queueAllowed && (!serverQueueRun || musicQueue.checked);
-  const queueReadFailed =
-    serverQueueRun && queueAllowed && musicQueue.settled && !musicQueue.checked;
+  const queueReadFailed = serverQueueRun && queueAllowed && musicQueue.failed;
   const serverItems = useMemo(() => musicQueue.rows?.filter(playableMusic), [musicQueue.rows]);
-  const serverNeighbours = queueNeighbours(serverItems, mediaId);
+  const serverNeighbours = useMemo(
+    () => musicQueueNeighbours(musicQueue.rows, mediaId),
+    [musicQueue.rows, mediaId],
+  );
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   // Watch together on the detail page (CORE-1764) arrives with the party started
@@ -253,16 +261,20 @@ function FeaturePlayer({
     epoch: AbortSignal | undefined;
     revealed: boolean;
     queueProfile: string | null;
+    queueReadMedia: typeof musicQueue.readMedia | null;
     info: GenericMediaInfo | null;
   } | null>(null);
+  const queueReadMedia = serverQueueRun ? musicQueue.readMedia : null;
   const mediaReadIsCurrent =
     mediaRead?.id === mediaId &&
     mediaRead.identity === identity &&
     mediaRead.revealed === revealed &&
     mediaRead.queueProfile === queueProfile &&
+    mediaRead.queueReadMedia === queueReadMedia &&
     mediaRead.epoch === epoch &&
     !epoch?.aborted;
-  const media = queueReady && mediaReadIsCurrent ? mediaRead.info : null;
+  const queueTitlesAllowed = !serverQueueRun || (queueAllowed && musicQueue.validated);
+  const media = queueTitlesAllowed && mediaReadIsCurrent ? mediaRead.info : null;
 
   // The catalog card / hero (and Up Next) carry the Media title forward in nav
   // state, with the siblings it was shown with as the play queue. The media(id)
@@ -572,22 +584,13 @@ function FeaturePlayer({
     : admissibleNext(reportedNext, catalogQueue, playingClass, learnedClasses);
   const refreshMusicQueue = musicQueue.refresh;
   const musicQueueIsCurrent = musicQueue.isCurrent;
-  const readMusicQueueMedia = musicQueue.readMedia;
+  useEffect(() => {
+    if (serverQueueRun && musicQueueOpen) void refreshMusicQueue();
+  }, [serverQueueRun, musicQueueOpen, refreshMusicQueue]);
   const startMusicQueue =
     profileID && !partyLeads ? (id: string) => playItem(id, "", true, profileID) : undefined;
-  const readQueueNeighbour = useCallback(
-    async (direction: "next" | "previous") => {
-      const rows = await refreshMusicQueue();
-      return queueNeighbours(rows?.filter(playableMusic), mediaId)[direction]?.id;
-    },
-    [refreshMusicQueue, mediaId],
-  );
-  const verifyQueueHandoff = useCallback(
-    async (id: string) => (await readQueueNeighbour("next")) === id && musicQueueIsCurrent(),
-    [readQueueNeighbour, musicQueueIsCurrent],
-  );
-  // Decode the candidate early. The bridge asks the server before scheduling it.
-  const suspendGaplessJoin = useGaplessAudio({
+  // Decode early, then let the ended read authorize both the sound and the route.
+  const confirmGaplessAdvance = useGaplessAudio({
     videoRef,
     mediaID: mediaId || "",
     stream: state.stream,
@@ -600,22 +603,48 @@ function FeaturePlayer({
       !partyLeads &&
       state.mediaID === (mediaId || "") &&
       (serverQueueRun ? !!issuedNext : !!(nextInQueue || issuedNext?.streams)),
-    verifyNext: serverQueueRun ? verifyQueueHandoff : undefined,
+    waitForAdvance: serverQueueRun,
   });
+  const [failedMove, setFailedMove] = useState<{
+    direction: "next" | "previous";
+    ended: boolean;
+    mediaId: string;
+    isCurrent: typeof musicQueueIsCurrent;
+  }>();
+  const retryMove =
+    failedMove?.isCurrent === musicQueueIsCurrent && failedMove.mediaId === mediaId
+      ? failedMove
+      : undefined;
   const moveRequest = useRef(0);
+  useLayoutEffect(() => {
+    return () => {
+      moveRequest.current++;
+    };
+  }, [mediaId, queueProfile]);
   const moveInMusicQueue = useCallback(
     async (direction: "next" | "previous", ended = false) => {
       if (!queueProfile || !musicQueueIsCurrent()) return;
       const request = ++moveRequest.current;
-      const keepHandoff = suspendGaplessJoin();
-      if (!ended) keepHandoff?.();
-      const id = await readQueueNeighbour(direction);
-      if (request !== moveRequest.current) return;
-      const target = musicQueueIsCurrent() ? id : undefined;
-      keepHandoff?.(target);
-      if (target) playItem(target, "", true, queueProfile);
+      setFailedMove(undefined);
+      const rows = await refreshMusicQueue(true);
+      if (rows === undefined || request !== moveRequest.current || !musicQueueIsCurrent()) return;
+      if (rows === null) {
+        setFailedMove({ direction, ended, mediaId, isCurrent: musicQueueIsCurrent });
+        return;
+      }
+      const target = musicQueueNeighbours(rows, mediaId)[direction]?.id;
+      if (!target) return;
+      if (ended) confirmGaplessAdvance(target);
+      playItem(target, "", true, queueProfile);
     },
-    [musicQueueIsCurrent, playItem, queueProfile, readQueueNeighbour, suspendGaplessJoin],
+    [
+      musicQueueIsCurrent,
+      playItem,
+      queueProfile,
+      refreshMusicQueue,
+      mediaId,
+      confirmGaplessAdvance,
+    ],
   );
   const playNext = useMemo(() => {
     if (partyLeads) return undefined;
@@ -769,26 +798,25 @@ function FeaturePlayer({
   // The media(id) read: title for a deep link, artwork and credits for the
   // audio surface, and the container Entity for the skip-interval row.
   useEffect(() => {
-    if (!mediaId || !queueAllowed) return;
+    if (!mediaId || !queueTitlesAllowed) return;
     const controller = new AbortController();
     const settle = (info: GenericMediaInfo | null) => {
       if (!controller.signal.aborted && !epoch?.aborted) {
-        setMediaRead({ id: mediaId, identity, epoch, revealed, queueProfile, info: info ?? null });
+        setMediaRead({
+          id: mediaId,
+          identity,
+          epoch,
+          revealed,
+          queueProfile,
+          queueReadMedia,
+          info: info ?? null,
+        });
       }
     };
-    const read = serverQueueRun ? readMusicQueueMedia : fetchMedia;
+    const read = queueReadMedia ?? fetchMedia;
     void read(mediaId, controller.signal).then(settle, () => settle(null));
     return () => controller.abort();
-  }, [
-    mediaId,
-    queueAllowed,
-    identity,
-    epoch,
-    revealed,
-    queueProfile,
-    serverQueueRun,
-    readMusicQueueMedia,
-  ]);
+  }, [mediaId, queueTitlesAllowed, identity, epoch, revealed, queueProfile, queueReadMedia]);
 
   // Keys edited in this identity epoch keep their local value over a Profile
   // read, which may predate the write. A Profile switch starts a new epoch.
@@ -891,6 +919,26 @@ function FeaturePlayer({
     navigate(mediaId ? mediaPath("media", mediaId) : "/", { replace: true });
   }
 
+  const queueFailureNotice = queueReady && (retryMove || (queueReadFailed && !musicQueueOpen)) && (
+    <div
+      className={`${docked ? "fixed" : "absolute"} bottom-24 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-md bg-scrim/80 px-3 py-2 text-sm text-on-scrim`}
+      role="alert"
+    >
+      <span>{t("musicQueueReadFailed")}</span>
+      <button
+        type="button"
+        className="rounded-sm underline underline-offset-2"
+        onClick={() =>
+          retryMove
+            ? void moveInMusicQueue(retryMove.direction, retryMove.ended)
+            : void refreshMusicQueue()
+        }
+      >
+        {t("tryAgain")}
+      </button>
+    </div>
+  );
+
   // Docked, the full player stays mounted but hidden, so its media element
   // (and with it playback) outlives the watch route; only the mini player
   // shows. The fragment keeps the element in the same place in both modes.
@@ -923,7 +971,7 @@ function FeaturePlayer({
         </div>
 
         {!queueAllowed ||
-        queueReadFailed ||
+        (queueReadFailed && !queueReady) ||
         (queueReady && (state.phase === "message" || state.phase === "terminal")) ? (
           <div
             id={docked ? undefined : MAIN_CONTENT_ID}
@@ -1027,6 +1075,7 @@ function FeaturePlayer({
                 </button>
               </div>
             )}
+            {!docked && queueFailureNotice}
             {state.waitingForNetwork ? (
               <p
                 className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-scrim/70 px-3 py-1 text-sm text-on-scrim"
@@ -1072,6 +1121,8 @@ function FeaturePlayer({
                 onPreviousInQueue={playPrevious}
                 onNextInQueue={playNext}
                 onPlayMusicQueue={isAudio ? startMusicQueue : undefined}
+                musicQueue={musicQueue}
+                onMusicQueueOpenChange={setMusicQueueOpen}
                 serverQueueNextID={serverQueueRun ? (issuedNext?.mediaID ?? "") : undefined}
                 onStop={back}
                 onRemoteStop={stopRemotely}
@@ -1107,6 +1158,7 @@ function FeaturePlayer({
           </div>
         )}
       </main>
+      {docked && queueFailureNotice}
       {docked && queueAllowed && (
         <MiniPlayer
           videoRef={videoRef}

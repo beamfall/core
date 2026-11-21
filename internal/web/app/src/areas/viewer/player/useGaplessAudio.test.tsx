@@ -249,14 +249,14 @@ interface Props {
   /** The stream the element plays; a direct-play stream of the item by default. */
   stream?: PlaybackStream;
   enabled?: boolean;
-  verifyNext?: (id: string) => Promise<boolean>;
+  waitForAdvance?: boolean;
 }
 
-function render(element: HTMLVideoElement, verifyNext?: Props["verifyNext"]) {
+function render(element: HTMLVideoElement, waitForAdvance = false) {
   // Stable, as the player's own ref is.
   const videoRef = { current: element };
   return renderHook(
-    ({ mediaID, next, stream, enabled = true, verifyNext }: Props) =>
+    ({ mediaID, next, stream, enabled = true, waitForAdvance }: Props) =>
       useGaplessAudio({
         videoRef,
         mediaID,
@@ -264,9 +264,9 @@ function render(element: HTMLVideoElement, verifyNext?: Props["verifyNext"]) {
         next,
         advanceID: next.mediaID,
         enabled,
-        verifyNext,
+        waitForAdvance,
       }),
-    { initialProps: { mediaID: "m1", next: nextItem("m2"), verifyNext } as Props },
+    { initialProps: { mediaID: "m1", next: nextItem("m2"), waitForAdvance } as Props },
   );
 }
 
@@ -284,19 +284,12 @@ function holdNextFetch(): () => void {
 }
 
 describe("useGaplessAudio", () => {
-  it("prepares early and schedules only after late server authorization", async () => {
+  it("prepares early and plays only the confirmed server successor", async () => {
     const element = playing();
     Object.defineProperty(element, "duration", { value: 60 });
     element.currentTime = 29;
     const answerFetch = holdNextFetch();
-    let authorize: (approved: boolean) => void = () => {};
-    const verifyNext = vi.fn(
-      () =>
-        new Promise<boolean>((resolve) => {
-          authorize = resolve;
-        }),
-    );
-    render(element, verifyNext);
+    const hook = render(element, true);
     expect(fetch).not.toHaveBeenCalled();
 
     element.currentTime = 30;
@@ -305,25 +298,22 @@ describe("useGaplessAudio", () => {
     element.currentTime = 34;
     answerFetch();
     await vi.waitFor(() => expect(contexts[0].decodeAudioData).toHaveBeenCalledOnce());
-    expect(verifyNext).not.toHaveBeenCalled();
     expect(sources).toHaveLength(0);
 
-    element.currentTime = 59.2;
-    element.dispatchEvent(new Event("timeupdate"));
-    expect(verifyNext).toHaveBeenCalledExactlyOnceWith("m2");
+    element.currentTime = 60;
+    element.dispatchEvent(new Event("ended"));
+    hook.result.current("m3");
     expect(sources).toHaveLength(0);
-    authorize(true);
-    await vi.waitFor(() => expect(sources).toHaveLength(1));
-    expect(sources[0].start.mock.calls[0][0]).toBeCloseTo(5.8, 9);
+    hook.result.current("m2");
+    expect(sources).toHaveLength(1);
+    expect(sources[0].start.mock.calls[0][0]).toBe(5);
   });
 
-  it("cancels a scheduled successor when the advance no longer names it", async () => {
+  it("cancels a scheduled catalog successor when the player enters server queue mode", async () => {
     const element = playing();
-    const hook = render(element, async () => true);
+    const hook = render(element);
     await vi.waitFor(() => expect(sources).toHaveLength(1));
-    const finish = hook.result.current();
-    expect(finish).toBeTypeOf("function");
-    finish?.("m3");
+    hook.rerender({ mediaID: "m1", next: nextItem("m2"), waitForAdvance: true });
     expect(sources[0].stop).toHaveBeenCalledOnce();
     expect(sources[0].disconnect).toHaveBeenCalledOnce();
     element.dispatchEvent(new Event("timeupdate"));

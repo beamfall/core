@@ -1,10 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OFFERED_LOCALE_TAGS } from "@/l10n/locales";
 import { I18nProvider } from "@/lib/i18n";
+import { notifyIdentityChange } from "@/lib/identityChanges";
 import { STRINGS } from "@/strings";
+import { useMusicQueue } from "../lib/musicQueue";
 import { MusicQueuePanel } from "./MusicQueuePanel";
 
 const viewer = vi.hoisted(() => ({
@@ -23,8 +25,15 @@ vi.mock("@/lib/session", () => ({
 
 function QueueButton({ onPlay }: { onPlay: (id: string) => void }) {
   const [open, setOpen] = useState(false);
+  const queue = useMusicQueue(open);
   return (
-    <MusicQueuePanel open={open} onOpenChange={setOpen} currentID="track-202" onPlay={onPlay} />
+    <MusicQueuePanel
+      open={open}
+      onOpenChange={setOpen}
+      currentID="track-202"
+      onPlay={onPlay}
+      queue={queue}
+    />
   );
 }
 
@@ -65,6 +74,7 @@ describe("MusicQueuePanel", () => {
       .mockImplementationOnce(async () => page(firstPage))
       .mockImplementationOnce(async () =>
         page([
+          firstPage[199],
           { id: "track-201", title: "Private title", mediaClass: "audio", locked: true },
           { id: "track-202", title: "Track 202", mediaClass: "audio" },
         ]),
@@ -86,7 +96,7 @@ describe("MusicQueuePanel", () => {
       expect(body.query).toMatch(/^query MusicQueue\b/);
       expect(body.query).toContain('sourceItems(kind: "queue"');
       expect(body.query).toContain("currentSession { profileID revealed");
-      expect(body.variables).toEqual({ query: "queue", limit: 200, offset: index * 200 });
+      expect(body.variables).toEqual({ query: "queue", limit: 200, offset: index * 199 });
     }
     expect(onPlay).not.toHaveBeenCalled();
   });
@@ -104,7 +114,7 @@ describe("MusicQueuePanel", () => {
       )
       .mockImplementationOnce(async () => page(firstPage))
       .mockImplementationOnce(async () =>
-        page([{ id: "new-first", title: "New first track", mediaClass: "audio" }]),
+        page([firstPage[199], { id: "new-first", title: "New first track", mediaClass: "audio" }]),
       );
     vi.stubGlobal("fetch", requests);
     const onPlay = renderQueuePanel();
@@ -112,7 +122,68 @@ describe("MusicQueuePanel", () => {
     await waitFor(() => expect(onPlay).toHaveBeenCalledExactlyOnceWith("new-first"));
     expect(
       requests.mock.calls.map(([, request]) => JSON.parse(request.body).variables.offset),
-    ).toEqual([0, 0, 200]);
+    ).toEqual([0, 0, 199]);
+  });
+
+  it("restarts all pages when a removal shifts the next page", async () => {
+    const original = Array.from({ length: 202 }, (_, i) => ({
+      id: `track-${i + 1}`,
+      title: `Track ${i + 1}`,
+      mediaClass: "audio",
+    }));
+    const shifted = original.slice(1);
+    const requests = vi.fn(async (_path: string, request: RequestInit) => {
+      const { limit, offset } = JSON.parse(String(request.body)).variables;
+      const rows = requests.mock.calls.length === 1 ? original : shifted;
+      return page(rows.slice(offset, offset + limit));
+    });
+    vi.stubGlobal("fetch", requests);
+    renderQueuePanel();
+    expect(await screen.findByText("Track 201")).toBeInTheDocument();
+    expect(screen.queryByText("Track 1")).not.toBeInTheDocument();
+    const titles = screen.getAllByRole("listitem").map((item) => item.textContent);
+    expect(titles).toEqual(shifted.map((row) => row.title));
+    expect(
+      requests.mock.calls.map(([, request]) => JSON.parse(String(request.body)).variables.offset),
+    ).toEqual([0, 199, 0, 199]);
+  });
+
+  it.each([
+    ["broadcast", { profileID: "profile-a", revealed: false }],
+    ["focus", { profileID: "profile-b", revealed: true }],
+    ["visibilitychange", { profileID: "profile-a", revealed: false }],
+    ["pageshow", { profileID: "profile-b", revealed: true }],
+  ])("hides already displayed titles during %s revalidation", async (trigger, changedSession) => {
+    let answer!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      answer = resolve;
+    });
+    const requests = vi
+      .fn()
+      .mockResolvedValueOnce(
+        page([{ id: "private", title: "Restricted track", mediaClass: "audio" }]),
+      )
+      .mockReturnValueOnce(pending);
+    vi.stubGlobal("fetch", requests);
+    renderQueuePanel();
+    expect(await screen.findByText("Restricted track")).toBeInTheDocument();
+
+    if (trigger === "broadcast") notifyIdentityChange();
+    else if (trigger === "pageshow") {
+      fireEvent(window, new Event("pagehide"));
+      expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
+      fireEvent(window, new PageTransitionEvent("pageshow", { persisted: true }));
+    } else if (trigger === "visibilitychange") {
+      fireEvent(document, new Event("visibilitychange"));
+    } else {
+      fireEvent.focus(window);
+    }
+    await waitFor(() => expect(requests).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(STRINGS.en.loading);
+    await act(async () => answer(page([], changedSession)));
+    expect(viewer.refresh).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Restricted track")).not.toBeInTheDocument();
   });
 
   it("leaves the panel open when another device clears the queue before Play", async () => {
