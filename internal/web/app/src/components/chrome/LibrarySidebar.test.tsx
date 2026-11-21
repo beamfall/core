@@ -448,6 +448,29 @@ describe("LibrarySidebar Your stuff group (CORE-2827)", () => {
     expect(screen.getByRole("link", { name: "Films" })).toBeInTheDocument();
   });
 
+  it("leaves an untouched group out of a legacy choice when the libraries are saved", async () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    renderSidebar({ prefs: { order: ["a"], hidden: [] }, onSavePrefs: save });
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0]).not.toHaveProperty("personal");
+  });
+
+  it("stores only the unpinned entries when the default order is untouched", async () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    renderSidebar({ prefs: { order: ["a"], hidden: [] }, onSavePrefs: save });
+    fireEvent.click(screen.getByRole("button", { name: "Edit your stuff" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pin Favorites" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0]).toEqual({
+      order: ["a"],
+      hidden: [],
+      personal: { order: [], hidden: ["favorites"] },
+    });
+  });
+
   it("reorders and unpins the group in its own editor and keeps the library choice", async () => {
     const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
     const { container } = renderSidebar({ prefs: { order: ["a"], hidden: [] }, onSavePrefs: save });
