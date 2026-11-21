@@ -119,15 +119,16 @@ test.describe("first-run setup at phone width", () => {
       await mockSetupAtLibraryStep(page, { "/": { name: "/", path: "/", children: [] } }, plugins);
       await page.goto("/web/setup");
       await expect(page.getByRole("heading", { name: "Create your first Library" })).toBeVisible();
+      // The plugin list loads after the heading: measure only once every type row is laid out.
+      const rows = page.locator('label:has(input[name="setup-library-type"])');
+      await expect(rows).toHaveCount(4);
 
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       );
       expect(overflow, "horizontal document overflow").toBeLessThanOrEqual(0);
 
-      const rows = page.locator('label:has(input[name="setup-library-type"])');
       const count = await rows.count();
-      expect(count).toBeGreaterThan(1);
       const boxes = [];
       for (let i = 0; i < count; i++) {
         const box = await rows.nth(i).boundingBox();
@@ -135,6 +136,7 @@ test.describe("first-run setup at phone width", () => {
         if (!box) continue;
         expect(box.width, `type row ${i} width`).toBeGreaterThanOrEqual(minTarget);
         expect(box.height, `type row ${i} height`).toBeGreaterThanOrEqual(minTarget);
+        expect(box.x, `type row ${i} inside the viewport`).toBeGreaterThanOrEqual(0);
         expect(box.x + box.width, `type row ${i} inside the viewport`).toBeLessThanOrEqual(width);
         boxes.push(box);
       }
