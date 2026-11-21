@@ -59,6 +59,10 @@ const entity: EntityInfo = {
   title: "Server title",
   fields: [{ name: "Year", type: "string", value: "2001", label: { en: "Year" } }],
 };
+// The row menu renders after a click; under a loaded full gate it can take longer than the
+// 1s Testing Library default to appear (CORE-2806).
+const MENU_WAIT = { timeout: 5000 };
+
 const related: SourceItem = {
   id: "m1",
   kind: "media",
@@ -539,7 +543,7 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     const queueWindow = vi.spyOn(watchQueue, "queueWindow");
     renderEntity();
     fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
-    const details = await screen.findByRole("menuitem", { name: "Details" });
+    const details = await screen.findByRole("menuitem", { name: "Details" }, MENU_WAIT);
     expect(queueWindow).not.toHaveBeenCalled();
     fireEvent.click(details);
     expect(screen.getByRole("status", { name: "detail" })).toHaveTextContent("m1");
@@ -554,7 +558,9 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     renderEntity();
     fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
 
-    expect(await screen.findByRole("menuitem", { name: "Mark played" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("menuitem", { name: "Mark played" }, MENU_WAIT),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Mark watched" })).toBeNull();
   });
 
@@ -566,7 +572,7 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     expect(queueWindow).not.toHaveBeenCalled();
     if (entry === "menu") {
       fireEvent.click(row.getByRole("button", { name: "More actions for Related item" }));
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Play" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Play" }, MENU_WAIT));
     } else {
       fireEvent.click(row.getByRole("button", { name: "Play Related item" }));
     }
@@ -697,7 +703,7 @@ describe.each(["list", "grid"] as const)(
           fireEvent.click(
             within(children).getByRole("button", { name: "More actions for Related item" }),
           );
-          fireEvent.click(await screen.findByRole("menuitem", { name: entry }));
+          fireEvent.click(await screen.findByRole("menuitem", { name: entry }, MENU_WAIT));
         }
 
         const destination = entry === "Play" ? "player" : "detail";
@@ -895,7 +901,7 @@ describe("EntityPage audio container order", () => {
       fireEvent.click(within(link).getByText("Second Disc Opener"));
     } else {
       fireEvent.click(disc.getByRole("button", { name: "More actions for Second Disc Opener" }));
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Details" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Details" }, MENU_WAIT));
     }
 
     const output = screen.getByRole("status", { name: "detail" }).textContent!;
