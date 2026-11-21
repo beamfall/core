@@ -61,6 +61,7 @@ import { ChapterList } from "./ChapterList";
 import { CastControl } from "./cast/CastControl";
 import { InfoOverlay } from "./InfoOverlay";
 import { listenerMuted, setListenerMuted } from "./listenerMute";
+import { MusicQueuePanel } from "./MusicQueuePanel";
 import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { TrackMotionSettings } from "./TrackMotionSettings";
@@ -93,6 +94,7 @@ type OpenKey =
   | "info"
   | "subtitleStyle"
   | "audioSync"
+  | "musicQueue"
   | "shortcuts"
   | null;
 type GestureFeedback =
@@ -122,6 +124,8 @@ export function PlayerTransport({
   onShare,
   onPreviousInQueue,
   onNextInQueue,
+  onPlayMusicQueue,
+  serverQueueNextID,
   onStop,
   onRemoteStop,
   onRemoteRestart,
@@ -163,6 +167,10 @@ export function PlayerTransport({
   onPreviousInQueue?: () => void;
   /** Play the queue's next item; the control is hidden when absent. */
   onNextInQueue?: () => void;
+  /** Start the active Profile's server queue on the first playable row. */
+  onPlayMusicQueue?: (id: string) => void;
+  /** Suppress prefetch of playback-info's next item when the server queue excludes it. */
+  serverQueueNextID?: string;
   /** Leaves the player when another device sends stop; without it stop only pauses. */
   onStop?: () => void;
   /** Stop requested by another device; falls back to onStop. */
@@ -694,12 +702,15 @@ export function PlayerTransport({
   const bufferedPercent = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0;
   // Music seek bar (CORE-2401): the track's waveform, or a flat placeholder of
   // the same shape while it loads, so the bar does not jump between songs.
+  const next = state.info?.next;
+  const waveformNext =
+    serverQueueNextID === undefined || serverQueueNextID === next?.mediaID ? next : undefined;
   const waveform = useWaveform({
     mediaID,
     infoMediaID: state.mediaID,
     url: state.info?.assets?.waveform,
-    nextMediaID: state.info?.next?.mediaID,
-    nextURL: state.info?.next?.assets?.waveform,
+    nextMediaID: waveformNext?.mediaID,
+    nextURL: waveformNext?.assets?.waveform,
   });
   const showWaveform = !!waveform.points || waveform.pending;
 
@@ -989,6 +1000,14 @@ export function PlayerTransport({
 
           <span aria-hidden="true" className="bf-transport-spacer" />
 
+          {onPlayMusicQueue && (
+            <MusicQueuePanel
+              open={openKey === "musicQueue"}
+              onOpenChange={(open) => setOpen("musicQueue", open)}
+              onPlay={onPlayMusicQueue}
+              currentID={mediaID}
+            />
+          )}
           {onShare && (
             <button
               type="button"

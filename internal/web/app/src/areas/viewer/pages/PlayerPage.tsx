@@ -1,5 +1,13 @@
 import { AlertCircle, LoaderCircle } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useLocation, useNavigate, useNavigationType } from "react-router";
 import { MAIN_CONTENT_ID, SkipLink } from "@/components/chrome/SkipLink";
 import { Button } from "@/components/ui/button";
@@ -23,6 +31,7 @@ import type {
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { mediaPath } from "../lib/mediaAddress";
+import { MUSIC_QUEUE_PARAM, playableMusic, useMusicQueue } from "../lib/musicQueue";
 import {
   adjustmentApplied,
   hasPicture,
@@ -126,7 +135,8 @@ export function PlayerPage() {
       rejoiningPlayback: titleSelectionEpoch === undefined && getWatchParty().status === "active",
     };
   }, [location, navigationType]);
-  const skip = new URLSearchParams(location.search).has("t");
+  const params = new URLSearchParams(location.search);
+  const skip = params.has("t") || params.has(MUSIC_QUEUE_PARAM);
   const carried =
     !!location.state && (location.state as { skipPrePlay?: unknown }).skipPrePlay === true;
   const bypass = skip || carried || !mediaId || rejoiningPlayback;
@@ -224,6 +234,15 @@ function FeaturePlayer({
   const { revealed, session } = useSession();
   const profileID = session?.profileID;
   const identity = useViewerIdentity();
+  const epoch = getIdentityEpochSignal();
+  const params = new URLSearchParams(entry.search);
+  const queueProfile = params.get(MUSIC_QUEUE_PARAM);
+  const serverQueueRun = queueProfile !== null;
+  const queueAllowed = !serverQueueRun || (!!profileID && queueProfile === profileID);
+  const musicQueue = useMusicQueue(serverQueueRun && queueAllowed, mediaId);
+  const serverItems = useMemo(() => musicQueue.rows?.filter(playableMusic), [musicQueue.rows]);
+  const serverNeighbours = queueNeighbours(serverItems, mediaId);
+  const queueReady = queueAllowed && (!serverQueueRun || musicQueue.settled);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   // Watch together on the detail page (CORE-1764) arrives with the party started
@@ -235,22 +254,31 @@ function FeaturePlayer({
   // never shows the previous item's title, artwork or credits.
   const [mediaRead, setMediaRead] = useState<{
     id: string;
+    identity: string | null;
+    epoch: AbortSignal | undefined;
+    revealed: boolean;
     info: GenericMediaInfo | null;
   } | null>(null);
-  const media = mediaRead && mediaRead.id === mediaId ? mediaRead.info : null;
+  const mediaReadIsCurrent =
+    mediaRead?.id === mediaId &&
+    mediaRead.identity === identity &&
+    mediaRead.revealed === revealed &&
+    mediaRead.epoch === epoch &&
+    !epoch?.aborted;
+  const media = queueAllowed && mediaReadIsCurrent ? mediaRead.info : null;
 
   // The catalog card / hero (and Up Next) carry the Media title forward in nav
   // state, with the siblings it was shown with as the play queue. The media(id)
   // read below fills in the title for a deep link, plus artwork and credits.
-  const navState = readPlayerNavState(entry.state, identity);
+  const navState = serverQueueRun ? {} : readPlayerNavState(entry.state, identity);
   const queueIdentity = navState.queueIdentity;
   const navTitle = navState.title || media?.title || "";
   // Docked, the browse page under the mini player names the tab (CORE-2322).
   // A Revealed session may be playing a restricted title, which stays out of
   // the browser history (tab titles are kept there).
-  useDocumentTitle(docked || revealed ? null : navTitle, t("brand"));
-  useCanonicalMediaAddress("watch", media, !docked);
-  const startAtSeconds = parseTimestampParam(new URLSearchParams(entry.search).get("t"));
+  useDocumentTitle(docked || revealed || serverQueueRun ? null : navTitle, t("brand"));
+  useCanonicalMediaAddress("watch", media, !docked && !serverQueueRun);
+  const startAtSeconds = parseTimestampParam(params.get("t"));
   // Media classes playback-info has reported (this item's and its declared
   // next item's), by Media id (CORE-1490).
   const [learnedClasses, setLearnedClasses] = useState<Record<string, string>>({});
@@ -259,11 +287,15 @@ function FeaturePlayer({
     () => (navQueue ? withQueueClasses(navQueue, learnedClasses) : undefined),
     [navQueue, learnedClasses],
   );
-  const entryClass = classedQueue?.find((item) => item.id === mediaId)?.mediaClass;
-  const declaredNextID = classedQueue
-    ? (queueNeighbours(queueOfClass(classedQueue, entryClass, mediaId || ""), mediaId || "").next
-        ?.id ?? "")
-    : undefined;
+  const entryClass = serverQueueRun
+    ? "audio"
+    : classedQueue?.find((item) => item.id === mediaId)?.mediaClass;
+  const declaredNextID = serverQueueRun
+    ? (serverNeighbours.next?.id ?? "")
+    : classedQueue
+      ? (queueNeighbours(queueOfClass(classedQueue, entryClass, mediaId || ""), mediaId || "").next
+          ?.id ?? "")
+      : undefined;
   // The Version this profile picked for this Media (CORE-1676): a pick made in
   // this player during this playback start, else the one the detail page sent
   // with its track picks (CORE-2442; "" is Auto), else a pick made in this
@@ -284,7 +316,7 @@ function FeaturePlayer({
       : (navVersion ?? readVersionChoice(profileID, mediaId || ""));
 
   const { videoRef, hlsRef, state, retry, restart, switchToHls, adjustment, adjust } = usePlayer(
-    mediaId || "",
+    queueReady ? mediaId : "",
     {
       couldNotReachServer: t("couldNotReachServer"),
       playbackUnavailable: t("playbackUnavailable"),
@@ -327,11 +359,14 @@ function FeaturePlayer({
   // tracks. The narrowed queue (with what was learned) is the one carried to
   // the next item, so a dropped entry stays dropped.
   const playingClass = state.info?.mediaClass || entryClass;
-  const queue = useMemo(
+  const catalogQueue = useMemo(
     () => (classedQueue ? [...queueOfClass(classedQueue, playingClass, mediaId || "")] : undefined),
     [classedQueue, playingClass, mediaId],
   );
-  const { previous: previousInQueue, next: nextInQueue } = queueNeighbours(queue, mediaId || "");
+  const queue = serverQueueRun ? serverItems : catalogQueue;
+  const { previous: previousInQueue, next: nextInQueue } = serverQueueRun
+    ? serverNeighbours
+    : queueNeighbours(catalogQueue, mediaId);
   const info = state.info;
   const infoIsCurrent = !!state.info && state.mediaID === mediaId;
   const mediaIdRef = useRef(mediaId);
@@ -354,7 +389,7 @@ function FeaturePlayer({
     );
   }, [info]);
 
-  const playing = state.phase === "playing";
+  const playing = queueReady && state.phase === "playing";
   // Song seconds per stream second under an applied tempo (CORE-1659).
   const songScale = songSecondsPerStreamSecond(state.info);
 
@@ -452,14 +487,13 @@ function FeaturePlayer({
     credits,
     queuePosition,
   };
-  const stageReady =
-    !mediaId || (!!mediaRead && mediaRead.id === mediaId) || (playing && infoIsCurrent);
+  const stageReady = !mediaId || mediaReadIsCurrent || (playing && infoIsCurrent);
   const [heldStage, setHeldStage] = useState<StageItem | null>(null);
-  if (stageReady) {
-    const keep = showAudioStage ? liveStage : null;
+  if (stageReady || serverQueueRun) {
+    const keep = showAudioStage && !serverQueueRun ? liveStage : null;
     if (!sameStageItem(keep, heldStage)) setHeldStage(keep);
   }
-  const stage = stageReady || !heldStage ? liveStage : heldStage;
+  const stage = serverQueueRun || stageReady || !heldStage ? liveStage : heldStage;
 
   const { chromeHidden, reveal } = useChromeAutoHide({
     stageRef,
@@ -474,27 +508,32 @@ function FeaturePlayer({
   // Docked in the mini player, the advance stays on the page the listener is
   // browsing.
   const playItem = useCallback(
-    (id: string, title: string, selectPartyTitle = true) => {
-      const state = {
-        title,
-        skipPrePlay: true,
-        selectPartyTitle,
-        ...(queue ? { queue, queueIdentity } : {}),
-      };
+    (id: string, title: string, selectPartyTitle = true, musicProfile?: string) => {
+      const search = musicProfile
+        ? `?${new URLSearchParams({ [MUSIC_QUEUE_PARAM]: musicProfile })}`
+        : "";
+      const state = musicProfile
+        ? { selectPartyTitle }
+        : {
+            title,
+            skipPrePlay: true,
+            selectPartyTitle,
+            ...(catalogQueue ? { queue: catalogQueue, queueIdentity } : {}),
+          };
       if (docked && onAdvanceDocked) {
         const titleSelectionEpoch = selectPartyTitle ? hostTitleSelectionEpoch() : undefined;
-        onAdvanceDocked({ mediaId: id, state, search: "", titleSelectionEpoch });
+        onAdvanceDocked({ mediaId: id, state, search, titleSelectionEpoch });
         return;
       }
-      navigate(mediaPath("watch", id), { replace: true, state });
+      navigate(`${mediaPath("watch", id)}${search}`, { replace: true, state });
     },
-    [navigate, queue, queueIdentity, docked, onAdvanceDocked],
+    [navigate, catalogQueue, queueIdentity, docked, onAdvanceDocked],
   );
 
   // Watch Party (CORE-1677): the party moves every member's player to the
   // title it is on and keeps the <video> on its shared timeline.
   const followParty = useCallback((id: string) => playItem(id, "", false), [playItem]);
-  const playerAttached = state.phase !== "message" && state.phase !== "terminal";
+  const playerAttached = queueReady && state.phase !== "message" && state.phase !== "terminal";
   const partySeekAutoSkip = useRef<PartySeekAutoSkip | null>(null);
   const watchParty = useWatchParty({
     videoRef,
@@ -528,24 +567,76 @@ function FeaturePlayer({
   // (CORE-1732): playback-info is not asked again when a learned class changes
   // the declared next item, so a card queue's issuance of another class stays
   // on the info document after the queue dropped it.
-  const issuedNext = admissibleNext(state.info?.next, queue, playingClass, learnedClasses);
+  const reportedNext = state.info?.next ?? undefined;
+  const issuedNext = serverQueueRun
+    ? state.mediaID === mediaId && reportedNext?.mediaID === serverNeighbours.next?.id
+      ? reportedNext
+      : undefined
+    : admissibleNext(reportedNext, catalogQueue, playingClass, learnedClasses);
+  const refreshMusicQueue = musicQueue.refresh;
+  const musicQueueIsCurrent = musicQueue.isCurrent;
+  const startMusicQueue =
+    profileID && !partyLeads ? (id: string) => playItem(id, "", true, profileID) : undefined;
+  const handoffID = useMusicQueueHandoff(
+    videoRef,
+    mediaId,
+    serverQueueRun && playing && !partyLeads && !karaokeSong && decodableStream(issuedNext)
+      ? issuedNext?.mediaID
+      : undefined,
+    refreshMusicQueue,
+  );
+  const moveRequest = useRef(0);
+  const moveInMusicQueue = useCallback(
+    (direction: "next" | "previous", verifiedID?: string) => {
+      if (!queueProfile || !musicQueueIsCurrent()) return;
+      const request = ++moveRequest.current;
+      const advance = (id?: string) => {
+        if (id && request === moveRequest.current && musicQueueIsCurrent()) {
+          playItem(id, "", true, queueProfile);
+        }
+      };
+      if (verifiedID) {
+        advance(verifiedID);
+        return;
+      }
+      void refreshMusicQueue().then((rows) => {
+        advance(queueNeighbours(rows?.filter(playableMusic), mediaId)[direction]?.id);
+      });
+    },
+    [mediaId, musicQueueIsCurrent, playItem, queueProfile, refreshMusicQueue],
+  );
   const playNext = useMemo(() => {
     if (partyLeads) return undefined;
+    if (serverQueueRun) {
+      return nextInQueue ? () => moveInMusicQueue("next", handoffID) : undefined;
+    }
     if (nextInQueue) return () => goToQueueItem(nextInQueue);
     if (issuedNext?.streams) return () => advanceToNext(issuedNext);
     return undefined;
-  }, [partyLeads, nextInQueue, issuedNext, goToQueueItem, advanceToNext]);
+  }, [
+    partyLeads,
+    serverQueueRun,
+    nextInQueue,
+    issuedNext,
+    handoffID,
+    moveInMusicQueue,
+    goToQueueItem,
+    advanceToNext,
+  ]);
   // A card queue names its own previous item; without one, a Play all queue
   // that holds this item may (stepping back keeps that queue going).
   const playAllPrevious = useMemo(
-    () => (queue || !mediaId ? null : previousInPlayQueue(mediaId)),
-    [queue, mediaId],
+    () => (serverQueueRun || queue || !mediaId ? null : previousInPlayQueue(mediaId)),
+    [serverQueueRun, queue, mediaId],
   );
   const playPrevious = useMemo(() => {
+    if (serverQueueRun) {
+      return previousInQueue ? () => moveInMusicQueue("previous") : undefined;
+    }
     if (previousInQueue) return () => goToQueueItem(previousInQueue);
     if (playAllPrevious) return () => playItem(playAllPrevious.id, playAllPrevious.title);
     return undefined;
-  }, [previousInQueue, playAllPrevious, goToQueueItem, playItem]);
+  }, [serverQueueRun, moveInMusicQueue, previousInQueue, playAllPrevious, goToQueueItem, playItem]);
 
   // Audio moves straight on to the next item when one ends (no countdown card,
   // which suits a film or an episode, not a track).
@@ -557,36 +648,49 @@ function FeaturePlayer({
     mediaID: mediaId || "",
     after: resolvedPrefs.stillWatchingAfter,
     next: issuedNext,
-    enabled: !isAudio && !partyLeads,
+    enabled: !serverQueueRun && !isAudio && !partyLeads,
     onContinue: advanceToNext,
   });
   const upNext = useUpNext({
     videoRef,
     next:
-      isAudio || partyLeads || stillWatching.armed || stillWatching.prompting ? null : issuedNext,
+      serverQueueRun || isAudio || partyLeads || stillWatching.armed || stillWatching.prompting
+        ? null
+        : issuedNext,
     onAdvance: advanceToNext,
     onAutoAdvance: (next) => noteAutoAdvance(next.mediaID),
   });
   useEffect(() => {
     const video = videoRef.current;
-    if (!isAudio || !playing || !video || !playNext) return;
-    video.addEventListener("ended", playNext);
-    return () => video.removeEventListener("ended", playNext);
-  }, [isAudio, playing, playNext, videoRef]);
+    if (!isAudio || !playing || !video || partyLeads) return;
+    const advance = serverQueueRun ? () => moveInMusicQueue("next", handoffID) : playNext;
+    if (!advance) return;
+    video.addEventListener("ended", advance);
+    return () => video.removeEventListener("ended", advance);
+  }, [
+    isAudio,
+    playing,
+    partyLeads,
+    serverQueueRun,
+    moveInMusicQueue,
+    handoffID,
+    playNext,
+    videoRef,
+  ]);
   // Album tracks join without a gap (CORE-1634): the item the end of this
   // track advances to is decoded ahead and scheduled to start where it stops.
   useGaplessAudio({
     videoRef,
     mediaID: mediaId || "",
     stream: state.stream,
-    next: state.info?.next ?? undefined,
-    advanceID: nextInQueue?.id ?? issuedNext?.mediaID,
+    next: serverQueueRun ? issuedNext : reportedNext,
+    advanceID: serverQueueRun ? handoffID : (nextInQueue?.id ?? issuedNext?.mediaID),
     enabled:
       playing &&
       showAudioStage &&
       !karaokeSong &&
       state.mediaID === (mediaId || "") &&
-      playNext !== undefined,
+      (serverQueueRun ? !!handoffID : playNext !== undefined),
   });
 
   // The card's appearance reveals chrome once; the card itself stays visible
@@ -657,7 +761,8 @@ function FeaturePlayer({
   }, [audioMedia, onAudioChange]);
   const dockedEnds =
     docked &&
-    (state.phase === "terminal" ||
+    (!queueAllowed ||
+      state.phase === "terminal" ||
       state.phase === "message" ||
       (infoIsCurrent && state.info?.mediaClass !== "audio"));
   useEffect(() => {
@@ -667,23 +772,26 @@ function FeaturePlayer({
   // Back to the full player from the mini player: the watch route for the
   // same entry, which re-attaches to the playing engine.
   const openFullPlayer = useCallback(() => {
-    const carried = entry.state && typeof entry.state === "object" ? entry.state : {};
+    const carried =
+      !serverQueueRun && entry.state && typeof entry.state === "object" ? entry.state : {};
     navigate(`${mediaPath("watch", mediaId)}${entry.search}`, {
       state: { ...carried, skipPrePlay: true, selectPartyTitle: false },
     });
-  }, [navigate, mediaId, entry.state, entry.search]);
+  }, [navigate, mediaId, entry.state, entry.search, serverQueueRun]);
 
   // The media(id) read: title for a deep link, artwork and credits for the
   // audio surface, and the container Entity for the skip-interval row.
   useEffect(() => {
-    if (!mediaId) return;
+    if (!mediaId || !queueAllowed) return;
     const controller = new AbortController();
     const settle = (info: GenericMediaInfo | null) => {
-      if (!controller.signal.aborted) setMediaRead({ id: mediaId, info: info ?? null });
+      if (!controller.signal.aborted && !epoch?.aborted) {
+        setMediaRead({ id: mediaId, identity, epoch, revealed, info: info ?? null });
+      }
     };
     void fetchMedia(mediaId, controller.signal).then(settle, () => settle(null));
     return () => controller.abort();
-  }, [mediaId]);
+  }, [mediaId, queueAllowed, identity, epoch, revealed]);
 
   // Keys edited in this identity epoch keep their local value over a Profile
   // read, which may predate the write. A Profile switch starts a new epoch.
@@ -817,7 +925,8 @@ function FeaturePlayer({
           )}
         </div>
 
-        {state.phase === "message" || state.phase === "terminal" ? (
+        {!queueAllowed ||
+        (queueReady && (state.phase === "message" || state.phase === "terminal")) ? (
           <div
             id={docked ? undefined : MAIN_CONTENT_ID}
             tabIndex={-1}
@@ -829,9 +938,9 @@ function FeaturePlayer({
                 <h2 className="m-0 text-xl font-semibold text-on-scrim">{navTitle}</h2>
               ) : null}
               <p className="m-0 text-[15px] leading-relaxed text-on-scrim/75" role="alert">
-                {state.message}
+                {queueAllowed ? state.message : t("playerTerminalUnavailable")}
               </p>
-              {state.detail ? (
+              {queueAllowed && state.detail ? (
                 <details className="text-sm text-on-scrim/55">
                   <summary className="cursor-pointer">{t("playbackErrorDetails")}</summary>
                   <p className="m-0 mt-1 break-words">
@@ -840,7 +949,7 @@ function FeaturePlayer({
                 </details>
               ) : null}
               <div className="mt-3">
-                {state.terminal || state.action === "back" ? (
+                {!queueAllowed || state.terminal || state.action === "back" ? (
                   <Button onClick={back}>{t("backToBrowse")}</Button>
                 ) : (
                   <Button onClick={() => retry()}>{t("tryAgain")}</Button>
@@ -859,6 +968,7 @@ function FeaturePlayer({
             <video ref={videoRef} playsInline controls={false} poster={videoPoster || undefined} />
             {showAudioStage && (
               <AudioStage
+                key={serverQueueRun ? JSON.stringify([identity, revealed]) : undefined}
                 title={stage.title}
                 artworkURL={stage.artworkURL}
                 credits={stage.credits}
@@ -873,7 +983,7 @@ function FeaturePlayer({
                 }
               />
             )}
-            {showSpinner && (
+            {(showSpinner || !queueReady) && (
               // Over the audio card a wait is a small cue, not a cover (CORE-2363).
               <div
                 className={
@@ -936,7 +1046,7 @@ function FeaturePlayer({
               needsTap={watchParty.needsTap}
               onResume={watchParty.resume}
             />
-            {(playing || advancing) && !docked && (
+            {(playing || (queueReady && advancing)) && !docked && (
               <PlayerTransport
                 videoRef={videoRef}
                 hlsRef={hlsRef}
@@ -957,6 +1067,8 @@ function FeaturePlayer({
                 onShare={shareAt}
                 onPreviousInQueue={playPrevious}
                 onNextInQueue={playNext}
+                onPlayMusicQueue={isAudio ? startMusicQueue : undefined}
+                serverQueueNextID={serverQueueRun ? (issuedNext?.mediaID ?? "") : undefined}
                 onStop={back}
                 onRemoteStop={stopRemotely}
                 onRemoteRestart={restart}
@@ -991,7 +1103,7 @@ function FeaturePlayer({
           </div>
         )}
       </main>
-      {docked && (
+      {docked && queueAllowed && (
         <MiniPlayer
           videoRef={videoRef}
           title={stage.title}
@@ -1007,8 +1119,8 @@ function FeaturePlayer({
           waveform={{
             infoMediaID: state.mediaID,
             url: state.info?.assets?.waveform,
-            nextMediaID: state.info?.next?.mediaID,
-            nextURL: state.info?.next?.assets?.waveform,
+            nextMediaID: (serverQueueRun ? issuedNext : reportedNext)?.mediaID,
+            nextURL: (serverQueueRun ? issuedNext : reportedNext)?.assets?.waveform,
           }}
         />
       )}
@@ -1017,6 +1129,64 @@ function FeaturePlayer({
 }
 
 const NO_CREDITS: readonly MediaCredit[] = [];
+
+const MUSIC_QUEUE_HANDOFF_SECONDS = 3;
+
+function useMusicQueueHandoff(
+  videoRef: RefObject<HTMLVideoElement | null>,
+  mediaID: string,
+  candidateID: string | undefined,
+  refresh: ReturnType<typeof useMusicQueue>["refresh"],
+): string | undefined {
+  const candidate = useMemo(() => ({ candidateID, refresh }), [candidateID, refresh]);
+  const [verified, setVerified] = useState<typeof candidate>();
+  useEffect(() => {
+    const video = videoRef.current;
+    const { candidateID, refresh } = candidate;
+    if (!video || !candidateID) return;
+    let pending: ReturnType<typeof refresh> | undefined;
+    let alive = true;
+    const reset = () => {
+      pending = undefined;
+      setVerified(undefined);
+    };
+    const check = () => {
+      const remaining = video.duration - video.currentTime;
+      if (
+        pending ||
+        video.paused ||
+        video.seeking ||
+        !(remaining > 0 && remaining <= MUSIC_QUEUE_HANDOFF_SECONDS)
+      )
+        return;
+      const request = refresh();
+      pending = request;
+      void request.then((rows) => {
+        if (!alive || pending !== request) return;
+        const { next } = queueNeighbours(rows?.filter(playableMusic), mediaID);
+        if (next?.id === candidateID) setVerified(candidate);
+      });
+    };
+    const pause = () => {
+      if (!video.ended) reset();
+    };
+    video.addEventListener("timeupdate", check);
+    video.addEventListener("playing", check);
+    video.addEventListener("seeking", reset);
+    video.addEventListener("pause", pause);
+    check();
+    return () => {
+      alive = false;
+      video.removeEventListener("timeupdate", check);
+      video.removeEventListener("playing", check);
+      video.removeEventListener("seeking", reset);
+      video.removeEventListener("pause", pause);
+    };
+  }, [videoRef, candidate, mediaID]);
+  // Next and ended use the same decision once the gapless bridge has been
+  // allowed to schedule the handoff.
+  return verified === candidate ? candidateID : undefined;
+}
 
 /** What the audio stage shows for one item. */
 interface StageItem {
