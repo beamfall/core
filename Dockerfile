@@ -139,7 +139,13 @@ VOLUME ["/data", "/media", "/transcode"]
 EXPOSE 8800
 USER beamfall:beamfall
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+# Until the first passing probe, probe every 2s for up to 5 minutes, so the
+# health state turns healthy about 2s after /health first answers, even after a
+# slow start (a long migration). Failures before that first pass do not count
+# while the start period lasts. After the first pass, or once the 5 minutes are
+# up, probe every 30s, and 3 failures in a row mark the container unhealthy.
+# --start-interval needs Docker Engine 25 or later (CORE-2164).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5m --start-interval=2s --retries=3 \
 	CMD curl -fsS http://127.0.0.1:8800/health >/dev/null || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/beamfall"]
