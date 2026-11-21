@@ -222,7 +222,7 @@ type indexCache struct {
 }
 
 type cachedIndex struct {
-	built   time.Time
+	built   time.Time // when the read the index was built from began
 	visible [sha256.Size]byte
 	index   *catalogIndex
 }
@@ -235,29 +235,49 @@ type cachedIndex struct {
 // run at once, and a request that waited finds the index the one ahead of it
 // built.
 func (h *Handler) libraryIndex(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary) (*catalogIndex, error) {
+	return h.readIndex(ctx, filter, lib, false)
+}
+
+// freshIndex returns an index of the Library read after this call began: one
+// another request read meanwhile, or a new read. A changed container link or
+// provider ID then shows even when the visible items are unchanged.
+func (h *Handler) freshIndex(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary) (*catalogIndex, error) {
+	return h.readIndex(ctx, filter, lib, true)
+}
+
+func (h *Handler) readIndex(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary, fresh bool) (*catalogIndex, error) {
 	key, err := indexKey(filter, lib)
 	if err != nil {
 		return nil, err
 	}
 	c := &h.indexes
+	asked := c.clock()
 	release, err := c.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
+	if fresh {
+		if index := c.readSince(key, asked); index != nil {
+			return index, nil
+		}
+	}
+	read := c.clock()
 	media, err := h.store.LibraryVisibleMedia(ctx, filter, lib.library.ID)
 	if err != nil {
 		return nil, err
 	}
 	visible := visibleFingerprint(media)
-	if index := c.lookup(key, visible); index != nil {
-		return index, nil
+	if !fresh {
+		if index := c.lookup(key, visible); index != nil {
+			return index, nil
+		}
 	}
 	index, err := h.buildIndex(ctx, media, lib)
 	if err != nil {
 		return nil, err
 	}
-	c.store(key, visible, index)
+	c.store(key, visible, index, read)
 	return index, nil
 }
 
@@ -287,7 +307,8 @@ func indexKey(filter store.LibraryFilter, lib catalogLibrary) (string, error) {
 // item: a leaf the store still reports visible, or a container that is still
 // an untrashed Entity of the Library and holds one. A node under a container
 // that is no longer such an Entity is dropped until the index is rebuilt. Each
-// copy carries the item's current title, year and dimensions. It reads only
+// copy carries the item's current title, year and dimensions; a container's
+// year is the earliest of its visible leaves'. It reads only
 // the leaves under the given nodes and the containers on and above them.
 func (h *Handler) visibleNodes(ctx context.Context, filter store.LibraryFilter, lib catalogLibrary, nodes []*catalogNode) ([]*catalogNode, error) {
 	var ids []store.MediaID
@@ -361,10 +382,26 @@ func (h *Handler) visibleNodes(ctx context.Context, filter store.LibraryFilter, 
 		} else {
 			current.name = titles[store.EntityID(n.id)]
 			current.sortKey = current.name
+			current.year = earliestYear(n, media)
 		}
 		kept = append(kept, &current)
 	}
 	return kept, nil
+}
+
+// earliestYear returns the earliest year among the visible leaves under n, the
+// year a container carries.
+func earliestYear(n *catalogNode, media map[store.MediaID]store.VisibleMedia) int {
+	if n.leaf {
+		return media[store.MediaID(n.id)].Year
+	}
+	year := 0
+	for _, child := range n.children {
+		if y := earliestYear(child, media); y > 0 && (year == 0 || y < year) {
+			year = y
+		}
+	}
+	return year
 }
 
 func (c *indexCache) acquire(ctx context.Context) (func(), error) {
@@ -411,8 +448,20 @@ func (c *indexCache) recent(key string) *catalogIndex {
 	return entry.index
 }
 
-// store keeps index under key, evicting the oldest entry when full.
-func (c *indexCache) store(key string, visible [sha256.Size]byte, index *catalogIndex) {
+// readSince returns the index stored under key whose read began after since.
+func (c *indexCache) readSince(key string, since time.Time) *catalogIndex {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.entries[key]
+	if !ok || !entry.built.After(since) {
+		return nil
+	}
+	return entry.index
+}
+
+// store keeps index, built from a read that began at read, under key,
+// evicting the oldest entry when full.
+func (c *indexCache) store(key string, visible [sha256.Size]byte, index *catalogIndex, read time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.entries == nil {
@@ -427,7 +476,7 @@ func (c *indexCache) store(key string, visible [sha256.Size]byte, index *catalog
 		}
 		delete(c.entries, oldest)
 	}
-	c.entries[key] = cachedIndex{built: c.clock(), visible: visible, index: index}
+	c.entries[key] = cachedIndex{built: read, visible: visible, index: index}
 }
 
 // visibleFingerprint digests every field of the visible items that an index
@@ -741,7 +790,8 @@ type catalogHit struct {
 // findNodes finds the indexed items with the given IDs, without confirming
 // they are still visible. It reads only the eligible Libraries that hold one,
 // each from its recent index. An ID the recent index lacks reads the Library
-// afresh, once per index: one still missing is remembered as absent.
+// afresh, once per index: one still missing from that fresh index is
+// remembered on it as absent.
 func (h *Handler) findNodes(ctx context.Context, filter store.LibraryFilter, libraries []catalogLibrary, ids []string) (map[string]catalogHit, error) {
 	found := map[string]catalogHit{}
 	if len(libraries) == 0 || len(ids) == 0 {
@@ -766,7 +816,7 @@ func (h *Handler) findNodes(ctx context.Context, filter store.LibraryFilter, lib
 			return nil, err
 		}
 		if slices.ContainsFunc(wanted, func(id string) bool { return index.byID[id] == nil && !index.isAbsent(id) }) {
-			if index, err = h.libraryIndex(ctx, filter, lib); err != nil {
+			if index, err = h.freshIndex(ctx, filter, lib); err != nil {
 				return nil, err
 			}
 			index.markAbsent(wanted)
@@ -1040,7 +1090,7 @@ func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request, _ net.IP) {
 	}
 	users := make([]compatUserSummary, len(profiles))
 	for i, profile := range profiles {
-		users[i] = compatUserSummary{ID: string(profile.ID), Name: profile.Name, ServerID: h.serverID}
+		users[i] = compatUserSummary{ID: h.compatUserID(profile.ID), Name: profile.Name, ServerID: h.serverID}
 	}
 	writeJSON(w, users)
 }
@@ -1078,7 +1128,7 @@ func (h *Handler) user(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	detail := compatUserDetail{}
 	detail.Configuration.GroupedFolders = []string{}
-	if setupID, setupName := h.setupUser(); id == setupID {
+	if setupID, setupName := h.setupUser(); normalizeUserID(id) == setupID {
 		detail.compatUserSummary = compatUserSummary{ID: setupID, Name: setupName, ServerID: h.serverID}
 		writeJSON(w, detail)
 		return
@@ -1092,7 +1142,7 @@ func (h *Handler) user(w http.ResponseWriter, r *http.Request, id string) {
 		http.NotFound(w, r)
 		return
 	}
-	detail.compatUserSummary = compatUserSummary{ID: string(profile.ID), Name: profile.Name, ServerID: h.serverID}
+	detail.compatUserSummary = compatUserSummary{ID: h.compatUserID(profile.ID), Name: profile.Name, ServerID: h.serverID}
 	writeJSON(w, detail)
 }
 
@@ -1126,13 +1176,16 @@ func (h *Handler) userImage(w http.ResponseWriter, r *http.Request, id string) {
 	_, _ = w.Write(picture)
 }
 
+// optedInProfile finds the opted-in Profile with the given compatibility
+// account ID. A raw Profile ID is not an account ID and matches nothing.
 func (h *Handler) optedInProfile(ctx context.Context, id string) (*store.Profile, error) {
 	profiles, err := h.optedInProfiles(ctx)
 	if err != nil {
 		return nil, err
 	}
+	id = normalizeUserID(id)
 	for i := range profiles {
-		if string(profiles[i].ID) == id {
+		if h.compatUserID(profiles[i].ID) == id {
 			return &profiles[i], nil
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -367,7 +368,8 @@ func TestJellyfinCatalogRequiresReadScope(t *testing.T) {
 	refreshOnly := scopedIntegrationToken(t, f.service, store.IntegrationScopeRefresh)
 	for _, path := range []string{
 		"Library/MediaFolders", "Items?ParentId=" + string(f.library), "Items/Latest?ParentId=" + string(f.library),
-		"Shows/" + string(f.group) + "/Seasons", "Users", "Users/profile-default", "Users/profile-default/Images/Primary",
+		"Shows/" + string(f.group) + "/Seasons", "Users", "Users/" + f.handler.compatUserID("profile-default"),
+		"Users/" + f.handler.compatUserID("profile-default") + "/Images/Primary",
 	} {
 		for _, token := range []string{"", refreshOnly} {
 			if rec := sendCompat(f.handler, seerrRequest(t, http.MethodGet, path, token)); rec.Code != http.StatusUnauthorized {
@@ -401,13 +403,25 @@ func TestJellyfinCatalogUsers(t *testing.T) {
 	if err := json.Unmarshal(f.get(t, "Users", http.StatusOK), &users); err != nil {
 		t.Fatal(err)
 	}
-	if len(users) != 1 || users[0]["Id"] != "profile-default" || users[0]["Name"] != "Default" || len(users[0]) != 3 {
-		t.Fatalf("users = %v, want only the opted-in Profile's ID, name and server", users)
+	userID := f.handler.compatUserID("profile-default")
+	if len(users) != 1 || users[0]["Id"] != userID || users[0]["Name"] != "Default" || len(users[0]) != 3 {
+		t.Fatalf("users = %v, want only the opted-in Profile's account ID, name and server", users)
 	}
-	body := f.get(t, "Users/profile-default", http.StatusOK)
-	if want := `{"Id":"profile-default","Name":"Default","ServerId":"server-test","Configuration":{"GroupedFolders":[]}}` + "\n"; string(body) != want {
+	// Seerr imports and matches only 32-hex-digit user IDs, dashes removed and
+	// lowercased; anything else is silently skipped.
+	if !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(userID) {
+		t.Fatalf("user ID %q is not the GUID form Seerr imports", userID)
+	}
+	body := f.get(t, "Users/"+userID, http.StatusOK)
+	if want := `{"Id":"` + userID + `","Name":"Default","ServerId":"server-test","Configuration":{"GroupedFolders":[]}}` + "\n"; string(body) != want {
 		t.Fatalf("user = %s, want %s", body, want)
 	}
+	dashed := strings.ToUpper(userID[:8] + "-" + userID[8:12] + "-" + userID[12:16] + "-" + userID[16:20] + "-" + userID[20:])
+	if body := f.get(t, "Users/"+dashed, http.StatusOK); !strings.Contains(string(body), `"Id":"`+userID+`"`) {
+		t.Fatalf("dashed user ID = %s", body)
+	}
+	// The raw Profile ID is not an account ID.
+	f.get(t, "Users/profile-default", http.StatusNotFound)
 	setupID, setupName := f.handler.setupUser()
 	body = f.get(t, "Users/"+setupID, http.StatusOK)
 	if !strings.Contains(string(body), `"Id":"`+setupID+`"`) || !strings.Contains(string(body), setupName) {
@@ -415,13 +429,14 @@ func TestJellyfinCatalogUsers(t *testing.T) {
 	}
 	f.get(t, "Users/missing", http.StatusNotFound)
 
-	f.get(t, "Users/profile-default/Images/Primary", http.StatusNotFound)
+	f.get(t, "Users/"+userID+"/Images/Primary", http.StatusNotFound)
 	f.get(t, "Users/"+setupID+"/Images/Primary", http.StatusNotFound)
 	picture := []byte("\x89PNG\r\n\x1a\n0000")
 	if _, err := f.st.SetProfilePicture(ctx, "profile-default", picture, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	rec := sendCompat(f.handler, seerrRequest(t, http.MethodGet, "Users/profile-default/Images/Primary", f.token))
+	f.get(t, "Users/profile-default/Images/Primary", http.StatusNotFound)
+	rec := sendCompat(f.handler, seerrRequest(t, http.MethodGet, "Users/"+userID+"/Images/Primary", f.token))
 	if rec.Code != http.StatusOK || rec.Body.String() != string(picture) || rec.Header().Get("Content-Type") != "image/png" ||
 		rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("avatar returned %d %q with headers %v", rec.Code, rec.Body.String(), rec.Header())
@@ -433,7 +448,7 @@ func TestJellyfinCatalogUsers(t *testing.T) {
 	}
 	// Opting out withdraws the Profile's compatibility sessions at once.
 	f.get(t, "Users", http.StatusUnauthorized)
-	f.get(t, "Users/profile-default/Images/Primary", http.StatusUnauthorized)
+	f.get(t, "Users/"+userID+"/Images/Primary", http.StatusUnauthorized)
 }
 
 func TestJellyfinCatalogPagingNeverOverflows(t *testing.T) {
@@ -623,7 +638,7 @@ func TestJellyfinCatalogIDLookupsReadCurrentRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	renamed := decodeList(t, f.get(t, "Items?ids="+string(f.part2)+","+string(f.group), http.StatusOK))
-	if len(renamed.Items) != 2 || renamed.Items[0].Name != title || renamed.Items[0].ProductionYear != year || renamed.Items[1].Name != "Beta Group Renamed" {
+	if len(renamed.Items) != 2 || renamed.Items[0].Name != title || renamed.Items[0].ProductionYear != year || renamed.Items[1].Name != "Beta Group Renamed" || renamed.Items[1].ProductionYear != year {
 		t.Fatalf("renamed items = %+v", renamed.Items)
 	}
 
@@ -672,6 +687,56 @@ func TestJellyfinCatalogIDLookupsReadCurrentRows(t *testing.T) {
 	f.get(t, "Items?ids="+string(f.unmapped), http.StatusOK)
 	if f.handler.indexes.recent(key) != rebuilt {
 		t.Fatal("an ID remembered as absent rebuilt the index again")
+	}
+
+	// Trash hides an Entity, not the Media it holds: the rebuilt index serves
+	// those still-visible members ungrouped, as the store reports them.
+	loose := decodeList(t, f.get(t, "Items?ids="+string(f.part1), http.StatusOK))
+	if got := itemIDs(loose.Items); !slices.Equal(got, []string{string(f.part1)}) || loose.Items[0].SeriesID != "" || loose.Items[0].SeasonID != "" {
+		t.Fatalf("member of a trashed container after rebuild = %+v", loose.Items)
+	}
+}
+
+// A container linked after the index was built is found on its first lookup,
+// though the visible items, and so the index fingerprint, are unchanged.
+func TestJellyfinCatalogLookupFindsNewContainer(t *testing.T) {
+	f := newCatalogFixture(t)
+	ctx := t.Context()
+	now := time.Unix(1_000_000, 0)
+	f.handler.indexes.now = func() time.Time { return now }
+	f.get(t, "Items?ids="+string(f.part3), http.StatusOK)
+	sub3 := store.EntityID("entity-sub-3")
+	if err := f.st.UpsertEntity(ctx, store.Entity{ID: sub3, LibraryID: f.library, Kind: "subgroup", Title: "Group Part 3"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, relation := range []store.EntityRelation{
+		{FromEntityID: sub3, Name: "member", ToMediaID: f.single, Cardinality: "one"},
+		{FromEntityID: sub3, Name: "member-of", ToEntityID: f.group, Cardinality: "one"},
+	} {
+		if err := f.st.UpsertEntityRelation(ctx, relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list := decodeList(t, f.get(t, "Items?ids="+string(sub3), http.StatusOK))
+	if got := itemIDs(list.Items); !slices.Equal(got, []string{string(sub3)}) {
+		t.Fatalf("lookup of a newly linked container = %v", got)
+	}
+}
+
+// A request that waited for a fresh read reuses an index whose read began
+// after it asked, and never one read before.
+func TestIndexCacheReadSince(t *testing.T) {
+	var c indexCache
+	var visible [sha256.Size]byte
+	asked := time.Unix(1_000_000, 0)
+	index := &catalogIndex{}
+	c.store("k", visible, index, asked)
+	if c.readSince("k", asked) != nil {
+		t.Fatal("an index read when the request asked was reused as fresh")
+	}
+	c.store("k", visible, index, asked.Add(time.Millisecond))
+	if c.readSince("k", asked) != index {
+		t.Fatal("an index read after the request asked was not reused")
 	}
 }
 
@@ -734,7 +799,7 @@ func TestJellyfinCatalogIndexCacheEvictsOldest(t *testing.T) {
 	for i := range catalogIndexEntries + 1 {
 		key := strconv.Itoa(i)
 		indexes[key] = &catalogIndex{}
-		c.store(key, visible, indexes[key])
+		c.store(key, visible, indexes[key], now)
 		now = now.Add(time.Millisecond)
 	}
 	if len(c.entries) != catalogIndexEntries || c.lookup("0", visible) != nil {

@@ -252,7 +252,7 @@ func (h *Handler) authenticateByName(w http.ResponseWriter, r *http.Request, cli
 // alone, so sharing the Id would make the owner's PIN a tool admin login.
 func (h *Handler) signedInUser(session auth.IntegrationSession) compatUser {
 	user := compatUser{
-		ID: string(session.ProfileID), Name: session.ProfileName,
+		ID: h.compatUserID(session.ProfileID), Name: session.ProfileName,
 		ServerID: h.serverID, ServerName: h.serverName,
 	}
 	if session.Setup {
@@ -266,6 +266,19 @@ func (h *Handler) signedInUser(session auth.IntegrationSession) compatUser {
 func (h *Handler) setupUser() (string, string) {
 	sum := sha256.Sum256([]byte("beamfall compat setup user\x00" + h.serverID))
 	return hex.EncodeToString(sum[:16]), auth.IntegrationSetupName
+}
+
+// compatUserID is a Profile's account ID on the compatibility API: a stable
+// 32-hex-digit GUID, the only user ID form Seerr imports or matches.
+func (h *Handler) compatUserID(id store.ProfileID) string {
+	sum := sha256.Sum256([]byte("beamfall compat profile user\x00" + h.serverID + "\x00" + string(id)))
+	return hex.EncodeToString(sum[:16])
+}
+
+// normalizeUserID accepts a user ID with or without GUID dashes, in either
+// case, as clients echo the ID they were given in either form.
+func normalizeUserID(id string) string {
+	return strings.ToLower(strings.ReplaceAll(id, "-", ""))
 }
 
 // authenticationResult is the AuthenticateByName body. It names the signed-in
