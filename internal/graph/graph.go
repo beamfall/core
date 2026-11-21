@@ -775,7 +775,10 @@ type UpdateChecker interface {
 // stopped so the mutations can report propagation honestly.
 type TranscodeTerminator interface {
 	TerminateSession(sessionID store.SessionID) int
-	TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int
+	// DetachPlayback detaches one Session's transcodes for one Media and
+	// returns a wait that joins their teardown, so a caller can detach under a
+	// lock and wait after releasing it.
+	DetachPlayback(sessionID store.SessionID, mediaID store.MediaID) (int, func())
 }
 
 // TranscodeCapacityProbe reports whether a normal-priority transcode for

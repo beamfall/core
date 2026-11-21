@@ -91,7 +91,8 @@ function isProfileMismatch(status: number, payload: unknown): boolean {
   if (typeof payload !== "object" || payload === null) return false;
   const body = payload as { reason?: unknown; errors?: { extensions?: { reason?: unknown } }[] };
   if (status === 409 && body.reason === "PROFILE_MISMATCH") return true;
-  return body.errors?.some((error) => error?.extensions?.reason === "PROFILE_MISMATCH") ?? false;
+  if (!Array.isArray(body.errors)) return false;
+  return body.errors.some((error) => error?.extensions?.reason === "PROFILE_MISMATCH");
 }
 
 /**
@@ -404,7 +405,6 @@ export function postKeepalive(
       body: JSON.stringify(body),
     })
       .then(async (response) => {
-        if (!response.ok && response.status !== 409) return;
         noteProfileRefusal(profile ?? undefined, response.status, await response.json());
       })
       .catch(() => {});
