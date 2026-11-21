@@ -233,6 +233,9 @@ func (h *Handler) upsertEntityRelation(ctx context.Context, scope auth.Scope, re
 		ToEntityID:   toEntityID,
 		ToMediaID:    toMediaID,
 		SortOrder:    sortOrder,
+		// The mutation carries no attributes, so re-ordering or re-adding a
+		// row must not erase the ones ingest wrote (CORE-2913).
+		KeepAttributes: true,
 	}); err != nil {
 		return RelationWriteResult{}, clientError(err.Error())
 	}

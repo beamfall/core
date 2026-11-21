@@ -30,9 +30,14 @@ rows that point *at* the open item. A link made on this page never shows up unde
   by search and appending it at the end. The link type is chosen from the group's existing link
   types, or typed when the group has none.
 - Sections that do not apply to the subject's type are not rendered.
+- `upsertEntityRelation` keeps an existing row's attributes. The mutation has no attributes
+  argument, so re-ordering a row the scanner wrote used to erase its attributes. The store upsert
+  gains a `KeepAttributes` flag that the mutation sets; other writers are unchanged.
+- `entityRelations` is read in pages (it already takes `limit`/`offset`), so ordering sees every row
+  of a large group.
 
 ## Non-goals
 
-- Server or schema changes: every read and write the page needs already exists.
+- Schema changes: every field and argument the page needs already exists.
 - Unlinking an extra, edition or group item: there is no mutation for it yet.
 - Changing the Item metadata, Entities, Unmatched or Tags pages.

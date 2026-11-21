@@ -353,16 +353,17 @@ export async function fetchMediaFiles(mediaID: string): Promise<MediaFileDetail[
 }
 
 const ENTITY_RELATIONS_QUERY =
-  "query EntityRelations($entityID: String!, $relation: String) { entityRelations(entityID: $entityID, relation: $relation) { relation targetKind sortOrder attributes entity { id kind title fields { name type value label } } media { id title summary year favorited } } }";
+  "query EntityRelations($entityID: String!, $relation: String, $limit: Int, $offset: Int) { entityRelations(entityID: $entityID, relation: $relation, limit: $limit, offset: $offset) { relation targetKind sortOrder attributes entity { id kind title fields { name type value label } } media { id title summary year favorited } } }";
 
 /** EntityRelations — generic relation/order rows for one visible Entity. */
 export async function fetchEntityRelations(
   entityID: string,
   relation?: string | null,
+  page?: { limit?: number; offset?: number },
 ): Promise<EntityRelationDetail[]> {
   const data = await graphql<{
     entityRelations: EntityRelationDetail[] | null;
-  }>(ENTITY_RELATIONS_QUERY, { entityID, relation });
+  }>(ENTITY_RELATIONS_QUERY, { entityID, relation, ...page });
   return data.entityRelations ?? [];
 }
 

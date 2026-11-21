@@ -8,3 +8,6 @@
 - [x] Group view: ordered items with move up/down and search-picked "Add an item" appended at the end.
 - [x] Update CurationPage tests; run biome, tsc, vitest and the strings tests.
 - [x] Screenshots from a local dev server.
+- [x] Keep relation attributes on `upsertEntityRelation`; read group relations in pages.
+- [x] Renumber within a relation on move and add; one save at a time; reload after failures.
+- [x] Search picker pages with "More results"; route results by the wire `kind`.

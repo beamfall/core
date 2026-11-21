@@ -63,11 +63,42 @@ and sections for the other subject type SHALL NOT be rendered.
 
 ### Requirement: Group items are ordered and appended
 
-The group view SHALL list its items in sort order with move up/down controls, and "Add an item"
-SHALL append the picked item after the last one using an existing link type of the group, or a
-typed one when the group has none.
+The group view SHALL read every relation row of the group and move each row only among the rows
+of its own relation. A move or an add SHALL renumber that relation's rows 0..n-1 where they differ.
+"Add an item" SHALL append the picked item after the last one, using an existing link type of the
+group or a typed one, and SHALL NOT rewrite an item already in that relation.
 
 #### Scenario: Manager adds an item to a group
 
-- **WHEN** the group's last item has sort order 4 and the manager adds item C
-- **THEN** the page upserts the relation to C with sort order 5
+- **WHEN** the group's relation holds items numbered 0 and 1 and the manager adds item C
+- **THEN** the page upserts the relation to C with sort order 2 and rewrites nothing else
+
+#### Scenario: Unnumbered items
+
+- **WHEN** a relation holds an item numbered 0 and an unnumbered one, and the manager adds item C
+- **THEN** the unnumbered item is written as 1 and C as 2
+
+#### Scenario: Item already in the group
+
+- **WHEN** the manager picks an item already in the chosen relation
+- **THEN** the page says so and writes nothing
+
+### Requirement: Group changes save one at a time
+
+The group view SHALL save one change at a time, with its controls disabled meanwhile, and SHALL
+reload after every save, including one that failed partway.
+
+#### Scenario: A move fails partway
+
+- **WHEN** the first of two renumbering writes succeeds and the second fails
+- **THEN** the page says the change was not saved and shows the order the server now holds
+
+### Requirement: Re-ordering keeps relation attributes
+
+`upsertEntityRelation` SHALL leave an existing row's attributes unchanged; only a new row is written
+without attributes.
+
+#### Scenario: Manager moves a scanned item
+
+- **WHEN** a relation row carries attributes from the scanner and the manager moves it
+- **THEN** the row's sort order changes and its attributes are kept

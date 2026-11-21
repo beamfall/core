@@ -288,6 +288,65 @@ func TestCurationRelationWritesAreManagerGatedAndRevealFiltered(t *testing.T) {
 	}
 }
 
+// TestUpsertEntityRelationKeepsAttributes: the mutation re-orders a row that
+// ingest wrote with attributes; it has no attributes argument, so it must keep
+// them rather than clear them (CORE-2913).
+func TestUpsertEntityRelationKeepsAttributes(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	handler := newTestHandlerWithStore(st)
+
+	member, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID:          "library-local",
+		Path:               "/media/member.mp4",
+		Title:              "Member",
+		Container:          "mp4",
+		Codec:              "h264",
+		ContentFingerprint: "fp-member",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []store.EntityID{"entity-group", "entity-child"} {
+		if err := st.UpsertEntity(ctx, store.Entity{ID: id, LibraryID: "library-local", Kind: "container", Title: string(id)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	zero := 0
+	for _, rel := range []store.EntityRelation{
+		{FromEntityID: "entity-group", Name: "contains", ToMediaID: member.ID, Attributes: map[string]string{"role": "lead"}, SortOrder: &zero},
+		{FromEntityID: "entity-group", Name: "contains", ToEntityID: "entity-child", Attributes: map[string]string{"role": "guest"}, SortOrder: &zero},
+	} {
+		if err := st.UpsertEntityRelation(ctx, rel); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, target := range []string{`"toMediaID":"` + string(member.ID) + `"`, `"toEntityID":"entity-child"`} {
+		body := graphPost(t, handler, authorizeManager, `{"query":"mutation($fromEntityID:String!,$relation:String!,$toEntityID:String,$toMediaID:String,$sortOrder:Int){ upsertEntityRelation(fromEntityID:$fromEntityID, relation:$relation, toEntityID:$toEntityID, toMediaID:$toMediaID, sortOrder:$sortOrder){ targetID } }","variables":{"fromEntityID":"entity-group","relation":"contains",`+target+`,"sortOrder":5}}`)
+		if bytes.Contains(body, []byte(`"errors"`)) {
+			t.Fatalf("upsert %s = %s", target, body)
+		}
+	}
+
+	rows, err := st.EntityRelationRows(ctx, "entity-group", "contains", store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %#v", rows)
+	}
+	for _, row := range rows {
+		want := "lead"
+		if row.ToEntity != nil {
+			want = "guest"
+		}
+		if row.Attributes["role"] != want || row.SortOrder == nil || *row.SortOrder != 5 {
+			t.Fatalf("row %#v: attributes=%v sortOrder=%v, want role=%s sortOrder=5", row, row.Attributes, row.SortOrder, want)
+		}
+	}
+}
+
 // TestMediaRelationsCarryCardFields covers the detail page's Extras row read
 // (CORE-2439): each related Media carries its artwork, duration and class, the
 // same values media(id) returns, so a client can draw a card.

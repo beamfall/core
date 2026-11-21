@@ -91,6 +91,10 @@ type EntityRelation struct {
 	// children (OrderedChildren containers). Nil means unordered; reads put
 	// ordered rows first.
 	SortOrder *int
+	// KeepAttributes leaves an existing row's attributes as they are on
+	// upsert: only a new row takes Attributes. For writers that re-order or
+	// re-link a row without carrying its attributes (CORE-2913).
+	KeepAttributes bool
 }
 
 // RelatedEntity pairs an Entity with the attributes of the relation row that
@@ -420,8 +424,9 @@ func (s *Store) UpsertEntityRelation(ctx context.Context, relation EntityRelatio
 			INSERT INTO entity_relation(from_entity_id, relation, to_entity_id, attributes, sort_order)
 			VALUES (?, ?, ?, ?, ?)
 			ON CONFLICT(from_entity_id, relation, to_entity_id) WHERE to_entity_id IS NOT NULL
-			DO UPDATE SET attributes = excluded.attributes, sort_order = excluded.sort_order
-		`, relation.FromEntityID, relation.Name, relation.ToEntityID, attributes, sortOrder)
+			DO UPDATE SET attributes = CASE WHEN ? THEN entity_relation.attributes ELSE excluded.attributes END,
+				sort_order = excluded.sort_order
+		`, relation.FromEntityID, relation.Name, relation.ToEntityID, attributes, sortOrder, relation.KeepAttributes)
 		return err
 	}
 	toPlane, err := s.catalogPlaneForMediaLocked(ctx, relation.ToMediaID)
@@ -658,8 +663,9 @@ func insertMediaRelationTx(ctx context.Context, tx *sql.Tx, relation EntityRelat
 		INSERT INTO entity_relation(from_entity_id, relation, to_media_id, attributes, sort_order)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(from_entity_id, relation, to_media_id) WHERE to_media_id IS NOT NULL
-		DO UPDATE SET attributes = excluded.attributes, sort_order = excluded.sort_order
-	`, relation.FromEntityID, relation.Name, relation.ToMediaID, attributes, sortOrder)
+		DO UPDATE SET attributes = CASE WHEN ? THEN entity_relation.attributes ELSE excluded.attributes END,
+			sort_order = excluded.sort_order
+	`, relation.FromEntityID, relation.Name, relation.ToMediaID, attributes, sortOrder, relation.KeepAttributes)
 	return err
 }
 

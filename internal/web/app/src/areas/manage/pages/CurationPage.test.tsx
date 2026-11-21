@@ -43,7 +43,7 @@ vi.mock("@/lib/graphql", () => ({
 }));
 
 function hit(id: string, title: string, entityKind?: string): SearchResultItem {
-  return { id, title, entityKind } as SearchResultItem;
+  return { id, title, entityKind, kind: entityKind ? "entity" : "media" } as SearchResultItem;
 }
 
 beforeEach(() => {
@@ -115,6 +115,21 @@ beforeEach(() => {
       restrictedResultsPresent: false,
     } as Awaited<ReturnType<typeof searchResult>>);
 });
+
+function row(
+  id: string,
+  title: string,
+  sortOrder: number | null,
+  relation = "contains",
+): Awaited<ReturnType<typeof fetchEntityRelations>>[number] {
+  return {
+    relation,
+    targetKind: "media",
+    media: { id, title, favorited: false },
+    attributes: {},
+    sortOrder: sortOrder ?? undefined,
+  };
+}
 
 function LocationProbe() {
   const location = useLocation();
@@ -215,16 +230,94 @@ describe("CurationPage", () => {
     expect(await screen.findByText("Part One")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Move down: Part One" }));
     await waitFor(() => expect(upsertEntityRelation).toHaveBeenCalledTimes(2));
-    expect(vi.mocked(upsertEntityRelation).mock.calls[0][0]).toMatchObject({
+    expect(upsertEntityRelation).toHaveBeenCalledWith({
       fromEntityID: "entity-1",
       relation: "contains",
-      toMediaID: "media-a",
-      sortOrder: 1,
-    });
-    expect(vi.mocked(upsertEntityRelation).mock.calls[1][0]).toMatchObject({
+      toEntityID: null,
       toMediaID: "media-b",
       sortOrder: 0,
     });
+    expect(upsertEntityRelation).toHaveBeenCalledWith({
+      fromEntityID: "entity-1",
+      relation: "contains",
+      toEntityID: null,
+      toMediaID: "media-a",
+      sortOrder: 1,
+    });
+    // The whole relation is read, in pages, before it is renumbered.
+    expect(fetchEntityRelations).toHaveBeenCalledWith("entity-1", null, { limit: 200, offset: 0 });
+  });
+
+  it("numbers unranked items so a move takes effect", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchEntityRelations).mockResolvedValue([
+      row("media-a", "Part One", null),
+      row("media-b", "Part Two", null),
+    ]);
+    renderPage("/?open=entity-1&as=entity");
+
+    await user.click(await screen.findByRole("button", { name: "Move down: Part One" }));
+    await waitFor(() => expect(upsertEntityRelation).toHaveBeenCalledTimes(2));
+    expect(upsertEntityRelation).toHaveBeenCalledWith(
+      expect.objectContaining({ toMediaID: "media-b", sortOrder: 0 }),
+    );
+    expect(upsertEntityRelation).toHaveBeenCalledWith(
+      expect.objectContaining({ toMediaID: "media-a", sortOrder: 1 }),
+    );
+  });
+
+  it("moves items only within their own relation", async () => {
+    vi.mocked(fetchEntityRelations).mockResolvedValue([
+      row("media-a", "Part One", 0, "contains"),
+      row("media-b", "Part Two", 0, "features"),
+    ]);
+    renderPage("/?open=entity-1&as=entity");
+
+    expect(await screen.findByRole("button", { name: "Move down: Part One" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move up: Part Two" })).toBeDisabled();
+  });
+
+  it("reads every page of a large group", async () => {
+    const first = Array.from({ length: 200 }, (_, i) => row(`media-${i}`, `Item ${i}`, i));
+    vi.mocked(fetchEntityRelations)
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce([row("media-last", "Last Item", 200)]);
+    renderPage("/?open=entity-1&as=entity");
+
+    expect(await screen.findByText("Last Item")).toBeVisible();
+    expect(fetchEntityRelations).toHaveBeenCalledWith("entity-1", null, {
+      limit: 200,
+      offset: 200,
+    });
+  });
+
+  it("reloads after a move fails partway", async () => {
+    const user = userEvent.setup();
+    vi.mocked(upsertEntityRelation)
+      .mockResolvedValueOnce({ relation: "contains", sourceID: "entity-1", targetID: "media-b" })
+      .mockRejectedValueOnce(new Error("boom"));
+    renderPage("/?open=entity-1&as=entity");
+
+    await user.click(await screen.findByRole("button", { name: "Move down: Part One" }));
+    expect(await screen.findByText("That change was not saved. Try again.")).toBeVisible();
+    expect(fetchEntityRelations).toHaveBeenCalledTimes(2);
+  });
+
+  it("disables the controls while a change is saving", async () => {
+    const user = userEvent.setup();
+    let finish: () => void = () => {};
+    vi.mocked(upsertEntityRelation).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({ relation: "contains", sourceID: "entity-1", targetID: "x" });
+        }),
+    );
+    renderPage("/?open=entity-1&as=entity");
+
+    await user.click(await screen.findByRole("button", { name: "Move down: Part One" }));
+    expect(screen.getByRole("button", { name: "Move up: Part Two" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add an item" })).toBeDisabled();
+    finish();
   });
 
   it("adds an item to the end of a group", async () => {
@@ -248,6 +341,101 @@ describe("CurationPage", () => {
       toMediaID: "media-c",
       sortOrder: 2,
     });
+    // Already numbered 0 and 1, so nothing else is rewritten.
+    expect(upsertEntityRelation).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not rewrite an item that is already in the group", async () => {
+    const user = userEvent.setup();
+    vi.mocked(searchResult).mockResolvedValue({
+      mode: "keyword",
+      items: [hit("media-b", "Part Two")],
+      restrictedResultsPresent: false,
+    } as Awaited<ReturnType<typeof searchResult>>);
+    renderPage("/?open=entity-1&as=entity");
+    await screen.findByText("Part One");
+
+    await user.click(screen.getByRole("button", { name: "Add an item" }));
+    await search(user, "Add an item", "two");
+    await user.click(await screen.findByRole("button", { name: "Add to group: Part Two" }));
+
+    expect(await screen.findByText("That is already in this group.")).toBeVisible();
+    expect(upsertEntityRelation).not.toHaveBeenCalled();
+  });
+
+  it("adds a group found by search as a group", async () => {
+    const user = userEvent.setup();
+    vi.mocked(searchResult).mockResolvedValue({
+      mode: "keyword",
+      // A group row without its display kind is still a group.
+      items: [{ id: "entity-2", title: "Sub Group", kind: "entity" } as SearchResultItem],
+      restrictedResultsPresent: false,
+    } as Awaited<ReturnType<typeof searchResult>>);
+    renderPage("/?open=entity-1&as=entity");
+    await screen.findByText("Part One");
+
+    await user.click(screen.getByRole("button", { name: "Add an item" }));
+    await search(user, "Add an item", "sub");
+    await user.click(await screen.findByRole("button", { name: "Add to group: Sub Group" }));
+
+    expect(upsertEntityRelation).toHaveBeenCalledWith(
+      expect.objectContaining({ toEntityID: "entity-2", toMediaID: null, sortOrder: 2 }),
+    );
+  });
+
+  it("numbers unranked items before adding one after them", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchEntityRelations).mockResolvedValue([
+      row("media-a", "Part One", 0),
+      row("media-b", "Part Two", null),
+    ]);
+    vi.mocked(searchResult).mockResolvedValue({
+      mode: "keyword",
+      items: [hit("media-c", "Part Three")],
+      restrictedResultsPresent: false,
+    } as Awaited<ReturnType<typeof searchResult>>);
+    renderPage("/?open=entity-1&as=entity");
+    await screen.findByText("Part One");
+
+    await user.click(screen.getByRole("button", { name: "Add an item" }));
+    await search(user, "Add an item", "three");
+    await user.click(await screen.findByRole("button", { name: "Add to group: Part Three" }));
+
+    await waitFor(() => expect(upsertEntityRelation).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(upsertEntityRelation).mock.calls[0][0]).toMatchObject({
+      toMediaID: "media-b",
+      sortOrder: 1,
+    });
+    expect(vi.mocked(upsertEntityRelation).mock.calls[1][0]).toMatchObject({
+      toMediaID: "media-c",
+      sortOrder: 2,
+    });
+  });
+
+  it("loads more search results on request", async () => {
+    const user = userEvent.setup();
+    vi.mocked(searchResult)
+      .mockResolvedValueOnce({
+        mode: "keyword",
+        hasMore: true,
+        items: [hit("media-1", "The Film")],
+        restrictedResultsPresent: false,
+      } as Awaited<ReturnType<typeof searchResult>>)
+      .mockResolvedValueOnce({
+        mode: "keyword",
+        hasMore: false,
+        items: [hit("media-2", "The Sequel")],
+        restrictedResultsPresent: false,
+      } as Awaited<ReturnType<typeof searchResult>>);
+    renderPage();
+    await search(user, "Search the catalog", "the");
+    await screen.findByRole("button", { name: "Open: The Film" });
+
+    await user.click(screen.getByRole("button", { name: "More results" }));
+    expect(await screen.findByRole("button", { name: "Open: The Sequel" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Open: The Film" })).toBeVisible();
+    expect(vi.mocked(searchResult).mock.calls[1][3]).toEqual({ offset: 1 });
+    expect(screen.queryByRole("button", { name: "More results" })).toBeNull();
   });
 
   it("says so when the open item cannot be loaded", async () => {
@@ -268,6 +456,14 @@ describe("CurationPage", () => {
   it("says so when the server has no such item", async () => {
     vi.mocked(fetchMedia).mockResolvedValue(null);
     renderPage("/?open=media-1&as=media");
+    expect(
+      await screen.findByText("That item or group no longer exists, or is hidden from you."),
+    ).toBeVisible();
+  });
+
+  it("says so when a group is hidden from the caller", async () => {
+    vi.mocked(fetchEntity).mockRejectedValue(new ApiError("unknown entity", 200));
+    renderPage("/?open=entity-1&as=entity");
     expect(
       await screen.findByText("That item or group no longer exists, or is hidden from you."),
     ).toBeVisible();

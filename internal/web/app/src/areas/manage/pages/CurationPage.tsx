@@ -58,7 +58,7 @@ export function CurationPage() {
   const openType: SubjectType = params.get("as") === "entity" ? "entity" : "media";
 
   const open = (item: SearchResultItem) => {
-    setParams({ open: item.id, as: item.entityKind ? "entity" : "media" });
+    setParams({ open: item.id, as: isEntity(item) ? "entity" : "media" });
   };
   const close = () => setParams({});
 
@@ -88,6 +88,11 @@ export function CurationPage() {
 
 // --- Catalog search picker ---------------------------------------------------
 
+// The wire discriminant: "entity" or "media". entityKind is display metadata.
+function isEntity(item: SearchResultItem): boolean {
+  return item.kind === "entity";
+}
+
 // Keyword catalog search (reveal-filtered server-side) with one action per
 // result. `mediaOnly` hides Entity rows where only a Media item can be linked.
 function ItemSearch({
@@ -97,6 +102,7 @@ function ItemSearch({
   onPick,
   mediaOnly = false,
   excludeID,
+  disabled = false,
 }: {
   id: string;
   label: string;
@@ -104,9 +110,17 @@ function ItemSearch({
   onPick: (item: SearchResultItem) => void | Promise<void>;
   mediaOnly?: boolean;
   excludeID?: string;
+  disabled?: boolean;
 }) {
   const { t, displayLocale } = useI18n();
   const [term, setTerm] = useState("");
+  // The submitted query and how many raw results it has returned so far, so
+  // "More results" asks for the next page of the same search.
+  const [search, setSearch] = useState<{ query: string; fetched: number; hasMore: boolean }>({
+    query: "",
+    fetched: 0,
+    hasMore: false,
+  });
   const [results, setResults] = useState<SearchResultItem[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -114,32 +128,41 @@ function ItemSearch({
 
   useEffect(() => () => request.current?.abort(), []);
 
-  const onSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    const query = term.trim();
-    if (!query) return;
+  const run = async (query: string, offset: number) => {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
     setError("");
     setBusy(true);
     try {
-      const response = await searchResult(query, "keyword", controller.signal, { offset: 0 });
+      const response = await searchResult(query, "keyword", controller.signal, { offset });
       if (controller.signal.aborted) return;
-      setResults(
-        response.items.filter((item) => item.id !== excludeID && !(mediaOnly && item.entityKind)),
+      const page = response.items.filter(
+        (item) => item.id !== excludeID && !(mediaOnly && isEntity(item)),
       );
+      setResults((prev) => (offset === 0 || !prev ? page : [...prev, ...page]));
+      setSearch({
+        query,
+        fetched: offset + response.items.length,
+        hasMore: Boolean(response.hasMore) && response.items.length > 0,
+      });
     } catch {
       if (controller.signal.aborted) return;
-      setResults(null);
+      if (offset === 0) setResults(null);
       setError(t("curationSearchFailed"));
     } finally {
       if (!controller.signal.aborted) setBusy(false);
     }
   };
 
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    const query = term.trim();
+    if (query) void run(query, 0);
+  };
+
   const kindLabel = (item: SearchResultItem) => {
-    if (item.entityKind) {
+    if (isEntity(item)) {
       return displayString(item.entityKindDisplayName, displayLocale) || t("curationKindEntity");
     }
     return t("curationKindMedia");
@@ -165,7 +188,11 @@ function ItemSearch({
         </Button>
       </form>
       <ErrorLine message={error} />
-      {results && results.length === 0 && <EmptyLine message={t("curationSearchNoResults")} />}
+      {results && results.length === 0 && !search.hasMore && (
+        <div role="status">
+          <EmptyLine message={t("curationSearchNoResults")} />
+        </div>
+      )}
       {results && results.length > 0 && (
         <ul className="mt-3 divide-y divide-[var(--line-soft)] rounded-md border border-[var(--line-soft)]">
           {results.map((item) => (
@@ -175,7 +202,7 @@ function ItemSearch({
                   {item.title || item.id}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
-                  <StatusBadge state={item.entityKind ? "cyan" : "neutral"}>
+                  <StatusBadge state={isEntity(item) ? "cyan" : "neutral"}>
                     {kindLabel(item)}
                   </StatusBadge>
                   {item.year ? <span>{item.year}</span> : null}
@@ -187,6 +214,7 @@ function ItemSearch({
                 size="sm"
                 variant="outline"
                 aria-label={`${actionLabel}: ${item.title || item.id}`}
+                disabled={disabled}
                 onClick={() => void onPick(item)}
               >
                 {actionLabel}
@@ -194,6 +222,18 @@ function ItemSearch({
             </li>
           ))}
         </ul>
+      )}
+      {results && search.hasMore && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="mt-2"
+          disabled={busy}
+          onClick={() => void run(search.query, search.fetched)}
+        >
+          {t("curationSearchMore")}
+        </Button>
       )}
     </div>
   );
@@ -282,6 +322,8 @@ function MediaView({ id, onClose }: { id: string; onClose: () => void }) {
   const { t } = useI18n();
   const [detail, setDetail] = useState<MediaDetail | "loading" | "missing" | "failed">("loading");
   const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const inFlight = useRef(false);
 
   const load = useCallback(async () => {
     const [media, files, extras, editions] = await Promise.all([
@@ -309,12 +351,18 @@ function MediaView({ id, onClose }: { id: string; onClose: () => void }) {
   // The picked item points AT the open one: from = extra/edition, to = this
   // item. That is the direction scan writes and mediaRelations reads.
   const link = async (relation: "extra-of" | "edition-of", picked: SearchResultItem) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setSaveError("");
+    setSaving(true);
     try {
       await linkMediaRelation(picked.id, relation, id);
       await load();
     } catch {
       setSaveError(t("curationSaveFailed"));
+    } finally {
+      inFlight.current = false;
+      setSaving(false);
     }
   };
 
@@ -372,6 +420,7 @@ function MediaView({ id, onClose }: { id: string; onClose: () => void }) {
         actionLabel={t("curationLinkAsExtra")}
         rows={detail.extras}
         subjectID={id}
+        saving={saving}
         onPick={(picked) => link("extra-of", picked)}
       />
       <LinkedMediaSection
@@ -383,6 +432,7 @@ function MediaView({ id, onClose }: { id: string; onClose: () => void }) {
         actionLabel={t("curationLinkAsEdition")}
         rows={detail.editions}
         subjectID={id}
+        saving={saving}
         onPick={(picked) => link("edition-of", picked)}
       />
     </div>
@@ -398,6 +448,7 @@ function LinkedMediaSection({
   actionLabel,
   rows,
   subjectID,
+  saving,
   onPick,
 }: {
   id: string;
@@ -408,6 +459,7 @@ function LinkedMediaSection({
   actionLabel: string;
   rows: MediaRelationDetail[];
   subjectID: string;
+  saving: boolean;
   onPick: (picked: SearchResultItem) => Promise<void>;
 }) {
   const [adding, setAdding] = useState(false);
@@ -453,6 +505,7 @@ function LinkedMediaSection({
             actionLabel={actionLabel}
             mediaOnly
             excludeID={subjectID}
+            disabled={saving}
             onPick={async (picked) => {
               await onPick(picked);
               setAdding(false);
@@ -472,25 +525,56 @@ function targetID(row: EntityRelationDetail): string {
   return (row.targetKind === "entity" ? row.entity?.id : row.media?.id) ?? "";
 }
 
+// entityRelations pages at most 200 rows and refuses offsets past 10,000; the
+// editor needs every row to number a relation, so it reads until a short page.
+const RELATION_PAGE = 200;
+const RELATION_OFFSET_MAX = 10_000;
+
+async function fetchAllEntityRelations(id: string): Promise<EntityRelationDetail[]> {
+  const rows: EntityRelationDetail[] = [];
+  for (let offset = 0; offset <= RELATION_OFFSET_MAX; offset += RELATION_PAGE) {
+    const page = await fetchEntityRelations(id, null, { limit: RELATION_PAGE, offset });
+    rows.push(...page);
+    if (page.length < RELATION_PAGE) break;
+  }
+  return rows;
+}
+
+function isUnknownEntity(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.status === 200 &&
+    err.message.toLowerCase().includes("unknown entity")
+  );
+}
+
 function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
   const { t } = useI18n();
   const [detail, setDetail] = useState<EntityDetail | "loading" | "missing" | "failed">("loading");
   const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newRelation, setNewRelation] = useState("");
+  // Only the latest load may set state, so a slow earlier read never
+  // overwrites a newer one.
+  const loadSeq = useRef(0);
+  const inFlight = useRef(false);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     const entity = await fetchEntity(id);
+    if (seq !== loadSeq.current) return;
     if (!entity) {
       setDetail("missing");
       return;
     }
-    const rows = await fetchEntityRelations(id);
+    const rows = await fetchAllEntityRelations(id);
+    if (seq !== loadSeq.current) return;
     setDetail({ title: entity.title || id, kind: entity.kind, rows });
   }, [id]);
 
   useEffect(() => {
-    load().catch(() => setDetail("failed"));
+    load().catch((err) => setDetail(isUnknownEntity(err) ? "missing" : "failed"));
   }, [load]);
 
   if (typeof detail === "string") return <LoadState state={detail} onClose={onClose} />;
@@ -498,54 +582,77 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
   const rows = detail.rows;
   const relationNames = [...new Set(rows.map((row) => row.relation))];
   const relation = newRelation.trim() || relationNames[0] || "";
+  const rowsOf = (name: string) => rows.filter((row) => row.relation === name);
 
-  // Reorder swaps this row's sortOrder with its neighbour by re-upserting both,
-  // keyed by relation+target. The server is the order authority; reload after.
-  const move = async (index: number, dir: -1 | 1) => {
-    setSaveError("");
-    const a = rows[index];
-    const b = rows[index + dir];
-    if (!a || !b) return;
-    const aOrder = a.sortOrder ?? index;
-    const bOrder = b.sortOrder ?? index + dir;
-    try {
-      for (const [row, sortOrder] of [
-        [a, bOrder],
-        [b, aOrder],
-      ] as const) {
-        await upsertEntityRelation({
-          fromEntityID: id,
-          relation: row.relation,
-          toEntityID: row.targetKind === "entity" ? targetID(row) : null,
-          toMediaID: row.targetKind === "media" ? targetID(row) : null,
-          sortOrder,
-        });
-      }
-      await load();
-    } catch {
-      setSaveError(t("curationSaveFailed"));
+  // Writes the given rows' positions as 0..n-1, skipping rows already there.
+  // Renumbering the whole relation makes tied or unnumbered positions (which
+  // the server lists last) explicit, so a move or append always takes effect.
+  const writeOrder = async (ordered: EntityRelationDetail[]) => {
+    for (const [sortOrder, row] of ordered.entries()) {
+      if (row.sortOrder === sortOrder) continue;
+      await upsertEntityRelation({
+        fromEntityID: id,
+        relation: row.relation,
+        toEntityID: row.targetKind === "entity" ? targetID(row) : null,
+        toMediaID: row.targetKind === "media" ? targetID(row) : null,
+        sortOrder,
+      });
     }
   };
 
-  // New items go after the last one.
-  const add = async (picked: SearchResultItem) => {
+  // One save at a time; always reload, so a write that failed partway shows
+  // the order the server actually holds.
+  const save = async (write: () => Promise<void>) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setSaveError("");
-    if (!relation) return;
-    const last = rows.reduce((max, row, i) => Math.max(max, row.sortOrder ?? i), -1);
+    setSaving(true);
     try {
-      await upsertEntityRelation({
-        fromEntityID: id,
-        relation,
-        toEntityID: picked.entityKind ? picked.id : null,
-        toMediaID: picked.entityKind ? null : picked.id,
-        sortOrder: last + 1,
-      });
-      setAdding(false);
-      setNewRelation("");
-      await load();
+      await write();
     } catch {
       setSaveError(t("curationSaveFailed"));
     }
+    try {
+      await load();
+    } catch {
+      setSaveError(t("curationSaveFailed"));
+    } finally {
+      inFlight.current = false;
+      setSaving(false);
+    }
+  };
+
+  // Moves a row one place within its own relation.
+  const move = (row: EntityRelationDetail, dir: -1 | 1) =>
+    save(async () => {
+      const ordered = rowsOf(row.relation);
+      const from = ordered.indexOf(row);
+      const to = from + dir;
+      if (from < 0 || to < 0 || to >= ordered.length) return;
+      [ordered[from], ordered[to]] = [ordered[to], ordered[from]];
+      await writeOrder(ordered);
+    });
+
+  // New items go after the last one in the chosen relation.
+  const add = async (picked: SearchResultItem) => {
+    if (!relation) return;
+    const existing = rowsOf(relation);
+    if (existing.some((row) => targetID(row) === picked.id)) {
+      setSaveError(t("curationAlreadyMember"));
+      return;
+    }
+    await save(async () => {
+      await writeOrder(existing);
+      await upsertEntityRelation({
+        fromEntityID: id,
+        relation,
+        toEntityID: isEntity(picked) ? picked.id : null,
+        toMediaID: isEntity(picked) ? null : picked.id,
+        sortOrder: existing.length,
+      });
+      setAdding(false);
+      setNewRelation("");
+    });
   };
 
   return (
@@ -563,7 +670,13 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
           <>
             <StatusBadge state="neutral">{rows.length}</StatusBadge>
             {!adding && (
-              <Button type="button" size="sm" variant="outline" onClick={() => setAdding(true)}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={saving}
+                onClick={() => setAdding(true)}
+              >
                 {t("curationAddMember")}
               </Button>
             )}
@@ -583,6 +696,8 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
             </TableHeader>
             <TableBody>
               {rows.map((row, i) => {
+                const siblings = rowsOf(row.relation);
+                const position = siblings.indexOf(row);
                 const name =
                   (row.targetKind === "entity" ? row.entity?.title : row.media?.title) ||
                   targetID(row);
@@ -591,7 +706,7 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <span className="manage-cell-num w-6 text-[var(--text-muted)]">
-                          {i + 1}
+                          {position + 1}
                         </span>
                         <Button
                           type="button"
@@ -599,8 +714,8 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
                           size="icon"
                           className="size-7"
                           aria-label={`${t("curationRelationMoveUp")}: ${name}`}
-                          disabled={i === 0}
-                          onClick={() => void move(i, -1)}
+                          disabled={saving || position === 0}
+                          onClick={() => void move(row, -1)}
                         >
                           <ArrowUp className="size-4" aria-hidden />
                         </Button>
@@ -610,8 +725,8 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
                           size="icon"
                           className="size-7"
                           aria-label={`${t("curationRelationMoveDown")}: ${name}`}
-                          disabled={i === rows.length - 1}
-                          onClick={() => void move(i, 1)}
+                          disabled={saving || position === siblings.length - 1}
+                          onClick={() => void move(row, 1)}
                         >
                           <ArrowDown className="size-4" aria-hidden />
                         </Button>
@@ -683,6 +798,7 @@ function EntityView({ id, onClose }: { id: string; onClose: () => void }) {
                 label={t("curationAddMember")}
                 actionLabel={t("curationAddToGroup")}
                 excludeID={id}
+                disabled={saving}
                 onPick={add}
               />
             ) : null}
