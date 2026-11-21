@@ -122,10 +122,10 @@ func TestMergeSplitVersionsLogsTheScanAsActor(t *testing.T) {
 	}
 }
 
-// TestDuplicateCopiesListsByteIdenticalVersions: two live part-0 Versions with
+// TestDuplicateCopiesListsLikelyIdenticalVersions: two live part-0 Versions with
 // the same OSHash and size form one set; a missing copy, a different size or
 // an empty hash does not (CORE-2916).
-func TestDuplicateCopiesListsByteIdenticalVersions(t *testing.T) {
+func TestDuplicateCopiesListsLikelyIdenticalVersions(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()
 	filter := LibraryFilter{Revealed: true, AllLibraries: true}
@@ -166,5 +166,121 @@ func TestDuplicateCopiesListsByteIdenticalVersions(t *testing.T) {
 	setFiles(`UPDATE media_file SET size_bytes = 42, missing_at_ms = 1 WHERE rowid = (SELECT MIN(rowid) FROM media_file WHERE media_id = ?)`, keep)
 	if sets, err = st.DuplicateCopies(ctx, filter); err != nil || len(sets) != 0 {
 		t.Fatalf("sets with a missing copy = %+v, %v; want none", sets, err)
+	}
+}
+
+// rateMedia gives a shared-catalog Media a certification under the
+// library-local Library, now bound to the photos Plugin.
+func rateMedia(t *testing.T, st *Store, id MediaID, value string) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE library SET plugin_id = 'photos' WHERE id = 'library-local'`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := st.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertMediaFields(ctx, tx, id, []MediaField{{Name: certificationField, Type: EntityFieldText, Text: value}}); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestMergeSurvivorAboveTheCeilingIsNotNamed: a caller whose certification
+// ceiling hides the survivor sees the folded Media without the merge
+// explanation (CORE-2916).
+func TestMergeSurvivorAboveTheCeilingIsNotNamed(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	keep, drop, _, _ := splitTitle(t, st)
+	if _, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{keep, drop}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	rateMedia(t, st, keep, "high")
+	rateMedia(t, st, drop, "low")
+	ceiling := LibraryFilter{Revealed: true, AllLibraries: true, Certification: []CertificationConstraint{{PluginID: "photos", Allowed: []string{"low"}}}}
+	entries, err := st.TrashedMediaList(ctx, ceiling)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Merge != nil {
+		t.Fatalf("trash under the ceiling = %+v, want the entry without its survivor", entries)
+	}
+	open := LibraryFilter{Revealed: true, AllLibraries: true, Certification: []CertificationConstraint{{PluginID: "photos", Allowed: []string{"low", "high"}}}}
+	if entries, err = st.TrashedMediaList(ctx, open); err != nil || len(entries) != 1 || entries[0].Merge == nil || entries[0].Merge.Survivor != keep {
+		t.Fatalf("trash with the survivor allowed = %+v, %v", entries, err)
+	}
+}
+
+// TestDuplicateCopiesHonourTheCertificationCeiling: a Media above the
+// caller's ceiling is left out of the duplicate copies report (CORE-2916).
+func TestDuplicateCopiesHonourTheCertificationCeiling(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	keep, drop, _, _ := splitTitle(t, st)
+	if _, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{keep, drop}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media_file SET oshash = 'abc', size_bytes = 42 WHERE media_id = ?`, keep); err != nil {
+		t.Fatal(err)
+	}
+	rateMedia(t, st, keep, "high")
+	ceiling := LibraryFilter{Revealed: true, AllLibraries: true, Certification: []CertificationConstraint{{PluginID: "photos", Allowed: []string{"low"}}}}
+	if sets, err := st.DuplicateCopies(ctx, ceiling); err != nil || len(sets) != 0 {
+		t.Fatalf("sets under the ceiling = %+v, %v; want none", sets, err)
+	}
+	ceiling.Certification[0].Allowed = []string{"high"}
+	if sets, err := st.DuplicateCopies(ctx, ceiling); err != nil || len(sets) != 1 {
+		t.Fatalf("sets with the rating allowed = %+v, %v; want one", sets, err)
+	}
+}
+
+// TestDuplicateCopiesCoverAnUnsealedEncryptedLibrary: copies in an unsealed
+// encrypted Library are reported from its private catalog, under the same
+// certification ceiling (CORE-2916).
+func TestDuplicateCopiesCoverAnUnsealedEncryptedLibrary(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	const libraryID = LibraryID("library-local")
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE library SET plugin_id = 'photos' WHERE id = ?`, libraryID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetLibraryBacking(ctx, libraryID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, libraryID, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := st.ImportMediaFile(ctx, encryptedImport(libraryID, "sha256:dup-copy-a", "/encrypted/dup-a.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := st.ImportMediaFile(ctx, encryptedImport(libraryID, "sha256:dup-copy-b", "/encrypted/dup-b.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := st.encryptedDBs[libraryID].writer
+	if _, err := writer.ExecContext(ctx, `UPDATE media_file SET media_id = ?, oshash = 'abc', size_bytes = 42, version_label = CASE WHEN media_id = ? THEN 'copy' ELSE version_label END WHERE media_id IN (?, ?)`, first.ID, second.ID, first.ID, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	all := LibraryFilter{Revealed: true, AllLibraries: true}
+	sets, err := st.DuplicateCopies(ctx, all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sets) != 1 || sets[0].MediaID != first.ID || len(sets[0].Copies) != 2 {
+		t.Fatalf("encrypted sets = %+v, want one set of two on %s", sets, first.ID)
+	}
+	ceiling := LibraryFilter{Revealed: true, AllLibraries: true, Certification: []CertificationConstraint{{PluginID: "photos", Allowed: []string{"low"}}}}
+	if sets, err = st.DuplicateCopies(ctx, ceiling); err != nil || len(sets) != 0 {
+		t.Fatalf("unrated encrypted sets under the ceiling = %+v, %v; want none", sets, err)
 	}
 }

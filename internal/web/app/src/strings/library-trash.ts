@@ -2,7 +2,7 @@
 // restore and permanent-delete controls, and the Undo offered after a delete
 // (CORE-1201); and in Manage > Trash, Media the library scan folded into another
 // item as an extra Version, with Undo merge per batch, and the read-only list of
-// byte-identical copies on disk (CORE-2916). Counts use the label form
+// likely identical copies on disk (CORE-2916). Counts use the label form
 // ("Media items: 3") so every locale stays grammatical without plural rules. A string with a typed argument such
 // as {count, number} is parsed as ICU, where a plain apostrophe starts a quoted
 // literal: keep those strings free of one.
@@ -32,7 +32,7 @@ export const libraryTrashStrings = {
       "Permanently deleted “{library}”. Media items removed: {count, number}. Its media files are still on disk.",
     trashMergedHeading: "Merged copies",
     trashMergedLead:
-      "The library scan found byte-identical copies of the same file and kept each one as an extra Version of a single item. No files were deleted: each file now belongs to the item it was merged into. Purging these entries removes only the empty records, never the files.",
+      "The library scan merged these items into another item as extra Versions. No files were deleted: each file now belongs to the item it was merged into. Purging these entries removes only the empty records, never the files.",
     trashMergedCount: "Merges: {count, number}",
     trashMergedItems: "Merged items",
     trashMergedInto: "Merged into",
@@ -44,7 +44,8 @@ export const libraryTrashStrings = {
     trashUndoMergeFailed: "Couldn't undo this merge. Try again.",
     duplicateCopiesHeading: "Duplicate copies on disk",
     duplicateCopiesLead:
-      "Items that hold more than one byte-identical file. Beamfall never deletes files. If you don't need a copy, remove it yourself.",
+      "Items that hold more than one likely identical file: same size and matching sampled fingerprint. Check the files before you remove one. Beamfall never deletes files.",
+    trashNoDeleted: "No deleted items.",
     duplicateCopiesEmpty: "No duplicate copies found.",
     duplicateCopiesUnavailable: "Couldn't load duplicate copies.",
     duplicateCopiesItem: "Item",
@@ -76,7 +77,7 @@ export const libraryTrashStrings = {
       "« {library} » a été supprimée définitivement. Éléments multimédias supprimés : {count, number}. Ses fichiers multimédias sont toujours sur le disque.",
     trashMergedHeading: "Copies fusionnées",
     trashMergedLead:
-      "L’analyse de la bibliothèque a trouvé des copies identiques octet par octet d’un même fichier et les a conservées comme Versions supplémentaires d’un seul élément. Aucun fichier n’a été supprimé : chaque fichier appartient désormais à l’élément dans lequel il a été fusionné. Purger ces entrées ne supprime que les fiches vides, jamais les fichiers.",
+      "L’analyse de la bibliothèque a fusionné ces éléments dans un autre élément comme Versions supplémentaires. Aucun fichier n’a été supprimé : chaque fichier appartient désormais à l’élément dans lequel il a été fusionné. Purger ces entrées ne supprime que les fiches vides, jamais les fichiers.",
     trashMergedCount: "Fusions : {count, number}",
     trashMergedItems: "Éléments fusionnés",
     trashMergedInto: "Fusionné dans",
@@ -88,7 +89,8 @@ export const libraryTrashStrings = {
     trashUndoMergeFailed: "Impossible d’annuler cette fusion. Réessayez.",
     duplicateCopiesHeading: "Copies en double sur le disque",
     duplicateCopiesLead:
-      "Éléments qui contiennent plusieurs fichiers identiques octet par octet. Beamfall ne supprime jamais de fichiers. Si une copie ne vous sert pas, supprimez-la vous-même.",
+      "Éléments qui contiennent plusieurs fichiers probablement identiques : même taille et empreinte échantillonnée identique. Vérifiez les fichiers avant d’en supprimer un. Beamfall ne supprime jamais de fichiers.",
+    trashNoDeleted: "Aucun élément supprimé.",
     duplicateCopiesEmpty: "Aucune copie en double.",
     duplicateCopiesUnavailable: "Impossible de charger les copies en double.",
     duplicateCopiesItem: "Élément",
@@ -122,7 +124,7 @@ export const libraryTrashStrings = {
       "„{library}“ wurde endgültig gelöscht. Entfernte Medienelemente: {count, number}. Die Mediendateien liegen weiterhin auf dem Datenträger.",
     trashMergedHeading: "Zusammengeführte Kopien",
     trashMergedLead:
-      "Der Bibliotheksscan hat bytegleiche Kopien derselben Datei gefunden und jede als zusätzliche Version eines einzigen Elements behalten. Es wurden keine Dateien gelöscht: Jede Datei gehört jetzt zu dem Element, in das sie zusammengeführt wurde. Das Bereinigen dieser Einträge entfernt nur die leeren Datensätze, nie die Dateien.",
+      "Der Bibliotheksscan hat diese Elemente als zusätzliche Versionen in ein anderes Element zusammengeführt. Es wurden keine Dateien gelöscht: Jede Datei gehört jetzt zu dem Element, in das sie zusammengeführt wurde. Das Bereinigen dieser Einträge entfernt nur die leeren Datensätze, nie die Dateien.",
     trashMergedCount: "Zusammenführungen: {count, number}",
     trashMergedItems: "Zusammengeführte Elemente",
     trashMergedInto: "Zusammengeführt in",
@@ -135,7 +137,8 @@ export const libraryTrashStrings = {
       "Diese Zusammenführung konnte nicht rückgängig gemacht werden. Versuche es erneut.",
     duplicateCopiesHeading: "Doppelte Kopien auf der Festplatte",
     duplicateCopiesLead:
-      "Elemente mit mehr als einer bytegleichen Datei. Beamfall löscht nie Dateien. Wenn du eine Kopie nicht brauchst, entferne sie selbst.",
+      "Elemente mit mehr als einer wahrscheinlich gleichen Datei: gleiche Größe und übereinstimmender Stichproben-Fingerabdruck. Prüfe die Dateien, bevor du eine entfernst. Beamfall löscht nie Dateien.",
+    trashNoDeleted: "Keine gelöschten Elemente.",
     duplicateCopiesEmpty: "Keine doppelten Kopien gefunden.",
     duplicateCopiesUnavailable: "Doppelte Kopien konnten nicht geladen werden.",
     duplicateCopiesItem: "Element",
@@ -167,7 +170,7 @@ export const libraryTrashStrings = {
       "Se eliminó «{library}» definitivamente. Elementos multimedia eliminados: {count, number}. Sus archivos multimedia siguen en el disco.",
     trashMergedHeading: "Copias fusionadas",
     trashMergedLead:
-      "El análisis de la biblioteca encontró copias idénticas byte a byte del mismo archivo y conservó cada una como Versión adicional de un solo elemento. No se eliminó ningún archivo: cada archivo pertenece ahora al elemento en el que se fusionó. Purgar estas entradas solo elimina los registros vacíos, nunca los archivos.",
+      "El análisis de la biblioteca fusionó estos elementos en otro elemento como Versiones adicionales. No se eliminó ningún archivo: cada archivo pertenece ahora al elemento en el que se fusionó. Purgar estas entradas solo elimina los registros vacíos, nunca los archivos.",
     trashMergedCount: "Fusiones: {count, number}",
     trashMergedItems: "Elementos fusionados",
     trashMergedInto: "Fusionado en",
@@ -179,7 +182,8 @@ export const libraryTrashStrings = {
     trashUndoMergeFailed: "No se pudo deshacer esta fusión. Inténtalo de nuevo.",
     duplicateCopiesHeading: "Copias duplicadas en el disco",
     duplicateCopiesLead:
-      "Elementos que tienen más de un archivo idéntico byte a byte. Beamfall nunca elimina archivos. Si no necesitas una copia, elimínala tú mismo.",
+      "Elementos que tienen más de un archivo probablemente idéntico: mismo tamaño y huella de muestra coincidente. Comprueba los archivos antes de eliminar uno. Beamfall nunca elimina archivos.",
+    trashNoDeleted: "No hay elementos eliminados.",
     duplicateCopiesEmpty: "No se encontraron copias duplicadas.",
     duplicateCopiesUnavailable: "No se pudieron cargar las copias duplicadas.",
     duplicateCopiesItem: "Elemento",
@@ -212,7 +216,7 @@ export const libraryTrashStrings = {
       "“{library}” foi excluída permanentemente. Itens de mídia removidos: {count, number}. Os arquivos de mídia continuam no disco.",
     trashMergedHeading: "Cópias mescladas",
     trashMergedLead:
-      "A verificação da biblioteca encontrou cópias idênticas byte a byte do mesmo arquivo e manteve cada uma como Versão adicional de um único item. Nenhum arquivo foi excluído: cada arquivo agora pertence ao item em que foi mesclado. Limpar estas entradas remove apenas os registros vazios, nunca os arquivos.",
+      "A verificação da biblioteca mesclou estes itens em outro item como Versões adicionais. Nenhum arquivo foi excluído: cada arquivo agora pertence ao item em que foi mesclado. Limpar estas entradas remove apenas os registros vazios, nunca os arquivos.",
     trashMergedCount: "Mesclagens: {count, number}",
     trashMergedItems: "Itens mesclados",
     trashMergedInto: "Mesclado em",
@@ -224,7 +228,8 @@ export const libraryTrashStrings = {
     trashUndoMergeFailed: "Não foi possível desfazer esta mesclagem. Tente novamente.",
     duplicateCopiesHeading: "Cópias duplicadas no disco",
     duplicateCopiesLead:
-      "Itens que têm mais de um arquivo idêntico byte a byte. O Beamfall nunca exclui arquivos. Se não precisar de uma cópia, remova-a você mesmo.",
+      "Itens que têm mais de um arquivo provavelmente idêntico: mesmo tamanho e impressão digital amostrada igual. Verifique os arquivos antes de remover um. O Beamfall nunca exclui arquivos.",
+    trashNoDeleted: "Nenhum item excluído.",
     duplicateCopiesEmpty: "Nenhuma cópia duplicada encontrada.",
     duplicateCopiesUnavailable: "Não foi possível carregar as cópias duplicadas.",
     duplicateCopiesItem: "Item",

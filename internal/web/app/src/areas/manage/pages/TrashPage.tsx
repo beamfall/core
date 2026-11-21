@@ -51,7 +51,7 @@ import { formatDateTime } from "../lib/schedule";
 //      item as an extra Version sit in Trash too. They are listed apart from
 //      deletions, one row per merge batch, with Undo merge (undoBatch) in place
 //      of Restore; purging them drops only the empty records, never the files,
-//      which now belong to the survivor. A read-only list of byte-identical
+//      which now belong to the survivor. A read-only list of likely identical
 //      copies on disk follows; the server never deletes files.
 //   3. Activity: the append-only feed (latest 50); reversible rows (a
 //      media.trash) carry an Undo that scrolls to the Retained Trash table where
@@ -143,6 +143,12 @@ export function TrashPage() {
 
   const { deleted, merges } = useMemo(() => splitTrash(entries), [entries]);
 
+  const [duplicatesReload, setDuplicatesReload] = useState(0);
+  const onMergeUndone = async () => {
+    await load();
+    setDuplicatesReload((n) => n + 1);
+  };
+
   const onRestore = async (entry: TrashEntry) => {
     setError("");
     try {
@@ -171,7 +177,7 @@ export function TrashPage() {
       >
         <div id={RETAINED_TRASH_ANCHOR} className="scroll-mt-4">
           {!loading && deleted.length === 0 ? (
-            <EmptyLine message={t("trashIsEmpty")} />
+            <EmptyLine message={merges.length === 0 ? t("trashIsEmpty") : t("trashNoDeleted")} />
           ) : (
             <ManageTable>
               <TableHeader>
@@ -211,9 +217,9 @@ export function TrashPage() {
         <ErrorLine message={error} />
       </ManageSection>
 
-      {merges.length > 0 && <MergedSection merges={merges} onUndone={load} />}
+      {merges.length > 0 && <MergedSection merges={merges} onUndone={onMergeUndone} />}
 
-      <DuplicateCopiesSection />
+      <DuplicateCopiesSection reloadKey={duplicatesReload} />
 
       <PurgeSection onPurged={load} />
 
@@ -310,9 +316,10 @@ const sizeFormat = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 2,
 });
 
-// DuplicateCopiesSection: read-only list of items holding byte-identical files
-// on disk. There is no delete control: the server never deletes files.
-function DuplicateCopiesSection() {
+// DuplicateCopiesSection: read-only list of items holding likely identical
+// files on disk. There is no delete control: the server never deletes files.
+// reloadKey changes after an undone merge, whose files moved back.
+function DuplicateCopiesSection({ reloadKey }: { reloadKey: number }) {
   const t = useT();
   const [sets, setSets] = useState<DuplicateCopySet[]>([]);
   const [loading, setLoading] = useState(true);
@@ -332,7 +339,7 @@ function DuplicateCopiesSection() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, reloadKey]);
 
   return (
     <ManageSection

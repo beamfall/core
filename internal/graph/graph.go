@@ -4061,7 +4061,7 @@ type TrashMergeInfo struct {
 	MergedAt      string `json:"mergedAt"`
 }
 
-// DuplicateCopySetInfo is one Media whose live Versions include byte-identical
+// DuplicateCopySetInfo is one Media whose live Versions include likely identical
 // on-disk copies. Read-only: the server never deletes these files.
 type DuplicateCopySetInfo struct {
 	MediaID   string              `json:"mediaID"`
@@ -4181,7 +4181,7 @@ func (h *Handler) trashList(ctx context.Context, scope auth.Scope) ([]TrashEntry
 	return resp, nil
 }
 
-// duplicateCopies lists Media whose live Versions include byte-identical
+// duplicateCopies lists Media whose live Versions include likely identical
 // on-disk copies, for a manager to clean up on disk.
 func (h *Handler) duplicateCopies(ctx context.Context, scope auth.Scope) ([]DuplicateCopySetInfo, error) {
 	sets, err := h.store.DuplicateCopies(ctx, scope.LibraryFilter())

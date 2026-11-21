@@ -948,7 +948,7 @@ export interface TrashMergeInfo {
   mergedAt: string;
 }
 
-/** A Media whose live Versions include byte-identical copies (graph.DuplicateCopySetInfo). */
+/** A Media whose live Versions include likely identical copies (graph.DuplicateCopySetInfo). */
 export interface DuplicateCopySet {
   mediaID: string;
   title: string;

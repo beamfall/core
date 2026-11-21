@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -301,7 +302,58 @@ func (s *Store) trashedMediaSQL(ctx context.Context, filter LibraryFilter) ([]Tr
 		}
 		entries = append(entries, entry)
 	}
-	return entries, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := s.hideUnseenMergeSurvivors(ctx, entries, filter); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+// hideUnseenMergeSurvivors drops the merge explanation from an entry whose
+// survivor is above the caller's certification ceiling, so trash never names
+// a Media the caller cannot see (CORE-2916). A Version merge never runs in an
+// encrypted Library, so the survivor is always in the shared catalog.
+func (s *Store) hideUnseenMergeSurvivors(ctx context.Context, entries []TrashedMedia, filter LibraryFilter) error {
+	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	if certClause == "" {
+		return nil
+	}
+	survivors := []any{}
+	for _, entry := range entries {
+		if entry.Merge != nil {
+			survivors = append(survivors, entry.Merge.Survivor)
+		}
+	}
+	if len(survivors) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(survivors)), ", ")
+	rows, err := s.catalogR.QueryContext(ctx,
+		`SELECT m.id FROM media m WHERE m.id IN (`+placeholders+`)`+certClause,
+		append(survivors, certArgs...)...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	seen := map[MediaID]bool{}
+	for rows.Next() {
+		var id MediaID
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		seen[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range entries {
+		if entries[i].Merge != nil && !seen[entries[i].Merge.Survivor] {
+			entries[i].Merge = nil
+		}
+	}
+	return nil
 }
 
 // purgeableTrashedMediaSelect is the inner selection of Media eligible for a

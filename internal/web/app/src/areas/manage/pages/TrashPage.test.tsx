@@ -173,6 +173,24 @@ describe("TrashPage", () => {
     await user.click(screen.getByRole("button", { name: "Undo merge into Harbour Lights" }));
     await waitFor(() => expect(undoVersionMerge).toHaveBeenCalledWith("batch-1"));
     await waitFor(() => expect(fetchTrashList).toHaveBeenCalledTimes(2));
+    // The undone merge moved files back, so the duplicate report reloads.
+    await waitFor(() => expect(fetchDuplicateCopies).toHaveBeenCalledTimes(2));
+  });
+
+  it("says no deleted items, not an empty Trash, when only merges remain", async () => {
+    const merge = {
+      batchID: "batch-1",
+      survivorID: "media-keep",
+      survivorTitle: "Harbour Lights",
+      mergedAt: "2026-11-20T10:00:00Z",
+    };
+    vi.mocked(fetchTrashList).mockResolvedValue([
+      { id: "m-a", title: "Harbour Lights copy", trashedAt: merge.mergedAt, mergedInto: merge },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText("No deleted items.")).toBeInTheDocument();
+    expect(screen.queryByText(/Trash is empty/)).not.toBeInTheDocument();
   });
 
   it("shows duplicate copies on disk read-only", async () => {

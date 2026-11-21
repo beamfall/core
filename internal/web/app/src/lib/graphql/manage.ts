@@ -501,7 +501,7 @@ export async function undoVersionMerge(batchID: string): Promise<void> {
 const DUPLICATE_COPIES_QUERY =
   "query DuplicateCopies { duplicateCopies { mediaID title libraryID copies { path sizeBytes label } } }";
 
-/** DuplicateCopies — Media holding byte-identical copies on disk (read-only, managers). */
+/** DuplicateCopies — Media holding likely identical copies on disk (read-only, managers). */
 export async function fetchDuplicateCopies(): Promise<DuplicateCopySet[]> {
   const data = await graphql<{ duplicateCopies: DuplicateCopySet[] | null }>(
     DUPLICATE_COPIES_QUERY,
