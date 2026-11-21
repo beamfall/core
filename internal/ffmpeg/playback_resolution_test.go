@@ -137,7 +137,7 @@ func PlaybackResolutionFixtureForTest(t *testing.T, name string) (func(context.C
 			delete(maxRedirectsByTool, path)
 			maxRedirectsMu.Unlock()
 		})
-		call = func(ctx context.Context) bool { return toolHasMaxRedirectsContext(ctx, path) }
+		call = func(ctx context.Context) bool { ok, _ := toolHasMaxRedirectsContext(ctx, path); return ok }
 	default:
 		t.Fatalf("unknown shared resolution %q", name)
 	}
@@ -251,7 +251,7 @@ func TestT3LiveEncryptedPreparationCancelsBeforeSpawn(t *testing.T) {
 		t.Fatal("encrypted preparation waited for the shared probe")
 	}
 	unblock()
-	if !toolHasMaxRedirectsContext(t.Context(), tool) {
+	if ok, _ := toolHasMaxRedirectsContext(t.Context(), tool); !ok {
 		t.Fatal("a surviving caller did not receive the shared value")
 	}
 }

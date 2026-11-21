@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // The bounded fail-closed FFmpeg supervisor. Every
@@ -36,6 +37,25 @@ var ErrOutputOverflow = errors.New("ffmpeg: process output exceeded the bounded 
 // errGroupSurvived reports a process group that still had a live member when
 // the macOS kill sweep gave up.
 var errGroupSurvived = errors.New("ffmpeg: process group survived SIGKILL")
+
+// groupSurvivorReporter, when set, hears every process group that survived
+// the kill sweep, so the host can log one whatever the caller made of the
+// error: a capability probe reads a failed run as an unsupported feature.
+var groupSurvivorReporter atomic.Pointer[func(error)]
+
+// SetGroupSurvivorReporter registers report to hear each process group that
+// survived the kill sweep (CORE-2757). It replaces any earlier reporter.
+func SetGroupSurvivorReporter(report func(error)) {
+	groupSurvivorReporter.Store(&report)
+}
+
+// reportGroupSurvivor passes err to the registered reporter and returns it.
+func reportGroupSurvivor(err error) error {
+	if report := groupSurvivorReporter.Load(); report != nil && *report != nil {
+		(*report)(err)
+	}
+	return err
+}
 
 // survivedError returns err when it reports a surviving process group, else
 // nil, so callers that replace err with a diagnostic keep that failure.

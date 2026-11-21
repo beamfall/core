@@ -75,7 +75,7 @@ func sweepExitedGroup(pgid int) error {
 	deadline := time.Now().Add(groupSweepDeadline)
 	for groupHasLiveMember(pgid) {
 		if time.Now().After(deadline) {
-			return fmt.Errorf("%w: process group %d", errGroupSurvived, pgid)
+			return reportGroupSurvivor(fmt.Errorf("%w: process group %d", errGroupSurvived, pgid))
 		}
 		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		time.Sleep(groupSweepInterval)

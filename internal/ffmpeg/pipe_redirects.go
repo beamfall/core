@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -61,15 +62,14 @@ var (
 	redirectLookups                           = map[string]*sharedResolution[string]{}
 )
 
-// toolHasMaxRedirects reports whether toolPath's http protocol takes
+// toolHasMaxRedirectsContext reports whether toolPath's http protocol takes
 // -max_redirects, asking the binary once per path and file identity. A
 // listing that fails counts as supported: the run then fails exactly as it did
-// before this check, rather than silently dropping the guard.
-func toolHasMaxRedirects(toolPath string) bool {
-	return toolHasMaxRedirectsContext(context.Background(), toolPath)
-}
-
-func toolHasMaxRedirectsContext(ctx context.Context, toolPath string) bool {
+// before this check, rather than silently dropping the guard. A listing whose
+// process group survived the kill sweep is an error instead, so no pipe job
+// starts beside the survivor, and it is not cached: the next job asks again
+// (CORE-2757).
+func toolHasMaxRedirectsContext(ctx context.Context, toolPath string) (bool, error) {
 	maxRedirectsMu.Lock()
 	lookup := redirectLookups[toolPath]
 	if lookup == nil {
@@ -85,7 +85,7 @@ func toolHasMaxRedirectsContext(ctx context.Context, toolPath string) bool {
 		return key, nil
 	})
 	if err != nil {
-		return false
+		return false, nil
 	}
 	maxRedirectsMu.Lock()
 	entry, ok := maxRedirectsByTool[key]
@@ -95,11 +95,22 @@ func toolHasMaxRedirectsContext(ctx context.Context, toolPath string) bool {
 	}
 	run := httpProtocolHelp
 	maxRedirectsMu.Unlock()
-	supported, _ := entry.wait(ctx, func() (bool, error) {
+	supported, err := entry.wait(ctx, func() (bool, error) {
 		help, err := run(context.Background(), toolPath)
+		if errors.Is(err, errGroupSurvived) {
+			return false, err
+		}
 		return err != nil || bytes.Contains(help, []byte(maxRedirectsOption+" ")), nil
 	})
-	return supported
+	if errors.Is(err, errGroupSurvived) {
+		maxRedirectsMu.Lock()
+		if maxRedirectsByTool[key] == entry {
+			delete(maxRedirectsByTool, key)
+		}
+		maxRedirectsMu.Unlock()
+		return false, err
+	}
+	return supported, nil
 }
 
 // toolIdentityKey keys the capability cache by the probed binary itself, so
@@ -113,17 +124,18 @@ func toolIdentityKey(toolPath string) string {
 	return fmt.Sprintf("%s\x00%d\x00%d", toolPath, info.Size(), info.ModTime().UnixNano())
 }
 
-// pipeArgsForTool adapts a pipe argv built with pipeInputOptions to the tool
-// that will run it, dropping the -max_redirects pair on a build without it.
-func pipeArgsForTool(toolPath string, args []string) []string {
-	return pipeArgsForToolContext(context.Background(), toolPath, args)
-}
-
-func pipeArgsForToolContext(ctx context.Context, toolPath string, args []string) []string {
-	if toolHasMaxRedirectsContext(ctx, toolPath) {
-		return args
+// pipeArgsForToolContext adapts a pipe argv built with pipeInputOptions to the
+// tool that will run it, dropping the -max_redirects pair on a build without
+// it. It fails only when the capability listing left a surviving process group.
+func pipeArgsForToolContext(ctx context.Context, toolPath string, args []string) ([]string, error) {
+	supported, err := toolHasMaxRedirectsContext(ctx, toolPath)
+	if err != nil {
+		return nil, err
 	}
-	return withoutMaxRedirects(args)
+	if supported {
+		return args, nil
+	}
+	return withoutMaxRedirects(args), nil
 }
 
 // withoutMaxRedirects returns args without any "-max_redirects <n>" pair.

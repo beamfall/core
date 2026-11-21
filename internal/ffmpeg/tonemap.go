@@ -91,7 +91,7 @@ const (
 	// ToneMapFailureUnavailable — the backend's device is absent. It is
 	// DETECTED by a pre-check before any render, never inferred from a failed
 	// one, because the error classifier below can only produce binary-missing,
-	// timeout, and chain-unrunnable — so an absent device would otherwise be
+	// timeout, chain-unrunnable and inconclusive — so an absent device would otherwise be
 	// reported as a broken chain. The
 	// spelling deliberately REUSES the existing HWAccelUnavailable value rather
 	// than minting a second synonym for the same condition.
@@ -619,6 +619,12 @@ func (p ToneMapProbe) working() bool {
 }
 
 func classifyToneMapRenderError(err error) ToneMapFailure {
+	if errors.Is(err, errGroupSurvived) {
+		// The run's teardown failed, so it proves nothing about the chain
+		// (CORE-2757). Every leg after a failed one is skipped, and the
+		// survivor reporter has the error.
+		return ToneMapFailureInconclusive
+	}
 	if errors.Is(err, exec.ErrNotFound) {
 		return ToneMapFailureBinaryMissing
 	}
