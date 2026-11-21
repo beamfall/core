@@ -31,10 +31,30 @@ the header, or with a blank one, SHALL behave exactly as before.
 - **WHEN** a request carries no `X-Beamfall-Profile` header
 - **THEN** it is served for the credential's current Profile as before
 
+### Requirement: A request stays bound to its Profile until it applies
+
+A request that names a Profile SHALL be refused with the same 409 at every later resolution of its
+scope. An event stream naming a Profile SHALL end once its session is bound to another Profile. A
+Reveal, relock or playback end SHALL apply only while the session is still bound to the Profile the
+request resolved to.
+
+#### Scenario: A switch that lands after the route check still refuses the write
+
+- **WHEN** the session is switched to Profile B after the route's check passed for Profile A
+- **THEN** the handler's own scope resolution refuses the request with the same 409
+- **AND** a Reveal whose PIN was verified for Profile A does not reveal Profile B
+
+#### Scenario: An event stream for the previous Profile ends
+
+- **WHEN** an event stream naming Profile A is open and the session is switched to Profile B
+- **THEN** the stream delivers none of Profile B's events and ends
+- **AND** a reconnect naming Profile A is refused with the 409
+
 ### Requirement: The web app names its Profile and reloads on a mismatch
 
 The web app SHALL send `X-Beamfall-Profile` with the signed-in Profile on every API request once
-it has read that Profile, and SHALL send none while an identity is loading. When a request is
+it has read that Profile, including on its event stream and keepalive writes, and SHALL send none on
+the reads of an identity load. When a request is
 refused with `PROFILE_MISMATCH` for the Profile the tab still shows, the web app SHALL start a new
 identity epoch and show the Profile the session is now bound to. A refusal for a Profile the tab
 no longer shows SHALL be ignored.
@@ -45,3 +65,8 @@ no longer shows SHALL be ignored.
   Profile A saves a preference
 - **THEN** the save does not reach either Profile
 - **AND** the second tab reloads and shows Profile B
+
+#### Scenario: A stale tab's Reveal or switch names the Profile it shows
+
+- **WHEN** a tab still showing Profile A sends a Reveal or a Profile switch
+- **THEN** the request names Profile A and is refused
