@@ -172,18 +172,20 @@ var clientErrorCodes = map[string]ErrorCode{
 	// "unknown <value>" for a closed vocabulary is a bad argument, not a
 	// missing record. Resolvers re-wrap store and push validation text into a
 	// clientError, so these are pinned here as well as by the store rules.
-	"unknown push platform":               ErrorCodeInvalid,
-	"unknown artwork slot":                ErrorCodeInvalid,
-	"unknown delete scope":                ErrorCodeInvalid,
-	"unknown engagement kind":             ErrorCodeInvalid,
-	"unknown family scope":                ErrorCodeInvalid,
-	"unknown importer":                    ErrorCodeInvalid,
-	"unknown lifecycle action":            ErrorCodeInvalid,
-	"unknown or non-flippable capability": ErrorCodeInvalid,
-	"unknown permission":                  ErrorCodeInvalid,
-	"unknown plugin action":               ErrorCodeInvalid,
-	"unknown plugin config field":         ErrorCodeInvalid,
-	"unknown transport command":           ErrorCodeInvalid,
+	"unknown push platform": ErrorCodeInvalid,
+	// Two ways to order one relation row at once.
+	"give sortOrder or position, not both": ErrorCodeInvalid,
+	"unknown artwork slot":                 ErrorCodeInvalid,
+	"unknown delete scope":                 ErrorCodeInvalid,
+	"unknown engagement kind":              ErrorCodeInvalid,
+	"unknown family scope":                 ErrorCodeInvalid,
+	"unknown importer":                     ErrorCodeInvalid,
+	"unknown lifecycle action":             ErrorCodeInvalid,
+	"unknown or non-flippable capability":  ErrorCodeInvalid,
+	"unknown permission":                   ErrorCodeInvalid,
+	"unknown plugin action":                ErrorCodeInvalid,
+	"unknown plugin config field":          ErrorCodeInvalid,
+	"unknown transport command":            ErrorCodeInvalid,
 
 	"admin password rejected":                                   ErrorCodeForbidden,
 	"adult profile or manager role required":                    ErrorCodeForbidden,
