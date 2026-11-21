@@ -114,6 +114,10 @@
       "effect": "write"
     },
     {
+      "field": "createjellyfincompatkey",
+      "effect": "write"
+    },
+    {
       "field": "createlibrary",
       "effect": "write"
     },
@@ -179,6 +183,10 @@
     },
     {
       "field": "jellyfincompat",
+      "effect": "read"
+    },
+    {
+      "field": "jellyfincompatkeys",
       "effect": "read"
     },
     {
@@ -335,6 +343,10 @@
     },
     {
       "field": "revokedevice",
+      "effect": "write"
+    },
+    {
+      "field": "revokejellyfincompatkey",
       "effect": "write"
     },
     {
