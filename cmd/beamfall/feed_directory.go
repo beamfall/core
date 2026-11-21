@@ -5,7 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -13,6 +17,7 @@ import (
 
 	"github.com/beamfall/core/internal/app"
 	"github.com/beamfall/core/internal/graph"
+	"github.com/beamfall/core/internal/jsonstate"
 	"github.com/beamfall/core/internal/scrape"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -36,12 +41,16 @@ type feedDirectorySearcher struct {
 	endpoint string
 	template string
 	now      func() time.Time
+	lookup   func(*url.URL) (string, bool)
 
-	mu        sync.Mutex
-	cache     map[string]cachedFeedSearch
-	inFlight  map[string]*feedSearchCall
-	tokens    [feedRequestsPerMin]time.Time
-	nextToken int
+	mu       sync.Mutex
+	cache    map[string]cachedFeedSearch
+	inFlight map[string]*feedSearchCall
+
+	budgetMu   sync.Mutex
+	budgetFile string
+	budgetErr  error
+	tokens     [feedRequestsPerMin]time.Time
 }
 
 type cachedFeedSearch struct {
@@ -51,20 +60,31 @@ type cachedFeedSearch struct {
 
 type feedSearchCall struct {
 	done    chan struct{}
+	cancel  context.CancelFunc
+	waiters int
 	results []graph.FeedSearchResult
 	err     error
 }
 
-func newFeedDirectorySearcher(engine feedDirectoryFetcher, secrets app.SecretSource, endpoint, template string, now func() time.Time) *feedDirectorySearcher {
-	return &feedDirectorySearcher{
-		engine:   engine,
-		secrets:  secrets,
-		endpoint: strings.TrimRight(endpoint, "/"),
-		template: template,
-		now:      now,
-		cache:    make(map[string]cachedFeedSearch),
-		inFlight: make(map[string]*feedSearchCall),
+func newFeedDirectorySearcher(engine feedDirectoryFetcher, secrets app.SecretSource, endpoint, template, budgetFile string, now func() time.Time) *feedDirectorySearcher {
+	s := &feedDirectorySearcher{
+		engine:     engine,
+		secrets:    secrets,
+		endpoint:   strings.TrimRight(endpoint, "/"),
+		template:   template,
+		now:        now,
+		cache:      make(map[string]cachedFeedSearch),
+		inFlight:   make(map[string]*feedSearchCall),
+		budgetFile: budgetFile,
 	}
+	var tokens []time.Time
+	found, err := jsonstate.Load(budgetFile, &tokens)
+	if err == nil && found && len(tokens) != len(s.tokens) {
+		err = errors.New("invalid feed request budget size")
+	}
+	s.budgetErr = err
+	copy(s.tokens[:], tokens)
+	return s
 }
 
 func (s *feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) ([]graph.FeedSearchResult, error) {
@@ -76,53 +96,78 @@ func (s *feedDirectorySearcher) SearchFeeds(ctx context.Context, query string) (
 		if strings.HasPrefix(key, "https:") || strings.HasPrefix(key, "http:") {
 			return nil, graph.ErrFeedSearchInvalidURL
 		}
-		return s.searchCached(ctx, key, func() ([]graph.FeedSearchResult, error) {
+		return s.searchCached(ctx, key, func(ctx context.Context) ([]graph.FeedSearchResult, error) {
 			return s.searchText(ctx, text)
 		})
 	}
 
 	if err := s.engine.CheckDocumentURL(link); err != nil {
-		return nil, err
+		return nil, graph.ErrFeedSearchInvalidURL
 	}
 	link.Host = strings.ToLower(link.Host)
 	link.Fragment = ""
 	link.RawFragment = ""
-	return s.searchCached(ctx, link.String(), func() ([]graph.FeedSearchResult, error) {
+	return s.searchCached(ctx, link.String(), func(ctx context.Context) ([]graph.FeedSearchResult, error) {
+		if s.lookup != nil {
+			if rawURL, matched := s.lookup(link); matched {
+				return s.lookupFeed(ctx, rawURL)
+			}
+		}
 		return s.discoverWebsiteFeed(ctx, link)
 	})
 }
 
-func (s *feedDirectorySearcher) searchCached(ctx context.Context, key string, search func() ([]graph.FeedSearchResult, error)) ([]graph.FeedSearchResult, error) {
+func (s *feedDirectorySearcher) searchCached(ctx context.Context, key string, search func(context.Context) ([]graph.FeedSearchResult, error)) ([]graph.FeedSearchResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	if entry, ok := s.cache[key]; ok && s.now().Before(entry.expires) {
 		s.mu.Unlock()
 		return slices.Clone(entry.results), nil
 	}
-	if call := s.inFlight[key]; call != nil {
-		s.mu.Unlock()
-		select {
-		case <-call.done:
-			return slices.Clone(call.results), call.err
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	call := s.inFlight[key]
+	if call == nil {
+		delete(s.cache, key)
+		// The callers own the lifetime collectively. Each waits with its own
+		// deadline, and the last to leave cancels the upstream work.
+		shared, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		call = &feedSearchCall{done: make(chan struct{}), cancel: cancel}
+		s.inFlight[key] = call
+		go s.runSearch(shared, key, call, search)
 	}
-	delete(s.cache, key)
-	call := &feedSearchCall{done: make(chan struct{})}
-	s.inFlight[key] = call
+	call.waiters++
 	s.mu.Unlock()
 
-	results, err := search()
+	select {
+	case <-call.done:
+		return slices.Clone(call.results), call.err
+	case <-ctx.Done():
+		s.mu.Lock()
+		call.waiters--
+		if call.waiters == 0 && s.inFlight[key] == call {
+			delete(s.inFlight, key)
+			call.cancel()
+		}
+		s.mu.Unlock()
+		return nil, ctx.Err()
+	}
+}
+
+func (s *feedDirectorySearcher) runSearch(ctx context.Context, key string, call *feedSearchCall, search func(context.Context) ([]graph.FeedSearchResult, error)) {
+	defer call.cancel()
+	results, err := search(ctx)
 	s.mu.Lock()
-	if err == nil {
-		s.cacheResultLocked(key, results)
+	if s.inFlight[key] == call {
+		if err == nil {
+			s.cacheResultLocked(key, results)
+		}
+		delete(s.inFlight, key)
 	}
 	// Closing done publishes the result to waiters. Every caller gets a copy.
 	call.results, call.err = results, err
-	delete(s.inFlight, key)
 	close(call.done)
 	s.mu.Unlock()
-	return slices.Clone(results), err
 }
 
 func (s *feedDirectorySearcher) cacheResultLocked(key string, results []graph.FeedSearchResult) {
@@ -140,17 +185,45 @@ func (s *feedDirectorySearcher) cacheResultLocked(key string, results []graph.Fe
 }
 
 func (s *feedDirectorySearcher) admitRequest() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	// Each token refills one minute after use. The oldest token is first in
-	// line, enforcing the budget across every rolling minute, even at startup.
-	now := s.now()
-	if now.Before(s.tokens[s.nextToken]) {
-		return graph.ErrFeedSearchThrottled
+	s.budgetMu.Lock()
+	defer s.budgetMu.Unlock()
+	if s.budgetErr != nil {
+		return fmt.Errorf("load feed request budget: %w", s.budgetErr)
 	}
-	s.tokens[s.nextToken] = now.Add(time.Minute)
-	s.nextToken = (s.nextToken + 1) % len(s.tokens)
-	return nil
+	// Each token refills one minute after use. Persist the new deadline
+	// before admission so a restart cannot refund a request already sent.
+	now := s.now()
+	for i, deadline := range s.tokens {
+		if now.Before(deadline) {
+			continue
+		}
+		updated := s.tokens
+		updated[i] = now.Add(time.Minute)
+		if err := saveFeedRequestBudget(s.budgetFile, updated); err != nil {
+			return fmt.Errorf("persist feed request budget: %w", err)
+		}
+		s.tokens = updated
+		return nil
+	}
+	return graph.ErrFeedSearchThrottled
+}
+
+func saveFeedRequestBudget(path string, tokens [feedRequestsPerMin]time.Time) error {
+	if err := jsonstate.Save(path, tokens); err != nil {
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		// Windows does not support syncing a directory handle. The synced
+		// file has already been published for subsequent process starts.
+		return nil
+	}
+	// Save syncs the new contents before renaming. Sync the containing
+	// directory to make the replacement itself durable before admission.
+	dir, err := os.Open(filepath.Dir(path)) // #nosec G304 -- the server data directory, opened only for sync.
+	if err != nil {
+		return err
+	}
+	return errors.Join(dir.Sync(), dir.Close())
 }
 
 // FetchDocument keeps the signed extended directory on the same budget,
@@ -180,11 +253,26 @@ func (s *feedDirectorySearcher) searchText(ctx context.Context, query string) ([
 	if extended, err := s.searchExtendedDirectory(ctx, query); err == nil {
 		results = append(results, extended...)
 	}
-	results = slices.DeleteFunc(results, func(result graph.FeedSearchResult) bool {
+	return s.validFeedResults(results), nil
+}
+
+func (s *feedDirectorySearcher) lookupFeed(ctx context.Context, rawURL string) ([]graph.FeedSearchResult, error) {
+	if rawURL == "" {
+		return nil, nil
+	}
+	results, err := s.readITunesResults(ctx, rawURL)
+	if err != nil {
+		return nil, err
+	}
+	results = s.validFeedResults(results)
+	return results[:min(1, len(results))], nil
+}
+
+func (s *feedDirectorySearcher) validFeedResults(results []graph.FeedSearchResult) []graph.FeedSearchResult {
+	return slices.DeleteFunc(results, func(result graph.FeedSearchResult) bool {
 		feed, err := url.Parse(result.FeedURL)
 		return err != nil || s.engine.CheckDocumentURL(feed) != nil
 	})
-	return results, nil
 }
 
 func (s *feedDirectorySearcher) readITunesResults(ctx context.Context, rawURL string) ([]graph.FeedSearchResult, error) {

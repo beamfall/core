@@ -189,7 +189,7 @@ func TestStagedBundleCannotActivateCompiledFeedHook(t *testing.T) {
 	hooks := Hooks{FeedSearcher: &FeedSearcherHook{
 		PluginID:          string(dynamic.ID),
 		RequiredScraperID: "local",
-		New: func(*scrape.Engine, SecretSource) graph.FeedSearcher {
+		New: func(*scrape.Engine, SecretSource, string) graph.FeedSearcher {
 			called = true
 			return inertFeedSearcher{}
 		},

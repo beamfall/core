@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -192,11 +194,30 @@ func addPodcastHooks(hooks *app.Hooks) {
 	hooks.FeedSearcher = &app.FeedSearcherHook{
 		PluginID:          pluginID,
 		RequiredScraperID: "itunes-directory",
-		New: func(engine *scrape.Engine, secrets app.SecretSource) graph.FeedSearcher {
+		New: func(engine *scrape.Engine, secrets app.SecretSource, budgetFile string) graph.FeedSearcher {
 			endpoint, template, _ := feedDirectoryScraper("itunes-directory")
-			return newFeedDirectorySearcher(engine, secrets, endpoint, template, time.Now)
+			searcher := newFeedDirectorySearcher(engine, secrets, endpoint, template, budgetFile, time.Now)
+			searcher.lookup = func(link *url.URL) (string, bool) {
+				return appleDirectoryLookupURL(searcher.endpoint, link)
+			}
+			return searcher
 		},
 	}
+}
+
+func appleDirectoryLookupURL(endpoint string, link *url.URL) (string, bool) {
+	if link.Hostname() != "podcasts.apple.com" {
+		return "", false
+	}
+	id, ok := strings.CutPrefix(path.Base(link.Path), "id")
+	if !ok || id == "" || strings.Trim(id, "0123456789") != "" {
+		return "", true
+	}
+	query := url.Values{"id": {id}}
+	if country, _, _ := strings.Cut(strings.TrimPrefix(link.Path, "/"), "/"); len(country) == 2 {
+		query.Set("country", country)
+	}
+	return endpoint + "/lookup?" + query.Encode(), true
 }
 
 type photosLocalExtractor struct{ inner *photos.LocalExtractor }
