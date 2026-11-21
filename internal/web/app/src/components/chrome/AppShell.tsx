@@ -84,7 +84,8 @@ export function AppShell({
       : null,
   );
   const beamfallHost = getBeamfallHost();
-  usePosterSizeRoot();
+  // The poster size roams with the Profile in the Viewer (CORE-2914).
+  usePosterSizeRoot(register === "viewer" && session && !needsEnroll ? session.profileID : null);
   const sidebarId = useId();
   const phone = usePhoneLayout();
   const [collapsed, setCollapsed] = useState(readCollapsedPref);

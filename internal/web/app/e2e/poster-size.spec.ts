@@ -141,6 +141,40 @@ test.describe("poster size", () => {
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
+  // CORE-2914: the choice roams with the Profile. With this browser's own
+  // value gone, as in a browser that never held a size, the page draws the
+  // Profile's saved pick.
+  test("a pick follows the Profile to a browser without one", async ({ page }) => {
+    const errors = collectFatalErrors(page);
+    await openLibraryGrid(page);
+    const savePick = () =>
+      page.waitForResponse(
+        (res) =>
+          res.url().includes("/graphql") &&
+          (res.request().postData() ?? "").includes("setClientPref"),
+      );
+    try {
+      const saved = savePick();
+      await page.getByRole("button", { name: "Small posters" }).click();
+      expect((await saved).ok()).toBe(true);
+
+      await page.evaluate(() => localStorage.removeItem("beamfall.posterSize"));
+      await page.reload();
+      await expect(page.getByRole("button", { name: "Small posters" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(page.locator("html")).toHaveAttribute("data-poster-size", "small");
+    } finally {
+      // Back to the default, which also saves Large to the Profile, so later
+      // specs see Large.
+      const restored = savePick();
+      await page.getByRole("button", { name: "Large posters" }).click();
+      await restored;
+    }
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
+
   // The app-wide control stays on the Library pivot in List view, where it
   // sizes the row thumbnails.
   for (const width of [1440, 390]) {
