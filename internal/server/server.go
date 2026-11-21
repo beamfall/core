@@ -109,6 +109,7 @@ type Server struct {
 	artworkImport       ArtworkImporter
 	artworkApply        artworkApplyStore
 	subscriptionExport  subscriptionExportStore
+	subscriptionSealed  func(store.LibraryID) bool
 	profilePictures     profilePictureStore
 	compat              *compatState
 	devBuilds           *devBuildsFile
@@ -241,6 +242,11 @@ func WithUnmatchedArtworkCreator(creator unmatchedArtworkCreator) Option {
 // directory used when the catalog cannot accept either invalidation write.
 func WithCompatRefusalJournalDir(path string) Option {
 	return func(s *Server) { s.compatRefusalDir = strings.TrimSpace(path) }
+}
+
+// WithSubscriptionLibrarySealed supplies the runtime seal state for Subscription exports.
+func WithSubscriptionLibrarySealed(sealed func(store.LibraryID) bool) Option {
+	return func(s *Server) { s.subscriptionSealed = sealed }
 }
 
 // New creates an HTTP server with every route mounted through the recording helper.

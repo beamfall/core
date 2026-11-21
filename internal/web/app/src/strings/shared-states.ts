@@ -44,6 +44,9 @@ export const sharedStateStrings = {
     couldNotUpdateLibrary: "Could not update the library.",
     subscriptionsUnavailable: "Subscriptions are unavailable right now.",
     exportSubscriptionsOpml: "Export subscriptions as OPML",
+    subscriptionsExportSessionExpired:
+      "Your session has expired. Sign in again to export subscriptions.",
+    subscriptionsExportFailed: "Could not export subscriptions. Please try again.",
     libraryEmptyTitle: "Nothing to show in this library yet.",
     // Empty-as-activation (onboarding-funnel §6) is for owners and managers only.
     libraryEmptyOwnerTitle: "Your library is ready. Let's fill it.",
@@ -99,6 +102,9 @@ export const sharedStateStrings = {
     couldNotUpdateLibrary: "Impossible de mettre à jour la bibliothèque.",
     subscriptionsUnavailable: "Les abonnements sont indisponibles pour le moment.",
     exportSubscriptionsOpml: "Exporter les abonnements au format OPML",
+    subscriptionsExportSessionExpired:
+      "Votre session a expiré. Reconnectez-vous pour exporter les abonnements.",
+    subscriptionsExportFailed: "Impossible d’exporter les abonnements. Veuillez réessayer.",
     libraryEmptyTitle: "Rien à afficher dans cette bibliothèque pour le moment.",
     libraryEmptyOwnerTitle: "Votre bibliothèque est prête. Remplissons-la.",
     libraryEmptyOwnerLead:
@@ -156,6 +162,9 @@ export const sharedStateStrings = {
     couldNotUpdateLibrary: "Die Bibliothek konnte nicht aktualisiert werden.",
     subscriptionsUnavailable: "Abonnements sind derzeit nicht verfügbar.",
     exportSubscriptionsOpml: "Abonnements als OPML exportieren",
+    subscriptionsExportSessionExpired:
+      "Deine Sitzung ist abgelaufen. Melde dich erneut an, um Abonnements zu exportieren.",
+    subscriptionsExportFailed: "Abonnements konnten nicht exportiert werden. Versuche es erneut.",
     libraryEmptyTitle: "In dieser Bibliothek gibt es noch nichts anzuzeigen.",
     libraryEmptyOwnerTitle: "Deine Bibliothek ist bereit. Füllen wir sie.",
     libraryEmptyOwnerLead:
@@ -210,6 +219,9 @@ export const sharedStateStrings = {
     couldNotUpdateLibrary: "No se pudo actualizar la biblioteca.",
     subscriptionsUnavailable: "Las suscripciones no están disponibles en este momento.",
     exportSubscriptionsOpml: "Exportar suscripciones como OPML",
+    subscriptionsExportSessionExpired:
+      "Tu sesión ha caducado. Vuelve a iniciar sesión para exportar las suscripciones.",
+    subscriptionsExportFailed: "No se pudieron exportar las suscripciones. Inténtalo de nuevo.",
     libraryEmptyTitle: "Aún no hay nada que mostrar en esta biblioteca.",
     libraryEmptyOwnerTitle: "Tu biblioteca está lista. Vamos a llenarla.",
     libraryEmptyOwnerLead: "Inicia un análisis para traer tus medios, o migra desde otro servidor.",
@@ -264,6 +276,9 @@ export const sharedStateStrings = {
     couldNotUpdateLibrary: "Não foi possível atualizar a biblioteca.",
     subscriptionsUnavailable: "As assinaturas não estão disponíveis no momento.",
     exportSubscriptionsOpml: "Exportar assinaturas como OPML",
+    subscriptionsExportSessionExpired:
+      "Sua sessão expirou. Entre novamente para exportar as assinaturas.",
+    subscriptionsExportFailed: "Não foi possível exportar as assinaturas. Tente novamente.",
     libraryEmptyTitle: "Ainda não há nada para mostrar nesta biblioteca.",
     libraryEmptyOwnerTitle: "Sua biblioteca está pronta. Vamos preenchê-la.",
     libraryEmptyOwnerLead:

@@ -133,7 +133,7 @@ var managementRouteContracts = []ManagementRouteContract{
 	{
 		Method:        http.MethodGet,
 		Pattern:       subscriptionExportPath,
-		Note:          "Download visible Subscriptions as OPML 2.0. Set includePrivate=true to include authenticated feeds with exportable URLs.",
+		Note:          "Download public Subscriptions in visible, unsealed Libraries as OPML 2.0.",
 		Authorization: "manager-session",
 		Success: &ManagementRouteResponseContract{
 			Status:      http.StatusOK,

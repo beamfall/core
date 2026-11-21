@@ -67,6 +67,8 @@ export function SubscriptionsPage() {
   const [libraryID, setLibraryID] = useState("");
   const [subscriptions, setSubscriptions] = useState<SubscriptionInfo[]>([]);
   const [error, setError] = useState("");
+  const [exportError, setExportError] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [feedURL, setFeedURL] = useState("");
   const [root, setRoot] = useState("");
   const [authHeader, setAuthHeader] = useState("");
@@ -163,6 +165,39 @@ export function SubscriptionsPage() {
     }
   };
 
+  const onExport = async () => {
+    setExportError("");
+    setExporting(true);
+    try {
+      const response = await fetch("/api/subscriptions/export.opml", {
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        setExportError(
+          t(
+            response.status === 401
+              ? "subscriptionsExportSessionExpired"
+              : "subscriptionsExportFailed",
+          ),
+        );
+        return;
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "subscriptions.opml";
+      try {
+        link.click();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      setExportError(t("subscriptionsExportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <ManageSection
@@ -183,10 +218,8 @@ export function SubscriptionsPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" asChild>
-              <a href="/api/subscriptions/export.opml" download="subscriptions.opml">
-                {t("exportSubscriptionsOpml")}
-              </a>
+            <Button type="button" variant="outline" onClick={onExport} disabled={exporting}>
+              {t("exportSubscriptionsOpml")}
             </Button>
           </div>
         }
@@ -225,6 +258,7 @@ export function SubscriptionsPage() {
           )}
         </div>
         <ErrorLine message={error} />
+        <ErrorLine message={exportError} />
       </ManageSection>
 
       <ManageSection title={t("addSubscription")}>

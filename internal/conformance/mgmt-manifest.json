@@ -810,7 +810,7 @@
     {
       "method": "GET",
       "pattern": "/api/subscriptions/export.opml",
-      "note": "Download visible Subscriptions as OPML 2.0. Set includePrivate=true to include authenticated feeds with exportable URLs.",
+      "note": "Download public Subscriptions in visible, unsealed Libraries as OPML 2.0.",
       "authorization": "manager-session",
       "success": {
         "status": 200,

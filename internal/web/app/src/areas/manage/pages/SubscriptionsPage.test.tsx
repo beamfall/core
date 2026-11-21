@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addSubscription, fetchSubscriptions, setSubscriptionRetention } from "@/lib/graphql";
 import type { SubscriptionInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
@@ -27,18 +27,64 @@ vi.mock("@/lib/session", () => ({
 
 describe("SubscriptionsPage", () => {
   beforeEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
-  it("links to the default OPML download with a localized label", async () => {
+  it("downloads the OPML response as a Blob using same-origin credentials", async () => {
     vi.mocked(fetchSubscriptions).mockResolvedValue([]);
+    const blob = new Blob(['<opml version="2.0" />'], { type: "application/xml" });
+    const fetchExport = vi.fn().mockResolvedValue({ ok: true, blob: async () => blob });
+    vi.stubGlobal("fetch", fetchExport);
+    const createObjectURL = vi.fn().mockReturnValue("blob:subscriptions");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", Object.assign(class extends URL {}, { createObjectURL, revokeObjectURL }));
+    const downloads: { href: string; filename: string }[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloads.push({ href: this.href, filename: this.download });
+    });
+    const user = userEvent.setup();
     render(
       <I18nProvider initialLocale="fr">
         <SubscriptionsPage />
       </I18nProvider>,
     );
-    const link = screen.getByRole("link", { name: "Exporter les abonnements au format OPML" });
-    expect(link).toHaveAttribute("href", "/api/subscriptions/export.opml");
-    expect(link).toHaveAttribute("download", "subscriptions.opml");
-    await waitFor(() => expect(fetchSubscriptions).toHaveBeenCalledWith("library-a"));
+    await user.click(
+      screen.getByRole("button", { name: "Exporter les abonnements au format OPML" }),
+    );
+    expect(fetchExport).toHaveBeenCalledWith("/api/subscriptions/export.opml", {
+      credentials: "same-origin",
+    });
+    expect(createObjectURL).toHaveBeenCalledWith(blob);
+    expect(downloads).toEqual([{ href: "blob:subscriptions", filename: "subscriptions.opml" }]);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:subscriptions");
+  });
+
+  it.each([
+    [401, "Votre session a expiré. Reconnectez-vous pour exporter les abonnements."],
+    [500, "Impossible d’exporter les abonnements. Veuillez réessayer."],
+    [undefined, "Impossible d’exporter les abonnements. Veuillez réessayer."],
+  ])("shows a localized download error for status %s", async (status, message) => {
+    vi.mocked(fetchSubscriptions).mockResolvedValue([]);
+    const readBody = vi.fn();
+    const fetchExport = vi.fn();
+    if (status === undefined) fetchExport.mockRejectedValue(new Error("network failure"));
+    else fetchExport.mockResolvedValue({ ok: false, status, blob: readBody });
+    vi.stubGlobal("fetch", fetchExport);
+    const user = userEvent.setup();
+    render(
+      <I18nProvider initialLocale="fr">
+        <SubscriptionsPage />
+      </I18nProvider>,
+    );
+    const button = screen.getByRole("button", { name: "Exporter les abonnements au format OPML" });
+    await user.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(button).toBeEnabled();
+    expect(readBody).not.toHaveBeenCalled();
   });
 
   it("does not let an older library response replace the current library", async () => {
