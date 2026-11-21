@@ -4,8 +4,9 @@
 
 The viewer SHALL offer Play next and Add to queue for known unlocked audio Media while idle or
 on the active Profile's `?playQueue=<profileID>` route. Both actions SHALL be disabled for the
-current track. The viewer SHALL hide them during catalog playback and on search results.
-CORE-2865 owns catalog conversion. CORE-2867 owns search queue actions.
+current track. The viewer SHALL hide them during catalog playback, on search results, and on
+playlist rows. CORE-2865 owns catalog conversion. CORE-2867 owns queue actions for search results
+and playlist rows, including their eligibility and lock refresh.
 
 #### Scenario: Catalog playback starts on an already-queued track
 

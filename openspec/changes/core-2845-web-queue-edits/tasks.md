@@ -6,4 +6,4 @@
 - [x] 1.4 Preserve existing catalog playback and cover server reload, gapless playback, and stream continuity.
 - [x] 1.5 Limit edits to the server queue. Catalog conversion belongs to CORE-2865.
 - [x] 1.6 Use existing server contracts for web edits. Queue-write enforcement belongs to CORE-2866.
-- [x] 1.7 Exclude search results from queue edits. Search eligibility and refresh belong to CORE-2867.
+- [x] 1.7 Exclude search results and playlist rows from queue edits. Their eligibility and lock refresh belong to CORE-2867.

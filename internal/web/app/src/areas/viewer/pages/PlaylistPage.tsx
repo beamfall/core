@@ -8,8 +8,6 @@ import { fetchMediaRows } from "@/lib/graphql/browse";
 import type { CollectionInfo, GenericMediaInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
-import { useEngagementEpoch } from "../actions/engagementSync";
-import { MediaItemCardMenu } from "../components/MediaItemCardMenu";
 import { ViewerActions } from "../components/ViewerActions";
 import { fetchEntryLocks } from "../lib/collections";
 import { mediaPath } from "../lib/mediaAddress";
@@ -37,15 +35,11 @@ export function PlaylistPage() {
   const { playlistId = "" } = useParams();
   const { manifest, isManager } = useSession();
   const identity = useViewerIdentity();
-  const engagementEpoch = useEngagementEpoch();
   const libraryKey = (manifest?.libraries ?? []).map((library) => library.id).join("\n");
   const [playlist, setPlaylist] = useState<CollectionInfo | null | undefined>(undefined);
   const [rows, setRows] = useState<Record<string, GenericMediaInfo>>({});
   // Each entry's lock state, "unknown" when the read failed, null while loading.
-  const [lockRead, setLockRead] = useState<{
-    key: string;
-    result: Map<string, boolean> | "unknown";
-  }>();
+  const [locks, setLocks] = useState<Map<string, boolean> | "unknown" | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -65,8 +59,6 @@ export function PlaylistPage() {
 
   const order = useMemo(() => (playlist ? memberOrder(playlist) : []), [playlist]);
   const orderKey = order.join("\n");
-  const lockKey = JSON.stringify([identity, playlistId, orderKey, engagementEpoch]);
-  const locks = lockRead?.key === lockKey ? lockRead.result : null;
 
   useEffect(() => {
     if (!orderKey) return;
@@ -77,21 +69,20 @@ export function PlaylistPage() {
     return () => controller.abort();
   }, [orderKey]);
 
-  // The lock feed omits hidden members. Reload every page when the playlist
-  // changes or an engagement invalidation reports a possible hide or unhide.
+  // Lock state is per Profile, so it reloads when the playlist or its members
+  // change. Nothing plays until it is known; if the read fails, playback still
+  // meets the server's own ceiling check.
   useEffect(() => {
-    setLockRead(undefined);
+    setLocks(null);
     if (!orderKey) return;
     const controller = new AbortController();
     fetchEntryLocks(playlistId, orderKey.split("\n").length, controller.signal)
-      .then((result) => {
-        if (!controller.signal.aborted) setLockRead({ key: lockKey, result });
-      })
+      .then(setLocks)
       .catch(() => {
-        if (!controller.signal.aborted) setLockRead({ key: lockKey, result: "unknown" });
+        if (!controller.signal.aborted) setLocks("unknown");
       });
     return () => controller.abort();
-  }, [playlistId, orderKey, lockKey]);
+  }, [playlistId, orderKey]);
 
   const listed: PlayQueueItem[] = order
     .filter((id) => rows[id])
@@ -155,7 +146,7 @@ export function PlaylistPage() {
               {listed.map((entry, index) => {
                 const position = order.indexOf(entry.id);
                 return (
-                  <li key={entry.id} className="bf-card-shell bf-track">
+                  <li key={entry.id} className="bf-track">
                     <button
                       type="button"
                       className="bf-track-row"
@@ -171,28 +162,6 @@ export function PlaylistPage() {
                         {formatDuration(rows[entry.id]?.durationSeconds)}
                       </span>
                     </button>
-                    {entry.mediaClass === "audio" &&
-                      locks instanceof Map &&
-                      locks.get(entry.id) === false && (
-                        <div className="bf-child-actions">
-                          <MediaItemCardMenu
-                            title={entry.title}
-                            primaryLabel={t("play")}
-                            isMedia
-                            isAudio
-                            queueUnlocked
-                            credits={rows[entry.id]?.credits}
-                            href={
-                              new URL(
-                                `${import.meta.env.BASE_URL}${mediaPath("watch", entry.id).slice(1)}`,
-                                window.location.origin,
-                              ).href
-                            }
-                            target={{ mediaID: entry.id }}
-                            onPrimary={() => play(entry)}
-                          />
-                        </div>
-                      )}
                     {isManager && (
                       <span className="bf-track-tools">
                         <Button

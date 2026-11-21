@@ -16,6 +16,7 @@ import type { MediaCredit } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { type Locale, STRINGS } from "@/strings";
 import * as musicQueue from "../lib/musicQueue";
+import { MediaItemCard } from "./MediaItemCard";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 import { MusicQueueNotice } from "./MusicQueueNotice";
 
@@ -218,8 +219,24 @@ describe("MediaItemCardMenu hide (CORE-2836)", () => {
 });
 
 describe("MediaItemCardMenu Play Queue", () => {
-  it.each([undefined, false])("hides queue actions when eligibility is %s", (unlocked) => {
-    renderMenu(true, undefined, "en", [], unlocked);
+  it("omits queue actions from an audio card on the search route", () => {
+    render(
+      <I18nProvider initialLocale="en">
+        <MemoryRouter initialEntries={["/search"]}>
+          <MediaItemCard
+            item={{
+              id: "t1",
+              kind: "media",
+              title: "Track One",
+              mediaClass: "audio",
+              locked: false,
+            }}
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Track One" }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Play next" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Add to queue" })).not.toBeInTheDocument();
   });
