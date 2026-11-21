@@ -100,11 +100,10 @@ export interface SessionState {
   /** Re-reads the roster in place, applying any confirmed entry PIN before the read. */
   refreshProfiles: (profileIDWithSavedEntryPin?: string) => Promise<void>;
   /**
-   * Re-reads currentSession in place, inside the current identity epoch (a
-   * Restrictions PIN set or changed). Nothing is cleared, so open pages keep
-   * their state.
+   * Re-reads currentSession in place inside the current identity epoch,
+   * applying any confirmed subtitle preferences before the read.
    */
-  refreshSession: () => Promise<void>;
+  refreshSession: (confirmed?: { profileID: string; subtitleLanguages: string[] }) => Promise<void>;
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -128,6 +127,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const controllerRef = useRef<AbortController | null>(null);
   const refreshSeqRef = useRef(0);
   const profileRefreshSeq = useRef(0);
+  const sessionRefreshSeq = useRef(0);
 
   const beginEpoch = useCallback(() => {
     controllerRef.current?.abort();
@@ -344,12 +344,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!signal.aborted && seq === profileRefreshSeq.current) setProfiles(next);
   }, []);
 
-  const refreshSession = useCallback(async () => {
+  const refreshSession = useCallback<SessionState["refreshSession"]>(async (confirmed) => {
     const signal = controllerRef.current?.signal;
     if (!signal || signal.aborted) return;
+    const seq = ++sessionRefreshSeq.current;
+    if (confirmed) {
+      setSession((current) =>
+        current?.profileID === confirmed.profileID
+          ? { ...current, subtitleLanguages: confirmed.subtitleLanguages }
+          : current,
+      );
+    }
     const next = await fetchCurrentSession(signal);
     // A load that cleared the session owns the next value; never resurrect it.
-    if (!signal.aborted) setSession((current) => (current ? next : current));
+    if (!signal.aborted && seq === sessionRefreshSeq.current) {
+      setSession((current) => (current ? next : current));
+    }
   }, []);
 
   const value = useMemo<SessionState>(

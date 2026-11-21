@@ -19,6 +19,8 @@ interface SettingsSaveState {
   setSaving: (busy: boolean) => void;
 }
 
+type EntryPinResult = "saved" | "failed" | "mismatch" | null;
+
 export function ProfileSettings({ saving, setSaving }: SettingsSaveState) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -62,6 +64,8 @@ function SettingsForms({ saving, setSaving }: SettingsSaveState) {
     (profile) => profile.kind === "adult" && typeof profile.entryPinSet === "boolean",
   );
   const [selectedID, setSelectedID] = useState("");
+  // The roster refresh can hide the form after its write succeeds.
+  const [pinResult, setPinResult] = useState<EntryPinResult>(null);
   const selected = adults?.find((profile) => profile.id === (selectedID || session?.profileID));
 
   return (
@@ -90,7 +94,10 @@ function SettingsForms({ saving, setSaving }: SettingsSaveState) {
                 className="block h-9 max-w-full rounded-md border border-input bg-background px-2 text-sm"
                 value={selected?.id ?? ""}
                 disabled={saving}
-                onChange={(event) => setSelectedID(event.target.value)}
+                onChange={(event) => {
+                  setSelectedID(event.target.value);
+                  setPinResult(null);
+                }}
               >
                 {!selected && (
                   <option value="" disabled>
@@ -111,6 +118,7 @@ function SettingsForms({ saving, setSaving }: SettingsSaveState) {
                 pinSet={selected.entryPinSet === true}
                 busy={saving}
                 setBusy={setSaving}
+                setResult={setPinResult}
                 onSaved={async () => {
                   await Promise.all([
                     refresh(),
@@ -124,6 +132,9 @@ function SettingsForms({ saving, setSaving }: SettingsSaveState) {
         {!loading && !failed && adults?.length === 0 && (
           <p className="text-sm text-muted-foreground">{t("manageProfileEntryPinUnavailable")}</p>
         )}
+        {pinResult === "saved" && <p role="status">{t("restrictionsPinSaved")}</p>}
+        {pinResult === "failed" && <ErrorLine message={t("restrictionsPinNotSaved")} />}
+        {pinResult === "mismatch" && <ErrorLine message={t("restrictionsPinMismatch")} />}
       </section>
       {current.loading && <p className="text-sm text-muted-foreground">{t("loading")}</p>}
       {current.failed && (
@@ -162,19 +173,20 @@ function EntryPinForm({
   pinSet,
   busy,
   setBusy,
+  setResult,
   onSaved,
 }: {
   profileID: string;
   pinSet: boolean;
   busy: boolean;
   setBusy: (busy: boolean) => void;
+  setResult: (result: EntryPinResult) => void;
   onSaved: () => Promise<void>;
 }) {
   const t = useT();
   const id = useId();
   const [pin, setPin] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [result, setResult] = useState<"saved" | "failed" | "mismatch" | null>(null);
   const scope = useFormScope();
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -193,8 +205,8 @@ function EntryPinForm({
     try {
       await setProfileEntryPin(profileID, value, signal);
       if (signal.aborted) return;
+      setResult("saved");
       await onSaved();
-      if (!signal.aborted) setResult("saved");
     } catch {
       if (!signal.aborted) setResult("failed");
     } finally {
@@ -235,9 +247,6 @@ function EntryPinForm({
           {t(pinSet ? "restrictionsChangePin" : "restrictionsSetPin")}
         </Button>
       </fieldset>
-      {result === "saved" && <p role="status">{t("restrictionsPinSaved")}</p>}
-      {result === "failed" && <ErrorLine message={t("restrictionsPinNotSaved")} />}
-      {result === "mismatch" && <ErrorLine message={t("restrictionsPinMismatch")} />}
     </form>
   );
 }
@@ -270,12 +279,13 @@ function SubtitleLanguagesForm({
     setSaving(true);
     setResult(null);
     try {
-      const next = (await setProfileSubtitleLanguages(profileID, preferences, signal)).join(", ");
+      const subtitleLanguages = await setProfileSubtitleLanguages(profileID, preferences, signal);
       if (signal.aborted) return;
+      const next = subtitleLanguages.join(", ");
       setSaved(next);
       setDraft(next);
       setResult("saved");
-      void refreshSession().catch(() => {});
+      void refreshSession({ profileID, subtitleLanguages }).catch(() => {});
     } catch {
       if (!signal.aborted) setResult("failed");
     } finally {

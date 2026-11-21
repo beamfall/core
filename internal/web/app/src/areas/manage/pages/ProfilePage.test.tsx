@@ -29,11 +29,13 @@ function renderPage(locale: Locale = "en") {
 
 function server({
   active = true,
+  rejectRosterRefresh = false,
   rejectSave = false,
   rejectSession = false,
   subtitleSave,
 }: {
   active?: boolean;
+  rejectRosterRefresh?: boolean;
   rejectSave?: boolean;
   rejectSession?: boolean;
   subtitleSave?: Promise<void>;
@@ -59,6 +61,9 @@ function server({
       return Response.json({ data: { setupState: { adminPasswordSet: true } } });
     }
     if (query.startsWith("query Profiles") && query.includes("entryPinSet")) {
+      if (rejectRosterRefresh && writes.length === 1) {
+        return Response.json({ errors: [{ message: "Roster refresh failed" }] });
+      }
       return Response.json({ data: { profiles } });
     }
     if (query.startsWith("query CurrentSession") && query.includes("subtitleLanguages")) {
@@ -169,12 +174,11 @@ describe("Manage profile settings", () => {
     await user.click(screen.getByRole("button", { name: "Set PIN" }));
     await waitFor(() => expect(refreshProfiles).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("button", { name: /^Jo/ })).toBeDisabled();
-    expect(screen.queryByText("PIN saved.")).not.toBeInTheDocument();
+    expect(screen.getByText("PIN saved.")).toBeVisible();
     completeRosterRefresh();
-    expect(await screen.findByText("PIN saved.")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Change PIN" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Jo/ })).toBeEnabled();
-    await waitFor(() => expect(screen.getByLabelText("Profile")).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Jo/ })).toBeEnabled());
+    expect(screen.getByLabelText("Profile")).toBeEnabled();
     expect(screen.getByLabelText("New PIN")).toHaveValue("");
     expect(screen.getByLabelText("Confirm PIN")).toHaveValue("");
     await enterPin(user, "5678");
@@ -185,6 +189,22 @@ describe("Manage profile settings", () => {
       { profileID: "adult-b", entryPIN: "1234" },
       { profileID: "adult-b", entryPIN: "5678" },
     ]);
+  });
+
+  it("shows a confirmed PIN save when the editor roster refresh fails", async () => {
+    const user = userEvent.setup();
+    const { writes } = server({ rejectRosterRefresh: true });
+    const copy = STRINGS.fr;
+    renderPage("fr");
+    await user.click(screen.getByRole("button", { name: copy.manageProfileSettingsOpen }));
+    await user.selectOptions(await screen.findByLabelText(copy.profile), "adult-b");
+    await enterPin(user, "1234", "fr");
+    await user.click(screen.getByRole("button", { name: copy.restrictionsSetPin }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(copy.consoleProfilesUnavailable);
+    expect(screen.getByText(copy.restrictionsPinSaved)).toBeVisible();
+    expect(screen.queryByText(copy.restrictionsPinNotSaved)).not.toBeInTheDocument();
+    expect(writes).toEqual([{ profileID: "adult-b", entryPIN: "1234" }]);
   });
 
   it("keeps the PIN form available when the subtitle languages read fails", async () => {
@@ -224,7 +244,10 @@ describe("Manage profile settings", () => {
     await user.clear(reopened);
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Subtitle languages saved.")).toBeInTheDocument();
-    expect(refreshSession).toHaveBeenCalledTimes(2);
+    expect(refreshSession.mock.calls).toEqual([
+      [{ profileID: "adult-a", subtitleLanguages: ["es", "fr-CA", "en"] }],
+      [{ profileID: "adult-a", subtitleLanguages: [] }],
+    ]);
     expect(writes).toEqual([
       { profileID: "adult-a", subtitleLanguages: ["es", "fr-CA", "en"] },
       { profileID: "adult-a", subtitleLanguages: [] },
