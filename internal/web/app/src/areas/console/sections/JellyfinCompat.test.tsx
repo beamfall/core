@@ -241,6 +241,25 @@ describe("JellyfinCompat", () => {
     expect(screen.getByLabelText("Key name")).toHaveValue("");
   });
 
+  it("mints one key however often the form is submitted while the mint is in flight", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchJellyfinCompat).mockResolvedValue(optedIn);
+    let finish: (value: Awaited<ReturnType<typeof createJellyfinCompatKey>>) => void = () => {};
+    vi.mocked(createJellyfinCompatKey).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderPage();
+
+    const input = await screen.findByLabelText("Key name");
+    await user.type(input, "Seerr{Enter}{Enter}");
+    expect(screen.getByRole("button", { name: "Create key" })).toBeDisabled();
+    finish({ token: `bfj_${"b".repeat(64)}`, key: { ...seerrKey, lastUsedAt: undefined } });
+    expect(await screen.findByText(`bfj_${"b".repeat(64)}`)).toBeVisible();
+    expect(createJellyfinCompatKey).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the server's refusal when a key cannot be minted", async () => {
     const user = userEvent.setup();
     vi.mocked(fetchJellyfinCompat).mockResolvedValue(optedIn);

@@ -13,9 +13,9 @@ func TestLogLineRedactsSecretsPathsAndAddresses(t *testing.T) {
 	}{
 		{
 			name:       "api key and bearer",
-			in:         `level=WARN msg="auth failed" header="Bearer abc.def" key=bfk_live123`,
+			in:         `level=WARN msg="auth failed" header="Bearer abc.def" key=bfk_live123 compat=bfj_0123abcd`,
 			want:       []string{Marker},
-			wantAbsent: []string{"abc.def", "bfk_live123"},
+			wantAbsent: []string{"abc.def", "bfk_live123", "bfj_0123abcd"},
 		},
 		{
 			name:       "secret attribute values",

@@ -86,6 +86,7 @@ func TestDecision9Denylist(t *testing.T) {
 		{"account.id": "account"},
 		{"client_ip": "127.0.0.1"},
 		{"status": "Bearer secret"},
+		{"status": "bfj_0123abcd"},
 		{"status": "/api/media/direct/token"},
 	} {
 		err := controller.RecordGauge(t.Context(), "beamfall_observability_jobs", 1, labels)

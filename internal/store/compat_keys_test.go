@@ -132,3 +132,28 @@ func TestCompatIntegrationKeyRefusesIneligibleProfilesAndCaps(t *testing.T) {
 		t.Fatalf("mint after opt-out freed the cap: %v", err)
 	}
 }
+
+// The Profile settings mutation is a second way to opt out of integration
+// sign-in; it must revoke keys exactly as SetProfileIntegrationSignIn does.
+func TestCompatIntegrationKeyRevokedByProfileSettingsOptOut(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	now := time.UnixMilli(1_800_000_000_000).UTC()
+	if _, err := st.SetProfileIntegrationSignIn(ctx, "profile-default", true); err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := st.CreateCompatIntegrationKey(ctx, "profile-default", "Seerr", []IntegrationScope{IntegrationScopeRead}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	off, on := false, true
+	if _, err := st.UpdateProfileSettings(ctx, "profile-default", ProfileSettings{IntegrationSignIn: &off}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateProfileSettings(ctx, "profile-default", ProfileSettings{IntegrationSignIn: &on}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CompatIntegrationKeyByToken(ctx, token, now); !errors.Is(err, ErrCompatKeyInvalid) {
+		t.Fatalf("key after settings opt-out: %v; want ErrCompatKeyInvalid", err)
+	}
+}

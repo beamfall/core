@@ -5,6 +5,7 @@ import {
   collapseJobLog,
   formatJobEventTime,
   jobRunSeconds,
+  redactJobLogPayload,
   unresolvedFailedJobs,
 } from "./jobQueue";
 
@@ -199,5 +200,14 @@ describe("formatJobEventTime (CORE-2352)", () => {
 
   it("is empty for a value that is not a date", () => {
     expect(formatJobEventTime("not a date", now, "en-US", "UTC")).toBe("");
+  });
+});
+
+describe("redactJobLogPayload (CORE-2725)", () => {
+  it("blanks developer keys and Jellyfin compat integration keys", () => {
+    const out = redactJobLogPayload("dev bfk_abc_123 compat bfj_" + "0".repeat(64) + " done");
+    expect(out).not.toContain("bfk_abc_123");
+    expect(out).not.toContain("bfj_");
+    expect(out).toContain("done");
   });
 });

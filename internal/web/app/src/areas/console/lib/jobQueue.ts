@@ -177,7 +177,7 @@ export function formatJobEventTime(
 }
 
 const jobLogSecretPatterns = [
-  /bfk_[A-Za-z0-9_-]+/gi,
+  /bf[kj]_[A-Za-z0-9_-]+/gi,
   /Bearer\s+\S+/gi,
   /Basic\s+\S+/gi,
   /[?&]token=[^&\s"']+/gi,

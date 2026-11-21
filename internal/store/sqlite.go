@@ -1643,7 +1643,8 @@ func profileDisabled(ctx context.Context, q queryRower, id ProfileID) (bool, err
 // updateProfileSettingsSQL writes the policy column set from the
 // already-merged Profile. The integration sign-in opt-in is written only when
 // integrationSignIn is set, so an unrelated edit racing an opt-out cannot write
-// a stale opt-in back; setting it false revokes the integration sessions.
+// a stale opt-in back; setting it false revokes the integration sessions and
+// integration keys, so opting back in does not revive either.
 func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile, integrationSignIn *bool) error {
 	audioLanguages, err := encodeLanguages(profile.AudioLanguages)
 	if err != nil {
@@ -1681,6 +1682,9 @@ func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile, i
 	}
 	if err == nil && integrationSignIn != nil && !*integrationSignIn {
 		_, err = s.catalogW.ExecContext(ctx, `DELETE FROM auth_session WHERE profile_id = ? AND kind = ?`, profile.ID, SessionKindIntegration)
+		if err == nil {
+			_, err = s.catalogW.ExecContext(ctx, `UPDATE compat_integration_key SET revoked_at_ms = ? WHERE profile_id = ? AND revoked_at_ms = 0`, timeToMillis(time.Now()), profile.ID)
+		}
 	}
 	return err
 }

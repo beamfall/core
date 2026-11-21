@@ -202,15 +202,17 @@ func (h *Handler) createJellyfinCompatKey(ctx context.Context, scope auth.Scope,
 	if profileID == "" || name == "" {
 		return CreatedJellyfinCompatKeyInfo{}, clientError("profileID and name are required")
 	}
+	// Read the names before minting: once the key commits, the response is the
+	// only copy of its token, so nothing after the mint may fail the request.
+	names, err := h.profileNames(ctx)
+	if err != nil {
+		return CreatedJellyfinCompatKeyInfo{}, err
+	}
 	key, token, err := h.store.CreateCompatIntegrationKey(ctx, profileID, name, jellyfinCompatKeyScopes, time.Now().UTC())
 	if err != nil {
 		return CreatedJellyfinCompatKeyInfo{}, compatKeyClientError(err)
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityKeyCreate, "integration-key", key.ID, ""); err != nil {
-		return CreatedJellyfinCompatKeyInfo{}, err
-	}
-	names, err := h.profileNames(ctx)
-	if err != nil {
 		return CreatedJellyfinCompatKeyInfo{}, err
 	}
 	return CreatedJellyfinCompatKeyInfo{Token: token, Key: jellyfinCompatKeyInfo(key, names[key.ProfileID])}, nil

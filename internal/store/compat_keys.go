@@ -197,23 +197,39 @@ func (s *Store) CompatIntegrationKeyByToken(ctx context.Context, token string, n
 		return CompatIntegrationKey{}, err
 	}
 	nowMS := timeToMillis(now)
-	if nowMS-timeToMillis(key.LastUsedAt) >= compatKeyLastUseInterval.Milliseconds() {
-		// The revoked check rides the write too: a revoke that landed after the
-		// read wins and the request fails.
+	cutoff := nowMS - compatKeyLastUseInterval.Milliseconds()
+	if timeToMillis(key.LastUsedAt) <= cutoff {
 		result, err := s.catalogW.ExecContext(ctx, `
 			UPDATE compat_integration_key SET last_used_at_ms = ?
-			WHERE id = ? AND revoked_at_ms = 0 AND last_used_at_ms < ?`,
-			nowMS, key.ID, nowMS)
+			WHERE id = ? AND revoked_at_ms = 0 AND last_used_at_ms <= ?`,
+			nowMS, key.ID, cutoff)
 		if err != nil {
 			return CompatIntegrationKey{}, err
 		}
-		if changed, err := result.RowsAffected(); err != nil {
+		changed, err := result.RowsAffected()
+		if err != nil {
 			return CompatIntegrationKey{}, err
-		} else if changed == 1 {
+		}
+		if changed == 1 {
 			key.LastUsedAt = millisToTime(nowMS)
+		} else if err := s.compatKeyStillLiveLocked(ctx, key.ID); err != nil {
+			// No row changed: either a concurrent request already recorded
+			// the use, or a revoke landed after the read. A revoke wins.
+			return CompatIntegrationKey{}, err
 		}
 	}
 	return key, nil
+}
+
+// compatKeyStillLiveLocked re-reads a key's revocation from the writer
+// connection, so a revoke committed after the lookup's read is seen.
+func (s *Store) compatKeyStillLiveLocked(ctx context.Context, id string) error {
+	var revokedMS int64
+	err := s.catalogW.QueryRowContext(ctx, `SELECT revoked_at_ms FROM compat_integration_key WHERE id = ?`, id).Scan(&revokedMS)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && revokedMS != 0) {
+		return ErrCompatKeyInvalid
+	}
+	return err
 }
 
 func scanCompatIntegrationKey(scanner interface{ Scan(dest ...any) error }) (CompatIntegrationKey, error) {

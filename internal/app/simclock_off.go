@@ -1,4 +1,4 @@
-//go:build !beamfall_simclock
+//go:build !beamfall_simclock || beamfall_appstore
 
 package app
 

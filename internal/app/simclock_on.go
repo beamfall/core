@@ -1,4 +1,4 @@
-//go:build beamfall_simclock
+//go:build beamfall_simclock && !beamfall_appstore
 
 package app
 
@@ -10,9 +10,9 @@ import (
 
 // simClock shifts the read-path clock by the duration written in the file
 // BEAMFALL_SIMCLOCK_FILE names (for example "25h"), read on every call. It
-// exists so a recorded run can show a credential outliving a day without
+// exists so a recorded run can prove a credential outlives a day without
 // waiting one (CORE-2725). Only binaries built with the beamfall_simclock tag
-// carry it; release and App Store builds never set that tag.
+// carry it, and the beamfall_appstore tag compiles it out even if both are set.
 func simClock(base func() time.Time) func() time.Time {
 	path := os.Getenv("BEAMFALL_SIMCLOCK_FILE")
 	if path == "" {

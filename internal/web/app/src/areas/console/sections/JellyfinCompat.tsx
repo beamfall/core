@@ -1,5 +1,5 @@
 import { Plus } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   ControlRow,
   DataTable,
@@ -77,6 +77,10 @@ function IntegrationKeys({
   const [profileID, setProfileID] = useState("");
   const [secret, setSecret] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // A ref, not only state: a second Enter can land before the re-render that
+  // disables the button, and each submit mints a key whose token shows once.
+  const creatingRef = useRef(false);
+  const [creating, setCreating] = useState(false);
   const eligible = profiles.filter((p) => p.integrationSignIn);
   const selected = eligible.find((p) => p.id === profileID)?.id ?? eligible[0]?.id ?? "";
 
@@ -87,17 +91,23 @@ function IntegrationKeys({
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !selected) return;
+    if (!name.trim() || !selected || creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
     setError("");
     setSecret(null);
     try {
       const created = await createJellyfinCompatKey(selected, name.trim());
       setSecret(created.token);
       setName("");
-      await refresh();
     } catch (err) {
       setError(t("jellyfinCompatKeyCreateFailed", { reason: errorReason(err) }));
+      return;
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
     }
+    await refresh();
   }
 
   async function revoke(id: string) {
@@ -146,7 +156,7 @@ function IntegrationKeys({
               ))}
             </select>
           </div>
-          <Button type="submit" disabled={!name.trim()}>
+          <Button type="submit" disabled={!name.trim() || creating}>
             <Plus className="console-nav-icon" aria-hidden />
             {t("jellyfinCompatKeyCreate")}
           </Button>

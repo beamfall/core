@@ -217,6 +217,7 @@ func sensitiveLabelValue(value string) bool {
 	return strings.Contains(v, "bearer ") ||
 		strings.Contains(v, "basic ") ||
 		strings.Contains(v, "bfk_") ||
+		strings.Contains(v, "bfj_") ||
 		strings.Contains(v, "/api/media/") ||
 		strings.Contains(v, "/api/pack/") ||
 		strings.Contains(v, "?token=") ||
