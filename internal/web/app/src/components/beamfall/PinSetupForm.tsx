@@ -13,6 +13,7 @@ const directions = [
 ] as const;
 
 const minimumSteps = 6;
+const nonDigit = /[^0-9]/;
 type PinMode = "digits" | "directions";
 
 export function PinSetupForm({
@@ -37,15 +38,19 @@ export function PinSetupForm({
   const [busy, setBusy] = useState(false);
   const usingDirections = mode === "directions";
   const firstDirection = useRef<HTMLButtonElement>(null);
-  const value = pin.trim();
+  const invalidPin = !usingDirections && nonDigit.test(pin);
+  const invalidConfirm = !usingDirections && nonDigit.test(confirm);
   const canSubmit =
     !busy &&
     (usingDirections
-      ? value.length >= minimumSteps && confirm.length >= minimumSteps
-      : value !== "");
+      ? pin.length >= minimumSteps && confirm.length >= minimumSteps
+      : pin !== "" && !invalidPin && !invalidConfirm);
   const showTVWarning =
     !usingDirections &&
-    [...value].some((digit) => !directions.some((entry) => entry.digit === digit));
+    !invalidPin &&
+    [...pin].some((digit) => !directions.some((entry) => entry.digit === digit));
+  const digitsErrorID = `${id}-digits-error`;
+  const tvWarningID = `${id}-tv-warning`;
 
   useEffect(() => {
     if (usingDirections) firstDirection.current?.focus();
@@ -63,7 +68,7 @@ export function PinSetupForm({
     event.preventDefault();
     if (!canSubmit) return;
     setError("");
-    if (value !== confirm.trim()) {
+    if (pin !== confirm) {
       setError(t("restrictionsPinMismatch"));
       return;
     }
@@ -71,7 +76,7 @@ export function PinSetupForm({
     setConfirm("");
     setBusy(true);
     try {
-      await onSave(value);
+      await onSave(pin);
     } catch (err) {
       setError(saveError?.(err) ?? t("restrictionsPinNotSaved"));
       setBusy(false);
@@ -139,7 +144,10 @@ export function PinSetupForm({
                 type="password"
                 inputMode="numeric"
                 autoComplete="new-password"
-                aria-describedby={showTVWarning ? `${id}-tv-warning` : undefined}
+                aria-invalid={invalidPin || undefined}
+                aria-describedby={
+                  invalidPin ? digitsErrorID : showTVWarning ? tvWarningID : undefined
+                }
                 value={pin}
                 onChange={(event) => setPin(event.target.value)}
                 className="w-40"
@@ -153,6 +161,8 @@ export function PinSetupForm({
                 type="password"
                 inputMode="numeric"
                 autoComplete="new-password"
+                aria-invalid={invalidConfirm || undefined}
+                aria-describedby={invalidConfirm ? digitsErrorID : undefined}
                 value={confirm}
                 onChange={(event) => setConfirm(event.target.value)}
                 className="w-40"
@@ -162,9 +172,14 @@ export function PinSetupForm({
           </>
         )}
       </div>
-      <p id={`${id}-tv-warning`} aria-live="polite" className="m-0 text-sm text-muted-foreground">
-        {showTVWarning && t("pinSetupTVWarning")}
-      </p>
+      <div>
+        <p id={digitsErrorID} aria-live="polite" className="m-0 text-sm text-destructive">
+          {(invalidPin || invalidConfirm) && t("pinSetupDigitsOnly")}
+        </p>
+        <p id={tvWarningID} aria-live="polite" className="m-0 text-sm text-muted-foreground">
+          {showTVWarning && t("pinSetupTVWarning")}
+        </p>
+      </div>
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={!canSubmit}>
           {submitLabel}

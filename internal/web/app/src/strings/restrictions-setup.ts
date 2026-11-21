@@ -26,6 +26,7 @@ export const restrictionsSetupStrings = {
       "Unlock with the Restrictions PIN first (Manage › Restrictions) to change this.",
     libraryRestrictedNotSaved: "The change was not saved. Try again.",
     pinSetupDigits: "Digits",
+    pinSetupDigitsOnly: "Use only digits 0–9 for the PIN.",
     pinSetupDirections: "Directions",
     pinSetupDirectionsHelp:
       "Use at least 6 steps. Use the arrow buttons or the keyboard arrow keys.",
@@ -67,6 +68,7 @@ export const restrictionsSetupStrings = {
       "Déverrouillez d’abord avec le PIN de restriction (Gérer › Restrictions) pour modifier ce réglage.",
     libraryRestrictedNotSaved: "La modification n’a pas été enregistrée. Réessayez.",
     pinSetupDigits: "Chiffres",
+    pinSetupDigitsOnly: "Utilisez uniquement les chiffres de 0 à 9 pour le PIN.",
     pinSetupDirections: "Directions",
     pinSetupDirectionsHelp:
       "Saisissez au moins 6 directions avec les boutons fléchés ou les flèches du clavier.",
@@ -109,6 +111,7 @@ export const restrictionsSetupStrings = {
       "Entsperren Sie zuerst mit der Einschränkungs-PIN (Verwalten › Einschränkungen), um dies zu ändern.",
     libraryRestrictedNotSaved: "Die Änderung wurde nicht gespeichert. Versuchen Sie es erneut.",
     pinSetupDigits: "Ziffern",
+    pinSetupDigitsOnly: "Verwenden Sie für die PIN nur die Ziffern 0 bis 9.",
     pinSetupDirections: "Richtungen",
     pinSetupDirectionsHelp:
       "Geben Sie mindestens 6 Richtungen über die Pfeilschaltflächen oder die Pfeiltasten ein.",
@@ -151,6 +154,7 @@ export const restrictionsSetupStrings = {
       "Desbloquea primero con el PIN de restricción (Gestionar › Restricciones) para cambiar esto.",
     libraryRestrictedNotSaved: "No se guardó el cambio. Inténtalo de nuevo.",
     pinSetupDigits: "Dígitos",
+    pinSetupDigitsOnly: "Usa solo los dígitos del 0 al 9 para el PIN.",
     pinSetupDirections: "Direcciones",
     pinSetupDirectionsHelp:
       "Introduce al menos 6 direcciones con los botones de flecha o las flechas del teclado.",
@@ -193,6 +197,7 @@ export const restrictionsSetupStrings = {
       "Desbloqueie primeiro com o PIN de restrição (Gerir › Restrições) para alterar isto.",
     libraryRestrictedNotSaved: "A alteração não foi guardada. Tente novamente.",
     pinSetupDigits: "Dígitos",
+    pinSetupDigitsOnly: "Utilize apenas os algarismos de 0 a 9 para o PIN.",
     pinSetupDirections: "Direções",
     pinSetupDirectionsHelp:
       "Introduza pelo menos 6 direções com os botões de seta ou as teclas de seta.",

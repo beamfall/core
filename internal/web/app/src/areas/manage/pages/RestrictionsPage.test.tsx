@@ -115,6 +115,38 @@ describe("Manage Restrictions setup (CORE-2463)", () => {
     expect(setRevealPin).toHaveBeenCalledWith("24680");
   });
 
+  it.each([
+    ["en", "New PIN", "Confirm PIN", "Set PIN", "Use only digits 0–9 for the PIN."],
+    [
+      "fr",
+      "Nouveau PIN",
+      "Confirmer le PIN",
+      "Définir le PIN",
+      "Utilisez uniquement les chiffres de 0 à 9 pour le PIN.",
+    ],
+  ] as const)(
+    "rejects pasted letters in both PIN fields (%s)",
+    async (locale, pinLabel, confirmLabel, saveLabel, reason) => {
+      const user = userEvent.setup();
+      withSession(false, false);
+      renderPage(locale);
+      const pin = screen.getByLabelText(pinLabel);
+      const confirm = screen.getByLabelText(confirmLabel);
+      const save = screen.getByRole("button", { name: saveLabel });
+
+      await user.click(pin);
+      await user.paste("12ab");
+      await user.click(confirm);
+      await user.paste("12ab");
+
+      expect(save).toBeDisabled();
+      await user.click(save);
+      expect(setRevealPin).not.toHaveBeenCalled();
+      expect(pin).toHaveAccessibleDescription(reason);
+      expect(confirm).toHaveAccessibleDescription(reason);
+    },
+  );
+
   it("localizes the TV warning and direction setup instructions", async () => {
     const user = userEvent.setup();
     withSession(false, false);
