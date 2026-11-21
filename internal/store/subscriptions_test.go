@@ -760,6 +760,7 @@ func TestSubscriptionTitleRejectsURLs(t *testing.T) {
 		"雨です。傘は必要？":                                           "雨です。傘は必要？",
 		"News 例子。中国？sig=abc":                                  "",
 		"News feeds.example/?sig=abc":                         "",
+		"Visit feeds.example/":                                "",
 		"News 例子.中国/feed?sig=abc":                             "",
 		"News feeds.भारत/feed?sig=abc":                        "",
 		"Side A // Side B":                                    "Side A // Side B",
