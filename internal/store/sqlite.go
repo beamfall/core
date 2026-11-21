@@ -3014,6 +3014,17 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 			versionLabel, partOrdinal = "", 0
 		}
 	}
+	// A file a Subscription downloaded to its recorded target path joins the
+	// entry's file-less Media instead of minting a new one, keeping the
+	// feed's title (CORE-2953). The catalogue lives on the catalog plane only.
+	boundEntry := false
+	if mediaID == "" && !plane.encrypted {
+		mediaID, err = subscriptionEntryMediaForPathTx(ctx, tx, imported.LibraryID, imported.Path)
+		if err != nil {
+			return Media{}, MediaFile{}, false, err
+		}
+		boundEntry = mediaID != ""
+	}
 	if mediaID == "" {
 		if plane.encrypted {
 			mediaID, err = s.allocateEncryptedMediaIDLocked(ctx)
@@ -3039,6 +3050,9 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		keepTitle = first != "" && first != imported.ContentFingerprint
 		keepProbeFacts = keepTitle || (first != "" && imported.KeepProbeFacts)
 	}
+	if boundEntry {
+		keepTitle = true
+	}
 	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, imported, plane.encrypted, keepTitle, keepProbeFacts)
 	if err != nil {
 		return Media{}, MediaFile{}, false, err
@@ -3057,6 +3071,14 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	}
 	if err := upsertMediaFileTx(ctx, tx, file, now); err != nil {
 		return Media{}, MediaFile{}, false, err
+	}
+	if boundEntry {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE subscription_entry SET download_state = 'downloaded'
+			WHERE media_id = ? AND download_path = ?
+		`, mediaID, imported.Path); err != nil {
+			return Media{}, MediaFile{}, false, err
+		}
 	}
 	if detachedFrom != "" {
 		// A detached file is the only file of its new Media: it takes the
@@ -3091,6 +3113,27 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		return Media{}, MediaFile{}, false, err
 	}
 	return media, file, created, nil
+}
+
+// subscriptionEntryMediaForPathTx returns the untrashed, still file-less
+// Media of the Library's feed entry whose recorded download path is path, or
+// "" when none is.
+func subscriptionEntryMediaForPathTx(ctx context.Context, tx *sql.Tx, libraryID LibraryID, path string) (MediaID, error) {
+	var mediaID MediaID
+	err := tx.QueryRowContext(ctx, `
+		SELECT se.media_id
+		FROM subscription_entry se
+		JOIN subscription s ON s.id = se.subscription_id
+		JOIN media m ON m.id = se.media_id
+		WHERE se.download_path = ? AND s.library_id = ? AND m.library_id = ? AND m.trashed_at_ms IS NULL
+		  AND NOT EXISTS (SELECT 1 FROM media_file mf WHERE mf.media_id = se.media_id AND mf.missing_at_ms IS NULL)
+		ORDER BY se.first_seen_at_ms, se.subscription_id, se.guid
+		LIMIT 1
+	`, path, libraryID, libraryID).Scan(&mediaID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return mediaID, err
 }
 
 // mediaHoldsOtherFilesInAnotherLibraryTx reports whether mediaID belongs to a

@@ -11,6 +11,12 @@ ALTER TABLE subscription ADD COLUMN next_poll_at_ms INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE subscription ADD COLUMN last_success_at_ms INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE subscription ADD COLUMN retired_at_ms INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE subscription ADD COLUMN refresh_requested_at_ms INTEGER NOT NULL DEFAULT 0;
+-- A feed move (permanent redirect or in-feed new-feed-url) rewrites feed_url
+-- only after two consecutive polls observe the same new URL.
+-- pending_feed_url is secret class like feed_url: never logged, never on the
+-- wire.
+ALTER TABLE subscription ADD COLUMN pending_feed_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE subscription ADD COLUMN pending_feed_url_count INTEGER NOT NULL DEFAULT 0;
 
 -- One row per feed entry with an enclosure, bound to the entry's Media
 -- (file-less until downloaded). enclosure_url is secret class like
