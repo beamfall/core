@@ -66,6 +66,9 @@ const entity: EntityInfo = {
 // The row menu renders after a click; under a loaded full gate it can take longer than the
 // 1s Testing Library default to appear (CORE-2806).
 const MENU_WAIT = { timeout: 5000 };
+// A test that waits on the menu needs a budget above that wait plus its render: at Vitest's
+// 5s default, a slow menu timed out the whole test before the wait could finish (CORE-2883).
+const MENU_TEST_TIMEOUT = 15_000;
 
 const related: SourceItem = {
   id: "m1",
@@ -574,50 +577,62 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     expect(screen.queryByRole("status", { name: "player" })).toBeNull();
   });
 
-  it("opens detail from More", async () => {
-    const queueWindow = vi.spyOn(watchQueue, "queueWindow");
-    renderEntity();
-    fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
-    const details = await screen.findByRole("menuitem", { name: "Details" }, MENU_WAIT);
-    expect(queueWindow).not.toHaveBeenCalled();
-    fireEvent.click(details);
-    expect(screen.getByRole("status", { name: "detail" })).toHaveTextContent("m1");
-    expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), "m1");
-  });
+  it(
+    "opens detail from More",
+    async () => {
+      const queueWindow = vi.spyOn(watchQueue, "queueWindow");
+      renderEntity();
+      fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
+      const details = await screen.findByRole("menuitem", { name: "Details" }, MENU_WAIT);
+      expect(queueWindow).not.toHaveBeenCalled();
+      fireEvent.click(details);
+      expect(screen.getByRole("status", { name: "detail" })).toHaveTextContent("m1");
+      expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), "m1");
+    },
+    MENU_TEST_TIMEOUT,
+  );
 
-  it("offers Mark played for an audio child alongside video children", async () => {
-    vi.mocked(fetchMediaForEntity).mockResolvedValue([
-      { ...related, mediaClass: "audio" },
-      { ...related, id: "m2", title: "Video child", mediaClass: "video" },
-    ]);
-    renderEntity();
-    fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
+  it(
+    "offers Mark played for an audio child alongside video children",
+    async () => {
+      vi.mocked(fetchMediaForEntity).mockResolvedValue([
+        { ...related, mediaClass: "audio" },
+        { ...related, id: "m2", title: "Video child", mediaClass: "video" },
+      ]);
+      renderEntity();
+      fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
 
-    expect(
-      await screen.findByRole("menuitem", { name: "Mark played" }, MENU_WAIT),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Mark watched" })).toBeNull();
-  });
+      expect(
+        await screen.findByRole("menuitem", { name: "Mark played" }, MENU_WAIT),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("menuitem", { name: "Mark watched" })).toBeNull();
+    },
+    MENU_TEST_TIMEOUT,
+  );
 
-  it.each(["button", "menu"])("keeps direct Play through the %s", async (entry) => {
-    const queueWindow = vi.spyOn(watchQueue, "queueWindow");
-    renderEntity();
-    const link = await screen.findByRole("link", { name: /Related item/ });
-    const row = within(link.closest("li")!);
-    expect(queueWindow).not.toHaveBeenCalled();
-    if (entry === "menu") {
-      fireEvent.click(row.getByRole("button", { name: "More actions for Related item" }));
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Play" }, MENU_WAIT));
-    } else {
-      fireEvent.click(row.getByRole("button", { name: "Play Related item" }));
-    }
-    const output = screen.getByRole("status", { name: "player" }).textContent!;
-    expect(output.startsWith("m1 ")).toBe(true);
-    const state = JSON.parse(output.slice(3));
-    expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["m1", "m2"]);
-    expect(state.queueIdentity).toBe(identity);
-    expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), "m1");
-  });
+  it.each(["button", "menu"])(
+    "keeps direct Play through the %s",
+    async (entry) => {
+      const queueWindow = vi.spyOn(watchQueue, "queueWindow");
+      renderEntity();
+      const link = await screen.findByRole("link", { name: /Related item/ });
+      const row = within(link.closest("li")!);
+      expect(queueWindow).not.toHaveBeenCalled();
+      if (entry === "menu") {
+        fireEvent.click(row.getByRole("button", { name: "More actions for Related item" }));
+        fireEvent.click(await screen.findByRole("menuitem", { name: "Play" }, MENU_WAIT));
+      } else {
+        fireEvent.click(row.getByRole("button", { name: "Play Related item" }));
+      }
+      const output = screen.getByRole("status", { name: "player" }).textContent!;
+      expect(output.startsWith("m1 ")).toBe(true);
+      const state = JSON.parse(output.slice(3));
+      expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["m1", "m2"]);
+      expect(state.queueIdentity).toBe(identity);
+      expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), "m1");
+    },
+    MENU_TEST_TIMEOUT,
+  );
 
   it("shows the localized action error on the child whose menu failed to load", async () => {
     vi.mocked(fetchItemState).mockRejectedValueOnce(new Error("offline"));
@@ -747,30 +762,34 @@ describe.each(["list", "grid"] as const)(
       },
     );
 
-    it("tabs from detail through direct Play to More and plays from the focused button", async () => {
-      const user = userEvent.setup();
-      renderEntity();
-      const children = within(await screen.findByRole("list", { name: "Children" }));
-      const link = children.getByRole("link", { name: /Related item/ });
-      const play = children.getByRole("button", { name: "Play Related item" });
-      const more = children.getByRole("button", { name: "More actions for Related item" });
-      const locked = children.getByRole("link", { name: /Locked child/ });
+    it(
+      "tabs from detail through direct Play to More and plays from the focused button",
+      async () => {
+        const user = userEvent.setup();
+        renderEntity();
+        const children = within(await screen.findByRole("list", { name: "Children" }));
+        const link = children.getByRole("link", { name: /Related item/ });
+        const play = children.getByRole("button", { name: "Play Related item" });
+        const more = children.getByRole("button", { name: "More actions for Related item" });
+        const locked = children.getByRole("link", { name: /Locked child/ });
 
-      link.focus();
-      await user.tab();
-      expect(play).toHaveFocus();
-      await user.tab();
-      expect(more).toHaveFocus();
-      await user.tab();
-      expect(locked).toHaveFocus();
-      expect(within(locked.closest("li")!).queryByRole("button")).toBeNull();
-      await user.tab({ shift: true });
-      await user.tab({ shift: true });
-      expect(play).toHaveFocus();
-      await user.keyboard("{Enter}");
+        link.focus();
+        await user.tab();
+        expect(play).toHaveFocus();
+        await user.tab();
+        expect(more).toHaveFocus();
+        await user.tab();
+        expect(locked).toHaveFocus();
+        expect(within(locked.closest("li")!).queryByRole("button")).toBeNull();
+        await user.tab({ shift: true });
+        await user.tab({ shift: true });
+        expect(play).toHaveFocus();
+        await user.keyboard("{Enter}");
 
-      expect(screen.getByRole("status", { name: "player" })).toHaveTextContent(/^m1\b/);
-    });
+        expect(screen.getByRole("status", { name: "player" })).toHaveTextContent(/^m1\b/);
+      },
+      MENU_TEST_TIMEOUT,
+    );
   },
 );
 
@@ -926,26 +945,30 @@ describe("EntityPage audio container order", () => {
     expect(playerState()).toEqual({ mediaId: "d1t1", queue: ["d1t1", "d1t2", "d2t1"] });
   });
 
-  it.each(["title", "More"])("opens the second disc track's detail through %s", async (entry) => {
-    renderEntity();
-    const disc = within(await screen.findByRole("list", { name: "Disc 2" }));
+  it.each(["title", "More"])(
+    "opens the second disc track's detail through %s",
+    async (entry) => {
+      renderEntity();
+      const disc = within(await screen.findByRole("list", { name: "Disc 2" }));
 
-    if (entry === "title") {
-      const link = disc.getByRole("link", { name: /Second Disc Opener/ });
-      expect(link).toHaveAttribute("href", "/media/d2t1");
-      fireEvent.click(within(link).getByText("Second Disc Opener"));
-    } else {
-      fireEvent.click(disc.getByRole("button", { name: "More actions for Second Disc Opener" }));
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Details" }, MENU_WAIT));
-    }
+      if (entry === "title") {
+        const link = disc.getByRole("link", { name: /Second Disc Opener/ });
+        expect(link).toHaveAttribute("href", "/media/d2t1");
+        fireEvent.click(within(link).getByText("Second Disc Opener"));
+      } else {
+        fireEvent.click(disc.getByRole("button", { name: "More actions for Second Disc Opener" }));
+        fireEvent.click(await screen.findByRole("menuitem", { name: "Details" }, MENU_WAIT));
+      }
 
-    const output = screen.getByRole("status", { name: "detail" }).textContent!;
-    expect(output.startsWith("d2t1 ")).toBe(true);
-    const state: watchQueue.PlayerNavState = JSON.parse(output.slice("d2t1 ".length));
-    expect(state.queueIdentity).toBe(identity);
-    expect(state.queue?.map((item) => item.id)).toEqual(["d1t1", "d1t2", "d2t1"]);
-    expect(screen.queryByRole("status", { name: "player" })).not.toBeInTheDocument();
-  });
+      const output = screen.getByRole("status", { name: "detail" }).textContent!;
+      expect(output.startsWith("d2t1 ")).toBe(true);
+      const state: watchQueue.PlayerNavState = JSON.parse(output.slice("d2t1 ".length));
+      expect(state.queueIdentity).toBe(identity);
+      expect(state.queue?.map((item) => item.id)).toEqual(["d1t1", "d1t2", "d2t1"]);
+      expect(screen.queryByRole("status", { name: "player" })).not.toBeInTheDocument();
+    },
+    MENU_TEST_TIMEOUT,
+  );
 
   it("tabs from the track detail link to Play and More and plays with the cross-disc queue", async () => {
     const user = userEvent.setup();
