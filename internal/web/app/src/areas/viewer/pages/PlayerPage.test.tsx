@@ -1921,13 +1921,12 @@ describe("PlayerPage server Play Queue", () => {
         renderQueue(b.id, c.id, "?playQueue=profile-a", true);
         await waitFor(() => expect(playingID()).toBe(b.id));
         type QueueResponse = Awaited<ReturnType<typeof readQueue>>;
-        const first = deferred<QueueResponse>();
-        const replacement = deferred<QueueResponse>();
-        readQueue.mockReturnValueOnce(first.promise).mockReturnValueOnce(replacement.promise);
+        const pending = deferred<QueueResponse>();
+        readQueue.mockReturnValueOnce(pending.promise);
         fireEvent.ended(stageVideo());
         await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
         fireEvent.focus(window);
-        await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(3));
+        expect(readQueue).toHaveBeenCalledTimes(2);
         await act(async () => go("/search"));
         await screen.findByRole("region", { name: "Now playing" });
         const currentSession =
@@ -1936,8 +1935,7 @@ describe("PlayerPage server Play Queue", () => {
             : change === "profile switch"
               ? { ...serverSession, profileID: "profile-b" }
               : serverSession;
-        await act(async () => replacement.resolve({ sourceItems: rows, currentSession }));
-        await act(async () => first.resolve({ sourceItems: rows, currentSession: serverSession }));
+        await act(async () => pending.resolve({ sourceItems: rows, currentSession }));
         if (change === "same identity") {
           expect(playingID()).toBe(c.id);
           expect(confirm).toHaveBeenCalledExactlyOnceWith(c.id);
@@ -1946,7 +1944,7 @@ describe("PlayerPage server Play Queue", () => {
           expect(confirm).not.toHaveBeenCalled();
         }
         expect(location.pathname).toBe("/search");
-        expect(readQueue).toHaveBeenCalledTimes(3);
+        expect(readQueue).toHaveBeenCalledTimes(2);
       } finally {
         vi.mocked(useGaplessAudio).mockReset();
       }
@@ -1967,6 +1965,35 @@ describe("PlayerPage server Play Queue", () => {
     expect(playingID()).toBe(b.id);
     fireEvent.click(within(alert).getByRole("button", { name: STRINGS.en.tryAgain }));
     await waitFor(() => expect(playingID()).toBe(c.id));
+    expect(location.pathname).toBe("/search");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps a failed docked advance retryable after a successful focus refresh", async () => {
+    renderQueue(b.id, c.id, "?playQueue=profile-a", true);
+    await waitFor(() => expect(playingID()).toBe(b.id));
+    const video = stageVideo();
+    await act(async () => go("/search"));
+    await screen.findByRole("region", { name: "Now playing" });
+    readQueue.mockRejectedValueOnce(new Error("network"));
+    fireEvent.ended(video);
+    expect(await screen.findByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueReadFailed);
+
+    await act(async () => fireEvent.focus(window));
+    expect(readQueue).toHaveBeenCalledTimes(3);
+    expect(playingID()).toBe(b.id);
+    const pending = deferred<Awaited<ReturnType<typeof readQueue>>>();
+    readQueue.mockReturnValueOnce(pending.promise);
+    const retry = within(screen.getByRole("alert")).getByRole("button", {
+      name: STRINGS.en.tryAgain,
+    });
+    fireEvent.click(retry);
+    fireEvent.focus(window);
+    expect(screen.getByRole("alert")).toHaveTextContent(STRINGS.en.musicQueueReadFailed);
+    expect(readQueue).toHaveBeenCalledTimes(4);
+    await act(async () => pending.resolve({ sourceItems: rows, currentSession: serverSession }));
+    await waitFor(() => expect(playingID()).toBe(c.id));
+    expect(readQueue).toHaveBeenCalledTimes(4);
     expect(location.pathname).toBe("/search");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });

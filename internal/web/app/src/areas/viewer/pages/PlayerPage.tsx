@@ -603,26 +603,26 @@ function FeaturePlayer({
       (serverQueueRun ? !!issuedNext : !!(nextInQueue || issuedNext?.streams)),
     waitForAdvance: serverQueueRun,
   });
+  const queueRoute = useMemo(
+    () => ({ mediaId, queueProfile, identity, epoch, revealed }),
+    [mediaId, queueProfile, identity, epoch, revealed],
+  );
   const [failedMove, setFailedMove] = useState<{
     direction: "next" | "previous";
     ended: boolean;
-    mediaId: string;
-    isCurrent: typeof musicQueueIsCurrent;
+    route: typeof queueRoute;
   }>();
-  const retryMove =
-    failedMove?.isCurrent === musicQueueIsCurrent && failedMove.mediaId === mediaId
-      ? failedMove
-      : undefined;
+  const retryMove = failedMove?.route === queueRoute && !epoch?.aborted ? failedMove : undefined;
   const moveRequest = useRef(0);
-  const queueMoveCallbacks = useRef({ playItem, isCurrent: musicQueueIsCurrent });
+  const playItemRef = useRef(playItem);
   useLayoutEffect(() => {
-    queueMoveCallbacks.current = { playItem, isCurrent: musicQueueIsCurrent };
-  }, [playItem, musicQueueIsCurrent]);
+    playItemRef.current = playItem;
+  }, [playItem]);
   useLayoutEffect(() => {
     return () => {
       moveRequest.current++;
     };
-  }, [mediaId, queueProfile]);
+  }, [queueRoute]);
   const startMusicQueue =
     profileID && !partyLeads
       ? (id: string) => {
@@ -636,24 +636,29 @@ function FeaturePlayer({
         }
       : undefined;
   const moveInMusicQueue = useCallback(
-    (direction: "next" | "previous", ended = false) => {
+    async (direction: "next" | "previous", ended = false) => {
       if (!queueProfile || !musicQueueIsCurrent()) return;
       const request = ++moveRequest.current;
+      const rows = await refreshMusicQueue(true);
+      if (rows === undefined || request !== moveRequest.current || !musicQueueIsCurrent()) return;
+      if (rows === null) {
+        setFailedMove({ direction, ended, route: queueRoute });
+        return;
+      }
       setFailedMove(undefined);
-      void refreshMusicQueue(true, (rows) => {
-        const { isCurrent, playItem } = queueMoveCallbacks.current;
-        if (request !== moveRequest.current || !isCurrent()) return;
-        if (rows === null) {
-          setFailedMove({ direction, ended, mediaId, isCurrent });
-          return;
-        }
-        const target = musicQueueNeighbours(rows, mediaId)[direction]?.id;
-        if (!target) return;
-        if (ended) confirmGaplessAdvance(target);
-        playItem(target, "", true, queueProfile);
-      });
+      const target = musicQueueNeighbours(rows, mediaId)[direction]?.id;
+      if (!target) return;
+      if (ended) confirmGaplessAdvance(target);
+      playItemRef.current(target, "", true, queueProfile);
     },
-    [musicQueueIsCurrent, queueProfile, refreshMusicQueue, mediaId, confirmGaplessAdvance],
+    [
+      musicQueueIsCurrent,
+      queueProfile,
+      refreshMusicQueue,
+      mediaId,
+      queueRoute,
+      confirmGaplessAdvance,
+    ],
   );
   const playNext = useMemo(() => {
     if (partyLeads) return undefined;
