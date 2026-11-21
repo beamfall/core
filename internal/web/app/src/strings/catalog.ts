@@ -41,8 +41,9 @@ import { migrationFixmatchStrings } from "./migration-fixmatch";
 import { migrationUnmatchedStrings } from "./migration-unmatched";
 import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
-import { partyHostStrings } from "./party-host";
+import { partyGuestStrings } from "./party-guest";
 import { partyHostLiveStrings } from "./party-host-live";
+import { partyHostStrings } from "./party-host";
 import { pickerStrings } from "./pickers";
 import { playbackStrings } from "./playback";
 import { playbackChapterStrings } from "./playback-chapters";
@@ -162,6 +163,7 @@ export const en = {
   ...watchPartyStrings.en,
   ...libraryTrashStrings.en,
   ...mediaPageStrings.en,
+  ...partyGuestStrings.en,
   ...restrictionsSetupStrings.en,
   ...remoteControlStrings.en,
   ...webhookStrings.en,
@@ -257,6 +259,7 @@ export const fr = {
   ...watchPartyStrings.fr,
   ...libraryTrashStrings.fr,
   ...mediaPageStrings.fr,
+  ...partyGuestStrings.fr,
   ...restrictionsSetupStrings.fr,
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
@@ -352,6 +355,7 @@ export const de = {
   ...watchPartyStrings.de,
   ...libraryTrashStrings.de,
   ...mediaPageStrings.de,
+  ...partyGuestStrings.de,
   ...restrictionsSetupStrings.de,
   ...remoteControlStrings.de,
   ...webhookStrings.de,
@@ -447,6 +451,7 @@ export const es = {
   ...watchPartyStrings.es,
   ...libraryTrashStrings.es,
   ...mediaPageStrings.es,
+  ...partyGuestStrings.es,
   ...restrictionsSetupStrings.es,
   ...remoteControlStrings.es,
   ...webhookStrings.es,
@@ -542,6 +547,7 @@ export const pt = {
   ...watchPartyStrings.pt,
   ...libraryTrashStrings.pt,
   ...mediaPageStrings.pt,
+  ...partyGuestStrings.pt,
   ...restrictionsSetupStrings.pt,
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,

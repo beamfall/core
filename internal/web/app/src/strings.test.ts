@@ -141,6 +141,7 @@ const SHIPPED = new Set(
 // merged with the CORE-2957 Following pivot, feed follow, health and catalogue copy.
 // merged with stack 4 (2026-11-21): OPML export, photos viewer and slideshow, audiobooks, entity picker and burst copy.
 // merged with the CORE-1662 party host and stage copy.
+// merged with the CORE-2948 party guest phone page copy.
 const BASE_SERIALIZED_LENGTH = 994_214;
 const BASE_REGISTRY_SHA256 = "354d1b6fd0a9e08cbac842102ca30a77da7def14a6983a8e6df5e8de0d0c1439";
 const BASE_KEY_ORDER_SHA256 = "630662e33292d3c97339c622aef0d27ef729e78b61f54cadac4337d1cbee6fd0";
