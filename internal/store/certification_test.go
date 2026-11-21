@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -218,5 +219,42 @@ func TestProfileCertificationCeilingRoundTrip(t *testing.T) {
 	}
 	if _, err = st.SetProfileCertificationCeiling(ctx, "profile-managed", ProfileCertificationCeiling{PluginID: "filmtv"}); err == nil {
 		t.Fatal("blank ceiling accepted")
+	}
+}
+
+// TestCertificationGrantSetAboveSQLiteVariableLimit pins CORE-2931: a grant
+// set larger than SQLite's bound-variable limit (32766) must not fail
+// certification-filtered reads, and the granted item stays visible.
+func TestCertificationGrantSetAboveSQLiteVariableLimit(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	libraryID, ids := seedCertifiedLibrary(t, st, "filmtv", false, "low", "high")
+
+	granted := make([]MediaID, 0, 40001)
+	for i := range 40000 {
+		granted = append(granted, MediaID(fmt.Sprintf("granted-%05d", i)))
+	}
+	granted = append(granted, ids["high"])
+	filter := LibraryFilter{
+		AllowedIDs:      []LibraryID{libraryID},
+		Certification:   []CertificationConstraint{{PluginID: "filmtv", Allowed: []string{"low"}}},
+		GrantedMediaIDs: granted,
+	}
+
+	if _, err := st.Media(ctx, ids["high"], filter); err != nil {
+		t.Fatalf("granted above-ceiling media hidden: %v", err)
+	}
+	items, err := st.SourceItems(ctx, filter, SourceQuery{Kind: "all-items", Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertItemSet(t, "all-items", items, ids, "low", "high")
+	found, err := st.SearchMedia(ctx, filter, "Item", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertItemSet(t, "search", found, ids, "low", "high")
+	if _, err := st.TrashedMediaList(ctx, filter); err != nil {
+		t.Fatalf("trash list failed with a large grant set: %v", err)
 	}
 }
