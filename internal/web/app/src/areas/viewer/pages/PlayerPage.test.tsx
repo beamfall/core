@@ -1934,6 +1934,36 @@ describe("PlayerPage server Play Queue", () => {
     expect(screen.getByText("Search results")).toBeInTheDocument();
   });
 
+  it.each([
+    { playback: "server queue", search: "?playQueue=profile-a", initialReads: 2 },
+    { playback: "catalog", search: "?t=0", initialReads: 1 },
+  ])(
+    "starts the queue on the browse route when docked $playback playback ends during Play queue",
+    async ({ search, initialReads }) => {
+      await mockWithRealTransport();
+      rows = [a, b, c];
+      renderQueue(b.id, c.id, search, true);
+      fireEvent.click(await screen.findByRole("button", { name: STRINGS.en.musicQueueTitle }));
+      const playQueue = await screen.findByRole("button", { name: STRINGS.en.musicQueuePlay });
+      await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(initialReads));
+      const pending = deferred<Awaited<ReturnType<typeof readQueue>>>();
+      readQueue.mockReturnValueOnce(pending.promise);
+      fireEvent.click(playQueue);
+      expect(readQueue).toHaveBeenCalledTimes(initialReads + 1);
+
+      await act(async () => go("/search"));
+      await screen.findByRole("region", { name: "Now playing" });
+      expect(playingID()).toBe(b.id);
+      fireEvent.ended(stageVideo());
+      await act(async () => pending.resolve({ sourceItems: rows, currentSession: serverSession }));
+
+      expect(playingID()).toBe(a.id);
+      expect(location.pathname).toBe("/search");
+      expect(screen.getByText("Search results")).toBeInTheDocument();
+      expect(readQueue).toHaveBeenCalledTimes(initialReads + 1);
+    },
+  );
+
   it("starts the queue after its panel closes while the read is pending", async () => {
     await mockWithRealTransport();
     renderQueue(b.id, c.id, "?t=0");
