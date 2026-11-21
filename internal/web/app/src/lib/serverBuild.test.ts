@@ -2,7 +2,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatMessage, type useT } from "@/lib/i18n";
 import { STRINGS } from "@/strings";
-import { formatServerBuild, useServerBuild } from "./serverBuild";
+import { formatServerBuild, healthUrl, useServerBuild } from "./serverBuild";
 
 const t: ReturnType<typeof useT> = (key, vars) => formatMessage(STRINGS.en[key], vars, "en-GB");
 const buildDate = "2026-11-21T00:15:00Z";
@@ -46,7 +46,9 @@ it("shares a not-ready health response across shells and remounts", async () => 
   const build = { version: "v1.2.3", commit, buildDate };
   const fetchHealth = vi
     .fn()
-    .mockResolvedValue(new Response(JSON.stringify({ capabilities: [], ...build }), { status: 503 }));
+    .mockResolvedValue(
+      new Response(JSON.stringify({ capabilities: [], ...build }), { status: 503 }),
+    );
   vi.stubGlobal("fetch", fetchHealth);
 
   const first = renderHook(useServerBuild);
@@ -64,4 +66,11 @@ it("shares a not-ready health response across shells and remounts", async () => 
     cache: "no-store",
   });
   remount.unmount();
+});
+
+describe("healthUrl", () => {
+  it("resolves health beside the web base, under a mount prefix", () => {
+    expect(healthUrl()).toBe("/health");
+    expect(healthUrl("/media/web/")).toBe("/media/health");
+  });
 });

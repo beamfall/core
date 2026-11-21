@@ -10,9 +10,18 @@ interface ServerBuild {
 let cachedBuild: ServerBuild | null = null;
 let buildRequest: Promise<ServerBuild | null> | undefined;
 
+// The server serves the bundle with every "/web" literal rewritten under its
+// configured prefix (rewriteWebBasePaths), so the app base below becomes, for
+// example, "/media/web/" and health resolves beside it as "/media/health".
+const WEB_BASE = "/web/";
+
+export function healthUrl(webBase: string = WEB_BASE): string {
+  return webBase.replace(/\/web\/?$/, "") + "/health";
+}
+
 async function fetchServerBuild(): Promise<ServerBuild | null> {
   try {
-    const response = await fetch("/health", { credentials: "same-origin", cache: "no-store" });
+    const response = await fetch(healthUrl(), { credentials: "same-origin", cache: "no-store" });
     // Readiness does not affect the identity of the running build.
     if (!response.ok && response.status !== 503) return null;
     const report: { version?: unknown; commit?: unknown; buildDate?: unknown } | null =
