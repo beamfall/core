@@ -17,6 +17,8 @@ import {
   PrimaryAction,
   SurfaceHeading,
 } from "@/components/beamfall/surface";
+import { ErrorState } from "@/components/beamfall/workbench";
+import { Button } from "@/components/ui/button";
 import {
   endAdminSession,
   fetchAdminSession,
@@ -65,6 +67,9 @@ export function AdminGate({
   const currentProfileID = session?.profileID;
 
   const [active, setActive] = useState<boolean | null>(null);
+  // CORE-0258: a failed admin-session read is UNKNOWN, not locked. It renders
+  // the shared retryable error instead of a password form that may not apply.
+  const [readFailed, setReadFailed] = useState(false);
   const [password, setPassword] = useState("");
   const [rejected, setRejected] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -113,21 +118,22 @@ export function AdminGate({
     };
   }, [invalidateRequest, ownsEpoch]);
 
-  // Resolve the current Admin Session once on mount. An aborted or failed
-  // read is treated as "locked" — the password is the only way in. The query
+  // Resolve the current Admin Session on mount and on Retry. An aborted read
+  // changes nothing; a failed read is the unknown state, never "locked". The query
   // includes the same expiry the server enforces so a reload-restored session
   // can still show and client-expire its short owner re-auth window. The
   // AbortController guards the same stale-callback hazard as the session
   // spine (lib/session.tsx): if this gate unmounts before the fetch resolves,
   // the aborted signal drops the response instead of writing to unmounted
   // state.
-  useLayoutEffect(() => {
+  const readSession = useCallback(() => {
     const request = beginRequest();
     // Profile/Reveal transitions temporarily remove or replace the bound
     // Profile. Clear every Admin-scoped field before reading authority for the
     // new identity; in particular, aborting an unlock must not strand busy or
     // retain its password/rejection in the next epoch.
     setActive(null);
+    setReadFailed(false);
     setPassword("");
     setConfirmPassword("");
     setMismatch(false);
@@ -156,10 +162,14 @@ export function AdminGate({
         }
       })
       .catch(() => {
-        if (request.isCurrent()) setActive(false);
+        if (request.isCurrent()) setReadFailed(true);
       });
+  }, [beginRequest, currentProfileID, isManager, profileKind]);
+
+  useLayoutEffect(() => {
+    readSession();
     return invalidateRequest;
-  }, [beginRequest, currentProfileID, invalidateRequest, isManager, profileKind]);
+  }, [readSession, invalidateRequest]);
 
   useEffect(() => {
     if (!active || !expiresAt) return;
@@ -243,6 +253,19 @@ export function AdminGate({
     } catch {
       // best-effort; the local lock still takes effect.
     }
+  }
+
+  if (readFailed) {
+    return (
+      <PageShell embedded>
+        <GlassCard>
+          <ErrorState message="couldNotReachServer" />
+          <Button type="button" variant="outline" onClick={readSession}>
+            {t("jobRetryAction")}
+          </Button>
+        </GlassCard>
+      </PageShell>
+    );
   }
 
   if (active === null) {
