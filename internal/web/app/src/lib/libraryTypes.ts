@@ -62,6 +62,12 @@ const PLUGIN_ICON_NAMES: Record<string, string> = {
   karaoke: "mic",
 };
 
+/**
+ * Scopes a plugin still serves for existing libraries but that the add-library
+ * pickers no longer offer (CORE-2927: Films and TV Shows replace Mixed).
+ */
+const HIDDEN_SCOPES: Readonly<Record<string, readonly string[]>> = { filmtv: ["mixed"] };
+
 /** The symbol for a plugin, for lists of plugins and the types they offer. */
 export function pluginIcon(pluginID: string): LucideIcon {
   if (pluginID in SCOPE_PRESETS) return Clapperboard;
@@ -77,7 +83,8 @@ export function libraryTypeOptions(
   return plugins.flatMap((plugin): LibraryTypeOption[] => {
     const pluginLabel = displayString(plugin.displayName, locale) || plugin.id;
     const icon = pluginIcon(plugin.id);
-    const served = plugin.familyScopes ?? [];
+    const hidden = HIDDEN_SCOPES[plugin.id] ?? [];
+    const served = (plugin.familyScopes ?? []).filter((scope) => !hidden.includes(scope.value));
     if (served.length > 0) {
       return served.map((scope) => ({
         key: `${plugin.id}/${scope.value}`,

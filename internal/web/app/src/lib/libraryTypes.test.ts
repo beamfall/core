@@ -33,7 +33,10 @@ describe("libraryTypeOptions (CORE-1156)", () => {
         {
           id: "filmtv",
           displayName: "Film & TV",
-          familyScopes: [{ value: "films", displayName: "Movies" }],
+          familyScopes: [
+            { value: "films", displayName: "Movies" },
+            { value: "mixed", displayName: "Mixed" },
+          ],
         },
       ],
       t,
