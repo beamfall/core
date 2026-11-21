@@ -28,3 +28,22 @@ describe("chrome focus styles in forced-colors mode", () => {
     expect(rules(selector).join("\n")).toMatch(/outline:\s*2px solid transparent;/);
   });
 });
+
+// CORE-2882: under viewport-fit=cover the phone tab bar must clear the home
+// indicator, and everything it would otherwise cover must move up by the same
+// inset.
+describe("phone tab bar safe-area insets", () => {
+  it.each([
+    [".bf-tabbar", /padding:[^;]*env\(safe-area-inset-bottom, 0px\)/],
+    [
+      ".bf-shell.has-tabbar .bf-content",
+      /padding-bottom: calc\(var\(--bf-tabbar-height\) \+ env\(safe-area-inset-bottom, 0px\)\)/,
+    ],
+    [
+      ":root:has(.bf-tabbar) .bf-mini-player",
+      /bottom: calc\(var\(--bf-tabbar-height\) \+ env\(safe-area-inset-bottom, 0px\)\)/,
+    ],
+  ])("%s includes the bottom inset", (selector, pattern) => {
+    expect(rules(selector).join("\n")).toMatch(pattern);
+  });
+});
