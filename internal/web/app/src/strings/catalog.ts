@@ -42,7 +42,7 @@ import { migrationFixmatchStrings } from "./migration-fixmatch";
 import { migrationUnmatchedStrings } from "./migration-unmatched";
 import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
-import { pathPickerStrings } from "./path-picker";
+import { pickerStrings } from "./pickers";
 import { playbackStrings } from "./playback";
 import { playbackChapterStrings } from "./playback-chapters";
 import { playerRecoveryStrings } from "./player-recovery";
@@ -101,7 +101,7 @@ export const en = {
   ...appShellStrings.en,
   ...sidebarStrings.en,
   ...libraryOperationsStrings.en,
-  ...pathPickerStrings.en,
+  ...pickerStrings.en,
   ...consoleAccessStrings.en,
   ...consoleAccessLockStrings.en,
   ...libraryHealthStrings.en,
@@ -195,7 +195,7 @@ export const fr = {
   ...appShellStrings.fr,
   ...sidebarStrings.fr,
   ...libraryOperationsStrings.fr,
-  ...pathPickerStrings.fr,
+  ...pickerStrings.fr,
   ...consoleAccessStrings.fr,
   ...consoleAccessLockStrings.fr,
   ...libraryHealthStrings.fr,
@@ -289,7 +289,7 @@ export const de = {
   ...appShellStrings.de,
   ...sidebarStrings.de,
   ...libraryOperationsStrings.de,
-  ...pathPickerStrings.de,
+  ...pickerStrings.de,
   ...consoleAccessStrings.de,
   ...consoleAccessLockStrings.de,
   ...libraryHealthStrings.de,
@@ -383,7 +383,7 @@ export const es = {
   ...appShellStrings.es,
   ...sidebarStrings.es,
   ...libraryOperationsStrings.es,
-  ...pathPickerStrings.es,
+  ...pickerStrings.es,
   ...consoleAccessStrings.es,
   ...consoleAccessLockStrings.es,
   ...libraryHealthStrings.es,
@@ -477,7 +477,7 @@ export const pt = {
   ...appShellStrings.pt,
   ...sidebarStrings.pt,
   ...libraryOperationsStrings.pt,
-  ...pathPickerStrings.pt,
+  ...pickerStrings.pt,
   ...consoleAccessStrings.pt,
   ...consoleAccessLockStrings.pt,
   ...libraryHealthStrings.pt,

@@ -1,6 +1,7 @@
 import { CornerDownRight, FolderInput, Pencil, Trash2, X } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Segmented } from "@/areas/console/Segmented";
+import { EntityMultiPicker, EntityPicker } from "@/components/beamfall/EntityPicker";
 import {
   EmptyLine,
   ErrorLine,
@@ -541,17 +542,30 @@ function AssignSection({ tags }: { tags: TagInfo[] }) {
           <TargetTypeField
             id="assign-target-type"
             value={targetType}
-            onChange={(type) => changeTarget(type, targetID)}
+            onChange={(type) => changeTarget(type, "")}
           />
           <ManageField id="assign-target-id" label={t("tagTargetID")} className="min-w-48 flex-1">
-            <Input
-              id="assign-target-id"
-              value={targetID}
-              autoComplete="off"
-              spellCheck={false}
-              className="manage-mono"
-              onChange={(e) => changeTarget(targetType, e.target.value)}
-            />
+            {targetType === "marker" ? (
+              <Input
+                id="assign-target-id"
+                value={targetID}
+                autoComplete="off"
+                spellCheck={false}
+                className="manage-mono"
+                onChange={(e) => changeTarget(targetType, e.target.value)}
+              />
+            ) : (
+              <EntityPicker
+                id="assign-target-id"
+                kind={targetType}
+                value={targetID}
+                onChange={(picked) => {
+                  // Picking loads that target at once; clearing drops the panel.
+                  changeTarget(targetType, picked);
+                  if (picked) void run(() => fetchTagAssignments(targetType, picked));
+                }}
+              />
+            )}
           </ManageField>
           <Button type="submit" variant="outline" disabled={!id}>
             {t("tagLoad")}
@@ -646,23 +660,44 @@ function BulkSection({ tags }: { tags: TagInfo[] }) {
     <ManageSection title={t("tagBulkHeading")} lead={t("tagBulkLead")}>
       <form className="space-y-3" onSubmit={submit(() => void onApply())}>
         <ManageInlineForm>
-          <TargetTypeField id="bulk-target-type" value={targetType} onChange={setTargetType} />
+          <TargetTypeField
+            id="bulk-target-type"
+            value={targetType}
+            onChange={(type) => {
+              // A new kind invalidates the picked IDs.
+              setAffected(null);
+              setTargetType(type);
+              setTargetIDs("");
+            }}
+          />
           <ManageField
             id="bulk-target-ids"
             label={t("tagBulkTargetIDs")}
             className="min-w-48 flex-1"
           >
-            <Input
-              id="bulk-target-ids"
-              value={targetIDs}
-              autoComplete="off"
-              spellCheck={false}
-              className="manage-mono"
-              onChange={(e) => {
-                setAffected(null);
-                setTargetIDs(e.target.value);
-              }}
-            />
+            {targetType === "marker" ? (
+              <Input
+                id="bulk-target-ids"
+                value={targetIDs}
+                autoComplete="off"
+                spellCheck={false}
+                className="manage-mono"
+                onChange={(e) => {
+                  setAffected(null);
+                  setTargetIDs(e.target.value);
+                }}
+              />
+            ) : (
+              <EntityMultiPicker
+                id="bulk-target-ids"
+                kind={targetType}
+                value={idList}
+                onChange={(ids) => {
+                  setAffected(null);
+                  setTargetIDs(ids.join(","));
+                }}
+              />
+            )}
           </ManageField>
         </ManageInlineForm>
 
