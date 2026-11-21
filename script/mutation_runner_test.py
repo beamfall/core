@@ -135,8 +135,10 @@ class MutationRunnerTest(unittest.TestCase):
             self.fail(f"timed-out Gremlins descendant survived: {child_pid}")
 
     def test_between_package_timeout_has_exact_remaining_ledger(self) -> None:
-        self.env["MUTATION_RUN_CAP_SEC"] = "0.5"
-        self.env["MUTATION_TEST_INTER_PACKAGE_DELAY_SEC"] = "0.6"
+        # The delay alone outlasts the cap, so the deadline always falls between packages; the
+        # cap stays long enough for the first fake package to report under gate load.
+        self.env["MUTATION_RUN_CAP_SEC"] = "5.0"
+        self.env["MUTATION_TEST_INTER_PACKAGE_DELAY_SEC"] = "5.5"
         result = self.invoke("named")
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = self.status()
