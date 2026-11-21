@@ -126,6 +126,10 @@ function anchoredTo(command: SessionControlCommand, target: RemotePlayerTarget):
 // supersedes it, so it is kept to be cancelled.
 let deferredSeek: { video: HTMLVideoElement; listener: () => void } | null = null;
 
+function songScaleOf(target: RemotePlayerTarget): number {
+  return target.songScale && target.songScale > 0 ? target.songScale : 1;
+}
+
 function cancelDeferredSeek(): void {
   deferredSeek?.video.removeEventListener("loadedmetadata", deferredSeek.listener);
   deferredSeek = null;
@@ -169,18 +173,20 @@ export function applyPlayerCommand(
       if (!video || command.positionMs === undefined) return false;
       // A remote position is song time; an adjusted stream covers songScale
       // song seconds per stream second (CORE-1828).
-      const scale = target.songScale && target.songScale > 0 ? target.songScale : 1;
-      const at = command.positionMs / 1000 / scale;
+      const songSeconds = command.positionMs / 1000;
       // Before metadata the player's own opening seek is still to come; seek
       // after it so the newer position wins.
       cancelDeferredSeek();
       if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-        video.currentTime = at;
+        video.currentTime = songSeconds / songScaleOf(target);
         return true;
       }
+      // The loading stream's tempo may not be known yet, so convert when the
+      // seek runs, against the player registered then.
       const listener = () => {
         deferredSeek = null;
-        video.currentTime = at;
+        const current = active?.current.video() === video ? active.current : target;
+        video.currentTime = songSeconds / songScaleOf(current);
       };
       deferredSeek = { video, listener };
       video.addEventListener("loadedmetadata", listener, { once: true });
