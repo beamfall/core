@@ -243,8 +243,8 @@ async function surfaceSizes(page: Page) {
 for (const { width, large, small } of [
   {
     width: 1440,
-    large: { category: 4, tile: 6, collection: 7, cast: 120, row: 240 },
-    small: { category: 6, tile: 9, collection: 9, cast: 88, row: 160 },
+    large: { category: 6, tile: 6, collection: 7, cast: 120, row: 240 },
+    small: { category: 9, tile: 9, collection: 9, cast: 88, row: 160 },
   },
   {
     width: 390,
