@@ -36,6 +36,17 @@
       "knownDrift": []
     },
     {
+      "boundary": "web-styled-subtitles",
+      "producer": "beamfall",
+      "artifact": "contracts/styled-subtitles/v1/subtitle-resources.md",
+      "version": "1.0.0",
+      "activeArtifactVersion": "1.0.0",
+      "license": "AGPL",
+      "consumers": ["beamfall"],
+      "conformanceTest": "internal/mediahttp/styled_subtitles_test.go",
+      "knownDrift": []
+    },
+    {
       "boundary": "client-core-token-scope",
       "producer": "beamfall",
       "artifact": "internal/conformance/testdata/token-scope.golden.json",

@@ -44,7 +44,7 @@ describe("probeCapabilityProfile", () => {
     expect(profile.videoCodecs).toHaveLength(1);
     expect(profile.videoCodecs[0]).toMatchObject({ codec: "h264", maxHeight: 1080 });
     expect(profile.hdrFormats).toBeUndefined();
-    expect(profile.subtitleFormats).toEqual(["srt", "webvtt"]);
+    expect(profile.subtitleFormats).toEqual(["srt", "webvtt", "ass"]);
     expect(profile.downstreamAudio).toBe("stereo");
   });
 

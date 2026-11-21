@@ -4,6 +4,8 @@ import {
   CAPTION_TRACK_ATTRIBUTE,
   captionElement,
   reloadCaptionElement,
+  STYLED_CAPTION_SOURCE_ATTRIBUTE,
+  startNativeCaption,
 } from "./streamTracks";
 
 /**
@@ -103,6 +105,7 @@ export function useCaptionLoad(
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     // Bumped on every pick, so a probe answering for an earlier pick is dropped.
     let generation = 0;
+    let styled: { element: HTMLTrackElement; controller: AbortController } | undefined;
     const clearTimers = () => {
       if (timer !== undefined) clearTimeout(timer);
       if (retryTimer !== undefined) clearTimeout(retryTimer);
@@ -115,20 +118,56 @@ export function useCaptionLoad(
     };
     const onShown = (event: Event) => {
       const id = (event as CustomEvent<string | null>).detail ?? null;
+      const element = id === null ? null : captionElement(video, id);
+      if (styled && styled.element === element) return;
+      styled?.controller.abort();
+      styled = undefined;
       const automatic = autoRetryRef.current && id === shownRef.current;
       autoRetryRef.current = false;
       generation++;
       shownRef.current = id;
       if (!automatic) attemptsRef.current = 0;
-      const element = id === null ? null : captionElement(video, id);
       // Burned-in and menu-only tracks have no element to watch.
       if (id === null || !element) return settle("idle");
-      if (element.readyState === TRACK_LOADED) return settle("loaded");
-      if (element.readyState === TRACK_ERROR) return void onFailed(id, element);
-      settle(automatic ? "preparing" : "loading");
-      timer = setTimeout(() => {
-        if (shownRef.current === id) settle("failed");
-      }, timeoutMS);
+      const watchNative = () => {
+        if (element.readyState === TRACK_LOADED) return settle("loaded");
+        if (element.readyState === TRACK_ERROR) return void onFailed(id, element);
+        settle(automatic ? "preparing" : "loading");
+        timer = setTimeout(() => {
+          if (shownRef.current === id) settle("failed");
+        }, timeoutMS);
+      };
+      const source = element.getAttribute(STYLED_CAPTION_SOURCE_ATTRIBUTE);
+      if (
+        !source ||
+        element.src ||
+        typeof WebAssembly === "undefined" ||
+        typeof Worker === "undefined" ||
+        typeof HTMLCanvasElement.prototype.transferControlToOffscreen !== "function"
+      ) {
+        startNativeCaption(element);
+        return watchNative();
+      }
+      const controller = new AbortController();
+      styled = { element, controller };
+      const fallback = () => {
+        if (controller.signal.aborted) return;
+        controller.abort();
+        styled = undefined;
+        startNativeCaption(element);
+        watchNative();
+      };
+      settle("loading");
+      timer = setTimeout(fallback, timeoutMS);
+      void import("./styledCaptionRenderer")
+        .then(({ startStyledCaption }) => {
+          if (controller.signal.aborted) return;
+          return startStyledCaption(video, source, controller.signal, fallback);
+        })
+        .then(() => {
+          if (!controller.signal.aborted) settle("loaded");
+        })
+        .catch(fallback);
     };
     const onFailed = (id: string, element: HTMLTrackElement) => {
       clearTimers();
@@ -149,7 +188,7 @@ export function useCaptionLoad(
     };
     const shownTrack = (event: Event): HTMLTrackElement | null => {
       const target = event.target;
-      if (!(target instanceof HTMLTrackElement)) return null;
+      if (!(target instanceof HTMLTrackElement) || !target.src) return null;
       const id = target.getAttribute(CAPTION_TRACK_ATTRIBUTE);
       return id !== null && id === shownRef.current ? target : null;
     };
@@ -168,6 +207,7 @@ export function useCaptionLoad(
     video.addEventListener("error", onError, true);
     return () => {
       generation++;
+      styled?.controller.abort();
       clearTimers();
       video.removeEventListener(CAPTION_SHOWN_EVENT, onShown);
       video.removeEventListener("load", onLoad, true);
