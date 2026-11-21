@@ -147,6 +147,7 @@ func (s *Store) profileSourceItemsLocked(ctx context.Context, filter LibraryFilt
 	want := offset + limit
 	chunk := max(want, profileFilteredChunk)
 	kept := []SourceItem{}
+	seen := map[MediaID]bool{}
 	for read := 0; len(kept) < want; {
 		raw, err := s.sourceItemsForKind(ctx, filter, query, chunk, read)
 		if err != nil {
@@ -159,7 +160,14 @@ func (s *Store) profileSourceItemsLocked(ctx context.Context, filter LibraryFilt
 		if watched != nil {
 			survivors = dropWatched(survivors, watched)
 		}
-		kept = append(kept, survivors...)
+		// A row that moved down between chunk reads (a new play) comes back
+		// in the next chunk; it shows once.
+		for _, item := range survivors {
+			if !seen[item.ID] {
+				seen[item.ID] = true
+				kept = append(kept, item)
+			}
+		}
 		if len(raw) < chunk {
 			break
 		}
