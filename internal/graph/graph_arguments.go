@@ -362,6 +362,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "pluginID", Kind: "string"},
 		{Name: "query", Kind: "string", Optional: true},
 		{Name: "scraperID", Kind: "string"},
+		{Name: "year", Kind: "number", Optional: true},
 	},
 	"fixmatchpreview": {
 		{Name: "candidateID", Kind: "string"},

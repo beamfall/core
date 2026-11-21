@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io/fs"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -26,8 +26,10 @@ func (r *Runner) ExtractStyledSubtitle(ctx context.Context, path string, index i
 	return out, err
 }
 
-// ErrFontAttachmentNotFound means the requested stream is not a supported font attachment.
-var ErrFontAttachmentNotFound = errors.New("font attachment not found")
+// ErrFontAttachmentNotFound means the requested stream is not a supported font
+// attachment. It wraps fs.ErrNotExist so the serving layer can answer 404
+// without importing this package.
+var ErrFontAttachmentNotFound = fmt.Errorf("font attachment not found: %w", fs.ErrNotExist)
 
 type attachmentStream struct {
 	Index     int               `json:"index"`

@@ -5,18 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/playback/subtitleingest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/streamtoken"
 )
 
-type styledSubtitleConverter interface {
+// StyledSubtitleConverter is the optional extraction the styled subtitle route
+// probes the subtitle converter for; a missing font attachment wraps fs.ErrNotExist.
+type StyledSubtitleConverter interface {
 	ExtractStyledSubtitle(context.Context, string, int) ([]byte, error)
 	SubtitleFontIndexes(context.Context, string) ([]int, error)
 	ExtractSubtitleFont(context.Context, string, int) ([]byte, error)
@@ -25,7 +27,7 @@ type styledSubtitleConverter interface {
 func (h *Handler) serveStyledSubtitle(w http.ResponseWriter, r *http.Request, grant streamtoken.Grant, token string, library store.Library, file store.MediaFile, resource string) {
 	// Styled extraction opens the original through the local-file runner.
 	// Encrypted sources keep the encrypted WebVTT delivery path.
-	converter, ok := h.subtitles.(styledSubtitleConverter)
+	converter, ok := h.subtitles.(StyledSubtitleConverter)
 	if !ok || library.Encrypted || grant.SubtitleFileFingerprint == "" || grant.SubtitleStreamIndex == 0 {
 		http.NotFound(w, r)
 		return
@@ -88,7 +90,7 @@ func (h *Handler) serveStyledSubtitle(w http.ResponseWriter, r *http.Request, gr
 			data, err = converter.ExtractSubtitleFont(ctx, file.Path, fontIndex)
 		}
 	}()
-	if errors.Is(err, ffmpeg.ErrFontAttachmentNotFound) {
+	if errors.Is(err, fs.ErrNotExist) {
 		http.NotFound(w, r)
 		return
 	}

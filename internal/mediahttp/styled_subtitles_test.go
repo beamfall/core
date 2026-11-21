@@ -19,6 +19,12 @@ import (
 	"github.com/beamfall/core/internal/streamtoken"
 )
 
+// TestStyledSubtitleAndFontAttachment serves a real ASS track and its font
+// attachment through the styled subtitle route with the ffmpeg runner.
+//
+// io:ffmpeg-extract-styled-subtitle
+// io:ffmpeg-subtitle-font-indexes
+// io:ffmpeg-extract-subtitle-font
 func TestStyledSubtitleAndFontAttachment(t *testing.T) {
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {

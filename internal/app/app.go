@@ -4343,6 +4343,10 @@ var (
 // is extracted in its own pass (CORE-2315).
 var _ mediahttp.BatchSubtitleConverter = (*ffmpeg.Runner)(nil)
 
+// The same runner must keep the styled ASS/SSA extraction and font attachment
+// reads the styled subtitle route probes for (CORE-1719).
+var _ mediahttp.StyledSubtitleConverter = (*ffmpeg.Runner)(nil)
+
 type appOperationDBCipher struct{ cipher libencrypt.OperationCipher }
 
 func (c appOperationDBCipher) UnsealDBFile(_ context.Context, libraryID store.LibraryID, ciphertextPath, workingPath string) error {
