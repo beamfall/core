@@ -1643,7 +1643,11 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 	// privileged occurrence from turning an earlier mutation into a partial,
 	// unauthorized batch.
 	for _, occurrence := range plan.occurrences {
-		probe := fieldDispatchContext{scope: scope, fields: map[string]bool{occurrence.canonical: true}}
+		probe := fieldDispatchContext{
+			scope:  scope,
+			req:    request{Variables: occurrence.input},
+			fields: map[string]bool{occurrence.canonical: true},
+		}
 		for _, order := range selectedFieldDispatchOrders(probe.fields) {
 			if resp := authorizeDispatchOrder(&probe, order); len(resp.Errors) > 0 {
 				return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
@@ -1653,7 +1657,7 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 	mutated := false
 	for _, occurrence := range plan.occurrences {
 		if mutated {
-			refreshed, resp := h.reauthorizeAfterMutation(ctx, scope, occurrence.canonical)
+			refreshed, resp := h.reauthorizeAfterMutation(ctx, scope, occurrence)
 			if len(resp.Errors) > 0 {
 				return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
 			}
@@ -1696,7 +1700,7 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 // state or Admin authority; every later field must act on that, never on the
 // scope resolved when the request arrived. Admin API tokens carry no session
 // and cannot change their authority mid-request, so they keep their scope.
-func (h *Handler) reauthorizeAfterMutation(ctx context.Context, scope auth.Scope, field string) (auth.Scope, response) {
+func (h *Handler) reauthorizeAfterMutation(ctx context.Context, scope auth.Scope, occurrence operationOccurrence) (auth.Scope, response) {
 	if !scope.IsEnrolledDeviceSession() {
 		return scope, response{}
 	}
@@ -1707,7 +1711,11 @@ func (h *Handler) reauthorizeAfterMutation(ctx context.Context, scope auth.Scope
 			authorizationRefused: true,
 		}
 	}
-	probe := fieldDispatchContext{scope: refreshed, fields: map[string]bool{field: true}}
+	probe := fieldDispatchContext{
+		scope:  refreshed,
+		req:    request{Variables: occurrence.input},
+		fields: map[string]bool{occurrence.canonical: true},
+	}
 	for _, order := range selectedFieldDispatchOrders(probe.fields) {
 		if resp := authorizeDispatchOrder(&probe, order); len(resp.Errors) > 0 {
 			return auth.Scope{}, resp
@@ -2497,8 +2505,9 @@ func (h *Handler) createProfile(ctx context.Context, scope auth.Scope, req reque
 	return profileInfo(profile), nil
 }
 
-// updateProfile applies a partial Profile policy write (manager-gated in
-// execute). Disabling a Profile refuses new sessions and hides it from
+// updateProfile applies a partial Profile policy write (Admin Session gated
+// in execute, except a session writing only its own Profile's track
+// preferences, CORE-1937 — see ownTrackPreferenceWrite). Disabling a Profile refuses new sessions and hides it from
 // pickers; engagement history stays untouched.
 func (h *Handler) updateProfile(ctx context.Context, req request) (ProfileInfo, error) {
 	profileID := trimmedVariable(req, "profileID")
@@ -6280,7 +6289,7 @@ var adminFields = map[string]bool{
 	"updatestatus": true,
 	// Profiles & access — CRUD + policies (§4)
 	"createprofile":           true,
-	"updateprofile":           true,
+	"updateprofile":           true, // own track preferences only: ownTrackPreferenceWrite (CORE-1937)
 	"reorderprofiles":         true,
 	"setprofileavatar":        true,
 	"setprofilelibraries":     true,

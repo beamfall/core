@@ -146,13 +146,56 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 			authorizationRefused: true,
 		}
 	}
-	if gate&roleAdmin != 0 && !dispatch.scope.Admin && !adminTokenMayRun(dispatch) {
+	if gate&roleAdmin != 0 && !dispatch.scope.Admin && !adminTokenMayRun(dispatch) && !ownTrackPreferenceWrite(dispatch) {
 		return response{
 			Errors:               []graphError{newGraphError(ErrorCodeForbidden, "admin session required")},
 			authorizationRefused: true,
 		}
 	}
 	return response{}
+}
+
+// ownTrackPreferenceVariables are the updateProfile arguments a Profile may
+// write for itself without an Admin Session (CORE-1937): its audio and
+// subtitle track preferences. Every other Profile policy field stays Console.
+var ownTrackPreferenceVariables = map[string]bool{
+	"audioLanguages":    true,
+	"subtitleLanguages": true,
+	"subtitleMode":      true,
+	"preferSDH":         true,
+}
+
+// ownTrackPreferenceWrite reports whether the dispatch is an enrolled device
+// session writing only its own Profile's track preferences through
+// updateProfile (CORE-1937). Any other selected field, any other argument, or
+// another Profile's ID keeps the Admin Session requirement.
+func ownTrackPreferenceWrite(dispatch *fieldDispatchContext) bool {
+	scope := dispatch.scope
+	if !scope.IsEnrolledDeviceSession() || scope.ProfileID == "" {
+		return false
+	}
+	for field, requested := range dispatch.fields {
+		if requested && field != "updateprofile" {
+			return false
+		}
+	}
+	if !dispatch.fields["updateprofile"] {
+		return false
+	}
+	if store.ProfileID(trimmedVariable(dispatch.req, "profileID")) != scope.ProfileID {
+		return false
+	}
+	writes := false
+	for name, value := range dispatch.req.Variables {
+		if name == "profileID" || value == nil {
+			continue
+		}
+		if !ownTrackPreferenceVariables[name] {
+			return false
+		}
+		writes = true
+	}
+	return writes
 }
 
 // adminTokenOps are the Console operations the operator CLI performs against a
