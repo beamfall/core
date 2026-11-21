@@ -91,7 +91,7 @@ func TestJellyfinSignInDescribesUser(t *testing.T) {
 	// creates at setup and matches later sign-ins by Id alone.
 	owner := signIn(t, handler, "Default", "2468")
 	if owner.User.Policy.IsAdministrator || owner.User.Name != "Default" || owner.User.ServerID != "stable-id" ||
-		owner.User.ID != "profile-default" || owner.User.ID == admin.User.ID {
+		owner.User.ID != handler.compatUserID("profile-default") || owner.User.ID == admin.User.ID {
 		t.Fatalf("owner PIN sign-in = %+v, admin Id %q", owner, admin.User.ID)
 	}
 	if again := signIn(t, handler, "admin", "setup-secret"); again.User.ID != admin.User.ID {
