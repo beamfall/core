@@ -81,6 +81,7 @@ function serveKinds(kinds: LibraryEntityKind[]) {
     total: 0,
     items: [],
     letters: [],
+    childKinds: [],
   });
 }
 
