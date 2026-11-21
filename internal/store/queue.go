@@ -24,12 +24,10 @@ var ErrQueueMediaLocked = errors.New("media is locked")
 var ErrQueueProfileOutsideSchedule = errors.New("profile access not allowed at this time")
 
 // QueueAddResult is the visible first page and scope at the commit point.
-// Position is the target's zero-based visible position, nil if filtered out.
 type QueueAddResult struct {
 	Items     []SourceItem
 	Filter    LibraryFilter
 	ProfileID ProfileID
-	Position  *int
 }
 
 // QueueAddForProfile adds or moves an item in the Profile's Play Queue using
@@ -44,59 +42,106 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 	if profileID == "" || mediaID == "" {
 		return QueueAddResult{}, ValidationError("profile ID and media ID are required")
 	}
-	// The queue transaction is in events.db. Hold catalog and encrypted-plane
-	// writes off as well, so Reveal, grants and certification cannot change
-	// between the eligibility reads and the commit.
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Keep the database handles and any unsealed plane registered through the
+	// operation. Other readers can take the same lock while SQLite serializes
+	// writes to the attached databases.
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return QueueAddResult{}, err
 	}
-	tx, err := s.eventsW.BeginTx(ctx, nil)
+	privateID, err := s.queueTargetLibrary(ctx, mediaID)
+	if err != nil {
+		return QueueAddResult{}, err
+	}
+	writer, err := s.openQueueWriter(ctx, privateID)
+	if err != nil {
+		return QueueAddResult{}, err
+	}
+	defer writer.Close()
+	tx, err := writer.BeginTx(ctx, nil)
 	if err != nil {
 		return QueueAddResult{}, err
 	}
 	defer tx.Rollback()
-	session, err := s.queueAddSessionLocked(ctx, sessionID)
-	if err != nil {
-		return QueueAddResult{}, err
+
+	var session Session
+	if sessionID != "" {
+		session, err = readSession(ctx, tx, sessionID)
+		if err != nil {
+			return QueueAddResult{}, err
+		}
+		device, err := readDevice(ctx, tx, session.DeviceID)
+		if err != nil {
+			return QueueAddResult{}, err
+		}
+		if device.Revoked {
+			return QueueAddResult{}, ErrDeviceRevoked
+		}
 	}
-	var reboundSession SessionID
+	rebound := sessionID != "" && session.ProfileID != profileID
 	filter.Revealed = filter.Revealed && session.Revealed
-	if sessionID != "" && session.ProfileID != profileID {
+	if rebound {
 		profileID = session.ProfileID
-		reboundSession = sessionID
 		filter.Revealed = session.Revealed
 	}
 	if expectedProfileID != "" && expectedProfileID != profileID {
 		return QueueAddResult{}, ErrSessionProfileMismatch
 	}
-	filter, err = s.queueAddFilterLocked(ctx, profileID, reboundSession, filter, resolveCertification)
+	profile, err := readProfile(ctx, tx, profileID)
 	if err != nil {
 		return QueueAddResult{}, err
 	}
+	if profile.Disabled {
+		return QueueAddResult{}, ErrProfileDisabled
+	}
+	var windows []ProfileAccessWindow
+	if profile.Kind == ProfileManaged {
+		windows, err = readProfileAccessWindows(ctx, tx, profileID)
+		if err != nil {
+			return QueueAddResult{}, err
+		}
+		filter.GrantedMediaIDs, err = readGrantedMediaIDs(ctx, tx, profileID)
+		if err != nil {
+			return QueueAddResult{}, err
+		}
+	} else {
+		filter.GrantedMediaIDs = nil
+	}
+	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, s.serverNow()); err != nil {
+		return QueueAddResult{}, err
+	}
+	filter = queueAddFilter(profile, rebound, filter)
+	filter.Certification = resolveCertification(profile.CertificationCeilings)
+
 	entries, err := queueEntries(ctx, tx, profileID)
 	if err != nil {
 		return QueueAddResult{}, err
 	}
-	visibleMedia, err := s.visibleQueueMedia(ctx, entries, filter, mediaID)
+	readers := mediaReaders{catalog: tx, encrypted: func(id LibraryID) rowsQueryer {
+		if id == privateID {
+			return queueTargetReader{tx}
+		}
+		return s.encryptedMediaReaderLocked(id)
+	}}
+	visibleMedia, err := visibleMediaBatch(ctx, readers, queueMediaIDs(entries, mediaID), filter)
 	if err != nil {
 		return QueueAddResult{}, err
 	}
 	target, ok := visibleMedia[mediaID]
-	if !ok {
+	// A private target first seen after routing has no attached writer lock.
+	if !ok || (target.LibraryID != privateID && s.encryptedMediaReaderLocked(target.LibraryID) != nil) {
 		return QueueAddResult{}, ErrQueueMediaNotFound
 	}
-	// Check the target even when its committed position would be off-page.
 	check := []SourceItem{queueSourceItem(target)}
-	if err := s.annotateLockedLocked(ctx, filter.Certification, check, filter.GrantedMediaIDs); err != nil {
+	if err := annotateLocked(ctx, readers, filter.Certification, check, filter.GrantedMediaIDs); err != nil {
 		return QueueAddResult{}, err
 	}
 	if check[0].Locked {
 		return QueueAddResult{}, ErrQueueMediaLocked
 	}
 
-	addedAt := timeToMillis(time.Now().UTC())
+	addedAt := timeToMillis(s.serverNow())
 	without := make([]queueEntry, 0, len(entries))
 	visible := make(map[MediaID]bool, len(visibleMedia))
 	for id := range visibleMedia {
@@ -121,11 +166,9 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 	if err != nil {
 		return QueueAddResult{}, err
 	}
-	// Capture placement before truncating the visible order to the first page.
-	targetIndex := slices.IndexFunc(items, func(item SourceItem) bool { return item.ID == mediaID })
-	items = slices.Clone(pageOf(items, defaultSourceItemsLimit, 0))
+	items = pageOf(items, defaultSourceItemsLimit, 0)
 	if filter.Revealed {
-		restricted, err := s.restrictedLibraryIDsLocked(ctx)
+		restricted, err := restrictedLibraryIDs(ctx, tx)
 		if err != nil {
 			return QueueAddResult{}, err
 		}
@@ -133,63 +176,86 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 			items[i].Restricted = restricted[items[i].LibraryID]
 		}
 	}
-	if err := s.annotateLockedLocked(ctx, filter.Certification, items, filter.GrantedMediaIDs); err != nil {
+	if err := annotateLocked(ctx, readers, filter.Certification, items, filter.GrantedMediaIDs); err != nil {
+		return QueueAddResult{}, err
+	}
+	// A deadline can pass while building the page or rewriting the queue even though
+	// the policy rows are stable. Check just before writing and before commit.
+	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, s.serverNow()); err != nil {
 		return QueueAddResult{}, err
 	}
 	if err := replaceQueue(ctx, tx, profileID, updated); err != nil {
 		return QueueAddResult{}, err
 	}
-	// Time can advance during queue reconstruction while the session row is stable.
-	if !session.ExpiresAt.IsZero() && !time.Now().Before(session.ExpiresAt) {
-		return QueueAddResult{}, ErrSessionExpired
+	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, s.serverNow()); err != nil {
+		return QueueAddResult{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return QueueAddResult{}, err
 	}
-	result := QueueAddResult{Items: items, Filter: filter, ProfileID: profileID}
-	if targetIndex >= 0 {
-		result.Position = &targetIndex
-	}
-	return result, nil
+	return QueueAddResult{Items: slices.Clone(items), Filter: filter, ProfileID: profileID}, nil
 }
 
-func (s *Store) queueAddSessionLocked(ctx context.Context, sessionID SessionID) (Session, error) {
-	if sessionID == "" {
-		return Session{}, nil
-	}
-	session, err := s.sessionSQL(ctx, sessionID)
-	if err != nil {
-		return Session{}, err
-	}
-	if !session.ExpiresAt.IsZero() && !time.Now().Before(session.ExpiresAt) {
-		return Session{}, ErrSessionExpired
-	}
-	device, err := s.deviceSQL(ctx, session.DeviceID)
-	if err != nil {
-		return Session{}, err
-	}
-	if device.Revoked {
-		return Session{}, ErrDeviceRevoked
-	}
-	return session, nil
-}
-
-func (s *Store) queueAddFilterLocked(ctx context.Context, profileID ProfileID, reboundSession SessionID, filter LibraryFilter, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (LibraryFilter, error) {
-	profile, err := s.profileSQL(ctx, profileID)
-	if err != nil {
-		return LibraryFilter{}, err
-	}
-	if profile.Disabled {
-		return LibraryFilter{}, ErrProfileDisabled
-	}
-	if reboundSession != "" {
-		// The request was authorized for a different Profile. Derive this
-		// Profile's grants and check its access schedule before using them.
-		if profile.Kind == ProfileManaged {
-			if err := s.checkQueueAddAccessScheduleLocked(ctx, profileID, reboundSession); err != nil {
-				return LibraryFilter{}, err
-			}
+// queueTargetLibrary selects a private plane to attach. The transaction still
+// decides whether the target exists and is visible.
+func (s *Store) queueTargetLibrary(ctx context.Context, mediaID MediaID) (LibraryID, error) {
+	for id := range s.encryptedDBs {
+		reader := s.encryptedMediaReaderLocked(id)
+		if reader == nil {
+			continue
 		}
+		rows, err := reader.QueryContext(ctx, "SELECT 1 FROM media WHERE id = ?", mediaID)
+		if err != nil {
+			return "", err
+		}
+		found := rows.Next()
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil || found {
+			return id, err
+		}
+	}
+	return "", nil
+}
+
+// openQueueWriter uses an exclusive connection lifetime for the attachments.
+// Only the events file is modified, so the commit requires no cross-file
+// durability guarantee from SQLite's WAL mode.
+func (s *Store) openQueueWriter(ctx context.Context, privateID LibraryID) (*sql.DB, error) {
+	writer, err := openSQLiteWriterWithPragmas(s.catalogPath, []string{"temp_store(MEMORY)"})
+	if err != nil {
+		return nil, err
+	}
+	// Acquire database writer locks in catalog, private plane, events order.
+	if privateID != "" {
+		if _, err := writer.ExecContext(ctx, "ATTACH DATABASE ? AS queue_target", sqliteDSN(s.encryptedDBs[privateID].workingPath, nil, "")+"?mode=rw"); err != nil {
+			_ = writer.Close()
+			return nil, err
+		}
+	}
+	if _, err := writer.ExecContext(ctx, "ATTACH DATABASE ? AS queue_events", sqliteDSN(s.eventsPath, nil, "")+"?mode=rw"); err != nil {
+		_ = writer.Close()
+		return nil, err
+	}
+	if _, err := writer.ExecContext(ctx, "PRAGMA queue_events.synchronous = FULL"); err != nil {
+		_ = writer.Close()
+		return nil, err
+	}
+	return writer, nil
+}
+
+// queueTargetReader routes the existing private-plane visibility and
+// certification queries to the attached target without shadowing main in
+// any other query.
+type queueTargetReader struct{ tx *sql.Tx }
+
+func (q queueTargetReader) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return q.tx.QueryContext(ctx, `WITH media AS (SELECT * FROM queue_target.media),
+		media_field_text AS (SELECT * FROM queue_target.media_field_text) `+query, args...)
+}
+
+func queueAddFilter(profile Profile, rebound bool, filter LibraryFilter) LibraryFilter {
+	if rebound {
 		filter.AllLibraries = false
 		filter.AllowedIDs = profile.Library
 	} else if !filter.AllLibraries {
@@ -202,24 +268,20 @@ func (s *Store) queueAddFilterLocked(ctx context.Context, profileID ProfileID, r
 		filter.AllowedIDs = allowed
 	}
 	filter.Revealed = filter.Revealed && profile.Kind == ProfileAdult
-	filter.Certification = resolveCertification(profile.CertificationCeilings)
-	filter.GrantedMediaIDs = nil
-	if profile.Kind == ProfileManaged {
-		filter.GrantedMediaIDs, err = s.grantedMediaIDsForProfileLocked(ctx, profileID)
-	}
-	return filter, err
+	return filter
 }
 
-func (s *Store) checkQueueAddAccessScheduleLocked(ctx context.Context, profileID ProfileID, sessionID SessionID) error {
-	windows, err := s.profileAccessWindowsLocked(ctx, profileID)
-	if err != nil {
-		return err
+func checkQueueAddAccess(ctx context.Context, tx *sql.Tx, profileID ProfileID, session Session, windows []ProfileAccessWindow, now time.Time) error {
+	if !session.ExpiresAt.IsZero() && !now.Before(session.ExpiresAt) {
+		return ErrSessionExpired
 	}
-	now := time.Now()
 	if AllowedAt(windows, now.Local()) {
 		return nil
 	}
-	granted, err := s.activeExtensionGrantLocked(ctx, profileID, sessionID, now)
+	if session.ID == "" {
+		return ErrQueueProfileOutsideSchedule
+	}
+	granted, err := activeExtensionGrant(ctx, tx, profileID, session.ID, now)
 	if err != nil {
 		return err
 	}
@@ -381,7 +443,7 @@ func (s *Store) updateQueue(ctx context.Context, profileID ProfileID, filter Lib
 
 // queueVisibility resolves which queued and candidate IDs the scope can see.
 func (s *Store) queueVisibility(ctx context.Context, entries []queueEntry, filter LibraryFilter, extra ...MediaID) (map[MediaID]bool, error) {
-	media, err := s.visibleQueueMedia(ctx, entries, filter, extra...)
+	media, err := s.visibleMediaBatchSQL(ctx, queueMediaIDs(entries, extra...), filter)
 	if err != nil {
 		return nil, err
 	}
@@ -392,13 +454,12 @@ func (s *Store) queueVisibility(ctx context.Context, entries []queueEntry, filte
 	return visible, nil
 }
 
-func (s *Store) visibleQueueMedia(ctx context.Context, entries []queueEntry, filter LibraryFilter, extra ...MediaID) (map[MediaID]Media, error) {
+func queueMediaIDs(entries []queueEntry, extra ...MediaID) []MediaID {
 	ids := make([]MediaID, 0, len(entries)+len(extra))
 	for _, entry := range entries {
 		ids = append(ids, entry.mediaID)
 	}
-	ids = append(ids, extra...)
-	return s.visibleMediaBatchSQL(ctx, ids, filter)
+	return append(ids, extra...)
 }
 
 // insertAtVisiblePosition inserts entry so it lands at index position among
@@ -586,9 +647,7 @@ func repointQueueEntryTx(ctx context.Context, tx *sql.Tx, m queueMove, from, to 
 	return err
 }
 
-func queueEntries(ctx context.Context, db interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}, profileID ProfileID) ([]queueEntry, error) {
+func queueEntries(ctx context.Context, db rowsQueryer, profileID ProfileID) ([]queueEntry, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT media_id, added_at_ms
 		FROM play_queue

@@ -322,12 +322,12 @@ func (s *Store) ActiveExtensionGrant(ctx context.Context, profileID ProfileID, s
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	return s.activeExtensionGrantLocked(ctx, profileID, sessionID, now)
+	return activeExtensionGrant(ctx, s.catalogR, profileID, sessionID, now)
 }
 
-func (s *Store) activeExtensionGrantLocked(ctx context.Context, profileID ProfileID, sessionID SessionID, now time.Time) (bool, error) {
+func activeExtensionGrant(ctx context.Context, q queryRower, profileID ProfileID, sessionID SessionID, now time.Time) (bool, error) {
 	var count int
-	err := s.catalogR.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM extension_request
 		WHERE profile_id = ? AND requesting_session_id = ? AND status = ?
 		  AND grant_expires_at_ms > ?

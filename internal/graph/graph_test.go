@@ -5482,9 +5482,8 @@ func TestIdentifySearchMediaIDGating(t *testing.T) {
 }
 
 type graphTestResponse struct {
-	Data       map[string]json.RawMessage `json:"data"`
-	Errors     []graphError               `json:"errors"`
-	Extensions *responseExtensions        `json:"extensions"`
+	Data   map[string]json.RawMessage `json:"data"`
+	Errors []graphError               `json:"errors"`
 }
 
 func postGraphJSON(t *testing.T, handler *Handler, authorize func(*http.Request), query string, variables map[string]any) graphTestResponse {

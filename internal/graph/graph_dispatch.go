@@ -18,7 +18,6 @@ type fieldDispatchContext struct {
 	data               map[string]any
 	errs               []graphError
 	privilegedOutcomes map[string]observability.AuditOutcome
-	queueAddPlacement  *queueAddPlacement
 	canonical          string
 	responseKey        string
 }
@@ -1282,8 +1281,7 @@ func dispatchFieldBlock030(dispatch *fieldDispatchContext) response {
 	req := dispatch.req
 	fields := dispatch.fields
 	if fields["queueadd"] {
-		items, placement, err := h.queueAdd(ctx, scope, req)
-		dispatch.queueAddPlacement = placement
+		items, err := h.queueAdd(ctx, scope, req)
 		return resolveField(dispatch, "queueadd", items, err)
 	}
 	if fields["queueremove"] || fields["queuemove"] || fields["queueclear"] {

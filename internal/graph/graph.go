@@ -1659,12 +1659,26 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 			}
 		}
 	}
+	committedQueueAdd := false
+	abort := func(resp response, responseKey string) response {
+		if committedQueueAdd {
+			// Keep results from before the failure, especially any committed
+			// queue page. The failing field still stops mutation execution.
+			resp.Data = out.Data
+			resp.Data[responseKey] = nil
+			for i := range resp.Errors {
+				resp.Errors[i].Path = []string{responseKey}
+			}
+			resp.Errors = append(out.Errors, resp.Errors...)
+		}
+		return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+	}
 	mutated := false
 	for _, occurrence := range plan.occurrences {
 		if mutated {
 			refreshed, resp := h.reauthorizeAfterMutation(ctx, scope, occurrence.canonical)
 			if len(resp.Errors) > 0 {
-				return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+				return abort(resp, occurrence.responseKey)
 			}
 			scope = refreshed
 		}
@@ -1684,20 +1698,13 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 		for _, order := range selectedFieldDispatchOrders(dispatch.fields) {
 			resp := fieldDispatchRuns[order](&dispatch)
 			if len(resp.Errors) > 0 {
-				// Mutation errors abort with no data. Read errors are accumulated by
-				// readField and do not reach this branch.
-				return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+				return abort(resp, occurrence.responseKey)
 			}
 		}
 		for key, value := range dispatch.data {
 			out.Data[key] = value
 		}
-		if dispatch.queueAddPlacement != nil {
-			if out.Extensions == nil {
-				out.Extensions = &responseExtensions{QueueAdd: map[string]queueAddPlacement{}}
-			}
-			out.Extensions.QueueAdd[occurrence.responseKey] = *dispatch.queueAddPlacement
-		}
+		committedQueueAdd = committedQueueAdd || occurrence.canonical == "queueadd"
 		out.Errors = append(out.Errors, dispatch.errs...)
 		mutated = mutated || mutationFields[occurrence.canonical]
 	}
@@ -1791,10 +1798,9 @@ func clientCanceled(ctx context.Context, err error) bool {
 }
 
 // graphFail resolves the abort-the-batch wire response for one failed top-level
-// field. MUTATION fields use this: a half-applied mutation batch is worse than
-// none, so the first mutation error discards the whole response (M2). READ
-// fields instead accumulate a per-field error via readField and resolve the
-// rest of the batch.
+// field. Mutation fields stop the batch on the first error. If a queueAdd
+// committed, execute keeps the data already produced. Read fields accumulate
+// per-field errors via readField and resolve the rest of the batch.
 func graphFail(ctx context.Context, field string, err error) response {
 	return response{Errors: []graphError{fieldGraphError(ctx, field, err)}}
 }
@@ -4491,28 +4497,20 @@ func (h *Handler) queueOps(ctx context.Context, scope auth.Scope, fields map[str
 		data, err = h.applyQueueOps(ctx, scope, fields, req)
 		return err
 	})
-	if errors.Is(err, store.ErrDeviceRevoked) || errors.Is(err, store.ErrSessionExpired) || errors.Is(err, store.ErrSessionNotFound) {
-		return nil, clientError("invalid session")
-	}
 	if err != nil {
 		return nil, err
 	}
 	return data, nil
 }
 
-type queueAddPlacement struct {
-	MediaID  string `json:"mediaID"`
-	Position int    `json:"position"`
-}
-
-func (h *Handler) queueAdd(ctx context.Context, scope auth.Scope, req request) ([]SourceItem, *queueAddPlacement, error) {
+func (h *Handler) queueAdd(ctx context.Context, scope auth.Scope, req request) ([]SourceItem, error) {
 	expected, err := checkExpectedProfile(scope, req)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
 	if mediaID == "" {
-		return nil, nil, clientError("mediaID is required")
+		return nil, clientError("mediaID is required")
 	}
 	var position *int
 	v := newVars(req)
@@ -4521,36 +4519,32 @@ func (h *Handler) queueAdd(ctx context.Context, scope auth.Scope, req request) (
 		position = &p
 	}
 	if err := v.Err(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	committed, err := h.store.QueueAddForProfile(ctx, scope.ProfileID, scope.SessionID, expected, mediaID, position, scope.LibraryFilter(), h.auth.CertificationConstraints)
 	switch {
 	case errors.Is(err, store.ErrQueueMediaNotFound):
-		return nil, nil, clientError("unknown media")
+		return nil, clientError("unknown media")
 	case errors.Is(err, store.ErrQueueMediaLocked):
-		return nil, nil, &l10n.Error{Key: l10n.QueueMediaLocked, Err: clientError("This item is locked.")}
+		return nil, &l10n.Error{Key: l10n.QueueMediaLocked, Err: clientError("This item is locked.")}
 	case errors.Is(err, store.ErrSessionProfileMismatch):
-		return nil, nil, errProfileMismatch
+		return nil, errProfileMismatch
 	case errors.Is(err, store.ErrProfileDisabled):
-		return nil, nil, clientError("profile is disabled")
+		return nil, clientError("profile is disabled")
 	case errors.Is(err, store.ErrDeviceRevoked), errors.Is(err, store.ErrSessionExpired),
 		errors.Is(err, store.ErrSessionNotFound), errors.Is(err, store.ErrQueueProfileOutsideSchedule):
-		return nil, nil, clientError("invalid session")
+		return nil, clientError("invalid session")
 	case err != nil:
-		return nil, nil, err
+		return nil, err
 	}
 
-	var placement *queueAddPlacement
-	if committed.Position != nil {
-		placement = &queueAddPlacement{MediaID: string(mediaID), Position: *committed.Position}
-	}
 	// Keep the committed projection intact if optional card reads fail.
 	cards := slices.Clone(committed.Items)
 	if err := h.annotateCardsForProfile(ctx, committed.ProfileID, committed.Filter, cards); err != nil {
 		slog.DebugContext(ctx, "queueAdd card details unavailable", "error", err)
-		return h.queueResponse(committed.Items, committed.Filter.Revealed, false), placement, nil
+		return h.queueResponse(committed.Items, committed.Filter.Revealed, false), nil
 	}
-	return h.queueResponse(cards, committed.Filter.Revealed, true), placement, nil
+	return h.queueResponse(cards, committed.Filter.Revealed, true), nil
 }
 
 func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
@@ -6598,14 +6592,9 @@ type request struct {
 
 type response struct {
 	Data                 map[string]any                        `json:"data,omitempty"`
-	Extensions           *responseExtensions                   `json:"extensions,omitempty"`
 	Errors               []graphError                          `json:"errors,omitempty"`
 	authorizationRefused bool                                  `json:"-"`
 	privilegedOutcomes   map[string]observability.AuditOutcome `json:"-"`
-}
-
-type responseExtensions struct {
-	QueueAdd map[string]queueAddPlacement `json:"queueAdd,omitempty"`
 }
 
 // MarshalJSON distinguishes an intentionally empty successful data object
@@ -6613,11 +6602,10 @@ type responseExtensions struct {
 // data member must be absent.
 func (r response) MarshalJSON() ([]byte, error) {
 	type wireResponse struct {
-		Data       json.RawMessage     `json:"data,omitempty"`
-		Errors     []graphError        `json:"errors,omitempty"`
-		Extensions *responseExtensions `json:"extensions,omitempty"`
+		Data   json.RawMessage `json:"data,omitempty"`
+		Errors []graphError    `json:"errors,omitempty"`
 	}
-	wire := wireResponse{Errors: r.Errors, Extensions: r.Extensions}
+	wire := wireResponse{Errors: r.Errors}
 	if r.Data != nil {
 		data, err := json.Marshal(r.Data)
 		if err != nil {
@@ -6630,9 +6618,8 @@ func (r response) MarshalJSON() ([]byte, error) {
 
 type graphError struct {
 	Message string `json:"message"`
-	// Path names the top-level field this error belongs to (M2 partial-success
-	// reads). Omitted for whole-response errors (auth gate, unsupported query,
-	// aborted mutation batch) so their wire shape is unchanged.
+	// Path names the top-level field this error belongs to in a partial
+	// response. Whole-response errors and errors-only mutations omit it.
 	Path []string `json:"path,omitempty"`
 	// Extensions.Code is one of the closed ErrorCodes vocabulary (§7);
 	// error_codes.go owns the mapping.

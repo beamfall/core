@@ -217,6 +217,101 @@ func TestQueueAddRefusesAfterRelock(t *testing.T) {
 	}
 }
 
+func TestQueueAddRechecksManagedDeadlineBeforeWrite(t *testing.T) {
+	for _, extension := range []bool{false, true} {
+		name := "schedule"
+		if extension {
+			name = "extension"
+		}
+		t.Run(name, func(t *testing.T) {
+			st := openSeeded(t)
+			ctx := t.Context()
+			const profile = "profile-managed"
+			const session = "session-managed"
+			filter := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+			now := time.Date(2026, time.June, 15, 10, 0, 0, 0, time.Local)
+			st.now = func() time.Time { return now }
+			deadline := now.Add(time.Minute)
+			window := ProfileAccessWindow{Weekday: int(now.Weekday()), StartMinute: 600, EndMinute: 601}
+			if extension {
+				window.EndMinute = window.StartMinute
+				window.StartMinute--
+				req, err := st.CreateExtensionRequest(ctx, ExtensionRequestInput{
+					ProfileID: profile, RequestingSessionID: session, Now: now,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				grant, err := st.RespondExtensionRequest(ctx, req.ID, req.ApprovalNonce(), "profile-default", ExtensionApproved, 1, now)
+				if err != nil || !grant.GrantExpiresAt.Equal(deadline) {
+					t.Fatalf("extension fixture = %+v, %v", grant, err)
+				}
+			}
+			if err := st.SetProfileAccessWindows(ctx, profile, []ProfileAccessWindow{window}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.QueueAddForProfile(ctx, profile, session, profile, "media-alpha", nil, filter, testQueueCertification); err != nil {
+				t.Fatalf("queue add before deadline: %v", err)
+			}
+			target := importQueueMedia(t, st, "queue-managed-deadline")
+			expire := func(ceilings []ProfileCertificationCeiling) []CertificationConstraint {
+				now = deadline
+				return testQueueCertification(ceilings)
+			}
+			if _, err := st.QueueAddForProfile(ctx, profile, session, profile, target, queueIntPtr(0), filter, expire); !errors.Is(err, ErrQueueProfileOutsideSchedule) {
+				t.Fatalf("queue add at deadline = %v, want schedule refusal", err)
+			}
+			assertQueueIDs(t, st, filter, profile, []MediaID{"media-alpha"})
+		})
+	}
+}
+
+func TestQueueAddKeepsSessionReadersUnblocked(t *testing.T) {
+	st := openSeeded(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	started, release := make(chan struct{}), make(chan struct{})
+	addDone := make(chan struct{})
+	var addErr error
+	defer func() {
+		close(release)
+		<-addDone
+		if !t.Failed() && addErr != nil {
+			t.Errorf("queue add: %v", addErr)
+		}
+	}()
+	go func() {
+		defer close(addDone)
+		filter := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+		_, addErr = st.QueueAddForProfile(ctx, "profile-default", "session-default", "", "media-alpha", nil, filter,
+			func(ceilings []ProfileCertificationCeiling) []CertificationConstraint {
+				close(started)
+				<-release
+				return testQueueCertification(ceilings)
+			})
+	}()
+	select {
+	case <-started:
+	case <-addDone:
+		t.Fatalf("queue add stopped before certification: %v", addErr)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := st.Session(ctx, "session-default")
+		readDone <- err
+	}()
+	select {
+	case err := <-readDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("session read waited for the queue writer")
+	}
+}
+
 func TestQueueAddChecksCurrentCertification(t *testing.T) {
 	st := openSeeded(t)
 	ctx := t.Context()

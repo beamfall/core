@@ -97,11 +97,11 @@ func (s *Store) GrantedMediaIDsForProfile(ctx context.Context, profileID Profile
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	return s.grantedMediaIDsForProfileLocked(ctx, profileID)
+	return readGrantedMediaIDs(ctx, s.catalogR, profileID)
 }
 
-func (s *Store) grantedMediaIDsForProfileLocked(ctx context.Context, profileID ProfileID) ([]MediaID, error) {
-	rows, err := s.catalogR.QueryContext(ctx,
+func readGrantedMediaIDs(ctx context.Context, q rowsQueryer, profileID ProfileID) ([]MediaID, error) {
+	rows, err := q.QueryContext(ctx,
 		`SELECT media_id FROM access_grant WHERE profile_id = ? ORDER BY updated_at_ms DESC`,
 		string(profileID))
 	if err != nil {

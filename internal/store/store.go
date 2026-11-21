@@ -3822,11 +3822,11 @@ func libraryVisible(library Library, filter LibraryFilter) bool {
 	return true
 }
 
-// restrictedLibraryIDsLocked returns the set of restricted-Library IDs. Library
+// restrictedLibraryIDs returns the set of restricted-Library IDs. Library
 // metadata (including is_restricted) lives in the catalog plane even for
 // encrypted Libraries, so a single catalog read is authoritative.
-func (s *Store) restrictedLibraryIDsLocked(ctx context.Context) (map[LibraryID]bool, error) {
-	libraries, err := loadLibraries(ctx, s.catalogR)
+func restrictedLibraryIDs(ctx context.Context, q rowsQueryer) (map[LibraryID]bool, error) {
+	libraries, err := loadLibraries(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -3856,7 +3856,7 @@ func (s *Store) annotateRestrictedLocked(ctx context.Context, restricted map[Lib
 	}
 	if restricted == nil {
 		var err error
-		restricted, err = s.restrictedLibraryIDsLocked(ctx)
+		restricted, err = restrictedLibraryIDs(ctx, s.catalogR)
 		if err != nil {
 			return err
 		}
