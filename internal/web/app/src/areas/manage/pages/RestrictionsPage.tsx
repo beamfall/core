@@ -1,5 +1,6 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
+import { PinSetupForm } from "@/components/beamfall/PinSetupForm";
 import { ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,7 +91,7 @@ export function RestrictionsPage() {
             <li>{t("restrictionsSetupStepPin")}</li>
             <li>{t("restrictionsSetupStepLibrary")}</li>
           </ol>
-          <PinForm submitLabel={t("restrictionsSetPin")} onSaved={onPinSaved} />
+          <RevealPinForm submitLabel={t("restrictionsSetPin")} onSaved={onPinSaved} />
         </div>
       ) : revealed ? (
         <div className="space-y-3" data-setting="manage.restrictions.pin">
@@ -112,7 +113,7 @@ export function RestrictionsPage() {
             )}
           </div>
           {changing && (
-            <PinForm
+            <RevealPinForm
               submitLabel={t("restrictionsChangePin")}
               onSaved={onPinSaved}
               onCancel={() => setChanging(false)}
@@ -153,9 +154,7 @@ export function RestrictionsPage() {
   );
 }
 
-// The new PIN and its confirmation. Both fields clear once read, so the PIN
-// lives only in the setRevealPin call.
-function PinForm({
+function RevealPinForm({
   submitLabel,
   onSaved,
   onCancel,
@@ -165,77 +164,17 @@ function PinForm({
   onCancel?: () => void;
 }) {
   const t = useT();
-  const id = useId();
-  const [pin, setPinValue] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const onSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setError("");
-    const value = pin.trim();
-    const again = confirm.trim();
-    if (!value) return;
-    if (value !== again) {
-      setError(t("restrictionsPinMismatch"));
-      return;
-    }
-    setPinValue("");
-    setConfirm("");
-    setBusy(true);
-    try {
-      await setRevealPin(value);
-    } catch (err) {
-      setError(
-        err instanceof Error && err.message.includes("no reveal path")
-          ? t("restrictionsPinNoRevealPath")
-          : t("restrictionsPinNotSaved"),
-      );
-      setBusy(false);
-      return;
-    }
-    setBusy(false);
-    await onSaved();
-  };
-
   return (
-    <form onSubmit={onSubmit} className="space-y-2">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
-          <Label htmlFor={`${id}-pin`}>{t("restrictionsNewPin")}</Label>
-          <Input
-            id={`${id}-pin`}
-            type="password"
-            inputMode="numeric"
-            autoComplete="new-password"
-            value={pin}
-            onChange={(e) => setPinValue(e.target.value)}
-            className="w-40"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={`${id}-confirm`}>{t("restrictionsConfirmPin")}</Label>
-          <Input
-            id={`${id}-confirm`}
-            type="password"
-            inputMode="numeric"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            className="w-40"
-          />
-        </div>
-        <Button type="submit" disabled={busy || !pin.trim()}>
-          {submitLabel}
-        </Button>
-        {onCancel && (
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
-            {t("cancel")}
-          </Button>
-        )}
-      </div>
-      <ErrorLine message={error} />
-    </form>
+    <PinSetupForm
+      submitLabel={submitLabel}
+      onSave={(pin) => setRevealPin(pin)}
+      onSaved={onSaved}
+      onCancel={onCancel}
+      saveError={(error) =>
+        error instanceof Error && error.message.includes("no reveal path")
+          ? t("restrictionsPinNoRevealPath")
+          : t("restrictionsPinNotSaved")
+      }
+    />
   );
 }

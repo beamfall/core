@@ -990,6 +990,22 @@ export async function updateProfile(
   return data.updateProfile;
 }
 
+const SET_PROFILE_ENTRY_PIN_MUTATION =
+  "mutation SetProfileEntryPin($profileID: String!, $entryPIN: String!) { updateProfile(profileID: $profileID, entryPIN: $entryPIN) { id } }";
+
+/** Set an adult Profile's entry PIN separately from other Profile settings. */
+export async function setProfileEntryPin(
+  profileID: string,
+  entryPIN: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await graphql<{ updateProfile: { id: string } }>(
+    SET_PROFILE_ENTRY_PIN_MUTATION,
+    { profileID, entryPIN },
+    signal,
+  );
+}
+
 const REORDER_PROFILES_MUTATION =
   "mutation ReorderProfiles($profileIDs: [String!]!) { reorderProfiles(profileIDs: $profileIDs) { id } }";
 
