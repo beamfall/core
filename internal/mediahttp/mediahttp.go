@@ -173,6 +173,22 @@ func (h *Handler) verifyAuthenticatedMediaGrant(ctx context.Context, authenticat
 	return grant, scope, nil
 }
 
+// refuseAccessScheduleEnded answers a grant verification that failed only
+// because the session's managed Profile is outside its access schedule: 403
+// with the ACCESS_SCHEDULE_ENDED reason in the X-Beamfall-Denial-Reason
+// header, so a player can tell it from an expired or revoked stream
+// (CORE-2950). For every other failure it writes nothing and reports false,
+// and the route keeps its own status. The Stream Token verified before the
+// session was resolved, so the reason reaches only that Profile's own player.
+func refuseAccessScheduleEnded(w http.ResponseWriter, err error) bool {
+	if !auth.AccessScheduleEnded(err) {
+		return false
+	}
+	w.Header().Set(auth.DenialReasonHeader, auth.DenialReasonAccessScheduleEnded)
+	http.Error(w, "access schedule ended", http.StatusForbidden)
+	return true
+}
+
 // errUnverifiedReceiver refuses bytes for a receiver-bound grant whose receiver
 // profile never resolved through the ADR-0161 quirks selectors.
 var errUnverifiedReceiver = errors.New("unverified receiver profile")
@@ -320,6 +336,9 @@ func (h *Handler) Assets(w http.ResponseWriter, r *http.Request) {
 	}
 	grant, scope, err := h.verifyMediaGrant(r.Context(), token, streamtoken.TargetMediaAssets)
 	if err != nil {
+		if refuseAccessScheduleEnded(w, err) {
+			return
+		}
 		http.Error(w, "invalid stream token", http.StatusUnauthorized)
 		return
 	}
@@ -394,7 +413,11 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		// playback that ended (ADR-0012 §7 revocation, relock). The track menu
 		// keeps the URL for the whole runtime, so 410 tells the player the
 		// track is gone for good instead of inviting a retry; a token that never
-		// verified at all stays 401.
+		// verified at all stays 401. A session refused only by its Profile's
+		// access schedule says so instead (CORE-2950).
+		if refuseAccessScheduleEnded(w, err) {
+			return
+		}
 		http.Error(w, "stream ended", h.endedSubtitleStatus(r.Context(), token))
 		return
 	}
@@ -657,6 +680,9 @@ func (h *Handler) Sidecars(w http.ResponseWriter, r *http.Request) {
 	}
 	grant, scope, err := h.verifyMediaGrant(r.Context(), token, streamtoken.TargetMediaSidecar)
 	if err != nil {
+		if refuseAccessScheduleEnded(w, err) {
+			return
+		}
 		http.Error(w, "invalid stream token", http.StatusUnauthorized)
 		return
 	}
@@ -1004,6 +1030,9 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		if refuseAccessScheduleEnded(w, err) {
+			return
+		}
 		http.Error(w, "invalid stream token", http.StatusUnauthorized)
 		return
 	}
@@ -1539,6 +1568,11 @@ func (h *Handler) Direct(w http.ResponseWriter, r *http.Request) {
 		fileFingerprint = grant.FileFingerprint
 	}
 	if err != nil {
+		// A media grant that authenticated but whose Profile is outside its
+		// access schedule is not a Circle lease; refuse it as such (CORE-2950).
+		if refuseAccessScheduleEnded(w, err) {
+			return
+		}
 		if h.tokens == nil {
 			http.Error(w, "invalid stream token", http.StatusUnauthorized)
 			return

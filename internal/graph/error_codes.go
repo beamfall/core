@@ -2,8 +2,10 @@ package graph
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -80,6 +82,13 @@ const (
 	// Profile the session is no longer bound to (CORE-2177). Nothing was
 	// written; the client drops the write instead of retrying it.
 	ErrorReasonProfileMismatch ErrorReason = "PROFILE_MISMATCH"
+	// ErrorReasonAccessScheduleEnded: the request was refused only because the
+	// session's managed Profile is outside its access schedule (CORE-2950). The
+	// session stays valid; the client shows that access has ended for now
+	// instead of signing out. The code is FORBIDDEN, never UNAUTHENTICATED.
+	// It equals auth.DenialReasonAccessScheduleEnded, the value REST playback
+	// and media transports carry in their denial-reason header.
+	ErrorReasonAccessScheduleEnded ErrorReason = "ACCESS_SCHEDULE_ENDED"
 )
 
 // ErrorReasons returns the closed reason vocabulary in its documented order.
@@ -89,6 +98,7 @@ func ErrorReasons() []ErrorReason {
 		ErrorReasonRevealPINRequired,
 		ErrorReasonRevealPINIncorrect,
 		ErrorReasonProfileMismatch,
+		ErrorReasonAccessScheduleEnded,
 	}
 }
 
@@ -121,6 +131,23 @@ func revealPINRefusal(message clientError, pin string) error {
 		reason = ErrorReasonRevealPINRequired
 	}
 	return reasonedClientError{message: message, reason: reason}
+}
+
+// accessScheduleEndedMessage is the client message of the access-schedule
+// refusal. It names no window, so it discloses nothing about the schedule.
+const accessScheduleEndedMessage = "access schedule ended"
+
+// scopeRefusal maps a failed scope resolution to its HTTP status and error:
+// the access-schedule refusal answers 403 FORBIDDEN with reason
+// ACCESS_SCHEDULE_ENDED, every other failure 401 UNAUTHENTICATED "invalid
+// session" exactly as before (CORE-2950).
+func scopeRefusal(err error) (int, graphError) {
+	if auth.AccessScheduleEnded(err) {
+		refusal := newGraphError(ErrorCodeForbidden, accessScheduleEndedMessage)
+		refusal.Extensions.Reason = ErrorReasonAccessScheduleEnded
+		return http.StatusForbidden, refusal
+	}
+	return http.StatusUnauthorized, newGraphError(ErrorCodeUnauthenticated, "invalid session")
 }
 
 func newGraphError(code ErrorCode, message string) graphError {

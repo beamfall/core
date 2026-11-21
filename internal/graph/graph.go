@@ -1342,7 +1342,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if auditErr := h.recordPrivilegedAudit(r.Context(), privilegedNames, observability.AuditActor{}, observability.AuditRefused); auditErr != nil {
 				slog.Error("privileged refusal audit failed", "error", auditErr)
 			}
-			writeGraphError(w, http.StatusUnauthorized, ErrorCodeUnauthenticated, "invalid session")
+			status, refusal := scopeRefusal(err)
+			writeJSON(w, status, response{Errors: []graphError{refusal}})
 			return
 		}
 	}
@@ -1702,8 +1703,9 @@ func (h *Handler) reauthorizeAfterMutation(ctx context.Context, scope auth.Scope
 	}
 	refreshed, err := h.auth.Scope(ctx, scope.SessionID)
 	if err != nil {
+		_, refusal := scopeRefusal(err)
 		return auth.Scope{}, response{
-			Errors:               []graphError{newGraphError(ErrorCodeUnauthenticated, "invalid session")},
+			Errors:               []graphError{refusal},
 			authorizationRefused: true,
 		}
 	}
