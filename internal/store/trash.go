@@ -15,6 +15,18 @@ type TrashedMedia struct {
 	LibraryID LibraryID
 	Title     string
 	TrashedAt time.Time
+	// Merge is set when a Version merge that has not been undone folded this
+	// Media into another, rather than anyone deleting it (CORE-2916).
+	Merge *TrashedMediaMerge
+}
+
+// TrashedMediaMerge names the merge batch that trashed a Media and the Media
+// that kept its files as Versions.
+type TrashedMediaMerge struct {
+	BatchID       string
+	Survivor      MediaID
+	SurvivorTitle string
+	MergedAt      time.Time
 }
 
 // TrashRetention is how long trashed media stays restorable before purge.
@@ -249,12 +261,23 @@ func (s *Store) trashedMediaSQL(ctx context.Context, filter LibraryFilter) ([]Tr
 			visible[library.ID] = true
 		}
 	}
+	// The live merge-version batch item, if any, explains the trash. A Media
+	// a merge folded and the user undid is never folded again, so at most one
+	// such batch is live; the newest wins defensively.
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT id, library_id, title, trashed_at_ms
-		FROM media
-		WHERE trashed_at_ms IS NOT NULL
-		ORDER BY trashed_at_ms DESC
-	`)
+		SELECT m.id, m.library_id, m.title, m.trashed_at_ms,
+		  COALESCE(b.id, ''), COALESCE(json_extract(i.prior_state, '$.survivor'), ''),
+		  COALESCE(sm.title, ''), COALESCE(b.created_at_ms, 0)
+		FROM media m
+		LEFT JOIN op_batch_item i ON i.rowid = (
+		  SELECT i2.rowid FROM op_batch_item i2 JOIN op_batch b2 ON b2.id = i2.batch_id
+		  WHERE i2.media_id = m.id AND b2.kind = ? AND b2.undone_at_ms = 0
+		  ORDER BY b2.created_at_ms DESC, b2.id DESC LIMIT 1)
+		LEFT JOIN op_batch b ON b.id = i.batch_id
+		LEFT JOIN media sm ON sm.id = json_extract(i.prior_state, '$.survivor')
+		WHERE m.trashed_at_ms IS NOT NULL
+		ORDER BY m.trashed_at_ms DESC
+	`, opKindMergeVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -262,14 +285,20 @@ func (s *Store) trashedMediaSQL(ctx context.Context, filter LibraryFilter) ([]Tr
 	entries := []TrashedMedia{}
 	for rows.Next() {
 		var entry TrashedMedia
-		var trashedAt int64
-		if err := rows.Scan(&entry.ID, &entry.LibraryID, &entry.Title, &trashedAt); err != nil {
+		var trashedAt, mergedAt int64
+		var merge TrashedMediaMerge
+		if err := rows.Scan(&entry.ID, &entry.LibraryID, &entry.Title, &trashedAt,
+			&merge.BatchID, &merge.Survivor, &merge.SurvivorTitle, &mergedAt); err != nil {
 			return nil, err
 		}
 		if !visible[entry.LibraryID] {
 			continue
 		}
 		entry.TrashedAt = millisToTime(trashedAt)
+		if merge.BatchID != "" && merge.Survivor != "" {
+			merge.MergedAt = millisToTime(mergedAt)
+			entry.Merge = &merge
+		}
 		entries = append(entries, entry)
 	}
 	return entries, rows.Err()

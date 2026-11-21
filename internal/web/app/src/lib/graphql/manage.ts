@@ -18,6 +18,7 @@ import type {
   BulkOpResult,
   CollectionInfo,
   CreateLibraryResult,
+  DuplicateCopySet,
   DuplicateGroupInfo,
   EntityFieldInfo,
   EntityRelationDetail,
@@ -477,12 +478,36 @@ export async function setScheduleTrigger(
 
 // --- Trash (ADR-0005) -----------------------------------------------------
 
-const TRASH_LIST_QUERY = "query TrashList { trashList { id title trashedAt } }";
+const TRASH_LIST_QUERY =
+  "query TrashList { trashList { id title trashedAt mergedInto { batchID survivorID survivorTitle mergedAt } } }";
 
 /** TrashList — the server-side Trash (retention window). */
 export async function fetchTrashList(): Promise<TrashEntry[]> {
   const data = await graphql<{ trashList: TrashEntry[] | null }>(TRASH_LIST_QUERY, {});
   return data.trashList ?? [];
+}
+
+const UNDO_VERSION_MERGE_MUTATION =
+  "mutation UndoVersionMerge($batchID: String!) { undoBatch(batchID: $batchID) { batchID kind affected } }";
+
+/**
+ * UndoVersionMerge — undo one Version merge batch: each folded Media leaves
+ * Trash and takes its file back from the survivor (undoBatch, CORE-2490).
+ */
+export async function undoVersionMerge(batchID: string): Promise<void> {
+  await graphql<{ undoBatch: { batchID: string } }>(UNDO_VERSION_MERGE_MUTATION, { batchID });
+}
+
+const DUPLICATE_COPIES_QUERY =
+  "query DuplicateCopies { duplicateCopies { mediaID title libraryID copies { path sizeBytes label } } }";
+
+/** DuplicateCopies — Media holding byte-identical copies on disk (read-only, managers). */
+export async function fetchDuplicateCopies(): Promise<DuplicateCopySet[]> {
+  const data = await graphql<{ duplicateCopies: DuplicateCopySet[] | null }>(
+    DUPLICATE_COPIES_QUERY,
+    {},
+  );
+  return data.duplicateCopies ?? [];
 }
 
 const RESTORE_MEDIA_MUTATION =

@@ -936,6 +936,31 @@ export interface TrashEntry {
   id: string;
   title: string;
   trashedAt: string;
+  /** Set when a Version merge (not undone) folded this Media into a survivor. */
+  mergedInto?: TrashMergeInfo;
+}
+
+/** The Version merge that sent a Media to Trash (graph.TrashMergeInfo). */
+export interface TrashMergeInfo {
+  batchID: string;
+  survivorID: string;
+  survivorTitle: string;
+  mergedAt: string;
+}
+
+/** A Media whose live Versions include byte-identical copies (graph.DuplicateCopySetInfo). */
+export interface DuplicateCopySet {
+  mediaID: string;
+  title: string;
+  libraryID: string;
+  copies: DuplicateCopy[];
+}
+
+/** One on-disk file of a DuplicateCopySet. */
+export interface DuplicateCopy {
+  path: string;
+  sizeBytes: number;
+  label: string;
 }
 
 /** A first-class Core Tag (graph.TagInfo). */

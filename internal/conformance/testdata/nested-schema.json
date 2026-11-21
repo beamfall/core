@@ -235,6 +235,11 @@
         "kind": "scalar"
       },
       {
+        "name": "systemActor",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "targetID",
         "kind": "scalar",
         "optional": true
@@ -292,6 +297,11 @@
       {
         "name": "sessionID",
         "kind": "scalar"
+      },
+      {
+        "name": "systemActor",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "targetID",
@@ -6138,6 +6148,60 @@
   {
     "field": "dismissunmatched",
     "kind": "object"
+  },
+  {
+    "field": "duplicatecopies",
+    "kind": "object",
+    "children": [
+      {
+        "name": "copies",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "label",
+              "kind": "scalar"
+            },
+            {
+              "name": "path",
+              "kind": "scalar"
+            },
+            {
+              "name": "sizeBytes",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "label",
+            "kind": "scalar"
+          },
+          {
+            "name": "path",
+            "kind": "scalar"
+          },
+          {
+            "name": "sizeBytes",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "libraryID",
+        "kind": "scalar"
+      },
+      {
+        "name": "mediaID",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      }
+    ]
   },
   {
     "field": "editmediametadata",
@@ -20499,6 +20563,30 @@
         "kind": "scalar"
       },
       {
+        "name": "mergedInto",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "batchID",
+            "kind": "scalar"
+          },
+          {
+            "name": "mergedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorID",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorTitle",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "title",
         "kind": "scalar"
       },
@@ -32769,6 +32857,30 @@
         "kind": "scalar"
       },
       {
+        "name": "mergedInto",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "batchID",
+            "kind": "scalar"
+          },
+          {
+            "name": "mergedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorID",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorTitle",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "title",
         "kind": "scalar"
       },
@@ -32789,6 +32901,30 @@
       {
         "name": "libraryID",
         "kind": "scalar"
+      },
+      {
+        "name": "mergedInto",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "batchID",
+            "kind": "scalar"
+          },
+          {
+            "name": "mergedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorID",
+            "kind": "scalar"
+          },
+          {
+            "name": "survivorTitle",
+            "kind": "scalar"
+          }
+        ]
       },
       {
         "name": "title",

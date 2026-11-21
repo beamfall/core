@@ -318,6 +318,23 @@ type ActivityEntry struct {
 	APIKeyID string
 }
 
+// ActivitySystemActorScan names the library scan as the actor of an entry the
+// server wrote on its own (CORE-2916).
+const ActivitySystemActorScan = "scan"
+
+// SystemActor names the server subsystem that wrote the entry on its own, or
+// "" when a session, token or key acted. It is derived from the closed action
+// vocabulary, not stored: only the scan's verified-copy merge writes a
+// media.merge entry with no session, Profile, token or key, so the entries
+// written before this existed read correctly too.
+func (e ActivityEntry) SystemActor() string {
+	if e.Action == ActivityMediaMerge && e.SessionID == "" && e.ProfileID == "" &&
+		e.TokenID == "" && e.APIKeyID == "" {
+		return ActivitySystemActorScan
+	}
+	return ""
+}
+
 // ActivityQuery scopes an activity-log read. Filter applies the caller's
 // reveal/Library visibility; a non-empty ProfileID additionally restricts the
 // page to that Profile's own entries (the non-manager "self" scope).

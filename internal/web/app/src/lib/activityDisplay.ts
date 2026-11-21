@@ -384,6 +384,7 @@ function actorName(entry: ActivityRecord, names: ActivityNames, t: Translate): s
   if (profile) return profile;
   if (entry.tokenID) return t("activityActorApiToken");
   if (entry.apiKeyID) return t("activityActorApiKey");
+  if (entry.systemActor === "scan") return t("activityActorScan");
   return t(entry.profileID ? "activityActorGoneProfile" : "activityActorSomeone");
 }
 

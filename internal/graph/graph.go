@@ -4047,6 +4047,34 @@ type TrashEntry struct {
 	LibraryID string `json:"libraryID"`
 	Title     string `json:"title"`
 	TrashedAt string `json:"trashedAt"`
+	// MergedInto is set when the Version merge folded this Media into another
+	// rather than anyone deleting it; undoBatch(batchID) reverses it.
+	MergedInto *TrashMergeInfo `json:"mergedInto,omitempty"`
+}
+
+// TrashMergeInfo names the merge batch that trashed a Media and the Media that
+// kept its files as Versions.
+type TrashMergeInfo struct {
+	BatchID       string `json:"batchID"`
+	SurvivorID    string `json:"survivorID"`
+	SurvivorTitle string `json:"survivorTitle"`
+	MergedAt      string `json:"mergedAt"`
+}
+
+// DuplicateCopySetInfo is one Media whose live Versions include byte-identical
+// on-disk copies. Read-only: the server never deletes these files.
+type DuplicateCopySetInfo struct {
+	MediaID   string              `json:"mediaID"`
+	Title     string              `json:"title"`
+	LibraryID string              `json:"libraryID"`
+	Copies    []DuplicateCopyInfo `json:"copies"`
+}
+
+// DuplicateCopyInfo is one file of a DuplicateCopySetInfo.
+type DuplicateCopyInfo struct {
+	Path      string `json:"path"`
+	SizeBytes int64  `json:"sizeBytes"`
+	Label     string `json:"label"`
 }
 
 // trashMedia soft-deletes a visible Media item and returns the updated trash.
@@ -4141,6 +4169,37 @@ func (h *Handler) trashList(ctx context.Context, scope auth.Scope) ([]TrashEntry
 			Title:     entry.Title,
 			TrashedAt: entry.TrashedAt.UTC().Format(time.RFC3339),
 		}
+		if merge := entry.Merge; merge != nil {
+			resp[i].MergedInto = &TrashMergeInfo{
+				BatchID:       merge.BatchID,
+				SurvivorID:    string(merge.Survivor),
+				SurvivorTitle: merge.SurvivorTitle,
+				MergedAt:      merge.MergedAt.UTC().Format(time.RFC3339),
+			}
+		}
+	}
+	return resp, nil
+}
+
+// duplicateCopies lists Media whose live Versions include byte-identical
+// on-disk copies, for a manager to clean up on disk.
+func (h *Handler) duplicateCopies(ctx context.Context, scope auth.Scope) ([]DuplicateCopySetInfo, error) {
+	sets, err := h.store.DuplicateCopies(ctx, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	resp := make([]DuplicateCopySetInfo, len(sets))
+	for i, set := range sets {
+		copies := make([]DuplicateCopyInfo, len(set.Copies))
+		for j, file := range set.Copies {
+			copies[j] = DuplicateCopyInfo{Path: file.Path, SizeBytes: file.SizeBytes, Label: file.VersionLabel}
+		}
+		resp[i] = DuplicateCopySetInfo{
+			MediaID:   string(set.MediaID),
+			Title:     set.Title,
+			LibraryID: string(set.LibraryID),
+			Copies:    copies,
+		}
 	}
 	return resp, nil
 }
@@ -4162,6 +4221,9 @@ type ActivityEntryInfo struct {
 	LibraryID  string `json:"libraryID,omitempty"`
 	TokenID    string `json:"tokenID,omitempty"`
 	APIKeyID   string `json:"apiKeyID,omitempty"`
+	// SystemActor names the server subsystem that wrote the entry on its own
+	// ("scan"), when no session, token or key acted.
+	SystemActor string `json:"systemActor,omitempty"`
 }
 
 // activityReversible returns true for operations routed through Trash and
@@ -4196,16 +4258,17 @@ func (h *Handler) activityLog(ctx context.Context, scope auth.Scope, req request
 	resp := make([]ActivityEntryInfo, len(entries))
 	for i, entry := range entries {
 		resp[i] = ActivityEntryInfo{
-			ID:         strconv.FormatInt(entry.ID, 10),
-			OccurredAt: entry.OccurredAt.UTC().Format(time.RFC3339),
-			Action:     entry.Action,
-			Reversible: activityReversible(entry.Action),
-			SessionID:  string(entry.SessionID),
-			DeviceID:   string(entry.DeviceID),
-			ProfileID:  string(entry.ProfileID),
-			TargetType: entry.TargetType,
-			TargetID:   entry.TargetID,
-			LibraryID:  string(entry.LibraryID),
+			ID:          strconv.FormatInt(entry.ID, 10),
+			OccurredAt:  entry.OccurredAt.UTC().Format(time.RFC3339),
+			Action:      entry.Action,
+			Reversible:  activityReversible(entry.Action),
+			SessionID:   string(entry.SessionID),
+			DeviceID:    string(entry.DeviceID),
+			ProfileID:   string(entry.ProfileID),
+			TargetType:  entry.TargetType,
+			TargetID:    entry.TargetID,
+			LibraryID:   string(entry.LibraryID),
+			SystemActor: entry.SystemActor(),
 		}
 		if scope.DeviceRole == store.DeviceRoleManager {
 			resp[i].TokenID = entry.TokenID
@@ -4235,16 +4298,17 @@ func (h *Handler) activityEntry(ctx context.Context, scope auth.Scope, req reque
 		return ActivityEntryInfo{}, clientError("not found")
 	}
 	info := ActivityEntryInfo{
-		ID:         strconv.FormatInt(entry.ID, 10),
-		OccurredAt: entry.OccurredAt.UTC().Format(time.RFC3339),
-		Action:     entry.Action,
-		Reversible: activityReversible(entry.Action),
-		SessionID:  string(entry.SessionID),
-		DeviceID:   string(entry.DeviceID),
-		ProfileID:  string(entry.ProfileID),
-		TargetType: entry.TargetType,
-		TargetID:   entry.TargetID,
-		LibraryID:  string(entry.LibraryID),
+		ID:          strconv.FormatInt(entry.ID, 10),
+		OccurredAt:  entry.OccurredAt.UTC().Format(time.RFC3339),
+		Action:      entry.Action,
+		Reversible:  activityReversible(entry.Action),
+		SessionID:   string(entry.SessionID),
+		DeviceID:    string(entry.DeviceID),
+		ProfileID:   string(entry.ProfileID),
+		TargetType:  entry.TargetType,
+		TargetID:    entry.TargetID,
+		LibraryID:   string(entry.LibraryID),
+		SystemActor: entry.SystemActor(),
 	}
 	if scope.DeviceRole == store.DeviceRoleManager {
 		info.TokenID = entry.TokenID
@@ -5852,6 +5916,7 @@ var queryFields = map[string]bool{
 	"preplayclips":           true, // CORE-1701: the Owner's pre-play clip list
 	"media":                  true,
 	"trashlist":              true,
+	"duplicatecopies":        true,
 	"tags":                   true,
 	"tagassignments":         true,
 	"libraries":              true,

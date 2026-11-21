@@ -2,10 +2,11 @@
 
 ### Requirement: Server-initiated entries name their system actor
 
-An activity entry the server writes on its own, with no session, token or key, SHALL be able to
-carry a system actor from a closed vocabulary. The automatic Version merge's `media.merge` entry
-SHALL carry the system actor `scan`. `activityLog` and `activityEntry` SHALL expose it as
-`systemActor`, and the activity sentence SHALL name the library scan as the actor.
+An activity entry the server writes on its own, with no session, Profile, token or key, SHALL name
+its system actor from a closed vocabulary, derived from the action and not stored. A `media.merge`
+entry with none of those SHALL have the system actor `scan`; a `media.merge` a session, token or key
+made SHALL have none. `activityLog` and `activityEntry` SHALL expose it as `systemActor`, and the
+activity sentence SHALL name the library scan as the actor.
 
 #### Scenario: An automatic merge reads as the scan's
 

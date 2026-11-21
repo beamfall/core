@@ -17,9 +17,10 @@ which survivors now hold two identical copies on disk.
 - Manage › Trash lists those entries apart from real deletions, one group per batch, each saying
   "Merged into <survivor> as a Version (automatic, scan)" with a link to the survivor and an
   Undo merge action that calls the existing `undoBatch`. Per-row Restore stays for deletions only.
-- A new append-only events migration adds `activity_entry.system_actor`. The store-written
-  `media.merge` entry records `scan`; `activityLog` exposes `systemActor` and the activity sentence
-  names the library scan.
+- `activityLog` and `activityEntry` expose `systemActor`, derived from the closed action vocabulary
+  like `reversible` and not stored: a `media.merge` entry with no session, Profile, token or key is
+  the scan's, so it reads `scan`. No migration, and entries already written read correctly. The
+  activity sentence names the library scan.
 - A manager query `duplicateCopies` reports Media whose live Versions share an OSHash and size,
   with each copy's path and size. The web shows it read-only. The server never deletes files.
 - A store test pins that purging a merge-trashed Media leaves the moved files on the survivor.
@@ -28,4 +29,4 @@ which survivors now hold two identical copies on disk.
 
 - Changing when or how the scan merges copies.
 - Deleting, moving or renaming files on disk.
-- Backfilling `system_actor` on entries written before this change (the activity log is append-only).
+- Storing a system actor column (a derived field covers the one server-written action today).

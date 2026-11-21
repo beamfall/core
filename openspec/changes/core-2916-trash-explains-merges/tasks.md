@@ -1,7 +1,7 @@
 # Tasks
 
-- [ ] Events migration adding `activity_entry.system_actor`; store writes `scan` on the
-      verified-copy and split-version `media.merge` entries.
+- [ ] Store derives the system actor `scan` for a `media.merge` entry with no session, Profile,
+      token or key.
 - [ ] `activityLog` / `activityEntry` expose `systemActor`; the web activity sentence names the scan.
 - [ ] Store read of merge-trashed Media (`op_batch` kind `merge-version`, not undone) with survivor
       title; `trashList` returns `mergedInto`.

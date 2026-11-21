@@ -107,6 +107,14 @@ describe("describeActivity", () => {
     });
   });
 
+  it("names the library scan when the server made the change", () => {
+    const merge = { ...base, action: "media.merge", targetType: "media", targetID: "m-1" };
+    expect(describeActivity({ ...merge, systemActor: "scan" }, t, names).sentence).toBe(
+      "The library scan merged items",
+    );
+    expect(describeActivity(merge, t, names).sentence).toBe("Someone merged items");
+  });
+
   it("names a media item whose title the viewer may see", () => {
     const media = { ...base, profileID: "p-alex", targetType: "media" };
     expect(

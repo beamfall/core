@@ -88,6 +88,7 @@
         "profileID",
         "reversible",
         "sessionID",
+        "systemActor",
         "targetID",
         "targetType",
         "tokenID"
@@ -107,6 +108,7 @@
         "profileID",
         "reversible",
         "sessionID",
+        "systemActor",
         "targetID",
         "targetType",
         "tokenID"
@@ -1073,6 +1075,17 @@
       "field": "dismissunmatched",
       "effect": "write",
       "tier": "session"
+    },
+    {
+      "field": "duplicatecopies",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "copies",
+        "libraryID",
+        "mediaID",
+        "title"
+      ]
     },
     {
       "field": "editmediametadata",
@@ -2834,6 +2847,7 @@
       "children": [
         "id",
         "libraryID",
+        "mergedInto",
         "title",
         "trashedAt"
       ]
@@ -4273,6 +4287,7 @@
       "children": [
         "id",
         "libraryID",
+        "mergedInto",
         "title",
         "trashedAt"
       ]
@@ -4284,6 +4299,7 @@
       "children": [
         "id",
         "libraryID",
+        "mergedInto",
         "title",
         "trashedAt"
       ]
