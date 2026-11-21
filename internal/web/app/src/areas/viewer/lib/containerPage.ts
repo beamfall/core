@@ -54,6 +54,18 @@ export function withoutItem(
     .filter((group) => group.items.length > 0);
 }
 
+/**
+ * A related group's heading: the plugin's plural display name ("Albums"), then
+ * its display name, then the opaque kind (CORE-2831).
+ */
+export function groupHeading(group: RelatedEntityGroup, locale: string): string {
+  return (
+    displayString(group.kindPluralDisplayName, locale) ||
+    displayString(group.kindDisplayName, locale) ||
+    group.kind
+  );
+}
+
 /** The ancestor's related Entities of the page's kind, in the server's order, each once. */
 export function siblingContainers(
   ancestor: EntityInfo | null | undefined,

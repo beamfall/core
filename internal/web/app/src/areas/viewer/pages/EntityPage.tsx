@@ -33,6 +33,7 @@ import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
 import { nextUpChild, nextUpChildContainer } from "../lib/containerChildren";
 import {
   ancestorOf,
+  groupHeading,
   nextUpName,
   siblingContainers,
   similarContainers,
@@ -518,10 +519,7 @@ export function EntityPage() {
                 {siblings && (
                   <nav
                     className="bf-entity-siblings"
-                    aria-label={
-                      displayString(siblings.group.kindDisplayName, displayLocale) ||
-                      siblings.group.kind
-                    }
+                    aria-label={groupHeading(siblings.group, displayLocale)}
                   >
                     <ul>
                       {siblings.items.map((item) => (
@@ -644,7 +642,7 @@ export function EntityPage() {
           {groups.containers.map((group) => (
             <RelatedGroup
               key={group.kind}
-              title={displayString(group.kindDisplayName, displayLocale) || group.kind}
+              title={groupHeading(group, displayLocale)}
               items={group.items.map((item) => withItemCount(item, itemCount, displayLocale))}
             />
           ))}
@@ -713,7 +711,7 @@ export function EntityPage() {
           {groups.other.map((group) => (
             <RelatedGroup
               key={group.kind}
-              title={displayString(group.kindDisplayName, displayLocale) || group.kind}
+              title={groupHeading(group, displayLocale)}
               items={group.items}
             />
           ))}

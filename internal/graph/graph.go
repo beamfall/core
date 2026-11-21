@@ -4962,12 +4962,14 @@ type EntityDetailInfo struct {
 }
 
 // RelatedEntityGroupInfo is one Entity kind's share of an Entity's related
-// Entities: the kind, its plugin-declared display name (omitted when the
-// declaration carries none; clients fall back to Kind) and the Entities as
+// Entities: the kind, its plugin-declared display name and plural display
+// name (each omitted when the declaration carries none; clients head the group
+// with the plural, then the display name, then Kind) and the Entities as
 // Source items of kind "entity".
 type RelatedEntityGroupInfo struct {
-	Kind            string              `json:"kind"`
-	KindDisplayName plugin.LocaleString `json:"kindDisplayName,omitempty"`
+	Kind                  string              `json:"kind"`
+	KindDisplayName       plugin.LocaleString `json:"kindDisplayName,omitempty"`
+	KindPluralDisplayName plugin.LocaleString `json:"kindPluralDisplayName,omitempty"`
 	// Archetype is the plugin-declared shape of Kind; omitted when undeclared.
 	Archetype string       `json:"archetype,omitempty"`
 	Items     []SourceItem `json:"items"`
@@ -5008,10 +5010,11 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 		}
 		spec := h.entityKindSpec(ctx, group.LibraryID, group.Kind)
 		info.RelatedEntities = append(info.RelatedEntities, RelatedEntityGroupInfo{
-			Kind:            group.Kind,
-			KindDisplayName: spec.DisplayName,
-			Archetype:       spec.Archetype,
-			Items:           items,
+			Kind:                  group.Kind,
+			KindDisplayName:       spec.DisplayName,
+			KindPluralDisplayName: spec.PluralDisplayName,
+			Archetype:             spec.Archetype,
+			Items:                 items,
 		})
 	}
 	return info, nil

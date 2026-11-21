@@ -6892,6 +6892,15 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "kindPluralDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             }
           ]
         },
@@ -7313,6 +7322,15 @@
           },
           {
             "name": "kindDisplayName",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "kindPluralDisplayName",
             "kind": "map",
             "optional": true,
             "nullable": true,

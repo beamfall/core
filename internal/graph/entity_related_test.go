@@ -29,10 +29,11 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 		DisplayName: plugin.L("Tunes"),
 		MediaLabel:  plugin.L("Cut"),
 		EntityKinds: []plugin.EntityKind{{
-			Name:            "record",
-			DisplayName:     plugin.L("Record"),
-			Archetype:       "container",
-			OrderedChildren: true,
+			Name:              "record",
+			DisplayName:       plugin.L("Record"),
+			PluralDisplayName: plugin.L("Records"),
+			Archetype:         "container",
+			OrderedChildren:   true,
 			Relations: []plugin.RelationSpec{
 				{Name: "record-cut", ToKind: plugin.MediaKindName},
 				{Name: "record-performer", ToKind: "performer"},
@@ -93,7 +94,7 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 
 	read := func(id string) EntityDetailInfo {
 		t.Helper()
-		body := []byte(`{"query":"query($id:String!) { entity(id: $id) { id kind title relatedEntities { kind kindDisplayName items { id kind title libraryID } } } }","variables":{"id":"` + id + `"}}`)
+		body := []byte(`{"query":"query($id:String!) { entity(id: $id) { id kind title relatedEntities { kind kindDisplayName kindPluralDisplayName items { id kind title libraryID } } } }","variables":{"id":"` + id + `"}}`)
 		req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
 		authorizeViewer(req)
 		rec := httptest.NewRecorder()
@@ -116,9 +117,10 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 
 	got := read("entity-performer").RelatedEntities
 	want := []RelatedEntityGroupInfo{{
-		Kind:            "record",
-		KindDisplayName: plugin.L("Record"),
-		Archetype:       "container",
+		Kind:                  "record",
+		KindDisplayName:       plugin.L("Record"),
+		KindPluralDisplayName: plugin.L("Records"),
+		Archetype:             "container",
 		// First Record's only Media is video, so its card carries that class.
 		Items: []SourceItem{
 			{ID: "entity-record-a", LibraryID: string(library.ID), Kind: "entity", Title: "First Record", MediaClass: "video"},

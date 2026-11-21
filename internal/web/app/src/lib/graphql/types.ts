@@ -276,6 +276,8 @@ export interface EntityInfo {
 export interface RelatedEntityGroup {
   kind: string;
   kindDisplayName?: DisplayString;
+  /** The plugin's plural of `kindDisplayName`, for the group heading; absent when it declares none. */
+  kindPluralDisplayName?: DisplayString;
   /** The group kind's fixed archetype ("container", "person", …). */
   archetype?: string;
   items: SourceItem[];
