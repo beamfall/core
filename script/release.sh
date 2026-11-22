@@ -5,9 +5,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="${ROOT}/script/dist"
 VERSION="${VERSION:-$(git -C "${ROOT}" describe --tags --always --dirty)}"
 CHANNEL="${CHANNEL:-stable}"
-COMMIT="$(git -C "${ROOT}" rev-parse HEAD)"
-# Stamp the binary and source offer with the same reproducible UTC date.
-build_epoch="${SOURCE_DATE_EPOCH-$(git -C "${ROOT}" show -s --format=%ct "${COMMIT}")}"
+COMMIT="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
+# Stamp the binary and source offer with the same reproducible UTC date: the
+# commit's, or now outside a checkout (the source offer then refuses anyway).
+build_epoch="${SOURCE_DATE_EPOCH-$(git -C "${ROOT}" show -s --format=%ct "${COMMIT:-HEAD}" 2>/dev/null || date -u +%s)}"
 BUILD_DATE="$(python3 -c 'import sys; from datetime import datetime, timezone; print(datetime.fromtimestamp(int(sys.argv[1]), timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"))' "${build_epoch}")"
 INVOCATION_ID="${INVOCATION_ID:-}"
 if [ -z "${INVOCATION_ID}" ] && [ -n "${GITHUB_RUN_ID:-}" ]; then
