@@ -312,6 +312,22 @@ func (r *Registry) HasEngagementEventKind(kind string) bool {
 	return false
 }
 
+// RelationAttributeType looks up a declared attribute. Untyped attributes
+// return an empty type; callers that parse typed values can use the type.
+func RelationAttributeType(relation RelationSpec, name string) (string, bool) {
+	for _, attribute := range relation.Attributes {
+		if attribute == name {
+			return "", true
+		}
+	}
+	for _, attribute := range relation.TypedAttributes {
+		if attribute.Name == name {
+			return attribute.Type, true
+		}
+	}
+	return "", false
+}
+
 // EntityParentRelations returns the relation names activated bundles declare
 // for linking a child Entity to its same-Kind parent (EntityMap.ParentRelation),
 // sorted and without repeats. Core walks an Entity hierarchy only along these,

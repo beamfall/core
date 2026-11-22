@@ -130,6 +130,7 @@ var originalScopedFields = []string{
 	"entitiesformedia",
 	"entity",
 	"entityrelations",              // WEB-5B: generic Entity relation/order read
+	"entitysearch",                 // CORE-3131: Assign relation-target search
 	"extensionrequest",             // PUSH-2 (ADR-0039 §2.3): read one extension request by id
 	"requestextension",             // PUSH-2 (ADR-0039 §2.1): managed Profile raises a request
 	"respondextension",             // PUSH-2 (ADR-0039 §2.3): adult approves/denies, first-responder-wins
@@ -319,6 +320,8 @@ var originalScopedFields = []string{
 	"setlibraryrestricted",
 	"setlibraryroots",
 	"setmediafieldlock",
+	"setmediarelation",       // CORE-3131: operator relation write, locked against rehydration
+	"removemediarelation",    // CORE-3131: operator relation removal
 	"editmediametadata",      // CORE-1715: per-item manual metadata edit (locks edited fields)
 	"refreshmediametadata",   // CORE-1715: per-item provider refresh honouring locks
 	"refreshlibrarymetadata", // CORE-1136: Library-wide metadata refresh job

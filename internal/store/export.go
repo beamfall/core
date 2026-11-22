@@ -64,11 +64,12 @@ type ArtworkPin struct {
 // Entity, the relation name, exactly one target (entity or Media), and the
 // render-only attributes.
 type ExportedEntityRelation struct {
-	FromEntityID EntityID
-	Relation     string
-	ToEntityID   EntityID
-	ToMediaID    MediaID
-	Attributes   map[string]string
+	FromEntityID   EntityID
+	Relation       string
+	ToEntityID     EntityID
+	ToMediaID      MediaID
+	Attributes     map[string]string
+	OperatorLocked bool `json:",omitempty"`
 }
 
 // ExportedMediaRelation is one media_relation row (Media→Media): the fixed-shape
@@ -248,7 +249,7 @@ func (s *Store) ExportCatalog(ctx context.Context, filter LibraryFilter) (Catalo
 	// source's relation list.
 	relRows, err := s.catalogR.QueryContext(ctx, `
 		SELECT r.from_entity_id, r.relation, COALESCE(r.to_entity_id, ''),
-		       COALESCE(r.to_media_id, ''), r.attributes
+		       COALESCE(r.to_media_id, ''), r.attributes, r.operator_locked_at_ms IS NOT NULL
 		FROM entity_relation r
 		JOIN entity e ON e.id = r.from_entity_id
 		WHERE e.library_id IN `+inList+`
@@ -259,7 +260,7 @@ func (s *Store) ExportCatalog(ctx context.Context, filter LibraryFilter) (Catalo
 	for relRows.Next() {
 		var rel ExportedEntityRelation
 		var attrs sql.NullString
-		if err := relRows.Scan(&rel.FromEntityID, &rel.Relation, &rel.ToEntityID, &rel.ToMediaID, &attrs); err != nil {
+		if err := relRows.Scan(&rel.FromEntityID, &rel.Relation, &rel.ToEntityID, &rel.ToMediaID, &attrs, &rel.OperatorLocked); err != nil {
 			relRows.Close()
 			return CatalogExport{}, err
 		}

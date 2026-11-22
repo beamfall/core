@@ -38,6 +38,8 @@ func storeAudit(action string, functions ...string) destructiveAuditRequirement 
 // non-destructive Store calls live in knownNonSeamGraphStoreMethods; destructive
 // names must never be hidden there.
 var destructiveGraphStoreMethods = map[string]destructiveAuditRequirement{
+	"SetOperatorMediaRelation":      storeAudit("ActivitySetMediaRelation", "publishMediaRelationActivityLocked"),
+	"RemoveOperatorMediaRelation":   storeAudit("ActivityRemoveMediaRelation", "publishMediaRelationActivityLocked"),
 	"BatchRenameManagedPaths":       graphAudit("ActivityManagedFileMove"),
 	"DeleteChannel":                 graphAudit("ActivityChannelDelete"),
 	"DeleteLibrary":                 graphAudit("ActivityLibraryDelete"),

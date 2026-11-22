@@ -970,7 +970,7 @@ func (f *fakeEntityStore) UpsertEntity(_ context.Context, entity store.Entity) e
 	return nil
 }
 
-func (f *fakeEntityStore) UpsertEntityRelation(_ context.Context, relation store.EntityRelation) error {
+func (f *fakeEntityStore) UpsertHydratedEntityRelation(_ context.Context, relation store.EntityRelation) error {
 	if f.relationErr != nil {
 		return f.relationErr
 	}

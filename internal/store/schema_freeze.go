@@ -103,7 +103,9 @@ package store
 //
 // Events 0024 (CORE-2762) stages Version merge playback for recovery and
 // Profile erasure without changing entity queries.
+// Encrypted-library 0012 (CORE-3131) keeps relation locks and recovery rows
+// in the owning Library plane.
 const (
 	schemaFreezeEventsMigrations           = 24
-	schemaFreezeEncryptedLibraryMigrations = 11
+	schemaFreezeEncryptedLibraryMigrations = 12
 )

@@ -84,6 +84,7 @@
         "deviceID",
         "id",
         "libraryID",
+        "mediaRelationChange",
         "occurredAt",
         "profileID",
         "reversible",
@@ -104,6 +105,7 @@
         "deviceID",
         "id",
         "libraryID",
+        "mediaRelationChange",
         "occurredAt",
         "profileID",
         "reversible",
@@ -1154,7 +1156,11 @@
         "id",
         "kind",
         "kindDisplayName",
-        "title"
+        "operatorLocked",
+        "relation",
+        "sortOrder",
+        "title",
+        "undeclared"
       ]
     },
     {
@@ -1183,6 +1189,17 @@
         "relation",
         "sortOrder",
         "targetKind"
+      ]
+    },
+    {
+      "field": "entitysearch",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "libraryID",
+        "title"
       ]
     },
     {
@@ -2687,6 +2704,16 @@
       ]
     },
     {
+      "field": "removemediarelation",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "relation",
+        "sourceID",
+        "targetID"
+      ]
+    },
+    {
       "field": "removesubscription",
       "effect": "write",
       "tier": "session",
@@ -3690,6 +3717,16 @@
       "children": [
         "field",
         "locked"
+      ]
+    },
+    {
+      "field": "setmediarelation",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "relation",
+        "sourceID",
+        "targetID"
       ]
     },
     {

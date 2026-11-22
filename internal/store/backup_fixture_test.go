@@ -561,17 +561,22 @@ func insertFixtureRow(ctx context.Context, db *sql.DB, table string) error {
 
 func fixtureSemanticValue(ctx context.Context, db *sql.DB, table, column string) (any, bool, error) {
 	if value, ok := map[string]any{
-		"detection_run.completion_outcome":      "completed",
-		"detection_run_lifecycle.event_type":    "revoke",
-		"detection_run_lifecycle.model_id":      "fixture-model",
-		"detection_run_lifecycle.model_version": "fixture-version",
-		"detection_run_lifecycle.model_hash":    "fixture-hash",
-		"watchlist_item.target_kind":            "media",
-		"item_rating.target_kind":               "media",
-		"item_rating.rating":                    5,
-		"device_build_binding.surface":          "ios-viewer",
-		"media_operator_ordinal.sequence":       "2",
-		"media_operator_ordinal.ordinal_index":  5,
+		"detection_run.completion_outcome":          "completed",
+		"detection_run_lifecycle.event_type":        "revoke",
+		"detection_run_lifecycle.model_id":          "fixture-model",
+		"detection_run_lifecycle.model_version":     "fixture-version",
+		"detection_run_lifecycle.model_hash":        "fixture-hash",
+		"watchlist_item.target_kind":                "media",
+		"item_rating.target_kind":                   "media",
+		"item_rating.rating":                        5,
+		"device_build_binding.surface":              "ios-viewer",
+		"media_operator_ordinal.sequence":           "2",
+		"media_relation_activity.before_rows":       "[]",
+		"media_relation_activity.after_rows":        "[]",
+		"entity_relation.operator_locked_at_ms":     int64(1700000000000),
+		"entity_relation.operator_lock_activity_id": "fixture-relation-activity",
+		"entity_relation.operator_lock_one":         1,
+		"media_operator_ordinal.ordinal_index":      5,
 	}[table+"."+column]; ok {
 		return value, true, nil
 	}

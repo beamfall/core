@@ -149,7 +149,7 @@ type FingerprintStore interface {
 type EntityStore interface {
 	MediaLibrary(ctx context.Context, id store.MediaID) (store.LibraryID, error)
 	UpsertEntity(ctx context.Context, entity store.Entity) error
-	UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error
+	UpsertHydratedEntityRelation(ctx context.Context, relation store.EntityRelation) error
 }
 
 // MediaTitleSource supplies a Media item's parser-owned display title: the
@@ -827,7 +827,7 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 		if err := s.writeEntity(ctx, entity); err != nil {
 			return err
 		}
-		if err := s.entities.UpsertEntityRelation(ctx, store.EntityRelation{
+		if err := s.entities.UpsertHydratedEntityRelation(ctx, store.EntityRelation{
 			FromEntityID: id,
 			Name:         hydrated.Relation,
 			ToMediaID:    mediaID,
@@ -908,7 +908,7 @@ func (s *Service) applyEntityParent(ctx context.Context, library store.LibraryID
 	}); err != nil {
 		return err
 	}
-	return s.entities.UpsertEntityRelation(ctx, store.EntityRelation{
+	return s.entities.UpsertHydratedEntityRelation(ctx, store.EntityRelation{
 		FromEntityID: childID,
 		Name:         hydrated.ParentRelation,
 		ToEntityID:   parentID,
