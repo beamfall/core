@@ -1864,7 +1864,13 @@ describe("EntityPage rolled-up Media (CORE-3058)", () => {
         role: "detail",
         entityKind: "cast",
         sections: [
-          { id: "media", kind: "list", title: { en: "Rows" }, source: { kind: "entity-media" } },
+          {
+            id: "media",
+            kind: "list",
+            title: { en: "Rows" },
+            artworkSlot: "poster",
+            source: { kind: "entity-media" },
+          },
         ],
       },
     ];

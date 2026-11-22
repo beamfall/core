@@ -1,6 +1,8 @@
 import { Music } from "lucide-react";
 import { type CSSProperties, type ReactNode, type RefObject, useEffect, useState } from "react";
+import { Link, useInRouterContext } from "react-router";
 import type { MediaCredit } from "@/lib/graphql/types";
+import { mediaPath } from "../lib/mediaAddress";
 import type { PlaybackStream } from "../lib/playback";
 import {
   type ChangeMotion,
@@ -19,6 +21,9 @@ import { useVisualChoice } from "./visualizer/visualChoice";
 // another, everything else a third, each in plugin declaration order. The
 // artwork frame keeps its square footprint with a quiet fallback when the item
 // has no artwork or it fails to load, so the layout never shifts.
+// Now Playing (CORE-1637): inside a router the title links to the item's page
+// and each credit to its Entity page; `children` (Up Next, the quality badge)
+// sit under the words.
 export function AudioStage({
   title,
   artworkURL,
@@ -30,6 +35,8 @@ export function AudioStage({
   next = null,
   lyrics = null,
   reason = "",
+  mediaID = "",
+  children,
 }: {
   title: string;
   artworkURL: string;
@@ -47,20 +54,31 @@ export function AudioStage({
   lyrics?: ReactNode;
   /** Why radio picked this item (CORE-2772), shown under its credits. */
   reason?: string;
+  /** The playing item, whose page the title links to. */
+  mediaID?: string;
+  /** Shown under the words: Up Next and the quality badge. */
+  children?: ReactNode;
 }) {
   const [failedURL, setFailedURL] = useState("");
   const showArtwork = !!artworkURL && failedURL !== artworkURL;
-  const people = creditLine(credits, (c) => c.archetype === "person", ", ");
-  const collections = creditLine(credits, (c) => c.archetype === "container", " · ");
-  const others = creditLine(
-    credits,
-    (c) => c.archetype !== "person" && c.archetype !== "container",
-    " · ",
+  const people = credits.filter((c) => c.archetype === "person" && c.title);
+  const collections = credits.filter((c) => c.archetype === "container" && c.title);
+  const others = credits.filter(
+    (c) => c.archetype !== "person" && c.archetype !== "container" && c.title,
   );
+  const linked = useInRouterContext();
 
   const changeKey = trackKey || title;
   const motion = motionForChange(changeKey, useTrackChangeMotion(), usePrefersReducedMotion());
-  const meta = { position: queuePosition ?? "", title, people, collections, others, reason };
+  const meta = {
+    position: queuePosition ?? "",
+    title,
+    mediaID,
+    people,
+    collections,
+    others,
+    reason,
+  };
   // A further change cancels an unfinished one: only the latest outgoing words stay.
   const metaLayers = useLayers(changeKey, meta, META_LEAVE_MS, undefined, 1);
   const art = showArtwork ? artworkURL : "";
@@ -97,50 +115,54 @@ export function AudioStage({
         <div className="bf-audio-artwork" data-art={motion.art}>
           <ArtworkLayers url={art} leaveMs={ART_LEAVE_MS} onError={setFailedURL} placeholder />
         </div>
-        {/* One polite region: each incoming item is announced once, as whole
+        <div className="bf-audio-info">
+          {/* One polite region: each incoming item is announced once, as whole
             words; leaving words and per-letter pieces are hidden from it. */}
-        <div className="bf-audio-meta" data-words={motion.words} aria-live="polite">
-          {metaLayers.map(({ id, value: m, leaving }) => (
-            <div
-              key={id}
-              className="bf-audio-meta-layer"
-              data-state={leaving ? "out" : "in"}
-              aria-hidden={leaving || undefined}
-            >
-              {m.position && (
-                <Line beat={3} className="bf-audio-position">
-                  {m.position}
-                </Line>
-              )}
-              <Line
-                beat={0}
-                className="bf-audio-title"
-                spoken={!leaving && splitsLetters(m.title, motion) ? m.title : undefined}
+          <div className="bf-audio-meta" data-words={motion.words} aria-live="polite">
+            {metaLayers.map(({ id, value: m, leaving }) => (
+              <div
+                key={id}
+                className="bf-audio-meta-layer"
+                data-state={leaving ? "out" : "in"}
+                aria-hidden={leaving || undefined}
               >
-                {leaving ? m.title : <Letters text={m.title} motion={motion} />}
-              </Line>
-              {m.people && (
-                <Line beat={1} className="bf-audio-people">
-                  {m.people}
+                {m.position && (
+                  <Line beat={3} className="bf-audio-position">
+                    {m.position}
+                  </Line>
+                )}
+                <Line
+                  beat={0}
+                  className="bf-audio-title"
+                  spoken={!leaving && splitsLetters(m.title, motion) ? m.title : undefined}
+                  to={linked && !leaving && m.mediaID ? mediaPath("media", m.mediaID) : undefined}
+                >
+                  {leaving ? m.title : <Letters text={m.title} motion={motion} />}
                 </Line>
-              )}
-              {m.collections && (
-                <Line beat={2} className="bf-audio-collections">
-                  {m.collections}
-                </Line>
-              )}
-              {m.others && (
-                <Line beat={3} className="bf-audio-others">
-                  {m.others}
-                </Line>
-              )}
-              {m.reason && (
-                <Line beat={3} className="bf-audio-reason">
-                  {m.reason}
-                </Line>
-              )}
-            </div>
-          ))}
+                {m.people.length > 0 && (
+                  <Line beat={1} className="bf-audio-people">
+                    <Credits credits={m.people} separator=", " linked={linked && !leaving} />
+                  </Line>
+                )}
+                {m.collections.length > 0 && (
+                  <Line beat={2} className="bf-audio-collections">
+                    <Credits credits={m.collections} separator=" · " linked={linked && !leaving} />
+                  </Line>
+                )}
+                {m.others.length > 0 && (
+                  <Line beat={3} className="bf-audio-others">
+                    <Credits credits={m.others} separator=" · " linked={linked && !leaving} />
+                  </Line>
+                )}
+                {m.reason && (
+                  <Line beat={3} className="bf-audio-reason">
+                    {m.reason}
+                  </Line>
+                )}
+              </div>
+            ))}
+          </div>
+          {children}
         </div>
         {lyrics && <div className="bf-audio-lyrics">{lyrics}</div>}
       </div>
@@ -158,18 +180,33 @@ const META_LEAVE_MS = 320;
 // flap rolls in; the beat orders the arrival: title, then who made it, then
 // what it belongs to and the queue position (CORE-2331).
 // A line drawn letter by letter is read from `spoken`, a visually hidden copy,
-// and its letters are hidden from assistive technology.
+// and its letters are hidden from assistive technology. A linked line keeps
+// the spoken copy inside its link, so the link has a name.
 function Line({
   beat,
   className,
   spoken,
+  to,
   children,
 }: {
   beat: number;
   className: string;
   spoken?: string;
+  to?: string;
   children: ReactNode;
 }) {
+  if (to) {
+    return (
+      <div className="bf-audio-line" style={{ "--bf-line": beat } as CSSProperties}>
+        <p className={className}>
+          <Link to={to} className="bf-audio-link">
+            {spoken && <span className="sr-only">{spoken}</span>}
+            <span aria-hidden={spoken ? true : undefined}>{children}</span>
+          </Link>
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="bf-audio-line" style={{ "--bf-line": beat } as CSSProperties}>
       {spoken && <span className="sr-only">{spoken}</span>}
@@ -178,6 +215,31 @@ function Line({
       </p>
     </div>
   );
+}
+
+// A credit line: each credit links to its Entity page when it names one.
+function Credits({
+  credits,
+  separator,
+  linked,
+}: {
+  credits: readonly MediaCredit[];
+  separator: string;
+  linked: boolean;
+}) {
+  if (!linked) return credits.map((credit) => credit.title).join(separator);
+  return credits.map((credit, index) => (
+    <span key={`${credit.entityID}-${index}`}>
+      {index > 0 && separator}
+      {credit.entityID ? (
+        <Link to={`/entity/${encodeURIComponent(credit.entityID)}`} className="bf-audio-link">
+          {credit.title}
+        </Link>
+      ) : (
+        credit.title
+      )}
+    </span>
+  ));
 }
 
 /** Titles longer than this rise as one line; per-letter motion would cost frames. */
@@ -314,16 +376,4 @@ export function artworkKey(url: string): string {
   } catch {
     return url;
   }
-}
-
-function creditLine(
-  credits: readonly MediaCredit[],
-  keep: (credit: MediaCredit) => boolean,
-  separator: string,
-): string {
-  return credits
-    .filter(keep)
-    .map((credit) => credit.title)
-    .filter(Boolean)
-    .join(separator);
 }

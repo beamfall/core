@@ -55,7 +55,9 @@ afterEach(() => {
 describe("SubtitleSearchDialog", () => {
   it("searches the typed languages and lists language, rating, hash match and source", async () => {
     renderDialog();
-    fireEvent.change(screen.getByRole("textbox", { name: /^Languages/ }), { target: { value: "fr, pt-BR" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /^Languages/ }), {
+      target: { value: "fr, pt-BR" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
     expect(await screen.findByText("French")).toBeInTheDocument();
     expect(searchSubtitles).toHaveBeenCalledWith("m-1", ["fr", "pt-BR"]);

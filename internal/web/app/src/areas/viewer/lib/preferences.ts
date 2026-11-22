@@ -65,10 +65,35 @@ export type PrefKey = (typeof PREF_KEYS)[keyof typeof PREF_KEYS];
 /** The "on"/absent boolean convention shared with graph_autoskip.go. */
 export const PREF_ON = "on";
 
-/** Allowed playback-speed default options (advisory, client-owned). */
+/** The playback-speed default options Profile Settings offers (advisory, client-owned). */
 export const PLAYBACK_SPEEDS = ["1", "1.25", "1.5", "1.75", "2"] as const;
-export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
+/**
+ * A stored speed in canonical form: any multiple of 0.05 from 0.5 to 3
+ * (CORE-2960), so a speed chosen on the audio stage's slider is honoured.
+ */
+export type PlaybackSpeed = string;
 export const PLAYBACK_SPEED_DEFAULT: PlaybackSpeed = "1";
+export const PLAYBACK_SPEED_MIN = 0.5;
+export const PLAYBACK_SPEED_MAX = 3;
+
+/** A stored speed in canonical form ("1.25", "2.5"), or "" when malformed or out of range. */
+export function parsePlaybackSpeed(raw: string | undefined): PlaybackSpeed | "" {
+  if (!raw || !/^\d+(\.\d+)?$/.test(raw)) return "";
+  const value = Number(raw);
+  if (!(value >= PLAYBACK_SPEED_MIN && value <= PLAYBACK_SPEED_MAX)) return "";
+  return String(value);
+}
+
+/**
+ * The speed override for one container Entity (an album, a series, a book):
+ * a generic parent key, so every kind of collection shares it. "" when the
+ * Entity id would push the key past the server's 200-character limit.
+ */
+export function containerSpeedKey(entityID: string): string {
+  if (!entityID) return "";
+  const key = `playback.speed.container.${encodeURIComponent(entityID)}`;
+  return key.length <= 200 ? key : "";
+}
 export const SKIP_INTERVALS = ["10", "15", "30", "45", "60"] as const;
 export type SkipInterval = (typeof SKIP_INTERVALS)[number];
 export const SKIP_INTERVAL_DEFAULT: SkipInterval = "10";
@@ -139,10 +164,7 @@ function prePlayExtras(map: Map<string, string>): PrePlayExtras {
 }
 
 function speed(map: Map<string, string>): PlaybackSpeed {
-  const raw = map.get(PREF_KEYS.playbackSpeedDefault);
-  return (PLAYBACK_SPEEDS as readonly string[]).includes(raw ?? "")
-    ? (raw as PlaybackSpeed)
-    : PLAYBACK_SPEED_DEFAULT;
+  return parsePlaybackSpeed(map.get(PREF_KEYS.playbackSpeedDefault)) || PLAYBACK_SPEED_DEFAULT;
 }
 
 function interval(
