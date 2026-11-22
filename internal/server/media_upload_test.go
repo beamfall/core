@@ -107,6 +107,11 @@ func TestMediaUploadRoutesStageProposeAndCommit(t *testing.T) {
 		t.Fatalf("proposals = %+v", proposals)
 	}
 
+	body, _ = json.Marshal(map[string]any{"libraryID": "library-local", "query": "clip"})
+	req = mediaUploadRequest(t, http.MethodPost, "/api/media/uploads/targets", body, 0)
+	authorizeManager(req)
+	serveMediaUpload(t, srv, req, http.StatusOK, nil)
+
 	var commit struct{ Results []mediaUploadCommitResult }
 	body, _ = json.Marshal(map[string]any{"items": []map[string]string{
 		{"uploadID": status.UploadID, "destination": proposals.Proposals[0].Destination},

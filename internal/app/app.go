@@ -2756,6 +2756,9 @@ func runRetentionPurge(ctx context.Context, st *store.Store, art *artwork.Servic
 			logger.Warn("deleted library purge failed", "libraries", len(purged), "error", err)
 		}
 	}
+	if err := st.SweepMediaUploads(time.Now().UTC()); err != nil {
+		logger.Warn("media upload sweep failed", "error", err)
+	}
 	if purged, skipped, err := st.SweepManagedFileTrash(ctx, time.Now().UTC()); trashDisabledConfirmationRequired(skipped, err) {
 		logger.Info("managed file trash purge skipped: confirmation required", "reason", "trash disabled", "skips", st.TrashDisabledSweepSkips())
 	} else if err != nil {

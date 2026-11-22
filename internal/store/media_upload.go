@@ -14,6 +14,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // Media upload sessions (CORE-3192) stage an admin's uploaded file in a
@@ -74,7 +76,10 @@ var ErrMediaUploadOffset = errors.New("store: upload chunk does not start at the
 // ErrMediaUploadNotFound is returned for an unknown or expired session.
 var ErrMediaUploadNotFound = errors.New("store: upload session not found")
 
-var mediaUploadLocks sync.Map // id -> *sync.Mutex
+var (
+	mediaUploadLocks    sync.Map // id -> *sync.Mutex
+	mediaUploadCreateMu sync.Mutex
+)
 
 func lockMediaUpload(id string) func() {
 	m, _ := mediaUploadLocks.LoadOrStore(id, &sync.Mutex{})
@@ -91,7 +96,7 @@ func (s *Store) mediaUploadStaging() (string, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return "", err
 	}
-	if err := os.Chmod(root, 0o700); err != nil {
+	if err := os.Chmod(root, 0o700); err != nil { // #nosec G302 -- a directory needs its execute bit; 0700 is owner-only
 		return "", err
 	}
 	return root, nil
@@ -107,7 +112,34 @@ func validateMediaUploadID(id string) error {
 	return nil
 }
 
-// cleanUploadRelativeDir validates a client-relative folder ("Show/Season 1")
+// validateUploadSegment is validateManagedName plus a case-insensitive refusal
+// of the managed trash directory, which a case-insensitive volume would
+// otherwise resolve to.
+func validateUploadSegment(name string) error {
+	if err := validateManagedName(name); err != nil {
+		return err
+	}
+	if strings.EqualFold(strings.TrimSpace(name), managedFileTrashDir) {
+		return ValidationError("name must be a safe path segment")
+	}
+	return nil
+}
+
+// rejectEncryptedUploadLibraryLocked refuses an Encrypted Library: staging and
+// placement write plaintext, which such a Library must never hold.
+func (s *Store) rejectEncryptedUploadLibraryLocked(ctx context.Context, libraryID LibraryID) error {
+	var encrypted bool
+	err := s.catalogR.QueryRowContext(ctx, `SELECT encrypted FROM library WHERE id = ?`, libraryID).Scan(&encrypted)
+	if err != nil {
+		return err
+	}
+	if encrypted {
+		return ValidationError("uploads are unavailable for encrypted libraries")
+	}
+	return nil
+}
+
+// cleanUploadRelativeDir validates a client-relative folder ("Group/Part 1")
 // segment by segment and returns it with forward slashes.
 func cleanUploadRelativeDir(dir string) (string, error) {
 	dir = strings.Trim(strings.ReplaceAll(strings.TrimSpace(dir), `\`, "/"), "/")
@@ -119,7 +151,7 @@ func cleanUploadRelativeDir(dir string) (string, error) {
 		return "", ValidationError("relative folder is too deep")
 	}
 	for _, part := range parts {
-		if err := validateManagedName(part); err != nil {
+		if err := validateUploadSegment(part); err != nil {
 			return "", ValidationError("relative folder must be safe path segments")
 		}
 	}
@@ -129,7 +161,7 @@ func cleanUploadRelativeDir(dir string) (string, error) {
 // CreateMediaUpload opens a staged upload session for one file.
 func (s *Store) CreateMediaUpload(ctx context.Context, libraryID LibraryID, fileName, relativeDir string, size int64, filter LibraryFilter, now time.Time) (MediaUpload, error) {
 	fileName = strings.TrimSpace(fileName)
-	if err := validateManagedName(fileName); err != nil {
+	if err := validateUploadSegment(fileName); err != nil {
 		return MediaUpload{}, err
 	}
 	rel, err := cleanUploadRelativeDir(relativeDir)
@@ -150,6 +182,13 @@ func (s *Store) CreateMediaUpload(ctx context.Context, libraryID LibraryID, file
 	if _, err := s.visibleLibraryRootsLocked(ctx, libraryID, filter); err != nil {
 		return MediaUpload{}, err
 	}
+	if err := s.rejectEncryptedUploadLibraryLocked(ctx, libraryID); err != nil {
+		return MediaUpload{}, err
+	}
+	// Creates serialize so two cannot both pass the session cap or free-space
+	// check on one sweep's numbers.
+	mediaUploadCreateMu.Lock()
+	defer mediaUploadCreateMu.Unlock()
 	staging, err := s.mediaUploadStaging()
 	if err != nil {
 		return MediaUpload{}, err
@@ -181,19 +220,20 @@ func (s *Store) CreateMediaUpload(ctx context.Context, libraryID LibraryID, file
 	if err != nil {
 		return MediaUpload{}, err
 	}
-	sidecar := filepath.Join(staging, upload.ID+".json")
-	if err := writeFileExclusive(sidecar, data); err != nil {
+	// The .part goes first: a sidecar is only ever visible beside its data file.
+	part := filepath.Join(staging, upload.ID+".part")
+	if err := writeFileExclusive(part, nil); err != nil {
 		return MediaUpload{}, err
 	}
-	if err := writeFileExclusive(filepath.Join(staging, upload.ID+".part"), nil); err != nil {
-		_ = os.Remove(sidecar)
+	if err := writeFileExclusive(filepath.Join(staging, upload.ID+".json"), data); err != nil {
+		_ = os.Remove(part)
 		return MediaUpload{}, err
 	}
 	return upload, nil
 }
 
 func writeFileExclusive(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- callers pass a path under the server-owned staging dir
 	if err != nil {
 		return err
 	}
@@ -210,6 +250,27 @@ func writeFileExclusive(path string, data []byte) error {
 	return f.Close()
 }
 
+// SweepMediaUploads expires idle upload sessions; the periodic maintenance
+// sweep calls it so a discarded upload does not wait for the next create.
+func (s *Store) SweepMediaUploads(now time.Time) error {
+	if s.dataDir == "" {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	mediaUploadCreateMu.Lock()
+	defer mediaUploadCreateMu.Unlock()
+	staging, err := s.mediaUploadStaging()
+	if err != nil {
+		return err
+	}
+	_, _, err = sweepMediaUploads(staging, now)
+	return err
+}
+
 // sweepMediaUploads removes sessions idle past MediaUploadTTL and returns the
 // count of open sessions and the bytes they still expect.
 func sweepMediaUploads(staging string, now time.Time) (open int, reserved int64, err error) {
@@ -218,6 +279,15 @@ func sweepMediaUploads(staging string, now time.Time) (open int, reserved int64,
 		return 0, 0, err
 	}
 	for _, entry := range entries {
+		if id, ok := strings.CutSuffix(entry.Name(), ".part"); ok && validateMediaUploadID(id) == nil {
+			// A .part without its sidecar is a create that died between writes.
+			if _, err := os.Lstat(filepath.Join(staging, id+".json")); errors.Is(err, os.ErrNotExist) {
+				if info, err := entry.Info(); err == nil && now.Sub(info.ModTime()) > MediaUploadTTL {
+					_ = os.Remove(filepath.Join(staging, entry.Name()))
+				}
+			}
+			continue
+		}
 		id, ok := strings.CutSuffix(entry.Name(), ".json")
 		if !ok || validateMediaUploadID(id) != nil {
 			continue
@@ -239,7 +309,7 @@ type stagedMediaUpload struct {
 }
 
 func readMediaUpload(staging, id string) (stagedMediaUpload, error) {
-	data, err := os.ReadFile(filepath.Join(staging, id+".json"))
+	data, err := os.ReadFile(filepath.Join(staging, id+".json")) // #nosec G304 -- id is a validated hex upload id under the staging dir
 	if errors.Is(err, os.ErrNotExist) {
 		return stagedMediaUpload{}, ErrMediaUploadNotFound
 	}
@@ -323,7 +393,7 @@ func (s *Store) AppendMediaUploadChunk(ctx context.Context, id string, offset in
 	if offset != upload.Offset {
 		return upload, ErrMediaUploadOffset
 	}
-	f, err := os.OpenFile(filepath.Join(staging, id+".part"), os.O_WRONLY|os.O_APPEND, 0)
+	f, err := os.OpenFile(filepath.Join(staging, id+".part"), os.O_WRONLY|os.O_APPEND, 0) // #nosec G304 -- id is a validated hex upload id under the staging dir
 	if err != nil {
 		return upload, err
 	}
@@ -368,9 +438,13 @@ func (s *Store) CancelMediaUpload(ctx context.Context, id string, filter Library
 
 // CommitMediaUpload places a complete upload in destDir, an absolute folder
 // under a visible root of the session's Library, creating missing folders. The
-// admission is no-replace: a conflict keeps both files, fails, or, for
-// MediaUploadReplace, moves the existing file to the managed trash first. The
-// caller enqueues the scan that catalogs the file.
+// admission is no-replace: a conflict keeps both files or fails. For
+// MediaUploadReplace the upload is first admitted beside the existing file,
+// then the existing file moves to the managed trash and the upload takes its
+// name; a failure on the way restores the original. Every folder and file
+// operation resolves through a descriptor on the Library root, so a folder
+// swapped for a link mid-commit cannot redirect the file outside it. The caller
+// enqueues the scan that catalogs the file.
 func (s *Store) CommitMediaUpload(ctx context.Context, id, destDir string, conflict MediaUploadConflict, filter LibraryFilter, now time.Time) (MediaUploadCommit, error) {
 	switch conflict {
 	case MediaUploadKeepBoth, MediaUploadReplace, MediaUploadFail:
@@ -385,21 +459,33 @@ func (s *Store) CommitMediaUpload(ctx context.Context, id, destDir string, confl
 	unlock := lockMediaUpload(id)
 	defer unlock()
 
-	staging, upload, root, dir, err := s.prepareMediaUploadCommit(ctx, id, destDir, filter, now)
+	staging, upload, rootPath, rel, err := s.prepareMediaUploadCommit(ctx, id, destDir, filter, now)
 	if err != nil {
 		return MediaUploadCommit{}, err
 	}
-	result := MediaUploadCommit{Root: root}
-	target := filepath.Join(dir, upload.FileName)
+	root, err := openManagedDir(rootPath)
+	if err != nil {
+		return MediaUploadCommit{}, err
+	}
+	defer root.Close()
+	dir, err := ensureUploadFolders(root, rel)
+	if err != nil {
+		return MediaUploadCommit{}, err
+	}
+	defer dir.Close()
+	part := filepath.Join(staging, id+".part")
+	finish := func(name string, trashed *ManagedTrash) MediaUploadCommit {
+		_ = os.Remove(part)
+		_ = os.Remove(filepath.Join(staging, id+".json"))
+		mediaUploadLocks.Delete(id)
+		return MediaUploadCommit{Path: filepath.Join(rootPath, rel, name), Root: rootPath, Trashed: trashed}
+	}
+
 	if conflict == MediaUploadReplace {
-		info, err := os.Lstat(target)
+		info, err := dir.Lstat(upload.FileName)
 		switch {
 		case err == nil && info.Mode().IsRegular():
-			trash, err := s.DeleteManagedPath(ctx, upload.LibraryID, target, filter, now)
-			if err != nil {
-				return MediaUploadCommit{}, err
-			}
-			result.Trashed = &trash
+			return s.replaceWithMediaUpload(ctx, dir, part, filepath.Join(rootPath, rel), upload, filter, now, finish)
 		case err == nil:
 			return MediaUploadCommit{}, ValidationError("only a regular file can be replaced")
 		case !errors.Is(err, os.ErrNotExist):
@@ -407,25 +493,15 @@ func (s *Store) CommitMediaUpload(ctx context.Context, id, destDir string, confl
 		}
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return MediaUploadCommit{}, err
-	}
-	part := filepath.Join(staging, id+".part")
 	stem, ext := splitUploadName(upload.FileName)
 	for n := 1; n <= mediaUploadMaxSuffix; n++ {
 		name := upload.FileName
 		if n > 1 {
 			name = fmt.Sprintf("%s (%d)%s", stem, n, ext)
 		}
-		candidate := filepath.Join(dir, name)
-		err := admitStagedFileNoReplace(part, candidate)
+		err := admitUploadIntoDir(dir, part, name)
 		if err == nil {
-			_ = os.Remove(filepath.Join(staging, id+".json"))
-			mediaUploadLocks.Delete(id)
-			result.Path = candidate
-			return result, nil
+			return finish(name, nil), nil
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return MediaUploadCommit{}, err
@@ -437,6 +513,97 @@ func (s *Store) CommitMediaUpload(ctx context.Context, id, destDir string, confl
 	return MediaUploadCommit{}, ValidationError("no free name for this file in the destination")
 }
 
+// replaceWithMediaUpload admits the upload under a hidden temporary name, moves
+// the existing file to the managed trash, then links the upload at the
+// original name. If the final link fails the trashed file is restored, so a
+// failed Replace never leaves the folder without the original.
+func (s *Store) replaceWithMediaUpload(ctx context.Context, dir *os.Root, part, dirPath string, upload MediaUpload, filter LibraryFilter, now time.Time, finish func(string, *ManagedTrash) MediaUploadCommit) (MediaUploadCommit, error) {
+	var token [8]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		return MediaUploadCommit{}, err
+	}
+	tmp := "." + upload.FileName + ".upload-" + hex.EncodeToString(token[:])
+	if err := admitUploadIntoDir(dir, part, tmp); err != nil {
+		return MediaUploadCommit{}, err
+	}
+	trash, err := s.DeleteManagedPath(ctx, upload.LibraryID, filepath.Join(dirPath, upload.FileName), filter, now)
+	if err != nil {
+		_ = dir.Remove(tmp)
+		return MediaUploadCommit{}, err
+	}
+	if err := dir.Link(tmp, upload.FileName); err != nil {
+		_ = dir.Remove(tmp)
+		if _, restoreErr := s.RestoreManagedPath(ctx, upload.LibraryID, trash.TrashID, filter, now); restoreErr != nil {
+			return MediaUploadCommit{}, fmt.Errorf("replace failed (%w); the original stays in trash %s: %w", err, trash.TrashID, restoreErr)
+		}
+		return MediaUploadCommit{}, err
+	}
+	_ = dir.Remove(tmp)
+	return finish(upload.FileName, &trash), nil
+}
+
+// ensureUploadFolders creates the missing folders of rel under root, refusing
+// any existing component that is not a real directory, and returns a
+// descriptor on the destination folder. Each step resolves through root, so no
+// component can lead outside it.
+func ensureUploadFolders(root *os.Root, rel string) (*os.Root, error) {
+	current := "."
+	if rel != "." {
+		for _, segment := range strings.Split(rel, string(filepath.Separator)) {
+			current = filepath.Join(current, segment)
+			info, err := root.Lstat(current)
+			switch {
+			case err == nil && info.IsDir():
+				continue
+			case err == nil:
+				return nil, ValidationError("destination crosses a file or link")
+			case !errors.Is(err, os.ErrNotExist):
+				return nil, err
+			}
+			// Library folders must stay readable by the media server and its
+			// scanners, like the scan-created ones.
+			if err := root.Mkdir(current, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+				return nil, err
+			}
+			if info, err := root.Lstat(current); err != nil || !info.IsDir() {
+				return nil, ValidationError("destination crosses a file or link")
+			}
+		}
+	}
+	return root.OpenRoot(current)
+}
+
+// admitUploadIntoDir places the staged part at name inside dir without
+// replacing anything: a hard link from staging when both share a filesystem,
+// else a copy into a sibling temp finalized with a link. The part stays staged
+// until the caller finishes, so a failed commit can be retried. EEXIST is the
+// no-replace refusal.
+func admitUploadIntoDir(dir *os.Root, part, name string) error {
+	dirFile, err := dir.Open(".")
+	if err != nil {
+		return err
+	}
+	defer dirFile.Close()
+	linkErr := unix.Linkat(unix.AT_FDCWD, part, int(dirFile.Fd()), name, 0) //nolint:gosec // descriptors fit int
+	if linkErr == nil {
+		return nil
+	}
+	if !errors.Is(linkErr, unix.EXDEV) {
+		return &os.LinkError{Op: "link", Old: part, New: name, Err: linkErr}
+	}
+	src, err := os.Open(part) // #nosec G304 -- part is a validated upload id under the staging dir
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	tmp, err := copyIntoRootTemp(dir, src, "."+name+".upload-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = dir.Remove(tmp) }()
+	return dir.Link(tmp, name)
+}
+
 func splitUploadName(name string) (stem, ext string) {
 	ext = filepath.Ext(name)
 	if ext == name {
@@ -445,10 +612,9 @@ func splitUploadName(name string) (stem, ext string) {
 	return strings.TrimSuffix(name, ext), ext
 }
 
-// prepareMediaUploadCommit validates the session and destination and creates
-// missing destination folders, refusing any existing component that is not a
-// real directory.
-func (s *Store) prepareMediaUploadCommit(ctx context.Context, id, destDir string, filter LibraryFilter, now time.Time) (staging string, upload MediaUpload, root, dir string, err error) {
+// prepareMediaUploadCommit validates the session and destination and returns
+// the canonical root and the destination relative to it.
+func (s *Store) prepareMediaUploadCommit(ctx context.Context, id, destDir string, filter LibraryFilter, now time.Time) (staging string, upload MediaUpload, root, rel string, err error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err = s.guardLocked(); err != nil {
@@ -462,40 +628,26 @@ func (s *Store) prepareMediaUploadCommit(ctx context.Context, id, destDir string
 		err = ValidationError("upload is not complete")
 		return
 	}
+	if err = s.rejectEncryptedUploadLibraryLocked(ctx, upload.LibraryID); err != nil {
+		return
+	}
+	var dir string
 	root, dir, err = s.resolveMediaUploadDestinationLocked(ctx, upload.LibraryID, destDir, filter)
 	if err != nil {
 		return
 	}
-	rel, _ := filepath.Rel(root, dir)
-	current := root
+	rel, err = filepath.Rel(root, dir)
+	if err != nil {
+		return
+	}
 	if rel != "." {
 		for _, segment := range strings.Split(rel, string(filepath.Separator)) {
-			if err = validateManagedName(segment); err != nil {
-				return
-			}
-			current = filepath.Join(current, segment)
-			info, statErr := os.Lstat(current)
-			switch {
-			case statErr == nil && info.IsDir():
-			case statErr == nil:
-				err = ValidationError("destination crosses a file or link")
-				return
-			case errors.Is(statErr, os.ErrNotExist):
-				if mkErr := os.Mkdir(current, 0o755); mkErr != nil && !errors.Is(mkErr, os.ErrExist) {
-					err = mkErr
-					return
-				}
-				if info, statErr = os.Lstat(current); statErr != nil || !info.IsDir() {
-					err = ValidationError("destination crosses a file or link")
-					return
-				}
-			default:
-				err = statErr
+			if err = validateUploadSegment(segment); err != nil {
 				return
 			}
 		}
 	}
-	return staging, upload, root, dir, nil
+	return staging, upload, root, rel, nil
 }
 
 // resolveMediaUploadDestinationLocked maps destDir onto a canonical visible
@@ -538,7 +690,35 @@ func (s *Store) resolveMediaUploadDestinationLocked(ctx context.Context, library
 		if err := validateManagedTarget(c[1], dir); err != nil {
 			return "", "", err
 		}
+		if err := s.rejectNestedLibraryRootLocked(ctx, libraryID, c[1], dir); err != nil {
+			return "", "", err
+		}
 		return c[1], dir, nil
 	}
 	return "", "", ValidationError("destination is outside the library roots")
+}
+
+// rejectNestedLibraryRootLocked refuses a destination inside another Library's
+// root that sits below this Library's root: placing or replacing there would
+// act on the other Library under this one's permission and audit.
+func (s *Store) rejectNestedLibraryRootLocked(ctx context.Context, libraryID LibraryID, root, dir string) error {
+	rows, err := s.catalogR.QueryContext(ctx, `SELECT root FROM library_roots WHERE library_id <> ?`, libraryID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var configured string
+		if err := rows.Scan(&configured); err != nil {
+			return err
+		}
+		other, err := canonicalExistingPath(configured)
+		if err != nil {
+			continue
+		}
+		if other != root && pathWithinRoot(root, other) && pathWithinRoot(other, dir) {
+			return ValidationError("destination is inside another library")
+		}
+	}
+	return rows.Err()
 }

@@ -93,20 +93,44 @@ export function resumeKey(libraryID: string, file: File, relativeDir: string): s
   return `${RESUME_KEY}${libraryID}:${relativeDir}/${file.name}:${file.size}:${file.lastModified}`;
 }
 
-function rememberedUpload(key: string): string | null {
+type RememberedUpload = { id: string; head: string };
+
+function rememberedUpload(key: string): RememberedUpload | null {
   try {
-    return sessionStorage.getItem(key);
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<RememberedUpload>;
+    return typeof parsed.id === "string" && typeof parsed.head === "string"
+      ? { id: parsed.id, head: parsed.head }
+      : null;
   } catch {
     return null;
   }
 }
 
-function rememberUpload(key: string, id: string | null): void {
+function rememberUpload(key: string, entry: RememberedUpload | null): void {
   try {
-    if (id) sessionStorage.setItem(key, id);
+    if (entry) sessionStorage.setItem(key, JSON.stringify(entry));
     else sessionStorage.removeItem(key);
   } catch {
     // Resume across reloads is a convenience; the upload still works.
+  }
+}
+
+const FINGERPRINT_BYTES = 64 * 1024;
+
+/**
+ * A SHA-256 of the file's first 64 KiB. Name, size and modification time
+ * alone can match a different file, so a staged upload is resumed only when
+ * this matches too. Null when the browser cannot hash, which disables resume.
+ */
+export async function uploadFingerprint(file: File): Promise<string | null> {
+  try {
+    const head = await file.slice(0, FINGERPRINT_BYTES).arrayBuffer();
+    const digest = await crypto.subtle.digest("SHA-256", head);
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null;
   }
 }
 
@@ -118,21 +142,22 @@ export async function openMediaUpload(
   signal?: AbortSignal,
 ): Promise<MediaUploadStatus> {
   const key = resumeKey(libraryID, file, relativeDir);
+  const head = await uploadFingerprint(file);
   const remembered = rememberedUpload(key);
-  if (remembered) {
-    const response = await sendUpload("GET", remembered, { signal });
+  if (remembered && head && remembered.head === head) {
+    const response = await sendUpload("GET", remembered.id, { signal });
     if (response.ok) {
       const status = await readStatus(response);
       if (status.size === file.size) return status;
     }
-    rememberUpload(key, null);
   }
+  rememberUpload(key, null);
   const status = await postJSON<MediaUploadStatus>(
     UPLOADS,
     { libraryID, fileName: file.name, relativeDir, size: file.size },
     { signal },
   );
-  rememberUpload(key, status.uploadID);
+  if (head) rememberUpload(key, { id: status.uploadID, head });
   return status;
 }
 

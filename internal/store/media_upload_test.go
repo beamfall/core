@@ -140,10 +140,10 @@ func TestMediaUploadCommitConflictsAndBounds(t *testing.T) {
 	st, root, filter := mediaUploadFixture(t)
 	now := time.Now()
 	existing := filepath.Join(root, "Film (2001)", "film.mkv")
-	if err := os.MkdirAll(filepath.Dir(existing), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(existing), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(existing, []byte("old"), 0o644); err != nil {
+	if err := os.WriteFile(existing, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -166,7 +166,7 @@ func TestMediaUploadCommitConflictsAndBounds(t *testing.T) {
 	if filepath.Base(kept.Path) != "film (2).mkv" || kept.Trashed != nil {
 		t.Fatalf("keep-both = %+v", kept)
 	}
-	if got, _ := os.ReadFile(existing); string(got) != "old" {
+	if got, _ := os.ReadFile(existing); string(got) != "old" { // #nosec G304 -- test temp path
 		t.Fatalf("keep-both touched the existing file: %q", got)
 	}
 
@@ -178,7 +178,7 @@ func TestMediaUploadCommitConflictsAndBounds(t *testing.T) {
 	if replaced.Path != existing || replaced.Trashed == nil || replaced.Trashed.OriginalPath != existing {
 		t.Fatalf("replace = %+v", replaced)
 	}
-	if got, _ := os.ReadFile(existing); string(got) != "newer" {
+	if got, _ := os.ReadFile(existing); string(got) != "newer" { // #nosec G304 -- test temp path
 		t.Fatalf("replaced bytes = %q", got)
 	}
 	if got, err := os.ReadFile(replaced.Trashed.TrashPath); err != nil || string(got) != "old" {
@@ -193,5 +193,31 @@ func TestMediaUploadCommitConflictsAndBounds(t *testing.T) {
 	linked := stageUpload(t, st, "a.mkv", "", []byte("a"), filter, now)
 	if _, err := st.CommitMediaUpload(ctx, linked.ID, filepath.Join(link, "sub"), store.MediaUploadKeepBoth, filter, now); err == nil || !strings.Contains(err.Error(), "link") {
 		t.Fatalf("symlinked destination: %v", err)
+	}
+}
+
+func TestMediaUploadRefusesNestedLibraryAndTrashSpellings(t *testing.T) {
+	ctx := context.Background()
+	st, root, filter := mediaUploadFixture(t)
+	now := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
+	nested := filepath.Join(root, "Other")
+	if err := os.Mkdir(nested, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateLibraryWithRoots(ctx, "Other", true, "", "profile-default", []string{nested}, ""); err != nil {
+		t.Fatal(err)
+	}
+	upload := stageUpload(t, st, "a.mkv", "", []byte("a"), filter, now)
+	if _, err := st.CommitMediaUpload(ctx, upload.ID, filepath.Join(nested, "x"), store.MediaUploadKeepBoth, filter, now); err == nil || !strings.Contains(err.Error(), "another library") {
+		t.Fatalf("nested library destination: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(nested, "x")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("refused commit created folders: %v", err)
+	}
+	if _, err := st.CommitMediaUpload(ctx, upload.ID, filepath.Join(root, "Kept"), store.MediaUploadKeepBoth, filter, now); err != nil {
+		t.Fatalf("sibling destination: %v", err)
+	}
+	if _, err := st.CreateMediaUpload(ctx, "library-local", "a.mkv", strings.ToUpper(".beamfall-trash")+"/x", 1, filter, now); err == nil {
+		t.Fatal("trash folder spelled in another case was accepted")
 	}
 }

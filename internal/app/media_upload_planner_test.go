@@ -69,10 +69,10 @@ func TestMediaUploadPlannerProposesParsedAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	existing := filepath.Join(canonical, "Harbor Lights (2004)", "Harbor Lights (2004).mkv")
-	if err := os.MkdirAll(filepath.Dir(existing), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(existing), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(existing, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(existing, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -80,8 +80,12 @@ func TestMediaUploadPlannerProposesParsedAssignments(t *testing.T) {
 	planner := &mediaUploadPlanner{
 		st:      st,
 		parsers: map[string]scanpkg.FilenameParser{pluginID: uploadTestParser{}},
-		enqueue: func(_ context.Context, job store.Job) error { enqueued = append(enqueued, job); return nil },
-		now:     func() time.Time { return time.Unix(0, 0).UTC() },
+		enqueue: func(_ context.Context, job store.Job) (store.Job, error) {
+			enqueued = append(enqueued, job)
+			job.Status = store.JobStatusQueued
+			return job, nil
+		},
+		now: func() time.Time { return time.Unix(0, 0).UTC() },
 	}
 	proposals, err := planner.ProposeMediaUploads(ctx, filter, "library-local", []store.MediaUpload{
 		{ID: "u1", FileName: "Harbor Lights (2004).mkv"},

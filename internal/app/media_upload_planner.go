@@ -30,7 +30,7 @@ type mediaUploadPlanner struct {
 	st      *store.Store
 	parsers map[string]scanpkg.FilenameParser
 	plugins *plugin.Registry
-	enqueue func(ctx context.Context, job store.Job) error
+	enqueue func(ctx context.Context, job store.Job) (store.Job, error)
 	now     func() time.Time
 }
 
@@ -41,9 +41,8 @@ func newMediaUploadPlanner(st *store.Store, parsers map[string]scanpkg.FilenameP
 		st:      st,
 		parsers: parsers,
 		plugins: plugins,
-		enqueue: func(ctx context.Context, job store.Job) error {
-			_, err := enqueueAndWake(ctx, st, wake, job)
-			return err
+		enqueue: func(ctx context.Context, job store.Job) (store.Job, error) {
+			return enqueueAndWake(ctx, st, wake, job)
 		},
 		now: func() time.Time { return time.Now().UTC() },
 	}
@@ -357,5 +356,15 @@ func (p *mediaUploadPlanner) MediaUploadCommitted(ctx context.Context, libraryID
 	if err != nil {
 		return err
 	}
-	return p.enqueue(ctx, job)
+	active, err := p.enqueue(ctx, job)
+	if err != nil || active.Status == store.JobStatusQueued {
+		return err
+	}
+	// The scan already under way may have passed the new file's folder, so
+	// queue one follow-up behind it; later uploads during the same scan
+	// dedupe into that follow-up.
+	job.DedupeKey += ":after:" + string(active.ID)
+	job.ID = ""
+	_, err = p.enqueue(ctx, job)
+	return err
 }

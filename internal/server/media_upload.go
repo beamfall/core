@@ -346,7 +346,9 @@ func (s *Server) commitMediaUploads(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "items must list 1 to 200 uploads")
 		return
 	}
-	ctx := r.Context()
+	// Placement outlives a client that gives up waiting: the audit and the
+	// scan for files already placed must still land.
+	ctx := context.WithoutCancel(r.Context())
 	filter := scope.LibraryFilter()
 	results := make([]mediaUploadCommitResult, 0, len(req.Items))
 	type scanKey struct {

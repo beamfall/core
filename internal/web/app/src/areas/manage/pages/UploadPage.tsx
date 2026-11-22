@@ -21,6 +21,7 @@ import { fetchLibraries } from "@/lib/graphql";
 import type { LibraryInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import {
+  cancelMediaUpload,
   commitMediaUploads,
   droppedRelativeDir,
   forgetMediaUpload,
@@ -119,10 +120,10 @@ export function UploadPage() {
     }
     if (sent.length > 0) {
       try {
-        const proposals = await proposeMediaUploads(
-          libraryID,
-          sent.map((s) => s.uploadID),
-        );
+        const proposals: MediaUploadProposal[] = [];
+        for (const batch of batches(sent.map((s) => s.uploadID))) {
+          proposals.push(...(await proposeMediaUploads(libraryID, batch)));
+        }
         const byID = new Map(proposals.map((p) => [p.uploadID, p]));
         setRows((current) =>
           current.map((row) => {
@@ -144,6 +145,15 @@ export function UploadPage() {
     setBusy(false);
   };
 
+  // Removing a row that is staged but not placed discards the staged bytes
+  // too, so they do not sit on the server until the session expires.
+  const onRemove = (row: UploadRow) => {
+    if (row.uploadID && !row.result?.path) {
+      void cancelMediaUpload(libraryID, row.file, row.relativeDir, row.uploadID).catch(() => {});
+    }
+    setRows((current) => current.filter((r) => r.key !== row.key));
+  };
+
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragging(false);
@@ -156,13 +166,15 @@ export function UploadPage() {
     setError("");
     setBusy(true);
     try {
-      const results = await commitMediaUploads(
-        placeable.map((row) => ({
-          uploadID: row.proposal!.uploadID,
-          destination: row.destination,
-          conflict: row.conflict,
-        })),
-      );
+      const results: MediaUploadCommitResult[] = [];
+      const requests = placeable.map((row) => ({
+        uploadID: row.proposal!.uploadID,
+        destination: row.destination,
+        conflict: row.conflict,
+      }));
+      for (const batch of batches(requests)) {
+        results.push(...(await commitMediaUploads(batch)));
+      }
       const byID = new Map(results.map((r) => [r.uploadID, r]));
       setRows((current) =>
         current.map((row) => {
@@ -269,7 +281,7 @@ export function UploadPage() {
                   row={row}
                   libraryID={libraryID}
                   onChange={(change) => patch(row.key, change)}
-                  onRemove={() => setRows((current) => current.filter((r) => r.key !== row.key))}
+                  onRemove={() => onRemove(row)}
                 />
               ))}
             </TableBody>
@@ -451,4 +463,13 @@ function TargetPicker({
       )}
     </div>
   );
+}
+
+/** The server caps proposals and commits at 200 uploads per request. */
+const BATCH = 200;
+
+function batches<T>(items: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += BATCH) out.push(items.slice(i, i + BATCH));
+  return out;
 }
