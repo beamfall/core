@@ -965,3 +965,26 @@ func TestWatchPartyRevealIntersectionRecomputedOnJoin(t *testing.T) {
 		t.Fatalf("party members after rejected accepts = %d, want 1 (host only)", n)
 	}
 }
+
+// TestWatchPartyNonHostTransportRefusalIgnoresTheItem guards CORE-1801: a
+// non-host transition is refused as not the host before any Reveal check, so
+// the refusal is the same for a visible, a restricted and a missing Media.
+//
+// feature:watch-party
+func TestWatchPartyNonHostTransportRefusalIgnoresTheItem(t *testing.T) {
+	st := storetest.Open(t)
+	h := newConductorHandler(st, time.Unix(1_700_000_000, 0).UTC())
+	party := createParty(t, h, "media-alpha", false, authorizeViewer)
+	if _, errs := post(t, h, inviteBody(party.PartyID, "Managed"), authorizeViewer); len(errs) != 0 {
+		t.Fatalf("invite errors = %#v", errs)
+	}
+	if _, errs := post(t, h, acceptBody(party.PartyID), authorizeManaged); len(errs) != 0 {
+		t.Fatalf("accept errors = %#v", errs)
+	}
+	for _, item := range []string{"media-alpha", "media-archive", "media-missing"} {
+		_, errs := post(t, h, transportBody(party.PartyID, item, 5000), authorizeManaged)
+		if len(errs) != 1 || errs[0].Message != "not the party host" {
+			t.Fatalf("non-host transport to %s errors = %#v, want only not-the-party-host", item, errs)
+		}
+	}
+}

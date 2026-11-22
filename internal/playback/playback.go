@@ -583,6 +583,8 @@ type Service struct {
 	observed      observations
 
 	decisionLookup decisionLookup
+	feedStreams    FeedStreamRegistrar
+	feedEntries    feedEntryLookup
 }
 
 // SealedPredicate reports whether a Library is currently Sealed (ADR-0098 area
@@ -665,6 +667,7 @@ func (s *Service) SetSessions(sessions *Sessions) {
 	s.sessions = sessions
 	if sessions != nil && s.store != nil {
 		sessions.sourceStore = s.store
+		sessions.recordDuration = s.store.SetProbedMediaDuration
 		sessions.SetKeyframeStore(s.store) // probe each audio-copy source once (CORE-0021)
 	}
 }
@@ -1087,7 +1090,15 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 	// yields one Version with one Part, so the negotiation is a no-op there and
 	// existing behaviour is unchanged.
 	files, err := s.store.MediaFilesForMedia(ctx, media.ID, scope.LibraryFilter())
-	if err != nil {
+	if err == nil {
+		files = playableFiles(files)
+	}
+	if err != nil || len(files) == 0 {
+		// A catalogued feed entry not yet downloaded streams its origin through
+		// the proxy (ADR-0238); anything else without a file is unavailable.
+		if feed, ok, feedErr := s.feedStreamDecision(ctx, scope, media, suffix, timeline, profile, priority, ov); feedErr != nil || ok {
+			return feed, feedErr
+		}
 		return decision{media: media, verdict: "unavailable", reason: "media-file-unavailable", streams: []StreamChoice{}, timeline: timeline}, nil
 	}
 	// Image-class posture: a still is served as direct authenticated
@@ -1132,15 +1143,15 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 		// Every rung below judges the negotiated Version by its own file facts.
 		media = versionFacts(media, file, streams, !alternate)
 	}
-	// A Media stored without a runtime (its container declared none) is
-	// probed on demand, so the timeline and a live session's playlist cover
-	// the whole file instead of ending where the encoder is (CORE-2314).
-	if media.DurationSeconds <= 0 && len(parts) <= 1 {
-		if seconds := s.probedDuration(ctx, op, media, file); seconds > 0 {
-			media.DurationSeconds = seconds
-			timeline.DurationSeconds = seconds
-		}
+	// The catalog runtime belongs to the primary Version. Probe single-Part
+	// alternatives and files whose runtime is missing on demand (CORE-2314).
+	if alternate {
+		media.DurationSeconds = 0
 	}
+	if media.DurationSeconds <= 0 && len(parts) <= 1 {
+		media.DurationSeconds = s.probedDuration(ctx, op, media, file, !alternate)
+	}
+	timeline.DurationSeconds = media.DurationSeconds
 	barred := unknownHeightBarred(media, profile, alternate || versioned || len(versions) > 0)
 	// Resolution badges (CORE-2485) describe the negotiated file as judged
 	// above, so an alternate Version's unknown frame size stays unlabelled.

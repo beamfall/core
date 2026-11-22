@@ -101,7 +101,10 @@ func (h *Handler) serveStyledSubtitle(w http.ResponseWriter, r *http.Request, gr
 	// A file read can outlive a relock or a change to the viewer's library scope.
 	_, scope, err := h.verifyMediaGrant(r.Context(), token, streamtoken.TargetMediaSubtitle)
 	if err != nil {
-		http.Error(w, "stream ended", h.endedSubtitleStatus(r.Context(), token))
+		if refuseAccessScheduleEnded(w, err) {
+			return
+		}
+		http.Error(w, "stream ended", endedSubtitleStatus(err))
 		return
 	}
 	if h.sealed != nil && h.sealed(library.ID) ||

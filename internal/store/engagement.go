@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/beamfall/core/internal/serverrole"
 )
@@ -39,6 +41,23 @@ type PlaybackProgress struct {
 	// last-applied event-time is a no-op, so a stale offline-flush from one device
 	// cannot rewind a newer position already recorded by another.
 	EventTimeMS int64
+	// DeviceID and PlayMethod are write-only: the reporting Device and the
+	// play method (PlayMethodDirect, PlayMethodRemux or PlayMethodTranscode)
+	// the server chose for its session, recorded on the progress event for
+	// play history (CORE-1703). Empty when unknown.
+	DeviceID   DeviceID
+	PlayMethod string
+	// PlaybackID and Paused are write-only too. PlaybackID is the client's
+	// random ID for one play, new each time a player starts an item and kept
+	// across pauses and seeks; play history groups a play by it. Empty when
+	// the client sent none. Paused says whether the player was paused when it
+	// reported; nil when the client did not say. PlayedMS is the time, in
+	// milliseconds, the client has actually played under PlaybackID so far
+	// (not paused, seeking or buffering); play history credits its growth.
+	// nil when the client did not say.
+	PlaybackID string
+	Paused     *bool
+	PlayedMS   *int64
 	// Provenance is the ADR-0009 §7 import discriminator: "" native,
 	// a shape-named source value for imported engagement. Write-only on input
 	// is via UpsertPlaybackProgressWithProvenance; this field is the read-back.
@@ -58,11 +77,38 @@ type PlaybackProgress struct {
 	ImportMatchMethod string
 }
 
+// MaxPlaybackIDLength bounds a client's playback ID, in characters; a UUID
+// is 36.
+const MaxPlaybackIDLength = 64
+
+// ErrInvalidPlaybackID reports a playback ID that is too long or carries
+// surrounding whitespace.
+var ErrInvalidPlaybackID = errors.New("playbackID must be at most 64 characters with no surrounding whitespace")
+
+// ValidatePlaybackID checks a client's playback ID exactly as sent: at most
+// MaxPlaybackIDLength characters (runes) and valid UTF-8, with no leading or
+// trailing whitespace, so two IDs that differ only by spacing are never
+// merged into one play. The empty ID (none sent) is valid.
+func ValidatePlaybackID(id string) error {
+	if !utf8.ValidString(id) || utf8.RuneCountInString(id) > MaxPlaybackIDLength {
+		return ErrInvalidPlaybackID
+	}
+	if id != strings.TrimFunc(id, unicode.IsSpace) {
+		return ErrInvalidPlaybackID
+	}
+	return nil
+}
+
 // watchedThreshold marks video media watched once this fraction has played.
 const watchedThreshold = 0.95
 
 // playedThreshold marks audio media played: min(80%, track end).
 const playedThreshold = 0.8
+
+// resumeFinishRemainingSeconds marks resume-eligible audio (long spoken-word
+// Media) played only once this little is left: a fraction threshold would
+// fire with hours to go in a long item and reset its resume position.
+const resumeFinishRemainingSeconds = 30
 
 // resumeFloorSeconds hides barely-started playback from Continue Watching.
 const resumeFloorSeconds = 10
@@ -174,7 +220,9 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 	resumeEligible := policy.Eligible()
 	watched := finished
 	if progress.DurationSeconds > 0 &&
-		float64(progress.PositionSeconds) >= threshold*float64(progress.DurationSeconds) {
+		float64(progress.PositionSeconds) >= threshold*float64(progress.DurationSeconds) &&
+		(policy.Class != MediaClassAudio || !resumeEligible ||
+			progress.DurationSeconds-progress.PositionSeconds <= resumeFinishRemainingSeconds) {
 		watched = true
 	}
 	position := progress.PositionSeconds
@@ -247,6 +295,14 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 		ImportMatch:      prov.MatchMethod,
 		EventTimeMS:      eventTimeMS,
 		ChannelContext:   progress.ChannelContext,
+		DeviceID:         string(progress.DeviceID),
+		PlayMethod:       progress.PlayMethod,
+		// Every native report records the client's own position; an
+		// import has no playback to measure.
+		ReportedPositionSeconds: optionalInt(prov.Source == "", progress.PositionSeconds),
+		PlaybackID:              progress.PlaybackID,
+		Paused:                  progress.Paused,
+		PlayedMS:                progress.PlayedMS,
 	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
@@ -272,6 +328,13 @@ const positionAdvancedPredicate = `
 	playback_progress.event_time_ms IS NULL
 	OR excluded.event_time_ms IS NULL
 	OR excluded.event_time_ms >= playback_progress.event_time_ms`
+
+func optionalInt(set bool, value int) *int {
+	if !set {
+		return nil
+	}
+	return &value
+}
 
 func optionalMillis(set bool, millis int64) *int64 {
 	if !set {
@@ -472,8 +535,10 @@ func (s *Store) extraMediaIDsSQL(ctx context.Context, ids []MediaID) (map[MediaI
 // first, reveal-filtered through catalog Media visibility. Extras
 // are excluded by default — a trailer/BTS clip never appears on
 // the Continue Watching shelf even if the Profile has a resume point for it.
+// Items the Profile removed from the shelf (SetContinueWatchingHidden) are
+// left out until a playback report moves their position.
 func (s *Store) continueWatchingSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
-	return s.inProgressItemsSQL(ctx, profileID, filter, limit, offset)
+	return s.inProgressItemsSQL(ctx, profileID, filter, limit, offset, true)
 }
 
 // inProgressItemsSQL is the shared "in-progress" engagement projection: the
@@ -489,16 +554,25 @@ func (s *Store) continueWatchingSQL(ctx context.Context, profileID ProfileID, fi
 // Continue Watching — the Channel itself is the resumable object. The exclusion
 // is here, in the single shared projection, so both the shelf and the filter
 // drop channel plays by construction.
-func (s *Store) inProgressItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
+//
+// excludeHidden drops items the Profile removed from Continue Watching. Only
+// the shelf passes it: a removed item keeps its progress, so it still matches
+// the "in-progress" filter, and it still holds its container off Next Up, so
+// removing an abandoned item does not resurface it there.
+func (s *Store) inProgressItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int, excludeHidden bool) ([]SourceItem, error) {
 	type progressRow struct {
 		mediaID         MediaID
 		positionSeconds int
 		durationSeconds int
 	}
+	hiddenClause := ""
+	if excludeHidden {
+		hiddenClause = " AND continue_hidden = 0"
+	}
 	return s.filteredEngagementPage(ctx, `
 		SELECT media_id, position_seconds, duration_seconds
 		FROM playback_progress
-		WHERE profile_id = ? AND watched = 0 AND position_seconds >= ? AND channel_context = 0
+		WHERE profile_id = ? AND watched = 0 AND position_seconds >= ? AND channel_context = 0`+hiddenClause+`
 		ORDER BY updated_at_ms DESC, media_id
 	`, []any{profileID, resumeFloorSeconds}, filter, limit, offset, true,
 		func(rows *sql.Rows) (MediaID, func(Media) SourceItem, error) {
@@ -637,7 +711,7 @@ func (s *Store) resumeProgressSQL(ctx context.Context, profileID ProfileID, valu
 	if value != "in-progress" {
 		return []SourceItem{}, nil
 	}
-	return s.inProgressItemsSQL(ctx, profileID, filter, limit, offset)
+	return s.inProgressItemsSQL(ctx, profileID, filter, limit, offset, false)
 }
 
 // watchedByAnyProfileSQL backs the "watched-by-any-profile" Source predicate:
@@ -986,9 +1060,10 @@ func anyHeld(held map[EntityID]bool, ids []EntityID) bool {
 // resumable predicate (resume floor, channel plays, Extras, incomplete
 // sources, Media visibility) is Continue Watching's by construction, and it
 // stops at a hidden or trashed entity. A next-up group touching this set is
-// on Continue Watching and yields nothing here.
+// on Continue Watching and yields nothing here. Items the Profile removed from
+// the shelf still count, so their containers stay off Next Up too.
 func (s *Store) nextUpHeldSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, kinds []string, libraries []LibraryID) (map[EntityID]bool, error) {
-	resumable, err := s.inProgressItemsSQL(ctx, profileID, filter, -1, 0)
+	resumable, err := s.inProgressItemsSQL(ctx, profileID, filter, -1, 0, false)
 	if err != nil {
 		return nil, err
 	}

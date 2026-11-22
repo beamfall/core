@@ -17,6 +17,7 @@ type Snapshot struct {
 	Manifest        ManifestContract          `json:"manifest"`
 	PlaybackInfo    PlaybackInfoContract      `json:"playbackInfo"`
 	GraphQLErrors   GraphQLErrorsContract     `json:"graphqlErrors"`
+	GraphQLResponse GraphQLResponseContract   `json:"graphqlResponse"`
 	Compatibility   CompatibilityDecisions    `json:"compatibility"`
 	KnownDrift      []KnownDrift              `json:"knownDrift"`
 }
@@ -37,6 +38,7 @@ func BuildWithKnownDrift(version string, drift []KnownDrift) Snapshot {
 		Manifest:        buildManifestContract(),
 		PlaybackInfo:    buildPlaybackInfoContract(),
 		GraphQLErrors:   buildGraphQLErrorsContract(),
+		GraphQLResponse: buildGraphQLResponseContract(),
 		Compatibility:   compatibilityDecisions(),
 		KnownDrift:      append([]KnownDrift(nil), drift...),
 	}

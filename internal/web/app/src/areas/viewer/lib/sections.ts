@@ -3,8 +3,9 @@ import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
 import { groupsNewByContainer, NEW_SHELF_FETCH } from "./containerGroups";
 
 // The six renderable Section kinds (manifest.Section.kind), copied exactly from
-// the vanilla app.js SECTION_KINDS set. Unknown kinds are silently skipped and
-// empty sections hidden (ADR-0014).
+// the vanilla app.js SECTION_KINDS set. Unknown kinds are skipped, with one
+// UnknownSectionKind diagnostic each (LayoutView), and empty sections hidden
+// (ADR-0014).
 // biome-ignore format: conformance requires one static string literal per line.
 export const SECTION_KINDS = new Set([
   "hero",
@@ -82,6 +83,11 @@ export async function fetchSectionItems(
       limit,
       offset: ctx.paging ? ctx.paging.offset : 0,
       ...(ctx.home ? { home: true } : {}),
+      // A random Source's seed and a valued Source's band echo back like the
+      // other Source parameters (CORE-0203); a Source that declares neither
+      // sends neither.
+      ...(source.seed ? { seed: source.seed } : {}),
+      ...(source.value ? { value: source.value } : {}),
     },
     signal,
   );

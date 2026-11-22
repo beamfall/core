@@ -8,8 +8,12 @@ import (
 	"errors"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // ErrSubscriptionNotFound means no Subscription exists with the given ID.
@@ -56,6 +60,8 @@ type Subscription struct {
 	LastModified  string
 	RetentionKind RetentionKind
 	RetentionN    *int
+	// Health is the poller's record of how the feed is fetching (CORE-2955).
+	Health SubscriptionHealth
 }
 
 // SubscriptionEntryAssociation is a feed-scoped association between one
@@ -337,6 +343,87 @@ func (s *Store) RemoveSubscription(ctx context.Context, id SubscriptionID) (Subs
 	return removed, nil
 }
 
+// maxSubscriptionTitleRunes caps a Subscription title taken from imported or
+// fetched data.
+const maxSubscriptionTitleRunes = 256
+
+// SubscriptionTitle returns title trimmed and capped for use as a Subscription
+// title, or "" when it is a URL, the feed URL or the feed's host. OPML writers
+// fill outline text with the feed URL or host when a feed has no title, and a
+// feed URL can carry a bearer token that viewers would then see as the title.
+func SubscriptionTitle(title, feedURL string) string {
+	title = strings.TrimSpace(title)
+	if title == "" || title == strings.TrimSpace(feedURL) {
+		return ""
+	}
+	if containsURL(title) {
+		return ""
+	}
+	if feed, err := url.Parse(feedURL); err == nil && feed.Hostname() != "" && strings.EqualFold(title, feed.Hostname()) {
+		return ""
+	}
+	if runes := []rune(title); len(runes) > maxSubscriptionTitleRunes {
+		title = strings.TrimSpace(string(runes[:maxSubscriptionTitleRunes]))
+	}
+	return title
+}
+
+// urlPattern finds a URL anywhere in a title, whatever punctuation or
+// brackets surround it: a scheme separator, a scheme-relative //host, or a
+// dotted host (any script, optional root dot) or bracketed IPv6 host
+// (optional port) followed by a path or query.
+var urlPattern = regexp.MustCompile(`(?i)://|//[^\s/]|[\p{L}\p{M}\p{N}_-]+([.。．｡][\p{L}\p{M}\p{N}_-]+)+[.。．｡]?(:[0-9]+)?(/|\?\S)|\[[0-9a-f.]*:[0-9a-f:.]*\](:[0-9]+)?(/|\?\S)`)
+
+// containsURL reports whether title contains a URL, with or without a scheme,
+// so a signed feed URL inside prose never becomes a visible title.
+// containsURL reports whether title holds anything that reads as a URL. It
+// matches on the NFKC form with format characters and variation selectors
+// removed, so compatibility and IDNA-ignored variants of URL syntax are caught
+// as one class instead of one code point at a time.
+func containsURL(title string) bool {
+	folded := strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Variation_Selector, r) {
+			return -1
+		}
+		return r
+	}, norm.NFKC.String(title))
+	return urlPattern.MatchString(folded)
+}
+
+// FillSubscriptionTitle sets the Subscription's title only while it is empty,
+// so a poll can name a feed imported without a title but never overwrites
+// one. title passes through SubscriptionTitle first; a title it rejects is a
+// no-op. Reports whether the title was set.
+func (s *Store) FillSubscriptionTitle(ctx context.Context, id SubscriptionID, title string) (bool, error) {
+	if id == "" {
+		return false, errors.New("subscription ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var feedURL string
+	if err := s.catalogW.QueryRowContext(ctx, `SELECT feed_url FROM subscription WHERE id = ?`, id).Scan(&feedURL); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, ErrSubscriptionNotFound
+		}
+		return false, err
+	}
+	title = SubscriptionTitle(title, feedURL)
+	if title == "" {
+		return false, nil
+	}
+	result, err := s.catalogW.ExecContext(ctx, `
+		UPDATE subscription SET title = ? WHERE id = ? AND COALESCE(title, '') = ''
+	`, title, id)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected > 0, err
+}
+
 // MarkSubscriptionPolled records a completed poll: the poll time and the
 // conditional-GET validators the next poll sends.
 func (s *Store) MarkSubscriptionPolled(ctx context.Context, id SubscriptionID, etag, lastModified string, now time.Time) error {
@@ -375,7 +462,10 @@ func (s *Store) SubscriptionSeenGUIDs(ctx context.Context, id SubscriptionID) (m
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `SELECT guid FROM subscription_seen_entry WHERE subscription_id = ?`, id)
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT guid FROM subscription_seen_entry
+		WHERE subscription_id = ? AND (path <> '' OR seen_at_ms <> 0)
+	`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -391,9 +481,10 @@ func (s *Store) SubscriptionSeenGUIDs(ctx context.Context, id SubscriptionID) (m
 	return seen, rows.Err()
 }
 
-// MarkSubscriptionEntrySeen records one ingested feed-entry GUID and the
-// absolute path where its enclosure landed. Re-marking an already-seen GUID
-// is a no-op, including path preservation.
+// MarkSubscriptionEntrySeen records one ingested feed-entry GUID. The path
+// may be empty while a durable staged download awaits publication. Re-marking
+// an already-seen GUID is a no-op, except that a back-catalogue marker can
+// gain a download receipt.
 func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID, guid string, path string, now time.Time) error {
 	if id == "" {
 		return errors.New("subscription ID is required")
@@ -410,8 +501,70 @@ func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID
 	_, err := s.catalogW.ExecContext(ctx, `
 		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
 		VALUES (?, ?, ?, ?)
-		ON CONFLICT(subscription_id, guid) DO NOTHING
+		ON CONFLICT(subscription_id, guid) DO UPDATE SET seen_at_ms = excluded.seen_at_ms, path = excluded.path
+		WHERE subscription_seen_entry.path = '' AND subscription_seen_entry.seen_at_ms = 0
 	`, id, guid, now.UTC().UnixMilli(), path)
+	return err
+}
+
+// PublishSubscriptionEntry records the published path in both the receipt and
+// the optional catalogue row. It holds the catalogue writer during publish
+// so a concurrent scan import sees the binding when it writes the Media.
+func (s *Store) PublishSubscriptionEntry(ctx context.Context, id SubscriptionID, guid string, publish func() (string, error)) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	path, err := publish()
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `
+		UPDATE subscription_seen_entry SET path = ? WHERE subscription_id = ? AND guid = ?
+	`, path, id, guid)
+	if err != nil {
+		return err
+	}
+	if err := requireOneRow(result, ValidationError("subscription receipt not found")); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE subscription_entry SET download_state = 'queued', download_path = ?
+		WHERE subscription_id = ? AND guid = ? AND download_path <> ?
+	`, path, id, guid, path); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// AliasSubscriptionEntryGUID adds a GUID for an existing receipt. It keeps
+// the original receipt and copies the path and timestamp so both GUIDs
+// refer to the same file and retention counts it once.
+func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionID, existingGUID, guid string) error {
+	if id == "" {
+		return errors.New("subscription ID is required")
+	}
+	if strings.TrimSpace(existingGUID) == "" || strings.TrimSpace(guid) == "" {
+		return errors.New("entry GUID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err := s.catalogW.ExecContext(ctx, `
+		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
+		SELECT subscription_id, ?, seen_at_ms, path FROM subscription_seen_entry
+		WHERE subscription_id = ? AND guid = ?
+		ON CONFLICT(subscription_id, guid) DO UPDATE SET seen_at_ms = excluded.seen_at_ms, path = excluded.path
+		WHERE subscription_seen_entry.path = '' AND subscription_seen_entry.seen_at_ms = 0
+	`, guid, id, existingGUID)
 	return err
 }
 
@@ -532,7 +685,7 @@ func (s *Store) upsertSubscriptionEntryAssociationLocked(ctx context.Context, id
 	_, err = s.catalogW.ExecContext(ctx, `
 		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
 		VALUES (?, ?, ?)
-	`, mediaID, subscriptionFeedGUIDScheme, guid)
+	`, mediaID, subscriptionFeedGUIDScheme, feedGUIDExternalID(guid))
 	return err
 }
 
@@ -549,7 +702,7 @@ func pathWithinRoot(root, path string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
-const subscriptionColumns = `SELECT id, library_id, feed_url, auth_ref, root, title, added_at_ms, last_polled_at_ms, etag, last_modified, retention_kind, retention_n FROM subscription`
+const subscriptionColumns = `SELECT id, library_id, feed_url, auth_ref, root, title, added_at_ms, last_polled_at_ms, etag, last_modified, retention_kind, retention_n, ` + subscriptionHealthColumns + ` FROM subscription`
 
 func (s *Store) querySubscriptions(ctx context.Context, query string, args ...any) ([]Subscription, error) {
 	rows, err := s.catalogR.QueryContext(ctx, query, args...)
@@ -580,11 +733,14 @@ func scanSubscriptionRow(scan func(...any) error) (Subscription, error) {
 	var subscription Subscription
 	var addedMS, polledMS int64
 	var retentionN sql.NullInt64
-	if err := scan(&subscription.ID, &subscription.LibraryID, &subscription.FeedURL, &subscription.AuthRef,
+	var health subscriptionHealthRow
+	dest := []any{&subscription.ID, &subscription.LibraryID, &subscription.FeedURL, &subscription.AuthRef,
 		&subscription.Root, &subscription.Title, &addedMS, &polledMS,
-		&subscription.ETag, &subscription.LastModified, &subscription.RetentionKind, &retentionN); err != nil {
+		&subscription.ETag, &subscription.LastModified, &subscription.RetentionKind, &retentionN}
+	if err := scan(append(dest, health.dest()...)...); err != nil {
 		return Subscription{}, err
 	}
+	subscription.Health = health.health()
 	if subscription.RetentionKind == "" {
 		subscription.RetentionKind = RetentionKeepAll
 	}

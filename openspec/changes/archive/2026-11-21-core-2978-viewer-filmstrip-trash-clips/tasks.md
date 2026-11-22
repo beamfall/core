@@ -1,0 +1,9 @@
+- [ ] Web: filmstrip of queue neighbours with jump, follow and chrome auto-hide (CORE-2978)
+- [ ] Web: trash control and Delete key for managers, step on, undo toast via `restoreMedia`
+- [ ] Web: video-class queue items step and play muted inline with play/pause (CORE-2977)
+- [ ] Web: clip cards in image grids show a duration badge, a clip glyph and open the viewer
+- [ ] Web: favourite toggle disabled while pending (CORE-0542 follow-up)
+- [ ] Strings in every shipped locale
+- [ ] Vitest: viewer stepping list, filmstrip window, trash step target
+- [ ] Browser check against a Photos library with clips
+- [ ] `openspec archive core-2978-viewer-filmstrip-trash-clips` after landing

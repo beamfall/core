@@ -57,6 +57,7 @@ export function MediaItemCard({
   nameContainer = true,
   intrinsicArtwork = false,
   quickPlay = true,
+  continueWatching = false,
 }: {
   item: SourceItem;
   /** 1-based aria-posinset for grid a11y; omit outside a grid. */
@@ -90,6 +91,8 @@ export function MediaItemCard({
    * info row, which is already a row of its own (CORE-2881).
    */
   quickPlay?: boolean;
+  /** The card is on the Continue Watching row: its menu offers to leave it (CORE-2017). */
+  continueWatching?: boolean;
 }) {
   const navigate = useNavigate();
   const cardImageSizes = useCardImageSizes();
@@ -120,8 +123,16 @@ export function MediaItemCard({
     showYear && !featureAudioDetails,
     featureAudioDetails ? subline : lead,
   );
+  // An image opens straight in the image viewer (CORE-0542): it has no
+  // playback for a detail page to start.
+  const isImage = isMedia && item.mediaClass === "image";
+  // A video among images is a camera-roll clip (CORE-2977): it opens in the
+  // viewer with its neighbours and shows its length on the frame.
+  const isClip =
+    isMedia && item.mediaClass === "video" && !!queue?.some((q) => q.mediaClass === "image");
+  const opensViewer = isImage || isClip;
   // The page the card's own activation opens (and the More menu's copied link).
-  const path = `/${isMedia ? (playOnActivate ? "watch" : "media") : "entity"}/${encodeURIComponent(item.id)}`;
+  const path = `/${isMedia ? (opensViewer ? "view" : playOnActivate ? "watch" : "media") : "entity"}/${encodeURIComponent(item.id)}`;
   const primaryLabel = isMedia
     ? t(state.progressPercent === undefined ? "play" : "cardResume")
     : t("cardOpen");
@@ -205,12 +216,14 @@ export function MediaItemCard({
   }
 
   function play() {
-    navigate(mediaPath("watch", item.id), { state: playState() });
+    navigate(opensViewer ? mediaPath("view", item.id) : mediaPath("watch", item.id), {
+      state: playState(),
+    });
   }
 
   // The navigation state the card's link carries to the page it opens.
   function linkState(): unknown {
-    if (isMedia && playOnActivate) return playState();
+    if (isMedia && (playOnActivate || opensViewer)) return playState();
     if (isMedia) {
       const link = mediaLinkState(item, identity, focusAnchor?.section);
       return link ? { ...link, ...queueState() } : undefined;
@@ -285,6 +298,7 @@ export function MediaItemCard({
       containerID={item.container?.id}
       href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
       target={itemTargetFor(item)}
+      continueWatching={continueWatching}
       onPrimary={isMedia ? play : open}
       onDetails={
         isMedia
@@ -345,7 +359,17 @@ export function MediaItemCard({
                 onError={() => setFailedPoster(poster)}
               />
             ) : (
-              <PosterGlyph mediaClass={item.mediaClass} />
+              <PosterGlyph mediaClass={item.mediaClass} clip={isClip} />
+            )}
+            {isClip && (item.durationSeconds ?? 0) > 0 && (
+              <span
+                aria-hidden="true"
+                className="bf-card-badge"
+                data-badge="duration"
+                style={{ top: "auto", left: "auto", right: 6, bottom: 6 }}
+              >
+                {formatDuration(item.durationSeconds ?? 0)}
+              </span>
             )}
             {previewClip && (
               <video
@@ -377,7 +401,7 @@ export function MediaItemCard({
         <div className="bf-card-copy">
           <span className="bf-card-title">{heading}</span>
           {subline && <span className="bf-card-sub">{subline}</span>}
-          {!isRow && isMedia && (item.durationSeconds ?? 0) > 0 && (
+          {!isRow && isMedia && !isClip && (item.durationSeconds ?? 0) > 0 && (
             <span aria-hidden="true" className="bf-card-sub bf-card-runtime">
               {formatDuration(item.durationSeconds ?? 0)}
             </span>

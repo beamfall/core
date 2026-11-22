@@ -49,10 +49,14 @@ func (h *Handler) itemStateFor(ctx context.Context, scope auth.Scope, target sto
 	if err != nil {
 		return ItemStateInfo{}, itemActionError(err)
 	}
+	return itemStateInfo(state), nil
+}
+
+func itemStateInfo(state store.ItemState) ItemStateInfo {
 	return ItemStateInfo{
 		ID: state.ID, Kind: state.Kind,
 		Watched: state.Watched, Watchlisted: state.Watchlisted, Rating: state.Rating,
-	}, nil
+	}
 }
 
 // itemActionDone tells the Profile's other sessions to refetch and returns the
@@ -60,11 +64,15 @@ func (h *Handler) itemStateFor(ctx context.Context, scope auth.Scope, target sto
 // already committed, and a client that misses the event still reads the new
 // state on its next load.
 func (h *Handler) itemActionDone(ctx context.Context, scope auth.Scope, target store.ItemTarget) (ItemStateInfo, error) {
+	h.notifyEngagementChanged(ctx, scope)
+	return h.itemStateFor(ctx, scope, target)
+}
+
+func (h *Handler) notifyEngagementChanged(ctx context.Context, scope auth.Scope) {
 	_ = h.store.AppendInvalidationEvent(ctx, store.InvalidationPayload{
 		ProfileID: scope.ProfileID,
 		Reason:    store.InvalidationReasonEngagementChanged,
 	}, time.Now().UTC())
-	return h.itemStateFor(ctx, scope, target)
 }
 
 func (h *Handler) setWatched(ctx context.Context, scope auth.Scope, req request) (ItemStateInfo, error) {
@@ -106,6 +114,42 @@ func (h *Handler) setWatchlisted(ctx context.Context, scope auth.Scope, req requ
 		return ItemStateInfo{}, itemActionError(err)
 	}
 	return h.itemActionDone(ctx, scope, target)
+}
+
+// setContinueWatchingHidden removes one Media from the calling Profile's
+// Continue Watching shelf (hidden: true) or puts it back (hidden: false, the
+// web's Undo). Progress is kept; playing the Media again also puts it back.
+// It honours the optional expectedProfileID precondition (CORE-2177): an Undo
+// made for one Profile is refused once the session is bound to another.
+func (h *Handler) setContinueWatchingHidden(ctx context.Context, scope auth.Scope, req request) (ItemStateInfo, error) {
+	mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
+	v := newVars(req)
+	hidden, ok := v.Bool("hidden")
+	if err := v.Err(); err != nil {
+		return ItemStateInfo{}, err
+	}
+	if !ok {
+		return ItemStateInfo{}, clientError("hidden is required")
+	}
+	if mediaID == "" {
+		return ItemStateInfo{}, clientError("mediaID is required")
+	}
+	// The store reads the response state inside the write, so a library that
+	// locks after the commit cannot turn a saved removal into a reported failure.
+	var state store.ItemState
+	err := h.withExpectedProfile(ctx, scope, req, func() error {
+		var err error
+		state, err = h.store.SetContinueWatchingHidden(ctx, scope.ProfileID, mediaID, hidden, scope.LibraryFilter())
+		if err != nil {
+			return itemActionError(err)
+		}
+		return nil
+	})
+	if err != nil {
+		return ItemStateInfo{}, err
+	}
+	h.notifyEngagementChanged(ctx, scope)
+	return itemStateInfo(state), nil
 }
 
 func (h *Handler) setRating(ctx context.Context, scope auth.Scope, req request) (ItemStateInfo, error) {

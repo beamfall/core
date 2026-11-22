@@ -203,7 +203,7 @@ function EntryPinForm({
     setResult(null);
     setBusy(true);
     try {
-      await setProfileEntryPin(profileID, value, signal);
+      await setProfileEntryPin(profileID, value, signal, { adminUnlock: false });
       if (signal.aborted) return;
       setResult("saved");
       await onSaved();

@@ -3,6 +3,8 @@ package playback
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -33,7 +35,22 @@ type durationProbeEntry struct {
 	generation string
 	seconds    int
 	at         time.Time
+	writes     map[durationWriteTarget]durationWriteState
 }
+type durationWriteTarget struct {
+	library     store.LibraryID
+	media       store.MediaID
+	fingerprint string
+}
+
+type durationWriteState uint8
+
+const (
+	durationWritePending durationWriteState = iota + 1
+	durationWriteVerified
+	durationWriteComplete
+	durationWriteMismatch
+)
 
 type durationKey struct {
 	path, generation string
@@ -50,7 +67,7 @@ type durationFlight struct {
 	seconds    int // winning positive held until the last overlapping probe finishes
 }
 
-func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBinding, op *libraryOperation, fingerprint, path string) int {
+func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBinding, op *libraryOperation, mediaID store.MediaID, fingerprint, path string) (result int) {
 	if fingerprint == "" || path == "" || ctx.Err() != nil {
 		return 0
 	}
@@ -58,6 +75,15 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	defer s.releaseSource(source)
 	if source.generation == "" || !source.info.Mode().IsRegular() {
 		return 0
+	}
+	// Legacy fingerprints require reading the whole file. Use the probed
+	// runtime for playback and leave the catalog write to the next scan.
+	if s.recordDuration != nil && mediaID != "" && strings.HasPrefix(fingerprint, "sample1:") {
+		defer func() {
+			if result > 0 {
+				s.persistProbedDuration(ctx, op, source, durationWriteTarget{op.library, mediaID, fingerprint}, result)
+			}
+		}()
 	}
 	now := s.now()
 	s.mu.Lock()
@@ -91,6 +117,9 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 		}
 		if binding.duration.seconds > 0 {
 			seconds := binding.duration.seconds
+			if !matches || entry.seconds <= 0 {
+				s.cacheDurationLocked(source, seconds, now)
+			}
 			s.mu.Unlock()
 			return seconds
 		}
@@ -152,11 +181,69 @@ func (s *Sessions) probedSourceDuration(ctx context.Context, binding *LiveBindin
 	if entry.generation == source.generation && entry.seconds > 0 {
 		return seconds
 	}
-	if s.durationProbes == nil || len(s.durationProbes) >= durationProbeCacheLimit && entry.generation == "" {
+	s.cacheDurationLocked(source, seconds, now)
+	return seconds
+}
+
+func (s *Sessions) cacheDurationLocked(source sourceCapture, seconds int, now time.Time) {
+	if s.durationProbes == nil || len(s.durationProbes) >= durationProbeCacheLimit && s.durationProbes[source.path].generation == "" {
 		s.durationProbes = make(map[string]durationProbeEntry)
 	}
-	s.durationProbes[path] = durationProbeEntry{source.generation, seconds, now}
-	return seconds
+	s.durationProbes[source.path] = durationProbeEntry{generation: source.generation, seconds: seconds, at: now}
+}
+
+func (s *Sessions) persistProbedDuration(ctx context.Context, op *libraryOperation, source sourceCapture, target durationWriteTarget, seconds int) {
+	s.mu.Lock()
+	entry := s.durationProbes[source.path]
+	state := entry.writes[target]
+	if (state != 0 && state != durationWriteVerified) || entry.generation != source.generation || ctx.Err() != nil || s.libraryOperationErrorLocked(op) != nil || source.supersededLocked() {
+		s.mu.Unlock()
+		return
+	}
+	if entry.writes == nil {
+		entry.writes = make(map[durationWriteTarget]durationWriteState)
+		s.durationProbes[source.path] = entry
+	}
+	entry.writes[target] = durationWritePending
+	s.mu.Unlock()
+
+	// Verify the bytes without holding the Sessions lock. The Library claim
+	// stays held through the write, and the store rechecks catalog eligibility.
+	verified := state == durationWriteVerified
+	var err error
+	if !verified {
+		match := s.matchDurationFile
+		if match == nil {
+			match = store.MediaFileMatchesSampleFingerprint
+		}
+		verified, err = match(ctx, source.path, source.generation, target.fingerprint)
+	}
+	stable := ctx.Err() == nil && source.matches(captureSource(source.path, nil, s.statSource))
+	var updated bool
+	if err == nil && verified && stable {
+		s.mu.Lock()
+		current := s.libraryOperationErrorLocked(op) == nil && !source.supersededLocked() && source.owner.durationGeneration == source.generation
+		s.mu.Unlock()
+		if current {
+			updated, err = s.recordDuration(ctx, target.library, target.media, target.fingerprint, source.path, seconds)
+		}
+	}
+	s.mu.Lock()
+	switch {
+	case updated && err == nil:
+		entry.writes[target] = durationWriteComplete
+	case stable && verified:
+		// A later request may find the same catalog file eligible for writing.
+		entry.writes[target] = durationWriteVerified
+	case stable && err == nil:
+		entry.writes[target] = durationWriteMismatch
+	default:
+		delete(entry.writes, target)
+	}
+	s.mu.Unlock()
+	if err != nil {
+		slog.WarnContext(ctx, "could not record probed runtime", "media", target.media, "error", err)
+	}
 }
 
 func (s *Sessions) retainDurationLocked(source sourceCapture) *retainedDuration {
@@ -183,7 +270,7 @@ func (s *Sessions) releaseDurationLocked(retained *retainedDuration) {
 
 // probedDuration is the on-demand runtime of a video or audio Media's
 // negotiated file, or 0. An Encrypted Library's file is never probed.
-func (s *Service) probedDuration(ctx context.Context, op *libraryOperation, media store.Media, file store.MediaFile) int {
+func (s *Service) probedDuration(ctx context.Context, op *libraryOperation, media store.Media, file store.MediaFile, primary bool) int {
 	if s.sessions == nil || media.Class != store.MediaClassVideo && media.Class != store.MediaClassAudio {
 		return 0
 	}
@@ -191,5 +278,12 @@ func (s *Service) probedDuration(ctx context.Context, op *libraryOperation, medi
 	if err != nil || encrypted {
 		return 0
 	}
-	return s.sessions.probedSourceDuration(ctx, nil, op, file.ContentFingerprint, file.Path)
+	var mediaID store.MediaID
+	if primary && file.PartOrdinal == 0 && strings.HasPrefix(file.ContentFingerprint, "sample1:") {
+		multipart, err := s.store.MediaVersionHasAdditionalParts(ctx, media.ID, file.VersionLabel)
+		if err == nil && !multipart {
+			mediaID = media.ID
+		}
+	}
+	return s.sessions.probedSourceDuration(ctx, nil, op, mediaID, file.ContentFingerprint, file.Path)
 }

@@ -17,6 +17,7 @@ ffmpeg-loudness-measure	internal/ioe2e
 ffmpeg-sample-clip	internal/ioe2e
 ffmpeg-scale-image	internal/ioe2e
 ffmpeg-silence-spans	internal/ioe2e
+ffmpeg-spectral-fingerprint	internal/ioe2e
 ffmpeg-sprite-sheets	internal/ioe2e
 ffmpeg-start-background-hls	internal/ioe2e
 ffmpeg-start-hls	internal/ioe2e

@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assignTag,
@@ -18,6 +19,12 @@ import { I18nProvider } from "@/lib/i18n";
 import { TagsPage } from "./TagsPage";
 
 vi.mock("@/lib/graphql", () => ({
+  searchResult: vi.fn(async () => ({
+    mode: "keyword",
+    items: [],
+    hasMore: false,
+    restrictedResultsPresent: false,
+  })),
   fetchTags: vi.fn(),
   createTag: vi.fn(),
   updateTag: vi.fn(),
@@ -107,7 +114,9 @@ beforeEach(() => {
 function renderPage() {
   return render(
     <I18nProvider>
-      <TagsPage />
+      <MemoryRouter>
+        <TagsPage />
+      </MemoryRouter>
     </I18nProvider>,
   );
 }
@@ -165,7 +174,7 @@ describe("TagsPage", () => {
     renderPage();
     await ready();
 
-    await user.type(screen.getByLabelText("Target ID"), "media-7f3a");
+    await user.type(screen.getByLabelText("Target ID"), "media-7f3a{Enter}");
     await user.click(screen.getByRole("button", { name: "Load" }));
 
     expect(fetchTagAssignments).toHaveBeenCalledWith("media", "media-7f3a");
@@ -178,17 +187,24 @@ describe("TagsPage", () => {
 
   it("drops an assignment response that arrives after the target changed", async () => {
     let resolveFirst: (value: Awaited<ReturnType<typeof fetchTagAssignments>>) => void = () => {};
-    vi.mocked(fetchTagAssignments).mockImplementationOnce(
-      () => new Promise((resolve) => (resolveFirst = resolve)),
-    );
+    vi.mocked(fetchTagAssignments)
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce({
+        targetType: "media",
+        targetID: "media-b",
+        libraryID: "lib-1",
+        tags: [],
+      });
     const user = userEvent.setup();
     renderPage();
     await ready();
 
+    // Picking a target loads it at once; picking another drops the first load.
     const target = screen.getByLabelText("Target ID");
     await user.type(target, "media-a{Enter}");
     await user.clear(target);
-    await user.type(target, "media-b");
+    await user.type(target, "media-b{Enter}");
+    expect(await screen.findByText("No tags assigned.")).toBeInTheDocument();
     await act(async () => {
       resolveFirst({
         targetType: "media",
@@ -198,7 +214,8 @@ describe("TagsPage", () => {
       });
     });
 
-    expect(fetchTagAssignments).toHaveBeenCalledTimes(1);
+    expect(fetchTagAssignments).toHaveBeenCalledTimes(2);
+    expect(fetchTagAssignments).toHaveBeenLastCalledWith("media", "media-b");
     expect(screen.queryByRole("button", { name: "Unassign Favorites" })).not.toBeInTheDocument();
   });
 
@@ -209,7 +226,7 @@ describe("TagsPage", () => {
 
     await user.type(
       screen.getByLabelText("Target IDs (comma-separated)"),
-      "media-7f3a, media-22b1, media-9c08",
+      "media-7f3a, media-22b1, media-9c08{Enter}",
     );
     // Pick "replace" mode, then add the Archive tag via the bulk add-picker
     // (the selection renders as a removable ×-pill, matching the mockup).

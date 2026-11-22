@@ -1,0 +1,12 @@
+- [ ] Web: `/slideshow` route and `SlideshowPage` (CORE-2981)
+- [ ] Web: setup sheet with Source picker, interval 5–60 s (default 12), Motion, overlay, Dark Room
+- [ ] Web: image and muted inline clip slides, next-image preload, interval within ±0.5 s
+- [ ] Web: overlay with clock, date and subtitle caption, now-playing from the Media Session
+- [ ] Web: keyboard controls and Escape
+- [ ] Web: Slideshow action on Collection and Library browse pages
+- [ ] Web: hidden, locked and other-identity items never shown; no playback decision requested
+- [ ] Web: `oscilluxSlideMotion` seam, hard cuts until Oscillux CORE-2980 ships
+- [ ] Strings in every shipped locale
+- [ ] Vitest: hidden items never shown, interval bounds, engagement silence
+- [ ] Browser check against a Photos library
+- [ ] `openspec archive core-2981-web-photo-slideshow` after landing

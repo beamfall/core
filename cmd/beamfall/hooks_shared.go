@@ -16,7 +16,7 @@ import (
 	scanpkg "github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
-	books "github.com/beamfall/plugin-audiobook"
+	tagFolderPlugin "github.com/beamfall/plugin-audiobook"
 	enrichment "github.com/beamfall/plugin-enrichment"
 	familyarchive "github.com/beamfall/plugin-familyarchive"
 	filmtv "github.com/beamfall/plugin-filmtv"
@@ -50,11 +50,11 @@ func firstPartyHooksForBundles(bundles []plugin.Bundle) app.Hooks {
 		hooks.ScrobbleAdapters = append(hooks.ScrobbleAdapters, app.ScrobbleAdapterHook{PluginID: filmtv.PluginID, Service: filmtv.ScrobbleServiceTrakt, Factory: filmtv.TraktScrobbleFactory})
 		hooks.PrePlayPolicy = filmtvPrePlayHook()
 	}
-	if active[books.PluginID] {
-		hooks.Parsers[books.PluginID] = books.New()
-		hooks.HydrationMappers[books.PluginID] = bookHydrationMapper{}
-		hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: books.PluginID, ImporterID: books.ImporterID}] = func(_ []string, path string) migrate.Source {
-			return books.NewImportSource(path)
+	if active[tagFolderPlugin.PluginID] {
+		hooks.Parsers[tagFolderPlugin.PluginID] = tagFolderPlugin.New()
+		hooks.HydrationMappers[tagFolderPlugin.PluginID] = relationHydrationMapper{}
+		hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: tagFolderPlugin.PluginID, ImporterID: tagFolderPlugin.ImporterID}] = func(_ []string, path string) migrate.Source {
+			return tagFolderPlugin.NewImportSource(path)
 		}
 	}
 	if active[familyarchive.PluginID] {
@@ -85,7 +85,9 @@ func addFilmTVMigrationSources(hooks *app.Hooks) {
 	add("plex", func(_ []string, path string) migrate.Source { return filmtv.NewPlexSource(path) })
 	add("emby", func(_ []string, path string) migrate.Source { return filmtv.NewEmbySource(path) })
 	add("jellyfin", func(_ []string, path string) migrate.Source { return filmtv.NewJellyfinSource(path) })
-	add("nfo", func(_ []string, path string) migrate.Source { return filmtv.NewNFOSource(path) })
+	add("nfo", func(categories []string, path string) migrate.Source {
+		return filmtv.NewNFOSourceForCategories(path, categories)
+	})
 	add(filmtv.TraktImporterID, func(_ []string, path string) migrate.Source { return filmtv.NewTraktSource(path) })
 }
 

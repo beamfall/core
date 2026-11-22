@@ -18,8 +18,7 @@ var ErrNothingToRefresh = errors.New("identify: no identification to refresh")
 var ErrScraperUnavailable = errors.New("identify: scraper unavailable")
 
 // ProvenanceReader reads the scraper and candidate that last identified a
-// Media item. The store implements it next to SetMediaMetadataProvenance; a
-// ProvenanceStore without it makes every refresh ErrNothingToRefresh.
+// Media item. Refresh requires the metadata store to implement it.
 type ProvenanceReader interface {
 	MediaMetadataProvenance(ctx context.Context, mediaID store.MediaID) (store.MediaMetadataProvenance, bool, error)
 }
@@ -33,7 +32,9 @@ func (s *Service) Refresh(ctx context.Context, mediaID store.MediaID) error {
 	if mediaID == "" {
 		return errors.New("identify: media ID is required")
 	}
-	reader, ok := s.provenance.(ProvenanceReader)
+	unlock := s.writes.lock(mediaID)
+	defer unlock()
+	reader, ok := s.store.(ProvenanceReader)
 	if !ok {
 		return ErrNothingToRefresh
 	}
@@ -47,5 +48,5 @@ func (s *Service) Refresh(ctx context.Context, mediaID store.MediaID) error {
 	if _, _, err := s.spec(record.PluginID, record.ScraperID); err != nil {
 		return fmt.Errorf("%w: %w", ErrScraperUnavailable, err)
 	}
-	return s.Apply(ctx, mediaID, record.PluginID, record.ScraperID, record.CandidateID)
+	return s.apply(ctx, mediaID, record.PluginID, record.ScraperID, record.CandidateID, store.MediaMetadata{})
 }

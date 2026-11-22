@@ -10,7 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { CollapsibleCard, IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -29,6 +29,8 @@ import {
   fetchMyDataSummary,
   fetchMyEngagement,
   fetchMyEngagementLog,
+  fetchMyPlayHistory,
+  fetchMyPlayStats,
   fetchMySessions,
 } from "@/lib/graphql";
 import type {
@@ -38,8 +40,11 @@ import type {
   MySessionInfo,
   MySessionsInfo,
   MyStreamTokenInfo,
+  PlayInfo,
+  PlayStatsInfo,
 } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { playMethodLabel, watched } from "@/lib/playReporting";
 import { useSession } from "@/lib/session";
 import { ViewerActions } from "../components/ViewerActions";
 import { mediaPath } from "../lib/mediaAddress";
@@ -96,6 +101,8 @@ export function MyDataPage() {
   const [draftTo, setDraftTo] = useState<string>("");
   const [applied, setApplied] = useState<MyEngagementLogVars>({});
   const [offset, setOffset] = useState(0);
+  // Bumped after a deletion so the watch card refetches its plays.
+  const [playsVersion, setPlaysVersion] = useState(0);
 
   const refresh = useCallback(async () => {
     setSessionsError(null);
@@ -182,6 +189,7 @@ export function MyDataPage() {
     try {
       await deleteMyEngagement("all");
       setDeleteMsg(t("myDataDeleteDone"));
+      setPlaysVersion((v) => v + 1);
       await Promise.all([refresh(), refreshSummary(), refreshLog()]);
     } catch (err) {
       const needsPin =
@@ -196,6 +204,7 @@ export function MyDataPage() {
       try {
         await deleteMyEngagement("all", pin);
         setDeleteMsg(t("myDataDeleteDone"));
+        setPlaysVersion((v) => v + 1);
         await Promise.all([refresh(), refreshSummary(), refreshLog()]);
       } catch {
         setDeleteError(t("myDataDeleteError"));
@@ -213,6 +222,8 @@ export function MyDataPage() {
         <IconHeading icon={ShieldCheck} title={t("myDataTitle")} lead={t("myDataLead")} />
 
         <SummarySection summary={summary} error={summaryError} libraryName={libraryName} />
+
+        <PlaysSection version={playsVersion} />
 
         <LogSection
           page={logPage}
@@ -372,6 +383,156 @@ function SummarySection({
             </div>
           )}
         </>
+      )}
+    </CollapsibleCard>
+  );
+}
+
+const PLAY_WINDOWS = [7, 30, 90] as const;
+const RECENT_PLAYS = 10;
+
+// PlaysSection is the viewer's own watch history (CORE-1703): totals, the
+// most-played items, devices and playback types over 7, 30 or 90 days, and the
+// most recent plays. The server pins every read to the caller's own profile.
+// A new version (bumped after a deletion) refetches.
+function PlaysSection({ version }: { version: number }) {
+  const t = useT();
+  const [days, setDays] = useState<(typeof PLAY_WINDOWS)[number]>(30);
+  const [stats, setStats] = useState<PlayStatsInfo | null>(null);
+  const [recent, setRecent] = useState<PlayInfo[]>([]);
+  const [failed, setFailed] = useState(false);
+  const shownVersion = useRef(version);
+  useEffect(() => {
+    const ctl = new AbortController();
+    setFailed(false);
+    // A delete-all bumps version: drop what was shown at once, so a failed
+    // refetch shows its error over empty data, never over deleted plays.
+    if (shownVersion.current !== version) {
+      shownVersion.current = version;
+      setStats(null);
+      setRecent([]);
+    }
+    Promise.all([fetchMyPlayStats(days, ctl.signal), fetchMyPlayHistory(RECENT_PLAYS, ctl.signal)])
+      .then(([s, plays]) => {
+        setStats(s);
+        setRecent(plays);
+      })
+      .catch(() => {
+        if (!ctl.signal.aborted) setFailed(true);
+      });
+    return () => ctl.abort();
+  }, [days, version]);
+  const tally = (plays: number, seconds: number) =>
+    `${t("playStatsPlays", { count: plays })} · ${watched(seconds)}`;
+  const breakdowns: {
+    heading: string;
+    rows: { id: string; name: string; plays: number; seconds: number }[];
+  }[] = stats
+    ? [
+        {
+          heading: t("playStatsMostPlayed"),
+          rows: stats.items.map((r) => ({
+            id: r.mediaID,
+            name: r.title,
+            plays: r.plays,
+            seconds: r.watchedSeconds,
+          })),
+        },
+        {
+          heading: t("playStatsDevices"),
+          rows: stats.devices.map((r) => ({
+            id: r.deviceID,
+            name: r.deviceName || t("playHistoryUnknownDevice"),
+            plays: r.plays,
+            seconds: r.watchedSeconds,
+          })),
+        },
+        {
+          heading: t("playStatsMethods"),
+          rows: stats.methods.map((r) => ({
+            id: r.playMethod,
+            name: t(playMethodLabel(r.playMethod)),
+            plays: r.plays,
+            seconds: r.watchedSeconds,
+          })),
+        },
+      ]
+    : [];
+  return (
+    <CollapsibleCard
+      title={t("myDataPlaysHeading")}
+      lead={t("myDataPlaysLead")}
+      defaultOpen
+      actions={
+        <div className="flex gap-1">
+          {PLAY_WINDOWS.map((w) => (
+            <Button
+              key={w}
+              size="sm"
+              variant={w === days ? "default" : "outline"}
+              aria-pressed={w === days}
+              onClick={() => setDays(w)}
+            >
+              {t("playStatsWindow", { days: w })}
+            </Button>
+          ))}
+        </div>
+      }
+    >
+      {failed && <Notice tone="error">{t("myDataPlaysError")}</Notice>}
+      {stats && stats.totalPlays === 0 && <p className="mydata-range">{t("myDataPlaysEmpty")}</p>}
+      {stats && stats.totalPlays > 0 && (
+        <>
+          <p className="mydata-range">
+            {t("playStatsTotal")}: {tally(stats.totalPlays, stats.totalWatchedSeconds)}
+          </p>
+          {breakdowns
+            .filter((b) => b.rows.length > 0)
+            .map((b) => {
+              const most = Math.max(1, ...b.rows.map((r) => r.plays));
+              return (
+                <div key={b.heading} className="mydata-subsection">
+                  <h3 className="mydata-subheading">{b.heading}</h3>
+                  <ul className="flex flex-col gap-2.5">
+                    {b.rows.map((r) => (
+                      <li key={r.id} className="mydata-bar-row">
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="min-w-0 break-words text-[var(--text-primary)]">
+                            {r.name}
+                          </span>
+                          <span className="tabular-nums text-[var(--text-secondary)]">
+                            {tally(r.plays, r.seconds)}
+                          </span>
+                        </div>
+                        <div className="mydata-bar" aria-hidden>
+                          <span style={{ width: `${(r.plays / most) * 100}%` }} />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+        </>
+      )}
+      {recent.length > 0 && (
+        <div className="mydata-subsection">
+          <h3 className="mydata-subheading">{t("myDataPlaysRecent")}</h3>
+          <ul className="flex flex-col gap-1.5 text-sm">
+            {recent.map((p) => (
+              <li
+                key={`${p.mediaID}-${p.startedAt}`}
+                className="flex flex-wrap items-baseline justify-between gap-x-3"
+              >
+                <span className="min-w-0 break-words text-[var(--text-primary)]">{p.title}</span>
+                <span className="text-[var(--text-secondary)]">
+                  {formatDate(p.startedAt)} · {p.deviceName || t("playHistoryUnknownDevice")} ·{" "}
+                  {t(playMethodLabel(p.playMethod))} · {watched(p.watchedSeconds)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </CollapsibleCard>
   );

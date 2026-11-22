@@ -17,7 +17,6 @@ import (
 // locked field while unlocked fields take the provider's values again.
 func TestItemMetadataEditorLockSurvivesRefresh(t *testing.T) {
 	handler, st := newIdentifyTestHandler(t)
-	handler.identify.SetProvenance(st)
 	ctx := context.Background()
 
 	post := func(query string, vars map[string]any, authorize func(*http.Request)) *httptest.ResponseRecorder {

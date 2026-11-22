@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { DECLARED_LOCALE_TAGS, LOCALE_DECLARATION } from "./l10n/locales";
 import {
@@ -16,155 +18,39 @@ const SHIPPED = new Set(
   LOCALE_DECLARATION.locales.filter((entry) => entry.status === "shipped").map((l) => l.tag),
 );
 
-// Captured after WEB-HLS-RECOVERY-1 added localized playback-recovery keys atop
-// WEBUI-SHELL-RESILIENCE-UPGRADE-BLANK-1 (2026-08-30); updated for CORE-1141 player settings copy,
-// the CORE-1197 Manage unlock copy, the CORE-1190 library browse copy, the CORE-1143 audio
-// player and queue copy, the CORE-1194 item action copy, the CORE-1192 card state copy, the
-// CORE-1195 console dashboard copy (with its memory-unavailable fix), the CORE-1191 header search copy and the CORE-1196
-// who's-watching copy; merged with CORE-1106 admin-password sign-in keys, CORE-1110 sign-in
-// security keys, CORE-1114 setup wizard copy, CORE-1115 provider-key copy, CORE-1131 rescan and
-// account-menu copy and CORE-1142 folder-picker copy; updated for the CORE-1146, CORE-1362 and
-// CORE-1363 player recovery copy, the CORE-1342 source-ends-early copy and the CORE-1117 copy cleanup
-// and orphan-key removal; updated for the setup/enroll redesign copy tightening and removal of
-// the orphaned setupFreshServer and setupPlugin* keys; merged with the Normal/Advanced settings copy and the setup and pairing error copy, dropping the orphaned pairingCodeManagerOnly, enrollmentFailed and promotionFailed keys; merged with
-// the CORE-1132 first admin password copy and the CORE-0393 Viewer pairing-code switch copy;
-// merged with the CORE-1126 metadata credits copy, the CORE-1171 delete-library copy and the CORE-1117 design-system
-// copy (settings modes, onboarding, viewer browse and detail); merged with the CORE-1200 Library icon
-// and setup-checklist Optional copy; merged with the CORE-1201 library restore copy; merged with
-// the CORE-1144 media detail copy; merged with the CORE-1156 add-library copy; merged with the CORE-1606 library folder health copy
-// and the CORE-1598 to CORE-1610 onboarding copy (setup folder errors, password rule, enroll and
-// add-a-device hints); updated for the CORE-1604 saved plugin choices retry copy and the CORE-1607
-// manual copy-link field copy; merged with the CORE-1681 subtitle appearance copy;
-// merged with the CORE-1659 karaoke key and tempo copy;
-// merged with the CORE-1671 subtitle offset and audio delay copy, the CORE-1682 player keyboard
-// shortcut sheet copy and the CORE-1683 player chapter list copy;
-// merged with the CORE-1689 "still watching" prompt and setting copy;
-// merged with the CORE-1678 remote control and Play on copy;
-// merged with the CORE-1676 Version picker copy;
-// merged with the CORE-1701 pre-play copy;
-// merged with the CORE-1685 library letter rail copy;
-// merged with the CORE-1697 webhook copy;
-// updated for the CORE-1540 disabled provider-key copy;
-// merged with the CORE-1785 media detail lockup copy;
-// merged with the CORE-1764 Watch together copy;
-// merged with the CORE-1786 container entity copy;
-// merged with the CORE-1684 viewer Collections copy;
-// merged with the CORE-1679 Cast sender copy;
-// merged with the CORE-1718 skip link, CORE-1633 mini player, CORE-1635
-// listening browse and CORE-1709 track menu copy;
-// merged with the CORE-1715 item metadata editor copy;
-// merged with the CORE-1534 Libraries provider-key copy;
-// merged with the CORE-1716 console server-log copy;
-// merged with the CORE-1720 console staged restore copy and the reworded backup restore safety line;
-// merged with the CORE-1717 remote bitrate cap copy;
-// merged with the CORE-1877 add-to-playlist library copy;
-// merged with the CORE-1614 Add a device QR copy;
-// updated for the CORE-1853 bitrate-ceiling transcode reason copy;
-// merged with the CORE-1717 remote cap and CORE-1742 offline pack stack copy;
-// merged with the CORE-1620 signed-out Console device copy;
-// merged with the CORE-1970 transcoder resource settings and HDR tone-map disabled copy;
-// updated for the CORE-2077 Library folders, Add folder and file tools copy.
-// updated for the CORE-1237 one-key plural search result count, the CORE-1208 localized activity
-// log copy and the CORE-1204/1223/1255/1271/1310/2052 completion of the fr, de, es and pt catalogs.
-// merged with the CORE-0557 spoken scrubber time copy.
-// merged with the CORE-2109 Console job purpose, target and Scan now copy.
-// merged with the CORE-2011/2012/2013/0292 plain-language Console, player and scan copy.
-// merged with the CORE-1118/1119/1121/1123/1125/1179 surface leads and Appearance copy;
-// merged with the CORE-2120 Live sessions end-session copy;
-// updated for the CORE-0043 unsupported-codec copy, which no longer names a Profile setting.
-// updated for the CORE-2175 backup key copy: the before-confirming note and the days-left count
-// are gone, since confirming keeps the key every set was sealed to;
-// merged with the CORE-2181 transcode-disallowed playback details reason copy;
-// merged with the CORE-1635 disc grouping copy;
-// merged with the CORE-2190 generic plugin key copy and the CORE-2040 scan summary copy.
-// merged with the CORE-0317 and CORE-2064 device pairing request copy and
-// the CORE-2070 Ask to join copy.
-// merged with the pairing request review copy: the separate manager approval, the
-// announcement, the plural queue count, and the link wording removed.
-// merged with the CORE-2245 lead and follower screen copy.
-// merged with the CORE-2303 session length copy.
-// merged with the CORE-2308 job queue, CORE-2311 optional provider key and CORE-2310/2309
-// Overview attention and first-value copy.
-// merged with the CORE-2315 subtitle load failure, preparing and duplicate track copy and the
-// CORE-2319 My Data library and stream token copy, the CORE-2320 "Keep browsing" related row and the
-// CORE-2321 capped search count, and the CORE-2322 profile, library management and server console labels.
-// merged with the CORE-2331/CORE-2332 track-change motion setting labels.
-// merged with the CORE-2352 job progress name, job log entry labels and progress-fold copy, then
-// its paused-job, pause-cycle, progress-count, scan help and asset sweep wording.
-// merged with the CORE-2359 Library folder view copy.
-// merged with the CORE-2360 Show on Home library setting and activity copy.
-// merged with the CORE-2362 Library view switcher and person all-tracks copy.
-// merged with the CORE-2368 visualizer choice labels.
-// merged with the CORE-2383 Library health no-scraper, not-applicable and rescan-reason copy.
-// merged with the CORE-1136 Refresh all metadata action and its job labels.
-// merged with the CORE-2386 poster, thumbnail and list display labels.
-// merged with the CORE-2406 cast row and person filmography headings.
-// merged with the CORE-2400 card content rating and audience score labels.
-// merged with the CORE-2435 sidebar library pin and order editor copy.
-// merged with the CORE-2441 entity hero on-deck, unwatched and item-count copy.
-// merged with the CORE-2437 Library pivot, Collections and Categories copy, dropping the
-// orphaned libraryBrowseAll key.
-// merged with the CORE-2443 release-date, audience-score and plays sorts, year range and table
-// view labels.
-// updated for the CORE-2439 Extras and Editions row titles and the CORE-2444 More with and Related rows.
-// merged with the CORE-2445 settings help, settings search and menu purpose copy, and its orphan-key removal.
-// updated for the CORE-2452 transcode help copy, dropping the retired transcodeCodecHevc label.
-// merged with the CORE-2463 Restrictions PIN setup and Library Restricted switch copy.
-// merged with the CORE-2468 poster size control copy.
-// merged with the CORE-2485 video format badges label and the player info Source row.
-// merged with the CORE-2469, CORE-2471 and CORE-2472 TV detail copy.
-// merged with the CORE-2489 removal of the corresponding source footer copy.
-// merged with the CORE-2459 title-fold merge activity sentence.
-// merged with the CORE-2505 Categories pivot jump, count, See all, A-Z filter and letter copy.
-// merged with the CORE-2504/2508 category overflow count and Details Video label, dropping the
-// retired mediaDetailKeepBrowsing shelf title (CORE-2507).
-// merged with the CORE-2524 "N new" card count and the CORE-2525 nested search matches copy.
-// updated for the CORE-2503 director and writer labels as plural messages (CORE-2545).
-// merged with the CORE-2568 browse toolbar search, Filters and Sort copy.
-// updated for CORE-2572 first-start duration and attempt labels.
-// updated for the CORE-2453 workflow capability tips.
-// updated for the CORE-2585 Restrictions setup subtitle.
-// Merged with the CORE-1154 Home hero and library pagination labels.
-// merged with the CORE-2734 sidebar resize handle label and hint.
-// merged with the CORE-2764/2765/2768 music wording and the CORE-1803/1871 Watch Party copy.
-// merged with the CORE-2683 Jellyfin compatibility copy, and its base-path and setup sign-in copy.
-// merged with the CORE-2736 sidebar width popover copy.
-// merged with the CORE-2836 Hide copy and the CORE-2725 integration key Console copy.
-// merged with the CORE-2767 music play queue copy.
-// merged with the CORE-2814 visualizer Off, previous/next visual and shortcut copy.
-// merged with the CORE-2827 sidebar Your stuff group and phone tab bar copy.
-// merged with the CORE-2884 entity enrichment job labels.
-// merged with the CORE-2927 Mixed type removal and the CORE-2917 tag tidy copy.
-// merged with the CORE-2910 Unmatched fix flows copy.
-const BASE_SERIALIZED_LENGTH = 940_167;
-const BASE_REGISTRY_SHA256 = "c19d3dbaef0d1c81ab3fe5181739ce71dcc95333579912ef885a29c8b6c8744c";
-const BASE_KEY_ORDER_SHA256 = "d2e449111b43ac5f9109f7b4f58c763d96fc91879919789c12ccc7bedfa85f0c";
-const BASE_PLACEHOLDER_SHA256 = "84b60fdae631966c8ae0b37f346666fa1798f08a545b6fba1947db3906093efb";
+// Ratchet baselines of the current catalogs; this file's git log records which change moved them.
+// After a catalog change (or a merge conflict in these constants: take either side), run
+// `npm run strings:rerecord` (CORE-2455). It rewrites only the BASE_* constants below from the
+// current catalogs, then runs this file.
+const BASE_SERIALIZED_LENGTH = 1_010_374;
+const BASE_REGISTRY_SHA256 = "737ae7a61bef99ce2460492e011bc801f88e8b95f412f13b84d20f1e71dad26a";
+const BASE_KEY_ORDER_SHA256 = "48a1ea229593f46079e40da55beffb7b7c63f7e413e9674d13f0eade58b4aae1";
+const BASE_PLACEHOLDER_SHA256 = "9ed106958e13e152ef90d30398a3b75fbd322f3b671168544d29d6f81f00cfc5";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 3_033,
-    partialSha256: "f7d73667d362466b594f21e5cbeabfba7787af3eee98e08264400f2cc67a7368",
-    resolvedSha256: "ec903cc13c96a5bb0a24fe56a87cd5ae31cdd8c125c04510e08bfb26c87f5e52",
+    partialCount: 3_293,
+    partialSha256: "65d8f949d1671f09fbc5d8615c2c6921e21d0319b554ec7a380b3a951ba44463",
+    resolvedSha256: "faa82cc185848eace814c75d03eb7f309d8668097f69035b631b157096d714ae",
   },
   fr: {
-    partialCount: 3_033,
-    partialSha256: "c729d0119571a134a0eeb035cdff34eb361aaaa4442723c3c07c8976a92263dd",
-    resolvedSha256: "9de40e7f98bf0f4811eb248556476eb21af9f116f058ea01ffd48ef3e927a0fa",
+    partialCount: 3_293,
+    partialSha256: "918e1f85b68526f347b0fc6bcba3fbbc8d2c49786fd06c16abf7751c154acab0",
+    resolvedSha256: "9b61af3276056d914551da214b7c3d270a20b115d765c54c541678ed14a50e6e",
   },
   de: {
-    partialCount: 3_033,
-    partialSha256: "f6b24d4c4526b7a101ba13312ff15615c5c0ddc1b4662b549f6384525bd1a158",
-    resolvedSha256: "21cc6c7c760839e32e4bce00423ceeedd46696dcc8bc13ae95eff70fef7f3988",
+    partialCount: 3_293,
+    partialSha256: "7376c1a551a3e52287aa70f2c5e22c320d28fcaa5c1cd19f10c4c75163672e96",
+    resolvedSha256: "6cd2ba98a0639a81aaf7dddfae5b5b2b3af8a9b66a7819316d376fe485e31bea",
   },
   es: {
-    partialCount: 3_033,
-    partialSha256: "b3a7ee25580a0bf164e01eee0fa9e06c032e6ae0cf1ce3c5726747bdcb024177",
-    resolvedSha256: "dbee36e7adabc2d5f78f2805ac74269b24fb3747ef5b2f808a9e9bf5f42e1c1e",
+    partialCount: 3_293,
+    partialSha256: "de153357bff017b0cee943599da3905f5d468a63706ac6c5359409305ab2506d",
+    resolvedSha256: "656ec5d7733b475cd6ff7d347f68f4076cd0e9106752eefa81e997adacb52218",
   },
   pt: {
-    partialCount: 3_033,
-    partialSha256: "c1344943cf0b068b2b3cf984f5259627bc78b273401900c948dc8f195eeaecf9",
-    resolvedSha256: "b461ff4618e5ff5f3d63702e4ef7acdaf5af9644811454b3ccda70d037d537ba",
+    partialCount: 3_293,
+    partialSha256: "6e3d2cab68cb6979a7ca5b80155b5a938e814ba66a34c00b4aa37591674bfd44",
+    resolvedSha256: "04767fa70dff38496b3b95ae953b67c22928ec4d52d1c5acde5e9819c61e9b88",
   },
 } as const satisfies Record<
   Locale,
@@ -251,6 +137,107 @@ function placeholderInventory(table: StringTable): Record<string, string[]> {
   }
   return inventory;
 }
+
+interface Baselines {
+  serializedLength: number;
+  registrySha256: string;
+  keyOrderSha256: string;
+  placeholderSha256: string;
+  catalogs: Record<Locale, { partialCount: number; partialSha256: string; resolvedSha256: string }>;
+}
+
+/** The ratchet values the current catalogs produce, as the BASE_* constants record them. */
+function currentBaselines(): Baselines {
+  const serialized = JSON.stringify(STRINGS);
+  return {
+    serializedLength: serialized.length,
+    registrySha256: sha256(serialized),
+    keyOrderSha256: sha256(JSON.stringify(Object.keys(en))),
+    placeholderSha256: sha256(JSON.stringify(placeholderInventory(STRINGS.en))),
+    catalogs: Object.fromEntries(
+      LOCALES.map((locale) => [
+        locale,
+        {
+          partialCount: Object.keys(PARTIAL_CATALOGS[locale]).length,
+          partialSha256: sha256(sortedSerialization(PARTIAL_CATALOGS[locale])),
+          resolvedSha256: sha256(JSON.stringify(STRINGS[locale])),
+        },
+      ]),
+    ) as Baselines["catalogs"],
+  };
+}
+
+function digitGroups(value: number): string {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, "_");
+}
+
+/** This file's source with its BASE_* constants rewritten to `values`; nothing else changes. */
+function rerecordBaselines(source: string, values: Baselines): string {
+  // Keep the checkout's own line endings.
+  const eol = source.includes("\r\n") ? "\r\n" : "\n";
+  const catalogs = LOCALES.map((locale) => {
+    const entry = values.catalogs[locale];
+    // A regional tag such as fr-CA is not a bare property name.
+    const name = /^[A-Za-z_$][\w$]*$/.test(locale) ? locale : JSON.stringify(locale);
+    return [
+      `  ${name}: {`,
+      `    partialCount: ${digitGroups(entry.partialCount)},`,
+      `    partialSha256: "${entry.partialSha256}",`,
+      `    resolvedSha256: "${entry.resolvedSha256}",`,
+      "  },",
+    ].join(eol);
+  }).join(eol);
+  const replacements: [RegExp, string][] = [
+    [
+      /^const BASE_SERIALIZED_LENGTH = [\d_]+;(?=\r?$)/m,
+      `const BASE_SERIALIZED_LENGTH = ${digitGroups(values.serializedLength)};`,
+    ],
+    [
+      /^const BASE_REGISTRY_SHA256 = "[0-9a-f]+";(?=\r?$)/m,
+      `const BASE_REGISTRY_SHA256 = "${values.registrySha256}";`,
+    ],
+    [
+      /^const BASE_KEY_ORDER_SHA256 = "[0-9a-f]+";(?=\r?$)/m,
+      `const BASE_KEY_ORDER_SHA256 = "${values.keyOrderSha256}";`,
+    ],
+    [
+      /^const BASE_PLACEHOLDER_SHA256 = "[0-9a-f]+";(?=\r?$)/m,
+      `const BASE_PLACEHOLDER_SHA256 = "${values.placeholderSha256}";`,
+    ],
+    [
+      /^const BASE_CATALOGS = \{\r?\n[\s\S]*?\r?\n\} as const satisfies/m,
+      `const BASE_CATALOGS = {${eol}${catalogs}${eol}} as const satisfies`,
+    ],
+  ];
+  let next = source;
+  for (const [pattern, replacement] of replacements) {
+    if (!pattern.test(next)) throw new Error(`strings.test.ts: no match for ${pattern}`);
+    next = next.replace(pattern, () => replacement);
+  }
+  return next;
+}
+
+describe("strings baseline re-record (CORE-2455)", () => {
+  // Runs only under `npm run strings:rerecord`; a plain test run never rewrites anything.
+  it.runIf(process.env.STRINGS_RERECORD === "1")("rerecords the BASE_* constants", () => {
+    const path = fileURLToPath(import.meta.url);
+    writeFileSync(path, rerecordBaselines(readFileSync(path, "utf8"), currentBaselines()));
+  });
+
+  it("rewrites only the constants, and the recorded file matches the current catalogs", () => {
+    const source = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const values = currentBaselines();
+    const rewritten = rerecordBaselines(source, values);
+    // The committed file already holds the current values, so a re-record is a no-op.
+    expect(rewritten).toBe(source);
+    const changed = rerecordBaselines(source, { ...values, registrySha256: "0".repeat(64) });
+    expect(changed).not.toBe(source);
+    expect(changed.replace("0".repeat(64), values.registrySha256)).toBe(source);
+    // A CRLF checkout re-records in place too.
+    const crlf = source.replace(/\n/g, "\r\n");
+    expect(rerecordBaselines(crlf, values)).toBe(crlf);
+  });
+});
 
 describe("localized string assembly", () => {
   it("matches the pre-split JSON serialization exactly", () => {

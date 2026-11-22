@@ -20,6 +20,7 @@ type fieldDispatchContext struct {
 	privilegedOutcomes map[string]observability.AuditOutcome
 	canonical          string
 	responseKey        string
+	queueAddReceipt    *QueueAddReceipt
 }
 
 type fieldDispatchFunc func(*fieldDispatchContext) response
@@ -146,13 +147,53 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 			authorizationRefused: true,
 		}
 	}
-	if gate&roleAdmin != 0 && !dispatch.scope.Admin && !adminTokenMayRun(dispatch) {
+	if gate&roleAdmin != 0 && !dispatch.scope.Admin && !adminTokenMayRun(dispatch) && !ownTrackPreferenceWrite(dispatch) {
 		return response{
 			Errors:               []graphError{newGraphError(ErrorCodeForbidden, "admin session required")},
 			authorizationRefused: true,
 		}
 	}
 	return response{}
+}
+
+// ownTrackPreferenceWrite reports whether the dispatch is an enrolled device
+// session writing only its own Profile's track preferences through
+// updateProfile (CORE-1937). Any other selected field, any other argument, or
+// another Profile's ID keeps the Admin Session requirement.
+func ownTrackPreferenceWrite(dispatch *fieldDispatchContext) bool {
+	scope := dispatch.scope
+	if !scope.IsEnrolledDeviceSession() || scope.ProfileID == "" {
+		return false
+	}
+	for field, requested := range dispatch.fields {
+		if requested && field != "updateprofile" {
+			return false
+		}
+	}
+	if !dispatch.fields["updateprofile"] {
+		return false
+	}
+	if store.ProfileID(trimmedVariable(dispatch.req, "profileID")) != scope.ProfileID {
+		return false
+	}
+	// The input holds only the arguments the document binds on updateProfile
+	// (effectiveArguments), so this table names every one but profileID:
+	// true for a track preference, false for a Profile policy field.
+	writes := false
+	for name, own := range map[string]bool{
+		"audioLanguages": true, "subtitleLanguages": true, "subtitleMode": true, "preferSDH": true,
+		"disabled": false, "entryPIN": false, "kind": false, "maxConcurrentStreams": false,
+		"name": false, "remoteMaxBitrate": false, "transcodeAllowed": false,
+	} {
+		if dispatch.req.Variables[name] == nil {
+			continue
+		}
+		if !own {
+			return false
+		}
+		writes = true
+	}
+	return writes
 }
 
 // adminTokenOps are the Console operations the operator CLI performs against a
@@ -393,6 +434,8 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	153: dispatchFieldBlock153,
 	154: dispatchFieldBlock154,
 	155: dispatchFieldBlock155,
+	156: dispatchFieldBlock156,
+	157: dispatchFieldBlock157,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -476,12 +519,18 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"engagementcounter":                  newFieldHandler("engagementCounter", "engagementCounter", fieldRead, roleSession, 126),
 	"entitiesformedia":                   newFieldHandler("entitiesForMedia", "entitiesForMedia", fieldRead, roleSession, 6),
 	"entity":                             newFieldHandler("entity", "entity", fieldRead, roleSession, 11),
+	"entitysearch":                       newFieldHandler("entitySearch", "entitySearch", fieldRead, roleSession|roleManager, 156),
 	"entityrelations":                    newFieldHandler("entityRelations", "entityRelations", fieldRead, roleSession, 7),
 	"evictplaybackrenditioncache":        newFieldHandler("evictPlaybackRenditionCache", "evictPlaybackRenditionCache", fieldMutation, roleSession|roleAdmin, 75),
 	"extensionrequest":                   newFieldHandler("extensionRequest", "extensionRequest", fieldRead, roleSession, 95),
+	"clearmediaordinal":                  newFieldHandler("clearMediaOrdinal", "clearMediaOrdinal", fieldMutation, roleSession|roleManager, 60),
 	"fixmatch":                           newFieldHandler("fixMatch", "fixMatch", fieldMutation, roleSession|roleManager, 60),
 	"fixmatchcandidates":                 newFieldHandler("fixMatchCandidates", "fixMatchCandidates", fieldRead, roleSession|roleManager, 60),
+	"fixmatchchildren":                   newFieldHandler("fixMatchChildren", "fixMatchChildren", fieldRead, roleSession|roleManager, 60),
+	"fixmatchcurrent":                    newFieldHandler("fixMatchCurrent", "fixMatchCurrent", fieldRead, roleSession|roleManager, 60),
+	"fixmatchlockedfields":               newFieldHandler("fixMatchLockedFields", "fixMatchLockedFields", fieldRead, roleSession|roleManager, 60),
 	"fixmatchpreview":                    newFieldHandler("fixMatchPreview", "fixMatchPreview", fieldRead, roleSession|roleManager, 60),
+	"fixmatchsources":                    newFieldHandler("fixMatchSources", "fixMatchSources", fieldRead, roleSession|roleManager, 60),
 	"foldertree":                         newFieldHandler("folderTree", "folderTree", fieldRead, roleSession|roleManager, 110),
 	"formgroup":                          newFieldHandler("formGroup", "formGroup", fieldMutation, roleSession, 131),
 	"identifyapply":                      newFieldHandler("identifyApply", "identifyApply", fieldMutation, roleSession|roleManager, 60),
@@ -533,6 +582,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"myengagement":                       newFieldHandler("myEngagement", "myEngagement", fieldRead, roleSession, 112),
 	"myengagementlog":                    newFieldHandler("myEngagementLog", "myEngagementLog", fieldRead, roleSession, 114),
 	"mysessions":                         newFieldHandler("mySessions", "mySessions", fieldRead, roleSession, 116),
+	"myplayhistory":                      newFieldHandler("myPlayHistory", "myPlayHistory", fieldRead, roleSession, 116),
+	"myplaystats":                        newFieldHandler("myPlayStats", "myPlayStats", fieldRead, roleSession, 116),
 	"navigationmanifest":                 newFieldHandler("navigationManifest", "manifest", fieldRead, roleSession, 4),
 	"navoverride":                        newFieldHandler("navOverride", "navOverride", fieldRead, roleSession|roleManager, 62),
 	"navoverridehistory":                 newFieldHandler("navOverrideHistory", "navOverrideHistory", fieldRead, roleSession|roleManager, 62),
@@ -565,6 +616,14 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"revokejellyfincompatkey":            newFieldHandler("revokeJellyfinCompatKey", "revokeJellyfinCompatKey", fieldMutation, roleSession|roleAdmin, 155),
 	"qbittorrentingest":                  newFieldHandler("qbittorrentIngest", "qbittorrentIngest", fieldRead, roleSession|roleAdmin, 106),
 	"qualitypolicy":                      newFieldHandler("qualityPolicy", "qualityPolicy", fieldRead, roleSession|roleAdmin, 50),
+	"playqueue":                          newFieldHandler("playQueue", "queue", fieldRead, roleSession, 30),
+	"queueaddmany":                       newFieldHandler("queueAddMany", "queue", fieldMutation, roleSession, 30),
+	"queuemoveentry":                     newFieldHandler("queueMoveEntry", "queue", fieldMutation, roleSession, 30),
+	"queueremoveentry":                   newFieldHandler("queueRemoveEntry", "queue", fieldMutation, roleSession, 30),
+	"queueplaynext":                      newFieldHandler("queuePlayNext", "queue", fieldMutation, roleSession, 30),
+	"queuesetcurrent":                    newFieldHandler("queueSetCurrent", "queue", fieldMutation, roleSession, 30),
+	"queuesetshuffle":                    newFieldHandler("queueSetShuffle", "queue", fieldMutation, roleSession, 30),
+	"queuesetrepeat":                     newFieldHandler("queueSetRepeat", "queue", fieldMutation, roleSession, 30),
 	"queueadd":                           newFieldHandler("queueAdd", "queue", fieldMutation, roleSession, 30),
 	"queueclear":                         newFieldHandler("queueClear", "queue", fieldMutation, roleSession, 30),
 	"queuemove":                          newFieldHandler("queueMove", "queue", fieldMutation, roleSession, 30),
@@ -580,6 +639,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"removecollectionmedia":              newFieldHandler("removeCollectionMedia", "removeCollectionMedia", fieldMutation, roleSession|roleManager, 57),
 	"removelastengagement":               newFieldHandler("removeLastEngagement", "removeLastEngagement", fieldMutation, roleSession, 128),
 	"removesubscription":                 newFieldHandler("removeSubscription", "removeSubscription", fieldMutation, roleSession|roleManager, 54),
+	"removemediarelation":                newFieldHandler("removeMediaRelation", "removeMediaRelation", fieldMutation, roleSession|roleManager, 157),
 	"renamemanagedpath":                  newFieldHandler("renameManagedPath", "renameManagedPath", fieldMutation, roleSession|roleManager, 110),
 	"reordercollectionmedia":             newFieldHandler("reorderCollectionMedia", "reorderCollectionMedia", fieldMutation, roleSession|roleManager, 57),
 	"reportdrift":                        newFieldHandler("reportDrift", "reportDrift", fieldMutation, roleSession, 135),
@@ -626,6 +686,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"search":                             newFieldHandler("search", "search", fieldRead, roleSession, 19),
 	"searchentities":                     newFieldHandler("searchEntities", "searchEntities", fieldRead, roleSession, 22),
 	"searchfeeds":                        newFieldHandler("searchFeeds", "searchFeeds", fieldRead, roleSession, 23),
+	"followfeed":                         newFieldHandler("followFeed", "followFeed", fieldMutation, roleSession, 23),
 	"searchresult":                       newFieldHandler("searchResult", "searchResult", fieldRead, roleSession, 20),
 	"semanticcapability":                 newFieldHandler("semanticCapability", "semanticCapability", fieldRead, roleSession, 21),
 	"serverinfo":                         newFieldHandler("serverInfo", "", fieldRead, rolePublic, 0),
@@ -633,17 +694,21 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setcapabilityenabled":               newFieldHandler("setCapabilityEnabled", "setCapabilityEnabled", fieldMutation, roleSession|roleAdmin, 67),
 	"setcertificationceiling":            newFieldHandler("setCertificationCeiling", "setCertificationCeiling", fieldMutation, roleSession|roleAdmin, 40),
 	"setclientpref":                      newFieldHandler("setClientPref", "setClientPref", fieldMutation, roleSession, 42),
+	"setcontinuewatchinghidden":          newFieldHandler("setContinueWatchingHidden", "setContinueWatchingHidden", fieldMutation, roleSession, 146),
 	"setconsoleconfig":                   newFieldHandler("setConsoleConfig", "setConsoleConfig", fieldMutation, roleSession|roleAdmin, 66),
 	"setdevicerole":                      newFieldHandler("setDeviceRole", "setDeviceRole", fieldMutation, roleSession|roleAdmin, 145),
 	"setextensionpreauthorization":       newFieldHandler("setExtensionPreauthorization", "setExtensionPreauthorization", fieldMutation, roleSession|roleAdmin, 96),
 	"setfavorite":                        newFieldHandler("setFavorite", "setFavorite", fieldMutation, roleSession, 34),
 	"setfollow":                          newFieldHandler("setFollow", "setFollow", fieldMutation, roleSession, 53),
+	"refreshsubscription":                newFieldHandler("refreshSubscription", "refreshSubscription", fieldMutation, roleSession, 53),
+	"refreshallsubscriptions":            newFieldHandler("refreshAllSubscriptions", "refreshAllSubscriptions", fieldMutation, roleSession|roleManager, 54),
 	"setlibraryaiindexing":               newFieldHandler("setLibraryAIIndexing", "setLibraryAIIndexing", fieldMutation, roleSession|roleAdmin, 77),
 	"setlibrarybacking":                  newFieldHandler("setLibraryBacking", "setLibraryBacking", fieldMutation, roleSession|roleAdmin, 48),
 	"setlibrarypreviewclips":             newFieldHandler("setLibraryPreviewClips", "setLibraryPreviewClips", fieldMutation, roleSession|roleAdmin, 47),
 	"setlibraryshowonhome":               newFieldHandler("setLibraryShowOnHome", "setLibraryShowOnHome", fieldMutation, roleSession|roleAdmin, 47),
 	"setlibraryrestricted":               newFieldHandler("setLibraryRestricted", "setLibraryRestricted", fieldMutation, roleSession|roleAdmin, 49),
 	"setlibraryroots":                    newFieldHandler("setLibraryRoots", "setLibraryRoots", fieldMutation, roleSession|roleAdmin, 46),
+	"setmediarelation":                   newFieldHandler("setMediaRelation", "setMediaRelation", fieldMutation, roleSession|roleManager, 157),
 	"setmediafieldlock":                  newFieldHandler("setMediaFieldLock", "setMediaFieldLock", fieldMutation, roleSession|roleManager, 108),
 	"editmediametadata":                  newFieldHandler("editMediaMetadata", "editMediaMetadata", fieldMutation, roleSession|roleManager, 108),
 	"refreshmediametadata":               newFieldHandler("refreshMediaMetadata", "refreshMediaMetadata", fieldMutation, roleSession|roleManager, 108),
@@ -665,6 +730,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setpreplayclips":                    newFieldHandler("setPrePlayClips", "setPrePlayClips", fieldMutation, roleSession|roleAdmin, 149),
 	"setskipdetectionenabled":            newFieldHandler("setSkipDetectionEnabled", "setSkipDetectionEnabled", fieldMutation, roleSession|roleAdmin, 78),
 	"setsubscriptionretention":           newFieldHandler("setSubscriptionRetention", "setSubscriptionRetention", fieldMutation, roleSession|roleManager, 54),
+	"setsubscriptiondownloadpolicy":      newFieldHandler("setSubscriptionDownloadPolicy", "setSubscriptionDownloadPolicy", fieldMutation, roleSession|roleManager, 54),
 	"settranscodeconfig":                 newFieldHandler("setTranscodeConfig", "setTranscodeConfig", fieldMutation, roleSession|roleAdmin, 69),
 	"setwatched":                         newFieldHandler("setWatched", "setWatched", fieldMutation, roleSession, 146),
 	"setwatchlisted":                     newFieldHandler("setWatchlisted", "setWatchlisted", fieldMutation, roleSession, 146),
@@ -681,6 +747,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"stationsave":                        newFieldHandler("stationSave", "stationSave", fieldMutation, roleSession, 32),
 	"stationstart":                       newFieldHandler("stationStart", "stationStart", fieldMutation, roleSession, 31),
 	"subscriptions":                      newFieldHandler("subscriptions", "subscriptions", fieldRead, roleSession|roleManager, 54),
+	"subscriptionentries":                newFieldHandler("subscriptionEntries", "subscriptionEntries", fieldRead, roleSession, 23),
 	"switchprofile":                      newFieldHandler("switchProfile", "switchProfile", fieldMutation, roleSession, 3),
 	"syncofflinepackprogress":            newFieldHandler("syncOfflinePackProgress", "syncOfflinePackProgress", fieldMutation, roleSession, 120),
 	"tagassignments":                     newFieldHandler("tagAssignments", "tagAssignments", fieldRead, roleSession|roleManager, 36),
@@ -691,6 +758,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"transitiongroup":                    newFieldHandler("transitionGroup", "transitionGroup", fieldMutation, roleSession, 134),
 	"trashedmarkers":                     newFieldHandler("trashedMarkers", "markers", fieldRead, roleSession|roleManager, 13),
 	"trashlist":                          newFieldHandler("trashList", "trash", fieldRead, roleSession|roleManager, 35),
+	"duplicatecopies":                    newFieldHandler("duplicateCopies", "trash", fieldRead, roleSession|roleManager, 35),
 	"trashedlibraries":                   newFieldHandler("trashedLibraries", "trashedLibraries", fieldRead, roleSession|roleAdmin, 148),
 	"trashmedia":                         newFieldHandler("trashMedia", "trashMedia", fieldMutation, roleSession|roleManager, 35),
 	"unassigntag":                        newFieldHandler("unassignTag", "unassignTag", fieldMutation, roleSession|roleManager, 36),
@@ -1163,6 +1231,18 @@ func dispatchFieldBlock023(dispatch *fieldDispatchContext) response {
 			return resp
 		}
 	}
+	if fields["followfeed"] {
+		subscription, err := h.followFeed(ctx, scope, req)
+		if resp := resolveField(dispatch, "followfeed", subscription, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["subscriptionentries"] {
+		entries, err := h.subscriptionEntries(ctx, scope, req)
+		if resp := resolveField(dispatch, "subscriptionentries", entries, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	return response{}
 }
 
@@ -1280,10 +1360,29 @@ func dispatchFieldBlock030(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
-	if fields["queueadd"] || fields["queueremove"] || fields["queuemove"] || fields["queueclear"] {
+	if fields["playqueue"] {
+		result, err := h.playQueue(ctx, scope)
+		return resolveField(dispatch, "playqueue", result, err)
+	}
+	if fields["queueaddmany"] || fields["queuemoveentry"] || fields["queueremoveentry"] || fields["queueplaynext"] ||
+		fields["queuesetcurrent"] || fields["queuesetshuffle"] || fields["queuesetrepeat"] {
+		field := requestedField(fields, "queueaddmany", "queuemoveentry", "queueremoveentry", "queueplaynext",
+			"queuesetcurrent", "queuesetshuffle", "queuesetrepeat")
+		result, err := h.writePlayQueue(ctx, scope, fields, req)
+		return resolveField(dispatch, field, result, err)
+	}
+	if fields["queueadd"] {
+		result, err := h.queueAdd(ctx, scope, req)
+		if err == nil {
+			result.receipt.ResponseKey = dispatch.responseKey
+			dispatch.queueAddReceipt = &result.receipt
+		}
+		return resolveField(dispatch, "queueadd", result.items, err)
+	}
+	if fields["queueremove"] || fields["queuemove"] || fields["queueclear"] {
 		result, err := h.queueOps(ctx, scope, fields, req)
 		if err != nil {
-			return resolveField(dispatch, requestedField(fields, "queueadd", "queueremove", "queuemove", "queueclear"), any(nil), err)
+			return resolveField(dispatch, requestedField(fields, "queueremove", "queuemove", "queueclear"), any(nil), err)
 		}
 		for field, value := range result {
 			if resp := resolveField(dispatch, field, value, nil); len(resp.Errors) > 0 {
@@ -1362,7 +1461,7 @@ func dispatchFieldBlock035(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
-	if fields["trashmedia"] || fields["restoremedia"] || fields["trashlist"] || fields["purgetrash"] {
+	if fields["trashmedia"] || fields["restoremedia"] || fields["trashlist"] || fields["purgetrash"] || fields["duplicatecopies"] {
 		if fields["trashmedia"] {
 			entries, err := h.trashMedia(ctx, scope, req)
 			if resp := resolveField(dispatch, "trashmedia", entries, err); len(resp.Errors) > 0 {
@@ -1384,6 +1483,12 @@ func dispatchFieldBlock035(dispatch *fieldDispatchContext) response {
 		if fields["purgetrash"] {
 			result, err := h.purgeTrash(ctx, scope, req)
 			if resp := resolveField(dispatch, "purgetrash", result, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["duplicatecopies"] {
+			sets, err := h.duplicateCopies(ctx, scope)
+			if resp := resolveField(dispatch, "duplicatecopies", sets, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}
@@ -1480,7 +1585,7 @@ func dispatchFieldBlock038(dispatch *fieldDispatchContext) response {
 	req := dispatch.req
 	fields := dispatch.fields
 	if fields["updateprofile"] {
-		profile, err := h.updateProfile(ctx, req)
+		profile, err := h.updateProfile(ctx, scope, req)
 		if resp := resolveField(dispatch, "updateprofile", profile, err); len(resp.Errors) > 0 {
 			return resp
 		}
@@ -1763,6 +1868,12 @@ func dispatchFieldBlock053(dispatch *fieldDispatchContext) response {
 			return resp
 		}
 	}
+	if fields["refreshsubscription"] {
+		refreshed, err := h.refreshSubscription(ctx, scope, req)
+		if resp := resolveField(dispatch, "refreshsubscription", refreshed, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	return response{}
 }
 
@@ -1772,7 +1883,7 @@ func dispatchFieldBlock054(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
-	if fields["addsubscription"] || fields["removesubscription"] || fields["subscriptions"] || fields["setsubscriptionretention"] || fields["associatesubscriptionentry"] {
+	if fields["addsubscription"] || fields["removesubscription"] || fields["subscriptions"] || fields["setsubscriptionretention"] || fields["setsubscriptiondownloadpolicy"] || fields["associatesubscriptionentry"] || fields["refreshallsubscriptions"] {
 		if fields["addsubscription"] {
 			subscription, err := h.addSubscription(ctx, scope, req)
 			if resp := resolveField(dispatch, "addsubscription", subscription, err); len(resp.Errors) > 0 {
@@ -1797,9 +1908,21 @@ func dispatchFieldBlock054(dispatch *fieldDispatchContext) response {
 				return resp
 			}
 		}
+		if fields["setsubscriptiondownloadpolicy"] {
+			subscription, err := h.setSubscriptionDownloadPolicy(ctx, scope, req)
+			if resp := resolveField(dispatch, "setsubscriptiondownloadpolicy", subscription, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
 		if fields["associatesubscriptionentry"] {
 			association, err := h.associateSubscriptionEntry(ctx, scope, req)
 			if resp := resolveField(dispatch, "associatesubscriptionentry", association, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["refreshallsubscriptions"] {
+			refreshed, err := h.refreshAllSubscriptions(ctx, scope, req)
+			if resp := resolveField(dispatch, "refreshallsubscriptions", refreshed, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}
@@ -2035,8 +2158,26 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
+	if fields["fixmatchsources"] {
+		sources, err := h.fixMatchSources(ctx, scope, req)
+		if resp := resolveField(dispatch, "fixmatchsources", sources, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["fixmatchcurrent"] {
+		current, err := h.fixMatchCurrent(ctx, scope, req)
+		if resp := resolveField(dispatch, "fixmatchcurrent", current, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["fixmatchlockedfields"] {
+		locks, err := h.fixMatchLockedFields(ctx, scope, req)
+		if resp := resolveField(dispatch, "fixmatchlockedfields", locks, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	if fields["identifysearch"] || fields["identifyapply"] || fields["fixmatch"] ||
-		fields["identifylookup"] || fields["fixmatchcandidates"] || fields["fixmatchpreview"] {
+		fields["identifylookup"] || fields["fixmatchcandidates"] || fields["fixmatchchildren"] || fields["fixmatchpreview"] || fields["clearmediaordinal"] {
 		if h.identify == nil {
 			return response{Errors: []graphError{newGraphError(ErrorCodeInternal, "identification unavailable")}}
 		}
@@ -2061,6 +2202,12 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 				return resp
 			}
 		}
+		if fields["fixmatchchildren"] {
+			children, err := h.fixMatchChildren(ctx, scope, req)
+			if resp := resolveField(dispatch, "fixmatchchildren", children, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
 		if fields["identifylookup"] {
 			candidate, err := h.identifyLookup(ctx, scope, req)
 			if resp := resolveField(dispatch, "identifylookup", candidate, err); len(resp.Errors) > 0 {
@@ -2070,6 +2217,12 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 		if fields["fixmatchpreview"] {
 			diff, err := h.fixMatchPreview(ctx, scope, req)
 			if resp := resolveField(dispatch, "fixmatchpreview", diff, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["clearmediaordinal"] {
+			cleared, err := h.clearMediaOrdinal(ctx, scope, req)
+			if resp := resolveField(dispatch, "clearmediaordinal", cleared, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}
@@ -3582,10 +3735,23 @@ func dispatchFieldBlock116(dispatch *fieldDispatchContext) response {
 	h := dispatch.handler
 	ctx := dispatch.ctx
 	scope := dispatch.scope
+	req := dispatch.req
 	fields := dispatch.fields
 	if fields["mysessions"] {
 		sessions, err := h.mySessions(ctx, scope)
 		if resp := resolveField(dispatch, "mysessions", sessions, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["myplayhistory"] {
+		plays, err := h.playHistory(ctx, scope, req, ownPlayFilter(scope, req))
+		if resp := resolveField(dispatch, "myplayhistory", plays, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["myplaystats"] {
+		stats, err := h.playStats(ctx, scope, req, ownPlayFilter(scope, req))
+		if resp := resolveField(dispatch, "myplaystats", stats, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
@@ -4071,13 +4237,13 @@ func dispatchFieldBlock145(dispatch *fieldDispatchContext) response {
 		}
 	}
 	if fields["playhistory"] {
-		plays, err := h.playHistory(ctx, scope, req)
+		plays, err := h.playHistory(ctx, scope, req, consolePlayFilter(req))
 		if resp := resolveField(dispatch, "playhistory", plays, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
 	if fields["playstats"] {
-		stats, err := h.playStats(ctx, scope, req)
+		stats, err := h.playStats(ctx, scope, req, consolePlayFilter(req))
 		if resp := resolveField(dispatch, "playstats", stats, err); len(resp.Errors) > 0 {
 			return resp
 		}
@@ -4153,6 +4319,12 @@ func dispatchFieldBlock146(dispatch *fieldDispatchContext) response {
 	if fields["setrating"] {
 		state, err := h.setRating(ctx, scope, req)
 		if resp := resolveField(dispatch, "setrating", state, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setcontinuewatchinghidden"] {
+		state, err := h.setContinueWatchingHidden(ctx, scope, req)
+		if resp := resolveField(dispatch, "setcontinuewatchinghidden", state, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
@@ -4421,6 +4593,42 @@ func dispatchFieldBlock155(dispatch *fieldDispatchContext) response {
 	if fields["jellyfincompatkeys"] {
 		keys, err := h.jellyfinCompatKeys(ctx)
 		if resp := resolveField(dispatch, "jellyfincompatkeys", keys, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+func dispatchFieldBlock156(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["entitysearch"] {
+		items, err := h.entitySearch(ctx, scope, req)
+		if resp := resolveField(dispatch, "entitysearch", items, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+func dispatchFieldBlock157(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["setmediarelation"] {
+		result, err := h.setMediaRelation(ctx, scope, req)
+		if resp := resolveField(dispatch, "setmediarelation", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["removemediarelation"] {
+		result, err := h.removeMediaRelation(ctx, scope, req)
+		if resp := resolveField(dispatch, "removemediarelation", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

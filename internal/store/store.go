@@ -281,6 +281,12 @@ const (
 // IntegrationSetupTTL is the longest life of an admin setup Session.
 const IntegrationSetupTTL = 15 * time.Minute
 
+// ErrSessionNotFound reports that no session exists for the requested ID.
+var ErrSessionNotFound = errors.New("session not found")
+
+// ErrSessionExpired reports that the request's session has expired.
+var ErrSessionExpired = errors.New("session expired")
+
 // IntegrationSetupAttemptKey names the throttle lane of an admin setup
 // sign-in for the owner Profile.
 func IntegrationSetupAttemptKey(owner ProfileID) string {
@@ -476,6 +482,12 @@ const (
 	// auto-locks the field: nothing below it (identification, re-match, scan,
 	// hydration, AI) may overwrite it.
 	MutationSourceManual MutationSource = "manual"
+	// MutationSourceLocal marks values a plugin read from sidecar files the
+	// operator keeps beside the media. They are the operator's own curation, so
+	// they rank above identification and read as locked; only a manual edit
+	// outranks them. Releasing them (the sidecar went away) moves them to the
+	// scan tier without clearing the values.
+	MutationSourceLocal MutationSource = "local"
 	// MutationSourceOperator means a human operator applied identification via
 	// identifyApply (an explicit candidate choice) — the "identified" tier.
 	MutationSourceOperator MutationSource = "operator"
@@ -500,17 +512,19 @@ func mutationSourceFromDB(source string) MutationSource {
 }
 
 // metadataSourceRank is the total precedence order over metadata-field write
-// sources: user/manual > identified > parsed > hydrated >
+// sources: user/manual > local sidecar > identified > parsed > hydrated >
 // machine-derived. A write of source S may overwrite a field last written by
 // source T only when rank(S) >= rank(T); the provenance record of the winning
 // source is authoritative over the legacy media.<field>_identified booleans.
 // An empty/unknown source ranks as parsed — the same "" == scan reader rule the
 // mutated_by column already uses (pre-migration and scan-imported rows).
-// Importers are behavioral-state-only and never write here, so
-// they carry no rank in this chain.
+// Library importers are behavioral-state-only and never write here; sidecar
+// metadata read during a scan writes at the local tier.
 func metadataSourceRank(source MutationSource) int {
 	switch source {
 	case MutationSourceManual:
+		return 5
+	case MutationSourceLocal:
 		return 4
 	case MutationSourceOperator:
 		return 3
@@ -565,6 +579,12 @@ type MediaMetadata struct {
 	// zero-value the store falls back to MutationSourceOperator (all
 	// explicit identification writes are operator-initiated today).
 	Source MutationSource
+	// ClearLocks are field locks to clear in the same transaction as the write.
+	ClearLocks []string
+	// Identification-only manual tier edits, committed with the replacement.
+	OperatorOrdinal *MediaOrdinal
+	OrdinalActor    ProfileID
+	ClearOrdinal    bool
 }
 
 // ArtworkCandidate is one persisted scraped artwork alternative for a
@@ -1079,6 +1099,12 @@ type Store struct {
 	// Test-only, like convertStepHook: it lets a deterministic test purge the
 	// Media in that exact window. Never set in production wiring.
 	offlinePackSealHook func()
+	// operatorRelationWriteHook, when non-nil, fires inside an operator
+	// Media relation write after the visibility pre-check and before the
+	// write transaction opens. Test-only, like convertStepHook: it lets a
+	// deterministic test restrict a Library in that exact window. Never set
+	// in production wiring.
+	operatorRelationWriteHook func()
 	// entityIndexes holds the registered plugin-declared field index
 	// postures: kind → field → spec (RegisterEntityFieldIndexes). Guarded by
 	// mu like every other member.
@@ -2171,6 +2197,27 @@ func (s *Store) LibraryRestricted(ctx context.Context, id LibraryID) (bool, erro
 	return restricted != 0, nil
 }
 
+// LibraryLive reports whether a Library exists and is not in the trash. A job
+// queued before its Library was deleted uses it to exit without work
+// (CORE-1279).
+func (s *Store) LibraryLive(ctx context.Context, id LibraryID) (bool, error) {
+	if id == "" {
+		return false, errors.New("library ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var live int
+	err := s.catalogR.QueryRowContext(ctx,
+		"SELECT EXISTS (SELECT 1 FROM library WHERE id = ? AND trashed_at_ms IS NULL)", id).Scan(&live)
+	if err != nil {
+		return false, err
+	}
+	return live != 0, nil
+}
+
 // LibraryPreviewClips reports the Library's preview-clip toggle.
 func (s *Store) LibraryPreviewClips(ctx context.Context, id LibraryID) (bool, error) {
 	if id == "" {
@@ -2705,6 +2752,26 @@ func (s *Store) SetMatchPinned(ctx context.Context, fingerprint string, pinned b
 	return affected > 0, nil
 }
 
+// PinMediaMatch pins the fingerprint of every file on a visible Media item,
+// including missing Parts or Versions that might be rediscovered by a scan.
+func (s *Store) PinMediaMatch(ctx context.Context, id MediaID, filter LibraryFilter) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, id, filter); err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx,
+		"UPDATE media_file SET match_pinned = 1 WHERE media_id = ? AND content_fingerprint <> ''", id)
+	return err
+}
+
 // SetMediaFileDecodeBroken records the result of a decode-verify pass over one
 // Media item's available bytes (FEAT-8 / ADR-0009 §9 / catalog 0064). broken=1
 // means the decode-verify sampling job hit a decode error or truncation on this
@@ -2996,6 +3063,59 @@ type StoredFingerprint struct {
 // an available path in the public catalog.
 func (s *Store) MediaFileFingerprintByPath(ctx context.Context, path string) (StoredFingerprint, error) {
 	return s.mediaFileFingerprintByPath(ctx, path, "")
+}
+
+// SetProbedMediaDuration fills a missing runtime from the primary single-Part
+// Version's active file. A scan may have replaced the file or filled the runtime
+// while playback was probing it. The result reports whether a row changed.
+func (s *Store) SetProbedMediaDuration(ctx context.Context, libraryID LibraryID, id MediaID, fingerprint, path string, seconds int) (bool, error) {
+	if seconds <= 0 {
+		return false, nil
+	}
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return false, err
+	}
+	// Keep the chosen catalog writable only under the backing and unlock state
+	// observed here, including while a Library's backing is being changed.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return false, err
+	}
+	var trashed bool
+	if err := s.catalogR.QueryRowContext(ctx, `SELECT trashed_at_ms IS NOT NULL FROM library WHERE id = ?`, libraryID).Scan(&trashed); err != nil {
+		return false, err
+	}
+	if trashed {
+		return false, nil
+	}
+	result, err := plane.writer.ExecContext(ctx, `
+		WITH primary_file AS (
+			SELECT content_fingerprint, path, version_label, missing_at_ms
+			FROM media_file
+			WHERE media_id = ? AND part_ordinal = 0
+			ORDER BY version_label, missing_at_ms IS NOT NULL LIMIT 1
+		)
+		UPDATE media SET duration_seconds = ?
+		WHERE id = ? AND library_id = ? AND duration_seconds = 0 AND trashed_at_ms IS NULL
+		  AND EXISTS (
+			SELECT 1 FROM primary_file f
+			WHERE f.content_fingerprint = ? AND f.path = ? AND f.missing_at_ms IS NULL
+			  AND NOT EXISTS (
+				SELECT 1 FROM media_file p
+				WHERE p.media_id = media.id AND p.version_label = f.version_label AND p.part_ordinal > 0
+			  )
+		  )
+	`, id, seconds, id, libraryID, fingerprint, path)
+	if err != nil {
+		return false, err
+	}
+	updated, err := result.RowsAffected()
+	return updated > 0, err
 }
 
 // LibraryFilePathsWithoutDuration returns the available first-part file
@@ -3520,14 +3640,8 @@ func (s *Store) AddMediaFileVersion(ctx context.Context, mediaID MediaID, file M
 // belongs to the calling surface, which must have already resolved the Media
 // through a reveal-filtered read.
 func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata MediaMetadata) error {
-	if id == "" {
-		return errors.New("media ID is required")
-	}
-	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil && metadata.SortTitle == nil {
-		return errors.New("no metadata fields to update")
-	}
-	if metadata.Title != nil && strings.TrimSpace(*metadata.Title) == "" {
-		return errors.New("media title cannot be empty")
+	if err := validateMediaMetadata(id, metadata); err != nil {
+		return err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -3537,14 +3651,24 @@ func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata Me
 	if err := s.updateMediaMetadataSQL(ctx, id, metadata); err != nil {
 		return err
 	}
-	// Emit AFTER the catalog write committed (cross-DB ordering: see
-	// appendMediaEventLocked). The write already succeeded; a failed outbox
-	// append must not surface as a metadata-update failure.
-	if eventErr := s.appendMediaEventLocked(ctx, MediaEventUpdated, id, nil, time.Now().UTC()); eventErr != nil {
-		slog.Warn("media outbox event append failed", "kind", MediaEventUpdated, "media", id, "error", eventErr)
+	s.emitMediaUpdated(ctx, id)
+	return nil
+}
+
+func validateMediaMetadata(id MediaID, metadata MediaMetadata) error {
+	if id == "" {
+		return errors.New("media ID is required")
+	}
+	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil && metadata.SortTitle == nil {
+		return errors.New("no metadata fields to update")
+	}
+	if metadata.Title != nil && strings.TrimSpace(*metadata.Title) == "" {
+		return errors.New("media title cannot be empty")
 	}
 	return nil
 }
+
+const defaultSourceItemsLimit = 50
 
 // SourceItems returns visible Media rows for a bounded manifest Source.
 func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query SourceQuery) ([]SourceItem, error) {
@@ -3575,7 +3699,7 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 	}
 	limit := query.Limit
 	if limit <= 0 {
-		limit = 50
+		limit = defaultSourceItemsLimit
 	}
 	if limit > 200 {
 		limit = 200
@@ -3659,8 +3783,7 @@ func (s *Store) homeLibraryFilterLocked(ctx context.Context, filter LibraryFilte
 }
 
 // sourceItemsForKind dispatches one bounded manifest Source kind to its SQL
-// projection. It runs under the read lock SourceItems holds; the per-Profile
-// Mute predicate is layered on its result by SourceItems, not here.
+// projection under the read lock SourceItems holds.
 func (s *Store) sourceItemsForKind(ctx context.Context, filter LibraryFilter, query SourceQuery, limit, offset int) ([]SourceItem, error) {
 	switch query.Kind {
 	case "smart-collection":
@@ -3815,11 +3938,11 @@ func libraryVisible(library Library, filter LibraryFilter) bool {
 	return true
 }
 
-// restrictedLibraryIDsLocked returns the set of restricted-Library IDs. Library
+// restrictedLibraryIDs returns the set of restricted-Library IDs. Library
 // metadata (including is_restricted) lives in the catalog plane even for
 // encrypted Libraries, so a single catalog read is authoritative.
-func (s *Store) restrictedLibraryIDsLocked(ctx context.Context) (map[LibraryID]bool, error) {
-	libraries, err := loadLibraries(ctx, s.catalogR)
+func restrictedLibraryIDs(ctx context.Context, q rowsQueryer) (map[LibraryID]bool, error) {
+	libraries, err := loadLibraries(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -3849,7 +3972,7 @@ func (s *Store) annotateRestrictedLocked(ctx context.Context, restricted map[Lib
 	}
 	if restricted == nil {
 		var err error
-		restricted, err = s.restrictedLibraryIDsLocked(ctx)
+		restricted, err = restrictedLibraryIDs(ctx, s.catalogR)
 		if err != nil {
 			return err
 		}
@@ -4136,7 +4259,16 @@ func (s *Store) CreateLibraryWithRoots(ctx context.Context, title string, restri
 	if grantTo == "" {
 		return Library{}, ValidationError("profile ID is required")
 	}
-	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, grantTo, roots, familyScope)
+	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, grantTo, false, roots, familyScope)
+}
+
+// CreateOwnerLibraryWithRoots is CreateLibraryWithRoots for a caller with no
+// Profile (an admin API token, CORE-2921): the Library is granted to the
+// designated owner's Profile, resolved inside the creating transaction so an
+// ownership transfer cannot leave the grant with the former owner. It returns
+// ErrNoOwnerProfile, writing nothing, when no owner is designated.
+func (s *Store) CreateOwnerLibraryWithRoots(ctx context.Context, title string, restricted bool, pluginID string, roots []string, familyScope string) (Library, error) {
+	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, "", true, roots, familyScope)
 }
 
 // CreateUngrantedLibraryWithRoots is CreateLibraryWithRoots for a server that
@@ -4145,12 +4277,13 @@ func (s *Store) CreateLibraryWithRoots(ctx context.Context, title string, restri
 // grant, and refuses once any Profile exists: BootstrapOwner grants every
 // existing Library to the owner it creates, so nothing is left unreachable.
 func (s *Store) CreateUngrantedLibraryWithRoots(ctx context.Context, title string, restricted bool, pluginID string, roots []string, familyScope string) (Library, error) {
-	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, "", roots, familyScope)
+	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, "", false, roots, familyScope)
 }
 
-// createLibraryWithRoots is the shared creation path. An empty grantTo means
-// "no grant" and is only valid while the server has no Profile at all.
-func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restricted bool, pluginID string, grantTo ProfileID, roots []string, familyScope string) (Library, error) {
+// createLibraryWithRoots is the shared creation path. grantOwner grants the
+// designated owner's Profile; otherwise an empty grantTo means "no grant" and
+// is only valid while the server has no Profile at all.
+func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restricted bool, pluginID string, grantTo ProfileID, grantOwner bool, roots []string, familyScope string) (Library, error) {
 	// Authority face: Library catalog rows are main-only (a Library
 	// is bound to its home node, but the binding is main-authored — decision 4).
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
@@ -4169,13 +4302,16 @@ func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restri
 	if err := s.guardLocked(); err != nil {
 		return Library{}, err
 	}
-	if grantTo != "" {
+	switch {
+	case grantOwner:
+		// Resolved and granted inside the transaction below.
+	case grantTo != "":
 		if exists, err := s.profileExistsSQL(ctx, grantTo); err != nil {
 			return Library{}, err
 		} else if !exists {
 			return Library{}, ValidationError("profile not found")
 		}
-	} else {
+	default:
 		var profiles int
 		if err := s.catalogR.QueryRowContext(ctx, `SELECT COUNT(*) FROM profile`).Scan(&profiles); err != nil {
 			return Library{}, err
@@ -4214,7 +4350,21 @@ func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restri
 		id, title, pluginValue, boolToInt(restricted), familyScope); err != nil {
 		return Library{}, err
 	}
-	if grantTo != "" {
+	if grantOwner {
+		result, err := tx.ExecContext(ctx, `
+		INSERT INTO profile_library(profile_id, library_id, position)
+		SELECT p.id, ?, COALESCE((SELECT MAX(pl.position) + 1 FROM profile_library AS pl WHERE pl.profile_id = p.id), 0)
+		FROM profile AS p WHERE p.is_owner = 1
+	`, id)
+		if err != nil {
+			return Library{}, err
+		}
+		if granted, err := result.RowsAffected(); err != nil {
+			return Library{}, err
+		} else if granted == 0 {
+			return Library{}, ErrNoOwnerProfile
+		}
+	} else if grantTo != "" {
 		if _, err := tx.ExecContext(ctx, `
 		INSERT INTO profile_library(profile_id, library_id, position)
 		VALUES (?, ?, COALESCE((SELECT MAX(position) + 1 FROM profile_library WHERE profile_id = ?), 0))
@@ -4701,7 +4851,7 @@ func (s *Store) UpdateProfileSettings(ctx context.Context, id ProfileID, setting
 	if settings.RemoteMaxBitrate != nil {
 		profile.RemoteMaxBitrate = *settings.RemoteMaxBitrate
 	}
-	if err := s.updateProfileSettingsSQL(ctx, profile, settings.IntegrationSignIn); err != nil {
+	if err := s.updateProfileSettingsSQL(ctx, profile, settings); err != nil {
 		return Profile{}, err
 	}
 	return s.profileSQL(ctx, id)

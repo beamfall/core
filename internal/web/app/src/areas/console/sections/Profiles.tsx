@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { PinSetupForm } from "@/components/beamfall/PinSetupForm";
 import { AvatarChooser, ProfileAvatar, ProfilePhotoEditor } from "@/components/beamfall/profile";
 import { EmptyState, ErrorState, HelpTip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import {
   fetchProfilesAdmin,
   reorderProfiles,
   setProfileAvatar,
+  setProfileEntryPin,
   updateProfile,
 } from "@/lib/graphql";
 import type { ProfileAdminInfo } from "@/lib/graphql/types";
@@ -396,6 +398,7 @@ function ProfileRow({
         >
           {t("consoleProfilesSave")}
         </Button>
+        {profile.kind === "adult" && <ProfileEntryPin profile={profile} />}
         <ConfirmButton
           label={t("consoleProfilesDisable")}
           confirm="consoleProfilesDisableConfirm"
@@ -410,6 +413,60 @@ function ProfileRow({
         </ConfirmButton>
       </div>
     </li>
+  );
+}
+
+function ProfileEntryPin({ profile }: { profile: AdminProfile }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const saving = useRef(false);
+  const title = t("pinSetupProfileTitle", { name: profile.name });
+
+  return (
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (saving.current) return;
+          if (nextOpen) setSaved(false);
+          setOpen(nextOpen);
+        }}
+      >
+        <DialogTrigger asChild>
+          <Button type="button" variant="outline" size="sm" aria-label={title}>
+            {t("pinSetupProfileAction")}
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>{t("pinSetupProfileHelp")}</DialogDescription>
+          </DialogHeader>
+          <PinSetupForm
+            submitLabel={t("restrictionsSetPin")}
+            onSave={async (pin) => {
+              saving.current = true;
+              try {
+                await setProfileEntryPin(profile.id, pin, getAdminEpochSignal());
+              } finally {
+                saving.current = false;
+              }
+            }}
+            onSaved={() => {
+              setOpen(false);
+              setSaved(true);
+            }}
+            onCancel={() => setOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
+      {saved && (
+        <p role="status" className="m-0 text-sm">
+          {t("restrictionsPinSaved")}
+        </p>
+      )}
+    </>
   );
 }
 

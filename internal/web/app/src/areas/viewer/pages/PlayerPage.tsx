@@ -377,6 +377,21 @@ function FeaturePlayer({
     : queueNeighbours(catalogQueue, mediaId);
   const info = state.info;
   const infoIsCurrent = !!state.info && state.mediaID === mediaId;
+  // An image reached through a watch link (a row or deep link that could not
+  // know its class) belongs in the image viewer (CORE-0542). Leaving the
+  // watch route detaches the host, which drops a non-audio entry.
+  const imageEntry =
+    !docked &&
+    !serverQueueRun &&
+    !!mediaId &&
+    ((infoIsCurrent && state.info?.mediaClass === "image") ||
+      media?.mediaClass === "image" ||
+      entryClass === "image");
+  useEffect(() => {
+    if (imageEntry && mediaId) {
+      navigate(mediaPath("view", mediaId), { replace: true, state: entry.state });
+    }
+  }, [imageEntry, mediaId, navigate, entry.state]);
   const mediaIdRef = useRef(mediaId);
   mediaIdRef.current = mediaId;
   useEffect(() => {

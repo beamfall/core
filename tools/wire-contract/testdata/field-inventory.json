@@ -84,10 +84,12 @@
         "deviceID",
         "id",
         "libraryID",
+        "mediaRelationChange",
         "occurredAt",
         "profileID",
         "reversible",
         "sessionID",
+        "systemActor",
         "targetID",
         "targetType",
         "tokenID"
@@ -103,10 +105,12 @@
         "deviceID",
         "id",
         "libraryID",
+        "mediaRelationChange",
         "occurredAt",
         "profileID",
         "reversible",
         "sessionID",
+        "systemActor",
         "targetID",
         "targetType",
         "tokenID"
@@ -173,14 +177,25 @@
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]
@@ -528,6 +543,11 @@
       "children": [
         "cleared"
       ]
+    },
+    {
+      "field": "clearmediaordinal",
+      "effect": "write",
+      "tier": "session"
     },
     {
       "field": "clearmute",
@@ -1075,12 +1095,24 @@
       "tier": "session"
     },
     {
+      "field": "duplicatecopies",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "copies",
+        "libraryID",
+        "mediaID",
+        "title"
+      ]
+    },
+    {
       "field": "editmediametadata",
       "effect": "write",
       "tier": "session",
       "children": [
         "locks",
         "mediaID",
+        "operatorOrdinal",
         "refreshable",
         "sortTitle",
         "summary",
@@ -1135,7 +1167,11 @@
         "id",
         "kind",
         "kindDisplayName",
-        "title"
+        "operatorLocked",
+        "relation",
+        "sortOrder",
+        "title",
+        "undeclared"
       ]
     },
     {
@@ -1164,6 +1200,17 @@
         "relation",
         "sortOrder",
         "targetKind"
+      ]
+    },
+    {
+      "field": "entitysearch",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "libraryID",
+        "title"
       ]
     },
     {
@@ -1236,6 +1283,40 @@
       ]
     },
     {
+      "field": "fixmatchchildren",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artworkURL",
+        "index",
+        "key",
+        "label",
+        "sequence",
+        "year"
+      ]
+    },
+    {
+      "field": "fixmatchcurrent",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "candidateID",
+        "pluginID",
+        "scraperID",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "fixmatchlockedfields",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "field",
+        "value"
+      ]
+    },
+    {
       "field": "fixmatchpreview",
       "effect": "read",
       "tier": "session",
@@ -1244,6 +1325,20 @@
         "current",
         "field",
         "proposed"
+      ]
+    },
+    {
+      "field": "fixmatchsources",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "acceptsPastedID",
+        "childLevels",
+        "isDefault",
+        "label",
+        "pluginID",
+        "scraperID",
+        "supportsChildren"
       ]
     },
     {
@@ -1257,6 +1352,35 @@
         "name",
         "path",
         "size"
+      ]
+    },
+    {
+      "field": "followfeed",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
+        "feedURL",
+        "followed",
+        "hasAuth",
+        "healthStatus",
+        "id",
+        "lastErrorClass",
+        "lastPolledAt",
+        "libraryID",
+        "movedAt",
+        "nextPollAt",
+        "retentionKind",
+        "retentionN",
+        "retiredAt",
+        "root",
+        "title"
       ]
     },
     {
@@ -1839,6 +1963,7 @@
       "children": [
         "locks",
         "mediaID",
+        "operatorOrdinal",
         "refreshable",
         "sortTitle",
         "summary",
@@ -1962,6 +2087,7 @@
         "playbackProgress",
         "profile",
         "queue",
+        "queueState",
         "ratings",
         "savedFilters",
         "schema",
@@ -1976,6 +2102,43 @@
       "children": [
         "events",
         "total"
+      ]
+    },
+    {
+      "field": "myplayhistory",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "deviceClient",
+        "deviceID",
+        "deviceName",
+        "finished",
+        "libraryID",
+        "libraryTitle",
+        "mediaID",
+        "playMethod",
+        "profileID",
+        "profileName",
+        "startedAt",
+        "title",
+        "watchedSeconds"
+      ]
+    },
+    {
+      "field": "myplaystats",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "days",
+        "devices",
+        "items",
+        "methods",
+        "profiles",
+        "since",
+        "totalPlays",
+        "totalWatchedSeconds",
+        "until",
+        "windowDays"
       ]
     },
     {
@@ -2181,10 +2344,14 @@
       "effect": "read",
       "tier": "admin",
       "children": [
+        "deviceClient",
+        "deviceID",
+        "deviceName",
         "finished",
         "libraryID",
         "libraryTitle",
         "mediaID",
+        "playMethod",
         "profileID",
         "profileName",
         "startedAt",
@@ -2193,12 +2360,31 @@
       ]
     },
     {
+      "field": "playqueue",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
       "field": "playstats",
       "effect": "read",
       "tier": "admin",
       "children": [
+        "days",
+        "devices",
         "items",
+        "methods",
         "profiles",
+        "since",
+        "totalPlays",
+        "totalWatchedSeconds",
+        "until",
         "windowDays"
       ]
     },
@@ -2372,6 +2558,18 @@
       ]
     },
     {
+      "field": "queueaddmany",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
       "field": "queueclear",
       "effect": "write",
       "tier": "session",
@@ -2432,6 +2630,30 @@
       ]
     },
     {
+      "field": "queuemoveentry",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
+      "field": "queueplaynext",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
       "field": "queueremove",
       "effect": "write",
       "tier": "session",
@@ -2462,6 +2684,54 @@
       ]
     },
     {
+      "field": "queueremoveentry",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
+      "field": "queuesetcurrent",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
+      "field": "queuesetrepeat",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
+      "field": "queuesetshuffle",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "currentEntryID",
+        "entries",
+        "positionMS",
+        "repeatMode",
+        "shuffle"
+      ]
+    },
+    {
       "field": "recordengagement",
       "effect": "write",
       "tier": "session",
@@ -2472,6 +2742,14 @@
         "kind",
         "lastOccurredAt",
         "mediaID"
+      ]
+    },
+    {
+      "field": "refreshallsubscriptions",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "refreshed"
       ]
     },
     {
@@ -2500,11 +2778,25 @@
       "children": [
         "locks",
         "mediaID",
+        "operatorOrdinal",
         "refreshable",
         "sortTitle",
         "summary",
         "title",
         "year"
+      ]
+    },
+    {
+      "field": "refreshsubscription",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "failingSince",
+        "healthStatus",
+        "id",
+        "lastErrorClass",
+        "nextPollAt",
+        "title"
       ]
     },
     {
@@ -2618,19 +2910,40 @@
       ]
     },
     {
+      "field": "removemediarelation",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "relation",
+        "sourceID",
+        "targetID"
+      ]
+    },
+    {
       "field": "removesubscription",
       "effect": "write",
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]
@@ -2835,6 +3148,7 @@
       "children": [
         "id",
         "libraryID",
+        "mergedInto",
         "title",
         "trashedAt"
       ]
@@ -3428,6 +3742,18 @@
       ]
     },
     {
+      "field": "setcontinuewatchinghidden",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "rating",
+        "watched",
+        "watchlisted"
+      ]
+    },
+    {
       "field": "setdevicerole",
       "effect": "write",
       "tier": "admin",
@@ -3620,6 +3946,16 @@
       "children": [
         "field",
         "locked"
+      ]
+    },
+    {
+      "field": "setmediarelation",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "relation",
+        "sourceID",
+        "targetID"
       ]
     },
     {
@@ -3844,19 +4180,59 @@
       ]
     },
     {
+      "field": "setsubscriptiondownloadpolicy",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
+        "feedURL",
+        "followed",
+        "hasAuth",
+        "healthStatus",
+        "id",
+        "lastErrorClass",
+        "lastPolledAt",
+        "libraryID",
+        "movedAt",
+        "nextPollAt",
+        "retentionKind",
+        "retentionN",
+        "retiredAt",
+        "root",
+        "title"
+      ]
+    },
+    {
       "field": "setsubscriptionretention",
       "effect": "write",
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]
@@ -4092,19 +4468,44 @@
       ]
     },
     {
+      "field": "subscriptionentries",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "availability",
+        "downloadState",
+        "enclosureLength",
+        "feedPosition",
+        "mediaID",
+        "publishedAt",
+        "title"
+      ]
+    },
+    {
       "field": "subscriptions",
       "effect": "read",
       "tier": "session",
       "children": [
         "addedAt",
+        "catalogBytes",
+        "downloadLatestN",
+        "downloadPolicy",
+        "downloadedCount",
+        "entryCount",
+        "failingSince",
         "feedURL",
         "followed",
         "hasAuth",
+        "healthStatus",
         "id",
+        "lastErrorClass",
         "lastPolledAt",
         "libraryID",
+        "movedAt",
+        "nextPollAt",
         "retentionKind",
         "retentionN",
+        "retiredAt",
         "root",
         "title"
       ]
@@ -4274,6 +4675,7 @@
       "children": [
         "id",
         "libraryID",
+        "mergedInto",
         "title",
         "trashedAt"
       ]
@@ -4285,6 +4687,7 @@
       "children": [
         "id",
         "libraryID",
+        "mergedInto",
         "title",
         "trashedAt"
       ]

@@ -143,12 +143,24 @@ func (h *Handler) endPlayback(ctx context.Context, scope auth.Scope, req request
 	if scope.SessionID == "" {
 		return nil
 	}
-	if err := h.store.EndPlayback(ctx, scope.SessionID, store.MediaID(mediaID)); err != nil {
+	// A player's cleanup can arrive after another tab switched the session and
+	// started the same Media there; it must not end that Profile's playback.
+	// The transcodes are detached under the binding lock, and their teardown,
+	// which waits for the encoder to exit, is joined after it is released so a
+	// slow encoder does not stall every Profile switch.
+	wait := func() {}
+	if err := h.whileScopeProfile(ctx, scope, func() error {
+		if err := h.store.EndPlayback(ctx, scope.SessionID, store.MediaID(mediaID)); err != nil {
+			return err
+		}
+		if h.transcodeTerminator != nil {
+			_, wait = h.transcodeTerminator.DetachPlayback(scope.SessionID, store.MediaID(mediaID))
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
-	if h.transcodeTerminator != nil {
-		h.transcodeTerminator.TerminatePlayback(scope.SessionID, store.MediaID(mediaID))
-	}
+	wait()
 	return nil
 }
 

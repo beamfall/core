@@ -1,0 +1,6 @@
+- [x] `setContinueWatchingHidden` client call
+- [x] Card menu entry on Continue Watching shelves only
+- [x] Immediate removal held until a fresh read confirms it; Undo notice with restore; failure notice
+- [x] Strings for en, fr, de, es, pt
+- [x] Vitest: menu entry, removal and settle, Undo, failure, Profile switch, shelf removal
+- [ ] Android long-press (beamfall-android, CORE-2017)

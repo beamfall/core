@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"image"
 	"image/color"
 	"image/gif"
@@ -46,6 +47,7 @@ func newArtworkUploadTestServer(t *testing.T) (*Server, *store.Store) {
 	artworkService := artwork.NewService(st, nil, t.TempDir())
 	graphHandler := graph.NewHandler(manifests, authService, st, nil)
 	graphHandler.SetArtworkCandidateServices(nil, artworkService)
+	graphHandler.SetStreamTokens(tokens)
 	srv := New(
 		manifests,
 		playback.NewService(st, tokens, clock),
@@ -161,6 +163,94 @@ func TestUploadArtworkStoresAndServesTheSlot(t *testing.T) {
 		t.Fatalf("served artwork = %d bytes, want the %d uploaded bytes verbatim", getRec.Body.Len(), len(png))
 	}
 	assertOneAppliedArtworkCandidate(t, st, mediaID, artwork.SlotPoster)
+}
+
+// TestUploadedArtworkCandidateRepinsAndPreviewsWithoutFetch is CORE-2937: an
+// uploaded candidate stays usable after another candidate replaces it. Its
+// preview renders and pinning it again restores its bytes, with no candidate
+// fetcher wired, so neither path can dereference the synthetic upload URL.
+func TestUploadedArtworkCandidateRepinsAndPreviewsWithoutFetch(t *testing.T) {
+	srv, st := newArtworkUploadTestServer(t)
+	mediaID := createArtworkUploadMedia(t, st, "Artwork Upload Repin")
+	first := pngArtwork(t, 32, 24)
+	second := pngArtwork(t, 24, 32)
+	for _, body := range [][]byte{first, second} {
+		req := uploadArtworkRequest(t, string(mediaID), artwork.SlotPoster, "poster.png", body, "image/png")
+		authorizeManager(req)
+		req.Header.Set(auth.CSRFHeader, "1")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("upload status = %d, want 200: %s", rec.Code, rec.Body.String())
+		}
+	}
+	firstID := store.ArtworkCandidateID(mediaID, artwork.SlotPoster, artwork.UploadedSourceURL(first))
+
+	var listed struct {
+		Data struct {
+			ArtworkCandidates []struct {
+				ID         string `json:"id"`
+				Applied    bool   `json:"applied"`
+				PreviewURL string `json:"previewURL"`
+			} `json:"artworkCandidates"`
+		} `json:"data"`
+	}
+	artworkUploadGraphQL(t, srv, `{"query":"query { artworkCandidates(mediaID: \"`+string(mediaID)+`\", slot: \"poster\") { id applied previewURL } }"}`, &listed)
+	previewURL := ""
+	for _, candidate := range listed.Data.ArtworkCandidates {
+		if candidate.ID == firstID {
+			if candidate.Applied {
+				t.Fatal("first upload is still applied after the second upload")
+			}
+			previewURL = candidate.PreviewURL
+		}
+	}
+	if previewURL == "" {
+		t.Fatalf("candidates = %#v, want the first upload with a preview URL", listed.Data.ArtworkCandidates)
+	}
+	previewReq := httptest.NewRequest(http.MethodGet, previewURL, nil)
+	authorizeManager(previewReq)
+	previewRec := httptest.NewRecorder()
+	srv.ServeHTTP(previewRec, previewReq)
+	if previewRec.Code != http.StatusOK || !bytes.Equal(previewRec.Body.Bytes(), first) {
+		t.Fatalf("preview status = %d (%d bytes), want 200 with the first upload", previewRec.Code, previewRec.Body.Len())
+	}
+
+	var pinned struct {
+		Data struct {
+			PinArtworkCandidate struct {
+				Applied bool `json:"applied"`
+			} `json:"pinArtworkCandidate"`
+		} `json:"data"`
+		Errors []json.RawMessage `json:"errors"`
+	}
+	artworkUploadGraphQL(t, srv, `{"query":"mutation { pinArtworkCandidate(mediaID: \"`+string(mediaID)+`\", slot: \"poster\", candidateID: \"`+firstID+`\") { applied } }"}`, &pinned)
+	if len(pinned.Errors) != 0 || !pinned.Data.PinArtworkCandidate.Applied {
+		t.Fatalf("pin = %#v, want the first upload applied", pinned)
+	}
+	getReq := httptest.NewRequest(http.MethodGet, "/api/media/artwork/"+string(mediaID)+"/poster", nil)
+	authorizeManager(getReq)
+	getRec := httptest.NewRecorder()
+	srv.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK || !bytes.Equal(getRec.Body.Bytes(), first) {
+		t.Fatalf("served poster status = %d (%d bytes), want the first upload's %d bytes", getRec.Code, getRec.Body.Len(), len(first))
+	}
+}
+
+func artworkUploadGraphQL(t *testing.T, srv *Server, body string, out any) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(auth.CSRFHeader, "1")
+	authorizeManager(req)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("graphql status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), out); err != nil {
+		t.Fatalf("decode %s: %v", rec.Body.String(), err)
+	}
 }
 
 // TestUploadArtworkRequiresCSRFHeader mirrors

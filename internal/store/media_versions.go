@@ -308,6 +308,25 @@ func firstVersionFingerprintSQL(ctx context.Context, q interface {
 	return first, err
 }
 
+// MediaVersionHasAdditionalParts counts missing Parts too: the runtime of one
+// available Part still does not describe the whole Version.
+func (s *Store) MediaVersionHasAdditionalParts(ctx context.Context, id MediaID, label string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	var multipart bool
+	err = plane.reader.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM media_file WHERE media_id = ? AND version_label = ? AND part_ordinal > 0
+	)`, id, label).Scan(&multipart)
+	return multipart, err
+}
+
 // placeDerivedVersionTx picks the label of a new file that, like its anchor,
 // carries no parsed label (MediaVersionImport.DeriveLabels) and replaces no
 // file of the Media in place (replacedVersionLabelTx). When the Media's live

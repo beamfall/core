@@ -207,6 +207,15 @@ func (h *Handler) sidecarTrackFingerprint(r *http.Request, mediaID store.MediaID
 // refused rather than silently writing under an empty one.
 func (h *Handler) profileScope(w http.ResponseWriter, r *http.Request) (auth.Scope, bool) {
 	scope, err := h.auth.ScopeFromRequest(r.Context(), r)
+	if errors.Is(err, auth.ErrProfileMismatch) {
+		// Another tab switched the session after the route's precondition
+		// passed: the server's Profile refusal, so the tab reloads (CORE-2923).
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"profile mismatch","code":"CONFLICT","reason":"PROFILE_MISMATCH"}`))
+		return auth.Scope{}, false
+	}
 	if err != nil {
 		http.Error(w, "invalid session", http.StatusUnauthorized)
 		return auth.Scope{}, false

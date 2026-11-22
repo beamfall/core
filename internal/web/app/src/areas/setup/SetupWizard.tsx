@@ -996,12 +996,13 @@ export function SetupWizard() {
                 {libraryTypes.length === 0 && (
                   <p className="m-0 text-sm text-muted-foreground">{t("setupPluginsEmpty")}</p>
                 )}
-                <div className="grid grid-cols-2 gap-x-4">
+                {/* One column of full-width rows at phone width, two from sm up (CORE-0256). */}
+                <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
                   {libraryTypes.map((spec) => {
                     const sel = spec.key === libraryType;
                     const Icon = spec.icon;
                     return (
-                      <OptionRow key={spec.key} className="items-center py-2">
+                      <OptionRow key={spec.key} className="items-center py-2 max-sm:min-h-[44px]">
                         <OptionRadio
                           name="setup-library-type"
                           value={spec.key}

@@ -346,8 +346,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "kind", Kind: "string"},
 		{Name: "mediaID", Kind: "string", Optional: true},
 	},
-	"entitiesformedia": fieldArguments["entitiesformedia"],
-	"entity":           fieldArguments["entity"],
+	"entitiesformedia":    fieldArguments["entitiesformedia"],
+	"entitysearch":        fieldArguments["entitysearch"],
+	"setmediarelation":    fieldArguments["setmediarelation"],
+	"removemediarelation": fieldArguments["removemediarelation"],
+	"entity":              fieldArguments["entity"],
 	"entityrelations": slices.Concat(fieldArguments["entityrelations"], []NestedArgument{
 		{Name: "limit", Kind: "int", Optional: true},
 		{Name: "offset", Kind: "int", Optional: true},
@@ -356,7 +359,8 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"extensionrequest": {
 		{Name: "id", Kind: "string"},
 	},
-	"fixmatch": fieldArguments["fixmatch"],
+	"clearmediaordinal": fieldArguments["clearmediaordinal"],
+	"fixmatch":          fieldArguments["fixmatch"],
 	"fixmatchcandidates": {
 		{Name: "mediaID", Kind: "string", Optional: true},
 		{Name: "pluginID", Kind: "string"},
@@ -364,16 +368,22 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "scraperID", Kind: "string"},
 		{Name: "year", Kind: "number", Optional: true},
 	},
-	"fixmatchpreview": {
-		{Name: "candidateID", Kind: "string"},
-		{Name: "mediaID", Kind: "string"},
-		{Name: "pluginID", Kind: "string"},
-		{Name: "scraperID", Kind: "string"},
-	},
+	"fixmatchchildren":     fieldArguments["fixmatchchildren"],
+	"fixmatchcurrent":      {{Name: "mediaID", Kind: "string"}},
+	"fixmatchlockedfields": {{Name: "mediaID", Kind: "string"}},
+	"fixmatchpreview":      fieldArguments["fixmatchpreview"],
+	"fixmatchsources":      {{Name: "mediaID", Kind: "string"}},
 	"foldertree": {
 		{Name: "depth", Kind: "number", Optional: true},
 		{Name: "libraryID", Kind: "string"},
 		{Name: "root", Kind: "string", Optional: true},
+	},
+	"followfeed": {
+		{Name: "confirmEverything", Kind: "boolean", Optional: true},
+		{Name: "downloadPolicy", Kind: "string", Optional: true},
+		{Name: "feedURL", Kind: "string"},
+		{Name: "latestN", Kind: "number", Optional: true},
+		{Name: "libraryID", Kind: "string", Optional: true},
 	},
 	"formgroup":   {},
 	"hostmetrics": {},
@@ -521,6 +531,23 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "offset", Kind: "int", Optional: true},
 		{Name: "to", Kind: "string", Optional: true},
 	},
+	"myplayhistory": {
+		{Name: "deviceID", Kind: "string", Optional: true},
+		{Name: "limit", Kind: "int", Optional: true},
+		{Name: "mediaID", Kind: "string", Optional: true},
+		{Name: "playMethod", Kind: "string", Optional: true},
+		{Name: "since", Kind: "string", Optional: true},
+		{Name: "until", Kind: "string", Optional: true},
+	},
+	"myplaystats": {
+		{Name: "deviceID", Kind: "string", Optional: true},
+		{Name: "mediaID", Kind: "string", Optional: true},
+		{Name: "playMethod", Kind: "string", Optional: true},
+		{Name: "since", Kind: "string", Optional: true},
+		{Name: "until", Kind: "string", Optional: true},
+		{Name: "utcOffsetMinutes", Kind: "int", Optional: true},
+		{Name: "windowDays", Kind: "int", Optional: true},
+	},
 	"mysessions":         {},
 	"navigationmanifest": {},
 	"navoverride":        {},
@@ -562,14 +589,25 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"playbackrenditioncache": {},
 	"playhistory": {
+		{Name: "deviceID", Kind: "string", Optional: true},
 		{Name: "libraryID", Kind: "string", Optional: true},
 		{Name: "limit", Kind: "int", Optional: true},
+		{Name: "mediaID", Kind: "string", Optional: true},
+		{Name: "playMethod", Kind: "string", Optional: true},
 		{Name: "profileID", Kind: "string", Optional: true},
 		{Name: "since", Kind: "string", Optional: true},
 		{Name: "until", Kind: "string", Optional: true},
 	},
 	"playstats": {
-		{Name: "windowDays", Kind: "int"},
+		{Name: "deviceID", Kind: "string", Optional: true},
+		{Name: "libraryID", Kind: "string", Optional: true},
+		{Name: "mediaID", Kind: "string", Optional: true},
+		{Name: "playMethod", Kind: "string", Optional: true},
+		{Name: "profileID", Kind: "string", Optional: true},
+		{Name: "since", Kind: "string", Optional: true},
+		{Name: "until", Kind: "string", Optional: true},
+		{Name: "utcOffsetMinutes", Kind: "int", Optional: true},
+		{Name: "windowDays", Kind: "int", Optional: true},
 	},
 	"plugins": {},
 	"pluginworker": {
@@ -603,6 +641,14 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"qualitypolicy": {
 		{Name: "libraryID", Kind: "string"},
 	},
+	"playqueue":        {},
+	"queueaddmany":     fieldArguments["queueaddmany"],
+	"queuemoveentry":   fieldArguments["queuemoveentry"],
+	"queueremoveentry": fieldArguments["queueremoveentry"],
+	"queueplaynext":    fieldArguments["queueplaynext"],
+	"queuesetcurrent":  fieldArguments["queuesetcurrent"],
+	"queuesetshuffle":  fieldArguments["queuesetshuffle"],
+	"queuesetrepeat":   fieldArguments["queuesetrepeat"],
 	"queueadd": {
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "mediaID", Kind: "string"},
@@ -624,6 +670,10 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "entityID", Kind: "string", Optional: true},
 		{Name: "kind", Kind: "string"},
 		{Name: "mediaID", Kind: "string", Optional: true},
+	},
+	"refreshallsubscriptions": {},
+	"refreshsubscription": {
+		{Name: "id", Kind: "string"},
 	},
 	"refreshmediametadata": {
 		{Name: "mediaID", Kind: "string"},
@@ -680,6 +730,9 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "eventTimeMS", Kind: "number", Optional: true},
 		{Name: "finished", Kind: "boolean", Optional: true},
 		{Name: "mediaID", Kind: "string"},
+		{Name: "paused", Kind: "boolean", Optional: true},
+		{Name: "playbackID", Kind: "string", Optional: true},
+		{Name: "playedMS", Kind: "int", Optional: true},
 		{Name: "positionSeconds", Kind: "int", Optional: true},
 	},
 	"requestaccess": {
@@ -849,6 +902,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "key", Kind: "string"},
 		{Name: "value", Kind: "string", Optional: true},
 	},
+	"setcontinuewatchinghidden": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "hidden", Kind: "boolean"},
+		{Name: "mediaID", Kind: "string"},
+	},
 	"setconsoleconfig": {
 		{Name: "adminSessionMinutes", Kind: "number", Optional: true},
 		{Name: "backgroundWorkers", Kind: "number", Optional: true},
@@ -1010,6 +1068,12 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "kind", Kind: "string"},
 		{Name: "n", Kind: "number", Optional: true},
 	},
+	"setsubscriptiondownloadpolicy": {
+		{Name: "confirmEverything", Kind: "boolean", Optional: true},
+		{Name: "downloadPolicy", Kind: "string"},
+		{Name: "id", Kind: "string"},
+		{Name: "latestN", Kind: "number", Optional: true},
+	},
 	"settranscodeconfig": {
 		{Name: "clearMaxConcurrentTranscodes", Kind: "boolean", Optional: true},
 		{Name: "codec", Kind: "string", Optional: true},
@@ -1079,6 +1143,9 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"subscriptions": {
 		{Name: "libraryID", Kind: "string"},
 	},
+	"subscriptionentries": {
+		{Name: "subscriptionID", Kind: "string"},
+	},
 	"suppressunmatched": {
 		{Name: "candidateID", Kind: "string", Optional: true},
 		{Name: "fingerprint", Kind: "string", Optional: true},
@@ -1121,7 +1188,8 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"trashedmarkers": {
 		{Name: "mediaID", Kind: "string"},
 	},
-	"trashlist": {},
+	"trashlist":       {},
+	"duplicatecopies": {},
 	"trashmedia": {
 		{Name: "mediaID", Kind: "string"},
 	},
@@ -1223,6 +1291,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"upsertentityrelation": {
 		{Name: "fromEntityID", Kind: "string"},
+		{Name: "position", Kind: "number", Optional: true},
 		{Name: "relation", Kind: "string"},
 		{Name: "sortOrder", Kind: "number", Optional: true},
 		{Name: "toEntityID", Kind: "string", Optional: true},

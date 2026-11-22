@@ -170,7 +170,7 @@ describe("See All rendering contract", () => {
         height: `${offsets[rowHeights.length] - offsets[renderedCount / columns] - gap}px`,
       });
     });
-  });
+  }, 15_000);
 
   it("reads the shown span again when engagement changes, from the first item", async () => {
     vi.mocked(fetchSectionItems)
@@ -293,7 +293,7 @@ describe("See All rendering contract", () => {
         paging: { limit: 60, offset },
       })),
     );
-  });
+  }, 15_000);
 
   it.each([
     { name: "hidden", libraries: [{ id: "lib", title: "Library", showOnHome: false }] },

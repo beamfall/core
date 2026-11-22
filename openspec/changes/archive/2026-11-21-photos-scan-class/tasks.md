@@ -1,0 +1,3 @@
+- [x] Derive extractor class from extension or probe
+- [x] Apply local metadata for any extracted file
+- [x] Unit test: class selection and pass-through

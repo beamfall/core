@@ -34,7 +34,7 @@ func (s *Server) pushNotification(w http.ResponseWriter, r *http.Request) {
 	}
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil || scope.SessionID == "" || scope.ProfileID == "" || scope.APITokenID != "" || scope.APIKeyID != "" {
-		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		writeScopeError(w, r, err, "invalid session")
 		return
 	}
 	id := strings.TrimSpace(r.PathValue("id"))

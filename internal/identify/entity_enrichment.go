@@ -161,7 +161,7 @@ func EnrichmentHandler(st EnrichmentStore, engine Engine, enrichments []EntityEn
 					break walk
 				}
 				if err != nil && scrape.IsTransient(err) {
-					logger.InfoContext(ctx, "entity enrichment paused on provider error", "plugin", enrichment.PluginID, "key", enrichment.Key)
+					logger.InfoContext(ctx, "entity enrichment paused on provider error", "plugin", enrichment.PluginID, "key", enrichment.Key, "error", err)
 					more = true
 					runAfter = time.Now().UTC().Add(EnrichmentTransientDelay)
 					break walk

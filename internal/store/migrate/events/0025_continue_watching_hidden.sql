@@ -1,0 +1,13 @@
+-- CORE-2039 — let a Profile remove an item from Continue Watching without
+-- losing its resume position.
+--
+-- continue_hidden is set by a logged "hide-continue" engagement event and
+-- cleared by the next playback report that moves the position, so a projection
+-- rebuild reproduces it and playing the item again returns it to the shelf.
+-- The continue-watching read (engagement.go continueWatchingSQL) skips hidden
+-- rows; the resume position, watched state and play count stay as they were.
+--
+-- Additive and backward compatible: every existing row backfills 0 (shown).
+-- It sits off the entity-query hot path (playback_progress is the events-DB
+-- engagement projection, not the catalog).
+ALTER TABLE playback_progress ADD COLUMN continue_hidden INTEGER NOT NULL DEFAULT 0;

@@ -165,7 +165,7 @@ func TestProvisionalPromotionPreservesQueueResumeAndAvailability(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProvisionalMedia: %v", err)
 	}
-	if err := st.QueueAdd(ctx, "profile-default", mediaID, nil, filter); err != nil {
+	if err := queueAddFixture(ctx, st, "profile-default", mediaID, nil, filter); err != nil {
 		t.Fatalf("QueueAdd provisional: %v", err)
 	}
 	if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
@@ -427,5 +427,119 @@ func TestStreamedProvisionalRetentionRoutesThroughTrash(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].ID != mediaID {
 		t.Fatalf("trash entries = %#v, want provisional media %s", entries, mediaID)
+	}
+}
+
+// seedFilelessEntryMedia writes a catalogued, file-less Media keyed by the
+// provisional GUID External ID, optionally bound by a subscription entry.
+func seedFilelessEntryMedia(t *testing.T, st *Store, guid string, bound bool) MediaID {
+	t.Helper()
+	ctx := context.Background()
+	mediaID := ProvisionalMediaID("library-local", guid)
+	if _, err := st.catalogW.ExecContext(ctx, `
+		INSERT INTO media(id, library_id, title, duration_seconds, container, codec, media_class, mutated_by)
+		VALUES (?, 'library-local', 'Catalogued Title', 1800, 'mp3', 'mp3', 'audio', 'scan')
+	`, mediaID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `INSERT INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)`, mediaID, ProvisionalExternalIDScheme, guid); err != nil {
+		t.Fatal(err)
+	}
+	if bound {
+		sub, err := st.AddSubscription(ctx, Subscription{LibraryID: "library-local", FeedURL: "https://feeds.example.test/catalogue.xml", Root: t.TempDir()}, time.Unix(100, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.catalogW.ExecContext(ctx, `
+			INSERT INTO subscription_entry(subscription_id, guid, media_id, first_seen_at_ms, enclosure_type)
+			VALUES (?, ?, ?, 100, 'audio/mpeg')
+		`, sub.ID, guid, mediaID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return mediaID
+}
+
+func TestRegisterProvisionalAttachesToFilelessCataloguedMedia(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	guid := "sub-1\x00entry-1"
+	mediaID := seedFilelessEntryMedia(t, st, guid, true)
+	teePath := "/tmp/catalogued.partial"
+
+	gotID, previous, err := st.RegisterProvisionalMedia(ctx, ProvisionalMedia{
+		LibraryID: "library-local", GUID: guid, Title: "Registration Title", TeePath: teePath,
+		Container: "m4a", Codec: "aac", Class: MediaClassAudio,
+	})
+	if err != nil || gotID != mediaID || previous != "" {
+		t.Fatalf("RegisterProvisionalMedia = %q, %q, %v; want %q", gotID, previous, err, mediaID)
+	}
+	all := LibraryFilter{AllLibraries: true, Revealed: true}
+	media, err := st.Media(ctx, mediaID, all)
+	if err != nil || media.Title != "Catalogued Title" || media.Container != "mp3" {
+		t.Fatalf("Media = %+v, %v; want catalogue title and container kept", media, err)
+	}
+	files, err := st.MediaFilesForMedia(ctx, mediaID, all)
+	if err != nil || len(files) != 1 || files[0].Path != teePath || !IsProvisionalMediaFile(files[0]) {
+		t.Fatalf("files = %+v, %v; want one provisional file at the tee path", files, err)
+	}
+	// A repeat registration refreshes the same row.
+	if again, previous, err := st.RegisterProvisionalMedia(ctx, ProvisionalMedia{
+		LibraryID: "library-local", GUID: guid, Title: "Registration Title", TeePath: teePath,
+	}); err != nil || again != mediaID || previous != teePath {
+		t.Fatalf("repeat registration = %q, %q, %v", again, previous, err)
+	}
+
+	// Compensation removes only the file; the catalogued Media stays.
+	compensated, err := st.CompensateProvisionalMediaRegistration(ctx, mediaID, teePath, "")
+	if err != nil || !compensated {
+		t.Fatalf("compensation = %v, %v", compensated, err)
+	}
+	if _, err := st.Media(ctx, mediaID, all); err != nil {
+		t.Fatalf("catalogued Media removed by compensation: %v", err)
+	}
+	if _, err := st.MediaFilesForMedia(ctx, mediaID, all); err == nil {
+		t.Fatal("provisional file survived compensation")
+	}
+	var entries int
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT COUNT(*) FROM subscription_entry WHERE media_id = ?`, mediaID).Scan(&entries); err != nil || entries != 1 {
+		t.Fatalf("subscription entries = %d, %v; want 1", entries, err)
+	}
+}
+
+func TestRegisterProvisionalRefusesFilelessMediaWithoutMatchingGUID(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	guid := "sub-1\x00entry-2"
+	mediaID := seedFilelessEntryMedia(t, st, guid, false)
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media_external_id SET value = 'other' WHERE media_id = ?`, mediaID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.RegisterProvisionalMedia(ctx, ProvisionalMedia{
+		LibraryID: "library-local", GUID: guid, Title: "T", TeePath: "/tmp/x.partial",
+	}); !errors.Is(err, ErrProvisionalRegistrationConflict) {
+		t.Fatalf("err = %v, want ErrProvisionalRegistrationConflict", err)
+	}
+}
+
+func TestRegisterProvisionalCompensationRemovesUnboundAttachedRow(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	guid := "sub-1\x00entry-3"
+	mediaID := seedFilelessEntryMedia(t, st, guid, false)
+	if _, _, err := st.RegisterProvisionalMedia(ctx, ProvisionalMedia{
+		LibraryID: "library-local", GUID: guid, Title: "T", TeePath: "/tmp/y.partial",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A stale path compensates nothing.
+	if compensated, err := st.CompensateProvisionalMediaRegistration(ctx, mediaID, "/tmp/other.partial", ""); err != nil || compensated {
+		t.Fatalf("stale compensation = %v, %v", compensated, err)
+	}
+	if compensated, err := st.CompensateProvisionalMediaRegistration(ctx, mediaID, "/tmp/y.partial", ""); err != nil || !compensated {
+		t.Fatalf("compensation = %v, %v", compensated, err)
+	}
+	if _, err := st.Media(ctx, mediaID, LibraryFilter{AllLibraries: true, Revealed: true}); err == nil {
+		t.Fatal("unbound Media survived compensation of a new registration")
 	}
 }

@@ -73,3 +73,88 @@ it shows only the first rows.
 - **WHEN** a manager hides a group
 - **THEN** each item's queue row is dismissed and the confirmation said they may return on the
   next scan
+
+### Requirement: Fix Match reads are available for visible Media
+
+Managers SHALL be able to read the current match, searchable scrapers and locked field values
+for visible Media outside Encrypted Libraries. A recorded searchable scraper from the owning plugin
+SHALL come first, followed by the remaining scrapers in declaration order. Identification
+provenance lives in the shared catalog, so Fix Match reads and applies for Media in an Encrypted
+Library SHALL be refused with the localized `fix_match.encrypted_library` error.
+
+#### Scenario: A manager opens Fix Match for an identified item
+
+- **WHEN** a manager opens Fix Match for visible Media with a recorded match
+- **THEN** the current match includes its recorded source and candidate, and the stored title and year
+- **AND** the first searchable scraper is the sole default when at least one exists
+- **AND** the manager can read the item's manually locked values
+
+#### Scenario: A manager opens Fix Match in an Encrypted Library
+
+- **WHEN** a manager opens Fix Match for visible Media in an Encrypted Library
+- **THEN** the request is refused with the localized `fix_match.encrypted_library` error
+- **AND** no match, scraper or lock data is returned
+
+### Requirement: Applying a replacement respects field locks
+
+Fix Match SHALL work without an Unmatched row, pin the item's file fingerprints and preserve
+manually locked fields unless the request explicitly clears their locks.
+
+#### Scenario: The operator chooses which locks to clear
+
+- **WHEN** the manager applies a replacement and names valid fields in clearLocks
+- **THEN** the named locks are cleared for the replacement
+- **AND** every other manual lock is kept
+
+### Requirement: Fix Match can read declared scraper child listings
+
+Fix Match SHALL expose each searchable scraper's ordered child level names and whether it
+declares child listings. Managers SHALL be able to read a declared level for visible Media
+outside Encrypted Libraries. The read SHALL enforce the scraper's fetch controls and row limits.
+
+#### Scenario: A manager opens a child level
+
+- **WHEN** a manager requests the first level with a valid candidate ID
+- **THEN** the read returns the scraper's mapped child rows
+- **AND** a later level can be read only with a key returned at the previous level for that candidate
+
+#### Scenario: A parent key appears under several earlier rows
+
+- **WHEN** a later level's parent key was returned under more than one earlier row
+- **AND** those rows substitute different values into the level's list template
+- **THEN** the read rejects the request instead of choosing one of them
+
+#### Scenario: A request supplies an invalid level or path value
+
+- **WHEN** the scraper has no child listings, the requested level is absent, or a required path value is invalid
+- **THEN** the read rejects the request
+
+### Requirement: Scraper list paths follow the plugin SDK dialect
+
+Search candidates and child listing rows SHALL support a root array and terminal filter-all
+predicates, including row-relative predicate keys.
+
+#### Scenario: A declared list path filters an array
+
+- **WHEN** the scraper declares a terminal filter-all predicate
+- **THEN** all matching rows are available for mapping in source order
+
+### Requirement: Fix Match supports a manual ordinal
+
+Managers SHALL be able to preview, set and clear an ordinal on visible Media supported by Fix Match.
+The ordinal SHALL persist by Media ID and take precedence over the parser in identification lookups.
+A supplied sequence SHALL have at most 32 characters and a supplied index SHALL be nonnegative.
+
+#### Scenario: An operator previews and applies an ordinal
+
+- **WHEN** the manager supplies a sequence or index to Fix Match preview or apply
+- **THEN** the lookup uses the supplied ordinal, with an omitted sequence or index defaulting to empty or zero
+- **AND** the Apply commits the ordinal with the replacement metadata and lists it among the item's locked values
+- **AND** an Apply refused before that commit (a failed lookup, invalid input, or hydration the server cannot run) changes neither the ordinal nor the Media's Entity links
+- **AND** Entity links follow the commit, so a retry after a failed link write converges
+
+#### Scenario: An operator replaces a match or clears the ordinal
+
+- **WHEN** the manager applies a match without an ordinal or lock selection
+- **THEN** the same candidate keeps the saved ordinal and a different candidate clears it
+- **AND** explicitly clearing the ordinal restores parser lookup, with a standalone clear preserving the fingerprint pin

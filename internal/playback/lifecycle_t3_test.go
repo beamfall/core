@@ -386,7 +386,7 @@ func TestT3DurationFallbackAppliesTempoOnce(t *testing.T) {
 		if err := b.Attach("library", "", nil); err != nil {
 			t.Fatal(err)
 		}
-		seconds := b.ProbedDurationSeconds(t.Context(), "fingerprint", src)
+		seconds := b.ProbedDurationSeconds(t.Context(), "fingerprint", src, true)
 		a, err := b.ArtifactShaped(t.Context(), src, seconds, 0, 0, false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, shape, PriorityNormal, "audio/index.m3u8")
 		if err != nil {
 			t.Fatal(err)
@@ -427,7 +427,7 @@ func TestT3BoundDurationRejectsReplacementBeforeSetup(t *testing.T) {
 			if cached && probeDurationWithLibraryClaim(t.Context(), s, "fp", src) != 120 {
 				t.Fatal("could not warm the duration cache")
 			}
-			seconds := b.ProbedDurationSeconds(t.Context(), "fp", src)
+			seconds := b.ProbedDurationSeconds(t.Context(), "fp", src, true)
 			if seconds != 120 || prober.probeCount() != 1 {
 				t.Fatalf("bound duration = %d, probes = %d", seconds, prober.probeCount())
 			}
@@ -886,7 +886,7 @@ func testDurationWinnerBeforeShapeCommit(t *testing.T, running bool) {
 	defer close(prober.results[0])
 	defer close(prober.results[1])
 	hls := make(chan int, 1)
-	go func() { hls <- binding.ProbedDurationSeconds(t.Context(), "source", src) }()
+	go func() { hls <- binding.ProbedDurationSeconds(t.Context(), "source", src, true) }()
 	select {
 	case i := <-prober.entered:
 		if i != 0 {
@@ -2316,7 +2316,7 @@ func testDurationWinnerAcrossCallers(t *testing.T, hlsWins bool) {
 	}
 	first := playlist(120)
 	hls := make(chan int, 1)
-	go func() { hls <- bind.ProbedDurationSeconds(ctx, fingerprint, src) }()
+	go func() { hls <- bind.ProbedDurationSeconds(ctx, fingerprint, src, true) }()
 	waitProbe := func(want int) {
 		t.Helper()
 		select {

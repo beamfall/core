@@ -62,3 +62,13 @@ func TestShapeAddsMapAndRecursiveElementMetadata(t *testing.T) {
 		t.Fatalf("candidate children = %+v, want recursive object element", recursive)
 	}
 }
+
+func TestShapeRespectsNonNullListContract(t *testing.T) {
+	type shape struct {
+		Levels []string `json:"levels" graphshape:"nonnull"`
+	}
+	levels := Shape(shape{}).Children[0]
+	if levels.Nullable || levels.Optional || levels.Kind != "list" || levels.Elem == nil || levels.Elem.Nullable {
+		t.Fatalf("levels shape = %+v, want a required list of non-null elements", levels)
+	}
+}
