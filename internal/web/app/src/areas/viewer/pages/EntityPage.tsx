@@ -388,6 +388,7 @@ export function EntityPage() {
         // An expired session is not an empty search: offer nothing to play.
         if (isAuthRejection(err)) {
           clearViewerCache();
+          setChildMedia(null);
           return;
         }
         setChildMedia({ id: childContainerKey, items: [] });
@@ -804,17 +805,25 @@ async function playThroughMedia(
       return empty;
     }
   };
+  // A container searched again only expands its children, from the detail
+  // read already made, so a shorter path costs no reads.
+  const details = new Map<string, EntityInfo | null>();
   async function search(id: string, depth: number): Promise<SourceItem[] | null> {
     const at = searchedAt.get(id);
     if ((at !== undefined && at <= depth) || depth >= MAX_CONTAINER_DEPTH) return null;
-    if (reads >= PLAY_THROUGH_READS) return null;
+    let entity = details.get(id);
+    if (entity === undefined) {
+      if (reads >= PLAY_THROUGH_READS) return null;
+      reads++;
+      searchedAt.set(id, depth);
+      const items = await soft(fetchMediaForEntity(id, signal), []);
+      const next = nextUpChild(items);
+      if (next && !nextUpFinished(next)) return items;
+      if (next && replay.length === 0) replay = items;
+      entity = await soft(fetchEntity(id, signal), null);
+      details.set(id, entity);
+    }
     searchedAt.set(id, depth);
-    reads++;
-    const items = await soft(fetchMediaForEntity(id, signal), []);
-    const next = nextUpChild(items);
-    if (next && !nextUpFinished(next)) return items;
-    if (next && replay.length === 0) replay = items;
-    const entity = await soft(fetchEntity(id, signal), null);
     for (const child of childContainerCandidates(entity?.relatedEntities, searchedBy(depth + 1))) {
       const found = await search(child.id, depth + 1);
       if (found) return found;
