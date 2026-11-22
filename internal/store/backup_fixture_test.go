@@ -473,9 +473,6 @@ func narrowAdditiveFixtureMigration(ctx context.Context, databases map[string]*s
 		if err != nil {
 			return err
 		}
-		if len(columns) == len(old) {
-			continue
-		}
 		if len(columns) < len(old) {
 			return fmt.Errorf("%s lost columns in migration", key)
 		}
@@ -484,13 +481,25 @@ func narrowAdditiveFixtureMigration(ctx context.Context, databases map[string]*s
 				return fmt.Errorf("%s column %d got %s, want %s", key, index, columns[index].name, name)
 			}
 		}
+		if len(columns) == len(old) {
+			continue
+		}
+		// fixtureColumns skips generated columns, which the full checksum covers;
+		// narrowing a table that has any would drop them from the diff.
+		var generated int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM pragma_table_xinfo(?) WHERE hidden IN (2, 3)", table).Scan(&generated); err != nil {
+			return err
+		}
+		if generated != 0 {
+			return fmt.Errorf("%s has generated columns; additive narrowing does not apply", key)
+		}
 		for _, column := range columns[len(old):] {
 			want := "NULL"
 			if column.defaultSQL.Valid {
 				want = column.defaultSQL.String
 			}
 			var n int
-			query := "SELECT count(*) FROM " + quoteFixtureIdentifier(table) + " WHERE " + quoteFixtureIdentifier(column.name) + " IS NOT (" + want + ")" //nolint:gosec // G202: identifiers are quoted names and the default is SQL from the fixture's local SQLite schema.
+			query := "SELECT count(*) FROM " + quoteFixtureIdentifier(table) + " WHERE " + quoteFixtureIdentifier(column.name) + " COLLATE BINARY IS NOT (" + want + ")" //nolint:gosec // G202: identifiers are quoted names and the default is SQL from the fixture's local SQLite schema.
 			if err := db.QueryRowContext(ctx, query).Scan(&n); err != nil {
 				return err
 			}
@@ -498,7 +507,7 @@ func narrowAdditiveFixtureMigration(ctx context.Context, databases map[string]*s
 				return fmt.Errorf("%s.%s added by migration holds %d non-default values", key, column.name, n)
 			}
 		}
-		narrowed, err := fixtureTableChecksum(ctx, db, table, old)
+		narrowed, err := fixtureTableChecksum(ctx, db, table, quoteFixtureIdentifiers(old), old)
 		if err != nil {
 			return err
 		}
@@ -960,7 +969,7 @@ func collectFixtureDatabaseExpectations(ctx context.Context, databases map[strin
 			for _, column := range tableColumns {
 				names = append(names, column.name)
 			}
-			expectation, err := fixtureTableChecksum(ctx, db, table, names)
+			expectation, err := fixtureTableChecksum(ctx, db, table, "*", names)
 			if err != nil {
 				return fixtureExpectations{}, err
 			}
@@ -970,16 +979,24 @@ func collectFixtureDatabaseExpectations(ctx context.Context, databases map[strin
 	return expectations, nil
 }
 
-// fixtureTableChecksum hashes a table's rows over columns, ordered by them.
-func fixtureTableChecksum(ctx context.Context, db *sql.DB, table string, columns []string) (fixtureTableExpectation, error) {
-	quoted := make([]string, 0, len(columns))
-	for _, column := range columns {
-		quoted = append(quoted, quoteFixtureIdentifier(column))
+func quoteFixtureIdentifiers(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		quoted = append(quoted, quoteFixtureIdentifier(name))
 	}
-	list := strings.Join(quoted, ",")
-	rows, err := db.QueryContext(ctx, "SELECT "+list+" FROM "+quoteFixtureIdentifier(table)+" ORDER BY "+list) //nolint:gosec // G202: table and columns are identifier-quoted names from the test fixture's local SQLite schema.
+	return strings.Join(quoted, ",")
+}
+
+// fixtureTableChecksum hashes the selected values of a table's rows, ordered by
+// the order columns. selected is "*" or an identifier-quoted column list.
+func fixtureTableChecksum(ctx context.Context, db *sql.DB, table, selected string, order []string) (fixtureTableExpectation, error) {
+	rows, err := db.QueryContext(ctx, "SELECT "+selected+" FROM "+quoteFixtureIdentifier(table)+" ORDER BY "+quoteFixtureIdentifiers(order)) //nolint:gosec // G202: table and columns are identifier-quoted names from the test fixture's local SQLite schema.
 	if err != nil {
 		return fixtureTableExpectation{}, err
+	}
+	columns, err := rows.Columns()
+	if err != nil {
+		return fixtureTableExpectation{}, errors.Join(err, rows.Close())
 	}
 	hash := sha256.New()
 	count := 0
@@ -1078,10 +1095,15 @@ func TestNarrowAdditiveFixtureMigrationKeepsChecksumDiff(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct {
 		name, migration, want string
+		empty                 bool
 	}{
 		{name: "defaults", migration: "ALTER TABLE item ADD COLUMN lock INTEGER NOT NULL DEFAULT 0; ALTER TABLE item ADD COLUMN note TEXT; CREATE TABLE activity (id INTEGER PRIMARY KEY);"},
 		{name: "added value", migration: "ALTER TABLE item ADD COLUMN lock INTEGER NOT NULL DEFAULT 0; UPDATE item SET lock = 1 WHERE id = 1;", want: "catalog.item.lock added by migration holds 1 non-default values"},
 		{name: "old value", migration: "ALTER TABLE item ADD COLUMN note TEXT; UPDATE item SET title = 'changed' WHERE id = 1;", want: "catalog.item checksum"},
+		{name: "collation", migration: "ALTER TABLE item ADD COLUMN mode TEXT COLLATE NOCASE NOT NULL DEFAULT 'off'; UPDATE item SET mode = 'OFF' WHERE id = 1;", want: "catalog.item.mode added by migration holds 1 non-default values"},
+		{name: "generated", migration: "ALTER TABLE item ADD COLUMN upper TEXT AS (upper(title)); ALTER TABLE item ADD COLUMN note TEXT;", want: "catalog.item has generated columns"},
+		{name: "empty reorder", empty: true, migration: "DROP TABLE item; CREATE TABLE item (title TEXT NOT NULL, id INTEGER PRIMARY KEY);", want: "catalog.item column 0 got title, want id"},
+		{name: "empty replace", empty: true, migration: "ALTER TABLE item DROP COLUMN title; ALTER TABLE item ADD COLUMN name TEXT NOT NULL DEFAULT '';", want: "catalog.item column 1 got name, want title"},
 		{name: "new rows", migration: "CREATE TABLE activity (id INTEGER PRIMARY KEY); INSERT INTO activity VALUES (1);", want: "catalog.activity created by migration holds 1 rows"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1090,7 +1112,11 @@ func TestNarrowAdditiveFixtureMigrationKeepsChecksumDiff(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer db.Close()
-			if _, err := db.ExecContext(ctx, "CREATE TABLE item (id INTEGER PRIMARY KEY, title TEXT NOT NULL); INSERT INTO item VALUES (1, 'a'), (2, 'b');"); err != nil {
+			seed := "CREATE TABLE item (id INTEGER PRIMARY KEY, title TEXT NOT NULL);"
+			if !tc.empty {
+				seed += " INSERT INTO item VALUES (1, 'a'), (2, 'b');"
+			}
+			if _, err := db.ExecContext(ctx, seed); err != nil {
 				t.Fatal(err)
 			}
 			databases := map[string]*sql.DB{"catalog": db}

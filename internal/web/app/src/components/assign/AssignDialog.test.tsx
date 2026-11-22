@@ -673,7 +673,11 @@ describe("Assign catalog children", () => {
       const lock = await dialog.findByRole("checkbox", { name: /Replace Ordinal/ });
       expect(lock).not.toBeChecked();
       expect(dialog.getByText("Proposed title for 3")).toBeVisible();
-      expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith({ mediaID: "m1", ...show });
+      expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith({
+        mediaID: "m1",
+        ...show,
+        clearLocks: [],
+      });
       if (replace) {
         await user.click(lock);
         expect(dialog.getByText("Proposed title for 5")).toBeVisible();
@@ -697,7 +701,9 @@ describe("Assign catalog children", () => {
       {
         field: "title",
         current: "Old",
-        proposed: vars.clearLocks?.includes("ordinal") ? "Parsed episode title" : "Saved episode title",
+        proposed: vars.clearLocks?.includes("ordinal")
+          ? "Parsed episode title"
+          : "Saved episode title",
         changed: true,
       },
     ]);
@@ -734,8 +740,8 @@ describe("Assign catalog children", () => {
     });
     vi.mocked(fixMatchLockedFields).mockResolvedValue([{ field: "ordinal", value: "1 / 3" }]);
     let rejectKeep!: (error: Error) => void;
-    vi.mocked(fixMatchPreview).mockImplementation(async ({ index }) => {
-      if (index === 3) {
+    vi.mocked(fixMatchPreview).mockImplementation(async ({ clearLocks }) => {
+      if (clearLocks?.length === 0) {
         return new Promise((_resolve, reject) => {
           rejectKeep = reject;
         });
@@ -755,17 +761,13 @@ describe("Assign catalog children", () => {
     expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith({
       mediaID: "m1",
       ...show,
+      clearLocks: ["ordinal"],
       sequence: "2",
       index: 5,
     });
 
     await user.click(lock);
-    expect(fixMatchPreview).toHaveBeenLastCalledWith({
-      mediaID: "m1",
-      ...show,
-      sequence: "1",
-      index: 3,
-    });
+    expect(fixMatchPreview).toHaveBeenLastCalledWith({ mediaID: "m1", ...show, clearLocks: [] });
     expect(apply).toBeDisabled();
     expect(dialog.queryByText("Replacement title")).not.toBeInTheDocument();
 

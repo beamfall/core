@@ -96,18 +96,19 @@ function diffKey(row: Pairing) {
   return keepsOrdinal(row) ? "keepDiff" : "replaceDiff";
 }
 
-async function previewPairing(candidate: MatchTarget, row: Pairing) {
-  const lock = row.locked.find(({ field }) => field === "ordinal");
-  const vars = { mediaID: row.mediaID, ...candidate };
-  if (lock && keepsOrdinal(row)) {
-    if (row.sameCandidate) return fixMatchPreview(vars);
-    const previous = lockedOrdinal(lock.value);
-    return previous ? fixMatchPreview({ ...vars, ...previous }) : null;
-  }
-  // A new candidate drops the saved ordinal by default. For the same candidate,
-  // pass the cleared lock so the preview uses the parser's ordinal, as Apply will.
-  const clearLocks = lock && row.sameCandidate ? { clearLocks: ["ordinal"] } : {};
-  return fixMatchPreview({ ...vars, ...row.ordinal, ...clearLocks });
+// The lock and ordinal arguments Apply sends for a row. Preview sends the same
+// ones, so the server resolves the ordinal for both from the same request and
+// never from a candidate comparison that may have gone stale.
+function ordinalVars(row: Pairing) {
+  const keep = keepsOrdinal(row);
+  return {
+    ...(keep || row.clearLocks.length ? { clearLocks: row.clearLocks } : {}),
+    ...(keep ? undefined : row.ordinal),
+  };
+}
+
+function previewPairing(candidate: MatchTarget, row: Pairing) {
+  return fixMatchPreview({ mediaID: row.mediaID, ...candidate, ...ordinalVars(row) });
 }
 
 export function AssignPanel({
@@ -445,17 +446,8 @@ export function AssignPanel({
       if (identityEnded()) break;
       setProgress(t("unmatchedMatching", { done: index + 1, total: writes.length }));
       const row = unmatched ? undefined : preview?.[index];
-      const keep = row && keepsOrdinal(row);
       try {
-        await fixMatch(
-          {
-            mediaID,
-            ...candidate,
-            ...(row && (keep || row.clearLocks.length) ? { clearLocks: row.clearLocks } : {}),
-            ...(keep ? undefined : row?.ordinal),
-          },
-          epoch,
-        );
+        await fixMatch({ mediaID, ...candidate, ...(row && ordinalVars(row)) }, epoch);
         next.push({ mediaID });
         // Invalidate cached viewer documents as each write is confirmed, whether
         // or not the panel is still mounted (Back during a write unmounts it).
