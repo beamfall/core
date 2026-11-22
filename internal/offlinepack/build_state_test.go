@@ -27,6 +27,7 @@ func TestFailureReasonIsClosed(t *testing.T) {
 		"item too large":  {ErrItemTooLarge, FailureByteBound},
 		"budget":          {errors.Join(errors.New("ctx"), ErrBuildBudget), FailureByteBound},
 		"missing source":  {&fs.PathError{Op: "open", Path: "media-alpha", Err: fs.ErrNotExist}, FailureSourceUnavailable},
+		"parts":           {ErrManifestPartsUnsupported, FailurePartsUnsupported},
 		"anything else":   {errors.New("disk on fire"), FailureBuild},
 	}
 	for name, tc := range cases {

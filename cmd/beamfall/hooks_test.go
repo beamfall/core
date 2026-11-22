@@ -56,7 +56,16 @@ func TestFirstPartyHooksComposeProductionPluginBehavior(t *testing.T) {
 	if want := len(filmtv.PackResolvers()); want == 0 || filmtvResolvers != want {
 		t.Fatalf("Film/TV offline pack resolver hooks = %d, want %d", filmtvResolvers, want)
 	}
-	if others := len(hooks.OfflinePackResolvers) - filmtvResolvers; others != 4 {
+	audiobookResolvers := 0
+	for _, resolver := range hooks.OfflinePackResolvers {
+		if resolver.PluginID == books.PluginID {
+			audiobookResolvers++
+		}
+	}
+	if want := len(books.PackResolvers()); want == 0 || audiobookResolvers != want {
+		t.Fatalf("audiobook offline pack resolver hooks = %d, want %d", audiobookResolvers, want)
+	}
+	if others := len(hooks.OfflinePackResolvers) - filmtvResolvers - audiobookResolvers; others != 4 {
 		t.Fatalf("other offline pack resolver hooks = %d, want 4", others)
 	}
 	if len(hooks.ScrobbleAdapters) != 3 {

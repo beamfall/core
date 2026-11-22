@@ -142,6 +142,9 @@ var vocabAllowedLines = map[string][]vocabAllowed{
 		{"podcast", `driven by the podcast plugin`},
 		{"podcast", `podcast index is the optional richer directory`},
 	},
+	"cmd/beamfall/hooks_audiobookpack.go": {
+		{"audiobook", `github.com/beamfall/plugin-audiobook`},
+	},
 	"cmd/beamfall/hooks_books_browse.go": {
 		{"audiobook", `github.com/beamfall/plugin-audiobook`},
 	},
