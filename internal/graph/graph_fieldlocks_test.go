@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -61,11 +62,14 @@ func TestMediaFieldLocksReadAndSetManagerGated(t *testing.T) {
 		t.Fatalf("viewer mediaFieldLocks = %s", rec.Body.String())
 	}
 
-	// Initial read: the fixed lockable fields, all unlocked.
+	// Initial read: the fixed lockable fields, all unlocked. Every known
+	// artwork slot is lockable, so a pin on any slot can lock it.
 	locks := decodeFieldLocks(t, post(readBody, authorizeManager), "mediaFieldLocks")
 	wantFields := map[string]bool{
 		"title": false, "sortTitle": false, "summary": false, "year": false,
-		"artworkPoster": false, "artworkBackdrop": false, "artworkThumb": false,
+	}
+	for _, slot := range artwork.KnownSlots {
+		wantFields[store.ArtworkLockField(slot)] = false
 	}
 	if len(locks) != len(wantFields) {
 		t.Fatalf("locks = %#v, want %d fields", locks, len(wantFields))

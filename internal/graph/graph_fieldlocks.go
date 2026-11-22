@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 
+	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
 )
@@ -47,9 +48,28 @@ func (h *Handler) mediaFieldLocks(ctx context.Context, scope auth.Scope, req req
 	return fieldLockInfos(locks), nil
 }
 
+// manualArtworkReverter gives an artwork slot back from an operator pick.
+type manualArtworkReverter interface {
+	RevertManualArtwork(ctx context.Context, id store.MediaID, slot string) error
+}
+
+// artworkSlotForLockField returns the artwork slot whose lock field is field.
+func artworkSlotForLockField(field string) (string, bool) {
+	for _, slot := range artwork.KnownSlots {
+		if store.ArtworkLockField(slot) == field {
+			return slot, true
+		}
+	}
+	return "", false
+}
+
 // setMediaFieldLock resolves the write: set or clear one field's lock on a
 // visible Media, returning the refreshed lock set. The lock decision routes
-// through the audited activity log as a media field write.
+// through the audited activity log as a media field write. revert, with
+// locked false on an artwork field, also gives the slot back from the
+// operator's pick (a plain unlock keeps the picked image until a refresh
+// replaces it): the slot's applied candidate is cleared and the sidecar, or
+// the provider's image on the next refresh, takes the slot again.
 func (h *Handler) setMediaFieldLock(ctx context.Context, scope auth.Scope, req request) ([]FieldLockInfo, error) {
 	if h.store == nil {
 		return nil, clientError("store unavailable")
@@ -63,13 +83,25 @@ func (h *Handler) setMediaFieldLock(ctx context.Context, scope auth.Scope, req r
 	if !ok {
 		return nil, clientError("locked is required")
 	}
+	revert, _ := newVars(req).Bool("revert")
 	locks, err := h.store.SetMediaFieldLock(ctx, store.MediaID(mediaID), field, locked, scope.LibraryFilter())
 	if err != nil {
 		return nil, err
 	}
-	library, err := h.store.MediaLibrary(ctx, store.MediaID(mediaID))
-	if err == nil {
-		if err := h.logActivity(ctx, scope, store.ActivityMediaFieldLock, "media", mediaID, library); err != nil {
+	slot, isArtwork := artworkSlotForLockField(field)
+	revertArtwork := revert && !locked && isArtwork
+	if revertArtwork {
+		if err := h.store.ClearArtworkSlotApplied(ctx, store.MediaID(mediaID), slot); err != nil {
+			return nil, err
+		}
+	}
+	// A failed Library lookup still logs the decision, without the Library.
+	library, _ := h.store.MediaLibrary(ctx, store.MediaID(mediaID))
+	if err := h.logActivity(ctx, scope, store.ActivityMediaFieldLock, "media", mediaID, library); err != nil {
+		return nil, err
+	}
+	if reverter, ok := h.candidateImport.(manualArtworkReverter); ok && revertArtwork {
+		if err := reverter.RevertManualArtwork(ctx, store.MediaID(mediaID), slot); err != nil {
 			return nil, err
 		}
 	}

@@ -1004,6 +1004,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "field", Kind: "string"},
 		{Name: "locked", Kind: "boolean"},
 		{Name: "mediaID", Kind: "string"},
+		{Name: "revert", Kind: "boolean", Optional: true},
 	},
 	"setmute": {
 		{Name: "includeDescendants", Kind: "boolean", Optional: true},

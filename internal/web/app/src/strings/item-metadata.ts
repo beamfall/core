@@ -49,7 +49,7 @@ export const itemMetadataStrings = {
     itemMetadataArtworkUpload: "Upload",
     itemMetadataArtworkUploadSlot: "Upload {slot}",
     itemMetadataArtworkUploaded: "Uploaded. This slot is now locked.",
-    itemMetadataArtworkUploadFailed: "Could not upload this image. Use a JPEG, PNG or WebP file.",
+    itemMetadataArtworkUploadFailed: "Could not upload this image. Use a JPEG or PNG file.",
     itemMetadataArtworkCurrent: "Current",
     itemMetadataArtworkCurrentAlt: "Current {slot}",
     itemMetadataEditDetails: "Edit details",
@@ -108,7 +108,7 @@ export const itemMetadataStrings = {
     itemMetadataArtworkUploadSlot: "Importer {slot}",
     itemMetadataArtworkUploaded: "Importée. Cet emplacement est maintenant verrouillé.",
     itemMetadataArtworkUploadFailed:
-      "Impossible d’importer cette image. Utilisez un fichier JPEG, PNG ou WebP.",
+      "Impossible d’importer cette image. Utilisez un fichier JPEG ou PNG.",
     itemMetadataArtworkCurrent: "Actuelle",
     itemMetadataArtworkCurrentAlt: "{slot} actuelle",
     itemMetadataEditDetails: "Modifier les détails",
@@ -168,7 +168,7 @@ export const itemMetadataStrings = {
     itemMetadataArtworkUploadSlot: "{slot} hochladen",
     itemMetadataArtworkUploaded: "Hochgeladen. Dieser Platz ist jetzt gesperrt.",
     itemMetadataArtworkUploadFailed:
-      "Das Bild konnte nicht hochgeladen werden. Verwende eine JPEG-, PNG- oder WebP-Datei.",
+      "Das Bild konnte nicht hochgeladen werden. Verwende eine JPEG- oder PNG-Datei.",
     itemMetadataArtworkCurrent: "Aktuell",
     itemMetadataArtworkCurrentAlt: "Aktuelles Bild: {slot}",
     itemMetadataEditDetails: "Details bearbeiten",
@@ -226,8 +226,7 @@ export const itemMetadataStrings = {
     itemMetadataArtworkUpload: "Subir",
     itemMetadataArtworkUploadSlot: "Subir {slot}",
     itemMetadataArtworkUploaded: "Subida. Este espacio ya está bloqueado.",
-    itemMetadataArtworkUploadFailed:
-      "No se pudo subir esta imagen. Usa un archivo JPEG, PNG o WebP.",
+    itemMetadataArtworkUploadFailed: "No se pudo subir esta imagen. Usa un archivo JPEG o PNG.",
     itemMetadataArtworkCurrent: "Actual",
     itemMetadataArtworkCurrentAlt: "{slot} actual",
     itemMetadataEditDetails: "Editar detalles",
@@ -286,7 +285,7 @@ export const itemMetadataStrings = {
     itemMetadataArtworkUploadSlot: "Enviar {slot}",
     itemMetadataArtworkUploaded: "Enviada. Este espaço está agora bloqueado.",
     itemMetadataArtworkUploadFailed:
-      "Não foi possível enviar esta imagem. Use um ficheiro JPEG, PNG ou WebP.",
+      "Não foi possível enviar esta imagem. Use um ficheiro JPEG ou PNG.",
     itemMetadataArtworkCurrent: "Atual",
     itemMetadataArtworkCurrentAlt: "{slot} atual",
     itemMetadataEditDetails: "Editar detalhes",

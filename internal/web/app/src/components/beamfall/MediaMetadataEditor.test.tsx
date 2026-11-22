@@ -7,6 +7,7 @@ import {
   fetchArtworkCandidates,
   fetchMediaFields,
   fetchMediaMetadata,
+  pinArtworkCandidate,
   refreshMediaMetadata,
   setMediaFieldLock,
 } from "@/lib/graphql";
@@ -83,7 +84,7 @@ describe("MediaMetadataEditor", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Revert Title to provider" }));
 
-    expect(setMediaFieldLock).toHaveBeenCalledWith("media-1", "title", false);
+    expect(setMediaFieldLock).toHaveBeenCalledWith("media-1", "title", false, true);
     expect(refreshMediaMetadata).toHaveBeenCalledWith("media-1");
     expect(await screen.findByDisplayValue("Provider Title")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Reverted. The provider's value is back.");
@@ -98,7 +99,7 @@ describe("MediaMetadataEditor", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Revert Title to provider" }));
 
-    expect(setMediaFieldLock).toHaveBeenCalledWith("media-1", "title", false);
+    expect(setMediaFieldLock).toHaveBeenCalledWith("media-1", "title", false, true);
     expect(refreshMediaMetadata).not.toHaveBeenCalled();
     expect(await screen.findByRole("status")).toHaveTextContent("returns on the next refresh");
   });
@@ -167,5 +168,45 @@ describe("MediaMetadataEditor", () => {
 
     await waitFor(() => expect(container.querySelector('img[src$="/upload-1"]')).toBeNull());
     expect(screen.getByText("In use")).toBeInTheDocument();
+  });
+
+  it("keeps an unsaved title edit when artwork is uploaded", async () => {
+    vi.mocked(uploadMediaArtwork).mockResolvedValue();
+    renderEditor();
+    const title = await screen.findByDisplayValue("Edited Title");
+    await userEvent.clear(title);
+    await userEvent.type(title, "Draft Title");
+    vi.mocked(fetchMediaMetadata).mockResolvedValue(
+      info({ locks: locks(["title", "artworkPoster"]) }),
+    );
+
+    fireEvent.change(screen.getByTestId("item-metadata-upload-poster"), {
+      target: { files: [new File(["png"], "poster.png", { type: "image/png" })] },
+    });
+
+    expect(await screen.findByRole("button", { name: "Unlock Poster" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Draft Title")).toBeInTheDocument();
+  });
+
+  it("pins a candidate and reads the lock the server set", async () => {
+    vi.mocked(fetchArtworkCandidates).mockImplementation(async (_mediaID, slot) =>
+      slot === "poster" ? [{ id: "cand-1", slot: "poster", applied: false, previewURL: "" }] : [],
+    );
+    vi.mocked(pinArtworkCandidate).mockResolvedValue({
+      id: "cand-1",
+      slot: "poster",
+      applied: true,
+      previewURL: "",
+    });
+    renderEditor();
+    const choose = await screen.findByRole("button", { name: "Choose" });
+    vi.mocked(fetchMediaMetadata).mockResolvedValue(
+      info({ locks: locks(["title", "artworkPoster"]) }),
+    );
+    await userEvent.click(choose);
+
+    expect(await screen.findByRole("button", { name: "Unlock Poster" })).toBeInTheDocument();
+    expect(pinArtworkCandidate).toHaveBeenCalledWith("media-1", "poster", "cand-1");
+    expect(setMediaFieldLock).not.toHaveBeenCalled();
   });
 });

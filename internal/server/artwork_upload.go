@@ -77,6 +77,12 @@ func (s *Server) uploadArtwork(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusForbidden, "manager session required")
 		return
 	}
+	// Like the metadata mutations' roleAdultProfile gate: a managed profile on a
+	// manager device may not edit artwork (CORE-2905).
+	if scope.Profile == store.ProfileManaged {
+		writeError(w, r, http.StatusForbidden, "adult profile required")
+		return
+	}
 	if s.artworkImport == nil || s.artworkApply == nil {
 		writeError(w, r, http.StatusServiceUnavailable, "artwork upload unavailable")
 		return

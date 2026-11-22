@@ -476,3 +476,38 @@ func scanArtworkCandidate(scanner artworkCandidateScanner) (ArtworkCandidate, er
 	candidate.CreatedAt = millisToTime(createdAt)
 	return candidate, nil
 }
+
+// ArtworkSlotManual reports whether an operator owns a Media artwork slot:
+// its lock field carries manual provenance, set by a pick or an upload. A
+// curated sidecar must not replace such a slot.
+func (s *Store) ArtworkSlotManual(ctx context.Context, mediaID MediaID, slot string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var source string
+	err := s.catalogW.QueryRowContext(ctx,
+		`SELECT source FROM media_field_provenance WHERE media_id = ? AND field = ?`,
+		mediaID, ArtworkLockField(slot)).Scan(&source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil && MutationSource(source) == MutationSourceManual, err
+}
+
+// ClearArtworkSlotApplied clears the applied mark of every candidate in one
+// Media slot, so a reverted operator upload stops owning it. The candidates
+// stay and can be chosen again.
+func (s *Store) ClearArtworkSlotApplied(ctx context.Context, mediaID MediaID, slot string) error {
+	artworkCandidateMutationMu.Lock()
+	defer artworkCandidateMutationMu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err := s.catalogW.ExecContext(ctx,
+		`UPDATE artwork_candidate SET applied = 0 WHERE media_id = ? AND slot = ?`, mediaID, slot)
+	return err
+}

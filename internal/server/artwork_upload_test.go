@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -280,6 +281,28 @@ func TestUploadArtworkRequiresManagerRole(t *testing.T) {
 	srv.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 for a non-manager session", rec.Code)
+	}
+}
+
+// A managed profile on a manager device keeps the manager role but may not
+// edit artwork (CORE-2905).
+func TestUploadArtworkRefusesManagedProfile(t *testing.T) {
+	srv, st := newArtworkUploadTestServer(t)
+	ctx := context.Background()
+	child, err := st.CreateProfile(ctx, "Kid", store.ProfileManaged, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatalf("CreateProfile: %v", err)
+	}
+	if err := st.SetSessionProfile(ctx, "session-manager", child.ID); err != nil {
+		t.Fatalf("SetSessionProfile: %v", err)
+	}
+	req := uploadArtworkRequest(t, "media-alpha", artwork.SlotPoster, "poster.png", pngArtwork(t, 8, 8), "image/png")
+	authorizeManager(req)
+	req.Header.Set(auth.CSRFHeader, "1")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "adult profile required") {
+		t.Fatalf("status = %d body=%s, want 403 adult profile required", rec.Code, rec.Body.String())
 	}
 }
 

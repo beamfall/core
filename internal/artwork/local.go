@@ -116,11 +116,79 @@ func (s *Service) IsEntityArtworkLocked(id store.EntityID, slot string) bool {
 
 // ImportManualArtwork stores operator-picked artwork bytes in a Media slot.
 // A manual pick outranks every lock (ADR-0072), so unlike ImportArtwork it
-// replaces locked local artwork. The lock marker is kept: an unchanged sidecar
-// does not take the slot back, and an edited sidecar still does.
+// replaces locked local artwork. The lock marker is kept, so a sidecar does
+// not take the slot back while the operator owns it; RevertManualArtwork
+// re-imports it.
 func (s *Service) ImportManualArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error {
 	_, err := s.importMediaArtwork(ctx, id, slot, data, false, nil)
 	return err
+}
+
+// RevertManualArtwork gives a Media slot back from an operator pick. When the
+// slot's lock marker names a local sidecar inside one of the Media's Library
+// roots, that sidecar is imported again at once. Otherwise, or when the
+// re-import fails, the slot file and its markers are removed so the next
+// refresh, embedded cover or frame grab fills the slot. The picked bytes stay
+// recoverable as an artwork candidate.
+func (s *Service) RevertManualArtwork(ctx context.Context, id store.MediaID, slot string) error {
+	if !ValidSlot(slot) {
+		return fmt.Errorf("unknown artwork slot %q", slot)
+	}
+	dst := s.ArtworkPath(id, slot)
+	if lock, locked := readSlotLock(dst); locked && lock.Source == SourceLocal && lock.Path != "" {
+		if root := s.sidecarRoot(ctx, id, lock.Path); root != "" {
+			// Removing only the slot file keeps the marker, so importLocal
+			// sees a missing slot and imports the sidecar again.
+			if err := s.removeSlotFiles(ctx, dst, false); err != nil {
+				return err
+			}
+			if _, err := s.ImportLocalArtwork(ctx, id, slot, root, lock.Path); err == nil {
+				return nil
+			}
+		}
+	}
+	return s.removeSlotFiles(ctx, dst, true)
+}
+
+// sidecarRoot returns the Media's Library root that contains path, or "".
+func (s *Service) sidecarRoot(ctx context.Context, id store.MediaID, path string) string {
+	if s.store == nil || !filepath.IsAbs(path) {
+		return ""
+	}
+	libraryID, err := s.store.MediaLibraryID(ctx, id)
+	if err != nil {
+		return ""
+	}
+	roots, err := s.store.LibraryRoots(ctx, libraryID)
+	if err != nil {
+		return ""
+	}
+	for _, root := range roots {
+		if rel, err := filepath.Rel(root, path); err == nil && filepath.IsAbs(root) && filepath.IsLocal(rel) {
+			return root
+		}
+	}
+	return ""
+}
+
+// removeSlotFiles removes a slot file and its generated marker and, when
+// markers is set, its lock markers too.
+func (s *Service) removeSlotFiles(ctx context.Context, dst string, markers bool) error {
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	paths := []string{dst, generatedMarkerPath(dst)}
+	if markers {
+		paths = append(paths, slotLockMarker(dst), lockMarkerPath(dst))
+	}
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 // ImportLocalArtwork imports a curated sidecar image file into a Media slot
@@ -139,7 +207,11 @@ func (s *Service) ImportLocalArtwork(ctx context.Context, id store.MediaID, slot
 	if s.isSealed(ctx, id) || s.isEncrypted(ctx, id) {
 		return false, nil
 	}
-	return s.importLocal(ctx, s.ArtworkPath(id, slot), string(id), slot, root, path)
+	var operatorOwned func() (bool, error)
+	if s.store != nil {
+		operatorOwned = func() (bool, error) { return s.store.ArtworkSlotManual(ctx, id, slot) }
+	}
+	return s.importLocal(ctx, s.ArtworkPath(id, slot), string(id), slot, root, path, operatorOwned)
 }
 
 // ReleaseLocalArtwork removes a Media slot's local lock when no sidecar
@@ -168,11 +240,11 @@ func (s *Service) ImportEntityLocalArtwork(ctx context.Context, id store.EntityI
 	}
 	dst := s.EntityArtworkPath(id, slot)
 	if slot != SlotPoster {
-		return s.importLocal(ctx, dst, string(id), slot, root, path)
+		return s.importLocal(ctx, dst, string(id), slot, root, path, nil)
 	}
 	s.entityPosterMu.Lock()
 	defer s.entityPosterMu.Unlock()
-	changed, err := s.importLocal(ctx, dst, string(id), slot, root, path)
+	changed, err := s.importLocal(ctx, dst, string(id), slot, root, path, nil)
 	if err != nil {
 		return changed, err
 	}
@@ -203,7 +275,12 @@ func (s *Service) entityProtected(ctx context.Context, id store.EntityID) bool {
 	return (s.sealed != nil && s.sealed(entity.LibraryID)) || (s.encrypted != nil && s.encrypted(entity.LibraryID))
 }
 
-func (s *Service) importLocal(ctx context.Context, dst, owner, slot, root, src string) (bool, error) {
+// importLocal imports one sidecar into the slot file dst and locks it with
+// source local, unless the sidecar is unchanged since the last import.
+// operatorOwned, when set, is asked before a changed sidecar is imported: an
+// operator pick (store.ArtworkSlotManual) outranks a sidecar until the
+// operator reverts it, so the slot is left alone.
+func (s *Service) importLocal(ctx context.Context, dst, owner, slot, root, src string, operatorOwned func() (bool, error)) (bool, error) {
 	if !filepath.IsAbs(root) || !filepath.IsAbs(src) {
 		return false, fmt.Errorf("local artwork path %q or root %q is not absolute", src, root)
 	}
@@ -235,6 +312,11 @@ func (s *Service) importLocal(ctx context.Context, dst, owner, slot, root, src s
 	current, hadLock := readSlotLock(dst)
 	if hadLock && current == want && nonEmptyRegularFile(dst) && !regularFileExists(generatedMarkerPath(dst)) {
 		return false, nil
+	}
+	if operatorOwned != nil {
+		if owned, err := operatorOwned(); err != nil || owned {
+			return false, err
+		}
 	}
 	data, err := readLocalImage(libraryRoot, rel, src, info)
 	if err != nil {

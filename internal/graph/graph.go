@@ -5685,9 +5685,15 @@ func (h *Handler) mediaFieldsQuery(ctx context.Context, scope auth.Scope, req re
 	if err != nil {
 		return nil, clientError("unknown media")
 	}
-	specs := h.mediaFieldSpecs(ctx, store.MediaID(mediaID))
+	declared := h.declaredMediaFields(ctx, store.MediaID(mediaID))
+	specs := make(map[string]plugin.FieldSpec, len(declared))
+	for _, spec := range declared {
+		specs[spec.Name] = spec
+	}
 	infos := []EntityFieldInfo{}
+	seen := make(map[string]bool, len(fields))
 	for _, field := range fields {
+		seen[field.Name] = true
 		spec := specs[field.Name]
 		if spec.Sensitive {
 			continue
@@ -5699,6 +5705,14 @@ func (h *Handler) mediaFieldsQuery(ctx context.Context, scope auth.Scope, req re
 			Label: spec.Label,
 		})
 	}
+	// Declared fields with no value yet still appear (empty Value), in
+	// declaration order, so an editor can set them for the first time.
+	for _, spec := range declared {
+		if spec.Sensitive || seen[spec.Name] {
+			continue
+		}
+		infos = append(infos, EntityFieldInfo{Name: spec.Name, Type: string(spec.Type), Label: spec.Label})
+	}
 	return infos, nil
 }
 
@@ -5706,22 +5720,28 @@ func (h *Handler) mediaFieldsQuery(ctx context.Context, scope auth.Scope, req re
 // bundle declaration. Empty when the item is plugin-less or undeclared.
 func (h *Handler) mediaFieldSpecs(ctx context.Context, mediaID store.MediaID) map[string]plugin.FieldSpec {
 	specs := map[string]plugin.FieldSpec{}
-	libraryID, err := h.store.MediaLibrary(ctx, mediaID)
-	if err != nil {
-		return specs
-	}
-	pluginID, err := h.store.LibraryPluginID(ctx, libraryID)
-	if err != nil || pluginID == "" {
-		return specs
-	}
-	bundle, ok := h.plugins.Bundle(plugin.ID(pluginID))
-	if !ok {
-		return specs
-	}
-	for _, field := range bundle.MediaFields {
+	for _, field := range h.declaredMediaFields(ctx, mediaID) {
 		specs[field.Name] = field
 	}
 	return specs
+}
+
+// declaredMediaFields returns the owning bundle's MediaFields in declaration
+// order. Nil when the item is plugin-less or the bundle is not loaded.
+func (h *Handler) declaredMediaFields(ctx context.Context, mediaID store.MediaID) []plugin.FieldSpec {
+	libraryID, err := h.store.MediaLibrary(ctx, mediaID)
+	if err != nil {
+		return nil
+	}
+	pluginID, err := h.store.LibraryPluginID(ctx, libraryID)
+	if err != nil || pluginID == "" {
+		return nil
+	}
+	bundle, ok := h.plugins.Bundle(plugin.ID(pluginID))
+	if !ok {
+		return nil
+	}
+	return bundle.MediaFields
 }
 
 type ArtworkCandidateInfo struct {

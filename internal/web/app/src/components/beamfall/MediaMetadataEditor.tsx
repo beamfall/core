@@ -32,7 +32,7 @@ const SLOTS: { slot: string; lock: string; key: StringKey }[] = [
   { slot: "thumb", lock: "artworkThumb", key: "artworkSlotThumb" },
 ];
 
-const UPLOAD_ACCEPT = "image/jpeg,image/png,image/webp";
+const UPLOAD_ACCEPT = "image/jpeg,image/png";
 
 interface Draft {
   title: string;
@@ -158,6 +158,12 @@ export function MediaMetadataEditor({
     setInfo((prev) => (prev ? { ...prev, locks } : prev));
   };
 
+  // refreshLocks re-reads only the lock state, so an artwork or plugin-field
+  // change never discards unsaved edits in the details form.
+  const refreshLocks = async () => {
+    setLocks((await fetchMediaMetadata(mediaID)).locks);
+  };
+
   const changed = () => {
     setArtworkVersion((v) => v + 1);
     onChanged?.();
@@ -181,7 +187,7 @@ export function MediaMetadataEditor({
     begin();
     setBusy(true);
     try {
-      setLocks(await setMediaFieldLock(mediaID, field, false));
+      setLocks(await setMediaFieldLock(mediaID, field, false, true));
       if (info?.refreshable) {
         applyInfo(await refreshMediaMetadata(mediaID));
         await loadAll(mediaID);
@@ -246,7 +252,7 @@ export function MediaMetadataEditor({
     setBusy(true);
     try {
       await bulkEditApply([mediaID], edits);
-      applyInfo(await fetchMediaMetadata(mediaID));
+      await refreshLocks();
       await loadFields(mediaID);
       setStatus(t("itemMetadataSaved"));
       onChanged?.();
@@ -257,11 +263,12 @@ export function MediaMetadataEditor({
     }
   };
 
-  const onChooseArtwork = async (slot: string, lock: string, candidate: ArtworkCandidate) => {
+  const onChooseArtwork = async (slot: string, candidate: ArtworkCandidate) => {
     begin();
     try {
+      // The server locks the slot as part of the pin.
       await pinArtworkCandidate(mediaID, slot, candidate.id);
-      setLocks(await setMediaFieldLock(mediaID, lock, true));
+      await refreshLocks();
       await loadSlot(mediaID, slot);
       changed();
     } catch {
@@ -275,7 +282,7 @@ export function MediaMetadataEditor({
     setBusy(true);
     try {
       await uploadMediaArtwork(mediaID, slot, file);
-      applyInfo(await fetchMediaMetadata(mediaID));
+      await refreshLocks();
       await loadSlot(mediaID, slot);
       setStatus(t("itemMetadataArtworkUploaded"));
       changed();
@@ -518,7 +525,7 @@ export function MediaMetadataEditor({
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => onChooseArtwork(slot, lock, candidate)}
+                          onClick={() => onChooseArtwork(slot, candidate)}
                         >
                           {t("itemMetadataArtworkChoose")}
                         </Button>

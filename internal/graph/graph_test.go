@@ -3007,6 +3007,8 @@ func TestSensitivePluginFieldsWithheldAfterReveal(t *testing.T) {
 		MediaFields: []plugin.FieldSpec{
 			{Name: "public-note", Type: "text"},
 			{Name: "private-note", Type: "text", Sensitive: true},
+			{Name: "unset-count", Type: "number", Label: plugin.L("Count")},
+			{Name: "unset-secret", Type: "text", Sensitive: true},
 		},
 		EntityKinds: []plugin.EntityKind{{
 			Name:      "contact",
@@ -3064,7 +3066,7 @@ func TestSensitivePluginFieldsWithheldAfterReveal(t *testing.T) {
 
 	body, err := json.Marshal(map[string]any{
 		"query": `query Sensitive($mediaID: String!, $id: String!) {
-			mediaFields(mediaID: $mediaID) { name value }
+			mediaFields(mediaID: $mediaID) { name type value label }
 			entity(id: $id) { fields { name value } }
 		}`,
 		"variables": map[string]any{
@@ -3095,8 +3097,13 @@ func TestSensitivePluginFieldsWithheldAfterReveal(t *testing.T) {
 	if len(resp.Errors) != 0 {
 		t.Fatalf("errors = %#v", resp.Errors)
 	}
-	if len(resp.Data.MediaFields) != 1 || resp.Data.MediaFields[0].Name != "public-note" {
-		t.Fatalf("mediaFields = %#v, want only public-note", resp.Data.MediaFields)
+	// Set fields first, then declared-but-unset non-sensitive fields with an
+	// empty value so an editor can set them; sensitive ones never appear.
+	got := resp.Data.MediaFields
+	if len(got) != 2 || got[0].Name != "public-note" || got[0].Value != "returned" ||
+		got[1].Name != "unset-count" || got[1].Type != "number" || got[1].Value != "" ||
+		got[1].Label.Resolve("en") != "Count" {
+		t.Fatalf("mediaFields = %#v, want public-note then empty unset-count", got)
 	}
 	if len(resp.Data.Entity.Fields) != 1 || resp.Data.Entity.Fields[0].Name != "public-note" {
 		t.Fatalf("entity.fields = %#v, want only public-note", resp.Data.Entity.Fields)

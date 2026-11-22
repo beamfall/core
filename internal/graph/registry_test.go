@@ -615,7 +615,7 @@ func TestFieldHandlerWireMetadataExceptions(t *testing.T) {
 		"queueremove":          {"queueRemove", "queue", fieldMutation, roleSession, fieldDispatchPlan{30}},
 		"createmarker":         {"createMarker", "createMarker", fieldMutation, roleSession | roleManager, fieldDispatchPlan{14}},
 		"artworkcandidates":    {"artworkCandidates", "artworkCandidates", fieldRead, roleSession | roleManager, fieldDispatchPlan{16}},
-		"pinartworkcandidate":  {"pinArtworkCandidate", "pinArtworkCandidate", fieldMutation, roleSession | roleManager, fieldDispatchPlan{16}},
+		"pinartworkcandidate":  {"pinArtworkCandidate", "pinArtworkCandidate", fieldMutation, roleSession | roleManager | roleAdultProfile, fieldDispatchPlan{16}},
 		"notifications":        {"notifications", "notifications", fieldRead, roleSession, fieldDispatchPlan{88}},
 		"marknotificationread": {"markNotificationRead", "markNotificationRead", fieldMutation, roleSession, fieldDispatchPlan{89}},
 	}

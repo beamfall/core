@@ -296,3 +296,104 @@ func TestImportLocalArtworkStaysInsideLibraryRoot(t *testing.T) {
 		t.Fatal("refused sidecar wrote a lock")
 	}
 }
+
+// An operator-locked slot is not overwritten by an edited sidecar; the
+// sidecar comes back only after the operator reverts the slot.
+func TestEditedSidecarSkipsOperatorLockedSlot(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(ctx, "Library", true, "demo", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: "/srv/demo/item.mkv", Title: "Item",
+		Container: "mkv", Codec: "h264", ContentFingerprint: "fp-sidecar-lock",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(st, &fakeGrabber{}, t.TempDir())
+	sidecar := writeSidecar(t, t.TempDir(), "poster.jpg", testJPEG)
+	if _, err := svc.ImportLocalArtwork(ctx, media.ID, SlotPoster, filepath.Dir(sidecar), sidecar); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ImportManualArtwork(ctx, media.ID, SlotPoster, []byte("picked")); err != nil {
+		t.Fatal(err)
+	}
+	all := store.LibraryFilter{Revealed: true, AllLibraries: true}
+	if _, err := st.SetMediaFieldLock(ctx, media.ID, store.ArtworkLockField(SlotPoster), true, all); err != nil {
+		t.Fatal(err)
+	}
+
+	writeSidecar(t, filepath.Dir(sidecar), "poster.jpg", testPNG)
+	later := time.Now().Add(time.Minute)
+	if err := os.Chtimes(sidecar, later, later); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := svc.ImportLocalArtwork(ctx, media.ID, SlotPoster, filepath.Dir(sidecar), sidecar); err != nil || changed {
+		t.Fatalf("edited sidecar on locked slot = %v, %v; want false, nil", changed, err)
+	}
+	if got := readSlot(t, svc.PosterPath(media.ID)); got != "picked" {
+		t.Fatalf("poster = %q, want the operator's pick kept", got)
+	}
+
+	if _, err := st.SetMediaFieldLock(ctx, media.ID, store.ArtworkLockField(SlotPoster), false, all); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := svc.ImportLocalArtwork(ctx, media.ID, SlotPoster, filepath.Dir(sidecar), sidecar); err != nil || !changed {
+		t.Fatalf("edited sidecar after unlock = %v, %v; want true, nil", changed, err)
+	}
+	if got := readSlot(t, svc.PosterPath(media.ID)); got != string(testPNG) {
+		t.Fatalf("poster = %q, want edited sidecar bytes", got)
+	}
+}
+
+// Reverting a manual pick re-imports the slot's sidecar at once; with no
+// sidecar the slot is emptied for the next refresh to fill.
+func TestRevertManualArtwork(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	libraryDir := t.TempDir()
+	library, err := st.CreateLibrary(ctx, "Library", true, "demo", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetLibraryRoots(ctx, library.ID, []string{libraryDir}); err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: filepath.Join(libraryDir, "item.mkv"), Title: "Item",
+		Container: "mkv", Codec: "h264", ContentFingerprint: "fp-revert",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(st, &fakeGrabber{}, t.TempDir())
+	sidecar := writeSidecar(t, libraryDir, "poster.jpg", testJPEG)
+	if _, err := svc.ImportLocalArtwork(ctx, media.ID, SlotPoster, libraryDir, sidecar); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ImportManualArtwork(ctx, media.ID, SlotPoster, []byte("picked")); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevertManualArtwork(ctx, media.ID, SlotPoster); err != nil {
+		t.Fatal(err)
+	}
+	if got := readSlot(t, svc.PosterPath(media.ID)); got != string(testJPEG) {
+		t.Fatalf("poster after revert = %q, want the sidecar back", got)
+	}
+
+	if err := svc.ImportManualArtwork(ctx, media.ID, SlotBackdrop, []byte("picked")); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevertManualArtwork(ctx, media.ID, SlotBackdrop); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(svc.ArtworkPath(media.ID, SlotBackdrop)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("backdrop after revert stat = %v, want removed", err)
+	}
+	if svc.IsArtworkLocked(media.ID, SlotBackdrop) {
+		t.Fatal("backdrop still locked after revert")
+	}
+}
