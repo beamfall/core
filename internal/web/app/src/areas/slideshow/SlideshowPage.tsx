@@ -218,6 +218,8 @@ function Slideshow() {
   const [sheetOpen, setSheetOpen] = useState(source === null && !screensaver);
   const [items, setItems] = useState<SourceItem[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  // Whether every page of the Source has arrived: an empty first page is not an empty Source.
+  const [loadDone, setLoadDone] = useState(false);
   const [broken, setBroken] = useState<ReadonlySet<string>>(() => new Set());
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -284,6 +286,7 @@ function Slideshow() {
     void reload;
     setItems(null);
     setLoadFailed(false);
+    setLoadDone(false);
     setShown(null);
     if (!sameSource(loadedSource.current, source)) {
       loadedSource.current = source;
@@ -292,9 +295,13 @@ function Slideshow() {
     }
     if (!source) return;
     const controller = new AbortController();
-    fetchSlideshowItems(source, (next) => setItems(next), controller.signal).catch(() => {
-      if (!controller.signal.aborted) setLoadFailed(true);
-    });
+    fetchSlideshowItems(source, (next) => setItems(next), controller.signal)
+      .then(() => {
+        if (!controller.signal.aborted) setLoadDone(true);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadFailed(true);
+      });
     return () => controller.abort();
   }, [source, reload]);
 
@@ -542,12 +549,12 @@ function Slideshow() {
       }
     };
     const options = { capture: true, passive: false } as const;
-    for (const name of ["keydown", "pointerdown", "touchstart", "wheel"]) {
+    for (const name of ["keydown", "pointerdown", "touchstart", "wheel", "click"]) {
       window.addEventListener(name, dismiss, options);
     }
     window.addEventListener("pointermove", move, true);
     return () => {
-      for (const name of ["keydown", "pointerdown", "touchstart", "wheel"]) {
+      for (const name of ["keydown", "pointerdown", "touchstart", "wheel", "click"]) {
         window.removeEventListener(name, dismiss, true);
       }
       window.removeEventListener("pointermove", move, true);
@@ -652,13 +659,14 @@ function Slideshow() {
 
   // The screensaver has nothing to fall back to on the web: a missing, failed or
   // empty Source closes it, and the idle count starts again.
-  const nothingToShow = !source || loadFailed || (!loading && !revalidating && !current);
+  const nothingToShow =
+    !source || loadFailed || (loadDone && !loading && !revalidating && !current);
   useEffect(() => {
     if (screensaver && nothingToShow) close();
   }, [screensaver, nothingToShow, close]);
 
-  // The Source this device last played is what its screensaver plays.
-  const playing = !!source && !!current;
+  // The Source this device last played is what its screensaver plays: one that painted a slide.
+  const playing = !!source && !!shown;
   useEffect(() => {
     if (!screensaver && playing && source) saveLastSlideshowSource(source);
   }, [screensaver, playing, source]);

@@ -67,7 +67,7 @@ export function idleRoute(pathname: string): boolean {
   return !BUSY_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
 
-/** Whether the page is mid-task: a dialog is open or a text field has focus. */
+/** Whether the page is mid-task: a dialog is open, or a text field has focus or unsaved text. */
 export function pageBusy(doc: Document): boolean {
   if (
     doc.querySelector("dialog[open], [role='dialog'], [role='alertdialog'], [aria-modal='true']")
@@ -75,5 +75,16 @@ export function pageBusy(doc: Document): boolean {
     return true;
   }
   const active = doc.activeElement;
-  return active instanceof HTMLElement && !!active.closest(TEXT_FIELDS);
+  if (active instanceof HTMLElement && active.closest(TEXT_FIELDS)) return true;
+  // Typed-in text the viewer has not submitted would be lost when the screensaver
+  // replaces the page, even after focus moves on to the form's button.
+  for (const field of doc.querySelectorAll(TEXT_FIELDS)) {
+    if (
+      (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) &&
+      field.value !== field.defaultValue
+    ) {
+      return true;
+    }
+  }
+  return false;
 }

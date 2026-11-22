@@ -333,6 +333,10 @@ describe("SlideshowPage", () => {
     expect(lastSlideshowSource()).toBeNull();
     cleanup();
     renderAt("/slideshow?source=favorites&library=lib");
+    // A Source counts as played once a slide has painted, not when it merely loads.
+    const slide = await screen.findByRole("img", { name: "Title one" });
+    expect(lastSlideshowSource()).toBeNull();
+    fireEvent.load(slide);
     await waitFor(() =>
       expect(lastSlideshowSource()).toEqual({ kind: "favorites", libraryID: "lib" }),
     );
@@ -358,11 +362,14 @@ describe("screensaver helpers", () => {
     }
   });
 
-  it("treats an open dialog or a focused text field as busy, not a focused checkbox", () => {
+  it("treats an open dialog, a focused text field or unsaved text as busy, not a focused checkbox", () => {
     document.body.innerHTML = '<input id="box" type="checkbox"><input id="text">';
     (document.getElementById("box") as HTMLElement).focus();
     expect(pageBusy(document)).toBe(false);
     (document.getElementById("text") as HTMLElement).focus();
+    expect(pageBusy(document)).toBe(true);
+    (document.getElementById("box") as HTMLElement).focus();
+    (document.getElementById("text") as HTMLInputElement).value = "Unsaved name";
     expect(pageBusy(document)).toBe(true);
     document.body.innerHTML = '<div role="dialog"></div>';
     expect(pageBusy(document)).toBe(true);
