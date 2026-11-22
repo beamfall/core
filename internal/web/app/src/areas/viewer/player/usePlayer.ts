@@ -169,56 +169,79 @@ const REPORT_INTERVAL_MS = 15000;
 /** The song as recorded: no pitch shift, the recorded tempo. */
 export const DEFAULT_ADJUSTMENT: PlaybackAdjustment = { pitchShiftSemitones: 0, tempo: 1 };
 const REPORT_PLAYBACK_MUTATION =
-  "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!, $paused: Boolean) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS, paused: $paused) { mediaID } }";
+  "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!, $paused: Boolean, $playbackID: String) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS, paused: $paused, playbackID: $playbackID) { mediaID } }";
 let lastPlaybackEventTimeMS = 0;
 
+/** A random ID for one play of an item (CORE-1703): play history groups the
+ *  play's reports by it. getRandomValues, unlike randomUUID, works on a server
+ *  reached over plain HTTP. */
+function newPlaybackID(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+interface QueuedProgress {
+  progress: ReportPlaybackVars;
+  // Sent by the periodic timer rather than a play, pause, seek or end.
+  heartbeat: boolean;
+}
+
 interface ProgressQueue {
+  playbackID: string;
   active: boolean;
   finalQueued: boolean;
   // Set when the player moved on (track change, unmount) with a finish report
-  // still owed: no new reports are accepted, but the queued final one is sent.
+  // still owed: no new reports are accepted, but the queued ones are sent, in
+  // order, the finish last.
   retiring: boolean;
   onDrained: (() => void) | null;
   inFlight: { controller: AbortController; progress: ReportPlaybackVars } | null;
-  // A report that paused playback, held apart while another is in flight so
-  // a later report (a seek made while paused) cannot replace it: the server
-  // must see the pause to credit nothing after it (CORE-1703).
-  pausing: ReportPlaybackVars | null;
-  pending: ReportPlaybackVars | null;
+  // Reports waiting for the one in flight, sent one at a time in the order
+  // they were made: play history reads each step between them, so none is
+  // dropped or reordered (CORE-1703).
+  queued: QueuedProgress[];
 }
 
-function createProgressQueue(): ProgressQueue {
+function createProgressQueue(playbackID: string): ProgressQueue {
   return {
+    playbackID,
     active: true,
     finalQueued: false,
     retiring: false,
     onDrained: null,
     inFlight: null,
-    pausing: null,
-    pending: null,
+    queued: [],
   };
 }
 
-function enqueueProgress(queue: ProgressQueue, progress: ReportPlaybackVars): void {
+function enqueueProgress(
+  queue: ProgressQueue,
+  progress: ReportPlaybackVars,
+  heartbeat: boolean,
+): void {
   if (!queue.active || queue.retiring) return;
   if (queue.finalQueued && !progress.finished) return;
   if (progress.finished) queue.finalQueued = true;
-  sendProgress(queue, progress);
+  if (!queue.inFlight) {
+    sendProgress(queue, progress);
+    return;
+  }
+  // The one merge allowed: a heartbeat replaces the heartbeat queued just
+  // before it, in the same state, since the later one says all it did.
+  const last = queue.queued.at(-1);
+  if (
+    heartbeat &&
+    last?.heartbeat &&
+    last.progress.paused === progress.paused &&
+    last.progress.playbackID === progress.playbackID
+  ) {
+    last.progress = progress;
+    return;
+  }
+  queue.queued.push({ progress, heartbeat });
 }
 
 function sendProgress(queue: ProgressQueue, progress: ReportPlaybackVars): void {
-  if (queue.inFlight) {
-    if (queue.inFlight.progress.finished) return;
-    const last = queue.pending ?? queue.pausing ?? queue.inFlight.progress;
-    if (progress.paused && !last.paused && !progress.finished && !queue.pausing) {
-      queue.pausing = progress;
-      queue.pending = null;
-    } else {
-      queue.pending = progress;
-    }
-    return;
-  }
-
   const controller = new AbortController();
   queue.inFlight = { controller, progress };
   void graphql<{ reportPlayback: { mediaID: string } }>(
@@ -234,11 +257,9 @@ function completeProgress(queue: ProgressQueue, controller: AbortController): vo
   if (queue.inFlight?.controller !== controller) return;
   queue.inFlight = null;
   if (!queue.active) return;
-  const next = queue.pausing ?? queue.pending;
-  if (queue.pausing) queue.pausing = null;
-  else queue.pending = null;
+  const next = queue.queued.shift();
   if (next) {
-    sendProgress(queue, next);
+    sendProgress(queue, next.progress);
     return;
   }
   if (queue.retiring) stopProgressQueue(queue);
@@ -246,8 +267,7 @@ function completeProgress(queue: ProgressQueue, controller: AbortController): vo
 
 function stopProgressQueue(queue: ProgressQueue): void {
   queue.active = false;
-  queue.pausing = null;
-  queue.pending = null;
+  queue.queued = [];
   queue.inFlight?.controller.abort();
   queue.inFlight = null;
   const onDrained = queue.onDrained;
@@ -255,30 +275,22 @@ function stopProgressQueue(queue: ProgressQueue): void {
   onDrained?.();
 }
 
-// retireProgressQueue ends a queue when playback moves to another item. A
-// finish report already queued (an auto-advance at `ended`) is still delivered,
-// so a fully played track counts as finished; anything else is cancelled. An
-// identity change still stops the queue outright (CORE-1143).
+// retireProgressQueue ends a queue when playback moves to another item. With
+// a finish report owed (an auto-advance at `ended`), every queued report is
+// still delivered in order and the finish last, so a fully played track
+// counts as finished; otherwise everything is cancelled. An identity change
+// still stops the queue outright (CORE-1143).
 function retireProgressQueue(queue: ProgressQueue, onDrained: () => void): void {
   queue.onDrained = onDrained;
+  // Nothing is accepted after the finish, so it is still owed while any
+  // report is in flight or queued.
   const finalOwed =
-    queue.active &&
-    queue.finalQueued &&
-    (queue.inFlight?.progress.finished === true || queue.pending?.finished === true);
+    queue.active && queue.finalQueued && (queue.inFlight !== null || queue.queued.length > 0);
   if (!finalOwed) {
     stopProgressQueue(queue);
     return;
   }
   queue.retiring = true;
-  // Drop the in-flight periodic report so the final one goes out now.
-  if (queue.inFlight && !queue.inFlight.progress.finished) {
-    const final = queue.pending;
-    queue.pausing = null;
-    queue.pending = null;
-    queue.inFlight.controller.abort();
-    queue.inFlight = null;
-    if (final) sendProgress(queue, final);
-  }
 }
 
 function nextPlaybackEventTimeMS(): number {
@@ -481,6 +493,8 @@ export function usePlayer(
   const hlsRef = useRef<Hls | null>(null);
   const progressTimerRef = useRef<number | null>(null);
   const progressQueueRef = useRef<ProgressQueue | null>(null);
+  // The playback ID of the play under way and the item it is for.
+  const playbackIDRef = useRef<{ mediaID: string; id: string } | null>(null);
   const [state, setState] = useState<PlayerState>(emptyState);
   // Bumped by retry() so the load effect re-runs for the same mediaID after a
   // non-terminal failure.
@@ -587,7 +601,7 @@ export function usePlayer(
   }, []);
 
   const reportProgress = useCallback(
-    (finished: boolean) => {
+    (finished: boolean, heartbeat = false) => {
       const video = videoRef.current;
       if (!video || !mediaID || !video.duration) return;
       notePresentedPosition(video);
@@ -603,14 +617,19 @@ export function usePlayer(
         stateRef.current.info?.timeline?.durationSeconds,
         video.duration * songScale,
       );
-      enqueueProgress(queue, {
-        mediaID,
-        positionSeconds: Math.floor(position * songScale),
-        durationSeconds: Math.floor(durationSeconds),
-        finished,
-        eventTimeMS,
-        paused: video.paused,
-      });
+      enqueueProgress(
+        queue,
+        {
+          mediaID,
+          positionSeconds: Math.floor(position * songScale),
+          durationSeconds: Math.floor(durationSeconds),
+          finished,
+          eventTimeMS,
+          paused: video.paused,
+          playbackID: queue.playbackID,
+        },
+        heartbeat,
+      );
     },
     [mediaID, notePresentedPosition],
   );
@@ -670,7 +689,12 @@ export function usePlayer(
     // ref before this effect's cleanup runs, so cleanup cannot re-read it.
     let boundVideo: HTMLVideoElement | null = null;
     let recoveryTimer: number | null = null;
-    const progressQueue = createProgressQueue();
+    // A reload of this item (Try again, a quality or key change) carries on
+    // the same play; anything else starts a new one, with a new playback ID.
+    if (retryFromRef.current?.mediaID !== mediaID || playbackIDRef.current?.mediaID !== mediaID) {
+      playbackIDRef.current = { mediaID, id: newPlaybackID() };
+    }
+    const progressQueue = createProgressQueue(playbackIDRef.current.id);
     const identitySignal = getIdentityEpochSignal();
     const stopForIdentityChange = () => stopProgressQueue(progressQueue);
     progressQueueRef.current = progressQueue;
@@ -1386,7 +1410,7 @@ export function usePlayer(
       // Periodic progress beacon while playing.
       progressTimerRef.current = window.setInterval(() => {
         if (videoRef.current && !videoRef.current.paused) {
-          reportProgress(false);
+          reportProgress(false, true);
         }
       }, REPORT_INTERVAL_MS);
     }

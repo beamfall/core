@@ -15,16 +15,19 @@ server and never sent anywhere.
 - Each playback progress event records the reporting device and the play method the server chose
   for that session (direct, remux or transcode) when one is held. The event payload is JSON, so no
   migration is needed. Events written before this change have neither and read as unknown.
-- A play is a run for one profile, item and stream, where the stream key is a one-way hash of the
-  authenticated session (reports carry no stream id of their own; the session is what the held
-  delivery decision and stream tokens are keyed by). Concurrent devices are separate plays and
-  moving between streams starts a new play, every time. Reports are ordered by server receipt. A
-  play's method is the method that covered most of its watched time (each step counts for the
-  report that ends it), read from the session's held decision on receipt, never from client
-  timestamps. Events written before receipt times keep the CORE-1307 rule exactly.
-- Watched time is the position advance between consecutive reports, capped at the server receipt
-  gap and zero after a report that said paused. The web player now sends an optional `paused` flag
-  and reports on resume; clients that do not send it read as playing.
+- A play is the reports sharing one client-generated playback ID, ordered by server receipt. A
+  client makes a new random ID each time its player starts an item and keeps it across pauses,
+  seeks and reloads, and sends one ID's reports in order, one at a time (only a heartbeat may
+  replace the heartbeat queued just before it). Concurrent devices and hand-offs are separate
+  plays because their IDs differ. A play's method is the method that covered most of its watched
+  time (each step counts for the report that ends it), read from the session's held decision on
+  receipt. Reports without a playback ID (older clients, events written before this change) are
+  grouped and credited by the CORE-1307 rule exactly.
+- Within a play, watched time is the position advance between consecutive reports, capped at the
+  time between them (the client clock difference when it ran forward, else the receipt
+  difference), and zero after a report that said paused. The web player now sends an optional
+  `paused` flag and `playbackID`, reports on resume, and queues reports in strict order; clients
+  that do not say paused read as playing. Apple and Android send the playback ID in follow-ups.
 - `playHistory` gains `mediaID`, `deviceID` and `playMethod` filters, and each play carries the
   device ID, device name, device client surface and play method.
 - `playStats` accepts a `since`/`until` range (up to 366 days) as well as a 7/30/90-day window,

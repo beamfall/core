@@ -45,13 +45,13 @@ type PlaybackProgress struct {
 	// play history (CORE-1703). Empty when unknown.
 	DeviceID   DeviceID
 	PlayMethod string
-	// SessionID and Paused are write-only too. SessionID is the reporting
-	// auth session, which identifies one stream end to end; the event keeps
-	// only a key derived from it (playStreamKey), never the session ID itself.
-	// Paused says whether the player was paused when it reported; nil when the
-	// client did not say.
-	SessionID SessionID
-	Paused    *bool
+	// PlaybackID and Paused are write-only too. PlaybackID is the client's
+	// random ID for one play, new each time a player starts an item and kept
+	// across pauses and seeks; play history groups a play by it. Empty when
+	// the client sent none. Paused says whether the player was paused when it
+	// reported; nil when the client did not say.
+	PlaybackID string
+	Paused     *bool
 	// Provenance is the ADR-0009 §7 import discriminator: "" native,
 	// a shape-named source value for imported engagement. Write-only on input
 	// is via UpsertPlaybackProgressWithProvenance; this field is the read-back.
@@ -265,7 +265,7 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 		// Every native report records the client's own position; an
 		// import has no playback to measure.
 		ReportedPositionSeconds: optionalInt(prov.Source == "", progress.PositionSeconds),
-		StreamKey:               playStreamKey(progress.SessionID),
+		PlaybackID:              progress.PlaybackID,
 		Paused:                  progress.Paused,
 	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)

@@ -414,6 +414,8 @@ export interface ReportPlaybackVars {
   eventTimeMS: number;
   /** Whether the player was paused: play history credits no time after a paused report. */
   paused?: boolean;
+  /** The client's random ID for this play, kept across pauses and seeks. */
+  playbackID?: string;
 }
 
 // --- Viewer: My Data / Privacy panel (internal/graph/mydata.go) -----------

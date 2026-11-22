@@ -3,7 +3,7 @@
 ### Requirement: Play history is listed and filterable
 
 The admin field `playHistory` SHALL list plays newest first, where a play is a run of playback
-progress events for one profile, item and stream with no gap longer than 30 minutes, and SHALL
+progress events for one profile, item and playback ID with no gap longer than 30 minutes, and SHALL
 accept optional `profileID`, `libraryID`, `mediaID`, `deviceID`, `playMethod`, `since` and `until`
 filters and a bounded `limit`. Each play SHALL carry the profile, the item title and library when
 the operator may see the item, the device ID, name and client surface when known, the play method
@@ -56,43 +56,54 @@ than 366 days, or neither a window nor `since` SHALL be refused.
 
 ### Requirement: Progress reports record the device and play method
 
-A playback progress report SHALL record the reporting session's device, a stream key derived
-one-way from the authenticated session (never the session credential itself), whether the player
-said it was paused when it says so, and, when the server holds a delivery decision for that
-session and item, its play method.
+A playback progress report SHALL record the reporting session's device, the client's playback ID
+when it sends one, whether the player said it was paused when it says so, and, when the server
+holds a delivery decision for that session and item, its play method. A playback ID longer than 64
+characters SHALL be refused.
 
 #### Scenario: Transcoded session
 
 - **WHEN** a player whose session the server is transcoding reports progress
 - **THEN** the resulting play lists that device and the method `transcode`
 
-### Requirement: Plays are split per stream
+### Requirement: Clients name each play with a playback ID
 
-Reports from different streams SHALL never join one play, and reports without a stream key SHALL be
-split per device. A stream's report SHALL start a new play when the stream was silent longer than a
-minute and the previous report for that profile and item came from another stream. Streams that
-report within a minute of each other SHALL stay separate plays without splitting each other.
+A client SHALL send a new random playback ID each time its player starts an item, keep it across
+pauses, seeks and reloads of the same item, and send the reports for one playback ID one at a time
+in the order it made them, never dropping or reordering one. Only a periodic heartbeat MAY replace
+the heartbeat queued just before it in the same state.
+
+#### Scenario: Pause, resume and heartbeat behind a stalled report
+
+- **WHEN** a playing report stalls and the viewer pauses, resumes and a heartbeat follows
+- **THEN** all four reports are sent in that order, with one playback ID
+
+#### Scenario: Auto-advance with reports queued
+
+- **WHEN** the player moves to the next item while reports and the finish are queued
+- **THEN** the queued reports are sent in order and the finish last
+
+### Requirement: A play is the reports sharing a playback ID
+
+Reports with the same playback ID SHALL form one play, ordered by server receipt and split only by
+silence longer than 30 minutes. Reports with different playback IDs SHALL never join one play.
+Reports without a playback ID SHALL be grouped and credited exactly as before this change.
 
 #### Scenario: Concurrent devices
 
 - **WHEN** a profile plays one item on two devices at the same time and their reports interleave
 - **THEN** two plays are listed, one per device, each with its own watched time
 
-#### Scenario: Repeated hand-offs
+#### Scenario: Short hand-off
 
-- **WHEN** a profile plays an item for a minute each on a TV, a phone, the TV and the phone, each
-  within 30 minutes
-- **THEN** four plays are listed, each with 60 watched seconds
+- **WHEN** a TV plays 60 seconds, a phone 45 and the TV resumes 50 seconds after its last report
+  for 60 more, each with its own playback ID
+- **THEN** three plays are listed, totalling 165 watched seconds
 
-### Requirement: Reports are ordered by receipt
+#### Scenario: Reports without a playback ID
 
-Reports SHALL be ordered by the time the server received them, never by the client's clock. Events
-written before receipt times SHALL keep the order of their observed time.
-
-#### Scenario: Client clock runs backward
-
-- **WHEN** a client's clock jumps backward between two minutes of playing reports
-- **THEN** the play still gains 120 watched seconds
+- **WHEN** an older client reports a minute each on a TV, a phone, the TV and the phone
+- **THEN** one play of 240 watched seconds is listed, as before this change
 
 ### Requirement: A play's method covers most of its watched time
 
@@ -100,7 +111,7 @@ Each stretch of watched time SHALL count toward the method on the report that en
 play's method SHALL be the method with the most watched time, ties going to the most demanding of
 transcode, remux and direct. A method with no watched time SHALL never win while another has some.
 A play with no watched time SHALL take the most demanding method recorded, or `unknown` when none
-is. The method SHALL never depend on the client's clock.
+is.
 
 #### Scenario: Delayed report or slow client clock
 
@@ -115,28 +126,35 @@ is. The method SHALL never depend on the client's clock.
 
 ### Requirement: Watched time counts playing time only
 
-A play's watched seconds SHALL be the sum, over each consecutive pair of its stream's reports, of
-the position advance capped at the time between the server receiving the two reports, counting
-nothing when the advance is negative or the earlier report said the player was paused. A report
-that does not say whether the player was paused SHALL count as playing. Events written before
-receipt times SHALL keep the earlier rule unchanged: no credit across a gap of more than a minute.
+Within a play, each step between consecutive reports SHALL credit the position advance capped at
+the time between them, and nothing when the earlier report said paused or the advance is negative.
+The time is the client's clock difference when both reports carry one and it did not run backward,
+else the receipt difference. A report that does not say whether it was paused SHALL count as
+playing. No cap of a minute applies.
 
 #### Scenario: Paused seek
 
 - **WHEN** a player reports paused, seeks 45 seconds ahead while paused and resumes
 - **THEN** the seek adds no watched time
 
-#### Scenario: Pause report delayed behind a stalled one
+#### Scenario: Delayed report
 
-- **WHEN** a player's pause report is queued behind a stalled report and the user then seeks
-- **THEN** the pause report is still sent before the seek report and the seek adds no watched time
+- **WHEN** a TV's reports go from position 60 to 135 across a 75-second network stall
+- **THEN** the TV's play still gains 180 watched seconds over 180 seconds of playing
 
-#### Scenario: Coalesced reports
+#### Scenario: Reports queued behind a stalled one
 
-- **WHEN** a player reports position 100 and, five minutes of playing later, position 400
-- **THEN** the play gains 300 watched seconds
+- **WHEN** a pause, a resume and a heartbeat 14 seconds later queue behind a stalled report and
+  arrive together
+- **THEN** the play gains the 14 seconds; a paused seek to the end, play and finish queued the same
+  way gain only the last second
+
+#### Scenario: Client clock runs backward
+
+- **WHEN** a client's clock jumps backward between two minutes of playing reports
+- **THEN** the play still gains 120 watched seconds
 
 #### Scenario: Upgraded history
 
-- **WHEN** events written before receipt times show a 20-minute pause between two reports
+- **WHEN** reports without a playback ID show a 20-minute pause between two reports
 - **THEN** the pause adds no watched time, as before the upgrade

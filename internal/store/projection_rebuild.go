@@ -45,12 +45,11 @@ type playbackProjectionEvent struct {
 	// when the stored position is zeroed (watched, or not resumable), so play
 	// history can tell a paused heartbeat from playback (CORE-1703).
 	ReportedPositionSeconds *int `json:"reportedPositionSeconds,omitempty"`
-	// StreamKey names the playback stream (the reporting auth session, hashed)
-	// so play history splits concurrent streams apart, and Paused is whether
-	// the player was paused when it reported (CORE-1703). Both absent on older
-	// events and imports; Paused also when the client did not say.
-	StreamKey string `json:"streamKey,omitempty"`
-	Paused    *bool  `json:"paused,omitempty"`
+	// PlaybackID is the client's ID for the play the report belongs to, and
+	// Paused is whether the player was paused when it reported (CORE-1703).
+	// Both absent on older events, imports and clients that do not send them.
+	PlaybackID string `json:"playbackId,omitempty"`
+	Paused     *bool  `json:"paused,omitempty"`
 }
 
 func appendPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {

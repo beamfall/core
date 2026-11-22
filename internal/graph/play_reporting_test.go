@@ -161,14 +161,15 @@ func TestPlayReportingKeepsTheMethodWhateverTheClientClock(t *testing.T) {
 }
 
 // feature:play-history
-func TestReportPlaybackRecordsPausedAndStream(t *testing.T) {
+func TestReportPlaybackRecordsPausedAndPlaybackID(t *testing.T) {
 	// The web player says whether it was paused, so play history credits
-	// nothing after a paused report; each report names its stream by a key
-	// derived from the session, never the session ID (CORE-1703 r1).
+	// nothing after a paused report, and names the play each report belongs
+	// to by its playback ID (CORE-1703 r3). A report without one records
+	// none.
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)
-	report := `{"query":"mutation R($position: Int!, $paused: Boolean) { reportPlayback(mediaID: \"media-alpha\", positionSeconds: $position, durationSeconds: 3600, paused: $paused) { mediaID } }","variables":%s}`
-	for _, vars := range []string{`{"position":45,"paused":true}`, `{"position":50}`} {
+	report := `{"query":"mutation R($position: Int!, $paused: Boolean, $playbackID: String) { reportPlayback(mediaID: \"media-alpha\", positionSeconds: $position, durationSeconds: 3600, paused: $paused, playbackID: $playbackID) { mediaID } }","variables":%s}`
+	for _, vars := range []string{`{"position":45,"paused":true,"playbackID":"play-1"}`, `{"position":50}`} {
 		if _, errs := post(t, handler, fmt.Sprintf(report, vars), authorizeViewer); len(errs) != 0 {
 			t.Fatalf("reportPlayback errors = %#v", errs)
 		}
@@ -194,8 +195,11 @@ func TestReportPlaybackRecordsPausedAndStream(t *testing.T) {
 	if len(payloads) != 2 || paused["paused"] != true || playing == nil || playing["paused"] != nil {
 		t.Fatalf("progress payloads = %#v, want paused true at 45, unset at 50", payloads)
 	}
-	stream, _ := playing["streamKey"].(string)
-	if stream == "" || paused["streamKey"] != stream || strings.Contains(fmt.Sprint(payloads), "session-default") {
-		t.Fatalf("progress payloads = %#v, want one derived stream key on both", payloads)
+	if paused["playbackId"] != "play-1" || playing["playbackId"] != nil {
+		t.Fatalf("progress payloads = %#v, want playback ID play-1 at 45, none at 50", payloads)
+	}
+	long := fmt.Sprintf(`{"position":55,"playbackID":%q}`, strings.Repeat("x", 65))
+	if _, errs := post(t, handler, fmt.Sprintf(report, long), authorizeViewer); len(errs) == 0 || errs[0].Message != "playbackID is too long" {
+		t.Fatalf("long playbackID errors = %#v, want playbackID is too long", errs)
 	}
 }
