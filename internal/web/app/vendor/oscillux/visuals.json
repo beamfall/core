@@ -5,10 +5,10 @@
       "shaders/manifest.json": "df873883811271f466df229936f24ad589e041ef5d4b96f9c63778cc793c4973",
       "shaders/originals/manifest.json": "56e6459e66aaea416f62338c63e03f52c3723f2a67909a4b7ce46c79dd2c067a"
     },
-    "rev": "646b841912f268faedd0809dc0b22e27bb710c1d",
-    "release": "v0.2.15",
+    "rev": "46b9df6eced8d8aa76520e53d7816ef9d04d7f74",
+    "release": "v0.2.16",
     "license": "AGPL-3.0-only",
-    "note": "The release set the v0.2.15 shader legs ship (tools/shader/manifest.mjs loadReleaseSet at the pinned rev), in catalogOrder. A visual a rebuilt original overrides takes the original's header, palette, trailDecay and params and its post as the release set resolves it, and keeps the catalog's name, tier and calm flag; the paths map gives each manifest's SHA-256. Data only: the shader bytes are in glsl300/."
+    "note": "The release set the v0.2.16 shader legs ship (tools/shader/manifest.mjs loadReleaseSet at the pinned rev), in catalogOrder. A visual a rebuilt original overrides takes the original's header, palette, trailDecay and params and its post as the release set resolves it, and keeps the catalog's name, tier and calm flag; the paths map gives each manifest's SHA-256. Data only: the shader bytes are in glsl300/."
   },
   "visuals": [
     {

@@ -345,13 +345,13 @@ export class CurveConfig {
      */
     phase: number;
     /**
-     * r" Envelope release start, curve units; 0 = never.
-     */
-    releaseAt: number;
-    /**
      * r" Envelope fall, curve units.
      */
     release: number;
+    /**
+     * r" Envelope release start, curve units; 0 = never.
+     */
+    releaseAt: number;
     /**
      * r" A `CurveShape`.
      */

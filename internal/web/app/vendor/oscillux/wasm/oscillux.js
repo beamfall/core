@@ -767,19 +767,19 @@ export class CurveConfig {
         return ret;
     }
     /**
-     * r" Envelope release start, curve units; 0 = never.
-     * @returns {number}
-     */
-    get releaseAt() {
-        const ret = wasm.curveconfig_release_at(this.__wbg_ptr);
-        return ret;
-    }
-    /**
      * r" Envelope fall, curve units.
      * @returns {number}
      */
     get release() {
         const ret = wasm.curveconfig_release(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * r" Envelope release start, curve units; 0 = never.
+     * @returns {number}
+     */
+    get releaseAt() {
+        const ret = wasm.curveconfig_release_at(this.__wbg_ptr);
         return ret;
     }
     /**
@@ -845,14 +845,14 @@ export class CurveConfig {
     /**
      * @param {number} value
      */
-    set releaseAt(value) {
-        wasm.curveconfig_set_release_at(this.__wbg_ptr, value);
+    set release(value) {
+        wasm.curveconfig_set_release(this.__wbg_ptr, value);
     }
     /**
      * @param {number} value
      */
-    set release(value) {
-        wasm.curveconfig_set_release(this.__wbg_ptr, value);
+    set releaseAt(value) {
+        wasm.curveconfig_set_release_at(this.__wbg_ptr, value);
     }
     /**
      * @param {number} value
@@ -3982,31 +3982,31 @@ function __wbg_get_imports() {
         __wbg___wbindgen_throw_4c88d8bf264fd984: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
-        __wbg_components_29af0f10e4da0f0d: function(arg0) {
+        __wbg_components_e6510407b3bd13c6: function(arg0) {
             const ret = arg0.components;
             return ret;
         },
-        __wbg_get_559fe8cd212adffb: function(arg0, arg1) {
+        __wbg_get_25d9a2bc77b45894: function(arg0, arg1) {
             const ret = arg0[arg1 >>> 0];
             return ret;
         },
-        __wbg_length_a96c87cb8438cda2: function(arg0) {
+        __wbg_length_a3548140f19b811f: function(arg0) {
             const ret = arg0.length;
             return ret;
         },
-        __wbg_offset_2b85b9dbed227924: function(arg0) {
+        __wbg_offset_5d4aa49b28de9ecb: function(arg0) {
             const ret = arg0.offset;
             return ret;
         },
-        __wbg_source_1dc039d3dcbc2b50: function(arg0) {
+        __wbg_source_6faf0cda2b8d9d6c: function(arg0) {
             const ret = arg0.source;
             return ret;
         },
-        __wbg_source_offset_7f6c38f420125324: function(arg0) {
+        __wbg_source_offset_10931e117d3f3cf6: function(arg0) {
             const ret = arg0.sourceOffset;
             return ret;
         },
-        __wbg_stride_9739f9240164536b: function(arg0) {
+        __wbg_stride_764eca0308132438: function(arg0) {
             const ret = arg0.stride;
             return ret;
         },
