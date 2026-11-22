@@ -175,11 +175,7 @@ export type RadioStartResult =
   | { status: "started"; firstMediaID: string; station: RadioStation }
   | { status: "needs-confirm" }
   | { status: "empty"; message: string }
-  /**
-   * A stop, a newer start or an identity change overtook this start. If its
-   * replace landed and only a newer start overtook it, its Station is active,
-   * since the queue holds it, until the newer one lands.
-   */
+  /** A stop, a newer start or an identity change overtook this start. */
   | { status: "cancelled" };
 
 interface RadioStartInput {
@@ -197,8 +193,9 @@ interface RadioStartInput {
  * the result asks for confirmation and nothing changes. The playing Station
  * keeps playing until this one lands, so a retune that needs confirming keeps
  * it. A stop, a newer start or an identity change first cancels this start:
- * it writes nothing. Once its replace has landed, only a stop or an identity
- * change keeps it from becoming active, because the queue now holds it.
+ * it writes nothing. Once the server has answered the replace, the queue is
+ * no longer the old Station's: it ends, and this one starts unless a stop or
+ * an identity change came first.
  */
 export async function startRadio(input: RadioStartInput): Promise<RadioStartResult> {
   const station = { seedKind: input.seedKind, seedID: input.seedID, rules: input.rules ?? {} };
@@ -231,13 +228,14 @@ export async function startRadio(input: RadioStartInput): Promise<RadioStartResu
       if (error instanceof Error && error.message.includes("confirmReplace")) {
         return overtaken() ? { status: "cancelled" } : { status: "needs-confirm" };
       }
+      // The replace may have landed without its reply; fail closed.
+      if (!stopped()) setActive(null);
       throw error;
     }
     if (stopped()) return { status: "cancelled" };
     if (!queued.length) {
-      return overtaken()
-        ? { status: "cancelled" }
-        : { status: "empty", message: preview.explanation };
+      setActive(null);
+      return { status: "empty", message: preview.explanation };
     }
     const why = new Map(preview.candidates.map((c) => [c.mediaID, c.explanation]));
     const reasons = Object.fromEntries(queued.map(({ id }) => [id, why.get(id) ?? ""]));
@@ -247,9 +245,9 @@ export async function startRadio(input: RadioStartInput): Promise<RadioStartResu
       ruleTitles: input.ruleTitles,
       reasons,
     };
-    // Inside the write turn, so the old Station's next add sees it ended.
+    // Inside the write turn, so the old Station's next add sees it ended. A
+    // newer start still waiting does not undo this: the queue holds this one.
     setActive(started, epoch);
-    if (overtaken()) return { status: "cancelled" };
     return { status: "started", firstMediaID: queued[0].id, station: started };
   });
 }

@@ -289,7 +289,7 @@ describe("radio", () => {
     expect(activeRadio("p1")?.seedID).toBe("m2");
   });
 
-  // Review round 5, P2: a retune whose replace landed is active even when a
+  // Review round 5-6, P2: a retune whose replace landed starts even when a
   // newer start overtook it, so a declined newer start leaves the queue's Station.
   it("activates a landed retune that a newer start overtook", async () => {
     await started("a");
@@ -314,9 +314,30 @@ describe("radio", () => {
 
     releaseStart({ stationStart: queued("b") });
 
-    expect(await retune).toEqual({ status: "cancelled" });
+    expect(await retune).toMatchObject({ status: "started", firstMediaID: "b" });
     expect(await newer).toEqual({ status: "needs-confirm" });
     expect(activeRadio("p1")?.seedID).toBe("m2");
+  });
+
+  // Review round 6, P2: once the replace was sent and answered with nothing or
+  // an error, the queue may no longer be the old Station's, so it ends.
+  it("ends the playing Station when a retune's replace returns empty or fails", async () => {
+    await started("a");
+    vi.mocked(graphql)
+      .mockResolvedValueOnce({ stationGenerate: { candidates: candidates("x"), explanation: "" } })
+      .mockResolvedValueOnce({ stationStart: [] });
+    const empty = await startRadio({ profileID: "p1", seedKind: "media", seedID: "m2" });
+    expect(empty).toMatchObject({ status: "empty" });
+    expect(activeRadio("p1")).toBeNull();
+
+    await started("a");
+    vi.mocked(graphql)
+      .mockResolvedValueOnce({ stationGenerate: { candidates: candidates("x"), explanation: "" } })
+      .mockRejectedValueOnce(new Error("timeout"));
+    await expect(
+      startRadio({ profileID: "p1", seedKind: "media", seedID: "m2", confirmReplace: true }),
+    ).rejects.toThrow("timeout");
+    expect(activeRadio("p1")).toBeNull();
   });
 
   // Review round 2, P2: what earlier builds kept in sessionStorage is cleared.
