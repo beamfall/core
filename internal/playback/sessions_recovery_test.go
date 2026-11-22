@@ -10,11 +10,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/governor"
+	"golang.org/x/sys/unix"
 )
 
 // mp4Box encodes one ISO-BMFF box with a 32-bit size.
@@ -424,6 +427,11 @@ func TestStoppedEncoderWaiterNeverStopsANewerSeek(t *testing.T) {
 func TestStoppedInitWaiterStartsItsOwnWhenASeekEndsWithoutInit(t *testing.T) {
 	t.Parallel()
 	const window = 3 * time.Second
+	fifo := filepath.Join(t.TempDir(), "release-seg20")
+	if err := unix.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatalf("mkfifo: %v", err)
+	}
+
 	transcoder := &scriptedTranscoder{cmds: make(chan *exec.Cmd, 4)}
 	transcoder.start = func(n int, dir string, startSegment int) []string {
 		switch n {
@@ -431,7 +439,7 @@ func TestStoppedInitWaiterStartsItsOwnWhenASeekEndsWithoutInit(t *testing.T) {
 			return []string{"sleep", "60"} // stopped before it writes anything
 		case 1:
 			writeArtifact(t, dir, fmt.Sprintf("seg%05d.m4s", startSegment), mediaSegment())
-			return []string{"true"} // ends without writing init.mp4
+			return []string{"cat", fifo} // held alive until init attaches, then ends without init.mp4
 		default:
 			writeArtifact(t, dir, "init.mp4", []byte("init"))
 			return []string{"sleep", "60"}
@@ -452,6 +460,36 @@ func TestStoppedInitWaiterStartsItsOwnWhenASeekEndsWithoutInit(t *testing.T) {
 	if _, err := filePath720(sessions, key, "720p/seg00020.m4s"); err != nil {
 		t.Fatalf("seg20: %v", err)
 	}
+	// Hold the segment-20 encoder alive until the init.mp4 waiter has observed
+	// it in followRung and attached to its encoderRun; otherwise a fast reap
+	// would let followRung take the idle path without testing live-run
+	// classification.
+	deadline := time.Now().Add(window)
+	for {
+		sessions.mu.Lock()
+		h := sessions.sessions[key]
+		attached := h != nil && h.proc != nil && h.baseSegment == 20 && h.run != nil && h.run.waiting.Load() > 0
+		sessions.mu.Unlock()
+		if attached {
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("init.mp4 finished before the segment-20 encoder exited: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("init.mp4 waiter never attached to the segment-20 encoder")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	releaseSeg20, err := os.OpenFile(fifo, os.O_WRONLY, 0) // #nosec G304 -- fifo is beneath a test-owned temporary directory.
+	if err != nil {
+		t.Fatalf("open fifo writer: %v", err)
+	}
+	if err := releaseSeg20.Close(); err != nil {
+		t.Fatalf("release seg20 encoder: %v", err)
+	}
 	if err := <-done; err != nil {
 		t.Fatalf("init.mp4 after its encoder was replaced: %v", err)
 	}
@@ -461,7 +499,60 @@ func TestStoppedInitWaiterStartsItsOwnWhenASeekEndsWithoutInit(t *testing.T) {
 	transcoder.mu.Lock()
 	starts := append([]int(nil), transcoder.starts...)
 	transcoder.mu.Unlock()
-	if len(starts) != 3 || starts[1] != 20 {
-		t.Fatalf("starts = %v, want [0 20 x]", starts)
+	if !slices.Equal(starts, []int{0, 20, 0}) {
+		t.Fatalf("starts = %v, want [0 20 0]", starts)
+	}
+}
+
+// TestEnsureRungFollowDoesNotReplaceLiveEncoder covers the followRung gap in
+// CORE-1256: if another request starts a live encoder between followRung's
+// lock release and ensureRung's lock acquisition, ensureRung(..., true) must
+// return errFollowLive without starting or replacing the live encoder.
+func TestEnsureRungFollowDoesNotReplaceLiveEncoder(t *testing.T) {
+	t.Parallel()
+	g := governor.New()
+	transcoder := &fakeTranscoder{holdChild: true}
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
+	sessions.SetGovernor(g)
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-follow-live", MediaID: "media-follow-live"}
+
+	// Start a live encoder at segment 20 so segment 0 lies outside its window
+	// and a non-follow ensureRung call would replace it.
+	if _, err := filePath720(sessions, key, "720p/seg00020.m4s"); err != nil {
+		t.Fatalf("seg20 start: %v", err)
+	}
+	session := registeredSession(t, sessions, key)
+	rung, ok := session.rung("720p")
+	if !ok {
+		t.Fatal("720p rung missing from session ladder")
+	}
+	sessions.mu.Lock()
+	liveProc := session.proc
+	liveRun := session.run
+	sessions.mu.Unlock()
+	if liveProc == nil || liveRun == nil {
+		t.Fatal("expected a live encoder after seg20 start")
+	}
+	started := transcoder.startCount()
+
+	run, err := sessions.ensureRung(context.Background(), key, session, rung, 0, filepath.Join(session.dir, rung.ID, "seg00000.m4s"), true)
+	if !errors.Is(err, errFollowLive) {
+		t.Fatalf("ensureRung err = %v, want errFollowLive", err)
+	}
+	if run != nil {
+		t.Fatalf("ensureRung run = %v, want nil", run)
+	}
+	if got := transcoder.startCount(); got != started {
+		t.Fatalf("transcode starts = %d, want %d (follower replaced a live encoder)", got, started)
+	}
+	sessions.mu.Lock()
+	sameLive := session.proc == liveProc && session.run == liveRun && session.baseSegment == 20
+	sessions.mu.Unlock()
+	if !sameLive {
+		t.Fatal("follower disturbed the session's live encoder")
+	}
+	if got := g.ActiveTranscodes(); got != 1 {
+		t.Fatalf("ActiveTranscodes = %d, want 1", got)
 	}
 }
