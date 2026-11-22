@@ -464,10 +464,12 @@ func TestAppWiresRoutesAndSurfaces(t *testing.T) {
 	// the API reference and its OpenAPI document (CORE-1714) and the six
 	// device pairing-request routes (CORE-0316) and their cancel route
 	// (CORE-2070), the GPL FFmpeg source route (CORE-2497) and the three
-	// profile picture routes (CORE-1240).
+	// profile picture routes (CORE-1240), and the three online subtitle
+	// search and download routes (CORE-1690), and the five watch party routes
+	// (CORE-1662).
 	// This constant is rebase-hidden coupling: git keeps it as common context,
 	// so every lane that adds a route must bump it explicitly.
-	if got, want := len(beamfall.Routes()), 73; got != want {
+	if got, want := len(beamfall.Routes()), 81; got != want {
 		t.Fatalf("len(Routes) = %d, want %d", got, want)
 	}
 	if got := len(beamfall.Surfaces().All()); got < 5 {

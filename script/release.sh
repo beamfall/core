@@ -5,8 +5,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="${ROOT}/script/dist"
 VERSION="${VERSION:-$(git -C "${ROOT}" describe --tags --always --dirty)}"
 CHANNEL="${CHANNEL:-stable}"
-BUILD_DATE="${BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 COMMIT="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
+# Stamp the binary and source offer with the same reproducible UTC date: the
+# commit's, or now outside a checkout (the source offer then refuses anyway).
+build_epoch="${SOURCE_DATE_EPOCH-$(git -C "${ROOT}" show -s --format=%ct "${COMMIT:-HEAD}" 2>/dev/null || date -u +%s)}"
+BUILD_DATE="$(python3 -c 'import sys; from datetime import datetime, timezone; print(datetime.fromtimestamp(int(sys.argv[1]), timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"))' "${build_epoch}")"
 INVOCATION_ID="${INVOCATION_ID:-}"
 if [ -z "${INVOCATION_ID}" ] && [ -n "${GITHUB_RUN_ID:-}" ]; then
   INVOCATION_ID="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-beamfall/core}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT:-1}"
@@ -93,7 +96,7 @@ for target in "${targets[@]}"; do
   # unset, the build ships none and owners register their own.
   CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
     go build -trimpath \
-      -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${VERSION} -X github.com/beamfall/core/internal/capabilities.SourceOfferURL=${offer_url}${first_party_ldflag} -X github.com/beamfall/core/internal/app.BundledCredentials=${BEAMFALL_BUNDLED_CREDENTIALS:-}" \
+      -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${VERSION} -X github.com/beamfall/core/internal/capabilities.ReleaseBuildDate=${BUILD_DATE} -X github.com/beamfall/core/internal/capabilities.SourceOfferURL=${offer_url}${first_party_ldflag} -X github.com/beamfall/core/internal/app.BundledCredentials=${BEAMFALL_BUNDLED_CREDENTIALS:-}" \
       -o "${work}/beamfall" ./cmd/beamfall
 
   python3 "${ROOT}/script/source-artifact.py" write \

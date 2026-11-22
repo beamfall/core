@@ -133,6 +133,11 @@ func (s *Store) profileSourceItemsLocked(ctx context.Context, filter LibraryFilt
 	if query.ProfileID == "" || strings.TrimSpace(query.Query) != "" {
 		return s.sourceItemsForKind(ctx, filter, query, limit, offset)
 	}
+	// A smart playlist applies both filters itself, before its rule limit
+	// (CORE-2771).
+	if query.Kind == "smart-collection" && s.isSmartRuleCollectionLocked(ctx, query.Value) {
+		return s.sourceItemsForKind(ctx, filter, query, limit, offset)
+	}
 	watched, err := s.hiddenWatchedLocked(ctx, query)
 	if err != nil {
 		return nil, err

@@ -25,5 +25,5 @@ the viewer actually did, unlike Plex and Jellyfin, which sync offline progress o
 
 ## Impact
 
-- Events migration 0027 (`offline_engagement_event`), store, graph, wire contract and mgmt
+- Events migration 0028 (`offline_engagement_event`), store, graph, wire contract and mgmt
   manifests. No /v1 change.

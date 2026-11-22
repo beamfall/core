@@ -179,12 +179,14 @@ func TestRunCapabilitiesCommandVersionIncludesMetadata(t *testing.T) {
 	}
 }
 
-func TestRunVersionCommandIncludesSourceOffer(t *testing.T) {
-	oldVersion, oldURL := capabilities.ReleaseVersion, capabilities.SourceOfferURL
+func TestRunVersionCommandIncludesStampedIdentityAndSourceOffer(t *testing.T) {
+	oldVersion, oldDate, oldURL := capabilities.ReleaseVersion, capabilities.ReleaseBuildDate, capabilities.SourceOfferURL
 	capabilities.ReleaseVersion = "v9.9.9"
+	capabilities.ReleaseBuildDate = "2026-11-21T16:24:00Z"
 	capabilities.SourceOfferURL = "https://github.com/beamfall/core/releases/download/v9.9.9/beamfall.source.json"
 	t.Cleanup(func() {
 		capabilities.ReleaseVersion = oldVersion
+		capabilities.ReleaseBuildDate = oldDate
 		capabilities.SourceOfferURL = oldURL
 	})
 
@@ -192,8 +194,10 @@ func TestRunVersionCommandIncludesSourceOffer(t *testing.T) {
 	if err := versionCommand(&out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), `"version": "v9.9.9"`) || !strings.Contains(out.String(), `"correspondingSourceOfferURL"`) {
-		t.Fatalf("version output = %s, want release version and source offer", out.String())
+	for _, want := range []string{`"version": "v9.9.9"`, `"buildDate": "2026-11-21T16:24:00Z"`, `"correspondingSourceOfferURL"`} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("version output = %s, want %s", out.String(), want)
+		}
 	}
 	if strings.Contains(out.String(), `"capabilities"`) {
 		t.Fatalf("version output = %s, want no capabilities list", out.String())

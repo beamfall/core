@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -227,5 +228,145 @@ func TestRelatedEntityGroupsReadsTheEncryptedLibraryPlane(t *testing.T) {
 	}
 	if _, err := st.RelatedEntityGroups(ctx, "entity-plane-maker", server); err == nil {
 		t.Fatal("sealed encrypted RelatedEntityGroups succeeded")
+	}
+}
+
+func TestRelatedEntityGroupsDeriveValuesFromCurrentVisibleMedia(t *testing.T) {
+	st, lib, hidden := relatedFixture(t)
+	ctx := t.Context()
+	upsertRelatedEntity(t, st, "maker", lib.ID, "maker", "Maker")
+	for _, id := range []EntityID{"box-a", "box-b"} {
+		// A legacy stored Entity value must have no effect on grouping.
+		if err := st.UpsertEntity(ctx, Entity{ID: id, LibraryID: lib.ID, Kind: "box", Title: string(id),
+			Fields: []EntityField{{Name: "shape", Type: EntityFieldText, Text: "stale"}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		relateEntities(t, st, EntityRelation{FromEntityID: id, Name: "made-by", ToEntityID: "maker"})
+	}
+	setTag := func(id MediaID, value string) {
+		t.Helper()
+		if err := st.UpsertMediaFields(ctx, id, []MediaField{{Name: "shape", Type: EntityFieldText, Text: value}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add := func(id string, library LibraryID, tag string) MediaID {
+		t.Helper()
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: library, Path: "/shelf/" + id + ".flac", Title: id, Container: "flac", Codec: "flac",
+			Class: MediaClassAudio, ContentFingerprint: id, Year: 2005,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		setTag(media.ID, tag)
+		relateEntities(t, st, EntityRelation{FromEntityID: "box-a", Name: "contains", ToMediaID: media.ID})
+		return media.ID
+	}
+	add("hidden", hidden.ID, "alphabetically-first")
+	add("dated", lib.ID, "long")
+	moved := add("moved", lib.ID, "short")
+	alsoShort := add("also-short", lib.ID, "short")
+	relateEntities(t, st, EntityRelation{FromEntityID: "box-a", Name: "also-contains", ToMediaID: alsoShort})
+
+	check := func(a, b string) {
+		t.Helper()
+		groups, err := st.RelatedEntityGroupsBy(ctx, "maker", LibraryFilter{AllLibraries: true}, func(owner, kind string) string {
+			if owner == "shelf" && kind == "box" {
+				return "shape"
+			}
+			return ""
+		})
+		if err != nil || len(groups) != 1 || len(groups[0].Items) != 2 {
+			t.Fatalf("groups = %+v, err = %v", groups, err)
+		}
+		g := groups[0]
+		if g.GroupValues["box-a"] != a || g.GroupValues["box-b"] != b || g.Items[0].Year != 2005 {
+			t.Fatalf("values = %v, first year = %d, want %q, %q and 2005", g.GroupValues, g.Items[0].Year, a, b)
+		}
+	}
+	check("short", "")
+	if err := st.ReplaceMediaRelations(ctx, moved, []EntityRelation{{
+		FromEntityID: "box-b", Name: "contains", ToMediaID: moved,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	check("long", "short") // tie on box A, even with a duplicate link to the short item
+	setTag(moved, "")
+	check("long", "") // the moved track was box B's only vote
+}
+
+func TestRelatedEntityYearsExceedSQLiteVariableLimit(t *testing.T) {
+	st, lib, _ := relatedFixture(t)
+	ctx := t.Context()
+	upsertRelatedEntity(t, st, "dated-entity", lib.ID, "box", "Dated")
+	media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: lib.ID, Path: "/shelf/dated.flac", Title: "Dated", Container: "flac", Codec: "flac",
+		Class: MediaClassAudio, ContentFingerprint: "dated", Year: 2005,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	relateEntities(t, st, EntityRelation{FromEntityID: "dated-entity", Name: "contains", ToMediaID: media.ID})
+
+	// Exercise the same year-annotation path as RelatedEntityGroups without
+	// inserting thousands of unrelated fixture rows.
+	items := make([]SourceItem, 32_767)
+	for i := range items {
+		items[i] = SourceItem{ID: MediaID(strconv.Itoa(i)), Kind: "entity"}
+	}
+	items[len(items)-1].ID = "dated-entity"
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	if err := st.annotateEntityYearsLocked(ctx, LibraryFilter{AllLibraries: true}, items); err != nil {
+		t.Fatal(err)
+	}
+	if got := items[len(items)-1].Year; got != 2005 || items[0].Year != 0 {
+		t.Fatalf("years = %d, %d; want 0, 2005", items[0].Year, got)
+	}
+}
+
+func TestHydrationTagCandidatesReuseOnlyPerMediaLegacyValues(t *testing.T) {
+	st, lib, _ := relatedFixture(t)
+	ctx := t.Context()
+	entity := Entity{ID: "box", LibraryID: lib.ID, Kind: "box", Title: "Box",
+		Fields: []EntityField{{Name: "shape", Type: EntityFieldText, Text: "shared-and-stale"}},
+	}
+	if err := st.UpsertEntity(ctx, entity); err != nil {
+		t.Fatal(err)
+	}
+	results := map[MediaID]string{}
+	for _, name := range []string{"with-legacy", "without-legacy"} {
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: lib.ID, Path: "/shelf/" + name + ".flac", Title: name, Container: "flac", Codec: "flac",
+			Class: MediaClassAudio, ContentFingerprint: name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		relateEntities(t, st, EntityRelation{FromEntityID: entity.ID, Name: "contains", ToMediaID: media.ID})
+		results[media.ID] = ""
+		if name == "with-legacy" {
+			legacy := `{"attributes":{"label":"legacy label"},"@hydration":{"Field":"shape","Value":"oval"}}`
+			if _, err := st.catalogW.ExecContext(ctx, "UPDATE entity_relation SET attributes = ? WHERE to_media_id = ?", legacy, media.ID); err != nil {
+				t.Fatal(err)
+			}
+			results[media.ID] = "oval"
+			links, err := st.EntitiesForMedia(ctx, media.ID, "contains", LibraryFilter{AllLibraries: true})
+			if err != nil || len(links) != 1 || !reflect.DeepEqual(links[0].Attributes, map[string]string{"label": "legacy label"}) {
+				t.Fatalf("legacy render attributes: %v, err = %v", links, err)
+			}
+		}
+	}
+	candidates, err := st.HydrationTagCandidates(ctx, lib.ID, []MediaClass{MediaClassAudio}, "shape")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[MediaID]string{}
+	for _, candidate := range candidates {
+		got[candidate.MediaID] = candidate.PersistedValue
+	}
+	if !reflect.DeepEqual(got, results) {
+		t.Fatalf("per-Media candidates = %v, want %v", got, results)
 	}
 }

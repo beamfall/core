@@ -19,7 +19,7 @@ const TRACK: SyntheticTrack = {
   seconds: 20,
 };
 
-test.use({ serviceWorkers: "block", launchOptions: { args: ["--enable-gpu"] } });
+test.use({ serviceWorkers: "block", launchOptions: { args: ["--enable-gpu", "--mute-audio"] } });
 
 test("an audio item plays with an Oscillux visual in the stage", async ({ page }) => {
   test.setTimeout(60_000);

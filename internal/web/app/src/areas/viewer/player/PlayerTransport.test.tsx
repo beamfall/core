@@ -104,7 +104,7 @@ describe("PlayerTransport", () => {
     Object.defineProperty(video, "currentTime", { configurable: true, value: 83.8 });
 
     fireEvent.timeUpdate(video);
-    fireEvent.click(screen.getByRole("button", { name: "Share current time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy link at current time" }));
 
     expect(onShare).toHaveBeenCalledWith(83);
   });
@@ -895,3 +895,50 @@ function fireMouse(
   });
   fireEvent(target, event);
 }
+
+describe("PlayerTransport lyrics toggle", () => {
+  function renderAudio(onLyricsOpenChange?: (open: boolean) => void, lyricsOpen = false) {
+    function AudioHarness() {
+      const videoRef = createRef<HTMLVideoElement>();
+      const hlsRef = createRef<null>();
+      const stageRef = useRef<HTMLDivElement | null>(null);
+      return (
+        <I18nProvider>
+          <div ref={stageRef}>
+            <video ref={videoRef} />
+            <PlayerTransport
+              videoRef={videoRef}
+              hlsRef={hlsRef}
+              state={state}
+              stageRef={stageRef}
+              mediaTitle="Long Weekend"
+              audioStage
+              lyricsOpen={lyricsOpen}
+              onLyricsOpenChange={onLyricsOpenChange}
+            />
+          </div>
+        </I18nProvider>
+      );
+    }
+    render(<AudioHarness />);
+  }
+
+  it("opens and closes the lyrics view from the audio transport", () => {
+    const onLyricsOpenChange = vi.fn();
+    renderAudio(onLyricsOpenChange);
+    const toggle = screen.getByRole("button", { name: "Lyrics" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(toggle);
+    expect(onLyricsOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("shows the toggle pressed while the lyrics are open", () => {
+    renderAudio(vi.fn(), true);
+    expect(screen.getByRole("button", { name: "Lyrics" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("has no toggle when the page offers no lyrics view", () => {
+    renderAudio(undefined);
+    expect(screen.queryByRole("button", { name: "Lyrics" })).not.toBeInTheDocument();
+  });
+});

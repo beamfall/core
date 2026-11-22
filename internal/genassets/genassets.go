@@ -165,6 +165,10 @@ type Service struct {
 	// (EnsureWaveform), keyed by content fingerprint, and the slots that bound
 	// how many run at once.
 	waveformDemand waveformDemand
+	// sonicDecoder and sonicAnalyzer drive sonic analysis (sonic.go); both
+	// nil leaves it inactive.
+	sonicDecoder  ExcerptDecoder
+	sonicAnalyzer SonicAnalyzer
 }
 
 // SealedPredicate reports whether a Library is currently Sealed (ADR-0098 area

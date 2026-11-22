@@ -27,6 +27,17 @@ an "unavailable on this route" note only when cues are not native TextTracks.
 - **WHEN** an offset is set and hls.js appends cues from a subtitle fragment that arrives later
 - **THEN** the new cues show shifted by the offset and earlier cues stay where they were
 
+### Requirement: Subtitle offset on the styled ASS route
+
+When the web player draws an ASS or SSA track with its styled renderer, the subtitle offset SHALL
+shift that renderer's cues by the same amount as text-track cues, and SHALL redraw the current cue
+while playback is paused.
+
+#### Scenario: Nudging a styled track
+
+- **WHEN** an ASS track is drawn by the styled renderer and the viewer nudges the offset by +0.5 s
+- **THEN** each styled cue appears half a second later than its timestamp, also while paused
+
 ### Requirement: Audio delay control
 
 The web player SHALL offer an audio sync control for video items that delays the element's sound

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -150,7 +151,11 @@ const entityDirectMediaClassSQL = `
 				GROUP BY r.from_entity_id`
 
 // entityLinkedMediaClassSQL spans the classes of the Media linked to each
-// Entity's linked, untrashed Entities, following the link either way.
+// Entity's linked, untrashed Entities, following the link either way. Each
+// linked Entity's span is computed once and then combined per item, so cards
+// sharing a heavily linked Entity (a person credited on thousands of Media)
+// read its Media once rather than once per card (CORE-3058). The span of a
+// union is the span of its parts' spans, so the result is unchanged.
 const entityLinkedMediaClassSQL = `
 				WITH linked(item_id, other_id) AS (
 					SELECT from_entity_id, to_entity_id FROM entity_relation
@@ -158,13 +163,19 @@ const entityLinkedMediaClassSQL = `
 					UNION
 					SELECT to_entity_id, from_entity_id FROM entity_relation
 					WHERE to_entity_id IN (%[1]s)
+				), spans(other_id, low, high) AS (
+					SELECT o.other_id, MIN(m.media_class), MAX(m.media_class)
+					FROM (SELECT DISTINCT other_id FROM linked WHERE other_id <> item_id) o
+					JOIN entity e ON e.id = o.other_id AND e.trashed_at_ms IS NULL
+					JOIN entity_relation r ON r.from_entity_id = o.other_id
+					JOIN media m ON m.id = r.to_media_id
+					WHERE m.trashed_at_ms IS NULL
+					GROUP BY o.other_id
 				)
-				SELECT linked.item_id, MIN(m.media_class), MAX(m.media_class)
+				SELECT linked.item_id, MIN(spans.low), MAX(spans.high)
 				FROM linked
-				JOIN entity e ON e.id = linked.other_id AND e.trashed_at_ms IS NULL
-				JOIN entity_relation r ON r.from_entity_id = linked.other_id
-				JOIN media m ON m.id = r.to_media_id
-				WHERE linked.other_id <> linked.item_id AND m.trashed_at_ms IS NULL
+				JOIN spans ON spans.other_id = linked.other_id
+				WHERE linked.other_id <> linked.item_id
 				GROUP BY linked.item_id`
 
 // entityMediaClassSpansLocked runs a class-span query over every open catalog
@@ -208,24 +219,37 @@ func (s *Store) entityMediaClassSpansLocked(ctx context.Context, ids []MediaID, 
 	return spans, nil
 }
 
-// annotateEntityYearsLocked sets each Entity card's year from its earliest
-// dated, directly linked Media visible to this Source. The Source bounds the
-// number of IDs, so each readable plane can aggregate in one query.
+// annotateEntityYearsLocked sets Source card years from directly linked Media.
 func (s *Store) annotateEntityYearsLocked(ctx context.Context, filter LibraryFilter, items []SourceItem) error {
-	var ids []any
+	_, err := s.annotateEntityCardsLocked(ctx, filter, items, "")
+	return err
+}
+
+// annotateEntityCardsLocked batches the earliest visible Media year and, when
+// requested, the most common non-empty text value on the card's linked Media.
+func (s *Store) annotateEntityCardsLocked(ctx context.Context, filter LibraryFilter, items []SourceItem, field string) (map[MediaID]string, error) {
+	var ids []MediaID
 	for _, item := range items {
 		if item.Kind == "entity" {
 			ids = append(ids, item.ID)
 		}
 	}
 	if len(ids) == 0 {
-		return nil
+		return nil, nil
+	}
+	encoded, err := json.Marshal(ids)
+	if err != nil {
+		return nil, err
 	}
 	libraries, err := loadLibraries(ctx, s.catalogR)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	years := make(map[MediaID]int, len(ids))
+	votes := map[MediaID]map[string]int{}
+	read := func(reader *sql.DB, libraryIDs []LibraryID, certClause string, certArgs []any) error {
+		return readEntityCardFacts(ctx, reader, string(encoded), field, libraryIDs, certClause, certArgs, years, votes)
+	}
 	var publicIDs []LibraryID
 	for _, library := range libraries {
 		if !libraryVisible(library, filter) {
@@ -244,14 +268,14 @@ func (s *Store) annotateEntityYearsLocked(ctx context.Context, filter LibraryFil
 			pluginID = *library.PluginID
 		}
 		certClause, certArgs := planeCertificationFilterSQL(pluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
-		if err := readEntityYears(ctx, db.reader, ids, []LibraryID{library.ID}, certClause, certArgs, years); err != nil {
-			return err
+		if err := read(db.reader, []LibraryID{library.ID}, certClause, certArgs); err != nil {
+			return nil, err
 		}
 	}
 	if len(publicIDs) > 0 {
 		certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
-		if err := readEntityYears(ctx, s.catalogR, ids, publicIDs, certClause, certArgs, years); err != nil {
-			return err
+		if err := read(s.catalogR, publicIDs, certClause, certArgs); err != nil {
+			return nil, err
 		}
 	}
 	for i := range items {
@@ -259,37 +283,56 @@ func (s *Store) annotateEntityYearsLocked(ctx context.Context, filter LibraryFil
 			items[i].Year = years[items[i].ID]
 		}
 	}
-	return nil
+	values := make(map[MediaID]string, len(votes))
+	for id, counts := range votes {
+		var winner string
+		var best int
+		for value, count := range counts {
+			if count > best || (count == best && value < winner) {
+				winner, best = value, count
+			}
+		}
+		values[id] = winner
+	}
+	return values, nil
 }
 
-func readEntityYears(ctx context.Context, reader *sql.DB, ids []any, libraryIDs []LibraryID, certClause string, certArgs []any, years map[MediaID]int) error {
+func readEntityCardFacts(ctx context.Context, reader *sql.DB, ids, field string, libraryIDs []LibraryID, certClause string, certArgs []any, years map[MediaID]int, votes map[MediaID]map[string]int) error {
 	libraries, libraryArgs := libraryIDPlaceholders(libraryIDs)
-	args := make([]any, 0, len(ids)+len(libraryArgs)+len(certArgs))
-	args = append(args, ids...)
-	args = append(args, libraryArgs...)
+	args := append([]any{field, ids}, libraryArgs...)
 	args = append(args, certArgs...)
 	// #nosec G202 -- only generated placeholders and closed certification SQL are interpolated.
 	rows, err := reader.QueryContext(ctx, `
-		SELECT r.from_entity_id, MIN(m.year)
+		SELECT r.from_entity_id, MIN(CASE WHEN m.year > 0 THEN m.year END),
+		       NULLIF(f.value, ''), COUNT(DISTINCT m.id)
 		FROM entity_relation r
 		JOIN media m ON m.id = r.to_media_id
-		WHERE r.from_entity_id IN (`+sqlPlaceholders(len(ids))+`)
-		  AND r.to_media_id IS NOT NULL
+		LEFT JOIN media_field_text f ON f.media_id = m.id AND f.field = ? AND f.field_type = 'text'
+		  AND EXISTS (SELECT 1 FROM media_file mf WHERE mf.media_id = m.id AND mf.missing_at_ms IS NULL)
+		WHERE r.from_entity_id IN (SELECT value FROM json_each(?))
 		  AND m.library_id IN (`+libraries+`)
-		  AND m.trashed_at_ms IS NULL AND m.year > 0`+certClause+`
-		GROUP BY r.from_entity_id`, args...)
+		  AND m.trashed_at_ms IS NULL`+certClause+`
+		GROUP BY r.from_entity_id, NULLIF(f.value, '')`, args...)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id MediaID
-		var year int
-		if err := rows.Scan(&id, &year); err != nil {
+		var year sql.NullInt64
+		var value sql.NullString
+		var count int
+		if err := rows.Scan(&id, &year, &value, &count); err != nil {
 			return err
 		}
-		if current, ok := years[id]; !ok || year < current {
-			years[id] = year
+		if current := years[id]; year.Valid && (current == 0 || int(year.Int64) < current) {
+			years[id] = int(year.Int64)
+		}
+		if value.Valid {
+			if votes[id] == nil {
+				votes[id] = map[string]int{}
+			}
+			votes[id][value.String] += count
 		}
 	}
 	return rows.Err()

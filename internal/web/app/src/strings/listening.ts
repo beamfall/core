@@ -1,5 +1,8 @@
+import { smartPlaylistStrings as smart } from "./smart-playlists";
+
 // Audio browse copy: track lists, person pages, playlists, favorites and play
-// history, plus the audio wording of the card menu (CORE-1635).
+// history, plus the audio wording of the card menu (CORE-1635) and the smart
+// playlist copy (CORE-2771).
 export const listeningStrings = {
   en: {
     itemMarkPlayed: "Mark played",
@@ -21,6 +24,10 @@ export const listeningStrings = {
     trackGoToAlbum: "Go to album",
     personAppearsOn: "Appears on",
     personAppearsIn: "Appears in",
+    personRoleWrote: "Wrote",
+    personRoleNarrated: "Narrated",
+    personRoleTranslated: "Translated",
+    personRoleOther: "As {role}",
     personAllTracks: "All tracks",
     playlistsTitle: "Playlists",
     playlistsEmpty: "No playlists yet.",
@@ -48,6 +55,7 @@ export const listeningStrings = {
     historyRecent: "Recently played",
     historyMost: "Most played",
     historyEmpty: "Nothing played yet.",
+    ...smart.en,
   },
   fr: {
     itemMarkPlayed: "Marquer comme écouté",
@@ -69,6 +77,10 @@ export const listeningStrings = {
     trackGoToAlbum: "Aller à l’album",
     personAppearsOn: "Apparaît sur",
     personAppearsIn: "Apparaît dans",
+    personRoleWrote: "Écrits",
+    personRoleNarrated: "Lus",
+    personRoleTranslated: "Traduits",
+    personRoleOther: "En tant que {role}",
     personAllTracks: "Tous les titres",
     playlistsTitle: "Playlists",
     playlistsEmpty: "Aucune playlist.",
@@ -96,6 +108,7 @@ export const listeningStrings = {
     historyRecent: "Écoutés récemment",
     historyMost: "Les plus écoutés",
     historyEmpty: "Rien d'écouté pour l'instant.",
+    ...smart.fr,
   },
   de: {
     itemMarkPlayed: "Als gehört markieren",
@@ -117,6 +130,10 @@ export const listeningStrings = {
     trackGoToAlbum: "Zum Album",
     personAppearsOn: "Vertreten auf",
     personAppearsIn: "Zu sehen in",
+    personRoleWrote: "Geschrieben",
+    personRoleNarrated: "Gelesen",
+    personRoleTranslated: "Übersetzt",
+    personRoleOther: "Als {role}",
     personAllTracks: "Alle Titel",
     playlistsTitle: "Playlists",
     playlistsEmpty: "Noch keine Playlists.",
@@ -144,6 +161,7 @@ export const listeningStrings = {
     historyRecent: "Zuletzt gespielt",
     historyMost: "Am häufigsten gespielt",
     historyEmpty: "Noch nichts gespielt.",
+    ...smart.de,
   },
   es: {
     itemMarkPlayed: "Marcar como escuchado",
@@ -165,6 +183,10 @@ export const listeningStrings = {
     trackGoToAlbum: "Ir al álbum",
     personAppearsOn: "Aparece en",
     personAppearsIn: "Aparece en",
+    personRoleWrote: "Escritos",
+    personRoleNarrated: "Narrados",
+    personRoleTranslated: "Traducidos",
+    personRoleOther: "Como {role}",
     personAllTracks: "Todas las canciones",
     playlistsTitle: "Listas",
     playlistsEmpty: "Aún no hay listas.",
@@ -192,6 +214,7 @@ export const listeningStrings = {
     historyRecent: "Escuchado recientemente",
     historyMost: "Lo más escuchado",
     historyEmpty: "Aún no se ha reproducido nada.",
+    ...smart.es,
   },
   pt: {
     itemMarkPlayed: "Marcar como ouvido",
@@ -213,6 +236,10 @@ export const listeningStrings = {
     trackGoToAlbum: "Ir para o álbum",
     personAppearsOn: "Aparece em",
     personAppearsIn: "Aparece em",
+    personRoleWrote: "Escritos",
+    personRoleNarrated: "Narrados",
+    personRoleTranslated: "Traduzidos",
+    personRoleOther: "Como {role}",
     personAllTracks: "Todas as faixas",
     playlistsTitle: "Playlists",
     playlistsEmpty: "Ainda não há playlists.",
@@ -240,5 +267,6 @@ export const listeningStrings = {
     historyRecent: "Ouvidos recentemente",
     historyMost: "Mais ouvidos",
     historyEmpty: "Nada reproduzido ainda.",
+    ...smart.pt,
   },
 } as const;

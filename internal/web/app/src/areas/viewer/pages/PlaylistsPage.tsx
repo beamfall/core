@@ -15,8 +15,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { CollectionInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
+import { SmartPlaylistEditor } from "../components/SmartPlaylistEditor";
 import { ViewerActions } from "../components/ViewerActions";
 import { createPlaylist, deletePlaylist, loadPlaylists, renamePlaylist } from "../lib/playlists";
+import { loadSmartPlaylists, type SmartPlaylist } from "../lib/smartPlaylists";
 
 const SELECT_CLASS =
   "h-10 rounded-[var(--radius-control)] border border-input bg-transparent px-3 text-sm";
@@ -24,12 +26,16 @@ const SELECT_CLASS =
 // The listener's playlists (CORE-1635): every Library's Collections, with
 // create, rename and delete. Changes need a manager device (the server gates
 // the Collection mutations), so other devices list them read-only and say why.
+// Smart playlists (CORE-2771) are listed below them: rule-based Smart
+// Collections the server evaluates on every read.
 export function PlaylistsPage() {
   const t = useT();
   const { manifest, isManager } = useSession();
   const libraries = manifest?.libraries ?? [];
   const libraryKey = libraries.map((library) => library.id).join("\n");
   const [playlists, setPlaylists] = useState<CollectionInfo[] | null>(null);
+  const [smartPlaylists, setSmartPlaylists] = useState<SmartPlaylist[] | null>(null);
+  const [creatingSmart, setCreatingSmart] = useState(false);
   const [name, setName] = useState("");
   const [libraryID, setLibraryID] = useState("");
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
@@ -41,9 +47,17 @@ export function PlaylistsPage() {
     setPlaylists(await loadPlaylists(libraryKey ? libraryKey.split("\n") : []));
   }, [libraryKey]);
 
+  const reloadSmart = useCallback(async () => {
+    setSmartPlaylists(await loadSmartPlaylists(libraryKey ? libraryKey.split("\n") : []));
+  }, [libraryKey]);
+
   useEffect(() => {
     void reload().catch(() => setPlaylists([]));
   }, [reload]);
+
+  useEffect(() => {
+    void reloadSmart().catch(() => setSmartPlaylists([]));
+  }, [reloadSmart]);
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -172,7 +186,49 @@ export function PlaylistsPage() {
             ))}
           </ul>
         )}
+        <section className="flex flex-col gap-3" aria-labelledby="smart-playlists-title">
+          <div className="bf-list-toolbar justify-between">
+            <h2 id="smart-playlists-title" className="text-lg font-semibold">
+              {t("smartPlaylistsTitle")}
+            </h2>
+            {isManager && libraries.length > 0 && (
+              <Button variant="outline" onClick={() => setCreatingSmart(true)}>
+                {t("smartPlaylistNew")}
+              </Button>
+            )}
+          </div>
+          {smartPlaylists === null && <Skeleton aria-hidden className="bf-shimmer h-16 w-full" />}
+          {smartPlaylists?.length === 0 && (
+            <p className="text-sm text-muted-foreground">{t("smartPlaylistsEmpty")}</p>
+          )}
+          {smartPlaylists && smartPlaylists.length > 0 && (
+            <ul className="m-0 flex list-none flex-col gap-2 p-0">
+              {smartPlaylists.map((playlist) => (
+                <li key={playlist.id}>
+                  <Link
+                    to={`/playlists/smart/${encodeURIComponent(playlist.id)}`}
+                    className="flex flex-col"
+                  >
+                    <span>{playlist.name}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {t("smartPlaylistRuleCount", { count: playlist.rules.rules.length })}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
+      {creatingSmart && (
+        <SmartPlaylistEditor
+          onClose={() => setCreatingSmart(false)}
+          onSaved={() => {
+            setCreatingSmart(false);
+            void reloadSmart().catch(() => {});
+          }}
+        />
+      )}
       <Dialog
         open={deleting !== null}
         onOpenChange={(open) => {

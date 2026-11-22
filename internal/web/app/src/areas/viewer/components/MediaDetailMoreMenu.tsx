@@ -1,11 +1,13 @@
-import { Check, Eye, EyeOff, Link2, ListPlus, MoreHorizontal } from "lucide-react";
+import { Captions, Check, Eye, EyeOff, Link2, ListPlus, MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Menu } from "@/components/ui/astryx-primitives";
 import { buttonVariants } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import { useItemHide } from "../actions";
 import { mediaPath } from "../lib/mediaAddress";
+import { useSubtitleSearchAvailable } from "../lib/subtitleSearch";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
+import { SubtitleSearchDialog } from "./SubtitleSearchDialog";
 
 const COPIED_RESET_MS = 2000;
 
@@ -13,13 +15,25 @@ const COPIED_RESET_MS = 2000;
 // earn a button of their own beside Play. Built on the Base UI menu like the
 // card menu, so arrow keys, Escape and focus return come from the primitive.
 // Add to playlist opens the existing manager-gated dialog (CORE-1635); Hide
-// takes the item out of this Profile's browsing (CORE-2836).
-export function MediaDetailMoreMenu({ mediaID, title }: { mediaID: string; title: string }) {
+// takes the item out of this Profile's browsing (CORE-2836). Search online
+// for subtitles shows only when the server has a provider enabled and this
+// viewer may use it (CORE-1690); a download calls onSubtitleAdded.
+export function MediaDetailMoreMenu({
+  mediaID,
+  title,
+  onSubtitleAdded,
+}: {
+  mediaID: string;
+  title: string;
+  onSubtitleAdded?: () => void;
+}) {
   const t = useT();
   const [copied, setCopied] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [subtitlesOpen, setSubtitlesOpen] = useState(false);
   const [opened, setOpened] = useState(false);
   const hide = useItemHide({ mediaID }, title, { enabled: opened });
+  const subtitleSearch = useSubtitleSearchAvailable(opened);
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -65,6 +79,12 @@ export function MediaDetailMoreMenu({ mediaID, title }: { mediaID: string; title
                 <ListPlus aria-hidden="true" size={15} />
                 {t("addToPlaylist")}
               </Menu.Item>
+              {subtitleSearch && (
+                <Menu.Item className="bf-card-menu-item" onClick={() => setSubtitlesOpen(true)}>
+                  <Captions aria-hidden="true" size={15} />
+                  {t("subtitleSearchOnline")}
+                </Menu.Item>
+              )}
               <Menu.Item
                 className="bf-card-menu-item"
                 disabled={hide.pending || hide.hidden === null}
@@ -91,6 +111,14 @@ export function MediaDetailMoreMenu({ mediaID, title }: { mediaID: string; title
       </Menu.Root>
       {addOpen && (
         <AddToPlaylistDialog mediaID={mediaID} title={title} onClose={() => setAddOpen(false)} />
+      )}
+      {subtitlesOpen && (
+        <SubtitleSearchDialog
+          mediaID={mediaID}
+          title={title}
+          onClose={() => setSubtitlesOpen(false)}
+          onDownloaded={onSubtitleAdded}
+        />
       )}
     </>
   );

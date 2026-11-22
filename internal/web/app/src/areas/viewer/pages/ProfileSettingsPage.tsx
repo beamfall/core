@@ -26,7 +26,7 @@ import {
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
-import { useSession } from "@/lib/session";
+import { useSession, useViewerIdentity } from "@/lib/session";
 import { SCHEME_PREFERENCES, type SchemePreference } from "@/lib/theme/runtime";
 import { THEME_PRESETS } from "@/lib/theme/theme.generated";
 import type { StringKey } from "@/strings";
@@ -37,7 +37,6 @@ import {
   type DownstreamAudioMode,
   encodeBool,
   PLAYBACK_SPEEDS,
-  type PlaybackSpeed,
   PRE_PLAY_EXTRAS,
   PREF_KEYS,
   type PrePlayExtras,
@@ -49,6 +48,7 @@ import {
   STILL_WATCHING_OPTIONS,
   type ViewerPreferences,
 } from "../lib/preferences";
+import { applySpoilerPref } from "../lib/spoilerGuard";
 
 // Profile Settings (ADR-0082): the viewer-resident, self-service preference
 // surface owned by the selected Profile. Every preference persists through the
@@ -67,6 +67,7 @@ import {
 export function ProfileSettingsPage() {
   const t = useT();
   const { session, profiles, refreshProfiles } = useSession();
+  const viewerIdentity = useViewerIdentity();
   const profileID = session?.profileID || "";
   const profile = profiles.find((p) => p.id === profileID);
   const managed = session?.profile === "managed";
@@ -317,7 +318,7 @@ export function ProfileSettingsPage() {
                 value={prefs.playbackSpeed}
                 onValueChange={(v) =>
                   persist(PREF_KEYS.playbackSpeedDefault, v, {
-                    playbackSpeed: v as PlaybackSpeed,
+                    playbackSpeed: v,
                   })
                 }
               >
@@ -325,11 +326,14 @@ export function ProfileSettingsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PLAYBACK_SPEEDS.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}×
-                    </SelectItem>
-                  ))}
+                  {/* A speed set on the audio stage's slider shows as its own choice. */}
+                  {[...new Set<string>([...PLAYBACK_SPEEDS, prefs.playbackSpeed])]
+                    .sort((a, b) => Number(a) - Number(b))
+                    .map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}×
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -495,6 +499,24 @@ export function ProfileSettingsPage() {
                 }
               />
               <span className="text-sm text-[var(--text-muted)]">{t("hideWatchedLead")}</span>
+            </div>
+            <div className="settings-row flex flex-col gap-1">
+              {/* On by default: the stored key turns the spoiler guard off (CORE-3057). */}
+              <ToggleRow
+                labelKey="spoilerGuardSetting"
+                checked={!prefs.showUnplayedDetails}
+                onChange={(on) => {
+                  const value = encodeBool(!on);
+                  // The guard takes the save only for the identity that made it.
+                  const owner = viewerIdentity;
+                  void persist(PREF_KEYS.showUnplayedDetails, value, {
+                    showUnplayedDetails: !on,
+                  }).then((saved) => {
+                    if (saved) applySpoilerPref(owner, PREF_KEYS.showUnplayedDetails, value);
+                  });
+                }}
+              />
+              <span className="text-sm text-[var(--text-muted)]">{t("spoilerGuardLead")}</span>
             </div>
             <HiddenItemsRow />
           </CollapsibleCard>

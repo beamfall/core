@@ -27,6 +27,8 @@ import { LibraryPivotPage } from "./pages/LibraryPivotPages";
 import { MediaDetailPage } from "./pages/MediaDetailPage";
 import { MyDataPage } from "./pages/MyDataPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
+import { PartyHostPage } from "./pages/PartyHostPage";
+import { PartyStagePage } from "./pages/PartyStagePage";
 import { PlaylistPage } from "./pages/PlaylistPage";
 import { PlaylistsPage } from "./pages/PlaylistsPage";
 import { ProfilePickerPage } from "./pages/ProfilePickerPage";
@@ -34,6 +36,7 @@ import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 import { RemotePage } from "./pages/RemotePage";
 import { SearchPage } from "./pages/SearchPage";
 import { SeeAllPage } from "./pages/SeeAllPage";
+import { SmartPlaylistPage } from "./pages/SmartPlaylistPage";
 import { LazyPlayerPage } from "./player/LazyPlayerPage";
 import { PlayerHost } from "./player/PlayerHost";
 import "./player/player-deferred.css";
@@ -131,12 +134,14 @@ export function ViewerArea() {
 
   // "Who's watching?" (CORE-1196): a server with more than one Profile opens on
   // the picker once per tab, then carries on to where the visitor was heading.
-  // Playback links are exempt so a shared or cast-handoff watch URL still plays.
+  // Playback links are exempt so a shared or cast-handoff watch URL still plays,
+  // and so is a party stage window, which the host opens already picked.
   if (
     profiles.length > 1 &&
     location.pathname !== "/profiles" &&
     !location.pathname.startsWith("/watch/") &&
     !location.pathname.startsWith("/view/") &&
+    !location.pathname.startsWith("/party/stage/") &&
     !profilePickedThisTab()
   ) {
     return <Navigate to="/profiles" state={{ from: location }} replace />;
@@ -175,6 +180,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/favorites" element={<FavoritesPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/playlists" element={<PlaylistsPage />} />
+        <Route path="/playlists/smart/:smartId" element={<SmartPlaylistPage />} />
         <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/remote" element={<RemotePage />} />
@@ -182,6 +188,8 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/settings" element={<ProfileSettingsPage />} />
         <Route path="/view/*" element={<ImageViewerPage />} />
         <Route path="/slideshow" element={<SlideshowPage />} />
+        <Route path="/party" element={<PartyHostPage />} />
+        <Route path="/party/stage/:sessionID" element={<PartyStagePage />} />
         <Route
           path="/watch/*"
           element={

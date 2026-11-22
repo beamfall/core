@@ -25,6 +25,7 @@ var archWhitelist = map[string][]string{
 	"ioe2e":             {},                                   // I/O E2E journey package: only io_e2e-tagged *_test.go files (imports apptest/ffmpeg from tests, which the arch walk skips) + an empty untagged doc.go. No production imports.
 	"capabilities":      {},                                   // leaf; compile/runtime capability self-report for clients and CI manifest checks (POWERTOOLS-5)
 	"config":            {"serverrole"},                       // bootstrap config carries the ADR-0123 §2 attached/main Role
+	"partyqueue":        {},                                   // leaf; pure ordering and wait-estimate math for a shared request rotation (CORE-1662), stdlib only
 	"serverrole":        {},                                   // leaf; the ADR-0123 §2 two-face authority Role (Main/Attached) + GuardAuthority sentinel, stdlib only, no internal deps
 	"nodehost":          {},                                   // leaf; ADR-0123 §5 Origin-Node enrollment lifecycle + ADR-0063 origin-node Compatibility Handshake gate + per-node revoke/rotate (NODE-3), stdlib only over real x509 material, no internal deps
 	"nodehostd":         {"nodehost"},                         // node-facing mTLS SESSION transport (ADR-0129 §5: the node dials the main): main-side listener + node-side dialer that pin SPKI in both directions. Composes nodehost's pin logic; nodehost stays the leaf. The app composition root prepares the cloned self-signed mTLS config + policy and passes them in, so no remoteaccess/config edge here.
@@ -32,29 +33,31 @@ var archWhitelist = map[string][]string{
 	"conductor":         {"store"},                            // Ambient Group Conductor (ADR-0035 §8, AV-4): in-memory ephemeral group registry + NTP/drift math; imports store only for its id/time types
 	"decodeverify":      {"store", "jobs"},                    // decode-verify sampling job (FEAT-8 / ADR-0009 §9): flags corrupt/truncated files broken; the ffmpeg DecodeVerify seam is a consumer-side interface, so no ffmpeg edge (same shape as genassets)
 	"discovery":         {},
-	"hostmetrics":       {},                  // leaf; in-memory one-hour ring of host CPU, memory and this server's own network traffic for the console (CORE-1195), stdlib only, never persisted or sent off the server
-	"redact":            {},                  // leaf; log-text redaction shared by jobs and logtail (CORE-1716), stdlib only
-	"l10n":              {},                  // leaf; server-text locale negotiation and catalogs over the vendored shared locale declaration (CORE-2102)
-	"logtail":           {"redact"},          // in-memory tail of redacted operator log lines for the console server-log read (CORE-1716)
-	"restorestage":      {"store", "backup"}, // staged restore (CORE-1720): backup decrypts the set, store reads the manifest and checks the restore identity; the apply runs in cmd/beamfall under the server lock
-	"graphquery":        {},                  // leaf; pure GraphQL operation selection and top-level field parsing for the hand-written graph dispatcher
-	"graphshape":        {},                  // leaf; generic JSON-shape reflection walker used by graph's nested schema artifact
-	"jsonstate":         {},                  // leaf; atomic JSON file load/save helper for private state stores
-	"ffmpeg":            {},                  // leaf; the ONE FFmpeg boundary
-	"filmtvintegration": {},                  // ORG-52: core-side integration test for the Film & TV migration sources (now in beamfall-plugin-filmtv). Only a doc.go package clause + a *_test.go (test imports — jobs/store/migrate + the plugin module — are skipped by the arch walk); no production imports.
-	"governor":          {},                  // leaf; resource arbitration counters
-	"causation":         {},                  // leaf; ADR-0125 server-global Integration Worker chain budget, per-worker action rate, and bounded/coalesced abort surface
-	"backup":            {"libencrypt"},      // leaf; ZK off-site backup transport (ADR-0115 §1/§2/§4/§5, BACKUP-1): BBK1 envelope (ephemeral DEK wrapped under BackupKey) + BucketClient seam; domain-agnostic, no store/graph/entitlement; depends only on libencrypt for the AES-256-GCM DEK wrap + EncryptStream/DecryptStream
-	"encderiv":          {"libencrypt"},      // ADR-0235: Encrypted Library derivative builder — loopback-only per-job source endpoint, pipe-fed fMP4 encrypted under an ephemeral per-job key into owner-only staging; domain-agnostic, no store/graph
-	"libencrypt":        {},                  // leaf; per-Encrypted-Library key model (ADR-0045 §2.4, ENC-2) — DEK/KEK/passphrase-KDF/Recovery-Key + Sealed/Unsealed; domain-agnostic crypto over stdlib + x/crypto, persists via a consumer-side SecretStore seam (no internal deps)
-	"store":             {"serverrole"},      // the only importer of the SQLite driver; imports serverrole for the ADR-0123 §2 attached-authority guard on catalog/engagement authors
-	"racefixture":       {},                  // leaf; test-only deliberately-racy RED-proving fixture for the -race tier (ADR-0121 §3, TEST-CORE-1). Only a doc.go package clause + a *_test.go; no production imports.
-	"push":              {},                  // leaf; ADR-0039 push primitive — persisting registrar + APNs/FCM/Web-Push dispatcher (owns its store/HTTP/credential seams, no internal deps)
-	"release":           {},                  // leaf; supply-chain integrity core (PANEL-11 / ADR-0013 §A) — signed release manifest, ed25519 sign/verify, pinned trust anchor, SBOM/provenance builders; stdlib only, no internal deps
+	"hostmetrics":       {},                           // leaf; in-memory one-hour ring of host CPU, memory and this server's own network traffic for the console (CORE-1195), stdlib only, never persisted or sent off the server
+	"redact":            {},                           // leaf; log-text redaction shared by jobs and logtail (CORE-1716), stdlib only
+	"lyrics":            {},                           // leaf; local lyric reads (LRC and plain sidecars, ID3v2 SYLT/USLT) for the mediaLyrics graph read (CORE-1638), stdlib only
+	"l10n":              {},                           // leaf; server-text locale negotiation and catalogs over the vendored shared locale declaration (CORE-2102)
+	"logtail":           {"redact"},                   // in-memory tail of redacted operator log lines for the console server-log read (CORE-1716)
+	"restorestage":      {"store", "backup"},          // staged restore (CORE-1720): backup decrypts the set, store reads the manifest and checks the restore identity; the apply runs in cmd/beamfall under the server lock
+	"graphquery":        {},                           // leaf; pure GraphQL operation selection and top-level field parsing for the hand-written graph dispatcher
+	"graphshape":        {},                           // leaf; generic JSON-shape reflection walker used by graph's nested schema artifact
+	"jsonstate":         {},                           // leaf; atomic JSON file load/save helper for private state stores
+	"ffmpeg":            {},                           // leaf; the ONE FFmpeg boundary
+	"filmtvintegration": {},                           // ORG-52: core-side integration test for the Film & TV migration sources (now in beamfall-plugin-filmtv). Only a doc.go package clause + a *_test.go (test imports — jobs/store/migrate + the plugin module — are skipped by the arch walk); no production imports.
+	"governor":          {},                           // leaf; resource arbitration counters
+	"causation":         {},                           // leaf; ADR-0125 server-global Integration Worker chain budget, per-worker action rate, and bounded/coalesced abort surface
+	"backup":            {"libencrypt"},               // leaf; ZK off-site backup transport (ADR-0115 §1/§2/§4/§5, BACKUP-1): BBK1 envelope (ephemeral DEK wrapped under BackupKey) + BucketClient seam; domain-agnostic, no store/graph/entitlement; depends only on libencrypt for the AES-256-GCM DEK wrap + EncryptStream/DecryptStream
+	"encderiv":          {"libencrypt"},               // ADR-0235: Encrypted Library derivative builder — loopback-only per-job source endpoint, pipe-fed fMP4 encrypted under an ephemeral per-job key into owner-only staging; domain-agnostic, no store/graph
+	"libencrypt":        {},                           // leaf; per-Encrypted-Library key model (ADR-0045 §2.4, ENC-2) — DEK/KEK/passphrase-KDF/Recovery-Key + Sealed/Unsealed; domain-agnostic crypto over stdlib + x/crypto, persists via a consumer-side SecretStore seam (no internal deps)
+	"store":             {"serverrole", "partyqueue"}, // the only importer of the SQLite driver; imports serverrole for the ADR-0123 §2 attached-authority guard on catalog/engagement authors
+	"racefixture":       {},                           // leaf; test-only deliberately-racy RED-proving fixture for the -race tier (ADR-0121 §3, TEST-CORE-1). Only a doc.go package clause + a *_test.go; no production imports.
+	"push":              {},                           // leaf; ADR-0039 push primitive — persisting registrar + APNs/FCM/Web-Push dispatcher (owns its store/HTTP/credential seams, no internal deps)
+	"release":           {},                           // leaf; supply-chain integrity core (PANEL-11 / ADR-0013 §A) — signed release manifest, ed25519 sign/verify, pinned trust anchor, SBOM/provenance builders; stdlib only, no internal deps
 	"reveal":            {},
 	"skins":             {},                              // leaf; user-authored color Skins (ADR-0125) — server-side WCAG-2.2 contrast math for hard-role validation, stdlib only, no internal deps
 	"compat":            {"store", "auth"},               // ADR-0171 §2.2/§2.4 Jellyfin compat route group (JFCOMPAT-3): default-off, integration-session auth via auth, store for session/lookup; no other internal deps
 	"streamtoken":       {"store", "auth", "serverrole"}, // serverrole gates Issue on the ADR-0123 §2 / ADR-0129 §1 attached authority face
+	"subtitlesearch":    {},                              // leaf; CORE-1690 opt-in online subtitle providers over a consumer-side Egress seam; stdlib only
 	"updatecheck":       {"release"},                     // opt-in version check (ADR-0013 §7); imports release to verify the signed channel manifest before blessing an update (PANEL-11)
 	"jobs":              {"store", "redact"},             // operational job errors are redacted before they are logged
 	"auth":              {"store"},

@@ -320,6 +320,37 @@ func TestFieldWritesEmitUpdated(t *testing.T) {
 	}
 }
 
+func TestUpsertScannedMediaTagSkipsUnchangedValueAndProvenance(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	const id = "media-alpha"
+	const name = "format"
+	if err := st.UpsertMediaFieldsWithSource(ctx, id, []MediaField{{Name: name, Type: EntityFieldText, Text: "ep"}}, MutationSourceHydrated); err != nil {
+		t.Fatal(err)
+	}
+	want := countMediaEvents(mediaOutboxEvents(t, st), MediaEventUpdated, id)
+	for _, step := range []struct {
+		value   string
+		changed bool
+	}{
+		{value: "ep", changed: true}, // same value, new provenance
+		{value: "ep"},
+		{value: "lp", changed: true},
+		{value: "", changed: true},
+		{value: ""},
+	} {
+		if err := st.UpsertScannedMediaTag(ctx, id, name, step.value); err != nil {
+			t.Fatal(err)
+		}
+		if step.changed {
+			want++
+		}
+		if got := countMediaEvents(mediaOutboxEvents(t, st), MediaEventUpdated, id); got != want {
+			t.Fatalf("media.updated count after tag %q = %d, want %d", step.value, got, want)
+		}
+	}
+}
+
 // TestMergeApplyEmitsDeletedAndUpdated proves a dedupe merge emits media.deleted
 // (with the cluster's LibraryID) for each merged-away loser and one
 // media.updated for the survivor.

@@ -119,16 +119,16 @@ func TestComposedSegmentArgsTempoGraphics(t *testing.T) {
 	picture := ComposedPicture{GraphicsPath: "/lib/song.cdg"}
 	rendition := Rendition{VideoKbps: 1500}.WithAudioAdjust(AudioAdjust{Tempo: 0.8})
 	args := composedSegmentArgs("/lib/song.mp3", "/scratch/s/composed", picture, 10, 4, rendition)
-	// The graphics are drawn at source time (trimmed at source 32s) and
-	// stamped at output time, so they stay with the retimed audio.
-	if got, want := argAfter(args, "-vf"), "scale=1000:720:flags=neighbor,pad=1280:720:(ow-iw)/2:0,fps=30,tpad=stop=-1:stop_mode=clone,trim=start=32,setpts=(PTS-STARTPTS)/0.8,fps=30,format=yuv420p"; got != want {
+	// The presenter draws source time itself (startComposedProcess), so the
+	// rawvideo picture needs no retiming filters.
+	if got, want := argAfter(args, "-vf"), "format=yuv420p"; got != want {
 		t.Fatalf("-vf = %q\nwant %q", got, want)
 	}
 	if !containsPair(args, "-ss", "32") || !containsPair(args, "-output_ts_offset", "40") || argAfter(args, "-af") != "atempo=0.8,aresample=matrix_encoding=dplii" {
 		t.Fatalf("audio must seek source 32s, play at tempo 0.8 and land at output 40s: %q", args)
 	}
 	args = composedSegmentArgs("/lib/song.mp3", "/d", picture, 0, 4, rendition)
-	if got := argAfter(args, "-vf"); !strings.HasSuffix(got, "tpad=stop=-1:stop_mode=clone,setpts=PTS/0.8,fps=30,format=yuv420p") || slices.Contains(args, "-ss") {
+	if got := argAfter(args, "-vf"); got != "format=yuv420p" || slices.Contains(args, "-ss") {
 		t.Fatalf("from the start: -vf = %q in %q", got, args)
 	}
 }

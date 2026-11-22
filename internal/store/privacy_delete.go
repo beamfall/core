@@ -299,6 +299,9 @@ func (s *Store) deleteProfileEventsLocked(ctx context.Context, profileID Profile
 	if err := deleteMyQueueAll(ctx, tx, profileID); err != nil {
 		return err
 	}
+	if err := deletePartyProfileTx(ctx, tx, profileID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -339,6 +342,13 @@ func deleteMyCatalogFootprintTx(ctx context.Context, tx *sql.Tx, profileID Profi
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM server_config WHERE key LIKE ?`, pluginProfileLinkPrefix+"%."+string(profileID)); err != nil {
 		return err
+	}
+	// The Profile's own Home layout and its history (CORE-1972).
+	for _, table := range []string{"nav_override", "nav_override_history"} {
+		// #nosec G202 -- table is drawn from the closed literal list above.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE scope = 'profile' AND scope_id = ?`, profileID); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE media_operator_ordinal SET actor_profile_id = NULL WHERE actor_profile_id = ?`, profileID); err != nil {
 		return err

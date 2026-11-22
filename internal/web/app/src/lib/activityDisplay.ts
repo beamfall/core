@@ -192,6 +192,12 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
   "retention_rule.delete": label("library", "activityEventRetentionRuleDelete"),
   "collection.trash": label("library", "activityEventCollectionTrash"),
   "marker.delete": label("library", "activityEventMarkerDelete"),
+  "subtitle.download": label(
+    "library",
+    "activityEventSubtitleDownload",
+    "activityNounItem",
+    "media",
+  ),
   "channel.delete": label("library", "activityEventChannelDelete"),
   "saved_filter.delete": label("library", "activityEventSavedFilterDelete"),
   "smart_collection.delete": label("library", "activityEventSmartCollectionDelete"),

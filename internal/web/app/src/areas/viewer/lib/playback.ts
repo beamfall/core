@@ -92,6 +92,11 @@ export interface PlaybackAssets {
    * every audio decision; the server generates it on first fetch (CORE-2401).
    */
   waveform?: string;
+  /**
+   * Silence map URL (`{version: 1, spans: [{startSeconds, endSeconds}]}`, file
+   * seconds; ADR-0098 area 2), read when the listener removes long pauses.
+   */
+  silenceMap?: string;
 }
 
 /** The "Up Next" issuance the server pre-mints for the player (ADR-0010 next-item). */
@@ -220,6 +225,18 @@ export interface PlaybackInfo {
   selectedSubtitleTrack?: PlaybackSelectedSubtitle;
   /** Why subtitles the viewer would want cannot be shown here, when they cannot. */
   subtitlesUnavailableReason?: string;
+  /** The source audio and whether the primary stream delivers it unchanged (CORE-1627). */
+  audioQuality?: AudioQuality;
+}
+
+/** playback-info `audioQuality` (CORE-1627). Rate in Hz, depth in bits; absent when unknown. */
+export interface AudioQuality {
+  codec: string;
+  sampleRate?: number;
+  bitDepth?: number;
+  lossless?: boolean;
+  /** "direct" when the source audio arrives bit-for-bit, else "transcode". */
+  delivery: string;
 }
 
 /** The /api/preview-info response: Generated Asset URLs only, no playback streams. */

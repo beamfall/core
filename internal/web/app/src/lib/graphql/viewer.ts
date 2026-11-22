@@ -17,6 +17,7 @@ import type {
   EntityInfo,
   FieldFilters,
   GenericMediaInfo,
+  HomeLayoutInfo,
   ItemStateInfo,
   ItemTarget,
   LibraryInfo,
@@ -218,10 +219,28 @@ export async function fetchSourceItems(
   return data.sourceItems ?? [];
 }
 
+const SMART_COLLECTION_ITEMS_QUERY =
+  "query SmartCollectionItems($kind: String, $value: String, $limit: Int, $offset: Int) { sourceItems(kind: $kind, value: $value, limit: $limit, offset: $offset) { id title durationSeconds mediaClass locked } }";
+
+/** One page of a Smart Collection's items, evaluated by the server for the calling Profile. */
+export async function fetchSmartCollectionItems(
+  id: string,
+  limit: number,
+  offset: number,
+  signal?: AbortSignal,
+): Promise<SourceItem[]> {
+  const data = await graphql<{ sourceItems: SourceItem[] | null }>(
+    SMART_COLLECTION_ITEMS_QUERY,
+    { kind: "smart-collection", value: id, limit, offset },
+    signal,
+  );
+  return data.sourceItems ?? [];
+}
+
 // --- Entity detail --------------------------------------------------------
 
 const ENTITY_QUERY =
-  "query Entity($id: String!) { entity(id: $id) { id kind kindDisplayName title archetype artworkSlots fields { name type value label } relatedEntities { kind kindDisplayName kindPluralDisplayName archetype items { id kind title summary artwork { poster } artworkSlots mediaClass year byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } } }";
+  "query Entity($id: String!) { entity(id: $id) { id kind kindDisplayName title archetype artworkSlots fields { name type value label } relatedEntities { kind kindDisplayName kindPluralDisplayName archetype sections { value displayName count } items { id kind title summary artwork { poster } artworkSlots mediaClass year byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } } }";
 
 /** Entity — the detail header (declared fields, server-stringified) and its related Entities. */
 export async function fetchEntity(id: string, signal?: AbortSignal): Promise<EntityInfo | null> {
@@ -254,16 +273,21 @@ export async function fetchMetadataCredits(signal?: AbortSignal): Promise<Metada
 }
 
 const MEDIA_FOR_ENTITY_QUERY =
-  "query MediaForEntity($entityID: String!) { mediaForEntity(entityID: $entityID) { id kind title summary locked artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query MediaForEntity($entityID: String!, $rollUp: Boolean) { mediaForEntity(entityID: $entityID, rollUp: $rollUp) { id kind title summary locked artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
-/** MediaForEntity — the hand-rolled related-Media fallback list for a detail view. */
+/**
+ * MediaForEntity — the hand-rolled related-Media fallback list for a detail
+ * view. With `rollUp`, Media a container holds come back as one card for
+ * their outermost container (CORE-3058).
+ */
 export async function fetchMediaForEntity(
   entityID: string,
   signal?: AbortSignal,
+  options?: { rollUp?: boolean },
 ): Promise<SourceItem[]> {
   const data = await graphql<{ mediaForEntity: SourceItem[] | null }>(
     MEDIA_FOR_ENTITY_QUERY,
-    { entityID },
+    options?.rollUp ? { entityID, rollUp: true } : { entityID },
     signal,
   );
   // Two relations to the same Media return it twice; every view lists, counts
@@ -277,7 +301,7 @@ export async function fetchMediaForEntity(
 }
 
 const RELATED_MEDIA_QUERY =
-  "query RelatedMedia($mediaID: String!, $limit: Int) { relatedMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query RelatedMedia($mediaID: String!, $limit: Int) { relatedMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification locked audienceScore audienceScoreVotes byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /**
  * RelatedMedia — Media sharing a Media item's credits, ranked and bounded on the
@@ -294,6 +318,27 @@ export async function fetchRelatedMedia(
     signal,
   );
   return data.relatedMedia ?? [];
+}
+
+const SIMILAR_MEDIA_QUERY =
+  "query SimilarMedia($mediaID: String!, $limit: Int) { similarMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification locked audienceScore audienceScoreVotes byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+
+/**
+ * SimilarMedia — Media whose locally computed sonic features are nearest a
+ * Media item's, best first, with the same Mute and visibility rules as browse
+ * (CORE-3075). Empty when the item or its Library was never analysed.
+ */
+export async function fetchSimilarMedia(
+  mediaID: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<SourceItem[]> {
+  const data = await graphql<{ similarMedia: SourceItem[] | null }>(
+    SIMILAR_MEDIA_QUERY,
+    { mediaID, limit },
+    signal,
+  );
+  return data.similarMedia ?? [];
 }
 
 // --- Search ---------------------------------------------------------------
@@ -583,6 +628,40 @@ export async function setClientPref(key: string, value: string): Promise<{ key: 
     value,
   });
   return data.setClientPref;
+}
+
+// --- Home layout (per-Profile order and visibility, CORE-1972) ----------
+
+const HOME_LAYOUT_FIELDS = "customized sections { id kind title hidden }";
+
+const HOME_LAYOUT_QUERY = `query HomeLayout { homeLayout { ${HOME_LAYOUT_FIELDS} } }`;
+
+/** HomeLayout — every Home shelf this Profile receives, in its order, with visibility. */
+export async function fetchHomeLayout(signal?: AbortSignal): Promise<HomeLayoutInfo> {
+  const data = await graphql<{ homeLayout: HomeLayoutInfo }>(HOME_LAYOUT_QUERY, {}, signal);
+  return data.homeLayout;
+}
+
+const SET_HOME_LAYOUT_MUTATION = `mutation SetHomeLayout($sectionOrder: [String!], $hiddenSectionIDs: [String!]) { setHomeLayout(sectionOrder: $sectionOrder, hiddenSectionIDs: $hiddenSectionIDs) { ${HOME_LAYOUT_FIELDS} } }`;
+
+/** SetHomeLayout — save this Profile's Home order and hidden shelves. */
+export async function setHomeLayout(
+  sectionOrder: string[],
+  hiddenSectionIDs: string[],
+): Promise<HomeLayoutInfo> {
+  const data = await graphql<{ setHomeLayout: HomeLayoutInfo }>(SET_HOME_LAYOUT_MUTATION, {
+    sectionOrder,
+    hiddenSectionIDs,
+  });
+  return data.setHomeLayout;
+}
+
+const RESET_HOME_LAYOUT_MUTATION = `mutation ResetHomeLayout { resetHomeLayout { ${HOME_LAYOUT_FIELDS} } }`;
+
+/** ResetHomeLayout — return this Profile's Home to the server default. */
+export async function resetHomeLayout(): Promise<HomeLayoutInfo> {
+  const data = await graphql<{ resetHomeLayout: HomeLayoutInfo }>(RESET_HOME_LAYOUT_MUTATION, {});
+  return data.resetHomeLayout;
 }
 
 // --- Hide (per-Profile Mute) ----------------------------------------------

@@ -16,6 +16,7 @@ package store
 //   - failed_enrichment — per-media failure log enforcing the retry cap
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/binary"
@@ -23,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 )
@@ -368,10 +370,12 @@ func (s *Store) semanticSearchSQL(ctx context.Context, filter LibraryFilter, kin
 		if err != nil {
 			continue // corrupt blob — skip rather than abort the whole result
 		}
-		score := cosineSimilarity(queryVector, vec)
-		if score == cosineSimilarityMismatch {
+		if len(vec) != len(queryVector) {
 			continue // dims/blob disagree — not comparable, skip
 		}
+		// Checked by length, not by the mismatch sentinel: a signed (centred)
+		// vector can legitimately score -1, its exact opposite.
+		score := cosineSimilarity(queryVector, vec)
 		candidates = append(candidates, embeddingCandidate{mediaID: id, score: score})
 	}
 	if err := rows.Err(); err != nil {
@@ -1220,16 +1224,12 @@ type embeddingCandidate struct {
 	score   float32
 }
 
-// sortCandidates sorts candidates in place, highest score first.
-// Uses insertion sort: for the typical limit (10–200 top-k results from a
-// brute-force scan) O(n log n) stdlib sort would be fine too, but insertion
-// sort avoids an allocation and keeps the code dependency-free.
+// sortCandidates sorts candidates in place, highest score first; equal scores
+// keep their scan order. It sorts the whole scored window, which runs to many
+// thousands of rows for SimilarMedia and RecommendFromEngagement, so it must be
+// O(n log n): the insertion sort it replaced was quadratic in the window.
 func sortCandidates(candidates []embeddingCandidate) {
-	for i := 1; i < len(candidates); i++ {
-		j := i
-		for j > 0 && candidates[j].score > candidates[j-1].score {
-			candidates[j], candidates[j-1] = candidates[j-1], candidates[j]
-			j--
-		}
-	}
+	slices.SortStableFunc(candidates, func(a, b embeddingCandidate) int {
+		return cmp.Compare(b.score, a.score)
+	})
 }

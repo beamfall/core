@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -63,4 +64,66 @@ func (s *Store) MarkHydrationBackfillChecked(ctx context.Context, libraryID Libr
 		ON CONFLICT(key) DO NOTHING
 	`, hydrationBackfillKey(libraryID, markerField), timeToMillis(now))
 	return err
+}
+
+// HydrationTagCandidate is a Media row that has yet to receive a text tag.
+type HydrationTagCandidate struct {
+	MediaID        MediaID
+	Path           string
+	PersistedValue string
+}
+
+// HydrationTagCandidates selects Media with an available primary path,
+// including trashed Media that may later be restored. It also finds any old
+// per-Media tag stored with a hydration relation.
+func (s *Store) HydrationTagCandidates(ctx context.Context, libraryID LibraryID, classes []MediaClass, field string) ([]HydrationTagCandidate, error) {
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(classes)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		WITH candidates AS (
+			SELECT m.id, (
+				SELECT f.path FROM media_file f
+				WHERE f.media_id = m.id AND f.missing_at_ms IS NULL
+				ORDER BY f.version_label, f.part_ordinal, f.path LIMIT 1
+			) AS path
+			FROM media m
+			WHERE m.library_id = ?
+			  AND m.media_class IN (SELECT value FROM json_each(?))
+			  AND NOT EXISTS (SELECT 1 FROM media_field_text f WHERE f.media_id = m.id AND f.field = ?)
+			  AND NOT EXISTS (SELECT 1 FROM media_field_provenance p WHERE p.media_id = m.id AND p.field = ?)
+		)
+		SELECT c.id, c.path, COALESCE((
+			SELECT MIN(NULLIF(json_extract(r.attributes, '$."@hydration".Value'), '') COLLATE BINARY)
+			FROM entity_relation r
+			WHERE r.to_media_id = c.id AND json_extract(r.attributes, '$."@hydration".Field') = ?
+		), '')
+		FROM candidates c WHERE c.path IS NOT NULL ORDER BY c.id
+	`, libraryID, string(encoded), field, field, field)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var candidates []HydrationTagCandidate
+	for rows.Next() {
+		var candidate HydrationTagCandidate
+		if err := rows.Scan(&candidate.MediaID, &candidate.Path, &candidate.PersistedValue); err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, candidate)
+	}
+	return candidates, rows.Err()
 }

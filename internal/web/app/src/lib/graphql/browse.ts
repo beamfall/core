@@ -8,7 +8,7 @@ import { graphql } from "@/lib/api";
 import type { GenericMediaInfo } from "./types";
 
 const MEDIA_ROW_FIELDS =
-  "media(id: $id) { id title durationSeconds mediaClass credits { entityID title kind archetype relation } }";
+  "media(id: $id) { id title durationSeconds mediaClass credits { entityID title kind archetype relation attributes } }";
 const MEDIA_ROW_QUERY = `query MediaRow($id: String!) { ${MEDIA_ROW_FIELDS} }`;
 // The same row plus the Media's stored fields, read for core's scan positions.
 const MEDIA_TRACK_ROW_QUERY = `query MediaTrackRow($id: String!) { ${MEDIA_ROW_FIELDS} mediaFields(mediaID: $id) { name value } }`;

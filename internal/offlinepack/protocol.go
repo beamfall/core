@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -64,12 +66,34 @@ type GrantClaims struct {
 	Rev                 RevocationGenerations `json:"rev"`
 }
 
+// ManifestItem is one sealed pack item: one Part of a Media's selected
+// Version. PartOrdinal and Markers (CORE-3016) are omitted when zero or empty,
+// so a single-Part Media without chapters keeps its pre-Part manifest bytes.
+// Markers are the Media's chapter Markers and ride on its Part 0 item only.
 type ManifestItem struct {
-	MediaID         string `json:"media_id"`
-	SelectedVersion string `json:"selected_version"`
-	Size            uint64 `json:"size"`
-	SHA256          string `json:"sha256"`
+	MediaID         string           `json:"media_id"`
+	SelectedVersion string           `json:"selected_version"`
+	Size            uint64           `json:"size"`
+	SHA256          string           `json:"sha256"`
+	PartOrdinal     int              `json:"part_ordinal,omitempty"`
+	Markers         []ManifestMarker `json:"markers,omitempty"`
 }
+
+// ManifestMarker is a chapter Marker carried in the manifest for offline
+// chapter navigation. EndSeconds is omitted for a point Marker.
+type ManifestMarker struct {
+	Title        string   `json:"title"`
+	StartSeconds float64  `json:"start_seconds"`
+	EndSeconds   *float64 `json:"end_seconds,omitempty"`
+}
+
+// MaxManifestMarkers bounds the chapter Markers one manifest carries across
+// all its items, and MaxManifestMarkerTitleBytes bounds their titles' total
+// bytes, so a book with a runaway Marker set cannot bloat a signed manifest.
+const (
+	MaxManifestMarkers          = 4096
+	MaxManifestMarkerTitleBytes = 256 << 10
+)
 
 type ManifestWrap struct {
 	Suite          string `json:"suite"`
@@ -329,13 +353,49 @@ func validateGrantBindings(c GrantClaims, e GrantExpectations) error {
 	return nil
 }
 
+// validManifestParts checks an item's Part ordinal and chapter Markers: a
+// non-negative ordinal, Markers only on Part 0, and finite Marker times with
+// any end after its start.
+func validManifestParts(item ManifestItem) bool {
+	if item.PartOrdinal < 0 || len(item.Markers) > MaxManifestMarkers ||
+		(item.PartOrdinal != 0 && len(item.Markers) > 0) {
+		return false
+	}
+	for _, marker := range item.Markers {
+		if !finiteNonNegative(marker.StartSeconds) {
+			return false
+		}
+		if marker.EndSeconds != nil && (!finiteNonNegative(*marker.EndSeconds) || *marker.EndSeconds <= marker.StartSeconds) {
+			return false
+		}
+	}
+	return true
+}
+
+// validManifestMarkerBudget checks the manifest-wide chapter Marker bounds.
+func validManifestMarkerBudget(items []ManifestItem) bool {
+	markers, titleBytes := 0, 0
+	for _, item := range items {
+		markers += len(item.Markers)
+		for _, marker := range item.Markers {
+			titleBytes += len(marker.Title)
+		}
+	}
+	return markers <= MaxManifestMarkers && titleBytes <= MaxManifestMarkerTitleBytes
+}
+
+func finiteNonNegative(v float64) bool {
+	return v >= 0 && !math.IsInf(v, 0) && !math.IsNaN(v)
+}
+
 func ValidateManifestClaims(c ManifestClaims) error {
 	if c.V != 1 || c.Aud != OfflinePackAudience || c.Iss == "" || c.PackID == "" || c.ProfileID == "" ||
 		c.DeviceEnrollmentID == "" || c.DeviceKeyThumbprint == "" || c.ManifestRevision == 0 ||
 		!validDigest(c.ManifestSHA256) || !validDigest(c.GrantScopeSHA256) ||
 		c.PackExpiresAt <= 0 || !sortedUniqueNonEmpty(c.LibraryIDs) ||
 		c.Wrap.Suite != WrapSuite || c.Wrap.DeviceKID != c.DeviceKeyThumbprint ||
-		!validDigest(c.Wrap.EnvelopeSHA256) || len(c.Items) == 0 || len(c.Items) > MaxManifestItems {
+		!validDigest(c.Wrap.EnvelopeSHA256) || len(c.Items) == 0 || len(c.Items) > MaxManifestItems ||
+		!validManifestMarkerBudget(c.Items) {
 		return ErrInvalidEnvelope
 	}
 	envelope, err := DecodeWrappedEnvelope(c.Wrap.Envelope)
@@ -348,10 +408,11 @@ func ValidateManifestClaims(c ManifestClaims) error {
 	}
 	seen := make(map[string]struct{}, len(c.Items))
 	for _, item := range c.Items {
-		if item.MediaID == "" || item.Size > MaxItemSize || !validDigest(item.SHA256) {
+		if item.MediaID == "" || item.Size > MaxItemSize || !validDigest(item.SHA256) ||
+			!validManifestParts(item) {
 			return ErrInvalidEnvelope
 		}
-		key := item.MediaID + "\x00" + item.SelectedVersion
+		key := item.MediaID + "\x00" + item.SelectedVersion + "\x00" + strconv.Itoa(item.PartOrdinal)
 		if _, exists := seen[key]; exists {
 			return ErrInvalidEnvelope
 		}
@@ -374,11 +435,11 @@ func validateManifestBinding(c ManifestBinding) error {
 	if c.V != 1 || c.Iss == "" || c.Aud != OfflinePackAudience || c.PackID == "" || c.ProfileID == "" ||
 		!sortedUniqueNonEmpty(c.LibraryIDs) || c.DeviceEnrollmentID == "" || c.DeviceKeyThumbprint == "" ||
 		c.ManifestRevision == 0 || c.PackExpiresAt <= 0 || len(c.Items) == 0 ||
-		len(c.Items) > MaxManifestItems || c.WrapSuite != WrapSuite {
+		len(c.Items) > MaxManifestItems || c.WrapSuite != WrapSuite || !validManifestMarkerBudget(c.Items) {
 		return ErrInvalidEnvelope
 	}
 	for _, item := range c.Items {
-		if item.MediaID == "" || item.Size > MaxItemSize || !validDigest(item.SHA256) {
+		if item.MediaID == "" || item.Size > MaxItemSize || !validDigest(item.SHA256) || !validManifestParts(item) {
 			return ErrInvalidEnvelope
 		}
 	}

@@ -1,0 +1,9 @@
+- [x] `internal/store`: classify roots before the ordered-children read; declared containers read incoming parts only, other kinds outgoing ordered links only
+- [x] `internal/store`: fold linked Entity class spans once per batch
+- [x] Store test: a declared container ignores a shared Entity's Media; an undeclared root ignores incoming parts
+- [x] Equivalence and timing against a copy of the owner's catalog (identical results, 2.0-2.4 s to about 60 ms annotation per page)
+- [x] Web: `libraryEntities` read cache with shared in-flight reads and engagement-epoch invalidation; Library page and grid paint cached pages and revalidate
+- [x] Vitest: cache sharing, invalidation, abort, failure; grid paints cached then fresh
+- [ ] Measure the deployed Library tab after landing
+- [ ] `make gate`
+- [ ] `openspec archive core-3064-library-entities-load` after landing

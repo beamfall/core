@@ -7,6 +7,7 @@ import (
 
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/scrape"
+	"github.com/beamfall/core/internal/store"
 )
 
 // chainBundle declares a two-level container chain (part holds Media and
@@ -36,6 +37,29 @@ func TestContainerRelationsIndexesHoldersAndNesting(t *testing.T) {
 	}
 	if !index.Nests("part", "part-of", "volume") || index.Nests("part", "holds", "volume") {
 		t.Fatal("part-of nesting not indexed exactly")
+	}
+}
+
+func TestContainerNestingsListsEveryCrossKindNesting(t *testing.T) {
+	got := ContainerNestings("kit", chainBundle())
+	want := []store.ContainerNest{{PluginID: "kit", ChildKind: "part", Relation: "part-of", ParentKind: "volume"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ContainerNestings = %+v, want %+v", got, want)
+	}
+	// One relation naming two parent kinds keeps both; a same-kind relation
+	// is not a nesting.
+	bundle := chainBundle()
+	bundle.EntityKinds[0].Relations = append(bundle.EntityKinds[0].Relations,
+		plugin.RelationSpec{Name: "part-of", ToKind: "shelf"},
+		plugin.RelationSpec{Name: "sibling", ToKind: "part"},
+	)
+	got = ContainerNestings("kit", bundle)
+	want = []store.ContainerNest{
+		{PluginID: "kit", ChildKind: "part", Relation: "part-of", ParentKind: "volume"},
+		{PluginID: "kit", ChildKind: "part", Relation: "part-of", ParentKind: "shelf"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ContainerNestings = %+v, want %+v", got, want)
 	}
 }
 

@@ -32,6 +32,7 @@ func capabilitiesCommand(args []string, stdout io.Writer) error {
 	report := capabilities.CurrentWithOverrides(workflowOverrides())
 	report.Version = ""
 	report.Commit = ""
+	report.BuildDate = ""
 	report.BuildTags = nil
 	report.CorrespondingSourceOfferURL = ""
 	return writeCapabilitiesReport(stdout, report)

@@ -53,9 +53,11 @@ func firstPartyHooksForBundles(bundles []plugin.Bundle) app.Hooks {
 	if active[books.PluginID] {
 		hooks.Parsers[books.PluginID] = books.New()
 		hooks.HydrationMappers[books.PluginID] = booksHydrationMapper{}
+		hooks.EntityBrowseRules = append(hooks.EntityBrowseRules, bookAuthorBrowseRule())
 		hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: books.PluginID, ImporterID: books.ImporterID}] = func(_ []string, path string) migrate.Source {
 			return books.NewImportSource(path)
 		}
+		addBookPackResolvers(&hooks)
 	}
 	if active[familyarchive.PluginID] {
 		hooks.Parsers[familyarchive.PluginID] = familyarchive.New()
@@ -107,6 +109,7 @@ func addMusicHooks(hooks *app.Hooks) {
 			{Relation: "appears-on"},
 		}},
 	)
+	hooks.EntityGroupRules = append(hooks.EntityGroupRules, musicReleaseTypeGroupRule())
 	hooks.EntityBrowseRules = append(hooks.EntityBrowseRules, app.EntityBrowseRule{
 		PluginID: music.PluginID, Kind: "artist", Sources: []app.EntityBrowseSource{
 			{Relation: "album-artist", FromKind: "album"},
@@ -224,6 +227,19 @@ type musicHydrationMapper struct{}
 
 func (musicHydrationMapper) MarkerField() string { return music.HydratedField }
 
+func (musicHydrationMapper) HydrationTag() app.HydrationTag {
+	return app.HydrationTag{
+		Field: music.ReleaseTypeField,
+		Keys: []string{
+			"releasetype", "musicbrainz_albumtype", "musicbrainz album type", "release type",
+			"compilation", "tcmp", "cpil", "album_artist", "albumartist",
+		},
+		Read: func(tags map[string]string) string {
+			return music.MapHydration(tags, "").ReleaseType
+		},
+	}
+}
+
 func (musicHydrationMapper) ExternalIDSchemes() []string {
 	return []string{music.SchemeMusicBrainzRecording}
 }
@@ -322,7 +338,9 @@ func (musicHydrationMapper) MapHydration(tags map[string]string, path string) ap
 			}
 			albumArtist = credit.Artist
 		}
-		album := app.HydrationEntity{Kind: "album", Title: hydration.Album, Scope: albumArtist}
+		album := app.HydrationEntity{
+			Kind: "album", Title: hydration.Album, Scope: albumArtist,
+		}
 		if !hydration.ReleaseDate.IsZero() {
 			album.Fields = append(album.Fields, store.EntityField{Name: "release-date", Type: store.EntityFieldDate, Date: hydration.ReleaseDate.UTC()})
 		}
@@ -526,4 +544,15 @@ func (s feedDirectorySearcher) searchPodcastIndex(ctx context.Context, query str
 		out = append(out, graph.FeedSearchResult{Title: feed.Title, FeedURL: feed.FeedURL, ArtworkURL: feed.ArtworkURL, Description: feed.Description})
 	}
 	return out, nil
+}
+
+// musicReleaseTypeGroupRule splits an Entity's related albums by release type,
+// with the plugin's headings in its order (CORE-2769).
+func musicReleaseTypeGroupRule() app.EntityGroupRule {
+	groups := music.ReleaseTypeGroups()
+	values := make([]app.EntityGroupValue, 0, len(groups))
+	for _, g := range groups {
+		values = append(values, app.EntityGroupValue{Value: g.Value, Label: g.Label})
+	}
+	return app.EntityGroupRule{PluginID: music.PluginID, Kind: "album", Field: music.ReleaseTypeField, Groups: values}
 }

@@ -291,3 +291,61 @@ func synthesizeSubtitledMKV(t *testing.T) string {
 	}
 	return mkv
 }
+
+// TestAudioExcerptJourney decodes a window of real audio to in-memory float32
+// samples. audio_sine is a 2s mono 440Hz tone, so a 1s mono window at 16kHz
+// holds about 16000 non-silent samples, and a window past the end is an error.
+//
+// io:ffmpeg-audio-excerpt
+func TestAudioExcerptJourney(t *testing.T) {
+	r := newRunner(t)
+	src := fixtures(t).Path("audio_sine")
+
+	samples, err := r.AudioExcerpt(ctx(t), src, 0.5, 1, 16000, 1)
+	if err != nil {
+		t.Fatalf("AudioExcerpt(%s): %v", src, err)
+	}
+	if n := len(samples); n < 15000 || n > 17000 {
+		t.Errorf("AudioExcerpt returned %d samples, want about 16000", n)
+	}
+	var peak float64
+	for _, s := range samples {
+		peak = math.Max(peak, math.Abs(float64(s)))
+	}
+	if peak < 0.01 || peak > 1.01 {
+		t.Errorf("AudioExcerpt peak=%v, want a non-silent tone within [-1,1]", peak)
+	}
+	if _, err := r.AudioExcerpt(ctx(t), src, 10, 1, 16000, 1); err == nil {
+		t.Errorf("AudioExcerpt past the end returned no error")
+	}
+}
+
+// TestProbeMetadataTagsJourney remuxes av_basic with a container title and
+// reads selected tags back: the requested tag present, keys lower-cased, and an
+// absent tag omitted.
+//
+// io:ffmpeg-probe-metadata-tags
+func TestProbeMetadataTagsJourney(t *testing.T) {
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skipf("ffmpeg not on PATH: %v", err)
+	}
+	r := newRunner(t)
+	dst := filepath.Join(t.TempDir(), "tagged.mp4")
+	cmd := exec.Command(ffmpegPath, "-v", "error", "-i", fixtures(t).Path("av_basic"),
+		"-map", "0", "-c", "copy", "-metadata", "title=Journey Title", "-y", dst)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("remux tagged file: %v\n%s", err, strings.TrimSpace(string(out)))
+	}
+
+	tags, err := r.ProbeMetadataTags(ctx(t), dst, []string{"title", "album"})
+	if err != nil {
+		t.Fatalf("ProbeMetadataTags(%s): %v", dst, err)
+	}
+	if got := tags["title"]; got != "Journey Title" {
+		t.Errorf("title=%q, want %q (tags=%v)", got, "Journey Title", tags)
+	}
+	if _, ok := tags["album"]; ok {
+		t.Errorf("album present in %v, want omitted", tags)
+	}
+}

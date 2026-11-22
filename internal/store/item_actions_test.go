@@ -203,6 +203,105 @@ func TestSetItemWatchedEntityTree(t *testing.T) {
 	}
 }
 
+// TestSetItemWatchedNestedContainers marks a container whose parts are of
+// another Kind and nest in it by a declared container relation, as a season
+// nests in a show (CORE-3056). Without the declared nesting the whole holds no
+// Media of its own and the mark reached nothing.
+func TestSetItemWatchedNestedContainers(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	library, err := st.CreateLibrary(ctx, "Nested", false, "nest-kit", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filter := LibraryFilter{AllowedIDs: []LibraryID{library.ID}}
+	watched := func(target ItemTarget) bool {
+		t.Helper()
+		state, err := st.ItemStateFor(ctx, "profile-default", target, filter)
+		if err != nil {
+			t.Fatalf("ItemStateFor(%+v): %v", target, err)
+		}
+		return state.Watched
+	}
+	ids := []MediaID{
+		seedHealthMedia(t, st, library.ID, "nest-one", "/library/nest-one.mp4", "oshash-nest-one"),
+		seedHealthMedia(t, st, library.ID, "nest-two", "/library/nest-two.mp4", "oshash-nest-two"),
+		seedHealthMedia(t, st, library.ID, "nest-three", "/library/nest-three.mp4", "oshash-nest-three"),
+	}
+	stray := seedHealthMedia(t, st, library.ID, "nest-stray", "/library/nest-stray.mp4", "oshash-nest-stray")
+	peer := seedHealthMedia(t, st, library.ID, "nest-peer", "/library/nest-peer.mp4", "oshash-nest-peer")
+	for _, entity := range []Entity{
+		{ID: "entity-nest-whole", LibraryID: library.ID, Kind: "whole", Title: "Whole"},
+		{ID: "entity-nest-part-a", LibraryID: library.ID, Kind: "part", Title: "Part A"},
+		{ID: "entity-nest-part-b", LibraryID: library.ID, Kind: "part", Title: "Part B"},
+		{ID: "entity-nest-stray", LibraryID: library.ID, Kind: "part", Title: "Stray"},
+		{ID: "entity-nest-peer", LibraryID: library.ID, Kind: "whole", Title: "Peer"},
+	} {
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, relation := range []EntityRelation{
+		{FromEntityID: "entity-nest-part-a", Name: "part-of", ToEntityID: "entity-nest-whole"},
+		{FromEntityID: "entity-nest-part-b", Name: "part-of", ToEntityID: "entity-nest-whole"},
+		{FromEntityID: "entity-nest-part-a", Name: "holds", ToMediaID: ids[0]},
+		{FromEntityID: "entity-nest-part-a", Name: "holds", ToMediaID: ids[1]},
+		{FromEntityID: "entity-nest-part-b", Name: "holds", ToMediaID: ids[2]},
+		// A part linked under an undeclared relation is not nested.
+		{FromEntityID: "entity-nest-stray", Name: "related", ToEntityID: "entity-nest-whole"},
+		{FromEntityID: "entity-nest-stray", Name: "holds", ToMediaID: stray},
+		// A nesting another plugin declares does not apply to this Library.
+		{FromEntityID: "entity-nest-peer", Name: "peer-of", ToEntityID: "entity-nest-whole"},
+		{FromEntityID: "entity-nest-peer", Name: "holds", ToMediaID: peer},
+	} {
+		if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nests := []ContainerNest{
+		{PluginID: "nest-kit", ChildKind: "part", Relation: "part-of", ParentKind: "whole"},
+		{PluginID: "other-kit", ChildKind: "whole", Relation: "peer-of", ParentKind: "whole"},
+	}
+	whole := ItemTarget{EntityID: "entity-nest-whole", ParentRelations: itemParentRelations, ContainerNests: nests}
+
+	if watched(whole) {
+		t.Fatal("unwatched nested container reads as watched")
+	}
+	changed, err := st.SetItemWatched(ctx, "profile-default", whole, true, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changed) != len(ids) {
+		t.Fatalf("changed = %v, want every Media of the nested parts", changed)
+	}
+	for _, id := range ids {
+		if !watched(ItemTarget{MediaID: id}) {
+			t.Fatalf("Media %s not watched after marking the whole", id)
+		}
+	}
+	if !watched(whole) {
+		t.Fatal("fully watched nested container reads as unwatched")
+	}
+	if watched(ItemTarget{MediaID: stray}) {
+		t.Fatal("mark followed an undeclared relation into another part's Media")
+	}
+	if watched(ItemTarget{MediaID: peer}) {
+		t.Fatal("mark followed another plugin's nesting")
+	}
+	if watched(ItemTarget{EntityID: "entity-nest-whole", ParentRelations: itemParentRelations}) {
+		t.Fatal("a whole with no declared nesting reached its parts' Media")
+	}
+
+	if _, err := st.SetItemWatched(ctx, "profile-default", whole, false, filter); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		if watched(ItemTarget{MediaID: id}) {
+			t.Fatalf("Media %s still watched after unmarking the whole", id)
+		}
+	}
+}
+
 func TestSetItemWatchedSurvivesProjectionRebuild(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

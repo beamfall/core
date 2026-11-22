@@ -450,6 +450,10 @@
       "effect": "write"
     },
     {
+      "field": "setsonicanalysisenabled",
+      "effect": "write"
+    },
+    {
       "field": "settranscodeconfig",
       "effect": "write"
     },
@@ -459,6 +463,10 @@
     },
     {
       "field": "skipdetectionenabled",
+      "effect": "read"
+    },
+    {
+      "field": "sonicanalysisenabled",
       "effect": "read"
     },
     {
@@ -708,6 +716,66 @@
     },
     {
       "method": "POST",
+      "pattern": "/api/party/join",
+      "note": "Join a party session as a guest with its join code"
+    },
+    {
+      "method": "GET",
+      "pattern": "/api/party/guest",
+      "note": "Read the party session as its guest sees it"
+    },
+    {
+      "method": "GET",
+      "pattern": "/api/party/guest/search",
+      "note": "Search the party session's Media as a guest"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/party/guest/request",
+      "note": "Request a Media entry as a party guest"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/party/guest/cancel",
+      "note": "Cancel a party guest's own pending or waiting entry"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/pairing-requests",
+      "note": "Request device pairing: returns a short code for an administrator to approve"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/pairing-requests/poll",
+      "note": "Poll a device pairing request with its request secret; delivers the enrollment once approved"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/pairing-requests/regenerate",
+      "note": "Replace a pending device pairing request's code and request secret"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/pairing-requests/cancel",
+      "note": "Withdraw a device pairing request with its request secret"
+    },
+    {
+      "method": "GET",
+      "pattern": "/api/pairing-requests",
+      "note": "List pending device pairing requests (admin)"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/pairing-requests/approve",
+      "note": "Approve a pending device pairing request (admin)"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/pairing-requests/deny",
+      "note": "Deny a pending device pairing request (admin)"
+    },
+    {
+      "method": "POST",
       "pattern": "/api/group/calibrate",
       "note": "Calibrate group watch sync"
     },
@@ -715,6 +783,43 @@
       "method": "GET",
       "pattern": "/api/manifest",
       "note": "Navigation Manifest: server-side layout and section configuration"
+    },
+    {
+      "method": "GET",
+      "pattern": "/api/subscriptions/export.opml",
+      "note": "Download every Subscription in visible, unsealed Libraries as OPML 2.0, without auth references, URL userinfo or feeds on this server. By default only clean http(s) feed URLs (no auth reference, userinfo, query or fragment) are exported; includePrivate=true adds the rest with their complete URL and no stored title.",
+      "authorization": "manager-session",
+      "success": {
+        "status": 200,
+        "contentType": "application/xml; charset=utf-8",
+        "fields": []
+      },
+      "errors": [
+        {
+          "status": 401,
+          "messages": [
+            "invalid session"
+          ]
+        },
+        {
+          "status": 403,
+          "messages": [
+            "manager session required"
+          ]
+        },
+        {
+          "status": 500,
+          "messages": [
+            "could not export subscriptions"
+          ]
+        },
+        {
+          "status": 503,
+          "messages": [
+            "subscription export unavailable"
+          ]
+        }
+      ]
     },
     {
       "method": "GET",

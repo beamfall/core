@@ -198,6 +198,96 @@ func TestSetWatchedEntityFollowsDeclaredParentRelations(t *testing.T) {
 	}
 }
 
+// A container whose parts are another container Kind, nesting in it by a
+// declared relation (a season in a show), marks and unmarks its parts' Media
+// (CORE-3056). Before, the mark walked only same-Kind children and reached
+// nothing, so the card's remaining count never moved.
+func TestSetWatchedEntityFollowsDeclaredContainerNesting(t *testing.T) {
+	registry, err := newTestPluginRegistry([]plugin.Bundle{{
+		ID:           "nest-test",
+		Version:      "0.0.1",
+		DisplayName:  plugin.LocaleString{"en": "Nest Test"},
+		MediaLabel:   plugin.LocaleString{"en": "Item"},
+		MediaClasses: []string{"video"},
+		EntityKinds: []plugin.EntityKind{
+			{Name: "whole", Archetype: "container", OrderedChildren: true},
+			{
+				Name: "part", Archetype: "container", OrderedChildren: true,
+				Relations: []plugin.RelationSpec{
+					{Name: "part-holds", ToKind: plugin.MediaKindName, Cardinality: "one"},
+					{Name: "part-of", ToKind: "whole"},
+				},
+			},
+		},
+		Layouts: []plugin.LayoutSpec{{ID: "home", Role: "browse", Sections: []plugin.SectionSpec{
+			{ID: "all", Kind: "grid", Title: plugin.LocaleString{"en": "All"},
+				ArtworkSlot: "thumb", Source: plugin.SourceSpec{Kind: "all-items"}},
+		}}},
+	}})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	st := storetest.Open(t)
+	ctx := context.Background()
+	// The nesting applies only in a Library of the plugin that declares it.
+	library, err := st.CreateLibrary(ctx, "Nested", false, "nest-test", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: "/nested/one.mkv", Title: "One",
+		Container: "mkv", Codec: "h264", ContentFingerprint: "fp-nested-one",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entity := range []store.Entity{
+		{ID: "entity-whole", LibraryID: library.ID, Kind: "whole", Title: "Whole"},
+		{ID: "entity-part", LibraryID: library.ID, Kind: "part", Title: "Part"},
+		{ID: "entity-other-whole", LibraryID: "library-local", Kind: "whole", Title: "Other Whole"},
+		{ID: "entity-other-part", LibraryID: "library-local", Kind: "part", Title: "Other Part"},
+	} {
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, relation := range []store.EntityRelation{
+		{FromEntityID: "entity-part", Name: "part-of", ToEntityID: "entity-whole"},
+		{FromEntityID: "entity-part", Name: "part-holds", ToMediaID: item.ID},
+		{FromEntityID: "entity-other-part", Name: "part-of", ToEntityID: "entity-other-whole"},
+		{FromEntityID: "entity-other-part", Name: "part-holds", ToMediaID: "media-alpha"},
+	} {
+		if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := newTestHandlerWithPlugins(st, registry)
+	state, errs := itemActionCall(t, handler, authorizeViewer, "mutation", "setWatched", map[string]any{"entityID": "entity-whole", "watched": true})
+	if len(errs) != 0 || !state.Watched {
+		t.Fatalf("setWatched(whole) = %+v errors %v", state, errs)
+	}
+	media, errs := itemActionCall(t, handler, authorizeViewer, "query", "itemState", map[string]any{"mediaID": string(item.ID)})
+	if len(errs) != 0 || !media.Watched {
+		t.Fatalf("part Media after marking the whole = %+v errors %v", media, errs)
+	}
+	state, errs = itemActionCall(t, handler, authorizeViewer, "mutation", "setWatched", map[string]any{"entityID": "entity-whole", "watched": false})
+	if len(errs) != 0 || state.Watched {
+		t.Fatalf("setWatched(whole, false) = %+v errors %v", state, errs)
+	}
+	media, errs = itemActionCall(t, handler, authorizeViewer, "query", "itemState", map[string]any{"mediaID": string(item.ID)})
+	if len(errs) != 0 || media.Watched {
+		t.Fatalf("part Media after unmarking the whole = %+v errors %v", media, errs)
+	}
+	// library-local has no plugin, so the same relations there nest nothing.
+	if _, errs := itemActionCall(t, handler, authorizeViewer, "mutation", "setWatched", map[string]any{"entityID": "entity-other-whole", "watched": true}); len(errs) != 0 {
+		t.Fatalf("setWatched(other whole) errors %v", errs)
+	}
+	media, errs = itemActionCall(t, handler, authorizeViewer, "query", "itemState", map[string]any{"mediaID": "media-alpha"})
+	if len(errs) != 0 || media.Watched {
+		t.Fatalf("Media of a Library without the plugin = %+v errors %v", media, errs)
+	}
+}
+
 func TestSetWatchlistedAddsAndRemoves(t *testing.T) {
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)

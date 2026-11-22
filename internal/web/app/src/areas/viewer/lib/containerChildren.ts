@@ -52,20 +52,64 @@ export function childThumbURL(item: SourceItem): string {
 }
 
 /**
+ * The child containers a container with no Media of its own plays through, in
+ * the order to try them: the first related group whose archetype is a
+ * container, its unlocked items with children left to finish first, then the
+ * rest. Empty when there is no such group. Ids in `skip` (containers already
+ * visited) are left out, so a group of only those does not count. Related
+ * groups carry no relation direction, so in a tree three or more containers
+ * deep a parent group sorting first could stand in for a child (CORE-2036).
+ */
+export function childContainerCandidates(
+  groups: readonly { archetype?: string; items: readonly SourceItem[] }[] | undefined,
+  skip?: ReadonlySet<string>,
+): SourceItem[] {
+  for (const group of groups ?? []) {
+    if (group.archetype !== "container") continue;
+    const items = skip ? group.items.filter((item) => !skip.has(item.id)) : group.items;
+    const playable = playOrder(items);
+    if (playable.length > 0) return playable;
+  }
+  return [];
+}
+
+/**
  * The child container a container with no Media of its own plays next: the
- * first related group whose archetype is a container, then its first item with
- * children left to finish, else (all finished) its first. Null when there is
- * no such group. Only read when the Entity has no direct Media. Related groups
- * carry no relation direction, so in a tree three or more containers deep a
- * parent group sorting first could stand in for a child (CORE-2036).
+ * first of childContainerCandidates. Null when there is none.
  */
 export function nextUpChildContainer(
   groups: readonly { archetype?: string; items: readonly SourceItem[] }[] | undefined,
 ): SourceItem | null {
-  const group = groups?.find((g) => g.archetype === "container" && g.items.length > 0);
-  if (!group) return null;
-  const items = group.items.filter((item) => !item.locked);
-  return items.find(hasChildrenLeft) ?? items[0] ?? null;
+  return childContainerCandidates(groups)[0] ?? null;
+}
+
+/**
+ * The container cards a rolled-up Media list plays through, in the order to
+ * try them (CORE-3058): its unlocked cards with children left first, then the
+ * rest. Empty when the list has no container card. The page moves on when one
+ * turns out to hold nothing it can play (only locked Media, say).
+ */
+export function rolledContainerCandidates(items: readonly SourceItem[]): SourceItem[] {
+  return playOrder(items.filter((item) => item.kind === "entity"));
+}
+
+/** Unlocked containers, those with children left first, else in order. */
+function playOrder(items: readonly SourceItem[]): SourceItem[] {
+  const unlocked = items.filter((item) => !item.locked);
+  return [
+    ...unlocked.filter(hasChildrenLeft),
+    ...unlocked.filter((item) => !hasChildrenLeft(item)),
+  ];
+}
+
+/** Whether the next-up child is a finished item played again (nothing is left). */
+export function nextUpFinished(next: NextUpChild): boolean {
+  return !next.resume && next.item.engagement?.completed === true;
+}
+
+/** Whether a rolled-up Media list has a container card with children left. */
+export function rolledContainerLeft(items: readonly SourceItem[]): boolean {
+  return items.some((item) => item.kind === "entity" && !item.locked && hasChildrenLeft(item));
 }
 
 /**

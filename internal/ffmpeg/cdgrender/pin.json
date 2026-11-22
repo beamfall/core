@@ -1,0 +1,11 @@
+{
+  "release": "v0.2.14",
+  "rev": "b767af88cdac9a9b2606ed72653a9413096f0b0e",
+  "license": "AGPL-3.0-only",
+  "source": "https://github.com/beamfall/oscillux/releases/tag/v0.2.14",
+  "assets": {
+    "oscillux-cdg-render.wasm": {
+      "sha256": "0e8afc40014e69615665fc2971730075bdb7b0c5f6844c8395dd9bda95188b1d"
+    }
+  }
+}

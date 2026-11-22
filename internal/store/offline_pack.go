@@ -73,10 +73,12 @@ type OfflinePack struct {
 	WrappedCEK          []byte
 }
 
-// OfflinePackItem is one frozen Media reference in a pack's resolved list.
+// OfflinePackItem is one frozen Media Part in a pack's resolved list. A
+// multi-Part Media (CORE-3016) has one item per Part of its selected Version.
 type OfflinePackItem struct {
 	PackID          OfflinePackID
 	MediaID         MediaID
+	PartOrdinal     int
 	SortOrder       int
 	SelectedVersion string
 	PlaintextSize   int64
@@ -214,9 +216,9 @@ func (s *Store) CreateOfflinePack(ctx context.Context, pack OfflinePack, items [
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO offline_pack_item
-			    (pack_id, media_id, sort_order, selected_version, plaintext_size, sha256, ciphertext_path)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, pack.ID, item.MediaID, order, item.SelectedVersion, item.PlaintextSize, item.SHA256, item.CiphertextPath); err != nil {
+			    (pack_id, media_id, part_ordinal, sort_order, selected_version, plaintext_size, sha256, ciphertext_path)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, pack.ID, item.MediaID, item.PartOrdinal, order, item.SelectedVersion, item.PlaintextSize, item.SHA256, item.CiphertextPath); err != nil {
 			return OfflinePack{}, err
 		}
 	}
@@ -263,7 +265,7 @@ func (s *Store) OfflinePacksForProfile(ctx context.Context, profileID ProfileID)
 	rows, err := s.catalogR.QueryContext(ctx, `
 		SELECT p.id, p.profile_id, p.device_id, p.target_kind, p.target_ref, p.state,
 		       p.manifest_json, p.bytes_total, p.bytes_ready, p.created_at_ms, p.updated_at_ms,
-		       p.expires_at_ms, p.revoked_at_ms, COUNT(i.media_id),
+		       p.expires_at_ms, p.revoked_at_ms, COUNT(DISTINCT i.media_id),
 		       p.device_enrollment_id, p.device_key_thumbprint, p.device_public_key, p.device_attested,
 		       p.library_ids_json, p.manifest_revision, p.manifest_sha256, p.grant_seq,
 		       p.rev_grant, p.rev_enrollment, p.rev_profile, p.rev_library_policy, p.rev_backup,
@@ -313,10 +315,10 @@ func (s *Store) OfflinePackItems(ctx context.Context, id OfflinePackID) ([]Offli
 		return nil, err
 	}
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT pack_id, media_id, sort_order, selected_version, plaintext_size, sha256, ciphertext_path
+		SELECT pack_id, media_id, part_ordinal, sort_order, selected_version, plaintext_size, sha256, ciphertext_path
 		FROM offline_pack_item
 		WHERE pack_id = ?
-		ORDER BY sort_order, media_id
+		ORDER BY sort_order, media_id, part_ordinal
 	`, id)
 	if err != nil {
 		return nil, err
@@ -325,7 +327,7 @@ func (s *Store) OfflinePackItems(ctx context.Context, id OfflinePackID) ([]Offli
 	out := []OfflinePackItem{}
 	for rows.Next() {
 		var item OfflinePackItem
-		if err := rows.Scan(&item.PackID, &item.MediaID, &item.SortOrder, &item.SelectedVersion,
+		if err := rows.Scan(&item.PackID, &item.MediaID, &item.PartOrdinal, &item.SortOrder, &item.SelectedVersion,
 			&item.PlaintextSize, &item.SHA256, &item.CiphertextPath); err != nil {
 			return nil, err
 		}
@@ -516,7 +518,7 @@ func (s *Store) offlinePackByIDLocked(ctx context.Context, id OfflinePackID) (Of
 	pack, err := scanOfflinePack(s.catalogR.QueryRowContext(ctx, `
 		SELECT p.id, p.profile_id, p.device_id, p.target_kind, p.target_ref, p.state,
 		       p.manifest_json, p.bytes_total, p.bytes_ready, p.created_at_ms, p.updated_at_ms,
-		       p.expires_at_ms, p.revoked_at_ms, COUNT(i.media_id),
+		       p.expires_at_ms, p.revoked_at_ms, COUNT(DISTINCT i.media_id),
 		       p.device_enrollment_id, p.device_key_thumbprint, p.device_public_key, p.device_attested,
 		       p.library_ids_json, p.manifest_revision, p.manifest_sha256, p.grant_seq,
 		       p.rev_grant, p.rev_enrollment, p.rev_profile, p.rev_library_policy, p.rev_backup,
