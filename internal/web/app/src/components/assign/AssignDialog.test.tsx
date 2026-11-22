@@ -690,11 +690,16 @@ describe("Assign catalog children", () => {
     },
   );
 
-  it("blocks a same-candidate ordinal clear when the preview only covers the saved ordinal", async () => {
+  it("previews a same-candidate ordinal clear with the parsed ordinal Apply will use", async () => {
     vi.mocked(fixMatchCurrent).mockResolvedValue({ ...show, title: "Old", year: 2022 });
     vi.mocked(fixMatchLockedFields).mockResolvedValue([{ field: "ordinal", value: "1 / 3" }]);
-    vi.mocked(fixMatchPreview).mockResolvedValue([
-      { field: "title", current: "Old", proposed: "Saved episode title", changed: true },
+    vi.mocked(fixMatchPreview).mockImplementation(async (vars) => [
+      {
+        field: "title",
+        current: "Old",
+        proposed: vars.clearLocks?.includes("ordinal") ? "Parsed episode title" : "Saved episode title",
+        changed: true,
+      },
     ]);
     const view = await open();
     const { user, dialog } = view;
@@ -706,14 +711,17 @@ describe("Assign catalog children", () => {
     expect(apply).toBeEnabled();
 
     await user.click(lock);
+    expect(await dialog.findByText("Parsed episode title")).toBeVisible();
     expect(dialog.queryByText("Saved episode title")).not.toBeInTheDocument();
-    expect(dialog.getByRole("alert")).toHaveTextContent("Could not preview the candidate");
-    expect(apply).toBeDisabled();
-    await user.click(apply);
-    expect(fixMatch).not.toHaveBeenCalled();
+    expect(fixMatchPreview).toHaveBeenLastCalledWith({
+      mediaID: "m1",
+      ...show,
+      clearLocks: ["ordinal"],
+    });
+    expect(apply).toBeEnabled();
 
     await user.click(lock);
-    expect(dialog.getByText("Saved episode title")).toBeVisible();
+    expect(await dialog.findByText("Saved episode title")).toBeVisible();
     expect(apply).toBeEnabled();
   });
 

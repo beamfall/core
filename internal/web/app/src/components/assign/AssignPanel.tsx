@@ -104,10 +104,10 @@ async function previewPairing(candidate: MatchTarget, row: Pairing) {
     const previous = lockedOrdinal(lock.value);
     return previous ? fixMatchPreview({ ...vars, ...previous }) : null;
   }
-  // An implicit preview for the same candidate uses the saved ordinal. The
-  // API has no way to request the parser's ordinal while that lock is set.
-  if (lock && row.sameCandidate && !row.ordinal) return null;
-  return fixMatchPreview({ ...vars, ...row.ordinal });
+  // A new candidate drops the saved ordinal by default. For the same candidate,
+  // pass the cleared lock so the preview uses the parser's ordinal, as Apply will.
+  const clearLocks = lock && row.sameCandidate ? { clearLocks: ["ordinal"] } : {};
+  return fixMatchPreview({ ...vars, ...row.ordinal, ...clearLocks });
 }
 
 export function AssignPanel({

@@ -8635,6 +8635,14 @@
         "kind": "string"
       },
       {
+        "name": "clearLocks",
+        "kind": "list",
+        "optional": true,
+        "elem": {
+          "kind": "string"
+        }
+      },
+      {
         "name": "index",
         "kind": "int",
         "optional": true

@@ -1934,7 +1934,7 @@ export async function identifyLookup(vars: {
 }
 
 const FIX_MATCH_PREVIEW_QUERY =
-  "query FixMatchPreview($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $sequence: String, $index: Int) { fixMatchPreview(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, sequence: $sequence, index: $index) { field current proposed changed } }";
+  "query FixMatchPreview($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $sequence: String, $index: Int, $clearLocks: [String!]) { fixMatchPreview(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, sequence: $sequence, index: $index, clearLocks: $clearLocks) { field current proposed changed } }";
 
 /** FixMatchPreview — what applying a candidate would change, before any write. */
 export async function fixMatchPreview(vars: {
@@ -1944,6 +1944,8 @@ export async function fixMatchPreview(vars: {
   candidateID: string;
   sequence?: string;
   index?: number;
+  /** Locks Apply would clear, so the preview resolves the ordinal as Apply will. */
+  clearLocks?: string[];
 }): Promise<FixMatchFieldDiff[]> {
   const data = await graphql<{ fixMatchPreview: FixMatchFieldDiff[] | null }>(
     FIX_MATCH_PREVIEW_QUERY,

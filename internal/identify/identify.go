@@ -419,11 +419,12 @@ func (s *Service) Lookup(ctx context.Context, pluginID, scraperID, candidateID s
 // the parser's title built from the lookup's plugin Media field values when
 // the title source builds one, else AppliedTitle's. The Fix-Match preview
 // reads it so the proposed title is the one Apply writes.
-func (s *Service) PreviewLookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID, ordinal *store.MediaOrdinal) (Candidate, string, error) {
+// clearLocks resolves the operator ordinal exactly as ApplyFixMatch does.
+func (s *Service) PreviewLookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID, clearLocks []string, ordinal *store.MediaOrdinal) (Candidate, string, error) {
 	if strings.TrimSpace(candidateID) == "" {
 		return Candidate{}, "", errors.New("identify: candidate ID is required")
 	}
-	clearOrdinal, err := s.shouldClearOrdinal(ctx, mediaID, candidateID, nil, ordinal)
+	clearOrdinal, err := s.shouldClearOrdinal(ctx, mediaID, candidateID, clearLocks, ordinal)
 	if err != nil {
 		return Candidate{}, "", err
 	}

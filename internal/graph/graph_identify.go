@@ -619,7 +619,14 @@ func (h *Handler) fixMatchPreview(ctx context.Context, scope auth.Scope, req req
 	if err != nil {
 		return nil, err
 	}
-	candidate, title, err := h.identify.PreviewLookup(ctx, pluginID, scraperID, candidateID, media.ID, ordinal)
+	// clearLocks mirrors fixMatch so the preview runs the lookup Apply will run,
+	// including a same-candidate Apply that clears the operator ordinal.
+	vars := newVars(req)
+	clearLocks, _ := vars.StringList("clearLocks", "strings")
+	if err := vars.Err(); err != nil {
+		return nil, err
+	}
+	candidate, title, err := h.identify.PreviewLookup(ctx, pluginID, scraperID, candidateID, media.ID, clearLocks, ordinal)
 	if err != nil {
 		return nil, err
 	}

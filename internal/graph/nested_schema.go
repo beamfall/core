@@ -452,6 +452,7 @@ var fieldArguments = map[string][]NestedArgument{
 	},
 	"fixmatchpreview": {
 		{Name: "candidateID", Kind: "string"},
+		{Name: "clearLocks", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string"}},
 		{Name: "index", Kind: "int", Optional: true},
 		{Name: "mediaID", Kind: "string"},
 		{Name: "pluginID", Kind: "string"},

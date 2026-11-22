@@ -21,8 +21,8 @@ const fixMatchOrdinalMutation = `mutation($mediaID: String!, $candidateID: Strin
 	fixMatch(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: $candidateID, sequence: $sequence, index: $index, clearLocks: $clearLocks) { title }
 }`
 
-const fixMatchOrdinalPreview = `query($mediaID: String!, $candidateID: String!, $sequence: String, $index: Int) {
-	fixMatchPreview(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: $candidateID, sequence: $sequence, index: $index) { field proposed }
+const fixMatchOrdinalPreview = `query($mediaID: String!, $candidateID: String!, $sequence: String, $index: Int, $clearLocks: [String!]) {
+	fixMatchPreview(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: $candidateID, sequence: $sequence, index: $index, clearLocks: $clearLocks) { field proposed }
 }`
 
 const clearMediaOrdinalMutation = `mutation($mediaID: String!) { clearMediaOrdinal(mediaID: $mediaID) }`
@@ -251,6 +251,14 @@ func TestFixMatchOperatorOrdinalKeepClearAndFailure(t *testing.T) {
 			if tc.locks != nil {
 				vars["clearLocks"] = tc.locks
 			}
+			// The preview takes the same variables and must look up what Apply
+			// will, without touching the stored ordinal.
+			var diffs []FixMatchFieldDiff
+			execGraph(t, handler, authorizeManager, fixMatchOrdinalPreview, vars, "fixMatchPreview", &diffs)
+			if got := engine.lookedUp[len(engine.lookedUp)-1]; got != tc.lookup {
+				t.Fatalf("preview lookup = %+v, want %+v", got, tc.lookup)
+			}
+			assertStored(t, &want)
 			apply(t, vars)
 			if got := engine.lookedUp[len(engine.lookedUp)-1]; got != tc.lookup {
 				t.Fatalf("lookup = %+v, want %+v", got, tc.lookup)
