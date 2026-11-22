@@ -88,7 +88,7 @@ function sourceKey(source: Pick<Source, "pluginID" | "scraperID">) {
   return JSON.stringify([source.pluginID, source.scraperID]);
 }
 
-function keepsOrdinal(row: Pairing) {
+function keepsOrdinal(row: Pick<Pairing, "locked" | "clearLocks">) {
   return row.locked.some(({ field }) => field === "ordinal") && !row.clearLocks.includes("ordinal");
 }
 
@@ -97,14 +97,15 @@ function diffKey(row: Pairing) {
 }
 
 // The lock and ordinal arguments Apply sends for a row. Preview sends the same
-// ones, so the server resolves the ordinal for both from the same request and
-// never from a candidate comparison that may have gone stale.
-function ordinalVars(row: Pairing) {
-  const keep = keepsOrdinal(row);
-  return {
-    ...(keep || row.clearLocks.length ? { clearLocks: row.clearLocks } : {}),
-    ...(keep ? undefined : row.ordinal),
-  };
+// ones. clearLocks is always explicit and names "ordinal" exactly when the row
+// replaces the operator ordinal, so the server never falls back to comparing
+// candidates and toggling another field's lock cannot change the ordinal.
+function ordinalVars(row: Pick<Pairing, "locked" | "clearLocks" | "ordinal">) {
+  if (keepsOrdinal(row)) return { clearLocks: row.clearLocks };
+  const clearLocks = row.clearLocks.includes("ordinal")
+    ? row.clearLocks
+    : [...row.clearLocks, "ordinal"];
+  return { clearLocks, ...row.ordinal };
 }
 
 function previewPairing(candidate: MatchTarget, row: Pairing) {
@@ -447,7 +448,10 @@ export function AssignPanel({
       setProgress(t("unmatchedMatching", { done: index + 1, total: writes.length }));
       const row = unmatched ? undefined : preview?.[index];
       try {
-        await fixMatch({ mediaID, ...candidate, ...(row && ordinalVars(row)) }, epoch);
+        await fixMatch(
+          { mediaID, ...candidate, ...ordinalVars(row ?? { locked: [], clearLocks: [] }) },
+          epoch,
+        );
         next.push({ mediaID });
         // Invalidate cached viewer documents as each write is confirmed, whether
         // or not the panel is still mounted (Back during a write unmounts it).

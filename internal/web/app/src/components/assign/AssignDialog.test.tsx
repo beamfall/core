@@ -180,9 +180,16 @@ describe("Assign metadata", () => {
       await user.click(dialog.getByRole("button", { name: "Apply" }));
       expect(await dialog.findByText("Applied")).toBeVisible();
       expect(fixMatch).toHaveBeenCalledWith(
-        { mediaID: "m1", ...ids, ...(clear ? { clearLocks: ["title"] } : {}) },
+        { mediaID: "m1", ...ids, clearLocks: clear ? ["title", "ordinal"] : ["ordinal"] },
         undefined,
       );
+      // Toggling another field's lock never changes whether the ordinal is
+      // cleared: preview and Apply both name it explicitly.
+      expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith({
+        mediaID: "m1",
+        ...ids,
+        clearLocks: ["ordinal"],
+      });
     },
   );
 
@@ -201,6 +208,7 @@ describe("Assign metadata", () => {
       mediaID: "m1",
       ...ids,
       candidateID: "tt0084787",
+      clearLocks: ["ordinal"],
     });
     expect(fixMatchCandidates).not.toHaveBeenCalled();
 
@@ -211,7 +219,7 @@ describe("Assign metadata", () => {
     await dialog.findByText("A corrected overview.");
     await user.click(apply);
     expect(fixMatch).toHaveBeenCalledWith(
-      { mediaID: "m1", ...ids, candidateID: "tt00847879" },
+      { mediaID: "m1", ...ids, candidateID: "tt00847879", clearLocks: ["ordinal"] },
       undefined,
     );
   });
@@ -237,7 +245,7 @@ describe("Assign metadata", () => {
       await within(table.getByRole("row", { name: /Item m3/ })).findByText("Applied"),
     ).toBeVisible();
     expect(vi.mocked(fixMatch).mock.calls.map(([vars]) => vars)).toEqual(
-      selection.map((item) => ({ ...item, ...ids })),
+      selection.map((item) => ({ ...item, ...ids, clearLocks: ["ordinal"] })),
     );
     expect(fixMatchPreview).toHaveBeenCalledTimes(3);
     expect(fixMatchLockedFields).toHaveBeenCalledTimes(3);
@@ -415,7 +423,10 @@ describe("Assign metadata", () => {
     });
     await user.click(await screen.findByRole("checkbox", { name: /I confirm/ }));
     await user.click(screen.getByRole("button", { name: "Apply" }));
-    expect(fixMatch).toHaveBeenCalledExactlyOnceWith({ mediaID: "m1", ...ids }, epoch.signal);
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
+      { mediaID: "m1", ...ids, clearLocks: ["ordinal"] },
+      epoch.signal,
+    );
     await act(async () => epoch.abort());
 
     expect(onFinished).toHaveBeenCalledExactlyOnceWith([], 0);
@@ -508,7 +519,13 @@ describe("Assign catalog children", () => {
       );
     }
     await user.click(await dialog.findByRole("button", { name: row.child }));
-    const expected = { mediaID: "m1", ...show, sequence: row.sequence, index: row.index };
+    const expected = {
+      mediaID: "m1",
+      ...show,
+      sequence: row.sequence,
+      index: row.index,
+      clearLocks: ["ordinal"],
+    };
     expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith(expected);
     expect(
       await dialog.findByText(
@@ -526,8 +543,15 @@ describe("Assign catalog children", () => {
     await view.user.click(view.dialog.getByRole("button", { name: "Preview candidate" }));
     await view.dialog.findByText("A corrected overview.");
     await view.user.click(view.dialog.getByRole("button", { name: "Apply" }));
-    expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith({ mediaID: "m1", ...show });
-    expect(fixMatch).toHaveBeenCalledExactlyOnceWith({ mediaID: "m1", ...show }, undefined);
+    expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith({
+      mediaID: "m1",
+      ...show,
+      clearLocks: ["ordinal"],
+    });
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
+      { mediaID: "m1", ...show, clearLocks: ["ordinal"] },
+      undefined,
+    );
   });
 
   it("reports loading, errors and empty results in their own column", async () => {
@@ -599,7 +623,13 @@ describe("Assign catalog children", () => {
     await user.clear(number);
     await user.type(number, "0");
     await user.click(previewButton);
-    const expected = { mediaID: "m1", ...show, sequence: "A-side", index: 0 };
+    const expected = {
+      mediaID: "m1",
+      ...show,
+      sequence: "A-side",
+      index: 0,
+      clearLocks: ["ordinal"],
+    };
     expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith(expected);
     expect(await dialog.findByText("— → Release A-side · Bonus track 0")).toBeVisible();
     await user.click(dialog.getByRole("button", { name: "Apply" }));
@@ -620,7 +650,7 @@ describe("Assign catalog children", () => {
     await user.type(dialog.getByRole("spinbutton", { name: "Episode" }), "7");
     await user.click(dialog.getByRole("button", { name: "Preview changes" }));
     expect(await dialog.findByText("— → Season 2 · Episode 7")).toBeVisible();
-    const expected = { mediaID: "m1", ...show, sequence: "2", index: 7 };
+    const expected = { mediaID: "m1", ...show, sequence: "2", index: 7, clearLocks: ["ordinal"] };
     expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith(expected);
     await user.click(dialog.getByRole("button", { name: "Apply" }));
     expect(fixMatch).toHaveBeenCalledExactlyOnceWith(expected, undefined);
@@ -844,6 +874,7 @@ describe("Assign catalog children", () => {
       ...show,
       sequence: "2",
       index,
+      clearLocks: ["ordinal"],
     }));
     expect(
       vi
