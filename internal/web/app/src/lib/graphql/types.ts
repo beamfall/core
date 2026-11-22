@@ -430,6 +430,13 @@ export interface ReportPlaybackVars {
   durationSeconds: number;
   finished: boolean;
   eventTimeMS: number;
+  /** Whether the player was paused: play history credits no time after a paused report. */
+  paused?: boolean;
+  /** The client's random ID for this play, kept across pauses and seeks. */
+  playbackID?: string;
+  /** Milliseconds actually played under playbackID so far (not paused, seeking or
+   *  buffering): play history credits its growth. */
+  playedMS?: number;
 }
 
 // --- Viewer: My Data / Privacy panel (internal/graph/mydata.go) -----------
@@ -1668,6 +1675,10 @@ export interface HostMetricsInfo {
   samples: HostMetricSample[];
 }
 
+/** How a play was delivered: as stored, remuxed or transcoded (CORE-1703).
+ * "unknown" is a play recorded before the method was, or with no decision. */
+export type PlayMethod = "direct" | "remux" | "transcode" | "unknown";
+
 /** One past play (graph.PlayInfo). */
 export interface PlayInfo {
   profileID: string;
@@ -1676,6 +1687,11 @@ export interface PlayInfo {
   title: string;
   libraryID: string;
   libraryTitle: string;
+  /** The Device that played it; absent for plays recorded before devices were. */
+  deviceID?: string;
+  deviceName?: string;
+  deviceClient?: string;
+  playMethod: PlayMethod;
   startedAt: string;
   watchedSeconds: number;
   finished: boolean;
@@ -1685,22 +1701,46 @@ export interface PlayInfo {
 export interface PlayHistoryFilter {
   profileID?: string;
   libraryID?: string;
+  mediaID?: string;
+  deviceID?: string;
+  playMethod?: PlayMethod;
   since?: string;
   until?: string;
   limit?: number;
 }
 
-/** Rankings over a 7, 30 or 90 day window (graph.PlayStatsInfo). */
+/** Filters and range for the play stats read: a 7, 30 or 90 day window, or
+ * since (and optionally until), not both. */
+export interface PlayStatsFilter {
+  profileID?: string;
+  libraryID?: string;
+  mediaID?: string;
+  deviceID?: string;
+  playMethod?: PlayMethod;
+  windowDays?: 7 | 30 | 90;
+  since?: string;
+  until?: string;
+}
+
+/** One row of a play breakdown: how many plays and how long. */
+export interface PlayTally {
+  plays: number;
+  watchedSeconds: number;
+}
+
+/** Totals and breakdowns over a date range (graph.PlayStatsInfo). Days run in
+ * the caller's time zone and omit days with no plays. */
 export interface PlayStatsInfo {
   windowDays: number;
-  profiles: { profileID: string; profileName: string; plays: number; watchedSeconds: number }[];
-  items: {
-    mediaID: string;
-    title: string;
-    libraryID: string;
-    plays: number;
-    watchedSeconds: number;
-  }[];
+  since: string;
+  until: string;
+  totalPlays: number;
+  totalWatchedSeconds: number;
+  profiles: ({ profileID: string; profileName: string } & PlayTally)[];
+  items: ({ mediaID: string; title: string; libraryID: string } & PlayTally)[];
+  devices: ({ deviceID: string; deviceName: string; deviceClient: string } & PlayTally)[];
+  methods: ({ playMethod: PlayMethod } & PlayTally)[];
+  days: ({ day: string } & PlayTally)[];
 }
 
 /** The terminateSession result. */
@@ -1892,6 +1932,7 @@ export interface MediaMetadataInfo {
   year: number;
   refreshable: boolean;
   locks: FieldLockInfo[];
+  operatorOrdinal?: { sequence: string; index: number } | null;
 }
 
 /** The built-in fields an item edit may set; an absent field is left alone. */

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/beamfall/core/internal/plugin"
@@ -226,8 +227,15 @@ func containerKindNames(bundle plugin.Bundle) map[string]bool {
 // its display title (its ID unchanged), its poster and other artwork slots are
 // applied like any hydrated Entity poster, and its links relate it to the
 // Entities sibling maps hydrated. A result whose kind holds no Entity for this
-// Media is skipped; nothing is created.
-func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.MediaID, library store.LibraryID, bundle plugin.Bundle, results []scrape.EntityResult) error {
+// Media is skipped; nothing is created. holderLinks keys each kind the scraper
+// links the Media to through a holder link map, with the holders this lookup
+// linked: a result of such a kind applies only to one of those, never to a
+// holder an operator or another writer linked (CORE-3152). Under an operator
+// ordinal (manual non-nil) a sequence-scoped result describes the operator's
+// sequence, so its container is written only when that container's own
+// ordinal is that sequence; otherwise it may be a sibling sequence shared by
+// other Media.
+func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.MediaID, library store.LibraryID, bundle plugin.Bundle, results []scrape.EntityResult, holderLinks map[string][]store.EntityID, manual *store.MediaOrdinal) error {
 	if len(results) == 0 {
 		return nil
 	}
@@ -241,10 +249,22 @@ func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.Medi
 		return err
 	}
 	for _, result := range results {
-		target, ok := containerOfKind(chain, result.Kind)
+		container, ok := containerOfKind(chain, result.Kind)
 		if !ok {
 			slog.Debug("identify: no container entity of kind holds the media", "media", mediaID, "kind", result.Kind)
 			continue
+		}
+		target := container.ID
+		if linked, owned := holderLinks[result.Kind]; owned && !slices.Contains(linked, target) {
+			continue
+		}
+		if manual != nil && !containerMatchesSequence(container, manual.Sequence) {
+			if result.SequenceScoped {
+				slog.Debug("identify: container hydration skipped, holder does not match the operator sequence",
+					"media", mediaID, "kind", result.Kind, "sequence", manual.Sequence)
+				continue
+			}
+			result = withoutLinkRelations(result, result.SequenceScopedLinks)
 		}
 		if fields := entityFields(bundle, result); len(fields) > 0 || result.Title != "" || len(result.Links) > 0 {
 			existing, err := containers.Entity(ctx, target, unrestrictedEntityFilter)
@@ -271,6 +291,18 @@ func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.Medi
 		}
 	}
 	return nil
+}
+
+// withoutLinkRelations drops the named container relations from a result's
+// LinkRelations and Links, so applyContainerLinks neither replaces nor clears
+// them on a container they do not describe.
+func withoutLinkRelations(result scrape.EntityResult, drop []string) scrape.EntityResult {
+	if len(drop) == 0 {
+		return result
+	}
+	result.LinkRelations = slices.DeleteFunc(slices.Clone(result.LinkRelations), func(name string) bool { return slices.Contains(drop, name) })
+	result.Links = slices.DeleteFunc(slices.Clone(result.Links), func(link scrape.EntityLink) bool { return slices.Contains(drop, link.Relation) })
+	return result
 }
 
 // entityArtworkImporter is the optional ArtworkStore extension that writes
@@ -346,7 +378,7 @@ func (s *Service) applyContainerLinks(ctx context.Context, library store.Library
 		return replacer.ReplaceEntityRelations(ctx, target, names, rows)
 	}
 	for _, row := range rows {
-		if err := s.entities.UpsertEntityRelation(ctx, row); err != nil {
+		if err := s.entities.UpsertHydratedEntityRelation(ctx, row); err != nil {
 			return err
 		}
 	}
@@ -385,13 +417,24 @@ func containerRelationRows(library store.LibraryID, target store.EntityID, decla
 }
 
 // containerOfKind returns the innermost chain Entity of kind.
-func containerOfKind(chain []ContainerEntity, kind string) (store.EntityID, bool) {
+// containerMatchesSequence reports whether an ordered container's ordinal is
+// the integral decimal sequence. An unordered container, an empty or
+// fractional sequence cannot be verified and does not match.
+func containerMatchesSequence(container ContainerEntity, sequence string) bool {
+	if !container.Ordered {
+		return false
+	}
+	n, err := strconv.ParseFloat(strings.TrimSpace(sequence), 64)
+	return err == nil && n == float64(container.Ordinal)
+}
+
+func containerOfKind(chain []ContainerEntity, kind string) (ContainerEntity, bool) {
 	for _, entity := range chain {
 		if strings.EqualFold(entity.Kind, kind) {
-			return entity.ID, true
+			return entity, true
 		}
 	}
-	return "", false
+	return ContainerEntity{}, false
 }
 
 // mergeEntityFields overlays fields onto existing by name, keeping every

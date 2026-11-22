@@ -24,14 +24,14 @@ type MediaMetadataProvenance struct {
 // item's metadata and the candidate it applied, replacing any earlier record.
 // Deleting the Media row deletes the record (ON DELETE CASCADE).
 func (s *Store) SetMediaMetadataProvenance(ctx context.Context, mediaID MediaID, pluginID, scraperID, candidateID string) error {
-	pluginID = strings.TrimSpace(pluginID)
-	scraperID = strings.TrimSpace(scraperID)
-	candidateID = strings.TrimSpace(candidateID)
 	if mediaID == "" {
 		return ValidationError("media ID is required")
 	}
-	if pluginID == "" || scraperID == "" {
-		return ValidationError("plugin and scraper IDs are required")
+	provenance, err := normalizeMediaMetadataProvenance(MediaMetadataProvenance{
+		PluginID: pluginID, ScraperID: scraperID, CandidateID: candidateID,
+	})
+	if err != nil {
+		return err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -43,7 +43,21 @@ func (s *Store) SetMediaMetadataProvenance(ctx context.Context, mediaID MediaID,
 	} else if !ok {
 		return ValidationError("media not found")
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	return upsertMediaMetadataProvenance(ctx, s.catalogW, mediaID, provenance)
+}
+
+func normalizeMediaMetadataProvenance(provenance MediaMetadataProvenance) (MediaMetadataProvenance, error) {
+	provenance.PluginID = strings.TrimSpace(provenance.PluginID)
+	provenance.ScraperID = strings.TrimSpace(provenance.ScraperID)
+	provenance.CandidateID = strings.TrimSpace(provenance.CandidateID)
+	if provenance.PluginID == "" || provenance.ScraperID == "" {
+		return MediaMetadataProvenance{}, ValidationError("plugin and scraper IDs are required")
+	}
+	return provenance, nil
+}
+
+func upsertMediaMetadataProvenance(ctx context.Context, db sqlExecer, mediaID MediaID, provenance MediaMetadataProvenance) error {
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO media_metadata_provenance(media_id, plugin_id, scraper_id, candidate_id, updated_at_ms)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(media_id) DO UPDATE SET
@@ -51,8 +65,64 @@ func (s *Store) SetMediaMetadataProvenance(ctx context.Context, mediaID MediaID,
 			scraper_id = excluded.scraper_id,
 			candidate_id = excluded.candidate_id,
 			updated_at_ms = excluded.updated_at_ms`,
-		mediaID, pluginID, scraperID, candidateID, timeToMillis(time.Now().UTC()))
+		mediaID, provenance.PluginID, provenance.ScraperID, provenance.CandidateID, timeToMillis(time.Now().UTC()))
 	return err
+}
+
+// ApplyMediaIdentification commits the replacement metadata, selected lock
+// clears, candidate provenance and plugin fields together at operator precedence.
+// Identification is supported on the shared catalog, which owns provenance.
+func (s *Store) ApplyMediaIdentification(ctx context.Context, id MediaID, metadata MediaMetadata, provenance MediaMetadataProvenance, fields []MediaField) error {
+	if err := validateMediaMetadata(id, metadata); err != nil {
+		return err
+	}
+	if err := validateMediaFields(fields); err != nil {
+		return err
+	}
+	provenance, err := normalizeMediaMetadataProvenance(provenance)
+	if err != nil {
+		return err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	metadata.Source = MutationSourceOperator
+	if err := updateMediaMetadataTx(ctx, tx, id, metadata); err != nil {
+		return err
+	}
+	if err := upsertMediaMetadataProvenance(ctx, tx, id, provenance); err != nil {
+		return err
+	}
+	if metadata.OperatorOrdinal != nil {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO media_operator_ordinal(media_id, sequence, ordinal_index, set_at_ms, actor_profile_id)
+			VALUES (?, ?, ?, ?, NULLIF(?, ''))
+			ON CONFLICT(media_id) DO UPDATE SET sequence = excluded.sequence,
+				ordinal_index = excluded.ordinal_index, set_at_ms = excluded.set_at_ms,
+				actor_profile_id = excluded.actor_profile_id`,
+			id, metadata.OperatorOrdinal.Sequence, metadata.OperatorOrdinal.Index,
+			timeToMillis(s.serverNow().UTC()), metadata.OrdinalActor)
+	} else if metadata.ClearOrdinal {
+		_, err = deleteMediaOrdinal(ctx, tx, id)
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := upsertMediaFieldsTx(ctx, tx, id, fields, MutationSourceOperator, false); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.emitMediaUpdated(ctx, id)
+	return nil
 }
 
 // MediaMetadataProvenance returns the recorded metadata provenance for a Media

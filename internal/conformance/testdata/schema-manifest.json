@@ -220,6 +220,11 @@
     "tier": "session"
   },
   {
+    "field": "clearmediaordinal",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "clearmute",
     "effect": "write",
     "tier": "session"
@@ -465,6 +470,11 @@
     "tier": "session"
   },
   {
+    "field": "entitysearch",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "evictplaybackrenditioncache",
     "effect": "write",
     "tier": "admin"
@@ -485,7 +495,27 @@
     "tier": "session"
   },
   {
+    "field": "fixmatchchildren",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "fixmatchcurrent",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "fixmatchlockedfields",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "fixmatchpreview",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "fixmatchsources",
     "effect": "read",
     "tier": "session"
   },
@@ -766,6 +796,16 @@
   },
   {
     "field": "myengagementlog",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "myplayhistory",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "myplaystats",
     "effect": "read",
     "tier": "session"
   },
@@ -1126,6 +1166,11 @@
   },
   {
     "field": "removelastengagement",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "removemediarelation",
     "effect": "write",
     "tier": "session"
   },
@@ -1491,6 +1536,11 @@
   },
   {
     "field": "setmediafieldlock",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setmediarelation",
     "effect": "write",
     "tier": "session"
   },

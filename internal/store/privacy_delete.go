@@ -350,6 +350,9 @@ func deleteMyCatalogFootprintTx(ctx context.Context, tx *sql.Tx, profileID Profi
 			return err
 		}
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE media_operator_ordinal SET actor_profile_id = NULL WHERE actor_profile_id = ?`, profileID); err != nil {
+		return err
+	}
 	for _, table := range []string{"marker", "smart_collection"} {
 		// #nosec G202 -- table is drawn from the closed literal list above.
 		if _, err := tx.ExecContext(ctx, `UPDATE `+table+` SET created_by_profile_id = NULL WHERE created_by_profile_id = ?`, profileID); err != nil {

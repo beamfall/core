@@ -2,11 +2,13 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -124,6 +126,9 @@ func (h *Handler) undoBatch(ctx context.Context, scope auth.Scope, req request) 
 		return BatchResultInfo{}, clientError("batchID is required")
 	}
 	batch, err := h.store.UndoBatch(ctx, batchID, scope.LibraryFilter(), time.Now().UTC())
+	if errors.Is(err, store.ErrOperatorRelationUndoConflict) {
+		return BatchResultInfo{}, &l10n.Error{Key: l10n.OperatorRelationUndoConflict, Err: err}
+	}
 	if err != nil {
 		return BatchResultInfo{}, err
 	}

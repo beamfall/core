@@ -96,6 +96,46 @@ type HydrationPlan struct {
 	MarkComplete bool
 }
 
+// HydrationLocal is one parse of a Media's local sidecar: the built-in title,
+// sort title, summary and year (empty or zero leaves one as it is), declared
+// Media fields, and Media-target relations, all applied at the locked local
+// tier (store.MutationSourceLocal) in one transaction. OwnedRelations names
+// the relations the sidecar format owns: the Media's local rows of each are
+// replaced by Relations, so an owned relation with no rows is emptied, while
+// rows an operator or another writer owns stay. Signature identifies the
+// bytes that were parsed. Unreadable reports a sidecar that exists but could
+// not be read or parsed: nothing is written or released and the next scan
+// retries.
+type HydrationLocal struct {
+	Title          string
+	SortTitle      string
+	Summary        string
+	Year           int
+	MediaFields    []store.MediaField
+	Relations      []HydrationRelation
+	OwnedRelations []store.WrittenRelation
+	Signature      string
+	Unreadable     bool
+}
+
+// HydrationSidecarMapper is implemented by a HydrationMapper that also reads
+// local sidecars kept beside the media. SidecarSignature identifies the
+// sidecar of a media path: "" only when there is none, and an error when the
+// lookup failed, which the seam treats as an unreadable sidecar, never a
+// removed one. The seam records the selected media path with the signature of
+// each applied parse in the declared text Media field SidecarSignatureField,
+// so a scan re-reads an unchanged file whose sidecar changed. MapSidecar
+// parses the sidecar of a path, nil when there is none; a readable sidecar
+// with no values is a signed, empty parse that still states its owned
+// relations. When the sidecar is gone, the Media's local values are released
+// to the scan tier and its local relation rows to an unowned writer: kept,
+// but unlocked.
+type HydrationSidecarMapper interface {
+	SidecarSignatureField() string
+	SidecarSignature(path string) (string, error)
+	MapSidecar(path string) *HydrationLocal
+}
+
 func (h HydrationPlan) Empty() bool {
 	if h.MarkComplete {
 		return false

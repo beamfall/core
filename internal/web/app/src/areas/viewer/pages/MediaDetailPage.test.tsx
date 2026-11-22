@@ -38,7 +38,8 @@ const mocks = vi.hoisted(() => ({
   // The server's item state for the page's Media (CORE-2436); it outlives a render.
   itemState: { id: "m1", kind: "media", watched: false, watchlisted: false, rating: 0 },
   itemCalls: [] as Array<[string, unknown, unknown]>,
-  session: null as { profileID: string } | null,
+  session: null as { profileID: string; profile?: string } | null,
+  isManager: false,
 }));
 
 vi.mock("../lib/mediaDetail", async (importOriginal) => ({
@@ -75,7 +76,12 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
 }));
 vi.mock("@/lib/session", () => ({
   useViewerIdentity: () => mocks.identity,
-  useSession: () => ({ manifest: null, revealed: false, session: mocks.session }),
+  useSession: () => ({
+    manifest: null,
+    revealed: false,
+    session: mocks.session,
+    isManager: mocks.isManager,
+  }),
 }));
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
@@ -164,6 +170,7 @@ function pending<T>() {
 
 beforeEach(() => {
   mocks.identity = identity;
+  mocks.isManager = false;
   vi.mocked(usePlayerHost).mockReset();
   vi.mocked(fetchMedia).mockReset();
   vi.mocked(fetchMediaDetailFields).mockReset().mockResolvedValue([]);
@@ -190,6 +197,28 @@ afterEach(() => {
 });
 
 describe("MediaDetailPage", () => {
+  it.each([
+    [true, "adult", true],
+    [false, "adult", false],
+    [true, "child", false],
+  ])("gates Assign and Edit metadata (%s, %s)", async (manager, profile, allowed) => {
+    mocks.isManager = manager;
+    mocks.session = { profileID: "p1", profile };
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    renderAt(["/media/m1"]);
+    await screen.findByRole("heading", { name: media.title });
+
+    const assign = screen.queryByRole("button", { name: "Assign…" });
+    const edit = screen.queryByRole("link", { name: "Edit metadata" });
+    if (allowed) {
+      expect(assign).toBeEnabled();
+      expect(edit).toHaveAttribute("href", "/manage/items/m1");
+    } else {
+      expect(assign).not.toBeInTheDocument();
+      expect(edit).not.toBeInTheDocument();
+    }
+  });
+
   it("shows a busy skeleton, then the server header with labelled declared fields", async () => {
     const request = pending<GenericMediaInfo | null>();
     vi.mocked(fetchMedia).mockReturnValue(request.promise);

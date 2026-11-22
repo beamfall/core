@@ -291,9 +291,9 @@ const (
 )
 
 // ActivityEntry is one append-only activity-log record. The
-// shape is deliberately closed — fixed identifier columns, no free-form
-// payload — so an entry can never carry a PIN, pairing code, token, or other
-// secret. Entries whose target lives in a Library carry that LibraryID; the
+// stored shape is deliberately closed: fixed identifier columns and no
+// free-form payload. Library-scoped recovery detail is read from its own
+// catalog plane. Entries whose target lives in a Library carry that LibraryID; the
 // read path hides such entries from sessions that cannot see the Library
 // (hidden == missing, never an existence oracle).
 type ActivityEntry struct {
@@ -317,6 +317,8 @@ type ActivityEntry struct {
 	// key instead of a session or admin API token. It stores
 	// only the key id, never secret material.
 	APIKeyID string
+	// MediaRelationChange is read from the visible catalog's recovery journal.
+	MediaRelationChange *MediaRelationChange `json:"-"`
 }
 
 // ActivitySystemActorScan names the library scan as the actor of an entry the
@@ -405,6 +407,9 @@ func (s *Store) ActivityEntries(ctx context.Context, query ActivityQuery) ([]Act
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
+	if err := s.flushMediaRelationActivityLocked(ctx); err != nil {
+		return nil, err
+	}
 	libraries, err := loadLibraries(ctx, s.catalogR)
 	if err != nil {
 		return nil, err
@@ -413,10 +418,12 @@ func (s *Store) ActivityEntries(ctx context.Context, query ActivityQuery) ([]Act
 	// fail-closed, same as a Library outside the caller's allowed set.
 	clauses := []string{"library_id = ''"}
 	args := []any{}
+	var visible []LibraryID
 	for _, library := range libraries {
 		if libraryVisible(library, query.Filter) {
 			clauses = append(clauses, "library_id = ?")
 			args = append(args, library.ID)
+			visible = append(visible, library.ID)
 		}
 	}
 	where := "(" + strings.Join(clauses, " OR ") + ")"
@@ -452,7 +459,18 @@ func (s *Store) ActivityEntries(ctx context.Context, query ActivityQuery) ([]Act
 		entry.OccurredAt = millisToTime(occurredAt)
 		entries = append(entries, entry)
 	}
-	return entries, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range entries {
+		if err := s.loadMediaRelationActivityLocked(ctx, &entries[i], visible); err != nil {
+			return nil, err
+		}
+	}
+	return entries, nil
 }
 
 // ActivityByID returns the single activity entry with the given numeric id,
@@ -465,16 +483,21 @@ func (s *Store) ActivityByID(ctx context.Context, id int64, filter LibraryFilter
 	if err := s.guardLocked(); err != nil {
 		return ActivityEntry{}, err
 	}
+	if err := s.flushMediaRelationActivityLocked(ctx); err != nil {
+		return ActivityEntry{}, err
+	}
 	libraries, err := loadLibraries(ctx, s.catalogR)
 	if err != nil {
 		return ActivityEntry{}, err
 	}
 	clauses := []string{"library_id = ''"}
 	args := []any{}
+	var visible []LibraryID
 	for _, library := range libraries {
 		if libraryVisible(library, filter) {
 			clauses = append(clauses, "library_id = ?")
 			args = append(args, library.ID)
+			visible = append(visible, library.ID)
 		}
 	}
 	where := "(" + strings.Join(clauses, " OR ") + ")"
@@ -492,5 +515,8 @@ func (s *Store) ActivityByID(ctx context.Context, id int64, filter LibraryFilter
 	}
 	entry.OperationID = operationID.String
 	entry.OccurredAt = millisToTime(occurredAt)
+	if err := s.loadMediaRelationActivityLocked(ctx, &entry, visible); err != nil {
+		return ActivityEntry{}, err
+	}
 	return entry, nil
 }

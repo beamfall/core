@@ -185,7 +185,8 @@ func recordFieldProvenanceTx(ctx context.Context, tx *sql.Tx, id MediaID, field 
 // stored source's rank without a Go round-trip. Kept in lockstep with
 // metadataSourceRank — the one Go source of truth for the ordering.
 func sourceRankValues() string {
-	return `SELECT 'manual' AS src, 4 AS rank
+	return `SELECT 'manual' AS src, 5 AS rank
+	  UNION ALL SELECT 'local', 4
 	  UNION ALL SELECT 'operator', 3
 	  UNION ALL SELECT 'scan', 2
 	  UNION ALL SELECT 'hydrated', 1
@@ -326,51 +327,9 @@ func (s *Store) upsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 		return err
 	}
 	defer tx.Rollback()
-	wrote := 0
-	for _, field := range fields {
-		clear := standaloneTag && field.Text == ""
-		if !clear && source != MutationSourceManual {
-			tombstoned, err := mediaFieldTombstonedTx(ctx, tx, id, field)
-			if err != nil {
-				return err
-			}
-			if tombstoned {
-				continue
-			}
-		}
-		allowed, err := canWriteFieldTx(ctx, tx, id, field.Name, source)
-		if err != nil {
-			return err
-		}
-		if !allowed {
-			continue // a higher-precedence source owns this field — preserve it
-		}
-		if standaloneTag {
-			unchanged, err := scannedMediaTagMatchesTx(ctx, tx, id, field, clear)
-			if err != nil {
-				return err
-			}
-			if unchanged {
-				continue
-			}
-		}
-		// A field's type may change across writes, so the old value is
-		// cleared from every side table, not just the new type's.
-		if err := deleteMediaFieldValueTx(ctx, tx, id, field.Name); err != nil {
-			return err
-		}
-		if !clear {
-			if err := insertMediaFields(ctx, tx, id, []MediaField{field}); err != nil {
-				return err
-			}
-		}
-		if err := recordFieldProvenanceTx(ctx, tx, id, field.Name, source); err != nil {
-			return err
-		}
-		wrote++
-	}
-	if wrote == 0 {
-		return nil
+	wrote, err := upsertMediaFieldsTx(ctx, tx, id, fields, source, standaloneTag)
+	if err != nil || !wrote {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
@@ -397,6 +356,65 @@ func scannedMediaTagMatchesTx(ctx context.Context, tx *sql.Tx, id MediaID, field
 		return !exists, nil
 	}
 	return exists && mediaFieldValuesEqual(stored, field), nil
+}
+
+// upsertMediaFieldsTx is UpsertMediaFieldsWithSource inside the caller's
+// transaction; it reports whether any field landed. A standalone scanned tag
+// skips an unchanged value and clears the field on an empty one.
+func upsertMediaFieldsTx(ctx context.Context, tx *sql.Tx, id MediaID, fields []MediaField, source MutationSource, standaloneTag bool) (bool, error) {
+	wrote := false
+	for _, field := range fields {
+		clear := standaloneTag && field.Text == ""
+		if !clear && source != MutationSourceManual {
+			tombstoned, err := mediaFieldTombstonedTx(ctx, tx, id, field)
+			if err != nil {
+				return false, err
+			}
+			if tombstoned {
+				continue
+			}
+		}
+		allowed, err := canWriteFieldTx(ctx, tx, id, field.Name, source)
+		if err != nil {
+			return false, err
+		}
+		if !allowed {
+			continue // a higher-precedence source owns this field — preserve it
+		}
+		if standaloneTag {
+			unchanged, err := scannedMediaTagMatchesTx(ctx, tx, id, field, clear)
+			if err != nil {
+				return false, err
+			}
+			if unchanged {
+				continue
+			}
+		}
+		if clear {
+			if err := deleteMediaFieldValueTx(ctx, tx, id, field.Name); err != nil {
+				return false, err
+			}
+		} else if err := replaceMediaFieldValueTx(ctx, tx, id, field); err != nil {
+			return false, err
+		}
+		if err := recordFieldProvenanceTx(ctx, tx, id, field.Name, source); err != nil {
+			return false, err
+		}
+		wrote = true
+	}
+	return wrote, nil
+}
+
+// replaceMediaFieldValueTx stores one field's value. A field's type may
+// change across writes, so the old value is cleared from every side table,
+// not just the new type's.
+func replaceMediaFieldValueTx(ctx context.Context, tx *sql.Tx, id MediaID, field MediaField) error {
+	for _, table := range mediaFieldTables {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE media_id = ? AND field = ?`, id, field.Name); err != nil { // #nosec G202 -- fixed table list
+			return err
+		}
+	}
+	return insertMediaFields(ctx, tx, id, []MediaField{field})
 }
 
 // InsertMediaFieldsIfAbsent writes only fields with no existing (media_id,

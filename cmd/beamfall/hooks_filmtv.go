@@ -13,7 +13,8 @@ import (
 // filmtvHydrationMapper groups a local file into the Film & TV plugin's
 // container Entities from the path alone, so files with no provider match still
 // land in containers. Every file is marked complete, so a rescan does not map it
-// again.
+// again. MapSidecar reads the file's own sidecar, whose values
+// land at the locked local tier; container sidecars are not imported.
 //
 // The two container kinds are read from the plugin's bundle: groupKind is the
 // kind that declares filmtv.SeasonOfRelation and parentKind is that relation's
@@ -62,6 +63,14 @@ func (m filmtvHydrationMapper) TitleFoldKinds() []string {
 	return []string{m.groupKind, m.parentKind}
 }
 
+// SidecarSignatureField and SidecarSignature let a rescan re-read a file's
+// sidecar when one appears, changes or goes away.
+func (filmtvHydrationMapper) SidecarSignatureField() string { return filmtv.NFOSignatureField }
+
+func (filmtvHydrationMapper) SidecarSignature(path string) (string, error) {
+	return filmtv.NFOSignature(path)
+}
+
 func (m filmtvHydrationMapper) MapHydration(_ map[string]string, path string) app.HydrationPlan {
 	plan := app.HydrationPlan{MarkComplete: true}
 	local := filmtv.LocalHydration(path)
@@ -99,6 +108,47 @@ func (m filmtvHydrationMapper) MapHydration(_ map[string]string, path string) ap
 		},
 	)
 	return plan
+}
+
+// MapSidecar parses the file's own sidecar: nil when it has none, Unreadable
+// when it cannot be read now. Its relations target the Media, and the
+// relations the format owns are stated even when the sidecar lists none of
+// them, so a credit removed from it is removed from the Media. A readable
+// sidecar with no values (a URL-only NFO) is a signed, empty parse, so it
+// replaces what an earlier sidecar wrote.
+func (filmtvHydrationMapper) MapSidecar(path string) *app.HydrationLocal {
+	sidecar := filmtv.LocalNFOHydration(path)
+	if sidecar.Unreadable {
+		return &app.HydrationLocal{Unreadable: true}
+	}
+	if sidecar.Signature == "" {
+		return nil
+	}
+	local := &app.HydrationLocal{
+		Title:     sidecar.Title,
+		SortTitle: sidecar.SortTitle,
+		Summary:   sidecar.Summary,
+		Year:      sidecar.Year,
+		Signature: sidecar.Signature,
+	}
+	for _, field := range sidecar.MediaFields {
+		local.MediaFields = append(local.MediaFields, store.MediaField{
+			Name: field.Name, Type: store.EntityFieldType(field.Type), Text: field.Text, Number: field.Number, Date: field.Date,
+		})
+	}
+	for _, relation := range sidecar.Relations {
+		local.Relations = append(local.Relations, app.HydrationRelation{
+			From:        app.HydrationEntity{Kind: relation.FromKind, Title: relation.FromTitle},
+			Name:        relation.Name,
+			Attributes:  relation.Attributes,
+			Cardinality: relation.Cardinality,
+			SortOrder:   relation.SortOrder,
+		})
+	}
+	for _, owned := range filmtv.NFOOwnedRelations() {
+		local.OwnedRelations = append(local.OwnedRelations, store.WrittenRelation{Kind: owned.FromKind, Name: owned.Name})
+	}
+	return local
 }
 
 // parentFolderDepth is how many enclosing folders parentTitle searches: the

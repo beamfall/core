@@ -6,11 +6,14 @@ import (
 	"time"
 )
 
-// Play history for the Console dashboard. A play is derived, not stored: it is
-// one run of playback-progress events for a Profile and Media with no gap
+// Play history for the Console dashboard and My Data. A play is derived, not
+// stored: it is one run of playback-progress events for a Profile and Media,
+// and for one client playback ID when the reports carry one, with no gap
 // longer than playGap between consecutive events, lasting at least
-// playMinSpan. Nothing new is persisted — the events are the ones the
-// engagement log already keeps.
+// playMinSpan (see derivedPlaysLocked). Nothing new is persisted — the events
+// are the ones the engagement log already keeps, each carrying the reporting
+// Device, its playback ID and the play method the server chose for it
+// (CORE-1703).
 
 const (
 	// playGap is the silence that ends one play and starts the next.
@@ -27,41 +30,144 @@ const (
 	// must reach to be Finished: this fraction of the item, or within the tail.
 	playFinishedFraction = 0.8
 	playFinishedTail     = 30
-	// playReportGapCap is the most one gap between consecutive progress
-	// reports adds to watched time when the reports do not say how far
-	// playback moved (CORE-1307): a watched report carries position zero.
-	// Clients report every 10 to 15 seconds while playing.
+	// playReportGapCap is the longest silence between two reports without a
+	// playback ID that still reads as continuous playback (CORE-1307): such
+	// reports cannot say whether the player was paused, and clients report
+	// every 10 to 15 seconds while playing.
 	playReportGapCap = time.Minute
 )
 
+// Play methods a play reports. A play's method is the one that covered most of
+// its watched time; reports written before CORE-1703 recorded none.
+const (
+	PlayMethodDirect    = "direct"
+	PlayMethodRemux     = "remux"
+	PlayMethodTranscode = "transcode"
+	PlayMethodUnknown   = "unknown"
+)
+
+// playMethods orders the methods by rank: an index is the SQL rank below.
+var playMethods = []string{PlayMethodUnknown, PlayMethodDirect, PlayMethodRemux, PlayMethodTranscode}
+
+// ValidPlayMethod reports whether method names a play method.
+func ValidPlayMethod(method string) bool {
+	return playMethodRank(method) >= 0
+}
+
+func playMethodRank(method string) int {
+	for rank, m := range playMethods {
+		if m == method {
+			return rank
+		}
+	}
+	return -1
+}
+
+// playMethodRankSQL ranks a report's recorded method (an index into
+// playMethods).
+const playMethodRankSQL = `CASE json_extract(payload, '$.playMethod')
+			WHEN 'transcode' THEN 3 WHEN 'remux' THEN 2 WHEN 'direct' THEN 1 ELSE 0 END`
+
+// PlayFilter narrows which plays a history or stats read covers. Zero fields
+// do not filter. VisibleOnly drops plays of Media the caller cannot see, as a
+// viewer's own reads do; without it such plays still count, untitled.
+type PlayFilter struct {
+	ProfileID   ProfileID
+	LibraryID   LibraryID
+	MediaID     MediaID
+	DeviceID    DeviceID
+	Method      string
+	VisibleOnly bool
+}
+
+// needsVisibility reports whether every play must be resolved against the
+// caller's visibility before it is kept.
+func (f PlayFilter) needsVisibility() bool {
+	return f.LibraryID != "" || f.VisibleOnly
+}
+
+// keeps reports whether a play of media passes the visibility half of f;
+// media is zero when the caller cannot see it.
+func (f PlayFilter) keeps(media Media) bool {
+	if f.VisibleOnly && media.ID == "" {
+		return false
+	}
+	return f.LibraryID == "" || media.LibraryID == f.LibraryID
+}
+
 // PlayHistoryQuery narrows the play history. Zero fields do not filter.
 type PlayHistoryQuery struct {
-	ProfileID ProfileID
-	LibraryID LibraryID
+	PlayFilter
+	Since time.Time
+	Until time.Time
+	Limit int
+}
+
+// PlayStatsQuery selects the plays a stats read aggregates. Since is
+// required. UTCOffset places the day buckets in the caller's local days.
+type PlayStatsQuery struct {
+	PlayFilter
 	Since     time.Time
 	Until     time.Time
-	Limit     int
+	UTCOffset time.Duration
 }
 
 // Play is one derived play. Title, LibraryID and LibraryTitle are empty when
 // the Media is outside the caller's visibility; the play is still reported so
 // activity is never understated.
 type Play struct {
-	ProfileID      ProfileID
-	ProfileName    string
-	MediaID        MediaID
-	Title          string
-	LibraryID      LibraryID
-	LibraryTitle   string
+	ProfileID    ProfileID
+	ProfileName  string
+	MediaID      MediaID
+	Title        string
+	LibraryID    LibraryID
+	LibraryTitle string
+	// DeviceID is the reporting Device, empty for plays recorded before
+	// devices were; DeviceName and DeviceClient (its surface) are empty when
+	// the Device is unknown or gone.
+	DeviceID       DeviceID
+	DeviceName     string
+	DeviceClient   string
+	Method         string
 	StartedAt      time.Time
 	WatchedSeconds int
 	Finished       bool
 }
 
-// PlayStats ranks who played most and what was played most over a window.
+// PlayStats totals the plays over a range and breaks them down: who played
+// most, what was played most, on which devices, by which method and per day.
 type PlayStats struct {
-	Profiles []PlayStatsProfile
-	Items    []PlayStatsItem
+	Plays          int
+	WatchedSeconds int
+	Profiles       []PlayStatsProfile
+	Items          []PlayStatsItem
+	Devices        []PlayStatsDevice
+	Methods        []PlayStatsMethod
+	Days           []PlayStatsDay
+}
+
+// PlayStatsDevice is one Device's activity in the range.
+type PlayStatsDevice struct {
+	DeviceID       DeviceID
+	DeviceName     string
+	DeviceClient   string
+	Plays          int
+	WatchedSeconds int
+}
+
+// PlayStatsMethod is one play method's activity in the range.
+type PlayStatsMethod struct {
+	Method         string
+	Plays          int
+	WatchedSeconds int
+}
+
+// PlayStatsDay is one local day's activity; Day is YYYY-MM-DD. Days without
+// plays are omitted.
+type PlayStatsDay struct {
+	Day            string
+	Plays          int
+	WatchedSeconds int
 }
 
 // PlayStatsProfile is one Profile's activity in the window.
@@ -84,6 +190,8 @@ type PlayStatsItem struct {
 type derivedPlay struct {
 	profileID ProfileID
 	mediaID   MediaID
+	deviceID  DeviceID
+	method    int // index into playMethods
 	startMS   int64
 	endMS     int64
 	duration  int
@@ -95,26 +203,40 @@ type derivedPlay struct {
 	lastPos  int
 	// playedMS is how long the run actually played; see playedStepMS.
 	playedMS int64
+	// keyed is whether the run is one playback ID's reports. Such a run is
+	// measured by playedMS alone; its report times only date it.
+	keyed bool
 }
 
-// counts reports whether the run lasted long enough to be a play.
+// ranMS is how long the run lasted for counting and for judging how far it
+// got: the time it actually played for a playback ID's run, whose report
+// times can come from a client clock that stalled or went back, and the span
+// of its report times otherwise.
+func (p derivedPlay) ranMS() int64 {
+	if p.keyed {
+		return p.playedMS
+	}
+	return p.endMS - p.startMS
+}
+
+// counts reports whether the run lasted long enough to be a play (ranMS).
 func (p derivedPlay) counts() bool {
 	minSpan := playMinSpan
 	if p.duration > 0 {
 		minSpan = min(minSpan, time.Duration(p.duration)*time.Second/4)
 	}
-	return time.Duration(p.endMS-p.startMS)*time.Millisecond >= minSpan
+	return time.Duration(p.ranMS())*time.Millisecond >= minSpan
 }
 
 // reachedEnd reports whether the run got near the end of the item: its
-// highest reported position, or where it started plus how long it ran, is
+// highest reported position, or where it started plus how long it ran (ranMS), is
 // within playFinishedFraction or playFinishedTail of the end. An item of
 // unknown length cannot be judged, so the watched flag stands alone.
 func (p derivedPlay) reachedEnd() bool {
 	if p.duration <= 0 {
 		return true
 	}
-	reached := max(p.lastPos, p.firstPos+int((p.endMS-p.startMS)/1000))
+	reached := max(p.lastPos, p.firstPos+int(p.ranMS()/1000))
 	return float64(reached) >= playFinishedFraction*float64(p.duration) || p.duration-reached <= playFinishedTail
 }
 
@@ -132,84 +254,177 @@ func (p derivedPlay) watchedSeconds() int {
 // epoch-millisecond event time when it sent one, so a report held back while a
 // device was offline stays in the play it belongs to, and the server arrival
 // time otherwise. A client clock ahead of the server is not believed, so no
-// play is ever dated in the future.
+// play is ever dated in the future. It dates plays and orders reports without
+// a playback ID; it is never compared with a server time.
 const playedAtMS = `CASE
 		WHEN COALESCE(json_extract(payload, '$.eventTimeMs'), 0) BETWEEN 1 AND occurred_at_ms
 		THEN json_extract(payload, '$.eventTimeMs')
 		ELSE occurred_at_ms END`
 
-// playedStepMS is how much one report adds to its run's watched time
-// (CORE-1307): the wall-clock gap since the previous report, but no more than
-// the position advanced over it, so a pause counts nothing whether the client
-// stays silent or keeps reporting the same position, and a forward seek counts
-// only the time it took. When either report gives no position (a watched
-// report stores zero, and so does a client that sends none), the gap counts up
-// to playReportGapCap. The first report of a run adds nothing.
+// playedStepMS is how much one report adds to its run's watched time.
+//
+// Within a playback ID whose client reports how long it has played
+// (playedMs, counted only while media actually plays), the step is how far
+// that count grew past the largest count the server had already received for
+// the ID, and never less than nothing. The count is cumulative, so a delayed,
+// queued or repeated report credits exactly the playing it covers, a seek or a
+// pause adds nothing, and the client's wall clock plays no part. The first
+// report of an ID credits its whole count. Once any report of an ID carries
+// a count, the counts alone decide: a report of that ID without one adds
+// nothing.
+//
+// Reports with a playback ID but no played count credit the advance of the
+// position the client reported, but no more than the time between their
+// arrivals at the server, and nothing after a report that said the player was
+// paused. The first report of their run adds nothing. A report that does not
+// say whether the player was paused reads as playing.
+//
+// Reports without a playback ID keep the CORE-1307 rule unchanged, so
+// recorded history reads as it did: the first report of a run adds nothing,
+// nothing across a gap longer than playReportGapCap, otherwise the gap between
+// their observed times, but no more than the stored position advanced when
+// both sides have one, and no more than playReportGapCap.
 const playedStepMS = `CASE
-		WHEN prev_ms IS NULL OR at_ms - prev_ms > ? THEN 0
+		WHEN part <> '' AND counted
+		THEN COALESCE(MAX(played - COALESCE(prev_played, 0), 0), 0)
+		WHEN starts = 1 THEN 0
+		WHEN part <> ''
+		THEN CASE WHEN prev_paused = 1 OR reported IS NULL OR prev_reported IS NULL THEN 0
+		          ELSE MAX(MIN(recv_ms - prev_recv, (reported - prev_reported) * 1000), 0) END
+		WHEN at_ms - prev_ms > ? THEN 0
 		WHEN watched = 0 AND prev_watched = 0 AND (position > 0 OR prev_position > 0)
-		THEN MIN(at_ms - prev_ms, MAX(position - prev_position, 0) * 1000)
-		ELSE MIN(at_ms - prev_ms, ?) END`
+		THEN MAX(MIN(at_ms - prev_ms, MAX(position - prev_position, 0) * 1000), 0)
+		ELSE MAX(MIN(at_ms - prev_ms, ?), 0) END`
 
 // derivedPlaysLocked lists the plays that started in [since, until), newest
 // first, each measured whole even when it runs past either bound. A zero bound
-// is open; an empty profileID covers every Profile.
+// is open. The Profile, Media, Device and method parts of f apply here; the
+// Library and visibility parts are the caller's.
 //
-// Runs are grouped before the window applies: a play that began just before
-// since is left out, not cut into a shorter play starting at since. Reports
-// from one gap before since are enough to tell, because a run starting at or
-// after since has no report within one gap before its first.
-func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, since, until time.Time, visit func(derivedPlay) bool) error {
+// A run is the reports for a Profile and Media that share a playback ID,
+// taken in the order the server received them, so two devices playing at once
+// and each hand-off between devices are separate plays. Reports without a
+// playback ID (older clients and every report written before CORE-1703) group
+// as they always did: all of a Profile's reports for the Media, in
+// observed-time order. Either kind of run also ends at a silence longer than
+// playGap.
+//
+// A play's method is the one that covered most of its watched time, each step
+// credited to the method recorded on the report that ends it (ties go to the
+// more demanding method, and unknown competes too). A method that covered no
+// watched time never wins; a play with none at all reports the most demanding
+// method recorded.
+//
+// Runs are grouped and measured before the window applies: a play that began
+// just before since is left out, not cut into a shorter play starting at
+// since. Every report for a Profile and Media that has any report since then
+// is read, so a playback ID's played count steps from all of its earlier
+// counts, even ones from a run that ended before since.
+func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, until time.Time, visit func(derivedPlay) bool) error {
 	query := `
-		WITH raw AS (
-			SELECT profile_id, media_id, ` + playedAtMS + ` AS at_ms,
+		WITH src AS (
+			SELECT profile_id, media_id, ` + playDeviceSQL + ` AS device_id,
+			       COALESCE(json_extract(payload, '$.playbackId'), '') AS pid,
+			       ` + playMethodRankSQL + ` AS method,
+			       ` + playedAtMS + ` AS at_ms,
+			       occurred_at_ms AS recv_ms, rowid AS seq,
+			       CASE WHEN json_extract(payload, '$.playedMs') >= 0
+			            THEN json_extract(payload, '$.playedMs') END AS played,
 			       COALESCE(json_extract(payload, '$.durationSeconds'), 0) AS duration,
 			       COALESCE(json_extract(payload, '$.watched'), 0) AS watched,
-			       COALESCE(json_extract(payload, '$.positionSeconds'), 0) AS position
+			       COALESCE(json_extract(payload, '$.positionSeconds'), 0) AS position,
+			       json_extract(payload, '$.reportedPositionSeconds') AS reported,
+			       json_extract(payload, '$.paused') AS paused
 			FROM engagement_event
 			WHERE kind = ? AND media_id IS NOT NULL
 			  AND json_extract(payload, '$.operation') = ?`
 	args := []any{playbackProjectionEventKind, playbackProjectionOperationProgress}
-	if profileID != "" {
+	if f.ProfileID != "" {
 		query += ` AND profile_id = ?`
-		args = append(args, profileID)
+		args = append(args, f.ProfileID)
+	}
+	if f.MediaID != "" {
+		query += ` AND media_id = ?`
+		args = append(args, f.MediaID)
 	}
 	if !since.IsZero() {
-		// A report is never dated after it arrived, so the arrival index can
-		// still bound the scan, one gap early.
-		query += ` AND occurred_at_ms >= ?`
-		args = append(args, timeToMillis(since.UTC().Add(-playGap)))
+		// A play starting at or after since has every report arriving then
+		// too (none is dated after it arrived), so only those Profile and
+		// Media pairs can list one; their whole history is read.
+		query += ` AND (profile_id, media_id) IN (
+				SELECT profile_id, media_id FROM engagement_event
+				WHERE kind = ? AND media_id IS NOT NULL AND occurred_at_ms >= ?)`
+		args = append(args, playbackProjectionEventKind, timeToMillis(since.UTC()))
 	}
 	query += `
+		), raw AS (
+			SELECT *, CASE WHEN pid <> '' THEN 'p' || pid ELSE '' END AS part,
+			       CASE WHEN pid <> '' THEN recv_ms ELSE at_ms END AS ord_ms
+			FROM src
 		), ev AS (
-			SELECT *, LAG(at_ms) OVER w AS prev_ms, LAG(position) OVER w AS prev_position,
-			       LAG(watched) OVER w AS prev_watched
+			SELECT *, LAG(ord_ms) OVER w AS prev_ord, LAG(at_ms) OVER w AS prev_ms,
+			       LAG(recv_ms) OVER w AS prev_recv,
+			       MAX(played) OVER (w ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_played,
+			       COUNT(played) OVER (PARTITION BY profile_id, media_id, part) > 0 AS counted,
+			       LAG(position) OVER w AS prev_position, LAG(watched) OVER w AS prev_watched,
+			       LAG(reported) OVER w AS prev_reported, LAG(paused) OVER w AS prev_paused
 			FROM raw
-			WINDOW w AS (PARTITION BY profile_id, media_id ORDER BY at_ms)
+			WINDOW w AS (PARTITION BY profile_id, media_id, part ORDER BY ord_ms, seq)
 		), run AS (
-			SELECT *, SUM(CASE WHEN prev_ms IS NULL OR at_ms - prev_ms > ? THEN 1 ELSE 0 END)
-			            OVER (PARTITION BY profile_id, media_id ORDER BY at_ms) AS run_no,
-			       ` + playedStepMS + ` AS step_ms
+			SELECT *, CASE WHEN prev_ord IS NULL OR ord_ms - prev_ord > ? THEN 1 ELSE 0 END AS starts,
+			       SUM(CASE WHEN prev_ord IS NULL OR ord_ms - prev_ord > ? THEN 1 ELSE 0 END)
+			           OVER (PARTITION BY profile_id, media_id, part ORDER BY ord_ms, seq
+			                 ROWS UNBOUNDED PRECEDING) AS run_no
 			FROM ev
+		), step AS (
+			SELECT *, ` + playedStepMS + ` AS step_ms
+			FROM run
+		), credit AS (
+			SELECT profile_id, media_id, part, run_no, method,
+			       ROW_NUMBER() OVER (PARTITION BY profile_id, media_id, part, run_no
+			                          ORDER BY SUM(step_ms) DESC, method DESC) AS pick
+			FROM step
+			WHERE step_ms > 0
+			GROUP BY profile_id, media_id, part, run_no, method
+		), play AS (
+			SELECT profile_id, media_id, part, run_no, MAX(device_id) AS device_id, MAX(method) AS top_method,
+			       MIN(at_ms) AS start_ms, MAX(at_ms) AS end_ms, MAX(duration) AS duration, MAX(watched) AS watched,
+			       COALESCE(MIN(CASE WHEN watched = 0 THEN position END), 0) AS first_pos,
+			       COALESCE(MAX(CASE WHEN watched = 0 THEN position END), 0) AS last_pos,
+			       SUM(step_ms) AS played_ms, part <> '' AS keyed
+			FROM step
+			GROUP BY profile_id, media_id, part, run_no
+		), result AS (
+			SELECT play.*, COALESCE(credit.method, play.top_method) AS play_method
+			FROM play LEFT JOIN credit
+			  ON credit.profile_id = play.profile_id AND credit.media_id = play.media_id
+			 AND credit.part = play.part AND credit.run_no = play.run_no AND credit.pick = 1
 		)
-		SELECT profile_id, media_id, MIN(at_ms), MAX(at_ms), MAX(duration), MAX(watched),
-		       COALESCE(MIN(CASE WHEN watched = 0 THEN position END), 0),
-		       COALESCE(MAX(CASE WHEN watched = 0 THEN position END), 0),
-		       SUM(step_ms)
-		FROM run
-		GROUP BY profile_id, media_id, run_no
-		HAVING 1 = 1`
-	args = append(args, playGap.Milliseconds(), playGap.Milliseconds(), playReportGapCap.Milliseconds())
+		SELECT profile_id, media_id, device_id, play_method, start_ms, end_ms, duration, watched,
+		       first_pos, last_pos, played_ms, keyed
+		FROM result
+		WHERE 1 = 1`
+	args = append(args, playGap.Milliseconds(), playGap.Milliseconds(),
+		playReportGapCap.Milliseconds(), playReportGapCap.Milliseconds())
+	if f.DeviceID != "" {
+		// After grouping, so a play is listed under its own Device.
+		query += ` AND device_id = ?`
+		args = append(args, f.DeviceID)
+	}
+	if f.Method != "" {
+		query += ` AND play_method = ?`
+		args = append(args, max(playMethodRank(f.Method), 0))
+	}
 	if !since.IsZero() {
-		query += ` AND MIN(at_ms) >= ?`
+		query += ` AND start_ms >= ?`
 		args = append(args, timeToMillis(since.UTC()))
 	}
 	if !until.IsZero() {
-		query += ` AND MIN(at_ms) < ?`
+		query += ` AND start_ms < ?`
 		args = append(args, timeToMillis(until.UTC()))
 	}
 	query += `
-		ORDER BY MIN(at_ms) DESC, profile_id, media_id`
+		ORDER BY start_ms DESC, profile_id, media_id, device_id`
 	rows, err := s.eventsR.QueryContext(ctx, query, args...)
 	if err != nil {
 		return err
@@ -218,7 +433,7 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, sin
 	for rows.Next() {
 		var p derivedPlay
 		var finished int
-		if err := rows.Scan(&p.profileID, &p.mediaID, &p.startMS, &p.endMS, &p.duration, &finished, &p.firstPos, &p.lastPos, &p.playedMS); err != nil {
+		if err := rows.Scan(&p.profileID, &p.mediaID, &p.deviceID, &p.method, &p.startMS, &p.endMS, &p.duration, &finished, &p.firstPos, &p.lastPos, &p.playedMS, &p.keyed); err != nil {
 			return err
 		}
 		if !p.counts() {
@@ -232,6 +447,34 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, sin
 		}
 	}
 	return rows.Err()
+}
+
+// playDeviceSQL is a report's Device; reports recorded before CORE-1703 have
+// none and group together.
+const playDeviceSQL = `COALESCE(json_extract(payload, '$.deviceId'), '')`
+
+// playDevice is how a play names its Device.
+type playDevice struct {
+	name   string
+	client string
+}
+
+func (s *Store) playDevicesLocked(ctx context.Context) (map[DeviceID]playDevice, error) {
+	rows, err := s.catalogR.QueryContext(ctx, `SELECT id, name, device_surface FROM device`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	devices := map[DeviceID]playDevice{}
+	for rows.Next() {
+		var id DeviceID
+		var device playDevice
+		if err := rows.Scan(&id, &device.name, &device.client); err != nil {
+			return nil, err
+		}
+		devices[id] = device
+	}
+	return devices, rows.Err()
 }
 
 func (s *Store) profileNamesLocked(ctx context.Context) (map[ProfileID]string, error) {
@@ -293,49 +536,39 @@ func (s *Store) PlayHistory(ctx context.Context, filter LibraryFilter, q PlayHis
 	return s.playHistoryLocked(ctx, filter, q, q.Since, limit)
 }
 
-// playHistoryChunk is how many plays a Library-filtered read resolves against
-// the catalog at a time.
+// playHistoryChunk is how many plays a visibility-filtered read resolves
+// against the catalog at a time.
 const playHistoryChunk = PlayHistoryMaxLimit
 
 // playHistoryLocked resolves up to limit plays no older than since.
 func (s *Store) playHistoryLocked(ctx context.Context, filter LibraryFilter, q PlayHistoryQuery, since time.Time, limit int) ([]Play, error) {
 	// Visibility lives in the catalog database and plays in the events
-	// database. Without a Library filter the newest limit plays are the page.
-	// With one, plays are resolved a chunk at a time and kept only when their
-	// Media is in that Library, until the page fills or the window runs out,
-	// so a quiet Library is never crowded out by a busy one.
+	// database. Without a Library or visibility filter the newest limit plays
+	// are the page. With one, plays are resolved a chunk at a time and kept
+	// only when they pass it, until the page fills or the window runs out, so
+	// a quiet Library is never crowded out by a busy one.
 	var raw, pending []derivedPlay
 	visible := map[MediaID]Media{}
 	var resolveErr error
 	resolve := func() bool {
-		ids := make([]MediaID, 0, len(pending))
-		for _, p := range pending {
-			if _, done := visible[p.mediaID]; !done {
-				ids = append(ids, p.mediaID)
-			}
-		}
-		found, err := s.visibleMediaBatchSQL(ctx, ids, filter)
-		if err != nil {
+		if err := s.resolvePlayMediaLocked(ctx, filter, pending, visible); err != nil {
 			resolveErr = err
 			return false
-		}
-		for _, id := range ids {
-			visible[id] = found[id] // a zero Media marks one the caller cannot see
 		}
 		for _, p := range pending {
 			if len(raw) == limit {
 				break
 			}
-			if q.LibraryID == "" || visible[p.mediaID].LibraryID == q.LibraryID {
+			if q.keeps(visible[p.mediaID]) {
 				raw = append(raw, p)
 			}
 		}
 		pending = pending[:0]
 		return len(raw) < limit
 	}
-	err := s.derivedPlaysLocked(ctx, q.ProfileID, since, q.Until, func(p derivedPlay) bool {
+	err := s.derivedPlaysLocked(ctx, q.PlayFilter, since, q.Until, func(p derivedPlay) bool {
 		pending = append(pending, p)
-		if q.LibraryID == "" {
+		if !q.needsVisibility() {
 			return len(pending) < limit
 		}
 		if len(pending) < playHistoryChunk {
@@ -364,13 +597,22 @@ func (s *Store) playHistoryLocked(ctx context.Context, filter LibraryFilter, q P
 	if err != nil {
 		return nil, err
 	}
+	devices, err := s.playDevicesLocked(ctx)
+	if err != nil {
+		return nil, err
+	}
 	plays := make([]Play, 0, len(raw))
 	for _, p := range raw {
 		media := visible[p.mediaID]
+		device := devices[p.deviceID]
 		play := Play{
 			ProfileID:      p.profileID,
 			ProfileName:    names[p.profileID],
 			MediaID:        p.mediaID,
+			DeviceID:       p.deviceID,
+			DeviceName:     device.name,
+			DeviceClient:   device.client,
+			Method:         playMethods[p.method],
 			StartedAt:      millisToTime(p.startMS),
 			WatchedSeconds: p.watchedSeconds(),
 			Finished:       p.finished,
@@ -385,84 +627,156 @@ func (s *Store) playHistoryLocked(ctx context.Context, filter LibraryFilter, q P
 	return plays, nil
 }
 
-// PlayStats ranks Profiles and Media by play count since the given instant.
-// Every play counts toward its Profile; only Media visible through filter are
+// resolvePlayMediaLocked adds the plays' Media not yet in visible, recording a
+// zero Media for each one the caller cannot see.
+func (s *Store) resolvePlayMediaLocked(ctx context.Context, filter LibraryFilter, plays []derivedPlay, visible map[MediaID]Media) error {
+	ids := make([]MediaID, 0, len(plays))
+	for _, p := range plays {
+		if _, done := visible[p.mediaID]; !done {
+			visible[p.mediaID] = Media{}
+			ids = append(ids, p.mediaID)
+		}
+	}
+	found, err := s.visibleMediaBatchSQL(ctx, ids, filter)
+	if err != nil {
+		return err
+	}
+	for id, media := range found {
+		visible[id] = media
+	}
+	return nil
+}
+
+// PlayStats totals and breaks down the plays that started in the query's
+// range. Every play that passes the query counts toward the totals, its
+// Profile, Device, method and day; only Media visible through filter are
 // ranked as items.
-func (s *Store) PlayStats(ctx context.Context, filter LibraryFilter, since time.Time) (PlayStats, error) {
+func (s *Store) PlayStats(ctx context.Context, filter LibraryFilter, q PlayStatsQuery) (PlayStats, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return PlayStats{}, err
 	}
-	profiles := map[ProfileID]*PlayStatsProfile{}
-	items := map[MediaID]*PlayStatsItem{}
-	err := s.derivedPlaysLocked(ctx, "", since, time.Time{}, func(p derivedPlay) bool {
-		profile := profiles[p.profileID]
-		if profile == nil {
-			profile = &PlayStatsProfile{ProfileID: p.profileID}
-			profiles[p.profileID] = profile
-		}
-		profile.Plays++
-		profile.WatchedSeconds += p.watchedSeconds()
-		item := items[p.mediaID]
-		if item == nil {
-			item = &PlayStatsItem{MediaID: p.mediaID}
-			items[p.mediaID] = item
-		}
-		item.Plays++
-		item.WatchedSeconds += p.watchedSeconds()
+	var plays []derivedPlay
+	if err := s.derivedPlaysLocked(ctx, q.PlayFilter, q.Since, q.Until, func(p derivedPlay) bool {
+		plays = append(plays, p)
 		return true
-	})
-	if err != nil {
+	}); err != nil {
 		return PlayStats{}, err
+	}
+	visible := map[MediaID]Media{}
+	for start := 0; start < len(plays); start += playHistoryChunk {
+		if err := s.resolvePlayMediaLocked(ctx, filter, plays[start:min(start+playHistoryChunk, len(plays))], visible); err != nil {
+			return PlayStats{}, err
+		}
 	}
 	names, err := s.profileNamesLocked(ctx)
 	if err != nil {
 		return PlayStats{}, err
 	}
-	ids := make([]MediaID, 0, len(items))
-	for id := range items {
-		ids = append(ids, id)
-	}
-	visible, err := s.visibleMediaBatchSQL(ctx, ids, filter)
+	devices, err := s.playDevicesLocked(ctx)
 	if err != nil {
 		return PlayStats{}, err
 	}
-	stats := PlayStats{Profiles: make([]PlayStatsProfile, 0, len(profiles)), Items: make([]PlayStatsItem, 0, len(visible))}
-	for _, profile := range profiles {
-		profile.ProfileName = names[profile.ProfileID]
-		stats.Profiles = append(stats.Profiles, *profile)
-	}
-	for id, item := range items {
-		media, ok := visible[id]
-		if !ok {
+	zone := time.FixedZone("", int(q.UTCOffset/time.Second))
+	var stats PlayStats
+	profiles := map[ProfileID]*PlayStatsProfile{}
+	items := map[MediaID]*PlayStatsItem{}
+	byDevice := map[DeviceID]*PlayStatsDevice{}
+	methods := map[string]*PlayStatsMethod{}
+	days := map[string]*PlayStatsDay{}
+	for _, p := range plays {
+		media := visible[p.mediaID]
+		if !q.keeps(media) {
 			continue
 		}
-		item.Title = media.Title
-		item.LibraryID = media.LibraryID
-		stats.Items = append(stats.Items, *item)
+		watched := p.watchedSeconds()
+		stats.Plays++
+		stats.WatchedSeconds += watched
+		profile := profiles[p.profileID]
+		if profile == nil {
+			profile = &PlayStatsProfile{ProfileID: p.profileID, ProfileName: names[p.profileID]}
+			profiles[p.profileID] = profile
+		}
+		profile.Plays++
+		profile.WatchedSeconds += watched
+		if media.ID != "" {
+			item := items[p.mediaID]
+			if item == nil {
+				item = &PlayStatsItem{MediaID: p.mediaID, Title: media.Title, LibraryID: media.LibraryID}
+				items[p.mediaID] = item
+			}
+			item.Plays++
+			item.WatchedSeconds += watched
+		}
+		device := byDevice[p.deviceID]
+		if device == nil {
+			known := devices[p.deviceID]
+			device = &PlayStatsDevice{DeviceID: p.deviceID, DeviceName: known.name, DeviceClient: known.client}
+			byDevice[p.deviceID] = device
+		}
+		device.Plays++
+		device.WatchedSeconds += watched
+		method := methods[playMethods[p.method]]
+		if method == nil {
+			method = &PlayStatsMethod{Method: playMethods[p.method]}
+			methods[method.Method] = method
+		}
+		method.Plays++
+		method.WatchedSeconds += watched
+		key := millisToTime(p.startMS).In(zone).Format(time.DateOnly)
+		day := days[key]
+		if day == nil {
+			day = &PlayStatsDay{Day: key}
+			days[key] = day
+		}
+		day.Plays++
+		day.WatchedSeconds += watched
 	}
-	sort.Slice(stats.Profiles, func(i, j int) bool {
-		a, b := stats.Profiles[i], stats.Profiles[j]
-		if a.Plays != b.Plays {
-			return a.Plays > b.Plays
-		}
-		if a.WatchedSeconds != b.WatchedSeconds {
-			return a.WatchedSeconds > b.WatchedSeconds
-		}
-		return a.ProfileID < b.ProfileID
+	stats.Profiles = rankPlays(profiles, func(p PlayStatsProfile) (int, int, string) {
+		return p.Plays, p.WatchedSeconds, string(p.ProfileID)
 	})
-	sort.Slice(stats.Items, func(i, j int) bool {
-		a, b := stats.Items[i], stats.Items[j]
-		if a.Plays != b.Plays {
-			return a.Plays > b.Plays
-		}
-		if a.WatchedSeconds != b.WatchedSeconds {
-			return a.WatchedSeconds > b.WatchedSeconds
-		}
-		return a.MediaID < b.MediaID
+	stats.Items = rankPlays(items, func(i PlayStatsItem) (int, int, string) {
+		return i.Plays, i.WatchedSeconds, string(i.MediaID)
 	})
-	stats.Profiles = stats.Profiles[:min(len(stats.Profiles), playStatsRanks)]
-	stats.Items = stats.Items[:min(len(stats.Items), playStatsRanks)]
+	stats.Devices = sortPlays(byDevice, func(d PlayStatsDevice) (int, int, string) {
+		return d.Plays, d.WatchedSeconds, string(d.DeviceID)
+	})
+	stats.Methods = sortPlays(methods, func(m PlayStatsMethod) (int, int, string) {
+		return m.Plays, m.WatchedSeconds, m.Method
+	})
+	stats.Days = make([]PlayStatsDay, 0, len(days))
+	for _, day := range days {
+		stats.Days = append(stats.Days, *day)
+	}
+	sort.Slice(stats.Days, func(i, j int) bool { return stats.Days[i].Day < stats.Days[j].Day })
 	return stats, nil
+}
+
+// rankPlays orders entries by plays, then watched seconds, then id, and keeps
+// the top playStatsRanks.
+func rankPlays[K comparable, V any](entries map[K]*V, key func(V) (plays, watched int, id string)) []V {
+	ranked := sortPlays(entries, key)
+	return ranked[:min(len(ranked), playStatsRanks)]
+}
+
+// sortPlays orders every entry the way rankPlays does, keeping them all: the
+// Device and method breakdowns add up to the totals.
+func sortPlays[K comparable, V any](entries map[K]*V, key func(V) (plays, watched int, id string)) []V {
+	ranked := make([]V, 0, len(entries))
+	for _, entry := range entries {
+		ranked = append(ranked, *entry)
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		ap, aw, aid := key(ranked[i])
+		bp, bw, bid := key(ranked[j])
+		if ap != bp {
+			return ap > bp
+		}
+		if aw != bw {
+			return aw > bw
+		}
+		return aid < bid
+	})
+	return ranked
 }

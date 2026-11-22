@@ -1,9 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,8 +19,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/graph"
 	"github.com/beamfall/core/internal/identify"
+	"github.com/beamfall/core/internal/manifest"
 	"github.com/beamfall/core/internal/plugin"
 	scanpkg "github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/store"
@@ -186,7 +193,7 @@ func (f *fakeHydrationStore) UpsertEntityMergingText(ctx context.Context, entity
 	return f.UpsertEntity(ctx, entity)
 }
 
-func (f *fakeHydrationStore) UpsertEntityRelation(_ context.Context, relation store.EntityRelation) error {
+func (f *fakeHydrationStore) UpsertHydratedEntityRelation(_ context.Context, relation store.EntityRelation) error {
 	f.relations = append(f.relations, relation)
 	return nil
 }
@@ -890,7 +897,7 @@ func TestHydrationSplitsMergedEntityAfterScopeRepair(t *testing.T) {
 			{FromEntityID: legacy, Name: "album-track", ToMediaID: media, Cardinality: "one"},
 			{FromEntityID: legacy, Name: "album-artist", ToEntityID: artistID},
 		} {
-			if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+			if err := st.UpsertHydratedEntityRelation(ctx, relation); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -982,7 +989,7 @@ func TestScopeRepairQueuesBackfillScan(t *testing.T) {
 	if err := st.UpsertEntity(ctx, store.Entity{ID: legacy, LibraryID: lib.ID, Kind: "album", Title: "Shared Collection"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: legacy, Name: "album-track", ToMediaID: media.ID, Cardinality: "one"}); err != nil {
+	if err := st.UpsertHydratedEntityRelation(ctx, store.EntityRelation{FromEntityID: legacy, Name: "album-track", ToMediaID: media.ID, Cardinality: "one"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetMediaFields(ctx, media.ID, []store.MediaField{{Name: testHydrationMarkerField, Type: store.EntityFieldFlag, Flag: true}}); err != nil {
@@ -1077,10 +1084,10 @@ func (r *rendezvousHydrationStore) UpsertEntityMergingText(ctx context.Context, 
 	return r.inner.UpsertEntityMergingText(ctx, entity, field, mediaID)
 }
 
-func (r *rendezvousHydrationStore) UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error {
+func (r *rendezvousHydrationStore) UpsertHydratedEntityRelation(ctx context.Context, relation store.EntityRelation) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.inner.UpsertEntityRelation(ctx, relation)
+	return r.inner.UpsertHydratedEntityRelation(ctx, relation)
 }
 
 func (r *rendezvousHydrationStore) ReplaceMediaRelations(ctx context.Context, mediaID store.MediaID, relations []store.EntityRelation) error {
@@ -1183,6 +1190,9 @@ func (rehydratingTestMapper) MapHydration(tags map[string]string, _ string) Hydr
 	if tags["album"] != "" {
 		plan.MarkComplete = true
 		plan.MediaFields = append(plan.MediaFields, store.MediaField{Name: "album", Type: store.EntityFieldText, Text: tags["album"]})
+		plan.Relations = append(plan.Relations, HydrationRelation{
+			From: HydrationEntity{Kind: "album", Title: tags["album"]}, Name: "album-track", Cardinality: "one",
+		})
 	}
 	// "contributors" maps to the many-cardinality credit relation, one row per
 	// comma-separated name; "category" maps to a second, independent kind.
@@ -1750,6 +1760,67 @@ func TestRehydrationReplacesManyCardinalityRelations(t *testing.T) {
 	if got := r.relationSources("appears-on"); !slices.Equal(got, []string{"Contributor Beta", "Contributor Gamma"}) {
 		t.Fatalf("credits after a category-only replace = %v, want them kept", got)
 	}
+}
+
+func TestRehydrationPreservesOperatorRelationUntilRemoved(t *testing.T) {
+	r := newRehydrationScan(t)
+	tags := map[string]string{"title": "Track", "album": "Tagged Collection"}
+	r.write("original audio bytes padding padding", 2*time.Hour, tags)
+	r.scan()
+	assertAlbum := func(want ...string) {
+		t.Helper()
+		if got := r.relationSources("album-track"); !slices.Equal(got, want) {
+			t.Fatalf("album relation = %v, want %v", got, want)
+		}
+	}
+	assertAlbum("Tagged Collection")
+
+	ctx := t.Context()
+	album := store.Entity{ID: "operator-collection", LibraryID: r.library, Kind: "album", Title: "Chosen Collection"}
+	if err := r.st.UpsertEntity(ctx, album); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := plugin.NewRegistry([]plugin.Bundle{rehydrationBundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := graph.NewHandler(manifest.NewService(r.st, time.Now, registry), auth.NewService(r.st), r.st, registry)
+	mutate := func(query string) {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{"query": query, "variables": map[string]any{"mediaID": string(r.mediaID)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
+		req.Header.Set("X-Beamfall-Session", "session-manager")
+		req.Header.Set("X-Beamfall-Device", "device-mac")
+		req.Header.Set("X-Beamfall-Device-Secret", "dev-manager-secret")
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, req)
+		var response struct {
+			Errors []json.RawMessage
+			Data   map[string]json.RawMessage
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &response); err != nil || resp.Code != http.StatusOK ||
+			len(response.Errors) != 0 || len(response.Data) != 1 {
+			t.Fatalf("mutation response %d: %s", resp.Code, resp.Body.String())
+		}
+	}
+	mutate(`mutation($mediaID: String!) {
+		setMediaRelation(mediaID: $mediaID, relation: "album-track", entityID: "operator-collection") { sourceID }
+	}`)
+	assertAlbum("Chosen Collection")
+	r.rehydrate("sha256:retagged-but-locked", tags)
+	if got := recordedFingerprint(r.field(testHydrationFingerprintField)); got != "sha256:retagged-but-locked" {
+		t.Fatalf("replacement hydration did not run: %q", got)
+	}
+	assertAlbum("Chosen Collection")
+	mutate(`mutation($mediaID: String!) {
+		removeMediaRelation(mediaID: $mediaID, relation: "album-track", entityID: "operator-collection") { sourceID }
+	}`)
+	assertAlbum()
+	r.rehydrate("sha256:retagged-after-removal", tags)
+	assertAlbum("Tagged Collection")
 }
 
 func TestRehydrationKeepsLockedTitle(t *testing.T) {

@@ -41,12 +41,13 @@ type CatalogExport struct {
 }
 
 // ExportedMedia is one Media plus the curation attached to it: its plugin
-// fields, authored Markers, and pinned artwork (the applied candidate per slot).
+// fields, manual ordinal, authored Markers and pinned artwork.
 type ExportedMedia struct {
-	Media      Media
-	Fields     []MediaField
-	Markers    []Marker
-	ArtworkPin []ArtworkPin
+	Media           Media
+	Fields          []MediaField
+	Markers         []Marker
+	ArtworkPin      []ArtworkPin
+	OperatorOrdinal *MediaOrdinal
 }
 
 // ArtworkPin is the materialized (applied) artwork choice for a Media/slot pair
@@ -63,11 +64,12 @@ type ArtworkPin struct {
 // Entity, the relation name, exactly one target (entity or Media), and the
 // render-only attributes.
 type ExportedEntityRelation struct {
-	FromEntityID EntityID
-	Relation     string
-	ToEntityID   EntityID
-	ToMediaID    MediaID
-	Attributes   map[string]string
+	FromEntityID   EntityID
+	Relation       string
+	ToEntityID     EntityID
+	ToMediaID      MediaID
+	Attributes     map[string]string
+	OperatorLocked bool `json:",omitempty"`
 }
 
 // ExportedMediaRelation is one media_relation row (Media→Media): the fixed-shape
@@ -129,30 +131,36 @@ func (s *Store) ExportCatalog(ctx context.Context, filter LibraryFilter) (Catalo
 	// resolve to a visible Media here.
 	mediaRows, err := s.catalogR.QueryContext(ctx, `
 		SELECT id, library_id, title, summary, year, duration_seconds, container, codec, media_class,
-		       video_width, video_height, COALESCE(mutated_by, '')
+		       video_width, video_height, COALESCE(mutated_by, ''), o.sequence, o.ordinal_index
 		FROM media
+		LEFT JOIN media_operator_ordinal o ON o.media_id = media.id
 		WHERE library_id IN `+inList+` AND trashed_at_ms IS NULL
 		ORDER BY library_id, id`, libArgs...)
 	if err != nil {
 		return CatalogExport{}, err
 	}
 	mediaSet := map[MediaID]bool{}
-	var ordered []Media
+	var ordered []ExportedMedia
 	var mediaIDs []MediaID
 	for mediaRows.Next() {
 		var m Media
 		var summary sql.NullString
-		var year sql.NullInt64
+		var year, ordinalIndex sql.NullInt64
+		var sequence sql.NullString
 		if err := mediaRows.Scan(&m.ID, &m.LibraryID, &m.Title, &summary, &year,
 			&m.DurationSeconds, &m.Container, &m.Codec, &m.Class,
-			&m.VideoWidth, &m.VideoHeight, &m.MutatedBy); err != nil {
+			&m.VideoWidth, &m.VideoHeight, &m.MutatedBy, &sequence, &ordinalIndex); err != nil {
 			mediaRows.Close()
 			return CatalogExport{}, err
 		}
 		m.Summary = summary.String
 		m.Year = int(year.Int64)
 		mediaSet[m.ID] = true
-		ordered = append(ordered, m)
+		row := ExportedMedia{Media: m}
+		if sequence.Valid {
+			row.OperatorOrdinal = &MediaOrdinal{Sequence: sequence.String, Index: int(ordinalIndex.Int64)}
+		}
+		ordered = append(ordered, row)
 		mediaIDs = append(mediaIDs, m.ID)
 	}
 	if err := mediaRows.Err(); err != nil {
@@ -176,7 +184,8 @@ func (s *Store) ExportCatalog(ctx context.Context, filter LibraryFilter) (Catalo
 		return CatalogExport{}, err
 	}
 
-	for _, m := range ordered {
+	for _, row := range ordered {
+		m := row.Media
 		fields := fieldsByMedia[m.ID]
 		if fields == nil {
 			fields = []MediaField{}
@@ -190,12 +199,8 @@ func (s *Store) ExportCatalog(ctx context.Context, filter LibraryFilter) (Catalo
 		if pins == nil {
 			pins = []ArtworkPin{}
 		}
-		export.Media = append(export.Media, ExportedMedia{
-			Media:      m,
-			Fields:     fields,
-			Markers:    markers,
-			ArtworkPin: pins,
-		})
+		row.Fields, row.Markers, row.ArtworkPin = fields, markers, pins
+		export.Media = append(export.Media, row)
 	}
 
 	// Entities in visible Libraries, with their fields. Entity IDs back the
@@ -244,7 +249,7 @@ func (s *Store) ExportCatalog(ctx context.Context, filter LibraryFilter) (Catalo
 	// source's relation list.
 	relRows, err := s.catalogR.QueryContext(ctx, `
 		SELECT r.from_entity_id, r.relation, COALESCE(r.to_entity_id, ''),
-		       COALESCE(r.to_media_id, ''), r.attributes
+		       COALESCE(r.to_media_id, ''), r.attributes, r.operator_locked_at_ms IS NOT NULL
 		FROM entity_relation r
 		JOIN entity e ON e.id = r.from_entity_id
 		WHERE e.library_id IN `+inList+`
@@ -255,7 +260,7 @@ func (s *Store) ExportCatalog(ctx context.Context, filter LibraryFilter) (Catalo
 	for relRows.Next() {
 		var rel ExportedEntityRelation
 		var attrs sql.NullString
-		if err := relRows.Scan(&rel.FromEntityID, &rel.Relation, &rel.ToEntityID, &rel.ToMediaID, &attrs); err != nil {
+		if err := relRows.Scan(&rel.FromEntityID, &rel.Relation, &rel.ToEntityID, &rel.ToMediaID, &attrs, &rel.OperatorLocked); err != nil {
 			relRows.Close()
 			return CatalogExport{}, err
 		}

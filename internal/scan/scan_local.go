@@ -207,7 +207,7 @@ func upsertLocalEntity(ctx context.Context, st *store.Store, libraryID store.Lib
 	}); err != nil {
 		return err
 	}
-	return st.UpsertEntityRelation(ctx, store.EntityRelation{
+	return st.UpsertHydratedEntityRelation(ctx, store.EntityRelation{
 		FromEntityID: id,
 		Name:         relation,
 		ToMediaID:    mediaID,

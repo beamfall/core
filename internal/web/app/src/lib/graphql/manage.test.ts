@@ -631,7 +631,7 @@ describe("manage mutation request recording", () => {
     });
     expect(recorded[0].query).toContain("mutation FixMatch");
     expect(recorded[0].query).toContain(
-      "fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID)",
+      "fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, clearLocks: $clearLocks, sequence: $sequence, index: $index)",
     );
     expect(recorded[0].variables).toEqual({
       mediaID: "media-1",

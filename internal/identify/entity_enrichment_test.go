@@ -14,6 +14,7 @@ import (
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
 )
 
 type enrichmentRecord struct {
@@ -234,6 +235,50 @@ func TestEnrichmentWritesTargetsToMemberMedia(t *testing.T) {
 	}
 	if st.progress.Message != EnrichmentJobProgressMessage || st.progress.Current != 1 {
 		t.Errorf("progress = %+v", st.progress)
+	}
+}
+
+func TestEnrichmentPreservesOperatorRelationAttributes(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	enrichment := testEnrichment()
+	lib := store.LibraryID("library-local")
+	media := store.MediaID("media-alpha")
+	filter := store.LibraryFilter{AllLibraries: true}
+	subject := store.Entity{ID: "enrichment-subject", LibraryID: lib, Kind: enrichment.Kind, Title: "Subject"}
+	for _, entity := range []store.Entity{
+		subject,
+		{ID: "operator-tag", LibraryID: lib, Kind: enrichment.TargetKind, Title: "Selected"},
+		{ID: "stale-tag", LibraryID: lib, Kind: enrichment.TargetKind, Title: "Stale"},
+	} {
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{
+		FromEntityID: subject.ID, Name: enrichment.MediaRelation, ToMediaID: media,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{
+		FromEntityID: "stale-tag", Name: enrichment.Relation, ToMediaID: media,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	row := store.EntityRelation{FromEntityID: "operator-tag", Name: enrichment.Relation,
+		ToMediaID: media, Cardinality: "many", Attributes: map[string]string{"role": "selected"}}
+	if _, err := st.SetOperatorMediaRelation(ctx, row, store.Entity{}, filter, store.ActivityEntry{
+		OperationID: "operator-tag-assignment", OccurredAt: time.Now(), ProfileID: "profile-default",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeEnrichment(ctx, st, enrichment, store.EntityRef{ID: subject.ID, LibraryID: lib}, []string{"Selected", "New"}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.EntitiesForMedia(ctx, media, enrichment.Relation, filter)
+	if err != nil || len(rows) != 2 || rows[0].Entity.Title != "New" || rows[0].OperatorLocked ||
+		rows[1].Entity.ID != "operator-tag" || !rows[1].OperatorLocked || rows[1].Attributes["role"] != "selected" {
+		t.Fatalf("enriched relations = %+v, %v", rows, err)
 	}
 }
 

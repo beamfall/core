@@ -189,6 +189,11 @@ func errorCode(err error) ErrorCode {
 // clientErrorCodes pins the client error messages no rule below classifies,
 // or that a rule would classify wrongly. A message here wins over every rule.
 var clientErrorCodes = map[string]ErrorCode{
+	"scraper declares no child listing":                ErrorCodeInvalid,
+	"no such level":                                    ErrorCodeInvalid,
+	"parentKey is forbidden at level 1":                ErrorCodeInvalid,
+	"parentKey was not returned by the previous level": ErrorCodeInvalid,
+	"parent row has no valid ordinal for this level":   ErrorCodeInvalid,
 	// §6 denial-of-existence: content the caller cannot see answers exactly
 	// as content that does not exist.
 	"cannot host a party for content you cannot see":                   ErrorCodeNotFound,
@@ -217,6 +222,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"no owner Profile is designated to grant the library to": ErrorCodeConflict,
 	"unknown importer":                    ErrorCodeInvalid,
 	"unknown lifecycle action":            ErrorCodeInvalid,
+	"unknown lockable field":              ErrorCodeInvalid,
 	"unknown or non-flippable capability": ErrorCodeInvalid,
 	"unknown permission":                  ErrorCodeInvalid,
 	"unknown plugin action":               ErrorCodeInvalid,
@@ -224,6 +230,10 @@ var clientErrorCodes = map[string]ErrorCode{
 	"unknown transport command":           ErrorCodeInvalid,
 
 	"subscription was refreshed recently; try again later": ErrorCodeThrottled,
+
+	"fix match is unavailable in encrypted libraries":    ErrorCodeInvalid,
+	"sequence must be a string of at most 32 characters": ErrorCodeInvalid,
+	"index must be an integer from 0 to 2147483647":      ErrorCodeInvalid,
 
 	"admin password rejected":                                   ErrorCodeForbidden,
 	"adult profile required to follow feeds":                    ErrorCodeForbidden,

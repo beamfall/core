@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"slices"
@@ -4544,7 +4545,8 @@ type ActivityEntryInfo struct {
 	APIKeyID   string `json:"apiKeyID,omitempty"`
 	// SystemActor names the server subsystem that wrote the entry on its own
 	// ("scan"), when no session, token or key acted.
-	SystemActor string `json:"systemActor,omitempty"`
+	SystemActor         string                     `json:"systemActor,omitempty"`
+	MediaRelationChange *store.MediaRelationChange `json:"mediaRelationChange,omitempty"`
 }
 
 // activityReversible returns true for operations routed through Trash and
@@ -4634,6 +4636,7 @@ func (h *Handler) activityEntry(ctx context.Context, scope auth.Scope, req reque
 	if scope.DeviceRole == store.DeviceRoleManager {
 		info.TokenID = entry.TokenID
 		info.APIKeyID = entry.APIKeyID
+		info.MediaRelationChange = entry.MediaRelationChange
 	}
 	return info, nil
 }
@@ -4670,6 +4673,32 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 	// client omits it (int64Var reads missing/zero the same, 0), which the store
 	// guard treats as "no event-time" (legacy unconditional-overwrite behavior).
 	eventTimeMS := int64Var(req, "eventTimeMS")
+	// paused says whether the player was paused when it reported, so play
+	// history credits no time after a paused report (CORE-1703). Optional: a
+	// client that omits it reads as playing.
+	var paused *bool
+	if p, ok := req.Variables["paused"].(bool); ok {
+		paused = &p
+	}
+	// playedMS is the time, in milliseconds, the client has actually played
+	// under playbackID so far (not paused, seeking or buffering); play history
+	// credits its growth (CORE-1703). Optional: nil when omitted.
+	var playedMS *int64
+	if raw, ok := req.Variables["playedMS"]; ok && raw != nil {
+		v, ok := playedMSVar(raw)
+		if !ok {
+			return PlaybackReport{}, clientError("playedMS must be a non-negative integer")
+		}
+		playedMS = &v
+	}
+	// playbackID is the client's random ID for this play: new each time the
+	// player starts the item, kept across pauses and seeks. Play history
+	// groups a play by it (CORE-1703). Optional for older clients.
+	// It is checked exactly as sent, never trimmed (store.ValidatePlaybackID).
+	playbackID := stringVar(req, "playbackID")
+	if err := store.ValidatePlaybackID(playbackID); err != nil {
+		return PlaybackReport{}, clientError(err.Error())
+	}
 	media, err := h.store.Media(ctx, store.MediaID(mediaID), scope.PlaybackFilter())
 	if err != nil {
 		return PlaybackReport{}, clientError("unknown media")
@@ -4697,6 +4726,9 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 		PositionSeconds: positionSeconds,
 		DurationSeconds: durationSeconds,
 		EventTimeMS:     eventTimeMS,
+		Paused:          paused,
+		PlaybackID:      playbackID,
+		PlayedMS:        playedMS,
 	}, finished)
 	if err != nil {
 		return PlaybackReport{}, err
@@ -4734,6 +4766,25 @@ func (h *Handler) notePlaybackActivity(ctx context.Context, scope auth.Scope, me
 	_ = h.store.TouchStreamTokenActivity(ctx, scope.SessionID, scope.ProfileID, mediaID, time.Now().UTC())
 }
 
+// playedMSVar reads reportPlayback's playedMS as /v1 does: a whole number,
+// not negative. A fraction is refused, never truncated, so -0.5 cannot pass
+// as zero.
+func playedMSVar(raw any) (int64, bool) {
+	switch v := raw.(type) {
+	case int:
+		return int64(v), v >= 0
+	case int64:
+		return v, v >= 0
+	case float64:
+		if v < 0 || v != math.Trunc(v) || v >= math.MaxInt64 {
+			return 0, false
+		}
+		return int64(v), true
+	default:
+		return 0, false
+	}
+}
+
 // recordPlaybackProgress writes one non-ambient position report for an already
 // reveal-resolved Media and returns the stored state.
 func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, media store.Media, report store.PlaybackProgress, finished bool) (store.PlaybackProgress, error) {
@@ -4751,6 +4802,11 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		PositionSeconds: report.PositionSeconds,
 		DurationSeconds: report.DurationSeconds,
 		EventTimeMS:     report.EventTimeMS,
+		DeviceID:        scope.DeviceID,
+		PlayMethod:      h.heldPlayMethod(scope.SessionID, media.ID),
+		PlaybackID:      report.PlaybackID,
+		Paused:          report.Paused,
+		PlayedMS:        report.PlayedMS,
 	}, finished, h.resumePolicy(ctx, media)); err != nil {
 		return store.PlaybackProgress{}, err
 	}
@@ -4767,6 +4823,21 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		h.notifyWatched(ctx, scope.ProfileID, media)
 	}
 	return progress, nil
+}
+
+// heldPlayMethod is the play method the server decided for this session's
+// playback of the Media, recorded on each progress report for play history
+// (CORE-1703). With no held decision the method is left unknown rather than
+// guessed.
+func (h *Handler) heldPlayMethod(sessionID store.SessionID, mediaID store.MediaID) string {
+	if h.playbackObserver == nil {
+		return ""
+	}
+	seen, ok := h.playbackObserver.PlayObservation(sessionID, mediaID)
+	if !ok || seen.Method == store.PlayMethodUnknown || !store.ValidPlayMethod(seen.Method) {
+		return ""
+	}
+	return seen.Method
 }
 
 // notifyWatched resolves the watched Media's External IDs and hands the
@@ -5413,7 +5484,11 @@ type RelatedEntitySectionInfo struct {
 // reached it (credit-style links, ADR-0003 §2).
 type RelatedEntityInfo struct {
 	EntityInfo
-	Attributes map[string]string `json:"attributes"`
+	Attributes     map[string]string `json:"attributes"`
+	Relation       string            `json:"relation"`
+	SortOrder      *int              `json:"sortOrder,omitempty"`
+	OperatorLocked bool              `json:"operatorLocked"`
+	Undeclared     bool              `json:"undeclared"`
 }
 
 // entityQuery resolves entity(id) — reveal-filtered like every read.
@@ -5467,25 +5542,32 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 
 // entitiesForMedia resolves the Media item's credit-style relations.
 func (h *Handler) entitiesForMedia(ctx context.Context, scope auth.Scope, req request) ([]RelatedEntityInfo, error) {
-	mediaID := trimmedVariable(req, "mediaID")
+	mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
 	relation := trimmedVariable(req, "relation")
-	if mediaID == "" || relation == "" {
-		return nil, clientError("mediaID and relation are required")
+	if mediaID == "" {
+		return nil, clientError("mediaID is required")
 	}
-	related, err := h.store.EntitiesForMedia(ctx, store.MediaID(mediaID), relation, scope.LibraryFilter())
+	related, err := h.store.EntitiesForMedia(ctx, mediaID, relation, scope.LibraryFilter())
 	if err != nil {
 		return nil, clientError("unknown media")
 	}
-	resp := make([]RelatedEntityInfo, len(related))
-	for i, item := range related {
+	var bundle plugin.Bundle
+	if libraryID, err := h.store.MediaLibrary(ctx, mediaID); err == nil {
+		bundle = h.relationBundle(ctx, libraryID)
+	}
+	resp := make([]RelatedEntityInfo, 0, len(related))
+	for _, item := range related {
+		_, declared := declaredMediaRelation(bundle, item.Entity.Kind, item.Relation)
 		attributes := item.Attributes
 		if attributes == nil {
 			attributes = map[string]string{}
 		}
-		resp[i] = RelatedEntityInfo{
+		resp = append(resp, RelatedEntityInfo{
 			EntityInfo: entityInfo(item.Entity, h.entityKindSpec(ctx, item.Entity.LibraryID, item.Entity.Kind)),
 			Attributes: attributes,
-		}
+			Relation:   item.Relation, SortOrder: item.SortOrder, OperatorLocked: item.OperatorLocked,
+			Undeclared: item.OperatorLocked && !declared,
+		})
 	}
 	return resp, nil
 }
@@ -6269,6 +6351,7 @@ var queryFields = map[string]bool{
 	"playbackrenditioncache": true,
 	"entity":                 true,
 	"entitiesformedia":       true,
+	"entitysearch":           true,
 	"entityrelations":        true,
 	"mediaforentity":         true,
 	"mediafiles":             true,
@@ -6314,7 +6397,11 @@ var queryFields = map[string]bool{
 	"identifysearch":         true,
 	"identifylookup":         true, // METAPARITY-4 (ADR-0068 §A): paste-an-id direct fetch, read-only
 	"fixmatchcandidates":     true, // METAPARITY-4 (ADR-0068 §A): scored candidate list, read-only
+	"fixmatchchildren":       true,
+	"fixmatchcurrent":        true,
+	"fixmatchlockedfields":   true,
 	"fixmatchpreview":        true, // METAPARITY-4 (ADR-0068 §A): preview-before-apply diff, writes nothing
+	"fixmatchsources":        true,
 	"unmatchedqueue":         true,
 	"unmatchedrecords":       true, // METAPARITY-6 (ADR-0068 §A): the Media-independent review inbox
 	"unmatchedsuppressions":  true, // METAPARITY-7 (ADR-0068 §A): active scoped suppressions + provenance
@@ -6337,6 +6424,8 @@ var queryFields = map[string]bool{
 	"mydatasummary":          true,
 	"myengagementlog":        true,
 	"mysessions":             true,
+	"myplayhistory":          true,
+	"myplaystats":            true,
 	"scrobblelinks":          true, // MUSIC-7 (ADR-0098 area 7): own Profile's scrobble links (non-secret)
 	"scrobbleeligibility":    true, // MUSIC-7 (ADR-0098 area 7): per-visible-Library scrobble eligibility
 	"scrobblestatus":         true, // MUSIC-7 (ADR-0098 area 7): admin diagnostic (dead-letter/skip/adapters)
@@ -6513,6 +6602,9 @@ var mutationFields = map[string]bool{
 	"undobatch":                          true,
 	"identifyapply":                      true,
 	"fixmatch":                           true,
+	"setmediarelation":                   true,
+	"removemediarelation":                true,
+	"clearmediaordinal":                  true,
 	"dismissunmatched":                   true,
 	"createmediafromunmatched":           true, // METAPARITY-6 (ADR-0068 §A): hand-authored no-match Media
 	"suppressunmatched":                  true, // METAPARITY-7 (ADR-0068 §A): one scoped suppression

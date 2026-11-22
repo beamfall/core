@@ -482,6 +482,12 @@ const (
 	// auto-locks the field: nothing below it (identification, re-match, scan,
 	// hydration, AI) may overwrite it.
 	MutationSourceManual MutationSource = "manual"
+	// MutationSourceLocal marks values a plugin read from sidecar files the
+	// operator keeps beside the media. They are the operator's own curation, so
+	// they rank above identification and read as locked; only a manual edit
+	// outranks them. Releasing them (the sidecar went away) moves them to the
+	// scan tier without clearing the values.
+	MutationSourceLocal MutationSource = "local"
 	// MutationSourceOperator means a human operator applied identification via
 	// identifyApply (an explicit candidate choice) — the "identified" tier.
 	MutationSourceOperator MutationSource = "operator"
@@ -506,17 +512,19 @@ func mutationSourceFromDB(source string) MutationSource {
 }
 
 // metadataSourceRank is the total precedence order over metadata-field write
-// sources: user/manual > identified > parsed > hydrated >
+// sources: user/manual > local sidecar > identified > parsed > hydrated >
 // machine-derived. A write of source S may overwrite a field last written by
 // source T only when rank(S) >= rank(T); the provenance record of the winning
 // source is authoritative over the legacy media.<field>_identified booleans.
 // An empty/unknown source ranks as parsed — the same "" == scan reader rule the
 // mutated_by column already uses (pre-migration and scan-imported rows).
-// Importers are behavioral-state-only and never write here, so
-// they carry no rank in this chain.
+// Library importers are behavioral-state-only and never write here; sidecar
+// metadata read during a scan writes at the local tier.
 func metadataSourceRank(source MutationSource) int {
 	switch source {
 	case MutationSourceManual:
+		return 5
+	case MutationSourceLocal:
 		return 4
 	case MutationSourceOperator:
 		return 3
@@ -571,6 +579,12 @@ type MediaMetadata struct {
 	// zero-value the store falls back to MutationSourceOperator (all
 	// explicit identification writes are operator-initiated today).
 	Source MutationSource
+	// ClearLocks are field locks to clear in the same transaction as the write.
+	ClearLocks []string
+	// Identification-only manual tier edits, committed with the replacement.
+	OperatorOrdinal *MediaOrdinal
+	OrdinalActor    ProfileID
+	ClearOrdinal    bool
 }
 
 // ArtworkCandidate is one persisted scraped artwork alternative for a
@@ -1088,6 +1102,12 @@ type Store struct {
 	// Test-only, like convertStepHook: it lets a deterministic test purge the
 	// Media in that exact window. Never set in production wiring.
 	offlinePackSealHook func()
+	// operatorRelationWriteHook, when non-nil, fires inside an operator
+	// Media relation write after the visibility pre-check and before the
+	// write transaction opens. Test-only, like convertStepHook: it lets a
+	// deterministic test restrict a Library in that exact window. Never set
+	// in production wiring.
+	operatorRelationWriteHook func()
 	// entityIndexes holds the registered plugin-declared field index
 	// postures: kind → field → spec (RegisterEntityFieldIndexes). Guarded by
 	// mu like every other member.
@@ -2735,6 +2755,26 @@ func (s *Store) SetMatchPinned(ctx context.Context, fingerprint string, pinned b
 	return affected > 0, nil
 }
 
+// PinMediaMatch pins the fingerprint of every file on a visible Media item,
+// including missing Parts or Versions that might be rediscovered by a scan.
+func (s *Store) PinMediaMatch(ctx context.Context, id MediaID, filter LibraryFilter) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, id, filter); err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx,
+		"UPDATE media_file SET match_pinned = 1 WHERE media_id = ? AND content_fingerprint <> ''", id)
+	return err
+}
+
 // SetMediaFileDecodeBroken records the result of a decode-verify pass over one
 // Media item's available bytes (FEAT-8 / ADR-0009 §9 / catalog 0064). broken=1
 // means the decode-verify sampling job hit a decode error or truncation on this
@@ -3603,14 +3643,8 @@ func (s *Store) AddMediaFileVersion(ctx context.Context, mediaID MediaID, file M
 // belongs to the calling surface, which must have already resolved the Media
 // through a reveal-filtered read.
 func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata MediaMetadata) error {
-	if id == "" {
-		return errors.New("media ID is required")
-	}
-	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil && metadata.SortTitle == nil {
-		return errors.New("no metadata fields to update")
-	}
-	if metadata.Title != nil && strings.TrimSpace(*metadata.Title) == "" {
-		return errors.New("media title cannot be empty")
+	if err := validateMediaMetadata(id, metadata); err != nil {
+		return err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -3620,11 +3654,19 @@ func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata Me
 	if err := s.updateMediaMetadataSQL(ctx, id, metadata); err != nil {
 		return err
 	}
-	// Emit AFTER the catalog write committed (cross-DB ordering: see
-	// appendMediaEventLocked). The write already succeeded; a failed outbox
-	// append must not surface as a metadata-update failure.
-	if eventErr := s.appendMediaEventLocked(ctx, MediaEventUpdated, id, nil, time.Now().UTC()); eventErr != nil {
-		slog.Warn("media outbox event append failed", "kind", MediaEventUpdated, "media", id, "error", eventErr)
+	s.emitMediaUpdated(ctx, id)
+	return nil
+}
+
+func validateMediaMetadata(id MediaID, metadata MediaMetadata) error {
+	if id == "" {
+		return errors.New("media ID is required")
+	}
+	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil && metadata.SortTitle == nil {
+		return errors.New("no metadata fields to update")
+	}
+	if metadata.Title != nil && strings.TrimSpace(*metadata.Title) == "" {
+		return errors.New("media title cannot be empty")
 	}
 	return nil
 }

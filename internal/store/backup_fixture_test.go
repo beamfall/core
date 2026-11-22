@@ -43,6 +43,9 @@ type fixtureExpectations struct {
 	Tables            map[string]fixtureTableExpectation `json:"tables"`
 	SchemaVersions    map[string]int                     `json:"schemaVersions"`
 	FixturePolicy     map[string]int                     `json:"fixturePolicy"`
+	// columns holds each table's columns read from a historical snapshot
+	// before migration, so an additive migration can be checked column-wise.
+	columns map[string][]fixtureSelectedColumn
 }
 
 type fixtureDescriptor struct {
@@ -325,7 +328,7 @@ func TestBackupFixtureCorpusDrill(t *testing.T) {
 		schemaFreezeCatalogMigrations, schemaFreezeEventsMigrations, schemaFreezeEncryptedLibraryMigrations)
 	var historicalQueue []fixtureQueueRow
 	if !currentSchema {
-		historicalQueue, err = verifyHistoricalFixture(ctx, restoreDir, descriptor.EncryptedLibraryIDs, expected)
+		historicalQueue, expected.columns, err = verifyHistoricalFixture(ctx, restoreDir, descriptor.EncryptedLibraryIDs, expected)
 		if err != nil {
 			t.Fatalf("verify restored snapshot before migration: %v", err)
 		}
@@ -352,7 +355,7 @@ func TestBackupFixtureCorpusDrill(t *testing.T) {
 	}
 }
 
-func verifyHistoricalFixture(ctx context.Context, restoreDir string, encryptedIDs []string, expected fixtureExpectations) ([]fixtureQueueRow, error) {
+func verifyHistoricalFixture(ctx context.Context, restoreDir string, encryptedIDs []string, expected fixtureExpectations) ([]fixtureQueueRow, map[string][]fixtureSelectedColumn, error) {
 	dbDir := filepath.Join(restoreDir, "db")
 	paths := map[string]string{
 		"catalog": filepath.Join(dbDir, "catalog.db"),
@@ -368,14 +371,14 @@ func verifyHistoricalFixture(ctx context.Context, restoreDir string, encryptedID
 	for label, path := range paths {
 		db, err := openSQLiteReader(path)
 		if err != nil {
-			return nil, fmt.Errorf("open %s: %w", label, err)
+			return nil, nil, fmt.Errorf("open %s: %w", label, err)
 		}
 		defer db.Close()
 		databases[label] = db
 	}
 	actual, err := collectFixtureDatabaseExpectations(ctx, databases)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var encryptedVersion int
 	for _, id := range encryptedIDs {
@@ -383,12 +386,27 @@ func verifyHistoricalFixture(ctx context.Context, restoreDir string, encryptedID
 	}
 	actual.SchemaFingerprint = fixtureSchemaFingerprint(actual.SchemaVersions["catalog"], actual.SchemaVersions["events"], encryptedVersion)
 	if err := compareFixtureExpectations(ctx, databases, actual, expected); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	columns := map[string][]fixtureSelectedColumn{}
+	for label, db := range databases {
+		tables, err := durableFixtureTables(ctx, db)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, table := range tables {
+			names, err := fixtureSelectedColumns(ctx, db, table)
+			if err != nil {
+				return nil, nil, err
+			}
+			columns[label+"."+table] = names
+		}
+	}
+	var queue []fixtureQueueRow
 	if actual.SchemaVersions["events"] < fixtureQueueStateMigration {
-		return readFixtureQueueRows(ctx, databases["events"])
+		queue, err = readFixtureQueueRows(ctx, databases["events"])
 	}
-	return nil, nil
+	return queue, columns, err
 }
 
 func verifyMigratedFixture(ctx context.Context, databases map[string]*sql.DB, expected fixtureExpectations, historicalQueue []fixtureQueueRow) error {
@@ -410,6 +428,11 @@ func verifyMigratedFixture(ctx context.Context, databases map[string]*sql.DB, ex
 			return err
 		}
 	}
+	if expected.columns != nil {
+		if err := narrowAdditiveFixtureMigration(ctx, databases, expected.columns, actual.Tables, unchanged); err != nil {
+			return err
+		}
+	}
 	if err := compareFixtureTables(actual.Tables, unchanged); err != nil {
 		return err
 	}
@@ -417,6 +440,84 @@ func verifyMigratedFixture(ctx context.Context, databases map[string]*sql.DB, ex
 		if err := assertFixtureDatabaseIntegrity(ctx, db); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// narrowAdditiveFixtureMigration lets an additive migration pass the drill. A
+// table that gained columns is hashed over the columns it had before, once every
+// added column is shown to hold its declared default; a table the migration
+// created must be empty. Any other schema change still fails the checksum diff.
+func narrowAdditiveFixtureMigration(ctx context.Context, databases map[string]*sql.DB, before map[string][]fixtureSelectedColumn, actual, unchanged map[string]fixtureTableExpectation) error {
+	for key, got := range actual {
+		if _, existed := before[key]; existed {
+			continue
+		}
+		if got.Rows != 0 {
+			return fmt.Errorf("%s created by migration holds %d rows", key, got.Rows)
+		}
+		delete(actual, key)
+	}
+	for key, old := range before {
+		if _, ok := unchanged[key]; !ok {
+			continue
+		}
+		cut := strings.LastIndex(key, ".")
+		db, table := databases[key[:cut]], key[cut+1:]
+		if db == nil {
+			continue
+		}
+		names, err := fixtureSelectedColumns(ctx, db, table)
+		if err != nil {
+			return err
+		}
+		if len(names) < len(old) {
+			return fmt.Errorf("%s lost columns in migration", key)
+		}
+		for index, column := range old {
+			if names[index] != column {
+				return fmt.Errorf("%s column %d got %s, want %s", key, index, names[index], column)
+			}
+		}
+		if len(names) == len(old) {
+			continue
+		}
+		// The narrowed checksum and the default check below read ordinary
+		// columns only; a table with generated columns keeps its full diff.
+		var generated int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM pragma_table_xinfo(?) WHERE hidden IN (2, 3)", table).Scan(&generated); err != nil {
+			return err
+		}
+		if generated != 0 {
+			return fmt.Errorf("%s has generated columns; additive narrowing does not apply", key)
+		}
+		columns, err := fixtureColumns(ctx, db, table)
+		if err != nil {
+			return err
+		}
+		for _, column := range columns[len(old):] {
+			want := "NULL"
+			if column.defaultSQL.Valid {
+				want = column.defaultSQL.String
+			}
+			var n int
+			query := "SELECT count(*) FROM " + quoteFixtureIdentifier(table) + " WHERE " + quoteFixtureIdentifier(column.name) + " COLLATE BINARY IS NOT (" + want + ")" //nolint:gosec // G202: identifiers are quoted names and the default is SQL from the fixture's local SQLite schema.
+			if err := db.QueryRowContext(ctx, query).Scan(&n); err != nil {
+				return err
+			}
+			if n != 0 {
+				return fmt.Errorf("%s.%s added by migration holds %d non-default values", key, column.name, n)
+			}
+		}
+		oldNames := make([]string, len(old))
+		for index, column := range old {
+			oldNames[index] = column.name
+		}
+		narrowed, err := fixtureTableChecksum(ctx, db, table, quoteFixtureIdentifiers(oldNames), oldNames)
+		if err != nil {
+			return err
+		}
+		actual[key] = narrowed
 	}
 	return nil
 }
@@ -671,18 +772,25 @@ func insertFixtureRow(ctx context.Context, db *sql.DB, table string) error {
 
 func fixtureSemanticValue(ctx context.Context, db *sql.DB, table, column string) (any, bool, error) {
 	if value, ok := map[string]any{
-		"detection_run.completion_outcome":      "completed",
-		"detection_run_lifecycle.event_type":    "revoke",
-		"detection_run_lifecycle.model_id":      "fixture-model",
-		"detection_run_lifecycle.model_version": "fixture-version",
-		"detection_run_lifecycle.model_hash":    "fixture-hash",
-		"watchlist_item.target_kind":            "media",
-		"item_rating.target_kind":               "media",
-		"item_rating.rating":                    5,
-		"device_build_binding.surface":          "ios-viewer",
-		"party_entry.state":                     "waiting",
-		"party_screen.kind":                     "popout",
-		"party_screen.carrier":                  "local",
+		"detection_run.completion_outcome":          "completed",
+		"detection_run_lifecycle.event_type":        "revoke",
+		"detection_run_lifecycle.model_id":          "fixture-model",
+		"detection_run_lifecycle.model_version":     "fixture-version",
+		"detection_run_lifecycle.model_hash":        "fixture-hash",
+		"watchlist_item.target_kind":                "media",
+		"item_rating.target_kind":                   "media",
+		"item_rating.rating":                        5,
+		"device_build_binding.surface":              "ios-viewer",
+		"media_operator_ordinal.sequence":           "2",
+		"media_relation_activity.before_rows":       "[]",
+		"media_relation_activity.after_rows":        "[]",
+		"entity_relation.operator_locked_at_ms":     int64(1700000000000),
+		"entity_relation.operator_lock_activity_id": "fixture-relation-activity",
+		"entity_relation.operator_lock_one":         1,
+		"media_operator_ordinal.ordinal_index":      5,
+		"party_entry.state":                         "waiting",
+		"party_screen.kind":                         "popout",
+		"party_screen.carrier":                      "local",
 	}[table+"."+column]; ok {
 		return value, true, nil
 	}
@@ -706,6 +814,39 @@ func fixtureSemanticValue(ctx context.Context, db *sql.DB, table, column string)
 		return nil, false, nil
 	}
 	return firstFixtureValue(ctx, db, source[0], source[1])
+}
+
+// fixtureSelectedColumn is one column SELECT * returns. A generated column
+// that replaces an ordinary one of the same name is a different column.
+type fixtureSelectedColumn struct {
+	name      string
+	generated bool
+}
+
+func (c fixtureSelectedColumn) String() string {
+	if c.generated {
+		return c.name + " (generated)"
+	}
+	return c.name
+}
+
+// fixtureSelectedColumns lists the columns SELECT * returns, generated ones
+// included, in order.
+func fixtureSelectedColumns(ctx context.Context, db *sql.DB, table string) ([]fixtureSelectedColumn, error) {
+	rows, err := db.QueryContext(ctx, "SELECT name, hidden IN (2, 3) FROM pragma_table_xinfo(?) WHERE hidden != 1 ORDER BY cid", table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var columns []fixtureSelectedColumn
+	for rows.Next() {
+		var column fixtureSelectedColumn
+		if err := rows.Scan(&column.name, &column.generated); err != nil {
+			return nil, err
+		}
+		columns = append(columns, column)
+	}
+	return columns, rows.Err()
 }
 
 func fixtureColumns(ctx context.Context, db *sql.DB, table string) ([]fixtureColumn, error) {
@@ -866,40 +1007,58 @@ func collectFixtureDatabaseExpectations(ctx context.Context, databases map[strin
 			if err != nil {
 				return fixtureExpectations{}, err
 			}
-			order := make([]string, 0, len(tableColumns))
+			names := make([]string, 0, len(tableColumns))
 			for _, column := range tableColumns {
-				order = append(order, quoteFixtureIdentifier(column.name))
+				names = append(names, column.name)
 			}
-			rows, err := db.QueryContext(ctx, "SELECT * FROM "+quoteFixtureIdentifier(table)+" ORDER BY "+strings.Join(order, ",")) //nolint:gosec // G202: table and order columns are identifier-quoted names from the test fixture's local SQLite schema.
+			expectation, err := fixtureTableChecksum(ctx, db, table, "*", names)
 			if err != nil {
 				return fixtureExpectations{}, err
 			}
-			columns, err := rows.Columns()
-			if err != nil {
-				return fixtureExpectations{}, errors.Join(err, rows.Close())
-			}
-			hash := sha256.New()
-			count := 0
-			for rows.Next() {
-				values := make([]any, len(columns))
-				dest := make([]any, len(columns))
-				for index := range values {
-					dest[index] = &values[index]
-				}
-				if err := rows.Scan(dest...); err != nil {
-					return fixtureExpectations{}, errors.Join(err, rows.Close())
-				}
-				encoded, _ := json.Marshal(values)
-				hash.Write(encoded)
-				count++
-			}
-			if err := rows.Close(); err != nil {
-				return fixtureExpectations{}, err
-			}
-			expectations.Tables[label+"."+table] = fixtureTableExpectation{Rows: count, Checksum: hex.EncodeToString(hash.Sum(nil))}
+			expectations.Tables[label+"."+table] = expectation
 		}
 	}
 	return expectations, nil
+}
+
+func quoteFixtureIdentifiers(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		quoted = append(quoted, quoteFixtureIdentifier(name))
+	}
+	return strings.Join(quoted, ",")
+}
+
+// fixtureTableChecksum hashes the selected values of a table's rows, ordered by
+// the order columns. selected is "*" or an identifier-quoted column list.
+func fixtureTableChecksum(ctx context.Context, db *sql.DB, table, selected string, order []string) (fixtureTableExpectation, error) {
+	rows, err := db.QueryContext(ctx, "SELECT "+selected+" FROM "+quoteFixtureIdentifier(table)+" ORDER BY "+quoteFixtureIdentifiers(order)) //nolint:gosec // G202: table and columns are identifier-quoted names from the test fixture's local SQLite schema.
+	if err != nil {
+		return fixtureTableExpectation{}, err
+	}
+	columns, err := rows.Columns()
+	if err != nil {
+		return fixtureTableExpectation{}, errors.Join(err, rows.Close())
+	}
+	hash := sha256.New()
+	count := 0
+	for rows.Next() {
+		values := make([]any, len(columns))
+		dest := make([]any, len(columns))
+		for index := range values {
+			dest[index] = &values[index]
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return fixtureTableExpectation{}, errors.Join(err, rows.Close())
+		}
+		encoded, _ := json.Marshal(values)
+		hash.Write(encoded)
+		count++
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return fixtureTableExpectation{}, err
+	}
+	return fixtureTableExpectation{Rows: count, Checksum: hex.EncodeToString(hash.Sum(nil))}, nil
 }
 
 func verifyFixtureExpectations(ctx context.Context, st *Store, expected fixtureExpectations) error {
@@ -972,4 +1131,63 @@ func fixtureSchemaFingerprint(catalog, events, encrypted int) string {
 	})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+func TestNarrowAdditiveFixtureMigrationKeepsChecksumDiff(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name, seed, migration, want string
+		empty                       bool
+	}{
+		{name: "defaults", migration: "ALTER TABLE item ADD COLUMN lock INTEGER NOT NULL DEFAULT 0; ALTER TABLE item ADD COLUMN note TEXT; CREATE TABLE activity (id INTEGER PRIMARY KEY);"},
+		{name: "added value", migration: "ALTER TABLE item ADD COLUMN lock INTEGER NOT NULL DEFAULT 0; UPDATE item SET lock = 1 WHERE id = 1;", want: "catalog.item.lock added by migration holds 1 non-default values"},
+		{name: "old value", migration: "ALTER TABLE item ADD COLUMN note TEXT; UPDATE item SET title = 'changed' WHERE id = 1;", want: "catalog.item checksum"},
+		{name: "collation", migration: "ALTER TABLE item ADD COLUMN mode TEXT COLLATE NOCASE NOT NULL DEFAULT 'off'; UPDATE item SET mode = 'OFF' WHERE id = 1;", want: "catalog.item.mode added by migration holds 1 non-default values"},
+		{name: "generated", migration: "ALTER TABLE item ADD COLUMN upper TEXT AS (upper(title)); ALTER TABLE item ADD COLUMN note TEXT;", want: "catalog.item has generated columns"},
+		{name: "empty reorder", empty: true, migration: "DROP TABLE item; CREATE TABLE item (title TEXT NOT NULL, id INTEGER PRIMARY KEY);", want: "catalog.item column 0 got title, want id"},
+		{name: "empty generated drop", empty: true, seed: "ALTER TABLE item ADD COLUMN upper TEXT AS (upper(title));", migration: "ALTER TABLE item DROP COLUMN upper;", want: "catalog.item lost columns in migration"},
+		{name: "empty replace", empty: true, migration: "ALTER TABLE item DROP COLUMN title; ALTER TABLE item ADD COLUMN name TEXT NOT NULL DEFAULT '';", want: "catalog.item column 1 got name, want title"},
+		{name: "empty generated replace", empty: true, migration: "ALTER TABLE item DROP COLUMN title; ALTER TABLE item ADD COLUMN title TEXT AS ('x');", want: "catalog.item column 1 got title (generated), want title"},
+		{name: "new rows", migration: "CREATE TABLE activity (id INTEGER PRIMARY KEY); INSERT INTO activity VALUES (1);", want: "catalog.activity created by migration holds 1 rows"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "catalog.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			seed := "CREATE TABLE item (id INTEGER PRIMARY KEY, title TEXT NOT NULL);"
+			if !tc.empty {
+				seed += " INSERT INTO item VALUES (1, 'a'), (2, 'b');"
+			}
+			seed += tc.seed
+			if _, err := db.ExecContext(ctx, seed); err != nil {
+				t.Fatal(err)
+			}
+			databases := map[string]*sql.DB{"catalog": db}
+			before, err := collectFixtureDatabaseExpectations(ctx, databases)
+			if err != nil {
+				t.Fatal(err)
+			}
+			columns, err := fixtureSelectedColumns(ctx, db, "item")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.ExecContext(ctx, tc.migration); err != nil {
+				t.Fatal(err)
+			}
+			after, err := collectFixtureDatabaseExpectations(ctx, databases)
+			if err != nil {
+				t.Fatal(err)
+			}
+			unchanged := maps.Clone(before.Tables)
+			err = narrowAdditiveFixtureMigration(ctx, databases, map[string][]fixtureSelectedColumn{"catalog.item": columns}, after.Tables, unchanged)
+			if err == nil {
+				err = compareFixtureTables(after.Tables, unchanged)
+			}
+			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+				t.Fatalf("got %v, want %q", err, tc.want)
+			}
+		})
+	}
 }

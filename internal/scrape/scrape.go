@@ -50,6 +50,12 @@ type Result struct {
 	// Search candidates never carry entities. Nil when the spec declares no
 	// EntityMaps or none of their paths resolved.
 	Entities []EntityResult
+	// SkippedEntityMaps lists, by index into the spec's EntityMaps, the maps
+	// the engine did not evaluate because their Path names an ordinal the
+	// lookup does not know. A skipped map says nothing about the document, so
+	// a consumer must not read its missing Entities as "none". Nil when every
+	// map ran.
+	SkippedEntityMaps []int
 }
 
 // EntityResult is one hydrated Entity from a spec's EntityMaps: the declared
@@ -105,6 +111,15 @@ type EntityResult struct {
 	// Links holds every link under them this lookup resolved, so a relation
 	// with no Links resolved to none.
 	LinkRelations []string
+	// SequenceScoped marks a container result the item's {sequence} selected:
+	// its map Path or the lookup template names {sequence}, so it describes
+	// that sequence's container, not necessarily the one holding the Media.
+	SequenceScoped bool
+	// SequenceScopedLinks lists, sorted, the LinkRelations whose sibling map
+	// Path or LookupTemplate names {sequence}: those links describe the item's sequence even
+	// when the container itself is not sequence-scoped, so they replace a
+	// container's links only when it is that sequence's container.
+	SequenceScopedLinks []string
 	// containerRelations is the container map's ContainerRelations, which
 	// linkContainerResults resolves into Links once every map has resolved.
 	containerRelations map[string]string
@@ -256,10 +271,11 @@ type Engine struct {
 	streamClient *http.Client
 	clock        requestClock
 
-	mu          sync.Mutex
-	tokens      map[string]cachedToken     // login-bearer cache, keyed endpoint+authref
-	lastRequest map[string]time.Time       // rate-limit anchor per scraper ID
-	references  map[string]cachedReference // reference documents, keyed by URL
+	mu             sync.Mutex
+	tokens         map[string]cachedToken     // login-bearer cache, keyed endpoint+authref
+	lastRequest    map[string]time.Time       // rate-limit anchor per scraper ID
+	references     map[string]cachedReference // reference documents, keyed by URL
+	childResponses childResponseCache
 
 	// extensions reads the scraper declarations the pinned plugin-sdk does
 	// not carry yet; New sets plugin.ScraperExtensionsOf.
@@ -527,11 +543,18 @@ func (e *Engine) lookupDocument(ctx context.Context, spec plugin.ScraperSpec, te
 	}
 	fieldMap, artworkMap := e.referenceMaps(ctx, spec, config, spec.FieldMap), e.referenceMaps(ctx, spec, config, spec.ArtworkMap)
 	result := mapJSON(spec, fieldMap, artworkMap, root, config)
-	result.Entities, err = e.resolveEntityMaps(ctx, spec, root, v, config)
+	result.Entities, result.SkippedEntityMaps, err = e.resolveEntityMaps(ctx, spec, root, v, config)
 	if err != nil {
 		return Result{}, err
 	}
 	linkContainerResults(result.Entities)
+	if strings.Contains(template, "{sequence}") {
+		for i := range result.Entities {
+			if result.Entities[i].Container {
+				result.Entities[i].SequenceScoped = true
+			}
+		}
+	}
 	if template == spec.LookupTemplate {
 		if err := e.overlayItemLookup(ctx, spec, id, v, config, &result); err != nil {
 			return Result{}, err
@@ -577,6 +600,9 @@ func (e *Engine) overlayItemLookup(ctx context.Context, spec plugin.ScraperSpec,
 func (e *Engine) Search(ctx context.Context, spec plugin.ScraperSpec, query string, vars ...Variables) ([]Result, error) {
 	if spec.SearchTemplate == "" {
 		return nil, fmt.Errorf("scrape: scraper %q declares no search template", spec.ID)
+	}
+	if spec.CandidatesPath == "" {
+		return nil, fmt.Errorf("scrape: scraper %q declares no candidates path", spec.ID)
 	}
 	v := variablesArg(vars)
 	config, err := e.configValues(ctx, v)
@@ -732,8 +758,9 @@ func (e *Engine) lookupRSS(ctx context.Context, spec plugin.ScraperSpec, id stri
 // context-sensitively: path-escaped in the path, query-escaped after the
 // first "?" — so a free-text search term containing "&" or "=" cannot inject
 // extra query parameters.
-func buildURL(endpoint, template, placeholder, value string, vars Variables, config map[string]string, page int) string {
-	pairs := append([][2]string{{placeholder, value}}, vars.substitutions(page)...)
+func buildURL(endpoint, template, placeholder, value string, vars Variables, config map[string]string, page int, extra ...[2]string) string {
+	pairs := append([][2]string{{placeholder, value}}, extra...)
+	pairs = append(pairs, vars.substitutions(page)...)
 	path, query, hasQuery := strings.Cut(template, "?")
 	query = dropUnknownYear(query, vars)
 	for _, pair := range pairs {
@@ -867,11 +894,14 @@ func logSkippedField(spec plugin.ScraperSpec, field, fieldType, value string) {
 // ArtworkMap values; FieldMap values stay raw for the consumer to type-parse).
 // Unresolved paths and blank values are omitted, never errors — the FieldMap
 // posture. Validation already keeps EntityMaps off rss specs, whose documents
-// are not JSON.
-func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec, root any, vars Variables, config map[string]string) ([]EntityResult, error) {
+// are not JSON. It also returns the indices of the maps it skipped because
+// their Path names an unknown ordinal.
+func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec, root any, vars Variables, config map[string]string) ([]EntityResult, []int, error) {
 	var entities []EntityResult
-	for _, entityMap := range spec.EntityMaps {
+	var skipped []int
+	for mapIndex, entityMap := range spec.EntityMaps {
 		if vars.namesUnknownOrdinal(entityMap.Path) {
+			skipped = append(skipped, mapIndex)
 			continue
 		}
 		node, ok := resolveJSONNode(root, vars.substituteOrdinals(substituteConfig(entityMap.Path, config, identity)))
@@ -880,6 +910,8 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 		}
 		if entityMap.Container {
 			if entity, ok := containerEntityResult(spec, entityMap, node, config); ok {
+				entity.SequenceScoped = mapNamesSequence(entityMap)
+				entity.SequenceScopedLinks = sequenceScopedLinks(spec, entityMap)
 				entities = append(entities, entity)
 			}
 			continue
@@ -906,7 +938,7 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 				var err error
 				source, err = e.fetchJSONDocument(ctx, spec, entityMap.LookupTemplate, "{id}", id, vars, config, 0)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 			var name string
@@ -957,7 +989,7 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 			entities = append(entities, entity)
 		}
 	}
-	return entities, nil
+	return entities, skipped, nil
 }
 
 // elementMatchesFilter reports whether one EntityMap element passes the map's
@@ -1041,6 +1073,30 @@ func containerEntityResult(spec plugin.ScraperSpec, entityMap plugin.EntityMap, 
 	return entity, entity.ArtworkURL != "" || len(entity.Fields) > 0 || len(entity.Artwork) > 0 || entity.Title != "" || len(entityMap.ContainerRelations) > 0
 }
 
+// mapNamesSequence reports whether an entity map selects what it hydrates by
+// the item's {sequence}: through its Path or its per-element LookupTemplate.
+func mapNamesSequence(entityMap plugin.EntityMap) bool {
+	return strings.Contains(entityMap.Path, "{sequence}") || strings.Contains(entityMap.LookupTemplate, "{sequence}")
+}
+
+// sequenceScopedLinks returns, sorted, the container relations of a container
+// map whose sibling map (any non-container map hydrating that relation) names
+// {sequence} in its Path or per-element LookupTemplate, so its Entities, or
+// their absence, belong to the item's sequence.
+func sequenceScopedLinks(spec plugin.ScraperSpec, container plugin.EntityMap) []string {
+	var scoped []string
+	for _, relation := range slices.Sorted(maps.Keys(container.ContainerRelations)) {
+		sibling := container.ContainerRelations[relation]
+		for _, entityMap := range spec.EntityMaps {
+			if !entityMap.Container && entityMap.Relation == sibling && mapNamesSequence(entityMap) {
+				scoped = append(scoped, relation)
+				break
+			}
+		}
+	}
+	return scoped
+}
+
 // linkContainerResults fills each container result's Links from its map's
 // ContainerRelations: every non-container result in the same lookup whose
 // relation is the one a container relation names.
@@ -1087,19 +1143,38 @@ func renderArtworkURL(base, tmpl, value string) string {
 // invalidate it, re-login once (inside the second authorizer call), and retry
 // the request once. A second 401 surfaces as the error.
 func (e *Engine) fetchAuthorized(ctx context.Context, spec plugin.ScraperSpec, method, rawURL string, payload []byte, contentType string) ([]byte, error) {
+	return e.fetchAuthorizedResponse(ctx, spec, method, rawURL, payload, contentType, false)
+}
+
+func (e *Engine) fetchAuthorizedResponse(ctx context.Context, spec plugin.ScraperSpec, method, rawURL string, payload []byte, contentType string, cache bool) ([]byte, error) {
 	attempt := func() ([]byte, error) {
 		authorize, err := e.authorizer(ctx, spec)
 		if err != nil {
-			return nil, err
-		}
-		if err := e.waitTurn(ctx, spec); err != nil {
 			return nil, err
 		}
 		var body io.Reader
 		if payload != nil {
 			body = bytes.NewReader(payload)
 		}
-		return e.fetch(withPace(ctx, spec), method, rawURL, body, contentType, authorize)
+		req, err := e.newRequest(withPace(ctx, spec), method, rawURL, body, contentType, authorize)
+		if err != nil {
+			return nil, err
+		}
+		var key [32]byte
+		if cache {
+			key = childResponseKey(req)
+			if data := e.childResponses.get(key, e.clock.Now()); data != nil {
+				return data, nil
+			}
+		}
+		if err := e.waitTurn(ctx, spec); err != nil {
+			return nil, err
+		}
+		data, err := e.fetchRequest(req)
+		if cache && err == nil && json.Valid(data) {
+			e.childResponses.put(key, data, e.clock.Now())
+		}
+		return data, err
 	}
 	data, err := attempt()
 	var status *statusError
@@ -1289,6 +1364,14 @@ func (e *Engine) invalidateToken(spec plugin.ScraperSpec) {
 // authorize runs after the URL passes the SSRF gate; it may add headers or
 // query parameters but never changes scheme or host.
 func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reader, contentType string, authorize func(*http.Request)) ([]byte, error) {
+	req, err := e.newRequest(ctx, method, rawURL, body, contentType, authorize)
+	if err != nil {
+		return nil, err
+	}
+	return e.fetchRequest(req)
+}
+
+func (e *Engine) newRequest(ctx context.Context, method, rawURL string, body io.Reader, contentType string, authorize func(*http.Request)) (*http.Request, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("scrape: invalid request URL")
@@ -1309,7 +1392,12 @@ func (e *Engine) fetch(ctx context.Context, method, rawURL string, body io.Reade
 	if authorize != nil {
 		authorize(req)
 	}
-	resp, err := e.requestWithRetry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	return req, nil
+}
+
+func (e *Engine) fetchRequest(req *http.Request) ([]byte, error) {
+	parsed := req.URL
+	resp, err := e.requestWithRetry(req.Context(), req, func(attempt *http.Request) (*http.Response, error) {
 		return e.client.Do(attempt)
 	})
 	if err != nil {

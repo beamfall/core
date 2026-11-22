@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { mediaAddressIDs } from "@/areas/viewer/lib/mediaAddress";
+import { AssignDialog } from "@/components/assign/AssignDialog";
 import { EntityMultiPicker } from "@/components/beamfall/EntityPicker";
 import {
   ErrorLine,
@@ -46,6 +47,7 @@ import type {
   MediaFieldInput,
 } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { useSession } from "@/lib/session";
 
 function fieldSummary(fields: MediaFieldInput[]): string {
   return fields.map((f) => `${f.name}=${f.value}`).join(", ");
@@ -114,6 +116,7 @@ function BulkEditSection({
   onApplied: (result: BatchResultInfo) => void;
 }) {
   const t = useT();
+  const { session, isManager } = useSession();
   const [ids, setIds] = useState<string[]>([]);
   const [fieldName, setFieldName] = useState("");
   const [fieldValue, setFieldValue] = useState("");
@@ -199,6 +202,12 @@ function BulkEditSection({
           <Button type="button" variant="outline" onClick={onPreview} disabled={!canRun}>
             {t("bulkEditPreview")}
           </Button>
+          {isManager && session?.profile === "adult" && (
+            <AssignDialog
+              selection={mediaIDs().map((mediaID) => ({ mediaID }))}
+              onChanged={() => setChanges(null)}
+            />
+          )}
           <ConfirmApply
             label={t("bulkEditApply")}
             disabled={!canRun || !previewCurrent}

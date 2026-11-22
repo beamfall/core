@@ -5,6 +5,7 @@ package conformance
 // detector considers every Store call, so a new primitive fails closed until it
 // is classified here or in destructiveGraphStoreMethods.
 var knownNonSeamGraphStoreMethods = map[string]struct{}{
+	"SearchEntitiesByName":                  {},
 	"APITokens":                             {},
 	"AccessGrantsForProfile":                {},
 	"AccessRequestByID":                     {},
@@ -106,6 +107,9 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"CreateCompatIntegrationKey":              {},
 	"PartySessionForHost":                     {},
 	"PartyStage":                              {},
+	"LibraryEncrypted":                        {},
+	"MediaOperatorOrdinal":                    {},
+	"PinMediaMatch":                           {},
 	"RevokeCompatIntegrationKey":              {},
 	"Libraries":                               {},
 	"LibraryBrowse":                           {},

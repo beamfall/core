@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/beamfall/core/internal/serverrole"
 )
@@ -39,6 +41,23 @@ type PlaybackProgress struct {
 	// last-applied event-time is a no-op, so a stale offline-flush from one device
 	// cannot rewind a newer position already recorded by another.
 	EventTimeMS int64
+	// DeviceID and PlayMethod are write-only: the reporting Device and the
+	// play method (PlayMethodDirect, PlayMethodRemux or PlayMethodTranscode)
+	// the server chose for its session, recorded on the progress event for
+	// play history (CORE-1703). Empty when unknown.
+	DeviceID   DeviceID
+	PlayMethod string
+	// PlaybackID and Paused are write-only too. PlaybackID is the client's
+	// random ID for one play, new each time a player starts an item and kept
+	// across pauses and seeks; play history groups a play by it. Empty when
+	// the client sent none. Paused says whether the player was paused when it
+	// reported; nil when the client did not say. PlayedMS is the time, in
+	// milliseconds, the client has actually played under PlaybackID so far
+	// (not paused, seeking or buffering); play history credits its growth.
+	// nil when the client did not say.
+	PlaybackID string
+	Paused     *bool
+	PlayedMS   *int64
 	// Provenance is the ADR-0009 §7 import discriminator: "" native,
 	// a shape-named source value for imported engagement. Write-only on input
 	// is via UpsertPlaybackProgressWithProvenance; this field is the read-back.
@@ -56,6 +75,28 @@ type PlaybackProgress struct {
 	ImportRunID       string
 	ImportImporterID  string
 	ImportMatchMethod string
+}
+
+// MaxPlaybackIDLength bounds a client's playback ID, in characters; a UUID
+// is 36.
+const MaxPlaybackIDLength = 64
+
+// ErrInvalidPlaybackID reports a playback ID that is too long or carries
+// surrounding whitespace.
+var ErrInvalidPlaybackID = errors.New("playbackID must be at most 64 characters with no surrounding whitespace")
+
+// ValidatePlaybackID checks a client's playback ID exactly as sent: at most
+// MaxPlaybackIDLength characters (runes) and valid UTF-8, with no leading or
+// trailing whitespace, so two IDs that differ only by spacing are never
+// merged into one play. The empty ID (none sent) is valid.
+func ValidatePlaybackID(id string) error {
+	if !utf8.ValidString(id) || utf8.RuneCountInString(id) > MaxPlaybackIDLength {
+		return ErrInvalidPlaybackID
+	}
+	if id != strings.TrimFunc(id, unicode.IsSpace) {
+		return ErrInvalidPlaybackID
+	}
+	return nil
 }
 
 // watchedThreshold marks video media watched once this fraction has played.
@@ -254,6 +295,14 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 		ImportMatch:      prov.MatchMethod,
 		EventTimeMS:      eventTimeMS,
 		ChannelContext:   progress.ChannelContext,
+		DeviceID:         string(progress.DeviceID),
+		PlayMethod:       progress.PlayMethod,
+		// Every native report records the client's own position; an
+		// import has no playback to measure.
+		ReportedPositionSeconds: optionalInt(prov.Source == "", progress.PositionSeconds),
+		PlaybackID:              progress.PlaybackID,
+		Paused:                  progress.Paused,
+		PlayedMS:                progress.PlayedMS,
 	}
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
@@ -279,6 +328,13 @@ const positionAdvancedPredicate = `
 	playback_progress.event_time_ms IS NULL
 	OR excluded.event_time_ms IS NULL
 	OR excluded.event_time_ms >= playback_progress.event_time_ms`
+
+func optionalInt(set bool, value int) *int {
+	if !set {
+		return nil
+	}
+	return &value
+}
 
 func optionalMillis(set bool, millis int64) *int64 {
 	if !set {
