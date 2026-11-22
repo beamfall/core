@@ -146,10 +146,12 @@ func TestMergeEntitiesUndoFullyReverses(t *testing.T) {
 		}
 	}
 	relations := []EntityRelation{
-		{FromEntityID: "winner", Name: "linked", ToMediaID: "media-alpha"},
-		{FromEntityID: "loser", Name: "linked", ToMediaID: "media-alpha"}, // collision
-		{FromEntityID: "loser", Name: "friend", ToEntityID: "pointer"},    // loser-only, re-points
-		{FromEntityID: "pointer", Name: "child", ToEntityID: "loser"},     // inbound, re-points
+		// Writers are journaled too (CORE-3152): undo restores a scraper's own
+		// rows owned, so its later cleanup still recognises them.
+		{FromEntityID: "winner", Name: "linked", ToMediaID: "media-alpha", Writer: "scraper:demo/item"},
+		{FromEntityID: "loser", Name: "linked", ToMediaID: "media-alpha", Writer: "scraper:demo/other"}, // collision
+		{FromEntityID: "loser", Name: "friend", ToEntityID: "pointer"},                                  // loser-only, re-points
+		{FromEntityID: "pointer", Name: "child", ToEntityID: "loser"},                                   // inbound, re-points
 		// A relation between winner and loser becomes a self-loop on re-point and
 		// is dropped on apply — undo must restore it too.
 		{FromEntityID: "winner", Name: "sibling", ToEntityID: "loser"},
@@ -309,7 +311,7 @@ func snapshotRelations(t *testing.T, st *Store) string {
 	rows, err := st.catalogR.QueryContext(context.Background(), `
 		SELECT from_entity_id, relation,
 		       COALESCE(to_entity_id, ''), COALESCE(to_media_id, ''),
-		       COALESCE(attributes, ''), COALESCE(sort_order, -1)
+		       COALESCE(attributes, ''), COALESCE(sort_order, -1), COALESCE(writer, '')
 		FROM entity_relation
 		ORDER BY from_entity_id, relation, to_entity_id, to_media_id
 	`)
@@ -319,12 +321,12 @@ func snapshotRelations(t *testing.T, st *Store) string {
 	defer rows.Close()
 	var out string
 	for rows.Next() {
-		var from, rel, toE, toM, attrs string
+		var from, rel, toE, toM, attrs, writer string
 		var sort int64
-		if err := rows.Scan(&from, &rel, &toE, &toM, &attrs, &sort); err != nil {
+		if err := rows.Scan(&from, &rel, &toE, &toM, &attrs, &sort, &writer); err != nil {
 			t.Fatal(err)
 		}
-		out += from + "|" + rel + "|" + toE + "|" + toM + "|" + attrs + "|" + strconv.FormatInt(sort, 10) + "\n"
+		out += from + "|" + rel + "|" + toE + "|" + toM + "|" + attrs + "|" + strconv.FormatInt(sort, 10) + "|" + writer + "\n"
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)

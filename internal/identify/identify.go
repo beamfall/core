@@ -727,7 +727,9 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 // Media's stored year, after field precedence, as its sort order, so the
 // container lists its members in release order. A lookup whose holder map ran
 // and hydrated nothing removes the Media's earlier link, but only one this
-// scraper wrote (clearStaleHolderLinks).
+// scraper wrote (clearStaleHolderLinks). A holder link keeps an existing
+// holder's title (holderTitle), and a container map of a kind the scraper
+// links applies only to a holder it linked in this lookup.
 func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
 	holders := ContainerRelations(bundle)
 	writer := relationWriter(bundle, spec)
@@ -749,6 +751,14 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 	if err != nil {
 		return err
 	}
+	// holderLinks has a key for each kind the scraper declares a holder link
+	// map onto, listing the holders this lookup linked.
+	holderLinks := map[string][]store.EntityID{}
+	for _, entityMap := range spec.EntityMaps {
+		if !entityMap.Container && holders.Holds(entityMap.Kind, entityMap.Relation) {
+			holderLinks[entityMap.Kind] = nil
+		}
+	}
 	var containers, linked []scrape.EntityResult
 	for _, hydrated := range result.Entities {
 		if hydrated.Container {
@@ -766,11 +776,18 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 			Title:     hydrated.Name,
 			Fields:    entityFields(bundle, hydrated),
 		}
+		holds := holders.Holds(hydrated.Kind, hydrated.Relation)
+		if holds {
+			if entity.Title, err = s.holderTitle(ctx, entity); err != nil {
+				return err
+			}
+			holderLinks[hydrated.Kind] = append(holderLinks[hydrated.Kind], id)
+		}
 		if err := s.writeEntity(ctx, entity); err != nil {
 			return err
 		}
 		sortOrder := hydrated.SortOrder
-		if sortOrder == nil && year != nil && holders.Holds(hydrated.Kind, hydrated.Relation) {
+		if sortOrder == nil && year != nil && holds {
 			sortOrder = year
 		}
 		if err := s.entities.UpsertEntityRelation(ctx, store.EntityRelation{
@@ -789,7 +806,30 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 		}
 		s.applyEntityPoster(ctx, id, hydrated.ArtworkURL)
 	}
-	return s.applyContainerEntities(ctx, mediaID, library, bundle, containers)
+	return s.applyContainerEntities(ctx, mediaID, library, bundle, containers, holderLinks)
+}
+
+// holderTitle is the title a holder link writes onto its Entity. The link's
+// name is the provider's key (an id), so an existing holder keeps its stored
+// title, which the container map's TitlePath or an operator owns; a new
+// holder takes the name until a title arrives. A store without ensure and
+// read support keeps the name.
+func (s *Service) holderTitle(ctx context.Context, entity store.Entity) (string, error) {
+	ensurer, canEnsure := s.entities.(EntityEnsurer)
+	reader, canRead := s.entities.(ContainerStore)
+	if !canEnsure || !canRead {
+		return entity.Title, nil
+	}
+	if err := ensurer.EnsureEntity(ctx, store.Entity{
+		ID: entity.ID, LibraryID: entity.LibraryID, Kind: entity.Kind, Title: entity.Title,
+	}); err != nil {
+		return "", err
+	}
+	existing, err := reader.Entity(ctx, entity.ID, unrestrictedEntityFilter)
+	if err != nil || existing.Title == "" {
+		return entity.Title, nil
+	}
+	return existing.Title, nil
 }
 
 // relationWriter is the writer key a scraper's Entity→Media links carry, so
@@ -847,7 +887,8 @@ type writtenRelationRemover interface {
 // leaves the old one. Only a link this scraper wrote, from an Entity of the
 // map's kind, is removed: an operator's link or another scraper's stays. A map
 // the engine skipped (an unknown ordinal in its Path) says nothing about the
-// document and removes nothing. A move to another container needs nothing
+// document, so nothing under its kind and relation is removed, even when a
+// sibling map onto the same relation resolved nothing. A move to another container needs nothing
 // here: the relation's single cardinality replaces the old row on write. A
 // scraper without such a map, or a store without the remover, changes nothing.
 func (s *Service) clearStaleHolderLinks(ctx context.Context, mediaID store.MediaID, spec plugin.ScraperSpec, writer string, holders ContainerRelationIndex, result scrape.Result) error {
@@ -855,17 +896,24 @@ func (s *Service) clearStaleHolderLinks(ctx context.Context, mediaID store.Media
 	if !ok {
 		return nil
 	}
+	// resolved holds each (kind, relation) a map hydrated or the engine
+	// skipped: neither may lose its link.
 	resolved := map[store.WrittenRelation]bool{}
 	for _, entity := range result.Entities {
 		if !entity.Container {
 			resolved[store.WrittenRelation{Kind: entity.Kind, Name: entity.Relation}] = true
 		}
 	}
+	for _, i := range result.SkippedEntityMaps {
+		if i >= 0 && i < len(spec.EntityMaps) {
+			resolved[store.WrittenRelation{Kind: spec.EntityMaps[i].Kind, Name: spec.EntityMaps[i].Relation}] = true
+		}
+	}
 	var stale []store.WrittenRelation
-	for i, entityMap := range spec.EntityMaps {
+	for _, entityMap := range spec.EntityMaps {
 		key := store.WrittenRelation{Kind: entityMap.Kind, Name: entityMap.Relation}
 		if entityMap.Container || resolved[key] || !holders.Holds(entityMap.Kind, entityMap.Relation) ||
-			slices.Contains(result.SkippedEntityMaps, i) || slices.Contains(stale, key) {
+			slices.Contains(stale, key) {
 			continue
 		}
 		stale = append(stale, key)

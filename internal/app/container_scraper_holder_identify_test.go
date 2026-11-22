@@ -67,6 +67,8 @@ func TestIdentifyLinksScraperDeclaredHolder(t *testing.T) {
 		"/item/3": `{"title":"Loner","release_date":"1999-03-31","group":null}`,
 		"/item/4": `{"title":"Origin","release_date":"1999-03-31","group":{"id":88,"name":"Other Set","poster_path":"/other.jpg","backdrop_path":"/other-backdrop.jpg"}}`,
 		"/item/5": `{"title":"Origin","release_date":"1999-03-31","group":{"id":77,"name":"Renamed Set","poster_path":"/set.jpg","backdrop_path":"/set-backdrop.jpg"}}`,
+		"/item/7": `{"title":"Stray","release_date":"2005-01-01","group":{"name":"Hijack Name","backdrop_path":"/hijack.jpg"}}`,
+		"/item/8": `{"title":"Origin","release_date":"1999-03-31","group":{"id":77}}`,
 		"/item/6": `{"title":"Namesake","release_date":"2001-01-01","group":{"id":99,"name":"Renamed Set","poster_path":"/twin.jpg","backdrop_path":"/twin-backdrop.jpg"}}`,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +180,11 @@ func TestIdentifyLinksScraperDeclaredHolder(t *testing.T) {
 		t.Fatalf("renamed group: title %q, holders %q/%q; want one set %q titled Renamed Set",
 			entity.Title, holder(first), holder(second), set)
 	}
+	apply(first, "8")
+	if entity, err = st.Entity(ctx, set, metadataLibraryFilter); err != nil || entity.Title != "Renamed Set" || holder(first) != set {
+		t.Fatalf("group without a name: title %q, %v, holder %q; want the stored title kept on %q",
+			entity.Title, err, holder(first), set)
+	}
 	apply(fourth, "6")
 	twin := identify.EntityIDForName(library.ID, "set", "99")
 	if got := holder(fourth); got != twin || twin == set {
@@ -200,6 +207,10 @@ func TestIdentifyLinksScraperDeclaredHolder(t *testing.T) {
 		FromEntityID: set, Name: "set-member", ToMediaID: third, Cardinality: "one",
 	}); err != nil {
 		t.Fatal(err)
+	}
+	apply(third, "7")
+	if entity, err = st.Entity(ctx, set, metadataLibraryFilter); err != nil || entity.Title != "Synthetic Set" {
+		t.Fatalf("curated set title = %q, %v after a group without an id, want Synthetic Set untouched", entity.Title, err)
 	}
 	apply(third, "3")
 	if got := holder(third); got != set {
@@ -242,8 +253,9 @@ func (o *holderOrdinals) ParsedMediaOrdinal(context.Context, store.MediaID, stri
 
 // TestIdentifyKeepsHolderLinkWhenMapSkipped (CORE-3152): a holder map whose
 // path names an ordinal the parser does not know is skipped by the engine,
-// which says nothing about the document, so the earlier link stays. The same
-// map resolving nothing once the ordinal is known removes it.
+// which says nothing about the document, so the earlier link stays, even
+// though a fallback map onto the same relation resolves nothing. Both maps
+// resolving nothing once the ordinal is known removes it.
 func TestIdentifyKeepsHolderLinkWhenMapSkipped(t *testing.T) {
 	ctx := context.Background()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -267,8 +279,10 @@ func TestIdentifyKeepsHolderLinkWhenMapSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 	ordinals := &holderOrdinals{sequence: "1"}
-	service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()),
-		scraperHolderBundle(server.URL, "parts[part={sequence}].group"), st)
+	bundle := scraperHolderBundle(server.URL, "parts[part={sequence}].group")
+	bundle.Scrapers[0].EntityMaps = append(bundle.Scrapers[0].EntityMaps,
+		plugin.EntityMap{Kind: "set", Relation: "set-member", Path: "fallback", NamePath: "id"})
+	service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), bundle, st)
 	service.SetEntities(st)
 	service.SetMediaTitles(ordinals)
 	set := identify.EntityIDForName(library.ID, "set", "77")
