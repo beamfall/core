@@ -1418,6 +1418,11 @@
       "tier": "admin"
     },
     {
+      "field": "setsonicanalysisenabled",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "setsubscriptionretention",
       "effect": "write",
       "tier": "session"
@@ -1448,6 +1453,11 @@
       "tier": "admin"
     },
     {
+      "field": "similarmedia",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "skipdetectionenabled",
       "effect": "read",
       "tier": "admin"
@@ -1456,6 +1466,11 @@
       "field": "smartcollections",
       "effect": "read",
       "tier": "session"
+    },
+    {
+      "field": "sonicanalysisenabled",
+      "effect": "read",
+      "tier": "admin"
     },
     {
       "field": "sourceitems",
@@ -32814,6 +32829,24 @@
       ]
     },
     {
+      "field": "setsonicanalysisenabled",
+      "kind": "object",
+      "children": [
+        {
+          "name": "available",
+          "kind": "scalar"
+        },
+        {
+          "name": "enabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "setsubscriptionretention",
       "kind": "object",
       "children": [
@@ -33062,6 +33095,220 @@
       ]
     },
     {
+      "field": "similarmedia",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "limit",
+          "kind": "int",
+          "optional": true
+        },
+        {
+          "name": "mediaID",
+          "kind": "string"
+        }
+      ],
+      "children": [
+        {
+          "name": "artwork",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "dominantColor",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "poster",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "artworkSlots",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "byline",
+          "kind": "list",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "engagement",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "completed",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "remainingCount",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "totalCount",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "kind",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "locked",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "muted",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "restricted",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "summary",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar",
+          "optional": true
+        }
+      ]
+    },
+    {
       "field": "skipdetectionenabled",
       "kind": "object",
       "children": [
@@ -33102,6 +33349,24 @@
         },
         {
           "name": "sourceExpr",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "sonicanalysisenabled",
+      "kind": "object",
+      "children": [
+        {
+          "name": "available",
+          "kind": "scalar"
+        },
+        {
+          "name": "enabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryID",
           "kind": "scalar"
         }
       ]
@@ -39380,6 +39645,10 @@
         "effect": "write"
       },
       {
+        "field": "setsonicanalysisenabled",
+        "effect": "write"
+      },
+      {
         "field": "settranscodeconfig",
         "effect": "write"
       },
@@ -39389,6 +39658,10 @@
       },
       {
         "field": "skipdetectionenabled",
+        "effect": "read"
+      },
+      {
+        "field": "sonicanalysisenabled",
         "effect": "read"
       },
       {

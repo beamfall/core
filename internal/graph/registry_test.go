@@ -183,9 +183,12 @@ var originalScopedFields = []string{
 	"mediametadata", // CORE-1715: per-item metadata editor read
 	"mediafiles",    // WEB-5B: Versions/Parts file-plane read
 	"mediaforentity",
-	"mediarelations", // WEB-5B: generic Media relation read
-	"mediatracks",    // CORE-2442: Versions and tracks before playback
-	"relatedmedia",   // CORE-2444: ranked Media sharing credits, discovery-suppressed
+	"mediarelations",          // WEB-5B: generic Media relation read
+	"mediatracks",             // CORE-2442: Versions and tracks before playback
+	"relatedmedia",            // CORE-2444: ranked Media sharing credits, discovery-suppressed
+	"similarmedia",            // CORE-3074: sonically similar Media, discovery-suppressed
+	"sonicanalysisenabled",    // CORE-3073: Admin read of the per-Library sonic toggle
+	"setsonicanalysisenabled", // CORE-3073: Admin write of the per-Library sonic toggle
 	"mergeentities",
 	"mergemedia",
 	"metadataexport",

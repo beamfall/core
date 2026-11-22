@@ -16,6 +16,8 @@ export const mediaDetailStrings = {
     // Closing rows (CORE-2444); {name} is the first billed person.
     mediaDetailMoreWith: "More with {name}",
     mediaDetailRelated: "Related",
+    // Sonic similarity row (CORE-3075), audio Media only.
+    mediaDetailSonicallySimilar: "Sonically similar",
     // Ordered item hero and container rail (CORE-2469); {label} is a plugin display name.
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "More in {title}",
@@ -75,6 +77,7 @@ export const mediaDetailStrings = {
     mediaDetailEditions: "Éditions",
     mediaDetailMoreWith: "Aussi avec {name}",
     mediaDetailRelated: "Titres similaires",
+    mediaDetailSonicallySimilar: "Sonorités proches",
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Aussi dans {title}",
     mediaDetailPeople: "Personnes",
@@ -128,6 +131,7 @@ export const mediaDetailStrings = {
     mediaDetailEditions: "Fassungen",
     mediaDetailMoreWith: "Mehr mit {name}",
     mediaDetailRelated: "Ähnliche Titel",
+    mediaDetailSonicallySimilar: "Klanglich ähnlich",
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Mehr aus {title}",
     mediaDetailPeople: "Personen",
@@ -182,6 +186,7 @@ export const mediaDetailStrings = {
     mediaDetailEditions: "Ediciones",
     mediaDetailMoreWith: "Más con {name}",
     mediaDetailRelated: "Títulos similares",
+    mediaDetailSonicallySimilar: "Sonido similar",
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Más de {title}",
     mediaDetailPeople: "Personas",
@@ -234,6 +239,7 @@ export const mediaDetailStrings = {
     mediaDetailEditions: "Edições",
     mediaDetailMoreWith: "Mais com {name}",
     mediaDetailRelated: "Títulos semelhantes",
+    mediaDetailSonicallySimilar: "Som semelhante",
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Mais de {title}",
     mediaDetailPeople: "Pessoas",

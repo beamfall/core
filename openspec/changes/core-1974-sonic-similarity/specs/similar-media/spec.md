@@ -70,3 +70,52 @@ dimensions) and never fewer than 1,000 candidate rows, taken in the same determi
 
 - **WHEN** the seeds' vectors have 32 dimensions
 - **THEN** up to 125,000 candidate Media are scored
+
+### Requirement: Similar-Media graph read
+
+The graph SHALL answer `similarMedia(mediaID, limit)` with the visible Media whose sonic vectors
+are nearest the item's, best first, using the caller's Library scope. The limit SHALL default to 20
+and be capped at 50. Muted Media SHALL be suppressed as on other discovery rows. An unknown or
+hidden item SHALL be an error, and an item without a vector SHALL return an empty list.
+
+#### Scenario: Ranked row
+
+- **WHEN** two other visible Media have sonic vectors at decreasing similarity to the item
+- **THEN** both are returned, nearest first, without the item
+
+#### Scenario: Muted hit
+
+- **WHEN** the nearest hit is Muted for the Profile
+- **THEN** it is not returned
+
+#### Scenario: No vectors
+
+- **WHEN** nothing has been analysed
+- **THEN** the list is empty
+
+### Requirement: Sonic Station seed
+
+A Station SHALL accept seed kind `sonic` with a Media id. Its candidates SHALL be the seed and the
+Media nearest it by sonic vector, after the Station's usual filtering, in similarity order with
+tuning applied as a bias and no shuffle.
+
+#### Scenario: Similarity order
+
+- **WHEN** a Station is seeded with a Media item that has a sonic vector
+- **THEN** the window lists the seed, then the other Media nearest first
+
+#### Scenario: Seed without a vector
+
+- **WHEN** the seed has no sonic vector
+- **THEN** the window lists only the seed and no error is returned
+
+### Requirement: Sonically similar web row
+
+The web Media detail page SHALL show a "Sonically similar" row for audio Media from
+`similarMedia`, without the current item, and SHALL hide it while empty. Non-audio Media SHALL
+NOT send the read.
+
+#### Scenario: Hidden without vectors
+
+- **WHEN** `similarMedia` returns nothing for an audio item
+- **THEN** no Sonically similar row is shown

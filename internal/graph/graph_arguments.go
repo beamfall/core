@@ -486,6 +486,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"mediafiles":     fieldArguments["mediafiles"],
 	"mediatracks":    fieldArguments["mediatracks"],
 	"relatedmedia":   fieldArguments["relatedmedia"],
+	"similarmedia":   fieldArguments["similarmedia"],
 	"mediaforentity": fieldArguments["mediaforentity"],
 	"mediametadata": {
 		{Name: "mediaID", Kind: "string"},
@@ -1005,6 +1006,10 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "enabled", Kind: "boolean"},
 		{Name: "libraryID", Kind: "string"},
 	},
+	"setsonicanalysisenabled": {
+		{Name: "enabled", Kind: "boolean"},
+		{Name: "libraryID", Kind: "string"},
+	},
 	"setsubscriptionretention": {
 		{Name: "id", Kind: "string"},
 		{Name: "kind", Kind: "string"},
@@ -1035,6 +1040,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "publicBaseURL", Kind: "string", Optional: true},
 	},
 	"skipdetectionenabled": {},
+	"sonicanalysisenabled": {},
 	"smartcollections": {
 		{Name: "libraryID", Kind: "string"},
 	},

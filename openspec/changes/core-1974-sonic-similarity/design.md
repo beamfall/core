@@ -1,6 +1,8 @@
 # Design: sonic mixes and sonically similar Media
 
-Status: proposed (post-1.0). Ticket: CORE-1974. Owner decisions: CORE-3070.
+Status: accepted (post-1.0). Ticket: CORE-1974. Owner decisions: CORE-3070, accepted 2026-11-21 as
+recommended (D1 wazero and WASI, D2 idle-only excerpt, D3 separate toggle default OFF, D4 DSP
+features only, D5 storage accepted).
 
 ## Split of responsibilities
 
@@ -50,15 +52,30 @@ a new kind (`sonic-v2`), so old vectors are never compared with new ones and rea
 
 ## Core pieces
 
-1. `Store.SimilarMedia` (this change): centroid of unit seed vectors, cosine scan over the
+1. `Store.SimilarMedia` (CORE-1974): centroid of unit seed vectors, cosine scan over the
    Reveal-eligible set, seeds excluded, at most 4M values scored (125,000 Media at 32 dims).
-2. Analysis job (CORE-3073): FFmpeg decodes to PCM, the pinned Oscillux artifact returns the vector,
-   `UpsertEmbedding(fingerprint, "sonic-v1", v)`. Per-library toggle in a new appended migration,
-   local-only, no telemetry, yields to playback (`background-job-playback-yield`), idle scheduling,
-   retry cap.
-3. Graph (CORE-3074): generic `similarMedia(seeds, limit)` read and a sonic seed mode for Stations,
-   with a client-core-wire bump.
-4. Web (CORE-3075): "Sonically similar" row on audio Media detail and "Start sonic mix".
+2. Analysis job (CORE-3073, built): the `sonic-analysis-sweep` background job walks audio-class
+   Media without a vector of the analyser's kind in Libraries whose toggle is on, in Media ID order
+   with a checkpoint, five items per slice. FFmpeg decodes a 60 s excerpt from the middle of the file
+   at 22.05 kHz stereo into memory (`Runner.AudioExcerpt`), a `SonicAnalyzer` returns the vector, and
+   `UpsertEmbedding(fingerprint, kind, v)` stores it. Vectors that are empty, wider than 256 values,
+   non-finite or all zero are refused. Sealed and Encrypted Libraries are skipped. The job is
+   registered through the resource governor, so it runs only while no playback transcode or scan
+   is active and yields when one starts (D2). A failure is counted and retried by the next sweep.
+3. Toggle (CORE-3073, built): a per-Library `server_config` row `sonicanalysis.library.<id>`; an
+   absent row is OFF (D3), so no migration is needed. It is separate from `ai_indexing_enabled`.
+   Admin graph read `sonicAnalysisEnabled` and mutation `setSonicAnalysisEnabled`; enabling is
+   refused while no analyser is wired, and enabling arms the sweep. Turning it off keeps vectors.
+4. Analyser seam (CORE-3072): `genassets.SonicAnalyzer` is the interface the wazero loader will
+   implement over the pinned Oscillux WASI artifact. No artifact exists yet, so the composition root
+   wires none: the toggle reports `available: false` and the sweep is inert. Tests use a double.
+5. Graph (CORE-3074, built): `similarMedia(mediaID, limit)` (default 20, max 50) reads
+   `SimilarMedia` with the `sonic-v1` kind through the caller's scope, with passive-rail Mute
+   suppression like `relatedMedia`. Station seed kind `sonic` takes a Media id and keeps similarity
+   order (the seed, then nearest first; tuning bias only, no shuffle). This is a client-core-wire
+   minor bump that the landing owner publishes.
+6. Web (CORE-3075, built): a "Sonically similar" row on audio Media detail pages, hidden while
+   empty; non-audio Media never send the read. "Start sonic mix" waits for a client entry point.
 
 ## Cost and storage (estimates, not measured)
 
@@ -69,22 +86,19 @@ a new kind (`sonic-v2`), so old vectors are never compared with new ones and rea
 - Query: brute force over 125,000 x 32 values is a few milliseconds of arithmetic plus the SQLite
   read of about 16 MB; larger libraries need CORE-3076.
 
-## Owner decisions (CORE-3070)
+## Owner decisions (CORE-3070), accepted 2026-11-21
 
-- **D1 Server runtime.** Core is pure Go and has no Oscillux runtime since CORE-1506 removed the
-  beat-grid analyser (Oscillux is AGPL-3.0-only since ADR-0233, so the licence block is gone).
-  Options: WASI module via wazero (pure Go, deterministic, new dependency), CGO link of
-  `oscillux-ffi` (breaks the pure-Go build), bundled CLI subprocess (per-platform binaries), or
-  client-side analysis uploaded to the server. Recommendation: WASI via wazero, else a CLI.
-- **D2 Analysis cost.** Whole track or excerpt; idle-only or continuous with playback yield; the
-  estimate above is unmeasured and needs a benchmark on the owner's hardware.
-- **D3 Opt-in default.** `ai_indexing_enabled` defaults ON. Recommendation: a separate per-library
-  audio-analysis toggle defaulting OFF.
-- **D4 Model.** v1 is hand-engineered DSP with KB-sized normalisation constants; which reference
-  corpus derives those constants is open. A learned embedding (CNN or CLAP style) would ship tens of
-  MB of weights and about 2 KB per vector, with licence and provenance questions for the weights.
-- **D5 Storage and width.** 32 dims is negligible; wider vectors shrink scan coverage under the
-  value budget and raise storage linearly.
+- **D1 Server runtime: WASI via wazero.** Core is pure Go and has no Oscillux runtime since
+  CORE-1506 removed the beat-grid analyser (Oscillux is AGPL-3.0-only since ADR-0233). The pinned
+  Oscillux sonic-profile WASI module runs in wazero (pure Go, deterministic, no CGO). Rejected: CGO
+  link of `oscillux-ffi`, a bundled CLI per platform, client-side analysis.
+- **D2 Analysis cost: idle-only, excerpt.** One 60 s window from the middle of each file, analysed
+  only while the server is idle (resource-governor admission and preemption). The cost estimate
+  above is still unmeasured; CORE-3072 benchmarks it once the artifact exists.
+- **D3 Opt-in: a separate per-Library toggle, default OFF.** Independent of `ai_indexing_enabled`.
+- **D4 Model: DSP features only.** Hand-engineered `sonic-v1` features with KB-sized normalisation
+  constants; no learned embedding and no shipped weights.
+- **D5 Storage: accepted.** About 128 B per file at 32 dims.
 
 ## Ticket map
 
@@ -96,6 +110,6 @@ a new kind (`sonic-v2`), so old vectors are never compared with new ones and rea
 | CORE-3072 | Oscillux server-runnable artifact | CORE-3070, CORE-3071 |
 | CORE-3073 | Core opt-in analysis job | CORE-3070, CORE-3072, CORE-1974 |
 | CORE-3074 | Graph read and sonic Station mode | CORE-1974, CORE-3073 |
-| CORE-3075 | Web row and Start sonic mix | CORE-3074 |
+| CORE-3075 | Web row (built); Start sonic mix | CORE-3074 |
 | CORE-3076 | Indexed nearest-neighbour search | CORE-1974 |
 | CORE-3077 | RecommendFromEngagement nondeterministic dims (bug) | none |

@@ -1,6 +1,6 @@
 # Similar-Media retrieval over per-file feature vectors (sonic mixes, first slice)
 
-Ticket: CORE-1974 (`queue:core:main`).
+Tickets: CORE-1974, CORE-3073, CORE-3074, CORE-3075 (`queue:core:main`); owner decisions CORE-3070.
 
 ## Why
 
@@ -25,12 +25,21 @@ dropped, and candidates were ranked with a quadratic insertion sort.
 - `design.md` records the cross-repo design (Oscillux sonic profile, server runtime, analysis job,
   graph and web surfaces), cost and storage estimates, the owner decisions and the ticket map.
 
-No schema, migration, GraphQL or wire change in this slice.
+- Per-Library sonic-analysis toggle, default OFF, stored as a `server_config` row (no migration),
+  with an Admin graph read and mutation (CORE-3073).
+- An idle-only background job decodes a 60 s excerpt with FFmpeg and stores the vector a
+  `SonicAnalyzer` returns. Until the Oscillux WASI artifact and its wazero loader exist
+  (CORE-3072), no analyser is wired and the job does nothing (CORE-3073).
+- Graph read `similarMedia(mediaID, limit)` and Station seed kind `sonic` (CORE-3074), an additive
+  client-core-wire change.
+- Web "Sonically similar" row on audio Media detail, hidden while empty (CORE-3075).
+
+No migration.
 
 ## Non-goals
 
-- Audio analysis in core. Oscillux owns extraction (CORE-3071, CORE-3072); core runs a pinned
-  artifact in a later ticket (CORE-3073).
-- GraphQL, Station and web surfaces (CORE-3074, CORE-3075).
+- Audio analysis in core. Oscillux owns extraction (CORE-3071); the wazero loader for its
+  artifact is CORE-3072.
+- "Start sonic mix" and a Console toggle in the web UI.
 - Indexed nearest-neighbour search past the scan budget (CORE-3076).
 - Telemetry or cloud analysis of any kind.
