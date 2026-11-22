@@ -1720,7 +1720,9 @@ const CLEAR_MEDIA_ORDINAL_MUTATION =
   "mutation ClearMediaOrdinal($mediaID: String!) { clearMediaOrdinal(mediaID: $mediaID) }";
 
 export async function clearMediaOrdinal(mediaID: string): Promise<boolean> {
-  const data = await graphql<{ clearMediaOrdinal: boolean }>(CLEAR_MEDIA_ORDINAL_MUTATION, { mediaID });
+  const data = await graphql<{ clearMediaOrdinal: boolean }>(CLEAR_MEDIA_ORDINAL_MUTATION, {
+    mediaID,
+  });
   return data.clearMediaOrdinal;
 }
 
