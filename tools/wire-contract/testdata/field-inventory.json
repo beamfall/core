@@ -1185,11 +1185,13 @@
       "children": [
         "archetype",
         "artworkSlots",
+        "audioForm",
         "fields",
         "id",
         "kind",
         "kindDisplayName",
         "relatedEntities",
+        "subscriptionID",
         "title"
       ]
     },

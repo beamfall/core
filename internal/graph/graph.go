@@ -5530,7 +5530,23 @@ type EntityDetailInfo struct {
 	EntityInfo
 	ArtworkSlots    map[string]string        `json:"artworkSlots,omitempty"`
 	RelatedEntities []RelatedEntityGroupInfo `json:"relatedEntities,omitempty"`
+	// AudioForm says how an audio container plays, so a client picks its
+	// detail layout without domain knowledge (CORE-2288): "feed" when its
+	// member Media are a Subscription's catalogued entries (newest first,
+	// followable), "long-form" when its Library's plugin resumes audio
+	// (resume, numbered parts). Omitted otherwise, where audio reads as
+	// numbered tracks.
+	AudioForm string `json:"audioForm,omitempty"`
+	// SubscriptionID names the Subscription behind a "feed" container, for
+	// follow and catalogue reads; omitted otherwise.
+	SubscriptionID string `json:"subscriptionID,omitempty"`
 }
+
+// Audio forms an entity(id) read reports (CORE-2288).
+const (
+	audioFormFeed     = "feed"
+	audioFormLongForm = "long-form"
+)
 
 // RelatedEntityGroupInfo is one Entity kind's share of an Entity's related
 // Entities: the kind, its plugin-declared display name and plural display
@@ -5623,7 +5639,41 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 		rule.apply(&related, group.GroupValues)
 		info.RelatedEntities = append(info.RelatedEntities, related)
 	}
+	if err := h.setAudioForm(ctx, scope, entity, &info); err != nil {
+		return EntityDetailInfo{}, err
+	}
 	return info, nil
+}
+
+// setAudioForm fills AudioForm and SubscriptionID for a container whose
+// first member Media, as mediaForEntity lists it for this scope, is audio
+// (CORE-2288): a feed when that Media is a Subscription entry, else long-form
+// when its Library's plugin resumes Media.
+func (h *Handler) setAudioForm(ctx context.Context, scope auth.Scope, entity store.Entity, info *EntityDetailInfo) error {
+	if info.Archetype != containerArchetype {
+		return nil
+	}
+	first, ok, err := h.store.FirstMediaForEntity(ctx, entity.ID, scope.LibraryFilter())
+	if err != nil || !ok {
+		return err
+	}
+	items := []store.SourceItem{first}
+	if err := h.store.AnnotateMediaClass(ctx, items); err != nil || items[0].MediaClass != store.MediaClassAudio {
+		return err
+	}
+	_, subscription, found, err := h.store.SubscriptionEntryForMedia(ctx, first.ID)
+	if err != nil {
+		return err
+	}
+	if found {
+		info.AudioForm = audioFormFeed
+		info.SubscriptionID = string(subscription.ID)
+		return nil
+	}
+	if h.resumePolicy(ctx, store.Media{Class: store.MediaClassAudio, LibraryID: first.LibraryID}).Eligible() {
+		info.AudioForm = audioFormLongForm
+	}
+	return nil
 }
 
 // entitiesForMedia resolves the Media item's credit-style relations.

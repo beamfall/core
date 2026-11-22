@@ -6,6 +6,8 @@ package conformance
 // is classified here or in destructiveGraphStoreMethods.
 var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"SearchEntitiesByName":                  {},
+	"FirstMediaForEntity":                   {},
+	"SubscriptionEntryForMedia":             {},
 	"APITokens":                             {},
 	"AccessGrantsForProfile":                {},
 	"AccessRequestByID":                     {},
