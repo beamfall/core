@@ -119,9 +119,9 @@ package store
 // Encrypted-library 0012 (CORE-3152) adds the entity_relation writer column.
 // Encrypted-library 0013 (CORE-3131) keeps relation locks and recovery rows
 // in the owning Library plane.
-// Events 0028 (CORE-2958) adds the per-follow new-entry route, read by the
+// Events 0029 (CORE-2958) adds the per-follow new-entry route, read by the
 // subscription-new Source and the poller, without changing entity queries.
 const (
-	schemaFreezeEventsMigrations           = 28
+	schemaFreezeEventsMigrations           = 29
 	schemaFreezeEncryptedLibraryMigrations = 13
 )
