@@ -552,6 +552,8 @@ describe("Renderer geometry (CORE-2516)", () => {
     drawIn([64, 36, 2], [5, 71]);
     expect(blits.at(-1)).toEqual([0, 1, 2, 36, 0, 1, 2, 36]);
     expect(blocks.at(-1)?.[2]).toBe(limiterWindow(64, 36, 2, 2, 35).limit);
+    // limiter1.zw: the sub-block window of the texels in view, not the backing frame's.
+    expect(blocks.at(-1)?.slice(6, 8)).toEqual([1, 12]);
     expect(renderer.shown).toMatchObject({
       width: 64,
       height: 36,
@@ -586,6 +588,10 @@ describe("Renderer geometry (CORE-2516)", () => {
     // One spend, in the grant state the frame read; area limit and refill of zero.
     expect(spent.slice(before)).toEqual([[L.fG[cur], SPENT]]);
     expect(blocks.at(-1)?.slice(2, 4)).toEqual([0, 0]);
+    // The fade keeps the sub-block window: 0 x 0 would select the shader's whole-cell windows.
+    const zw = blocks.at(-1)?.slice(6, 8) ?? [];
+    expect(zw).toHaveLength(2);
+    expect(Math.min(...zw)).toBeGreaterThan(0);
     expect(renderer.settled(800, 450, 1)).toBe(false);
     expect(renderer.settled(640, 360, 1)).toBe(false);
   });

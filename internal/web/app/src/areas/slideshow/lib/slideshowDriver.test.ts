@@ -309,6 +309,8 @@ describe("SlideshowDriver flash limiter (CORE-2980)", () => {
     expect(spend.mock.calls.length).toBe(starts + 1);
     const [L] = spend.mock.calls.at(-1) as [Limiter];
     expect(L.window.limit).toBe(0);
+    // The fade keeps the sub-block window (limiter1.zw); 0 x 0 would select whole-cell windows.
+    expect(Math.min(L.window.bcols, L.window.brows)).toBeGreaterThan(0);
     const shown = blits.length;
     run(1000);
     expect(blits.length).toBeGreaterThan(shown);
