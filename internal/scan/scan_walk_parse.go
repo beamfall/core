@@ -165,14 +165,55 @@ func (*scanWalkState) isParsedPart(parsed ParsedMedia, ok bool) bool {
 	return ok && parsed.PartGroup != "" && parsed.Index > 0 && parsed.Title != ""
 }
 
-// flushPendingPartsUnlessImage flushes the pending parts group before a file
-// that is not a part, except a still image: an image whose name sorts between
-// numbered parts is not part of the group and must not split it (CORE-1837).
-func (s *scanWalkState) flushPendingPartsUnlessImage(isImage bool) error {
-	if isImage {
+// flushPendingPartsUnlessInGroup flushes the pending parts group before a file
+// that is not a part, except a still image (CORE-1837) or a file inside the
+// group's folder (CORE-3017): neither is part of the group, and one whose name
+// sorts between its Parts, such as a loose file between two disc folders of a
+// book, must not split it. Its completion is held below the group until then.
+func (s *scanWalkState) flushPendingPartsUnlessInGroup(path string, isImage bool) error {
+	if isImage || (len(s.pendingParts) > 0 && insidePartGroup(s.pendingParts[0].parsed.PartGroup, path)) {
 		return nil
 	}
 	return s.flushPendingParts()
+}
+
+// insidePartGroup reports whether path lies below group, a part group key
+// that names a folder. A key that is not an absolute path names no folder.
+func insidePartGroup(group, path string) bool {
+	if !filepath.IsAbs(group) {
+		return false
+	}
+	rel, err := filepath.Rel(group, path)
+	return err == nil && rel != "." && filepath.IsLocal(rel)
+}
+
+// orderParts orders a group's Parts folder by folder: each folder takes the
+// place of its lowest part number, a tie going to the folder walked first, and
+// its Parts follow by part number, a tie going to the file walked first. Disc
+// folders that name the same disc ("CD1", "Disc 01") then play one after the
+// other instead of interleaving or colliding (CORE-3017). Parts arrive in walk
+// order; a group in one folder orders by part number exactly as before.
+func orderParts(parts []parsedPartImport) {
+	type folder struct{ first, rank int }
+	folders := map[string]*folder{}
+	for i, part := range parts {
+		dir := filepath.Dir(part.imported.Path)
+		if f := folders[dir]; f == nil {
+			folders[dir] = &folder{first: part.parsed.Index, rank: i}
+		} else if part.parsed.Index < f.first {
+			f.first = part.parsed.Index
+		}
+	}
+	sort.SliceStable(parts, func(i, j int) bool {
+		a, b := folders[filepath.Dir(parts[i].imported.Path)], folders[filepath.Dir(parts[j].imported.Path)]
+		if a != b {
+			if a.first != b.first {
+				return a.first < b.first
+			}
+			return a.rank < b.rank
+		}
+		return parts[i].parsed.Index < parts[j].parsed.Index
+	})
 }
 
 func (s *scanWalkState) flushPendingParts() error {
@@ -187,12 +228,10 @@ func (s *scanWalkState) flushPendingParts() error {
 	}
 	parts := s.pendingParts
 	s.pendingParts = nil
-	sort.SliceStable(parts, func(i, j int) bool {
-		return parts[i].parsed.Index < parts[j].parsed.Index
-	})
+	orderParts(parts)
 	imports := make([]store.ImportMediaFilePart, len(parts))
 	for i, part := range parts {
-		imports[i] = store.ImportMediaFilePart{File: part.imported, SourceOrdinal: part.parsed.Index}
+		imports[i] = store.ImportMediaFilePart{File: part.imported, SourceOrdinal: i + 1}
 	}
 	media, files, err := s.st.ImportMediaFileParts(s.ctx, imports)
 	if err != nil {
