@@ -810,6 +810,96 @@
     "tier": "session"
   },
   {
+    "field": "partyadd",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyadvance",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyend",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partymove",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyplayback",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyremove",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyremoveparticipant",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyrestore",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyreview",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyrotatecode",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyscreendrop",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyscreenregister",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyscreenreport",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyscreenticker",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partysession",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "partystage",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "partystart",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyupdate",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "pathpicker",
     "effect": "read",
     "tier": "admin"
