@@ -23,7 +23,7 @@ func TestComposedHLSArgsGraphics(t *testing.T) {
 	if args[0] != "-v" || args[2] != "-i" || args[3] != "/lib/song.cdg" {
 		t.Fatalf("picture input must come first: %q", args)
 	}
-	if got, want := argAfter(args, "-vf"), "scale=1000:720:flags=neighbor,pad=1280:720:(ow-iw)/2:0,fps=30,tpad=stop=-1:stop_mode=clone,format=yuv420p"; got != want {
+	if got, want := argAfter(args, "-vf"), "fps=30,tpad=stop=-1:stop_mode=clone,xbr=n=4,scale=1000:720:flags=bicubic,pad=1280:720:(ow-iw)/2:0,format=yuv420p"; got != want {
 		t.Fatalf("-vf = %q\nwant %q", got, want)
 	}
 	for _, want := range [][]string{
@@ -115,8 +115,7 @@ func TestStartBackgroundComposedHLSRefusesOutsideConfinement(t *testing.T) {
 	}
 }
 
-// requireComposeCapableFFmpeg skips unless ffmpeg/ffprobe are installed with
-// the graphics decoder and the libass filter composed renditions use.
+// requireComposeCapableFFmpeg skips unless ffmpeg/ffprobe are installed.
 func requireComposeCapableFFmpeg(t *testing.T) {
 	t.Helper()
 	for _, bin := range []string{"ffmpeg", "ffprobe"} {
@@ -124,10 +123,20 @@ func requireComposeCapableFFmpeg(t *testing.T) {
 			t.Skipf("%s not installed", bin)
 		}
 	}
+}
+
+// requirePictureCapableFFmpeg skips unless ffmpeg has what the picture kind
+// needs: the graphics decoder and the xBR filter, or the libass filter.
+func requirePictureCapableFFmpeg(t *testing.T, kind string) {
+	t.Helper()
 	decoders, _ := exec.Command("ffmpeg", "-hide_banner", "-decoders").Output()
 	filters, _ := exec.Command("ffmpeg", "-hide_banner", "-filters").Output()
-	if !strings.Contains(string(decoders), "cdgraphics") || !strings.Contains(string(filters), " ass ") {
-		t.Skip("ffmpeg lacks the cdgraphics decoder or the libass filter")
+	if kind == "graphics" {
+		if !strings.Contains(string(decoders), "cdgraphics") || !strings.Contains(string(filters), " xbr ") {
+			t.Skip("ffmpeg lacks the cdgraphics decoder or the xbr filter")
+		}
+	} else if !strings.Contains(string(filters), " ass ") {
+		t.Skip("ffmpeg lacks the libass filter")
 	}
 }
 
@@ -208,6 +217,7 @@ func TestStartBackgroundComposedHLSRealEncode(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			requirePictureCapableFFmpeg(t, name)
 			dir := filepath.Join(root, "precompute:m1:fp,x;y[z]'q", strings.ReplaceAll(name, " ", "-"))
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				t.Fatal(err)
@@ -235,7 +245,7 @@ func TestStartBackgroundComposedHLSRealEncode(t *testing.T) {
 
 func TestComposedSegmentArgsStartOffsetGraphics(t *testing.T) {
 	args := composedSegmentArgs("/lib/song.mp3", "/scratch/s/composed", ComposedPicture{GraphicsPath: "/lib/song.cdg"}, 3, 4, Rendition{VideoKbps: 1500})
-	if got, want := argAfter(args, "-vf"), "scale=1000:720:flags=neighbor,pad=1280:720:(ow-iw)/2:0,fps=30,tpad=stop=-1:stop_mode=clone,trim=start=12,setpts=PTS-STARTPTS,format=yuv420p"; got != want {
+	if got, want := argAfter(args, "-vf"), "fps=30,tpad=stop=-1:stop_mode=clone,trim=start=12,setpts=PTS-STARTPTS,xbr=n=4,scale=1000:720:flags=bicubic,pad=1280:720:(ow-iw)/2:0,format=yuv420p"; got != want {
 		t.Fatalf("-vf = %q\nwant %q", got, want)
 	}
 	// The graphics input is never seeked (it is drawn incrementally); the
@@ -330,6 +340,7 @@ func TestStartHLSSegmentsComposedRealEncodeFromOffset(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			requirePictureCapableFFmpeg(t, name)
 			dir := filepath.Join(root, strings.ReplaceAll(name, " ", "-"))
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				t.Fatal(err)

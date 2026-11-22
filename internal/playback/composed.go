@@ -72,6 +72,11 @@ func (s *Service) SetPictureComposer(composer PictureComposer) {
 	s.composer = composer
 }
 
+// composedGraphicsRecipe names the graphics drawing recipe in the rendition
+// digest. Change it with any visible change to the graphics branch of the
+// composed encode (CORE-3149: the xBR upscale replaced nearest-neighbour).
+const composedGraphicsRecipe = "xbr4"
+
 func (p ComposedPicture) validate() error {
 	if (p.GraphicsPath == "") == (p.TimedText == "") {
 		return errors.New("composed picture sets exactly one of graphics or timed text")
@@ -82,7 +87,9 @@ func (p ComposedPicture) validate() error {
 // digest identifies the picture's content so an edited sidecar yields a new
 // rendition: timed text hashes its document; a graphics track hashes its path,
 // size, and modification time (reading a whole track per playbackInfo would
-// cost more than the change detection is worth).
+// cost more than the change detection is worth). The graphics hash also
+// carries composedGraphicsRecipe, so a change to how graphics are drawn
+// re-makes their renditions instead of serving the old picture.
 func (p ComposedPicture) digest() (string, error) {
 	return p.digestWithStat(os.Stat)
 }
@@ -99,7 +106,7 @@ func (p ComposedPicture) digestWithStat(stat func(string) (os.FileInfo, error)) 
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(h, "graphics\x00%s\x00%d\x00%d", p.GraphicsPath, info.Size(), info.ModTime().UnixNano())
+		fmt.Fprintf(h, "graphics\x00%s\x00%s\x00%d\x00%d", composedGraphicsRecipe, p.GraphicsPath, info.Size(), info.ModTime().UnixNano())
 	}
 	return hex.EncodeToString(h.Sum(nil))[:composedDigestLen], nil
 }
