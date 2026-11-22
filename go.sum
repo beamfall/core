@@ -14,8 +14,8 @@ github.com/beamfall/plugin-photos v0.1.16 h1:5aZATupSzWTMUVn1rWpDaUtsV2uybT2hwPs
 github.com/beamfall/plugin-photos v0.1.16/go.mod h1:hbfOyuH/5W6DE2wAiW010MACKSm+necWdx7IuCPV8pU=
 github.com/beamfall/plugin-podcasts v0.1.16 h1:ZHj2kdNHPYmBNU9r6Ii+rptoop5yBtKfMS//ST/+FbY=
 github.com/beamfall/plugin-podcasts v0.1.16/go.mod h1:dQtplBQROEPZZooxhPtNoIFU5FAmjl1iXsJ2+OM+GWo=
-github.com/beamfall/plugin-sdk v0.4.11 h1:goG4XWqUDQQrSveiUzvHr/TIoiLHVI2Q4J2IuALS8oA=
-github.com/beamfall/plugin-sdk v0.4.11/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
+github.com/beamfall/plugin-sdk v0.4.12 h1:/2ZI9BjSNqsuNjp1YCR90u7n4FRtkwK1z4fGQbyWRKQ=
+github.com/beamfall/plugin-sdk v0.4.12/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/brutella/dnssd v1.2.14 h1:qLpTnRTm5peo2jA30hqMIbCuWn8x3sFg3e9o9ODOobw=
