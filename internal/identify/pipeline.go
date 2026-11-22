@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/beamfall/core/internal/plugin"
+	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -126,11 +127,11 @@ func (s *Service) AutoIdentify(ctx context.Context, mediaID store.MediaID, plugi
 	if !ok {
 		return skipped(SkipNoBundle), nil
 	}
-	scraper, ok := s.searchableScraperForClass(pluginID, bundle, parsed.Class)
+	scraper, ok := s.searchableScraperForClass(pluginID, bundle, parsed.Class, parsed.Hints)
 	if !ok {
 		return skipped(SkipNoScraper), nil
 	}
-	candidates, err := s.search(ctx, pluginID, scraper.ID, parsed.Title, mediaID, parsed.Year)
+	candidates, err := s.search(ctx, pluginID, scraper.ID, parsed.Title, mediaID, parsed.Year, parsed.Hints)
 	if err != nil {
 		return AutoOutcome{}, err
 	}
@@ -238,15 +239,17 @@ func (s *Service) bestCandidate(pluginID string, candidates []Candidate, parsed 
 // SearchTemplate → CandidateIDPath chain). When parsed.Class is empty (the parser
 // could not classify), the sole searchable scraper is used if there is exactly
 // one — an unambiguous bundle still auto-identifies; an ambiguous one defers to
-// the manual flow rather than guess a class.
-func (s *Service) searchableScraperForClass(pluginID string, bundle plugin.Bundle, class string) (plugin.ScraperSpec, bool) {
+// the manual flow rather than guess a class. A scraper whose
+// RequiredSearchHints the parsed hints do not all supply is skipped for this
+// item, so a later scraper for the class (a broader search) can serve it.
+func (s *Service) searchableScraperForClass(pluginID string, bundle plugin.Bundle, class string, hints map[string]string) (plugin.ScraperSpec, bool) {
 	class = strings.TrimSpace(class)
 	var (
 		soleSearchable  plugin.ScraperSpec
 		searchableCount int
 	)
 	for _, scraper := range bundle.Scrapers {
-		if scraper.SearchTemplate == "" || scraper.CandidateIDPath == "" {
+		if scraper.SearchTemplate == "" || scraper.CandidateIDPath == "" || !scrape.RequiredSearchHintsPresent(scraper, hints) {
 			continue
 		}
 		if scraper.OptionalAuth && !s.credentialAvailable(scraper.AuthRef) {

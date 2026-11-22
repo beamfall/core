@@ -172,7 +172,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 			return err
 		}
 	}
-	if err := s.retryAutoIdentify(path, media.ID, stored.ContentFingerprint, parsed); err != nil {
+	if err := s.retryAutoIdentify(task, media.ID, stored.ContentFingerprint, parsed); err != nil {
 		return err
 	}
 	s.noteVersion(versionKey, path, media.ID)
@@ -190,7 +190,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 // the Unmatched queue. That is the state a failed attempt leaves (a missing
 // provider credential, a network error), and without this a rescan's fast path
 // would never revisit it. Pinned matches are left alone inside AutoIdentify.
-func (s *scanWalkState) retryAutoIdentify(path string, mediaID store.MediaID, fingerprint string, parsed ParsedMedia) error {
+func (s *scanWalkState) retryAutoIdentify(task *workerTask, mediaID store.MediaID, fingerprint string, parsed ParsedMedia) error {
 	if s.identifier == nil || s.libraryPluginID == "" {
 		return nil
 	}
@@ -203,10 +203,31 @@ func (s *scanWalkState) retryAutoIdentify(path string, mediaID store.MediaID, fi
 		return err
 	}
 	if queued {
-		s.noteFile(path, func(t *fileTally) { t.unmatched = true })
+		s.noteFile(task.path, func(t *fileTally) { t.unmatched = true })
 		return nil
 	}
-	s.autoIdentify(path, mediaID, fingerprint, parsed, "scan: auto-identify retry failed")
+	// A fast-path retry can run after a restart, when only the file still
+	// holds the embedded tags. Probe only Media eligible for a retry.
+	if len(s.tagHints) > 0 && s.parser != nil && s.prober != nil && !task.probe.succeeded &&
+		s.directoryPreflights[filepath.Dir(task.path)] == nil && !imageClassForPath(task.path) {
+		if err := s.acquireBudget(s.ctx); err != nil {
+			return err
+		}
+		task.probeFile(s.ctx, s.prober)
+		s.releaseBudget()
+		if task.probe.succeeded {
+			probe := ParseProbe{
+				HasVideo:        task.probe.hasVideo,
+				HasAudio:        task.probe.hasAudio,
+				DurationSeconds: task.probe.value.DurationSeconds,
+				Tags:            task.probe.value.Tags,
+			}
+			if reparsed, ok, _ := s.parseFilename(task.path, probe); ok {
+				parsed.Hints = reparsed.Hints
+			}
+		}
+	}
+	s.autoIdentify(task.path, mediaID, fingerprint, parsed, "scan: auto-identify retry failed")
 	return nil
 }
 

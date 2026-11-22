@@ -3289,6 +3289,26 @@ func (t parserMediaTitles) ParsedMediaOrdinal(ctx context.Context, mediaID store
 	return parsed.Sequence, parsed.Index, nil
 }
 
+// ParsedMediaHints is the plugin parser's named search hints for the Media
+// item's primary file, read the same unfiltered way as ParsedMediaTitle. The
+// probe is empty (embedded tags are not stored), so only hints the parser
+// derives from the path are returned (CORE-2333).
+func (t parserMediaTitles) ParsedMediaHints(ctx context.Context, mediaID store.MediaID, pluginID string) (map[string]string, error) {
+	parser, ok := t.parsers[pluginID]
+	if !ok || parser == nil {
+		return nil, nil
+	}
+	file, err := t.store.PrimaryMediaFile(ctx, mediaID, metadataLibraryFilter)
+	if err != nil {
+		return nil, err
+	}
+	parsed, ok := parser.Parse(file.Path, scanpkg.ParseProbe{})
+	if !ok {
+		return nil, nil
+	}
+	return scanpkg.SearchHints(parsed, nil, nil), nil
+}
+
 // scanIdentifier adapts identify.Service to scan.Identifier (PIPE-1, ADR-0003
 // §4). It is the composition-root bridge that lets scan trigger auto-identify
 // without importing internal/identify (arch §4 forbids the edge; identify also
@@ -3326,6 +3346,7 @@ func (a *scanIdentifier) AutoIdentifyOutcome(ctx context.Context, mediaID store.
 		Sequence: parsed.Sequence,
 		Index:    parsed.Index,
 		IndexEnd: parsed.IndexEnd,
+		Hints:    parsed.Hints,
 	})
 	return scanIdentifyOutcome(outcome, false), err
 }
@@ -3413,6 +3434,17 @@ func (a *scanIdentifier) PluginMediaClasses(pluginID string) []store.MediaClass 
 		classes = append(classes, store.MediaClass(class))
 	}
 	return classes
+}
+
+// PluginEmbeddedTagHints reports the active bundle's embedded-tag-to-hint
+// map, so the scan fills search hints the parser left empty from the file's
+// embedded tags (CORE-2333). An inactive or unknown Plugin declares none.
+func (a *scanIdentifier) PluginEmbeddedTagHints(pluginID string) map[string]string {
+	bundle, ok := activeBundle(a.registry, pluginID)
+	if !ok {
+		return nil
+	}
+	return bundle.EmbeddedTagHints
 }
 
 type validatingLocalExtractor struct {

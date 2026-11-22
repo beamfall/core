@@ -139,7 +139,17 @@ func (d *contextualDirectoryPreflight) skipsStillImage(path string) bool {
 	return d != nil && d.audioParts && imageClassForPath(path) && !d.accepted[path]
 }
 
+// parseFilename parses path with probe and fills the result's named search
+// hints from the probe's embedded tags (SearchHints).
 func (s *scanWalkState) parseFilename(path string, probe ParseProbe) (ParsedMedia, bool, bool) {
+	parsed, ok, refused := s.parseFilenameOnly(path, probe)
+	if ok {
+		parsed.Hints = SearchHints(parsed, probe.Tags, s.tagHints)
+	}
+	return parsed, ok, refused
+}
+
+func (s *scanWalkState) parseFilenameOnly(path string, probe ParseProbe) (ParsedMedia, bool, bool) {
 	legacy, legacyOK := s.parser.Parse(path, probe)
 	contextual, ok := s.parser.(ContextFilenameParser)
 	if !ok {
