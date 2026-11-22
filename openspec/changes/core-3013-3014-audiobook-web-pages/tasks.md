@@ -1,0 +1,7 @@
+- [ ] Browse source attribute filter, validation, audiobook Person rule, store test
+- [ ] Book page: series position, Resume with time left, chapter list
+- [ ] Person page role groups; series page sequence grid without a play queue
+- [ ] Manual Next in series on the book page and the player finish state
+- [ ] Plugin home "Next in Series" shelf (next-up), tag and repin
+- [ ] Next-up ordering test with a half-step sequence
+- [ ] Web unit test for the relation helpers
