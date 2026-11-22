@@ -61,43 +61,44 @@ func (e *Engine) ListChildren(ctx context.Context, spec plugin.ScraperSpec, leve
 	if err != nil {
 		return nil, err
 	}
-	listing := spec.Children[level-1]
 	var parent *ChildRow
 	if level > 1 {
-		matches, err := e.findChildParents(ctx, spec, level-2, candidateID, *parentKey, config)
+		parent, err = e.findChildParent(ctx, spec, level-2, candidateID, *parentKey, config)
 		if err != nil {
 			return nil, err
 		}
-		if len(matches) == 0 {
-			return nil, ErrChildParentRow
-		}
-		parents := openableParents(listing, matches)
-		if len(parents) == 0 {
-			return nil, ErrChildParentAmbig
-		}
-		parent = &parents[0]
 	}
 	return e.childRows(ctx, spec, spec.Children[level-1], candidateID, parent, config)
 }
 
-// findChildParents starts at the root even after a restart or cache eviction.
+// findChildParent starts at the root even after a restart or cache eviction.
 // The wire key carries no ancestor, so it walks level by level, descending only
-// through rows a read could accept as parentKey, and returns every row at the
-// target level whose key matches. Target-level listings are filtered as they
-// arrive; the SDK allows at most three levels, so the only rows retained in
-// full are those of the single root listing.
-func (e *Engine) findChildParents(ctx context.Context, spec plugin.ScraperSpec, target int, candidateID, parentKey string, config map[string]string) ([]ChildRow, error) {
+// through rows a read could accept as parentKey. At the target level it keeps
+// one matching row and refuses the key when another match would open a
+// different listing. The SDK allows at most three levels, so only the single
+// root listing is ever retained in full.
+func (e *Engine) findChildParent(ctx context.Context, spec plugin.ScraperSpec, target int, candidateID, parentKey string, config map[string]string) (*ChildRow, error) {
+	opens := spec.Children[target+1]
+	var match *ChildRow
+	ambiguous := false
+	consider := func(rows []ChildRow) {
+		for _, row := range rows {
+			switch {
+			case row.Key != parentKey:
+			case match == nil:
+				match = &row
+			case !slices.Equal(childParentPairs(opens, match), childParentPairs(opens, &row)):
+				ambiguous = true
+			}
+		}
+	}
 	rows, err := e.childRows(ctx, spec, spec.Children[0], candidateID, nil, config)
 	if err != nil {
 		return nil, err
 	}
-	keep := func(rows []ChildRow, level int) []ChildRow {
-		if level != target {
-			return rows
-		}
-		return slices.DeleteFunc(rows, func(row ChildRow) bool { return row.Key != parentKey })
+	if target == 0 {
+		consider(rows)
 	}
-	rows = keep(rows, 0)
 	for current := 0; current < target; current++ {
 		next := spec.Children[current+1]
 		var deeper []ChildRow
@@ -109,11 +110,21 @@ func (e *Engine) findChildParents(ctx context.Context, spec plugin.ScraperSpec, 
 			if err != nil {
 				return nil, err
 			}
-			deeper = append(deeper, keep(children, current+1)...)
+			if current+1 == target {
+				consider(children)
+			} else {
+				deeper = append(deeper, children...)
+			}
 		}
 		rows = deeper
 	}
-	return rows, nil
+	switch {
+	case match == nil:
+		return nil, ErrChildParentRow
+	case ambiguous:
+		return nil, ErrChildParentAmbig
+	}
+	return match, nil
 }
 
 // openableParents returns, in first-seen order, one row for each key a read of
