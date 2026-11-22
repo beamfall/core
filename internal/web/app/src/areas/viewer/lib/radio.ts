@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { graphql } from "@/lib/api";
+import { getIdentityEpochSignal, graphql } from "@/lib/api";
 
 // Radio (CORE-2772): a Station started from one Media or one Entity fills the
 // Profile's Play Queue with related Media and keeps topping it up while it
@@ -7,6 +7,10 @@ import { graphql } from "@/lib/api";
 // picked; this module starts a Station, remembers it for the Profile that
 // started it, and adds more when the queue runs low. The queue itself stays the
 // server's Play Queue, so the player walks it the usual way.
+//
+// The Station lives in memory only and belongs to the identity epoch that
+// started it: a relock, Reveal change, Profile switch or reload drops it, so
+// no title or reason outlives the access that produced it.
 
 /** What a Station starts from: one Media item, or one Entity (a person, container or category). */
 export type RadioSeedKind = "media" | "entity";
@@ -15,6 +19,10 @@ export type RadioSeedKind = "media" | "entity";
 export interface RadioRules {
   decades?: number[];
   anyEntityIDs?: string[];
+}
+
+interface ServerRules extends RadioRules {
+  excludeQueued?: boolean;
 }
 
 export interface RadioStation {
@@ -40,12 +48,13 @@ const GENERATE = `query RadioGenerate($seedKind: String!, $seedID: String!, $see
     explanation
   }
 }`;
-const START = `mutation RadioStart($seedKind: String!, $seedID: String!, $seed: String, $rulesJSON: String, $confirmReplace: Boolean) {
-  stationStart(seedKind: $seedKind, seedID: $seedID, seed: $seed, rulesJSON: $rulesJSON, confirmReplace: $confirmReplace) { id }
+const START = `mutation RadioStart($seedKind: String!, $seedID: String!, $seed: String, $rulesJSON: String, $confirmReplace: Boolean, $expectedProfileID: String) {
+  stationStart(seedKind: $seedKind, seedID: $seedID, seed: $seed, rulesJSON: $rulesJSON, confirmReplace: $confirmReplace, expectedProfileID: $expectedProfileID) { id }
 }`;
-const ADD = `mutation RadioAdd($mediaID: String!) { queueAdd(mediaID: $mediaID) { id } }`;
+const ADD = `mutation RadioAdd($mediaID: String!, $expectedProfileID: String) {
+  queueAdd(mediaID: $mediaID, expectedProfileID: $expectedProfileID) { id }
+}`;
 
-const STORAGE_KEY = "beamfall.radio";
 /** At most this many Media are added per top-up, so one top-up stays a few requests. */
 export const RADIO_TOP_UP = 10;
 /** A top-up starts when this few playable items remain after the current one. */
@@ -55,14 +64,17 @@ function randomSeed(): string {
   return Math.random().toString(36).slice(2);
 }
 
-function rulesJSON(rules: RadioRules): string {
-  const cleaned: RadioRules = {};
+function rulesJSON(rules: ServerRules): string {
+  const cleaned: ServerRules = {};
   if (rules.decades?.length) cleaned.decades = rules.decades;
   if (rules.anyEntityIDs?.length) cleaned.anyEntityIDs = rules.anyEntityIDs;
+  if (rules.excludeQueued) cleaned.excludeQueued = true;
   return JSON.stringify(cleaned);
 }
 
-async function generate(station: Omit<RadioStation, "reasons" | "profileID">, seed: string) {
+type StationSeed = Pick<RadioStation, "seedKind" | "seedID"> & { rules: ServerRules };
+
+async function generate(station: StationSeed, seed: string) {
   const data = await graphql<{ stationGenerate: { candidates: Candidate[]; explanation: string } }>(
     GENERATE,
     {
@@ -75,33 +87,44 @@ async function generate(station: Omit<RadioStation, "reasons" | "profileID">, se
   return data.stationGenerate;
 }
 
-// --- The active Station, one per browser tab -------------------------------
+// --- The active Station, one per browser tab, in memory only ---------------
 
-let active: RadioStation | null = readStored();
+interface Active {
+  station: RadioStation;
+  epoch: AbortSignal | undefined;
+}
+
+let active: Active | null = null;
+// Bumped on every start, stop and epoch end; a top-up that sees it change stops
+// before its next queue write.
+let generation = 0;
 const listeners = new Set<() => void>();
 
-function readStored(): RadioStation | null {
-  try {
-    const raw = globalThis.sessionStorage?.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as RadioStation;
-    return parsed && typeof parsed.profileID === "string" && typeof parsed.seedID === "string"
-      ? parsed
-      : null;
-  } catch {
-    return null;
-  }
+function notify() {
+  for (const listener of listeners) listener();
 }
 
 function setActive(next: RadioStation | null) {
-  active = next;
-  try {
-    if (next) globalThis.sessionStorage?.setItem(STORAGE_KEY, JSON.stringify(next));
-    else globalThis.sessionStorage?.removeItem(STORAGE_KEY);
-  } catch {
-    // Storage is a convenience: the Station still runs for this page's life.
+  generation++;
+  if (!next) {
+    active = null;
+  } else {
+    const epoch = getIdentityEpochSignal();
+    const mine = generation;
+    active = { station: next, epoch };
+    // The identity that started the Station ended: forget it, fail closed.
+    epoch?.addEventListener("abort", () => generation === mine && setActive(null), {
+      once: true,
+    });
   }
-  for (const listener of listeners) listener();
+  notify();
+}
+
+function current(): RadioStation | null {
+  if (!active) return null;
+  const epoch = getIdentityEpochSignal();
+  if (active.epoch !== epoch || epoch?.aborted) return null;
+  return active.station;
 }
 
 function subscribe(listener: () => void) {
@@ -111,15 +134,12 @@ function subscribe(listener: () => void) {
 
 /** The Station playing for this Profile, or null. */
 export function activeRadio(profileID: string | null | undefined): RadioStation | null {
-  return profileID && active?.profileID === profileID ? active : null;
+  const station = current();
+  return profileID && station?.profileID === profileID ? station : null;
 }
 
 export function useActiveRadio(profileID: string | null | undefined): RadioStation | null {
-  const station = useSyncExternalStore(
-    subscribe,
-    () => active,
-    () => null,
-  );
+  const station = useSyncExternalStore(subscribe, current, () => null);
   return profileID && station?.profileID === profileID ? station : null;
 }
 
@@ -150,25 +170,30 @@ export async function startRadio(input: {
 }): Promise<RadioStartResult> {
   const station = { seedKind: input.seedKind, seedID: input.seedID, rules: input.rules ?? {} };
   // The same seed makes the preview and the started window identical, so the
-  // preview's reasons describe exactly what was queued.
+  // preview's reasons describe what was queued; the server's reply says which.
   const seed = randomSeed();
   const preview = await generate(station, seed);
   if (!preview.candidates.length) return { status: "empty", message: preview.explanation };
+  let queued: { id: string }[];
   try {
-    await graphql(START, {
+    const data = await graphql<{ stationStart: { id: string }[] }>(START, {
       seedKind: station.seedKind,
       seedID: station.seedID,
       seed,
       rulesJSON: rulesJSON(station.rules),
       confirmReplace: input.confirmReplace ?? false,
+      expectedProfileID: input.profileID,
     });
+    queued = data.stationStart ?? [];
   } catch (error) {
     if (error instanceof Error && error.message.includes("confirmReplace")) {
       return { status: "needs-confirm" };
     }
     throw error;
   }
-  const reasons = Object.fromEntries(preview.candidates.map((c) => [c.mediaID, c.explanation]));
+  if (!queued.length) return { status: "empty", message: preview.explanation };
+  const why = new Map(preview.candidates.map((c) => [c.mediaID, c.explanation]));
+  const reasons = Object.fromEntries(queued.map(({ id }) => [id, why.get(id) ?? ""]));
   const started: RadioStation = {
     ...station,
     profileID: input.profileID,
@@ -176,16 +201,23 @@ export async function startRadio(input: {
     reasons,
   };
   setActive(started);
-  return { status: "started", firstMediaID: preview.candidates[0].mediaID, station: started };
+  return { status: "started", firstMediaID: queued[0].id, station: started };
 }
 
 /**
  * Adds up to RADIO_TOP_UP related Media the queue does not hold yet, and
- * returns how many were added. A fresh seed reshuffles the related set, so
- * each top-up reaches further than the window the Station started with.
+ * returns how many were added. The server leaves out what is already queued
+ * before it samples, so each top-up reaches further than the last. A stop,
+ * retune or identity change while this runs stops it before its next write.
  */
 export async function topUpRadio(station: RadioStation, queued: ReadonlySet<string>) {
-  const { candidates } = await generate(station, randomSeed());
+  const mine = generation;
+  const live = () => generation === mine && current() === station;
+  if (!live()) return 0;
+  const { candidates } = await generate(
+    { ...station, rules: { ...station.rules, excludeQueued: true } },
+    randomSeed(),
+  );
   // Media the Station already queued count as queued even before the queue is read again.
   const fresh = candidates
     .filter((c) => !queued.has(c.mediaID) && !(c.mediaID in station.reasons))
@@ -193,8 +225,9 @@ export async function topUpRadio(station: RadioStation, queued: ReadonlySet<stri
   const reasons = { ...station.reasons };
   let added = 0;
   for (const candidate of fresh) {
+    if (!live()) break;
     try {
-      await graphql(ADD, { mediaID: candidate.mediaID });
+      await graphql(ADD, { mediaID: candidate.mediaID, expectedProfileID: station.profileID });
     } catch {
       // A locked or removed item is skipped; the rest still join the queue.
       continue;
@@ -202,7 +235,10 @@ export async function topUpRadio(station: RadioStation, queued: ReadonlySet<stri
     reasons[candidate.mediaID] = candidate.explanation;
     added++;
   }
-  // Only the Station that asked keeps the reasons: a Station started meanwhile replaced it.
-  if (added && active === station) setActive({ ...station, reasons });
+  if (added && live() && active) {
+    // The same Station, now naming why its new items were picked.
+    active = { ...active, station: { ...station, reasons } };
+    notify();
+  }
   return added;
 }

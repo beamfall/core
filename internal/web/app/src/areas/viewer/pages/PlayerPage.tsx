@@ -268,7 +268,9 @@ function FeaturePlayer({
     toppingUp.current = true;
     topUpRadio(station, new Set(queueRows.map((row) => row.id)))
       .then((added) => {
-        if (added) void refreshMusicQueue(true);
+        // Joins a read already in flight rather than aborting it: the ended
+        // handler may be waiting on that read to advance.
+        if (added) void refreshMusicQueue();
       })
       .catch(() => {
         // The queue still plays what it holds; the next item change tries again.
@@ -1144,7 +1146,11 @@ function FeaturePlayer({
             {!docked && queueFailureNotice}
             {station && showAudioStage && !docked && (
               <div className="absolute left-4 top-4 z-10">
-                <RadioTuning station={station} credits={stage.credits} />
+                <RadioTuning
+                  station={station}
+                  credits={stage.credits}
+                  queuedIDs={queueRows?.map((row) => row.id)}
+                />
               </div>
             )}
             {state.waitingForNetwork ? (

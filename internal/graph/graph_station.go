@@ -99,7 +99,13 @@ func (h *Handler) generateStation(ctx context.Context, scope auth.Scope, seed st
 	//    each constrained to the sealed-free music filter: the seed's own Media,
 	//    then Media sharing an Entity with them (CORE-2772). Candidates are full
 	//    Media rows so the hard filter + ranking can read real fields.
-	pool, err := h.collectStationCandidates(ctx, scope, filter, seed, rules, rankSeed)
+	//    Media already queued are left out when the rules ask, before any
+	//    sampling, so each top-up reaches past the last one.
+	queued, err := h.stationQueued(ctx, scope, filter, rules)
+	if err != nil {
+		return nil, "", err
+	}
+	pool, err := h.collectStationCandidates(ctx, scope, filter, seed, rules, queued, rankSeed)
 	if err != nil {
 		return nil, "", err
 	}
@@ -110,7 +116,7 @@ func (h *Handler) generateStation(ctx context.Context, scope auth.Scope, seed st
 	//    enforced upstream by sealedFreeStationFilter + the per-read LibraryFilter.)
 	candidates := make([]store.Media, 0, len(pool.candidates))
 	for _, m := range pool.candidates {
-		if rules.admits(m, pool.links[m.ID]) {
+		if !queued[m.ID] && rules.admits(m, pool.links[m.ID]) {
 			candidates = append(candidates, m)
 		}
 	}
@@ -135,6 +141,23 @@ func (h *Handler) generateStation(ctx context.Context, scope auth.Scope, seed st
 		}
 	}
 	return out, stationScarcityExplanation(locale, len(out)), nil
+}
+
+// stationQueued returns the Media in the acting Profile's Play Queue when the
+// rules exclude them, and nothing otherwise.
+func (h *Handler) stationQueued(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, rules stationRules) (map[store.MediaID]bool, error) {
+	queued := map[store.MediaID]bool{}
+	if !rules.ExcludeQueued {
+		return queued, nil
+	}
+	q, err := h.store.PlayQueue(ctx, scope.ProfileID, filter)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range q.Entries {
+		queued[entry.Item.ID] = true
+	}
+	return queued, nil
 }
 
 // sealedFreeStationFilter returns a LibraryFilter restricted to the caller's
@@ -166,12 +189,16 @@ func (h *Handler) sealedFreeStationFilter(ctx context.Context, scope auth.Scope)
 	}
 	// AllLibraries is deliberately false: the Station only ever sees the explicit
 	// sealed-free music set, never the AllLibraries sentinel. Certification bounds
-	// from the caller's scope are preserved.
+	// from the caller's scope are preserved and enforced as playback enforces
+	// them: a locked item is never picked, and an item the managed Profile was
+	// granted is (CORE-2772).
 	return store.LibraryFilter{
-		AllowedIDs:    allowed,
-		AllLibraries:  false,
-		Revealed:      scope.Revealed,
-		Certification: scope.Certification,
+		AllowedIDs:      allowed,
+		AllLibraries:    false,
+		Revealed:        scope.Revealed,
+		Certification:   scope.Certification,
+		GrantedMediaIDs: scope.GrantedMediaIDs,
+		PlaybackGate:    true,
 	}, nil
 }
 
@@ -188,6 +215,10 @@ const (
 	stationExpandEntities = 12
 	// stationPerEntityCap bounds how many Media one expanded Entity adds.
 	stationPerEntityCap = 100
+	// stationEntityReadPage is the Source's largest page; stationEntityReadCap
+	// bounds how many of one Entity's Media are read before sampling.
+	stationEntityReadPage = 200
+	stationEntityReadCap  = 2000
 	// stationSeedEntityWeight keeps an Entity seed at the top of its own
 	// profile, so its Media are always expanded and ranked strongly.
 	stationSeedEntityWeight = 10
@@ -213,7 +244,7 @@ type stationPool struct {
 // Entity a rule requires. Every id is resolved through the sealed-free music
 // filter so no Sealed/hidden/non-music Media can enter the pool. Duplicate ids
 // are collapsed keeping first appearance.
-func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, seed stationSeed, rules stationRules, rankSeed uint64) (stationPool, error) {
+func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, seed stationSeed, rules stationRules, queued map[store.MediaID]bool, rankSeed uint64) (stationPool, error) {
 	pool := stationPool{seed: seed, seedMedia: map[store.MediaID]bool{}, profile: map[store.EntityID]float64{}, archetypes: map[store.EntityID]string{}}
 	var seedIDs []store.MediaID
 	switch seed.kind {
@@ -227,7 +258,7 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 		}
 		seedIDs = append(seedIDs, media.ID)
 	case "artist", "album", "genre", "entity":
-		items, err := h.store.MediaForEntity(ctx, store.EntityID(seed.id), filter)
+		items, err := h.stationEntityMedia(ctx, scope, filter, store.EntityID(seed.id))
 		if err != nil {
 			return pool, clientError("unknown station seed")
 		}
@@ -293,11 +324,15 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 		pool.profile[pool.seedEntity] += stationSeedEntityWeight
 	}
 
-	// Expand the strongest Entities, then any Entity a rule requires (a genre
-	// rule must find that genre's Media even when the seed never touched it).
+	// Expand the strongest Entities. A rule naming Entities expands only those:
+	// every candidate must be linked to one, and a genre rule must find that
+	// genre's Media even when the seed never touched it.
 	expand := strongestStationEntities(pool.profile, stationExpandEntities)
-	for _, id := range rules.AnyEntityIDs {
-		expand = append(expand, store.EntityID(id))
+	if len(rules.AnyEntityIDs) > 0 {
+		expand = expand[:0]
+		for _, id := range rules.AnyEntityIDs {
+			expand = append(expand, store.EntityID(id))
+		}
 	}
 	ids := append([]store.MediaID{}, visibleSeed...)
 	expanded := map[store.EntityID]bool{}
@@ -306,15 +341,19 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 			continue
 		}
 		expanded[entityID] = true
-		items, err := h.store.MediaForEntity(ctx, entityID, filter)
+		items, err := h.stationEntityMedia(ctx, scope, filter, entityID)
 		if err != nil {
 			// An Entity this scope cannot see adds nothing; it never errors the
 			// Station, so a rule naming one is not an oracle either.
 			continue
 		}
-		related := make([]store.MediaID, len(items))
-		for i, it := range items {
-			related[i] = it.ID
+		// The year and length rules and the queued exclusion apply before
+		// sampling, so a large Entity's few matching Media are never sampled away.
+		related := make([]store.MediaID, 0, len(items))
+		for _, it := range items {
+			if !queued[it.ID] && rules.admitsFields(it.Year, it.DurationSeconds) {
+				related = append(related, it.ID)
+			}
 		}
 		ids = append(ids, sampleStationIDs(related, stationPerEntityCap, rankSeed)...)
 	}
@@ -352,6 +391,32 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 		}
 	}
 	return pool, nil
+}
+
+// stationEntityMedia reads an Entity's Media through the entity-media Source
+// with the acting Profile, the read Related Media and browse take, so Mute
+// suppression and the Library, Reveal and certification filter apply as they do
+// there. Extras are left out, and at most stationEntityReadCap Media are read.
+func (h *Handler) stationEntityMedia(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, entityID store.EntityID) ([]store.SourceItem, error) {
+	var out []store.SourceItem
+	for len(out) < stationEntityReadCap {
+		page, err := h.store.SourceItems(ctx, filter, store.SourceQuery{
+			Kind:          "entity-media",
+			EntityID:      entityID,
+			Limit:         stationEntityReadPage,
+			Offset:        len(out),
+			ProfileID:     scope.ProfileID,
+			ExcludeExtras: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page...)
+		if len(page) < stationEntityReadPage {
+			break
+		}
+	}
+	return out, nil
 }
 
 // stationArchetypeLookup maps an Entity kind to its plugin-declared archetype
@@ -578,30 +643,38 @@ type stationRules struct {
 	MaxDurationSeconds int      `json:"maxDurationSeconds"`
 	Decades            []int    `json:"decades"`
 	AnyEntityIDs       []string `json:"anyEntityIDs"`
+	// ExcludeQueued drops Media already in the acting Profile's Play Queue, so
+	// a top-up reaches past what the Station already queued.
+	ExcludeQueued bool `json:"excludeQueued"`
 }
 
 // admits reports whether a Media, with its Entity links, passes every hard
 // filter. An item it rejects is removed from the candidate set before ranking,
 // so it can never reach the window or an explanation.
 func (r stationRules) admits(m store.Media, links []store.MediaEntityLink) bool {
-	if len(r.Decades) > 0 && (m.Year == 0 || !slices.Contains(r.Decades, m.Year/10*10)) {
-		return false
-	}
 	if len(r.AnyEntityIDs) > 0 && !slices.ContainsFunc(links, func(link store.MediaEntityLink) bool {
 		return slices.Contains(r.AnyEntityIDs, string(link.EntityID))
 	}) {
 		return false
 	}
-	if r.MinYear > 0 && (m.Year == 0 || m.Year < r.MinYear) {
+	return r.admitsFields(m.Year, m.DurationSeconds)
+}
+
+// admitsFields applies the rules that read only a Media's year and length.
+func (r stationRules) admitsFields(year, durationSeconds int) bool {
+	if len(r.Decades) > 0 && (year == 0 || !slices.Contains(r.Decades, year/10*10)) {
 		return false
 	}
-	if r.MaxYear > 0 && m.Year > r.MaxYear {
+	if r.MinYear > 0 && (year == 0 || year < r.MinYear) {
 		return false
 	}
-	if r.MinDurationSeconds > 0 && m.DurationSeconds < r.MinDurationSeconds {
+	if r.MaxYear > 0 && year > r.MaxYear {
 		return false
 	}
-	if r.MaxDurationSeconds > 0 && m.DurationSeconds > r.MaxDurationSeconds {
+	if r.MinDurationSeconds > 0 && durationSeconds < r.MinDurationSeconds {
+		return false
+	}
+	if r.MaxDurationSeconds > 0 && durationSeconds > r.MaxDurationSeconds {
 		return false
 	}
 	return true

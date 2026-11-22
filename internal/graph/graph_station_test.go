@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -545,5 +546,149 @@ func TestStationDecadeAndEntityRules(t *testing.T) {
 		if strings.Contains(c.Explanation, "Tunes") {
 			t.Fatalf("explanation names a Library: %q", c.Explanation)
 		}
+	}
+}
+
+// importStationTracks adds n tracks of the given year to the fixture's music
+// Library, each credited to entityID.
+func importStationTracks(t *testing.T, st *store.Store, fx musicFixture, entityID store.EntityID, prefix string, n, year int) []store.MediaID {
+	t.Helper()
+	ctx := context.Background()
+	ids := make([]store.MediaID, 0, n)
+	for i := range n {
+		name := fmt.Sprintf("%s-%03d", prefix, i)
+		m, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: fx.libraryID, Path: "/music/" + name + ".flac", Title: name, Container: "flac", Codec: "flac",
+			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + name, DurationSecondsHint: 200, Year: year,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: entityID, Name: "appears-on", ToMediaID: m.ID}); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, m.ID)
+	}
+	return ids
+}
+
+// Review finding P1: a Station never picks an item the Profile's
+// certification ceiling locks, but does pick one the Profile was granted.
+func TestStationHonoursLockedAndGranted(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedStationRelatedFixture(t, st)
+	ctx := context.Background()
+	for id, rating := range map[store.MediaID]string{fx.trackA: "low", fx.trackB: "high", fx.trackC: "high"} {
+		if err := st.SetMediaFields(ctx, id, []store.MediaField{{Name: "certification", Type: store.EntityFieldText, Text: rating}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scope := defaultScope()
+	scope.Certification = []store.CertificationConstraint{{PluginID: stationPluginID, Allowed: []string{"low"}, Locked: true}}
+	scope.GrantedMediaIDs = []store.MediaID{fx.trackC}
+	got, _, err := h.generateStation(ctx, scope, stationSeed{kind: "media", id: string(fx.trackA)}, stationRules{}, stationTuning{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidatesContain(got, string(fx.trackB)) {
+		t.Fatalf("locked trackB entered the station: %v", candidateIDs(got))
+	}
+	if !candidatesContain(got, string(fx.trackA)) || !candidatesContain(got, string(fx.trackC)) {
+		t.Fatalf("station = %v, want the allowed trackA and the granted trackC", candidateIDs(got))
+	}
+}
+
+// Review finding P1: expansion honours the Profile's Mutes, as the related-media
+// read does.
+func TestStationExpansionLeavesOutMutedMedia(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedStationRelatedFixture(t, st)
+	ctx := context.Background()
+	disliked := store.Entity{ID: "entity-disliked", LibraryID: fx.libraryID, Kind: "person", Title: "Disliked"}
+	if err := st.UpsertEntity(ctx, disliked); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: disliked.ID, Name: "appears-on", ToMediaID: fx.trackC}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetMute(ctx, "profile-default", store.MuteKindEntity, string(disliked.ID), false, true); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "media", id: string(fx.trackA)}, stationRules{}, stationTuning{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidatesContain(got, string(fx.trackC)) {
+		t.Fatalf("muted trackC entered the station: %v", candidateIDs(got))
+	}
+	if !candidatesContain(got, string(fx.trackB)) {
+		t.Fatalf("station = %v, want trackB still reached", candidateIDs(got))
+	}
+}
+
+// Review finding P2: a decade rule filters an Entity's Media before sampling, so
+// the one matching track among hundreds is always found.
+func TestStationDecadeFiltersBeforeSampling(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	importStationTracks(t, st, fx, fx.artistID, "later", 250, 2005)
+	match := importStationTracks(t, st, fx, fx.artistID, "eighties", 1, 1984)[0]
+	rules, err := parseStationRules(`{"decades":[1980]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for seed := uint64(1); seed <= 5; seed++ {
+		got, _, err := h.generateStation(context.Background(), defaultScope(), stationSeed{kind: "media", id: string(fx.trackA)}, rules, stationTuning{}, seed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ids := candidateIDs(got); len(ids) != 1 || ids[0] != string(match) {
+			t.Fatalf("rankSeed %d: decade 1980 = %v, want only %s", seed, ids, match)
+		}
+	}
+}
+
+// Review finding P2: with excludeQueued, each top-up leaves out what is already
+// queued before sampling, so repeated generations reach past the first window.
+func TestStationExcludeQueuedReachesPastFirstWindow(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	importStationTracks(t, st, fx, fx.artistID, "deep", 160, 2001)
+	ctx := context.Background()
+	filter, err := h.sealedFreeStationFilter(ctx, defaultScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	noCertification := func([]store.ProfileCertificationCeiling) []store.CertificationConstraint { return nil }
+	rules := stationRules{ExcludeQueued: true}
+	seen := map[string]bool{}
+	for round := range 3 {
+		got, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "entity", id: string(fx.artistID)}, rules, stationTuning{}, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) == 0 {
+			t.Fatalf("round %d: empty station with %d queued", round, len(seen))
+		}
+		for _, c := range got {
+			if seen[c.MediaID] {
+				t.Fatalf("round %d: %s was already queued", round, c.MediaID)
+			}
+			seen[c.MediaID] = true
+			if _, err := st.QueueAddForProfile(ctx, "profile-default", "session-default", "", store.MediaID(c.MediaID), nil, filter, time.Now, noCertification); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if len(seen) <= stationPerEntityCap {
+		t.Fatalf("three top-ups reached %d tracks, want past the %d-track sample", len(seen), stationPerEntityCap)
 	}
 }
