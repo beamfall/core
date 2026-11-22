@@ -18,8 +18,10 @@ server and never sent anywhere.
 - A play is a run for one profile, item and stream, where the stream key is a one-way hash of the
   authenticated session (reports carry no stream id of their own; the session is what the held
   delivery decision and stream tokens are keyed by). Concurrent devices are separate plays and
-  moving between streams starts a new play. A play's method is the method that covered most of its
-  watched time, read from the session's held decision on receipt, never from client timestamps.
+  moving between streams starts a new play, every time. Reports are ordered by server receipt. A
+  play's method is the method that covered most of its watched time (each step counts for the
+  report that ends it), read from the session's held decision on receipt, never from client
+  timestamps. Events written before receipt times keep the CORE-1307 rule exactly.
 - Watched time is the position advance between consecutive reports, capped at the server receipt
   gap and zero after a report that said paused. The web player now sends an optional `paused` flag
   and reports on resume; clients that do not send it read as playing.

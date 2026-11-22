@@ -180,6 +180,10 @@ interface ProgressQueue {
   retiring: boolean;
   onDrained: (() => void) | null;
   inFlight: { controller: AbortController; progress: ReportPlaybackVars } | null;
+  // A report that paused playback, held apart while another is in flight so
+  // a later report (a seek made while paused) cannot replace it: the server
+  // must see the pause to credit nothing after it (CORE-1703).
+  pausing: ReportPlaybackVars | null;
   pending: ReportPlaybackVars | null;
 }
 
@@ -190,6 +194,7 @@ function createProgressQueue(): ProgressQueue {
     retiring: false,
     onDrained: null,
     inFlight: null,
+    pausing: null,
     pending: null,
   };
 }
@@ -203,7 +208,14 @@ function enqueueProgress(queue: ProgressQueue, progress: ReportPlaybackVars): vo
 
 function sendProgress(queue: ProgressQueue, progress: ReportPlaybackVars): void {
   if (queue.inFlight) {
-    if (!queue.inFlight.progress.finished) queue.pending = progress;
+    if (queue.inFlight.progress.finished) return;
+    const last = queue.pending ?? queue.pausing ?? queue.inFlight.progress;
+    if (progress.paused && !last.paused && !progress.finished && !queue.pausing) {
+      queue.pausing = progress;
+      queue.pending = null;
+    } else {
+      queue.pending = progress;
+    }
     return;
   }
 
@@ -222,10 +234,11 @@ function completeProgress(queue: ProgressQueue, controller: AbortController): vo
   if (queue.inFlight?.controller !== controller) return;
   queue.inFlight = null;
   if (!queue.active) return;
-  const pending = queue.pending;
-  queue.pending = null;
-  if (pending) {
-    sendProgress(queue, pending);
+  const next = queue.pausing ?? queue.pending;
+  if (queue.pausing) queue.pausing = null;
+  else queue.pending = null;
+  if (next) {
+    sendProgress(queue, next);
     return;
   }
   if (queue.retiring) stopProgressQueue(queue);
@@ -233,6 +246,7 @@ function completeProgress(queue: ProgressQueue, controller: AbortController): vo
 
 function stopProgressQueue(queue: ProgressQueue): void {
   queue.active = false;
+  queue.pausing = null;
   queue.pending = null;
   queue.inFlight?.controller.abort();
   queue.inFlight = null;
@@ -259,6 +273,7 @@ function retireProgressQueue(queue: ProgressQueue, onDrained: () => void): void 
   // Drop the in-flight periodic report so the final one goes out now.
   if (queue.inFlight && !queue.inFlight.progress.finished) {
     const final = queue.pending;
+    queue.pausing = null;
     queue.pending = null;
     queue.inFlight.controller.abort();
     queue.inFlight = null;

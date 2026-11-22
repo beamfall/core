@@ -167,8 +167,8 @@ func TestReportPlaybackRecordsPausedAndStream(t *testing.T) {
 	// derived from the session, never the session ID (CORE-1703 r1).
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)
-	report := `{"query":"mutation R($paused: Boolean) { reportPlayback(mediaID: \"media-alpha\", positionSeconds: 45, durationSeconds: 3600, paused: $paused) { mediaID } }","variables":%s}`
-	for _, vars := range []string{`{"paused":true}`, `{}`} {
+	report := `{"query":"mutation R($position: Int!, $paused: Boolean) { reportPlayback(mediaID: \"media-alpha\", positionSeconds: $position, durationSeconds: 3600, paused: $paused) { mediaID } }","variables":%s}`
+	for _, vars := range []string{`{"position":45,"paused":true}`, `{"position":50}`} {
 		if _, errs := post(t, handler, fmt.Sprintf(report, vars), authorizeViewer); len(errs) != 0 {
 			t.Fatalf("reportPlayback errors = %#v", errs)
 		}
@@ -177,22 +177,25 @@ func TestReportPlaybackRecordsPausedAndStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var payloads []map[string]any
+	// Both writes can share a millisecond, so the export order is not the
+	// report order: each report is found by its position.
+	payloads := map[float64]map[string]any{}
 	for _, event := range export.EngagementEvents {
 		var payload map[string]any
 		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
 			t.Fatal(err)
 		}
 		if payload["operation"] == "progress" {
-			payloads = append(payloads, payload)
+			position, _ := payload["reportedPositionSeconds"].(float64)
+			payloads[position] = payload
 		}
 	}
-	// Newest first: the report without paused, then the paused one.
-	if len(payloads) != 2 || payloads[1]["paused"] != true || payloads[0]["paused"] != nil {
-		t.Fatalf("progress payloads = %#v, want paused true, then unset", payloads)
+	paused, playing := payloads[45], payloads[50]
+	if len(payloads) != 2 || paused["paused"] != true || playing == nil || playing["paused"] != nil {
+		t.Fatalf("progress payloads = %#v, want paused true at 45, unset at 50", payloads)
 	}
-	stream, _ := payloads[0]["streamKey"].(string)
-	if stream == "" || payloads[1]["streamKey"] != stream || strings.Contains(fmt.Sprint(payloads), "session-default") {
+	stream, _ := playing["streamKey"].(string)
+	if stream == "" || paused["streamKey"] != stream || strings.Contains(fmt.Sprint(payloads), "session-default") {
 		t.Fatalf("progress payloads = %#v, want one derived stream key on both", payloads)
 	}
 }

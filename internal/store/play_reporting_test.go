@@ -486,6 +486,107 @@ func TestPlayHistoryMethodCoversMostOfThePlay(t *testing.T) {
 }
 
 // feature:play-history
+func TestPlayHistorySplitsRepeatedHandoffs(t *testing.T) {
+	// Codex CORE-1703 r2: a minute each on a TV, a phone, the TV and the
+	// phone, each stretch starting two minutes after the last and resuming
+	// where the previous one stopped, is four plays of 60 seconds, not two
+	// plays that span the other device's stretches. Reports that name no
+	// stream split the same way by Device.
+	st := openSeeded(t)
+	ctx := context.Background()
+	all := LibraryFilter{AllLibraries: true}
+	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
+	for media, streams := range map[MediaID][2]string{"media-alpha": {"stream-tv", "stream-phone"}, "media-archive": {"", ""}} {
+		for i, device := range []DeviceID{"dev-tv", "dev-phone", "dev-tv", "dev-phone"} {
+			r := streamReport{device: device, stream: streams[i%2], method: PlayMethodDirect,
+				received: day.Add(time.Duration(i) * 2 * time.Minute), position: 60 * i}
+			streamPlaying(t, st, "profile-default", media, r, r.received.Add(time.Minute), 15*time.Second)
+		}
+		plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{PlayFilter: PlayFilter{MediaID: media}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(plays) != 4 {
+			t.Fatalf("%s plays = %#v, want four", media, plays)
+		}
+		for i, p := range plays {
+			want := DeviceID("dev-phone")
+			if i%2 == 1 {
+				want = "dev-tv"
+			}
+			if p.DeviceID != want || p.WatchedSeconds != 60 {
+				t.Fatalf("%s play %d = %#v, want 60s on %s", media, i, p, want)
+			}
+		}
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryKeepsTheLegacyRuleForOldReports(t *testing.T) {
+	// Codex CORE-1703 r2: reports written before they recorded the client's
+	// position read as they always did. Five minutes played, a 20-minute
+	// pause, a seek from 300 to 1500, then a minute more: the gap over a
+	// minute earns nothing, so 360 seconds, not 1,560.
+	st := openSeeded(t)
+	ctx := context.Background()
+	day := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
+	devicePlaying(t, st, "profile-default", "media-alpha", "dev-tv", "", day, day.Add(5*time.Minute), 0)
+	devicePlaying(t, st, "profile-default", "media-alpha", "dev-tv", "", day.Add(25*time.Minute), day.Add(26*time.Minute), 1500)
+	plays, err := st.PlayHistory(ctx, LibraryFilter{AllLibraries: true}, PlayHistoryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plays) != 1 || plays[0].WatchedSeconds != 360 {
+		t.Fatalf("plays = %#v, want one play of 360s", plays)
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryOrdersStreamlessReportsByReceipt(t *testing.T) {
+	// Codex CORE-1703 r2: a Device that records its position but names no
+	// stream reports 0, 60 and 120 a minute apart, and its clock jumps back
+	// before the third report. Receipt order still credits 120 seconds.
+	st := openSeeded(t)
+	ctx := context.Background()
+	day := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
+	playing := false
+	r := streamReport{device: "dev-tv", method: PlayMethodDirect, paused: &playing}
+	for i, clientAt := range []time.Time{day, day.Add(time.Minute), day.Add(-5 * time.Minute)} {
+		r.received, r.clientAt, r.position = day.Add(time.Duration(i)*time.Minute), clientAt, 60*i
+		addStreamReport(t, st, "profile-default", "media-alpha", r)
+	}
+	plays, err := st.PlayHistory(ctx, LibraryFilter{AllLibraries: true}, PlayHistoryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plays) != 1 || plays[0].WatchedSeconds != 120 {
+		t.Fatalf("plays = %#v, want one play of 120s", plays)
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryTrailingMethodDoesNotTakeThePlay(t *testing.T) {
+	// Codex CORE-1703 r2: ten minutes with no held method, then one last
+	// report that records transcode. The play stays unknown, and none of its
+	// time lands in the transcode breakdown.
+	st := openSeeded(t)
+	ctx := context.Background()
+	day := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
+	r := streamReport{device: "dev-tv", stream: "stream-tv", received: day}
+	streamPlaying(t, st, "profile-default", "media-alpha", r, day.Add(10*time.Minute), 15*time.Second)
+	r.method, r.received, r.position = PlayMethodTranscode, day.Add(10*time.Minute+15*time.Second), 615
+	addStreamReport(t, st, "profile-default", "media-alpha", r)
+	stats, err := st.PlayStats(ctx, LibraryFilter{AllLibraries: true}, PlayStatsQuery{Since: day.Add(-time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []PlayStatsMethod{{PlayMethodUnknown, 1, 615}}
+	if fmt.Sprint(stats.Methods) != fmt.Sprint(want) {
+		t.Fatalf("methods = %+v, want %+v", stats.Methods, want)
+	}
+}
+
+// feature:play-history
 func TestPlayStatsDeviceAndMethodBreakdownsAddUp(t *testing.T) {
 	// Codex CORE-1703 r0: rankings keep the top ten, but the Device and
 	// method breakdowns list every entry so they sum to the totals.

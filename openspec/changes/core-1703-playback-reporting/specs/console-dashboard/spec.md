@@ -68,33 +68,50 @@ session and item, its play method.
 
 ### Requirement: Plays are split per stream
 
-Reports from different streams SHALL never join one play, whatever order they arrive in, and
-reports without a stream key SHALL be split per device. A stream's reports SHALL be ordered by the
-time the server received them. When playback of an item moves to another stream and later back,
-each stretch SHALL be its own play.
+Reports from different streams SHALL never join one play, and reports without a stream key SHALL be
+split per device. A stream's report SHALL start a new play when the stream was silent longer than a
+minute and the previous report for that profile and item came from another stream. Streams that
+report within a minute of each other SHALL stay separate plays without splitting each other.
 
 #### Scenario: Concurrent devices
 
 - **WHEN** a profile plays one item on two devices at the same time and their reports interleave
 - **THEN** two plays are listed, one per device, each with its own watched time
 
-#### Scenario: Device switch and back
+#### Scenario: Repeated hand-offs
 
-- **WHEN** a profile plays an item on a TV, continues on a phone and returns to the TV, each within
-  30 minutes
-- **THEN** three plays are listed
+- **WHEN** a profile plays an item for a minute each on a TV, a phone, the TV and the phone, each
+  within 30 minutes
+- **THEN** four plays are listed, each with 60 watched seconds
+
+### Requirement: Reports are ordered by receipt
+
+Reports SHALL be ordered by the time the server received them, never by the client's clock. Events
+written before receipt times SHALL keep the order of their observed time.
+
+#### Scenario: Client clock runs backward
+
+- **WHEN** a client's clock jumps backward between two minutes of playing reports
+- **THEN** the play still gains 120 watched seconds
 
 ### Requirement: A play's method covers most of its watched time
 
-A play's method SHALL be the method that covered most of its watched time, ties going to the most
-demanding of transcode, remux and direct. A play with no watched time SHALL take the most
-demanding method recorded, and a play with none recorded SHALL read as `unknown`. The method SHALL
-never depend on comparing the client's clock with the server's.
+Each stretch of watched time SHALL count toward the method on the report that ends it, and a
+play's method SHALL be the method with the most watched time, ties going to the most demanding of
+transcode, remux and direct. A method with no watched time SHALL never win while another has some.
+A play with no watched time SHALL take the most demanding method recorded, or `unknown` when none
+is. The method SHALL never depend on the client's clock.
 
 #### Scenario: Delayed report or slow client clock
 
 - **WHEN** a report arrives late, or the client's clock runs behind the server's
 - **THEN** the play keeps the method of the stream decision that covered its playing time
+
+#### Scenario: Trailing transcode report
+
+- **WHEN** a play direct-plays for ten minutes and its last report, with no playing time after the
+  one before it, says transcode
+- **THEN** the play's method is direct and transcode is credited 0 seconds
 
 ### Requirement: Watched time counts playing time only
 
@@ -102,14 +119,24 @@ A play's watched seconds SHALL be the sum, over each consecutive pair of its str
 the position advance capped at the time between the server receiving the two reports, counting
 nothing when the advance is negative or the earlier report said the player was paused. A report
 that does not say whether the player was paused SHALL count as playing. Events written before
-stream keys and receipt times SHALL keep the earlier rule.
+receipt times SHALL keep the earlier rule unchanged: no credit across a gap of more than a minute.
 
 #### Scenario: Paused seek
 
 - **WHEN** a player reports paused, seeks 45 seconds ahead while paused and resumes
 - **THEN** the seek adds no watched time
 
+#### Scenario: Pause report delayed behind a stalled one
+
+- **WHEN** a player's pause report is queued behind a stalled report and the user then seeks
+- **THEN** the pause report is still sent before the seek report and the seek adds no watched time
+
 #### Scenario: Coalesced reports
 
 - **WHEN** a player reports position 100 and, five minutes of playing later, position 400
 - **THEN** the play gains 300 watched seconds
+
+#### Scenario: Upgraded history
+
+- **WHEN** events written before receipt times show a 20-minute pause between two reports
+- **THEN** the pause adds no watched time, as before the upgrade

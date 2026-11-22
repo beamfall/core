@@ -31,6 +31,13 @@ const (
 	// must reach to be Finished: this fraction of the item, or within the tail.
 	playFinishedFraction = 0.8
 	playFinishedTail     = 30
+	// playReportGapCap is the longest silence between two reports of one
+	// stream that still reads as continuous playback when the reports cannot
+	// say so themselves. Clients report every 10 to 15 seconds while playing.
+	// Reports from before CORE-1703 earn nothing across a longer gap
+	// (CORE-1307), and a stream silent this long while another stream of the
+	// same Profile and Media reported has handed off.
+	playReportGapCap = time.Minute
 )
 
 // Play methods a play reports. A play's method is the one that covered most of
@@ -236,8 +243,8 @@ func (p derivedPlay) watchedSeconds() int {
 // epoch-millisecond event time when it sent one, so a report held back while a
 // device was offline stays in the play it belongs to, and the server arrival
 // time otherwise. A client clock ahead of the server is not believed, so no
-// play is ever dated in the future. It dates plays and orders reports that
-// name no stream; it is never compared with a server time.
+// play is ever dated in the future. It dates plays and orders reports written
+// before CORE-1703; it is never compared with a server time.
 const playedAtMS = `CASE
 		WHEN COALESCE(json_extract(payload, '$.eventTimeMs'), 0) BETWEEN 1 AND occurred_at_ms
 		THEN json_extract(payload, '$.eventTimeMs')
@@ -258,7 +265,7 @@ func playStreamKey(sessionID SessionID) string {
 // playedStepMS is how much one report adds to its run's watched time: the
 // span from the report before it in the same run.
 //
-// A report that records the client's position (every native report since
+// A pair of reports that record the client's position (every report since
 // CORE-1703) adds the position's advance, capped at the time between the two
 // arrivals at the server, and nothing when the earlier report said the player
 // was paused. A pause earns nothing whether the client stays silent or keeps
@@ -267,17 +274,20 @@ func playStreamKey(sessionID SessionID) string {
 // was in flight earns its real advance. A client that does not say whether it
 // was paused reads as playing.
 //
-// Older reports keep the CORE-1307 rule: the gap between their observed times,
-// but no more than the stored position advanced when both sides have one. The
+// Any other pair keeps the CORE-1307 rule unchanged, so recorded history reads
+// as it did: nothing across a gap longer than playReportGapCap, otherwise the
+// gap between their observed times, but no more than the stored position
+// advanced when both sides have one, and no more than playReportGapCap. The
 // first report of a run adds nothing.
 const playedStepMS = `CASE
 		WHEN starts = 1 THEN 0
 		WHEN reported IS NOT NULL AND prev_reported IS NOT NULL
 		THEN CASE WHEN prev_paused = 1 THEN 0
 		          ELSE MAX(MIN(recv_ms - prev_recv, (reported - prev_reported) * 1000), 0) END
+		WHEN at_ms - prev_ms > ? THEN 0
 		WHEN watched = 0 AND prev_watched = 0 AND (position > 0 OR prev_position > 0)
-		THEN MIN(at_ms - prev_ms, MAX(position - prev_position, 0) * 1000)
-		ELSE at_ms - prev_ms END`
+		THEN MAX(MIN(at_ms - prev_ms, MAX(position - prev_position, 0) * 1000), 0)
+		ELSE MAX(MIN(at_ms - prev_ms, ?), 0) END`
 
 // derivedPlaysLocked lists the plays that started in [since, until), newest
 // first, each measured whole even when it runs past either bound. A zero bound
@@ -285,20 +295,20 @@ const playedStepMS = `CASE
 // Library and visibility parts are the caller's.
 //
 // A run is one stream's reports for a Profile and Media: the stream key when a
-// report has one, its Device otherwise. Streams never interleave into each
-// other, so two devices playing at once are two plays. A stream's reports are
-// taken in the order the server received them, or by observed time when they
-// name no stream, and a run ends at a silence longer than playGap, or where
-// another stream of the same Profile and Media played a whole run of at least
-// playMinSpan inside the silence: TV, then phone, then TV again is three
-// plays. That holds exactly when the latest-starting such run to end before
-// a report started after the report before it (no run of the report's own
-// stream can), which one ordered pass finds.
+// report has one, its Device otherwise, so two devices playing at once are two
+// plays. Reports are taken in the order the server received them; those
+// written before CORE-1703, which record no client position, keep their
+// observed-time order. A run ends at a silence longer than playGap, or where a
+// stream that had been silent longer than playReportGapCap reports right after
+// another stream of the same Profile and Media: playback moved away and came
+// back, so TV, phone, TV, phone is four plays, while streams playing at once
+// keep reporting within the cap and stay whole.
 //
-// A play's method is the one that covered most of its watched time, each
-// step credited to the method recorded on the report it starts from (ties go
-// to the more demanding method). A play with no credited time under a known
-// method reports the most demanding one recorded.
+// A play's method is the one that covered most of its watched time, each step
+// credited to the method recorded on the report that ends it (ties go to the
+// more demanding method, and unknown competes too). A method that covered no
+// watched time never wins; a play with none at all reports the most demanding
+// method recorded.
 //
 // Runs are grouped before the window applies: a play that began just before
 // since is left out, not cut into a shorter play starting at since. Reports
@@ -338,37 +348,24 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 	query += `
 		), raw AS (
 			SELECT *, CASE WHEN stream <> '' THEN 's' || stream ELSE 'd' || device_id END AS part,
-			       CASE WHEN stream <> '' THEN recv_ms ELSE at_ms END AS ord_ms
+			       CASE WHEN reported IS NULL THEN at_ms ELSE recv_ms END AS ord_ms
 			FROM src
+		), ord AS (
+			SELECT *, LAG(part) OVER (PARTITION BY profile_id, media_id ORDER BY ord_ms, seq) AS prev_part
+			FROM raw
 		), ev AS (
 			SELECT *, LAG(ord_ms) OVER w AS prev_ord, LAG(at_ms) OVER w AS prev_ms,
 			       LAG(recv_ms) OVER w AS prev_recv, LAG(position) OVER w AS prev_position,
 			       LAG(watched) OVER w AS prev_watched, LAG(reported) OVER w AS prev_reported,
-			       LAG(paused) OVER w AS prev_paused, LAG(method) OVER w AS prev_method
-			FROM raw
+			       LAG(paused) OVER w AS prev_paused
+			FROM ord
 			WINDOW w AS (PARTITION BY profile_id, media_id, part ORDER BY ord_ms, seq)
-		), gap AS (
-			SELECT *, SUM(CASE WHEN prev_ord IS NULL OR ord_ms - prev_ord > ? THEN 1 ELSE 0 END)
-			            OVER (PARTITION BY profile_id, media_id, part ORDER BY ord_ms, seq
-			                  ROWS UNBOUNDED PRECEDING) AS gap_no
-			FROM ev
-		), other AS (
-			SELECT profile_id, media_id, MIN(ord_ms) AS first_ms, MAX(ord_ms) AS last_ms
-			FROM gap
-			GROUP BY profile_id, media_id, part, gap_no
-			HAVING MAX(ord_ms) - MIN(ord_ms) >= ?
-		), inside AS (
-			SELECT seq, marker, MAX(first_ms) OVER (PARTITION BY profile_id, media_id ORDER BY at, marker
-			                                        ROWS UNBOUNDED PRECEDING) AS latest_first
-			FROM (SELECT profile_id, media_id, seq, ord_ms AS at, 0 AS marker, NULL AS first_ms FROM gap
-			      UNION ALL
-			      SELECT profile_id, media_id, NULL, last_ms, 1, first_ms FROM other)
 		), mark AS (
-			SELECT gap.*, CASE
+			SELECT *, CASE
 			       WHEN prev_ord IS NULL OR ord_ms - prev_ord > ? THEN 1
-			       WHEN inside.latest_first > prev_ord THEN 1
+			       WHEN prev_part <> part AND ord_ms - prev_ord > ? THEN 1
 			       ELSE 0 END AS starts
-			FROM gap JOIN inside ON inside.seq = gap.seq AND inside.marker = 0
+			FROM ev
 		), run AS (
 			SELECT *, SUM(starts) OVER (PARTITION BY profile_id, media_id, part ORDER BY ord_ms, seq
 			                            ROWS UNBOUNDED PRECEDING) AS run_no
@@ -377,12 +374,12 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 			SELECT *, ` + playedStepMS + ` AS step_ms
 			FROM run
 		), credit AS (
-			SELECT profile_id, media_id, part, run_no, prev_method AS method,
+			SELECT profile_id, media_id, part, run_no, method,
 			       ROW_NUMBER() OVER (PARTITION BY profile_id, media_id, part, run_no
-			                          ORDER BY SUM(step_ms) DESC, prev_method DESC) AS pick
+			                          ORDER BY SUM(step_ms) DESC, method DESC) AS pick
 			FROM step
-			WHERE starts = 0 AND prev_method > 0 AND step_ms > 0
-			GROUP BY profile_id, media_id, part, run_no, prev_method
+			WHERE step_ms > 0
+			GROUP BY profile_id, media_id, part, run_no, method
 		), play AS (
 			SELECT profile_id, media_id, part, run_no, MAX(device_id) AS device_id, MAX(method) AS top_method,
 			       MIN(at_ms) AS start_ms, MAX(at_ms) AS end_ms, MAX(duration) AS duration, MAX(watched) AS watched,
@@ -401,7 +398,8 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 		       first_pos, last_pos, played_ms
 		FROM result
 		WHERE 1 = 1`
-	args = append(args, playGap.Milliseconds(), playMinSpan.Milliseconds(), playGap.Milliseconds())
+	args = append(args, playGap.Milliseconds(), playReportGapCap.Milliseconds(),
+		playReportGapCap.Milliseconds(), playReportGapCap.Milliseconds())
 	if f.DeviceID != "" {
 		// After grouping: dropping other Devices' reports first would join
 		// this Device's runs across a switch away and back.

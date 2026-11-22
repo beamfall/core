@@ -332,6 +332,39 @@ describe("usePlayer", () => {
     expect(vi.mocked(graphql).mock.calls.at(-1)?.[1]).toMatchObject({ paused: false });
   });
 
+  it("never lets a later report replace a pause queued behind a stalled one (CORE-1703)", async () => {
+    // The event clock is monotonic across the file; keep it where its tests expect.
+    vi.spyOn(Date, "now").mockReturnValue(1783432800123);
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const progress = capturePendingProgress();
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 3600 });
+    Object.defineProperty(video, "seeking", { configurable: true, value: false });
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 300 });
+    fireEvent.play(video);
+    await waitFor(() => expect(progress.requests).toHaveLength(1));
+
+    // The playing report stalls; the viewer pauses, then seeks while paused.
+    Object.defineProperty(video, "paused", { configurable: true, value: true });
+    fireEvent.pause(video);
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 1500 });
+    fireEvent.seeked(video);
+    const sent = () =>
+      progress.requests.map(({ variables }) => [variables.positionSeconds, variables.paused]);
+
+    progress.requests[0].resolve();
+    await waitFor(() => expect(progress.requests).toHaveLength(2));
+    progress.requests[1].resolve();
+    await waitFor(() => expect(progress.requests).toHaveLength(3));
+    expect(sent()).toEqual([
+      [300, false],
+      [300, true],
+      [1500, true],
+    ]);
+  });
+
   it("reports the probed duration, not a live transcode's growing video.duration (CORE-2314)", async () => {
     vi.mocked(fetchPlaybackInfo).mockResolvedValue({
       decision: "direct-play",

@@ -5,3 +5,4 @@
 - [x] Web: Console Dashboard range picker, filters and breakdowns; My Data "Watch history"; strings in every locale
 - [x] Tests: store (realistic report spacing, device split, method, filters, aggregates), graph scope (viewer sees only own), focused vitest
 - [x] Round 1: per-stream runs ordered by receipt, receipt-capped credit with paused reports, majority method, delete-all clears the watch card, history table ignores the window without a To day
+- [x] Round 2: receipt order for every report (observed order for pre-receipt events), hand-off split after a minute of silence, method credited to the report ending each step, legacy rule kept exactly, web pause report never replaced by a later one
