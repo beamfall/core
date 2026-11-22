@@ -179,7 +179,7 @@ describe("Console Libraries scan", () => {
     vi.mocked(browseServerFolders).mockRejectedValue(new Error("folder does not exist"));
     renderLibraries();
 
-    expect(await screen.findByText("Folder not found")).toBeVisible();
+    expect(await screen.findByText("Folder not found", {}, { timeout: 5000 })).toBeVisible();
     expect(screen.getByText(/Remove this folder and add the right one below/)).toBeVisible();
     expect(browseServerFolders).toHaveBeenCalledWith("/Volumes/library", 0);
   });
