@@ -166,25 +166,28 @@ func (*scanWalkState) isParsedPart(parsed ParsedMedia, ok bool) bool {
 }
 
 // flushPendingPartsUnlessInGroup flushes the pending parts group before a file
-// that is not a part, except a still image (CORE-1837) or a file inside the
-// group's folder (CORE-3017): neither is part of the group, and one whose name
-// sorts between its Parts, such as a loose file between two disc folders of a
-// book, must not split it. Its completion is held below the group until then.
+// that is not a part, except a still image (CORE-1837) or a file directly in
+// the group's folder (CORE-3017): neither is part of the group, and one whose
+// name sorts between its Parts, such as a loose file between two disc folders
+// of a book, must not split it. Its completion is held below the group until
+// then.
 func (s *scanWalkState) flushPendingPartsUnlessInGroup(path string, isImage bool) error {
-	if isImage || (len(s.pendingParts) > 0 && insidePartGroup(s.pendingParts[0].parsed.PartGroup, path)) {
+	if isImage || s.inPendingPartFolder(path) {
 		return nil
 	}
 	return s.flushPendingParts()
 }
 
-// insidePartGroup reports whether path lies below group, a part group key
-// that names a folder. A key that is not an absolute path names no folder.
-func insidePartGroup(group, path string) bool {
-	if !filepath.IsAbs(group) {
+// inPendingPartFolder reports whether path sits directly in the folder the
+// pending group's key names. A key that is not an absolute path names no
+// folder. Only the folder's own files qualify, so the held completions stay
+// bounded by one folder even when the group's folder is the Library root.
+func (s *scanWalkState) inPendingPartFolder(path string) bool {
+	if len(s.pendingParts) == 0 {
 		return false
 	}
-	rel, err := filepath.Rel(group, path)
-	return err == nil && rel != "." && filepath.IsLocal(rel)
+	group := s.pendingParts[0].parsed.PartGroup
+	return filepath.IsAbs(group) && filepath.Clean(group) == filepath.Dir(path)
 }
 
 // orderParts orders a group's Parts folder by folder: each folder takes the
@@ -366,8 +369,14 @@ func (s *scanWalkState) queueParsedPart(imported store.ImportMediaFile, parsed P
 }
 
 func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia) error {
-	if err := s.flushPendingParts(); err != nil {
-		return err
+	// A refused file directly in a pending group's folder does not split the
+	// group (see flushPendingPartsUnlessInGroup); its resume point is held
+	// below the group like a completion's.
+	held := s.inPendingPartFolder(path)
+	if !held {
+		if err := s.flushPendingParts(); err != nil {
+			return err
+		}
 	}
 	recordID, err := s.st.QueueUnmatchedRecordOnce(s.ctx, store.UnmatchedRecord{
 		Origin:         store.UnmatchedOriginScan,
@@ -389,6 +398,10 @@ func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia) err
 		return err
 	}
 	s.result.FilesSeen++
+	if held {
+		s.held = append(s.held, heldCompletion{path: path})
+		return nil
+	}
 	s.result.LastPath = path
 	if s.progress != nil {
 		return s.progress(s.resumeCheckpoint(), store.JobProgress{

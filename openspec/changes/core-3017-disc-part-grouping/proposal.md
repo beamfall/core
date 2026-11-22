@@ -11,8 +11,10 @@ and numbers its tracks disc×10000 + track, but Core still split or failed such 
   number, and the store refused the group, which failed the whole scan.
 
 ## What changes
-- A file inside the pending group's folder (its `PartGroup`, when that is an absolute path
-  above the file) no longer flushes the group, as a still image already did not (CORE-1837).
+- A file directly in the pending group's folder (its `PartGroup`, when that is an absolute path
+  naming the file's folder) no longer flushes the group, whether the parser accepts or refuses
+  it, as a still image already did not (CORE-1837). Files in deeper folders still flush, which
+  bounds what the group holds.
   Such a file is still its own Media; its completion is held below the group until the group
   flushes. A file outside the folder, or a part of another group, flushes as before.
 - A group orders its Parts folder by folder: each folder takes the place of its lowest part

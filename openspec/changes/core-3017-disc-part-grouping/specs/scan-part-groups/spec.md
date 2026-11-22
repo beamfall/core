@@ -2,7 +2,7 @@
 
 ### Requirement: Disc subfolders of a book join one Media
 Scan SHALL import the Parts a parser keys to one part group as one Media even when files that
-are not Parts of that group sort between them, provided those files lie inside the group's
+are not Parts of that group sort between them, provided those files lie directly in the group's
 folder. Scan SHALL order the Parts folder by folder, each folder placed by its lowest part
 number with ties going to the folder walked first, and within a folder by part number with ties
 going to the file walked first. Equal part numbers SHALL NOT fail the scan.

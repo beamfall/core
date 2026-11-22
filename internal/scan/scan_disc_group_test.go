@@ -68,6 +68,10 @@ func TestScanKeepsDiscBookAcrossInterleavedSiblingFile(t *testing.T) {
 		}
 		writeScanFile(t, book, "Credits.mp3", []byte("loose"))
 		scanDiscBook(t, root, workers, want)
+		// Two untagged loose files make the plugin refuse the book folder's
+		// own files; the refusals must not split the book either.
+		writeScanFile(t, book, "Cover Notes.mp3", []byte("loose two"))
+		scanDiscBook(t, root, workers, want)
 	}
 }
 
