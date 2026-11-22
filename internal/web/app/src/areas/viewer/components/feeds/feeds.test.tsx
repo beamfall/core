@@ -7,11 +7,13 @@ import { ApiError } from "@/lib/api";
 import {
   type FeedSubscription,
   followFeed,
+  queuePlayNextMedia,
   refreshSubscription,
   type SubscriptionEntry,
   type SubscriptionHealth,
   searchFeeds,
   setSubscriptionDownloadPolicy,
+  setWatched,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { nodePath } from "@/lib/nodePath";
@@ -32,6 +34,8 @@ vi.mock("@/lib/graphql", async (importOriginal) => {
     followFeed: vi.fn(),
     refreshSubscription: vi.fn(),
     setSubscriptionDownloadPolicy: vi.fn(),
+    queuePlayNextMedia: vi.fn(),
+    setWatched: vi.fn(),
   };
 });
 vi.mock("@/lib/session", () => ({ useViewerIdentity: () => "viewer-1" }));
@@ -41,6 +45,8 @@ beforeEach(() => {
   vi.mocked(followFeed).mockReset();
   vi.mocked(refreshSubscription).mockReset();
   vi.mocked(setSubscriptionDownloadPolicy).mockReset();
+  vi.mocked(queuePlayNextMedia).mockReset();
+  vi.mocked(setWatched).mockReset();
 });
 afterEach(cleanup);
 
@@ -360,6 +366,7 @@ describe("FeedCatalogue", () => {
       enclosureLength: 52_000_000,
       downloadState: "none",
       availability: "not-downloaded",
+      played: false,
       ...overrides,
     };
   }
@@ -407,5 +414,56 @@ describe("FeedCatalogue", () => {
     expect(state.title).toBe("Third");
     expect(state.queueIdentity).toBe("viewer-1");
     expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["m-1", "m-2", "m-3"]);
+  });
+
+  it("filters Unplayed, sorts oldest first, queues next and marks played (CORE-2959)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(queuePlayNextMedia).mockResolvedValue();
+    vi.mocked(setWatched).mockResolvedValue({} as Awaited<ReturnType<typeof setWatched>>);
+    const entries = [
+      entry({
+        mediaID: "m-3",
+        title: "Third",
+        feedPosition: 0,
+        publishedAt: "2026-11-03T12:00:00Z",
+      }),
+      entry({
+        mediaID: "m-2",
+        title: "Second",
+        feedPosition: 1,
+        publishedAt: "2026-11-02T12:00:00Z",
+        played: true,
+      }),
+      entry({
+        mediaID: "m-1",
+        title: "First",
+        feedPosition: 2,
+        publishedAt: "2026-11-01T12:00:00Z",
+      }),
+    ];
+    wrap(<FeedCatalogue entries={entries} />);
+    const order = () =>
+      screen.getAllByRole("listitem").map((row) => row.getAttribute("data-entry"));
+
+    expect(order()).toEqual(["m-3", "m-2", "m-1"]);
+    expect(screen.getAllByRole("listitem")[1]).toHaveAttribute("data-played", "true");
+
+    await user.selectOptions(screen.getByLabelText("Sort"), "oldest");
+    expect(order()).toEqual(["m-1", "m-2", "m-3"]);
+
+    await user.selectOptions(screen.getByLabelText("Show"), "unplayed");
+    expect(order()).toEqual(["m-1", "m-3"]);
+
+    await user.click(screen.getByRole("button", { name: "Play Third next" }));
+    expect(queuePlayNextMedia).toHaveBeenCalledWith("m-3");
+    expect(await screen.findByRole("status")).toHaveTextContent("Third plays next.");
+
+    await user.click(screen.getByRole("button", { name: "Mark First played" }));
+    expect(setWatched).toHaveBeenCalledWith({ mediaID: "m-1" }, true);
+    expect(order()).toEqual(["m-3"]);
+
+    await user.selectOptions(screen.getByLabelText("Show"), "all");
+    await user.click(screen.getByRole("button", { name: "Mark Second unplayed" }));
+    expect(setWatched).toHaveBeenLastCalledWith({ mediaID: "m-2" }, false);
   });
 });

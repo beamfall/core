@@ -5015,6 +5015,7 @@
         "enclosureLength",
         "feedPosition",
         "mediaID",
+        "played",
         "publishedAt",
         "title"
       ]

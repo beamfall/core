@@ -232,6 +232,15 @@ func (s *Store) newEntryMediaSQL(ctx context.Context, follows []followRow) ([]Me
 	return ids, nil
 }
 
+// PlayedMedia reports which of ids profileID has played (watched, or played at
+// least once). A scope without a Profile has played nothing.
+func (s *Store) PlayedMedia(ctx context.Context, profileID ProfileID, ids []MediaID) (map[MediaID]bool, error) {
+	if profileID == "" || len(ids) == 0 {
+		return map[MediaID]bool{}, nil
+	}
+	return playedAmong(ctx, s.eventsR, profileID, ids)
+}
+
 // playedAmong reports which of ids profileID has played, read through q.
 func playedAmong(ctx context.Context, q rowsQueryer, profileID ProfileID, ids []MediaID) (map[MediaID]bool, error) {
 	played := map[MediaID]bool{}

@@ -1,3 +1,4 @@
+import { feedCatalogueStrings } from "./feeds-catalogue";
 import { feedHealthStrings } from "./feeds-health";
 
 // CORE-2957 — following a feed, the feed home and a feed's catalogue. The
@@ -6,6 +7,7 @@ import { feedHealthStrings } from "./feeds-health";
 export const feedStrings = {
   en: {
     ...feedHealthStrings.en,
+    ...feedCatalogueStrings.en,
     feedsPivot: "Following",
     feedsFollowHeading: "Follow a feed",
     feedsSearchLabel: "Search feeds or paste a feed address",
@@ -52,6 +54,7 @@ export const feedStrings = {
   },
   fr: {
     ...feedHealthStrings.fr,
+    ...feedCatalogueStrings.fr,
     feedsPivot: "Abonnements",
     feedsFollowHeading: "Suivre un flux",
     feedsSearchLabel: "Rechercher des flux ou coller l’adresse d’un flux",
@@ -98,6 +101,7 @@ export const feedStrings = {
   },
   de: {
     ...feedHealthStrings.de,
+    ...feedCatalogueStrings.de,
     feedsPivot: "Abonniert",
     feedsFollowHeading: "Feed abonnieren",
     feedsSearchLabel: "Feeds suchen oder Feed-Adresse einfügen",
@@ -146,6 +150,7 @@ export const feedStrings = {
   },
   es: {
     ...feedHealthStrings.es,
+    ...feedCatalogueStrings.es,
     feedsPivot: "Siguiendo",
     feedsFollowHeading: "Seguir un feed",
     feedsSearchLabel: "Busca feeds o pega la dirección de un feed",
@@ -193,6 +198,7 @@ export const feedStrings = {
   },
   pt: {
     ...feedHealthStrings.pt,
+    ...feedCatalogueStrings.pt,
     feedsPivot: "Seguindo",
     feedsFollowHeading: "Seguir um feed",
     feedsSearchLabel: "Pesquise feeds ou cole o endereço de um feed",

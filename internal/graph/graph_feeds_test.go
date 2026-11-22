@@ -338,9 +338,13 @@ func TestSubscriptionEntriesAndCountsNeverCarryEnclosureURLs(t *testing.T) {
 		{SubscriptionID: id, GUID: "g2", MediaID: created[1].MediaID, Title: "Older", FeedPosition: 1,
 			EnclosureURL: "https://cdn.example.com/b.mp3?sig=hush", EnclosureLength: 2000, DownloadState: store.EntryDownloadNone},
 	}
+	if _, err := fx.st.SetItemWatched(t.Context(), "profile-default", store.ItemTarget{MediaID: created[1].MediaID}, true,
+		store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}}); err != nil {
+		t.Fatal(err)
+	}
 
 	body, resp := rawGraph(t, fx.handler, authorizeViewer,
-		`query E($subscriptionID: String!) { subscriptionEntries(subscriptionID: $subscriptionID) { mediaID title publishedAt feedPosition enclosureLength downloadState availability } }`,
+		`query E($subscriptionID: String!) { subscriptionEntries(subscriptionID: $subscriptionID) { mediaID title publishedAt feedPosition enclosureLength downloadState availability played } }`,
 		map[string]any{"subscriptionID": sub.ID})
 	if len(resp.Errors) > 0 {
 		t.Fatalf("errors = %+v", resp.Errors)
@@ -357,6 +361,9 @@ func TestSubscriptionEntriesAndCountsNeverCarryEnclosureURLs(t *testing.T) {
 	}
 	if entries[0].Availability != "downloaded" || entries[1].Availability != "not-downloaded" || entries[0].PublishedAt != "2026-11-01T09:00:00Z" {
 		t.Fatalf("entries = %+v", entries)
+	}
+	if entries[0].Played || !entries[1].Played {
+		t.Fatalf("played = %v/%v, want the watched entry only", entries[0].Played, entries[1].Played)
 	}
 
 	_, resp = rawGraph(t, fx.handler, authorizeViewer,

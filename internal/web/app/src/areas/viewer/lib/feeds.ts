@@ -92,9 +92,32 @@ export function entryAvailabilityKey(entry: SubscriptionEntry): StringKey {
   return "feedsNotDownloaded";
 }
 
-/** Catalogue entries in feed order. */
-export function inFeedOrder(entries: readonly SubscriptionEntry[]): SubscriptionEntry[] {
-  return [...entries].sort((a, b) => a.feedPosition - b.feedPosition);
+export const CATALOGUE_FILTERS = ["all", "unplayed", "downloaded"] as const;
+export type CatalogueFilter = (typeof CATALOGUE_FILTERS)[number];
+export const CATALOGUE_SORTS = ["newest", "oldest"] as const;
+export type CatalogueSort = (typeof CATALOGUE_SORTS)[number];
+export const NEW_ENTRY_ROUTES = ["new", "queue-end", "queue-front"] as const;
+
+/** The catalogue under one filter and sort (CORE-2959). Newest is feed order,
+ * which feeds publish newest first; Oldest reverses it, so a serial reads from
+ * its start. Dates break the order only where both entries carry one. */
+export function catalogueView(
+  entries: readonly SubscriptionEntry[],
+  filter: CatalogueFilter,
+  sort: CatalogueSort,
+): SubscriptionEntry[] {
+  const kept = entries.filter((entry) => {
+    if (filter === "unplayed") return !entry.played;
+    if (filter === "downloaded") return entry.availability === "downloaded";
+    return true;
+  });
+  const newestFirst = [...kept].sort((a, b) => {
+    const at = parseWireTime(a.publishedAt)?.getTime();
+    const bt = parseWireTime(b.publishedAt)?.getTime();
+    if (at !== undefined && bt !== undefined && at !== bt) return bt - at;
+    return a.feedPosition - b.feedPosition;
+  });
+  return sort === "oldest" ? newestFirst.reverse() : newestFirst;
 }
 
 const BYTE_UNITS = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"] as const;

@@ -432,6 +432,9 @@ type SubscriptionEntryInfo struct {
 	DownloadState   string `json:"downloadState"`
 	// Availability is "downloaded" or "not-downloaded".
 	Availability string `json:"availability"`
+	// Played reports whether the caller's Profile has played the entry
+	// (CORE-2959).
+	Played bool `json:"played"`
 }
 
 func (h *Handler) subscriptionEntries(ctx context.Context, scope auth.Scope, req request) ([]SubscriptionEntryInfo, error) {
@@ -455,6 +458,10 @@ func (h *Handler) subscriptionEntries(ctx context.Context, scope auth.Scope, req
 	if err != nil {
 		return nil, err
 	}
+	played, err := h.store.PlayedMedia(ctx, scope.ProfileID, ids)
+	if err != nil {
+		return nil, err
+	}
 	infos := make([]SubscriptionEntryInfo, 0, len(entries))
 	for _, entry := range entries {
 		if _, ok := visible[entry.MediaID]; !ok {
@@ -472,6 +479,7 @@ func (h *Handler) subscriptionEntries(ctx context.Context, scope auth.Scope, req
 			EnclosureLength: entry.EnclosureLength,
 			DownloadState:   string(entry.DownloadState),
 			Availability:    availability,
+			Played:          played[entry.MediaID],
 		})
 	}
 	return infos, nil
