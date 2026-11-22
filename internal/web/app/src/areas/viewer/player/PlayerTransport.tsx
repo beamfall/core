@@ -62,6 +62,7 @@ import { CastControl } from "./cast/CastControl";
 import { InfoOverlay } from "./InfoOverlay";
 import { listenerMuted, setListenerMuted } from "./listenerMute";
 import { MusicQueuePanel } from "./MusicQueuePanel";
+import { savePlayerVolume } from "./playerVolume";
 import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { TrackMotionSettings } from "./TrackMotionSettings";
@@ -473,6 +474,7 @@ export function PlayerTransport({
       if (clamped > 0) setListenerMuted(video, false);
       setVolumeState(clamped);
       setMuted(listenerMuted(video));
+      savePlayerVolume({ muted: listenerMuted(video), volume: clamped });
     },
     [videoRef],
   );
@@ -594,6 +596,7 @@ export function PlayerTransport({
     if (!video) return;
     setListenerMuted(video, !listenerMuted(video));
     setMuted(listenerMuted(video));
+    savePlayerVolume({ muted: listenerMuted(video), volume: video.volume });
   }, [videoRef]);
 
   const visualControls = audioStage && canVisualize();

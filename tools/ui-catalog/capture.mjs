@@ -615,7 +615,7 @@ async function main() {
     const { proc, base } = await bootServer(bin, port);
     let browser;
     try {
-      browser = await chromium.launch({ headless: true });
+      browser = await chromium.launch({ headless: true, args: ["--mute-audio"] });
       for (const entry of ENTRIES) {
         const vp = VIEWPORTS[entry.viewport] || VIEWPORTS.desktop;
         const manifestEntry = {

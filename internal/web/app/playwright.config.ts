@@ -31,7 +31,7 @@ const archivedVisualBaselineDir = join(
   "visual-baselines",
 );
 
-export default defineConfig({
+const config = defineConfig({
   testDir: "./e2e",
   snapshotPathTemplate: join(
     archivedVisualBaselineDir,
@@ -188,3 +188,24 @@ export default defineConfig({
     },
   ],
 });
+
+// Tests that play media never sound through the host's speakers: every Chromium project
+// launches with --mute-audio. It silences only the output device, so decoding, Web Audio
+// analysers and the player's own mute state behave as they do with sound. Firefox and
+// WebKit take no such flag and are left alone.
+config.projects = config.projects?.map((project) =>
+  project.use?.defaultBrowserType === "chromium"
+    ? {
+        ...project,
+        use: {
+          ...project.use,
+          launchOptions: {
+            ...project.use.launchOptions,
+            args: [...(project.use.launchOptions?.args ?? []), "--mute-audio"],
+          },
+        },
+      }
+    : project,
+);
+
+export default config;
