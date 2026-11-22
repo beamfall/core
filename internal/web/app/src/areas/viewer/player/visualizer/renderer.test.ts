@@ -259,7 +259,15 @@ function recordingGl() {
 // black through the limiter, black is presented, and a frame starts at the geometry asked for
 // then, black with every budget spent. Nothing is carried from one geometry to the next.
 describe("Renderer geometry (CORE-2516)", () => {
-  type Limiter = { fG: unknown[]; fOut: unknown[]; cur: number };
+  type Limiter = {
+    fRows: unknown;
+    fS: unknown;
+    fC: unknown;
+    fW: unknown;
+    fG: unknown[];
+    fOut: unknown[];
+    cur: number;
+  };
   type Texels = [width: number, height: number, texel: number];
   const SPENT = [256, 65025, 65025, 0];
   // A start's trackers: black, counted with nothing owed (CORE-2869).
@@ -780,7 +788,7 @@ describe("Renderer geometry (CORE-2516)", () => {
   // Codex round 18: a slot resized between a draw and its paint withdraws the frame, so nothing
   // judged against the old area limit is shown in the new one.
   it("withdraws the last frame to the limiter's previous output and state", () => {
-    const { flash, r, renderer, draw, limiter, blits, blocks } = make();
+    const { flash, renderer, draw, limiter, blits, blocks } = make();
     draw(64, 36);
     draw(64, 36, 1 / 60, 50);
     const L = limiter();
@@ -1434,7 +1442,6 @@ describe("Renderer switch feedback (CORE-2724)", () => {
   const make = (reducedMotion: boolean) => {
     const { gl, ...recorded } = recordingGl();
     const r = Object.create(Renderer.prototype) as Record<string, unknown>;
-    const flash = new FrameLimiter(gl as unknown as WebGL2RenderingContext, new Array(6));
     const feedback = [
       { tex: { id: "a" }, fbo: { id: "fa" } },
       { tex: { id: "b" }, fbo: { id: "fb" } },
