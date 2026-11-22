@@ -1,15 +1,18 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { AssignDialog } from "@/components/assign/AssignDialog";
+import { formatOrdinal, ordinalLabels } from "@/components/assign/assignOrdinals";
 import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { getIdentityEpochSignal } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import {
   bulkEditApply,
+  clearMediaOrdinal,
   editMediaMetadata,
   fetchArtworkCandidates,
   fetchMediaFields,
@@ -27,6 +30,7 @@ import type {
 } from "@/lib/graphql/types";
 import { useI18n } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
+import { clearViewerCache } from "@/lib/viewerCache";
 import type { StringKey } from "@/strings";
 
 const SLOTS: { slot: string; lock: string; key: StringKey }[] = [
@@ -80,6 +84,8 @@ export function ItemMetadataPage() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const activeMediaID = useRef("");
+  const canAssign = isManager && session?.profile === "adult" && info?.mediaID === mediaID;
 
   const applyInfo = useCallback((next: MediaMetadataInfo) => {
     setInfo(next);
@@ -114,6 +120,7 @@ export function ItemMetadataPage() {
   );
 
   useEffect(() => {
+    activeMediaID.current = mediaID;
     setIdInput(mediaID);
     setStatus("");
     setError("");
@@ -135,6 +142,7 @@ export function ItemMetadataPage() {
     void loadAll(mediaID);
     return () => {
       cancelled = true;
+      activeMediaID.current = "";
     };
   }, [mediaID, applyInfo, loadAll, assignmentRevision]);
 
@@ -192,6 +200,30 @@ export function ItemMetadataPage() {
       setStatus(t("itemMetadataSaved"));
     } catch {
       setError(t("itemMetadataSaveFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onClearOrdinal = async () => {
+    if (!canAssign || busy) return;
+    const epoch = getIdentityEpochSignal();
+    const sameIdentity = () => !epoch?.aborted && epoch === getIdentityEpochSignal();
+    setStatus("");
+    setError("");
+    setBusy(true);
+    try {
+      await clearMediaOrdinal(mediaID);
+      if (!sameIdentity()) return;
+      clearViewerCache();
+      if (activeMediaID.current !== mediaID) return;
+      setInfo((current) =>
+        current?.mediaID === mediaID ? { ...current, operatorOrdinal: null } : current,
+      );
+      setStatus(t("assignOrdinalCleared"));
+    } catch {
+      if (sameIdentity() && activeMediaID.current === mediaID)
+        setError(t("assignClearOrdinalFailed"));
     } finally {
       setBusy(false);
     }
@@ -367,7 +399,7 @@ export function ItemMetadataPage() {
                 <Button type="button" onClick={onSaveDetails} disabled={busy}>
                   {t("itemMetadataSave")}
                 </Button>
-                {isManager && session?.profile === "adult" && info.mediaID === mediaID && (
+                {canAssign && (
                   <AssignDialog
                     key={mediaID}
                     selection={[{ mediaID, title: info.title, year: info.year }]}
@@ -377,6 +409,29 @@ export function ItemMetadataPage() {
                 )}
               </div>
             </section>
+
+            {canAssign && (
+              <section className="space-y-3" aria-labelledby="item-metadata-ordinal">
+                <h3 id="item-metadata-ordinal" className="font-medium">
+                  {t("assignOrdinal")}
+                </h3>
+                {info.operatorOrdinal ? (
+                  <>
+                    <p>{formatOrdinal(info.operatorOrdinal, ordinalLabels([], t))}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={onClearOrdinal}
+                    >
+                      {t("assignClearOrdinal")}
+                    </Button>
+                  </>
+                ) : (
+                  <EmptyLine message={t("assignNoOperatorOrdinal")} />
+                )}
+              </section>
+            )}
 
             <section className="space-y-3" aria-labelledby="item-metadata-fields">
               <h3 id="item-metadata-fields" className="font-medium">
