@@ -32,6 +32,8 @@ const (
 	MediaUploadChunkBytes  = 32 << 20
 	maxMediaUploadJSONBody = 1 << 20
 	maxMediaUploadBatch    = 200
+	mediaUploadChunkIdle   = 60 * time.Second
+	mediaUploadChunkLimit  = 15 * time.Minute
 	// MediaUploadOffsetHeader names the byte offset a chunk starts at.
 	MediaUploadOffsetHeader = "Upload-Offset"
 )
@@ -212,7 +214,20 @@ func (s *Server) appendMediaUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "Upload-Offset header is required")
 		return
 	}
-	upload, err := uploads.AppendMediaUploadChunk(r.Context(), r.PathValue("id"), offset, r.Body, scope.LibraryFilter(), time.Now().UTC())
+	now := time.Now()
+	body := mediaUploadChunkReader{
+		Reader:     r.Body,
+		controller: http.NewResponseController(w),
+		limit:      now.Add(mediaUploadChunkLimit),
+	}
+	var chunk io.Reader = &body
+	if err := body.refreshDeadline(now); errors.Is(err, http.ErrNotSupported) {
+		chunk = r.Body
+	} else if err != nil {
+		writeErrorCause(w, r, http.StatusInternalServerError, "media upload deadline failed", err)
+		return
+	}
+	upload, err := uploads.AppendMediaUploadChunk(r.Context(), r.PathValue("id"), offset, chunk, scope.LibraryFilter(), now.UTC())
 	if errors.Is(err, store.ErrMediaUploadOffset) {
 		writeJSON(w, http.StatusConflict, mediaUploadStatusOf(upload))
 		return
@@ -227,6 +242,29 @@ func (s *Server) appendMediaUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, mediaUploadStatusOf(upload))
+}
+
+// A chunk can outlive the server's global read timeout while making progress.
+type mediaUploadChunkReader struct {
+	io.Reader
+	controller *http.ResponseController
+	limit      time.Time
+}
+
+func (r *mediaUploadChunkReader) refreshDeadline(now time.Time) error {
+	deadline := now.Add(mediaUploadChunkIdle)
+	if deadline.After(r.limit) {
+		deadline = r.limit
+	}
+	return r.controller.SetReadDeadline(deadline)
+}
+
+func (r *mediaUploadChunkReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if n > 0 && err == nil {
+		err = r.refreshDeadline(time.Now())
+	}
+	return n, err
 }
 
 func (s *Server) cancelMediaUpload(w http.ResponseWriter, r *http.Request) {

@@ -27,6 +27,7 @@ export const mediaUploadStrings = {
     mediaUploadProposalsFailed: "Could not read the uploaded files.",
     mediaUploadSearchFailed: "Search failed.",
     mediaUploadPlaceFailed: "Could not place the files.",
+    mediaUploadPossiblyPlaced: "This file may have been placed. Check the destination folder.",
     mediaUploadNoLibraries: "Add a library first.",
   },
   fr: {
@@ -55,6 +56,8 @@ export const mediaUploadStrings = {
     mediaUploadProposalsFailed: "Impossible de lire les fichiers importés.",
     mediaUploadSearchFailed: "La recherche a échoué.",
     mediaUploadPlaceFailed: "Impossible de placer les fichiers.",
+    mediaUploadPossiblyPlaced:
+      "Ce fichier a peut-être été placé. Vérifiez le dossier de destination.",
     mediaUploadNoLibraries: "Ajoutez d'abord une bibliothèque.",
   },
   de: {
@@ -83,6 +86,7 @@ export const mediaUploadStrings = {
     mediaUploadProposalsFailed: "Die hochgeladenen Dateien konnten nicht gelesen werden.",
     mediaUploadSearchFailed: "Die Suche ist fehlgeschlagen.",
     mediaUploadPlaceFailed: "Die Dateien konnten nicht abgelegt werden.",
+    mediaUploadPossiblyPlaced: "Diese Datei wurde möglicherweise abgelegt. Prüfe den Zielordner.",
     mediaUploadNoLibraries: "Fügen Sie zuerst eine Bibliothek hinzu.",
   },
   es: {
@@ -111,6 +115,8 @@ export const mediaUploadStrings = {
     mediaUploadProposalsFailed: "No se pudieron leer los archivos subidos.",
     mediaUploadSearchFailed: "La búsqueda falló.",
     mediaUploadPlaceFailed: "No se pudieron colocar los archivos.",
+    mediaUploadPossiblyPlaced:
+      "Es posible que este archivo se haya colocado. Revisa la carpeta de destino.",
     mediaUploadNoLibraries: "Añade primero una biblioteca.",
   },
   pt: {
@@ -139,6 +145,7 @@ export const mediaUploadStrings = {
     mediaUploadProposalsFailed: "Não foi possível ler os arquivos enviados.",
     mediaUploadSearchFailed: "A pesquisa falhou.",
     mediaUploadPlaceFailed: "Não foi possível colocar os arquivos.",
+    mediaUploadPossiblyPlaced: "Este arquivo pode ter sido colocado. Verifique a pasta de destino.",
     mediaUploadNoLibraries: "Adicione uma biblioteca primeiro.",
   },
 } as const;

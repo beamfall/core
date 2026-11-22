@@ -222,7 +222,8 @@ export class ApiConfigurationError extends Error {
 export interface JSONRequestOptions {
   signal?: AbortSignal;
   maxResponseBytes?: number;
-  deadlineMs?: number;
+  /** Null lets a long-running operation use only the caller and identity signals. */
+  deadlineMs?: number | null;
 }
 
 type JSONRequestArgument = AbortSignal | JSONRequestOptions;
@@ -230,15 +231,15 @@ type JSONRequestArgument = AbortSignal | JSONRequestOptions;
 interface JSONRequestConfig {
   signal?: AbortSignal;
   maxResponseBytes: number;
-  deadlineMs: number;
+  deadlineMs: number | null;
 }
 
 function jsonRequestConfig(argument?: JSONRequestArgument): JSONRequestConfig {
   const options = argument && "aborted" in argument ? { signal: argument } : argument;
   const maxResponseBytes = options?.maxResponseBytes ?? DEFAULT_RESPONSE_BYTES;
-  const deadlineMs = options?.deadlineMs ?? DEFAULT_DEADLINE_MS;
+  const { deadlineMs = DEFAULT_DEADLINE_MS } = options ?? {};
   validateRequestBound("maxResponseBytes", maxResponseBytes, MAX_RESPONSE_BYTES);
-  validateRequestBound("deadlineMs", deadlineMs, MAX_DEADLINE_MS);
+  if (deadlineMs !== null) validateRequestBound("deadlineMs", deadlineMs, MAX_DEADLINE_MS);
   return { signal: options?.signal, maxResponseBytes, deadlineMs };
 }
 
@@ -260,19 +261,23 @@ async function requestJSON<T>(
 ): Promise<T> {
   requestGuard?.(path);
   const config = jsonRequestConfig(argument);
-  const deadlineError = new ApiDeadlineError(path, config.deadlineMs);
-  const deadlineController = new AbortController();
+  const { deadlineMs } = config;
+  let transportSignal = requestSignal(config.signal);
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_resolve, reject) => {
-    deadlineTimer = setTimeout(() => {
-      deadlineController.abort(deadlineError);
-      reject(deadlineError);
-    }, config.deadlineMs);
-  });
-  const callerSignal = requestSignal(config.signal);
-  const transportSignal = callerSignal
-    ? AbortSignal.any([callerSignal, deadlineController.signal])
-    : deadlineController.signal;
+  let deadline: Promise<never> | undefined;
+  if (deadlineMs !== null) {
+    const deadlineError = new ApiDeadlineError(path, deadlineMs);
+    const controller = new AbortController();
+    transportSignal = transportSignal
+      ? AbortSignal.any([transportSignal, controller.signal])
+      : controller.signal;
+    deadline = new Promise<never>((_resolve, reject) => {
+      deadlineTimer = setTimeout(() => {
+        controller.abort(deadlineError);
+        reject(deadlineError);
+      }, deadlineMs);
+    });
+  }
   const sentProfile = expectedProfileID;
   const requestInit: RequestInit = { ...init, signal: transportSignal };
   if (sentProfile !== undefined) {
@@ -293,7 +298,7 @@ async function requestJSON<T>(
     return body;
   });
   try {
-    return await Promise.race([transport, deadline]);
+    return await (deadline ? Promise.race([transport, deadline]) : transport);
   } finally {
     clearTimeout(deadlineTimer);
   }

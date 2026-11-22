@@ -53,6 +53,7 @@ type UploadRow = {
   destination: string;
   conflict: MediaUploadConflict;
   result?: MediaUploadCommitResult;
+  commitUnconfirmed?: boolean;
 };
 
 function parseLabel(parse?: MediaUploadParse): string {
@@ -90,7 +91,16 @@ export function UploadPage() {
   }, [t]);
 
   const patch = (key: string, change: Partial<UploadRow>) =>
-    setRows((current) => current.map((row) => (row.key === key ? { ...row, ...change } : row)));
+    setRows((current) =>
+      current.map((row) => {
+        if (row.key !== key) return row;
+        const updated = { ...row, ...change };
+        if (updated.destination !== row.destination) {
+          updated.conflict = updated.proposal?.conflict ? "fail" : "keep";
+        }
+        return updated;
+      }),
+    );
 
   const addFiles = async (files: File[]) => {
     if (!libraryID || files.length === 0) return;
@@ -166,26 +176,38 @@ export function UploadPage() {
     setError("");
     setBusy(true);
     try {
-      const results: MediaUploadCommitResult[] = [];
       const requests = placeable.map((row) => ({
         uploadID: row.proposal!.uploadID,
         destination: row.destination,
         conflict: row.conflict,
       }));
+      const byUploadID = new Map(placeable.map((row) => [row.uploadID, row]));
       for (const batch of batches(requests)) {
-        results.push(...(await commitMediaUploads(batch)));
+        let results: MediaUploadCommitResult[];
+        let commitUnconfirmed = false;
+        try {
+          results = await commitMediaUploads(batch);
+        } catch {
+          const message = t("mediaUploadPlaceFailed");
+          results = batch.map(({ uploadID }) => ({ uploadID, error: message }));
+          commitUnconfirmed = true;
+        }
+        const byID = new Map(results.map((result) => [result.uploadID, result]));
+        for (const result of results) {
+          const row = byUploadID.get(result.uploadID);
+          if (row && result.path) forgetMediaUpload(libraryID, row.file, row.relativeDir);
+        }
+        setRows((current) =>
+          current.map((row) => {
+            const result = row.uploadID ? byID.get(row.uploadID) : undefined;
+            if (!result) return row;
+            if (row.commitUnconfirmed && result.error === "upload not found") {
+              return { ...row, result: { ...result, error: t("mediaUploadPossiblyPlaced") } };
+            }
+            return { ...row, result, commitUnconfirmed };
+          }),
+        );
       }
-      const byID = new Map(results.map((r) => [r.uploadID, r]));
-      setRows((current) =>
-        current.map((row) => {
-          const result = row.uploadID ? byID.get(row.uploadID) : undefined;
-          if (!result) return row;
-          if (result.path) forgetMediaUpload(libraryID, row.file, row.relativeDir);
-          return { ...row, result };
-        }),
-      );
-    } catch {
-      setError(t("mediaUploadPlaceFailed"));
     } finally {
       setBusy(false);
     }

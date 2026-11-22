@@ -2,7 +2,14 @@
 
 package store
 
-import "os"
+import (
+	"os"
+	"syscall"
+)
+
+func renameMediaUploadNoReplace(_ int, _, _ string) error {
+	return syscall.ENOTSUP
+}
 
 func platformDataDirFilesystem(dataDir string) (dataDirFilesystem, error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {

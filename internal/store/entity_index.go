@@ -577,5 +577,12 @@ func (s *Store) SearchEntities(ctx context.Context, filter LibraryFilter, query 
 	if len(visible) == 0 {
 		return []SourceItem{}, nil
 	}
-	return s.fuzzySearchEntitiesLocked(ctx, visible, restricted, query, limit, "", nil)
+	items, err := s.fuzzySearchEntitiesLocked(ctx, visible, restricted, query, limit, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.annotateEntityYearsLocked(ctx, filter, items); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

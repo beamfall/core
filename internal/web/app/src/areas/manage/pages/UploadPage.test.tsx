@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchLibraries } from "@/lib/graphql";
@@ -127,5 +127,86 @@ describe("UploadPage", () => {
       ]),
     );
     expect(await screen.findByText("exists")).toBeInTheDocument();
+  });
+
+  it.each(["edit", "pick"])("clears a Replace approval after a destination %s", async (change) => {
+    const user = userEvent.setup();
+    vi.mocked(proposeMediaUploads).mockResolvedValue([
+      { uploadID: "u1", fileName: "clip.mkv", destination: "/lib/A", conflict: true },
+    ]);
+    vi.mocked(searchMediaUploadTargets).mockResolvedValue([
+      { entityID: "e2", title: "B", kindLabel: "Widget", destination: "/lib/B" },
+    ]);
+    vi.mocked(commitMediaUploads).mockResolvedValue([{ uploadID: "u1", error: "exists" }]);
+    render(
+      <I18nProvider>
+        <UploadPage />
+      </I18nProvider>,
+    );
+    await screen.findByRole("button", { name: "Choose files" });
+    await user.upload(
+      screen.getByLabelText("Choose files", { selector: "input" }),
+      new File(["abc"], "clip.mkv"),
+    );
+    const conflict = await screen.findByRole("combobox", { name: /clip\.mkv/ });
+    await user.tab();
+    conflict.focus();
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("option", { name: "Replace (old file to trash)" }));
+    expect(conflict).toHaveTextContent("Replace");
+
+    if (change === "edit") {
+      fireEvent.change(screen.getByLabelText("Folder clip.mkv"), { target: { value: "/lib/B" } });
+    } else {
+      await user.click(screen.getByRole("button", { name: "Change" }));
+      await user.type(screen.getByLabelText("Search items"), "B{Enter}");
+      await user.click(await screen.findByRole("button", { name: "Widget: B" }));
+    }
+    await user.click(screen.getByRole("button", { name: "Place files" }));
+    expect(commitMediaUploads).toHaveBeenCalledWith([
+      { uploadID: "u1", destination: "/lib/B", conflict: "fail" },
+    ]);
+  });
+
+  it("keeps earlier placements when a later commit batch loses its response", async () => {
+    const user = userEvent.setup();
+    const files = Array.from({ length: 201 }, (_, i) => new File(["abc"], `clip-${i}.mkv`));
+    vi.mocked(openMediaUpload).mockImplementation(async (_libraryID, file) => ({
+      uploadID: file.name,
+      fileName: file.name,
+      relativeDir: "",
+      size: file.size,
+      offset: 0,
+      chunkSize: 4,
+    }));
+    vi.mocked(proposeMediaUploads).mockImplementation(async (_libraryID, ids) =>
+      ids.map((id) => ({ uploadID: id, fileName: id, destination: "/lib", conflict: false })),
+    );
+    vi.mocked(commitMediaUploads)
+      .mockImplementationOnce(async (items) =>
+        items.map((item) => ({ uploadID: item.uploadID, path: `/lib/${item.uploadID}` })),
+      )
+      .mockRejectedValueOnce(new TypeError("response lost"))
+      .mockResolvedValueOnce([{ uploadID: "clip-200.mkv", error: "upload not found" }]);
+
+    render(
+      <I18nProvider>
+        <UploadPage />
+      </I18nProvider>,
+    );
+    await screen.findByRole("button", { name: "Choose files" });
+    await user.upload(screen.getByLabelText("Choose files", { selector: "input" }), files);
+    await screen.findByLabelText("Folder clip-200.mkv");
+    const place = screen.getByRole("button", { name: "Place files" });
+    await user.click(place);
+    const lastRow = within(screen.getByTestId("upload-row-clip-200.mkv"));
+    expect(await lastRow.findByText("Could not place the files.")).toBeInTheDocument();
+    expect(screen.getAllByText("Placed")).toHaveLength(200);
+
+    await user.click(place);
+    expect(commitMediaUploads).toHaveBeenLastCalledWith([
+      { uploadID: "clip-200.mkv", destination: "/lib", conflict: "keep" },
+    ]);
+    expect(await lastRow.findByText(/may have been placed/)).toBeInTheDocument();
   });
 });

@@ -142,3 +142,46 @@ func TestMediaUploadDestinationHelpers(t *testing.T) {
 		t.Fatalf("destination = %q", got)
 	}
 }
+
+func TestMediaUploadPlannerMatchesSameTitleByYear(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	const libraryID = "library-local"
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetLibraryRoots(ctx, libraryID, []string{root}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RegisterEntityKindPolicies(ctx, []store.EntityKindPolicy{{Kind: "widget", FullTextSearchable: true}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, year := range []int{1999, 2004} {
+		id := store.EntityID("entity-harbor-" + strconv.Itoa(year))
+		if err := st.UpsertEntity(ctx, store.Entity{ID: id, LibraryID: libraryID, Kind: "widget", Title: "Harbor Lights"}); err != nil {
+			t.Fatal(err)
+		}
+		member, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: libraryID, Path: filepath.Join(root, string(id), "part.mkv"),
+			Title: "Harbor Lights", Container: "mkv", Codec: "h264", Class: store.MediaClassVideo,
+			ContentFingerprint: string(id), Year: year,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: id, Name: "holds", ToMediaID: member.ID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filter := store.LibraryFilter{AllLibraries: true}
+	planner := &mediaUploadPlanner{st: st}
+	library, err := planner.library(ctx, filter, libraryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := planner.matchTarget(ctx, library, &server.MediaUploadParse{Title: "Harbor Lights", Year: 2004, Sequence: "1"})
+	if err != nil || target == nil || target.EntityID != "entity-harbor-2004" || target.Year != 2004 {
+		t.Fatalf("target = %+v, %v", target, err)
+	}
+}

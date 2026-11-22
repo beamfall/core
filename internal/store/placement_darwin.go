@@ -8,6 +8,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func renameMediaUploadNoReplace(fd int, from, to string) error {
+	return unix.RenameatxNp(fd, from, fd, to, unix.RENAME_EXCL)
+}
+
 func platformDataDirFilesystem(dataDir string) (dataDirFilesystem, error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return dataDirFilesystem{}, err

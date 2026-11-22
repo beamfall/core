@@ -4,7 +4,7 @@ import { ApiError, CSRF_HEADER, postJSON, profileHeaders } from "@/lib/api";
 // /api/media/uploads routes; each chunk names the byte offset it starts at, so
 // a dropped chunk resumes from the offset the server reports instead of
 // starting over. The session id is remembered per file for this tab, so a
-// reload resumes a half-sent file too.
+// reload can resume when the fingerprint covers all staged bytes.
 
 const UPLOADS = "/api/media/uploads";
 const RESUME_KEY = "beamfall.mediaUpload.";
@@ -121,8 +121,7 @@ const FINGERPRINT_BYTES = 64 * 1024;
 
 /**
  * A SHA-256 of the file's first 64 KiB. Name, size and modification time
- * alone can match a different file, so a staged upload is resumed only when
- * this matches too. Null when the browser cannot hash, which disables resume.
+ * alone can match a different file. Null when the browser cannot hash.
  */
 export async function uploadFingerprint(file: File): Promise<string | null> {
   try {
@@ -148,7 +147,10 @@ export async function openMediaUpload(
     const response = await sendUpload("GET", remembered.id, { signal });
     if (response.ok) {
       const status = await readStatus(response);
-      if (status.size === file.size) return status;
+      // Status reports only an offset. The fingerprint must cover all staged bytes.
+      if (status.size === file.size && status.offset <= Math.min(file.size, FINGERPRINT_BYTES)) {
+        return status;
+      }
     }
   }
   rememberUpload(key, null);
@@ -253,9 +255,11 @@ export async function searchMediaUploadTargets(
 export async function commitMediaUploads(
   items: MediaUploadCommitItem[],
 ): Promise<MediaUploadCommitResult[]> {
-  const result = await postJSON<{ results: MediaUploadCommitResult[] }>(`${UPLOADS}/commit`, {
-    items,
-  });
+  const result = await postJSON<{ results: MediaUploadCommitResult[] }>(
+    `${UPLOADS}/commit`,
+    { items },
+    { deadlineMs: null },
+  );
   return result.results ?? [];
 }
 

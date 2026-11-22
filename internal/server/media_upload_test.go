@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
@@ -160,4 +162,46 @@ func TestMediaUploadRoutesRequireAdminSession(t *testing.T) {
 	req.Header.Del(auth.CSRFHeader)
 	authorizeManager(req)
 	serveMediaUpload(t, srv, req, http.StatusForbidden, nil)
+}
+
+func TestMediaUploadChunkOutlivesServerReadTimeout(t *testing.T) {
+	srv, st := newTestServerWithStore(t)
+	if err := st.SetLibraryRoots(context.Background(), "library-local", []string{t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	data := bytes.Repeat([]byte("x"), 1200)
+	create, _ := json.Marshal(map[string]any{"libraryID": "library-local", "fileName": "clip.mkv", "size": len(data)})
+	var status mediaUploadStatus
+	req := mediaUploadRequest(t, http.MethodPost, "/api/media/uploads", create, 0)
+	authorizeManager(req)
+	serveMediaUpload(t, srv, req, http.StatusOK, &status)
+
+	ts := httptest.NewUnstartedServer(srv)
+	ts.Config.ReadTimeout = 200 * time.Millisecond
+	ts.Start()
+	defer ts.Close()
+
+	body := &pacingReader{remaining: data, chunk: 100, delay: 40 * time.Millisecond}
+	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/media/uploads/"+status.UploadID, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set(MediaUploadOffsetHeader, "0")
+	req.Header.Set(auth.CSRFHeader, "1")
+	authorizeManager(req)
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("slow chunk = %d: %s", resp.StatusCode, body)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Offset != int64(len(data)) {
+		t.Fatalf("offset = %d, want %d", status.Offset, len(data))
+	}
 }

@@ -292,15 +292,19 @@ func sweepMediaUploads(staging string, now time.Time) (open int, reserved int64,
 		if !ok || validateMediaUploadID(id) != nil {
 			continue
 		}
-		upload, err := readMediaUpload(staging, id)
-		if err != nil || now.Sub(upload.lastActive) > MediaUploadTTL {
+		upload, readErr := readMediaUpload(staging, id)
+		if errors.Is(readErr, ErrMediaUploadNotFound) || (readErr == nil && now.Sub(upload.lastActive) > MediaUploadTTL) {
 			removeMediaUploadFiles(staging, id)
+			continue
+		}
+		if readErr != nil {
+			err = errors.Join(err, readErr)
 			continue
 		}
 		open++
 		reserved += upload.Size - upload.Offset
 	}
-	return open, reserved, nil
+	return open, reserved, err
 }
 
 type stagedMediaUpload struct {
@@ -321,7 +325,13 @@ func readMediaUpload(staging, id string) (stagedMediaUpload, error) {
 		return stagedMediaUpload{}, ErrMediaUploadNotFound
 	}
 	info, err := os.Lstat(filepath.Join(staging, id+".part"))
-	if err != nil || !info.Mode().IsRegular() {
+	if errors.Is(err, os.ErrNotExist) {
+		return stagedMediaUpload{}, ErrMediaUploadNotFound
+	}
+	if err != nil {
+		return stagedMediaUpload{}, err
+	}
+	if !info.Mode().IsRegular() {
 		return stagedMediaUpload{}, ErrMediaUploadNotFound
 	}
 	upload.Offset = info.Size()
@@ -514,8 +524,8 @@ func (s *Store) CommitMediaUpload(ctx context.Context, id, destDir string, confl
 }
 
 // replaceWithMediaUpload admits the upload under a hidden temporary name, moves
-// the existing file to the managed trash, then links the upload at the
-// original name. If the final link fails the trashed file is restored, so a
+// the existing file to the managed trash, then publishes the upload at the
+// original name. If publishing fails the trashed file is restored, so a
 // failed Replace never leaves the folder without the original.
 func (s *Store) replaceWithMediaUpload(ctx context.Context, dir *os.Root, part, dirPath string, upload MediaUpload, filter LibraryFilter, now time.Time, finish func(string, *ManagedTrash) MediaUploadCommit) (MediaUploadCommit, error) {
 	var token [8]byte
@@ -531,7 +541,7 @@ func (s *Store) replaceWithMediaUpload(ctx context.Context, dir *os.Root, part, 
 		_ = dir.Remove(tmp)
 		return MediaUploadCommit{}, err
 	}
-	if err := dir.Link(tmp, upload.FileName); err != nil {
+	if err := publishMediaUploadTemp(dir, tmp, upload.FileName); err != nil {
 		_ = dir.Remove(tmp)
 		if _, restoreErr := s.RestoreManagedPath(ctx, upload.LibraryID, trash.TrashID, filter, now); restoreErr != nil {
 			return MediaUploadCommit{}, fmt.Errorf("replace failed (%w); the original stays in trash %s: %w", err, trash.TrashID, restoreErr)
@@ -575,7 +585,7 @@ func ensureUploadFolders(root *os.Root, rel string) (*os.Root, error) {
 
 // admitUploadIntoDir places the staged part at name inside dir without
 // replacing anything: a hard link from staging when both share a filesystem,
-// else a copy into a sibling temp finalized with a link. The part stays staged
+// else a copy into a sibling temp that is published whole. The part stays staged
 // until the caller finishes, so a failed commit can be retried. EEXIST is the
 // no-replace refusal.
 func admitUploadIntoDir(dir *os.Root, part, name string) error {
@@ -588,7 +598,7 @@ func admitUploadIntoDir(dir *os.Root, part, name string) error {
 	if linkErr == nil {
 		return nil
 	}
-	if !errors.Is(linkErr, unix.EXDEV) {
+	if !errors.Is(linkErr, unix.EXDEV) && !mediaUploadLinkUnavailable(linkErr) {
 		return &os.LinkError{Op: "link", Old: part, New: name, Err: linkErr}
 	}
 	src, err := os.Open(part) // #nosec G304 -- part is a validated upload id under the staging dir
@@ -601,7 +611,56 @@ func admitUploadIntoDir(dir *os.Root, part, name string) error {
 		return err
 	}
 	defer func() { _ = dir.Remove(tmp) }()
-	return dir.Link(tmp, name)
+	return publishMediaUploadTemp(dir, tmp, name)
+}
+
+func mediaUploadLinkUnavailable(err error) bool {
+	return errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.ENOSYS) ||
+		errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES)
+}
+
+func publishMediaUploadTemp(dir *os.Root, tmp, name string) error {
+	if err := dir.Link(tmp, name); !mediaUploadLinkUnavailable(err) {
+		return err
+	}
+	fd, err := dir.Open(".")
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+	err = renameMediaUploadNoReplace(int(fd.Fd()), tmp, name) //nolint:gosec // descriptors fit int
+	if !errors.Is(err, unix.ENOTSUP) && !errors.Is(err, unix.ENOSYS) && !errors.Is(err, unix.EINVAL) {
+		return err
+	}
+	return publishMediaUploadOverReservation(dir, tmp, name)
+}
+
+// Some volumes (including exFAT drivers) lack both links and exclusive rename.
+// Reserve the name atomically and rename the completed copy over our reservation.
+func publishMediaUploadOverReservation(dir *os.Root, tmp, name string) error {
+	reservation, err := dir.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	defer reservation.Close()
+	created, err := reservation.Stat()
+	if err != nil {
+		return err
+	}
+	ownsName := func() bool {
+		current, err := dir.Lstat(name)
+		return err == nil && os.SameFile(created, current)
+	}
+	if !ownsName() {
+		return os.ErrExist
+	}
+	if err := dir.Rename(tmp, name); err != nil {
+		if ownsName() {
+			_ = dir.Remove(name)
+		}
+		return err
+	}
+	return nil
 }
 
 func splitUploadName(name string) (stem, ext string) {

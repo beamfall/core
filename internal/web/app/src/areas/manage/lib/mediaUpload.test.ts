@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  commitMediaUploads,
   droppedRelativeDir,
   openMediaUpload,
   resumeKey,
@@ -29,7 +30,10 @@ if (!Blob.prototype.arrayBuffer) {
 }
 
 beforeEach(() => sessionStorage.clear());
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe("sendMediaUpload", () => {
   it("resumes from the server offset after a refused or failed chunk", async () => {
@@ -84,6 +88,43 @@ describe("sendMediaUpload", () => {
     const status = await openMediaUpload("lib", file, "");
     expect(status.uploadID).toBe("u-new");
   });
+
+  it("restarts when the staged prefix extends past the fingerprint", async () => {
+    const prefix = new Uint8Array(64 * 1024);
+    const original = new File([prefix, "ab"], file.name, { lastModified: 1 });
+    const changed = new File([prefix, "zb"], file.name, { lastModified: 1 });
+    const head = await uploadFingerprint(original);
+    expect(head).toBeTruthy();
+    expect(await uploadFingerprint(changed)).toBe(head);
+    sessionStorage.setItem(resumeKey("lib", original, ""), JSON.stringify({ id: "u-old", head }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        json({ uploadID: "u-old", size: changed.size, offset: prefix.length + 1 }),
+      )
+      .mockResolvedValueOnce(json({ uploadID: "u-new", size: changed.size, offset: 0 }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await openMediaUpload("lib", changed, "")).toMatchObject({
+      uploadID: "u-new",
+      offset: 0,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+it("waits for a commit that takes longer than the default JSON deadline", async () => {
+  vi.useFakeTimers();
+  const results = [{ uploadID: "u1", path: "/lib/clip.mkv" }];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 180_000));
+      return json({ results });
+    }),
+  );
+  const pending = commitMediaUploads([{ uploadID: "u1", destination: "/lib", conflict: "keep" }]);
+  const [committed] = await Promise.all([pending, vi.advanceTimersByTimeAsync(180_000)]);
+  expect(committed).toEqual(results);
 });
 
 describe("droppedRelativeDir", () => {
