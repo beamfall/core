@@ -1,5 +1,7 @@
 {
   "fix_match.encrypted_library": "La corrección de coincidencias no está disponible en bibliotecas cifradas.",
+  "fix_match.invalid_index": "El índice debe ser un número entero entre 0 y 2147483647.",
+  "fix_match.invalid_sequence": "La secuencia debe ser una cadena de hasta 32 caracteres.",
   "library_root.cant_open": "El servidor no puede abrir {path}.",
   "library_root.missing": "La carpeta {path} no existe en el servidor.",
   "library_root.not_folder": "{path} es un archivo, no una carpeta.",

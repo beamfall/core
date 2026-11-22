@@ -356,7 +356,8 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"extensionrequest": {
 		{Name: "id", Kind: "string"},
 	},
-	"fixmatch": fieldArguments["fixmatch"],
+	"clearmediaordinal": fieldArguments["clearmediaordinal"],
+	"fixmatch":          fieldArguments["fixmatch"],
 	"fixmatchcandidates": {
 		{Name: "mediaID", Kind: "string", Optional: true},
 		{Name: "pluginID", Kind: "string"},
@@ -366,13 +367,8 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"fixmatchcurrent":      {{Name: "mediaID", Kind: "string"}},
 	"fixmatchlockedfields": {{Name: "mediaID", Kind: "string"}},
-	"fixmatchpreview": {
-		{Name: "candidateID", Kind: "string"},
-		{Name: "mediaID", Kind: "string"},
-		{Name: "pluginID", Kind: "string"},
-		{Name: "scraperID", Kind: "string"},
-	},
-	"fixmatchsources": {{Name: "mediaID", Kind: "string"}},
+	"fixmatchpreview":      fieldArguments["fixmatchpreview"],
+	"fixmatchsources":      {{Name: "mediaID", Kind: "string"}},
 	"foldertree": {
 		{Name: "depth", Kind: "number", Optional: true},
 		{Name: "libraryID", Kind: "string"},

@@ -1825,6 +1825,7 @@ export interface MediaMetadataInfo {
   year: number;
   refreshable: boolean;
   locks: FieldLockInfo[];
+  operatorOrdinal?: { sequence: string; index: number } | null;
 }
 
 /** The built-in fields an item edit may set; an absent field is left alone. */

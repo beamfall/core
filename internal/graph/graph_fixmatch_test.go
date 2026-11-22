@@ -143,6 +143,7 @@ func TestFixMatchRejectsVisibleEncryptedMedia(t *testing.T) {
 		{"current", `query($mediaID: String!) { fixMatchCurrent(mediaID: $mediaID) { candidateID } }`},
 		{"locked fields", `query($mediaID: String!) { fixMatchLockedFields(mediaID: $mediaID) { field } }`},
 		{"candidates", `query($mediaID: String!) { fixMatchCandidates(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup") { id } }`},
+		{"clear ordinal", clearMediaOrdinalMutation},
 		{"preview", `query($mediaID: String!) { fixMatchPreview(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42") { field } }`},
 		{"replace", `mutation($mediaID: String!) { fixMatch(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42") { id } }`},
 		{"associate", `mutation($mediaID: String!) { fixMatch(mediaID: $mediaID, recordID: "record", importRunID: "run") { id } }`},

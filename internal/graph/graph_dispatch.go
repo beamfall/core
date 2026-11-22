@@ -480,6 +480,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"entityrelations":                    newFieldHandler("entityRelations", "entityRelations", fieldRead, roleSession, 7),
 	"evictplaybackrenditioncache":        newFieldHandler("evictPlaybackRenditionCache", "evictPlaybackRenditionCache", fieldMutation, roleSession|roleAdmin, 75),
 	"extensionrequest":                   newFieldHandler("extensionRequest", "extensionRequest", fieldRead, roleSession, 95),
+	"clearmediaordinal":                  newFieldHandler("clearMediaOrdinal", "clearMediaOrdinal", fieldMutation, roleSession|roleManager, 60),
 	"fixmatch":                           newFieldHandler("fixMatch", "fixMatch", fieldMutation, roleSession|roleManager, 60),
 	"fixmatchcandidates":                 newFieldHandler("fixMatchCandidates", "fixMatchCandidates", fieldRead, roleSession|roleManager, 60),
 	"fixmatchcurrent":                    newFieldHandler("fixMatchCurrent", "fixMatchCurrent", fieldRead, roleSession|roleManager, 60),
@@ -2073,7 +2074,7 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 		}
 	}
 	if fields["identifysearch"] || fields["identifyapply"] || fields["fixmatch"] ||
-		fields["identifylookup"] || fields["fixmatchcandidates"] || fields["fixmatchpreview"] {
+		fields["identifylookup"] || fields["fixmatchcandidates"] || fields["fixmatchpreview"] || fields["clearmediaordinal"] {
 		if h.identify == nil {
 			return response{Errors: []graphError{newGraphError(ErrorCodeInternal, "identification unavailable")}}
 		}
@@ -2107,6 +2108,12 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 		if fields["fixmatchpreview"] {
 			diff, err := h.fixMatchPreview(ctx, scope, req)
 			if resp := resolveField(dispatch, "fixmatchpreview", diff, err); len(resp.Errors) > 0 {
+				return resp
+			}
+		}
+		if fields["clearmediaordinal"] {
+			cleared, err := h.clearMediaOrdinal(ctx, scope, req)
+			if resp := resolveField(dispatch, "clearmediaordinal", cleared, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}

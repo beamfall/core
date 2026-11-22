@@ -8,6 +8,9 @@ import (
 	"path"
 	"strings"
 	"testing"
+	"time"
+
+	filmtv "github.com/beamfall/plugin-filmtv"
 
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/plugin"
@@ -192,4 +195,63 @@ func TestIdentifyNamesTheEpisode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOperatorOrdinalSurvivesRescanAndRehydration(t *testing.T) {
+	r := newRehydrationScan(t)
+	r.path = path.Join(r.root, "Sample - S01E03.flac")
+	r.write("synthetic bytes for scan and hydration", 3*time.Hour, map[string]string{"title": "One", "album": "First"})
+	r.scan()
+	id := r.mediaID
+	ctx := t.Context()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/lookup/42/1/3":
+			fmt.Fprint(w, `{"name":"Matched item","summary":"parsed ordinal"}`)
+		case "/lookup/42/2/5":
+			fmt.Fprint(w, `{"name":"Matched item","summary":"operator ordinal"}`)
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer server.Close()
+	bundle := singleBundle{ID: testHydrationPluginID, Scrapers: []plugin.ScraperSpec{{
+		ID: "lookup", Kind: "http-json", Endpoint: server.URL, LookupTemplate: "/lookup/{id}/{sequence}/{index}",
+		FieldMap: map[string]string{"title": "name", "summary": "summary"},
+	}}}
+	service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), bundle, r.st)
+	service.SetMediaTitles(parserMediaTitles{store: r.st, parsers: map[string]scanpkg.FilenameParser{testHydrationPluginID: filmtv.New()}})
+
+	assertSummary := func(want string) {
+		t.Helper()
+		media, err := r.st.Media(ctx, id, metadataLibraryFilter)
+		if err != nil || media.Summary != want {
+			t.Fatalf("lookup path = %q, err %v, want %q", media.Summary, err, want)
+		}
+	}
+
+	if err := service.Apply(ctx, id, testHydrationPluginID, "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	assertSummary("parsed ordinal")
+	ordinal := store.MediaOrdinal{Sequence: "2", Index: 5}
+	if err := service.ApplyFixMatch(ctx, id, testHydrationPluginID, "lookup", "42", nil, &ordinal, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	assertSummary("operator ordinal")
+
+	r.touch(2 * time.Hour)
+	r.scan()
+	if r.mediaID != id {
+		t.Fatalf("rescanned Media = %s, want %s", r.mediaID, id)
+	}
+	r.rehydrate("sha256:updated-tags", map[string]string{"title": "Two", "album": "Second"})
+	if got := r.field("album"); got != "Second" {
+		t.Fatalf("rehydrated album = %q, want Second", got)
+	}
+	if err := service.Refresh(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	assertSummary("operator ordinal")
 }

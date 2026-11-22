@@ -202,7 +202,7 @@ type Service struct {
 	queue             UnmatchedStore
 	pins              MatchPinStore
 	optionalAuthSkips sync.Map
-	// writes serializes the Media write and subsequent entity hydration per item.
+	// writes serializes ordinal changes, lookups and hydration per Media item.
 	writes mediaWriteLocks
 }
 
@@ -390,7 +390,7 @@ func (s *Service) Lookup(ctx context.Context, pluginID, scraperID, candidateID s
 	if strings.TrimSpace(candidateID) == "" {
 		return Candidate{}, errors.New("identify: candidate ID is required")
 	}
-	_, _, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID)
+	_, _, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID, nil, false)
 	if err != nil {
 		return Candidate{}, err
 	}
@@ -401,11 +401,15 @@ func (s *Service) Lookup(ctx context.Context, pluginID, scraperID, candidateID s
 // the parser's title built from the lookup's plugin Media field values when
 // the title source builds one, else AppliedTitle's. The Fix-Match preview
 // reads it so the proposed title is the one Apply writes.
-func (s *Service) PreviewLookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID) (Candidate, string, error) {
+func (s *Service) PreviewLookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID, ordinal *store.MediaOrdinal) (Candidate, string, error) {
 	if strings.TrimSpace(candidateID) == "" {
 		return Candidate{}, "", errors.New("identify: candidate ID is required")
 	}
-	bundle, spec, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID)
+	clearOrdinal, err := s.shouldClearOrdinal(ctx, mediaID, candidateID, nil, ordinal)
+	if err != nil {
+		return Candidate{}, "", err
+	}
+	bundle, spec, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID, ordinal, clearOrdinal)
 	if err != nil {
 		return Candidate{}, "", err
 	}
@@ -415,9 +419,8 @@ func (s *Service) PreviewLookup(ctx context.Context, pluginID, scraperID, candid
 }
 
 // lookup resolves the scraper and runs the engine's lookup for candidateID
-// with mediaID's fingerprint and ordinal variables: the read Apply, Lookup and
-// PreviewLookup share.
-func (s *Service) lookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID) (plugin.Bundle, plugin.ScraperSpec, scrape.Result, error) {
+// with mediaID's fingerprint and effective ordinal variables.
+func (s *Service) lookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID, ordinal *store.MediaOrdinal, clearOrdinal bool) (plugin.Bundle, plugin.ScraperSpec, scrape.Result, error) {
 	bundle, spec, err := s.spec(pluginID, scraperID)
 	if err != nil {
 		return plugin.Bundle{}, plugin.ScraperSpec{}, scrape.Result{}, err
@@ -427,7 +430,11 @@ func (s *Service) lookup(ctx context.Context, pluginID, scraperID, candidateID s
 		return plugin.Bundle{}, plugin.ScraperSpec{}, scrape.Result{}, err
 	}
 	vars.PluginID = pluginID
-	s.applyOrdinal(ctx, mediaID, pluginID, &vars)
+	if ordinal != nil {
+		vars.Sequence, vars.Index = ordinal.Sequence, ordinal.Index
+	} else {
+		s.applyOrdinal(ctx, mediaID, pluginID, &vars, clearOrdinal)
+	}
 	result, err := s.engine.Lookup(ctx, spec, candidateID, vars)
 	if err != nil {
 		return plugin.Bundle{}, plugin.ScraperSpec{}, scrape.Result{}, err
@@ -454,42 +461,112 @@ func (s *Service) variables(ctx context.Context, mediaID store.MediaID) (scrape.
 	}, nil
 }
 
-// applyOrdinal sets vars' sequence and index from the plugin parser's
-// ordinal for mediaID when the wired title source supplies one. A failed read
-// leaves them unknown, which skips the per-item lookup and ordinal entity
-// maps rather than failing the identification.
-func (s *Service) applyOrdinal(ctx context.Context, mediaID store.MediaID, pluginID string, vars *scrape.Variables) {
+// applyOrdinal reads the manual tier before falling back to the parser. A
+// failed read leaves the ordinal unknown.
+func (s *Service) applyOrdinal(ctx context.Context, mediaID store.MediaID, pluginID string, vars *scrape.Variables, clearOrdinal bool) {
+	if mediaID == "" {
+		return
+	}
+	if source, ok := s.store.(mediaOrdinalReader); ok && !clearOrdinal {
+		ordinal, err := source.MediaOperatorOrdinal(ctx, mediaID)
+		if err != nil {
+			slog.Debug("identify: operator ordinal unavailable", "media", mediaID, "error", err)
+			return
+		}
+		if ordinal != nil {
+			vars.Sequence, vars.Index = ordinal.Sequence, ordinal.Index
+			return
+		}
+	}
 	source, ok := s.titles.(MediaOrdinalSource)
-	if !ok || mediaID == "" {
+	if !ok {
 		return
 	}
 	sequence, index, err := source.ParsedMediaOrdinal(ctx, mediaID, pluginID)
 	if err != nil {
-		slog.Debug("identify: parser ordinal unavailable", "media", mediaID, "error", err.Error())
+		slog.Debug("identify: parser ordinal unavailable", "media", mediaID, "error", err)
 		return
 	}
 	vars.Sequence, vars.Index = sequence, index
 }
 
-// Apply looks up the chosen candidate and writes its title/summary/year and
-// sort title onto the Media row. The engine already returns transformed
-// values; a year that does not parse to an int is omitted, like an unresolved
-// path. Visibility gating belongs to the caller — this is the server-internal
-// write path.
-func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string) error {
-	return s.ApplyWithClearedLocks(ctx, mediaID, pluginID, scraperID, candidateID, nil)
+type mediaOrdinalReader interface {
+	MediaOperatorOrdinal(context.Context, store.MediaID) (*store.MediaOrdinal, error)
 }
 
-// ApplyWithClearedLocks applies a candidate and clears the chosen metadata locks.
-// The lookup and result validation happen before any locks can be changed.
-func (s *Service) ApplyWithClearedLocks(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, clearLocks []string) error {
+// Apply looks up the chosen candidate and writes its metadata onto the Media.
+// Visibility gating belongs to the caller.
+func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string) error {
+	unlock := s.writes.lock(mediaID)
+	defer unlock()
+	return s.apply(ctx, mediaID, pluginID, scraperID, candidateID, store.MediaMetadata{})
+}
+
+// ApplyFixMatch uses the prospective ordinal for lookup and commits the manual
+// edit with the replacement. No other identification can interleave its
+// lookup or change the remembered candidate while this match is being applied.
+func (s *Service) ApplyFixMatch(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, clearLocks []string, ordinal *store.MediaOrdinal, actor store.ProfileID) error {
+	unlock := s.writes.lock(mediaID)
+	defer unlock()
+	clearOrdinal, err := s.shouldClearOrdinal(ctx, mediaID, candidateID, clearLocks, ordinal)
+	if err != nil {
+		return err
+	}
+	locks := slices.DeleteFunc(slices.Clone(clearLocks), func(field string) bool {
+		return field == store.MediaOrdinalLockField
+	})
+	edit := store.MediaMetadata{
+		ClearLocks: locks, OperatorOrdinal: ordinal, OrdinalActor: actor, ClearOrdinal: clearOrdinal,
+	}
+	if err := s.apply(ctx, mediaID, pluginID, scraperID, candidateID, edit); err != nil {
+		return err
+	}
+	disposition := "kept"
+	if ordinal != nil {
+		disposition = "set"
+	} else if clearOrdinal {
+		disposition = "cleared"
+	}
+	slog.Info("identify: fixed match", "media", mediaID, "operatorOrdinal", disposition)
+	return nil
+}
+
+func (s *Service) shouldClearOrdinal(ctx context.Context, mediaID store.MediaID, candidateID string, clearLocks []string, ordinal *store.MediaOrdinal) (bool, error) {
+	if ordinal != nil {
+		return false, nil
+	}
+	if clearLocks != nil {
+		return slices.Contains(clearLocks, store.MediaOrdinalLockField), nil
+	}
+	reader, ok := s.store.(ProvenanceReader)
+	if !ok || mediaID == "" {
+		return false, nil
+	}
+	current, _, err := reader.MediaMetadataProvenance(ctx, mediaID)
+	return current.CandidateID != candidateID, err
+}
+
+// ClearMediaOrdinal serializes unlock with lookups and writes for the same Media.
+func (s *Service) ClearMediaOrdinal(ctx context.Context, mediaID store.MediaID) (bool, error) {
+	unlock := s.writes.lock(mediaID)
+	defer unlock()
+	writer, ok := s.store.(interface {
+		ClearMediaOrdinal(context.Context, store.MediaID) (bool, error)
+	})
+	if !ok {
+		return false, errors.New("identify: operator ordinal store unavailable")
+	}
+	return writer.ClearMediaOrdinal(ctx, mediaID)
+}
+
+func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, edit store.MediaMetadata) error {
 	if mediaID == "" {
 		return errors.New("identify: media ID is required")
 	}
 	if strings.TrimSpace(candidateID) == "" {
 		return errors.New("identify: candidate ID is required")
 	}
-	bundle, spec, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID)
+	bundle, spec, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID, edit.OperatorOrdinal, edit.ClearOrdinal)
 	if err != nil {
 		return err
 	}
@@ -507,23 +584,29 @@ func (s *Service) ApplyWithClearedLocks(ctx context.Context, mediaID store.Media
 		title := s.appliedTitle(ctx, mediaID, pluginID, *metadata.Title, identifiedFieldTexts(bundle, spec, result))
 		metadata.Title = &title
 	}
-	metadata.ClearLocks = clearLocks
-	if err := s.applyLocal(ctx, mediaID, pluginID, scraperID, candidateID, metadata, bundle, spec, result); err != nil {
-		return err
-	}
-	s.applyArtwork(ctx, mediaID, pluginID, scraperID, result)
-	return nil
-}
-
-// applyLocal commits the Media replacement before hydrating related entities.
-func (s *Service) applyLocal(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, metadata store.MediaMetadata, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
-	unlock := s.writes.lock(mediaID)
-	defer unlock()
+	metadata.ClearLocks = edit.ClearLocks
+	metadata.OperatorOrdinal = edit.OperatorOrdinal
+	metadata.OrdinalActor = edit.OrdinalActor
+	metadata.ClearOrdinal = edit.ClearOrdinal
 	provenance := store.MediaMetadataProvenance{PluginID: pluginID, ScraperID: scraperID, CandidateID: candidateID}
+	// Entity hydration uses independent writes and can fail. Finish it before
+	// committing an ordinal edit so a failed Apply never publishes that edit.
+	ordinalsChanged := edit.OperatorOrdinal != nil || edit.ClearOrdinal
+	if ordinalsChanged {
+		if err := s.applyEntities(ctx, mediaID, bundle, spec, result); err != nil {
+			return err
+		}
+	}
 	if err := s.store.ApplyMediaIdentification(ctx, mediaID, metadata, provenance, identifiedMediaFields(bundle, spec, result)); err != nil {
 		return err
 	}
-	return s.applyEntities(ctx, mediaID, bundle, spec, result)
+	if !ordinalsChanged {
+		if err := s.applyEntities(ctx, mediaID, bundle, spec, result); err != nil {
+			return err
+		}
+	}
+	s.applyArtwork(ctx, mediaID, pluginID, scraperID, result)
+	return nil
 }
 
 // identifiedMediaFields collects the scraper's plugin-declared Media field

@@ -70,6 +70,7 @@ type ExportMediaInfo struct {
 	Fields          []EntityFieldInfo   `json:"fields"`
 	Markers         []ExportMarkerInfo  `json:"markers"`
 	ArtworkPins     []ExportArtworkInfo `json:"artworkPins"`
+	OperatorOrdinal *MediaOrdinalInfo   `json:"operatorOrdinal,omitempty"`
 }
 
 // ExportMarkerInfo is one exported authored Marker.
@@ -180,6 +181,7 @@ func (h *Handler) metadataExport(ctx context.Context, scope auth.Scope) (Metadat
 			Fields:          make([]EntityFieldInfo, 0, len(m.Fields)),
 			Markers:         make([]ExportMarkerInfo, 0, len(m.Markers)),
 			ArtworkPins:     make([]ExportArtworkInfo, 0, len(m.ArtworkPin)),
+			OperatorOrdinal: mediaOrdinalInfo(m.OperatorOrdinal),
 		}
 		for _, f := range m.Fields {
 			mi.Fields = append(mi.Fields, EntityFieldInfo{

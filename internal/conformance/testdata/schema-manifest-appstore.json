@@ -210,6 +210,11 @@
     "tier": "session"
   },
   {
+    "field": "clearmediaordinal",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "clearmute",
     "effect": "write",
     "tier": "session"

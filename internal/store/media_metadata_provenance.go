@@ -100,6 +100,21 @@ func (s *Store) ApplyMediaIdentification(ctx context.Context, id MediaID, metada
 	if err := upsertMediaMetadataProvenance(ctx, tx, id, provenance); err != nil {
 		return err
 	}
+	if metadata.OperatorOrdinal != nil {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO media_operator_ordinal(media_id, sequence, ordinal_index, set_at_ms, actor_profile_id)
+			VALUES (?, ?, ?, ?, NULLIF(?, ''))
+			ON CONFLICT(media_id) DO UPDATE SET sequence = excluded.sequence,
+				ordinal_index = excluded.ordinal_index, set_at_ms = excluded.set_at_ms,
+				actor_profile_id = excluded.actor_profile_id`,
+			id, metadata.OperatorOrdinal.Sequence, metadata.OperatorOrdinal.Index,
+			timeToMillis(s.serverNow().UTC()), metadata.OrdinalActor)
+	} else if metadata.ClearOrdinal {
+		_, err = deleteMediaOrdinal(ctx, tx, id)
+	}
+	if err != nil {
+		return err
+	}
 	if _, err := upsertMediaFieldsTx(ctx, tx, id, fields, MutationSourceOperator); err != nil {
 		return err
 	}

@@ -690,7 +690,7 @@ export async function acknowledgeBackupKey(
 }
 
 const METADATA_EXPORT_QUERY =
-  "query MetadataExport { metadataExport { schema exportedAt libraries { id pluginID restricted title } media { artworkPins { pluginID scraperID slot sourceURL } class codec container durationSeconds fields { label name type value } id libraryID markers { endSeconds id segmentKind startSeconds tags title } mutatedBy summary title year } entities { fields { label name type value } id kind libraryID title } relations { attributes fromEntityID relation toEntityID toMediaID } mediaLinks { attributes fromMediaID relation toMediaID } collections { createdAt id libraryID name sourceExpr } } }";
+  "query MetadataExport { metadataExport { schema exportedAt libraries { id pluginID restricted title } media { artworkPins { pluginID scraperID slot sourceURL } class codec container durationSeconds fields { label name type value } id libraryID markers { endSeconds id segmentKind startSeconds tags title } mutatedBy operatorOrdinal { sequence index } summary title year } entities { fields { label name type value } id kind libraryID title } relations { attributes fromEntityID relation toEntityID toMediaID } mediaLinks { attributes fromMediaID relation toMediaID } collections { createdAt id libraryID name sourceExpr } } }";
 
 /** MetadataExport — the full reveal-filtered portability export (ADR-0005 §5). */
 export async function fetchMetadataExport(signal?: AbortSignal): Promise<MetadataExportInfo> {
@@ -1532,7 +1532,7 @@ export async function setMediaFieldLock(
 // --- Per-item metadata editor (CORE-1715) ---------------------------------
 
 const MEDIA_METADATA_SELECTION =
-  "{ mediaID title sortTitle summary year refreshable locks { field locked } }";
+  "{ mediaID title sortTitle summary year refreshable locks { field locked } operatorOrdinal { sequence index } }";
 
 const MEDIA_METADATA_QUERY = `query MediaMetadata($mediaID: String!) { mediaMetadata(mediaID: $mediaID) ${MEDIA_METADATA_SELECTION} }`;
 
@@ -1697,7 +1697,7 @@ export async function identifySearch(vars: {
 }
 
 const FIX_MATCH_MUTATION =
-  "mutation FixMatch($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $clearLocks: [String!]) { fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, clearLocks: $clearLocks) { id title summary year favorited } }";
+  "mutation FixMatch($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $clearLocks: [String!], $sequence: String, $index: Int) { fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, clearLocks: $clearLocks, sequence: $sequence, index: $index) { id title summary year favorited } }";
 
 /** FixMatch — apply a selected candidate and clear the unmatched row. */
 export async function fixMatch(vars: {
@@ -1706,9 +1706,19 @@ export async function fixMatch(vars: {
   scraperID: string;
   candidateID: string;
   clearLocks?: string[];
+  sequence?: string;
+  index?: number;
 }): Promise<GenericMediaInfo> {
   const data = await graphql<{ fixMatch: GenericMediaInfo }>(FIX_MATCH_MUTATION, vars);
   return data.fixMatch;
+}
+
+const CLEAR_MEDIA_ORDINAL_MUTATION =
+  "mutation ClearMediaOrdinal($mediaID: String!) { clearMediaOrdinal(mediaID: $mediaID) }";
+
+export async function clearMediaOrdinal(mediaID: string): Promise<boolean> {
+  const data = await graphql<{ clearMediaOrdinal: boolean }>(CLEAR_MEDIA_ORDINAL_MUTATION, { mediaID });
+  return data.clearMediaOrdinal;
 }
 
 // --- Fix Match full contract (METAPARITY-4, ADR-0068 §A) -------------------
@@ -1780,7 +1790,7 @@ export async function identifyLookup(vars: {
 }
 
 const FIX_MATCH_PREVIEW_QUERY =
-  "query FixMatchPreview($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!) { fixMatchPreview(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID) { field current proposed changed } }";
+  "query FixMatchPreview($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $sequence: String, $index: Int) { fixMatchPreview(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, sequence: $sequence, index: $index) { field current proposed changed } }";
 
 /** FixMatchPreview — what applying a candidate would change, before any write. */
 export async function fixMatchPreview(vars: {
@@ -1788,6 +1798,8 @@ export async function fixMatchPreview(vars: {
   pluginID: string;
   scraperID: string;
   candidateID: string;
+  sequence?: string;
+  index?: number;
 }): Promise<FixMatchFieldDiff[]> {
   const data = await graphql<{ fixMatchPreview: FixMatchFieldDiff[] | null }>(
     FIX_MATCH_PREVIEW_QUERY,

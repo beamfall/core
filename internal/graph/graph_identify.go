@@ -3,11 +3,13 @@ package graph
 import (
 	"context"
 	"errors"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/identify"
@@ -167,6 +169,10 @@ func (h *Handler) fixMatch(ctx context.Context, scope auth.Scope, req request) (
 	if mediaID == "" || pluginID == "" || scraperID == "" || candidateID == "" {
 		return MediaInfo{}, clientError("mediaID, pluginID, scraperID, and candidateID are required")
 	}
+	ordinal, err := fixMatchOrdinal(req)
+	if err != nil {
+		return MediaInfo{}, err
+	}
 	vars := newVars(req)
 	clearLocks, _ := vars.StringList("clearLocks", "strings")
 	if err := vars.Err(); err != nil {
@@ -177,7 +183,7 @@ func (h *Handler) fixMatch(ctx context.Context, scope auth.Scope, req request) (
 	if err != nil {
 		return MediaInfo{}, err
 	}
-	if err := h.identify.ApplyWithClearedLocks(ctx, media.ID, pluginID, scraperID, candidateID, clearLocks); err != nil {
+	if err := h.identify.ApplyFixMatch(ctx, media.ID, pluginID, scraperID, candidateID, clearLocks, ordinal, scope.ProfileID); err != nil {
 		if errors.Is(err, store.ValidationError("unknown lockable field")) {
 			return MediaInfo{}, clientError("unknown lockable field")
 		}
@@ -200,6 +206,43 @@ func (h *Handler) fixMatch(ctx context.Context, scope auth.Scope, req request) (
 		return MediaInfo{}, clientError("unknown media")
 	}
 	return h.mediaInfo(ctx, scope, media)
+}
+
+func fixMatchOrdinal(req request) (*store.MediaOrdinal, error) {
+	v := newVars(req)
+	sequence, hasSequence := v.String("sequence")
+	if v.Err() != nil || utf8.RuneCountInString(sequence) > 32 {
+		return nil, &l10n.Error{
+			Key: l10n.FixMatchInvalidSequence,
+			Err: clientError("sequence must be a string of at most 32 characters"),
+		}
+	}
+	index, hasIndex := v.Number("index")
+	if v.Err() != nil || index != math.Trunc(index) || index < 0 || index > math.MaxInt32 {
+		return nil, &l10n.Error{
+			Key: l10n.FixMatchInvalidIndex,
+			Err: clientError("index must be an integer from 0 to 2147483647"),
+		}
+	}
+	if !hasSequence && !hasIndex {
+		return nil, nil
+	}
+	return &store.MediaOrdinal{Sequence: sequence, Index: int(index)}, nil
+}
+
+func (h *Handler) clearMediaOrdinal(ctx context.Context, scope auth.Scope, req request) (bool, error) {
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(trimmedVariable(req, "mediaID")))
+	if err != nil {
+		return false, err
+	}
+	cleared, err := h.identify.ClearMediaOrdinal(ctx, media.ID)
+	if err != nil {
+		return false, err
+	}
+	if cleared {
+		h.logMediaActivity(ctx, scope, store.ActivityMediaFieldLock, media.ID)
+	}
+	return cleared, nil
 }
 
 // FixMatchSourceInfo describes a searchable scraper available to this Media.
@@ -512,7 +555,11 @@ func (h *Handler) fixMatchPreview(ctx context.Context, scope auth.Scope, req req
 	if err != nil {
 		return nil, err
 	}
-	candidate, title, err := h.identify.PreviewLookup(ctx, pluginID, scraperID, candidateID, media.ID)
+	ordinal, err := fixMatchOrdinal(req)
+	if err != nil {
+		return nil, err
+	}
+	candidate, title, err := h.identify.PreviewLookup(ctx, pluginID, scraperID, candidateID, media.ID, ordinal)
 	if err != nil {
 		return nil, err
 	}
@@ -540,9 +587,20 @@ func (h *Handler) fixMatchLockedFields(ctx context.Context, scope auth.Scope, re
 		return nil, err
 	}
 	fields := []FixMatchLockedFieldInfo{}
+	ordinal, err := h.store.MediaOperatorOrdinal(ctx, media.ID)
+	if err != nil {
+		return nil, err
+	}
+	if ordinal != nil {
+		value := strconv.Itoa(ordinal.Index)
+		if ordinal.Sequence != "" {
+			value = ordinal.Sequence + " / " + value
+		}
+		fields = append(fields, FixMatchLockedFieldInfo{Field: store.MediaOrdinalLockField, Value: value})
+	}
 	var pluginValues map[string]string
 	for _, lock := range locks {
-		if !lock.Locked {
+		if !lock.Locked || (ordinal != nil && lock.Field == store.MediaOrdinalLockField) {
 			continue
 		}
 		var value string

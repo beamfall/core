@@ -213,6 +213,11 @@
       "tier": "session"
     },
     {
+      "field": "clearmediaordinal",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "clearmute",
       "effect": "write",
       "tier": "session"
@@ -3718,6 +3723,16 @@
         {
           "name": "cleared",
           "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "clearmediaordinal",
+      "kind": "scalar",
+      "arguments": [
+        {
+          "name": "mediaID",
+          "kind": "string"
         }
       ]
     },
@@ -7669,6 +7684,21 @@
           "kind": "scalar"
         },
         {
+          "name": "operatorOrdinal",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "index",
+              "kind": "scalar"
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "refreshable",
           "kind": "scalar"
         },
@@ -9348,6 +9378,11 @@
           "optional": true
         },
         {
+          "name": "index",
+          "kind": "int",
+          "optional": true
+        },
+        {
           "name": "mediaID",
           "kind": "string"
         },
@@ -9363,6 +9398,11 @@
         },
         {
           "name": "scraperID",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "sequence",
           "kind": "string",
           "optional": true
         }
@@ -9720,6 +9760,34 @@
     {
       "field": "fixmatchpreview",
       "kind": "object",
+      "arguments": [
+        {
+          "name": "candidateID",
+          "kind": "string"
+        },
+        {
+          "name": "index",
+          "kind": "int",
+          "optional": true
+        },
+        {
+          "name": "mediaID",
+          "kind": "string"
+        },
+        {
+          "name": "pluginID",
+          "kind": "string"
+        },
+        {
+          "name": "scraperID",
+          "kind": "string"
+        },
+        {
+          "name": "sequence",
+          "kind": "string",
+          "optional": true
+        }
+      ],
       "children": [
         {
           "name": "changed",
@@ -14893,6 +14961,21 @@
           "kind": "scalar"
         },
         {
+          "name": "operatorOrdinal",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "index",
+              "kind": "scalar"
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "refreshable",
           "kind": "scalar"
         },
@@ -16204,6 +16287,22 @@
                 "optional": true
               },
               {
+                "name": "operatorOrdinal",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "index",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "sequence",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
                 "name": "summary",
                 "kind": "scalar",
                 "optional": true
@@ -16428,6 +16527,22 @@
               "name": "mutatedBy",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "operatorOrdinal",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "index",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "sequence",
+                  "kind": "scalar"
+                }
+              ]
             },
             {
               "name": "summary",
@@ -20494,6 +20609,21 @@
         {
           "name": "mediaID",
           "kind": "scalar"
+        },
+        {
+          "name": "operatorOrdinal",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "index",
+              "kind": "scalar"
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "refreshable",

@@ -6194,6 +6194,7 @@ var mutationFields = map[string]bool{
 	"undobatch":                          true,
 	"identifyapply":                      true,
 	"fixmatch":                           true,
+	"clearmediaordinal":                  true,
 	"dismissunmatched":                   true,
 	"createmediafromunmatched":           true, // METAPARITY-6 (ADR-0068 §A): hand-authored no-match Media
 	"suppressunmatched":                  true, // METAPARITY-7 (ADR-0068 §A): one scoped suppression

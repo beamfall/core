@@ -188,7 +188,9 @@ var clientErrorCodes = map[string]ErrorCode{
 	"unknown plugin config field":          ErrorCodeInvalid,
 	"unknown transport command":            ErrorCodeInvalid,
 
-	"fix match is unavailable in encrypted libraries": ErrorCodeInvalid,
+	"fix match is unavailable in encrypted libraries":    ErrorCodeInvalid,
+	"sequence must be a string of at most 32 characters": ErrorCodeInvalid,
+	"index must be an integer from 0 to 2147483647":      ErrorCodeInvalid,
 
 	"admin password rejected":                                   ErrorCodeForbidden,
 	"adult profile or manager role required":                    ErrorCodeForbidden,

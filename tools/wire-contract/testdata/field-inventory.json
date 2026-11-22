@@ -532,6 +532,11 @@
       ]
     },
     {
+      "field": "clearmediaordinal",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "clearmute",
       "effect": "write",
       "tier": "session",
@@ -1094,6 +1099,7 @@
       "children": [
         "locks",
         "mediaID",
+        "operatorOrdinal",
         "refreshable",
         "sortTitle",
         "summary",
@@ -1886,6 +1892,7 @@
       "children": [
         "locks",
         "mediaID",
+        "operatorOrdinal",
         "refreshable",
         "sortTitle",
         "summary",
@@ -2547,6 +2554,7 @@
       "children": [
         "locks",
         "mediaID",
+        "operatorOrdinal",
         "refreshable",
         "sortTitle",
         "summary",

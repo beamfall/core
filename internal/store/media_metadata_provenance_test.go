@@ -72,7 +72,8 @@ func TestApplyMediaIdentificationRollsBackAfterMetadataWrite(t *testing.T) {
 	original := MediaMetadataProvenance{PluginID: "demo", ScraperID: "lookup", CandidateID: "original"}
 	originalFields := []MediaField{{Name: "providerCode", Type: EntityFieldText, Text: "original"}}
 	originalTitle := "Original match title"
-	if err := st.ApplyMediaIdentification(ctx, id, MediaMetadata{Title: &originalTitle}, original, originalFields); err != nil {
+	originalOrdinal := MediaOrdinal{Sequence: "2", Index: 5}
+	if err := st.ApplyMediaIdentification(ctx, id, MediaMetadata{Title: &originalTitle, OperatorOrdinal: &originalOrdinal, OrdinalActor: "profile-default"}, original, originalFields); err != nil {
 		t.Fatal(err)
 	}
 	manualTitle := "Manual title"
@@ -86,7 +87,8 @@ func TestApplyMediaIdentificationRollsBackAfterMetadataWrite(t *testing.T) {
 			SELECT CASE
 				WHEN (SELECT title FROM media WHERE id = NEW.media_id) = 'Replacement title'
 				AND (SELECT candidate_id FROM media_metadata_provenance WHERE media_id = NEW.media_id) = 'replacement'
-				THEN RAISE(ABORT, 'injected failure after metadata and candidate writes')
+				AND (SELECT ordinal_index FROM media_operator_ordinal WHERE media_id = NEW.media_id) = 6
+				THEN RAISE(ABORT, 'injected failure after metadata, candidate, and ordinal writes')
 				ELSE RAISE(ABORT, 'replacement did not reach the expected write stage')
 			END;
 		END`); err != nil {
@@ -95,9 +97,9 @@ func TestApplyMediaIdentificationRollsBackAfterMetadataWrite(t *testing.T) {
 	replacementTitle := "Replacement title"
 	replacement := MediaMetadataProvenance{PluginID: "demo", ScraperID: "lookup", CandidateID: "replacement"}
 	replacementFields := []MediaField{{Name: "providerCode", Type: EntityFieldText, Text: "replacement"}}
-	metadata := MediaMetadata{Title: &replacementTitle, ClearLocks: []string{"title"}}
+	metadata := MediaMetadata{Title: &replacementTitle, ClearLocks: []string{"title"}, OperatorOrdinal: &MediaOrdinal{Sequence: "3", Index: 6}}
 	if err := st.ApplyMediaIdentification(ctx, id, metadata, replacement, replacementFields); err == nil ||
-		!strings.Contains(err.Error(), "injected failure after metadata and candidate writes") {
+		!strings.Contains(err.Error(), "injected failure after metadata, candidate, and ordinal writes") {
 		t.Fatalf("identification error = %v, want injected plugin-field failure after metadata and provenance", err)
 	}
 	if err := st.Close(); err != nil {
@@ -120,6 +122,10 @@ func TestApplyMediaIdentificationRollsBackAfterMetadataWrite(t *testing.T) {
 	got, ok, err := reopened.MediaMetadataProvenance(ctx, id)
 	if err != nil || !ok || got != original {
 		t.Fatalf("provenance after reopen = %+v, found %v, err %v; want %+v", got, ok, err, original)
+	}
+	ordinal, err := reopened.MediaOperatorOrdinal(ctx, id)
+	if err != nil || ordinal == nil || *ordinal != originalOrdinal {
+		t.Fatalf("ordinal after reopen = %+v, err %v, want %+v", ordinal, err, originalOrdinal)
 	}
 	fields, err := reopened.MediaFields(ctx, id, filter)
 	if err != nil || !slices.Equal(fields, originalFields) {

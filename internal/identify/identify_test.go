@@ -1724,7 +1724,7 @@ func TestApplyIdentifiedMediaTitleSource(t *testing.T) {
 			if !reflect.DeepEqual(tc.titles.gotFields, tc.wantFields) {
 				t.Errorf("hook fields = %#v, want %#v", tc.titles.gotFields, tc.wantFields)
 			}
-			_, previewTitle, err := service.PreviewLookup(context.Background(), "demo", "lookup", "42", "media-alpha")
+			_, previewTitle, err := service.PreviewLookup(context.Background(), "demo", "lookup", "42", "media-alpha", nil)
 			if err != nil {
 				t.Fatal(err)
 			}

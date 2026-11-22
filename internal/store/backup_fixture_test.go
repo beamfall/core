@@ -570,6 +570,8 @@ func fixtureSemanticValue(ctx context.Context, db *sql.DB, table, column string)
 		"item_rating.target_kind":               "media",
 		"item_rating.rating":                    5,
 		"device_build_binding.surface":          "ios-viewer",
+		"media_operator_ordinal.sequence":       "2",
+		"media_operator_ordinal.ordinal_index":  5,
 	}[table+"."+column]; ok {
 		return value, true, nil
 	}

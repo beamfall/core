@@ -1,5 +1,7 @@
 {
   "fix_match.encrypted_library": "La correction de la correspondance est indisponible dans les bibliothèques chiffrées.",
+  "fix_match.invalid_index": "L’indice doit être un entier compris entre 0 et 2147483647.",
+  "fix_match.invalid_sequence": "La séquence doit être une chaîne de 32 caractères au maximum.",
   "library_root.cant_open": "Le serveur ne peut pas ouvrir {path}.",
   "library_root.missing": "Le dossier {path} n’existe pas sur le serveur.",
   "library_root.not_folder": "{path} est un fichier, pas un dossier.",

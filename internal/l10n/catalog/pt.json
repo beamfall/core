@@ -1,5 +1,7 @@
 {
   "fix_match.encrypted_library": "A correção de correspondências não está disponível em bibliotecas criptografadas.",
+  "fix_match.invalid_index": "O índice deve ser um número inteiro entre 0 e 2147483647.",
+  "fix_match.invalid_sequence": "A sequência deve ser uma cadeia de até 32 caracteres.",
   "library_root.cant_open": "O servidor não consegue abrir {path}.",
   "library_root.missing": "A pasta {path} não existe no servidor.",
   "library_root.not_folder": "{path} é um arquivo, não uma pasta.",

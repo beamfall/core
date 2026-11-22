@@ -1,5 +1,7 @@
 {
   "fix_match.encrypted_library": "Die Zuordnung kann in verschlüsselten Bibliotheken nicht korrigiert werden.",
+  "fix_match.invalid_index": "Der Index muss eine ganze Zahl zwischen 0 und 2147483647 sein.",
+  "fix_match.invalid_sequence": "Die Sequenz muss eine Zeichenfolge mit höchstens 32 Zeichen sein.",
   "library_root.cant_open": "Der Server kann {path} nicht öffnen.",
   "library_root.missing": "Den Ordner {path} gibt es auf dem Server nicht.",
   "library_root.not_folder": "{path} ist eine Datei, kein Ordner.",

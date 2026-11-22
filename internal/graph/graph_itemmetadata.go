@@ -21,6 +21,19 @@ import (
 // at the manual source. Reads and writes are reveal-and-Library filtered, so a
 // hidden Media is "not found".
 
+// MediaOrdinalInfo is the saved sequence and index exposed to a manager.
+type MediaOrdinalInfo struct {
+	Sequence string `json:"sequence"`
+	Index    int    `json:"index"`
+}
+
+func mediaOrdinalInfo(ordinal *store.MediaOrdinal) *MediaOrdinalInfo {
+	if ordinal == nil {
+		return nil
+	}
+	return &MediaOrdinalInfo{Sequence: ordinal.Sequence, Index: ordinal.Index}
+}
+
 // MediaMetadataInfo is one Media's editable built-in metadata on the wire.
 type MediaMetadataInfo struct {
 	MediaID   string `json:"mediaID"`
@@ -30,8 +43,9 @@ type MediaMetadataInfo struct {
 	Year      int    `json:"year"`
 	// Refreshable reports whether a per-item refresh can re-run a provider:
 	// false until an identification recorded the candidate it applied.
-	Refreshable bool            `json:"refreshable"`
-	Locks       []FieldLockInfo `json:"locks"`
+	Refreshable     bool              `json:"refreshable"`
+	Locks           []FieldLockInfo   `json:"locks"`
+	OperatorOrdinal *MediaOrdinalInfo `json:"operatorOrdinal"`
 }
 
 // mediaMetadata resolves the editor read.
@@ -146,17 +160,22 @@ func (h *Handler) mediaMetadataInfo(ctx context.Context, scope auth.Scope, media
 	if err != nil {
 		return MediaMetadataInfo{}, err
 	}
+	ordinal, err := h.store.MediaOperatorOrdinal(ctx, mediaID)
+	if err != nil {
+		return MediaMetadataInfo{}, err
+	}
 	record, ok, err := h.store.MediaMetadataProvenance(ctx, mediaID)
 	if err != nil {
 		return MediaMetadataInfo{}, err
 	}
 	return MediaMetadataInfo{
-		MediaID:     string(media.ID),
-		Title:       media.Title,
-		SortTitle:   sortTitle,
-		Summary:     media.Summary,
-		Year:        media.Year,
-		Refreshable: ok && record.CandidateID != "" && h.identify != nil,
-		Locks:       fieldLockInfos(locks),
+		MediaID:         string(media.ID),
+		Title:           media.Title,
+		SortTitle:       sortTitle,
+		Summary:         media.Summary,
+		Year:            media.Year,
+		Refreshable:     ok && record.CandidateID != "" && h.identify != nil,
+		Locks:           fieldLockInfos(locks),
+		OperatorOrdinal: mediaOrdinalInfo(ordinal),
 	}, nil
 }

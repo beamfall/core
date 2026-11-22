@@ -147,6 +147,7 @@ var originalScopedFields = []string{
 	"fixmatchlockedfields",
 	"fixmatchpreview",
 	"fixmatchsources",
+	"clearmediaordinal",
 	"fixmatch",           // PIPE-1 (ADR-0003 §4): re-identify + pin
 	"foldertree",         // WEB-5C (ADR-0061): manager-scoped bounded folder/file tree read
 	"unmatchedqueue",     // PIPE-1 (ADR-0003 §4): Unmatched-queue read

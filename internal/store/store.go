@@ -573,6 +573,10 @@ type MediaMetadata struct {
 	Source MutationSource
 	// ClearLocks are field locks to clear in the same transaction as the write.
 	ClearLocks []string
+	// Identification-only manual tier edits, committed with the replacement.
+	OperatorOrdinal *MediaOrdinal
+	OrdinalActor    ProfileID
+	ClearOrdinal    bool
 }
 
 // ArtworkCandidate is one persisted scraped artwork alternative for a

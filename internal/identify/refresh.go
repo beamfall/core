@@ -32,6 +32,8 @@ func (s *Service) Refresh(ctx context.Context, mediaID store.MediaID) error {
 	if mediaID == "" {
 		return errors.New("identify: media ID is required")
 	}
+	unlock := s.writes.lock(mediaID)
+	defer unlock()
 	reader, ok := s.store.(ProvenanceReader)
 	if !ok {
 		return ErrNothingToRefresh
@@ -46,5 +48,5 @@ func (s *Service) Refresh(ctx context.Context, mediaID store.MediaID) error {
 	if _, _, err := s.spec(record.PluginID, record.ScraperID); err != nil {
 		return fmt.Errorf("%w: %w", ErrScraperUnavailable, err)
 	}
-	return s.Apply(ctx, mediaID, record.PluginID, record.ScraperID, record.CandidateID)
+	return s.apply(ctx, mediaID, record.PluginID, record.ScraperID, record.CandidateID, store.MediaMetadata{})
 }

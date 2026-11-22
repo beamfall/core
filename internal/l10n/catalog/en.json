@@ -1,5 +1,7 @@
 {
   "fix_match.encrypted_library": "fix match is unavailable in encrypted libraries",
+  "fix_match.invalid_index": "index must be an integer from 0 to 2147483647",
+  "fix_match.invalid_sequence": "sequence must be a string of at most 32 characters",
   "library_root.cant_open": "The server can't open {path}.",
   "library_root.missing": "The folder {path} doesn't exist on the server.",
   "library_root.not_folder": "{path} is a file, not a folder.",
