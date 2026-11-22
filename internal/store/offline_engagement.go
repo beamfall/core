@@ -116,21 +116,23 @@ func (s *Store) ApplyOfflineEngagementEvent(ctx context.Context, ev OfflineEngag
 		// is kept.
 		return OfflineEngagementOutcome{}, tx.Commit()
 	}
-	// The stored state's time: its event time, or when the server received it
-	// for a report that carried none.
-	priorTime := priorUpdatedAt
-	if priorEventTime.Valid {
-		priorTime = priorEventTime.Int64
+	priorTime := int64(0)
+	if hasPrior {
+		priorTime, err = priorPositionTimeMS(ctx, tx, progress.ProfileID, progress.MediaID, priorEventTime, priorUpdatedAt)
+		if err != nil {
+			return OfflineEngagementOutcome{}, err
+		}
 	}
 	if hasPrior && !event.Watched && priorTime > playedAt {
 		// Latest timestamp wins: a stale offline position changes nothing, not
 		// the position and not the duration, so only the ledger row is kept.
 		return OfflineEngagementOutcome{}, tx.Commit()
 	}
-	if event.Watched && priorEventTime.Valid && priorEventTime.Int64 > playedAt {
+	if event.Watched && hasPrior && priorTime > playedAt {
 		// Completion wins whatever its timestamp: lift the event time to the
-		// stored one so the event-time guard lets the completion through.
-		lifted := priorEventTime.Int64
+		// stored state's so the event-time guard lets it through and the
+		// stored time never moves backward.
+		lifted := priorTime
 		event.EventTimeMS = &lifted
 	}
 	if err := appendPlaybackProjectionEvent(ctx, tx, event); err != nil {
@@ -143,4 +145,28 @@ func (s *Store) ApplyOfflineEngagementEvent(ctx context.Context, ev OfflineEngag
 		return OfflineEngagementOutcome{}, err
 	}
 	return OfflineEngagementOutcome{BecameWatched: event.Watched}, nil
+}
+
+// priorPositionTimeMS is when the stored position was set: its event time, or,
+// for a report that carried none, when the server received the latest report
+// that moved the position. updated_at_ms is the last resort only, because an
+// import moves it without moving the position.
+func priorPositionTimeMS(ctx context.Context, tx *sql.Tx, profileID ProfileID, mediaID MediaID, eventTime sql.NullInt64, updatedAt int64) (int64, error) {
+	if eventTime.Valid {
+		return eventTime.Int64, nil
+	}
+	var positioned sql.NullInt64
+	err := tx.QueryRowContext(ctx, `
+		SELECT MAX(created_at_ms) FROM engagement_event
+		WHERE profile_id = ? AND media_id = ? AND kind = ?
+		  AND json_extract(payload, '$.operation') IN (?, ?, ?)
+	`, profileID, mediaID, playbackProjectionEventKind,
+		playbackProjectionOperationProgress, playbackProjectionOperationMark, playbackProjectionOperationVersionMerge).Scan(&positioned)
+	if err != nil {
+		return 0, err
+	}
+	if positioned.Valid {
+		return positioned.Int64, nil
+	}
+	return updatedAt, nil
 }

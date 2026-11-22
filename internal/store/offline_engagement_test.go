@@ -245,6 +245,55 @@ func TestOfflineEngagementStaleEventKeepsUntimedNewerState(t *testing.T) {
 	}
 }
 
+// An import moves updated_at_ms without moving the position, so it must not
+// make an offline play that is newer than the position look stale.
+func TestOfflineEngagementImportDoesNotHideNewerPlay(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+		ProfileID: "profile-default", MediaID: "media-alpha",
+		PositionSeconds: 100, DurationSeconds: 1200,
+	}, false, ResumePolicy{Class: MediaClassVideo}); err != nil {
+		t.Fatal(err)
+	}
+	playedAt := time.Now().Add(time.Second)
+	// Push the row's updated_at_ms past the play, as a later import does.
+	if _, err := st.eventsW.ExecContext(ctx, `UPDATE playback_progress SET updated_at_ms = ? WHERE profile_id = 'profile-default' AND media_id = 'media-alpha'`,
+		playedAt.Add(time.Hour).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	ev := offlineEvent("profile-default", "evt-after-import", 300, false, playedAt)
+	if _, err := st.ApplyOfflineEngagementEvent(ctx, ev); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustProgress(t, st, "profile-default"); got.PositionSeconds != 300 {
+		t.Fatalf("position = %d, want 300 from the newer offline play", got.PositionSeconds)
+	}
+}
+
+// An older offline completion over newer untimed state still completes, but
+// never moves the stored event time backward.
+func TestOfflineEngagementOldCompletionKeepsEventTime(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+		ProfileID: "profile-default", MediaID: "media-alpha",
+		PositionSeconds: 600, DurationSeconds: 1200,
+	}, false, ResumePolicy{Class: MediaClassVideo}); err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now().UnixMilli()
+	ev := offlineEvent("profile-default", "evt-old-done", 1200, true, time.Now().Add(-2*time.Hour))
+	out, err := st.ApplyOfflineEngagementEvent(ctx, ev)
+	if err != nil || !out.BecameWatched {
+		t.Fatalf("old completion = %+v, %v; want watched", out, err)
+	}
+	got := mustProgress(t, st, "profile-default")
+	if !got.Watched || got.EventTimeMS < before-60_000 {
+		t.Fatalf("progress = %+v; want watched with event time no older than the untimed report", got)
+	}
+}
+
 func TestOfflineEngagementFarFutureClockIsClamped(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

@@ -191,7 +191,12 @@ func (h *Handler) applyOfflineEngagement(ctx context.Context, scope auth.Scope, 
 		return offlineEngagementDuplicate, "", nil
 	}
 	if outcome.BecameWatched && h.watchedObserver != nil {
-		// The scrobble carries when the play happened, not when it was replayed.
+		// The scrobble carries when the play happened, not when it was
+		// replayed, clamped like the store's copy so a fast clock never dates
+		// it in the future.
+		if now := time.Now().UTC(); playedAt.After(now) {
+			playedAt = now
+		}
 		h.notifyWatchedAt(ctx, scope.ProfileID, media, playedAt)
 	}
 	return offlineEngagementApplied, "", nil
