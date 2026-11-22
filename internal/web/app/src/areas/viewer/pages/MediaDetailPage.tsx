@@ -36,7 +36,12 @@ import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { artFrameClass } from "../lib/cardArt";
 import { timeLeftLabel } from "../lib/cardState";
-import { audioPeople, type ContainerLink, useContainerContext } from "../lib/containerContext";
+import {
+  audioPeople,
+  type ContainerLink,
+  useContainerContext,
+  useSequenceNext,
+} from "../lib/containerContext";
 import { mediaPath } from "../lib/mediaAddress";
 import {
   fetchMedia,
@@ -48,7 +53,7 @@ import {
   resumeProgress,
 } from "../lib/mediaDetail";
 import { castHasDetail, creditsWithJob } from "../lib/people";
-import { nextInSequence, secondsLeft, sequenceLabel, sequencePosition } from "../lib/relationOrder";
+import { secondsLeft, sequenceLabel, sequencePosition } from "../lib/relationOrder";
 import { streamFacts } from "../lib/streamFacts";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
@@ -209,6 +214,7 @@ export function MediaDetailPage() {
   // A book in a relation-sequenced series (CORE-3014): the next one is offered,
   // never queued, so finishing it never starts another (ADR-0055 §2.4).
   const series = sequencePosition(media);
+  const seriesNext = useSequenceNext(series, mediaId, context);
   // The Profile's watched state as the item actions read and change it, so
   // Mark played offers Next in series at once (and a direct link knows it).
   const [watched, setWatched] = useState<{ id: string; watched: boolean } | null>(null);
@@ -351,7 +357,7 @@ export function MediaDetailPage() {
   const reserving = !media && status === "loading";
   const progressText = progress ? t("mediaDetailProgress", { percent: progress.percent }) : "";
   // A sequenced book offers the next one only once it is finished.
-  const next = series ? (finished ? nextInSequence(series, context) : null) : context.next;
+  const next = series ? (finished ? seriesNext : null) : context.next;
   // The grouping is linked above; the nearest container is in the position line.
   const positioned = ordered?.container.id ?? series?.id;
   const parents = positioned

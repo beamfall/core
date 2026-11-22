@@ -197,3 +197,35 @@ export function useContainerContext(
 
   return context;
 }
+
+/**
+ * The item after `mediaID` in the sequencing container's own order: the
+ * context's next when that container is the nearest one, otherwise a read of
+ * the sequencing container, so a smaller container never hides or replaces
+ * the next in sequence. Null without a position or until the read lands.
+ */
+export function useSequenceNext(
+  position: { id: string } | null,
+  mediaID: string,
+  context: ContainerContext,
+): SourceItem | null {
+  const own = !!position && context.container?.id === position.id;
+  const readID = position && !own ? position.id : "";
+  const [read, setRead] = useState<{ key: string; next: SourceItem | null } | null>(null);
+  const key = `${readID}\n${mediaID}`;
+  useEffect(() => {
+    if (!readID) return;
+    const controller = new AbortController();
+    fetchMediaForEntity(readID, controller.signal)
+      .then((items) => {
+        if (!controller.signal.aborted) setRead({ key, next: nextAfter(items, mediaID) });
+      })
+      .catch(() => {
+        // No offer without the container's order.
+      });
+    return () => controller.abort();
+  }, [key, readID, mediaID]);
+  if (!position) return null;
+  if (own) return context.next;
+  return read?.key === key ? read.next : null;
+}

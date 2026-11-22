@@ -152,4 +152,43 @@ describe("useSequenceFinish and NextInSequenceCard (CORE-3013)", () => {
     await screen.findByRole("link", { name: /Title b45/ });
     expect(screen.getByText("The Long Road")).toBeInTheDocument();
   });
+
+  it("offers the series' next even when a smaller container is the nearest", async () => {
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id) =>
+      id === "c1" ? [item("b4"), item("x9")] : [item("b3"), item("b4"), item("b45"), item("b5")],
+    );
+    const collection = {
+      ...credit(""),
+      entityID: "c1",
+      title: "Shelf",
+      kind: "collection",
+      attributes: {},
+    };
+    const video = renderHarness(book("b4", "4", { credits: [collection, credit("4")] }));
+    await waitFor(() => expect(fetchMediaForEntity).toHaveBeenCalledWith("s1", expect.anything()));
+    fire(video, "ended");
+    const link = await screen.findByRole("link", { name: /Title b45/ });
+    expect(link).toHaveAttribute("href", "/media/b45");
+  });
+
+  it("does not bring a stale offer back after playing again while disabled", async () => {
+    const video = document.createElement("video");
+    const tree = (enabled: boolean) => (
+      <I18nProvider>
+        <MemoryRouter>
+          <Harness media={book("b4", "4")} video={video} enabled={enabled} />
+        </MemoryRouter>
+      </I18nProvider>
+    );
+    const { rerender } = render(tree(true));
+    await waitFor(() => expect(fetchMediaForEntity).toHaveBeenCalled());
+    fire(video, "ended");
+    await screen.findByRole("region", { name: "Next in series" });
+    rerender(tree(false));
+    // Played again while the listeners were off: the element is no longer ended.
+    fire(video, "play");
+    rerender(tree(true));
+    await act(async () => {});
+    expect(screen.getByText("ended plainly")).toBeInTheDocument();
+  });
 });

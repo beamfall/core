@@ -77,18 +77,6 @@ export function sequencePosition(
   return null;
 }
 
-/**
- * The item after this one in the sequencing container, from a container
- * context whose nearest container is that one; null otherwise, so another
- * container's order is never offered as the next in sequence.
- */
-export function nextInSequence(
-  position: SequencePosition | null,
-  context: { container: { id: string } | null; next: SourceItem | null },
-): SourceItem | null {
-  return position && context.container?.id === position.id ? context.next : null;
-}
-
 /** Roles in their display order; any other role follows in the order first seen. */
 const ROLE_ORDER = ["author", "narrator", "translator"];
 

@@ -44,6 +44,7 @@ import {
   skipIntervalOverrideKey,
   skipIntervalOverrideValue,
 } from "../lib/preferences";
+import { sequencePosition } from "../lib/relationOrder";
 import { noteAutoAdvance } from "../lib/stillWatching";
 import {
   encodeSubtitleAppearance,
@@ -1192,6 +1193,14 @@ function FeaturePlayer({
                 identity={identity}
                 onDismiss={() => setDismissedFinish(finishKey)}
               />
+            )}
+            {playing && sequencePosition(media) && (
+              // Persistent for a sequenced item, so the offer's arrival is announced without moving focus.
+              <p className="sr-only" role="status" aria-live="polite">
+                {sequenceNext && showSequenceNext
+                  ? t("mediaDetailNextInSeriesLabel", { title: sequenceNext.item.title })
+                  : ""}
+              </p>
             )}
             {playing && stillWatching.prompting && (
               <StillWatchingPrompt

@@ -3,7 +3,6 @@ import type { MediaCredit, SourceItem } from "@/lib/graphql/types";
 import {
   creditAttribute,
   creditRoles,
-  nextInSequence,
   roleGroups,
   secondsLeft,
   sequenceLabel,
@@ -97,7 +96,7 @@ describe("secondsLeft", () => {
   });
 });
 
-describe("sequencePosition and nextInSequence", () => {
+describe("sequencePosition", () => {
   const sequenced = { ...credit("s1", { sequence: "4.5" }), archetype: "container" };
   it("reads the sequencing container of an audio Media only", () => {
     expect(sequencePosition({ mediaClass: "audio", credits: [sequenced] })).toEqual({
@@ -109,13 +108,5 @@ describe("sequencePosition and nextInSequence", () => {
     expect(
       sequencePosition({ mediaClass: "audio", credits: [{ ...sequenced, archetype: "person" }] }),
     ).toBeNull();
-  });
-
-  it("offers the next item only from the sequencing container's own order", () => {
-    const position = { id: "s1", title: "s1", sequence: "4" };
-    const next = item("b5");
-    expect(nextInSequence(position, { container: { id: "s1" }, next })).toBe(next);
-    expect(nextInSequence(position, { container: { id: "other" }, next })).toBeNull();
-    expect(nextInSequence(null, { container: { id: "s1" }, next })).toBeNull();
   });
 });
