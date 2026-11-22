@@ -31,15 +31,31 @@ time in each file. Without a spectral fingerprint the loudness comparison SHALL 
 
 ### Requirement: Spectral shared run
 
-A one-second window of this Media SHALL count as shared when its frames' mean Hamming distance to
-the sibling's frames at that offset is at most 5 bits. The longest run of shared windows at any
-offset SHALL become the candidate segment, subject to the existing intro cap, runtime-fraction cap,
-whole-overlap rejection, minimum length and confidence threshold.
+Each frame pair SHALL agree, disagree or carry no evidence; shared silence and a held tone or hum
+on both sides carry none. A one-second window SHALL count as shared when at least two pairs agree
+and at most a quarter disagree, and as differing when at least two pairs disagree and outnumber the
+agreeing ones. The best run of shared windows at an offset with a differing window SHALL become the
+candidate segment, under the existing segment guards.
+
+#### Scenario: Held hum is no evidence
+
+- **WHEN** after a shared intro both files hold the same hum while their other frames differ
+- **THEN** the intro ends where the shared intro ends
 
 #### Scenario: Longest run wins
 
 - **WHEN** two offsets each yield a shared run, of 20 s and of 26 s
 - **THEN** the 26 s run is the candidate segment
+
+### Requirement: Spectral duplicate rejection
+
+When an offset with no differing window shares at least 15 windows outside the candidate segment,
+the sibling SHALL yield no segment, because the two files are one recording.
+
+#### Scenario: Silence-padded copy
+
+- **WHEN** a sibling is this Media's audio after 100 s of leading silence
+- **THEN** that sibling yields no intro
 
 ### Requirement: Spectral fingerprint hash
 

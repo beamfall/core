@@ -22,12 +22,16 @@ rejected, so no intro is detected, while Jellyfin's Chromaprint-based detector f
 - Skip detection uses the spectral fingerprint when the detector offers it and keeps the loudness
   fingerprint as the fallback (and for recap detection). Spectral matching searches every relative
   offset between the two files at frame resolution, groups this Media's frames into one-second
-  windows, and treats a window as shared when its mean Hamming distance is at most 5 bits. The
-  longest run of shared windows at any offset becomes the candidate intro (head) or credits (tail),
-  so an intro after a cold open and credits that end before a post-credits scene are found.
-- The CORE-3079 guards stay: a run capped at 120 s for intros, at half the runtime, rejected when it
-  covers every window both files had in common, at least 15 s long and confident enough to clear the
-  0.80 auto-apply threshold.
+  windows. Each frame pair agrees, disagrees or carries no evidence (shared silence, or a held tone
+  or hum on both sides); a window is shared when at least two pairs agree and at most a quarter
+  disagree, and differs when at least two pairs disagree and they outnumber the agreeing ones. The
+  best run of shared windows at an offset where the files also differ becomes the candidate intro
+  (head) or credits (tail), so an intro after a cold open and credits that end before a
+  post-credits scene are found.
+- A sibling that never differs from this Media at some offset, yet shares at least 15 s there
+  outside the candidate, is the same recording (perhaps padded with silence) and yields nothing.
+- The CORE-3079 guards stay: a run capped at 120 s for intros, at half the runtime, at least 15 s
+  long and confident enough to clear the 0.80 auto-apply threshold.
 
 No wire, schema or migration change.
 

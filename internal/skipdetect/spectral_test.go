@@ -312,7 +312,7 @@ func TestSpectralSharedTonesMatchExactly(t *testing.T) {
 		spectralSibling{"Tones 2", 1800, join(noise(3, 6), jitter(4, theme), noise(5, 1769))},
 	)
 	wantSegment(t, markers, "intro", 6, 31)
-	if _, verdict := spectralWindowDistance(constFrames(0x100, 1), constFrames(0x100, 1)); verdict != windowIncomparable {
+	if _, verdict := spectralWindowDistance(constFrames(0x100, 1), constFrames(0x100, 1), 0, 0); verdict != windowIncomparable {
 		t.Error("a window with no detailed frames compared")
 	}
 }
@@ -371,6 +371,113 @@ func TestSpectralHumAroundDifferencesDoesNotExtendIntro(t *testing.T) {
 	markers := detectSpectral(t, 0,
 		spectralSibling{"Hum 1", 1800, join(theme, humA, noise(22, 1752))},
 		spectralSibling{"Hum 2", 1800, join(jitter(23, theme), humB, noise(24, 1752))},
+	)
+	wantSegment(t, markers, "intro", 0, 24)
+}
+
+// slowOpening is seconds of detailed audio whose fingerprint changes once a
+// second and holds for the rest of it.
+func slowOpening(seed uint64, seconds int) []uint32 {
+	frames := noise(seed, float64(seconds))
+	for i := range frames {
+		frames[i] = frames[i-i%spectralFramesPerWindow]
+	}
+	return frames
+}
+
+// CORE-3111 review r3: a copy of a recording padded with 100 s of leading
+// silence overlaps the original's head by only 80 s. It is still one
+// recording, so neither a nearby offset nor the exact one yields an intro.
+func TestSpectralSilencePaddedDuplicateYieldsNoIntro(t *testing.T) {
+	recording := join(slowOpening(31, 32), noise(32, 1768))
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Original", 1800, recording},
+		spectralSibling{"Padded", 1900, join(constFrames(ffmpeg.SpectralSilentFrame, 100), recording)},
+	)
+	wantNoSegment(t, markers, "intro")
+}
+
+// CORE-3111 review r3: the same at the end, with 130 s of trailing silence.
+func TestSpectralSilencePaddedDuplicateYieldsNoCredits(t *testing.T) {
+	recording := join(noise(33, 1768), slowOpening(34, 32))
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Original", 1800, recording},
+		spectralSibling{"Padded", 1930, join(recording, constFrames(ffmpeg.SpectralSilentFrame, 130))},
+	)
+	wantNoSegment(t, markers, "credits")
+}
+
+// CORE-3111 review r3: a 25 s melody where six frames a second are the same
+// changing tones in both siblings, one is detailed and one is silence in one
+// sibling and a tone in the other. Seven agreeing frames out of eight match.
+func TestSpectralSharedMelodyKeepsIntro(t *testing.T) {
+	detailed := noise(41, 25)
+	melodyA, melodyB := make([]uint32, len(detailed)), make([]uint32, len(detailed))
+	for i := range melodyA {
+		switch k := i % spectralFramesPerWindow; {
+		case k < 6:
+			melodyA[i] = 1 << ((i/spectralFramesPerWindow*7 + k) % 31)
+			melodyB[i] = melodyA[i]
+		case k == 6:
+			melodyA[i], melodyB[i] = detailed[i], detailed[i]
+		default:
+			melodyA[i], melodyB[i] = ffmpeg.SpectralSilentFrame, 0x400
+		}
+	}
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Melody 1", 1800, join(melodyA, noise(42, 1775))},
+		spectralSibling{"Melody 2", 1800, join(melodyB, noise(43, 1775))},
+	)
+	wantSegment(t, markers, "intro", 0, 25)
+}
+
+// CORE-3111 review r3: 72 s siblings share a 24 s theme, and one reprises it
+// at 36-60 s. In the reprise's offset both theme copies are followed by 12 s of
+// silence, so that offset never diverges; it matches nothing beyond the
+// intro, so it is a reprise, not a duplicate.
+func TestSpectralReprisedThemeBeforeSilenceKeepsIntro(t *testing.T) {
+	theme := noise(51, 24)
+	silence := constFrames(ffmpeg.SpectralSilentFrame, 12)
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Reprise 1", 72, join(theme, silence, noise(52, 36))},
+		spectralSibling{"Reprise 2", 72, join(jitter(53, theme), noise(54, 12), jitter(55, theme), silence)},
+	)
+	wantSegment(t, markers, "intro", 0, 24)
+}
+
+// CORE-3111 review r3: after a shared intro both siblings hold the same hum
+// for six frames a second and carry unrelated detailed audio in the other two.
+// Held hum is no evidence, the detailed frames disagree, so the intro ends.
+func TestSpectralHumAroundUnrelatedAudioDoesNotExtendIntro(t *testing.T) {
+	theme := noise(61, 24)
+	humA, humB := constFrames(0x100, 24), constFrames(0x100, 24)
+	otherA, otherB := noise(62, 24), noise(63, 24)
+	for i := range humA {
+		if i%spectralFramesPerWindow >= 6 {
+			humA[i], humB[i] = otherA[i], otherB[i]
+		}
+	}
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Hum 1", 1800, join(theme, humA, noise(64, 1752))},
+		spectralSibling{"Hum 2", 1800, join(jitter(65, theme), humB, noise(66, 1752))},
+	)
+	wantSegment(t, markers, "intro", 0, 24)
+}
+
+// CORE-3111 review r3: the hum of TestSpectralHumAroundDifferencesDoesNotExtendIntro
+// runs to the end of the analysed head. Its differences still prove the two
+// siblings differ, so the shared intro is kept.
+func TestSpectralHumDifferencesToEndOfHeadKeepIntro(t *testing.T) {
+	theme := noise(71, 24)
+	humA, humB := constFrames(0x100, 156), constFrames(0x100, 156)
+	for i := range humA {
+		if i%spectralFramesPerWindow >= 6 {
+			humA[i], humB[i] = ffmpeg.SpectralSilentFrame, 0x400
+		}
+	}
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Hum 1", 1800, join(theme, humA, noise(72, 1620))},
+		spectralSibling{"Hum 2", 1800, join(jitter(73, theme), humB, noise(74, 1620))},
 	)
 	wantSegment(t, markers, "intro", 0, 24)
 }
