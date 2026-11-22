@@ -3601,14 +3601,8 @@ func (s *Store) AddMediaFileVersion(ctx context.Context, mediaID MediaID, file M
 // belongs to the calling surface, which must have already resolved the Media
 // through a reveal-filtered read.
 func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata MediaMetadata) error {
-	if id == "" {
-		return errors.New("media ID is required")
-	}
-	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil && metadata.SortTitle == nil {
-		return errors.New("no metadata fields to update")
-	}
-	if metadata.Title != nil && strings.TrimSpace(*metadata.Title) == "" {
-		return errors.New("media title cannot be empty")
+	if err := validateMediaMetadata(id, metadata); err != nil {
+		return err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -3618,11 +3612,19 @@ func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata Me
 	if err := s.updateMediaMetadataSQL(ctx, id, metadata); err != nil {
 		return err
 	}
-	// Emit AFTER the catalog write committed (cross-DB ordering: see
-	// appendMediaEventLocked). The write already succeeded; a failed outbox
-	// append must not surface as a metadata-update failure.
-	if eventErr := s.appendMediaEventLocked(ctx, MediaEventUpdated, id, nil, time.Now().UTC()); eventErr != nil {
-		slog.Warn("media outbox event append failed", "kind", MediaEventUpdated, "media", id, "error", eventErr)
+	s.emitMediaUpdated(ctx, id)
+	return nil
+}
+
+func validateMediaMetadata(id MediaID, metadata MediaMetadata) error {
+	if id == "" {
+		return errors.New("media ID is required")
+	}
+	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil && metadata.SortTitle == nil {
+		return errors.New("no metadata fields to update")
+	}
+	if metadata.Title != nil && strings.TrimSpace(*metadata.Title) == "" {
+		return errors.New("media title cannot be empty")
 	}
 	return nil
 }

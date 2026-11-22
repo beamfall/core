@@ -42,9 +42,9 @@ type Bundles interface {
 	Bundle(id plugin.ID) (plugin.Bundle, bool)
 }
 
-// MetadataStore is the metadata write seam; *store.Store satisfies it.
+// MetadataStore commits an identification's local Media changes together.
 type MetadataStore interface {
-	UpdateMediaMetadata(ctx context.Context, id store.MediaID, metadata store.MediaMetadata) error
+	ApplyMediaIdentification(ctx context.Context, id store.MediaID, metadata store.MediaMetadata, provenance store.MediaMetadataProvenance, fields []store.MediaField) error
 }
 
 // ArtworkCandidateStore persists scraped artwork alternatives. It is optional
@@ -53,13 +53,6 @@ type MetadataStore interface {
 type ArtworkCandidateStore interface {
 	UpsertArtworkCandidate(ctx context.Context, mediaID store.MediaID, slot, sourceURL, pluginID, scraperID string) error
 	MarkArtworkCandidateApplied(ctx context.Context, candidateID string) error
-}
-
-// ProvenanceStore records which plugin scraper supplied a Media item's
-// metadata so readers can credit that source with its declared attribution;
-// *store.Store satisfies it. Optional: nil keeps Apply provenance-free.
-type ProvenanceStore interface {
-	SetMediaMetadataProvenance(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string) error
 }
 
 // Fetcher downloads one remote resource through a hardened client;
@@ -143,14 +136,6 @@ var (
 	_ mediaClassReader        = (*store.Store)(nil)
 )
 
-// FieldStore is the Media field write seam; *store.Store satisfies it.
-// Upsert (not full-replace) semantics: fields other writers set survive.
-// Identification writes at the operator (identified) tier so a manual edit is
-// never clobbered by a re-identify / scheduled re-match.
-type FieldStore interface {
-	UpsertMediaFieldsWithSource(ctx context.Context, id store.MediaID, fields []store.MediaField, source store.MutationSource) error
-}
-
 // FingerprintStore is the content-identity read seam;
 // *store.Store satisfies it. The values feed the engine's fingerprint
 // variables ({oshash}, {phash}, {duration}).
@@ -203,10 +188,8 @@ type Service struct {
 	bundles      Bundles
 	store        MetadataStore
 	candidates   ArtworkCandidateStore
-	provenance   ProvenanceStore
 	fetcher      Fetcher
 	artwork      ArtworkStore
-	fields       FieldStore
 	entities     EntityStore
 	fingerprints FingerprintStore
 	titles       MediaTitleSource
@@ -219,8 +202,7 @@ type Service struct {
 	queue             UnmatchedStore
 	pins              MatchPinStore
 	optionalAuthSkips sync.Map
-	// writes serializes Apply's local writes per Media item, so the
-	// provenance row always names the scraper whose metadata was kept.
+	// writes serializes the Media write and subsequent entity hydration per item.
 	writes mediaWriteLocks
 }
 
@@ -265,13 +247,6 @@ func NewService(engine Engine, bundles Bundles, store MetadataStore) *Service {
 	return &Service{engine: engine, bundles: bundles, store: store}
 }
 
-// SetProvenance wires metadata provenance: every successful metadata write
-// in Apply records the plugin and scraper that supplied it, replacing the
-// item's earlier record.
-func (s *Service) SetProvenance(provenance ProvenanceStore) {
-	s.provenance = provenance
-}
-
 // SetArtwork wires scraped-artwork application: Apply downloads the chosen
 // candidate's poster through the fetcher and stores it. Nil (the default)
 // keeps Apply metadata-only.
@@ -283,14 +258,6 @@ func (s *Service) SetArtwork(fetcher Fetcher, artwork ArtworkStore) {
 // SetArtworkCandidates wires persistence for the candidate picker.
 func (s *Service) SetArtworkCandidates(store ArtworkCandidateStore) {
 	s.candidates = store
-}
-
-// SetFields wires implied-Media-field application: when the chosen scraper
-// declares ImpliedMediaFields, Apply writes them after the metadata write.
-// Nil (the default) makes Apply error on such scrapers rather than silently
-// drop declared values.
-func (s *Service) SetFields(fields FieldStore) {
-	s.fields = fields
 }
 
 // SetEntities wires entity hydration: when the chosen scraper's EntityMaps
@@ -548,28 +515,19 @@ func (s *Service) ApplyWithClearedLocks(ctx context.Context, mediaID store.Media
 	return nil
 }
 
-// applyLocal writes one identification's local rows while holding the Media
-// item's write lock: two identifications racing each other then commit one
-// after the other, never metadata from one with provenance from the other.
+// applyLocal commits the Media replacement before hydrating related entities.
 func (s *Service) applyLocal(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, metadata store.MediaMetadata, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
 	unlock := s.writes.lock(mediaID)
 	defer unlock()
-	if err := s.store.UpdateMediaMetadata(ctx, mediaID, metadata); err != nil {
-		return err
-	}
-	if s.provenance != nil {
-		if err := s.provenance.SetMediaMetadataProvenance(ctx, mediaID, pluginID, scraperID, candidateID); err != nil {
-			return err
-		}
-	}
-	if err := s.applyMediaFields(ctx, mediaID, bundle, spec, result); err != nil {
+	provenance := store.MediaMetadataProvenance{PluginID: pluginID, ScraperID: scraperID, CandidateID: candidateID}
+	if err := s.store.ApplyMediaIdentification(ctx, mediaID, metadata, provenance, identifiedMediaFields(bundle, spec, result)); err != nil {
 		return err
 	}
 	return s.applyEntities(ctx, mediaID, bundle, spec, result)
 }
 
-// applyMediaFields writes the scraper's plugin-declared Media field values
-// onto the Media row, from two routes that share the BF-24 namespacing
+// identifiedMediaFields collects the scraper's plugin-declared Media field
+// values from two routes that share the BF-24 namespacing
 // contract (plugin.MediaFieldKeyPrefix):
 //
 //   - ImpliedMediaFields: constants the choice of scraper implies (ADR-0028
@@ -580,17 +538,9 @@ func (s *Service) applyLocal(ctx context.Context, mediaID store.MediaID, pluginI
 //     and logged, never failing the identification — the same posture the
 //     engine takes for numeric coercion and unresolved paths.
 //
-// These fields are identification-owned and written at the operator
-// (identified) tier via UpsertMediaFieldsWithSource: a re-identify (also
-// operator) heals them idempotently, but a manual edit (higher tier) is
-// preserved — the source-precedence record subsumes the per-field locks.
-// The bare built-in keys (title/summary/year) are written by
-// UpdateMediaMetadata, not here.
-//
-// Unlike artwork this is a local store write, so failures propagate: a
-// half-applied identification (metadata without its plugin fields) should be
-// visible, and re-running Apply heals it.
-func (s *Service) applyMediaFields(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
+// The store applies these values at operator precedence alongside the built-in
+// fields and provenance.
+func identifiedMediaFields(bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) []store.MediaField {
 	mediaFieldTypes := bundle.MediaFieldTypes()
 	// values collects field name → typed value, last writer wins. A document
 	// "media.<name>" value overrides the implied constant of the same name —
@@ -630,9 +580,6 @@ func (s *Service) applyMediaFields(ctx context.Context, mediaID store.MediaID, b
 	if len(values) == 0 {
 		return nil
 	}
-	if s.fields == nil {
-		return fmt.Errorf("identify: scraper %q writes media fields but no field store is wired", spec.ID)
-	}
 	names := make([]string, 0, len(values))
 	for name := range values {
 		names = append(names, name)
@@ -642,14 +589,13 @@ func (s *Service) applyMediaFields(ctx context.Context, mediaID store.MediaID, b
 	for i, name := range names {
 		fields[i] = values[name]
 	}
-	return s.fields.UpsertMediaFieldsWithSource(ctx, mediaID, fields, store.MutationSourceOperator)
+	return fields
 }
 
 // identifiedFieldTexts is the text of the plugin-declared Media field values
-// an identification writes (applyMediaFields' two routes, document values over
-// implied constants) by bare field name, blanks and values that do not parse
-// to the declared type dropped like applyMediaFields drops them: what a parser
-// builds an identified per-file title from.
+// an identification writes (identifiedMediaFields' two routes, document values over
+// implied constants), by bare field name. The title parser uses these values
+// with blanks and values that do not parse to the declared type removed.
 func identifiedFieldTexts(bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) map[string]string {
 	mediaFieldTypes := bundle.MediaFieldTypes()
 	texts := map[string]string{}

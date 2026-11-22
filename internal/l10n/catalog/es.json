@@ -1,4 +1,5 @@
 {
+  "fix_match.encrypted_library": "La corrección de coincidencias no está disponible en bibliotecas cifradas.",
   "library_root.cant_open": "El servidor no puede abrir {path}.",
   "library_root.missing": "La carpeta {path} no existe en el servidor.",
   "library_root.not_folder": "{path} es un archivo, no una carpeta.",

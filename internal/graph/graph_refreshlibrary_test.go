@@ -74,7 +74,6 @@ func TestRefreshLibraryMetadataQueuesOneJobPerLibrary(t *testing.T) {
 // trashed item is not walked, and progress counts every live item.
 func TestRefreshLibraryMetadataJobKeepsLocksAndReportsProgress(t *testing.T) {
 	handler, st := newIdentifyTestHandler(t)
-	handler.identify.SetProvenance(st)
 	openManagerAdminSession(t, st)
 	ctx := context.Background()
 	everything := store.LibraryFilter{Revealed: true, AllLibraries: true}
@@ -174,7 +173,6 @@ func TestRefreshLibraryMetadataJobKeepsLocksAndReportsProgress(t *testing.T) {
 // first provider call, so no item is refreshed and the job stays canceled.
 func TestRefreshLibraryMetadataCancelStopsTheWalk(t *testing.T) {
 	handler, st := newIdentifyTestHandler(t)
-	handler.identify.SetProvenance(st)
 	openManagerAdminSession(t, st)
 	ctx := context.Background()
 	everything := store.LibraryFilter{Revealed: true, AllLibraries: true}

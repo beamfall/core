@@ -1,4 +1,5 @@
 {
+  "fix_match.encrypted_library": "fix match is unavailable in encrypted libraries",
   "library_root.cant_open": "The server can't open {path}.",
   "library_root.missing": "The folder {path} doesn't exist on the server.",
   "library_root.not_folder": "{path} is a file, not a folder.",

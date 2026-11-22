@@ -3464,15 +3464,22 @@ func (s *Store) updateMediaMetadataSQL(ctx context.Context, id MediaID, metadata
 	if metadata.Source == MutationSourceAI {
 		return s.updateAIMediaMetadataSQL(ctx, id, metadata)
 	}
-	source := metadata.Source
-	if source == "" {
-		source = MutationSourceOperator
-	}
 	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err := updateMediaMetadataTx(ctx, tx, id, metadata); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func updateMediaMetadataTx(ctx context.Context, tx *sql.Tx, id MediaID, metadata MediaMetadata) error {
+	source := metadata.Source
+	if source == "" {
+		source = MutationSourceOperator
+	}
 	var exists int
 	if err := tx.QueryRowContext(ctx, "SELECT 1 FROM media WHERE id = ?", id).Scan(&exists); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -3531,16 +3538,14 @@ func (s *Store) updateMediaMetadataSQL(ctx context.Context, id MediaID, metadata
 		}
 	}
 	if len(sets) == 0 {
-		return tx.Commit() // nothing outranked the stored values; media exists
+		return nil // nothing outranked the stored values; media exists
 	}
 	sets = append(sets, "mutated_by = ?")
 	args = append(args, string(source))
 	args = append(args, id)
-	if _, err := tx.ExecContext(ctx,
-		"UPDATE media SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
-		return err
-	}
-	return tx.Commit()
+	// #nosec G202 -- assignments use fixed column names and bound values.
+	_, err := tx.ExecContext(ctx, "UPDATE media SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...)
+	return err
 }
 
 func derefString(p *string) string {

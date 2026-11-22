@@ -17,6 +17,8 @@ import (
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/identify"
+	"github.com/beamfall/core/internal/l10n"
+	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/manifest"
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/scrape"
@@ -108,6 +110,69 @@ func TestFixMatchReadsRequireManagerAndVisibleMedia(t *testing.T) {
 	}
 }
 
+func TestFixMatchRejectsVisibleEncryptedMedia(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	handler := newTestHandlerWithStore(st)
+	handler.SetIdentify(identify.NewService(nil, nil, st))
+	mgr := libencrypt.NewManagerWithParams(newMemSecretStore(), libencrypt.TestArgon2Params)
+	handler.SetLibEncrypt(mgr)
+	libraryID := newEncryptedLibrary(t, st)
+	if _, err := mgr.Provision(libraryID, libencrypt.UnsealModeAuto, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, store.LibraryID(libraryID), handler.libEncryptDBCipher()); err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: store.LibraryID(libraryID), Path: "/fixtures/protected.mkv", Title: "Protected Title",
+		Container: "mkv", Codec: "h264", ContentFingerprint: "sha256:protected",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSessionRevealed(ctx, "session-manager", true); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, query string }{
+		{"sources", fixMatchSourcesTestQuery},
+		{"current", `query($mediaID: String!) { fixMatchCurrent(mediaID: $mediaID) { candidateID } }`},
+		{"locked fields", `query($mediaID: String!) { fixMatchLockedFields(mediaID: $mediaID) { field } }`},
+		{"candidates", `query($mediaID: String!) { fixMatchCandidates(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup") { id } }`},
+		{"preview", `query($mediaID: String!) { fixMatchPreview(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42") { field } }`},
+		{"replace", `mutation($mediaID: String!) { fixMatch(mediaID: $mediaID, pluginID: "demo", scraperID: "lookup", candidateID: "42") { id } }`},
+		{"associate", `mutation($mediaID: String!) { fixMatch(mediaID: $mediaID, recordID: "record", importRunID: "run") { id } }`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := postGraphJSON(t, handler, authorizeManager, tc.query, map[string]any{"mediaID": string(media.ID)})
+			if len(resp.Errors) != 1 || resp.Errors[0].Extensions.Code != ErrorCodeInvalid ||
+				resp.Errors[0].Message != "fix match is unavailable in encrypted libraries" {
+				t.Fatalf("errors = %#v, want encrypted-library refusal", resp.Errors)
+			}
+		})
+	}
+	for locale, want := range map[string]string{
+		"fr": "La correction de la correspondance est indisponible dans les bibliothèques chiffrées.",
+		"de": "Die Zuordnung kann in verschlüsselten Bibliotheken nicht korrigiert werden.",
+		"es": "La corrección de coincidencias no está disponible en bibliotecas cifradas.",
+		"pt": "A correção de correspondências não está disponível em bibliotecas criptografadas.",
+	} {
+		t.Run(locale, func(t *testing.T) {
+			resp := postGraphJSON(t, handler, func(req *http.Request) {
+				authorizeManager(req)
+				*req = *req.WithContext(l10n.WithLocale(req.Context(), locale))
+			}, fixMatchSourcesTestQuery, map[string]any{"mediaID": string(media.ID)})
+			if len(resp.Errors) != 1 || resp.Errors[0].Extensions.Code != ErrorCodeInvalid || resp.Errors[0].Message != want {
+				t.Fatalf("errors = %#v, want localized encrypted-library refusal %q", resp.Errors, want)
+			}
+		})
+	}
+}
+
 type rematchTestEngine struct {
 	identifyTestEngine
 	searchCalls int
@@ -122,7 +187,6 @@ func TestFixMatchReidentifiesMatchedItemAndRespectsLocks(t *testing.T) {
 	handler, st := newIdentifyTestHandler(t)
 	engine := &rematchTestEngine{}
 	service := identify.NewService(engine, handler.plugins, st)
-	service.SetProvenance(st)
 	service.SetAutoStores(st, st)
 	service.RegisterScorer("demo", fixedScorer{scores: map[string]float64{"42": 1}}, 0.75)
 	handler.SetIdentify(service)
@@ -498,7 +562,6 @@ func TestFixMatchPreviewProposesTheIdentifiedTitle(t *testing.T) {
 		bundle.MediaFields = []plugin.FieldSpec{{Name: "phase", Type: "text"}}
 		bundle.Scrapers[0].ImpliedMediaFields = map[string]string{"media.phase": "Smells Like Mean Spirit"}
 	})
-	handler.identify.SetFields(st)
 	handler.identify.SetMediaTitles(stubIdentifiedTitles{stubMediaTitles("S03E01")})
 	ctx := context.Background()
 	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{

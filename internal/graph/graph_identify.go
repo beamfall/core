@@ -11,6 +11,7 @@ import (
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/identify"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/store"
 )
@@ -172,17 +173,9 @@ func (h *Handler) fixMatch(ctx context.Context, scope auth.Scope, req request) (
 		return MediaInfo{}, err
 	}
 	filter := scope.LibraryFilter()
-	media, err := h.store.Media(ctx, store.MediaID(mediaID), filter)
-	if err != nil {
-		return MediaInfo{}, clientError("unknown media")
-	}
-	// Identification provenance lives in the shared catalog, outside encrypted Libraries.
-	encrypted, err := h.store.LibraryEncrypted(ctx, media.LibraryID)
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(mediaID))
 	if err != nil {
 		return MediaInfo{}, err
-	}
-	if encrypted {
-		return MediaInfo{}, clientError("unknown media")
 	}
 	if err := h.identify.ApplyWithClearedLocks(ctx, media.ID, pluginID, scraperID, candidateID, clearLocks); err != nil {
 		if errors.Is(err, store.ValidationError("unknown lockable field")) {
@@ -220,7 +213,7 @@ type FixMatchSourceInfo struct {
 }
 
 func (h *Handler) fixMatchSources(ctx context.Context, scope auth.Scope, req request) ([]FixMatchSourceInfo, error) {
-	media, err := h.fixMatchMedia(ctx, scope, req)
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(trimmedVariable(req, "mediaID")))
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +270,7 @@ type FixMatchCurrentInfo struct {
 }
 
 func (h *Handler) fixMatchCurrent(ctx context.Context, scope auth.Scope, req request) (*FixMatchCurrentInfo, error) {
-	media, err := h.fixMatchMedia(ctx, scope, req)
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(trimmedVariable(req, "mediaID")))
 	if err != nil {
 		return nil, err
 	}
@@ -291,14 +284,24 @@ func (h *Handler) fixMatchCurrent(ctx context.Context, scope auth.Scope, req req
 	}, nil
 }
 
-func (h *Handler) fixMatchMedia(ctx context.Context, scope auth.Scope, req request) (store.Media, error) {
-	mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
+func (h *Handler) fixMatchMedia(ctx context.Context, scope auth.Scope, mediaID store.MediaID) (store.Media, error) {
 	if mediaID == "" {
 		return store.Media{}, clientError("mediaID is required")
 	}
 	media, err := h.store.Media(ctx, mediaID, scope.LibraryFilter())
 	if err != nil {
 		return store.Media{}, clientError("unknown media")
+	}
+	// Candidate provenance is only supported in the shared catalog.
+	encrypted, err := h.store.LibraryEncrypted(ctx, media.LibraryID)
+	if err != nil {
+		return store.Media{}, err
+	}
+	if encrypted {
+		return store.Media{}, &l10n.Error{
+			Key: l10n.FixMatchEncryptedLibrary,
+			Err: clientError("fix match is unavailable in encrypted libraries"),
+		}
 	}
 	return media, nil
 }
@@ -308,8 +311,8 @@ func (h *Handler) associateImportUnmatchedRecord(ctx context.Context, scope auth
 		return MediaInfo{}, clientError("unknown unmatched record")
 	}
 	filter := scope.LibraryFilter()
-	if _, err := h.store.Media(ctx, store.MediaID(mediaID), filter); err != nil {
-		return MediaInfo{}, clientError("unknown media")
+	if _, err := h.fixMatchMedia(ctx, scope, store.MediaID(mediaID)); err != nil {
+		return MediaInfo{}, err
 	}
 	ok, err := h.store.AssociateImportUnmatchedRecord(ctx, recordID, importRunID, store.MediaID(mediaID), filter, time.Now().UTC())
 	if err != nil {
@@ -380,8 +383,8 @@ func (h *Handler) fixMatchCandidates(ctx context.Context, scope auth.Scope, req 
 		parsed.Year = *year
 	}
 	if mediaID != "" {
-		if _, err := h.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter()); err != nil {
-			return nil, clientError("unknown media")
+		if _, err := h.fixMatchMedia(ctx, scope, store.MediaID(mediaID)); err != nil {
+			return nil, err
 		}
 	}
 	candidates, err := h.identify.SearchYear(ctx, pluginID, scraperID, query, store.MediaID(mediaID), parsed.Year)
@@ -505,11 +508,11 @@ func (h *Handler) fixMatchPreview(ctx context.Context, scope auth.Scope, req req
 	if mediaID == "" || pluginID == "" || scraperID == "" || candidateID == "" {
 		return nil, clientError("mediaID, pluginID, scraperID, and candidateID are required")
 	}
-	media, err := h.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(mediaID))
 	if err != nil {
-		return nil, clientError("unknown media")
+		return nil, err
 	}
-	candidate, title, err := h.identify.PreviewLookup(ctx, pluginID, scraperID, candidateID, store.MediaID(mediaID))
+	candidate, title, err := h.identify.PreviewLookup(ctx, pluginID, scraperID, candidateID, media.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -527,7 +530,7 @@ type FixMatchLockedFieldInfo struct {
 }
 
 func (h *Handler) fixMatchLockedFields(ctx context.Context, scope auth.Scope, req request) ([]FixMatchLockedFieldInfo, error) {
-	media, err := h.fixMatchMedia(ctx, scope, req)
+	media, err := h.fixMatchMedia(ctx, scope, store.MediaID(trimmedVariable(req, "mediaID")))
 	if err != nil {
 		return nil, err
 	}

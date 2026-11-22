@@ -315,41 +315,9 @@ func (s *Store) UpsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 		return err
 	}
 	defer tx.Rollback()
-	wrote := 0
-	for _, field := range fields {
-		if source != MutationSourceManual {
-			tombstoned, err := mediaFieldTombstonedTx(ctx, tx, id, field)
-			if err != nil {
-				return err
-			}
-			if tombstoned {
-				continue
-			}
-		}
-		allowed, err := canWriteFieldTx(ctx, tx, id, field.Name, source)
-		if err != nil {
-			return err
-		}
-		if !allowed {
-			continue // a higher-precedence source owns this field — preserve it
-		}
-		// A field's type may change across writes, so the old value is
-		// cleared from every side table, not just the new type's.
-		for _, table := range mediaFieldTables {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE media_id = ? AND field = ?`, id, field.Name); err != nil {
-				return err
-			}
-		}
-		if err := insertMediaFields(ctx, tx, id, []MediaField{field}); err != nil {
-			return err
-		}
-		if err := recordFieldProvenanceTx(ctx, tx, id, field.Name, source); err != nil {
-			return err
-		}
-		wrote++
-	}
-	if wrote == 0 {
-		return nil
+	wrote, err := upsertMediaFieldsTx(ctx, tx, id, fields, source)
+	if err != nil || !wrote {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
@@ -358,6 +326,43 @@ func (s *Store) UpsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 		s.emitMediaUpdated(ctx, id)
 	}
 	return nil
+}
+
+func upsertMediaFieldsTx(ctx context.Context, tx *sql.Tx, id MediaID, fields []MediaField, source MutationSource) (bool, error) {
+	wrote := false
+	for _, field := range fields {
+		if source != MutationSourceManual {
+			tombstoned, err := mediaFieldTombstonedTx(ctx, tx, id, field)
+			if err != nil {
+				return false, err
+			}
+			if tombstoned {
+				continue
+			}
+		}
+		allowed, err := canWriteFieldTx(ctx, tx, id, field.Name, source)
+		if err != nil {
+			return false, err
+		}
+		if !allowed {
+			continue // a higher-precedence source owns this field — preserve it
+		}
+		// A field's type may change across writes, so the old value is
+		// cleared from every side table, not just the new type's.
+		for _, table := range mediaFieldTables {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE media_id = ? AND field = ?`, id, field.Name); err != nil {
+				return false, err
+			}
+		}
+		if err := insertMediaFields(ctx, tx, id, []MediaField{field}); err != nil {
+			return false, err
+		}
+		if err := recordFieldProvenanceTx(ctx, tx, id, field.Name, source); err != nil {
+			return false, err
+		}
+		wrote = true
+	}
+	return wrote, nil
 }
 
 // InsertMediaFieldsIfAbsent writes only fields with no existing (media_id,

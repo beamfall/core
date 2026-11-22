@@ -188,6 +188,8 @@ var clientErrorCodes = map[string]ErrorCode{
 	"unknown plugin config field":          ErrorCodeInvalid,
 	"unknown transport command":            ErrorCodeInvalid,
 
+	"fix match is unavailable in encrypted libraries": ErrorCodeInvalid,
+
 	"admin password rejected":                                   ErrorCodeForbidden,
 	"adult profile or manager role required":                    ErrorCodeForbidden,
 	"cannot change the current device role":                     ErrorCodeForbidden,

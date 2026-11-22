@@ -179,7 +179,6 @@ func TestIdentifyNamesTheEpisode(t *testing.T) {
 				t.Fatal(err)
 			}
 			service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), bundles, st)
-			service.SetFields(st)
 			service.SetMediaTitles(parserMediaTitles{store: st, parsers: map[string]scanpkg.FilenameParser{"demo": tc.parser}})
 			if err := service.Apply(ctx, media.ID, "demo", "episode", "7"); err != nil {
 				t.Fatal(err)
