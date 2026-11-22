@@ -173,8 +173,19 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		return err
 	}
 	s.noteVersion(versionKey, path, media.ID)
-	if err := s.backfillHydration(media, path, stored.ContentFingerprint); err != nil {
-		return err
+	if s.metadataHydrator != nil && s.prober != nil && s.rehydrateUnchanged(media, path) {
+		if media.Class == store.MediaClassImage {
+			if err := s.hydrateMetadata(media, path, stored.ContentFingerprint, nil); err != nil {
+				return err
+			}
+		} else if probe, probeErr := s.prober.Probe(s.ctx, path); probeErr != nil {
+			slog.Warn("scan: metadata backfill probe failed, skipping hydration", "path", path, "error", probeErr.Error())
+		} else {
+			media.Class = mediaClassFromProbe(probe)
+			if err := s.hydrateMetadata(media, path, stored.ContentFingerprint, probe.Tags); err != nil {
+				return err
+			}
+		}
 	}
 	if err := s.queueCompletion(path, media.ID, stored.ContentFingerprint, imported.Class == store.MediaClassImage); err != nil {
 		return err
@@ -393,6 +404,25 @@ func applyProbeFacts(imported *store.ImportMediaFile, probe ffmpeg.Probe) {
 	imported.VideoHeightHint = probe.VideoHeight
 	imported.Streams = streamsFromProbe(probe.Streams)
 	imported.FontAttachments = fontsFromProbe(probe.FontAttachments)
+}
+
+// rehydrateUnchanged reports whether an unchanged file is hydrated again: a
+// backfill scan owes it hydration, or its sidecars changed since the last one.
+// A sidecar check that fails leaves the file as unchanged.
+func (s *scanWalkState) rehydrateUnchanged(media store.Media, path string) bool {
+	if _, stale := s.backfillStale[media.ID]; stale {
+		return true
+	}
+	sidecars, ok := s.metadataHydrator.(MetadataSidecarHydrator)
+	if !ok || !s.metadataCapability.Supports(media.Class) {
+		return false
+	}
+	changed, err := sidecars.SidecarsChanged(s.ctx, media.ID, path)
+	if err != nil {
+		slog.Warn("scan: sidecar check failed, keeping the file as unchanged", "path", path, "error", err.Error())
+		return false
+	}
+	return changed
 }
 
 func (s *scanWalkState) hydrateMetadata(media store.Media, path, fingerprint string, metadata map[string]string) error {

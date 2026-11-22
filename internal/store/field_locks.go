@@ -8,9 +8,10 @@ import (
 )
 
 // Per-field source-precedence locks. A field is locked when its recorded
-// write source is manual (media_field_provenance.source = 'manual'): nothing
-// below a manual edit in the precedence order (an identification, a per-item
-// refresh, a re-match, a scan) may overwrite it. An admin edit locks the
+// write source is manual or local (media_field_provenance.source): nothing
+// below it in the precedence order (an identification, a per-item refresh, a
+// re-match, a scan) may overwrite it. Local values come from sidecar files the
+// operator keeps beside the media and unlock when the sidecar goes away. An admin edit locks the
 // fields it writes; the Console reads and toggles the lock explicitly here.
 // Fields with a legacy media.<field>_identified column keep it in step, so a
 // scan import also leaves a locked value alone. The fields are named by the
@@ -147,6 +148,33 @@ func (s *Store) SetMediaFieldLock(ctx context.Context, id MediaID, field string,
 	return mediaFieldLocksFrom(ctx, plane.reader, id)
 }
 
+// ReleaseMediaFieldSource moves every field of one Media last written at the
+// given source down to the scan tier, keeping the values: the fields stop
+// reading as locked and the next identification or refresh may replace them.
+// A scan import still leaves them alone, since a released field is no longer
+// parser-owned. Manual edits cannot be released this way.
+func (s *Store) ReleaseMediaFieldSource(ctx context.Context, id MediaID, source MutationSource) error {
+	if id == "" {
+		return ValidationError("media ID is required")
+	}
+	if source == MutationSourceManual || source == MutationSourceScan {
+		return ValidationError("source cannot be released")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx,
+		"UPDATE media_field_provenance SET source = ? WHERE media_id = ? AND source = ?",
+		string(MutationSourceScan), id, string(source))
+	return err
+}
+
 // mediaFieldHeldTx reports whether a plugin-declared field holds a value or a
 // provenance record on the Media, which makes it lockable by name.
 func mediaFieldHeldTx(ctx context.Context, tx *sql.Tx, id MediaID, field string) (bool, error) {
@@ -169,8 +197,8 @@ func mediaFieldHeldTx(ctx context.Context, tx *sql.Tx, id MediaID, field string)
 // re-checking visibility — the caller already gated. Held under s.mu.RLock.
 func mediaFieldLocksFrom(ctx context.Context, db *sql.DB, id MediaID) ([]MediaFieldLock, error) {
 	rows, err := db.QueryContext(ctx,
-		"SELECT field FROM media_field_provenance WHERE media_id = ? AND source = ? ORDER BY field",
-		id, string(MutationSourceManual))
+		"SELECT field FROM media_field_provenance WHERE media_id = ? AND source IN (?, ?) ORDER BY field",
+		id, string(MutationSourceManual), string(MutationSourceLocal))
 	if err != nil {
 		return nil, err
 	}

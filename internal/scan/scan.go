@@ -150,6 +150,13 @@ type MetadataHydrator interface {
 	HydrateMetadata(ctx context.Context, input MetadataHydrationInput) error
 }
 
+// MetadataSidecarHydrator is implemented by a MetadataHydrator that reads
+// sidecar files beside the media. A rescan re-hydrates an unchanged file when
+// SidecarsChanged reports that its sidecars changed since its last hydration.
+type MetadataSidecarHydrator interface {
+	SidecarsChanged(ctx context.Context, mediaID store.MediaID, path string) (bool, error)
+}
+
 const JobKind store.JobKind = "scan"
 
 // A scan job yields after scanJobFileBatchSize checkpointed files or after

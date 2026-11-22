@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -71,6 +72,10 @@ type hydrationAdapter struct {
 
 	rehydrator       HydrationRehydrator
 	fingerprintField string
+	// sidecars is set when the mapper reads sidecar files; sidecarField is
+	// the Media field recording their signature.
+	sidecars     HydrationSidecarMapper
+	sidecarField string
 	// hydratedMediaFields bounds the plan's Media fields when the mapper
 	// names them (HydrationMediaFieldsMapper); nil allows any declared field.
 	hydratedMediaFields map[string]bool
@@ -134,6 +139,10 @@ func newHydrationAdapters(registry *plugin.Registry, st hydrationStore, mappers 
 			adapter.rehydrator = rehydrator
 			adapter.fingerprintField = rehydrator.FingerprintField()
 		}
+		if sidecars, ok := mapper.(HydrationSidecarMapper); ok {
+			adapter.sidecars = sidecars
+			adapter.sidecarField = sidecars.SidecarSignatureField()
+		}
 		if bounded, ok := mapper.(HydrationMediaFieldsMapper); ok {
 			adapter.boundMediaFields(bounded.HydratedMediaFields())
 		}
@@ -168,8 +177,10 @@ func (a *hydrationAdapter) boundMediaFields(names []string) {
 			written = append(written, name)
 		}
 	}
-	if a.fingerprintField != "" && !a.hydratedMediaFields[a.fingerprintField] {
-		written = append(written, a.fingerprintField)
+	for _, seam := range []string{a.fingerprintField, a.sidecarField} {
+		if seam != "" && !a.hydratedMediaFields[seam] && !slices.Contains(written, seam) {
+			written = append(written, seam)
+		}
 	}
 	a.capability.MediaFieldsBounded = true
 	a.capability.MediaFields = written
@@ -237,9 +248,29 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if err != nil {
 		return err
 	}
-	if write == HydrationWriteSkip {
-		return nil
+	sidecars, err := a.sidecarState(ctx, input.MediaID, input.Path)
+	if err != nil {
+		return err
 	}
+	local, err := a.validateLocal(plan.Local, a.capability.MarkerField)
+	if err != nil {
+		return err
+	}
+	if err := a.writeLocal(ctx, input.MediaID, input.LibraryID, local, sidecars); err != nil {
+		return err
+	}
+	plan.Local = nil
+	if write != HydrationWriteSkip {
+		if err := a.writePlan(ctx, input, plan, write, key); err != nil {
+			return err
+		}
+	}
+	return a.recordSidecarSignature(ctx, input.MediaID, sidecars)
+}
+
+// writePlan lands the plan's scan-tier part under the write decision.
+func (a *hydrationAdapter) writePlan(ctx context.Context, input scanpkg.MetadataHydrationInput, plan HydrationPlan, write HydrationWrite, key string) error {
+	var err error
 	var locked map[string]bool
 	if write == HydrationWriteReplace {
 		if locked, err = a.lockedFields(ctx, input.MediaID); err != nil {
@@ -705,14 +736,16 @@ func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.Lib
 	if err != nil {
 		return "", err
 	}
-	err = a.store.UpsertEntity(ctx, store.Entity{
-		ID:        id,
-		LibraryID: libraryID,
-		Kind:      mapped.Kind,
-		Title:     mapped.Title,
-		Fields:    mapped.Fields,
-	})
-	return id, err
+	entity := store.Entity{ID: id, LibraryID: libraryID, Kind: mapped.Kind, Title: mapped.Title}
+	// A field-less Entity (a name-only credit, a parent the plan only names)
+	// must not erase the fields an earlier write stored.
+	if ensurer, ok := a.store.(identify.EntityEnsurer); ok && len(mapped.Fields) == 0 {
+		return id, ensurer.EnsureEntity(ctx, entity)
+	}
+	if entity.Fields, err = a.mergedEntityFields(ctx, id, mapped.Fields); err != nil {
+		return "", err
+	}
+	return id, a.store.UpsertEntity(ctx, entity)
 }
 
 // entityID resolves the id a mapped Entity is written under. A scoped Entity

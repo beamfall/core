@@ -93,10 +93,43 @@ type HydrationPlan struct {
 	Relations    []HydrationRelation
 	ExternalIDs  []HydrationExternalID
 	MarkComplete bool
+	// Local carries values read from sidecar files the operator keeps beside
+	// the media. They land at the locked local tier (store.MutationSourceLocal)
+	// whatever the write decision, replacing the Media's previous local values.
+	Local *HydrationLocal `json:",omitempty"`
+}
+
+// HydrationLocal is the sidecar part of a HydrationPlan: the built-in title,
+// sort title, summary and year (empty or zero leaves one as it is), declared
+// Media fields, and Media relations, which replace the Media's rows for every
+// relation name they carry.
+type HydrationLocal struct {
+	Title       string
+	SortTitle   string
+	Summary     string
+	Year        int
+	MediaFields []store.MediaField
+	Relations   []HydrationRelation
+}
+
+func (l *HydrationLocal) empty() bool {
+	return l == nil || (l.Title == "" && l.SortTitle == "" && l.Summary == "" && l.Year == 0 &&
+		len(l.MediaFields) == 0 && len(l.Relations) == 0)
+}
+
+// HydrationSidecarMapper is implemented by a HydrationMapper whose plans read
+// sidecar files. SidecarSignature identifies the sidecars of a media path ("" when
+// there are none) and the seam records it in the declared text Media field
+// SidecarSignatureField after each hydration, so a scan re-hydrates an
+// unchanged file whose sidecars changed. When the sidecars are gone, the
+// Media's local values are released to the scan tier: kept, but unlocked.
+type HydrationSidecarMapper interface {
+	SidecarSignatureField() string
+	SidecarSignature(path string) string
 }
 
 func (h HydrationPlan) Empty() bool {
-	if h.MarkComplete {
+	if h.MarkComplete || !h.Local.empty() {
 		return false
 	}
 	if len(h.MediaFields) != 0 {

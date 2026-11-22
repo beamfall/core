@@ -482,6 +482,12 @@ const (
 	// auto-locks the field: nothing below it (identification, re-match, scan,
 	// hydration, AI) may overwrite it.
 	MutationSourceManual MutationSource = "manual"
+	// MutationSourceLocal marks values a plugin read from sidecar files the
+	// operator keeps beside the media. They are the operator's own curation, so
+	// they rank above identification and read as locked; only a manual edit
+	// outranks them. Releasing them (the sidecar went away) moves them to the
+	// scan tier without clearing the values.
+	MutationSourceLocal MutationSource = "local"
 	// MutationSourceOperator means a human operator applied identification via
 	// identifyApply (an explicit candidate choice) — the "identified" tier.
 	MutationSourceOperator MutationSource = "operator"
@@ -506,17 +512,19 @@ func mutationSourceFromDB(source string) MutationSource {
 }
 
 // metadataSourceRank is the total precedence order over metadata-field write
-// sources: user/manual > identified > parsed > hydrated >
+// sources: user/manual > local sidecar > identified > parsed > hydrated >
 // machine-derived. A write of source S may overwrite a field last written by
 // source T only when rank(S) >= rank(T); the provenance record of the winning
 // source is authoritative over the legacy media.<field>_identified booleans.
 // An empty/unknown source ranks as parsed — the same "" == scan reader rule the
 // mutated_by column already uses (pre-migration and scan-imported rows).
-// Importers are behavioral-state-only and never write here, so
-// they carry no rank in this chain.
+// Library importers are behavioral-state-only and never write here; sidecar
+// metadata read during a scan writes at the local tier.
 func metadataSourceRank(source MutationSource) int {
 	switch source {
 	case MutationSourceManual:
+		return 5
+	case MutationSourceLocal:
 		return 4
 	case MutationSourceOperator:
 		return 3

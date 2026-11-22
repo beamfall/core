@@ -185,7 +185,8 @@ func recordFieldProvenanceTx(ctx context.Context, tx *sql.Tx, id MediaID, field 
 // stored source's rank without a Go round-trip. Kept in lockstep with
 // metadataSourceRank — the one Go source of truth for the ordering.
 func sourceRankValues() string {
-	return `SELECT 'manual' AS src, 4 AS rank
+	return `SELECT 'manual' AS src, 5 AS rank
+	  UNION ALL SELECT 'local', 4
 	  UNION ALL SELECT 'operator', 3
 	  UNION ALL SELECT 'scan', 2
 	  UNION ALL SELECT 'hydrated', 1
