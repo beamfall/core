@@ -330,6 +330,7 @@ function AddEntries({
         <Input
           id={searchID}
           type="search"
+          data-unsaved-until-submit
           aria-label={t("viewerCollectionAddSearch")}
           placeholder={t("viewerCollectionAddSearch")}
           value={term}

@@ -17,6 +17,12 @@ export const SLIDESHOW_MOTIONS: readonly SlideshowMotion[] = ["calm", "still", "
 export interface SlideMotionDriver {
   /** Moves from the outgoing slide element to the incoming one. */
   advance: (from: HTMLElement | null, to: HTMLElement) => void;
+  /**
+   * Resolves once the slide element is actually on screen (after the black a
+   * calm start holds), so its interval counts from then; at once when the
+   * driver does not draw it.
+   */
+  whenPresented: (element: HTMLElement) => Promise<void>;
   /** Whether the page is advancing: a paused page holds the slide still. */
   setRunning: (running: boolean) => void;
   dispose: () => void;

@@ -36,6 +36,13 @@
   pointer-events: none;
 }
 
+/* Under the canvas the DOM slide keeps its alt text and load events but shows
+ * nothing: a frame pinned at its old size through a resize leaves part of the
+ * stage uncovered, and no photo pixel may bypass the flash limiter there. */
+.bf-slideshow-covered > .bf-slideshow-slide {
+  opacity: 0;
+}
+
 .bf-slideshow-slide {
   position: absolute;
   inset: 0;
