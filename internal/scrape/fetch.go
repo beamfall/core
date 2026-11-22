@@ -159,6 +159,12 @@ type OriginResponse struct {
 // for the caller to copy + tee. The origin URL never leaves the server — only
 // the streamed bytes do. The caller owns Body and must Close it.
 func (e *Engine) OpenOriginRange(ctx context.Context, rawURL, rangeHeader string) (OriginResponse, error) {
+	return e.OpenOriginRangeAuth(ctx, rawURL, rangeHeader, "")
+}
+
+// OpenOriginRangeAuth opens rawURL like OpenOriginRange and sends authHeader
+// as the upstream Authorization header when non-empty.
+func (e *Engine) OpenOriginRangeAuth(ctx context.Context, rawURL, rangeHeader, authHeader string) (OriginResponse, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		// Never wrap the parse error: it embeds the raw URL, which can carry
@@ -175,6 +181,9 @@ func (e *Engine) OpenOriginRange(ctx context.Context, rawURL, rangeHeader string
 	req.Header.Set("User-Agent", userAgent)
 	if strings.TrimSpace(rangeHeader) != "" {
 		req.Header.Set("Range", rangeHeader)
+	}
+	if strings.TrimSpace(authHeader) != "" {
+		req.Header.Set("Authorization", authHeader)
 	}
 	resp, err := e.streamClient.Do(req)
 	if err != nil {

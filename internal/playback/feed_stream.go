@@ -11,18 +11,14 @@ import (
 	"github.com/beamfall/core/internal/streamtoken"
 )
 
-// Reasons a catalogued feed entry without a playable file cannot stream.
-const (
-	// ReasonFeedStreamRequiresDownload: the entry's feed needs credentials, and
-	// credentialed origins are not proxied; the entry plays once downloaded.
-	ReasonFeedStreamRequiresDownload = "feed-stream-requires-download"
-	// ReasonFeedStreamUnavailable: the origin stream could not be registered.
-	ReasonFeedStreamUnavailable = "feed-stream-unavailable"
-)
+// ReasonFeedStreamUnavailable reports that a catalogued feed entry without a
+// playable file could not register its origin stream.
+const ReasonFeedStreamUnavailable = "feed-stream-unavailable"
 
 // FeedStream describes the origin enclosure of a catalogued feed entry that
-// has no playable file. OriginURL is a server-only secret: it never reaches a
-// client, a log line or an error string.
+// has no playable file. OriginURL and FeedURL are server-only secrets: neither
+// ever reaches a client, a log line or an error string. AuthRef names the
+// Subscription's secure-store credential ("" for public feeds).
 type FeedStream struct {
 	LibraryID store.LibraryID
 	// Key is the registration identity, store.SubscriptionEntryStreamKey; the
@@ -33,6 +29,8 @@ type FeedStream struct {
 	Codec     string
 	Class     store.MediaClass
 	OriginURL string
+	FeedURL   string
+	AuthRef   string
 }
 
 // FeedStreamRegistrar registers a server-side origin stream for a file-less
@@ -85,9 +83,6 @@ func (s *Service) feedStreamDecision(ctx context.Context, scope auth.Scope, medi
 	unavailable := func(reason string) (decision, bool, error) {
 		return decision{media: media, verdict: "unavailable", reason: reason, streams: []StreamChoice{}, timeline: timeline}, true, nil
 	}
-	if sub.AuthRef != "" {
-		return unavailable(ReasonFeedStreamRequiresDownload)
-	}
 	class := media.Class
 	if class == "" {
 		class = store.MediaClassAudio
@@ -104,6 +99,8 @@ func (s *Service) feedStreamDecision(ctx context.Context, scope auth.Scope, medi
 		Codec:     codec,
 		Class:     class,
 		OriginURL: entry.EnclosureURL,
+		FeedURL:   sub.FeedURL,
+		AuthRef:   sub.AuthRef,
 	})
 	// A registration bound to another Media would front bytes this grant does
 	// not name; refuse rather than mint a token for it.

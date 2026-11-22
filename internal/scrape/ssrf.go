@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"syscall"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 // vetURL enforces the ADR-0012 §9 pre-dial rules: https only, no literal IP
@@ -102,6 +105,47 @@ func SameOrigin(a, b string) bool {
 		return false
 	}
 	return normalizedRedirectOrigin(ua) == normalizedRedirectOrigin(ub)
+}
+
+// SameSite reports whether two absolute http(s) URLs share a schemeful site:
+// either the same normalized origin, or the same scheme and registrable domain
+// (eTLD+1) for non-IP hostnames. Unparseable URLs, scheme mismatches, IP
+// literals on different origins, and hosts without a registrable domain on
+// different origins fail closed.
+func SameSite(a, b string) bool {
+	ua, err := url.Parse(a)
+	if err != nil || ua.Hostname() == "" {
+		return false
+	}
+	ub, err := url.Parse(b)
+	if err != nil || ub.Hostname() == "" {
+		return false
+	}
+	schemeA := strings.ToLower(ua.Scheme)
+	schemeB := strings.ToLower(ub.Scheme)
+	if schemeA != schemeB || (schemeA != "https" && schemeA != "http") {
+		return false
+	}
+	if normalizedRedirectOrigin(ua) == normalizedRedirectOrigin(ub) {
+		return true
+	}
+	hostA := strings.ToLower(ua.Hostname())
+	hostB := strings.ToLower(ub.Hostname())
+	if _, err := netip.ParseAddr(hostA); err == nil {
+		return false
+	}
+	if _, err := netip.ParseAddr(hostB); err == nil {
+		return false
+	}
+	siteA, err := publicsuffix.EffectiveTLDPlusOne(hostA)
+	if err != nil || siteA == "" {
+		return false
+	}
+	siteB, err := publicsuffix.EffectiveTLDPlusOne(hostB)
+	if err != nil || siteB == "" {
+		return false
+	}
+	return siteA == siteB
 }
 
 func normalizedRedirectOrigin(u *url.URL) string {

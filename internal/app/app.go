@@ -235,6 +235,7 @@ var (
 	assertIntegrationHostPermissionVocabulary = integrationhost.AssertPermissionVocabularyInSync
 	closeOwnedWatcher                         = func(service *watcher.Service) error { return service.Close() }
 	newWatcherService                         = watcher.NewService
+	newScrapeEngine                           = scrape.New
 )
 
 // conformanceStreamTokenKey is the fixed 32-byte HMAC key the conformance seed
@@ -624,7 +625,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// Scraper credentials: the owner's saved secrets, then any defaults an
 	// official build bundled (BundledCredentials).
 	scraperCredentials := withBundledCredentials(secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}, BundledCredentials)
-	scrapeEngine := scrape.New(
+	scrapeEngine := newScrapeEngine(
 		scrape.WithCredentials(scraperCredentials),
 		scrape.WithConfigSource(pluginConfigWithDefaults{saved: st, bundles: executablePlugins}),
 	)
@@ -1623,7 +1624,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	graphHandler.SetJellyfinCompatController(compatSettings)
 	srv.SetProxyTee(proxyTee.ServeProxy)
-	playbackInfo.SetFeedStreams(feedStreamRegistrar{tee: proxyTee})
+	playbackInfo.SetFeedStreams(feedStreamRegistrar{
+		tee:     proxyTee,
+		secrets: secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")},
+	})
 	feedHookAdapter := feedHooks{poller: subscriptionPoller, logger: logger}
 	graphHandler.SetFeedProber(feedHookAdapter)
 	graphHandler.SetSubscriptionPoller(feedHookAdapter)
