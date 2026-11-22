@@ -25,13 +25,18 @@ var ErrQueueProfileOutsideSchedule = errors.New("profile access not allowed at t
 // other than the one the request authenticated for.
 var ErrQueueReboundProfileOutsideSchedule = fmt.Errorf("session changed profile: %w", ErrQueueProfileOutsideSchedule)
 
-// QueueAddResult captures the placement, visible first page, and scope at commit.
-type QueueAddResult struct {
+// QueueItemsResult contains the visible first page and its scope at commit.
+type QueueItemsResult struct {
 	Items     []SourceItem
 	Filter    LibraryFilter
 	ProfileID ProfileID
-	MediaID   MediaID
-	Position  *int // Zero-based in the visible queue, nil for a muted target.
+}
+
+// QueueAddResult captures the placement, visible first page, and scope at commit.
+type QueueAddResult struct {
+	QueueItemsResult
+	MediaID  MediaID
+	Position *int // Zero-based in the visible queue, nil for a muted target.
 }
 
 // QueueWriteAuthorization carries the request scope and policy evaluators.
@@ -43,6 +48,7 @@ type QueueWriteAuthorization struct {
 	Filter               LibraryFilter
 	Now                  func() time.Time
 	ResolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint
+	trustedFilter        bool // Store-internal edits already have a visibility filter.
 }
 
 // QueueAddForProfile adds or moves Media using current store authorization.
@@ -54,12 +60,12 @@ func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, ses
 		ProfileID: profileID, SessionID: sessionID, ExpectedProfileID: expectedProfileID,
 		Filter: filter, Now: authNow, ResolveCertification: resolveCertification,
 	}
-	var result QueueAddResult
-	_, err := s.writeAuthorizedQueue(ctx, auth, []MediaID{mediaID}, "", false, func(view queueWriteView) (PlayQueue, error) {
+	result := QueueAddResult{MediaID: mediaID}
+	err := s.writeQueue(ctx, auth, queueWriteTargets{ids: []MediaID{mediaID}, requireEligible: true}, func(view queueWriteView) error {
 		view.queue.addLegacy(mediaID, position, view.visible, s.serverNow())
 		var err error
-		result, err = s.queueAddProjection(ctx, view, mediaID)
-		return PlayQueue{}, err
+		result.QueueItemsResult, result.Position, err = s.queueItemsProjection(ctx, view, mediaID)
+		return err
 	})
 	if err != nil {
 		return QueueAddResult{}, err
@@ -73,9 +79,9 @@ func (s *Store) QueueAddMany(ctx context.Context, auth QueueWriteAuthorization, 
 	if !validQueueBatch(mediaIDs, placement) {
 		return PlayQueue{}, ValidationError("invalid queue placement or empty media list")
 	}
-	return s.writeAuthorizedQueue(ctx, auth, mediaIDs, "", false, func(view queueWriteView) (PlayQueue, error) {
-		view.queue.addMany(mediaIDs, placement, view.visible)
-		return view.queue.playQueue(view.visible), nil
+	return s.editPlayQueue(ctx, auth, queueWriteTargets{ids: mediaIDs, requireEligible: true}, func(q *queueSnapshot, visible map[MediaID]Media) error {
+		q.addMany(mediaIDs, placement, visible)
+		return nil
 	})
 }
 
@@ -85,26 +91,59 @@ func (s *Store) QueuePlayNext(ctx context.Context, auth QueueWriteAuthorization,
 	if entryID == "" {
 		return PlayQueue{}, ErrQueueMediaNotFound
 	}
-	return s.writeAuthorizedQueue(ctx, auth, nil, entryID, false, func(view queueWriteView) (PlayQueue, error) {
-		if err := view.queue.moveEntry(queueTarget{entryID: entryID}, nil, view.visible); err != nil {
-			return PlayQueue{}, err
-		}
-		return view.queue.playQueue(view.visible), nil
-	})
+	return s.editPlayQueue(ctx, auth, queueWriteTargets{entryID: entryID, requireEligible: true}, moveQueueTarget(queueTarget{entryID: entryID}, nil))
 }
 
-// EditPlayQueue applies an edit and projects the resulting queue with the same
-// visibility, while the catalog writer reservation holds the session stable.
+// EditPlayQueue applies an edit and returns the resulting entry-based queue.
 func (s *Store) EditPlayQueue(ctx context.Context, auth QueueWriteAuthorization, edit QueueEdit) (PlayQueue, error) {
-	if auth.ProfileID == "" {
-		return PlayQueue{}, ValidationError("profile ID is required")
-	}
-	return s.writeAuthorizedQueue(ctx, auth, nil, "", true, func(view queueWriteView) (PlayQueue, error) {
+	return s.editPlayQueue(ctx, auth, queueWriteTargets{}, edit)
+}
+
+func (s *Store) editPlayQueue(ctx context.Context, auth QueueWriteAuthorization, targets queueWriteTargets, edit QueueEdit) (PlayQueue, error) {
+	var result PlayQueue
+	err := s.writeQueue(ctx, auth, targets, func(view queueWriteView) error {
 		if err := edit(view.queue, view.visible); err != nil {
-			return PlayQueue{}, err
+			return err
 		}
-		return view.queue.playQueue(view.visible), nil
+		result = view.queue.playQueue(view.visible)
+		return nil
 	})
+	if err != nil {
+		return PlayQueue{}, err
+	}
+	return result, nil
+}
+
+// EditQueueItems applies an edit and returns the legacy Media-addressed queue page.
+func (s *Store) EditQueueItems(ctx context.Context, auth QueueWriteAuthorization, edit QueueEdit) (QueueItemsResult, error) {
+	return s.editQueueItems(ctx, auth, nil, edit)
+}
+
+// StartQueueStation replaces the visible entries and returns the legacy queue page.
+func (s *Store) StartQueueStation(ctx context.Context, auth QueueWriteAuthorization, mediaIDs []MediaID, confirmReplace bool) (QueueItemsResult, error) {
+	return s.editQueueItems(ctx, auth, mediaIDs, replaceQueueWithStation(mediaIDs, confirmReplace))
+}
+
+func (s *Store) editQueueItems(ctx context.Context, auth QueueWriteAuthorization, extra []MediaID, edit QueueEdit) (QueueItemsResult, error) {
+	var result QueueItemsResult
+	err := s.writeQueue(ctx, auth, queueWriteTargets{ids: extra}, func(view queueWriteView) error {
+		if err := edit(view.queue, view.visible); err != nil {
+			return err
+		}
+		var err error
+		result, _, err = s.queueItemsProjection(ctx, view, "")
+		return err
+	})
+	if err != nil {
+		return QueueItemsResult{}, err
+	}
+	return result, nil
+}
+
+type queueWriteTargets struct {
+	ids             []MediaID
+	entryID         string
+	requireEligible bool
 }
 
 type queueWriteView struct {
@@ -115,89 +154,82 @@ type queueWriteView struct {
 	profileID ProfileID
 }
 
-func (s *Store) writeAuthorizedQueue(ctx context.Context, auth QueueWriteAuthorization, targets []MediaID, entryID string, lockEntries bool, mutate func(queueWriteView) (PlayQueue, error)) (PlayQueue, error) {
+// writeQueue binds visibility and Profile policy to the events commit for every
+// queue edit. The catalog and encrypted-plane transactions only reserve writers.
+func (s *Store) writeQueue(ctx context.Context, auth QueueWriteAuthorization, targets queueWriteTargets, mutate func(queueWriteView) error) error {
 	if err := s.guardAuthority(serverrole.FaceEngagement); err != nil {
-		return PlayQueue{}, err
+		return err
 	}
-	if auth.ProfileID == "" || auth.Now == nil || auth.ResolveCertification == nil {
-		return PlayQueue{}, errors.New("queue write requires a profile, clock and certification resolver")
+	if auth.ProfileID == "" {
+		return ValidationError("profile ID is required")
+	}
+	if auth.Now == nil || (!auth.trustedFilter && auth.ResolveCertification == nil) {
+		return errors.New("queue write requires a clock and certification resolver")
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return PlayQueue{}, err
+		return err
 	}
 
-	// Catalog and private planes hold BEGIN IMMEDIATE reservations through
-	// the events commit. Only the events transaction changes any data.
 	catalog, closeCatalog, err := beginQueuePolicyTx(ctx, s.catalogW)
 	if err != nil {
-		return PlayQueue{}, err
+		return err
 	}
 	defer closeCatalog()
 	policy, err := readQueueWritePolicy(ctx, catalog, auth)
 	if err != nil {
-		return PlayQueue{}, err
+		return err
 	}
 	events, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
-		return PlayQueue{}, err
+		return err
 	}
 	defer events.Rollback()
 	q, err := loadQueue(ctx, events, policy.profileID)
 	if err != nil {
-		return PlayQueue{}, err
+		return err
 	}
-	if entryID != "" {
-		i := slices.IndexFunc(q.entries, func(entry queueEntry) bool { return entry.id == entryID })
+	if targets.entryID != "" {
+		i := slices.IndexFunc(q.entries, func(entry queueEntry) bool { return entry.id == targets.entryID })
 		if i < 0 {
-			return PlayQueue{}, ErrQueueMediaNotFound
+			return ErrQueueMediaNotFound
 		}
-		targets = []MediaID{q.entries[i].mediaID}
+		targets.ids = []MediaID{q.entries[i].mediaID}
 	}
-	mediaIDs := queueMediaIDs(q.entries, targets)
-	lockTargets := targets
-	if lockEntries {
-		// State edits act on, and return, the currently visible queue.
-		lockTargets = mediaIDs
+	mediaIDs := queueMediaIDs(q.entries, targets.ids)
+	readers := mediaReaders{catalog: catalog, encrypted: func(LibraryID) rowsQueryer { return nil }}
+	if len(mediaIDs) != 0 && len(s.encryptedDBs) != 0 {
+		encrypted, release, err := s.queueEncryptedReaders(ctx, catalog, policy.filter)
+		if err != nil {
+			return err
+		}
+		defer release()
+		readers.encrypted = encrypted
 	}
-	private := map[LibraryID]*sql.Tx{}
-	readers, release, err := s.queueWriteReaders(ctx, catalog, policy.filter, lockTargets, private)
-	if err != nil {
-		return PlayQueue{}, err
-	}
-	defer release()
 	visible, err := visibleMediaBatch(ctx, readers, mediaIDs, policy.filter)
 	if err != nil {
-		return PlayQueue{}, err
+		return err
 	}
-	for _, id := range targets {
-		lib := visible[id].LibraryID
-		if s.encryptedMediaReaderLocked(lib) != nil && private[lib] == nil {
-			return PlayQueue{}, ErrQueueMediaNotFound
+	if targets.requireEligible {
+		if err := authorizeQueueTargets(ctx, readers, policy.filter, visible, targets.ids); err != nil {
+			return err
 		}
 	}
-	if err := authorizeQueueTargets(ctx, readers, policy.filter, visible, targets); err != nil {
-		return PlayQueue{}, err
-	}
 	original := slices.Clone(q.entries)
-	result, err := mutate(queueWriteView{&q, visible, readers, policy.filter, policy.profileID})
-	if err != nil {
-		return PlayQueue{}, err
+	if err := mutate(queueWriteView{&q, visible, readers, policy.filter, policy.profileID}); err != nil {
+		return err
 	}
 	if err := policy.checkAccess(ctx, catalog, auth.Now()); err != nil {
-		return PlayQueue{}, err
+		return err
 	}
 	if err := saveQueue(ctx, events, policy.profileID, q, original); err != nil {
-		return PlayQueue{}, err
+		return err
 	}
 	if err := policy.checkAccess(ctx, catalog, auth.Now()); err != nil {
-		return PlayQueue{}, err
+		return err
 	}
-	if err := events.Commit(); err != nil {
-		return PlayQueue{}, err
-	}
-	return result, nil
+	return events.Commit()
 }
 
 // beginQueuePolicyTx lets cancellation abort connection acquisition and the
@@ -218,45 +250,35 @@ func beginQueuePolicyTx(ctx context.Context, db *sql.DB) (*sql.Tx, func(), error
 	}, nil
 }
 
-// queueWriteReaders routes targets to each eligible private plane, then
-// re-reads visibility and certification under that plane's writer lock.
-func (s *Store) queueWriteReaders(ctx context.Context, catalog *sql.Tx, filter LibraryFilter, targets []MediaID, locked map[LibraryID]*sql.Tx) (mediaReaders, func(), error) {
-	readers := mediaReaders{catalog: catalog, encrypted: func(id LibraryID) rowsQueryer {
-		if tx := locked[id]; tx != nil {
-			return tx
-		}
-		return s.encryptedMediaReaderLocked(id)
-	}}
+// queueEncryptedReaders reserves every eligible open private plane before
+// evaluating visibility, including planes used only by existing queue entries.
+func (s *Store) queueEncryptedReaders(ctx context.Context, catalog *sql.Tx, filter LibraryFilter) (func(LibraryID) rowsQueryer, func(), error) {
+	libraries, err := loadLibraries(ctx, catalog)
+	if err != nil {
+		return nil, nil, err
+	}
+	locked := map[LibraryID]rowsQueryer{}
 	var releases []func()
 	release := func() {
 		for _, closeTx := range slices.Backward(releases) {
 			closeTx()
 		}
 	}
-	if len(s.encryptedDBs) == 0 {
-		return readers, release, nil
-	}
-
-	routingFilter := filter
-	routingFilter.Certification = nil
-	candidates, err := visibleMediaBatch(ctx, readers, targets, routingFilter)
-	if err != nil {
-		return mediaReaders{}, nil, err
-	}
-	for _, id := range targets {
-		lib := candidates[id].LibraryID
-		if s.encryptedMediaReaderLocked(lib) == nil || locked[lib] != nil {
+	for _, library := range libraries {
+		db := s.encryptedDBs[library.ID]
+		if db == nil || db.state != "unsealed-registered" || db.writer == nil || db.reader == nil ||
+			!library.Encrypted || !libraryVisible(library, filter) {
 			continue
 		}
-		tx, closeTx, err := beginQueuePolicyTx(ctx, s.encryptedDBs[lib].writer)
+		tx, closeTx, err := beginQueuePolicyTx(ctx, db.writer)
 		if err != nil {
 			release()
-			return mediaReaders{}, nil, err
+			return nil, nil, err
 		}
-		locked[lib] = tx
+		locked[library.ID] = tx
 		releases = append(releases, closeTx)
 	}
-	return readers, release, nil
+	return func(id LibraryID) rowsQueryer { return locked[id] }, release, nil
 }
 
 func authorizeQueueTargets(ctx context.Context, readers mediaReaders, filter LibraryFilter, visible map[MediaID]Media, targets []MediaID) error {
@@ -279,7 +301,7 @@ func authorizeQueueTargets(ctx context.Context, readers mediaReaders, filter Lib
 	return nil
 }
 
-func (s *Store) queueAddProjection(ctx context.Context, view queueWriteView, mediaID MediaID) (QueueAddResult, error) {
+func (s *Store) queueItemsProjection(ctx context.Context, view queueWriteView, mediaID MediaID) (QueueItemsResult, *int, error) {
 	items := make([]SourceItem, 0, len(view.visible))
 	seen := make(map[MediaID]bool, len(view.visible))
 	for _, entry := range *view.queue.activeOrder() {
@@ -290,7 +312,7 @@ func (s *Store) queueAddProjection(ctx context.Context, view queueWriteView, med
 	}
 	items, err := s.applyMuteFilterLocked(ctx, s.catalogR, view.profileID, view.filter, items)
 	if err != nil {
-		return QueueAddResult{}, err
+		return QueueItemsResult{}, nil, err
 	}
 	var position *int
 	if i := slices.IndexFunc(items, func(item SourceItem) bool { return item.ID == mediaID }); i >= 0 {
@@ -300,19 +322,16 @@ func (s *Store) queueAddProjection(ctx context.Context, view queueWriteView, med
 	if view.filter.Revealed {
 		restricted, err := restrictedLibraryIDs(ctx, view.readers.catalog)
 		if err != nil {
-			return QueueAddResult{}, err
+			return QueueItemsResult{}, nil, err
 		}
 		for i := range items {
 			items[i].Restricted = restricted[items[i].LibraryID]
 		}
 	}
 	if err := annotateLocked(ctx, view.readers, view.filter.Certification, items, view.filter.GrantedMediaIDs); err != nil {
-		return QueueAddResult{}, err
+		return QueueItemsResult{}, nil, err
 	}
-	return QueueAddResult{
-		Items: slices.Clone(items), Filter: view.filter, ProfileID: view.profileID,
-		MediaID: mediaID, Position: position,
-	}, nil
+	return QueueItemsResult{Items: slices.Clone(items), Filter: view.filter, ProfileID: view.profileID}, position, nil
 }
 
 type queueWritePolicy struct {
@@ -340,7 +359,11 @@ func readQueueWritePolicy(ctx context.Context, tx *sql.Tx, auth QueueWriteAuthor
 		policy.session = session
 	}
 	policy.rebound = auth.SessionID != "" && policy.session.ProfileID != auth.ProfileID
-	policy.filter.Revealed = policy.filter.Revealed && policy.session.Revealed
+	if !auth.trustedFilter {
+		// Relocking revokes Reveal from an in-flight request. For the same
+		// Profile, the request's filter also caps the visibility it can gain.
+		policy.filter.Revealed = policy.filter.Revealed && policy.session.Revealed
+	}
 	if policy.rebound {
 		policy.profileID = policy.session.ProfileID
 		policy.filter.Revealed = policy.session.Revealed
@@ -360,22 +383,26 @@ func readQueueWritePolicy(ctx context.Context, tx *sql.Tx, auth QueueWriteAuthor
 		if err != nil {
 			return queueWritePolicy{}, err
 		}
-		policy.filter.GrantedMediaIDs, err = readGrantedMediaIDs(ctx, tx, policy.profileID)
-		if err != nil {
-			return queueWritePolicy{}, err
-		}
-	} else {
-		policy.filter.GrantedMediaIDs = nil
 	}
 	if err := policy.checkAccess(ctx, tx, auth.Now()); err != nil {
 		return queueWritePolicy{}, err
 	}
-	policy.filter = queueAddFilter(profile, policy.rebound, policy.filter)
+	if auth.trustedFilter {
+		return policy, nil
+	}
+	policy.filter.GrantedMediaIDs = nil
+	if profile.Kind == ProfileManaged {
+		policy.filter.GrantedMediaIDs, err = readGrantedMediaIDs(ctx, tx, policy.profileID)
+		if err != nil {
+			return queueWritePolicy{}, err
+		}
+	}
+	policy.filter = queueProfileFilter(profile, policy.rebound, policy.filter)
 	policy.filter.Certification = auth.ResolveCertification(profile.CertificationCeilings)
 	return policy, nil
 }
 
-func queueAddFilter(profile Profile, rebound bool, filter LibraryFilter) LibraryFilter {
+func queueProfileFilter(profile Profile, rebound bool, filter LibraryFilter) LibraryFilter {
 	if rebound {
 		filter.AllLibraries = false
 		filter.AllowedIDs = profile.Library

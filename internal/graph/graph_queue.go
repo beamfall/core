@@ -58,16 +58,23 @@ func (h *Handler) writePlayQueue(ctx context.Context, scope auth.Scope, fields m
 	return playQueueInfo(queue), nil
 }
 
+func (h *Handler) queueWriteAuthorization(ctx context.Context, scope auth.Scope, expected store.ProfileID) (store.QueueWriteAuthorization, error) {
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return store.QueueWriteAuthorization{}, err
+	}
+	return h.auth.QueueWriteAuthorization(scope, expected, filter), nil
+}
+
 func (h *Handler) writeAuthorizedPlayQueue(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (store.PlayQueue, error) {
 	expected, err := checkExpectedProfile(scope, req)
 	if err != nil {
 		return store.PlayQueue{}, err
 	}
-	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	authorization, err := h.queueWriteAuthorization(ctx, scope, expected)
 	if err != nil {
 		return store.PlayQueue{}, err
 	}
-	authorization := h.auth.QueueWriteAuthorization(scope, expected, filter)
 	if fields["queueplaynext"] {
 		return h.store.QueuePlayNext(ctx, authorization, trimmedVariable(req, "entryID"))
 	}

@@ -9,8 +9,6 @@ import (
 	randv2 "math/rand/v2"
 	"slices"
 	"time"
-
-	"github.com/beamfall/core/internal/serverrole"
 )
 
 // QueueRepeatMode is the Profile's Play Queue repeat setting.
@@ -145,7 +143,7 @@ func (t queueTarget) matches(entry queueEntry, visible map[MediaID]Media) bool {
 }
 
 func (s *Store) QueueRemove(ctx context.Context, profileID ProfileID, mediaID MediaID, filter LibraryFilter) error {
-	return s.updateQueue(ctx, profileID, filter, nil, removeQueueTarget(queueTarget{mediaID: mediaID}))
+	return s.updateQueue(ctx, profileID, filter, nil, RemoveQueueMedia(mediaID))
 }
 
 func (s *Store) QueueRemoveEntry(ctx context.Context, profileID ProfileID, entryID string, filter LibraryFilter) error {
@@ -154,6 +152,10 @@ func (s *Store) QueueRemoveEntry(ctx context.Context, profileID ProfileID, entry
 
 func RemoveQueueEntry(entryID string) QueueEdit {
 	return removeQueueTarget(queueTarget{entryID: entryID})
+}
+
+func RemoveQueueMedia(mediaID MediaID) QueueEdit {
+	return removeQueueTarget(queueTarget{mediaID: mediaID})
 }
 
 func removeQueueTarget(target queueTarget) QueueEdit {
@@ -180,7 +182,7 @@ func (q *queueSnapshot) removeEntries(remove func(queueEntry) bool) {
 }
 
 func (s *Store) QueueMove(ctx context.Context, profileID ProfileID, mediaID MediaID, position int, filter LibraryFilter) error {
-	return s.updateQueue(ctx, profileID, filter, nil, moveQueueTarget(queueTarget{mediaID: mediaID}, &position))
+	return s.updateQueue(ctx, profileID, filter, nil, MoveQueueMedia(mediaID, position))
 }
 
 func (s *Store) QueueMoveEntry(ctx context.Context, profileID ProfileID, entryID string, position int, filter LibraryFilter) error {
@@ -189,6 +191,10 @@ func (s *Store) QueueMoveEntry(ctx context.Context, profileID ProfileID, entryID
 
 func MoveQueueEntry(entryID string, position int) QueueEdit {
 	return moveQueueTarget(queueTarget{entryID: entryID}, &position)
+}
+
+func MoveQueueMedia(mediaID MediaID, position int) QueueEdit {
+	return moveQueueTarget(queueTarget{mediaID: mediaID}, &position)
 }
 
 func moveQueueTarget(target queueTarget, position *int) QueueEdit {
@@ -296,7 +302,11 @@ func SetQueueRepeat(mode QueueRepeatMode) QueueEdit {
 var ErrQueueReplaceNeedsConfirm = errors.New("queue replacement needs confirmation")
 
 func (s *Store) QueueReplaceWithStation(ctx context.Context, profileID ProfileID, mediaIDs []MediaID, confirmReplace bool, filter LibraryFilter) error {
-	return s.updateQueue(ctx, profileID, filter, mediaIDs, func(q *queueSnapshot, visible map[MediaID]Media) error {
+	return s.updateQueue(ctx, profileID, filter, mediaIDs, replaceQueueWithStation(mediaIDs, confirmReplace))
+}
+
+func replaceQueueWithStation(mediaIDs []MediaID, confirmReplace bool) QueueEdit {
+	return func(q *queueSnapshot, visible map[MediaID]Media) error {
 		isVisible := func(entry queueEntry) bool {
 			_, ok := visible[entry.mediaID]
 			return ok
@@ -319,57 +329,29 @@ func (s *Store) QueueReplaceWithStation(ctx context.Context, profileID ProfileID
 			q.shuffled = append(q.shuffled, entries...)
 		}
 		return nil
-	})
+	}
 }
 
 // QueueClear removes every entry the caller can see.
 func (s *Store) QueueClear(ctx context.Context, profileID ProfileID, filter LibraryFilter) error {
-	return s.updateQueue(ctx, profileID, filter, nil, func(q *queueSnapshot, visible map[MediaID]Media) error {
+	return s.updateQueue(ctx, profileID, filter, nil, ClearQueue())
+}
+
+func ClearQueue() QueueEdit {
+	return func(q *queueSnapshot, visible map[MediaID]Media) error {
 		q.removeEntries(func(entry queueEntry) bool {
 			_, ok := visible[entry.mediaID]
 			return ok
 		})
 		return nil
-	})
+	}
 }
 
 func (s *Store) updateQueue(ctx context.Context, profileID ProfileID, filter LibraryFilter, extra []MediaID, mutate QueueEdit) error {
-	if err := s.guardAuthority(serverrole.FaceEngagement); err != nil {
-		return err
-	}
-	if profileID == "" {
-		return ValidationError("profile ID is required")
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return err
-	}
-	tx, err := s.eventsW.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	q, err := loadQueue(ctx, tx, profileID)
-	if err != nil {
-		return err
-	}
-	visible, err := s.visibleQueueMedia(ctx, q.entries, filter, extra)
-	if err != nil {
-		return err
-	}
-	original := slices.Clone(q.entries)
-	if err := mutate(&q, visible); err != nil {
-		return err
-	}
-	if err := saveQueue(ctx, tx, profileID, q, original); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-func (s *Store) visibleQueueMedia(ctx context.Context, entries []queueEntry, filter LibraryFilter, extra []MediaID) (map[MediaID]Media, error) {
-	return s.visibleMediaBatchSQL(ctx, queueMediaIDs(entries, extra), filter)
+	auth := QueueWriteAuthorization{ProfileID: profileID, Filter: filter, Now: s.serverNow, trustedFilter: true}
+	return s.writeQueue(ctx, auth, queueWriteTargets{ids: extra}, func(view queueWriteView) error {
+		return mutate(view.queue, view.visible)
+	})
 }
 
 func queueMediaIDs(entries []queueEntry, extra []MediaID) []MediaID {
@@ -468,7 +450,7 @@ func (s *Store) readPlayQueue(ctx context.Context, profileID ProfileID, filter L
 	if err != nil {
 		return PlayQueue{}, err
 	}
-	visible, err := s.visibleQueueMedia(ctx, q.entries, filter, nil)
+	visible, err := s.visibleMediaBatchSQL(ctx, queueMediaIDs(q.entries, nil), filter)
 	if err != nil {
 		return PlayQueue{}, err
 	}

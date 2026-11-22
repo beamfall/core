@@ -6,7 +6,87 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
+
+func TestQueueAddManyProjectsEncryptedEntriesAtCommit(t *testing.T) {
+	st, queued := seededEncryptedMedia(t, "queue-commit-certification")
+	t.Cleanup(func() { _ = st.Close() })
+	ctx := t.Context()
+	const profile = "profile-default"
+	const session = "session-revealed"
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE library SET plugin_id = 'starlog' WHERE id = ?`, queued.LibraryID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetMediaFields(ctx, queued.ID, []MediaField{{Name: certificationField, Type: EntityFieldText, Text: "low"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetProfileCertificationCeiling(ctx, profile, ProfileCertificationCeiling{
+		PluginID: "starlog", Ceiling: "low", FilterVisibility: "hide",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	filter := LibraryFilter{AllLibraries: true, Revealed: true}
+	auth := QueueWriteAuthorization{
+		ProfileID: profile, SessionID: session, Filter: filter, Now: time.Now, ResolveCertification: testQueueCertification,
+	}
+	seed, err := st.QueueAddMany(ctx, auth, []MediaID{queued.ID}, QueueEnd)
+	if err != nil || len(seed.Entries) != 1 || seed.Entries[0].Item.ID != queued.ID {
+		t.Fatalf("seed encrypted queue = %+v, err = %v", seed.Entries, err)
+	}
+	// A second connection attempts a recertification after the queue's first
+	// visibility read. Do not wait on a writer reservation held by this write.
+	writer, err := openSQLiteWriter(st.encryptedDBs[queued.LibraryID].workingPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Close() })
+	if _, err := writer.ExecContext(ctx, `PRAGMA busy_timeout = 0`); err != nil {
+		t.Fatal(err)
+	}
+	hide := func() error {
+		_, err := writer.ExecContext(ctx, `UPDATE media_field_text SET value = 'high' WHERE media_id = ? AND field = ?`, queued.ID, certificationField)
+		return err
+	}
+	var hideErr error
+	var clockReads int
+	auth.Now = func() time.Time {
+		clockReads++
+		if clockReads == 2 {
+			hideErr = hide()
+		}
+		return time.Now()
+	}
+	const added = "media-archive"
+	got, err := st.QueueAddMany(ctx, auth, []MediaID{added}, QueueEnd)
+	if err != nil || clockReads < 2 {
+		t.Fatalf("batch did not reach the racing write: queue = %+v, err = %v, clock reads = %d", got.Entries, err, clockReads)
+	}
+	var busy *sqlite.Error
+	want := []MediaID{added}
+	if hideErr != nil {
+		if !errors.As(hideErr, &busy) || busy.Code() != sqlite3.SQLITE_BUSY {
+			t.Fatalf("recertifying encrypted Media: %v", hideErr)
+		}
+		want = []MediaID{queued.ID, added}
+		if err := hide(); err != nil {
+			t.Fatalf("recertifying after commit: %v", err)
+		}
+	}
+	var ids []MediaID
+	for _, entry := range got.Entries {
+		ids = append(ids, entry.Item.ID)
+	}
+	if !slices.Equal(ids, want) {
+		t.Errorf("batch response = %v, want %v at commit", ids, want)
+	}
+	filter.Certification = []CertificationConstraint{{PluginID: "starlog", Allowed: []string{"low"}}}
+	assertQueueIDs(t, st, filter, profile, []MediaID{added})
+	filter.Certification = nil
+	assertQueueIDs(t, st, filter, profile, []MediaID{queued.ID, added})
+}
 
 func queueAddFixture(ctx context.Context, st *Store, profileID ProfileID, mediaID MediaID, position *int, filter LibraryFilter) error {
 	var sessionID SessionID

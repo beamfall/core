@@ -16,6 +16,44 @@ import (
 
 const queueStateSelection = "{ entries { id mediaID } currentEntryID positionMS shuffle repeatMode }"
 
+func TestLegacyQueueWriteUsesRevealAtWrite(t *testing.T) {
+	for _, tc := range []struct {
+		field, body string
+	}{
+		{"queueClear", qaClear},
+		{"queueRemove", qaRemoveAlpha},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			st := storetest.Open(t)
+			h := newTestHandlerWithStore(st)
+			qaItems(t, h, qaAddAlpha, authorizeRevealed, "queueAdd")
+			if got := qaItems(t, h, qaAddArchive, authorizeRevealed, "queueAdd"); !qaEqualIDs(got, "media-alpha", "media-archive") {
+				t.Fatalf("seed queue = %v", qaIDs(got))
+			}
+			var relocked bool
+			h.mutationAuditAppend = func(ctx context.Context, entry store.ActivityEntry) error {
+				if entry.Action == store.ActivityMutationAttempt {
+					if err := st.SetSessionRevealed(ctx, "session-revealed", false); err != nil {
+						t.Fatal(err)
+					}
+					relocked = true
+				}
+				return st.AppendActivity(ctx, entry)
+			}
+			got := qaItems(t, h, tc.body, authorizeRevealed, tc.field)
+			if !relocked {
+				t.Fatal("request did not reach the relock hook")
+			}
+			if len(got) != 0 {
+				t.Errorf("response after relock = %v, want empty", qaIDs(got))
+			}
+			if stored := pqQueue(t, st, pqDefault); !slices.Equal(stored, []string{"media-archive"}) {
+				t.Errorf("stored queue after relock = %v, want [media-archive]", stored)
+			}
+		})
+	}
+}
+
 func TestPlayQueueRemoveEntryUsesRevealAtWrite(t *testing.T) {
 	st := storetest.Open(t)
 	h := newTestHandlerWithStore(st)
@@ -94,6 +132,47 @@ func TestPlayQueueWriteMapsScheduleEndingBeforeCommit(t *testing.T) {
 	}
 	if ids := pqQueue(t, st, pqManaged); len(ids) != 0 {
 		t.Errorf("queue add after deadline wrote %v", ids)
+	}
+}
+
+func TestQueueClearRefusesScheduleEndingBeforeCommit(t *testing.T) {
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	if got := qaItems(t, h, qaAddAlpha, authorizeManaged, "queueAdd"); !qaEqualIDs(got, "media-alpha") {
+		t.Fatalf("seed queue = %v", qaIDs(got))
+	}
+	now := time.Date(2026, time.June, 15, 10, 0, 0, 0, time.Local)
+	if err := st.SetProfileAccessWindows(t.Context(), pqManaged, []store.ProfileAccessWindow{
+		{Weekday: int(now.Weekday()), StartMinute: 600, EndMinute: 601},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var writing bool
+	var writeClockReads int
+	h.auth = auth.NewServiceWithClock(st, func() time.Time {
+		if writing {
+			writeClockReads++
+			if writeClockReads >= 3 {
+				// Close the window at the final check, after the SQL edit.
+				return now.Add(time.Minute)
+			}
+		}
+		return now
+	})
+	h.mutationAuditAppend = func(ctx context.Context, entry store.ActivityEntry) error {
+		if entry.Action == store.ActivityMutationAttempt {
+			writing = true
+		}
+		return st.AppendActivity(ctx, entry)
+	}
+	status, resp := postGraphStatus(t, h, qaClear, authorizeManaged)
+	if writeClockReads < 3 || status != http.StatusForbidden || len(resp.Errors) != 1 {
+		t.Errorf("queueClear clock reads = %d, status = %d, errors = %+v, want expiry at commit and one 403 error", writeClockReads, status, resp.Errors)
+	} else if got := resp.Errors[0]; got.Extensions.Code != ErrorCodeForbidden || got.Extensions.Reason != ErrorReasonAccessScheduleEnded {
+		t.Errorf("queueClear error = %#v, want FORBIDDEN / ACCESS_SCHEDULE_ENDED", got)
+	}
+	if stored := pqQueue(t, st, pqManaged); !slices.Equal(stored, []string{"media-alpha"}) {
+		t.Errorf("stored queue after deadline = %v, want [media-alpha]", stored)
 	}
 }
 

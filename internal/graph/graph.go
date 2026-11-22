@@ -4850,21 +4850,6 @@ func checkExpectedProfile(scope auth.Scope, req request) (store.ProfileID, error
 	return expected, nil
 }
 
-// queueOps applies the requested Play Queue mutations, all under one
-// expectedProfileID check when the request carries one.
-func (h *Handler) queueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
-	var data map[string]any
-	err := h.withExpectedProfile(ctx, scope, req, func() error {
-		var err error
-		data, err = h.applyQueueOps(ctx, scope, fields, req)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
 type queueAddResult struct {
 	items   []SourceItem
 	receipt QueueAddReceipt
@@ -4899,35 +4884,44 @@ func (h *Handler) queueAdd(ctx context.Context, scope auth.Scope, req request) (
 
 	// Keep the committed projection intact if optional card reads fail.
 	result := queueAddResult{receipt: QueueAddReceipt{MediaID: committed.MediaID, Position: committed.Position}}
-	cards := slices.Clone(committed.Items)
-	if err := h.annotateCardsForProfile(ctx, committed.ProfileID, committed.Filter, cards); err != nil {
+	result.items, err = h.queueItems(ctx, committed.QueueItemsResult)
+	if err != nil {
 		slog.DebugContext(ctx, "queueAdd card details unavailable", "error", err)
 		result.items = h.queueResponse(committed.Items, committed.Filter.Revealed, false)
-	} else {
-		result.items = h.queueResponse(cards, committed.Filter.Revealed, true)
 	}
 	return result, nil
 }
 
-func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
-	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+func (h *Handler) queueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
+	expected, err := checkExpectedProfile(scope, req)
+	if err != nil {
+		return nil, err
+	}
+	authorization, err := h.queueWriteAuthorization(ctx, scope, expected)
 	if err != nil {
 		return nil, err
 	}
 	data := map[string]any{}
+	write := func(field string, edit store.QueueEdit) error {
+		committed, err := h.store.EditQueueItems(ctx, authorization, edit)
+		if err != nil {
+			return queueWriteError(err)
+		}
+		items, err := h.queueItems(ctx, committed)
+		if err != nil {
+			return err
+		}
+		data[field] = items
+		return nil
+	}
 	if fields["queueremove"] {
 		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
 		if mediaID == "" {
 			return nil, clientError("mediaID is required")
 		}
-		if err := h.store.QueueRemove(ctx, scope.ProfileID, mediaID, filter); err != nil {
+		if err := write("queueremove", store.RemoveQueueMedia(mediaID)); err != nil {
 			return nil, err
 		}
-		items, err := h.queueItems(ctx, scope)
-		if err != nil {
-			return nil, err
-		}
-		data["queueremove"] = items
 	}
 	if fields["queuemove"] {
 		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
@@ -4942,44 +4936,24 @@ func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields ma
 		if !ok {
 			return nil, clientError("position is required")
 		}
-		if err := h.store.QueueMove(ctx, scope.ProfileID, mediaID, int(number), filter); err != nil {
+		if err := write("queuemove", store.MoveQueueMedia(mediaID, int(number))); err != nil {
 			return nil, err
 		}
-		items, err := h.queueItems(ctx, scope)
-		if err != nil {
-			return nil, err
-		}
-		data["queuemove"] = items
 	}
 	if fields["queueclear"] {
-		if err := h.store.QueueClear(ctx, scope.ProfileID, filter); err != nil {
+		if err := write("queueclear", store.ClearQueue()); err != nil {
 			return nil, err
 		}
-		items, err := h.queueItems(ctx, scope)
-		if err != nil {
-			return nil, err
-		}
-		data["queueclear"] = items
 	}
 	return data, nil
 }
 
-func (h *Handler) queueItems(ctx context.Context, scope auth.Scope) ([]SourceItem, error) {
-	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
-	if err != nil {
+func (h *Handler) queueItems(ctx context.Context, committed store.QueueItemsResult) ([]SourceItem, error) {
+	cards := slices.Clone(committed.Items)
+	if err := h.annotateCardsForProfile(ctx, committed.ProfileID, committed.Filter, cards); err != nil {
 		return nil, err
 	}
-	items, err := h.store.SourceItems(ctx, filter, store.SourceQuery{
-		Kind:      "queue",
-		ProfileID: scope.ProfileID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := h.annotateCards(ctx, scope, items); err != nil {
-		return nil, err
-	}
-	return h.queueResponse(items, scope.Revealed, true), nil
+	return h.queueResponse(cards, committed.Filter.Revealed, true), nil
 }
 
 // queueResponse attaches artwork only when the page's card reads succeeded.
