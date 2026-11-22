@@ -113,7 +113,7 @@ func writeLivePicture(dir string, picture ComposedPicture) (*ffmpeg.ComposedPict
 }
 
 // composedLiveRungs is the closed vocabulary of live composed shapes, best
-// first, each named by its video maxrate. The 720p shape encodes at the
+// first, each named by its video maxrate. The 540p shape encodes at the
 // precomputed composed rendition's maxrate; the smaller ones serve a client or
 // quirk height or bitrate limit with the same picture scaled down
 // (ffmpeg.ComposedCanvas).

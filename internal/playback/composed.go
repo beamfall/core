@@ -29,11 +29,11 @@ const (
 	ComposedRungID = "composed"
 
 	composedCodec  = "h264"
-	composedHeight = 720
-	// composedVideoKbps is the 720p composed encode's video maxrate, and
+	composedHeight = 540
+	// composedVideoKbps is the 540p composed encode's video maxrate, and
 	// composedBandwidth the whole peak the rendition is advertised and
 	// admitted at: that maxrate plus the ladder's audio and mux allowance
-	// (bandwidthFor), the same total as the live 720p composed rung.
+	// (bandwidthFor), the same total as the live 540p composed rung.
 	composedVideoKbps = 1500
 	composedBandwidth = composedVideoKbps*1000 + audioMuxReserve
 	// composedTimedTextFile is written into the rung directory for the encode
@@ -77,7 +77,7 @@ func (s *Service) SetPictureComposer(composer PictureComposer) {
 // composed encode (CORE-3149: the xBR upscale replaced nearest-neighbour;
 // CORE-3150: the Oscillux CD+G presenter replaced xBR). Bump it with every
 // re-pin of the presenter module that changes its frames.
-const composedGraphicsRecipe = "oscillux-cdg-v0.2.17"
+const composedGraphicsRecipe = "oscillux-cdg-v0.2.19"
 
 func (p ComposedPicture) validate() error {
 	if (p.GraphicsPath == "") == (p.TimedText == "") {

@@ -14,8 +14,8 @@ import (
 func TestComposedGraphicsOptionsFollowTheOutputClock(t *testing.T) {
 	r := Rendition{Height: 720}.WithAudioAdjust(AudioAdjust{Tempo: 1.25})
 	got := composedGraphicsOptions(r, 30)
-	if got.Width != 1280 || got.Height != 720 || got.FPS != 30 || got.Start != 37.5 || got.Tempo != 1.25 {
-		t.Fatalf("options = %+v, want 1280x720 at 30 fps from source 37.5 s at 1.25x", got)
+	if got.Width != 960 || got.Height != 540 || got.FPS != 30 || got.Start != 37.5 || got.Tempo != 1.25 {
+		t.Fatalf("options = %+v, want 960x540 at 30 fps from source 37.5 s at 1.25x", got)
 	}
 	if got := composedGraphicsOptions(Rendition{Height: 360}, 0); got.Width != 640 || got.Start != 0 || got.Tempo != 1 {
 		t.Fatalf("options = %+v, want 640x360 from 0 s at 1x", got)

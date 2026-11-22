@@ -20,7 +20,7 @@ func argAfter(args []string, flag string) string {
 
 func TestComposedHLSArgsGraphics(t *testing.T) {
 	args := composedHLSArgs("/lib/song.mp3", "/cache/r/composed", ComposedPicture{GraphicsPath: "/lib/song.cdg"}, Rendition{VideoKbps: 1500})
-	if got := strings.Join(args[2:12], " "); got != "-f rawvideo -pix_fmt rgba -s 1280x720 -r 30 -i pipe:0" {
+	if got := strings.Join(args[2:12], " "); got != "-f rawvideo -pix_fmt rgba -s 960x540 -r 30 -i pipe:0" {
 		t.Fatalf("the presenter's frames must be the first input: %q", args)
 	}
 	if slices.Contains(args, "/lib/song.cdg") {
@@ -44,7 +44,7 @@ func TestComposedHLSArgsGraphics(t *testing.T) {
 
 func TestComposedHLSArgsTimedText(t *testing.T) {
 	args := composedHLSArgs("/lib/song.ogg", "/cache/precompute:m1:fp:composed/composed", ComposedPicture{TimedTextPath: "/cache/precompute:m1:fp:composed/composed/picture.ass"}, Rendition{})
-	if got := strings.Join(args[2:6], " "); got != "-f lavfi -i color=c=black:s=1280x720:r=30" {
+	if got := strings.Join(args[2:6], " "); got != "-f lavfi -i color=c=black:s=960x540:r=30" {
 		t.Fatalf("canvas input = %q", got)
 	}
 	if got, want := argAfter(args, "-vf"), `ass=filename=/cache/precompute\\:m1\\:fp\\:composed/composed/picture.ass,format=yuv420p`; got != want {
@@ -231,7 +231,7 @@ func TestStartBackgroundComposedHLSRealEncode(t *testing.T) {
 				t.Fatalf("encode: %v", err)
 			}
 			probe := probeHLS(t, filepath.Join(dir, "index.m3u8"))
-			for _, want := range []string{"codec_name=h264|codec_type=video|width=1280|height=720", "codec_name=aac|codec_type=audio"} {
+			for _, want := range []string{"codec_name=h264|codec_type=video|width=960|height=540", "codec_name=aac|codec_type=audio"} {
 				if !strings.Contains(probe, want) {
 					t.Errorf("probe missing %q:\n%s", want, probe)
 				}
@@ -358,7 +358,7 @@ func TestStartHLSSegmentsComposedRealEncodeFromOffset(t *testing.T) {
 				t.Fatalf("first live segment must be numbered from the start segment: %v", err)
 			}
 			probe := probeHLS(t, filepath.Join(dir, "live.m3u8"))
-			for _, want := range []string{"codec_name=h264|codec_type=video|width=1280|height=720", "codec_name=aac|codec_type=audio"} {
+			for _, want := range []string{"codec_name=h264|codec_type=video|width=960|height=540", "codec_name=aac|codec_type=audio"} {
 				if !strings.Contains(probe, want) {
 					t.Errorf("probe missing %q:\n%s", want, probe)
 				}

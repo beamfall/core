@@ -209,7 +209,7 @@ func TestPrecomputeComposedRenditionEnqueue(t *testing.T) {
 	}
 	// The rendition is advertised and admitted at its whole peak: the 1500k
 	// video maxrate plus the ladder's 256 kbps audio and mux allowance, the
-	// same total as the live 720p composed rung (CORE-1804).
+	// same total as the live 540p composed rung (CORE-1804).
 	if !strings.Contains(string(jobsOut[0].Payload), `"bandwidth":1756000`) {
 		t.Fatalf("payload = %s, want bandwidth 1756000", jobsOut[0].Payload)
 	}
@@ -312,7 +312,7 @@ func TestComposedRenditionEndToEnd(t *testing.T) {
 	}
 	probe, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "stream=codec_name,height", "-of", "compact",
 		filepath.Join(ready[0].Path, ComposedRungID, "index.m3u8")).CombinedOutput()
-	if err != nil || !strings.Contains(string(probe), "codec_name=h264|height=720") || !strings.Contains(string(probe), "codec_name=aac") {
+	if err != nil || !strings.Contains(string(probe), "codec_name=h264|height=540") || !strings.Contains(string(probe), "codec_name=aac") {
 		t.Fatalf("composed rendition probe: %s %v", probe, err)
 	}
 

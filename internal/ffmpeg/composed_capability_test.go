@@ -131,7 +131,7 @@ func TestProbeCapabilitiesUsesTheRunner(t *testing.T) {
 
 func TestComposedCanvas(t *testing.T) {
 	cases := []struct{ height, wantWidth, wantHeight int }{
-		{0, 1280, 720}, {720, 1280, 720}, {1080, 1280, 720}, {480, 854, 480}, {360, 640, 360}, {361, 640, 360},
+		{0, 960, 540}, {540, 960, 540}, {720, 960, 540}, {1080, 960, 540}, {480, 854, 480}, {360, 640, 360}, {361, 640, 360},
 	}
 	for _, tc := range cases {
 		if w, h := ComposedCanvas(tc.height); w != tc.wantWidth || h != tc.wantHeight {

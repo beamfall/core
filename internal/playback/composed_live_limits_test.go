@@ -61,13 +61,13 @@ func TestLiveComposedPictureHonoursClientAndQuirkLimits(t *testing.T) {
 		quirk      *QuirkEntry
 		wantHeight int
 	}{
-		{"no limit keeps 720p", videoClientWithH264(0, 0), nil, 720},
+		{"no limit keeps 540p", videoClientWithH264(0, 0), nil, 540},
 		{"client H.264 height ceiling", videoClientWithH264(360, 0), nil, 360},
 		{"client H.264 bitrate ceiling", videoClientWithH264(0, 1_200_000), nil, 360},
 		// Each rung's budget is its video maxrate plus the ladder's 256 kbps
 		// audio and mux allowance: 1756k, 1256k, 856k.
-		{"budget exactly the 720p total", videoClientWithH264(0, 1_756_000), nil, 720},
-		{"budget just under the 720p total", videoClientWithH264(0, 1_755_999), nil, 480},
+		{"budget exactly the 540p total", videoClientWithH264(0, 1_756_000), nil, 540},
+		{"budget just under the 540p total", videoClientWithH264(0, 1_755_999), nil, 480},
 		{"budget exactly the 480p total", videoClientWithH264(0, 1_256_000), nil, 480},
 		{"budget just under the 480p total", videoClientWithH264(0, 1_255_999), nil, 360},
 		{"budget exactly the 360p total", videoClientWithH264(0, 856_000), nil, 360},
@@ -177,7 +177,7 @@ func TestLiveComposedPictureNeedsCapableFFmpeg(t *testing.T) {
 
 // The precomputed composed rendition is admitted and advertised at its whole
 // peak, the 1500k video maxrate plus the ladder's 256 kbps audio and mux
-// allowance, exactly like the live 720p composed rung (CORE-1804). A budget
+// allowance, exactly like the live 540p composed rung (CORE-1804). A budget
 // one bit under that total no longer admits it; the live 480p shape serves.
 func TestPrecomputedComposedRenditionHonoursBitrateBudget(t *testing.T) {
 	cases := []struct {
@@ -226,7 +226,7 @@ func TestPrecomputedComposedRenditionHonoursBitrateBudget(t *testing.T) {
 			}
 			live, _ := composedLiveRungWithin(0, 0)
 			if rendition.Bandwidth != 1_756_000 || rendition.Bandwidth != live.Bandwidth {
-				t.Fatalf("advertised bandwidth = %d, want 1756000, the live 720p composed rung's %d", rendition.Bandwidth, live.Bandwidth)
+				t.Fatalf("advertised bandwidth = %d, want 1756000, the live 540p composed rung's %d", rendition.Bandwidth, live.Bandwidth)
 			}
 		})
 	}
@@ -252,7 +252,7 @@ func TestReadyComposedRenditionNeedsNoCapableFFmpeg(t *testing.T) {
 
 func TestComposedShapedSessionEncodesTheGrantedShape(t *testing.T) {
 	t.Parallel()
-	for _, height := range []int{720, 480, 360} {
+	for _, height := range []int{540, 480, 360} {
 		transcoder := &fakeTranscoder{}
 		sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 		sessions.SetPictureComposer(func(context.Context, store.MediaID, string) (ComposedPicture, bool, error) {

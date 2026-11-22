@@ -1,11 +1,11 @@
 {
-  "release": "v0.2.17",
-  "rev": "9a37d98b5237f6c7fe05555e70039ee057e21436",
+  "release": "v0.2.19",
+  "rev": "fc1d3bed0d52a65eba8bb9d8bf03e5a6c2ffa393",
   "license": "AGPL-3.0-only",
-  "source": "https://github.com/beamfall/oscillux/releases/tag/v0.2.17",
+  "source": "https://github.com/beamfall/oscillux/releases/tag/v0.2.19",
   "assets": {
     "oscillux-cdg-render.wasm": {
-      "sha256": "164f53fc503393ef8705140592f0f343a44830cbc0cd5bf72aa7d39b2875d748"
+      "sha256": "c70396af072fd86d0b2acebaa65d1f199435ef811f355802dfeb1ba687f7486d"
     }
   }
 }

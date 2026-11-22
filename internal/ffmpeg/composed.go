@@ -15,19 +15,19 @@ import (
 	"github.com/beamfall/core/internal/ffmpeg/cdgrender"
 )
 
-// Composed-picture canvas: the 720p frame a composed rendition is drawn on
+// Composed-picture canvas: the 540p frame a composed rendition is drawn on
 // (ADR-0057 precomputed renditions; see ComposedPicture). A live composed
 // stream under a client or quirk height limit draws a smaller canvas of the
 // same shape (see ComposedCanvas).
 const (
-	composedWidth  = 1280
-	composedHeight = 720
+	composedWidth  = 960
+	composedHeight = 540
 	composedFPS    = 30
 )
 
 // ComposedCanvas is the canvas a composed rendition of the given height is
 // drawn on: 16:9 at that height, with even dimensions for yuv420p. A height of
-// zero or above the 720p canvas draws the 720p canvas, so a composed encode
+// zero or above the 540p canvas draws the 540p canvas, so a composed encode
 // never upscales.
 func ComposedCanvas(height int) (width, canvasHeight int) {
 	if height <= 0 || height > composedHeight {
@@ -67,7 +67,7 @@ func (p ComposedPicture) validate() error {
 }
 
 // StartBackgroundComposedHLS encodes an audio source plus a composed picture
-// into the same CMAF HLS layout StartBackgroundHLS writes, at a fixed 720p
+// into the same CMAF HLS layout StartBackgroundHLS writes, at a fixed 540p
 // canvas, for precomputed rendition generation. The encode is confined like
 // any HLS job: the source's directory read-only, dir read-write. A timed-text
 // document must therefore be inside dir, and a graphics track beside the
