@@ -174,4 +174,20 @@ func TestImportMediaFilePartsResettingMarkersClearsOnRegroup(t *testing.T) {
 	if got := methods(); !slices.Equal(got, []string{"chapter-import", "part-boundary", "silence-detect"}) {
 		t.Fatalf("markers after unchanged rescan = %v, want all three", got)
 	}
+
+	// A Part moving to another Media regroups its source Media as well.
+	three := ImportMediaFilePart{File: versionImport(libraryID, "/discs/three.m4b", "Other"), SourceOrdinal: 1}
+	other, _, err := st.ImportMediaFilePartsResettingMarkers(ctx, []ImportMediaFilePart{three}, reset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.ID == media.ID {
+		t.Fatalf("separate import landed on the same Media %s", other.ID)
+	}
+	if _, _, err := st.ImportMediaFilePartsResettingMarkers(ctx, []ImportMediaFilePart{three, two}, reset); err != nil {
+		t.Fatal(err)
+	}
+	if got := methods(); !slices.Equal(got, []string{"silence-detect"}) {
+		t.Fatalf("source markers after losing a Part = %v, want [silence-detect]", got)
+	}
 }

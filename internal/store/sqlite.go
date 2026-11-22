@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -3427,6 +3428,20 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 			}
 		}
 	}
+	if len(resetMethods) > 0 {
+		// A Part moving in from another Media regroups that Media too: its
+		// remaining membership already matches on its next scan, so its stale
+		// group Markers are reset here, in the same transaction.
+		sources, err := partSourceMediaTx(ctx, tx, mediaID, ordered)
+		if err != nil {
+			return Media{}, nil, false, err
+		}
+		for _, source := range sources {
+			if err := resetGroupMarkersTx(ctx, tx, plane, source, resetMethods); err != nil {
+				return Media{}, nil, false, err
+			}
+		}
+	}
 	files := make([]MediaFile, 0, len(ordered))
 	for i, part := range ordered {
 		imported := part.File
@@ -3460,6 +3475,38 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 		return Media{}, nil, false, err
 	}
 	return media, files, created, nil
+}
+
+// partSourceMediaTx lists the Media other than mediaID that currently own one
+// of the ordered Parts' files, each once, in Part order.
+func partSourceMediaTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, ordered []ImportMediaFilePart) ([]MediaID, error) {
+	var sources []MediaID
+	for _, part := range ordered {
+		rows, err := tx.QueryContext(ctx,
+			"SELECT DISTINCT media_id FROM media_file WHERE content_fingerprint = ? AND media_id <> ?",
+			part.File.ContentFingerprint, mediaID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var source MediaID
+			if err := rows.Scan(&source); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			if !slices.Contains(sources, source) {
+				sources = append(sources, source)
+			}
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return sources, nil
 }
 
 // resetGroupMarkersTx drops a regrouped Media's detected Markers of methods in
