@@ -462,13 +462,12 @@ function MyEntry({ entry, onCancel }: { entry: PartyGuestEntry; onCancel: () => 
           ) : entry.state === "declined" ? (
             <span className="text-muted-foreground">{t("partyGuestDeclined")}</span>
           ) : null}
-          {entry.pitchSemitones !== 0 && (
-            <span className="text-muted-foreground">
-              <span aria-hidden> · </span>
-              {t("partyGuestEntryKey", { key: signedSemitones(entry.pitchSemitones) })}
-            </span>
-          )}
         </p>
+        {entry.pitchSemitones !== 0 && (
+          <p className="m-0 mt-1 text-sm text-muted-foreground">
+            {t("partyGuestEntryKey", { key: signedSemitones(entry.pitchSemitones) })}
+          </p>
+        )}
       </div>
       {cancellable && (
         <Button
