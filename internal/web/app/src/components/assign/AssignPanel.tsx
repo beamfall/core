@@ -17,6 +17,7 @@ import type {
 } from "@/lib/graphql/manage";
 import type { FixMatchCandidateInfo, FixMatchFieldDiff } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { clearViewerCache } from "@/lib/viewerCache";
 import type { StringKey } from "@/strings";
 import { useAssignInterruptionNotice } from "./AssignInterruptionNotice";
 import { percent, reasonLabel } from "./matchLabels";
@@ -278,6 +279,9 @@ export function AssignPanel({
           epoch,
         );
         next.push({ mediaID });
+        // Invalidate cached viewer documents as each write is confirmed, whether
+        // or not the panel is still mounted (Back during a write unmounts it).
+        if (!identityEnded()) clearViewerCache();
       } catch (err) {
         if (identityEnded()) break;
         next.push({

@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/
 import { fixMatchCurrent, fixMatchSources } from "@/lib/graphql";
 import type { FixMatchSourceInfo } from "@/lib/graphql/manage";
 import { useT } from "@/lib/i18n";
-import { clearViewerCache } from "@/lib/viewerCache";
 import { type AssignItem, AssignPanel } from "./AssignPanel";
 
 type Selection = Pick<AssignItem, "mediaID"> & Partial<AssignItem>;
@@ -124,10 +123,7 @@ export function AssignDialog({
             dialog
             onWriteChange={setWriting}
             onFinished={(results) => {
-              if (results.some((result) => !result.error)) {
-                clearViewerCache();
-                setChanged(true);
-              }
+              if (results.some((result) => !result.error)) setChanged(true);
             }}
           />
         )}

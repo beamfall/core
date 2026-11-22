@@ -15,6 +15,7 @@ import {
 import { fixMatch as transportFixMatch } from "@/lib/graphql/manage";
 import { I18nProvider } from "@/lib/i18n";
 import { SessionProvider, useSession } from "@/lib/session";
+import { viewerCacheSize, writeViewerCache } from "@/lib/viewerCache";
 import { AssignDialog } from "./AssignDialog";
 import { AssignInterruptionNotice } from "./AssignInterruptionNotice";
 import { AssignPanel } from "./AssignPanel";
@@ -349,6 +350,38 @@ describe("Assign metadata", () => {
     expect(await dialog.findByRole("status")).toHaveTextContent(
       "Assignment interrupted. Confirmed changes: 0 of 2.",
     );
+  });
+
+  it("clears the viewer cache when a write confirms after the panel unmounts", async () => {
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    let confirm: () => void = () => {};
+    vi.mocked(fixMatch).mockImplementationOnce(
+      ({ mediaID }) =>
+        new Promise((resolve) => {
+          confirm = () =>
+            resolve({ id: mediaID, title: movie.title, year: movie.year, favorited: false });
+        }),
+    );
+    const onFinished = vi.fn();
+    const user = userEvent.setup();
+    const view = render(
+      <I18nProvider>
+        <AssignPanel items={[movie]} sources={[catalog]} onFinished={onFinished} />
+      </I18nProvider>,
+    );
+    await preview({
+      user,
+      dialog: within(screen.getByRole("region", { name: "Assign metadata" })),
+    });
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(fixMatch).toHaveBeenCalledOnce();
+    writeViewerCache("viewer", "/media/m1", { title: "Old title" });
+    view.unmount();
+    await act(async () => confirm());
+
+    expect(viewerCacheSize()).toBe(0);
+    expect(onFinished).not.toHaveBeenCalled();
   });
 
   it("omits the interrupted item from the finished results", async () => {
