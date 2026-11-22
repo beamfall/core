@@ -198,8 +198,22 @@ func TestReportPlaybackRecordsPausedAndPlaybackID(t *testing.T) {
 	if paused["playbackId"] != "play-1" || playing["playbackId"] != nil {
 		t.Fatalf("progress payloads = %#v, want playback ID play-1 at 45, none at 50", payloads)
 	}
-	long := fmt.Sprintf(`{"position":55,"playbackID":%q}`, strings.Repeat("x", 65))
-	if _, errs := post(t, handler, fmt.Sprintf(report, long), authorizeViewer); len(errs) == 0 || errs[0].Message != "playbackID is too long" {
-		t.Fatalf("long playbackID errors = %#v, want playbackID is too long", errs)
+	// The ID is checked exactly as sent: 64 characters counted in runes, and
+	// surrounding whitespace is refused rather than trimmed, so " x" and "x"
+	// never merge into one play.
+	for id, ok := range map[string]bool{
+		strings.Repeat("é", 64): true,
+		strings.Repeat("x", 65): false,
+		" play-1":               false,
+		"play-1\n":              false,
+	} {
+		vars := fmt.Sprintf(`{"position":55,"playbackID":%q}`, id)
+		_, errs := post(t, handler, fmt.Sprintf(report, vars), authorizeViewer)
+		if ok && len(errs) != 0 {
+			t.Fatalf("playbackID %q errors = %#v, want accepted", id, errs)
+		}
+		if !ok && (len(errs) == 0 || errs[0].Message != store.ErrInvalidPlaybackID.Error()) {
+			t.Fatalf("playbackID %q errors = %#v, want %v", id, errs, store.ErrInvalidPlaybackID)
+		}
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/beamfall/core/internal/serverrole"
 )
@@ -69,6 +71,28 @@ type PlaybackProgress struct {
 	ImportRunID       string
 	ImportImporterID  string
 	ImportMatchMethod string
+}
+
+// MaxPlaybackIDLength bounds a client's playback ID, in characters; a UUID
+// is 36.
+const MaxPlaybackIDLength = 64
+
+// ErrInvalidPlaybackID reports a playback ID that is too long or carries
+// surrounding whitespace.
+var ErrInvalidPlaybackID = errors.New("playbackID must be at most 64 characters with no surrounding whitespace")
+
+// ValidatePlaybackID checks a client's playback ID exactly as sent: at most
+// MaxPlaybackIDLength characters (runes) and valid UTF-8, with no leading or
+// trailing whitespace, so two IDs that differ only by spacing are never
+// merged into one play. The empty ID (none sent) is valid.
+func ValidatePlaybackID(id string) error {
+	if !utf8.ValidString(id) || utf8.RuneCountInString(id) > MaxPlaybackIDLength {
+		return ErrInvalidPlaybackID
+	}
+	if id != strings.TrimFunc(id, unicode.IsSpace) {
+		return ErrInvalidPlaybackID
+	}
+	return nil
 }
 
 // watchedThreshold marks video media watched once this fraction has played.

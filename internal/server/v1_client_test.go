@@ -193,6 +193,41 @@ func TestV1ReportProgressRecordsPositionAndWatched(t *testing.T) {
 	}
 }
 
+// TestV1ReportProgressRecordsPlaybackID passes the client's playback ID and
+// paused state through to the progress event, as GraphQL reportPlayback does,
+// so play history can tell two devices' concurrent plays apart (CORE-1703).
+// An ID with surrounding whitespace or over 64 characters is refused.
+func TestV1ReportProgressRecordsPlaybackID(t *testing.T) {
+	srv, st := newTestServerWithStore(t)
+	rec := v1DeviceRequest(t, srv, http.MethodPut, "/v1/media/media-alpha/progress", `{"positionSeconds":42,"eventTimeMS":1000,"playbackID":"play-v1","paused":true}`, "", authorizeViewer)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("progress status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	export, err := st.ExportMyEngagement(context.Background(), "profile-default", store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, event := range export.EngagementEvents {
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["operation"] == "progress" {
+			found = payload["playbackId"] == "play-v1" && payload["paused"] == true
+		}
+	}
+	if !found {
+		t.Fatalf("progress events = %#v, want playbackId play-v1 and paused", export.EngagementEvents)
+	}
+	for _, id := range []string{" play-v1", strings.Repeat("x", 65)} {
+		body, _ := json.Marshal(map[string]any{"positionSeconds": 50, "playbackID": id})
+		if rec := v1DeviceRequest(t, srv, http.MethodPut, "/v1/media/media-alpha/progress", string(body), "", authorizeViewer); rec.Code != http.StatusBadRequest {
+			t.Errorf("progress with playbackID %q = %d, want 400: %s", id, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestV1ReportProgressRejectsHiddenAndNegativeReports(t *testing.T) {
 	srv, st := newTestServerWithStore(t)
 	ctx := context.Background()

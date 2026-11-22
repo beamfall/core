@@ -4400,9 +4400,10 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 	// playbackID is the client's random ID for this play: new each time the
 	// player starts the item, kept across pauses and seeks. Play history
 	// groups a play by it (CORE-1703). Optional for older clients.
-	playbackID := trimmedVariable(req, "playbackID")
-	if len(playbackID) > maxPlaybackIDLength {
-		return PlaybackReport{}, clientError("playbackID is too long")
+	// It is checked exactly as sent, never trimmed (store.ValidatePlaybackID).
+	playbackID := stringVar(req, "playbackID")
+	if err := store.ValidatePlaybackID(playbackID); err != nil {
+		return PlaybackReport{}, clientError(err.Error())
 	}
 	media, err := h.store.Media(ctx, store.MediaID(mediaID), scope.PlaybackFilter())
 	if err != nil {
@@ -4443,9 +4444,6 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 		Watched:         progress.Watched,
 	}, nil
 }
-
-// maxPlaybackIDLength bounds a client's playback ID; a UUID is 36.
-const maxPlaybackIDLength = 64
 
 // RecordPlaybackProgress records a playback position reported through the
 // public /v1 client API for the Scope's Profile. It resolves the Media with the

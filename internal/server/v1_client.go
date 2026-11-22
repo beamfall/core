@@ -253,6 +253,14 @@ type v1ProgressRequest struct {
 	// observed the position. The server keeps the latest report by this time,
 	// so a delayed report cannot move the position backwards.
 	EventTimeMS int64 `json:"eventTimeMS,omitempty"`
+	// PlaybackID is the client's random ID for this play, new each time the
+	// player starts the item and kept across pauses and seeks; play history
+	// groups a play by it (CORE-1703). Optional, validated exactly as sent
+	// (store.ValidatePlaybackID), the same as GraphQL reportPlayback.
+	PlaybackID string `json:"playbackID,omitempty"`
+	// Paused says whether the player was paused when it reported; a client
+	// that omits it reads as playing.
+	Paused *bool `json:"paused,omitempty"`
 }
 
 type v1ProgressResponse struct {
@@ -292,6 +300,10 @@ func (s *Server) v1ReportProgress(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "positionSeconds, durationSeconds and eventTimeMS must not be negative")
 		return
 	}
+	if err := store.ValidatePlaybackID(req.PlaybackID); err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	if !s.v1MediaVisible(w, r, scope, mediaID) {
 		return
 	}
@@ -301,6 +313,8 @@ func (s *Server) v1ReportProgress(w http.ResponseWriter, r *http.Request) {
 		PositionSeconds: *req.PositionSeconds,
 		DurationSeconds: req.DurationSeconds,
 		EventTimeMS:     req.EventTimeMS,
+		PlaybackID:      req.PlaybackID,
+		Paused:          req.Paused,
 	}, req.Finished)
 	if err != nil {
 		writeErrorCause(w, r, http.StatusInternalServerError, "progress unavailable", err)

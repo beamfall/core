@@ -590,6 +590,31 @@ func TestPlayHistoryCreditsADelayedReport(t *testing.T) {
 	}
 }
 
+// feature:play-history
+func TestPlayHistoryFallsBackToReceiptWhenEventTimeStalls(t *testing.T) {
+	// Codex CORE-1703 r4: the device clock is set back two minutes after one
+	// minute of play, and a client that holds its event time at a high-water
+	// mark then sends the same event time for the whole second minute. A step
+	// whose event time does not move forward falls back to the receipt gap,
+	// so the two-minute play still earns 120 seconds.
+	st := openSeeded(t)
+	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
+	playing := false
+	r := clientReport{device: "dev-web", playback: "play-web", method: PlayMethodDirect, paused: &playing}
+	for at := 0; at <= 120; at += 15 {
+		client := min(at, 60)
+		r.received, r.clientAt, r.position = day.Add(time.Duration(at)*time.Second), day.Add(time.Duration(client)*time.Second), at
+		addClientReport(t, st, "profile-default", "media-alpha", r)
+	}
+	plays, err := st.PlayHistory(context.Background(), LibraryFilter{AllLibraries: true}, PlayHistoryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plays) != 1 || plays[0].WatchedSeconds != 120 {
+		t.Fatalf("plays = %#v, want one play of 120s", plays)
+	}
+}
+
 // stalledReports appends a play that reports every 15 seconds from 0 to 300,
 // then a report at 300 whose request stalls for 30 seconds, and after it the
 // reports queued behind it, which arrive back to back. Each queued report

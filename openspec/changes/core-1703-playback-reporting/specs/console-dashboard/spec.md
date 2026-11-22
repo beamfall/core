@@ -58,30 +58,74 @@ than 366 days, or neither a window nor `since` SHALL be refused.
 
 A playback progress report SHALL record the reporting session's device, the client's playback ID
 when it sends one, whether the player said it was paused when it says so, and, when the server
-holds a delivery decision for that session and item, its play method. A playback ID longer than 64
-characters SHALL be refused.
+holds a delivery decision for that session and item, its play method.
 
 #### Scenario: Transcoded session
 
 - **WHEN** a player whose session the server is transcoding reports progress
 - **THEN** the resulting play lists that device and the method `transcode`
 
+### Requirement: Both report APIs accept the playback ID as sent
+
+GraphQL `reportPlayback` and `PUT /v1/media/{mediaID}/progress` SHALL accept the playback ID and
+paused state alike. A playback ID SHALL be checked exactly as sent, never trimmed: one longer than
+64 characters (Unicode code points) or with leading or trailing whitespace SHALL be refused.
+
+#### Scenario: Long and padded IDs
+
+- **WHEN** a client sends a playback ID of 64 accented letters, one of 65 letters, or one with a
+  leading space
+- **THEN** the first is recorded and the other two are refused
+
+#### Scenario: Playback ID through the device API
+
+- **WHEN** a device reports progress through `/v1` with a playback ID
+- **THEN** the progress event records that ID, and an ID with surrounding whitespace is refused
+
 ### Requirement: Clients name each play with a playback ID
 
-A client SHALL send a new random playback ID each time its player starts an item, keep it across
-pauses, seeks and reloads of the same item, and send the reports for one playback ID one at a time
-in the order it made them, never dropping or reordering one. Only a periodic heartbeat MAY replace
-the heartbeat queued just before it in the same state.
+A client SHALL send a new random playback ID each time its player starts an item and keep it
+across pauses, seeks and reloads of the same item. Playing an item again after its finish SHALL
+start a new playback ID.
+
+#### Scenario: Replay in place
+
+- **WHEN** an item plays to its finish and the viewer presses Play again on the same player
+- **THEN** the second play's reports carry a new playback ID and its heartbeat runs again
+
+### Requirement: Clients send a play's reports in order
+
+A client SHALL send the reports for one playback ID one at a time in the order it made them, never
+dropping or reordering one. Only a periodic heartbeat MAY replace the heartbeat queued just before
+it in the same state. A reload of the same item SHALL send the reports still queued for its
+playback ID before any of its own.
 
 #### Scenario: Pause, resume and heartbeat behind a stalled report
 
 - **WHEN** a playing report stalls and the viewer pauses, resumes and a heartbeat follows
 - **THEN** all four reports are sent in that order, with one playback ID
 
+#### Scenario: Quality change behind a stalled report
+
+- **WHEN** a playing report stalls, the viewer pauses and seeks while paused, then changes quality
+- **THEN** the pause and the seek are sent in order, before the reloaded stream's reports, with one
+  playback ID
+
 #### Scenario: Auto-advance with reports queued
 
 - **WHEN** the player moves to the next item while reports and the finish are queued
 - **THEN** the queued reports are sent in order and the finish last
+
+### Requirement: Client event times only move forward
+
+A client's event times for one playback ID SHALL come from a clock that only moves forward, such as
+the wall clock at the play's start carried forward by a monotonic timer, so a device clock change
+mid-play neither stalls nor rewinds them.
+
+#### Scenario: Device clock set back mid-play
+
+- **WHEN** the device clock is set back two minutes while an item plays for three seconds
+- **THEN** the play's next report carries an event time three seconds after its previous one
 
 ### Requirement: A play is the reports sharing a playback ID
 
@@ -128,9 +172,16 @@ is.
 
 Within a play, each step between consecutive reports SHALL credit the position advance capped at
 the time between them, and nothing when the earlier report said paused or the advance is negative.
-The time is the client's clock difference when both reports carry one and it did not run backward,
-else the receipt difference. A report that does not say whether it was paused SHALL count as
-playing. No cap of a minute applies.
+The time is the client's clock difference when both reports carry one and it moved forward, else
+the receipt difference for that step. A report that does not say whether it was paused SHALL count
+as playing. No cap of a minute applies.
+
+#### Scenario: Client clock runs fast
+
+- **WHEN** a client's event times run ahead of real time
+- **THEN** no step credits more than its position advance and no play more than the item's known
+  duration; crediting by the client's clock keeps the time of reports queued behind a slow request,
+  at the cost of trusting that clock within these bounds
 
 #### Scenario: Paused seek
 
@@ -153,6 +204,12 @@ playing. No cap of a minute applies.
 
 - **WHEN** a client's clock jumps backward between two minutes of playing reports
 - **THEN** the play still gains 120 watched seconds
+
+#### Scenario: Client clock stands still
+
+- **WHEN** a client sends the same event time for a minute of playing reports that arrive and
+  advance normally
+- **THEN** each of those steps credits the receipt difference, and the play gains the full time
 
 #### Scenario: Upgraded history
 
