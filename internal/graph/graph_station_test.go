@@ -695,8 +695,8 @@ func TestStationExcludeQueuedReachesPastFirstWindow(t *testing.T) {
 	}
 }
 
-// Review round 2, P2: the list read carries no length, so length rules apply
-// to full rows in the hard filter, never to the pre-sampling list filter.
+// Review rounds 2 and 3, P2: the Entity read carries each Media's length, so
+// length rules filter related Media while reading without dropping a match.
 func TestStationLengthRulesKeepExpandedMedia(t *testing.T) {
 	// feature:music-stations
 	st := storetest.Open(t)

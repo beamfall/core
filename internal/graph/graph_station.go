@@ -349,11 +349,11 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 			continue
 		}
 		expanded[entityID] = true
-		// The year rules and the queued exclusion apply while reading, before
-		// sampling, so a large Entity's few matching Media are never sampled
-		// away. Length rules need the full row and apply in the hard filter.
+		// The year and length rules and the queued exclusion apply while
+		// reading, before sampling, so a large Entity's few matching Media are
+		// never sampled away.
 		items, err := h.stationEntityMedia(ctx, scope, filter, entityID, func(it store.SourceItem) bool {
-			return !queued[it.ID] && rules.admitsYear(it.Year)
+			return !queued[it.ID] && rules.admitsFields(it.Year, it.DurationSeconds)
 		})
 		if err != nil {
 			// An Entity this scope cannot see adds nothing; it never errors the
@@ -675,20 +675,6 @@ func (r stationRules) admits(m store.Media, links []store.MediaEntityLink) bool 
 
 // admitsFields applies the rules that read only a Media's year and length.
 func (r stationRules) admitsFields(year, durationSeconds int) bool {
-	if !r.admitsYear(year) {
-		return false
-	}
-	if r.MinDurationSeconds > 0 && durationSeconds < r.MinDurationSeconds {
-		return false
-	}
-	if r.MaxDurationSeconds > 0 && durationSeconds > r.MaxDurationSeconds {
-		return false
-	}
-	return true
-}
-
-// admitsYear applies the decade and year rules alone.
-func (r stationRules) admitsYear(year int) bool {
 	if len(r.Decades) > 0 && (year == 0 || !slices.Contains(r.Decades, year/10*10)) {
 		return false
 	}
@@ -696,6 +682,12 @@ func (r stationRules) admitsYear(year int) bool {
 		return false
 	}
 	if r.MaxYear > 0 && year > r.MaxYear {
+		return false
+	}
+	if r.MinDurationSeconds > 0 && durationSeconds < r.MinDurationSeconds {
+		return false
+	}
+	if r.MaxDurationSeconds > 0 && durationSeconds > r.MaxDurationSeconds {
 		return false
 	}
 	return true

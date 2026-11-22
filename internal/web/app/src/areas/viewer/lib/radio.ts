@@ -95,9 +95,11 @@ interface Active {
 }
 
 let active: Active | null = null;
-// Bumped on every start, stop and epoch end; a top-up that sees it change stops
-// before its next queue write.
+// Bumped on every start (when it is asked for, not when it lands), stop and
+// epoch end; a top-up or start that sees it change stops before its next write.
 let generation = 0;
+// Starts awaiting the server; no top-up writes while one may replace the queue.
+let starting = 0;
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -117,10 +119,10 @@ function setActive(next: RadioStation | null, epoch = getIdentityEpochSignal()) 
   if (!next) {
     active = null;
   } else {
-    const mine = generation;
-    active = { station: next, epoch };
+    const entry: Active = { station: next, epoch };
+    active = entry;
     // The identity that started the Station ended: forget it, fail closed.
-    epoch?.addEventListener("abort", () => generation === mine && setActive(null), {
+    epoch?.addEventListener("abort", () => active === entry && setActive(null), {
       once: true,
     });
   }
@@ -164,25 +166,36 @@ export type RadioStartResult =
   /** A stop, another start or an identity change overtook this start; nothing is active. */
   | { status: "cancelled" };
 
-/**
- * Starts a Station into the Profile's Play Queue. A queue that already holds
- * the listener's own items is replaced only with confirmReplace; without it
- * the result asks for confirmation and nothing changes.
- */
-export async function startRadio(input: {
+interface RadioStartInput {
   profileID: string;
   seedKind: RadioSeedKind;
   seedID: string;
   rules?: RadioRules;
   ruleTitles?: Record<string, string>;
   confirmReplace?: boolean;
-}): Promise<RadioStartResult> {
+}
+
+/**
+ * Starts a Station into the Profile's Play Queue. A queue that already holds
+ * the listener's own items is replaced only with confirmReplace; without it
+ * the result asks for confirmation and nothing changes.
+ */
+export async function startRadio(input: RadioStartInput): Promise<RadioStartResult> {
+  starting++;
+  try {
+    return await startOnce(input);
+  } finally {
+    starting--;
+  }
+}
+
+async function startOnce(input: RadioStartInput): Promise<RadioStartResult> {
   const station = { seedKind: input.seedKind, seedID: input.seedID, rules: input.rules ?? {} };
-  // Starting ends the playing Station at once, so its top-up writes no more.
+  // Starting halts the playing Station's top-up at once; the Station itself
+  // stays until this one lands, so a retune that needs confirming keeps it.
   // A stop, a newer start or an identity change before the reply cancels this
-  // one: its titles never reach a later identity.
-  stopRadio();
-  const mine = generation;
+  // start: its titles never reach a later identity.
+  const mine = ++generation;
   const epoch = getIdentityEpochSignal();
   const overtaken = () =>
     generation !== mine || getIdentityEpochSignal() !== epoch || !!epoch?.aborted;
@@ -205,7 +218,7 @@ export async function startRadio(input: {
     queued = data.stationStart ?? [];
   } catch (error) {
     if (error instanceof Error && error.message.includes("confirmReplace")) {
-      return { status: "needs-confirm" };
+      return overtaken() ? { status: "cancelled" } : { status: "needs-confirm" };
     }
     throw error;
   }
@@ -231,7 +244,7 @@ export async function startRadio(input: {
  */
 export async function topUpRadio(station: RadioStation, queued: ReadonlySet<string>) {
   const mine = generation;
-  const live = () => generation === mine && current() === station;
+  const live = () => generation === mine && starting === 0 && current() === station;
   if (!live()) return 0;
   const { candidates } = await generate(
     { ...station, rules: { ...station.rules, excludeQueued: true } },
@@ -256,7 +269,7 @@ export async function topUpRadio(station: RadioStation, queued: ReadonlySet<stri
   }
   if (added && live() && active) {
     // The same Station, now naming why its new items were picked.
-    active = { ...active, station: { ...station, reasons } };
+    active.station = { ...station, reasons };
     notify();
   }
   return added;

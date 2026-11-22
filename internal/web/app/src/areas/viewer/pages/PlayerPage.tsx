@@ -277,8 +277,9 @@ function FeaturePlayer({
         // handler may be waiting on that read to advance.
         await refreshMusicQueue();
         // The last item ended on a read from before these were added: advance
-        // now, on a fresh read, instead of stopping.
-        if (endedWithoutNext.current === mediaId) {
+        // now, on a fresh read, instead of stopping. It may be a later item
+        // than the one this top-up started on.
+        if (endedWithoutNext.current) {
           endedWithoutNext.current = null;
           retryEnded.current();
         }
@@ -735,6 +736,10 @@ function FeaturePlayer({
   useEffect(() => {
     retryEnded.current = () => void runQueueAction("ended");
   }, [runQueueAction]);
+  useEffect(() => {
+    // Another item started: the one that ended without a next is behind us.
+    if (endedWithoutNext.current !== mediaId) endedWithoutNext.current = null;
+  }, [mediaId]);
   const retryMusicQueue = () =>
     retryAction ? void runQueueAction(retryAction) : void refreshMusicQueue();
   const playNext = useMemo(() => {
