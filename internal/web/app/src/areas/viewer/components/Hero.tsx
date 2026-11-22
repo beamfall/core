@@ -14,7 +14,7 @@ import { entityLinkState } from "../lib/entityPreview";
 import { mediaPath } from "../lib/mediaAddress";
 import { rememberRenderFocus } from "../lib/renderFocus";
 import { isSpoilerCandidate, useSpoilerGuard } from "../lib/spoilerGuard";
-import { runtimeParts } from "../lib/viewerFields";
+import { runtimeParts, serverDurationSummary } from "../lib/viewerFields";
 
 // Hero Section, ported from the vanilla buildHero (app.js): one prominent
 // featured item (the Source's first item) — a wide full-bleed frame with a
@@ -29,7 +29,8 @@ import { runtimeParts } from "../lib/viewerFields";
 // and runtime.
 // The summary is dropped when it only repeats a fact, such as a server
 // runtime summary ("49 min"), and while the spoiler guard hides an unplayed
-// child (CORE-3057); useHomeArtwork then skips the child's thumb (its still).
+// child (CORE-3057). A hidden child shows only its container's poster, since
+// its own poster may be a frame; useHomeArtwork skips its art too.
 export function Hero({
   section,
   item,
@@ -46,8 +47,13 @@ export function Hero({
   const navigate = useNavigate();
   const identity = useViewerIdentity();
   const [imageFailed, setImageFailed] = useState(false);
+  const spoiler = useSpoilerGuard(isSpoilerCandidate(item, item.container?.id));
+  const spoilerHidden = spoiler.state(item, item.container?.id) === "hidden";
   const background =
-    artwork?.url ?? (artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "poster"));
+    artwork?.url ??
+    (spoilerHidden
+      ? (item.container?.artwork?.poster ?? "")
+      : artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "poster"));
   const isMedia = item.kind === "media";
   const { heading, lead } = cardHeading(item, true, displayLocale);
   const rating = cardRating(item, displayLocale, t);
@@ -63,13 +69,12 @@ export function Hero({
     runtime,
   ].filter(Boolean);
   const summary = item.summary?.trim() ?? "";
-  const spoiler = useSpoilerGuard(isSpoilerCandidate(item, item.container?.id));
   const showSummary =
     !!summary &&
     summary !== lead &&
     summary !== durationSummary &&
     !facts.includes(summary) &&
-    spoiler.state(item, item.container?.id) !== "hidden";
+    !spoilerHidden;
   const showFacts = facts.length > 0 || !!rating?.score;
 
   function activate() {
@@ -144,12 +149,6 @@ export function Hero({
       </div>
     </section>
   );
-}
-
-/** Mirrors the store's mediaDurationSummary: seconds under a minute, else minutes rounded up. */
-function serverDurationSummary(seconds: number): string {
-  if (seconds <= 0) return "";
-  return seconds < 60 ? `${seconds} sec` : `${Math.ceil(seconds / 60)} min`;
 }
 
 function heroRuntime(seconds: number, t: ReturnType<typeof useT>): string {

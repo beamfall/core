@@ -111,9 +111,55 @@ describe("useSpoilerGuard (CORE-3057)", () => {
 
   it("folds a pref saved in Profile Settings into the guard", async () => {
     const { result } = await loaded();
-    act(() => applySpoilerPref("profile.show-unplayed-details", "on"));
+    act(() => applySpoilerPref("p1", "profile.show-unplayed-details", "on"));
     expect(result.current.state(unplayed, "s1")).toBe("none");
-    act(() => applySpoilerPref("profile.show-unplayed-details", ""));
+    act(() => applySpoilerPref("p1", "profile.show-unplayed-details", ""));
+    expect(result.current.state(unplayed, "s1")).toBe("hidden");
+  });
+
+  it("ignores a pref another identity saved", async () => {
+    const { result } = await loaded();
+    act(() => applySpoilerPref("p2", "profile.show-unplayed-details", "on"));
+    expect(result.current.state(unplayed, "s1")).toBe("hidden");
+  });
+
+  it("drops a read that a Settings save overtook", async () => {
+    let first: (prefs: never[]) => void = () => {};
+    vi.mocked(fetchClientPrefs)
+      .mockReturnValueOnce(new Promise((resolve) => (first = resolve)))
+      .mockResolvedValueOnce([{ key: "profile.show-unplayed-details", value: "on" }] as never);
+    const { result } = renderHook(() => useSpoilerGuard());
+    await waitFor(() => expect(fetchClientPrefs).toHaveBeenCalledOnce());
+    act(() => applySpoilerPref("p1", "profile.show-unplayed-details", "on"));
+    await waitFor(() => expect(result.current.guardOn).toBe(false));
+    await act(async () => first([]));
+    expect(result.current.guardOn).toBe(false);
+  });
+
+  it("keeps every candidate hidden and ignores reveals until prefs load", () => {
+    vi.mocked(fetchClientPrefs).mockReturnValueOnce(new Promise<never>(() => {}));
+    const { result } = renderHook(() => useSpoilerGuard());
+    act(() => toggleItemReveal("e1"));
+    expect(result.current.state(unplayed, "s1")).toBe("hidden");
+  });
+
+  it("lets only the latest container write undo itself", async () => {
+    const { result } = await loaded();
+    let failFirst: (error: Error) => void = () => {};
+    vi.mocked(setClientPref)
+      .mockReturnValueOnce(new Promise((_, reject) => (failFirst = reject)))
+      .mockResolvedValueOnce(undefined as never);
+    let first: Promise<boolean> = Promise.resolve(true);
+    act(() => {
+      first = setContainerRevealed("s1", true);
+    });
+    await act(async () => {
+      await setContainerRevealed("s1", false);
+    });
+    await act(async () => {
+      failFirst(new Error("offline"));
+      await first;
+    });
     expect(result.current.state(unplayed, "s1")).toBe("hidden");
   });
 

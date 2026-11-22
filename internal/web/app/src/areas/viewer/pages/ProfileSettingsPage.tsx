@@ -26,7 +26,7 @@ import {
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
-import { useSession } from "@/lib/session";
+import { useSession, useViewerIdentity } from "@/lib/session";
 import { SCHEME_PREFERENCES, type SchemePreference } from "@/lib/theme/runtime";
 import { THEME_PRESETS } from "@/lib/theme/theme.generated";
 import type { StringKey } from "@/strings";
@@ -68,6 +68,7 @@ import { applySpoilerPref } from "../lib/spoilerGuard";
 export function ProfileSettingsPage() {
   const t = useT();
   const { session, profiles, refreshProfiles } = useSession();
+  const viewerIdentity = useViewerIdentity();
   const profileID = session?.profileID || "";
   const profile = profiles.find((p) => p.id === profileID);
   const managed = session?.profile === "managed";
@@ -504,10 +505,12 @@ export function ProfileSettingsPage() {
                 checked={!prefs.showUnplayedDetails}
                 onChange={(on) => {
                   const value = encodeBool(!on);
+                  // The guard takes the save only for the identity that made it.
+                  const owner = viewerIdentity;
                   void persist(PREF_KEYS.showUnplayedDetails, value, {
                     showUnplayedDetails: !on,
                   }).then((saved) => {
-                    if (saved) applySpoilerPref(PREF_KEYS.showUnplayedDetails, value);
+                    if (saved) applySpoilerPref(owner, PREF_KEYS.showUnplayedDetails, value);
                   });
                 }}
               />

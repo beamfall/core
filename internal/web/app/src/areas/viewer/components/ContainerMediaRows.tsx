@@ -10,8 +10,13 @@ import { childThumbURL } from "../lib/containerChildren";
 import { itemRuntimeSeconds, rowOrdinals } from "../lib/containerPage";
 import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
-import { isSpoilerCandidate, revealItem, useSpoilerGuard } from "../lib/spoilerGuard";
-import { runtimeParts } from "../lib/viewerFields";
+import {
+  firstGuardedContainer,
+  guardContainerOf,
+  revealItem,
+  useSpoilerGuard,
+} from "../lib/spoilerGuard";
+import { runtimeParts, serverDurationSummary } from "../lib/viewerFields";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
@@ -44,11 +49,8 @@ export function ContainerMediaRows({
   const media = useMemo(() => items.filter((item) => item.kind === "media"), [items]);
   const ordinals = useMemo(() => rowOrdinals(media, locale), [media, locale]);
   const queue = useMemo(() => playQueueOf(media), [media]);
-  const guarded = useMemo(
-    () => media.some((item) => isSpoilerCandidate(item, containerID)),
-    [media, containerID],
-  );
-  const spoiler = useSpoilerGuard(guarded);
+  const guardKey = useMemo(() => firstGuardedContainer(media, containerID), [media, containerID]);
+  const spoiler = useSpoilerGuard(guardKey !== undefined);
   if (media.length === 0) return null;
 
   function play(item: SourceItem) {
@@ -69,10 +71,10 @@ export function ContainerMediaRows({
 
   return (
     <>
-      {guarded && containerID && spoiler.guardOn && (
+      {guardKey && spoiler.guardOn && (
         <SpoilerContainerToggle
-          containerID={containerID}
-          revealed={spoiler.containerRevealed(containerID)}
+          containerID={guardKey}
+          revealed={spoiler.containerRevealed(guardKey)}
         />
       )}
       <ol className="bf-rows" aria-label={label}>
@@ -86,8 +88,12 @@ export function ContainerMediaRows({
           const progress = resumeProgress(item);
           const watched = item.engagement?.completed === true;
           const summary = item.summary?.trim() ?? "";
-          const guard = spoiler.state(item, containerID);
+          const guard = spoiler.state(item, guardContainerOf(item, containerID));
           const hidden = guard === "hidden";
+          // The server's runtime line in place of a description is no spoiler.
+          const plot =
+            summary !==
+            serverDurationSummary(item.durationSeconds ?? item.engagement?.durationSeconds ?? 0);
           return (
             <li key={`${item.id}-${index}`} className="bf-row">
               <Link
@@ -148,7 +154,7 @@ export function ContainerMediaRows({
                     </span>
                   )}
                   {summary &&
-                    (hidden ? (
+                    (hidden && plot ? (
                       <span className="bf-row-summary bf-spoiler-note">
                         {t("spoilerHiddenSummary")}
                       </span>

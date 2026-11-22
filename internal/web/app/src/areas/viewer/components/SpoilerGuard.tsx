@@ -2,7 +2,12 @@ import { EyeClosed, ScanEye } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useT } from "@/lib/i18n";
 import { artworkBucketURL } from "../lib/artwork";
-import { type SpoilerState, setContainerRevealed, toggleItemReveal } from "../lib/spoilerGuard";
+import {
+  type SpoilerState,
+  setContainerRevealed,
+  toggleItemReveal,
+  useSpoilerGuard,
+} from "../lib/spoilerGuard";
 
 // The spoiler guard's pieces for child rows and cards (CORE-3057): the
 // placeholder drawn instead of a guarded still, the per-item reveal toggle
@@ -29,7 +34,10 @@ export function SpoilerStill({ itemID, art }: { itemID: string; art?: string }) 
   );
 }
 
-/** The per-item reveal toggle beside a guarded item's Play; nothing is stored. */
+/**
+ * The per-item reveal toggle beside a guarded item's Play; nothing is stored.
+ * Disabled until the Profile's prefs load, while the guard fails closed.
+ */
 export function SpoilerRevealButton({
   itemID,
   title,
@@ -40,6 +48,8 @@ export function SpoilerRevealButton({
   state: SpoilerState;
 }) {
   const t = useT();
+  // Reads the shared guard without starting a load of its own.
+  const loading = useSpoilerGuard(false).guardOn === null;
   if (state !== "hidden" && state !== "revealed") return null;
   return (
     <button
@@ -47,6 +57,7 @@ export function SpoilerRevealButton({
       className="bf-row-play bf-spoiler-reveal"
       aria-label={t("spoilerRevealItem", { title })}
       aria-pressed={state === "revealed"}
+      disabled={loading}
       onClick={() => toggleItemReveal(itemID)}
     >
       <ScanEye aria-hidden />

@@ -105,6 +105,33 @@ describe("MediaItemCard spoiler guard (CORE-3057)", () => {
     });
     expect(container.innerHTML).not.toContain("show.jpg");
   });
+
+  it("hides an unplayed child's summary and keeps its title", () => {
+    renderCard({ mediaClass: "video", container: show, summary: "Everyone was a ghost." });
+    expect(screen.queryByText(/Everyone was a ghost/)).toBeNull();
+    expect(screen.getAllByText("Alpha").length).toBeGreaterThan(0);
+  });
+
+  it("reveals a child from its art only once the Profile's prefs load", async () => {
+    vi.useRealTimers();
+    const { container } = render(
+      <I18nProvider initialLocale="en">
+        <MemoryRouter>
+          <MediaItemCard item={baseItem({ mediaClass: "video", container: show })} showPlayButton />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    const reveal = screen.getByRole("button", { name: "Show details for Alpha" });
+    expect(reveal).toBeDisabled();
+    await waitFor(() => expect(reveal).toBeEnabled());
+    const art = container.querySelector("img")?.parentElement;
+    if (!art) throw new Error("card art missing");
+    fireEvent.click(art);
+    await waitFor(() => expect(container.innerHTML).toContain("poster-alpha.jpg"));
+    expect(container.innerHTML).not.toContain("show.jpg");
+    expect(screen.getByText(/First item/)).toBeInTheDocument();
+    expect(reveal).toHaveAttribute("aria-pressed", "true");
+  });
 });
 
 describe("MediaItemCard preview clip behavior", () => {

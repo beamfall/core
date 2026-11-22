@@ -166,6 +166,10 @@ describe("ContainerMediaRows spoiler guard (CORE-3057)", () => {
   it("reveals one row for the session from its labelled toggle", async () => {
     renderRows(episodes, "s1");
     const reveal = screen.getByRole("button", { name: "Show details for Twist" });
+    // Disabled until the Profile's prefs load: the guard fails closed.
+    expect(reveal).toBeDisabled();
+    await screen.findByRole("button", { name: "Show spoilers" });
+    expect(reveal).toBeEnabled();
     expect(reveal).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(reveal);
     expect(reveal).toHaveAttribute("aria-pressed", "true");
@@ -176,6 +180,9 @@ describe("ContainerMediaRows spoiler guard (CORE-3057)", () => {
 
   it("reveals a row from its placeholder without opening it", async () => {
     renderRows(episodes, "s1");
+    fireEvent.click(screen.getByTestId("spoiler-still"));
+    expect(screen.queryByText("Everyone was a ghost.")).toBeNull();
+    await screen.findByRole("button", { name: "Show spoilers" });
     fireEvent.click(screen.getByTestId("spoiler-still"));
     expect(screen.queryByRole("status", { name: "detail" })).toBeNull();
     expect(screen.getByText("Everyone was a ghost.")).toBeInTheDocument();

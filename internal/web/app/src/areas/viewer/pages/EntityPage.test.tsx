@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/graphql", () => ({
   fetchEntity: vi.fn(),
   fetchMutes: vi.fn(async () => []),
+  fetchClientPrefs: vi.fn(async () => []),
   setMute: vi.fn(async () => undefined),
   clearMute: vi.fn(async () => undefined),
   clearAllMutes: vi.fn(async () => 0),
@@ -575,6 +576,8 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     if (part === "thumbnail") {
       // The unplayed child's still is guarded (CORE-3057): its placeholder reveals, not opens.
       expect(link.querySelector("img")).toBeNull();
+      // Reveals wait for the Profile's prefs, so the guard fails closed.
+      await screen.findByRole("button", { name: "Show spoilers" });
       fireEvent.click(within(link).getByTestId("spoiler-still"));
       expect(screen.queryByRole("status", { name: "detail" })).toBeNull();
     }

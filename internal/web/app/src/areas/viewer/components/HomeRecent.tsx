@@ -314,14 +314,13 @@ interface ArtworkAttempt {
 }
 
 export function useHomeArtwork(items: readonly SourceItem[], epoch: string) {
-  // A guarded child's thumb is its still: the feature uses its other art (CORE-3057).
+  // A guarded child's own art may be a frame of it: the feature skips that
+  // item's art and uses another item's, or none (CORE-3057).
   const spoiler = useSpoilerGuard(
     items.some((item) => isSpoilerCandidate(item, item.container?.id)),
   );
   const slotsOf = (item: SourceItem) =>
-    spoiler.state(item, item.container?.id) === "hidden"
-      ? HERO_SLOTS.filter((slot) => slot !== "thumb")
-      : HERO_SLOTS;
+    spoiler.state(item, item.container?.id) === "hidden" ? [] : HERO_SLOTS;
   const [images, setImages] = useState<{
     epoch: string;
     failed: ReadonlySet<string>;

@@ -9,6 +9,8 @@ import { childThumbURL, groupChildrenByKind } from "../lib/containerChildren";
 import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
 import {
+  firstGuardedContainer,
+  guardContainerOf,
   isSpoilerCandidate,
   revealItem,
   type SpoilerState,
@@ -18,7 +20,7 @@ import { runtimeParts } from "../lib/viewerFields";
 import { type PlayQueueItem, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
-import { SpoilerRevealButton, SpoilerStill } from "./SpoilerGuard";
+import { SpoilerContainerToggle, SpoilerRevealButton, SpoilerStill } from "./SpoilerGuard";
 
 // A container Entity's children (CORE-1786), grouped by kind in the server's
 // order. Each child's detail link comes before its actions, so keyboard focus
@@ -45,10 +47,24 @@ export function ContainerChildren({
 }) {
   const groups = groupChildrenByKind(items);
   const guard = { containerID, containerArt };
+  // One Show spoilers toggle above every group, keyed like the rows' guard.
+  const guardKey = firstGuardedContainer(items, containerID);
+  const spoiler = useSpoilerGuard(guardKey !== undefined);
+  const toggle = guardKey && spoiler.guardOn && (
+    <SpoilerContainerToggle containerID={guardKey} revealed={spoiler.containerRevealed(guardKey)} />
+  );
   if (groups.length === 0) return null;
-  if (groups.length === 1) return <ChildList items={groups[0].items} label={label} {...guard} />;
+  if (groups.length === 1) {
+    return (
+      <>
+        {toggle}
+        <ChildList items={groups[0].items} label={label} {...guard} />
+      </>
+    );
+  }
   return (
     <section className="bf-children-groups" aria-label={label}>
+      {toggle}
       {groups.map((group) => {
         const heading = groupLabel?.(group.kind) || group.kind;
         return (
@@ -77,7 +93,7 @@ function ChildList({
 }) {
   const queue = playQueueOf(items);
   const spoiler = useSpoilerGuard(
-    items.some((item) => isSpoilerCandidate(item, item.container?.id ?? containerID)),
+    items.some((item) => isSpoilerCandidate(item, guardContainerOf(item, containerID))),
   );
   return (
     <ol className="bf-children" aria-label={label}>
@@ -87,7 +103,7 @@ function ChildList({
           item={item}
           number={index + 1}
           queue={queue}
-          guard={spoiler.state(item, item.container?.id ?? containerID)}
+          guard={spoiler.state(item, guardContainerOf(item, containerID))}
           containerArt={containerArt}
         />
       ))}

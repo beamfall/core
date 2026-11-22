@@ -88,23 +88,30 @@ function fromPrefs(prefs: ClientPref[]): Pick<Snapshot, "showAll" | "containers"
 
 // The identity whose prefs are loaded or loading; reset on a failed load so a
 // later mount retries. Until a load succeeds every candidate stays guarded.
+// Each load has a generation, so a read that a newer load or a save
+// superseded is dropped.
 let loading: string | null = null;
+let generation = 0;
 
-function ensure(identity: string) {
-  if (loading === identity) return;
+function load(identity: string) {
   loading = identity;
+  const mine = ++generation;
   // Session reveals belong to one identity.
   const items = snapshot.identity === identity ? snapshot.items : new Set<string>();
   emit({ ...EMPTY, identity, items });
   Promise.resolve()
     .then(() => fetchClientPrefs())
     .then((prefs) => {
-      if (loading !== identity) return;
+      if (generation !== mine) return;
       emit({ ...snapshot, ...fromPrefs(prefs ?? []), loaded: true });
     })
     .catch(() => {
-      if (loading === identity) loading = null;
+      if (generation === mine) loading = null;
     });
+}
+
+function ensure(identity: string) {
+  if (loading !== identity) load(identity);
 }
 
 /** Whether the Profile has any progress on the item. */
@@ -120,10 +127,32 @@ export function isSpoilerCandidate(item: SourceItem, containerID?: string): bool
   );
 }
 
+/**
+ * The container an item's guard is keyed on: the outermost container the
+ * server reports for it, else the page's container, so a container reveal
+ * reads the same key on every surface.
+ */
+export function guardContainerOf(item: SourceItem, fallback?: string): string | undefined {
+  return item.container?.id ?? fallback;
+}
+
+/** The guard key of the first candidate among items, if any is guarded. */
+export function firstGuardedContainer(
+  items: readonly SourceItem[],
+  fallback?: string,
+): string | undefined {
+  for (const item of items) {
+    const key = guardContainerOf(item, fallback);
+    if (isSpoilerCandidate(item, key)) return key;
+  }
+  return undefined;
+}
+
 function stateOf(snap: Snapshot, item: SourceItem, containerID?: string): SpoilerState {
   if (!containerID || !isSpoilerCandidate(item, containerID)) return "none";
-  if (snap.loaded && snap.showAll) return "none";
-  if (snap.loaded && snap.containers.has(containerID)) return "container";
+  if (!snap.loaded) return "hidden";
+  if (snap.showAll) return "none";
+  if (snap.containers.has(containerID)) return "container";
   if (snap.items.has(item.id)) return "revealed";
   return "hidden";
 }
@@ -160,8 +189,12 @@ export function useSpoilerGuard(enabled = true): SpoilerGuard {
   return { state, containerRevealed, guardOn: current.loaded ? !current.showAll : null };
 }
 
-/** Reveal or re-hide one item until the page reloads; nothing is stored. */
+/**
+ * Reveal or re-hide one item until the page reloads; nothing is stored. A
+ * no-op until the Profile's prefs load, so the guard fails closed.
+ */
 export function toggleItemReveal(itemID: string) {
+  if (!snapshot.loaded) return;
   const items = new Set(snapshot.items);
   if (items.has(itemID)) items.delete(itemID);
   else items.add(itemID);
@@ -180,28 +213,47 @@ function withContainer(snap: Snapshot, containerID: string, on: boolean): Snapsh
   return { ...snap, containers };
 }
 
+// The latest write per identity and container key; only it may undo itself,
+// so an older failed write never reverts a newer choice.
+const latestWrite = new Map<string, number>();
+let writeSeq = 0;
+
 /**
  * Reveal or re-hide every child of a container for the Profile, stored as its
- * client pref. The change shows at once and is undone when the write fails;
- * resolves false then.
+ * client pref. The change shows at once and is undone when the write fails and
+ * no newer write for that container followed; resolves false on failure.
  */
 export async function setContainerRevealed(containerID: string, on: boolean): Promise<boolean> {
   const before = snapshot;
+  const key = `${before.identity ?? ""}\n${containerID}`;
+  const mine = ++writeSeq;
+  latestWrite.set(key, mine);
   emit(withContainer(snapshot, containerID, on));
   try {
     await setClientPref(containerPrefKey(containerID), encodeBool(on));
     return true;
   } catch {
-    if (snapshot.identity === before.identity) {
+    if (latestWrite.get(key) === mine && snapshot.identity === before.identity) {
       emit(withContainer(snapshot, containerID, before.containers.has(containerID)));
     }
     return false;
+  } finally {
+    if (latestWrite.get(key) === mine) latestWrite.delete(key);
   }
 }
 
-/** Fold a client pref written elsewhere on this page (Profile Settings) into the guard. */
-export function applySpoilerPref(key: string, value: string) {
-  if (!snapshot.loaded) return;
+/**
+ * Fold a client pref that `identity` saved elsewhere on this page (Profile
+ * Settings) into the guard. Another identity's snapshot is left alone; a load
+ * still in flight for this identity is restarted so its older read cannot
+ * overwrite the save.
+ */
+export function applySpoilerPref(identity: string | null, key: string, value: string) {
+  if (snapshot.identity !== (identity ?? "")) return;
+  if (!snapshot.loaded) {
+    if (loading === snapshot.identity) load(snapshot.identity);
+    return;
+  }
   const on = value === PREF_ON;
   if (key === PREF_KEYS.showUnplayedDetails) {
     emit({ ...snapshot, showAll: on });
@@ -214,5 +266,7 @@ export function applySpoilerPref(key: string, value: string) {
 /** Test seam: forget every load and reveal. */
 export function resetSpoilerGuardForTest() {
   loading = null;
+  generation += 1;
+  latestWrite.clear();
   emit(EMPTY);
 }

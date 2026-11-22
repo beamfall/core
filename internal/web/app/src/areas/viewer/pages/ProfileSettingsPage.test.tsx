@@ -32,6 +32,7 @@ vi.mock("@/lib/graphql", () => ({
 
 vi.mock("@/lib/session", () => ({
   useSession: vi.fn(),
+  useViewerIdentity: () => "p1",
 }));
 
 Element.prototype.hasPointerCapture ??= () => false;
