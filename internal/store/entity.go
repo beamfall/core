@@ -133,6 +133,18 @@ type EntityRelationRow struct {
 // values. Like ImportMediaFile this is a server-internal write path (scan,
 // scraper, identification) — reads are reveal-filtered, writes are not.
 func (s *Store) UpsertEntity(ctx context.Context, entity Entity) error {
+	return s.upsertEntity(ctx, entity, false)
+}
+
+// UpsertEntityKeepTitle is UpsertEntity for a writer that does not own the
+// title: entity.Title only titles a new row, and an existing row, trashed or
+// not, keeps its stored title inside the same write transaction, so a
+// concurrent rename is never overwritten. Field values are replaced.
+func (s *Store) UpsertEntityKeepTitle(ctx context.Context, entity Entity) error {
+	return s.upsertEntity(ctx, entity, true)
+}
+
+func (s *Store) upsertEntity(ctx context.Context, entity Entity, keepTitle bool) error {
 	// Authority face: an Entity is a catalog-identity row. An
 	// Attached node identifies locally (probe/parse — byte-local), but the
 	// row-authoring side-effect of Identification is main-only; it index-pushes.
@@ -186,14 +198,24 @@ func (s *Store) UpsertEntity(ctx context.Context, entity Entity) error {
 		return err
 	}
 	defer tx.Rollback()
+	titleUpdate := "excluded.title"
+	if keepTitle {
+		titleUpdate = "entity.title"
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO entity(id, library_id, kind, title) VALUES (?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 		  library_id = excluded.library_id,
 		  kind = excluded.kind,
-		  title = excluded.title
+		  title = `+titleUpdate+`
 	`, entity.ID, entity.LibraryID, entity.Kind, entity.Title); err != nil {
 		return err
+	}
+	if keepTitle {
+		// The search document and title fold below index the stored title.
+		if err := tx.QueryRowContext(ctx, `SELECT title FROM entity WHERE id = ?`, entity.ID).Scan(&entity.Title); err != nil {
+			return err
+		}
 	}
 	for _, table := range entityFieldTables {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE entity_id = ?`, entity.ID); err != nil {

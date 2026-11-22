@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/identify"
@@ -308,5 +309,118 @@ func TestIdentifyKeepsHolderLinkWhenMapSkipped(t *testing.T) {
 		if got := heldBy(); got != step.want {
 			t.Fatalf("sequence %q: held by %q, want %q", step.sequence, got, step.want)
 		}
+	}
+}
+
+// renameBeforeWrite is the scraper's entity store with an operator rename
+// that lands just before the next Entity upsert of one id, the window between
+// a read and its write-back. EnsureEntity is not intercepted.
+type renameBeforeWrite struct {
+	*store.Store
+	id     store.EntityID
+	rename func()
+}
+
+func (r *renameBeforeWrite) fire(id store.EntityID) {
+	if r.rename != nil && id == r.id {
+		rename := r.rename
+		r.rename = nil
+		rename()
+	}
+}
+
+func (r *renameBeforeWrite) UpsertEntity(ctx context.Context, entity store.Entity) error {
+	r.fire(entity.ID)
+	return r.Store.UpsertEntity(ctx, entity)
+}
+
+func (r *renameBeforeWrite) UpsertEntityKeepTitle(ctx context.Context, entity store.Entity) error {
+	r.fire(entity.ID)
+	return r.Store.UpsertEntityKeepTitle(ctx, entity)
+}
+
+// TestIdentifyHolderLinkNeverWritesTitle (CORE-3152): a lookup whose group
+// object has an id but no name titles only a new holder. An existing holder
+// keeps its title even while trashed (restore brings back the old title, not
+// the id) and when an operator renames it while the link is being written.
+func TestIdentifyHolderLinkNeverWritesTitle(t *testing.T) {
+	ctx := context.Background()
+	docs := map[string]string{
+		"/item/1": `{"title":"Origin","release_date":"1999-03-31","group":{"id":77,"name":"Synthetic Set"}}`,
+		"/item/2": `{"title":"Origin","release_date":"1999-03-31","group":{"id":77}}`,
+		"/item/3": `{"title":"Origin","release_date":"1999-03-31","group":{"id":55}}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(docs[r.URL.Path]))
+	}))
+	defer server.Close()
+	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	library, err := st.CreateLibrary(ctx, "Items", false, "demo", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: "/synthetic/origin.mkv", Title: "origin",
+		Container: "mkv", Codec: "h264", Class: store.MediaClassVideo, ContentFingerprint: "fp-holder-title",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := identify.EntityIDForName(library.ID, "set", "77")
+	entities := &renameBeforeWrite{Store: st, id: set}
+	service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), scraperHolderBundle(server.URL, "group"), st)
+	service.SetEntities(entities)
+	apply := func(id string) {
+		t.Helper()
+		if err := service.Apply(ctx, media.ID, "demo", "item", id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	title := func(id store.EntityID) string {
+		t.Helper()
+		entity, err := st.Entity(ctx, id, metadataLibraryFilter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return entity.Title
+	}
+
+	apply("1")
+	if err := st.TrashEntity(ctx, set, metadataLibraryFilter, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	apply("2")
+	if err := st.RestoreEntity(ctx, set, metadataLibraryFilter); err != nil {
+		t.Fatal(err)
+	}
+	if got := title(set); got != "Synthetic Set" {
+		t.Fatalf("restored set title = %q after an id-only lookup while trashed, want Synthetic Set", got)
+	}
+
+	entities.rename = func() {
+		entity, err := st.Entity(ctx, set, metadataLibraryFilter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entity.Title = "Operator rename"
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apply("2")
+	if entities.rename != nil {
+		t.Fatal("the holder link wrote no Entity, so the rename never landed")
+	}
+	if got := title(set); got != "Operator rename" {
+		t.Fatalf("set title = %q after a rename during an id-only lookup, want Operator rename", got)
+	}
+
+	apply("3")
+	if got := title(identify.EntityIDForName(library.ID, "set", "55")); got != "55" {
+		t.Fatalf("new holder without a name titled %q, want the id 55", got)
 	}
 }

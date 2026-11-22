@@ -728,7 +728,7 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 // container lists its members in release order. A lookup whose holder map ran
 // and hydrated nothing removes the Media's earlier link, but only one this
 // scraper wrote (clearStaleHolderLinks). A holder link keeps an existing
-// holder's title (holderTitle), and a container map of a kind the scraper
+// holder's stored title (writeEntity), and a container map of a kind the scraper
 // links applies only to a holder it linked in this lookup.
 func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
 	holders := ContainerRelations(bundle)
@@ -778,12 +778,9 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 		}
 		holds := holders.Holds(hydrated.Kind, hydrated.Relation)
 		if holds {
-			if entity.Title, err = s.holderTitle(ctx, entity); err != nil {
-				return err
-			}
 			holderLinks[hydrated.Kind] = append(holderLinks[hydrated.Kind], id)
 		}
-		if err := s.writeEntity(ctx, entity); err != nil {
+		if err := s.writeEntity(ctx, entity, holds); err != nil {
 			return err
 		}
 		sortOrder := hydrated.SortOrder
@@ -807,29 +804,6 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 		s.applyEntityPoster(ctx, id, hydrated.ArtworkURL)
 	}
 	return s.applyContainerEntities(ctx, mediaID, library, bundle, containers, holderLinks)
-}
-
-// holderTitle is the title a holder link writes onto its Entity. The link's
-// name is the provider's key (an id), so an existing holder keeps its stored
-// title, which the container map's TitlePath or an operator owns; a new
-// holder takes the name until a title arrives. A store without ensure and
-// read support keeps the name.
-func (s *Service) holderTitle(ctx context.Context, entity store.Entity) (string, error) {
-	ensurer, canEnsure := s.entities.(EntityEnsurer)
-	reader, canRead := s.entities.(ContainerStore)
-	if !canEnsure || !canRead {
-		return entity.Title, nil
-	}
-	if err := ensurer.EnsureEntity(ctx, store.Entity{
-		ID: entity.ID, LibraryID: entity.LibraryID, Kind: entity.Kind, Title: entity.Title,
-	}); err != nil {
-		return "", err
-	}
-	existing, err := reader.Entity(ctx, entity.ID, unrestrictedEntityFilter)
-	if err != nil || existing.Title == "" {
-		return entity.Title, nil
-	}
-	return existing.Title, nil
 }
 
 // relationWriter is the writer key a scraper's Entity→Media links carry, so
@@ -1077,13 +1051,26 @@ type EntityEnsurer interface {
 	EnsureEntity(ctx context.Context, entity store.Entity) error
 }
 
+// EntityTitleKeeper is optionally implemented by an EntityStore:
+// UpsertEntityKeepTitle replaces an Entity's fields but titles only a new
+// row, keeping an existing row's stored title, trashed or not.
+type EntityTitleKeeper interface {
+	UpsertEntityKeepTitle(ctx context.Context, entity store.Entity) error
+}
+
 // writeEntity upserts a hydrated Entity. One hydrated without typed fields (a
 // name-only credit, or an element past its map's lookup cap) must not erase
 // the fields an earlier identification wrote, since UpsertEntity replaces
 // them, so it only ensures the Entity exists when the store can do that.
-func (s *Service) writeEntity(ctx context.Context, entity store.Entity) error {
+// A holder link's name is the provider's key (an id), not a title, so a
+// holder (keepTitle) titles only a new Entity: an existing one keeps the
+// title the container map's TitlePath or an operator wrote (CORE-3152).
+func (s *Service) writeEntity(ctx context.Context, entity store.Entity, keepTitle bool) error {
 	if ensurer, ok := s.entities.(EntityEnsurer); ok && len(entity.Fields) == 0 {
 		return ensurer.EnsureEntity(ctx, entity)
+	}
+	if keeper, ok := s.entities.(EntityTitleKeeper); ok && keepTitle {
+		return keeper.UpsertEntityKeepTitle(ctx, entity)
 	}
 	return s.entities.UpsertEntity(ctx, entity)
 }
