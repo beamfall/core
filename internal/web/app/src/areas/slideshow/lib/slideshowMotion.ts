@@ -1,7 +1,9 @@
 // How one slide gives way to the next (CORE-2981). Oscillux is the only source
 // of visual effects in Beamfall (ADR-0228), so the web slideshow never draws a
-// crossfade or a pan of its own: it hard-cuts until the pinned Oscillux package
-// ships its calm photo-slideshow mode (CORE-2980), which plugs in here.
+// crossfade or a pan of its own: Calm runs Oscillux's photo-slideshow pass
+// (CORE-2980, slideshowDriver.ts), and every other mode hard-cuts.
+import { DEFAULT_INTERVAL_SECONDS } from "./slideshow";
+import { createSlideshowDriver, webgl2Available } from "./slideshowDriver";
 
 /** The motion modes the setup sheet offers. */
 export type SlideshowMotion = "calm" | "still" | "visualiser";
@@ -18,23 +20,40 @@ export interface SlideMotionDriver {
   dispose: () => void;
 }
 
+/** What a driver reads from the page at each change. */
+export interface SlideMotionOptions {
+  /** The slide interval in milliseconds. */
+  intervalMs: () => number;
+}
+
+function reducedMotion(): boolean {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
 /**
- * The one seam where Oscillux motion plugs in. Oscillux v0.2.10 (vendored)
- * has a beat-quantised visualiser switch scheduler and the visualiser's own
- * switch shader, but no calm photo mode, so every mode is a hard cut today.
- * CORE-2980 returns a driver from the pinned package here for "calm", and the
- * visualiser host for "visualiser".
+ * The one seam where Oscillux motion plugs in. Oscillux v0.2.15 (vendored)
+ * ships the calm photo-slideshow pass, which drives "calm" through WebGL2.
+ * Without WebGL2 every mode is a hard cut, and a calm driver that loses its
+ * context or cannot run the pass hard-cuts from then on. "visualiser" waits
+ * for the visualiser host (CORE-2980).
  */
-export function oscilluxSlideMotion(_motion: SlideshowMotion): SlideMotionDriver | null {
-  return null;
+export function oscilluxSlideMotion(
+  motion: SlideshowMotion,
+  options: SlideMotionOptions = { intervalMs: () => DEFAULT_INTERVAL_SECONDS * 1000 },
+): SlideMotionDriver | null {
+  if (motion !== "calm" || !webgl2Available()) return null;
+  return createSlideshowDriver({ intervalMs: options.intervalMs, reducedMotion });
 }
 
-/** Whether a motion mode can run with the pinned Oscillux package. */
+/**
+ * Whether a motion mode can run with the pinned Oscillux package. Calm always
+ * can: without WebGL2 it changes slides with a hard cut, as Still does.
+ */
 export function slideshowMotionAvailable(motion: SlideshowMotion): boolean {
-  return motion === "still" || oscilluxSlideMotion(motion) !== null;
+  return motion === "still" || motion === "calm";
 }
 
-/** The first available of Calm then Still: Still until CORE-2980 lands. */
+/** Calm: Oscillux's slideshow pass where WebGL2 runs it, hard cuts elsewhere. */
 export function defaultSlideshowMotion(): SlideshowMotion {
-  return slideshowMotionAvailable("calm") ? "calm" : "still";
+  return "calm";
 }

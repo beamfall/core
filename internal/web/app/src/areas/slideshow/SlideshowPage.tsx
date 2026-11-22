@@ -457,11 +457,13 @@ function Slideshow() {
     return () => controller.abort();
   }, [captionID, captions, locale]);
 
-  // The motion seam: Oscillux drives slide changes once it can (CORE-2980).
+  // The motion seam: Oscillux drives slide changes where it can (CORE-2980).
   const driverRef = useRef<SlideMotionDriver | null>(null);
   const previousSlideRef = useRef<HTMLElement | null>(null);
+  const intervalRef = useRef(intervalMs);
+  intervalRef.current = intervalMs;
   useEffect(() => {
-    const driver = oscilluxSlideMotion(prefs.motion);
+    const driver = oscilluxSlideMotion(prefs.motion, { intervalMs: () => intervalRef.current });
     driverRef.current = driver;
     return () => {
       driver?.dispose();

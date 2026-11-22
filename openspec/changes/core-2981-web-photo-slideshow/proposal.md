@@ -49,11 +49,12 @@ generated preview clip, and the docked player keeps the play queue going across 
   reloads the slides.
 - **Engagement-silent.** The slideshow never requests a playback decision, so it opens no playback
   session and writes no play counts or history.
-- **Motion seam.** Oscillux is the only source of visual effects (ADR-0228). The pinned Oscillux
-  v0.2.10 has no photo-slideshow mode: its transition scheduler and switch styles serve the
-  visualiser's beat-quantised visual switches. Slides change with a hard cut, and one function
-  (`oscilluxSlideMotion`) is the seam where the calm photo-slideshow mode (CORE-2980) plugs in.
-  Calm and Visualiser are listed but unavailable until it does.
+- **Motion seam.** Oscillux is the only source of visual effects (ADR-0228). One function
+  (`oscilluxSlideMotion`) is the seam. Calm, the default, runs Oscillux v0.2.15's photo-slideshow
+  pass (CORE-2980) on a WebGL2 canvas over the DOM slide, then Oscillux's present pass; the host
+  only decodes and uploads photos, picks the layout and style and eases the progress. Without
+  WebGL2, or after a context loss, slides change with a hard cut. Visualiser is listed but
+  unavailable until its host is wired.
 
 ## Non-goals
 

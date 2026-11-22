@@ -128,13 +128,14 @@ image's date and place.
 
 ### Requirement: Pairing is layout only
 
-Pairing SHALL add no visual effect. A lone portrait SHALL keep dark bars until the Oscillux `fill`
-and `pair` layouts (CORE-2980) are wired through the motion seam, since a blurred fill is a visual
-effect and visual effects come only from Oscillux.
+Pairing SHALL add no visual effect of the page's own. Under Calm, the pair and a lone portrait's
+blurred fill are the Oscillux slideshow pass's `pair` and `fill` layouts (CORE-2980). Where the
+pass does not run, a lone portrait SHALL keep dark bars, since a blurred fill is a visual effect
+and visual effects come only from Oscillux.
 
-#### Scenario: No blurred fill
+#### Scenario: No blurred fill without the pass
 
-- **WHEN** a lone portrait shows and the pinned Oscillux release has no fill layout
+- **WHEN** a lone portrait shows and the Oscillux slideshow pass is not running
 - **THEN** the space beside it is the dark stage, with no blur of the photo
 
 ### Requirement: Keyboard control
@@ -150,11 +151,18 @@ Escape SHALL close the setup sheet when it is open, and otherwise close the slid
 
 ### Requirement: Motion comes only from Oscillux
 
-Slide transitions and motion SHALL come only from Oscillux. While the pinned Oscillux release has
-no photo-slideshow mode, slides SHALL change with a hard cut and the Calm and Visualiser choices
-SHALL be shown as unavailable.
+Slide transitions and motion SHALL come only from Oscillux. Calm, the default, SHALL run the
+pinned Oscillux release's photo-slideshow pass (v0.2.15, CORE-2980) through WebGL2, with the host
+choosing the layout and style and easing the progress as the pass's contract says. Without WebGL2,
+or once the WebGL2 context is lost or the pass fails, slides SHALL change with a hard cut. Visualiser
+SHALL be shown as unavailable until its host is wired.
 
-#### Scenario: Hard cut without an Oscillux slideshow mode
+#### Scenario: Calm through the Oscillux pass
 
-- **WHEN** the pinned Oscillux release offers no photo-slideshow mode
+- **WHEN** Calm is chosen and the browser runs WebGL2
+- **THEN** the next photo slide comes in through the Oscillux slideshow pass
+
+#### Scenario: Hard cut without the pass
+
+- **WHEN** the browser has no WebGL2, or its context is lost
 - **THEN** the next slide replaces the current one with no blend
