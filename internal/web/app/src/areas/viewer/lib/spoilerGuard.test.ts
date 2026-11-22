@@ -1,5 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setIdentityEpochSignal } from "@/lib/api";
 import { fetchClientPrefs, setClientPref } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import {
@@ -178,6 +179,29 @@ describe("useSpoilerGuard (CORE-3057)", () => {
     const { result } = await loaded();
     await showThenHide(ok, offline);
     expect(result.current.state(unplayed, "s1")).toBe("container");
+  });
+
+  it("drops a queued container write once the identity epoch ends", async () => {
+    await loaded();
+    setIdentityEpochSignal(new AbortController().signal);
+    let settleFirst: () => void = () => {};
+    vi.mocked(setClientPref).mockReturnValueOnce(
+      new Promise((resolve) => (settleFirst = () => resolve(undefined as never))),
+    );
+    let writes: Promise<boolean[]> = Promise.resolve([]);
+    act(() => {
+      writes = Promise.all([setContainerRevealed("s1", true), setContainerRevealed("s1", false)]);
+    });
+    await waitFor(() => expect(setClientPref).toHaveBeenCalledOnce());
+    setIdentityEpochSignal(new AbortController().signal);
+    let results: boolean[] = [];
+    await act(async () => {
+      settleFirst();
+      results = await writes;
+    });
+    setIdentityEpochSignal();
+    expect(results).toEqual([true, false]);
+    expect(setClientPref).toHaveBeenCalledOnce();
   });
 
   it("offers one container toggle only when every candidate shares a container", () => {

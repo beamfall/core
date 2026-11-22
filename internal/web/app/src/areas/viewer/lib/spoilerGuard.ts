@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { getIdentityEpochSignal } from "@/lib/api";
 import { fetchClientPrefs, setClientPref } from "@/lib/graphql";
 import type { ClientPref, SourceItem } from "@/lib/graphql/types";
 import { useViewerIdentity } from "@/lib/session";
@@ -237,9 +238,15 @@ export async function setContainerRevealed(containerID: string, on: boolean): Pr
   const key = `${before.identity ?? ""}\n${containerID}`;
   if (!writeTail.has(key)) confirmed.set(key, before.containers.has(containerID));
   emit(withContainer(snapshot, containerID, on));
-  const write = (writeTail.get(key) ?? Promise.resolve()).then(() =>
-    setClientPref(containerPrefKey(containerID), encodeBool(on)),
-  );
+  // A queued write is dropped once the identity epoch ends, so a Profile
+  // switch never stores the previous Profile's choice for the next one.
+  const epoch = getIdentityEpochSignal();
+  const write = (writeTail.get(key) ?? Promise.resolve()).then(() => {
+    if (getIdentityEpochSignal() !== epoch || epoch?.aborted) {
+      throw new Error("identity changed");
+    }
+    return setClientPref(containerPrefKey(containerID), encodeBool(on));
+  });
   const tail = write.then(
     () => undefined,
     () => undefined,

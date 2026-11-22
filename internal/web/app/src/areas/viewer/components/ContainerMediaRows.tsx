@@ -12,6 +12,7 @@ import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
 import {
   guardContainerOf,
+  isSpoilerCandidate,
   revealItem,
   sharedGuardContainer,
   useSpoilerGuard,
@@ -49,8 +50,13 @@ export function ContainerMediaRows({
   const media = useMemo(() => items.filter((item) => item.kind === "media"), [items]);
   const ordinals = useMemo(() => rowOrdinals(media, locale), [media, locale]);
   const queue = useMemo(() => playQueueOf(media), [media]);
+  // The page-wide toggle needs one shared key; per-row reveals need only a candidate.
   const guardKey = useMemo(() => sharedGuardContainer(media, containerID), [media, containerID]);
-  const spoiler = useSpoilerGuard(guardKey !== undefined);
+  const guarded = useMemo(
+    () => media.some((item) => isSpoilerCandidate(item, guardContainerOf(item, containerID))),
+    [media, containerID],
+  );
+  const spoiler = useSpoilerGuard(guarded);
   if (media.length === 0) return null;
 
   function play(item: SourceItem) {

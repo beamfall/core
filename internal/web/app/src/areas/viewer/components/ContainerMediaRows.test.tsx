@@ -188,6 +188,17 @@ describe("ContainerMediaRows spoiler guard (CORE-3057)", () => {
     expect(screen.getByText("Everyone was a ghost.")).toBeInTheDocument();
   });
 
+  it("loads the guard for rows from several containers without a page-wide toggle", async () => {
+    const mixed: SourceItem[] = [
+      { ...episodes[0], container: { id: "showA", title: "A" } },
+      { ...episodes[0], id: "u2", title: "Other", container: { id: "showB", title: "B" } },
+    ];
+    renderRows(mixed, "s1");
+    const reveal = screen.getByRole("button", { name: "Show details for Twist" });
+    await waitFor(() => expect(reveal).toBeEnabled());
+    expect(screen.queryByRole("button", { name: "Show spoilers" })).toBeNull();
+  });
+
   it("stores Show spoilers for the container", async () => {
     renderRows(episodes, "s1");
     const toggle = await screen.findByRole("button", { name: "Show spoilers" });
