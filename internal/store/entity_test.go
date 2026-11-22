@@ -1032,6 +1032,52 @@ func TestReplaceMediaRelationsRewritesNamedKindsOnly(t *testing.T) {
 	}
 }
 
+// CORE-3152: removing a Media's relations by name drops every source's row
+// under those names and keeps the Media's other relation names.
+func TestRemoveMediaRelationsDropsNamedRelationsOnly(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	for _, id := range []EntityID{"entity-a", "entity-b"} {
+		if err := st.UpsertEntity(ctx, widgetEntity(id, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, relation := range []EntityRelation{
+		{FromEntityID: "entity-a", Name: "member-of", ToMediaID: "media-alpha", Cardinality: "one"},
+		{FromEntityID: "entity-a", Name: "tagged", ToMediaID: "media-alpha"},
+		{FromEntityID: "entity-b", Name: "tagged", ToMediaID: "media-alpha"},
+	} {
+		if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func(name string) int {
+		related, err := st.EntitiesForMedia(ctx, "media-alpha", name, LibraryFilter{AllLibraries: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(related)
+	}
+	if err := st.RemoveMediaRelations(ctx, "media-alpha", nil); err != nil {
+		t.Fatalf("RemoveMediaRelations(no names): %v", err)
+	}
+	if count("member-of") != 1 || count("tagged") != 2 {
+		t.Fatal("removing no names changed rows")
+	}
+	if err := st.RemoveMediaRelations(ctx, "media-alpha", []string{"member-of"}); err != nil {
+		t.Fatalf("RemoveMediaRelations: %v", err)
+	}
+	if got := count("member-of"); got != 0 {
+		t.Fatalf("member-of rows = %d, want 0", got)
+	}
+	if got := count("tagged"); got != 2 {
+		t.Fatalf("tagged rows = %d, want both kept", got)
+	}
+	if err := st.RemoveMediaRelations(ctx, "", []string{"tagged"}); err == nil {
+		t.Fatal("RemoveMediaRelations accepted an empty Media")
+	}
+}
+
 // TestReplaceEntityRelationsRewritesNamedRelationsOnly: replacing a source
 // Entity's links under one relation name drops its previous Entity targets
 // under that name and keeps its other names and its Media-target rows; a row

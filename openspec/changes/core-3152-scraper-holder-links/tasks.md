@@ -8,4 +8,4 @@
 
 - [x] 2.1 Store test: removal deletes only the named relations of that Media
 - [x] 2.2 App test: two lookups sharing a container object hydrate one container Entity, listed in year order through the entity-media read path and the container chain; a match with no container removes the link and a match with another container moves it
-- [x] 2.3 Identify test: a spec without such a map, or a lookup without entities, never touches the store
+- [x] 2.3 Existing identify tests stay green: a spec without such a map issues no removal, and a lookup without entities writes nothing

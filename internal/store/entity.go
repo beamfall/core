@@ -532,6 +532,44 @@ func (s *Store) ReplaceMediaRelations(ctx context.Context, mediaID MediaID, rela
 	return tx.Commit()
 }
 
+// RemoveMediaRelations deletes one Media's Media-target rows under each of
+// names, whatever their source Entity, in one transaction. Other relation
+// names and other Media are left as they are; no names removes nothing.
+func (s *Store) RemoveMediaRelations(ctx context.Context, mediaID MediaID, names []string) error {
+	// Authority face: Entity-relation catalog rows are main-only.
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	if mediaID == "" {
+		return errors.New("relation target media is required")
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
+		return err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, name := range names {
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM entity_relation WHERE relation = ? AND to_media_id = ?`, name, mediaID,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // ReplaceEntityRelations rewrites the Entity-target relations of one source
 // Entity under each of names: the source's previous Entity-target rows under
 // those names are deleted and the given rows inserted, in one transaction, so
