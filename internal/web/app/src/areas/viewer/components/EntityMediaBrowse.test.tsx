@@ -161,12 +161,14 @@ describe("EntityMediaBrowse", () => {
       ...rows[id],
       credits: [{ ...credit("album-1", "Test Album", "container"), attributes: { sequence } }],
     });
+    // The first book carries no sequence; the others still order the page.
     const byId: Record<string, GenericMediaInfo> = {
-      t1: sequenced("t1", "1"),
+      t1: rows.t1,
       t2: sequenced("t2", "1.5"),
       t3: sequenced("t3", "2"),
     };
     vi.mocked(fetchMediaRow).mockImplementation(async (id) => byId[id] ?? null);
+    vi.mocked(fetchMediaRows).mockResolvedValue(byId);
     renderBrowse(album, tracks);
     const grid = await screen.findByRole("list", { name: "Children" });
     expect(within(grid).getAllByRole("listitem")).toHaveLength(3);
@@ -229,12 +231,15 @@ describe("EntityMediaBrowse", () => {
   it("reads stored positions only for a container's track list", async () => {
     renderBrowse(album, tracks);
     await screen.findByRole("list", { name: "Tracks" });
-    expect(vi.mocked(fetchMediaRows).mock.calls[0][2]).toEqual({ positions: true });
+    // The relation probe's own read passes no options.
+    const options = () => vi.mocked(fetchMediaRows).mock.calls.map((call) => call[2]);
+    expect(options()).toContainEqual({ positions: true });
     cleanup();
     vi.mocked(fetchMediaRows).mockClear();
     renderBrowse(artist, tracks);
     await screen.findByRole("list", { name: "Tracks" });
-    expect(vi.mocked(fetchMediaRows).mock.calls[0][2]).toEqual({ positions: false });
+    expect(options()).toContainEqual({ positions: false });
+    expect(options()).not.toContainEqual({ positions: true });
   });
 
   it("groups a container's tracks under a heading per stored sequence, playing on across groups", async () => {

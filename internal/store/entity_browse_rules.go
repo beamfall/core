@@ -7,7 +7,8 @@ import "strings"
 // requires that Media to have no incoming Entity relation of the given name.
 // Attribute and Value, set together, require the relation's Attribute to list
 // Value among its comma-separated values: a Person credited "author, narrator"
-// matches Value "author" (CORE-3014).
+// matches Value "author" (CORE-3014). Attribute with an empty Value requires
+// the relation to carry no value for it, as a credit written without a role.
 type EntityBrowseSource struct {
 	Relation             string
 	FromKind             string
@@ -24,6 +25,9 @@ func attributeValueSQL(source EntityBrowseSource) (string, []any) {
 		return "", nil
 	}
 	path := `$."` + strings.ReplaceAll(source.Attribute, `"`, ``) + `"`
+	if source.Value == "" {
+		return ` AND TRIM(COALESCE(CASE WHEN json_valid(r.attributes) THEN json_extract(r.attributes, ?) END, '')) = ''`, []any{path}
+	}
 	value := "," + strings.ReplaceAll(source.Value, " ", "") + ","
 	return ` AND instr(',' || REPLACE(COALESCE(CASE WHEN json_valid(r.attributes) THEN json_extract(r.attributes, ?) END, ''), ' ', '') || ',', ?) > 0`, []any{path, value}
 }

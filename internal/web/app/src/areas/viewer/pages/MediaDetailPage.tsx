@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronRight, Play, RotateCcw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { buttonVariants } from "@/components/ui/button";
@@ -214,11 +214,23 @@ export function MediaDetailPage() {
   // A book in a relation-sequenced series (CORE-3014): the next one is offered,
   // never queued, so finishing it never starts another (ADR-0055 §2.4).
   const series = seriesPosition(media);
+  // The Profile's watched state as the item actions read and change it, so
+  // Mark played offers Next in series at once (and a direct link knows it).
+  const [watched, setWatched] = useState<{ id: string; watched: boolean } | null>(null);
+  const onWatched = useCallback(
+    (value: boolean) => setWatched({ id: mediaId, watched: value }),
+    [mediaId],
+  );
 
   function watch(fromStart: boolean) {
     // Forward the queue the opening card carried (CORE-1143), still bound to
-    // the viewer identity it was listed for; a sequenced book plays alone.
-    const { queue } = series ? { queue: undefined } : readPlayerNavState(location.state, identity);
+    // the viewer identity it was listed for. A sequenced book plays alone, and
+    // so does any item whose credits have not loaded yet, since they decide
+    // whether it is one; the one-item queue also ends an earlier Play all.
+    const alone = series || !media;
+    const { queue } = alone
+      ? { queue: [{ id: previewID, title }] }
+      : readPlayerNavState(location.state, identity);
     // Every Play or Start over is its own start, so pressing one while the
     // mini player already plays this Media starts it again with these picks.
     const state: PlayerNavState = { title, startID: newStartID() };
@@ -278,8 +290,8 @@ export function MediaDetailPage() {
   }
 
   const art = { ...(card ?? {}), artworkSlots: { ...card?.artworkSlots, ...media?.artworkSlots } };
-  const ordered = orderedPosition(media, context.container, locale, t);
-  const seriesShown = ordered ? null : series;
+  // A book's place in its series outranks its Part's index in its own grouping.
+  const ordered = series ? null : orderedPosition(media, context.container, locale, t);
   // An ordered item's own still frames it better than the poster it shares
   // with its whole grouping (CORE-2469).
   const still = ordered ? artworkSlotURL(art as SourceItem, "thumb") : "";
@@ -294,7 +306,10 @@ export function MediaDetailPage() {
   const progress =
     resumeProgress(card) ?? (card?.engagement?.completed ? null : resumeProgress(context.current));
   const isAudio = (media?.mediaClass ?? card?.mediaClass) === "audio";
-  const finished = (context.current?.engagement?.completed ?? card?.engagement?.completed) === true;
+  const finished =
+    watched?.id === mediaId
+      ? watched.watched
+      : (context.current?.engagement?.completed ?? card?.engagement?.completed) === true;
   const summary = media?.summary || card?.summary || "";
   const allFields = current?.fields ?? [];
   // The probed length first (CORE-2314); a card's engagement duration is what
@@ -343,7 +358,7 @@ export function MediaDetailPage() {
   // A sequenced book offers the next one only once it is finished.
   const next = series ? (finished ? context.next : null) : context.next;
   // The grouping is linked above; the nearest container is in the position line.
-  const positioned = ordered?.container.id ?? seriesShown?.id;
+  const positioned = ordered?.container.id ?? series?.id;
   const parents = positioned
     ? context.parents.filter((parent) => parent.id !== positioned)
     : context.parents;
@@ -378,13 +393,11 @@ export function MediaDetailPage() {
                   {ordered.itemText && <span>{` · ${ordered.itemText}`}</span>}
                 </p>
               )}
-              {seriesShown && (
+              {series && (
                 <p className="bf-detail-position">
-                  <Link to={`/entity/${encodeURIComponent(seriesShown.id)}`}>
-                    {seriesShown.title}
-                  </Link>
+                  <Link to={`/entity/${encodeURIComponent(series.id)}`}>{series.title}</Link>
                   <span>{` · ${t("mediaDetailSequenceNumber", {
-                    number: sequenceLabel(seriesShown.sequence, locale),
+                    number: sequenceLabel(series.sequence, locale),
                   })}`}</span>
                 </p>
               )}
@@ -538,6 +551,7 @@ export function MediaDetailPage() {
                   target={{ mediaID: mediaId }}
                   isAudio={(media?.mediaClass ?? card?.mediaClass) === "audio"}
                   className="bf-detail-item-actions"
+                  onWatched={onWatched}
                 />
               )}
               {summary && <DetailOverview key={summary} text={summary} />}

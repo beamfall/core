@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchMediaRow, fetchMediaRows } from "@/lib/graphql/browse";
+import { fetchMediaRows } from "@/lib/graphql/browse";
 import type { EntityInfo, SourceItem } from "@/lib/graphql/types";
 import {
   creditAttribute,
@@ -25,9 +25,10 @@ export interface RelationProbe {
 const NONE: RelationProbe = { pending: false, sequenced: false, roles: null };
 
 // Read only for an audio "container" or "person" listing, the layout these
-// attributes reshape: the first Media's row says whether its credit from this
-// Entity carries a sequence or a role; only a role read goes on to read every
-// listed Media's row. Any failure leaves the page on its usual layout.
+// attributes reshape: every listed Media's row is read, and any credit from
+// this Entity that carries a sequence or a role reshapes the page, so a first
+// book without one (or whose read failed) does not hide the rest. A row that
+// fails to read is skipped; with none read the page keeps its usual layout.
 export function useRelationProbe(
   entity: EntityInfo | null,
   items: readonly SourceItem[],
@@ -53,16 +54,13 @@ export function useRelationProbe(
       if (!signal.aborted) setProbe({ key, probe: next });
     };
     (async () => {
-      const first = await fetchMediaRow(ids[0], signal);
-      if (first?.mediaClass !== AUDIO_CLASS) return settle(NONE);
-      if (archetype === "container") {
-        return settle({
-          ...NONE,
-          sequenced: creditAttribute(first.credits, entityID, SEQUENCE_ATTRIBUTE) !== "",
-        });
-      }
-      if (!creditAttribute(first.credits, entityID, ROLE_ATTRIBUTE)) return settle(NONE);
       const rows = await fetchMediaRows(ids, signal);
+      const read = ids.map((id) => rows[id]).filter((row) => row !== undefined);
+      if (!read.some((row) => row.mediaClass === AUDIO_CLASS)) return settle(NONE);
+      const attribute = archetype === "container" ? SEQUENCE_ATTRIBUTE : ROLE_ATTRIBUTE;
+      const carried = read.some((row) => creditAttribute(row.credits, entityID, attribute) !== "");
+      if (!carried) return settle(NONE);
+      if (archetype === "container") return settle({ ...NONE, sequenced: true });
       const roles: Record<string, string[]> = {};
       for (const id of ids) {
         roles[id] = creditRoles(creditAttribute(rows[id]?.credits, entityID, ROLE_ATTRIBUTE));

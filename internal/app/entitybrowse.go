@@ -54,7 +54,8 @@ func validEntityBrowseRule(bundle plugin.Bundle, rule EntityBrowseRule) bool {
 		if spec.ToKind != toKind {
 			return false
 		}
-		if (source.Attribute == "") != (source.Value == "") ||
+		// A Value needs its Attribute; an Attribute alone matches relations without it.
+		if (source.Attribute == "" && source.Value != "") ||
 			(source.Attribute != "" && !slices.Contains(spec.Attributes, source.Attribute)) {
 			return false
 		}

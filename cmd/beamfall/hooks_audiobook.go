@@ -5,16 +5,7 @@ import (
 	books "github.com/beamfall/plugin-audiobook"
 )
 
-// audiobookAuthorBrowseRule lists a Person in the plugin's browse (the home
-// Authors grid) only when some credit names them author: a narrator-only
-// Person stays reachable from their books but is not an author (CORE-3014).
-func audiobookAuthorBrowseRule() app.EntityBrowseRule {
-	return app.EntityBrowseRule{PluginID: books.PluginID, Kind: books.KindPerson, Sources: []app.EntityBrowseSource{
-		{Relation: books.RelationCreditedOn, Attribute: books.AttributeRole, Value: books.RoleAuthor},
-	}}
-}
-
-// audiobookHydrationMapper turns the plugin's tag-and-folder plan
+// audiobookHydrationMapper turns the audiobook plugin's tag-and-folder plan
 // into Core's hydration plan: Person credits, Series membership and Genre
 // links on the book's Media (ADR-0055 amendment A). Every plan is marked
 // complete. Like every hydration mapper, it runs again only when a file

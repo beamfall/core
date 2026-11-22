@@ -238,7 +238,12 @@ describe("MediaDetailPage", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
         expect(screen.getByTestId("path")).toHaveTextContent(mediaPath("watch", id));
-        expect(watchState()).toEqual({ title: "Card title" });
+        // Unread credits: the item plays alone (ADR-0055 §2.4).
+        expect(watchState()).toEqual({
+          title: "Card title",
+          queue: [{ id, title: "Card title" }],
+          queueIdentity: identity,
+        });
       } finally {
         window.history.replaceState(null, "", "/");
       }
@@ -281,8 +286,8 @@ describe("MediaDetailPage", () => {
     },
   );
 
-  it("forwards the opening card's queue to the player, only for its own identity (CORE-1143)", () => {
-    vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
+  it("forwards the opening card's queue to the player, only for its own identity (CORE-1143)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
     const queue = [
       { id: "m1", title: "Card title" },
       { id: "m2", title: "Next" },
@@ -294,16 +299,16 @@ describe("MediaDetailPage", () => {
       },
     ]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Play Server title" }));
     expect(watchState()).toEqual({
-      title: "Card title",
+      title: "Server title",
       queue,
       queueIdentity: identity,
     });
   });
 
-  it("drops a queue listed for another identity", () => {
-    vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
+  it("drops a queue listed for another identity", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
     renderAt([
       {
         pathname: "/media/m1",
@@ -315,10 +320,71 @@ describe("MediaDetailPage", () => {
       },
     ]);
 
+    fireEvent.click(await screen.findByRole("button", { name: "Play Server title" }));
+    expect(watchState()).toEqual({
+      title: "Server title",
+    });
+  });
+
+  // ADR-0055 §2.4: until the credits say whether the item is a sequenced
+  // book, Play queues it alone, which also ends an earlier Play all queue.
+  it("plays an item alone before its credits load", () => {
+    vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
+    renderAt([
+      {
+        pathname: "/media/m1",
+        state: {
+          ...mediaLinkState(card, identity),
+          queue: [
+            { id: "m1", title: "Card title" },
+            { id: "m2", title: "Next" },
+          ],
+          queueIdentity: identity,
+        },
+      },
+    ]);
+
     fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
     expect(watchState()).toEqual({
       title: "Card title",
+      queue: [{ id: "m1", title: "Card title" }],
+      queueIdentity: identity,
     });
+  });
+
+  // CORE-3013: a book in a sequenced series offers the next one once played,
+  // never queues it, and Mark played offers it at once.
+  it("offers Next in series once the book is marked played, and plays the book alone", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      mediaClass: "audio",
+      credits: [
+        {
+          entityID: "s1",
+          title: "The Cycle",
+          kind: "series",
+          archetype: "container",
+          relation: "contains-book",
+          attributes: { sequence: "2" },
+        },
+      ],
+    });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      { id: "m1", kind: "media", title: "Server title" },
+      { id: "m2", kind: "media", title: "Book Three" },
+    ]);
+    renderAt(["/media/m1"]);
+    const played = await screen.findByRole("button", { name: "Mark played" });
+    await act(async () => {});
+    expect(screen.queryByRole("link", { name: /^Next in series/ })).toBeNull();
+
+    fireEvent.click(played);
+    expect(await screen.findByRole("link", { name: "Next in series: Book Three" })).toHaveAttribute(
+      "href",
+      "/media/m2",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
+    expect(watchState().queue).toEqual([{ id: "m1", title: "Server title" }]);
   });
 
   it("ignores a card carried for another identity", () => {

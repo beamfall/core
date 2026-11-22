@@ -285,7 +285,7 @@ func TestMusicDeclaresEntityPosterInheritance(t *testing.T) {
 }
 
 func TestFirstPartyEntityBrowseRules(t *testing.T) {
-	want := []app.EntityBrowseRule{audiobookAuthorBrowseRule(), {
+	want := []app.EntityBrowseRule{bookAuthorBrowseRule(), {
 		PluginID: music.PluginID, Kind: "artist", Sources: []app.EntityBrowseSource{
 			{Relation: "album-artist", FromKind: "album"},
 			{Relation: "appears-on", ExcludeMediaRelation: "album-track"},
