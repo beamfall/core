@@ -43,6 +43,9 @@ type offlineEngagementInput struct {
 	durationSeconds int
 	completed       bool
 	playedAtMS      int64
+	// invalid names the first malformed field; the event is rejected, not
+	// recorded, so a corrected resend still applies.
+	invalid string
 }
 
 // replayOfflineEngagement applies the play sessions a Device recorded while
@@ -71,15 +74,28 @@ func (h *Handler) replayOfflineEngagement(ctx context.Context, scope auth.Scope,
 		}
 		eventID, _ := fields["eventID"].(string)
 		mediaID, _ := fields["mediaID"].(string)
-		completed, _ := fields["completed"].(bool)
-		inputs = append(inputs, offlineEngagementInput{
-			eventID:         eventID,
-			mediaID:         strings.TrimSpace(mediaID),
-			positionSeconds: int(offlineEngagementNumber(fields["positionSeconds"])),
-			durationSeconds: int(offlineEngagementNumber(fields["durationSeconds"])),
-			completed:       completed,
-			playedAtMS:      offlineEngagementNumber(fields["playedAtMS"]),
-		})
+		in := offlineEngagementInput{eventID: eventID, mediaID: strings.TrimSpace(mediaID)}
+		var okDuration, okPlayed, okCompleted bool
+		position, okPosition := playedMSVar(fields["positionSeconds"])
+		in.positionSeconds = int(position)
+		okDuration = true
+		if raw, present := fields["durationSeconds"]; present && raw != nil {
+			duration, valid := playedMSVar(raw)
+			in.durationSeconds, okDuration = int(duration), valid
+		}
+		in.playedAtMS, okPlayed = playedMSVar(fields["playedAtMS"])
+		in.completed, okCompleted = fields["completed"].(bool)
+		switch {
+		case !okPosition:
+			in.invalid = "positionSeconds must be a whole number, not negative"
+		case !okDuration:
+			in.invalid = "durationSeconds must be a whole number, not negative"
+		case !okPlayed:
+			in.invalid = "playedAtMS must be a whole number"
+		case !okCompleted:
+			in.invalid = "completed must be a boolean"
+		}
+		inputs = append(inputs, in)
 	}
 	sort.SliceStable(inputs, func(i, j int) bool {
 		if inputs[i].playedAtMS != inputs[j].playedAtMS {
@@ -110,8 +126,9 @@ func (h *Handler) replayOfflineEngagement(ctx context.Context, scope auth.Scope,
 	})
 	if result.Applied > 0 {
 		// Events that applied before a failure are committed, so caches must
-		// still learn of them.
-		h.notifyEngagementChanged(ctx, scope)
+		// still learn of them, even when the request was canceled: a retry
+		// reads them as duplicates and would never notify.
+		h.notifyEngagementChanged(context.WithoutCancel(ctx), scope)
 	}
 	if err != nil {
 		return OfflineEngagementReplay{}, err
@@ -125,23 +142,32 @@ func (h *Handler) replayOfflineEngagement(ctx context.Context, scope auth.Scope,
 // duplicates.
 func (h *Handler) applyOfflineEngagement(ctx context.Context, scope auth.Scope, in offlineEngagementInput) (string, string, error) {
 	switch {
+	case in.invalid != "":
+		return offlineEngagementRejected, in.invalid, nil
 	case strings.TrimSpace(in.eventID) == "":
 		return offlineEngagementRejected, "eventID is required", nil
 	case in.mediaID == "":
 		return offlineEngagementRejected, "mediaID is required", nil
 	case in.playedAtMS <= 0:
 		return offlineEngagementRejected, "playedAtMS is required", nil
-	case in.positionSeconds < 0 || in.durationSeconds < 0:
-		return offlineEngagementRejected, "positions cannot be negative", nil
 	}
 	media, err := h.store.Media(ctx, store.MediaID(in.mediaID), scope.PlaybackFilter())
-	if err != nil {
+	var missing store.ValidationError
+	switch {
+	case errors.As(err, &missing):
+		// Not found or not visible to this Profile: terminal, and worded the
+		// same either way so it cannot probe hidden Media.
 		return offlineEngagementRejected, "unknown media", nil
+	case err != nil:
+		// A catalog fault is not the event's fault: fail the call so the client
+		// keeps the event and retries.
+		return "", "", err
 	}
 	duration := in.durationSeconds
 	if duration <= 0 {
 		duration = media.DurationSeconds
 	}
+	playedAt := time.UnixMilli(in.playedAtMS).UTC()
 	outcome, err := h.store.ApplyOfflineEngagementEvent(ctx, store.OfflineEngagementEvent{
 		EventID: in.eventID,
 		Progress: store.PlaybackProgress{
@@ -152,7 +178,7 @@ func (h *Handler) applyOfflineEngagement(ctx context.Context, scope auth.Scope, 
 			DeviceID:        scope.DeviceID,
 		},
 		Completed: in.completed,
-		PlayedAt:  time.UnixMilli(in.playedAtMS).UTC(),
+		PlayedAt:  playedAt,
 		Policy:    h.resumePolicy(ctx, media),
 	})
 	var invalid store.ValidationError
@@ -165,23 +191,8 @@ func (h *Handler) applyOfflineEngagement(ctx context.Context, scope auth.Scope, 
 		return offlineEngagementDuplicate, "", nil
 	}
 	if outcome.BecameWatched && h.watchedObserver != nil {
-		h.notifyWatched(ctx, scope.ProfileID, media)
+		// The scrobble carries when the play happened, not when it was replayed.
+		h.notifyWatchedAt(ctx, scope.ProfileID, media, playedAt)
 	}
 	return offlineEngagementApplied, "", nil
-}
-
-// offlineEngagementNumber reads a whole-number event field; JSON numbers decode
-// as float64. A missing or non-numeric value reads as zero, which the
-// per-event checks reject where the field is required.
-func offlineEngagementNumber(raw any) int64 {
-	switch v := raw.(type) {
-	case float64:
-		return int64(v)
-	case int:
-		return int64(v)
-	case int64:
-		return v
-	default:
-		return 0
-	}
 }

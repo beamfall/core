@@ -72,6 +72,9 @@ func TestReplayOfflineEngagementAppliesOnceAndRejectsHidden(t *testing.T) {
 	if obs.count() != 1 {
 		t.Fatalf("watched observer fired %d times, want 1", obs.count())
 	}
+	if want := time.UnixMilli(base + 2000).UTC(); !obs.got[0].WatchedAt.Equal(want) {
+		t.Fatalf("scrobble WatchedAt = %v, want the offline play time %v", obs.got[0].WatchedAt, want)
+	}
 	if got := engagementInvalidations(t, st, "profile-default") - before; got != 1 {
 		t.Fatalf("engagement invalidations = %d, want 1", got)
 	}
@@ -107,6 +110,28 @@ func TestReplayOfflineEngagementRefusesOversizeBatchAndBadEvents(t *testing.T) {
 	}
 	if _, ok, _ := h.store.PlaybackProgressFor(t.Context(), "profile-default", "media-alpha"); ok {
 		t.Fatal("a rejected event wrote progress")
+	}
+
+	// A malformed field must not consume the event ID: it is refused, and the
+	// corrected resend applies.
+	at := time.Now().Add(-time.Minute).UnixMilli()
+	for _, bad := range []map[string]any{
+		{"eventID": "fix-me", "mediaID": "media-alpha", "completed": false, "playedAtMS": at},
+		{"eventID": "fix-me", "mediaID": "media-alpha", "positionSeconds": 5, "completed": "yes", "playedAtMS": at},
+		{"eventID": "fix-me", "mediaID": "media-alpha", "positionSeconds": 5.5, "completed": false, "playedAtMS": at},
+	} {
+		data, errs := post(t, h, replayBody(t, bad), authorizeViewer)
+		if len(errs) == 0 {
+			var out OfflineEngagementReplay
+			if err := json.Unmarshal(data["replayOfflineEngagement"], &out); err != nil || out.Rejected != 1 {
+				t.Fatalf("malformed %v = %s, want rejected", bad, data["replayOfflineEngagement"])
+			}
+		}
+	}
+	fixed := replay(t, h, replayBody(t,
+		map[string]any{"eventID": "fix-me", "mediaID": "media-alpha", "positionSeconds": 5, "completed": false, "playedAtMS": at}))
+	if fixed.Applied != 1 {
+		t.Fatalf("corrected resend = %+v, want applied", fixed)
 	}
 }
 

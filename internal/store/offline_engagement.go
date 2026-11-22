@@ -62,8 +62,10 @@ func (s *Store) ApplyOfflineEngagementEvent(ctx context.Context, ev OfflineEngag
 	if err := s.guardLocked(); err != nil {
 		return OfflineEngagementOutcome{}, err
 	}
-	now := timeToMillis(s.serverNow().UTC())
-	playedAt := timeToMillis(ev.PlayedAt.UTC())
+	// UnixMilli, not UnixNano: a far-future device clock must clamp, not
+	// overflow past the bound below.
+	now := s.serverNow().UnixMilli()
+	playedAt := ev.PlayedAt.UnixMilli()
 	if playedAt > now {
 		// A fast device clock must not freeze the position ahead of the server.
 		playedAt = now
@@ -100,9 +102,11 @@ func (s *Store) ApplyOfflineEngagementEvent(ctx context.Context, ev OfflineEngag
 	}
 	var priorWatched int
 	var priorEventTime sql.NullInt64
+	var priorUpdatedAt int64
 	err = tx.QueryRowContext(ctx, `
-		SELECT watched, event_time_ms FROM playback_progress WHERE profile_id = ? AND media_id = ?
-	`, progress.ProfileID, progress.MediaID).Scan(&priorWatched, &priorEventTime)
+		SELECT watched, event_time_ms, updated_at_ms FROM playback_progress WHERE profile_id = ? AND media_id = ?
+	`, progress.ProfileID, progress.MediaID).Scan(&priorWatched, &priorEventTime, &priorUpdatedAt)
+	hasPrior := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return OfflineEngagementOutcome{}, err
 	}
@@ -110,6 +114,17 @@ func (s *Store) ApplyOfflineEngagementEvent(ctx context.Context, ev OfflineEngag
 		// Completion is sticky: an offline event never un-completes watched
 		// Media and a repeat completion changes nothing, so only the ledger row
 		// is kept.
+		return OfflineEngagementOutcome{}, tx.Commit()
+	}
+	// The stored state's time: its event time, or when the server received it
+	// for a report that carried none.
+	priorTime := priorUpdatedAt
+	if priorEventTime.Valid {
+		priorTime = priorEventTime.Int64
+	}
+	if hasPrior && !event.Watched && priorTime > playedAt {
+		// Latest timestamp wins: a stale offline position changes nothing, not
+		// the position and not the duration, so only the ledger row is kept.
 		return OfflineEngagementOutcome{}, tx.Commit()
 	}
 	if event.Watched && priorEventTime.Valid && priorEventTime.Int64 > playedAt {

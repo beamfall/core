@@ -218,3 +218,65 @@ func TestOfflineEngagementLedgerClearedWithProfileMedia(t *testing.T) {
 		t.Fatalf("ledger rows after Profile erasure = %d, want 0", rows)
 	}
 }
+
+// A report that carried no event time is timed by when the server received
+// it, so an older offline event changes neither its position nor its
+// duration (Codex review of CORE-3182).
+func TestOfflineEngagementStaleEventKeepsUntimedNewerState(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+		ProfileID: "profile-default", MediaID: "media-alpha",
+		PositionSeconds: 600, DurationSeconds: 1200,
+	}, false, ResumePolicy{Class: MediaClassVideo}); err != nil {
+		t.Fatal(err)
+	}
+	stale := offlineEvent("profile-default", "evt-stale", 30, false, time.Now().Add(-24*time.Hour))
+	stale.Progress.DurationSeconds = 300
+	out, err := st.ApplyOfflineEngagementEvent(ctx, stale)
+	if err != nil || out.Duplicate {
+		t.Fatalf("stale apply = %+v, %v; want applied", out, err)
+	}
+	if got := mustProgress(t, st, "profile-default"); got.PositionSeconds != 600 || got.DurationSeconds != 1200 {
+		t.Fatalf("stale offline event changed state: %+v, want 600 of 1200", got)
+	}
+	if out, err := st.ApplyOfflineEngagementEvent(ctx, stale); err != nil || !out.Duplicate {
+		t.Fatalf("stale resend = %+v, %v; want duplicate", out, err)
+	}
+}
+
+func TestOfflineEngagementFarFutureClockIsClamped(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	ev := offlineEvent("profile-default", "evt-2300", 400, false, time.Date(2300, 1, 1, 0, 0, 0, 0, time.UTC))
+	if _, err := st.ApplyOfflineEngagementEvent(ctx, ev); err != nil {
+		t.Fatal(err)
+	}
+	progress := mustProgress(t, st, "profile-default")
+	if progress.PositionSeconds != 400 || progress.EventTimeMS <= 0 || progress.EventTimeMS > time.Now().UnixMilli() {
+		t.Fatalf("far-future event = %+v, want position 400 with a clamped event time", progress)
+	}
+}
+
+// A replay that races a Media purge can leave a ledger row behind; the orphan
+// sweep must find it even when nothing else references the Media.
+func TestOfflineEngagementOrphanLedgerIsSwept(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	if _, err := st.eventsW.ExecContext(ctx, `
+		INSERT INTO offline_engagement_event(profile_id, device_id, event_id, media_id, played_at_ms, applied_at_ms)
+		VALUES ('profile-default', 'device-phone', 'evt-orphan', 'media-purged', 1, 1)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.PruneOrphanedEngagementRows(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := st.eventsR.QueryRowContext(ctx, `SELECT COUNT(*) FROM offline_engagement_event`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("orphan ledger rows left = %d, want 0", n)
+	}
+}
