@@ -150,7 +150,9 @@ const entityDirectMediaClassSQL = `
 				GROUP BY r.from_entity_id`
 
 // entityLinkedMediaClassSQL spans the classes of the Media linked to each
-// Entity's linked, untrashed Entities, following the link either way.
+// Entity's linked, untrashed Entities, following the link either way. Each
+// linked Entity's span is folded first, so an Entity linked to many cards (a
+// shared category or person) is read once per chunk, not once per card.
 const entityLinkedMediaClassSQL = `
 				WITH linked(item_id, other_id) AS (
 					SELECT from_entity_id, to_entity_id FROM entity_relation
@@ -158,13 +160,19 @@ const entityLinkedMediaClassSQL = `
 					UNION
 					SELECT to_entity_id, from_entity_id FROM entity_relation
 					WHERE to_entity_id IN (%[1]s)
+				), spans(other_id, low, high) AS (
+					SELECT e.id, MIN(m.media_class), MAX(m.media_class)
+					FROM entity e
+					JOIN entity_relation r ON r.from_entity_id = e.id
+					JOIN media m ON m.id = r.to_media_id
+					WHERE e.id IN (SELECT other_id FROM linked WHERE other_id <> item_id)
+					  AND e.trashed_at_ms IS NULL AND m.trashed_at_ms IS NULL
+					GROUP BY e.id
 				)
-				SELECT linked.item_id, MIN(m.media_class), MAX(m.media_class)
+				SELECT linked.item_id, MIN(spans.low), MAX(spans.high)
 				FROM linked
-				JOIN entity e ON e.id = linked.other_id AND e.trashed_at_ms IS NULL
-				JOIN entity_relation r ON r.from_entity_id = linked.other_id
-				JOIN media m ON m.id = r.to_media_id
-				WHERE linked.other_id <> linked.item_id AND m.trashed_at_ms IS NULL
+				JOIN spans ON spans.other_id = linked.other_id
+				WHERE linked.other_id <> linked.item_id
 				GROUP BY linked.item_id`
 
 // entityMediaClassSpansLocked runs a class-span query over every open catalog

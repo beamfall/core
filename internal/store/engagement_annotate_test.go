@@ -226,3 +226,67 @@ func TestAnnotateEngagementIgnoresPartialChannelPlays(t *testing.T) {
 		t.Fatalf("direct play engagement = %+v, want position 45 of 120", got)
 	}
 }
+
+type nestingRelations struct{}
+
+func (nestingRelations) Holds(kind, relation string) bool {
+	return kind == "part" && relation == "contains"
+}
+func (nestingRelations) Nests(kind, relation, targetKind string) bool {
+	return kind == "part" && relation == "part-of" && targetKind == "whole"
+}
+
+// A declared container counts only its parts' Media, never the Media of an
+// Entity it links to with an ordered outgoing link (a shared category). Any
+// other kind keeps counting through its ordered outgoing links and ignores
+// incoming ones. Reading only the side each root counts keeps a container
+// linked to a large shared Entity cheap (CORE-3064).
+func TestAnnotateEngagementCountsEachRootsOwnSide(t *testing.T) {
+	ctx := context.Background()
+	st := openDemoSeeded(t)
+	for _, entity := range []Entity{
+		{ID: "entity-side-whole", LibraryID: "library-demo-open", Kind: "whole", Title: "Whole"},
+		{ID: "entity-side-part", LibraryID: "library-demo-open", Kind: "part", Title: "Part"},
+		{ID: "entity-side-shared", LibraryID: "library-demo-open", Kind: "shared", Title: "Shared"},
+		{ID: "entity-side-list", LibraryID: "library-demo-open", Kind: "list", Title: "List"},
+	} {
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, row := range []struct {
+		from, relation, toEntity, toMedia string
+		order                             any
+	}{
+		{"entity-side-part", "part-of", "entity-side-whole", "", nil},
+		{"entity-side-part", "contains", "", "media-demo-sintel", 1},
+		{"entity-side-part", "contains", "", "media-demo-bunny", 2},
+		{"entity-side-whole", "tagged", "entity-side-shared", "", 1},
+		{"entity-side-list", "tagged", "entity-side-shared", "", 1},
+		{"entity-side-part", "part-of", "entity-side-list", "", nil},
+		{"entity-side-shared", "contains", "", "media-demo-steel", 1},
+		{"entity-side-shared", "contains", "", "media-demo-spring", 2},
+		{"entity-side-shared", "contains", "", "media-demo-charge", 3},
+	} {
+		if _, err := st.catalogW.ExecContext(ctx, `
+			INSERT INTO entity_relation(from_entity_id, relation, to_entity_id, to_media_id, sort_order)
+			VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?)
+		`, row.from, row.relation, row.toEntity, row.toMedia, row.order); err != nil {
+			t.Fatal(err)
+		}
+	}
+	containers := map[EngagementContainerKey]EngagementContainerRelations{
+		{Kind: "whole"}: nestingRelations{},
+		{Kind: "part"}:  nestingRelations{},
+	}
+	items := []SourceItem{{ID: "entity-side-whole", Kind: "entity"}, {ID: "entity-side-list", Kind: "entity"}}
+	if err := st.AnnotateEngagement(ctx, "profile-demo-default", LibraryFilter{AllLibraries: true}, items, containers); err != nil {
+		t.Fatalf("AnnotateEngagement: %v", err)
+	}
+	if got := items[0].Engagement; got == nil || got.TotalCount != 2 {
+		t.Fatalf("declared container engagement = %+v, want its part's 2 Media", got)
+	}
+	if got := items[1].Engagement; got == nil || got.TotalCount != 3 {
+		t.Fatalf("undeclared root engagement = %+v, want the 3 Media of its ordered link", got)
+	}
+}
