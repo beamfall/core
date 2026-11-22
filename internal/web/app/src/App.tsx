@@ -38,13 +38,19 @@ const SetupWizard = lazyRoute(() =>
 const PromotePage = lazyRoute(() =>
   import("@/areas/enroll").then((m) => ({ default: m.PromotePage })),
 );
+// The party-session guest phone page (CORE-2948): unauthenticated, reached from
+// the host's QR code; a guest token, not a device session, authorizes it.
+const PartyGuestPage = lazyRoute(() =>
+  import("@/areas/join").then((m) => ({ default: m.PartyGuestPage })),
+);
 
 // Resolves the area chunk the first URL will render, so the first render can
 // show it directly instead of committing the Suspense fallback (React 19 holds
 // resolved lazy content back ~300 ms after a fallback was shown). Never
 // rejects; a failed chunk falls through to the route's own error boundary.
 export function preloadInitialRoute(pathname: string): Promise<unknown> {
-  const area = /^\/(setup|enroll|promote|manage|console)(\/|$)/.exec(pathname)?.[1];
+  // "party" (CORE-1662) is a Viewer route: matched here, it still resolves to ViewerArea.
+  const area = /^\/(setup|enroll|promote|join|manage|console|party)(\/|$)/.exec(pathname)?.[1];
   const route =
     area === "setup"
       ? SetupWizard
@@ -52,11 +58,13 @@ export function preloadInitialRoute(pathname: string): Promise<unknown> {
         ? EnrollPage
         : area === "promote"
           ? PromotePage
-          : area === "manage"
-            ? ManageArea
-            : area === "console"
-              ? ConsoleArea
-              : ViewerArea;
+          : area === "join"
+            ? PartyGuestPage
+            : area === "manage"
+              ? ManageArea
+              : area === "console"
+                ? ConsoleArea
+                : ViewerArea;
   return route.preload().catch(() => {});
 }
 
@@ -106,6 +114,14 @@ export function App() {
           element={
             <Area>
               <PromotePage />
+            </Area>
+          }
+        />
+        <Route
+          path="/join/:code"
+          element={
+            <Area>
+              <PartyGuestPage />
             </Area>
           }
         />

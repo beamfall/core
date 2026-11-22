@@ -78,6 +78,7 @@ type Server struct {
 	streamObserver    EventStreamObserver
 	pushNotifications PushNotificationStore
 	v1                V1Store
+	partyGuests       PartyGuestStore
 	v1ScanEnqueue     V1ScanEnqueuer
 	v1Progress        V1ProgressRecorder
 	backupEncryptor   store.BackupIngestEncryptor
@@ -355,6 +356,11 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	s.handle(http.MethodGet, "/api/pairing-requests", reveal.ContentJSON, s.listDevicePairingRequests)
 	s.handle(http.MethodPost, "/api/pairing-requests/approve", reveal.ContentJSON, s.approveDevicePairingRequest)
 	s.handle(http.MethodPost, "/api/pairing-requests/deny", reveal.ContentJSON, s.denyDevicePairingRequest)
+	s.handle(http.MethodPost, "/api/party/join", reveal.ContentJSON, s.partyJoin)
+	s.handle(http.MethodGet, "/api/party/guest", reveal.ContentJSON, s.partyGuestView)
+	s.handle(http.MethodGet, "/api/party/guest/search", reveal.ContentJSON, s.partyGuestSearch)
+	s.handle(http.MethodPost, "/api/party/guest/request", reveal.ContentJSON, s.partyGuestRequest)
+	s.handle(http.MethodPost, "/api/party/guest/cancel", reveal.ContentJSON, s.partyGuestCancel)
 	// Guideline 1.2 UGC moderation (NATIVEMGR-4, apple ADR-0004 §4): in-app
 	// content reporting + per-Profile content blocking for the self-hosted
 	// client. These are VIEWER content-safety surfaces consumed by the client

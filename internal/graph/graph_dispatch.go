@@ -435,6 +435,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	154: dispatchFieldBlock154,
 	155: dispatchFieldBlock155,
 	156: dispatchFieldBlock156,
+	157: dispatchFieldBlock157,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -612,6 +613,24 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"revokejellyfincompatkey":            newFieldHandler("revokeJellyfinCompatKey", "revokeJellyfinCompatKey", fieldMutation, roleSession|roleAdmin, 155),
 	"qbittorrentingest":                  newFieldHandler("qbittorrentIngest", "qbittorrentIngest", fieldRead, roleSession|roleAdmin, 106),
 	"qualitypolicy":                      newFieldHandler("qualityPolicy", "qualityPolicy", fieldRead, roleSession|roleAdmin, 50),
+	"partysession":                       newFieldHandler("partySession", "party", fieldRead, roleSession, 157),
+	"partystage":                         newFieldHandler("partyStage", "party", fieldRead, roleSession, 157),
+	"partystart":                         newFieldHandler("partyStart", "party", fieldMutation, roleSession, 157),
+	"partyend":                           newFieldHandler("partyEnd", "party", fieldMutation, roleSession, 157),
+	"partyupdate":                        newFieldHandler("partyUpdate", "party", fieldMutation, roleSession, 157),
+	"partyrotatecode":                    newFieldHandler("partyRotateCode", "party", fieldMutation, roleSession, 157),
+	"partyadd":                           newFieldHandler("partyAdd", "party", fieldMutation, roleSession, 157),
+	"partyreview":                        newFieldHandler("partyReview", "party", fieldMutation, roleSession, 157),
+	"partymove":                          newFieldHandler("partyMove", "party", fieldMutation, roleSession, 157),
+	"partyremove":                        newFieldHandler("partyRemove", "party", fieldMutation, roleSession, 157),
+	"partyrestore":                       newFieldHandler("partyRestore", "party", fieldMutation, roleSession, 157),
+	"partyadvance":                       newFieldHandler("partyAdvance", "party", fieldMutation, roleSession, 157),
+	"partyplayback":                      newFieldHandler("partyPlayback", "party", fieldMutation, roleSession, 157),
+	"partyremoveparticipant":             newFieldHandler("partyRemoveParticipant", "party", fieldMutation, roleSession, 157),
+	"partyscreenregister":                newFieldHandler("partyScreenRegister", "party", fieldMutation, roleSession, 157),
+	"partyscreenreport":                  newFieldHandler("partyScreenReport", "party", fieldMutation, roleSession, 157),
+	"partyscreenticker":                  newFieldHandler("partyScreenTicker", "party", fieldMutation, roleSession, 157),
+	"partyscreendrop":                    newFieldHandler("partyScreenDrop", "party", fieldMutation, roleSession, 157),
 	"playqueue":                          newFieldHandler("playQueue", "queue", fieldRead, roleSession, 30),
 	"queueaddmany":                       newFieldHandler("queueAddMany", "queue", fieldMutation, roleSession, 30),
 	"queuemoveentry":                     newFieldHandler("queueMoveEntry", "queue", fieldMutation, roleSession, 30),
@@ -4602,6 +4621,92 @@ func dispatchFieldBlock156(dispatch *fieldDispatchContext) response {
 		if resp := resolveField(dispatch, "homelayout", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
+	}
+	return response{}
+}
+
+// dispatchFieldBlock157 resolves the party session fields (CORE-1662).
+func dispatchFieldBlock157(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["partysession"] {
+		result, err := h.partySessionRead(ctx, scope)
+		if resp := resolveField(dispatch, "partysession", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["partystage"] {
+		result, err := h.partyStageRead(ctx, req)
+		if resp := resolveField(dispatch, "partystage", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["partystart"] {
+		result, err := h.partyStartWrite(ctx, scope, req)
+		return resolveField(dispatch, "partystart", result, err)
+	}
+	if fields["partyend"] {
+		result, err := h.partyEndWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyend", result, err)
+	}
+	if fields["partyupdate"] {
+		result, err := h.partyUpdateWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyupdate", result, err)
+	}
+	if fields["partyrotatecode"] {
+		result, err := h.partyRotateCodeWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyrotatecode", result, err)
+	}
+	if fields["partyadd"] {
+		result, err := h.partyAddWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyadd", result, err)
+	}
+	if fields["partyreview"] {
+		result, err := h.partyReviewWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyreview", result, err)
+	}
+	if fields["partymove"] {
+		result, err := h.partyMoveWrite(ctx, scope, req)
+		return resolveField(dispatch, "partymove", result, err)
+	}
+	if fields["partyremove"] {
+		result, err := h.partyRemoveWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyremove", result, err)
+	}
+	if fields["partyrestore"] {
+		result, err := h.partyRestoreWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyrestore", result, err)
+	}
+	if fields["partyadvance"] {
+		result, err := h.partyAdvanceWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyadvance", result, err)
+	}
+	if fields["partyplayback"] {
+		result, err := h.partyPlaybackWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyplayback", result, err)
+	}
+	if fields["partyremoveparticipant"] {
+		result, err := h.partyRemoveParticipantWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyremoveparticipant", result, err)
+	}
+	if fields["partyscreenregister"] {
+		result, err := h.partyScreenRegisterWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreenregister", result, err)
+	}
+	if fields["partyscreenreport"] {
+		result, err := h.partyScreenReportWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreenreport", result, err)
+	}
+	if fields["partyscreenticker"] {
+		result, err := h.partyScreenTickerWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreenticker", result, err)
+	}
+	if fields["partyscreendrop"] {
+		result, err := h.partyScreenDropWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreendrop", result, err)
 	}
 	return response{}
 }

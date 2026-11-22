@@ -299,6 +299,9 @@ func (s *Store) deleteProfileEventsLocked(ctx context.Context, profileID Profile
 	if err := deleteMyQueueAll(ctx, tx, profileID); err != nil {
 		return err
 	}
+	if err := deletePartyProfileTx(ctx, tx, profileID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 

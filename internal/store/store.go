@@ -1064,6 +1064,9 @@ type Store struct {
 	logger         *slog.Logger
 	// titleFolds is the title-fold index behind LiveFoldEqualEntities.
 	titleFolds entityTitleFoldIndex
+	// partySubtitler renders party entry subtitles from each Library
+	// plugin's MediaSubtitle template; see SetPartySubtitler.
+	partySubtitler atomic.Pointer[PartySubtitler]
 	// sessionBindMu holds Profile rebinds of every session (write lock) off
 	// while a write bound to a session's Profile checks the binding and
 	// commits (read lock); see RunWhileSessionBound. Take it before mu.

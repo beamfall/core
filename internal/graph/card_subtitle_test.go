@@ -112,6 +112,13 @@ func TestMediaCardsCarryThePluginSubtitleAndOrdinals(t *testing.T) {
 	if !found {
 		t.Fatalf("search rows = %+v, want the full card with its subtitle", search.Items)
 	}
+
+	// The plain-string read the party rotation uses (CORE-3048) renders the
+	// same template in English and leaves out Media that render nothing.
+	plain := handler.MediaSubtitles(ctx, []store.MediaID{media["full"], media["bare"], "media-missing"})
+	if len(plain) != 1 || plain[media["full"]] != "Vol 5 · No 3 · Reunion" {
+		t.Fatalf("MediaSubtitles = %v, want only the full card's subtitle", plain)
+	}
 }
 
 // TestMediaReadCarriesOrdinalsHeadlineAndClassLabel pins CORE-2469: the

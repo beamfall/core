@@ -41,6 +41,7 @@ import { migrationFixmatchStrings } from "./migration-fixmatch";
 import { migrationUnmatchedStrings } from "./migration-unmatched";
 import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
+import { partyStrings } from "./party";
 import { pickerStrings } from "./pickers";
 import { playbackStrings } from "./playback";
 import { playbackChapterStrings } from "./playback-chapters";
@@ -183,6 +184,7 @@ export const en = {
   ...activityPluginStrings.en,
   ...workbenchPageStrings.en,
   ...appearanceStrings.en,
+  ...partyStrings.en,
   ...radioStrings.en,
 } as const;
 
@@ -278,6 +280,7 @@ export const fr = {
   ...activityPluginStrings.fr,
   ...workbenchPageStrings.fr,
   ...appearanceStrings.fr,
+  ...partyStrings.fr,
   ...radioStrings.fr,
 } as const;
 
@@ -373,6 +376,7 @@ export const de = {
   ...activityPluginStrings.de,
   ...workbenchPageStrings.de,
   ...appearanceStrings.de,
+  ...partyStrings.de,
   ...radioStrings.de,
 } as const;
 
@@ -468,6 +472,7 @@ export const es = {
   ...activityPluginStrings.es,
   ...workbenchPageStrings.es,
   ...appearanceStrings.es,
+  ...partyStrings.es,
   ...radioStrings.es,
 } as const;
 
@@ -563,5 +568,6 @@ export const pt = {
   ...activityPluginStrings.pt,
   ...workbenchPageStrings.pt,
   ...appearanceStrings.pt,
+  ...partyStrings.pt,
   ...radioStrings.pt,
 } as const;
