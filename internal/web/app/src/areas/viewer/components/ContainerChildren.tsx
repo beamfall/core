@@ -9,11 +9,11 @@ import { childThumbURL, groupChildrenByKind } from "../lib/containerChildren";
 import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
 import {
-  firstGuardedContainer,
   guardContainerOf,
   isSpoilerCandidate,
   revealItem,
   type SpoilerState,
+  sharedGuardContainer,
   useSpoilerGuard,
 } from "../lib/spoilerGuard";
 import { runtimeParts } from "../lib/viewerFields";
@@ -47,8 +47,9 @@ export function ContainerChildren({
 }) {
   const groups = groupChildrenByKind(items);
   const guard = { containerID, containerArt };
-  // One Show spoilers toggle above every group, keyed like the rows' guard.
-  const guardKey = firstGuardedContainer(items, containerID);
+  // One Show spoilers toggle above every group, keyed like the rows' guard,
+  // when every guarded child sits in the same container.
+  const guardKey = sharedGuardContainer(items, containerID);
   const spoiler = useSpoilerGuard(guardKey !== undefined);
   const toggle = guardKey && spoiler.guardOn && (
     <SpoilerContainerToggle containerID={guardKey} revealed={spoiler.containerRevealed(guardKey)} />

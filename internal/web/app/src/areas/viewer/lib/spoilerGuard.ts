@@ -136,16 +136,23 @@ export function guardContainerOf(item: SourceItem, fallback?: string): string | 
   return item.container?.id ?? fallback;
 }
 
-/** The guard key of the first candidate among items, if any is guarded. */
-export function firstGuardedContainer(
+/**
+ * The guard key every candidate among items shares, if any is guarded. Items
+ * from several containers share none, so one toggle never reveals another
+ * container's children.
+ */
+export function sharedGuardContainer(
   items: readonly SourceItem[],
   fallback?: string,
 ): string | undefined {
+  let shared: string | undefined;
   for (const item of items) {
     const key = guardContainerOf(item, fallback);
-    if (isSpoilerCandidate(item, key)) return key;
+    if (!isSpoilerCandidate(item, key)) continue;
+    if (shared !== undefined && shared !== key) return undefined;
+    shared = key;
   }
-  return undefined;
+  return shared;
 }
 
 function stateOf(snap: Snapshot, item: SourceItem, containerID?: string): SpoilerState {
@@ -213,32 +220,45 @@ function withContainer(snap: Snapshot, containerID: string, on: boolean): Snapsh
   return { ...snap, containers };
 }
 
-// The latest write per identity and container key; only it may undo itself,
-// so an older failed write never reverts a newer choice.
-const latestWrite = new Map<string, number>();
-let writeSeq = 0;
+// Writes per identity and container key run one after another, so the server
+// keeps the latest choice. Each key remembers the value its last successful
+// write stored (or the value before its first write) and its queue's tail.
+const writeTail = new Map<string, Promise<void>>();
+const confirmed = new Map<string, boolean>();
 
 /**
  * Reveal or re-hide every child of a container for the Profile, stored as its
- * client pref. The change shows at once and is undone when the write fails and
- * no newer write for that container followed; resolves false on failure.
+ * client pref. The change shows at once. When the latest write for that
+ * container fails, the guard returns to the last value the server stored;
+ * resolves false on failure.
  */
 export async function setContainerRevealed(containerID: string, on: boolean): Promise<boolean> {
   const before = snapshot;
   const key = `${before.identity ?? ""}\n${containerID}`;
-  const mine = ++writeSeq;
-  latestWrite.set(key, mine);
+  if (!writeTail.has(key)) confirmed.set(key, before.containers.has(containerID));
   emit(withContainer(snapshot, containerID, on));
+  const write = (writeTail.get(key) ?? Promise.resolve()).then(() =>
+    setClientPref(containerPrefKey(containerID), encodeBool(on)),
+  );
+  const tail = write.then(
+    () => undefined,
+    () => undefined,
+  );
+  writeTail.set(key, tail);
   try {
-    await setClientPref(containerPrefKey(containerID), encodeBool(on));
+    await write;
+    confirmed.set(key, on);
     return true;
   } catch {
-    if (latestWrite.get(key) === mine && snapshot.identity === before.identity) {
-      emit(withContainer(snapshot, containerID, before.containers.has(containerID)));
+    if (writeTail.get(key) === tail && snapshot.identity === before.identity) {
+      emit(withContainer(snapshot, containerID, confirmed.get(key) ?? false));
     }
     return false;
   } finally {
-    if (latestWrite.get(key) === mine) latestWrite.delete(key);
+    if (writeTail.get(key) === tail) {
+      writeTail.delete(key);
+      confirmed.delete(key);
+    }
   }
 }
 
@@ -267,6 +287,7 @@ export function applySpoilerPref(identity: string | null, key: string, value: st
 export function resetSpoilerGuardForTest() {
   loading = null;
   generation += 1;
-  latestWrite.clear();
+  writeTail.clear();
+  confirmed.clear();
   emit(EMPTY);
 }

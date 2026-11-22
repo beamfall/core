@@ -9,6 +9,7 @@ import {
   resetSpoilerGuardForTest,
   revealItem,
   setContainerRevealed,
+  sharedGuardContainer,
   toggleItemReveal,
   useSpoilerGuard,
 } from "./spoilerGuard";
@@ -143,24 +144,48 @@ describe("useSpoilerGuard (CORE-3057)", () => {
     expect(result.current.state(unplayed, "s1")).toBe("hidden");
   });
 
-  it("lets only the latest container write undo itself", async () => {
-    const { result } = await loaded();
-    let failFirst: (error: Error) => void = () => {};
-    vi.mocked(setClientPref)
-      .mockReturnValueOnce(new Promise((_, reject) => (failFirst = reject)))
-      .mockResolvedValueOnce(undefined as never);
-    let first: Promise<boolean> = Promise.resolve(true);
+  // Show then Hide before either save settles; writes run in order.
+  async function showThenHide(first: () => Promise<never>, second: () => Promise<never>) {
+    vi.mocked(setClientPref).mockImplementationOnce(first).mockImplementationOnce(second);
+    let writes: Promise<boolean[]> = Promise.resolve([]);
     act(() => {
-      first = setContainerRevealed("s1", true);
+      writes = Promise.all([setContainerRevealed("s1", true), setContainerRevealed("s1", false)]);
     });
+    let results: boolean[] = [];
     await act(async () => {
-      await setContainerRevealed("s1", false);
+      results = await writes;
     });
-    await act(async () => {
-      failFirst(new Error("offline"));
-      await first;
-    });
+    return results;
+  }
+  const ok = async () => undefined as never;
+  const offline = async (): Promise<never> => {
+    throw new Error("offline");
+  };
+
+  it("keeps the latest choice when an older container write fails", async () => {
+    const { result } = await loaded();
+    expect(await showThenHide(offline, ok)).toEqual([false, true]);
     expect(result.current.state(unplayed, "s1")).toBe("hidden");
+  });
+
+  it("returns to the stored value when every overlapping write fails", async () => {
+    const { result } = await loaded();
+    await showThenHide(offline, offline);
+    expect(result.current.state(unplayed, "s1")).toBe("hidden");
+  });
+
+  it("returns to the value an earlier write stored when the latest fails", async () => {
+    const { result } = await loaded();
+    await showThenHide(ok, offline);
+    expect(result.current.state(unplayed, "s1")).toBe("container");
+  });
+
+  it("offers one container toggle only when every candidate shares a container", () => {
+    const a = { ...unplayed, id: "a", container: { id: "showA", title: "A" } };
+    const b = { ...unplayed, id: "b", container: { id: "showB", title: "B" } };
+    expect(sharedGuardContainer([a, { ...a, id: "a2" }], "page")).toBe("showA");
+    expect(sharedGuardContainer([a, b], "page")).toBeUndefined();
+    expect(sharedGuardContainer([unplayed], "page")).toBe("page");
   });
 
   it("drops another identity's prefs and session reveals", async () => {

@@ -11,9 +11,9 @@ import { itemRuntimeSeconds, rowOrdinals } from "../lib/containerPage";
 import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
 import {
-  firstGuardedContainer,
   guardContainerOf,
   revealItem,
+  sharedGuardContainer,
   useSpoilerGuard,
 } from "../lib/spoilerGuard";
 import { runtimeParts, serverDurationSummary } from "../lib/viewerFields";
@@ -49,7 +49,7 @@ export function ContainerMediaRows({
   const media = useMemo(() => items.filter((item) => item.kind === "media"), [items]);
   const ordinals = useMemo(() => rowOrdinals(media, locale), [media, locale]);
   const queue = useMemo(() => playQueueOf(media), [media]);
-  const guardKey = useMemo(() => firstGuardedContainer(media, containerID), [media, containerID]);
+  const guardKey = useMemo(() => sharedGuardContainer(media, containerID), [media, containerID]);
   const spoiler = useSpoilerGuard(guardKey !== undefined);
   if (media.length === 0) return null;
 

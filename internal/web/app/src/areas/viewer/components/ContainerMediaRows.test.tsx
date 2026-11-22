@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchClientPrefs, setClientPref } from "@/lib/graphql";
@@ -193,7 +193,7 @@ describe("ContainerMediaRows spoiler guard (CORE-3057)", () => {
     const toggle = await screen.findByRole("button", { name: "Show spoilers" });
     expect(toggle).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(toggle);
-    expect(setClientPref).toHaveBeenCalledWith(containerPrefKey("s1"), "on");
+    await waitFor(() => expect(setClientPref).toHaveBeenCalledWith(containerPrefKey("s1"), "on"));
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Everyone was a ghost.")).toBeInTheDocument();
     // The per-row toggle leaves with the container reveal.
