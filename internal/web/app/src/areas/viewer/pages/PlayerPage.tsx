@@ -30,10 +30,13 @@ import {
   useMusicQueue,
 } from "../lib/musicQueue";
 import {
+  type AudioQuality,
   adjustmentApplied,
   hasPicture,
   isComposedPictureServed,
+  type PlaybackInfo,
   type PlaybackNext,
+  type PlaybackStream,
   sameAdjustment,
   songSecondsPerStreamSecond,
 } from "../lib/playback";
@@ -66,6 +69,7 @@ import { KaraokeControls } from "../player/KaraokeControls";
 import { MiniPlayer } from "../player/MiniPlayer";
 import { NowPlayingDetails, type UpNextItem } from "../player/NowPlayingDetails";
 import {
+  DEFAULT_PLAY_MODES,
   modeNeighbours,
   modesReorder,
   nextRepeat,
@@ -268,7 +272,7 @@ function FeaturePlayer({
       return next;
     });
   }, []);
-  const reorder = modesReorder(playModes);
+  const modesReorderQueue = modesReorder(playModes);
   const queueRoute = useMemo(
     () => ({ mediaId, queueProfile, identity, epoch, revealed, profileID }),
     [mediaId, queueProfile, identity, epoch, revealed, profileID],
@@ -322,9 +326,13 @@ function FeaturePlayer({
     ? "audio"
     : classedQueue?.find((item) => item.id === mediaId)?.mediaClass;
   // Shuffle and repeat all choose the next item, so the server mints that one.
+  // They are audio controls: a video queue keeps its own order.
+  const reorder = modesReorderQueue && entryClass === "audio";
   const declaredNextID = serverQueueRun
-    ? ((reorder ? modeNeighbours(serverItems, mediaId, playModes) : serverNeighbours).next?.id ??
-      "")
+    ? ((reorder
+        ? modeNeighbours(musicQueue?.rows, mediaId, playModes, playableMusic)
+        : serverNeighbours
+      ).next?.id ?? "")
     : classedQueue
       ? (() => {
           const classQueue = queueOfClass(classedQueue, entryClass, mediaId || "");
@@ -404,11 +412,13 @@ function FeaturePlayer({
     [classedQueue, playingClass, mediaId],
   );
   const queue = serverQueueRun ? serverItems : catalogQueue;
-  const { previous: previousInQueue, next: nextInQueue } = reorder
-    ? modeNeighbours(queue, mediaId, playModes)
-    : serverQueueRun
+  const { previous: previousInQueue, next: nextInQueue } = !reorder
+    ? serverQueueRun
       ? serverNeighbours
-      : queueNeighbours(catalogQueue, mediaId);
+      : queueNeighbours(catalogQueue, mediaId)
+    : serverQueueRun
+      ? modeNeighbours(musicQueue?.rows, mediaId, playModes, playableMusic)
+      : modeNeighbours(catalogQueue, mediaId, playModes);
   const info = state.info;
   const infoIsCurrent = !!state.info && state.mediaID === mediaId;
   const mediaIdRef = useRef(mediaId);
@@ -619,29 +629,36 @@ function FeaturePlayer({
   // (CORE-1732): playback-info is not asked again when a learned class changes
   // the declared next item, so a card queue's issuance of another class stays
   // on the info document after the queue dropped it.
+  // An audio card queue's issuance counts only while it is still the queue's
+  // successor: playback-info is not asked again when shuffle or repeat changes
+  // that item.
   const reportedNext = state.info?.next ?? undefined;
-  const issuedNext = serverQueueRun
-    ? state.mediaID === mediaId && reportedNext?.mediaID === nextInQueue?.id
-      ? reportedNext
-      : undefined
-    : admissibleNext(reportedNext, catalogQueue, playingClass, learnedClasses);
+  const issuedNext =
+    serverQueueRun || (catalogQueue && playingClass === "audio")
+      ? state.mediaID === mediaId && reportedNext?.mediaID === nextInQueue?.id
+        ? reportedNext
+        : undefined
+      : admissibleNext(reportedNext, catalogQueue, playingClass, learnedClasses);
   // Now Playing's Up Next (CORE-1637): the next items of the queue driving
   // playback in play order, else the server's chain of next issuances.
   const upNextItems = useMemo<UpNextItem[]>(() => {
-    if (queue?.length) return upcomingItems(queue, mediaId, playModes, 3);
+    if (serverQueueRun) {
+      return upcomingItems(
+        musicQueue?.rows,
+        mediaId,
+        reorder ? playModes : DEFAULT_PLAY_MODES,
+        3,
+        playableMusic,
+      );
+    }
+    if (queue?.length)
+      return upcomingItems(queue, mediaId, reorder ? playModes : DEFAULT_PLAY_MODES, 3);
     const items: UpNextItem[] = [];
     for (let next = issuedNext; next && items.length < 3; next = next.next ?? undefined) {
       items.push({ id: next.mediaID, title: next.title ?? "" });
     }
     return items;
-  }, [queue, mediaId, playModes, issuedNext]);
-  const playUpNext = useCallback(
-    (item: UpNextItem) =>
-      serverQueueRun
-        ? playItem(item.id, item.title, true, profileID)
-        : playItem(item.id, item.title),
-    [serverQueueRun, playItem, profileID],
-  );
+  }, [serverQueueRun, musicQueue?.rows, queue, mediaId, reorder, playModes, issuedNext]);
   // Decode early, then let the ended read authorize both the sound and the route.
   const confirmGaplessAdvance = useGaplessAudio({
     videoRef,
@@ -659,9 +676,11 @@ function FeaturePlayer({
       (serverQueueRun ? !!issuedNext : !!(nextInQueue || issuedNext?.streams)),
     waitForAdvance: serverQueueRun,
   });
-  type QueueAction = "start" | "next" | "previous" | "ended";
+  // "pick" plays an Up Next item the fresh read still holds as playable.
+  type QueueAction = "start" | "next" | "previous" | "ended" | "pick";
   const [failedAction, setFailedAction] = useState<{
     action: QueueAction;
+    pick?: string;
     route: typeof queueRoute;
   }>();
   const retryAction = failedAction?.route === queueRoute && !epoch?.aborted && failedAction.action;
@@ -679,7 +698,7 @@ function FeaturePlayer({
   }, [queueRoute]);
 
   const runQueueAction = useCallback(
-    async (action: QueueAction) => {
+    async (action: QueueAction, pick?: string) => {
       if (
         !profileID ||
         (action !== "start" && !queueMatchesProfile) ||
@@ -695,7 +714,7 @@ function FeaturePlayer({
       pendingQueueAction.current = null;
       if (rows === undefined || !isCurrent()) return;
       if (rows === null) {
-        setFailedAction({ action, route: queueRoute });
+        setFailedAction({ action, pick, route: queueRoute });
         return;
       }
       setFailedAction(undefined);
@@ -708,12 +727,24 @@ function FeaturePlayer({
           if (queueMatchesProfile) return;
         }
         playItemRef.current(first.id, "", true, profileID);
+      } else if (action === "pick") {
+        const target = rows.find((row) => row.id === pick && playableMusic(row))?.id;
+        if (target) playItemRef.current(target, "", true, profileID);
       } else {
+        // Repeat is resolved against the fresh read too: the item plays again
+        // only while the queue still holds it as playable.
+        const replay = () => {
+          if (rows.some((row) => row.id === mediaId && playableMusic(row))) restart(0);
+        };
+        if (action === "ended" && playModes.repeat === "one") return replay();
         const neighbours = reorder
-          ? modeNeighbours(rows.filter(playableMusic), mediaId, playModes)
+          ? modeNeighbours(rows, mediaId, playModes, playableMusic)
           : musicQueueNeighbours(rows, mediaId);
         const target = (action === "previous" ? neighbours.previous : neighbours.next)?.id;
-        if (!target) return;
+        if (!target) {
+          if (action === "ended" && playModes.repeat === "all") replay();
+          return;
+        }
         if (action === "ended") confirmGaplessAdvance(target);
         playItemRef.current(target, "", true, profileID);
       }
@@ -732,7 +763,12 @@ function FeaturePlayer({
     ],
   );
   const retryMusicQueue = () =>
-    retryAction ? void runQueueAction(retryAction) : void refreshMusicQueue();
+    retryAction ? void runQueueAction(retryAction, failedAction?.pick) : void refreshMusicQueue();
+  const playUpNext = useCallback(
+    (item: UpNextItem) =>
+      serverQueueRun ? void runQueueAction("pick", item.id) : playItem(item.id, item.title),
+    [serverQueueRun, runQueueAction, playItem],
+  );
   const playNext = useMemo(() => {
     if (partyLeads) return undefined;
     if (serverQueueRun) {
@@ -789,8 +825,12 @@ function FeaturePlayer({
   });
   // Repeat one, or repeat all over a single item, plays the item again from
   // the start (CORE-1637); a fresh start keeps progress reporting going.
+  // A server queue resolves repeat in its fresh ended read instead; repeat all
+  // loops only a card queue known to hold this item alone.
   const loopItem =
-    playModes.repeat === "one" || (playModes.repeat === "all" && (queue?.length ?? 0) <= 1);
+    !serverQueueRun &&
+    (playModes.repeat === "one" ||
+      (playModes.repeat === "all" && catalogQueue !== undefined && catalogQueue.length <= 1));
   useLayoutEffect(() => {
     const video = videoRef.current;
     if (!isAudio || !playing || !video || partyLeads) return;
@@ -1135,9 +1175,9 @@ function FeaturePlayer({
                 mediaID={mediaId || ""}
               >
                 <NowPlayingDetails
-                  quality={infoIsCurrent ? state.info?.audioQuality : null}
+                  quality={infoIsCurrent ? activeQuality(state.info, state.stream) : null}
                   upNext={upNextItems}
-                  onPlay={playUpNext}
+                  onPlay={partyLeads ? undefined : playUpNext}
                 />
               </AudioStage>
             )}
@@ -1350,6 +1390,19 @@ function personLine(credits: readonly MediaCredit[]): string {
     .filter((credit) => credit.archetype === "person")
     .map((credit) => credit.title)
     .join(", ");
+}
+
+// The quality badge's facts, with the delivery claim only while the stream
+// playing is the primary one it describes (not a fallback HLS stream).
+function activeQuality(
+  info: PlaybackInfo | null | undefined,
+  stream: PlaybackStream | null,
+): AudioQuality | undefined {
+  const quality = info?.audioQuality;
+  if (!quality) return undefined;
+  return stream && stream.kind === info?.streams?.[0]?.kind
+    ? quality
+    : { ...quality, delivery: "" };
 }
 
 // A card queue keeps to the playing item's class (CORE-1490), so an issued

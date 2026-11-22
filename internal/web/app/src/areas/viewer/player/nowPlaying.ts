@@ -54,39 +54,55 @@ export function playOrder<T extends { id: string }>(
   return anchor ? [anchor, ...rest] : rest;
 }
 
-/** The items before and after `id` under the modes; never `id` itself. */
+/**
+ * The items before and after `id` under the modes; never `id` itself. The
+ * order spans the whole queue, so the playing item keeps its place even when
+ * `playable` rules it out (a row locked mid-play); only the items stepped to
+ * must be playable.
+ */
 export function modeNeighbours<T extends { id: string }>(
   queue: readonly T[] | undefined,
   id: string | undefined,
   modes: PlayModes,
+  playable: (item: T) => boolean = () => true,
 ): { previous?: T; next?: T } {
-  if (!queue || !id) return {};
-  const order = playOrder(queue, modes);
-  const index = order.findIndex((item) => item.id === id);
-  if (index < 0) return {};
-  const wrap = modes.repeat === "all";
-  const previous = order[index - 1] ?? (wrap ? order[order.length - 1] : undefined);
-  const next = order[index + 1] ?? (wrap ? order[0] : undefined);
-  return {
-    ...(previous && previous.id !== id ? { previous } : {}),
-    ...(next && next.id !== id ? { next } : {}),
-  };
+  const previous = stepFrom(queue, id, modes, playable, -1)[0];
+  const next = stepFrom(queue, id, modes, playable, 1)[0];
+  return { ...(previous ? { previous } : {}), ...(next ? { next } : {}) };
 }
 
-/** Up to `count` items that play after `id`, wrapping under repeat all. */
+/** Up to `count` playable items that play after `id`, wrapping under repeat all. */
 export function upcomingItems<T extends { id: string }>(
   queue: readonly T[] | undefined,
   id: string | undefined,
   modes: PlayModes,
   count: number,
+  playable: (item: T) => boolean = () => true,
+): T[] {
+  return stepFrom(queue, id, modes, playable, 1).slice(0, count);
+}
+
+// The playable items from `id` in one direction of the play order, wrapping
+// under repeat all, never `id` itself.
+function stepFrom<T extends { id: string }>(
+  queue: readonly T[] | undefined,
+  id: string | undefined,
+  modes: PlayModes,
+  playable: (item: T) => boolean,
+  direction: 1 | -1,
 ): T[] {
   if (!queue || !id) return [];
   const order = playOrder(queue, modes);
   const index = order.findIndex((item) => item.id === id);
   if (index < 0) return [];
-  const after = order.slice(index + 1);
-  const ahead = modes.repeat === "all" ? [...after, ...order.slice(0, index)] : after;
-  return ahead.slice(0, count);
+  const steps =
+    modes.repeat === "all" ? order.length - 1 : direction > 0 ? order.length - 1 - index : index;
+  const items: T[] = [];
+  for (let step = 1; step <= steps; step++) {
+    const item = order[(index + direction * step + order.length) % order.length]!;
+    if (item.id !== id && playable(item)) items.push(item);
+  }
+  return items;
 }
 
 // A small seeded generator: the same seed gives the same shuffle on every render.
@@ -141,7 +157,8 @@ export interface QualityWords {
 
 /**
  * The quality badge: the source codec, its bit depth and sample rate when the
- * probe recorded them, and whether the stream delivers it unchanged.
+ * probe recorded them, and whether the stream delivers it unchanged (left out
+ * when `delivery` is empty).
  */
 export function audioQualityLabel(quality: AudioQuality, words: QualityWords): string {
   const parts: string[] = [];
@@ -151,7 +168,8 @@ export function audioQualityLabel(quality: AudioQuality, words: QualityWords): s
     quality.sampleRate ? words.rate(Math.round(quality.sampleRate / 10) / 100) : "",
   ].filter(Boolean);
   if (resolution.length) parts.push(resolution.join(" / "));
-  parts.push(quality.delivery === "direct" ? words.direct : words.transcode);
+  // No delivery claim when the caller cannot vouch for it (a fallback stream).
+  if (quality.delivery) parts.push(quality.delivery === "direct" ? words.direct : words.transcode);
   return parts.join(" · ");
 }
 

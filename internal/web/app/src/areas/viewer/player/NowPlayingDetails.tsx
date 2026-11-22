@@ -17,7 +17,8 @@ export function NowPlayingDetails({
 }: {
   quality?: AudioQuality | null;
   upNext: readonly UpNextItem[];
-  onPlay: (item: UpNextItem) => void;
+  /** Absent while a Watch Party leads: the items show but do not play. */
+  onPlay?: (item: UpNextItem) => void;
 }) {
   const t = useT();
   const locale = useDisplayLocale();
@@ -46,13 +47,17 @@ export function NowPlayingDetails({
           <ol>
             {items.map((item) => (
               <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => onPlay(item)}
-                  aria-label={t("nowPlayingPlayItem", { title: item.title })}
-                >
-                  {item.title}
-                </button>
+                {onPlay ? (
+                  <button
+                    type="button"
+                    onClick={() => onPlay(item)}
+                    aria-label={t("nowPlayingPlayItem", { title: item.title })}
+                  >
+                    {item.title}
+                  </button>
+                ) : (
+                  item.title
+                )}
               </li>
             ))}
           </ol>

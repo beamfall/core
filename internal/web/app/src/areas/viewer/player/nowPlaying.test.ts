@@ -34,6 +34,9 @@ describe("audioQualityLabel", () => {
     expect(audioQualityLabel({ codec: "pcm_s24le", delivery: "direct" }, words)).toBe(
       "PCM · Direct",
     );
+    expect(audioQualityLabel({ codec: "flac", bitDepth: 16, delivery: "" }, words)).toBe(
+      "FLAC · 16-bit",
+    );
   });
 });
 
@@ -65,5 +68,17 @@ describe("play modes", () => {
     expect(ids(playOrder(queue, shuffled))).toEqual(order);
     expect(modeNeighbours(queue, "c", shuffled).next?.id).toBe(order[1]);
     expect(ids(upcomingItems(queue, "c", shuffled, 2))).toEqual(order.slice(1, 3));
+  });
+
+  it("keeps a locked playing item's place and steps only to playable items", () => {
+    const locked = new Set(["c", "d"]);
+    const playable = (item: { id: string }) => !locked.has(item.id);
+    expect(modeNeighbours(queue, "c", DEFAULT_PLAY_MODES, playable)).toEqual({
+      previous: { id: "b" },
+      next: { id: "e" },
+    });
+    const all = modes({ repeat: "all" });
+    expect(modeNeighbours(queue, "e", all, playable).next).toEqual({ id: "a" });
+    expect(ids(upcomingItems(queue, "c", all, 4, playable))).toEqual(["e", "a", "b"]);
   });
 });
