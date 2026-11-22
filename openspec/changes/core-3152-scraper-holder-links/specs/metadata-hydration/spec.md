@@ -29,8 +29,9 @@ map SHALL leave the Media's container links as they are.
 ### Requirement: Scraper container cleanup removes only the scraper's own links
 
 The removal of a stale single-holder link SHALL delete only rows the applying scraper wrote from an
-Entity of the map's kind, and SHALL keep every other row, including an operator's link. A map the
-engine skipped because its path names an unknown ordinal SHALL remove nothing.
+Entity of the map's kind, and SHALL keep every other row, including an operator's link. When the
+engine skipped a map because its path names an unknown ordinal, the server SHALL remove nothing
+under that map's kind and relation, even when a sibling map onto them hydrated nothing.
 
 #### Scenario: An operator's link survives
 
@@ -43,6 +44,31 @@ engine skipped because its path names an unknown ordinal SHALL remove nothing.
 - **WHEN** a Media item held by a container Entity is identified again while the map's path names an
   ordinal the parser does not know
 - **THEN** the Media item is still held by that container Entity
+
+#### Scenario: A skipped map protects the link from an empty sibling map
+
+- **WHEN** a Media item held by a container Entity is identified again while one map's path names an
+  ordinal the parser does not know and a second map onto the same relation hydrates nothing
+- **THEN** the Media item is still held by that container Entity
+
+### Requirement: A scraper titles only the container it linked
+
+Linking a Media item to an existing container Entity SHALL keep that Entity's stored title; a new
+container Entity whose document gives no name SHALL take the provider id as its title. A container
+EntityMap SHALL apply its title, fields and artwork only to a container Entity the same lookup
+linked through the scraper's single-holder map, when the scraper declares one for that kind.
+
+#### Scenario: A container object without a name keeps the title
+
+- **WHEN** a Media item held by a titled container Entity is identified again through a lookup whose
+  container object has an id but no name
+- **THEN** the container Entity keeps its title
+
+#### Scenario: A container object without an id leaves an operator's container alone
+
+- **WHEN** an operator linked a Media item to a container Entity and the item is identified through
+  a lookup whose container object has a name but no id
+- **THEN** the container Entity keeps its title
 
 ### Requirement: Scraper-declared container members are ordered by year
 

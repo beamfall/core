@@ -26,15 +26,20 @@ Two gaps keep such a container wrong after the first identification:
   rows under that relation are removed, but only rows that scraper wrote from an Entity of the
   map's kind. An operator's link, another scraper's link and links from other kinds stay. A map the
   engine skipped (its path names a `{sequence}` or `{index}` the parser does not know) removes
-  nothing: a skip says nothing about the document.
+  nothing under its kind and relation, even when a sibling map onto them resolved nothing: a skip
+  says nothing about the document.
 - Such a link without an ordinal from its map takes the Media's stored year, after field precedence,
   as its sort order, so the container's members list (and play next) in release-year order and a
   manual year outranks the scraper's. Members from one year keep the store's title order. Links
   with a map ordinal keep it.
 - A plugin keys the container by the provider's container id, not its name: the link map's
   `NamePath` reads the id and the container map's existing `TitlePath` titles the Entity. A renamed
-  container stays one Entity and two containers sharing a name stay two. This needs no core change:
-  the Entity is keyed by (Library, kind, name) and the name is the id.
+  container stays one Entity and two containers sharing a name stay two. The Entity is keyed by
+  (Library, kind, name) and the name is the id. A link to an existing holder keeps its stored title
+  (a document with an id but no name does not retitle it to the id; a new holder without a name
+  falls back to the id), and the container map applies its title, fields and artwork only to a
+  holder this lookup linked, so a document with a container name but no id leaves an operator's
+  holder alone.
 - The store gains `RemoveWrittenMediaRelations(mediaID, writer, relations)` and the scraper engine
   reports the entity maps it skipped (`scrape.Result.SkippedEntityMaps`). Identification removes
   links through an optional seam, so a store without it keeps today's behaviour.
@@ -45,7 +50,8 @@ Two gaps keep such a container wrong after the first identification:
 migration 0129, encrypted library 0012), with no index: only cleanup reads it, by target Media
 through the existing index. An upsert sets the writer it is given, so an operator re-linking a row
 takes it over. Rows from before the migration and rows an Entity merge copies have no writer, so
-automated cleanup never removes them: the conservative side. A scraper's move to another container
+automated cleanup never removes them: the conservative side. The merge journal records each row's
+writer and undo restores it; the journal is JSON, so this needs no migration. A scraper's move to another container
 still replaces an operator's single-holder link through the relation's single cardinality, as it
 did before; an operator relation lock is CORE-3131.
 
