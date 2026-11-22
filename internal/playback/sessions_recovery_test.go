@@ -416,3 +416,52 @@ func TestStoppedEncoderWaiterNeverStopsANewerSeek(t *testing.T) {
 		t.Fatalf("starts = %v, want [0 20]: the stale request must not restart the encoder", starts)
 	}
 }
+
+// TestStoppedInitWaiterStartsItsOwnWhenASeekEndsWithoutInit covers init.mp4 in
+// CORE-1256: a seek past the real end of a truncated source stops the encoder
+// an init request waits on, and its replacement ends without writing init.mp4.
+// The init request starts its own encoder instead of failing.
+func TestStoppedInitWaiterStartsItsOwnWhenASeekEndsWithoutInit(t *testing.T) {
+	t.Parallel()
+	const window = 3 * time.Second
+	transcoder := &scriptedTranscoder{cmds: make(chan *exec.Cmd, 4)}
+	transcoder.start = func(n int, dir string, startSegment int) []string {
+		switch n {
+		case 0:
+			return []string{"sleep", "60"} // stopped before it writes anything
+		case 1:
+			writeArtifact(t, dir, fmt.Sprintf("seg%05d.m4s", startSegment), mediaSegment())
+			return []string{"true"} // ends without writing init.mp4
+		default:
+			writeArtifact(t, dir, "init.mp4", []byte("init"))
+			return []string{"sleep", "60"}
+		}
+	}
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
+	sessions.waitWindow = window
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-init", MediaID: "media-init"}
+
+	done := make(chan error, 1)
+	begin := time.Now()
+	go func() {
+		_, err := filePath720(sessions, key, "720p/init.mp4")
+		done <- err
+	}()
+	<-transcoder.cmds
+	if _, err := filePath720(sessions, key, "720p/seg00020.m4s"); err != nil {
+		t.Fatalf("seg20: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("init.mp4 after its encoder was replaced: %v", err)
+	}
+	if elapsed := time.Since(begin); elapsed >= window {
+		t.Fatalf("init.mp4 took %v, want well inside its %v budget", elapsed, window)
+	}
+	transcoder.mu.Lock()
+	starts := append([]int(nil), transcoder.starts...)
+	transcoder.mu.Unlock()
+	if len(starts) != 3 || starts[1] != 20 {
+		t.Fatalf("starts = %v, want [0 20 x]", starts)
+	}
+}

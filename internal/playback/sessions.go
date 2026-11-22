@@ -1256,7 +1256,7 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 		if !writes || run.outcome == exitStopped {
 			// A run that was never going to write path, or that the server
 			// stopped, says nothing about path: follow the session's next run.
-			if run, writes, err = s.followRung(ctx, key, session, rung, segment, isSegment, path); err != nil {
+			if run, writes, err = s.followRung(ctx, key, session, rung, segment, path); err != nil {
 				return artifactObservation{}, err
 			}
 			continue
@@ -1286,15 +1286,16 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 
 // followRung picks the run a request waits on once the run it watched stopped
 // (CORE-1256). A live run of rung that started at or before segment writes
-// path, so the request follows it. A live run that will not write path (it
-// encodes another rung, or a seek started it past segment) is only watched: a
-// request never stops an encoder another request started, so a stale request
+// path, so the request follows it; init.mp4 counts as segment 0, since a run
+// that started later can end before writing it. A live run that will not
+// write path (it encodes another rung, or a seek started it past segment) is
+// only watched: a request never stops an encoder another request started, so a stale request
 // cannot take the encoder from a newer seek and two requests cannot trade it
 // back and forth. Once no encoder is live, the request starts one at segment
 // instead of waiting out its budget for a file nobody will write. writes
 // reports whether the returned run is expected to write path; a nil run with
 // writes set means path is already ready.
-func (s *Sessions) followRung(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string) (run *encoderRun, writes bool, err error) {
+func (s *Sessions) followRung(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, path string) (run *encoderRun, writes bool, err error) {
 	for {
 		if s.rungArtifactReady(session, path) {
 			return nil, true, nil
@@ -1313,7 +1314,7 @@ func (s *Sessions) followRung(ctx context.Context, key SessionKey, session *hlsS
 		}
 		if session.proc != nil {
 			run = session.run
-			writes = session.currentRung == rung.ID && (!isSegment || session.baseSegment <= segment)
+			writes = session.currentRung == rung.ID && session.baseSegment <= max(segment, 0)
 			s.mu.Unlock()
 			return run, writes, nil
 		}
