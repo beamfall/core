@@ -95,6 +95,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"ExtensionRequestByID":                    {},
 	"FolderTree":                              {},
 	"GrantedMediaIDsForProfile":               {},
+	"GrantedSessions":                         {},
 	"HasHiddenRestrictedLibraries":            {},
 	"HealthDuplicateGroups":                   {},
 	"ImportManagedFile":                       {},
