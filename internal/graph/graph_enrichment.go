@@ -294,6 +294,7 @@ func (h *Handler) describeSearchCards(ctx context.Context, filter store.LibraryF
 		return err
 	}
 	h.annotateScoreLabels(ctx, cards)
+	h.annotatePlaysAlone(ctx, cards)
 	for j, card := range cards {
 		i := at[j]
 		items[i].Container = h.sourceItemContainer(card)
@@ -308,6 +309,7 @@ func (h *Handler) describeSearchCards(ctx context.Context, filter store.LibraryF
 		items[i].Certification, items[i].AudienceScore = card.Certification, card.AudienceScore
 		items[i].AudienceScoreLabel = plugin.LocaleString(card.AudienceScoreLabel)
 		items[i].AudienceScoreVotes = card.AudienceScoreVotes
+		items[i].PlaysAlone = card.PlaysAlone
 	}
 	return nil
 }

@@ -390,6 +390,41 @@ describe("MediaDetailPage", () => {
     });
   });
 
+  // CORE-3147: an item whose plugin declares it plays alone (a standalone book,
+  // or one in a series without a sequence) sends a one-item queue; another
+  // loaded item forwards the queue its card carried.
+  it.each([
+    { playsAlone: true, queue: [{ id: "m1", title: "Server title" }] },
+    {
+      playsAlone: false,
+      queue: [
+        { id: "m1", title: "Card title" },
+        { id: "m2", title: "Next" },
+      ],
+    },
+  ])(
+    "sends the queue for a loaded item (playsAlone=$playsAlone)",
+    async ({ playsAlone, queue }) => {
+      vi.mocked(fetchMedia).mockResolvedValue({ ...media, playsAlone });
+      renderAt([
+        {
+          pathname: "/media/m1",
+          state: {
+            ...mediaLinkState(card, identity),
+            queue: [
+              { id: "m1", title: "Card title" },
+              { id: "m2", title: "Next" },
+            ],
+            queueIdentity: identity,
+          },
+        },
+      ]);
+      await act(async () => {});
+      fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
+      expect(watchState()).toMatchObject({ queue, queueIdentity: identity });
+    },
+  );
+
   // CORE-3013: a book in a sequenced series offers the next one once played,
   // never queues it, and Mark played offers it at once.
   it("offers Next in series once the book is marked played, and plays the book alone", async () => {

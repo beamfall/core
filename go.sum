@@ -1,5 +1,5 @@
-github.com/beamfall/plugin-audiobook v0.1.19 h1:rO2o6ZKfZVmiI6NoYUhfRfpXmR6lqhDnAql+QLtWoOE=
-github.com/beamfall/plugin-audiobook v0.1.19/go.mod h1:25evGZVbjQlcC8aZCKB1FQJLQWG40NiEV9tAD6MqJiY=
+github.com/beamfall/plugin-audiobook v0.1.20 h1:sXBbn4PxKam9Ib3grB6+2My9LKZlm/RaPo6SPTHM8bA=
+github.com/beamfall/plugin-audiobook v0.1.20/go.mod h1:5/6na0RUlAycJx4q5r14WobNHfVMFxYoive4FR++ckk=
 github.com/beamfall/plugin-enrichment v0.1.0 h1:3OTQGqQFauFhjTJefpPCX7C4UNZheCLiw2+2kJoKDIw=
 github.com/beamfall/plugin-enrichment v0.1.0/go.mod h1:ZqxoNHMHG0mzZHyP7q3oVjqI/ct6QkMaYnDzq++YlIc=
 github.com/beamfall/plugin-familyarchive v0.1.18 h1:rTgmSIKjit/vhnZ4lwEFkd89WFywEI4LTdNqVRD1C7s=
@@ -14,8 +14,8 @@ github.com/beamfall/plugin-photos v0.1.15 h1:q0lzHYiXAUH0PVMS6l1csbYhP7mopYJBipt
 github.com/beamfall/plugin-photos v0.1.15/go.mod h1:hbfOyuH/5W6DE2wAiW010MACKSm+necWdx7IuCPV8pU=
 github.com/beamfall/plugin-podcasts v0.1.15 h1:iypBPtw9oIYy/3MfCsGoSFeqW1F2jgJKpzeP79PYJ+c=
 github.com/beamfall/plugin-podcasts v0.1.15/go.mod h1:dQtplBQROEPZZooxhPtNoIFU5FAmjl1iXsJ2+OM+GWo=
-github.com/beamfall/plugin-sdk v0.4.10 h1:mWYHZxCIub8vXsNRw4MYGVhqwBHZBRwJhTo0Vz0m4LE=
-github.com/beamfall/plugin-sdk v0.4.10/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
+github.com/beamfall/plugin-sdk v0.4.11 h1:goG4XWqUDQQrSveiUzvHr/TIoiLHVI2Q4J2IuALS8oA=
+github.com/beamfall/plugin-sdk v0.4.11/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/brutella/dnssd v1.2.14 h1:qLpTnRTm5peo2jA30hqMIbCuWn8x3sFg3e9o9ODOobw=

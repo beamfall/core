@@ -73,7 +73,7 @@ import { mediaPath } from "../lib/mediaAddress";
 import { seeAllTargetFor } from "../lib/seeall";
 import { audioQueue, containerTrackRows, isAudioListing, playState } from "../lib/trackList";
 import { fieldDisplayValue, formatScore } from "../lib/viewerFields";
-import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
+import { listsPlaysAlone, type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import "./media-detail.css";
 import "./entity-detail.css";
@@ -184,7 +184,9 @@ export function EntityPage() {
   // keeps the server's order and hands the player no queue: each Media is
   // started on its own, so finishing one never starts the next (ADR-0055 §2.4).
   const probe = useRelationProbe(entity, listedItems ?? NO_ITEMS);
-  const relationOrdered = probe.sequenced || probe.roles !== null;
+  // Media whose plugin declares it plays alone is started on its own too (CORE-3147).
+  const relationOrdered =
+    probe.sequenced || probe.roles !== null || listsPlaysAlone(fallback ?? NO_ITEMS);
   const trackOrder = useMemo(
     () =>
       relationOrdered

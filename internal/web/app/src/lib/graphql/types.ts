@@ -159,6 +159,11 @@ export interface SourceItem {
   audienceScore?: number;
   /** The vote count behind that score; absent when unknown (CORE-2415). */
   audienceScoreVotes?: number;
+  /**
+   * The item's plugin declares that it plays on its own: a player never
+   * queues its siblings after it (CORE-3147). Absent means it may queue.
+   */
+  playsAlone?: boolean;
   /** Who made an audio Media item: its person-archetype Entities' titles (CORE-2362). */
   byline?: string[];
   /**
@@ -314,6 +319,8 @@ export interface GenericMediaInfo {
   durationSeconds?: number;
   /** The Media class ("audio", "video", …); omitted when unknown. */
   mediaClass?: string;
+  /** Plays on its own: no sibling queue follows it (CORE-3147); media(id) only. */
+  playsAlone?: boolean;
   /**
    * The owning Library, for the readable address (CORE-2329); only the
    * media(id) read fills it, and a server that predates it omits it.

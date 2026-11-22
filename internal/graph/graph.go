@@ -167,6 +167,10 @@ type SourceItem struct {
 	// for a Library whose plugin declares none (CORE-2415).
 	AudienceScoreLabel plugin.LocaleString `json:"audienceScoreLabel,omitempty"`
 	AudienceScoreVotes int                 `json:"audienceScoreVotes,omitempty"`
+	// PlaysAlone is true when the item's Library plugin declares that its
+	// Media play alone: a client starts it with a one-item queue and never
+	// auto-advances into or out of it. Absent otherwise (CORE-3147).
+	PlaysAlone bool `json:"playsAlone,omitempty"`
 	// Byline names the person-archetype Entities linked to audio Media or
 	// audio containers, in link order, so a card credits them under its title
 	// (CORE-2362). Absent for every other item.
@@ -1160,6 +1164,7 @@ func (h *Handler) annotateCardsForProfile(ctx context.Context, profileID store.P
 		return err
 	}
 	h.annotateScoreLabels(ctx, items)
+	h.annotatePlaysAlone(ctx, items)
 	return h.store.AnnotateEngagement(ctx, profileID, filter, items, h.engagementContainers)
 }
 
@@ -1273,6 +1278,7 @@ func basicSourceItem(item store.SourceItem, revealed bool) SourceItem {
 		AudienceScore:      item.AudienceScore,
 		AudienceScoreLabel: plugin.LocaleString(item.AudienceScoreLabel),
 		AudienceScoreVotes: item.AudienceScoreVotes,
+		PlaysAlone:         item.PlaysAlone,
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
@@ -5107,6 +5113,9 @@ type MediaInfo struct {
 	// read.
 	AudienceScoreLabel plugin.LocaleString `json:"audienceScoreLabel,omitempty"`
 	AudienceScoreVotes int                 `json:"audienceScoreVotes,omitempty"`
+	// PlaysAlone is as on SourceItem (CORE-3147); filled only by the
+	// media(id) read.
+	PlaysAlone bool `json:"playsAlone,omitempty"`
 	// Sequence and Index are the item's stored ordinals, as on SourceItem;
 	// Headline renders the plugin's MediaSubtitle segments that name no
 	// ordinal (the item's own title when stored), ClassLabel is the plugin's
@@ -5177,6 +5186,7 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 		}
 	}
 	info.VideoWidth, info.VideoHeight = media.VideoWidth, media.VideoHeight
+	info.PlaysAlone = h.libraryPlaysAlone(ctx, media.LibraryID)
 	h.describeOrderedMedia(ctx, media, &info)
 	return info, nil
 }

@@ -237,10 +237,11 @@ export function MediaDetailPage() {
 
   function watch(fromStart: boolean) {
     // Forward the queue the opening card carried (CORE-1143), still bound to
-    // the viewer identity it was listed for. A sequenced book plays alone, and
-    // so does any item whose credits have not loaded yet, since they decide
-    // whether it is one; the one-item queue also ends an earlier Play all.
-    const alone = series || !media;
+    // the viewer identity it was listed for. An item whose plugin declares it
+    // plays alone (CORE-3147) or a sequenced book plays alone, and so does any
+    // item whose detail has not loaded yet, since it decides whether it is
+    // one; the one-item queue also ends an earlier Play all.
+    const alone = !media || !!media.playsAlone || !!series;
     const { queue } = alone
       ? { queue: [{ id: previewID, title }] }
       : readPlayerNavState(location.state, identity);

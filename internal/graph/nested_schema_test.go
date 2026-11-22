@@ -146,7 +146,8 @@ func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 // told apart, ordered and timed, and `certification` and `audienceScore` by
 // CORE-2398 so a card can state its rating, and `audienceScoreLabel` and
 // `audienceScoreVotes` by CORE-2415 so it can name the score's source, and
-// `container` by CORE-2524 so it can name and group by what holds it. Any
+// `container` by CORE-2524 so it can name and group by what holds it, and
+// `playsAlone` by CORE-3147 so a client never queues past it. Any
 // further field must be added
 // the same way, alongside the golden.
 func TestNestedSchemaSourceItemShape(t *testing.T) {
@@ -154,7 +155,7 @@ func TestNestedSchemaSourceItemShape(t *testing.T) {
 	if si.Kind != "object" {
 		t.Fatalf("sourceItems kind = %q, want object", si.Kind)
 	}
-	want := []string{"artwork", "artworkSlots", "audienceScore", "audienceScoreLabel", "audienceScoreVotes", "byline", "certification", "container", "durationSeconds", "engagement", "id", "index", "kind", "libraryID", "locked", "mediaClass", "muted", "restricted", "sequence", "subtitle", "summary", "title", "year"}
+	want := []string{"artwork", "artworkSlots", "audienceScore", "audienceScoreLabel", "audienceScoreVotes", "byline", "certification", "container", "durationSeconds", "engagement", "id", "index", "kind", "libraryID", "locked", "mediaClass", "muted", "playsAlone", "restricted", "sequence", "subtitle", "summary", "title", "year"}
 	if got := childNames(si.Children); !slices.Equal(got, want) {
 		t.Fatalf("sourceItems fields = %v, want %v", got, want)
 	}
@@ -191,6 +192,7 @@ func TestNestedSchemaSourceItemOptionalFields(t *testing.T) {
 		"libraryID":          true,
 		"locked":             true,
 		"muted":              true,
+		"playsAlone":         true,
 		"restricted":         true,
 		"summary":            true,
 		"title":              false,
