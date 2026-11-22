@@ -608,6 +608,8 @@ function FeaturePlayer({
   });
   // A party member's Up Next and autoplay defer to the party (CORE-1766).
   const partyLeads = watchPartyDefersUpNext(watchParty.party);
+  const partyLeadsRef = useRef(partyLeads);
+  partyLeadsRef.current = partyLeads;
 
   // Up Next auto-advance: the server-issued next Media (a queue's next item
   // when one was declared, else the server's own next-item pick).
@@ -728,8 +730,9 @@ function FeaturePlayer({
         }
         playItemRef.current(first.id, "", true, profileID);
       } else if (action === "pick") {
+        // A Watch Party that took the lead during the read keeps it.
         const target = rows.find((row) => row.id === pick && playableMusic(row))?.id;
-        if (target) playItemRef.current(target, "", true, profileID);
+        if (target && !partyLeadsRef.current) playItemRef.current(target, "", true, profileID);
       } else {
         // Repeat is resolved against the fresh read too: the item plays again
         // only while the queue still holds it as playable.
@@ -836,8 +839,9 @@ function FeaturePlayer({
     if (!isAudio || !playing || !video || partyLeads) return;
     if (!serverQueueRun && !playNext && !loopItem) return;
     const advance = () => {
-      // Let the explicit start finish its read before changing tracks.
-      if (pendingQueueAction.current?.action === "start") {
+      // Let an explicit start or Up Next pick finish its read before changing tracks.
+      const pending = pendingQueueAction.current?.action;
+      if (pending === "start" || pending === "pick") {
         if (!serverQueueRun) handBack(video);
         return;
       }
