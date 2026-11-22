@@ -6,7 +6,7 @@ require (
 	github.com/beamfall/plugin-audiobook v0.1.17
 	github.com/beamfall/plugin-enrichment v0.1.0
 	github.com/beamfall/plugin-familyarchive v0.1.18
-	github.com/beamfall/plugin-filmtv v0.1.26
+	github.com/beamfall/plugin-filmtv v0.1.27
 	github.com/beamfall/plugin-karaoke v0.1.11
 	github.com/beamfall/plugin-music v0.1.19
 	github.com/beamfall/plugin-photos v0.1.15

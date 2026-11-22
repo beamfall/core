@@ -30,7 +30,8 @@ const ErrOperatorRelationUndoConflict = ValidationError("entity merge undo would
 
 // entityRelationRow is one entity_relation row captured for the merge journal:
 // every column, so undo re-inserts it verbatim. Exactly one of ToEntityID /
-// ToMediaID is non-empty (the table's CHECK); SortOrder is nil when unordered.
+// ToMediaID is non-empty (the table's CHECK); SortOrder is nil when unordered
+// and Writer is nil for an operator's or unattributed row (CORE-3152).
 type entityRelationRow struct {
 	FromEntityID   EntityID `json:"from"`
 	Relation       string   `json:"rel"`
@@ -38,6 +39,7 @@ type entityRelationRow struct {
 	ToMediaID      MediaID  `json:"toMedia,omitempty"`
 	Attributes     *string  `json:"attrs,omitempty"`
 	SortOrder      *int64   `json:"sort,omitempty"`
+	Writer         *string  `json:"writer,omitempty"`
 	LockActivityID *string  `json:"lockActivityID,omitempty"`
 	LockedAtMS     *int64   `json:"lockedAtMS,omitempty"`
 	LockOne        bool     `json:"lockOne,omitempty"`
@@ -325,7 +327,7 @@ func entityLibraryVisibleTx(ctx context.Context, tx *sql.Tx, id EntityID, filter
 // in either role (from or to), inside a transaction, for the merge journal.
 func entityRelationRowsTx(ctx context.Context, tx *sql.Tx, id EntityID) ([]entityRelationRow, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT from_entity_id, relation, to_entity_id, to_media_id, attributes, sort_order,
+		SELECT from_entity_id, relation, to_entity_id, to_media_id, attributes, sort_order, writer,
 		       operator_lock_activity_id, operator_locked_at_ms, operator_lock_one
 		FROM entity_relation
 		WHERE from_entity_id = ? OR to_entity_id = ?
@@ -340,7 +342,8 @@ func entityRelationRowsTx(ctx context.Context, tx *sql.Tx, id EntityID) ([]entit
 		var toEntity, attrs sql.NullString
 		var toMedia sql.NullString
 		var sortOrder sql.NullInt64
-		if err := rows.Scan(&row.FromEntityID, &row.Relation, &toEntity, &toMedia, &attrs, &sortOrder,
+		var writer sql.NullString
+		if err := rows.Scan(&row.FromEntityID, &row.Relation, &toEntity, &toMedia, &attrs, &sortOrder, &writer,
 			&row.LockActivityID, &row.LockedAtMS, &row.LockOne); err != nil {
 			return nil, err
 		}
@@ -357,6 +360,10 @@ func entityRelationRowsTx(ctx context.Context, tx *sql.Tx, id EntityID) ([]entit
 		if sortOrder.Valid {
 			value := sortOrder.Int64
 			row.SortOrder = &value
+		}
+		if writer.Valid {
+			value := writer.String
+			row.Writer = &value
 		}
 		out = append(out, row)
 	}
@@ -474,16 +481,16 @@ func undoMergeEntityItemTx(ctx context.Context, tx *sql.Tx, s *Store, item opBat
 func insertMergedEntityRelationTx(ctx context.Context, tx *sql.Tx, row entityRelationRow) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO entity_relation(from_entity_id, relation, to_entity_id, to_media_id, attributes,
-			sort_order, operator_lock_activity_id, operator_locked_at_ms, operator_lock_one)
-		VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?)
+			sort_order, writer, operator_lock_activity_id, operator_locked_at_ms, operator_lock_one)
+		VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(from_entity_id, relation, to_media_id) WHERE to_media_id IS NOT NULL
-		DO UPDATE SET attributes = excluded.attributes, sort_order = excluded.sort_order,
+		DO UPDATE SET attributes = excluded.attributes, sort_order = excluded.sort_order, writer = excluded.writer,
 			operator_lock_activity_id = excluded.operator_lock_activity_id,
 			operator_locked_at_ms = excluded.operator_locked_at_ms, operator_lock_one = excluded.operator_lock_one
 		WHERE entity_relation.operator_locked_at_ms IS NULL AND excluded.operator_locked_at_ms IS NOT NULL
 		ON CONFLICT DO NOTHING
 	`, row.FromEntityID, row.Relation, row.ToEntityID, row.ToMediaID, row.Attributes, row.SortOrder,
-		row.LockActivityID, row.LockedAtMS, row.LockOne)
+		row.Writer, row.LockActivityID, row.LockedAtMS, row.LockOne)
 	return err
 }
 

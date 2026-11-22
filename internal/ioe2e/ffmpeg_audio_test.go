@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/beamfall/core/internal/ffmpeg"
 )
 
 // TestLoudnessMeasureJourney runs the ebur128 loudness pass over real audio and
@@ -118,6 +120,29 @@ func TestAudioFingerprintJourney(t *testing.T) {
 		if v < 0 || v > 1 || math.IsNaN(v) {
 			t.Errorf("sig[%d]=%v out of [0,1]", i, v)
 		}
+	}
+}
+
+// TestSpectralFingerprintJourney decodes the bounded head of audio_sine to PCM
+// on stdout and hashes it: ~2s at 0.125s hops over 256ms frames yields up to 15
+// frames, and a steady audible tone hashes to the same non-silent value
+// throughout (CORE-3111).
+//
+// io:ffmpeg-spectral-fingerprint
+func TestSpectralFingerprintJourney(t *testing.T) {
+	r := newRunner(t)
+	src := fixtures(t).Path("audio_sine")
+
+	hashes, err := r.SpectralFingerprint(ctx(t), src, 8)
+	if err != nil {
+		t.Fatalf("SpectralFingerprint(%s): %v", src, err)
+	}
+	if len(hashes) == 0 || len(hashes) > 64 {
+		t.Fatalf("SpectralFingerprint len=%d, want 1..64 (8s at 8 frames/s)", len(hashes))
+	}
+	mid := hashes[len(hashes)/2]
+	if mid == ffmpeg.SpectralSilentFrame {
+		t.Fatalf("audible sine hashed to the silent value: %#x", hashes)
 	}
 }
 

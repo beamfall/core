@@ -1032,6 +1032,81 @@ func TestReplaceMediaRelationsRewritesNamedKindsOnly(t *testing.T) {
 	}
 }
 
+// CORE-3152: an automated cleanup removes only the Media's rows its own
+// writer owns, from source Entities of the named kind under the named
+// relation. An operator's row, another writer's row, a row from another kind
+// and the Media's other relation names stay; an operator re-linking a
+// writer's row takes it over.
+func TestRemoveWrittenMediaRelationsRemovesOnlyOwnedRows(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	const scraper, other = "scraper:demo/item", "scraper:demo/other"
+	gadget := widgetEntity("entity-gadget", "library-local")
+	gadget.Kind = "gadget"
+	for _, entity := range []Entity{
+		widgetEntity("entity-a", "library-local"), widgetEntity("entity-b", "library-local"),
+		widgetEntity("entity-c", "library-local"), gadget,
+	} {
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upsert := func(relation EntityRelation) {
+		t.Helper()
+		if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upsert(EntityRelation{FromEntityID: "entity-a", Name: "member-of", ToMediaID: "media-alpha", Writer: scraper})
+	upsert(EntityRelation{FromEntityID: "entity-b", Name: "member-of", ToMediaID: "media-alpha"})
+	upsert(EntityRelation{FromEntityID: "entity-c", Name: "member-of", ToMediaID: "media-alpha", Writer: other})
+	upsert(EntityRelation{FromEntityID: "entity-gadget", Name: "member-of", ToMediaID: "media-alpha", Writer: scraper})
+	upsert(EntityRelation{FromEntityID: "entity-a", Name: "tagged", ToMediaID: "media-alpha", Writer: scraper})
+	upsert(EntityRelation{FromEntityID: "entity-a", Name: "member-of", ToMediaID: "media-archive", Writer: scraper})
+	sources := func(media MediaID, name string) string {
+		t.Helper()
+		related, err := st.EntitiesForMedia(ctx, media, name, LibraryFilter{AllLibraries: true, Revealed: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]string, 0, len(related))
+		for _, item := range related {
+			ids = append(ids, string(item.Entity.ID))
+		}
+		slices.Sort(ids)
+		return strings.Join(ids, ",")
+	}
+	memberOf := []WrittenRelation{{Kind: "widget", Name: "member-of"}}
+	if err := st.RemoveWrittenMediaRelations(ctx, "media-alpha", scraper, nil); err != nil {
+		t.Fatalf("RemoveWrittenMediaRelations(no relations): %v", err)
+	}
+	if err := st.RemoveWrittenMediaRelations(ctx, "media-alpha", scraper, memberOf); err != nil {
+		t.Fatalf("RemoveWrittenMediaRelations: %v", err)
+	}
+	if got := sources("media-alpha", "member-of"); got != "entity-b,entity-c,entity-gadget" {
+		t.Fatalf("member-of sources = %q, want the operator's, the other writer's and the other kind's rows kept", got)
+	}
+	if got := sources("media-alpha", "tagged"); got != "entity-a" {
+		t.Fatalf("tagged sources = %q, want the other relation kept", got)
+	}
+	if got := sources("media-archive", "member-of"); got != "entity-a" {
+		t.Fatalf("media-archive member-of sources = %q, want the other Media kept", got)
+	}
+	upsert(EntityRelation{FromEntityID: "entity-a", Name: "member-of", ToMediaID: "media-archive", KeepAttributes: true})
+	if err := st.RemoveWrittenMediaRelations(ctx, "media-archive", scraper, memberOf); err != nil {
+		t.Fatal(err)
+	}
+	if got := sources("media-archive", "member-of"); got != "entity-a" {
+		t.Fatalf("media-archive member-of sources = %q, want the operator's re-link kept", got)
+	}
+	if err := st.RemoveWrittenMediaRelations(ctx, "", scraper, memberOf); err == nil {
+		t.Fatal("RemoveWrittenMediaRelations accepted an empty Media")
+	}
+	if err := st.RemoveWrittenMediaRelations(ctx, "media-alpha", "", memberOf); err == nil {
+		t.Fatal("RemoveWrittenMediaRelations accepted an empty writer")
+	}
+}
+
 // TestReplaceEntityRelationsRewritesNamedRelationsOnly: replacing a source
 // Entity's links under one relation name drops its previous Entity targets
 // under that name and keeps its other names and its Media-target rows; a row

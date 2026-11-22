@@ -193,11 +193,15 @@ func containerKindNames(bundle plugin.Bundle) map[string]bool {
 // its display title (its ID unchanged), its poster and other artwork slots are
 // applied like any hydrated Entity poster, and its links relate it to the
 // Entities sibling maps hydrated. A result whose kind holds no Entity for this
-// Media is skipped; nothing is created. Under an operator ordinal (manual
-// non-nil) a sequence-scoped result describes the operator's sequence, so its
-// container is written only when that container's own ordinal is that
-// sequence; otherwise it may be a sibling sequence shared by other Media.
-func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.MediaID, library store.LibraryID, bundle plugin.Bundle, results []scrape.EntityResult, manual *store.MediaOrdinal) error {
+// Media is skipped; nothing is created. holderLinks keys each kind the scraper
+// links the Media to through a holder link map, with the holders this lookup
+// linked: a result of such a kind applies only to one of those, never to a
+// holder an operator or another writer linked (CORE-3152). Under an operator
+// ordinal (manual non-nil) a sequence-scoped result describes the operator's
+// sequence, so its container is written only when that container's own
+// ordinal is that sequence; otherwise it may be a sibling sequence shared by
+// other Media.
+func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.MediaID, library store.LibraryID, bundle plugin.Bundle, results []scrape.EntityResult, holderLinks map[string][]store.EntityID, manual *store.MediaOrdinal) error {
 	if len(results) == 0 {
 		return nil
 	}
@@ -217,6 +221,9 @@ func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.Medi
 			continue
 		}
 		target := container.ID
+		if linked, owned := holderLinks[result.Kind]; owned && !slices.Contains(linked, target) {
+			continue
+		}
 		if manual != nil && !containerMatchesSequence(container, manual.Sequence) {
 			if result.SequenceScoped {
 				slog.Debug("identify: container hydration skipped, holder does not match the operator sequence",

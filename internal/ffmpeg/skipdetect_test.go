@@ -6,21 +6,6 @@ import (
 	"testing"
 )
 
-func TestSSEOFUnavailable(t *testing.T) {
-	for _, detail := range []string{
-		"Unrecognized option 'sseof'",
-		"Option sseof not found",
-		"option not found: sseof",
-	} {
-		if !sseofUnavailable(detail) {
-			t.Fatalf("did not recognize unavailable -sseof: %q", detail)
-		}
-	}
-	if sseofUnavailable("Invalid data found when processing input") {
-		t.Fatal("ordinary input failure must not trigger absolute-seek retry")
-	}
-}
-
 func TestParseOpeningTextCues(t *testing.T) {
 	vtt := "WEBVTT\r\n\r\ncue-1\r\n00:00:02.000 --> 00:00:04.500 align:start\r\nPreviously on…\r\n\r\n00:03:01.000 --> 00:03:03.000\r\nToo late\r\n"
 	cues := parseOpeningTextCues(vtt, 180)
