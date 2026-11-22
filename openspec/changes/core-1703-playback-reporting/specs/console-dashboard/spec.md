@@ -213,12 +213,11 @@ is.
 
 ### Requirement: Watched time counts playing time only
 
-Within a play, a report carrying `playedMS` SHALL credit its growth over the largest earlier
-`playedMS` in the play, taken in receipt order, and never less than zero. A report with a playback
-ID but no `playedMS` SHALL credit the position advance capped at the receipt difference, and
-nothing after a paused report. Reports without a playback ID SHALL be credited as before. A report
-that does not say whether it was paused SHALL count as playing. No play SHALL exceed the item's
-known duration.
+A report carrying `playedMS` SHALL credit its growth over the largest earlier `playedMS` for its
+playback ID, in receipt order, never below zero; once an ID sends one, its reports without one add
+nothing. An ID that never sends one SHALL credit the position advance capped at the receipt
+difference, nothing after a paused report. Reports without a playback ID SHALL be credited as
+before; one not saying paused counts as playing. No play SHALL exceed the item's known duration.
 
 #### Scenario: Client clock runs backward
 
@@ -237,6 +236,17 @@ known duration.
   the client's clock is set back, and arrive together
 - **THEN** the play gains the 14 seconds; a paused seek to the end, play and finish queued the same
   way gain only the last second
+
+#### Scenario: Report without a played time
+
+- **WHEN** a play's reports carry played times of 0 and 60 seconds with one between that omits it
+- **THEN** the play gains 60 seconds
+
+#### Scenario: Resumed play listed from a later date
+
+- **WHEN** a play runs 600 seconds, pauses an hour and resumes for 60 under the same playback ID,
+  and history is listed from just before the resume
+- **THEN** the resumed play is listed with 60 seconds
 
 #### Scenario: Repeated report
 

@@ -652,6 +652,63 @@ func TestPlayHistoryCreditsNothingForADelayedSeek(t *testing.T) {
 }
 
 // feature:play-history
+func TestPlayHistoryStepsAResumedPlayFromCountsBeforeSince(t *testing.T) {
+	// Codex CORE-1703 r7: a play runs 600 seconds, pauses for an hour and
+	// resumes for 60 more under the same playback ID. Listing from just
+	// before the resume must credit the resumed play its 60 seconds, not the
+	// whole 660 its count reached because the earlier counts fell outside
+	// the window.
+	st := openSeeded(t)
+	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
+	playing := false
+	r := clientReport{device: "dev-web", playback: "play-web", method: PlayMethodDirect, paused: &playing}
+	report := func(at, played int) {
+		r.received, r.clientAt = day.Add(time.Duration(at)*time.Second), day.Add(time.Duration(at)*time.Second)
+		r.position, r.played = played, playedSeconds(played)
+		addClientReport(t, st, "profile-default", "media-alpha", r)
+	}
+	for at := 0; at <= 600; at += 15 {
+		report(at, at)
+	}
+	for at := 4200; at <= 4260; at += 15 {
+		report(at, at-3600)
+	}
+	plays, err := st.PlayHistory(context.Background(), LibraryFilter{AllLibraries: true},
+		PlayHistoryQuery{Since: day.Add(4000 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plays) != 1 || plays[0].WatchedSeconds != 60 {
+		t.Fatalf("plays since the pause = %#v, want one play of 60s", plays)
+	}
+	if all := playHistoryOf(t, st); len(all) != 2 || all[0].WatchedSeconds != 60 || all[1].WatchedSeconds != 600 {
+		t.Fatalf("plays = %#v, want plays of 60s and 600s", all)
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryLetsPlayedCountsAloneDecide(t *testing.T) {
+	// Codex CORE-1703 r7: once a playback ID sends played counts, a report of
+	// it without one adds nothing. Counts of 0 and 60 seconds with a report
+	// between that omits its count earn 60 seconds, not 90.
+	st := openSeeded(t)
+	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
+	playing := false
+	r := clientReport{device: "dev-web", playback: "play-web", method: PlayMethodDirect, paused: &playing}
+	for _, step := range []struct {
+		at     int
+		played *int64
+	}{{0, playedSeconds(0)}, {30, nil}, {60, playedSeconds(60)}} {
+		r.received, r.clientAt = day.Add(time.Duration(step.at)*time.Second), day.Add(time.Duration(step.at)*time.Second)
+		r.position, r.played = step.at, step.played
+		addClientReport(t, st, "profile-default", "media-alpha", r)
+	}
+	if plays := playHistoryOf(t, st); len(plays) != 1 || plays[0].WatchedSeconds != 60 {
+		t.Fatalf("plays = %#v, want one play of 60s", plays)
+	}
+}
+
+// feature:play-history
 func TestPlayHistoryCreditsARepeatedReportOnce(t *testing.T) {
 	// A report at 15 seconds played is sent again and arrives late, after the
 	// report at 30. Each played second is credited once: 45 in all.
