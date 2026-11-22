@@ -1442,7 +1442,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	if err := offlinePacks.SweepStaging(); err != nil {
 		logger.Warn("offline pack staging sweep failed", "error", err)
 	}
-	offlinePacks.SetDeviceKeyAttestationVerifier(hooks.OfflinePackAttestationVerifier)
+	attestationVerifier, err := offlinePackAttestationVerifier(hooks.OfflinePackAttestationVerifier, logger)
+	if err != nil {
+		return nil, err
+	}
+	offlinePacks.SetDeviceKeyAttestationVerifier(attestationVerifier)
 	// A Sealed Library serves NOTHING (ADR-0098 area 2): stamp the same Sealed
 	// predicate used by the byte routes so a Sealed Library's Media is never
 	// frozen into a pack manifest and a member sealed AFTER issue is denied at
@@ -4445,6 +4449,34 @@ func observePersistedRoots(ctx context.Context, st *store.Store, watcherService 
 			_ = watcherService.Observe(library.ID, root)
 		}
 	}
+}
+
+// devEmulatorAttestationEnv opts a development build into accepting
+// software-level emulator attestation (CORE-3189). Release builds ignore it.
+const devEmulatorAttestationEnv = "BEAMFALL_DEV_ACCEPT_EMULATOR_ATTESTATION"
+
+// offlinePackAttestationVerifier returns the hook's verifier when one is set,
+// else Android Key Attestation against the Google roots (ADR-0208). Apple
+// Secure Enclave attestation is refused until CORE-1926.
+func offlinePackAttestationVerifier(hook offlinepack.DeviceKeyAttestationVerifier, logger *slog.Logger) (offlinepack.DeviceKeyAttestationVerifier, error) {
+	if hook != nil {
+		return hook, nil
+	}
+	return offlinepack.NewAndroidKeyAttestationVerifier(offlinepack.AndroidKeyAttestationOptions{
+		AllowSoftware: emulatorAttestationAllowed(capabilities.ReleaseVersion, logger),
+	})
+}
+
+func emulatorAttestationAllowed(releaseVersion string, logger *slog.Logger) bool {
+	if !envEnabled(devEmulatorAttestationEnv) {
+		return false
+	}
+	if releaseVersion != "development" {
+		logger.Warn("ignoring emulator attestation opt-in in a release build", "env", devEmulatorAttestationEnv)
+		return false
+	}
+	logger.Warn("accepting software emulator device-key attestation; development builds only", "env", devEmulatorAttestationEnv)
+	return true
 }
 
 func envEnabled(name string) bool {
