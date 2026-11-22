@@ -48145,6 +48145,28 @@
     ]
   },
   {
+    "field": "subscriptionfollow",
+    "kind": "object",
+    "children": [
+      {
+        "name": "followed",
+        "kind": "scalar"
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "newEntryRoute",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "subscriptions",
     "kind": "object",
     "children": [

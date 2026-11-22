@@ -8,7 +8,8 @@ without leaving the page.
 
 - Server: `SubscriptionEntryInfo.played` reports whether the caller's Profile played each entry.
 - Web: the feed catalogue filters (All, Unplayed, Downloaded) and sorts (Newest, Oldest); each row
-  offers Play, Play next and Mark played or unplayed.
+  offers Play and Mark played or unplayed.
+- Graph: `subscriptionFollow(subscriptionID)` lets any viewer read its own follow state and route.
 - Web: a followed feed's page offers a "New entries go to" selector backed by
   `setFollowNewEntryRoute` (CORE-2958).
 

@@ -98,9 +98,9 @@ export const CATALOGUE_SORTS = ["newest", "oldest"] as const;
 export type CatalogueSort = (typeof CATALOGUE_SORTS)[number];
 export const NEW_ENTRY_ROUTES = ["new", "queue-end", "queue-front"] as const;
 
-/** The catalogue under one filter and sort (CORE-2959). Newest is feed order,
- * which feeds publish newest first; Oldest reverses it, so a serial reads from
- * its start. Dates break the order only where both entries carry one. */
+/** The catalogue under one filter and sort (CORE-2959). Newest puts dated
+ * entries newest first, then undated ones in feed order (feeds publish newest
+ * first); Oldest reverses it, so a serial reads from its start. */
 export function catalogueView(
   entries: readonly SubscriptionEntry[],
   filter: CatalogueFilter,
@@ -115,6 +115,7 @@ export function catalogueView(
     const at = parseWireTime(a.publishedAt)?.getTime();
     const bt = parseWireTime(b.publishedAt)?.getTime();
     if (at !== undefined && bt !== undefined && at !== bt) return bt - at;
+    if ((at === undefined) !== (bt === undefined)) return at === undefined ? 1 : -1;
     return a.feedPosition - b.feedPosition;
   });
   return sort === "oldest" ? newestFirst.reverse() : newestFirst;

@@ -777,6 +777,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"stationstart":                       newFieldHandler("stationStart", "stationStart", fieldMutation, roleSession, 31),
 	"subscriptions":                      newFieldHandler("subscriptions", "subscriptions", fieldRead, roleSession|roleManager, 54),
 	"subscriptionentries":                newFieldHandler("subscriptionEntries", "subscriptionEntries", fieldRead, roleSession, 23),
+	"subscriptionfollow":                 newFieldHandler("subscriptionFollow", "subscriptionFollow", fieldRead, roleSession, 23),
 	"switchprofile":                      newFieldHandler("switchProfile", "switchProfile", fieldMutation, roleSession, 3),
 	"syncofflinepackprogress":            newFieldHandler("syncOfflinePackProgress", "syncOfflinePackProgress", fieldMutation, roleSession, 120),
 	"tagassignments":                     newFieldHandler("tagAssignments", "tagAssignments", fieldRead, roleSession|roleManager, 36),
@@ -1281,6 +1282,12 @@ func dispatchFieldBlock023(dispatch *fieldDispatchContext) response {
 	if fields["subscriptionentries"] {
 		entries, err := h.subscriptionEntries(ctx, scope, req)
 		if resp := resolveField(dispatch, "subscriptionentries", entries, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["subscriptionfollow"] {
+		follow, err := h.subscriptionFollow(ctx, scope, req)
+		if resp := resolveField(dispatch, "subscriptionfollow", follow, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

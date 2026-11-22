@@ -13,13 +13,24 @@ the entry's Media, and false without a Profile.
 ### Requirement: The web catalogue filters, sorts and acts on entries
 
 The web feed catalogue SHALL filter entries by All, Unplayed or Downloaded and sort them Newest or
-Oldest by publish time, falling back to feed order. Each row SHALL offer Play, Play next (after the
-current queue item) and Mark played or unplayed, and SHALL announce failures.
+Oldest by publish time, falling back to feed order, with undated entries after dated ones in
+Newest and before them in Oldest. Each row SHALL offer Play and Mark played or unplayed, and SHALL
+announce failures.
 
 #### Scenario: Unplayed filter hides a played entry
 
 - **WHEN** the listener marks an entry played and picks Unplayed
 - **THEN** that entry leaves the list
+
+### Requirement: Any viewer reads its own follow state for a Subscription
+
+The `subscriptionFollow(subscriptionID)` query SHALL return the calling Profile's follow state and
+new-entry route for a Subscription that Profile can see, without manager rights.
+
+#### Scenario: Viewer reads back a saved route
+
+- **WHEN** a viewer follows a Subscription and sets its new-entry route to `queue-end`
+- **THEN** `subscriptionFollow` reports it followed with route `queue-end`
 
 ### Requirement: A followed feed offers a new-entry route selector
 

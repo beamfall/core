@@ -238,6 +238,11 @@ func (s *Store) PlayedMedia(ctx context.Context, profileID ProfileID, ids []Medi
 	if profileID == "" || len(ids) == 0 {
 		return map[MediaID]bool{}, nil
 	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
 	return playedAmong(ctx, s.eventsR, profileID, ids)
 }
 

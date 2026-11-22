@@ -1140,13 +1140,10 @@ export interface FeedSubscription extends SubscriptionHealth {
   entryCount: number;
   downloadedCount: number;
   catalogBytes: number;
-  /** Whether the calling Profile follows it, and where its new entries go:
-   * new, queue-end or queue-front (CORE-2958). */
-  followed?: boolean;
-  newEntryRoute?: string;
 }
 
-/** The viewer-safe follow state (graph.FollowInfo). */
+/** The viewer-safe follow state and new-entry route: new, queue-end or
+ * queue-front (graph.FollowInfo, CORE-2958). */
 export interface FollowInfo {
   id: string;
   title: string;

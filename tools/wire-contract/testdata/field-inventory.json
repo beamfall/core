@@ -5021,6 +5021,17 @@
       ]
     },
     {
+      "field": "subscriptionfollow",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "followed",
+        "id",
+        "newEntryRoute",
+        "title"
+      ]
+    },
+    {
       "field": "subscriptions",
       "effect": "read",
       "tier": "session",

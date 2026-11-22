@@ -1750,6 +1750,11 @@
     "tier": "session"
   },
   {
+    "field": "subscriptionfollow",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "subscriptions",
     "effect": "read",
     "tier": "session"

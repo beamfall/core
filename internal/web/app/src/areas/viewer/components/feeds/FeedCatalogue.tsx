@@ -1,8 +1,8 @@
-import { Check, ListPlus, Play, RotateCcw } from "lucide-react";
+import { Check, Play, RotateCcw } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
-import { queuePlayNextMedia, type SubscriptionEntry, setWatched } from "@/lib/graphql";
+import { type SubscriptionEntry, setWatched } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import type { StringKey } from "@/strings";
@@ -40,8 +40,7 @@ type Notice = { kind: "status" | "alert"; text: string } | null;
 // date, size, availability and whether this Profile played it, filtered and
 // sorted. Play goes through the ordinary watch path for the entry's Media id,
 // downloaded or not (a not-downloaded entry streams), with the visible list as
-// the queue; Play next puts the entry after the current queue item; Mark
-// played toggles the Profile's played state.
+// the queue; Mark played toggles the Profile's played state.
 export function FeedCatalogue({ entries }: { entries: readonly SubscriptionEntry[] }) {
   const t = useT();
   const locale = useDisplayLocale();
@@ -52,7 +51,7 @@ export function FeedCatalogue({ entries }: { entries: readonly SubscriptionEntry
   const [items, setItems] = useState<readonly SubscriptionEntry[]>(entries);
   const [filter, setFilter] = useState<CatalogueFilter>("all");
   const [sort, setSort] = useState<CatalogueSort>("newest");
-  const [busy, setBusy] = useState<string | null>(null);
+  const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set());
   const [notice, setNotice] = useState<Notice>(null);
   useEffect(() => setItems(entries), [entries]);
 
@@ -67,21 +66,21 @@ export function FeedCatalogue({ entries }: { entries: readonly SubscriptionEntry
     navigate(mediaPath("watch", item.id), { state: playState(identity, queue, item) });
   }
 
-  async function playNext(item: PlayQueueItem) {
-    setBusy(item.id);
-    try {
-      await queuePlayNextMedia(item.id);
-      setNotice({ kind: "status", text: t("feedsQueuedNext", { title: item.title }) });
-    } catch {
-      setNotice({ kind: "alert", text: t("feedsActionFailed") });
-    } finally {
-      setBusy(null);
-    }
+  // Each row tracks its own request, so acting on another row never
+  // re-enables one still in flight.
+  function settle(id: string, on: boolean) {
+    setPending((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   }
 
   async function togglePlayed(entry: SubscriptionEntry) {
+    if (pending.has(entry.mediaID)) return;
     const played = !entry.played;
-    setBusy(entry.mediaID);
+    settle(entry.mediaID, true);
     try {
       await setWatched({ mediaID: entry.mediaID }, played);
       setItems((prev) =>
@@ -91,7 +90,7 @@ export function FeedCatalogue({ entries }: { entries: readonly SubscriptionEntry
     } catch {
       setNotice({ kind: "alert", text: t("feedsActionFailed") });
     } finally {
-      setBusy(null);
+      settle(entry.mediaID, false);
     }
   }
 
@@ -147,7 +146,7 @@ export function FeedCatalogue({ entries }: { entries: readonly SubscriptionEntry
             const published = parseWireTime(entry.publishedAt);
             const size = formatBytes(entry.enclosureLength, locale);
             const availability = entryAvailabilityKey(entry);
-            const pending = busy === entry.mediaID;
+            const busy = pending.has(entry.mediaID);
             return (
               <li
                 key={entry.mediaID}
@@ -182,20 +181,11 @@ export function FeedCatalogue({ entries }: { entries: readonly SubscriptionEntry
                 <button
                   type="button"
                   className="bf-row-play"
-                  aria-label={t("feedsPlayNextEntry", { title: item.title })}
-                  disabled={pending}
-                  onClick={() => playNext(item)}
-                >
-                  <ListPlus aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  className="bf-row-play"
                   aria-label={t(entry.played ? "feedsMarkUnplayed" : "feedsMarkPlayed", {
                     title: item.title,
                   })}
                   aria-pressed={entry.played}
-                  disabled={pending}
+                  disabled={busy}
                   onClick={() => togglePlayed(entry)}
                 >
                   {entry.played ? <RotateCcw aria-hidden /> : <Check aria-hidden />}

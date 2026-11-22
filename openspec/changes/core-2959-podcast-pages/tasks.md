@@ -5,6 +5,6 @@
 
 ## 2. Web
 
-- [x] 2.1 Catalogue filter and sort; Play next and Mark played row actions.
-- [x] 2.2 New-entry route selector on a followed feed's page.
+- [x] 2.1 Catalogue filter and sort; Play and Mark played row actions.
+- [x] 2.2 New-entry route selector on a followed feed's page, read through `subscriptionFollow`.
 - [x] 2.3 Strings in five locales; vitest coverage.

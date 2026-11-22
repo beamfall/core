@@ -245,3 +245,15 @@ func TestSubscriptionNewSpansManyFollowsAndHistoricalDates(t *testing.T) {
 		t.Fatalf("source = %v, want the 3 back-catalogue entries and %v, not the 1940 entry", got, created[1].MediaID)
 	}
 }
+
+// TestPlayedMediaAfterCloseReturnsErrClosed pins the CORE-2959 review: the
+// catalogue's played read holds the store lock and refuses a closed store.
+func TestPlayedMediaAfterCloseReturnsErrClosed(t *testing.T) {
+	st := openSeeded(t)
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.PlayedMedia(context.Background(), "profile-default", []MediaID{"media-1"}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("PlayedMedia after Close err = %v, want ErrClosed", err)
+	}
+}

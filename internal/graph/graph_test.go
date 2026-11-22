@@ -4043,6 +4043,14 @@ func TestSetFollowNewEntryRouteRequiresFollowAndReadsBack(t *testing.T) {
 	if !routed.Followed || routed.NewEntryRoute != "queue-end" {
 		t.Fatalf("routed = %+v, want followed queue-end", routed)
 	}
+	// A viewer session reads its own follow state back (CORE-2959).
+	var read FollowInfo
+	execGraph(t, handler, authorizeViewer,
+		`query Follow($id: String!) { subscriptionFollow(subscriptionID: $id) { id followed newEntryRoute } }`,
+		map[string]any{"id": added.ID}, "subscriptionFollow", &read)
+	if !read.Followed || read.NewEntryRoute != "queue-end" {
+		t.Fatalf("subscriptionFollow = %+v, want followed queue-end", read)
+	}
 	// The manager session runs as the same Profile, so it reads that route.
 	var listed []SubscriptionInfo
 	execGraph(t, handler, authorizeManager,
