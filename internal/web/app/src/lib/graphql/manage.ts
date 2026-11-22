@@ -1784,16 +1784,19 @@ const FIX_MATCH_MUTATION =
   "mutation FixMatch($mediaID: String!, $pluginID: String!, $scraperID: String!, $candidateID: String!, $clearLocks: [String!], $sequence: String, $index: Int) { fixMatch(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, candidateID: $candidateID, clearLocks: $clearLocks, sequence: $sequence, index: $index) { id title summary year favorited } }";
 
 /** FixMatch — apply a selected candidate and clear the unmatched row. */
-export async function fixMatch(vars: {
-  mediaID: string;
-  pluginID: string;
-  scraperID: string;
-  candidateID: string;
-  clearLocks?: string[];
-  sequence?: string;
-  index?: number;
-}): Promise<GenericMediaInfo> {
-  const data = await graphql<{ fixMatch: GenericMediaInfo }>(FIX_MATCH_MUTATION, vars);
+export async function fixMatch(
+  vars: {
+    mediaID: string;
+    pluginID: string;
+    scraperID: string;
+    candidateID: string;
+    clearLocks?: string[];
+    sequence?: string;
+    index?: number;
+  },
+  signal?: AbortSignal,
+): Promise<GenericMediaInfo> {
+  const data = await graphql<{ fixMatch: GenericMediaInfo }>(FIX_MATCH_MUTATION, vars, signal);
   return data.fixMatch;
 }
 
@@ -1801,7 +1804,9 @@ const CLEAR_MEDIA_ORDINAL_MUTATION =
   "mutation ClearMediaOrdinal($mediaID: String!) { clearMediaOrdinal(mediaID: $mediaID) }";
 
 export async function clearMediaOrdinal(mediaID: string): Promise<boolean> {
-  const data = await graphql<{ clearMediaOrdinal: boolean }>(CLEAR_MEDIA_ORDINAL_MUTATION, { mediaID });
+  const data = await graphql<{ clearMediaOrdinal: boolean }>(CLEAR_MEDIA_ORDINAL_MUTATION, {
+    mediaID,
+  });
   return data.clearMediaOrdinal;
 }
 
@@ -1847,6 +1852,33 @@ export const FIX_MATCH_CURRENT_QUERY =
 
 export const FIX_MATCH_LOCKED_FIELDS_QUERY =
   "query FixMatchLockedFields($mediaID: String!) { fixMatchLockedFields(mediaID: $mediaID) { field value } }";
+
+/** The searchable sources for a visible item's library. */
+export async function fixMatchSources(mediaID: string): Promise<FixMatchSourceInfo[]> {
+  const data = await graphql<{ fixMatchSources: FixMatchSourceInfo[] | null }>(
+    FIX_MATCH_SOURCES_QUERY,
+    { mediaID },
+  );
+  return data.fixMatchSources ?? [];
+}
+
+/** The item's recorded match, if any. */
+export async function fixMatchCurrent(mediaID: string): Promise<FixMatchCurrentInfo | null> {
+  const data = await graphql<{ fixMatchCurrent: FixMatchCurrentInfo | null }>(
+    FIX_MATCH_CURRENT_QUERY,
+    { mediaID },
+  );
+  return data.fixMatchCurrent ?? null;
+}
+
+/** The manually locked values shown alongside a candidate's preview. */
+export async function fixMatchLockedFields(mediaID: string): Promise<FixMatchLockedFieldInfo[]> {
+  const data = await graphql<{ fixMatchLockedFields: FixMatchLockedFieldInfo[] | null }>(
+    FIX_MATCH_LOCKED_FIELDS_QUERY,
+    { mediaID },
+  );
+  return data.fixMatchLockedFields ?? [];
+}
 
 const FIX_MATCH_CANDIDATES_QUERY =
   "query FixMatchCandidates($mediaID: String!, $pluginID: String!, $scraperID: String!, $query: String!, $year: Int) { fixMatchCandidates(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, query: $query, year: $year) { id title summary year pluginID scraperID confidence threshold scored reason } }";

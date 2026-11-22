@@ -7,6 +7,11 @@ import { bulkEditApply, bulkEditPreview, fetchLibraries } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { BulkOpsPage } from "./BulkOpsPage";
 
+const access = vi.hoisted(() => ({ manager: false }));
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({ isManager: access.manager, session: { profile: "adult" } }),
+}));
+
 vi.mock("@/lib/graphql", () => ({
   searchResult: vi.fn(async () => ({
     mode: "keyword",
@@ -26,6 +31,7 @@ vi.mock("@/lib/graphql", () => ({
 }));
 
 beforeEach(() => {
+  access.manager = false;
   vi.clearAllMocks();
   vi.mocked(fetchLibraries).mockResolvedValue([]);
   vi.mocked(bulkEditPreview).mockResolvedValue([
@@ -56,6 +62,15 @@ function renderPage() {
 }
 
 describe("BulkOpsPage", () => {
+  it.each([true, false])("shows Assign only for managers (%s)", async (manager) => {
+    access.manager = manager;
+    renderPage();
+    await userEvent.type(screen.getByLabelText("Media IDs (comma-separated)"), "media-1{Enter}");
+    const action = screen.queryByRole("button", { name: "Assign…" });
+    if (manager) expect(action).toBeEnabled();
+    else expect(action).not.toBeInTheDocument();
+  });
+
   it.each([
     ["Copy Link suffix", (url: URL) => url.pathname.split("/").at(-1)],
     ["Copy Link URL", (url: URL) => url.href],
