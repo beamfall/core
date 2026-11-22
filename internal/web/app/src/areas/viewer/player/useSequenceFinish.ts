@@ -43,15 +43,16 @@ export function useSequenceFinish({
   // Only a sequenced item reads its container, so other audio costs nothing.
   const context = useContainerContext(position ? media : null, mediaID);
   const next = sequenceNext(position, context);
-  const [endedID, setEndedID] = useState<string | null>(null);
-  const ended = enabled && endedID === mediaID;
+  // The end belongs to one element playing one item: a fresh element starts unended.
+  const [endedOn, setEndedOn] = useState<{ video: HTMLVideoElement; id: string } | null>(null);
+  const ended = enabled && !!video && endedOn?.video === video && endedOn.id === mediaID;
 
   // Track the element even while the offer is off (docked, or under a queue),
   // so turning it back on never revives an end that playback has since left.
   useEffect(() => {
     if (!video) return;
-    const onEnded = () => setEndedID(mediaID);
-    const onResume = () => setEndedID(null);
+    const onEnded = () => setEndedOn({ video, id: mediaID });
+    const onResume = () => setEndedOn(null);
     // A media element already at its end when the effect binds counts too.
     if (video.ended) onEnded();
     video.addEventListener("ended", onEnded);

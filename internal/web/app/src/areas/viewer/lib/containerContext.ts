@@ -163,12 +163,20 @@ export function useContainerContext(
     const controller = new AbortController();
     void (async () => {
       try {
-        const lists = await Promise.all(
+        const settled = await Promise.allSettled(
           links.map(async (link) => ({
             link,
             items: await fetchMediaForEntity(link.id, controller.signal),
           })),
         );
+        if (controller.signal.aborted) return;
+        const lists = settled.flatMap((read) => (read.status === "fulfilled" ? [read.value] : []));
+        // Each container's next stands on its own read, whatever else fails.
+        const nextBy = Object.fromEntries(
+          lists.map((list) => [list.link.id, nextAfter(list.items, mediaID)]),
+        );
+        setContext((prev) => ({ ...prev, nextBy }));
+        if (lists.length < links.length) return;
         const nearest = nearestContainer(lists, mediaID);
         if (!nearest || controller.signal.aborted) return;
         const entity = await fetchEntity(nearest.link.id, controller.signal);
@@ -190,9 +198,7 @@ export function useContainerContext(
           current: nearest.items.find((item) => item.id === mediaID) ?? null,
           container: nearest.link,
           items: nearest.items,
-          nextBy: Object.fromEntries(
-            lists.map((list) => [list.link.id, nextAfter(list.items, mediaID)]),
-          ),
+          nextBy,
         });
       } catch {
         // Context is an enhancement: the credited parents already show.

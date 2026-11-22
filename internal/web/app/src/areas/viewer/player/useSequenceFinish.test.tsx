@@ -199,4 +199,43 @@ describe("useSequenceFinish and NextInSequenceCard (CORE-3013)", () => {
     expect(screen.getByText("ended plainly")).toBeInTheDocument();
     expect(fetchMediaRows).toHaveBeenCalledTimes(1);
   });
+
+  it("offers the series' next when another container's read fails", async () => {
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id) => {
+      if (id === "c1") throw new Error("offline");
+      return [item("b4"), item("b45"), item("b5")];
+    });
+    const collection = {
+      ...credit(""),
+      entityID: "c1",
+      title: "Shelf",
+      kind: "collection",
+      attributes: {},
+    };
+    const video = renderHarness(book("b4", "4", { credits: [collection, credit("4")] }));
+    await waitFor(() => expect(fetchMediaForEntity).toHaveBeenCalledTimes(2));
+    fire(video, "ended");
+    expect(await screen.findByRole("link", { name: /Title b45/ })).toHaveAttribute(
+      "href",
+      "/media/b45",
+    );
+  });
+
+  it("starts a fresh element for the same item unended", async () => {
+    const media = book("b4", "4");
+    const tree = (video: HTMLVideoElement) => (
+      <I18nProvider>
+        <MemoryRouter>
+          <Harness media={media} video={video} />
+        </MemoryRouter>
+      </I18nProvider>
+    );
+    const first = document.createElement("video");
+    const { rerender } = render(tree(first));
+    await waitFor(() => expect(fetchMediaForEntity).toHaveBeenCalled());
+    fire(first, "ended");
+    await screen.findByRole("region", { name: "Next in series" });
+    rerender(tree(document.createElement("video")));
+    expect(screen.getByText("ended plainly")).toBeInTheDocument();
+  });
 });
