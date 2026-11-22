@@ -26,6 +26,7 @@ import (
 type memSecretStore struct {
 	values      map[string]string
 	locus       libencrypt.KeyLocusInfo
+	failGet     func(ref string) error
 	setCalls    int
 	failSetCall int
 	failSetErr  error
@@ -38,6 +39,11 @@ func TestSecretStoreAbsenceContract(t *testing.T) {
 }
 
 func (s *memSecretStore) Secret(ref string) (string, error) {
+	if s.failGet != nil {
+		if err := s.failGet(ref); err != nil {
+			return "", err
+		}
+	}
 	v, ok := s.values[ref]
 	if !ok {
 		return "", errNoSecret

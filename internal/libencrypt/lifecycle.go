@@ -203,6 +203,9 @@ func (m *Manager) BootUnsealPrepared(libraryIDs []string, prepare func(string, O
 	for _, id := range libraryIDs {
 		mode, err := m.Mode(id)
 		if err != nil {
+			if !errors.Is(err, ErrNotProvisioned) {
+				sealed = append(sealed, id)
+			}
 			continue
 		}
 		if mode != UnsealModeAuto {

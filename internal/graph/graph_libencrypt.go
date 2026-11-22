@@ -95,14 +95,21 @@ func (h *Handler) SetEncryptedGeneratedAssets(rewrapper EncryptedGeneratedAssetR
 // librarySealed reports whether a Library is currently Sealed (ADR-0098 area 2).
 // Only an ENCRYPTED (provisioned) Library can be Sealed: Manager.Sealed reports
 // "DEK not in memory", which is also true for every ordinary unprovisioned
-// Library, so gate on Provisioned first or every plain Library would read as
-// sealed. Returns false when no libEncrypt seam is wired (nothing is sealed).
+// Library, so a missing key bundle (ErrNotProvisioned) reads as unsealed while
+// any secure-store read failure fails closed as sealed. Returns false when no
+// libEncrypt seam is wired (nothing is sealed).
 func (h *Handler) librarySealed(libraryID store.LibraryID) bool {
 	if h.libEncrypt == nil {
 		return false
 	}
 	id := string(libraryID)
-	return h.libEncrypt.Provisioned(id) && h.libEncrypt.Sealed(id)
+	if !h.libEncrypt.Sealed(id) {
+		return false
+	}
+	if _, err := h.libEncrypt.Mode(id); err != nil {
+		return !errors.Is(err, libencrypt.ErrNotProvisioned)
+	}
+	return h.libEncrypt.Provisioned(id)
 }
 
 // sealedFilter stamps the caller's currently-Sealed Library IDs onto a base
