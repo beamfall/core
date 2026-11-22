@@ -718,7 +718,7 @@ export function MediaDetailPage() {
           <ContainerTracks
             tracks={siblingTracks}
             currentID={mediaId}
-            sequenced={Boolean(series)}
+            sequenced={Boolean(series) || Boolean(media?.playsAlone)}
             title={
               <Link to={`/entity/${encodeURIComponent(context.container.id)}`}>
                 {context.container.title}

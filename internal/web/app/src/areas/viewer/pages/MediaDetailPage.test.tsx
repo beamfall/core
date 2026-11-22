@@ -1642,6 +1642,19 @@ describe("MediaDetailPage", () => {
       fireEvent.click(within(first).getByRole("button", { name: "Play Opening" }));
       expect(rowQueueIDs()).toEqual(["m0"]);
     });
+
+    // CORE-3147: an unnumbered member of a series carries no sequence, but
+    // its plugin declares it plays alone, so its rows never queue the next.
+    it("plays each row alone when the item plays alone without a sequence", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue({ ...listed, playsAlone: true });
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(siblings);
+      vi.mocked(fetchEntity).mockResolvedValue(setEntity as never);
+      renderAt(["/media/m1"]);
+
+      const first = await screen.findByRole("list", { name: "Disc 1" });
+      fireEvent.click(within(first).getByRole("button", { name: "Play Opening" }));
+      expect(rowQueueIDs()).toEqual(["m0"]);
+    });
   });
 
   describe("track pickers before playback (CORE-2442)", () => {
