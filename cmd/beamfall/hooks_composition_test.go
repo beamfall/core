@@ -169,7 +169,7 @@ func TestFirstPartyOfflinePackHooksHaveExactPluginAndResolverIdentities(t *testi
 			inner = resolver.inner
 		case filmtvPackResolver:
 			inner = resolver.inner
-		case audiobookPackResolver:
+		case bookPackResolver:
 			inner = resolver.inner
 		default:
 			t.Errorf("offline-pack hook %q factory returned %T, want a plugin pack resolver adapter", hook.Kind, resolver)
