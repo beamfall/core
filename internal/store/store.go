@@ -1091,6 +1091,12 @@ type Store struct {
 	// Test-only, like convertStepHook: it lets a deterministic test purge the
 	// Media in that exact window. Never set in production wiring.
 	offlinePackSealHook func()
+	// operatorRelationWriteHook, when non-nil, fires inside an operator
+	// Media relation write after the visibility pre-check and before the
+	// write transaction opens. Test-only, like convertStepHook: it lets a
+	// deterministic test restrict a Library in that exact window. Never set
+	// in production wiring.
+	operatorRelationWriteHook func()
 	// entityIndexes holds the registered plugin-declared field index
 	// postures: kind → field → spec (RegisterEntityFieldIndexes). Guarded by
 	// mu like every other member.

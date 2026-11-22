@@ -84,21 +84,37 @@ func (s *Store) writeOperatorMediaRelation(ctx context.Context, relation EntityR
 		// Library identifiers. Media and Entity IDs stay on the private plane.
 		activity.TargetID = ""
 	}
-	libraries, err := s.visibleLibraryIDsLocked(ctx, filter)
+	if hook := s.operatorRelationWriteHook; hook != nil {
+		hook()
+	}
+	// Library restriction lives only on the shared catalog, and only its
+	// single writer changes it. Holding that writer's transaction until the
+	// commit means a restriction change cannot hide either endpoint between
+	// the visibility check below and the write. On the shared plane it is the
+	// write transaction itself; an encrypted write takes it first.
+	gate, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
 	}
-	tx, err := plane.writer.BeginTx(ctx, nil)
+	defer gate.Rollback()
+	tx := gate
+	if plane.encrypted {
+		tx, err = plane.writer.BeginTx(ctx, nil)
+		if err != nil {
+			return "", err
+		}
+		defer tx.Rollback()
+	}
+	libraries, err := visibleLibraryIDsFrom(ctx, gate, filter)
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
 	var live bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM media
 		WHERE id = ? AND library_id = ? AND trashed_at_ms IS NULL)`, media.ID, media.LibraryID).Scan(&live); err != nil {
 		return "", err
 	}
-	if !live {
+	if !live || !slices.Contains(libraries, media.LibraryID) {
 		return "", ValidationError("unknown media")
 	}
 	if entity.Title != "" {
@@ -162,6 +178,9 @@ func (s *Store) writeOperatorMediaRelation(ctx context.Context, relation EntityR
 	}
 	if err := tx.Commit(); err != nil {
 		return "", err
+	}
+	if plane.encrypted {
+		_ = gate.Rollback()
 	}
 	// Activity publication can be retried after a restart. Its recovery data
 	// was committed atomically with the change and stays on the owning plane.

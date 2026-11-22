@@ -1743,7 +1743,13 @@ func boundedReadPage(page []int) (int, int) {
 }
 
 func (s *Store) visibleLibraryIDsLocked(ctx context.Context, filter LibraryFilter) ([]LibraryID, error) {
-	libraries, err := loadLibraries(ctx, s.catalogR)
+	return visibleLibraryIDsFrom(ctx, s.catalogR, filter)
+}
+
+// visibleLibraryIDsFrom reads the visible set through q, so a write can make
+// the check inside a catalog writer transaction.
+func visibleLibraryIDsFrom(ctx context.Context, q rowsQueryer, filter LibraryFilter) ([]LibraryID, error) {
+	libraries, err := loadLibraries(ctx, q)
 	if err != nil {
 		return nil, err
 	}

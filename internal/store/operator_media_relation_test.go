@@ -193,3 +193,105 @@ func TestOperatorRelationRemovalSurvivesMergeUndo(t *testing.T) {
 		t.Fatalf("removed relation returned: %+v, %v", rows, err)
 	}
 }
+
+// TestOperatorRelationRechecksRestrictionInsideWrite restricts a Library after
+// the visibility pre-check and before the write transaction opens. The write
+// must refuse, for either endpoint, on both catalog planes and both verbs.
+func TestOperatorRelationRechecksRestrictionInsideWrite(t *testing.T) {
+	ctx := t.Context()
+	filter := LibraryFilter{AllLibraries: true}
+	restrictInWindow := func(st *Store, library LibraryID) {
+		st.operatorRelationWriteHook = func() {
+			// The hook runs under the store read lock, so write directly.
+			if _, err := st.catalogW.ExecContext(ctx, `UPDATE library SET is_restricted = 1 WHERE id = ?`, library); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	write := func(st *Store, row EntityRelation, entity Entity, remove bool, op string) error {
+		event := ActivityEntry{OperationID: op, ProfileID: "profile-default", OccurredAt: time.Now()}
+		if remove {
+			return st.RemoveOperatorMediaRelation(ctx, row, filter, event)
+		}
+		_, err := st.SetOperatorMediaRelation(ctx, row, entity, filter, event)
+		return err
+	}
+	for _, remove := range []bool{false, true} {
+		verb := "set "
+		if remove {
+			verb = "remove "
+		}
+		t.Run(verb+"shared media endpoint", func(t *testing.T) {
+			st := openSeeded(t)
+			entity := widgetEntity("restricted-media-entity", "library-local")
+			if err := st.EnsureEntity(ctx, entity); err != nil {
+				t.Fatal(err)
+			}
+			row := EntityRelation{FromEntityID: entity.ID, ToMediaID: "media-alpha", Name: "member"}
+			if err := st.UpsertEntityRelation(ctx, row); err != nil {
+				t.Fatal(err)
+			}
+			restrictInWindow(st, "library-local")
+			if err := write(st, row, Entity{}, remove, "restricted-media"); err == nil {
+				t.Fatal("write committed after its Media's Library was restricted")
+			}
+			assertRelationRows(t, st, row, 1, false)
+		})
+		t.Run(verb+"shared entity endpoint", func(t *testing.T) {
+			st := openSeeded(t)
+			if err := st.UpdateLibraryRestricted(ctx, "library-archive", false); err != nil {
+				t.Fatal(err)
+			}
+			entity := widgetEntity("restricted-source-entity", "library-archive")
+			if err := st.EnsureEntity(ctx, entity); err != nil {
+				t.Fatal(err)
+			}
+			row := EntityRelation{FromEntityID: entity.ID, ToMediaID: "media-alpha", Name: "member"}
+			if err := st.UpsertEntityRelation(ctx, row); err != nil {
+				t.Fatal(err)
+			}
+			restrictInWindow(st, "library-archive")
+			if err := write(st, row, Entity{}, remove, "restricted-entity"); err == nil {
+				t.Fatal("write committed after its Entity's Library was restricted")
+			}
+			assertRelationRows(t, st, row, 1, false)
+		})
+		t.Run(verb+"encrypted plane", func(t *testing.T) {
+			st, media := seededEncryptedMedia(t, "restricted-relation")
+			defer st.Close()
+			entity := Entity{ID: "restricted-private-entity", Kind: "widget", Title: "Private"}
+			row := EntityRelation{FromEntityID: entity.ID, ToMediaID: media.ID, Name: "member"}
+			if remove {
+				if _, err := st.SetOperatorMediaRelation(ctx, row, entity, filter, ActivityEntry{
+					OperationID: "restricted-encrypted-seed", ProfileID: "profile-default", OccurredAt: time.Now(),
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			restrictInWindow(st, media.LibraryID)
+			if err := write(st, row, entity, remove, "restricted-encrypted"); err == nil {
+				t.Fatal("encrypted write committed after its Library was restricted")
+			}
+			want := 0
+			if remove {
+				want = 1
+			}
+			// A refused removal keeps the seeded operator lock.
+			assertRelationRows(t, st, row, want, remove)
+		})
+	}
+}
+
+func assertRelationRows(t *testing.T, st *Store, row EntityRelation, want int, locked bool) {
+	t.Helper()
+	st.operatorRelationWriteHook = nil
+	rows, err := st.EntitiesForMedia(t.Context(), row.ToMediaID, row.Name, LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil || len(rows) != want {
+		t.Fatalf("relation rows = %+v, %v; want %d", rows, err, want)
+	}
+	for _, got := range rows {
+		if got.OperatorLocked != locked {
+			t.Fatalf("refused write changed the operator lock: %+v", got)
+		}
+	}
+}
