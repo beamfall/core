@@ -315,3 +315,104 @@ func TestSegmentLacksMedia(t *testing.T) {
 		t.Error("a missing file must not read as an empty segment")
 	}
 }
+
+// TestStoppedEncoderWaiterStartsItsOwnWhenTheReplacementEnds reproduces
+// CORE-1256: a request waits on seg0 while a seek for seg5 stops its encoder
+// and starts one at segment 5, which then reaches end of input. Nothing will
+// ever write seg0, so the waiter starts its own encoder at seg0 once no encoder
+// is live instead of waiting out its budget into a 503.
+func TestStoppedEncoderWaiterStartsItsOwnWhenTheReplacementEnds(t *testing.T) {
+	t.Parallel()
+	const window = 3 * time.Second
+	transcoder := &scriptedTranscoder{cmds: make(chan *exec.Cmd, 4)}
+	transcoder.start = func(n int, dir string, startSegment int) []string {
+		writeArtifact(t, dir, "init.mp4", []byte("init"))
+		switch n {
+		case 0:
+			return []string{"sleep", "60"} // slow: writes nothing before it is stopped
+		case 1:
+			for segment := startSegment; segment < 30; segment++ {
+				writeArtifact(t, dir, fmt.Sprintf("seg%05d.m4s", segment), mediaSegment())
+			}
+			return []string{"true"} // reaches end of input at once
+		default:
+			writeArtifact(t, dir, fmt.Sprintf("seg%05d.m4s", startSegment), mediaSegment())
+			return []string{"sleep", "60"}
+		}
+	}
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
+	sessions.waitWindow = window
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-burst", MediaID: "media-burst"}
+
+	type result struct {
+		path string
+		err  error
+	}
+	done := make(chan result, 1)
+	begin := time.Now()
+	go func() {
+		path, err := filePath720(sessions, key, "720p/seg00000.m4s")
+		done <- result{path, err}
+	}()
+	<-transcoder.cmds
+	if _, err := filePath720(sessions, key, "720p/seg00005.m4s"); err != nil {
+		t.Fatalf("seg5: %v", err)
+	}
+	got := <-done
+	if got.err != nil {
+		t.Fatalf("seg0 after its encoder was replaced: %v", got.err)
+	}
+	if filepath.Base(got.path) != "seg00000.m4s" {
+		t.Fatalf("path = %q, want seg00000.m4s", got.path)
+	}
+	if elapsed := time.Since(begin); elapsed >= window {
+		t.Fatalf("seg0 took %v, want well inside its %v budget", elapsed, window)
+	}
+	transcoder.mu.Lock()
+	starts := append([]int(nil), transcoder.starts...)
+	transcoder.mu.Unlock()
+	if len(starts) != 3 || starts[1] != 5 || starts[2] != 0 {
+		t.Fatalf("starts = %v, want [0 5 0]", starts)
+	}
+}
+
+// TestStoppedEncoderWaiterNeverStopsANewerSeek guards the other side of
+// CORE-1256: a request left behind by a far seek watches the seek's live
+// encoder but never stops it, so the seek keeps its encoder and two requests
+// cannot trade one back and forth.
+func TestStoppedEncoderWaiterNeverStopsANewerSeek(t *testing.T) {
+	t.Parallel()
+	const window = 300 * time.Millisecond
+	transcoder := &scriptedTranscoder{cmds: make(chan *exec.Cmd, 4)}
+	transcoder.start = func(n int, dir string, startSegment int) []string {
+		writeArtifact(t, dir, "init.mp4", []byte("init"))
+		if n > 0 {
+			writeArtifact(t, dir, fmt.Sprintf("seg%05d.m4s", startSegment), mediaSegment())
+		}
+		return []string{"sleep", "60"}
+	}
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
+	sessions.waitWindow = window
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-seek", MediaID: "media-seek"}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := filePath720(sessions, key, "720p/seg00000.m4s")
+		done <- err
+	}()
+	<-transcoder.cmds
+	if _, err := filePath720(sessions, key, "720p/seg00020.m4s"); err != nil {
+		t.Fatalf("seg20: %v", err)
+	}
+	if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("stale seg0 err = %v, want context.DeadlineExceeded", err)
+	}
+	transcoder.mu.Lock()
+	starts := append([]int(nil), transcoder.starts...)
+	transcoder.mu.Unlock()
+	if len(starts) != 2 || starts[1] != 20 {
+		t.Fatalf("starts = %v, want [0 20]: the stale request must not restart the encoder", starts)
+	}
+}

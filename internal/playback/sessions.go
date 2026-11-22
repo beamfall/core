@@ -1225,10 +1225,11 @@ func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *
 // requested segment inside this request (at most maxRequestEncoderRestarts
 // times, and within the session's crash-restart budget); an encoder that hit
 // end of input fails the request at once instead of letting it wait out its
-// budget; an encoder the server stopped (switch, seek, teardown) leaves the
-// request waiting for its replacement as before.
+// budget; an encoder the server stopped (switch, seek, teardown) hands the
+// request to whatever the session runs next (see followRung).
 func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun) (artifactObservation, error) {
 	restarts := 0
+	writes := true // run is expected to write path
 	for {
 		if run != nil {
 			run.waiting.Add(1)
@@ -1252,12 +1253,18 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 		if !live {
 			return artifactObservation{}, ErrSessionEvicted
 		}
-		if stale && run.outcome != exitStopped {
+		if !writes || run.outcome == exitStopped {
+			// A run that was never going to write path, or that the server
+			// stopped, says nothing about path: follow the session's next run.
+			if run, writes, err = s.followRung(ctx, key, session, rung, segment, isSegment, path); err != nil {
+				return artifactObservation{}, err
+			}
+			continue
+		}
+		if stale {
 			return artifactObservation{}, ErrArtifactChanged
 		}
 		switch run.outcome {
-		case exitStopped:
-			run = nil // the replacement owns any future output on this path
 		case exitEndOfInput:
 			if isSegment && s.beyondSourceEnd(session, rung, segment) {
 				return artifactObservation{}, ErrSourceEnded
@@ -1274,6 +1281,47 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 			slog.Warn("restarted live transcode at the requested segment",
 				"media", key.MediaID, "rung", rung.ID, "segment", segment, "attempt", restarts)
 		}
+	}
+}
+
+// followRung picks the run a request waits on once the run it watched stopped
+// (CORE-1256). A live run of rung that started at or before segment writes
+// path, so the request follows it. A live run that will not write path (it
+// encodes another rung, or a seek started it past segment) is only watched: a
+// request never stops an encoder another request started, so a stale request
+// cannot take the encoder from a newer seek and two requests cannot trade it
+// back and forth. Once no encoder is live, the request starts one at segment
+// instead of waiting out its budget for a file nobody will write. writes
+// reports whether the returned run is expected to write path; a nil run with
+// writes set means path is already ready.
+func (s *Sessions) followRung(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string) (run *encoderRun, writes bool, err error) {
+	for {
+		if s.rungArtifactReady(session, path) {
+			return nil, true, nil
+		}
+		s.mu.Lock()
+		if session.state != sessionRunning {
+			s.mu.Unlock()
+			return nil, false, ErrSessionEvicted
+		}
+		if pending := session.start; pending != nil {
+			s.mu.Unlock()
+			if err := waitEncoderOwner(ctx, session, pending.done); err != nil {
+				return nil, false, err
+			}
+			continue
+		}
+		if session.proc != nil {
+			run = session.run
+			writes = session.currentRung == rung.ID && (!isSegment || session.baseSegment <= segment)
+			s.mu.Unlock()
+			return run, writes, nil
+		}
+		s.mu.Unlock()
+		// An encoder another request starts before ensureRung takes the lock
+		// is handled as any fresh request for segment would handle it.
+		run, err = s.ensureRung(ctx, key, session, rung, segment, path)
+		return run, err == nil, err
 	}
 }
 
