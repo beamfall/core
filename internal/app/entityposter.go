@@ -39,6 +39,59 @@ func activeEntityPosterRules(registry *plugin.Registry, rules []EntityPosterRule
 	return active
 }
 
+const (
+	// categoryArchetype marks the Entity kinds a plugin declares for
+	// grouping its Media. One with no artwork of its own reads as a blank
+	// card, so it derives a mosaic from what it groups unless the wiring
+	// declares a rule for it.
+	categoryArchetype = "category"
+	// containerArchetype marks the Entity kinds that hold Media; their
+	// posters are the most distinct covers a category can offer.
+	containerArchetype = "container"
+)
+
+// withCategoryPosterRules appends, after the declared rules, a mosaic rule
+// for every category-archetype kind of an activated plugin that has none:
+// first the container Entities that point at the category, then the Media it
+// relates to, both through the relations the bundle declares.
+func withCategoryPosterRules(registry *plugin.Registry, rules []EntityPosterRule) []EntityPosterRule {
+	ruled := map[string]bool{}
+	for _, rule := range rules {
+		ruled[rule.PluginID+"\x00"+rule.Kind] = true
+	}
+	for _, id := range registry.IDs() {
+		bundle, ok := registry.Bundle(id)
+		if !ok {
+			continue
+		}
+		for _, kind := range bundle.EntityKinds {
+			if kind.Archetype != categoryArchetype || ruled[string(id)+"\x00"+kind.Name] {
+				continue
+			}
+			rule := EntityPosterRule{PluginID: string(id), Kind: kind.Name, Mosaic: true}
+			for _, from := range bundle.EntityKinds {
+				if from.Archetype != containerArchetype {
+					continue
+				}
+				for _, rel := range from.Relations {
+					if rel.ToKind == kind.Name {
+						rule.Sources = append(rule.Sources, EntityPosterSource{Relation: rel.Name, FromKind: from.Name})
+					}
+				}
+			}
+			for _, rel := range kind.Relations {
+				if rel.ToKind == plugin.MediaKindName {
+					rule.Sources = append(rule.Sources, EntityPosterSource{Relation: rel.Name})
+				}
+			}
+			if len(rule.Sources) > 0 {
+				rules = append(rules, rule)
+			}
+		}
+	}
+	return rules
+}
+
 func entityPosterRuleFault(bundle plugin.Bundle, rule EntityPosterRule) string {
 	if _, declared := declaredEntityFieldTypes(bundle)[rule.Kind]; !declared {
 		return "undeclared entity kind"
