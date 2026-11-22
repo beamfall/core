@@ -1722,6 +1722,54 @@ describe("EntityPage rolled-up Media (CORE-3058)", () => {
     expect(screen.getByRole("button", { name: "Play Open" })).toBeInTheDocument();
   });
 
+  it("tries a sibling inner container after one that holds only locked Media", async () => {
+    const entities: Record<string, EntityInfo> = {
+      e1: person,
+      s1: holder("s1", [box("a1"), box("b1")]),
+      a1: holder("a1", []),
+      b1: holder("b1", []),
+    };
+    vi.mocked(fetchEntity).mockImplementation(async (id: string) => entities[id] ?? null);
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) => {
+      if (id === "e1") return [card(2)];
+      if (id === "a1") return [{ ...part("x1", "Locked"), locked: true }];
+      return id === "b1" ? [part("o1", "Open")] : [];
+    });
+    renderEntity();
+    await settle();
+
+    expect(screen.getByRole("button", { name: "Play Open" })).toBeInTheDocument();
+  });
+
+  it("keeps its finished standalone Media when the containers hold nothing playable", async () => {
+    vi.mocked(fetchEntity).mockImplementation(async (id: string) =>
+      id === "e1" ? person : holder(id, []),
+    );
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) => {
+      if (id === "e1") return [film, card(2)];
+      return id === "s1" ? [{ ...part("x1", "Locked"), locked: true }] : [];
+    });
+    renderEntity();
+    await settle();
+
+    expect(screen.getByRole("button", { name: "Play A Film" })).toBeInTheDocument();
+  });
+
+  it("keeps a replay it found when a container's detail read fails", async () => {
+    vi.mocked(fetchEntity).mockImplementation(async (id: string) => {
+      if (id === "e1") return person;
+      throw new Error("boom");
+    });
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) => {
+      if (id === "e1") return [card(2)];
+      return id === "s1" ? [part("d1", "Done", { completed: true })] : [];
+    });
+    renderEntity();
+    await settle();
+
+    expect(screen.getByRole("button", { name: "Play Done" })).toBeInTheDocument();
+  });
+
   it("lists a container a related row already shows once", async () => {
     vi.mocked(fetchEntity).mockResolvedValue({
       ...person,

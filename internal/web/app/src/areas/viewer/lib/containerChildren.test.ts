@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import {
+  childContainerCandidates,
   childThumbURL,
   groupChildrenByKind,
   nextUpChild,
@@ -121,7 +122,7 @@ describe("rolledContainerCandidates (CORE-3058)", () => {
 
   const ids = (items: SourceItem[]) => items.map((i) => i.id);
 
-  it("tries unlocked container cards with children left, else the first", () => {
+  it("tries unlocked container cards with children left first, then the rest", () => {
     const film = item("f1");
     expect(
       ids(
@@ -133,8 +134,8 @@ describe("rolledContainerCandidates (CORE-3058)", () => {
           card("d", 2),
         ]),
       ),
-    ).toEqual(["c", "d"]);
-    expect(ids(rolledContainerCandidates([film, card("a"), card("b")]))).toEqual(["a"]);
+    ).toEqual(["c", "d", "a"]);
+    expect(ids(rolledContainerCandidates([film, card("a"), card("b")]))).toEqual(["a", "b"]);
     expect(rolledContainerCandidates([film])).toEqual([]);
     expect(rolledContainerLeft([film, card("a"), card("b", 2, true)])).toBe(false);
     expect(rolledContainerLeft([film, card("c", 1)])).toBe(true);
@@ -147,5 +148,28 @@ describe("nextUpFinished", () => {
     expect(nextUpFinished({ item: done, resume: false })).toBe(true);
     expect(nextUpFinished({ item: done, resume: true })).toBe(false);
     expect(nextUpFinished({ item: item("b"), resume: false })).toBe(false);
+  });
+});
+
+describe("childContainerCandidates", () => {
+  const box = (id: string, remainingCount?: number): SourceItem => ({
+    id,
+    kind: "entity",
+    title: id,
+    engagement: { totalCount: 2, ...(remainingCount ? { remainingCount } : {}) },
+  });
+
+  it("orders the first container group's children, skipping visited ones", () => {
+    const groups = [
+      { archetype: "person", items: [box("p")] },
+      { archetype: "container", items: [box("parent", 1)] },
+      { archetype: "container", items: [box("a"), box("b", 1)] },
+    ];
+    expect(childContainerCandidates(groups).map((i) => i.id)).toEqual(["parent"]);
+    expect(childContainerCandidates(groups, new Set(["parent"])).map((i) => i.id)).toEqual([
+      "b",
+      "a",
+    ]);
+    expect(childContainerCandidates(undefined)).toEqual([]);
   });
 });

@@ -31,8 +31,8 @@ import { useListingRows } from "../components/useListingRows";
 import { ViewerActions } from "../components/ViewerActions";
 import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
 import {
+  childContainerCandidates,
   nextUpChild,
-  nextUpChildContainer,
   nextUpFinished,
   rolledContainerCandidates,
   rolledContainerLeft,
@@ -190,30 +190,32 @@ export function EntityPage() {
   const ordered = trackOrder ?? fallback;
   // A Media item of its own plays first unless all are finished and a rolled-up
   // container card still has children left (CORE-3058).
-  const directNext = useMemo(() => {
-    if (!ordered || orderPending) return null;
-    const next = nextUpChild(ordered);
-    return next && nextUpFinished(next) && rolledContainerLeft(ordered) ? null : next;
-  }, [ordered, orderPending]);
-  // Otherwise play on through the rolled-up container cards, else the next-up
-  // child container: the space-separated ids of the containers to try in turn.
-  const childContainerIDs = useMemo(() => {
+  const ownNext = useMemo(
+    () => (!ordered || orderPending ? null : nextUpChild(ordered)),
+    [ordered, orderPending],
+  );
+  const directNext =
+    ownNext && nextUpFinished(ownNext) && rolledContainerLeft(ordered ?? NO_ITEMS) ? null : ownNext;
+  // Otherwise play on through the rolled-up container cards, else the child
+  // containers: the ids of the containers to try in turn, as a JSON key.
+  const childContainerKey = useMemo(() => {
     if (!fallback || orderPending || directNext) return "";
     const rolled = rolledContainerCandidates(fallback);
-    if (rolled.length > 0) return rolled.map((item) => item.id).join(" ");
-    return nextUpChildContainer(entity?.relatedEntities)?.id ?? "";
+    const candidates =
+      rolled.length > 0 ? rolled : childContainerCandidates(entity?.relatedEntities);
+    return candidates.length > 0 ? JSON.stringify(candidates.map((item) => item.id)) : "";
   }, [fallback, orderPending, directNext, entity]);
   const childItems =
-    childContainerIDs && childMedia?.id === childContainerIDs ? childMedia.items : null;
+    childContainerKey && childMedia?.id === childContainerKey ? childMedia.items : null;
+  const childNext = childItems ? nextUpChild(childItems) : null;
+  // A finished item of its own plays again when the containers hold nothing.
+  const playsOwn = !!directNext || (!!childItems && !childNext);
   const fallbackQueue = useMemo(() => {
-    if (directNext && trackOrder) return audioQueue(trackOrder);
-    const queueSource = directNext ? fallback : childItems;
+    if (playsOwn && trackOrder) return audioQueue(trackOrder);
+    const queueSource = playsOwn ? fallback : childItems;
     return queueSource ? playQueueOf(queueSource) : undefined;
-  }, [directNext, trackOrder, fallback, childItems]);
-  const nextUp = useMemo(
-    () => directNext ?? (childItems ? nextUpChild(childItems) : null),
-    [directNext, childItems],
-  );
+  }, [playsOwn, trackOrder, fallback, childItems]);
+  const nextUp = playsOwn ? ownNext : childNext;
   // The listed Media once known to be all audio: what Shuffle plays, and for a
   // container the sign to name its people under the title.
   const isAudio = isAudioListing(fallback ?? NO_ITEMS, listing.rows ?? {});
@@ -373,23 +375,24 @@ export function EntityPage() {
   }, [identity, entityId, needsDirectMedia, engagementEpoch]);
 
   useEffect(() => {
-    if (!childContainerIDs) return;
+    if (!childContainerKey) return;
     let alive = true;
     const controller = new AbortController();
-    playThroughMedia(childContainerIDs.split(" "), entityId ?? "", controller.signal)
+    const ids = JSON.parse(childContainerKey) as string[];
+    playThroughMedia(ids, entityId ?? "", controller.signal)
       .then((items) => {
-        if (alive) setChildMedia({ id: childContainerIDs, items });
+        if (alive) setChildMedia({ id: childContainerKey, items });
       })
       .catch((err: unknown) => {
         if (!alive) return;
         if (isAuthRejection(err)) clearViewerCache();
-        setChildMedia({ id: childContainerIDs, items: [] });
+        setChildMedia({ id: childContainerKey, items: [] });
       });
     return () => {
       alive = false;
       controller.abort();
     };
-  }, [childContainerIDs, entityId, engagementEpoch]);
+  }, [childContainerKey, entityId, engagementEpoch]);
 
   // The ancestor's own read lists this container's siblings (CORE-2522).
   const ancestorID = ancestor?.id ?? "";
@@ -764,56 +767,53 @@ export function EntityPage() {
 
 /** How many containers deep play-through looks for Media (identify.MaxContainerDepth). */
 const MAX_CONTAINER_DEPTH = 8;
-/** How many rolled-up container cards play-through tries before giving up. */
-const PLAY_THROUGH_TRIES = 4;
+/** How many containers play-through reads before it settles for what it found. */
+const PLAY_THROUGH_READS = 12;
 
 /**
- * The Media a page plays through its container cards (CORE-3058): those of
- * the first container that has something unfinished, trying each id in turn,
- * else those of the first that has anything to play again. `from` is the
- * page's own Entity, which the walk never goes back up to.
+ * The Media a page plays through its container cards (CORE-3058): a
+ * depth-first search through the given containers and their child containers
+ * (a rolled-up card can stand several containers above its Media), in turn,
+ * for the first with an unfinished item to play, else the first with anything
+ * to play again. Visited containers and `from`, the page's own Entity, are
+ * skipped, since related groups carry no direction and list the parent too. A
+ * failed read counts as an empty container; cancellation and authorization
+ * failures end the search.
  */
 async function playThroughMedia(
   ids: readonly string[],
   from: string,
   signal: AbortSignal,
 ): Promise<SourceItem[]> {
-  let replay: SourceItem[] = [];
-  for (const id of ids.slice(0, PLAY_THROUGH_TRIES)) {
-    const items = await containerMedia(id, from, signal);
-    const next = nextUpChild(items);
-    if (next && !nextUpFinished(next)) return items;
-    if (next && replay.length === 0) replay = items;
-  }
-  return replay;
-}
-
-/**
- * The Media a container plays from: its own when one is unfinished, else
- * those of its next-up child container, down the chain (a rolled-up card can
- * stand several containers above its Media). Containers already visited are
- * skipped, since related groups carry no direction and list the parent too.
- * When nothing deeper is unfinished, the first Media found play again.
- */
-async function containerMedia(
-  id: string,
-  from: string,
-  signal: AbortSignal,
-): Promise<SourceItem[]> {
   const visited = new Set<string>([from]);
+  let reads = 0;
   let replay: SourceItem[] = [];
-  let current: string | undefined = id;
-  for (let depth = 0; current && depth < MAX_CONTAINER_DEPTH; depth++) {
-    visited.add(current);
-    const items = await fetchMediaForEntity(current, signal);
+  const soft = async <T,>(read: Promise<T>, empty: T): Promise<T> => {
+    try {
+      return await read;
+    } catch (err) {
+      if (signal.aborted || isAuthRejection(err)) throw err;
+      return empty;
+    }
+  };
+  async function search(id: string, depth: number): Promise<SourceItem[] | null> {
+    if (visited.has(id) || depth >= MAX_CONTAINER_DEPTH || reads >= PLAY_THROUGH_READS) return null;
+    visited.add(id);
+    reads++;
+    const items = await soft(fetchMediaForEntity(id, signal), []);
     const next = nextUpChild(items);
     if (next && !nextUpFinished(next)) return items;
     if (next && replay.length === 0) replay = items;
-    const groups = (await fetchEntity(current, signal))?.relatedEntities?.map((group) => ({
-      ...group,
-      items: group.items.filter((item) => !visited.has(item.id)),
-    }));
-    current = nextUpChildContainer(groups)?.id;
+    const entity = await soft(fetchEntity(id, signal), null);
+    for (const child of childContainerCandidates(entity?.relatedEntities, visited)) {
+      const found = await search(child.id, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  for (const id of ids) {
+    const found = await search(id, 0);
+    if (found) return found;
   }
   return replay;
 }
