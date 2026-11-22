@@ -1526,6 +1526,45 @@ describe("usePlayer", () => {
     pending.requests[0].resolve();
   });
 
+  it("reports from the <video> a second Try again mounts after two failed loads (CORE-1703)", async () => {
+    // Codex CORE-1703 r8: when the first retry also fails, the next load must
+    // still rebind the listeners, though no element showed during either load.
+    let perf = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => perf);
+    vi.mocked(fetchPlaybackInfo)
+      .mockRejectedValueOnce(
+        new ApiError("server error", 500, { error: "playback info unavailable" }),
+      )
+      .mockRejectedValueOnce(
+        new ApiError("server error", 500, { error: "playback info unavailable" }),
+      );
+    const pending = capturePendingProgress();
+    render(<Harness unmountVideoOnMessage />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+
+    fireEvent.click(screen.getByRole("button", { name: "retry" }));
+    await waitFor(() => expect(vi.mocked(fetchPlaybackInfo)).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+
+    fireEvent.click(screen.getByRole("button", { name: "retry" }));
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 30 });
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.playing(video);
+    perf += 6_000;
+    Object.defineProperty(video, "paused", { configurable: true, value: true });
+    fireEvent.pause(video);
+    await waitFor(() => expect(pending.requests).toHaveLength(1));
+    expect(pending.requests[0].variables).toMatchObject({
+      positionSeconds: 30,
+      paused: true,
+      playedMS: 6_000,
+    });
+    pending.requests[0].resolve();
+  });
+
   it("removes the previous media resume listener before the next media loads metadata", async () => {
     vi.mocked(fetchPlaybackInfo)
       .mockResolvedValueOnce({
