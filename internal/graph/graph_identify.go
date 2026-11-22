@@ -487,6 +487,8 @@ func fixMatchChildError(err error) error {
 		key = l10n.FixMatchInvalidParent
 	case scrape.ErrChildParentRow:
 		key = l10n.FixMatchUnknownParent
+	case scrape.ErrChildParentAmbig:
+		key = l10n.FixMatchAmbiguousParent
 	case scrape.ErrChildOrdinal:
 		key = l10n.FixMatchInvalidParentOrdinal
 	default:

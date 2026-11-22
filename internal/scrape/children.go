@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ var (
 	ErrChildParentMissing = errors.New("parentKey is required after level 1")
 	ErrChildParentKey     = errors.New("invalid parentKey")
 	ErrChildParentRow     = errors.New("parentKey was not returned by the previous level")
+	ErrChildParentAmbig   = errors.New("parentKey names rows that open different listings")
 	ErrChildOrdinal       = errors.New("parent row has no valid ordinal for this level")
 )
 
@@ -59,60 +61,83 @@ func (e *Engine) ListChildren(ctx context.Context, spec plugin.ScraperSpec, leve
 	if err != nil {
 		return nil, err
 	}
+	listing := spec.Children[level-1]
 	var parent *ChildRow
 	if level > 1 {
-		parent, err = e.findChildParent(ctx, spec, 0, level-2, candidateID, *parentKey, nil, config)
-		if err != nil {
+		var matches []ChildRow
+		if err := e.findChildParents(ctx, spec, 0, level-2, candidateID, *parentKey, nil, config, &matches); err != nil {
 			return nil, err
 		}
-		if parent == nil {
+		if len(matches) == 0 {
 			return nil, ErrChildParentRow
 		}
+		// The wire key carries no ancestor, so the same key may appear under
+		// several earlier rows. That is safe only when every match opens the
+		// same listing.
+		first := childParentPairs(listing, &matches[0])
+		for i := range matches[1:] {
+			if !slices.Equal(childParentPairs(listing, &matches[i+1]), first) {
+				return nil, ErrChildParentAmbig
+			}
+		}
+		parent = &matches[0]
 	}
 	return e.childRows(ctx, spec, spec.Children[level-1], candidateID, parent, config)
 }
 
-// findChildParent starts at the root even after a restart or cache eviction.
-// For deeper levels the wire key carries no ancestor, so walk until it matches.
-func (e *Engine) findChildParent(ctx context.Context, spec plugin.ScraperSpec, current, target int, candidateID, parentKey string, parent *ChildRow, config map[string]string) (*ChildRow, error) {
+// findChildParents starts at the root even after a restart or cache eviction.
+// For deeper levels the wire key carries no ancestor, so it collects every row
+// at the target level whose key matches.
+func (e *Engine) findChildParents(ctx context.Context, spec plugin.ScraperSpec, current, target int, candidateID, parentKey string, parent *ChildRow, config map[string]string, matches *[]ChildRow) error {
 	rows, err := e.childRows(ctx, spec, spec.Children[current], candidateID, parent, config)
 	if errors.Is(err, ErrChildOrdinal) {
-		return nil, nil // This row cannot open the next level.
+		return nil // This row cannot open the next level.
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, row := range rows {
 		if current == target {
 			if row.Key == parentKey {
-				return &row, nil
+				*matches = append(*matches, row)
 			}
 			continue
 		}
 		if !sdk.ValidChildKeySegment(row.Key) {
 			continue
 		}
-		match, err := e.findChildParent(ctx, spec, current+1, target, candidateID, parentKey, &row, config)
-		if match != nil || err != nil {
-			return match, err
+		if err := e.findChildParents(ctx, spec, current+1, target, candidateID, parentKey, &row, config, matches); err != nil {
+			return err
 		}
 	}
-	return nil, nil
+	return nil
+}
+
+// childParentPairs returns the parent placeholders the listing's template
+// names, with the values a parent row substitutes for them.
+func childParentPairs(listing sdk.ChildListing, parent *ChildRow) [][2]string {
+	var sequence, index string
+	if parent.Sequence != nil {
+		sequence = *parent.Sequence
+	}
+	if parent.Index != nil {
+		index = strconv.Itoa(*parent.Index)
+	}
+	var pairs [][2]string
+	for _, pair := range [][2]string{{"{parent}", parent.Key}, {"{sequence}", sequence}, {"{index}", index}} {
+		if strings.Contains(listing.ListTemplate, pair[0]) {
+			pairs = append(pairs, pair)
+		}
+	}
+	return pairs
 }
 
 func (e *Engine) childRows(ctx context.Context, spec plugin.ScraperSpec, listing sdk.ChildListing, candidateID string, parent *ChildRow, config map[string]string) ([]ChildRow, error) {
 	var pairs [][2]string
 	if parent != nil {
-		var sequence, index string
-		if parent.Sequence != nil {
-			sequence = *parent.Sequence
-		}
-		if parent.Index != nil {
-			index = strconv.Itoa(*parent.Index)
-		}
-		pairs = [][2]string{{"{parent}", parent.Key}, {"{sequence}", sequence}, {"{index}", index}}
+		pairs = childParentPairs(listing, parent)
 		for _, pair := range pairs {
-			if strings.Contains(listing.ListTemplate, pair[0]) && !sdk.ValidChildKeySegment(pair[1]) {
+			if !sdk.ValidChildKeySegment(pair[1]) {
 				return nil, ErrChildOrdinal
 			}
 		}

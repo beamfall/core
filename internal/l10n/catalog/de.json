@@ -1,4 +1,5 @@
 {
+  "fix_match.ambiguous_parent": "Dieser übergeordnete Schlüssel bezeichnet mehrere Elemente mit unterschiedlichen Listen.",
   "fix_match.encrypted_library": "Die Zuordnung kann in verschlüsselten Bibliotheken nicht korrigiert werden.",
   "fix_match.extra_parent": "Auf Ebene 1 darf kein übergeordneter Schlüssel angegeben werden.",
   "fix_match.invalid_candidate": "Die Kandidaten-ID ist ungültig.",

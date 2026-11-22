@@ -1,4 +1,5 @@
 {
+  "fix_match.ambiguous_parent": "Esa clave del elemento principal indica varios elementos que abren listas diferentes.",
   "fix_match.encrypted_library": "La corrección de coincidencias no está disponible en bibliotecas cifradas.",
   "fix_match.extra_parent": "La clave del elemento principal debe omitirse en el nivel 1.",
   "fix_match.invalid_candidate": "El identificador del candidato no es válido.",

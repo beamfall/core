@@ -20,6 +20,7 @@ const (
 	FixMatchMissingParent        Key = "fix_match.missing_parent"
 	FixMatchInvalidParent        Key = "fix_match.invalid_parent"
 	FixMatchUnknownParent        Key = "fix_match.unknown_parent"
+	FixMatchAmbiguousParent      Key = "fix_match.ambiguous_parent"
 	FixMatchInvalidParentOrdinal Key = "fix_match.invalid_parent_ordinal"
 )
 
