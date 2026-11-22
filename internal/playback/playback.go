@@ -4,6 +4,7 @@ package playback
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -259,6 +260,67 @@ type AudioCodecCap struct {
 	MaxBitDepth   int    `json:"maxBitDepth,omitempty"`
 }
 
+// Decision is the closed whole-media playbackInfo verdict vocabulary (ADR-0141).
+// Growing it is a deliberate wire-contract change.
+type Decision string
+
+const (
+	DecisionDirectPlay           Decision = "direct-play"
+	DecisionDirectStream         Decision = "direct-stream"
+	DecisionPrecomputedRendition Decision = "precomputed-rendition"
+	DecisionTranscode            Decision = "transcode"
+	DecisionUnavailable          Decision = "unavailable"
+)
+
+// Decisions returns the closed Decision vocabulary in canonical order.
+func Decisions() []Decision {
+	return []Decision{
+		DecisionDirectPlay,
+		DecisionDirectStream,
+		DecisionPrecomputedRendition,
+		DecisionTranscode,
+		DecisionUnavailable,
+	}
+}
+
+// Valid reports whether d is a member of the closed Decision vocabulary.
+func (d Decision) Valid() bool {
+	switch d {
+	case DecisionDirectPlay,
+		DecisionDirectStream,
+		DecisionPrecomputedRendition,
+		DecisionTranscode,
+		DecisionUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// ParseDecision parses raw as a member of the closed Decision vocabulary.
+func ParseDecision(raw string) (Decision, error) {
+	d := Decision(raw)
+	if !d.Valid() {
+		return "", fmt.Errorf("playback: unrecognized decision %q", raw)
+	}
+	return d, nil
+}
+
+// UnmarshalJSON decodes a JSON string into Decision and rejects any value
+// outside the closed vocabulary.
+func (d *Decision) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	parsed, err := ParseDecision(raw)
+	if err != nil {
+		return err
+	}
+	*d = parsed
+	return nil
+}
+
 // InfoResponse is the playbackInfo payload consumed by clients.
 type InfoResponse struct {
 	MediaID string `json:"mediaID"`
@@ -274,7 +336,7 @@ type InfoResponse struct {
 	// indistinguishable from an unknown item. Receivers use this bit to discard
 	// stale Cast state immediately when Reveal is lost.
 	RestrictedOrigin    bool           `json:"restrictedOrigin,omitempty"`
-	Decision            string         `json:"decision"`
+	Decision            Decision       `json:"decision"`
 	Reason              string         `json:"reason,omitempty"`
 	StreamTokenRequired bool           `json:"streamTokenRequired"`
 	Streams             []StreamChoice `json:"streams"`
@@ -497,7 +559,7 @@ type NextInfo struct {
 	// MediaClass mirrors InfoResponse.MediaClass for the declared next item, so
 	// a gapless audio queue keeps routing audio transport across the handoff.
 	MediaClass string         `json:"mediaClass,omitempty"`
-	Decision   string         `json:"decision"`
+	Decision   Decision       `json:"decision"`
 	Streams    []StreamChoice `json:"streams"`
 	Timeline   Timeline       `json:"timeline"`
 	// Parts mirrors InfoResponse.Parts for the declared next item.
@@ -727,7 +789,7 @@ type decision struct {
 	restrictedOrigin bool
 	loudnessInfo     *LoudnessInfo
 	subtitles        subtitleResolution
-	verdict          string // direct-play | transcode | unavailable
+	verdict          Decision
 	reason           string
 	streams          []StreamChoice
 	timeline         Timeline
@@ -1364,9 +1426,9 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 	if composed, live, ok, err := s.composedChoice(ctx, scope, grant, suffix, media, file, profile, hlsAudio, expiresAt, ov, transcodeRefusal, audio.overridesDefault()); err != nil {
 		return decision{}, err
 	} else if ok {
-		verdict := "precomputed-rendition"
+		verdict := DecisionPrecomputedRendition
 		if live {
-			verdict = "transcode"
+			verdict = DecisionTranscode
 		}
 		return decision{
 			media:          media,
@@ -2118,8 +2180,8 @@ func (s *Service) loudnessInfo(dec decision, profile CapabilityProfile) *Loudnes
 // server never forces a transcode/worse rung solely to normalize). Any other
 // verdict is a transcode the server chose for other reasons, where it applies the
 // offset itself → server-normalized.
-func loudnessState(verdict, source string, declaredModes []string) string {
-	if verdict == "direct-play" {
+func loudnessState(verdict Decision, source string, declaredModes []string) string {
+	if verdict == DecisionDirectPlay {
 		if normalizationModeCovers(declaredModes, source) {
 			return LoudnessStateDirectSupported
 		}

@@ -52,7 +52,7 @@ func TestSubtitleUnavailableIsIndependentOfDecisionVerdict(t *testing.T) {
 		t.Run(verdict, func(t *testing.T) {
 			doc := marshalInfoResponse(t, playback.InfoResponse{
 				MediaID:                    "media-alpha",
-				Decision:                   verdict,
+				Decision:                   playback.Decision(verdict),
 				Reason:                     wholeMediaReason,
 				SubtitlesUnavailableReason: subtitleUnavailableReason,
 			})

@@ -108,7 +108,7 @@ func TestCanDirectPlayRichProfile(t *testing.T) {
 		height    int
 		streams   []store.MediaFileStream
 		profile   CapabilityProfile
-		want      string // direct-play | transcode
+		want      Decision // direct-play | transcode
 	}{
 		{
 			// The headline acceptance case: a 4K Dolby Vision TrueHD file routed
@@ -287,7 +287,7 @@ func TestCapabilityProfileTierUsesEnvelopeUnderStableClientIdentity(t *testing.T
 	for _, tc := range []struct {
 		name    string
 		profile CapabilityProfile
-		want    string
+		want    Decision
 	}{
 		{name: "low tier transcodes from its envelope", profile: low, want: "transcode"},
 		{name: "high tier direct-plays from its envelope", profile: high, want: "direct-play"},

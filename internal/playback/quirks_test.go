@@ -117,7 +117,7 @@ func TestQuirkOverlayTierScoped(t *testing.T) {
 func TestQuirkOverlayFirmwareScoped(t *testing.T) {
 	cases := []struct {
 		firmware string
-		want     string
+		want     Decision
 	}{
 		{"3.0.1", "direct-play"}, // above firmwareMax
 		{"0.9.9", "direct-play"}, // below firmwareMin
@@ -175,14 +175,14 @@ func TestQuirkOverlayClientScoped(t *testing.T) {
 
 // verdictRank orders the decision ladder. The overlay may only ever move a
 // verdict UP this ordering.
-func verdictRank(t *testing.T, verdict string) int {
+func verdictRank(t *testing.T, verdict Decision) int {
 	t.Helper()
-	rank := map[string]int{
-		"direct-play":           0,
-		"precomputed-rendition": 1,
-		"direct-stream":         2,
-		"transcode":             3,
-		"unavailable":           4,
+	rank := map[Decision]int{
+		DecisionDirectPlay:           0,
+		DecisionPrecomputedRendition: 1,
+		DecisionDirectStream:         2,
+		DecisionTranscode:            3,
+		DecisionUnavailable:          4,
 	}
 	value, ok := rank[verdict]
 	if !ok {
@@ -215,7 +215,7 @@ func TestQuirkOverlayIsMonotoneRestrictive(t *testing.T) {
 		entries []QuirkEntry
 		media   func(*testing.T, *store.Store) store.MediaID
 		setup   func(*testing.T, *Service, *store.Store, auth.Scope)
-		want    string
+		want    Decision
 	}{
 		{
 			name:    "denied video codec",
@@ -372,7 +372,7 @@ func TestQuirkUnverifiableSourceFactRestricts(t *testing.T) {
 		streams  []store.MediaFileStream
 		height   int
 		override QuirkOverride
-		want     string
+		want     Decision
 	}{
 		{
 			name:     "bitrate cap with unknown size",
@@ -426,7 +426,7 @@ func TestQuirkUnverifiableSourceFactRestricts(t *testing.T) {
 			if profile.Client == "" {
 				profile = quirkClientProfile
 			}
-			run := func(entries ...QuirkEntry) string {
+			run := func(entries ...QuirkEntry) Decision {
 				service, st, scope := capabilityTestService(t)
 				installQuirks(t, service, entries...)
 				mediaID := importProbedMedia(t, st, "fp-unverifiable", "mkv", "hevc", 1920, tc.height, tc.streams)
@@ -469,7 +469,7 @@ func TestQuirkHDRDenyLeavesSDRDirectPlayable(t *testing.T) {
 	cases := []struct {
 		name    string
 		streams []store.MediaFileStream
-		want    string
+		want    Decision
 	}{
 		{"SDR still direct-plays", []store.MediaFileStream{videoStream("hevc", "Main 10", 0, ""), audioStream(1, "eac3", 6)}, "direct-play"},
 		{"real HDR10 transcodes", []store.MediaFileStream{videoStream("hevc", "Main 10", 0, "smpte2084"), audioStream(1, "eac3", 6)}, "transcode"},
@@ -513,7 +513,7 @@ func TestQuirkForceRemuxOnHDRSourceFallsToTranscode(t *testing.T) {
 	cases := []struct {
 		name    string
 		streams []store.MediaFileStream
-		want    string
+		want    Decision
 	}{
 		{"HDR10+ source", []store.MediaFileStream{hdr10PlusVideoStream("hevc", "Main 10"), audioStream(1, "eac3", 6)}, "transcode"},
 		{"Dolby Vision profile 7 source", []store.MediaFileStream{dolbyVision(7), audioStream(1, "eac3", 6)}, "transcode"},
