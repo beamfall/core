@@ -761,7 +761,8 @@ function FeaturePlayer({
   // that item.
   // Plays-alone Media continues into nothing (CORE-3147), even when playback-info
   // issued a successor before the media read said so.
-  const reportedNext = playsAloneRead ? undefined : (state.info?.next ?? undefined);
+  const reportedNext =
+    playsAloneRead && !serverQueueRun ? undefined : (state.info?.next ?? undefined);
   const issuedNext =
     serverQueueRun || (catalogQueue && playingClass === "audio")
       ? state.mediaID === mediaId && reportedNext?.mediaID === nextInQueue?.id

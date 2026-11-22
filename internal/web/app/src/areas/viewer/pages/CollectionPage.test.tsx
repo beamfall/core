@@ -196,6 +196,15 @@ describe("CollectionPage", () => {
     expect(await screen.findByText("Added Encore.")).toBeInTheDocument();
   });
 
+  it("keeps the screensaver away while a search term waits for its submit", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("searchbox", { name: "Search this library" })).toHaveAttribute(
+      "data-unsaved-until-submit",
+    );
+  });
+
   it("offers no editing on a viewer device", async () => {
     session.isManager = false;
     renderPage();

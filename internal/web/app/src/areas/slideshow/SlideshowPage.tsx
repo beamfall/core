@@ -355,8 +355,24 @@ function Slideshow() {
     [steps, groups, groupAt],
   );
 
+  // The motion seam's driver and the slide element it last received (CORE-2980).
+  const driverRef = useRef<SlideMotionDriver | null>(null);
+  const previousSlideRef = useRef<HTMLElement | null>(null);
+  // The interval counts from when the slide is on screen: under Calm the motion
+  // canvas can still be holding black when the DOM slide has painted.
+  const currentKeyRef = useRef(currentKey);
+  currentKeyRef.current = currentKey;
   const markPainted = useCallback((key: string) => {
-    setShown((value) => (value?.id === key ? value : { id: key, at: performance.now(), held: 0 }));
+    const show = () => {
+      if (currentKeyRef.current !== key) return;
+      setShown((value) =>
+        value?.id === key ? value : { id: key, at: performance.now(), held: 0 },
+      );
+    };
+    const driver = driverRef.current;
+    const element = previousSlideRef.current;
+    if (driver && element) void driver.whenPresented(element).then(show);
+    else show();
   }, []);
 
   const markBroken = useCallback((id: string) => {
@@ -467,13 +483,14 @@ function Slideshow() {
   }, [captionID, captions, locale]);
 
   // The motion seam: Oscillux drives slide changes where it can (CORE-2980).
-  const driverRef = useRef<SlideMotionDriver | null>(null);
-  const previousSlideRef = useRef<HTMLElement | null>(null);
   const intervalRef = useRef(intervalMs);
   intervalRef.current = intervalMs;
   useEffect(() => {
     const driver = oscilluxSlideMotion(prefs.motion, { intervalMs: () => intervalRef.current });
     driverRef.current = driver;
+    // The slide already on the stage (Still switched to Calm, say) is the driver's first.
+    const mounted = previousSlideRef.current;
+    if (driver && mounted?.isConnected) driver.advance(null, mounted);
     return () => {
       driver?.dispose();
       driverRef.current = null;
