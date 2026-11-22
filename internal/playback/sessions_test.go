@@ -1969,7 +1969,7 @@ func TestEnsureRungRefusesEvictedSession(t *testing.T) {
 			t.Fatalf("recreate rung dir: %v", err)
 		}
 
-		_, err := sessions.ensureRung(context.Background(), key, stale, rung, 0, filepath.Join(rungDir, "seg00000.m4s"))
+		_, err := sessions.ensureRung(context.Background(), key, stale, rung, 0, filepath.Join(rungDir, "seg00000.m4s"), false)
 		if !errors.Is(err, ErrSessionEvicted) {
 			t.Fatalf("ensureRung err = %v, want ErrSessionEvicted", err)
 		}
@@ -2013,7 +2013,7 @@ func TestEnsureRungRefusesEvictedSession(t *testing.T) {
 
 		// Segment 12 is past the frontier plus lookahead, so this is the far-seek
 		// request that drops the lock to rescan the frontier.
-		_, err := sessions.ensureRung(context.Background(), key, stale, rung, 12, filepath.Join(rungDir, "seg00012.m4s"))
+		_, err := sessions.ensureRung(context.Background(), key, stale, rung, 12, filepath.Join(rungDir, "seg00012.m4s"), false)
 		if !errors.Is(err, ErrSessionEvicted) {
 			t.Fatalf("ensureRung err = %v, want ErrSessionEvicted", err)
 		}

@@ -1127,12 +1127,12 @@ func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, sess
 			return artifactObservation{path: path}, nil // synthesized at session creation
 		}
 		// Linear mode: ffmpeg owns the variant playlist, so it must run.
-		if run, err = s.ensureRung(ctx, key, session, rung, 0, path); err != nil {
+		if run, err = s.ensureRung(ctx, key, session, rung, 0, path, false); err != nil {
 			return artifactObservation{}, err
 		}
 	case file == initSegmentName:
 		segment = initRequest
-		if run, err = s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
+		if run, err = s.ensureRung(ctx, key, session, rung, segment, path, false); err != nil {
 			return artifactObservation{}, err
 		}
 	default:
@@ -1194,7 +1194,7 @@ func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *
 	if s.beyondSourceEnd(session, rung, segment) {
 		return artifactObservation{}, ErrSourceEnded
 	}
-	run, err := s.ensureRung(ctx, key, session, rung, segment, path)
+	run, err := s.ensureRung(ctx, key, session, rung, segment, path, false)
 	if err != nil {
 		return artifactObservation{}, err
 	}
@@ -1275,7 +1275,7 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 				return artifactObservation{}, errEncoderFailing
 			}
 			restarts++
-			if run, err = s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
+			if run, err = s.ensureRung(ctx, key, session, rung, segment, path, false); err != nil {
 				return artifactObservation{}, err
 			}
 			slog.Warn("restarted live transcode at the requested segment",
@@ -1283,6 +1283,10 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 		}
 	}
 }
+
+// errFollowLive tells followRung that an encoder went live before it could
+// start one.
+var errFollowLive = errors.New("playback: encoder went live while following")
 
 // followRung picks the run a request waits on once the run it watched stopped
 // (CORE-1256). A live run of rung that started at or before segment writes
@@ -1319,9 +1323,12 @@ func (s *Sessions) followRung(ctx context.Context, key SessionKey, session *hlsS
 			return run, writes, nil
 		}
 		s.mu.Unlock()
-		// An encoder another request starts before ensureRung takes the lock
-		// is handled as any fresh request for segment would handle it.
-		run, err = s.ensureRung(ctx, key, session, rung, segment, path)
+		// ensureRung starts an encoder only if none is live once it holds the
+		// lock; one another request started in the gap is followed instead.
+		run, err = s.ensureRung(ctx, key, session, rung, segment, path, true)
+		if errors.Is(err, errFollowLive) {
+			continue
+		}
 		return run, err == nil, err
 	}
 }
@@ -1760,7 +1767,7 @@ func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeli
 // new-bitrate, reusing the seek-restart machinery), and restarts it when a
 // seek lands outside the produced window. It returns the encoder run that will
 // produce path, or nil when path already exists.
-func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, requested int, path string) (*encoderRun, error) {
+func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, requested int, path string, follow bool) (*encoderRun, error) {
 	for {
 		select {
 		case <-session.scratch.cutoff:
@@ -1796,6 +1803,11 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 				return nil, pending.err
 			}
 			continue
+		}
+		if follow && session.proc != nil {
+			// A follower never replaces a live encoder (followRung).
+			s.mu.Unlock()
+			return nil, errFollowLive
 		}
 		segment := requested
 		if requested == initRequest {
