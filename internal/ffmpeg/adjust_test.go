@@ -121,7 +121,7 @@ func TestComposedSegmentArgsTempoGraphics(t *testing.T) {
 	args := composedSegmentArgs("/lib/song.mp3", "/scratch/s/composed", picture, 10, 4, rendition)
 	// The graphics are drawn at source time (trimmed at source 32s) and
 	// stamped at output time, so they stay with the retimed audio.
-	if got, want := argAfter(args, "-vf"), "scale=1000:720:flags=neighbor,pad=1280:720:(ow-iw)/2:0,fps=30,tpad=stop=-1:stop_mode=clone,trim=start=32,setpts=(PTS-STARTPTS)/0.8,fps=30,format=yuv420p"; got != want {
+	if got, want := argAfter(args, "-vf"), "fps=30,xbr=n=4,scale=1000:720:flags=bicubic,pad=1280:720:(ow-iw)/2:0,tpad=stop=-1:stop_mode=clone,trim=start=32,setpts=(PTS-STARTPTS)/0.8,fps=30,format=yuv420p"; got != want {
 		t.Fatalf("-vf = %q\nwant %q", got, want)
 	}
 	if !containsPair(args, "-ss", "32") || !containsPair(args, "-output_ts_offset", "40") || argAfter(args, "-af") != "atempo=0.8,aresample=matrix_encoding=dplii" {

@@ -23,7 +23,7 @@ func TestComposedHLSArgsGraphics(t *testing.T) {
 	if args[0] != "-v" || args[2] != "-i" || args[3] != "/lib/song.cdg" {
 		t.Fatalf("picture input must come first: %q", args)
 	}
-	if got, want := argAfter(args, "-vf"), "scale=1000:720:flags=neighbor,pad=1280:720:(ow-iw)/2:0,fps=30,tpad=stop=-1:stop_mode=clone,format=yuv420p"; got != want {
+	if got, want := argAfter(args, "-vf"), "fps=30,xbr=n=4,scale=1000:720:flags=bicubic,pad=1280:720:(ow-iw)/2:0,tpad=stop=-1:stop_mode=clone,format=yuv420p"; got != want {
 		t.Fatalf("-vf = %q\nwant %q", got, want)
 	}
 	for _, want := range [][]string{
@@ -235,7 +235,7 @@ func TestStartBackgroundComposedHLSRealEncode(t *testing.T) {
 
 func TestComposedSegmentArgsStartOffsetGraphics(t *testing.T) {
 	args := composedSegmentArgs("/lib/song.mp3", "/scratch/s/composed", ComposedPicture{GraphicsPath: "/lib/song.cdg"}, 3, 4, Rendition{VideoKbps: 1500})
-	if got, want := argAfter(args, "-vf"), "scale=1000:720:flags=neighbor,pad=1280:720:(ow-iw)/2:0,fps=30,tpad=stop=-1:stop_mode=clone,trim=start=12,setpts=PTS-STARTPTS,format=yuv420p"; got != want {
+	if got, want := argAfter(args, "-vf"), "fps=30,xbr=n=4,scale=1000:720:flags=bicubic,pad=1280:720:(ow-iw)/2:0,tpad=stop=-1:stop_mode=clone,trim=start=12,setpts=PTS-STARTPTS,format=yuv420p"; got != want {
 		t.Fatalf("-vf = %q\nwant %q", got, want)
 	}
 	// The graphics input is never seeked (it is drawn incrementally); the

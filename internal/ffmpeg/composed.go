@@ -21,6 +21,9 @@ const (
 	// A graphics track is drawn at its own aspect, pillarboxed to the canvas.
 	// 1000x720 keeps a 300x216 graphics frame's shape (25:18) to the pixel.
 	composedGraphicsWidth = 1000
+	// The xBR magnification of a graphics frame before it is fitted to the
+	// canvas: 4x (1200x864) is the smallest that covers the 720p graphics size.
+	composedGraphicsMagnify = 4
 )
 
 // ComposedCanvas is the canvas a composed rendition of the given height is
@@ -50,7 +53,7 @@ var ErrComposedPictureOutsideConfinement = errors.New("ffmpeg: composed picture 
 // source has none of its own. Exactly one field is set:
 //
 //   - GraphicsPath: a sibling file FFmpeg decodes as a video stream (a graphics
-//     subcode track), scaled without smoothing and pillarboxed.
+//     subcode track), upscaled edge-aware (xBR) and pillarboxed.
 //   - TimedTextPath: an ASS document rendered by libass over a black canvas.
 type ComposedPicture struct {
 	GraphicsPath  string
@@ -172,10 +175,16 @@ func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rend
 	width, height := ComposedCanvas(rendition.Height)
 	if picture.GraphicsPath != "" {
 		args = append(args, "-i", picture.GraphicsPath)
+		// The decoder emits 300 frames a second, so the output rate is taken
+		// first and the upscale runs on 30. xBR magnifies the low-resolution
+		// graphics 4x along their edges (smooth curves, crisp lyrics), and a
+		// bicubic step fits that to the graphics size, which is not an integer
+		// multiple of 300x216 (CORE-3149).
 		filters = []string{
-			fmt.Sprintf("scale=%d:%d:flags=neighbor", evenRound(float64(composedGraphicsWidth*height)/composedHeight), height),
-			fmt.Sprintf("pad=%d:%d:(ow-iw)/2:0", width, height),
 			fmt.Sprintf("fps=%d", composedFPS),
+			fmt.Sprintf("xbr=n=%d", composedGraphicsMagnify),
+			fmt.Sprintf("scale=%d:%d:flags=bicubic", evenRound(float64(composedGraphicsWidth*height)/composedHeight), height),
+			fmt.Sprintf("pad=%d:%d:(ow-iw)/2:0", width, height),
 			"tpad=stop=-1:stop_mode=clone",
 		}
 		switch {
