@@ -129,9 +129,29 @@ func TestAudiobookPackResolverPacksEveryPartAndItsChapters(t *testing.T) {
 		t.Fatalf("Part 0 chapters = %+v, want Chapter 1 [0,60) and Chapter 2 at 60, no intro", chapters)
 	}
 
+	// A book with a missing Part is refused rather than packed half-complete.
+	if err := st.MarkMediaFileMissing(context.Background(), "library-local", missingPart(t, st)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.BuildPack(context.Background(), packAuthScope(), offlinepack.BuildPackRequest{
+		TargetKind: books.PackKindBook, TargetRef: "media-alpha",
+	}); err == nil || !strings.Contains(err.Error(), "missing Part") {
+		t.Fatalf("BuildPack with a missing Part = %v, want a missing Part refusal", err)
+	}
+
 	resolver := audiobookPackResolver{store: st, inner: inner}
 	localOnly := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}}
 	if _, err := resolver.Resolve(context.Background(), "media-archive", localOnly); err == nil {
 		t.Fatal("resolver packed a book outside the caller's Libraries")
 	}
+}
+
+// missingPart returns the path of the book's last Part.
+func missingPart(t *testing.T, st *store.Store) string {
+	t.Helper()
+	files, err := st.MediaFilesForMedia(context.Background(), "media-alpha", revealedPackFilter())
+	if err != nil || len(files) != 3 {
+		t.Fatalf("MediaFilesForMedia = %d, %v", len(files), err)
+	}
+	return files[2].Path
 }

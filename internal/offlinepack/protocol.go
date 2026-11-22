@@ -87,8 +87,13 @@ type ManifestMarker struct {
 	EndSeconds   *float64 `json:"end_seconds,omitempty"`
 }
 
-// MaxManifestMarkers bounds the chapter Markers one manifest item carries.
-const MaxManifestMarkers = 4096
+// MaxManifestMarkers bounds the chapter Markers one manifest carries across
+// all its items, and MaxManifestMarkerTitleBytes bounds their titles' total
+// bytes, so a book with a runaway Marker set cannot bloat a signed manifest.
+const (
+	MaxManifestMarkers          = 4096
+	MaxManifestMarkerTitleBytes = 256 << 10
+)
 
 type ManifestWrap struct {
 	Suite          string `json:"suite"`
@@ -367,6 +372,18 @@ func validManifestParts(item ManifestItem) bool {
 	return true
 }
 
+// validManifestMarkerBudget checks the manifest-wide chapter Marker bounds.
+func validManifestMarkerBudget(items []ManifestItem) bool {
+	markers, titleBytes := 0, 0
+	for _, item := range items {
+		markers += len(item.Markers)
+		for _, marker := range item.Markers {
+			titleBytes += len(marker.Title)
+		}
+	}
+	return markers <= MaxManifestMarkers && titleBytes <= MaxManifestMarkerTitleBytes
+}
+
 func finiteNonNegative(v float64) bool {
 	return v >= 0 && !math.IsInf(v, 0) && !math.IsNaN(v)
 }
@@ -377,7 +394,8 @@ func ValidateManifestClaims(c ManifestClaims) error {
 		!validDigest(c.ManifestSHA256) || !validDigest(c.GrantScopeSHA256) ||
 		c.PackExpiresAt <= 0 || !sortedUniqueNonEmpty(c.LibraryIDs) ||
 		c.Wrap.Suite != WrapSuite || c.Wrap.DeviceKID != c.DeviceKeyThumbprint ||
-		!validDigest(c.Wrap.EnvelopeSHA256) || len(c.Items) == 0 || len(c.Items) > MaxManifestItems {
+		!validDigest(c.Wrap.EnvelopeSHA256) || len(c.Items) == 0 || len(c.Items) > MaxManifestItems ||
+		!validManifestMarkerBudget(c.Items) {
 		return ErrInvalidEnvelope
 	}
 	envelope, err := DecodeWrappedEnvelope(c.Wrap.Envelope)
@@ -417,11 +435,11 @@ func validateManifestBinding(c ManifestBinding) error {
 	if c.V != 1 || c.Iss == "" || c.Aud != OfflinePackAudience || c.PackID == "" || c.ProfileID == "" ||
 		!sortedUniqueNonEmpty(c.LibraryIDs) || c.DeviceEnrollmentID == "" || c.DeviceKeyThumbprint == "" ||
 		c.ManifestRevision == 0 || c.PackExpiresAt <= 0 || len(c.Items) == 0 ||
-		len(c.Items) > MaxManifestItems || c.WrapSuite != WrapSuite {
+		len(c.Items) > MaxManifestItems || c.WrapSuite != WrapSuite || !validManifestMarkerBudget(c.Items) {
 		return ErrInvalidEnvelope
 	}
 	for _, item := range c.Items {
-		if item.MediaID == "" || item.Size > MaxItemSize || !validDigest(item.SHA256) {
+		if item.MediaID == "" || item.Size > MaxItemSize || !validDigest(item.SHA256) || !validManifestParts(item) {
 			return ErrInvalidEnvelope
 		}
 	}
