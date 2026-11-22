@@ -9,8 +9,14 @@ import { fetchPreviewInfo } from "../viewer/lib/playback";
 import {
   clampInterval,
   DEFAULT_INTERVAL_SECONDS,
+  inDarkRoomWindow,
+  nextDarkRoomBoundary,
   nextDelay,
   parseSlideshowSource,
+  type Slide,
+  type SlideShape,
+  slideGroupSettled,
+  slideGroups,
   slidesFrom,
   slideshowPath,
 } from "./lib/slideshow";
@@ -111,6 +117,62 @@ describe("slideshow helpers", () => {
     expect(parseSlideshowSource("source=nope")).toBeNull();
   });
 
+  it("pairs consecutive portraits on a landscape screen and leaves a lone portrait alone", () => {
+    const slide = (id: string, clip = false): Slide => ({ item: media(id), clip });
+    const shapes: Record<string, SlideShape> = {
+      p1: "portrait",
+      p2: "portrait",
+      p3: "portrait",
+      wide: "landscape",
+      p4: "portrait",
+      clip: "portrait",
+      p5: "portrait",
+    };
+    const slides = ["p1", "p2", "p3", "wide", "p4", "clip", "p5", "unknown"].map((id) =>
+      slide(id, id === "clip"),
+    );
+    const ids = (pair: boolean) =>
+      slideGroups(slides, (s) => shapes[s.item.id], pair).map((group) =>
+        group.slides.map((s) => s.item.id).join("+"),
+      );
+    expect(ids(true)).toEqual(["p1+p2", "p3", "wide", "p4", "clip", "p5", "unknown"]);
+    expect(ids(false)).toEqual(["p1", "p2", "p3", "wide", "p4", "clip", "p5", "unknown"]);
+    // The last portrait never wraps round to pair with the first.
+    expect(ids(true).at(-1)).toBe("unknown");
+    expect(slideGroups([slide("p1")], (s) => shapes[s.item.id], true)).toHaveLength(1);
+  });
+
+  it("waits for the portraits before a slide so Previous never splits a pair", () => {
+    const slides = ["wide", "e", "f"].map((id): Slide => ({ item: media(id), clip: false }));
+    const known: Record<string, SlideShape> = { wide: "landscape", f: "portrait" };
+    const shapeOf = (s: Slide) => known[s.item.id];
+    expect(slideGroupSettled(slides, 2, shapeOf, true)).toBe(false);
+    known.e = "portrait";
+    expect(slideGroups(slides, shapeOf, true).map((g) => g.start)).toEqual([0, 1]);
+    expect(slideGroupSettled(slides, 1, shapeOf, true)).toBe(true);
+  });
+
+  it("finds the Dark Room window across midnight", () => {
+    const at = (hours: number, minutes = 0) => new Date(2026, 0, 1, hours, minutes);
+    expect(inDarkRoomWindow(at(23), "22:00", "07:00")).toBe(true);
+    expect(inDarkRoomWindow(at(2, 30), "22:00", "07:00")).toBe(true);
+    expect(inDarkRoomWindow(at(7), "22:00", "07:00")).toBe(false);
+    expect(inDarkRoomWindow(at(12), "22:00", "07:00")).toBe(false);
+    expect(inDarkRoomWindow(at(22), "22:00", "07:00")).toBe(true);
+    expect(inDarkRoomWindow(at(13), "12:00", "14:00")).toBe(true);
+    expect(inDarkRoomWindow(at(15), "12:00", "14:00")).toBe(false);
+    expect(inDarkRoomWindow(at(12), "12:00", "12:00")).toBe(false);
+    expect(inDarkRoomWindow(at(12), "noon", "14:00")).toBe(false);
+  });
+
+  it("ends a manual Dark Room choice at the schedule's next boundary", () => {
+    const at = (day: number, hours: number) => new Date(2026, 0, day, hours);
+    expect(nextDarkRoomBoundary(at(1, 12), "22:00", "07:00")).toEqual(at(1, 22));
+    expect(nextDarkRoomBoundary(at(1, 23), "22:00", "07:00")).toEqual(at(2, 7));
+    expect(nextDarkRoomBoundary(at(1, 7), "22:00", "07:00")).toEqual(at(1, 22));
+    expect(nextDarkRoomBoundary(at(1, 12), "12:00", "12:00")).toBeNull();
+  });
+
   it("hard-cuts until Oscillux ships a photo-slideshow mode", () => {
     expect(oscilluxSlideMotion("calm")).toBeNull();
     expect(slideshowMotionAvailable("calm")).toBe(false);
@@ -118,12 +180,28 @@ describe("slideshow helpers", () => {
   });
 });
 
+/** jsdom never decodes images: this one "loads" portrait when its URL says "tall". */
+class FakeImage {
+  decoding = "";
+  naturalWidth = 0;
+  naturalHeight = 0;
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  set src(url: string) {
+    const tall = url.includes("tall");
+    this.naturalWidth = tall ? 900 : 1600;
+    this.naturalHeight = tall ? 1350 : 1000;
+    queueMicrotask(() => this.onload?.());
+  }
+}
+
 describe("SlideshowPage", () => {
   const fetchSpy = vi.fn(async () => new Response("{}"));
 
   beforeEach(() => {
     vi.mocked(fetchSourceItems).mockResolvedValue(listed);
     vi.stubGlobal("fetch", fetchSpy);
+    vi.stubGlobal("Image", FakeImage);
   });
 
   afterEach(() => {
@@ -163,6 +241,57 @@ describe("SlideshowPage", () => {
     expect(screen.getByRole("radio", { name: /Calm/ })).toBeDisabled();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(await screen.findByText("home")).toBeInTheDocument();
+  });
+
+  it("shows two portraits as one slide and steps past the pair", async () => {
+    vi.mocked(fetchSourceItems).mockResolvedValue([
+      media("tall-a"),
+      media("tall-b"),
+      media("wide"),
+    ]);
+    renderAt("/slideshow?source=all-items");
+    expect(await screen.findByRole("img", { name: "Title tall-a" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Title tall-b" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(await screen.findByRole("img", { name: "Title wide" })).toBeInTheDocument();
+    expect(screen.getAllByRole("img")).toHaveLength(1);
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(await screen.findByRole("img", { name: "Title tall-b" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Title tall-a" })).toBeInTheDocument();
+  });
+
+  it("keeps a trailing pair together when Previous wraps to it", async () => {
+    vi.mocked(fetchSourceItems).mockResolvedValue([
+      media("wide"),
+      media("tall-e"),
+      media("tall-f"),
+    ]);
+    renderAt("/slideshow?source=all-items");
+    await screen.findByRole("img", { name: "Title wide" });
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(await screen.findByRole("img", { name: "Title tall-e" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Title tall-f" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(await screen.findByRole("img", { name: "Title wide" })).toBeInTheDocument();
+  });
+
+  it("dims on the Dark Room schedule", async () => {
+    const clock = (date: Date) =>
+      `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+    const now = Date.now();
+    localStorage.setItem(
+      "bf.slideshow.prefs",
+      JSON.stringify({
+        darkRoom: true,
+        darkRoomStart: clock(new Date(now - 3_600_000)),
+        darkRoomEnd: clock(new Date(now + 3_600_000)),
+      }),
+    );
+    renderAt("/slideshow?source=favorites");
+    await screen.findByRole("img", { name: "Title one" });
+    expect(screen.getByTestId("slideshow-dim")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "d" });
+    expect(screen.queryByTestId("slideshow-dim")).not.toBeInTheDocument();
   });
 
   it("dims the stage for Dark Room on D", async () => {

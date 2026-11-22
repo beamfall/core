@@ -27,7 +27,19 @@ generated preview clip, and the docked player keeps the play queue going across 
   plugin's subtitle line when the item has them, and the track the play queue is playing (read
   from the Media Session the player publishes). Music is whatever the current queue plays: the
   docked player keeps playing under the slideshow.
-- **Dark Room.** Dims the stage to near-black.
+- **Dark Room.** A schedule, on or off with a start and end time (default 22:00 to 07:00, a range
+  may cross midnight), stored per device in browser storage. Inside the window a plain opaque black
+  scrim at about 85% covers the stage and the clock and caption stay readable but dim. This is UI
+  dimming, not a visual effect: no filter or shader. D dims or undims at once until the schedule
+  next changes state.
+- **Portrait pairing.** On a landscape screen a portrait photo shares the stage, side by side with a
+  small gap, with the next photo in the queue when that one is a portrait too, as Apple does. A lone
+  portrait (the next is not a portrait, or the queue ends) shows alone. A pair is one slide:
+  Previous and Next step by slides, and the caption is the first photo's date and place. Orientation
+  is read from the decoded image, since the wire has no dimensions. Pairing is layout only: two
+  fitted images in two halves. The design's "blurred fill, never letterbox bars" is a visual effect,
+  and Oscillux is the only source of those (ADR-0228), so a lone portrait keeps its dark bars; the
+  Oscillux `fill` and `pair` layouts (CORE-2980) take over through the `oscilluxSlideMotion` seam.
 - **Keyboard.** Space pauses, arrows step, O toggles the overlay, D toggles Dark Room, F toggles
   browser full screen, S opens the setup sheet, Escape closes the sheet or the slideshow.
 - **Entry points.** A Slideshow action on an ordered Collection's page and on a Library's browse
@@ -46,8 +58,8 @@ generated preview clip, and the docked player keeps the play queue going across 
 ## Non-goals
 
 - Ambient Groups, multi-room sync, remotes and "send to TV" (AMBIENT-GROUP-SYNC-1, REMOTE-RELAY-1).
-- The tvOS leg and its screensaver hook (CORE-2981 Apple leg).
-- Portrait pairing and blurred fill (needs Oscillux), Dark Room on a schedule, playlist picking.
+- The tvOS leg and its screensaver hook (CORE-2981 Apple leg, built in parallel).
+- Blurred fill behind a lone portrait (an Oscillux layout, CORE-2980) and playlist picking.
 - Selection-mode "Play slideshow" (W2) and Places as a Source.
 
 ## Failure modes

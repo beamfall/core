@@ -14,20 +14,30 @@ import { fetchMediaDetailFields } from "../viewer/lib/mediaDetail";
 import { fetchPreviewInfo } from "../viewer/lib/playback";
 import {
   clampInterval,
+  clockMinutes,
+  DEFAULT_DARK_ROOM_END,
+  DEFAULT_DARK_ROOM_START,
   DEFAULT_INTERVAL_SECONDS,
   fetchSlideshowItems,
+  inDarkRoomWindow,
   MAX_INTERVAL_SECONDS,
   MIN_INTERVAL_SECONDS,
+  nextDarkRoomBoundary,
   nextDelay,
   parseSlideshowSource,
   SLIDESHOW_SOURCE_KINDS,
   type Slide,
+  type SlideGroup,
+  type SlideShape,
   type SlideshowSource,
   type SlideshowSourceKind,
   sameSource,
   slideDate,
+  slideGroupSettled,
+  slideGroups,
   slidesFrom,
   slideshowPath,
+  unreadPortraitBefore,
 } from "./lib/slideshow";
 import {
   defaultSlideshowMotion,
@@ -50,6 +60,8 @@ import "./slideshow.css";
 const SLIDE_BUCKET = "w1280";
 const PREFS_KEY = "bf.slideshow.prefs";
 const CHROME_HIDE_MS = 3000;
+/** How many slides from the current one have their shape read ahead: this group and the next. */
+const SHAPE_LOOKAHEAD = 4;
 const NO_LIBRARIES: readonly LibrarySummary[] = [];
 const SESSION_RECHECK_MS = 60_000;
 /** Re-read a preview clip this long before its Stream Token expires. */
@@ -72,7 +84,10 @@ interface SlideshowPrefs {
   clock: boolean;
   caption: boolean;
   nowPlaying: boolean;
+  /** Dark Room's schedule is on; it dims only between start and end (`HH:MM`, local). */
   darkRoom: boolean;
+  darkRoomStart: string;
+  darkRoomEnd: string;
 }
 
 function defaultPrefs(): SlideshowPrefs {
@@ -83,6 +98,8 @@ function defaultPrefs(): SlideshowPrefs {
     caption: true,
     nowPlaying: true,
     darkRoom: false,
+    darkRoomStart: DEFAULT_DARK_ROOM_START,
+    darkRoomEnd: DEFAULT_DARK_ROOM_END,
   };
 }
 
@@ -101,6 +118,10 @@ function loadPrefs(): SlideshowPrefs {
       caption: typeof stored.caption === "boolean" ? stored.caption : prefs.caption,
       nowPlaying: typeof stored.nowPlaying === "boolean" ? stored.nowPlaying : prefs.nowPlaying,
       darkRoom: typeof stored.darkRoom === "boolean" ? stored.darkRoom : prefs.darkRoom,
+      darkRoomStart:
+        clockMinutes(stored.darkRoomStart) === null ? prefs.darkRoomStart : stored.darkRoomStart,
+      darkRoomEnd:
+        clockMinutes(stored.darkRoomEnd) === null ? prefs.darkRoomEnd : stored.darkRoomEnd,
     };
   } catch {
     return prefs;
@@ -125,6 +146,14 @@ function readNowPlaying(): string {
   if (!session || session.playbackState !== "playing" || !session.metadata) return "";
   const { title, artist } = session.metadata;
   return [title, artist].filter(Boolean).join(" · ");
+}
+
+function landscapeScreen(): boolean {
+  return typeof window === "undefined" || window.innerWidth > window.innerHeight;
+}
+
+function groupKey(group: SlideGroup): string {
+  return group.slides.map((slide) => slide.item.id).join("+");
 }
 
 function interactiveTarget(target: EventTarget | null, key: string): boolean {
@@ -181,6 +210,14 @@ function Slideshow() {
   const [reload, setReload] = useState(0);
   const [revalidating, setRevalidating] = useState(false);
   const [captions, setCaptions] = useState<Record<string, string>>({});
+  // Each image's shape once decoded, and whether the screen is landscape (pairing needs both).
+  const [shapes, setShapes] = useState<Record<string, SlideShape>>({});
+  const [landscape, setLandscape] = useState(landscapeScreen);
+  // D dims or undims at once; the override lasts until the schedule next opens
+  // or closes (`until`, epoch ms), or for good while the schedule is off.
+  const [dimOverride, setDimOverride] = useState<{ on: boolean; until: number | null } | null>(
+    null,
+  );
 
   const updatePrefs = useCallback((patch: Partial<SlideshowPrefs>) => {
     setPrefs((current) => {
@@ -244,20 +281,44 @@ function Slideshow() {
     return slidesFrom(items, isHidden).filter((slide) => !broken.has(slide.item.id));
   }, [items, hiddenReady, revalidating, isHidden, broken]);
   const count = slides.length;
-  const current = count > 0 ? slides[index % count] : null;
+  const shapeOf = useCallback((slide: Slide) => shapes[slide.item.id], [shapes]);
+  const groups = useMemo(
+    () => slideGroups(slides, shapeOf, landscape),
+    [slides, shapeOf, landscape],
+  );
+  // `index` names a slide; the stage shows the group holding it, so a pair steps as one.
+  const groupAt = useCallback(
+    (slideIndex: number) => {
+      const at = count > 0 ? slideIndex % count : 0;
+      const found = groups.findIndex(
+        (group) => at >= group.start && at < group.start + group.slides.length,
+      );
+      return Math.max(0, found);
+    },
+    [groups, count],
+  );
+  const groupIndex = groupAt(index);
+  const group = groups.length > 0 ? groups[groupIndex] : null;
+  const current = group ? group.slides[0] : null;
+  const currentKey = group ? groupKey(group) : "";
+  const settled = group ? slideGroupSettled(slides, group.start, shapeOf, landscape) : false;
+  const steps = groups.length;
   const intervalMs = prefs.interval * 1000;
 
   const step = useCallback(
     (delta: number) => {
-      if (count < 2) return;
+      if (steps < 2) return;
       setShown(null);
-      setIndex((value) => ((((value % count) + delta) % count) + count) % count);
+      setIndex((value) => {
+        const next = (((groupAt(value) + delta) % steps) + steps) % steps;
+        return groups[next].start;
+      });
     },
-    [count],
+    [steps, groups, groupAt],
   );
 
-  const markPainted = useCallback((id: string) => {
-    setShown((value) => (value?.id === id ? value : { id, at: performance.now(), held: 0 }));
+  const markPainted = useCallback((key: string) => {
+    setShown((value) => (value?.id === key ? value : { id: key, at: performance.now(), held: 0 }));
   }, []);
 
   const markBroken = useCallback((id: string) => {
@@ -268,11 +329,11 @@ function Slideshow() {
   // A slide stays for the interval from when it was painted; a pause holds it.
   const running = !paused && !sheetOpen;
   useEffect(() => {
-    if (!running || !current || !shown || shown.id !== current.item.id || count < 2) return;
+    if (!running || !currentKey || !shown || shown.id !== currentKey || steps < 2) return;
     const delay = nextDelay(shown.at, performance.now(), intervalMs, shown.held);
     const timer = window.setTimeout(() => step(1), delay);
     return () => window.clearTimeout(timer);
-  }, [running, current, shown, count, intervalMs, step]);
+  }, [running, currentKey, shown, steps, intervalMs, step]);
 
   // Pausing banks the time already shown; resuming restarts the clock from now.
   const wasRunning = useRef(running);
@@ -288,20 +349,54 @@ function Slideshow() {
     });
   }, [running, intervalMs]);
 
-  // Preload the next slide's image so the cut lands on a decoded picture.
+  // Decode this group's and the next group's images ahead: the cut lands on a
+  // decoded picture, and each image's shape decides whether portraits pair.
+  // Portraits running back from this group are read too, since they decide where pairs fall.
+  const probing = useRef(new Set<string>());
   useEffect(() => {
-    if (count < 2) return;
-    const next = slides[(index + 1) % count];
-    const url = slideImageURL(next.item);
-    if (!url) return;
-    const image = new Image();
-    image.decoding = "async";
-    image.src = url;
-    image.decode?.().catch(() => {});
-  }, [slides, index, count]);
+    if (!group) return;
+    const ahead = Array.from(
+      { length: Math.min(SHAPE_LOOKAHEAD, count) },
+      (_, offset) => (group.start + offset) % count,
+    );
+    const behind = landscape ? unreadPortraitBefore(slides, group.start, shapeOf) : null;
+    for (const at of behind === null ? ahead : [...ahead, behind]) {
+      const slide = slides[at];
+      const id = slide.item.id;
+      if (slide.clip || id in shapes || probing.current.has(id)) continue;
+      const url = slideImageURL(slide.item);
+      const settle = (shape: SlideShape) => {
+        probing.current.delete(id);
+        setShapes((value) => (id in value ? value : { ...value, [id]: shape }));
+      };
+      if (!url) {
+        settle("landscape");
+        continue;
+      }
+      probing.current.add(id);
+      const image = new Image();
+      image.decoding = "async";
+      image.onload = () =>
+        settle(image.naturalHeight > image.naturalWidth ? "portrait" : "landscape");
+      // A failed read never pairs; the stage skips the slide when it fails there too.
+      image.onerror = () => settle("landscape");
+      image.src = url;
+    }
+  }, [group, slides, count, shapes, landscape, shapeOf]);
+
+  // The stage's own decode corrects a shape a failed probe guessed.
+  const noteShape = useCallback((id: string, shape: SlideShape) => {
+    setShapes((value) => (value[id] === shape ? value : { ...value, [id]: shape }));
+  }, []);
+
+  useEffect(() => {
+    const resize = () => setLandscape(landscapeScreen());
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
 
   // A clip's generated preview clip: an asset read, not a playback decision.
-  const clipID = current?.clip ? current.item.id : "";
+  const clipID = current?.clip && settled ? current.item.id : "";
   useEffect(() => {
     if (!clipID || clipPreviewFresh(clipURLs[clipID], Date.now())) return;
     let cancelled = false;
@@ -414,6 +509,20 @@ function Slideshow() {
     [navigate, source],
   );
 
+  // Dark Room: the schedule decides, and D overrides it until the schedule flips.
+  const scheduledDim =
+    prefs.darkRoom && inDarkRoomWindow(now, prefs.darkRoomStart, prefs.darkRoomEnd);
+  const dimmed =
+    dimOverride && (dimOverride.until === null || now.getTime() < dimOverride.until)
+      ? dimOverride.on
+      : scheduledDim;
+  const lastScheduled = useRef(scheduledDim);
+  useEffect(() => {
+    if (lastScheduled.current === scheduledDim) return;
+    lastScheduled.current = scheduledDim;
+    setDimOverride(null);
+  }, [scheduledDim]);
+
   // Keys resolve in the capture phase so the docked player's shortcuts skip them.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
@@ -434,7 +543,12 @@ function Slideshow() {
           const on = !(prefs.clock || prefs.caption || prefs.nowPlaying);
           updatePrefs({ clock: on, caption: on, nowPlaying: on });
         },
-        d: () => updatePrefs({ darkRoom: !prefs.darkRoom }),
+        d: () => {
+          const boundary = prefs.darkRoom
+            ? nextDarkRoomBoundary(new Date(), prefs.darkRoomStart, prefs.darkRoomEnd)
+            : null;
+          setDimOverride({ on: !dimmed, until: boundary ? boundary.getTime() : null });
+        },
         f: toggleFullscreen,
         s: () => setSheetOpen(true),
       };
@@ -447,7 +561,7 @@ function Slideshow() {
     };
     window.addEventListener("keydown", keydown, true);
     return () => window.removeEventListener("keydown", keydown, true);
-  }, [sheetOpen, source, close, step, prefs, updatePrefs, toggleFullscreen, wake]);
+  }, [sheetOpen, source, close, step, prefs, updatePrefs, toggleFullscreen, wake, dimmed]);
 
   const clock = useMemo(() => {
     try {
@@ -474,26 +588,29 @@ function Slideshow() {
       role="region"
       aria-label={t("slideshowRegion")}
       data-chrome={chrome || sheetOpen ? "shown" : "hidden"}
+      data-dark-room={dimmed ? "on" : "off"}
       onPointerMove={wake}
     >
       <h1 className="sr-only">{t("slideshowRegion")}</h1>
       <div className="bf-slideshow-stage">
-        {current && (
-          <SlideView
-            key={current.item.id}
-            slide={current}
+        {group && settled && (
+          <GroupView
+            key={currentKey}
+            groupKey={currentKey}
+            slides={group.slides}
             clipURL={
-              clipPreviewFresh(clipURLs[current.item.id], Date.now())
+              current && clipPreviewFresh(clipURLs[current.item.id], Date.now())
                 ? clipURLs[current.item.id]?.url
                 : undefined
             }
             slideRef={slideRef}
             onPainted={markPainted}
             onBroken={markBroken}
+            onShape={noteShape}
           />
         )}
       </div>
-      {prefs.darkRoom && <div className="bf-slideshow-dim" data-testid="slideshow-dim" />}
+      {dimmed && <div className="bf-slideshow-dim" data-testid="slideshow-dim" />}
       {message && (
         <p className="bf-slideshow-message" role="status">
           {message}
@@ -527,7 +644,7 @@ function Slideshow() {
           type="button"
           className="bf-slideshow-button"
           aria-label={t("slideshowPrevious")}
-          disabled={count < 2}
+          disabled={steps < 2}
           onClick={() => step(-1)}
         >
           <ChevronLeft aria-hidden />
@@ -544,7 +661,7 @@ function Slideshow() {
           type="button"
           className="bf-slideshow-button"
           aria-label={t("slideshowNext")}
-          disabled={count < 2}
+          disabled={steps < 2}
           onClick={() => step(1)}
         >
           <ChevronRight aria-hidden />
@@ -580,19 +697,72 @@ function Slideshow() {
   );
 }
 
-function SlideView({
-  slide,
+/**
+ * One stage: a slide, or two portraits side by side in two halves. It counts
+ * as painted once every image in it is. The Oscillux seam receives the whole
+ * stage, so its `fill` and `pair` layouts (CORE-2980) can take over from here.
+ */
+function GroupView({
+  groupKey,
+  slides,
   clipURL,
   slideRef,
   onPainted,
   onBroken,
+  onShape,
+}: {
+  groupKey: string;
+  slides: Slide[];
+  /** The first slide's preview clip (clips never pair). */
+  clipURL: string | undefined;
+  slideRef: (element: HTMLElement | null) => void;
+  onPainted: (key: string) => void;
+  onBroken: (id: string) => void;
+  onShape: (id: string, shape: SlideShape) => void;
+}) {
+  const [painted, setPainted] = useState<ReadonlySet<string>>(() => new Set());
+  const markPainted = useCallback((id: string) => {
+    setPainted((value) => (value.has(id) ? value : new Set(value).add(id)));
+  }, []);
+  const done = slides.every((slide) => painted.has(slide.item.id));
+  useEffect(() => {
+    if (done) onPainted(groupKey);
+  }, [done, groupKey, onPainted]);
+
+  return (
+    <div
+      ref={slideRef}
+      className="bf-slideshow-slide"
+      data-layout={slides.length > 1 ? "pair" : "single"}
+    >
+      {slides.map((slide, position) => (
+        <div key={slide.item.id} className="bf-slideshow-cell">
+          <SlideView
+            slide={slide}
+            clipURL={position === 0 ? clipURL : ""}
+            onPainted={markPainted}
+            onBroken={onBroken}
+            onShape={onShape}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SlideView({
+  slide,
+  clipURL,
+  onPainted,
+  onBroken,
+  onShape,
 }: {
   slide: Slide;
   /** Undefined while the preview clip is being looked up; "" when there is none. */
   clipURL: string | undefined;
-  slideRef: (element: HTMLElement | null) => void;
   onPainted: (id: string) => void;
   onBroken: (id: string) => void;
+  onShape: (id: string, shape: SlideShape) => void;
 }) {
   const { item } = slide;
   const poster = slideImageURL(item);
@@ -615,7 +785,6 @@ function SlideView({
   if (playClip) {
     return (
       <video
-        ref={slideRef}
         className="bf-slideshow-media"
         src={clipURL}
         poster={poster || undefined}
@@ -632,12 +801,17 @@ function SlideView({
   if (!poster) return null;
   return (
     <img
-      ref={slideRef}
       className="bf-slideshow-media"
       src={poster}
       alt={displayString(item.title)}
       decoding="async"
-      onLoad={() => setPosterLoaded(true)}
+      onLoad={(event) => {
+        const image = event.currentTarget;
+        if (!slide.clip && image.naturalWidth > 0) {
+          onShape(item.id, image.naturalHeight > image.naturalWidth ? "portrait" : "landscape");
+        }
+        setPosterLoaded(true);
+      }}
       onError={() => onBroken(item.id)}
     />
   );
@@ -767,6 +941,37 @@ function SetupSheet({
         />
       </fieldset>
       <fieldset>
+        <legend>{t("slideshowDarkRoom")}</legend>
+        <label className="bf-slideshow-option">
+          <input
+            type="checkbox"
+            checked={prefs.darkRoom}
+            onChange={(e) => onPrefs({ darkRoom: e.target.checked })}
+          />
+          {t("slideshowDarkRoomSchedule")}
+        </label>
+        <div className="bf-slideshow-times">
+          {(
+            [
+              ["darkRoomStart", "slideshowDarkRoomStart"],
+              ["darkRoomEnd", "slideshowDarkRoomEnd"],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="bf-slideshow-label">
+              {t(label)}
+              <input
+                type="time"
+                value={prefs[key]}
+                disabled={!prefs.darkRoom}
+                onChange={(e) => {
+                  if (clockMinutes(e.target.value) !== null) onPrefs({ [key]: e.target.value });
+                }}
+              />
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset>
         <legend>{t("slideshowMotion")}</legend>
         {SLIDESHOW_MOTIONS.map((motion) => {
           const available = slideshowMotionAvailable(motion);
@@ -793,7 +998,6 @@ function SetupSheet({
             ["clock", "slideshowShowClock"],
             ["caption", "slideshowShowCaption"],
             ["nowPlaying", "slideshowShowNowPlaying"],
-            ["darkRoom", "slideshowDarkRoom"],
           ] as const
         ).map(([key, label]) => (
           <label key={key} className="bf-slideshow-option">
