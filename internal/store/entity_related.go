@@ -34,8 +34,7 @@ func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filt
 }
 
 // RelatedEntityGroupsBy derives the nominated text field from each card's
-// linked visible Media. Ruled Libraries keep independent groups, and unruled
-// cards keep their relation order in consecutive owner runs (CORE-2769).
+// linked visible Media. Ruled Libraries keep independent groups (CORE-2769).
 func (s *Store) RelatedEntityGroupsBy(ctx context.Context, entityID EntityID, filter LibraryFilter, groupField func(pluginID, kind string) string) ([]RelatedEntityGroup, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -110,7 +109,7 @@ func (s *Store) RelatedEntityGroupsBy(ctx context.Context, entityID EntityID, fi
 			return nil, err
 		}
 		if len(groups) == 0 || groups[len(groups)-1].Kind != kind {
-			groups = append(groups, RelatedEntityGroup{Kind: kind})
+			groups = append(groups, RelatedEntityGroup{Kind: kind, LibraryID: libraryID})
 			ordered = append(ordered, 0)
 		}
 		if sortOrder.Valid {
@@ -157,26 +156,29 @@ func (s *Store) RelatedEntityGroupsBy(ctx context.Context, entityID EntityID, fi
 }
 
 func relatedGroupsByOwner(group RelatedEntityGroup, owners map[LibraryID]string, groupField func(pluginID, kind string) string) []RelatedEntityGroup {
-	ruled := map[LibraryID]int{}
+	if groupField == nil || !slices.ContainsFunc(group.Items, func(item SourceItem) bool {
+		return groupField(owners[item.LibraryID], group.Kind) != ""
+	}) {
+		return []RelatedEntityGroup{group}
+	}
+	type owner struct {
+		plugin  string
+		library LibraryID
+	}
+	index := map[owner]int{}
 	var groups []RelatedEntityGroup
-	previous := -1
 	for _, item := range group.Items {
-		owner := owners[item.LibraryID]
-		i := len(groups)
-		if groupField != nil && groupField(owner, group.Kind) != "" {
-			if existing, ok := ruled[item.LibraryID]; ok {
-				i = existing
-			} else {
-				ruled[item.LibraryID] = i
-			}
-		} else if previous >= 0 && groups[previous].PluginID == owner {
-			i = previous
+		key := owner{plugin: owners[item.LibraryID]}
+		if groupField(key.plugin, group.Kind) != "" {
+			key.library = item.LibraryID
 		}
-		if i == len(groups) {
-			groups = append(groups, RelatedEntityGroup{Kind: group.Kind, LibraryID: item.LibraryID, PluginID: owner})
+		i, ok := index[key]
+		if !ok {
+			i = len(groups)
+			index[key] = i
+			groups = append(groups, RelatedEntityGroup{Kind: group.Kind, LibraryID: item.LibraryID, PluginID: key.plugin})
 		}
 		groups[i].Items = append(groups[i].Items, item)
-		previous = i
 	}
 	return groups
 }

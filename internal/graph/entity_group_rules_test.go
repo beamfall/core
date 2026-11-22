@@ -218,21 +218,19 @@ func TestEntityQuerySplitsRuledKindByField(t *testing.T) {
 	detail, err := handler.entityQuery(ctx, auth.Scope{ProfileID: "profile-default", LibraryIDs: []store.LibraryID{
 		plain.ID, second.ID, library.ID, pageLibrary.ID,
 	}}, request{Variables: map[string]any{"id": "entity-performer"}})
-	if err != nil || len(detail.RelatedEntities) != 4 {
-		t.Fatalf("mixed owners = %+v, err = %v; want four groups", detail.RelatedEntities, err)
+	if err != nil || len(detail.RelatedEntities) != 3 {
+		t.Fatalf("mixed owners = %+v, err = %v; want three groups", detail.RelatedEntities, err)
 	}
 	mixed := detail.RelatedEntities
-	if got := mixed[0]; got.Archetype != "category" || len(got.Sections) != 0 || len(got.Items) != 1 || got.Items[0].ID != "plain-first" {
-		t.Fatalf("first unruled run = %+v, want plain-first with category archetype", got)
+	if got := mixed[0]; got.Archetype != "category" || len(got.Sections) != 0 || len(got.Items) != 2 ||
+		got.Items[0].ID != "plain-first" || got.Items[1].ID != "plain-last" {
+		t.Fatalf("unruled group = %+v, want category in relation order", got)
 	}
 	if got := mixed[1]; got.Archetype != "container" || len(got.Items) != 1 || got.Items[0].ID != "other-long" ||
 		len(got.Sections) != 1 || got.Sections[0].Value != "long" {
 		t.Fatalf("second Library group = %+v, want its own long section", got)
 	}
-	if got := mixed[2]; got.Archetype != "category" || len(got.Sections) != 0 || len(got.Items) != 1 || got.Items[0].ID != "plain-last" {
-		t.Fatalf("second unruled run = %+v, want plain-last with category archetype", got)
-	}
-	if got := mixed[3]; !reflect.DeepEqual(got.Sections, wantSections) {
+	if got := mixed[2]; !reflect.DeepEqual(got.Sections, wantSections) {
 		t.Fatalf("first Library sections = %+v, want %+v", got.Sections, wantSections)
 	}
 }
