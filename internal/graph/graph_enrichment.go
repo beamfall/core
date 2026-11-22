@@ -294,6 +294,7 @@ func (h *Handler) describeSearchCards(ctx context.Context, filter store.LibraryF
 		return err
 	}
 	h.annotateScoreLabels(ctx, cards)
+	h.annotatePlaysAlone(ctx, cards)
 	for j, card := range cards {
 		i := at[j]
 		items[i].Container = h.sourceItemContainer(card)
@@ -308,6 +309,7 @@ func (h *Handler) describeSearchCards(ctx context.Context, filter store.LibraryF
 		items[i].Certification, items[i].AudienceScore = card.Certification, card.AudienceScore
 		items[i].AudienceScoreLabel = plugin.LocaleString(card.AudienceScoreLabel)
 		items[i].AudienceScoreVotes = card.AudienceScoreVotes
+		items[i].PlaysAlone = card.PlaysAlone
 	}
 	return nil
 }
@@ -549,6 +551,9 @@ func (h *Handler) semanticItems(ctx context.Context, profileID store.ProfileID, 
 	if err := h.store.AnnotateEngagement(ctx, profileID, filter, sources, nil); err != nil {
 		return nil, err
 	}
+	// The all-items Source returns these hits without the card enrichment
+	// search results get, so the plays-alone flag is set here (CORE-3147).
+	h.annotatePlaysAlone(ctx, sources)
 	items := make([]SearchResultItem, len(sources))
 	for i := range sources {
 		items[i] = SearchResultItem{

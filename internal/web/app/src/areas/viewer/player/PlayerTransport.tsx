@@ -7,10 +7,12 @@ import {
   ChevronsRight,
   Gauge,
   Layers,
+  ListOrdered,
   Maximize,
   MicVocal,
   Minimize,
   MonitorPlay,
+  Moon,
   Pause,
   PictureInPicture2,
   Play,
@@ -143,6 +145,12 @@ export function PlayerTransport({
   onShare,
   onPreviousInQueue,
   onNextInQueue,
+  previousTitle,
+  nextTitle,
+  upNextOpen,
+  onUpNextToggle,
+  ambient,
+  onAmbientChange,
   onPlayMusicQueue,
   musicQueue,
   onMusicQueueOpenChange,
@@ -196,6 +204,16 @@ export function PlayerTransport({
   onPreviousInQueue?: () => void;
   /** Play the queue's next item; the control is hidden when absent. */
   onNextInQueue?: () => void;
+  /** The previous item's title: names the Previous control and shows on hover or focus. */
+  previousTitle?: string;
+  /** The next item's title: names the Next control and shows on hover or focus. */
+  nextTitle?: string;
+  /** Whether the Up next drawer is open; the toggle is hidden without onUpNextToggle. */
+  upNextOpen?: boolean;
+  onUpNextToggle?: () => void;
+  /** Ambient (OLED-safe) mode; the toggle is hidden without onAmbientChange. */
+  ambient?: boolean;
+  onAmbientChange?: (on: boolean) => void;
   /** Start the active Profile's server queue on the first playable row. */
   onPlayMusicQueue?: () => void;
   onRetryMusicQueue?: () => void;
@@ -994,15 +1012,23 @@ export function PlayerTransport({
               </button>
             )}
             {onPreviousInQueue && (
-              <button
-                type="button"
-                onClick={onPreviousInQueue}
-                aria-label={t("previousInQueue")}
-                className="bf-control is-icon"
-              >
-                <SkipBack aria-hidden="true" />
-                <span className="sr-only">{t("previousInQueue")}</span>
-              </button>
+              <span className="bf-neighbour">
+                <button
+                  type="button"
+                  onClick={onPreviousInQueue}
+                  aria-label={
+                    previousTitle
+                      ? t("previousInQueueNamed", { title: previousTitle })
+                      : t("previousInQueue")
+                  }
+                  className="bf-control is-icon"
+                >
+                  <SkipBack aria-hidden="true" />
+                </button>
+                {previousTitle && (
+                  <NeighbourTip eyebrow={t("previousInQueue")} title={previousTitle} />
+                )}
+              </span>
             )}
             <button
               type="button"
@@ -1038,15 +1064,19 @@ export function PlayerTransport({
               <span className="sr-only">{skipForwardLabel}</span>
             </button>
             {onNextInQueue && (
-              <button
-                type="button"
-                onClick={onNextInQueue}
-                aria-label={t("nextInQueue")}
-                className="bf-control is-icon"
-              >
-                <SkipForward aria-hidden="true" />
-                <span className="sr-only">{t("nextInQueue")}</span>
-              </button>
+              <span className="bf-neighbour">
+                <button
+                  type="button"
+                  onClick={onNextInQueue}
+                  aria-label={
+                    nextTitle ? t("nextInQueueNamed", { title: nextTitle }) : t("nextInQueue")
+                  }
+                  className="bf-control is-icon"
+                >
+                  <SkipForward aria-hidden="true" />
+                </button>
+                {nextTitle && <NeighbourTip eyebrow={t("nextInQueue")} title={nextTitle} />}
+              </span>
             )}
             {repeat && (
               <button
@@ -1144,6 +1174,28 @@ export function PlayerTransport({
 
           <span aria-hidden="true" className="bf-transport-spacer" />
 
+          {onUpNextToggle && (
+            <button
+              type="button"
+              onClick={onUpNextToggle}
+              aria-pressed={!!upNextOpen}
+              aria-label={t("upNextList")}
+              className="bf-control is-icon"
+            >
+              <ListOrdered aria-hidden="true" />
+            </button>
+          )}
+          {onAmbientChange && (
+            <button
+              type="button"
+              onClick={() => onAmbientChange(!ambient)}
+              aria-pressed={!!ambient}
+              aria-label={t("ambientMode")}
+              className="bf-control is-icon"
+            >
+              <Moon aria-hidden="true" />
+            </button>
+          )}
           {audioStage && onLyricsOpenChange && (
             <button
               type="button"
@@ -1456,4 +1508,15 @@ function useNarrowViewport(): boolean {
     return () => query.removeEventListener?.("change", sync);
   }, []);
   return narrow;
+}
+
+// The hover/focus label over Previous and Next (CORE-3216). The control's own
+// accessible name already carries the title, so this is visual only.
+function NeighbourTip({ eyebrow, title }: { eyebrow: string; title: string }) {
+  return (
+    <span className="bf-neighbour-tip" aria-hidden="true">
+      <span className="bf-neighbour-tip-eyebrow">{eyebrow}</span>
+      <span className="bf-neighbour-tip-title">{title}</span>
+    </span>
+  );
 }

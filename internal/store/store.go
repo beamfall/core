@@ -935,6 +935,9 @@ type SourceItem struct {
 	// after AnnotateMediaClass (CORE-2415); nil when there is none.
 	AudienceScoreVotes int
 	AudienceScoreLabel map[string]string
+	// PlaysAlone is true when a media-kind item's Library plugin declares
+	// that its Media play alone, set by the graph layer (CORE-3147).
+	PlaysAlone bool
 	// Locked is true when the item is visible in browse but blocked by a
 	// certification ceiling whose FilterVisibility is "locked" (ACCESS-1,
 	// ADR-0113 §2.1). Set by annotateLockedLocked; absent means not-locked.

@@ -110,6 +110,8 @@ type Server struct {
 	knownProxies        *KnownProxies
 	artworkImport       ArtworkImporter
 	artworkApply        artworkApplyStore
+	mediaUploadPlanner  MediaUploadPlanner
+	mediaUploads        mediaUploadStore
 	subscriptionExport  subscriptionExportStore
 	subscriptionSealed  func(store.LibraryID) bool
 	profilePictures     profilePictureStore
@@ -327,6 +329,9 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	if deviceBuilds, ok := jobStats.(deviceBuildStore); ok {
 		s.deviceBuilds = deviceBuilds
 	}
+	if uploads, ok := jobStats.(mediaUploadStore); ok {
+		s.mediaUploads = uploads
+	}
 	s.handle(http.MethodGet, "/health", "", s.health)
 	s.handle(http.MethodGet, "/metrics", reveal.Aggregate, s.metrics)
 	// AGPL §13 source offer for the exact running release. The redirect target
@@ -383,6 +388,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	// like the other web-Console write routes; the multipart body is excluded
 	// from the JSON-Content-Type check below, mirroring "/v1/backups/media".
 	s.handle(http.MethodPost, artworkUploadPattern, reveal.ContentJSON, s.uploadArtwork)
+	s.registerMediaUploadRoutes()
 	s.handle(http.MethodPost, profilePictureUploadPattern, reveal.ContentJSON, s.uploadProfilePicture)
 	s.handle(http.MethodDelete, profilePicturePattern, reveal.ContentJSON, s.deleteProfilePicture)
 	s.handle(http.MethodGet, profilePicturePattern, reveal.ContentBytes, s.profilePicture)
@@ -1254,7 +1260,7 @@ func (s *Server) recordGauge(ctx context.Context, name string, value int64, labe
 
 // requestIsLoopback reports whether the request came from a client on this host
 // with nothing in between — the condition the test-fault control gates on. The
-// TCP peer address alone cannot answer it: the default bind is 127.0.0.1:8800,
+// TCP peer address alone cannot answer it: the default bind is 127.0.0.1:2326,
 // so a reverse proxy in the documented topology necessarily runs on this same
 // host and presents a loopback peer address for traffic it relays from the
 // internet. requestRelayedByProxy therefore disqualifies a relayed request on

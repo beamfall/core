@@ -8,15 +8,15 @@ SHALL NOT encode a loopback address or the pairing code.
 
 #### Scenario: Console opened at a network address
 
-- **WHEN** the owner mints a pairing code in a Console opened at `http://192.168.1.10:8800/web/`
-- **THEN** the panel shows a QR code encoding `http://192.168.1.10:8800/web/enroll`
+- **WHEN** the owner mints a pairing code in a Console opened at `http://192.168.1.10:2326/web/`
+- **THEN** the panel shows a QR code encoding `http://192.168.1.10:2326/web/enroll`
 - **AND** shows that URL as text
 
 #### Scenario: Console opened on loopback
 
-- **WHEN** the owner mints a pairing code in a Console opened at `http://localhost:8800/web/`
-- **AND** the server reports a LAN endpoint `http://192.168.1.10:8800`
-- **THEN** the QR code encodes `http://192.168.1.10:8800/web/enroll`, not a `localhost` URL
+- **WHEN** the owner mints a pairing code in a Console opened at `http://localhost:2326/web/`
+- **AND** the server reports a LAN endpoint `http://192.168.1.10:2326`
+- **THEN** the QR code encodes `http://192.168.1.10:2326/web/enroll`, not a `localhost` URL
 
 #### Scenario: Loopback with no LAN endpoint
 

@@ -11,13 +11,13 @@ import { LibraryPivots } from "./LibraryPivots";
 
 // CORE-2826: reopening a Library returns to the pivot last used there.
 
-const NODE: NavigationNode = {
+const NODE = {
   id: "library-library-films",
   title: "Films",
   view: "layout",
   layoutID: "l",
   libraryID: "library-films",
-};
+} satisfies NavigationNode;
 const NAVIGATION: NavigationNode[] = [
   { id: "home", title: "Home", view: "layout", layoutID: "l" },
   NODE,
@@ -31,7 +31,7 @@ function Where() {
 function LibraryPage() {
   return (
     <>
-      <LibraryPivots nodeID={NODE.id} />
+      <LibraryPivots nodeID={NODE.id} libraryID={NODE.libraryID} />
       <Link to="/">Go home</Link>
     </>
   );
@@ -97,12 +97,12 @@ describe("remembered Library pivot", () => {
       "aria-current",
       "page",
     );
-    expect(readLibraryPivot(NODE.id)).toBe("");
+    expect(readLibraryPivot(NODE.libraryID)).toBe("");
   });
 
   it("falls back to Recommended when storage is blocked or holds an unknown value", () => {
     window.localStorage.setItem("beamfall.libraryPivot.library-library-films", "/elsewhere");
-    expect(rememberedLibraryPath(NODE.id)).toBe("/n/library-films");
+    expect(rememberedLibraryPath(NODE.id, NODE.libraryID)).toBe("/n/library-films");
 
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");

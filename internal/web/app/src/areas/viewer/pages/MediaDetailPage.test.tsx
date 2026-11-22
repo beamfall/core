@@ -390,6 +390,41 @@ describe("MediaDetailPage", () => {
     });
   });
 
+  // CORE-3147: an item whose plugin declares it plays alone (a standalone book,
+  // or one in a series without a sequence) sends a one-item queue; another
+  // loaded item forwards the queue its card carried.
+  it.each([
+    { playsAlone: true, queue: [{ id: "m1", title: "Server title" }] },
+    {
+      playsAlone: false,
+      queue: [
+        { id: "m1", title: "Card title" },
+        { id: "m2", title: "Next" },
+      ],
+    },
+  ])(
+    "sends the queue for a loaded item (playsAlone=$playsAlone)",
+    async ({ playsAlone, queue }) => {
+      vi.mocked(fetchMedia).mockResolvedValue({ ...media, playsAlone });
+      renderAt([
+        {
+          pathname: "/media/m1",
+          state: {
+            ...mediaLinkState(card, identity),
+            queue: [
+              { id: "m1", title: "Card title" },
+              { id: "m2", title: "Next" },
+            ],
+            queueIdentity: identity,
+          },
+        },
+      ]);
+      await act(async () => {});
+      fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
+      expect(watchState()).toMatchObject({ queue, queueIdentity: identity });
+    },
+  );
+
   // CORE-3013: a book in a sequenced series offers the next one once played,
   // never queues it, and Mark played offers it at once.
   it("offers Next in series once the book is marked played, and plays the book alone", async () => {
@@ -1599,6 +1634,19 @@ describe("MediaDetailPage", () => {
           person("p1", "Ada Lead"),
         ],
       });
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(siblings);
+      vi.mocked(fetchEntity).mockResolvedValue(setEntity as never);
+      renderAt(["/media/m1"]);
+
+      const first = await screen.findByRole("list", { name: "Disc 1" });
+      fireEvent.click(within(first).getByRole("button", { name: "Play Opening" }));
+      expect(rowQueueIDs()).toEqual(["m0"]);
+    });
+
+    // CORE-3147: an unnumbered member of a series carries no sequence, but
+    // its plugin declares it plays alone, so its rows never queue the next.
+    it("plays each row alone when the item plays alone without a sequence", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue({ ...listed, playsAlone: true });
       vi.mocked(fetchMediaForEntity).mockResolvedValue(siblings);
       vi.mocked(fetchEntity).mockResolvedValue(setEntity as never);
       renderAt(["/media/m1"]);

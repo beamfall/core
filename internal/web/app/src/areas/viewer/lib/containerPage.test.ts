@@ -53,7 +53,7 @@ describe("ancestorOf (CORE-2510)", () => {
     expect(ancestorOf(part, 10)?.id).toBe("w1");
   });
 
-  it("never takes a container of the page's own kind as its ancestor", () => {
+  it("ignores a same-kind group when its direction is unknown", () => {
     const peer = {
       kind: "part",
       archetype: "container",
@@ -62,6 +62,24 @@ describe("ancestorOf (CORE-2510)", () => {
     expect(
       ancestorOf({ ...part, relatedEntities: [peer, ...(part.relatedEntities ?? [])] }, 10)?.id,
     ).toBe("w1");
+  });
+
+  it("uses relation direction when a child sorts before a same-kind parent", () => {
+    const relatedEntities: EntityInfo["relatedEntities"] = [
+      {
+        kind: "group",
+        direction: "child",
+        archetype: "container",
+        items: [entityItem("g1", "Group", { engagement: { totalCount: 30 } })],
+      },
+      {
+        kind: "part",
+        direction: "parent",
+        archetype: "container",
+        items: [entityItem("p1", "Parent", { engagement: { totalCount: 20 } })],
+      },
+    ];
+    expect(ancestorOf({ ...part, relatedEntities }, 10)?.id).toBe("p1");
   });
 
   it("finds none without own Media, for a non-container, or when no container is larger", () => {
@@ -280,10 +298,15 @@ describe("catalog shelf ranking (CORE-2512)", () => {
 
 describe("groupSections (CORE-2769)", () => {
   const items = ["a", "b", "c", "d"].map((id) => entityItem(id, id.toUpperCase()));
-  const base = { kind: "record", kindPluralDisplayName: { en: "Records" }, items };
+  const base = {
+    kind: "record",
+    direction: "child" as const,
+    kindPluralDisplayName: { en: "Records" },
+    items,
+  };
 
   it("lists a group without sections as one run under its heading", () => {
-    expect(groupSections(base, "en")).toEqual([{ key: "record:a", title: "Records", items }]);
+    expect(groupSections(base, "en")).toEqual([{ key: "record:child:a", title: "Records", items }]);
   });
 
   it("splits a group into its sections in order, titled by display name, then value", () => {
@@ -299,9 +322,9 @@ describe("groupSections (CORE-2769)", () => {
       "fr",
     );
     expect(sections.map((s) => [s.key, s.title, s.count, s.items.map((i) => i.id)])).toEqual([
-      ["record:a", "Records", 1, ["a"]],
-      ["record:b", "Longs", 2, ["b", "c"]],
-      ["record:d", "odd", 1, ["d"]],
+      ["record:child:a", "Records", 1, ["a"]],
+      ["record:child:b", "Longs", 2, ["b", "c"]],
+      ["record:child:d", "odd", 1, ["d"]],
     ]);
   });
 

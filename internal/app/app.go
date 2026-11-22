@@ -1389,6 +1389,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		server.WithUnmatchedArtworkCreator(graphServer),
 		server.WithCompatRefusalJournalDir(filepath.Join(cfg.DataDir, "compat-refusals")),
 		server.WithSubscriptionLibrarySealed(sealedPredicate),
+		server.WithMediaUploadPlanner(newMediaUploadPlanner(st, parsers, executablePlugins, jobWake)),
 	)
 	// Guideline 1.2 UGC moderation substrate (NATIVEMGR-4, apple ADR-0004 §4):
 	// file-backed per-Profile content report/block store + published moderation
@@ -1477,7 +1478,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	if err := offlinePacks.SweepStaging(); err != nil {
 		logger.Warn("offline pack staging sweep failed", "error", err)
 	}
-	offlinePacks.SetDeviceKeyAttestationVerifier(hooks.OfflinePackAttestationVerifier)
+	attestationVerifier, err := offlinePackAttestationVerifier(hooks.OfflinePackAttestationVerifier, logger)
+	if err != nil {
+		return nil, err
+	}
+	offlinePacks.SetDeviceKeyAttestationVerifier(attestationVerifier)
 	// A Sealed Library serves NOTHING (ADR-0098 area 2): stamp the same Sealed
 	// predicate used by the byte routes so a Sealed Library's Media is never
 	// frozen into a pack manifest and a member sealed AFTER issue is denied at
@@ -2790,6 +2795,9 @@ func runRetentionPurge(ctx context.Context, st *store.Store, art *artwork.Servic
 			logger.Warn("deleted library purge failed", "libraries", len(purged), "error", err)
 		}
 	}
+	if err := st.SweepMediaUploads(time.Now().UTC()); err != nil {
+		logger.Warn("media upload sweep failed", "error", err)
+	}
 	if purged, skipped, err := st.SweepManagedFileTrash(ctx, time.Now().UTC()); trashDisabledConfirmationRequired(skipped, err) {
 		logger.Info("managed file trash purge skipped: confirmation required", "reason", "trash disabled", "skips", st.TrashDisabledSweepSkips())
 	} else if err != nil {
@@ -3285,6 +3293,26 @@ func (t parserMediaTitles) ParsedMediaOrdinal(ctx context.Context, mediaID store
 	return parsed.Sequence, parsed.Index, nil
 }
 
+// ParsedMediaHints is the plugin parser's named search hints for the Media
+// item's primary file, read the same unfiltered way as ParsedMediaTitle. The
+// probe is empty (embedded tags are not stored), so only hints the parser
+// derives from the path are returned (CORE-2333).
+func (t parserMediaTitles) ParsedMediaHints(ctx context.Context, mediaID store.MediaID, pluginID string) (map[string]string, error) {
+	parser, ok := t.parsers[pluginID]
+	if !ok || parser == nil {
+		return nil, nil
+	}
+	file, err := t.store.PrimaryMediaFile(ctx, mediaID, metadataLibraryFilter)
+	if err != nil {
+		return nil, err
+	}
+	parsed, ok := parser.Parse(file.Path, scanpkg.ParseProbe{})
+	if !ok {
+		return nil, nil
+	}
+	return scanpkg.SearchHints(parsed, nil, nil), nil
+}
+
 // scanIdentifier adapts identify.Service to scan.Identifier (PIPE-1, ADR-0003
 // §4). It is the composition-root bridge that lets scan trigger auto-identify
 // without importing internal/identify (arch §4 forbids the edge; identify also
@@ -3322,6 +3350,7 @@ func (a *scanIdentifier) AutoIdentifyOutcome(ctx context.Context, mediaID store.
 		Sequence: parsed.Sequence,
 		Index:    parsed.Index,
 		IndexEnd: parsed.IndexEnd,
+		Hints:    parsed.Hints,
 	})
 	return scanIdentifyOutcome(outcome, false), err
 }
@@ -3409,6 +3438,17 @@ func (a *scanIdentifier) PluginMediaClasses(pluginID string) []store.MediaClass 
 		classes = append(classes, store.MediaClass(class))
 	}
 	return classes
+}
+
+// PluginEmbeddedTagHints reports the active bundle's embedded-tag-to-hint
+// map, so the scan fills search hints the parser left empty from the file's
+// embedded tags (CORE-2333). An inactive or unknown Plugin declares none.
+func (a *scanIdentifier) PluginEmbeddedTagHints(pluginID string) map[string]string {
+	bundle, ok := activeBundle(a.registry, pluginID)
+	if !ok {
+		return nil
+	}
+	return bundle.EmbeddedTagHints
 }
 
 type validatingLocalExtractor struct {
@@ -4493,6 +4533,38 @@ func observePersistedRoots(ctx context.Context, st *store.Store, watcherService 
 			_ = watcherService.Observe(library.ID, root)
 		}
 	}
+}
+
+// devEmulatorAttestationEnv opts a development build into accepting
+// software-level emulator attestation (CORE-3189). Release builds ignore it.
+const devEmulatorAttestationEnv = "BEAMFALL_DEV_ACCEPT_EMULATOR_ATTESTATION"
+
+// offlinePackAttestationVerifier returns the hook's verifier when one is set,
+// else Android Key Attestation against the Google roots (ADR-0208). Apple
+// Secure Enclave attestation is refused until CORE-1926.
+// Google's revocation list is fetched on the first verification and held in
+// memory.
+func offlinePackAttestationVerifier(hook offlinepack.DeviceKeyAttestationVerifier, logger *slog.Logger) (offlinepack.DeviceKeyAttestationVerifier, error) {
+	if hook != nil {
+		return hook, nil
+	}
+	status := &offlinepack.AttestationStatusSource{}
+	return offlinepack.NewAndroidKeyAttestationVerifier(offlinepack.AndroidKeyAttestationOptions{
+		AllowSoftware: emulatorAttestationAllowed(capabilities.ReleaseVersion, logger),
+		Status:        status.Current,
+	})
+}
+
+func emulatorAttestationAllowed(releaseVersion string, logger *slog.Logger) bool {
+	if !envEnabled(devEmulatorAttestationEnv) {
+		return false
+	}
+	if releaseVersion != "development" {
+		logger.Warn("ignoring emulator attestation opt-in in a release build", "env", devEmulatorAttestationEnv)
+		return false
+	}
+	logger.Warn("accepting software emulator device-key attestation; development builds only", "env", devEmulatorAttestationEnv)
+	return true
 }
 
 func envEnabled(name string) bool {

@@ -54,12 +54,12 @@ export function LibraryPivotPage({ pivot }: { pivot: LibraryPivotName }) {
     nodeId,
   );
   if (!node?.libraryID) {
-    return <Navigate to={node ? nodePath(node.id) : "/"} replace />;
+    return <Navigate to={node ? nodePath(node.id, "", node.libraryID) : "/"} replace />;
   }
-  if (nodeId !== nodeSlug(node.id)) {
+  if (nodeId !== nodeSlug(node.id, node.libraryID)) {
     return (
       <Navigate
-        to={{ pathname: nodePath(node.id, `/${pivot}`), search: location.search }}
+        to={{ pathname: nodePath(node.id, `/${pivot}`, node.libraryID), search: location.search }}
         replace
       />
     );
@@ -77,7 +77,11 @@ export function LibraryPivotPage({ pivot }: { pivot: LibraryPivotName }) {
         {pivot === "collections" ? (
           <LibraryCollections key={node.libraryID} libraryID={node.libraryID} />
         ) : (
-          <LibraryCategories key={node.libraryID} libraryID={node.libraryID} nodeID={node.id} />
+          <LibraryCategories
+            key={node.libraryID}
+            libraryID={node.libraryID}
+            libraryPath={nodePath(node.id, "", node.libraryID)}
+          />
         )}
       </div>
     </AppShell>
@@ -173,7 +177,7 @@ function LibraryCollections({ libraryID }: { libraryID: string }) {
 // networks) shows its most used values and a See all list, A-Z, at ?kind=.
 // Jump links reach each grouping. A value opens the Library pivot's Media view
 // filtered to it.
-function LibraryCategories({ libraryID, nodeID }: { libraryID: string; nodeID: string }) {
+function LibraryCategories({ libraryID, libraryPath }: { libraryID: string; libraryPath: string }) {
   const t = useT();
   const [searchParams] = useSearchParams();
   const read = useCallback(async (): Promise<CategoryPlan[]> => {
@@ -210,9 +214,9 @@ function LibraryCategories({ libraryID, nodeID }: { libraryID: string; nodeID: s
           {t("libraryCategoriesEmpty")}
         </p>
       )}
-      {listed && <CategoryIndex plan={listed} nodeID={nodeID} />}
+      {listed && <CategoryIndex plan={listed} libraryPath={libraryPath} />}
       {plans && plans.length > 0 && !listed && (
-        <CategoryOverview plans={plans} libraryID={libraryID} nodeID={nodeID} />
+        <CategoryOverview plans={plans} libraryID={libraryID} libraryPath={libraryPath} />
       )}
     </div>
   );
@@ -222,8 +226,8 @@ function groupingTitle(plan: CategoryPlan, locale: string): string {
   return displayString(plan.grouping.title, locale) || plan.kind;
 }
 
-function categoryLink(nodeID: string, kind: string, value: string) {
-  return { pathname: nodePath(nodeID, "/all"), search: libraryCategorySearch(kind, value) };
+function categoryLink(libraryPath: string, kind: string, value: string) {
+  return { pathname: `${libraryPath}/all`, search: libraryCategorySearch(kind, value) };
 }
 
 function sectionID(kind: string): string {
@@ -319,11 +323,11 @@ function useCategoryArt(libraryID: string, plans: CategoryPlan[]): Map<string, C
 function CategoryOverview({
   plans,
   libraryID,
-  nodeID,
+  libraryPath,
 }: {
   plans: CategoryPlan[];
   libraryID: string;
-  nodeID: string;
+  libraryPath: string;
 }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
@@ -378,7 +382,7 @@ function CategoryOverview({
                 {plan.values.map((entry) => (
                   <li key={entry.value}>
                     <CategoryCard
-                      to={categoryLink(nodeID, plan.kind, entry.value)}
+                      to={categoryLink(libraryPath, plan.kind, entry.value)}
                       entry={entry}
                       art={art.get(artKey(plan.kind, entry.value)) ?? NO_ART}
                     />
@@ -390,7 +394,10 @@ function CategoryOverview({
                 <ul className="bf-category-chips">
                   {plan.top.map((entry) => (
                     <li key={entry.value}>
-                      <Link className="bf-chip" to={categoryLink(nodeID, plan.kind, entry.value)}>
+                      <Link
+                        className="bf-chip"
+                        to={categoryLink(libraryPath, plan.kind, entry.value)}
+                      >
                         {entry.value}
                         {entry.count !== undefined && (
                           <span className="bf-category-count">
@@ -479,7 +486,7 @@ function CategoryCard({
 }
 
 /** Every value of one grouping, A-Z under its initials, with a filter. */
-function CategoryIndex({ plan, nodeID }: { plan: CategoryPlan; nodeID: string }) {
+function CategoryIndex({ plan, libraryPath }: { plan: CategoryPlan; libraryPath: string }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const title = groupingTitle(plan, displayLocale);
@@ -553,7 +560,7 @@ function CategoryIndex({ plan, nodeID }: { plan: CategoryPlan; nodeID: string })
             <ul className="bf-category-az">
               {group.values.map((entry) => (
                 <li key={entry.value}>
-                  <Link to={categoryLink(nodeID, plan.kind, entry.value)}>
+                  <Link to={categoryLink(libraryPath, plan.kind, entry.value)}>
                     <span className="bf-category-name">{entry.value}</span>
                     {entry.count !== undefined && (
                       <span className="bf-category-count">

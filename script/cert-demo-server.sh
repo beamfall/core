@@ -71,7 +71,7 @@ PY
 }
 
 data_dir=""
-addr="${BEAMFALL_ADDR:-127.0.0.1:8800}"
+addr="${BEAMFALL_ADDR:-127.0.0.1:2326}"
 public_domain="${BEAMFALL_PUBLIC_DOMAIN:-}"
 prepare_only=0
 

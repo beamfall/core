@@ -186,6 +186,7 @@ describe("PartyGuestPage joined", () => {
     expect(within(section).getByText("Waiting for the host to approve")).toBeInTheDocument();
     const rotation = screen.getByRole("region", { name: "Coming up" });
     expect(within(rotation).getByText("Bramble")).toBeInTheDocument();
+    expect(within(rotation).getByText("Velvet Static · Nova Rook")).toBeInTheDocument();
     expect(within(rotation).getByText("Up next")).toBeInTheDocument();
     expect(within(rotation).getByText("Wren (You)")).toBeInTheDocument();
     await expectNoAxeViolations(container);

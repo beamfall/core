@@ -380,6 +380,64 @@ func TestPollDownloadsNewEntriesAndEnqueuesScan(t *testing.T) {
 	}
 }
 
+func TestPollRetentionKeepsFirstEntriesFromSamePollAfterRestart(t *testing.T) {
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	ctx := t.Context()
+	fs := newFeedServer(t)
+	root := t.TempDir()
+	titles := []string{"Newest", "Middle", "Oldest"}
+	fingerprints := []string{"z-retention-newest", "m-retention-middle", "a-retention-oldest"}
+	var items strings.Builder
+	for i, title := range titles {
+		file := fmt.Sprintf("item-%d.mp3", i)
+		fs.enclosures[file] = []byte(title)
+		items.WriteString(fs.item(file, title, file))
+	}
+	fs.setFeed(items.String())
+	keep := 2
+	sub, err := addDownloadAllSubscription(ctx, st, store.Subscription{
+		LibraryID: "library-local", FeedURL: fs.server.URL + "/feed.xml", Root: root,
+		RetentionKind: store.RetentionKeepLastN, RetentionN: &keep,
+	}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runPoll(t, st, Handler(NewPoller(st, scrape.New(scrape.WithInsecureLoopback()))))
+	media := make([]store.MediaID, len(titles))
+	for i, title := range titles {
+		path := filepath.Join(root, title+".mp3")
+		if _, err := os.Stat(path); err != nil {
+			t.Fatal(err)
+		}
+		item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: sub.LibraryID, Path: path, Title: title, Class: store.MediaClassAudio,
+			Container: "mp3", Codec: "mp3", ContentFingerprint: fingerprints[i],
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		media[i] = item.ID
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st = storetest.OpenAt(t, dataDir)
+	if moved, skipped, err := st.ApplySubscriptionRetentionPolicies(ctx); err != nil || skipped || moved != 1 {
+		t.Fatalf("retention sweep = %d, %v, %v, want 1, false, nil", moved, skipped, err)
+	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{sub.LibraryID}}
+	for _, id := range media[:keep] {
+		if _, err := st.Media(ctx, id, filter); err != nil {
+			t.Fatalf("retained Media %s is missing: %v", id, err)
+		}
+	}
+	trash, err := st.TrashedMediaList(ctx, filter)
+	if err != nil || len(trash) != 1 || trash[0].ID != media[keep] {
+		t.Fatalf("Trash = %+v, want only %s: %v", trash, media[keep], err)
+	}
+}
+
 func TestPollRecoversFromStalePartialDownload(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := context.Background()

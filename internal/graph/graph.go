@@ -167,6 +167,10 @@ type SourceItem struct {
 	// for a Library whose plugin declares none (CORE-2415).
 	AudienceScoreLabel plugin.LocaleString `json:"audienceScoreLabel,omitempty"`
 	AudienceScoreVotes int                 `json:"audienceScoreVotes,omitempty"`
+	// PlaysAlone is true when the item's Library plugin declares that its
+	// Media play alone: a client starts it with a one-item queue and never
+	// auto-advances into or out of it. Absent otherwise (CORE-3147).
+	PlaysAlone bool `json:"playsAlone,omitempty"`
 	// Byline names the person-archetype Entities linked to audio Media or
 	// audio containers, in link order, so a card credits them under its title
 	// (CORE-2362). Absent for every other item.
@@ -1160,6 +1164,7 @@ func (h *Handler) annotateCardsForProfile(ctx context.Context, profileID store.P
 		return err
 	}
 	h.annotateScoreLabels(ctx, items)
+	h.annotatePlaysAlone(ctx, items)
 	return h.store.AnnotateEngagement(ctx, profileID, filter, items, h.engagementContainers)
 }
 
@@ -1273,6 +1278,7 @@ func basicSourceItem(item store.SourceItem, revealed bool) SourceItem {
 		AudienceScore:      item.AudienceScore,
 		AudienceScoreLabel: plugin.LocaleString(item.AudienceScoreLabel),
 		AudienceScoreVotes: item.AudienceScoreVotes,
+		PlaysAlone:         item.PlaysAlone,
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
@@ -4847,6 +4853,12 @@ func (h *Handler) heldPlayMethod(sessionID store.SessionID, mediaID store.MediaI
 // LibraryID/Class/Title/Year ride the transition so the plugin can gate
 // eligibility and map a submission without a second read.
 func (h *Handler) notifyWatched(ctx context.Context, profileID store.ProfileID, media store.Media) {
+	h.notifyWatchedAt(ctx, profileID, media, time.Now())
+}
+
+// notifyWatchedAt is notifyWatched for a play that happened at watchedAt, such
+// as one replayed from a Device's offline log (CORE-3182).
+func (h *Handler) notifyWatchedAt(ctx context.Context, profileID store.ProfileID, media store.Media, watchedAt time.Time) {
 	externalIDs, err := h.store.MediaExternalIDs(ctx, media.ID)
 	if err != nil {
 		externalIDs = nil
@@ -4868,7 +4880,7 @@ func (h *Handler) notifyWatched(ctx context.Context, profileID store.ProfileID, 
 		Year:        media.Year,
 		ExternalIDs: externalIDs,
 		Audio:       audio,
-		WatchedAt:   time.Now().UTC(),
+		WatchedAt:   watchedAt.UTC(),
 	})
 }
 
@@ -5107,6 +5119,9 @@ type MediaInfo struct {
 	// read.
 	AudienceScoreLabel plugin.LocaleString `json:"audienceScoreLabel,omitempty"`
 	AudienceScoreVotes int                 `json:"audienceScoreVotes,omitempty"`
+	// PlaysAlone is as on SourceItem (CORE-3147); filled only by the
+	// media(id) read.
+	PlaysAlone bool `json:"playsAlone,omitempty"`
 	// Sequence and Index are the item's stored ordinals, as on SourceItem;
 	// Headline renders the plugin's MediaSubtitle segments that name no
 	// ordinal (the item's own title when stored), ClassLabel is the plugin's
@@ -5177,6 +5192,7 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 		}
 	}
 	info.VideoWidth, info.VideoHeight = media.VideoWidth, media.VideoHeight
+	info.PlaysAlone = h.libraryPlaysAlone(ctx, media.LibraryID)
 	h.describeOrderedMedia(ctx, media, &info)
 	return info, nil
 }
@@ -5454,10 +5470,14 @@ type EntityDetailInfo struct {
 // RelatedEntityGroupInfo is one Entity kind's share of an Entity's related
 // Entities: the kind, its plugin-declared display name and plural display
 // name (each omitted when the declaration carries none; clients head the group
-// with the plural, then the display name, then Kind) and the Entities as
-// Source items of kind "entity".
+// with the plural, then the display name, then Kind), the relation direction
+// and the Entities as Source items of kind "entity".
 type RelatedEntityGroupInfo struct {
-	Kind                  string              `json:"kind"`
+	Kind string `json:"kind"`
+	// Direction is "child" for Entities pointing at the context Entity and
+	// "parent" for Entities it points at (CORE-2036); one kind related both
+	// ways answers one group per direction.
+	Direction             string              `json:"direction"`
 	KindDisplayName       plugin.LocaleString `json:"kindDisplayName,omitempty"`
 	KindPluralDisplayName plugin.LocaleString `json:"kindPluralDisplayName,omitempty"`
 	// Archetype is the plugin-declared shape of Kind; omitted when undeclared.
@@ -5529,6 +5549,7 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 		rule := h.entityGroupRules[plugin.ID(group.PluginID)][group.Kind]
 		related := RelatedEntityGroupInfo{
 			Kind:                  group.Kind,
+			Direction:             group.Direction,
 			KindDisplayName:       spec.DisplayName,
 			KindPluralDisplayName: spec.PluralDisplayName,
 			Archetype:             spec.Archetype,
@@ -6505,6 +6526,7 @@ var mutationFields = map[string]bool{
 	"relock":                       true,
 	"setrevealpin":                 true,
 	"reportplayback":               true,
+	"replayofflineengagement":      true, // CORE-3182: offline engagement replay
 	"endplayback":                  true, // CORE-2305: a closing player ends its live session
 	"marknotificationread":         true,
 	"registerdevicepushtoken":      true,

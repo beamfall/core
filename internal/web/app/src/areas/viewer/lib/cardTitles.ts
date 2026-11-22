@@ -58,13 +58,25 @@ export function cardSubline(
   if (showsAudioEntityDetails(item)) {
     return [byline, year].filter(Boolean).join(" · ");
   }
+  // A Media card prints its runtime on a line of its own, so a summary that
+  // only restates it ("45 sec" over "0:45") is left out.
+  const summary = restatesRuntime(item) ? "" : item.summary;
   // A listener reads who made a track before its album, so an audio card
   // names its artist first and a long album title cannot crowd it out.
   const parts =
     item.mediaClass === "audio"
-      ? [byline, lead, showYear ? year : "", item.summary]
-      : [lead, showYear ? year : "", byline, item.summary];
+      ? [byline, lead, showYear ? year : "", summary]
+      : [lead, showYear ? year : "", byline, summary];
   return [...new Set(parts.filter(Boolean))].join(" · ");
+}
+
+// Whether a Media item's summary is the server's running-time line
+// (mediaDurationSummary: seconds under a minute, else whole minutes rounded up).
+function restatesRuntime(item: SourceItem): boolean {
+  const seconds = item.durationSeconds ?? 0;
+  if (item.kind !== "media" || seconds <= 0 || !item.summary) return false;
+  const runtime = seconds < 60 ? `${seconds} sec` : `${Math.ceil(seconds / 60)} min`;
+  return item.summary === runtime;
 }
 
 /**

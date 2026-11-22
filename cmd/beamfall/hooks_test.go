@@ -38,6 +38,11 @@ func TestFirstPartyHooksComposeProductionPluginBehavior(t *testing.T) {
 	if hooks.IdentifyScorers[filmtv.PluginID].Scorer == nil {
 		t.Fatal("Film/TV scorer hook missing")
 	}
+	if scorer := hooks.IdentifyScorers[music.PluginID]; scorer.Threshold != music.AutoApplyThreshold {
+		t.Fatalf("Music scorer threshold = %v, want %v", scorer.Threshold, music.AutoApplyThreshold)
+	} else if _, ok := scorer.Scorer.(*music.Scorer); !ok {
+		t.Fatalf("Music scorer hook = %T, want *music.Scorer", scorer.Scorer)
+	}
 	if hooks.HydrationMappers[music.PluginID] == nil {
 		t.Fatal("Music hydration hook missing")
 	}

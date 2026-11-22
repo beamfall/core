@@ -61,18 +61,18 @@ described in the [deploy runbook](../../security/runbooks/deploy.md).
 
 ## First sign-in and pairing
 
-Open `http://<unraid-ip>:8800/web/setup` on a trusted LAN, substituting the host's IP. Read the
+Open `http://<unraid-ip>:2326/web/setup` on a trusted LAN, substituting the host's IP. Read the
 container log in Unraid: the setup URLs and one-time setup token are the last startup lines
 once listening. A browser on the local network needs no token; every restart while setup is
 pending prints a new token. Printed bridge addresses belong to the container, so use the
-Unraid host's address instead. The template listens on `0.0.0.0:8800` inside the container.
+Unraid host's address instead. The template listens on `0.0.0.0:2326` inside the container.
 
 For an owner pairing code, stop the container and run the offline command with the same data
 mount and user (adjust the host path if changed):
 
 ```sh
 docker run --rm --user 99:100 -v /mnt/cache/appdata/beamfall/data:/data beamfall-core:local \
-  pairing-code -data-dir /data -addr 0.0.0.0:8800
+  pairing-code -data-dir /data -addr 0.0.0.0:2326
 ```
 
 Restart the normal container, open its Web UI using the Unraid host IP, and enter the code

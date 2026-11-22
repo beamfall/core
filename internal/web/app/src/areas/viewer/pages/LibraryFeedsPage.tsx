@@ -48,13 +48,19 @@ function useFeedLibraryNode(subpath: string): { node: NavigationNode | null; fal
     nodeId,
   );
   if (!node?.libraryID) {
-    return { node: null, fallback: <Navigate to={node ? nodePath(node.id) : "/"} replace /> };
+    return {
+      node: null,
+      fallback: <Navigate to={node ? nodePath(node.id, "", node.libraryID) : "/"} replace />,
+    };
   }
-  if (nodeId !== nodeSlug(node.id)) {
+  if (nodeId !== nodeSlug(node.id, node.libraryID)) {
     return {
       node: null,
       fallback: (
-        <Navigate to={{ pathname: nodePath(node.id, subpath), search: location.search }} replace />
+        <Navigate
+          to={{ pathname: nodePath(node.id, subpath, node.libraryID), search: location.search }}
+          replace
+        />
       ),
     };
   }
@@ -156,7 +162,7 @@ export function LibraryFeedsPage() {
           )}
           {items.length > 0 && (
             <FeedList
-              nodeID={node.id}
+              libraryPath={nodePath(node.id, "", node.libraryID)}
               subscriptions={items}
               canChangePolicy={manager}
               onChange={update}
@@ -211,7 +217,7 @@ export function FeedCataloguePage() {
     <AppShell actions={<ViewerActions />}>
       <div className="flex flex-col gap-5">
         <Link
-          to={nodePath(node.id, "/feeds")}
+          to={nodePath(node.id, "/feeds", node.libraryID)}
           className="flex items-center gap-1 self-start text-sm text-[var(--text-secondary)] hover:underline"
         >
           <ChevronLeft aria-hidden className="size-4" />

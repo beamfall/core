@@ -99,7 +99,7 @@
       "view": "ambient"
     },
     {
-      "id": "library-library-local",
+      "id": "library-local",
       "layoutID": "layout-home",
       "libraryID": "library-local",
       "title": "Local Library",

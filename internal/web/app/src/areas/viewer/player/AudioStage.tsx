@@ -1,5 +1,12 @@
 import { Music } from "lucide-react";
-import { type CSSProperties, type ReactNode, type RefObject, useEffect, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link, useInRouterContext } from "react-router";
 import type { MediaCredit } from "@/lib/graphql/types";
 import { mediaPath } from "../lib/mediaAddress";
@@ -10,6 +17,7 @@ import {
   usePrefersReducedMotion,
   useTrackChangeMotion,
 } from "./trackChangeMotion";
+import { useAmbientMotion } from "./useAmbient";
 import { useLayers } from "./useLayers";
 import { type NextTrack, Visualizer } from "./visualizer/Visualizer";
 import { useVisualChoice } from "./visualizer/visualChoice";
@@ -33,6 +41,8 @@ export function AudioStage({
   stream = null,
   trackKey = "",
   next = null,
+  ambient = false,
+  ambientIdle = false,
   lyrics = null,
   reason = "",
   mediaID = "",
@@ -50,6 +60,10 @@ export function AudioStage({
   trackKey?: string;
   /** The item played next, which the visualizer prepares ahead. */
   next?: NextTrack | null;
+  /** Ambient (OLED-safe) mode: black stage, no visual (CORE-3216). */
+  ambient?: boolean;
+  /** Ambient and idle: the card dims and drifts. */
+  ambientIdle?: boolean;
   /** The lyrics view (CORE-1638): when set, the artwork moves left and the lyrics fill the right. */
   lyrics?: ReactNode;
   /** Why radio picked this item (CORE-2772), shown under its credits. */
@@ -69,7 +83,10 @@ export function AudioStage({
   const linked = useInRouterContext();
 
   const changeKey = trackKey || title;
-  const motion = motionForChange(changeKey, useTrackChangeMotion(), usePrefersReducedMotion());
+  const reducedMotion = usePrefersReducedMotion();
+  const motion = motionForChange(changeKey, useTrackChangeMotion(), reducedMotion);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useAmbientMotion(cardRef, ambient && ambientIdle, reducedMotion);
   const meta = {
     position: queuePosition ?? "",
     title,
@@ -91,7 +108,13 @@ export function AudioStage({
   const visualArtURL = visualArt.key === artKey ? visualArt.url : art;
 
   return (
-    <div className="bf-audio-stage">
+    <div
+      className={
+        "bf-audio-stage" +
+        (ambient ? " is-ambient" : "") +
+        (ambient && ambientIdle ? " is-ambient-idle" : "")
+      }
+    >
       <div aria-hidden="true" className="bf-audio-backdrop">
         <ArtworkLayers url={art} leaveMs={BACKDROP_LEAVE_MS} />
       </div>
@@ -99,7 +122,7 @@ export function AudioStage({
           from Oscillux (ADR-0228); the slot stays empty where it cannot draw,
           and when the viewer turns it off (CORE-2814). */}
       <div aria-hidden="true" className="bf-audio-visualizer" data-visualizer-slot="">
-        {videoRef && visualChoice !== "off" && (
+        {videoRef && visualChoice !== "off" && !ambient && (
           <Visualizer
             videoRef={videoRef}
             stream={stream}
@@ -111,7 +134,7 @@ export function AudioStage({
           />
         )}
       </div>
-      <div className={`bf-audio-card${lyrics ? " has-lyrics" : ""}`}>
+      <div ref={cardRef} className={`bf-audio-card${lyrics ? " has-lyrics" : ""}`}>
         <div className="bf-audio-artwork" data-art={motion.art}>
           <ArtworkLayers url={art} leaveMs={ART_LEAVE_MS} onError={setFailedURL} placeholder />
         </div>

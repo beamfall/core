@@ -8,7 +8,7 @@ contract in `internal/conformance` is authoritative.
 
 When discovery is enabled (on by default; `--discovery-enabled=false` or `BEAMFALL_DISCOVERY_ENABLED=false` turns it off), the server advertises one
 `_beamfall._tcp` service in `local.` on the port it listens on. The instance name is the server
-name. A server listening on loopback only (the default `127.0.0.1:8800`) does not advertise, because
+name. A server listening on loopback only (the default `127.0.0.1:2326`) does not advertise, because
 no other device could connect to it; listen on a LAN or wildcard address to be discoverable. The TXT
 record carries:
 

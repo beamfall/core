@@ -11,6 +11,11 @@ import (
 // visible Media item. The visible-media check runs before both insert and
 // delete so hidden and absent targets are indistinguishable and hidden rows
 // cannot be deleted by a relocked caller.
+//
+// The check and the write run inside a catalog write transaction. SQLite's
+// single catalog writer serialises them against Subscription retention, which
+// decides and trashes in one such transaction: a Favorite either lands before
+// the decision and protects the Media, or finds it already in Trash.
 func (s *Store) SetMediaFavorite(ctx context.Context, profileID ProfileID, mediaID MediaID, favorite bool, filter LibraryFilter) error {
 	if profileID == "" || mediaID == "" {
 		return ValidationError("profile ID and media ID are required")
@@ -20,23 +25,31 @@ func (s *Store) SetMediaFavorite(ctx context.Context, profileID ProfileID, media
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	catalog, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer catalog.Rollback()
 	if _, err := s.visibleMediaSQL(ctx, mediaID, filter); err != nil {
 		return err
 	}
 	if favorite {
-		_, err := s.eventsW.ExecContext(ctx, `
+		_, err = s.eventsW.ExecContext(ctx, `
 			INSERT INTO media_favorite(profile_id, media_id, favorited_at_ms)
 			VALUES (?, ?, ?)
 			ON CONFLICT(profile_id, media_id) DO UPDATE SET
 			  favorited_at_ms = excluded.favorited_at_ms
 		`, profileID, mediaID, timeToMillis(time.Now().UTC()))
+	} else {
+		_, err = s.eventsW.ExecContext(ctx, `
+			DELETE FROM media_favorite
+			WHERE profile_id = ? AND media_id = ?
+		`, profileID, mediaID)
+	}
+	if err != nil {
 		return err
 	}
-	_, err := s.eventsW.ExecContext(ctx, `
-		DELETE FROM media_favorite
-		WHERE profile_id = ? AND media_id = ?
-	`, profileID, mediaID)
-	return err
+	return catalog.Commit()
 }
 
 // favoriteItemsSQL backs the favorites Source: the Profile's favorited Media,

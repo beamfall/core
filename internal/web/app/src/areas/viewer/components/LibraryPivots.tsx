@@ -28,21 +28,21 @@ const FEEDS_PIVOT: { path: LibraryPivotPath; label: StringKey } = {
   label: "feedsPivot",
 };
 
-export function LibraryPivots({ nodeID, libraryID }: { nodeID: string; libraryID?: string }) {
+export function LibraryPivots({ nodeID, libraryID }: { nodeID: string; libraryID: string }) {
   const t = useT();
   const { pathname } = useLocation();
   const hasFeeds = useLibraryHasFeeds(libraryID);
   const onFeeds = pivotOfPath(pathname) === FEEDS_PIVOT.path;
   const pivots = hasFeeds || onFeeds ? [...PIVOTS, FEEDS_PIVOT] : PIVOTS;
   useEffect(() => {
-    writeLibraryPivot(nodeID, pivotOfPath(pathname));
-  }, [nodeID, pathname]);
+    writeLibraryPivot(libraryID, pivotOfPath(pathname));
+  }, [libraryID, pathname]);
   return (
     <nav aria-label={t("libraryPivotsLabel")} className="bf-pivots">
       {pivots.map((pivot) => (
         <NavLink
           key={pivot.path}
-          to={nodePath(nodeID, pivot.path)}
+          to={nodePath(nodeID, pivot.path, libraryID)}
           // Recommended lives at the Library's own address, which every other
           // pivot's address starts with.
           end={pivot.path === ""}
@@ -65,7 +65,7 @@ export function LibraryHeader({
 }: {
   nodeID: string;
   /** The Library behind the node, for the pivots that depend on its contents. */
-  libraryID?: string;
+  libraryID: string;
   heading: string;
   /** Shown on the heading's row: a count, actions. */
   aside?: ReactNode;

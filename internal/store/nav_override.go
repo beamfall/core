@@ -11,7 +11,7 @@ import (
 // NavOverrideData is the operator-editable override blob for the Navigation
 // Manifest and Layout (WEB-5J / ADR-0061 §Layout editor).
 type NavOverrideData struct {
-	// HiddenNodeIDs suppresses nav nodes by ID ("ambient", "library-<id>", etc.).
+	// HiddenNodeIDs suppresses nav nodes by ID ("ambient", a Library node ID such as "library-films", etc.).
 	HiddenNodeIDs []string `json:"hiddenNodeIDs,omitempty"`
 	// NodeOrder, if non-empty, defines the canonical node order. IDs not listed
 	// are appended in their default order after the listed ones.
@@ -41,6 +41,36 @@ type NavOverrideHistoryEntry struct {
 	ScopeID   string // '' for server-level
 	Data      NavOverrideData
 	CreatedAt time.Time
+}
+
+// LibraryIDsInUse returns the supplied IDs that belong to catalog rows,
+// including hidden and trashed Libraries. Navigation aliases must not reuse
+// those IDs while their Libraries are invisible.
+func (s *Store) LibraryIDsInUse(ctx context.Context, ids []LibraryID) ([]LibraryID, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	in, args := libraryIDPlaceholders(ids)
+	// #nosec G202 -- in contains only generated placeholders.
+	rows, err := s.catalogR.QueryContext(ctx, "SELECT id FROM library WHERE id IN ("+in+")", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var used []LibraryID
+	for rows.Next() {
+		var id LibraryID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		used = append(used, id)
+	}
+	return used, rows.Err()
 }
 
 // navScopeID normalises a *string scope_id to the non-NULL empty-string form

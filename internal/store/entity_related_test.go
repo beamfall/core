@@ -94,6 +94,10 @@ func TestRelatedEntityGroupsBothDirections(t *testing.T) {
 	if len(groups) != 2 || groups[0].Kind != "box" || groups[1].Kind != "place" {
 		t.Fatalf("groups not in kind order: %+v", groups)
 	}
+	if groups[0].Direction != RelatedEntityChild || groups[1].Direction != RelatedEntityParent {
+		t.Fatalf("group directions = %q, %q; want the boxes pointing at maker as children and the place it points at as a parent",
+			groups[0].Direction, groups[1].Direction)
+	}
 	if item := groups[0].Items[0]; item.Kind != "entity" || item.Title != "Alpha" {
 		t.Fatalf("related item = %+v, want an entity item titled Alpha", item)
 	}
@@ -112,6 +116,73 @@ func TestRelatedEntityGroupsBothDirections(t *testing.T) {
 	}
 	if len(groups) != 0 {
 		t.Fatalf("RelatedEntityGroups(lone) = %+v, want none", groups)
+	}
+}
+
+// TestRelatedEntityGroupsDirectionThreeLevels pins relation direction over a
+// three-level container graph (CORE-2036): a middle container lists the
+// container below it as a child and the one above it as a parent, even when
+// the parent's kind sorts first, and one kind related both ways splits into a
+// child group and a parent group, with an Entity linked both ways listed once
+// as a parent.
+func TestRelatedEntityGroupsDirectionThreeLevels(t *testing.T) {
+	st, lib, _ := relatedFixture(t)
+	ctx := context.Background()
+	server := LibraryFilter{Revealed: true, AllLibraries: true}
+	// "a-top" sorts before "b-middle" and "c-bottom", so a kind-only read would
+	// put the parent group first.
+	upsertRelatedEntity(t, st, "entity-top", lib.ID, "a-top", "Top")
+	upsertRelatedEntity(t, st, "entity-middle", lib.ID, "b-middle", "Middle")
+	upsertRelatedEntity(t, st, "entity-bottom-1", lib.ID, "c-bottom", "Bottom 1")
+	upsertRelatedEntity(t, st, "entity-bottom-2", lib.ID, "c-bottom", "Bottom 2")
+	upsertRelatedEntity(t, st, "entity-peer-up", lib.ID, "b-middle", "Peer Up")
+	upsertRelatedEntity(t, st, "entity-peer-down", lib.ID, "b-middle", "Peer Down")
+	upsertRelatedEntity(t, st, "entity-peer-both", lib.ID, "b-middle", "Peer Both")
+	relateEntities(t, st,
+		EntityRelation{FromEntityID: "entity-middle", Name: "part-of", ToEntityID: "entity-top"},
+		EntityRelation{FromEntityID: "entity-bottom-1", Name: "part-of", ToEntityID: "entity-middle"},
+		EntityRelation{FromEntityID: "entity-bottom-2", Name: "part-of", ToEntityID: "entity-middle"},
+		EntityRelation{FromEntityID: "entity-middle", Name: "follows", ToEntityID: "entity-peer-up"},
+		EntityRelation{FromEntityID: "entity-peer-down", Name: "follows", ToEntityID: "entity-middle"},
+		EntityRelation{FromEntityID: "entity-middle", Name: "follows", ToEntityID: "entity-peer-both"},
+		EntityRelation{FromEntityID: "entity-peer-both", Name: "follows", ToEntityID: "entity-middle"},
+	)
+
+	type group struct {
+		kind, direction string
+		ids             []MediaID
+	}
+	read := func(id EntityID) []group {
+		t.Helper()
+		groups, err := st.RelatedEntityGroups(ctx, id, server)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := []group{}
+		for _, g := range groups {
+			ids := []MediaID{}
+			for _, item := range g.Items {
+				ids = append(ids, item.ID)
+			}
+			out = append(out, group{g.Kind, g.Direction, ids})
+		}
+		return out
+	}
+
+	want := []group{
+		{"a-top", RelatedEntityParent, []MediaID{"entity-top"}},
+		{"b-middle", RelatedEntityChild, []MediaID{"entity-peer-down"}},
+		{"b-middle", RelatedEntityParent, []MediaID{"entity-peer-both", "entity-peer-up"}},
+		{"c-bottom", RelatedEntityChild, []MediaID{"entity-bottom-1", "entity-bottom-2"}},
+	}
+	if got := read("entity-middle"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("RelatedEntityGroups(middle) = %+v, want %+v", got, want)
+	}
+	if got, want := read("entity-top"), []group{{"b-middle", RelatedEntityChild, []MediaID{"entity-middle"}}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("RelatedEntityGroups(top) = %+v, want %+v", got, want)
+	}
+	if got, want := read("entity-bottom-1"), []group{{"b-middle", RelatedEntityParent, []MediaID{"entity-middle"}}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("RelatedEntityGroups(bottom) = %+v, want %+v", got, want)
 	}
 }
 
@@ -190,7 +261,7 @@ func TestRelatedEntityGroupsOrderBySortOrderThenTitle(t *testing.T) {
 		EntityRelation{FromEntityID: "entity-shelf", Name: "holds", ToEntityID: "entity-a"},
 		EntityRelation{FromEntityID: "entity-shelf", Name: "holds", ToEntityID: "entity-b", SortOrder: &two},
 		EntityRelation{FromEntityID: "entity-shelf", Name: "holds", ToEntityID: "entity-c", SortOrder: &one},
-		EntityRelation{FromEntityID: "entity-d", Name: "sits-on", ToEntityID: "entity-shelf"},
+		EntityRelation{FromEntityID: "entity-shelf", Name: "holds", ToEntityID: "entity-d"},
 	)
 
 	groups, err := st.RelatedEntityGroups(ctx, "entity-shelf", LibraryFilter{AllLibraries: true})

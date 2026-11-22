@@ -10,12 +10,12 @@ emit() {
   fail=1
 }
 
-expected='${BEAMFALL_HTTP_BIND:-127.0.0.1}:${BEAMFALL_HTTP_PORT:-8800}:8800'
+expected='${BEAMFALL_HTTP_BIND:-127.0.0.1}:${BEAMFALL_HTTP_PORT:-2326}:2326'
 for file in packaging/compose/compose.cpu.yml packaging/compose/compose.nvidia.yml packaging/compose/compose.intel-vaapi.yml; do
   if ! grep -Fq "$expected" "$file"; then
     emit "$file must publish Beamfall on loopback by default"
   fi
-  if grep -Eq '^[[:space:]]*-[[:space:]]*"\$\{BEAMFALL_HTTP_PORT:-8800\}:8800"' "$file"; then
+  if grep -Eq '^[[:space:]]*-[[:space:]]*"\$\{BEAMFALL_HTTP_PORT:-2326\}:2326"' "$file"; then
     emit "$file still contains the old all-interface copy-paste port mapping"
   fi
 done
@@ -28,7 +28,7 @@ grep -Eq 'image:[[:space:]]*caddy:2' packaging/compose/compose.public.yml ||
   emit "public compose override must provide a TLS reverse-proxy service"
 grep -q '\${BEAMFALL_PUBLIC_HTTPS_BIND:-0.0.0.0}:\${BEAMFALL_PUBLIC_HTTPS_PORT:-443}:443' packaging/compose/compose.public.yml ||
   emit "public compose override must publish HTTPS explicitly"
-grep -q 'reverse_proxy beamfall:8800' packaging/compose/Caddyfile ||
+grep -q 'reverse_proxy beamfall:2326' packaging/compose/Caddyfile ||
   emit "public compose profile must reverse-proxy to the internal Beamfall service"
 
 grep -q 'PublicMetrics[[:space:]]*bool' internal/config/config.go ||

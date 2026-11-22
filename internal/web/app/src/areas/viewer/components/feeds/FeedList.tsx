@@ -17,7 +17,6 @@ import {
   setSubscriptionDownloadPolicy,
 } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
-import { nodePath } from "@/lib/nodePath";
 import {
   ALL_POLICIES,
   DEFAULT_LATEST_N,
@@ -36,12 +35,12 @@ const SELECT_CLASS =
 // Refresh. A manager device can change the policy; Everything first shows the
 // catalogue size and asks.
 export function FeedList({
-  nodeID,
+  libraryPath,
   subscriptions,
   canChangePolicy,
   onChange,
 }: {
-  nodeID: string;
+  libraryPath: string;
   subscriptions: readonly FeedSubscription[];
   canChangePolicy: boolean;
   onChange: (subscription: FeedSubscription) => void;
@@ -51,7 +50,7 @@ export function FeedList({
       {subscriptions.map((subscription) => (
         <FeedRow
           key={subscription.id}
-          nodeID={nodeID}
+          libraryPath={libraryPath}
           subscription={subscription}
           canChangePolicy={canChangePolicy}
           onChange={onChange}
@@ -64,12 +63,12 @@ export function FeedList({
 type Notice = "refreshQueued" | "rateLimited" | "refreshFailed" | "policyFailed" | null;
 
 function FeedRow({
-  nodeID,
+  libraryPath,
   subscription,
   canChangePolicy,
   onChange,
 }: {
-  nodeID: string;
+  libraryPath: string;
   subscription: FeedSubscription;
   canChangePolicy: boolean;
   onChange: (subscription: FeedSubscription) => void;
@@ -147,7 +146,7 @@ function FeedRow({
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <Link
-            to={nodePath(nodeID, `/feeds/${encodeURIComponent(subscription.id)}`)}
+            to={`${libraryPath}/feeds/${encodeURIComponent(subscription.id)}`}
             className="font-medium hover:underline"
             aria-label={t("feedsOpenCatalogue", { title })}
           >

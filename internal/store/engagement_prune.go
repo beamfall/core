@@ -117,6 +117,13 @@ func (s *Store) pruneOrphanedEngagementRowsLocked(ctx context.Context) (Engageme
 			return EngagementPruneCounts{}, err
 		}
 		counts.EventRows += int(affected)
+		// The offline replay ledger (CORE-3182) only de-duplicates; it goes with
+		// the Media's engagement and is not counted separately. It is in the
+		// sweep's id list too, so a replay that raced a purge is cleared here.
+		_, err = tx.ExecContext(ctx, `DELETE FROM offline_engagement_event WHERE media_id IN (`+placeholders+`)`, args...) // #nosec G202 -- placeholders holds only "?" marks
+		if err != nil {
+			return EngagementPruneCounts{}, err
+		}
 		for _, table := range []string{"watchlist_item", "item_rating"} {
 			// #nosec G202 -- table is drawn from the closed literal list above.
 			result, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE target_kind = 'media' AND target_id IN (`+placeholders+`)`, args...)
@@ -239,6 +246,8 @@ func (s *Store) engagementMediaIDs(ctx context.Context) ([]MediaID, error) {
 		SELECT media_id FROM playback_progress
 		UNION
 		SELECT media_id FROM engagement_event WHERE media_id IS NOT NULL
+		UNION
+		SELECT media_id FROM offline_engagement_event
 		UNION
 		SELECT target_id FROM watchlist_item WHERE target_kind = 'media'
 		UNION

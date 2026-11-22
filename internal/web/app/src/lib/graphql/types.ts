@@ -159,6 +159,11 @@ export interface SourceItem {
   audienceScore?: number;
   /** The vote count behind that score; absent when unknown (CORE-2415). */
   audienceScoreVotes?: number;
+  /**
+   * The item's plugin declares that it plays on its own: a player never
+   * queues its siblings after it (CORE-3147). Absent means it may queue.
+   */
+  playsAlone?: boolean;
   /** Who made an audio Media item: its person-archetype Entities' titles (CORE-2362). */
   byline?: string[];
   /**
@@ -272,15 +277,23 @@ export interface EntityInfo {
   fields: EntityFieldInfo[];
   /** The kind's fixed archetype ("container", "person", …); drives generic page layout. */
   archetype?: string;
-  /** Entities related in either direction, grouped by kind; only entity(id) fills it. */
+  /** Entities grouped by kind and relation direction; only entity(id) fills it. */
   relatedEntities?: RelatedEntityGroup[];
   /** The Entity's own artwork slots; only entity(id) fills it (CORE-2406). */
   artworkSlots?: Record<string, string>;
 }
 
+export type RelatedEntityDirection = "child" | "parent";
+
 /** One kind's share of an Entity's related Entities (graph.RelatedEntityGroupInfo). */
 export interface RelatedEntityGroup {
   kind: string;
+  /**
+   * How the group relates to the Entity (CORE-2036): "child" Entities point at
+   * it, "parent" Entities are the ones it points at. One kind related both ways
+   * comes as one group per direction.
+   */
+  direction?: RelatedEntityDirection;
   kindDisplayName?: DisplayString;
   /** The plugin's plural of `kindDisplayName`, for the group heading; absent when it declares none. */
   kindPluralDisplayName?: DisplayString;
@@ -314,6 +327,8 @@ export interface GenericMediaInfo {
   durationSeconds?: number;
   /** The Media class ("audio", "video", …); omitted when unknown. */
   mediaClass?: string;
+  /** Plays on its own: no sibling queue follows it (CORE-3147); media(id) only. */
+  playsAlone?: boolean;
   /**
    * The owning Library, for the readable address (CORE-2329); only the
    * media(id) read fills it, and a server that predates it omits it.

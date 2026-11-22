@@ -1508,6 +1508,35 @@ describe("PlayerPage class-narrowed queue (CORE-1490, CORE-1309)", () => {
     await waitFor(() => expect(lastPlayedID()).toBe("media-t2"));
   });
 
+  it("does not advance into an issued next once the media read says plays-alone (CORE-3147)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      id: "media-alpha",
+      title: "Alpha",
+      playsAlone: true,
+      credits: [],
+    } as never);
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: {
+          mediaClass: "audio",
+          next: {
+            mediaID: "media-t2",
+            mediaClass: "audio",
+            streams: [{ kind: "direct-play", url: "/api/media/t2" }],
+          },
+        } as PlayerState["info"],
+      }),
+      { title: "Alpha" },
+    );
+    await waitFor(() => expect(vi.mocked(fetchMedia)).toHaveBeenCalled());
+    await act(async () => {});
+    fireEvent.ended(stageVideo());
+    await act(async () => {});
+    expect(lastPlayedID()).not.toBe("media-t2");
+    vi.mocked(fetchMedia).mockResolvedValue(null);
+  });
+
   it("shows the audio stage while loading when the queue entry is a track", () => {
     renderPlayer(playerState({ phase: "loading" }), {
       title: "Alpha",
@@ -1786,6 +1815,20 @@ describe("PlayerPage server Play Queue", () => {
     fireEvent.ended(stageVideo());
     await waitFor(() => expect(readQueue).toHaveBeenCalledTimes(2));
     expect(playingID()).toBe(b.id);
+  });
+
+  it("keeps the server Play Queue's successor for a plays-alone track (CORE-3147)", async () => {
+    queueMedia = {
+      id: b.id,
+      title: "Current track B",
+      favorited: false,
+      credits: [],
+      playsAlone: true,
+    };
+    renderQueue();
+    await screen.findByRole("heading", { name: "Current track B" });
+    expect(gapless()?.next?.mediaID).toBe(c.id);
+    expect(gapless()?.advanceID).toBe(c.id);
   });
 
   it("withholds a stale gapless candidate and advances to the new server successor", async () => {

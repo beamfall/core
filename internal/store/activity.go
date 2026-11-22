@@ -410,6 +410,9 @@ func (s *Store) ActivityEntries(ctx context.Context, query ActivityQuery) ([]Act
 	if err := s.flushMediaRelationActivityLocked(ctx); err != nil {
 		return nil, err
 	}
+	if err := s.flushSubscriptionRetentionActivityLocked(ctx); err != nil {
+		return nil, err
+	}
 	libraries, err := loadLibraries(ctx, s.catalogR)
 	if err != nil {
 		return nil, err

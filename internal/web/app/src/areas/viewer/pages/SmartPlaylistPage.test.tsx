@@ -51,7 +51,8 @@ function WatchProbe() {
   const state = location.state as PlayerNavState | null;
   return (
     <p data-testid="watch">
-      {location.pathname}|{(state?.queue ?? []).map((entry) => entry.id).join(",")}
+      {location.pathname}|
+      {(state?.queue ?? []).map((entry) => entry.id + (entry.playsAlone ? "*" : "")).join(",")}
     </p>
   );
 }
@@ -113,6 +114,17 @@ describe("SmartPlaylistPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Play all" }));
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/m-1|m-1,m-3");
+  });
+
+  it("carries each match's plays-alone flag into the queue (CORE-3147)", async () => {
+    vi.mocked(fetchSmartCollectionItems).mockResolvedValue([
+      { ...item("b-1", "First book"), playsAlone: true },
+      { ...item("b-2", "Second book"), playsAlone: true },
+    ]);
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Play all" }));
+    expect(screen.getByTestId("watch")).toHaveTextContent(/^\/watch\/b-1\|b-1\*,b-2\*$/);
   });
 
   it("rereads the matches when engagement changes elsewhere", async () => {

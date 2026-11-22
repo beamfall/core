@@ -16,7 +16,7 @@ import (
 	scanpkg "github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
-	books "github.com/beamfall/plugin-audiobook"
+	tagFolderPlugin "github.com/beamfall/plugin-audiobook"
 	enrichment "github.com/beamfall/plugin-enrichment"
 	familyarchive "github.com/beamfall/plugin-familyarchive"
 	filmtv "github.com/beamfall/plugin-filmtv"
@@ -50,12 +50,12 @@ func firstPartyHooksForBundles(bundles []plugin.Bundle) app.Hooks {
 		hooks.ScrobbleAdapters = append(hooks.ScrobbleAdapters, app.ScrobbleAdapterHook{PluginID: filmtv.PluginID, Service: filmtv.ScrobbleServiceTrakt, Factory: filmtv.TraktScrobbleFactory})
 		hooks.PrePlayPolicy = filmtvPrePlayHook()
 	}
-	if active[books.PluginID] {
-		hooks.Parsers[books.PluginID] = books.New()
-		hooks.HydrationMappers[books.PluginID] = booksHydrationMapper{}
+	if active[tagFolderPlugin.PluginID] {
+		hooks.Parsers[tagFolderPlugin.PluginID] = tagFolderPlugin.New()
+		hooks.HydrationMappers[tagFolderPlugin.PluginID] = relationHydrationMapper{}
 		hooks.EntityBrowseRules = append(hooks.EntityBrowseRules, bookAuthorBrowseRule())
-		hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: books.PluginID, ImporterID: books.ImporterID}] = func(_ []string, path string) migrate.Source {
-			return books.NewImportSource(path)
+		hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: tagFolderPlugin.PluginID, ImporterID: tagFolderPlugin.ImporterID}] = func(_ []string, path string) migrate.Source {
+			return tagFolderPlugin.NewImportSource(path)
 		}
 		addBookPackResolvers(&hooks)
 	}
@@ -99,6 +99,9 @@ func addMusicHooks(hooks *app.Hooks) {
 	// filename stem ("01 - Opening Light") as its title.
 	hooks.Parsers[music.PluginID] = music.NewParser()
 	hooks.HydrationMappers[music.PluginID] = musicHydrationMapper{}
+	// Music candidates rank by the plugin's own scorer and auto-apply cut;
+	// without it they fell to the default scorer (CORE-1206).
+	hooks.IdentifyScorers[music.PluginID] = app.IdentifyScorerHook{Scorer: music.NewScorer(), Threshold: music.AutoApplyThreshold}
 	// With no provider artwork an album shows the cover of its first track
 	// that has one, and an artist the cover of one of its albums, else of a
 	// track it appears on. Albums come first so artists see this sweep's covers.

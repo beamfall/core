@@ -114,10 +114,12 @@ package store
 // Profile playback state without changing entity queries.
 // Events 0027 (CORE-1662) adds party sessions, participants, entries and
 // screens without changing entity queries.
+// Events 0028 (CORE-3182) adds the offline engagement replay ledger, written
+// only by the offline replay mutation, off the entity-query hot path.
 // Encrypted-library 0012 (CORE-3152) adds the entity_relation writer column.
 // Encrypted-library 0013 (CORE-3131) keeps relation locks and recovery rows
 // in the owning Library plane.
 const (
-	schemaFreezeEventsMigrations           = 27
+	schemaFreezeEventsMigrations           = 28
 	schemaFreezeEncryptedLibraryMigrations = 13
 )

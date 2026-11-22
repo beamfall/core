@@ -4,69 +4,33 @@
 // RGBA8 frame, the six passes of Oscillux's frame flash limiter, and a blit of the limited
 // frame to the canvas. The pass order, bindings and limiter clock follow the release's own
 // reference hosts (hosts/web/host.js and tools/shader/limiter-check.mjs at the pinned rev).
-// Every shader is Oscillux's, unchanged; this file only binds and schedules them.
+// Every shader is Oscillux's, unchanged; this file only binds and schedules them. The limiter's
+// passes, clock and targets are the shared host helper in limiter.ts.
 
 import type { AudioFrame } from "./analysis";
 import { AUDIO_KEYS } from "./analysis";
 import { CadenceGate, GPU_BUDGET_MS } from "./cadence";
+import {
+  BLACK_CREDIT_MS,
+  BLACK_S,
+  bind,
+  CREDIT_MS,
+  creditScale,
+  FADE_S,
+  FrameLimiter,
+  filter,
+  LIMITER_VERTEX,
+  type Limiter,
+  limiterSources,
+  limiterWindow,
+  linkLimiter,
+} from "./limiter";
 import type { Oscillux } from "./oscillux";
 import { shaderSource } from "./oscillux";
 import type { Visual } from "./visuals";
 
-// The frame flash limiter's clock (tools/shader/limiter-model.mjs) and its WCAG 2.x reference
-// field, a third of the frame each way (tools/shader/limiter-geometry.mjs).
-const TICK_MS = 1000 / 15 / 64;
-const TICKS = 240;
-const GRID_X = 16;
-const GRID_Y = 9;
-const SUB = 4;
-const TOKEN = 65025;
-const MAX_FLASH_HZ = 3;
-// The longest interval one frame credits the limiter with: a luma token's refill (limit).
-const CREDIT_MS = 1000 / (2 * MAX_FLASH_HZ);
-// The limiter's coverage interval and a recency unit (Oscillux shaders/limiter/common.glsl): a
-// stamp is recent while it is at most 5 units old, so its clock may age a stamp the coverage
-// interval and one unit more.
-const COVERAGE_MS = 1000 / 15;
-const UNIT_MS = 16 * TICK_MS;
+export { BLACK_S, FADE_S, type LimiterWindow, limiterWindow } from "./limiter";
 
-/**
- * The share of a draw interval the limiter is credited with when a frame is painted late
- * (CORE-2744): its clock runs slower by lagMs, the bound on the lag of the frames of about the
- * last second, a second, and by enough that a stamp under the coverage interval old on screen is
- * within the 5 units recency reaches, with recentLagMs the bound for the last coverage interval.
- */
-function creditScale(lagMs: number, recentLagMs: number): number {
-  return Math.min(1000 / (1000 + lagMs), (COVERAGE_MS + UNIT_MS) / (COVERAGE_MS + recentLagMs));
-}
-/** The limiter's grant state with every budget just spent: two luma tokens of deficit (bit 8 of x
- * carries one), a red token and no credit (Oscillux shaders/limiter/grant.glsl). */
-const SPENT = new Uint32Array([256, TOKEN, TOKEN, 0]);
-/** The longest a geometry change fades the frame on screen to black through the limiter, in time
- * the limiter is credited with: longer than the slowest grant of a fall, the red token's refill of
- * 8 / (2 maxFlashHz) s, by more than the one frame's credit the fade's last frame is not judged
- * with (Oscillux shaders/limiter/README.md, "Ping-pong and reset"). The fade ends sooner, at the
- * first frame after one whose grant held nothing (draw): this is the backstop. */
-export const FADE_S = 2;
-/** How long black is presented before every start, the first included: longer than a second by
- * the expiry's margin, so the trackers start tracked black and a red change owed from before has
- * expired (WCAG 2.3.1 counts flashes in any one second), and longer than the coverage interval,
- * 1 / (5 maxFlashHz) s. The black is credited a presented frame at a time from the first black
- * frame shown, in time the limiter is credited with and BLACK_CREDIT_MS at most a frame, and is
- * over once the credit less its longest interval reaches BLACK_S, as a credit may lead the display
- * by a frame (Oscillux hostBlackLongEnough, shaders/limiter/README.md, "Restart seeds and the black
- * hold"): 76 intervals at 60 Hz. */
-export const BLACK_S = 1.25;
-/** The longest interval one black frame is credited with (Oscillux "Black credit before a black
- * start"). */
-const BLACK_CREDIT_MS = 100;
-/** The tracker texel a start writes after BLACK_S of black: black, its red memory counted, both
- * u'v' boxes known and empty, the 32-bit marker set (Oscillux BLACK_TEXEL). */
-const BLACK_TRACKER = new Uint32Array([0, 32768, 2147508224, 0]);
-/** Bit 31 set in every word: a start writes it to each tracker copy and reads it back, and a
- * store of fewer than 32 bits presents black instead of holding every changed pixel (Oscillux
- * shaders/limiter/README.md, "Ping-pong and reset"). */
-const TRACKER_CHECK = new Uint32Array([0x80000001, 0x80000002, 0x80000004, 0x80000008]);
 /** What the host shows wherever the canvas shows no judged pixel (past its edge, through its clip,
  * with no frame on screen): the black every tracker starts at (clearOutput), whatever the theme,
  * so a pixel that comes into view rises from what its tracker holds (Codex round 25). */
@@ -91,56 +55,6 @@ function frameScale(width: number, height: number): number {
 
 function frameSide(side: number, k: number, least: number): number {
   return Math.min(MAX_SIDE, Math.max(least, Math.round(side * k)));
-}
-
-const LIMITER = ["rows", "reduce", "cells", "windows", "grant", "output"] as const;
-const LIMITER_SAMPLERS: Record<(typeof LIMITER)[number], readonly string[]> = {
-  rows: ["uFrame", "uTrack", "uHist"],
-  reduce: ["uRows"],
-  cells: ["uS"],
-  windows: ["uC"],
-  grant: ["uC", "uW", "uG"],
-  output: ["uFrame", "uHist", "uTrack", "uG"],
-};
-
-export interface LimiterWindow {
-  cols: number;
-  rows: number;
-  limit: number;
-}
-
-// The most cells a run of `len` pixels touches along an axis of `n` pixels split into `cells`
-// cells of SUB sub-blocks each.
-function span(len: number, n: number, cells: number): number {
-  const cellOf = (x: number) => Math.floor(Math.floor((cells * SUB * (x + 1) - 1) / n) / SUB);
-  let most = 1;
-  for (let s = 0; s + len <= n; s++) most = Math.max(most, cellOf(s + len - 1) - cellOf(s) + 1);
-  return most;
-}
-
-/** windowOf("wcag", W, H) from tools/shader/limiter-geometry.mjs for a W x H frame whose texels
- * are `texel` physical pixels on a side, with visibleWidth x visibleHeight of them in view: the
- * field is a third of the visible frame each way, the window the fewest whole cells that contain
- * every texel the field touches wherever it sits, and the area limit a quarter of the field's
- * physical pixels over the texel's area, so a patch over the physical limit is over it in texels
- * (Codex round 13). */
-export function limiterWindow(
-  W: number,
-  H: number,
-  texel = 1,
-  visibleWidth = W,
-  visibleHeight = H,
-): LimiterWindow {
-  const fieldPx = (px: number) => Math.min(px, Math.max(1, Math.round(px / 3)));
-  const touched = (px: number, n: number) =>
-    Math.min(n, texel === 1 ? px : Math.ceil((px - 1) / texel) + 1);
-  const fwPx = fieldPx(visibleWidth * texel);
-  const fhPx = fieldPx(visibleHeight * texel);
-  return {
-    cols: span(touched(fwPx, W), W, GRID_X),
-    rows: span(touched(fhPx, H), H, GRID_Y),
-    limit: Math.floor((fwPx * fhPx) / 4 / (texel * texel)),
-  };
 }
 
 /** What the viewer sees of a frame: its backing size in texels, the texel's side in physical
@@ -218,8 +132,6 @@ export function sameFrame(a: DrawRequest, b: DrawRequest): boolean {
     setGeometry(frameB, b[0], b[1], b[2], b[3], b[4]),
   );
 }
-const LIMITER_VERTEX =
-  "#version 300 es\nvoid main() { vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0); gl_Position = vec4(p, 0.0, 1.0); }";
 
 // The default preset's accent and motion (tools/shader/preset.mjs).
 const ACCENT = [0.15, 0.9, 0.72, 1];
@@ -299,26 +211,6 @@ interface Layer {
 interface Target {
   tex: WebGLTexture;
   fbo: WebGLFramebuffer;
-}
-
-interface Limiter {
-  rows: WebGLTexture;
-  s: WebGLTexture;
-  c: WebGLTexture;
-  w: WebGLTexture;
-  g: WebGLTexture[];
-  /** Per-pixel tracker state, RGBA32UI at the frame size. */
-  track: WebGLTexture[];
-  out: WebGLTexture[];
-  fRows: WebGLFramebuffer;
-  fS: WebGLFramebuffer;
-  fC: WebGLFramebuffer;
-  fW: WebGLFramebuffer;
-  fG: WebGLFramebuffer[];
-  /** The output pass's targets: out[i] and track[i]. */
-  fOut: WebGLFramebuffer[];
-  window: LimiterWindow;
-  cur: number;
 }
 
 interface Size extends Geometry {
@@ -402,11 +294,9 @@ export class Renderer {
   private readonly switchUbo: WebGLBuffer;
   private readonly switchBlock = new Float32Array(12);
   private readonly presentUbo: WebGLBuffer;
-  private readonly limiterUbo: WebGLBuffer;
   private readonly presentBlock = new Float32Array(PRESENT_FLOATS);
   // Oscillux's vivid colour mode: present-pass saturation and vibrance (CORE-2369).
   private readonly vivid: Float64Array;
-  private readonly limiterBlock = new Float32Array(8);
   private readonly grantWord = new Uint32Array(4);
   // The grant word is read through a pixel pack buffer and a fence, polled a frame later, so a
   // read never waits for the GPU on the main thread (Codex round 27). One read is in flight at
@@ -414,7 +304,6 @@ export class Renderer {
   private readonly grantPbo: WebGLBuffer;
   private grantSync: WebGLSync | null = null;
   private grantSettled = true;
-  private limiterSpent = false;
   // The limiter's state before the last frame drawn, until the next draw, when that frame was
   // judged outside a fade (withdraw). `started` marks the frame that started: before it there
   // was no frame, only black.
@@ -425,12 +314,11 @@ export class Renderer {
     spent: boolean;
     started: boolean;
   } | null = null;
-  // The fraction of a refill unit earned and not yet granted (limiter README, Codex round 15).
-  private refillCarry = 0;
   private readonly visualVertex: string;
   private present: WebGLProgram;
   private switchPass: WebGLProgram;
-  private limiter: WebGLProgram[];
+  // The frame flash limiter: its passes, clock and refill (limiter.ts).
+  private flash: FrameLimiter;
   private readonly shaders: WebGLShader[] = [];
   // Every program linked, for dispose.
   private readonly linked: WebGLProgram[] = [];
@@ -469,7 +357,6 @@ export class Renderer {
   private incomplete = false;
   private fixedChecked = false;
   private time = 0;
-  private clockMs = 0;
   private presented = 0;
 
   /** Whether the GL context is lost, which a draw can hit before the loss event arrives (CORE-2482). */
@@ -497,11 +384,11 @@ export class Renderer {
       preserveDrawingBuffer: false,
     });
     if (!gl) return null;
-    const [vertex, present, blend, ...limiter] = await Promise.all([
+    const [vertex, present, blend, limiter] = await Promise.all([
       shaderSource("visuals/vertex.web.vert"),
       shaderSource("post/present.frag"),
       shaderSource("switch/switch.frag"),
-      ...LIMITER.map((name) => shaderSource(`limiter/${name}.frag`)),
+      limiterSources(),
     ]);
     return new Renderer(gl, osc, vertex, present, blend, limiter);
   }
@@ -563,9 +450,6 @@ export class Renderer {
       this.presentUbo = must(gl.createBuffer());
       gl.bindBuffer(gl.UNIFORM_BUFFER, this.presentUbo);
       gl.bufferData(gl.UNIFORM_BUFFER, this.presentBlock.byteLength, gl.DYNAMIC_DRAW);
-      this.limiterUbo = must(gl.createBuffer());
-      gl.bindBuffer(gl.UNIFORM_BUFFER, this.limiterUbo);
-      gl.bufferData(gl.UNIFORM_BUFFER, this.limiterBlock.byteLength, gl.DYNAMIC_DRAW);
       this.grantPbo = must(gl.createBuffer());
       gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.grantPbo);
       gl.bufferData(gl.PIXEL_PACK_BUFFER, this.grantWord.byteLength, gl.STREAM_READ);
@@ -604,15 +488,10 @@ export class Renderer {
         gl.uniform1i(gl.getUniformLocation(this.switchPass, name), unit),
       );
 
-      this.limiter = LIMITER.map((name, i) => {
-        const p = this.link(LIMITER_VERTEX, limiter[i]);
-        gl.useProgram(p);
-        gl.uniformBlockBinding(p, gl.getUniformBlockIndex(p, "LimiterBlock"), 0);
-        LIMITER_SAMPLERS[name].forEach((s, unit) =>
-          gl.uniform1i(gl.getUniformLocation(p, s), unit),
-        );
-        return p;
-      });
+      this.flash = new FrameLimiter(
+        gl,
+        linkLimiter(gl, limiter, (v, f) => this.link(v, f)),
+      );
     } catch (err) {
       this.dispose();
       throw err;
@@ -817,7 +696,7 @@ export class Renderer {
       // of the fade's.
       this.dropGrantRead();
       this.fadeLeft = FADE_S;
-      this.spend(size.limiter);
+      this.flash.spend(size.limiter);
       size.limiter.window = { ...size.limiter.window, limit: 0 };
     }
     if (!size) {
@@ -898,9 +777,9 @@ export class Renderer {
       this.dropGrantRead();
       this.undo = {
         cur: L.cur,
-        clockMs: this.clockMs,
-        carry: this.refillCarry,
-        spent: this.limiterSpent,
+        clockMs: this.flash.clockMs,
+        carry: this.flash.refillCarry,
+        spent: this.flash.spent,
         started,
       };
     }
@@ -935,9 +814,9 @@ export class Renderer {
     const size = this.size;
     this.undo = null;
     if (!u || !size) return;
-    this.clockMs = u.clockMs;
-    this.refillCarry = u.carry;
-    this.limiterSpent = u.spent;
+    this.flash.clockMs = u.clockMs;
+    this.flash.refillCarry = u.carry;
+    this.flash.spent = u.spent;
     this.grantSettled = false;
     this.dropGrantRead();
     if (u.started) {
@@ -1033,7 +912,7 @@ export class Renderer {
     if (this.fadeLeft > 0 || !sameGeometry(size, want)) return false;
     // A grant state the host wrote spent has judged no frame, so its clear held bits say nothing
     // about the input: a withdrawn first draw would otherwise hold black (Codex round 24).
-    if (this.limiterSpent) return false;
+    if (this.flash.spent) return false;
     if (this.grantSettled) return true;
     // A denied direction can leave a steady input held, so the last frame's grant decides
     // whether to stop drawing. Its read takes a frame or more, and the frame is held meanwhile:
@@ -1210,7 +1089,7 @@ export class Renderer {
     // Fields a failed constructor never reached are undefined; GL treats them as null.
     gl.deleteBuffer(this.quad ?? null);
     gl.deleteBuffer(this.presentUbo ?? null);
-    gl.deleteBuffer(this.limiterUbo ?? null);
+    this.flash?.dispose();
     gl.deleteBuffer(this.grantPbo ?? null);
     gl.deleteBuffer(this.switchUbo ?? null);
     gl.deleteTexture(this.image ?? null);
@@ -1291,60 +1170,9 @@ export class Renderer {
   }
 
   private limit(size: Size, shownMs: number, lagMs: number, recentLagMs: number): void {
-    const gl = this.gl;
-    const L = size.limiter;
-    // shownMs is the time between draws. lagMs bounds how late any frame of about the last
-    // second was painted after its draw, and recentLagMs any of the last coverage interval (the
-    // host holds its largest recent refreshes), so a run of frames was on screen its draw time
-    // to within those either way (CORE-2744). The limiter is given time it cannot overstate:
-    // - its clock (tick and refill) runs slower by lagMs a second, and by enough that a stamp
-    //   under the coverage interval old on screen is within the 5 units recency reaches. A span
-    //   the clock counts as a second or more was then a second or more on screen, so lateness
-    //   cannot crowd a seventh transition into a second, and only about a refresh in a second is
-    //   held, not the half of all time a per-frame lower bound held;
-    // - deltaMs, which clears every stamp when it is over the coverage interval, is the
-    //   interval less recentLagMs, the least this frame can have been shown.
-    const creditMs = shownMs * creditScale(lagMs, recentLagMs);
-    const deltaMs = Math.max(0, shownMs - recentLagMs);
-    this.clockMs += creditMs;
-    // The interval up to a host write of the grant state cannot refill the deficit it wrote.
-    // The fraction of a unit carries to the next frame, so the refill keeps the exact rate. A
-    // token is TOKEN - 1 units of credit, so a carried fraction cannot finish one early (Codex
-    // round 16).
-    if (this.limiterSpent) this.refillCarry = 0;
-    const refillMs = this.limiterSpent ? 0 : creditMs;
-    const earned =
-      this.refillCarry +
-      Math.min(1, Math.max(0, (2 * MAX_FLASH_HZ * refillMs) / 1000)) * (TOKEN - 1);
-    const refill = Math.min(TOKEN, Math.floor(earned));
-    this.refillCarry = Math.min(1, earned - refill);
-    const tick = Math.floor(this.clockMs / TICK_MS) % TICKS;
-    this.limiterBlock.set([
-      L.window.cols,
-      L.window.rows,
-      L.window.limit,
-      refill,
-      tick,
-      deltaMs,
-      0,
-      0,
-    ]);
-    gl.bindBuffer(gl.UNIFORM_BUFFER, this.limiterUbo);
-    gl.bufferSubData(gl.UNIFORM_BUFFER, 0, this.limiterBlock);
-    gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, this.limiterUbo);
-    const a = L.cur;
-    const b = a ^ 1;
-    const [rows, reduce, cells, windows, grant, output] = this.limiter;
-    const W = size.width;
-    const H = size.height;
-    this.pass(rows, L.fRows, 64, H, [size.frame, L.track[a], L.out[a]]);
-    this.pass(reduce, L.fS, 64, 36, [L.rows]);
-    this.pass(cells, L.fC, 16, 9, [L.s]);
-    this.pass(windows, L.fW, 16, 9, [L.c]);
-    this.pass(grant, L.fG[b], 1, 1, [L.c, L.w, L.g[a]]);
-    this.pass(output, L.fOut[b], W, H, [size.frame, L.out[a], L.track[a], L.g[b]]);
-    L.cur = b;
-    this.limiterSpent = false;
+    // The limiter is fed the presented frame on the time the frames are shown apart, bounded by
+    // the paint lag (FrameLimiter.run, CORE-2744); a new judgement means a new grant to read.
+    this.flash.run(size.limiter, size.frame, size.width, size.height, shownMs, lagMs, recentLagMs);
     this.grantSettled = false;
   }
 
@@ -1391,17 +1219,9 @@ export class Renderer {
       gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]);
       return { tex, fbo };
     });
-    const rows = this.storage(64, H, gl.RGBA32UI);
-    const out = [0, 1].map(() => this.storage(W, H, gl.RGBA8));
-    const track = [0, 1].map(() => this.storage(W, H, gl.RGBA32UI));
-    const fOut = out.map((x, i) => this.framebuffer([x, track[i]]));
-    for (const f of fOut) {
-      if (!this.trackerKeeps32(f)) this.incomplete = true;
-      this.clearOutput(f);
-    }
     const window = limiterWindow(W, H, g.texel, g.visibleWidth, g.visibleHeight);
-    const limiter = this.newLimiterState(rows, out, track, fOut, window, !this.fixedChecked);
-    this.spend(limiter);
+    const { limiter, complete } = this.flash.allocate(W, H, window, !this.fixedChecked);
+    if (!complete) this.incomplete = true;
     this.size = {
       ...g,
       renderWidth: render.width,
@@ -1420,15 +1240,6 @@ export class Renderer {
     }
     this.fixedChecked = true;
     return this.size;
-  }
-
-  // Marks every limiter budget just spent, in the grant state the next frame reads.
-  private spend(L: Limiter): void {
-    const gl = this.gl;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, L.fG[L.cur]);
-    gl.clearBufferuiv(gl.COLOR, 0, SPENT);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    this.limiterSpent = true;
   }
 
   // Moves the visual to a governor level between switches: only its feedback pair is rebuilt,
@@ -1505,42 +1316,6 @@ export class Renderer {
     });
   }
 
-  // A fresh limiter: its output targets arrive black and tracked black, and start writes its
-  // budgets spent.
-  private newLimiterState(
-    rows: WebGLTexture,
-    out: WebGLTexture[],
-    track: WebGLTexture[],
-    fOut: WebGLFramebuffer[],
-    window: LimiterWindow,
-    fixed: boolean,
-  ): Limiter {
-    const gl = this.gl;
-    const s = this.storage(64, 36, gl.RGBA32UI);
-    const c = this.storage(16, 9, gl.RGBA32UI);
-    const w = this.storage(16, 9, gl.RGBA16UI);
-    const g = [0, 1].map(() => this.storage(1, 1, gl.RGBA16UI));
-    const limiter: Limiter = {
-      rows,
-      s,
-      c,
-      w,
-      g,
-      track,
-      out,
-      fRows: this.framebuffer([rows]),
-      fS: this.framebuffer([s], fixed),
-      fC: this.framebuffer([c], fixed),
-      fW: this.framebuffer([w], fixed),
-      fG: g.map((x) => this.framebuffer([x], fixed)),
-      fOut,
-      window,
-      cur: 0,
-    };
-    for (const f of limiter.fG) this.clearUint(f, 1);
-    return limiter;
-  }
-
   // Frees the frame's targets.
   private freeSize(): void {
     this.dropGrantRead();
@@ -1553,8 +1328,7 @@ export class Renderer {
       gl.deleteFramebuffer(t.fbo);
     }
     gl.deleteTexture(s.frame);
-    for (const t of [L.rows, L.s, L.c, L.w, ...L.g, ...L.track, ...L.out]) gl.deleteTexture(t);
-    for (const f of [L.fRows, L.fS, L.fC, L.fW, ...L.fG, ...L.fOut]) gl.deleteFramebuffer(f);
+    this.flash.free(L);
     this.size = null;
   }
 
@@ -1606,36 +1380,6 @@ export class Renderer {
     return f;
   }
 
-  private clearUint(fbo: WebGLFramebuffer, attachments: number): void {
-    const gl = this.gl;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    for (let i = 0; i < attachments; i++) gl.clearBufferuiv(gl.COLOR, i, new Uint32Array(4));
-  }
-
-  // Whether an output target's tracker attachment keeps bit 31 of every word: a texel stored with
-  // fewer bits reads as unmarked and is held at every change. One blocking read of a texel per
-  // copy, at a start only.
-  private trackerKeeps32(fbo: WebGLFramebuffer): boolean {
-    const gl = this.gl;
-    const got = new Uint32Array(4);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.clearBufferuiv(gl.COLOR, 1, TRACKER_CHECK);
-    gl.readBuffer(gl.COLOR_ATTACHMENT1);
-    gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, got);
-    gl.readBuffer(gl.COLOR_ATTACHMENT0);
-    return got.every((word, i) => word === TRACKER_CHECK[i]);
-  }
-
-  // An output target: the frame black and the trackers seeded black, counted with nothing owed,
-  // as every start follows BLACK_S of black, so the limiter counts the first frame's rises from
-  // black (Oscillux shaders/limiter/README.md).
-  private clearOutput(fbo: WebGLFramebuffer): void {
-    const gl = this.gl;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.clearBufferfv(gl.COLOR, 0, new Float32Array(4));
-    gl.clearBufferuiv(gl.COLOR, 1, BLACK_TRACKER);
-  }
-
   private link(vertex: string, fragment: string): WebGLProgram {
     const p = this.compile(vertex, fragment);
     this.check(p);
@@ -1674,18 +1418,6 @@ export class Renderer {
     }
     throw new Error(`visualizer: program: ${gl.getProgramInfoLog(p)}`);
   }
-}
-
-function bind(gl: WebGL2RenderingContext, unit: number, tex: WebGLTexture | null): void {
-  gl.activeTexture(gl.TEXTURE0 + unit);
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-}
-
-function filter(gl: WebGL2RenderingContext, mode: number): void {
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mode);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, mode);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
 
 function must<T>(value: T | null): T {

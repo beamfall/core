@@ -264,6 +264,28 @@ describe("EntityMediaBrowse", () => {
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/t1|t3:audio,t2:audio,t1:audio");
   });
 
+  it("lists a person's plays-alone Media without roles as cards, each queued alone (CORE-3147)", async () => {
+    const books = tracks.map((track) => ({ ...track, playsAlone: true }));
+    renderBrowse(artist, books);
+    const grid = await screen.findByRole("list", { name: "Appears in" });
+    expect(within(grid).getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.queryByRole("list", { name: "Top tracks" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "All tracks" })).not.toBeInTheDocument();
+    fireEvent.click(within(grid).getAllByRole("button", { name: /^Play / })[0]);
+    expect(screen.getByTestId("watch")).toHaveTextContent(/^\/watch\/(t\d)\|\1:(audio)?$/);
+  });
+
+  it("keeps a rolled-up container card beside plays-alone Media, each queued alone (CORE-3147)", async () => {
+    const items: SourceItem[] = [
+      { ...tracks[0], playsAlone: true },
+      { id: "box-1", kind: "entity", title: "Rolled Box" },
+    ];
+    renderBrowse(album, items);
+    expect(await screen.findByRole("link", { name: /^Rolled Box/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Play Track One" }));
+    expect(screen.getByTestId("watch")).toHaveTextContent(/^\/watch\/t1\|t1:(audio)?$/);
+  });
+
   it("splits an audio person's page into top tracks and the containers it appears on", async () => {
     vi.mocked(fetchSourceItems).mockResolvedValueOnce([
       { id: "t3", kind: "media", title: "Track Three" },

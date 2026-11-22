@@ -78,11 +78,13 @@ export function SmartPlaylistPage() {
     return () => controller.abort();
   }, [playlist, engagementEpoch]);
 
-  const listed: PlayQueueItem[] = (items ?? []).map((item) =>
-    item.mediaClass
-      ? { id: item.id, title: item.title, mediaClass: item.mediaClass }
-      : { id: item.id, title: item.title },
-  );
+  const listed: PlayQueueItem[] = (items ?? []).map((item) => {
+    const entry: PlayQueueItem = { id: item.id, title: item.title };
+    if (item.mediaClass) entry.mediaClass = item.mediaClass;
+    // Plays-alone Media never queues on into a sibling (CORE-3147).
+    if (item.playsAlone) entry.playsAlone = true;
+    return entry;
+  });
   const lockedIDs = new Set((items ?? []).filter((item) => item.locked).map((item) => item.id));
   const queue = listed.filter((entry) => !lockedIDs.has(entry.id));
 

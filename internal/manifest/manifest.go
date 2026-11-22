@@ -3,6 +3,8 @@ package manifest
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
@@ -195,6 +197,9 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 		},
 	}
 	pluginLayouts := map[string]Layout{}
+	// legacyNodeIDs maps the node ID a Library carried before CORE-2343 to the
+	// one it carries now, so a stored override naming the old ID still applies.
+	legacyNodeIDs := map[string]string{}
 	for i, library := range libraries {
 		summary := LibrarySummary{
 			ID:           string(library.ID),
@@ -220,8 +225,12 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 				layoutID = "layout-" + *library.PluginID
 			}
 		}
+		nodeID := libraryNodeID(library.ID)
+		if legacy := libraryNodePrefix + string(library.ID); legacy != nodeID {
+			legacyNodeIDs[legacy] = nodeID
+		}
 		navigation = append(navigation, NavigationNode{
-			ID: "library-" + string(library.ID),
+			ID: nodeID,
 			// A Library title is user data, not a contract display string —
 			// it travels as the single-locale shorthand.
 			Title:     plugin.L(library.Title),
@@ -246,7 +255,23 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 	if err != nil {
 		return Document{}, err
 	}
-	navigation = applyNavOverride(navigation, override)
+	// Reserve current IDs even when their Libraries are hidden or recoverable
+	// from trash. A scoped manifest must not apply their overrides elsewhere.
+	var candidates []store.LibraryID
+	for id := range legacyNodeIDs {
+		if _, labeled := override.NodeLabelOverrides[id]; labeled ||
+			slices.Contains(override.HiddenNodeIDs, id) || slices.Contains(override.NodeOrder, id) {
+			candidates = append(candidates, store.LibraryID(id))
+		}
+	}
+	reserved, err := s.store.LibraryIDsInUse(ctx, candidates)
+	if err != nil {
+		return Document{}, err
+	}
+	for _, id := range reserved {
+		delete(legacyNodeIDs, string(id))
+	}
+	navigation = applyNavOverride(navigation, resolveLegacyNodeIDs(override, legacyNodeIDs))
 	layouts = applyLayoutOverride(layouts, override)
 	// The Profile's own Home layout applies last, over the sections the
 	// Profile already receives, so it can only order and hide (CORE-1972).
@@ -279,6 +304,70 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 			AccentColor: accentColor,
 		},
 	}, nil
+}
+
+// libraryNodePrefix names a Library's navigation node.
+const libraryNodePrefix = "library-"
+
+// libraryNodeID is the navigation node ID for a Library. Library IDs are
+// minted with the node prefix already ("library-films"), so the prefix is
+// added only to an ID that lacks it; prefixing unconditionally produced
+// "library-library-films" (CORE-2343).
+func libraryNodeID(id store.LibraryID) string {
+	if strings.HasPrefix(string(id), libraryNodePrefix) {
+		return string(id)
+	}
+	return libraryNodePrefix + string(id)
+}
+
+// resolveLegacyNodeIDs rewrites node IDs in a stored override from their
+// legacy form to the current one, so an override saved before CORE-2343
+// keeps hiding, ordering and relabelling the same nodes. Where an override
+// names a node both ways, the current ID wins. The stored blob is untouched;
+// the next save from the Layout editor writes whatever IDs it sends.
+func resolveLegacyNodeIDs(o store.NavOverrideData, legacy map[string]string) store.NavOverrideData {
+	if len(legacy) == 0 {
+		return o
+	}
+	resolveList := func(ids []string) []string {
+		if len(ids) == 0 {
+			return ids
+		}
+		out := make([]string, 0, len(ids))
+		seen := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			if to, ok := legacy[id]; ok {
+				if slices.Contains(ids, to) {
+					continue
+				}
+				id = to
+			}
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	o.HiddenNodeIDs = resolveList(o.HiddenNodeIDs)
+	o.NodeOrder = resolveList(o.NodeOrder)
+	if len(o.NodeLabelOverrides) > 0 {
+		labels := make(map[string]map[string]string, len(o.NodeLabelOverrides))
+		for id, label := range o.NodeLabelOverrides {
+			if _, isLegacy := legacy[id]; !isLegacy {
+				labels[id] = label
+			}
+		}
+		for id, label := range o.NodeLabelOverrides {
+			if to, isLegacy := legacy[id]; isLegacy {
+				if _, taken := labels[to]; !taken {
+					labels[to] = label
+				}
+			}
+		}
+		o.NodeLabelOverrides = labels
+	}
+	return o
 }
 
 // applyNavOverride filters, reorders, and relabels navigation nodes according

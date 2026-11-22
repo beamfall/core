@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -151,5 +152,46 @@ func TestRescanRetriesAutoIdentifyUntilTheItemIsIdentified(t *testing.T) {
 	scan()
 	if identifier.calls != 2 {
 		t.Fatalf("identifier calls after identified rescan = %d, want 2 (an identified item is left alone)", identifier.calls)
+	}
+}
+
+type searchHintIdentifier struct {
+	hints []string
+}
+
+func (i *searchHintIdentifier) AutoIdentify(_ context.Context, _ store.MediaID, _, _ string, parsed ParsedMedia) error {
+	i.hints = append(i.hints, parsed.Hints["collection"])
+	return nil
+}
+
+func (*searchHintIdentifier) PluginEmbeddedTagHints(string) map[string]string {
+	return map[string]string{"collection_tag": "collection"}
+}
+
+func TestRescanRetryRecoversEmbeddedSearchHints(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	writeScanFile(t, root, "Summer Picnic/clip01.mov", []byte("archive bytes"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(ctx, "Archive", false, "familyarchive", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prober := poolProbeFunc(func(context.Context, string) (ffmpeg.Probe, error) {
+		return ffmpeg.Probe{HasVideo: true, DurationSeconds: 30, Tags: map[string]string{"collection_tag": "Summer"}}, nil
+	})
+	parsers := map[string]FilenameParser{"familyarchive": familyArchiveParser{}}
+	for _, wantUnchanged := range []bool{false, true} {
+		identifier := &searchHintIdentifier{}
+		result, err := Scan(ctx, st, prober, nil, parsers, nil, identifier, Request{LibraryID: library.ID, Root: root})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if unchanged := result.FilesAdded == 0 && result.FilesChanged == 0; unchanged != wantUnchanged {
+			t.Fatalf("scan unchanged = %t, want %t", unchanged, wantUnchanged)
+		}
+		if len(identifier.hints) != 1 || identifier.hints[0] != "Summer" {
+			t.Fatalf("scan unchanged = %t, got hints %q, want [Summer]", wantUnchanged, identifier.hints)
+		}
 	}
 }

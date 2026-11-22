@@ -518,8 +518,15 @@ describe("EntityPage container lockup", () => {
     vi.mocked(fetchEntity).mockResolvedValue({
       ...container,
       relatedEntities: [
-        { kind: "member", archetype: "person", items: [box("p1", 1)] },
-        { kind: "part", archetype: "container", items: [box("b1", 0), box("b2", 2)] },
+        // A parent container sorting first never stands in for a child (CORE-2036).
+        { kind: "anthology", direction: "parent", archetype: "container", items: [box("top", 2)] },
+        { kind: "member", direction: "parent", archetype: "person", items: [box("p1", 1)] },
+        {
+          kind: "part",
+          direction: "child",
+          archetype: "container",
+          items: [box("b1", 0), box("b2", 2)],
+        },
       ],
     });
     vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) =>
@@ -530,6 +537,7 @@ describe("EntityPage container lockup", () => {
     await act(async () => {});
 
     expect(fetchMediaForEntity).toHaveBeenCalledWith("b2", expect.any(AbortSignal));
+    expect(fetchMediaForEntity).not.toHaveBeenCalledWith("top", expect.any(AbortSignal));
     expect(root.querySelectorAll(".bg-primary")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Resume Second part" }));
     const player = screen.getByRole("status", { name: "player" }).textContent ?? "";
@@ -1386,7 +1394,14 @@ describe("EntityPage hero (CORE-2441)", () => {
   it("shows no badge from a lone parent container, before or after its Media load", async () => {
     vi.mocked(fetchEntity).mockResolvedValue({
       ...show,
-      relatedEntities: [{ kind: "whole", archetype: "container", items: [container("w", 9, 20)] }],
+      relatedEntities: [
+        {
+          kind: "whole",
+          direction: "parent",
+          archetype: "container",
+          items: [container("w", 9, 20)],
+        },
+      ],
     });
     let resolveMedia: (items: SourceItem[]) => void = () => {};
     vi.mocked(fetchMediaForEntity).mockReturnValue(
@@ -1411,8 +1426,18 @@ describe("EntityPage hero (CORE-2441)", () => {
     vi.mocked(fetchEntity).mockResolvedValue({
       ...show,
       relatedEntities: [
-        { kind: "whole", archetype: "container", items: [container("w", 3, 10)] },
-        { kind: "part", archetype: "container", items: [container("b", 3, 10)] },
+        {
+          kind: "whole",
+          direction: "parent",
+          archetype: "container",
+          items: [container("w", 3, 10)],
+        },
+        {
+          kind: "part",
+          direction: "child",
+          archetype: "container",
+          items: [container("b", 3, 10)],
+        },
       ],
     });
     vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
@@ -1685,6 +1710,7 @@ describe("EntityPage rolled-up Media (CORE-3058)", () => {
             relatedEntities: [
               {
                 kind: "part",
+                direction: "child",
                 archetype: "container",
                 items: [
                   {
@@ -1734,13 +1760,16 @@ describe("EntityPage rolled-up Media (CORE-3058)", () => {
     expect(fetchMediaForEntity).toHaveBeenCalledTimes(1);
   });
 
-  const holder = (id: string, children: SourceItem[]): EntityInfo => ({
+  const holder = (id: string, children: SourceItem[], parents: SourceItem[] = []): EntityInfo => ({
     id,
     kind: "whole",
     archetype: "container",
     title: id,
     fields: [],
-    relatedEntities: [{ kind: "part", archetype: "container", items: children }],
+    relatedEntities: [
+      { kind: "part", direction: "parent", archetype: "container", items: parents },
+      { kind: "part", direction: "child", archetype: "container", items: children },
+    ],
   });
   const box = (id: string): SourceItem => ({ id, kind: "entity", title: id });
   async function settle() {
@@ -1751,9 +1780,10 @@ describe("EntityPage rolled-up Media (CORE-3058)", () => {
     const entities: Record<string, EntityInfo> = {
       e1: person,
       s1: holder("s1", [box("m1")]),
-      // The middle container's related groups list its parent too.
-      m1: holder("m1", [box("s1"), box("i1")]),
-      i1: holder("i1", [box("m1")]),
+      // The middle container's related groups list its parent too, as a
+      // parent group sorting first (CORE-2036).
+      m1: holder("m1", [box("i1")], [box("s1")]),
+      i1: holder("i1", [], [box("m1")]),
     };
     vi.mocked(fetchEntity).mockImplementation(async (id: string) => entities[id] ?? null);
     vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) => {

@@ -185,8 +185,8 @@ export function LibrarySidebar({
             !node.libraryID
               ? nodePath(node.id)
               : active
-                ? nodePath(node.id, pivotOfPath(pathname))
-                : rememberedLibraryPath(node.id)
+                ? nodePath(node.id, pivotOfPath(pathname), node.libraryID)
+                : rememberedLibraryPath(node.id, node.libraryID)
           }
           aria-current={active ? "page" : undefined}
           className={"bf-side-link" + (active ? " is-active" : "")}

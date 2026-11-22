@@ -65,6 +65,7 @@ import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMe
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
   type PlayQueueItem,
+  queueForPlaying,
   queueNeighbours,
   queueOfClass,
   readPlayerNavState,
@@ -97,11 +98,14 @@ import {
 } from "../player/nowPlaying";
 import { type HostedPlayerProps, usePlayerHost, type WatchEntry } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
+import { PlayingNextCard } from "../player/PlayingNextCard";
 import { PrePlayStage } from "../player/PrePlayStage";
 import { applyPlayerVolume } from "../player/playerVolume";
 import { SkippedOverlay } from "../player/SkippedOverlay";
 import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
 import { UpNextCard } from "../player/UpNextCard";
+import { UpNextDrawer } from "../player/UpNextDrawer";
+import { useAmbientChoice, useAmbientIdle } from "../player/useAmbient";
 import { type PartySeekAutoSkip, useAutoSkip } from "../player/useAutoSkip";
 import { useCaptionLoad } from "../player/useCaptionLoad";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
@@ -110,6 +114,7 @@ import { useLongPauseSkip, usePlaybackSpeed, useSleepTimer } from "../player/use
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
+import { usePlayingNext } from "../player/usePlayingNext";
 import { useSequenceFinish } from "../player/useSequenceFinish";
 import { useShareLink } from "../player/useShareLink";
 import { useStillWatching } from "../player/useStillWatching";
@@ -384,7 +389,18 @@ function FeaturePlayer({
   // Media classes playback-info has reported (this item's and its declared
   // next item's), by Media id (CORE-1490).
   const [learnedClasses, setLearnedClasses] = useState<Record<string, string>>({});
-  const navQueue = navState.queue;
+  // An item that plays on its own neither queues its siblings nor is queued
+  // after one (CORE-3147).
+  // The media(id) read is authoritative: an entry a page sent without the flag
+  // still plays alone once the read says so.
+  const playsAloneRead = media?.id === mediaId && media?.playsAlone === true;
+  const navQueue = useMemo(() => {
+    if (!navState.queue) return undefined;
+    const queue = playsAloneRead
+      ? navState.queue.map((item) => (item.id === mediaId ? { ...item, playsAlone: true } : item))
+      : navState.queue;
+    return queueForPlaying(queue, mediaId || "");
+  }, [navState.queue, mediaId, playsAloneRead]);
   const classedQueue = useMemo(
     () => (navQueue ? withQueueClasses(navQueue, learnedClasses) : undefined),
     [navQueue, learnedClasses],
@@ -747,7 +763,10 @@ function FeaturePlayer({
   // An audio card queue's issuance counts only while it is still the queue's
   // successor: playback-info is not asked again when shuffle or repeat changes
   // that item.
-  const reportedNext = state.info?.next ?? undefined;
+  // Plays-alone Media continues into nothing (CORE-3147), even when playback-info
+  // issued a successor before the media read said so.
+  const reportedNext =
+    playsAloneRead && !serverQueueRun ? undefined : (state.info?.next ?? undefined);
   const issuedNext =
     serverQueueRun || (catalogQueue && playingClass === "audio")
       ? state.mediaID === mediaId && reportedNext?.mediaID === nextInQueue?.id
@@ -928,6 +947,22 @@ function FeaturePlayer({
     if (playAllPrevious) return () => playItem(playAllPrevious.id, playAllPrevious.title);
     return undefined;
   }, [serverQueueRun, runQueueAction, previousInQueue, playAllPrevious, goToQueueItem, playItem]);
+  // Neighbour titles and the audio Playing next card (CORE-3216).
+  const previousTitle = playPrevious
+    ? previousInQueue?.title || playAllPrevious?.title || undefined
+    : undefined;
+  const nextTitle = playNext ? nextInQueue?.title || issuedNext?.title || undefined : undefined;
+  const playingNext = usePlayingNext({
+    videoRef,
+    itemKey: stage.key,
+    enabled: isAudio && playing && !!nextTitle,
+  });
+  // The Up next drawer lists a card queue; a server queue keeps its own panel.
+  const drawerQueue = !serverQueueRun && queue && queue.length > 1 ? queue : undefined;
+  const [upNextOpen, setUpNextOpen] = useState(false);
+  const [ambientChoice, setAmbientChoice] = useAmbientChoice();
+  const ambient = ambientChoice && showAudioStage;
+  const ambientIdle = useAmbientIdle(ambient && playing, stage.key);
 
   // Audio moves straight on to the next item when one ends (no countdown card,
   // which suits a film or an episode, not a track).
@@ -1340,7 +1375,9 @@ function FeaturePlayer({
             tabIndex={-1}
             className={
               "bf-player-stage" +
-              (playing && chromeHidden && !showAudioStage ? " is-chrome-hidden" : "")
+              (playing && chromeHidden && !showAudioStage ? " is-chrome-hidden" : "") +
+              (ambient ? " is-ambient" : "") +
+              (ambientIdle ? " is-ambient-idle" : "")
             }
           >
             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
@@ -1361,6 +1398,8 @@ function FeaturePlayer({
                     ? { key: issuedNext.mediaID, stream: decodableStream(issuedNext) }
                     : null
                 }
+                ambient={ambient}
+                ambientIdle={ambientIdle}
                 lyrics={
                   lyricsOpen ? (
                     <LyricsPanel
@@ -1397,6 +1436,22 @@ function FeaturePlayer({
                   onPlay={partyLeads ? undefined : playUpNext}
                 />
               </AudioStage>
+            )}
+            {showAudioStage && playingNext.visible && nextTitle && (
+              <PlayingNextCard
+                title={nextTitle}
+                remaining={playingNext.remaining}
+                onPlay={playNext}
+                onDismiss={playingNext.dismiss}
+              />
+            )}
+            {showAudioStage && upNextOpen && drawerQueue && (
+              <UpNextDrawer
+                items={drawerQueue}
+                currentID={mediaId || ""}
+                onPick={goToQueueItem}
+                onClose={() => setUpNextOpen(false)}
+              />
             )}
             {(showSpinner || !queueReady) && (
               // Over the audio card a wait is a small cue, not a cover (CORE-2363).
@@ -1488,6 +1543,14 @@ function FeaturePlayer({
                 onShare={shareAt}
                 onPreviousInQueue={playPrevious}
                 onNextInQueue={playNext}
+                previousTitle={previousTitle}
+                nextTitle={nextTitle}
+                upNextOpen={upNextOpen}
+                onUpNextToggle={
+                  showAudioStage && drawerQueue ? () => setUpNextOpen((open) => !open) : undefined
+                }
+                ambient={ambient}
+                onAmbientChange={showAudioStage ? setAmbientChoice : undefined}
                 onPlayMusicQueue={
                   isAudio && profileID && !partyLeads
                     ? () => void runQueueAction("start")

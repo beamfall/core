@@ -66,6 +66,7 @@ export const MANAGE_ROUTES = Object.freeze([
   "operations",
   "convert",
   "rename",
+  "upload",
   "trash",
   "backups",
   "subscriptions",
