@@ -1,8 +1,9 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchMedia } from "@/areas/viewer/lib/mediaDetail";
+import { setIdentityEpochSignal } from "@/lib/api";
 import {
   fixMatch,
   fixMatchCandidates,
@@ -11,11 +12,16 @@ import {
   fixMatchPreview,
   fixMatchSources,
 } from "@/lib/graphql";
+import { fixMatch as transportFixMatch } from "@/lib/graphql/manage";
 import { I18nProvider } from "@/lib/i18n";
+import { SessionProvider, useSession } from "@/lib/session";
 import { AssignDialog } from "./AssignDialog";
+import { AssignInterruptionNotice } from "./AssignInterruptionNotice";
+import { AssignPanel } from "./AssignPanel";
 
 vi.mock("@/areas/viewer/lib/mediaDetail", () => ({ fetchMedia: vi.fn() }));
-vi.mock("@/lib/graphql", () => ({
+vi.mock("@/lib/graphql", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/graphql")>()),
   fixMatch: vi.fn(),
   fixMatchCandidates: vi.fn(),
   fixMatchCurrent: vi.fn(),
@@ -97,14 +103,21 @@ beforeEach(() => {
   }));
 });
 
-async function open(selection: React.ComponentProps<typeof AssignDialog>["selection"] = [movie]) {
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setIdentityEpochSignal();
+});
+
+async function open(
+  selection: React.ComponentProps<typeof AssignDialog>["selection"] = [movie],
+  Wrapper?: React.ComponentType<React.PropsWithChildren>,
+) {
   const user = userEvent.setup();
+  const dialogContent = <AssignDialog selection={selection} />;
   render(
-    <I18nProvider>
-      <AssignDialog selection={selection} />
-    </I18nProvider>,
+    <I18nProvider>{Wrapper ? <Wrapper>{dialogContent}</Wrapper> : dialogContent}</I18nProvider>,
   );
-  await user.click(screen.getByRole("button", { name: "Assign…" }));
+  await user.click(await screen.findByRole("button", { name: "Assign…" }));
   const dialog = within(await screen.findByRole("dialog", { name: "Assign metadata" }));
   await dialog.findByLabelText("Search title");
   return { user, dialog };
@@ -160,11 +173,10 @@ describe("Assign metadata", () => {
       if (clear) await user.click(checkbox);
       await user.click(dialog.getByRole("button", { name: "Apply" }));
       expect(await dialog.findByText("Applied")).toBeVisible();
-      expect(fixMatch).toHaveBeenCalledWith({
-        mediaID: "m1",
-        ...ids,
-        ...(clear ? { clearLocks: ["title"] } : {}),
-      });
+      expect(fixMatch).toHaveBeenCalledWith(
+        { mediaID: "m1", ...ids, ...(clear ? { clearLocks: ["title"] } : {}) },
+        undefined,
+      );
     },
   );
 
@@ -192,7 +204,10 @@ describe("Assign metadata", () => {
     await user.click(dialog.getByRole("button", { name: "Preview by ID" }));
     await dialog.findByText("A corrected overview.");
     await user.click(apply);
-    expect(fixMatch).toHaveBeenCalledWith({ mediaID: "m1", ...ids, candidateID: "tt00847879" });
+    expect(fixMatch).toHaveBeenCalledWith(
+      { mediaID: "m1", ...ids, candidateID: "tt00847879" },
+      undefined,
+    );
   });
 
   it("confirms a shared candidate, applies in order, and continues after a failed item", async () => {
@@ -220,6 +235,155 @@ describe("Assign metadata", () => {
     );
     expect(fixMatchPreview).toHaveBeenCalledTimes(3);
     expect(fixMatchLockedFields).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["SwitchProfile", 0],
+    ["Relock", 0],
+    ["Relock", 1],
+  ] as const)("stops on %s after %d confirmed changes", async (transition, applied) => {
+    const session = { deviceRole: "manager", profileID: "first", profile: "adult", revealed: true };
+    const sent: string[] = [];
+    let pendingSignal: AbortSignal | null | undefined;
+    vi.mocked(fixMatch).mockImplementation(transportFixMatch);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string, init?: RequestInit) => {
+        if (path === "/api/compat/handshake") {
+          return Response.json({ decision: "compatible", messageClass: "compat-compatible" });
+        }
+        if (path === "/api/manifest") return Response.json({});
+        const { query, variables } = JSON.parse(String(init?.body));
+        if (query.startsWith("query CurrentSession")) {
+          return Response.json({ data: { currentSession: session } });
+        }
+        if (query.startsWith("query Profiles")) return Response.json({ data: { profiles: [] } });
+        if (query.startsWith("mutation SwitchProfile")) {
+          session.profileID = variables.profileID;
+          session.revealed = false;
+          return Response.json({ data: { switchProfile: session } });
+        }
+        if (query.startsWith("mutation Relock")) {
+          session.revealed = false;
+          return Response.json({ data: { relock: session } });
+        }
+        if (query.startsWith("mutation FixMatch")) {
+          sent.push(variables.mediaID);
+          if (sent.length === applied + 1) {
+            pendingSignal = init?.signal;
+            return new Promise<Response>((_resolve, reject) => {
+              pendingSignal?.addEventListener("abort", () => reject(pendingSignal?.reason), {
+                once: true,
+              });
+            });
+          }
+          return Response.json({ data: { fixMatch: { id: variables.mediaID } } });
+        }
+        throw new Error(`Unexpected request: ${path} ${query}`);
+      }),
+    );
+
+    let depart!: () => Promise<void>;
+    function Workspace({ children }: React.PropsWithChildren) {
+      const { session, switchProfile, relock } = useSession();
+      depart = transition === "SwitchProfile" ? () => switchProfile("second") : relock;
+      return session ? children : null;
+    }
+    function Wrapper({ children }: React.PropsWithChildren) {
+      return (
+        <SessionProvider>
+          <AssignInterruptionNotice>
+            <Workspace>{children}</Workspace>
+          </AssignInterruptionNotice>
+        </SessionProvider>
+      );
+    }
+
+    const batch = selection.slice(0, applied + 2);
+    const view = await open(batch, Wrapper);
+    const { user, dialog } = view;
+    await preview(view);
+    await user.click(await dialog.findByRole("checkbox", { name: /I confirm/ }));
+    await user.click(dialog.getByRole("button", { name: "Apply" }));
+    expect(pendingSignal?.aborted).toBe(false);
+    expect(sent).toEqual(batch.slice(0, applied + 1).map(({ mediaID }) => mediaID));
+
+    let departure!: Promise<void>;
+    act(() => {
+      departure = depart();
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await act(async () => departure);
+    expect(pendingSignal?.aborted).toBe(true);
+    expect(session.revealed).toBe(false);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      `Assignment interrupted. Confirmed changes: ${applied} of ${batch.length}.`,
+    );
+    expect(sent).toEqual(batch.slice(0, applied + 1).map(({ mediaID }) => mediaID));
+    expect(fixMatch).toHaveBeenCalledTimes(applied + 1);
+    expect(screen.queryByText(/Failed:|AbortError/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await user.click(await screen.findByRole("button", { name: "Assign…" }));
+    const reopened = within(await screen.findByRole("dialog", { name: "Assign metadata" }));
+    await reopened.findByLabelText("Search title");
+    expect(reopened.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(reopened.queryByRole("table")).not.toBeInTheDocument();
+    await preview({ user, dialog: reopened });
+    expect(fixMatchPreview).toHaveBeenCalledTimes(2 * batch.length);
+    expect(await reopened.findByRole("checkbox", { name: /I confirm/ })).not.toBeChecked();
+  });
+
+  it("refuses to apply a preview from a departed identity", async () => {
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    const view = await open(selection.slice(0, 2));
+    const { user, dialog } = view;
+    await preview(view);
+    await user.click(await dialog.findByRole("checkbox", { name: /I confirm/ }));
+    epoch.abort();
+    setIdentityEpochSignal(new AbortController().signal);
+
+    await user.click(dialog.getByRole("button", { name: "Apply" }));
+    expect(fixMatch).not.toHaveBeenCalled();
+    expect(await dialog.findByRole("status")).toHaveTextContent(
+      "Assignment interrupted. Confirmed changes: 0 of 2.",
+    );
+  });
+
+  it("omits the interrupted item from the finished results", async () => {
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    vi.mocked(fixMatch).mockImplementationOnce(
+      (_, signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const onFinished = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <AssignPanel
+          items={[movie, { mediaID: "m2", title: "Another copy" }]}
+          sources={[catalog]}
+          onFinished={onFinished}
+        />
+      </I18nProvider>,
+    );
+    await preview({
+      user,
+      dialog: within(screen.getByRole("region", { name: "Assign metadata" })),
+    });
+    await user.click(await screen.findByRole("checkbox", { name: /I confirm/ }));
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith({ mediaID: "m1", ...ids }, epoch.signal);
+    await act(async () => epoch.abort());
+
+    expect(onFinished).toHaveBeenCalledExactlyOnceWith([], 0);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Assignment interrupted. Confirmed changes: 0 of 2.",
+    );
   });
 
   it("blocks a shared candidate for rows with the same structural ordinal", async () => {

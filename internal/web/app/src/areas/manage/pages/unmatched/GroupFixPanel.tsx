@@ -98,7 +98,11 @@ export function GroupFixPanel({
               onWriteChange={(writing) => {
                 if (writing) onWriteStart();
               }}
-              onFinished={(results) => {
+              onFinished={(results, interrupted) => {
+                if (interrupted !== undefined) {
+                  onFinished(t("assignInterrupted", { done: interrupted, total: count }));
+                  return;
+                }
                 const failed = results.filter((result) => result.error);
                 const titles = failed.map(
                   ({ mediaID }) =>

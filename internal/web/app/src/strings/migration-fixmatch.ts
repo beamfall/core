@@ -33,6 +33,7 @@ export const migrationFixmatchStrings = {
     assignItem: "Item",
     assignResult: "Result",
     assignApplied: "Applied",
+    assignInterrupted: "Assignment interrupted. Confirmed changes: {done} of {total}.",
     assignApplyFailed: "Could not apply the match.",
     assignResultFailed: "Failed: {error}",
     assignConfirmShared: "I confirm that these items should all use the same catalog entry.",
@@ -73,6 +74,7 @@ export const migrationFixmatchStrings = {
     assignItem: "Élément",
     assignResult: "Résultat",
     assignApplied: "Appliqué",
+    assignInterrupted: "Association interrompue. Modifications confirmées : {done} sur {total}.",
     assignApplyFailed: "Impossible d’appliquer la correspondance.",
     assignResultFailed: "Échec : {error}",
     assignConfirmShared:
@@ -113,6 +115,7 @@ export const migrationFixmatchStrings = {
     assignItem: "Element",
     assignResult: "Ergebnis",
     assignApplied: "Angewendet",
+    assignInterrupted: "Zuordnung unterbrochen. Bestätigte Änderungen: {done} von {total}.",
     assignApplyFailed: "Die Zuordnung konnte nicht angewendet werden.",
     assignResultFailed: "Fehlgeschlagen: {error}",
     assignConfirmShared:
@@ -153,6 +156,7 @@ export const migrationFixmatchStrings = {
     assignItem: "Elemento",
     assignResult: "Resultado",
     assignApplied: "Aplicado",
+    assignInterrupted: "Asignación interrumpida. Cambios confirmados: {done} de {total}.",
     assignApplyFailed: "No se pudo aplicar la coincidencia.",
     assignResultFailed: "Error: {error}",
     assignConfirmShared:
@@ -194,6 +198,7 @@ export const migrationFixmatchStrings = {
     assignItem: "Item",
     assignResult: "Resultado",
     assignApplied: "Aplicado",
+    assignInterrupted: "Atribuição interrompida. Alterações confirmadas: {done} de {total}.",
     assignApplyFailed: "Não foi possível aplicar a correspondência.",
     assignResultFailed: "Falha: {error}",
     assignConfirmShared: "Confirmo que todos estes itens devem usar a mesma entrada do catálogo.",

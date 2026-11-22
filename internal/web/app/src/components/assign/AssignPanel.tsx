@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { getIdentityEpochSignal } from "@/lib/api";
 import {
   fixMatch,
   fixMatchCandidates,
@@ -17,6 +18,7 @@ import type {
 import type { FixMatchCandidateInfo, FixMatchFieldDiff } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
+import { useAssignInterruptionNotice } from "./AssignInterruptionNotice";
 import { percent, reasonLabel } from "./matchLabels";
 
 export interface AssignItem {
@@ -36,6 +38,7 @@ type Pairing = {
   clearLocks: string[];
 };
 type Result = { mediaID: string; error?: string };
+type Preview = { rows: Pairing[]; epoch: AbortSignal | undefined };
 
 interface UnmatchedFlow {
   threshold: number;
@@ -82,9 +85,10 @@ export function AssignPanel({
   blocked?: boolean;
   onWriteChange?: (busy: boolean) => void;
   onActivityChange?: (busy: boolean) => void;
-  onFinished: (results: readonly Result[]) => void;
+  onFinished: (results: readonly Result[], interrupted?: number) => void;
 }) {
   const t = useT();
+  const showInterruptionNotice = useAssignInterruptionNotice();
   const heading = useId();
   const first = items[0];
   const [source, setSource] = useState(defaultSource ?? sources[0]);
@@ -93,9 +97,10 @@ export function AssignPanel({
   const [candidates, setCandidates] = useState<FixMatchCandidateInfo[]>([]);
   const [selectedID, setSelectedID] = useState("");
   const [pastedID, setPastedID] = useState("");
-  const [preview, setPreview] = useState<Pairing[] | null>(null);
+  const [approval, setApproval] = useState<Preview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [results, setResults] = useState<Result[]>([]);
+  const [interrupted, setInterrupted] = useState<number>();
   const [progress, setProgress] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -103,6 +108,7 @@ export function AssignPanel({
   const searched = useRef(false);
   const selection = useRef(0);
   const live = useRef(true);
+  const preview = approval?.rows;
 
   const multi = items.length > 1 && !unmatched;
   // A single candidate cannot describe multiple child positions in this flow.
@@ -127,7 +133,7 @@ export function AssignPanel({
   const select = (id: string) => {
     selection.current++;
     setSelectedID(id);
-    setPreview(null);
+    setApproval(null);
     setConfirmed(false);
     setResults([]);
     setError("");
@@ -194,6 +200,7 @@ export function AssignPanel({
       select(selectedID);
     }
     const asked = selection.current;
+    const epoch = getIdentityEpochSignal();
     const candidate = fromPaste
       ? { pluginID: source.pluginID, scraperID: source.scraperID, candidateID }
       : target(candidateID);
@@ -208,9 +215,11 @@ export function AssignPanel({
           return { mediaID, diff, locked, clearLocks: [] };
         }),
       );
-      if (asked === selection.current) setPreview(rows);
+      if (asked === selection.current && !epoch?.aborted && epoch === getIdentityEpochSignal()) {
+        setApproval({ rows, epoch });
+      }
     } catch {
-      if (asked === selection.current)
+      if (asked === selection.current && !epoch?.aborted && epoch === getIdentityEpochSignal())
         report(t(unmatched ? "unmatchedUnavailable" : "assignPreviewFailed"));
     } finally {
       setActivity(false);
@@ -253,17 +262,24 @@ export function AssignPanel({
   const apply = async () => {
     if (!canApply) return;
     const candidate = target(selectedID);
+    const epoch = approval ? approval.epoch : getIdentityEpochSignal();
+    const identityEnded = () => epoch?.aborted || epoch !== getIdentityEpochSignal();
     onWriteChange?.(true);
     setActivity(true);
     const next: Result[] = [];
     for (const [index, item] of items.entries()) {
+      if (identityEnded()) break;
       const { mediaID } = item;
       setProgress(t("unmatchedMatching", { done: index + 1, total: items.length }));
       const clearLocks = preview?.find((row) => row.mediaID === mediaID)?.clearLocks;
       try {
-        await fixMatch({ mediaID, ...candidate, ...(clearLocks?.length ? { clearLocks } : {}) });
+        await fixMatch(
+          { mediaID, ...candidate, ...(clearLocks?.length ? { clearLocks } : {}) },
+          epoch,
+        );
         next.push({ mediaID });
       } catch (err) {
+        if (identityEnded()) break;
         next.push({
           mediaID,
           error: (err instanceof Error && err.message) || t("assignApplyFailed"),
@@ -271,30 +287,47 @@ export function AssignPanel({
       }
       setResults([...next]);
     }
+    const confirmedChanges =
+      next.length < items.length ? next.filter((result) => !result.error).length : undefined;
+    if (confirmedChanges !== undefined) {
+      setInterrupted(confirmedChanges);
+      showInterruptionNotice?.({ done: confirmedChanges, total: items.length });
+    }
     setProgress("");
     setActivity(false);
-    onWriteChange?.(false);
-    onFinished(next);
+    if (live.current) {
+      onWriteChange?.(false);
+      onFinished(next, confirmedChanges);
+    }
   };
 
   const toggleLock = (mediaID: string, field: string, checked: boolean) => {
-    setPreview(
-      (rows) =>
-        rows?.map((row) =>
-          row.mediaID === mediaID
-            ? {
-                ...row,
-                clearLocks: checked
-                  ? [...row.clearLocks, field]
-                  : row.clearLocks.filter((name) => name !== field),
-              }
-            : row,
-        ) ?? null,
-    );
+    setApproval((current) => {
+      if (!current) return null;
+      const rows = current.rows.map((row) =>
+        row.mediaID === mediaID
+          ? {
+              ...row,
+              clearLocks: checked
+                ? [...row.clearLocks, field]
+                : row.clearLocks.filter((name) => name !== field),
+            }
+          : row,
+      );
+      return { ...current, rows };
+    });
   };
 
   const resultText = (result: Result) =>
     result.error ? t("assignResultFailed", { error: result.error }) : t("assignApplied");
+
+  if (interrupted !== undefined) {
+    return (
+      <p role="status" className="text-sm">
+        {t("assignInterrupted", { done: interrupted, total: items.length })}
+      </p>
+    );
+  }
 
   return (
     <section aria-labelledby={dialog ? undefined : heading} className="space-y-3">
