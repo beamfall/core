@@ -30,6 +30,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/bits"
 	"strings"
 	"time"
 	"unicode"
@@ -111,6 +112,34 @@ const (
 	recapCueConfidenceBonus      = 0.25
 )
 
+// Spectral sibling matching (CORE-3111). The spectral signature carries one
+// 32-bit sub-fingerprint per ffmpeg.SpectralFrameSeconds; matching searches
+// every relative offset at frame resolution and scores whole windows, so a
+// shared intro is found when a cold open moves it, and boundaries stay
+// whole-second like the loudness path.
+const (
+	// spectralFramesPerWindow groups sub-fingerprints into one analysis window.
+	spectralFramesPerWindow = int(ffmpeg.FingerprintWindowSeconds / ffmpeg.SpectralFrameSeconds)
+	// spectralFrameMatchBits is the max Hamming distance for two detailed
+	// sub-fingerprints to agree. Re-encodes and small shifts of one sound stay
+	// under 2 bits; unrelated frames average spectralChanceBits, and fewer than
+	// 3% of them fall this close.
+	spectralFrameMatchBits = 10
+	// spectralChanceBits is the mean distance between unrelated sub-fingerprints
+	// (half of 32 bits). A spectral run's confidence measures its distance below
+	// chance, so a run near the match limit scores below the auto-apply bar.
+	spectralChanceBits = 16
+	// spectralDetailBits is the fewest set (and unset) bits a sub-fingerprint
+	// needs to describe a sound. A pure tone sets about one bit and a smooth
+	// broadband slope sets nearly all of them, so two different tones, or two
+	// different noises, sit a few bits apart. Such frames match only when
+	// identical; any difference counts as chance distance.
+	spectralDetailBits = 4
+	// spectralMinWindowFrames is the fewest agreeing frame pairs a window needs
+	// to match, and the fewest disagreeing pairs it needs to diverge.
+	spectralMinWindowFrames = 2
+)
+
 // Detector is skipdetect's slice of the FFmpeg seam (interface at the consumer,
 // per the modular-monolith seam rule; *ffmpeg.Runner implements it). Both calls
 // are read-only and routed through the hardened spawn seam inside the Runner.
@@ -126,6 +155,16 @@ type Detector interface {
 // Detector so existing chapter-only adapters do not need to implement it.
 type tailFingerprinter interface {
 	AudioFingerprintTail(ctx context.Context, src string, windowCount, durationSeconds int) ([]float64, error)
+}
+
+// spectralFingerprinter is an optional detector capability. When present, the
+// sibling intro and credits search compares spectral sub-fingerprints at frame
+// resolution instead of loudness windows, because siblings often share their
+// loudness curve without sharing their sound (CORE-3111). The reverse recap
+// search still reads the loudness signature.
+type spectralFingerprinter interface {
+	SpectralFingerprint(ctx context.Context, src string, seconds int) ([]uint32, error)
+	SpectralFingerprintTail(ctx context.Context, src string, seconds, durationSeconds int) ([]uint32, error)
 }
 
 // openingTextCueDetector is optional so chapter/fingerprint-only adapters keep
@@ -272,44 +311,45 @@ func (s *Service) analyzeFingerprints(ctx context.Context, media store.Media, pa
 	if err != nil {
 		return result, err
 	}
-	tailDetector, ok := s.detector.(tailFingerprinter)
-	if !ok {
-		return result, errors.New("skipdetect: detector does not support EOF-aligned audio fingerprints")
-	}
-	tailSelf, err := tailDetector.AudioFingerprintTail(ctx, path, fingerprintTailWindows, media.DurationSeconds)
-	if err != nil {
-		return result, err
-	}
-
 	// Best shared run across any sibling, per kind. Comparing against the
 	// closest sibling (not every pair) is enough: a shared intro recurs across
 	// all siblings, so one strong match is the signal.
-	introLimits := runLimits{maxWindows: maxIntroWindows, durationSeconds: media.DurationSeconds}
-	creditsLimits := runLimits{durationSeconds: media.DurationSeconds}
+	limits := siblingRunLimits{
+		intro:   runLimits{maxWindows: maxIntroWindows, durationSeconds: media.DurationSeconds},
+		credits: runLimits{durationSeconds: media.DurationSeconds, offsetSeconds: creditsOffset(media.DurationSeconds), closing: true},
+	}
 	var bestIntro, bestCredits sharedRun
-	for _, siblingID := range siblings {
-		siblingFile, err := s.store.PrimaryMediaFile(ctx, siblingID, serverFilter)
-		if err != nil || siblingFile.Path == "" {
-			continue
-		}
-		headSib, err := s.detector.AudioFingerprint(ctx, siblingFile.Path, fingerprintHeadWindows)
-		if err != nil {
-			continue
-		}
-		if run := sharedLeadingRun(headSelf, headSib); run.windows > bestIntro.windows && run.plausible(introLimits) {
-			bestIntro = run
-		}
-		sibling, err := s.store.Media(ctx, siblingID, serverFilter)
-		if err != nil || sibling.DurationSeconds <= 0 {
-			continue
-		}
-		tailSib, err := tailDetector.AudioFingerprintTail(ctx, siblingFile.Path, fingerprintTailWindows, sibling.DurationSeconds)
-		if err != nil {
-			continue
-		}
-		if run := sharedTrailingRun(tailSelf, tailSib); run.windows > bestCredits.windows && run.plausible(creditsLimits) {
-			bestCredits = run
-		}
+	if spectral, ok := s.detector.(spectralFingerprinter); ok {
+		bestIntro, bestCredits, err = bestSiblingRuns(ctx, s.store, media, path, siblings, limits, siblingSignatures[uint32]{
+			head: func(src string) ([]uint32, error) {
+				return spectral.SpectralFingerprint(ctx, src, fingerprintHeadWindows)
+			},
+			tail: func(src string, durationSeconds int) ([]uint32, error) {
+				return spectral.SpectralFingerprintTail(ctx, src, fingerprintTailWindows, durationSeconds)
+			},
+			leading:  spectralSharedRun,
+			trailing: spectralSharedRun,
+		})
+	} else if tailDetector, ok := s.detector.(tailFingerprinter); ok {
+		bestIntro, bestCredits, err = bestSiblingRuns(ctx, s.store, media, path, siblings, limits, siblingSignatures[float64]{
+			head: func(src string) ([]float64, error) {
+				// This Media's head is already read for the recap search.
+				if src == path {
+					return headSelf, nil
+				}
+				return s.detector.AudioFingerprint(ctx, src, fingerprintHeadWindows)
+			},
+			tail: func(src string, durationSeconds int) ([]float64, error) {
+				return tailDetector.AudioFingerprintTail(ctx, src, fingerprintTailWindows, durationSeconds)
+			},
+			leading:  anyLimits(sharedLeadingRun),
+			trailing: anyLimits(sharedTrailingRun),
+		})
+	} else {
+		err = errors.New("skipdetect: detector does not support EOF-aligned audio fingerprints")
+	}
+	if err != nil {
+		return result, err
 	}
 	// A per-sibling failure is skipped, but a cancellation that caused it would
 	// make the result look empty: never reconcile a canceled analysis.
@@ -352,6 +392,64 @@ func (s *Service) analyzeFingerprints(ctx context.Context, media store.Media, pa
 	}
 	result.recap, result.hasRecap = recap, true
 	return result, nil
+}
+
+// siblingSignatures reads one signature type for the sibling intro and credits
+// search: the loudness windows or the spectral sub-fingerprints.
+type siblingSignatures[T any] struct {
+	head              func(src string) ([]T, error)
+	tail              func(src string, durationSeconds int) ([]T, error)
+	leading, trailing func(self, sibling []T, limits runLimits) sharedRun
+}
+
+// anyLimits adapts an anchored loudness matcher, which finds one run per
+// sibling pair and leaves the limits to the caller.
+func anyLimits(match func(self, sibling []float64) sharedRun) func(self, sibling []float64, limits runLimits) sharedRun {
+	return func(self, sibling []float64, _ runLimits) sharedRun { return match(self, sibling) }
+}
+
+// siblingRunLimits holds the plausibility bounds for each search.
+type siblingRunLimits struct {
+	intro, credits runLimits
+}
+
+// bestSiblingRuns returns the longest plausible intro and credits runs shared
+// with any sibling. A sibling whose file or signature cannot be read is
+// skipped; this Media's own signature failing fails the analysis.
+func bestSiblingRuns[T any](ctx context.Context, st *store.Store, media store.Media, path string, siblings []store.MediaID, limits siblingRunLimits, sigs siblingSignatures[T]) (intro, credits sharedRun, err error) {
+	headSelf, err := sigs.head(path)
+	if err != nil {
+		return intro, credits, err
+	}
+	tailSelf, err := sigs.tail(path, media.DurationSeconds)
+	if err != nil {
+		return intro, credits, err
+	}
+	for _, siblingID := range siblings {
+		siblingFile, err := st.PrimaryMediaFile(ctx, siblingID, serverFilter)
+		if err != nil || siblingFile.Path == "" {
+			continue
+		}
+		headSib, err := sigs.head(siblingFile.Path)
+		if err != nil {
+			continue
+		}
+		if run := sigs.leading(headSelf, headSib, limits.intro); run.plausible(limits.intro) && run.beats(intro) {
+			intro = run
+		}
+		sibling, err := st.Media(ctx, siblingID, serverFilter)
+		if err != nil || sibling.DurationSeconds <= 0 {
+			continue
+		}
+		tailSib, err := sigs.tail(siblingFile.Path, sibling.DurationSeconds)
+		if err != nil {
+			continue
+		}
+		if run := sigs.trailing(tailSelf, tailSib, limits.credits); run.plausible(limits.credits) && run.beats(credits) {
+			credits = run
+		}
+	}
+	return intro, credits, nil
 }
 
 // reconcileFingerprints replaces the detector-owned fingerprint rows with a
@@ -585,6 +683,9 @@ type sharedRun struct {
 	windows     int
 	compared    int
 	avgDiff     float64
+	// diffScale is the avgDiff at which tightness reaches zero; 0 means
+	// windowMatchTolerance (the loudness scale).
+	diffScale float64
 }
 
 // runLimits bounds what a shared run may claim before it becomes a segment.
@@ -593,6 +694,14 @@ type runLimits struct {
 	maxWindows int
 	// durationSeconds is this Media's runtime; 0 when unknown.
 	durationSeconds int
+	// offsetSeconds maps analysed window 0 to this Media's timeline.
+	offsetSeconds float64
+	// closing marks the credits search: its run must start in the second half
+	// of the runtime, and an intro run must end in the first. Head and tail
+	// regions overlap on a short file, and a spectral run is not anchored to
+	// window 0 or EOF, so without this one shared segment could be claimed by
+	// both searches, or an intro and credits from different siblings overlap.
+	closing bool
 }
 
 // plausible reports whether run can be a real intro or credits segment. A run
@@ -609,11 +718,41 @@ func (run sharedRun) plausible(limits runLimits) bool {
 	if run.windows >= run.compared {
 		return false
 	}
+	if limits.durationSeconds <= 0 {
+		return true
+	}
+	runtime := float64(limits.durationSeconds)
 	seconds := float64(run.windows) * ffmpeg.FingerprintWindowSeconds
-	if limits.durationSeconds > 0 && seconds > maxSegmentRuntimeFraction*float64(limits.durationSeconds) {
+	if seconds > maxSegmentRuntimeFraction*runtime {
 		return false
 	}
-	return true
+	start := limits.offsetSeconds + float64(run.startWindow)*ffmpeg.FingerprintWindowSeconds
+	if limits.closing {
+		return start >= runtime/2
+	}
+	return start+seconds <= runtime/2
+}
+
+// beats reports whether run should replace best as the chosen candidate. A run
+// that clears the auto-apply bar beats one that does not, so a longer loose run
+// never hides a shorter trusted one; then the longer run wins, then the
+// tighter.
+func (run sharedRun) beats(best sharedRun) bool {
+	if run.windows == 0 {
+		return false
+	}
+	if trusted := run.trusted(); trusted != best.trusted() {
+		return trusted
+	}
+	if run.windows != best.windows {
+		return run.windows > best.windows
+	}
+	return run.avgDiff < best.avgDiff
+}
+
+// trusted reports whether run would become a segment (see segment).
+func (run sharedRun) trusted() bool {
+	return run.windows >= minSharedWindows && run.confidence() >= fingerprintAutoApplyThreshold
 }
 
 type segment struct {
@@ -654,7 +793,11 @@ func (run sharedRun) confidence() float64 {
 	if run.windows == 0 {
 		return 0
 	}
-	tightness := 1 - run.avgDiff/windowMatchTolerance
+	scale := run.diffScale
+	if scale == 0 {
+		scale = windowMatchTolerance
+	}
+	tightness := 1 - run.avgDiff/scale
 	if tightness < 0 {
 		tightness = 0
 	}
@@ -720,6 +863,218 @@ func sharedTrailingRun(self, sibling []float64) sharedRun {
 		return sharedRun{}
 	}
 	return sharedRun{startWindow: len(self) - matched, windows: matched, compared: n, avgDiff: sumDiff / float64(matched)}
+}
+
+// spectralSharedRun finds the best plausible run of matching windows that self
+// and sibling share at any relative offset. Windows are spectralFramesPerWindow
+// frames aligned to self's frame 0, so startWindow is a window of self's
+// analysed region; the sibling side may sit at any frame. Each window matches,
+// diverges or cannot be compared (spectralWindowDistance); a run is a maximal
+// stretch of matching windows, and it needs minSharedWindows windows that match
+// on fresh frames: a held chord may carry a run, but cannot make one. Only
+// offsets with at least one diverging window yield candidates: there the two
+// signatures provably differ, so what they share is a segment. An offset that
+// never diverges shows only that the two agree where they can be compared.
+// When such an offset shares more than the chosen run explains, the pair is one
+// recording (a duplicate, perhaps padded with silence or repeating a passage)
+// and yields nothing. The run explains the matches against a reprise of its
+// audio on one file's side; every other match at that offset, the run meeting
+// itself (a looped passage) included, is what a duplicate adds.
+// compared is the number of windows the two signatures overlap at the run's
+// offset. Only maximal runs are judged against limits, so a run too long to be
+// a segment is never cut down to one; among those, beats picks.
+func spectralSharedRun(self, sibling []uint32, limits runLimits) sharedRun {
+	const fpw = spectralFramesPerWindow
+	windows := len(self) / fpw
+	var best sharedRun
+	bestShift := 0
+	var runs []sharedRun
+	// matched holds, for each offset that never diverges, its fresh matching
+	// windows: held frames one step off a slow theme's alignment still match,
+	// but show no shared change, so they are no evidence of a duplicate.
+	type offsetMatches struct {
+		shift   int
+		windows []int
+	}
+	var unproven []offsetMatches
+	// Self frame i pairs with sibling frame i-shift.
+	for shift := -(len(sibling) - fpw); shift <= len(self)-fpw; shift++ {
+		first := max(0, ceilDiv(shift, fpw))
+		last := min(windows, floorDiv(len(sibling)+shift, fpw))
+		if last-first < minSharedWindows {
+			continue
+		}
+		runs = runs[:0]
+		var matched []int
+		diverged := false
+		runStart, diffBits, fresh := first, 0, 0
+		for w := first; w <= last; w++ {
+			d, verdict := 0, windowIncomparable
+			if w < last {
+				d, verdict = spectralWindowDistance(self, sibling, w*fpw, w*fpw-shift)
+				diverged = diverged || verdict == windowDiverges
+			}
+			if verdict == windowMatches || verdict == windowSustains {
+				diffBits += d
+				if verdict == windowMatches {
+					fresh++
+					matched = append(matched, w)
+				}
+				continue
+			}
+			if run := w - runStart; run >= minSharedWindows && fresh >= minSharedWindows {
+				runs = append(runs, sharedRun{
+					startWindow: runStart,
+					windows:     run,
+					compared:    last - first,
+					avgDiff:     float64(diffBits) / float64(run*fpw),
+					diffScale:   spectralChanceBits,
+				})
+			}
+			runStart, diffBits, fresh = w+1, 0, 0
+		}
+		if !diverged {
+			if len(matched) >= minSharedWindows {
+				unproven = append(unproven, offsetMatches{shift, matched})
+			}
+			continue
+		}
+		for _, cand := range runs {
+			if cand.plausible(limits) && cand.beats(best) {
+				best, bestShift = cand, shift
+			}
+		}
+	}
+	if best.windows == 0 {
+		return sharedRun{}
+	}
+	// The run's frames on each timeline; a window touching either is part of
+	// the shared segment, not evidence of a duplicate.
+	selfStart, selfEnd := best.startWindow*fpw, (best.startWindow+best.windows)*fpw
+	sibStart, sibEnd := selfStart-bestShift, selfEnd-bestShift
+	for _, om := range unproven {
+		selfReprise, sibReprise := 0, 0
+		for _, w := range om.windows {
+			self, sib := w*fpw, w*fpw-om.shift
+			inSelf := self+fpw > selfStart && self < selfEnd
+			inSib := sib+fpw > sibStart && sib < sibEnd
+			switch {
+			case inSelf && !inSib:
+				selfReprise++ // the run's audio in self against a reprise in sibling
+			case inSib && !inSelf:
+				sibReprise++
+			}
+		}
+		if len(om.windows)-max(selfReprise, sibReprise) >= minSharedWindows {
+			return sharedRun{}
+		}
+	}
+	return best
+}
+
+// windowVerdict is how one window of two signatures compares.
+type windowVerdict int
+
+const (
+	windowIncomparable windowVerdict = iota
+	windowMatches
+	// windowSustains matches only through held frames: no agreeing pair
+	// changes on both sides.
+	windowSustains
+	windowDiverges
+)
+
+// spectralWindowDistance compares the spectralFramesPerWindow frames of self
+// from frame i with those of sibling from frame j, returning the window's
+// distance (scaled to the full window over its informative pairs) and its
+// verdict. Each frame pair agrees, disagrees or is neutral:
+//
+//   - silent on both sides: neutral, as shared silence is not shared audio;
+//   - silent on one side: disagrees;
+//   - both detailed: agrees within spectralFrameMatchBits, else disagrees;
+//   - otherwise (a low-detail tone or hum): agrees only when identical, as two
+//     tones a few bits apart are different sounds;
+//   - an agreeing low-detail pair whose frames both repeat their predecessors
+//     is neutral instead: a held tone or a steady hum carries no timing, so
+//     shared hum can neither make a window match nor hide its differences. Any
+//     other agreeing pair in which either frame repeats its predecessor (a held
+//     chord, or a steady sound against a moving one) still agrees, but is not
+//     fresh: only a change both files make together shows shared timing.
+//
+// The window matches when at least spectralMinWindowFrames pairs agree and at
+// most a quarter of its informative pairs disagree (a re-encode can clip a note
+// edge to silence); it only sustains when none of those agreeing pairs is
+// fresh. It diverges when at least
+// spectralMinWindowFrames pairs disagree and they outnumber the agreeing ones.
+// Otherwise it cannot be compared. Agreeing pairs add their Hamming distance (detailed) or nothing
+// (identical); disagreeing pairs add spectralChanceBits.
+func spectralWindowDistance(self, sibling []uint32, i, j int) (int, windowVerdict) {
+	var total, agree, held, disagree int
+	for k := range spectralFramesPerWindow {
+		a, b := self[i+k], sibling[j+k]
+		silentA, silentB := a == ffmpeg.SpectralSilentFrame, b == ffmpeg.SpectralSilentFrame
+		var dist int
+		switch {
+		case silentA && silentB:
+			continue
+		case silentA || silentB:
+			dist = spectralChanceBits
+		case spectralFrameDetailed(a) && spectralFrameDetailed(b):
+			dist = bits.OnesCount32(a ^ b)
+			if dist > spectralFrameMatchBits {
+				dist = spectralChanceBits
+			}
+		case a != b:
+			dist = spectralChanceBits
+		}
+		if dist == spectralChanceBits {
+			disagree++
+			total += dist
+			continue
+		}
+		// A frame with no predecessor shows no change, so it counts as held.
+		repeatA := i+k == 0 || self[i+k-1] == a
+		repeatB := j+k == 0 || sibling[j+k-1] == b
+		if repeatA && repeatB && !spectralFrameDetailed(a) {
+			continue
+		}
+		if repeatA || repeatB {
+			held++
+		}
+		agree++
+		total += dist
+	}
+	informative := agree + disagree
+	switch {
+	case agree >= spectralMinWindowFrames && 4*disagree <= informative && agree > held:
+		return total * spectralFramesPerWindow / informative, windowMatches
+	case agree >= spectralMinWindowFrames && 4*disagree <= informative:
+		return total * spectralFramesPerWindow / informative, windowSustains
+	case disagree >= spectralMinWindowFrames && disagree > agree:
+		return total * spectralFramesPerWindow / informative, windowDiverges
+	default:
+		return 0, windowIncomparable
+	}
+}
+
+// spectralFrameDetailed reports whether a sub-fingerprint describes a sound
+// well enough to match: not silent, and with at least spectralDetailBits bits
+// both set and unset. The silent hash has no bits set, so it fails too.
+func spectralFrameDetailed(hash uint32) bool {
+	set := bits.OnesCount32(hash)
+	return set >= spectralDetailBits && 32-set >= spectralDetailBits
+}
+
+func floorDiv(a, b int) int {
+	q := a / b
+	if a%b != 0 && a < 0 {
+		q--
+	}
+	return q
+}
+
+func ceilDiv(a, b int) int {
+	return -floorDiv(-a, b)
 }
 
 // kindFromChapterTitle maps a chapter title to a skip-segment kind by a
