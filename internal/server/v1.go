@@ -34,6 +34,7 @@ type V1Store interface {
 	MediaIDsByExternalID(ctx context.Context, scheme string, value string) ([]store.MediaID, error)
 	MediaExternalIDsBatch(ctx context.Context, ids []store.MediaID) (map[store.MediaID][]store.MediaExternalID, error)
 	ActiveSessions(ctx context.Context, now time.Time, filter store.LibraryFilter) ([]store.ActiveSession, error)
+	GrantedSessions(ctx context.Context, now time.Time, filter store.LibraryFilter) ([]store.ActiveSession, error)
 	LibraryRoots(ctx context.Context, libraryID store.LibraryID) ([]string, error)
 	AppendSessionControlEventWithActivity(ctx context.Context, target store.SessionID, payload store.SessionControlPayload, activity store.ActivityEntry, now time.Time) error
 	BackupIngest(ctx context.Context, req store.BackupIngestRequest) (store.BackupIngestResult, error)
@@ -551,7 +552,7 @@ func (s *Server) v1PlaybackControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	active, err := s.v1.ActiveSessions(r.Context(), time.Now().UTC(), scope.LibraryFilter())
+	active, err := s.v1.GrantedSessions(r.Context(), time.Now().UTC(), scope.LibraryFilter())
 	if err != nil {
 		writeErrorCause(w, r, http.StatusInternalServerError, "sessions read failed", err)
 		return

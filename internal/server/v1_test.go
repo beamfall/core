@@ -1243,10 +1243,11 @@ func TestV1PlaybackControlAnchorSetListsOnlyVisibleMedia(t *testing.T) {
 	}
 }
 
-// TestV1SessionsAndControlExcludeIdlePlaybacks covers CORE-2346: /v1/sessions
-// and /v1/playback-control apply the same 2-minute activity window as Console
-// liveSessions.
-func TestV1SessionsAndControlExcludeIdlePlaybacks(t *testing.T) {
+// TestV1SessionsExcludeIdlePlaybacksButControlReachesThem covers CORE-2346:
+// /v1/sessions applies the same 2-minute activity window as Console
+// liveSessions, while /v1/playback-control still reaches a paused playback
+// through GrantedSessions.
+func TestV1SessionsExcludeIdlePlaybacksButControlReachesThem(t *testing.T) {
 	dataDir := storetest.MigratedDataDir(t)
 	srv, st := newTestServerWithStoreAt(t, dataDir)
 	ctx := context.Background()
@@ -1284,7 +1285,7 @@ func TestV1SessionsAndControlExcludeIdlePlaybacks(t *testing.T) {
 	}
 
 	rec = v1Post(t, srv, "/v1/playback-control", controlKey, `{"sessionID":"session-default","command":"pause"}`)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("POST /v1/playback-control (idle) = %d, want 404: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /v1/playback-control (idle) = %d, want 202: %s", rec.Code, rec.Body.String())
 	}
 }

@@ -165,7 +165,7 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 	// current one) travel as the receiver's anchor set: which of them is on
 	// screen only the receiver knows.
 	now := time.Now().UTC()
-	active, err := h.store.ActiveSessions(ctx, now, scope.LibraryFilter())
+	active, err := h.store.GrantedSessions(ctx, now, scope.LibraryFilter())
 	if err != nil {
 		return ControlSessionResult{}, err
 	}

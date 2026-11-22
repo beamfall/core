@@ -267,7 +267,7 @@ func (h *Handler) transcodeSessionIDsByDevice(ctx context.Context, scope auth.Sc
 	if h.transcodeTerminator == nil {
 		return nil, nil
 	}
-	active, err := h.store.ActiveSessions(ctx, time.Now().UTC(), scope.LibraryFilter())
+	active, err := h.store.GrantedSessions(ctx, time.Now().UTC(), scope.LibraryFilter())
 	if err != nil {
 		return nil, err
 	}

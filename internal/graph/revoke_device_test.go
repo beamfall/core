@@ -241,10 +241,11 @@ func TestRevokeDeviceAbortsATranscodeAfterEndPlayback(t *testing.T) {
 	}
 }
 
-// TestRevokeAllDevicesExcludesIdleLedgerSessions covers CORE-2346:
-// revokeAllDevices reads ActiveSessions via transcodeSessionIDsByDevice and
-// excludes idle ledger playbacks when the old auth session is already gone.
-func TestRevokeAllDevicesExcludesIdleLedgerSessions(t *testing.T) {
+// TestRevokeAllDevicesAbortsIdleLedgerSessions covers CORE-2346:
+// transcodeSessionIDsByDevice reads GrantedSessions, so a playback quiet past
+// the activity window whose auth session already rotated still has its
+// transcode aborted.
+func TestRevokeAllDevicesAbortsIdleLedgerSessions(t *testing.T) {
 	dataDir := storetest.MigratedDataDir(t)
 	st := storetest.OpenAt(t, dataDir)
 	handler := newTestHandlerWithStore(st)
@@ -264,7 +265,7 @@ func TestRevokeAllDevicesExcludesIdleLedgerSessions(t *testing.T) {
 	if err := json.Unmarshal(data["revokeAllDevices"], &got); err != nil {
 		t.Fatalf("decode revokeAllDevices: %v", err)
 	}
-	if got.TranscodesAborted != 0 || slices.Contains(term.aborted, "session-rotated") {
-		t.Fatalf("revokeAllDevices aborted idle rotated ledger session: got=%+v aborted=%v", got, term.aborted)
+	if got.TranscodesAborted != 1 || !slices.Contains(term.aborted, "session-rotated") {
+		t.Fatalf("revokeAllDevices left the idle rotated session's transcode: got=%+v aborted=%v", got, term.aborted)
 	}
 }

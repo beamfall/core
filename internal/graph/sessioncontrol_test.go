@@ -304,10 +304,11 @@ func TestControlSessionRevealGate(t *testing.T) {
 	}
 }
 
-// TestProfileSessionsAndControlExcludeIdlePlaybacks covers CORE-2346:
-// profileSessions and controlSession apply the same 2-minute activity window
-// as Console liveSessions.
-func TestProfileSessionsAndControlExcludeIdlePlaybacks(t *testing.T) {
+// TestProfileSessionsExcludeIdlePlaybacksButControlReachesThem covers
+// CORE-2346: profileSessions applies the same 2-minute activity window as
+// Console liveSessions, while controlSession still reaches (and reveal-guards)
+// a paused playback through GrantedSessions.
+func TestProfileSessionsExcludeIdlePlaybacksButControlReachesThem(t *testing.T) {
 	dataDir := storetest.MigratedDataDir(t)
 	st := storetest.OpenAt(t, dataDir)
 	handler := newTestHandlerWithStore(st)
@@ -329,12 +330,11 @@ func TestProfileSessionsAndControlExcludeIdlePlaybacks(t *testing.T) {
 		t.Fatalf("profileSessions for idle playback = %#v, want none", got)
 	}
 
-	_, errs = controlSessionPost(t, handler, "session-default", "pause", authorizeManager)
-	if len(errs) == 0 || !strings.Contains(errs[0].Message, "no active playback") {
-		t.Fatalf("controlSession on idle playback errors = %#v, want no active playback", errs)
+	if _, errs := controlSessionPost(t, handler, "session-default", "pause", authorizeManager); len(errs) != 0 {
+		t.Fatalf("controlSession on paused playback errors = %#v", errs)
 	}
 
-	// A progress report restores both profileSessions and controlSession.
+	// A progress report restores profileSessions.
 	_, errs = post(t, handler, `{"query":"mutation { reportPlayback(mediaID: \"media-alpha\", positionSeconds: 15, durationSeconds: 120) { mediaID } }"}`, authorizeViewer)
 	if len(errs) != 0 {
 		t.Fatalf("reportPlayback errors = %#v", errs)

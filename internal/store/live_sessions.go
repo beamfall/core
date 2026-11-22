@@ -91,13 +91,28 @@ type activeLedgerRow struct {
 // their row (active load is never understated) but lose their identifying
 // fields.
 func (s *Store) ActiveSessions(ctx context.Context, now time.Time, filter LibraryFilter) ([]ActiveSession, error) {
+	return s.ledgerSessions(ctx, now, filter, true)
+}
+
+// GrantedSessions is ActiveSessions without the activity window: every
+// unexpired media grant whose playback has not ended, however long its player
+// has been quiet. Display and counting read ActiveSessions; the paths that must
+// not lose a quiet playback read this instead (CORE-2346): transcode
+// revocation, which has to find a paused or renewed session's encoder to stop
+// it, and the session-control reveal guard, which must still see a paused
+// restricted playback so a caller cannot command over it.
+func (s *Store) GrantedSessions(ctx context.Context, now time.Time, filter LibraryFilter) ([]ActiveSession, error) {
+	return s.ledgerSessions(ctx, now, filter, false)
+}
+
+func (s *Store) ledgerSessions(ctx context.Context, now time.Time, filter LibraryFilter, windowed bool) ([]ActiveSession, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
 
-	rows, err := s.activeLedgerRows(ctx, now)
+	rows, err := s.activeLedgerRows(ctx, now, windowed)
 	if err != nil {
 		return nil, err
 	}
@@ -221,15 +236,22 @@ func (s *Store) ActiveSessions(ctx context.Context, now time.Time, filter Librar
 // not playback and are excluded. Generated-asset tokens (trickplay, preview
 // clip) ride alongside a playback but do not by themselves prove one, so they
 // too are excluded; a session shows up only once it holds a direct or HLS token.
-func (s *Store) activeLedgerRows(ctx context.Context, now time.Time) ([]activeLedgerRow, error) {
+func (s *Store) activeLedgerRows(ctx context.Context, now time.Time, windowed bool) ([]activeLedgerRow, error) {
 	nowMS := timeToMillis(now)
-	activeSinceMS := timeToMillis(now.Add(-LiveSessionActivityWindow))
+	// An ended playback stores a negative last_active_ms; 0 keeps every other
+	// unexpired grant when the activity window is off.
+	activeSinceMS := int64(0)
+	if windowed {
+		// A legacy row with last_active_ms = 0 never reported activity, so
+		// it stays out of the window even when now is near the Unix epoch.
+		activeSinceMS = max(timeToMillis(now.Add(-LiveSessionActivityWindow)), 1)
+	}
 	_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE expires_at_ms <= ?`, nowMS)
 	rows, err := s.eventsR.QueryContext(ctx, `
 		SELECT session_id, profile_id, device_id, target, media_id, expires_at_ms, last_active_ms
 		FROM stream_token_ledger
 		WHERE expires_at_ms > ? AND target IN ('media-direct', 'media-hls')
-		  AND last_active_ms > 0 AND last_active_ms >= ?
+		  AND last_active_ms >= ?
 		ORDER BY session_id, media_id, target
 	`, nowMS, activeSinceMS)
 	if err != nil {
