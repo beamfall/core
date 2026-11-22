@@ -96,6 +96,8 @@ func (s *Store) ApplyLocalMetadata(ctx context.Context, id MediaID, local LocalM
 	}
 	metadata := local.Metadata
 	metadata.Source = MutationSourceLocal
+	// A sidecar never lifts a lock: only an operator clears one.
+	metadata.ClearLocks = nil
 	if plane.encrypted {
 		metadata.SortTitle = nil
 	}

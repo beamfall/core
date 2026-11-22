@@ -630,11 +630,28 @@ func (h *Handler) fixMatchPreview(ctx context.Context, scope auth.Scope, req req
 	if err != nil {
 		return nil, err
 	}
-	return []FixMatchFieldDiff{
+	// A field a sidecar locks keeps its value whatever the candidate says:
+	// Apply cannot clear that lock, so the preview proposes no change.
+	locks, err := h.store.MediaFieldLocks(ctx, media.ID, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	diffs := []FixMatchFieldDiff{
 		fieldDiff("title", media.Title, title),
 		fieldDiff("summary", media.Summary, candidate.Summary),
 		fieldDiff("year", yearText(media.Year), yearText(candidate.Year)),
-	}, nil
+	}
+	for _, lock := range locks {
+		if !lock.Local {
+			continue
+		}
+		for i := range diffs {
+			if diffs[i].Field == lock.Field {
+				diffs[i] = fieldDiff(lock.Field, diffs[i].Current, "")
+			}
+		}
+	}
+	return diffs, nil
 }
 
 // FixMatchLockedFieldInfo carries a manually locked value alongside the preview.

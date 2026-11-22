@@ -47,8 +47,9 @@ func TestLocalTierLocksUntilReleased(t *testing.T) {
 	if err := st.UpdateMediaMetadata(ctx, media.ID, MediaMetadata{Title: &manual, Source: MutationSourceManual}); err != nil {
 		t.Fatal(err)
 	}
+	// ClearLocks on a sidecar parse is ignored: a sidecar never lifts a lock.
 	if err := st.ApplyLocalMetadata(ctx, media.ID, LocalMetadata{
-		Metadata:       MediaMetadata{Title: &title, SortTitle: &sortTitle},
+		Metadata:       MediaMetadata{Title: &title, SortTitle: &sortTitle, ClearLocks: []string{"title"}},
 		Fields:         []MediaField{{Name: "tagline", Type: EntityFieldText, Text: "From the sidecar"}},
 		SignatureField: "sidecar-signature", Signature: "sig-2",
 	}); err != nil {

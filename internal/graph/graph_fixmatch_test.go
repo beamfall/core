@@ -769,4 +769,15 @@ func TestFixMatchLockedFieldsOmitsLocalTierLocks(t *testing.T) {
 	if want := []FixMatchLockedFieldInfo{{Field: "title", Value: title}}; !slices.Equal(listed, want) {
 		t.Fatalf("locked fields = %+v, want %+v", listed, want)
 	}
+	diff, err := handler.fixMatchPreview(ctx, managerScope(), request{Variables: map[string]any{
+		"mediaID": string(id), "pluginID": "demo", "scraperID": "lookup", "candidateID": "42",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range diff {
+		if row.Field == "summary" && (row.Changed || row.Proposed != summary) {
+			t.Fatalf("sidecar-locked summary previews a change: %+v", row)
+		}
+	}
 }
