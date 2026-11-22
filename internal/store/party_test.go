@@ -386,3 +386,47 @@ func TestPartyRequestedKeyStartsTheTurn(t *testing.T) {
 		t.Fatalf("current %+v playback %+v; want the requested entry at key -2", view.Current, view.Playback)
 	}
 }
+
+// TestPartySubtitlesPreferThePluginTemplate pins CORE-3048: party entries and
+// guest search name what the wired plugin subtitle renders, and fall back to
+// the first linked Entity only where it renders nothing.
+func TestPartySubtitlesPreferThePluginTemplate(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	st.SetPartySubtitler(func(_ context.Context, ids []MediaID) map[MediaID]string {
+		out := map[MediaID]string{}
+		for _, id := range ids {
+			if id == "media-alpha" {
+				out[id] = "Juniper Static"
+			}
+		}
+		return out
+	})
+	view := startTestParty(t, st, true)
+	if _, err := st.JoinParty(ctx, view.Session.JoinCode, "Casey", "hash-casey"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.RequestPartyEntry(ctx, "hash-casey", "media-alpha", 0); err != nil {
+		t.Fatal(err)
+	}
+	_, guestView, err := st.PartyGuestView(ctx, "hash-casey")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(guestView.Waiting) != 1 || guestView.Waiting[0].Subtitle != "Juniper Static" {
+		t.Fatalf("waiting = %+v, want the rendered subtitle", guestView.Waiting)
+	}
+	results, err := st.SearchPartyMedia(ctx, "hash-casey", "Media", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, result := range results {
+		if result.MediaID == "media-alpha" {
+			found = result.Subtitle == "Juniper Static"
+		}
+	}
+	if !found {
+		t.Fatalf("search = %+v, want media-alpha with the rendered subtitle", results)
+	}
+}

@@ -1408,6 +1408,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// here at the composition root since server cannot import internal/scan.
 	srv.SetV1Store(st)
 	srv.SetPartyGuestStore(st)
+	// Party entries name what their Library plugin's subtitle template
+	// renders; the store cannot read plugin bundles itself (CORE-3048).
+	st.SetPartySubtitler(graphHandler.MediaSubtitles)
 	scanEnqueue := v1ScanEnqueuer(st, jobWake)
 	srv.SetV1ScanEnqueuer(scanEnqueue)
 	srv.SetV1ProgressRecorder(graphHandler)

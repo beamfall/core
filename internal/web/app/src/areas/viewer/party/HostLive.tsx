@@ -574,6 +574,9 @@ export function PartyRotation({ session, run }: PanelProps) {
               <li key={entry.id} className="bf-party-row flex-wrap">
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate font-medium">{entry.title}</span>
+                  {entry.subtitle !== "" && (
+                    <span className="bf-party-muted truncate text-sm">{entry.subtitle}</span>
+                  )}
                   <span className="bf-party-muted text-sm">
                     {[
                       t("partyHostRequestedBy", { name: entry.participantName }),
@@ -655,6 +658,9 @@ export function PartyRotation({ session, run }: PanelProps) {
                 </span>
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate font-medium">{entry.title}</span>
+                  {entry.subtitle !== "" && (
+                    <span className="bf-party-muted truncate text-sm">{entry.subtitle}</span>
+                  )}
                   <span className="bf-party-muted text-sm">
                     {[
                       entry.participantName,

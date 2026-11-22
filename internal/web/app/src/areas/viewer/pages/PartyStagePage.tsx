@@ -332,6 +332,7 @@ function StagePlayer({
       <video ref={videoRef} className="bf-party-stage-video" playsInline onEnded={onEnded} />
       <div className="bf-party-stage-caption">
         <p className="bf-party-stage-title">{entry.title}</p>
+        {entry.subtitle !== "" && <p className="bf-party-stage-singer">{entry.subtitle}</p>}
         <p className="bf-party-stage-singer">
           {t("partyHostSungBy", { name: entry.participantName })}
         </p>

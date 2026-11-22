@@ -148,6 +148,14 @@ describe("PartyHostPage", () => {
     expect(link).toHaveAttribute("href", "/party/stage/s1");
   });
 
+  it("names the artist beside each rotation title", async () => {
+    const song = { ...entry("e1", "Midnight Orchard", 1), subtitle: "The Paper Comets" };
+    vi.mocked(fetchPartySession).mockResolvedValue(session({ entries: [song] }));
+    renderPage();
+
+    expect(await screen.findByText("The Paper Comets")).toBeInTheDocument();
+  });
+
   it("removes a rotation entry and restores it with Undo", async () => {
     const song = entry("e1", "Paper Lanterns", 1);
     vi.mocked(fetchPartySession).mockResolvedValue(session({ entries: [song] }));

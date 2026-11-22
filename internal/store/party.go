@@ -907,8 +907,19 @@ func (row partyScreenRow) view() PartyScreenView {
 	}
 }
 
-// annotatePartySubtitles names each entry's first linked Entity under its
-// title. It decorates the read and never fails it.
+// PartySubtitler renders the subtitle of each Media the way its Library
+// plugin declares, keyed by Media ID. A Media it leaves out has none.
+type PartySubtitler func(ctx context.Context, ids []MediaID) map[MediaID]string
+
+// SetPartySubtitler wires the plugin-declared subtitle renderer the party
+// reads use. The store cannot read plugin bundles, so the composition root
+// supplies it; unwired, entries fall back to their first linked Entity.
+func (s *Store) SetPartySubtitler(render PartySubtitler) {
+	s.partySubtitler.Store(&render)
+}
+
+// annotatePartySubtitles names each entry's subtitle under its title. It
+// decorates the read and never fails it.
 func (s *Store) annotatePartySubtitles(ctx context.Context, view *PartyView) {
 	lists := [][]PartyEntryView{view.Waiting, view.Requests, view.Recent, view.Removed, view.Skipped}
 	var ids []MediaID
@@ -936,13 +947,32 @@ func (s *Store) annotatePartySubtitles(ctx context.Context, view *PartyView) {
 	}
 }
 
+// partySubtitles renders each Media's plugin-declared subtitle, falling back
+// to its first linked Entity's title where the plugin renders none.
 func (s *Store) partySubtitles(ctx context.Context, ids []MediaID) map[MediaID]string {
 	out := map[MediaID]string{}
 	if len(ids) == 0 {
 		return out
 	}
 	slices.Sort(ids)
-	links, err := s.MediaEntityLinks(ctx, slices.Compact(ids))
+	ids = slices.Compact(ids)
+	if render := s.partySubtitler.Load(); render != nil && *render != nil {
+		for id, subtitle := range (*render)(ctx, ids) {
+			if subtitle != "" {
+				out[id] = subtitle
+			}
+		}
+	}
+	var missing []MediaID
+	for _, id := range ids {
+		if _, ok := out[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) == 0 {
+		return out
+	}
+	links, err := s.MediaEntityLinks(ctx, missing)
 	if err != nil {
 		return out
 	}
