@@ -795,18 +795,20 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // A projection-mapping show inside a cathedral at night. The camera walks a
 // raymarched vaulted hall of pale stone whose ribs, webbing, walls and piers
 // are the projection screen: graphic light is mapped onto the architecture in
-// time with the music. Every eight beats a new pattern slowly fades in over the
-// last: light pouring gently down the ribs from the crown and fading out at
-// the floor, a tiled reveal across the webbing, a spectrum meter climbing each
-// bay, a faint scan plane gliding down the nave, chevrons drifting over the
-// vault. Every pattern paints in the projector's warm colour and its cool
-// complement; a faint neon outline traces every edge of the hall, and the
-// backlit stained glass glows steadily. The polished floor softly mirrors the show. The camera glides
-// very slowly down the hall with a level horizon, and the stone right beside it
-// stays dim, so no bright stripe streams past; the smoothed level gently lifts the
-// projectors and the reds are kept just off saturated red, so the show never
-// flashes or blacks out and audio never moves the camera. Under the palette
-// tour the colours change hue but keep their brightness.
+// time with the music. Every eight beats a new pattern fades in over the last
+// at an even pace across all eight beats, so the hall never darkens quickly:
+// light pouring gently down the ribs from the crown and fading out at the
+// floor, a tiled reveal across the webbing, a spectrum meter standing in each
+// bay that the bands only nudge, a faint scan plane gliding down the nave,
+// chevrons drifting over the vault. Every pattern paints in the projector's
+// warm colour and its cool complement, both held near one brightness; a faint
+// neon outline traces every edge of the hall, and the backlit stained glass
+// glows steadily. The polished floor softly mirrors the show. The camera
+// glides very slowly down the hall with a level horizon, and the stone right
+// beside it stays dim, so no bright stripe streams past; the smoothed level
+// gently lifts the projectors and the reds are kept just off saturated red, so
+// the show never flashes or blacks out and audio never moves the camera. Under
+// the palette tour the colours change hue but keep their brightness.
 // param0 = Grandeur ; param1 = Ornament ; param2 = Walk Speed
 
 // The palette read without the library's per-beat and spectral-centroid hue
@@ -816,8 +818,8 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // hue, not brightness.
 vec3 vtPalStill(float t, VisualUniforms u) {
     if (u.palette.x >= 0.0) return palByIndex(t, int(floor(u.palette.x + 0.5)));
-    int a = int(mod(floor(u.palette.z), 32.0));
-    int b = int(mod(float(a + 1), 32.0));
+    int a = int(mod(floor(u.palette.z), OS_PAL_COUNT));
+    int b = int(mod(float(a + 1), OS_PAL_COUNT));
     float blend = smoothstep(0.0, 1.0, fract(u.palette.z));
     vec3 c = mix(palByIndex(t, a), palByIndex(t, b), blend);
     return c * pow(0.3 / max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 0.02), 0.75);
@@ -978,11 +980,13 @@ vec3 vtPattern(int pid, float z, float vs, float vc, float side, float bay, floa
         float tile = 1.0 - smoothstep(0.40 - fw * 1.6, 0.44 + fw * 1.6, max(f.x, f.y));
         float h2 = fract(h * 31.7);
         vec3 c = h2 < 0.65 ? cA : h2 < 0.92 ? cB : vec3(1.0);
-        return c * tile * (0.15 + 0.5 * rev) * (0.7 + 0.3 * fract(h * 7.3)) * (1.0 - rib * 0.6);
+        return c * tile * (0.15 + 0.35 * rev) * (0.7 + 0.3 * fract(h * 7.3)) * (1.0 - rib * 0.6);
     }
     if (pid == 2) {
         // each bay a spectrum meter, segmented like LEDs, peaking white
-        float lvl = saturate(0.42 + 0.012 * eq) * vc;
+        // the band only nudges the level, so the meter's top edge and cap
+        // drift rather than jump on every kick
+        float lvl = saturate(0.42 + 0.003 * eq) * vc;
         float fill = 1.0 - smoothstep(lvl - fw, lvl + fw, vs);
         float seg = smoothstep(0.10, 0.16, fract(vs * 3.0)) * smoothstep(1.0, 0.94, fract(vs * 3.0));
         float cap = vtLine(vs - lvl - 0.08, 0.04, fw);
@@ -990,7 +994,7 @@ vec3 vtPattern(int pid, float z, float vs, float vc, float side, float bay, floa
         vec3 c = mod(bay, 2.0) < 1.0 ? cA : cB;
         c = mix(c, vec3(1.0), 0.35 * smoothstep(0.75, 1.0, vs / vc));
         float top = smoothstep(lvl - 0.9, lvl, vs);
-        return c * (fill * seg * (0.35 + 0.6 * top) + cap * 0.8) * (1.0 - rib * 0.7) + cB * rib * 0.2;
+        return c * (fill * seg * (0.35 + 0.5 * top) + cap * 0.5) * (1.0 - rib * 0.7) + cB * rib * 0.2;
     }
     if (pid == 3) {
         // a scan plane glides down the nave, leaving contour lines behind it
@@ -1007,7 +1011,7 @@ vec3 vtPattern(int pid, float z, float vs, float vc, float side, float bay, floa
     float k = floor(w);
     float band = smoothstep(0.0, 0.04 + fw, s) * (1.0 - smoothstep(0.42 - fw, 0.46 + fw, s));
     vec3 c = mod(k, 2.0) < 1.0 ? cA : cB;
-    return c * (0.1 + 0.7 * band) * (1.0 - rib * 0.5) + c * rib * band * 0.8;
+    return c * (0.1 + 0.5 * band) * (1.0 - rib * 0.5) + c * rib * band * 0.6;
 }
 
 // Light leaving a surface point.
@@ -1116,10 +1120,14 @@ vec3 vtPal(VtPalette P, float t) {
     return mix(c, P.c4, smoothstep(3.0, 4.0, t));
 }
 
-// A projector colour: peak-normalised and pushed a little more saturated.
+// A projector colour: peak-normalised and pushed a little more saturated, then
+// brought toward one luminance (dimmed by up to half, lifted by at most a
+// quarter), so a hue change under the palette tour or the chorus barely
+// brightens or darkens the walls.
 vec3 vtVivid(vec3 c) {
     c = c / max(max(c.r, max(c.g, c.b)), 0.05);
-    return max(mix(vec3(luma(c)), c, 1.3), 0.0);
+    c = max(mix(vec3(luma(c)), c, 1.3), 0.0);
+    return c * clamp(0.5 / max(luma(c), 0.05), 0.5, 1.25);
 }
 
 // The pattern shown in two-beat slot k, never the same twice running.
@@ -1176,7 +1184,9 @@ vec3 osBody(vec2 uv, VisualUniforms u) {
     S.pNew = vtPick(k2);
     S.pOld = vtPick(k2 - 1.0);
     S.life = (n - 8.0 * k2 + bp) / 8.0;
-    S.wipe = smoothstep(0.0, 0.9, S.life);
+    // the crossfade runs evenly over the whole slot: a bright pattern giving way
+    // to a dim one darkens the vault no faster than the reveal brightened it
+    S.wipe = S.life;
     S.bp = bp;
     S.zc = zc;
     S.seed = mod(k2, 97.0);
