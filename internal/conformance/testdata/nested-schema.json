@@ -628,6 +628,11 @@
         ]
       },
       {
+        "name": "playsAlone",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "sequence",
         "kind": "scalar",
         "optional": true,
@@ -1203,6 +1208,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "playsAlone",
         "kind": "scalar",
         "optional": true
       },
@@ -5079,6 +5089,11 @@
         ]
       },
       {
+        "name": "playsAlone",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "sequence",
         "kind": "scalar",
         "optional": true,
@@ -6812,6 +6827,11 @@
                     "optional": true
                   },
                   {
+                    "name": "playsAlone",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "restricted",
                     "kind": "scalar",
                     "optional": true
@@ -7008,6 +7028,11 @@
                 },
                 {
                   "name": "muted",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "playsAlone",
                   "kind": "scalar",
                   "optional": true
                 },
@@ -7248,6 +7273,11 @@
                   "optional": true
                 },
                 {
+                  "name": "playsAlone",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
                   "name": "restricted",
                   "kind": "scalar",
                   "optional": true
@@ -7444,6 +7474,11 @@
               },
               {
                 "name": "muted",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "playsAlone",
                 "kind": "scalar",
                 "optional": true
               },
@@ -7849,6 +7884,11 @@
             ]
           },
           {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
             "name": "sequence",
             "kind": "scalar",
             "optional": true,
@@ -8197,6 +8237,11 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "playsAlone",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "sequence",
@@ -8801,6 +8846,11 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "playsAlone",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "sequence",
@@ -10548,6 +10598,11 @@
               ]
             },
             {
+              "name": "playsAlone",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "restricted",
               "kind": "scalar",
               "optional": true
@@ -10810,6 +10865,11 @@
                 "kind": "scalar"
               }
             ]
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
           },
           {
             "name": "restricted",
@@ -11206,6 +11266,11 @@
               "optional": true
             },
             {
+              "name": "playsAlone",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "restricted",
               "kind": "scalar",
               "optional": true
@@ -11402,6 +11467,11 @@
           },
           {
             "name": "muted",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "playsAlone",
             "kind": "scalar",
             "optional": true
           },
@@ -11935,6 +12005,11 @@
               "optional": true
             },
             {
+              "name": "playsAlone",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "restricted",
               "kind": "scalar",
               "optional": true
@@ -12131,6 +12206,11 @@
           },
           {
             "name": "muted",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "playsAlone",
             "kind": "scalar",
             "optional": true
           },
@@ -13354,6 +13434,11 @@
         ]
       },
       {
+        "name": "playsAlone",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "sequence",
         "kind": "scalar",
         "optional": true,
@@ -13645,6 +13730,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "playsAlone",
         "kind": "scalar",
         "optional": true
       },
@@ -13982,6 +14072,11 @@
                 "kind": "scalar"
               }
             ]
+          },
+          {
+            "name": "playsAlone",
+            "kind": "scalar",
+            "optional": true
           },
           {
             "name": "sequence",
@@ -18829,6 +18924,11 @@
         "optional": true
       },
       {
+        "name": "playsAlone",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "restricted",
         "kind": "scalar",
         "optional": true
@@ -19105,6 +19205,11 @@
         "optional": true
       },
       {
+        "name": "playsAlone",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "restricted",
         "kind": "scalar",
         "optional": true
@@ -19304,6 +19409,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "playsAlone",
         "kind": "scalar",
         "optional": true
       },
@@ -19635,6 +19745,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "playsAlone",
         "kind": "scalar",
         "optional": true
       },
@@ -20392,6 +20507,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "playsAlone",
         "kind": "scalar",
         "optional": true
       },
@@ -23363,6 +23483,11 @@
         "optional": true
       },
       {
+        "name": "playsAlone",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "restricted",
         "kind": "scalar",
         "optional": true
@@ -23569,6 +23694,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "playsAlone",
         "kind": "scalar",
         "optional": true
       },
@@ -23871,6 +24001,11 @@
               "optional": true
             },
             {
+              "name": "playsAlone",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "restricted",
               "kind": "scalar",
               "optional": true
@@ -24104,6 +24239,11 @@
           },
           {
             "name": "muted",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "playsAlone",
             "kind": "scalar",
             "optional": true
           },
@@ -26685,6 +26825,11 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "playsAlone",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "sequence",
@@ -32663,6 +32808,11 @@
         "optional": true
       },
       {
+        "name": "playsAlone",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "restricted",
         "kind": "scalar",
         "optional": true
@@ -33334,6 +33484,11 @@
       },
       {
         "name": "muted",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "playsAlone",
         "kind": "scalar",
         "optional": true
       },

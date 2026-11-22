@@ -19,7 +19,7 @@ import {
   topTracks,
   trackGroups,
 } from "../lib/trackList";
-import { playQueueOf } from "../lib/watchQueue";
+import { listsPlaysAlone, playQueueOf } from "../lib/watchQueue";
 import { ContainerChildren } from "./ContainerChildren";
 import { MediaItemCard } from "./MediaItemCard";
 import { TrackList } from "./TrackList";
@@ -67,6 +67,14 @@ export function EntityMediaBrowse({
   }
   if (probe.sequenced) return <SequencedMedia items={items} label={label} />;
   if (probe.roles) return <PersonRoles items={items} roles={probe.roles} />;
+  // Media that plays on its own is no track list (CORE-3147): a person lists it
+  // as a filmography, anything else in the server's order, one queue per card.
+  if (listsPlaysAlone(items))
+    return entity?.archetype === "person" ? (
+      <PersonFilmography items={items} />
+    ) : (
+      <SequencedMedia items={items} label={label} />
+    );
   const tracks = containerTrackRows(entity, items, rows);
   if (tracks) return <ContainerTracks tracks={tracks} />;
   if (entity && rows && entity.archetype === "person" && isAudioListing(items, rows))

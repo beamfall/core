@@ -56,6 +56,7 @@ import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMe
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
   type PlayQueueItem,
+  queueForPlaying,
   queueNeighbours,
   queueOfClass,
   readPlayerNavState,
@@ -293,7 +294,12 @@ function FeaturePlayer({
   // Media classes playback-info has reported (this item's and its declared
   // next item's), by Media id (CORE-1490).
   const [learnedClasses, setLearnedClasses] = useState<Record<string, string>>({});
-  const navQueue = navState.queue;
+  // An item that plays on its own neither queues its siblings nor is queued
+  // after one (CORE-3147).
+  const navQueue = useMemo(
+    () => (navState.queue ? queueForPlaying(navState.queue, mediaId || "") : undefined),
+    [navState.queue, mediaId],
+  );
   const classedQueue = useMemo(
     () => (navQueue ? withQueueClasses(navQueue, learnedClasses) : undefined),
     [navQueue, learnedClasses],

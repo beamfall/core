@@ -19,6 +19,11 @@ export interface PlayQueueItem {
    * listed it (search results report it) or learned from playback-info.
    */
   mediaClass?: string;
+  /**
+   * The item's plugin declares it plays on its own (CORE-3147, ADR-0055 §2.4):
+   * no sibling plays after it, and it never runs on from another item.
+   */
+  playsAlone?: boolean;
 }
 
 /**
@@ -92,13 +97,20 @@ export function playQueueOf(
   const queue: PlayQueueItem[] = [];
   for (const item of items) {
     if (item.kind !== "media" || item.locked) continue;
-    queue.push(
-      item.mediaClass
-        ? { id: item.id, title: item.title, mediaClass: item.mediaClass }
-        : { id: item.id, title: item.title },
-    );
+    const entry: PlayQueueItem = { id: item.id, title: item.title };
+    if (item.mediaClass) entry.mediaClass = item.mediaClass;
+    if (item.playsAlone) entry.playsAlone = true;
+    queue.push(entry);
   }
   return queue;
+}
+
+/**
+ * True when a listed Media item plays on its own (CORE-3147): the listing is
+ * then no track list, and each of its cards queues only itself.
+ */
+export function listsPlaysAlone(items: readonly SourceItem[]): boolean {
+  return items.some((item) => item.kind === "media" && !!item.playsAlone);
 }
 
 /**
@@ -137,6 +149,23 @@ export function queueOfClass(
     (item) => item.id === playingId || !item.mediaClass || item.mediaClass === mediaClass,
   );
   return narrowed.length === queue.length ? queue : narrowed;
+}
+
+/**
+ * Keeps items that play on their own out of a shared queue (CORE-3147): when
+ * the playing item plays alone the queue is that item only, so Next and
+ * auto-advance never run on into a sibling; otherwise the plays-alone entries
+ * are dropped, so nothing runs on into one. The queue is returned unchanged
+ * when no entry plays alone.
+ */
+export function queueForPlaying(
+  queue: readonly PlayQueueItem[],
+  playingId: string,
+): readonly PlayQueueItem[] {
+  if (!queue.some((item) => item.playsAlone)) return queue;
+  const playing = queue.find((item) => item.id === playingId);
+  if (playing?.playsAlone) return [playing];
+  return queue.filter((item) => !item.playsAlone);
 }
 
 /**
@@ -194,11 +223,12 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
               typeof (item as PlayQueueItem).id === "string" &&
               typeof (item as PlayQueueItem).title === "string",
           )
-          .map(({ id, title, mediaClass }) =>
-            typeof mediaClass === "string" && mediaClass
-              ? { id, title, mediaClass }
-              : { id, title },
-          )
+          .map(({ id, title, mediaClass, playsAlone }) => {
+            const entry: PlayQueueItem = { id, title };
+            if (typeof mediaClass === "string" && mediaClass) entry.mediaClass = mediaClass;
+            if (playsAlone === true) entry.playsAlone = true;
+            return entry;
+          })
       : undefined;
   const tracks = readStartTracks(raw.tracks);
   return {
