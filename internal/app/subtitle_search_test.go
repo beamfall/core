@@ -51,3 +51,19 @@ func TestSubtitleSearchPolicyNamesOnlyProviderOrigins(t *testing.T) {
 		t.Fatalf("user agent = %q", ua)
 	}
 }
+
+// TestSubtitleSearchIgnoresBundledCredentials: a release-injected key under
+// the OpenSubtitles ref never reaches the searcher (owner decision 2026-11-21).
+func TestSubtitleSearchIgnoresBundledCredentials(t *testing.T) {
+	files := secretFiles{dir: t.TempDir()}
+	bundled := withBundledCredentials(files, subtitlesearch.OpenSubtitlesKeyRef+"=bundled-test-value")
+	if got, err := bundled.Secret(subtitlesearch.OpenSubtitlesKeyRef); err != nil || got == "" {
+		t.Fatalf("precondition: bundled source = %q, %v", got, err)
+	}
+	// wireSubtitleSearch accepts only secretFiles, so production passes the
+	// operator's files; the searcher built from them must not see the key.
+	searcher := newSubtitleSearcher([]string{subtitlesearch.OpenSubtitlesID}, files)
+	if status := searcher.Status(context.Background()); len(status) != 1 || status[0].Ready {
+		t.Fatalf("status with only a bundled key = %+v, want not ready", status)
+	}
+}

@@ -14,8 +14,13 @@ identifier.
 
 #### Scenario: Provider enabled without a key
 
-- **WHEN** a provider is enabled but neither an operator key nor a release key is available
+- **WHEN** a provider is enabled but the operator has not written a key to the secrets file
 - **THEN** the status names the provider as needing a key and search makes no request
+
+#### Scenario: Release build carries a bundled key
+
+- **WHEN** a release build injects a credential under the OpenSubtitles key ref
+- **THEN** subtitle search ignores it and reports the provider as needing a key
 
 ### Requirement: Search matches by file hash and generic metadata
 

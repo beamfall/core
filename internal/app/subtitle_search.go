@@ -20,8 +20,9 @@ import (
 // here is constructed otherwise, so a default server makes no outbound
 // subtitle request. When enabled, every byte rides HardenedOutboundProxy under
 // a core-owned static policy naming exactly the provider's origins; the API key
-// is read per request from the 0600 secrets directory (or a release-injected
-// default), never from config.
+// is read per request from the operator's 0600 secrets directory, never from
+// config. Beamfall ships no OpenSubtitles key (owner decision 2026-11-21), so
+// the release-injected BundledCredentials never reach this path.
 
 // subtitleSearchPolicy is the outbound policy source for the enabled providers.
 type subtitleSearchPolicy struct {
@@ -143,8 +144,10 @@ func newSubtitleSearcher(providers []string, secrets interface{ Secret(string) (
 	return subtitleSearchAdapter{service: subtitlesearch.NewService(built...)}
 }
 
-// wireSubtitleSearch is the single production wiring path for CORE-1690.
-func wireSubtitleSearch(handler *mediahttp.Handler, providers []string, secrets interface{ Secret(string) (string, error) }) {
+// wireSubtitleSearch is the single production wiring path for CORE-1690. It
+// takes the operator's secrets files, not the bundled-credential source, so a
+// key can only come from the operator.
+func wireSubtitleSearch(handler *mediahttp.Handler, providers []string, secrets secretFiles) {
 	if searcher := newSubtitleSearcher(providers, secrets); searcher != nil {
 		handler.SetSubtitleSearch(searcher)
 	}

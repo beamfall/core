@@ -24,10 +24,10 @@ as tracks; what is missing is a way to find one online and put it there.
   (HTTPS only, private addresses refused, no cross-host redirects, 512 KiB cap) under a
   core-owned policy that declares the provider's origins and approves them only when enabled.
   No install identifier or telemetry is sent; the User-Agent is `Beamfall v<version>`.
-- The provider API key resolves through the existing scraper credential source: the operator's
-  0600 file `<data-dir>/secrets/opensubtitles-api-key` first, then a key injected into release
-  builds, as ADR-0238 §2.5 does for Podcast Index. No key is committed. A server with no key
-  reports the provider as needing a key and makes no request.
+- The provider API key comes only from the operator's 0600 file
+  `<data-dir>/secrets/opensubtitles-api-key`. Beamfall ships no key: the release-injected
+  `BundledCredentials` source is not wired to subtitle search. No key is committed. A server with
+  no key reports the provider as needing a key and makes no request.
 - New REST routes for a Profile session (no API token or developer key), allowed for an adult
   Profile or a manager device, on a Media the session can see:
   - `GET /api/media/subtitle-search` reports whether search is enabled and which providers.
@@ -51,9 +51,10 @@ as tracks; what is missing is a way to find one online and put it there.
 - Native client UI.
 - Automatic download on scan.
 
-## Owner decisions
+## Owner decisions (decided 2026-11-21)
 
-- Whether release builds ship a Beamfall OpenSubtitles API key (the ADR-0238 pattern is ready;
-  this change ships none).
-- Default state: this change ships search off.
-- Which providers to support beyond OpenSubtitles.
+- Beamfall ships no OpenSubtitles API key. The operator brings their own.
+- Search is off by default: the provider list is empty.
+- OpenSubtitles is the only provider in this slice; others are CORE-3105.
+
+See `design.md` for how an operator enables search.

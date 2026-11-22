@@ -184,7 +184,7 @@ resolver over `store` typed methods. No `internal/util`, no `internal/model`, no
 | `skipdetect` | Generic skip-segment detector over markers, ordered siblings, jobs, and FFmpeg | 0048 |
 | `store` | The single-writer storage gate: both DB handles, all SQL text, schema row types, typed query methods, typed IDs, `LibraryFilter`, FTS, migrations, backups, placement guard, refuse-on-newer | 0011 |
 | `streamtoken` | Stream Token issue + verify (HMAC, expiry, live revocation/reveal recheck); `Grant`, `Target` | 0010 §3 |
-| `subtitlesearch` | Opt-in, default-off online subtitle search providers (OpenSubtitles REST); requests travel through a consumer-side egress seam, no telemetry | CORE-1690 |
+| `subtitlesearch` | Opt-in, default-off online subtitle search providers (OpenSubtitles REST, operator-supplied key in `<data-dir>/secrets/opensubtitles-api-key`, none shipped); requests travel through a consumer-side egress seam, no telemetry | CORE-1690 |
 | `updatecheck` | Opt-in, default-off version check against a signed public release manifest. No telemetry | 0013 §7 |
 | `watcher` | Filesystem watch state and change observation | 0009 |
 | `web` | Embedded Core Web UI static file shim | 0007 |

@@ -25,8 +25,8 @@ const OpenSubtitlesAPIOrigin = "https://api.opensubtitles.com"
 var OpenSubtitlesDownloadOrigins = []string{"https://www.opensubtitles.com", "https://dl.opensubtitles.org"}
 
 // OpenSubtitlesKeyRef is the credential ref the API key resolves under: the
-// operator's 0600 file <data-dir>/secrets/opensubtitles-api-key, then a key a
-// release build injected.
+// operator's 0600 file <data-dir>/secrets/opensubtitles-api-key. Beamfall
+// ships no key of its own.
 const OpenSubtitlesKeyRef = "opensubtitles-api-key"
 
 // KeySource returns the API key. An fs.ErrNotExist error means no key is
