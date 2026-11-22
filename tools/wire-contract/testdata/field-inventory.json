@@ -4481,6 +4481,16 @@
       ]
     },
     {
+      "field": "setsonicanalysisenabled",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "available",
+        "enabled",
+        "libraryID"
+      ]
+    },
+    {
       "field": "setsubscriptiondownloadpolicy",
       "effect": "write",
       "tier": "session",
@@ -4607,6 +4617,36 @@
       ]
     },
     {
+      "field": "similarmedia",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "audienceScore",
+        "audienceScoreLabel",
+        "audienceScoreVotes",
+        "byline",
+        "certification",
+        "container",
+        "durationSeconds",
+        "engagement",
+        "id",
+        "index",
+        "kind",
+        "libraryID",
+        "locked",
+        "mediaClass",
+        "muted",
+        "restricted",
+        "sequence",
+        "subtitle",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
       "field": "skipdetectionenabled",
       "effect": "read",
       "tier": "admin",
@@ -4626,6 +4666,16 @@
         "name",
         "sortExpr",
         "sourceExpr"
+      ]
+    },
+    {
+      "field": "sonicanalysisenabled",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "available",
+        "enabled",
+        "libraryID"
       ]
     },
     {

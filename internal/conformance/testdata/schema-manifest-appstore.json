@@ -1515,6 +1515,11 @@
     "tier": "admin"
   },
   {
+    "field": "setsonicanalysisenabled",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "setsubscriptiondownloadpolicy",
     "effect": "write",
     "tier": "session"
@@ -1550,6 +1555,11 @@
     "tier": "admin"
   },
   {
+    "field": "similarmedia",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "skipdetectionenabled",
     "effect": "read",
     "tier": "admin"
@@ -1558,6 +1568,11 @@
     "field": "smartcollections",
     "effect": "read",
     "tier": "session"
+  },
+  {
+    "field": "sonicanalysisenabled",
+    "effect": "read",
+    "tier": "admin"
   },
   {
     "field": "sourceitems",
