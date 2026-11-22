@@ -283,6 +283,10 @@ func TestCompatEmbeddedSkewRefusesEveryNamedWebRoute(t *testing.T) {
 			if rec.Code != http.StatusForbidden {
 				t.Fatalf("%s with embedded skew = %d, want 403", path, rec.Code)
 			}
+			if path == graphQLPath {
+				compatRequireGraphQLRefusal(t, rec, "server-installation-inconsistent", "embedded-ui-skew")
+				return
+			}
 			var response compatHandshakeResponse
 			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 				t.Fatal(err)
@@ -938,15 +942,63 @@ func compatServe(srv *Server, req *http.Request) *httptest.ResponseRecorder {
 
 func compatRequireRefusal(t *testing.T, rec *httptest.ResponseRecorder, decision, reason string) {
 	t.Helper()
+	compatRequireGraphQLRefusal(t, rec, decision, reason)
+}
+
+func compatRequireGraphQLRefusal(t *testing.T, rec *httptest.ResponseRecorder, decision, reason string) {
+	t.Helper()
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
-	var response compatHandshakeResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode refusal: %v", err)
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
 	}
-	if response.Decision != decision || (reason != "" && response.ReasonCode != reason) {
-		t.Fatalf("refusal = %#v, want %s/%s", response, decision, reason)
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode raw refusal: %v: %s", err, rec.Body.String())
+	}
+	if dataVal, hasData := raw["data"]; !hasData || dataVal != nil {
+		t.Fatalf("raw GraphQL refusal data = (%v, present=%t), want explicit null: %s", dataVal, hasData, rec.Body.String())
+	}
+	// Existing clients detect a refusal from the top-level fields of any 403.
+	for _, key := range []string{"decision", "messageClass"} {
+		if _, ok := raw[key]; !ok {
+			t.Fatalf("GraphQL refusal dropped top-level %s: %s", key, rec.Body.String())
+		}
+	}
+	var envelope struct {
+		Data   any `json:"data"`
+		Errors []struct {
+			Message    string `json:"message"`
+			Extensions struct {
+				Code         string `json:"code"`
+				Decision     string `json:"decision"`
+				ReasonCode   string `json:"reasonCode"`
+				MessageClass string `json:"messageClass"`
+			} `json:"extensions"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode GraphQL refusal: %v: %s", err, rec.Body.String())
+	}
+	if len(envelope.Errors) != 1 {
+		t.Fatalf("errors count = %d, want 1: %s", len(envelope.Errors), rec.Body.String())
+	}
+	entry := envelope.Errors[0]
+	if strings.TrimSpace(entry.Message) == "" {
+		t.Fatalf("GraphQL refusal message is empty: %s", rec.Body.String())
+	}
+	if entry.Extensions.Code != "FORBIDDEN" {
+		t.Fatalf("extensions.code = %q, want FORBIDDEN: %s", entry.Extensions.Code, rec.Body.String())
+	}
+	wantClass := compatMessageClass(decision)
+	if entry.Extensions.Decision != decision ||
+		(reason != "" && entry.Extensions.ReasonCode != reason) ||
+		entry.Extensions.MessageClass != wantClass {
+		t.Fatalf("extensions = %#v, want decision=%q reason=%q messageClass=%q", entry.Extensions, decision, reason, wantClass)
 	}
 }
 
@@ -1122,4 +1174,74 @@ func TestCompatAuthChangeDoesNotRenewOtherMismatches(t *testing.T) {
 		grant(t, srv, st)
 		compatRequireRefusal(t, read(srv), "client-too-old", "unknown-build")
 	})
+}
+
+func TestCompatGraphQLRefusalEnvelopeAndRESTUnchanged(t *testing.T) {
+	cases := []struct {
+		name     string
+		prepare  func(*Server)
+		decision string
+		reason   string
+	}{
+		{
+			name: "client-too-old",
+			prepare: func(srv *Server) {
+				srv.compat.markRefused("session:session-default")
+			},
+			decision: "client-too-old",
+			reason:   "unknown-build",
+		},
+		{
+			name: "server-too-old",
+			prepare: func(srv *Server) {
+				policy := srv.compat.snapshot()
+				policy.SupportedRenderingRevisions = [2]capabilities.Revision{0, 0}
+				srv.SetCompatPolicy(policy, srv.buildSHA, 0)
+			},
+			decision: "server-too-old",
+			reason:   "rendering-revision-too-new",
+		},
+		{
+			name: "server-installation-inconsistent",
+			prepare: func(srv *Server) {
+				policy := srv.compat.snapshot()
+				policy.EmbeddedUIRevision++
+				srv.SetCompatPolicy(policy, srv.buildSHA, 0)
+			},
+			decision: "server-installation-inconsistent",
+			reason:   "embedded-ui-skew",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := compatTestServer(t)
+			tc.prepare(srv)
+
+			gqlRec := compatServe(srv, compatGraphQLRequest(`query { serverInfo { name } }`, authorizeViewerCookies))
+			compatRequireGraphQLRefusal(t, gqlRec, tc.decision, tc.reason)
+
+			restRec := compatServe(srv, cookieManifestRequest())
+			if restRec.Code != http.StatusForbidden {
+				t.Fatalf("REST status = %d, want 403: %s", restRec.Code, restRec.Body.String())
+			}
+			if got := restRec.Header().Get("Cache-Control"); got != "no-store" {
+				t.Fatalf("REST Cache-Control = %q, want no-store", got)
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(restRec.Body.Bytes(), &raw); err != nil {
+				t.Fatalf("decode raw REST refusal: %v", err)
+			}
+			if _, hasErrors := raw["errors"]; hasErrors {
+				t.Fatalf("non-GraphQL refusal unexpectedly included errors envelope: %s", restRec.Body.String())
+			}
+			var rest compatHandshakeResponse
+			if err := json.Unmarshal(restRec.Body.Bytes(), &rest); err != nil {
+				t.Fatalf("decode REST refusal: %v", err)
+			}
+			if rest.Decision != tc.decision || rest.ReasonCode != tc.reason || rest.MessageClass != compatMessageClass(tc.decision) {
+				t.Fatalf("REST refusal = %#v, want %s/%s/%s", rest, tc.decision, tc.reason, compatMessageClass(tc.decision))
+			}
+		})
+	}
 }

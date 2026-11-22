@@ -216,7 +216,7 @@ func (s *Server) requireCompatDecision(next http.HandlerFunc) http.HandlerFunc {
 		}
 		allowed, result, record := s.compatAuthorize(r, scope)
 		if !allowed {
-			writeCompatRefusal(w, result)
+			writeCompatRefusal(w, r, result)
 			return
 		}
 		generation := ""
@@ -352,12 +352,70 @@ func compatDecisionRequired() capabilities.Result {
 	}
 }
 
-func writeCompatRefusal(w http.ResponseWriter, result capabilities.Result) {
+// compatRefusalGraphQLCode mirrors internal/graph.ErrorCodeForbidden;
+// internal/server may not import internal/graph.
+const compatRefusalGraphQLCode = "FORBIDDEN"
+
+// compatGraphQLErrorEnvelope keeps the REST refusal fields at the top level,
+// which existing clients read from any 403, and adds the GraphQL errors list.
+type compatGraphQLErrorEnvelope struct {
+	compatHandshakeResponse
+	Data   any                  `json:"data"`
+	Errors []compatGraphQLError `json:"errors"`
+}
+
+type compatGraphQLError struct {
+	Message    string                       `json:"message"`
+	Extensions compatGraphQLErrorExtensions `json:"extensions"`
+}
+
+type compatGraphQLErrorExtensions struct {
+	Code         string `json:"code"`
+	Decision     string `json:"decision"`
+	ReasonCode   string `json:"reasonCode,omitempty"`
+	MessageClass string `json:"messageClass"`
+}
+
+func compatRefusalMessage(decision capabilities.Decision) string {
+	switch decision {
+	case capabilities.DecisionServerTooOld:
+		return "server update required"
+	case capabilities.DecisionServerInstallationInconsistent:
+		return "server installation is inconsistent"
+	default:
+		return "client update required"
+	}
+}
+
+func writeCompatRefusal(w http.ResponseWriter, r *http.Request, result capabilities.Result) {
 	w.Header().Set("Cache-Control", "no-store")
+	decision := string(result.Decision)
+	reasonCode := string(result.ReasonCode)
+	messageClass := compatMessageClass(decision)
+	if r != nil && r.URL != nil && r.URL.Path == graphQLPath {
+		writeJSON(w, http.StatusForbidden, compatGraphQLErrorEnvelope{
+			compatHandshakeResponse: compatHandshakeResponse{
+				Decision:     decision,
+				ReasonCode:   reasonCode,
+				MessageClass: messageClass,
+			},
+			Data: nil,
+			Errors: []compatGraphQLError{{
+				Message: compatRefusalMessage(result.Decision),
+				Extensions: compatGraphQLErrorExtensions{
+					Code:         compatRefusalGraphQLCode,
+					Decision:     decision,
+					ReasonCode:   reasonCode,
+					MessageClass: messageClass,
+				},
+			}},
+		})
+		return
+	}
 	writeJSON(w, http.StatusForbidden, compatHandshakeResponse{
-		Decision:     string(result.Decision),
-		ReasonCode:   string(result.ReasonCode),
-		MessageClass: compatMessageClass(string(result.Decision)),
+		Decision:     decision,
+		ReasonCode:   reasonCode,
+		MessageClass: messageClass,
 	})
 }
 
