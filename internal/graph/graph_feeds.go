@@ -439,7 +439,7 @@ type SubscriptionEntryInfo struct {
 
 // subscriptionFollow is the caller's follow state and new-entry route for one
 // Subscription it can see (CORE-2959): the viewer-safe read of what setFollow
-// echoes, so a non-manager can show and change its route.
+// echoes, so a non-manager can read and change its route.
 func (h *Handler) subscriptionFollow(ctx context.Context, scope auth.Scope, req request) (FollowInfo, error) {
 	id := store.SubscriptionID(trimmedVariable(req, "subscriptionID"))
 	if id == "" {
