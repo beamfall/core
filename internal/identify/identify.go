@@ -490,6 +490,26 @@ func (s *Service) applyOrdinal(ctx context.Context, mediaID store.MediaID, plugi
 	vars.Sequence, vars.Index = sequence, index
 }
 
+// effectiveOperatorOrdinal is the manual-tier ordinal the lookup used: the
+// edit's own, else the stored one unless the edit clears it. A failed read is
+// treated as an operator ordinal of unknown value, so container hydration
+// cannot write to a container it has not verified.
+func (s *Service) effectiveOperatorOrdinal(ctx context.Context, mediaID store.MediaID, edit store.MediaMetadata) *store.MediaOrdinal {
+	if edit.OperatorOrdinal != nil || edit.ClearOrdinal {
+		return edit.OperatorOrdinal
+	}
+	source, ok := s.store.(mediaOrdinalReader)
+	if !ok {
+		return nil
+	}
+	ordinal, err := source.MediaOperatorOrdinal(ctx, mediaID)
+	if err != nil {
+		slog.Debug("identify: operator ordinal unavailable for container hydration", "media", mediaID, "error", err)
+		return &store.MediaOrdinal{}
+	}
+	return ordinal
+}
+
 type mediaOrdinalReader interface {
 	MediaOperatorOrdinal(context.Context, store.MediaID) (*store.MediaOrdinal, error)
 }
@@ -592,8 +612,9 @@ func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 	// Entity hydration uses independent writes and can fail. Finish it before
 	// committing an ordinal edit so a failed Apply never publishes that edit.
 	ordinalsChanged := edit.OperatorOrdinal != nil || edit.ClearOrdinal
+	manual := s.effectiveOperatorOrdinal(ctx, mediaID, edit)
 	if ordinalsChanged {
-		if err := s.applyEntities(ctx, mediaID, bundle, spec, result); err != nil {
+		if err := s.applyEntities(ctx, mediaID, bundle, spec, result, manual); err != nil {
 			return err
 		}
 	}
@@ -601,7 +622,7 @@ func (s *Service) apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 		return err
 	}
 	if !ordinalsChanged {
-		if err := s.applyEntities(ctx, mediaID, bundle, spec, result); err != nil {
+		if err := s.applyEntities(ctx, mediaID, bundle, spec, result, manual); err != nil {
 			return err
 		}
 	}
@@ -756,7 +777,7 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 // merge into one row first (mergeEntityLinks). An Entity hydrated without
 // typed fields keeps the fields an earlier identification wrote. Entity
 // posters ride along best-effort (applyEntityPoster) and never fail hydration.
-func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
+func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result, manual *store.MediaOrdinal) error {
 	if len(result.Entities) == 0 {
 		return nil
 	}
@@ -803,7 +824,7 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 		}
 		s.applyEntityPoster(ctx, id, hydrated.ArtworkURL)
 	}
-	return s.applyContainerEntities(ctx, mediaID, library, bundle, containers)
+	return s.applyContainerEntities(ctx, mediaID, library, bundle, containers, manual)
 }
 
 // entityFields parses one hydrated Entity's raw FieldMap values against its

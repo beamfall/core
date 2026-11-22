@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/beamfall/core/internal/plugin"
@@ -192,8 +193,11 @@ func containerKindNames(bundle plugin.Bundle) map[string]bool {
 // its display title (its ID unchanged), its poster and other artwork slots are
 // applied like any hydrated Entity poster, and its links relate it to the
 // Entities sibling maps hydrated. A result whose kind holds no Entity for this
-// Media is skipped; nothing is created.
-func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.MediaID, library store.LibraryID, bundle plugin.Bundle, results []scrape.EntityResult) error {
+// Media is skipped; nothing is created. Under an operator ordinal (manual
+// non-nil) the lookup described the operator's sequence, so the container
+// directly holding the Media is written only when its own ordinal is that
+// sequence; otherwise it may be a sibling sequence shared by other Media.
+func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.MediaID, library store.LibraryID, bundle plugin.Bundle, results []scrape.EntityResult, manual *store.MediaOrdinal) error {
 	if len(results) == 0 {
 		return nil
 	}
@@ -210,6 +214,11 @@ func (s *Service) applyContainerEntities(ctx context.Context, mediaID store.Medi
 		target, ok := containerOfKind(chain, result.Kind)
 		if !ok {
 			slog.Debug("identify: no container entity of kind holds the media", "media", mediaID, "kind", result.Kind)
+			continue
+		}
+		if manual != nil && target == chain[0].ID && !containerMatchesSequence(chain[0], manual.Sequence) {
+			slog.Debug("identify: container hydration skipped, holder does not match the operator sequence",
+				"media", mediaID, "kind", result.Kind, "sequence", manual.Sequence)
 			continue
 		}
 		if fields := entityFields(bundle, result); len(fields) > 0 || result.Title != "" || len(result.Links) > 0 {
@@ -351,6 +360,17 @@ func containerRelationRows(library store.LibraryID, target store.EntityID, decla
 }
 
 // containerOfKind returns the innermost chain Entity of kind.
+// containerMatchesSequence reports whether an ordered container's ordinal is
+// the integral decimal sequence. An unordered container, an empty or
+// fractional sequence cannot be verified and does not match.
+func containerMatchesSequence(container ContainerEntity, sequence string) bool {
+	if !container.Ordered {
+		return false
+	}
+	n, err := strconv.ParseFloat(strings.TrimSpace(sequence), 64)
+	return err == nil && n == float64(container.Ordinal)
+}
+
 func containerOfKind(chain []ContainerEntity, kind string) (store.EntityID, bool) {
 	for _, entity := range chain {
 		if strings.EqualFold(entity.Kind, kind) {

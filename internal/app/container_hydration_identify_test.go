@@ -166,3 +166,87 @@ func TestIdentifyHydratesContainersFromItemLookup(t *testing.T) {
 		}
 	}
 }
+
+// TestOperatorOrdinalHydratesOnlyTheMatchingSeasonContainer (CORE-3128): a
+// Fix Match ordinal looks up the operator's sequence, so the season holding
+// the Media takes that sequence's fields only when its own ordinal is that
+// sequence. A sibling season, whose fields every one of its Media shares, is
+// left alone on the Fix Match and on a later Refresh, while the show is still
+// hydrated.
+func TestOperatorOrdinalHydratesOnlyTheMatchingSeasonContainer(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		holderOrdinal int
+		wantOverview  string
+	}{
+		{name: "sibling season", holderOrdinal: 1, wantOverview: ""},
+		{name: "matching season", holderOrdinal: 2, wantOverview: "Second."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			server, _ := containerLookupServer(t)
+			st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			library, err := st.CreateLibrary(ctx, "Shows", false, "demo", "profile-default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: library.ID, Path: "/synthetic/Harbor/Season 01/S01E03.mkv",
+				Title: "S01E03", Container: "mkv", Codec: "h264", Class: store.MediaClassVideo,
+				ContentFingerprint: "fp-operator-ordinal-season-0001",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := (showSeasonHydrator{st: st}).HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{MediaID: media.ID, LibraryID: library.ID}); err != nil {
+				t.Fatal(err)
+			}
+			ordinal := tc.holderOrdinal
+			if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: "entity-season-1", Name: "season-of", ToEntityID: "entity-show", SortOrder: &ordinal}); err != nil {
+				t.Fatal(err)
+			}
+			art := artwork.NewService(st, copyArtworkTools{}, t.TempDir())
+			service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), containerLookupBundle(server.URL), st)
+			service.SetEntities(st)
+			service.SetArtwork(urlFetcher{}, art)
+			service.SetMediaTitles(parserMediaTitles{store: st, parsers: map[string]scanpkg.FilenameParser{"demo": ordinalParser{}}})
+
+			assertContainers := func(step string) {
+				t.Helper()
+				for id, want := range map[store.EntityID]string{"entity-show": "Series overview.", "entity-season-1": tc.wantOverview} {
+					entity, err := st.Entity(ctx, id, metadataLibraryFilter)
+					if err != nil {
+						t.Fatal(err)
+					}
+					overview := ""
+					for _, field := range entity.Fields {
+						if field.Name == "overview" {
+							overview = field.Text
+						}
+					}
+					if overview != want {
+						t.Fatalf("%s: %s overview = %q, want %q", step, id, overview, want)
+					}
+				}
+				_, err := os.Stat(art.EntityPosterPath("entity-season-1"))
+				if hydrated := err == nil; hydrated != (tc.wantOverview != "") {
+					t.Fatalf("%s: season poster written = %t, want %t", step, hydrated, tc.wantOverview != "")
+				}
+			}
+
+			manual := store.MediaOrdinal{Sequence: "2", Index: 5}
+			if err := service.ApplyFixMatch(ctx, media.ID, "demo", "tv", "42", nil, &manual, "profile-default"); err != nil {
+				t.Fatal(err)
+			}
+			assertContainers("fix match")
+			if err := service.Refresh(ctx, media.ID); err != nil {
+				t.Fatal(err)
+			}
+			assertContainers("refresh")
+		})
+	}
+}
