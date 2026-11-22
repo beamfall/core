@@ -1442,7 +1442,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	if err := offlinePacks.SweepStaging(); err != nil {
 		logger.Warn("offline pack staging sweep failed", "error", err)
 	}
-	attestationVerifier, err := offlinePackAttestationVerifier(hooks.OfflinePackAttestationVerifier, logger)
+	attestationVerifier, err := offlinePackAttestationVerifier(hooks.OfflinePackAttestationVerifier, cfg.DataDir, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -4458,12 +4458,18 @@ const devEmulatorAttestationEnv = "BEAMFALL_DEV_ACCEPT_EMULATOR_ATTESTATION"
 // offlinePackAttestationVerifier returns the hook's verifier when one is set,
 // else Android Key Attestation against the Google roots (ADR-0208). Apple
 // Secure Enclave attestation is refused until CORE-1926.
-func offlinePackAttestationVerifier(hook offlinepack.DeviceKeyAttestationVerifier, logger *slog.Logger) (offlinepack.DeviceKeyAttestationVerifier, error) {
+// Google's revocation list is fetched on the first verification and cached
+// under the data directory.
+func offlinePackAttestationVerifier(hook offlinepack.DeviceKeyAttestationVerifier, dataDir string, logger *slog.Logger) (offlinepack.DeviceKeyAttestationVerifier, error) {
 	if hook != nil {
 		return hook, nil
 	}
+	status := &offlinepack.AttestationStatusSource{
+		CachePath: filepath.Join(dataDir, "attestation-status.json"),
+	}
 	return offlinepack.NewAndroidKeyAttestationVerifier(offlinepack.AndroidKeyAttestationOptions{
 		AllowSoftware: emulatorAttestationAllowed(capabilities.ReleaseVersion, logger),
+		Status:        status.Current,
 	})
 }
 

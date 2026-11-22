@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -24,17 +25,22 @@ import (
 // a Google Hardware Attestation root key, the leaf's KeyDescription says the
 // key lives in a TEE or StrongBox and was generated there (so it cannot be
 // exported), the challenge is the enrollment ID, and the leaf key is the
-// device key being registered. Revocation lists are not consulted: the server
-// may run offline.
+// device key being registered, generated for key agreement. Every
+// certificate is checked against Google's revocation status list; a server
+// that cannot fetch a fresh list for 30 days refuses rather than trust it.
 
 // keyDescriptionOID is the Android Key Attestation extension.
 var keyDescriptionOID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 1, 17}
 
 const (
-	attestationSecuritySoftware = 0
-	// attestationSecurityTEE and StrongBox (2) are hardware levels.
-	attestationSecurityTEE = 1
-	// authorizationTagOrigin is the KeyMint Tag::ORIGIN number; 0 is GENERATED.
+	attestationSecuritySoftware  = 0
+	attestationSecurityTEE       = 1
+	attestationSecurityStrongBox = 2
+	// authorizationTagPurpose is KeyMint Tag::PURPOSE; 6 is AGREE_KEY, the
+	// ECDH purpose an ADR-0208 device key needs to unwrap a pack.
+	authorizationTagPurpose = 1
+	keyPurposeAgreeKey      = 6
+	// authorizationTagOrigin is KeyMint Tag::ORIGIN; 0 is GENERATED.
 	authorizationTagOrigin = 702
 	keyOriginGenerated     = 0
 )
@@ -49,6 +55,9 @@ type AndroidKeyAttestationOptions struct {
 	// composition root enables it only on an explicit opt-in in a development
 	// build, never by default.
 	AllowSoftware bool
+	// Status returns Google's current revocation status list. It is
+	// required unless AllowSoftware is set; an error refuses verification.
+	Status func(context.Context) (*AttestationStatusList, error)
 	// Now is the verification clock; nil means time.Now.
 	Now func() time.Time
 	// roots replaces the Google roots in tests.
@@ -75,6 +84,9 @@ func NewAndroidKeyAttestationVerifier(opts AndroidKeyAttestationOptions) (*Andro
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	if opts.Status == nil && !opts.AllowSoftware {
+		return nil, errors.New("android key attestation needs a revocation status source")
+	}
 	return &AndroidKeyAttestationVerifier{opts: opts, roots: roots}, nil
 }
 
@@ -99,7 +111,7 @@ func parseAttestationRoots(data []byte) ([]*x509.Certificate, error) {
 }
 
 // VerifyDeviceKey implements DeviceKeyAttestationVerifier.
-func (v *AndroidKeyAttestationVerifier) VerifyDeviceKey(_ context.Context, enrollmentID string, publicKey, attestation []byte) error {
+func (v *AndroidKeyAttestationVerifier) VerifyDeviceKey(ctx context.Context, enrollmentID string, publicKey, attestation []byte) error {
 	if len(attestation) == 0 || attestation[0] != 0x30 {
 		// Not a DER chain. Apple Secure Enclave attestation is CORE-1926.
 		return errors.New("attestation is not an Android Key Attestation certificate chain")
@@ -111,7 +123,18 @@ func (v *AndroidKeyAttestationVerifier) VerifyDeviceKey(_ context.Context, enrol
 	if len(chain) < 2 {
 		return errors.New("attestation chain needs a leaf and an issuer")
 	}
+	// Only the leaf may carry a KeyDescription. An issuer carrying one is an
+	// app-generated attestation key, whose signature on the leaf proves
+	// nothing the hardware vouched for.
+	for i, cert := range chain[1:] {
+		if hasExtension(cert, keyDescriptionOID) {
+			return fmt.Errorf("attestation certificate %d is an attested key, not a hardware issuer", i+1)
+		}
+	}
 	if err := v.verifyChain(chain); err != nil {
+		return err
+	}
+	if err := v.checkRevocation(ctx, chain); err != nil {
 		return err
 	}
 	desc, err := leafKeyDescription(chain[0])
@@ -121,23 +144,76 @@ func (v *AndroidKeyAttestationVerifier) VerifyDeviceKey(_ context.Context, enrol
 	if !bytes.Equal(desc.AttestationChallenge, []byte(enrollmentID)) {
 		return errors.New("attestation challenge is not the enrollment ID")
 	}
-	if !v.opts.AllowSoftware {
-		if desc.AttestationSecurityLevel < attestationSecurityTEE || desc.KeymasterSecurityLevel < attestationSecurityTEE {
-			return errors.New("attested key is not in a TEE or StrongBox")
+	software := false
+	for _, level := range []asn1.Enumerated{desc.AttestationSecurityLevel, desc.KeymasterSecurityLevel} {
+		switch level {
+		case attestationSecurityTEE, attestationSecurityStrongBox:
+		case attestationSecuritySoftware:
+			if !v.opts.AllowSoftware {
+				return errors.New("attested key is not in a TEE or StrongBox")
+			}
+			software = true
+		default:
+			return fmt.Errorf("attestation security level %d is unknown", level)
 		}
 	}
-	enforced := desc.HardwareEnforced
-	if v.opts.AllowSoftware && desc.AttestationSecurityLevel == attestationSecuritySoftware {
-		enforced = desc.SoftwareEnforced
+	enforcedList := desc.HardwareEnforced
+	if software && desc.AttestationSecurityLevel == attestationSecuritySoftware {
+		enforcedList = desc.SoftwareEnforced
 	}
-	origin, ok, err := authorizationInt(enforced, authorizationTagOrigin)
+	if _, err := parseAuthorizationList(desc.SoftwareEnforced); err != nil {
+		return err
+	}
+	enforced, err := parseAuthorizationList(enforcedList)
+	if err != nil {
+		return err
+	}
+	origin, ok, err := enforced.integer(authorizationTagOrigin)
 	if err != nil {
 		return err
 	}
 	if !ok || origin != keyOriginGenerated {
 		return errors.New("attested key was not generated in the secure element")
 	}
+	agree, err := enforced.hasPurpose(keyPurposeAgreeKey)
+	if err != nil {
+		return err
+	}
+	if !agree {
+		return errors.New("attested key is not authorized for key agreement")
+	}
 	return leafKeyMatches(chain[0], publicKey)
+}
+
+// checkRevocation refuses a chain with any certificate on Google's status
+// list. The dev emulator opt-in tolerates an unavailable list, never a
+// listed certificate.
+func (v *AndroidKeyAttestationVerifier) checkRevocation(ctx context.Context, chain []*x509.Certificate) error {
+	if v.opts.Status == nil {
+		return nil // AllowSoftware only; enforced by the constructor.
+	}
+	list, err := v.opts.Status(ctx)
+	if err != nil {
+		if v.opts.AllowSoftware {
+			return nil
+		}
+		return err
+	}
+	for i, cert := range chain {
+		if status, listed := list.status(cert.SerialNumber); listed {
+			return fmt.Errorf("attestation certificate %d is %s", i, strings.ToLower(status))
+		}
+	}
+	return nil
+}
+
+func hasExtension(cert *x509.Certificate, oid asn1.ObjectIdentifier) bool {
+	for _, ext := range cert.Extensions {
+		if ext.Id.Equal(oid) {
+			return true
+		}
+	}
+	return false
 }
 
 // verifyChain checks each link and its validity window, and that the chain
@@ -170,6 +246,25 @@ func (v *AndroidKeyAttestationVerifier) verifyChain(chain []*x509.Certificate) e
 			return fmt.Errorf("attestation certificate %d does not verify: %w", i, err)
 		}
 	}
+	if !trusted {
+		return nil // dev emulator chain: links checked, no root to path-validate against.
+	}
+	// Full path validation enforces what single links cannot: path length
+	// constraints, name constraints and unhandled critical extensions.
+	pool := x509.NewCertPool()
+	for _, root := range v.roots {
+		pool.AddCert(root)
+	}
+	intermediates := x509.NewCertPool()
+	for _, cert := range chain[1:] {
+		intermediates.AddCert(cert)
+	}
+	if _, err := chain[0].Verify(x509.VerifyOptions{
+		Roots: pool, Intermediates: intermediates, CurrentTime: now,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+	}); err != nil {
+		return fmt.Errorf("attestation chain does not verify to a Google attestation root: %w", err)
+	}
 	return nil
 }
 
@@ -185,40 +280,89 @@ type keyDescription struct {
 }
 
 func leafKeyDescription(leaf *x509.Certificate) (keyDescription, error) {
+	var found []byte
 	for _, ext := range leaf.Extensions {
 		if !ext.Id.Equal(keyDescriptionOID) {
 			continue
 		}
-		var desc keyDescription
-		if _, err := asn1.Unmarshal(ext.Value, &desc); err != nil {
-			return keyDescription{}, fmt.Errorf("attestation KeyDescription is malformed: %w", err)
+		if found != nil {
+			return keyDescription{}, errors.New("attestation leaf has more than one KeyDescription")
 		}
-		return desc, nil
+		found = ext.Value
 	}
-	return keyDescription{}, errors.New("attestation leaf has no KeyDescription")
+	if found == nil {
+		return keyDescription{}, errors.New("attestation leaf has no KeyDescription")
+	}
+	var desc keyDescription
+	rest, err := asn1.Unmarshal(found, &desc)
+	if err != nil {
+		return keyDescription{}, fmt.Errorf("attestation KeyDescription is malformed: %w", err)
+	}
+	if len(rest) != 0 {
+		return keyDescription{}, errors.New("attestation KeyDescription has trailing data")
+	}
+	return desc, nil
 }
 
-// authorizationInt reads an INTEGER tag from an AuthorizationList, whose
-// entries are explicitly context-tagged by KeyMint tag number.
-func authorizationInt(list asn1.RawValue, tag int) (int, bool, error) {
-	rest := list.Bytes
+// authorizationList is a KeyMint AuthorizationList: a SEQUENCE of entries,
+// each explicitly context-tagged by its KeyMint tag number, at most once.
+type authorizationList map[int][]byte
+
+func parseAuthorizationList(raw asn1.RawValue) (authorizationList, error) {
+	if raw.Class != asn1.ClassUniversal || raw.Tag != asn1.TagSequence || !raw.IsCompound {
+		return nil, errors.New("attestation authorization list is not a SEQUENCE")
+	}
+	list := authorizationList{}
+	rest := raw.Bytes
 	for len(rest) > 0 {
 		var entry asn1.RawValue
 		var err error
 		rest, err = asn1.Unmarshal(rest, &entry)
 		if err != nil {
-			return 0, false, fmt.Errorf("attestation authorization list is malformed: %w", err)
+			return nil, fmt.Errorf("attestation authorization list is malformed: %w", err)
 		}
-		if entry.Class != asn1.ClassContextSpecific || entry.Tag != tag {
-			continue
+		if entry.Class != asn1.ClassContextSpecific || !entry.IsCompound {
+			return nil, errors.New("attestation authorization entry is not explicitly tagged")
 		}
-		var value int
-		if _, err := asn1.Unmarshal(entry.Bytes, &value); err != nil {
-			return 0, false, fmt.Errorf("attestation authorization %d is malformed: %w", tag, err)
+		if _, dup := list[entry.Tag]; dup {
+			return nil, fmt.Errorf("attestation authorization %d appears twice", entry.Tag)
 		}
-		return value, true, nil
+		list[entry.Tag] = entry.Bytes
 	}
-	return 0, false, nil
+	return list, nil
+}
+
+// integer reads an INTEGER-valued entry.
+func (l authorizationList) integer(tag int) (int, bool, error) {
+	body, ok := l[tag]
+	if !ok {
+		return 0, false, nil
+	}
+	var value int
+	rest, err := asn1.Unmarshal(body, &value)
+	if err != nil || len(rest) != 0 {
+		return 0, false, fmt.Errorf("attestation authorization %d is malformed", tag)
+	}
+	return value, true, nil
+}
+
+// hasPurpose reports whether the SET OF INTEGER purpose entry holds purpose.
+func (l authorizationList) hasPurpose(purpose int) (bool, error) {
+	body, ok := l[authorizationTagPurpose]
+	if !ok {
+		return false, nil
+	}
+	var purposes []int
+	rest, err := asn1.UnmarshalWithParams(body, &purposes, "set")
+	if err != nil || len(rest) != 0 {
+		return false, errors.New("attestation key purposes are malformed")
+	}
+	for _, p := range purposes {
+		if p == purpose {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func leafKeyMatches(leaf *x509.Certificate, publicKey []byte) error {

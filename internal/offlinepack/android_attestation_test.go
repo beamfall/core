@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/hex"
+	"errors"
 	"math/big"
 	"strings"
 	"testing"
@@ -27,11 +28,19 @@ type attestationFixture struct {
 
 func newAttestationFixture(t *testing.T) *attestationFixture {
 	t.Helper()
+	return newAttestationFixtureWith(t, false)
+}
+
+// newAttestationFixtureWith can give the root pathLenConstraint=0, which the
+// fixture's intermediate CA then violates.
+func newAttestationFixtureWith(t *testing.T, rootPathLenZero bool) *attestationFixture {
+	t.Helper()
 	f := &attestationFixture{rootKey: newTestKey(t), interKey: newTestKey(t), leafKey: newTestKey(t)}
 	f.root = signTestCert(t, &x509.Certificate{
 		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "test root"},
 		NotBefore: testNow.Add(-time.Hour), NotAfter: testNow.Add(time.Hour),
 		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+		MaxPathLenZero: rootPathLenZero,
 	}, nil, &f.rootKey.PublicKey, f.rootKey)
 	f.inter = signTestCert(t, &x509.Certificate{
 		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "test intermediate"},
@@ -47,11 +56,17 @@ type leafSpec struct {
 	keymasterLevel int
 	origin         int
 	noOrigin       bool
+	dupOrigin      int // when non-zero, a second origin entry with this value
+	purposes       []int
+	trailing       bool
 	notAfter       time.Time
 }
 
 func defaultLeaf() leafSpec {
-	return leafSpec{challenge: testEnrollmentID, attestLevel: 1, keymasterLevel: 1, notAfter: testNow.Add(time.Hour)}
+	return leafSpec{
+		challenge: testEnrollmentID, attestLevel: 1, keymasterLevel: 1,
+		purposes: []int{keyPurposeAgreeKey}, notAfter: testNow.Add(time.Hour),
+	}
 }
 
 // chain returns the DER chain leaf → intermediate → root.
@@ -71,8 +86,13 @@ func (f *attestationFixture) chain(t *testing.T, spec leafSpec) []byte {
 
 func (f *attestationFixture) verifier(t *testing.T, allowSoftware bool) *AndroidKeyAttestationVerifier {
 	t.Helper()
+	empty, err := ParseAttestationStatusList([]byte(`{"entries":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
 	v, err := NewAndroidKeyAttestationVerifier(AndroidKeyAttestationOptions{
 		AllowSoftware: allowSoftware, Now: func() time.Time { return testNow }, roots: []*x509.Certificate{f.root},
+		Status: func(context.Context) (*AttestationStatusList, error) { return empty, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -91,17 +111,26 @@ func (f *attestationFixture) devicePublicKey(t *testing.T) []byte {
 
 func keyDescriptionDER(t *testing.T, spec leafSpec) []byte {
 	t.Helper()
+	tagged := func(tag int, value any, params string) []byte {
+		body, err := asn1.MarshalWithParams(value, params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry, err := asn1.Marshal(asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: tag, IsCompound: true, Bytes: body})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return entry
+	}
 	var hw []byte
+	if spec.purposes != nil {
+		hw = append(hw, tagged(authorizationTagPurpose, spec.purposes, "set")...)
+	}
 	if !spec.noOrigin {
-		value, err := asn1.Marshal(spec.origin)
-		if err != nil {
-			t.Fatal(err)
-		}
-		entry, err := asn1.Marshal(asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: authorizationTagOrigin, IsCompound: true, Bytes: value})
-		if err != nil {
-			t.Fatal(err)
-		}
-		hw = entry
+		hw = append(hw, tagged(authorizationTagOrigin, spec.origin, "")...)
+	}
+	if spec.dupOrigin != 0 {
+		hw = append(hw, tagged(authorizationTagOrigin, spec.dupOrigin, "")...)
 	}
 	list := func(b []byte) asn1.RawValue {
 		return asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagSequence, IsCompound: true, Bytes: b}
@@ -118,6 +147,9 @@ func keyDescriptionDER(t *testing.T, spec leafSpec) []byte {
 	der, err := asn1.Marshal(desc)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if spec.trailing {
+		der = append(der, 0x05, 0x00)
 	}
 	return der
 }
@@ -172,6 +204,11 @@ func TestAndroidAttestationRefusals(t *testing.T) {
 		"software keymint": {spec: func(s *leafSpec) { s.keymasterLevel = 0 }, reason: "TEE or StrongBox"},
 		"wrong challenge":  {spec: func(s *leafSpec) { s.challenge = "device-2" }, reason: "challenge"},
 		"imported key":     {spec: func(s *leafSpec) { s.origin = 2 }, reason: "not generated"},
+		"duplicate origin": {spec: func(s *leafSpec) { s.dupOrigin = 2 }, reason: "appears twice"},
+		"unknown level":    {spec: func(s *leafSpec) { s.attestLevel, s.keymasterLevel = 3, 3 }, reason: "unknown"},
+		"signing key":      {spec: func(s *leafSpec) { s.purposes = []int{2, 3} }, reason: "key agreement"},
+		"no purpose":       {spec: func(s *leafSpec) { s.purposes = nil }, reason: "key agreement"},
+		"trailing data":    {spec: func(s *leafSpec) { s.trailing = true }, reason: "trailing"},
 		"no origin":        {spec: func(s *leafSpec) { s.noOrigin = true }, reason: "not generated"},
 		"wrong key":        {key: func([]byte) []byte { return other.devicePublicKey(t) }, reason: "not the device key"},
 		"expired leaf":     {now: testNow.Add(2 * time.Hour), reason: "validity"},
@@ -252,7 +289,79 @@ func TestEmbeddedGoogleAttestationRoots(t *testing.T) {
 			t.Fatalf("embedded root %s missing", prefix)
 		}
 	}
-	if _, err := NewAndroidKeyAttestationVerifier(AndroidKeyAttestationOptions{}); err != nil {
+	if _, err := NewAndroidKeyAttestationVerifier(AndroidKeyAttestationOptions{AllowSoftware: true}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAndroidAttestationRefusesAttestedIssuer(t *testing.T) {
+	// An app attestation key (itself attested) signs a leaf claiming another
+	// key and challenge: the issuer's KeyDescription must not be ignored.
+	f := newAttestationFixture(t)
+	attestKey := newTestKey(t)
+	issuer := signTestCert(t, &x509.Certificate{
+		SerialNumber: big.NewInt(4), Subject: pkix.Name{CommonName: "attest key"},
+		NotBefore: testNow.Add(-time.Hour), NotAfter: testNow.Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+		ExtraExtensions: []pkix.Extension{{Id: keyDescriptionOID, Value: keyDescriptionDER(t, defaultLeaf())}},
+	}, f.inter, &attestKey.PublicKey, f.interKey)
+	leaf := signTestCert(t, &x509.Certificate{
+		SerialNumber: big.NewInt(5), Subject: pkix.Name{CommonName: "Android Keystore Key"},
+		NotBefore: testNow.Add(-time.Hour), NotAfter: testNow.Add(time.Hour),
+		ExtraExtensions: []pkix.Extension{{Id: keyDescriptionOID, Value: keyDescriptionDER(t, defaultLeaf())}},
+	}, issuer, &f.leafKey.PublicKey, attestKey)
+	var chain []byte
+	for _, cert := range []*x509.Certificate{leaf, issuer, f.inter, f.root} {
+		chain = append(chain, cert.Raw...)
+	}
+	err := f.verifier(t, false).VerifyDeviceKey(context.Background(), testEnrollmentID, f.devicePublicKey(t), chain)
+	if err == nil || !strings.Contains(err.Error(), "attested key, not a hardware issuer") {
+		t.Fatalf("err = %v, want attested-issuer refusal", err)
+	}
+}
+
+func TestAndroidAttestationEnforcesPathLength(t *testing.T) {
+	f := newAttestationFixtureWith(t, true)
+	err := f.verifier(t, false).VerifyDeviceKey(context.Background(), testEnrollmentID, f.devicePublicKey(t), f.chain(t, defaultLeaf()))
+	if err == nil || !strings.Contains(err.Error(), "does not verify to a Google attestation root") {
+		t.Fatalf("err = %v, want path validation refusal", err)
+	}
+}
+
+func TestAndroidAttestationRevocation(t *testing.T) {
+	f := newAttestationFixture(t)
+	chain := f.chain(t, defaultLeaf())
+	revoked, err := ParseAttestationStatusList([]byte(`{"entries":{"2":{"status":"REVOKED","reason":"KEY_COMPROMISE"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		dev    bool
+		status func(context.Context) (*AttestationStatusList, error)
+		reason string
+	}{
+		"revoked intermediate": {status: func(context.Context) (*AttestationStatusList, error) { return revoked, nil }, reason: "revoked"},
+		"revoked in dev mode":  {dev: true, status: func(context.Context) (*AttestationStatusList, error) { return revoked, nil }, reason: "revoked"},
+		"status unavailable": {status: func(context.Context) (*AttestationStatusList, error) {
+			return nil, errors.New("attestation revocation status is unavailable")
+		}, reason: "unavailable"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := f.verifier(t, tc.dev)
+			v.opts.Status = tc.status
+			err := v.VerifyDeviceKey(context.Background(), testEnrollmentID, f.devicePublicKey(t), chain)
+			if err == nil || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("err = %v, want refusal mentioning %q", err, tc.reason)
+			}
+		})
+	}
+	// The dev opt-in tolerates an unreachable list, never a listed certificate.
+	v := f.verifier(t, true)
+	v.opts.Status = func(context.Context) (*AttestationStatusList, error) { return nil, errors.New("offline") }
+	if err := v.VerifyDeviceKey(context.Background(), testEnrollmentID, f.devicePublicKey(t), chain); err != nil {
+		t.Fatalf("dev mode refused on an unavailable status list: %v", err)
+	}
+	if _, err := NewAndroidKeyAttestationVerifier(AndroidKeyAttestationOptions{}); err == nil {
+		t.Fatal("production verifier built without a revocation status source")
 	}
 }
