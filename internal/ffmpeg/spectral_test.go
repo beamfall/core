@@ -44,13 +44,12 @@ func meanHamming(a, b []uint32) float64 {
 
 func TestSpectralHashesFrameCount(t *testing.T) {
 	pcm := melodyPCM(1, 3, 0.8)
-	samples := len(pcm) / 2
-	want := (samples-spectralFrameSamples)/spectralHopSamples + 1
-	if got := len(spectralHashes(pcm)); got != want {
+	// Three seconds give 24 frames: the final second is fully covered.
+	if got, want := len(spectralHashes(pcm)), int(3/SpectralFrameSeconds); got != want {
 		t.Fatalf("frames = %d, want %d", got, want)
 	}
-	if got := spectralHashes(pcm[:2*(spectralFrameSamples-1)]); got != nil {
-		t.Fatalf("short input hashed to %d frames, want none", len(got))
+	if got := spectralHashes(pcm[:2*(spectralHopSamples-1)]); got != nil {
+		t.Fatalf("sub-hop input hashed to %d frames, want none", len(got))
 	}
 }
 
@@ -105,25 +104,28 @@ func TestSpectralFFTMatchesDFT(t *testing.T) {
 	}
 }
 
-func TestWithTailSeekFallsBackToAbsoluteSeek(t *testing.T) {
+func TestWithTailSeekPrefersCatalogDuration(t *testing.T) {
 	var seeks [][]string
-	out, err := withTailSeek(240, 1000, func(seek []string) (int, error) {
+	record := func(seek []string) (int, error) {
 		seeks = append(seeks, seek)
-		if seek[0] == "-sseof" {
-			return 0, errors.New("Unrecognized option 'sseof'")
-		}
 		return 42, nil
-	})
-	if err != nil || out != 42 {
+	}
+	if out, err := withTailSeek(240, 1000, record); err != nil || out != 42 {
 		t.Fatalf("withTailSeek = %d, %v", out, err)
 	}
-	want := [][]string{{"-sseof", "-240.000"}, {"-ss", "760.000"}}
+	if _, err := withTailSeek(240, 100, record); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := withTailSeek(240, 0, record); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"-ss", "760.000"}, {"-ss", "0.000"}, {"-sseof", "-240.000"}}
 	if !reflect.DeepEqual(seeks, want) {
 		t.Fatalf("seeks = %q, want %q", seeks, want)
 	}
 	if _, err := withTailSeek(240, 1000, func([]string) (int, error) {
 		return 0, errors.New("Invalid data found when processing input")
 	}); err == nil {
-		t.Fatal("unrelated failure did not propagate")
+		t.Fatal("failure did not propagate")
 	}
 }

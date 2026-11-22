@@ -34,12 +34,12 @@ func (d *spectralDetector) SpectralFingerprintTail(_ context.Context, path strin
 	return append([]uint32(nil), frames...), nil
 }
 
-// noise returns seconds of unrelated, non-silent sub-fingerprints.
+// noise returns seconds of unrelated, detailed sub-fingerprints.
 func noise(seed uint64, seconds float64) []uint32 {
 	rng := rand.New(rand.NewPCG(seed, ^seed)) // #nosec G404 -- deterministic test signature
 	frames := make([]uint32, int(seconds*float64(spectralFramesPerWindow)))
 	for i := range frames {
-		for frames[i] == ffmpeg.SpectralSilentFrame {
+		for !spectralFrameDetailed(frames[i]) {
 			frames[i] = rng.Uint32()
 		}
 	}
@@ -51,10 +51,14 @@ func jitter(seed uint64, frames []uint32) []uint32 {
 	rng := rand.New(rand.NewPCG(seed, seed+1)) // #nosec G404 -- deterministic test signature
 	out := append([]uint32(nil), frames...)
 	for i := range out {
-		for range rng.IntN(3) {
+		flips := rng.IntN(3)
+		if !spectralFrameDetailed(frames[i]) {
+			continue // a re-encode keeps a lone tone's hash
+		}
+		for range flips {
 			out[i] ^= 1 << rng.IntN(32)
 		}
-		if out[i] == ffmpeg.SpectralSilentFrame {
+		if !spectralFrameDetailed(out[i]) {
 			out[i] = frames[i]
 		}
 	}
@@ -213,5 +217,102 @@ func TestSpectralSharedRunConfidence(t *testing.T) {
 	}
 	if run.windows >= run.compared {
 		t.Fatalf("compared = %d does not exceed the run", run.compared)
+	}
+}
+
+// constFrames returns seconds of one sub-fingerprint.
+func constFrames(hash uint32, seconds float64) []uint32 {
+	frames := make([]uint32, int(seconds*float64(spectralFramesPerWindow)))
+	for i := range frames {
+		frames[i] = hash
+	}
+	return frames
+}
+
+// CORE-3111 review: silence inside an otherwise identical pair breaks the
+// match into runs shorter than the overlap, but the pair never diverges, so it
+// is the same file and yields no intro.
+func TestSpectralIdenticalBrokenBySilenceYieldNoIntro(t *testing.T) {
+	frames := join(noise(1, 40), constFrames(ffmpeg.SpectralSilentFrame, 2), noise(2, 138))
+	limits := runLimits{maxWindows: maxIntroWindows, durationSeconds: 1800}
+	if run := spectralSharedRun(frames, jitter(3, frames), limits); run.windows != 0 {
+		t.Fatalf("identical pair matched %+v", run)
+	}
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Silence 1", 1800, join(frames, noise(4, 1620))},
+		spectralSibling{"Silence 2", 1800, join(jitter(5, frames), noise(6, 1620))},
+	)
+	wantNoSegment(t, markers, "intro")
+}
+
+// CORE-3111 review: a pure tone sets about one bit, so two different tones sit
+// a few bits apart. Different low-detail frames count as unrelated.
+func TestSpectralLowDetailFramesDoNotMatch(t *testing.T) {
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Tone 1", 1800, join(constFrames(0x100, 30), noise(1, 1770))},
+		spectralSibling{"Tone 2", 1800, join(constFrames(0x200, 30), noise(2, 1770))},
+	)
+	wantNoSegment(t, markers, "intro")
+	for _, hash := range []uint32{0, 0x100, 0x7, ^uint32(0x7)} {
+		if spectralFrameDetailed(hash) {
+			t.Errorf("hash %#x counted as detailed", hash)
+		}
+	}
+	if !spectralFrameDetailed(0xF0F0) {
+		t.Error("hash 0xF0F0 not detailed")
+	}
+}
+
+// CORE-3111 review: an intro must end in the first half and credits start in
+// the second, so the two can never overlap.
+func TestSpectralIntroAndCreditsCannotOverlap(t *testing.T) {
+	intro := runLimits{maxWindows: maxIntroWindows, durationSeconds: 100}
+	if (sharedRun{startWindow: 30, windows: 40, compared: 100}).plausible(intro) {
+		t.Error("intro [30,70) on a 100 s file accepted")
+	}
+	if !(sharedRun{startWindow: 10, windows: 40, compared: 100}).plausible(intro) {
+		t.Error("intro [10,50) on a 100 s file rejected")
+	}
+	credits := runLimits{durationSeconds: 100, closing: true}
+	if (sharedRun{startWindow: 45, windows: 30, compared: 100}).plausible(credits) {
+		t.Error("credits [45,75) on a 100 s file accepted")
+	}
+	if !(sharedRun{startWindow: 55, windows: 30, compared: 100}).plausible(credits) {
+		t.Error("credits [55,85) on a 100 s file rejected")
+	}
+}
+
+// CORE-3111 review: a longer loose run must not hide a shorter trusted one.
+func TestSpectralTrustedRunBeatsLongerLooseRun(t *testing.T) {
+	loose := sharedRun{windows: 21, compared: 100, avgDiff: 5, diffScale: spectralChanceBits}
+	tight := sharedRun{windows: 20, compared: 100, avgDiff: 0, diffScale: spectralChanceBits}
+	if loose.trusted() || !tight.trusted() {
+		t.Fatalf("trusted: loose %v (%.2f), tight %v (%.2f)", loose.trusted(), loose.confidence(), tight.trusted(), tight.confidence())
+	}
+	if !tight.beats(loose) || loose.beats(tight) {
+		t.Fatal("loose 21-window run beat the trusted 20-window run")
+	}
+	longer := sharedRun{windows: 25, compared: 100, avgDiff: 0.5, diffScale: spectralChanceBits}
+	if !longer.beats(tight) {
+		t.Fatal("longer trusted run did not win")
+	}
+}
+
+// A shared intro made of tones still matches: identical low-detail frames
+// agree, as long as each window holds enough detailed frames.
+func TestSpectralSharedTonesMatchExactly(t *testing.T) {
+	theme := noise(7, 25)
+	for i := range theme {
+		if i%8 >= 2 {
+			theme[i] = 1 << (i % 5)
+		}
+	}
+	markers := detectSpectral(t, 0,
+		spectralSibling{"Tones 1", 1800, join(noise(1, 6), theme, noise(2, 1769))},
+		spectralSibling{"Tones 2", 1800, join(noise(3, 6), jitter(4, theme), noise(5, 1769))},
+	)
+	wantSegment(t, markers, "intro", 6, 31)
+	if _, ok := spectralWindowDistance(constFrames(0x100, 1), constFrames(0x100, 1)); ok {
+		t.Error("a window with no detailed frames compared")
 	}
 }

@@ -37,10 +37,10 @@ const (
 	spectralBytesPerSecond = fingerprintSampleRate * 2
 )
 
-// SpectralSilentFrame is the hash of a silent frame. Real audio never hashes to
-// zero (that needs every band quieter than the one above it across the whole
-// 250-3500 Hz range), so callers treat it as matching nothing: two files that
-// are both silent at the same moment share no audio.
+// SpectralSilentFrame is the hash of a silent frame. Callers treat it as
+// matching nothing: two files that are both silent at the same moment share no
+// audio. Audible audio can also hash to zero (a lone tone in the top band sets
+// no bit), so callers trust only frames with enough bits set and unset.
 const SpectralSilentFrame uint32 = 0
 
 // SpectralFingerprint returns one 32-bit spectral sub-fingerprint per
@@ -56,7 +56,7 @@ func (r *Runner) SpectralFingerprint(ctx context.Context, src string, seconds in
 }
 
 // SpectralFingerprintTail returns the same signature as SpectralFingerprint
-// over the final seconds of src, aligned to EOF like AudioFingerprintTail.
+// over the final seconds of src, ending at EOF like AudioFingerprintTail.
 //
 //io:ignore ffmpeg-spectral-fingerprint-tail — seek wrapper over the spectralFingerprint I/O journey.
 func (r *Runner) SpectralFingerprintTail(ctx context.Context, src string, seconds, durationSeconds int) ([]uint32, error) {
@@ -86,6 +86,10 @@ func (r *Runner) spectralFingerprint(ctx context.Context, src string, seconds in
 		"-protocol_whitelist", productionProtocolAllowlist,
 		"-i", src,
 		"-map", "0:a:0",
+		// Raw PCM carries no timestamps: pad any delay before the stream's
+		// first sample (and any gap inside it) with silence, so sample 0 is
+		// the seek point on the media timeline, not the first decoded sample.
+		"-af", "aresample=async=1:first_pts=0",
 		"-ac", "1",
 		"-ar", strconv.Itoa(fingerprintSampleRate),
 		"-c:a", "pcm_s16le",
@@ -105,31 +109,38 @@ func (r *Runner) spectralFingerprint(ctx context.Context, src string, seconds in
 }
 
 // withTailSeek runs analyse with an input seek to the final tailSeconds of the
-// file. FFmpeg builds without -sseof retry with an absolute seek derived from
-// the catalog duration.
+// file. A known catalog duration gives an absolute -ss: FFmpeg silently
+// ignores -sseof on an input with no container duration (a live-written
+// Matroska) and decodes from the start, which would pass the opening off as the
+// tail. Without a duration it seeks with -sseof.
 func withTailSeek[T any](tailSeconds float64, durationSeconds int, analyse func(seek []string) (T, error)) (T, error) {
-	out, err := analyse([]string{"-sseof", "-" + strconv.FormatFloat(tailSeconds, 'f', 3, 64)})
-	if err == nil || errors.Is(err, errGroupSurvived) || !sseofUnavailable(err.Error()) {
-		return out, err
+	if durationSeconds > 0 {
+		start := math.Max(0, float64(durationSeconds)-tailSeconds)
+		return analyse([]string{"-ss", strconv.FormatFloat(start, 'f', 3, 64)})
 	}
-	start := math.Max(0, float64(durationSeconds)-tailSeconds)
-	return analyse([]string{"-ss", strconv.FormatFloat(start, 'f', 3, 64)})
+	return analyse([]string{"-sseof", "-" + strconv.FormatFloat(tailSeconds, 'f', 3, 64)})
 }
 
 // spectralHashes hashes mono s16le PCM at fingerprintSampleRate into one
-// sub-fingerprint per spectralHopSamples. A trailing partial frame is dropped.
+// sub-fingerprint per whole spectralHopSamples hop. Each frame is centred on its
+// hop, with zero padding past both ends, so N seconds give exactly
+// N/SpectralFrameSeconds frames and frame k describes [k, k+1) hops: the final
+// second of a region is as matchable as the first.
 func spectralHashes(pcm []byte) []uint32 {
-	samples := make([]float64, len(pcm)/2)
-	for i := range samples {
-		samples[i] = float64(int16(binary.LittleEndian.Uint16(pcm[2*i:]))) / 32768 // #nosec G115 -- s16le: reinterpreting the bits as signed is the decode
-	}
-	if len(samples) < spectralFrameSamples {
+	const pad = (spectralFrameSamples - spectralHopSamples) / 2
+	count := len(pcm) / 2 / spectralHopSamples
+	if count == 0 {
 		return nil
 	}
+	samples := make([]float64, pad+len(pcm)/2+spectralFrameSamples)
+	for i := range len(pcm) / 2 {
+		samples[pad+i] = float64(int16(binary.LittleEndian.Uint16(pcm[2*i:]))) / 32768 // #nosec G115 -- s16le: reinterpreting the bits as signed is the decode
+	}
 	h := newSpectralHasher()
-	hashes := make([]uint32, 0, (len(samples)-spectralFrameSamples)/spectralHopSamples+1)
-	for off := 0; off+spectralFrameSamples <= len(samples); off += spectralHopSamples {
-		hashes = append(hashes, h.hash(samples[off:off+spectralFrameSamples]))
+	hashes := make([]uint32, count)
+	for k := range hashes {
+		off := k * spectralHopSamples
+		hashes[k] = h.hash(samples[off : off+spectralFrameSamples])
 	}
 	return hashes
 }

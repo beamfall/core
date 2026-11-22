@@ -128,6 +128,16 @@ const (
 	// (half of 32 bits). A spectral run's confidence measures its distance below
 	// chance, so a run near the match limit scores below the auto-apply bar.
 	spectralChanceBits = 16
+	// spectralDetailBits is the fewest set (and unset) bits a sub-fingerprint
+	// needs to describe a sound. A pure tone sets about one bit and a smooth
+	// broadband slope sets nearly all of them, so two different tones, or two
+	// different noises, sit a few bits apart. Such frames match only when
+	// identical; any difference counts as chance distance.
+	spectralDetailBits = 4
+	// spectralMinDetailedFrames is the fewest detailed frames a window needs on
+	// both sides to compare at all, so a window of identical hum or a held tone
+	// alone is not evidence of shared audio.
+	spectralMinDetailedFrames = 2
 )
 
 // Detector is skipdetect's slice of the FFmpeg seam (interface at the consumer,
@@ -424,7 +434,7 @@ func bestSiblingRuns[T any](ctx context.Context, st *store.Store, media store.Me
 		if err != nil {
 			continue
 		}
-		if run := sigs.leading(headSelf, headSib, limits.intro); run.windows > intro.windows && run.plausible(limits.intro) {
+		if run := sigs.leading(headSelf, headSib, limits.intro); run.plausible(limits.intro) && run.beats(intro) {
 			intro = run
 		}
 		sibling, err := st.Media(ctx, siblingID, serverFilter)
@@ -435,7 +445,7 @@ func bestSiblingRuns[T any](ctx context.Context, st *store.Store, media store.Me
 		if err != nil {
 			continue
 		}
-		if run := sigs.trailing(tailSelf, tailSib, limits.credits); run.windows > credits.windows && run.plausible(limits.credits) {
+		if run := sigs.trailing(tailSelf, tailSib, limits.credits); run.plausible(limits.credits) && run.beats(credits) {
 			credits = run
 		}
 	}
@@ -687,10 +697,10 @@ type runLimits struct {
 	// offsetSeconds maps analysed window 0 to this Media's timeline.
 	offsetSeconds float64
 	// closing marks the credits search: its run must start in the second half
-	// of the runtime, and an intro run in the first. Head and tail regions
-	// overlap on a short file, and a spectral run is not anchored to window 0
-	// or EOF, so without this the longer of the two shared segments would be
-	// claimed by both searches.
+	// of the runtime, and an intro run must end in the first. Head and tail
+	// regions overlap on a short file, and a spectral run is not anchored to
+	// window 0 or EOF, so without this one shared segment could be claimed by
+	// both searches, or an intro and credits from different siblings overlap.
 	closing bool
 }
 
@@ -717,7 +727,32 @@ func (run sharedRun) plausible(limits runLimits) bool {
 		return false
 	}
 	start := limits.offsetSeconds + float64(run.startWindow)*ffmpeg.FingerprintWindowSeconds
-	return (start >= runtime/2) == limits.closing
+	if limits.closing {
+		return start >= runtime/2
+	}
+	return start+seconds <= runtime/2
+}
+
+// beats reports whether run should replace best as the chosen candidate. A run
+// that clears the auto-apply bar beats one that does not, so a longer loose run
+// never hides a shorter trusted one; then the longer run wins, then the
+// tighter.
+func (run sharedRun) beats(best sharedRun) bool {
+	if run.windows == 0 {
+		return false
+	}
+	if trusted := run.trusted(); trusted != best.trusted() {
+		return trusted
+	}
+	if run.windows != best.windows {
+		return run.windows > best.windows
+	}
+	return run.avgDiff < best.avgDiff
+}
+
+// trusted reports whether run would become a segment (see segment).
+func (run sharedRun) trusted() bool {
+	return run.windows >= minSharedWindows && run.confidence() >= fingerprintAutoApplyThreshold
 }
 
 type segment struct {
@@ -830,20 +865,22 @@ func sharedTrailingRun(self, sibling []float64) sharedRun {
 	return sharedRun{startWindow: len(self) - matched, windows: matched, compared: n, avgDiff: sumDiff / float64(matched)}
 }
 
-// spectralSharedRun finds the longest plausible run of matching windows that
-// self and sibling share at any relative offset. Windows are
-// spectralFramesPerWindow frames aligned to self's frame 0, so startWindow is a
-// window of self's analysed region; the sibling side may sit at any frame. A
-// window matches when its frames' mean Hamming distance is at most
-// spectralWindowMatchBits and neither side is silent there. compared is the
-// number of windows the two signatures overlap at the run's offset, so a run
-// covering the whole overlap stays implausible. Only maximal runs are judged
-// against limits, so a run too long to be a segment is never cut down to one.
-// Ties keep the tighter run.
+// spectralSharedRun finds the best plausible run of matching windows that self
+// and sibling share at any relative offset. Windows are spectralFramesPerWindow
+// frames aligned to self's frame 0, so startWindow is a window of self's
+// analysed region; the sibling side may sit at any frame. A window matches when
+// its frames' mean distance (spectralWindowDistance) is at most
+// spectralWindowMatchBits; it diverges when the distance is larger. An offset where no window diverges yields nothing:
+// the two signatures never differ there, so they are the same file (or the same
+// stretch of it) broken only by silence, not a segment with a known end.
+// compared is the number of windows the two signatures overlap at the run's
+// offset. Only maximal runs are judged against limits, so a run too long to be
+// a segment is never cut down to one; among those, beats picks.
 func spectralSharedRun(self, sibling []uint32, limits runLimits) sharedRun {
 	const fpw = spectralFramesPerWindow
 	windows := len(self) / fpw
 	var best sharedRun
+	var runs []sharedRun
 	// Self frame i pairs with sibling frame i-shift.
 	for shift := -(len(sibling) - fpw); shift <= len(self)-fpw; shift++ {
 		first := max(0, ceilDiv(shift, fpw))
@@ -851,47 +888,73 @@ func spectralSharedRun(self, sibling []uint32, limits runLimits) sharedRun {
 		if last-first < minSharedWindows {
 			continue
 		}
+		runs = runs[:0]
+		diverged := false
 		runStart, diffBits := first, 0
 		for w := first; w <= last; w++ {
 			d, ok := 0, false
 			if w < last {
 				d, ok = spectralWindowDistance(self[w*fpw:(w+1)*fpw], sibling[w*fpw-shift:(w+1)*fpw-shift])
-				ok = ok && d <= spectralWindowMatchBits*fpw
+				if ok && d > spectralWindowMatchBits*fpw {
+					ok, diverged = false, true
+				}
 			}
 			if ok {
 				diffBits += d
 				continue
 			}
 			if run := w - runStart; run >= minSharedWindows {
-				cand := sharedRun{
+				runs = append(runs, sharedRun{
 					startWindow: runStart,
 					windows:     run,
 					compared:    last - first,
 					avgDiff:     float64(diffBits) / float64(run*fpw),
 					diffScale:   spectralChanceBits,
-				}
-				if (run > best.windows || (run == best.windows && cand.avgDiff < best.avgDiff)) && cand.plausible(limits) {
-					best = cand
-				}
+				})
 			}
 			runStart, diffBits = w+1, 0
+		}
+		if !diverged {
+			continue
+		}
+		for _, cand := range runs {
+			if cand.plausible(limits) && cand.beats(best) {
+				best = cand
+			}
 		}
 	}
 	return best
 }
 
-// spectralWindowDistance sums the Hamming distance over one window's frames.
-// ok is false when either side holds a silent frame: shared silence is not
-// shared audio.
+// spectralWindowDistance sums the distance over one window's frames. Detailed
+// frame pairs add their Hamming distance. A pair with a low-detail frame adds
+// nothing when the hashes are identical and spectralChanceBits otherwise: two
+// tones a few bits apart are different sounds, not a near match. ok is false
+// when either side holds a silent frame (shared silence is not shared audio)
+// or the window has fewer than spectralMinDetailedFrames detailed pairs.
 func spectralWindowDistance(a, b []uint32) (int, bool) {
-	var total int
+	var total, detailed int
 	for i := range a {
 		if a[i] == ffmpeg.SpectralSilentFrame || b[i] == ffmpeg.SpectralSilentFrame {
 			return 0, false
 		}
-		total += bits.OnesCount32(a[i] ^ b[i])
+		switch {
+		case spectralFrameDetailed(a[i]) && spectralFrameDetailed(b[i]):
+			detailed++
+			total += bits.OnesCount32(a[i] ^ b[i])
+		case a[i] != b[i]:
+			total += spectralChanceBits
+		}
 	}
-	return total, true
+	return total, detailed >= spectralMinDetailedFrames
+}
+
+// spectralFrameDetailed reports whether a sub-fingerprint describes a sound
+// well enough to match: not silent, and with at least spectralDetailBits bits
+// both set and unset. The silent hash has no bits set, so it fails too.
+func spectralFrameDetailed(hash uint32) bool {
+	set := bits.OnesCount32(hash)
+	return set >= spectralDetailBits && 32-set >= spectralDetailBits
 }
 
 func floorDiv(a, b int) int {
