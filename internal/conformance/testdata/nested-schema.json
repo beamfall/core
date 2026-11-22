@@ -8284,6 +8284,71 @@
     ]
   },
   {
+    "field": "fixmatchchildren",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "candidateID",
+        "kind": "string"
+      },
+      {
+        "name": "level",
+        "kind": "int"
+      },
+      {
+        "name": "mediaID",
+        "kind": "string"
+      },
+      {
+        "name": "parentKey",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "pluginID",
+        "kind": "string"
+      },
+      {
+        "name": "scraperID",
+        "kind": "string"
+      }
+    ],
+    "children": [
+      {
+        "name": "artworkURL",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      },
+      {
+        "name": "index",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      },
+      {
+        "name": "key",
+        "kind": "scalar"
+      },
+      {
+        "name": "label",
+        "kind": "scalar"
+      },
+      {
+        "name": "sequence",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      },
+      {
+        "name": "year",
+        "kind": "scalar",
+        "optional": true,
+        "nullable": true
+      }
+    ]
+  },
+  {
     "field": "fixmatchcurrent",
     "kind": "object",
     "children": [
@@ -8380,6 +8445,13 @@
       {
         "name": "acceptsPastedID",
         "kind": "scalar"
+      },
+      {
+        "name": "childLevels",
+        "kind": "list",
+        "elem": {
+          "kind": "scalar"
+        }
       },
       {
         "name": "isDefault",

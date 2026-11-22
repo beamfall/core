@@ -365,6 +365,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "scraperID", Kind: "string"},
 		{Name: "year", Kind: "number", Optional: true},
 	},
+	"fixmatchchildren":     fieldArguments["fixmatchchildren"],
 	"fixmatchcurrent":      {{Name: "mediaID", Kind: "string"}},
 	"fixmatchlockedfields": {{Name: "mediaID", Kind: "string"}},
 	"fixmatchpreview":      fieldArguments["fixmatchpreview"],

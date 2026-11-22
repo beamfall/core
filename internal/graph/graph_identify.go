@@ -15,6 +15,7 @@ import (
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/plugin"
+	"github.com/beamfall/core/internal/scrape"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -247,12 +248,13 @@ func (h *Handler) clearMediaOrdinal(ctx context.Context, scope auth.Scope, req r
 
 // FixMatchSourceInfo describes a searchable scraper available to this Media.
 type FixMatchSourceInfo struct {
-	PluginID         string `json:"pluginID"`
-	ScraperID        string `json:"scraperID"`
-	Label            string `json:"label"`
-	SupportsChildren bool   `json:"supportsChildren"`
-	AcceptsPastedID  bool   `json:"acceptsPastedID"`
-	IsDefault        bool   `json:"isDefault"`
+	PluginID         string   `json:"pluginID"`
+	ScraperID        string   `json:"scraperID"`
+	Label            string   `json:"label"`
+	SupportsChildren bool     `json:"supportsChildren"`
+	ChildLevels      []string `json:"childLevels" graphshape:"nonnull"`
+	AcceptsPastedID  bool     `json:"acceptsPastedID"`
+	IsDefault        bool     `json:"isDefault"`
 }
 
 func (h *Handler) fixMatchSources(ctx context.Context, scope auth.Scope, req request) ([]FixMatchSourceInfo, error) {
@@ -284,11 +286,16 @@ func (h *Handler) fixMatchSources(ctx context.Context, scope auth.Scope, req req
 		if label == "" {
 			label = scraper.ID
 		}
+		levels := make([]string, len(scraper.Children))
+		for i, listing := range scraper.Children {
+			levels[i] = listing.Level
+		}
 		source := FixMatchSourceInfo{
 			PluginID:         pluginID,
 			ScraperID:        scraper.ID,
 			Label:            label,
-			SupportsChildren: false, // CORE-3127 adds ScraperSpec.Children.
+			SupportsChildren: len(levels) > 0,
+			ChildLevels:      levels,
 			AcceptsPastedID:  scraper.LookupTemplate != "" || len(scraper.LookupByIDTemplate) != 0,
 		}
 		if current.PluginID == pluginID && current.ScraperID == scraper.ID {
@@ -435,6 +442,57 @@ func (h *Handler) fixMatchCandidates(ctx context.Context, scope auth.Scope, req 
 		return nil, err
 	}
 	return h.scoreFixMatchCandidates(pluginID, scraperID, parsed, candidates), nil
+}
+
+func (h *Handler) fixMatchChildren(ctx context.Context, scope auth.Scope, req request) ([]scrape.ChildRow, error) {
+	if _, err := h.fixMatchMedia(ctx, scope, store.MediaID(trimmedVariable(req, "mediaID"))); err != nil {
+		return nil, err
+	}
+	v := newVars(req)
+	candidateID, _ := v.String("candidateID")
+	parent, hasParent := v.String("parentKey")
+	if err := v.Err(); err != nil {
+		return nil, err
+	}
+	level, err := optionalInt(req, "level")
+	if err != nil {
+		return nil, err
+	}
+	var parentKey *string
+	if hasParent {
+		parentKey = &parent
+	}
+	var levelNumber int
+	if level != nil {
+		levelNumber = *level
+	}
+	rows, err := h.identify.ListChildren(ctx, trimmedVariable(req, "pluginID"), trimmedVariable(req, "scraperID"), candidateID, levelNumber, parentKey)
+	return rows, fixMatchChildError(err)
+}
+
+func fixMatchChildError(err error) error {
+	var key l10n.Key
+	switch err {
+	case scrape.ErrNoChildListing:
+		key = l10n.FixMatchNoChildListing
+	case scrape.ErrNoSuchChildLevel:
+		key = l10n.FixMatchNoChildLevel
+	case scrape.ErrChildCandidate:
+		key = l10n.FixMatchInvalidCandidate
+	case scrape.ErrChildParentExtra:
+		key = l10n.FixMatchExtraParent
+	case scrape.ErrChildParentMissing:
+		key = l10n.FixMatchMissingParent
+	case scrape.ErrChildParentKey:
+		key = l10n.FixMatchInvalidParent
+	case scrape.ErrChildParentRow:
+		key = l10n.FixMatchUnknownParent
+	case scrape.ErrChildOrdinal:
+		key = l10n.FixMatchInvalidParentOrdinal
+	default:
+		return err
+	}
+	return &l10n.Error{Key: key, Err: clientError(err.Error())}
 }
 
 // scoreFixMatchCandidates scores every candidate against the operator's query

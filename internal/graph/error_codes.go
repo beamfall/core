@@ -156,6 +156,11 @@ func errorCode(err error) ErrorCode {
 // clientErrorCodes pins the client error messages no rule below classifies,
 // or that a rule would classify wrongly. A message here wins over every rule.
 var clientErrorCodes = map[string]ErrorCode{
+	"scraper declares no child listing":                ErrorCodeInvalid,
+	"no such level":                                    ErrorCodeInvalid,
+	"parentKey is forbidden at level 1":                ErrorCodeInvalid,
+	"parentKey was not returned by the previous level": ErrorCodeInvalid,
+	"parent row has no valid ordinal for this level":   ErrorCodeInvalid,
 	// §6 denial-of-existence: content the caller cannot see answers exactly
 	// as content that does not exist.
 	"cannot host a party for content you cannot see":                   ErrorCodeNotFound,
