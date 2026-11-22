@@ -211,7 +211,8 @@ func releaseLocalFieldsTx(ctx context.Context, tx *sql.Tx, id MediaID) error {
 // inserts the given rows as local. A row a released sidecar left behind is
 // taken back as local; a row that exists under any other writer is left with
 // that writer, and a single-cardinality relation another writer holds for the
-// Media is not taken over.
+// Media is not taken over. A released single-cardinality row is replaced by
+// the restored sidecar's own.
 func replaceLocalRelationsTx(ctx context.Context, tx *sql.Tx, id MediaID, ownedRelations []WrittenRelation, owned map[string]bool, relations []EntityRelation) error {
 	for _, relation := range ownedRelations {
 		if _, err := tx.ExecContext(ctx, `
@@ -241,6 +242,15 @@ func replaceLocalRelationsTx(ctx context.Context, tx *sql.Tx, id MediaID, ownedR
 			return ValidationError("sidecar relation is not one the sidecar owns")
 		}
 		if relation.Cardinality == "one" {
+			// The sidecar's own released row gives way to its restored
+			// statement; another writer's holder still wins (CORE-3175).
+			if _, err := tx.ExecContext(ctx, `
+				DELETE FROM entity_relation
+				WHERE to_media_id = ? AND relation = ? AND from_entity_id <> ? AND writer = ?
+				  AND from_entity_id IN (SELECT id FROM entity WHERE kind = ?)
+			`, id, relation.Name, relation.FromEntityID, releasedRelationWriter, kind); err != nil {
+				return err
+			}
 			var held int
 			err := tx.QueryRowContext(ctx, `
 				SELECT 1 FROM entity_relation

@@ -352,6 +352,9 @@ func TestSidecarRecordsParsedSignature(t *testing.T) {
 	if got := r.field(testSidecarSignatureField); got != sidecarIdentity(r.path, "parsed-bytes") {
 		t.Fatalf("recorded signature = %q, want the parse's", got)
 	}
+	if got := r.field(testSidecarSignatureField); strings.Contains(got, filepath.Base(r.path)) || strings.Contains(got, "parsed-bytes") {
+		t.Fatalf("recorded signature = %q leaks the media path or raw signature (CORE-3174)", got)
+	}
 	if changed, err := r.adapter.SidecarsChanged(context.Background(), r.mediaID, r.path); err != nil || !changed {
 		t.Fatalf("SidecarsChanged = %v, %v; want the newer sidecar read again", changed, err)
 	}

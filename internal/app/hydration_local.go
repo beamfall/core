@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -37,11 +39,14 @@ var (
 // a removed sidecar: the seam releases and records nothing.
 var errSidecarUnreadable = errors.New("hydration sidecar unreadable")
 
-// sidecarIdentity is what the seam records for the sidecar of source: the
-// media path with the mapper's signature, so a selection that moves to
-// another file's sidecar refreshes even when the signatures match.
+// sidecarIdentity is what the seam records for the sidecar of source: a
+// digest of the media path with the mapper's signature, so a selection that
+// moves to another file's sidecar refreshes even when the signatures match.
+// The record is a Media text field clients may display, so it carries a
+// digest, never the server path (CORE-3174).
 func sidecarIdentity(source, signature string) string {
-	return source + "\n" + signature
+	sum := sha256.Sum256([]byte(source + "\n" + signature))
+	return hex.EncodeToString(sum[:])
 }
 
 // sidecarState is a Media's recorded sidecar identity, the current one and

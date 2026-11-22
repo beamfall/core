@@ -226,6 +226,55 @@ func TestRestoredSidecarReclaimsReleasedRows(t *testing.T) {
 	}
 }
 
+// TestRestoredSidecarReplacesReleasedSingleRow (CORE-3175): a restored
+// sidecar naming another source for a single-cardinality relation replaces
+// the row its released predecessor left, while a scraper's holder keeps the
+// relation from the sidecar.
+func TestRestoredSidecarReplacesReleasedSingleRow(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	for _, id := range []EntityID{"entity-a", "entity-b", "entity-c"} {
+		if err := st.UpsertEntity(ctx, widgetEntity(id, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	owned := []WrittenRelation{{Kind: "widget", Name: "member-of"}}
+	apply := func(media MediaID, signature string, source EntityID) {
+		t.Helper()
+		if err := st.ApplyLocalMetadata(ctx, media, LocalMetadata{
+			Relations:      []EntityRelation{{FromEntityID: source, Name: "member-of", ToMediaID: media, Cardinality: "one"}},
+			OwnedRelations: owned, SignatureField: "sidecar-signature", Signature: signature,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apply("media-alpha", "sig-a", "entity-a")
+	if err := st.ReleaseLocalMetadata(ctx, "media-alpha", "sidecar-signature"); err != nil {
+		t.Fatal(err)
+	}
+	apply("media-alpha", "sig-b", "entity-b")
+	if got := relationWriters(t, st, "media-alpha", "member-of"); got != "entity-b=local" {
+		t.Fatalf("after restore = %q, want the released row replaced by entity-b", got)
+	}
+	if got := mediaFieldText(t, st, "media-alpha", "sidecar-signature"); got != "sig-b" {
+		t.Fatalf("signature = %q, want sig-b", got)
+	}
+	other, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: "library-local", Path: "/media/held.mp4", Title: "held",
+		Container: "mp4", Codec: "h264", ContentFingerprint: "fp-held",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntityRelation(ctx, EntityRelation{FromEntityID: "entity-c", Name: "member-of", ToMediaID: other.ID, Writer: "scraper:demo/item"}); err != nil {
+		t.Fatal(err)
+	}
+	apply(other.ID, "sig-b", "entity-b")
+	if got := relationWriters(t, st, other.ID, "member-of"); got != "entity-c=scraper:demo/item" {
+		t.Fatalf("held media = %q, want the scraper holder kept", got)
+	}
+}
+
 // TestReleaseClearsIdentifiedMarks (CORE-0361 r1): a released built-in field
 // drops its legacy identified mark with its lock, so a scan import replaces
 // the value again; a field the sidecar did not write keeps its mark.
