@@ -32,33 +32,25 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-function tune(queuedIDs: readonly string[] | undefined) {
+function tune() {
   render(
     <I18nProvider initialLocale="en">
       <MemoryRouter>
-        <RadioTuning station={station} credits={[]} queuedIDs={queuedIDs} />
+        <RadioTuning station={station} credits={[]} />
       </MemoryRouter>
     </I18nProvider>,
   );
   fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "1980" } });
 }
 
-// Review finding P2: retuning follows Start radio's confirm-before-replace rule.
+// Review findings: retuning follows Start radio's confirm-before-replace rule,
+// even for a queue this tab believes holds only radio's picks, since another
+// tab may have added to it.
 describe("RadioTuning", () => {
-  it("replaces a queue holding only radio's picks at once", () => {
-    tune(["a", "b"]);
+  it("asks the server to confirm before replacing the queue", () => {
+    tune();
     expect(startRadio).toHaveBeenCalledWith(
-      expect.objectContaining({ rules: { decades: [1980] }, confirmReplace: true }),
+      expect.objectContaining({ rules: { decades: [1980] }, confirmReplace: false }),
     );
-  });
-
-  it("asks before replacing a queue the listener added to", () => {
-    tune(["a", "mine"]);
-    expect(startRadio).toHaveBeenCalledWith(expect.objectContaining({ confirmReplace: false }));
-  });
-
-  it("asks when the queue has not been read", () => {
-    tune(undefined);
-    expect(startRadio).toHaveBeenCalledWith(expect.objectContaining({ confirmReplace: false }));
   });
 });

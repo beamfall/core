@@ -216,9 +216,11 @@ const (
 	// stationPerEntityCap bounds how many Media one expanded Entity adds.
 	stationPerEntityCap = 100
 	// stationEntityReadPage is the Source's largest page; stationEntityReadCap
-	// bounds how many of one Entity's Media are read before sampling.
+	// bounds how many of one Entity's matching Media are kept before sampling,
+	// and stationEntityScanCap how many are read to find them.
 	stationEntityReadPage = 200
 	stationEntityReadCap  = 2000
+	stationEntityScanCap  = 50000
 	// stationSeedEntityWeight keeps an Entity seed at the top of its own
 	// profile, so its Media are always expanded and ranked strongly.
 	stationSeedEntityWeight = 10
@@ -258,7 +260,7 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 		}
 		seedIDs = append(seedIDs, media.ID)
 	case "artist", "album", "genre", "entity":
-		items, err := h.stationEntityMedia(ctx, scope, filter, store.EntityID(seed.id))
+		items, err := h.stationEntityMedia(ctx, scope, filter, store.EntityID(seed.id), nil)
 		if err != nil {
 			return pool, clientError("unknown station seed")
 		}
@@ -282,6 +284,12 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 		}
 	default:
 		return pool, clientError("seedKind must be one of media, entity, collection, track, artist, album, genre")
+	}
+	// A large seed samples from what is not queued yet, so top-ups reach the
+	// members an earlier sample left out. A fully queued seed still shapes the
+	// profile; the hard filter drops its members.
+	if unqueued := slices.DeleteFunc(slices.Clone(seedIDs), func(id store.MediaID) bool { return queued[id] }); len(unqueued) > 0 {
+		seedIDs = unqueued
 	}
 	seedIDs = sampleStationIDs(seedIDs, stationSeedMediaCap, rankSeed)
 
@@ -341,19 +349,20 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 			continue
 		}
 		expanded[entityID] = true
-		items, err := h.stationEntityMedia(ctx, scope, filter, entityID)
+		// The year rules and the queued exclusion apply while reading, before
+		// sampling, so a large Entity's few matching Media are never sampled
+		// away. Length rules need the full row and apply in the hard filter.
+		items, err := h.stationEntityMedia(ctx, scope, filter, entityID, func(it store.SourceItem) bool {
+			return !queued[it.ID] && rules.admitsYear(it.Year)
+		})
 		if err != nil {
 			// An Entity this scope cannot see adds nothing; it never errors the
 			// Station, so a rule naming one is not an oracle either.
 			continue
 		}
-		// The year and length rules and the queued exclusion apply before
-		// sampling, so a large Entity's few matching Media are never sampled away.
 		related := make([]store.MediaID, 0, len(items))
 		for _, it := range items {
-			if !queued[it.ID] && rules.admitsFields(it.Year, it.DurationSeconds) {
-				related = append(related, it.ID)
-			}
+			related = append(related, it.ID)
 		}
 		ids = append(ids, sampleStationIDs(related, stationPerEntityCap, rankSeed)...)
 	}
@@ -397,21 +406,25 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 // with the acting Profile, the read Related Media and browse take, so Mute
 // suppression and the Library, Reveal and certification filter apply as they do
 // there. Extras are left out, and at most stationEntityReadCap Media are read.
-func (h *Handler) stationEntityMedia(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, entityID store.EntityID) ([]store.SourceItem, error) {
+func (h *Handler) stationEntityMedia(ctx context.Context, scope auth.Scope, filter store.LibraryFilter, entityID store.EntityID, keep func(store.SourceItem) bool) ([]store.SourceItem, error) {
 	var out []store.SourceItem
-	for len(out) < stationEntityReadCap {
+	for offset := 0; len(out) < stationEntityReadCap && offset < stationEntityScanCap; offset += stationEntityReadPage {
 		page, err := h.store.SourceItems(ctx, filter, store.SourceQuery{
 			Kind:          "entity-media",
 			EntityID:      entityID,
 			Limit:         stationEntityReadPage,
-			Offset:        len(out),
+			Offset:        offset,
 			ProfileID:     scope.ProfileID,
 			ExcludeExtras: true,
 		})
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, page...)
+		for _, it := range page {
+			if keep == nil || keep(it) {
+				out = append(out, it)
+			}
+		}
 		if len(page) < stationEntityReadPage {
 			break
 		}
@@ -662,6 +675,20 @@ func (r stationRules) admits(m store.Media, links []store.MediaEntityLink) bool 
 
 // admitsFields applies the rules that read only a Media's year and length.
 func (r stationRules) admitsFields(year, durationSeconds int) bool {
+	if !r.admitsYear(year) {
+		return false
+	}
+	if r.MinDurationSeconds > 0 && durationSeconds < r.MinDurationSeconds {
+		return false
+	}
+	if r.MaxDurationSeconds > 0 && durationSeconds > r.MaxDurationSeconds {
+		return false
+	}
+	return true
+}
+
+// admitsYear applies the decade and year rules alone.
+func (r stationRules) admitsYear(year int) bool {
 	if len(r.Decades) > 0 && (year == 0 || !slices.Contains(r.Decades, year/10*10)) {
 		return false
 	}
@@ -669,12 +696,6 @@ func (r stationRules) admitsFields(year, durationSeconds int) bool {
 		return false
 	}
 	if r.MaxYear > 0 && year > r.MaxYear {
-		return false
-	}
-	if r.MinDurationSeconds > 0 && durationSeconds < r.MinDurationSeconds {
-		return false
-	}
-	if r.MaxDurationSeconds > 0 && durationSeconds > r.MaxDurationSeconds {
 		return false
 	}
 	return true

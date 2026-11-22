@@ -56,6 +56,7 @@ export function useStartRadio() {
       setMessage("");
       try {
         const result = await startRadio({ ...seed, profileID, confirmReplace });
+        if (result.status === "cancelled") return;
         if (result.status === "needs-confirm") setConfirming(seed);
         else if (result.status === "empty") setMessage(result.message || t("radioFailed"));
         else {
@@ -130,18 +131,15 @@ const DECADES = [1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020];
 /**
  * Station rules in the player while radio plays: keep to one decade, or to
  * Media credited with one of the playing item's categories. Changing a rule
- * restarts the Station with it. A queue holding only what radio added is
- * replaced at once; one the listener added to asks first, as Start radio does.
+ * restarts the Station with it, asking first as Start radio does: the queue
+ * may hold items this tab never saw added.
  */
 export function RadioTuning({
   station,
   credits,
-  queuedIDs,
 }: {
   station: RadioStation;
   credits: readonly MediaCredit[];
-  /** Media in the queue now; unknown asks before replacing. */
-  queuedIDs: readonly string[] | undefined;
 }) {
   const t = useT();
   const radio = useStartRadio();
@@ -152,12 +150,13 @@ export function RadioTuning({
     categories.some((c) => c.entityID === only) || !only
       ? categories
       : [...categories, { entityID: only, title: station.ruleTitles?.[only] ?? only }];
-  const radioOnly = !!queuedIDs?.every((id) => id in station.reasons);
   const restart = (rules: RadioRules, titles?: Record<string, string>) =>
-    void radio.start(
-      { seedKind: station.seedKind, seedID: station.seedID, rules, ruleTitles: titles },
-      radioOnly,
-    );
+    void radio.start({
+      seedKind: station.seedKind,
+      seedID: station.seedID,
+      rules,
+      ruleTitles: titles,
+    });
   return (
     <div className="bf-radio-tuning">
       <Radio aria-hidden size={14} />

@@ -259,6 +259,10 @@ function FeaturePlayer({
   const station = serverQueueRun && queueMatchesProfile ? activeStation : null;
   const radioReason = station?.reasons[mediaId] ?? "";
   const toppingUp = useRef(false);
+  // The item that ended with nothing queued after it, and the ended handler to
+  // run again once a top-up has added more (runQueueAction is declared below).
+  const endedWithoutNext = useRef<string | null>(null);
+  const retryEnded = useRef<() => void>(() => {});
   const queueRows = musicQueue?.rows;
   useEffect(() => {
     if (!station || !queueRows || toppingUp.current) return;
@@ -267,10 +271,17 @@ function FeaturePlayer({
     if (queueRows.slice(index + 1).filter(playableMusic).length >= RADIO_LOW_WATER) return;
     toppingUp.current = true;
     topUpRadio(station, new Set(queueRows.map((row) => row.id)))
-      .then((added) => {
+      .then(async (added) => {
+        if (!added) return;
         // Joins a read already in flight rather than aborting it: the ended
         // handler may be waiting on that read to advance.
-        if (added) void refreshMusicQueue();
+        await refreshMusicQueue();
+        // The last item ended on a read from before these were added: advance
+        // now, on a fresh read, instead of stopping.
+        if (endedWithoutNext.current === mediaId) {
+          endedWithoutNext.current = null;
+          retryEnded.current();
+        }
       })
       .catch(() => {
         // The queue still plays what it holds; the next item change tries again.
@@ -701,7 +712,11 @@ function FeaturePlayer({
       } else {
         const neighbours = musicQueueNeighbours(rows, mediaId);
         const target = (action === "previous" ? neighbours.previous : neighbours.next)?.id;
-        if (!target) return;
+        if (!target) {
+          if (action === "ended") endedWithoutNext.current = mediaId;
+          return;
+        }
+        endedWithoutNext.current = null;
         if (action === "ended") confirmGaplessAdvance(target);
         playItemRef.current(target, "", true, profileID);
       }
@@ -717,6 +732,9 @@ function FeaturePlayer({
       confirmGaplessAdvance,
     ],
   );
+  useEffect(() => {
+    retryEnded.current = () => void runQueueAction("ended");
+  }, [runQueueAction]);
   const retryMusicQueue = () =>
     retryAction ? void runQueueAction(retryAction) : void refreshMusicQueue();
   const playNext = useMemo(() => {
@@ -1146,11 +1164,7 @@ function FeaturePlayer({
             {!docked && queueFailureNotice}
             {station && showAudioStage && !docked && (
               <div className="absolute left-4 top-4 z-10">
-                <RadioTuning
-                  station={station}
-                  credits={stage.credits}
-                  queuedIDs={queueRows?.map((row) => row.id)}
-                />
+                <RadioTuning station={station} credits={stage.credits} />
               </div>
             )}
             {state.waitingForNetwork ? (

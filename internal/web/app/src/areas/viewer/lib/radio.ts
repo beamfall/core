@@ -104,12 +104,19 @@ function notify() {
   for (const listener of listeners) listener();
 }
 
-function setActive(next: RadioStation | null) {
+// Builds before the Station moved to memory kept it in sessionStorage; clear
+// what they left so no title outlives this tab's identity.
+try {
+  globalThis.sessionStorage?.removeItem("beamfall.radio");
+} catch {
+  // Storage blocked: nothing was kept there either.
+}
+
+function setActive(next: RadioStation | null, epoch = getIdentityEpochSignal()) {
   generation++;
   if (!next) {
     active = null;
   } else {
-    const epoch = getIdentityEpochSignal();
     const mine = generation;
     active = { station: next, epoch };
     // The identity that started the Station ended: forget it, fail closed.
@@ -153,7 +160,9 @@ export function stopRadio() {
 export type RadioStartResult =
   | { status: "started"; firstMediaID: string; station: RadioStation }
   | { status: "needs-confirm" }
-  | { status: "empty"; message: string };
+  | { status: "empty"; message: string }
+  /** A stop, another start or an identity change overtook this start; nothing is active. */
+  | { status: "cancelled" };
 
 /**
  * Starts a Station into the Profile's Play Queue. A queue that already holds
@@ -169,10 +178,19 @@ export async function startRadio(input: {
   confirmReplace?: boolean;
 }): Promise<RadioStartResult> {
   const station = { seedKind: input.seedKind, seedID: input.seedID, rules: input.rules ?? {} };
+  // Starting ends the playing Station at once, so its top-up writes no more.
+  // A stop, a newer start or an identity change before the reply cancels this
+  // one: its titles never reach a later identity.
+  stopRadio();
+  const mine = generation;
+  const epoch = getIdentityEpochSignal();
+  const overtaken = () =>
+    generation !== mine || getIdentityEpochSignal() !== epoch || !!epoch?.aborted;
   // The same seed makes the preview and the started window identical, so the
   // preview's reasons describe what was queued; the server's reply says which.
   const seed = randomSeed();
   const preview = await generate(station, seed);
+  if (overtaken()) return { status: "cancelled" };
   if (!preview.candidates.length) return { status: "empty", message: preview.explanation };
   let queued: { id: string }[];
   try {
@@ -191,6 +209,7 @@ export async function startRadio(input: {
     }
     throw error;
   }
+  if (overtaken()) return { status: "cancelled" };
   if (!queued.length) return { status: "empty", message: preview.explanation };
   const why = new Map(preview.candidates.map((c) => [c.mediaID, c.explanation]));
   const reasons = Object.fromEntries(queued.map(({ id }) => [id, why.get(id) ?? ""]));
@@ -200,7 +219,7 @@ export async function startRadio(input: {
     ruleTitles: input.ruleTitles,
     reasons,
   };
-  setActive(started);
+  setActive(started, epoch);
   return { status: "started", firstMediaID: queued[0].id, station: started };
 }
 

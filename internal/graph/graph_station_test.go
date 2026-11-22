@@ -556,7 +556,7 @@ func importStationTracks(t *testing.T, st *store.Store, fx musicFixture, entityI
 	ctx := context.Background()
 	ids := make([]store.MediaID, 0, n)
 	for i := range n {
-		name := fmt.Sprintf("%s-%03d", prefix, i)
+		name := fmt.Sprintf("%s-%04d", prefix, i)
 		m, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
 			LibraryID: fx.libraryID, Path: "/music/" + name + ".flac", Title: name, Container: "flac", Codec: "flac",
 			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + name, DurationSecondsHint: 200, Year: year,
@@ -564,8 +564,10 @@ func importStationTracks(t *testing.T, st *store.Store, fx musicFixture, entityI
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: entityID, Name: "appears-on", ToMediaID: m.ID}); err != nil {
-			t.Fatal(err)
+		if entityID != "" {
+			if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: entityID, Name: "appears-on", ToMediaID: m.ID}); err != nil {
+				t.Fatal(err)
+			}
 		}
 		ids = append(ids, m.ID)
 	}
@@ -690,5 +692,99 @@ func TestStationExcludeQueuedReachesPastFirstWindow(t *testing.T) {
 	}
 	if len(seen) <= stationPerEntityCap {
 		t.Fatalf("three top-ups reached %d tracks, want past the %d-track sample", len(seen), stationPerEntityCap)
+	}
+}
+
+// Review round 2, P2: the list read carries no length, so length rules apply
+// to full rows in the hard filter, never to the pre-sampling list filter.
+func TestStationLengthRulesKeepExpandedMedia(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	want := importStationTracks(t, st, fx, fx.artistID, "long", 3, 2001)
+	rules, err := parseStationRules(`{"minDurationSeconds":100}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := h.generateStation(context.Background(), defaultScope(), stationSeed{kind: "media", id: string(fx.trackA)}, rules, stationTuning{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]bool{}
+	for _, id := range candidateIDs(got) {
+		ids[id] = true
+	}
+	for _, id := range want {
+		if !ids[string(id)] {
+			t.Fatalf("minDurationSeconds 100 dropped 200s track %s: %v", id, candidateIDs(got))
+		}
+	}
+}
+
+// Review round 2, P2: the read cap counts matching Media, so an Entity with
+// more than the cap of non-matching Media still yields its one match.
+func TestStationEntityReadFiltersBeforeTheCap(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	importStationTracks(t, st, fx, fx.artistID, "a-later", stationEntityReadCap+50, 2005)
+	match := importStationTracks(t, st, fx, fx.artistID, "z-eighties", 1, 1984)[0]
+	ctx := context.Background()
+	filter, err := h.sealedFreeStationFilter(ctx, defaultScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := h.stationEntityMedia(ctx, defaultScope(), filter, fx.artistID, func(it store.SourceItem) bool { return it.Year == 1984 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != match {
+		t.Fatalf("filtered read = %d items, want only %s", len(items), match)
+	}
+}
+
+// Review round 2, P2: a large Collection seed samples from its unqueued
+// members, so a top-up reaches every member not yet queued.
+func TestStationCollectionSeedSamplesUnqueued(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	ctx := context.Background()
+	members := importStationTracks(t, st, fx, "", "member", stationSeedMediaCap+10, 2001)
+	revealed := auth.Scope{ProfileID: "profile-default", AllLibraries: true, Revealed: true}.LibraryFilter()
+	coll, err := st.CreateCollection(ctx, store.Collection{LibraryID: fx.libraryID, Name: "Big Coll"}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AddCollectionMedia(ctx, coll.ID, members, revealed, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	filter, err := h.sealedFreeStationFilter(ctx, defaultScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	noCertification := func([]store.ProfileCertificationCeiling) []store.CertificationConstraint { return nil }
+	for _, id := range members[:stationSeedMediaCap] {
+		if _, err := st.QueueAddForProfile(ctx, "profile-default", "session-default", "", id, nil, filter, time.Now, noCertification); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for seed := uint64(1); seed <= 5; seed++ {
+		got, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "collection", id: string(coll.ID)}, stationRules{ExcludeQueued: true}, stationTuning{}, seed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := map[string]bool{}
+		for _, id := range candidateIDs(got) {
+			ids[id] = true
+		}
+		for _, id := range members[stationSeedMediaCap:] {
+			if !ids[string(id)] {
+				t.Fatalf("rankSeed %d: unqueued member %s missing from %v", seed, id, candidateIDs(got))
+			}
+		}
 	}
 }

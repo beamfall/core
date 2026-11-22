@@ -173,4 +173,51 @@ describe("radio", () => {
     expect(writes).toHaveLength(0);
     expect(activeRadio("p1")?.seedID).toBe("m2");
   });
+
+  // Review round 2, P1: a start overtaken by a relock or Profile switch
+  // activates nothing, so its titles never reach the next identity.
+  it("cancels a start whose identity epoch ended before the reply", async () => {
+    let release: (value: unknown) => void = () => {};
+    vi.mocked(graphql)
+      .mockResolvedValueOnce({ stationGenerate: { candidates: candidates("a"), explanation: "" } })
+      .mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+    const pending = startRadio({ profileID: "p1", seedKind: "media", seedID: "m1" });
+    await vi.waitFor(() => expect(graphql).toHaveBeenCalledTimes(2));
+
+    epoch.abort();
+    const next = new AbortController();
+    setIdentityEpochSignal(next.signal);
+    release({ stationStart: queued("a") });
+
+    expect(await pending).toEqual({ status: "cancelled" });
+    expect(activeRadio("p1")).toBeNull();
+  });
+
+  // Review round 2, P2: Stop while a start waits keeps radio stopped, and a
+  // start ends the playing Station at once.
+  it("keeps radio stopped when Stop lands while a start waits", async () => {
+    const playing = await started("a");
+    let release: (value: unknown) => void = () => {};
+    vi.mocked(graphql)
+      .mockResolvedValueOnce({ stationGenerate: { candidates: candidates("x"), explanation: "" } })
+      .mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+    const pending = startRadio({ profileID: "p1", seedKind: "media", seedID: "m2" });
+    expect(activeRadio("p1")).toBeNull();
+    expect(await topUpRadio(playing, new Set(["a"]))).toBe(0);
+    await vi.waitFor(() => expect(graphql).toHaveBeenCalledTimes(2));
+
+    stopRadio();
+    release({ stationStart: queued("x") });
+
+    expect(await pending).toEqual({ status: "cancelled" });
+    expect(activeRadio("p1")).toBeNull();
+  });
+
+  // Review round 2, P2: what earlier builds kept in sessionStorage is cleared.
+  it("clears the Station an earlier build left in sessionStorage", async () => {
+    sessionStorage.setItem("beamfall.radio", '{"reasons":{"a":"Secret title"}}');
+    vi.resetModules();
+    await import("./radio");
+    expect(sessionStorage.getItem("beamfall.radio")).toBeNull();
+  });
 });
