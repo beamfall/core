@@ -3365,14 +3365,14 @@ func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID,
 	return media, created, nil
 }
 
-func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane, parts []ImportMediaFilePart, now time.Time) (Media, []MediaFile, bool, bool, error) {
+func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane, parts []ImportMediaFilePart, resetMethods []string, now time.Time) (Media, []MediaFile, bool, error) {
 	ordered := append([]ImportMediaFilePart(nil), parts...)
 	sort.SliceStable(ordered, func(i, j int) bool {
 		return ordered[i].SourceOrdinal < ordered[j].SourceOrdinal
 	})
 	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
-		return Media{}, nil, false, false, err
+		return Media{}, nil, false, err
 	}
 	defer tx.Rollback()
 
@@ -3386,7 +3386,7 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 			continue
 		}
 		if err != nil {
-			return Media{}, nil, false, false, err
+			return Media{}, nil, false, err
 		}
 		if mediaID != "" {
 			break
@@ -3396,7 +3396,7 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 		if plane.encrypted {
 			mediaID, err = s.allocateEncryptedMediaIDLocked(ctx)
 			if err != nil {
-				return Media{}, nil, false, false, err
+				return Media{}, nil, false, err
 			}
 		} else {
 			mediaID = mediaIDForFingerprint(ordered[0].File.ContentFingerprint)
@@ -3408,19 +3408,23 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 	if primary.KeepProbeFacts {
 		first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
 		if err != nil {
-			return Media{}, nil, false, false, err
+			return Media{}, nil, false, err
 		}
 		keepProbeFacts = first == primary.ContentFingerprint
 	}
 	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, primary, plane.encrypted, false, keepProbeFacts)
 	if err != nil {
-		return Media{}, nil, false, false, err
+		return Media{}, nil, false, err
 	}
-	partsChanged := false
-	if !created {
-		partsChanged, err = mediaPartsDifferTx(ctx, tx, mediaID, ordered)
+	if !created && len(resetMethods) > 0 {
+		changed, err := mediaPartsDifferTx(ctx, tx, mediaID, ordered)
 		if err != nil {
-			return Media{}, nil, false, false, err
+			return Media{}, nil, false, err
+		}
+		if changed {
+			if err := resetGroupMarkersTx(ctx, tx, plane, mediaID, resetMethods); err != nil {
+				return Media{}, nil, false, err
+			}
 		}
 	}
 	files := make([]MediaFile, 0, len(ordered))
@@ -3438,24 +3442,42 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 			LastSeenAt:         now,
 		}
 		if err := upsertMediaFilePartTx(ctx, tx, file, now); err != nil {
-			return Media{}, nil, false, false, err
+			return Media{}, nil, false, err
 		}
 		if imported.Streams != nil || imported.FontAttachments != nil {
 			if err := replaceMediaFileInventoryTx(ctx, tx, plane.encrypted, imported.ContentFingerprint, imported.Streams, imported.FontAttachments); err != nil {
-				return Media{}, nil, false, false, err
+				return Media{}, nil, false, err
 			}
 		}
 		if imported.Sidecars != nil {
 			if err := replaceMediaFileSidecarsTx(ctx, tx, imported.ContentFingerprint, imported.Sidecars); err != nil {
-				return Media{}, nil, false, false, err
+				return Media{}, nil, false, err
 			}
 		}
 		files = append(files, file)
 	}
 	if err := tx.Commit(); err != nil {
-		return Media{}, nil, false, false, err
+		return Media{}, nil, false, err
 	}
-	return media, files, created, partsChanged, nil
+	return media, files, created, nil
+}
+
+// resetGroupMarkersTx drops a regrouped Media's detected Markers of methods in
+// the import transaction. Markers live only in the catalog database; an
+// encrypted library's plane has no marker table, so there is nothing to reset.
+func resetGroupMarkersTx(ctx context.Context, tx *sql.Tx, plane catalogPlane, mediaID MediaID, methods []string) error {
+	if plane.encrypted {
+		return nil
+	}
+	for _, method := range methods {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM marker
+			WHERE media_id = ? AND provenance = ? AND method = ?
+		`, mediaID, string(ProvenanceDetected), method); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func mediaPartsDifferTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, ordered []ImportMediaFilePart) (bool, error) {

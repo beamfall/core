@@ -3530,56 +3530,58 @@ func (s *Store) importMediaFileLocked(ctx context.Context, imported ImportMediaF
 // in the default Version. Server-internal scan path only: parser-confirmed
 // grouping resolves the authority; caller-owned reads remain reveal-filtered.
 func (s *Store) ImportMediaFileParts(ctx context.Context, parts []ImportMediaFilePart) (Media, []MediaFile, error) {
-	media, files, _, err := s.ImportMediaFilePartsWithChange(ctx, parts)
-	return media, files, err
+	return s.ImportMediaFilePartsResettingMarkers(ctx, parts, nil)
 }
 
-// ImportMediaFilePartsWithChange upserts one logical Media backed by many
-// ordered Parts in the default Version and reports whether an existing Media's
-// ordered default-version Part membership changed (CORE-3093).
-func (s *Store) ImportMediaFilePartsWithChange(ctx context.Context, parts []ImportMediaFilePart) (Media, []MediaFile, bool, error) {
+// ImportMediaFilePartsResettingMarkers is ImportMediaFileParts that, when an
+// existing Media's ordered default-version Part membership changes, also drops
+// its detected Markers of resetMethods in the same transaction (CORE-3093).
+// Markers derived from the whole Part list go stale with a regroup; clearing
+// them atomically means a scan that stops before rewriting them leaves an empty
+// set, which the next scan rebuilds, never a stale one it would keep.
+func (s *Store) ImportMediaFilePartsResettingMarkers(ctx context.Context, parts []ImportMediaFilePart, resetMethods []string) (Media, []MediaFile, error) {
 	// Authority face: catalog Media-row authoring is main-only.
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
-		return Media{}, nil, false, err
+		return Media{}, nil, err
 	}
 	if len(parts) == 0 {
-		return Media{}, nil, false, errors.New("media file parts are required")
+		return Media{}, nil, errors.New("media file parts are required")
 	}
 	ordinals := map[int]bool{}
 	for _, part := range parts {
 		if part.SourceOrdinal <= 0 {
-			return Media{}, nil, false, errors.New("part source ordinal is required")
+			return Media{}, nil, errors.New("part source ordinal is required")
 		}
 		if ordinals[part.SourceOrdinal] {
-			return Media{}, nil, false, errors.New("part source ordinals must be unique")
+			return Media{}, nil, errors.New("part source ordinals must be unique")
 		}
 		ordinals[part.SourceOrdinal] = true
 		if err := validateImportMediaFile(part.File); err != nil {
-			return Media{}, nil, false, err
+			return Media{}, nil, err
 		}
 		if err := s.refuseManagedAdmissionInFlight(part.File.Path); err != nil {
-			return Media{}, nil, false, err
+			return Media{}, nil, err
 		}
 		if part.File.LibraryID != parts[0].File.LibraryID {
-			return Media{}, nil, false, errors.New("media file parts must belong to one library")
+			return Media{}, nil, errors.New("media file parts must belong to one library")
 		}
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return Media{}, nil, false, err
+		return Media{}, nil, err
 	}
 	now := time.Now().UTC()
 	plane, err := s.catalogPlaneForLibraryLocked(ctx, parts[0].File.LibraryID)
 	if err != nil {
-		return Media{}, nil, false, err
+		return Media{}, nil, err
 	}
-	media, files, created, partsChanged, err := s.importMediaFilePartsSQL(ctx, plane, parts, now)
+	media, files, created, err := s.importMediaFilePartsSQL(ctx, plane, parts, resetMethods, now)
 	if err != nil {
-		return Media{}, nil, false, err
+		return Media{}, nil, err
 	}
 	if plane.encrypted {
-		return media, files, partsChanged, nil
+		return media, files, nil
 	}
 	kind := MediaEventUpdated
 	if created {
@@ -3588,7 +3590,7 @@ func (s *Store) ImportMediaFilePartsWithChange(ctx context.Context, parts []Impo
 	if eventErr := s.appendMediaEventLocked(ctx, kind, media.ID, nil, now); eventErr != nil {
 		slog.Warn("media outbox event append failed", "kind", kind, "media", media.ID, "error", eventErr)
 	}
-	return media, files, partsChanged, nil
+	return media, files, nil
 }
 
 func validateImportMediaFile(imported ImportMediaFile) error {

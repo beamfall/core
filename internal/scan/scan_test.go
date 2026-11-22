@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2489,12 +2490,17 @@ func (p *countingProber) Probe(context.Context, string) (ffmpeg.Probe, error) {
 	return p.probe, nil
 }
 
+// pathProber records each probed path. Pooled scans probe concurrently, so
+// calls is guarded; read it only after the scan returns.
 type pathProber struct {
 	probes map[string]ffmpeg.Probe
+	mu     sync.Mutex
 	calls  []string
 }
 
 func (p *pathProber) Probe(_ context.Context, path string) (ffmpeg.Probe, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.calls = append(p.calls, path)
 	return p.probes[path], nil
 }

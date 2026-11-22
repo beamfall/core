@@ -13,6 +13,10 @@ import (
 
 const partBoundaryMarkerMethod = "part-boundary"
 
+// groupMarkerMethods are the Marker methods derived from a grouped Media's
+// whole Part list. The store drops them when the membership changes.
+var groupMarkerMethods = []string{partBoundaryMarkerMethod, "chapter-import"}
+
 func partMarkerTitle(parser FilenameParser, path string, probe ParseProbe) string {
 	if titler, ok := parser.(PartMarkerTitler); ok {
 		if title := strings.TrimSpace(titler.PartMarkerTitle(path, probe)); title != "" {
@@ -35,13 +39,14 @@ func parsedMediaTitle(parser FilenameParser, path string, probe ParseProbe, pars
 
 // ensurePartBoundaryMarkers synthesizes one navigation Marker per ordered Part
 // only when the whole grouped Media has no embedded chapters. Any fresh probe,
-// including one Part in a mixed full/fast rescan, or any changed Part
-// membership on an existing Media, recomputes the deterministic set. An
-// all-fast cheap-triple rescan of an unchanged group keeps an already complete
-// set without probing; if a scan crashed after importing Parts but before
-// writing Markers, the missing set forces a bounded re-probe so resume still
-// converges instead of permanently skipping the synthesis.
-func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prober, parts []parsedPartImport, mediaID store.MediaID, partsChanged bool, observedAt time.Time) error {
+// including one Part in a mixed full/fast rescan, recomputes the deterministic
+// set. An all-fast cheap-triple rescan keeps an already complete set without
+// probing; if a scan crashed after importing Parts but before writing Markers,
+// the missing set forces a bounded re-probe so resume still converges instead
+// of permanently skipping the synthesis. A change in Part membership clears
+// both derived sets in the import transaction itself (groupMarkerMethods,
+// CORE-3093), so a regrouped Media always takes that re-probe path.
+func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prober, parts []parsedPartImport, mediaID store.MediaID, observedAt time.Time) error {
 	anyProbed := false
 	for _, part := range parts {
 		if part.probed {
@@ -49,7 +54,7 @@ func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prob
 			break
 		}
 	}
-	if !anyProbed && !partsChanged {
+	if !anyProbed {
 		existing, err := st.MarkersForMedia(ctx, mediaID, store.LibraryFilter{AllLibraries: true})
 		if err != nil {
 			return err
@@ -69,31 +74,20 @@ func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prob
 		}
 	}
 
-	filter := store.LibraryFilter{AllLibraries: true}
-	clearStaleChangedGroupMarkers := func() error {
-		if !partsChanged {
-			return nil
-		}
-		if err := st.ReplaceDetectedMarkers(ctx, mediaID, partBoundaryMarkerMethod, nil, filter, observedAt); err != nil {
-			return err
-		}
-		return st.ReplaceDetectedMarkers(ctx, mediaID, "chapter-import", nil, filter, observedAt)
-	}
-
 	prepared := append([]parsedPartImport(nil), parts...)
 	hasEmbeddedChapters := false
 	for i := range prepared {
 		part := &prepared[i]
 		if !part.probed {
 			if prober == nil {
-				return clearStaleChangedGroupMarkers()
+				return nil
 			}
 			probeCtx, probeCancel := context.WithTimeout(ctx, probeTimeout)
 			probe, err := prober.Probe(probeCtx, part.imported.Path)
 			probeCancel()
 			if err != nil {
 				slog.Warn("scan: part-boundary marker probe failed", "path", part.imported.Path, "error", err.Error())
-				return clearStaleChangedGroupMarkers()
+				return nil
 			}
 			part.imported.DurationSecondsHint = probe.DurationSeconds
 			part.probeChapters = append([]ffmpeg.ProbeChapter(nil), probe.Chapters...)
@@ -103,9 +97,10 @@ func ensurePartBoundaryMarkers(ctx context.Context, st *store.Store, prober Prob
 			hasEmbeddedChapters = true
 		}
 		if part.imported.DurationSecondsHint <= 0 {
-			return clearStaleChangedGroupMarkers()
+			return nil
 		}
 	}
+	filter := store.LibraryFilter{AllLibraries: true}
 	if hasEmbeddedChapters {
 		// Embedded chapter atoms are authoritative for the grouped book. Clear
 		// only this synthesizer's old rows, then import all embedded chapters

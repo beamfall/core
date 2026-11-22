@@ -2,7 +2,9 @@ package store
 
 import (
 	"errors"
+	"slices"
 	"testing"
+	"time"
 )
 
 func TestSetProbedMediaDurationKeepsScannedRuntime(t *testing.T) {
@@ -117,4 +119,59 @@ func TestSetProbedMediaDurationUsesUnlockedEncryptedCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	readDuration(7152)
+}
+
+// TestImportMediaFilePartsResettingMarkersClearsOnRegroup covers CORE-3093: a
+// change in Part membership drops the named derived Markers in the import
+// transaction, so a scan that stops before rewriting them leaves an empty set
+// (rebuilt next scan), never a stale one. Other methods and an unchanged
+// membership keep their Markers.
+func TestImportMediaFilePartsResettingMarkersClearsOnRegroup(t *testing.T) {
+	st := openSeeded(t)
+	ctx := t.Context()
+	const libraryID = "library-local"
+	reset := []string{"part-boundary", "chapter-import"}
+	one := ImportMediaFilePart{File: versionImport(libraryID, "/discs/one.m4b", "Book"), SourceOrdinal: 1}
+	two := ImportMediaFilePart{File: versionImport(libraryID, "/discs/two.m4b", "Book"), SourceOrdinal: 2}
+	media, _, err := st.ImportMediaFilePartsResettingMarkers(ctx, []ImportMediaFilePart{one}, reset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filter := LibraryFilter{AllLibraries: true}
+	seed := func() {
+		t.Helper()
+		end := 10.0
+		for _, method := range []string{"part-boundary", "chapter-import", "silence-detect"} {
+			if err := st.ReplaceDetectedMarkers(ctx, media.ID, method, []Marker{{Title: method, StartSeconds: 0, EndSeconds: &end}}, filter, time.Now()); err != nil {
+				t.Fatalf("seed %s: %v", method, err)
+			}
+		}
+	}
+	methods := func() []string {
+		t.Helper()
+		markers, err := st.MarkersForMedia(ctx, media.ID, filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, 0, len(markers))
+		for _, marker := range markers {
+			out = append(out, marker.Method)
+		}
+		slices.Sort(out)
+		return out
+	}
+	seed()
+	if _, _, err := st.ImportMediaFilePartsResettingMarkers(ctx, []ImportMediaFilePart{one, two}, reset); err != nil {
+		t.Fatal(err)
+	}
+	if got := methods(); !slices.Equal(got, []string{"silence-detect"}) {
+		t.Fatalf("markers after regroup = %v, want [silence-detect]", got)
+	}
+	seed()
+	if _, _, err := st.ImportMediaFilePartsResettingMarkers(ctx, []ImportMediaFilePart{one, two}, reset); err != nil {
+		t.Fatal(err)
+	}
+	if got := methods(); !slices.Equal(got, []string{"chapter-import", "part-boundary", "silence-detect"}) {
+		t.Fatalf("markers after unchanged rescan = %v, want all three", got)
+	}
 }

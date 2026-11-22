@@ -236,7 +236,7 @@ func (s *scanWalkState) flushPendingParts() error {
 	for i, part := range parts {
 		imports[i] = store.ImportMediaFilePart{File: part.imported, SourceOrdinal: i + 1}
 	}
-	media, files, partsChanged, err := s.st.ImportMediaFilePartsWithChange(s.ctx, imports)
+	media, files, err := s.st.ImportMediaFilePartsResettingMarkers(s.ctx, imports, groupMarkerMethods)
 	if err != nil {
 		// A member a managed import is still admitting skips the whole group
 		// this pass; the next scan groups it with the cataloged file.
@@ -259,7 +259,7 @@ func (s *scanWalkState) flushPendingParts() error {
 	if err := s.refreshParserFields(media.ID, first.refresh); err != nil {
 		return err
 	}
-	if err := ensurePartBoundaryMarkers(s.ctx, s.st, s.prober, parts, media.ID, partsChanged, now()); err != nil {
+	if err := ensurePartBoundaryMarkers(s.ctx, s.st, s.prober, parts, media.ID, now()); err != nil {
 		return err
 	}
 	// A multi-part Media hydrates from its first part's tags and path under
