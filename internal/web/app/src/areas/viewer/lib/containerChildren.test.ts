@@ -212,7 +212,11 @@ describe("childContainerCandidates", () => {
 
   it("passes over a group whose children are all locked", () => {
     const groups = [
-      { archetype: "container", direction: "child" as const, items: [{ ...box("x"), locked: true }] },
+      {
+        archetype: "container",
+        direction: "child" as const,
+        items: [{ ...box("x"), locked: true }],
+      },
       { archetype: "container", direction: "child" as const, items: [box("a")] },
     ];
     expect(childContainerCandidates(groups).map((i) => i.id)).toEqual(["a"]);
