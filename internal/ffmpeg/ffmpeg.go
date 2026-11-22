@@ -2471,6 +2471,9 @@ type HLSProcess struct {
 	// diagnostics (or a compromised decoder) could carry that plaintext into
 	// the server's logs.
 	stderrWithheld bool
+	// companion, when set, is joined by Wait after the encoder exits: the
+	// in-process writer feeding the encoder's stdin (composed graphics).
+	companion func() error
 }
 
 // hlsProgressLineBytes bounds a partial -progress line kept between writes;
@@ -2555,9 +2558,16 @@ func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
 }
 
 func startHLSProcessContext(ctx context.Context, cmd *exec.Cmd, withholdStderr bool) (*HLSProcess, error) {
+	return startHLSProcessWith(ctx, cmd, withholdStderr, nil)
+}
+
+// startHLSProcessWith is startHLSProcessContext for an encode with an
+// in-process companion feeding it (the composed graphics presenter): Wait
+// joins companion after the encoder exits and reports its error too.
+func startHLSProcessWith(ctx context.Context, cmd *exec.Cmd, withholdStderr bool, companion func() error) (*HLSProcess, error) {
 	applySysProcAttr(cmd)
 	configureProcessGroup(cmd)
-	p := &HLSProcess{cmd: cmd, stderrWithheld: withholdStderr}
+	p := &HLSProcess{cmd: cmd, stderrWithheld: withholdStderr, companion: companion}
 	p.stderr.tail.limit = hlsStderrTailBytes
 	cmd.Cancel = func() error {
 		p.stopRequested.Store(true)
@@ -2653,6 +2663,9 @@ func (p *HLSProcess) Wait() error {
 	}
 	p.wait.Do(func() {
 		p.waitErr = p.waitForExit()
+		if p.companion != nil {
+			p.waitErr = errors.Join(p.waitErr, p.companion())
+		}
 	})
 	return p.waitErr
 }

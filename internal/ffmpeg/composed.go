@@ -4,10 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+
+	"github.com/beamfall/core/internal/ffmpeg/cdgrender"
 )
 
 // Composed-picture canvas: the 720p frame a composed rendition is drawn on
@@ -18,12 +23,6 @@ const (
 	composedWidth  = 1280
 	composedHeight = 720
 	composedFPS    = 30
-	// A graphics track is drawn at its own aspect, pillarboxed to the canvas.
-	// 1000x720 keeps a 300x216 graphics frame's shape (25:18) to the pixel.
-	composedGraphicsWidth = 1000
-	// The xBR magnification of a graphics frame before it is fitted to the
-	// canvas: 4x (1200x864) is the smallest that covers the 720p graphics size.
-	composedGraphicsMagnify = 4
 )
 
 // ComposedCanvas is the canvas a composed rendition of the given height is
@@ -52,8 +51,8 @@ var ErrComposedPictureOutsideConfinement = errors.New("ffmpeg: composed picture 
 // ComposedPicture is where a composed rendition's picture comes from when the
 // source has none of its own. Exactly one field is set:
 //
-//   - GraphicsPath: a sibling file FFmpeg decodes as a video stream (a graphics
-//     subcode track), upscaled edge-aware (xBR) and pillarboxed.
+//   - GraphicsPath: a sibling graphics subcode track (CD+G), drawn by the
+//     Oscillux CD+G presenter and piped to FFmpeg as raw frames.
 //   - TimedTextPath: an ASS document rendered by libass over a black canvas.
 type ComposedPicture struct {
 	GraphicsPath  string
@@ -81,8 +80,9 @@ func (r *Runner) StartBackgroundComposedHLS(ctx context.Context, audioSrc, dir s
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
-	cmd := r.generationCommand(ctx, dirConfinement(audioSrc, dir), ffmpegPath, composedHLSArgs(audioSrc, dir, picture, r.withQuality(rendition))...)
-	process, err := startHLSProcessContext(ctx, cmd, false)
+	rendition = r.withQuality(rendition)
+	cmd := r.generationCommand(ctx, dirConfinement(audioSrc, dir), ffmpegPath, composedHLSArgs(audioSrc, dir, picture, rendition)...)
+	process, err := startComposedProcess(ctx, cmd, audioSrc, picture, rendition, 0)
 	if err != nil {
 		return nil, fmt.Errorf("starting ffmpeg composed encode: %w", err)
 	}
@@ -102,12 +102,174 @@ func (r *Runner) startComposedHLSSegments(ctx context.Context, audioSrc, dir str
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
 	conf := dirConfinement(audioSrc, dir)
-	cmd := r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, composedSegmentArgs(audioSrc, dir, picture, startSegment, segmentSeconds, r.withQuality(rendition)))
-	process, err := startHLSProcessContext(ctx, cmd, false)
+	rendition = r.withQuality(rendition)
+	cmd := r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, composedSegmentArgs(audioSrc, dir, picture, startSegment, segmentSeconds, rendition))
+	process, err := startComposedProcess(ctx, cmd, audioSrc, picture, rendition, startSegment*segmentSeconds)
 	if err != nil {
 		return nil, fmt.Errorf("starting ffmpeg composed transcode: %w", err)
 	}
 	return process, nil
+}
+
+// startComposedProcess starts a composed encode. For a graphics picture it
+// also runs the Oscillux CD+G presenter in-process, drawing the canvas into
+// the encode's stdin from the source position startSeconds plays, at the
+// rendition's tempo (CORE-3150).
+//
+// Nothing here blocks on the graphics file: a feeder goroutine opens it inside
+// the source directory and streams it to the presenter, which runs before the
+// encoder starts so the done channel is always signalled. When the encoder
+// exits, Wait cuts the stream (a stalled read cannot hold it) and joins the
+// presenter, reporting a failure that would otherwise end the picture early
+// behind a clean FFmpeg exit.
+func startComposedProcess(ctx context.Context, cmd *exec.Cmd, audioSrc string, picture ComposedPicture, rendition Rendition, startSeconds int) (*HLSProcess, error) {
+	if picture.GraphicsPath == "" {
+		return startHLSProcessContext(ctx, cmd, false)
+	}
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("ffmpeg: composed graphics pipe: %w", err)
+	}
+	stream := newGraphicsStream(filepath.Dir(audioSrc), picture.GraphicsPath)
+	done := make(chan error, 1)
+	go func() {
+		err := cdgrender.Render(ctx, stream, pw, composedGraphicsOptions(rendition, startSeconds))
+		// Settle the outcome before FFmpeg can see EOF and Wait can cut.
+		res := stream.result(err)
+		_ = pw.Close()
+		done <- res
+	}()
+	// stop ends a presenter blocked on either side: the cut ends a read, and
+	// closing pw ends a frame write the encoder will never take.
+	stop := func() error {
+		stream.cut()
+		_ = pw.Close()
+		return <-done
+	}
+	cmd.Stdin = pr
+	process, err := startHLSProcessWith(ctx, cmd, false, stop)
+	_ = pr.Close()
+	if err != nil {
+		_ = stop()
+		return nil, err
+	}
+	return process, nil
+}
+
+// composedGraphicsOptions is the presenter's canvas and clock for an encode
+// whose output starts at startSeconds: the picture starts at the source second
+// that output second plays and advances at the rendition's tempo.
+func composedGraphicsOptions(rendition Rendition, startSeconds int) cdgrender.Options {
+	width, height := ComposedCanvas(rendition.Height)
+	return cdgrender.Options{
+		Width: width, Height: height, FPS: composedFPS,
+		Start: rendition.adjust.SourceSeconds(float64(startSeconds)),
+		Tempo: rendition.adjust.tempo(),
+	}
+}
+
+// composedGraphicsLimit bounds a graphics track: the presenter holds the
+// whole track in memory. CD+G is 7200 bytes a second, so 128 MiB is about five
+// hours, well past any song.
+const composedGraphicsLimit = 128 << 20
+
+// errGraphicsCut ends the presenter's input when the encoder has gone.
+var errGraphicsCut = errors.New("ffmpeg: composed graphics stream cut")
+
+// graphicsStream feeds a graphics track to the presenter through a pipe. A
+// feeder goroutine opens and copies the file, so a stalled filesystem blocks
+// only that goroutine; cut closes the pipe so the presenter's read returns.
+type graphicsStream struct {
+	r       *io.PipeReader
+	mu      sync.Mutex
+	openErr error
+	wasCut  bool
+}
+
+func newGraphicsStream(sourceDir, path string) *graphicsStream {
+	r, w := io.Pipe()
+	s := &graphicsStream{r: r}
+	go func() {
+		f, err := openGraphics(sourceDir, path)
+		if err != nil {
+			s.mu.Lock()
+			s.openErr = err
+			s.mu.Unlock()
+			_ = w.CloseWithError(err)
+			return
+		}
+		n, err := io.Copy(w, io.LimitReader(f, composedGraphicsLimit+1))
+		_ = f.Close()
+		if err == nil && n > composedGraphicsLimit {
+			err = fmt.Errorf("ffmpeg: composed graphics exceed %d bytes", composedGraphicsLimit)
+			s.mu.Lock()
+			s.openErr = err
+			s.mu.Unlock()
+		}
+		_ = w.CloseWithError(err) // nil closes with io.EOF
+	}()
+	return s
+}
+
+func (s *graphicsStream) Read(p []byte) (int, error) { return s.r.Read(p) }
+
+func (s *graphicsStream) cut() {
+	s.mu.Lock()
+	s.wasCut = true
+	s.mu.Unlock()
+	_ = s.r.CloseWithError(errGraphicsCut)
+}
+
+// result is the presenter's outcome: the open failure when the track could
+// not be read, nothing when the stream was cut because the encoder had gone,
+// and otherwise the presenter's own error.
+func (s *graphicsStream) result(renderErr error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.openErr != nil:
+		return s.openErr
+	case s.wasCut:
+		return nil
+	default:
+		return renderErr
+	}
+}
+
+// openGraphics opens a graphics track checkComposedInputs placed in the
+// source's directory (after resolving symlinks), through an os.Root on that
+// directory: the server reads only what that directory holds, the same
+// directory the encoder's confinement grants by name, even if the track was
+// swapped for a symlink since the check. The track must be a regular file,
+// and opening it does not block on a FIFO.
+func openGraphics(sourceDir, path string) (*os.File, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, fmt.Errorf("ffmpeg: opening composed graphics: %w", err)
+	}
+	resolvedDir, err := filepath.EvalSymlinks(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("ffmpeg: opening composed graphics: %w", err)
+	}
+	if filepath.Dir(resolved) != filepath.Clean(resolvedDir) {
+		return nil, ErrComposedPictureOutsideConfinement
+	}
+	root, err := os.OpenRoot(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("ffmpeg: opening composed graphics: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	name := filepath.Base(resolved)
+	f, err := root.OpenFile(name, os.O_RDONLY|graphicsOpenFlags, 0)
+	if err != nil {
+		return nil, fmt.Errorf("ffmpeg: opening composed graphics: %w", err)
+	}
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, fmt.Errorf("ffmpeg: composed graphics %s is not a regular file", name)
+	}
+	return f, nil
 }
 
 // checkComposedInputs refuses a composed encode whose inputs fall outside its
@@ -160,10 +322,10 @@ func composedSegmentArgs(audioSrc, dir string, picture ComposedPicture, startSeg
 //
 // A positive startSeconds starts the output at that position (the source
 // position it plays, under an adjusted tempo). The audio
-// input seeks there. A graphics track is drawn incrementally, so it is decoded
-// from its start and trimmed rather than seeked; a timed-text canvas instead
-// has its clock advanced so libass renders the text due at that position. The
-// picture's timestamps then restart at zero, beside the seeked audio's.
+// input seeks there. The graphics presenter starts at that source position
+// itself; a timed-text canvas instead has its clock advanced so libass renders
+// the text due at that position. The picture's timestamps then restart at
+// zero, beside the seeked audio's.
 func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rendition, startSeconds, segmentSeconds int) []string {
 	var args, filters []string
 	// startSeconds is on the output timeline; the picture and the audio are
@@ -174,29 +336,12 @@ func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rend
 	source := formatSeconds(rendition.adjust.SourceSeconds(float64(startSeconds)))
 	width, height := ComposedCanvas(rendition.Height)
 	if picture.GraphicsPath != "" {
-		args = append(args, "-i", picture.GraphicsPath)
-		// The decoder emits 300 frames a second, so the output rate is taken
-		// first, and the picture is held, trimmed and retimed before it is
-		// magnified: a seek decodes from the start, and upscaling the frames
-		// the trim then drops made the first frame of a 30 s seek cost ~5 s.
-		// xBR magnifies the low-resolution graphics 4x along their edges
-		// (smooth curves, crisp lyrics), and a bicubic step fits that to the
-		// graphics size, which is not an integer multiple of 300x216
-		// (CORE-3149).
-		filters = []string{fmt.Sprintf("fps=%d", composedFPS), "tpad=stop=-1:stop_mode=clone"}
-		switch {
-		case tempo != 1 && startSeconds > 0:
-			filters = append(filters, "trim=start="+source, "setpts=(PTS-STARTPTS)/"+formatFactor(tempo), fmt.Sprintf("fps=%d", composedFPS))
-		case tempo != 1:
-			filters = append(filters, "setpts=PTS/"+formatFactor(tempo), fmt.Sprintf("fps=%d", composedFPS))
-		case startSeconds > 0:
-			filters = append(filters, "trim=start="+source, "setpts=PTS-STARTPTS")
-		}
-		filters = append(filters,
-			fmt.Sprintf("xbr=n=%d", composedGraphicsMagnify),
-			fmt.Sprintf("scale=%d:%d:flags=bicubic", evenRound(float64(composedGraphicsWidth*height)/composedHeight), height),
-			fmt.Sprintf("pad=%d:%d:(ow-iw)/2:0", width, height),
-		)
+		// The Oscillux CD+G presenter draws the whole canvas and writes it to
+		// FFmpeg's stdin (startComposedProcess); it starts at the source
+		// position and runs at the tempo itself, so the picture needs no
+		// trim or retiming here (CORE-3150).
+		args = append(args, "-f", "rawvideo", "-pix_fmt", "rgba",
+			"-s", fmt.Sprintf("%dx%d", width, height), "-r", strconv.Itoa(composedFPS), "-i", "pipe:0")
 	} else {
 		args = append(args, "-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=%dx%d:r=%d", width, height, composedFPS))
 		switch {

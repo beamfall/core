@@ -142,9 +142,8 @@ func TestComposedCanvas(t *testing.T) {
 
 func TestComposedEncodeArgsScaleToTheRenditionHeight(t *testing.T) {
 	graphics := composedEncodeArgs("/lib/song.mp3", ComposedPicture{GraphicsPath: "/c/song.cdg"}, Rendition{Height: 360}, 0, 4)
-	vf := argAfter(graphics, "-vf")
-	if !strings.Contains(vf, "xbr=n=4,scale=500:360:flags=bicubic") || !strings.Contains(vf, "pad=640:360:") {
-		t.Errorf("graphics -vf = %q, want the 360p canvas", vf)
+	if !containsPair(graphics, "-s", "640x360") {
+		t.Errorf("graphics input = %q, want the 360p canvas", graphics)
 	}
 	text := composedEncodeArgs("/lib/song.mp3", ComposedPicture{TimedTextPath: "/c/song.ass"}, Rendition{Height: 360}, 0, 4)
 	if !slices.Contains(text, "color=c=black:s=640x360:r=30") {
@@ -169,7 +168,7 @@ func TestComposedRecipeRequirementsCoverEveryBranch(t *testing.T) {
 		"aac with gain": func() Rendition { r := withCodec(base, "aac"); r.AudioGainDB = &gain; return r }(),
 		"surround eac3": func() Rendition { r := withCodec(base, "eac3"); r.AudioChannels = 6; return r }(),
 	}
-	wantSeen := map[string]bool{"atempo": false, "asetrate": false, "aresample": false, "volume": false, "ass": false, "tpad": false, "trim": false}
+	wantSeen := map[string]bool{"atempo": false, "asetrate": false, "aresample": false, "volume": false, "ass": false}
 	for name, rendition := range renditions {
 		for _, timedText := range []bool{false, true} {
 			for _, args := range composedRecipeArgv(timedText, rendition) {

@@ -17,6 +17,7 @@ require (
 	github.com/hashicorp/yamux v0.1.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/quic-go/quic-go v0.60.0
+	github.com/tetratelabs/wazero v1.12.0
 	github.com/vektah/gqlparser/v2 v2.5.36
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/exporters/prometheus v0.66.0

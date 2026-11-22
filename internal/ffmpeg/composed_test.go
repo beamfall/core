@@ -20,10 +20,13 @@ func argAfter(args []string, flag string) string {
 
 func TestComposedHLSArgsGraphics(t *testing.T) {
 	args := composedHLSArgs("/lib/song.mp3", "/cache/r/composed", ComposedPicture{GraphicsPath: "/lib/song.cdg"}, Rendition{VideoKbps: 1500})
-	if args[0] != "-v" || args[2] != "-i" || args[3] != "/lib/song.cdg" {
-		t.Fatalf("picture input must come first: %q", args)
+	if got := strings.Join(args[2:12], " "); got != "-f rawvideo -pix_fmt rgba -s 1280x720 -r 30 -i pipe:0" {
+		t.Fatalf("the presenter's frames must be the first input: %q", args)
 	}
-	if got, want := argAfter(args, "-vf"), "fps=30,tpad=stop=-1:stop_mode=clone,xbr=n=4,scale=1000:720:flags=bicubic,pad=1280:720:(ow-iw)/2:0,format=yuv420p"; got != want {
+	if slices.Contains(args, "/lib/song.cdg") {
+		t.Fatalf("FFmpeg must not read the graphics file: %q", args)
+	}
+	if got, want := argAfter(args, "-vf"), "format=yuv420p"; got != want {
 		t.Fatalf("-vf = %q\nwant %q", got, want)
 	}
 	for _, want := range [][]string{
@@ -126,16 +129,14 @@ func requireComposeCapableFFmpeg(t *testing.T) {
 }
 
 // requirePictureCapableFFmpeg skips unless ffmpeg has what the picture kind
-// needs: the graphics decoder and the xBR filter, or the libass filter.
+// needs: graphics are drawn in-process (cdgrender), subtitles need libass.
 func requirePictureCapableFFmpeg(t *testing.T, kind string) {
 	t.Helper()
-	decoders, _ := exec.Command("ffmpeg", "-hide_banner", "-decoders").Output()
-	filters, _ := exec.Command("ffmpeg", "-hide_banner", "-filters").Output()
 	if kind == "graphics" {
-		if !strings.Contains(string(decoders), "cdgraphics") || !strings.Contains(string(filters), " xbr ") {
-			t.Skip("ffmpeg lacks the cdgraphics decoder or the xbr filter")
-		}
-	} else if !strings.Contains(string(filters), " ass ") {
+		return
+	}
+	filters, _ := exec.Command("ffmpeg", "-hide_banner", "-filters").Output()
+	if !strings.Contains(string(filters), " ass ") {
 		t.Skip("ffmpeg lacks the libass filter")
 	}
 }
@@ -245,12 +246,12 @@ func TestStartBackgroundComposedHLSRealEncode(t *testing.T) {
 
 func TestComposedSegmentArgsStartOffsetGraphics(t *testing.T) {
 	args := composedSegmentArgs("/lib/song.mp3", "/scratch/s/composed", ComposedPicture{GraphicsPath: "/lib/song.cdg"}, 3, 4, Rendition{VideoKbps: 1500})
-	if got, want := argAfter(args, "-vf"), "fps=30,tpad=stop=-1:stop_mode=clone,trim=start=12,setpts=PTS-STARTPTS,xbr=n=4,scale=1000:720:flags=bicubic,pad=1280:720:(ow-iw)/2:0,format=yuv420p"; got != want {
+	if got, want := argAfter(args, "-vf"), "format=yuv420p"; got != want {
 		t.Fatalf("-vf = %q\nwant %q", got, want)
 	}
-	// The graphics input is never seeked (it is drawn incrementally); the
-	// audio input is, and the output timestamps land on the absolute position.
-	picture := slices.Index(args, "/lib/song.cdg")
+	// The presenter starts at the segment's source time itself, so only the
+	// audio input seeks, and the output timestamps land on the absolute position.
+	picture := slices.Index(args, "pipe:0")
 	audio := slices.Index(args, "/lib/song.mp3")
 	seek := slices.Index(args, "-ss")
 	if seek < picture || seek > audio || args[seek+1] != "12" {
@@ -383,5 +384,23 @@ func TestComposedArgsMapSelectedAudioTrack(t *testing.T) {
 		if !containsPair(args, "-map", "0:v:0") {
 			t.Errorf("%s: picture map missing: %q", name, args)
 		}
+	}
+}
+
+// TestComposedWaitReportsPresenterFailure proves Wait joins the in-process
+// presenter and reports its error even though FFmpeg itself exited cleanly
+// (a dead presenter only ends the picture, which -shortest hides).
+func TestComposedWaitReportsPresenterFailure(t *testing.T) {
+	failure := errors.New("presenter failed")
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", "exit 0")
+	p, err := startHLSProcessWith(t.Context(), cmd, false, func() error { return failure })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Wait(); !errors.Is(err, failure) {
+		t.Fatalf("Wait = %v, want the presenter's error", err)
+	}
+	if err := p.Wait(); !errors.Is(err, failure) {
+		t.Fatalf("second Wait = %v, want the same joined error", err)
 	}
 }
