@@ -13,9 +13,10 @@ not declare as text. Core SHALL NOT name any kind or value itself.
 
 ### Requirement: A ruled kind is ordered by value and lists its sections
 
-For a ruled kind, the `entity(id)` read SHALL return one group ordered by rule value (items without
-a value first, unlisted values last), each run newest first with undated items last, and whose
-`sections` list each run's value, display name and item count in order.
+The `entity(id)` read SHALL apply sections independently to each owning Library's cards of a
+ruled kind, ordered by rule value (no value first, unlisted values last) and newest first
+within each run (undated last). Its `sections` list each run's value, display name and item
+count. Unruled cards SHALL retain relation order and their owning plugin's archetype.
 
 #### Scenario: Albums grouped by release type
 
@@ -23,6 +24,26 @@ a value first, unlisted values last), each run newest first with undated items l
   ruled by its release-type field with values album then ep
 - **THEN** the artist's read lists one album group ordered 2010 album, 1999 album, EP, with sections
   album (2) and ep (1)
+
+### Requirement: Related Entity section values come from live Media
+
+A ruled card's value SHALL be the most common non-empty field value on its currently linked
+visible Media, with ties broken lexically.
+
+#### Scenario: A track tag changes or a track moves
+
+- **WHEN** a track moves to another album or its release-type tag is cleared
+- **THEN** the next read uses the current links and tags, leaving an album untyped when no tagged track remains
+
+### Requirement: Release-type backfill writes only the Media tag
+
+Existing track Media SHALL receive the release-type field through a field-only backfill.
+
+#### Scenario: Existing Media need the new field
+
+- **WHEN** the release-type backfill visits an existing track
+- **THEN** it uses a stored per-track value if available or reads the tag from the file
+- **AND** it writes only the release-type Media field
 
 ### Requirement: Related Entity cards carry a year
 

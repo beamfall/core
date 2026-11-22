@@ -6,17 +6,21 @@ Ticket: CORE-2769 (`queue:core:main`).
 
 The web artist page lists every album in one alphabetical "Albums" rail with no years, so a
 discography reads nothing like Plex (Albums, EPs, Singles, Live, Compilations, newest first). The
-music plugin now records a release type on each album (plugin-music branch
-`claude/core-artist-depth`, field `release-type`), but core has no generic way to split a related
-kind by a field, and related-Entity cards carry no year.
+music plugin provides the release type from track tags (plugin-music branch
+`claude/core-artist-depth`). Core needs a way to split a related kind by those tags and show
+years on related-Entity cards.
 
 ## What changes
 
-- Store: related-Entity cards carry their year (the earliest linked visible Media), as Source cards do.
+- Store: related-Entity cards carry the earliest linked visible Media year. The same batched
+  read derives a ruled card’s value from its currently linked visible Media.
+- Hydration: track Media carry the release type. A one-time backfill copies a per-track tag
+  when already available and reads the file tags otherwise. It writes that Media field alone.
 - App hook `EntityGroupRules`: a plugin's glue names a kind, a declared text field and the ordered
   values with their headings. Rules for undeclared kinds or non-text fields are dropped with a
   warning. Core names no kind or value.
-- Graph: `entity(id).relatedEntities` keeps one group per kind. A ruled kind's items are ordered by
+- Graph: `entity(id).relatedEntities` applies a rule to each owning Library's cards independently.
+  Unruled cards retain their relation order and the owning plugin's archetype. Ruled cards are ordered by
   rule value (items without a value first, unlisted values last), newest first within each value,
   and the group gains `sections { value displayName count }` describing the consecutive runs.
   Clients that ignore `sections` see the same group with every item. Additive wire change.
