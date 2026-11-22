@@ -142,23 +142,38 @@ func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string
 			args = append(args, id)
 		}
 		for _, db := range planes {
+			// A declared container only counts incoming parts and any other
+			// kind only outgoing ones, so classify the roots first: reading
+			// every ordered outgoing link of a container would fan out
+			// through shared Entities (categories, people) to Media the
+			// filter below discards anyway.
+			declared, err := declaredContainerRoots(ctx, db, placeholders, args, containers, libraryFor)
+			if err != nil {
+				return nil, err
+			}
+			declaredSQL := "0"
+			queryArgs := args
+			if len(declared) > 0 {
+				declaredSQL = "id IN (" + sqlPlaceholders(len(declared)) + ")"
+				queryArgs = append(append(make([]any, 0, len(declared)+len(args)), declared...), args...)
+			}
 			// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
 			rows, err := db.QueryContext(ctx, `
 				WITH roots AS (
-					SELECT id, kind, library_id FROM entity
+					SELECT id, kind, library_id, `+declaredSQL+` AS declared FROM entity
 					WHERE id IN (`+placeholders+`) AND trashed_at_ms IS NULL
 				), parts(root_id, root_kind, root_library_id, id, kind, library_id, parent_relation) AS (
 					SELECT root.id, root.kind, root.library_id, sub.id, sub.kind, sub.library_id, ''
 					FROM roots root
 					JOIN entity_relation link ON link.from_entity_id = root.id
 					JOIN entity sub ON sub.id = link.to_entity_id AND sub.trashed_at_ms IS NULL
-					WHERE link.sort_order IS NOT NULL
+					WHERE root.declared = 0 AND link.sort_order IS NOT NULL
 					UNION ALL
 					SELECT root.id, root.kind, root.library_id, sub.id, sub.kind, sub.library_id, link.relation
 					FROM roots root
 					JOIN entity_relation link ON link.to_entity_id = root.id
 					JOIN entity sub ON sub.id = link.from_entity_id AND sub.trashed_at_ms IS NULL
-					WHERE sub.library_id = root.library_id
+					WHERE root.declared = 1 AND sub.library_id = root.library_id
 				)
 				SELECT root.id, r.to_media_id, '', '', '', '', '', ''
 				FROM roots root
@@ -173,7 +188,7 @@ func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string
 				JOIN media m ON m.id = child.to_media_id AND m.extra = 0
 				WHERE child.sort_order IS NOT NULL
 				  AND (part.parent_relation = '' OR m.library_id = part.library_id)
-			`, args...)
+			`, queryArgs...)
 			if err != nil {
 				return nil, err
 			}
@@ -237,6 +252,55 @@ func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string
 		}
 	}
 	return out, nil
+}
+
+// declaredContainerRoots returns the untrashed roots among the bound IDs whose
+// Library's plugin declares their kind a container.
+func declaredContainerRoots(ctx context.Context, db *sql.DB, placeholders string, args []any, containers map[EngagementContainerKey]EngagementContainerRelations, libraryFor func(LibraryID) (Library, error)) ([]any, error) {
+	if len(containers) == 0 {
+		return nil, nil
+	}
+	// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
+	rows, err := db.QueryContext(ctx, `SELECT id, kind, library_id FROM entity
+		WHERE id IN (`+placeholders+`) AND trashed_at_ms IS NULL`, args...)
+	if err != nil {
+		return nil, err
+	}
+	type root struct {
+		id, kind  string
+		libraryID LibraryID
+	}
+	var roots []root
+	for rows.Next() {
+		var r root
+		if err := rows.Scan(&r.id, &r.kind, &r.libraryID); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		roots = append(roots, r)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Libraries load after the rows close: a reader may hold one connection.
+	var declared []any
+	for _, r := range roots {
+		library, err := libraryFor(r.libraryID)
+		if err != nil {
+			return nil, err
+		}
+		var pluginID string
+		if library.PluginID != nil {
+			pluginID = *library.PluginID
+		}
+		if containers[EngagementContainerKey{PluginID: pluginID, Kind: r.kind}] != nil {
+			declared = append(declared, r.id)
+		}
+	}
+	return declared, nil
 }
 
 // openCatalogReadersLocked lists the catalog reader and the reader of every

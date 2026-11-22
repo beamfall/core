@@ -3,12 +3,13 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchSourceItems } from "@/lib/graphql";
-import { fetchMediaRows } from "@/lib/graphql/browse";
+import { fetchMediaRow, fetchMediaRows } from "@/lib/graphql/browse";
 import type { EntityInfo, GenericMediaInfo, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { readPlayerNavState } from "../lib/watchQueue";
 import { EntityMediaBrowse } from "./EntityMediaBrowse";
 import { useListingRows } from "./useListingRows";
+import { useRelationProbe } from "./useRelationProbe";
 
 vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
@@ -16,6 +17,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
 }));
 
 vi.mock("@/lib/graphql/browse", () => ({
+  fetchMediaRow: vi.fn(),
   fetchMediaRows: vi.fn(),
 }));
 
@@ -105,6 +107,9 @@ const artist: EntityInfo = {
 
 beforeEach(() => {
   vi.mocked(fetchMediaRows).mockReset().mockResolvedValue(rows);
+  vi.mocked(fetchMediaRow)
+    .mockReset()
+    .mockImplementation(async (id) => rows[id] ?? null);
   vi.mocked(fetchSourceItems).mockReset().mockResolvedValue([]);
 });
 
@@ -121,10 +126,20 @@ function WatchProbe() {
   );
 }
 
-// The page reads the rows (useListingRows) and passes them in, as EntityPage does.
+// The page reads the rows (useListingRows) and the relation probe and passes
+// them in, as EntityPage does.
 function Browse({ entity, items }: { entity: EntityInfo; items: SourceItem[] }) {
   const listing = useListingRows(entity, items);
-  return <EntityMediaBrowse entity={entity} items={items} label="Children" listing={listing} />;
+  const probe = useRelationProbe(entity, items);
+  return (
+    <EntityMediaBrowse
+      entity={entity}
+      items={items}
+      label="Children"
+      listing={listing}
+      probe={probe}
+    />
+  );
 }
 
 function renderBrowse(entity: EntityInfo, items: SourceItem[]) {
@@ -141,6 +156,49 @@ function renderBrowse(entity: EntityInfo, items: SourceItem[]) {
 }
 
 describe("EntityMediaBrowse", () => {
+  it("lists a relation-sequenced container as a poster grid in server order, each book queued alone", async () => {
+    const sequenced = (id: string, sequence: string) => ({
+      ...rows[id],
+      credits: [{ ...credit("album-1", "Test Album", "container"), attributes: { sequence } }],
+    });
+    // The first book carries no sequence; the others still order the page.
+    const byId: Record<string, GenericMediaInfo> = {
+      t1: rows.t1,
+      t2: sequenced("t2", "1.5"),
+      t3: sequenced("t3", "2"),
+    };
+    vi.mocked(fetchMediaRow).mockImplementation(async (id) => byId[id] ?? null);
+    vi.mocked(fetchMediaRows).mockResolvedValue(byId);
+    renderBrowse(album, tracks);
+    const grid = await screen.findByRole("list", { name: "Children" });
+    expect(within(grid).getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.queryByRole("list", { name: "Tracks" })).not.toBeInTheDocument();
+    // A card starts its own book alone: its one-item queue runs on to no next
+    // book and ends an earlier Play all queue.
+    fireEvent.click(within(grid).getAllByRole("button", { name: /^Play / })[0]);
+    expect(screen.getByTestId("watch")).toHaveTextContent(/^\/watch\/t1\|t1:(audio)?$/);
+  });
+
+  it("groups a person's audio Media by credited role", async () => {
+    const roled = (id: string, role: string) => ({
+      ...rows[id],
+      credits: [{ ...credit("person-a", "Test Artist", "person"), attributes: { role } }],
+    });
+    const byId: Record<string, GenericMediaInfo> = {
+      t1: roled("t1", "author"),
+      t2: roled("t2", "narrator, author"),
+      t3: roled("t3", "narrator"),
+    };
+    vi.mocked(fetchMediaRow).mockImplementation(async (id) => byId[id] ?? null);
+    vi.mocked(fetchMediaRows).mockResolvedValue(byId);
+    renderBrowse(artist, tracks);
+    const wrote = await screen.findByRole("list", { name: "Wrote" });
+    expect(within(wrote).getAllByRole("listitem")).toHaveLength(2);
+    const narrated = screen.getByRole("list", { name: "Narrated" });
+    expect(within(narrated).getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.queryByRole("list", { name: "Top tracks" })).not.toBeInTheDocument();
+  });
+
   it("lists an audio container's tracks in server order with runtime and differing credits", async () => {
     renderBrowse(album, tracks);
     const list = await screen.findByRole("list", { name: "Tracks" });
@@ -174,12 +232,15 @@ describe("EntityMediaBrowse", () => {
   it("reads stored positions only for a container's track list", async () => {
     renderBrowse(album, tracks);
     await screen.findByRole("list", { name: "Tracks" });
-    expect(vi.mocked(fetchMediaRows).mock.calls[0][2]).toEqual({ positions: true });
+    // The relation probe's own read passes no options.
+    const options = () => vi.mocked(fetchMediaRows).mock.calls.map((call) => call[2]);
+    expect(options()).toContainEqual({ positions: true });
     cleanup();
     vi.mocked(fetchMediaRows).mockClear();
     renderBrowse(artist, tracks);
     await screen.findByRole("list", { name: "Tracks" });
-    expect(vi.mocked(fetchMediaRows).mock.calls[0][2]).toEqual({ positions: false });
+    expect(options()).toContainEqual({ positions: false });
+    expect(options()).not.toContainEqual({ positions: true });
   });
 
   it("groups a container's tracks under a heading per stored sequence, playing on across groups", async () => {
@@ -201,6 +262,17 @@ describe("EntityMediaBrowse", () => {
     expect(screen.queryByRole("list", { name: "Tracks" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Play Track One" }));
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/t1|t3:audio,t2:audio,t1:audio");
+  });
+
+  it("lists a person's plays-alone Media without roles as cards, each queued alone (CORE-3147)", async () => {
+    const books = tracks.map((track) => ({ ...track, playsAlone: true }));
+    renderBrowse(artist, books);
+    const grid = await screen.findByRole("list", { name: "Appears in" });
+    expect(within(grid).getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.queryByRole("list", { name: "Top tracks" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "All tracks" })).not.toBeInTheDocument();
+    fireEvent.click(within(grid).getAllByRole("button", { name: /^Play / })[0]);
+    expect(screen.getByTestId("watch")).toHaveTextContent(/^\/watch\/t\d\|(t\d:(audio)?)?$/);
   });
 
   it("splits an audio person's page into top tracks and the containers it appears on", async () => {

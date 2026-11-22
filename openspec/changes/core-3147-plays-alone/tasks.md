@@ -1,0 +1,6 @@
+- [x] Pin plugin SDK v0.4.11 and plugin-audiobook v0.1.20
+- [x] Set `playsAlone` on cards, search cards and `media(id)` from the Library plugin's engagement posture
+- [x] Graph tests for a plays-alone plugin, a plugin that does not declare it, and a plugin-less Library
+- [x] Regenerate the wire contract artifacts
+- [x] Web: one-item queues and player narrowing for plays-alone items; no track list for plays-alone listings
+- [ ] Publish the additive client-core-wire minor (landing stack)

@@ -250,7 +250,7 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 	}
 	downloaded := 0
 	var firstErr error
-	for _, entry := range document.Entries {
+	for position, entry := range document.Entries {
 		if ctx.Err() != nil {
 			return published + downloaded, ctx.Err()
 		}
@@ -267,7 +267,7 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 			if !selected[entry.GUID] {
 				continue
 			}
-			entryErr = p.ingestEntry(ctx, subscription, entry, authHeader, catalogued, now)
+			entryErr = p.ingestEntry(ctx, subscription, entry, authHeader, catalogued, now, position)
 			if entryErr == nil {
 				downloaded++
 			}
@@ -300,7 +300,7 @@ func (p *Poller) pollSubscription(ctx context.Context, subscription store.Subscr
 // acknowledges the staged payload by exact source GUID. The destination is
 // recorded once the payload is published. Every boundary in between either
 // resumes from the staged payload or retries the download on the next poll.
-func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscription, entry scrape.FeedEntry, authHeader string, catalogued bool, now time.Time) error {
+func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscription, entry scrape.FeedEntry, authHeader string, catalogued bool, now time.Time, position int) error {
 	if err := os.MkdirAll(subscription.Root, 0o755); err != nil {
 		return err
 	}
@@ -335,7 +335,7 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 		}
 	}
 	// Acknowledge the durable stage without exposing a path to scan or retention.
-	if err := p.store.MarkSubscriptionEntrySeen(ctx, subscription.ID, entry.GUID, "", now); err != nil {
+	if err := p.store.MarkSubscriptionFeedEntrySeen(ctx, subscription.ID, entry.GUID, "", now, position); err != nil {
 		return err
 	}
 	if err := p.faultAt("receipt-recorded"); err != nil {

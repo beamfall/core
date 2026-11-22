@@ -1,0 +1,9 @@
+- [ ] Web: Screensaver option in the slideshow setup sheet, per-device storage, off by default
+- [ ] Web: last-played slideshow Source recorded per device
+- [ ] Web: idle hook in the viewer shell (5 min, visible tab, browsing route, no dialog or text field)
+- [ ] Web: screensaver mode in `/slideshow`: no chrome, first input closes it, input swallowed
+- [ ] Web: missing, failed or empty Source closes the screensaver at once
+- [ ] Strings in every shipped locale
+- [ ] Vitest: idle eligibility, settings round trip, first input closes, empty Source closes
+- [ ] Browser check against a Photos library
+- [ ] `openspec archive core-2981-web-screensaver` after landing

@@ -7,7 +7,7 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import { isRankedShelf, rankShelfItems } from "../lib/containerPage";
 import { SECTION_GRID_CAP } from "../lib/sections";
-import { playQueueOf } from "../lib/watchQueue";
+import { playQueueOf, sectionQueue } from "../lib/watchQueue";
 import { MediaItemCard } from "./MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "./useVirtualGrid";
 
@@ -83,7 +83,8 @@ export function SectionView({
   const start = window ? window.startIndex : 0;
   const end = window ? window.endIndex : items.length;
   const visible = window ? items.slice(start, end) : items;
-  const queue = useMemo(() => playQueueOf(items), [items]);
+  const sourceKind = section.source?.kind;
+  const queue = useMemo(() => sectionQueue(sourceKind, items), [sourceKind, items]);
   const repeated = useMemo(() => repeatedTitles(items), [items]);
   const title = displayString(section.title, displayLocale);
 
@@ -115,7 +116,7 @@ export function SectionView({
               item={item}
               posInSet={index + 1}
               setSize={items.length}
-              queue={queue}
+              queue={queue ?? playQueueOf([item])}
               playOnActivate={!showPlayButton && playOnActivate}
               showPlayButton={showPlayButton}
               showYear={showsYear(item, repeated)}

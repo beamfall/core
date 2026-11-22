@@ -167,6 +167,10 @@ type SourceItem struct {
 	// for a Library whose plugin declares none (CORE-2415).
 	AudienceScoreLabel plugin.LocaleString `json:"audienceScoreLabel,omitempty"`
 	AudienceScoreVotes int                 `json:"audienceScoreVotes,omitempty"`
+	// PlaysAlone is true when the item's Library plugin declares that its
+	// Media play alone: a client starts it with a one-item queue and never
+	// auto-advances into or out of it. Absent otherwise (CORE-3147).
+	PlaysAlone bool `json:"playsAlone,omitempty"`
 	// Byline names the person-archetype Entities linked to audio Media or
 	// audio containers, in link order, so a card credits them under its title
 	// (CORE-2362). Absent for every other item.
@@ -414,6 +418,7 @@ type Options struct {
 	Identify                     *identify.Service
 	Artwork                      ArtworkLocator
 	EntityBrowseSources          map[plugin.ID]map[string][]store.EntityBrowseSource
+	EntityGroupRules             map[plugin.ID]map[string]EntityGroupRule
 	StreamTokens                 *streamtoken.Service
 	ArtworkCandidateFetcher      ArtworkCandidateFetcher
 	ArtworkCandidateImporter     ArtworkCandidateImporter
@@ -429,6 +434,8 @@ type Options struct {
 	FeedSearcher                 FeedSearcher
 	PrePlayPolicy                PrePlayPolicy
 	AssetSweep                   func(context.Context)
+	SonicAnalysisAvailable       func() bool
+	SonicAnalysisSweep           func(context.Context)
 	SubscriptionSecrets          SubscriptionSecretStore
 	ScraperCredentialStore       ScraperCredentialStore
 	ScraperCredentialInvalidator ScraperCredentialInvalidator
@@ -482,9 +489,14 @@ type Handler struct {
 
 	// Immutable after construction, keyed by plugin ID and Entity kind.
 	entityBrowseSources map[plugin.ID]map[string][]store.EntityBrowseSource
+	entityGroupRules    map[plugin.ID]map[string]EntityGroupRule
 
 	// Immutable after construction, keyed by plugin ID and container kind.
 	engagementContainers map[store.EngagementContainerKey]store.EngagementContainerRelations
+	// containerNests are the activated bundles' declared container nestings,
+	// which an item action on a container follows to its parts in a Library
+	// of the declaring plugin.
+	containerNests []store.ContainerNest
 
 	// transcodeRuntime is the live transcoder wiring the transcode-config
 	// resolver reads and applies; liveTranscodeCap is the cap now in force.
@@ -534,6 +546,11 @@ type Handler struct {
 	// (ADR-0033 §4: thumbnails are generated when a Marker is created or its
 	// timestamp edited). Nil (the default) disables.
 	assetSweep func(context.Context)
+	// sonicAnalysisAvailable and sonicAnalysisSweep back the per-Library
+	// sonic-analysis toggle (graph_sonic.go). Nil reports analysis
+	// unavailable and refuses turning the toggle on.
+	sonicAnalysisAvailable func() bool
+	sonicAnalysisSweep     func(context.Context)
 	// remoteAccess reports direct-HTTPS/ACME + relay carrier status to the
 	// manager Console (ADR-0012/0018/0025). Nil (the default) reports both
 	// paths disabled — honest for a LAN-only server.
@@ -827,6 +844,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	for _, id := range plugins.IDs() {
 		bundle, _ := plugins.Bundle(id)
 		relations := identify.ContainerRelations(bundle)
+		h.containerNests = append(h.containerNests, identify.ContainerNestings(string(id), bundle)...)
 		for _, kind := range bundle.EntityKinds {
 			if kind.Archetype == containerArchetype {
 				h.engagementContainers[store.EngagementContainerKey{PluginID: string(id), Kind: kind.Name}] = relations
@@ -857,6 +875,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.identify = o.Identify
 	h.artwork = o.Artwork
 	h.entityBrowseSources = o.EntityBrowseSources
+	h.entityGroupRules = o.EntityGroupRules
 	h.tokens = o.StreamTokens
 	h.candidateFetch = o.ArtworkCandidateFetcher
 	h.candidateImport = o.ArtworkCandidateImporter
@@ -872,6 +891,8 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.feedSearcher = o.FeedSearcher
 	h.prePlayPolicy = o.PrePlayPolicy
 	h.assetSweep = o.AssetSweep
+	h.sonicAnalysisAvailable = o.SonicAnalysisAvailable
+	h.sonicAnalysisSweep = o.SonicAnalysisSweep
 	h.subscriptionSecrets = o.SubscriptionSecrets
 	h.scraperCredentials = o.ScraperCredentialStore
 	h.scraperCredentialInvalidator = o.ScraperCredentialInvalidator
@@ -1126,14 +1147,14 @@ func (h *Handler) SetUpdateChecker(checker UpdateChecker, serverVersion string) 
 // does not carry: each media item's class (for its placeholder), its
 // container, and the acting Profile's engagement.
 func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []store.SourceItem) error {
-	return h.annotateCardsForProfile(ctx, scope.ProfileID, scope.LibraryFilter(), items)
+	return h.annotateCardsForProfile(ctx, scope.ProfileID, scope.LibraryFilter(), items, true)
 }
 
-func (h *Handler) annotateCardsForProfile(ctx context.Context, profileID store.ProfileID, filter store.LibraryFilter, items []store.SourceItem) error {
+func (h *Handler) annotateCardsForProfile(ctx context.Context, profileID store.ProfileID, filter store.LibraryFilter, items []store.SourceItem, useReleaseYear bool) error {
 	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
 		return err
 	}
-	if err := h.annotateBylines(ctx, filter, items); err != nil {
+	if err := h.annotateBylines(ctx, filter, items, useReleaseYear); err != nil {
 		return err
 	}
 	if err := h.annotateContainers(ctx, items); err != nil {
@@ -1143,6 +1164,7 @@ func (h *Handler) annotateCardsForProfile(ctx context.Context, profileID store.P
 		return err
 	}
 	h.annotateScoreLabels(ctx, items)
+	h.annotatePlaysAlone(ctx, items)
 	return h.store.AnnotateEngagement(ctx, profileID, filter, items, h.engagementContainers)
 }
 
@@ -1156,7 +1178,7 @@ const maxCardByline = 3
 // annotateBylines credits audio Media and audio containers from the
 // person-archetype Entities linked to them (CORE-2362, CORE-2764). It runs
 // after AnnotateMediaClass. Linked Entities share the visible card's Library.
-func (h *Handler) annotateBylines(ctx context.Context, filter store.LibraryFilter, items []store.SourceItem) error {
+func (h *Handler) annotateBylines(ctx context.Context, filter store.LibraryFilter, items []store.SourceItem, useReleaseYear bool) error {
 	var mediaIDs []store.MediaID
 	var entityIDs []store.EntityID
 	for _, item := range items {
@@ -1214,7 +1236,7 @@ func (h *Handler) annotateBylines(ctx context.Context, filter store.LibraryFilte
 			}
 			// The album's release date outranks the earliest-track year a
 			// shelf query may have set.
-			if detail.ReleaseYear > 0 {
+			if useReleaseYear && detail.ReleaseYear > 0 {
 				item.Year = detail.ReleaseYear
 			}
 			for _, credit := range detail.Credits {
@@ -1256,6 +1278,7 @@ func basicSourceItem(item store.SourceItem, revealed bool) SourceItem {
 		AudienceScore:      item.AudienceScore,
 		AudienceScoreLabel: plugin.LocaleString(item.AudienceScoreLabel),
 		AudienceScoreVotes: item.AudienceScoreVotes,
+		PlaysAlone:         item.PlaysAlone,
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
@@ -5021,7 +5044,7 @@ func (h *Handler) queueOps(ctx context.Context, scope auth.Scope, fields map[str
 
 func (h *Handler) queueItems(ctx context.Context, committed store.QueueItemsResult) ([]SourceItem, error) {
 	cards := slices.Clone(committed.Items)
-	if err := h.annotateCardsForProfile(ctx, committed.ProfileID, committed.Filter, cards); err != nil {
+	if err := h.annotateCardsForProfile(ctx, committed.ProfileID, committed.Filter, cards, true); err != nil {
 		return nil, err
 	}
 	return h.queueResponse(cards, committed.Filter.Revealed, true), nil
@@ -5090,6 +5113,9 @@ type MediaInfo struct {
 	// read.
 	AudienceScoreLabel plugin.LocaleString `json:"audienceScoreLabel,omitempty"`
 	AudienceScoreVotes int                 `json:"audienceScoreVotes,omitempty"`
+	// PlaysAlone is as on SourceItem (CORE-3147); filled only by the
+	// media(id) read.
+	PlaysAlone bool `json:"playsAlone,omitempty"`
 	// Sequence and Index are the item's stored ordinals, as on SourceItem;
 	// Headline renders the plugin's MediaSubtitle segments that name no
 	// ordinal (the item's own title when stored), ClassLabel is the plugin's
@@ -5160,6 +5186,7 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 		}
 	}
 	info.VideoWidth, info.VideoHeight = media.VideoWidth, media.VideoHeight
+	info.PlaysAlone = h.libraryPlaysAlone(ctx, media.LibraryID)
 	h.describeOrderedMedia(ctx, media, &info)
 	return info, nil
 }
@@ -5446,6 +5473,21 @@ type RelatedEntityGroupInfo struct {
 	// Archetype is the plugin-declared shape of Kind; omitted when undeclared.
 	Archetype string       `json:"archetype,omitempty"`
 	Items     []SourceItem `json:"items"`
+	// Sections partitions Items, in order, when a group rule splits Kind by
+	// a plugin field (CORE-2769): each section names a run of Items by its
+	// count. Omitted for an unsplit kind; clients that ignore it still get
+	// every Item, ordered section by section.
+	Sections []RelatedEntitySectionInfo `json:"sections,omitempty"`
+}
+
+// RelatedEntitySectionInfo is one run of a split related group: the grouping
+// field's value (empty for Entities without one), its plugin-declared heading
+// (omitted when the rule lists none; clients then head it with Value, or
+// with the kind's heading when Value is empty) and how many Items it covers.
+type RelatedEntitySectionInfo struct {
+	Value       string              `json:"value"`
+	DisplayName plugin.LocaleString `json:"displayName,omitempty"`
+	Count       int                 `json:"count"`
 }
 
 // RelatedEntityInfo pairs an Entity with the relation attributes that
@@ -5473,12 +5515,20 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 		EntityInfo:   entityInfo(entity, h.entityKindSpec(ctx, entity.LibraryID, entity.Kind)),
 		ArtworkSlots: h.entityArtworkSlots(entity.ID),
 	}
-	groups, err := h.store.RelatedEntityGroups(ctx, entity.ID, scope.LibraryFilter())
+	filter := scope.LibraryFilter()
+	var groupField func(pluginID, kind string) string
+	if len(h.entityGroupRules) != 0 {
+		groupField = func(pluginID, kind string) string {
+			return h.entityGroupRules[plugin.ID(pluginID)][kind].Field
+		}
+	}
+	groups, err := h.store.RelatedEntityGroupsBy(ctx, entity.ID, filter, groupField)
 	if err != nil {
 		return EntityDetailInfo{}, err
 	}
 	for _, group := range groups {
-		if err := h.annotateCards(ctx, scope, group.Items); err != nil {
+		// Related cards display and sort by their earliest linked Media year.
+		if err := h.annotateCardsForProfile(ctx, scope.ProfileID, filter, group.Items, false); err != nil {
 			return EntityDetailInfo{}, err
 		}
 		items := make([]SourceItem, len(group.Items))
@@ -5486,13 +5536,16 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 			items[i] = h.sourceItem(item, scope.Revealed)
 		}
 		spec := h.entityKindSpec(ctx, group.LibraryID, group.Kind)
-		info.RelatedEntities = append(info.RelatedEntities, RelatedEntityGroupInfo{
+		rule := h.entityGroupRules[plugin.ID(group.PluginID)][group.Kind]
+		related := RelatedEntityGroupInfo{
 			Kind:                  group.Kind,
 			KindDisplayName:       spec.DisplayName,
 			KindPluralDisplayName: spec.PluralDisplayName,
 			Archetype:             spec.Archetype,
 			Items:                 items,
-		})
+		}
+		rule.apply(&related, group.GroupValues)
+		info.RelatedEntities = append(info.RelatedEntities, related)
 	}
 	return info, nil
 }
@@ -5941,6 +5994,8 @@ func entityInfo(entity store.Entity, kind plugin.EntityKind) EntityInfo {
 // mediaForEntity resolves the Media items related to one Entity — the
 // detail-page item list. Reveal-filtered twice over: the Entity must be
 // visible to the session, and each related item's Library is filtered again.
+// With rollUp, held Media are listed as their outermost containers
+// (rollUpContainers, CORE-3058).
 func (h *Handler) mediaForEntity(ctx context.Context, scope auth.Scope, req request) ([]SourceItem, error) {
 	entityID := trimmedVariable(req, "entityID")
 	if entityID == "" {
@@ -5949,6 +6004,11 @@ func (h *Handler) mediaForEntity(ctx context.Context, scope auth.Scope, req requ
 	items, err := h.store.MediaForEntity(ctx, store.EntityID(entityID), scope.LibraryFilter())
 	if err != nil {
 		return nil, clientError("unknown entity")
+	}
+	if boolVar(req, "rollUp") {
+		if items, err = h.rollUpContainers(ctx, store.EntityID(entityID), items); err != nil {
+			return nil, err
+		}
 	}
 	// Direct navigation reaches muted Media on purpose (§2.2) and badges them (§2.7).
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
@@ -6306,7 +6366,9 @@ var queryFields = map[string]bool{
 	"mediaforentity":         true,
 	"mediafiles":             true,
 	"mediatracks":            true,
+	"medialyrics":            true,
 	"relatedmedia":           true,
+	"similarmedia":           true, // CORE-3074: sonically similar Media
 	"mediarelations":         true,
 	"mediafields":            true,
 	"artworkcandidates":      true,
@@ -6315,6 +6377,8 @@ var queryFields = map[string]bool{
 	"itemstate":              true,
 	"metadatacredits":        true,
 	"playqueue":              true,
+	"partysession":           true,
+	"partystage":             true,
 	"sourceitems":            true,
 	"libraryentities":        true,
 	"libraryitems":           true,
@@ -6339,6 +6403,7 @@ var queryFields = map[string]bool{
 	"encryptedlibrarystatus": true, // ENC-2 (ADR-0045 §2.4): credential-free Sealed/Unsealed + mode read
 	"accessschedule":         true,
 	"clientprefs":            true,
+	"homelayout":             true, // CORE-1972: the session Profile's Home layout
 	"identifysearch":         true,
 	"identifylookup":         true, // METAPARITY-4 (ADR-0068 §A): paste-an-id direct fetch, read-only
 	"fixmatchcandidates":     true, // METAPARITY-4 (ADR-0068 §A): scored candidate list, read-only
@@ -6396,6 +6461,8 @@ var queryFields = map[string]bool{
 	// ENR-7 (ADR-0048 Decision 3/6): operator read of the per-Library
 	// skip-detection toggle (resolver in graph_skipdetect.go).
 	"skipdetectionenabled": true,
+	// CORE-3073: operator read of the per-Library sonic-analysis toggle.
+	"sonicanalysisenabled": true,
 	"notifications":        true,
 	"extensionrequest":     true,
 	// ADR-0113 §2.2: per-title access request reads.
@@ -6464,6 +6531,22 @@ var mutationFields = map[string]bool{
 	"setrating":                          true,
 	"setcontinuewatchinghidden":          true,
 	"setfavorite":                        true,
+	"partystart":                         true,
+	"partyend":                           true,
+	"partyupdate":                        true,
+	"partyrotatecode":                    true,
+	"partyadd":                           true,
+	"partyreview":                        true,
+	"partymove":                          true,
+	"partyremove":                        true,
+	"partyrestore":                       true,
+	"partyadvance":                       true,
+	"partyplayback":                      true,
+	"partyremoveparticipant":             true,
+	"partyscreenregister":                true,
+	"partyscreenreport":                  true,
+	"partyscreenticker":                  true,
+	"partyscreendrop":                    true,
 	"queueaddmany":                       true,
 	"queuemoveentry":                     true,
 	"queueremoveentry":                   true,
@@ -6481,6 +6564,8 @@ var mutationFields = map[string]bool{
 	"linkscrobble":                       true, // SCROBBLE-1 (ADR-0049 §2.2): link own Profile to a scrobble service
 	"unlinkscrobble":                     true, // SCROBBLE-1 (ADR-0049 §2.9): unlink own Profile from a scrobble service
 	"setclientpref":                      true,
+	"sethomelayout":                      true, // CORE-1972: save the session Profile's Home layout
+	"resethomelayout":                    true, // CORE-1972: clear the session Profile's Home layout
 	"setfollow":                          true,
 	"associatesubscriptionentry":         true,
 	"setmute":                            true, // ENR-4 (ADR-0054 §2.8): set "Not interested" on an Entity/Tag (own Profile)
@@ -6675,6 +6760,8 @@ var mutationFields = map[string]bool{
 	// ENR-7 (ADR-0048 Decision 3/6): operator write of the per-Library
 	// skip-detection toggle (resolver in graph_skipdetect.go).
 	"setskipdetectionenabled": true,
+	// CORE-3073: operator write of the per-Library sonic-analysis toggle.
+	"setsonicanalysisenabled": true,
 	"setpreplayclips":         true,
 	// Encrypted-Library key model: provision the DEK +
 	// three wraps (Recovery Key once), and the Sealed/Unsealed lifecycle.
@@ -6894,6 +6981,9 @@ var adminFields = map[string]bool{
 	// 3/6 — Admin Session, the same tier as setLibraryAIIndexing).
 	"skipdetectionenabled":    true,
 	"setskipdetectionenabled": true,
+	// Sonic analysis per-Library toggle (CORE-3073), same tier.
+	"sonicanalysisenabled":    true,
+	"setsonicanalysisenabled": true,
 	"preplayclips":            true, // CORE-1701: the Owner's pre-play clip list
 	"setpreplayclips":         true,
 }

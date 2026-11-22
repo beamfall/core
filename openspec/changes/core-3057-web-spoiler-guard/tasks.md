@@ -1,0 +1,10 @@
+- [x] `preferences.ts`: the global and per-container keys
+- [x] `spoilerGuard.ts`: shared per-Profile prefs cache, session reveals, the guard rule
+- [x] Container rows: placeholder still, hidden summary, reveal button, Show spoilers toggle
+- [x] Container children grid and Media cards use the same rule
+- [x] More menu: Reveal details
+- [x] Profile Settings toggle under Hidden items
+- [x] Strings for en, fr, de, es, pt and the `strings.test.ts` baselines
+- [x] Vitest for the rule, the rows and the setting; `tsc --noEmit`, lint
+- [ ] `make gate`
+- [ ] `openspec archive core-3057-web-spoiler-guard` after landing

@@ -1,20 +1,40 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ItemTarget, SourceItem } from "@/lib/graphql/types";
 import { fetchSourceItems } from "@/lib/graphql/viewer";
 import { I18nProvider } from "@/lib/i18n";
 import { fetchPreviewInfo } from "../viewer/lib/playback";
 import {
+  idleRoute,
+  lastSlideshowSource,
+  pageBusy,
+  saveLastSlideshowSource,
+  saveScreensaverEnabled,
+  screensaverEnabled,
+  screensaverPath,
+  trackTyping,
+} from "./lib/screensaver";
+import {
   clampInterval,
   DEFAULT_INTERVAL_SECONDS,
+  inDarkRoomWindow,
+  nextDarkRoomBoundary,
   nextDelay,
   parseSlideshowSource,
+  type Slide,
+  type SlideShape,
+  slideGroupSettled,
+  slideGroups,
   slidesFrom,
   slideshowPath,
 } from "./lib/slideshow";
-import { oscilluxSlideMotion, slideshowMotionAvailable } from "./lib/slideshowMotion";
+import {
+  defaultSlideshowMotion,
+  oscilluxSlideMotion,
+  slideshowMotionAvailable,
+} from "./lib/slideshowMotion";
 import { SlideshowPage } from "./SlideshowPage";
 
 vi.mock("@/lib/graphql/viewer", async (importOriginal) => ({
@@ -111,12 +131,86 @@ describe("slideshow helpers", () => {
     expect(parseSlideshowSource("source=nope")).toBeNull();
   });
 
-  it("hard-cuts until Oscillux ships a photo-slideshow mode", () => {
+  it("pairs consecutive portraits on a landscape screen and leaves a lone portrait alone", () => {
+    const slide = (id: string, clip = false): Slide => ({ item: media(id), clip });
+    const shapes: Record<string, SlideShape> = {
+      p1: "portrait",
+      p2: "portrait",
+      p3: "portrait",
+      wide: "landscape",
+      p4: "portrait",
+      clip: "portrait",
+      p5: "portrait",
+    };
+    const slides = ["p1", "p2", "p3", "wide", "p4", "clip", "p5", "unknown"].map((id) =>
+      slide(id, id === "clip"),
+    );
+    const ids = (pair: boolean) =>
+      slideGroups(slides, (s) => shapes[s.item.id], pair).map((group) =>
+        group.slides.map((s) => s.item.id).join("+"),
+      );
+    expect(ids(true)).toEqual(["p1+p2", "p3", "wide", "p4", "clip", "p5", "unknown"]);
+    expect(ids(false)).toEqual(["p1", "p2", "p3", "wide", "p4", "clip", "p5", "unknown"]);
+    // The last portrait never wraps round to pair with the first.
+    expect(ids(true).at(-1)).toBe("unknown");
+    expect(slideGroups([slide("p1")], (s) => shapes[s.item.id], true)).toHaveLength(1);
+  });
+
+  it("waits for the portraits before a slide so Previous never splits a pair", () => {
+    const slides = ["wide", "e", "f"].map((id): Slide => ({ item: media(id), clip: false }));
+    const known: Record<string, SlideShape> = { wide: "landscape", f: "portrait" };
+    const shapeOf = (s: Slide) => known[s.item.id];
+    expect(slideGroupSettled(slides, 2, shapeOf, true)).toBe(false);
+    known.e = "portrait";
+    expect(slideGroups(slides, shapeOf, true).map((g) => g.start)).toEqual([0, 1]);
+    expect(slideGroupSettled(slides, 1, shapeOf, true)).toBe(true);
+  });
+
+  it("finds the Dark Room window across midnight", () => {
+    const at = (hours: number, minutes = 0) => new Date(2026, 0, 1, hours, minutes);
+    expect(inDarkRoomWindow(at(23), "22:00", "07:00")).toBe(true);
+    expect(inDarkRoomWindow(at(2, 30), "22:00", "07:00")).toBe(true);
+    expect(inDarkRoomWindow(at(7), "22:00", "07:00")).toBe(false);
+    expect(inDarkRoomWindow(at(12), "22:00", "07:00")).toBe(false);
+    expect(inDarkRoomWindow(at(22), "22:00", "07:00")).toBe(true);
+    expect(inDarkRoomWindow(at(13), "12:00", "14:00")).toBe(true);
+    expect(inDarkRoomWindow(at(15), "12:00", "14:00")).toBe(false);
+    expect(inDarkRoomWindow(at(12), "12:00", "12:00")).toBe(false);
+    expect(inDarkRoomWindow(at(12), "noon", "14:00")).toBe(false);
+  });
+
+  it("ends a manual Dark Room choice at the schedule's next boundary", () => {
+    const at = (day: number, hours: number) => new Date(2026, 0, day, hours);
+    expect(nextDarkRoomBoundary(at(1, 12), "22:00", "07:00")).toEqual(at(1, 22));
+    expect(nextDarkRoomBoundary(at(1, 23), "22:00", "07:00")).toEqual(at(2, 7));
+    expect(nextDarkRoomBoundary(at(1, 7), "22:00", "07:00")).toEqual(at(1, 22));
+    expect(nextDarkRoomBoundary(at(1, 12), "12:00", "12:00")).toBeNull();
+  });
+
+  it("offers Calm by default and hard-cuts it without WebGL2", () => {
+    // jsdom has no WebGL2: Calm stays available and falls back to hard cuts.
+    expect(defaultSlideshowMotion()).toBe("calm");
     expect(oscilluxSlideMotion("calm")).toBeNull();
-    expect(slideshowMotionAvailable("calm")).toBe(false);
+    expect(slideshowMotionAvailable("calm")).toBe(true);
     expect(slideshowMotionAvailable("still")).toBe(true);
+    expect(slideshowMotionAvailable("visualiser")).toBe(false);
   });
 });
+
+/** jsdom never decodes images: this one "loads" portrait when its URL says "tall". */
+class FakeImage {
+  decoding = "";
+  naturalWidth = 0;
+  naturalHeight = 0;
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  set src(url: string) {
+    const tall = url.includes("tall");
+    this.naturalWidth = tall ? 900 : 1600;
+    this.naturalHeight = tall ? 1350 : 1000;
+    queueMicrotask(() => this.onload?.());
+  }
+}
 
 describe("SlideshowPage", () => {
   const fetchSpy = vi.fn(async () => new Response("{}"));
@@ -124,6 +218,7 @@ describe("SlideshowPage", () => {
   beforeEach(() => {
     vi.mocked(fetchSourceItems).mockResolvedValue(listed);
     vi.stubGlobal("fetch", fetchSpy);
+    vi.stubGlobal("Image", FakeImage);
   });
 
   afterEach(() => {
@@ -160,9 +255,61 @@ describe("SlideshowPage", () => {
   it("opens the setup sheet without a Source and closes on Escape", async () => {
     renderAt("/slideshow");
     expect(await screen.findByRole("dialog", { name: "Slideshow settings" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /Calm/ })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: /Calm/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /Visualiser/ })).toBeDisabled();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(await screen.findByText("home")).toBeInTheDocument();
+  });
+
+  it("shows two portraits as one slide and steps past the pair", async () => {
+    vi.mocked(fetchSourceItems).mockResolvedValue([
+      media("tall-a"),
+      media("tall-b"),
+      media("wide"),
+    ]);
+    renderAt("/slideshow?source=all-items");
+    expect(await screen.findByRole("img", { name: "Title tall-a" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Title tall-b" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(await screen.findByRole("img", { name: "Title wide" })).toBeInTheDocument();
+    expect(screen.getAllByRole("img")).toHaveLength(1);
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(await screen.findByRole("img", { name: "Title tall-b" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Title tall-a" })).toBeInTheDocument();
+  });
+
+  it("keeps a trailing pair together when Previous wraps to it", async () => {
+    vi.mocked(fetchSourceItems).mockResolvedValue([
+      media("wide"),
+      media("tall-e"),
+      media("tall-f"),
+    ]);
+    renderAt("/slideshow?source=all-items");
+    await screen.findByRole("img", { name: "Title wide" });
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(await screen.findByRole("img", { name: "Title tall-e" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Title tall-f" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(await screen.findByRole("img", { name: "Title wide" })).toBeInTheDocument();
+  });
+
+  it("dims on the Dark Room schedule", async () => {
+    const clock = (date: Date) =>
+      `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+    const now = Date.now();
+    localStorage.setItem(
+      "bf.slideshow.prefs",
+      JSON.stringify({
+        darkRoom: true,
+        darkRoomStart: clock(new Date(now - 3_600_000)),
+        darkRoomEnd: clock(new Date(now + 3_600_000)),
+      }),
+    );
+    renderAt("/slideshow?source=favorites");
+    await screen.findByRole("img", { name: "Title one" });
+    expect(screen.getByTestId("slideshow-dim")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "d" });
+    expect(screen.queryByTestId("slideshow-dim")).not.toBeInTheDocument();
   });
 
   it("dims the stage for Dark Room on D", async () => {
@@ -171,5 +318,211 @@ describe("SlideshowPage", () => {
     expect(screen.queryByTestId("slideshow-dim")).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "d" });
     expect(screen.getByTestId("slideshow-dim")).toBeInTheDocument();
+  });
+
+  it("closes the screensaver on the first key without stepping", async () => {
+    renderAt("/slideshow?source=favorites&screensaver=1");
+    await screen.findByRole("img", { name: "Title one" });
+    expect(screen.queryByRole("button", { name: "Next slide" })).toBeNull();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(await screen.findByText("home")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Title two" })).not.toBeInTheDocument();
+  });
+
+  it("closes the screensaver at once when its Source has no images", async () => {
+    vi.mocked(fetchSourceItems).mockResolvedValue([media("hidden")]);
+    renderAt("/slideshow?source=favorites&screensaver=1");
+    expect(await screen.findByText("home")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("records the Source it played, but not from the screensaver", async () => {
+    renderAt("/slideshow?source=on-this-day&library=lib&screensaver=1");
+    await screen.findByRole("img", { name: "Title one" });
+    expect(lastSlideshowSource()).toBeNull();
+    cleanup();
+    renderAt("/slideshow?source=favorites&library=lib");
+    // A Source counts as played once a slide has painted, not when it merely loads.
+    const slide = await screen.findByRole("img", { name: "Title one" });
+    expect(lastSlideshowSource()).toBeNull();
+    fireEvent.load(slide);
+    await waitFor(() =>
+      expect(lastSlideshowSource()).toEqual({ kind: "favorites", libraryID: "lib" }),
+    );
+  });
+
+  it("does not record a Source switched to before it paints (CORE-2981)", async () => {
+    function SwitchSource() {
+      const navigate = useNavigate();
+      return (
+        <button
+          type="button"
+          onClick={() => navigate("/slideshow?source=collection&collection=empty")}
+        >
+          switch
+        </button>
+      );
+    }
+    // The mocked collection read is empty.
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/slideshow?source=favorites&library=lib"]}>
+          <SwitchSource />
+          <Routes>
+            <Route path="/slideshow" element={<SlideshowPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    fireEvent.load(await screen.findByRole("img", { name: "Title one" }));
+    await waitFor(() =>
+      expect(lastSlideshowSource()).toEqual({ kind: "favorites", libraryID: "lib" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "switch" }));
+    await waitFor(() => expect(screen.queryByRole("img")).not.toBeInTheDocument());
+    expect(lastSlideshowSource()).toEqual({ kind: "favorites", libraryID: "lib" });
+  });
+
+  it("closes the screensaver on one large pointer move after the grace period", async () => {
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    renderAt("/slideshow?source=favorites&screensaver=1");
+    await screen.findByRole("img", { name: "Title one" });
+    // jsdom has no PointerEvent; a MouseEvent carries the coordinates.
+    const point = (clientX: number) =>
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX, clientY: 10 }));
+    point(10);
+    clock = 5000;
+    point(200);
+    expect(await screen.findByText("home")).toBeInTheDocument();
+  });
+
+  it("closes the screensaver on a move from a pointer that rested through the grace period", async () => {
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    renderAt("/slideshow?source=favorites&screensaver=1");
+    await screen.findByRole("img", { name: "Title one" });
+    clock = 5000;
+    // jsdom drops movementX from the init dictionary.
+    const moved = new MouseEvent("pointermove", { clientX: 210, clientY: 10 });
+    Object.defineProperty(moved, "movementX", { value: 200 });
+    window.dispatchEvent(moved);
+    expect(await screen.findByText("home")).toBeInTheDocument();
+  });
+
+  it("keeps the screensaver option per device from the setup sheet", async () => {
+    renderAt("/slideshow");
+    const option = await screen.findByRole("checkbox", { name: "Open this slideshow when idle" });
+    expect(option).not.toBeChecked();
+    fireEvent.click(option);
+    expect(screensaverEnabled()).toBe(true);
+  });
+});
+
+describe("screensaver helpers", () => {
+  afterEach(() => localStorage.clear());
+
+  it("counts idle only on browsing routes", () => {
+    expect(idleRoute("/")).toBe(true);
+    expect(idleRoute("/n/lib/all")).toBe(true);
+    for (const route of [
+      "/watch/m1",
+      "/view/m1",
+      "/slideshow",
+      "/profiles",
+      "/remote",
+      "/party/stage/s1",
+    ]) {
+      expect(idleRoute(route)).toBe(false);
+    }
+  });
+
+  it("treats an open dialog, a focused text field or unsaved text as busy, not a focused checkbox", () => {
+    document.body.innerHTML = '<input id="box" type="checkbox"><input id="text">';
+    (document.getElementById("box") as HTMLElement).focus();
+    expect(pageBusy(document)).toBe(false);
+    (document.getElementById("text") as HTMLElement).focus();
+    expect(pageBusy(document)).toBe(true);
+    (document.getElementById("box") as HTMLElement).focus();
+    (document.getElementById("text") as HTMLInputElement).value = "Unsaved name";
+    expect(pageBusy(document)).toBe(true);
+    document.body.innerHTML = '<div role="dialog"></div>';
+    expect(pageBusy(document)).toBe(true);
+    document.body.innerHTML = "";
+  });
+
+  it("treats typed text as unsaved until the field empties, but not a search filter", () => {
+    const untrack = trackTyping(document);
+    document.body.innerHTML =
+      '<form><input id="name"><button id="go">Create</button></form><input id="q" type="search">';
+    const field = document.getElementById("name") as HTMLInputElement;
+    field.focus();
+    field.value = "New playlist";
+    // React mirrors a controlled field's value into defaultValue.
+    field.defaultValue = "New playlist";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    (document.getElementById("go") as HTMLElement).focus();
+    expect(pageBusy(document)).toBe(true);
+    // A failed save leaves the text in place, so a submit alone does not clear it.
+    field.form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(pageBusy(document)).toBe(true);
+    field.value = "";
+    field.defaultValue = "";
+    expect(pageBusy(document)).toBe(false);
+    const search = document.getElementById("q") as HTMLInputElement;
+    search.value = "beach";
+    search.defaultValue = "beach";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(pageBusy(document)).toBe(false);
+    untrack();
+    document.body.innerHTML = "";
+  });
+
+  it("treats a marked search field as unsaved until its form submits", () => {
+    const untrack = trackTyping(document);
+    document.body.innerHTML =
+      '<form><input id="feed" type="search" data-unsaved-until-submit><button id="go">Search</button></form>' +
+      '<form><input id="q" type="search"></form>';
+    const feed = document.getElementById("feed") as HTMLInputElement;
+    feed.value = "https://example.test/feed.xml";
+    feed.defaultValue = feed.value;
+    feed.dispatchEvent(new Event("input", { bubbles: true }));
+    (document.getElementById("go") as HTMLElement).focus();
+    expect(pageBusy(document)).toBe(true);
+    feed.form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(pageBusy(document)).toBe(false);
+    // A search page's field filters as it is typed, form or not.
+    const query = document.getElementById("q") as HTMLInputElement;
+    query.value = "beach";
+    query.defaultValue = "beach";
+    query.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(pageBusy(document)).toBe(false);
+    untrack();
+    document.body.innerHTML = "";
+  });
+
+  it("treats playing media as busy", () => {
+    document.body.innerHTML = "<video></video>";
+    const video = document.querySelector("video") as HTMLVideoElement;
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    expect(pageBusy(document)).toBe(true);
+    // A muted hover preview loops with nobody watching.
+    video.muted = true;
+    expect(pageBusy(document)).toBe(false);
+    video.muted = false;
+    Object.defineProperty(video, "paused", { configurable: true, value: true });
+    expect(pageBusy(document)).toBe(false);
+    document.body.innerHTML = "";
+  });
+
+  it("stores the option and the last Source per device", () => {
+    expect(screensaverEnabled()).toBe(false);
+    saveScreensaverEnabled(true);
+    expect(screensaverEnabled()).toBe(true);
+    saveLastSlideshowSource({ kind: "collection", collectionID: "trip" });
+    expect(lastSlideshowSource()).toEqual({ kind: "collection", collectionID: "trip" });
+    expect(screensaverPath({ kind: "favorites", libraryID: "" })).toBe(
+      "/slideshow?source=favorites&screensaver=1",
+    );
   });
 });

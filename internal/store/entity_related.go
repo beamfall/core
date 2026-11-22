@@ -8,13 +8,14 @@ import (
 	"strings"
 )
 
-// RelatedEntityGroup is one Entity kind's share of the Entities related to a
-// context Entity, as Source items (Kind "entity"). LibraryID is the Library of
-// the group's first Entity, which names the bundle declaring the kind.
+// RelatedEntityGroup holds related cards of one kind. LibraryID names the
+// Library whose plugin declares the group's presentation.
 type RelatedEntityGroup struct {
-	Kind      string
-	LibraryID LibraryID
-	Items     []SourceItem
+	Kind        string
+	LibraryID   LibraryID
+	PluginID    string
+	Items       []SourceItem
+	GroupValues map[MediaID]string
 }
 
 // RelatedEntityGroups returns the visible Entities related to one Entity
@@ -26,8 +27,15 @@ type RelatedEntityGroup struct {
 // Entities in Libraries the filter hides are omitted. The context Entity must
 // itself be visible; a hidden one errors like a missing one, as
 // mediaForEntitySQL does. The read runs on the Entity's catalog plane, so an
-// encrypted Library's relations come from its own database.
+// encrypted Library's relations come from its own database. Each card carries
+// its year: the earliest of its directly linked visible Media.
 func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filter LibraryFilter) ([]RelatedEntityGroup, error) {
+	return s.RelatedEntityGroupsBy(ctx, entityID, filter, nil)
+}
+
+// RelatedEntityGroupsBy derives the nominated text field from each card's
+// linked visible Media. Ruled Libraries keep independent groups (CORE-2769).
+func (s *Store) RelatedEntityGroupsBy(ctx context.Context, entityID EntityID, filter LibraryFilter, groupField func(pluginID, kind string) string) ([]RelatedEntityGroup, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
@@ -48,8 +56,12 @@ func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filt
 	}
 	var visible []LibraryID
 	restricted := map[LibraryID]bool{}
+	owners := map[LibraryID]string{}
 	for _, library := range libraries {
 		restricted[library.ID] = library.IsRestricted
+		if library.PluginID != nil {
+			owners[library.ID] = *library.PluginID
+		}
 		if libraryVisible(library, filter) {
 			visible = append(visible, library.ID)
 		}
@@ -114,6 +126,9 @@ func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filt
 			LibraryID:  libraryID,
 		})
 	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -122,7 +137,50 @@ func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filt
 			return cmp.Or(naturalCompare(a.Title, b.Title), cmp.Compare(a.Title, b.Title), cmp.Compare(a.ID, b.ID))
 		})
 	}
-	return groups, nil
+	result := make([]RelatedEntityGroup, 0, len(groups))
+	for _, group := range groups {
+		for _, ownerGroup := range relatedGroupsByOwner(group, owners, groupField) {
+			field := ""
+			if groupField != nil {
+				field = groupField(ownerGroup.PluginID, group.Kind)
+			}
+			values, err := s.annotateEntityCardsLocked(ctx, filter, ownerGroup.Items, field)
+			if err != nil {
+				return nil, err
+			}
+			ownerGroup.GroupValues = values
+			result = append(result, ownerGroup)
+		}
+	}
+	return result, nil
+}
+
+func relatedGroupsByOwner(group RelatedEntityGroup, owners map[LibraryID]string, groupField func(pluginID, kind string) string) []RelatedEntityGroup {
+	if groupField == nil || !slices.ContainsFunc(group.Items, func(item SourceItem) bool {
+		return groupField(owners[item.LibraryID], group.Kind) != ""
+	}) {
+		return []RelatedEntityGroup{group}
+	}
+	type owner struct {
+		plugin  string
+		library LibraryID
+	}
+	index := map[owner]int{}
+	var groups []RelatedEntityGroup
+	for _, item := range group.Items {
+		key := owner{plugin: owners[item.LibraryID]}
+		if groupField(key.plugin, group.Kind) != "" {
+			key.library = item.LibraryID
+		}
+		i, ok := index[key]
+		if !ok {
+			i = len(groups)
+			index[key] = i
+			groups = append(groups, RelatedEntityGroup{Kind: group.Kind, LibraryID: item.LibraryID, PluginID: key.plugin})
+		}
+		groups[i].Items = append(groups[i].Items, item)
+	}
+	return groups
 }
 
 func asciiDigit(r rune) bool { return r >= '0' && r <= '9' }

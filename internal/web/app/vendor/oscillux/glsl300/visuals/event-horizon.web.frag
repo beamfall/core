@@ -808,8 +808,9 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // profile, the disc turns at a steady beat-locked rate (no surges, so its fine
 // bright streaks never sweep fast) and the roll eases every eight beats; a soft
 // swell inside each beat barely heats the inner disc, the jets and the photon
-// ring (nothing jumps on the kick, and the level, not the bass, sets the glow), the spectrum lights the
-// disc ring by ring (lows inside, highs outside) and the hot spots, and treble
+// ring (nothing jumps on the kick, and the level, not the bass, sets the glow), the spectrum gently lights the
+// disc ring by ring (lows inside, highs outside) and the hot spots over a
+// steady base, so no clump pulses on the kick, and treble
 // makes the stars glitter. The crimson side is kept a touch rose, off
 // saturated red. Audio never moves the camera.
 // param0 = Pull (how close the orbit is) ; param1 = Spin (disc speed) ;
@@ -906,7 +907,7 @@ vec4 ehDisc(vec3 hit, vec3 v, float t, float spotClock, int oct, EhPal P, Visual
 
     // orbiting hot spots: bright plasma clumps riding the flow, each a whole
     // number of turns per clock period so the wrap is seamless; the spectrum
-    // pumps each one, and their sheared tails trail behind them
+    // gently lifts each one over a steady base, and their sheared tails trail behind them
     float spots = 0.0;
     for (int i = 0; i < 4; ++i) {
         float fi = float(i);
@@ -917,7 +918,7 @@ vec4 ehDisc(vec3 hit, vec3 v, float t, float spotClock, int oct, EhPal P, Visual
         float al = da * 6.2831853 * rr;                       // arc length
         float tail = al < 0.0 ? 2.6 : 0.7;                    // longer behind
         float dr = rr - ri;
-        float pump = 0.55 + 1.3 * bandAt(u, 0.08 + 0.2 * fi) + 0.12 * ehSwell;
+        float pump = 0.75 + 0.6 * bandAt(u, 0.08 + 0.2 * fi) + 0.08 * ehSwell;
         spots += exp(-dr * dr * 6.0 - al * al / (tail * tail)) * pump * (1.4 - 0.18 * fi);
     }
 
@@ -946,7 +947,7 @@ vec4 ehDisc(vec3 hit, vec3 v, float t, float spotClock, int oct, EhPal P, Visual
     // audio: spectrum by radius, bass heats the inner edge
     float sp = bandAt(u, saturate((rr - EH_ISCO) / (EH_OUTER * 0.6 - EH_ISCO)));
     float heat = 1.0 + 0.1 * ehSwell * exp(-(rr - EH_ISCO) * 0.8) + 0.12 * u.level;
-    float glow = inten * (0.35 + 1.1 * streak + 1.0 * spots + 0.1 * ripple * (0.4 + streak)) * (0.75 + 0.7 * sp) * heat;
+    float glow = inten * (0.35 + 1.1 * streak + 1.0 * spots + 0.1 * ripple * (0.4 + streak)) * (0.85 + 0.45 * sp) * heat;
     // the beat's density wave burns cool against the warm gas: the complementary accent
     float rdC = (rr - rw) / (0.2 + 0.35 * bp);
     float rippleC = exp(-rdC * rdC) * (1.0 - bp) * (1.0 - bp) * smoothstep(0.0, 0.06, bp) * prof;

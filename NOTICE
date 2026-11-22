@@ -202,11 +202,11 @@ GET /source/ffmpeg, with its SHA-256 in the X-Checksum-SHA256 header.
 
 -------------------------------------------------------------------------------
 
-21. Oscillux v0.2.12 (AGPL-3.0-only)
+21. Oscillux v0.2.15 (AGPL-3.0-only)
     https://github.com/beamfall/oscillux
     Vendored unchanged in internal/web/app/vendor/oscillux/ and bundled into
-    the web UI as the audio visualizer (CORE-1309, ADR-0228). Same licence as
-    Beamfall core; its copyright, licensing and third-party notices are in
+    the web UI as the audio visualizer and the photo slideshow pass (CORE-1309,
+    CORE-2980, ADR-0228). Same licence as Beamfall core; its copyright, licensing and third-party notices are in
     vendor/oscillux/wasm/LICENSING.md, THIRD-PARTY-NOTICES.md and third-party/.
 
 -------------------------------------------------------------------------------
@@ -268,6 +268,23 @@ GET /source/ffmpeg, with its SHA-256 in the X-Checksum-SHA256 header.
     LICENSE): https://registry.npmjs.org/rvfc-polyfill/-/rvfc-polyfill-1.0.8.tgz
     https://github.com/ThaUnknown/rvfc-polyfill
     https://www.gnu.org/licenses/gpl-3.0.txt
+
+-------------------------------------------------------------------------------
+
+24. tetratelabs/wazero v1.12.0 (Apache-2.0)
+    https://github.com/tetratelabs/wazero
+    Copyright 2020-2023 wazero authors.
+    Licensed under the Apache License, Version 2.0. Runs the Oscillux CD+G
+    presenter (entry 25) in-process.
+
+-------------------------------------------------------------------------------
+
+25. Oscillux v0.2.14 oscillux-cdg-render.wasm (AGPL-3.0-only)
+    https://github.com/beamfall/oscillux
+    Embedded unchanged in internal/ffmpeg/cdgrender/ as the CD+G presenter that
+    draws composed karaoke graphics (CORE-3150, ADR-0228). Its release and
+    checksum are in internal/ffmpeg/cdgrender/pin.json; licensing and
+    third-party notices are in that Oscillux release.
 
 -------------------------------------------------------------------------------
 

@@ -9,16 +9,20 @@ import {
   Layers,
   ListOrdered,
   Maximize,
+  MicVocal,
   Minimize,
   MonitorPlay,
   Moon,
   Pause,
   PictureInPicture2,
   Play,
+  Repeat,
+  Repeat1,
   RotateCcw,
   RotateCw,
   Settings,
   Share2,
+  Shuffle,
   SkipBack,
   SkipForward,
   Timer,
@@ -31,6 +35,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -38,6 +43,7 @@ import { Slider } from "@/components/ui/astryx-primitives";
 import { NativeSelect } from "@/components/ui/select";
 import type { MetadataAttribution } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { SubtitleSearchDialog } from "../components/SubtitleSearchDialog";
 import { songSecondsPerStreamSecond } from "../lib/playback";
 import { SKIP_INTERVALS, type SkipInterval } from "../lib/preferences";
 import {
@@ -45,6 +51,7 @@ import {
   type SubtitleAppearance,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
+import { useSubtitleSearchAvailable } from "../lib/subtitleSearch";
 import {
   buildChapterList,
   buildMarkerStripModel,
@@ -64,6 +71,8 @@ import { CastControl } from "./cast/CastControl";
 import { InfoOverlay } from "./InfoOverlay";
 import { listenerMuted, setListenerMuted } from "./listenerMute";
 import { MusicQueuePanel } from "./MusicQueuePanel";
+import type { RepeatMode } from "./nowPlaying";
+import { savePlayerVolume } from "./playerVolume";
 import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { TrackMotionSettings } from "./TrackMotionSettings";
@@ -106,7 +115,15 @@ type GestureFeedback =
   | { kind: "volume"; value: number };
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const REPEAT_LABELS = {
+  off: "playerRepeatOff",
+  all: "playerRepeatAll",
+  one: "playerRepeatOne",
+} as const satisfies Record<RepeatMode, string>;
+const noop = () => {};
 const GESTURE_THRESHOLD = 24;
+/** The subtitle menu row that opens online search; never a track id. */
+const SUBTITLE_SEARCH_ROW = "subtitle-search-online";
 
 export function PlayerTransport({
   videoRef,
@@ -141,6 +158,11 @@ export function PlayerTransport({
   musicQueueOpen = false,
   serverQueueNextID,
   audioStage = false,
+  lyricsOpen = false,
+  onLyricsOpenChange,
+  shuffle,
+  onSpeed,
+  repeat,
   onStop,
   onRemoteStop,
   onRemoteRestart,
@@ -202,6 +224,16 @@ export function PlayerTransport({
   serverQueueNextID?: string;
   /** The audio stage is showing: the transport carries the visualizer control (CORE-2814). */
   audioStage?: boolean;
+  /** The audio stage shows the lyrics view (CORE-1638). */
+  lyricsOpen?: boolean;
+  /** Toggles the lyrics view; the control shows only on the audio stage. */
+  onLyricsOpenChange?: (open: boolean) => void;
+  /** Shuffle over the playing queue (CORE-1637); the button is hidden when absent. */
+  shuffle?: { on: boolean; onToggle: () => void };
+  /** The listening controls' speed setter (CORE-2960): the speed shortcuts store through it. */
+  onSpeed?: (speed: number) => void;
+  /** Repeat off, all or one (CORE-1637); the button is hidden when absent. */
+  repeat?: { mode: RepeatMode; onCycle: () => void };
   /** Leaves the player when another device sends stop; without it stop only pauses. */
   onStop?: () => void;
   /** Stop requested by another device; falls back to onStop. */
@@ -380,6 +412,46 @@ export function PlayerTransport({
     renegotiate: onRenegotiate ? renegotiate : undefined,
   });
 
+  // Search online (CORE-1690): one extra subtitle row when the server has a
+  // provider enabled and this viewer may use it. A download is a new sidecar,
+  // so playback info is re-read at the current position to list it. The
+  // server is asked only once the subtitle menu has been opened.
+  const [subtitleMenuOpened, setSubtitleMenuOpened] = useState(false);
+  useEffect(() => {
+    if (openKey === "subtitle") setSubtitleMenuOpened(true);
+  }, [openKey]);
+  const subtitleSearch = useSubtitleSearchAvailable(subtitleMenuOpened && mediaID !== "");
+  const [subtitleSearchOpen, setSubtitleSearchOpen] = useState(false);
+  const subtitleOptions = useMemo(
+    () =>
+      subtitleSearch
+        ? [
+            ...tracks.subtitleOptions,
+            {
+              id: SUBTITLE_SEARCH_ROW,
+              label: t("subtitleSearchOnline"),
+              selected: false,
+              disabled: false,
+              reason: "",
+            },
+          ]
+        : tracks.subtitleOptions,
+    [subtitleSearch, tracks.subtitleOptions, t],
+  );
+  const selectSubtitle = tracks.selectSubtitle;
+  const onSubtitleRow = useCallback(
+    (id: string) => {
+      if (id !== SUBTITLE_SEARCH_ROW) {
+        selectSubtitle(id);
+        return;
+      }
+      // The dialog portals to the document, which stage fullscreen would hide.
+      if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+      setSubtitleSearchOpen(true);
+    },
+    [selectSubtitle],
+  );
+
   // Commands from the Profile's other devices drive this player (CORE-1678).
   useRemotePlayerTarget({
     video: () => videoRef.current,
@@ -491,6 +563,7 @@ export function PlayerTransport({
       if (clamped > 0) setListenerMuted(video, false);
       setVolumeState(clamped);
       setMuted(listenerMuted(video));
+      savePlayerVolume({ muted: listenerMuted(video), volume: clamped });
     },
     [videoRef],
   );
@@ -612,6 +685,7 @@ export function PlayerTransport({
     if (!video) return;
     setListenerMuted(video, !listenerMuted(video));
     setMuted(listenerMuted(video));
+    savePlayerVolume({ muted: listenerMuted(video), volume: video.volume });
   }, [videoRef]);
 
   const visualControls = audioStage && canVisualize();
@@ -619,9 +693,11 @@ export function PlayerTransport({
     videoRef,
     skipInterval,
     speeds: SPEEDS,
+    setSpeed: onSpeed,
     markers: state.markers,
     togglePlay,
-    toggleFullscreen,
+    // The audio stage has no fullscreen (CORE-1637): the shortcut does nothing there.
+    toggleFullscreen: audioStage ? noop : toggleFullscreen,
     toggleMute,
     seekBy,
     setVolume,
@@ -923,6 +999,18 @@ export function PlayerTransport({
 
         <div className="bf-controls bf-transport-row">
           <div className="bf-primary-controls">
+            {shuffle && (
+              <button
+                type="button"
+                onClick={shuffle.onToggle}
+                aria-pressed={shuffle.on}
+                aria-label={t("playerShuffle")}
+                title={shuffle.on ? t("playerShuffleOn") : t("playerShuffleOff")}
+                className="bf-control is-icon"
+              >
+                <Shuffle aria-hidden="true" />
+              </button>
+            )}
             {onPreviousInQueue && (
               <span className="bf-neighbour">
                 <button
@@ -989,6 +1077,22 @@ export function PlayerTransport({
                 </button>
                 {nextTitle && <NeighbourTip eyebrow={t("nextInQueue")} title={nextTitle} />}
               </span>
+            )}
+            {repeat && (
+              <button
+                type="button"
+                onClick={repeat.onCycle}
+                aria-label={t(REPEAT_LABELS[repeat.mode])}
+                title={t(REPEAT_LABELS[repeat.mode])}
+                data-repeat={repeat.mode}
+                className="bf-control is-icon"
+              >
+                {repeat.mode === "one" ? (
+                  <Repeat1 aria-hidden="true" />
+                ) : (
+                  <Repeat aria-hidden="true" />
+                )}
+              </button>
             )}
           </div>
 
@@ -1092,7 +1196,18 @@ export function PlayerTransport({
               <Moon aria-hidden="true" />
             </button>
           )}
-
+          {audioStage && onLyricsOpenChange && (
+            <button
+              type="button"
+              onClick={() => onLyricsOpenChange(!lyricsOpen)}
+              aria-pressed={lyricsOpen}
+              aria-label={t("lyrics")}
+              className={`bf-control is-icon bf-lyrics-toggle${lyricsOpen ? " is-open" : ""}`}
+            >
+              <MicVocal aria-hidden="true" />
+              <span className="sr-only">{t("lyrics")}</span>
+            </button>
+          )}
           {onPlayMusicQueue && onRetryMusicQueue && (
             <MusicQueuePanel
               open={musicQueueOpen}
@@ -1148,28 +1263,31 @@ export function PlayerTransport({
                 <p aria-hidden="true" className="bf-settings-title">
                   {t("playbackSettings")}
                 </p>
-                <label className="bf-settings-row">
-                  <span aria-hidden="true" className="bf-settings-tile">
-                    <Gauge />
-                  </span>
-                  <span className="bf-settings-label">{t("playbackSpeed")}</span>
-                  <NativeSelect
-                    aria-label={t("playbackSpeed")}
-                    className="bf-settings-select"
-                    value={String(playbackRate)}
-                    onValueChange={(value) => {
-                      const next = Number(value);
-                      if (videoRef.current) videoRef.current.playbackRate = next;
-                      setPlaybackRate(next);
-                    }}
-                  >
-                    {SPEEDS.map((speed) => (
-                      <option key={speed} value={speed}>
-                        {speed}×
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </label>
+                {/* The audio stage has its own persisted Speed control (CORE-2960). */}
+                {!audioStage && (
+                  <label className="bf-settings-row">
+                    <span aria-hidden="true" className="bf-settings-tile">
+                      <Gauge />
+                    </span>
+                    <span className="bf-settings-label">{t("playbackSpeed")}</span>
+                    <NativeSelect
+                      aria-label={t("playbackSpeed")}
+                      className="bf-settings-select"
+                      value={String(playbackRate)}
+                      onValueChange={(value) => {
+                        const next = Number(value);
+                        if (videoRef.current) videoRef.current.playbackRate = next;
+                        setPlaybackRate(next);
+                      }}
+                    >
+                      {SPEEDS.map((speed) => (
+                        <option key={speed} value={speed}>
+                          {speed}×
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                )}
                 <TransportMenu
                   label={t("audio")}
                   ariaLabel={t("audio")}
@@ -1187,10 +1305,10 @@ export function PlayerTransport({
                   icon={<Captions />}
                   container={layerRef}
                   side={menuSide}
-                  options={tracks.subtitleOptions}
+                  options={subtitleOptions}
                   open={openKey === "subtitle"}
                   onOpenChange={(open) => setOpen("subtitle", open)}
-                  onSelect={tracks.selectSubtitle}
+                  onSelect={onSubtitleRow}
                 />
                 {subtitle.stylingAvailable && (
                   <SubtitleStylePanel
@@ -1292,42 +1410,51 @@ export function PlayerTransport({
           {mediaID && state.info?.mediaClass === "video" && (
             <CastControl videoRef={videoRef} mediaID={mediaID} mediaTitle={mediaTitle} />
           )}
-          <button
-            type="button"
-            onClick={() => void togglePictureInPicture()}
-            disabled={!pipSupported}
-            aria-label={pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
-            aria-describedby={pipStatusId}
-            className="bf-control is-icon"
-            title={!pipSupported ? t("pictureInPictureUnavailable") : undefined}
-          >
-            <PictureInPicture2 aria-hidden="true" />
-            <span className="sr-only">
-              {pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
-            </span>
-          </button>
-          <span
-            id={pipStatusId}
-            className="bf-player-control-status"
-            role={pipFailure ? "alert" : "status"}
-          >
-            {!pipSupported
-              ? t("pictureInPictureUnavailable")
-              : pipFailure
-                ? t(pipFailure === "exit" ? "pictureInPictureExitFailed" : "pictureInPictureFailed")
-                : ""}
-          </span>
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            aria-label={fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
-            className="bf-control is-icon"
-          >
-            {fullscreen ? <Minimize aria-hidden="true" /> : <Maximize aria-hidden="true" />}
-            <span className="sr-only">
-              {fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
-            </span>
-          </button>
+          {/* A track has no picture to float or fill the screen with (CORE-1637). */}
+          {!audioStage && (
+            <>
+              <button
+                type="button"
+                onClick={() => void togglePictureInPicture()}
+                disabled={!pipSupported}
+                aria-label={pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
+                aria-describedby={pipStatusId}
+                className="bf-control is-icon"
+                title={!pipSupported ? t("pictureInPictureUnavailable") : undefined}
+              >
+                <PictureInPicture2 aria-hidden="true" />
+                <span className="sr-only">
+                  {pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
+                </span>
+              </button>
+              <span
+                id={pipStatusId}
+                className="bf-player-control-status"
+                role={pipFailure ? "alert" : "status"}
+              >
+                {!pipSupported
+                  ? t("pictureInPictureUnavailable")
+                  : pipFailure
+                    ? t(
+                        pipFailure === "exit"
+                          ? "pictureInPictureExitFailed"
+                          : "pictureInPictureFailed",
+                      )
+                    : ""}
+              </span>
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                aria-label={fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
+                className="bf-control is-icon"
+              >
+                {fullscreen ? <Minimize aria-hidden="true" /> : <Maximize aria-hidden="true" />}
+                <span className="sr-only">
+                  {fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
+                </span>
+              </button>
+            </>
+          )}
         </div>
       </div>
       {/* Listboxes portal here: inside the stage (so stage fullscreen shows
@@ -1340,6 +1467,14 @@ export function PlayerTransport({
         container={layerRef}
         skipInterval={skipInterval}
       />
+      {subtitleSearchOpen && (
+        <SubtitleSearchDialog
+          mediaID={mediaID}
+          title={mediaTitle}
+          onClose={() => setSubtitleSearchOpen(false)}
+          onDownloaded={renegotiate}
+        />
+      )}
     </div>
   );
 }

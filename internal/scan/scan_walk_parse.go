@@ -139,7 +139,17 @@ func (d *contextualDirectoryPreflight) skipsStillImage(path string) bool {
 	return d != nil && d.audioParts && imageClassForPath(path) && !d.accepted[path]
 }
 
+// parseFilename parses path with probe and fills the result's named search
+// hints from the probe's embedded tags (SearchHints).
 func (s *scanWalkState) parseFilename(path string, probe ParseProbe) (ParsedMedia, bool, bool) {
+	parsed, ok, refused := s.parseFilenameOnly(path, probe)
+	if ok {
+		parsed.Hints = SearchHints(parsed, probe.Tags, s.tagHints)
+	}
+	return parsed, ok, refused
+}
+
+func (s *scanWalkState) parseFilenameOnly(path string, probe ParseProbe) (ParsedMedia, bool, bool) {
 	legacy, legacyOK := s.parser.Parse(path, probe)
 	contextual, ok := s.parser.(ContextFilenameParser)
 	if !ok {
@@ -267,7 +277,7 @@ func (s *scanWalkState) flushPendingParts() error {
 	// during the one-time backfill of Media the marker does not cover.
 	// Otherwise, like an unchanged single file, it refreshes its sidecar.
 	if first.hydrate {
-		if err := s.hydrateMetadata(media, first.imported.Path, first.imported.ContentFingerprint, first.tags); err != nil {
+		if err := s.hydrateMetadata(media, first.imported.Path, first.imported.ContentFingerprint, first.tags, first.probed, true); err != nil {
 			return err
 		}
 	} else if err := s.hydrateUnchanged(media, first.imported.Path, first.imported.ContentFingerprint); err != nil {

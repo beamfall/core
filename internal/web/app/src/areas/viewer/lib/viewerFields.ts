@@ -301,3 +301,9 @@ export function formatScore(value: number, locale: string): string {
     return new Intl.NumberFormat("en", options).format(value);
   }
 }
+
+/** Mirrors the store's mediaDurationSummary: seconds under a minute, else minutes rounded up. */
+export function serverDurationSummary(seconds: number): string {
+  if (seconds <= 0) return "";
+  return seconds < 60 ? `${seconds} sec` : `${Math.ceil(seconds / 60)} min`;
+}

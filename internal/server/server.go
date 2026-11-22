@@ -78,6 +78,7 @@ type Server struct {
 	streamObserver    EventStreamObserver
 	pushNotifications PushNotificationStore
 	v1                V1Store
+	partyGuests       PartyGuestStore
 	v1ScanEnqueue     V1ScanEnqueuer
 	v1Progress        V1ProgressRecorder
 	backupEncryptor   store.BackupIngestEncryptor
@@ -90,6 +91,7 @@ type Server struct {
 	// credential; nil means none was established, which refuses every bearer.
 	metricsScrapeDigest []byte
 	testFaults          atomic.Pointer[testFaults]
+	buildIdentity       capabilities.Report
 	buildSHA            string
 	seedProfile         string
 	seedVersion         string
@@ -108,6 +110,8 @@ type Server struct {
 	knownProxies        *KnownProxies
 	artworkImport       ArtworkImporter
 	artworkApply        artworkApplyStore
+	mediaUploadPlanner  MediaUploadPlanner
+	mediaUploads        mediaUploadStore
 	subscriptionExport  subscriptionExportStore
 	subscriptionSealed  func(store.LibraryID) bool
 	profilePictures     profilePictureStore
@@ -267,6 +271,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 		panic(fmt.Errorf("invalid release first-party build catalog: %w", err))
 	}
 	defaultCapabilities := capabilities.EnabledIDs(nil)
+	report := capabilities.Current()
 	s := &Server{
 		mux:             http.NewServeMux(),
 		accessClasses:   make(map[string]AccessClass),
@@ -280,9 +285,15 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 		auth:            authService,
 		jobStats:        jobStats,
 		buildSHA:        detectBuildSHA(),
-		capabilities:    append([]string(nil), defaultCapabilities...),
-		baseURL:         baseURL,
-		knownProxies:    knownProxies,
+		buildIdentity: capabilities.Report{
+			Version:   report.Version,
+			Commit:    report.Commit,
+			BuildDate: report.BuildDate,
+			BuildTags: report.BuildTags,
+		},
+		capabilities: append([]string(nil), defaultCapabilities...),
+		baseURL:      baseURL,
+		knownProxies: knownProxies,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -318,6 +329,9 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	if deviceBuilds, ok := jobStats.(deviceBuildStore); ok {
 		s.deviceBuilds = deviceBuilds
 	}
+	if uploads, ok := jobStats.(mediaUploadStore); ok {
+		s.mediaUploads = uploads
+	}
 	s.handle(http.MethodGet, "/health", "", s.health)
 	s.handle(http.MethodGet, "/metrics", reveal.Aggregate, s.metrics)
 	// AGPL §13 source offer for the exact running release. The redirect target
@@ -347,6 +361,11 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	s.handle(http.MethodGet, "/api/pairing-requests", reveal.ContentJSON, s.listDevicePairingRequests)
 	s.handle(http.MethodPost, "/api/pairing-requests/approve", reveal.ContentJSON, s.approveDevicePairingRequest)
 	s.handle(http.MethodPost, "/api/pairing-requests/deny", reveal.ContentJSON, s.denyDevicePairingRequest)
+	s.handle(http.MethodPost, "/api/party/join", reveal.ContentJSON, s.partyJoin)
+	s.handle(http.MethodGet, "/api/party/guest", reveal.ContentJSON, s.partyGuestView)
+	s.handle(http.MethodGet, "/api/party/guest/search", reveal.ContentJSON, s.partyGuestSearch)
+	s.handle(http.MethodPost, "/api/party/guest/request", reveal.ContentJSON, s.partyGuestRequest)
+	s.handle(http.MethodPost, "/api/party/guest/cancel", reveal.ContentJSON, s.partyGuestCancel)
 	// Guideline 1.2 UGC moderation (NATIVEMGR-4, apple ADR-0004 §4): in-app
 	// content reporting + per-Profile content blocking for the self-hosted
 	// client. These are VIEWER content-safety surfaces consumed by the client
@@ -369,6 +388,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	// like the other web-Console write routes; the multipart body is excluded
 	// from the JSON-Content-Type check below, mirroring "/v1/backups/media".
 	s.handle(http.MethodPost, artworkUploadPattern, reveal.ContentJSON, s.uploadArtwork)
+	s.registerMediaUploadRoutes()
 	s.handle(http.MethodPost, profilePictureUploadPattern, reveal.ContentJSON, s.uploadProfilePicture)
 	s.handle(http.MethodDelete, profilePicturePattern, reveal.ContentJSON, s.deleteProfilePicture)
 	s.handle(http.MethodGet, profilePicturePattern, reveal.ContentBytes, s.profilePicture)
@@ -391,6 +411,11 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	// which only that package derives.
 	s.handle(http.MethodPost, "/api/media/subtitle-pin", reveal.ContentJSON, s.media.SetSubtitlePin)
 	s.handle(http.MethodPost, "/api/media/subtitle-offset", reveal.ContentJSON, s.media.SetSubtitleOffset)
+	// Online subtitle search (CORE-1690): opt-in provider search and a download
+	// that lands as a sidecar caption. Profile-session JSON like the writes above.
+	s.handle(http.MethodGet, "/api/media/subtitle-search", reveal.ContentJSON, s.media.SubtitleSearchStatus)
+	s.handle(http.MethodPost, "/api/media/subtitle-search", reveal.ContentJSON, s.media.SearchSubtitles)
+	s.handle(http.MethodPost, "/api/media/subtitle-download", reveal.ContentJSON, s.media.DownloadSubtitle)
 	// Proxy-tee stream of a provisional Media: the server ranges
 	// the origin enclosure to the client through this Stream-Token'd endpoint and
 	// tees the bytes to disk, then promotes the copy in place on completion. It
@@ -1124,7 +1149,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	}
 	_, ffmpegErr := lookPath("ffmpeg")
 	_, ffprobeErr := lookPath("ffprobe")
-	writeJSON(w, status, map[string]any{
+	body := map[string]any{
 		"status":       summary,
 		"live":         true,
 		"ready":        ready,
@@ -1135,7 +1160,14 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		"seedVersion":  s.seedVersion,
 		"capabilities": s.capabilities,
 		"features":     serverFeatures,
-	})
+		"version":      s.buildIdentity.Version,
+		"commit":       s.buildIdentity.Commit,
+	}
+	// buildDate is omitted, never invented, when the binary carries none.
+	if s.buildIdentity.BuildDate != "" {
+		body["buildDate"] = s.buildIdentity.BuildDate
+	}
+	writeJSON(w, status, body)
 }
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {

@@ -6,9 +6,10 @@ import { Dialog as DialogPrimitive } from "@/components/ui/astryx-primitives";
 import { Badge } from "@/components/ui/badge";
 import { getBeamfallHost } from "@/lib/beamfallHost";
 import { useHeadingDocumentTitle } from "@/lib/documentTitle";
-import { useT } from "@/lib/i18n";
+import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug } from "@/lib/nodePath";
 import { useRegister } from "@/lib/register";
+import { formatServerBuild, useServerBuild } from "@/lib/serverBuild";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
 import { LibrarySidebar, type SidebarGroup, sidebarGroupId } from "./LibrarySidebar";
@@ -58,6 +59,19 @@ function usePhoneLayout(): boolean {
     return () => query.removeEventListener("change", onChange);
   }, []);
   return phone;
+}
+
+function ServerBuildLabel({ hidden }: { hidden: boolean }) {
+  const build = useServerBuild();
+  const t = useT();
+  const locale = useDisplayLocale();
+  if (hidden || !build) return null;
+  const { label, details } = formatServerBuild(build, locale, t);
+  return (
+    <span className="bf-build-label" role="note" aria-label={details} title={details}>
+      <span aria-hidden="true">{label}</span>
+    </span>
+  );
 }
 
 // The shared app chrome (ADR-0007): a register-aware header + content slot in
@@ -207,6 +221,7 @@ export function AppShell({
           <span aria-hidden className="bf-mark" />
           <span aria-hidden className="bf-wordmark" />
         </Link>
+        <ServerBuildLabel hidden={phone} />
 
         <div className="bf-actions">
           {actions}

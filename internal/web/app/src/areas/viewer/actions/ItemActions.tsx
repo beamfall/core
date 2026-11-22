@@ -1,10 +1,27 @@
 import { Bookmark, BookmarkCheck, Circle, CircleCheck, Eye, EyeOff, Star } from "lucide-react";
+import { useEffect } from "react";
 import type { ItemTarget } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useItemHide } from "./hiddenItems";
 import { useItemActions } from "./useItemActions";
 
 const STARS = [1, 2, 3, 4, 5];
+
+interface ItemActionsProps {
+  target: ItemTarget;
+  isAudio?: boolean;
+  /** The item's title, for the Hide notice; Hide is offered only when set. */
+  hideTitle?: string;
+  /**
+   * False drops the watched, watchlist and rating controls and their state
+   * read, leaving only Hide: for an Entity a viewer watches through rather
+   * than watches, such as a person or a category (CORE-3058).
+   */
+  watchActions?: boolean;
+  className?: string;
+  /** Told the watched state once it loads and whenever it changes. */
+  onWatched?: (watched: boolean) => void;
+}
 
 /**
  * The watched, watchlist and rating controls for one item, for the calling
@@ -13,21 +30,31 @@ const STARS = [1, 2, 3, 4, 5];
  * clients. Ratings are stored 1–10 and shown as five stars. Given a
  * `hideTitle`, it also offers Hide for the calling Profile (CORE-2836).
  */
-export function ItemActions({
+export function ItemActions({ watchActions = true, ...props }: ItemActionsProps) {
+  if (watchActions) return <WatchActions {...props} />;
+  const { target, hideTitle, className = "" } = props;
+  if (hideTitle === undefined) return null;
+  return (
+    <div className={`bf-item-actions ${className}`.trim()}>
+      <HideButton target={target} title={hideTitle} />
+    </div>
+  );
+}
+
+function WatchActions({
   target,
   isAudio = false,
   hideTitle,
   className = "",
-}: {
-  target: ItemTarget;
-  isAudio?: boolean;
-  /** The item's title, for the Hide notice; Hide is offered only when set. */
-  hideTitle?: string;
-  className?: string;
-}) {
+  onWatched,
+}: Omit<ItemActionsProps, "watchActions">) {
   const t = useT();
   const { state, pending, failed, retry, setWatched, setWatchlisted, setRating } =
     useItemActions(target);
+  const loadedWatched = state?.watched;
+  useEffect(() => {
+    if (loadedWatched !== undefined) onWatched?.(loadedWatched);
+  }, [loadedWatched, onWatched]);
   const disabled = pending || !state;
   const watched = state?.watched ?? false;
   const watchedLabel = isAudio

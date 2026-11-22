@@ -29,6 +29,7 @@ describe("resolvePreferences", () => {
       prePlayEnabled: false,
       prePlayExtras: PRE_PLAY_EXTRAS_DEFAULT,
       hideWatched: false,
+      showUnplayedDetails: false,
     });
   });
 

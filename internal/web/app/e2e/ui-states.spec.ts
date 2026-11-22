@@ -66,6 +66,15 @@ const FIXTURE_COLLECTION = {
   members: [],
 };
 
+// A smart playlist (CORE-2771) with no rules; its item read is answered empty.
+const FIXTURE_SMART_PLAYLIST = {
+  id: "smart-fixture",
+  libraryID: "library-fixture",
+  name: "Fixture Smart Playlist",
+  sourceExpr: JSON.stringify({ kind: "rules", match: "all", rules: [], limit: 25 }),
+  sortExpr: JSON.stringify({ by: "title", dir: "asc" }),
+};
+
 // The development seed has no Tags; the tag manager reads this small tree, a long name included.
 const FIXTURE_TAGS = [
   { id: "tag-fav", name: "Favorites", assignmentCount: 42 },
@@ -225,10 +234,61 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
         page.getByRole("heading", { level: 1, name: FIXTURE_COLLECTION.name }),
       ).toBeVisible();
       return;
+    case "/playlists/smart/:smartId":
+      await routeOperation(page, "SmartCollections", {
+        data: { smartCollections: [FIXTURE_SMART_PLAYLIST] },
+      });
+      await routeOperation(page, "SmartCollectionItems", { data: { sourceItems: [] } });
+      await page.goto(`/web/playlists/smart/${FIXTURE_SMART_PLAYLIST.id}`);
+      await expect(
+        page.getByRole("heading", { level: 1, name: FIXTURE_SMART_PLAYLIST.name }),
+      ).toBeVisible();
+      return;
     case "/manage/items/:mediaID":
       await page.goto("/web/manage/items/media-alpha");
       // The editor's Details section renders only once the seeded Media has loaded.
       await expect(page.getByRole("heading", { level: 3, name: "Details" })).toBeVisible();
+      return;
+    case "/party":
+      // No live session: the host page shows its start form.
+      await routeOperation(page, "PartySession", { data: { partySession: null } });
+      await page.goto("/web/party");
+      await expect(page.getByRole("heading", { level: 1, name: "Karaoke party" })).toBeVisible();
+      return;
+    case "/party/stage/:sessionID":
+      // Between songs: the stage shows the join code and nothing plays.
+      await routeOperation(page, "PartyScreenRegister", {
+        data: {
+          partyScreenRegister: {
+            id: "screen-fixture",
+            name: "Pop-out stage",
+            kind: "popout",
+            carrier: "local",
+            lead: true,
+            ticker: true,
+            offsetMS: 0,
+            rttMS: 0,
+            reportedAt: "",
+          },
+        },
+      });
+      await routeOperation(page, "PartyScreenReport", { data: { partyScreenReport: true } });
+      await routeOperation(page, "PartyStage", {
+        data: {
+          partyStage: {
+            sessionID: "party-fixture",
+            serverNowMS: Date.now(),
+            current: null,
+            playback: null,
+            upNext: [],
+            ticker: true,
+            joinCode: "QZXW",
+            joinPath: "/web/join/QZXW",
+          },
+        },
+      });
+      await page.goto("/web/party/stage/party-fixture");
+      await expect(page.getByText("QZXW", { exact: true })).toBeVisible();
       return;
     case "/watch/*":
       await page.goto("/web/watch/media-alpha");

@@ -153,6 +153,7 @@
         "libraryID",
         "mediaClass",
         "metadataAttribution",
+        "playsAlone",
         "sequence",
         "summary",
         "title",
@@ -240,6 +241,7 @@
         "locked",
         "mediaClass",
         "muted",
+        "playsAlone",
         "restricted",
         "sequence",
         "subtitle",
@@ -765,6 +767,7 @@
         "libraryID",
         "mediaClass",
         "metadataAttribution",
+        "playsAlone",
         "sequence",
         "summary",
         "title",
@@ -1256,6 +1259,7 @@
         "libraryID",
         "mediaClass",
         "metadataAttribution",
+        "playsAlone",
         "sequence",
         "summary",
         "title",
@@ -1393,6 +1397,15 @@
       ]
     },
     {
+      "field": "homelayout",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "customized",
+        "sections"
+      ]
+    },
+    {
       "field": "hostmetrics",
       "effect": "read",
       "tier": "admin",
@@ -1421,6 +1434,7 @@
         "libraryID",
         "mediaClass",
         "metadataAttribution",
+        "playsAlone",
         "sequence",
         "summary",
         "title",
@@ -1884,6 +1898,7 @@
         "libraryID",
         "mediaClass",
         "metadataAttribution",
+        "playsAlone",
         "sequence",
         "summary",
         "title",
@@ -1948,12 +1963,23 @@
         "locked",
         "mediaClass",
         "muted",
+        "playsAlone",
         "restricted",
         "sequence",
         "subtitle",
         "summary",
         "title",
         "year"
+      ]
+    },
+    {
+      "field": "medialyrics",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "lines",
+        "source",
+        "synced"
       ]
     },
     {
@@ -2269,6 +2295,411 @@
       ]
     },
     {
+      "field": "partyadd",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partyadvance",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partyend",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "partymove",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partyplayback",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partyremove",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partyremoveparticipant",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partyrestore",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partyreview",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partyrotatecode",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partyscreendrop",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partyscreenregister",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "carrier",
+        "id",
+        "kind",
+        "lead",
+        "name",
+        "offsetMS",
+        "reportedAt",
+        "rttMS",
+        "ticker"
+      ]
+    },
+    {
+      "field": "partyscreenreport",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "partyscreenticker",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partysession",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partystage",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "current",
+        "joinCode",
+        "joinPath",
+        "playback",
+        "serverNowMS",
+        "sessionID",
+        "ticker",
+        "upNext"
+      ]
+    },
+    {
+      "field": "partystart",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
+      "field": "partyupdate",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "autoAdd",
+        "changeoverSeconds",
+        "current",
+        "entries",
+        "expiresAt",
+        "fairness",
+        "id",
+        "joinCode",
+        "joinOpen",
+        "joinPath",
+        "libraryIDs",
+        "participants",
+        "playback",
+        "recent",
+        "removed",
+        "requests",
+        "screens",
+        "skipped",
+        "startedAt"
+      ]
+    },
+    {
       "field": "pathpicker",
       "effect": "read",
       "tier": "admin",
@@ -2549,6 +2980,7 @@
         "locked",
         "mediaClass",
         "muted",
+        "playsAlone",
         "restricted",
         "sequence",
         "subtitle",
@@ -2591,6 +3023,7 @@
         "locked",
         "mediaClass",
         "muted",
+        "playsAlone",
         "restricted",
         "sequence",
         "subtitle",
@@ -2621,6 +3054,7 @@
         "locked",
         "mediaClass",
         "muted",
+        "playsAlone",
         "restricted",
         "sequence",
         "subtitle",
@@ -2675,6 +3109,7 @@
         "locked",
         "mediaClass",
         "muted",
+        "playsAlone",
         "restricted",
         "sequence",
         "subtitle",
@@ -2849,6 +3284,7 @@
         "locked",
         "mediaClass",
         "muted",
+        "playsAlone",
         "restricted",
         "sequence",
         "subtitle",
@@ -3046,6 +3482,15 @@
       "children": [
         "approved",
         "partyID"
+      ]
+    },
+    {
+      "field": "resethomelayout",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "customized",
+        "sections"
       ]
     },
     {
@@ -3579,6 +4024,7 @@
         "locked",
         "mediaClass",
         "muted",
+        "playsAlone",
         "restricted",
         "sequence",
         "subtitle",
@@ -3609,6 +4055,7 @@
         "locked",
         "mediaClass",
         "muted",
+        "playsAlone",
         "restricted",
         "sequence",
         "subtitle",
@@ -3795,6 +4242,7 @@
         "libraryID",
         "mediaClass",
         "metadataAttribution",
+        "playsAlone",
         "sequence",
         "summary",
         "title",
@@ -3811,6 +4259,15 @@
         "followed",
         "id",
         "title"
+      ]
+    },
+    {
+      "field": "sethomelayout",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "customized",
+        "sections"
       ]
     },
     {
@@ -4180,6 +4637,16 @@
       ]
     },
     {
+      "field": "setsonicanalysisenabled",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "available",
+        "enabled",
+        "libraryID"
+      ]
+    },
+    {
       "field": "setsubscriptiondownloadpolicy",
       "effect": "write",
       "tier": "session",
@@ -4306,6 +4773,37 @@
       ]
     },
     {
+      "field": "similarmedia",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "audienceScore",
+        "audienceScoreLabel",
+        "audienceScoreVotes",
+        "byline",
+        "certification",
+        "container",
+        "durationSeconds",
+        "engagement",
+        "id",
+        "index",
+        "kind",
+        "libraryID",
+        "locked",
+        "mediaClass",
+        "muted",
+        "playsAlone",
+        "restricted",
+        "sequence",
+        "subtitle",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
       "field": "skipdetectionenabled",
       "effect": "read",
       "tier": "admin",
@@ -4325,6 +4823,16 @@
         "name",
         "sortExpr",
         "sourceExpr"
+      ]
+    },
+    {
+      "field": "sonicanalysisenabled",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "available",
+        "enabled",
+        "libraryID"
       ]
     },
     {
@@ -4349,6 +4857,7 @@
         "locked",
         "mediaClass",
         "muted",
+        "playsAlone",
         "restricted",
         "sequence",
         "subtitle",
@@ -4459,6 +4968,7 @@
         "locked",
         "mediaClass",
         "muted",
+        "playsAlone",
         "restricted",
         "sequence",
         "subtitle",

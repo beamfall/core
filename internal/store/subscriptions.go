@@ -486,6 +486,16 @@ func (s *Store) SubscriptionSeenGUIDs(ctx context.Context, id SubscriptionID) (m
 // an already-seen GUID is a no-op, except that a back-catalogue marker can
 // gain a download receipt.
 func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID, guid string, path string, now time.Time) error {
+	return s.markSubscriptionEntrySeen(ctx, id, guid, path, now, nil)
+}
+
+// MarkSubscriptionFeedEntrySeen records the entry's zero-based position in the
+// fetched feed in the durable receipt, which may await publication.
+func (s *Store) MarkSubscriptionFeedEntrySeen(ctx context.Context, id SubscriptionID, guid string, path string, now time.Time, position int) error {
+	return s.markSubscriptionEntrySeen(ctx, id, guid, path, now, &position)
+}
+
+func (s *Store) markSubscriptionEntrySeen(ctx context.Context, id SubscriptionID, guid string, path string, now time.Time, position *int) error {
 	if id == "" {
 		return errors.New("subscription ID is required")
 	}
@@ -499,11 +509,12 @@ func (s *Store) MarkSubscriptionEntrySeen(ctx context.Context, id SubscriptionID
 		return err
 	}
 	_, err := s.catalogW.ExecContext(ctx, `
-		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(subscription_id, guid) DO UPDATE SET seen_at_ms = excluded.seen_at_ms, path = excluded.path
+		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path, feed_position)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(subscription_id, guid) DO UPDATE SET seen_at_ms = excluded.seen_at_ms, path = excluded.path,
+		  feed_position = excluded.feed_position
 		WHERE subscription_seen_entry.path = '' AND subscription_seen_entry.seen_at_ms = 0
-	`, id, guid, now.UTC().UnixMilli(), path)
+	`, id, guid, now.UTC().UnixMilli(), path, position)
 	return err
 }
 
@@ -544,7 +555,7 @@ func (s *Store) PublishSubscriptionEntry(ctx context.Context, id SubscriptionID,
 }
 
 // AliasSubscriptionEntryGUID adds a GUID for an existing receipt. It keeps
-// the original receipt and copies the path and timestamp so both GUIDs
+// the original receipt and copies the path, timestamp and feed position so both GUIDs
 // refer to the same file and retention counts it once.
 func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionID, existingGUID, guid string) error {
 	if id == "" {
@@ -559,10 +570,11 @@ func (s *Store) AliasSubscriptionEntryGUID(ctx context.Context, id SubscriptionI
 		return err
 	}
 	_, err := s.catalogW.ExecContext(ctx, `
-		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path)
-		SELECT subscription_id, ?, seen_at_ms, path FROM subscription_seen_entry
+		INSERT INTO subscription_seen_entry(subscription_id, guid, seen_at_ms, path, feed_position)
+		SELECT subscription_id, ?, seen_at_ms, path, feed_position FROM subscription_seen_entry
 		WHERE subscription_id = ? AND guid = ?
-		ON CONFLICT(subscription_id, guid) DO UPDATE SET seen_at_ms = excluded.seen_at_ms, path = excluded.path
+		ON CONFLICT(subscription_id, guid) DO UPDATE SET seen_at_ms = excluded.seen_at_ms, path = excluded.path,
+		  feed_position = excluded.feed_position
 		WHERE subscription_seen_entry.path = '' AND subscription_seen_entry.seen_at_ms = 0
 	`, guid, id, existingGUID)
 	return err

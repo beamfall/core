@@ -33,11 +33,13 @@ import {
 } from "../lib/libraryBrowse";
 import { FOLDER_VIEW } from "../lib/libraryFolders";
 import {
+  cachedLibraryEntities,
   entityCardLine,
   fetchLibraryEntities,
   LIBRARY_ENTITY_PAGE,
   LIBRARY_VIEW_PARAM,
   type LibraryEntitiesPage,
+  type LibraryEntitiesRequest,
   type LibraryEntityChildKind,
   type LibraryEntityItem,
   type LibraryView,
@@ -54,8 +56,16 @@ const ENTITY_MAX_RENDERED = 240;
 // Enough Media to tell an audio-only Library from the facets read.
 const FACETS_SAMPLE = 24;
 
+// A cached plan names the kinds at once; its page is not a seed, since the
+// grid paints that page from the cache and reads it afresh itself.
 type Plan =
-  | { page: LibraryEntitiesPage; limit: number; stateKey: string; epoch: number }
+  | {
+      page: LibraryEntitiesPage;
+      limit: number;
+      stateKey: string;
+      epoch: number;
+      cached: boolean;
+    }
   | "failed"
   | null;
 /** The Library's filter values before any filter, and whether it is all audio. */
@@ -88,7 +98,39 @@ export function LibraryViews({
   const displayLocale = useDisplayLocale();
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get(LIBRARY_VIEW_PARAM);
-  const [plan, setPlan] = useState<Plan>(null);
+  // One read per Library learns its kinds. It already asks for the first page
+  // of the kind the URL names (or of the first kind), so that grid paints from
+  // it; the Media and Folders views need only the kinds. A Library opened
+  // again paints its kinds from the cached read while this one runs.
+  const [first] = useState(() => {
+    const kindless = requested === MEDIA_VIEW || requested === FOLDER_VIEW;
+    const limit = kindless ? 1 : LIBRARY_ENTITY_PAGE;
+    const state = parseBrowseState(searchParams);
+    const request: LibraryEntitiesRequest = {
+      libraryID,
+      kind: requested && !kindless ? requested : undefined,
+      ...(kindless ? {} : { state }),
+      limit,
+      offset: 0,
+    };
+    const cached = cachedLibraryEntities(request);
+    // Naming the cached kind makes this the same read the grid makes for its
+    // first page, so the two share one request.
+    if (cached && !kindless && !request.kind && cached.kind) request.kind = cached.kind;
+    return { limit, stateKey: browseStateParams(state).toString(), request, cached };
+  });
+  const [plan, setPlan] = useState<Plan>(() =>
+    first.cached
+      ? {
+          page: first.cached,
+          limit: first.limit,
+          stateKey: first.stateKey,
+          // Never a seed, so no epoch applies.
+          epoch: -1,
+          cached: true,
+        }
+      : null,
+  );
   // The opening page paints only the first grid that takes it: a grid opened
   // again later (after the Media view, say) reads afresh, since watched state
   // or ratings may have changed what the query returns since.
@@ -101,34 +143,18 @@ export function LibraryViews({
   const epochRef = useRef(engagementEpoch);
   epochRef.current = engagementEpoch;
 
-  // One read per Library learns its kinds. It already asks for the first page
-  // of the kind the URL names (or of the first kind), so that grid paints from
-  // it; the Media and Folders views need only the kinds.
-  const firstRequestRef = useRef({ view: requested, params: searchParams });
   useEffect(() => {
-    const { view: first, params } = firstRequestRef.current;
-    const kindless = first === MEDIA_VIEW || first === FOLDER_VIEW;
-    const limit = kindless ? 1 : LIBRARY_ENTITY_PAGE;
-    const state = parseBrowseState(params);
-    const stateKey = browseStateParams(state).toString();
+    const { limit, stateKey, request } = first;
     const controller = new AbortController();
     const epoch = epochRef.current;
-    fetchLibraryEntities(
-      {
-        libraryID,
-        kind: first && !kindless ? first : undefined,
-        ...(kindless ? {} : { state }),
-        limit,
-        offset: 0,
-      },
-      controller.signal,
-    )
-      .then((page) => setPlan({ page, limit, stateKey, epoch }))
+    fetchLibraryEntities({ ...request, libraryID }, controller.signal)
+      .then((page) => setPlan({ page, limit, stateKey, epoch, cached: false }))
       .catch(() => {
-        if (!controller.signal.aborted) setPlan("failed");
+        if (!controller.signal.aborted)
+          setPlan((prior) => (prior && prior !== "failed" ? prior : "failed"));
       });
     return () => controller.abort();
-  }, [libraryID]);
+  }, [libraryID, first]);
 
   const read = plan && plan !== "failed" ? plan.page : null;
   const views =
@@ -173,7 +199,10 @@ export function LibraryViews({
     );
   }
   if (!view?.kind || plan === null || plan === "failed") return media(switcher);
-  const seed = plan.limit === LIBRARY_ENTITY_PAGE && plan.page.kind === view.kind ? plan : null;
+  const seed =
+    !plan.cached && plan.limit === LIBRARY_ENTITY_PAGE && plan.page.kind === view.kind
+      ? plan
+      : null;
   const takeSeed = () => {
     if (!seed || seedTakenRef.current || seed.epoch !== engagementEpoch) return null;
     seedTakenRef.current = true;
@@ -323,30 +352,44 @@ function LibraryEntityGrid({
   const [retryTick, setRetryTick] = useState(0);
   const pagesRef = useRef(new Map<number, LibraryEntityItem[]>());
   const pendingRef = useRef(new Set<number>());
+  // Pages painted from the cache whose fresh read has not landed yet.
+  const stalePagesRef = useRef(new Set<number>());
   const generationRef = useRef(0);
 
   const loadPage = useCallback(
     (pageIndex: number) => {
-      if (pagesRef.current.has(pageIndex) || pendingRef.current.has(pageIndex)) return;
+      if (pendingRef.current.has(pageIndex)) return;
+      if (pagesRef.current.has(pageIndex) && !stalePagesRef.current.has(pageIndex)) return;
       const generation = generationRef.current;
-      pendingRef.current.add(pageIndex);
-      fetchLibraryEntities({
+      const request = {
         libraryID,
         kind,
         state,
         limit: LIBRARY_ENTITY_PAGE,
         offset: pageIndex * LIBRARY_ENTITY_PAGE,
-      })
+      };
+      const show = (page: LibraryEntitiesPage) => {
+        pagesRef.current.set(pageIndex, page.items);
+        setTotal(page.total);
+        if (pageIndex === 0) {
+          setLetters(page.letters);
+          setChildKinds(page.childKinds ?? []);
+        }
+        setLoadedTick((tick) => tick + 1);
+      };
+      // A page read before paints at once and is read afresh behind it.
+      const cached = pagesRef.current.has(pageIndex) ? undefined : cachedLibraryEntities(request);
+      if (cached) {
+        stalePagesRef.current.add(pageIndex);
+        show(cached);
+      }
+      pendingRef.current.add(pageIndex);
+      fetchLibraryEntities(request)
         .then((page) => {
           if (generation !== generationRef.current) return;
           pendingRef.current.delete(pageIndex);
-          pagesRef.current.set(pageIndex, page.items);
-          setTotal(page.total);
-          if (pageIndex === 0) {
-            setLetters(page.letters);
-            setChildKinds(page.childKinds ?? []);
-          }
-          setLoadedTick((tick) => tick + 1);
+          stalePagesRef.current.delete(pageIndex);
+          show(page);
         })
         .catch(() => {
           if (generation !== generationRef.current) return;
@@ -365,6 +408,7 @@ function LibraryEntityGrid({
   useEffect(() => {
     generationRef.current += 1;
     pendingRef.current = new Set();
+    stalePagesRef.current = new Set();
     setFailed(false);
     const opening = takeSeedRef.current();
     takeSeedRef.current = () => null;

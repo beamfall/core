@@ -1,5 +1,5 @@
 {
-  "schemaFingerprint": "67fca499d1249026e7f04f61e9a67c3a9f7dd7cb07679bb02f9a96be6fe6683b",
+  "schemaFingerprint": "9169c618c181eec27b742c109848108b7328b75dcf10a4b8bcea2f19fc9ae3ff",
   "tables": {
     "catalog.access_grant": {
       "rows": 1,
@@ -287,7 +287,7 @@
     },
     "catalog.offline_pack_item": {
       "rows": 1,
-      "checksum": "7c4091a451b7db606cc92ad4b92277c9a9d97ef16795980376c2662bb830df18"
+      "checksum": "45fc52d7a3c4b0b89c8e457d6113b3baefcd9f2c88056fa03eb6b40bc55e9245"
     },
     "catalog.op_batch": {
       "rows": 1,
@@ -366,8 +366,8 @@
       "checksum": "78db107c4d13509a4581394e44b0bacc109b78bcfb28331592e09f2030821dbd"
     },
     "catalog.schema_migrations": {
-      "rows": 129,
-      "checksum": "9112da8f177294f97f91c25f5b843eb5a03c218b8e05626c362c82f1a1dabb82"
+      "rows": 131,
+      "checksum": "fe7fe959b6c8bb3e08226eb3123c53758926131eb30a1329105162bd2bc4e475"
     },
     "catalog.scoped_api_key": {
       "rows": 1,
@@ -387,7 +387,7 @@
     },
     "catalog.server_config": {
       "rows": 2,
-      "checksum": "fdc86bb4cec9a8335d95dec5fb43a2dec665dde7886129cf3c451397828a096c"
+      "checksum": "9444d83f86c4b813864af5e8f43b5a8a31dbf86c906250a88eeffa5991574203"
     },
     "catalog.smart_collection": {
       "rows": 1,
@@ -405,9 +405,13 @@
       "rows": 1,
       "checksum": "4dc5628d1e8f5d5e246a122fd74ceaaa3e4a765d54ce0a7d87b705519a6be115"
     },
+    "catalog.subscription_retention_activity": {
+      "rows": 1,
+      "checksum": "e4136e6a38303f30a69d67b63d646e7816ad557f7d28fb578aa5c2194016830f"
+    },
     "catalog.subscription_seen_entry": {
       "rows": 1,
-      "checksum": "104e17a2e4a503ae27ddbbef4db67b61a5d6ddbb10fd5f99fa370b7124feae48"
+      "checksum": "c2ae13260cb3078965b52556648cb7d18400da53344a576b971c0cff02f5e234"
     },
     "catalog.subtitle_choice_record": {
       "rows": 1,
@@ -491,7 +495,7 @@
     },
     "encrypted:library-acc-archive.media_file": {
       "rows": 1,
-      "checksum": "ac9159eb9d5bd7e3dd10ff470712dad3c43c2d0499330d8b3045c8e008e8f50f"
+      "checksum": "5a08a8e303e92ee69c8cad2ddbcb429bc288fe8d5d22f15258320da56980ce90"
     },
     "encrypted:library-acc-archive.media_file_font_attachment": {
       "rows": 1,
@@ -523,7 +527,7 @@
     },
     "encrypted:library-acc-archive.schema_migrations": {
       "rows": 13,
-      "checksum": "3ed7a051bf04488d5a385b7659f8efedc21a1a956ddea126659020ec923e22a9"
+      "checksum": "95d763992269a089bb268eb4ea5d11350e2e380fadf9641ee62e4d92944808bd"
     },
     "encrypted:library-acc-archive.source_end_observation": {
       "rows": 1,
@@ -543,7 +547,7 @@
     },
     "events.engagement_event": {
       "rows": 3,
-      "checksum": "8acb6fc09e70f9c79b567d8155b4308c63e8d2e918aa1c7b67b0c3e7c7681812"
+      "checksum": "fa6642383f9c0daa1bb2bf4056d5c697713660fa02dc67da3a407ff7d78bda41"
     },
     "events.event_outbox": {
       "rows": 1,
@@ -577,6 +581,22 @@
       "rows": 1,
       "checksum": "03a3eae913f829dccbca6b14098e5e0c8d5d2d27ecb662d128253e8f61b83e9d"
     },
+    "events.party_entry": {
+      "rows": 1,
+      "checksum": "09f6e991d90ebf29d9b133b3fbb7da94a3c4447225ff5bde17401b6208770591"
+    },
+    "events.party_participant": {
+      "rows": 1,
+      "checksum": "682d2cc5fbaef7dba99bfa5a2e53152a1acb4d2f918d345dccba737a1affc374"
+    },
+    "events.party_screen": {
+      "rows": 1,
+      "checksum": "9e1db8160859f450348464f8b21469e7181254b55438552f66c97091c13048f1"
+    },
+    "events.party_session": {
+      "rows": 1,
+      "checksum": "38bb511eb92655ebf5b1a2ed00ec6370b322ca1b167c201267c2daa1593b5914"
+    },
     "events.play_queue": {
       "rows": 1,
       "checksum": "1dcd559bb7189b6a1769998ef548090911d7c8f5f55c2626637a2aef90734d77"
@@ -602,8 +622,8 @@
       "checksum": "b3971daa8e69b56b2c08558552f433672730d6834eee7832ab3e765c0341a840"
     },
     "events.schema_migrations": {
-      "rows": 26,
-      "checksum": "2582d5149c8920839f39e668408ace19afb025f324c3a6567e3fde72196cd61e"
+      "rows": 27,
+      "checksum": "6c59edadd8362d329d2ae4ddb65b874bcf2a660a06843afa4aff9c9910873a66"
     },
     "events.stream_token_ledger": {
       "rows": 1,
@@ -619,9 +639,9 @@
     }
   },
   "schemaVersions": {
-    "catalog": 129,
+    "catalog": 131,
     "encrypted:library-acc-archive": 13,
-    "events": 26
+    "events": 27
   },
   "fixturePolicy": {
     "minimumRecentReleases": 3,

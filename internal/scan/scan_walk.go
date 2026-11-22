@@ -79,6 +79,9 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		if resolver, ok := identifier.(PluginMediaClassResolver); ok && pluginID != "" {
 			state.imageRule = ImageRuleFor(resolver.PluginMediaClasses(pluginID))
 		}
+		if resolver, ok := identifier.(PluginTagHintResolver); ok && pluginID != "" {
+			state.tagHints = resolver.PluginEmbeddedTagHints(pluginID)
+		}
 		state.localExtractors = localExtractors[pluginID]
 		if pluginID != "" {
 			state.parser = parsers[pluginID]

@@ -160,3 +160,119 @@ export function slideDate(
     return raw;
   }
 }
+
+/** An image slide's shape, read from its decoded pixels (the wire carries no dimensions). */
+export type SlideShape = "portrait" | "landscape";
+
+/** One stage's worth of slides: one, or two portraits side by side. `start` indexes `slides`. */
+export interface SlideGroup {
+  start: number;
+  slides: Slide[];
+}
+
+/**
+ * Splits slides into what each stage shows, in order. On a landscape screen a
+ * portrait image pairs with the next slide when that is a portrait image too;
+ * a lone portrait, a clip and a slide of unknown shape show alone. The last
+ * slide never pairs with the first. Layout only: this decides what shares the
+ * stage, never how it is drawn.
+ */
+export function slideGroups(
+  slides: readonly Slide[],
+  shapeOf: (slide: Slide) => SlideShape | undefined,
+  pairPortraits: boolean,
+): SlideGroup[] {
+  const portrait = (slide: Slide | undefined) =>
+    !!slide && !slide.clip && shapeOf(slide) === "portrait";
+  const groups: SlideGroup[] = [];
+  for (let start = 0; start < slides.length; ) {
+    const size = pairPortraits && portrait(slides[start]) && portrait(slides[start + 1]) ? 2 : 1;
+    groups.push({ start, slides: slides.slice(start, start + size) });
+    start += size;
+  }
+  return groups;
+}
+
+/**
+ * Whether the group starting at `start` is known: the slide's shape is read
+ * and, when it is a portrait that could pair, so are the next one's and those
+ * of the portraits running back to it (pairing counts from the queue's start,
+ * so an unread one before it could shift the pair). A stage waits for this so
+ * a pair never lands as a lone portrait first.
+ */
+export function slideGroupSettled(
+  slides: readonly Slide[],
+  start: number,
+  shapeOf: (slide: Slide) => SlideShape | undefined,
+  pairPortraits: boolean,
+): boolean {
+  const slide = slides[start];
+  if (!pairPortraits || !slide || slide.clip) return true;
+  const shape = shapeOf(slide);
+  if (shape !== "portrait") return shape !== undefined;
+  if (unreadPortraitBefore(slides, start, shapeOf) !== null) return false;
+  const next = slides[start + 1];
+  return !next || next.clip || shapeOf(next) !== undefined;
+}
+
+/**
+ * The nearest slide before `start` whose shape is still unread, walking back
+ * through portraits; null once a landscape, a clip or the queue's start ends
+ * the run.
+ */
+export function unreadPortraitBefore(
+  slides: readonly Slide[],
+  start: number,
+  shapeOf: (slide: Slide) => SlideShape | undefined,
+): number | null {
+  for (let at = start - 1; at >= 0; at -= 1) {
+    const slide = slides[at];
+    if (!slide || slide.clip) return null;
+    const shape = shapeOf(slide);
+    if (shape === undefined) return at;
+    if (shape !== "portrait") return null;
+  }
+  return null;
+}
+
+/** The Dark Room window's defaults, as `HH:MM` local times. */
+export const DEFAULT_DARK_ROOM_START = "22:00";
+export const DEFAULT_DARK_ROOM_END = "07:00";
+
+/** Minutes after midnight for an `HH:MM` time, or null when it is not one. */
+export function clockMinutes(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+/**
+ * Whether the local time `now` falls in the Dark Room window from `start` up to
+ * `end` (`HH:MM`). An end before the start crosses midnight; equal or
+ * unreadable times make an empty window.
+ */
+export function inDarkRoomWindow(now: Date, start: string, end: string): boolean {
+  const from = clockMinutes(start);
+  const until = clockMinutes(end);
+  if (from === null || until === null || from === until) return false;
+  const minute = now.getHours() * 60 + now.getMinutes();
+  return from < until ? minute >= from && minute < until : minute >= from || minute < until;
+}
+
+/**
+ * The first moment after `from` at which the Dark Room window opens or closes,
+ * or null when the window is empty. A manual dim lasts until then.
+ */
+export function nextDarkRoomBoundary(from: Date, start: string, end: string): Date | null {
+  const opens = clockMinutes(start);
+  const closes = clockMinutes(end);
+  if (opens === null || closes === null || opens === closes) return null;
+  let next: Date | null = null;
+  for (const minutes of [opens, closes]) {
+    const at = new Date(from);
+    at.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+    if (at.getTime() <= from.getTime()) at.setDate(at.getDate() + 1);
+    if (!next || at.getTime() < next.getTime()) next = at;
+  }
+  return next;
+}

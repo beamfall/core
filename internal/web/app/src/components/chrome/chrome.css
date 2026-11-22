@@ -53,6 +53,15 @@
   border-radius: 6px;
 }
 
+.bf-build-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .bf-mark {
   width: 26px;
   height: 26px;

@@ -62,16 +62,81 @@ playback decision, open a playback session or send progress for a slide.
 - **WHEN** a slideshow shows images and clips
 - **THEN** no `/api/playback-info` request and no playback progress or end is sent
 
-### Requirement: Overlay, music and Dark Room
+### Requirement: Overlay and music
 
 The slideshow SHALL offer an overlay with a clock, a caption with the item's date and subtitle when
 it has them, and the title of the track the current play queue is playing. Audio the player is
-playing SHALL keep playing under the slideshow. Dark Room SHALL dim the stage to near-black.
+playing SHALL keep playing under the slideshow.
 
 #### Scenario: Now playing
 
 - **WHEN** the play queue is playing a track and the overlay is on
 - **THEN** the overlay names that track
+
+### Requirement: Dark Room schedule
+
+The setup sheet SHALL offer Dark Room as an on/off setting with a start and an end time, defaulting
+to 22:00 and 07:00 and stored per device. A window whose end is earlier than its start SHALL cross
+midnight. Inside the window, while Dark Room is on, the stage SHALL be dimmed.
+
+#### Scenario: Window crosses midnight
+
+- **WHEN** Dark Room is on from 22:00 to 07:00 and the local time is 02:30
+- **THEN** the stage is dimmed
+
+#### Scenario: Outside the window
+
+- **WHEN** Dark Room is on from 22:00 to 07:00 and the local time is 12:00
+- **THEN** the stage is not dimmed
+
+### Requirement: Dark Room dimming is UI only
+
+The Dark Room dim SHALL be a plain opaque black scrim at about 85% over the stage, with no filter,
+blur or shader. The clock and caption SHALL stay readable but dim. D SHALL dim or undim at once
+until the schedule next changes state.
+
+#### Scenario: Dim now
+
+- **WHEN** the stage is not dimmed and the viewer presses D
+- **THEN** the scrim covers the stage until the schedule next changes state
+
+### Requirement: Portrait pairing
+
+On a landscape screen, a portrait image SHALL share the stage with the next slide when that slide is
+also a portrait image, side by side in two halves with a small gap, each fitted whole. Otherwise a
+portrait SHALL show alone. Clips SHALL never pair.
+
+#### Scenario: Two portraits pair
+
+- **WHEN** the current and next slides are portrait images on a landscape screen
+- **THEN** both show side by side
+
+#### Scenario: Lone portrait
+
+- **WHEN** a portrait image is followed by a landscape image, or ends the queue
+- **THEN** the portrait shows alone
+
+### Requirement: A pair is one slide
+
+A pair SHALL be one slide for timing and for Previous and Next, and its caption SHALL be the first
+image's date and place.
+
+#### Scenario: Next skips past a pair
+
+- **WHEN** a pair is showing and the viewer presses Next
+- **THEN** the slide after the pair's second image shows
+
+### Requirement: Pairing is layout only
+
+Pairing SHALL add no visual effect of the page's own. Under Calm, the pair and a lone portrait's
+blurred fill are the Oscillux slideshow pass's `pair` and `fill` layouts (CORE-2980). Where the
+pass does not run, a lone portrait SHALL keep dark bars, since a blurred fill is a visual effect
+and visual effects come only from Oscillux.
+
+#### Scenario: No blurred fill without the pass
+
+- **WHEN** a lone portrait shows and the Oscillux slideshow pass is not running
+- **THEN** the space beside it is the dark stage, with no blur of the photo
 
 ### Requirement: Keyboard control
 
@@ -86,11 +151,18 @@ Escape SHALL close the setup sheet when it is open, and otherwise close the slid
 
 ### Requirement: Motion comes only from Oscillux
 
-Slide transitions and motion SHALL come only from Oscillux. While the pinned Oscillux release has
-no photo-slideshow mode, slides SHALL change with a hard cut and the Calm and Visualiser choices
-SHALL be shown as unavailable.
+Slide transitions and motion SHALL come only from Oscillux. Calm, the default, SHALL run the
+pinned Oscillux release's photo-slideshow pass (v0.2.15, CORE-2980) through WebGL2, with the host
+choosing the layout and style and easing the progress as the pass's contract says. Without WebGL2,
+or once the WebGL2 context is lost or the pass fails, slides SHALL change with a hard cut. Visualiser
+SHALL be shown as unavailable until its host is wired.
 
-#### Scenario: Hard cut without an Oscillux slideshow mode
+#### Scenario: Calm through the Oscillux pass
 
-- **WHEN** the pinned Oscillux release offers no photo-slideshow mode
+- **WHEN** Calm is chosen and the browser runs WebGL2
+- **THEN** the next photo slide comes in through the Oscillux slideshow pass
+
+#### Scenario: Hard cut without the pass
+
+- **WHEN** the browser has no WebGL2, or its context is lost
 - **THEN** the next slide replaces the current one with no blend

@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { unavailableReasonMessage } from "./playback";
 import {
+  listsPlaysAlone,
   newStartID,
   playQueueOf,
+  queueForPlaying,
   queueNeighbours,
   queueOfClass,
   queueWindow,
   readPlayerNavState,
+  sectionQueue,
   withQueueClasses,
 } from "./watchQueue";
 
@@ -205,6 +208,56 @@ describe("class-narrowed play queue (CORE-1490)", () => {
       { id: "a", title: "A", mediaClass: "audio" },
       { id: "b", title: "B" },
     ]);
+  });
+});
+
+describe("section queue (CORE-3013)", () => {
+  const items = [item("a", "media"), item("b", "media")];
+
+  it("queues no siblings for a per-container Source, so none runs on", () => {
+    expect(sectionQueue("next-up", items)).toBeUndefined();
+    expect(sectionQueue("continue-watching", items)).toBeUndefined();
+  });
+
+  it("queues a library Source's playable items", () => {
+    expect(sectionQueue("recently-added", items)?.map((entry) => entry.id)).toEqual(["a", "b"]);
+    expect(sectionQueue(undefined, items)).toHaveLength(2);
+  });
+});
+
+describe("plays-alone queue (CORE-3147)", () => {
+  const alone = (id: string) =>
+    ({ id, title: `T-${id}`, kind: "media", playsAlone: true }) as unknown as SourceItem;
+
+  it("carries the flag from the card onto the queue and through nav state", () => {
+    const queue = playQueueOf([alone("b1"), item("t1", "media")]);
+    expect(queue).toEqual([
+      { id: "b1", title: "T-b1", playsAlone: true },
+      { id: "t1", title: "T-t1" },
+    ]);
+    const nav = readPlayerNavState({ queue, queueIdentity: "me" }, "me");
+    expect(nav.queue).toEqual(queue);
+  });
+
+  it("plays a plays-alone item as a one-item queue", () => {
+    const queue = playQueueOf([alone("b1"), alone("b2"), alone("b3")]);
+    expect(queueForPlaying(queue, "b2")).toEqual([{ id: "b2", title: "T-b2", playsAlone: true }]);
+    expect(queueNeighbours(queueForPlaying(queue, "b2"), "b2")).toEqual({
+      previous: undefined,
+      next: undefined,
+    });
+  });
+
+  it("never runs on into a plays-alone item, and leaves other queues unchanged", () => {
+    const mixed = playQueueOf([item("t1", "media"), alone("b1"), item("t2", "media")]);
+    expect(queueForPlaying(mixed, "t1").map((entry) => entry.id)).toEqual(["t1", "t2"]);
+    const tracks = playQueueOf([item("t1", "media"), item("t2", "media")]);
+    expect(queueForPlaying(tracks, "t1")).toBe(tracks);
+  });
+
+  it("names a listing with a plays-alone Media item", () => {
+    expect(listsPlaysAlone([item("t1", "media"), alone("b1")])).toBe(true);
+    expect(listsPlaysAlone([item("t1", "media")])).toBe(false);
   });
 });
 

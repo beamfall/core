@@ -33,6 +33,10 @@ schemaVersion: 1
 
 ops:
   # ── egress ────────────────────────────────────────────────────────────────
+  - id: egress-attestation-status
+    desc: GET Google's Android Key Attestation revocation status list
+    pkg: internal/offlinepack
+    kind: egress
   - id: egress-webhook-post
     desc: POST event payloads to operator-configured webhook endpoints
     pkg: internal/webhook

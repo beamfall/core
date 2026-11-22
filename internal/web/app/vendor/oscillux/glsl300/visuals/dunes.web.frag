@@ -809,8 +809,8 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // step, so the colours change slowly.
 vec3 dnPalStill(float t, VisualUniforms u) {
     if (u.palette.x >= 0.0) return palByIndex(t, int(floor(u.palette.x + 0.5)));
-    int a = int(mod(floor(u.palette.z), 32.0));
-    int b = int(mod(float(a + 1), 32.0));
+    int a = int(mod(floor(u.palette.z), OS_PAL_COUNT));
+    int b = int(mod(float(a + 1), OS_PAL_COUNT));
     float blend = smoothstep(0.0, 1.0, fract(u.palette.z));
     return mix(palByIndex(t, a), palByIndex(t, b), blend);
 }

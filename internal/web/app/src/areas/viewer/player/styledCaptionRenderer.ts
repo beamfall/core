@@ -1,4 +1,5 @@
 import JASSUB from "jassub";
+import { publishedSubtitleOffset, SUBTITLE_OFFSET_EVENT } from "./playbackSync";
 
 async function fetchCaption(url: URL, signal: AbortSignal): Promise<Response> {
   const response = await fetch(url, { signal, credentials: "same-origin", cache: "no-store" });
@@ -68,7 +69,8 @@ export async function startStyledCaption(
     });
     await renderer.setVideo(video);
     signal.throwIfAborted();
-    if (video.paused && video.videoWidth > 0 && video.videoHeight > 0) {
+    const repaintIfPaused = async () => {
+      if (!video.paused || video.videoWidth <= 0 || video.videoHeight <= 0) return;
       await renderer.manualRender(
         {
           expectedDisplayTime: performance.now(),
@@ -78,7 +80,26 @@ export async function startStyledCaption(
         },
         true,
       );
-    }
+    };
+    // JASSUB draws at mediaTime + timeOffset; a positive subtitle offset shows
+    // cues later (CORE-1671), so it looks the cue up that far back.
+    const followOffset = () => {
+      renderer.timeOffset = -publishedSubtitleOffset(video);
+    };
+    const onOffset = () => {
+      followOffset();
+      void repaintIfPaused().catch(() => {});
+    };
+    followOffset();
+    video.addEventListener(SUBTITLE_OFFSET_EVENT, onOffset);
+    signal.addEventListener(
+      "abort",
+      () => video.removeEventListener(SUBTITLE_OFFSET_EVENT, onOffset),
+      {
+        once: true,
+      },
+    );
+    await repaintIfPaused();
   } catch (error) {
     canvas.remove();
     throw error;

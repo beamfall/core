@@ -2,7 +2,9 @@ package scan
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/beamfall/core/internal/store"
@@ -36,12 +38,17 @@ var extraNameSuffixes = []string{
 	"-behindthescenes",
 }
 
+// discStreamName matches a disc rip's stream file: a bare five-digit stream
+// number with a transport-stream extension, as a disc's STREAM folder names
+// them ("00019.m2ts").
+var discStreamName = regexp.MustCompile(`(?i)^\d{5}\.(?:m2ts|mts)$`)
+
 // isExtraPath reports whether a scanned file is an Extra by the established
 // folder/suffix conventions. It looks at the filename stem and at the
 // directory components between the Library root and the file; the root
 // itself and the folders above it never count, so a Library stored under a
-// folder named "Trailers" or "Extras" still holds main Media (CORE-2189). It
-// does not stat the filesystem.
+// folder named "Trailers" or "Extras" still holds main Media (CORE-2189).
+// Only a disc stream file reads its folder's listing (see strayDiscStream).
 func isExtraPath(root, path string) bool {
 	return matchExtraPath(root, path).isExtra()
 }
@@ -49,13 +56,14 @@ func isExtraPath(root, path string) bool {
 // extraMatch records every Extra convention a path matches, so parent
 // resolution can fall back from one to the next.
 type extraMatch struct {
-	suffix    string // the matched filename-stem suffix, if any
-	container string // the nearest Extras folder holding the file, if any
+	suffix     string // the matched filename-stem suffix, if any
+	container  string // the nearest Extras folder holding the file, if any
+	discStream bool   // a disc stream file beside a titled main file
 }
 
 // isExtra reports whether any Extra convention matched.
 func (m extraMatch) isExtra() bool {
-	return m.suffix != "" || m.container != ""
+	return m.suffix != "" || m.container != "" || m.discStream
 }
 
 // matchExtraPath is the single classifier behind isExtraPath and
@@ -71,7 +79,44 @@ func matchExtraPath(root, path string) extraMatch {
 		}
 	}
 	match.container = extraContainerDir(root, path)
+	if !match.isExtra() {
+		match.discStream = strayDiscStream(root, path)
+	}
 	return match
+}
+
+// strayDiscStream reports whether path is a disc stream file ("00019.m2ts")
+// in a folder strictly below root that also holds a titled video file: a
+// disc rip's featurette or trailer kept beside the folder's main file
+// (CORE-3060). A folder holding only disc stream files keeps them all as
+// main Media, since nothing says which one is the main file.
+func strayDiscStream(root, path string) bool {
+	if root == "" || !discStreamName.MatchString(filepath.Base(path)) {
+		return false
+	}
+	root = filepath.Clean(root)
+	dir := filepath.Clean(filepath.Dir(path))
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return false
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.Type().IsRegular() || discStreamName.MatchString(name) || titleFromPath(name) == "" {
+			continue
+		}
+		if !videoExtensions[strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), ".")] {
+			continue
+		}
+		if matchExtraPath(root, filepath.Join(dir, name)).suffix == "" {
+			return true
+		}
+	}
+	return false
 }
 
 type extraParentTitleKey struct {
@@ -138,7 +183,8 @@ func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryI
 //   - a stem suffix names its parent by title in the same folder
 //     ("Title-trailer.mkv" beside "Title.mkv");
 //   - an Extras folder belongs to the sole main Media of the folder holding
-//     it.
+//     it;
+//   - a disc stream file belongs to the sole main Media of its own folder.
 //
 // It returns "" when neither resolves, and the file stays an unlinked Extra:
 // picking one of several candidates would attach it to the wrong item.
@@ -155,6 +201,9 @@ func extraParentMediaID(root, path string, byDir map[string][]store.MediaID, byD
 	}
 	if match.container != "" {
 		return soleMediaID(byDir[filepath.Clean(filepath.Dir(match.container))])
+	}
+	if match.discStream {
+		return soleMediaID(byDir[dir])
 	}
 	return ""
 }

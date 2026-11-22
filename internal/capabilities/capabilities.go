@@ -4,11 +4,13 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"time"
 )
 
 type Report struct {
 	Version                     string   `json:"version,omitempty"`
 	Commit                      string   `json:"commit"`
+	BuildDate                   string   `json:"buildDate,omitempty"`
 	BuildTags                   []string `json:"buildTags"`
 	CorrespondingSourceOfferURL string   `json:"correspondingSourceOfferURL,omitempty"`
 	Capabilities                []string `json:"capabilities,omitempty"`
@@ -23,17 +25,20 @@ type Report struct {
 	manifestError      error
 }
 
-// ReleaseVersion and ReleaseCommit are set at link time by the release
-// pipeline and the repo Dockerfile:
+// Build identity can be set at link time by the release pipeline, Dockerfile,
+// and Makefile:
 //
 //	-X github.com/beamfall/core/internal/capabilities.ReleaseVersion=<version>
 //	-X github.com/beamfall/core/internal/capabilities.ReleaseCommit=<git commit>
+//	-X github.com/beamfall/core/internal/capabilities.ReleaseBuildDate=<RFC3339 UTC timestamp>
 //
 // ReleaseCommit exists for builds without VCS metadata (a Docker build context
 // excludes .git, so debug.ReadBuildInfo has no vcs.revision); an empty value
 // falls back to that revision, then to "development".
+// ReleaseBuildDate falls back to vcs.time and is omitted when neither is valid.
 var ReleaseVersion = "development"
 var ReleaseCommit string
+var ReleaseBuildDate string
 var SourceOfferURL string
 
 // Current reports the build identity plus the *default* runtime capability state
@@ -66,6 +71,7 @@ func CurrentWithOverrides(overrides map[string]bool) Report {
 	return Report{
 		Version:                     ReleaseVersion,
 		Commit:                      detectCommit(),
+		BuildDate:                   resolveBuildDate(ReleaseBuildDate, debug.ReadBuildInfo),
 		BuildTags:                   buildTags,
 		CorrespondingSourceOfferURL: SourceOfferURL,
 		Capabilities:                caps,
@@ -98,6 +104,28 @@ func detectCommit() string {
 		}
 	}
 	return "development"
+}
+
+func resolveBuildDate(stamped string, readBuildInfo func() (*debug.BuildInfo, bool)) string {
+	if date := normalizeBuildDate(stamped); date != "" {
+		return date
+	}
+	if info, ok := readBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.time" {
+				return normalizeBuildDate(setting.Value)
+			}
+		}
+	}
+	return ""
+}
+
+func normalizeBuildDate(value string) string {
+	date, err := time.Parse(time.RFC3339, strings.TrimSpace(value))
+	if err != nil {
+		return ""
+	}
+	return date.UTC().Format(time.RFC3339)
 }
 
 func detectBuildTags() []string {

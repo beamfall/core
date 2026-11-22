@@ -80,17 +80,9 @@ func (s *Store) trashMediaReporting(ctx context.Context, id MediaID, filter Libr
 		return false, err
 	}
 	now = now.UTC()
-	result, err := s.catalogW.ExecContext(ctx,
-		`UPDATE media SET trashed_at_ms = ? WHERE id = ? AND trashed_at_ms IS NULL`,
-		timeToMillis(now), id)
-	if err != nil {
+	moved, err := setMediaTrashedAt(ctx, s.catalogW, id, now)
+	if err != nil || !moved {
 		return false, err
-	}
-	// Only a real soft-delete emits an event: re-trashing an already-trashed
-	// item (or one another writer just trashed) affects no row.
-	affected, raErr := result.RowsAffected()
-	if raErr != nil || affected == 0 {
-		return false, nil
 	}
 	// Emit AFTER the catalog write committed (cross-DB ordering: see
 	// appendMediaEventLocked). The event carries the Media's LibraryID so the
@@ -101,6 +93,19 @@ func (s *Store) trashMediaReporting(ctx context.Context, id MediaID, filter Libr
 		slog.Warn("media outbox event append failed", "kind", MediaEventDeleted, "media", id, "error", eventErr)
 	}
 	return true, nil
+}
+
+// setMediaTrashedAt is the shared recoverable Trash write. Only a real
+// soft-delete affects a row and warrants an audit entry or an outbox event.
+func setMediaTrashedAt(ctx context.Context, db sqlExecer, id MediaID, now time.Time) (bool, error) {
+	result, err := db.ExecContext(ctx,
+		`UPDATE media SET trashed_at_ms = ? WHERE id = ? AND trashed_at_ms IS NULL`,
+		timeToMillis(now), id)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected != 0, err
 }
 
 // TrashMediaRetiredByScan moves to the trash the Media of one Library that a

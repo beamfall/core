@@ -46,6 +46,11 @@ export interface MediaSessionOptions {
    * and lands at that song position in the stream. 1 when nothing was applied.
    */
   songScale?: number;
+  /**
+   * The listener's skip interval in seconds (global or per container,
+   * CORE-2960): the step for an OS seek that names no offset. 10 by default.
+   */
+  skipSeconds?: number;
 }
 
 export function useMediaSession({
@@ -60,6 +65,7 @@ export function useMediaSession({
   album,
   artworkURL,
   songScale = 1,
+  skipSeconds = SEEK_STEP_SECONDS,
 }: MediaSessionOptions): void {
   // Metadata: set when active, cleared when not. Kept in its own effect so a
   // title change updates the OS surface without re-binding the action handlers.
@@ -112,16 +118,17 @@ export function useMediaSession({
     });
     // OS offsets and seek times are song seconds; the <video> plays stream seconds.
     const scale = songScale > 0 && Number.isFinite(songScale) ? songScale : 1;
+    const skip = skipSeconds > 0 && Number.isFinite(skipSeconds) ? skipSeconds : SEEK_STEP_SECONDS;
     safeSet("seekbackward", (details) => {
       markViewerIntent();
       resetStillWatching();
-      const step = details?.seekOffset ?? SEEK_STEP_SECONDS;
+      const step = details?.seekOffset ?? skip;
       video.currentTime = Math.max(0, video.currentTime - step / scale);
     });
     safeSet("seekforward", (details) => {
       markViewerIntent();
       resetStillWatching();
-      const step = details?.seekOffset ?? SEEK_STEP_SECONDS;
+      const step = details?.seekOffset ?? skip;
       const end = Number.isFinite(video.duration) ? video.duration : Infinity;
       video.currentTime = Math.min(end, video.currentTime + step / scale);
     });
@@ -187,5 +194,5 @@ export function useMediaSession({
       }
       ms.playbackState = "none";
     };
-  }, [videoRef, active, next, onNext, onNextTrack, onPreviousTrack, songScale]);
+  }, [videoRef, active, next, onNext, onNextTrack, onPreviousTrack, songScale, skipSeconds]);
 }

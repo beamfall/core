@@ -1,11 +1,13 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { publishSubtitleOffset } from "./playbackSync";
 import { attachCaptionElements, captionElement, showCaptionElement } from "./streamTracks";
 import { startStyledCaption } from "./styledCaptionRenderer";
 import { useCaptionLoad } from "./useCaptionLoad";
 
-const { draw, frame, start, terminate } = vi.hoisted(() => ({
+const { draw, frame, instances, start, terminate } = vi.hoisted(() => ({
   draw: vi.fn<() => Promise<void>>(),
+  instances: [] as { timeOffset: number }[],
   frame: { render: async () => {} },
   start: vi.fn(),
   terminate: vi.fn(),
@@ -14,6 +16,7 @@ const { draw, frame, start, terminate } = vi.hoisted(() => ({
 vi.mock("jassub", () => ({
   default: class {
     ready = Promise.resolve();
+    timeOffset = 0;
     renderer = new Proxy(
       { _draw: draw },
       {
@@ -26,6 +29,7 @@ vi.mock("jassub", () => ({
 
     constructor(private readonly options: { canvas: HTMLCanvasElement; subContent: string }) {
       start(options);
+      instances.push(this);
     }
 
     async setVideo() {
@@ -69,6 +73,22 @@ describe("styled caption renderer", () => {
     );
     controller.abort();
     expect(start).toHaveBeenLastCalledWith(expect.objectContaining({ subContent: `${prefix}é\n` }));
+  });
+
+  it("follows the published subtitle offset (CORE-1671)", async () => {
+    vi.stubGlobal("fetch", async () => new Response("[Events]"));
+    const video = document.createElement("video");
+    publishSubtitleOffset(video, 1.5);
+    const controller = new AbortController();
+    await startStyledCaption(video, track.url, controller.signal, vi.fn());
+    const renderer = instances[instances.length - 1];
+    // JASSUB draws at mediaTime + timeOffset: showing cues 1.5 s later looks back 1.5 s.
+    expect(renderer.timeOffset).toBe(-1.5);
+    publishSubtitleOffset(video, -0.3);
+    expect(renderer.timeOffset).toBe(0.3);
+    controller.abort();
+    publishSubtitleOffset(video, 2);
+    expect(renderer.timeOffset).toBe(0.3);
   });
 
   it("switches to WebVTT when a frame draw rejects after startup", async () => {

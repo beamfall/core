@@ -159,6 +159,11 @@ export interface SourceItem {
   audienceScore?: number;
   /** The vote count behind that score; absent when unknown (CORE-2415). */
   audienceScoreVotes?: number;
+  /**
+   * The item's plugin declares that it plays on its own: a player never
+   * queues its siblings after it (CORE-3147). Absent means it may queue.
+   */
+  playsAlone?: boolean;
   /** Who made an audio Media item: its person-archetype Entities' titles (CORE-2362). */
   byline?: string[];
   /**
@@ -287,6 +292,20 @@ export interface RelatedEntityGroup {
   /** The group kind's fixed archetype ("container", "person", …). */
   archetype?: string;
   items: SourceItem[];
+  /**
+   * The group split by a plugin-declared field (CORE-2769): consecutive runs
+   * of `items`, in order, each with the field value, its heading and size.
+   * Absent when the kind is not split.
+   */
+  sections?: RelatedEntitySection[];
+}
+
+/** One run of a related group's items sharing a field value (graph.RelatedEntitySectionInfo). */
+export interface RelatedEntitySection {
+  /** The field value; "" for the items carrying none. */
+  value: string;
+  displayName?: DisplayString;
+  count: number;
 }
 
 /** A generic Media detail row (graph.MediaInfo), intentionally domain-neutral. */
@@ -300,6 +319,8 @@ export interface GenericMediaInfo {
   durationSeconds?: number;
   /** The Media class ("audio", "video", …); omitted when unknown. */
   mediaClass?: string;
+  /** Plays on its own: no sibling queue follows it (CORE-3147); media(id) only. */
+  playsAlone?: boolean;
   /**
    * The owning Library, for the readable address (CORE-2329); only the
    * media(id) read fills it, and a server that predates it omits it.
@@ -2195,4 +2216,18 @@ export interface WebhookSettingsInfo {
   publicBaseURL: string;
   formats: string[];
   eventKinds: string[];
+}
+
+/** One Home shelf in the calling Profile's layout (CORE-1972). */
+export interface HomeLayoutSection {
+  id: string;
+  kind: string;
+  title: LocaleString | string;
+  hidden: boolean;
+}
+
+/** The calling Profile's Home order and visibility (CORE-1972). */
+export interface HomeLayoutInfo {
+  customized: boolean;
+  sections: HomeLayoutSection[];
 }

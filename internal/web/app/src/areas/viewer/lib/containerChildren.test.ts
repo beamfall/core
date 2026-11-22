@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import {
+  childContainerCandidates,
   childThumbURL,
   groupChildrenByKind,
   nextUpChild,
   nextUpChildContainer,
+  nextUpFinished,
+  rolledContainerCandidates,
+  rolledContainerLeft,
 } from "./containerChildren";
 
 const item = (id: string, extra: Partial<SourceItem> = {}): SourceItem => ({
@@ -104,5 +108,76 @@ describe("nextUpChildContainer", () => {
     ).toBe("s2");
     expect(nextUpChildContainer([{ archetype: "person", items: [box("p")] }])).toBeNull();
     expect(nextUpChildContainer(undefined)).toBeNull();
+  });
+});
+
+describe("rolledContainerCandidates (CORE-3058)", () => {
+  const card = (id: string, remainingCount?: number, locked?: boolean): SourceItem => ({
+    id,
+    kind: "entity",
+    title: id,
+    locked,
+    engagement: { totalCount: 3, ...(remainingCount ? { remainingCount } : {}) },
+  });
+
+  const ids = (items: SourceItem[]) => items.map((i) => i.id);
+
+  it("tries unlocked container cards with children left first, then the rest", () => {
+    const film = item("f1");
+    expect(
+      ids(
+        rolledContainerCandidates([
+          film,
+          card("a"),
+          card("b", 2, true),
+          card("c", 1),
+          card("d", 2),
+        ]),
+      ),
+    ).toEqual(["c", "d", "a"]);
+    expect(ids(rolledContainerCandidates([film, card("a"), card("b")]))).toEqual(["a", "b"]);
+    expect(rolledContainerCandidates([film])).toEqual([]);
+    expect(rolledContainerLeft([film, card("a"), card("b", 2, true)])).toBe(false);
+    expect(rolledContainerLeft([film, card("c", 1)])).toBe(true);
+  });
+});
+
+describe("nextUpFinished", () => {
+  it("is true only for a finished item played again", () => {
+    const done = item("a", { engagement: { completed: true } });
+    expect(nextUpFinished({ item: done, resume: false })).toBe(true);
+    expect(nextUpFinished({ item: done, resume: true })).toBe(false);
+    expect(nextUpFinished({ item: item("b"), resume: false })).toBe(false);
+  });
+});
+
+describe("childContainerCandidates", () => {
+  const box = (id: string, remainingCount?: number): SourceItem => ({
+    id,
+    kind: "entity",
+    title: id,
+    engagement: { totalCount: 2, ...(remainingCount ? { remainingCount } : {}) },
+  });
+
+  it("orders the first container group's children, skipping visited ones", () => {
+    const groups = [
+      { archetype: "person", items: [box("p")] },
+      { archetype: "container", items: [box("parent", 1)] },
+      { archetype: "container", items: [box("a"), box("b", 1)] },
+    ];
+    expect(childContainerCandidates(groups).map((i) => i.id)).toEqual(["parent"]);
+    expect(childContainerCandidates(groups, new Set(["parent"])).map((i) => i.id)).toEqual([
+      "b",
+      "a",
+    ]);
+    expect(childContainerCandidates(undefined)).toEqual([]);
+  });
+
+  it("passes over a group whose children are all locked", () => {
+    const groups = [
+      { archetype: "container", items: [{ ...box("x"), locked: true }] },
+      { archetype: "container", items: [box("a")] },
+    ];
+    expect(childContainerCandidates(groups).map((i) => i.id)).toEqual(["a"]);
   });
 });

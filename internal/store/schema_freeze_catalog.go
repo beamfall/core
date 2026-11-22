@@ -133,4 +133,9 @@ package store
 // to_media index.
 // CORE-3128 adds 0132_media_operator_ordinal, keyed by Media ID and read off the entity-query hot path.
 // CORE-3131 adds 0133_media_relation_operator_lock, with relation locks and catalog-local recovery history.
-const schemaFreezeCatalogMigrations = 129
+// CORE-3016 adds 0134_offline_pack_item_parts, keying offline pack items by
+// Media Part; read only by offline pack builds and grants, off the
+// entity-query hot path.
+// CORE-2968 adds 0135_subscription_seen_feed_position for Subscription
+// retention ranking and audit recovery, off the entity-query hot path.
+const schemaFreezeCatalogMigrations = 131

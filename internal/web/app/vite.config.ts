@@ -61,10 +61,10 @@ export default defineConfig({
     },
   },
   server: {
-    // `npm run dev` proxies API + media calls to a local server binary so the
-    // React app talks to the real GraphQL/manifest/SSE surfaces.
+    // `npm run dev` proxies to the local Core server for API calls and build identity.
     proxy: {
       "/api": "http://127.0.0.1:8080",
+      "/health": "http://127.0.0.1:8080",
     },
   },
 });

@@ -27,6 +27,11 @@ export function notifyEngagementChanged(): void {
   for (const listener of listeners) listener();
 }
 
+/** The engagement counter now, for a cache that must drop reads made before a change. */
+export function readEngagementEpoch(): number {
+  return epoch;
+}
+
 /** A counter that changes each time engagement state changes; use it as an effect dependency. */
 export function useEngagementEpoch(): number {
   return useSyncExternalStore(

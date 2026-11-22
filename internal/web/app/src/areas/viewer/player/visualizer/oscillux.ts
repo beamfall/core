@@ -1,4 +1,4 @@
-// Loads the vendored Oscillux v0.2.12 release (vendor/oscillux, AGPL-3.0-only, ADR-0233): the
+// Loads the vendored Oscillux v0.2.15 release (vendor/oscillux, AGPL-3.0-only, ADR-0233): the
 // wasm core and the GLSL ES 3.00 shader bundle. Both load on first use only, so a page that
 // never shows the audio stage downloads none of it. Core adds host glue only: every visual
 // effect is Oscillux's (ADR-0228).

@@ -795,9 +795,9 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // Luminous ink in dark water, shot macro. The feedback buffer is the fluid:
 // each frame it is carried along a velocity field, sharpened against the
 // blur of resampling, and fed fresh dye. The field is multi-scale curl noise
-// plus the analytic vortex pairs of rising plumes: every beat a warm charge
-// eases in slowly from the floor and mushrooms upward, a small crown of dye
-// opens once a beat, and two pens draw a second, cool ink in thin wisps which
+// plus the analytic vortex pairs of rising plumes, whose wide cores roll
+// slowly: every beat a warm charge eases in slowly from the floor and
+// mushrooms upward, a small soft crown of dye opens once a beat, and two pens draw a second, cool ink in thin wisps which
 // the turbulence frays. The dye and the flow follow the music's smoothed
 // level, never a kick or an onset, so ink fades in rather than popping;
 // the water swirls slowly, the pens draw at a gentle pace and the soft
@@ -906,7 +906,7 @@ vec3 osBody(vec2 uv, VisualUniforms u) {
     vec2 q = uv * asp * 2.8;
     q = rot2(0.07 * sin(t * 0.05)) * q + vec2(0.0, t * 0.025);
     int oct = osSteps(2.0, 4.0, detail);
-    vec2 vel = inkCurl(q, oct, 0.9) * (0.0006 + 0.0003 * u.level) * flow;
+    vec2 vel = inkCurl(q, oct, 0.9) * (0.00045 + 0.0002 * u.level) * flow;
 
     // fresh dye is grainy, so the flow stretches it into filaments
     float grain = 0.45 + 0.55 * smoothstep(0.2, 0.9, vnoise(rot2(0.6) * uv * asp * 17.0 + vec2(t * 0.2, 0.0)));
@@ -927,16 +927,18 @@ vec3 osBody(vec2 uv, VisualUniforms u) {
         float y0 = 1.05 - age * 0.16 * (0.6 + 0.6 * buoy);
         vec2 c = vec2(x0 + 0.03 * sin(age * 1.3 + hb * 6.0), y0);
         float life = smoothstep(0.0, 0.6, age) * (1.0 - smoothstep(2.0, 3.0, age));
-        float s = 0.0006 * life * (0.6 + 0.3 * u.level) * buoy * flow * (1.0 + 0.5 * hero);
+        float s = 0.0006 * life * (0.6 + 0.3 * u.level) * buoy * flow * (1.0 + 0.2 * hero);
         float R = (0.06 + 0.03 * age) * (1.0 + 0.6 * hero);
         vec2 d = (uv - c) * asp;
-        vel += (inkVortex(d - vec2(R, 0.0), s, 0.05) - inkVortex(d + vec2(R, 0.0), s, 0.05)) / asp;
+        // wide vortex cores: the pair rolls the dye into a mushroom without
+        // spinning bright and dark sheets past a point several times a second
+        vel += (inkVortex(d - vec2(R, 0.0), s, 0.08) - inkVortex(d + vec2(R, 0.0), s, 0.08)) / asp;
         // the youngest plume carries the kick's dye up from the floor
         float g = exp(-dot(d, d) / (0.006 * (1.0 + 1.2 * hero)));
         // the charge is shaded as a lit billow: a hot crown toward the light
         // above, a deeper body below, so the advected sheets keep their form
-        float lit = 0.55 + 0.75 * saturate(0.5 - d.y * 9.0 - d.x * 3.0) + 0.6 * exp(-dot(d + vec2(0.012, 0.03), d + vec2(0.012, 0.03)) / 0.0008);
-        vec3 pc = mix(mix(warmB, warmA, hb), palVisual(0.985, u) * 1.2, hero * 0.6);
+        float lit = 0.55 + 0.75 * saturate(0.5 - d.y * 9.0 - d.x * 3.0) + 0.35 * exp(-dot(d + vec2(0.012, 0.03), d + vec2(0.012, 0.03)) / 0.0008);
+        vec3 pc = mix(mix(warmB, warmA, hb), palVisual(0.985, u), hero * 0.6);
         dye += pc * g * lit * (1.0 + 0.2 * hero) * 0.8 * (0.045 + 0.045 * u.level)
              * smoothstep(0.0, 0.8, age) * (1.0 - smoothstep(0.9, 1.8, age)) * budget * 0.7 * grain;
     }
@@ -955,12 +957,12 @@ vec3 osBody(vec2 uv, VisualUniforms u) {
         // small dense core, which the outward flow then frays
         float rr = sqrt(r2);
         float rx = (rr - 0.012 - 0.06 * kAge) / (0.006 + 0.004 * u.flux);
-        float g = exp(-rx * rx) * (0.6 + 0.4 * grain) + 0.5 * exp(-r2 / 0.0004);
+        float g = exp(-rx * rx) * (0.6 + 0.4 * grain) + 0.25 * exp(-r2 / 0.0007);
         // the first burst takes the palette's far end, the accent opposite the
         // cool pens (red-coral on the default palette)
-        vec3 dc = j == 0 ? palVisual(0.975 + 0.02 * h.y, u) * 1.25
+        vec3 dc = j == 0 ? palVisual(0.975 + 0.02 * h.y, u)
                          : palVisual(0.05 + 0.2 * u.spectralCentroid + h.y * 0.08, u);
-        dye += dc * g * smoothstep(0.0, 0.3, kAge) * (1.0 - kAge) * (0.015 + 0.02 * u.level) * budget * 0.35 * grain;
+        dye += dc * g * smoothstep(0.0, 0.5, kAge) * (1.0 - kAge) * (0.015 + 0.02 * u.level) * budget * 0.35 * grain;
     }
 
     // treble pens: a second, cool ink in thin drawn wisps
@@ -971,7 +973,7 @@ vec3 osBody(vec2 uv, VisualUniforms u) {
                         0.48 + 0.28 * sin(t * 0.08 + fj * 1.9 + 1.0));
         vec2 d = (uv - pen) * asp;
         float g = exp(-dot(d, d) / 0.00022);
-        float tr = 0.025 + 0.04 * u.level + 0.01 * u.treble;
+        float tr = 0.02 + 0.03 * u.level + 0.005 * u.treble;
         dye += mix(cool, vec3(0.9, 1.0, 1.0), 0.1) * g * tr * budget * 1.3;
     }
 

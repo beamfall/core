@@ -23,11 +23,14 @@ type EntityPosterSource struct {
 
 // EntityPosterRule declares that one plugin's Entity kind, when it has no
 // poster of its own, takes a copy of the first poster found among Sources in
-// order. Kinds without a rule never inherit.
+// order. With Mosaic set, an Entity whose sources offer mosaicTiles distinct
+// posters gets a grid of them instead, which reads as a group rather than as
+// one of its members. Kinds without a rule never inherit.
 type EntityPosterRule struct {
 	PluginID string
 	Kind     string
 	Sources  []EntityPosterSource
+	Mosaic   bool
 }
 
 const (
@@ -57,6 +60,9 @@ type inheritedSource struct {
 	Source    string `json:"source"`
 	Size      int64  `json:"size"`
 	ModTimeNS int64  `json:"mod_time_ns"`
+	// Tiles lists, for a mosaic, every source poster in grid order; Source
+	// is then empty.
+	Tiles []inheritedSource `json:"tiles,omitempty"`
 }
 
 func (r inheritedSource) matches(info os.FileInfo) bool {
@@ -147,6 +153,12 @@ func (s *Service) inheritEntityPoster(ctx context.Context, ref store.EntityRef, 
 	if hasPoster && !marked {
 		return false, nil
 	}
+	if rule.Mosaic {
+		wrote, handled, err := s.inheritMosaicPoster(ctx, ref, rule, hasPoster, recorded)
+		if err != nil || handled {
+			return wrote, err
+		}
+	}
 	// Sources are read page by page in order until the first usable one is
 	// found and, for an inherited poster, its recorded source has been seen.
 	seeking := hasPoster && recorded.Source != ""
@@ -219,7 +231,13 @@ func (s *Service) copyInheritedPoster(ctx context.Context, dst string, candidate
 	if len(data) == 0 {
 		return false, nil
 	}
-	record, err := json.Marshal(inheritedSource{Source: s.sourceName(candidate.path), Size: info.Size(), ModTimeNS: info.ModTime().UnixNano()})
+	return s.publishInheritedPoster(ctx, dst, data, inheritedSource{Source: s.sourceName(candidate.path), Size: info.Size(), ModTimeNS: info.ModTime().UnixNano()})
+}
+
+// publishInheritedPoster writes data as the Entity's inherited poster with
+// the mark recording where it came from; see copyInheritedPoster.
+func (s *Service) publishInheritedPoster(ctx context.Context, dst string, data []byte, source inheritedSource) (bool, error) {
+	record, err := json.Marshal(source)
 	if err != nil {
 		return false, err
 	}

@@ -40,6 +40,7 @@ const (
 	ActivityMediaTrash              = "media.trash"
 	ActivityMediaRestore            = "media.restore"
 	ActivityMarkerDelete            = "marker.delete"
+	ActivitySubtitleDownload        = "subtitle.download"
 	ActivityCollectionTrash         = "collection.trash"
 	ActivityChannelDelete           = "channel.delete"
 	ActivitySavedFilterDelete       = "saved_filter.delete"
@@ -407,6 +408,9 @@ func (s *Store) ActivityEntries(ctx context.Context, query ActivityQuery) ([]Act
 		return nil, err
 	}
 	if err := s.flushMediaRelationActivityLocked(ctx); err != nil {
+		return nil, err
+	}
+	if err := s.flushSubscriptionRetentionActivityLocked(ctx); err != nil {
 		return nil, err
 	}
 	libraries, err := loadLibraries(ctx, s.catalogR)

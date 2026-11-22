@@ -115,7 +115,7 @@ func (s *Store) ApplyMediaIdentification(ctx context.Context, id MediaID, metada
 	if err != nil {
 		return err
 	}
-	if _, err := upsertMediaFieldsTx(ctx, tx, id, fields, MutationSourceOperator); err != nil {
+	if _, err := upsertMediaFieldsTx(ctx, tx, id, fields, MutationSourceOperator, false); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {

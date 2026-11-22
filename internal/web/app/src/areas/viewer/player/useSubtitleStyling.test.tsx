@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import Hls from "hls.js";
 import { afterEach, describe, expect, it } from "vitest";
-import { writeSync } from "./playbackSync";
+import { publishedSubtitleOffset, SUBTITLE_OFFSET_EVENT, writeSync } from "./playbackSync";
 import { useSubtitleStyling } from "./useSubtitleStyling";
 
 afterEach(() => window.localStorage.clear());
@@ -85,6 +85,18 @@ describe("useSubtitleStyling sync", () => {
     expect(late.startTime).toBe(19);
     // Already-anchored cues stay put.
     expect(cues[0].startTime).toBe(9);
+  });
+
+  it("publishes the offset for the styled ASS renderer", () => {
+    const { video } = fakeVideo([]);
+    const heard: number[] = [];
+    video.addEventListener(SUBTITLE_OFFSET_EVENT, () => heard.push(publishedSubtitleOffset(video)));
+    const { result } = render(video, null);
+    act(() => result.current.nudgeSync(-0.5));
+    expect(publishedSubtitleOffset(video)).toBe(-0.5);
+    act(() => result.current.resetSync());
+    expect(publishedSubtitleOffset(video)).toBe(0);
+    expect(heard).toEqual([-0.5, 0]);
   });
 
   it("loads the next item's own offset", () => {

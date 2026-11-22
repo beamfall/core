@@ -598,7 +598,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	artworkService := artwork.NewService(st, artworkGrabber, cfg.DataDir)
 	// Plugin wirings declare which Entity kinds borrow a poster from their own
 	// Media when no provider supplied one; the artwork sweep applies them.
-	artworkService.SetEntityPosterRules(activeEntityPosterRules(executablePlugins, hooks.EntityPosterRules, logger))
+	// Category kinds without a declared rule derive a mosaic from what they
+	// group (CORE-3059). The conformance corpus keeps its seeded artwork
+	// byte-stable, so it gets declared rules only.
+	posterRules := activeEntityPosterRules(executablePlugins, hooks.EntityPosterRules, logger)
+	if !conformanceMode {
+		posterRules = withCategoryPosterRules(executablePlugins, posterRules)
+	}
+	artworkService.SetEntityPosterRules(posterRules)
 	// Plugin wirings declare per-Entity provider lookups; the enrichment job
 	// runs them after scans and at boot (CORE-2884). The conformance corpus
 	// never reaches a provider.
@@ -688,6 +695,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		}
 		if err == nil {
 			enqueueArtworkSweep(ctx, st, logger, jobWake)
+			// New audio Media in sonic-enabled Libraries need a vector
+			// (CORE-3073); the sweep dedupes and stays idle-only.
+			if assetService.SonicAnalysisActive() {
+				enqueueSonicSweep(ctx, st, logger, jobWake)
+			}
 			enqueueEntityEnrichment(ctx, st, logger, jobWake, entityEnrichments)
 			skipDetection.enqueue(ctx, string(job.ID))
 			// Populate the vector store for any newly scanned/identified Media
@@ -709,6 +721,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		}
 		return result, err
 	})
+	jobRegistry.Register(hydrationTagBackfillKind, governedSweep(resourceGovernor, logger, hydrationTagBackfillHandler(st, metadataHydrators, ffmpegRunner, logger)))
 	jobRegistry.Register(retentionSweepJobKind, retentionSweepHandler(st, artworkService, logger))
 	// Subtitle offset-nudge sweep. Nudge rows are keyed on a
 	// subtitle track's byte fingerprint, so a row whose track no longer exists can
@@ -730,6 +743,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	assetSweepHandler := genassets.SweepHandler(assetService)
 	jobRegistry.Register(genassets.SweepJobKind, governedSweep(resourceGovernor, logger, assetSweepHandler))
 	jobRegistry.Register(genassets.CatchUpJobKind, governedSweep(resourceGovernor, logger, genassets.CatchUpHandler(assetService)))
+	// Sonic analysis (CORE-3073, owner decisions D1-D3 on CORE-3070): an
+	// opt-in, idle-only sweep governed like the other generation sweeps. The
+	// analyser is Oscillux's sonic profile run under wazero (CORE-3072); until
+	// that artifact ships no analyser is wired, the sweep is inert and the
+	// per-Library toggle reports itself unavailable. The CORE-3072 loader wires
+	// it here: assetService.SetSonicAnalysis(ffmpegRunner, analyzer).
+	jobRegistry.Register(genassets.SonicSweepJobKind, governedSweep(resourceGovernor, logger, genassets.SonicSweepHandler(assetService)))
 	// Decode-verify sampling: a low-priority background
 	// sweep that sample-decodes media bytes and flags corrupt/truncated files as
 	// broken in Library Health. Governed like the other generation sweeps so a
@@ -976,6 +996,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	scheduleService := schedulepkg.NewService(wakingScheduleStore{Store: st, wake: jobWake})
 	scheduleService.SetLogger(logger)
 	registerBuiltInSchedules(ctx, st, scheduleService, precomputeCacheRoot, cfg.PlaybackCacheBudgetBytes, composers != nil)
+	if assetService.SonicAnalysisActive() {
+		enqueueSonicSweep(ctx, st, logger, jobWake)
+	}
 	precomputeSchedules := newLibraryPrecomputeSchedules(st, precomputeCacheRoot, cfg.PlaybackCacheBudgetBytes)
 	if err := precomputeSchedules.registerAll(ctx, scheduleService); err != nil {
 		logger.Warn("library precompute schedules unavailable", "error", err)
@@ -994,6 +1017,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// types onto it. Without this line the fetch seam stays unavailable — it
 	// never degrades to a raw client.
 	wireProviderSubtitleFetch(mediaHTTP, integrationhost.NewHardenedOutboundProxy(integrationController))
+	// Online subtitle search (CORE-1690) is opt-in: with no provider configured
+	// the routes refuse and nothing dials out. The key is read per request from
+	// the 0600 secrets directory through the same credential source scrapers use.
+	wireSubtitleSearch(mediaHTTP, cfg.SubtitleSearchProviders, secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")})
 	// Encrypted-Library key model: the libencrypt.Manager
 	// persists the per-Library DEK wraps + KEK to the same 0600 secretFiles store
 	// (invariant #5 — no key material in any DB column). It uses production
@@ -1120,6 +1147,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	backfillHydration := func(ctx context.Context) {
 		reclassifyAttachedPictureAudio(ctx, st, ffmpegRunner, logger)
 		queueHydrationBackfills(ctx, st, metadataHydrators, logger)
+		queueHydrationTagBackfills(ctx, st, metadataHydrators, jobWake, logger)
 	}
 	backfillHydration(ctx)
 	// Device push-token registration: the persisting
@@ -1286,6 +1314,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		Identify:                     identifyService,
 		Artwork:                      artworkService,
 		EntityBrowseSources:          activeEntityBrowseRules(executablePlugins, hooks.EntityBrowseRules, logger),
+		EntityGroupRules:             activeEntityGroupRules(executablePlugins, hooks.EntityGroupRules, logger),
 		StreamTokens:                 tokenService,
 		ArtworkCandidateFetcher:      scrapeEngine,
 		ArtworkCandidateImporter:     artworkService,
@@ -1298,6 +1327,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		FeedSearcher:                 graphFeedSearcher,
 		PrePlayPolicy:                activePrePlayPolicy(executablePlugins, hooks.PrePlayPolicy, st),
 		AssetSweep:                   func(ctx context.Context) { enqueueAssetSweep(ctx, st, logger, jobWake) },
+		SonicAnalysisAvailable:       assetService.SonicAnalysisActive,
+		SonicAnalysisSweep:           func(ctx context.Context) { enqueueSonicSweep(ctx, st, logger, jobWake) },
 		SubscriptionSecrets:          secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")},
 		ScraperCredentialStore:       scraperCredentials,
 		ScraperCredentialInvalidator: scrapeEngine,
@@ -1358,6 +1389,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		server.WithUnmatchedArtworkCreator(graphServer),
 		server.WithCompatRefusalJournalDir(filepath.Join(cfg.DataDir, "compat-refusals")),
 		server.WithSubscriptionLibrarySealed(sealedPredicate),
+		server.WithMediaUploadPlanner(newMediaUploadPlanner(st, parsers, executablePlugins, jobWake)),
 	)
 	// Guideline 1.2 UGC moderation substrate (NATIVEMGR-4, apple ADR-0004 §4):
 	// file-backed per-Profile content report/block store + published moderation
@@ -1405,6 +1437,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// reveal-filtered catalog/session reads, while scan-job construction lives
 	// here at the composition root since server cannot import internal/scan.
 	srv.SetV1Store(st)
+	srv.SetPartyGuestStore(st)
+	// Party entries name what their Library plugin's subtitle template
+	// renders; the store cannot read plugin bundles itself (CORE-3048).
+	st.SetPartySubtitler(graphHandler.MediaSubtitles)
 	scanEnqueue := v1ScanEnqueuer(st, jobWake)
 	srv.SetV1ScanEnqueuer(scanEnqueue)
 	srv.SetV1ProgressRecorder(graphHandler)
@@ -1442,7 +1478,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	if err := offlinePacks.SweepStaging(); err != nil {
 		logger.Warn("offline pack staging sweep failed", "error", err)
 	}
-	offlinePacks.SetDeviceKeyAttestationVerifier(hooks.OfflinePackAttestationVerifier)
+	attestationVerifier, err := offlinePackAttestationVerifier(hooks.OfflinePackAttestationVerifier, logger)
+	if err != nil {
+		return nil, err
+	}
+	offlinePacks.SetDeviceKeyAttestationVerifier(attestationVerifier)
 	// A Sealed Library serves NOTHING (ADR-0098 area 2): stamp the same Sealed
 	// predicate used by the byte routes so a Sealed Library's Media is never
 	// frozen into a pack manifest and a member sealed AFTER issue is denied at
@@ -2755,6 +2795,9 @@ func runRetentionPurge(ctx context.Context, st *store.Store, art *artwork.Servic
 			logger.Warn("deleted library purge failed", "libraries", len(purged), "error", err)
 		}
 	}
+	if err := st.SweepMediaUploads(time.Now().UTC()); err != nil {
+		logger.Warn("media upload sweep failed", "error", err)
+	}
 	if purged, skipped, err := st.SweepManagedFileTrash(ctx, time.Now().UTC()); trashDisabledConfirmationRequired(skipped, err) {
 		logger.Info("managed file trash purge skipped: confirmation required", "reason", "trash disabled", "skips", st.TrashDisabledSweepSkips())
 	} else if err != nil {
@@ -3250,6 +3293,26 @@ func (t parserMediaTitles) ParsedMediaOrdinal(ctx context.Context, mediaID store
 	return parsed.Sequence, parsed.Index, nil
 }
 
+// ParsedMediaHints is the plugin parser's named search hints for the Media
+// item's primary file, read the same unfiltered way as ParsedMediaTitle. The
+// probe is empty (embedded tags are not stored), so only hints the parser
+// derives from the path are returned (CORE-2333).
+func (t parserMediaTitles) ParsedMediaHints(ctx context.Context, mediaID store.MediaID, pluginID string) (map[string]string, error) {
+	parser, ok := t.parsers[pluginID]
+	if !ok || parser == nil {
+		return nil, nil
+	}
+	file, err := t.store.PrimaryMediaFile(ctx, mediaID, metadataLibraryFilter)
+	if err != nil {
+		return nil, err
+	}
+	parsed, ok := parser.Parse(file.Path, scanpkg.ParseProbe{})
+	if !ok {
+		return nil, nil
+	}
+	return scanpkg.SearchHints(parsed, nil, nil), nil
+}
+
 // scanIdentifier adapts identify.Service to scan.Identifier (PIPE-1, ADR-0003
 // §4). It is the composition-root bridge that lets scan trigger auto-identify
 // without importing internal/identify (arch §4 forbids the edge; identify also
@@ -3287,6 +3350,7 @@ func (a *scanIdentifier) AutoIdentifyOutcome(ctx context.Context, mediaID store.
 		Sequence: parsed.Sequence,
 		Index:    parsed.Index,
 		IndexEnd: parsed.IndexEnd,
+		Hints:    parsed.Hints,
 	})
 	return scanIdentifyOutcome(outcome, false), err
 }
@@ -3374,6 +3438,17 @@ func (a *scanIdentifier) PluginMediaClasses(pluginID string) []store.MediaClass 
 		classes = append(classes, store.MediaClass(class))
 	}
 	return classes
+}
+
+// PluginEmbeddedTagHints reports the active bundle's embedded-tag-to-hint
+// map, so the scan fills search hints the parser left empty from the file's
+// embedded tags (CORE-2333). An inactive or unknown Plugin declares none.
+func (a *scanIdentifier) PluginEmbeddedTagHints(pluginID string) map[string]string {
+	bundle, ok := activeBundle(a.registry, pluginID)
+	if !ok {
+		return nil
+	}
+	return bundle.EmbeddedTagHints
 }
 
 type validatingLocalExtractor struct {
@@ -4186,6 +4261,19 @@ func enqueueAssetSweep(ctx context.Context, st *store.Store, logger *slog.Logger
 	}
 }
 
+// enqueueSonicSweep schedules the sonic analysis sweep when an analyser is
+// wired; failure is logged, never fatal. The job dedupes while one is queued,
+// running, or yielded.
+func enqueueSonicSweep(ctx context.Context, st *store.Store, logger *slog.Logger, wake *jobWake) {
+	job, err := genassets.NewSonicSweepJob(time.Now().UTC())
+	if err == nil {
+		_, err = enqueueAndWake(ctx, st, wake, job)
+	}
+	if err != nil {
+		logger.Warn("sonic analysis sweep enqueue failed", "error", err)
+	}
+}
+
 // enqueueAssetCatchUp arms the Generated Assets catch-up for Media added
 // above floor, the durable insertion high-water mark taken before a scan
 // invocation. No new Media means nothing to arm; failure is logged, and the
@@ -4445,6 +4533,38 @@ func observePersistedRoots(ctx context.Context, st *store.Store, watcherService 
 			_ = watcherService.Observe(library.ID, root)
 		}
 	}
+}
+
+// devEmulatorAttestationEnv opts a development build into accepting
+// software-level emulator attestation (CORE-3189). Release builds ignore it.
+const devEmulatorAttestationEnv = "BEAMFALL_DEV_ACCEPT_EMULATOR_ATTESTATION"
+
+// offlinePackAttestationVerifier returns the hook's verifier when one is set,
+// else Android Key Attestation against the Google roots (ADR-0208). Apple
+// Secure Enclave attestation is refused until CORE-1926.
+// Google's revocation list is fetched on the first verification and held in
+// memory.
+func offlinePackAttestationVerifier(hook offlinepack.DeviceKeyAttestationVerifier, logger *slog.Logger) (offlinepack.DeviceKeyAttestationVerifier, error) {
+	if hook != nil {
+		return hook, nil
+	}
+	status := &offlinepack.AttestationStatusSource{}
+	return offlinepack.NewAndroidKeyAttestationVerifier(offlinepack.AndroidKeyAttestationOptions{
+		AllowSoftware: emulatorAttestationAllowed(capabilities.ReleaseVersion, logger),
+		Status:        status.Current,
+	})
+}
+
+func emulatorAttestationAllowed(releaseVersion string, logger *slog.Logger) bool {
+	if !envEnabled(devEmulatorAttestationEnv) {
+		return false
+	}
+	if releaseVersion != "development" {
+		logger.Warn("ignoring emulator attestation opt-in in a release build", "env", devEmulatorAttestationEnv)
+		return false
+	}
+	logger.Warn("accepting software emulator device-key attestation; development builds only", "env", devEmulatorAttestationEnv)
+	return true
 }
 
 func envEnabled(name string) bool {

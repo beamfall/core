@@ -167,15 +167,10 @@ export function LayoutView({
     aggregateEmpty && hydratable.some((section) => stateFor(section) === "failed");
 
   const settledEmpty = aggregateEmpty && !aggregateFailed;
-  // Home renders Continue Watching ahead of every other shelf, whatever order
-  // the Layout lists them in, so items to resume lead the page (CORE-2825).
-  // A Section a filter bar targets keeps its place beside the bar.
-  const renderOrder = (() => {
-    const ordered = sections.map((section, index) => ({ section, index }));
-    const at = homeContinue ? sections.indexOf(homeContinue) : -1;
-    if (at <= 0 || [...filterTargets.values()].includes(at)) return ordered;
-    return [ordered[at], ...ordered.filter((_, i) => i !== at)];
-  })();
+  // Sections render in manifest order. The server leads a default Home with
+  // Continue Watching (CORE-2825) and applies the Profile's own order when it
+  // has saved one (CORE-1972), so the client never reorders.
+  const renderOrder = sections.map((section, index) => ({ section, index }));
   useEffect(() => {
     onEmptyChange?.(settledEmpty);
   }, [onEmptyChange, settledEmpty]);

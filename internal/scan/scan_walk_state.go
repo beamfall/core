@@ -31,7 +31,10 @@ type scanWalkState struct {
 	libraryPluginID    string
 	// imageRule is what the walk does with still images, from the classes
 	// the Library's Plugin declares (CORE-0043, CORE-2361).
-	imageRule     ImageRule
+	imageRule ImageRule
+	// tagHints is the Plugin's Bundle.EmbeddedTagHints: embedded tag names
+	// that fill a parse's named search hints (CORE-2333).
+	tagHints      map[string]string
 	backfillStale map[store.MediaID]struct{}
 	// legacyParserPaths are the unchanged files probed on the fast path so
 	// their parse settles legacy parser fields (CORE-2554).

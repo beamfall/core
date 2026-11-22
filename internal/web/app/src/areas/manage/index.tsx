@@ -19,6 +19,7 @@ import {
   Sparkles,
   Tags,
   Trash2,
+  Upload,
   UserCog,
 } from "lucide-react";
 import {
@@ -64,6 +65,7 @@ import { SubscriptionsPage } from "./pages/SubscriptionsPage";
 import { TagsPage } from "./pages/TagsPage";
 import { TrashPage } from "./pages/TrashPage";
 import { UnmatchedPage } from "./pages/UnmatchedPage";
+import { UploadPage } from "./pages/UploadPage";
 
 // MANAGE (ADR-0007 §3): the promoted browser's manager surface, rendered in the
 // Workbench register. Every operation is manager-gated server-side; this area is
@@ -99,6 +101,12 @@ export const MANAGE_NAV_GROUPS: NavItem[][] = [
       label: "convert",
       lead: "convertLead",
       advanced: true,
+    },
+    {
+      to: "/manage/upload",
+      icon: Upload,
+      label: "mediaUpload",
+      lead: "mediaUploadLead",
     },
     {
       to: "/manage/rename",
@@ -452,6 +460,7 @@ function ManageWorkspace({
               <Route path="operations" element={<OperationsPage />} />
               <Route path="convert" element={<ConvertPage />} />
               <Route path="rename" element={<RenamePage />} />
+              <Route path="upload" element={<UploadPage />} />
               <Route path="trash" element={<TrashPage />} />
               <Route path="backups" element={<BackupExportPage />} />
               <Route path="subscriptions" element={<SubscriptionsPage />} />

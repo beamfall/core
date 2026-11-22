@@ -103,3 +103,43 @@ describe("card activation", () => {
     expect(screen.getByTestId("path")).toHaveTextContent("/entity/e1");
   });
 });
+
+// ADR-0055 §2.4: a shelf that lists each container's next or resume point
+// holds unrelated items, so playing one queues it alone and never runs on
+// into another container's item.
+describe("per-container shelves", () => {
+  const books: SourceItem[] = [
+    { id: "b1", kind: "media", title: "Book One" },
+    { id: "b2", kind: "media", title: "Book Two" },
+  ];
+  function queueFrom(sourceKind: string) {
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <SectionView
+                  section={{ ...section("list"), source: { kind: sourceKind } }}
+                  items={books}
+                />
+              }
+            />
+            <Route path="*" element={<Probe />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("link", { name: "Book One" }));
+    return JSON.parse(screen.getByTestId("state").textContent || "null").queue;
+  }
+
+  it.each(["next-up", "continue-watching"])("queues a %s item alone", (kind) => {
+    expect(queueFrom(kind)).toEqual([{ id: "b1", title: "Book One" }]);
+  });
+
+  it("queues the siblings of any other Source", () => {
+    expect(queueFrom("library")).toHaveLength(2);
+  });
+});

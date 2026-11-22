@@ -20,6 +20,8 @@ export interface PlayerShortcutHandlers {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   skipInterval: number;
   speeds: readonly number[];
+  /** Where a speed step goes when the player keeps a persisted speed (CORE-2960). */
+  setSpeed?: (speed: number) => void;
   markers: PlaybackMarker[];
   togglePlay: () => void;
   toggleFullscreen: () => void;
@@ -156,7 +158,9 @@ function apply(
     case "faster": {
       if (!video) return;
       const next = stepSpeed(h.speeds, video.playbackRate, shortcut.action === "faster" ? 1 : -1);
-      if (next !== null) video.playbackRate = next;
+      if (next === null) return;
+      if (h.setSpeed) h.setSpeed(next);
+      else video.playbackRate = next;
       return;
     }
     case "toggleSubtitles": {

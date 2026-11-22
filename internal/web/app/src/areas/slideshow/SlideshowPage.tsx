@@ -13,21 +13,37 @@ import { fetchViewerCollections, type LibraryCollections } from "../viewer/lib/c
 import { fetchMediaDetailFields } from "../viewer/lib/mediaDetail";
 import { fetchPreviewInfo } from "../viewer/lib/playback";
 import {
+  isScreensaverSearch,
+  saveLastSlideshowSource,
+  saveScreensaverEnabled,
+  screensaverEnabled,
+} from "./lib/screensaver";
+import {
   clampInterval,
+  clockMinutes,
+  DEFAULT_DARK_ROOM_END,
+  DEFAULT_DARK_ROOM_START,
   DEFAULT_INTERVAL_SECONDS,
   fetchSlideshowItems,
+  inDarkRoomWindow,
   MAX_INTERVAL_SECONDS,
   MIN_INTERVAL_SECONDS,
+  nextDarkRoomBoundary,
   nextDelay,
   parseSlideshowSource,
   SLIDESHOW_SOURCE_KINDS,
   type Slide,
+  type SlideGroup,
+  type SlideShape,
   type SlideshowSource,
   type SlideshowSourceKind,
   sameSource,
   slideDate,
+  slideGroupSettled,
+  slideGroups,
   slidesFrom,
   slideshowPath,
+  unreadPortraitBefore,
 } from "./lib/slideshow";
 import {
   defaultSlideshowMotion,
@@ -50,8 +66,13 @@ import "./slideshow.css";
 const SLIDE_BUCKET = "w1280";
 const PREFS_KEY = "bf.slideshow.prefs";
 const CHROME_HIDE_MS = 3000;
+/** How many slides from the current one have their shape read ahead: this group and the next. */
+const SHAPE_LOOKAHEAD = 4;
 const NO_LIBRARIES: readonly LibrarySummary[] = [];
 const SESSION_RECHECK_MS = 60_000;
+/** A screensaver ignores pointer jitter: only a move this far (px), after this grace (ms), closes it. */
+const SCREENSAVER_MOVE_PX = 24;
+const SCREENSAVER_GRACE_MS = 800;
 /** Re-read a preview clip this long before its Stream Token expires. */
 const CLIP_EXPIRY_MARGIN_MS = 60_000;
 
@@ -72,7 +93,10 @@ interface SlideshowPrefs {
   clock: boolean;
   caption: boolean;
   nowPlaying: boolean;
+  /** Dark Room's schedule is on; it dims only between start and end (`HH:MM`, local). */
   darkRoom: boolean;
+  darkRoomStart: string;
+  darkRoomEnd: string;
 }
 
 function defaultPrefs(): SlideshowPrefs {
@@ -83,6 +107,8 @@ function defaultPrefs(): SlideshowPrefs {
     caption: true,
     nowPlaying: true,
     darkRoom: false,
+    darkRoomStart: DEFAULT_DARK_ROOM_START,
+    darkRoomEnd: DEFAULT_DARK_ROOM_END,
   };
 }
 
@@ -101,6 +127,10 @@ function loadPrefs(): SlideshowPrefs {
       caption: typeof stored.caption === "boolean" ? stored.caption : prefs.caption,
       nowPlaying: typeof stored.nowPlaying === "boolean" ? stored.nowPlaying : prefs.nowPlaying,
       darkRoom: typeof stored.darkRoom === "boolean" ? stored.darkRoom : prefs.darkRoom,
+      darkRoomStart:
+        clockMinutes(stored.darkRoomStart) === null ? prefs.darkRoomStart : stored.darkRoomStart,
+      darkRoomEnd:
+        clockMinutes(stored.darkRoomEnd) === null ? prefs.darkRoomEnd : stored.darkRoomEnd,
     };
   } catch {
     return prefs;
@@ -127,6 +157,25 @@ function readNowPlaying(): string {
   return [title, artist].filter(Boolean).join(" · ");
 }
 
+/** Drops the click that follows a press, wherever it lands, for a moment. */
+function swallowNextClick() {
+  const swallow = (event: Event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    window.removeEventListener("click", swallow, true);
+  };
+  window.addEventListener("click", swallow, true);
+  window.setTimeout(() => window.removeEventListener("click", swallow, true), 600);
+}
+
+function landscapeScreen(): boolean {
+  return typeof window === "undefined" || window.innerWidth > window.innerHeight;
+}
+
+function groupKey(group: SlideGroup): string {
+  return group.slides.map((slide) => slide.item.id).join("+");
+}
+
 function interactiveTarget(target: EventTarget | null, key: string): boolean {
   if (!(target instanceof HTMLElement)) return false;
   // A focused button keeps Space for its own activation.
@@ -149,6 +198,8 @@ function Slideshow() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const source = useMemo(() => parseSlideshowSource(searchParams), [searchParams]);
+  // Screensaver mode (CORE-2981): opened by the idle hook; no chrome, and the first input closes it.
+  const screensaver = useMemo(() => isScreensaverSearch(searchParams), [searchParams]);
   const { manifest, refreshSession } = useSession();
   const libraries = manifest?.libraries ?? NO_LIBRARIES;
   const { mutes, failed: hiddenFailed, isHidden } = useHiddenItems();
@@ -164,9 +215,13 @@ function Slideshow() {
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [prefs, setPrefs] = useState<SlideshowPrefs>(loadPrefs);
-  const [sheetOpen, setSheetOpen] = useState(source === null);
+  const [sheetOpen, setSheetOpen] = useState(source === null && !screensaver);
   const [items, setItems] = useState<SourceItem[] | null>(null);
+  // The Source `items` came from: on the first render after a switch they are still the old one's.
+  const [itemsSource, setItemsSource] = useState<SlideshowSource | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  // Whether every page of the Source has arrived: an empty first page is not an empty Source.
+  const [loadDone, setLoadDone] = useState(false);
   const [broken, setBroken] = useState<ReadonlySet<string>>(() => new Set());
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -181,6 +236,14 @@ function Slideshow() {
   const [reload, setReload] = useState(0);
   const [revalidating, setRevalidating] = useState(false);
   const [captions, setCaptions] = useState<Record<string, string>>({});
+  // Each image's shape once decoded, and whether the screen is landscape (pairing needs both).
+  const [shapes, setShapes] = useState<Record<string, SlideShape>>({});
+  const [landscape, setLandscape] = useState(landscapeScreen);
+  // D dims or undims at once; the override lasts until the schedule next opens
+  // or closes (`until`, epoch ms), or for good while the schedule is off.
+  const [dimOverride, setDimOverride] = useState<{ on: boolean; until: number | null } | null>(
+    null,
+  );
 
   const updatePrefs = useCallback((patch: Partial<SlideshowPrefs>) => {
     setPrefs((current) => {
@@ -225,6 +288,7 @@ function Slideshow() {
     void reload;
     setItems(null);
     setLoadFailed(false);
+    setLoadDone(false);
     setShown(null);
     if (!sameSource(loadedSource.current, source)) {
       loadedSource.current = source;
@@ -233,9 +297,20 @@ function Slideshow() {
     }
     if (!source) return;
     const controller = new AbortController();
-    fetchSlideshowItems(source, (next) => setItems(next), controller.signal).catch(() => {
-      if (!controller.signal.aborted) setLoadFailed(true);
-    });
+    fetchSlideshowItems(
+      source,
+      (next) => {
+        setItems(next);
+        setItemsSource(source);
+      },
+      controller.signal,
+    )
+      .then(() => {
+        if (!controller.signal.aborted) setLoadDone(true);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadFailed(true);
+      });
     return () => controller.abort();
   }, [source, reload]);
 
@@ -244,20 +319,44 @@ function Slideshow() {
     return slidesFrom(items, isHidden).filter((slide) => !broken.has(slide.item.id));
   }, [items, hiddenReady, revalidating, isHidden, broken]);
   const count = slides.length;
-  const current = count > 0 ? slides[index % count] : null;
+  const shapeOf = useCallback((slide: Slide) => shapes[slide.item.id], [shapes]);
+  const groups = useMemo(
+    () => slideGroups(slides, shapeOf, landscape),
+    [slides, shapeOf, landscape],
+  );
+  // `index` names a slide; the stage shows the group holding it, so a pair steps as one.
+  const groupAt = useCallback(
+    (slideIndex: number) => {
+      const at = count > 0 ? slideIndex % count : 0;
+      const found = groups.findIndex(
+        (group) => at >= group.start && at < group.start + group.slides.length,
+      );
+      return Math.max(0, found);
+    },
+    [groups, count],
+  );
+  const groupIndex = groupAt(index);
+  const group = groups.length > 0 ? groups[groupIndex] : null;
+  const current = group ? group.slides[0] : null;
+  const currentKey = group ? groupKey(group) : "";
+  const settled = group ? slideGroupSettled(slides, group.start, shapeOf, landscape) : false;
+  const steps = groups.length;
   const intervalMs = prefs.interval * 1000;
 
   const step = useCallback(
     (delta: number) => {
-      if (count < 2) return;
+      if (steps < 2) return;
       setShown(null);
-      setIndex((value) => ((((value % count) + delta) % count) + count) % count);
+      setIndex((value) => {
+        const next = (((groupAt(value) + delta) % steps) + steps) % steps;
+        return groups[next].start;
+      });
     },
-    [count],
+    [steps, groups, groupAt],
   );
 
-  const markPainted = useCallback((id: string) => {
-    setShown((value) => (value?.id === id ? value : { id, at: performance.now(), held: 0 }));
+  const markPainted = useCallback((key: string) => {
+    setShown((value) => (value?.id === key ? value : { id: key, at: performance.now(), held: 0 }));
   }, []);
 
   const markBroken = useCallback((id: string) => {
@@ -268,11 +367,11 @@ function Slideshow() {
   // A slide stays for the interval from when it was painted; a pause holds it.
   const running = !paused && !sheetOpen;
   useEffect(() => {
-    if (!running || !current || !shown || shown.id !== current.item.id || count < 2) return;
+    if (!running || !currentKey || !shown || shown.id !== currentKey || steps < 2) return;
     const delay = nextDelay(shown.at, performance.now(), intervalMs, shown.held);
     const timer = window.setTimeout(() => step(1), delay);
     return () => window.clearTimeout(timer);
-  }, [running, current, shown, count, intervalMs, step]);
+  }, [running, currentKey, shown, steps, intervalMs, step]);
 
   // Pausing banks the time already shown; resuming restarts the clock from now.
   const wasRunning = useRef(running);
@@ -288,20 +387,54 @@ function Slideshow() {
     });
   }, [running, intervalMs]);
 
-  // Preload the next slide's image so the cut lands on a decoded picture.
+  // Decode this group's and the next group's images ahead: the cut lands on a
+  // decoded picture, and each image's shape decides whether portraits pair.
+  // Portraits running back from this group are read too, since they decide where pairs fall.
+  const probing = useRef(new Set<string>());
   useEffect(() => {
-    if (count < 2) return;
-    const next = slides[(index + 1) % count];
-    const url = slideImageURL(next.item);
-    if (!url) return;
-    const image = new Image();
-    image.decoding = "async";
-    image.src = url;
-    image.decode?.().catch(() => {});
-  }, [slides, index, count]);
+    if (!group) return;
+    const ahead = Array.from(
+      { length: Math.min(SHAPE_LOOKAHEAD, count) },
+      (_, offset) => (group.start + offset) % count,
+    );
+    const behind = landscape ? unreadPortraitBefore(slides, group.start, shapeOf) : null;
+    for (const at of behind === null ? ahead : [...ahead, behind]) {
+      const slide = slides[at];
+      const id = slide.item.id;
+      if (slide.clip || id in shapes || probing.current.has(id)) continue;
+      const url = slideImageURL(slide.item);
+      const settle = (shape: SlideShape) => {
+        probing.current.delete(id);
+        setShapes((value) => (id in value ? value : { ...value, [id]: shape }));
+      };
+      if (!url) {
+        settle("landscape");
+        continue;
+      }
+      probing.current.add(id);
+      const image = new Image();
+      image.decoding = "async";
+      image.onload = () =>
+        settle(image.naturalHeight > image.naturalWidth ? "portrait" : "landscape");
+      // A failed read never pairs; the stage skips the slide when it fails there too.
+      image.onerror = () => settle("landscape");
+      image.src = url;
+    }
+  }, [group, slides, count, shapes, landscape, shapeOf]);
+
+  // The stage's own decode corrects a shape a failed probe guessed.
+  const noteShape = useCallback((id: string, shape: SlideShape) => {
+    setShapes((value) => (value[id] === shape ? value : { ...value, [id]: shape }));
+  }, []);
+
+  useEffect(() => {
+    const resize = () => setLandscape(landscapeScreen());
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
 
   // A clip's generated preview clip: an asset read, not a playback decision.
-  const clipID = current?.clip ? current.item.id : "";
+  const clipID = current?.clip && settled ? current.item.id : "";
   useEffect(() => {
     if (!clipID || clipPreviewFresh(clipURLs[clipID], Date.now())) return;
     let cancelled = false;
@@ -333,17 +466,22 @@ function Slideshow() {
     return () => controller.abort();
   }, [captionID, captions, locale]);
 
-  // The motion seam: Oscillux drives slide changes once it can (CORE-2980).
+  // The motion seam: Oscillux drives slide changes where it can (CORE-2980).
   const driverRef = useRef<SlideMotionDriver | null>(null);
   const previousSlideRef = useRef<HTMLElement | null>(null);
+  const intervalRef = useRef(intervalMs);
+  intervalRef.current = intervalMs;
   useEffect(() => {
-    const driver = oscilluxSlideMotion(prefs.motion);
+    const driver = oscilluxSlideMotion(prefs.motion, { intervalMs: () => intervalRef.current });
     driverRef.current = driver;
     return () => {
       driver?.dispose();
       driverRef.current = null;
     };
   }, [prefs.motion]);
+  useEffect(() => {
+    driverRef.current?.setRunning(running);
+  }, [running, prefs.motion]);
   const slideRef = useCallback((element: HTMLElement | null) => {
     if (!element) return;
     driverRef.current?.advance(previousSlideRef.current, element);
@@ -398,6 +536,51 @@ function Slideshow() {
     else navigate("/");
   }, [navigate]);
 
+  // Screensaver mode: the first key, click, touch, wheel or deliberate pointer
+  // move closes it and does nothing else. A press's click lands after the route
+  // changes, so it is swallowed too, or it would open whatever is underneath.
+  useEffect(() => {
+    if (!screensaver) return;
+    const openedAt = performance.now();
+    let origin: { x: number; y: number } | null = null;
+    let closed = false;
+    const dismiss = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (closed) return;
+      closed = true;
+      if (event.type === "pointerdown" || event.type === "touchstart") swallowNextClick();
+      close();
+    };
+    const move = (event: PointerEvent) => {
+      // Moves during the grace period only fix where the pointer rests.
+      const resting = performance.now() - openedAt < SCREENSAVER_GRACE_MS;
+      if (resting) {
+        origin = { x: event.clientX, y: event.clientY };
+        return;
+      }
+      // A pointer that rested through the grace period starts where this move began.
+      origin ??= {
+        x: event.clientX - (event.movementX || 0),
+        y: event.clientY - (event.movementY || 0),
+      };
+      if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) >= SCREENSAVER_MOVE_PX) {
+        dismiss(event);
+      }
+    };
+    const options = { capture: true, passive: false } as const;
+    for (const name of ["keydown", "pointerdown", "touchstart", "wheel", "click"]) {
+      window.addEventListener(name, dismiss, options);
+    }
+    window.addEventListener("pointermove", move, true);
+    return () => {
+      for (const name of ["keydown", "pointerdown", "touchstart", "wheel", "click"]) {
+        window.removeEventListener(name, dismiss, true);
+      }
+      window.removeEventListener("pointermove", move, true);
+    };
+  }, [screensaver, close]);
+
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => {});
@@ -414,9 +597,24 @@ function Slideshow() {
     [navigate, source],
   );
 
+  // Dark Room: the schedule decides, and D overrides it until the schedule flips.
+  const scheduledDim =
+    prefs.darkRoom && inDarkRoomWindow(now, prefs.darkRoomStart, prefs.darkRoomEnd);
+  const dimmed =
+    dimOverride && (dimOverride.until === null || now.getTime() < dimOverride.until)
+      ? dimOverride.on
+      : scheduledDim;
+  const lastScheduled = useRef(scheduledDim);
+  useEffect(() => {
+    if (lastScheduled.current === scheduledDim) return;
+    lastScheduled.current = scheduledDim;
+    setDimOverride(null);
+  }, [scheduledDim]);
+
   // Keys resolve in the capture phase so the docked player's shortcuts skip them.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      if (screensaver) return;
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === "Escape") {
         event.preventDefault();
@@ -434,7 +632,12 @@ function Slideshow() {
           const on = !(prefs.clock || prefs.caption || prefs.nowPlaying);
           updatePrefs({ clock: on, caption: on, nowPlaying: on });
         },
-        d: () => updatePrefs({ darkRoom: !prefs.darkRoom }),
+        d: () => {
+          const boundary = prefs.darkRoom
+            ? nextDarkRoomBoundary(new Date(), prefs.darkRoomStart, prefs.darkRoomEnd)
+            : null;
+          setDimOverride({ on: !dimmed, until: boundary ? boundary.getTime() : null });
+        },
         f: toggleFullscreen,
         s: () => setSheetOpen(true),
       };
@@ -447,7 +650,18 @@ function Slideshow() {
     };
     window.addEventListener("keydown", keydown, true);
     return () => window.removeEventListener("keydown", keydown, true);
-  }, [sheetOpen, source, close, step, prefs, updatePrefs, toggleFullscreen, wake]);
+  }, [
+    screensaver,
+    sheetOpen,
+    source,
+    close,
+    step,
+    prefs,
+    updatePrefs,
+    toggleFullscreen,
+    wake,
+    dimmed,
+  ]);
 
   const clock = useMemo(() => {
     try {
@@ -463,6 +677,20 @@ function Slideshow() {
   else if (loading && !current) message = t("slideshowLoading");
   else if (source && !current) message = t("slideshowEmpty");
 
+  // The screensaver has nothing to fall back to on the web: a missing, failed or
+  // empty Source closes it, and the idle count starts again.
+  const nothingToShow =
+    !source || loadFailed || (loadDone && !loading && !revalidating && !current);
+  useEffect(() => {
+    if (screensaver && nothingToShow) close();
+  }, [screensaver, nothingToShow, close]);
+
+  // The Source this device last played is what its screensaver plays: one that painted a slide.
+  const playing = !!source && !!shown && sameSource(itemsSource, source);
+  useEffect(() => {
+    if (!screensaver && playing && source) saveLastSlideshowSource(source);
+  }, [screensaver, playing, source]);
+
   const date = current ? (captions[current.item.id] ?? "") : "";
   const place = current ? displayString(current.item.subtitle, locale) : "";
   const showOverlay = !!current && (prefs.clock || prefs.caption || prefs.nowPlaying);
@@ -473,27 +701,31 @@ function Slideshow() {
       className="bf-slideshow"
       role="region"
       aria-label={t("slideshowRegion")}
-      data-chrome={chrome || sheetOpen ? "shown" : "hidden"}
-      onPointerMove={wake}
+      data-chrome={!screensaver && (chrome || sheetOpen) ? "shown" : "hidden"}
+      data-screensaver={screensaver ? "on" : undefined}
+      data-dark-room={dimmed ? "on" : "off"}
+      onPointerMove={screensaver ? undefined : wake}
     >
       <h1 className="sr-only">{t("slideshowRegion")}</h1>
       <div className="bf-slideshow-stage">
-        {current && (
-          <SlideView
-            key={current.item.id}
-            slide={current}
+        {group && settled && (
+          <GroupView
+            key={currentKey}
+            groupKey={currentKey}
+            slides={group.slides}
             clipURL={
-              clipPreviewFresh(clipURLs[current.item.id], Date.now())
+              current && clipPreviewFresh(clipURLs[current.item.id], Date.now())
                 ? clipURLs[current.item.id]?.url
                 : undefined
             }
             slideRef={slideRef}
             onPainted={markPainted}
             onBroken={markBroken}
+            onShape={noteShape}
           />
         )}
       </div>
-      {prefs.darkRoom && <div className="bf-slideshow-dim" data-testid="slideshow-dim" />}
+      {dimmed && <div className="bf-slideshow-dim" data-testid="slideshow-dim" />}
       {message && (
         <p className="bf-slideshow-message" role="status">
           {message}
@@ -513,7 +745,7 @@ function Slideshow() {
           </div>
         </div>
       )}
-      <div className="bf-slideshow-bar" hidden={!chrome || sheetOpen}>
+      <div className="bf-slideshow-bar" hidden={screensaver || !chrome || sheetOpen}>
         <button
           type="button"
           className="bf-slideshow-button"
@@ -527,7 +759,7 @@ function Slideshow() {
           type="button"
           className="bf-slideshow-button"
           aria-label={t("slideshowPrevious")}
-          disabled={count < 2}
+          disabled={steps < 2}
           onClick={() => step(-1)}
         >
           <ChevronLeft aria-hidden />
@@ -544,7 +776,7 @@ function Slideshow() {
           type="button"
           className="bf-slideshow-button"
           aria-label={t("slideshowNext")}
-          disabled={count < 2}
+          disabled={steps < 2}
           onClick={() => step(1)}
         >
           <ChevronRight aria-hidden />
@@ -566,7 +798,7 @@ function Slideshow() {
           <Settings aria-hidden />
         </button>
       </div>
-      {sheetOpen && (
+      {sheetOpen && !screensaver && (
         <SetupSheet
           source={source}
           libraries={libraries}
@@ -580,19 +812,72 @@ function Slideshow() {
   );
 }
 
-function SlideView({
-  slide,
+/**
+ * One stage: a slide, or two portraits side by side in two halves. It counts
+ * as painted once every image in it is. The Oscillux seam receives the whole
+ * stage, so its `fill` and `pair` layouts (CORE-2980) can take over from here.
+ */
+function GroupView({
+  groupKey,
+  slides,
   clipURL,
   slideRef,
   onPainted,
   onBroken,
+  onShape,
+}: {
+  groupKey: string;
+  slides: Slide[];
+  /** The first slide's preview clip (clips never pair). */
+  clipURL: string | undefined;
+  slideRef: (element: HTMLElement | null) => void;
+  onPainted: (key: string) => void;
+  onBroken: (id: string) => void;
+  onShape: (id: string, shape: SlideShape) => void;
+}) {
+  const [painted, setPainted] = useState<ReadonlySet<string>>(() => new Set());
+  const markPainted = useCallback((id: string) => {
+    setPainted((value) => (value.has(id) ? value : new Set(value).add(id)));
+  }, []);
+  const done = slides.every((slide) => painted.has(slide.item.id));
+  useEffect(() => {
+    if (done) onPainted(groupKey);
+  }, [done, groupKey, onPainted]);
+
+  return (
+    <div
+      ref={slideRef}
+      className="bf-slideshow-slide"
+      data-layout={slides.length > 1 ? "pair" : "single"}
+    >
+      {slides.map((slide, position) => (
+        <div key={slide.item.id} className="bf-slideshow-cell">
+          <SlideView
+            slide={slide}
+            clipURL={position === 0 ? clipURL : ""}
+            onPainted={markPainted}
+            onBroken={onBroken}
+            onShape={onShape}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SlideView({
+  slide,
+  clipURL,
+  onPainted,
+  onBroken,
+  onShape,
 }: {
   slide: Slide;
   /** Undefined while the preview clip is being looked up; "" when there is none. */
   clipURL: string | undefined;
-  slideRef: (element: HTMLElement | null) => void;
   onPainted: (id: string) => void;
   onBroken: (id: string) => void;
+  onShape: (id: string, shape: SlideShape) => void;
 }) {
   const { item } = slide;
   const poster = slideImageURL(item);
@@ -615,7 +900,6 @@ function SlideView({
   if (playClip) {
     return (
       <video
-        ref={slideRef}
         className="bf-slideshow-media"
         src={clipURL}
         poster={poster || undefined}
@@ -632,12 +916,17 @@ function SlideView({
   if (!poster) return null;
   return (
     <img
-      ref={slideRef}
       className="bf-slideshow-media"
       src={poster}
       alt={displayString(item.title)}
       decoding="async"
-      onLoad={() => setPosterLoaded(true)}
+      onLoad={(event) => {
+        const image = event.currentTarget;
+        if (!slide.clip && image.naturalWidth > 0) {
+          onShape(item.id, image.naturalHeight > image.naturalWidth ? "portrait" : "landscape");
+        }
+        setPosterLoaded(true);
+      }}
       onError={() => onBroken(item.id)}
     />
   );
@@ -682,6 +971,7 @@ function SetupSheet({
     source && source.kind !== "collection" ? source.libraryID : "",
   );
   const [collections, setCollections] = useState<LibraryCollections[]>([]);
+  const [idleOpens, setIdleOpens] = useState(screensaverEnabled);
 
   useEffect(() => {
     if (libraries.length === 0) return;
@@ -767,6 +1057,51 @@ function SetupSheet({
         />
       </fieldset>
       <fieldset>
+        <legend>{t("slideshowDarkRoom")}</legend>
+        <label className="bf-slideshow-option">
+          <input
+            type="checkbox"
+            checked={prefs.darkRoom}
+            onChange={(e) => onPrefs({ darkRoom: e.target.checked })}
+          />
+          {t("slideshowDarkRoomSchedule")}
+        </label>
+        <div className="bf-slideshow-times">
+          {(
+            [
+              ["darkRoomStart", "slideshowDarkRoomStart"],
+              ["darkRoomEnd", "slideshowDarkRoomEnd"],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="bf-slideshow-label">
+              {t(label)}
+              <input
+                type="time"
+                value={prefs[key]}
+                disabled={!prefs.darkRoom}
+                onChange={(e) => {
+                  if (clockMinutes(e.target.value) !== null) onPrefs({ [key]: e.target.value });
+                }}
+              />
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>{t("slideshowScreensaver")}</legend>
+        <label className="bf-slideshow-option">
+          <input
+            type="checkbox"
+            checked={idleOpens}
+            onChange={(e) => {
+              saveScreensaverEnabled(e.target.checked);
+              setIdleOpens(screensaverEnabled());
+            }}
+          />
+          {t("slideshowScreensaverIdle")}
+        </label>
+      </fieldset>
+      <fieldset>
         <legend>{t("slideshowMotion")}</legend>
         {SLIDESHOW_MOTIONS.map((motion) => {
           const available = slideshowMotionAvailable(motion);
@@ -793,7 +1128,6 @@ function SetupSheet({
             ["clock", "slideshowShowClock"],
             ["caption", "slideshowShowCaption"],
             ["nowPlaying", "slideshowShowNowPlaying"],
-            ["darkRoom", "slideshowDarkRoom"],
           ] as const
         ).map(([key, label]) => (
           <label key={key} className="bf-slideshow-option">

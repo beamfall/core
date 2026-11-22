@@ -520,6 +520,11 @@
     "tier": "session"
   },
   {
+    "field": "homelayout",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "hostmetrics",
     "effect": "read",
     "tier": "admin"
@@ -705,6 +710,11 @@
     "tier": "session"
   },
   {
+    "field": "medialyrics",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "mediametadata",
     "effect": "read",
     "tier": "session"
@@ -822,6 +832,96 @@
   {
     "field": "organizepreview",
     "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "partyadd",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyadvance",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyend",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partymove",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyplayback",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyremove",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyremoveparticipant",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyrestore",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyreview",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyrotatecode",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyscreendrop",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyscreenregister",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyscreenreport",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyscreenticker",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partysession",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "partystage",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "partystart",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "partyupdate",
+    "effect": "write",
     "tier": "session"
   },
   {
@@ -1085,6 +1185,11 @@
     "tier": "session"
   },
   {
+    "field": "resethomelayout",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "resetnavoverride",
     "effect": "write",
     "tier": "session"
@@ -1340,6 +1445,11 @@
     "tier": "session"
   },
   {
+    "field": "sethomelayout",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "setlibraryaiindexing",
     "effect": "write",
     "tier": "admin"
@@ -1455,6 +1565,11 @@
     "tier": "admin"
   },
   {
+    "field": "setsonicanalysisenabled",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "setsubscriptiondownloadpolicy",
     "effect": "write",
     "tier": "session"
@@ -1490,6 +1605,11 @@
     "tier": "admin"
   },
   {
+    "field": "similarmedia",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "skipdetectionenabled",
     "effect": "read",
     "tier": "admin"
@@ -1498,6 +1618,11 @@
     "field": "smartcollections",
     "effect": "read",
     "tier": "session"
+  },
+  {
+    "field": "sonicanalysisenabled",
+    "effect": "read",
+    "tier": "admin"
   },
   {
     "field": "sourceitems",

@@ -773,6 +773,60 @@
   gap: 8px;
 }
 
+/* Next in series (CORE-3013): the finish state of a sequenced item. The card
+   is the Up Next card's shape with the next item's cover, and a link instead
+   of a countdown. */
+.bf-next-in-sequence-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -4px;
+  padding: 4px;
+  border-radius: calc(var(--radius-card) - 4px);
+  color: inherit;
+  text-decoration: none;
+}
+
+.bf-next-in-sequence-link:hover {
+  background: color-mix(in oklab, var(--on-scrim) 8%, transparent);
+}
+
+.bf-next-in-sequence-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-next-in-sequence-cover {
+  flex: none;
+  width: 64px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--on-scrim) 10%, transparent);
+}
+
+.bf-next-in-sequence-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bf-next-in-sequence-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
+.bf-next-in-sequence-chevron {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  opacity: 0.7;
+}
+
 /* --- Idle auto-hide: the transport + top bar fade out while playing. The Up
    Next card is deliberately NOT in this set: it must stay opaque and clickable
    while its countdown runs, or an idle viewer can neither see nor dismiss it. --- */
@@ -1265,13 +1319,294 @@
 }
 
 .bf-audio-collections,
-.bf-audio-others {
+.bf-audio-others,
+.bf-audio-reason {
   font-size: clamp(14px, 1.4vw, 18px);
   color: color-mix(
     in oklab,
     color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 72%,
     transparent
   );
+}
+
+/* Now Playing (CORE-1637): the words, then Up Next and the quality badge in
+   one column. The stage takes no pointer input; its links and buttons do. */
+.bf-audio-info {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.bf-audio-link {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 4px;
+  pointer-events: auto;
+}
+
+.bf-audio-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.bf-audio-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-audio-quality {
+  align-self: flex-start;
+  margin: 0;
+  padding: 2px 10px;
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 28%, transparent);
+  border-radius: 999px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--on-scrim) 80%, var(--on-scrim-muted));
+  background: color-mix(in oklab, var(--scrim) 55%, transparent);
+}
+
+.bf-audio-upnext {
+  min-width: 0;
+  pointer-events: auto;
+}
+
+.bf-audio-upnext h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--on-scrim) 60%, var(--on-scrim-muted));
+}
+
+.bf-audio-upnext ol {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bf-audio-upnext button {
+  display: block;
+  width: 100%;
+  max-width: 36ch;
+  padding: 4px 8px;
+  margin-left: -8px;
+  overflow: hidden;
+  border-radius: 6px;
+  font-size: 14px;
+  text-align: start;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: color-mix(in oklab, var(--on-scrim) 85%, var(--on-scrim-muted));
+}
+
+.bf-audio-upnext button:hover {
+  background: color-mix(in oklab, var(--on-scrim) 10%, transparent);
+}
+
+.bf-audio-upnext button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* Listening controls (CORE-2960): Speed, Remove long pauses and the sleep
+   timer in one row under the words. */
+.bf-listen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  pointer-events: auto;
+}
+
+.bf-listen-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 22%, transparent);
+  border-radius: 999px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--on-scrim) 90%, var(--on-scrim-muted));
+  background: color-mix(in oklab, var(--scrim) 55%, transparent);
+  cursor: pointer;
+}
+
+.bf-listen-chip:hover,
+.bf-listen-chip[data-popup-open] {
+  background: color-mix(in oklab, var(--on-scrim) 14%, var(--scrim));
+}
+
+.bf-listen-chip[data-active] {
+  border-color: var(--accent);
+  color: var(--on-scrim);
+}
+
+.bf-listen-chip:focus-visible,
+.bf-listen-preset:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-listen-pauses {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 36px;
+  font-size: 13px;
+  color: color-mix(in oklab, var(--on-scrim) 90%, var(--on-scrim-muted));
+}
+
+.bf-listen-pauses label {
+  cursor: pointer;
+}
+
+.bf-listen-note {
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--on-scrim) 65%, var(--on-scrim-muted));
+}
+
+/* The popover and menu portal into the stage, above the words and transport. */
+.bf-listen-positioner {
+  z-index: 7;
+}
+
+.bf-listen-popup {
+  gap: 14px;
+  width: min(300px, calc(100vw - 24px));
+  padding: 14px 16px 16px;
+}
+
+.bf-listen-popup-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.bf-listen-popup-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bf-listen-speed {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.bf-listen-popup .bf-slider-control {
+  position: relative;
+  width: 100%;
+}
+
+.bf-listen-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.bf-listen-preset {
+  min-height: 36px;
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 18%, transparent);
+  border-radius: 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.bf-listen-preset:hover {
+  background: color-mix(in oklab, var(--on-scrim) 9%, transparent);
+}
+
+.bf-listen-preset[aria-pressed="true"] {
+  border-color: var(--accent);
+  font-weight: 600;
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+}
+
+.bf-listen-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.bf-listen-toggle label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.bf-listen-menu .bf-menu-option[data-checked] {
+  font-weight: 600;
+}
+
+.bf-listen-menu .bf-menu-option[data-checked]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 13px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  transform: translateY(-50%);
+}
+
+@media (hover: none) {
+  .bf-listen-chip,
+  .bf-listen-preset {
+    min-height: 44px;
+  }
+}
+
+/* Over a live visual the row gets the same plate as the words. */
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-listen-chip,
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-listen-pauses {
+  background: color-mix(in oklab, var(--scrim) 78%, transparent);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-listen-pauses {
+  padding: 0 12px;
+  border-radius: 999px;
+}
+
+/* Shuffle and repeat show their state in the accent colour. */
+.bf-transport .bf-control[aria-pressed="true"],
+.bf-transport .bf-control[data-repeat="all"],
+.bf-transport .bf-control[data-repeat="one"] {
+  color: var(--accent);
+}
+
+/* Over a live visual, Up Next and the quality badge get the same plate as the
+   words (CORE-2216 contrast; CORE-1637). */
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-audio-upnext {
+  margin: 0 -12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-card);
+  background: color-mix(in oklab, var(--scrim) 78%, transparent);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-audio-quality {
+  background: color-mix(in oklab, var(--scrim) 78%, transparent);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
 }
 
 /* Over a live visual the words sit on a blurred scrim plate, and the muted
@@ -1290,7 +1625,7 @@
 }
 
 .bf-audio-stage:has(.bf-audio-visualizer-canvas)
-  :is(.bf-audio-position, .bf-audio-collections, .bf-audio-others) {
+  :is(.bf-audio-position, .bf-audio-collections, .bf-audio-others, .bf-audio-reason) {
   color: color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted));
 }
 
@@ -1345,6 +1680,138 @@
   color: inherit;
 }
 
+/* The lyrics view (CORE-1638): the artwork and its words keep the left column, the lyrics fill
+   the right. The words take no width of their own, so the artwork sets the column. */
+.bf-audio-card.has-lyrics {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: clamp(24px, 5vw, 72px);
+  row-gap: 16px;
+  max-width: 1280px;
+}
+
+/* Sized by width: a grid column cannot size itself from a percentage height. The cap leaves the
+   words room under the artwork inside the stage's padding. */
+.bf-audio-card.has-lyrics .bf-audio-artwork {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
+  width: min(400px, 30vw, max(160px, calc(100dvh - 72px - clamp(176px, 26vh, 240px) - 140px)));
+  height: auto;
+}
+
+.bf-audio-card.has-lyrics .bf-audio-meta {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+  contain: inline-size;
+}
+
+.bf-audio-card.has-lyrics .bf-audio-title {
+  font-size: clamp(20px, 2.2vw, 28px);
+}
+
+.bf-audio-lyrics {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.bf-lyrics {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  container-type: size;
+  color: var(--on-scrim);
+  text-shadow: 0 1px 12px color-mix(in oklab, var(--scrim) 60%, transparent);
+}
+
+.bf-lyrics-scroll {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8cqh 0;
+  scrollbar-width: none;
+  /* A mask reads only alpha; Canvas is an always-opaque system colour, so this
+     stays out of the colour tokens (CORE-1179) without dimming the lines. */
+  mask-image: linear-gradient(transparent, Canvas 10%, Canvas 90%, transparent);
+}
+
+/* Room above the first line and below the last, so either can sit in the middle. */
+.bf-lyrics-scroll.is-synced {
+  padding: 40cqh 0;
+}
+
+.bf-lyrics-line {
+  display: block;
+  margin: 0;
+  font-size: clamp(17px, 1.7vw, 22px);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  opacity: 0.9;
+}
+
+.is-synced .bf-lyrics-line {
+  width: 100%;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: clamp(22px, 2.6vw, 34px);
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: start;
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 300ms var(--ease-emphasis);
+}
+
+.is-synced .bf-lyrics-line[data-state="past"] {
+  opacity: 0.28;
+}
+
+.is-synced .bf-lyrics-line:hover {
+  opacity: 0.7;
+}
+
+.is-synced .bf-lyrics-line[data-state="current"] {
+  opacity: 1;
+}
+
+.is-synced .bf-lyrics-line:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.bf-lyrics-none {
+  margin: 0;
+  color: var(--on-scrim-muted);
+  font-size: 15px;
+  text-align: center;
+}
+
+.bf-transport .bf-lyrics-toggle[aria-pressed="true"] svg {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-synced .bf-lyrics-line {
+    transition: none;
+  }
+}
+
 /* Narrow windows stack the artwork above the words. The artwork takes the
    height the words leave, so a short window shrinks it instead of clipping it
    under the top bar or the transport. */
@@ -1364,8 +1831,55 @@
     min-height: 0;
   }
 
+  /* With the lyrics open a phone has no room for the artwork beside them: the words sit above
+     the lyrics instead. */
+  .bf-audio-card.has-lyrics {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    justify-items: stretch;
+    align-content: stretch;
+  }
+
+  .bf-audio-card.has-lyrics .bf-audio-artwork {
+    display: none;
+  }
+
+  .bf-audio-card.has-lyrics .bf-audio-meta {
+    grid-row: 1;
+    contain: none;
+  }
+
+  .bf-audio-lyrics {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
   .bf-audio-meta {
     max-width: 100%;
+  }
+
+  .bf-audio-info {
+    align-items: center;
+    max-width: 100%;
+    gap: 10px;
+  }
+
+  .bf-audio-quality {
+    align-self: center;
+  }
+
+  .bf-listen {
+    justify-content: center;
+  }
+
+  /* A phone keeps the artwork large: Up Next names only the next item. */
+  .bf-audio-upnext li:nth-child(n + 2) {
+    display: none;
+  }
+
+  .bf-audio-upnext button {
+    margin-left: 0;
+    text-align: center;
   }
 
   /* A long title or credit line would push the artwork down to a thumbnail:
@@ -1377,7 +1891,8 @@
   .bf-audio-title,
   .bf-audio-people,
   .bf-audio-collections,
-  .bf-audio-others {
+  .bf-audio-others,
+  .bf-audio-reason {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 1;
@@ -1699,4 +2214,27 @@
   .bf-queue-drawer {
     animation: none;
   }
+}
+
+/* Why radio picked the playing item (CORE-2772): a quiet italic note. */
+.bf-audio-reason {
+  font-style: italic;
+}
+
+.bf-radio-tuning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--on-scrim-muted);
+}
+
+.bf-radio-tuning select {
+  max-width: 14rem;
+  border-radius: var(--radius-control, 6px);
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 24%, transparent);
+  background: color-mix(in oklab, var(--scrim) 60%, transparent);
+  color: var(--on-scrim);
+  padding: 2px 6px;
 }

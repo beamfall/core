@@ -788,6 +788,10 @@ func fixtureSemanticValue(ctx context.Context, db *sql.DB, table, column string)
 		"entity_relation.operator_lock_activity_id": "fixture-relation-activity",
 		"entity_relation.operator_lock_one":         1,
 		"media_operator_ordinal.ordinal_index":      5,
+		"subscription_seen_entry.feed_position":     2,
+		"party_entry.state":                         "waiting",
+		"party_screen.kind":                         "popout",
+		"party_screen.carrier":                      "local",
 	}[table+"."+column]; ok {
 		return value, true, nil
 	}

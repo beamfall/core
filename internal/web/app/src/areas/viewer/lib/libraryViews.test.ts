@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { graphql } from "@/lib/api";
+import { notifyEngagementChanged } from "../actions/engagementSync";
 import { DEFAULT_BROWSE_STATE, parseBrowseState } from "./libraryBrowse";
 import { FOLDER_VIEW } from "./libraryFolders";
 import {
+  cachedLibraryEntities,
+  clearLibraryEntitiesCache,
   entityCardLine,
+  fetchLibraryEntities,
   type LibraryEntityChildKind,
   type LibraryEntityItem,
   libraryCategorySearch,
@@ -12,6 +17,11 @@ import {
   selectedView,
   viewSearchParams,
 } from "./libraryViews";
+
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  graphql: vi.fn(),
+}));
 
 const kinds = [
   { kind: "maker", label: { en: "Makers", fr: "Créateurs" }, total: 2 },
@@ -181,5 +191,93 @@ describe("library entities variables (CORE-2440)", () => {
         offset: 0,
       }),
     ).not.toHaveProperty("kind");
+  });
+});
+
+describe("libraryEntities cache (CORE-3064)", () => {
+  const request = { libraryID: "lib-1", limit: 100, offset: 0 };
+  const served = {
+    libraryEntities: { kinds: [], kind: "maker", total: 1, items: [{ id: "e1", title: "One" }] },
+  };
+
+  beforeEach(() => {
+    clearLibraryEntitiesCache();
+    vi.mocked(graphql).mockReset();
+  });
+
+  it("shares one read between concurrent callers and caches it, also under the kind served", async () => {
+    vi.mocked(graphql).mockResolvedValue(served);
+    expect(cachedLibraryEntities(request)).toBeUndefined();
+    const [a, b] = await Promise.all([
+      fetchLibraryEntities(request),
+      fetchLibraryEntities(request),
+    ]);
+    expect(graphql).toHaveBeenCalledTimes(1);
+    expect(a).toBe(b);
+    expect(cachedLibraryEntities(request)?.items.map((item) => item.id)).toEqual(["e1"]);
+    expect(cachedLibraryEntities({ ...request, kind: "maker" })).toBe(a);
+    expect(cachedLibraryEntities({ ...request, offset: 100 })).toBeUndefined();
+    await fetchLibraryEntities(request);
+    expect(graphql).toHaveBeenCalledTimes(2);
+  });
+
+  it("never serves a read made before an engagement change", async () => {
+    vi.mocked(graphql).mockResolvedValue(served);
+    await fetchLibraryEntities(request);
+    notifyEngagementChanged();
+    expect(cachedLibraryEntities(request)).toBeUndefined();
+  });
+
+  // Codex stack 5 review: a caller after an engagement change must not join
+  // an older read, and that older read must not overwrite the newer answer.
+  it("reads afresh after an engagement change and keeps the newer answer", async () => {
+    const answers: ((value: unknown) => void)[] = [];
+    vi.mocked(graphql).mockImplementation(() => new Promise((resolve) => answers.push(resolve)));
+    const before = fetchLibraryEntities(request);
+    notifyEngagementChanged();
+    const after = fetchLibraryEntities(request);
+    expect(graphql).toHaveBeenCalledTimes(2);
+    const newer = {
+      libraryEntities: { ...served.libraryEntities, items: [{ id: "e2", title: "Two" }] },
+    };
+    answers[1]!(newer);
+    expect((await after).items.map((item) => item.id)).toEqual(["e2"]);
+    answers[0]!(served);
+    await before;
+    expect(cachedLibraryEntities(request)?.items.map((item) => item.id)).toEqual(["e2"]);
+  });
+
+  it("never lets a kindless read's alias replace a read of that kind", async () => {
+    const answers: ((value: unknown) => void)[] = [];
+    vi.mocked(graphql).mockImplementation(() => new Promise((resolve) => answers.push(resolve)));
+    const kindless = fetchLibraryEntities(request);
+    const named = fetchLibraryEntities({ ...request, kind: "maker" });
+    const fresh = {
+      libraryEntities: { ...served.libraryEntities, items: [{ id: "e2", title: "Two" }] },
+    };
+    answers[1]!(fresh);
+    await named;
+    answers[0]!(served);
+    await kindless;
+    expect(
+      cachedLibraryEntities({ ...request, kind: "maker" })?.items.map((item) => item.id),
+    ).toEqual(["e2"]);
+  });
+
+  it("rejects an aborted caller and still caches the shared read", async () => {
+    let finish: (value: unknown) => void = () => {};
+    vi.mocked(graphql).mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const controller = new AbortController();
+    const aborted = fetchLibraryEntities(request, controller.signal);
+    controller.abort();
+    await expect(aborted).rejects.toBeDefined();
+    finish(served);
+    await vi.waitFor(() => expect(cachedLibraryEntities(request)).toBeDefined());
+  });
+
+  it("caches nothing from a failed read", async () => {
+    vi.mocked(graphql).mockRejectedValue(new Error("offline"));
+    await expect(fetchLibraryEntities(request)).rejects.toThrow("offline");
+    expect(cachedLibraryEntities(request)).toBeUndefined();
   });
 });

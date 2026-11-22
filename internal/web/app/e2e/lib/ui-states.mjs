@@ -25,7 +25,7 @@
 // The annotation type coverUiStates() writes and the coverage reporter reads.
 export const UI_STATE_ANNOTATION = "ui-state";
 
-export const TOP_LEVEL_ROUTES = Object.freeze(["/setup", "/enroll", "/promote"]);
+export const TOP_LEVEL_ROUTES = Object.freeze(["/setup", "/enroll", "/promote", "/join/:code"]);
 
 // areas/viewer/index.tsx, under /*.
 export const VIEWER_ROUTES = Object.freeze([
@@ -47,6 +47,7 @@ export const VIEWER_ROUTES = Object.freeze([
   "/favorites",
   "/history",
   "/playlists",
+  "/playlists/smart/:smartId",
   "/playlists/:playlistId",
   "/notifications",
   "/remote",
@@ -54,6 +55,8 @@ export const VIEWER_ROUTES = Object.freeze([
   "/settings",
   "/view/*",
   "/slideshow",
+  "/party",
+  "/party/stage/:sessionID",
   "/watch/*",
 ]);
 
@@ -131,6 +134,7 @@ export const AREA_ROLES = Object.freeze({
   setup: ["unenrolled"],
   enroll: ["unenrolled"],
   promote: ["owner"],
+  join: ["unenrolled"],
 });
 
 export const AREA_LOCALES = Object.freeze({
@@ -139,6 +143,7 @@ export const AREA_LOCALES = Object.freeze({
   console: ["fr-FR"],
   setup: ["fr-FR"],
   enroll: ["fr-FR"],
+  join: ["fr-FR"],
 });
 
 // In-page states, keyed by screen: the dialogs, menus, tabs and Selects each screen opens, and the
@@ -168,6 +173,15 @@ export const IN_PAGE_STATES = Object.freeze({
     { kind: "error", name: "invalid-401" },
     { kind: "error", name: "viewer-code-403" },
     { kind: "error", name: "generic" },
+  ],
+  "/join/:code": [
+    { kind: "loading", name: "joining" },
+    { kind: "error", name: "unknown-code" },
+    { kind: "error", name: "rate-limited" },
+    { kind: "error", name: "full" },
+    { kind: "error", name: "session-ended" },
+    { kind: "empty", name: "search" },
+    { kind: "error", name: "at-limit" },
   ],
   "/": [
     { kind: "loading", name: "manifest" },
@@ -713,6 +727,8 @@ const NO_CONTROL_DRIVEN = "no test opens this control yet (CORE-1311)";
 const NO_EMPTY_FIXTURE = "no test routes or seeds an empty result for this state yet (CORE-1311)";
 const NO_ERROR_FIXTURE = "no test routes a failure for this state yet (CORE-1311)";
 const NO_LOADING_FIXTURE = "no test holds a response open to show this state yet (CORE-1311)";
+const NO_PARTY_GUEST_SMOKE =
+  "no Playwright smoke drives the party guest page yet; Vitest covers it (CORE-2948)";
 const SHELL_NARROW_OVERFLOW =
   "overflows horizontally at phone width: Manage and Console navigation and tables do not fit (CORE-0058)";
 const VIEWER_HEADER_OVERFLOW =
@@ -730,6 +746,16 @@ export const UI_STATE_GAPS = Object.freeze({
   "/setup#error:step": NO_ERROR_FIXTURE,
   "/enroll#loading:busy": NO_LOADING_FIXTURE,
   "/enroll#error:invalid-code": NO_ERROR_FIXTURE,
+  "/join/:code#loading:joining": NO_PARTY_GUEST_SMOKE,
+  "/join/:code#error:unknown-code": NO_PARTY_GUEST_SMOKE,
+  "/join/:code#error:rate-limited": NO_PARTY_GUEST_SMOKE,
+  "/join/:code#error:full": NO_PARTY_GUEST_SMOKE,
+  "/join/:code#error:session-ended": NO_PARTY_GUEST_SMOKE,
+  "/join/:code#empty:search": NO_PARTY_GUEST_SMOKE,
+  "/join/:code#error:at-limit": NO_PARTY_GUEST_SMOKE,
+  "/join/:code@mobile": NO_PARTY_GUEST_SMOKE,
+  "area:join@role:unenrolled": NO_PARTY_GUEST_SMOKE,
+  "area:join@locale:fr-FR": NO_PARTY_GUEST_SMOKE,
   "/#loading:manifest": NO_LOADING_FIXTURE,
   "/@mobile": VIEWER_HEADER_OVERFLOW,
   "/n/:nodeId#empty:node": NO_EMPTY_FIXTURE,
@@ -788,6 +814,7 @@ export const UI_STATE_GAPS = Object.freeze({
   "/notifications#empty:page": NO_EMPTY_FIXTURE,
   "/notifications@mobile": VIEWER_HEADER_OVERFLOW,
   "/remote@mobile": VIEWER_HEADER_OVERFLOW,
+  "/party@mobile": VIEWER_HEADER_OVERFLOW,
   "/profiles#empty:unavailable": NO_EMPTY_FIXTURE,
   "/profiles#error:failure-alert": NO_ERROR_FIXTURE,
   "/profiles#error:pin": NO_ERROR_FIXTURE,

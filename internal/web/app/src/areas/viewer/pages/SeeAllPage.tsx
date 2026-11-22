@@ -27,7 +27,7 @@ import {
   SEEALL_PAGE,
 } from "../lib/sections";
 import type { HomeLibrarySeeAllState, SeeAllContext } from "../lib/seeall";
-import { playQueueOf } from "../lib/watchQueue";
+import { playQueueOf, sectionQueue } from "../lib/watchQueue";
 
 type ResolvedSeeAllContext = SeeAllContext & { homeLibraryShelf?: true };
 
@@ -157,7 +157,10 @@ function SeeAllResults({
   const start = gridWindow?.startIndex ?? 0;
   const end = gridWindow?.endIndex ?? items.length;
   const visibleItems = gridWindow ? items.slice(start, end) : items;
-  const queue = useMemo(() => playQueueOf(items), [items]);
+  // The same queue rule as the shelf (sectionQueue): a per-container Source's
+  // cards play alone here too.
+  const sourceKind = ctx?.section.source?.kind;
+  const queue = useMemo(() => sectionQueue(sourceKind, items), [sourceKind, items]);
   const repeated = useMemo(() => repeatedTitles(items), [items]);
 
   const clearResults = useCallback(
@@ -335,7 +338,7 @@ function SeeAllResults({
                 item={item}
                 posInSet={index + 1}
                 setSize={items.length}
-                queue={queue}
+                queue={queue ?? playQueueOf([item])}
                 showYear={showsYear(item, repeated)}
                 intrinsicArtwork={ctx.home}
               />

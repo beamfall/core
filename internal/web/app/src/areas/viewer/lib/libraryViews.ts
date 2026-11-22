@@ -1,6 +1,7 @@
 import { graphql } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import type { DisplayString, SourceItem } from "@/lib/graphql/types";
+import { readEngagementEpoch } from "../actions/engagementSync";
 import {
   browseStateParams,
   DEFAULT_BROWSE_STATE,
@@ -99,14 +100,100 @@ export function libraryEntitiesVariables(request: LibraryEntitiesRequest): Recor
   return vars;
 }
 
-export async function fetchLibraryEntities(
+// Recent libraryEntities reads, newest last, so a Library page opened again
+// paints at once while it reads afresh (stale-while-revalidate, CORE-3064).
+// A read made before an engagement change (watched state, ratings, hides,
+// Hide watched) is never served: those change what a query returns.
+const ENTITY_CACHE_LIMIT = 24;
+const entityCache = new Map<string, { epoch: number; page: LibraryEntitiesPage }>();
+const entityReads = new Map<string, Promise<LibraryEntitiesPage>>();
+
+function entityCacheKey(request: LibraryEntitiesRequest): string {
+  return JSON.stringify(libraryEntitiesVariables(request));
+}
+
+function rememberLibraryEntities(
+  key: string,
+  epoch: number,
+  page: LibraryEntitiesPage,
+  alias = false,
+) {
+  // A read from before an engagement change never replaces a newer one, and
+  // a page cached under the kind the server chose never replaces a read that
+  // named that kind itself in the same epoch.
+  const held = entityCache.get(key);
+  if (held && (held.epoch > epoch || (alias && held.epoch === epoch))) return;
+  entityCache.delete(key);
+  entityCache.set(key, { epoch, page });
+  for (const oldest of entityCache.keys()) {
+    if (entityCache.size <= ENTITY_CACHE_LIMIT) break;
+    entityCache.delete(oldest);
+  }
+}
+
+/** The last read of this request, unless engagement has changed since it was made. */
+export function cachedLibraryEntities(
+  request: LibraryEntitiesRequest,
+): LibraryEntitiesPage | undefined {
+  const entry = entityCache.get(entityCacheKey(request));
+  return entry && entry.epoch === readEngagementEpoch() ? entry.page : undefined;
+}
+
+/** Drops every cached libraryEntities read. */
+export function clearLibraryEntitiesCache(): void {
+  entityCache.clear();
+  entityReads.clear();
+}
+
+/**
+ * Reads one libraryEntities page and caches it. Callers asking for the same
+ * page at once, in the same engagement epoch, share one request: a caller
+ * after an engagement change reads afresh rather than joining a read whose
+ * answer may predate it. A caller's abort rejects its own promise
+ * and leaves the shared read to finish into the cache. A read that names no
+ * kind is also cached under the kind the server chose.
+ */
+export function fetchLibraryEntities(
   request: LibraryEntitiesRequest,
   signal?: AbortSignal,
 ): Promise<LibraryEntitiesPage> {
+  const key = entityCacheKey(request);
+  const epoch = readEngagementEpoch();
+  const readKey = `${epoch}:${key}`;
+  let read = entityReads.get(readKey);
+  if (!read) {
+    read = readLibraryEntities(request)
+      .then((page) => {
+        rememberLibraryEntities(key, epoch, page);
+        if (!request.kind && page.kind) {
+          rememberLibraryEntities(
+            entityCacheKey({ ...request, kind: page.kind }),
+            epoch,
+            page,
+            true,
+          );
+        }
+        return page;
+      })
+      .finally(() => {
+        if (entityReads.get(readKey) === read) entityReads.delete(readKey);
+      });
+    entityReads.set(readKey, read);
+  }
+  if (!signal) return read;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  const shared = read;
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    shared.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+async function readLibraryEntities(request: LibraryEntitiesRequest): Promise<LibraryEntitiesPage> {
   const data = await graphql<{ libraryEntities: LibraryEntitiesPage | null }>(
     LIBRARY_ENTITIES_QUERY,
     libraryEntitiesVariables(request),
-    signal,
   );
   const page = data.libraryEntities;
   return {

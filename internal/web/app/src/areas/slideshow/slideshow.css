@@ -1,6 +1,8 @@
 /* Web photo slideshow (CORE-2981, photos design §3.1). The picture fills the
- * stage on the scrim. Slides hard-cut: transitions and motion come only from
- * Oscillux (see lib/slideshowMotion.ts). Tokens only; no blur, fade or pan. */
+ * stage on the scrim. Transitions, motion, the portrait pair and the blurred
+ * fill come only from Oscillux: Calm draws them on the motion canvas over the
+ * DOM slide (lib/slideshowDriver.ts, CORE-2980). The DOM slide underneath
+ * hard-cuts. Tokens only; no blur, fade or pan here. */
 
 .bf-slideshow {
   position: fixed;
@@ -18,9 +20,44 @@
 .bf-slideshow-stage {
   position: absolute;
   inset: 0;
+  isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Oscillux's slideshow pass, over the DOM slide whatever their order. */
+.bf-slideshow-motion {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.bf-slideshow-slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: 8px;
+}
+
+.bf-slideshow-cell {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* A pair meets at the centre with the small gap between them. */
+.bf-slideshow-slide[data-layout="pair"] .bf-slideshow-cell:first-child {
+  justify-content: flex-end;
+}
+
+.bf-slideshow-slide[data-layout="pair"] .bf-slideshow-cell:last-child {
+  justify-content: flex-start;
 }
 
 .bf-slideshow-media {
@@ -29,12 +66,18 @@
   object-fit: contain;
 }
 
+/* Dark Room: plain opaque UI dimming, never a filter. The overlay sits above
+ * it, dimmed but readable. */
 .bf-slideshow-dim {
   position: absolute;
   inset: 0;
   background: var(--scrim);
-  opacity: 0.82;
+  opacity: 0.85;
   pointer-events: none;
+}
+
+.bf-slideshow[data-dark-room="on"] .bf-slideshow-overlay {
+  opacity: 0.55;
 }
 
 .bf-slideshow-message {
@@ -201,6 +244,31 @@
   align-items: center;
   gap: 8px;
   font-size: 14px;
+}
+
+.bf-slideshow-times {
+  display: flex;
+  gap: 12px;
+}
+
+.bf-slideshow-times .bf-slideshow-label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bf-slideshow-times input {
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.bf-slideshow-times input:disabled {
+  opacity: 0.5;
 }
 
 .bf-slideshow-option small {

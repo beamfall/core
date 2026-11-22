@@ -2,6 +2,8 @@
 # emit-mgmt-manifest.sh — regenerate the Core management-surface manifest.
 #
 # Emits internal/conformance/mgmt-manifest.json from the live graph.SchemaManifest()
+# (and mgmt-manifest-appstore.json from the beamfall_appstore build, which the
+# App Store-tagged conformance test reads)
 # filtered to admin-tier fields, plus the declared management HTTP routes.
 # This is the ADR-0122 Tier-2 parity artifact consumed by beamfall-web's
 # script/check-mgmt-parity.sh.
@@ -22,5 +24,16 @@ if [[ "${1:-}" == "--stdout" ]]; then
 fi
 
 cd "$REPO_ROOT"
-go run ./tools/mgmt-manifest > "$OUT"
+APPSTORE_OUT="$REPO_ROOT/internal/conformance/mgmt-manifest-appstore.json"
+# Generate both into temp files beside their targets first, so a failed build
+# never truncates a tracked manifest and each mv is a same-filesystem rename.
+TMP_OUT="$(mktemp "$OUT.XXXXXX")"
+TMP_APPSTORE="$(mktemp "$APPSTORE_OUT.XXXXXX")"
+trap 'rm -f "$TMP_OUT" "$TMP_APPSTORE"' EXIT
+go run ./tools/mgmt-manifest > "$TMP_OUT"
+go run -tags beamfall_appstore ./tools/mgmt-manifest > "$TMP_APPSTORE"
+chmod 0644 "$TMP_OUT" "$TMP_APPSTORE"
+mv -f "$TMP_OUT" "$OUT"
+mv -f "$TMP_APPSTORE" "$APPSTORE_OUT"
 echo "==> mgmt-manifest written: $OUT"
+echo "==> mgmt-manifest written: $APPSTORE_OUT"

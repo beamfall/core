@@ -2,45 +2,45 @@
   "schemaVersion": 1,
   "producer": "oscillux",
   "leg": "glsl300",
-  "release": "v0.2.12",
-  "rev": "19421f5f21f37811520efdcf2ea5ccccf57a721e",
+  "release": "v0.2.15",
+  "rev": "646b841912f268faedd0809dc0b22e27bb710c1d",
   "license": "AGPL-3.0-only",
   "generator": "tools/shader/bundle-legs.mjs glsl300 at the pinned rev",
   "files": [
     {
       "path": "catalog.json",
-      "sha256": "574fbf153db57bc8978813d8d80c67a063288288aa428c7467ea6f927ecb9596",
+      "sha256": "c8fb2eac8a783e79030260a74feb71709212a9fac036bde9c65f8be393b4afef",
       "bytes": 113237
     },
     {
       "path": "limiter/cells.frag",
-      "sha256": "cdbd9d320c25110383d83965fa8fbf0d9265fd57abc2ca0083bd6b581793c291",
-      "bytes": 15534
+      "sha256": "455994a3ff25c097f68ef995c0fbc71c920a5fbbf27963042df1862379efc6fc",
+      "bytes": 25978
     },
     {
       "path": "limiter/grant.frag",
-      "sha256": "f2fd9411ece946db2d1c7c82fa3349907d47d95edd815951e9ca606283639e00",
-      "bytes": 20203
+      "sha256": "69aead30449bfc3d7746b1ad53c0a6a5c3ac6ab7efb6fed5be08197d887959f8",
+      "bytes": 30647
     },
     {
       "path": "limiter/output.frag",
-      "sha256": "2a9b4baef121604ebced3b8bea6e65ccd86ac109b369cd4dee27060269e05633",
-      "bytes": 26189
+      "sha256": "aac3ac27d14610d0bfa6125618c5237a1cf61d1455cd6646f48af34eabc861cb",
+      "bytes": 39708
     },
     {
       "path": "limiter/reduce.frag",
-      "sha256": "b0a7368ba4bf0381486e23bd2d399b83fa764fbced9c975e8312be2b554bf292",
-      "bytes": 15711
+      "sha256": "09c1cb0460f83f982d08dd988b544ea7bd7473b5167acc6861d6537ceb396223",
+      "bytes": 26155
     },
     {
       "path": "limiter/rows.frag",
-      "sha256": "cbaf2be1b4049a192c562eb0a6491151f465a1200df7106c5e2bc3c5028085ef",
-      "bytes": 25341
+      "sha256": "ecd50b2bb274bd90b4fb4ed0d5fc3724b21d1a2d57179130aaa7887972cb2b76",
+      "bytes": 38463
     },
     {
       "path": "limiter/windows.frag",
-      "sha256": "1a3960aa6fc1c76fdf6ae6f17895556fd1a07adf9a914f465fffa300df6c6dbc",
-      "bytes": 15924
+      "sha256": "d241e809364a18aa08d83a9816f2f06c9dcac8d3302dcb5b99f88443584a7592",
+      "bytes": 26368
     },
     {
       "path": "post/bloom-down.frag",
@@ -61,6 +61,11 @@
       "path": "post/present.frag",
       "sha256": "8b1d056b72716883e74c60ec9bbc20cf96131148943626cb6042de92769c7fcd",
       "bytes": 14276
+    },
+    {
+      "path": "slideshow/slideshow.frag",
+      "sha256": "15dc41bf13cfa857bab58cb53fad3119e1d3f2a4e759aceca7fd0c60e3cebc2f",
+      "bytes": 15076
     },
     {
       "path": "switch/switch.frag",
@@ -119,18 +124,18 @@
     },
     {
       "path": "visuals/dunes.web.frag",
-      "sha256": "5372b2c2840618796dac92a633aa4c533768d3942aac29a1b7082c4063d8a1d7",
-      "bytes": 50549
+      "sha256": "1f5ec6c696794c4a3ba58c152cc3c59f3a7cb0b409b93d329b67f96ab8a9a272",
+      "bytes": 50565
     },
     {
       "path": "visuals/event-horizon.web.frag",
-      "sha256": "6e7957ee50ec2c8152c10ab5b959ed2dcdd4c50c945551771e03fe79c3cd09c5",
-      "bytes": 55573
+      "sha256": "004009dc84cf623eddabb1eb9193b7ac6077f51266520cb077f5f2046db0ca0e",
+      "bytes": 55661
     },
     {
       "path": "visuals/filament.web.frag",
-      "sha256": "5eba9f84ec9486692d88050e105d0251a8066d3905f46782f69512dcfbf3a4a1",
-      "bytes": 62528
+      "sha256": "0388646e4f825d2a8c21b87ab77024ff4898918ac2eb014129d349965bc768c6",
+      "bytes": 62543
     },
     {
       "path": "visuals/glyph.web.frag",
@@ -144,8 +149,8 @@
     },
     {
       "path": "visuals/ink.web.frag",
-      "sha256": "24cac836efe54cd659cc0d595a722c3094298b06274520652e4994fddc3ab445",
-      "bytes": 49436
+      "sha256": "a392bf95942e2c93e54e14a2c149c8ce2fa0c6791094fd4b97d24ea9e1a66103",
+      "bytes": 49617
     },
     {
       "path": "visuals/interference.web.frag",
@@ -154,8 +159,8 @@
     },
     {
       "path": "visuals/kaleidoscope.web.frag",
-      "sha256": "ddbdf9ca970550a14b86ae6921eb7091d00c3a75baf7ffb45c812a707e10c3f4",
-      "bytes": 58164
+      "sha256": "201f64e376d41e6e08f0d16f2ee7d81e85e91c9a3f201b2c238f889ec1e17ccd",
+      "bytes": 58180
     },
     {
       "path": "visuals/laser-tunnel.web.frag",
@@ -194,8 +199,8 @@
     },
     {
       "path": "visuals/mirror-bloom.web.frag",
-      "sha256": "942ce9d49404c4f6b42345e47ba971458478a21ae2bf79798d8e9f4ac91d68e7",
-      "bytes": 54617
+      "sha256": "76461dea562687d3101bdc7c5206b9e0df2ed9eb86d80cf15fc5f742420f2c3f",
+      "bytes": 54633
     },
     {
       "path": "visuals/murmuration.web.frag",
@@ -204,8 +209,8 @@
     },
     {
       "path": "visuals/nebula.web.frag",
-      "sha256": "4fc2402ba0394a1ed9512897eb700d4cacc3a77d8fe990d6f543beb5a8974a1e",
-      "bytes": 49885
+      "sha256": "4c7bcbfc80161f428711b98a444707a4b3eb53b6be3e0cb80d18cc998a420c3a",
+      "bytes": 49901
     },
     {
       "path": "visuals/oscillo-ring.web.frag",
@@ -244,8 +249,8 @@
     },
     {
       "path": "visuals/photo-lens.web.frag",
-      "sha256": "78d30a38ab427f82ec10b88de46cb49cdd2e99b5ea0a3082c7bf515e2aff5faf",
-      "bytes": 56067
+      "sha256": "b73bf265dc14bca9dc3c55e5421c6ed0c03eac1462f7e32c793b4e5111c30078",
+      "bytes": 56083
     },
     {
       "path": "visuals/photo-liquid.web.frag",
@@ -314,8 +319,8 @@
     },
     {
       "path": "visuals/spectral-city.web.frag",
-      "sha256": "6ece09a5091fc9a0e01d7d3c62e2269233a5cebae31f188cc2d8465c815a76f7",
-      "bytes": 50603
+      "sha256": "6226da2a486160483ff9584038dd738103bd59379ca1d0bdd766debfc6204ea5",
+      "bytes": 50619
     },
     {
       "path": "visuals/spectrum.web.frag",
@@ -344,8 +349,8 @@
     },
     {
       "path": "visuals/vault.web.frag",
-      "sha256": "7f2b63bc55a878e3b2c058d8c8290aff747d7b7454cf8ed31924ce87efbb9b94",
-      "bytes": 59890
+      "sha256": "13d320cb89e7a641cc39ee40f9c6f1d08da33ff34fc63c6ae1f12f764154f40c",
+      "bytes": 60545
     },
     {
       "path": "visuals/vertex.web.vert",
