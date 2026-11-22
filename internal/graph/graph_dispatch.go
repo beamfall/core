@@ -726,6 +726,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setextensionpreauthorization":       newFieldHandler("setExtensionPreauthorization", "setExtensionPreauthorization", fieldMutation, roleSession|roleAdmin, 96),
 	"setfavorite":                        newFieldHandler("setFavorite", "setFavorite", fieldMutation, roleSession, 34),
 	"setfollow":                          newFieldHandler("setFollow", "setFollow", fieldMutation, roleSession, 53),
+	"setfollownewentryroute":             newFieldHandler("setFollowNewEntryRoute", "setFollowNewEntryRoute", fieldMutation, roleSession, 53),
 	"refreshsubscription":                newFieldHandler("refreshSubscription", "refreshSubscription", fieldMutation, roleSession, 53),
 	"refreshallsubscriptions":            newFieldHandler("refreshAllSubscriptions", "refreshAllSubscriptions", fieldMutation, roleSession|roleManager, 54),
 	"setlibraryaiindexing":               newFieldHandler("setLibraryAIIndexing", "setLibraryAIIndexing", fieldMutation, roleSession|roleAdmin, 77),
@@ -1911,6 +1912,12 @@ func dispatchFieldBlock053(dispatch *fieldDispatchContext) response {
 	if fields["setfollow"] {
 		subscription, err := h.setFollow(ctx, scope, req)
 		if resp := resolveField(dispatch, "setfollow", subscription, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setfollownewentryroute"] {
+		follow, err := h.setFollowNewEntryRoute(ctx, scope, req)
+		if resp := resolveField(dispatch, "setfollownewentryroute", follow, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

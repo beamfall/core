@@ -259,6 +259,7 @@ var resultTypes = map[string]any{
 	"sethomelayout":                      HomeLayoutInfo{}, // CORE-1972
 	"resethomelayout":                    HomeLayoutInfo{}, // CORE-1972
 	"setfollow":                          FollowInfo{},
+	"setfollownewentryroute":             FollowInfo{},
 	"refreshsubscription":                SubscriptionRefreshInfo{},
 	"refreshallsubscriptions":            SubscriptionRefreshAllInfo{},
 	"associatesubscriptionentry":         SubscriptionEntryAssociationInfo{},

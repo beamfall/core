@@ -1450,6 +1450,11 @@
     "tier": "session"
   },
   {
+    "field": "setfollownewentryroute",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "sethomelayout",
     "effect": "write",
     "tier": "session"

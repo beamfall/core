@@ -71,6 +71,15 @@ type Poller struct {
 	// PollSubscriptionNow goroutines.
 	inflight   sync.Map
 	background sync.WaitGroup
+	// certification resolves a follower's ceilings when new entries are
+	// routed to its Play Queue; nil disables routing.
+	certification func([]store.ProfileCertificationCeiling) []store.CertificationConstraint
+}
+
+// SetCertificationResolver wires the resolver used when new entries are
+// routed to followers' Play Queues (CORE-2958). Call before polling starts.
+func (p *Poller) SetCertificationResolver(resolve func([]store.ProfileCertificationCeiling) []store.CertificationConstraint) {
+	p.certification = resolve
 }
 
 // NewPoller creates a Poller over the shared hardened scrape engine.

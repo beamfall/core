@@ -1453,6 +1453,11 @@
       "tier": "session"
     },
     {
+      "field": "setfollownewentryroute",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "sethomelayout",
       "effect": "write",
       "tier": "session"
@@ -3003,6 +3008,10 @@
           "name": "movedAt",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "newEntryRoute",
+          "kind": "scalar"
         },
         {
           "name": "nextPollAt",
@@ -10865,6 +10874,10 @@
           "name": "movedAt",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "newEntryRoute",
+          "kind": "scalar"
         },
         {
           "name": "nextPollAt",
@@ -37442,6 +37455,10 @@
           "optional": true
         },
         {
+          "name": "newEntryRoute",
+          "kind": "scalar"
+        },
+        {
           "name": "nextPollAt",
           "kind": "scalar",
           "optional": true
@@ -43265,6 +43282,32 @@
           "kind": "scalar"
         },
         {
+          "name": "newEntryRoute",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "setfollownewentryroute",
+      "kind": "object",
+      "children": [
+        {
+          "name": "followed",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "newEntryRoute",
+          "kind": "scalar"
+        },
+        {
           "name": "title",
           "kind": "scalar"
         }
@@ -48320,6 +48363,10 @@
           "optional": true
         },
         {
+          "name": "newEntryRoute",
+          "kind": "scalar"
+        },
+        {
           "name": "nextPollAt",
           "kind": "scalar",
           "optional": true
@@ -48419,6 +48466,10 @@
           "name": "movedAt",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "newEntryRoute",
+          "kind": "scalar"
         },
         {
           "name": "nextPollAt",
@@ -50055,6 +50106,10 @@
           "name": "movedAt",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "newEntryRoute",
+          "kind": "scalar"
         },
         {
           "name": "nextPollAt",

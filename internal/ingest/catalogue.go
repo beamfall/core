@@ -55,12 +55,18 @@ func (p *Poller) catalogue(ctx context.Context, subscription store.Subscription,
 			return selectByPolicy(policy, true, document.Serial, subscription.AddedAt, entries, nil)
 		}
 	}
-	_, err = p.store.UpsertSubscriptionCatalogWithInitialDownloads(ctx, subscription.ID, rows, now, selectInitial)
+	created, err := p.store.UpsertSubscriptionCatalogWithInitialDownloads(ctx, subscription.ID, rows, now, selectInitial)
 	encrypted := errors.Is(err, store.ErrSubscriptionCatalogUnsupported)
 	if err != nil && !encrypted {
 		return nil, false, err
 	}
 	firstPoll := subscription.LastPolledAt.IsZero()
+	if !firstPoll && len(created) > 0 && p.certification != nil {
+		// The first poll's back catalogue is never routed (CORE-2958).
+		if err := p.store.RouteNewSubscriptionEntries(ctx, subscription.ID, created, p.certification); err != nil {
+			p.logger.Warn("routing new entries failed", "subscription", subscription.ID, "error", err)
+		}
+	}
 	if encrypted {
 		selected, err := p.uncataloguedDownloads(ctx, subscription.ID, policy, firstPoll, document.Serial, entries, now)
 		return selected, false, err
