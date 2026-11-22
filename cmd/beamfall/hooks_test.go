@@ -293,3 +293,46 @@ func TestMusicDeclaresEntityBrowseRule(t *testing.T) {
 		t.Fatalf("music browse rules = %+v, want %+v", got, want)
 	}
 }
+
+// An album records its release type from the tags, and the music wiring
+// splits an artist's related albums by it under the plugin's headings, over a
+// field the music bundle declares as text (CORE-2769).
+func TestMusicAlbumReleaseTypeGroups(t *testing.T) {
+	plan := firstPartyHooks().HydrationMappers[music.PluginID].MapHydration(map[string]string{
+		"TITLE": "Copper Tide", "ALBUM": "Tidewater Live", "ALBUMARTIST": "Lantern Choir", "RELEASETYPE": "album; live",
+	}, "/flat/a.flac")
+	var releaseType string
+	for _, relation := range plan.Relations {
+		if relation.Name != "album-track" {
+			continue
+		}
+		for _, field := range relation.From.Fields {
+			if field.Name == music.ReleaseTypeField {
+				releaseType = field.Text
+			}
+		}
+	}
+	if releaseType != music.ReleaseTypeLive {
+		t.Fatalf("album release type = %q, want %q", releaseType, music.ReleaseTypeLive)
+	}
+
+	rules := firstPartyHooks().EntityGroupRules
+	if len(rules) != 1 || rules[0].PluginID != music.PluginID || rules[0].Kind != "album" || rules[0].Field != music.ReleaseTypeField {
+		t.Fatalf("music entity group rules = %+v", rules)
+	}
+	if got, want := len(rules[0].Groups), len(music.ReleaseTypeGroups()); got != want || rules[0].Groups[0].Value != music.ReleaseTypeAlbum {
+		t.Fatalf("release type groups = %+v, want the plugin's %d in order", rules[0].Groups, want)
+	}
+	declared := false
+	for _, kind := range music.Bundle().EntityKinds {
+		if kind.Name != "album" {
+			continue
+		}
+		for _, field := range kind.Fields {
+			declared = declared || (field.Name == music.ReleaseTypeField && field.Type == "text")
+		}
+	}
+	if !declared {
+		t.Fatal("music bundle does not declare the album release-type text field")
+	}
+}
