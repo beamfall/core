@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { AssignDialog } from "@/components/assign/AssignDialog";
 import { EntityPicker } from "@/components/beamfall/EntityPicker";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import type {
   MediaMetadataInfo,
 } from "@/lib/graphql/types";
 import { useI18n } from "@/lib/i18n";
+import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
 
 const SLOTS: { slot: string; lock: string; key: StringKey }[] = [
@@ -64,6 +66,8 @@ function isRelativePreviewURL(value: string | undefined): value is string {
 export function ItemMetadataPage() {
   const { t, displayLocale } = useI18n();
   const navigate = useNavigate();
+  const { session, isManager } = useSession();
+  const [assignmentRevision, setAssignmentRevision] = useState(0);
   const params = useParams<{ mediaID?: string }>();
   const mediaID = params.mediaID ?? "";
   const [idInput, setIdInput] = useState(mediaID);
@@ -132,7 +136,7 @@ export function ItemMetadataPage() {
     return () => {
       cancelled = true;
     };
-  }, [mediaID, applyInfo, loadAll]);
+  }, [mediaID, applyInfo, loadAll, assignmentRevision]);
 
   const locked = (field: string): boolean =>
     info?.locks.some((lock) => lock.field === field && lock.locked) ?? false;
@@ -359,9 +363,19 @@ export function ItemMetadataPage() {
                   onChange={(e) => setDraftField("summary")(e.target.value)}
                 />
               ))}
-              <Button type="button" onClick={onSaveDetails} disabled={busy}>
-                {t("itemMetadataSave")}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" onClick={onSaveDetails} disabled={busy}>
+                  {t("itemMetadataSave")}
+                </Button>
+                {isManager && session?.profile === "adult" && info.mediaID === mediaID && (
+                  <AssignDialog
+                    key={mediaID}
+                    selection={[{ mediaID, title: info.title, year: info.year }]}
+                    disabled={busy}
+                    onChanged={() => setAssignmentRevision((revision) => revision + 1)}
+                  />
+                )}
+              </div>
             </section>
 
             <section className="space-y-3" aria-labelledby="item-metadata-fields">

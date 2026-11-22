@@ -17,6 +17,11 @@ import type { FieldLockInfo, MediaMetadataInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { ItemMetadataPage } from "./ItemMetadataPage";
 
+const access = vi.hoisted(() => ({ manager: false }));
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({ isManager: access.manager, session: { profile: "adult" } }),
+}));
+
 vi.mock("@/lib/graphql", () => ({
   searchResult: vi.fn(async () => ({
     mode: "keyword",
@@ -75,6 +80,7 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
+  access.manager = false;
   vi.clearAllMocks();
   vi.mocked(fetchMediaMetadata).mockResolvedValue(info());
   vi.mocked(fetchMediaFields).mockResolvedValue([
@@ -97,6 +103,15 @@ beforeEach(() => {
 });
 
 describe("ItemMetadataPage", () => {
+  it.each([true, false])("shows Assign only for managers (%s)", async (manager) => {
+    access.manager = manager;
+    renderAt("/manage/items/media-1");
+    await screen.findByLabelText("Title");
+    const action = screen.queryByRole("button", { name: "Assign…" });
+    if (manager) expect(action).toBeEnabled();
+    else expect(action).not.toBeInTheDocument();
+  });
+
   it("asks for a media ID when none is in the route", () => {
     renderAt("/manage/items");
     expect(screen.getByText("Enter a media ID to edit its details.")).toBeVisible();

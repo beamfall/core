@@ -1754,6 +1754,33 @@ export const FIX_MATCH_CURRENT_QUERY =
 export const FIX_MATCH_LOCKED_FIELDS_QUERY =
   "query FixMatchLockedFields($mediaID: String!) { fixMatchLockedFields(mediaID: $mediaID) { field value } }";
 
+/** The searchable sources for a visible item's library. */
+export async function fixMatchSources(mediaID: string): Promise<FixMatchSourceInfo[]> {
+  const data = await graphql<{ fixMatchSources: FixMatchSourceInfo[] | null }>(
+    FIX_MATCH_SOURCES_QUERY,
+    { mediaID },
+  );
+  return data.fixMatchSources ?? [];
+}
+
+/** The item's recorded match, if any. */
+export async function fixMatchCurrent(mediaID: string): Promise<FixMatchCurrentInfo | null> {
+  const data = await graphql<{ fixMatchCurrent: FixMatchCurrentInfo | null }>(
+    FIX_MATCH_CURRENT_QUERY,
+    { mediaID },
+  );
+  return data.fixMatchCurrent ?? null;
+}
+
+/** The manually locked values shown alongside a candidate's preview. */
+export async function fixMatchLockedFields(mediaID: string): Promise<FixMatchLockedFieldInfo[]> {
+  const data = await graphql<{ fixMatchLockedFields: FixMatchLockedFieldInfo[] | null }>(
+    FIX_MATCH_LOCKED_FIELDS_QUERY,
+    { mediaID },
+  );
+  return data.fixMatchLockedFields ?? [];
+}
+
 const FIX_MATCH_CANDIDATES_QUERY =
   "query FixMatchCandidates($mediaID: String!, $pluginID: String!, $scraperID: String!, $query: String!, $year: Int) { fixMatchCandidates(mediaID: $mediaID, pluginID: $pluginID, scraperID: $scraperID, query: $query, year: $year) { id title summary year pluginID scraperID confidence threshold scored reason } }";
 
