@@ -8950,6 +8950,11 @@
           }
         },
         {
+          "name": "audioForm",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "fields",
           "kind": "list",
           "nullable": true,
@@ -10020,6 +10025,11 @@
               ]
             }
           ]
+        },
+        {
+          "name": "subscriptionID",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "title",
