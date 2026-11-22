@@ -13,6 +13,12 @@ import { fetchViewerCollections, type LibraryCollections } from "../viewer/lib/c
 import { fetchMediaDetailFields } from "../viewer/lib/mediaDetail";
 import { fetchPreviewInfo } from "../viewer/lib/playback";
 import {
+  isScreensaverSearch,
+  saveLastSlideshowSource,
+  saveScreensaverEnabled,
+  screensaverEnabled,
+} from "./lib/screensaver";
+import {
   clampInterval,
   clockMinutes,
   DEFAULT_DARK_ROOM_END,
@@ -64,6 +70,9 @@ const CHROME_HIDE_MS = 3000;
 const SHAPE_LOOKAHEAD = 4;
 const NO_LIBRARIES: readonly LibrarySummary[] = [];
 const SESSION_RECHECK_MS = 60_000;
+/** A screensaver ignores pointer jitter: only a move this far (px), after this grace (ms), closes it. */
+const SCREENSAVER_MOVE_PX = 24;
+const SCREENSAVER_GRACE_MS = 800;
 /** Re-read a preview clip this long before its Stream Token expires. */
 const CLIP_EXPIRY_MARGIN_MS = 60_000;
 
@@ -148,6 +157,17 @@ function readNowPlaying(): string {
   return [title, artist].filter(Boolean).join(" · ");
 }
 
+/** Drops the click that follows a press, wherever it lands, for a moment. */
+function swallowNextClick() {
+  const swallow = (event: Event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    window.removeEventListener("click", swallow, true);
+  };
+  window.addEventListener("click", swallow, true);
+  window.setTimeout(() => window.removeEventListener("click", swallow, true), 600);
+}
+
 function landscapeScreen(): boolean {
   return typeof window === "undefined" || window.innerWidth > window.innerHeight;
 }
@@ -178,6 +198,8 @@ function Slideshow() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const source = useMemo(() => parseSlideshowSource(searchParams), [searchParams]);
+  // Screensaver mode (CORE-2981): opened by the idle hook; no chrome, and the first input closes it.
+  const screensaver = useMemo(() => isScreensaverSearch(searchParams), [searchParams]);
   const { manifest, refreshSession } = useSession();
   const libraries = manifest?.libraries ?? NO_LIBRARIES;
   const { mutes, failed: hiddenFailed, isHidden } = useHiddenItems();
@@ -193,9 +215,11 @@ function Slideshow() {
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [prefs, setPrefs] = useState<SlideshowPrefs>(loadPrefs);
-  const [sheetOpen, setSheetOpen] = useState(source === null);
+  const [sheetOpen, setSheetOpen] = useState(source === null && !screensaver);
   const [items, setItems] = useState<SourceItem[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  // Whether every page of the Source has arrived: an empty first page is not an empty Source.
+  const [loadDone, setLoadDone] = useState(false);
   const [broken, setBroken] = useState<ReadonlySet<string>>(() => new Set());
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -262,6 +286,7 @@ function Slideshow() {
     void reload;
     setItems(null);
     setLoadFailed(false);
+    setLoadDone(false);
     setShown(null);
     if (!sameSource(loadedSource.current, source)) {
       loadedSource.current = source;
@@ -270,9 +295,13 @@ function Slideshow() {
     }
     if (!source) return;
     const controller = new AbortController();
-    fetchSlideshowItems(source, (next) => setItems(next), controller.signal).catch(() => {
-      if (!controller.signal.aborted) setLoadFailed(true);
-    });
+    fetchSlideshowItems(source, (next) => setItems(next), controller.signal)
+      .then(() => {
+        if (!controller.signal.aborted) setLoadDone(true);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadFailed(true);
+      });
     return () => controller.abort();
   }, [source, reload]);
 
@@ -493,6 +522,45 @@ function Slideshow() {
     else navigate("/");
   }, [navigate]);
 
+  // Screensaver mode: the first key, click, touch, wheel or deliberate pointer
+  // move closes it and does nothing else. A press's click lands after the route
+  // changes, so it is swallowed too, or it would open whatever is underneath.
+  useEffect(() => {
+    if (!screensaver) return;
+    const openedAt = performance.now();
+    let origin: { x: number; y: number } | null = null;
+    let closed = false;
+    const dismiss = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (closed) return;
+      closed = true;
+      if (event.type === "pointerdown" || event.type === "touchstart") swallowNextClick();
+      close();
+    };
+    const move = (event: PointerEvent) => {
+      if (performance.now() - openedAt < SCREENSAVER_GRACE_MS) return;
+      if (!origin) {
+        origin = { x: event.clientX, y: event.clientY };
+        return;
+      }
+      if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) >= SCREENSAVER_MOVE_PX) {
+        dismiss(event);
+      }
+    };
+    const options = { capture: true, passive: false } as const;
+    for (const name of ["keydown", "pointerdown", "touchstart", "wheel", "click"]) {
+      window.addEventListener(name, dismiss, options);
+    }
+    window.addEventListener("pointermove", move, true);
+    return () => {
+      for (const name of ["keydown", "pointerdown", "touchstart", "wheel", "click"]) {
+        window.removeEventListener(name, dismiss, true);
+      }
+      window.removeEventListener("pointermove", move, true);
+    };
+  }, [screensaver, close]);
+
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => {});
@@ -526,6 +594,7 @@ function Slideshow() {
   // Keys resolve in the capture phase so the docked player's shortcuts skip them.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      if (screensaver) return;
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === "Escape") {
         event.preventDefault();
@@ -561,7 +630,18 @@ function Slideshow() {
     };
     window.addEventListener("keydown", keydown, true);
     return () => window.removeEventListener("keydown", keydown, true);
-  }, [sheetOpen, source, close, step, prefs, updatePrefs, toggleFullscreen, wake, dimmed]);
+  }, [
+    screensaver,
+    sheetOpen,
+    source,
+    close,
+    step,
+    prefs,
+    updatePrefs,
+    toggleFullscreen,
+    wake,
+    dimmed,
+  ]);
 
   const clock = useMemo(() => {
     try {
@@ -577,6 +657,20 @@ function Slideshow() {
   else if (loading && !current) message = t("slideshowLoading");
   else if (source && !current) message = t("slideshowEmpty");
 
+  // The screensaver has nothing to fall back to on the web: a missing, failed or
+  // empty Source closes it, and the idle count starts again.
+  const nothingToShow =
+    !source || loadFailed || (loadDone && !loading && !revalidating && !current);
+  useEffect(() => {
+    if (screensaver && nothingToShow) close();
+  }, [screensaver, nothingToShow, close]);
+
+  // The Source this device last played is what its screensaver plays: one that painted a slide.
+  const playing = !!source && !!shown;
+  useEffect(() => {
+    if (!screensaver && playing && source) saveLastSlideshowSource(source);
+  }, [screensaver, playing, source]);
+
   const date = current ? (captions[current.item.id] ?? "") : "";
   const place = current ? displayString(current.item.subtitle, locale) : "";
   const showOverlay = !!current && (prefs.clock || prefs.caption || prefs.nowPlaying);
@@ -587,9 +681,10 @@ function Slideshow() {
       className="bf-slideshow"
       role="region"
       aria-label={t("slideshowRegion")}
-      data-chrome={chrome || sheetOpen ? "shown" : "hidden"}
+      data-chrome={!screensaver && (chrome || sheetOpen) ? "shown" : "hidden"}
+      data-screensaver={screensaver ? "on" : undefined}
       data-dark-room={dimmed ? "on" : "off"}
-      onPointerMove={wake}
+      onPointerMove={screensaver ? undefined : wake}
     >
       <h1 className="sr-only">{t("slideshowRegion")}</h1>
       <div className="bf-slideshow-stage">
@@ -630,7 +725,7 @@ function Slideshow() {
           </div>
         </div>
       )}
-      <div className="bf-slideshow-bar" hidden={!chrome || sheetOpen}>
+      <div className="bf-slideshow-bar" hidden={screensaver || !chrome || sheetOpen}>
         <button
           type="button"
           className="bf-slideshow-button"
@@ -683,7 +778,7 @@ function Slideshow() {
           <Settings aria-hidden />
         </button>
       </div>
-      {sheetOpen && (
+      {sheetOpen && !screensaver && (
         <SetupSheet
           source={source}
           libraries={libraries}
@@ -856,6 +951,7 @@ function SetupSheet({
     source && source.kind !== "collection" ? source.libraryID : "",
   );
   const [collections, setCollections] = useState<LibraryCollections[]>([]);
+  const [idleOpens, setIdleOpens] = useState(screensaverEnabled);
 
   useEffect(() => {
     if (libraries.length === 0) return;
@@ -970,6 +1066,20 @@ function SetupSheet({
             </label>
           ))}
         </div>
+      </fieldset>
+      <fieldset>
+        <legend>{t("slideshowScreensaver")}</legend>
+        <label className="bf-slideshow-option">
+          <input
+            type="checkbox"
+            checked={idleOpens}
+            onChange={(e) => {
+              saveScreensaverEnabled(e.target.checked);
+              setIdleOpens(screensaverEnabled());
+            }}
+          />
+          {t("slideshowScreensaverIdle")}
+        </label>
       </fieldset>
       <fieldset>
         <legend>{t("slideshowMotion")}</legend>

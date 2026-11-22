@@ -7,6 +7,15 @@ import { fetchSourceItems } from "@/lib/graphql/viewer";
 import { I18nProvider } from "@/lib/i18n";
 import { fetchPreviewInfo } from "../viewer/lib/playback";
 import {
+  idleRoute,
+  lastSlideshowSource,
+  pageBusy,
+  saveLastSlideshowSource,
+  saveScreensaverEnabled,
+  screensaverEnabled,
+  screensaverPath,
+} from "./lib/screensaver";
+import {
   clampInterval,
   DEFAULT_INTERVAL_SECONDS,
   inDarkRoomWindow,
@@ -300,5 +309,81 @@ describe("SlideshowPage", () => {
     expect(screen.queryByTestId("slideshow-dim")).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "d" });
     expect(screen.getByTestId("slideshow-dim")).toBeInTheDocument();
+  });
+
+  it("closes the screensaver on the first key without stepping", async () => {
+    renderAt("/slideshow?source=favorites&screensaver=1");
+    await screen.findByRole("img", { name: "Title one" });
+    expect(screen.queryByRole("button", { name: "Next slide" })).toBeNull();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(await screen.findByText("home")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Title two" })).not.toBeInTheDocument();
+  });
+
+  it("closes the screensaver at once when its Source has no images", async () => {
+    vi.mocked(fetchSourceItems).mockResolvedValue([media("hidden")]);
+    renderAt("/slideshow?source=favorites&screensaver=1");
+    expect(await screen.findByText("home")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("records the Source it played, but not from the screensaver", async () => {
+    renderAt("/slideshow?source=on-this-day&library=lib&screensaver=1");
+    await screen.findByRole("img", { name: "Title one" });
+    expect(lastSlideshowSource()).toBeNull();
+    cleanup();
+    renderAt("/slideshow?source=favorites&library=lib");
+    // A Source counts as played once a slide has painted, not when it merely loads.
+    const slide = await screen.findByRole("img", { name: "Title one" });
+    expect(lastSlideshowSource()).toBeNull();
+    fireEvent.load(slide);
+    await waitFor(() =>
+      expect(lastSlideshowSource()).toEqual({ kind: "favorites", libraryID: "lib" }),
+    );
+  });
+
+  it("keeps the screensaver option per device from the setup sheet", async () => {
+    renderAt("/slideshow");
+    const option = await screen.findByRole("checkbox", { name: "Open this slideshow when idle" });
+    expect(option).not.toBeChecked();
+    fireEvent.click(option);
+    expect(screensaverEnabled()).toBe(true);
+  });
+});
+
+describe("screensaver helpers", () => {
+  afterEach(() => localStorage.clear());
+
+  it("counts idle only on browsing routes", () => {
+    expect(idleRoute("/")).toBe(true);
+    expect(idleRoute("/n/lib/all")).toBe(true);
+    for (const route of ["/watch/m1", "/view/m1", "/slideshow", "/profiles", "/remote"]) {
+      expect(idleRoute(route)).toBe(false);
+    }
+  });
+
+  it("treats an open dialog, a focused text field or unsaved text as busy, not a focused checkbox", () => {
+    document.body.innerHTML = '<input id="box" type="checkbox"><input id="text">';
+    (document.getElementById("box") as HTMLElement).focus();
+    expect(pageBusy(document)).toBe(false);
+    (document.getElementById("text") as HTMLElement).focus();
+    expect(pageBusy(document)).toBe(true);
+    (document.getElementById("box") as HTMLElement).focus();
+    (document.getElementById("text") as HTMLInputElement).value = "Unsaved name";
+    expect(pageBusy(document)).toBe(true);
+    document.body.innerHTML = '<div role="dialog"></div>';
+    expect(pageBusy(document)).toBe(true);
+    document.body.innerHTML = "";
+  });
+
+  it("stores the option and the last Source per device", () => {
+    expect(screensaverEnabled()).toBe(false);
+    saveScreensaverEnabled(true);
+    expect(screensaverEnabled()).toBe(true);
+    saveLastSlideshowSource({ kind: "collection", collectionID: "trip" });
+    expect(lastSlideshowSource()).toEqual({ kind: "collection", collectionID: "trip" });
+    expect(screensaverPath({ kind: "favorites", libraryID: "" })).toBe(
+      "/slideshow?source=favorites&screensaver=1",
+    );
   });
 });
