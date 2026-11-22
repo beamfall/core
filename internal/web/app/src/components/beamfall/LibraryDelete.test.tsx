@@ -5,6 +5,7 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteLibrary } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import { setManifestRefresher } from "@/lib/manifestRefresh";
 import { DeleteLibraryButton } from "./LibraryDelete";
 
 vi.mock("@/lib/graphql", () => ({ deleteLibrary: vi.fn() }));
@@ -35,11 +36,18 @@ function SectionWithLibrary() {
   );
 }
 
+let refreshed: ReturnType<typeof vi.fn<() => void>>;
+
 beforeEach(() => {
   vi.mocked(deleteLibrary).mockReset().mockResolvedValue(undefined);
+  refreshed = vi.fn();
+  setManifestRefresher(refreshed);
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  setManifestRefresher();
+});
 
 describe("DeleteLibraryButton", () => {
   it("names the library and says what deleting does before anything is sent", async () => {
@@ -89,6 +97,7 @@ describe("DeleteLibraryButton", () => {
 
     expect(deleteLibrary).not.toHaveBeenCalled();
     expect(onDeleted).not.toHaveBeenCalled();
+    expect(refreshed).not.toHaveBeenCalled();
   });
 
   it("disables both buttons while deleting, then closes and reloads", async () => {
@@ -108,6 +117,7 @@ describe("DeleteLibraryButton", () => {
     );
 
     expect(deleteLibrary).toHaveBeenCalledWith("lib-1");
+    expect(refreshed).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
     expect(dialog).toBeInTheDocument();
@@ -115,6 +125,7 @@ describe("DeleteLibraryButton", () => {
     finish();
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(onDeleted).toHaveBeenCalledTimes(1);
+    expect(refreshed).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the dialog open with the error and lets the owner retry", async () => {
@@ -131,11 +142,13 @@ describe("DeleteLibraryButton", () => {
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     expect(confirm()).toBeEnabled();
     expect(onDeleted).not.toHaveBeenCalled();
+    expect(refreshed).not.toHaveBeenCalled();
 
     await user.click(confirm());
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(deleteLibrary).toHaveBeenCalledTimes(2);
     expect(onDeleted).toHaveBeenCalledTimes(1);
+    expect(refreshed).toHaveBeenCalledTimes(1);
   });
 
   it("moves focus to the section heading once the deleted card is gone", async () => {

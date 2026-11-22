@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
 import {
   deleteLibrary,
@@ -16,6 +16,7 @@ import {
 } from "@/lib/graphql";
 import type { LibraryPurgeResult, TrashedLibraryInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { setManifestRefresher } from "@/lib/manifestRefresh";
 import { Libraries } from "./Libraries";
 
 class ResizeObserverStub {
@@ -76,9 +77,13 @@ describe("Console Libraries recently deleted", () => {
     entitiesRemoved: 1,
   };
 
+  let refreshed: ReturnType<typeof vi.fn<() => void>>;
+
   beforeEach(() => {
     vi.clearAllMocks();
     resetRescansForTest();
+    refreshed = vi.fn();
+    setManifestRefresher(refreshed);
     vi.mocked(fetchLibraries).mockResolvedValue([]);
     vi.mocked(fetchPlugins).mockResolvedValue([]);
     vi.mocked(fetchSkipDetectionEnabled).mockResolvedValue([]);
@@ -88,6 +93,8 @@ describe("Console Libraries recently deleted", () => {
     vi.mocked(restoreLibrary).mockResolvedValue(true);
     vi.mocked(purgeLibrary).mockResolvedValue(purged);
   });
+
+  afterEach(() => setManifestRefresher());
 
   function renderLibraries() {
     return render(
@@ -170,6 +177,7 @@ describe("Console Libraries recently deleted", () => {
     expect(screen.getByRole("button", { name: "Restore Films" })).toHaveTextContent("Restoring…");
     expect(screen.getByRole("button", { name: "Delete Films permanently" })).toBeDisabled();
     expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(refreshed).not.toHaveBeenCalled();
 
     vi.mocked(fetchLibraries).mockResolvedValue([films]);
     vi.mocked(fetchTrashedLibraries).mockResolvedValue([]);
@@ -182,6 +190,7 @@ describe("Console Libraries recently deleted", () => {
     await waitFor(() => expect(screen.queryByText("Recently deleted")).toBeNull());
     expect(fetchLibraries).toHaveBeenCalledTimes(2);
     expect(fetchTrashedLibraries).toHaveBeenCalledTimes(2);
+    expect(refreshed).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(notice).toHaveFocus());
   });
 
@@ -196,10 +205,12 @@ describe("Console Libraries recently deleted", () => {
     expect(alert).toHaveTextContent("Couldn't restore this library. Try again.");
     expect(alert).toHaveTextContent("admin session required");
     expect(fetchLibraries).toHaveBeenCalledTimes(1);
+    expect(refreshed).not.toHaveBeenCalled();
 
     // The same button retries.
     await user.click(screen.getByRole("button", { name: "Restore Films" }));
     await waitFor(() => expect(restoreLibrary).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(refreshed).toHaveBeenCalledTimes(1));
   });
 
   it("confirms a permanent delete with the library name and what it removes", async () => {
@@ -303,6 +314,8 @@ describe("Console Libraries recently deleted", () => {
       renderLibraries();
 
       const undo = await deleteFilms(user);
+      expect(refreshed).toHaveBeenCalledTimes(1);
+      refreshed.mockClear();
       // The deleted library is also waiting in the group below.
       expect(await screen.findByRole("button", { name: "Restore Films" })).toBeInTheDocument();
       expect(undo).toHaveAccessibleDescription(
@@ -315,6 +328,7 @@ describe("Console Libraries recently deleted", () => {
 
       expect(restoreLibrary).toHaveBeenCalledTimes(1);
       expect(restoreLibrary).toHaveBeenCalledWith("library-1");
+      expect(refreshed).toHaveBeenCalledTimes(1);
       expect(await screen.findByRole("heading", { name: "Films" })).toBeInTheDocument();
       const notice = await screen.findByText(
         "Restored “Films”. Beamfall is scanning its folders for changes.",
@@ -332,6 +346,7 @@ describe("Console Libraries recently deleted", () => {
       renderLibraries();
 
       const undo = await deleteFilms(user);
+      refreshed.mockClear();
       await user.click(undo);
 
       const failure = await screen.findByText("admin session required");
@@ -340,6 +355,7 @@ describe("Console Libraries recently deleted", () => {
       );
       expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
       expect(screen.queryByRole("heading", { name: "Films" })).toBeNull();
+      expect(refreshed).not.toHaveBeenCalled();
     });
   });
 });
