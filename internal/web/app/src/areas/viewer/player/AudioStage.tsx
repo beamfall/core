@@ -199,8 +199,7 @@ function Line({
     return (
       <div className="bf-audio-line" style={{ "--bf-line": beat } as CSSProperties}>
         <p className={className}>
-          <Link to={to} className="bf-audio-link">
-            {spoken && <span className="sr-only">{spoken}</span>}
+          <Link to={to} className="bf-audio-link" aria-label={spoken}>
             <span aria-hidden={spoken ? true : undefined}>{children}</span>
           </Link>
         </p>
