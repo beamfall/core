@@ -149,6 +149,7 @@ type Store interface {
 	VisibleMediaBatch(ctx context.Context, ids []store.MediaID, filter store.LibraryFilter) (map[store.MediaID]store.Media, error)
 	PrimaryMediaFile(ctx context.Context, id store.MediaID, filter store.LibraryFilter) (store.MediaFile, error)
 	MediaFilesForMedia(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFile, error)
+	MediaVersionPartCount(ctx context.Context, id store.MediaID, versionLabel string) (int, error)
 	MarkersForMedia(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.Marker, error)
 	MediaFileStreams(ctx context.Context, fingerprint string) ([]store.MediaFileStream, error)
 	Libraries(ctx context.Context, filter store.LibraryFilter) ([]store.Library, error)

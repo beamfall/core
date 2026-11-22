@@ -157,6 +157,13 @@ func (s *Service) selectedVersionParts(ctx context.Context, id store.MediaID, fi
 	if len(parts) == 0 {
 		return nil, errors.New("offline pack selected Version has no available file")
 	}
+	catalogued, err := s.store.MediaVersionPartCount(ctx, id, selected)
+	if err != nil {
+		return nil, err
+	}
+	if catalogued != len(parts) {
+		return nil, errors.New("offline pack selected Version has a missing Part")
+	}
 	slices.SortStableFunc(parts, func(a, b store.MediaFile) int { return a.PartOrdinal - b.PartOrdinal })
 	for i, part := range parts {
 		if part.PartOrdinal != i {
@@ -181,9 +188,6 @@ func (s *Service) chapterMarkers(ctx context.Context, id store.MediaID, filter s
 		chapters = append(chapters, ManifestMarker{
 			Title: marker.Title, StartSeconds: marker.StartSeconds, EndSeconds: marker.EndSeconds,
 		})
-	}
-	if len(chapters) > MaxManifestMarkers {
-		return nil, errors.New("offline pack Media exceeds chapter Marker bound")
 	}
 	return chapters, nil
 }
@@ -211,6 +215,7 @@ type packBuildSource struct {
 func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID, visible map[store.MediaID]store.Media, filter store.LibraryFilter, selectedVersions map[store.MediaID]string, quality string) ([]packBuildSource, error) {
 	sources := make([]packBuildSource, 0, len(ids))
 	var total uint64
+	markerTotal, markerTitleBytes := 0, 0
 	for _, id := range ids {
 		media, ok := visible[id]
 		if !ok {
@@ -240,6 +245,13 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 		markers, err := s.chapterMarkers(ctx, id, filter)
 		if err != nil {
 			return nil, err
+		}
+		markerTotal += len(markers)
+		for _, marker := range markers {
+			markerTitleBytes += len(marker.Title)
+		}
+		if markerTotal > MaxManifestMarkers || markerTitleBytes > MaxManifestMarkerTitleBytes {
+			return nil, errors.New("offline pack exceeds chapter Marker bound")
 		}
 		for _, file := range parts {
 			source := packBuildSource{

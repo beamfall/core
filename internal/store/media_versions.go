@@ -577,3 +577,23 @@ func (s *Store) MediaFilesInDirectory(ctx context.Context, libraryID LibraryID, 
 	}
 	return files, rows.Err()
 }
+
+// MediaVersionPartCount returns how many Parts a Media's Version has
+// catalogued, counting files marked missing, so a caller holding only the
+// available files can tell a complete Version from one with a missing Part.
+func (s *Store) MediaVersionPartCount(ctx context.Context, id MediaID, versionLabel string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return 0, err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	var parts int
+	err = plane.reader.QueryRowContext(ctx,
+		"SELECT COUNT(DISTINCT part_ordinal) FROM media_file WHERE media_id = ? AND version_label = ?", id, versionLabel,
+	).Scan(&parts)
+	return parts, err
+}
