@@ -2,6 +2,7 @@ package playback
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -475,5 +476,24 @@ func TestPrecomputeComposedRenditionRefusesUnsupportedRecipe(t *testing.T) {
 	graphics := ComposedPicture{GraphicsPath: graphicsPath}
 	if jobsOut, err := PrecomputeComposedRendition(ctx, st, audio.ID, staticComposer(graphics, true, nil), noLibass, cache, now); err != nil || len(jobsOut) != 1 {
 		t.Fatalf("graphics without libass: jobs %v err %v, want one", jobsOut, err)
+	}
+}
+
+// TestComposedGraphicsRecipeNamesThePinnedPresenter keeps the graphics recipe
+// digest in step with the embedded Oscillux presenter: a re-pin changes the
+// frames, so it must change the digest and re-render existing renditions.
+func TestComposedGraphicsRecipeNamesThePinnedPresenter(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "ffmpeg", "cdgrender", "pin.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pin struct {
+		Release string `json:"release"`
+	}
+	if err := json.Unmarshal(raw, &pin); err != nil {
+		t.Fatal(err)
+	}
+	if want := "oscillux-cdg-" + pin.Release; composedGraphicsRecipe != want {
+		t.Fatalf("composedGraphicsRecipe = %q, want %q for the pinned presenter", composedGraphicsRecipe, want)
 	}
 }
