@@ -156,20 +156,41 @@ func TestIdentifyHydratesShowDetails(t *testing.T) {
 }
 
 // TestOperatorOrdinalKeepsLinksFromSequenceSelectedSiblingMaps (CORE-3128): a
-// show map links the cast a sibling map selects by {sequence}. Correcting an
-// item to another season under an operator ordinal still writes the show's
-// own fields, but neither replaces nor clears the show's cast, since that
-// cast describes the operator's season, not the Entity being written.
+// show map links the cast a sibling map selects by {sequence}, through its
+// Path or its per-element LookupTemplate. Correcting an item to another season
+// under an operator ordinal still writes the show's own fields, but neither
+// replaces nor clears the show's cast, whether season 2 has a cast or none,
+// since that cast describes the operator's season, not the Entity written.
 func TestOperatorOrdinalKeepsLinksFromSequenceSelectedSiblingMaps(t *testing.T) {
-	ctx := context.Background()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/tv/42" {
-			http.NotFound(w, r)
-			return
+	for _, route := range []string{"path", "lookup template"} {
+		for _, secondCast := range []string{"Season Two Actor", ""} {
+			t.Run(fmt.Sprintf("%s/season 2 cast %q", route, secondCast), func(t *testing.T) {
+				operatorOrdinalKeepsSiblingLinks(t, route, secondCast)
+			})
 		}
-		fmt.Fprint(w, `{"name":"Harbor","overview":"Series overview.","seasons":[
-			{"season_number":1,"cast":[{"name":"Season One Actor"}]},
-			{"season_number":2,"cast":[]}]}`)
+	}
+}
+
+func operatorOrdinalKeepsSiblingLinks(t *testing.T, route, secondCast string) {
+	ctx := context.Background()
+	casts := map[string]string{"1": "Season One Actor", "2": secondCast}
+	castJSON := func(season string) string {
+		if casts[season] == "" {
+			return "[]"
+		}
+		return fmt.Sprintf(`[{"id":"p1","name":%q}]`, casts[season])
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/tv/42":
+			fmt.Fprintf(w, `{"name":"Harbor","overview":"Series overview.","cast_ids":[{"id":"p1"}],"seasons":[
+				{"season_number":1,"cast":%s},{"season_number":2,"cast":%s}]}`, castJSON("1"), castJSON("2"))
+		case strings.HasPrefix(r.URL.Path, "/tv/42/season/") && strings.HasSuffix(r.URL.Path, "/person/p1"):
+			season := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/tv/42/season/"), "/person/p1")
+			fmt.Fprintf(w, `{"name":%q}`, casts[season])
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer server.Close()
 	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
@@ -200,10 +221,15 @@ func TestOperatorOrdinalKeepsLinksFromSequenceSelectedSiblingMaps(t *testing.T) 
 	bundle.EntityKinds[0].Relations = []plugin.RelationSpec{{Name: "credit", ToKind: "person"}}
 	bundle.EntityKinds = append(bundle.EntityKinds,
 		plugin.EntityKind{Name: "person", Archetype: "person", Relations: []plugin.RelationSpec{{Name: "credited-in", ToKind: plugin.MediaKindName}}})
+	cast := plugin.EntityMap{Kind: "person", Relation: "credited-in", Path: "seasons[season_number={sequence}].cast", NamePath: "name"}
+	if route == "lookup template" {
+		cast = plugin.EntityMap{Kind: "person", Relation: "credited-in", Path: "cast_ids", NamePath: "name",
+			LookupTemplate: "/tv/42/season/{sequence}/person/{id}", LookupIDPath: "id"}
+	}
 	spec := &bundle.Scrapers[0]
 	spec.ItemLookupTemplate, spec.ItemFieldMap = "", nil
 	spec.EntityMaps = []plugin.EntityMap{
-		{Kind: "person", Relation: "credited-in", Path: "seasons[season_number={sequence}].cast", NamePath: "name"},
+		cast,
 		{Kind: "show", Container: true, FieldMap: map[string]string{"overview": "overview"}, ContainerRelations: map[string]string{"credit": "credited-in"}},
 	}
 	service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), bundle, st)
@@ -229,16 +255,16 @@ func TestOperatorOrdinalKeepsLinksFromSequenceSelectedSiblingMaps(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		var cast []string
+		var names []string
 		for _, group := range groups {
 			if group.Kind == "person" {
 				for _, item := range group.Items {
-					cast = append(cast, item.Title)
+					names = append(names, item.Title)
 				}
 			}
 		}
-		if strings.Join(cast, ",") != "Season One Actor" {
-			t.Fatalf("%s: show cast = %v, want [Season One Actor] kept", step, cast)
+		if strings.Join(names, ",") != "Season One Actor" {
+			t.Fatalf("%s: show cast = %v, want [Season One Actor] kept", step, names)
 		}
 	}
 	if err := service.Apply(ctx, media.ID, "demo", "tv", "42"); err != nil {

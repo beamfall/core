@@ -110,7 +110,7 @@ type EntityResult struct {
 	// that sequence's container, not necessarily the one holding the Media.
 	SequenceScoped bool
 	// SequenceScopedLinks lists, sorted, the LinkRelations whose sibling map
-	// Path names {sequence}: those links describe the item's sequence even
+	// Path or LookupTemplate names {sequence}: those links describe the item's sequence even
 	// when the container itself is not sequence-scoped, so they replace a
 	// container's links only when it is that sequence's container.
 	SequenceScopedLinks []string
@@ -887,7 +887,7 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 		}
 		if entityMap.Container {
 			if entity, ok := containerEntityResult(spec, entityMap, node, config); ok {
-				entity.SequenceScoped = strings.Contains(entityMap.Path, "{sequence}")
+				entity.SequenceScoped = mapNamesSequence(entityMap)
 				entity.SequenceScopedLinks = sequenceScopedLinks(spec, entityMap)
 				entities = append(entities, entity)
 			}
@@ -1050,16 +1050,22 @@ func containerEntityResult(spec plugin.ScraperSpec, entityMap plugin.EntityMap, 
 	return entity, entity.ArtworkURL != "" || len(entity.Fields) > 0 || len(entity.Artwork) > 0 || entity.Title != "" || len(entityMap.ContainerRelations) > 0
 }
 
+// mapNamesSequence reports whether an entity map selects what it hydrates by
+// the item's {sequence}: through its Path or its per-element LookupTemplate.
+func mapNamesSequence(entityMap plugin.EntityMap) bool {
+	return strings.Contains(entityMap.Path, "{sequence}") || strings.Contains(entityMap.LookupTemplate, "{sequence}")
+}
+
 // sequenceScopedLinks returns, sorted, the container relations of a container
 // map whose sibling map (any non-container map hydrating that relation) names
-// {sequence} in its Path, so its Entities, or their absence, belong to the
-// item's sequence.
+// {sequence} in its Path or per-element LookupTemplate, so its Entities, or
+// their absence, belong to the item's sequence.
 func sequenceScopedLinks(spec plugin.ScraperSpec, container plugin.EntityMap) []string {
 	var scoped []string
 	for _, relation := range slices.Sorted(maps.Keys(container.ContainerRelations)) {
 		sibling := container.ContainerRelations[relation]
 		for _, entityMap := range spec.EntityMaps {
-			if !entityMap.Container && entityMap.Relation == sibling && strings.Contains(entityMap.Path, "{sequence}") {
+			if !entityMap.Container && entityMap.Relation == sibling && mapNamesSequence(entityMap) {
 				scoped = append(scoped, relation)
 				break
 			}
