@@ -187,7 +187,7 @@ func (h *Handler) createOfflinePack(ctx context.Context, scope auth.Scope, req r
 	if _, err := h.store.EnqueueJob(ctx, store.Job{
 		Kind:      offlinepack.BuildJobKind,
 		Class:     store.JobClassInteractive,
-		DedupeKey: offlinePackBuildDedupeKey(scope.ProfileID, kind, build.TargetRef),
+		DedupeKey: offlinePackBuildDedupeKey(scope.ProfileID, kind, build.TargetRef) + manifestPartsKey(build.ManifestParts),
 		Payload:   payload,
 		CreatedAt: started,
 	}); err != nil {
@@ -237,7 +237,7 @@ func (h *Handler) queueOfflinePackBuild(ctx context.Context, scope auth.Scope, b
 	job, err := h.store.EnqueueJob(ctx, store.Job{
 		Kind:      offlinepack.BuildJobKind,
 		Class:     store.JobClassBackground,
-		DedupeKey: offlinePackQueueDedupeKey(scope, build.TargetKind, build.TargetRef, build.Quality, build.SelectedVersions),
+		DedupeKey: offlinePackQueueDedupeKey(scope, build.TargetKind, build.TargetRef, build.Quality, build.SelectedVersions, build.ManifestParts),
 		Payload:   payload,
 		CreatedAt: time.Now().UTC(),
 	})
@@ -317,7 +317,7 @@ func (h *Handler) retryOfflinePack(ctx context.Context, scope auth.Scope, req re
 			// The original build's key: an operator jobRetry keeps that key, so
 			// a retry from either side joins the other's active job instead of
 			// running a second builder for the same pack ID.
-			DedupeKey: offlinePackQueueDedupeKey(scope, job.TargetKind, job.TargetRef, job.Quality, job.SelectedVersions),
+			DedupeKey: offlinePackQueueDedupeKey(scope, job.TargetKind, job.TargetRef, job.Quality, job.SelectedVersions, job.ManifestParts),
 			Payload:   payload,
 			CreatedAt: time.Now().UTC(),
 		})
@@ -394,8 +394,18 @@ func selectedVersionsKey(selected map[store.MediaID]string) string {
 // offlinePackQueueDedupeKey keys a background build. The device is part of
 // the key: a pack is sealed to one device key, so another device of the same
 // Profile must not reuse this build.
-func offlinePackQueueDedupeKey(scope auth.Scope, kind, ref, quality string, selected map[store.MediaID]string) string {
-	return offlinePackBuildDedupeKey(scope.ProfileID, kind, ref) + "\x1f" + string(scope.DeviceID) + "\x1f" + quality + "\x1f" + selectedVersionsKey(selected)
+func offlinePackQueueDedupeKey(scope auth.Scope, kind, ref, quality string, selected map[store.MediaID]string, manifestParts bool) string {
+	return offlinePackBuildDedupeKey(scope.ProfileID, kind, ref) + "\x1f" + string(scope.DeviceID) + "\x1f" + quality + "\x1f" + selectedVersionsKey(selected) + manifestPartsKey(manifestParts)
+}
+
+// manifestPartsKey separates the dedupe keys of builds whose manifests differ
+// in item shape (ADR-0157 Amendment A), so a legacy client never joins a
+// parts-aware build. It is empty for a legacy build, which keeps that key.
+func manifestPartsKey(manifestParts bool) string {
+	if manifestParts {
+		return "\x1fparts"
+	}
+	return ""
 }
 
 func offlinePackBuildDedupeKey(profileID store.ProfileID, kind, ref string) string {

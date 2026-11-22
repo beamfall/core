@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/offlinepack"
 	"github.com/beamfall/core/internal/store"
@@ -603,5 +604,19 @@ func TestOfflinePackRetryWhileFailedJobIsFinishing(t *testing.T) {
 	runOfflinePackBuildJob(t, handler)
 	if state := offlinePackBuildState(t, handler, created.ID); state != "ready" {
 		t.Fatalf("build %q after the retried job = %q, want ready", created.ID, state)
+	}
+}
+
+// TestOfflinePackDedupeKeySeparatesManifestParts keeps a legacy client from
+// joining a parts-aware build whose manifest it would reject (ADR-0157
+// Amendment A), and keeps the legacy key unchanged.
+func TestOfflinePackDedupeKeySeparatesManifestParts(t *testing.T) {
+	scope := auth.Scope{ProfileID: "profile-default", DeviceID: "device-1"}
+	legacy := offlinePackQueueDedupeKey(scope, "media", "media-alpha", "low", nil, false)
+	if want := "profile-default\x1fmedia\x1fmedia-alpha\x1fdevice-1\x1flow\x1f"; legacy != want {
+		t.Fatalf("legacy dedupe key = %q, want %q", legacy, want)
+	}
+	if aware := offlinePackQueueDedupeKey(scope, "media", "media-alpha", "low", nil, true); aware == legacy {
+		t.Fatal("parts-aware build shares the legacy dedupe key")
 	}
 }
