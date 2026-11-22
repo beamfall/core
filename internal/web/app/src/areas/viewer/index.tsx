@@ -10,6 +10,7 @@ import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { SlideshowPage } from "../slideshow/SlideshowPage";
+import { useScreensaver } from "../slideshow/useScreensaver";
 import { HiddenUndoNotice, useEngagementEvents } from "./actions";
 import { SectionSkeleton } from "./components/HydratedSection";
 import { useScrollRestoration } from "./lib/useScrollRestoration";
@@ -151,6 +152,7 @@ export function ViewerArea() {
 function ViewerRoutes({ profileID }: { profileID: string }) {
   const remote = useRemoteReceiver(profileID);
   useEngagementEvents(remote.onEvent);
+  useScreensaver();
   // The player host sits above the routes so audio keeps playing, docked in a
   // mini player, while the listener browses (CORE-1633). Keyed like the routes:
   // a Profile switch ends playback.
