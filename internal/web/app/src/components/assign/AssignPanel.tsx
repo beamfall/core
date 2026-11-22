@@ -97,15 +97,18 @@ function diffKey(row: Pairing) {
 }
 
 // The lock and ordinal arguments Apply sends for a row. Preview sends the same
-// ones. clearLocks is always explicit, even when empty, so the server clears
-// the operator ordinal exactly when it is named and never falls back to
-// comparing candidates; toggling another field's lock cannot change that.
-function ordinalVars(row: Pick<Pairing, "locked" | "clearLocks" | "ordinal">) {
+// ones. Where the panel read the row's locks, clearLocks is always explicit,
+// even when empty, so the server clears the operator ordinal exactly when it
+// is named and toggling another field's lock cannot change that. The unmatched
+// flow reads no locks and sends none, so the server keeps the ordinal for the
+// same candidate and clears it for a different one.
+function ordinalVars(row: Pick<Pairing, "locked" | "clearLocks" | "ordinal"> | undefined) {
+  if (!row) return undefined;
   return { clearLocks: row.clearLocks, ...(keepsOrdinal(row) ? undefined : row.ordinal) };
 }
 
-function previewPairing(candidate: MatchTarget, row: Pairing) {
-  return fixMatchPreview({ mediaID: row.mediaID, ...candidate, ...ordinalVars(row) });
+function previewPairing(candidate: MatchTarget, row: Pairing | undefined, mediaID: string) {
+  return fixMatchPreview({ mediaID, ...candidate, ...ordinalVars(row) });
 }
 
 export function AssignPanel({
@@ -340,7 +343,7 @@ export function AssignPanel({
             clearLocks: hasOrdinalLock && !sameCandidate ? ["ordinal"] : [],
           };
           if (currentRequest()) {
-            const request = previewPairing(candidate, row);
+            const request = previewPairing(candidate, unmatched ? undefined : row, mediaID);
             row[diffKey(row)] = await (hasOrdinalLock ? request.catch(() => null) : request);
           }
           return row;
@@ -444,10 +447,7 @@ export function AssignPanel({
       setProgress(t("unmatchedMatching", { done: index + 1, total: writes.length }));
       const row = unmatched ? undefined : preview?.[index];
       try {
-        await fixMatch(
-          { mediaID, ...candidate, ...ordinalVars(row ?? { locked: [], clearLocks: [] }) },
-          epoch,
-        );
+        await fixMatch({ mediaID, ...candidate, ...ordinalVars(row) }, epoch);
         next.push({ mediaID });
         // Invalidate cached viewer documents as each write is confirmed, whether
         // or not the panel is still mounted (Back during a write unmounts it).
@@ -499,7 +499,7 @@ export function AssignPanel({
     };
     updateRow(needsDiff ? { clearLocks, [key]: "loading" } : { clearLocks });
     if (!needsDiff) return;
-    const diff = await previewPairing(candidate, next).catch(() => null);
+    const diff = await previewPairing(candidate, next, next.mediaID).catch(() => null);
     if (asked === selection.current && !epoch?.aborted && epoch === getIdentityEpochSignal()) {
       updateRow({ [key]: diff });
     }
