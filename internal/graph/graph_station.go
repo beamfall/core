@@ -37,10 +37,16 @@ const stationWindowSize = 50
 // stationSeedKinds is the closed set of seed kinds (ADR-0098 §Stations: Track,
 // Artist, Album, Genre, or Collection). Track is a Media id; Artist/Album/Genre
 // are Music Plugin Entity ids; Collection is a Collection id. The names are
-// generic shape labels, not domain types.
+// generic shape labels, not domain types. "sonic" (CORE-3074) is a Media id
+// whose Station is the Media that sound most like it, in similarity order.
 var stationSeedKinds = map[string]bool{
-	"track": true, "artist": true, "album": true, "genre": true, "collection": true,
+	"track": true, "artist": true, "album": true, "genre": true, "collection": true, "sonic": true,
 }
+
+// stationSonicPool is how many similar Media a sonic seed reads before the
+// hard filter: the store's whole window, so year and duration rules still
+// leave a full Station unless they reject most of the nearest 200.
+const stationSonicPool = store.MaxSimilarMediaLimit
 
 // stationSeed is the parsed seed for a generation request.
 type stationSeed struct {
@@ -114,7 +120,18 @@ func (h *Handler) generateStation(ctx context.Context, scope auth.Scope, seed st
 	//    hints bias the order. Tuning is RANKING-ONLY — it reorders the post-filter
 	//    set and can never admit an item rule.admits already rejected (the rejected
 	//    items are gone from `candidates` before tuning ever sees them).
-	rankStationCandidates(candidates, tuning, rankSeed)
+	if seed.kind == "sonic" {
+		// A sonic Station keeps similarity order (the seed first, then nearest
+		// first); tuning biases the neighbours but never displaces the seed,
+		// and there is no shuffle.
+		rest := candidates
+		if len(rest) > 0 && string(rest[0].ID) == seed.id {
+			rest = rest[1:]
+		}
+		biasStationCandidates(rest, tuning)
+	} else {
+		rankStationCandidates(candidates, tuning, rankSeed)
+	}
 	// 5. Rolling window.
 	if len(candidates) > stationWindowSize {
 		candidates = candidates[:stationWindowSize]
@@ -160,12 +177,13 @@ func (h *Handler) sealedFreeStationFilter(ctx context.Context, scope auth.Scope)
 	}
 	// AllLibraries is deliberately false: the Station only ever sees the explicit
 	// sealed-free music set, never the AllLibraries sentinel. Certification bounds
-	// from the caller's scope are preserved.
+	// and per-Media access grants from the caller's scope are preserved.
 	return store.LibraryFilter{
-		AllowedIDs:    allowed,
-		AllLibraries:  false,
-		Revealed:      scope.Revealed,
-		Certification: scope.Certification,
+		AllowedIDs:      allowed,
+		AllLibraries:    false,
+		Revealed:        scope.Revealed,
+		Certification:   scope.Certification,
+		GrantedMediaIDs: scope.GrantedMediaIDs,
 	}, nil
 }
 
@@ -193,6 +211,19 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 		for _, it := range items {
 			ids = append(ids, it.ID)
 		}
+	case "sonic":
+		media, err := h.store.Media(ctx, store.MediaID(seed.id), filter)
+		if err != nil {
+			return nil, clientError("unknown station seed")
+		}
+		ids = append(ids, media.ID)
+		similar, err := h.store.SimilarMedia(ctx, filter, store.SonicEmbeddingKind, []store.MediaID{media.ID}, stationSonicPool)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range similar {
+			ids = append(ids, r.MediaID)
+		}
 	case "collection":
 		// MUSIC-4's canonical ordered-membership read (ADR-0098 area 4): it returns
 		// the ordered static membership with Reveal/Sealed visibility already
@@ -208,7 +239,7 @@ func (h *Handler) collectStationCandidates(ctx context.Context, scope auth.Scope
 			ids = append(ids, m.MediaID)
 		}
 	default:
-		return nil, clientError("seedKind must be one of track, artist, album, genre, collection")
+		return nil, clientError("seedKind must be one of track, artist, album, genre, collection, sonic")
 	}
 	// One batch read resolves every candidate id to a full Media row through the
 	// sealed-free MUSIC filter. A CollectionMembers list may mix non-music Media
@@ -247,6 +278,14 @@ func rankStationCandidates(candidates []store.Media, tuning stationTuning, rankS
 			return bi > bj
 		}
 		return stationRankKey(candidates[i].ID, rankSeed) < stationRankKey(candidates[j].ID, rankSeed)
+	})
+}
+
+// biasStationCandidates applies only the tuning bias, keeping the given order
+// among equal scores. An empty tuning leaves the order untouched.
+func biasStationCandidates(candidates []store.Media, tuning stationTuning) {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return tuning.bias(candidates[i]) > tuning.bias(candidates[j])
 	})
 }
 
@@ -349,6 +388,8 @@ func stationItemExplanation(seed stationSeed) string {
 		return "from your genre seed"
 	case "collection":
 		return "from your collection seed"
+	case "sonic":
+		return "sounds like your seed"
 	}
 	return ""
 }
@@ -388,7 +429,7 @@ func parseStationSeed(req request) (stationSeed, error) {
 		return stationSeed{}, clientError("seedKind and seedID are required")
 	}
 	if !stationSeedKinds[kind] {
-		return stationSeed{}, clientError("seedKind must be one of track, artist, album, genre, collection")
+		return stationSeed{}, clientError("seedKind must be one of track, artist, album, genre, collection, sonic")
 	}
 	return stationSeed{kind: kind, id: id}, nil
 }

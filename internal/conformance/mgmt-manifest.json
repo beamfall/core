@@ -506,6 +506,10 @@
       "effect": "write"
     },
     {
+      "field": "setsonicanalysisenabled",
+      "effect": "write"
+    },
+    {
       "field": "settranscodeconfig",
       "effect": "write"
     },
@@ -515,6 +519,10 @@
     },
     {
       "field": "skipdetectionenabled",
+      "effect": "read"
+    },
+    {
+      "field": "sonicanalysisenabled",
       "effect": "read"
     },
     {

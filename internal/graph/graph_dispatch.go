@@ -564,6 +564,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"mediaforentity":                     newFieldHandler("mediaForEntity", "mediaForEntity", fieldRead, roleSession, 8),
 	"mediatracks":                        newFieldHandler("mediaTracks", "mediaTracks", fieldRead, roleSession, 9),
 	"relatedmedia":                       newFieldHandler("relatedMedia", "relatedMedia", fieldRead, roleSession, 9),
+	"similarmedia":                       newFieldHandler("similarMedia", "similarMedia", fieldRead, roleSession, 9),
 	"mediarelations":                     newFieldHandler("mediaRelations", "mediaRelations", fieldRead, roleSession, 10),
 	"mergeentities":                      newFieldHandler("mergeEntities", "mergeEntities", fieldMutation, roleSession|roleManager, 110),
 	"mergemedia":                         newFieldHandler("mergeMedia", "mergeMedia", fieldMutation, roleSession|roleManager, 110),
@@ -724,6 +725,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setwatchlisted":                     newFieldHandler("setWatchlisted", "setWatchlisted", fieldMutation, roleSession, 146),
 	"setupstate":                         newFieldHandler("setupState", "setupState", fieldRead, roleSession, 80),
 	"skipdetectionenabled":               newFieldHandler("skipDetectionEnabled", "skipDetectionEnabled", fieldRead, roleSession|roleAdmin, 78),
+	"sonicanalysisenabled":               newFieldHandler("sonicAnalysisEnabled", "sonicAnalysisEnabled", fieldRead, roleSession|roleAdmin, 78),
+	"setsonicanalysisenabled":            newFieldHandler("setSonicAnalysisEnabled", "setSonicAnalysisEnabled", fieldMutation, roleSession|roleAdmin, 78),
 	"smartcollections":                   newFieldHandler("smartCollections", "smartCollections", fieldRead, roleSession, 57),
 	"sourceitems":                        newFieldHandler("sourceItems", "sourceItems", fieldRead, roleSession, 17),
 	"libraryitems":                       newFieldHandler("libraryItems", "libraryItems", fieldRead, roleSession, 17),
@@ -957,6 +960,12 @@ func dispatchFieldBlock009(dispatch *fieldDispatchContext) response {
 	if fields["relatedmedia"] {
 		items, err := h.relatedMedia(ctx, scope, req)
 		if resp := resolveField(dispatch, "relatedmedia", items, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["similarmedia"] {
+		items, err := h.similarMedia(ctx, scope, req)
+		if resp := resolveField(dispatch, "similarmedia", items, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
@@ -2864,6 +2873,20 @@ func dispatchFieldBlock078(dispatch *fieldDispatchContext) response {
 			if resp := resolveField(dispatch, "setskipdetectionenabled", info, err); len(resp.Errors) > 0 {
 				return resp
 			}
+		}
+	}
+	// ── Sonic analysis per-Library toggle (CORE-3073, graph_sonic.go) ──
+	// Operator-only, Admin-Session gated like skip detection.
+	if fields["sonicanalysisenabled"] {
+		infos, err := h.sonicAnalysisEnabledRead(ctx, scope)
+		if resp := resolveField(dispatch, "sonicanalysisenabled", infos, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setsonicanalysisenabled"] {
+		info, err := h.setSonicAnalysisEnabled(ctx, scope, req)
+		if resp := resolveField(dispatch, "setsonicanalysisenabled", info, err); len(resp.Errors) > 0 {
+			return resp
 		}
 	}
 	return response{}

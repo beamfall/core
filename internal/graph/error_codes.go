@@ -282,6 +282,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"session has no active playback":                                                               ErrorCodeConflict,
 	"scan preview token was already used":                                                          ErrorCodeConflict,
 	"scan preview token has expired":                                                               ErrorCodeConflict,
+	"sonic analysis is not available on this server":                                               ErrorCodeConflict,
 	"scan preview is stale because the library changed":                                            ErrorCodeConflict,
 
 	"offline pack job did not produce a pack":    ErrorCodeInternal,

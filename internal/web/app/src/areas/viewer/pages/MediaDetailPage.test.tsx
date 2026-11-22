@@ -9,6 +9,7 @@ import {
   fetchMediaForEntity,
   fetchPrePlayQueue,
   fetchRelatedMedia,
+  fetchSimilarMedia,
   fetchSourceItems,
 } from "@/lib/graphql";
 import type { GenericMediaInfo, Section, SourceItem } from "@/lib/graphql/types";
@@ -53,6 +54,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   fetchMediaForEntity: vi.fn(),
   fetchPrePlayQueue: vi.fn(),
   fetchRelatedMedia: vi.fn(),
+  fetchSimilarMedia: vi.fn(),
   fetchSourceItems: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
   fetchItemState: vi.fn(async () => mocks.itemState),
@@ -163,6 +165,7 @@ beforeEach(() => {
   vi.mocked(fetchMediaForEntity).mockReset().mockResolvedValue([]);
   vi.mocked(fetchPrePlayQueue).mockReset().mockResolvedValue([]);
   vi.mocked(fetchRelatedMedia).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchSimilarMedia).mockReset().mockResolvedValue([]);
   vi.mocked(fetchSourceItems).mockReset().mockResolvedValue([]);
   vi.mocked(fetchEntity).mockReset().mockResolvedValue(null);
   // Off the home network by default: Watch together is not offered (CORE-1764).
@@ -1194,6 +1197,42 @@ describe("MediaDetailPage", () => {
     await waitFor(() => expect(fetchRelatedMedia).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("heading", { name: /More with/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Related" })).not.toBeInTheDocument();
+  });
+
+  it("ends audio Media with a Sonically similar row in server order (CORE-3075)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({ ...media, mediaClass: "audio" });
+    vi.mocked(fetchSimilarMedia).mockResolvedValue([
+      item("m1", "Server title"),
+      item("s2", "Nearest"),
+      item("s1", "Further"),
+    ]);
+    renderAt(["/media/m1"]);
+
+    const similar = await screen.findByRole("list", { name: "Sonically similar" });
+    const titles = within(similar)
+      .getAllByRole("listitem")
+      .map((li) => li.textContent);
+    expect(titles).toHaveLength(2);
+    expect(titles[0]).toContain("Nearest");
+    expect(titles[1]).toContain("Further");
+    expect(fetchSimilarMedia).toHaveBeenCalledWith("m1", 20, expect.anything());
+  });
+
+  it("hides Sonically similar without vectors and never asks for non-audio Media (CORE-3075)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({ ...media, mediaClass: "audio" });
+    renderAt(["/media/m1"]);
+    await screen.findByRole("heading", { name: "Server title" });
+    await waitFor(() => expect(fetchSimilarMedia).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("heading", { name: "Sonically similar" })).not.toBeInTheDocument();
+    cleanup();
+    clearViewerCache();
+
+    vi.mocked(fetchSimilarMedia).mockClear();
+    vi.mocked(fetchMedia).mockResolvedValue({ ...media, mediaClass: "video" });
+    renderAt(["/media/m1"]);
+    await screen.findByRole("heading", { name: "Server title" });
+    await waitFor(() => expect(fetchRelatedMedia).toHaveBeenCalled());
+    expect(fetchSimilarMedia).not.toHaveBeenCalled();
   });
 
   it("hides the closing rows when every read fails (CORE-2444)", async () => {

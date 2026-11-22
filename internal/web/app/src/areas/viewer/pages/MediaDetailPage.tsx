@@ -658,7 +658,12 @@ export function MediaDetailPage() {
         )}
 
         {media && (
-          <MediaMoreRows mediaID={mediaId} credits={media.credits} exclude={context.items} />
+          <MediaMoreRows
+            mediaID={mediaId}
+            credits={media.credits}
+            mediaClass={media.mediaClass}
+            exclude={context.items}
+          />
         )}
       </article>
     </AppShell>

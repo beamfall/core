@@ -428,6 +428,8 @@ type Options struct {
 	FeedSearcher                 FeedSearcher
 	PrePlayPolicy                PrePlayPolicy
 	AssetSweep                   func(context.Context)
+	SonicAnalysisAvailable       func() bool
+	SonicAnalysisSweep           func(context.Context)
 	SubscriptionSecrets          SubscriptionSecretStore
 	ScraperCredentialStore       ScraperCredentialStore
 	ScraperCredentialInvalidator ScraperCredentialInvalidator
@@ -537,6 +539,11 @@ type Handler struct {
 	// (ADR-0033 §4: thumbnails are generated when a Marker is created or its
 	// timestamp edited). Nil (the default) disables.
 	assetSweep func(context.Context)
+	// sonicAnalysisAvailable and sonicAnalysisSweep back the per-Library
+	// sonic-analysis toggle (graph_sonic.go). Nil reports analysis
+	// unavailable and refuses turning the toggle on.
+	sonicAnalysisAvailable func() bool
+	sonicAnalysisSweep     func(context.Context)
 	// remoteAccess reports direct-HTTPS/ACME + relay carrier status to the
 	// manager Console (ADR-0012/0018/0025). Nil (the default) reports both
 	// paths disabled — honest for a LAN-only server.
@@ -876,6 +883,8 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.feedSearcher = o.FeedSearcher
 	h.prePlayPolicy = o.PrePlayPolicy
 	h.assetSweep = o.AssetSweep
+	h.sonicAnalysisAvailable = o.SonicAnalysisAvailable
+	h.sonicAnalysisSweep = o.SonicAnalysisSweep
 	h.subscriptionSecrets = o.SubscriptionSecrets
 	h.scraperCredentials = o.ScraperCredentialStore
 	h.scraperCredentialInvalidator = o.ScraperCredentialInvalidator
@@ -6229,6 +6238,7 @@ var queryFields = map[string]bool{
 	"mediafiles":             true,
 	"mediatracks":            true,
 	"relatedmedia":           true,
+	"similarmedia":           true, // CORE-3074: sonically similar Media
 	"mediarelations":         true,
 	"mediafields":            true,
 	"artworkcandidates":      true,
@@ -6312,6 +6322,8 @@ var queryFields = map[string]bool{
 	// ENR-7 (ADR-0048 Decision 3/6): operator read of the per-Library
 	// skip-detection toggle (resolver in graph_skipdetect.go).
 	"skipdetectionenabled": true,
+	// CORE-3073: operator read of the per-Library sonic-analysis toggle.
+	"sonicanalysisenabled": true,
 	"notifications":        true,
 	"extensionrequest":     true,
 	// ADR-0113 §2.2: per-title access request reads.
@@ -6588,6 +6600,8 @@ var mutationFields = map[string]bool{
 	// ENR-7 (ADR-0048 Decision 3/6): operator write of the per-Library
 	// skip-detection toggle (resolver in graph_skipdetect.go).
 	"setskipdetectionenabled": true,
+	// CORE-3073: operator write of the per-Library sonic-analysis toggle.
+	"setsonicanalysisenabled": true,
 	"setpreplayclips":         true,
 	// Encrypted-Library key model: provision the DEK +
 	// three wraps (Recovery Key once), and the Sealed/Unsealed lifecycle.
@@ -6807,6 +6821,9 @@ var adminFields = map[string]bool{
 	// 3/6 — Admin Session, the same tier as setLibraryAIIndexing).
 	"skipdetectionenabled":    true,
 	"setskipdetectionenabled": true,
+	// Sonic analysis per-Library toggle (CORE-3073), same tier.
+	"sonicanalysisenabled":    true,
+	"setsonicanalysisenabled": true,
 	"preplayclips":            true, // CORE-1701: the Owner's pre-play clip list
 	"setpreplayclips":         true,
 }

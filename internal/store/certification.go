@@ -17,6 +17,18 @@ import (
 // is marked Locked=true. Entity items never carry a certification field and are
 // never marked locked. Items in grantedIDs are skipped (ACCESS-3, ADR-0113
 // §2.3): an active AccessGrant bypasses the ceiling for that item.
+// AnnotateLocked marks the items a locked certification ceiling blocks, for
+// reads that resolve Media outside SourceItems (which annotates on its own).
+// Items the filter grants are never marked.
+func (s *Store) AnnotateLocked(ctx context.Context, filter LibraryFilter, items []SourceItem) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	return s.annotateLockedLocked(ctx, filter.Certification, items, filter.GrantedMediaIDs)
+}
+
 func (s *Store) annotateLockedLocked(ctx context.Context, constraints []CertificationConstraint, items []SourceItem, grantedIDs []MediaID) error {
 	return annotateLocked(ctx, s.mediaReadersLocked(), constraints, items, grantedIDs)
 }

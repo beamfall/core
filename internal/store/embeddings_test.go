@@ -201,15 +201,22 @@ func TestSemanticRevealContract(t *testing.T) {
 	}
 
 	// Unrevealed caller: restricted library must be invisible.
-	unrevealed := LibraryFilter{Revealed: false}
+	// AllLibraries is required: a filter naming no Library sees none, which
+	// would pass this check vacuously.
+	unrevealed := LibraryFilter{AllLibraries: true}
 	results, err := st.SemanticSearch(ctx, unrevealed, kind, vec, 50)
 	if err != nil {
 		t.Fatalf("SemanticSearch unrevealed: %v", err)
 	}
+	var unrevealedSawAlpha bool
 	for _, r := range results {
 		if r.MediaID == "media-archive" {
 			t.Fatalf("SemanticSearch leaked restricted media-archive to unrevealed caller (score=%v)", r.Score)
 		}
+		unrevealedSawAlpha = unrevealedSawAlpha || r.MediaID == "media-alpha"
+	}
+	if !unrevealedSawAlpha {
+		t.Fatal("unrevealed SemanticSearch did not list media-alpha, so the leak check proved nothing")
 	}
 
 	// Revealed caller: both items should be visible.

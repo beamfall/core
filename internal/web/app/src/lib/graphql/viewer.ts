@@ -274,7 +274,7 @@ export async function fetchMediaForEntity(
 }
 
 const RELATED_MEDIA_QUERY =
-  "query RelatedMedia($mediaID: String!, $limit: Int) { relatedMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query RelatedMedia($mediaID: String!, $limit: Int) { relatedMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification locked audienceScore audienceScoreVotes byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /**
  * RelatedMedia — Media sharing a Media item's credits, ranked and bounded on the
@@ -291,6 +291,27 @@ export async function fetchRelatedMedia(
     signal,
   );
   return data.relatedMedia ?? [];
+}
+
+const SIMILAR_MEDIA_QUERY =
+  "query SimilarMedia($mediaID: String!, $limit: Int) { similarMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification locked audienceScore audienceScoreVotes byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+
+/**
+ * SimilarMedia — Media whose locally computed sonic features are nearest a
+ * Media item's, best first, with the same Mute and visibility rules as browse
+ * (CORE-3075). Empty when the item or its Library was never analysed.
+ */
+export async function fetchSimilarMedia(
+  mediaID: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<SourceItem[]> {
+  const data = await graphql<{ similarMedia: SourceItem[] | null }>(
+    SIMILAR_MEDIA_QUERY,
+    { mediaID, limit },
+    signal,
+  );
+  return data.similarMedia ?? [];
 }
 
 // --- Search ---------------------------------------------------------------
