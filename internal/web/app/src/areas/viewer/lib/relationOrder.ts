@@ -34,10 +34,59 @@ export function creditRoles(value: string): string[] {
   return roles;
 }
 
-/** A sequence for display: a number in the locale's form ("4,5" in French), else as stored. */
+/** A plain decimal sequence ("4", "4.5"); anything else ("IV", "1e3", "4a") shows as stored. */
+const DECIMAL_SEQUENCE = /^\d+(?:\.(\d{1,20}))?$/;
+
+/**
+ * A sequence for display: a decimal in the locale's form with every stored
+ * fraction digit ("4,5" in French, "4.25" never rounded), else as stored.
+ */
 export function sequenceLabel(sequence: string, locale: string): string {
-  const number = Number(sequence);
-  return sequence !== "" && Number.isFinite(number) ? number.toLocaleString(locale) : sequence;
+  const match = DECIMAL_SEQUENCE.exec(sequence);
+  if (!match) return sequence;
+  const digits = match[1]?.length ?? 0;
+  return Number(sequence).toLocaleString(locale, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+    useGrouping: false,
+  });
+}
+
+/** A Media's place in a container its credit sequences it in. */
+export interface SequencePosition {
+  /** The container Entity. */
+  id: string;
+  title: string;
+  /** The relation's sequence attribute, as stored ("4.5"). */
+  sequence: string;
+}
+
+/**
+ * The container an audio Media's credit places in a sequence, from the
+ * relation's sequence attribute: the first such credit, or null.
+ */
+export function sequencePosition(
+  media: { mediaClass?: string; credits?: readonly MediaCredit[] } | null | undefined,
+): SequencePosition | null {
+  if (media?.mediaClass !== "audio") return null;
+  for (const credit of media.credits ?? []) {
+    if (credit.archetype !== "container") continue;
+    const sequence = creditAttribute([credit], credit.entityID, SEQUENCE_ATTRIBUTE);
+    if (sequence) return { id: credit.entityID, title: credit.title, sequence };
+  }
+  return null;
+}
+
+/**
+ * The item after this one in the sequencing container, from a container
+ * context whose nearest container is that one; null otherwise, so another
+ * container's order is never offered as the next in sequence.
+ */
+export function nextInSequence(
+  position: SequencePosition | null,
+  context: { container: { id: string } | null; next: SourceItem | null },
+): SourceItem | null {
+  return position && context.container?.id === position.id ? context.next : null;
 }
 
 /** Roles in their display order; any other role follows in the order first seen. */

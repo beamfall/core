@@ -48,12 +48,7 @@ import {
   resumeProgress,
 } from "../lib/mediaDetail";
 import { castHasDetail, creditsWithJob } from "../lib/people";
-import {
-  creditAttribute,
-  SEQUENCE_ATTRIBUTE,
-  secondsLeft,
-  sequenceLabel,
-} from "../lib/relationOrder";
+import { nextInSequence, secondsLeft, sequenceLabel, sequencePosition } from "../lib/relationOrder";
 import { streamFacts } from "../lib/streamFacts";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
@@ -213,7 +208,7 @@ export function MediaDetailPage() {
 
   // A book in a relation-sequenced series (CORE-3014): the next one is offered,
   // never queued, so finishing it never starts another (ADR-0055 §2.4).
-  const series = seriesPosition(media);
+  const series = sequencePosition(media);
   // The Profile's watched state as the item actions read and change it, so
   // Mark played offers Next in series at once (and a direct link knows it).
   const [watched, setWatched] = useState<{ id: string; watched: boolean } | null>(null);
@@ -356,7 +351,7 @@ export function MediaDetailPage() {
   const reserving = !media && status === "loading";
   const progressText = progress ? t("mediaDetailProgress", { percent: progress.percent }) : "";
   // A sequenced book offers the next one only once it is finished.
-  const next = series ? (finished ? context.next : null) : context.next;
+  const next = series ? (finished ? nextInSequence(series, context) : null) : context.next;
   // The grouping is linked above; the nearest container is in the position line.
   const positioned = ordered?.container.id ?? series?.id;
   const parents = positioned
@@ -652,19 +647,6 @@ interface OrderedPosition {
  * and index, each from plugin display names. Without a kind name or sequence
  * the container shows its title; without a class label the index stands alone.
  */
-/** The series a book's credit sequences it in, from the relation's sequence attribute. */
-function seriesPosition(
-  media: GenericMediaInfo | undefined,
-): { id: string; title: string; sequence: string } | null {
-  if (media?.mediaClass !== "audio") return null;
-  for (const credit of media.credits ?? []) {
-    if (credit.archetype !== "container") continue;
-    const sequence = creditAttribute([credit], credit.entityID, SEQUENCE_ATTRIBUTE);
-    if (sequence) return { id: credit.entityID, title: credit.title, sequence };
-  }
-  return null;
-}
-
 function orderedPosition(
   media: GenericMediaInfo | undefined,
   container: ContainerLink | null,

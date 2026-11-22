@@ -64,6 +64,7 @@ import { readWatchPartyIntent } from "../lib/watchTogether";
 import { AudioStage } from "../player/AudioStage";
 import { KaraokeControls } from "../player/KaraokeControls";
 import { MiniPlayer } from "../player/MiniPlayer";
+import { NextInSequenceCard } from "../player/NextInSequenceCard";
 import { type HostedPlayerProps, usePlayerHost, type WatchEntry } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { PrePlayStage } from "../player/PrePlayStage";
@@ -77,6 +78,7 @@ import { decodableStream, handBack, useGaplessAudio } from "../player/useGapless
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
+import { useSequenceFinish } from "../player/useSequenceFinish";
 import { useStillWatching } from "../player/useStillWatching";
 import { useUpNext } from "../player/useUpNext";
 import { useWatchParty } from "../player/useWatchParty";
@@ -745,9 +747,22 @@ function FeaturePlayer({
     video.addEventListener("ended", advance);
     return () => video.removeEventListener("ended", advance);
   }, [isAudio, playing, partyLeads, serverQueueRun, runQueueAction, playNext, videoRef]);
+  // A sequenced item that ends with nothing to advance to offers the next one
+  // in its sequence, as a choice only (CORE-3013, ADR-0055 §2.4).
+  const sequenceNext = useSequenceFinish({
+    video: videoNode,
+    media,
+    mediaID: mediaId || "",
+    enabled: isAudio && !docked && !serverQueueRun && !partyLeads && !playNext,
+  });
+  const [dismissedFinish, setDismissedFinish] = useState<string | null>(null);
+  const finishKey = sequenceNext ? `${mediaId}\n${sequenceNext.item.id}` : "";
+  // Playing again clears a dismissal, so the next end offers it again.
+  if (!sequenceNext && dismissedFinish !== null) setDismissedFinish(null);
+  const showSequenceNext = !!sequenceNext && dismissedFinish !== finishKey;
   // The card's appearance reveals chrome once; the card itself stays visible
   // and clickable regardless of auto-hide (player-deferred.css).
-  const upNextVisible = upNext.visible || stillWatching.prompting;
+  const upNextVisible = upNext.visible || stillWatching.prompting || showSequenceNext;
   useEffect(() => {
     if (upNextVisible) reveal();
   }, [upNextVisible, reveal]);
@@ -1169,6 +1184,13 @@ function FeaturePlayer({
                 countdown={upNext.countdown}
                 onPlay={upNext.advance}
                 onDismiss={upNext.dismiss}
+              />
+            )}
+            {playing && sequenceNext && showSequenceNext && (
+              <NextInSequenceCard
+                next={sequenceNext}
+                identity={identity}
+                onDismiss={() => setDismissedFinish(finishKey)}
               />
             )}
             {playing && stillWatching.prompting && (

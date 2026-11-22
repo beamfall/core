@@ -3,9 +3,11 @@ import type { MediaCredit, SourceItem } from "@/lib/graphql/types";
 import {
   creditAttribute,
   creditRoles,
+  nextInSequence,
   roleGroups,
   secondsLeft,
   sequenceLabel,
+  sequencePosition,
 } from "./relationOrder";
 
 const item = (id: string, over: Partial<SourceItem> = {}): SourceItem => ({
@@ -46,6 +48,17 @@ describe("sequenceLabel", () => {
     expect(sequenceLabel("2", "en")).toBe("2");
     expect(sequenceLabel("IV", "en")).toBe("IV");
   });
+
+  it("keeps every stored fraction digit and shows non-decimal sequences as stored", () => {
+    expect(sequenceLabel("4.25", "en")).toBe("4.25");
+    expect(sequenceLabel("4.125", "de")).toBe("4,125");
+    expect(sequenceLabel("4.5555", "en")).toBe("4.5555");
+    expect(sequenceLabel("1000", "en")).toBe("1000");
+    expect(sequenceLabel("1e3", "en")).toBe("1e3");
+    expect(sequenceLabel("0x10", "en")).toBe("0x10");
+    expect(sequenceLabel("4a", "en")).toBe("4a");
+    expect(sequenceLabel("", "en")).toBe("");
+  });
 });
 
 describe("roleGroups", () => {
@@ -81,5 +94,28 @@ describe("secondsLeft", () => {
   it("never goes negative", () => {
     expect(secondsLeft({ positionSeconds: 600, durationSeconds: 3600 })).toBe(3000);
     expect(secondsLeft({ positionSeconds: 4000, durationSeconds: 3600 })).toBe(0);
+  });
+});
+
+describe("sequencePosition and nextInSequence", () => {
+  const sequenced = { ...credit("s1", { sequence: "4.5" }), archetype: "container" };
+  it("reads the sequencing container of an audio Media only", () => {
+    expect(sequencePosition({ mediaClass: "audio", credits: [sequenced] })).toEqual({
+      id: "s1",
+      title: "s1",
+      sequence: "4.5",
+    });
+    expect(sequencePosition({ mediaClass: "video", credits: [sequenced] })).toBeNull();
+    expect(
+      sequencePosition({ mediaClass: "audio", credits: [{ ...sequenced, archetype: "person" }] }),
+    ).toBeNull();
+  });
+
+  it("offers the next item only from the sequencing container's own order", () => {
+    const position = { id: "s1", title: "s1", sequence: "4" };
+    const next = item("b5");
+    expect(nextInSequence(position, { container: { id: "s1" }, next })).toBe(next);
+    expect(nextInSequence(position, { container: { id: "other" }, next })).toBeNull();
+    expect(nextInSequence(null, { container: { id: "s1" }, next })).toBeNull();
   });
 });
