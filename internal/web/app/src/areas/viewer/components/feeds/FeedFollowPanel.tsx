@@ -110,6 +110,7 @@ export function FeedFollowPanel({
         <Input
           id={`${id}-query`}
           type="search"
+          data-unsaved-until-submit
           className="max-w-xl flex-1"
           placeholder={t("feedsSearchLabel")}
           value={input}

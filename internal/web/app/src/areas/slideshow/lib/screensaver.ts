@@ -71,11 +71,12 @@ export function idleRoute(pathname: string): boolean {
 // a controlled field's defaultValue equal to its value, so value against
 // defaultValue cannot tell unsaved text on its own. A submit does not clear the
 // mark: the save can fail and leave the text in place, so the text counts until
-// the page empties the field or unmounts it. A search field outside a form
-// filters as it is typed and holds no unsaved work; one inside a form waits
-// for its submit, which runs the search, so the submit clears it.
+// the page empties the field or unmounts it. Search fields filter as they are
+// typed and hold no unsaved work, unless one marks itself with
+// data-unsaved-until-submit: it waits for its form's submit, which clears it.
 const typed = new WeakSet<Element>();
 const SEARCH_FIELDS = "input[type='search'], [role='searchbox']";
+const UNTIL_SUBMIT = "data-unsaved-until-submit";
 
 /** Follows typing in doc's text fields for pageBusy; returns the cleanup. */
 export function trackTyping(doc: Document): () => void {
@@ -84,7 +85,7 @@ export function trackTyping(doc: Document): () => void {
     if (
       target instanceof Element &&
       target.matches(TEXT_FIELDS) &&
-      (!target.matches(SEARCH_FIELDS) || target.closest("form"))
+      (!target.matches(SEARCH_FIELDS) || target.hasAttribute(UNTIL_SUBMIT))
     ) {
       typed.add(target);
     }
@@ -97,7 +98,7 @@ export function trackTyping(doc: Document): () => void {
   const onSubmit = (event: Event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
-    for (const field of form.querySelectorAll(SEARCH_FIELDS)) typed.delete(field);
+    for (const field of form.querySelectorAll(`[${UNTIL_SUBMIT}]`)) typed.delete(field);
   };
   doc.addEventListener("input", onInput, true);
   doc.addEventListener("reset", onReset, true);

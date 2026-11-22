@@ -470,10 +470,11 @@ describe("screensaver helpers", () => {
     document.body.innerHTML = "";
   });
 
-  it("treats a search field in a form as unsaved until its form submits", () => {
+  it("treats a marked search field as unsaved until its form submits", () => {
     const untrack = trackTyping(document);
     document.body.innerHTML =
-      '<form><input id="feed" type="search"><button id="go">Search</button></form>';
+      '<form><input id="feed" type="search" data-unsaved-until-submit><button id="go">Search</button></form>' +
+      '<form><input id="q" type="search"></form>';
     const feed = document.getElementById("feed") as HTMLInputElement;
     feed.value = "https://example.test/feed.xml";
     feed.defaultValue = feed.value;
@@ -481,6 +482,12 @@ describe("screensaver helpers", () => {
     (document.getElementById("go") as HTMLElement).focus();
     expect(pageBusy(document)).toBe(true);
     feed.form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(pageBusy(document)).toBe(false);
+    // A search page's field filters as it is typed, form or not.
+    const query = document.getElementById("q") as HTMLInputElement;
+    query.value = "beach";
+    query.defaultValue = "beach";
+    query.dispatchEvent(new Event("input", { bubbles: true }));
     expect(pageBusy(document)).toBe(false);
     untrack();
     document.body.innerHTML = "";
