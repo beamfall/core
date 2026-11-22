@@ -198,6 +198,8 @@ var originalScopedFields = []string{
 	"myengagement",
 	"mydatasummary",
 	"myengagementlog",
+	"myplayhistory", // CORE-1703: the caller's own plays
+	"myplaystats",   // CORE-1703: the caller's own play stats
 	"mysessions",
 	"offlinepacks",            // MUSIC-6 (ADR-0098 area 6): own Offline Packs + fetch tokens
 	"createofflinepack",       // MUSIC-6 (ADR-0098 area 6): build a pack from an opaque target

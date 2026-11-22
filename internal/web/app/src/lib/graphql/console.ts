@@ -13,6 +13,13 @@ import {
   noteProfileRefusal,
   profileHeaders,
 } from "@/lib/api";
+import {
+  normalizePlayStats,
+  PLAY_FIELDS,
+  PLAY_STATS_FIELDS,
+  playVariables,
+  utcOffsetMinutes,
+} from "./plays";
 import type {
   AccessScheduleInfo,
   AccessWindowInput,
@@ -39,6 +46,7 @@ import type {
   PlaybackCacheOpResult,
   PlayHistoryFilter,
   PlayInfo,
+  PlayStatsFilter,
   PlayStatsInfo,
   PrePlayClipsInfo,
   ProfileAdminInfo,
@@ -442,43 +450,35 @@ export async function fetchHostMetrics(signal?: AbortSignal): Promise<HostMetric
   return { intervalSeconds: info?.intervalSeconds ?? 0, samples: info?.samples ?? [] };
 }
 
-const PLAY_HISTORY_QUERY =
-  "query PlayHistory($profileID: String, $libraryID: String, $since: String, $until: String, $limit: Int) { playHistory(profileID: $profileID, libraryID: $libraryID, since: $since, until: $until, limit: $limit) { profileID profileName mediaID title libraryID libraryTitle startedAt watchedSeconds finished } }";
+const PLAY_HISTORY_QUERY = `query PlayHistory($profileID: String, $libraryID: String, $mediaID: String, $deviceID: String, $playMethod: String, $since: String, $until: String, $limit: Int) { playHistory(profileID: $profileID, libraryID: $libraryID, mediaID: $mediaID, deviceID: $deviceID, playMethod: $playMethod, since: $since, until: $until, limit: $limit) { ${PLAY_FIELDS} } }`;
 
 /** PlayHistory — past plays, newest first, optionally filtered. */
 export async function fetchPlayHistory(
   filter: PlayHistoryFilter = {},
   signal?: AbortSignal,
 ): Promise<PlayInfo[]> {
-  const variables: Record<string, unknown> = {};
-  if (filter.profileID) variables.profileID = filter.profileID;
-  if (filter.libraryID) variables.libraryID = filter.libraryID;
-  if (filter.since) variables.since = filter.since;
-  if (filter.until) variables.until = filter.until;
-  if (filter.limit) variables.limit = filter.limit;
   const data = await graphql<{ playHistory: PlayInfo[] | null }>(
     PLAY_HISTORY_QUERY,
-    variables,
+    playVariables(filter),
     signal,
   );
   return data.playHistory ?? [];
 }
 
-const PLAY_STATS_QUERY =
-  "query PlayStats($windowDays: Int!) { playStats(windowDays: $windowDays) { windowDays profiles { profileID profileName plays watchedSeconds } items { mediaID title libraryID plays watchedSeconds } } }";
+const PLAY_STATS_QUERY = `query PlayStats($profileID: String, $libraryID: String, $mediaID: String, $deviceID: String, $playMethod: String, $windowDays: Int, $since: String, $until: String, $utcOffsetMinutes: Int) { playStats(profileID: $profileID, libraryID: $libraryID, mediaID: $mediaID, deviceID: $deviceID, playMethod: $playMethod, windowDays: $windowDays, since: $since, until: $until, utcOffsetMinutes: $utcOffsetMinutes) { ${PLAY_STATS_FIELDS} } }`;
 
-/** PlayStats — top users and most-played items over 7, 30 or 90 days. */
+/** PlayStats — totals and breakdowns by user, item, device, play method and
+ * day over a 7, 30 or 90 day window or a date range, optionally filtered. */
 export async function fetchPlayStats(
-  windowDays: 7 | 30 | 90,
+  filter: PlayStatsFilter,
   signal?: AbortSignal,
 ): Promise<PlayStatsInfo> {
   const data = await graphql<{ playStats: PlayStatsInfo | null }>(
     PLAY_STATS_QUERY,
-    { windowDays },
+    { ...playVariables(filter), utcOffsetMinutes: utcOffsetMinutes() },
     signal,
   );
-  const stats = data.playStats;
-  return { windowDays, profiles: stats?.profiles ?? [], items: stats?.items ?? [] };
+  return normalizePlayStats(data.playStats);
 }
 
 const TERMINATE_SESSION_MUTATION =

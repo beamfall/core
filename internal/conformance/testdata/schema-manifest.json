@@ -760,6 +760,16 @@
     "tier": "session"
   },
   {
+    "field": "myplayhistory",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "myplaystats",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "mysessions",
     "effect": "read",
     "tier": "session"

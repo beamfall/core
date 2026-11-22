@@ -159,7 +159,7 @@ const CONSOLE_READS: [string, (signal: AbortSignal) => Promise<unknown>][] = [
   ["fetchLiveSessions", (s) => fetchLiveSessions(s)],
   ["fetchHostMetrics", (s) => fetchHostMetrics(s)],
   ["fetchPlayHistory", (s) => fetchPlayHistory({}, s)],
-  ["fetchPlayStats", (s) => fetchPlayStats(30, s)],
+  ["fetchPlayStats", (s) => fetchPlayStats({ windowDays: 30 }, s)],
   ["fetchDevices", (s) => fetchDevices(s)],
   ["fetchPlaybackCache", (s) => fetchPlaybackCache(s)],
   ["fetchCapabilityStates", (s) => fetchCapabilityStates(s)],

@@ -9,6 +9,8 @@ import {
   fetchMyDataSummary,
   fetchMyEngagement,
   fetchMyEngagementLog,
+  fetchMyPlayHistory,
+  fetchMyPlayStats,
   fetchMySessions,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
@@ -35,7 +37,22 @@ vi.mock("@/lib/graphql", () => ({
   deleteMyEngagement: vi.fn(),
   fetchMyDataSummary: vi.fn(),
   fetchMyEngagementLog: vi.fn(),
+  fetchMyPlayHistory: vi.fn(),
+  fetchMyPlayStats: vi.fn(),
 }));
+
+const NO_PLAYS = {
+  windowDays: 30,
+  since: "",
+  until: "",
+  totalPlays: 0,
+  totalWatchedSeconds: 0,
+  profiles: [],
+  items: [],
+  devices: [],
+  methods: [],
+  days: [],
+};
 
 beforeEach(() => {
   vi.mocked(fetchMySessions).mockReset().mockResolvedValue({
@@ -63,6 +80,8 @@ beforeEach(() => {
     total: 0,
     events: [],
   });
+  vi.mocked(fetchMyPlayStats).mockReset().mockResolvedValue(NO_PLAYS);
+  vi.mocked(fetchMyPlayHistory).mockReset().mockResolvedValue([]);
   vi.mocked(deleteMyEngagement).mockReset().mockResolvedValue({ scope: "all" });
   vi.stubGlobal(
     "confirm",
@@ -171,5 +190,121 @@ describe("MyDataPage internal identifiers (CORE-2319)", () => {
       { label: "myDataTokenKindPreviews", count: 2, expiresAt: "2026-11-01T12:00:00Z" },
       { label: "myDataTokenKindOther", count: 1, expiresAt: "2026-11-01T09:00:00Z" },
     ]);
+  });
+});
+
+describe("MyDataPage watch history", () => {
+  it("shows the viewer's own totals, breakdowns and recent plays over a chosen window", async () => {
+    const tally = { plays: 2, watchedSeconds: 5400 };
+    vi.mocked(fetchMyPlayStats).mockResolvedValue({
+      ...NO_PLAYS,
+      totalPlays: 2,
+      totalWatchedSeconds: 5400,
+      items: [{ mediaID: "m-1", title: "Night Train", libraryID: "library-films", ...tally }],
+      devices: [{ deviceID: "d-1", deviceName: "Living room TV", deviceClient: "web", ...tally }],
+      methods: [{ playMethod: "direct", ...tally }],
+    });
+    vi.mocked(fetchMyPlayHistory).mockResolvedValue([
+      {
+        profileID: "p-1",
+        profileName: "Ada",
+        mediaID: "m-1",
+        title: "Night Train",
+        libraryID: "library-films",
+        libraryTitle: "Films",
+        deviceID: "",
+        playMethod: "unknown",
+        startedAt: "2026-11-10T20:00:00Z",
+        watchedSeconds: 840,
+        finished: false,
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText("Total: 2 plays · 1 h 30 min")).toBeInTheDocument();
+    expect(screen.getAllByText("2 plays · 1 h 30 min")).toHaveLength(3);
+    expect(screen.getByText("Living room TV")).toBeInTheDocument();
+    expect(screen.getByText("Direct play")).toBeInTheDocument();
+    expect(screen.getByText(/Unknown device · Not recorded · 14 min/)).toBeInTheDocument();
+    expect(fetchMyPlayStats).toHaveBeenLastCalledWith(30, expect.anything());
+    expect(fetchMyPlayHistory).toHaveBeenLastCalledWith(10, expect.anything());
+
+    vi.mocked(fetchMyPlayStats).mockResolvedValue(NO_PLAYS);
+    await userEvent.click(screen.getByRole("button", { name: "7 days" }));
+    expect(
+      await screen.findByText("You have not played anything in this period."),
+    ).toBeInTheDocument();
+    expect(fetchMyPlayStats).toHaveBeenLastCalledWith(7, expect.anything());
+  });
+  it("clears the watch card after deleting all engagement", async () => {
+    vi.mocked(fetchMyPlayStats).mockResolvedValue({
+      ...NO_PLAYS,
+      totalPlays: 1,
+      totalWatchedSeconds: 600,
+      items: [
+        {
+          mediaID: "m-1",
+          title: "Night Train",
+          libraryID: "library-films",
+          plays: 1,
+          watchedSeconds: 600,
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText("Night Train")).toBeInTheDocument();
+    const statsCalls = vi.mocked(fetchMyPlayStats).mock.calls.length;
+    const historyCalls = vi.mocked(fetchMyPlayHistory).mock.calls.length;
+
+    vi.mocked(fetchMyPlayStats).mockResolvedValue(NO_PLAYS);
+    await userEvent.click(screen.getByRole("button", { name: "Delete all my engagement" }));
+
+    expect(
+      await screen.findByText("You have not played anything in this period."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Night Train")).not.toBeInTheDocument();
+    expect(fetchMyPlayStats).toHaveBeenCalledTimes(statsCalls + 1);
+    expect(fetchMyPlayHistory).toHaveBeenCalledTimes(historyCalls + 1);
+  });
+  it("shows a failed refetch after deleting all over empty data, not the deleted plays", async () => {
+    vi.mocked(fetchMyPlayStats).mockResolvedValue({
+      ...NO_PLAYS,
+      totalPlays: 1,
+      totalWatchedSeconds: 600,
+      items: [
+        {
+          mediaID: "m-1",
+          title: "Night Train",
+          libraryID: "library-films",
+          plays: 1,
+          watchedSeconds: 600,
+        },
+      ],
+    });
+    vi.mocked(fetchMyPlayHistory).mockResolvedValue([
+      {
+        profileID: "p-1",
+        profileName: "Ada",
+        mediaID: "m-2",
+        title: "Morning Ferry",
+        libraryID: "library-films",
+        libraryTitle: "Films",
+        deviceID: "",
+        playMethod: "unknown",
+        startedAt: "2026-11-10T20:00:00Z",
+        watchedSeconds: 600,
+        finished: false,
+      },
+    ]);
+    renderPage();
+    expect(await screen.findByText("Night Train")).toBeInTheDocument();
+    expect(screen.getByText("Morning Ferry")).toBeInTheDocument();
+
+    vi.mocked(fetchMyPlayStats).mockRejectedValue(new Error("offline"));
+    await userEvent.click(screen.getByRole("button", { name: "Delete all my engagement" }));
+
+    expect(await screen.findByText("Could not load your watch history.")).toBeInTheDocument();
+    expect(screen.queryByText("Night Train")).not.toBeInTheDocument();
+    expect(screen.queryByText("Morning Ferry")).not.toBeInTheDocument();
   });
 });

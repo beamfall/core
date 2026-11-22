@@ -738,6 +738,16 @@
       "tier": "session"
     },
     {
+      "field": "myplayhistory",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
+      "field": "myplaystats",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "mysessions",
       "effect": "read",
       "tier": "session"
@@ -17475,6 +17485,316 @@
       ]
     },
     {
+      "field": "myplayhistory",
+      "kind": "object",
+      "children": [
+        {
+          "name": "deviceClient",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "deviceID",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "deviceName",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "finished",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "libraryTitle",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "playMethod",
+          "kind": "scalar"
+        },
+        {
+          "name": "profileID",
+          "kind": "scalar"
+        },
+        {
+          "name": "profileName",
+          "kind": "scalar"
+        },
+        {
+          "name": "startedAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "watchedSeconds",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "myplaystats",
+      "kind": "object",
+      "children": [
+        {
+          "name": "days",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "day",
+                "kind": "scalar"
+              },
+              {
+                "name": "plays",
+                "kind": "scalar"
+              },
+              {
+                "name": "watchedSeconds",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "day",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "devices",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "deviceClient",
+                "kind": "scalar"
+              },
+              {
+                "name": "deviceID",
+                "kind": "scalar"
+              },
+              {
+                "name": "deviceName",
+                "kind": "scalar"
+              },
+              {
+                "name": "plays",
+                "kind": "scalar"
+              },
+              {
+                "name": "watchedSeconds",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "deviceClient",
+              "kind": "scalar"
+            },
+            {
+              "name": "deviceID",
+              "kind": "scalar"
+            },
+            {
+              "name": "deviceName",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "items",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "libraryID",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "plays",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              },
+              {
+                "name": "watchedSeconds",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "libraryID",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "methods",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "playMethod",
+                "kind": "scalar"
+              },
+              {
+                "name": "plays",
+                "kind": "scalar"
+              },
+              {
+                "name": "watchedSeconds",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "playMethod",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "profiles",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "plays",
+                "kind": "scalar"
+              },
+              {
+                "name": "profileID",
+                "kind": "scalar"
+              },
+              {
+                "name": "profileName",
+                "kind": "scalar"
+              },
+              {
+                "name": "watchedSeconds",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "profileID",
+              "kind": "scalar"
+            },
+            {
+              "name": "profileName",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "since",
+          "kind": "scalar"
+        },
+        {
+          "name": "totalPlays",
+          "kind": "scalar"
+        },
+        {
+          "name": "totalWatchedSeconds",
+          "kind": "scalar"
+        },
+        {
+          "name": "until",
+          "kind": "scalar"
+        },
+        {
+          "name": "windowDays",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "mysessions",
       "kind": "object",
       "children": [
@@ -19085,6 +19405,21 @@
       "kind": "object",
       "children": [
         {
+          "name": "deviceClient",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "deviceID",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "deviceName",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "finished",
           "kind": "scalar"
         },
@@ -19100,6 +19435,10 @@
         },
         {
           "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "playMethod",
           "kind": "scalar"
         },
         {
@@ -19181,6 +19520,94 @@
       "kind": "object",
       "children": [
         {
+          "name": "days",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "day",
+                "kind": "scalar"
+              },
+              {
+                "name": "plays",
+                "kind": "scalar"
+              },
+              {
+                "name": "watchedSeconds",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "day",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "devices",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "deviceClient",
+                "kind": "scalar"
+              },
+              {
+                "name": "deviceID",
+                "kind": "scalar"
+              },
+              {
+                "name": "deviceName",
+                "kind": "scalar"
+              },
+              {
+                "name": "plays",
+                "kind": "scalar"
+              },
+              {
+                "name": "watchedSeconds",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "deviceClient",
+              "kind": "scalar"
+            },
+            {
+              "name": "deviceID",
+              "kind": "scalar"
+            },
+            {
+              "name": "deviceName",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "items",
           "kind": "list",
           "nullable": true,
@@ -19233,6 +19660,42 @@
           ]
         },
         {
+          "name": "methods",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "playMethod",
+                "kind": "scalar"
+              },
+              {
+                "name": "plays",
+                "kind": "scalar"
+              },
+              {
+                "name": "watchedSeconds",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "playMethod",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "profiles",
           "kind": "list",
           "nullable": true,
@@ -19275,6 +19738,22 @@
               "kind": "scalar"
             }
           ]
+        },
+        {
+          "name": "since",
+          "kind": "scalar"
+        },
+        {
+          "name": "totalPlays",
+          "kind": "scalar"
+        },
+        {
+          "name": "totalWatchedSeconds",
+          "kind": "scalar"
+        },
+        {
+          "name": "until",
+          "kind": "scalar"
         },
         {
           "name": "windowDays",
@@ -38285,6 +38764,27 @@
               },
               {
                 "name": "eventTimeMS",
+                "shape": {
+                  "type": "integer"
+                },
+                "omitempty": true
+              },
+              {
+                "name": "playbackID",
+                "shape": {
+                  "type": "string"
+                },
+                "omitempty": true
+              },
+              {
+                "name": "paused",
+                "shape": {
+                  "type": "boolean"
+                },
+                "omitempty": true
+              },
+              {
+                "name": "playedMS",
                 "shape": {
                   "type": "integer"
                 },

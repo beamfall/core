@@ -301,7 +301,7 @@ test.describe("UI state inventory in-page states", () => {
 
     await routeOperation(page, "PlayHistory", { data: { playHistory: [] } });
     await routeOperation(page, "PlayStats", {
-      data: { playStats: { windowDays: 30, profiles: [], items: [] } },
+      data: { playStats: { windowDays: 30, totalPlays: 0, profiles: [], items: [] } },
     });
     await page.reload();
     await expect(page.getByText("No plays match these filters.")).toBeVisible();

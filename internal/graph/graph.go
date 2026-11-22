@@ -4653,6 +4653,32 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 	// client omits it (int64Var reads missing/zero the same, 0), which the store
 	// guard treats as "no event-time" (legacy unconditional-overwrite behavior).
 	eventTimeMS := int64Var(req, "eventTimeMS")
+	// paused says whether the player was paused when it reported, so play
+	// history credits no time after a paused report (CORE-1703). Optional: a
+	// client that omits it reads as playing.
+	var paused *bool
+	if p, ok := req.Variables["paused"].(bool); ok {
+		paused = &p
+	}
+	// playedMS is the time, in milliseconds, the client has actually played
+	// under playbackID so far (not paused, seeking or buffering); play history
+	// credits its growth (CORE-1703). Optional: nil when omitted.
+	var playedMS *int64
+	if raw, ok := req.Variables["playedMS"]; ok && raw != nil {
+		v := int64Var(req, "playedMS")
+		if v < 0 {
+			return PlaybackReport{}, clientError("playedMS must not be negative")
+		}
+		playedMS = &v
+	}
+	// playbackID is the client's random ID for this play: new each time the
+	// player starts the item, kept across pauses and seeks. Play history
+	// groups a play by it (CORE-1703). Optional for older clients.
+	// It is checked exactly as sent, never trimmed (store.ValidatePlaybackID).
+	playbackID := stringVar(req, "playbackID")
+	if err := store.ValidatePlaybackID(playbackID); err != nil {
+		return PlaybackReport{}, clientError(err.Error())
+	}
 	media, err := h.store.Media(ctx, store.MediaID(mediaID), scope.PlaybackFilter())
 	if err != nil {
 		return PlaybackReport{}, clientError("unknown media")
@@ -4680,6 +4706,9 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 		PositionSeconds: positionSeconds,
 		DurationSeconds: durationSeconds,
 		EventTimeMS:     eventTimeMS,
+		Paused:          paused,
+		PlaybackID:      playbackID,
+		PlayedMS:        playedMS,
 	}, finished)
 	if err != nil {
 		return PlaybackReport{}, err
@@ -4734,6 +4763,11 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		PositionSeconds: report.PositionSeconds,
 		DurationSeconds: report.DurationSeconds,
 		EventTimeMS:     report.EventTimeMS,
+		DeviceID:        scope.DeviceID,
+		PlayMethod:      h.heldPlayMethod(scope.SessionID, media.ID),
+		PlaybackID:      report.PlaybackID,
+		Paused:          report.Paused,
+		PlayedMS:        report.PlayedMS,
 	}, finished, h.resumePolicy(ctx, media)); err != nil {
 		return store.PlaybackProgress{}, err
 	}
@@ -4750,6 +4784,21 @@ func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 		h.notifyWatched(ctx, scope.ProfileID, media)
 	}
 	return progress, nil
+}
+
+// heldPlayMethod is the play method the server decided for this session's
+// playback of the Media, recorded on each progress report for play history
+// (CORE-1703). With no held decision the method is left unknown rather than
+// guessed.
+func (h *Handler) heldPlayMethod(sessionID store.SessionID, mediaID store.MediaID) string {
+	if h.playbackObserver == nil {
+		return ""
+	}
+	seen, ok := h.playbackObserver.PlayObservation(sessionID, mediaID)
+	if !ok || seen.Method == store.PlayMethodUnknown || !store.ValidPlayMethod(seen.Method) {
+		return ""
+	}
+	return seen.Method
 }
 
 // notifyWatched resolves the watched Media's External IDs and hands the
@@ -6282,6 +6331,8 @@ var queryFields = map[string]bool{
 	"mydatasummary":          true,
 	"myengagementlog":        true,
 	"mysessions":             true,
+	"myplayhistory":          true,
+	"myplaystats":            true,
 	"scrobblelinks":          true, // MUSIC-7 (ADR-0098 area 7): own Profile's scrobble links (non-secret)
 	"scrobbleeligibility":    true, // MUSIC-7 (ADR-0098 area 7): per-visible-Library scrobble eligibility
 	"scrobblestatus":         true, // MUSIC-7 (ADR-0098 area 7): admin diagnostic (dead-letter/skip/adapters)

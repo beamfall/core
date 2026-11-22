@@ -131,6 +131,8 @@ var resultTypes = map[string]any{
 	"notifications":                 NotificationInfo{},
 	"extensionrequest":              ExtensionRequestInfo{},
 	"playqueue":                     PlayQueueInfo{},
+	"myplayhistory":                 PlayInfo{},
+	"myplaystats":                   PlayStatsInfo{},
 	// ADR-0113 §2.2: per-title access request reads.
 	"accessrequest":         AccessRequestInfo{},
 	"pendingaccessrequests": AccessRequestInfo{},

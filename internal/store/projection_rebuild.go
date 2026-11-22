@@ -39,6 +39,22 @@ type playbackProjectionEvent struct {
 	ChannelContext    bool   `json:"channelContext"`
 	MergedFromMediaID string `json:"mergedFromMediaId,omitempty"`
 	ContinueHidden    bool   `json:"continueHidden,omitempty"`
+	// DeviceID and PlayMethod say which Device reported and how the server
+	// delivered to it (CORE-1703); play history reads them. Older events
+	// carry neither.
+	DeviceID   string `json:"deviceId,omitempty"`
+	PlayMethod string `json:"playMethod,omitempty"`
+	// ReportedPositionSeconds is the position the client reported, kept even
+	// when the stored position is zeroed (watched, or not resumable), so play
+	// history can tell a paused heartbeat from playback (CORE-1703).
+	ReportedPositionSeconds *int `json:"reportedPositionSeconds,omitempty"`
+	// PlaybackID is the client's ID for the play the report belongs to, and
+	// Paused is whether the player was paused when it reported, and PlayedMS
+	// is the time the client has actually played under that ID (CORE-1703).
+	// All absent on older events, imports and clients that do not send them.
+	PlaybackID string `json:"playbackId,omitempty"`
+	Paused     *bool  `json:"paused,omitempty"`
+	PlayedMS   *int64 `json:"playedMs,omitempty"`
 }
 
 func appendPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
