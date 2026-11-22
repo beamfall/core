@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,19 +27,36 @@ const (
 // relation, and an "unreadable" line makes the read fail. It owns the credit
 // relation. parsedSignature, when set, replaces the signature of the bytes it
 // read, as when the sidecar changed between the scan's check and its read.
-type sidecarTestMapper struct{ parsedSignature string }
+// fixedSignature, when set, is the signature of every sidecar that exists, as
+// when two sidecars share a name, size and modification time. A path in
+// failLookup fails its signature lookup, as when its folder cannot be
+// searched.
+type sidecarTestMapper struct {
+	parsedSignature string
+	fixedSignature  string
+	failLookup      map[string]bool
+}
 
 func sidecarPath(path string) string { return path + ".side" }
 
 func (sidecarTestMapper) MarkerField() string           { return testHydrationMarkerField }
 func (sidecarTestMapper) ExternalIDSchemes() []string   { return nil }
 func (sidecarTestMapper) SidecarSignatureField() string { return testSidecarSignatureField }
-func (sidecarTestMapper) SidecarSignature(path string) string {
-	info, err := os.Stat(sidecarPath(path))
-	if err != nil {
-		return ""
+func (m sidecarTestMapper) SidecarSignature(path string) (string, error) {
+	if m.failLookup[path] {
+		return "", fmt.Errorf("stat %s: %w", sidecarPath(path), os.ErrPermission)
 	}
-	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
+	info, err := os.Stat(sidecarPath(path))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if m.fixedSignature != "" {
+		return m.fixedSignature, nil
+	}
+	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano()), nil
 }
 
 func (sidecarTestMapper) MapHydration(map[string]string, string) HydrationPlan {
@@ -49,8 +68,12 @@ func (m sidecarTestMapper) MapSidecar(path string) *HydrationLocal {
 	if err != nil {
 		return nil
 	}
+	signature, err := m.SidecarSignature(path)
+	if err != nil {
+		return &HydrationLocal{Unreadable: true}
+	}
 	local := &HydrationLocal{
-		Signature:      m.SidecarSignature(path),
+		Signature:      signature,
 		OwnedRelations: []store.WrittenRelation{{Kind: "artist", Name: "appears-on"}},
 	}
 	if m.parsedSignature != "" {
@@ -326,7 +349,7 @@ func TestSidecarRecordsParsedSignature(t *testing.T) {
 	r.write("sidecar audio bytes padding padding", 3*time.Hour, map[string]string{})
 	r.writeSidecar("note=First note")
 	r.scan()
-	if got := r.field(testSidecarSignatureField); got != "parsed-bytes" {
+	if got := r.field(testSidecarSignatureField); got != sidecarIdentity(r.path, "parsed-bytes") {
 		t.Fatalf("recorded signature = %q, want the parse's", got)
 	}
 	if changed, err := r.adapter.SidecarsChanged(context.Background(), r.mediaID, r.path); err != nil || !changed {
@@ -359,5 +382,101 @@ func TestHydrationFieldlessEntityKeepsStoredFields(t *testing.T) {
 	}
 	if len(entity.Fields) != 2 {
 		t.Fatalf("field-less write left %+v, want both stored fields", entity.Fields)
+	}
+}
+
+// sidecarInput is the hydration input for path on the scan's Media.
+func (r *rehydrationScan) sidecarInput(path string) scanpkg.MetadataHydrationInput {
+	return scanpkg.MetadataHydrationInput{MediaID: r.mediaID, LibraryID: r.library, Class: store.MediaClassAudio, Path: path}
+}
+
+func (r *rehydrationScan) writeSidecarFor(path, content string) {
+	r.t.Helper()
+	if err := os.WriteFile(sidecarPath(path), []byte(content), 0o600); err != nil {
+		r.t.Fatal(err)
+	}
+}
+
+// TestSidecarLookupFailureIsUnreadable (CORE-0361 r1): a sidecar lookup that
+// fails reads as unreadable in the scan's check, in a full hydration and in
+// a sidecar-only refresh. Nothing is released, the selection does not move
+// on to a later file's sidecar and the recorded identity stays.
+func TestSidecarLookupFailureIsUnreadable(t *testing.T) {
+	ctx := context.Background()
+	r := newRehydrationScan(t)
+	r.adapter = newSidecarAdapter(t, r.counted)
+	r.write("sidecar audio bytes padding padding", 3*time.Hour, map[string]string{})
+	r.writeSidecar("note=First note\ncredit=Person A")
+	r.scan()
+	identity := r.field(testSidecarSignatureField)
+
+	later := filepath.Join(r.root, "02 track.flac")
+	r.writeSidecarFor(later, "note=Later note")
+	r.adapter = newSidecarAdapterFor(t, r.counted, sidecarTestMapper{failLookup: map[string]bool{r.path: true}})
+	if _, err := r.adapter.SidecarsChanged(ctx, r.mediaID, r.path); !errors.Is(err, errSidecarUnreadable) {
+		t.Fatalf("SidecarsChanged after a failed lookup = %v, want errSidecarUnreadable", err)
+	}
+	r.scan()
+	for _, path := range []string{r.path, later} {
+		if err := r.adapter.HydrateMetadata(ctx, r.sidecarInput(path)); err != nil {
+			t.Fatalf("hydration at %s: %v", filepath.Base(path), err)
+		}
+		if err := r.adapter.HydrateSidecars(ctx, r.sidecarInput(path)); err != nil {
+			t.Fatalf("sidecar refresh at %s: %v", filepath.Base(path), err)
+		}
+	}
+	if r.field(testSidecarNoteField) != "First note" || !r.locked(testSidecarNoteField) || len(r.credits()) != 1 {
+		t.Fatalf("failed lookup changed state: note %q locked %v credits %v", r.field(testSidecarNoteField), r.locked(testSidecarNoteField), r.credits())
+	}
+	if got := r.field(testSidecarSignatureField); got != identity {
+		t.Fatalf("identity after a failed lookup = %q, want the old %q", got, identity)
+	}
+}
+
+// TestSidecarIdentityNamesTheSource (CORE-0361 r1): when the Media's sidecar
+// moves to another file whose sidecar has the same signature, the recorded
+// identity differs, so the other sidecar's values are applied.
+func TestSidecarIdentityNamesTheSource(t *testing.T) {
+	ctx := context.Background()
+	r := newRehydrationScan(t)
+	r.adapter = newSidecarAdapterFor(t, r.counted, sidecarTestMapper{fixedSignature: "same"})
+	r.write("sidecar audio bytes padding padding", 3*time.Hour, map[string]string{})
+	r.writeSidecar("note=First note")
+	r.scan()
+	if got := r.field(testSidecarSignatureField); got != sidecarIdentity(r.path, "same") {
+		t.Fatalf("recorded identity = %q, want the path and the signature", got)
+	}
+	if changed, err := r.adapter.SidecarsChanged(ctx, r.mediaID, r.path); err != nil || changed {
+		t.Fatalf("SidecarsChanged after the apply = %v, %v; want the identity recorded", changed, err)
+	}
+	later := filepath.Join(r.root, "02 track.flac")
+	r.writeSidecarFor(later, "note=Later note")
+	if err := os.Remove(sidecarPath(r.path)); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.adapter.HydrateSidecars(ctx, r.sidecarInput(later)); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.field(testSidecarNoteField); got != "Later note" || !r.locked(testSidecarNoteField) {
+		t.Fatalf("note after the sidecar moved = %q (locked %v), want the later sidecar's", got, r.locked(testSidecarNoteField))
+	}
+}
+
+// TestSidecarWithNoValuesReplacesTheLastOne (CORE-0361 r1): a readable
+// sidecar that states nothing is applied: the previous values unlock, the
+// credits it owned go and the next scan does not apply it again.
+func TestSidecarWithNoValuesReplacesTheLastOne(t *testing.T) {
+	r := newRehydrationScan(t)
+	r.adapter = newSidecarAdapter(t, r.counted)
+	r.write("sidecar audio bytes padding padding", 3*time.Hour, map[string]string{})
+	r.writeSidecar("title=Sidecar Title\nnote=First note\ncredit=Person A")
+	r.scan()
+	r.writeSidecar("a link and nothing the mapper reads")
+	r.scan()
+	if r.locked("title") || r.locked(testSidecarNoteField) || len(r.credits()) != 0 {
+		t.Fatalf("empty sidecar: title locked %v note locked %v credits %v", r.locked("title"), r.locked(testSidecarNoteField), r.credits())
+	}
+	if changed, err := r.adapter.SidecarsChanged(context.Background(), r.mediaID, r.path); err != nil || changed {
+		t.Fatalf("SidecarsChanged after the empty sidecar = %v, %v; want it recorded", changed, err)
 	}
 }

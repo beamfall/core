@@ -265,11 +265,12 @@ func (s *scanWalkState) flushPendingParts() error {
 	// A multi-part Media hydrates from its first part's tags and path under
 	// the single-file rule: when that part is new or changed on disk, or
 	// during the one-time backfill of Media the marker does not cover.
+	// Otherwise, like an unchanged single file, it refreshes its sidecar.
 	if first.hydrate {
 		if err := s.hydrateMetadata(media, first.imported.Path, first.imported.ContentFingerprint, first.tags); err != nil {
 			return err
 		}
-	} else if err := s.backfillHydration(media, first.imported.Path, first.imported.ContentFingerprint); err != nil {
+	} else if err := s.hydrateUnchanged(media, first.imported.Path, first.imported.ContentFingerprint); err != nil {
 		return err
 	}
 	// The group's Unmatched count rides on its last part in walk order, which

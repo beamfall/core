@@ -85,3 +85,33 @@ func TestScanRefreshesSidecarsWithoutAProbe(t *testing.T) {
 		}
 	}
 }
+
+// TestScanRefreshesGroupedPartSidecars (CORE-0361 r1): a Media whose files a
+// parser groups as parts refreshes its sidecar on a rescan of the unchanged
+// parts, like a single unchanged file.
+func TestScanRefreshesGroupedPartSidecars(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, root, "01.mp3", []byte("part one"))
+	writeScanFile(t, root, "03.mp3", []byte("part two"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(context.Background(), "Parts", false, "parts", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scan := func() *sidecarHydrator {
+		t.Helper()
+		hydrator := &sidecarHydrator{fakeMetadataHydrator: fakeMetadataHydrator{capability: MetadataHydrationCapability{MediaClasses: []store.MediaClass{store.MediaClassAudio}}}}
+		if _, err := ScanWithMetadataHydration(context.Background(), st, taggedPartsProber{}, nil, map[string]FilenameParser{"parts": cancellingPartsParser{}}, nil, nil, nil,
+			map[string]MetadataHydrator{"parts": hydrator}, Request{LibraryID: library.ID, Root: root}); err != nil {
+			t.Fatal(err)
+		}
+		return hydrator
+	}
+	if first := scan(); len(first.calls) != 1 {
+		t.Fatalf("first scan: %d hydrations, want the group hydrated once", len(first.calls))
+	}
+	rescan := scan()
+	if len(rescan.calls) != 0 || !slices.Equal(rescan.sidecarPaths(), []string{"01.mp3"}) {
+		t.Fatalf("rescan: %d hydrations, sidecar refreshes %v; want the group's sidecar refreshed", len(rescan.calls), rescan.sidecarPaths())
+	}
+}

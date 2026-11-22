@@ -33,7 +33,18 @@ var (
 	_ identify.EntityEnsurer = (*store.Store)(nil)
 )
 
-// sidecarState is a Media's recorded sidecar signature, the current one and
+// errSidecarUnreadable marks a sidecar lookup that failed. It never reads as
+// a removed sidecar: the seam releases and records nothing.
+var errSidecarUnreadable = errors.New("hydration sidecar unreadable")
+
+// sidecarIdentity is what the seam records for the sidecar of source: the
+// media path with the mapper's signature, so a selection that moves to
+// another file's sidecar refreshes even when the signatures match.
+func sidecarIdentity(source, signature string) string {
+	return source + "\n" + signature
+}
+
+// sidecarState is a Media's recorded sidecar identity, the current one and
 // the media path whose sidecar it is ("" when the Media has none).
 type sidecarState struct {
 	recorded string
@@ -45,11 +56,12 @@ func (s sidecarState) changed() bool {
 	return s.recorded != s.current
 }
 
-// sidecarState reads the signature recorded at the Media's last sidecar
+// sidecarState reads the identity recorded at the Media's last sidecar
 // apply and finds its sidecar now: the sidecar of the first of the Media's
 // file paths, in path order, that has one. The order does not depend on which
 // version a scan is at, so two versions with their own sidecars do not take
-// turns.
+// turns. A failed lookup stops the search with errSidecarUnreadable rather
+// than moving on, so it cannot change the selection.
 func (a *hydrationAdapter) sidecarState(ctx context.Context, mediaID store.MediaID, path string) (sidecarState, error) {
 	if declaredType, ok := a.declaredMediaFields[a.sidecarField]; a.sidecarField == "" || !ok || declaredType != string(store.EntityFieldText) {
 		return sidecarState{}, fmt.Errorf("hydration sidecar signature field %q is not a declared text field", a.sidecarField)
@@ -80,8 +92,12 @@ func (a *hydrationAdapter) sidecarState(ctx context.Context, mediaID store.Media
 		if candidate == "" {
 			continue
 		}
-		if signature := a.sidecars.SidecarSignature(candidate); signature != "" {
-			state.current, state.source = signature, candidate
+		signature, err := a.sidecars.SidecarSignature(candidate)
+		if err != nil {
+			return sidecarState{}, fmt.Errorf("%w: %s: %w", errSidecarUnreadable, candidate, err)
+		}
+		if signature != "" {
+			state.current, state.source = sidecarIdentity(candidate, signature), candidate
 			break
 		}
 	}
@@ -89,7 +105,8 @@ func (a *hydrationAdapter) sidecarState(ctx context.Context, mediaID store.Media
 }
 
 // SidecarsChanged reports whether the Media's sidecar changed since it was
-// last applied, so a scan re-reads an unchanged file.
+// last applied, so a scan re-reads an unchanged file. A failed lookup is an
+// error, which leaves the sidecar for the next scan.
 func (a *hydrationAdapter) SidecarsChanged(ctx context.Context, mediaID store.MediaID, path string) (bool, error) {
 	if a.sidecars == nil {
 		return false, nil
@@ -112,15 +129,19 @@ func (a *hydrationAdapter) HydrateSidecars(ctx context.Context, input scanpkg.Me
 
 // applySidecars brings the Media's local tier in line with its sidecar. A
 // changed sidecar is parsed and applied in one store transaction that records
-// the parsed bytes' signature; a removed one is released. A sidecar that
-// cannot be read is not a removal: nothing is written or released and the
-// signature stays, so the next scan retries. An unchanged signature skips the
+// the parsed bytes' identity; a removed one is released. A sidecar that
+// cannot be read or looked up is not a removal: nothing is written or
+// released and the identity stays, so the next scan retries. An unchanged signature skips the
 // apply, so an operator's unlock holds until the sidecar changes.
 func (a *hydrationAdapter) applySidecars(ctx context.Context, input scanpkg.MetadataHydrationInput) error {
 	if a.sidecars == nil {
 		return nil
 	}
 	state, err := a.sidecarState(ctx, input.MediaID, input.Path)
+	if errors.Is(err, errSidecarUnreadable) {
+		slog.Warn("hydration: sidecar lookup failed, keeping the previous local values", "media", input.MediaID, "error", err.Error())
+		return nil
+	}
 	if err != nil || !state.changed() {
 		return err
 	}
@@ -156,7 +177,7 @@ func (a *hydrationAdapter) applySidecars(ctx context.Context, input scanpkg.Meta
 		Relations:      relations,
 		OwnedRelations: local.OwnedRelations,
 		SignatureField: a.sidecarField,
-		Signature:      parsed.Signature,
+		Signature:      sidecarIdentity(state.source, parsed.Signature),
 	})
 }
 

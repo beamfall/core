@@ -475,24 +475,6 @@ func (s *scanWalkState) hydrateMetadata(media store.Media, path, fingerprint str
 	})
 }
 
-// backfillHydration hydrates an unchanged file's Media once when the
-// one-time backfill found its marker missing.
-func (s *scanWalkState) backfillHydration(media store.Media, path, fingerprint string) error {
-	if _, stale := s.backfillStale[media.ID]; !stale || s.metadataHydrator == nil || s.prober == nil {
-		return nil
-	}
-	if media.Class == store.MediaClassImage {
-		return s.hydrateMetadata(media, path, fingerprint, nil)
-	}
-	probe, err := s.prober.Probe(s.ctx, path)
-	if err != nil {
-		slog.Warn("scan: metadata backfill probe failed, skipping hydration", "path", path, "error", err.Error())
-		return nil
-	}
-	media.Class = mediaClassFromProbe(probe)
-	return s.hydrateMetadata(media, path, fingerprint, probe.Tags)
-}
-
 func mediaClassFromProbe(probe ffmpeg.Probe) store.MediaClass {
 	if !probe.HasVideo && probe.AudioCodec != "" {
 		return store.MediaClassAudio

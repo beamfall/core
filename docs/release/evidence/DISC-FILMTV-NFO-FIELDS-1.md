@@ -10,19 +10,20 @@ or an unreadable flag). The store applies a local part in one transaction on the
 own catalog plane (`ApplyLocalMetadata`) and releases a removed sidecar the same way
 (`ReleaseLocalMetadata`). Sidecar relation rows carry the CORE-3152 writer `local`.
 
-- Base: `1b9b000c3` (CORE-3152) plus OpenSpec `core-0361-local-sidecar-tier`
-  (`b6b265d33`, `0d1b524b8`, `e79ccfa03`) and this change
-- Plugin: beamfall-plugin-filmtv `887ee54` (branch `cl/CORE-0361-nfo-import`). Core
-  needs a filmtv tag from that commit; the `go.mod` pin moves up from v0.1.25.
+- Base: `e9dd7e3d4` (stack CORE-3111/3152) plus OpenSpec `core-0361-local-sidecar-tier`
+  and this change, through review round 1 (OpenSpec `50714d16d`)
+- Plugin: beamfall-plugin-filmtv `17156b2` (branch `cl/CORE-0361-nfo-import`, on `fa572ba`).
+  Core needs a filmtv tag from that commit (v0.1.28); the `go.mod` pin moves at landing.
 - Run: 2026-11-21, go1.27.4 darwin/arm64
 
 | Command | rc | Result |
 |---|---|---|
-| `GOWORK=off go test -count=1 ./internal/identify/... ./internal/app/... ./internal/store/... ./internal/scan/... ./internal/migrate/... ./internal/conformance/...` | 0 | ok (TestVocab rerun after a comment fix) |
+| `GOWORK=off go test -count=1 ./internal/identify/ ./internal/app/ ./internal/store/ ./internal/scan/` | 0 | ok |
+| `GOWORK=off go test -count=1 -run TestVocab ./internal/conformance/` | 0 | ok |
 | `go test -count=1 ./cmd/beamfall/...` (uncommitted go.work with the filmtv worktree) | 0 | ok |
 | `gofmt -l internal cmd/beamfall` | 0 | no output |
 | `golangci-lint run ./internal/store/... ./internal/app/... ./internal/scan/... ./cmd/beamfall/...` | 0 | 0 issues |
-| `openspec validate --all --strict` | 0 | 204 passed |
+| `openspec validate --all --strict` | 0 | 217 passed |
 | filmtv `go test ./...`, gofmt, golangci-lint | 0 | ok, 0 issues |
 
 ## Mutation checks
@@ -40,6 +41,14 @@ Each mutant below was applied alone and made the named test fail.
 | Scan fast path skips the sidecar refresh | `TestScanRefreshesSidecarsWithoutAProbe` |
 | Scraper upsert may take a `local` row over (entity.go guard removed) | `TestApplyLocalMetadataOwnsOnlyLocalRelationRows` |
 | Field-less Entity written with an upsert instead of an ensure | `TestHydrationFieldlessEntityKeepsStoredFields` |
+| Change check compares the bare signature, not the source-qualified identity | `TestSidecarIdentityNamesTheSource` |
+| Record the bare signature | `TestSidecarIdentityNamesTheSource`, `TestSidecarRecordsParsedSignature` |
+| A failed lookup moves on to the next candidate | `TestSidecarLookupFailureIsUnreadable` |
+| A failed lookup applies instead of keeping the previous values | `TestSidecarLookupFailureIsUnreadable` |
+| Release leaves the identified marks set | `TestReleaseClearsIdentifiedMarks` |
+| A sidecar listing a released row again does not reclaim it | `TestRestoredSidecarReclaimsReleasedRows` |
+| A URL-only sidecar is skipped instead of applied empty | `TestFilmTVURLOnlySidecarIsAnEmptyOwnedParse` |
+| Grouped parts skip the sidecar refresh | `TestScanRefreshesGroupedPartSidecars` |
 
 ## Acceptance
 
@@ -60,6 +69,12 @@ Each mutant below was applied alone and made the named test fail.
 | The SQL rank table matches the Go precedence | `TestSourceRankValuesMatchGo` |
 | Local values outside the bundle are rejected; an undeclared signature field errors | `TestValidateLocalRejectsOutOfBundleValues`, `TestSidecarHydrationNeedsDeclaredSupport` |
 | A field-less Entity keeps stored fields | `TestHydrationFieldlessEntityKeepsStoredFields` |
+| A failed sidecar lookup is unreadable and stops the selection; only a clean not-found is absent | `TestSidecarLookupFailureIsUnreadable`, `TestFilmTVSidecarLookupFailureIsAnError`, filmtv lookup tests |
+| The recorded identity names the selected sidecar's source | `TestSidecarIdentityNamesTheSource` |
+| Release clears the identified marks, so a rescan takes the file's own title | `TestReleaseClearsIdentifiedMarks` |
+| A restored sidecar reclaims its released credits | `TestRestoredSidecarReclaimsReleasedRows` |
+| A sidecar with no local values (URL-only) applies as an empty owned plan | `TestSidecarWithNoValuesReplacesTheLastOne`, `TestFilmTVURLOnlySidecarIsAnEmptyOwnedParse` |
+| An edited sidecar beside grouped parts is refreshed | `TestScanRefreshesGroupedPartSidecars` |
 
 ## Known gaps
 

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -177,9 +178,119 @@ func TestApplyLocalMetadataOwnsOnlyLocalRelationRows(t *testing.T) {
 	if err := st.ReleaseLocalMetadata(ctx, "media-alpha", "sidecar-signature"); err != nil {
 		t.Fatal(err)
 	}
-	if got := relationWriters(t, st, "media-alpha", "member-of"); got != "entity-a=,entity-b=scan,entity-manual=" {
+	if got := relationWriters(t, st, "media-alpha", "member-of"); got != "entity-a=,entity-b=local-released,entity-manual=" {
 		t.Fatalf("after release = %q, want entity-b kept under an unowned writer", got)
 	}
+}
+
+// TestRestoredSidecarReclaimsReleasedRows (CORE-0361 r1): a row a removed
+// sidecar released goes back to the local writer when a restored sidecar
+// lists it again, so a later edit that drops it removes it. A released row
+// the restored sidecar does not list, and a scraper row, stay unowned.
+func TestRestoredSidecarReclaimsReleasedRows(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	for _, id := range []EntityID{"entity-a", "entity-b", "entity-c"} {
+		if err := st.UpsertEntity(ctx, widgetEntity(id, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	owned := []WrittenRelation{{Kind: "widget", Name: "member-of"}}
+	apply := func(signature string, sources ...EntityID) {
+		t.Helper()
+		relations := make([]EntityRelation, 0, len(sources))
+		for _, id := range sources {
+			relations = append(relations, EntityRelation{FromEntityID: id, Name: "member-of", ToMediaID: "media-alpha"})
+		}
+		if err := st.ApplyLocalMetadata(ctx, "media-alpha", LocalMetadata{
+			Relations: relations, OwnedRelations: owned,
+			SignatureField: "sidecar-signature", Signature: signature,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.UpsertEntityRelation(ctx, EntityRelation{FromEntityID: "entity-c", Name: "member-of", ToMediaID: "media-alpha", Writer: "scraper:demo/item"}); err != nil {
+		t.Fatal(err)
+	}
+	apply("sig-1", "entity-a", "entity-b")
+	if err := st.ReleaseLocalMetadata(ctx, "media-alpha", "sidecar-signature"); err != nil {
+		t.Fatal(err)
+	}
+	apply("sig-2", "entity-a", "entity-c")
+	if got := relationWriters(t, st, "media-alpha", "member-of"); got != "entity-a=local,entity-b=local-released,entity-c=scraper:demo/item" {
+		t.Fatalf("after restore = %q, want entity-a reclaimed and the others kept", got)
+	}
+	apply("sig-3")
+	if got := relationWriters(t, st, "media-alpha", "member-of"); got != "entity-b=local-released,entity-c=scraper:demo/item" {
+		t.Fatalf("after the edit = %q, want the reclaimed row removed", got)
+	}
+}
+
+// TestReleaseClearsIdentifiedMarks (CORE-0361 r1): a released built-in field
+// drops its legacy identified mark with its lock, so a scan import replaces
+// the value again; a field the sidecar did not write keeps its mark.
+func TestReleaseClearsIdentifiedMarks(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	imported := ImportMediaFile{
+		LibraryID: "library-local", Path: "/media/released.mp4", Title: "released",
+		Container: "mp4", Codec: "h264", ContentFingerprint: "fp-released",
+	}
+	media, _, err := st.ImportMediaFile(ctx, imported)
+	if err != nil {
+		t.Fatal(err)
+	}
+	year := 1999
+	if err := st.UpdateMediaMetadata(ctx, media.ID, MediaMetadata{Year: &year, Source: MutationSourceOperator}); err != nil {
+		t.Fatal(err)
+	}
+	title, summary := "Sidecar Title", "Sidecar summary"
+	if err := st.ApplyLocalMetadata(ctx, media.ID, LocalMetadata{
+		Metadata:       MediaMetadata{Title: &title, Summary: &summary},
+		SignatureField: "sidecar-signature", Signature: "sig-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A re-apply that no longer states the summary releases it alone.
+	if err := st.ApplyLocalMetadata(ctx, media.ID, LocalMetadata{
+		Metadata:       MediaMetadata{Title: &title},
+		SignatureField: "sidecar-signature", Signature: "sig-2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := identifiedMarks(t, st, media.ID); got != "1,0,1" {
+		t.Fatalf("identified marks after dropping the summary = %s, want 1,0,1", got)
+	}
+	if err := st.ReleaseLocalMetadata(ctx, media.ID, "sidecar-signature"); err != nil {
+		t.Fatal(err)
+	}
+	if got := identifiedMarks(t, st, media.ID); got != "0,0,1" {
+		t.Fatalf("identified marks after release = %s, want 0,0,1", got)
+	}
+	imported.Title = "From The File Name"
+	if _, _, err := st.ImportMediaFile(ctx, imported); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT title FROM media WHERE id = ?`, media.ID).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "From The File Name" {
+		t.Fatalf("title after a rescan = %q, want the file-name title", got)
+	}
+}
+
+// identifiedMarks returns one Media's title, summary and year identified
+// marks as "t,s,y".
+func identifiedMarks(t *testing.T, st *Store, id MediaID) string {
+	t.Helper()
+	var title, summary, year int
+	if err := st.catalogR.QueryRowContext(context.Background(),
+		`SELECT title_identified, summary_identified, year_identified FROM media WHERE id = ?`, id,
+	).Scan(&title, &summary, &year); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join([]string{strconv.Itoa(title), strconv.Itoa(summary), strconv.Itoa(year)}, ",")
 }
 
 // TestApplyLocalMetadataFailureKeepsPreviousState (CORE-0361): the release

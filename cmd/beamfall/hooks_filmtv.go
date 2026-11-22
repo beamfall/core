@@ -67,7 +67,9 @@ func (m filmtvHydrationMapper) TitleFoldKinds() []string {
 // sidecar when one appears, changes or goes away.
 func (filmtvHydrationMapper) SidecarSignatureField() string { return filmtv.NFOSignatureField }
 
-func (filmtvHydrationMapper) SidecarSignature(path string) string { return filmtv.NFOSignature(path) }
+func (filmtvHydrationMapper) SidecarSignature(path string) (string, error) {
+	return filmtv.NFOSignature(path)
+}
 
 func (m filmtvHydrationMapper) MapHydration(_ map[string]string, path string) app.HydrationPlan {
 	plan := app.HydrationPlan{MarkComplete: true}
@@ -111,13 +113,15 @@ func (m filmtvHydrationMapper) MapHydration(_ map[string]string, path string) ap
 // MapSidecar parses the file's own sidecar: nil when it has none, Unreadable
 // when it cannot be read now. Its relations target the Media, and the
 // relations the format owns are stated even when the sidecar lists none of
-// them, so a credit removed from it is removed from the Media.
+// them, so a credit removed from it is removed from the Media. A readable
+// sidecar with no values (a URL-only NFO) is a signed, empty parse, so it
+// replaces what an earlier sidecar wrote.
 func (filmtvHydrationMapper) MapSidecar(path string) *app.HydrationLocal {
 	sidecar := filmtv.LocalNFOHydration(path)
 	if sidecar.Unreadable {
 		return &app.HydrationLocal{Unreadable: true}
 	}
-	if !sidecar.Found || sidecar.Signature == "" {
+	if sidecar.Signature == "" {
 		return nil
 	}
 	local := &app.HydrationLocal{

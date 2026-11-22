@@ -17,8 +17,9 @@ const LocalRelationWriter = "local"
 
 // releasedRelationWriter is the Writer a released sidecar's rows move to: an
 // unowned automated writer, so the rows stay until another writer replaces
-// them.
-const releasedRelationWriter = "scan"
+// them. It is its own name so a restored sidecar that lists a row again takes
+// it back as local.
+const releasedRelationWriter = "local-released"
 
 // LocalMetadata is one parse of a Media's local sidecar, applied as a whole by
 // ApplyLocalMetadata.
@@ -171,18 +172,46 @@ func (s *Store) ReleaseLocalMetadata(ctx context.Context, id MediaID, signatureF
 }
 
 // releaseLocalFieldsTx moves every local-tier field of one Media to the scan
-// tier, keeping the values, so they stop reading as locked.
+// tier, keeping the values, so they stop reading as locked. A released
+// built-in field's legacy identified mark is cleared with it, so a scan
+// import can replace the value again.
 func releaseLocalFieldsTx(ctx context.Context, tx *sql.Tx, id MediaID) error {
-	_, err := tx.ExecContext(ctx,
+	rows, err := tx.QueryContext(ctx,
+		"SELECT field FROM media_field_provenance WHERE media_id = ? AND source = ?",
+		id, string(MutationSourceLocal))
+	if err != nil {
+		return err
+	}
+	var mirrors []string
+	for rows.Next() {
+		var field string
+		if err := rows.Scan(&field); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if mirror, _ := lockMirror(field); mirror != "" {
+			mirrors = append(mirrors, mirror)
+		}
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return err
+	}
+	for _, mirror := range mirrors {
+		if _, err := tx.ExecContext(ctx, mirror, boolInt(false), id); err != nil {
+			return err
+		}
+	}
+	_, err = tx.ExecContext(ctx,
 		"UPDATE media_field_provenance SET source = ? WHERE media_id = ? AND source = ?",
 		string(MutationSourceScan), id, string(MutationSourceLocal))
 	return err
 }
 
 // replaceLocalRelationsTx deletes the local rows of each owned relation and
-// inserts the given rows as local. A row that already exists under another
-// writer is left with that writer, and a single-cardinality relation another
-// writer holds for the Media is not taken over.
+// inserts the given rows as local. A row a released sidecar left behind is
+// taken back as local; a row that exists under any other writer is left with
+// that writer, and a single-cardinality relation another writer holds for the
+// Media is not taken over.
 func replaceLocalRelationsTx(ctx context.Context, tx *sql.Tx, id MediaID, ownedRelations []WrittenRelation, owned map[string]bool, relations []EntityRelation) error {
 	for _, relation := range ownedRelations {
 		if _, err := tx.ExecContext(ctx, `
@@ -231,8 +260,10 @@ func replaceLocalRelationsTx(ctx context.Context, tx *sql.Tx, id MediaID, ownedR
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO entity_relation(from_entity_id, relation, to_media_id, attributes, sort_order, writer)
 			VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT(from_entity_id, relation, to_media_id) WHERE to_media_id IS NOT NULL DO NOTHING
-		`, relation.FromEntityID, relation.Name, id, attributes, sortOrder, LocalRelationWriter); err != nil {
+			ON CONFLICT(from_entity_id, relation, to_media_id) WHERE to_media_id IS NOT NULL DO UPDATE SET
+			  attributes = excluded.attributes, sort_order = excluded.sort_order, writer = excluded.writer
+			WHERE entity_relation.writer = ?
+		`, relation.FromEntityID, relation.Name, id, attributes, sortOrder, LocalRelationWriter, releasedRelationWriter); err != nil {
 			return err
 		}
 	}

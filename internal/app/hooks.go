@@ -119,16 +119,19 @@ type HydrationLocal struct {
 
 // HydrationSidecarMapper is implemented by a HydrationMapper that also reads
 // local sidecars kept beside the media. SidecarSignature identifies the
-// sidecar of a media path ("" when there is none) and the seam records the
-// signature of each applied parse in the declared text Media field
-// SidecarSignatureField, so a scan re-reads an unchanged file whose sidecar
-// changed. MapSidecar parses the sidecar of a path, nil when there is none.
-// When the sidecar is gone, the Media's local values are released to the
-// scan tier and its local relation rows to an unowned writer: kept, but
-// unlocked.
+// sidecar of a media path: "" only when there is none, and an error when the
+// lookup failed, which the seam treats as an unreadable sidecar, never a
+// removed one. The seam records the selected media path with the signature of
+// each applied parse in the declared text Media field SidecarSignatureField,
+// so a scan re-reads an unchanged file whose sidecar changed. MapSidecar
+// parses the sidecar of a path, nil when there is none; a readable sidecar
+// with no values is a signed, empty parse that still states its owned
+// relations. When the sidecar is gone, the Media's local values are released
+// to the scan tier and its local relation rows to an unowned writer: kept,
+// but unlocked.
 type HydrationSidecarMapper interface {
 	SidecarSignatureField() string
-	SidecarSignature(path string) string
+	SidecarSignature(path string) (string, error)
 	MapSidecar(path string) *HydrationLocal
 }
 

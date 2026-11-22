@@ -41,17 +41,17 @@ func TestFilmTVHydrationCarriesFilmSidecar(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "Lantern (2019)")
 	path := filepath.Join(dir, "Lantern (2019).mkv")
 	writeSidecarFixture(t, path, "")
-	if sidecars.SidecarSignature(path) != "" || sidecars.MapSidecar(path) != nil {
-		t.Fatal("film without a sidecar carries local values")
+	if signature, err := sidecars.SidecarSignature(path); err != nil || signature != "" || sidecars.MapSidecar(path) != nil {
+		t.Fatalf("film without a sidecar: signature %q, %v; want none", signature, err)
 	}
 	writeSidecarFixture(t, filepath.Join(dir, "Lantern (2019).nfo"), `<?xml version="1.0" encoding="UTF-8"?>
 <movie><title>The Lantern</title><sorttitle>Lantern, The</sorttitle><plot>A keeper stays.</plot>
 <tagline>Light stays.</tagline><year>2019</year><genre>Drama</genre><studio>North Pier</studio>
 <set><name>Lantern Collection</name></set><director>Mara Ellison</director>
 <actor><name>Iris Calder</name><role>Wren</role><order>0</order></actor><playcount>1</playcount></movie>`)
-	signature := sidecars.SidecarSignature(path)
-	if signature == "" {
-		t.Fatal("sidecar signature empty with a sidecar present")
+	signature, err := sidecars.SidecarSignature(path)
+	if err != nil || signature == "" {
+		t.Fatalf("sidecar signature %q, %v with a sidecar present", signature, err)
 	}
 	if plan := mapper.MapHydration(nil, path); !plan.MarkComplete {
 		t.Fatalf("film plan = %+v, want marked complete", plan)
@@ -139,11 +139,59 @@ func TestFilmTVSidecarUnreadableIsNotRemoval(t *testing.T) {
 		t.Skip("permissions do not stop this user reading the sidecar")
 	}
 	sidecars := firstPartyHooks().HydrationMappers[filmtv.PluginID].(app.HydrationSidecarMapper)
-	if sidecars.SidecarSignature(path) == "" {
-		t.Fatal("unreadable sidecar has no signature, so it reads as removed")
+	if signature, err := sidecars.SidecarSignature(path); err != nil || signature == "" {
+		t.Fatalf("unreadable sidecar signature %q, %v; it must not read as removed", signature, err)
 	}
 	if local := sidecars.MapSidecar(path); local == nil || !local.Unreadable {
 		t.Fatalf("unreadable sidecar = %+v, want Unreadable", local)
+	}
+}
+
+// CORE-0361 r1: a sidecar whose lookup fails is an error, never "no
+// sidecar", so Core cannot release what it imported from it.
+func TestFilmTVSidecarLookupFailureIsAnError(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Lantern (2019)")
+	path := filepath.Join(dir, "Lantern (2019).mkv")
+	writeSidecarFixture(t, path, "")
+	writeSidecarFixture(t, filepath.Join(dir, "Lantern (2019).nfo"), `<movie><title>The Lantern</title></movie>`)
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o750) }) // #nosec G302 -- restores this test's t.TempDir() folder
+	if _, err := os.Stat(filepath.Join(dir, "Lantern (2019).nfo")); err == nil {
+		t.Skip("permissions do not stop this user searching the folder")
+	}
+	sidecars := firstPartyHooks().HydrationMappers[filmtv.PluginID].(app.HydrationSidecarMapper)
+	if signature, err := sidecars.SidecarSignature(path); err == nil {
+		t.Fatalf("failed lookup signature = %q with no error, which reads as a removed sidecar", signature)
+	}
+	if local := sidecars.MapSidecar(path); local == nil || !local.Unreadable {
+		t.Fatalf("failed lookup sidecar = %+v, want Unreadable", local)
+	}
+}
+
+// CORE-0361 r1: a readable sidecar that names no values (a URL-only NFO) is a
+// signed, empty parse that owns the format's relations, so it replaces what
+// an earlier sidecar wrote instead of being skipped.
+func TestFilmTVURLOnlySidecarIsAnEmptyOwnedParse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Lantern (2019).mkv")
+	writeSidecarFixture(t, path, "")
+	writeSidecarFixture(t, filepath.Join(dir, "Lantern (2019).nfo"), "https://www.themoviedb.org/movie/12345\n")
+	sidecars := firstPartyHooks().HydrationMappers[filmtv.PluginID].(app.HydrationSidecarMapper)
+	signature, err := sidecars.SidecarSignature(path)
+	if err != nil || signature == "" {
+		t.Fatalf("URL-only sidecar signature %q, %v", signature, err)
+	}
+	local := sidecars.MapSidecar(path)
+	if local == nil || local.Unreadable || local.Signature != signature {
+		t.Fatalf("URL-only sidecar = %+v, want a parse signed %q", local, signature)
+	}
+	if local.Title != "" || local.Year != 0 || len(local.MediaFields) != 0 || len(local.Relations) != 0 {
+		t.Fatalf("URL-only sidecar = %+v, want no values", local)
+	}
+	if len(local.OwnedRelations) != len(filmtv.NFOOwnedRelations()) {
+		t.Fatalf("owned relations = %+v, want every NFO relation", local.OwnedRelations)
 	}
 }
 
