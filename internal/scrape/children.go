@@ -83,12 +83,21 @@ func (e *Engine) ListChildren(ctx context.Context, spec plugin.ScraperSpec, leve
 // findChildParents starts at the root even after a restart or cache eviction.
 // The wire key carries no ancestor, so it walks level by level, descending only
 // through rows a read could accept as parentKey, and returns every row at the
-// target level whose key matches.
+// target level whose key matches. Target-level listings are filtered as they
+// arrive; the SDK allows at most three levels, so the only rows retained in
+// full are those of the single root listing.
 func (e *Engine) findChildParents(ctx context.Context, spec plugin.ScraperSpec, target int, candidateID, parentKey string, config map[string]string) ([]ChildRow, error) {
 	rows, err := e.childRows(ctx, spec, spec.Children[0], candidateID, nil, config)
 	if err != nil {
 		return nil, err
 	}
+	keep := func(rows []ChildRow, level int) []ChildRow {
+		if level != target {
+			return rows
+		}
+		return slices.DeleteFunc(rows, func(row ChildRow) bool { return row.Key != parentKey })
+	}
+	rows = keep(rows, 0)
 	for current := 0; current < target; current++ {
 		next := spec.Children[current+1]
 		var deeper []ChildRow
@@ -100,17 +109,11 @@ func (e *Engine) findChildParents(ctx context.Context, spec plugin.ScraperSpec, 
 			if err != nil {
 				return nil, err
 			}
-			deeper = append(deeper, children...)
+			deeper = append(deeper, keep(children, current+1)...)
 		}
 		rows = deeper
 	}
-	var matches []ChildRow
-	for _, row := range rows {
-		if row.Key == parentKey {
-			matches = append(matches, row)
-		}
-	}
-	return matches, nil
+	return rows, nil
 }
 
 // openableParents returns, in first-seen order, one row for each key a read of
