@@ -13,10 +13,13 @@ import {
   Pause,
   PictureInPicture2,
   Play,
+  Repeat,
+  Repeat1,
   RotateCcw,
   RotateCw,
   Settings,
   Share2,
+  Shuffle,
   SkipBack,
   SkipForward,
   Timer,
@@ -62,6 +65,7 @@ import { CastControl } from "./cast/CastControl";
 import { InfoOverlay } from "./InfoOverlay";
 import { listenerMuted, setListenerMuted } from "./listenerMute";
 import { MusicQueuePanel } from "./MusicQueuePanel";
+import type { RepeatMode } from "./nowPlaying";
 import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { TrackMotionSettings } from "./TrackMotionSettings";
@@ -104,6 +108,12 @@ type GestureFeedback =
   | { kind: "volume"; value: number };
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const REPEAT_LABELS = {
+  off: "playerRepeatOff",
+  all: "playerRepeatAll",
+  one: "playerRepeatOne",
+} as const satisfies Record<RepeatMode, string>;
+const noop = () => {};
 const GESTURE_THRESHOLD = 24;
 
 export function PlayerTransport({
@@ -133,6 +143,8 @@ export function PlayerTransport({
   musicQueueOpen = false,
   serverQueueNextID,
   audioStage = false,
+  shuffle,
+  repeat,
   onStop,
   onRemoteStop,
   onRemoteRestart,
@@ -184,6 +196,10 @@ export function PlayerTransport({
   serverQueueNextID?: string;
   /** The audio stage is showing: the transport carries the visualizer control (CORE-2814). */
   audioStage?: boolean;
+  /** Shuffle over the playing queue (CORE-1637); the button is hidden when absent. */
+  shuffle?: { on: boolean; onToggle: () => void };
+  /** Repeat off, all or one (CORE-1637); the button is hidden when absent. */
+  repeat?: { mode: RepeatMode; onCycle: () => void };
   /** Leaves the player when another device sends stop; without it stop only pauses. */
   onStop?: () => void;
   /** Stop requested by another device; falls back to onStop. */
@@ -602,7 +618,8 @@ export function PlayerTransport({
     speeds: SPEEDS,
     markers: state.markers,
     togglePlay,
-    toggleFullscreen,
+    // The audio stage has no fullscreen (CORE-1637): the shortcut does nothing there.
+    toggleFullscreen: audioStage ? noop : toggleFullscreen,
     toggleMute,
     seekBy,
     setVolume,
@@ -904,6 +921,18 @@ export function PlayerTransport({
 
         <div className="bf-controls bf-transport-row">
           <div className="bf-primary-controls">
+            {shuffle && (
+              <button
+                type="button"
+                onClick={shuffle.onToggle}
+                aria-pressed={shuffle.on}
+                aria-label={t("playerShuffle")}
+                title={shuffle.on ? t("playerShuffleOn") : t("playerShuffleOff")}
+                className="bf-control is-icon"
+              >
+                <Shuffle aria-hidden="true" />
+              </button>
+            )}
             {onPreviousInQueue && (
               <button
                 type="button"
@@ -957,6 +986,22 @@ export function PlayerTransport({
               >
                 <SkipForward aria-hidden="true" />
                 <span className="sr-only">{t("nextInQueue")}</span>
+              </button>
+            )}
+            {repeat && (
+              <button
+                type="button"
+                onClick={repeat.onCycle}
+                aria-label={t(REPEAT_LABELS[repeat.mode])}
+                title={t(REPEAT_LABELS[repeat.mode])}
+                data-repeat={repeat.mode}
+                className="bf-control is-icon"
+              >
+                {repeat.mode === "one" ? (
+                  <Repeat1 aria-hidden="true" />
+                ) : (
+                  <Repeat aria-hidden="true" />
+                )}
               </button>
             )}
           </div>
@@ -1238,42 +1283,51 @@ export function PlayerTransport({
           {mediaID && state.info?.mediaClass === "video" && (
             <CastControl videoRef={videoRef} mediaID={mediaID} mediaTitle={mediaTitle} />
           )}
-          <button
-            type="button"
-            onClick={() => void togglePictureInPicture()}
-            disabled={!pipSupported}
-            aria-label={pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
-            aria-describedby={pipStatusId}
-            className="bf-control is-icon"
-            title={!pipSupported ? t("pictureInPictureUnavailable") : undefined}
-          >
-            <PictureInPicture2 aria-hidden="true" />
-            <span className="sr-only">
-              {pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
-            </span>
-          </button>
-          <span
-            id={pipStatusId}
-            className="bf-player-control-status"
-            role={pipFailure ? "alert" : "status"}
-          >
-            {!pipSupported
-              ? t("pictureInPictureUnavailable")
-              : pipFailure
-                ? t(pipFailure === "exit" ? "pictureInPictureExitFailed" : "pictureInPictureFailed")
-                : ""}
-          </span>
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            aria-label={fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
-            className="bf-control is-icon"
-          >
-            {fullscreen ? <Minimize aria-hidden="true" /> : <Maximize aria-hidden="true" />}
-            <span className="sr-only">
-              {fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
-            </span>
-          </button>
+          {/* A track has no picture to float or fill the screen with (CORE-1637). */}
+          {!audioStage && (
+            <>
+              <button
+                type="button"
+                onClick={() => void togglePictureInPicture()}
+                disabled={!pipSupported}
+                aria-label={pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
+                aria-describedby={pipStatusId}
+                className="bf-control is-icon"
+                title={!pipSupported ? t("pictureInPictureUnavailable") : undefined}
+              >
+                <PictureInPicture2 aria-hidden="true" />
+                <span className="sr-only">
+                  {pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
+                </span>
+              </button>
+              <span
+                id={pipStatusId}
+                className="bf-player-control-status"
+                role={pipFailure ? "alert" : "status"}
+              >
+                {!pipSupported
+                  ? t("pictureInPictureUnavailable")
+                  : pipFailure
+                    ? t(
+                        pipFailure === "exit"
+                          ? "pictureInPictureExitFailed"
+                          : "pictureInPictureFailed",
+                      )
+                    : ""}
+              </span>
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                aria-label={fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
+                className="bf-control is-icon"
+              >
+                {fullscreen ? <Minimize aria-hidden="true" /> : <Maximize aria-hidden="true" />}
+                <span className="sr-only">
+                  {fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
+                </span>
+              </button>
+            </>
+          )}
         </div>
       </div>
       {/* Listboxes portal here: inside the stage (so stage fullscreen shows

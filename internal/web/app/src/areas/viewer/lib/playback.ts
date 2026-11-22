@@ -220,6 +220,18 @@ export interface PlaybackInfo {
   selectedSubtitleTrack?: PlaybackSelectedSubtitle;
   /** Why subtitles the viewer would want cannot be shown here, when they cannot. */
   subtitlesUnavailableReason?: string;
+  /** The source audio and whether the primary stream delivers it unchanged (CORE-1627). */
+  audioQuality?: AudioQuality;
+}
+
+/** playback-info `audioQuality` (CORE-1627). Rate in Hz, depth in bits; absent when unknown. */
+export interface AudioQuality {
+  codec: string;
+  sampleRate?: number;
+  bitDepth?: number;
+  lossless?: boolean;
+  /** "direct" when the source audio arrives bit-for-bit, else "transcode". */
+  delivery: string;
 }
 
 /** The /api/preview-info response: Generated Asset URLs only, no playback streams. */

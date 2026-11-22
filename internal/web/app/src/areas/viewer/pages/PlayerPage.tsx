@@ -64,6 +64,16 @@ import { readWatchPartyIntent } from "../lib/watchTogether";
 import { AudioStage } from "../player/AudioStage";
 import { KaraokeControls } from "../player/KaraokeControls";
 import { MiniPlayer } from "../player/MiniPlayer";
+import { NowPlayingDetails, type UpNextItem } from "../player/NowPlayingDetails";
+import {
+  modeNeighbours,
+  modesReorder,
+  nextRepeat,
+  type PlayModes,
+  readPlayModes,
+  upcomingItems,
+  writePlayModes,
+} from "../player/nowPlaying";
 import { type HostedPlayerProps, usePlayerHost, type WatchEntry } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { PrePlayStage } from "../player/PrePlayStage";
@@ -137,7 +147,10 @@ export function PlayerPage() {
   const carried =
     !!location.state && (location.state as { skipPrePlay?: unknown }).skipPrePlay === true;
   const bypass = skip || carried || !mediaId || rejoiningPlayback;
-  const [decided, setDecided] = useState<{ mediaId: string; items: PrePlayItem[] } | null>(null);
+  const [decided, setDecided] = useState<{
+    mediaId: string;
+    items: PrePlayItem[];
+  } | null>(null);
 
   useEffect(() => {
     if (bypass || !mediaId) return;
@@ -246,6 +259,16 @@ function FeaturePlayer({
     () => musicQueueNeighbours(musicQueue?.rows, mediaId),
     [musicQueue?.rows, mediaId],
   );
+  // Shuffle and repeat (CORE-1637): a view over the queue below, kept in this browser.
+  const [playModes, setPlayModes] = useState<PlayModes>(readPlayModes);
+  const updatePlayModes = useCallback((change: (modes: PlayModes) => PlayModes) => {
+    setPlayModes((modes) => {
+      const next = change(modes);
+      writePlayModes(next);
+      return next;
+    });
+  }, []);
+  const reorder = modesReorder(playModes);
   const queueRoute = useMemo(
     () => ({ mediaId, queueProfile, identity, epoch, revealed, profileID }),
     [mediaId, queueProfile, identity, epoch, revealed, profileID],
@@ -298,11 +321,20 @@ function FeaturePlayer({
   const entryClass = serverQueueRun
     ? "audio"
     : classedQueue?.find((item) => item.id === mediaId)?.mediaClass;
+  // Shuffle and repeat all choose the next item, so the server mints that one.
   const declaredNextID = serverQueueRun
-    ? (serverNeighbours.next?.id ?? "")
+    ? ((reorder ? modeNeighbours(serverItems, mediaId, playModes) : serverNeighbours).next?.id ??
+      "")
     : classedQueue
-      ? (queueNeighbours(queueOfClass(classedQueue, entryClass, mediaId || ""), mediaId || "").next
-          ?.id ?? "")
+      ? (() => {
+          const classQueue = queueOfClass(classedQueue, entryClass, mediaId || "");
+          return (
+            (reorder
+              ? modeNeighbours(classQueue, mediaId, playModes)
+              : queueNeighbours(classQueue, mediaId || "")
+            ).next?.id ?? ""
+          );
+        })()
       : undefined;
   // The Version this profile picked for this Media (CORE-1676): a pick made in
   // this player during this playback start, else the one the detail page sent
@@ -372,9 +404,11 @@ function FeaturePlayer({
     [classedQueue, playingClass, mediaId],
   );
   const queue = serverQueueRun ? serverItems : catalogQueue;
-  const { previous: previousInQueue, next: nextInQueue } = serverQueueRun
-    ? serverNeighbours
-    : queueNeighbours(catalogQueue, mediaId);
+  const { previous: previousInQueue, next: nextInQueue } = reorder
+    ? modeNeighbours(queue, mediaId, playModes)
+    : serverQueueRun
+      ? serverNeighbours
+      : queueNeighbours(catalogQueue, mediaId);
   const info = state.info;
   const infoIsCurrent = !!state.info && state.mediaID === mediaId;
   const mediaIdRef = useRef(mediaId);
@@ -511,6 +545,8 @@ function FeaturePlayer({
   }
   const stage = serverQueueRun || stageReady || !heldStage ? liveStage : heldStage;
 
+  // The audio transport never auto-hides (CORE-1637): a listener is not
+  // watching a picture the controls would cover.
   const { chromeHidden, reveal } = useChromeAutoHide({
     stageRef,
     videoRef,
@@ -585,10 +621,27 @@ function FeaturePlayer({
   // on the info document after the queue dropped it.
   const reportedNext = state.info?.next ?? undefined;
   const issuedNext = serverQueueRun
-    ? state.mediaID === mediaId && reportedNext?.mediaID === serverNeighbours.next?.id
+    ? state.mediaID === mediaId && reportedNext?.mediaID === nextInQueue?.id
       ? reportedNext
       : undefined
     : admissibleNext(reportedNext, catalogQueue, playingClass, learnedClasses);
+  // Now Playing's Up Next (CORE-1637): the next items of the queue driving
+  // playback in play order, else the server's chain of next issuances.
+  const upNextItems = useMemo<UpNextItem[]>(() => {
+    if (queue?.length) return upcomingItems(queue, mediaId, playModes, 3);
+    const items: UpNextItem[] = [];
+    for (let next = issuedNext; next && items.length < 3; next = next.next ?? undefined) {
+      items.push({ id: next.mediaID, title: next.title ?? "" });
+    }
+    return items;
+  }, [queue, mediaId, playModes, issuedNext]);
+  const playUpNext = useCallback(
+    (item: UpNextItem) =>
+      serverQueueRun
+        ? playItem(item.id, item.title, true, profileID)
+        : playItem(item.id, item.title),
+    [serverQueueRun, playItem, profileID],
+  );
   // Decode early, then let the ended read authorize both the sound and the route.
   const confirmGaplessAdvance = useGaplessAudio({
     videoRef,
@@ -601,6 +654,7 @@ function FeaturePlayer({
       showAudioStage &&
       !karaokeSong &&
       !partyLeads &&
+      playModes.repeat !== "one" &&
       state.mediaID === (mediaId || "") &&
       (serverQueueRun ? !!issuedNext : !!(nextInQueue || issuedNext?.streams)),
     waitForAdvance: serverQueueRun,
@@ -655,7 +709,9 @@ function FeaturePlayer({
         }
         playItemRef.current(first.id, "", true, profileID);
       } else {
-        const neighbours = musicQueueNeighbours(rows, mediaId);
+        const neighbours = reorder
+          ? modeNeighbours(rows.filter(playableMusic), mediaId, playModes)
+          : musicQueueNeighbours(rows, mediaId);
         const target = (action === "previous" ? neighbours.previous : neighbours.next)?.id;
         if (!target) return;
         if (action === "ended") confirmGaplessAdvance(target);
@@ -671,6 +727,8 @@ function FeaturePlayer({
       mediaId,
       restart,
       confirmGaplessAdvance,
+      reorder,
+      playModes,
     ],
   );
   const retryMusicQueue = () =>
@@ -729,22 +787,37 @@ function FeaturePlayer({
     onAdvance: advanceToNext,
     onAutoAdvance: (next) => noteAutoAdvance(next.mediaID),
   });
+  // Repeat one, or repeat all over a single item, plays the item again from
+  // the start (CORE-1637); a fresh start keeps progress reporting going.
+  const loopItem =
+    playModes.repeat === "one" || (playModes.repeat === "all" && (queue?.length ?? 0) <= 1);
   useLayoutEffect(() => {
     const video = videoRef.current;
     if (!isAudio || !playing || !video || partyLeads) return;
-    if (!serverQueueRun && !playNext) return;
+    if (!serverQueueRun && !playNext && !loopItem) return;
     const advance = () => {
       // Let the explicit start finish its read before changing tracks.
       if (pendingQueueAction.current?.action === "start") {
         if (!serverQueueRun) handBack(video);
         return;
       }
-      if (serverQueueRun) void runQueueAction("ended");
+      if (loopItem) restart(0);
+      else if (serverQueueRun) void runQueueAction("ended");
       else playNext?.();
     };
     video.addEventListener("ended", advance);
     return () => video.removeEventListener("ended", advance);
-  }, [isAudio, playing, partyLeads, serverQueueRun, runQueueAction, playNext, videoRef]);
+  }, [
+    isAudio,
+    playing,
+    partyLeads,
+    serverQueueRun,
+    runQueueAction,
+    playNext,
+    videoRef,
+    loopItem,
+    restart,
+  ]);
   // The card's appearance reveals chrome once; the card itself stays visible
   // and clickable regardless of auto-hide (player-deferred.css).
   const upNextVisible = upNext.visible || stillWatching.prompting;
@@ -1037,7 +1110,10 @@ function FeaturePlayer({
             ref={stageRef}
             id={docked ? undefined : MAIN_CONTENT_ID}
             tabIndex={-1}
-            className={"bf-player-stage" + (playing && chromeHidden ? " is-chrome-hidden" : "")}
+            className={
+              "bf-player-stage" +
+              (playing && chromeHidden && !showAudioStage ? " is-chrome-hidden" : "")
+            }
           >
             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
             <video ref={bindVideo} playsInline controls={false} poster={videoPoster || undefined} />
@@ -1056,7 +1132,14 @@ function FeaturePlayer({
                     ? { key: issuedNext.mediaID, stream: decodableStream(issuedNext) }
                     : null
                 }
-              />
+                mediaID={mediaId || ""}
+              >
+                <NowPlayingDetails
+                  quality={infoIsCurrent ? state.info?.audioQuality : null}
+                  upNext={upNextItems}
+                  onPlay={playUpNext}
+                />
+              </AudioStage>
             )}
             {(showSpinner || !queueReady) && (
               // Over the audio card a wait is a small cue, not a cover (CORE-2363).
@@ -1154,6 +1237,32 @@ function FeaturePlayer({
                 onMusicQueueOpenChange={setMusicQueueOpen}
                 serverQueueNextID={serverQueueRun ? (issuedNext?.mediaID ?? "") : undefined}
                 audioStage={showAudioStage}
+                shuffle={
+                  showAudioStage && (queue?.length ?? 0) >= 2
+                    ? {
+                        on: playModes.shuffle,
+                        onToggle: () =>
+                          updatePlayModes((modes) => ({
+                            ...modes,
+                            shuffle: !modes.shuffle,
+                            seed: Math.floor(Math.random() * 0x7fffffff),
+                            anchor: mediaId || "",
+                          })),
+                      }
+                    : undefined
+                }
+                repeat={
+                  showAudioStage
+                    ? {
+                        mode: playModes.repeat,
+                        onCycle: () =>
+                          updatePlayModes((modes) => ({
+                            ...modes,
+                            repeat: nextRepeat(modes.repeat),
+                          })),
+                      }
+                    : undefined
+                }
                 onStop={back}
                 onRemoteStop={stopRemotely}
                 onRemoteRestart={restart}
