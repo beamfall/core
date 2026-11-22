@@ -152,6 +152,28 @@ func (i ContainerRelationIndex) Nests(kind, relation, targetKind string) bool {
 	return i.nesting[kind+"\x00"+relation] == targetKind
 }
 
+// ContainerNestings lists, in declaration order, each relation by which a
+// container kind of the bundle nests in another container kind, so an item
+// action on a container reaches its parts. Every declared target is kept,
+// even when one relation names several; a relation between two Entities of
+// one kind is a parent link only under an EntityMap.ParentRelation, so it is
+// left out.
+func ContainerNestings(pluginID string, bundle plugin.Bundle) []store.ContainerNest {
+	containerKinds := containerKindNames(bundle)
+	var nests []store.ContainerNest
+	for _, kind := range bundle.EntityKinds {
+		if !containerKinds[kind.Name] {
+			continue
+		}
+		for _, relation := range kind.Relations {
+			if containerKinds[relation.ToKind] && relation.ToKind != kind.Name {
+				nests = append(nests, store.ContainerNest{PluginID: pluginID, ChildKind: kind.Name, Relation: relation.Name, ParentKind: relation.ToKind})
+			}
+		}
+	}
+	return nests
+}
+
 // OutermostContainerKinds names the container kinds a container chain ends
 // at: kinds that declare no relation to another container kind yet hold Media
 // themselves or are nested into by another container kind. A container kind
