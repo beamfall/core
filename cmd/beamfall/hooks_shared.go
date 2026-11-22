@@ -53,6 +53,7 @@ func firstPartyHooksForBundles(bundles []plugin.Bundle) app.Hooks {
 	if active[books.PluginID] {
 		hooks.Parsers[books.PluginID] = books.New()
 		hooks.HydrationMappers[books.PluginID] = booksHydrationMapper{}
+		hooks.EntityBrowseRules = append(hooks.EntityBrowseRules, bookAuthorBrowseRule())
 		hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: books.PluginID, ImporterID: books.ImporterID}] = func(_ []string, path string) migrate.Source {
 			return books.NewImportSource(path)
 		}

@@ -29,6 +29,7 @@ import { NotAvailable } from "../components/NotAvailable";
 import type { SeeAllTarget } from "../components/SectionView";
 import { StartRadioButton } from "../components/StartRadio";
 import { useListingRows } from "../components/useListingRows";
+import { useRelationProbe } from "../components/useRelationProbe";
 import { ViewerActions } from "../components/ViewerActions";
 import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
 import {
@@ -179,16 +180,24 @@ export function EntityPage() {
   // order the list shows (grouped and numbered by stored position, CORE-1635).
   const listedItems = needsFallback || listens || rollsOverLayout ? fallback : null;
   const listing = useListingRows(entity, listedItems ?? NO_ITEMS);
+  // A listing whose relation sequences or credits its Media by role (CORE-3014)
+  // keeps the server's order and hands the player no queue: each Media is
+  // started on its own, so finishing one never starts the next (ADR-0055 §2.4).
+  const probe = useRelationProbe(entity, listedItems ?? NO_ITEMS);
+  const relationOrdered = probe.sequenced || probe.roles !== null;
   const trackOrder = useMemo(
     () =>
-      containerTrackRows(entity, listedItems ?? NO_ITEMS, listing.rows)?.map(
-        (track) => track.item,
-      ) ?? null,
-    [entity, listedItems, listing.rows],
+      relationOrdered
+        ? null
+        : (containerTrackRows(entity, listedItems ?? NO_ITEMS, listing.rows)?.map(
+            (track) => track.item,
+          ) ?? null),
+    [entity, listedItems, listing.rows, relationOrdered],
   );
   // Until an audio container's order is known, offer no Play action that could
   // start the wrong track.
-  const orderPending = listing.wanted && listing.rows === null && entity?.archetype === "container";
+  const orderPending =
+    probe.pending || (listing.wanted && listing.rows === null && entity?.archetype === "container");
   const ordered = trackOrder ?? fallback;
   // A Media item of its own plays first unless all are finished and a rolled-up
   // container card still has children left (CORE-3058).
@@ -213,10 +222,11 @@ export function EntityPage() {
   // A finished item of its own plays again when the containers hold nothing.
   const playsOwn = !!directNext || (!!childItems && !childNext);
   const fallbackQueue = useMemo(() => {
+    if (relationOrdered) return undefined;
     if (playsOwn && trackOrder) return audioQueue(trackOrder);
     const queueSource = playsOwn ? fallback : childItems;
     return queueSource ? playQueueOf(queueSource) : undefined;
-  }, [playsOwn, trackOrder, fallback, childItems]);
+  }, [relationOrdered, playsOwn, trackOrder, fallback, childItems]);
   const nextUp = playsOwn ? ownNext : childNext;
   // The listed Media once known to be all audio: what Shuffle plays, and for a
   // container the sign to name its people under the title.
@@ -225,10 +235,11 @@ export function EntityPage() {
   // (CORE-2826); a listening page keeps the plain label.
   const nextUpOrdinalText = nextUp && !isAudio ? nextUpOrdinal(nextUp.item, displayLocale) : "";
   const listeningTracks = useMemo(() => {
+    if (relationOrdered) return null;
     if (trackOrder) return trackOrder;
     if (entity?.archetype !== "person" || !listedItems || !listing.rows || !isAudio) return null;
     return listedItems.filter((item) => item.kind === "media");
-  }, [trackOrder, entity, listedItems, listing.rows, isAudio]);
+  }, [relationOrdered, trackOrder, entity, listedItems, listing.rows, isAudio]);
   const people = trackOrder ? entityPeople(entity) : [];
   const unwatched = unwatchedCount(fallback);
   const remainingLabel = t(isAudio ? "cardUnplayed" : "entityDetailUnwatched", {
@@ -463,8 +474,11 @@ export function EntityPage() {
     if (!nextUp) return;
     const { item } = nextUp;
     const state: PlayerNavState = { title: item.title };
-    if (identity && fallbackQueue && fallbackQueue.length > 0) {
-      state.queue = queueWindow(fallbackQueue, item.id);
+    // A relation-ordered listing's Media plays alone; the one-item queue also
+    // ends an earlier Play all queue, so it never runs on (ADR-0055 §2.4).
+    const queue = relationOrdered ? playQueueOf([item]) : fallbackQueue;
+    if (identity && queue && queue.length > 0) {
+      state.queue = queueWindow(queue, item.id);
       state.queueIdentity = identity;
     }
     navigate(mediaPath("watch", item.id), { state });
@@ -758,6 +772,7 @@ export function EntityPage() {
                   guardContainerID={guardContainerID}
                   items={withoutShownCards(fallback, groups.containers)}
                   listing={listing}
+                  probe={probe}
                   label={t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })}
                 />
               </>

@@ -52,6 +52,7 @@ import {
   skipIntervalOverrideValue,
 } from "../lib/preferences";
 import { RADIO_LOW_WATER, topUpRadio, useActiveRadio } from "../lib/radio";
+import { sequencePosition } from "../lib/relationOrder";
 import { noteAutoAdvance } from "../lib/stillWatching";
 import {
   encodeSubtitleAppearance,
@@ -82,6 +83,7 @@ import {
   speedValue,
 } from "../player/listening";
 import { MiniPlayer } from "../player/MiniPlayer";
+import { NextInSequenceCard } from "../player/NextInSequenceCard";
 import { NowPlayingDetails, type UpNextItem } from "../player/NowPlayingDetails";
 import {
   DEFAULT_PLAY_MODES,
@@ -108,6 +110,7 @@ import { useLongPauseSkip, usePlaybackSpeed, useSleepTimer } from "../player/use
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
+import { useSequenceFinish } from "../player/useSequenceFinish";
 import { useShareLink } from "../player/useShareLink";
 import { useStillWatching } from "../player/useStillWatching";
 import { useUpNext } from "../player/useUpNext";
@@ -984,9 +987,22 @@ function FeaturePlayer({
     restart,
     setSleepTimer,
   ]);
+  // A sequenced item that ends with nothing to advance to offers the next one
+  // in its sequence, as a choice only (CORE-3013, ADR-0055 §2.4).
+  const sequenceNext = useSequenceFinish({
+    video: videoNode,
+    media,
+    mediaID: mediaId || "",
+    enabled: isAudio && !docked && !serverQueueRun && !partyLeads && !playNext,
+  });
+  const [dismissedFinish, setDismissedFinish] = useState<string | null>(null);
+  const finishKey = sequenceNext ? `${mediaId}\n${sequenceNext.item.id}` : "";
+  // Playing again clears a dismissal, so the next end offers it again.
+  if (!sequenceNext && dismissedFinish !== null) setDismissedFinish(null);
+  const showSequenceNext = !!sequenceNext && dismissedFinish !== finishKey;
   // The card's appearance reveals chrome once; the card itself stays visible
   // and clickable regardless of auto-hide (player-deferred.css).
-  const upNextVisible = upNext.visible || stillWatching.prompting;
+  const upNextVisible = upNext.visible || stillWatching.prompting || showSequenceNext;
   useEffect(() => {
     if (upNextVisible) reveal();
   }, [upNextVisible, reveal]);
@@ -1523,6 +1539,21 @@ function FeaturePlayer({
                 onPlay={upNext.advance}
                 onDismiss={upNext.dismiss}
               />
+            )}
+            {playing && sequenceNext && showSequenceNext && (
+              <NextInSequenceCard
+                next={sequenceNext}
+                identity={identity}
+                onDismiss={() => setDismissedFinish(finishKey)}
+              />
+            )}
+            {playing && sequencePosition(media) && (
+              // Persistent for a sequenced item, so the offer's arrival is announced without moving focus.
+              <p className="sr-only" role="status" aria-live="polite">
+                {sequenceNext && showSequenceNext
+                  ? t("mediaDetailNextInSeriesLabel", { title: sequenceNext.item.title })
+                  : ""}
+              </p>
             )}
             {playing && stillWatching.prompting && (
               <StillWatchingPrompt

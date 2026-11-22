@@ -41,7 +41,10 @@ vi.mock("@/lib/graphql", () => ({
   fetchMediaForEntity: vi.fn(),
   fetchSourceItems: vi.fn(),
 }));
-vi.mock("@/lib/graphql/browse", () => ({ fetchMediaRows: vi.fn() }));
+vi.mock("@/lib/graphql/browse", () => ({
+  fetchMediaRow: vi.fn().mockResolvedValue(null),
+  fetchMediaRows: vi.fn(),
+}));
 vi.mock("@/lib/session", () => ({
   useSession: () => ({ manifest: { layouts: mocks.layouts }, revealed: mocks.revealed }),
   useViewerIdentity: () => mocks.identity,

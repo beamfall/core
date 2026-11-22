@@ -37,6 +37,8 @@ export interface ContainerContext {
   items: SourceItem[];
   /** The nearest container's Entity (archetype, related people); null until read. */
   entity: EntityInfo | null;
+  /** The next item in each credited container's order, by container id; empty until read. */
+  nextBy: Readonly<Record<string, SourceItem | null>>;
 }
 
 const EMPTY: ContainerContext = {
@@ -46,6 +48,7 @@ const EMPTY: ContainerContext = {
   container: null,
   items: [],
   entity: null,
+  nextBy: {},
 };
 
 /** The item's container credits, de-duplicated, in the server's order. */
@@ -163,12 +166,20 @@ export function useContainerContext(
     const controller = new AbortController();
     void (async () => {
       try {
-        const lists = await Promise.all(
+        const settled = await Promise.allSettled(
           links.map(async (link) => ({
             link,
             items: await fetchMediaForEntity(link.id, controller.signal),
           })),
         );
+        if (controller.signal.aborted) return;
+        const lists = settled.flatMap((read) => (read.status === "fulfilled" ? [read.value] : []));
+        // Each container's next stands on its own read, whatever else fails.
+        const nextBy = Object.fromEntries(
+          lists.map((list) => [list.link.id, nextAfter(list.items, mediaID)]),
+        );
+        setContext((prev) => ({ ...prev, nextBy }));
+        if (lists.length < links.length) return;
         const nearest = nearestContainer(lists, mediaID);
         if (!nearest || controller.signal.aborted) return;
         const entity = await fetchEntity(nearest.link.id, controller.signal);
@@ -191,6 +202,7 @@ export function useContainerContext(
           container: nearest.link,
           items: nearest.items,
           entity,
+          nextBy,
         });
       } catch {
         // Context is an enhancement: the credited parents already show.
@@ -200,4 +212,16 @@ export function useContainerContext(
   }, [creditKey, mediaID]);
 
   return context;
+}
+
+/**
+ * The item after this one in the sequencing container's own order, whichever
+ * container is the nearest, so a smaller container never hides or replaces
+ * the next in sequence. Null without a position or until the context is read.
+ */
+export function sequenceNext(
+  position: { id: string } | null,
+  context: Pick<ContainerContext, "nextBy">,
+): SourceItem | null {
+  return position ? (context.nextBy[position.id] ?? null) : null;
 }

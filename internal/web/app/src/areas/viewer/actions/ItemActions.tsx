@@ -1,4 +1,5 @@
 import { Bookmark, BookmarkCheck, Circle, CircleCheck, Eye, EyeOff, Star } from "lucide-react";
+import { useEffect } from "react";
 import type { ItemTarget } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useItemHide } from "./hiddenItems";
@@ -18,6 +19,8 @@ interface ItemActionsProps {
    */
   watchActions?: boolean;
   className?: string;
+  /** Told the watched state once it loads and whenever it changes. */
+  onWatched?: (watched: boolean) => void;
 }
 
 /**
@@ -43,10 +46,15 @@ function WatchActions({
   isAudio = false,
   hideTitle,
   className = "",
+  onWatched,
 }: Omit<ItemActionsProps, "watchActions">) {
   const t = useT();
   const { state, pending, failed, retry, setWatched, setWatchlisted, setRating } =
     useItemActions(target);
+  const loadedWatched = state?.watched;
+  useEffect(() => {
+    if (loadedWatched !== undefined) onWatched?.(loadedWatched);
+  }, [loadedWatched, onWatched]);
   const disabled = pending || !state;
   const watched = state?.watched ?? false;
   const watchedLabel = isAudio

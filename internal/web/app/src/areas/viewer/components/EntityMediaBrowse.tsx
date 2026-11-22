@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { useEngagementEpoch } from "../actions/engagementSync";
 import { filmographyOrder } from "../lib/people";
+import { roleGroups } from "../lib/relationOrder";
 import {
   appearsOn,
   audioQueue,
@@ -16,10 +17,12 @@ import {
   TOP_TRACKS_LIMIT,
   topTracks,
 } from "../lib/trackList";
+import { playQueueOf } from "../lib/watchQueue";
 import { ContainerChildren } from "./ContainerChildren";
 import { MediaItemCard } from "./MediaItemCard";
 import { ContainerTracks, TrackList } from "./TrackList";
 import type { ListingRows } from "./useListingRows";
+import type { RelationProbe } from "./useRelationProbe";
 
 // The Media an Entity page lists when its Kind has no detail Layout. The
 // layout follows the generic rules in lib/trackList (CORE-1635): an audio
@@ -30,13 +33,17 @@ import type { ListingRows } from "./useListingRows";
 // first (CORE-2406); anything else lists its children grouped by
 // kind (ContainerChildren, CORE-1786). The page reads the per-Media rows
 // (useListingRows) and passes them in, so its Play action and this list use
-// one track order (containerTrackRows).
+// one track order (containerTrackRows). An audio listing whose relation
+// carries a sequence or roles (useRelationProbe, CORE-3014) lists instead as
+// a poster grid in the server's sequence order, or grouped by role; each card
+// queues only its own Media, so finishing one never starts the next.
 export function EntityMediaBrowse({
   entity,
   items,
   label,
   listing,
   guardContainerID,
+  probe,
 }: {
   entity: EntityInfo | null;
   items: SourceItem[];
@@ -46,9 +53,11 @@ export function EntityMediaBrowse({
   label: string;
   /** The page's per-Media rows (useListingRows), shared with its Play action. */
   listing: ListingRows;
+  /** The listing relation's attributes (useRelationProbe), shared with the page's Play action. */
+  probe: RelationProbe;
 }) {
   const { wanted, rows } = listing;
-  if (wanted && rows === null) {
+  if (probe.pending || (wanted && rows === null)) {
     return (
       <div aria-hidden className="flex flex-col gap-2">
         <Skeleton className="bf-shimmer h-12 w-full" />
@@ -57,6 +66,8 @@ export function EntityMediaBrowse({
       </div>
     );
   }
+  if (probe.sequenced) return <SequencedMedia items={items} label={label} />;
+  if (probe.roles) return <PersonRoles items={items} roles={probe.roles} />;
   const tracks = containerTrackRows(entity, items, rows);
   if (tracks) return <ContainerTracks tracks={tracks} />;
   if (entity && rows && entity.archetype === "person" && isAudioListing(items, rows))
@@ -77,6 +88,74 @@ export function EntityMediaBrowse({
       }
     />
   );
+}
+
+function SequencedMedia({ items, label }: { items: SourceItem[]; label: string }) {
+  const media = items.filter((item) => item.kind === "media");
+  if (media.length === 0) return null;
+  return (
+    <section className="bf-section flex flex-col gap-3">
+      <ul className="bf-grid" aria-label={label}>
+        {media.map((item, index) => (
+          <MediaItemCard
+            key={item.id}
+            item={item}
+            posInSet={index + 1}
+            setSize={media.length}
+            nameContainer={false}
+            queue={playQueueOf([item])}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function PersonRoles({ items, roles }: { items: SourceItem[]; roles: Record<string, string[]> }) {
+  const t = useT();
+  const groups = useMemo(() => roleGroups(items, roles), [items, roles]);
+  if (groups.length === 0) return <PosterGrid items={items} byYear />;
+  return (
+    <>
+      {groups.map(({ role, items: groupItems }) => {
+        const heading = roleHeading(t, role);
+        return (
+          <section key={role} className="bf-section flex flex-col gap-3">
+            <h2 className="bf-section-title">
+              <span>{heading}</span>
+            </h2>
+            <ul className="bf-grid" aria-label={heading}>
+              {groupItems.map((item, index) => (
+                <MediaItemCard
+                  key={item.id}
+                  item={item}
+                  posInSet={index + 1}
+                  setSize={groupItems.length}
+                  nameContainer={false}
+                  queue={playQueueOf([item])}
+                />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </>
+  );
+}
+
+function roleHeading(t: ReturnType<typeof useT>, role: string): string {
+  switch (role) {
+    case "":
+      return t("personAppearsIn");
+    case "author":
+      return t("personRoleWrote");
+    case "narrator":
+      return t("personRoleNarrated");
+    case "translator":
+      return t("personRoleTranslated");
+    default:
+      return t("personRoleOther", { role });
+  }
 }
 
 /**

@@ -616,6 +616,42 @@ func TestEntityItemsSourceBrowseRules(t *testing.T) {
 	}
 }
 
+// TestEntityItemsSourceBrowseRuleAttributeValue pins the audiobook Authors
+// grid: a credit attribute filter keeps an author, an "author, narrator" and a
+// credit without a role, and drops a narrator and a "co-author" (CORE-3014).
+func TestEntityItemsSourceBrowseRuleAttributeValue(t *testing.T) {
+	st, lib, _ := relatedFixture(t)
+	ctx := context.Background()
+	book, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: lib.ID, Path: "/books/book.m4b", Title: "Book",
+		Container: "mp4", Codec: "aac", Class: MediaClassAudio, ContentFingerprint: "fp-book",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles := map[EntityID]string{"author": "author", "both": "narrator, author", "narrator": "narrator", "coauthor": "co-author"}
+	for id, role := range roles {
+		if err := st.UpsertEntity(ctx, Entity{ID: id, LibraryID: lib.ID, Kind: "person", Title: string(id)}); err != nil {
+			t.Fatal(err)
+		}
+		relateEntities(t, st, EntityRelation{FromEntityID: id, Name: "credited-on", ToMediaID: book.ID, Attributes: map[string]string{"role": role}})
+	}
+	// A credit written without a role (a scraper's) matches the empty Value.
+	if err := st.UpsertEntity(ctx, Entity{ID: "unroled", LibraryID: lib.ID, Kind: "person", Title: "unroled"}); err != nil {
+		t.Fatal(err)
+	}
+	relateEntities(t, st, EntityRelation{FromEntityID: "unroled", Name: "credited-on", ToMediaID: book.ID})
+	query := SourceQuery{Kind: "entity-items", EntityKind: "person", Home: true,
+		EntityBrowseSources: map[string][]EntityBrowseSource{"shelf": {
+			{Relation: "credited-on", Attribute: "role", Value: "author"},
+			{Relation: "credited-on", Attribute: "role"},
+		}},
+	}
+	if got, want := sourceItemIDs(mustSourceItems(t, st, LibraryFilter{AllLibraries: true}, query)), []MediaID{"author", "both", "unroled"}; !slices.Equal(got, want) {
+		t.Fatalf("authors = %v, want %v", got, want)
+	}
+}
+
 func TestRelatedEntitiesTraversal(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

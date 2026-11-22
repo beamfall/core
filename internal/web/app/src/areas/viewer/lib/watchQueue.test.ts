@@ -8,6 +8,7 @@ import {
   queueOfClass,
   queueWindow,
   readPlayerNavState,
+  sectionQueue,
   withQueueClasses,
 } from "./watchQueue";
 
@@ -205,6 +206,20 @@ describe("class-narrowed play queue (CORE-1490)", () => {
       { id: "a", title: "A", mediaClass: "audio" },
       { id: "b", title: "B" },
     ]);
+  });
+});
+
+describe("section queue (CORE-3013)", () => {
+  const items = [item("a", "media"), item("b", "media")];
+
+  it("queues no siblings for a per-container Source, so none runs on", () => {
+    expect(sectionQueue("next-up", items)).toBeUndefined();
+    expect(sectionQueue("continue-watching", items)).toBeUndefined();
+  });
+
+  it("queues a library Source's playable items", () => {
+    expect(sectionQueue("recently-added", items)?.map((entry) => entry.id)).toEqual(["a", "b"]);
+    expect(sectionQueue(undefined, items)).toHaveLength(2);
   });
 });
 
