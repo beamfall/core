@@ -103,6 +103,7 @@ vi.mock("@/lib/graphql", () => ({
   fetchPlaybackMarkers: vi.fn().mockResolvedValue([]),
   fetchPrePlayQueue: vi.fn().mockResolvedValue([]),
   fetchRelatedMedia: vi.fn().mockResolvedValue([]),
+  fetchSimilarMedia: vi.fn().mockResolvedValue([]),
   // Off the home network: the player does not listen for a lead party.
   calibrateWatchPartyClock: vi.fn().mockRejectedValue(new Error("not on the home network")),
   createWatchParty: vi.fn(),

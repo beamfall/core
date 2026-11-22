@@ -13,6 +13,7 @@ export {
 } from "./continueWatching";
 export {
   notifyEngagementChanged,
+  readEngagementEpoch,
   useEngagementEpoch,
   useEngagementEvents,
 } from "./engagementSync";

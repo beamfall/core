@@ -221,7 +221,12 @@ const CLIP_UTILITY =
 // 2026-11-21 (CORE-2915): +6 → 38. The EntityPicker adds `truncate` on the option title and
 // detail, the raw-ID option, the selected card's title and detail, and the multi-pick chip.
 // CSS ellipsis inside `min-w-0` flex rows; the full text stays in the DOM for AT.
-const CLIP_BASELINE = 38;
+// 2026-11-21 (stack 5 merge: CORE-1662 party, CORE-1690 subtitle search): +13 → 51.
+// `truncate` on the party guest's now-playing line and queue rows, the stage's
+// up-next line, the host's screen, queue, request and guest rows (title and
+// detail), and the subtitle result's release name. CSS ellipsis only; the full
+// text stays in the DOM text node for AT.
+const CLIP_BASELINE = 51;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

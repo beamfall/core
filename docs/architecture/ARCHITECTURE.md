@@ -147,6 +147,7 @@ resolver over `store` typed methods. No `internal/util`, no `internal/model`, no
 | `graphshape` | Generic JSON-shape reflection walker used by graph's nested schema artifact | 0011 §8 |
 | `hostmetrics` | In-memory one-hour ring of host CPU, memory and this server's own network traffic for the console graphs; never persisted or sent off the server | — |
 | `redact` | Secret-class and personal-detail redaction for operational log text (API keys, auth headers, URL tokens, content paths, secret-named values, home-directory user names, IP addresses) | — |
+| `lyrics` | Local lyric reads for audio files: LRC and plain-text same-name sidecars through a rooted, size-bounded open, and ID3v2 SYLT/USLT frames (CORE-1638) | — |
 | `l10n` | Server-text localization: the vendored shared locale declaration, per-locale catalogs, request locale negotiation (profile preference, `Accept-Language`, source locale) | — |
 | `logtail` | Bounded in-memory tail of the most recent operator log lines, redacted before they are kept, for the console server-log read (CORE-1716) | — |
 | `restorestage` | Staged restore from the console: decrypts a backup into the data directory and leaves a staged marker; the next start applies it under the server lock, and a restore journal left by an interrupted apply blocks later starts (CORE-1720) | 0115 |
@@ -184,6 +185,7 @@ resolver over `store` typed methods. No `internal/util`, no `internal/model`, no
 | `skipdetect` | Generic skip-segment detector over markers, ordered siblings, jobs, and FFmpeg | 0048 |
 | `store` | The single-writer storage gate: both DB handles, all SQL text, schema row types, typed query methods, typed IDs, `LibraryFilter`, FTS, migrations, backups, placement guard, refuse-on-newer | 0011 |
 | `streamtoken` | Stream Token issue + verify (HMAC, expiry, live revocation/reveal recheck); `Grant`, `Target` | 0010 §3 |
+| `subtitlesearch` | Opt-in, default-off online subtitle search providers (OpenSubtitles REST, operator-supplied key in `<data-dir>/secrets/opensubtitles-api-key`, none shipped); requests travel through a consumer-side egress seam, no telemetry | CORE-1690 |
 | `updatecheck` | Opt-in, default-off version check against a signed public release manifest. No telemetry | 0013 §7 |
 | `watcher` | Filesystem watch state and change observation | 0009 |
 | `web` | Embedded Core Web UI static file shim | 0007 |
@@ -208,19 +210,21 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | package | allowed `internal/` imports |
 |---|---|
 | `config` | serverrole (bootstrap config carries the ADR-0123 §2 attached/main `Role`) |
+| `partyqueue` | — (leaf; pure ordering and wait-estimate math for a shared request rotation, CORE-1662; stdlib only, no internal deps) |
 | `serverrole` | — (leaf; the ADR-0123 §2 two-face authority `Role` — `Main`/`Attached` — plus the `GuardAuthority` sentinel the catalog-row / Stream-Token / engagement seams consult; stdlib only, no internal deps) |
 | `nodehost` | — (leaf; the ADR-0123 §5 Origin-Node enrollment lifecycle + the ADR-0063 origin-node Compatibility Handshake gate + per-node revoke/rotate — NODE-3; operates on real x509 mTLS leaves, stdlib only, no internal deps) |
 | `nodehostd` | `nodehost` (node-facing mTLS SESSION transport, ADR-0129 §5: the node dials the main; main-side listener + node-side dialer pin SPKI in both directions. The `app` composition root prepares the cloned self-signed mTLS config + compatibility policy and passes them in, so no `remoteaccess`/`config` edge.) |
 | `capabilities` | — (leaf; compile/runtime capability self-report for clients and CI manifest checks) |
 | `hostmetrics` | — (leaf; host CPU, memory and own-traffic sampler behind the console graphs, CORE-1195; stdlib only, no internal deps) |
 | `redact` | — (leaf; log-text redaction shared by `jobs` and `logtail`; stdlib only, no internal deps) |
+| `lyrics` | — (leaf; local lyric reads for the `mediaLyrics` graph read; stdlib only, no internal deps) |
 | `l10n` | — (leaf; server-text catalogs and locale negotiation, CORE-2102; stdlib and `golang.org/x/text` only) |
 | `logtail` | redact (in-memory tail of redacted operator log lines for the console server-log read, CORE-1716) |
 | `restorestage` | store, backup (staged restore, CORE-1720: `backup` decrypts the set, `store` reads the manifest and checks the restore identity; the apply runs in `cmd/beamfall` under the server lock) |
 | `causation` | — (leaf; ADR-0125 Integration Worker global-chain budget, per-worker action rate, authenticated causation tokens, and bounded/coalesced abort feed; stdlib only) |
 | `apptest` | app, config, plugin, store (in-process E2E test harness, mirrors `store/storetest` but top-level next to `app`: boots the composition root over `httptest` for the I/O E2E track. Test-support only, never imported by production code) |
 | `ioe2e` | — (I/O E2E journey package: `io_e2e`-tagged `*_test.go` journeys only — real ffmpeg ops + harness lifecycle happy-paths — plus an empty untagged `doc.go`. Test imports are arch-walk-invisible; no production imports) |
-| `store` (+ subpackages) | serverrole (the only importer of the SQLite driver; imports `serverrole` for the ADR-0123 §2 attached-authority guard on catalog/engagement authors) |
+| `store` (+ subpackages) | serverrole, partyqueue (the only importer of the SQLite driver; imports `serverrole` for the ADR-0123 §2 attached-authority guard on catalog/engagement authors and `partyqueue` for rotation order) |
 | `governor` | — |
 | `ffmpeg` | — |
 | `reveal` | — |
@@ -239,6 +243,7 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `web` | — (the `go:embed` shim only) |
 | `streamtoken` | store, auth (auth supplies the verifying `Scope`), serverrole (gates `Issue` on the ADR-0123 §2 / ADR-0129 §1 attached authority face — an attached Origin Node never issues) |
 | `release` | — (leaf; supply-chain integrity core — signed release manifest, ed25519 sign/verify, pinned trust-anchor public key, SBOM/provenance builders; stdlib only, PANEL-11 / ADR-0013 §A) |
+| `subtitlesearch` | — (leaf; CORE-1690 online subtitle providers over a consumer-side `Egress` seam the composition root adapts onto the hardened outbound proxy; stdlib only, no internal deps) |
 | `updatecheck` | release (opt-in version check, ADR-0013 §7; imports `release` to verify the signed channel manifest before blessing an update — PANEL-11) |
 | `jobs` | store, redact (operational job errors are redacted before they are logged) |
 | `auth` | store |

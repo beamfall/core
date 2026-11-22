@@ -31,6 +31,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   fetchMediaForEntity: vi.fn(async () => []),
   fetchPrePlayQueue: vi.fn(async () => []),
   fetchRelatedMedia: vi.fn(async () => []),
+  fetchSimilarMedia: vi.fn(async () => []),
   fetchSourceItems: vi.fn(async () => []),
   calibrateWatchPartyClock: vi.fn(async () => {
     throw new Error("home network only");

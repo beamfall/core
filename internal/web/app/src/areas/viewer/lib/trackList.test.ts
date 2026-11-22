@@ -178,6 +178,14 @@ describe("track list rules", () => {
     ).toBe(true);
   });
 
+  it("reads a rolled-up container card as held non-audio Media (CORE-3058)", () => {
+    const card: SourceItem = { id: "c1", kind: "entity", title: "Held" };
+    const track = media("x", "Clip", { mediaClass: "audio" } as Partial<SourceItem>);
+    expect(isAudioListing([track, card], {})).toBe(false);
+    expect(hasKnownNonAudio([track, card])).toBe(true);
+    expect(hasKnownNonAudio([track])).toBe(false);
+  });
+
   it("formats runtimes", () => {
     expect(formatDuration(201)).toBe("3:21");
     expect(formatDuration(5)).toBe("0:05");

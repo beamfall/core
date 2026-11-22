@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/beamfall/core/internal/app"
+	books "github.com/beamfall/plugin-audiobook"
 	enrichment "github.com/beamfall/plugin-enrichment"
 	filmtv "github.com/beamfall/plugin-filmtv"
 	music "github.com/beamfall/plugin-music"
@@ -54,7 +56,16 @@ func TestFirstPartyHooksComposeProductionPluginBehavior(t *testing.T) {
 	if want := len(filmtv.PackResolvers()); want == 0 || filmtvResolvers != want {
 		t.Fatalf("Film/TV offline pack resolver hooks = %d, want %d", filmtvResolvers, want)
 	}
-	if others := len(hooks.OfflinePackResolvers) - filmtvResolvers; others != 4 {
+	audiobookResolvers := 0
+	for _, resolver := range hooks.OfflinePackResolvers {
+		if resolver.PluginID == books.PluginID {
+			audiobookResolvers++
+		}
+	}
+	if want := len(books.PackResolvers()); want == 0 || audiobookResolvers != want {
+		t.Fatalf("audiobook offline pack resolver hooks = %d, want %d", audiobookResolvers, want)
+	}
+	if others := len(hooks.OfflinePackResolvers) - filmtvResolvers - audiobookResolvers; others != 4 {
 		t.Fatalf("other offline pack resolver hooks = %d, want 4", others)
 	}
 	if len(hooks.ScrobbleAdapters) != 3 {
@@ -282,14 +293,55 @@ func TestMusicDeclaresEntityPosterInheritance(t *testing.T) {
 	}
 }
 
-func TestMusicDeclaresEntityBrowseRule(t *testing.T) {
-	want := []app.EntityBrowseRule{{
+func TestFirstPartyEntityBrowseRules(t *testing.T) {
+	want := []app.EntityBrowseRule{bookAuthorBrowseRule(), {
 		PluginID: music.PluginID, Kind: "artist", Sources: []app.EntityBrowseSource{
 			{Relation: "album-artist", FromKind: "album"},
 			{Relation: "appears-on", ExcludeMediaRelation: "album-track"},
 		},
 	}}
 	if got := firstPartyHooks().EntityBrowseRules; !reflect.DeepEqual(got, want) {
-		t.Fatalf("music browse rules = %+v, want %+v", got, want)
+		t.Fatalf("browse rules = %+v, want %+v", got, want)
+	}
+	// Core drops a rule whose attribute the relation does not declare.
+	declared := false
+	for _, kind := range books.Bundle().EntityKinds {
+		for _, relation := range kind.Relations {
+			if kind.Name == books.KindPerson && relation.Name == books.RelationCreditedOn {
+				declared = slices.Contains(relation.Attributes, books.AttributeRole)
+			}
+		}
+	}
+	if !declared {
+		t.Fatalf("audiobook person %s does not declare attribute %q", books.RelationCreditedOn, books.AttributeRole)
+	}
+}
+
+func TestMusicAlbumReleaseTypeGroups(t *testing.T) {
+	mapper := musicHydrationMapper{}
+	plan := mapper.MapHydration(map[string]string{
+		"TITLE": "Copper Tide", "ALBUM": "Tidewater Live", "ALBUMARTIST": "Lantern Choir", "RELEASETYPE": "album; live",
+	}, "/flat/a.flac")
+	for _, relation := range plan.Relations {
+		for _, field := range relation.From.Fields {
+			if field.Name == music.ReleaseTypeField {
+				t.Fatalf("Entity hydration still writes %q", field.Name)
+			}
+		}
+	}
+	tag := mapper.HydrationTag()
+	if got := tag.Read(map[string]string{"releasetype": "album; live"}); tag.Field != music.ReleaseTypeField || got != music.ReleaseTypeLive {
+		t.Fatalf("Media tag %q = %q, want %q", tag.Field, got, music.ReleaseTypeLive)
+	}
+	if got := tag.Read(nil); got != "" {
+		t.Fatalf("missing tag normalized to %q", got)
+	}
+
+	rules := firstPartyHooks().EntityGroupRules
+	if len(rules) != 1 || rules[0].PluginID != music.PluginID || rules[0].Kind != "album" || rules[0].Field != tag.Field {
+		t.Fatalf("music entity group rules = %+v", rules)
+	}
+	if got, want := len(rules[0].Groups), len(music.ReleaseTypeGroups()); got != want || rules[0].Groups[0].Value != music.ReleaseTypeAlbum {
+		t.Fatalf("release type groups = %+v, want the plugin's %d in order", rules[0].Groups, want)
 	}
 }

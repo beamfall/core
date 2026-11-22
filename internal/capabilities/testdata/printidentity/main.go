@@ -10,5 +10,5 @@ import (
 
 func main() {
 	report := capabilities.Current()
-	fmt.Printf("%s\n%s\n", report.Version, report.Commit)
+	fmt.Printf("%s\n%s\n%s\n", report.Version, report.Commit, report.BuildDate)
 }

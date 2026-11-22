@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
-import { expectArchivedVisualParity } from "./archived-visual-parity";
+import { expectArchivedVisualParity, hideBuildLabel } from "./archived-visual-parity";
 
 const postDir = process.env.TECHDUR_VISUAL_POST_DIR;
 
@@ -98,6 +98,7 @@ export async function expectVisualParity(
 ): Promise<void> {
   const fileName = `${name}.png`;
   await waitForSplashHandoff(page);
+  await hideBuildLabel(page);
   if (postDir) {
     const root = isAbsolute(postDir) ? postDir : resolve(process.cwd(), postDir);
     const projectDir = join(root, testInfo.project.name);
@@ -132,6 +133,7 @@ export async function expectLocatorVisualParity(
 ): Promise<void> {
   const fileName = `${name}.png`;
   await waitForSplashHandoff(locator.page());
+  await hideBuildLabel(locator.page());
   if (postDir) {
     const root = isAbsolute(postDir) ? postDir : resolve(process.cwd(), postDir);
     const projectDir = join(root, testInfo.project.name);

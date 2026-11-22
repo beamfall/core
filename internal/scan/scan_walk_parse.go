@@ -267,7 +267,7 @@ func (s *scanWalkState) flushPendingParts() error {
 	// during the one-time backfill of Media the marker does not cover.
 	// Otherwise, like an unchanged single file, it refreshes its sidecar.
 	if first.hydrate {
-		if err := s.hydrateMetadata(media, first.imported.Path, first.imported.ContentFingerprint, first.tags); err != nil {
+		if err := s.hydrateMetadata(media, first.imported.Path, first.imported.ContentFingerprint, first.tags, first.probed, true); err != nil {
 			return err
 		}
 	} else if err := s.hydrateUnchanged(media, first.imported.Path, first.imported.ContentFingerprint); err != nil {

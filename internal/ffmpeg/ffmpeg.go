@@ -503,6 +503,34 @@ func (r *Runner) Probe(ctx context.Context, path string) (Probe, error) {
 	return probe, nil
 }
 
+// ProbeMetadataTags reads selected container tags without probing streams, chapters or
+// gapless playback data.
+func (r *Runner) ProbeMetadataTags(ctx context.Context, path string, keys []string) (map[string]string, error) {
+	if err := checkPath(path); err != nil {
+		return nil, err
+	}
+	ffprobePath, err := r.resolveProbe(ctx)
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"-v", "error", "-print_format", "json", "-show_entries", "format_tags=" + strings.Join(keys, ",")}
+	args = append(args, inputProtocolArgs()...)
+	cmd := r.hardenedCommand(ctx, ffprobePath, readConfinement(path).ReadOnly, nil, append(args, "--", path))
+	stdout, stderr, err := r.run(ctx, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("ffprobe tags: %s: %w", captureDetail(stdout, stderr, nil), err)
+	}
+	var doc probeDocument
+	if err := json.Unmarshal(stdout, &doc); err != nil {
+		return nil, err
+	}
+	tags := make(map[string]string, len(doc.Format.Tags))
+	for key, value := range doc.Format.Tags {
+		tags[strings.ToLower(key)] = value
+	}
+	return tags, nil
+}
+
 // FrameGrab extracts one video frame as a JPEG, scaled to width (keeping
 // aspect), writing dst atomically via a temp file in dst's directory.
 func (r *Runner) FrameGrab(ctx context.Context, src string, atSeconds float64, width int, dst string) (err error) {
@@ -2550,6 +2578,9 @@ type HLSProcess struct {
 	// diagnostics (or a compromised decoder) could carry that plaintext into
 	// the server's logs.
 	stderrWithheld bool
+	// companion, when set, is joined by Wait after the encoder exits: the
+	// in-process writer feeding the encoder's stdin (composed graphics).
+	companion func() error
 }
 
 // hlsProgressLineBytes bounds a partial -progress line kept between writes;
@@ -2634,9 +2665,16 @@ func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
 }
 
 func startHLSProcessContext(ctx context.Context, cmd *exec.Cmd, withholdStderr bool) (*HLSProcess, error) {
+	return startHLSProcessWith(ctx, cmd, withholdStderr, nil)
+}
+
+// startHLSProcessWith is startHLSProcessContext for an encode with an
+// in-process companion feeding it (the composed graphics presenter): Wait
+// joins companion after the encoder exits and reports its error too.
+func startHLSProcessWith(ctx context.Context, cmd *exec.Cmd, withholdStderr bool, companion func() error) (*HLSProcess, error) {
 	applySysProcAttr(cmd)
 	configureProcessGroup(cmd)
-	p := &HLSProcess{cmd: cmd, stderrWithheld: withholdStderr}
+	p := &HLSProcess{cmd: cmd, stderrWithheld: withholdStderr, companion: companion}
 	p.stderr.tail.limit = hlsStderrTailBytes
 	cmd.Cancel = func() error {
 		p.stopRequested.Store(true)
@@ -2732,6 +2770,9 @@ func (p *HLSProcess) Wait() error {
 	}
 	p.wait.Do(func() {
 		p.waitErr = p.waitForExit()
+		if p.companion != nil {
+			p.waitErr = errors.Join(p.waitErr, p.companion())
+		}
 	})
 	return p.waitErr
 }

@@ -161,3 +161,32 @@ func namesOrdinal(segment plugin.LocaleString) bool {
 	}
 	return false
 }
+
+// MediaSubtitles renders each Media's Library plugin MediaSubtitle in
+// English, keyed by Media ID, for reads that carry one plain subtitle such
+// as the party rotation (CORE-3048). A Media whose plugin declares no
+// template, or whose fields render nothing, is left out. A failed read
+// leaves the result short; it decorates, never gates.
+func (h *Handler) MediaSubtitles(ctx context.Context, ids []store.MediaID) map[store.MediaID]string {
+	out := map[store.MediaID]string{}
+	if h.store == nil {
+		return out
+	}
+	items := make([]store.SourceItem, 0, len(ids))
+	for _, id := range ids {
+		libraryID, err := h.store.MediaLibraryID(ctx, id)
+		if err != nil {
+			continue
+		}
+		items = append(items, store.SourceItem{ID: id, Kind: "media", LibraryID: libraryID})
+	}
+	if err := h.annotateSubtitles(ctx, items); err != nil {
+		return out
+	}
+	for _, item := range items {
+		if text := item.Subtitle["en"]; text != "" {
+			out[item.ID] = text
+		}
+	}
+	return out
+}

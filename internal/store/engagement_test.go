@@ -127,6 +127,41 @@ func TestPlaybackEventTimeGuardsPositionAgainstStaleReplay(t *testing.T) {
 	}
 }
 
+// TestOfflineAudiobookProgressKeepsNewerPosition is CORE-3016: an audiobook
+// listened to from an offline pack syncs its progress back late, and that
+// replay must not clobber a newer position another device already reported.
+func TestOfflineAudiobookProgressKeepsNewerPosition(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	resume := true
+	policy := ResumePolicy{Class: MediaClassAudio, Override: &resume}
+	report := func(position, eventTimeMS int) {
+		t.Helper()
+		if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+			ProfileID: "profile-default", MediaID: "media-alpha",
+			PositionSeconds: position, DurationSeconds: 36000, EventTimeMS: int64(eventTimeMS),
+		}, false, policy); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := func(position int, eventTimeMS int64) {
+		t.Helper()
+		stored, ok, err := st.PlaybackProgressFor(ctx, "profile-default", "media-alpha")
+		if err != nil || !ok {
+			t.Fatalf("progress read: ok=%v err=%v", ok, err)
+		}
+		if stored.PositionSeconds != position || stored.EventTimeMS != eventTimeMS {
+			t.Fatalf("progress = %ds at %d, want %ds at %d", stored.PositionSeconds, stored.EventTimeMS, position, eventTimeMS)
+		}
+	}
+
+	report(7200, 5000) // online device, newest
+	report(3600, 3000) // offline pack replay listened earlier
+	want(7200, 5000)
+	report(9000, 6000) // offline pack replay listened later
+	want(9000, 6000)
+}
+
 func TestResumeOverrideMakesAudioResumable(t *testing.T) {
 	st := openSeeded(t)
 	progress := PlaybackProgress{
@@ -1027,6 +1062,48 @@ func TestNextUpFollowsPlayNextOrder(t *testing.T) {
 	mustReport(t, st, "profile-default", ids[2], 120, 120, true)
 	if items = nextUp(t, st, filter, "profile-default"); len(items) != 0 {
 		t.Fatalf("next-up after finishing all = %#v, want empty", items)
+	}
+}
+
+// TestNextUpFollowsSeriesSequence pins the audiobook Next in Series shelf: a
+// series orders books by sequence×1000, so book 4.5 sits between 4 and 5,
+// and finishing books 1 and 2 surfaces book 3 (CORE-3013).
+func TestNextUpFollowsSeriesSequence(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllLibraries: true}
+	registerNextUpContainerKind(t, st)
+	if err := st.UpsertEntity(ctx, widgetEntity("entity-series", "library-local")); err != nil {
+		t.Fatal(err)
+	}
+	orders := []int{5000, 4500, 4000, 3000, 2000, 1000}
+	books := map[int]MediaID{}
+	for _, order := range orders {
+		name := "book-" + strconv.Itoa(order)
+		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: "library-local", Path: "/books/" + name + ".m4b", Title: name,
+			Container: "mp4", Codec: "aac", Class: MediaClassAudio, ContentFingerprint: "sha256:" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		books[order] = media.ID
+		if err := st.UpsertEntityRelation(ctx, EntityRelation{
+			FromEntityID: "entity-series", Name: "contains-book", ToMediaID: media.ID, SortOrder: &order,
+			Attributes: map[string]string{"sequence": strconv.FormatFloat(float64(order)/1000, 'f', -1, 64)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, step := range []struct {
+		finish int
+		want   int
+	}{{1000, 2000}, {2000, 3000}, {3000, 4000}, {4000, 4500}, {4500, 5000}} {
+		mustReport(t, st, "profile-default", books[step.finish], 3600, 3600, true)
+		items := nextUp(t, st, filter, "profile-default")
+		if len(items) != 1 || items[0].ID != books[step.want] {
+			t.Fatalf("after finishing %d next-up = %#v, want %q", step.finish, items, books[step.want])
+		}
 	}
 }
 

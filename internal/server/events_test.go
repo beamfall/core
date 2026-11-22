@@ -54,6 +54,7 @@ func newTestServerWithStore(t *testing.T) (*Server, *store.Store) {
 	srv.SetEvents(st)
 	srv.SetPushNotifications(st)
 	srv.SetV1Store(st)
+	srv.SetPartyGuestStore(st)
 	srv.SetV1ScanEnqueuer(testV1ScanEnqueuer(st))
 	srv.SetV1ProgressRecorder(graphHandler)
 	return srv, st

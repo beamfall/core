@@ -92,7 +92,7 @@ export function cardRating(item: SourceItem, locale: string, t: Translate): Card
 }
 
 // Rounds up to whole minutes, matching the server's own "min left" subtitle.
-function timeLeftLabel(seconds: number, t: Translate): string {
+export function timeLeftLabel(seconds: number, t: Translate): string {
   const minutes = Math.max(1, Math.ceil(seconds / 60));
   if (minutes >= 60) {
     return t("cardHoursLeft", {

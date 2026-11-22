@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fetchItemState } from "@/lib/graphql";
 import type { ItemStateInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { isEngagementInvalidation, notifyEngagementChanged } from "./engagementSync";
@@ -24,6 +25,7 @@ vi.mock("@/lib/graphql", () => {
     setWatched: apply("setWatched", (watched) => ({ watched })),
     setWatchlisted: apply("setWatchlisted", (watchlisted) => ({ watchlisted })),
     setRating: apply("setRating", (rating) => ({ rating })),
+    fetchMutes: vi.fn(async () => []),
   };
 });
 
@@ -42,6 +44,28 @@ function renderActions(isAudio = false) {
 }
 
 describe("ItemActions", () => {
+  it("offers only Hide, reading no watch state, without watch actions (CORE-3058)", async () => {
+    vi.mocked(fetchItemState).mockClear();
+    render(
+      <I18nProvider>
+        <ItemActions target={{ entityID: "entity-1" }} hideTitle="Drama" watchActions={false} />
+      </I18nProvider>,
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: "Hide" })).toBeEnabled());
+    expect(screen.queryByRole("button", { name: /watch|rate/i })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Your rating" })).toBeNull();
+    expect(fetchItemState).not.toHaveBeenCalled();
+  });
+
+  it("renders nothing without watch actions or a Hide title", () => {
+    const { container } = render(
+      <I18nProvider>
+        <ItemActions target={{ entityID: "entity-1" }} watchActions={false} />
+      </I18nProvider>,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("marks watched, adds to the watchlist, and sets then clears a rating", async () => {
     renderActions();
     const watched = await screen.findByRole("button", { name: "Mark watched" });

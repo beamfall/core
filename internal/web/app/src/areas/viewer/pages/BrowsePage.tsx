@@ -1,11 +1,15 @@
+import { Pencil } from "lucide-react";
 import { useState } from "react";
 import { Navigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
+import { Button } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import type { NavigationNode, Section } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { requestManifestRefresh } from "@/lib/manifestRefresh";
 import { findNodeBySlug, HOME_NODE_ID, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
+import { HomeEditor } from "../components/HomeEditor";
 import { SectionSkeleton } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
 import { LibraryHeader } from "../components/LibraryPivots";
@@ -27,6 +31,7 @@ export function BrowsePage() {
   const displayLocale = useDisplayLocale();
   const { nodeId } = useParams();
   const { manifest, loading } = useSession();
+  const [editingHome, setEditingHome] = useState(false);
   // The node whose Layout settled with nothing in it: an empty Library offers
   // no pivots into empty views (CORE-2322).
   const [emptyNode, setEmptyNode] = useState<string | null>(null);
@@ -93,17 +98,30 @@ export function BrowsePage() {
       ) : (
         <h1 className="sr-only">{node ? displayString(node.title, displayLocale) : t("brand")}</h1>
       )}
-      <LayoutView
-        layout={layout}
-        libraryID={libraryID}
-        home={home}
-        buildSeeAll={buildSeeAll}
-        navigationID={node?.id || HOME_NODE_ID}
-        onEmptyChange={(empty) => {
-          const id = node?.id ?? null;
-          setEmptyNode((current) => (empty ? id : current === id ? null : current));
-        }}
-      />
+      {home && !editingHome && (
+        // Each Profile orders and hides its own Home shelves (CORE-1972).
+        <div className="flex justify-end pb-4">
+          <Button variant="ghost" size="sm" onClick={() => setEditingHome(true)}>
+            <Pencil aria-hidden />
+            {t("homeEdit")}
+          </Button>
+        </div>
+      )}
+      {home && editingHome ? (
+        <HomeEditor onSaved={requestManifestRefresh} onClose={() => setEditingHome(false)} />
+      ) : (
+        <LayoutView
+          layout={layout}
+          libraryID={libraryID}
+          home={home}
+          buildSeeAll={buildSeeAll}
+          navigationID={node?.id || HOME_NODE_ID}
+          onEmptyChange={(empty) => {
+            const id = node?.id ?? null;
+            setEmptyNode((current) => (empty ? id : current === id ? null : current));
+          }}
+        />
+      )}
     </AppShell>
   );
 }

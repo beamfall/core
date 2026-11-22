@@ -25,6 +25,16 @@
   "queue.media_locked": "This item is locked.",
   "setup.lan_hint.finish_setup": "Open Beamfall by its IP address to finish setup without the setup token.",
   "setup.lan_hint.sign_in": "Open Beamfall by its IP address to sign in with the admin password.",
+  "station.empty": "No tracks are available to start this station right now.",
+  "station.reason.category": "Also in {title}",
+  "station.reason.era": "From the same era: the {decade}s",
+  "station.reason.from": "From {title}",
+  "station.reason.picked": "Picked for this station",
+  "station.reason.sonic": "Sounds like your seed",
+  "station.reason.played": "One you've played before",
+  "station.reason.seed": "Where this station started",
+  "station.reason.shared": "Related through {title}",
+  "station.short": "Only a few tracks matched, so this station is short.",
   "watch_party.participant_fallback": "Participant",
   "workflow.capability_disabled": "This workflow is disabled in Console → Optional features."
 }

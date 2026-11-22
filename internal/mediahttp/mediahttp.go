@@ -45,6 +45,7 @@ type Handler struct {
 	sealed                SealedPredicate
 	encryptedBytes        EncryptedByteDecryptor
 	mediaResolver         func(context.Context, store.MediaID, store.LibraryFilter) (store.Media, error)
+	subtitleSearch        SubtitleSearcher
 }
 
 // SealedPredicate reports whether a Library is currently Sealed (ADR-0098 area

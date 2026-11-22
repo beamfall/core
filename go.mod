@@ -3,12 +3,12 @@ module github.com/beamfall/core
 go 1.27.4
 
 require (
-	github.com/beamfall/plugin-audiobook v0.1.17
+	github.com/beamfall/plugin-audiobook v0.1.19
 	github.com/beamfall/plugin-enrichment v0.1.0
 	github.com/beamfall/plugin-familyarchive v0.1.18
 	github.com/beamfall/plugin-filmtv v0.1.28
-	github.com/beamfall/plugin-karaoke v0.1.11
-	github.com/beamfall/plugin-music v0.1.19
+	github.com/beamfall/plugin-karaoke v0.1.12
+	github.com/beamfall/plugin-music v0.1.20
 	github.com/beamfall/plugin-photos v0.1.15
 	github.com/beamfall/plugin-podcasts v0.1.15
 	github.com/beamfall/plugin-sdk v0.4.10
@@ -17,6 +17,7 @@ require (
 	github.com/hashicorp/yamux v0.1.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/quic-go/quic-go v0.60.0
+	github.com/tetratelabs/wazero v1.12.0
 	github.com/vektah/gqlparser/v2 v2.5.36
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/exporters/prometheus v0.66.0

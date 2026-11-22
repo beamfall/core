@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { useEngagementEpoch } from "../actions/engagementSync";
 import { filmographyOrder } from "../lib/people";
+import { roleGroups } from "../lib/relationOrder";
 import {
   appearsOn,
   audioQueue,
@@ -14,14 +15,14 @@ import {
   isAudioListing,
   listedTrackRows,
   TOP_TRACKS_LIMIT,
-  type TrackRow,
   topTracks,
-  trackGroups,
 } from "../lib/trackList";
+import { playQueueOf } from "../lib/watchQueue";
 import { ContainerChildren } from "./ContainerChildren";
 import { MediaItemCard } from "./MediaItemCard";
-import { TrackList } from "./TrackList";
+import { ContainerTracks, TrackList } from "./TrackList";
 import type { ListingRows } from "./useListingRows";
+import type { RelationProbe } from "./useRelationProbe";
 
 // The Media an Entity page lists when its Kind has no detail Layout. The
 // layout follows the generic rules in lib/trackList (CORE-1635): an audio
@@ -32,22 +33,31 @@ import type { ListingRows } from "./useListingRows";
 // first (CORE-2406); anything else lists its children grouped by
 // kind (ContainerChildren, CORE-1786). The page reads the per-Media rows
 // (useListingRows) and passes them in, so its Play action and this list use
-// one track order (containerTrackRows).
+// one track order (containerTrackRows). An audio listing whose relation
+// carries a sequence or roles (useRelationProbe, CORE-3014) lists instead as
+// a poster grid in the server's sequence order, or grouped by role; each card
+// queues only its own Media, so finishing one never starts the next.
 export function EntityMediaBrowse({
   entity,
   items,
   label,
   listing,
+  guardContainerID,
+  probe,
 }: {
   entity: EntityInfo | null;
   items: SourceItem[];
+  /** The outermost container the spoiler guard keys on (CORE-3057). */
+  guardContainerID?: string;
   /** Accessible name of the child list the non-audio layout renders. */
   label: string;
   /** The page's per-Media rows (useListingRows), shared with its Play action. */
   listing: ListingRows;
+  /** The listing relation's attributes (useRelationProbe), shared with the page's Play action. */
+  probe: RelationProbe;
 }) {
   const { wanted, rows } = listing;
-  if (wanted && rows === null) {
+  if (probe.pending || (wanted && rows === null)) {
     return (
       <div aria-hidden className="flex flex-col gap-2">
         <Skeleton className="bf-shimmer h-12 w-full" />
@@ -56,27 +66,123 @@ export function EntityMediaBrowse({
       </div>
     );
   }
+  if (probe.sequenced) return <SequencedMedia items={items} label={label} />;
+  if (probe.roles) return <PersonRoles items={items} roles={probe.roles} />;
   const tracks = containerTrackRows(entity, items, rows);
   if (tracks) return <ContainerTracks tracks={tracks} />;
   if (entity && rows && entity.archetype === "person" && isAudioListing(items, rows))
     return <PersonListening entity={entity} items={items} rows={rows} />;
-  if (entity?.archetype === "person") return <PersonFilmography items={items} />;
-  return <ContainerChildren items={items} label={label} />;
+  if (entity?.archetype === "person") return <PosterGrid items={items} byYear />;
+  // A rolled-up list stands its containers' Media in as container cards
+  // (CORE-3058), which open their Entity page rather than play.
+  if (items.some((item) => item.kind === "entity"))
+    return <PosterGrid items={items} label={label} />;
+  const container = entity?.archetype === "container" ? entity : null;
+  return (
+    <ContainerChildren
+      items={items}
+      label={label}
+      containerID={guardContainerID}
+      containerArt={
+        container?.artworkSlots?.backdrop || container?.artworkSlots?.poster || undefined
+      }
+    />
+  );
 }
 
-function PersonFilmography({ items }: { items: SourceItem[] }) {
-  const t = useT();
-  const ordered = useMemo(
-    () => filmographyOrder(items.filter((item) => item.kind === "media")),
-    [items],
-  );
-  if (ordered.length === 0) return null;
+function SequencedMedia({ items, label }: { items: SourceItem[]; label: string }) {
+  const media = items.filter((item) => item.kind === "media");
+  if (media.length === 0) return null;
   return (
     <section className="bf-section flex flex-col gap-3">
-      <h2 className="bf-section-title">
-        <span>{t("personAppearsIn")}</span>
-      </h2>
-      <ul className="bf-grid" aria-label={t("personAppearsIn")}>
+      <ul className="bf-grid" aria-label={label}>
+        {media.map((item, index) => (
+          <MediaItemCard
+            key={item.id}
+            item={item}
+            posInSet={index + 1}
+            setSize={media.length}
+            nameContainer={false}
+            queue={playQueueOf([item])}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function PersonRoles({ items, roles }: { items: SourceItem[]; roles: Record<string, string[]> }) {
+  const t = useT();
+  const groups = useMemo(() => roleGroups(items, roles), [items, roles]);
+  if (groups.length === 0) return <PosterGrid items={items} byYear />;
+  return (
+    <>
+      {groups.map(({ role, items: groupItems }) => {
+        const heading = roleHeading(t, role);
+        return (
+          <section key={role} className="bf-section flex flex-col gap-3">
+            <h2 className="bf-section-title">
+              <span>{heading}</span>
+            </h2>
+            <ul className="bf-grid" aria-label={heading}>
+              {groupItems.map((item, index) => (
+                <MediaItemCard
+                  key={item.id}
+                  item={item}
+                  posInSet={index + 1}
+                  setSize={groupItems.length}
+                  nameContainer={false}
+                  queue={playQueueOf([item])}
+                />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </>
+  );
+}
+
+function roleHeading(t: ReturnType<typeof useT>, role: string): string {
+  switch (role) {
+    case "":
+      return t("personAppearsIn");
+    case "author":
+      return t("personRoleWrote");
+    case "narrator":
+      return t("personRoleNarrated");
+    case "translator":
+      return t("personRoleTranslated");
+    default:
+      return t("personRoleOther", { role });
+  }
+}
+
+/**
+ * The listed Media and container cards as a poster grid: a person's, newest
+ * year first under "Appears in", or anything else's in the server's order.
+ */
+function PosterGrid({
+  items,
+  byYear = false,
+  label,
+}: {
+  items: SourceItem[];
+  byYear?: boolean;
+  label?: string;
+}) {
+  const t = useT();
+  const ordered = useMemo(() => (byYear ? filmographyOrder(items) : items), [items, byYear]);
+  if (ordered.length === 0) return null;
+  const heading = byYear ? t("personAppearsIn") : "";
+  return (
+    <section className="bf-section flex flex-col gap-3">
+      {heading && (
+        <h2 className="bf-section-title">
+          <span>{heading}</span>
+        </h2>
+      )}
+      <ul className="bf-grid" aria-label={heading || label}>
         {ordered.map((item, index) => (
           <MediaItemCard
             key={item.id}
@@ -88,30 +194,6 @@ function PersonFilmography({ items }: { items: SourceItem[] }) {
           />
         ))}
       </ul>
-    </section>
-  );
-}
-
-function ContainerTracks({ tracks }: { tracks: TrackRow[] }) {
-  const t = useT();
-  // One queue in display order, so playback runs on across groups.
-  const queue = audioQueue(tracks.map((track) => track.item));
-  return (
-    <section className="bf-section flex flex-col gap-3">
-      <h2 className="bf-section-title">
-        <span>{t("trackListLabel")}</span>
-      </h2>
-      {trackGroups(tracks).map(({ group, rows: groupRows }) => {
-        if (group === undefined)
-          return <TrackList key="all" rows={groupRows} queue={queue} label={t("trackListLabel")} />;
-        const heading = t("trackGroupLabel", { number: group });
-        return (
-          <div key={group} className="bf-track-group">
-            <h3 className="bf-track-group-title">{heading}</h3>
-            <TrackList rows={groupRows} queue={queue} label={heading} />
-          </div>
-        );
-      })}
     </section>
   );
 }

@@ -284,7 +284,7 @@ func (h *Handler) describeSearchCards(ctx context.Context, filter store.LibraryF
 	if err := h.store.AnnotateMediaClass(ctx, cards); err != nil {
 		return err
 	}
-	if err := h.annotateBylines(ctx, filter, cards); err != nil {
+	if err := h.annotateBylines(ctx, filter, cards, true); err != nil {
 		return err
 	}
 	if err := h.annotateSubtitles(ctx, cards); err != nil {

@@ -106,7 +106,7 @@ func (s *Store) ApplyLocalMetadata(ctx context.Context, id MediaID, local LocalM
 			return err
 		}
 	}
-	if _, err := upsertMediaFieldsTx(ctx, tx, id, local.Fields, MutationSourceLocal); err != nil {
+	if _, err := upsertMediaFieldsTx(ctx, tx, id, local.Fields, MutationSourceLocal, false); err != nil {
 		return err
 	}
 	if err := replaceLocalRelationsTx(ctx, tx, id, local.OwnedRelations, owned, local.Relations); err != nil {

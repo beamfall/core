@@ -18,8 +18,8 @@ func TestEntityTreeMediaWalksOutFromTheRoot(t *testing.T) {
 	}
 	defer st.Close()
 	certClause, certArgs := certificationFilterSQL(nil, false, nil)
-	args := append([]any{"entity-root", "album-track", "season-of", "lib-a", "lib-b", "lib-a", "lib-b"}, certArgs...)
-	rows, err := st.catalogR.QueryContext(ctx, "EXPLAIN QUERY PLAN "+entityTreeMediaSQL("?, ?", "?, ?", certClause), args...)
+	args := append([]any{"lib-a", "kit", "kit", "season", "season-of", "show", "entity-root", "album-track", "season-of", "lib-a", "lib-b", "lib-a", "lib-b"}, certArgs...)
+	rows, err := st.catalogR.QueryContext(ctx, "EXPLAIN QUERY PLAN "+entityTreeMediaSQL(valuesRows(1, 2), valuesRows(1, 4), "?, ?", "?, ?", certClause), args...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,8 +37,11 @@ func TestEntityTreeMediaWalksOutFromTheRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan := strings.Join(steps, "; ")
+	// Both recursive arms, same-Kind and nesting, seek by target and name.
+	if got := strings.Count(plan, "SEARCH r USING INDEX entity_relation_to_entity_idx (to_entity_id=? AND relation=?)"); got != 2 {
+		t.Fatalf("entity tree plan = %q, want both recursive arms to seek relations by target and name", plan)
+	}
 	for _, want := range []string{
-		"SEARCH r USING INDEX entity_relation_to_entity_idx (to_entity_id=?",
 		"SEARCH child USING INDEX sqlite_autoindex_entity_1 (id=?)",
 		"SEARCH r USING COVERING INDEX entity_relation_media_uq (from_entity_id=?)",
 		"SEARCH m USING INDEX sqlite_autoindex_media_1 (id=?)",

@@ -59,6 +59,17 @@
   text-decoration: none;
 }
 
+/* The row for the Media whose page this is (CORE-3065). */
+[data-register="viewer"] .bf-track[data-current] .bf-track-row {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+[data-register="viewer"] .bf-track[data-current] .bf-track-number,
+[data-register="viewer"] .bf-track[data-current] .bf-track-title {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
 [data-register="viewer"] .bf-track-number,
 [data-register="viewer"] .bf-track-duration {
   color: var(--text-secondary);

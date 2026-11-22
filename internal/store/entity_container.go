@@ -1,10 +1,12 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 )
 
 // EntityLink is one relation row seen from the side being followed: the Entity
@@ -98,16 +100,25 @@ type TitledEntityLink struct {
 // the Media's own Library that point at it through any relation, ordered by
 // relation then Entity id like MediaHolderLinks. The caller has already
 // decided the Media are visible; an Entity of the same Library reveals
-// nothing more. Every open catalog plane is read.
-func (s *Store) MediaHolderLinksBatch(ctx context.Context, ids []MediaID) (map[MediaID][]TitledEntityLink, error) {
+// nothing more. Every open catalog plane is read. Naming relations reads only
+// rows of those relations, so a caller that wants container links skips a
+// heavily credited Media's every other holder (CORE-3058).
+func (s *Store) MediaHolderLinksBatch(ctx context.Context, ids []MediaID, relations ...string) (map[MediaID][]TitledEntityLink, error) {
+	var only string
+	extra := make([]any, len(relations))
+	if len(relations) > 0 {
+		only = ` AND r.relation IN (` + sqlPlaceholders(len(relations)) + `)`
+		for i, relation := range relations {
+			extra[i] = relation
+		}
+	}
 	return batchTitledLinks[MediaID](ctx, s, ids, `
 		SELECT r.to_media_id, e.id, e.kind, r.relation, r.sort_order, e.library_id, e.title
 		FROM entity_relation r
 		JOIN entity e ON e.id = r.from_entity_id
 		JOIN media m ON m.id = r.to_media_id
-		WHERE r.to_media_id IN (%s)
-			AND e.trashed_at_ms IS NULL AND e.library_id = m.library_id
-		ORDER BY r.to_media_id, r.relation, e.id`)
+		WHERE r.to_media_id IN (%s)`+only+`
+			AND e.trashed_at_ms IS NULL AND e.library_id = m.library_id`, extra...)
 }
 
 // EntityTargetLinksBatch returns, for each Entity id, the untrashed Entities
@@ -121,14 +132,15 @@ func (s *Store) EntityTargetLinksBatch(ctx context.Context, ids []EntityID) (map
 		JOIN entity e ON e.id = r.to_entity_id
 		JOIN entity source ON source.id = r.from_entity_id
 		WHERE r.from_entity_id IN (%s)
-			AND e.trashed_at_ms IS NULL AND e.library_id = source.library_id
-		ORDER BY r.from_entity_id, r.relation, e.id`)
+			AND e.trashed_at_ms IS NULL AND e.library_id = source.library_id`)
 }
 
 // batchTitledLinks runs one keyed TitledEntityLink query over every open
 // catalog plane in bounded chunks; query has one %s for the key placeholders
-// and selects the key first.
-func batchTitledLinks[K ~string](ctx context.Context, s *Store, ids []K, query string) (map[K][]TitledEntityLink, error) {
+// and selects the key first; extra binds any placeholders after the keys.
+// Each key's links are ordered by relation then Entity id here rather than in
+// SQL, so a large batch needs no SQLite sorter (CORE-3058).
+func batchTitledLinks[K ~string](ctx context.Context, s *Store, ids []K, query string, extra ...any) (map[K][]TitledEntityLink, error) {
 	links := map[K][]TitledEntityLink{}
 	if len(ids) == 0 {
 		return links, nil
@@ -141,10 +153,11 @@ func batchTitledLinks[K ~string](ctx context.Context, s *Store, ids []K, query s
 	for _, reader := range s.openCatalogReadersLocked() {
 		for start := 0; start < len(ids); start += engagementChunkSize {
 			chunk := ids[start:min(start+engagementChunkSize, len(ids))]
-			args := make([]any, len(chunk))
+			args := make([]any, len(chunk), len(chunk)+len(extra))
 			for i, id := range chunk {
 				args[i] = string(id)
 			}
+			args = append(args, extra...)
 			// #nosec G201 -- only generated placeholders are interpolated; IDs are bound args.
 			rows, err := reader.QueryContext(ctx, fmt.Sprintf(query, sqlPlaceholders(len(chunk))), args...)
 			if err != nil {
@@ -171,6 +184,11 @@ func batchTitledLinks[K ~string](ctx context.Context, s *Store, ids []K, query s
 				return nil, err
 			}
 		}
+	}
+	for _, keyed := range links {
+		slices.SortFunc(keyed, func(a, b TitledEntityLink) int {
+			return cmp.Or(cmp.Compare(a.Relation, b.Relation), cmp.Compare(a.EntityID, b.EntityID))
+		})
 	}
 	return links, nil
 }

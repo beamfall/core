@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/beamfall/core/internal/auth"
@@ -171,7 +172,9 @@ func (h *HTTPHandlers) Manifest(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(pack.Manifest))
 }
 
-// Content serves one frozen Media member's encrypted BFOP bytes.
+// Content serves one frozen Media Part's encrypted BFOP bytes at
+// /api/pack/content/<token>/<media_id>[/<part>]; without a part it serves
+// Part 0 (CORE-3016).
 func (h *HTTPHandlers) Content(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/pack/content/")
 	token, mediaIDRaw, ok := strings.Cut(rest, "/")
@@ -184,7 +187,17 @@ func (h *HTTPHandlers) Content(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg, status)
 		return
 	}
-	mediaID := store.MediaID(strings.Trim(mediaIDRaw, "/"))
+	mediaIDText, partRaw, hasPart := strings.Cut(strings.Trim(mediaIDRaw, "/"), "/")
+	part := 0
+	if hasPart {
+		parsed, convErr := strconv.Atoi(partRaw)
+		if convErr != nil || parsed < 0 || strconv.Itoa(parsed) != partRaw {
+			http.Error(w, "unknown offline pack item", http.StatusNotFound)
+			return
+		}
+		part = parsed
+	}
+	mediaID := store.MediaID(mediaIDText)
 	items, err := h.svc.store.OfflinePackItems(r.Context(), pack.ID)
 	if err != nil {
 		http.Error(w, "offline pack unavailable", http.StatusInternalServerError)
@@ -192,7 +205,7 @@ func (h *HTTPHandlers) Content(w http.ResponseWriter, r *http.Request) {
 	}
 	var found store.OfflinePackItem
 	for _, item := range items {
-		if item.MediaID == mediaID {
+		if item.MediaID == mediaID && item.PartOrdinal == part {
 			found = item
 			break
 		}

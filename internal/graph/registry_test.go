@@ -193,9 +193,13 @@ var originalScopedFields = []string{
 	"mediametadata", // CORE-1715: per-item metadata editor read
 	"mediafiles",    // WEB-5B: Versions/Parts file-plane read
 	"mediaforentity",
-	"mediarelations", // WEB-5B: generic Media relation read
-	"mediatracks",    // CORE-2442: Versions and tracks before playback
-	"relatedmedia",   // CORE-2444: ranked Media sharing credits, discovery-suppressed
+	"mediarelations",          // WEB-5B: generic Media relation read
+	"mediatracks",             // CORE-2442: Versions and tracks before playback
+	"relatedmedia",            // CORE-2444: ranked Media sharing credits, discovery-suppressed
+	"similarmedia",            // CORE-3074: sonically similar Media, discovery-suppressed
+	"sonicanalysisenabled",    // CORE-3073: Admin read of the per-Library sonic toggle
+	"setsonicanalysisenabled", // CORE-3073: Admin write of the per-Library sonic toggle
+	"medialyrics",             // CORE-1638: lyrics of an audio item
 	"mergeentities",
 	"mergemedia",
 	"metadataexport",
@@ -249,6 +253,24 @@ var originalScopedFields = []string{
 	"unsealencryptedlibrary",    // ENC-2 (ADR-0045 §2.4): passphrase/Recovery-Key unseal
 	"sealencryptedlibrary",      // ENC-2 (ADR-0045 §2.4): drop in-memory DEK
 	"rewrapencryptedlibrary",    // ENC-7 (ADR-0117): rotate DEK + Recovery Key after compromise
+	"partysession",
+	"partystage",
+	"partystart",
+	"partyend",
+	"partyupdate",
+	"partyrotatecode",
+	"partyadd",
+	"partyreview",
+	"partymove",
+	"partyremove",
+	"partyrestore",
+	"partyadvance",
+	"partyplayback",
+	"partyremoveparticipant",
+	"partyscreenregister",
+	"partyscreenreport",
+	"partyscreenticker",
+	"partyscreendrop",
 	"playqueue",
 	"queueadd",
 	"queueaddmany",
@@ -403,6 +425,9 @@ var originalScopedFields = []string{
 	// ADR-0113 §2.3: per-title access grant (adult exception list + revoke).
 	"accessgrantsforprofile", // adult or managed Profile lists active grants
 	"revokeaccessgrant",      // adult revokes a grant (mutation)
+	"homelayout",             // CORE-1972: read the calling Profile's Home layout
+	"sethomelayout",          // CORE-1972: save the calling Profile's Home order and hidden shelves
+	"resethomelayout",        // CORE-1972: return the calling Profile's Home to the default
 }
 
 // TestActionRegistryMatchesDispatch is the self-check for the registry split:

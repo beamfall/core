@@ -292,6 +292,17 @@ func (s *Store) UpsertMediaFields(ctx context.Context, id MediaID, fields []Medi
 // identification vs a scan re-write) is preserved rather than clobbered, closing
 // the re-identify / scheduled-re-match clobber gap for plugin fields.
 func (s *Store) UpsertMediaFieldsWithSource(ctx context.Context, id MediaID, fields []MediaField, source MutationSource) error {
+	return s.upsertMediaFieldsWithSource(ctx, id, fields, source, false)
+}
+
+// UpsertScannedMediaTag replaces a standalone tag at the scan tier. An empty
+// probe clears the value and records scan provenance so backfill cannot revive it.
+func (s *Store) UpsertScannedMediaTag(ctx context.Context, id MediaID, name, value string) error {
+	field := MediaField{Name: name, Type: EntityFieldText, Text: value}
+	return s.upsertMediaFieldsWithSource(ctx, id, []MediaField{field}, MutationSourceScan, true)
+}
+
+func (s *Store) upsertMediaFieldsWithSource(ctx context.Context, id MediaID, fields []MediaField, source MutationSource, standaloneTag bool) error {
 	if id == "" {
 		return errors.New("media ID is required")
 	}
@@ -316,7 +327,7 @@ func (s *Store) UpsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 		return err
 	}
 	defer tx.Rollback()
-	wrote, err := upsertMediaFieldsTx(ctx, tx, id, fields, source)
+	wrote, err := upsertMediaFieldsTx(ctx, tx, id, fields, source, standaloneTag)
 	if err != nil || !wrote {
 		return err
 	}
@@ -329,12 +340,32 @@ func (s *Store) UpsertMediaFieldsWithSource(ctx context.Context, id MediaID, fie
 	return nil
 }
 
+func scannedMediaTagMatchesTx(ctx context.Context, tx *sql.Tx, id MediaID, field MediaField, clear bool) (bool, error) {
+	var sameProvenance bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM media_field_provenance
+		WHERE media_id = ? AND field = ? AND source = ? AND parser_owned = ?)
+	`, id, field.Name, MutationSourceScan, parserOwnedNone).Scan(&sameProvenance); err != nil || !sameProvenance {
+		return false, err
+	}
+	stored, exists, err := mediaFieldValueTx(ctx, tx, id, field.Name)
+	if err != nil {
+		return false, err
+	}
+	if clear {
+		return !exists, nil
+	}
+	return exists && mediaFieldValuesEqual(stored, field), nil
+}
+
 // upsertMediaFieldsTx is UpsertMediaFieldsWithSource inside the caller's
-// transaction; it reports whether any field landed.
-func upsertMediaFieldsTx(ctx context.Context, tx *sql.Tx, id MediaID, fields []MediaField, source MutationSource) (bool, error) {
+// transaction; it reports whether any field landed. A standalone scanned tag
+// skips an unchanged value and clears the field on an empty one.
+func upsertMediaFieldsTx(ctx context.Context, tx *sql.Tx, id MediaID, fields []MediaField, source MutationSource, standaloneTag bool) (bool, error) {
 	wrote := false
 	for _, field := range fields {
-		if source != MutationSourceManual {
+		clear := standaloneTag && field.Text == ""
+		if !clear && source != MutationSourceManual {
 			tombstoned, err := mediaFieldTombstonedTx(ctx, tx, id, field)
 			if err != nil {
 				return false, err
@@ -350,7 +381,20 @@ func upsertMediaFieldsTx(ctx context.Context, tx *sql.Tx, id MediaID, fields []M
 		if !allowed {
 			continue // a higher-precedence source owns this field — preserve it
 		}
-		if err := replaceMediaFieldValueTx(ctx, tx, id, field); err != nil {
+		if standaloneTag {
+			unchanged, err := scannedMediaTagMatchesTx(ctx, tx, id, field, clear)
+			if err != nil {
+				return false, err
+			}
+			if unchanged {
+				continue
+			}
+		}
+		if clear {
+			if err := deleteMediaFieldValueTx(ctx, tx, id, field.Name); err != nil {
+				return false, err
+			}
+		} else if err := replaceMediaFieldValueTx(ctx, tx, id, field); err != nil {
 			return false, err
 		}
 		if err := recordFieldProvenanceTx(ctx, tx, id, field.Name, source); err != nil {
@@ -379,6 +423,17 @@ func replaceMediaFieldValueTx(ctx context.Context, tx *sql.Tx, id MediaID, field
 // that already exist are skipped; an empty effective set is a no-op.
 // Server-internal write path.
 func (s *Store) InsertMediaFieldsIfAbsent(ctx context.Context, id MediaID, fields []MediaField) error {
+	return s.insertMediaFieldsIfAbsent(ctx, id, fields, false)
+}
+
+// InsertHydrationTagIfAbsent backfills a tag only if no value or prior write
+// exists. A scan may have cleared the tag while backfill was probing the file.
+func (s *Store) InsertHydrationTagIfAbsent(ctx context.Context, id MediaID, name, value string) error {
+	field := MediaField{Name: name, Type: EntityFieldText, Text: value}
+	return s.insertMediaFieldsIfAbsent(ctx, id, []MediaField{field}, true)
+}
+
+func (s *Store) insertMediaFieldsIfAbsent(ctx context.Context, id MediaID, fields []MediaField, requireUnwritten bool) error {
 	if id == "" {
 		return errors.New("media ID is required")
 	}
@@ -426,11 +481,11 @@ func (s *Store) InsertMediaFieldsIfAbsent(ctx context.Context, id MediaID, field
 			}
 		}
 		if !exists {
-			allowed, err := canWriteFieldTx(ctx, tx, id, field.Name, MutationSourceScan)
+			source, err := fieldProvenanceTx(ctx, tx, id, field.Name)
 			if err != nil {
 				return err
 			}
-			if !allowed {
+			if metadataSourceRank(source) > metadataSourceRank(MutationSourceScan) || (requireUnwritten && source != "") {
 				continue
 			}
 			toInsert = append(toInsert, field)

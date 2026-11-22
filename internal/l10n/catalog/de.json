@@ -25,6 +25,16 @@
   "queue.media_locked": "Dieses Element ist gesperrt.",
   "setup.lan_hint.finish_setup": "Öffne Beamfall über seine IP-Adresse, um die Einrichtung ohne Einrichtungstoken abzuschließen.",
   "setup.lan_hint.sign_in": "Öffne Beamfall über seine IP-Adresse, um dich mit dem Admin-Passwort anzumelden.",
+  "station.empty": "Für diesen Sender sind gerade keine Titel verfügbar.",
+  "station.reason.category": "Ebenfalls in {title}",
+  "station.reason.era": "Aus derselben Zeit: die {decade}er",
+  "station.reason.from": "Von {title}",
+  "station.reason.picked": "Für diesen Sender ausgewählt",
+  "station.reason.sonic": "Klingt wie dein Ausgangstitel",
+  "station.reason.played": "Schon einmal gehört",
+  "station.reason.seed": "Hier hat dieser Sender begonnen",
+  "station.reason.shared": "Verbunden über {title}",
+  "station.short": "Nur wenige Titel passen, daher ist dieser Sender kurz.",
   "watch_party.participant_fallback": "Teilnehmer",
   "workflow.capability_disabled": "Dieses Werkzeug ist unter Konsole → Optionale Funktionen deaktiviert."
 }

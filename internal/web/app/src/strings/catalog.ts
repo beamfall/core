@@ -28,7 +28,6 @@ import { libraryMetadataRefreshStrings } from "./library-metadata-refresh";
 import { libraryOperationsStrings } from "./library-operations";
 import { libraryPivotStrings } from "./library-pivots";
 import { libraryTrashStrings } from "./library-trash";
-import { listeningStrings } from "./listening";
 import { managedFileStrings } from "./managed-files";
 import { managedFileLibrariesStrings } from "./managed-files-libraries";
 import { managedFileOptionsStrings } from "./managed-files-options";
@@ -41,11 +40,10 @@ import { migrationFixmatchStrings } from "./migration-fixmatch";
 import { migrationUnmatchedStrings } from "./migration-unmatched";
 import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
+import { partyStrings } from "./party";
 import { pickerStrings } from "./pickers";
-import { playbackStrings } from "./playback";
-import { playbackChapterStrings } from "./playback-chapters";
 import { playerRecoveryStrings } from "./player-recovery";
-import { playerShortcutStrings } from "./player-shortcuts";
+import { playerSurfaceStrings } from "./player-surfaces";
 import { pluginStrings } from "./plugins";
 import { pluginConfigStrings } from "./plugins-config";
 import { powerToolStrings } from "./power-tools";
@@ -56,10 +54,12 @@ import { profileDeviceStrings } from "./profiles-devices";
 import { profileDevicePairingStrings } from "./profiles-devices-pairing";
 import { profileDeviceRequestStrings } from "./profiles-devices-requests";
 import { providerKeyStrings } from "./provider-keys";
+import { radioStrings } from "./radio";
 import { remoteAccessStrings } from "./remote-access";
 import { remoteAccessMappingStrings } from "./remote-access-mapping";
 import { remoteControlStrings } from "./remote-control";
 import { restrictionsSetupStrings } from "./restrictions-setup";
+import { serverBuildStrings } from "./server-build";
 import { serverLogStrings } from "./server-logs";
 import { sessionUpdateStrings } from "./sessions-updates";
 import { sessionUpdateHistoryStrings } from "./sessions-updates-history";
@@ -78,8 +78,6 @@ import { setupLibraryStrings } from "./setup-library";
 import { sharedStateStrings } from "./shared-states";
 import { sidebarStrings } from "./sidebar";
 import { stagedRestoreStrings } from "./staged-restore";
-import { subtitleAppearanceStrings } from "./subtitle-appearance";
-import { trackMenuStrings } from "./track-menu";
 import { viewerAccountStrings } from "./viewer-account";
 import { viewerAccountMyDataStrings } from "./viewer-account-mydata";
 import { viewerCollectionStrings } from "./viewer-collections";
@@ -98,6 +96,7 @@ export const en = {
   ...settingsHelpManageStrings.en,
   ...settingsHelpManage2Strings.en,
   ...appShellStrings.en,
+  ...serverBuildStrings.en,
   ...sidebarStrings.en,
   ...libraryOperationsStrings.en,
   ...pickerStrings.en,
@@ -109,12 +108,7 @@ export const en = {
   ...consoleOperationsOpsStrings.en,
   ...consoleOperationsJobsStrings.en,
   ...consoleOverviewAttentionStrings.en,
-  ...playbackStrings.en,
-  ...playbackChapterStrings.en,
-  ...playerShortcutStrings.en,
-  ...subtitleAppearanceStrings.en,
-  ...listeningStrings.en,
-  ...trackMenuStrings.en,
+  ...playerSurfaceStrings.en,
   ...managedFileStrings.en,
   ...managedFileLibrariesStrings.en,
   ...libraryMetadataRefreshStrings.en,
@@ -180,6 +174,8 @@ export const en = {
   ...activityPluginStrings.en,
   ...workbenchPageStrings.en,
   ...appearanceStrings.en,
+  ...partyStrings.en,
+  ...radioStrings.en,
 } as const;
 
 export const fr = {
@@ -191,6 +187,7 @@ export const fr = {
   ...settingsHelpManageStrings.fr,
   ...settingsHelpManage2Strings.fr,
   ...appShellStrings.fr,
+  ...serverBuildStrings.fr,
   ...sidebarStrings.fr,
   ...libraryOperationsStrings.fr,
   ...pickerStrings.fr,
@@ -202,12 +199,7 @@ export const fr = {
   ...consoleOperationsOpsStrings.fr,
   ...consoleOperationsJobsStrings.fr,
   ...consoleOverviewAttentionStrings.fr,
-  ...playbackStrings.fr,
-  ...playbackChapterStrings.fr,
-  ...playerShortcutStrings.fr,
-  ...subtitleAppearanceStrings.fr,
-  ...listeningStrings.fr,
-  ...trackMenuStrings.fr,
+  ...playerSurfaceStrings.fr,
   ...managedFileStrings.fr,
   ...managedFileLibrariesStrings.fr,
   ...libraryMetadataRefreshStrings.fr,
@@ -273,6 +265,8 @@ export const fr = {
   ...activityPluginStrings.fr,
   ...workbenchPageStrings.fr,
   ...appearanceStrings.fr,
+  ...partyStrings.fr,
+  ...radioStrings.fr,
 } as const;
 
 export const de = {
@@ -284,6 +278,7 @@ export const de = {
   ...settingsHelpManageStrings.de,
   ...settingsHelpManage2Strings.de,
   ...appShellStrings.de,
+  ...serverBuildStrings.de,
   ...sidebarStrings.de,
   ...libraryOperationsStrings.de,
   ...pickerStrings.de,
@@ -295,12 +290,7 @@ export const de = {
   ...consoleOperationsOpsStrings.de,
   ...consoleOperationsJobsStrings.de,
   ...consoleOverviewAttentionStrings.de,
-  ...playbackStrings.de,
-  ...playbackChapterStrings.de,
-  ...playerShortcutStrings.de,
-  ...subtitleAppearanceStrings.de,
-  ...listeningStrings.de,
-  ...trackMenuStrings.de,
+  ...playerSurfaceStrings.de,
   ...managedFileStrings.de,
   ...managedFileLibrariesStrings.de,
   ...libraryMetadataRefreshStrings.de,
@@ -366,6 +356,8 @@ export const de = {
   ...activityPluginStrings.de,
   ...workbenchPageStrings.de,
   ...appearanceStrings.de,
+  ...partyStrings.de,
+  ...radioStrings.de,
 } as const;
 
 export const es = {
@@ -377,6 +369,7 @@ export const es = {
   ...settingsHelpManageStrings.es,
   ...settingsHelpManage2Strings.es,
   ...appShellStrings.es,
+  ...serverBuildStrings.es,
   ...sidebarStrings.es,
   ...libraryOperationsStrings.es,
   ...pickerStrings.es,
@@ -388,12 +381,7 @@ export const es = {
   ...consoleOperationsOpsStrings.es,
   ...consoleOperationsJobsStrings.es,
   ...consoleOverviewAttentionStrings.es,
-  ...playbackStrings.es,
-  ...playbackChapterStrings.es,
-  ...playerShortcutStrings.es,
-  ...subtitleAppearanceStrings.es,
-  ...listeningStrings.es,
-  ...trackMenuStrings.es,
+  ...playerSurfaceStrings.es,
   ...managedFileStrings.es,
   ...managedFileLibrariesStrings.es,
   ...libraryMetadataRefreshStrings.es,
@@ -459,6 +447,8 @@ export const es = {
   ...activityPluginStrings.es,
   ...workbenchPageStrings.es,
   ...appearanceStrings.es,
+  ...partyStrings.es,
+  ...radioStrings.es,
 } as const;
 
 export const pt = {
@@ -470,6 +460,7 @@ export const pt = {
   ...settingsHelpManageStrings.pt,
   ...settingsHelpManage2Strings.pt,
   ...appShellStrings.pt,
+  ...serverBuildStrings.pt,
   ...sidebarStrings.pt,
   ...libraryOperationsStrings.pt,
   ...pickerStrings.pt,
@@ -481,12 +472,7 @@ export const pt = {
   ...consoleOperationsOpsStrings.pt,
   ...consoleOperationsJobsStrings.pt,
   ...consoleOverviewAttentionStrings.pt,
-  ...playbackStrings.pt,
-  ...playbackChapterStrings.pt,
-  ...playerShortcutStrings.pt,
-  ...subtitleAppearanceStrings.pt,
-  ...listeningStrings.pt,
-  ...trackMenuStrings.pt,
+  ...playerSurfaceStrings.pt,
   ...managedFileStrings.pt,
   ...managedFileLibrariesStrings.pt,
   ...libraryMetadataRefreshStrings.pt,
@@ -552,4 +538,6 @@ export const pt = {
   ...activityPluginStrings.pt,
   ...workbenchPageStrings.pt,
   ...appearanceStrings.pt,
+  ...partyStrings.pt,
+  ...radioStrings.pt,
 } as const;

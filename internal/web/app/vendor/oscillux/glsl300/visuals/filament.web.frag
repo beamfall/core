@@ -796,8 +796,8 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // strung inside a clear glass tube, seen so close that every turn of the coil
 // is a glowing wire with a lit front and a darker back. The coil's axis is a
 // plucked string: band energies weight its standing-wave harmonics (bass the
-// fundamental, treble the high harmonics) in two planes, and each beat plucks
-// a small kink that runs out to the lead-in wires. The bands are smoothed
+// fundamental, treble the high harmonics) in two planes, and each beat softly
+// plucks a small kink that runs out to the lead-in wires. The bands are smoothed
 // toward the level, so the string sways rather than snaps. The coil burns at
 // a steady orange heat that the level warms only slightly, with faint hot
 // spots and a soft warm/cool rim accent that alternates each beat; the
@@ -1090,8 +1090,8 @@ vec3 osBody(vec2 uv, VisualUniforms u) {
     float kinkA = sp + bp * 0.9;
     float kinkB = abs(sp - bp * 0.9);
     kinkA = kinkA > 1.0 ? 2.0 - kinkA : kinkA;
-    float kinkAmp = 0.006 * smoothstep
-(0.0, 0.2, bp) * exp(-2.0 * bp) * (0.8 + 0.2 * u.level);
+    float kinkAmp = 0.0045 * smoothstep
+(0.0, 0.3, bp) * exp(-2.0 * bp) * (0.8 + 0.2 * u.level);
     vec3 kink = vec3(kinkA, kinkB, kinkAmp);
 
     // ---- colours ----
@@ -1288,7 +1288,7 @@ vec3 osBody(vec2 uv, VisualUniforms u) {
         }
     }
 
-    // ---- anamorphic streaks: each pluck kink throws a thin horizontal flare ----
+    // ---- anamorphic streaks: each pluck kink throws a thin, faint horizontal flare ----
     {
         vec3 fw = normalize(ta - ro);
         vec3 rt = normalize(cross(fw, vec3(sin(roll), cos(roll), 0.0)));
@@ -1301,7 +1301,7 @@ vec3 osBody(vec2 uv, VisualUniforms u) {
                 vec2 sp2 = fov * vec2(dot(X, rt), dot(X, cu)) / zz;
                 vec2 dq = p - sp2;
                 float st = (exp(-abs(dq.y) * 260.0) + 0.18 * exp(-abs(dq.y) * 55.0)) * exp(-abs(dq.x) * 1.6) + exp(-dot(dq, dq) * 900.0) * 0.6;
-                col += cS * st * kinkAmp * 3.0 * glowAmt;
+                col += cS * st * kinkAmp * 1.6 * glowAmt;
 
             }
         }

@@ -38,13 +38,16 @@ ARG TARGETARCH
 # platform) before it is linked, so a malformed one fails the image build
 # instead of panicking the server at boot (CORE-1395).
 ARG BEAMFALL_FIRST_PARTY_BUILDS=""
-# Build identity (CORE-1096): `docker build --build-arg BEAMFALL_VERSION=v1.2.3
-# --build-arg BEAMFALL_COMMIT=$(git rev-parse HEAD)` stamps `beamfall version`
-# and /health. The build context excludes .git, so without these the version is
+# Build identity (CORE-1096, CORE-3055): BEAMFALL_VERSION, BEAMFALL_COMMIT and
+# BEAMFALL_BUILD_DATE (RFC3339 UTC) stamp `beamfall version` and /health.
+# The date defaults to SOURCE_DATE_EPOCH or the UTC build time.
+# The build context excludes .git, so without a version or commit the version is
 # development+src.<source digest> and the commit is "development": an unstamped
 # build is never mistaken for a release.
 ARG BEAMFALL_VERSION=""
 ARG BEAMFALL_COMMIT=""
+ARG BEAMFALL_BUILD_DATE=""
+ARG SOURCE_DATE_EPOCH
 # Bundled metadata keys (internal/app.BundledCredentials, ref=value,...) come
 # from an optional BuildKit secret, never a build arg, so they stay out of the
 # image history: `docker build --secret id=beamfall_bundled_credentials,src=FILE`.
@@ -60,8 +63,16 @@ RUN --mount=type=secret,id=beamfall_bundled_credentials,required=false set -eu; 
 		CGO_ENABLED=0 go run ./cmd/beamfall release build-catalog --catalog "${BEAMFALL_FIRST_PARTY_BUILDS}" >/dev/null; \
 	fi; \
 	version="${BEAMFALL_VERSION:-development+src.$(cat /out/source-id)}"; \
+	build_date="${BEAMFALL_BUILD_DATE}"; \
+	if [ -z "${build_date}" ]; then \
+		if [ "${SOURCE_DATE_EPOCH+x}" = x ]; then \
+			build_date="$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"; \
+		else \
+			build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+		fi; \
+	fi; \
 	CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-	go build -trimpath -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${version} -X github.com/beamfall/core/internal/capabilities.ReleaseCommit=${BEAMFALL_COMMIT} -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${BEAMFALL_FIRST_PARTY_BUILDS} -X github.com/beamfall/core/internal/app.BundledCredentials=${bundled}" -o /out/beamfall ./cmd/beamfall
+	go build -trimpath -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${version} -X github.com/beamfall/core/internal/capabilities.ReleaseCommit=${BEAMFALL_COMMIT} -X github.com/beamfall/core/internal/capabilities.ReleaseBuildDate=${build_date} -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${BEAMFALL_FIRST_PARTY_BUILDS} -X github.com/beamfall/core/internal/app.BundledCredentials=${bundled}" -o /out/beamfall ./cmd/beamfall
 
 # ffmpeg (CORE-2497): jellyfin-ffmpeg's locked source release, patched and
 # built against the Debian snapshot named in ffmpeg.lock, GPL-3.0-or-later with

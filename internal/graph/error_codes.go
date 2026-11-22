@@ -292,6 +292,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"session has no active playback":                                                               ErrorCodeConflict,
 	"scan preview token was already used":                                                          ErrorCodeConflict,
 	"scan preview token has expired":                                                               ErrorCodeConflict,
+	"sonic analysis is not available on this server":                                               ErrorCodeConflict,
 	"scan preview is stale because the library changed":                                            ErrorCodeConflict,
 
 	"offline pack job did not produce a pack":    ErrorCodeInternal,
@@ -312,6 +313,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"not a date":                                               ErrorCodeInvalid,
 	"not a migration job":                                      ErrorCodeInvalid,
 	"original quality is limited to 4 GiB per item; choose high, medium or low quality": ErrorCodeInvalid,
+	"this item has several files; update the app to download it":                        ErrorCodeInvalid,
 	"not a number": ErrorCodeInvalid,
 	"permission is not declared by the active plugin manifest": ErrorCodeInvalid,
 	"pre-authorization applies to managed profiles only":       ErrorCodeInvalid,

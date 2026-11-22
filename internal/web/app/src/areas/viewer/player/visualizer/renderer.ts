@@ -60,8 +60,13 @@ export const BLACK_S = 1.25;
 /** The longest interval one black frame is credited with (Oscillux "Black credit before a black
  * start"). */
 const BLACK_CREDIT_MS = 100;
-/** The tracker texel a start writes after BLACK_S of black: black, its red memory counted. */
-const BLACK_TRACKER = new Uint32Array([0, 32768, 0, 0]);
+/** The tracker texel a start writes after BLACK_S of black: black, its red memory counted, both
+ * u'v' boxes known and empty, the 32-bit marker set (Oscillux BLACK_TEXEL). */
+const BLACK_TRACKER = new Uint32Array([0, 32768, 2147508224, 0]);
+/** Bit 31 set in every word: a start writes it to each tracker copy and reads it back, and a
+ * store of fewer than 32 bits presents black instead of holding every changed pixel (Oscillux
+ * shaders/limiter/README.md, "Ping-pong and reset"). */
+const TRACKER_CHECK = new Uint32Array([0x80000001, 0x80000002, 0x80000004, 0x80000008]);
 /** What the host shows wherever the canvas shows no judged pixel (past its edge, through its clip,
  * with no frame on screen): the black every tracker starts at (clearOutput), whatever the theme,
  * so a pixel that comes into view rises from what its tracker holds (Codex round 25). */
@@ -90,7 +95,7 @@ function frameSide(side: number, k: number, least: number): number {
 
 const LIMITER = ["rows", "reduce", "cells", "windows", "grant", "output"] as const;
 const LIMITER_SAMPLERS: Record<(typeof LIMITER)[number], readonly string[]> = {
-  rows: ["uFrame", "uTrack"],
+  rows: ["uFrame", "uTrack", "uHist"],
   reduce: ["uRows"],
   cells: ["uS"],
   windows: ["uC"],
@@ -302,7 +307,7 @@ interface Limiter {
   c: WebGLTexture;
   w: WebGLTexture;
   g: WebGLTexture[];
-  /** Per-pixel tracker state, RGBA16UI at the frame size. */
+  /** Per-pixel tracker state, RGBA32UI at the frame size. */
   track: WebGLTexture[];
   out: WebGLTexture[];
   fRows: WebGLFramebuffer;
@@ -1332,7 +1337,7 @@ export class Renderer {
     const [rows, reduce, cells, windows, grant, output] = this.limiter;
     const W = size.width;
     const H = size.height;
-    this.pass(rows, L.fRows, 64, H, [size.frame, L.track[a]]);
+    this.pass(rows, L.fRows, 64, H, [size.frame, L.track[a], L.out[a]]);
     this.pass(reduce, L.fS, 64, 36, [L.rows]);
     this.pass(cells, L.fC, 16, 9, [L.s]);
     this.pass(windows, L.fW, 16, 9, [L.c]);
@@ -1388,9 +1393,12 @@ export class Renderer {
     });
     const rows = this.storage(64, H, gl.RGBA32UI);
     const out = [0, 1].map(() => this.storage(W, H, gl.RGBA8));
-    const track = [0, 1].map(() => this.storage(W, H, gl.RGBA16UI));
+    const track = [0, 1].map(() => this.storage(W, H, gl.RGBA32UI));
     const fOut = out.map((x, i) => this.framebuffer([x, track[i]]));
-    for (const f of fOut) this.clearOutput(f);
+    for (const f of fOut) {
+      if (!this.trackerKeeps32(f)) this.incomplete = true;
+      this.clearOutput(f);
+    }
     const window = limiterWindow(W, H, g.texel, g.visibleWidth, g.visibleHeight);
     const limiter = this.newLimiterState(rows, out, track, fOut, window, !this.fixedChecked);
     this.spend(limiter);
@@ -1602,6 +1610,20 @@ export class Renderer {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     for (let i = 0; i < attachments; i++) gl.clearBufferuiv(gl.COLOR, i, new Uint32Array(4));
+  }
+
+  // Whether an output target's tracker attachment keeps bit 31 of every word: a texel stored with
+  // fewer bits reads as unmarked and is held at every change. One blocking read of a texel per
+  // copy, at a start only.
+  private trackerKeeps32(fbo: WebGLFramebuffer): boolean {
+    const gl = this.gl;
+    const got = new Uint32Array(4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.clearBufferuiv(gl.COLOR, 1, TRACKER_CHECK);
+    gl.readBuffer(gl.COLOR_ATTACHMENT1);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, got);
+    gl.readBuffer(gl.COLOR_ATTACHMENT0);
+    return got.every((word, i) => word === TRACKER_CHECK[i]);
   }
 
   // An output target: the frame black and the trackers seeded black, counted with nothing owed,

@@ -2,10 +2,14 @@ package graph
 
 import (
 	"context"
+	"fmt"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/manifest"
 	"github.com/beamfall/core/internal/plugin"
@@ -45,6 +49,10 @@ func newStationTestHandler(t *testing.T, st *store.Store) *Handler {
 		MediaClasses:       []string{"audio"},
 		FeatureEligibility: []string{plugin.FeatureAudioStation},
 		Layouts:            []plugin.LayoutSpec{{ID: "home", Role: "browse"}},
+		EntityKinds: []plugin.EntityKind{
+			{Name: "person", Archetype: "person"},
+			{Name: "genre", Archetype: "category"},
+		},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -402,4 +410,408 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// stationRelatedFixture adds to the music fixture a genre linked to trackA and to a
+// track by another artist (trackC, 1993), plus an unrelated track (trackD) that
+// shares nothing with the seed (CORE-2772).
+type stationRelatedFixture struct {
+	musicFixture
+	genreID store.EntityID
+	trackC  store.MediaID
+	trackD  store.MediaID
+}
+
+func seedStationRelatedFixture(t *testing.T, st *store.Store) stationRelatedFixture {
+	t.Helper()
+	ctx := context.Background()
+	fx := seedMusicFixture(t, st)
+	importTrack := func(path, title, fp string, year int) store.MediaID {
+		m, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: fx.libraryID, Path: path, Title: title, Container: "flac", Codec: "flac",
+			Class: store.MediaClassAudio, ContentFingerprint: fp, DurationSecondsHint: 200, Year: year,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m.ID
+	}
+	trackC := importTrack("/music/c.flac", "Track C", "fp-music-c", 1993)
+	trackD := importTrack("/music/d.flac", "Track D", "fp-music-d", 1960)
+	other := store.Entity{ID: "entity-artist-2", LibraryID: fx.libraryID, Kind: "person", Title: "Other Artist"}
+	genre := store.Entity{ID: "entity-genre-1", LibraryID: fx.libraryID, Kind: "genre", Title: "Shoegaze"}
+	for _, e := range []store.Entity{other, genre} {
+		if err := st.UpsertEntity(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, rel := range []store.EntityRelation{
+		{FromEntityID: other.ID, Name: "appears-on", ToMediaID: trackC},
+		{FromEntityID: genre.ID, Name: "classifies", ToMediaID: fx.trackA},
+		{FromEntityID: genre.ID, Name: "classifies", ToMediaID: trackC},
+	} {
+		if err := st.UpsertEntityRelation(ctx, rel); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return stationRelatedFixture{musicFixture: fx, genreID: genre.ID, trackC: trackC, trackD: trackD}
+}
+
+// TestStationExpandsToRelatedMedia pins similarity from existing data: a track
+// seed leads its window and reaches another artist's track through a shared
+// category, explained by that category; Media sharing nothing stay out.
+func TestStationExpandsToRelatedMedia(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedStationRelatedFixture(t, st)
+	got, _, err := h.generateStation(context.Background(), defaultScope(), stationSeed{kind: "media", id: string(fx.trackA)}, stationRules{}, stationTuning{}, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := candidateIDs(got)
+	if len(ids) == 0 || ids[0] != string(fx.trackA) {
+		t.Fatalf("seed track does not lead: %v", ids)
+	}
+	if !candidatesContain(got, string(fx.trackC)) {
+		t.Fatalf("shared category did not reach trackC: %v", ids)
+	}
+	if !candidatesContain(got, string(fx.trackB)) {
+		t.Fatalf("shared artist did not reach trackB: %v", ids)
+	}
+	if candidatesContain(got, string(fx.trackD)) {
+		t.Fatalf("unrelated trackD entered the station: %v", ids)
+	}
+	for _, c := range got {
+		if c.MediaID == string(fx.trackC) && c.Explanation != "Also in Shoegaze" {
+			t.Fatalf("trackC explanation = %q, want the shared category", c.Explanation)
+		}
+		if c.MediaID == string(fx.trackA) && c.Explanation != "Where this station started" {
+			t.Fatalf("seed explanation = %q", c.Explanation)
+		}
+	}
+}
+
+// TestStationEntitySeedExplainsAndLocalizes pins the generic entity seed kind
+// and localized explanations.
+func TestStationEntitySeedExplainsAndLocalizes(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedStationRelatedFixture(t, st)
+	ctx := l10n.WithLocale(context.Background(), "de")
+	got, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "entity", id: string(fx.artistID)}, stationRules{}, stationTuning{}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range got {
+		if c.MediaID == string(fx.trackB) && c.Explanation != "Von The Artist" {
+			t.Fatalf("trackB explanation = %q, want the localized seed Entity", c.Explanation)
+		}
+	}
+	if !candidatesContain(got, string(fx.trackC)) {
+		t.Fatalf("artist seed did not expand through its genre: %v", candidateIDs(got))
+	}
+}
+
+// TestStationDecadeAndEntityRules pins the CORE-2772 rule vocabulary: decades
+// and anyEntityIDs filter before ranking, and an entity rule finds that
+// Entity's Media even when the seed never linked it.
+func TestStationDecadeAndEntityRules(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedStationRelatedFixture(t, st)
+	ctx := context.Background()
+	rules, err := parseStationRules(`{"decades":[1990]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "entity", id: string(fx.artistID)}, rules, stationTuning{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidatesContain(got, string(fx.trackB)) || !candidatesContain(got, string(fx.trackA)) || !candidatesContain(got, string(fx.trackC)) {
+		t.Fatalf("decade rule 1990 = %v, want trackA and trackC only", candidateIDs(got))
+	}
+
+	got, _, err = h.generateStation(ctx, defaultScope(), stationSeed{kind: "media", id: string(fx.trackB)}, stationRules{AnyEntityIDs: []string{string(fx.genreID)}}, stationTuning{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := candidateIDs(got)
+	if len(ids) != 2 || !candidatesContain(got, string(fx.trackA)) || !candidatesContain(got, string(fx.trackC)) {
+		t.Fatalf("entity rule = %v, want only the genre's trackA and trackC", ids)
+	}
+	for _, c := range got {
+		if strings.Contains(c.Explanation, "Tunes") {
+			t.Fatalf("explanation names a Library: %q", c.Explanation)
+		}
+	}
+}
+
+// importStationTracks adds n tracks of the given year to the fixture's music
+// Library, each credited to entityID.
+func importStationTracks(t *testing.T, st *store.Store, fx musicFixture, entityID store.EntityID, prefix string, n, year int) []store.MediaID {
+	t.Helper()
+	ctx := context.Background()
+	ids := make([]store.MediaID, 0, n)
+	for i := range n {
+		name := fmt.Sprintf("%s-%04d", prefix, i)
+		m, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: fx.libraryID, Path: "/music/" + name + ".flac", Title: name, Container: "flac", Codec: "flac",
+			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + name, DurationSecondsHint: 200, Year: year,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entityID != "" {
+			if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: entityID, Name: "appears-on", ToMediaID: m.ID}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		ids = append(ids, m.ID)
+	}
+	return ids
+}
+
+// Review finding P1: a Station never picks an item the Profile's
+// certification ceiling locks, but does pick one the Profile was granted.
+func TestStationHonoursLockedAndGranted(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedStationRelatedFixture(t, st)
+	ctx := context.Background()
+	for id, rating := range map[store.MediaID]string{fx.trackA: "low", fx.trackB: "high", fx.trackC: "high"} {
+		if err := st.SetMediaFields(ctx, id, []store.MediaField{{Name: "certification", Type: store.EntityFieldText, Text: rating}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scope := defaultScope()
+	scope.Certification = []store.CertificationConstraint{{PluginID: stationPluginID, Allowed: []string{"low"}, Locked: true}}
+	scope.GrantedMediaIDs = []store.MediaID{fx.trackC}
+	got, _, err := h.generateStation(ctx, scope, stationSeed{kind: "media", id: string(fx.trackA)}, stationRules{}, stationTuning{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidatesContain(got, string(fx.trackB)) {
+		t.Fatalf("locked trackB entered the station: %v", candidateIDs(got))
+	}
+	if !candidatesContain(got, string(fx.trackA)) || !candidatesContain(got, string(fx.trackC)) {
+		t.Fatalf("station = %v, want the allowed trackA and the granted trackC", candidateIDs(got))
+	}
+}
+
+// Review finding P1: expansion honours the Profile's Mutes, as the related-media
+// read does.
+func TestStationExpansionLeavesOutMutedMedia(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedStationRelatedFixture(t, st)
+	ctx := context.Background()
+	disliked := store.Entity{ID: "entity-disliked", LibraryID: fx.libraryID, Kind: "person", Title: "Disliked"}
+	if err := st.UpsertEntity(ctx, disliked); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: disliked.ID, Name: "appears-on", ToMediaID: fx.trackC}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetMute(ctx, "profile-default", store.MuteKindEntity, string(disliked.ID), false, true); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "media", id: string(fx.trackA)}, stationRules{}, stationTuning{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidatesContain(got, string(fx.trackC)) {
+		t.Fatalf("muted trackC entered the station: %v", candidateIDs(got))
+	}
+	if !candidatesContain(got, string(fx.trackB)) {
+		t.Fatalf("station = %v, want trackB still reached", candidateIDs(got))
+	}
+}
+
+// Review finding P2: a decade rule filters an Entity's Media before sampling, so
+// the one matching track among hundreds is always found.
+func TestStationDecadeFiltersBeforeSampling(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	importStationTracks(t, st, fx, fx.artistID, "later", 250, 2005)
+	match := importStationTracks(t, st, fx, fx.artistID, "eighties", 1, 1984)[0]
+	rules, err := parseStationRules(`{"decades":[1980]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for seed := uint64(1); seed <= 5; seed++ {
+		got, _, err := h.generateStation(context.Background(), defaultScope(), stationSeed{kind: "media", id: string(fx.trackA)}, rules, stationTuning{}, seed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ids := candidateIDs(got); len(ids) != 1 || ids[0] != string(match) {
+			t.Fatalf("rankSeed %d: decade 1980 = %v, want only %s", seed, ids, match)
+		}
+	}
+}
+
+// Review finding P2: with excludeQueued, each top-up leaves out what is already
+// queued before sampling, so repeated generations reach past the first window.
+func TestStationExcludeQueuedReachesPastFirstWindow(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	importStationTracks(t, st, fx, fx.artistID, "deep", 160, 2001)
+	ctx := context.Background()
+	filter, err := h.sealedFreeStationFilter(ctx, defaultScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	noCertification := func([]store.ProfileCertificationCeiling) []store.CertificationConstraint { return nil }
+	rules := stationRules{ExcludeQueued: true}
+	seen := map[string]bool{}
+	for round := range 3 {
+		got, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "entity", id: string(fx.artistID)}, rules, stationTuning{}, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) == 0 {
+			t.Fatalf("round %d: empty station with %d queued", round, len(seen))
+		}
+		for _, c := range got {
+			if seen[c.MediaID] {
+				t.Fatalf("round %d: %s was already queued", round, c.MediaID)
+			}
+			seen[c.MediaID] = true
+			if _, err := st.QueueAddForProfile(ctx, "profile-default", "session-default", "", store.MediaID(c.MediaID), nil, filter, time.Now, noCertification); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if len(seen) <= stationPerEntityCap {
+		t.Fatalf("three top-ups reached %d tracks, want past the %d-track sample", len(seen), stationPerEntityCap)
+	}
+}
+
+// Review rounds 2 and 3, P2: the Entity read carries each Media's length, so
+// length rules filter related Media while reading without dropping a match.
+func TestStationLengthRulesKeepExpandedMedia(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	want := importStationTracks(t, st, fx, fx.artistID, "long", 3, 2001)
+	rules, err := parseStationRules(`{"minDurationSeconds":100}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := h.generateStation(context.Background(), defaultScope(), stationSeed{kind: "media", id: string(fx.trackA)}, rules, stationTuning{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]bool{}
+	for _, id := range candidateIDs(got) {
+		ids[id] = true
+	}
+	for _, id := range want {
+		if !ids[string(id)] {
+			t.Fatalf("minDurationSeconds 100 dropped 200s track %s: %v", id, candidateIDs(got))
+		}
+	}
+}
+
+// Review round 2, P2: the read cap counts matching Media, so an Entity with
+// more than the cap of non-matching Media still yields its one match.
+func TestStationEntityReadFiltersBeforeTheCap(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	importStationTracks(t, st, fx, fx.artistID, "a-later", stationEntityReadCap+50, 2005)
+	match := importStationTracks(t, st, fx, fx.artistID, "z-eighties", 1, 1984)[0]
+	ctx := context.Background()
+	filter, err := h.sealedFreeStationFilter(ctx, defaultScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := h.stationEntityMedia(ctx, defaultScope(), filter, fx.artistID, func(it store.SourceItem) bool { return it.Year == 1984 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != match {
+		t.Fatalf("filtered read = %d items, want only %s", len(items), match)
+	}
+}
+
+// Review round 2, P2: a large Collection seed samples from its unqueued
+// members, so a top-up reaches every member not yet queued.
+func TestStationCollectionSeedSamplesUnqueued(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	ctx := context.Background()
+	members := importStationTracks(t, st, fx, "", "member", stationSeedMediaCap+10, 2001)
+	revealed := auth.Scope{ProfileID: "profile-default", AllLibraries: true, Revealed: true}.LibraryFilter()
+	coll, err := st.CreateCollection(ctx, store.Collection{LibraryID: fx.libraryID, Name: "Big Coll"}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AddCollectionMedia(ctx, coll.ID, members, revealed, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	filter, err := h.sealedFreeStationFilter(ctx, defaultScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	noCertification := func([]store.ProfileCertificationCeiling) []store.CertificationConstraint { return nil }
+	for _, id := range members[:stationSeedMediaCap] {
+		if _, err := st.QueueAddForProfile(ctx, "profile-default", "session-default", "", id, nil, filter, time.Now, noCertification); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for seed := uint64(1); seed <= 5; seed++ {
+		got, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "collection", id: string(coll.ID)}, stationRules{ExcludeQueued: true}, stationTuning{}, seed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := map[string]bool{}
+		for _, id := range candidateIDs(got) {
+			ids[id] = true
+		}
+		for _, id := range members[stationSeedMediaCap:] {
+			if !ids[string(id)] {
+				t.Fatalf("rankSeed %d: unqueued member %s missing from %v", seed, id, candidateIDs(got))
+			}
+		}
+	}
+}
+
+// TestStationEntitySeedMatchesArtistSeed proves the generic "entity" seed
+// kind resolves an Entity id the way "artist" does, so a client can start a
+// Station without naming a plugin kind (CORE-2769).
+func TestStationEntitySeedMatchesArtistSeed(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	ctx := context.Background()
+
+	byArtist, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "artist", id: string(fx.artistID)}, stationRules{}, stationTuning{}, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byEntity, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "entity", id: string(fx.artistID)}, stationRules{}, stationTuning{}, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byEntity) == 0 {
+		t.Fatal("entity seed produced no candidates")
+	}
+	if a, e := candidateIDs(byArtist), candidateIDs(byEntity); !slices.Equal(a, e) {
+		t.Fatalf("entity seed = %v, artist seed = %v", e, a)
+	}
 }

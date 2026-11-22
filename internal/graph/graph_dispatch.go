@@ -436,6 +436,8 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	155: dispatchFieldBlock155,
 	156: dispatchFieldBlock156,
 	157: dispatchFieldBlock157,
+	158: dispatchFieldBlock158,
+	159: dispatchFieldBlock159,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -479,6 +481,9 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"clearallmutes":                      newFieldHandler("clearAllMutes", "clearAllMutes", fieldMutation, roleSession, 125),
 	"clearmute":                          newFieldHandler("clearMute", "clearMute", fieldMutation, roleSession, 124),
 	"clientprefs":                        newFieldHandler("clientPrefs", "client preferences", fieldRead, roleSession, 43),
+	"homelayout":                         newFieldHandler("homeLayout", "homeLayout", fieldRead, roleSession, 158),
+	"resethomelayout":                    newFieldHandler("resetHomeLayout", "resetHomeLayout", fieldMutation, roleSession, 158),
+	"sethomelayout":                      newFieldHandler("setHomeLayout", "setHomeLayout", fieldMutation, roleSession, 158),
 	"collections":                        newFieldHandler("collections", "collections", fieldRead, roleSession, 57),
 	"connectionendpoints":                newFieldHandler("connectionEndpoints", "", fieldRead, roleSession, 104),
 	"consoleconfig":                      newFieldHandler("consoleConfig", "consoleConfig", fieldRead, roleSession|roleAdmin, 66),
@@ -571,7 +576,9 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"mediafiles":                         newFieldHandler("mediaFiles", "mediaFiles", fieldRead, roleSession, 9),
 	"mediaforentity":                     newFieldHandler("mediaForEntity", "mediaForEntity", fieldRead, roleSession, 8),
 	"mediatracks":                        newFieldHandler("mediaTracks", "mediaTracks", fieldRead, roleSession, 9),
+	"medialyrics":                        newFieldHandler("mediaLyrics", "mediaLyrics", fieldRead, roleSession, 9),
 	"relatedmedia":                       newFieldHandler("relatedMedia", "relatedMedia", fieldRead, roleSession, 9),
+	"similarmedia":                       newFieldHandler("similarMedia", "similarMedia", fieldRead, roleSession, 9),
 	"mediarelations":                     newFieldHandler("mediaRelations", "mediaRelations", fieldRead, roleSession, 10),
 	"mergeentities":                      newFieldHandler("mergeEntities", "mergeEntities", fieldMutation, roleSession|roleManager, 110),
 	"mergemedia":                         newFieldHandler("mergeMedia", "mergeMedia", fieldMutation, roleSession|roleManager, 110),
@@ -616,6 +623,24 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"revokejellyfincompatkey":            newFieldHandler("revokeJellyfinCompatKey", "revokeJellyfinCompatKey", fieldMutation, roleSession|roleAdmin, 155),
 	"qbittorrentingest":                  newFieldHandler("qbittorrentIngest", "qbittorrentIngest", fieldRead, roleSession|roleAdmin, 106),
 	"qualitypolicy":                      newFieldHandler("qualityPolicy", "qualityPolicy", fieldRead, roleSession|roleAdmin, 50),
+	"partysession":                       newFieldHandler("partySession", "party", fieldRead, roleSession, 159),
+	"partystage":                         newFieldHandler("partyStage", "party", fieldRead, roleSession, 159),
+	"partystart":                         newFieldHandler("partyStart", "party", fieldMutation, roleSession, 159),
+	"partyend":                           newFieldHandler("partyEnd", "party", fieldMutation, roleSession, 159),
+	"partyupdate":                        newFieldHandler("partyUpdate", "party", fieldMutation, roleSession, 159),
+	"partyrotatecode":                    newFieldHandler("partyRotateCode", "party", fieldMutation, roleSession, 159),
+	"partyadd":                           newFieldHandler("partyAdd", "party", fieldMutation, roleSession, 159),
+	"partyreview":                        newFieldHandler("partyReview", "party", fieldMutation, roleSession, 159),
+	"partymove":                          newFieldHandler("partyMove", "party", fieldMutation, roleSession, 159),
+	"partyremove":                        newFieldHandler("partyRemove", "party", fieldMutation, roleSession, 159),
+	"partyrestore":                       newFieldHandler("partyRestore", "party", fieldMutation, roleSession, 159),
+	"partyadvance":                       newFieldHandler("partyAdvance", "party", fieldMutation, roleSession, 159),
+	"partyplayback":                      newFieldHandler("partyPlayback", "party", fieldMutation, roleSession, 159),
+	"partyremoveparticipant":             newFieldHandler("partyRemoveParticipant", "party", fieldMutation, roleSession, 159),
+	"partyscreenregister":                newFieldHandler("partyScreenRegister", "party", fieldMutation, roleSession, 159),
+	"partyscreenreport":                  newFieldHandler("partyScreenReport", "party", fieldMutation, roleSession, 159),
+	"partyscreenticker":                  newFieldHandler("partyScreenTicker", "party", fieldMutation, roleSession, 159),
+	"partyscreendrop":                    newFieldHandler("partyScreenDrop", "party", fieldMutation, roleSession, 159),
 	"playqueue":                          newFieldHandler("playQueue", "queue", fieldRead, roleSession, 30),
 	"queueaddmany":                       newFieldHandler("queueAddMany", "queue", fieldMutation, roleSession, 30),
 	"queuemoveentry":                     newFieldHandler("queueMoveEntry", "queue", fieldMutation, roleSession, 30),
@@ -736,6 +761,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setwatchlisted":                     newFieldHandler("setWatchlisted", "setWatchlisted", fieldMutation, roleSession, 146),
 	"setupstate":                         newFieldHandler("setupState", "setupState", fieldRead, roleSession, 80),
 	"skipdetectionenabled":               newFieldHandler("skipDetectionEnabled", "skipDetectionEnabled", fieldRead, roleSession|roleAdmin, 78),
+	"sonicanalysisenabled":               newFieldHandler("sonicAnalysisEnabled", "sonicAnalysisEnabled", fieldRead, roleSession|roleAdmin, 78),
+	"setsonicanalysisenabled":            newFieldHandler("setSonicAnalysisEnabled", "setSonicAnalysisEnabled", fieldMutation, roleSession|roleAdmin, 78),
 	"smartcollections":                   newFieldHandler("smartCollections", "smartCollections", fieldRead, roleSession, 57),
 	"sourceitems":                        newFieldHandler("sourceItems", "sourceItems", fieldRead, roleSession, 17),
 	"libraryitems":                       newFieldHandler("libraryItems", "libraryItems", fieldRead, roleSession, 17),
@@ -966,9 +993,21 @@ func dispatchFieldBlock009(dispatch *fieldDispatchContext) response {
 			return resp
 		}
 	}
+	if fields["medialyrics"] {
+		lines, err := h.mediaLyrics(ctx, scope, req)
+		if resp := resolveField(dispatch, "medialyrics", lines, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	if fields["relatedmedia"] {
 		items, err := h.relatedMedia(ctx, scope, req)
 		if resp := resolveField(dispatch, "relatedmedia", items, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["similarmedia"] {
+		items, err := h.similarMedia(ctx, scope, req)
+		if resp := resolveField(dispatch, "similarmedia", items, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
@@ -2908,6 +2947,20 @@ func dispatchFieldBlock078(dispatch *fieldDispatchContext) response {
 			}
 		}
 	}
+	// ── Sonic analysis per-Library toggle (CORE-3073, graph_sonic.go) ──
+	// Operator-only, Admin-Session gated like skip detection.
+	if fields["sonicanalysisenabled"] {
+		infos, err := h.sonicAnalysisEnabledRead(ctx, scope)
+		if resp := resolveField(dispatch, "sonicanalysisenabled", infos, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setsonicanalysisenabled"] {
+		info, err := h.setSonicAnalysisEnabled(ctx, scope, req)
+		if resp := resolveField(dispatch, "setsonicanalysisenabled", info, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	return response{}
 }
 
@@ -4631,6 +4684,120 @@ func dispatchFieldBlock157(dispatch *fieldDispatchContext) response {
 		if resp := resolveField(dispatch, "removemediarelation", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
+	}
+	return response{}
+}
+
+// Per-Profile Home layout (CORE-1972, resolvers in graph_home_layout.go).
+func dispatchFieldBlock158(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["sethomelayout"] {
+		result, err := h.setHomeLayout(ctx, scope, req)
+		if resp := resolveField(dispatch, "sethomelayout", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["resethomelayout"] {
+		result, err := h.resetHomeLayout(ctx, scope)
+		if resp := resolveField(dispatch, "resethomelayout", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["homelayout"] {
+		result, err := h.homeLayout(ctx, scope)
+		if resp := resolveField(dispatch, "homelayout", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+// dispatchFieldBlock159 resolves the party session fields (CORE-1662).
+func dispatchFieldBlock159(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["partysession"] {
+		result, err := h.partySessionRead(ctx, scope)
+		if resp := resolveField(dispatch, "partysession", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["partystage"] {
+		result, err := h.partyStageRead(ctx, req)
+		if resp := resolveField(dispatch, "partystage", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["partystart"] {
+		result, err := h.partyStartWrite(ctx, scope, req)
+		return resolveField(dispatch, "partystart", result, err)
+	}
+	if fields["partyend"] {
+		result, err := h.partyEndWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyend", result, err)
+	}
+	if fields["partyupdate"] {
+		result, err := h.partyUpdateWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyupdate", result, err)
+	}
+	if fields["partyrotatecode"] {
+		result, err := h.partyRotateCodeWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyrotatecode", result, err)
+	}
+	if fields["partyadd"] {
+		result, err := h.partyAddWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyadd", result, err)
+	}
+	if fields["partyreview"] {
+		result, err := h.partyReviewWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyreview", result, err)
+	}
+	if fields["partymove"] {
+		result, err := h.partyMoveWrite(ctx, scope, req)
+		return resolveField(dispatch, "partymove", result, err)
+	}
+	if fields["partyremove"] {
+		result, err := h.partyRemoveWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyremove", result, err)
+	}
+	if fields["partyrestore"] {
+		result, err := h.partyRestoreWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyrestore", result, err)
+	}
+	if fields["partyadvance"] {
+		result, err := h.partyAdvanceWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyadvance", result, err)
+	}
+	if fields["partyplayback"] {
+		result, err := h.partyPlaybackWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyplayback", result, err)
+	}
+	if fields["partyremoveparticipant"] {
+		result, err := h.partyRemoveParticipantWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyremoveparticipant", result, err)
+	}
+	if fields["partyscreenregister"] {
+		result, err := h.partyScreenRegisterWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreenregister", result, err)
+	}
+	if fields["partyscreenreport"] {
+		result, err := h.partyScreenReportWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreenreport", result, err)
+	}
+	if fields["partyscreenticker"] {
+		result, err := h.partyScreenTickerWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreenticker", result, err)
+	}
+	if fields["partyscreendrop"] {
+		result, err := h.partyScreenDropWrite(ctx, scope, req)
+		return resolveField(dispatch, "partyscreendrop", result, err)
 	}
 	return response{}
 }

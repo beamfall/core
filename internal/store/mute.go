@@ -421,6 +421,22 @@ func (s *Store) AnnotateMuted(ctx context.Context, profileID ProfileID, filter L
 	return s.annotateMutedLocked(ctx, s.catalogR, profileID, items)
 }
 
+// SuppressMuted applies the passive-rail Mute suppression (§2.5) to items a
+// caller assembled outside a Source read, such as a similarity row: a direct
+// Mute drops the Media, a broad Mute drops it unless a positive signal
+// protects it. An empty profileID returns items unchanged.
+func (s *Store) SuppressMuted(ctx context.Context, profileID ProfileID, filter LibraryFilter, items []SourceItem) ([]SourceItem, error) {
+	if profileID == "" || len(items) == 0 {
+		return items, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	return s.applyMuteFilterLocked(ctx, s.catalogR, profileID, filter, items)
+}
+
 // annotateMutedLocked is AnnotateMuted's in-lock body. Kind-aware: an entity-kind
 // item badges when its entity id is a direct or broad ENTITY mute target; a
 // media-kind item badges when any mute target (entity or tag) reaches its Media,

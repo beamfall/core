@@ -147,6 +147,11 @@ function recordingGl() {
   // wait for the GPU. A fence signals at the next poll unless the GPU is busy.
   const reads: unknown[] = [];
   const blocking: unknown[] = [];
+  // A tracker format check: a clear with bit 31 set in every word, read back into an array. The
+  // store keeps `store.bits` of each word (32 unless a harness picks fewer).
+  const store = { bits: 32 };
+  const lastClear = new Map<unknown, number[]>();
+  const formatReads: unknown[] = [];
   const packed = new Uint32Array(4);
   const gpu = { busy: false };
   const waits: number[] = [];
@@ -181,7 +186,10 @@ function recordingGl() {
         };
       if (key === "bindFramebuffer") return (_: unknown, f: unknown) => (bound.f = f);
       if (key === "clearBufferuiv")
-        return (_: unknown, __: unknown, v: Uint32Array) => spent.push([bound.f, [...v]]);
+        return (_: unknown, __: unknown, v: Uint32Array) => {
+          spent.push([bound.f, [...v]]);
+          lastClear.set(bound.f, [...v]);
+        };
       if (key === "clear") return () => clears.push(bound.f);
       if (key === "clearBufferfv")
         return (_: unknown, i: number, v: ArrayLike<number>) =>
@@ -192,7 +200,13 @@ function recordingGl() {
         return (
           ...args: [number, number, number, number, number, number, Uint32Array | number]
         ) => {
-          if (typeof args[6] !== "number") return blocking.push(bound.f);
+          const into = args[6];
+          const check = lastClear.get(bound.f);
+          if (typeof into !== "number" && check?.every((w) => w >= 0x80000000)) {
+            formatReads.push(bound.f);
+            return into.set(check.map((w) => (store.bits >= 32 ? w : w % 2 ** store.bits)));
+          }
+          if (typeof into !== "number") return blocking.push(bound.f);
           reads.push(bound.f);
           packed.set(pick.word());
         };
@@ -227,6 +241,8 @@ function recordingGl() {
     pick,
     reads,
     blocking,
+    store,
+    formatReads,
     gpu,
     waits,
     order,
@@ -242,7 +258,7 @@ describe("Renderer geometry (CORE-2516)", () => {
   type Texels = [width: number, height: number, texel: number];
   const SPENT = [256, 65025, 65025, 0];
   // A start's trackers: black, counted with nothing owed (CORE-2869).
-  const BLACK_TRACKER = [0, 32768, 0, 0];
+  const BLACK_TRACKER = [0, 32768, 2147508224, 0];
   // The black is credited a frame at a time, 100 ms at most, and is over once the credit less
   // its longest interval reaches BLACK_S (Oscillux hostBlackLongEnough): this many frames an
   // eighth of a second apart, each credited 100 ms.
@@ -1114,6 +1130,25 @@ describe("Renderer geometry (CORE-2516)", () => {
     renderer.drop();
     expect(r.size).toBe(null);
     expect(r.fadeLeft).toBe(0);
+  });
+
+  // CORE-2935: the trackers are RGBA32UI, and a texel stored with fewer bits loses its marker
+  // and is held at every change. Each start writes bit 31 to every word of both tracker copies
+  // and reads it back; a store that drops it presents black and starts nothing.
+  it("checks both tracker copies keep 32 bits at a start", () => {
+    const { draw, limiter, formatReads } = make();
+    draw(640, 360);
+    expect(formatReads).toEqual(limiter().fOut);
+  });
+
+  it("presents black and fails a start whose tracker stores fewer than 32 bits", () => {
+    const { r, renderer, draw, store, blits, clears } = make();
+    store.bits = 16;
+    expect(() => draw(640, 360)).toThrow("incomplete framebuffer");
+    expect(r.size).toBe(null);
+    expect(renderer.shown).toBe(null);
+    expect(blits).toEqual([]);
+    expect(clears.at(-1)).toBe(null);
   });
 
   it("presents black and fails when a later start's framebuffer is incomplete", () => {

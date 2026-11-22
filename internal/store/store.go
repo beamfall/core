@@ -1078,6 +1078,9 @@ type Store struct {
 	logger         *slog.Logger
 	// titleFolds is the title-fold index behind LiveFoldEqualEntities.
 	titleFolds entityTitleFoldIndex
+	// partySubtitler renders party entry subtitles from each Library
+	// plugin's MediaSubtitle template; see SetPartySubtitler.
+	partySubtitler atomic.Pointer[PartySubtitler]
 	// sessionBindMu holds Profile rebinds of every session (write lock) off
 	// while a write bound to a session's Profile checks the binding and
 	// commits (read lock); see RunWhileSessionBound. Take it before mu.
@@ -3891,6 +3894,9 @@ func (s *Store) smartCollectionSourceItemsLocked(ctx context.Context, filter Lib
 	}
 	filter.AllowedIDs = []LibraryID{collection.LibraryID}
 	filter.AllLibraries = false
+	if isSmartRuleSourceExpr(collection.SourceExpr) {
+		return s.smartRuleItemsLocked(ctx, filter, collection.LibraryID, query.ProfileID, collection.ID, collection.SourceExpr, collection.SortExpr, limit, offset)
+	}
 	source, err := decodeSmartCollectionSourceExpr(collection.SourceExpr)
 	if err != nil {
 		return nil, err

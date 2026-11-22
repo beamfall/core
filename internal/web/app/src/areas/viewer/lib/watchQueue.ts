@@ -64,6 +64,23 @@ export function newStartID(): string {
 // centred on the item being played.
 export const MAX_QUEUE = 500;
 
+/** Source kinds that list one item per container: their items are not siblings. */
+const PER_CONTAINER_SOURCES = new Set(["continue-watching", "next-up"]);
+
+/**
+ * The queue a list's cards hand the player: its playable items, or undefined
+ * for a Source that lists each container's own next or resume point, whose
+ * items belong to unrelated containers, so playing one never runs on into
+ * another container's item (ADR-0055 §2.4). Each card then queues only
+ * itself, which also ends an earlier Play all queue.
+ */
+export function sectionQueue(
+  sourceKind: string | undefined,
+  items: readonly (SourceItem & { mediaClass?: string })[],
+): PlayQueueItem[] | undefined {
+  return PER_CONTAINER_SOURCES.has(sourceKind ?? "") ? undefined : playQueueOf(items);
+}
+
 /**
  * The playable items of a list, in order, as a queue: kind "media" and not
  * locked. A locked item (a certification ceiling blocks it) stays on the page

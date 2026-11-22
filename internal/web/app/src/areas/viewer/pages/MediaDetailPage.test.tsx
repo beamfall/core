@@ -9,6 +9,7 @@ import {
   fetchMediaForEntity,
   fetchPrePlayQueue,
   fetchRelatedMedia,
+  fetchSimilarMedia,
   fetchSourceItems,
 } from "@/lib/graphql";
 import type { GenericMediaInfo, Section, SourceItem } from "@/lib/graphql/types";
@@ -54,9 +55,11 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   fetchMediaForEntity: vi.fn(),
   fetchPrePlayQueue: vi.fn(),
   fetchRelatedMedia: vi.fn(),
+  fetchSimilarMedia: vi.fn(),
   fetchSourceItems: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
   fetchItemState: vi.fn(async () => mocks.itemState),
+  fetchPlaybackMarkers: vi.fn(async () => []),
   ...Object.fromEntries(
     (["setWatched", "setWatchlisted", "setRating"] as const).map((name) => [
       name,
@@ -149,6 +152,12 @@ function watchState() {
   return rest;
 }
 
+// The queue the last track-row Play sent; a row's Play carries no startID.
+function rowQueueIDs(): string[] {
+  const state = JSON.parse(screen.getByTestId("state").textContent || "null");
+  return state.queue.map((item: { id: string }) => item.id);
+}
+
 function pending<T>() {
   let resolve!: (value: T) => void;
   let reject!: (err: unknown) => void;
@@ -170,6 +179,7 @@ beforeEach(() => {
   vi.mocked(fetchMediaForEntity).mockReset().mockResolvedValue([]);
   vi.mocked(fetchPrePlayQueue).mockReset().mockResolvedValue([]);
   vi.mocked(fetchRelatedMedia).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchSimilarMedia).mockReset().mockResolvedValue([]);
   vi.mocked(fetchSourceItems).mockReset().mockResolvedValue([]);
   vi.mocked(fetchEntity).mockReset().mockResolvedValue(null);
   // Off the home network by default: Watch together is not offered (CORE-1764).
@@ -266,7 +276,12 @@ describe("MediaDetailPage", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
         expect(screen.getByTestId("path")).toHaveTextContent(mediaPath("watch", id));
-        expect(watchState()).toEqual({ title: "Card title" });
+        // Unread credits: the item plays alone (ADR-0055 §2.4).
+        expect(watchState()).toEqual({
+          title: "Card title",
+          queue: [{ id, title: "Card title" }],
+          queueIdentity: identity,
+        });
       } finally {
         window.history.replaceState(null, "", "/");
       }
@@ -309,8 +324,8 @@ describe("MediaDetailPage", () => {
     },
   );
 
-  it("forwards the opening card's queue to the player, only for its own identity (CORE-1143)", () => {
-    vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
+  it("forwards the opening card's queue to the player, only for its own identity (CORE-1143)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
     const queue = [
       { id: "m1", title: "Card title" },
       { id: "m2", title: "Next" },
@@ -322,16 +337,16 @@ describe("MediaDetailPage", () => {
       },
     ]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Play Server title" }));
     expect(watchState()).toEqual({
-      title: "Card title",
+      title: "Server title",
       queue,
       queueIdentity: identity,
     });
   });
 
-  it("drops a queue listed for another identity", () => {
-    vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
+  it("drops a queue listed for another identity", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
     renderAt([
       {
         pathname: "/media/m1",
@@ -343,10 +358,71 @@ describe("MediaDetailPage", () => {
       },
     ]);
 
+    fireEvent.click(await screen.findByRole("button", { name: "Play Server title" }));
+    expect(watchState()).toEqual({
+      title: "Server title",
+    });
+  });
+
+  // ADR-0055 §2.4: until the credits say whether the item is a sequenced
+  // book, Play queues it alone, which also ends an earlier Play all queue.
+  it("plays an item alone before its credits load", () => {
+    vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
+    renderAt([
+      {
+        pathname: "/media/m1",
+        state: {
+          ...mediaLinkState(card, identity),
+          queue: [
+            { id: "m1", title: "Card title" },
+            { id: "m2", title: "Next" },
+          ],
+          queueIdentity: identity,
+        },
+      },
+    ]);
+
     fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
     expect(watchState()).toEqual({
       title: "Card title",
+      queue: [{ id: "m1", title: "Card title" }],
+      queueIdentity: identity,
     });
+  });
+
+  // CORE-3013: a book in a sequenced series offers the next one once played,
+  // never queues it, and Mark played offers it at once.
+  it("offers Next in series once the book is marked played, and plays the book alone", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      mediaClass: "audio",
+      credits: [
+        {
+          entityID: "s1",
+          title: "The Cycle",
+          kind: "series",
+          archetype: "container",
+          relation: "contains-book",
+          attributes: { sequence: "2" },
+        },
+      ],
+    });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      { id: "m1", kind: "media", title: "Server title" },
+      { id: "m2", kind: "media", title: "Book Three" },
+    ]);
+    renderAt(["/media/m1"]);
+    const played = await screen.findByRole("button", { name: "Mark played" });
+    await act(async () => {});
+    expect(screen.queryByRole("link", { name: /^Next in series/ })).toBeNull();
+
+    fireEvent.click(played);
+    expect(await screen.findByRole("link", { name: "Next in series: Book Three" })).toHaveAttribute(
+      "href",
+      "/media/m2",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
+    expect(watchState().queue).toEqual([{ id: "m1", title: "Server title" }]);
   });
 
   it("ignores a card carried for another identity", () => {
@@ -1225,6 +1301,42 @@ describe("MediaDetailPage", () => {
     expect(screen.queryByRole("heading", { name: "Related" })).not.toBeInTheDocument();
   });
 
+  it("ends audio Media with a Sonically similar row in server order (CORE-3075)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({ ...media, mediaClass: "audio" });
+    vi.mocked(fetchSimilarMedia).mockResolvedValue([
+      item("m1", "Server title"),
+      item("s2", "Nearest"),
+      item("s1", "Further"),
+    ]);
+    renderAt(["/media/m1"]);
+
+    const similar = await screen.findByRole("list", { name: "Sonically similar" });
+    const titles = within(similar)
+      .getAllByRole("listitem")
+      .map((li) => li.textContent);
+    expect(titles).toHaveLength(2);
+    expect(titles[0]).toContain("Nearest");
+    expect(titles[1]).toContain("Further");
+    expect(fetchSimilarMedia).toHaveBeenCalledWith("m1", 20, expect.anything());
+  });
+
+  it("hides Sonically similar without vectors and never asks for non-audio Media (CORE-3075)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({ ...media, mediaClass: "audio" });
+    renderAt(["/media/m1"]);
+    await screen.findByRole("heading", { name: "Server title" });
+    await waitFor(() => expect(fetchSimilarMedia).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("heading", { name: "Sonically similar" })).not.toBeInTheDocument();
+    cleanup();
+    clearViewerCache();
+
+    vi.mocked(fetchSimilarMedia).mockClear();
+    vi.mocked(fetchMedia).mockResolvedValue({ ...media, mediaClass: "video" });
+    renderAt(["/media/m1"]);
+    await screen.findByRole("heading", { name: "Server title" });
+    await waitFor(() => expect(fetchRelatedMedia).toHaveBeenCalled());
+    expect(fetchSimilarMedia).not.toHaveBeenCalled();
+  });
+
   it("hides the closing rows when every read fails (CORE-2444)", async () => {
     vi.mocked(fetchMedia).mockResolvedValue({
       ...media,
@@ -1400,6 +1512,100 @@ describe("MediaDetailPage", () => {
       const moreWith = await screen.findByRole("list", { name: "More with Ada Lead" });
       expect(within(moreWith).getAllByRole("listitem")).toHaveLength(1);
       expect(within(moreWith).getByRole("link", { name: /^Lead Again/ })).toBeInTheDocument();
+    });
+
+    it("keeps the More in rail for a container of video items", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue(ordered);
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(
+        inner.map((sibling) => ({ ...sibling, mediaClass: "video" })),
+      );
+      vi.mocked(fetchEntity).mockResolvedValue({ ...innerEntity, archetype: "container" } as never);
+      renderAt(["/media/m1"]);
+
+      expect(await screen.findByRole("list", { name: "More in Part Two" })).toBeInTheDocument();
+      expect(document.querySelector(".bf-track-list")).toBeNull();
+    });
+  });
+
+  describe("an item in a numbered list (CORE-3065)", () => {
+    const audio = (id: string, title: string, sequence: number, index: number): SourceItem => ({
+      id,
+      kind: "media",
+      title,
+      mediaClass: "audio",
+      byline: ["Ada Lead"],
+      sequence,
+      index,
+      durationSeconds: 200 + index,
+    });
+    const listed: GenericMediaInfo = {
+      ...media,
+      mediaClass: "audio",
+      credits: [
+        { entityID: "c1", title: "The Set", kind: "set", archetype: "container", relation: "in" },
+        person("p1", "Ada Lead"),
+      ],
+    };
+    const siblings = [
+      audio("m0", "Opening", 1, 1),
+      audio("m1", "Server title", 1, 2),
+      audio("m2", "Second Side", 2, 1),
+    ];
+    const setEntity = {
+      id: "c1",
+      kind: "set",
+      title: "The Set",
+      archetype: "container",
+      fields: [],
+      relatedEntities: [
+        {
+          kind: "artist",
+          archetype: "person",
+          items: [{ id: "p1", kind: "a", title: "Ada Lead" }],
+        },
+      ],
+    };
+
+    it("lists its container as the Entity page does, with its own row marked", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue(listed);
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(siblings);
+      vi.mocked(fetchEntity).mockResolvedValue(setEntity as never);
+      renderAt(["/media/m1"]);
+
+      const first = await screen.findByRole("list", { name: "Disc 1" });
+      const second = screen.getByRole("list", { name: "Disc 2" });
+      expect(within(first).getAllByRole("listitem")).toHaveLength(2);
+      expect(within(second).getAllByRole("listitem")).toHaveLength(1);
+      const current = within(first).getByRole("link", { name: /Server title/ });
+      expect(current).toHaveAttribute("aria-current", "page");
+      expect(current.closest("li")).toHaveAttribute("data-current");
+      expect(within(first).getByRole("link", { name: /Opening/ })).not.toHaveAttribute(
+        "aria-current",
+      );
+      expect(screen.getByRole("heading", { level: 2, name: "The Set" })).toBeInTheDocument();
+      expect(screen.queryByRole("list", { name: "More in The Set" })).toBeNull();
+
+      fireEvent.click(within(first).getByRole("button", { name: "Play Opening" }));
+      expect(rowQueueIDs()).toEqual(["m0", "m1", "m2"]);
+    });
+
+    // ADR-0055 §2.4: a row of a relation-sequenced series plays its book
+    // alone, so finishing it never starts the next one.
+    it("plays each row of a sequenced series alone", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue({
+        ...listed,
+        credits: [
+          { ...listed.credits![0], attributes: { sequence: "2" } },
+          person("p1", "Ada Lead"),
+        ],
+      });
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(siblings);
+      vi.mocked(fetchEntity).mockResolvedValue(setEntity as never);
+      renderAt(["/media/m1"]);
+
+      const first = await screen.findByRole("list", { name: "Disc 1" });
+      fireEvent.click(within(first).getByRole("button", { name: "Play Opening" }));
+      expect(rowQueueIDs()).toEqual(["m0"]);
     });
   });
 
