@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"slices"
@@ -4402,9 +4403,9 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 	// credits its growth (CORE-1703). Optional: nil when omitted.
 	var playedMS *int64
 	if raw, ok := req.Variables["playedMS"]; ok && raw != nil {
-		v := int64Var(req, "playedMS")
-		if v < 0 {
-			return PlaybackReport{}, clientError("playedMS must not be negative")
+		v, ok := playedMSVar(raw)
+		if !ok {
+			return PlaybackReport{}, clientError("playedMS must be a non-negative integer")
 		}
 		playedMS = &v
 	}
@@ -4481,6 +4482,25 @@ func (h *Handler) RecordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 // dashboard is advisory, so a failed touch must not fail the report.
 func (h *Handler) notePlaybackActivity(ctx context.Context, scope auth.Scope, mediaID store.MediaID) {
 	_ = h.store.TouchStreamTokenActivity(ctx, scope.SessionID, scope.ProfileID, mediaID, time.Now().UTC())
+}
+
+// playedMSVar reads reportPlayback's playedMS as /v1 does: a whole number,
+// not negative. A fraction is refused, never truncated, so -0.5 cannot pass
+// as zero.
+func playedMSVar(raw any) (int64, bool) {
+	switch v := raw.(type) {
+	case int:
+		return int64(v), v >= 0
+	case int64:
+		return v, v >= 0
+	case float64:
+		if v < 0 || v != math.Trunc(v) || v >= math.MaxInt64 {
+			return 0, false
+		}
+		return int64(v), true
+	default:
+		return 0, false
+	}
 }
 
 // recordPlaybackProgress writes one non-ambient position report for an already

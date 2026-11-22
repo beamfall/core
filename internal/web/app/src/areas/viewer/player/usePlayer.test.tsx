@@ -159,6 +159,7 @@ function Harness({
   selectedVersion,
   startTracks,
   startID,
+  unmountVideoOnMessage,
 }: {
   mediaID?: string;
   startAtSeconds?: number;
@@ -166,6 +167,9 @@ function Harness({
   selectedVersion?: string;
   startTracks?: StartTracks;
   startID?: string;
+  // Drop the <video> while a message shows, as the player page does, so Try
+  // again plays on a new element.
+  unmountVideoOnMessage?: boolean;
 }) {
   const { videoRef, state, retry, restart, switchToHls, adjust } = usePlayer(
     mediaID,
@@ -178,7 +182,9 @@ function Harness({
   );
   return (
     <>
-      <video data-testid="player" ref={videoRef} />
+      {unmountVideoOnMessage && (state.phase === "message" || state.phase === "terminal") ? null : (
+        <video data-testid="player" ref={videoRef} />
+      )}
       <output data-testid="stream-kinds">
         {(state.streams ?? []).map((s) => s.kind).join(",")}
       </output>
@@ -1485,6 +1491,39 @@ describe("usePlayer", () => {
     expect(pending.requests[1].variables.playbackID).toBe(pending.requests[0].variables.playbackID);
     expect(pending.requests.map(({ variables }) => variables.playedMS)).toEqual([7_000, 9_000]);
     pending.requests[1].resolve();
+  });
+
+  it("reports from the new <video> that Try again mounts after a playback error (CORE-1703)", async () => {
+    // Codex CORE-1703 r7: the reporting and played-clock listeners must follow
+    // the element, not stay on the one the error removed.
+    let perf = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => perf);
+    vi.mocked(fetchPlaybackInfo).mockRejectedValueOnce(
+      new ApiError("server error", 500, { error: "playback info unavailable" }),
+    );
+    const pending = capturePendingProgress();
+    render(<Harness unmountVideoOnMessage />);
+    const first = screen.getByTestId("player");
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+
+    fireEvent.click(screen.getByRole("button", { name: "retry" }));
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    expect(video).not.toBe(first);
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 30 });
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.playing(video);
+    perf += 6_000;
+    Object.defineProperty(video, "paused", { configurable: true, value: true });
+    fireEvent.pause(video);
+    await waitFor(() => expect(pending.requests).toHaveLength(1));
+    expect(pending.requests[0].variables).toMatchObject({
+      positionSeconds: 30,
+      paused: true,
+      playedMS: 6_000,
+    });
+    pending.requests[0].resolve();
   });
 
   it("removes the previous media resume listener before the next media loads metadata", async () => {

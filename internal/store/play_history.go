@@ -269,7 +269,9 @@ const playedAtMS = `CASE
 // the ID, and never less than nothing. The count is cumulative, so a delayed,
 // queued or repeated report credits exactly the playing it covers, a seek or a
 // pause adds nothing, and the client's wall clock plays no part. The first
-// report of an ID credits its whole count.
+// report of an ID credits its whole count. Once any report of an ID carries
+// a count, the counts alone decide: a report of that ID without one adds
+// nothing.
 //
 // Reports with a playback ID but no played count credit the advance of the
 // position the client reported, but no more than the time between their
@@ -283,8 +285,8 @@ const playedAtMS = `CASE
 // their observed times, but no more than the stored position advanced when
 // both sides have one, and no more than playReportGapCap.
 const playedStepMS = `CASE
-		WHEN part <> '' AND played IS NOT NULL
-		THEN MAX(played - COALESCE(prev_played, 0), 0)
+		WHEN part <> '' AND counted
+		THEN COALESCE(MAX(played - COALESCE(prev_played, 0), 0), 0)
 		WHEN starts = 1 THEN 0
 		WHEN part <> ''
 		THEN CASE WHEN prev_paused = 1 OR reported IS NULL OR prev_reported IS NULL THEN 0
@@ -313,10 +315,11 @@ const playedStepMS = `CASE
 // watched time never wins; a play with none at all reports the most demanding
 // method recorded.
 //
-// Runs are grouped before the window applies: a play that began just before
-// since is left out, not cut into a shorter play starting at since. Reports
-// from one gap before since are enough to tell, because a run starting at or
-// after since has no report within one gap before its first.
+// Runs are grouped and measured before the window applies: a play that began
+// just before since is left out, not cut into a shorter play starting at
+// since. Every report for a Profile and Media that has any report since then
+// is read, so a playback ID's played count steps from all of its earlier
+// counts, even ones from a run that ended before since.
 func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, until time.Time, visit func(derivedPlay) bool) error {
 	query := `
 		WITH src AS (
@@ -345,10 +348,13 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 		args = append(args, f.MediaID)
 	}
 	if !since.IsZero() {
-		// A report is never dated after it arrived, so the arrival index can
-		// still bound the scan, one gap early.
-		query += ` AND occurred_at_ms >= ?`
-		args = append(args, timeToMillis(since.UTC().Add(-playGap)))
+		// A play starting at or after since has every report arriving then
+		// too (none is dated after it arrived), so only those Profile and
+		// Media pairs can list one; their whole history is read.
+		query += ` AND (profile_id, media_id) IN (
+				SELECT profile_id, media_id FROM engagement_event
+				WHERE kind = ? AND media_id IS NOT NULL AND occurred_at_ms >= ?)`
+		args = append(args, playbackProjectionEventKind, timeToMillis(since.UTC()))
 	}
 	query += `
 		), raw AS (
@@ -359,6 +365,7 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, f PlayFilter, since, unt
 			SELECT *, LAG(ord_ms) OVER w AS prev_ord, LAG(at_ms) OVER w AS prev_ms,
 			       LAG(recv_ms) OVER w AS prev_recv,
 			       MAX(played) OVER (w ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_played,
+			       COUNT(played) OVER (PARTITION BY profile_id, media_id, part) > 0 AS counted,
 			       LAG(position) OVER w AS prev_position, LAG(watched) OVER w AS prev_watched,
 			       LAG(reported) OVER w AS prev_reported, LAG(paused) OVER w AS prev_paused
 			FROM raw

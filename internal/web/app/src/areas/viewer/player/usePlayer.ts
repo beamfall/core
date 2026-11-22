@@ -563,6 +563,10 @@ export function usePlayer(
   // Bumped by retry() so the load effect re-runs for the same mediaID after a
   // non-terminal failure.
   const [retryKey, setRetryKey] = useState(0);
+  // The <video> the current load plays on. Try again after an error plays on
+  // a new element, so the reporting listeners follow this, not the first
+  // element the ref held (CORE-1703).
+  const [loadedVideo, setLoadedVideo] = useState<HTMLVideoElement | null>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   // A ref, not an effect dependency: the next item rides along with the load
@@ -765,6 +769,9 @@ export function usePlayer(
     // ref before this effect's cleanup runs, so cleanup cannot re-read it.
     let boundVideo: HTMLVideoElement | null = null;
     let recoveryTimer: number | null = null;
+    // Point the reporting listeners at this load's element before anything
+    // can play on it.
+    setLoadedVideo(videoRef.current);
     // A reload of this item (Try again, a quality or key change) carries on
     // the same play and its queue, still sending what it holds; anything else
     // starts a new play, with a new playback ID and queue.
@@ -1537,9 +1544,9 @@ export function usePlayer(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mediaID, startAtSeconds, retryKey, startID]);
 
-  // Report on pause / seek / end edges.
+  // Report on pause / seek / end edges of the element the load plays on.
   useEffect(() => {
-    const video = videoRef.current;
+    const video = loadedVideo ?? videoRef.current;
     if (!video) return;
     // Play history credits time only after a playing report, so resuming
     // reports too (CORE-1703).
@@ -1589,7 +1596,7 @@ export function usePlayer(
     return () => {
       for (const [type, listener] of listeners) video.removeEventListener(type, listener);
     };
-  }, [reportProgress, startHeartbeat, stopProgressReporting]);
+  }, [loadedVideo, reportProgress, startHeartbeat, stopProgressReporting]);
 
   const trackControl = useMemo<StreamTrackControl>(() => {
     const bumpTracks = () =>

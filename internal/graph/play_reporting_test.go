@@ -202,8 +202,12 @@ func TestReportPlaybackRecordsPausedAndPlaybackID(t *testing.T) {
 	if paused["playedMs"] != float64(44000) || playing["playedMs"] != nil {
 		t.Fatalf("progress payloads = %#v, want playedMs 44000 at 45, none at 50", payloads)
 	}
-	if _, errs := post(t, handler, fmt.Sprintf(report, `{"position":55,"playedMS":-1}`), authorizeViewer); len(errs) == 0 {
-		t.Fatal("reportPlayback with a negative playedMS succeeded, want an error")
+	// playedMS is refused as /v1 refuses it: negative or not a whole number,
+	// never truncated (-0.5 must not pass as zero).
+	for _, bad := range []string{"-1", "-0.5", "0.5", `"60"`} {
+		if _, errs := post(t, handler, fmt.Sprintf(report, `{"position":55,"playedMS":`+bad+`}`), authorizeViewer); len(errs) == 0 {
+			t.Fatalf("reportPlayback with playedMS %s succeeded, want an error", bad)
+		}
 	}
 	// The ID is checked exactly as sent: 64 characters counted in runes, and
 	// surrounding whitespace is refused rather than trimmed, so " x" and "x"
