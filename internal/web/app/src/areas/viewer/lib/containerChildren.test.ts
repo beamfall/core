@@ -190,9 +190,9 @@ describe("childContainerCandidates", () => {
 
   it("orders the first container group's children, skipping visited ones", () => {
     const groups = [
-      { archetype: "person", direction: "child", items: [box("p")] },
-      { archetype: "container", direction: "child", items: [box("parent", 1)] },
-      { archetype: "container", direction: "child", items: [box("a"), box("b", 1)] },
+      { archetype: "person", direction: "child" as const, items: [box("p")] },
+      { archetype: "container", direction: "child" as const, items: [box("parent", 1)] },
+      { archetype: "container", direction: "child" as const, items: [box("a"), box("b", 1)] },
     ];
     expect(childContainerCandidates(groups).map((i) => i.id)).toEqual(["parent"]);
     expect(childContainerCandidates(groups, new Set(["parent"])).map((i) => i.id)).toEqual([
@@ -204,16 +204,16 @@ describe("childContainerCandidates", () => {
 
   it("never walks a parent group (CORE-2036)", () => {
     const groups = [
-      { archetype: "container", direction: "parent", items: [box("up", 1)] },
-      { archetype: "container", direction: "child", items: [box("down")] },
+      { archetype: "container", direction: "parent" as const, items: [box("up", 1)] },
+      { archetype: "container", direction: "child" as const, items: [box("down")] },
     ] as const;
     expect(childContainerCandidates(groups).map((i) => i.id)).toEqual(["down"]);
   });
 
   it("passes over a group whose children are all locked", () => {
     const groups = [
-      { archetype: "container", direction: "child", items: [{ ...box("x"), locked: true }] },
-      { archetype: "container", direction: "child", items: [box("a")] },
+      { archetype: "container", direction: "child" as const, items: [{ ...box("x"), locked: true }] },
+      { archetype: "container", direction: "child" as const, items: [box("a")] },
     ];
     expect(childContainerCandidates(groups).map((i) => i.id)).toEqual(["a"]);
   });
