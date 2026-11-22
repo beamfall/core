@@ -67,6 +67,7 @@ import { MiniPlayer } from "../player/MiniPlayer";
 import { type HostedPlayerProps, usePlayerHost, type WatchEntry } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { PrePlayStage } from "../player/PrePlayStage";
+import { applyPlayerVolume } from "../player/playerVolume";
 import { SkippedOverlay } from "../player/SkippedOverlay";
 import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
 import { UpNextCard } from "../player/UpNextCard";
@@ -441,6 +442,7 @@ function FeaturePlayer({
   const bindVideo = useCallback(
     (node: HTMLVideoElement | null) => {
       videoRef.current = node;
+      if (node) applyPlayerVolume(node);
       setVideoNode(node);
     },
     [videoRef],
