@@ -2,11 +2,11 @@
 
 ### Requirement: Scraper-declared container membership follows the identification
 
-When an identification is applied through a scraper that declares a non-container EntityMap onto a
-container kind's single-holder Media relation, the server SHALL link the Media to the container
-Entity the lookup hydrates for that map and SHALL remove the Media's existing rows under that
-relation when the lookup hydrates none. A scraper that declares no such map SHALL leave the Media's
-container links as they are.
+When a scraper declares a non-container EntityMap onto a container kind's single-holder Media
+relation, applying its identification SHALL link the Media to the container Entity the lookup
+hydrates for that map, recording the scraper as the link's writer. When that map ran and hydrated
+no Entity, the server SHALL remove the Media's link under that relation. A scraper without such a
+map SHALL leave the Media's container links as they are.
 
 #### Scenario: Two members of one container
 
@@ -26,14 +26,39 @@ container links as they are.
   document names a different container object
 - **THEN** the Media item is held only by the other container Entity
 
+### Requirement: Scraper container cleanup removes only the scraper's own links
+
+The removal of a stale single-holder link SHALL delete only rows the applying scraper wrote from an
+Entity of the map's kind, and SHALL keep every other row, including an operator's link. A map the
+engine skipped because its path names an unknown ordinal SHALL remove nothing.
+
+#### Scenario: An operator's link survives
+
+- **WHEN** an operator linked a Media item to a container Entity and the item is identified through
+  a lookup whose document names no container object
+- **THEN** the Media item is still held by that container Entity
+
+#### Scenario: A skipped map keeps the link
+
+- **WHEN** a Media item held by a container Entity is identified again while the map's path names an
+  ordinal the parser does not know
+- **THEN** the Media item is still held by that container Entity
+
 ### Requirement: Scraper-declared container members are ordered by year
 
-A single-holder link written from such a map without an ordinal of its own SHALL take the identified
-Media's year as its sort order, so the container lists its members in release-year order. A link
-whose map supplies an ordinal SHALL keep that ordinal.
+A single-holder link written from such a map without an ordinal of its own SHALL take the Media's
+stored year, after field precedence, as its sort order, so the container lists its members in
+release-year order and a manual year outranks the scraper's. A link whose map supplies an ordinal
+SHALL keep that ordinal.
 
 #### Scenario: Members listed in release order
 
 - **WHEN** a container holds an item identified with the year 2003 and an item identified with the
   year 1999
 - **THEN** the container's Media list shows the 1999 item first
+
+#### Scenario: A manual year orders the member
+
+- **WHEN** a container member has a manual year of 2010 and its lookup reports 1999, and another
+  member is identified with the year 2003
+- **THEN** the container's Media list shows the 2003 item first
