@@ -2,45 +2,45 @@
   "schemaVersion": 1,
   "producer": "oscillux",
   "leg": "glsl300",
-  "release": "v0.2.16",
-  "rev": "46b9df6eced8d8aa76520e53d7816ef9d04d7f74",
+  "release": "v0.2.18",
+  "rev": "21e0cb17062d431f7655cfd4fab95103e9f66542",
   "license": "AGPL-3.0-only",
   "generator": "tools/shader/bundle-legs.mjs glsl300 at the pinned rev",
   "files": [
     {
       "path": "catalog.json",
-      "sha256": "b3f10f304e52c7cf216516fac72e1c24964d0d1fb760923b945597e96f7255ce",
+      "sha256": "449daa7e0635bac7ea7fcfdbf9d0fa0d22076345d77b90c9f931b9cd6424decd",
       "bytes": 113237
     },
     {
       "path": "limiter/cells.frag",
-      "sha256": "455994a3ff25c097f68ef995c0fbc71c920a5fbbf27963042df1862379efc6fc",
-      "bytes": 25978
+      "sha256": "ec670899794c73d6f0d9100a58cc491b7030773a98dfb039a5cd69cafacecc61",
+      "bytes": 27841
     },
     {
       "path": "limiter/grant.frag",
-      "sha256": "69aead30449bfc3d7746b1ad53c0a6a5c3ac6ab7efb6fed5be08197d887959f8",
-      "bytes": 30647
+      "sha256": "e3420f7656c684691c62593e615a58238df7eb98b38e3e52cf1a1890bcfeff4d",
+      "bytes": 30794
     },
     {
       "path": "limiter/output.frag",
-      "sha256": "aac3ac27d14610d0bfa6125618c5237a1cf61d1455cd6646f48af34eabc861cb",
-      "bytes": 39708
+      "sha256": "520223d6f65319c77a0dec7783541f4c457854590cfcaa7144156cbaa70acfa7",
+      "bytes": 39795
     },
     {
       "path": "limiter/reduce.frag",
-      "sha256": "09c1cb0460f83f982d08dd988b544ea7bd7473b5167acc6861d6537ceb396223",
-      "bytes": 26155
+      "sha256": "4a557a4c25eafbc0d5276c80e362e02ffa2fdf81188bd4ef10c8d6b1073c0e6f",
+      "bytes": 26242
     },
     {
       "path": "limiter/rows.frag",
-      "sha256": "ecd50b2bb274bd90b4fb4ed0d5fc3724b21d1a2d57179130aaa7887972cb2b76",
-      "bytes": 38463
+      "sha256": "b9a91a7476f28aa618834a30f17a4e0857a8ac48cdf54bf9a47cebc879eb1c93",
+      "bytes": 38550
     },
     {
       "path": "limiter/windows.frag",
-      "sha256": "d241e809364a18aa08d83a9816f2f06c9dcac8d3302dcb5b99f88443584a7592",
-      "bytes": 26368
+      "sha256": "f1c3cab2a7940d6291e9382b69fe5c745fbf34fb7567ccf2bdbb042fcaff872b",
+      "bytes": 26698
     },
     {
       "path": "post/bloom-down.frag",

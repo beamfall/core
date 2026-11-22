@@ -19,7 +19,8 @@ layout(location = 0) out uvec4 oW;
 // LIM_USIZE(tex) (the size of a float or uint texture), and LIMITER_LUT in the passes that
 // include luma-lut.glsl (rows, output), which measure pixels.
 //   lu.limiter0 = (window columns, window rows, area limit in pixels, token refill)
-//   lu.limiter1 = (tick in [0, 240), frame interval in ms, 0, 0)
+//   lu.limiter1 = (tick in [0, 240), frame interval in ms, window columns and rows in sub-blocks,
+//                 or 0 and 0 for whole-cell windows)
 // Tracker state, one RGBA32UI texel per pixel (uTrack, oTrack). The low 16 bits of each word hold
 // the luma and red trackers; the high 16 bits the red chromaticity boxes (limiterUvStep). Each
 // measure's tracker has a direction (the way it last fired), its extreme since then (the peak when
@@ -491,11 +492,13 @@ ivec3 limiterBytes(vec3 c) {
     return ivec3(round(c * 255.0));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
-// Pass 4, windows: one fragment per window origin (16 x 9). Sums the cells pass's counts over the
-// cols x rows cells from this origin and flags a sum over the area limit (more than limit pixels);
-// an origin whose window would leave the grid flags nothing. Running the windows in parallel keeps
-// the single-fragment grant pass short. Input uC; output oW = (over, 0, 0, 0). The limit is an
-// integer below 2^24, exact in a float; a window holds under 2^27 pixels.
+// Pass 4, windows: one fragment per cell origin (16 x 9). With a sub-block window (lu.limiter1.zw
+// nonzero) it passes on the cells pass's flag for the window origins at this cell's sub-blocks.
+// Otherwise it sums the cells pass's counts over the cols x rows cells from this origin and flags
+// a sum over the area limit (more than limit pixels); an origin whose window would leave the grid
+// flags nothing. Running the windows in parallel keeps the single-fragment grant pass short. Input
+// uC; output oW = (over, 0, 0, 0). The limit is an integer below 2^24, exact in a float; a window
+// holds under 2^27 pixels.
 
 void main() {
     ivec2 o = ivec2(gl_FragCoord.xy);
@@ -503,7 +506,9 @@ void main() {
     int rows = int(lu.limiter0.y);
     uint limit = uint(lu.limiter0.z);
     uint over = 0u;
-    if (o.x + cols <= GRID_X && o.y + rows <= GRID_Y) {
+    if (lu.limiter1.z > 0.0 && lu.limiter1.w > 0.0) {
+        over = LIM_U(uC, o).z;
+    } else if (o.x + cols <= GRID_X && o.y + rows <= GRID_Y) {
         uint sum = 0u;
         for (int y = o.y; y < o.y + rows; y++) {
             for (int x = o.x; x < o.x + cols; x++) sum += LIM_U(uC, ivec2(x, y)).x;

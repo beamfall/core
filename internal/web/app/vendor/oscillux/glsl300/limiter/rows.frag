@@ -128,7 +128,8 @@ const int LIN24_LUT[256] = int[256](
 // LIM_USIZE(tex) (the size of a float or uint texture), and LIMITER_LUT in the passes that
 // include luma-lut.glsl (rows, output), which measure pixels.
 //   lu.limiter0 = (window columns, window rows, area limit in pixels, token refill)
-//   lu.limiter1 = (tick in [0, 240), frame interval in ms, 0, 0)
+//   lu.limiter1 = (tick in [0, 240), frame interval in ms, window columns and rows in sub-blocks,
+//                 or 0 and 0 for whole-cell windows)
 // Tracker state, one RGBA32UI texel per pixel (uTrack, oTrack). The low 16 bits of each word hold
 // the luma and red trackers; the high 16 bits the red chromaticity boxes (limiterUvStep). Each
 // measure's tracker has a direction (the way it last fired), its extreme since then (the peak when

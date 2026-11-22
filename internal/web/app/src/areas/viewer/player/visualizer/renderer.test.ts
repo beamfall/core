@@ -643,6 +643,9 @@ describe("Renderer geometry (CORE-2516)", () => {
     for (const f of L.fOut) expect(spent).toContainEqual([f, BLACK_TRACKER]);
     expect(spent.at(-1)).toEqual([L.fG[L.cur ^ 1], SPENT]);
     expect(blocks.at(-1)?.slice(2, 4)).toEqual([limiterWindow(1200, 675).limit, 0]);
+    // limiter1.zw: the window in sub-blocks, which the cells pass tests (Oscillux v0.2.18).
+    const win = limiterWindow(1200, 675);
+    expect(blocks.at(-1)?.slice(6, 8)).toEqual([win.bcols, win.brows]);
     expect(blits).toEqual([[0, 0, 1200, 675, 0, 0, 1200, 675]]);
     expect(r.fadeLeft).toBe(0);
   });
@@ -1397,16 +1400,17 @@ describe("Renderer geometry (CORE-2516)", () => {
 });
 
 describe("limiterWindow", () => {
-  // windowOf("wcag", W, H) in Oscillux v0.2.9 tools/shader/limiter-geometry.mjs.
+  // windowOf("wcag", W, H) in Oscillux v0.2.18 tools/shader/limiter-geometry.mjs.
   it.each([
-    [320, 180, 7, 4, 1605],
-    [331, 193, 7, 4, 1760],
-    [1920, 1080, 7, 4, 57600],
-    [390, 844, 7, 4, 9132],
-    [64, 36, 6, 4, 63],
-    [3840, 2160, 7, 4, 230400],
-  ])("%i x %i", (w, h, cols, rows, limit) => {
-    expect(limiterWindow(w, h)).toEqual({ cols, rows, limit });
+    [320, 180, 7, 4, 23, 13, 1605],
+    [331, 193, 7, 4, 23, 13, 1760],
+    [480, 270, 7, 4, 23, 13, 3600],
+    [1920, 1080, 7, 4, 23, 13, 57600],
+    [390, 844, 7, 4, 23, 13, 9132],
+    [64, 36, 6, 4, 21, 12, 63],
+    [3840, 2160, 7, 4, 23, 13, 230400],
+  ])("%i x %i", (w, h, cols, rows, bcols, brows, limit) => {
+    expect(limiterWindow(w, h)).toEqual({ cols, rows, bcols, brows, limit });
   });
 
   // Codex round 13: 65 x 36 texels shown at 2x is 130 x 72 physical pixels, whose field is

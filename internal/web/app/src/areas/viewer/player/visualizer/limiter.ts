@@ -80,6 +80,10 @@ export const LIMITER_VERTEX =
 export interface LimiterWindow {
   cols: number;
   rows: number;
+  /** The window in whole sub-blocks (limiter1.zw): the cells pass tests every window of bcols x
+   * brows sub-blocks, so a patch is not counted with cells around it (Oscillux v0.2.18). */
+  bcols: number;
+  brows: number;
   limit: number;
 }
 
@@ -92,10 +96,20 @@ function span(len: number, n: number, cells: number): number {
   return most;
 }
 
+// The most sub-blocks a run of `len` pixels touches along an axis of `n` pixels split into
+// `blocks` sub-blocks (blockSpan in tools/shader/limiter-geometry.mjs).
+function blockSpan(len: number, n: number, blocks: number): number {
+  const blockOf = (x: number) => Math.floor((blocks * (x + 1) - 1) / n);
+  let most = 1;
+  for (let s = 0; s + len <= n; s++) most = Math.max(most, blockOf(s + len - 1) - blockOf(s) + 1);
+  return most;
+}
+
 /** windowOf("wcag", W, H) from tools/shader/limiter-geometry.mjs for a W x H frame whose texels
  * are `texel` physical pixels on a side, with visibleWidth x visibleHeight of them in view: the
  * field is a third of the visible frame each way, the window the fewest whole cells that contain
- * every texel the field touches wherever it sits, and the area limit a quarter of the field's
+ * every texel the field touches wherever it sits (bcols x brows in sub-blocks, which the shader
+ * tests; cols x rows in cells), and the area limit a quarter of the field's
  * physical pixels over the texel's area, so a patch over the physical limit is over it in texels
  * (Codex round 13). */
 export function limiterWindow(
@@ -110,9 +124,13 @@ export function limiterWindow(
     Math.min(n, texel === 1 ? px : Math.ceil((px - 1) / texel) + 1);
   const fwPx = fieldPx(visibleWidth * texel);
   const fhPx = fieldPx(visibleHeight * texel);
+  const fw = touched(fwPx, W);
+  const fh = touched(fhPx, H);
   return {
-    cols: span(touched(fwPx, W), W, GRID_X),
-    rows: span(touched(fhPx, H), H, GRID_Y),
+    cols: span(fw, W, GRID_X),
+    rows: span(fh, H, GRID_Y),
+    bcols: blockSpan(fw, W, GRID_X * SUB),
+    brows: blockSpan(fh, H, GRID_Y * SUB),
     limit: Math.floor((fwPx * fhPx) / 4 / (texel * texel)),
   };
 }
@@ -296,7 +314,16 @@ export class FrameLimiter {
     const refill = Math.min(TOKEN, Math.floor(earned));
     this.refillCarry = Math.min(1, earned - refill);
     const tick = Math.floor(this.clockMs / TICK_MS) % TICKS;
-    this.block.set([L.window.cols, L.window.rows, L.window.limit, refill, tick, deltaMs, 0, 0]);
+    this.block.set([
+      L.window.cols,
+      L.window.rows,
+      L.window.limit,
+      refill,
+      tick,
+      deltaMs,
+      L.window.bcols,
+      L.window.brows,
+    ]);
     gl.bindBuffer(gl.UNIFORM_BUFFER, this.ubo);
     gl.bufferSubData(gl.UNIFORM_BUFFER, 0, this.block);
     gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, this.ubo);

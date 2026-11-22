@@ -21,7 +21,8 @@ layout(location = 0) out uvec4 oG;
 // LIM_USIZE(tex) (the size of a float or uint texture), and LIMITER_LUT in the passes that
 // include luma-lut.glsl (rows, output), which measure pixels.
 //   lu.limiter0 = (window columns, window rows, area limit in pixels, token refill)
-//   lu.limiter1 = (tick in [0, 240), frame interval in ms, 0, 0)
+//   lu.limiter1 = (tick in [0, 240), frame interval in ms, window columns and rows in sub-blocks,
+//                 or 0 and 0 for whole-cell windows)
 // Tracker state, one RGBA32UI texel per pixel (uTrack, oTrack). The low 16 bits of each word hold
 // the luma and red trackers; the high 16 bits the red chromaticity boxes (limiterUvStep). Each
 // measure's tracker has a direction (the way it last fired), its extreme since then (the peak when
@@ -493,9 +494,10 @@ ivec3 limiterBytes(vec3 c) {
     return ivec3(round(c * 255.0));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
-// Pass 5, grant: one fragment (1 x 1). The frame is over when some window of cols x rows cells
-// (covering the 10° field) counts more than the area limit pixels changing in any channel and
-// direction (flagged by the windows pass); every direction is then over. Luminance over the limit
+// Pass 5, grant: one fragment (1 x 1). The frame is over when some window of bcols x brows
+// sub-blocks, or cols x rows cells without a sub-block window (covering the 10° field), counts
+// more than the area limit pixels changing in any channel and direction (flagged by the windows
+// pass); every direction is then over. Luminance over the limit
 // is rationed by one token budget; red has its own, refilled at an eighth of the luma rate, so at
 // most one large-area red transition (either direction) falls in any 1 s window: no saturated-red
 // flash (ITU-R BT.1702, ADR-0232 R5), and a held red change is admitted instead of freezing (R7,
