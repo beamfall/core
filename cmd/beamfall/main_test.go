@@ -818,18 +818,25 @@ func startServeSignalTestProcess(t *testing.T, binary, addr string) *exec.Cmd {
 	return process
 }
 
+// waitForServeSignalTestListener waits until serve itself answers HTTP on addr.
+// A bare TCP connect is not proof: under WSL2 mirrored networking the first
+// connect to a loopback port released a few milliseconds earlier is accepted by
+// the host relay and then reset (CORE-1005), so a dial probe would declare
+// serve ready while it is still starting and the signal would land before its
+// handler exists. Only a complete HTTP response proves serve is listening.
 func waitForServeSignalTestListener(t *testing.T, addr string) {
 	t.Helper()
+	client := &http.Client{Timeout: time.Second}
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", addr, time.Second)
+		resp, err := client.Get("http://" + addr + "/health")
 		if err == nil {
-			_ = conn.Close()
+			_ = resp.Body.Close()
 			return
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	t.Fatalf("serve never bound %s", addr)
+	t.Fatalf("serve never answered HTTP on %s", addr)
 }
 
 // serveSignalTestDescendants records the children the running server owns, so
