@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
-import type { DisplayString, GenericMediaInfo, SourceItem } from "@/lib/graphql/types";
+import type { DisplayString, EntityInfo, GenericMediaInfo, SourceItem } from "@/lib/graphql/types";
 
 // Where one Media item sits among its containers (CORE-1785, CORE-1786).
 //
@@ -35,6 +35,8 @@ export interface ContainerContext {
   container: ContainerLink | null;
   /** The nearest container's items in its order, this one included; empty until read. */
   items: SourceItem[];
+  /** The nearest container's Entity (archetype, related people); null until read. */
+  entity: EntityInfo | null;
 }
 
 const EMPTY: ContainerContext = {
@@ -43,6 +45,7 @@ const EMPTY: ContainerContext = {
   current: null,
   container: null,
   items: [],
+  entity: null,
 };
 
 /** The item's container credits, de-duplicated, in the server's order. */
@@ -187,6 +190,7 @@ export function useContainerContext(
           current: nearest.items.find((item) => item.id === mediaID) ?? null,
           container: nearest.link,
           items: nearest.items,
+          entity,
         });
       } catch {
         // Context is an enhancement: the credited parents already show.

@@ -31,6 +31,8 @@ import { NotAvailable } from "../components/NotAvailable";
 import { PosterGlyph } from "../components/PosterGlyph";
 import { PosterPickerDialog } from "../components/PosterPickerDialog";
 import { SectionView } from "../components/SectionView";
+import { ContainerTracks } from "../components/TrackList";
+import { useListingRows } from "../components/useListingRows";
 import { ViewerActions } from "../components/ViewerActions";
 import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
@@ -48,6 +50,7 @@ import {
 } from "../lib/mediaDetail";
 import { castHasDetail, creditsWithJob } from "../lib/people";
 import { streamFacts } from "../lib/streamFacts";
+import { containerTrackRows } from "../lib/trackList";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
   type DetailScore,
@@ -171,6 +174,8 @@ export function MediaDetailPage() {
   const media = current?.media;
   useCanonicalMediaAddress("media", media ?? null, confirmed);
   const context = useContainerContext(media, mediaId);
+  // The rows that decide whether the container's items list as numbered rows.
+  const siblingRows = useListingRows(context.entity, context.items);
   // Audio names its people under the title, unless a credit carries a headshot
   // or a part (an audio drama's cast): then the cast row shows them instead, so
   // no one is named twice.
@@ -346,6 +351,11 @@ export function MediaDetailPage() {
     : context.parents;
   // The nearest container's other items, in its order (CORE-2469).
   const moreIn = context.items.filter((item) => item.id !== mediaId);
+  // A container the Entity page lists as numbered rows is listed the same way
+  // here, this item's row marked (CORE-3065); others keep the poster row.
+  // While the rows that decide it load, neither shows.
+  const siblingTracks = containerTrackRows(context.entity, context.items, siblingRows.rows);
+  const siblingsPending = siblingRows.wanted && siblingRows.rows === null;
 
   const meta = metaItems.length > 0 || streamBadges.length > 0;
 
@@ -621,7 +631,19 @@ export function MediaDetailPage() {
 
         {media && <MediaRelationRows mediaID={mediaId} />}
 
-        {context.container && moreIn.length > 0 && (
+        {context.container && siblingTracks && siblingTracks.length > 0 && (
+          <ContainerTracks
+            tracks={siblingTracks}
+            currentID={mediaId}
+            title={
+              <Link to={`/entity/${encodeURIComponent(context.container.id)}`}>
+                {context.container.title}
+              </Link>
+            }
+          />
+        )}
+
+        {context.container && !siblingTracks && !siblingsPending && moreIn.length > 0 && (
           <SectionView
             section={{
               id: "media-more-in",
