@@ -115,8 +115,7 @@ func TestStartBackgroundComposedHLSRefusesOutsideConfinement(t *testing.T) {
 	}
 }
 
-// requireComposeCapableFFmpeg skips unless ffmpeg/ffprobe are installed with
-// the graphics decoder and the xBR and libass filters composed renditions use.
+// requireComposeCapableFFmpeg skips unless ffmpeg/ffprobe are installed.
 func requireComposeCapableFFmpeg(t *testing.T) {
 	t.Helper()
 	for _, bin := range []string{"ffmpeg", "ffprobe"} {
@@ -124,10 +123,20 @@ func requireComposeCapableFFmpeg(t *testing.T) {
 			t.Skipf("%s not installed", bin)
 		}
 	}
+}
+
+// requirePictureCapableFFmpeg skips unless ffmpeg has what the picture kind
+// needs: the graphics decoder and the xBR filter, or the libass filter.
+func requirePictureCapableFFmpeg(t *testing.T, kind string) {
+	t.Helper()
 	decoders, _ := exec.Command("ffmpeg", "-hide_banner", "-decoders").Output()
 	filters, _ := exec.Command("ffmpeg", "-hide_banner", "-filters").Output()
-	if !strings.Contains(string(decoders), "cdgraphics") || !strings.Contains(string(filters), " xbr ") || !strings.Contains(string(filters), " ass ") {
-		t.Skip("ffmpeg lacks the cdgraphics decoder or the xbr or libass filter")
+	if kind == "graphics" {
+		if !strings.Contains(string(decoders), "cdgraphics") || !strings.Contains(string(filters), " xbr ") {
+			t.Skip("ffmpeg lacks the cdgraphics decoder or the xbr filter")
+		}
+	} else if !strings.Contains(string(filters), " ass ") {
+		t.Skip("ffmpeg lacks the libass filter")
 	}
 }
 
@@ -208,6 +217,7 @@ func TestStartBackgroundComposedHLSRealEncode(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			requirePictureCapableFFmpeg(t, name)
 			dir := filepath.Join(root, "precompute:m1:fp,x;y[z]'q", strings.ReplaceAll(name, " ", "-"))
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				t.Fatal(err)
@@ -330,6 +340,7 @@ func TestStartHLSSegmentsComposedRealEncodeFromOffset(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			requirePictureCapableFFmpeg(t, name)
 			dir := filepath.Join(root, strings.ReplaceAll(name, " ", "-"))
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				t.Fatal(err)
