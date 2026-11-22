@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	filmtv "github.com/beamfall/plugin-filmtv"
-
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/plugin"
 	scanpkg "github.com/beamfall/core/internal/scan"
@@ -37,6 +35,14 @@ type containerOnlyParser struct{}
 
 func (containerOnlyParser) Parse(p string, _ scanpkg.ParseProbe) (scanpkg.ParsedMedia, bool) {
 	return scanpkg.ParsedMedia{Title: path.Base(path.Dir(p))}, true
+}
+
+// episodeOrdinalParser parses every file to season 1, episode 3, the ordinal
+// a filename such as "Sample - S01E03" carries.
+type episodeOrdinalParser struct{}
+
+func (episodeOrdinalParser) Parse(p string, _ scanpkg.ParseProbe) (scanpkg.ParsedMedia, bool) {
+	return scanpkg.ParsedMedia{Title: "Sample", Sequence: "1", Index: 3}, true
 }
 
 type singleBundle plugin.Bundle
@@ -221,7 +227,7 @@ func TestOperatorOrdinalSurvivesRescanAndRehydration(t *testing.T) {
 		FieldMap: map[string]string{"title": "name", "summary": "summary"},
 	}}}
 	service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), bundle, r.st)
-	service.SetMediaTitles(parserMediaTitles{store: r.st, parsers: map[string]scanpkg.FilenameParser{testHydrationPluginID: filmtv.New()}})
+	service.SetMediaTitles(parserMediaTitles{store: r.st, parsers: map[string]scanpkg.FilenameParser{testHydrationPluginID: episodeOrdinalParser{}}})
 
 	assertSummary := func(want string) {
 		t.Helper()
