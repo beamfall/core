@@ -10,7 +10,9 @@ A supplied sequence SHALL have at most 32 characters and a supplied index SHALL 
 
 - **WHEN** the manager supplies a sequence or index to Fix Match preview or apply
 - **THEN** the lookup uses the supplied ordinal, with an omitted sequence or index defaulting to empty or zero
-- **AND** only a successful Apply commits the ordinal and lists it among the item's locked values
+- **AND** the Apply commits the ordinal with the replacement metadata and lists it among the item's locked values
+- **AND** an Apply refused before that commit (a failed lookup, invalid input, or hydration the server cannot run) changes neither the ordinal nor the Media's Entity links
+- **AND** Entity links follow the commit, so a retry after a failed link write converges
 
 #### Scenario: An operator replaces a match or clears the ordinal
 

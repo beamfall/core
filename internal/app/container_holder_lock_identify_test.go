@@ -101,14 +101,15 @@ func (failingIdentification) ApplyMediaIdentification(context.Context, store.Med
 }
 
 // TestFixMatchOrdinalFailureKeepsHolderLink (CORE-3128): a Fix Match with an
-// ordinal hydrates before it commits the Media's metadata. When that commit
-// fails, the scraper's earlier holder link stays: stale link removal waits
-// for the commit.
+// ordinal hydrates only after the Media's metadata commits. When that commit
+// fails, or the request is rejected, the scraper's earlier holder link stays:
+// neither a stale link removal nor a move to the new candidate's holder runs.
 func TestFixMatchOrdinalFailureKeepsHolderLink(t *testing.T) {
 	ctx := context.Background()
 	st, library, media, endpoint := holderLockFixture(t, map[string]string{
 		"/item/1": `{"title":"Origin","release_date":"1999-03-31","group":{"id":77,"name":"Synthetic Set"}}`,
 		"/item/3": `{"title":"Loner","release_date":"1999-03-31","group":null}`,
+		"/item/4": `{"title":"Origin","release_date":"1999-03-31","group":{"id":88,"name":"Other Set"}}`,
 	})
 	bundle := scraperHolderBundle(endpoint, "group")
 	service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), bundle, st)
@@ -128,6 +129,12 @@ func TestFixMatchOrdinalFailureKeepsHolderLink(t *testing.T) {
 	}
 	if got := holderOf(t, service, media); got != set {
 		t.Fatalf("held by %q after a failed fix match, want the old holder %q", got, set)
+	}
+	if err := service.ApplyFixMatch(ctx, media, "demo", "item", "4", []string{"no-such-field"}, &manual, "profile-default"); err == nil {
+		t.Fatal("fix match accepted an unknown lock to clear")
+	}
+	if got := holderOf(t, service, media); got != set {
+		t.Fatalf("held by %q after a rejected fix match, want the old holder %q", got, set)
 	}
 	if err := service.ApplyFixMatch(ctx, media, "demo", "item", "3", nil, &manual, "profile-default"); err != nil {
 		t.Fatal(err)
