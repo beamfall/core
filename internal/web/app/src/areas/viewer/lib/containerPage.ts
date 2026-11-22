@@ -50,7 +50,22 @@ export function withoutItem(
 ): RelatedEntityGroup[] {
   if (!id) return [...groups];
   return groups
-    .map((group) => ({ ...group, items: group.items.filter((item) => item.id !== id) }))
+    .map((group) => {
+      const items = group.items.filter((item) => item.id !== id);
+      if (items.length === group.items.length) return group;
+
+      let start = 0;
+      const sections = group.sections
+        ?.filter((section) => section.count > 0)
+        .map((section) => {
+          const end = start + section.count;
+          const removed = group.items.slice(start, end).filter((item) => item.id === id).length;
+          start = end;
+          return { ...section, count: section.count - removed };
+        })
+        .filter((section) => section.count > 0);
+      return { ...group, items, sections };
+    })
     .filter((group) => group.items.length > 0);
 }
 
@@ -90,15 +105,18 @@ export function groupSections(group: RelatedEntityGroup, locale: string): Relate
   const covered = sections.reduce((sum, section) => sum + Math.max(0, section.count), 0);
   if (sections.length === 0 || covered !== group.items.length) return whole;
   const out: RelatedSection[] = [];
+  const keys = new Set<string>();
   let start = 0;
   for (const section of sections) {
     if (section.count <= 0) continue;
+    const key = `${group.kind}:${section.value}`;
     out.push({
-      key: `${group.kind}:${section.value}`,
+      key: keys.has(key) ? `${key}:${group.items[start].id}` : key,
       title: section.value ? displayString(section.displayName, locale) || section.value : heading,
       count: section.count,
       items: group.items.slice(start, start + section.count),
     });
+    keys.add(key);
     start += section.count;
   }
   return out;

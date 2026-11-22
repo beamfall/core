@@ -1,5 +1,5 @@
 import { ArrowLeft, Play, Radio, Shuffle } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { buttonVariants } from "@/components/ui/button";
@@ -277,6 +277,14 @@ export function EntityPage() {
   );
   const [similar, setSimilar] = useState<{ id: string; items: SourceItem[] } | null>(null);
   const [radioStarting, setRadioStarting] = useState(false);
+  const radioRequest = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    setRadioStarting(false);
+    return () => {
+      radioRequest.current?.abort();
+      radioRequest.current = null;
+    };
+  }, [entityId, identity]);
   const similarItems = similar?.id === entityId ? similar.items : [];
   // A detail Layout that only lists a container's own video Media renders as
   // rows that open each item's detail page (CORE-2510).
@@ -454,10 +462,13 @@ export function EntityPage() {
   // the server's read-only window, so a listener's own queue is replaced only
   // by the player, the way Play and Shuffle replace it.
   function startRadio() {
-    if (!entityId || radioStarting) return;
+    if (!entityId || radioRequest.current) return;
+    const controller = new AbortController();
+    radioRequest.current = controller;
     setRadioStarting(true);
-    fetchEntityStation(entityId)
+    fetchEntityStation(entityId, controller.signal)
       .then((candidates) => {
+        if (controller.signal.aborted) return;
         const queue = candidates.map((c) => ({
           id: c.mediaID,
           title: c.title,
@@ -469,7 +480,11 @@ export function EntityPage() {
       .catch(() => {
         // A failed read leaves the page as it was; the button stays usable.
       })
-      .finally(() => setRadioStarting(false));
+      .finally(() => {
+        if (controller.signal.aborted) return;
+        radioRequest.current = null;
+        setRadioStarting(false);
+      });
   }
 
   // The same way back the media detail page offers (CORE-2322).
@@ -705,7 +720,7 @@ export function EntityPage() {
               <RelatedGroup
                 key={section.key}
                 title={section.title}
-                count={sections.length > 1 ? section.count : undefined}
+                count={section.count}
                 items={section.items.map((item) => withItemCount(item, itemCount, displayLocale))}
               />
             ));

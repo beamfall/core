@@ -209,8 +209,7 @@ func (s *Store) entityMediaClassSpansLocked(ctx context.Context, ids []MediaID, 
 }
 
 // annotateEntityYearsLocked sets each Entity card's year from its earliest
-// dated, directly linked Media visible to this Source. The Source bounds the
-// number of IDs, so each readable plane can aggregate in one query.
+// dated, directly linked Media visible to this Source.
 func (s *Store) annotateEntityYearsLocked(ctx context.Context, filter LibraryFilter, items []SourceItem) error {
 	var ids []any
 	for _, item := range items {
@@ -264,6 +263,15 @@ func (s *Store) annotateEntityYearsLocked(ctx context.Context, filter LibraryFil
 
 func readEntityYears(ctx context.Context, reader *sql.DB, ids []any, libraryIDs []LibraryID, certClause string, certArgs []any, years map[MediaID]int) error {
 	libraries, libraryArgs := libraryIDPlaceholders(libraryIDs)
+	for batch := range slices.Chunk(ids, engagementChunkSize) {
+		if err := readEntityYearsBatch(ctx, reader, batch, libraries, libraryArgs, certClause, certArgs, years); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func readEntityYearsBatch(ctx context.Context, reader *sql.DB, ids []any, libraries string, libraryArgs []any, certClause string, certArgs []any, years map[MediaID]int) error {
 	args := make([]any, 0, len(ids)+len(libraryArgs)+len(certArgs))
 	args = append(args, ids...)
 	args = append(args, libraryArgs...)

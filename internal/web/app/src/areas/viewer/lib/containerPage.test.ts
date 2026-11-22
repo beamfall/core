@@ -78,6 +78,34 @@ describe("ancestorOf (CORE-2510)", () => {
   });
 });
 
+describe("withoutItem", () => {
+  it("updates the containing section and drops an empty section", () => {
+    const group = {
+      kind: "record",
+      items: [entityItem("a", "A"), entityItem("b", "B"), entityItem("c", "C")],
+      sections: [
+        { value: "long", count: 2 },
+        { value: "short", count: 1 },
+      ],
+    };
+
+    const [shorter] = withoutItem([group], "b");
+    expect(
+      groupSections(shorter, "en").map(({ title, count, items }) => [
+        title,
+        count,
+        items.map((item) => item.id),
+      ]),
+    ).toEqual([
+      ["long", 1, ["a"]],
+      ["short", 1, ["c"]],
+    ]);
+    const [oneSection] = withoutItem([group], "c");
+    expect(oneSection.sections).toEqual([{ value: "long", count: 2 }]);
+    expect(group.sections.map(({ count }) => count)).toEqual([2, 1]);
+  });
+});
+
 describe("groupHeading (CORE-2831)", () => {
   it("heads a group with the plugin's plural, then its display name, then the kind", () => {
     const items: SourceItem[] = [];

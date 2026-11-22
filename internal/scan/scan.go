@@ -109,6 +109,9 @@ type LocalEntity struct {
 type MetadataHydrationCapability struct {
 	MediaClasses []store.MediaClass
 	MarkerField  string
+	// A versioned fingerprint reopens Media hydrated by an older mapper.
+	FingerprintField  string
+	FingerprintPrefix string
 	// MediaFieldsBounded is true when MediaFields names every text, number
 	// or date Media field the hydrator writes (at the scan tier); otherwise
 	// it may write any. The scan uses it to tell which older scan-tier values

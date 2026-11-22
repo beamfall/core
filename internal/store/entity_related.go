@@ -18,6 +18,7 @@ type RelatedEntityGroup struct {
 	// group (unsplit, or the Entities with no value).
 	Group     string
 	LibraryID LibraryID
+	PluginID  string // owner of the grouping rule, when split
 	Items     []SourceItem
 }
 
@@ -37,11 +38,10 @@ func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filt
 }
 
 // RelatedEntityGroupsBy is RelatedEntityGroups with some kinds split by a
-// text field: groupFields maps a kind to the field whose value partitions it
-// (CORE-2769). A split kind yields its Entities without a value first, as the
-// kind's own group (Group ""), then one group per value in first-seen order;
-// every group keeps the kind's item order.
-func (s *Store) RelatedEntityGroupsBy(ctx context.Context, entityID EntityID, filter LibraryFilter, groupFields map[string]string) ([]RelatedEntityGroup, error) {
+// text field selected from each related Entity's owning plugin and kind
+// (CORE-2769). A ruled plugin yields a part for each value, including an
+// empty value for its Entities without the field. Each part keeps item order.
+func (s *Store) RelatedEntityGroupsBy(ctx context.Context, entityID EntityID, filter LibraryFilter, groupField func(pluginID, kind string) string) ([]RelatedEntityGroup, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
@@ -62,8 +62,12 @@ func (s *Store) RelatedEntityGroupsBy(ctx context.Context, entityID EntityID, fi
 	}
 	var visible []LibraryID
 	restricted := map[LibraryID]bool{}
+	owners := map[LibraryID]string{}
 	for _, library := range libraries {
 		restricted[library.ID] = library.IsRestricted
+		if library.PluginID != nil {
+			owners[library.ID] = *library.PluginID
+		}
 		if libraryVisible(library, filter) {
 			visible = append(visible, library.ID)
 		}
@@ -143,21 +147,39 @@ func (s *Store) RelatedEntityGroupsBy(ctx context.Context, entityID EntityID, fi
 			return nil, err
 		}
 	}
-	if len(groupFields) == 0 {
+	if groupField == nil {
 		return groups, nil
 	}
 	split := make([]RelatedEntityGroup, 0, len(groups))
 	for _, group := range groups {
-		field := groupFields[group.Kind]
-		if field == "" {
-			split = append(split, group)
-			continue
+		byOwner := map[string]int{}
+		var ownerGroups []RelatedEntityGroup
+		for _, item := range group.Items {
+			owner := owners[item.LibraryID]
+			if groupField(owner, group.Kind) == "" {
+				owner = ""
+			}
+			i, ok := byOwner[owner]
+			if !ok {
+				i = len(ownerGroups)
+				byOwner[owner] = i
+				ownerGroups = append(ownerGroups, RelatedEntityGroup{
+					Kind: group.Kind, LibraryID: item.LibraryID, PluginID: owner,
+				})
+			}
+			ownerGroups[i].Items = append(ownerGroups[i].Items, item)
 		}
-		parts, err := splitRelatedEntityGroup(ctx, plane.reader, group, field)
-		if err != nil {
-			return nil, err
+		for _, ownerGroup := range ownerGroups {
+			if ownerGroup.PluginID == "" {
+				split = append(split, ownerGroup)
+				continue
+			}
+			parts, err := splitRelatedEntityGroup(ctx, plane.reader, ownerGroup, groupField(ownerGroup.PluginID, group.Kind))
+			if err != nil {
+				return nil, err
+			}
+			split = append(split, parts...)
 		}
-		split = append(split, parts...)
 	}
 	return split, nil
 }
@@ -194,7 +216,7 @@ func splitRelatedEntityGroup(ctx context.Context, db *sql.DB, group RelatedEntit
 			return nil, err
 		}
 	}
-	parts := []RelatedEntityGroup{{Kind: group.Kind, LibraryID: group.LibraryID}}
+	parts := []RelatedEntityGroup{{Kind: group.Kind, LibraryID: group.LibraryID, PluginID: group.PluginID}}
 	index := map[string]int{"": 0}
 	for _, item := range group.Items {
 		value := values[EntityID(item.ID)]
@@ -202,7 +224,7 @@ func splitRelatedEntityGroup(ctx context.Context, db *sql.DB, group RelatedEntit
 		if !ok {
 			i = len(parts)
 			index[value] = i
-			parts = append(parts, RelatedEntityGroup{Kind: group.Kind, Group: value, LibraryID: group.LibraryID})
+			parts = append(parts, RelatedEntityGroup{Kind: group.Kind, Group: value, LibraryID: item.LibraryID, PluginID: group.PluginID})
 		}
 		parts[i].Items = append(parts[i].Items, item)
 	}

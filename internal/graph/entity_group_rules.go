@@ -2,11 +2,11 @@ package graph
 
 import (
 	"cmp"
-	"context"
+	"maps"
+	"math"
 	"slices"
 
 	"github.com/beamfall/core/internal/plugin"
-	"github.com/beamfall/core/internal/store"
 )
 
 // EntityGroupRule splits one Entity kind in entity(id)'s related groups by
@@ -45,20 +45,7 @@ func (r EntityGroupRule) rank(value string) int {
 			return i
 		}
 	}
-	return len(r.Groups)
-}
-
-// entityGroupRulesFor returns the group rules of the plugin owning the
-// Library, keyed by kind; nil when it has none.
-func (h *Handler) entityGroupRulesFor(ctx context.Context, libraryID store.LibraryID) map[string]EntityGroupRule {
-	if len(h.entityGroupRules) == 0 {
-		return nil
-	}
-	pluginID, err := h.store.LibraryPluginID(ctx, libraryID)
-	if err != nil || pluginID == "" {
-		return nil
-	}
-	return h.entityGroupRules[plugin.ID(pluginID)]
+	return math.MaxInt
 }
 
 // sortNewestFirst orders a ruled kind's cards by year, newest first; cards
@@ -79,6 +66,7 @@ func sortNewestFirst(items []SourceItem) {
 // value, before mergeRuledParts folds a kind's parts into one wire group.
 type relatedEntityPart struct {
 	value string
+	rule  EntityGroupRule
 	info  RelatedEntityGroupInfo
 }
 
@@ -87,32 +75,47 @@ type relatedEntityPart struct {
 // order — Entities without a value first, then the listed values, then
 // unlisted ones by value — so clients that ignore Sections still see one
 // group per kind. Unruled groups pass through unchanged.
-func mergeRuledParts(parts []relatedEntityPart, rules map[string]EntityGroupRule) []RelatedEntityGroupInfo {
+func mergeRuledParts(parts []relatedEntityPart) []RelatedEntityGroupInfo {
 	var out []RelatedEntityGroupInfo
 	for start := 0; start < len(parts); {
 		end := start + 1
 		for end < len(parts) && parts[end].info.Kind == parts[start].info.Kind {
 			end++
 		}
-		rule, ruled := rules[parts[start].info.Kind]
-		if !ruled {
+		run := parts[start:end]
+		if !slices.ContainsFunc(run, func(part relatedEntityPart) bool { return part.rule.Field != "" }) {
 			for _, part := range parts[start:end] {
 				out = append(out, part.info)
 			}
 			start = end
 			continue
 		}
-		run := parts[start:end]
 		slices.SortStableFunc(run, func(a, b relatedEntityPart) int {
-			return cmp.Or(cmp.Compare(rule.rank(a.value), rule.rank(b.value)), cmp.Compare(a.value, b.value))
+			return cmp.Or(cmp.Compare(a.rule.rank(a.value), b.rule.rank(b.value)), cmp.Compare(a.value, b.value))
 		})
 		merged := run[0].info
 		merged.Items = nil
+		var sectionItems [][]SourceItem
+		byValue := map[string][]int{}
 		for _, part := range run {
-			merged.Items = append(merged.Items, part.info.Items...)
-			merged.Sections = append(merged.Sections, RelatedEntitySectionInfo{
-				Value: part.value, DisplayName: rule.label(part.value), Count: len(part.info.Items),
+			label := part.rule.label(part.value)
+			matching := byValue[part.value]
+			match := slices.IndexFunc(matching, func(index int) bool {
+				return maps.Equal(merged.Sections[index].DisplayName, label)
 			})
+			if match >= 0 {
+				index := matching[match]
+				sectionItems[index] = append(sectionItems[index], part.info.Items...)
+				continue
+			}
+			byValue[part.value] = append(matching, len(merged.Sections))
+			merged.Sections = append(merged.Sections, RelatedEntitySectionInfo{Value: part.value, DisplayName: label})
+			sectionItems = append(sectionItems, part.info.Items)
+		}
+		for i, items := range sectionItems {
+			sortNewestFirst(items)
+			merged.Items = append(merged.Items, items...)
+			merged.Sections[i].Count = len(items)
 		}
 		out = append(out, merged)
 		start = end

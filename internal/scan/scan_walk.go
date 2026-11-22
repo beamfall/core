@@ -88,8 +88,8 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 			}
 		}
 	}
-	if req.Backfill && state.metadataHydrator != nil && prober != nil {
-		stale, err := metadataBackfillStale(ctx, st, req.LibraryID, state.metadataCapability)
+	if state.metadataHydrator != nil && prober != nil && (req.Backfill || state.metadataCapability.FingerprintPrefix != "") {
+		stale, err := metadataBackfillStale(ctx, st, req.LibraryID, state.metadataCapability, req.Backfill)
 		if err != nil {
 			return Result{}, err
 		}
@@ -226,7 +226,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 	return state.result, nil
 }
 
-func metadataBackfillStale(ctx context.Context, st *store.Store, libraryID store.LibraryID, capability MetadataHydrationCapability) (map[store.MediaID]struct{}, error) {
+func metadataBackfillStale(ctx context.Context, st *store.Store, libraryID store.LibraryID, capability MetadataHydrationCapability, backfill bool) (map[store.MediaID]struct{}, error) {
 	stale := map[store.MediaID]struct{}{}
 	queried := map[store.MediaClass]bool{}
 	for _, class := range capability.MediaClasses {
@@ -234,7 +234,7 @@ func metadataBackfillStale(ctx context.Context, st *store.Store, libraryID store
 			continue
 		}
 		queried[class] = true
-		matching, err := st.MediaLackingFieldInLibrary(ctx, libraryID, class, capability.MarkerField)
+		matching, err := st.MediaNeedingHydration(ctx, libraryID, class, capability.MarkerField, capability.FingerprintField, capability.FingerprintPrefix, backfill)
 		if err != nil {
 			return nil, err
 		}

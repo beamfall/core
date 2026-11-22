@@ -1172,7 +1172,7 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
       screen.getByRole("button", { name: "Start a radio station from Server title" }),
     );
     await act(async () => {});
-    expect(fetchEntityStation).toHaveBeenCalledWith("e1");
+    expect(fetchEntityStation).toHaveBeenCalledWith("e1", expect.any(AbortSignal));
     const player = screen.getByRole("status", { name: "player" }).textContent ?? "";
     const [mediaId] = player.split(" ", 1);
     const state = JSON.parse(player.slice(mediaId.length + 1));
@@ -1181,6 +1181,40 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
       { id: "s2", title: "Station Two", mediaClass: "audio" },
       { id: "s1", title: "Station One", mediaClass: "audio" },
     ]);
+  });
+
+  it("keeps the new Entity open when Radio responds for the previous one", async () => {
+    const request = pending<Awaited<ReturnType<typeof fetchEntityStation>>>();
+    vi.mocked(fetchEntityStation).mockReturnValueOnce(request.promise);
+    vi.mocked(fetchEntity)
+      .mockResolvedValueOnce({
+        ...record,
+        relatedEntities: [
+          {
+            kind: record.kind,
+            archetype: "container",
+            items: [{ id: "next", kind: "entity", title: "Next Release" }],
+            sections: [{ value: "short", displayName: { en: "Short Players" }, count: 1 }],
+          },
+        ],
+      } as EntityInfo)
+      .mockResolvedValue({ ...record, id: "next", title: "Next Release" } as EntityInfo);
+    renderEntity();
+    await act(async () => {});
+
+    const section = screen.getByRole("heading", { name: "Short Players 1" }).closest("section");
+    expect(section).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Start a radio station from Server title" }),
+    );
+    const signal = vi.mocked(fetchEntityStation).mock.lastCall?.[1];
+    fireEvent.click(within(section as HTMLElement).getByRole("link", { name: /^Next Release/ }));
+    await act(async () => {});
+    expect(signal?.aborted).toBe(true);
+
+    await act(async () => request.resolve([{ mediaID: "late", title: "Late Track" }]));
+    expect(screen.getByRole("heading", { name: "Next Release" })).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "player" })).toBeNull();
   });
 
   it("heads each section of a split container kind with its count (CORE-2769)", async () => {
@@ -1329,7 +1363,7 @@ describe("EntityPage hero (CORE-2441)", () => {
     expect(screen.getByText("Channel")).toBeInTheDocument();
     // Child containers carry their item counts on the card.
     expect(screen.getByText("Part one")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Parts" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Parts 2" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "People" })).toBeInTheDocument();
   });
 

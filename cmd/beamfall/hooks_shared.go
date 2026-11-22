@@ -222,6 +222,9 @@ type musicHydrationMapper struct{}
 
 func (musicHydrationMapper) MarkerField() string { return music.HydratedField }
 
+// Version 2 derives the album grouping field from existing track tags.
+func (musicHydrationMapper) HydrationVersion() string { return "v2" }
+
 func (musicHydrationMapper) ExternalIDSchemes() []string {
 	return []string{music.SchemeMusicBrainzRecording}
 }
@@ -320,7 +323,9 @@ func (musicHydrationMapper) MapHydration(tags map[string]string, path string) ap
 			}
 			albumArtist = credit.Artist
 		}
-		album := app.HydrationEntity{Kind: "album", Title: hydration.Album, Scope: albumArtist}
+		album := app.HydrationEntity{
+			Kind: "album", Title: hydration.Album, Scope: albumArtist, MergeTextField: music.ReleaseTypeField,
+		}
 		if !hydration.ReleaseDate.IsZero() {
 			album.Fields = append(album.Fields, store.EntityField{Name: "release-date", Type: store.EntityFieldDate, Date: hydration.ReleaseDate.UTC()})
 		}

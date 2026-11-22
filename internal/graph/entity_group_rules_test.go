@@ -25,16 +25,17 @@ import (
 func TestEntityQuerySplitsRuledKindByField(t *testing.T) {
 	st := storetest.Open(t)
 	registry, err := newTestPluginRegistry([]plugin.Bundle{{
-		ID:          "tunes",
-		Version:     "1.0.0",
-		DisplayName: plugin.L("Tunes"),
-		MediaLabel:  plugin.L("Cut"),
+		ID:           "tunes",
+		Version:      "1.0.0",
+		DisplayName:  plugin.L("Tunes"),
+		MediaLabel:   plugin.L("Cut"),
+		MediaClasses: []string{"audio"},
 		EntityKinds: []plugin.EntityKind{{
 			Name:              "record",
 			DisplayName:       plugin.L("Record"),
 			PluralDisplayName: plugin.L("Records"),
 			Archetype:         "container",
-			Fields:            []plugin.FieldSpec{{Name: "format", Type: "text"}},
+			Fields:            []plugin.FieldSpec{{Name: "format", Type: "text"}, {Name: "release-date", Type: "date"}},
 			Relations: []plugin.RelationSpec{
 				{Name: "record-cut", ToKind: plugin.MediaKindName},
 				{Name: "record-performer", ToKind: "performer"},
@@ -66,7 +67,12 @@ func TestEntityQuerySplitsRuledKindByField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpsertEntity(ctx, store.Entity{ID: "entity-performer", LibraryID: library.ID, Kind: "performer", Title: "The Performer"}); err != nil {
+	// The page belongs to a different library with no grouping rule.
+	pageLibrary, err := st.CreateLibrary(ctx, "Performers", false, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntity(ctx, store.Entity{ID: "entity-performer", LibraryID: pageLibrary.ID, Kind: "performer", Title: "The Performer"}); err != nil {
 		t.Fatal(err)
 	}
 	records := []struct {
@@ -84,6 +90,13 @@ func TestEntityQuerySplitsRuledKindByField(t *testing.T) {
 		entity := store.Entity{ID: store.EntityID(r.id), LibraryID: library.ID, Kind: "record", Title: r.title}
 		if r.format != "" {
 			entity.Fields = []store.EntityField{{Name: "format", Type: store.EntityFieldText, Text: r.format}}
+		}
+		// The release date would reverse the order of the two dated long cards.
+		switch r.id {
+		case "entity-b":
+			entity.Fields = append(entity.Fields, store.EntityField{Name: "release-date", Type: store.EntityFieldDate, Date: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)})
+		case "entity-c":
+			entity.Fields = append(entity.Fields, store.EntityField{Name: "release-date", Type: store.EntityFieldDate, Date: time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)})
 		}
 		if err := st.UpsertEntity(ctx, entity); err != nil {
 			t.Fatal(err)
@@ -157,5 +170,38 @@ func TestEntityQuerySplitsRuledKindByField(t *testing.T) {
 	}
 	if !reflect.DeepEqual(groups[0].Sections, wantSections) {
 		t.Fatalf("sections = %+v, want %+v", groups[0].Sections, wantSections)
+	}
+}
+
+func TestRelatedSectionsCombineMatchingLabelsAcrossPluginRules(t *testing.T) {
+	shared := EntityGroupValue{Value: "shared", Label: plugin.L("Shared")}
+	first := EntityGroupRule{Field: "format", Groups: []EntityGroupValue{shared}}
+	second := EntityGroupRule{Field: "shape", Groups: []EntityGroupValue{{Value: "early"}, {Value: "middle"}, shared}}
+	part := func(rule EntityGroupRule, value string, id string, year int) relatedEntityPart {
+		return relatedEntityPart{
+			value: value, rule: rule,
+			info: RelatedEntityGroupInfo{Kind: "record", Items: []SourceItem{{ID: id, Year: year}}},
+		}
+	}
+	groups := mergeRuledParts([]relatedEntityPart{
+		part(first, "shared", "older", 2000),
+		part(first, "unlisted", "unlisted", 2001),
+		part(second, "middle", "middle", 2002),
+		part(second, "shared", "newer", 2003),
+	})
+	want := []RelatedEntitySectionInfo{
+		{Value: "shared", DisplayName: shared.Label, Count: 2},
+		{Value: "middle", Count: 1},
+		{Value: "unlisted", Count: 1},
+	}
+	if len(groups) != 1 || !reflect.DeepEqual(groups[0].Sections, want) {
+		t.Fatalf("groups = %+v, want one group with sections %+v", groups, want)
+	}
+	var ids []string
+	for _, item := range groups[0].Items {
+		ids = append(ids, item.ID)
+	}
+	if wantIDs := []string{"newer", "older", "middle", "unlisted"}; !reflect.DeepEqual(ids, wantIDs) {
+		t.Fatalf("items = %v, want %v", ids, wantIDs)
 	}
 }

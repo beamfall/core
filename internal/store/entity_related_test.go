@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"reflect"
+	"slices"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -256,7 +258,12 @@ func TestRelatedEntityGroupsBySplitsAKindByField(t *testing.T) {
 	}
 	relateEntities(t, st, EntityRelation{FromEntityID: "entity-maker", Name: "based-in", ToEntityID: "entity-place"})
 
-	groups, err := st.RelatedEntityGroupsBy(ctx, "entity-maker", server, map[string]string{"box": "shape"})
+	groups, err := st.RelatedEntityGroupsBy(ctx, "entity-maker", server, func(_, kind string) string {
+		if kind == "box" {
+			return "shape"
+		}
+		return ""
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,5 +294,110 @@ func TestRelatedEntityGroupsBySplitsAKindByField(t *testing.T) {
 	}
 	if len(plain) != 2 || len(plain[0].Items) != 4 || plain[0].Group != "" {
 		t.Fatalf("RelatedEntityGroups = %+v, want box whole then place", plain)
+	}
+}
+
+func TestRelatedEntityYearsExceedSQLiteVariableLimit(t *testing.T) {
+	st, lib, _ := relatedFixture(t)
+	ctx := t.Context()
+	upsertRelatedEntity(t, st, "dated-entity", lib.ID, "box", "Dated")
+	media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID: lib.ID, Path: "/shelf/dated.flac", Title: "Dated", Container: "flac", Codec: "flac",
+		Class: MediaClassAudio, ContentFingerprint: "dated", Year: 2005,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	relateEntities(t, st, EntityRelation{FromEntityID: "dated-entity", Name: "contains", ToMediaID: media.ID})
+
+	// Exercise the same year-annotation path as RelatedEntityGroups without
+	// inserting thousands of unrelated fixture rows.
+	items := make([]SourceItem, 32_767)
+	for i := range items {
+		items[i] = SourceItem{ID: MediaID(strconv.Itoa(i)), Kind: "entity"}
+	}
+	items[len(items)-1].ID = "dated-entity"
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	if err := st.annotateEntityYearsLocked(ctx, LibraryFilter{AllLibraries: true}, items); err != nil {
+		t.Fatal(err)
+	}
+	if got := items[len(items)-1].Year; got != 2005 || items[0].Year != 0 {
+		t.Fatalf("years = %d, %d; want 0, 2005", items[0].Year, got)
+	}
+}
+
+func TestUpsertEntityMergingTextIsIndependentOfTrackOrder(t *testing.T) {
+	st, lib, _ := relatedFixture(t)
+	ctx := t.Context()
+	for _, tc := range []struct {
+		name   string
+		values []string
+		want   []string
+	}{
+		{"short first", []string{"short", "", "long", ""}, []string{"short", "short", "long", "long"}},
+		{"long first", []string{"long", "short", "", ""}, []string{"long", "long", "long", "long"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entity := Entity{ID: EntityID("box-" + tc.name), LibraryID: lib.ID, Kind: "box", Title: "Box"}
+			var linked []MediaID
+			for i, value := range tc.values {
+				track := tc.name + "-" + strconv.Itoa(i)
+				media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+					LibraryID: lib.ID, Path: "/shelf/" + track + ".flac", Title: track, Container: "flac", Codec: "flac",
+					Class: MediaClassAudio, ContentFingerprint: track,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				entity.Fields = []EntityField{{Name: "other", Type: EntityFieldText, Text: "latest write"}}
+				if value != "" {
+					entity.Fields = append(entity.Fields, EntityField{Name: "shape", Type: EntityFieldText, Text: value})
+				}
+				if err := st.UpsertEntityMergingText(ctx, entity, "shape", media.ID); err != nil {
+					t.Fatal(err)
+				}
+				linked = append(linked, media.ID)
+				attributes := map[string]string{"@hydration": "render attribute"}
+				relation := EntityRelation{
+					FromEntityID: entity.ID, Name: "contains", ToMediaID: media.ID, Attributes: attributes,
+				}
+				if value != "" {
+					relation.HydrationText = &EntityTextContribution{Field: "shape", Value: value}
+				}
+				relateEntities(t, st, relation)
+				credits, err := st.EntitiesForMedia(ctx, media.ID, "contains", LibraryFilter{AllLibraries: true})
+				if err != nil || len(credits) != 1 || !reflect.DeepEqual(credits[0].Attributes, attributes) {
+					t.Fatalf("public relation attributes = %+v, err = %v", credits, err)
+				}
+				read, err := st.Entity(ctx, entity.ID, LibraryFilter{AllLibraries: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := []EntityField{
+					{Name: "other", Type: EntityFieldText, Text: "latest write"},
+					{Name: "shape", Type: EntityFieldText, Text: tc.want[i]},
+				}
+				if !reflect.DeepEqual(read.Fields, want) {
+					t.Fatalf("fields after %q = %+v, want %+v", value, read.Fields, want)
+				}
+			}
+
+			// Once the winning track is trashed, it no longer votes when
+			// another track hydrates, even with several live tracks.
+			winner := slices.Index(tc.values, "long")
+			filter := LibraryFilter{AllLibraries: true}
+			if err := st.TrashMedia(ctx, linked[winner], filter); err != nil {
+				t.Fatal(err)
+			}
+			entity.Fields = nil
+			if err := st.UpsertEntityMergingText(ctx, entity, "shape", linked[len(linked)-1]); err != nil {
+				t.Fatal(err)
+			}
+			read, err := st.Entity(ctx, entity.ID, filter)
+			if want := []EntityField{{Name: "shape", Type: EntityFieldText, Text: "short"}}; err != nil || !reflect.DeepEqual(read.Fields, want) {
+				t.Fatalf("fields without the trashed track = %+v, err = %v; want %+v", read.Fields, err, want)
+			}
+		})
 	}
 }

@@ -117,6 +117,9 @@ type HydrationEntity struct {
 	// mapper that sets it must declare the kind through HydrationScopeMapper.
 	Scope  string
 	Fields []store.EntityField
+	// MergeTextField retains the lexically first non-empty value for a
+	// declared text field contributed by multiple Media.
+	MergeTextField string `json:",omitempty"`
 }
 
 // HydrationEntityScope declares that Entities of Kind are scoped, and that the

@@ -306,6 +306,9 @@ func TestMusicAlbumReleaseTypeGroups(t *testing.T) {
 		if relation.Name != "album-track" {
 			continue
 		}
+		if relation.From.MergeTextField != music.ReleaseTypeField {
+			t.Fatalf("album merge field = %q, want %q", relation.From.MergeTextField, music.ReleaseTypeField)
+		}
 		for _, field := range relation.From.Fields {
 			if field.Name == music.ReleaseTypeField {
 				releaseType = field.Text

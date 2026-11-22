@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -179,6 +180,10 @@ func (f *fakeHydrationStore) MediaFieldLocks(context.Context, store.MediaID, sto
 func (f *fakeHydrationStore) UpsertEntity(_ context.Context, entity store.Entity) error {
 	f.entities[entity.ID] = entity
 	return nil
+}
+
+func (f *fakeHydrationStore) UpsertEntityMergingText(ctx context.Context, entity store.Entity, _ string, _ store.MediaID) error {
+	return f.UpsertEntity(ctx, entity)
 }
 
 func (f *fakeHydrationStore) UpsertEntityRelation(_ context.Context, relation store.EntityRelation) error {
@@ -1051,6 +1056,12 @@ func (r *rendezvousHydrationStore) UpsertEntity(ctx context.Context, entity stor
 	return r.inner.UpsertEntity(ctx, entity)
 }
 
+func (r *rendezvousHydrationStore) UpsertEntityMergingText(ctx context.Context, entity store.Entity, field string, mediaID store.MediaID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.UpsertEntityMergingText(ctx, entity, field, mediaID)
+}
+
 func (r *rendezvousHydrationStore) UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1363,6 +1374,122 @@ func (r *rehydrationScan) field(name string) string {
 		}
 	}
 	return ""
+}
+
+type versionedFixtureHydration struct{ rehydratingTestMapper }
+
+func (versionedFixtureHydration) HydrationVersion() string { return "v2" }
+
+func (m versionedFixtureHydration) MapHydration(tags map[string]string, path string) HydrationPlan {
+	plan := m.rehydratingTestMapper.MapHydration(tags, path)
+	plan.Relations = append(plan.Relations, HydrationRelation{
+		From: HydrationEntity{
+			Kind: "album", Title: tags["album"], MergeTextField: "format",
+			Fields: []store.EntityField{{Name: "format", Type: store.EntityFieldText, Text: tags["RELEASETYPE"]}},
+		},
+		Name: "album-track", Cardinality: "one",
+	})
+	return plan
+}
+
+type failingHydrationProbe struct{ calls int }
+
+func (p *failingHydrationProbe) Probe(context.Context, string) (ffmpeg.Probe, error) {
+	p.calls++
+	return ffmpeg.Probe{}, errors.New("transient probe failure")
+}
+
+func TestBackfillRehydratesAlreadyMarkedTrackAfterMapperUpgrade(t *testing.T) {
+	r := newRehydrationScan(t)
+	ctx := t.Context()
+	r.write("previously hydrated audio bytes", 3*time.Hour, map[string]string{
+		"title": "Track", "album": "Release", "RELEASETYPE": "ep",
+	})
+	r.scan()
+	mediaID := r.mediaID
+	legacyFingerprint := r.field(testHydrationFingerprintField)
+	if legacyFingerprint == "" {
+		t.Fatal("legacy scan did not record a fingerprint")
+	}
+	if stale, err := r.st.MediaLackingFieldInLibrary(ctx, r.library, store.MediaClassAudio, testHydrationMarkerField); err != nil || len(stale) != 0 {
+		t.Fatalf("legacy scan left unmarked Media %v, err = %v", stale, err)
+	}
+	if err := r.st.SetLibraryRoots(ctx, r.library, []string{r.root}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.st.MarkHydrationBackfillChecked(ctx, r.library, testHydrationMarkerField, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	albumID := identify.EntityIDForName(r.library, "album", "Release")
+	if err := r.st.UpsertEntity(ctx, store.Entity{ID: albumID, LibraryID: r.library, Kind: "album", Title: "Release"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.st.UpsertEntityRelation(ctx, store.EntityRelation{
+		FromEntityID: albumID, Name: "album-track", ToMediaID: mediaID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	bundle := rehydrationBundle()
+	for i := range bundle.EntityKinds {
+		if bundle.EntityKinds[i].Name == "album" {
+			bundle.EntityKinds[i].Fields = append(bundle.EntityKinds[i].Fields, plugin.FieldSpec{
+				Name: "format", Type: "text", Label: plugin.L("Format"),
+			})
+		}
+	}
+	registry, err := plugin.NewRegistry([]plugin.Bundle{bundle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hydrators := newHydrationAdapters(registry, r.counted, map[string]HydrationMapper{testHydrationPluginID: versionedFixtureHydration{}})
+	for range 2 {
+		queueHydrationBackfills(ctx, r.st, hydrators, slog.New(slog.DiscardHandler))
+	}
+	jobs, err := r.st.ListJobs(ctx)
+	if err != nil || len(jobs) != 1 || jobs[0].Kind != scanpkg.JobKind {
+		t.Fatalf("versioned backfill jobs = %+v, err = %v; want one scan", jobs, err)
+	}
+	scan := func(prober scanpkg.Prober, backfill bool) {
+		t.Helper()
+		if _, err := scanpkg.ScanWithMetadataHydration(ctx, r.st, prober, nil, nil, nil, nil, nil,
+			hydrators, scanpkg.Request{LibraryID: r.library, Root: r.root, Backfill: backfill}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	failedProbe := &failingHydrationProbe{}
+	scan(failedProbe, true)
+	if failedProbe.calls != 1 || r.field(testHydrationFingerprintField) != legacyFingerprint {
+		t.Fatal("failed backfill must probe the legacy track and leave it eligible for retry")
+	}
+	prober := tagProber{tags: &r.tags}
+	scan(prober, false)
+	checkReleaseType := func(value string) {
+		t.Helper()
+		album, err := r.st.Entity(ctx, albumID, store.LibraryFilter{AllLibraries: true})
+		want := []store.EntityField{{Name: "format", Type: store.EntityFieldText, Text: value}}
+		if err != nil || !reflect.DeepEqual(album.Fields, want) {
+			t.Fatalf("release fields = %+v, err = %v; want %v", album.Fields, err, want)
+		}
+	}
+	checkReleaseType("ep")
+	if fingerprint := r.field(testHydrationFingerprintField); !strings.HasPrefix(fingerprint, "v2:") {
+		t.Fatalf("backfilled fingerprint = %q, want current version", fingerprint)
+	}
+	writes := r.counted.writes
+	scan(prober, true)
+	if r.counted.writes != writes {
+		t.Fatal("second backfill hydrated the same track")
+	}
+
+	// The only live track can correct its tag, even to a later value.
+	r.tags["RELEASETYPE"] = "single"
+	if err := hydrators[testHydrationPluginID].HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
+		LibraryID: r.library, MediaID: mediaID, Class: store.MediaClassAudio, Path: r.path,
+		Metadata: r.tags, ContentFingerprint: "corrected",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	checkReleaseType("single")
 }
 
 func TestScanRehydratesRetaggedFile(t *testing.T) {

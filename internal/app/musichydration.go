@@ -30,6 +30,7 @@ type hydrationStore interface {
 	MediaFields(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaField, error)
 	MediaFieldLocks(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFieldLock, error)
 	UpsertEntity(ctx context.Context, entity store.Entity) error
+	UpsertEntityMergingText(ctx context.Context, entity store.Entity, field string, mediaID store.MediaID) error
 	UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error
 	ReplaceMediaRelations(ctx context.Context, mediaID store.MediaID, relations []store.EntityRelation) error
 	AddMediaExternalID(ctx context.Context, mediaID store.MediaID, scheme string, value string) error
@@ -60,6 +61,12 @@ const (
 type HydrationRehydrator interface {
 	FingerprintField() string
 	DecideHydrationWrite(recordedFingerprint, currentFingerprint string) HydrationWrite
+}
+
+// VersionedHydrationRehydrator can reopen files hydrated by an older version
+// of a mapper even when their bytes have not changed.
+type VersionedHydrationRehydrator interface {
+	HydrationVersion() string
 }
 
 // hydrationAdapter validates a plugin-supplied write plan against the active
@@ -133,6 +140,10 @@ func newHydrationAdapters(registry *plugin.Registry, st hydrationStore, mappers 
 		if rehydrator, ok := mapper.(HydrationRehydrator); ok {
 			adapter.rehydrator = rehydrator
 			adapter.fingerprintField = rehydrator.FingerprintField()
+			if versioned, ok := mapper.(VersionedHydrationRehydrator); ok && versioned.HydrationVersion() != "" {
+				adapter.capability.FingerprintField = adapter.fingerprintField
+				adapter.capability.FingerprintPrefix = versioned.HydrationVersion() + ":"
+			}
 		}
 		if bounded, ok := mapper.(HydrationMediaFieldsMapper); ok {
 			adapter.boundMediaFields(bounded.HydratedMediaFields())
@@ -232,6 +243,9 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	key, err := hydrationKey(input.ContentFingerprint, plan)
 	if err != nil {
 		return err
+	}
+	if key != "" {
+		key = a.capability.FingerprintPrefix + key
 	}
 	write, err := a.decideWrite(ctx, input.MediaID, key)
 	if err != nil {
@@ -532,6 +546,9 @@ func (a *hydrationAdapter) validateEntity(entity HydrationEntity) error {
 			return fmt.Errorf("hydration scope relation %q from entity kind %q is not a declared entity relation", relation, entity.Kind)
 		}
 	}
+	if entity.MergeTextField != "" && declared[entity.MergeTextField] != string(store.EntityFieldText) {
+		return fmt.Errorf("hydration merge field %q on kind %q must be declared as text", entity.MergeTextField, entity.Kind)
+	}
 	for _, field := range entity.Fields {
 		declaredType, ok := declared[field.Name]
 		if !ok {
@@ -677,7 +694,7 @@ func (a *hydrationAdapter) resolveRelation(ctx context.Context, mediaID store.Me
 			return store.EntityRelation{}, false, nil
 		}
 	}
-	fromID, err := a.upsertEntity(ctx, libraryID, mapped.From, resolved)
+	fromID, err := a.upsertEntity(ctx, libraryID, mapped.From, resolved, mediaID)
 	if err != nil {
 		return store.EntityRelation{}, false, err
 	}
@@ -690,29 +707,40 @@ func (a *hydrationAdapter) resolveRelation(ctx context.Context, mediaID store.Me
 		SortOrder:    mapped.SortOrder,
 	}
 	if mapped.ToEntity != nil {
-		toID, err := a.upsertEntity(ctx, libraryID, *mapped.ToEntity, resolved)
+		toID, err := a.upsertEntity(ctx, libraryID, *mapped.ToEntity, resolved, mediaID)
 		if err != nil {
 			return store.EntityRelation{}, false, err
 		}
 		relation.ToMediaID = ""
 		relation.ToEntityID = toID
 	}
+	if relation.ToMediaID != "" && mapped.From.MergeTextField != "" {
+		for _, field := range mapped.From.Fields {
+			if field.Name == mapped.From.MergeTextField && field.Text != "" {
+				relation.HydrationText = &store.EntityTextContribution{Field: field.Name, Value: field.Text}
+				break
+			}
+		}
+	}
 	return relation, true, nil
 }
 
-func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity, resolved map[string]store.EntityID) (store.EntityID, error) {
+func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity, resolved map[string]store.EntityID, mediaID store.MediaID) (store.EntityID, error) {
 	id, err := a.entityID(ctx, libraryID, mapped, resolved)
 	if err != nil {
 		return "", err
 	}
-	err = a.store.UpsertEntity(ctx, store.Entity{
+	entity := store.Entity{
 		ID:        id,
 		LibraryID: libraryID,
 		Kind:      mapped.Kind,
 		Title:     mapped.Title,
 		Fields:    mapped.Fields,
-	})
-	return id, err
+	}
+	if mapped.MergeTextField != "" {
+		return id, a.store.UpsertEntityMergingText(ctx, entity, mapped.MergeTextField, mediaID)
+	}
+	return id, a.store.UpsertEntity(ctx, entity)
 }
 
 // entityID resolves the id a mapped Entity is written under. A scoped Entity
