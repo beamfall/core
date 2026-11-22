@@ -35,9 +35,10 @@ Two gaps keep such a container wrong after the first identification:
 - A plugin keys the container by the provider's container id, not its name: the link map's
   `NamePath` reads the id and the container map's existing `TitlePath` titles the Entity. A renamed
   container stays one Entity and two containers sharing a name stay two. The Entity is keyed by
-  (Library, kind, name) and the name is the id. A link to an existing holder keeps its stored title
-  (a document with an id but no name does not retitle it to the id; a new holder without a name
-  falls back to the id), and the container map applies its title, fields and artwork only to a
+  (Library, kind, name) and the name is the id. A link to an existing holder, trashed or not, keeps
+  its stored title: the new `store.UpsertEntityKeepTitle` replaces the fields and keeps the title in
+  the same transaction, so neither a document with an id but no name nor a concurrent rename is
+  overwritten (a new holder without a name falls back to the id), and the container map applies its title, fields and artwork only to a
   holder this lookup linked, so a document with a container name but no id leaves an operator's
   holder alone.
 - The store gains `RemoveWrittenMediaRelations(mediaID, writer, relations)` and the scraper engine

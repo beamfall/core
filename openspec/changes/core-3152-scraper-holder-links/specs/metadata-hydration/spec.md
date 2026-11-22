@@ -53,8 +53,9 @@ under that map's kind and relation, even when a sibling map onto them hydrated n
 
 ### Requirement: A scraper titles only the container it linked
 
-Linking a Media item to an existing container Entity SHALL keep that Entity's stored title; a new
-container Entity whose document gives no name SHALL take the provider id as its title. A container
+Linking a Media item to an existing container Entity, trashed or not, SHALL keep that Entity's
+stored title, which the store keeps in the same write as the link's fields so a concurrent rename
+stands; a new container Entity whose document gives no name SHALL take the provider id as its title. A container
 EntityMap SHALL apply its title, fields and artwork only to a container Entity the same lookup
 linked through the scraper's single-holder map, when the scraper declares one for that kind.
 
@@ -63,6 +64,12 @@ linked through the scraper's single-holder map, when the scraper declares one fo
 - **WHEN** a Media item held by a titled container Entity is identified again through a lookup whose
   container object has an id but no name
 - **THEN** the container Entity keeps its title
+
+#### Scenario: A trashed container keeps its title
+
+- **WHEN** a container Entity is trashed, a member is identified through a lookup whose container
+  object has its id but no name, and the Entity is restored
+- **THEN** the container Entity has the title it had before it was trashed
 
 #### Scenario: A container object without an id leaves an operator's container alone
 
