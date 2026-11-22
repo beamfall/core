@@ -118,7 +118,7 @@ func (s *Store) purgeEncryptedLibraryPackItemsTx(ctx context.Context, tx *sql.Tx
 		return nil, err
 	}
 	for _, pack := range packs {
-		items, err := queryIDs[MediaID](ctx, tx, `SELECT media_id FROM offline_pack_item WHERE pack_id = ?`, pack)
+		items, err := queryIDs[MediaID](ctx, tx, `SELECT DISTINCT media_id FROM offline_pack_item WHERE pack_id = ?`, pack)
 		if err != nil {
 			return nil, err
 		}

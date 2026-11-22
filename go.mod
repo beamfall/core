@@ -3,7 +3,7 @@ module github.com/beamfall/core
 go 1.27.4
 
 require (
-	github.com/beamfall/plugin-audiobook v0.1.15
+	github.com/beamfall/plugin-audiobook v0.1.18
 	github.com/beamfall/plugin-enrichment v0.1.0
 	github.com/beamfall/plugin-familyarchive v0.1.18
 	github.com/beamfall/plugin-filmtv v0.1.25

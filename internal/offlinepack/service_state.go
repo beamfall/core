@@ -139,25 +139,58 @@ func (s *Service) packDir(id store.OfflinePackID) (string, error) {
 	return filepath.Join(s.packRoot, name), nil
 }
 
-func (s *Service) selectedVersionFile(ctx context.Context, id store.MediaID, filter store.LibraryFilter, selected string) (store.MediaFile, error) {
+// selectedVersionParts returns every Part of the selected Version in Part
+// order (CORE-3016): a multi-file audiobook is one Media whose audio files are
+// Parts. A Version whose Parts are not contiguous from 0, including one with a
+// missing or unavailable Part, is refused so a pack never holds half a book.
+func (s *Service) selectedVersionParts(ctx context.Context, id store.MediaID, filter store.LibraryFilter, selected string) ([]store.MediaFile, error) {
 	files, err := s.store.MediaFilesForMedia(ctx, id, filter)
 	if err != nil {
-		return store.MediaFile{}, err
+		return nil, err
 	}
-	var matches []store.MediaFile
+	var parts []store.MediaFile
 	for _, file := range files {
 		if file.VersionLabel == selected {
-			matches = append(matches, file)
+			parts = append(parts, file)
 		}
 	}
-	if len(matches) != 1 {
-		return store.MediaFile{}, errors.New("offline pack selected Version must resolve to exactly one file")
+	if len(parts) == 0 {
+		return nil, errors.New("offline pack selected Version has no available file")
 	}
-	return matches[0], nil
+	slices.SortStableFunc(parts, func(a, b store.MediaFile) int { return a.PartOrdinal - b.PartOrdinal })
+	for i, part := range parts {
+		if part.PartOrdinal != i {
+			return nil, errors.New("offline pack selected Version must have every Part from 0 without gaps")
+		}
+	}
+	return parts, nil
+}
+
+// chapterMarkers returns a Media's chapter Markers (no segment kind) for its
+// manifest entry, in start order.
+func (s *Service) chapterMarkers(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]ManifestMarker, error) {
+	markers, err := s.store.MarkersForMedia(ctx, id, filter)
+	if err != nil {
+		return nil, err
+	}
+	var chapters []ManifestMarker
+	for _, marker := range markers {
+		if marker.SegmentKind != "" {
+			continue
+		}
+		chapters = append(chapters, ManifestMarker{
+			Title: marker.Title, StartSeconds: marker.StartSeconds, EndSeconds: marker.EndSeconds,
+		})
+	}
+	if len(chapters) > MaxManifestMarkers {
+		return nil, errors.New("offline pack Media exceeds chapter Marker bound")
+	}
+	return chapters, nil
 }
 
 type packBuildSource struct {
 	mediaID         store.MediaID
+	partOrdinal     int
 	libraryID       store.LibraryID
 	path            string
 	selectedVersion string
@@ -171,6 +204,8 @@ type packBuildSource struct {
 	staged     *encderiv.Result
 	// streams is the source file's stream inventory, read for transcodes.
 	streams []store.MediaFileStream
+	// markers are the Media's chapter Markers, carried on its Part 0 only.
+	markers []ManifestMarker
 }
 
 func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID, visible map[store.MediaID]store.Media, filter store.LibraryFilter, selectedVersions map[store.MediaID]string, quality string) ([]packBuildSource, error) {
@@ -195,39 +230,51 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 		if encryptedTranscode && s.reauthorize == nil {
 			return nil, fmt.Errorf("%w: encrypted-library re-authorization is not configured", ErrTranscode)
 		}
-		file, err := s.selectedVersionFile(ctx, id, filter, selectedVersions[id])
+		parts, err := s.selectedVersionParts(ctx, id, filter, selectedVersions[id])
 		if err != nil {
 			return nil, err
 		}
-		source := packBuildSource{
-			mediaID: id, libraryID: media.LibraryID, path: file.Path,
-			selectedVersion: file.VersionLabel, transcode: transcode,
+		if len(sources)+len(parts) > MaxManifestItems {
+			return nil, errors.New("offline pack exceeds item bound")
 		}
-		if transcode {
-			source.streams, err = s.store.MediaFileStreams(ctx, file.ContentFingerprint)
-			if err != nil {
-				return nil, err
+		markers, err := s.chapterMarkers(ctx, id, filter)
+		if err != nil {
+			return nil, err
+		}
+		for _, file := range parts {
+			source := packBuildSource{
+				mediaID: id, partOrdinal: file.PartOrdinal, libraryID: media.LibraryID, path: file.Path,
+				selectedVersion: file.VersionLabel, transcode: transcode,
 			}
-		} else {
-			// Fail before any transcode work when original bytes already break
-			// a bound; checkBuildBytes re-checks the final set.
-			size, err := s.catalogPlaintextSize(media.LibraryID, file)
-			if err != nil {
-				return nil, err
+			if file.PartOrdinal == 0 {
+				source.markers = markers
 			}
-			if size > MaxItemSize {
-				if media.Class == store.MediaClassVideo {
-					return nil, ErrOriginalItemTooLarge
+			if transcode {
+				source.streams, err = s.store.MediaFileStreams(ctx, file.ContentFingerprint)
+				if err != nil {
+					return nil, err
 				}
-				return nil, ErrItemTooLarge
+			} else {
+				// Fail before any transcode work when original bytes already break
+				// a bound; checkBuildBytes re-checks the final set.
+				size, err := s.catalogPlaintextSize(media.LibraryID, file)
+				if err != nil {
+					return nil, err
+				}
+				if size > MaxItemSize {
+					if media.Class == store.MediaClassVideo {
+						return nil, ErrOriginalItemTooLarge
+					}
+					return nil, ErrItemTooLarge
+				}
+				if size > s.buildByteBudget-total {
+					return nil, ErrBuildBudget
+				}
+				total += size
+				source.size = size
 			}
-			if size > s.buildByteBudget-total {
-				return nil, ErrBuildBudget
-			}
-			total += size
-			source.size = size
+			sources = append(sources, source)
 		}
-		sources = append(sources, source)
 	}
 	return sources, nil
 }

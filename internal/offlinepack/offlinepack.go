@@ -149,6 +149,7 @@ type Store interface {
 	VisibleMediaBatch(ctx context.Context, ids []store.MediaID, filter store.LibraryFilter) (map[store.MediaID]store.Media, error)
 	PrimaryMediaFile(ctx context.Context, id store.MediaID, filter store.LibraryFilter) (store.MediaFile, error)
 	MediaFilesForMedia(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFile, error)
+	MarkersForMedia(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.Marker, error)
 	MediaFileStreams(ctx context.Context, fingerprint string) ([]store.MediaFileStream, error)
 	Libraries(ctx context.Context, filter store.LibraryFilter) ([]store.Library, error)
 	Profile(ctx context.Context, id store.ProfileID) (store.Profile, error)
@@ -518,12 +519,12 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 		digest := base64.RawURLEncoding.EncodeToString(sum[:])
 		sortOrder := len(items) + 1
 		items = append(items, store.OfflinePackItem{
-			MediaID: source.mediaID, SortOrder: sortOrder, SelectedVersion: source.selectedVersion,
-			PlaintextSize: source.storageSize, SHA256: digest,
+			MediaID: source.mediaID, PartOrdinal: source.partOrdinal, SortOrder: sortOrder,
+			SelectedVersion: source.selectedVersion, PlaintextSize: source.storageSize, SHA256: digest,
 		})
 		manifestItems = append(manifestItems, ManifestItem{
 			MediaID: string(source.mediaID), SelectedVersion: source.selectedVersion,
-			Size: source.size, SHA256: digest,
+			Size: source.size, SHA256: digest, PartOrdinal: source.partOrdinal, Markers: source.markers,
 		})
 		librarySet[string(source.libraryID)] = struct{}{}
 	}

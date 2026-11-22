@@ -125,4 +125,7 @@ package store
 // requests and listed in the Console only, off the entity-query hot path.
 // CORE-2884 adds 0128_entity_enrichment, keyed by entity and read only by the
 // background enrichment job, off the entity-query hot path.
-const schemaFreezeCatalogMigrations = 124
+// CORE-3016 adds 0129_offline_pack_item_parts, keying offline pack items by
+// Media Part; read only by offline pack builds and grants, off the
+// entity-query hot path.
+const schemaFreezeCatalogMigrations = 125
