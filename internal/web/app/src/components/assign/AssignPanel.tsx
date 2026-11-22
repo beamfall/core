@@ -52,9 +52,11 @@ type PlannedMatch = {
   mediaID: string;
   ordinal?: Ordinal;
 };
+type PreviewDiff = FixMatchFieldDiff[] | "loading" | null;
 type Pairing = PlannedMatch & {
-  diff: FixMatchFieldDiff[];
-  keptOrdinalDiff?: FixMatchFieldDiff[];
+  sameCandidate: boolean;
+  replaceDiff?: PreviewDiff;
+  keepDiff?: PreviewDiff;
   locked: FixMatchLockedFieldInfo[];
   clearLocks: string[];
 };
@@ -88,6 +90,24 @@ function sourceKey(source: Pick<Source, "pluginID" | "scraperID">) {
 
 function keepsOrdinal(row: Pairing) {
   return row.locked.some(({ field }) => field === "ordinal") && !row.clearLocks.includes("ordinal");
+}
+
+function diffKey(row: Pairing) {
+  return keepsOrdinal(row) ? "keepDiff" : "replaceDiff";
+}
+
+async function previewPairing(candidate: MatchTarget, row: Pairing) {
+  const lock = row.locked.find(({ field }) => field === "ordinal");
+  const vars = { mediaID: row.mediaID, ...candidate };
+  if (lock && keepsOrdinal(row)) {
+    if (row.sameCandidate) return fixMatchPreview(vars);
+    const previous = lockedOrdinal(lock.value);
+    return previous ? fixMatchPreview({ ...vars, ...previous }) : null;
+  }
+  // An implicit preview for the same candidate uses the saved ordinal. The
+  // API has no way to request the parser's ordinal while that lock is set.
+  if (lock && row.sameCandidate && !row.ordinal) return null;
+  return fixMatchPreview({ ...vars, ...row.ordinal });
 }
 
 export function AssignPanel({
@@ -310,31 +330,22 @@ export function AssignPanel({
     try {
       const rows = await Promise.all(
         plan.map(async ({ mediaID, ordinal }) => {
-          const [diff, locked] = await Promise.all([
-            fixMatchPreview({ mediaID, ...candidate, ...ordinal }),
-            unmatched ? [] : fixMatchLockedFields(mediaID),
-          ]);
+          const locked = unmatched ? [] : await fixMatchLockedFields(mediaID);
           const currentID = items.find((item) => item.mediaID === mediaID)?.current?.candidateID;
-          const ordinalLock = locked.find(({ field }) => field === "ordinal");
-          const previous = ordinalLock && lockedOrdinal(ordinalLock.value);
-          // Preview doesn't return lock disposition. The server defaults to
-          // keeping an existing ordinal when the recorded candidate ID matches.
-          const clearOrdinal = !!ordinalLock && currentID !== candidateID;
-          const needsKeepDiff = ordinal
-            ? previous?.sequence !== ordinal.sequence || previous?.index !== ordinal.index
-            : clearOrdinal;
-          const keptOrdinalDiff =
-            previous && needsKeepDiff && currentRequest()
-              ? await fixMatchPreview({ mediaID, ...candidate, ...previous })
-              : undefined;
-          return {
+          const hasOrdinalLock = locked.some(({ field }) => field === "ordinal");
+          const sameCandidate = currentID === candidateID;
+          const row: Pairing = {
             mediaID,
             ordinal,
-            diff,
-            keptOrdinalDiff,
+            sameCandidate,
             locked,
-            clearLocks: clearOrdinal ? ["ordinal"] : [],
+            clearLocks: hasOrdinalLock && !sameCandidate ? ["ordinal"] : [],
           };
+          if (currentRequest()) {
+            const request = previewPairing(candidate, row);
+            row[diffKey(row)] = await (hasOrdinalLock ? request.catch(() => null) : request);
+          }
+          return row;
         }),
       );
       if (currentRequest()) setApproval({ candidate, rows, epoch });
@@ -416,6 +427,7 @@ export function AssignPanel({
     (!!unmatched ||
       (!!preview &&
         results.length === 0 &&
+        preview.every((row) => Array.isArray(row[diffKey(row)])) &&
         !ordinalConflict &&
         !duplicatePairing &&
         (!multi || (childPairings ? preview.every(({ ordinal }) => ordinal) : confirmed))));
@@ -471,21 +483,34 @@ export function AssignPanel({
     }
   };
 
-  const toggleLock = (mediaID: string, field: string, checked: boolean) => {
-    setApproval((current) => {
-      if (!current) return null;
-      const rows = current.rows.map((row) =>
-        row.mediaID === mediaID
-          ? {
-              ...row,
-              clearLocks: checked
-                ? [...row.clearLocks, field]
-                : row.clearLocks.filter((name) => name !== field),
-            }
-          : row,
+  const toggleLock = async (row: Pairing, field: string, checked: boolean) => {
+    if (!approval) return;
+    const { candidate, epoch } = approval;
+    if (epoch?.aborted || epoch !== getIdentityEpochSignal()) return;
+    const asked = selection.current;
+    const clearLocks = checked
+      ? [...row.clearLocks, field]
+      : row.clearLocks.filter((name) => name !== field);
+    const next = { ...row, clearLocks };
+    const key = diffKey(next);
+    const needsDiff = field === "ordinal" && next[key] === undefined;
+    const updateRow = (changes: Partial<Pairing>) => {
+      setApproval(
+        (current) =>
+          current && {
+            ...current,
+            rows: current.rows.map((entry) =>
+              entry.mediaID === row.mediaID ? { ...entry, ...changes } : entry,
+            ),
+          },
       );
-      return { ...current, rows };
-    });
+    };
+    updateRow(needsDiff ? { clearLocks, [key]: "loading" } : { clearLocks });
+    if (!needsDiff) return;
+    const diff = await previewPairing(candidate, next).catch(() => null);
+    if (asked === selection.current && !epoch?.aborted && epoch === getIdentityEpochSignal()) {
+      updateRow({ [key]: diff });
+    }
   };
 
   const resultText = (result: Result) =>
@@ -868,7 +893,8 @@ export function AssignPanel({
                 : undefined;
             const keep = keepsOrdinal(row);
             const after = keep ? before : row.ordinal;
-            const diff = (keep && row.keptOrdinalDiff) || row.diff;
+            const diff = row[diffKey(row)];
+            const changes = Array.isArray(diff) ? diff : undefined;
             return (
               <div key={row.mediaID} className="space-y-2 rounded-md border p-2">
                 {!unmatched && (
@@ -887,7 +913,7 @@ export function AssignPanel({
                       </dd>
                     </div>
                   )}
-                  {diff.map((change) => (
+                  {changes?.map((change) => (
                     <div key={change.field} className="grid gap-0.5">
                       <dt className="text-xs text-muted-foreground">{fieldLabel(change.field)}</dt>
                       <dd className="break-words text-sm">
@@ -921,7 +947,7 @@ export function AssignPanel({
                           type="checkbox"
                           className="mt-1"
                           checked={row.clearLocks.includes(field)}
-                          onChange={(event) => toggleLock(row.mediaID, field, event.target.checked)}
+                          onChange={(event) => void toggleLock(row, field, event.target.checked)}
                         />
                         <span className="min-w-0 break-words">
                           {field === "ordinal" && !row.ordinal
@@ -939,6 +965,8 @@ export function AssignPanel({
                     ))}
                   </fieldset>
                 )}
+                {diff === "loading" && <p role="status">{t("loading")}</p>}
+                {diff === null && <p role="alert">{t("assignPreviewFailed")}</p>}
               </div>
             );
           })}
