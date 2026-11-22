@@ -45,7 +45,8 @@ type OfflinePackInfo struct {
 	// FailureReason is a closed code naming why a background build failed
 	// (state "failed"): empty_target, unknown_target_kind, unknown_quality,
 	// device_attestation_failed, source_unavailable, transcode_failed,
-	// byte_bound_exceeded or build_failed. Empty in every other state.
+	// byte_bound_exceeded, parts_unsupported or build_failed. Empty in every
+	// other state.
 	FailureReason string `json:"failureReason,omitempty"`
 }
 
@@ -154,6 +155,7 @@ func (h *Handler) createOfflinePack(ctx context.Context, scope auth.Scope, req r
 		TargetKind:       kind,
 		TargetRef:        stringVar(req, "targetRef"),
 		SelectedVersions: selectedVersionsFromVariables(req),
+		ManifestParts:    boolVar(req, "manifestParts"),
 	}
 	var err error
 	build.DevicePublicKey, err = decodeOfflinePackBytes(req, "devicePublicKey")
@@ -209,8 +211,12 @@ const offlinePackBuilding = "building"
 // build would fail on its per-item bound. Every other admission failure is
 // left to the job, which reports it as before.
 func (h *Handler) admitOfflinePackBuild(ctx context.Context, scope auth.Scope, build offlinepack.BuildPackRequest) error {
-	if err := h.offlinePacks.AdmitBuild(ctx, scope, build); errors.Is(err, offlinepack.ErrOriginalItemTooLarge) {
+	err := h.offlinePacks.AdmitBuild(ctx, scope, build)
+	if errors.Is(err, offlinepack.ErrOriginalItemTooLarge) {
 		return clientError("original quality is limited to 4 GiB per item; choose high, medium or low quality")
+	}
+	if errors.Is(err, offlinepack.ErrManifestPartsUnsupported) {
+		return clientError("this item has several files; update the app to download it")
 	}
 	return nil
 }

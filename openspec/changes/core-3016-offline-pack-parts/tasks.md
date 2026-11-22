@@ -5,6 +5,7 @@
 - [x] 1.3 Manifest items carry optional `part_ordinal` and chapter `markers`; validation keys duplicates by Part
 - [x] 1.4 Content route serves `/<media_id>/<part>`
 - [x] 1.5 Test: stale offline audio progress is ignored by event time
+- [x] 1.6 `manifestParts` opt-in: without it Markers are left out and multi-Part Media are refused (`parts_unsupported`); ADR-0157 Amendment A
 
 ## 2. Audiobook plugin
 

@@ -22,6 +22,9 @@ const (
 	FailureTranscode         = "transcode_failed"
 	FailureByteBound         = "byte_bound_exceeded"
 	FailureBuild             = "build_failed"
+	// FailurePartsUnsupported names a multi-Part Media the requesting client
+	// did not declare it can store (ADR-0157 Amendment A).
+	FailurePartsUnsupported = "parts_unsupported"
 )
 
 var (
@@ -56,6 +59,8 @@ func FailureReason(err error) string {
 		return FailureTranscode
 	case errors.Is(err, ErrItemTooLarge), errors.Is(err, ErrOriginalItemTooLarge), errors.Is(err, ErrBuildBudget):
 		return FailureByteBound
+	case errors.Is(err, ErrManifestPartsUnsupported):
+		return FailurePartsUnsupported
 	case errors.Is(err, fs.ErrNotExist):
 		return FailureSourceUnavailable
 	default:
@@ -127,6 +132,7 @@ func (s *Service) RetryBuild(ctx context.Context, scope auth.Scope, id store.Off
 		TargetKind: job.TargetKind, TargetRef: job.TargetRef, ExpiresAt: job.ExpiresAt,
 		DevicePublicKey: job.DevicePublicKey, DeviceAttestation: job.DeviceAttestation,
 		SelectedVersions: job.SelectedVersions, Quality: job.Quality, PackID: id,
+		ManifestParts: job.ManifestParts,
 	})
 	if err != nil {
 		return store.OfflinePackBuild{}, nil, err

@@ -18,14 +18,32 @@ refuse a Media whose selected Version's Parts are not contiguous from 0.
 
 ### Requirement: The manifest carries chapter Markers
 
-The manifest item for Part 0 of each Media SHALL carry that Media's chapter Markers (Markers with
+For a client that sent `manifestParts`, the manifest item for Part 0 of each Media SHALL carry that Media's chapter Markers (Markers with
 no segment kind) with title, start and optional end seconds. A single-Part Media without chapter
 Markers SHALL produce the same manifest bytes as before this change.
 
 #### Scenario: Book with chapters
 
-- **WHEN** a pack is built for a Media with two chapter Markers and an intro segment
+- **WHEN** a parts-aware client builds a pack for a Media with two chapter Markers and an intro segment
 - **THEN** the Part 0 manifest item lists the two chapters and not the intro
+
+### Requirement: Only clients that declare Parts support get Parts and Markers
+
+The `createOfflinePack` mutation SHALL take an optional `manifestParts` boolean (ADR-0157
+Amendment A). Without it the builder SHALL leave chapter Markers out of the manifest and SHALL
+refuse a Media whose selected Version has more than one Part, with failure reason
+`parts_unsupported`, so a client whose decoder rejects unknown item keys or a repeated media_id
+keeps receiving manifests in the original item shape.
+
+#### Scenario: Older client asks for a multi-Part book
+
+- **WHEN** a client that does not send `manifestParts` asks for a pack of a three-Part book
+- **THEN** the request is refused with `parts_unsupported`
+
+#### Scenario: Older client packs a Media with chapter Markers
+
+- **WHEN** a client that does not send `manifestParts` packs a single-Part Media with chapter Markers
+- **THEN** each manifest item has only media_id, selected_version, size and sha256
 
 ### Requirement: Part content route
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,8 +90,20 @@ func TestAudiobookPackResolverPacksEveryPartAndItsChapters(t *testing.T) {
 	}
 	service.RegisterResolver(books.PackKindBook, audiobookPackResolver{store: st, inner: inner})
 
+	// A client that has not declared manifest Parts support (ADR-0157
+	// Amendment A) is refused at admission and at build, so its strict decoder
+	// never sees a repeated media_id.
+	legacy := offlinepack.BuildPackRequest{TargetKind: books.PackKindBook, TargetRef: "media-alpha", Quality: "low"}
+	if err := service.AdmitBuild(context.Background(), packAuthScope(), legacy); !errors.Is(err, offlinepack.ErrManifestPartsUnsupported) {
+		t.Fatalf("AdmitBuild for a legacy client = %v, want ErrManifestPartsUnsupported", err)
+	}
+	legacy.Quality = ""
+	if _, err := service.BuildPack(context.Background(), packAuthScope(), legacy); !errors.Is(err, offlinepack.ErrManifestPartsUnsupported) {
+		t.Fatalf("BuildPack for a legacy client = %v, want ErrManifestPartsUnsupported", err)
+	}
+
 	pack, err := service.BuildPack(context.Background(), packAuthScope(), offlinepack.BuildPackRequest{
-		TargetKind: books.PackKindBook, TargetRef: "media-alpha",
+		TargetKind: books.PackKindBook, TargetRef: "media-alpha", ManifestParts: true,
 	})
 	if err != nil {
 		t.Fatalf("BuildPack: %v", err)
@@ -134,7 +147,7 @@ func TestAudiobookPackResolverPacksEveryPartAndItsChapters(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := service.BuildPack(context.Background(), packAuthScope(), offlinepack.BuildPackRequest{
-		TargetKind: books.PackKindBook, TargetRef: "media-alpha",
+		TargetKind: books.PackKindBook, TargetRef: "media-alpha", ManifestParts: true,
 	}); err == nil || !strings.Contains(err.Error(), "missing Part") {
 		t.Fatalf("BuildPack with a missing Part = %v, want a missing Part refusal", err)
 	}
