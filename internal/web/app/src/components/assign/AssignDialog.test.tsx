@@ -639,12 +639,15 @@ describe("Assign catalog children", () => {
     await pickCandidate(view);
     await user.click(dialog.getByRole("button", { name: "Preview candidate" }));
     const lock = await dialog.findByRole("checkbox", { name: /Clear operator ordinal/ });
-    if (same) expect(lock).not.toBeChecked();
-    else expect(lock).toBeChecked();
-    await user.click(lock);
+    if (same) {
+      expect(lock).not.toBeChecked();
+    } else {
+      expect(lock).toBeChecked();
+      await user.click(lock);
+    }
     await user.click(dialog.getByRole("button", { name: "Apply" }));
     expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
-      { mediaID: "m1", ...show, clearLocks: same ? ["ordinal"] : [] },
+      { mediaID: "m1", ...show, clearLocks: [] },
       undefined,
     );
   });
@@ -655,7 +658,12 @@ describe("Assign catalog children", () => {
       vi.mocked(fixMatchCurrent).mockResolvedValue({ ...show, title: "Old", year: 2022 });
       vi.mocked(fixMatchLockedFields).mockResolvedValue([{ field: "ordinal", value: "1 / 3" }]);
       vi.mocked(fixMatchPreview).mockImplementation(async ({ index }) => [
-        { field: "title", current: "Old", proposed: `Proposed title for ${index}`, changed: true },
+        {
+          field: "title",
+          current: "Old",
+          proposed: `Proposed title for ${index ?? 3}`,
+          changed: true,
+        },
       ]);
       const view = await open();
       const { user, dialog } = view;
@@ -665,6 +673,7 @@ describe("Assign catalog children", () => {
       const lock = await dialog.findByRole("checkbox", { name: /Replace Ordinal/ });
       expect(lock).not.toBeChecked();
       expect(dialog.getByText("Proposed title for 3")).toBeVisible();
+      expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith({ mediaID: "m1", ...show });
       if (replace) {
         await user.click(lock);
         expect(dialog.getByText("Proposed title for 5")).toBeVisible();
@@ -680,6 +689,100 @@ describe("Assign catalog children", () => {
       );
     },
   );
+
+  it("blocks a same-candidate ordinal clear when the preview only covers the saved ordinal", async () => {
+    vi.mocked(fixMatchCurrent).mockResolvedValue({ ...show, title: "Old", year: 2022 });
+    vi.mocked(fixMatchLockedFields).mockResolvedValue([{ field: "ordinal", value: "1 / 3" }]);
+    vi.mocked(fixMatchPreview).mockResolvedValue([
+      { field: "title", current: "Old", proposed: "Saved episode title", changed: true },
+    ]);
+    const view = await open();
+    const { user, dialog } = view;
+    await pickCandidate(view);
+    await user.click(dialog.getByRole("button", { name: "Preview candidate" }));
+    const lock = await dialog.findByRole("checkbox", { name: /Clear operator ordinal/ });
+    const apply = dialog.getByRole("button", { name: "Apply" });
+    expect(dialog.getByText("Saved episode title")).toBeVisible();
+    expect(apply).toBeEnabled();
+
+    await user.click(lock);
+    expect(dialog.queryByText("Saved episode title")).not.toBeInTheDocument();
+    expect(dialog.getByRole("alert")).toHaveTextContent("Could not preview the candidate");
+    expect(apply).toBeDisabled();
+    await user.click(apply);
+    expect(fixMatch).not.toHaveBeenCalled();
+
+    await user.click(lock);
+    expect(dialog.getByText("Saved episode title")).toBeVisible();
+    expect(apply).toBeEnabled();
+  });
+
+  it("keeps the replacement available when previewing the saved ordinal fails", async () => {
+    vi.mocked(fixMatchCurrent).mockResolvedValue({
+      ...show,
+      candidateID: "old-show",
+      title: "Old",
+      year: 2022,
+    });
+    vi.mocked(fixMatchLockedFields).mockResolvedValue([{ field: "ordinal", value: "1 / 3" }]);
+    let rejectKeep!: (error: Error) => void;
+    vi.mocked(fixMatchPreview).mockImplementation(async ({ index }) => {
+      if (index === 3) {
+        return new Promise((_resolve, reject) => {
+          rejectKeep = reject;
+        });
+      }
+      return [{ field: "title", current: "Old", proposed: "Replacement title", changed: true }];
+    });
+    const view = await open();
+    const { user, dialog } = view;
+    await pickCandidate(view);
+    await user.click(await dialog.findByRole("button", { name: /Second season/ }));
+    await user.click(await dialog.findByRole("button", { name: /Episode Five/ }));
+
+    const lock = await dialog.findByRole("checkbox", { name: /Replace Ordinal/ });
+    const apply = dialog.getByRole("button", { name: "Apply" });
+    expect(lock).toBeChecked();
+    expect(apply).toBeEnabled();
+    expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith({
+      mediaID: "m1",
+      ...show,
+      sequence: "2",
+      index: 5,
+    });
+
+    await user.click(lock);
+    expect(fixMatchPreview).toHaveBeenLastCalledWith({
+      mediaID: "m1",
+      ...show,
+      sequence: "1",
+      index: 3,
+    });
+    expect(apply).toBeDisabled();
+    expect(dialog.queryByText("Replacement title")).not.toBeInTheDocument();
+
+    await user.click(lock);
+    expect(dialog.getByText("Replacement title")).toBeVisible();
+    expect(apply).toBeEnabled();
+    await user.click(lock);
+    expect(apply).toBeDisabled();
+    expect(fixMatchPreview).toHaveBeenCalledTimes(2);
+
+    await act(async () => rejectKeep(new Error("The replacement has no such ordinal")));
+    expect(await dialog.findByRole("alert")).toHaveTextContent("Could not preview the candidate");
+    expect(dialog.queryByText("Replacement title")).not.toBeInTheDocument();
+    expect(apply).toBeDisabled();
+
+    await user.click(lock);
+    expect(dialog.queryByRole("alert")).not.toBeInTheDocument();
+    expect(dialog.getByText("Replacement title")).toBeVisible();
+    expect(apply).toBeEnabled();
+    await user.click(apply);
+    expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
+      { mediaID: "m1", ...show, clearLocks: ["ordinal"], sequence: "2", index: 5 },
+      undefined,
+    );
+  });
 
   it("pre-pairs parsed and title indexes, refuses duplicates, and continues after a failure", async () => {
     const batch = [
