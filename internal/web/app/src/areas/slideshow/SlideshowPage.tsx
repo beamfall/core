@@ -476,6 +476,7 @@ function Slideshow() {
       data-chrome={chrome || sheetOpen ? "shown" : "hidden"}
       onPointerMove={wake}
     >
+      <h1 className="sr-only">{t("slideshowRegion")}</h1>
       <div className="bf-slideshow-stage">
         {current && (
           <SlideView
