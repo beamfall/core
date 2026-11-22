@@ -169,6 +169,13 @@ describe("useSequenceFinish and NextInSequenceCard (CORE-3013)", () => {
     fire(video, "ended");
     const link = await screen.findByRole("link", { name: /Title b45/ });
     expect(link).toHaveAttribute("href", "/media/b45");
+    // One read per container: the series' order comes from the context's own read.
+    expect(
+      vi
+        .mocked(fetchMediaForEntity)
+        .mock.calls.map(([id]) => id)
+        .sort(),
+    ).toEqual(["c1", "s1"]);
   });
 
   it("does not bring a stale offer back after playing again while disabled", async () => {
@@ -188,7 +195,8 @@ describe("useSequenceFinish and NextInSequenceCard (CORE-3013)", () => {
     // Played again while the listeners were off: the element is no longer ended.
     fire(video, "play");
     rerender(tree(true));
-    await act(async () => {});
+    // Not even for one commit, and no read for the stale offer.
     expect(screen.getByText("ended plainly")).toBeInTheDocument();
+    expect(fetchMediaRows).toHaveBeenCalledTimes(1);
   });
 });

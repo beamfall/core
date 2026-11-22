@@ -35,6 +35,8 @@ export interface ContainerContext {
   container: ContainerLink | null;
   /** The nearest container's items in its order, this one included; empty until read. */
   items: SourceItem[];
+  /** The next item in each credited container's order, by container id; empty until read. */
+  nextBy: Readonly<Record<string, SourceItem | null>>;
 }
 
 const EMPTY: ContainerContext = {
@@ -43,6 +45,7 @@ const EMPTY: ContainerContext = {
   current: null,
   container: null,
   items: [],
+  nextBy: {},
 };
 
 /** The item's container credits, de-duplicated, in the server's order. */
@@ -187,6 +190,9 @@ export function useContainerContext(
           current: nearest.items.find((item) => item.id === mediaID) ?? null,
           container: nearest.link,
           items: nearest.items,
+          nextBy: Object.fromEntries(
+            lists.map((list) => [list.link.id, nextAfter(list.items, mediaID)]),
+          ),
         });
       } catch {
         // Context is an enhancement: the credited parents already show.
@@ -199,33 +205,13 @@ export function useContainerContext(
 }
 
 /**
- * The item after `mediaID` in the sequencing container's own order: the
- * context's next when that container is the nearest one, otherwise a read of
- * the sequencing container, so a smaller container never hides or replaces
- * the next in sequence. Null without a position or until the read lands.
+ * The item after this one in the sequencing container's own order, whichever
+ * container is the nearest, so a smaller container never hides or replaces
+ * the next in sequence. Null without a position or until the context is read.
  */
-export function useSequenceNext(
+export function sequenceNext(
   position: { id: string } | null,
-  mediaID: string,
-  context: ContainerContext,
+  context: Pick<ContainerContext, "nextBy">,
 ): SourceItem | null {
-  const own = !!position && context.container?.id === position.id;
-  const readID = position && !own ? position.id : "";
-  const [read, setRead] = useState<{ key: string; next: SourceItem | null } | null>(null);
-  const key = `${readID}\n${mediaID}`;
-  useEffect(() => {
-    if (!readID) return;
-    const controller = new AbortController();
-    fetchMediaForEntity(readID, controller.signal)
-      .then((items) => {
-        if (!controller.signal.aborted) setRead({ key, next: nextAfter(items, mediaID) });
-      })
-      .catch(() => {
-        // No offer without the container's order.
-      });
-    return () => controller.abort();
-  }, [key, readID, mediaID]);
-  if (!position) return null;
-  if (own) return context.next;
-  return read?.key === key ? read.next : null;
+  return position ? (context.nextBy[position.id] ?? null) : null;
 }

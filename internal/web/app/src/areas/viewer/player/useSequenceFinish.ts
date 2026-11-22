@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchMediaRows } from "@/lib/graphql/browse";
 import type { GenericMediaInfo, SourceItem } from "@/lib/graphql/types";
-import { useContainerContext, useSequenceNext } from "../lib/containerContext";
+import { sequenceNext, useContainerContext } from "../lib/containerContext";
 import {
   creditAttribute,
   SEQUENCE_ATTRIBUTE,
@@ -42,18 +42,18 @@ export function useSequenceFinish({
   const position = sequencePosition(media);
   // Only a sequenced item reads its container, so other audio costs nothing.
   const context = useContainerContext(position ? media : null, mediaID);
-  const next = useSequenceNext(position, mediaID, context);
+  const next = sequenceNext(position, context);
   const [endedID, setEndedID] = useState<string | null>(null);
   const ended = enabled && endedID === mediaID;
 
+  // Track the element even while the offer is off (docked, or under a queue),
+  // so turning it back on never revives an end that playback has since left.
   useEffect(() => {
-    if (!video || !enabled) return;
+    if (!video) return;
     const onEnded = () => setEndedID(mediaID);
     const onResume = () => setEndedID(null);
-    // Bind to the element's current state: it may have ended, or played again,
-    // while these listeners were off (docked, or under a queue).
+    // A media element already at its end when the effect binds counts too.
     if (video.ended) onEnded();
-    else onResume();
     video.addEventListener("ended", onEnded);
     video.addEventListener("play", onResume);
     video.addEventListener("seeking", onResume);
@@ -62,7 +62,7 @@ export function useSequenceFinish({
       video.removeEventListener("play", onResume);
       video.removeEventListener("seeking", onResume);
     };
-  }, [video, enabled, mediaID]);
+  }, [video, mediaID]);
 
   // The next item's own place, read once it is offered.
   const nextID = ended ? (next?.id ?? "") : "";
