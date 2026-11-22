@@ -67,7 +67,8 @@ export function childContainerCandidates(
   for (const group of groups ?? []) {
     if (group.archetype !== "container") continue;
     const items = skip ? group.items.filter((item) => !skip.has(item.id)) : group.items;
-    if (items.length > 0) return playOrder(items);
+    const playable = playOrder(items);
+    if (playable.length > 0) return playable;
   }
   return [];
 }

@@ -172,4 +172,12 @@ describe("childContainerCandidates", () => {
     ]);
     expect(childContainerCandidates(undefined)).toEqual([]);
   });
+
+  it("passes over a group whose children are all locked", () => {
+    const groups = [
+      { archetype: "container", items: [{ ...box("x"), locked: true }] },
+      { archetype: "container", items: [box("a")] },
+    ];
+    expect(childContainerCandidates(groups).map((i) => i.id)).toEqual(["a"]);
+  });
 });

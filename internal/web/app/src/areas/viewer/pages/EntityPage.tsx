@@ -385,7 +385,11 @@ export function EntityPage() {
       })
       .catch((err: unknown) => {
         if (!alive) return;
-        if (isAuthRejection(err)) clearViewerCache();
+        // An expired session is not an empty search: offer nothing to play.
+        if (isAuthRejection(err)) {
+          clearViewerCache();
+          return;
+        }
         setChildMedia({ id: childContainerKey, items: [] });
       });
     return () => {
@@ -785,7 +789,11 @@ async function playThroughMedia(
   from: string,
   signal: AbortSignal,
 ): Promise<SourceItem[]> {
-  const visited = new Set<string>([from]);
+  // The shallowest depth each container was searched at: a container first
+  // met deep down is searched again when a shorter path reaches it.
+  const searchedAt = new Map<string, number>([[from, -1]]);
+  const searchedBy = (depth: number) =>
+    new Set([...searchedAt].filter(([, at]) => at <= depth).map(([id]) => id));
   let reads = 0;
   let replay: SourceItem[] = [];
   const soft = async <T,>(read: Promise<T>, empty: T): Promise<T> => {
@@ -797,15 +805,17 @@ async function playThroughMedia(
     }
   };
   async function search(id: string, depth: number): Promise<SourceItem[] | null> {
-    if (visited.has(id) || depth >= MAX_CONTAINER_DEPTH || reads >= PLAY_THROUGH_READS) return null;
-    visited.add(id);
+    const at = searchedAt.get(id);
+    if ((at !== undefined && at <= depth) || depth >= MAX_CONTAINER_DEPTH) return null;
+    if (reads >= PLAY_THROUGH_READS) return null;
+    searchedAt.set(id, depth);
     reads++;
     const items = await soft(fetchMediaForEntity(id, signal), []);
     const next = nextUpChild(items);
     if (next && !nextUpFinished(next)) return items;
     if (next && replay.length === 0) replay = items;
     const entity = await soft(fetchEntity(id, signal), null);
-    for (const child of childContainerCandidates(entity?.relatedEntities, visited)) {
+    for (const child of childContainerCandidates(entity?.relatedEntities, searchedBy(depth + 1))) {
       const found = await search(child.id, depth + 1);
       if (found) return found;
     }
