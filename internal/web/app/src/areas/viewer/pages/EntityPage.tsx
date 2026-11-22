@@ -28,6 +28,7 @@ import { MediaItemCard } from "../components/MediaItemCard";
 import { NotAvailable } from "../components/NotAvailable";
 import type { SeeAllTarget } from "../components/SectionView";
 import { useListingRows } from "../components/useListingRows";
+import { useRelationProbe } from "../components/useRelationProbe";
 import { ViewerActions } from "../components/ViewerActions";
 import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
 import { nextUpChild, nextUpChildContainer } from "../lib/containerChildren";
@@ -161,16 +162,24 @@ export function EntityPage() {
   // order the list shows (grouped and numbered by stored position, CORE-1635).
   const listedItems = needsFallback || listens ? fallback : null;
   const listing = useListingRows(entity, listedItems ?? NO_ITEMS);
+  // A listing whose relation sequences or credits its Media by role (CORE-3014)
+  // keeps the server's order and hands the player no queue: each Media is
+  // started on its own, so finishing one never starts the next (ADR-0055 §2.4).
+  const probe = useRelationProbe(entity, listedItems ?? NO_ITEMS);
+  const relationOrdered = probe.sequenced || probe.roles !== null;
   const trackOrder = useMemo(
     () =>
-      containerTrackRows(entity, listedItems ?? NO_ITEMS, listing.rows)?.map(
-        (track) => track.item,
-      ) ?? null,
-    [entity, listedItems, listing.rows],
+      relationOrdered
+        ? null
+        : (containerTrackRows(entity, listedItems ?? NO_ITEMS, listing.rows)?.map(
+            (track) => track.item,
+          ) ?? null),
+    [entity, listedItems, listing.rows, relationOrdered],
   );
   // Until an audio container's order is known, offer no Play action that could
   // start the wrong track.
-  const orderPending = listing.wanted && listing.rows === null && entity?.archetype === "container";
+  const orderPending =
+    probe.pending || (listing.wanted && listing.rows === null && entity?.archetype === "container");
   const ordered = trackOrder ?? fallback;
   const directNext = useMemo(
     () => (ordered && !orderPending ? nextUpChild(ordered) : null),
@@ -187,10 +196,11 @@ export function EntityPage() {
   const childItems =
     childContainer && childMedia?.id === childContainer.id ? childMedia.items : null;
   const fallbackQueue = useMemo(() => {
+    if (relationOrdered) return undefined;
     if (directNext && trackOrder) return audioQueue(trackOrder);
     const queueSource = directNext ? fallback : childItems;
     return queueSource ? playQueueOf(queueSource) : undefined;
-  }, [directNext, trackOrder, fallback, childItems]);
+  }, [relationOrdered, directNext, trackOrder, fallback, childItems]);
   const nextUp = useMemo(
     () => directNext ?? (childItems ? nextUpChild(childItems) : null),
     [directNext, childItems],
@@ -202,10 +212,11 @@ export function EntityPage() {
   // (CORE-2826); a listening page keeps the plain label.
   const nextUpOrdinalText = nextUp && !isAudio ? nextUpOrdinal(nextUp.item, displayLocale) : "";
   const listeningTracks = useMemo(() => {
+    if (relationOrdered) return null;
     if (trackOrder) return trackOrder;
     if (entity?.archetype !== "person" || !listedItems || !listing.rows || !isAudio) return null;
     return listedItems.filter((item) => item.kind === "media");
-  }, [trackOrder, entity, listedItems, listing.rows, isAudio]);
+  }, [relationOrdered, trackOrder, entity, listedItems, listing.rows, isAudio]);
   const people = trackOrder ? entityPeople(entity) : [];
   const unwatched = unwatchedCount(fallback);
   const remainingLabel = t(isAudio ? "cardUnplayed" : "entityDetailUnwatched", {
@@ -714,6 +725,7 @@ export function EntityPage() {
                   entity={entity}
                   items={fallback}
                   listing={listing}
+                  probe={probe}
                   label={t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })}
                 />
               </>

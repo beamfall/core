@@ -18,6 +18,7 @@ import {
 import { ItemActions } from "../actions";
 import { CastRow } from "../components/CastRow";
 import { findCachedSectionItem } from "../components/HydratedSection";
+import { MediaChapters } from "../components/MediaChapters";
 import { MediaDetailMoreMenu } from "../components/MediaDetailMoreMenu";
 import { MediaMoreRows } from "../components/MediaMoreRows";
 import { MediaRelationRows } from "../components/MediaRelationRows";
@@ -34,6 +35,7 @@ import { ViewerActions } from "../components/ViewerActions";
 import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { artFrameClass } from "../lib/cardArt";
+import { timeLeftLabel } from "../lib/cardState";
 import { audioPeople, type ContainerLink, useContainerContext } from "../lib/containerContext";
 import { mediaPath } from "../lib/mediaAddress";
 import {
@@ -46,6 +48,12 @@ import {
   resumeProgress,
 } from "../lib/mediaDetail";
 import { castHasDetail, creditsWithJob } from "../lib/people";
+import {
+  creditAttribute,
+  SEQUENCE_ATTRIBUTE,
+  secondsLeft,
+  sequenceLabel,
+} from "../lib/relationOrder";
 import { streamFacts } from "../lib/streamFacts";
 import { useCanonicalMediaAddress, useMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
@@ -203,10 +211,14 @@ export function MediaDetailPage() {
 
   const title = media?.title || card?.title || "";
 
+  // A book in a relation-sequenced series (CORE-3014): the next one is offered,
+  // never queued, so finishing it never starts another (ADR-0055 §2.4).
+  const series = seriesPosition(media);
+
   function watch(fromStart: boolean) {
     // Forward the queue the opening card carried (CORE-1143), still bound to
-    // the viewer identity it was listed for.
-    const { queue } = readPlayerNavState(location.state, identity);
+    // the viewer identity it was listed for; a sequenced book plays alone.
+    const { queue } = series ? { queue: undefined } : readPlayerNavState(location.state, identity);
     // Every Play or Start over is its own start, so pressing one while the
     // mini player already plays this Media starts it again with these picks.
     const state: PlayerNavState = { title, startID: newStartID() };
@@ -267,6 +279,7 @@ export function MediaDetailPage() {
 
   const art = { ...(card ?? {}), artworkSlots: { ...card?.artworkSlots, ...media?.artworkSlots } };
   const ordered = orderedPosition(media, context.container, locale, t);
+  const seriesShown = ordered ? null : series;
   // An ordered item's own still frames it better than the poster it shares
   // with its whole grouping (CORE-2469).
   const still = ordered ? artworkSlotURL(art as SourceItem, "thumb") : "";
@@ -276,7 +289,12 @@ export function MediaDetailPage() {
     artworkSlotURL(art as SourceItem, "thumb");
   const heading = (ordered && displayString(media?.headline, locale)) || title;
   const backdrop = artworkSlotURL(art as SourceItem, "backdrop");
-  const progress = resumeProgress(card);
+  // The opening card's progress, else the container listing's, unless the card
+  // already says the item is finished.
+  const progress =
+    resumeProgress(card) ?? (card?.engagement?.completed ? null : resumeProgress(context.current));
+  const isAudio = (media?.mediaClass ?? card?.mediaClass) === "audio";
+  const finished = (context.current?.engagement?.completed ?? card?.engagement?.completed) === true;
   const summary = media?.summary || card?.summary || "";
   const allFields = current?.fields ?? [];
   // The probed length first (CORE-2314); a card's engagement duration is what
@@ -322,10 +340,12 @@ export function MediaDetailPage() {
   // and overview will take, so they do not push the page down (CORE-2509).
   const reserving = !media && status === "loading";
   const progressText = progress ? t("mediaDetailProgress", { percent: progress.percent }) : "";
-  const next = context.next;
+  // A sequenced book offers the next one only once it is finished.
+  const next = series ? (finished ? context.next : null) : context.next;
   // The grouping is linked above; the nearest container is in the position line.
-  const parents = ordered
-    ? context.parents.filter((parent) => parent.id !== ordered.container.id)
+  const positioned = ordered?.container.id ?? seriesShown?.id;
+  const parents = positioned
+    ? context.parents.filter((parent) => parent.id !== positioned)
     : context.parents;
   // The nearest container's other items, in its order (CORE-2469).
   const moreIn = context.items.filter((item) => item.id !== mediaId);
@@ -356,6 +376,16 @@ export function MediaDetailPage() {
                     {ordered.containerText}
                   </Link>
                   {ordered.itemText && <span>{` · ${ordered.itemText}`}</span>}
+                </p>
+              )}
+              {seriesShown && (
+                <p className="bf-detail-position">
+                  <Link to={`/entity/${encodeURIComponent(seriesShown.id)}`}>
+                    {seriesShown.title}
+                  </Link>
+                  <span>{` · ${t("mediaDetailSequenceNumber", {
+                    number: sequenceLabel(seriesShown.sequence, locale),
+                  })}`}</span>
                 </p>
               )}
               <h1 id={TITLE_ID} className="bf-page-title">
@@ -441,7 +471,13 @@ export function MediaDetailPage() {
                   onFocus={preloadPlayer}
                 >
                   <Play aria-hidden />
-                  {progress ? t("mediaDetailResume") : t("play")}
+                  {progress
+                    ? isAudio
+                      ? t("mediaDetailResumeLeft", {
+                          left: timeLeftLabel(secondsLeft(progress), t),
+                        })
+                      : t("mediaDetailResume")
+                    : t("play")}
                 </button>
                 {progress && (
                   <button
@@ -466,9 +502,14 @@ export function MediaDetailPage() {
                     to={mediaPath("media", next.id)}
                     state={mediaLinkState(next, identity)}
                     className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
-                    aria-label={t("mediaDetailNextLabel", { title: next.title })}
+                    aria-label={t(
+                      series ? "mediaDetailNextInSeriesLabel" : "mediaDetailNextLabel",
+                      {
+                        title: next.title,
+                      },
+                    )}
                   >
-                    {t("mediaDetailNext")}
+                    {t(series ? "mediaDetailNextInSeries" : "mediaDetailNext")}
                     <ChevronRight aria-hidden />
                   </Link>
                 )}
@@ -556,6 +597,10 @@ export function MediaDetailPage() {
           </section>
         )}
 
+        {media && isAudio && (
+          <MediaChapters mediaID={mediaId} positionSeconds={progress?.positionSeconds} />
+        )}
+
         {media && <MediaRelationRows mediaID={mediaId} />}
 
         {context.container && moreIn.length > 0 && (
@@ -593,6 +638,19 @@ interface OrderedPosition {
  * and index, each from plugin display names. Without a kind name or sequence
  * the container shows its title; without a class label the index stands alone.
  */
+/** The series a book's credit sequences it in, from the relation's sequence attribute. */
+function seriesPosition(
+  media: GenericMediaInfo | undefined,
+): { id: string; title: string; sequence: string } | null {
+  if (media?.mediaClass !== "audio") return null;
+  for (const credit of media.credits ?? []) {
+    if (credit.archetype !== "container") continue;
+    const sequence = creditAttribute([credit], credit.entityID, SEQUENCE_ATTRIBUTE);
+    if (sequence) return { id: credit.entityID, title: credit.title, sequence };
+  }
+  return null;
+}
+
 function orderedPosition(
   media: GenericMediaInfo | undefined,
   container: ContainerLink | null,

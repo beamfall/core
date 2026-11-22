@@ -2,6 +2,7 @@ package app
 
 import (
 	"log/slog"
+	"slices"
 
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/store"
@@ -49,7 +50,12 @@ func validEntityBrowseRule(bundle plugin.Bundle, rule EntityBrowseRule) bool {
 		if fromKind == "" {
 			fromKind, toKind = rule.Kind, plugin.MediaKindName
 		}
-		if relations[fromKind+"\x00"+source.Relation].ToKind != toKind {
+		spec := relations[fromKind+"\x00"+source.Relation]
+		if spec.ToKind != toKind {
+			return false
+		}
+		if (source.Attribute == "") != (source.Value == "") ||
+			(source.Attribute != "" && !slices.Contains(spec.Attributes, source.Attribute)) {
 			return false
 		}
 		if source.ExcludeMediaRelation != "" {

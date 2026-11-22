@@ -560,3 +560,59 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* An audio Media's chapters (CORE-3014): one row per chapter, the current one
+   marked by weight and a leading rule, never by colour alone. */
+[data-register="viewer"] .bf-detail-chapters {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-detail-chapters li {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+[data-register="viewer"] .bf-detail-chapters a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+[data-register="viewer"] .bf-detail-chapters a:hover,
+[data-register="viewer"] .bf-detail-chapters a:focus-visible {
+  background: color-mix(in oklab, var(--text-primary) 6%, transparent);
+}
+
+[data-register="viewer"] .bf-detail-chapters a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-detail-chapters [aria-current] a {
+  border-left-color: var(--text-primary);
+  font-weight: 600;
+}
+
+[data-register="viewer"] .bf-detail-chapter-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-register="viewer"] .bf-detail-chapter-start {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}

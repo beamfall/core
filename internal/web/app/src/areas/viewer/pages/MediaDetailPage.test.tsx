@@ -56,6 +56,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   fetchSourceItems: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
   fetchItemState: vi.fn(async () => mocks.itemState),
+  fetchPlaybackMarkers: vi.fn(async () => []),
   ...Object.fromEntries(
     (["setWatched", "setWatchlisted", "setRating"] as const).map((name) => [
       name,
