@@ -246,6 +246,9 @@ func (s *Store) CreateSmartCollection(ctx context.Context, c SmartCollection, no
 	if c.SortExpr == "" {
 		c.SortExpr = "{}"
 	}
+	if err := validateSmartRuleExprs(c.SourceExpr, c.SortExpr); err != nil {
+		return SmartCollection{}, err
+	}
 	id, err := randomSmartCollectionID()
 	if err != nil {
 		return SmartCollection{}, err
@@ -316,6 +319,9 @@ func (s *Store) UpdateSmartCollection(ctx context.Context, c SmartCollection) (S
 	sortExpr := c.SortExpr
 	if sortExpr == "" {
 		sortExpr = existing.SortExpr
+	}
+	if err := validateSmartRuleExprs(sourceExpr, sortExpr); err != nil {
+		return SmartCollection{}, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -397,6 +403,11 @@ func decodeSmartCollectionSourceExpr(expr string) (SourceQuery, error) {
 	}
 	if query.Kind == "smart-collection" {
 		return SourceQuery{}, ValidationError("smart collection source cannot reference another smart collection")
+	}
+	if query.Kind == smartRuleSourceKind {
+		// Rule sources evaluate only through smartRuleItemsLocked; never let
+		// them fall through as an unknown kind.
+		return SourceQuery{}, ValidationError("rule sources are evaluated by their smart collection")
 	}
 	query.EntityKind = stringFromRaw(raw["entityKind"])
 	query.EntityID = EntityID(stringFromRaw(raw["entityID"]))

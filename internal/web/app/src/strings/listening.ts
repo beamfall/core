@@ -1,5 +1,8 @@
+import { smartPlaylistStrings as smart } from "./smart-playlists";
+
 // Audio browse copy: track lists, person pages, playlists, favorites and play
-// history, plus the audio wording of the card menu (CORE-1635).
+// history, plus the audio wording of the card menu (CORE-1635) and the smart
+// playlist copy (CORE-2771).
 export const listeningStrings = {
   en: {
     itemMarkPlayed: "Mark played",
@@ -48,6 +51,7 @@ export const listeningStrings = {
     historyRecent: "Recently played",
     historyMost: "Most played",
     historyEmpty: "Nothing played yet.",
+    ...smart.en,
   },
   fr: {
     itemMarkPlayed: "Marquer comme écouté",
@@ -96,6 +100,7 @@ export const listeningStrings = {
     historyRecent: "Écoutés récemment",
     historyMost: "Les plus écoutés",
     historyEmpty: "Rien d'écouté pour l'instant.",
+    ...smart.fr,
   },
   de: {
     itemMarkPlayed: "Als gehört markieren",
@@ -144,6 +149,7 @@ export const listeningStrings = {
     historyRecent: "Zuletzt gespielt",
     historyMost: "Am häufigsten gespielt",
     historyEmpty: "Noch nichts gespielt.",
+    ...smart.de,
   },
   es: {
     itemMarkPlayed: "Marcar como escuchado",
@@ -192,6 +198,7 @@ export const listeningStrings = {
     historyRecent: "Escuchado recientemente",
     historyMost: "Lo más escuchado",
     historyEmpty: "Aún no se ha reproducido nada.",
+    ...smart.es,
   },
   pt: {
     itemMarkPlayed: "Marcar como ouvido",
@@ -240,5 +247,6 @@ export const listeningStrings = {
     historyRecent: "Ouvidos recentemente",
     historyMost: "Mais ouvidos",
     historyEmpty: "Nada reproduzido ainda.",
+    ...smart.pt,
   },
 } as const;
