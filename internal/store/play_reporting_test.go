@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -224,21 +225,27 @@ func TestPlayReadsVisibleOnlyDropHiddenMedia(t *testing.T) {
 func TestPlaybackProgressRecordsDeviceAndMethod(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()
+	paused := true
 	if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
 		ProfileID: "profile-default", MediaID: "media-alpha", PositionSeconds: 30, DurationSeconds: 3600,
-		DeviceID: "dev-tv", PlayMethod: PlayMethodRemux,
+		DeviceID: "dev-tv", PlayMethod: PlayMethodRemux, SessionID: "session-secret", Paused: &paused,
 	}, false, ResumePolicy{Class: MediaClassVideo}); err != nil {
 		t.Fatal(err)
 	}
-	var device, method string
+	var device, method, stream, payload string
+	var gotPaused bool
 	if err := st.eventsR.QueryRow(`
-		SELECT json_extract(payload, '$.deviceId'), json_extract(payload, '$.playMethod')
+		SELECT json_extract(payload, '$.deviceId'), json_extract(payload, '$.playMethod'),
+		       json_extract(payload, '$.streamKey'), json_extract(payload, '$.paused'), payload
 		FROM engagement_event WHERE kind = ? AND media_id = 'media-alpha'
-		ORDER BY occurred_at_ms DESC LIMIT 1`, playbackProjectionEventKind).Scan(&device, &method); err != nil {
+		ORDER BY occurred_at_ms DESC LIMIT 1`, playbackProjectionEventKind).Scan(&device, &method, &stream, &gotPaused, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if device != "dev-tv" || method != PlayMethodRemux {
-		t.Fatalf("event device=%q method=%q", device, method)
+	// The stream is named by a key derived from the session, never the
+	// session ID, which is a credential.
+	if device != "dev-tv" || method != PlayMethodRemux || stream != playStreamKey("session-secret") || stream == "" ||
+		!gotPaused || strings.Contains(payload, "session-secret") {
+		t.Fatalf("event device=%q method=%q stream=%q paused=%v payload=%s", device, method, stream, gotPaused, payload)
 	}
 }
 
@@ -283,51 +290,198 @@ func TestPlayHistorySplitsEveryDeviceSwitch(t *testing.T) {
 	}
 }
 
+// streamReport is one progress report as a native client sends it since
+// CORE-1703: the stream it belongs to, the position it reported, whether it
+// said it was paused (nil: it did not say), the method held when the server
+// received it, and when that was. clientAt is the client's own clock, zero
+// when it sent none.
+type streamReport struct {
+	device   DeviceID
+	stream   string
+	method   string
+	received time.Time
+	clientAt time.Time
+	position int
+	paused   *bool
+}
+
+func addStreamReport(t *testing.T, st *Store, profile ProfileID, media MediaID, r streamReport) {
+	t.Helper()
+	event := playbackProjectionEvent{
+		Operation: playbackProjectionOperationProgress, ProfileID: string(profile), MediaID: string(media),
+		PositionSeconds: r.position, DurationSeconds: 3600, UpdatedAtMS: timeToMillis(r.received),
+		DeviceID: string(r.device), PlayMethod: r.method, ReportedPositionSeconds: &r.position,
+		StreamKey: r.stream, Paused: r.paused,
+	}
+	if !r.clientAt.IsZero() {
+		at := timeToMillis(r.clientAt)
+		event.EventTimeMS = &at
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := fmt.Sprintf("stream-report-%s-%s-%s-%d", profile, media, r.stream, r.received.UnixNano())
+	if _, err := st.eventsW.Exec(`
+		INSERT INTO engagement_event(id, profile_id, media_id, kind, payload, occurred_at_ms, created_at_ms)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, profile, media, playbackProjectionEventKind, string(payload), timeToMillis(r.received), timeToMillis(r.received)); err != nil {
+		t.Fatalf("insert progress event: %v", err)
+	}
+}
+
+// streamPlaying appends the playing reports a stream sends every interval
+// from r.received to until, both included, its position advancing with time.
+func streamPlaying(t *testing.T, st *Store, profile ProfileID, media MediaID, r streamReport, until time.Time, interval time.Duration) {
+	t.Helper()
+	from, fromPos := r.received, r.position
+	playing := false
+	r.paused = &playing
+	for at := from; !at.After(until); at = at.Add(interval) {
+		r.received, r.position = at, fromPos+int(at.Sub(from)/time.Second)
+		addStreamReport(t, st, profile, media, r)
+	}
+}
+
 // feature:play-history
-func TestPlayHistoryCountsOnlyPlayingTime(t *testing.T) {
-	// Codex CORE-1703 r0: a seek made while paused, and the heartbeats of a
-	// paused audio player whose stored position is zero, add nothing.
+func TestPlayHistoryKeepsConcurrentStreamsApart(t *testing.T) {
+	// Codex CORE-1703 r1: a TV and a phone playing the same item on one
+	// Profile at once, each reporting every 15 seconds and 5 seconds apart,
+	// are two plays, not dozens of one-report runs. A TV, then the phone,
+	// then the TV again is still three plays.
 	st := openSeeded(t)
 	ctx := context.Background()
 	all := LibraryFilter{AllLibraries: true}
-	base := time.Now().Add(-3 * time.Hour).Truncate(time.Second)
-	report := func(media MediaID, at time.Time, position int, policy ResumePolicy) {
-		t.Helper()
-		if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
-			ProfileID: "profile-default", MediaID: media, PositionSeconds: position, DurationSeconds: 3600,
-			EventTimeMS: at.UnixMilli(),
-		}, false, policy); err != nil {
-			t.Fatal(err)
-		}
+	addPlayDevice(t, st, "dev-tv", "Living room", DeviceSurfaceTVOSViewer)
+	addPlayDevice(t, st, "dev-phone", "Phone", DeviceSurfaceCoreWebUI)
+	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
+	tv := streamReport{device: "dev-tv", stream: "stream-tv", method: PlayMethodDirect}
+	phone := streamReport{device: "dev-phone", stream: "stream-phone", method: PlayMethodTranscode}
+
+	tv.received, phone.received, phone.position = day, day.Add(5*time.Second), 1000
+	streamPlaying(t, st, "profile-default", "media-alpha", tv, day.Add(10*time.Minute), 15*time.Second)
+	streamPlaying(t, st, "profile-default", "media-alpha", phone, day.Add(10*time.Minute+5*time.Second), 15*time.Second)
+	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{PlayFilter: PlayFilter{MediaID: "media-alpha"}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	playFor := func(media MediaID, from time.Time, fromPos int, d time.Duration, policy ResumePolicy) {
-		for at := time.Duration(0); at <= d; at += 15 * time.Second {
-			report(media, from.Add(at), fromPos+int(at/time.Second), policy)
-		}
+	if len(plays) != 2 || plays[0].DeviceID != "dev-phone" || plays[0].WatchedSeconds != 600 || plays[0].Method != PlayMethodTranscode ||
+		plays[1].DeviceID != "dev-tv" || plays[1].WatchedSeconds != 600 || plays[1].Method != PlayMethodDirect {
+		t.Fatalf("concurrent plays = %#v, want the phone's and the TV's, 600s each", plays)
 	}
-	video := ResumePolicy{Class: MediaClassVideo}
-	// Five minutes played, paused silently for 20 minutes, a seek from 300 to
-	// 1500 while paused, then five more minutes.
-	playFor("media-alpha", base, 0, 5*time.Minute, video)
-	playFor("media-alpha", base.Add(25*time.Minute), 1500, 5*time.Minute, video)
-	// Audio stores no position, but its paused heartbeats repeat the
-	// position the client reported: five minutes played, ten paused with a
-	// heartbeat every 15 seconds, five more played.
-	audio := ResumePolicy{Class: MediaClassAudio}
-	later := base.Add(90 * time.Minute)
-	playFor("media-archive", later, 0, 5*time.Minute, audio)
-	for at := 5 * time.Minute; at < 15*time.Minute; at += 15 * time.Second {
-		report("media-archive", later.Add(at), 300, audio)
+
+	tv.received, tv.position = day, 0
+	streamPlaying(t, st, "profile-default", "media-archive", tv, day.Add(10*time.Minute), 15*time.Second)
+	phone.received, phone.position = day.Add(11*time.Minute), 600
+	streamPlaying(t, st, "profile-default", "media-archive", phone, day.Add(16*time.Minute), 15*time.Second)
+	tv.received, tv.position = day.Add(17*time.Minute), 900
+	streamPlaying(t, st, "profile-default", "media-archive", tv, day.Add(27*time.Minute), 15*time.Second)
+	handoff, err := st.PlayHistory(ctx, all, PlayHistoryQuery{PlayFilter: PlayFilter{MediaID: "media-archive"}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	playFor("media-archive", later.Add(15*time.Minute), 300, 5*time.Minute, audio)
+	if len(handoff) != 3 || handoff[0].WatchedSeconds != 600 || handoff[1].WatchedSeconds != 300 || handoff[2].WatchedSeconds != 600 {
+		t.Fatalf("handoff plays = %#v, want TV, phone, TV: 600s, 300s, 600s", handoff)
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryCreditsNothingAfterAPausedReport(t *testing.T) {
+	// Codex CORE-1703 r1: paused at 300, then 45 seconds later a seek to
+	// 1500 while still paused, earns nothing. Paused heartbeats that repeat
+	// the position earn nothing either, even from a client that does not say
+	// it is paused.
+	st := openSeeded(t)
+	ctx := context.Background()
+	all := LibraryFilter{AllLibraries: true}
+	day := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
+	paused := true
+	web := streamReport{device: "dev-web", stream: "stream-web", method: PlayMethodDirect, received: day}
+	streamPlaying(t, st, "profile-default", "media-alpha", web, day.Add(5*time.Minute), 15*time.Second)
+	web.paused, web.position = &paused, 300
+	web.received = day.Add(5*time.Minute + 5*time.Second) // the pause
+	addStreamReport(t, st, "profile-default", "media-alpha", web)
+	web.received, web.position = day.Add(5*time.Minute+50*time.Second), 1500 // the paused seek
+	addStreamReport(t, st, "profile-default", "media-alpha", web)
+	web.received = day.Add(6 * time.Minute) // resumed
+	streamPlaying(t, st, "profile-default", "media-alpha", web, day.Add(11*time.Minute), 15*time.Second)
+
+	audio := streamReport{device: "dev-web", stream: "stream-audio", method: PlayMethodDirect, received: day.Add(time.Hour)}
+	for at := time.Duration(0); at <= 15*time.Minute; at += 15 * time.Second {
+		// Five minutes played, ten paused, heartbeats throughout.
+		audio.received, audio.position = day.Add(time.Hour+at), int(min(at, 5*time.Minute)/time.Second)
+		addStreamReport(t, st, "profile-default", "media-archive", audio)
+	}
 
 	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plays) != 2 || plays[0].MediaID != "media-archive" || plays[0].WatchedSeconds != 600 ||
+	if len(plays) != 2 || plays[0].MediaID != "media-archive" || plays[0].WatchedSeconds != 300 ||
 		plays[1].MediaID != "media-alpha" || plays[1].WatchedSeconds != 600 {
-		t.Fatalf("plays = %#v, want 600s each: neither the paused seek nor the paused heartbeats count", plays)
+		t.Fatalf("plays = %#v, want 600s and 300s: neither the paused seek nor the paused heartbeats count", plays)
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryCreditsCoalescedReports(t *testing.T) {
+	// Codex CORE-1703 r1: the web player sends only the latest report while
+	// one is in flight, so a slow server can see 100 and then 400 five
+	// minutes later. That is five minutes of playing, not a pause.
+	st := openSeeded(t)
+	ctx := context.Background()
+	day := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
+	playing := false
+	web := streamReport{device: "dev-web", stream: "stream-web", method: PlayMethodDirect, received: day, position: 100, paused: &playing}
+	addStreamReport(t, st, "profile-default", "media-alpha", web)
+	web.received, web.position = day.Add(5*time.Minute), 400
+	addStreamReport(t, st, "profile-default", "media-alpha", web)
+	plays, err := st.PlayHistory(ctx, LibraryFilter{AllLibraries: true}, PlayHistoryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plays) != 1 || plays[0].WatchedSeconds != 300 {
+		t.Fatalf("plays = %#v, want one play of 300s", plays)
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryMethodCoversMostOfThePlay(t *testing.T) {
+	// Codex CORE-1703 r1: played direct from 10:00, the server switched the
+	// stream to transcode at 10:05, and a report the client observed at
+	// 10:04 arrived at 10:06, so it records transcode. The play was direct
+	// for most of its time, and the client's clock, two minutes slow, never
+	// enters into it.
+	st := openSeeded(t)
+	ctx := context.Background()
+	day := time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)
+	slow := -2 * time.Minute
+	playing := false
+	tv := streamReport{device: "dev-tv", stream: "stream-tv", method: PlayMethodDirect, paused: &playing}
+	for at := time.Duration(0); at < 5*time.Minute; at += 15 * time.Second {
+		tv.received, tv.clientAt, tv.position = day.Add(at), day.Add(at+slow), int(at/time.Second)
+		addStreamReport(t, st, "profile-default", "media-alpha", tv)
+	}
+	tv.method = PlayMethodTranscode
+	tv.received, tv.clientAt, tv.position = day.Add(6*time.Minute), day.Add(4*time.Minute+slow), 240
+	addStreamReport(t, st, "profile-default", "media-alpha", tv)
+	for at := 6*time.Minute + 15*time.Second; at <= 7*time.Minute; at += 15 * time.Second {
+		tv.received, tv.clientAt, tv.position = day.Add(at), day.Add(at+slow), int(at/time.Second)
+		addStreamReport(t, st, "profile-default", "media-alpha", tv)
+	}
+	plays, err := st.PlayHistory(ctx, LibraryFilter{AllLibraries: true}, PlayHistoryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plays) != 1 || plays[0].Method != PlayMethodDirect {
+		t.Fatalf("plays = %#v, want one direct play", plays)
+	}
+	direct, err := st.PlayHistory(ctx, LibraryFilter{AllLibraries: true}, PlayHistoryQuery{PlayFilter: PlayFilter{Method: PlayMethodDirect}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(direct) != 1 {
+		t.Fatalf("direct-filtered plays = %#v, want the play", direct)
 	}
 }
 

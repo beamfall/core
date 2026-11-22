@@ -266,4 +266,45 @@ describe("MyDataPage watch history", () => {
     expect(fetchMyPlayStats).toHaveBeenCalledTimes(statsCalls + 1);
     expect(fetchMyPlayHistory).toHaveBeenCalledTimes(historyCalls + 1);
   });
+  it("shows a failed refetch after deleting all over empty data, not the deleted plays", async () => {
+    vi.mocked(fetchMyPlayStats).mockResolvedValue({
+      ...NO_PLAYS,
+      totalPlays: 1,
+      totalWatchedSeconds: 600,
+      items: [
+        {
+          mediaID: "m-1",
+          title: "Night Train",
+          libraryID: "library-films",
+          plays: 1,
+          watchedSeconds: 600,
+        },
+      ],
+    });
+    vi.mocked(fetchMyPlayHistory).mockResolvedValue([
+      {
+        profileID: "p-1",
+        profileName: "Ada",
+        mediaID: "m-2",
+        title: "Morning Ferry",
+        libraryID: "library-films",
+        libraryTitle: "Films",
+        deviceID: "",
+        playMethod: "unknown",
+        startedAt: "2026-11-10T20:00:00Z",
+        watchedSeconds: 600,
+        finished: false,
+      },
+    ]);
+    renderPage();
+    expect(await screen.findByText("Night Train")).toBeInTheDocument();
+    expect(screen.getByText("Morning Ferry")).toBeInTheDocument();
+
+    vi.mocked(fetchMyPlayStats).mockRejectedValue(new Error("offline"));
+    await userEvent.click(screen.getByRole("button", { name: "Delete all my engagement" }));
+
+    expect(await screen.findByText("Could not load your watch history.")).toBeInTheDocument();
+    expect(screen.queryByText("Night Train")).not.toBeInTheDocument();
+    expect(screen.queryByText("Morning Ferry")).not.toBeInTheDocument();
+  });
 });

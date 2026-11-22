@@ -193,9 +193,12 @@ function FilterBar({
 
 function HistoryTable({ filters, days }: { filters: PlayFilters; days: WindowDays }) {
   const t = useT();
+  // The window reaches the table only under a To day alone; otherwise a new
+  // window would refetch the same rows.
+  const windowDays = !filters.from && dayStart(filters.to) ? days : 0;
   const { data, loading, failed } = useAsync(
     (signal) => fetchPlayHistory(filterVariables(filters, days), signal),
-    [filters, days],
+    [filters, windowDays],
   );
   const plays = data ?? [];
 

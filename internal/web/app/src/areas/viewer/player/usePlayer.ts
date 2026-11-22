@@ -169,7 +169,7 @@ const REPORT_INTERVAL_MS = 15000;
 /** The song as recorded: no pitch shift, the recorded tempo. */
 export const DEFAULT_ADJUSTMENT: PlaybackAdjustment = { pitchShiftSemitones: 0, tempo: 1 };
 const REPORT_PLAYBACK_MUTATION =
-  "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS) { mediaID } }";
+  "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!, $paused: Boolean) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS, paused: $paused) { mediaID } }";
 let lastPlaybackEventTimeMS = 0;
 
 interface ProgressQueue {
@@ -594,6 +594,7 @@ export function usePlayer(
         durationSeconds: Math.floor(durationSeconds),
         finished,
         eventTimeMS,
+        paused: video.paused,
       });
     },
     [mediaID, notePresentedPosition],
@@ -1425,15 +1426,20 @@ export function usePlayer(
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    // Play history credits time only after a playing report, so resuming
+    // reports too (CORE-1703).
+    const onPlay = () => reportProgress(false);
     const onPause = () => reportProgress(false);
     const onSeeked = () => reportProgress(false);
     const onEnded = () => stopProgressReporting(true);
     const onTimeUpdate = () => notePresentedPosition(video);
+    video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
     video.addEventListener("seeked", onSeeked);
     video.addEventListener("ended", onEnded);
     video.addEventListener("timeupdate", onTimeUpdate);
     return () => {
+      video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("ended", onEnded);

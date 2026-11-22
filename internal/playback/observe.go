@@ -44,9 +44,6 @@ type PlayObservation struct {
 	Method  string
 	Reason  string
 	Bitrate int // bits per second; 0 when unknown
-	// DecidedAt is when the decision was made: a progress report observed
-	// before it belongs to an earlier decision (CORE-1703).
-	DecidedAt time.Time
 }
 
 type observationKey struct {
@@ -105,7 +102,6 @@ func (s *Service) PlayObservation(sessionID store.SessionID, mediaID store.Media
 		return PlayObservation{}, false
 	}
 	obs := observed.PlayObservation
-	obs.DecidedAt = observed.at
 	if s.sessions == nil {
 		return obs, true
 	}

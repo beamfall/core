@@ -412,6 +412,8 @@ export interface ReportPlaybackVars {
   durationSeconds: number;
   finished: boolean;
   eventTimeMS: number;
+  /** Whether the player was paused: play history credits no time after a paused report. */
+  paused?: boolean;
 }
 
 // --- Viewer: My Data / Privacy panel (internal/graph/mydata.go) -----------

@@ -15,8 +15,14 @@ server and never sent anywhere.
 - Each playback progress event records the reporting device and the play method the server chose
   for that session (direct, remux or transcode) when one is held. The event payload is JSON, so no
   migration is needed. Events written before this change have neither and read as unknown.
-- A play is a run for one profile, item and device: switching devices starts a new play. A play's
-  method is the most demanding method seen in the run.
+- A play is a run for one profile, item and stream, where the stream key is a one-way hash of the
+  authenticated session (reports carry no stream id of their own; the session is what the held
+  delivery decision and stream tokens are keyed by). Concurrent devices are separate plays and
+  moving between streams starts a new play. A play's method is the method that covered most of its
+  watched time, read from the session's held decision on receipt, never from client timestamps.
+- Watched time is the position advance between consecutive reports, capped at the server receipt
+  gap and zero after a report that said paused. The web player now sends an optional `paused` flag
+  and reports on resume; clients that do not send it read as playing.
 - `playHistory` gains `mediaID`, `deviceID` and `playMethod` filters, and each play carries the
   device ID, device name, device client surface and play method.
 - `playStats` accepts a `since`/`until` range (up to 366 days) as well as a 7/30/90-day window,

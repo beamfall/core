@@ -708,6 +708,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "eventTimeMS", Kind: "number", Optional: true},
 		{Name: "finished", Kind: "boolean", Optional: true},
 		{Name: "mediaID", Kind: "string"},
+		{Name: "paused", Kind: "boolean", Optional: true},
 		{Name: "positionSeconds", Kind: "int", Optional: true},
 	},
 	"requestaccess": {

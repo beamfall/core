@@ -354,7 +354,7 @@ export async function fetchSemanticCapability(): Promise<SemanticCapabilityInfo[
 // --- Playback -------------------------------------------------------------
 
 const REPORT_PLAYBACK_MUTATION =
-  "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS) { mediaID } }";
+  "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!, $paused: Boolean) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS, paused: $paused) { mediaID } }";
 
 /** ReportPlayback — progress beacon (drives Continue Watching + watched state). */
 export async function reportPlayback(vars: ReportPlaybackVars): Promise<ReportPlaybackResult> {

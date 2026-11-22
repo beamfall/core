@@ -384,8 +384,12 @@ describe("PlayHistory", () => {
     expect(screen.getByText("Direct stream")).toBeInTheDocument();
     expect(vi.mocked(fetchPlayStats).mock.calls[0][0]).toEqual({ windowDays: 30 });
 
+    // With both days empty the table is not windowed, so a new window does
+    // not refetch it.
+    const historyCalls = vi.mocked(fetchPlayHistory).mock.calls.length;
     await userEvent.click(screen.getByRole("button", { name: "7 days" }));
     expect(vi.mocked(fetchPlayStats).mock.calls.at(-1)?.[0]).toEqual({ windowDays: 7 });
+    expect(fetchPlayHistory).toHaveBeenCalledTimes(historyCalls);
     expect(screen.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true");
 
     // A From day replaces the window, for the rankings and the table alike.
@@ -409,6 +413,14 @@ describe("PlayHistory", () => {
     );
     expect(vi.mocked(fetchPlayHistory).mock.calls.at(-1)?.[0]).toEqual(toOnly);
     expect(screen.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true");
+    // Under a To day the window does matter to the table.
+    await userEvent.click(screen.getByRole("button", { name: "30 days" }));
+    await vi.waitFor(() =>
+      expect(vi.mocked(fetchPlayHistory).mock.calls.at(-1)?.[0]).toEqual({
+        ...toOnly,
+        since: new Date(2026, 9, 12).toISOString(),
+      }),
+    );
   });
 });
 

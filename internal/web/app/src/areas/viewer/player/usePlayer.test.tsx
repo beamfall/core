@@ -300,7 +300,7 @@ describe("usePlayer", () => {
     vi.restoreAllMocks();
   });
 
-  it("sends eventTimeMS with playback progress reports", async () => {
+  it("sends eventTimeMS and the paused state with playback progress reports", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1783432800123);
     render(<Harness />);
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
@@ -320,7 +320,16 @@ describe("usePlayer", () => {
       durationSeconds: 120,
       finished: false,
       eventTimeMS: 1783432800123,
+      paused: true,
     });
+
+    // Resuming reports at once and says the stream is playing again, so the
+    // server credits the time from here on and none from the pause.
+    const calls = vi.mocked(graphql).mock.calls.length;
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.play(video);
+    await waitFor(() => expect(vi.mocked(graphql).mock.calls.length).toBeGreaterThan(calls));
+    expect(vi.mocked(graphql).mock.calls.at(-1)?.[1]).toMatchObject({ paused: false });
   });
 
   it("reports the probed duration, not a live transcode's growing video.duration (CORE-2314)", async () => {

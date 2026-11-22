@@ -3,7 +3,7 @@
 ### Requirement: Play history is listed and filterable
 
 The admin field `playHistory` SHALL list plays newest first, where a play is a run of playback
-progress events for one profile, item and device with no gap longer than 30 minutes, and SHALL
+progress events for one profile, item and stream with no gap longer than 30 minutes, and SHALL
 accept optional `profileID`, `libraryID`, `mediaID`, `deviceID`, `playMethod`, `since` and `until`
 filters and a bounded `limit`. Each play SHALL carry the profile, the item title and library when
 the operator may see the item, the device ID, name and client surface when known, the play method
@@ -56,17 +56,60 @@ than 366 days, or neither a window nor `since` SHALL be refused.
 
 ### Requirement: Progress reports record the device and play method
 
-A playback progress report SHALL record the reporting session's device and, when the server holds
-a delivery decision for that session and item, its play method. A device switch SHALL start a new
-play. A play's method SHALL be the most demanding method recorded in it, in the order transcode,
-remux, direct; a play with none recorded SHALL read as `unknown`.
+A playback progress report SHALL record the reporting session's device, a stream key derived
+one-way from the authenticated session (never the session credential itself), whether the player
+said it was paused when it says so, and, when the server holds a delivery decision for that
+session and item, its play method.
 
 #### Scenario: Transcoded session
 
 - **WHEN** a player whose session the server is transcoding reports progress
 - **THEN** the resulting play lists that device and the method `transcode`
 
-#### Scenario: Device switch
+### Requirement: Plays are split per stream
 
-- **WHEN** a profile plays an item on one device and continues it on another within 30 minutes
-- **THEN** two plays are listed, one per device
+Reports from different streams SHALL never join one play, whatever order they arrive in, and
+reports without a stream key SHALL be split per device. A stream's reports SHALL be ordered by the
+time the server received them. When playback of an item moves to another stream and later back,
+each stretch SHALL be its own play.
+
+#### Scenario: Concurrent devices
+
+- **WHEN** a profile plays one item on two devices at the same time and their reports interleave
+- **THEN** two plays are listed, one per device, each with its own watched time
+
+#### Scenario: Device switch and back
+
+- **WHEN** a profile plays an item on a TV, continues on a phone and returns to the TV, each within
+  30 minutes
+- **THEN** three plays are listed
+
+### Requirement: A play's method covers most of its watched time
+
+A play's method SHALL be the method that covered most of its watched time, ties going to the most
+demanding of transcode, remux and direct. A play with no watched time SHALL take the most
+demanding method recorded, and a play with none recorded SHALL read as `unknown`. The method SHALL
+never depend on comparing the client's clock with the server's.
+
+#### Scenario: Delayed report or slow client clock
+
+- **WHEN** a report arrives late, or the client's clock runs behind the server's
+- **THEN** the play keeps the method of the stream decision that covered its playing time
+
+### Requirement: Watched time counts playing time only
+
+A play's watched seconds SHALL be the sum, over each consecutive pair of its stream's reports, of
+the position advance capped at the time between the server receiving the two reports, counting
+nothing when the advance is negative or the earlier report said the player was paused. A report
+that does not say whether the player was paused SHALL count as playing. Events written before
+stream keys and receipt times SHALL keep the earlier rule.
+
+#### Scenario: Paused seek
+
+- **WHEN** a player reports paused, seeks 45 seconds ahead while paused and resumes
+- **THEN** the seek adds no watched time
+
+#### Scenario: Coalesced reports
+
+- **WHEN** a player reports position 100 and, five minutes of playing later, position 400
+- **THEN** the play gains 300 watched seconds

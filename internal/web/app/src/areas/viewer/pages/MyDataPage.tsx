@@ -10,7 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { CollapsibleCard, IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -401,9 +401,17 @@ function PlaysSection({ version }: { version: number }) {
   const [stats, setStats] = useState<PlayStatsInfo | null>(null);
   const [recent, setRecent] = useState<PlayInfo[]>([]);
   const [failed, setFailed] = useState(false);
+  const shownVersion = useRef(version);
   useEffect(() => {
     const ctl = new AbortController();
     setFailed(false);
+    // A delete-all bumps version: drop what was shown at once, so a failed
+    // refetch shows its error over empty data, never over deleted plays.
+    if (shownVersion.current !== version) {
+      shownVersion.current = version;
+      setStats(null);
+      setRecent([]);
+    }
     Promise.all([fetchMyPlayStats(days, ctl.signal), fetchMyPlayHistory(RECENT_PLAYS, ctl.signal)])
       .then(([s, plays]) => {
         setStats(s);

@@ -3,6 +3,7 @@ package graph
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,9 +12,11 @@ import (
 	"github.com/beamfall/core/internal/store/storetest"
 )
 
-// reportMinute records two progress reports a minute apart through the
-// graph's own progress write, so the session's Device and held play method
-// are recorded the way a player's reports record them.
+// reportMinute records two progress reports a minute apart by the client's
+// clock through the graph's own progress write, so the session's Device and
+// held play method are recorded the way a player's reports record them. The
+// server receives both at once, so they credit no watched time: that is
+// measured by arrival, and the store's tests cover it.
 func reportMinute(t *testing.T, handler *Handler, scope auth.Scope, media store.MediaID) {
 	t.Helper()
 	started := time.Now().Add(-time.Minute)
@@ -52,7 +55,7 @@ func TestPlayReportingRecordsDeviceAndScopesViewers(t *testing.T) {
 		t.Fatalf("myPlayHistory = %#v, want only the caller's visible play", plays)
 	}
 	if p := plays[0]; p.ProfileID != "profile-default" || p.MediaID != "media-alpha" || p.DeviceID != "device-tv" ||
-		p.DeviceName != "TV" || p.DeviceClient != string(store.DeviceSurfaceCoreWebUI) || p.PlayMethod != "transcode" || p.WatchedSeconds != 60 {
+		p.DeviceName != "TV" || p.DeviceClient != string(store.DeviceSurfaceCoreWebUI) || p.PlayMethod != "transcode" {
 		t.Fatalf("viewer play = %#v", p)
 	}
 	data, errs = post(t, handler, fmt.Sprintf(myHistory, `{}`), authorizeManagedSession)
@@ -80,7 +83,7 @@ func TestPlayReportingRecordsDeviceAndScopesViewers(t *testing.T) {
 	if err := json.Unmarshal(data["myPlayStats"], &mine); err != nil {
 		t.Fatalf("decode myPlayStats: %v", err)
 	}
-	if mine.TotalPlays != 1 || mine.TotalWatchedSeconds != 60 || len(mine.Profiles) != 1 || mine.Profiles[0].ProfileID != "profile-default" ||
+	if mine.TotalPlays != 1 || len(mine.Profiles) != 1 || mine.Profiles[0].ProfileID != "profile-default" ||
 		len(mine.Devices) != 1 || mine.Devices[0].DeviceName != "TV" || len(mine.Methods) != 1 || mine.Methods[0].PlayMethod != "transcode" ||
 		len(mine.Days) != 1 {
 		t.Fatalf("myPlayStats = %#v", mine)
@@ -132,25 +135,64 @@ func TestPlayReportingRecordsDeviceAndScopesViewers(t *testing.T) {
 }
 
 // feature:play-history
-func TestPlayReportingLeavesDelayedReportMethodUnknown(t *testing.T) {
-	st := storetest.Open(t)
-	handler := newTestHandlerWithStore(st)
-	// The held decision was made now: reports the client observed an hour
-	// ago belong to an earlier decision, whose method is gone.
-	handler.playbackObserver = fixedObserver{"session-default": {Method: "transcode", DecidedAt: time.Now()}}
-	viewer := auth.Scope{SessionID: "session-default", DeviceID: "device-tv", ProfileID: "profile-default", AllLibraries: true, Revealed: true}
-	early := time.Now().Add(-time.Hour)
-	for i, at := range []time.Time{early, early.Add(time.Minute)} {
-		if _, err := handler.RecordPlaybackProgress(t.Context(), viewer, store.PlaybackProgress{
-			MediaID: "media-alpha", PositionSeconds: 30 + 60*i, DurationSeconds: 3600, EventTimeMS: at.UnixMilli(),
-		}, false); err != nil {
-			t.Fatalf("RecordPlaybackProgress: %v", err)
+func TestPlayReportingKeepsTheMethodWhateverTheClientClock(t *testing.T) {
+	// Codex CORE-1703 r1: the method is the decision held for the session
+	// when the server receives a report. A client clock two minutes slow
+	// never turns a direct play into an unknown one.
+	for _, skew := range []time.Duration{0, -2 * time.Minute} {
+		st := storetest.Open(t)
+		handler := newTestHandlerWithStore(st)
+		handler.playbackObserver = fixedObserver{"session-default": {Method: "direct"}}
+		viewer := auth.Scope{SessionID: "session-default", DeviceID: "device-tv", ProfileID: "profile-default", AllLibraries: true, Revealed: true}
+		started := time.Now().Add(skew - time.Minute)
+		for i, at := range []time.Time{started, started.Add(time.Minute)} {
+			if _, err := handler.RecordPlaybackProgress(t.Context(), viewer, store.PlaybackProgress{
+				MediaID: "media-alpha", PositionSeconds: 30 + 60*i, DurationSeconds: 3600, EventTimeMS: at.UnixMilli(),
+			}, false); err != nil {
+				t.Fatalf("RecordPlaybackProgress: %v", err)
+			}
+		}
+		data, errs := post(t, handler, `{"query":"{ myPlayHistory { playMethod } }"}`, authorizeViewer)
+		var plays []PlayInfo
+		if err := json.Unmarshal(data["myPlayHistory"], &plays); len(errs) != 0 || err != nil || len(plays) != 1 || plays[0].PlayMethod != "direct" {
+			t.Fatalf("clock skew %v: myPlayHistory = %#v (errs %#v, err %v), want one direct play", skew, plays, errs, err)
 		}
 	}
-	data, errs := post(t, handler, `{"query":"{ myPlayHistory { playMethod watchedSeconds } }"}`, authorizeViewer)
-	var plays []PlayInfo
-	if err := json.Unmarshal(data["myPlayHistory"], &plays); len(errs) != 0 || err != nil || len(plays) != 1 ||
-		plays[0].PlayMethod != "unknown" || plays[0].WatchedSeconds != 60 {
-		t.Fatalf("delayed myPlayHistory = %#v (errs %#v, err %v), want one play, method unknown", plays, errs, err)
+}
+
+// feature:play-history
+func TestReportPlaybackRecordsPausedAndStream(t *testing.T) {
+	// The web player says whether it was paused, so play history credits
+	// nothing after a paused report; each report names its stream by a key
+	// derived from the session, never the session ID (CORE-1703 r1).
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	report := `{"query":"mutation R($paused: Boolean) { reportPlayback(mediaID: \"media-alpha\", positionSeconds: 45, durationSeconds: 3600, paused: $paused) { mediaID } }","variables":%s}`
+	for _, vars := range []string{`{"paused":true}`, `{}`} {
+		if _, errs := post(t, handler, fmt.Sprintf(report, vars), authorizeViewer); len(errs) != 0 {
+			t.Fatalf("reportPlayback errors = %#v", errs)
+		}
+	}
+	export, err := st.ExportMyEngagement(t.Context(), "profile-default", store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payloads []map[string]any
+	for _, event := range export.EngagementEvents {
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["operation"] == "progress" {
+			payloads = append(payloads, payload)
+		}
+	}
+	// Newest first: the report without paused, then the paused one.
+	if len(payloads) != 2 || payloads[1]["paused"] != true || payloads[0]["paused"] != nil {
+		t.Fatalf("progress payloads = %#v, want paused true, then unset", payloads)
+	}
+	stream, _ := payloads[0]["streamKey"].(string)
+	if stream == "" || payloads[1]["streamKey"] != stream || strings.Contains(fmt.Sprint(payloads), "session-default") {
+		t.Fatalf("progress payloads = %#v, want one derived stream key on both", payloads)
 	}
 }

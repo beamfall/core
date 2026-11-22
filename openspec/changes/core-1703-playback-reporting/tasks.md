@@ -1,6 +1,7 @@
 - [x] Fold in CORE-1307 (watched time counts playing time only), as separate commits
 - [x] Progress events carry `deviceId` and `playMethod`; graph progress writes fill them from the session scope and the playback observer
-- [x] Store: plays split by device, carry method and device, filter by item/device/method, and aggregate totals and by profile, item, device, method and day
+- [x] Store: plays split by stream (device when there is none), carry method and device, filter by item/device/method, and aggregate totals and by profile, item, device, method and day
 - [x] Graph: `playHistory`/`playStats` filters and breakdowns; viewer `myPlayHistory`/`myPlayStats` scoped to the caller's profile; registries and wire goldens regenerated
 - [x] Web: Console Dashboard range picker, filters and breakdowns; My Data "Watch history"; strings in every locale
 - [x] Tests: store (realistic report spacing, device split, method, filters, aggregates), graph scope (viewer sees only own), focused vitest
+- [x] Round 1: per-stream runs ordered by receipt, receipt-capped credit with paused reports, majority method, delete-all clears the watch card, history table ignores the window without a To day
