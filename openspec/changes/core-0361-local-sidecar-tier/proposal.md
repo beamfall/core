@@ -41,7 +41,9 @@ identification outranks, and a rescan revisits an unchanged file only for a back
 
 - Container sidecars (a show's or a container's own sidecar) are not imported. Entity fields carry
   no source tier, so a later identification would overwrite them and a manual edit could not
-  outrank them. A follow-up ticket carries that work and its reproductions.
+  outrank them. CORE-3165 carries that work and its reproductions.
+- An encrypted library's catalog holds no sort title, so a sidecar's sort title is not written
+  there (CORE-1868). Its other values are.
 
 ## Non-goals
 
