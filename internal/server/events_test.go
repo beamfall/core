@@ -31,7 +31,12 @@ import (
 // media-archive in the restricted library-archive (sqlite.go seed).
 func newTestServerWithStore(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
-	st := storetest.Open(t)
+	return newTestServerWithStoreAt(t, storetest.MigratedDataDir(t))
+}
+
+func newTestServerWithStoreAt(t *testing.T, dataDir string) (*Server, *store.Store) {
+	t.Helper()
+	st := storetest.OpenAt(t, dataDir)
 	clock := func() time.Time { return time.Unix(0, 0).UTC() }
 	if err := st.SetSessionAdminUntil(context.Background(), "session-manager", clock().Add(time.Hour)); err != nil {
 		t.Fatalf("SetSessionAdminUntil: %v", err)

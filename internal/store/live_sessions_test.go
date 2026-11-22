@@ -137,3 +137,78 @@ func TestActiveSessionsFollowLatestProfile(t *testing.T) {
 	}
 	playing("profile-default", tie.Add(time.Second))
 }
+
+// TestActiveSessionsAndCountApplyActivityWindow covers CORE-2346:
+// ActiveSessions and ActiveSessionCount apply the same LiveSessionActivityWindow
+// (and reject legacy 0-activity rows), while My Data keeps unexpired tokens.
+func TestActiveSessionsAndCountApplyActivityWindow(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	expires := now.Add(time.Hour)
+
+	if err := st.RecordStreamToken(ctx, "session-default", "profile-default", "device-tv", "media-direct", "media-alpha", false, expires); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordStreamToken(ctx, "session-managed", "profile-managed", "device-tv", "media-hls", "media-alpha", false, expires); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.TouchStreamTokenActivity(ctx, "session-managed", "profile-managed", "media-alpha", now.Add(LiveSessionActivityWindow)); err != nil {
+		t.Fatal(err)
+	}
+
+	assertActive := func(step string, at time.Time, want ...SessionID) {
+		t.Helper()
+		active, err := st.ActiveSessions(ctx, at, profileDefaultFilter(true))
+		if err != nil {
+			t.Fatalf("%s: ActiveSessions: %v", step, err)
+		}
+		if len(active) != len(want) {
+			t.Fatalf("%s: ActiveSessions len = %d, want %d (%+v)", step, len(active), len(want), active)
+		}
+		for i := range want {
+			if active[i].SessionID != want[i] {
+				t.Fatalf("%s: ActiveSessions[%d] = %s, want %s", step, i, active[i].SessionID, want[i])
+			}
+		}
+		count, err := st.ActiveSessionCount(ctx, at)
+		if err != nil || count != len(want) {
+			t.Fatalf("%s: ActiveSessionCount = %d, %v; want %d", step, count, err, len(want))
+		}
+	}
+
+	// Just at the boundary (now + LiveSessionActivityWindow from session-default's
+	// activity, or backdated): test both inside and just past the window.
+	atBoundary := now.Add(LiveSessionActivityWindow)
+	if _, err := st.eventsW.ExecContext(ctx, `UPDATE stream_token_ledger SET last_active_ms = ? WHERE session_id = ?`, timeToMillis(now), "session-default"); err != nil {
+		t.Fatal(err)
+	}
+	assertActive("at exact window boundary", atBoundary, "session-default", "session-managed")
+
+	pastBoundary := atBoundary.Add(time.Millisecond)
+	assertActive("1ms past window boundary", pastBoundary, "session-managed")
+
+	// My Data still lists session-default's unexpired token even while idle.
+	tokens, err := st.MyStreamTokens(ctx, "profile-default", pastBoundary)
+	if err != nil || len(tokens) != 1 {
+		t.Fatalf("MyStreamTokens for idle playback = %d, %v; want 1", len(tokens), err)
+	}
+
+	// A progress report brings the idle playback back.
+	if err := st.TouchStreamTokenActivity(ctx, "session-default", "profile-default", "media-alpha", pastBoundary); err != nil {
+		t.Fatal(err)
+	}
+	assertActive("after progress report", pastBoundary, "session-default", "session-managed")
+
+	// A legacy row with last_active_ms = 0 stays inactive even if now is at Unix epoch 0.
+	if _, err := st.eventsW.ExecContext(ctx, `UPDATE stream_token_ledger SET last_active_ms = 0 WHERE session_id = ?`, "session-default"); err != nil {
+		t.Fatal(err)
+	}
+	epoch := time.Unix(0, 0).UTC()
+	if active, err := st.ActiveSessions(ctx, epoch, profileDefaultFilter(true)); err != nil || len(active) != 1 || active[0].SessionID != "session-managed" {
+		t.Fatalf("epoch ActiveSessions with legacy 0 row = %+v, %v; want only session-managed", active, err)
+	}
+	if count, err := st.ActiveSessionCount(ctx, epoch); err != nil || count != 1 {
+		t.Fatalf("epoch ActiveSessionCount with legacy 0 row = %d, %v; want 1", count, err)
+	}
+}

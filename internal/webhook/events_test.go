@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
 )
 
 // fakeCatalog is an in-memory Catalog.
@@ -478,5 +479,56 @@ func TestStaleEndpointSnapshotCannotBorrowReplacementClient(t *testing.T) {
 	}
 	if got := len(doer.all()); got != 1 {
 		t.Fatalf("requests sent = %d, want only the one before the reload", got)
+	}
+}
+
+// TestPlaybackWebhookEmitsStopWhenPlaybackGoesIdle covers CORE-2346: the
+// playback webhook deriver reads store.ActiveSessions and emits
+// playback.stopped once a playback goes quiet past LiveSessionActivityWindow,
+// matching Console liveSessions.
+func TestPlaybackWebhookEmitsStopWhenPlaybackGoesIdle(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	if err := st.RecordStreamToken(ctx, "session-default", "profile-default", "device-tv", "media-direct", "media-alpha", false, now.Add(time.Hour)); err != nil {
+		t.Fatalf("RecordStreamToken: %v", err)
+	}
+
+	state, err := OpenDeadLetter(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doer := &recordingDoer{}
+	cfg := Config{Endpoints: []Endpoint{{
+		ID:         "ep",
+		URL:        "https://hooks.example/in",
+		Secret:     []byte("k"),
+		EventKinds: []string{KindPlaybackStarted, KindPlaybackStopped},
+	}}}
+	em := newEmitter(t, cfg, &fixedEvents{}, doer, state)
+	currentNow := now
+	em.now = func() time.Time { return currentNow }
+	em.EnableDerivation(DeriveOptions{
+		Catalog:       st,
+		PublicBaseURL: func() string { return "https://media.example" },
+	})
+
+	// First tick primes the live-session snapshot without emitting.
+	if _, err := em.tick(ctx, 0); err != nil {
+		t.Fatalf("prime tick: %v", err)
+	}
+	if reqs := doer.all(); len(reqs) != 0 {
+		t.Fatalf("prime tick emitted %d requests, want 0", len(reqs))
+	}
+
+	// Advancing past LiveSessionActivityWindow with no progress drops the idle
+	// playback and emits playback.stopped.
+	currentNow = now.Add(store.LiveSessionActivityWindow + time.Second)
+	if _, err := em.tick(ctx, 0); err != nil {
+		t.Fatalf("idle tick: %v", err)
+	}
+	reqs := doer.all()
+	if len(reqs) != 1 || decodeDerived(t, reqs[0].body).Kind != KindPlaybackStopped {
+		t.Fatalf("idle tick requests = %+v, want one %s", reqs, KindPlaybackStopped)
 	}
 }

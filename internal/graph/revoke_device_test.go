@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -237,5 +238,33 @@ func TestRevokeDeviceAbortsATranscodeAfterEndPlayback(t *testing.T) {
 	}
 	if !slices.Equal(term.aborted, []store.SessionID{"session-default"}) {
 		t.Errorf("aborted sessions = %v, want [session-default]", term.aborted)
+	}
+}
+
+// TestRevokeAllDevicesExcludesIdleLedgerSessions covers CORE-2346:
+// revokeAllDevices reads ActiveSessions via transcodeSessionIDsByDevice and
+// excludes idle ledger playbacks when the old auth session is already gone.
+func TestRevokeAllDevicesExcludesIdleLedgerSessions(t *testing.T) {
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	handler := newTestHandlerWithStore(st)
+	term := &fakeTerminator{live: map[store.SessionID]int{"session-rotated": 1}}
+	handler.SetTranscodeTerminator(term)
+	openManagerAdminSession(t, st)
+
+	// Record a playback for a rotated session no longer present in auth_session.
+	recordActive(t, st, "session-rotated", "profile-default", "device-tv", "media-hls", "media-alpha", false)
+	storetest.BackdateStreamTokenActivity(t, dataDir, "session-rotated", time.Now().Add(-store.LiveSessionActivityWindow-time.Minute))
+
+	data, errs := post(t, handler, `{"query":"mutation { revokeAllDevices { revokedCount transcodesAborted } }"}`, authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("revokeAllDevices errors = %#v", errs)
+	}
+	var got RevokeAllDevicesResult
+	if err := json.Unmarshal(data["revokeAllDevices"], &got); err != nil {
+		t.Fatalf("decode revokeAllDevices: %v", err)
+	}
+	if got.TranscodesAborted != 0 || slices.Contains(term.aborted, "session-rotated") {
+		t.Fatalf("revokeAllDevices aborted idle rotated ledger session: got=%+v aborted=%v", got, term.aborted)
 	}
 }

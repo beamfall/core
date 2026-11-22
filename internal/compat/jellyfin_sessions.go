@@ -73,7 +73,7 @@ func (h *Handler) sessions(w http.ResponseWriter, r *http.Request, _ net.IP) {
 	var playing []store.ActiveSession
 	var ids []string
 	for _, session := range active {
-		if !optedIn[session.ProfileID] || session.ProfileTied || session.LastActiveAt.Before(now.Add(-store.LiveSessionActivityWindow)) {
+		if !optedIn[session.ProfileID] || session.ProfileTied {
 			continue
 		}
 		playing = append(playing, session)

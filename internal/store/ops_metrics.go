@@ -49,12 +49,12 @@ func (s *Store) Ready(ctx context.Context) error {
 }
 
 // ActiveSessionCount returns the number of distinct playback sessions currently
-// holding a live media Stream Token. It reuses the same ledger the
-// live-sessions dashboard reads (the outstanding-Stream-Token model, ADR-0010 /
-// ADR-0036): a live playback is exactly an unexpired media-direct/media-hls
-// token whose playback has not been ended (CORE-2461), so a distinct-session
-// count over those rows is the active-session gauge. Expired rows are swept first, matching ActiveSessions, so the count is
-// what is actually live.
+// holding a live media Stream Token. It reuses the same ledger and activity
+// definition as ActiveSessions (ADR-0010 / ADR-0036): an unexpired
+// media-direct/media-hls token whose playback has not been ended (CORE-2461)
+// and whose last grant or progress report is within LiveSessionActivityWindow
+// (CORE-2346). Expired rows are swept first, matching ActiveSessions, so the
+// count is what is actually live.
 func (s *Store) ActiveSessionCount(ctx context.Context, now time.Time) (int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -62,13 +62,15 @@ func (s *Store) ActiveSessionCount(ctx context.Context, now time.Time) (int, err
 		return 0, err
 	}
 	nowMS := timeToMillis(now)
+	activeSinceMS := timeToMillis(now.Add(-LiveSessionActivityWindow))
 	_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE expires_at_ms <= ?`, nowMS)
 	var count int
 	if err := s.eventsR.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT session_id)
 		FROM stream_token_ledger
-		WHERE expires_at_ms > ? AND target IN ('media-direct', 'media-hls') AND last_active_ms >= 0
-	`, nowMS).Scan(&count); err != nil {
+		WHERE expires_at_ms > ? AND target IN ('media-direct', 'media-hls')
+		  AND last_active_ms > 0 AND last_active_ms >= ?
+	`, nowMS, activeSinceMS).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil

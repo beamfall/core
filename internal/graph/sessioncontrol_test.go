@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -300,6 +301,56 @@ func TestControlSessionRevealGate(t *testing.T) {
 	}
 	if payloads[1].Command != store.SessionCommandPlayMedia || len(payloads[1].PlayingMediaIDs) != 0 {
 		t.Errorf("play-media payload = %#v, want no playingMediaIDs", payloads[1])
+	}
+}
+
+// TestProfileSessionsAndControlExcludeIdlePlaybacks covers CORE-2346:
+// profileSessions and controlSession apply the same 2-minute activity window
+// as Console liveSessions.
+func TestProfileSessionsAndControlExcludeIdlePlaybacks(t *testing.T) {
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	handler := newTestHandlerWithStore(st)
+
+	recordActive(t, st, "session-default", "profile-default", "device-tv", "media-direct", "media-alpha", false)
+
+	idleSince := time.Now().Add(-store.LiveSessionActivityWindow - time.Minute)
+	storetest.BackdateStreamTokenActivity(t, dataDir, "session-default", idleSince)
+
+	data, errs := post(t, handler, `{"query":"query { profileSessions { sessionID } }"}`, authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("profileSessions errors = %#v", errs)
+	}
+	var got []ProfileSessionInfo
+	if err := json.Unmarshal(data["profileSessions"], &got); err != nil {
+		t.Fatalf("decode profileSessions: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("profileSessions for idle playback = %#v, want none", got)
+	}
+
+	_, errs = controlSessionPost(t, handler, "session-default", "pause", authorizeManager)
+	if len(errs) == 0 || !strings.Contains(errs[0].Message, "no active playback") {
+		t.Fatalf("controlSession on idle playback errors = %#v, want no active playback", errs)
+	}
+
+	// A progress report restores both profileSessions and controlSession.
+	_, errs = post(t, handler, `{"query":"mutation { reportPlayback(mediaID: \"media-alpha\", positionSeconds: 15, durationSeconds: 120) { mediaID } }"}`, authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("reportPlayback errors = %#v", errs)
+	}
+	data, errs = post(t, handler, `{"query":"query { profileSessions { sessionID } }"}`, authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("profileSessions after progress errors = %#v", errs)
+	}
+	if err := json.Unmarshal(data["profileSessions"], &got); err != nil {
+		t.Fatalf("decode profileSessions after progress: %v", err)
+	}
+	if len(got) != 1 || got[0].SessionID != "session-default" {
+		t.Fatalf("profileSessions after progress = %#v, want session-default", got)
+	}
+	if _, errs := controlSessionPost(t, handler, "session-default", "pause", authorizeManager); len(errs) != 0 {
+		t.Fatalf("controlSession after progress errors = %#v", errs)
 	}
 }
 

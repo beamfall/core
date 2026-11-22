@@ -23,6 +23,7 @@ import (
 
 	"github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
 )
 
 func testV1ScanEnqueuer(st *store.Store) V1ScanEnqueuer {
@@ -1239,5 +1240,51 @@ func TestV1PlaybackControlAnchorSetListsOnlyVisibleMedia(t *testing.T) {
 	}
 	if payload.MediaID != "media-alpha" || len(payload.PlayingMediaIDs) != 1 || payload.PlayingMediaIDs[0] != "media-alpha" {
 		t.Fatalf("payload media/playing = %q/%v, want media-alpha/[media-alpha]", payload.MediaID, payload.PlayingMediaIDs)
+	}
+}
+
+// TestV1SessionsAndControlExcludeIdlePlaybacks covers CORE-2346: /v1/sessions
+// and /v1/playback-control apply the same 2-minute activity window as Console
+// liveSessions.
+func TestV1SessionsAndControlExcludeIdlePlaybacks(t *testing.T) {
+	dataDir := storetest.MigratedDataDir(t)
+	srv, st := newTestServerWithStoreAt(t, dataDir)
+	ctx := context.Background()
+	future := time.Now().UTC().Add(time.Hour)
+	if err := st.RecordStreamToken(ctx, "session-default", "profile-default", "device-tv", "media-direct", "media-alpha", false, future); err != nil {
+		t.Fatalf("RecordStreamToken: %v", err)
+	}
+	readKey := mintKey(t, st, "read-idle", "profile-default", store.ScopeReadSessions)
+	controlKey := mintKey(t, st, "control-idle", "profile-default", store.ScopePlaybackControl)
+
+	rec := v1Get(t, srv, "/v1/sessions", readKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /v1/sessions = %d: %s", rec.Code, rec.Body.String())
+	}
+	var listed v1SessionsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode /v1/sessions: %v", err)
+	}
+	if len(listed.Sessions) != 1 {
+		t.Fatalf("active /v1/sessions = %#v, want 1", listed.Sessions)
+	}
+
+	storetest.BackdateStreamTokenActivity(t, dataDir, "session-default", time.Now().Add(-store.LiveSessionActivityWindow-time.Minute))
+
+	rec = v1Get(t, srv, "/v1/sessions", readKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /v1/sessions (idle) = %d: %s", rec.Code, rec.Body.String())
+	}
+	listed.Sessions = nil
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode /v1/sessions (idle): %v", err)
+	}
+	if len(listed.Sessions) != 0 {
+		t.Fatalf("idle /v1/sessions = %#v, want none", listed.Sessions)
+	}
+
+	rec = v1Post(t, srv, "/v1/playback-control", controlKey, `{"sessionID":"session-default","command":"pause"}`)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("POST /v1/playback-control (idle) = %d, want 404: %s", rec.Code, rec.Body.String())
 	}
 }

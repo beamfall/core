@@ -79,15 +79,17 @@ type activeLedgerRow struct {
 	lastActive time.Time
 }
 
-// ActiveSessions returns every currently-active playback session for the
-// operator Console. The read spans both databases — the ledger
-// lives in events, Device/Profile/Media in catalog — so it gathers the ledger
-// first, then resolves catalog details in a second pass (the two stores are
-// separate connections; SQLite cannot join across them). Expired ledger rows
-// are filtered out by the same lazy-sweep the My Data read uses, so the
-// dashboard shows only what is actually live. Media outside the operator's
-// LibraryFilter keep their row (active load is never understated) but lose their
-// identifying fields.
+// ActiveSessions returns every currently-active playback session: unexpired
+// media-direct/media-hls tokens whose playback has not ended and whose last
+// grant or progress report is within LiveSessionActivityWindow (CORE-2305,
+// CORE-2346). The read spans both databases — the ledger lives in events,
+// Device/Profile/Media in catalog — so it gathers the ledger first, then
+// resolves catalog details in a second pass (the two stores are separate
+// connections; SQLite cannot join across them). Expired ledger rows are
+// filtered out by the same lazy-sweep the My Data read uses, so callers see
+// only what is actually live. Media outside the caller's LibraryFilter keep
+// their row (active load is never understated) but lose their identifying
+// fields.
 func (s *Store) ActiveSessions(ctx context.Context, now time.Time, filter LibraryFilter) ([]ActiveSession, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -221,13 +223,15 @@ func (s *Store) ActiveSessions(ctx context.Context, now time.Time, filter Librar
 // too are excluded; a session shows up only once it holds a direct or HLS token.
 func (s *Store) activeLedgerRows(ctx context.Context, now time.Time) ([]activeLedgerRow, error) {
 	nowMS := timeToMillis(now)
+	activeSinceMS := timeToMillis(now.Add(-LiveSessionActivityWindow))
 	_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE expires_at_ms <= ?`, nowMS)
 	rows, err := s.eventsR.QueryContext(ctx, `
 		SELECT session_id, profile_id, device_id, target, media_id, expires_at_ms, last_active_ms
 		FROM stream_token_ledger
-		WHERE expires_at_ms > ? AND target IN ('media-direct', 'media-hls') AND last_active_ms >= 0
+		WHERE expires_at_ms > ? AND target IN ('media-direct', 'media-hls')
+		  AND last_active_ms > 0 AND last_active_ms >= ?
 		ORDER BY session_id, media_id, target
-	`, nowMS)
+	`, nowMS, activeSinceMS)
 	if err != nil {
 		return nil, err
 	}

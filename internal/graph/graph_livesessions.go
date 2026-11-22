@@ -88,23 +88,18 @@ func (h *Handler) playDelivery(s store.ActiveSession) (method, reason string, bi
 // like the other Console reads — a restricted-Library session the operator
 // hasn't revealed appears with its media fields suppressed.
 //
-// A grant alone does not prove a playback is still running: grants live for
-// hours and a closed or crashed player never revokes them. So a playback with
-// no new grant and no progress report within store.LiveSessionActivityWindow is
-// left out (CORE-2305), and Transcoding follows the reported play method so the
-// two fields never disagree.
+// store.ActiveSessions leaves out ended playbacks and playbacks with no new
+// grant or progress report within store.LiveSessionActivityWindow (CORE-2305,
+// CORE-2346), and Transcoding follows the reported play method so the two
+// fields never disagree.
 func (h *Handler) liveSessions(ctx context.Context, scope auth.Scope) ([]LiveSessionInfo, error) {
 	now := time.Now().UTC()
 	sessions, err := h.store.ActiveSessions(ctx, now, scope.LibraryFilter())
 	if err != nil {
 		return nil, err
 	}
-	activeSince := now.Add(-store.LiveSessionActivityWindow)
 	out := make([]LiveSessionInfo, 0, len(sessions))
 	for _, s := range sessions {
-		if s.LastActiveAt.Before(activeSince) {
-			continue
-		}
 		method, reason, bitrate := h.playDelivery(s)
 		out = append(out, LiveSessionInfo{
 			SessionID:       string(s.SessionID),
