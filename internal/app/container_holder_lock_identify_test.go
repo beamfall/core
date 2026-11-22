@@ -145,38 +145,49 @@ func TestFixMatchOrdinalFailureKeepsHolderLink(t *testing.T) {
 	}
 }
 
-// TestFixMatchZeroEntityDateIsAbsent (CORE-3128): hydration follows the
-// metadata commit, so a scraped Entity value the store refuses would leave a
-// committed ordinal that no retry can hydrate. 0001-01-01 parses as Go's zero
-// time, which the store reads as no value; it is dropped as absent instead.
-func TestFixMatchZeroEntityDateIsAbsent(t *testing.T) {
-	ctx := context.Background()
-	st, library, media, endpoint := holderLockFixture(t, map[string]string{
-		"/item/1": `{"title":"Origin","release_date":"1999-03-31","group":{"id":77,"name":"Original Set","first":"2000-01-01"}}`,
-		"/item/2": `{"title":"Replacement","release_date":"1999-03-31","group":{"id":88,"name":"New Set","first":"0001-01-01"}}`,
-	})
-	bundle := scraperHolderBundle(endpoint, "group")
-	bundle.EntityKinds[0].Fields = append(bundle.EntityKinds[0].Fields, plugin.FieldSpec{Name: "first", Type: "date"})
-	bundle.Scrapers[0].EntityMaps[0].FieldMap["first"] = "first"
-	service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), bundle, st)
-	service.SetEntities(st)
-	if err := service.Apply(ctx, media, "demo", "item", "1"); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.ApplyFixMatch(ctx, media, "demo", "item", "2", nil, &store.MediaOrdinal{Index: 3}, "profile-default"); err != nil {
-		t.Fatalf("fix match with a zero entity date: %v", err)
-	}
-	replacement := identify.EntityIDForName(library, "set", "88")
-	if got := holderOf(t, service, media); got != replacement {
-		t.Fatalf("held by %q, want %q", got, replacement)
-	}
-	entity, err := st.Entity(ctx, replacement, metadataLibraryFilter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, field := range entity.Fields {
-		if field.Name == "first" {
-			t.Fatalf("zero date stored as %v, want the field absent", field.Date)
-		}
+// TestFixMatchUnstorableEntityValuesAreAbsent (CORE-3128): hydration follows
+// the metadata commit, so a scraped Entity value the store cannot keep would
+// leave a committed ordinal that no retry can hydrate. Go's zero time and the
+// epoch both map to the store's "no date", and NaN binds as NULL; each is
+// dropped as absent instead.
+func TestFixMatchUnstorableEntityValuesAreAbsent(t *testing.T) {
+	for _, tc := range []struct{ name, first, score string }{
+		{"zero time", `"0001-01-01"`, `"7.5"`},
+		{"epoch", `"1970-01-01"`, `"7.5"`},
+		{"NaN", `"2000-01-01"`, `"NaN"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			st, library, media, endpoint := holderLockFixture(t, map[string]string{
+				"/item/1": `{"title":"Origin","release_date":"1999-03-31","group":{"id":77,"name":"Original Set","first":"2000-01-01","score":"7.5"}}`,
+				"/item/2": `{"title":"Replacement","release_date":"1999-03-31","group":{"id":88,"name":"New Set","first":` + tc.first + `,"score":` + tc.score + `}}`,
+			})
+			bundle := scraperHolderBundle(endpoint, "group")
+			bundle.EntityKinds[0].Fields = append(bundle.EntityKinds[0].Fields,
+				plugin.FieldSpec{Name: "first", Type: "date"}, plugin.FieldSpec{Name: "score", Type: "number"})
+			bundle.Scrapers[0].EntityMaps[0].FieldMap["first"] = "first"
+			bundle.Scrapers[0].EntityMaps[0].FieldMap["score"] = "score"
+			service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), bundle, st)
+			service.SetEntities(st)
+			if err := service.Apply(ctx, media, "demo", "item", "1"); err != nil {
+				t.Fatal(err)
+			}
+			if err := service.ApplyFixMatch(ctx, media, "demo", "item", "2", nil, &store.MediaOrdinal{Index: 3}, "profile-default"); err != nil {
+				t.Fatalf("fix match: %v", err)
+			}
+			replacement := identify.EntityIDForName(library, "set", "88")
+			if got := holderOf(t, service, media); got != replacement {
+				t.Fatalf("held by %q, want %q", got, replacement)
+			}
+			entity, err := st.Entity(ctx, replacement, metadataLibraryFilter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range entity.Fields {
+				if (field.Name == "first" && tc.first != `"2000-01-01"`) || (field.Name == "score" && tc.score == `"NaN"`) {
+					t.Fatalf("unstorable %s stored as %+v, want it absent", field.Name, field)
+				}
+			}
+		})
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -758,7 +759,9 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 		return store.MediaField{Name: name, Type: store.EntityFieldType(fieldType), Text: value}, true
 	case store.EntityFieldNumber:
 		number, err := strconv.ParseFloat(value, 64)
-		if err != nil {
+		if err != nil || math.IsNaN(number) || math.IsInf(number, 0) {
+			// NaN binds as SQL NULL and neither survives the wire, so an
+			// unusable number is absent like an unparseable one.
 			return store.MediaField{}, false
 		}
 		return store.MediaField{Name: name, Type: store.EntityFieldNumber, Number: number}, true
@@ -771,9 +774,10 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 	case store.EntityFieldDate:
 		for _, layout := range []string{"2006-01-02", time.RFC3339, time.RFC3339Nano} {
 			if when, err := time.Parse(layout, value); err == nil {
-				if when.IsZero() {
-					// 0001-01-01 is Go's zero time, which the store reads as
-					// no value and refuses; treat it as absent.
+				if when.IsZero() || when.UnixMilli() == 0 {
+					// The store keeps dates as Unix milliseconds with 0 for
+					// no value, so neither Go's zero time nor the epoch
+					// round-trips; a write it would refuse later is absent.
 					return store.MediaField{}, false
 				}
 				return store.MediaField{Name: name, Type: store.EntityFieldDate, Date: when.UTC()}, true
