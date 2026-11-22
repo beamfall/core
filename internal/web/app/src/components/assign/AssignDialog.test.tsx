@@ -180,7 +180,7 @@ describe("Assign metadata", () => {
       await user.click(dialog.getByRole("button", { name: "Apply" }));
       expect(await dialog.findByText("Applied")).toBeVisible();
       expect(fixMatch).toHaveBeenCalledWith(
-        { mediaID: "m1", ...ids, clearLocks: clear ? ["title", "ordinal"] : ["ordinal"] },
+        { mediaID: "m1", ...ids, clearLocks: clear ? ["title"] : [] },
         undefined,
       );
       // Toggling another field's lock never changes whether the ordinal is
@@ -188,7 +188,7 @@ describe("Assign metadata", () => {
       expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith({
         mediaID: "m1",
         ...ids,
-        clearLocks: ["ordinal"],
+        clearLocks: [],
       });
     },
   );
@@ -208,7 +208,7 @@ describe("Assign metadata", () => {
       mediaID: "m1",
       ...ids,
       candidateID: "tt0084787",
-      clearLocks: ["ordinal"],
+      clearLocks: [],
     });
     expect(fixMatchCandidates).not.toHaveBeenCalled();
 
@@ -219,7 +219,7 @@ describe("Assign metadata", () => {
     await dialog.findByText("A corrected overview.");
     await user.click(apply);
     expect(fixMatch).toHaveBeenCalledWith(
-      { mediaID: "m1", ...ids, candidateID: "tt00847879", clearLocks: ["ordinal"] },
+      { mediaID: "m1", ...ids, candidateID: "tt00847879", clearLocks: [] },
       undefined,
     );
   });
@@ -245,7 +245,7 @@ describe("Assign metadata", () => {
       await within(table.getByRole("row", { name: /Item m3/ })).findByText("Applied"),
     ).toBeVisible();
     expect(vi.mocked(fixMatch).mock.calls.map(([vars]) => vars)).toEqual(
-      selection.map((item) => ({ ...item, ...ids, clearLocks: ["ordinal"] })),
+      selection.map((item) => ({ ...item, ...ids, clearLocks: [] })),
     );
     expect(fixMatchPreview).toHaveBeenCalledTimes(3);
     expect(fixMatchLockedFields).toHaveBeenCalledTimes(3);
@@ -424,7 +424,7 @@ describe("Assign metadata", () => {
     await user.click(await screen.findByRole("checkbox", { name: /I confirm/ }));
     await user.click(screen.getByRole("button", { name: "Apply" }));
     expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
-      { mediaID: "m1", ...ids, clearLocks: ["ordinal"] },
+      { mediaID: "m1", ...ids, clearLocks: [] },
       epoch.signal,
     );
     await act(async () => epoch.abort());
@@ -524,7 +524,7 @@ describe("Assign catalog children", () => {
       ...show,
       sequence: row.sequence,
       index: row.index,
-      clearLocks: ["ordinal"],
+      clearLocks: [],
     };
     expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith(expected);
     expect(
@@ -546,10 +546,10 @@ describe("Assign catalog children", () => {
     expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith({
       mediaID: "m1",
       ...show,
-      clearLocks: ["ordinal"],
+      clearLocks: [],
     });
     expect(fixMatch).toHaveBeenCalledExactlyOnceWith(
-      { mediaID: "m1", ...show, clearLocks: ["ordinal"] },
+      { mediaID: "m1", ...show, clearLocks: [] },
       undefined,
     );
   });
@@ -628,7 +628,7 @@ describe("Assign catalog children", () => {
       ...show,
       sequence: "A-side",
       index: 0,
-      clearLocks: ["ordinal"],
+      clearLocks: [],
     };
     expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith(expected);
     expect(await dialog.findByText("— → Release A-side · Bonus track 0")).toBeVisible();
@@ -650,7 +650,7 @@ describe("Assign catalog children", () => {
     await user.type(dialog.getByRole("spinbutton", { name: "Episode" }), "7");
     await user.click(dialog.getByRole("button", { name: "Preview changes" }));
     expect(await dialog.findByText("— → Season 2 · Episode 7")).toBeVisible();
-    const expected = { mediaID: "m1", ...show, sequence: "2", index: 7, clearLocks: ["ordinal"] };
+    const expected = { mediaID: "m1", ...show, sequence: "2", index: 7, clearLocks: [] };
     expect(fixMatchPreview).toHaveBeenCalledExactlyOnceWith(expected);
     await user.click(dialog.getByRole("button", { name: "Apply" }));
     expect(fixMatch).toHaveBeenCalledExactlyOnceWith(expected, undefined);
@@ -874,7 +874,7 @@ describe("Assign catalog children", () => {
       ...show,
       sequence: "2",
       index,
-      clearLocks: ["ordinal"],
+      clearLocks: [],
     }));
     expect(
       vi

@@ -97,15 +97,11 @@ function diffKey(row: Pairing) {
 }
 
 // The lock and ordinal arguments Apply sends for a row. Preview sends the same
-// ones. clearLocks is always explicit and names "ordinal" exactly when the row
-// replaces the operator ordinal, so the server never falls back to comparing
-// candidates and toggling another field's lock cannot change the ordinal.
+// ones. clearLocks is always explicit, even when empty, so the server clears
+// the operator ordinal exactly when it is named and never falls back to
+// comparing candidates; toggling another field's lock cannot change that.
 function ordinalVars(row: Pick<Pairing, "locked" | "clearLocks" | "ordinal">) {
-  if (keepsOrdinal(row)) return { clearLocks: row.clearLocks };
-  const clearLocks = row.clearLocks.includes("ordinal")
-    ? row.clearLocks
-    : [...row.clearLocks, "ordinal"];
-  return { clearLocks, ...row.ordinal };
+  return { clearLocks: row.clearLocks, ...(keepsOrdinal(row) ? undefined : row.ordinal) };
 }
 
 function previewPairing(candidate: MatchTarget, row: Pairing) {

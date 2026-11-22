@@ -211,7 +211,7 @@ describe("UnmatchedPage", () => {
           pluginID: "filmtv",
           scraperID: "tmdb",
           candidateID: "outsider-2020",
-          clearLocks: ["ordinal"],
+          clearLocks: [],
         },
         undefined,
       );
@@ -233,7 +233,7 @@ describe("UnmatchedPage", () => {
       pluginID: "filmtv",
       scraperID: "tmdb",
       candidateID: "outsider-2020",
-      clearLocks: ["ordinal"],
+      clearLocks: [],
     });
     expect(fixMatch).not.toHaveBeenCalled();
 
@@ -279,7 +279,7 @@ describe("UnmatchedPage", () => {
           pluginID: "filmtv",
           scraperID: "tmdb",
           candidateID: "thing-1982",
-          clearLocks: ["ordinal"],
+          clearLocks: [],
         },
         undefined,
       ),
