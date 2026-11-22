@@ -95,11 +95,21 @@ interface Active {
 }
 
 let active: Active | null = null;
-// Bumped on every start (when it is asked for, not when it lands), stop and
-// epoch end; a top-up or start that sees it change stops before its next write.
+// Bumped whenever the active Station changes (start lands, stop, epoch end);
+// a top-up or start that sees it change makes no further queue write.
 let generation = 0;
-// Starts awaiting the server; no top-up writes while one may replace the queue.
-let starting = 0;
+// Bumped when a start is asked for; an older start that sees it change is overtaken.
+let startSeq = 0;
+// This tab's radio queue writes run one at a time, each checking it is still
+// wanted when its turn comes: a start never interleaves with a top-up's add,
+// and an overtaken start or a superseded top-up writes nothing.
+let writes: Promise<unknown> = Promise.resolve();
+
+function exclusive<T>(write: () => Promise<T>): Promise<T> {
+  const run = writes.then(write, write);
+  writes = run.catch(() => {});
+  return run;
+}
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -178,73 +188,72 @@ interface RadioStartInput {
 /**
  * Starts a Station into the Profile's Play Queue. A queue that already holds
  * the listener's own items is replaced only with confirmReplace; without it
- * the result asks for confirmation and nothing changes.
+ * the result asks for confirmation and nothing changes. The playing Station
+ * keeps playing until this one lands, so a retune that needs confirming keeps
+ * it. A stop, a newer start or an identity change first cancels this start:
+ * it writes nothing, or activates nothing if its write already went out.
  */
 export async function startRadio(input: RadioStartInput): Promise<RadioStartResult> {
-  starting++;
-  try {
-    return await startOnce(input);
-  } finally {
-    starting--;
-  }
-}
-
-async function startOnce(input: RadioStartInput): Promise<RadioStartResult> {
   const station = { seedKind: input.seedKind, seedID: input.seedID, rules: input.rules ?? {} };
-  // Starting halts the playing Station's top-up at once; the Station itself
-  // stays until this one lands, so a retune that needs confirming keeps it.
-  // A stop, a newer start or an identity change before the reply cancels this
-  // start: its titles never reach a later identity.
-  const mine = ++generation;
+  const mineStart = ++startSeq;
+  const mine = generation;
   const epoch = getIdentityEpochSignal();
   const overtaken = () =>
-    generation !== mine || getIdentityEpochSignal() !== epoch || !!epoch?.aborted;
+    startSeq !== mineStart ||
+    generation !== mine ||
+    getIdentityEpochSignal() !== epoch ||
+    !!epoch?.aborted;
   // The same seed makes the preview and the started window identical, so the
   // preview's reasons describe what was queued; the server's reply says which.
   const seed = randomSeed();
   const preview = await generate(station, seed);
   if (overtaken()) return { status: "cancelled" };
   if (!preview.candidates.length) return { status: "empty", message: preview.explanation };
-  let queued: { id: string }[];
-  try {
-    const data = await graphql<{ stationStart: { id: string }[] }>(START, {
-      seedKind: station.seedKind,
-      seedID: station.seedID,
-      seed,
-      rulesJSON: rulesJSON(station.rules),
-      confirmReplace: input.confirmReplace ?? false,
-      expectedProfileID: input.profileID,
-    });
-    queued = data.stationStart ?? [];
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("confirmReplace")) {
-      return overtaken() ? { status: "cancelled" } : { status: "needs-confirm" };
+  return exclusive(async (): Promise<RadioStartResult> => {
+    if (overtaken()) return { status: "cancelled" };
+    let queued: { id: string }[];
+    try {
+      const data = await graphql<{ stationStart: { id: string }[] }>(START, {
+        seedKind: station.seedKind,
+        seedID: station.seedID,
+        seed,
+        rulesJSON: rulesJSON(station.rules),
+        confirmReplace: input.confirmReplace ?? false,
+        expectedProfileID: input.profileID,
+      });
+      queued = data.stationStart ?? [];
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("confirmReplace")) {
+        return overtaken() ? { status: "cancelled" } : { status: "needs-confirm" };
+      }
+      throw error;
     }
-    throw error;
-  }
-  if (overtaken()) return { status: "cancelled" };
-  if (!queued.length) return { status: "empty", message: preview.explanation };
-  const why = new Map(preview.candidates.map((c) => [c.mediaID, c.explanation]));
-  const reasons = Object.fromEntries(queued.map(({ id }) => [id, why.get(id) ?? ""]));
-  const started: RadioStation = {
-    ...station,
-    profileID: input.profileID,
-    ruleTitles: input.ruleTitles,
-    reasons,
-  };
-  setActive(started, epoch);
-  return { status: "started", firstMediaID: queued[0].id, station: started };
+    if (overtaken()) return { status: "cancelled" };
+    if (!queued.length) return { status: "empty", message: preview.explanation };
+    const why = new Map(preview.candidates.map((c) => [c.mediaID, c.explanation]));
+    const reasons = Object.fromEntries(queued.map(({ id }) => [id, why.get(id) ?? ""]));
+    const started: RadioStation = {
+      ...station,
+      profileID: input.profileID,
+      ruleTitles: input.ruleTitles,
+      reasons,
+    };
+    // Inside the write turn, so the old Station's next add sees it ended.
+    setActive(started, epoch);
+    return { status: "started", firstMediaID: queued[0].id, station: started };
+  });
 }
 
 /**
  * Adds up to RADIO_TOP_UP related Media the queue does not hold yet, and
  * returns how many were added. The server leaves out what is already queued
  * before it samples, so each top-up reaches further than the last. A stop,
- * retune or identity change while this runs stops it before its next write.
+ * retune or identity change while this runs stops it before its next write,
+ * and a retune's replace waits for an add already sent.
  */
 export async function topUpRadio(station: RadioStation, queued: ReadonlySet<string>) {
   const mine = generation;
-  const live = () => generation === mine && starting === 0 && current() === station;
+  const live = () => generation === mine && current() === station;
   if (!live()) return 0;
   const { candidates } = await generate(
     { ...station, rules: { ...station.rules, excludeQueued: true } },
@@ -257,15 +266,21 @@ export async function topUpRadio(station: RadioStation, queued: ReadonlySet<stri
   const reasons = { ...station.reasons };
   let added = 0;
   for (const candidate of fresh) {
-    if (!live()) break;
-    try {
-      await graphql(ADD, { mediaID: candidate.mediaID, expectedProfileID: station.profileID });
-    } catch {
-      // A locked or removed item is skipped; the rest still join the queue.
-      continue;
+    const outcome = await exclusive(async () => {
+      if (!live()) return "stopped";
+      try {
+        await graphql(ADD, { mediaID: candidate.mediaID, expectedProfileID: station.profileID });
+        return "added";
+      } catch {
+        // A locked or removed item is skipped; the rest still join the queue.
+        return "skipped";
+      }
+    });
+    if (outcome === "stopped") break;
+    if (outcome === "added") {
+      reasons[candidate.mediaID] = candidate.explanation;
+      added++;
     }
-    reasons[candidate.mediaID] = candidate.explanation;
-    added++;
   }
   if (added && live() && active) {
     // The same Station, now naming why its new items were picked.

@@ -193,24 +193,100 @@ describe("radio", () => {
     expect(activeRadio("p1")).toBeNull();
   });
 
-  // Review round 2, P2: Stop while a start waits keeps radio stopped, and a
-  // start halts the playing Station's top-up at once.
+  // Review round 2, P2: Stop while a start waits keeps radio stopped.
   it("keeps radio stopped when Stop lands while a start waits", async () => {
-    const playing = await started("a");
+    await started("a");
     let release: (value: unknown) => void = () => {};
     vi.mocked(graphql)
       .mockResolvedValueOnce({ stationGenerate: { candidates: candidates("x"), explanation: "" } })
       .mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
     const pending = startRadio({ profileID: "p1", seedKind: "media", seedID: "m2" });
-    expect(activeRadio("p1")?.seedID).toBe("m1");
-    expect(await topUpRadio(playing, new Set(["a"]))).toBe(0);
     await vi.waitFor(() => expect(graphql).toHaveBeenCalledTimes(2));
+    expect(activeRadio("p1")?.seedID).toBe("m1");
 
     stopRadio();
     release({ stationStart: queued("x") });
 
     expect(await pending).toEqual({ status: "cancelled" });
     expect(activeRadio("p1")).toBeNull();
+  });
+
+  // Review round 4, P2: radio's queue writes run one at a time, so a retune's
+  // replace waits for an add already sent and the old Station adds no more.
+  it("holds a retune's replace until an add already sent returns", async () => {
+    const playing = await started("a");
+    let releaseAdd: (value: unknown) => void = () => {};
+    vi.mocked(graphql)
+      .mockResolvedValueOnce({
+        stationGenerate: { candidates: candidates("b", "c"), explanation: "" },
+      })
+      .mockReturnValueOnce(new Promise((resolve) => (releaseAdd = resolve)));
+    const topUp = topUpRadio(playing, new Set(["a"]));
+    await vi.waitFor(() => expect(graphql).toHaveBeenCalledTimes(2));
+    vi.mocked(graphql)
+      .mockResolvedValueOnce({ stationGenerate: { candidates: candidates("x"), explanation: "" } })
+      .mockResolvedValueOnce({ stationStart: queued("x") })
+      .mockResolvedValue({ queueAdd: [] });
+    const retune = startRadio({
+      profileID: "p1",
+      seedKind: "media",
+      seedID: "m2",
+      confirmReplace: true,
+    });
+    await vi.waitFor(() => expect(graphql).toHaveBeenCalledTimes(3));
+    const queries = () => vi.mocked(graphql).mock.calls.map(([query]) => query);
+    expect(queries().some((q) => q.includes("stationStart"))).toBe(false);
+
+    releaseAdd({ queueAdd: [] });
+
+    expect(await retune).toMatchObject({ status: "started" });
+    expect(await topUp).toBe(1);
+    const writes = queries().filter((q) => q.includes("queueAdd") || q.includes("stationStart"));
+    expect(writes.map((q) => (q.includes("stationStart") ? "start" : "add"))).toEqual([
+      "add",
+      "start",
+    ]);
+  });
+
+  // Review round 4, P2: a top-up asked for while a retune waits still runs
+  // once the server asks to confirm, so a declined retune leaves radio going.
+  it("tops up after a retune the server asks to confirm", async () => {
+    const playing = await started("a");
+    let rejectStart: (reason: unknown) => void = () => {};
+    vi.mocked(graphql)
+      .mockResolvedValueOnce({ stationGenerate: { candidates: candidates("x"), explanation: "" } })
+      .mockReturnValueOnce(new Promise((_, fail) => (rejectStart = fail)))
+      .mockResolvedValueOnce({ stationGenerate: { candidates: candidates("b"), explanation: "" } })
+      .mockResolvedValue({ queueAdd: [] });
+    const retune = startRadio({ profileID: "p1", seedKind: "media", seedID: "m2" });
+    await vi.waitFor(() => expect(graphql).toHaveBeenCalledTimes(2));
+    const topUp = topUpRadio(playing, new Set(["a"]));
+
+    rejectStart(new ApiError("queue has items; pass confirmReplace to replace it", 400));
+
+    expect(await retune).toEqual({ status: "needs-confirm" });
+    expect(await topUp).toBe(1);
+    expect(activeRadio("p1")?.reasons).toMatchObject({ b: "Why b" });
+  });
+
+  // Review round 4, P2: a start overtaken before its write sends none.
+  it("sends no queue write for a start a newer one overtook", async () => {
+    let releasePreview: (value: unknown) => void = () => {};
+    vi.mocked(graphql).mockReturnValueOnce(new Promise((resolve) => (releasePreview = resolve)));
+    const first = startRadio({ profileID: "p1", seedKind: "media", seedID: "m1" });
+    vi.mocked(graphql)
+      .mockResolvedValueOnce({ stationGenerate: { candidates: candidates("b"), explanation: "" } })
+      .mockResolvedValueOnce({ stationStart: queued("b") });
+    await startRadio({ profileID: "p1", seedKind: "media", seedID: "m2", confirmReplace: true });
+
+    releasePreview({ stationGenerate: { candidates: candidates("a"), explanation: "" } });
+
+    expect(await first).toEqual({ status: "cancelled" });
+    const starts = vi
+      .mocked(graphql)
+      .mock.calls.filter(([query]) => query.includes("stationStart"));
+    expect(starts).toHaveLength(1);
+    expect(activeRadio("p1")?.seedID).toBe("m2");
   });
 
   // Review round 2, P2: what earlier builds kept in sessionStorage is cleared.
@@ -248,11 +324,18 @@ describe("radio", () => {
     vi.mocked(graphql)
       .mockResolvedValueOnce({ stationGenerate: { candidates: candidates("b"), explanation: "" } })
       .mockResolvedValueOnce({ stationStart: queued("b") });
-    await startRadio({ profileID: "p1", seedKind: "media", seedID: "m2", confirmReplace: true });
+    const second = startRadio({
+      profileID: "p1",
+      seedKind: "media",
+      seedID: "m2",
+      confirmReplace: true,
+    });
+    await vi.waitFor(() => expect(graphql).toHaveBeenCalledTimes(3));
 
     reject(new ApiError("queue has items; pass confirmReplace to replace it", 400));
 
     expect(await first).toEqual({ status: "cancelled" });
+    expect(await second).toMatchObject({ status: "started" });
     expect(activeRadio("p1")?.seedID).toBe("m2");
   });
 });
