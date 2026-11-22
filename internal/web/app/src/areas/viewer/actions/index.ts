@@ -6,6 +6,7 @@
 //   useItemHide(target, title, { enabled })             Hide for this Profile (CORE-2836)
 export {
   notifyEngagementChanged,
+  readEngagementEpoch,
   useEngagementEpoch,
   useEngagementEvents,
 } from "./engagementSync";

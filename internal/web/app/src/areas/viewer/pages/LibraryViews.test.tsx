@@ -8,6 +8,7 @@ import { expectNoAxeViolations } from "@/test/axe";
 import { notifyEngagementChanged } from "../actions/engagementSync";
 import { DEFAULT_BROWSE_STATE, fetchLibraryItems } from "../lib/libraryBrowse";
 import {
+  cachedLibraryEntities,
   fetchLibraryEntities,
   type LibraryEntitiesPage,
   type LibraryEntitiesRequest,
@@ -16,7 +17,11 @@ import { LibraryBrowsePage } from "./LibraryBrowsePage";
 
 vi.mock("../lib/libraryViews", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/libraryViews")>();
-  return { ...actual, fetchLibraryEntities: vi.fn() };
+  return {
+    ...actual,
+    fetchLibraryEntities: vi.fn(),
+    cachedLibraryEntities: vi.fn(() => undefined),
+  };
 });
 vi.mock("../lib/libraryBrowse", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/libraryBrowse")>();
@@ -134,6 +139,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.mocked(fetchLibraryEntities).mockReset();
+  vi.mocked(cachedLibraryEntities).mockReset();
   vi.mocked(fetchLibraryItems).mockReset();
   window.localStorage.clear();
 });
@@ -144,6 +150,35 @@ afterEach(() => {
 const SLOW_FLOW_TIMEOUT = 15_000;
 
 describe("Library views (CORE-2362)", () => {
+  it("paints a Library opened again from its cached read and reads it afresh behind it (CORE-3064)", async () => {
+    vi.mocked(cachedLibraryEntities).mockImplementation((request) => {
+      const page = entitiesPage({ ...request, kind: request.kind ?? "maker" });
+      return {
+        ...page,
+        items: page.items.map((item) => ({ ...item, title: `${item.title} (cached)` })),
+      };
+    });
+    const fresh: Array<() => void> = [];
+    vi.mocked(fetchLibraryEntities).mockImplementation(
+      (request) => new Promise((resolve) => fresh.push(() => resolve(entitiesPage(request)))),
+    );
+    renderAt("/n/tunes/all");
+
+    const grid = await screen.findByRole("list", { name: "Makers" });
+    expect(within(grid).getByText("Maker A (cached)")).toBeInTheDocument();
+    // The Library read names the cached kind, so it is the same read as the
+    // grid's first page and the two share one request.
+    expect(vi.mocked(fetchLibraryEntities).mock.calls.map(([request]) => request.kind)).toEqual([
+      "maker",
+      "maker",
+    ]);
+    await act(async () => {
+      for (const resolve of fresh) resolve();
+    });
+    expect(await within(grid).findByText("Maker A")).toBeInTheDocument();
+    expect(within(grid).queryByText("Maker A (cached)")).not.toBeInTheDocument();
+  });
+
   it("opens on the first browse kind with a switcher for every kind, the Media and Folders views", async () => {
     renderAt("/n/tunes/all");
 
