@@ -565,8 +565,10 @@ export function usePlayer(
   const [retryKey, setRetryKey] = useState(0);
   // The <video> the current load plays on. Try again after an error plays on
   // a new element, so the reporting listeners follow this, not the first
-  // element the ref held (CORE-1703).
-  const [loadedVideo, setLoadedVideo] = useState<HTMLVideoElement | null>(null);
+  // element the ref held (CORE-1703). Each load sets a new object, so the
+  // listeners rebind even when two loads in a row start with no element (an
+  // error screen shows none) and the ref fills in on the next render.
+  const [loadedVideo, setLoadedVideo] = useState<{ element: HTMLVideoElement | null } | null>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   // A ref, not an effect dependency: the next item rides along with the load
@@ -771,7 +773,7 @@ export function usePlayer(
     let recoveryTimer: number | null = null;
     // Point the reporting listeners at this load's element before anything
     // can play on it.
-    setLoadedVideo(videoRef.current);
+    setLoadedVideo({ element: videoRef.current });
     // A reload of this item (Try again, a quality or key change) carries on
     // the same play and its queue, still sending what it holds; anything else
     // starts a new play, with a new playback ID and queue.
@@ -1546,7 +1548,7 @@ export function usePlayer(
 
   // Report on pause / seek / end edges of the element the load plays on.
   useEffect(() => {
-    const video = loadedVideo ?? videoRef.current;
+    const video = loadedVideo?.element ?? videoRef.current;
     if (!video) return;
     // Play history credits time only after a playing report, so resuming
     // reports too (CORE-1703).
