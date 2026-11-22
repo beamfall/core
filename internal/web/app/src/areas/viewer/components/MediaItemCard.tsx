@@ -18,6 +18,7 @@ import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState } from "../lib/mediaDetail";
 import { fetchPreviewInfo } from "../lib/playback";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
+import { isSpoilerCandidate, revealItem, useSpoilerGuard } from "../lib/spoilerGuard";
 import { formatDuration } from "../lib/trackList";
 import { type PlayerNavState, type PlayQueueItem, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
@@ -125,11 +126,19 @@ export function MediaItemCard({
   const primaryLabel = isMedia
     ? t(state.progressPercent === undefined ? "play" : "cardResume")
     : t("cardOpen");
-  const poster = wide
-    ? artworkSlotURL(item, "thumb") || artworkSlotURL(item, "poster")
-    : artworkSlotURL(item, "poster") ||
-      artworkSlotURL(item, "thumb") ||
-      (intrinsicArtwork ? artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "banner") : "");
+  // An unplayed child draws its container's poster, or the glyph, instead of
+  // its own art and never plays a hover preview (spoiler guard, CORE-3057).
+  const spoiler = useSpoilerGuard(isSpoilerCandidate(item, item.container?.id));
+  const spoilerHidden = spoiler.state(item, item.container?.id) === "hidden";
+  const poster = spoilerHidden
+    ? (item.container?.artwork?.poster ?? "")
+    : wide
+      ? artworkSlotURL(item, "thumb") || artworkSlotURL(item, "poster")
+      : artworkSlotURL(item, "poster") ||
+        artworkSlotURL(item, "thumb") ||
+        (intrinsicArtwork
+          ? artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "banner")
+          : "");
   const frameClass = wide ? "bf-poster bf-poster-wide" : artFrameClass(item);
   const showArtwork = poster && failedPoster !== poster;
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -266,7 +275,7 @@ export function MediaItemCard({
   }
 
   function canStartPreview(event?: PointerEvent<HTMLAnchorElement>) {
-    if (!isMedia) {
+    if (!isMedia || spoilerHidden) {
       return false;
     }
     if (event?.pointerType && event.pointerType !== "mouse") {
@@ -297,6 +306,7 @@ export function MediaItemCard({
               })
           : undefined
       }
+      onReveal={spoilerHidden ? () => revealItem(item.id) : undefined}
     />
   );
 

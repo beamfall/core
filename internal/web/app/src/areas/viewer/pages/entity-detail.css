@@ -468,3 +468,103 @@
     flex-basis: calc(var(--bf-row-thumb) * 0.5);
   }
 }
+
+/* Spoiler guard (CORE-3057): a guarded child's still is replaced by the
+   container's art, dimmed, under a closed-eye mark; its summary by a note.
+   A reveal fades the still in, and does not animate under reduced motion. */
+[data-register="viewer"] .bf-child-thumb {
+  position: relative;
+}
+
+[data-register="viewer"] .bf-spoiler-still {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+[data-register="viewer"] .bf-spoiler-still img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.3;
+}
+
+[data-register="viewer"] .bf-spoiler-still svg {
+  position: relative;
+  width: 24px;
+  height: 24px;
+}
+
+[data-register="viewer"] .bf-spoiler-shown {
+  animation: bf-spoiler-in var(--duration-fast) var(--ease-standard);
+}
+
+@keyframes bf-spoiler-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[data-register="viewer"] .bf-spoiler-note {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+[data-register="viewer"] .bf-spoiler-reveal[aria-pressed="true"] {
+  background: var(--control-bg-hover);
+}
+
+[data-register="viewer"] .bf-spoiler-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+[data-register="viewer"] .bf-spoiler-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-spoiler-toggle:hover,
+[data-register="viewer"] .bf-spoiler-toggle[aria-pressed="true"] {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+[data-register="viewer"] .bf-spoiler-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-spoiler-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-register="viewer"] .bf-spoiler-shown {
+    animation: none;
+  }
+  [data-register="viewer"] .bf-spoiler-toggle {
+    transition: none;
+  }
+}

@@ -10,23 +10,32 @@ import { childThumbURL } from "../lib/containerChildren";
 import { itemRuntimeSeconds, rowOrdinals } from "../lib/containerPage";
 import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
+import { isSpoilerCandidate, revealItem, useSpoilerGuard } from "../lib/spoilerGuard";
 import { runtimeParts } from "../lib/viewerFields";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
+import { SpoilerContainerToggle, SpoilerRevealButton, SpoilerStill } from "./SpoilerGuard";
 
 // A container's own video Media as detail rows (CORE-2510): the still, the
 // ordinal its siblings do not share with the runtime, the title once and a
 // two-line summary. The row is a link to the item's detail page; a separate
 // button beside it plays the item with the container's Media as the queue.
-// Values the item lacks are left out.
+// Values the item lacks are left out. With a containerID, unplayed rows keep
+// their still and summary behind the spoiler guard (CORE-3057).
 export function ContainerMediaRows({
   items,
   label,
+  containerID,
+  containerArt,
 }: {
   items: readonly SourceItem[];
   /** Accessible name of the list. */
   label: string;
+  /** The outermost container holding these rows; the spoiler guard needs it. */
+  containerID?: string;
+  /** The container's art, drawn dimmed in place of a guarded still. */
+  containerArt?: string;
 }) {
   const t = useT();
   const locale = useDisplayLocale();
@@ -35,6 +44,11 @@ export function ContainerMediaRows({
   const media = useMemo(() => items.filter((item) => item.kind === "media"), [items]);
   const ordinals = useMemo(() => rowOrdinals(media, locale), [media, locale]);
   const queue = useMemo(() => playQueueOf(media), [media]);
+  const guarded = useMemo(
+    () => media.some((item) => isSpoilerCandidate(item, containerID)),
+    [media, containerID],
+  );
+  const spoiler = useSpoilerGuard(guarded);
   if (media.length === 0) return null;
 
   function play(item: SourceItem) {
@@ -54,99 +68,135 @@ export function ContainerMediaRows({
   }
 
   return (
-    <ol className="bf-rows" aria-label={label}>
-      {media.map((item, index) => {
-        const path = mediaPath("media", item.id);
-        const openDetails = () => navigate(path, { state: linkState(item) });
-        const thumb = childThumbURL(item);
-        const seconds = itemRuntimeSeconds(item);
-        const runtime = seconds ? runtimeParts(seconds) : null;
-        const ordinal = ordinals.get(item.id) ?? "";
-        const progress = resumeProgress(item);
-        const watched = item.engagement?.completed === true;
-        const summary = item.summary?.trim() ?? "";
-        return (
-          <li key={`${item.id}-${index}`} className="bf-row">
-            <Link
-              className="bf-row-link"
-              to={path}
-              onClick={(event) => activateLink(event, openDetails)}
-            >
-              <span className="bf-row-thumb" aria-hidden>
-                {thumb && <img src={artworkBucketURL(thumb, "w320")} alt="" loading="lazy" />}
-                {progress && (
-                  <span
-                    className="bf-child-progress bf-row-progress"
-                    role="progressbar"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={progress.percent}
-                    aria-valuetext={t("mediaDetailProgress", { percent: progress.percent })}
-                  >
-                    <span style={{ width: `${progress.percent}%` }} />
-                  </span>
-                )}
-              </span>
-              <span className="bf-row-text">
-                <span className="bf-row-title">{item.title}</span>
-                {(ordinal || runtime || watched) && (
-                  <span className="bf-child-meta">
-                    {[
-                      ordinal,
-                      runtime &&
-                        (runtime.hours > 0
-                          ? t("mediaDetailRuntimeHours", runtime)
-                          : t("mediaDetailRuntimeMinutes", { minutes: runtime.minutes })),
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                    {watched && (
-                      <span className="bf-child-watched">
-                        <Check aria-hidden />
-                        {t("entityDetailWatched")}
+    <>
+      {guarded && containerID && spoiler.guardOn && (
+        <SpoilerContainerToggle
+          containerID={containerID}
+          revealed={spoiler.containerRevealed(containerID)}
+        />
+      )}
+      <ol className="bf-rows" aria-label={label}>
+        {media.map((item, index) => {
+          const path = mediaPath("media", item.id);
+          const openDetails = () => navigate(path, { state: linkState(item) });
+          const thumb = childThumbURL(item);
+          const seconds = itemRuntimeSeconds(item);
+          const runtime = seconds ? runtimeParts(seconds) : null;
+          const ordinal = ordinals.get(item.id) ?? "";
+          const progress = resumeProgress(item);
+          const watched = item.engagement?.completed === true;
+          const summary = item.summary?.trim() ?? "";
+          const guard = spoiler.state(item, containerID);
+          const hidden = guard === "hidden";
+          return (
+            <li key={`${item.id}-${index}`} className="bf-row">
+              <Link
+                className="bf-row-link"
+                to={path}
+                onClick={(event) => activateLink(event, openDetails)}
+              >
+                <span className="bf-row-thumb" aria-hidden>
+                  {hidden ? (
+                    <SpoilerStill itemID={item.id} art={containerArt} />
+                  ) : (
+                    thumb && (
+                      <img
+                        className={guard === "none" ? undefined : "bf-spoiler-shown"}
+                        src={artworkBucketURL(thumb, "w320")}
+                        alt=""
+                        loading="lazy"
+                      />
+                    )
+                  )}
+                  {progress && (
+                    <span
+                      className="bf-child-progress bf-row-progress"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={progress.percent}
+                      aria-valuetext={t("mediaDetailProgress", { percent: progress.percent })}
+                    >
+                      <span style={{ width: `${progress.percent}%` }} />
+                    </span>
+                  )}
+                </span>
+                <span className="bf-row-text">
+                  <span className="bf-row-title">{item.title}</span>
+                  {(ordinal || runtime || watched) && (
+                    <span className="bf-child-meta">
+                      {[
+                        ordinal,
+                        runtime &&
+                          (runtime.hours > 0
+                            ? t("mediaDetailRuntimeHours", runtime)
+                            : t("mediaDetailRuntimeMinutes", { minutes: runtime.minutes })),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                      {watched && (
+                        <span className="bf-child-watched">
+                          <Check aria-hidden />
+                          {t("entityDetailWatched")}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  {progress && (
+                    <span className="sr-only">
+                      {t("mediaDetailProgress", { percent: progress.percent })}
+                    </span>
+                  )}
+                  {summary &&
+                    (hidden ? (
+                      <span className="bf-row-summary bf-spoiler-note">
+                        {t("spoilerHiddenSummary")}
                       </span>
-                    )}
-                  </span>
-                )}
-                {progress && (
-                  <span className="sr-only">
-                    {t("mediaDetailProgress", { percent: progress.percent })}
-                  </span>
-                )}
-                {summary && <span className="bf-row-summary">{summary}</span>}
-              </span>
-            </Link>
-            {!item.locked && (
-              <div className="bf-child-actions">
-                <button
-                  type="button"
-                  className="bf-row-play"
-                  aria-label={t("mediaDetailPlayLabel", { title: item.title })}
-                  onClick={() => play(item)}
-                  onPointerEnter={preloadPlayer}
-                  onFocus={preloadPlayer}
-                >
-                  <Play aria-hidden />
-                </button>
-                <MediaItemCardMenu
-                  title={item.title}
-                  primaryLabel={t("play")}
-                  isMedia
-                  isAudio={item.mediaClass === "audio"}
-                  containerID={item.container?.id}
-                  href={
-                    new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin)
-                      .href
-                  }
-                  target={{ mediaID: item.id }}
-                  onPrimary={() => play(item)}
-                  onDetails={openDetails}
-                />
-              </div>
-            )}
-          </li>
-        );
-      })}
-    </ol>
+                    ) : (
+                      <span className="bf-row-summary">{summary}</span>
+                    ))}
+                </span>
+              </Link>
+              {item.locked && (
+                // A locked row cannot play, but its reveal stays reachable.
+                <div className="bf-child-actions">
+                  <SpoilerRevealButton itemID={item.id} title={item.title} state={guard} />
+                </div>
+              )}
+              {!item.locked && (
+                <div className="bf-child-actions">
+                  <SpoilerRevealButton itemID={item.id} title={item.title} state={guard} />
+                  <button
+                    type="button"
+                    className="bf-row-play"
+                    aria-label={t("mediaDetailPlayLabel", { title: item.title })}
+                    onClick={() => play(item)}
+                    onPointerEnter={preloadPlayer}
+                    onFocus={preloadPlayer}
+                  >
+                    <Play aria-hidden />
+                  </button>
+                  <MediaItemCardMenu
+                    title={item.title}
+                    primaryLabel={t("play")}
+                    isMedia
+                    isAudio={item.mediaClass === "audio"}
+                    containerID={item.container?.id}
+                    href={
+                      new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin)
+                        .href
+                    }
+                    target={{ mediaID: item.id }}
+                    onPrimary={() => play(item)}
+                    onDetails={openDetails}
+                    onReveal={hidden ? () => revealItem(item.id) : undefined}
+                  />
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </>
   );
 }

@@ -17,6 +17,7 @@ import {
   searchRowOpenPath,
   searchRowPlayPath,
 } from "../lib/searchRows";
+import { isSpoilerCandidate, useSpoilerGuard } from "../lib/spoilerGuard";
 import { useLiveSearch, useSearchShortcut } from "../lib/useLiveSearch";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
@@ -262,7 +263,12 @@ function ResultRow({
 }) {
   const { item } = open;
   const [imageFailed, setImageFailed] = useState(false);
-  const art = artworkSlotURL(item, "poster") || artworkSlotURL(item, "thumb");
+  // A guarded child shows its container's poster, not its own still (CORE-3057).
+  const spoiler = useSpoilerGuard(isSpoilerCandidate(item, item.container?.id));
+  const art =
+    spoiler.state(item, item.container?.id) === "hidden"
+      ? (item.container?.artwork?.poster ?? "")
+      : artworkSlotURL(item, "poster") || artworkSlotURL(item, "thumb");
   const detail = [cardByline(item), searchRowDetail(item), typeLabel].filter(Boolean).join(" · ");
   return (
     <Autocomplete.Row className="flex items-stretch gap-1 px-1">

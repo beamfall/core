@@ -9,6 +9,7 @@ import {
   ListPlus,
   MoreVertical,
   Play,
+  ScanEye,
   SquareArrowOutUpRight,
   UserRound,
 } from "lucide-react";
@@ -45,6 +46,7 @@ export function MediaItemCardMenu({
   target,
   onPrimary,
   onDetails,
+  onReveal,
 }: {
   title: string;
   primaryLabel: string;
@@ -61,6 +63,8 @@ export function MediaItemCardMenu({
   onPrimary: () => void;
   /** Opens Media detail without starting playback (CORE-1144, CORE-2034). */
   onDetails?: () => void;
+  /** Reveals a spoiler-guarded item's still and summary (CORE-3057). */
+  onReveal?: () => void;
 }) {
   const t = useT();
   const identity = useViewerIdentity();
@@ -166,6 +170,12 @@ export function MediaItemCardMenu({
                 <Menu.Item className="bf-card-menu-item" onClick={onDetails}>
                   <SquareArrowOutUpRight aria-hidden="true" size={15} />
                   {t("mediaDetailDetails")}
+                </Menu.Item>
+              )}
+              {onReveal && (
+                <Menu.Item className="bf-card-menu-item" onClick={onReveal}>
+                  <ScanEye aria-hidden="true" size={15} />
+                  {t("spoilerReveal")}
                 </Menu.Item>
               )}
               {artistID && (

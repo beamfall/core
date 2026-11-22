@@ -8,30 +8,45 @@ import { artworkBucketURL } from "../lib/artwork";
 import { childThumbURL, groupChildrenByKind } from "../lib/containerChildren";
 import { mediaPath } from "../lib/mediaAddress";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
+import {
+  isSpoilerCandidate,
+  revealItem,
+  type SpoilerState,
+  useSpoilerGuard,
+} from "../lib/spoilerGuard";
 import { runtimeParts } from "../lib/viewerFields";
 import { type PlayQueueItem, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
+import { SpoilerRevealButton, SpoilerStill } from "./SpoilerGuard";
 
 // A container Entity's children (CORE-1786), grouped by kind in the server's
 // order. Each child's detail link comes before its actions, so keyboard focus
 // follows the visual order. CSS lays them out as a grid on wide screens and as list
 // rows (thumbnail, number, title, runtime, progress) on a phone. Motion is
-// limited to the token hover and focus states.
+// limited to the token hover and focus states. With a containerID, unplayed
+// children keep their still behind the spoiler guard (CORE-3057).
 export function ContainerChildren({
   items,
   label,
   groupLabel,
+  containerID,
+  containerArt,
 }: {
   items: readonly SourceItem[];
   /** Accessible name of the list (one group) or the region (several). */
   label: string;
   /** A group's heading; only shown when there is more than one group. */
   groupLabel?: (kind: string) => string;
+  /** The outermost container holding these children; the spoiler guard needs it. */
+  containerID?: string;
+  /** The container's art, drawn dimmed in place of a guarded still. */
+  containerArt?: string;
 }) {
   const groups = groupChildrenByKind(items);
+  const guard = { containerID, containerArt };
   if (groups.length === 0) return null;
-  if (groups.length === 1) return <ChildList items={groups[0].items} label={label} />;
+  if (groups.length === 1) return <ChildList items={groups[0].items} label={label} {...guard} />;
   return (
     <section className="bf-children-groups" aria-label={label}>
       {groups.map((group) => {
@@ -41,7 +56,7 @@ export function ContainerChildren({
             <h2 className="bf-section-title">
               <span>{heading}</span>
             </h2>
-            <ChildList items={group.items} label={heading} />
+            <ChildList items={group.items} label={heading} {...guard} />
           </section>
         );
       })}
@@ -49,12 +64,32 @@ export function ContainerChildren({
   );
 }
 
-function ChildList({ items, label }: { items: readonly SourceItem[]; label: string }) {
+function ChildList({
+  items,
+  label,
+  containerID,
+  containerArt,
+}: {
+  items: readonly SourceItem[];
+  label: string;
+  containerID?: string;
+  containerArt?: string;
+}) {
   const queue = playQueueOf(items);
+  const spoiler = useSpoilerGuard(
+    items.some((item) => isSpoilerCandidate(item, item.container?.id ?? containerID)),
+  );
   return (
     <ol className="bf-children" aria-label={label}>
       {items.map((item, index) => (
-        <ChildRow key={`${item.id}-${index}`} item={item} number={index + 1} queue={queue} />
+        <ChildRow
+          key={`${item.id}-${index}`}
+          item={item}
+          number={index + 1}
+          queue={queue}
+          guard={spoiler.state(item, item.container?.id ?? containerID)}
+          containerArt={containerArt}
+        />
       ))}
     </ol>
   );
@@ -64,10 +99,14 @@ function ChildRow({
   item,
   number,
   queue,
+  guard,
+  containerArt,
 }: {
   item: SourceItem;
   number: number;
   queue: PlayQueueItem[];
+  guard: SpoilerState;
+  containerArt?: string;
 }) {
   const t = useT();
   const identity = useViewerIdentity();
@@ -100,7 +139,18 @@ function ChildRow({
         onClick={(event) => activateLink(event, openDetails)}
       >
         <span className="bf-child-thumb" aria-hidden>
-          {thumb && <img src={artworkBucketURL(thumb, "w320")} alt="" loading="lazy" />}
+          {guard === "hidden" ? (
+            <SpoilerStill itemID={item.id} art={containerArt} />
+          ) : (
+            thumb && (
+              <img
+                className={guard === "none" ? undefined : "bf-spoiler-shown"}
+                src={artworkBucketURL(thumb, "w320")}
+                alt=""
+                loading="lazy"
+              />
+            )
+          )}
         </span>
         <span className="bf-child-text">
           <span className="bf-child-title">
@@ -135,8 +185,15 @@ function ChildRow({
           )}
         </span>
       </Link>
+      {item.kind === "media" && item.locked && guard !== "none" && guard !== "container" && (
+        // A locked child cannot play, but its reveal stays reachable.
+        <div className="bf-child-actions">
+          <SpoilerRevealButton itemID={item.id} title={item.title} state={guard} />
+        </div>
+      )}
       {item.kind === "media" && !item.locked && (
         <div className="bf-child-actions">
+          <SpoilerRevealButton itemID={item.id} title={item.title} state={guard} />
           <button
             type="button"
             className="bf-row-play"
@@ -159,6 +216,7 @@ function ChildRow({
             target={{ mediaID: item.id }}
             onPrimary={play}
             onDetails={openDetails}
+            onReveal={guard === "hidden" ? () => revealItem(item.id) : undefined}
           />
         </div>
       )}

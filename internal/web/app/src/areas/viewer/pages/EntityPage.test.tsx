@@ -19,6 +19,7 @@ import type { Locale } from "@/strings";
 import { notifyEngagementChanged } from "../actions/engagementSync";
 import { sectionCacheKey } from "../components/HydratedSection";
 import { entityLinkState } from "../lib/entityPreview";
+import { resetSpoilerGuardForTest } from "../lib/spoilerGuard";
 import * as watchQueue from "../lib/watchQueue";
 import { EntityPage } from "./EntityPage";
 
@@ -147,6 +148,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   clearViewerCache();
+  resetSpoilerGuardForTest();
   vi.restoreAllMocks();
 });
 
@@ -570,6 +572,12 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     renderEntity();
     const link = await screen.findByRole("link", { name: /Related item/ });
     expect(link).toHaveAttribute("href", "/media/m1");
+    if (part === "thumbnail") {
+      // The unplayed child's still is guarded (CORE-3057): its placeholder reveals, not opens.
+      expect(link.querySelector("img")).toBeNull();
+      fireEvent.click(within(link).getByTestId("spoiler-still"));
+      expect(screen.queryByRole("status", { name: "detail" })).toBeNull();
+    }
     fireEvent.click(
       part === "title" ? within(link).getByText("Related item") : link.querySelector("img")!,
     );
@@ -665,12 +673,16 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
       controls.map((control) => control.getAttribute("aria-label") ?? control.textContent),
     ).toEqual([
       expect.stringContaining("Related item"),
+      "Show details for Related item",
       "Play Related item",
       "More actions for Related item",
       expect.stringContaining("Second child"),
+      "Show details for Second child",
       "Play Second child",
       "More actions for Second child",
       expect.stringContaining("Locked child"),
+      // A locked child keeps its spoiler reveal, never Play (CORE-3057).
+      "Show details for Locked child",
     ]);
     expect(
       controls.every(

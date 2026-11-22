@@ -17,6 +17,7 @@ import { useEngagementEpoch } from "../actions/engagementSync";
 import { artworkSlotURL } from "../lib/artwork";
 import { foldNewShelf, groupByContainer } from "../lib/containerGroups";
 import { fetchSectionItems } from "../lib/sections";
+import { isSpoilerCandidate, useSpoilerGuard } from "../lib/spoilerGuard";
 import {
   SECTION_LOAD_TIMEOUT_MS,
   type SectionHydrationState,
@@ -313,6 +314,14 @@ interface ArtworkAttempt {
 }
 
 export function useHomeArtwork(items: readonly SourceItem[], epoch: string) {
+  // A guarded child's thumb is its still: the feature uses its other art (CORE-3057).
+  const spoiler = useSpoilerGuard(
+    items.some((item) => isSpoilerCandidate(item, item.container?.id)),
+  );
+  const slotsOf = (item: SourceItem) =>
+    spoiler.state(item, item.container?.id) === "hidden"
+      ? HERO_SLOTS.filter((slot) => slot !== "thumb")
+      : HERO_SLOTS;
   const [images, setImages] = useState<{
     epoch: string;
     failed: ReadonlySet<string>;
@@ -348,7 +357,7 @@ export function useHomeArtwork(items: readonly SourceItem[], epoch: string) {
     const item = items.find(
       (item) =>
         item.id === attempt.itemID &&
-        HERO_SLOTS.some((slot) => artworkSlotURL(item, slot) === attempt.url),
+        slotsOf(item).some((slot) => artworkSlotURL(item, slot) === attempt.url),
     );
     if (item) {
       return {
@@ -366,7 +375,7 @@ export function useHomeArtwork(items: readonly SourceItem[], epoch: string) {
     }
   }
   for (const item of items) {
-    for (const slot of HERO_SLOTS) {
+    for (const slot of slotsOf(item)) {
       const url = artworkSlotURL(item, slot);
       if (url && !images.failed.has(url)) {
         setImages({ ...images, attempt: { itemID: item.id, url }, ready: false });

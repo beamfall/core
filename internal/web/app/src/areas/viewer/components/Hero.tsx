@@ -13,6 +13,7 @@ import { cardHeading } from "../lib/cardTitles";
 import { entityLinkState } from "../lib/entityPreview";
 import { mediaPath } from "../lib/mediaAddress";
 import { rememberRenderFocus } from "../lib/renderFocus";
+import { isSpoilerCandidate, useSpoilerGuard } from "../lib/spoilerGuard";
 import { runtimeParts } from "../lib/viewerFields";
 
 // Hero Section, ported from the vanilla buildHero (app.js): one prominent
@@ -27,7 +28,8 @@ import { runtimeParts } from "../lib/viewerFields";
 // (cardHeading), followed by a facts row: who made it, year, rating, score
 // and runtime.
 // The summary is dropped when it only repeats a fact, such as a server
-// runtime summary ("49 min").
+// runtime summary ("49 min"), and while the spoiler guard hides an unplayed
+// child (CORE-3057); useHomeArtwork then skips the child's thumb (its still).
 export function Hero({
   section,
   item,
@@ -61,8 +63,13 @@ export function Hero({
     runtime,
   ].filter(Boolean);
   const summary = item.summary?.trim() ?? "";
+  const spoiler = useSpoilerGuard(isSpoilerCandidate(item, item.container?.id));
   const showSummary =
-    !!summary && summary !== lead && summary !== durationSummary && !facts.includes(summary);
+    !!summary &&
+    summary !== lead &&
+    summary !== durationSummary &&
+    !facts.includes(summary) &&
+    spoiler.state(item, item.container?.id) !== "hidden";
   const showFacts = facts.length > 0 || !!rating?.score;
 
   function activate() {

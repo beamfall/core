@@ -678,6 +678,12 @@ export function EntityPage() {
                 )}
                 <ContainerMediaRows
                   items={fallback}
+                  containerID={
+                    ancestorKnown && entity?.archetype === "container"
+                      ? (ancestor?.id ?? entity.id)
+                      : undefined
+                  }
+                  containerArt={backdrop || photo || undefined}
                   label={
                     rowsTitle ||
                     t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })
