@@ -13,6 +13,11 @@
 - [x] 2.4 Guest phone page: join, search, request, position and ETA (CORE-2948).
 - [x] 2.5 Strings in all shipped locales; Vitest coverage.
 
-## 3. Verification
+## 3. Requested key (CORE-3143)
 
-- [x] 3.1 Exercise host, guest at phone width, request, advance and stage in a browser.
+- [ ] 3.1 Store the requested key on the entry, validate it and start the turn at it.
+- [ ] 3.2 Guest key picker, key shown on guest and host entries; tests.
+
+## 4. Verification
+
+- [x] 4.1 Exercise host, guest at phone width, request, advance and stage in a browser.

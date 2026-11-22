@@ -76,6 +76,23 @@ restore it, and remove a participant.
 - **WHEN** a guest with three waiting entries submits another request
 - **THEN** the request is refused and the guest's entries are unchanged
 
+### Requirement: A request carries the singer's key
+
+A guest request SHALL carry a key shift in whole semitones from -12 to +12, defaulting to 0, and
+the server SHALL refuse any other value. The key SHALL be stored on the entry and shown on the
+guest's own entries and in the host's rotation. When the entry becomes current, the shared
+playback key SHALL start at the entry's key; the host SHALL still be able to change it live.
+
+#### Scenario: A requested key applies when the turn starts
+
+- **WHEN** a guest requests an entry with key -2 and the host advances to it
+- **THEN** the shared playback anchor for that entry has key -2
+
+#### Scenario: Out-of-range key is refused
+
+- **WHEN** a guest requests an entry with key 13
+- **THEN** the request is refused and no entry is created
+
 ### Requirement: The server orders the rotation
 
 Under round-robin the next waiting entry SHALL be the oldest waiting entry of the participant who
@@ -110,7 +127,8 @@ missing duration SHALL count as the session's median duration.
 
 The host SHALL set the current entry's playback state (playing or paused), position in song
 milliseconds, tempo and key; the server SHALL stamp it with its own clock as an anchor. Advancing
-SHALL mark the current entry done and make the next waiting entry current, and SHALL be idempotent
+SHALL mark the current entry done and make the next waiting entry current at tempo 1 and the
+entry's requested key, and SHALL be idempotent
 when it names the entry it advances from. Entries whose Media is no longer visible SHALL be
 skipped and reported.
 

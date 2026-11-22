@@ -1,7 +1,7 @@
 ## Why
 
 Tickets: CORE-1662 (party session server and web), CORE-2945 (host home), CORE-2946 (pop-out
-stage), CORE-2947 (joined screens with drift reporting), CORE-2948 (guest phone page), all in
+stage), CORE-2947 (joined screens with drift reporting), CORE-2948 (guest phone page), CORE-3143 (guest chooses the key when requesting), all in
 `queue:core:main`. ADR-0237 (party session, relay stage sync) is the binding design.
 
 A household running a party wants guests to put their own requests in from their phones, a fair
@@ -24,6 +24,8 @@ players but has no requests, rotation or guests.
   searches the Libraries the host opened for the session and submits or cancels its own requests.
   It cannot play, stream or download, and it expires when the session ends, after 12 hours or when
   the host removes the guest.
+- **Requested key**: a guest picks a key shift (-12 to +12 semitones) with each request; the turn
+  starts at that key and the host can still change it live (CORE-3143).
 - **Limits**: three waiting requests per guest, a per-guest request rate limit, join attempts
   rate-limited per source address, a cap of 50 guests, and a wrong or closed code is
   indistinguishable from an unknown one.
