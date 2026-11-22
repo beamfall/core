@@ -38,6 +38,9 @@ func (r NewEntryRoute) Valid() bool {
 
 // SetFollowNewEntryRoute changes where new entries of a followed Subscription
 // go for profileID. The follow time, which bounds what counts as new, is kept.
+// Switching from the New-only route to a Play Queue route starts the queue
+// from entries catalogued after the switch: entries already listed as new
+// stay in the Source and are not added to the queue all at once.
 func (s *Store) SetFollowNewEntryRoute(ctx context.Context, profileID ProfileID, subscriptionID SubscriptionID, route NewEntryRoute) error {
 	if profileID == "" || subscriptionID == "" {
 		return ValidationError("profile ID and subscription ID are required")
@@ -50,9 +53,19 @@ func (s *Store) SetFollowNewEntryRoute(ctx context.Context, profileID ProfileID,
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
+	var seenThrough int64
+	if err := s.catalogR.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(first_seen_at_ms), 0) FROM subscription_entry WHERE subscription_id = ?
+	`, subscriptionID).Scan(&seenThrough); err != nil {
+		return err
+	}
 	result, err := s.eventsW.ExecContext(ctx, `
-		UPDATE follow SET new_entry_route = ? WHERE profile_id = ? AND subscription_id = ?
-	`, string(route), profileID, subscriptionID)
+		UPDATE follow SET
+		  new_entry_routed_ms = CASE WHEN new_entry_route = 'new' AND ? <> 'new'
+		    THEN MAX(new_entry_routed_ms, ?) ELSE new_entry_routed_ms END,
+		  new_entry_route = ?
+		WHERE profile_id = ? AND subscription_id = ?
+	`, string(route), seenThrough, string(route), profileID, subscriptionID)
 	if err != nil {
 		return err
 	}
@@ -90,6 +103,7 @@ type followRow struct {
 	subID      SubscriptionID
 	followedMS int64
 	route      NewEntryRoute
+	routedMS   int64
 }
 
 // subscriptionNewSQL is the subscription-new Source: unplayed catalogued Media
@@ -105,7 +119,7 @@ func (s *Store) subscriptionNewSQL(ctx context.Context, profileID ProfileID, fil
 	if err != nil || len(candidates) == 0 {
 		return items, err
 	}
-	played, err := s.playedAmongSQL(ctx, profileID, candidates)
+	played, err := playedAmong(ctx, s.eventsR, profileID, candidates)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +149,7 @@ func (s *Store) subscriptionNewSQL(ctx context.Context, profileID ProfileID, fil
 
 func (s *Store) profileFollowsSQL(ctx context.Context, profileID ProfileID) ([]followRow, error) {
 	return s.followRowsSQL(ctx, `
-		SELECT profile_id, subscription_id, followed_at_ms, new_entry_route
+		SELECT profile_id, subscription_id, followed_at_ms, new_entry_route, new_entry_routed_ms
 		FROM follow WHERE profile_id = ? ORDER BY subscription_id
 	`, profileID)
 }
@@ -150,7 +164,7 @@ func (s *Store) followRowsSQL(ctx context.Context, query string, args ...any) ([
 	for rows.Next() {
 		var row followRow
 		var route string
-		if err := rows.Scan(&row.profileID, &row.subID, &row.followedMS, &route); err != nil {
+		if err := rows.Scan(&row.profileID, &row.subID, &row.followedMS, &route, &row.routedMS); err != nil {
 			return nil, err
 		}
 		row.route = NewEntryRoute(route)
@@ -160,45 +174,66 @@ func (s *Store) followRowsSQL(ctx context.Context, query string, args ...any) ([
 }
 
 // subscriptionEntryTimeSQL is an entry's effective publish time: the feed's
-// date when it gave one, otherwise when the server first saw it.
-const subscriptionEntryTimeSQL = `CASE WHEN published_at_ms > 0 THEN published_at_ms ELSE first_seen_at_ms END`
+// date when it gave one, otherwise when the server first saw it. A missing
+// date is stored as 0; dates before 1970 are negative and still count.
+const subscriptionEntryTimeSQL = `CASE WHEN published_at_ms <> 0 THEN published_at_ms ELSE first_seen_at_ms END`
+
+// newEntryFollowChunk bounds the follows bound into one query.
+const newEntryFollowChunk = 400
 
 // newEntryMediaSQL lists the Media of entries newer than each follow, newest
 // first. Subscriptions are catalogued in the plain catalog only.
 func (s *Store) newEntryMediaSQL(ctx context.Context, follows []followRow) ([]MediaID, error) {
-	clauses := make([]string, 0, len(follows))
-	args := make([]any, 0, 2*len(follows))
-	for _, follow := range follows {
-		clauses = append(clauses, `(subscription_id = ? AND `+subscriptionEntryTimeSQL+` > ?)`)
-		args = append(args, follow.subID, follow.followedMS)
+	type entry struct {
+		id       MediaID
+		at       int64
+		position int64
 	}
-	// #nosec G202 -- only closed clause text with bound placeholders is interpolated; every value is bound.
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT media_id FROM subscription_entry
-		WHERE `+strings.Join(clauses, " OR ")+`
-		ORDER BY `+subscriptionEntryTimeSQL+` DESC, feed_position, media_id
-	`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	seen := map[MediaID]bool{}
-	var ids []MediaID
-	for rows.Next() {
-		var id MediaID
-		if err := rows.Scan(&id); err != nil {
+	var entries []entry
+	for chunk := range slices.Chunk(follows, newEntryFollowChunk) {
+		args := make([]any, 0, 2*len(chunk))
+		for _, follow := range chunk {
+			args = append(args, follow.subID, follow.followedMS)
+		}
+		values := strings.TrimSuffix(strings.Repeat("(?, ?),", len(chunk)), ",")
+		// #nosec G202 -- only generated placeholders and the closed entry-time expression are interpolated; every value is bound.
+		rows, err := s.catalogR.QueryContext(ctx, `
+			WITH followed(subscription_id, followed_at_ms) AS (VALUES `+values+`)
+			SELECT e.media_id, `+subscriptionEntryTimeSQL+`, e.feed_position
+			FROM subscription_entry e JOIN followed f ON f.subscription_id = e.subscription_id
+			WHERE `+subscriptionEntryTimeSQL+` > f.followed_at_ms
+		`, args...)
+		if err != nil {
 			return nil, err
 		}
-		if !seen[id] {
-			seen[id] = true
-			ids = append(ids, id)
+		for rows.Next() {
+			var e entry
+			if err := rows.Scan(&e.id, &e.at, &e.position); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			entries = append(entries, e)
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
 		}
 	}
-	return ids, rows.Err()
+	slices.SortFunc(entries, func(a, b entry) int {
+		return cmp.Or(cmp.Compare(b.at, a.at), cmp.Compare(a.position, b.position), cmp.Compare(a.id, b.id))
+	})
+	seen := map[MediaID]bool{}
+	ids := make([]MediaID, 0, len(entries))
+	for _, e := range entries {
+		if !seen[e.id] {
+			seen[e.id] = true
+			ids = append(ids, e.id)
+		}
+	}
+	return ids, nil
 }
 
-// playedAmongSQL reports which of ids profileID has played.
-func (s *Store) playedAmongSQL(ctx context.Context, profileID ProfileID, ids []MediaID) (map[MediaID]bool, error) {
+// playedAmong reports which of ids profileID has played, read through q.
+func playedAmong(ctx context.Context, q rowsQueryer, profileID ProfileID, ids []MediaID) (map[MediaID]bool, error) {
 	played := map[MediaID]bool{}
 	for chunk := range slices.Chunk(ids, 500) {
 		args := make([]any, 0, len(chunk)+1)
@@ -207,7 +242,7 @@ func (s *Store) playedAmongSQL(ctx context.Context, profileID ProfileID, ids []M
 			args = append(args, id)
 		}
 		// #nosec G202 -- only generated placeholders are interpolated; every value is bound.
-		rows, err := s.eventsR.QueryContext(ctx, `
+		rows, err := q.QueryContext(ctx, `
 			SELECT media_id FROM playback_progress
 			WHERE profile_id = ? AND (watched = 1 OR play_count >= 1)
 			  AND media_id IN (`+sqlPlaceholders(len(chunk))+`)
@@ -230,34 +265,29 @@ func (s *Store) playedAmongSQL(ctx context.Context, profileID ProfileID, ids []M
 	return played, nil
 }
 
-// RouteNewSubscriptionEntries adds entries a poll just catalogued to the Play
-// Queue of every follower whose route asks for it. Each follower gets only the
-// entries published after its follow, oldest first, under its own Library and
-// certification policy (resolveCertification maps its ceilings). A follower
-// the queue refuses is skipped and logged; the poll does not fail.
-func (s *Store) RouteNewSubscriptionEntries(ctx context.Context, subscriptionID SubscriptionID, created []SubscriptionEntry, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) error {
-	if len(created) == 0 || resolveCertification == nil {
+// errFollowChanged reports that a follow was removed, re-routed or routed by
+// another pass between reading it and writing its Play Queue.
+var errFollowChanged = errors.New("follow changed while routing new entries")
+
+// RouteNewSubscriptionEntries adds a Subscription's not yet routed new entries
+// to the Play Queue of every follower whose route asks for it. Each follower
+// gets only entries published after its follow, oldest first, under its own
+// Library, certification (resolveCertification maps its ceilings) and Mute
+// policy, minus what it already played. The follow's watermark advances in
+// the queue's events transaction, so a pass interrupted by a crash resumes on
+// the next poll and an entry is never routed twice. A follower whose write
+// fails is skipped and logged; the poll does not fail.
+func (s *Store) RouteNewSubscriptionEntries(ctx context.Context, subscriptionID SubscriptionID, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) error {
+	if resolveCertification == nil {
 		return nil
 	}
 	followers, err := s.queueRoutedFollowers(ctx, subscriptionID)
 	if err != nil {
 		return err
 	}
-	ordered := slices.Clone(created)
-	slices.SortStableFunc(ordered, func(a, b SubscriptionEntry) int {
-		return cmp.Or(cmp.Compare(entryTimeMS(a), entryTimeMS(b)), cmp.Compare(b.FeedPosition, a.FeedPosition))
-	})
 	for _, follower := range followers {
-		var ids []MediaID
-		for _, entry := range ordered {
-			if entryTimeMS(entry) > follower.followedMS {
-				ids = append(ids, entry.MediaID)
-			}
-		}
-		if len(ids) == 0 {
-			continue
-		}
-		if err := s.routeToQueue(ctx, follower, ids, resolveCertification); err != nil {
+		err := s.routeFollowerEntries(ctx, follower, resolveCertification)
+		if err != nil && !errors.Is(err, errFollowChanged) {
 			slog.Warn("new entries not added to the play queue", "subscription", subscriptionID, "profile", follower.profileID, "error", err)
 		}
 	}
@@ -271,13 +301,17 @@ func (s *Store) queueRoutedFollowers(ctx context.Context, subscriptionID Subscri
 		return nil, err
 	}
 	return s.followRowsSQL(ctx, `
-		SELECT profile_id, subscription_id, followed_at_ms, new_entry_route
+		SELECT profile_id, subscription_id, followed_at_ms, new_entry_route, new_entry_routed_ms
 		FROM follow WHERE subscription_id = ? AND new_entry_route <> 'new'
 		ORDER BY profile_id
 	`, subscriptionID)
 }
 
-func (s *Store) routeToQueue(ctx context.Context, follower followRow, ids []MediaID, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) error {
+func (s *Store) routeFollowerEntries(ctx context.Context, follower followRow, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) error {
+	pending, watermark, err := s.unroutedEntries(ctx, follower)
+	if err != nil || watermark <= follower.routedMS {
+		return err
+	}
 	profile, err := s.Profile(ctx, follower.profileID)
 	if err != nil {
 		return err
@@ -292,13 +326,95 @@ func (s *Store) routeToQueue(ctx context.Context, follower followRow, ids []Medi
 		Now:                  s.serverNow,
 		ResolveCertification: resolveCertification,
 	}
-	_, err = s.QueueAddMany(ctx, auth, ids, placement)
-	return err
+	return s.writeQueue(ctx, auth, queueWriteTargets{ids: pending}, func(view queueWriteView) error {
+		ids, err := s.routableLocked(ctx, view, pending)
+		if err != nil {
+			return err
+		}
+		if len(ids) > 0 {
+			view.queue.addMany(ids, placement, view.visible)
+		}
+		return advanceFollowWatermark(ctx, view.events, follower, watermark)
+	})
 }
 
-func entryTimeMS(entry SubscriptionEntry) int64 {
-	if !entry.PublishedAt.IsZero() && entry.PublishedAt.UnixMilli() > 0 {
-		return entry.PublishedAt.UnixMilli()
+// unroutedEntries lists the follower's entries first seen after its watermark
+// and published after its follow, oldest first, with the new watermark.
+func (s *Store) unroutedEntries(ctx context.Context, follower followRow) ([]MediaID, int64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, 0, err
 	}
-	return entry.FirstSeenAt.UnixMilli()
+	// #nosec G202 -- only the closed entry-time expression is interpolated; every value is bound.
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT media_id, first_seen_at_ms FROM subscription_entry
+		WHERE subscription_id = ? AND first_seen_at_ms > ? AND `+subscriptionEntryTimeSQL+` > ?
+		ORDER BY `+subscriptionEntryTimeSQL+`, feed_position DESC, media_id
+	`, follower.subID, follower.routedMS, follower.followedMS)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	watermark := follower.routedMS
+	var ids []MediaID
+	for rows.Next() {
+		var id MediaID
+		var firstSeen int64
+		if err := rows.Scan(&id, &firstSeen); err != nil {
+			return nil, 0, err
+		}
+		ids = append(ids, id)
+		watermark = max(watermark, firstSeen)
+	}
+	return ids, watermark, rows.Err()
+}
+
+// routableLocked keeps the pending Media the follower may queue: visible,
+// not locked by certification, not muted and not played.
+func (s *Store) routableLocked(ctx context.Context, view queueWriteView, pending []MediaID) ([]MediaID, error) {
+	items := make([]SourceItem, 0, len(pending))
+	for _, id := range pending {
+		if media, ok := view.visible[id]; ok {
+			items = append(items, queueSourceItem(media))
+		}
+	}
+	if err := annotateLocked(ctx, view.readers, view.filter.Certification, items, view.filter.GrantedMediaIDs); err != nil {
+		return nil, err
+	}
+	items = slices.DeleteFunc(items, func(item SourceItem) bool { return item.Locked })
+	var err error
+	for _, relations := range s.relationReadersLocked() {
+		if items, err = s.applyMuteFilterLocked(ctx, relations, view.profileID, view.filter, items); err != nil {
+			return nil, err
+		}
+	}
+	candidates := make([]MediaID, len(items))
+	for i, item := range items {
+		candidates[i] = item.ID
+	}
+	played, err := playedAmong(ctx, view.events, view.profileID, candidates)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(candidates, func(id MediaID) bool { return played[id] }), nil
+}
+
+// advanceFollowWatermark moves the follow's watermark only while the follow
+// is still the one routing read: same follow time, route and watermark.
+func advanceFollowWatermark(ctx context.Context, tx *sql.Tx, follower followRow, watermark int64) error {
+	result, err := tx.ExecContext(ctx, `
+		UPDATE follow SET new_entry_routed_ms = ?
+		WHERE profile_id = ? AND subscription_id = ? AND followed_at_ms = ?
+		  AND new_entry_route = ? AND new_entry_routed_ms = ?
+	`, watermark, follower.profileID, follower.subID, follower.followedMS, string(follower.route), follower.routedMS)
+	if err != nil {
+		return err
+	}
+	if n, err := result.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return errFollowChanged
+	}
+	return nil
 }

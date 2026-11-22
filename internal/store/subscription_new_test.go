@@ -2,6 +2,9 @@ package store
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"slices"
 	"testing"
 	"time"
 )
@@ -109,6 +112,19 @@ func TestSubscriptionNewHonoursLibraryAndRevealFunnels(t *testing.T) {
 	}
 }
 
+func queueMediaIDsFor(t *testing.T, st *Store, profileID ProfileID) []MediaID {
+	t.Helper()
+	queue, err := st.PlayQueue(context.Background(), profileID, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]MediaID, len(queue.Entries))
+	for i, entry := range queue.Entries {
+		ids[i] = entry.Item.ID
+	}
+	return ids
+}
+
 func TestRouteNewSubscriptionEntriesAppendsToFollowerQueue(t *testing.T) {
 	st, sub, created := newEntriesFixture(t, "library-local", NewEntryRouteQueueEnd)
 	ctx := context.Background()
@@ -118,23 +134,114 @@ func TestRouteNewSubscriptionEntriesAppendsToFollowerQueue(t *testing.T) {
 	if err := st.SetFollowNewEntryRoute(ctx, "profile-managed", sub.ID, NewEntryRouteQueueEnd); err != ErrNotFollowing {
 		t.Fatalf("route without follow = %v, want ErrNotFollowing", err)
 	}
-	if err := st.RouteNewSubscriptionEntries(ctx, sub.ID, created, testQueueCertification); err != nil {
-		t.Fatal(err)
-	}
-	filter := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
-	queue, err := st.PlayQueue(ctx, "profile-default", filter)
-	if err != nil {
-		t.Fatal(err)
+	// Two passes, as after a poll that repeated: the watermark keeps each
+	// entry to one Play Queue add.
+	for range 2 {
+		if err := st.RouteNewSubscriptionEntries(ctx, sub.ID, testQueueCertification); err != nil {
+			t.Fatal(err)
+		}
 	}
 	// Oldest first: created[1] was published before created[0].
-	if len(queue.Entries) != 2 || queue.Entries[0].Item.ID != created[1].MediaID || queue.Entries[1].Item.ID != created[0].MediaID {
-		t.Fatalf("queue = %+v, want %v then %v", queue.Entries, created[1].MediaID, created[0].MediaID)
+	got := queueMediaIDsFor(t, st, "profile-default")
+	if len(got) != 2 || got[0] != created[1].MediaID || got[1] != created[0].MediaID {
+		t.Fatalf("queue = %v, want %v then %v", got, created[1].MediaID, created[0].MediaID)
 	}
-	managed, err := st.PlayQueue(ctx, "profile-managed", filter)
-	if err != nil {
+	if managed := queueMediaIDsFor(t, st, "profile-managed"); len(managed) != 0 {
+		t.Fatalf("non-follower queue = %v, want empty", managed)
+	}
+}
+
+func TestRouteNewSubscriptionEntriesReplaysAfterAnInterruptedPass(t *testing.T) {
+	st, sub, created := newEntriesFixture(t, "library-local", NewEntryRouteQueueFront)
+	ctx := context.Background()
+	followers, err := st.queueRoutedFollowers(ctx, sub.ID)
+	if err != nil || len(followers) != 1 {
+		t.Fatalf("followers = %v, %v; want one", followers, err)
+	}
+	// A pass that read the follow before a re-route commits nothing.
+	if _, err := st.eventsW.ExecContext(ctx, `UPDATE follow SET new_entry_route = 'queue-end'`); err != nil {
 		t.Fatal(err)
 	}
-	if len(managed.Entries) != 0 {
-		t.Fatalf("non-follower queue = %+v, want empty", managed.Entries)
+	if err := st.routeFollowerEntries(ctx, followers[0], testQueueCertification); !errors.Is(err, errFollowChanged) {
+		t.Fatalf("stale pass = %v, want errFollowChanged", err)
+	}
+	if got := queueMediaIDsFor(t, st, "profile-default"); len(got) != 0 {
+		t.Fatalf("stale pass queued %v, want nothing", got)
+	}
+	// The next poll's pass picks the entries up under the current route.
+	if err := st.RouteNewSubscriptionEntries(ctx, sub.ID, testQueueCertification); err != nil {
+		t.Fatal(err)
+	}
+	if got := queueMediaIDsFor(t, st, "profile-default"); len(got) != len(created) {
+		t.Fatalf("replayed queue = %v, want %d entries", got, len(created))
+	}
+}
+
+func TestRouteNewSubscriptionEntriesSkipsMutedAndPlayed(t *testing.T) {
+	st, sub, created := newEntriesFixture(t, "library-local", NewEntryRouteQueueEnd)
+	ctx := context.Background()
+	if err := st.SetMute(ctx, "profile-default", MuteKindMedia, string(created[0].MediaID), false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{MediaID: created[1].MediaID}, true, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RouteNewSubscriptionEntries(ctx, sub.ID, testQueueCertification); err != nil {
+		t.Fatal(err)
+	}
+	if got := queueMediaIDsFor(t, st, "profile-default"); len(got) != 0 {
+		t.Fatalf("queue = %v, want muted and played entries left out", got)
+	}
+}
+
+func TestSwitchingToAQueueRouteLeavesListedEntriesInTheSource(t *testing.T) {
+	st, sub, created := newEntriesFixture(t, "library-local", NewEntryRouteNew)
+	ctx := context.Background()
+	if err := st.SetFollowNewEntryRoute(ctx, "profile-default", sub.ID, NewEntryRouteQueueEnd); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RouteNewSubscriptionEntries(ctx, sub.ID, testQueueCertification); err != nil {
+		t.Fatal(err)
+	}
+	if got := queueMediaIDsFor(t, st, "profile-default"); len(got) != 0 {
+		t.Fatalf("queue = %v, want entries listed before the switch left out", got)
+	}
+	if got := subscriptionNewIDs(t, st, "profile-default", LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}); len(got) != len(created) {
+		t.Fatalf("source = %v, want %d entries", got, len(created))
+	}
+}
+
+func TestRepeatedFollowKeepsTheNewEntryBoundary(t *testing.T) {
+	st, sub, created := newEntriesFixture(t, "library-local", NewEntryRouteNew)
+	ctx := context.Background()
+	if err := st.SetFollow(ctx, "profile-default", sub.ID, true, time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if got := subscriptionNewIDs(t, st, "profile-default", LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}); len(got) != len(created) {
+		t.Fatalf("after repeated follow = %v, want %d entries", got, len(created))
+	}
+}
+
+func TestSubscriptionNewSpansManyFollowsAndHistoricalDates(t *testing.T) {
+	st, _, created := newEntriesFixture(t, "library-local", NewEntryRouteNew)
+	ctx := context.Background()
+	// A follow that predates 1970 still bounds by date: negative publish
+	// times are real dates, not the missing-date sentinel.
+	if _, err := st.eventsW.ExecContext(ctx, `UPDATE follow SET followed_at_ms = ?`, time.Date(1950, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE subscription_entry SET published_at_ms = ? WHERE media_id = ?`,
+		time.Date(1940, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli(), created[0].MediaID); err != nil {
+		t.Fatal(err)
+	}
+	// More follows than one query binds.
+	for i := range 2 * newEntryFollowChunk {
+		if _, err := st.eventsW.ExecContext(ctx, `INSERT INTO follow(profile_id, subscription_id, followed_at_ms) VALUES ('profile-default', ?, 0)`, fmt.Sprintf("sub-filler-%04d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := subscriptionNewIDs(t, st, "profile-default", LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
+	if len(got) != 4 || slices.Contains(got, created[0].MediaID) {
+		t.Fatalf("source = %v, want the 3 back-catalogue entries and %v, not the 1940 entry", got, created[1].MediaID)
 	}
 }

@@ -152,6 +152,9 @@ type queueWriteView struct {
 	readers   mediaReaders
 	filter    LibraryFilter
 	profileID ProfileID
+	// events is the transaction the queue saves in, for writes that must
+	// commit or roll back with it.
+	events *sql.Tx
 }
 
 // writeQueue binds visibility and Profile policy to the events commit for every
@@ -217,7 +220,7 @@ func (s *Store) writeQueue(ctx context.Context, auth QueueWriteAuthorization, ta
 		}
 	}
 	original := slices.Clone(q.entries)
-	if err := mutate(queueWriteView{&q, visible, readers, policy.filter, policy.profileID}); err != nil {
+	if err := mutate(queueWriteView{&q, visible, readers, policy.filter, policy.profileID, events}); err != nil {
 		return err
 	}
 	if err := policy.checkAccess(ctx, catalog, auth.Now()); err != nil {
