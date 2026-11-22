@@ -115,6 +115,7 @@ type MetadataHydrationCapability struct {
 	// the filename parser alone wrote (CORE-2554).
 	MediaFieldsBounded bool
 	MediaFields        []string
+	TrackFilePath      bool // include a library-scoped file path witness on full probes
 }
 
 // Supports reports whether this capability accepts class.
@@ -138,7 +139,9 @@ type MetadataHydrationInput struct {
 	Class              store.MediaClass
 	Path               string
 	Metadata           map[string]string
+	MetadataProbed     bool // a successful probe, even if the file had no tags
 	ContentFingerprint string
+	FilePathChanged    bool // this path is new or the store invalidated its path facts
 }
 
 // MetadataHydrator is scan's consumer-side local metadata hook. A dedicated

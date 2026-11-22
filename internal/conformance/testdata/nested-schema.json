@@ -7067,6 +7067,53 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "sections",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "count",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "displayName",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "value",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "count",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "displayName",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "value",
+                  "kind": "scalar"
+                }
+              ]
             }
           ]
         },
@@ -7503,6 +7550,53 @@
             "elem": {
               "kind": "scalar"
             }
+          },
+          {
+            "name": "sections",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "count",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "displayName",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "value",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "count",
+                "kind": "scalar"
+              },
+              {
+                "name": "displayName",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "value",
+                "kind": "scalar"
+              }
+            ]
           }
         ]
       },

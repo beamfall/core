@@ -413,6 +413,7 @@ type Options struct {
 	Identify                     *identify.Service
 	Artwork                      ArtworkLocator
 	EntityBrowseSources          map[plugin.ID]map[string][]store.EntityBrowseSource
+	EntityGroupRules             map[plugin.ID]map[string]EntityGroupRule
 	StreamTokens                 *streamtoken.Service
 	ArtworkCandidateFetcher      ArtworkCandidateFetcher
 	ArtworkCandidateImporter     ArtworkCandidateImporter
@@ -483,6 +484,7 @@ type Handler struct {
 
 	// Immutable after construction, keyed by plugin ID and Entity kind.
 	entityBrowseSources map[plugin.ID]map[string][]store.EntityBrowseSource
+	entityGroupRules    map[plugin.ID]map[string]EntityGroupRule
 
 	// Immutable after construction, keyed by plugin ID and container kind.
 	engagementContainers map[store.EngagementContainerKey]store.EngagementContainerRelations
@@ -868,6 +870,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.identify = o.Identify
 	h.artwork = o.Artwork
 	h.entityBrowseSources = o.EntityBrowseSources
+	h.entityGroupRules = o.EntityGroupRules
 	h.tokens = o.StreamTokens
 	h.candidateFetch = o.ArtworkCandidateFetcher
 	h.candidateImport = o.ArtworkCandidateImporter
@@ -1139,14 +1142,14 @@ func (h *Handler) SetUpdateChecker(checker UpdateChecker, serverVersion string) 
 // does not carry: each media item's class (for its placeholder), its
 // container, and the acting Profile's engagement.
 func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []store.SourceItem) error {
-	return h.annotateCardsForProfile(ctx, scope.ProfileID, scope.LibraryFilter(), items)
+	return h.annotateCardsForProfile(ctx, scope.ProfileID, scope.LibraryFilter(), items, true)
 }
 
-func (h *Handler) annotateCardsForProfile(ctx context.Context, profileID store.ProfileID, filter store.LibraryFilter, items []store.SourceItem) error {
+func (h *Handler) annotateCardsForProfile(ctx context.Context, profileID store.ProfileID, filter store.LibraryFilter, items []store.SourceItem, useReleaseYear bool) error {
 	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
 		return err
 	}
-	if err := h.annotateBylines(ctx, filter, items); err != nil {
+	if err := h.annotateBylines(ctx, filter, items, useReleaseYear); err != nil {
 		return err
 	}
 	if err := h.annotateContainers(ctx, items); err != nil {
@@ -1169,7 +1172,7 @@ const maxCardByline = 3
 // annotateBylines credits audio Media and audio containers from the
 // person-archetype Entities linked to them (CORE-2362, CORE-2764). It runs
 // after AnnotateMediaClass. Linked Entities share the visible card's Library.
-func (h *Handler) annotateBylines(ctx context.Context, filter store.LibraryFilter, items []store.SourceItem) error {
+func (h *Handler) annotateBylines(ctx context.Context, filter store.LibraryFilter, items []store.SourceItem, useReleaseYear bool) error {
 	var mediaIDs []store.MediaID
 	var entityIDs []store.EntityID
 	for _, item := range items {
@@ -1227,7 +1230,7 @@ func (h *Handler) annotateBylines(ctx context.Context, filter store.LibraryFilte
 			}
 			// The album's release date outranks the earliest-track year a
 			// shelf query may have set.
-			if detail.ReleaseYear > 0 {
+			if useReleaseYear && detail.ReleaseYear > 0 {
 				item.Year = detail.ReleaseYear
 			}
 			for _, credit := range detail.Credits {
@@ -4964,7 +4967,7 @@ func (h *Handler) queueOps(ctx context.Context, scope auth.Scope, fields map[str
 
 func (h *Handler) queueItems(ctx context.Context, committed store.QueueItemsResult) ([]SourceItem, error) {
 	cards := slices.Clone(committed.Items)
-	if err := h.annotateCardsForProfile(ctx, committed.ProfileID, committed.Filter, cards); err != nil {
+	if err := h.annotateCardsForProfile(ctx, committed.ProfileID, committed.Filter, cards, true); err != nil {
 		return nil, err
 	}
 	return h.queueResponse(cards, committed.Filter.Revealed, true), nil
@@ -5389,6 +5392,21 @@ type RelatedEntityGroupInfo struct {
 	// Archetype is the plugin-declared shape of Kind; omitted when undeclared.
 	Archetype string       `json:"archetype,omitempty"`
 	Items     []SourceItem `json:"items"`
+	// Sections partitions Items, in order, when a group rule splits Kind by
+	// a plugin field (CORE-2769): each section names a run of Items by its
+	// count. Omitted for an unsplit kind; clients that ignore it still get
+	// every Item, ordered section by section.
+	Sections []RelatedEntitySectionInfo `json:"sections,omitempty"`
+}
+
+// RelatedEntitySectionInfo is one run of a split related group: the grouping
+// field's value (empty for Entities without one), its plugin-declared heading
+// (omitted when the rule lists none; clients then head it with Value, or
+// with the kind's heading when Value is empty) and how many Items it covers.
+type RelatedEntitySectionInfo struct {
+	Value       string              `json:"value"`
+	DisplayName plugin.LocaleString `json:"displayName,omitempty"`
+	Count       int                 `json:"count"`
 }
 
 // RelatedEntityInfo pairs an Entity with the relation attributes that
@@ -5412,12 +5430,20 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 		EntityInfo:   entityInfo(entity, h.entityKindSpec(ctx, entity.LibraryID, entity.Kind)),
 		ArtworkSlots: h.entityArtworkSlots(entity.ID),
 	}
-	groups, err := h.store.RelatedEntityGroups(ctx, entity.ID, scope.LibraryFilter())
+	filter := scope.LibraryFilter()
+	var groupField func(pluginID, kind string) string
+	if len(h.entityGroupRules) != 0 {
+		groupField = func(pluginID, kind string) string {
+			return h.entityGroupRules[plugin.ID(pluginID)][kind].Field
+		}
+	}
+	groups, err := h.store.RelatedEntityGroupsBy(ctx, entity.ID, filter, groupField)
 	if err != nil {
 		return EntityDetailInfo{}, err
 	}
 	for _, group := range groups {
-		if err := h.annotateCards(ctx, scope, group.Items); err != nil {
+		// Related cards display and sort by their earliest linked Media year.
+		if err := h.annotateCardsForProfile(ctx, scope.ProfileID, filter, group.Items, false); err != nil {
 			return EntityDetailInfo{}, err
 		}
 		items := make([]SourceItem, len(group.Items))
@@ -5425,13 +5451,16 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 			items[i] = h.sourceItem(item, scope.Revealed)
 		}
 		spec := h.entityKindSpec(ctx, group.LibraryID, group.Kind)
-		info.RelatedEntities = append(info.RelatedEntities, RelatedEntityGroupInfo{
+		rule := h.entityGroupRules[plugin.ID(group.PluginID)][group.Kind]
+		related := RelatedEntityGroupInfo{
 			Kind:                  group.Kind,
 			KindDisplayName:       spec.DisplayName,
 			KindPluralDisplayName: spec.PluralDisplayName,
 			Archetype:             spec.Archetype,
 			Items:                 items,
-		})
+		}
+		rule.apply(&related, group.GroupValues)
+		info.RelatedEntities = append(info.RelatedEntities, related)
 	}
 	return info, nil
 }

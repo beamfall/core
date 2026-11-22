@@ -293,3 +293,32 @@ func TestMusicDeclaresEntityBrowseRule(t *testing.T) {
 		t.Fatalf("music browse rules = %+v, want %+v", got, want)
 	}
 }
+
+func TestMusicAlbumReleaseTypeGroups(t *testing.T) {
+	mapper := musicHydrationMapper{}
+	plan := mapper.MapHydration(map[string]string{
+		"TITLE": "Copper Tide", "ALBUM": "Tidewater Live", "ALBUMARTIST": "Lantern Choir", "RELEASETYPE": "album; live",
+	}, "/flat/a.flac")
+	for _, relation := range plan.Relations {
+		for _, field := range relation.From.Fields {
+			if field.Name == music.ReleaseTypeField {
+				t.Fatalf("Entity hydration still writes %q", field.Name)
+			}
+		}
+	}
+	tag := mapper.HydrationTag()
+	if got := tag.Read(map[string]string{"releasetype": "album; live"}); tag.Field != music.ReleaseTypeField || got != music.ReleaseTypeLive {
+		t.Fatalf("Media tag %q = %q, want %q", tag.Field, got, music.ReleaseTypeLive)
+	}
+	if got := tag.Read(nil); got != "" {
+		t.Fatalf("missing tag normalized to %q", got)
+	}
+
+	rules := firstPartyHooks().EntityGroupRules
+	if len(rules) != 1 || rules[0].PluginID != music.PluginID || rules[0].Kind != "album" || rules[0].Field != tag.Field {
+		t.Fatalf("music entity group rules = %+v", rules)
+	}
+	if got, want := len(rules[0].Groups), len(music.ReleaseTypeGroups()); got != want || rules[0].Groups[0].Value != music.ReleaseTypeAlbum {
+		t.Fatalf("release type groups = %+v, want the plugin's %d in order", rules[0].Groups, want)
+	}
+}

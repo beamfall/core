@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -786,5 +787,31 @@ func TestStationCollectionSeedSamplesUnqueued(t *testing.T) {
 				t.Fatalf("rankSeed %d: unqueued member %s missing from %v", seed, id, candidateIDs(got))
 			}
 		}
+	}
+}
+
+// TestStationEntitySeedMatchesArtistSeed proves the generic "entity" seed
+// kind resolves an Entity id the way "artist" does, so a client can start a
+// Station without naming a plugin kind (CORE-2769).
+func TestStationEntitySeedMatchesArtistSeed(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	ctx := context.Background()
+
+	byArtist, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "artist", id: string(fx.artistID)}, stationRules{}, stationTuning{}, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byEntity, _, err := h.generateStation(ctx, defaultScope(), stationSeed{kind: "entity", id: string(fx.artistID)}, stationRules{}, stationTuning{}, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byEntity) == 0 {
+		t.Fatal("entity seed produced no candidates")
+	}
+	if a, e := candidateIDs(byArtist), candidateIDs(byEntity); !slices.Equal(a, e) {
+		t.Fatalf("entity seed = %v, artist seed = %v", e, a)
 	}
 }

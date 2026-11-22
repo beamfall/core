@@ -41,6 +41,7 @@ import {
 import {
   ancestorOf,
   groupHeading,
+  groupSections,
   nextUpName,
   nextUpOrdinal,
   siblingContainers,
@@ -691,14 +692,19 @@ export function EntityPage() {
             </div>
           </header>
 
-          {/* Child containers first, each card counting its items. */}
-          {groups.containers.map((group) => (
-            <RelatedGroup
-              key={group.kind}
-              title={groupHeading(group, displayLocale)}
-              items={group.items.map((item) => withItemCount(item, itemCount, displayLocale))}
-            />
-          ))}
+          {/* Child containers first, each card counting its items; a kind the
+              plugin splits by a field (a release type) heads each run (CORE-2769). */}
+          {groups.containers.flatMap((group) => {
+            const sections = groupSections(group, displayLocale);
+            return sections.map((section) => (
+              <RelatedGroup
+                key={section.key}
+                title={section.title}
+                count={section.count}
+                items={section.items.map((item) => withItemCount(item, itemCount, displayLocale))}
+              />
+            ));
+          })}
 
           {mediaRows ? (
             fallback &&
@@ -768,7 +774,7 @@ export function EntityPage() {
 
           {groups.other.map((group) => (
             <RelatedGroup
-              key={group.kind}
+              key={`${group.kind}:${group.items[0]?.id ?? ""}`}
               title={groupHeading(group, displayLocale)}
               items={group.items}
             />
@@ -862,11 +868,21 @@ function withoutShownCards(
 }
 
 /** One related group as a poster grid under its heading. */
-function RelatedGroup({ title, items }: { title: string; items: readonly SourceItem[] }) {
+function RelatedGroup({
+  title,
+  count,
+  items,
+}: {
+  title: string;
+  /** The run's size, shown beside a heading that splits a kind. */
+  count?: number;
+  items: readonly SourceItem[];
+}) {
   return (
     <section className="bf-section flex flex-col gap-3">
       <h2 className="bf-section-title">
         <span>{title}</span>
+        {count !== undefined && <span className="bf-section-count">{count}</span>}
       </h2>
       <ul className="bf-grid">
         {items.map((item, index) => (

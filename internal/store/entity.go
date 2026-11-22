@@ -1300,7 +1300,15 @@ func decodeRelationAttributes(raw sql.NullString) (map[string]string, error) {
 	}
 	attributes := map[string]string{}
 	if err := json.Unmarshal([]byte(raw.String), &attributes); err != nil {
-		return nil, err
+		// Older hydration wrote a tag alongside the render attributes.
+		var legacy struct {
+			Attributes map[string]string `json:"attributes"`
+			Tag        json.RawMessage   `json:"@hydration"`
+		}
+		if legacyErr := json.Unmarshal([]byte(raw.String), &legacy); legacyErr != nil || len(legacy.Tag) == 0 {
+			return nil, err
+		}
+		return legacy.Attributes, nil
 	}
 	return attributes, nil
 }

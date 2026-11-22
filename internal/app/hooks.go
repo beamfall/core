@@ -26,6 +26,7 @@ type Hooks struct {
 	HydrationMappers               map[string]HydrationMapper
 	EntityPosterRules              []EntityPosterRule
 	EntityBrowseRules              []EntityBrowseRule
+	EntityGroupRules               []EntityGroupRule
 	EntityEnrichments              []EntityEnrichment
 	OfflinePackResolvers           []OfflinePackResolverHook
 	OfflinePackAttestationVerifier offlinepack.DeviceKeyAttestationVerifier
@@ -154,6 +155,20 @@ type HydrationTitleFoldMapper interface {
 // (CORE-2554). A mapper without it may write any declared Media field.
 type HydrationMediaFieldsMapper interface {
 	HydratedMediaFields() []string
+}
+
+// HydrationTag is an independent text field on Media, supplied by compiled
+// plugin glue. Read selects and normalizes the tag from container metadata.
+type HydrationTag struct {
+	Field string
+	Keys  []string
+	Read  func(map[string]string) string
+}
+
+// HydrationTagMapper opts into a field that can be backfilled independently
+// of the mapper's Entity and relation plan.
+type HydrationTagMapper interface {
+	HydrationTag() HydrationTag
 }
 
 // HydrationRelation targets the current Media when ToEntity is nil.

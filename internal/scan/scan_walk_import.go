@@ -336,6 +336,15 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			return err
 		}
 	}
+	pathChanged := false
+	if s.metadataCapability.TrackFilePath {
+		// Look in this Library's plane before import makes the new path known.
+		prior, err := s.st.MediaFileFingerprintInLibrary(s.ctx, s.req.LibraryID, path)
+		if err != nil {
+			return err
+		}
+		pathChanged = !prior.OK || prior.ModTime.IsZero() || prior.ContentFingerprint != fingerprint
+	}
 	media, _, err := s.st.ImportMediaFile(s.ctx, imported)
 	if err != nil {
 		s.dropTallies(path)
@@ -354,7 +363,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			return err
 		}
 	}
-	if err := s.hydrateMetadata(media, path, fingerprint, probeTags); err != nil {
+	if err := s.hydrateMetadata(media, path, fingerprint, probeTags, probeSucceeded, pathChanged); err != nil {
 		return err
 	}
 	if err := s.refreshParserFields(media.ID, refresh); err != nil {
@@ -395,7 +404,7 @@ func applyProbeFacts(imported *store.ImportMediaFile, probe ffmpeg.Probe) {
 	imported.FontAttachments = fontsFromProbe(probe.FontAttachments)
 }
 
-func (s *scanWalkState) hydrateMetadata(media store.Media, path, fingerprint string, metadata map[string]string) error {
+func (s *scanWalkState) hydrateMetadata(media store.Media, path, fingerprint string, metadata map[string]string, probed, pathChanged bool) error {
 	if s.metadataHydrator == nil {
 		return nil
 	}
@@ -408,7 +417,9 @@ func (s *scanWalkState) hydrateMetadata(media store.Media, path, fingerprint str
 		Class:              media.Class,
 		Path:               path,
 		Metadata:           metadata,
+		MetadataProbed:     probed,
 		ContentFingerprint: fingerprint,
+		FilePathChanged:    pathChanged,
 	})
 }
 
@@ -419,7 +430,7 @@ func (s *scanWalkState) backfillHydration(media store.Media, path, fingerprint s
 		return nil
 	}
 	if media.Class == store.MediaClassImage {
-		return s.hydrateMetadata(media, path, fingerprint, nil)
+		return s.hydrateMetadata(media, path, fingerprint, nil, false, false)
 	}
 	probe, err := s.prober.Probe(s.ctx, path)
 	if err != nil {
@@ -427,7 +438,7 @@ func (s *scanWalkState) backfillHydration(media store.Media, path, fingerprint s
 		return nil
 	}
 	media.Class = mediaClassFromProbe(probe)
-	return s.hydrateMetadata(media, path, fingerprint, probe.Tags)
+	return s.hydrateMetadata(media, path, fingerprint, probe.Tags, true, false)
 }
 
 func mediaClassFromProbe(probe ffmpeg.Probe) store.MediaClass {

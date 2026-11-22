@@ -1174,6 +1174,50 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
     );
   });
 
+  it("gives ruled sections counts and keeps unruled related cards in order (CORE-2769)", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...record,
+      archetype: "person",
+      relatedEntities: [
+        {
+          kind: "release",
+          archetype: "container",
+          kindPluralDisplayName: { en: "Releases" },
+          items: [
+            { id: "r1", kind: "entity", title: "Long One", year: 2010 },
+            { id: "r2", kind: "entity", title: "Long Two", year: 1999 },
+            { id: "r3", kind: "entity", title: "Short One", year: 2005 },
+          ],
+          sections: [
+            { value: "long", displayName: { en: "Long Players" }, count: 2 },
+            { value: "short", displayName: { en: "Short Players" }, count: 1 },
+          ],
+        },
+        {
+          kind: "release",
+          archetype: "container",
+          kindPluralDisplayName: { en: "Other Releases" },
+          items: [
+            { id: "r4", kind: "entity", title: "Z First", year: 1990 },
+            { id: "r5", kind: "entity", title: "A Second", year: 2022 },
+          ],
+        },
+      ],
+    } as EntityInfo);
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    const long = screen.getByRole("heading", { name: "Long Players 2" });
+    expect(within(long.closest("section") as HTMLElement).getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: "Short Players 1" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Releases/ })).toBeNull();
+    const unruled = screen.getByRole("heading", { name: "Other Releases" });
+    const links = within(unruled.closest("section") as HTMLElement).getAllByRole("link");
+    expect(links[0]).toHaveAccessibleName(/^Z First/);
+    expect(links[1]).toHaveAccessibleName(/^A Second/);
+  });
+
   it("lists a video container's own Media as detail rows over its Media-only Layout (CORE-2510)", async () => {
     vi.mocked(fetchMediaForEntity).mockResolvedValue([
       track("v1", "First Part", "video"),

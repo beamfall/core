@@ -721,6 +721,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		}
 		return result, err
 	})
+	jobRegistry.Register(hydrationTagBackfillKind, governedSweep(resourceGovernor, logger, hydrationTagBackfillHandler(st, metadataHydrators, ffmpegRunner, logger)))
 	jobRegistry.Register(retentionSweepJobKind, retentionSweepHandler(st, artworkService, logger))
 	// Subtitle offset-nudge sweep. Nudge rows are keyed on a
 	// subtitle track's byte fingerprint, so a row whose track no longer exists can
@@ -1148,6 +1149,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	backfillHydration := func(ctx context.Context) {
 		reclassifyAttachedPictureAudio(ctx, st, ffmpegRunner, logger)
 		queueHydrationBackfills(ctx, st, metadataHydrators, logger)
+		queueHydrationTagBackfills(ctx, st, metadataHydrators, jobWake, logger)
 	}
 	backfillHydration(ctx)
 	// Device push-token registration: the persisting
@@ -1314,6 +1316,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		Identify:                     identifyService,
 		Artwork:                      artworkService,
 		EntityBrowseSources:          activeEntityBrowseRules(executablePlugins, hooks.EntityBrowseRules, logger),
+		EntityGroupRules:             activeEntityGroupRules(executablePlugins, hooks.EntityGroupRules, logger),
 		StreamTokens:                 tokenService,
 		ArtworkCandidateFetcher:      scrapeEngine,
 		ArtworkCandidateImporter:     artworkService,

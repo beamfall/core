@@ -203,6 +203,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"RefreshLibraryHealthCache":               {},
 	"RegisterImportSource":                    {},
 	"RelatedEntityGroups":                     {},
+	"RelatedEntityGroupsBy":                   {},
 	"RemoveCollectionMedia":                   {},
 	"RemoveSubscription":                      {},
 	"RequestAllSubscriptionsRefresh":          {}, // updates poll cadence only
