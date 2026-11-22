@@ -82,6 +82,13 @@ vi.mock("../components/LayoutView", () => ({
     );
   },
 }));
+vi.mock("../components/HomeEditor", () => ({
+  HomeEditor: ({ onClose }: { onClose: () => void }) => (
+    <button type="button" onClick={onClose}>
+      home editor
+    </button>
+  ),
+}));
 vi.mock("../components/RevealControls", () => ({ RevealControls: () => null }));
 vi.mock("../components/ViewerActions", () => ({ ViewerActions: () => null }));
 
@@ -110,6 +117,18 @@ afterEach(() => {
 });
 
 describe("BrowsePage node resolution", () => {
+  it("offers Edit home on Home only and swaps the layout for the editor (CORE-1972)", () => {
+    renderAt("/", { manifest, loading: false, refresh: vi.fn() });
+    fireEvent.click(screen.getByRole("button", { name: "Edit home" }));
+    expect(screen.queryByTestId("layout")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "home editor" }));
+    expect(screen.getByTestId("layout")).toBeInTheDocument();
+    cleanup();
+
+    renderAt("/n/library-lib-a");
+    expect(screen.queryByRole("button", { name: "Edit home" })).toBeNull();
+  });
+
   it("renders a library node under its own heading and scope", () => {
     renderAt("/n/library-lib-a");
 

@@ -81,6 +81,7 @@ var resultTypes = map[string]any{
 	"qualitypolicy":          QualityPolicyInfo{},
 	"accessschedule":         AccessScheduleInfo{},
 	"clientprefs":            ClientPrefInfo{},
+	"homelayout":             HomeLayoutInfo{}, // CORE-1972
 	"identifysearch":         IdentifyCandidate{},
 	"identifylookup":         IdentifyCandidate{},
 	"fixmatchcandidates":     FixMatchCandidateInfo{},
@@ -213,6 +214,8 @@ var resultTypes = map[string]any{
 	"scrobbleeligibility":                ScrobbleEligibilityInfo{}, // MUSIC-7: list of per-Library eligibility
 	"scrobblestatus":                     ScrobbleStatusInfo{},      // MUSIC-7: admin diagnostic object
 	"setclientpref":                      ClientPrefInfo{},
+	"sethomelayout":                      HomeLayoutInfo{}, // CORE-1972
+	"resethomelayout":                    HomeLayoutInfo{}, // CORE-1972
 	"setfollow":                          FollowInfo{},
 	"associatesubscriptionentry":         SubscriptionEntryAssociationInfo{},
 	"setmute":                            MuteResult{},

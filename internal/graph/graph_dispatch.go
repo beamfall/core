@@ -394,6 +394,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	153: dispatchFieldBlock153,
 	154: dispatchFieldBlock154,
 	155: dispatchFieldBlock155,
+	156: dispatchFieldBlock156,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -437,6 +438,9 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"clearallmutes":                      newFieldHandler("clearAllMutes", "clearAllMutes", fieldMutation, roleSession, 125),
 	"clearmute":                          newFieldHandler("clearMute", "clearMute", fieldMutation, roleSession, 124),
 	"clientprefs":                        newFieldHandler("clientPrefs", "client preferences", fieldRead, roleSession, 43),
+	"homelayout":                         newFieldHandler("homeLayout", "homeLayout", fieldRead, roleSession, 156),
+	"resethomelayout":                    newFieldHandler("resetHomeLayout", "resetHomeLayout", fieldMutation, roleSession, 156),
+	"sethomelayout":                      newFieldHandler("setHomeLayout", "setHomeLayout", fieldMutation, roleSession, 156),
 	"collections":                        newFieldHandler("collections", "collections", fieldRead, roleSession, 57),
 	"connectionendpoints":                newFieldHandler("connectionEndpoints", "", fieldRead, roleSession, 104),
 	"consoleconfig":                      newFieldHandler("consoleConfig", "consoleConfig", fieldRead, roleSession|roleAdmin, 66),
@@ -4437,6 +4441,34 @@ func dispatchFieldBlock155(dispatch *fieldDispatchContext) response {
 	if fields["jellyfincompatkeys"] {
 		keys, err := h.jellyfinCompatKeys(ctx)
 		if resp := resolveField(dispatch, "jellyfincompatkeys", keys, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+// Per-Profile Home layout (CORE-1972, resolvers in graph_home_layout.go).
+func dispatchFieldBlock156(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["sethomelayout"] {
+		result, err := h.setHomeLayout(ctx, scope, req)
+		if resp := resolveField(dispatch, "sethomelayout", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["resethomelayout"] {
+		result, err := h.resetHomeLayout(ctx, scope)
+		if resp := resolveField(dispatch, "resethomelayout", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["homelayout"] {
+		result, err := h.homeLayout(ctx, scope)
+		if resp := resolveField(dispatch, "homelayout", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

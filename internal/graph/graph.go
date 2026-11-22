@@ -6018,6 +6018,7 @@ var queryFields = map[string]bool{
 	"encryptedlibrarystatus": true, // ENC-2 (ADR-0045 §2.4): credential-free Sealed/Unsealed + mode read
 	"accessschedule":         true,
 	"clientprefs":            true,
+	"homelayout":             true, // CORE-1972: the session Profile's Home layout
 	"identifysearch":         true,
 	"identifylookup":         true, // METAPARITY-4 (ADR-0068 §A): paste-an-id direct fetch, read-only
 	"fixmatchcandidates":     true, // METAPARITY-4 (ADR-0068 §A): scored candidate list, read-only
@@ -6145,6 +6146,8 @@ var mutationFields = map[string]bool{
 	"linkscrobble":                       true, // SCROBBLE-1 (ADR-0049 §2.2): link own Profile to a scrobble service
 	"unlinkscrobble":                     true, // SCROBBLE-1 (ADR-0049 §2.9): unlink own Profile from a scrobble service
 	"setclientpref":                      true,
+	"sethomelayout":                      true, // CORE-1972: save the session Profile's Home layout
+	"resethomelayout":                    true, // CORE-1972: clear the session Profile's Home layout
 	"setfollow":                          true,
 	"associatesubscriptionentry":         true,
 	"setmute":                            true, // ENR-4 (ADR-0054 §2.8): set "Not interested" on an Entity/Tag (own Profile)

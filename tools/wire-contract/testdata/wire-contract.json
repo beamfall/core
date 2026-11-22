@@ -503,6 +503,11 @@
       "tier": "session"
     },
     {
+      "field": "homelayout",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "hostmetrics",
       "effect": "read",
       "tier": "admin"
@@ -1023,6 +1028,11 @@
       "tier": "session"
     },
     {
+      "field": "resethomelayout",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "resetnavoverride",
       "effect": "write",
       "tier": "session"
@@ -1284,6 +1294,11 @@
     },
     {
       "field": "setfollow",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "sethomelayout",
       "effect": "write",
       "tier": "session"
     },
@@ -10057,6 +10072,68 @@
             {
               "name": "sessionID",
               "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "field": "homelayout",
+      "kind": "object",
+      "children": [
+        {
+          "name": "customized",
+          "kind": "scalar"
+        },
+        {
+          "name": "sections",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "hidden",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "hidden",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "map",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             }
           ]
         }
@@ -22081,6 +22158,68 @@
       ]
     },
     {
+      "field": "resethomelayout",
+      "kind": "object",
+      "children": [
+        {
+          "name": "customized",
+          "kind": "scalar"
+        },
+        {
+          "name": "sections",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "hidden",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "hidden",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "map",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "field": "resetnavoverride",
       "kind": "object",
       "children": [
@@ -27629,6 +27768,68 @@
         {
           "name": "title",
           "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "sethomelayout",
+      "kind": "object",
+      "children": [
+        {
+          "name": "customized",
+          "kind": "scalar"
+        },
+        {
+          "name": "sections",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "hidden",
+                "kind": "scalar"
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "hidden",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "map",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            }
+          ]
         }
       ]
     },

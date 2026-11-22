@@ -419,7 +419,7 @@ describe("Viewer Home", () => {
     expect(screen.queryByRole("list", { name: "Ajouts récents" })).toBeNull();
   });
 
-  it("leads with Continue Watching even when the layout orders it after Recent (CORE-2825)", async () => {
+  it("renders shelves in the order the server sends, even with Continue Watching after Recent (CORE-1972)", async () => {
     // One aggregate Recent shelf rather than a shelf per library.
     vi.mocked(fetchHomeLibraries).mockResolvedValue(null);
     const [keepWatching, recent] = layout.sections;
@@ -433,7 +433,9 @@ describe("Viewer Home", () => {
     await screen.findByRole("list", { name: "Reprendre la lecture" });
     await screen.findByRole("list", { name: "Ajouts récents" });
     expect(container.querySelector(".bf-hero")).toBeNull();
-    expect(screen.getAllByRole("list")[0]).toHaveAccessibleName("Reprendre la lecture");
+    // The server applies the default Continue-first order (CORE-2825) and the
+    // Profile's saved order; the client never reorders.
+    expect(screen.getAllByRole("list")[0]).toHaveAccessibleName("Ajouts récents");
   });
 
   it("holds the hero while a Continue shelf cached empty revalidates (CORE-2825)", async () => {

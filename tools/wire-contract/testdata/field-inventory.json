@@ -1282,6 +1282,15 @@
       ]
     },
     {
+      "field": "homelayout",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "customized",
+        "sections"
+      ]
+    },
+    {
       "field": "hostmetrics",
       "effect": "read",
       "tier": "admin",
@@ -2749,6 +2758,15 @@
       ]
     },
     {
+      "field": "resethomelayout",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "customized",
+        "sections"
+      ]
+    },
+    {
       "field": "resetnavoverride",
       "effect": "write",
       "tier": "session",
@@ -3499,6 +3517,15 @@
         "followed",
         "id",
         "title"
+      ]
+    },
+    {
+      "field": "sethomelayout",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "customized",
+        "sections"
       ]
     },
     {

@@ -230,12 +230,10 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 			LibraryID: string(library.ID),
 		})
 	}
-	home := homeLayout()
-	smartSections, err := s.smartCollectionHomeSections(ctx, libraries)
+	home, err := s.composedHome(ctx, libraries)
 	if err != nil {
 		return Document{}, err
 	}
-	home.Sections = append(home.Sections, smartSections...)
 	layouts := []Layout{home}
 	for _, layout := range pluginLayouts {
 		layouts = append(layouts, layout)
@@ -250,6 +248,17 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 	}
 	navigation = applyNavOverride(navigation, override)
 	layouts = applyLayoutOverride(layouts, override)
+	// The Profile's own Home layout applies last, over the sections the
+	// Profile already receives, so it can only order and hide (CORE-1972).
+	preference, err := s.homePreference(ctx, scope)
+	if err != nil {
+		return Document{}, err
+	}
+	for i := range layouts {
+		if layouts[i].ID == HomeLayoutID {
+			layouts[i] = applyHomePreference(layouts[i], preference)
+		}
+	}
 
 	accentColor := DefaultAccentColor
 	if override.ThemeAccentColor != "" {
