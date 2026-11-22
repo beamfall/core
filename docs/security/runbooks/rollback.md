@@ -13,8 +13,10 @@ Revert a bad release.
    read query:
    ```sh
    curl -sS -H "Authorization: Bearer $(cat <data-dir>/secrets/metrics-scrape-token)" \
-     http://127.0.0.1:8800/metrics
+     http://127.0.0.1:<port>/metrics
    ```
+   Use the port the restored instance listens on: its `--addr` or `BEAMFALL_ADDR`, else its
+   build's default (2326 from ADR-0239, 8800 before).
 5. File an incident note (see [incident](incident.md)) capturing cause + timeline.
 
 ## Targets

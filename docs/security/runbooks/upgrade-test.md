@@ -11,7 +11,7 @@ Validate an upgrade before rolling it out.
    credential described in [The scrape credential](metrics.md#the-scrape-credential):
    ```sh
    curl -sS -H "Authorization: Bearer $(cat <data-dir>/secrets/metrics-scrape-token)" \
-     http://127.0.0.1:8800/metrics
+     http://127.0.0.1:2326/metrics
    ```
 
 ## Targets

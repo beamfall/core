@@ -21,9 +21,9 @@ services:
     container_name: beamfall
     restart: unless-stopped
     ports:
-      - "${BEAMFALL_HTTP_BIND:-127.0.0.1}:${BEAMFALL_HTTP_PORT:-8800}:8800"
+      - "${BEAMFALL_HTTP_BIND:-127.0.0.1}:${BEAMFALL_HTTP_PORT:-2326}:2326"
     environment:
-      BEAMFALL_ADDR: "0.0.0.0:8800"
+      BEAMFALL_ADDR: "0.0.0.0:2326"
       BEAMFALL_DATA_DIR: "/data"
       BEAMFALL_TRANSCODE_CAP: "${BEAMFALL_TRANSCODE_CAP:-2}"
       BEAMFALL_KNOWN_PROXIES: "${BEAMFALL_KNOWN_PROXIES:-}"

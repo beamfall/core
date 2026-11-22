@@ -63,7 +63,7 @@ structured log carries the same URL with the token as `REDACTED`, so read the to
 or supervisor stdout, not from shipped logs. To recover a lost or already-used token
 (`setup_token_invalid`), restart the server and use the newly printed URL; the previous token stops
 working. A browser on the server's local network does not need the token: open
-`http://<server-ip>:8800/web/` (when bound to all interfaces the block lists `From this network (no token needed): <url>` for
+`http://<server-ip>:2326/web/` (when bound to all interfaces the block lists `From this network (no token needed): <url>` for
 each LAN address first) and finish setup there.
 Requests that reach the server from outside the local network, through the relay, or through a
 proxy that is not declared as trusted still need the token, and so does a LAN browser that opens
@@ -96,7 +96,7 @@ There are three ways back in after setup. None of them needs a setup token.
    beamfall pairing-code --data-dir /var/lib/beamfall
    ```
 
-   It prints a one-time code. Start the server, open `http://<server>:8800/web/` and enter the
+   It prints a one-time code. Start the server, open `http://<server>:2326/web/` and enter the
    code. The new device is a Manager; pass `--role viewer` for a Viewer. `BEAMFALL_DATA_DIR` is
    honored in place of `--data-dir`. Like `reset-admin-password`, it refuses to run while the
    server holds its data-directory lock.

@@ -67,7 +67,7 @@ adjust it if FFmpeg is elsewhere.
     <string>/Users/YOU/.local/bin/beamfall</string>
     <string>serve</string>
     <string>-data-dir</string><string>/Users/YOU/Library/Application Support/Beamfall</string>
-    <string>-addr</string><string>127.0.0.1:8800</string>
+    <string>-addr</string><string>127.0.0.1:2326</string>
   </array>
   <key>EnvironmentVariables</key><dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
@@ -106,7 +106,7 @@ read-only media mounts; see [container paths and permissions](linux.md#data-and-
 
 ## First sign-in and pairing
 
-Open `http://127.0.0.1:8800/`. For LAN access, change `-addr` to `0.0.0.0:8800` in the foreground
+Open `http://127.0.0.1:2326/`. For LAN access, change `-addr` to `0.0.0.0:2326` in the foreground
 command or plist and restart. Use a trusted LAN for first claim. Setup URLs, including the
 one-time token, are the last startup lines once listening; a LAN browser using the Mac's IP
 needs no token. Each restart while setup is pending prints a new token. For Docker, read
@@ -115,7 +115,7 @@ needs no token. Each restart while setup is pending prints a new token. For Dock
 For an owner pairing code, unload the LaunchAgent or stop the foreground server, then run:
 
 ```sh
-"$HOME/.local/bin/beamfall" pairing-code -data-dir "$HOME/Library/Application Support/Beamfall" -addr 127.0.0.1:8800
+"$HOME/.local/bin/beamfall" pairing-code -data-dir "$HOME/Library/Application Support/Beamfall" -addr 127.0.0.1:2326
 ```
 
 Restart before entering the code; it expires at the printed time. `-role viewer` is optional

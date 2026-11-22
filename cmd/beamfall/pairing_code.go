@@ -75,7 +75,7 @@ func pairingCodeCommand(ctx context.Context, args []string, stdout io.Writer) er
 func pairingWebURL(listenAddr string, interfaceAddrs []net.Addr) string {
 	host, port, err := net.SplitHostPort(listenAddr)
 	if err != nil {
-		return "http://127.0.0.1:8800/web/"
+		return "http://127.0.0.1:2326/web/"
 	}
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"

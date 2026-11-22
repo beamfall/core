@@ -67,7 +67,7 @@ For the native installation above, create `/etc/beamfall.env`, owned by root wit
 
 ```ini
 BEAMFALL_DATA_DIR=/var/lib/beamfall
-BEAMFALL_ADDR=127.0.0.1:8800
+BEAMFALL_ADDR=127.0.0.1:2326
 PATH=/usr/local/bin:/usr/bin:/bin
 ```
 
@@ -121,8 +121,8 @@ variable: set it to `/transcode` in the service environment if using that separa
 
 ## First sign-in and pairing
 
-Open `http://127.0.0.1:8800/` on the host. For LAN access, change the service's `BEAMFALL_ADDR`
-to `0.0.0.0:8800` and restart it; the equivalent foreground flag is `-addr 0.0.0.0:8800`.
+Open `http://127.0.0.1:2326/` on the host. For LAN access, change the service's `BEAMFALL_ADDR`
+to `0.0.0.0:2326` and restart it; the equivalent foreground flag is `-addr 0.0.0.0:2326`.
 Only expose an unclaimed instance on a trusted LAN. After listening, the server prints setup
 URLs as its last startup lines, including a one-time token. A LAN browser using the host's IP
 needs no token; while setup remains unfinished, every restart produces a new token. For a
@@ -134,7 +134,7 @@ the data-directory owner:
 
 ```sh
 sudo systemctl stop beamfall.service
-sudo -u beamfall /usr/local/bin/beamfall pairing-code -data-dir /var/lib/beamfall -addr 127.0.0.1:8800
+sudo -u beamfall /usr/local/bin/beamfall pairing-code -data-dir /var/lib/beamfall -addr 127.0.0.1:2326
 sudo systemctl start beamfall.service
 ```
 

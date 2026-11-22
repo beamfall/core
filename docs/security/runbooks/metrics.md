@@ -23,7 +23,7 @@ Scrape, dashboard, and alert on Beamfall Core.
 - `beamfall_*_error` sentinels — set to 1 when a sub-collector fails.
 
 ## Breaking change: every scrape now needs the bearer
-**A local scrape without the bearer is refused after upgrade.** `curl http://127.0.0.1:8800/metrics`
+**A local scrape without the bearer is refused after upgrade.** `curl http://127.0.0.1:2326/metrics`
 from the server's own host used to return the exposition; it now returns 403. Nothing about where a
 request comes from earns it a scrape any more. There are exactly two ways in:
 
@@ -40,15 +40,15 @@ Fix a local scraper before you upgrade:
 
 ```sh
 curl -sS -H "Authorization: Bearer $(cat <data-dir>/secrets/metrics-scrape-token)" \
-  http://127.0.0.1:8800/metrics
+  http://127.0.0.1:2326/metrics
 ```
 
-**Why the host-local carve-out was withdrawn.** The default bind is `127.0.0.1:8800`, so a reverse
+**Why the host-local carve-out was withdrawn.** The default bind is `127.0.0.1:2326`, so a reverse
 proxy in front of the server runs on the same host and every request it relays arrives with a
 loopback peer address. The server can refuse a relayed request it *recognises* — the
 `BEAMFALL_KNOWN_PROXIES` allowlist, or the hop headers a relaying proxy adds (`Forwarded`,
 `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-Proto`, `X-Real-Ip`, `Via`).
-But nginx's bare `location / { proxy_pass http://127.0.0.1:8800; }` declares nothing and adds none
+But nginx's bare `location / { proxy_pass http://127.0.0.1:2326; }` declares nothing and adds none
 of them, so the request it relays from the internet is byte-for-byte what a local client sends. No
 check can separate the two, so serving the local one uncredentialed served the relayed one too. The
 credential is what a relayed client cannot obtain and a local operator can.
@@ -59,7 +59,7 @@ credential is what a relayed client cannot obtain and a local operator can.
   authorization: it does not depend on the peer address, on what the fronting proxy sends, or on
   `BEAMFALL_KNOWN_PROXIES`.
 - **How to present it.** `Authorization: Bearer <the file's contents>`, e.g.
-  `curl -sS -H "Authorization: Bearer $(cat <data-dir>/secrets/metrics-scrape-token)" http://127.0.0.1:8800/metrics`.
+  `curl -sS -H "Authorization: Bearer $(cat <data-dir>/secrets/metrics-scrape-token)" http://127.0.0.1:2326/metrics`.
 - **It rotates on every restart.** The server mints a new credential each start and rewrites the
   file; the previous value stops working immediately. A scraper must read the file at scrape time
   (or re-read it on the first 403) rather than caching the value into its own config — a Prometheus

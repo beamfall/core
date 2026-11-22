@@ -38,7 +38,7 @@ There is no installer yet, so the first run means building Beamfall yourself. In
 3. **Start it** and leave the terminal open:
 
    ```sh
-   ./beamfall serve --addr 0.0.0.0:8800 --data-dir "$HOME/beamfall-data"
+   ./beamfall serve --addr 0.0.0.0:2326 --data-dir "$HOME/beamfall-data"
    ```
 
 4. **Finish setup in your browser.** Open the address the server prints under "From this network"
@@ -257,7 +257,7 @@ and the architecture test in `internal/conformance` disagree, the test wins.
 
 Core serves its own Web UI at `/web/`: first-run setup, the Beamfall Console for
 administration, library management, and a browser player. On a fresh server, open
-`http://<server-ip>:8800/web/` from a browser on the same network to finish first-run setup; no
+`http://<server-ip>:2326/web/` from a browser on the same network to finish first-run setup; no
 token is needed there. It lives in this repository under the
 same license. Native Beamfall apps are separate products and are not part of this repository.
 They talk to Core over its network API, and Core never needs them to run.

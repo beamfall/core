@@ -41,11 +41,11 @@ bound to a wildcard or non-loopback address and discovery is on.
 
 #### Scenario: Default loopback listener stays off the LAN
 
-- **WHEN** the server starts with discovery on and listens on `127.0.0.1:8800`
+- **WHEN** the server starts with discovery on and listens on `127.0.0.1:2326`
 - **THEN** no `_beamfall._tcp` record is registered
 - **AND** the server logs that discovery was not advertised
 
 #### Scenario: Wildcard listener advertises
 
-- **WHEN** the server starts with discovery on and listens on `0.0.0.0:8800`
-- **THEN** the `_beamfall._tcp` record is registered on port 8800
+- **WHEN** the server starts with discovery on and listens on `0.0.0.0:2326`
+- **THEN** the `_beamfall._tcp` record is registered on port 2326

@@ -73,5 +73,5 @@ covers about 10 seconds, so capture it right away if you need those results.
 ```sh
 docker events --since 10m --until "$(date +%s)" --filter container=Beamfall-Core --format '{{.Time}} {{.Action}}'
 docker inspect --format '{{json .State.Health}}' Beamfall-Core
-curl -fsS http://127.0.0.1:8800/health
+curl -fsS http://127.0.0.1:2326/health
 ```

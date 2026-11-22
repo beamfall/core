@@ -49,7 +49,7 @@ func TestPairingCodeMintsOwnerCode(t *testing.T) {
 				t.Fatal(err)
 			}
 			lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-			if len(lines) != 2 || !strings.Contains(lines[1], "http://127.0.0.1:8800/web/") {
+			if len(lines) != 2 || !strings.Contains(lines[1], "http://127.0.0.1:2326/web/") {
 				t.Fatalf("output = %q, want a code and one instruction line", out.String())
 			}
 			st, err := store.Open(context.Background(), dataDir, store.Options{})
@@ -109,10 +109,10 @@ func TestPairingWebURL(t *testing.T) {
 		addrs []net.Addr
 		want  string
 	}{
-		{addr: "127.0.0.1:8800", addrs: lan, want: "http://127.0.0.1:8800/web/"},
+		{addr: "127.0.0.1:2326", addrs: lan, want: "http://127.0.0.1:2326/web/"},
 		{addr: "0.0.0.0:9000", addrs: lan, want: "http://192.168.1.20:9000/web/"},
 		{addr: ":9000", addrs: nil, want: "http://127.0.0.1:9000/web/"},
-		{addr: "10.0.0.5:8800", addrs: lan, want: "http://10.0.0.5:8800/web/"},
+		{addr: "10.0.0.5:2326", addrs: lan, want: "http://10.0.0.5:2326/web/"},
 	} {
 		if got := pairingWebURL(tc.addr, tc.addrs); got != tc.want {
 			t.Errorf("pairingWebURL(%q) = %q, want %q", tc.addr, got, tc.want)

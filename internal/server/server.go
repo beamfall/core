@@ -1228,7 +1228,7 @@ func (s *Server) recordGauge(ctx context.Context, name string, value int64, labe
 
 // requestIsLoopback reports whether the request came from a client on this host
 // with nothing in between — the condition the test-fault control gates on. The
-// TCP peer address alone cannot answer it: the default bind is 127.0.0.1:8800,
+// TCP peer address alone cannot answer it: the default bind is 127.0.0.1:2326,
 // so a reverse proxy in the documented topology necessarily runs on this same
 // host and presents a loopback peer address for traffic it relays from the
 // internet. requestRelayedByProxy therefore disqualifies a relayed request on
