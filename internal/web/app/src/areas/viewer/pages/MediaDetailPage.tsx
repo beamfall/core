@@ -229,6 +229,11 @@ export function MediaDetailPage() {
     }
     // ?t=0 is the player's "from the beginning" (it also skips pre-play).
     const suffix = fromStart ? "?t=0" : "";
+    if ((media?.mediaClass ?? card?.mediaClass) === "image") {
+      // A still has nothing to play: Play opens it in the image viewer.
+      navigate(mediaPath("view", previewID), { state });
+      return;
+    }
     navigate(`${mediaPath("watch", previewID)}${suffix}`, { state });
   }
 

@@ -3,16 +3,19 @@ package scrape
 // Ingest-facing additions to the hardened engine: conditional
 // feed fetches and streamed resource downloads. Both run through the same
 // ADR-0012 §9 SSRF gate as every scraper request — https only, no literal
-// IPs, no private ranges, host-pinned redirects.
+// IPs, no private ranges, and origin checks on redirects.
 
 import (
 	"context"
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ConditionalResult is one conditional-GET response: either NotModified (the
@@ -35,7 +38,7 @@ func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[s
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: building request: %w", err)
+		return nil, safeFetchError("building request", err)
 	}
 	req.Header.Set("User-Agent", userAgent)
 	for name, value := range headers {
@@ -43,7 +46,7 @@ func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[s
 			req.Header.Set(name, value)
 		}
 	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	resp, err := e.requestWithRetry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
 		return e.client.Do(attempt)
 	})
 	if err != nil {
@@ -55,7 +58,7 @@ func (e *Engine) FetchDocument(ctx context.Context, rawURL string, headers map[s
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("scrape: reading response: %w", err)
+		return nil, safeFetchError("reading response", err)
 	}
 	if int64(len(data)) > e.maxResponseBytes {
 		return nil, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
@@ -73,55 +76,13 @@ func (e *Engine) FetchConditional(ctx context.Context, rawURL, etag, lastModifie
 }
 
 func (e *Engine) FetchConditionalAuth(ctx context.Context, rawURL, etag, lastModified string, authHeader string) (ConditionalResult, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		// Never wrap the parse error: it embeds the raw URL, which can carry
-		// private-feed credentials.
-		return ConditionalResult{}, fmt.Errorf("scrape: invalid request URL")
-	}
-	if err := e.vetURL(parsed); err != nil {
-		return ConditionalResult{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
-	if err != nil {
-		return ConditionalResult{}, fmt.Errorf("scrape: building request: %w", err)
-	}
-	req.Header.Set("User-Agent", userAgent)
-	if strings.TrimSpace(authHeader) != "" {
-		req.Header.Set("Authorization", authHeader)
-	}
-	if etag != "" {
-		req.Header.Set("If-None-Match", etag)
-	}
-	if lastModified != "" {
-		req.Header.Set("If-Modified-Since", lastModified)
-	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
-		return e.client.Do(attempt)
-	})
-	if err != nil {
-		return ConditionalResult{}, sanitizedTransportError(parsed, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotModified {
-		return ConditionalResult{ETag: etag, LastModified: lastModified, NotModified: true}, nil
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return ConditionalResult{}, &statusError{host: parsed.Hostname(), code: resp.StatusCode}
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBytes+1))
-	if err != nil {
-		return ConditionalResult{}, fmt.Errorf("scrape: reading response: %w", err)
-	}
-	if int64(len(data)) > e.maxResponseBytes {
-		return ConditionalResult{}, fmt.Errorf("scrape: response from %s exceeds the %d-byte cap", parsed.Hostname(), e.maxResponseBytes)
-	}
-	return ConditionalResult{
-		Data:         data,
-		ETag:         resp.Header.Get("ETag"),
-		LastModified: resp.Header.Get("Last-Modified"),
-	}, nil
+	result, err := e.FetchFeed(ctx, rawURL, etag, lastModified, authHeader)
+	return result.ConditionalResult, err
 }
+
+// EnclosureDownloadLimit is the per-enclosure archive budget. Declared
+// lengths are optional and untrusted.
+const EnclosureDownloadLimit int64 = 2 << 30
 
 // DownloadResource streams one resource into dst through the vetted client,
 // refusing bodies larger than maxBytes (maxBytes <= 0 means no cap; callers
@@ -143,13 +104,13 @@ func (e *Engine) DownloadResourceAuth(ctx context.Context, rawURL string, dst io
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return 0, fmt.Errorf("scrape: building request: %w", err)
+		return 0, safeFetchError("building request", err)
 	}
 	req.Header.Set("User-Agent", userAgent)
 	if strings.TrimSpace(authHeader) != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
-	resp, err := e.requestWith429Retry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
+	resp, err := e.requestWithRetry(ctx, req, func(attempt *http.Request) (*http.Response, error) {
 		return e.streamClient.Do(attempt)
 	})
 	if err != nil {
@@ -166,7 +127,7 @@ func (e *Engine) DownloadResourceAuth(ctx context.Context, rawURL string, dst io
 	}
 	written, err := io.Copy(dst, reader)
 	if err != nil {
-		return written, fmt.Errorf("scrape: streaming response from %s: %w", parsed.Hostname(), err)
+		return written, safeFetchError("streaming response", err)
 	}
 	if maxBytes > 0 && written > maxBytes {
 		return written, fmt.Errorf("scrape: response from %s exceeds the %d-byte download budget", parsed.Hostname(), maxBytes)
@@ -193,7 +154,7 @@ type OriginResponse struct {
 // OpenOriginRange opens rawURL for streaming through the SAME ADR-0012 §9 SSRF
 // gate as every other server-side fetch (vetURL: https only, no literal IPs, no
 // private ranges; the dialer's controlDial re-checks the resolved IP for
-// DNS-rebinding; checkRedirect host-pins). It forwards the client's Range header
+// DNS-rebinding; checkStreamRedirect re-vets every hop). It forwards the client's Range header
 // to the origin so the proxy can honour client seeks, and returns the open body
 // for the caller to copy + tee. The origin URL never leaves the server — only
 // the streamed bytes do. The caller owns Body and must Close it.
@@ -209,7 +170,7 @@ func (e *Engine) OpenOriginRange(ctx context.Context, rawURL, rangeHeader string
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return OriginResponse{}, fmt.Errorf("scrape: building request: %w", err)
+		return OriginResponse{}, safeFetchError("building request", err)
 	}
 	req.Header.Set("User-Agent", userAgent)
 	if strings.TrimSpace(rangeHeader) != "" {
@@ -250,15 +211,46 @@ func originTotalSize(resp *http.Response) int64 {
 	return 0
 }
 
-// sanitizedTransportError strips the full request URL from client errors
-// (*url.Error embeds it verbatim — query strings can carry credentials) and
-// keeps only the host plus the underlying cause.
+// sanitizedTransportError keeps status and refusal diagnostics and never
+// formats transport text. net/http can include a malformed Location in the
+// underlying error, even after the outer *url.Error is stripped.
 func sanitizedTransportError(parsed *url.URL, err error) error {
-	cause := err
-	if urlErr, ok := err.(*url.Error); ok {
-		cause = urlErr.Err
+	for {
+		urlErr, ok := err.(*url.Error)
+		if !ok {
+			break
+		}
+		err = urlErr.Err
 	}
-	return fmt.Errorf("scrape: request to %s failed: %w", parsed.Hostname(), cause)
+	var refused *refusedError
+	var status *statusError
+	switch {
+	case errors.As(err, &refused):
+		return refused
+	case errors.As(err, &status):
+		return status
+	default:
+		return safeFetchError("request to "+parsed.Hostname(), err)
+	}
+}
+
+// fetchError retains typed causes for classification without printing them.
+type fetchError struct {
+	operation string
+	cause     error
+}
+
+func (e *fetchError) Error() string        { return "scrape: " + e.operation + " failed" }
+func (e *fetchError) Is(target error) bool { return errors.Is(e.cause, target) }
+func (e *fetchError) As(target any) bool {
+	if _, isURL := target.(**url.Error); isURL {
+		return false
+	}
+	return errors.As(e.cause, target)
+}
+
+func safeFetchError(operation string, cause error) error {
+	return &fetchError{operation: operation, cause: cause}
 }
 
 // FeedEntry is one feed item relevant to ingest: its identity GUID, display
@@ -266,44 +258,151 @@ func sanitizedTransportError(parsed *url.URL, err error) error {
 type FeedEntry struct {
 	GUID  string
 	Title string
+	// DerivedGUID is true when the feed omitted an explicit GUID or Atom ID.
+	DerivedGUID bool
 	// EnclosureURL is the media payload URL ("" for entries with no
 	// enclosure). Never an identity key — ad insertion rewrites it freely.
 	EnclosureURL string
 	// EnclosureType is the declared MIME type ("" when the feed omits it).
 	EnclosureType string
+	// EnclosureLength is the declared byte length (0 when absent or invalid).
+	EnclosureLength int64
+	// Description is the entry summary ("" when absent).
+	Description string
+	// PublishedAt is the parsed publication time (zero when absent or
+	// unparseable).
+	PublishedAt time.Time
+	// DurationSeconds is itunes:duration as seconds (0 when absent).
+	DurationSeconds int64
+}
+
+// FeedDocument is a parsed feed: channel metadata plus its entries in
+// document order.
+type FeedDocument struct {
+	Title string
+	// Serial is true when the channel declares itunes:type "serial": its
+	// entries are meant to be consumed in order from the first.
+	Serial bool
+	// NewFeedURL is the channel's declared new location (a direct child named
+	// new-feed-url or newFeedUrl in any namespace: the iTunes and Index
+	// extensions), "" when absent. Secret class: never logged.
+	NewFeedURL string
+	Entries    []FeedEntry
 }
 
 // ParseFeedEntries extracts every entry's GUID, title, and enclosure from an
-// RSS or Atom document, in document order. RSS items without a <guid> (Atom
-// entries without an <id>) fall back to the enclosure URL as a last-resort
-// identity; entries with neither are skipped (nothing to download, nothing
-// to key on).
+// RSS or Atom document, in document order. Entries without an explicit
+// identity need an enclosure and derive their GUID from the item link or
+// publication metadata (ADR-0030 §3).
 func ParseFeedEntries(data []byte) ([]FeedEntry, error) {
-	root, err := parseXML(data)
+	document, err := ParseFeed(data)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: invalid feed document: %w", err)
+		return nil, err
+	}
+	return document.Entries, nil
+}
+
+// ParseFeed parses an RSS or Atom document into its channel metadata and
+// entries (see ParseFeedEntries for entry identity).
+func ParseFeed(data []byte) (FeedDocument, error) {
+	root, err := parseXML(data)
+	if err != nil || len(root.children) != 1 {
+		return FeedDocument{}, errors.New("scrape: invalid feed document")
+	}
+	name := root.children[0].name
+	switch name[strings.LastIndexByte(name, ':')+1:] {
+	case "rss", "feed", "RDF":
+	default:
+		return FeedDocument{}, errors.New("scrape: unsupported feed root element")
+	}
+	var document FeedDocument
+	channel := root
+	if channels := findElements([]*xmlNode{root}, "channel"); len(channels) > 0 {
+		channel = channels[0]
+	} else if feeds := findElements([]*xmlNode{root}, "feed"); len(feeds) > 0 {
+		channel = feeds[0]
+	}
+	document.Title = directChildText(channel, "title")
+	document.Serial = strings.EqualFold(directChildText(channel, "itunes:type"), "serial")
+	for _, child := range channel.children {
+		local := child.name[strings.LastIndexByte(child.name, ':')+1:]
+		if local == "new-feed-url" || local == "newFeedUrl" {
+			if document.NewFeedURL = strings.TrimSpace(child.text); document.NewFeedURL != "" {
+				break
+			}
+		}
 	}
 	if items := findElements([]*xmlNode{root}, "item"); len(items) > 0 {
-		return rssEntries(items), nil
+		document.Entries = rssEntries(items)
+		return document, nil
 	}
 	// No <item> elements: either an Atom feed or an empty RSS one — Atom's
 	// <entry> lookup returns the empty list for both.
-	return atomEntries(findElements([]*xmlNode{root}, "entry")), nil
+	document.Entries = atomEntries(findElements([]*xmlNode{root}, "entry"))
+	return document, nil
+}
+
+// directChildText is the trimmed text of scope's first direct child named
+// name, so channel metadata never picks up an entry's element.
+func directChildText(scope *xmlNode, name string) string {
+	for _, child := range scope.children {
+		if child.name == name {
+			return strings.TrimSpace(child.text)
+		}
+	}
+	return ""
+}
+
+func parseFeedTime(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	for _, layout := range feedPublicationLayouts {
+		if stamp, err := time.Parse(layout, value); err == nil {
+			return stamp.UTC()
+		}
+	}
+	return time.Time{}
+}
+
+func parseFeedDuration(value string) int64 {
+	seconds, ok := secondsFromClock(value)
+	if !ok {
+		return 0
+	}
+	n, _ := strconv.ParseInt(seconds, 10, 64)
+	return n
+}
+
+func parseEnclosureLength(value string) int64 {
+	n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 func rssEntries(items []*xmlNode) []FeedEntry {
 	entries := make([]FeedEntry, 0, len(items))
 	for _, item := range items {
 		entry := FeedEntry{
-			GUID:  childText(item, "guid"),
-			Title: childText(item, "title"),
+			GUID:            childText(item, "guid"),
+			Title:           childText(item, "title"),
+			Description:     childText(item, "description"),
+			PublishedAt:     parseFeedTime(childText(item, "pubDate")),
+			DurationSeconds: parseFeedDuration(childText(item, "itunes:duration")),
+		}
+		if entry.Description == "" {
+			entry.Description = childText(item, "itunes:summary")
 		}
 		if enclosures := findElements([]*xmlNode{item}, "enclosure"); len(enclosures) > 0 {
 			entry.EnclosureURL = enclosures[0].attrs["url"]
 			entry.EnclosureType = enclosures[0].attrs["type"]
+			entry.EnclosureLength = parseEnclosureLength(enclosures[0].attrs["length"])
 		}
-		if entry.GUID == "" {
-			entry.GUID = entry.EnclosureURL
+		if entry.GUID == "" && entry.EnclosureURL != "" {
+			entry.deriveGUID(childText(item, "link"), childText(item, "pubDate"))
 		}
 		if entry.GUID == "" {
 			continue
@@ -319,18 +418,25 @@ func atomEntries(items []*xmlNode) []FeedEntry {
 	entries := make([]FeedEntry, 0, len(items))
 	for _, item := range items {
 		entry := FeedEntry{
-			GUID:  childText(item, "id"),
-			Title: childText(item, "title"),
+			GUID:            childText(item, "id"),
+			Title:           childText(item, "title"),
+			Description:     childText(item, "summary"),
+			PublishedAt:     parseFeedTime(childText(item, "published")),
+			DurationSeconds: parseFeedDuration(childText(item, "itunes:duration")),
+		}
+		if entry.PublishedAt.IsZero() {
+			entry.PublishedAt = parseFeedTime(childText(item, "updated"))
 		}
 		for _, link := range findElements([]*xmlNode{item}, "link") {
 			if link.attrs["rel"] == "enclosure" {
 				entry.EnclosureURL = link.attrs["href"]
 				entry.EnclosureType = link.attrs["type"]
+				entry.EnclosureLength = parseEnclosureLength(link.attrs["length"])
 				break
 			}
 		}
-		if entry.GUID == "" {
-			entry.GUID = entry.EnclosureURL
+		if entry.GUID == "" && entry.EnclosureURL != "" {
+			entry.deriveGUID(atomEntryLink(item), childText(item, "published"))
 		}
 		if entry.GUID == "" {
 			continue
@@ -338,6 +444,40 @@ func atomEntries(items []*xmlNode) []FeedEntry {
 		entries = append(entries, entry)
 	}
 	return entries
+}
+
+func atomEntryLink(item *xmlNode) string {
+	for _, link := range item.children {
+		rel := link.attrs["rel"]
+		if link.name == "link" && (rel == "" || rel == "alternate") {
+			if href := strings.TrimSpace(link.attrs["href"]); href != "" {
+				return href
+			}
+		}
+	}
+	return ""
+}
+
+var feedPublicationLayouts = append([]string{time.RFC3339Nano}, rfc822Layouts...)
+
+func (entry *FeedEntry) deriveGUID(link, published string) {
+	key := "link\x00" + link
+	if link == "" {
+		title := strings.ToLower(strings.Join(strings.Fields(entry.Title), " "))
+		if title == "" && published == "" {
+			return
+		}
+		for _, layout := range feedPublicationLayouts {
+			if stamp, err := time.ParseInLocation(layout, published, time.UTC); err == nil {
+				published = stamp.UTC().Format(time.RFC3339Nano)
+				break
+			}
+		}
+		key = "title-date\x00" + title + "\x00" + published
+	}
+	// Hash links as well as metadata so URL credentials stay out of receipts.
+	entry.GUID = fmt.Sprintf("urn:beamfall:feed-entry:%x", sha256.Sum256([]byte(key)))
+	entry.DerivedGUID = true
 }
 
 func childText(scope *xmlNode, name string) string {

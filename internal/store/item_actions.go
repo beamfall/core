@@ -435,6 +435,19 @@ func (s *Store) ItemStateFor(ctx context.Context, profileID ProfileID, target It
 	if err := s.guardLocked(); err != nil {
 		return ItemState{}, err
 	}
+	return s.itemStateLocked(ctx, s.eventsR, profileID, target, kind, id, filter)
+}
+
+// itemStateQueryer is the events handle an item-state read uses: the reader,
+// or a write transaction that must answer with its own uncommitted state.
+type itemStateQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+// itemStateLocked reads target's per-Profile state through events. The caller
+// holds s.mu and has validated profileID and target.
+func (s *Store) itemStateLocked(ctx context.Context, events itemStateQueryer, profileID ProfileID, target ItemTarget, kind, id string, filter LibraryFilter) (ItemState, error) {
 	media, err := s.itemTargetMediaLocked(ctx, target, filter)
 	if err != nil {
 		return ItemState{}, err
@@ -444,7 +457,7 @@ func (s *Store) ItemStateFor(ctx context.Context, profileID ProfileID, target It
 	for i, item := range media {
 		ids[i] = item.id
 	}
-	progress, err := itemProgressLocked(ctx, s.eventsR, profileID, ids)
+	progress, err := itemProgressLocked(ctx, events, profileID, ids)
 	if err != nil {
 		return ItemState{}, err
 	}
@@ -455,7 +468,7 @@ func (s *Store) ItemStateFor(ctx context.Context, profileID ProfileID, target It
 		}
 	}
 	var one int
-	err = s.eventsR.QueryRowContext(ctx, `
+	err = events.QueryRowContext(ctx, `
 		SELECT 1 FROM watchlist_item
 		WHERE profile_id = ? AND target_kind = ? AND target_id = ?
 	`, profileID, kind, id).Scan(&one)
@@ -463,7 +476,7 @@ func (s *Store) ItemStateFor(ctx context.Context, profileID ProfileID, target It
 		return ItemState{}, err
 	}
 	state.Watchlisted = err == nil
-	err = s.eventsR.QueryRowContext(ctx, `
+	err = events.QueryRowContext(ctx, `
 		SELECT rating FROM item_rating
 		WHERE profile_id = ? AND target_kind = ? AND target_id = ?
 	`, profileID, kind, id).Scan(&state.Rating)

@@ -34,6 +34,8 @@ export const VIEWER_ROUTES = Object.freeze([
   "/n/:nodeId/all",
   "/n/:nodeId/collections",
   "/n/:nodeId/categories",
+  "/n/:nodeId/feeds",
+  "/n/:nodeId/feeds/:subscriptionId",
   "/entity/:entityId",
   "/media/*",
   "/credits/*",
@@ -50,6 +52,8 @@ export const VIEWER_ROUTES = Object.freeze([
   "/remote",
   "/profiles",
   "/settings",
+  "/view/*",
+  "/slideshow",
   "/watch/*",
 ]);
 

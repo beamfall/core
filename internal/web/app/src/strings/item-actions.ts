@@ -13,6 +13,8 @@ export const itemActionStrings = {
     itemHiddenNotice: "Hid “{title}”.",
     itemHideUndo: "Undo",
     itemHideDismiss: "Dismiss",
+    itemContinueRemove: "Remove from Continue Watching",
+    itemContinueRemovedNotice: "Removed “{title}” from Continue Watching.",
     hideWatched: "Hide watched",
     hideWatchedLead:
       "Leave what you've finished out of Home and libraries. Your history and lists keep everything.",
@@ -38,6 +40,8 @@ export const itemActionStrings = {
     itemHiddenNotice: "« {title} » masqué.",
     itemHideUndo: "Annuler",
     itemHideDismiss: "Fermer",
+    itemContinueRemove: "Retirer de Reprendre la lecture",
+    itemContinueRemovedNotice: "« {title} » retiré de Reprendre la lecture.",
     hideWatched: "Masquer les contenus vus",
     hideWatchedLead:
       "Retirer ce que vous avez terminé de l’accueil et des bibliothèques. L’historique et vos listes gardent tout.",
@@ -63,6 +67,8 @@ export const itemActionStrings = {
     itemHiddenNotice: "„{title}“ ausgeblendet.",
     itemHideUndo: "Rückgängig",
     itemHideDismiss: "Schließen",
+    itemContinueRemove: "Aus „Weiterschauen“ entfernen",
+    itemContinueRemovedNotice: "„{title}“ aus „Weiterschauen“ entfernt.",
     hideWatched: "Gesehenes ausblenden",
     hideWatchedLead:
       "Fertig Angesehenes aus Startseite und Mediatheken ausblenden. Verlauf und Listen behalten alles.",
@@ -88,6 +94,8 @@ export const itemActionStrings = {
     itemHiddenNotice: "Se ocultó «{title}».",
     itemHideUndo: "Deshacer",
     itemHideDismiss: "Cerrar",
+    itemContinueRemove: "Quitar de Seguir viendo",
+    itemContinueRemovedNotice: "Se quitó «{title}» de Seguir viendo.",
     hideWatched: "Ocultar lo visto",
     hideWatchedLead:
       "Quita lo que ya terminaste de Inicio y las bibliotecas. Tu historial y tus listas lo conservan todo.",
@@ -113,6 +121,8 @@ export const itemActionStrings = {
     itemHiddenNotice: "“{title}” ocultado.",
     itemHideUndo: "Desfazer",
     itemHideDismiss: "Fechar",
+    itemContinueRemove: "Remover de Continuar assistindo",
+    itemContinueRemovedNotice: "“{title}” removido de Continuar assistindo.",
     hideWatched: "Ocultar vistos",
     hideWatchedLead:
       "Retira o que já terminou do Início e das bibliotecas. O histórico e as listas guardam tudo.",

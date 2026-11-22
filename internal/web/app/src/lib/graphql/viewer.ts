@@ -174,7 +174,7 @@ export async function relock(signalOrCommitted?: AbortSignal | (() => void)): Pr
 // --- Catalog: Section feeds (sourceItems) ---------------------------------
 
 const SOURCE_ITEMS_QUERY =
-  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $entityID: String, $excludeEditionGroupOf: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int, $home: Boolean) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, entityID: $entityID, excludeEditionGroupOf: $excludeEditionGroupOf, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset, home: $home) { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $entityID: String, $excludeEditionGroupOf: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int, $home: Boolean, $seed: String, $value: String) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, entityID: $entityID, excludeEditionGroupOf: $excludeEditionGroupOf, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset, home: $home, seed: $seed, value: $value) { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** Variables for one Section feed query (the Source context + paging cursor). */
 export interface SourceItemsVars {
@@ -192,6 +192,9 @@ export interface SourceItemsVars {
   offset: number;
   /** Home hydration: the server leaves out Libraries a manager hid from Home (CORE-2360). */
   home?: boolean;
+  /** The Source's declared seed or value, echoed from the manifest; omitted when it declares none. */
+  seed?: string;
+  value?: string;
 }
 
 /**
@@ -628,6 +631,26 @@ export async function setWatchlisted(
     watchlisted,
   });
   return data.setWatchlisted;
+}
+
+const SET_CONTINUE_WATCHING_HIDDEN_MUTATION = `mutation SetContinueWatchingHidden($mediaID: ID!, $hidden: Boolean!, $expectedProfileID: String) { setContinueWatchingHidden(mediaID: $mediaID, hidden: $hidden, expectedProfileID: $expectedProfileID) { ${ITEM_STATE_FIELDS} } }`;
+
+/**
+ * SetContinueWatchingHidden — take one Media off the calling Profile's Continue
+ * Watching row, or put it back (CORE-2039). The resume position is kept, and
+ * playing the Media again returns it to the row. With `expectedProfileID` the
+ * server refuses the write once the session is bound to another Profile.
+ */
+export async function setContinueWatchingHidden(
+  mediaID: string,
+  hidden: boolean,
+  expectedProfileID?: string,
+): Promise<ItemStateInfo> {
+  const data = await graphql<{ setContinueWatchingHidden: ItemStateInfo }>(
+    SET_CONTINUE_WATCHING_HIDDEN_MUTATION,
+    expectedProfileID ? { mediaID, hidden, expectedProfileID } : { mediaID, hidden },
+  );
+  return data.setContinueWatchingHidden;
 }
 
 const SET_RATING_MUTATION = `mutation SetRating($mediaID: ID, $entityID: ID, $rating: Int!) { setRating(mediaID: $mediaID, entityID: $entityID, rating: $rating) { ${ITEM_STATE_FIELDS} } }`;

@@ -75,6 +75,15 @@ const (
 	// minSharedWindows is the shortest shared run (seconds) that counts as a
 	// real segment — a couple of incidentally-similar seconds is not an intro.
 	minSharedWindows = 15
+	// maxIntroWindows caps an intro (seconds). A longer shared opening is not an
+	// intro but near-identical audio (a duplicate encode, a constant audio bed),
+	// and auto-skipping it would jump past real content.
+	maxIntroWindows = 120
+	// maxSegmentRuntimeFraction caps an intro or credits run as a share of the
+	// Media's runtime, so a short file can never be skipped whole. With intro
+	// anchored at 0 and credits at EOF, a cap of one half also keeps the two
+	// from overlapping.
+	maxSegmentRuntimeFraction = 0.5
 	// windowMatchTolerance is the max per-window loudness difference (on the
 	// [0,1] magnitude scale) for two windows to count as "the same" audio.
 	windowMatchTolerance = 0.06
@@ -275,6 +284,8 @@ func (s *Service) analyzeFingerprints(ctx context.Context, media store.Media, pa
 	// Best shared run across any sibling, per kind. Comparing against the
 	// closest sibling (not every pair) is enough: a shared intro recurs across
 	// all siblings, so one strong match is the signal.
+	introLimits := runLimits{maxWindows: maxIntroWindows, durationSeconds: media.DurationSeconds}
+	creditsLimits := runLimits{durationSeconds: media.DurationSeconds}
 	var bestIntro, bestCredits sharedRun
 	for _, siblingID := range siblings {
 		siblingFile, err := s.store.PrimaryMediaFile(ctx, siblingID, serverFilter)
@@ -285,7 +296,7 @@ func (s *Service) analyzeFingerprints(ctx context.Context, media store.Media, pa
 		if err != nil {
 			continue
 		}
-		if run := sharedLeadingRun(headSelf, headSib); run.windows > bestIntro.windows {
+		if run := sharedLeadingRun(headSelf, headSib); run.windows > bestIntro.windows && run.plausible(introLimits) {
 			bestIntro = run
 		}
 		sibling, err := s.store.Media(ctx, siblingID, serverFilter)
@@ -296,7 +307,7 @@ func (s *Service) analyzeFingerprints(ctx context.Context, media store.Media, pa
 		if err != nil {
 			continue
 		}
-		if run := sharedTrailingRun(tailSelf, tailSib); run.windows > bestCredits.windows {
+		if run := sharedTrailingRun(tailSelf, tailSib); run.windows > bestCredits.windows && run.plausible(creditsLimits) {
 			bestCredits = run
 		}
 	}
@@ -567,11 +578,42 @@ func creditsOffset(durationSeconds int) float64 {
 
 // sharedRun is a matched run of windows starting at startWindow in this Media's
 // analysed region, spanning windows windows long, with an average per-window
-// tightness (0 = identical) that sets the confidence.
+// tightness (0 = identical) that sets the confidence. compared is how many
+// windows both signatures had to compare.
 type sharedRun struct {
 	startWindow int
 	windows     int
+	compared    int
 	avgDiff     float64
+}
+
+// runLimits bounds what a shared run may claim before it becomes a segment.
+type runLimits struct {
+	// maxWindows caps the run length; 0 leaves only the analysed region.
+	maxWindows int
+	// durationSeconds is this Media's runtime; 0 when unknown.
+	durationSeconds int
+}
+
+// plausible reports whether run can be a real intro or credits segment. A run
+// is rejected when it is longer than limits.maxWindows, when it covers more
+// than maxSegmentRuntimeFraction of the runtime, or when it matched every
+// window the two signatures had in common: then no boundary was ever seen, and
+// the run is the whole short file or a near-duplicate sibling, not a segment
+// whose end is known. Comparing best-of-siblings only among plausible runs
+// keeps such a sibling from hiding a real segment found against another.
+func (run sharedRun) plausible(limits runLimits) bool {
+	if limits.maxWindows > 0 && run.windows > limits.maxWindows {
+		return false
+	}
+	if run.windows >= run.compared {
+		return false
+	}
+	seconds := float64(run.windows) * ffmpeg.FingerprintWindowSeconds
+	if limits.durationSeconds > 0 && seconds > maxSegmentRuntimeFraction*float64(limits.durationSeconds) {
+		return false
+	}
+	return true
 }
 
 type segment struct {
@@ -653,7 +695,7 @@ func sharedLeadingRun(self, sibling []float64) sharedRun {
 	if matched == 0 {
 		return sharedRun{}
 	}
-	return sharedRun{startWindow: 0, windows: matched, avgDiff: sumDiff / float64(matched)}
+	return sharedRun{startWindow: 0, windows: matched, compared: n, avgDiff: sumDiff / float64(matched)}
 }
 
 // sharedTrailingRun finds the longest run ending at EOF in both signatures.
@@ -677,7 +719,7 @@ func sharedTrailingRun(self, sibling []float64) sharedRun {
 	if matched == 0 {
 		return sharedRun{}
 	}
-	return sharedRun{startWindow: len(self) - matched, windows: matched, avgDiff: sumDiff / float64(matched)}
+	return sharedRun{startWindow: len(self) - matched, windows: matched, compared: n, avgDiff: sumDiff / float64(matched)}
 }
 
 // kindFromChapterTitle maps a chapter title to a skip-segment kind by a

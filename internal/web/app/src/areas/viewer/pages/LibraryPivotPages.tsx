@@ -70,6 +70,7 @@ export function LibraryPivotPage({ pivot }: { pivot: LibraryPivotName }) {
         {/* The app-wide poster size, on every pivot's heading row (CORE-2893). */}
         <LibraryHeader
           nodeID={node.id}
+          libraryID={node.libraryID}
           heading={displayString(node.title, displayLocale)}
           aside={<PosterSizeControl className="ml-auto" />}
         />

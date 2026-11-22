@@ -444,7 +444,10 @@ func (s *Store) pathPickerEntry(ctx context.Context, path string, depth int) (Pa
 	})
 	entry.Children = make([]PathPickerEntry, 0, len(children))
 	for _, child := range children {
-		if child.Name() == managedFileTrashDir {
+		// Dot-named children (the managed trash, .Trash-*, .cache) are left
+		// out of the browse list; a dot path requested directly still
+		// browses (CORE-1203).
+		if strings.HasPrefix(child.Name(), ".") {
 			continue
 		}
 		childPath := filepath.Join(path, child.Name())

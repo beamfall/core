@@ -3,17 +3,19 @@ package store
 import (
 	"container/heap"
 	"context"
+	"database/sql"
 	"sort"
 )
 
 const (
 	myEngagementLogMaxOffset = 10_000
-	myEngagementLogIDChunk   = 400
+	myEngagementLogChunkSize = 400
 )
 
 type myEngagementRankedEvent struct {
-	event MyEngagementEvent
-	rank  int
+	event   MyEngagementEvent
+	rank    int
+	entryID string
 }
 
 // myEngagementWorstHeap keeps the least desirable retained event at index 0,
@@ -49,19 +51,25 @@ func (s *Store) myEngagementLogBoundedLocked(ctx context.Context, profileID Prof
 	offset := min(max(query.Offset, 0), myEngagementLogMaxOffset)
 	want := offset + limit
 
+	tx, err := s.eventsR.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return MyEngagementLogPage{}, err
+	}
+	defer tx.Rollback()
+
 	top := make(myEngagementWorstHeap, 0, want)
 	heap.Init(&top)
 	total := 0
-	var after MediaID
+	var after myEngagementRankedEvent
 	for {
-		ids, events, err := s.myEngagementChunkLocked(ctx, profileID, after, query)
+		ids, events, err := myEngagementChunk(ctx, tx, profileID, after, query)
 		if err != nil {
 			return MyEngagementLogPage{}, err
 		}
-		if len(ids) == 0 {
+		if len(events) == 0 {
 			break
 		}
-		after = ids[len(ids)-1]
+		after = events[len(events)-1]
 		visible, err := s.visibleMediaBatchSQL(ctx, ids, filter)
 		if err != nil {
 			return MyEngagementLogPage{}, err
@@ -113,5 +121,8 @@ func myEngagementBefore(left, right myEngagementRankedEvent) bool {
 	if left.rank != right.rank {
 		return left.rank < right.rank
 	}
-	return left.event.MediaID < right.event.MediaID
+	if left.event.MediaID != right.event.MediaID {
+		return left.event.MediaID < right.event.MediaID
+	}
+	return left.entryID < right.entryID
 }

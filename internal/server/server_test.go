@@ -84,6 +84,7 @@ func TestRoutesAreRecorded(t *testing.T) {
 		{Method: http.MethodPost, Pattern: "/api/compat/handshake", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/media/artwork-upload/{recordID}", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodGet, Pattern: "/api/manifest", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodGet, Pattern: subscriptionExportPath, RevealClass: reveal.ContentBytes},
 		{Method: http.MethodPost, Pattern: "/api/playback-info", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/preview-info", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/beam/offers", RevealClass: reveal.ContentJSON},
@@ -807,6 +808,9 @@ func TestCORSAllowsForeignOriginOnTokenByteGET(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want *", got)
 	}
+	if got := rec.Header().Get("Access-Control-Expose-Headers"); got != auth.DenialReasonHeader {
+		t.Fatalf("Access-Control-Expose-Headers = %q, want %q", got, auth.DenialReasonHeader)
+	}
 	if rec.Body.String() != "beamfall file bytes" {
 		t.Fatalf("media body = %q, want file bytes", rec.Body.String())
 	}
@@ -818,17 +822,33 @@ func TestCORSExemptsOnlyOrdinaryAPIContentByteGETRoutes(t *testing.T) {
 		if route.Method != http.MethodGet || route.RevealClass != reveal.ContentBytes || !strings.HasPrefix(route.Pattern, "/api/") {
 			continue
 		}
-		req := httptest.NewRequest(http.MethodGet, route.Pattern+"token", nil)
-		// Pack keys and the session-authenticated artwork and Profile picture
-		// routes carry no URL token, so they never get the token-byte
-		// wildcard origin.
+		path := route.Pattern
+		if strings.HasSuffix(path, "/") {
+			path += "token"
+		}
+		req := httptest.NewRequest(http.MethodGet, strings.ReplaceAll(path, "{id}", "id"), nil)
+		// Pack keys and session-authenticated downloads carry no URL token,
+		// so they never get the token-byte wildcard origin.
 		want := route.Pattern != "/api/pack/key/" &&
 			route.Pattern != "/api/media/artwork/" &&
 			route.Pattern != "/api/entity/artwork/" &&
-			route.Pattern != "/api/profiles/picture/{id}"
+			route.Pattern != "/api/profiles/picture/{id}" &&
+			route.Pattern != subscriptionExportPath
 		if got := tokenByteGETPath(req); got != want {
 			t.Fatalf("tokenByteGETPath(%q) = %v, want %v", req.URL.Path, got, want)
 		}
+	}
+}
+
+func TestCORSRejectsForeignOriginForSubscriptionExport(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "https://beamfall.test"+subscriptionExportPath, nil)
+	req.Header.Set("Origin", "https://foreign.example.test")
+	authorizeManagerCookies(req)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden || rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("foreign-origin export returned status %d and origin %q", rec.Code, rec.Header().Get("Access-Control-Allow-Origin"))
 	}
 }
 

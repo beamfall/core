@@ -2,8 +2,10 @@ package graph
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -80,6 +82,13 @@ const (
 	// Profile the session is no longer bound to (CORE-2177). Nothing was
 	// written; the client drops the write instead of retrying it.
 	ErrorReasonProfileMismatch ErrorReason = "PROFILE_MISMATCH"
+	// ErrorReasonAccessScheduleEnded: the request was refused only because the
+	// session's managed Profile is outside its access schedule (CORE-2950). The
+	// session stays valid; the client shows that access has ended for now
+	// instead of signing out. The code is FORBIDDEN, never UNAUTHENTICATED.
+	// It equals auth.DenialReasonAccessScheduleEnded, the value REST playback
+	// and media transports carry in their denial-reason header.
+	ErrorReasonAccessScheduleEnded ErrorReason = "ACCESS_SCHEDULE_ENDED"
 )
 
 // ErrorReasons returns the closed reason vocabulary in its documented order.
@@ -89,6 +98,7 @@ func ErrorReasons() []ErrorReason {
 		ErrorReasonRevealPINRequired,
 		ErrorReasonRevealPINIncorrect,
 		ErrorReasonProfileMismatch,
+		ErrorReasonAccessScheduleEnded,
 	}
 }
 
@@ -121,6 +131,29 @@ func revealPINRefusal(message clientError, pin string) error {
 		reason = ErrorReasonRevealPINRequired
 	}
 	return reasonedClientError{message: message, reason: reason}
+}
+
+// accessScheduleEndedMessage is the client message of the access-schedule
+// refusal. It names no window, so it discloses nothing about the schedule.
+const accessScheduleEndedMessage = "access schedule ended"
+
+// scopeRefusal maps a failed scope resolution to its HTTP status and error:
+// the access-schedule refusal answers 403 FORBIDDEN with reason
+// ACCESS_SCHEDULE_ENDED, every other failure 401 UNAUTHENTICATED "invalid
+// session" exactly as before (CORE-2950).
+func scopeRefusal(err error) (int, graphError) {
+	if auth.AccessScheduleEnded(err) {
+		refusal := newGraphError(ErrorCodeForbidden, accessScheduleEndedMessage)
+		refusal.Extensions.Reason = ErrorReasonAccessScheduleEnded
+		return http.StatusForbidden, refusal
+	}
+	return invalidSessionRefusal()
+}
+
+// invalidSessionRefusal is the generic credential refusal: 401
+// UNAUTHENTICATED "invalid session", with no reason.
+func invalidSessionRefusal() (int, graphError) {
+	return http.StatusUnauthorized, newGraphError(ErrorCodeUnauthenticated, "invalid session")
 }
 
 func newGraphError(code ErrorCode, message string) graphError {
@@ -180,24 +213,30 @@ var clientErrorCodes = map[string]ErrorCode{
 	"unknown push platform": ErrorCodeInvalid,
 	// Two ways to order one relation row at once.
 	"give sortOrder or position, not both": ErrorCodeInvalid,
+	"media is not queued":                  ErrorCodeInvalid,
 	"unknown artwork slot":                 ErrorCodeInvalid,
 	"unknown delete scope":                 ErrorCodeInvalid,
 	"unknown engagement kind":              ErrorCodeInvalid,
 	"unknown family scope":                 ErrorCodeInvalid,
-	"unknown importer":                     ErrorCodeInvalid,
-	"unknown lifecycle action":             ErrorCodeInvalid,
-	"unknown lockable field":               ErrorCodeInvalid,
-	"unknown or non-flippable capability":  ErrorCodeInvalid,
-	"unknown permission":                   ErrorCodeInvalid,
-	"unknown plugin action":                ErrorCodeInvalid,
-	"unknown plugin config field":          ErrorCodeInvalid,
-	"unknown transport command":            ErrorCodeInvalid,
+	// An admin token creating a Library on a server with no owner Profile (CORE-2921).
+	"no owner Profile is designated to grant the library to": ErrorCodeConflict,
+	"unknown importer":                    ErrorCodeInvalid,
+	"unknown lifecycle action":            ErrorCodeInvalid,
+	"unknown lockable field":              ErrorCodeInvalid,
+	"unknown or non-flippable capability": ErrorCodeInvalid,
+	"unknown permission":                  ErrorCodeInvalid,
+	"unknown plugin action":               ErrorCodeInvalid,
+	"unknown plugin config field":         ErrorCodeInvalid,
+	"unknown transport command":           ErrorCodeInvalid,
+
+	"subscription was refreshed recently; try again later": ErrorCodeThrottled,
 
 	"fix match is unavailable in encrypted libraries":    ErrorCodeInvalid,
 	"sequence must be a string of at most 32 characters": ErrorCodeInvalid,
 	"index must be an integer from 0 to 2147483647":      ErrorCodeInvalid,
 
 	"admin password rejected":                                   ErrorCodeForbidden,
+	"adult profile required to follow feeds":                    ErrorCodeForbidden,
 	"adult profile or manager role required":                    ErrorCodeForbidden,
 	"cannot change the current device role":                     ErrorCodeForbidden,
 	"incorrect passphrase or recovery key":                      ErrorCodeForbidden,
@@ -315,6 +354,8 @@ var clientErrorRules = []clientErrorRule{
 	{code: ErrorCodeConflict, suffix: " is not applicable to this library"},
 	// An installed plugin built for an incompatible plugin SDK (CORE-2837).
 	{code: ErrorCodeConflict, prefix: "plugin does not support this server's plugin SDK: "},
+	// A feed probe failure carries only its failure class (CORE-2953).
+	{code: ErrorCodeInvalid, prefix: "feed could not be read: "},
 	{code: ErrorCodeInvalid, suffix: " required"},
 	{code: ErrorCodeInvalid, contains: " is required "},
 	{code: ErrorCodeInvalid, contains: " are required "},

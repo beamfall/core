@@ -573,7 +573,8 @@ func versionMergeProgressEventsTx(ctx context.Context, tx *sql.Tx, from, to Medi
 	rows, err := tx.QueryContext(ctx, `
 		SELECT profile_id, position_seconds, duration_seconds, watched, updated_at_ms, play_count,
 		  last_played_at_ms, provenance, occurred_at_ms, COALESCE(import_run_id, ''),
-		  COALESCE(import_importer_id, ''), COALESCE(import_match_method, ''), event_time_ms, channel_context
+		  COALESCE(import_importer_id, ''), COALESCE(import_match_method, ''), event_time_ms, channel_context,
+		  continue_hidden
 		FROM playback_progress AS p
 		WHERE media_id = ? AND (? OR NOT EXISTS (
 		  SELECT 1 FROM playback_progress WHERE profile_id = p.profile_id AND media_id = ?))
@@ -585,15 +586,16 @@ func versionMergeProgressEventsTx(ctx context.Context, tx *sql.Tx, from, to Medi
 	var events []playbackProjectionEvent
 	for rows.Next() {
 		event := playbackProjectionEvent{Operation: playbackProjectionOperationVersionMerge, MediaID: string(to)}
-		var watched, channel int
+		var watched, channel, hidden int
 		var lastPlayed, occurred, eventTime sql.NullInt64
 		if err := rows.Scan(&event.ProfileID, &event.PositionSeconds, &event.DurationSeconds, &watched,
 			&event.UpdatedAtMS, &event.PlayCount, &lastPlayed, &event.Provenance, &occurred,
-			&event.ImportRunID, &event.ImportImporterID, &event.ImportMatch, &eventTime, &channel); err != nil {
+			&event.ImportRunID, &event.ImportImporterID, &event.ImportMatch, &eventTime, &channel, &hidden); err != nil {
 			return nil, errors.Join(err, rows.Close())
 		}
 		event.Watched = watched != 0
 		event.ChannelContext = channel != 0
+		event.ContinueHidden = hidden != 0
 		event.ExplicitCount = event.PlayCount
 		event.LastPlayedAtMS = nullInt64Ptr(lastPlayed)
 		event.OccurredAtMS = nullInt64Ptr(occurred)

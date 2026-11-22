@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   EmptyLine,
   ErrorLine,
@@ -67,6 +67,16 @@ export function RenamePage() {
   const [busy, setBusy] = useState(false);
   const [lastBatchID, setLastBatchID] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  // The Library and folder the loaded sources were read from (CORE-0755).
+  // Sources hold absolute paths, so once the visible selection moves away from
+  // them Apply stays off until Load files reads the new selection; Apply and
+  // the post-change reload always target this loaded set, never the fields.
+  const [loadedFrom, setLoadedFrom] = useState<{ libraryID: string; folder: string } | null>(null);
+  const loadGenerationRef = useRef(0);
+  const selectionMatches =
+    loadedFrom !== null &&
+    loadedFrom.libraryID === libraryID &&
+    loadedFrom.folder === folder.trim();
 
   useEffect(() => {
     void (async () => {
@@ -94,21 +104,28 @@ export function RenamePage() {
     setError("");
     setNotice("");
     setLoadingFiles(true);
+    const selection = { libraryID, folder: folder.trim() };
+    const generation = ++loadGenerationRef.current;
     try {
-      const tree = await fetchFolderTree(libraryID, folder.trim(), 1);
+      const tree = await fetchFolderTree(selection.libraryID, selection.folder, 1);
+      if (generation !== loadGenerationRef.current) return;
       const files = (tree.children ?? []).filter((c) => c.kind === "file");
       setSources(files.map((f: FolderEntryInfo) => ({ path: f.path, name: f.name })));
+      setLoadedFrom(selection);
       if (files.length === 0) setNotice(t("renameNoFiles"));
     } catch {
+      if (generation !== loadGenerationRef.current) return;
       setError(t("renameListFolderFailed"));
       setSources([]);
+      setLoadedFrom(null);
     } finally {
-      setLoadingFiles(false);
+      if (generation === loadGenerationRef.current) setLoadingFiles(false);
     }
   };
 
   const onApply = async () => {
     const renames = changedRenames(previews);
+    if (!loadedFrom || !selectionMatches) return;
     if (renames.length === 0) {
       setError(t("renameNoRenames"));
       return;
@@ -116,11 +133,12 @@ export function RenamePage() {
     setError("");
     setNotice("");
     setBusy(true);
+    const generation = loadGenerationRef.current;
     try {
-      const result = await batchRenameManagedPaths(libraryID, renames);
+      const result = await batchRenameManagedPaths(loadedFrom.libraryID, renames);
       setLastBatchID(result.batchID);
       setNotice(t("renameApplied").replace("{count}", String(result.affected)));
-      await onReloadAfterChange();
+      await onReloadAfterChange(loadedFrom, generation);
     } catch (err) {
       setError(err instanceof ApiError && err.message ? err.message : t("renameApplyFailed"));
     } finally {
@@ -133,11 +151,12 @@ export function RenamePage() {
     setError("");
     setNotice("");
     setBusy(true);
+    const generation = loadGenerationRef.current;
     try {
       const result = await undoBatchRename(lastBatchID);
       setNotice(t("renameReverted").replace("{count}", String(result.affected)));
       setLastBatchID(null);
-      await onReloadAfterChange();
+      if (loadedFrom) await onReloadAfterChange(loadedFrom, generation);
     } catch {
       setError(t("renameUndoFailed"));
     } finally {
@@ -147,10 +166,15 @@ export function RenamePage() {
 
   // After a rename/undo the on-disk basenames changed; reload so the preview
   // reflects the current truth rather than stale source names.
-  const onReloadAfterChange = async () => {
-    if (!libraryID || !folder.trim()) return;
+  // `generation` is the load generation when the rename or undo started: a
+  // Load files begun meanwhile owns the preview, so this reload is dropped.
+  const onReloadAfterChange = async (
+    selection: { libraryID: string; folder: string },
+    generation: number,
+  ) => {
     try {
-      const tree = await fetchFolderTree(libraryID, folder.trim(), 1);
+      const tree = await fetchFolderTree(selection.libraryID, selection.folder, 1);
+      if (generation !== loadGenerationRef.current) return;
       const files = (tree.children ?? []).filter((c) => c.kind === "file");
       setSources(files.map((f: FolderEntryInfo) => ({ path: f.path, name: f.name })));
     } catch {
@@ -253,7 +277,11 @@ export function RenamePage() {
           <div className="flex items-center gap-2">
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button type="button" size="sm" disabled={busy || changeCount === 0}>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={busy || changeCount === 0 || !selectionMatches}
+                >
                   {t("renameApply").replace("{count}", String(changeCount))}
                 </Button>
               </AlertDialogTrigger>

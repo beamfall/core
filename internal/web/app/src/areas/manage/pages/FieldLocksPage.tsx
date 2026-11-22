@@ -44,6 +44,9 @@ export function FieldLocksPage() {
     const id = (picked ?? mediaID).trim();
     if (!id) return;
     const seq = ++loadSeq.current;
+    // Hide the old table while loading so no toggle can write to it mid-load.
+    setLoadedID("");
+    setLocks(null);
     try {
       const next = await fetchMediaFieldLocks(id);
       if (seq !== loadSeq.current) return;
@@ -64,7 +67,7 @@ export function FieldLocksPage() {
     setError("");
     const id = loadedID;
     if (!id) return;
-    // A newer load or Clear since the write started owns the table.
+    // A load or Clear started since the write owns the table.
     const seq = loadSeq.current;
     try {
       const next = await setMediaFieldLock(id, lock.field, !lock.locked);

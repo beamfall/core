@@ -378,6 +378,13 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "libraryID", Kind: "string"},
 		{Name: "root", Kind: "string", Optional: true},
 	},
+	"followfeed": {
+		{Name: "confirmEverything", Kind: "boolean", Optional: true},
+		{Name: "downloadPolicy", Kind: "string", Optional: true},
+		{Name: "feedURL", Kind: "string"},
+		{Name: "latestN", Kind: "number", Optional: true},
+		{Name: "libraryID", Kind: "string", Optional: true},
+	},
 	"formgroup":   {},
 	"hostmetrics": {},
 	"identifyapply": {
@@ -606,6 +613,14 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"qualitypolicy": {
 		{Name: "libraryID", Kind: "string"},
 	},
+	"playqueue":        {},
+	"queueaddmany":     fieldArguments["queueaddmany"],
+	"queuemoveentry":   fieldArguments["queuemoveentry"],
+	"queueremoveentry": fieldArguments["queueremoveentry"],
+	"queueplaynext":    fieldArguments["queueplaynext"],
+	"queuesetcurrent":  fieldArguments["queuesetcurrent"],
+	"queuesetshuffle":  fieldArguments["queuesetshuffle"],
+	"queuesetrepeat":   fieldArguments["queuesetrepeat"],
 	"queueadd": {
 		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "mediaID", Kind: "string"},
@@ -627,6 +642,10 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "entityID", Kind: "string", Optional: true},
 		{Name: "kind", Kind: "string"},
 		{Name: "mediaID", Kind: "string", Optional: true},
+	},
+	"refreshallsubscriptions": {},
+	"refreshsubscription": {
+		{Name: "id", Kind: "string"},
 	},
 	"refreshmediametadata": {
 		{Name: "mediaID", Kind: "string"},
@@ -852,6 +871,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "key", Kind: "string"},
 		{Name: "value", Kind: "string", Optional: true},
 	},
+	"setcontinuewatchinghidden": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+		{Name: "hidden", Kind: "boolean"},
+		{Name: "mediaID", Kind: "string"},
+	},
 	"setconsoleconfig": {
 		{Name: "adminSessionMinutes", Kind: "number", Optional: true},
 		{Name: "backgroundWorkers", Kind: "number", Optional: true},
@@ -1013,6 +1037,12 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "kind", Kind: "string"},
 		{Name: "n", Kind: "number", Optional: true},
 	},
+	"setsubscriptiondownloadpolicy": {
+		{Name: "confirmEverything", Kind: "boolean", Optional: true},
+		{Name: "downloadPolicy", Kind: "string"},
+		{Name: "id", Kind: "string"},
+		{Name: "latestN", Kind: "number", Optional: true},
+	},
 	"settranscodeconfig": {
 		{Name: "clearMaxConcurrentTranscodes", Kind: "boolean", Optional: true},
 		{Name: "codec", Kind: "string", Optional: true},
@@ -1081,6 +1111,9 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"subscriptions": {
 		{Name: "libraryID", Kind: "string"},
+	},
+	"subscriptionentries": {
+		{Name: "subscriptionID", Kind: "string"},
 	},
 	"suppressunmatched": {
 		{Name: "candidateID", Kind: "string", Optional: true},

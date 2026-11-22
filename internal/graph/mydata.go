@@ -33,6 +33,7 @@ type MyEngagementExportInfo struct {
 	PlaybackProgress        []MyPlaybackProgressInfo     `json:"playbackProgress"`
 	Favorites               []MyFavoriteInfo             `json:"favorites"`
 	Queue                   []MyQueueEntryInfo           `json:"queue"`
+	QueueState              store.MyQueueState           `json:"queueState"`
 	Watchlist               []MyWatchlistEntryInfo       `json:"watchlist"`
 	Ratings                 []MyItemRatingInfo           `json:"ratings"`
 	SavedFilters            []MySavedFilterInfo          `json:"savedFilters"`
@@ -195,6 +196,7 @@ type MyItemRatingInfo struct {
 
 // MyQueueEntryInfo is one exported play-queue row, in queue order.
 type MyQueueEntryInfo struct {
+	ID      string `json:"id"`
 	MediaID string `json:"mediaID"`
 	AddedAt string `json:"addedAt"`
 }
@@ -278,6 +280,7 @@ func (h *Handler) myEngagement(ctx context.Context, scope auth.Scope, req reques
 		PlaybackProgress: make([]MyPlaybackProgressInfo, 0, len(export.PlaybackProgress)),
 		Favorites:        make([]MyFavoriteInfo, 0, len(export.Favorites)),
 		Queue:            make([]MyQueueEntryInfo, 0, len(export.Queue)),
+		QueueState:       export.QueueState,
 		Watchlist:        make([]MyWatchlistEntryInfo, 0, len(export.Watchlist)),
 		Ratings:          make([]MyItemRatingInfo, 0, len(export.Ratings)),
 		SavedFilters:     make([]MySavedFilterInfo, 0, len(export.SavedFilters)),
@@ -326,8 +329,9 @@ func (h *Handler) myEngagement(ctx context.Context, scope auth.Scope, req reques
 	}
 	for _, row := range export.Queue {
 		info.Queue = append(info.Queue, MyQueueEntryInfo{
+			ID:      row.ID,
 			MediaID: string(row.MediaID),
-			AddedAt: row.AddedAt.UTC().Format(time.RFC3339),
+			AddedAt: row.AddedAt.UTC().Format(time.RFC3339Nano),
 		})
 	}
 	for _, row := range export.SavedFilters {
@@ -421,7 +425,11 @@ type MyDataSummaryInfo struct {
 // (ADR-0036 §2.2 layer 1). Own-Profile-only + Reveal are enforced at the store
 // boundary by passing scope.ProfileID + scope.LibraryFilter() and nothing else.
 func (h *Handler) myDataSummary(ctx context.Context, scope auth.Scope) (MyDataSummaryInfo, error) {
-	summary, err := h.store.MyDataSummary(ctx, scope.ProfileID, scope.LibraryFilter())
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return MyDataSummaryInfo{}, err
+	}
+	summary, err := h.store.MyDataSummary(ctx, scope.ProfileID, filter)
 	if err != nil {
 		return MyDataSummaryInfo{}, err
 	}
@@ -485,7 +493,11 @@ func (h *Handler) myEngagementLog(ctx context.Context, scope auth.Scope, req req
 	query.From = from
 	query.To = to
 
-	page, err := h.store.MyEngagementLog(ctx, scope.ProfileID, scope.LibraryFilter(), query)
+	filter, err := h.sealedFilter(ctx, scope.LibraryFilter())
+	if err != nil {
+		return MyEngagementLogInfo{}, err
+	}
+	page, err := h.store.MyEngagementLog(ctx, scope.ProfileID, filter, query)
 	if err != nil {
 		return MyEngagementLogInfo{}, err
 	}
@@ -494,11 +506,15 @@ func (h *Handler) myEngagementLog(ctx context.Context, scope auth.Scope, req req
 		Total:  page.Total,
 	}
 	for _, ev := range page.Events {
+		layout := time.RFC3339
+		if ev.Kind == store.MyEventQueue {
+			layout = time.RFC3339Nano
+		}
 		info.Events = append(info.Events, MyEngagementEventInfo{
 			Kind:       string(ev.Kind),
 			MediaID:    string(ev.MediaID),
 			LibraryID:  string(ev.LibraryID),
-			OccurredAt: ev.OccurredAt.UTC().Format(time.RFC3339),
+			OccurredAt: ev.OccurredAt.UTC().Format(layout),
 		})
 	}
 	return info, nil

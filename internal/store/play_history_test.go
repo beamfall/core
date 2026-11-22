@@ -30,6 +30,23 @@ func progressReported(t *testing.T, st *Store, profile ProfileID, media MediaID,
 	progressEvent(t, st, profile, media, at, observed, 0, 3600, watched)
 }
 
+// playing appends the reports a client sends every 15 seconds while it plays
+// continuously from one report to the next, both excluded, each carrying the
+// position playback has reached. A zero arrived time is a live client whose
+// reports arrive as they are made; otherwise every report arrives then and
+// carries its own event time, as a device back from offline sends them.
+func playing(t *testing.T, st *Store, profile ProfileID, media MediaID, from, to, arrived time.Time, fromPos, duration int) {
+	t.Helper()
+	for at := from.Add(15 * time.Second); at.Before(to); at = at.Add(15 * time.Second) {
+		position := fromPos + int(at.Sub(from)/time.Second)
+		if arrived.IsZero() {
+			progressEvent(t, st, profile, media, at, time.Time{}, position, duration, false)
+		} else {
+			progressEvent(t, st, profile, media, arrived.Add(at.Sub(from)/1000), at, position, duration, false)
+		}
+	}
+}
+
 // progressEvent appends one progress event with every field the play
 // derivation reads.
 func progressEvent(t *testing.T, st *Store, profile ProfileID, media MediaID, at, observed time.Time, position, duration int, watched bool) {
@@ -67,15 +84,19 @@ func TestPlayHistoryDerivesPlaysAndFilters(t *testing.T) {
 	// later resumes 40 minutes in and plays to the end: two plays, the second
 	// finished.
 	progressAt(t, st, "profile-default", "media-alpha", day, false)
-	progressAt(t, st, "profile-default", "media-alpha", day.Add(10*time.Minute), false)
+	playing(t, st, "profile-default", "media-alpha", day, day.Add(10*time.Minute), time.Time{}, 0, 3600)
+	progressAtPosition(t, st, "profile-default", "media-alpha", day.Add(10*time.Minute), 600, false)
 	progressAtPosition(t, st, "profile-default", "media-alpha", day.Add(2*time.Hour), 2400, false)
+	playing(t, st, "profile-default", "media-alpha", day.Add(2*time.Hour), day.Add(2*time.Hour+20*time.Minute), time.Time{}, 2400, 3600)
 	progressAt(t, st, "profile-default", "media-alpha", day.Add(2*time.Hour+20*time.Minute), true)
 	// profile-managed plays it once the next day, and plays the restricted
 	// media-archive.
 	progressAt(t, st, "profile-managed", "media-alpha", day.Add(24*time.Hour), false)
-	progressAt(t, st, "profile-managed", "media-alpha", day.Add(24*time.Hour+5*time.Minute), false)
+	playing(t, st, "profile-managed", "media-alpha", day.Add(24*time.Hour), day.Add(24*time.Hour+5*time.Minute), time.Time{}, 0, 3600)
+	progressAtPosition(t, st, "profile-managed", "media-alpha", day.Add(24*time.Hour+5*time.Minute), 300, false)
 	progressAt(t, st, "profile-managed", "media-archive", day.Add(25*time.Hour), false)
-	progressAt(t, st, "profile-managed", "media-archive", day.Add(25*time.Hour+5*time.Minute), false)
+	playing(t, st, "profile-managed", "media-archive", day.Add(25*time.Hour), day.Add(25*time.Hour+5*time.Minute), time.Time{}, 0, 3600)
+	progressAtPosition(t, st, "profile-managed", "media-archive", day.Add(25*time.Hour+5*time.Minute), 300, false)
 
 	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})
 	if err != nil {
@@ -155,7 +176,9 @@ func TestPlayHistoryDatesDelayedReportsByWhenTheyWerePlayed(t *testing.T) {
 	// The first report arrives live, 40 minutes into the item. The device then
 	// goes offline and sends the rest of the same play the next day.
 	progressEvent(t, st, "profile-default", "media-alpha", played, played, 2400, 3600, false)
+	playing(t, st, "profile-default", "media-alpha", played, played.Add(10*time.Minute), flushed.Add(-time.Second), 2400, 3600)
 	progressEvent(t, st, "profile-default", "media-alpha", flushed, played.Add(10*time.Minute), 3000, 3600, false)
+	playing(t, st, "profile-default", "media-alpha", played.Add(10*time.Minute), played.Add(20*time.Minute), flushed, 3000, 3600)
 	progressReported(t, st, "profile-default", "media-alpha", flushed.Add(time.Second), played.Add(20*time.Minute), true)
 	// A client whose clock runs a day ahead is dated by arrival instead.
 	progressReported(t, st, "profile-managed", "media-alpha", played.Add(time.Hour), played.Add(25*time.Hour), false)
@@ -205,7 +228,8 @@ func TestPlayHistoryOpenEndedReadMatchesTheWholeLog(t *testing.T) {
 	progressAt(t, st, "profile-managed", "media-alpha", until.Add(-26*time.Hour), false)
 	progressAt(t, st, "profile-managed", "media-alpha", until.Add(-26*time.Hour+5*time.Minute), false)
 	progressAt(t, st, "profile-default", "media-alpha", bound.Add(-10*time.Minute), false)
-	progressAt(t, st, "profile-default", "media-alpha", bound.Add(10*time.Minute), false)
+	playing(t, st, "profile-default", "media-alpha", bound.Add(-10*time.Minute), bound.Add(10*time.Minute), time.Time{}, 0, 3600)
+	progressAtPosition(t, st, "profile-default", "media-alpha", bound.Add(10*time.Minute), 1200, false)
 	progressAt(t, st, "profile-managed", "media-alpha", bound.Add(-200*24*time.Hour), false)
 	progressAt(t, st, "profile-managed", "media-alpha", bound.Add(-200*24*time.Hour+15*time.Minute), false)
 
@@ -243,11 +267,13 @@ func TestPlayHistoryWindowKeepsPlaysWhole(t *testing.T) {
 
 	// One play straddles since, one sits inside, one straddles until.
 	progressAt(t, st, "profile-default", "media-alpha", since.Add(-10*time.Minute), false)
-	progressAt(t, st, "profile-default", "media-alpha", since.Add(10*time.Minute), false)
-	progressAt(t, st, "profile-default", "media-alpha", since.Add(20*time.Minute), false)
+	playing(t, st, "profile-default", "media-alpha", since.Add(-10*time.Minute), since.Add(20*time.Minute), time.Time{}, 0, 3600)
+	progressAtPosition(t, st, "profile-default", "media-alpha", since.Add(20*time.Minute), 1800, false)
 	progressAt(t, st, "profile-managed", "media-alpha", since.Add(2*time.Hour), false)
-	progressAt(t, st, "profile-managed", "media-alpha", since.Add(2*time.Hour+5*time.Minute), false)
+	playing(t, st, "profile-managed", "media-alpha", since.Add(2*time.Hour), since.Add(2*time.Hour+5*time.Minute), time.Time{}, 0, 3600)
+	progressAtPosition(t, st, "profile-managed", "media-alpha", since.Add(2*time.Hour+5*time.Minute), 300, false)
 	progressAtPosition(t, st, "profile-default", "media-alpha", until.Add(-10*time.Minute), 2100, false)
+	playing(t, st, "profile-default", "media-alpha", until.Add(-10*time.Minute), until.Add(15*time.Minute), time.Time{}, 2100, 3600)
 	progressAt(t, st, "profile-default", "media-alpha", until.Add(15*time.Minute), true)
 
 	got, err := st.PlayHistory(ctx, all, PlayHistoryQuery{Since: since, Until: until})
@@ -357,6 +383,7 @@ func TestPlayHistoryCountsOnlyRealPlaysAndFinishesNearTheEnd(t *testing.T) {
 	// Ten minutes of an hour-long item, then reported watched: a play, but
 	// not finished.
 	progressEvent(t, st, "profile-default", "media-alpha", day.Add(2*time.Hour), time.Time{}, 60, 3600, false)
+	playing(t, st, "profile-default", "media-alpha", day.Add(2*time.Hour), day.Add(2*time.Hour+10*time.Minute), time.Time{}, 60, 3600)
 	progressEvent(t, st, "profile-default", "media-alpha", day.Add(2*time.Hour+10*time.Minute), time.Time{}, 0, 3600, true)
 	// A 60-second item played for 20 seconds to its end: a play (a quarter
 	// of a short item is enough) and finished.
@@ -365,6 +392,7 @@ func TestPlayHistoryCountsOnlyRealPlaysAndFinishesNearTheEnd(t *testing.T) {
 	// An item of unknown length played for a minute and reported watched:
 	// the watched flag stands.
 	progressEvent(t, st, "profile-default", "media-alpha", day.Add(4*time.Hour), time.Time{}, 0, 0, false)
+	playing(t, st, "profile-default", "media-alpha", day.Add(4*time.Hour), day.Add(4*time.Hour+time.Minute), time.Time{}, 0, 0)
 	progressEvent(t, st, "profile-default", "media-alpha", day.Add(4*time.Hour+time.Minute), time.Time{}, 0, 0, true)
 
 	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})
@@ -389,5 +417,50 @@ func TestPlayHistoryCountsOnlyRealPlaysAndFinishesNearTheEnd(t *testing.T) {
 	}
 	if len(stats.Items) != 1 || stats.Items[0].Plays != 3 || stats.Items[0].WatchedSeconds != 680 {
 		t.Errorf("item ranking = %#v, want 3 plays and 680s", stats.Items)
+	}
+}
+
+func TestPlayHistoryDoesNotCountPauses(t *testing.T) {
+	// CORE-1307: a pause adds nothing to watched time, whether the client
+	// stays silent while paused or keeps reporting the same position.
+	st := openSeeded(t)
+	ctx := context.Background()
+	all := LibraryFilter{AllLibraries: true}
+	day := time.Date(2026, 11, 14, 20, 0, 0, 0, time.UTC)
+
+	// Silent client: five minutes played, a 20-minute pause, five more
+	// minutes, then a watched report 15 seconds later.
+	resume := day.Add(25 * time.Minute)
+	progressAtPosition(t, st, "profile-default", "media-alpha", day, 0, false)
+	playing(t, st, "profile-default", "media-alpha", day, day.Add(5*time.Minute), time.Time{}, 0, 3600)
+	progressAtPosition(t, st, "profile-default", "media-alpha", day.Add(5*time.Minute), 300, false)
+	progressAtPosition(t, st, "profile-default", "media-alpha", resume, 300, false)
+	playing(t, st, "profile-default", "media-alpha", resume, resume.Add(5*time.Minute), time.Time{}, 300, 3600)
+	progressAtPosition(t, st, "profile-default", "media-alpha", resume.Add(5*time.Minute), 600, false)
+	progressAt(t, st, "profile-default", "media-alpha", resume.Add(5*time.Minute+15*time.Second), true)
+
+	// Reporting client: the same position every 10 seconds through a
+	// 20-minute pause, then a report that arrived five minutes after the one
+	// before it (a slow request) but advanced the position five minutes.
+	other := day.Add(2 * time.Hour)
+	progressAtPosition(t, st, "profile-managed", "media-alpha", other, 100, false)
+	for step := 10 * time.Second; step <= 20*time.Minute; step += 10 * time.Second {
+		progressAtPosition(t, st, "profile-managed", "media-alpha", other.Add(step), 100, false)
+	}
+	progressAtPosition(t, st, "profile-managed", "media-alpha", other.Add(25*time.Minute), 400, false)
+
+	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plays) != 2 || plays[0].WatchedSeconds != 300 || plays[1].WatchedSeconds != 615 {
+		t.Fatalf("plays = %#v, want 300s (reporting client) and 615s (silent client)", plays)
+	}
+	stats, err := st.PlayStats(ctx, all, day.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats.Items) != 1 || stats.Items[0].WatchedSeconds != 915 {
+		t.Fatalf("item ranking = %#v, want 915s", stats.Items)
 	}
 }

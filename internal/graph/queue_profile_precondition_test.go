@@ -315,3 +315,32 @@ func TestConcurrentSwitchNeverMovesPreconditionedWriteToNewProfile(t *testing.T)
 	}
 	t.Logf("applied %d, refused %d", applied, refused)
 }
+
+func TestSetContinueWatchingHiddenWithStaleExpectedProfileIsRefused(t *testing.T) {
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	ctx := t.Context()
+	for _, profile := range []store.ProfileID{pqDefault, pqManaged} {
+		if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
+			ProfileID: profile, MediaID: "media-alpha", PositionSeconds: 30, DurationSeconds: 120,
+		}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const hide = `mutation H($expectedProfileID: String) { setContinueWatchingHidden(mediaID: "media-alpha", hidden: true, expectedProfileID: $expectedProfileID) { id } }`
+	if resp := postGraphJSON(t, h, authorizeViewer, hide, map[string]any{"expectedProfileID": pqDefault}); len(resp.Errors) != 0 {
+		t.Fatalf("matching expectedProfileID errors = %#v", resp.Errors)
+	}
+	// Another tab moves the session to profile-managed: the first Profile's
+	// Undo must not write under the new one.
+	pqSwitchViewerToManaged(t, h)
+	resp := postGraphJSON(t, h, authorizeViewer, hide, map[string]any{"expectedProfileID": pqDefault})
+	pqWantMismatch(t, "setContinueWatchingHidden", resp.Errors)
+	items, err := st.SourceItems(ctx, store.LibraryFilter{Revealed: true, AllLibraries: true}, store.SourceQuery{Kind: "continue-watching", ProfileID: pqManaged})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("new Profile's Continue Watching = %d items, want untouched (1)", len(items))
+	}
+}

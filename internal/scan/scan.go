@@ -233,10 +233,20 @@ var imageExtensions = map[string]bool{
 	"webp": true,
 	"heic": true,
 	"heif": true,
+	// RAW formats (CORE-0310, CORE-0652); derivatives come from the
+	// embedded JPEG preview (internal/ffmpeg ScaleImage).
 	"cr2":  true,
+	"cr3":  true,
 	"nef":  true,
+	"nrw":  true,
 	"arw":  true,
 	"dng":  true,
+	"raf":  true,
+	"orf":  true,
+	"rw2":  true,
+	"pef":  true,
+	"srw":  true,
+	"3fr":  true,
 	"avif": true,
 	"bmp":  true,
 	"tif":  true,
@@ -399,4 +409,9 @@ type parsedPartImport struct {
 	markerTitle   string
 	probeChapters []ffmpeg.ProbeChapter
 	probed        bool
+	// hydrate is set when the part is new or changed on disk, as a single
+	// file must be to hydrate; tags are then its embedded metadata. The group
+	// hydrates from its first part's.
+	hydrate bool
+	tags    map[string]string
 }

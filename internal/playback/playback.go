@@ -583,6 +583,8 @@ type Service struct {
 	observed      observations
 
 	decisionLookup decisionLookup
+	feedStreams    FeedStreamRegistrar
+	feedEntries    feedEntryLookup
 }
 
 // SealedPredicate reports whether a Library is currently Sealed (ADR-0098 area
@@ -1088,7 +1090,15 @@ func (s *Service) decideMedia(ctx context.Context, op *libraryOperation, batch *
 	// yields one Version with one Part, so the negotiation is a no-op there and
 	// existing behaviour is unchanged.
 	files, err := s.store.MediaFilesForMedia(ctx, media.ID, scope.LibraryFilter())
-	if err != nil {
+	if err == nil {
+		files = playableFiles(files)
+	}
+	if err != nil || len(files) == 0 {
+		// A catalogued feed entry not yet downloaded streams its origin through
+		// the proxy (ADR-0238); anything else without a file is unavailable.
+		if feed, ok, feedErr := s.feedStreamDecision(ctx, scope, media, suffix, timeline, profile, priority, ov); feedErr != nil || ok {
+			return feed, feedErr
+		}
 		return decision{media: media, verdict: "unavailable", reason: "media-file-unavailable", streams: []StreamChoice{}, timeline: timeline}, nil
 	}
 	// Image-class posture: a still is served as direct authenticated

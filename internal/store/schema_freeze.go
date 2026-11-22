@@ -103,9 +103,15 @@ package store
 //
 // Events 0024 (CORE-2762) stages Version merge playback for recovery and
 // Profile erasure without changing entity queries.
+//
+// Events 0025 (CORE-2039) adds playback_progress.continue_hidden so a Profile
+// can remove an item from Continue Watching and keep its resume position; it
+// is read only by the continue-watching Source, off the entity-query hot path.
+// Events 0026 (CORE-1630) gives Play Queue entries stable IDs and persists
+// Profile playback state without changing entity queries.
 // Encrypted-library 0012 (CORE-3131) keeps relation locks and recovery rows
 // in the owning Library plane.
 const (
-	schemaFreezeEventsMigrations           = 24
+	schemaFreezeEventsMigrations           = 26
 	schemaFreezeEncryptedLibraryMigrations = 12
 )

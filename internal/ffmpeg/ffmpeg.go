@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"unicode"
 )
@@ -583,6 +584,12 @@ func (r *Runner) ExtractEmbeddedArtwork(ctx context.Context, src string, width i
 // (keeping aspect, never upscaling), writing dst atomically via a temp file in
 // dst's directory. A dst ending in .png is an RGBA PNG, so the source's alpha
 // channel survives; every other dst is a JPEG.
+//
+// The source is inspected first (CORE-0310, still.go): a RAW is scaled from its
+// largest embedded JPEG preview, written to a second temp beside dst; EXIF
+// orientation is applied explicitly with FFmpeg's autorotation off, so the
+// derivative is upright and untagged; and a JPEG derivative of a Display P3 or
+// BT.2020 source is converted to sRGB and embeds an sRGB profile.
 func (r *Runner) ScaleImage(ctx context.Context, src string, width int, dst string) (err error) {
 	if err := checkPath(src); err != nil {
 		return err
@@ -594,29 +601,101 @@ func (r *Runner) ScaleImage(ctx context.Context, src string, width int, dst stri
 	if err != nil {
 		return fmt.Errorf("ffmpeg is not available: %w", err)
 	}
+	still, err := inspectStillFile(src)
+	if err != nil {
+		return err
+	}
 	out, err := reserveOutput(dst)
 	if err != nil {
 		return err
 	}
 	defer out.joinDiscardError(&err)
-	args := []string{
-		"-v", "error",
-		"-protocol_whitelist", productionProtocolAllowlist,
-		"-i", src,
-		"-frames:v", "1",
-		"-vf", fmt.Sprintf("scale=min(%d\\,iw):-2", width),
+	input := src
+	if still.preview != nil {
+		preview, err := reserveOutput(dst)
+		if err != nil {
+			return err
+		}
+		defer preview.joinDiscardError(&err)
+		if _, err := preview.file.Write(still.preview); err != nil {
+			return fmt.Errorf("writing embedded preview: %w", err)
+		}
+		input = preview.Path
 	}
+	png := strings.EqualFold(filepath.Ext(dst), ".png")
+	convert := still.colour.converts() && !png
+	args := []string{"-v", "error", "-protocol_whitelist", productionProtocolAllowlist}
+	if still.orientation != 0 {
+		args = append(args, "-noautorotate")
+	}
+	args = append(args, "-i", input, "-frames:v", "1", "-vf", stillFilters(still, width, convert))
 	// The temp output has no image extension, so image2 picks JPEG unless the
 	// codec is named.
-	if strings.EqualFold(filepath.Ext(dst), ".png") {
+	if png {
 		args = append(args, "-c:v", "png", "-pix_fmt", "rgba")
 	}
 	args = append(args, "-f", "image2", "-y", "--", out.Path)
-	cmd := r.generationCommand(ctx, transformConfinement(src, out.Path), ffmpegPath, args...)
+	cmd := r.generationCommand(ctx, transformConfinement(input, out.Path), ffmpegPath, args...)
 	if detail, err := r.runDetail(ctx, cmd); err != nil {
 		return errors.Join(fmt.Errorf("ffmpeg image scale: %s", detail), survivedError(err))
 	}
+	if convert {
+		if err := out.embedICC(srgbICC); err != nil {
+			return fmt.Errorf("tagging derivative as sRGB: %w", err)
+		}
+	}
 	return out.publish(dst)
+}
+
+// stillFilters builds the -vf chain: orientation, then the width cap, then (for
+// a converted JPEG) the conversion to sRGB. With neither it is the plain scale.
+func stillFilters(still stillSource, width int, convert bool) string {
+	var filters []string
+	if f := orientationFilter(still.orientation); f != "" {
+		filters = append(filters, f)
+	}
+	if !convert {
+		return strings.Join(append(filters, fmt.Sprintf("scale=min(%d\\,iw):-2", width)), ",")
+	}
+	// Full-range BT.601 YUV is what the colorspace filter and the JPEG encoder
+	// share, so the conversion happens once, on the scaled pixels. The colorspace
+	// filter refuses odd frame sizes, so the width is rounded down to even too.
+	filters = append(filters,
+		fmt.Sprintf("scale=w=max(2\\,trunc(min(%d\\,iw)/2)*2):h=-2:out_color_matrix=bt601:out_range=full", width),
+		"format=yuv444p",
+		fmt.Sprintf("colorspace=iprimaries=%s:itrc=%s:ispace=bt470bg:irange=pc:primaries=bt709:trc=srgb:space=bt470bg:range=pc",
+			still.colour.primaries, still.colour.transfer),
+	)
+	return strings.Join(filters, ",")
+}
+
+// inspectStillFile inspects src through one descriptor. An unreadable source is
+// an error; an unrecognised one is the zero stillSource (direct decode).
+//
+// The open is confined like FFmpeg's own read: through an os.Root on src's
+// directory (transformConfinement's read grant), so a symlink leading out of it
+// is refused, and nonblocking, so a FIFO swapped in for the source cannot hang
+// the worker before the descriptor is found not to be a regular file.
+func inspectStillFile(src string) (stillSource, error) {
+	root, err := os.OpenRoot(dirOf(src))
+	if err != nil {
+		return stillSource{}, fmt.Errorf("opening image: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	f, err := root.OpenFile(filepath.Base(src), os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return stillSource{}, fmt.Errorf("opening image: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return stillSource{}, fmt.Errorf("reading image: %w", err)
+	}
+	// FFmpeg would block opening a FIFO or device the inspection skipped.
+	if !info.Mode().IsRegular() {
+		return stillSource{}, errors.New("image source is not a regular file")
+	}
+	return inspectStill(f, info.Size(), src), nil
 }
 
 // SpriteSheets samples one frame every intervalSeconds from src, scales each

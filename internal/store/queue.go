@@ -1,598 +1,544 @@
 package store
 
 import (
+	"cmp"
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"errors"
+	randv2 "math/rand/v2"
 	"slices"
 	"time"
 )
 
+// QueueRepeatMode is the Profile's Play Queue repeat setting.
+type QueueRepeatMode string
+
+const (
+	QueueRepeatOff QueueRepeatMode = "off"
+	QueueRepeatAll QueueRepeatMode = "all"
+	QueueRepeatOne QueueRepeatMode = "one"
+)
+
+type QueuePlacement string
+
+const (
+	QueueNext QueuePlacement = "next"
+	QueueEnd  QueuePlacement = "end"
+)
+
+type PlayQueueEntry struct {
+	ID   string
+	Item SourceItem
+}
+
+type PlayQueue struct {
+	Entries        []PlayQueueEntry
+	CurrentEntryID *string
+	PositionMS     int64
+	Shuffle        bool
+	RepeatMode     QueueRepeatMode
+}
+
 type queueEntry struct {
-	mediaID   MediaID
-	addedAtMS int64
+	id              string
+	mediaID         MediaID
+	addedAtMS       int64
+	position        int
+	shufflePosition sql.NullInt64
+	persisted       bool
 }
 
-// ErrQueueMediaNotFound covers missing targets and targets hidden from the queue.
-const ErrQueueMediaNotFound = ValidationError("media not found")
-
-// ErrQueueMediaLocked reports a visible target blocked by certification.
-var ErrQueueMediaLocked = errors.New("media is locked")
-
-// ErrQueueProfileOutsideSchedule reports a switched Profile that cannot use
-// the session at the current time.
-var ErrQueueProfileOutsideSchedule = errors.New("profile access not allowed at this time")
-
-// QueueAddResult captures the placement, visible first page, and scope at commit.
-type QueueAddResult struct {
-	Items     []SourceItem
-	Filter    LibraryFilter
-	ProfileID ProfileID
-	MediaID   MediaID
-	Position  *int // Zero-based in the visible queue, nil for a muted target.
+type queueSnapshot struct {
+	entries    []queueEntry
+	shuffled   []queueEntry
+	currentID  string
+	positionMS int64
+	shuffle    bool
+	repeat     QueueRepeatMode
 }
 
-// QueueAddForProfile adds or moves an item in the Profile's Play Queue using
-// current store authorization. A nonempty expectedProfileID pins the write
-// to that Profile. An empty sessionID is for sessionless scopes, which
-// cannot Reveal. authNow supplies the clock used to authorize the request.
-// resolveCertification maps current ceilings against the active plugin scales
-// and must not call back into the store.
-func (s *Store) QueueAddForProfile(ctx context.Context, profileID ProfileID, sessionID SessionID, expectedProfileID ProfileID, mediaID MediaID, position *int, filter LibraryFilter, authNow func() time.Time, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint) (QueueAddResult, error) {
-	if resolveCertification == nil {
-		return QueueAddResult{}, errors.New("queue add requires a certification resolver")
+func (q *queueSnapshot) activeOrder() *[]queueEntry {
+	if q.shuffle {
+		return &q.shuffled
 	}
-	if profileID == "" || mediaID == "" {
-		return QueueAddResult{}, ValidationError("profile ID and media ID are required")
-	}
-	// Keep the database handles and any unsealed plane registered through the
-	// operation. Other readers can take the same lock while SQLite serializes
-	// writes to the attached databases.
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return QueueAddResult{}, err
-	}
-	return s.queueAddWithWriter(ctx, profileID, sessionID, expectedProfileID, mediaID, position, filter, authNow, resolveCertification, "")
+	return &q.entries
 }
 
-func (s *Store) queueAddWithWriter(ctx context.Context, scopeProfileID ProfileID, sessionID SessionID, expectedProfileID ProfileID, mediaID MediaID, position *int, scopeFilter LibraryFilter, authNow func() time.Time, resolveCertification func([]ProfileCertificationCeiling) []CertificationConstraint, privateID LibraryID) (QueueAddResult, error) {
-	writer, err := s.openQueueWriter(ctx, privateID)
-	if err != nil {
-		return QueueAddResult{}, err
-	}
-	defer writer.Close()
-	tx, err := writer.BeginTx(ctx, nil)
-	if err != nil {
-		return QueueAddResult{}, err
-	}
-	defer tx.Rollback()
-
-	var session Session
-	if sessionID != "" {
-		session, err = readSession(ctx, tx, sessionID)
-		if err != nil {
-			return QueueAddResult{}, err
-		}
-		device, err := readDevice(ctx, tx, session.DeviceID)
-		if err != nil {
-			return QueueAddResult{}, err
-		}
-		if device.Revoked {
-			return QueueAddResult{}, ErrDeviceRevoked
-		}
-	}
-	profileID, filter := scopeProfileID, scopeFilter
-	rebound := sessionID != "" && session.ProfileID != profileID
-	filter.Revealed = filter.Revealed && session.Revealed
-	if rebound {
-		profileID = session.ProfileID
-		filter.Revealed = session.Revealed
-	}
-	if expectedProfileID != "" && expectedProfileID != profileID {
-		return QueueAddResult{}, ErrSessionProfileMismatch
-	}
-	profile, err := readProfile(ctx, tx, profileID)
-	if err != nil {
-		return QueueAddResult{}, err
-	}
-	if profile.Disabled {
-		return QueueAddResult{}, ErrProfileDisabled
-	}
-	var windows []ProfileAccessWindow
-	if profile.Kind == ProfileManaged {
-		windows, err = readProfileAccessWindows(ctx, tx, profileID)
-		if err != nil {
-			return QueueAddResult{}, err
-		}
-		filter.GrantedMediaIDs, err = readGrantedMediaIDs(ctx, tx, profileID)
-		if err != nil {
-			return QueueAddResult{}, err
-		}
-	} else {
-		filter.GrantedMediaIDs = nil
-	}
-	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, authNow()); err != nil {
-		return QueueAddResult{}, err
-	}
-	filter = queueAddFilter(profile, rebound, filter)
-	if privateID == "" {
-		targetLibrary, err := s.queueTargetLibrary(ctx, tx, mediaID, filter)
-		if err != nil {
-			return QueueAddResult{}, err
-		}
-		if targetLibrary != "" {
-			// Attach the target plane before taking the writer locks. Re-read
-			// the session, Profile, and target in the transaction that writes.
-			if err := tx.Rollback(); err != nil {
-				return QueueAddResult{}, err
-			}
-			return s.queueAddWithWriter(ctx, scopeProfileID, sessionID, expectedProfileID, mediaID, position, scopeFilter, authNow, resolveCertification, targetLibrary)
-		}
-	}
-	filter.Certification = resolveCertification(profile.CertificationCeilings)
-
-	entries, err := queueEntries(ctx, tx, profileID)
-	if err != nil {
-		return QueueAddResult{}, err
-	}
-	readers := mediaReaders{catalog: tx, encrypted: func(id LibraryID) rowsQueryer {
-		if id == privateID {
-			return queueTargetReader{tx}
-		}
-		return s.encryptedMediaReaderLocked(id)
-	}}
-	visibleMedia, err := visibleMediaBatch(ctx, readers, queueMediaIDs(entries, mediaID), filter)
-	if err != nil {
-		return QueueAddResult{}, err
-	}
-	target, ok := visibleMedia[mediaID]
-	// A private target first seen after routing has no attached writer lock.
-	if !ok || (target.LibraryID != privateID && s.encryptedMediaReaderLocked(target.LibraryID) != nil) {
-		return QueueAddResult{}, ErrQueueMediaNotFound
-	}
-	check := []SourceItem{queueSourceItem(target)}
-	if err := annotateLocked(ctx, readers, filter.Certification, check, filter.GrantedMediaIDs); err != nil {
-		return QueueAddResult{}, err
-	}
-	if check[0].Locked {
-		return QueueAddResult{}, ErrQueueMediaLocked
-	}
-
-	addedAt := timeToMillis(s.serverNow())
-	without := make([]queueEntry, 0, len(entries))
-	visible := make(map[MediaID]bool, len(visibleMedia))
-	for id := range visibleMedia {
-		visible[id] = true
-	}
-	for _, entry := range entries {
+// addLegacy preserves the Media-addressed behavior for existing clients.
+// Numeric positions count distinct visible Media, as legacy reads do.
+func (q *queueSnapshot) addLegacy(mediaID MediaID, position *int, visible map[MediaID]Media, addedAt time.Time) {
+	order := q.activeOrder()
+	for i, entry := range *order {
 		if entry.mediaID == mediaID {
-			addedAt = entry.addedAtMS
+			*order = moveLegacyQueueEntry(*order, i, position, visible)
+			return
+		}
+	}
+	entry := newQueueEntries([]MediaID{mediaID})[0]
+	entry.addedAtMS = timeToMillis(addedAt)
+	q.entries = insertLegacyQueueEntry(q.entries, entry, position, visible)
+	if q.shuffle {
+		q.shuffled = insertLegacyQueueEntry(q.shuffled, entry, position, visible)
+	}
+}
+
+func validQueueBatch(mediaIDs []MediaID, placement QueuePlacement) bool {
+	return len(mediaIDs) > 0 && (placement == QueueEnd || placement == QueueNext)
+}
+
+func (q *queueSnapshot) addMany(mediaIDs []MediaID, placement QueuePlacement, visible map[MediaID]Media) {
+	entries := newQueueEntries(mediaIDs)
+	q.entries = addQueueEntries(q.entries, entries, q.currentID, placement, visible)
+	if q.shuffle {
+		q.shuffled = addQueueEntries(q.shuffled, entries, q.currentID, placement, visible)
+	}
+}
+
+func newQueueEntries(ids []MediaID) []queueEntry {
+	addedAt := timeToMillis(time.Now().UTC())
+	entries := make([]queueEntry, len(ids))
+	for i, id := range ids {
+		entries[i] = queueEntry{id: rand.Text(), mediaID: id, addedAtMS: addedAt}
+	}
+	return entries
+}
+
+func addQueueEntries(order, entries []queueEntry, currentID string, placement QueuePlacement, visible map[MediaID]Media) []queueEntry {
+	if placement == QueueEnd {
+		return append(order, entries...)
+	}
+	first := -1
+	for i, entry := range order {
+		if _, ok := visible[entry.mediaID]; !ok {
 			continue
 		}
-		without = append(without, entry)
-	}
-	updated := insertAtVisiblePosition(without, queueEntry{mediaID: mediaID, addedAtMS: addedAt}, position, visible)
-	items := make([]SourceItem, 0, len(visibleMedia))
-	for _, entry := range updated {
-		if media, ok := visibleMedia[entry.mediaID]; ok {
-			items = append(items, queueSourceItem(media))
+		if entry.id == currentID {
+			return slices.Insert(order, i+1, entries...)
+		}
+		if first < 0 {
+			first = i
 		}
 	}
-	// Match the normal queue response's mute filtering after placement.
-	items, err = s.applyMuteFilterLocked(ctx, s.catalogR, profileID, filter, items)
-	if err != nil {
-		return QueueAddResult{}, err
+	if first < 0 {
+		first = len(order)
 	}
-	var visiblePosition *int
-	if index := slices.IndexFunc(items, func(item SourceItem) bool { return item.ID == mediaID }); index >= 0 {
-		visiblePosition = &index
-	}
-	items = pageOf(items, defaultSourceItemsLimit, 0)
-	if filter.Revealed {
-		restricted, err := restrictedLibraryIDs(ctx, tx)
-		if err != nil {
-			return QueueAddResult{}, err
-		}
-		for i := range items {
-			items[i].Restricted = restricted[items[i].LibraryID]
-		}
-	}
-	if err := annotateLocked(ctx, readers, filter.Certification, items, filter.GrantedMediaIDs); err != nil {
-		return QueueAddResult{}, err
-	}
-	// A deadline can pass while building the page or rewriting the queue even though
-	// the policy rows are stable. Check just before writing and before commit.
-	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, authNow()); err != nil {
-		return QueueAddResult{}, err
-	}
-	if err := replaceQueue(ctx, tx, profileID, updated); err != nil {
-		return QueueAddResult{}, err
-	}
-	if err := checkQueueAddAccess(ctx, tx, profileID, session, windows, authNow()); err != nil {
-		return QueueAddResult{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return QueueAddResult{}, err
-	}
-	return QueueAddResult{
-		Items: slices.Clone(items), Filter: filter, ProfileID: profileID,
-		MediaID: mediaID, Position: visiblePosition,
-	}, nil
+	return slices.Insert(order, first, entries...)
 }
 
-// queueTargetLibrary resolves catalog IDs first, then selects an eligible
-// private plane to attach. The write transaction checks the target again.
-func (s *Store) queueTargetLibrary(ctx context.Context, tx *sql.Tx, mediaID MediaID, filter LibraryFilter) (LibraryID, error) {
-	var one int
-	err := tx.QueryRowContext(ctx, "SELECT 1 FROM media WHERE id = ?", mediaID).Scan(&one)
-	if !errors.Is(err, sql.ErrNoRows) {
-		return "", err
-	}
-	libraries, err := loadLibraries(ctx, tx)
-	if err != nil {
-		return "", err
-	}
-	for _, library := range libraries {
-		if !library.Encrypted || !libraryVisible(library, filter) {
-			continue
-		}
-		reader := s.encryptedMediaReaderLocked(library.ID)
-		if reader == nil {
-			continue
-		}
-		rows, err := reader.QueryContext(ctx, "SELECT 1 FROM media WHERE id = ? AND library_id = ? AND trashed_at_ms IS NULL", mediaID, library.ID)
-		if err != nil {
-			return "", err
-		}
-		found := rows.Next()
-		err = rows.Err()
-		_ = rows.Close()
-		if err != nil || found {
-			return library.ID, err
-		}
-	}
-	return "", ErrQueueMediaNotFound
+type queueTarget struct {
+	entryID string
+	mediaID MediaID
 }
 
-// openQueueWriter uses an exclusive connection lifetime for the attachments.
-// Only the events file is modified, so the commit requires no cross-file
-// durability guarantee from SQLite's WAL mode.
-func (s *Store) openQueueWriter(ctx context.Context, privateID LibraryID) (*sql.DB, error) {
-	writer, err := openSQLiteWriterWithPragmas(s.catalogPath, []string{"temp_store(MEMORY)"})
-	if err != nil {
-		return nil, err
+// QueueEdit applies a state change using the visibility resolved for the write.
+type QueueEdit func(*queueSnapshot, map[MediaID]Media) error
+
+func (t queueTarget) matches(entry queueEntry, visible map[MediaID]Media) bool {
+	_, ok := visible[entry.mediaID]
+	if t.entryID != "" {
+		return ok && entry.id == t.entryID
 	}
-	// Acquire database writer locks in catalog, private plane, events order.
-	if privateID != "" {
-		if _, err := writer.ExecContext(ctx, "ATTACH DATABASE ? AS queue_target", sqliteDSN(s.encryptedDBs[privateID].workingPath, nil, "")+"?mode=rw"); err != nil {
-			_ = writer.Close()
-			return nil, err
+	return ok && entry.mediaID == t.mediaID
+}
+
+func (s *Store) QueueRemove(ctx context.Context, profileID ProfileID, mediaID MediaID, filter LibraryFilter) error {
+	return s.updateQueue(ctx, profileID, filter, nil, RemoveQueueMedia(mediaID))
+}
+
+func (s *Store) QueueRemoveEntry(ctx context.Context, profileID ProfileID, entryID string, filter LibraryFilter) error {
+	return s.updateQueue(ctx, profileID, filter, nil, RemoveQueueEntry(entryID))
+}
+
+func RemoveQueueEntry(entryID string) QueueEdit {
+	return removeQueueTarget(queueTarget{entryID: entryID})
+}
+
+func RemoveQueueMedia(mediaID MediaID) QueueEdit {
+	return removeQueueTarget(queueTarget{mediaID: mediaID})
+}
+
+func removeQueueTarget(target queueTarget) QueueEdit {
+	return func(q *queueSnapshot, visible map[MediaID]Media) error {
+		if target == (queueTarget{}) {
+			return ValidationError("queue entry is required")
 		}
-	}
-	if _, err := writer.ExecContext(ctx, "ATTACH DATABASE ? AS queue_events", sqliteDSN(s.eventsPath, nil, "")+"?mode=rw"); err != nil {
-		_ = writer.Close()
-		return nil, err
-	}
-	if _, err := writer.ExecContext(ctx, "PRAGMA queue_events.synchronous = FULL"); err != nil {
-		_ = writer.Close()
-		return nil, err
-	}
-	return writer, nil
-}
-
-// queueTargetReader routes the existing private-plane visibility and
-// certification queries to the attached target without shadowing main in
-// any other query.
-type queueTargetReader struct{ tx *sql.Tx }
-
-func (q queueTargetReader) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return q.tx.QueryContext(ctx, `WITH media AS (SELECT * FROM queue_target.media),
-		media_field_text AS (SELECT * FROM queue_target.media_field_text) `+query, args...)
-}
-
-func queueAddFilter(profile Profile, rebound bool, filter LibraryFilter) LibraryFilter {
-	if rebound {
-		filter.AllLibraries = false
-		filter.AllowedIDs = profile.Library
-	} else if !filter.AllLibraries {
-		allowed := make([]LibraryID, 0, len(filter.AllowedIDs))
-		for _, id := range filter.AllowedIDs {
-			if slices.Contains(profile.Library, id) {
-				allowed = append(allowed, id)
+		for _, entry := range *q.activeOrder() {
+			if target.matches(entry, visible) {
+				q.removeEntries(func(candidate queueEntry) bool { return candidate.id == entry.id })
+				break
 			}
 		}
-		filter.AllowedIDs = allowed
-	}
-	filter.Revealed = filter.Revealed && profile.Kind == ProfileAdult
-	return filter
-}
-
-func checkQueueAddAccess(ctx context.Context, tx *sql.Tx, profileID ProfileID, session Session, windows []ProfileAccessWindow, now time.Time) error {
-	if !session.ExpiresAt.IsZero() && !now.Before(session.ExpiresAt) {
-		return ErrSessionExpired
-	}
-	if AllowedAt(windows, now.Local()) {
 		return nil
 	}
-	if session.ID == "" {
-		return ErrQueueProfileOutsideSchedule
-	}
-	granted, err := activeExtensionGrant(ctx, tx, profileID, session.ID, now)
-	if err != nil {
-		return err
-	}
-	if !granted {
-		return ErrQueueProfileOutsideSchedule
-	}
-	return nil
 }
 
-// QueueRemove removes one visible Media item from a Profile's play queue and
-// renumbers the remaining positions contiguously. A hidden-but-queued entry
-// is left in place: hidden == missing, so for this caller there is nothing
-// to remove — and the entry must still be there after a reveal.
-func (s *Store) QueueRemove(ctx context.Context, profileID ProfileID, mediaID MediaID, filter LibraryFilter) error {
-	if profileID == "" || mediaID == "" {
-		return ValidationError("profile ID and media ID are required")
+func (q *queueSnapshot) removeEntries(remove func(queueEntry) bool) {
+	q.entries = slices.DeleteFunc(q.entries, remove)
+	q.shuffled = slices.DeleteFunc(q.shuffled, remove)
+	if !slices.ContainsFunc(q.entries, func(entry queueEntry) bool { return entry.id == q.currentID }) {
+		q.currentID, q.positionMS = "", 0
 	}
-	return s.updateQueue(ctx, profileID, filter, nil, func(entries []queueEntry, visible map[MediaID]bool) ([]queueEntry, error) {
-		updated := entries[:0]
-		for _, entry := range entries {
-			if entry.mediaID == mediaID && visible[entry.mediaID] {
-				continue
-			}
-			updated = append(updated, entry)
-		}
-		return updated, nil
-	})
 }
 
-// QueueMove moves a visible queued item to a new position counted among the
-// entries the caller can see. A hidden-but-queued id fails with the exact
-// error an unqueued id gets — succeeding (or failing differently) would let
-// a relocked session probe which hidden ids sit in its queue.
 func (s *Store) QueueMove(ctx context.Context, profileID ProfileID, mediaID MediaID, position int, filter LibraryFilter) error {
-	if profileID == "" || mediaID == "" {
-		return ValidationError("profile ID and media ID are required")
-	}
-	return s.updateQueue(ctx, profileID, filter, nil, func(entries []queueEntry, visible map[MediaID]bool) ([]queueEntry, error) {
-		var moved queueEntry
-		found := false
-		without := make([]queueEntry, 0, len(entries))
-		for _, entry := range entries {
-			if entry.mediaID == mediaID && visible[entry.mediaID] {
-				moved = entry
-				found = true
-				continue
-			}
-			without = append(without, entry)
-		}
-		if !found {
-			return nil, ValidationError("media is not queued")
-		}
-		return insertAtVisiblePosition(without, moved, &position, visible), nil
-	})
+	return s.updateQueue(ctx, profileID, filter, nil, MoveQueueMedia(mediaID, position))
 }
 
-// ErrQueueReplaceNeedsConfirm signals that QueueReplaceWithStation refused
-// because the caller's visible queue is non-empty (it holds user-added items)
-// and confirmReplace was not set. Starting a Station materializes a rolling
-// window into the existing Play Queue, but replacing a visible queue that
-// already has items is an explicit user action with client confirmation
-// (ADR-0098 §Stations). The caller re-issues with confirmReplace=true to commit.
+func (s *Store) QueueMoveEntry(ctx context.Context, profileID ProfileID, entryID string, position int, filter LibraryFilter) error {
+	return s.updateQueue(ctx, profileID, filter, nil, MoveQueueEntry(entryID, position))
+}
+
+func MoveQueueEntry(entryID string, position int) QueueEdit {
+	return moveQueueTarget(queueTarget{entryID: entryID}, &position)
+}
+
+func MoveQueueMedia(mediaID MediaID, position int) QueueEdit {
+	return moveQueueTarget(queueTarget{mediaID: mediaID}, &position)
+}
+
+func moveQueueTarget(target queueTarget, position *int) QueueEdit {
+	return func(q *queueSnapshot, visible map[MediaID]Media) error {
+		return q.moveEntry(target, position, visible)
+	}
+}
+
+func (q *queueSnapshot) moveEntry(target queueTarget, position *int, visible map[MediaID]Media) error {
+	order := q.activeOrder()
+	for i, entry := range *order {
+		if !target.matches(entry, visible) {
+			continue
+		}
+		if position == nil && entry.id == q.currentID {
+			return nil
+		}
+		if target.entryID == "" {
+			*order = moveLegacyQueueEntry(*order, i, position, visible)
+			return nil
+		}
+		remaining := slices.Delete(*order, i, i+1)
+		if position == nil {
+			*order = addQueueEntries(remaining, []queueEntry{entry}, q.currentID, QueueNext, visible)
+		} else {
+			*order = insertQueueEntry(remaining, entry, *position, visible)
+		}
+		return nil
+	}
+	return ValidationError("media is not queued")
+}
+
+func (s *Store) QueueSetCurrent(ctx context.Context, profileID ProfileID, entryID string, positionMS int64, filter LibraryFilter) error {
+	return s.updateQueue(ctx, profileID, filter, nil, SetQueueCurrent(entryID, positionMS))
+}
+
+func SetQueueCurrent(entryID string, positionMS int64) QueueEdit {
+	return func(q *queueSnapshot, visible map[MediaID]Media) error {
+		if positionMS < 0 || (entryID == "" && positionMS != 0) {
+			return ValidationError("invalid queue position")
+		}
+		if entryID == "" && q.currentID == "" {
+			return nil
+		}
+		targetID := entryID
+		if targetID == "" {
+			// A clear from a locked session must leave a hidden current entry alone.
+			targetID = q.currentID
+		}
+		if slices.ContainsFunc(q.entries, func(e queueEntry) bool {
+			return queueTarget{entryID: targetID}.matches(e, visible)
+		}) {
+			q.currentID, q.positionMS = entryID, positionMS
+			return nil
+		}
+		if entryID != "" {
+			return ValidationError("media is not queued")
+		}
+		return nil
+	}
+}
+
+func (s *Store) QueueSetShuffle(ctx context.Context, profileID ProfileID, enabled bool, filter LibraryFilter) error {
+	return s.updateQueue(ctx, profileID, filter, nil, SetQueueShuffle(enabled))
+}
+
+func SetQueueShuffle(enabled bool) QueueEdit {
+	return func(q *queueSnapshot, _ map[MediaID]Media) error {
+		if enabled == q.shuffle {
+			return nil
+		}
+		q.shuffle = enabled
+		q.shuffled = nil
+		if enabled {
+			q.shuffled = slices.Clone(q.entries)
+			randv2.Shuffle(len(q.shuffled), func(i, j int) { //nolint:gosec // Playback order does not require cryptographic randomness.
+				q.shuffled[i], q.shuffled[j] = q.shuffled[j], q.shuffled[i]
+			})
+			if i := slices.IndexFunc(q.shuffled, func(e queueEntry) bool { return e.id == q.currentID }); i > 0 {
+				q.shuffled[0], q.shuffled[i] = q.shuffled[i], q.shuffled[0]
+			}
+		}
+		return nil
+	}
+}
+
+func (s *Store) QueueSetRepeat(ctx context.Context, profileID ProfileID, mode QueueRepeatMode, filter LibraryFilter) error {
+	return s.updateQueue(ctx, profileID, filter, nil, SetQueueRepeat(mode))
+}
+
+func SetQueueRepeat(mode QueueRepeatMode) QueueEdit {
+	return func(q *queueSnapshot, _ map[MediaID]Media) error {
+		switch mode {
+		case QueueRepeatOff, QueueRepeatAll, QueueRepeatOne:
+		default:
+			return ValidationError("invalid queue repeat mode")
+		}
+		q.repeat = mode
+		return nil
+	}
+}
+
+// ErrQueueReplaceNeedsConfirm protects a visible, nonempty queue from an
+// implicit replacement when a caller starts a Station (ADR-0098).
 var ErrQueueReplaceNeedsConfirm = errors.New("queue replacement needs confirmation")
 
-// QueueReplaceWithStation materializes a generated Station window into the
-// Profile's Play Queue (ADR-0098 area 5). It replaces the entries the caller can
-// SEE with mediaIDs in order, while PRESERVING hidden-but-queued entries exactly
-// like QueueClear — a relocked session must never destroy (or learn about) queue
-// state it cannot read, and hidden entries reappear on reveal. The hidden
-// entries are kept at the FRONT (their original relative order) and the new
-// visible window follows; the visible positions the caller reads back are the
-// Station window in generation order.
-//
-// confirmReplace gates the destructive replace: when the caller's visible queue
-// is already non-empty (user-added items present) and confirmReplace is false,
-// it makes no change and returns ErrQueueReplaceNeedsConfirm so the client can
-// prompt. An empty visible queue needs no confirmation.
-//
-// mediaIDs are trusted to already be visible to the caller (the Station
-// generator collects candidates through the same LibraryFilter, sealed-free);
-// any id that is not currently visible to this caller is dropped defensively so
-// a stale window can never inject an item the caller cannot itself read.
 func (s *Store) QueueReplaceWithStation(ctx context.Context, profileID ProfileID, mediaIDs []MediaID, confirmReplace bool, filter LibraryFilter) error {
-	if profileID == "" {
-		return ValidationError("profile ID is required")
-	}
-	return s.updateQueue(ctx, profileID, filter, mediaIDs, func(entries []queueEntry, visible map[MediaID]bool) ([]queueEntry, error) {
-		hidden := make([]queueEntry, 0, len(entries))
-		visibleCount := 0
-		for _, entry := range entries {
-			if visible[entry.mediaID] {
-				visibleCount++
-				continue
-			}
-			hidden = append(hidden, entry)
+	return s.updateQueue(ctx, profileID, filter, mediaIDs, replaceQueueWithStation(mediaIDs, confirmReplace))
+}
+
+func replaceQueueWithStation(mediaIDs []MediaID, confirmReplace bool) QueueEdit {
+	return func(q *queueSnapshot, visible map[MediaID]Media) error {
+		isVisible := func(entry queueEntry) bool {
+			_, ok := visible[entry.mediaID]
+			return ok
 		}
-		if visibleCount > 0 && !confirmReplace {
-			return nil, ErrQueueReplaceNeedsConfirm
+		if !confirmReplace && slices.ContainsFunc(q.entries, isVisible) {
+			return ErrQueueReplaceNeedsConfirm
 		}
-		addedAt := timeToMillis(time.Now().UTC())
-		updated := hidden
+		q.removeEntries(isVisible)
 		seen := make(map[MediaID]bool, len(mediaIDs))
+		var ids []MediaID
 		for _, id := range mediaIDs {
-			if id == "" || seen[id] || !visible[id] {
-				continue
+			if _, ok := visible[id]; ok && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
 			}
-			seen[id] = true
-			updated = append(updated, queueEntry{mediaID: id, addedAtMS: addedAt})
 		}
-		return updated, nil
-	})
-}
-
-// QueueClear removes every entry the caller can see. Hidden entries stay —
-// a relocked session must not be able to destroy queue state it cannot read.
-func (s *Store) QueueClear(ctx context.Context, profileID ProfileID, filter LibraryFilter) error {
-	if profileID == "" {
-		return ValidationError("profile ID is required")
+		entries := newQueueEntries(ids)
+		q.entries = append(q.entries, entries...)
+		if q.shuffle {
+			q.shuffled = append(q.shuffled, entries...)
+		}
+		return nil
 	}
-	return s.updateQueue(ctx, profileID, filter, nil, func(entries []queueEntry, visible map[MediaID]bool) ([]queueEntry, error) {
-		var kept []queueEntry
-		for _, entry := range entries {
-			if !visible[entry.mediaID] {
-				kept = append(kept, entry)
-			}
-		}
-		return kept, nil
+}
+
+// QueueClear removes every entry the caller can see.
+func (s *Store) QueueClear(ctx context.Context, profileID ProfileID, filter LibraryFilter) error {
+	return s.updateQueue(ctx, profileID, filter, nil, ClearQueue())
+}
+
+func ClearQueue() QueueEdit {
+	return func(q *queueSnapshot, visible map[MediaID]Media) error {
+		q.removeEntries(func(entry queueEntry) bool {
+			_, ok := visible[entry.mediaID]
+			return ok
+		})
+		return nil
+	}
+}
+
+func (s *Store) updateQueue(ctx context.Context, profileID ProfileID, filter LibraryFilter, extra []MediaID, mutate QueueEdit) error {
+	auth := QueueWriteAuthorization{ProfileID: profileID, Filter: filter, Now: s.serverNow, trustedFilter: true}
+	return s.writeQueue(ctx, auth, queueWriteTargets{ids: extra}, func(view queueWriteView) error {
+		return mutate(view.queue, view.visible)
 	})
 }
 
-func (s *Store) updateQueue(ctx context.Context, profileID ProfileID, filter LibraryFilter, extra []MediaID, mutate func([]queueEntry, map[MediaID]bool) ([]queueEntry, error)) error {
+func queueMediaIDs(entries []queueEntry, extra []MediaID) []MediaID {
+	seen := make(map[MediaID]bool, len(entries)+len(extra))
+	ids := make([]MediaID, 0, len(entries)+len(extra))
+	for _, entry := range entries {
+		if !seen[entry.mediaID] {
+			seen[entry.mediaID] = true
+			ids = append(ids, entry.mediaID)
+		}
+	}
+	for _, id := range extra {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func moveLegacyQueueEntry(order []queueEntry, index int, position *int, visible map[MediaID]Media) []queueEntry {
+	if position != nil {
+		// The target is the first occurrence of its Media in playback order.
+		// Compare its legacy index before regrouping any duplicate entries.
+		seen := make(map[MediaID]bool)
+		for _, entry := range order[:index] {
+			if _, ok := visible[entry.mediaID]; ok {
+				seen[entry.mediaID] = true
+			}
+		}
+		if len(seen) == max(0, *position) {
+			return order
+		}
+	}
+	entry := order[index]
+	return insertLegacyQueueEntry(slices.Delete(order, index, index+1), entry, position, visible)
+}
+
+// insertLegacyQueueEntry counts the first visible occurrence of each other
+// Media. Carry any earlier duplicates of the moved Media with it so the
+// legacy read sees its first occurrence at the requested position.
+func insertLegacyQueueEntry(order []queueEntry, entry queueEntry, position *int, visible map[MediaID]Media) []queueEntry {
+	if position == nil {
+		return append(order, entry)
+	}
+	target := max(0, *position)
+	seen := make(map[MediaID]bool)
+	reordered := make([]queueEntry, 0, len(order)+1)
+	moved := []queueEntry{entry}
+	for i, candidate := range order {
+		if candidate.mediaID == entry.mediaID {
+			moved = append(moved, candidate)
+			continue
+		}
+		if _, ok := visible[candidate.mediaID]; ok && !seen[candidate.mediaID] {
+			if target == 0 {
+				reordered = append(reordered, moved...)
+				return append(reordered, order[i:]...)
+			}
+			seen[candidate.mediaID] = true
+			target--
+		}
+		reordered = append(reordered, candidate)
+	}
+	return append(reordered, moved...)
+}
+
+// insertQueueEntry counts each visible entry, including duplicate Media.
+func insertQueueEntry(order []queueEntry, entry queueEntry, position int, visible map[MediaID]Media) []queueEntry {
+	target := max(0, position)
+	for i, candidate := range order {
+		if _, ok := visible[candidate.mediaID]; !ok {
+			continue
+		}
+		if target == 0 {
+			return slices.Insert(order, i, entry)
+		}
+		target--
+	}
+	return append(order, entry)
+}
+
+func (s *Store) PlayQueue(ctx context.Context, profileID ProfileID, filter LibraryFilter) (PlayQueue, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return err
+		return PlayQueue{}, err
 	}
-	tx, err := s.eventsW.BeginTx(ctx, nil)
+	return s.readPlayQueue(ctx, profileID, filter)
+}
+
+// readPlayQueue is called with the Store read lock held. The events read
+// transaction binds the entry order and playback state to the same snapshot.
+func (s *Store) readPlayQueue(ctx context.Context, profileID ProfileID, filter LibraryFilter) (PlayQueue, error) {
+	q, err := s.readQueueSnapshot(ctx, profileID)
 	if err != nil {
-		return err
+		return PlayQueue{}, err
+	}
+	visible, err := s.visibleMediaBatchSQL(ctx, queueMediaIDs(q.entries, nil), filter)
+	if err != nil {
+		return PlayQueue{}, err
+	}
+	return q.playQueue(visible), nil
+}
+
+func (s *Store) readQueueSnapshot(ctx context.Context, profileID ProfileID) (queueSnapshot, error) {
+	tx, err := s.eventsR.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return queueSnapshot{}, err
 	}
 	defer tx.Rollback()
-	entries, err := queueEntries(ctx, tx, profileID)
-	if err != nil {
-		return err
-	}
-	visible, err := s.queueVisibility(ctx, entries, filter, extra...)
-	if err != nil {
-		return err
-	}
-	updated, err := mutate(entries, visible)
-	if err != nil {
-		return err
-	}
-	if err := replaceQueue(ctx, tx, profileID, updated); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return loadQueue(ctx, tx, profileID)
 }
 
-// queueVisibility resolves which queued and candidate IDs the scope can see.
-func (s *Store) queueVisibility(ctx context.Context, entries []queueEntry, filter LibraryFilter, extra ...MediaID) (map[MediaID]bool, error) {
-	media, err := s.visibleMediaBatchSQL(ctx, queueMediaIDs(entries, extra...), filter)
-	if err != nil {
-		return nil, err
-	}
-	visible := make(map[MediaID]bool, len(media))
-	for id := range media {
-		visible[id] = true
-	}
-	return visible, nil
-}
-
-func queueMediaIDs(entries []queueEntry, extra ...MediaID) []MediaID {
-	ids := make([]MediaID, 0, len(entries)+len(extra))
-	for _, entry := range entries {
-		ids = append(ids, entry.mediaID)
-	}
-	return append(ids, extra...)
-}
-
-// insertAtVisiblePosition inserts entry so it lands at index position among
-// the entries the caller can see (nil or past-the-end position = the end of
-// the queue). Hidden entries keep their slots; the caller's position
-// arithmetic only ever counts items it can read back.
-func insertAtVisiblePosition(entries []queueEntry, entry queueEntry, position *int, visible map[MediaID]bool) []queueEntry {
-	visibleCount := 0
-	for _, e := range entries {
-		if visible[e.mediaID] {
-			visibleCount++
-		}
-	}
-	target := visibleCount
-	if position != nil {
-		target = clampQueuePosition(*position, visibleCount)
-	}
-	at := len(entries)
-	seen := 0
-	for i, e := range entries {
-		if !visible[e.mediaID] {
-			continue
-		}
-		if seen == target {
-			at = i
+func (q *queueSnapshot) visibleCurrent(visible map[MediaID]Media) (*string, int64) {
+	for _, entry := range q.entries {
+		if entry.id == q.currentID {
+			if _, ok := visible[entry.mediaID]; ok {
+				return &entry.id, q.positionMS
+			}
 			break
 		}
-		seen++
 	}
-	updated := append(entries[:at:at], entry)
-	return append(updated, entries[at:]...)
+	return nil, 0
 }
 
-func (s *Store) queueItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
-	rows, err := s.eventsR.QueryContext(ctx, `
-		SELECT media_id
-		FROM play_queue
-		WHERE profile_id = ?
-		ORDER BY position
-	`, profileID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []MediaID
-	for rows.Next() {
-		var id MediaID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	visible, err := s.visibleMediaBatchSQL(ctx, ids, filter)
-	if err != nil {
-		return nil, err
-	}
-	items := []SourceItem{}
-	visibleIndex := 0
-	for _, id := range ids {
-		media, ok := visible[id]
+func (q *queueSnapshot) playQueue(visible map[MediaID]Media) PlayQueue {
+	result := PlayQueue{Entries: []PlayQueueEntry{}, Shuffle: q.shuffle, RepeatMode: q.repeat}
+	result.CurrentEntryID, result.PositionMS = q.visibleCurrent(visible)
+	for _, entry := range *q.activeOrder() {
+		media, ok := visible[entry.mediaID]
 		if !ok {
 			continue
 		}
-		if visibleIndex < offset {
-			visibleIndex++
-			continue
-		}
-		items = append(items, SourceItem{ID: media.ID, Kind: "media", Title: media.Title, LibraryID: media.LibraryID, Summary: mediaDurationSummary(media.DurationSeconds)})
-		visibleIndex++
-		if len(items) >= limit {
+		result.Entries = append(result.Entries, PlayQueueEntry{ID: entry.id, Item: queueSourceItem(media)})
+	}
+	return result
+}
+
+func (s *Store) queueItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
+	queue, err := s.readPlayQueue(ctx, profileID, filter)
+	if err != nil {
+		return nil, err
+	}
+	// Legacy clients identify rows by Media ID. Apply pagination to the
+	// first occurrence of each visible Media in playback order.
+	items := make([]SourceItem, 0, min(limit, len(queue.Entries)))
+	seen := make(map[MediaID]bool, len(queue.Entries))
+	for _, entry := range queue.Entries {
+		if len(items) == limit {
 			break
 		}
+		if seen[entry.Item.ID] {
+			continue
+		}
+		seen[entry.Item.ID] = true
+		if offset > 0 {
+			offset--
+			continue
+		}
+		items = append(items, entry.Item)
 	}
 	return items, nil
 }
 
-func queueSourceItem(media Media) SourceItem {
-	return SourceItem{
-		ID: media.ID, Kind: "media", Title: media.Title, LibraryID: media.LibraryID,
-		Summary: mediaDurationSummary(media.DurationSeconds),
+func (q *queueSnapshot) export(visible map[MediaID]Media) ([]MyQueueEntry, MyQueueState) {
+	entries := []MyQueueEntry{}
+	state := MyQueueState{Shuffle: q.shuffle, RepeatMode: q.repeat, ShuffledEntryIDs: []string{}}
+	state.CurrentEntryID, state.PositionMS = q.visibleCurrent(visible)
+	for _, entry := range q.entries {
+		if _, ok := visible[entry.mediaID]; ok {
+			entries = append(entries, MyQueueEntry{ID: entry.id, MediaID: entry.mediaID, AddedAt: millisToTime(entry.addedAtMS)})
+		}
 	}
+	for _, entry := range q.shuffled {
+		if _, ok := visible[entry.mediaID]; ok {
+			state.ShuffledEntryIDs = append(state.ShuffledEntryIDs, entry.id)
+		}
+	}
+	return entries, state
 }
 
-// myQueueRows returns every queued entry for the Profile in queue order,
-// unfiltered. My Data reveal-filters the whole export centrally, so
-// this read deliberately returns hidden entries too; it lives here, not in
-// mydata.go, because the play_queue table is firewalled behind the queue API
-// (see TestPlayQueueWritesStayBehindQueueAPI). The caller (ExportMyEngagement)
-// holds s.mu and has guarded; this reads via eventsR like the other My Data
-// projection reads.
+// myQueueRows reads the unfiltered canonical order for My Data Summary.
+// Its caller holds the Store read lock and applies visibility.
 func (s *Store) myQueueRows(ctx context.Context, profileID ProfileID) ([]MyQueueEntry, error) {
 	rows, err := s.eventsR.QueryContext(ctx, `
-		SELECT media_id, added_at_ms
+		SELECT entry_id, media_id, added_at_ms
 		FROM play_queue
 		WHERE profile_id = ?
 		ORDER BY position
@@ -605,7 +551,7 @@ func (s *Store) myQueueRows(ctx context.Context, profileID ProfileID) ([]MyQueue
 	for rows.Next() {
 		var row MyQueueEntry
 		var at int64
-		if err := rows.Scan(&row.MediaID, &at); err != nil {
+		if err := rows.Scan(&row.ID, &row.MediaID, &at); err != nil {
 			return nil, err
 		}
 		row.AddedAt = millisToTime(at)
@@ -619,44 +565,40 @@ func (s *Store) myQueueRows(ctx context.Context, profileID ProfileID) ([]MyQueue
 // so unlike QueueClear (which keeps hidden entries) it purges everything. It
 // lives in queue.go so all play_queue SQL stays behind the queue firewall.
 func deleteMyQueueAll(ctx context.Context, tx *sql.Tx, profileID ProfileID) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM play_queue_state WHERE profile_id = ?`, profileID); err != nil {
+		return err
+	}
 	_, err := tx.ExecContext(ctx, `DELETE FROM play_queue WHERE profile_id = ?`, profileID)
 	return err
 }
 
-// deleteMyQueueMedia removes one Media item's queue entry for the Profile within
-// the caller's transaction. My Data's `media:<id>` delete has already resolved
-// the id through the caller's visibility filter, so this is an unconditional
-// purge of that single row. It lives in queue.go for the same firewall reason.
+// deleteMyQueueMedia purges all occurrences after My Data resolves the
+// Media through the caller's visibility filter.
 func deleteMyQueueMedia(ctx context.Context, tx *sql.Tx, profileID ProfileID, mediaID MediaID) error {
 	_, err := tx.ExecContext(ctx, `DELETE FROM play_queue WHERE profile_id = ? AND media_id = ?`, profileID, mediaID)
 	return err
 }
 
-// queueMove is one Profile's queue entry a version merge pointed at another
-// Media (CORE-2490). AddedAtMS tells it from an entry the Profile queues later.
+// queueMove records an entry repointed by a Version merge. Older undo
+// records contain the Profile and timestamp only.
 type queueMove struct {
 	Profile   ProfileID `json:"profile"`
 	AddedAtMS int64     `json:"addedAtMs"`
+	EntryID   string    `json:"entryID,omitempty"`
 }
 
-// moveQueueEntriesTx points each Profile's queue entry for from at to,
-// keeping its position and added time, unless that Profile already queues to,
-// and returns the entries it moved. It lives in queue.go for the firewall
-// reason above.
 func moveQueueEntriesTx(ctx context.Context, tx *sql.Tx, from, to MediaID) ([]queueMove, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT profile_id, added_at_ms FROM play_queue AS q
-		WHERE media_id = ?
-		  AND NOT EXISTS (SELECT 1 FROM play_queue WHERE profile_id = q.profile_id AND media_id = ?)
-		ORDER BY profile_id
-	`, from, to)
+		SELECT profile_id, added_at_ms, entry_id FROM play_queue
+		WHERE media_id = ? ORDER BY profile_id, position
+	`, from)
 	if err != nil {
 		return nil, err
 	}
 	var moves []queueMove
 	for rows.Next() {
 		var m queueMove
-		if err := rows.Scan(&m.Profile, &m.AddedAtMS); err != nil {
+		if err := rows.Scan(&m.Profile, &m.AddedAtMS, &m.EntryID); err != nil {
 			return nil, errors.Join(err, rows.Close())
 		}
 		moves = append(moves, m)
@@ -672,63 +614,127 @@ func moveQueueEntriesTx(ctx context.Context, tx *sql.Tx, from, to MediaID) ([]qu
 	return moves, nil
 }
 
-// repointQueueEntryTx points m's queue entry for from at to, unless the
-// Profile has since removed it, queued it again (a new added time) or already
-// queues to.
 func repointQueueEntryTx(ctx context.Context, tx *sql.Tx, m queueMove, from, to MediaID) error {
+	if m.EntryID != "" {
+		_, err := tx.ExecContext(ctx, `
+			UPDATE play_queue SET media_id = ?
+			WHERE entry_id = ? AND profile_id = ? AND media_id = ?
+		`, to, m.EntryID, m.Profile, from)
+		return err
+	}
+	// A pre-migration undo record can only refer to a migrated row. Preserve
+	// the earlier conflict rule for these records, which lack an entry ID.
 	_, err := tx.ExecContext(ctx, `
 		UPDATE play_queue SET media_id = ?
-		WHERE profile_id = ? AND media_id = ? AND added_at_ms = ?
+		WHERE profile_id = ? AND media_id = ? AND added_at_ms = ? AND entry_id GLOB 'legacy-*'
 		  AND NOT EXISTS (SELECT 1 FROM play_queue WHERE profile_id = ? AND media_id = ?)
-	`, to, m.Profile, from, m.AddedAtMS, m.Profile, to)
+		  AND 1 = (SELECT COUNT(*) FROM play_queue WHERE profile_id = ? AND media_id = ? AND added_at_ms = ? AND entry_id GLOB 'legacy-*')
+	`, to, m.Profile, from, m.AddedAtMS, m.Profile, to, m.Profile, from, m.AddedAtMS)
 	return err
 }
 
-func queueEntries(ctx context.Context, db rowsQueryer, profileID ProfileID) ([]queueEntry, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT media_id, added_at_ms
-		FROM play_queue
-		WHERE profile_id = ?
-		ORDER BY position
+func loadQueue(ctx context.Context, tx *sql.Tx, profileID ProfileID) (queueSnapshot, error) {
+	q := queueSnapshot{repeat: QueueRepeatOff}
+	var current sql.NullString
+	err := tx.QueryRowContext(ctx, `
+		SELECT current_entry_id, position_ms, shuffle, repeat_mode FROM play_queue_state WHERE profile_id = ?
+	`, profileID).Scan(&current, &q.positionMS, &q.shuffle, &q.repeat)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return queueSnapshot{}, err
+	}
+	q.currentID = current.String
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT entry_id, media_id, added_at_ms, position, shuffle_position
+		FROM play_queue WHERE profile_id = ? ORDER BY position
 	`, profileID)
 	if err != nil {
-		return nil, err
+		return queueSnapshot{}, err
 	}
 	defer rows.Close()
-	var entries []queueEntry
 	for rows.Next() {
 		var entry queueEntry
-		if err := rows.Scan(&entry.mediaID, &entry.addedAtMS); err != nil {
-			return nil, err
+		if err := rows.Scan(&entry.id, &entry.mediaID, &entry.addedAtMS, &entry.position, &entry.shufflePosition); err != nil {
+			return queueSnapshot{}, err
 		}
-		entries = append(entries, entry)
+		entry.persisted = true
+		q.entries = append(q.entries, entry)
 	}
-	return entries, rows.Err()
+	if err := rows.Err(); err != nil {
+		return queueSnapshot{}, err
+	}
+	if q.shuffle {
+		q.shuffled = slices.Clone(q.entries)
+		// Entries without a rank (such as rows imported by maintenance tools)
+		// follow the ranked entries in canonical order.
+		slices.SortStableFunc(q.shuffled, func(a, b queueEntry) int {
+			ar, br := a.shufflePosition, b.shufflePosition
+			switch {
+			case ar.Valid && br.Valid:
+				return cmp.Compare(ar.Int64, br.Int64)
+			case ar.Valid:
+				return -1
+			case br.Valid:
+				return 1
+			default:
+				return 0
+			}
+		})
+	}
+	return q, nil
 }
 
-func replaceQueue(ctx context.Context, tx *sql.Tx, profileID ProfileID, entries []queueEntry) error {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM play_queue WHERE profile_id = ?`, profileID); err != nil {
+func saveQueue(ctx context.Context, tx *sql.Tx, profileID ProfileID, q queueSnapshot, original []queueEntry) error {
+	ranks := make(map[string]int, len(q.shuffled))
+	for i, entry := range q.shuffled {
+		ranks[entry.id] = i
+	}
+	kept := make(map[string]bool, len(q.entries))
+	for position, entry := range q.entries {
+		kept[entry.id] = true
+		rank, ranked := ranks[entry.id]
+		shufflePosition := sql.NullInt64{Int64: int64(rank), Valid: ranked}
+		if !entry.persisted {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO play_queue(entry_id, profile_id, position, media_id, added_at_ms, shuffle_position)
+				VALUES (?, ?, ?, ?, ?, ?)
+			`, entry.id, profileID, position, entry.mediaID, entry.addedAtMS, shufflePosition); err != nil {
+				return err
+			}
+		} else if entry.position != position || entry.shufflePosition != shufflePosition {
+			// Edit order in place so future entry metadata survives moves.
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE play_queue SET position = ?, shuffle_position = ? WHERE entry_id = ?
+			`, position, shufflePosition, entry.id); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO play_queue_state(profile_id, current_entry_id, position_ms, shuffle, repeat_mode)
+		VALUES (?, NULLIF(?, ''), ?, ?, ?)
+		ON CONFLICT(profile_id) DO UPDATE SET current_entry_id = excluded.current_entry_id,
+			position_ms = excluded.position_ms, shuffle = excluded.shuffle, repeat_mode = excluded.repeat_mode
+		WHERE play_queue_state.current_entry_id IS NOT excluded.current_entry_id
+			OR play_queue_state.position_ms != excluded.position_ms OR play_queue_state.shuffle != excluded.shuffle
+			OR play_queue_state.repeat_mode != excluded.repeat_mode
+	`, profileID, q.currentID, q.positionMS, q.shuffle, q.repeat); err != nil {
 		return err
 	}
-	for position, entry := range entries {
-		if entry.mediaID == "" {
-			return errors.New("queue entry media ID is required")
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO play_queue(profile_id, position, media_id, added_at_ms)
-			VALUES (?, ?, ?, ?)
-		`, profileID, position, entry.mediaID, entry.addedAtMS); err != nil {
-			return err
+	for _, entry := range original {
+		if !kept[entry.id] {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM play_queue WHERE entry_id = ?`, entry.id); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-// myEngagementChunkLocked keyset-pages the Profile's matching engagement IDs
-// and their rows in one events query. It lives in the queue API because the
-// combined projection includes queue rows; callers resolve only this bounded
-// ID chunk through the catalog before advancing the keyset.
-func (s *Store) myEngagementChunkLocked(ctx context.Context, profileID ProfileID, after MediaID, query MyEngagementLogQuery) ([]MediaID, []myEngagementRankedEvent, error) {
+// myEngagementChunk pages engagement rows before resolving Media
+// visibility. The queue entry ID keeps the cursor unique even when a single
+// Media has enough additions to span several chunks.
+func myEngagementChunk(ctx context.Context, tx *sql.Tx, profileID ProfileID, after myEngagementRankedEvent, query MyEngagementLogQuery) ([]MediaID, []myEngagementRankedEvent, error) {
 	args := []any{profileID, profileID, profileID}
 	dateWhere := "1 = 1"
 	if !query.From.IsZero() {
@@ -739,46 +745,34 @@ func (s *Store) myEngagementChunkLocked(ctx context.Context, profileID ProfileID
 		dateWhere += ` AND occurred_at_ms <= ?`
 		args = append(args, timeToMillis(query.To))
 	}
-	args = append(args, after, myEngagementLogIDChunk)
+	args = append(args, after.event.MediaID, after.rank, after.entryID, myEngagementLogChunkSize)
 	// #nosec G202 -- dateWhere is assembled only from fixed timestamp predicates.
-	rows, err := s.eventsR.QueryContext(ctx, `
-		WITH engagement_rows(kind, rank, media_id, occurred_at_ms) AS (
-			SELECT 'play', 0, media_id, updated_at_ms FROM playback_progress WHERE profile_id = ?
+	rows, err := tx.QueryContext(ctx, `
+		WITH engagement_rows(kind, rank, media_id, occurred_at_ms, entry_id) AS (
+			SELECT 'play', 0, media_id, updated_at_ms, '' FROM playback_progress WHERE profile_id = ?
 			UNION ALL
-			SELECT 'favorite', 1, media_id, favorited_at_ms FROM media_favorite WHERE profile_id = ?
+			SELECT 'favorite', 1, media_id, favorited_at_ms, '' FROM media_favorite WHERE profile_id = ?
 			UNION ALL
-			SELECT 'queue', 2, media_id, added_at_ms FROM play_queue WHERE profile_id = ?
-		),
-		matching AS (
-			SELECT kind, rank, media_id, occurred_at_ms
-			FROM engagement_rows
-			WHERE `+dateWhere+`
-		),
-		next_ids AS (
-			SELECT media_id
-			FROM matching
-			WHERE media_id > ?
-			GROUP BY media_id
-			ORDER BY media_id
-			LIMIT ?
+			SELECT 'queue', 2, media_id, added_at_ms, entry_id FROM play_queue WHERE profile_id = ?
 		)
-		SELECT m.kind, m.rank, m.media_id, m.occurred_at_ms
-		FROM matching m
-		JOIN next_ids n ON n.media_id = m.media_id
-		ORDER BY m.media_id, m.rank
+		SELECT kind, rank, media_id, occurred_at_ms, entry_id
+		FROM engagement_rows
+		WHERE `+dateWhere+` AND (media_id, rank, entry_id) > (?, ?, ?)
+		ORDER BY media_id, rank, entry_id
+		LIMIT ?
 	`, args...)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer rows.Close()
-	ids := make([]MediaID, 0, myEngagementLogIDChunk)
-	events := make([]myEngagementRankedEvent, 0, myEngagementLogIDChunk*3)
+	ids := make([]MediaID, 0, myEngagementLogChunkSize)
+	events := make([]myEngagementRankedEvent, 0, myEngagementLogChunkSize)
 	var previous MediaID
 	for rows.Next() {
 		var kind string
 		var ranked myEngagementRankedEvent
 		var occurredAt int64
-		if err := rows.Scan(&kind, &ranked.rank, &ranked.event.MediaID, &occurredAt); err != nil {
+		if err := rows.Scan(&kind, &ranked.rank, &ranked.event.MediaID, &occurredAt, &ranked.entryID); err != nil {
 			return nil, nil, err
 		}
 		if ranked.event.MediaID != previous {
@@ -795,12 +789,9 @@ func (s *Store) myEngagementChunkLocked(ctx context.Context, profileID ProfileID
 	return ids, events, nil
 }
 
-func clampQueuePosition(position, length int) int {
-	if position < 0 {
-		return 0
+func queueSourceItem(media Media) SourceItem {
+	return SourceItem{
+		ID: media.ID, Kind: "media", Title: media.Title, LibraryID: media.LibraryID,
+		Summary: mediaDurationSummary(media.DurationSeconds),
 	}
-	if position > length {
-		return length
-	}
-	return position
 }

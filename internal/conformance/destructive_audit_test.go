@@ -60,7 +60,7 @@ var destructiveGraphStoreMethods = map[string]destructiveAuditRequirement{
 	"OrganizeApply":                 graphAudit("ActivityMediaOrganize"),
 	"PurgeLibrary":                  graphAudit("ActivityLibraryPurge"),
 	"PurgePluginData":               graphAudit("ActivityPluginUninstall"),
-	"PurgeTrashedBefore":            storeAudit("ActivityTrashPurge", "PurgeTrashedBefore"),
+	"PurgeTrashedMediaBefore":       storeAudit("ActivityTrashPurge", "PurgeTrashedMediaBefore"),
 	"RenameManagedPath":             graphAudit("ActivityManagedFileMove"),
 	"RestoreLibrary":                graphAudit("ActivityLibraryRestore"),
 	"RestoreManagedPath":            graphAudit("ActivityManagedFileRestore"),

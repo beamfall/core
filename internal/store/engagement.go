@@ -64,6 +64,11 @@ const watchedThreshold = 0.95
 // playedThreshold marks audio media played: min(80%, track end).
 const playedThreshold = 0.8
 
+// resumeFinishRemainingSeconds marks resume-eligible audio (long spoken-word
+// Media) played only once this little is left: a fraction threshold would
+// fire with hours to go in a long item and reset its resume position.
+const resumeFinishRemainingSeconds = 30
+
 // resumeFloorSeconds hides barely-started playback from Continue Watching.
 const resumeFloorSeconds = 10
 
@@ -174,7 +179,9 @@ func (s *Store) UpsertPlaybackProgressWithProvenance(ctx context.Context, progre
 	resumeEligible := policy.Eligible()
 	watched := finished
 	if progress.DurationSeconds > 0 &&
-		float64(progress.PositionSeconds) >= threshold*float64(progress.DurationSeconds) {
+		float64(progress.PositionSeconds) >= threshold*float64(progress.DurationSeconds) &&
+		(policy.Class != MediaClassAudio || !resumeEligible ||
+			progress.DurationSeconds-progress.PositionSeconds <= resumeFinishRemainingSeconds) {
 		watched = true
 	}
 	position := progress.PositionSeconds
@@ -472,8 +479,10 @@ func (s *Store) extraMediaIDsSQL(ctx context.Context, ids []MediaID) (map[MediaI
 // first, reveal-filtered through catalog Media visibility. Extras
 // are excluded by default — a trailer/BTS clip never appears on
 // the Continue Watching shelf even if the Profile has a resume point for it.
+// Items the Profile removed from the shelf (SetContinueWatchingHidden) are
+// left out until a playback report moves their position.
 func (s *Store) continueWatchingSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
-	return s.inProgressItemsSQL(ctx, profileID, filter, limit, offset)
+	return s.inProgressItemsSQL(ctx, profileID, filter, limit, offset, true)
 }
 
 // inProgressItemsSQL is the shared "in-progress" engagement projection: the
@@ -489,16 +498,25 @@ func (s *Store) continueWatchingSQL(ctx context.Context, profileID ProfileID, fi
 // Continue Watching — the Channel itself is the resumable object. The exclusion
 // is here, in the single shared projection, so both the shelf and the filter
 // drop channel plays by construction.
-func (s *Store) inProgressItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
+//
+// excludeHidden drops items the Profile removed from Continue Watching. Only
+// the shelf passes it: a removed item keeps its progress, so it still matches
+// the "in-progress" filter, and it still holds its container off Next Up, so
+// removing an abandoned item does not resurface it there.
+func (s *Store) inProgressItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int, excludeHidden bool) ([]SourceItem, error) {
 	type progressRow struct {
 		mediaID         MediaID
 		positionSeconds int
 		durationSeconds int
 	}
+	hiddenClause := ""
+	if excludeHidden {
+		hiddenClause = " AND continue_hidden = 0"
+	}
 	return s.filteredEngagementPage(ctx, `
 		SELECT media_id, position_seconds, duration_seconds
 		FROM playback_progress
-		WHERE profile_id = ? AND watched = 0 AND position_seconds >= ? AND channel_context = 0
+		WHERE profile_id = ? AND watched = 0 AND position_seconds >= ? AND channel_context = 0`+hiddenClause+`
 		ORDER BY updated_at_ms DESC, media_id
 	`, []any{profileID, resumeFloorSeconds}, filter, limit, offset, true,
 		func(rows *sql.Rows) (MediaID, func(Media) SourceItem, error) {
@@ -637,7 +655,7 @@ func (s *Store) resumeProgressSQL(ctx context.Context, profileID ProfileID, valu
 	if value != "in-progress" {
 		return []SourceItem{}, nil
 	}
-	return s.inProgressItemsSQL(ctx, profileID, filter, limit, offset)
+	return s.inProgressItemsSQL(ctx, profileID, filter, limit, offset, false)
 }
 
 // watchedByAnyProfileSQL backs the "watched-by-any-profile" Source predicate:
@@ -986,9 +1004,10 @@ func anyHeld(held map[EntityID]bool, ids []EntityID) bool {
 // resumable predicate (resume floor, channel plays, Extras, incomplete
 // sources, Media visibility) is Continue Watching's by construction, and it
 // stops at a hidden or trashed entity. A next-up group touching this set is
-// on Continue Watching and yields nothing here.
+// on Continue Watching and yields nothing here. Items the Profile removed from
+// the shelf still count, so their containers stay off Next Up too.
 func (s *Store) nextUpHeldSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, kinds []string, libraries []LibraryID) (map[EntityID]bool, error) {
-	resumable, err := s.inProgressItemsSQL(ctx, profileID, filter, -1, 0)
+	resumable, err := s.inProgressItemsSQL(ctx, profileID, filter, -1, 0, false)
 	if err != nil {
 		return nil, err
 	}

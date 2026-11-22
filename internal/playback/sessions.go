@@ -501,6 +501,9 @@ type Sessions struct {
 	writeSetupPlaylist func(*hlsSession, string, []byte) error
 	// beforeSetupCommit lets tests pause after writing the unpublished playlists.
 	beforeSetupCommit func()
+	// rungReady, when set, replaces ensureRung's artifact readiness check.
+	// Tests set it to park that filesystem read.
+	rungReady func(*hlsSession, string) bool
 	// durationProbes caches on-demand runtime probes by source path and generation.
 	durationProbes    map[string]durationProbeEntry
 	durationRetained  map[durationKey]*retainedDuration
@@ -1108,11 +1111,11 @@ func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, sess
 	}
 	rungID, file, ok := strings.Cut(name, "/")
 	if !ok || !rungFileName.MatchString(file) {
-		return artifactObservation{}, errors.New("unknown stream file")
+		return artifactObservation{}, ErrUnknownStreamFile
 	}
 	rung, ok := session.rung(rungID)
 	if !ok {
-		return artifactObservation{}, errors.New("unknown stream file")
+		return artifactObservation{}, ErrUnknownStreamFile
 	}
 	path := filepath.Join(session.dir, rungID, file)
 
@@ -1136,7 +1139,7 @@ func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, sess
 		match := segmentName.FindStringSubmatch(file)
 		segment, _ = strconv.Atoi(match[1])
 		if session.durationSeconds > 0 && segment >= session.playlistSegmentCount(rung) {
-			return artifactObservation{}, errors.New("unknown stream file")
+			return artifactObservation{}, ErrUnknownStreamFile
 		}
 		return s.playlistSegment(ctx, key, session, rung, segment, budget)
 	}
@@ -1715,7 +1718,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 			return nil, ErrSessionEvicted
 		default:
 		}
-		ready := session.artifactReady(path)
+		ready := s.rungArtifactReady(session, path)
 		s.mu.Lock()
 		if session.state != sessionRunning {
 			s.mu.Unlock()
@@ -1759,7 +1762,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 			base := session.baseSegment
 			s.mu.Unlock()
 			frontier, scanned := session.scanFrontier(rung.ID, base)
-			ready = session.artifactReady(path)
+			ready = s.rungArtifactReady(session, path)
 			s.mu.Lock()
 			if session.state != sessionRunning {
 				s.mu.Unlock()
@@ -1796,6 +1799,14 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		s.finishEncoderStart(start, err)
 		return launched, err
 	}
+}
+
+// rungArtifactReady is ensureRung's readiness check; it runs with mu released.
+func (s *Sessions) rungArtifactReady(session *hlsSession, path string) bool {
+	if s.rungReady != nil {
+		return s.rungReady(session, path)
+	}
+	return session.artifactReady(path)
 }
 
 func (s *Sessions) launchEncoder(ctx context.Context, start *encoderStart, rung Rung, segment int) (*ffmpeg.HLSProcess, error) {

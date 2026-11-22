@@ -41,6 +41,10 @@ var originalScopedFields = []string{
 	"adminsession",
 	"ambientqueue",
 	"associatesubscriptionentry",
+	"followfeed",
+	"refreshsubscription",
+	"setsubscriptiondownloadpolicy",
+	"subscriptionentries",
 	"apikeys",
 	"apitokens",
 	"artworkcandidates",
@@ -243,7 +247,15 @@ var originalScopedFields = []string{
 	"unsealencryptedlibrary",    // ENC-2 (ADR-0045 §2.4): passphrase/Recovery-Key unseal
 	"sealencryptedlibrary",      // ENC-2 (ADR-0045 §2.4): drop in-memory DEK
 	"rewrapencryptedlibrary",    // ENC-7 (ADR-0117): rotate DEK + Recovery Key after compromise
+	"playqueue",
 	"queueadd",
+	"queueaddmany",
+	"queuemoveentry",
+	"queueremoveentry",
+	"queueplaynext",
+	"queuesetcurrent",
+	"queuesetshuffle",
+	"queuesetrepeat",
 	"queueclear",
 	"queuemove",
 	"queueremove",
@@ -258,6 +270,8 @@ var originalScopedFields = []string{
 	"setretentioncandidatehold", // RET-2 (ADR-0051): viewer-writable keep flag (manager-tier)
 	"removecollectionmedia",
 	"removesubscription",
+	"refreshsubscription",     // CORE-2955 (ADR-0238 §2.2): manual feed refresh, rate-limited
+	"refreshallsubscriptions", // CORE-2955 (ADR-0238 §2.2): Manager Refresh all
 	"reordercollectionmedia",
 	"savedfilters",
 	"scanestimate", // OPS-4 (ADR-0013 §2): first-scan wizard estimate read
@@ -302,11 +316,12 @@ var originalScopedFields = []string{
 	"setconsoleconfig",
 	"setscrapercredential",
 	"setfavorite",
-	"itemstate",       // CORE-1194: per-Profile item state read
-	"metadatacredits", // CORE-1126: active plugin scrapers' declared attribution
-	"setwatched",      // CORE-1194: mark a Media or Entity tree watched/unwatched
-	"setwatchlisted",  // CORE-1194: per-Profile watchlist add/remove
-	"setrating",       // CORE-1194: personal rating set/clear
+	"itemstate",                 // CORE-1194: per-Profile item state read
+	"metadatacredits",           // CORE-1126: active plugin scrapers' declared attribution
+	"setwatched",                // CORE-1194: mark a Media or Entity tree watched/unwatched
+	"setwatchlisted",            // CORE-1194: per-Profile watchlist add/remove
+	"setrating",                 // CORE-1194: personal rating set/clear
+	"setcontinuewatchinghidden", // CORE-2039: remove from / restore to Continue Watching, keeping progress
 	"setfollow",
 	"setlibraryaiindexing",
 	"skipdetectionenabled",    // ENR-7 (ADR-0048 Decision 3/6): per-Library skip-detection toggle (read)

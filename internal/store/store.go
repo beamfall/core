@@ -2189,6 +2189,27 @@ func (s *Store) LibraryRestricted(ctx context.Context, id LibraryID) (bool, erro
 	return restricted != 0, nil
 }
 
+// LibraryLive reports whether a Library exists and is not in the trash. A job
+// queued before its Library was deleted uses it to exit without work
+// (CORE-1279).
+func (s *Store) LibraryLive(ctx context.Context, id LibraryID) (bool, error) {
+	if id == "" {
+		return false, errors.New("library ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var live int
+	err := s.catalogR.QueryRowContext(ctx,
+		"SELECT EXISTS (SELECT 1 FROM library WHERE id = ? AND trashed_at_ms IS NULL)", id).Scan(&live)
+	if err != nil {
+		return false, err
+	}
+	return live != 0, nil
+}
+
 // LibraryPreviewClips reports the Library's preview-clip toggle.
 func (s *Store) LibraryPreviewClips(ctx context.Context, id LibraryID) (bool, error) {
 	if id == "" {
@@ -4230,7 +4251,16 @@ func (s *Store) CreateLibraryWithRoots(ctx context.Context, title string, restri
 	if grantTo == "" {
 		return Library{}, ValidationError("profile ID is required")
 	}
-	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, grantTo, roots, familyScope)
+	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, grantTo, false, roots, familyScope)
+}
+
+// CreateOwnerLibraryWithRoots is CreateLibraryWithRoots for a caller with no
+// Profile (an admin API token, CORE-2921): the Library is granted to the
+// designated owner's Profile, resolved inside the creating transaction so an
+// ownership transfer cannot leave the grant with the former owner. It returns
+// ErrNoOwnerProfile, writing nothing, when no owner is designated.
+func (s *Store) CreateOwnerLibraryWithRoots(ctx context.Context, title string, restricted bool, pluginID string, roots []string, familyScope string) (Library, error) {
+	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, "", true, roots, familyScope)
 }
 
 // CreateUngrantedLibraryWithRoots is CreateLibraryWithRoots for a server that
@@ -4239,12 +4269,13 @@ func (s *Store) CreateLibraryWithRoots(ctx context.Context, title string, restri
 // grant, and refuses once any Profile exists: BootstrapOwner grants every
 // existing Library to the owner it creates, so nothing is left unreachable.
 func (s *Store) CreateUngrantedLibraryWithRoots(ctx context.Context, title string, restricted bool, pluginID string, roots []string, familyScope string) (Library, error) {
-	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, "", roots, familyScope)
+	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, "", false, roots, familyScope)
 }
 
-// createLibraryWithRoots is the shared creation path. An empty grantTo means
-// "no grant" and is only valid while the server has no Profile at all.
-func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restricted bool, pluginID string, grantTo ProfileID, roots []string, familyScope string) (Library, error) {
+// createLibraryWithRoots is the shared creation path. grantOwner grants the
+// designated owner's Profile; otherwise an empty grantTo means "no grant" and
+// is only valid while the server has no Profile at all.
+func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restricted bool, pluginID string, grantTo ProfileID, grantOwner bool, roots []string, familyScope string) (Library, error) {
 	// Authority face: Library catalog rows are main-only (a Library
 	// is bound to its home node, but the binding is main-authored — decision 4).
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
@@ -4263,13 +4294,16 @@ func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restri
 	if err := s.guardLocked(); err != nil {
 		return Library{}, err
 	}
-	if grantTo != "" {
+	switch {
+	case grantOwner:
+		// Resolved and granted inside the transaction below.
+	case grantTo != "":
 		if exists, err := s.profileExistsSQL(ctx, grantTo); err != nil {
 			return Library{}, err
 		} else if !exists {
 			return Library{}, ValidationError("profile not found")
 		}
-	} else {
+	default:
 		var profiles int
 		if err := s.catalogR.QueryRowContext(ctx, `SELECT COUNT(*) FROM profile`).Scan(&profiles); err != nil {
 			return Library{}, err
@@ -4308,7 +4342,21 @@ func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restri
 		id, title, pluginValue, boolToInt(restricted), familyScope); err != nil {
 		return Library{}, err
 	}
-	if grantTo != "" {
+	if grantOwner {
+		result, err := tx.ExecContext(ctx, `
+		INSERT INTO profile_library(profile_id, library_id, position)
+		SELECT p.id, ?, COALESCE((SELECT MAX(pl.position) + 1 FROM profile_library AS pl WHERE pl.profile_id = p.id), 0)
+		FROM profile AS p WHERE p.is_owner = 1
+	`, id)
+		if err != nil {
+			return Library{}, err
+		}
+		if granted, err := result.RowsAffected(); err != nil {
+			return Library{}, err
+		} else if granted == 0 {
+			return Library{}, ErrNoOwnerProfile
+		}
+	} else if grantTo != "" {
 		if _, err := tx.ExecContext(ctx, `
 		INSERT INTO profile_library(profile_id, library_id, position)
 		VALUES (?, ?, COALESCE((SELECT MAX(position) + 1 FROM profile_library WHERE profile_id = ?), 0))
@@ -4795,7 +4843,7 @@ func (s *Store) UpdateProfileSettings(ctx context.Context, id ProfileID, setting
 	if settings.RemoteMaxBitrate != nil {
 		profile.RemoteMaxBitrate = *settings.RemoteMaxBitrate
 	}
-	if err := s.updateProfileSettingsSQL(ctx, profile, settings.IntegrationSignIn); err != nil {
+	if err := s.updateProfileSettingsSQL(ctx, profile, settings); err != nil {
 		return Profile{}, err
 	}
 	return s.profileSQL(ctx, id)

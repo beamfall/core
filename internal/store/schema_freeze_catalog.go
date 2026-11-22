@@ -125,6 +125,8 @@ package store
 // requests and listed in the Console only, off the entity-query hot path.
 // CORE-2884 adds 0128_entity_enrichment, keyed by entity and read only by the
 // background enrichment job, off the entity-query hot path.
-// CORE-3128 adds 0129_media_operator_ordinal, keyed by Media ID and read off the entity-query hot path.
-// CORE-3131 adds 0130_media_relation_operator_lock, with relation locks and catalog-local recovery history.
-const schemaFreezeCatalogMigrations = 126
+// CORE-2955 adds 0129_subscription_feed_health for polling and Console reads.
+// CORE-2953 adds 0130_subscription_catalogue_health for download policy, the feed catalogue and scan binding.
+// CORE-3128 adds 0131_media_operator_ordinal, keyed by Media ID and read off the entity-query hot path.
+// CORE-3131 adds 0132_media_relation_operator_lock, with relation locks and catalog-local recovery history.
+const schemaFreezeCatalogMigrations = 128

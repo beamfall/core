@@ -21,6 +21,13 @@ import (
 // already an External ID, and the value never holds a secret URL.
 const ProvisionalExternalIDScheme = "provisional-guid"
 
+func provisionalGUIDExternalID(key string) string {
+	if id, guid, ok := strings.Cut(key, "\x00"); ok {
+		return id + "\x00" + feedGUIDExternalID(guid)
+	}
+	return feedGUIDExternalID(key)
+}
+
 // provisionalMediaID derives a stable, durable Media ID from the (libraryID,
 // GUID) of a provisional play. Unlike a scanned file's ID,
 // which is content-fingerprint-derived (mediaIDForFingerprint), a provisional
@@ -191,7 +198,24 @@ func (s *Store) RegisterProvisionalMedia(ctx context.Context, p ProvisionalMedia
 		return "", "", err
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM media WHERE id = ?`, mediaID).Scan(&one); err == nil {
-		return "", "", ErrProvisionalRegistrationConflict
+		// A file-less Media keyed by this registration's GUID External ID (a
+		// catalogued entry not yet fetched) gains the provisional file in place;
+		// its title and metadata stay. Any other existing row is not ours.
+		if err := tx.QueryRowContext(ctx, `
+			SELECT 1 FROM media_external_id WHERE media_id = ? AND scheme = ? AND value IN (?, ?)
+		`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(strings.TrimSpace(p.GUID)), strings.TrimSpace(p.GUID)).Scan(&one); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", "", ErrProvisionalRegistrationConflict
+			}
+			return "", "", err
+		}
+		if err := insertProvisionalMediaFile(ctx, tx, mediaID, p.TeePath); err != nil {
+			return "", "", err
+		}
+		if err := tx.Commit(); err != nil {
+			return "", "", err
+		}
+		return mediaID, "", nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return "", "", err
 	}
@@ -202,13 +226,10 @@ func (s *Store) RegisterProvisionalMedia(ctx context.Context, p ProvisionalMedia
 	`, mediaID, p.LibraryID, p.Title, p.Container, p.Codec, p.Class); err != nil {
 		return "", "", err
 	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO media_file(id, content_fingerprint, media_id, path, provisional, last_seen_at_ms)
-		VALUES (?, ?, ?, ?, 1, ?)
-	`, provisionalFingerprint(mediaID), provisionalFingerprint(mediaID), mediaID, p.TeePath, timeToMillis(time.Now().UTC())); err != nil {
+	if err := insertProvisionalMediaFile(ctx, tx, mediaID, p.TeePath); err != nil {
 		return "", "", err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)`, mediaID, ProvisionalExternalIDScheme, strings.TrimSpace(p.GUID)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO media_external_id(media_id, scheme, value) VALUES (?, ?, ?)`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(strings.TrimSpace(p.GUID))); err != nil {
 		return "", "", err
 	}
 	if err := tx.Commit(); err != nil {
@@ -217,9 +238,25 @@ func (s *Store) RegisterProvisionalMedia(ctx context.Context, p ProvisionalMedia
 	return mediaID, "", nil
 }
 
+func insertProvisionalMediaFile(ctx context.Context, tx *sql.Tx, mediaID MediaID, teePath string) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO media_file(id, content_fingerprint, media_id, path, provisional, last_seen_at_ms)
+		VALUES (?, ?, ?, ?, 1, ?)
+	`, provisionalFingerprint(mediaID), provisionalFingerprint(mediaID), mediaID, teePath, timeToMillis(time.Now().UTC()))
+	return err
+}
+
+// IsProvisionalMediaFile reports whether a file is a provisional placeholder:
+// its bytes are an in-progress proxy-tee copy, never a direct-play source.
+func IsProvisionalMediaFile(file MediaFile) bool {
+	return strings.HasPrefix(file.ContentFingerprint, "provisional:")
+}
+
 // CompensateProvisionalMediaRegistration reverses only the exact provisional
 // path written by a registration that could not publish its in-memory stream.
-// A refresh restores its previous path; a newly-created row is removed.
+// A refresh restores its previous path; a new registration removes its file,
+// and also its Media row unless a catalogued subscription entry binds that row
+// (the registration attached a file to a Media it did not create).
 func (s *Store) CompensateProvisionalMediaRegistration(ctx context.Context, mediaID MediaID, registeredPath, previousPath string) (bool, error) {
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
 		return false, err
@@ -232,29 +269,49 @@ func (s *Store) CompensateProvisionalMediaRegistration(ctx context.Context, medi
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	query := `
+	if previousPath == "" {
+		return s.compensateNewProvisionalRegistration(ctx, mediaID, registeredPath)
+	}
+	res, err := s.catalogW.ExecContext(ctx, `
 		UPDATE media_file SET path = ?
 		WHERE media_id = ? AND content_fingerprint = ? AND path = ? AND provisional = 1
-	`
-	args := []any{previousPath, mediaID, provisionalFingerprint(mediaID), registeredPath}
-	if previousPath == "" {
-		query = `
-			DELETE FROM media
-			WHERE id = ?
-			  AND (SELECT COUNT(*) FROM media_file WHERE media_id = ?) = 1
-			  AND EXISTS (
-				SELECT 1 FROM media_file
-				WHERE media_id = ? AND content_fingerprint = ? AND path = ? AND provisional = 1
-			  )
-		`
-		args = []any{mediaID, mediaID, mediaID, provisionalFingerprint(mediaID), registeredPath}
-	}
-	res, err := s.catalogW.ExecContext(ctx, query, args...)
+	`, previousPath, mediaID, provisionalFingerprint(mediaID), registeredPath)
 	if err != nil {
 		return false, err
 	}
 	rows, err := res.RowsAffected()
 	return rows == 1, err
+}
+
+func (s *Store) compensateNewProvisionalRegistration(ctx context.Context, mediaID MediaID, registeredPath string) (bool, error) {
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `
+		DELETE FROM media_file
+		WHERE media_id = ? AND content_fingerprint = ? AND path = ? AND provisional = 1
+		  AND (SELECT COUNT(*) FROM media_file WHERE media_id = ?) = 1
+	`, mediaID, provisionalFingerprint(mediaID), registeredPath, mediaID)
+	if err != nil {
+		return false, err
+	}
+	if rows, err := res.RowsAffected(); err != nil || rows != 1 {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM media
+		WHERE id = ?
+		  AND NOT EXISTS (SELECT 1 FROM media_file WHERE media_id = ?)
+		  AND NOT EXISTS (SELECT 1 FROM subscription_entry WHERE media_id = ?)
+	`, mediaID, mediaID, mediaID); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Store) createProvisionalMediaSQL(ctx context.Context, mediaID MediaID, p ProvisionalMedia, now time.Time) error {
@@ -293,7 +350,7 @@ func (s *Store) createProvisionalMediaSQL(ctx context.Context, mediaID MediaID, 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
 		VALUES (?, ?, ?)
-	`, mediaID, ProvisionalExternalIDScheme, strings.TrimSpace(p.GUID)); err != nil {
+	`, mediaID, ProvisionalExternalIDScheme, provisionalGUIDExternalID(strings.TrimSpace(p.GUID))); err != nil {
 		return err
 	}
 	return tx.Commit()

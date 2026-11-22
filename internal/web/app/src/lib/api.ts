@@ -423,7 +423,24 @@ export async function getJSON<T = unknown>(
 
 export interface GraphQLResult<T> {
   data?: T;
-  errors?: { message: string }[];
+  errors?: GraphQLErrorEntry[];
+}
+
+/** One entry of a GraphQL response's errors array. `extensions.code` is the
+ * server's closed error vocabulary (NOT_FOUND, FORBIDDEN, THROTTLED, ...). */
+export interface GraphQLErrorEntry {
+  message: string;
+  extensions?: { code?: string; reason?: string };
+}
+
+/** The extensions.code of the first GraphQL error behind `err`, when `err` is
+ * an ApiError raised by graphql(). Callers branch on the code, never on the
+ * message. */
+export function graphqlErrorCode(err: unknown): string | undefined {
+  if (!(err instanceof ApiError)) return undefined;
+  const payload = err.payload as { errors?: GraphQLErrorEntry[] } | undefined;
+  if (!payload || !Array.isArray(payload.errors)) return undefined;
+  return payload.errors.find((e) => typeof e.extensions?.code === "string")?.extensions?.code;
 }
 
 /** Issue a GraphQL operation against /api/graphql. Honors an optional
@@ -457,7 +474,9 @@ export async function graphql<T = unknown>(
   if (unlock && needsAdminSession(result) && (await unlock())) result = await send();
   if (result.errors?.length) {
     const messages = result.errors.map((e) => e.message);
-    throw new ApiError(messages.join("; "), graphqlErrorStatus(messages));
+    throw new ApiError(messages.join("; "), graphqlErrorStatus(messages), {
+      errors: result.errors,
+    });
   }
   if (result.data === undefined) {
     throw new ApiError("GraphQL response had no data", 200);

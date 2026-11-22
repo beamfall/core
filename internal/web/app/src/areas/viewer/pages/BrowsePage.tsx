@@ -84,6 +84,7 @@ export function BrowsePage() {
         <div className="pb-6">
           <LibraryHeader
             nodeID={node.id}
+            libraryID={node.libraryID}
             heading={displayString(node.title, displayLocale)}
             aside={emptyNode !== node.id && <PosterSizeControl className="ml-auto" />}
             pivots={emptyNode !== node.id}

@@ -27,6 +27,7 @@ type MyEngagementExport struct {
 	PlaybackProgress  []MyPlaybackProgress     `json:"playbackProgress"`
 	Favorites         []MyFavorite             `json:"favorites"`
 	Queue             []MyQueueEntry           `json:"queue"`
+	QueueState        MyQueueState             `json:"queueState"`
 	Watchlist         []MyWatchlistEntry       `json:"watchlist"`
 	Ratings           []MyItemRating           `json:"ratings"`
 	SavedFilters      []MySavedFilter          `json:"savedFilters"`
@@ -159,8 +160,18 @@ type MyFavorite struct {
 
 // MyQueueEntry is one exported play-queue row, in queue order.
 type MyQueueEntry struct {
+	ID      string    `json:"id"`
 	MediaID MediaID   `json:"mediaID"`
 	AddedAt time.Time `json:"addedAt"`
+}
+
+// MyQueueState describes playback state for the exported queue entries.
+type MyQueueState struct {
+	CurrentEntryID   *string         `json:"currentEntryID"`
+	PositionMS       int64           `json:"positionMS"`
+	Shuffle          bool            `json:"shuffle"`
+	ShuffledEntryIDs []string        `json:"shuffledEntryIDs"`
+	RepeatMode       QueueRepeatMode `json:"repeatMode"`
 }
 
 // MyWatchlistEntry is one exported watchlist row. TargetKind is ItemTargetMedia
@@ -217,7 +228,7 @@ func (s *Store) ExportMyEngagement(ctx context.Context, profileID ProfileID, fil
 	if err != nil {
 		return MyEngagementExport{}, err
 	}
-	queue, err := s.myQueueRows(ctx, profileID)
+	queue, err := s.readQueueSnapshot(ctx, profileID)
 	if err != nil {
 		return MyEngagementExport{}, err
 	}
@@ -279,7 +290,7 @@ func (s *Store) ExportMyEngagement(ctx context.Context, profileID ProfileID, fil
 	// Reveal filtering: gather every Media id the export references and resolve
 	// visibility once. A row whose Media the caller cannot currently see is
 	// dropped from the export — the Reveal contract outranks completeness.
-	ids := make([]MediaID, 0, len(progress)+len(favorites)+len(queue)+len(engagementEvents))
+	ids := make([]MediaID, 0, len(progress)+len(favorites)+len(queue.entries)+len(engagementEvents))
 	for _, row := range engagementEvents {
 		if row.MediaID != "" {
 			ids = append(ids, row.MediaID)
@@ -291,8 +302,8 @@ func (s *Store) ExportMyEngagement(ctx context.Context, profileID ProfileID, fil
 	for _, row := range favorites {
 		ids = append(ids, row.MediaID)
 	}
-	for _, row := range queue {
-		ids = append(ids, row.MediaID)
+	for _, entry := range queue.entries {
+		ids = append(ids, entry.mediaID)
 	}
 	for _, row := range watchlist {
 		if row.TargetKind == ItemTargetMedia {
@@ -310,13 +321,15 @@ func (s *Store) ExportMyEngagement(ctx context.Context, profileID ProfileID, fil
 	}
 
 	excludedLibraries := sealedLibraryExclusions(filter)
+	queueEntries, queueState := queue.export(visible)
 	export := MyEngagementExport{
 		Profile:           meta,
 		Complete:          len(excludedLibraries) == 0,
 		ExcludedLibraries: excludedLibraries,
 		PlaybackProgress:  []MyPlaybackProgress{},
 		Favorites:         []MyFavorite{},
-		Queue:             []MyQueueEntry{},
+		Queue:             queueEntries,
+		QueueState:        queueState,
 		Watchlist:         []MyWatchlistEntry{},
 		Ratings:           []MyItemRating{},
 		SavedFilters:      savedFilters,
@@ -348,11 +361,6 @@ func (s *Store) ExportMyEngagement(ctx context.Context, profileID ProfileID, fil
 	for _, row := range favorites {
 		if _, ok := visible[row.MediaID]; ok {
 			export.Favorites = append(export.Favorites, row)
-		}
-	}
-	for _, row := range queue {
-		if _, ok := visible[row.MediaID]; ok {
-			export.Queue = append(export.Queue, row)
 		}
 	}
 	// Watchlist and rating rows target a Media item or an Entity. Both kinds
@@ -908,9 +916,7 @@ const (
 // gatherMyEvents reads the caller's engagement rows from the three events
 // projections and resolves every referenced Media once through the caller's
 // LibraryFilter, returning the Reveal-filtered events in descending event-time
-// order (newest first). This is the shared primitive behind both the Summary
-// and the Event log: both operate ONLY over the rows this returns, so neither
-// can ever count or list activity on Media the caller cannot currently see.
+// order (newest first) for the Summary.
 func (s *Store) gatherMyEvents(ctx context.Context, profileID ProfileID, filter LibraryFilter) ([]MyEngagementEvent, error) {
 	progress, err := s.myPlaybackProgress(ctx, profileID)
 	if err != nil {

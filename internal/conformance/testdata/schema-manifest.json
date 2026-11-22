@@ -525,6 +525,11 @@
     "tier": "session"
   },
   {
+    "field": "followfeed",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "formgroup",
     "effect": "write",
     "tier": "session"
@@ -865,6 +870,11 @@
     "tier": "admin"
   },
   {
+    "field": "playqueue",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "playstats",
     "effect": "read",
     "tier": "admin"
@@ -935,6 +945,11 @@
     "tier": "session"
   },
   {
+    "field": "queueaddmany",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "queueclear",
     "effect": "write",
     "tier": "session"
@@ -945,12 +960,47 @@
     "tier": "session"
   },
   {
+    "field": "queuemoveentry",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queueplaynext",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "queueremove",
     "effect": "write",
     "tier": "session"
   },
   {
+    "field": "queueremoveentry",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queuesetcurrent",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queuesetrepeat",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queuesetshuffle",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "recordengagement",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "refreshallsubscriptions",
     "effect": "write",
     "tier": "session"
   },
@@ -961,6 +1011,11 @@
   },
   {
     "field": "refreshmediametadata",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "refreshsubscription",
     "effect": "write",
     "tier": "session"
   },
@@ -1300,6 +1355,11 @@
     "tier": "admin"
   },
   {
+    "field": "setcontinuewatchinghidden",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "setdevicerole",
     "effect": "write",
     "tier": "admin"
@@ -1455,6 +1515,11 @@
     "tier": "admin"
   },
   {
+    "field": "setsubscriptiondownloadpolicy",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "setsubscriptionretention",
     "effect": "write",
     "tier": "session"
@@ -1532,6 +1597,11 @@
   {
     "field": "stationstart",
     "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "subscriptionentries",
+    "effect": "read",
     "tier": "session"
   },
   {

@@ -488,28 +488,18 @@
       "tier": "session"
     },
     {
-      "field": "fixmatchcurrent",
-      "effect": "read",
-      "tier": "session"
-    },
-    {
-      "field": "fixmatchlockedfields",
-      "effect": "read",
-      "tier": "session"
-    },
-    {
       "field": "fixmatchpreview",
-      "effect": "read",
-      "tier": "session"
-    },
-    {
-      "field": "fixmatchsources",
       "effect": "read",
       "tier": "session"
     },
     {
       "field": "foldertree",
       "effect": "read",
+      "tier": "session"
+    },
+    {
+      "field": "followfeed",
+      "effect": "write",
       "tier": "session"
     },
     {
@@ -853,6 +843,11 @@
       "tier": "admin"
     },
     {
+      "field": "playqueue",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "playstats",
       "effect": "read",
       "tier": "admin"
@@ -923,6 +918,11 @@
       "tier": "session"
     },
     {
+      "field": "queueaddmany",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "queueclear",
       "effect": "write",
       "tier": "session"
@@ -933,12 +933,47 @@
       "tier": "session"
     },
     {
+      "field": "queuemoveentry",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "queueplaynext",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "queueremove",
       "effect": "write",
       "tier": "session"
     },
     {
+      "field": "queueremoveentry",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "queuesetcurrent",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "queuesetrepeat",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "queuesetshuffle",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "recordengagement",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "refreshallsubscriptions",
       "effect": "write",
       "tier": "session"
     },
@@ -949,6 +984,11 @@
     },
     {
       "field": "refreshmediametadata",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "refreshsubscription",
       "effect": "write",
       "tier": "session"
     },
@@ -1283,6 +1323,11 @@
       "tier": "admin"
     },
     {
+      "field": "setcontinuewatchinghidden",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "setdevicerole",
       "effect": "write",
       "tier": "admin"
@@ -1433,6 +1478,11 @@
       "tier": "admin"
     },
     {
+      "field": "setsubscriptiondownloadpolicy",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "setsubscriptionretention",
       "effect": "write",
       "tier": "session"
@@ -1510,6 +1560,11 @@
     {
       "field": "stationstart",
       "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "subscriptionentries",
+      "effect": "read",
       "tier": "session"
     },
     {
@@ -2412,6 +2467,31 @@
           "optional": true
         },
         {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "failingSince",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "feedURL",
           "kind": "scalar"
         },
@@ -2424,7 +2504,15 @@
           "kind": "scalar"
         },
         {
+          "name": "healthStatus",
+          "kind": "scalar"
+        },
+        {
           "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastErrorClass",
           "kind": "scalar"
         },
         {
@@ -2437,6 +2525,16 @@
           "kind": "scalar"
         },
         {
+          "name": "movedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "nextPollAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "retentionKind",
           "kind": "scalar"
         },
@@ -2444,6 +2542,11 @@
           "name": "retentionN",
           "kind": "scalar",
           "nullable": true
+        },
+        {
+          "name": "retiredAt",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "root",
@@ -9631,14 +9734,6 @@
           "optional": true
         },
         {
-          "name": "clearLocks",
-          "kind": "list",
-          "optional": true,
-          "elem": {
-            "kind": "string"
-          }
-        },
-        {
           "name": "importRunID",
           "kind": "string",
           "optional": true
@@ -9974,46 +10069,6 @@
       ]
     },
     {
-      "field": "fixmatchcurrent",
-      "kind": "object",
-      "children": [
-        {
-          "name": "candidateID",
-          "kind": "scalar"
-        },
-        {
-          "name": "pluginID",
-          "kind": "scalar"
-        },
-        {
-          "name": "scraperID",
-          "kind": "scalar"
-        },
-        {
-          "name": "title",
-          "kind": "scalar"
-        },
-        {
-          "name": "year",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "fixmatchlockedfields",
-      "kind": "object",
-      "children": [
-        {
-          "name": "field",
-          "kind": "scalar"
-        },
-        {
-          "name": "value",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
       "field": "fixmatchpreview",
       "kind": "object",
       "children": [
@@ -10031,36 +10086,6 @@
         },
         {
           "name": "proposed",
-          "kind": "scalar"
-        }
-      ]
-    },
-    {
-      "field": "fixmatchsources",
-      "kind": "object",
-      "children": [
-        {
-          "name": "acceptsPastedID",
-          "kind": "scalar"
-        },
-        {
-          "name": "isDefault",
-          "kind": "scalar"
-        },
-        {
-          "name": "label",
-          "kind": "scalar"
-        },
-        {
-          "name": "pluginID",
-          "kind": "scalar"
-        },
-        {
-          "name": "scraperID",
-          "kind": "scalar"
-        },
-        {
-          "name": "supportsChildren",
           "kind": "scalar"
         }
       ]
@@ -10097,6 +10122,107 @@
         },
         {
           "name": "size",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "followfeed",
+      "kind": "object",
+      "children": [
+        {
+          "name": "addedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "failingSince",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "feedURL",
+          "kind": "scalar"
+        },
+        {
+          "name": "followed",
+          "kind": "scalar"
+        },
+        {
+          "name": "hasAuth",
+          "kind": "scalar"
+        },
+        {
+          "name": "healthStatus",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastErrorClass",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastPolledAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar"
+        },
+        {
+          "name": "movedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "nextPollAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "retentionKind",
+          "kind": "scalar"
+        },
+        {
+          "name": "retentionN",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "retiredAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "root",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
           "kind": "scalar"
         }
       ]
@@ -17586,6 +17712,10 @@
                 "kind": "scalar"
               },
               {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
                 "name": "mediaID",
                 "kind": "scalar"
               }
@@ -17597,8 +17727,43 @@
               "kind": "scalar"
             },
             {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
               "name": "mediaID",
               "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "queueState",
+          "kind": "object",
+          "children": [
+            {
+              "name": "currentEntryID",
+              "kind": "scalar",
+              "nullable": true
+            },
+            {
+              "name": "positionMS",
+              "kind": "scalar"
+            },
+            {
+              "name": "repeatMode",
+              "kind": "scalar"
+            },
+            {
+              "name": "shuffle",
+              "kind": "scalar"
+            },
+            {
+              "name": "shuffledEntryIDs",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             }
           ]
         },
@@ -19442,6 +19607,57 @@
       ]
     },
     {
+      "field": "playqueue",
+      "kind": "object",
+      "children": [
+        {
+          "name": "currentEntryID",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "entries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "positionMS",
+          "kind": "scalar"
+        },
+        {
+          "name": "repeatMode",
+          "kind": "scalar"
+        },
+        {
+          "name": "shuffle",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "playstats",
       "kind": "object",
       "children": [
@@ -20428,6 +20644,79 @@
       ]
     },
     {
+      "field": "queueaddmany",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "expectedProfileID",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "mediaIDs",
+          "kind": "list",
+          "elem": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "placement",
+          "kind": "string",
+          "enum": [
+            "end",
+            "next"
+          ]
+        }
+      ],
+      "children": [
+        {
+          "name": "currentEntryID",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "entries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "positionMS",
+          "kind": "scalar"
+        },
+        {
+          "name": "repeatMode",
+          "kind": "scalar"
+        },
+        {
+          "name": "shuffle",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "queueclear",
       "kind": "object",
       "children": [
@@ -20834,6 +21123,134 @@
       ]
     },
     {
+      "field": "queuemoveentry",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "entryID",
+          "kind": "string"
+        },
+        {
+          "name": "expectedProfileID",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "position",
+          "kind": "number"
+        }
+      ],
+      "children": [
+        {
+          "name": "currentEntryID",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "entries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "positionMS",
+          "kind": "scalar"
+        },
+        {
+          "name": "repeatMode",
+          "kind": "scalar"
+        },
+        {
+          "name": "shuffle",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "queueplaynext",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "entryID",
+          "kind": "string"
+        },
+        {
+          "name": "expectedProfileID",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "children": [
+        {
+          "name": "currentEntryID",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "entries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "positionMS",
+          "kind": "scalar"
+        },
+        {
+          "name": "repeatMode",
+          "kind": "scalar"
+        },
+        {
+          "name": "shuffle",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "queueremove",
       "kind": "object",
       "children": [
@@ -21037,6 +21454,264 @@
       ]
     },
     {
+      "field": "queueremoveentry",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "entryID",
+          "kind": "string"
+        },
+        {
+          "name": "expectedProfileID",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "children": [
+        {
+          "name": "currentEntryID",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "entries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "positionMS",
+          "kind": "scalar"
+        },
+        {
+          "name": "repeatMode",
+          "kind": "scalar"
+        },
+        {
+          "name": "shuffle",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "queuesetcurrent",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "entryID",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "expectedProfileID",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "positionMS",
+          "kind": "number"
+        }
+      ],
+      "children": [
+        {
+          "name": "currentEntryID",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "entries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "positionMS",
+          "kind": "scalar"
+        },
+        {
+          "name": "repeatMode",
+          "kind": "scalar"
+        },
+        {
+          "name": "shuffle",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "queuesetrepeat",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "expectedProfileID",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "mode",
+          "kind": "string",
+          "enum": [
+            "all",
+            "off",
+            "one"
+          ]
+        }
+      ],
+      "children": [
+        {
+          "name": "currentEntryID",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "entries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "positionMS",
+          "kind": "scalar"
+        },
+        {
+          "name": "repeatMode",
+          "kind": "scalar"
+        },
+        {
+          "name": "shuffle",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "queuesetshuffle",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "enabled",
+          "kind": "boolean"
+        },
+        {
+          "name": "expectedProfileID",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "children": [
+        {
+          "name": "currentEntryID",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "entries",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "positionMS",
+          "kind": "scalar"
+        },
+        {
+          "name": "repeatMode",
+          "kind": "scalar"
+        },
+        {
+          "name": "shuffle",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "recordengagement",
       "kind": "object",
       "children": [
@@ -21066,6 +21741,16 @@
           "name": "mediaID",
           "kind": "scalar",
           "optional": true
+        }
+      ]
+    },
+    {
+      "field": "refreshallsubscriptions",
+      "kind": "object",
+      "children": [
+        {
+          "name": "refreshed",
+          "kind": "scalar"
         }
       ]
     },
@@ -21223,6 +21908,38 @@
         },
         {
           "name": "year",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "refreshsubscription",
+      "kind": "object",
+      "children": [
+        {
+          "name": "failingSince",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "healthStatus",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastErrorClass",
+          "kind": "scalar"
+        },
+        {
+          "name": "nextPollAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "title",
           "kind": "scalar"
         }
       ]
@@ -21835,6 +22552,31 @@
           "optional": true
         },
         {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "failingSince",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "feedURL",
           "kind": "scalar"
         },
@@ -21847,7 +22589,15 @@
           "kind": "scalar"
         },
         {
+          "name": "healthStatus",
+          "kind": "scalar"
+        },
+        {
           "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastErrorClass",
           "kind": "scalar"
         },
         {
@@ -21860,6 +22610,16 @@
           "kind": "scalar"
         },
         {
+          "name": "movedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "nextPollAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "retentionKind",
           "kind": "scalar"
         },
@@ -21867,6 +22627,11 @@
           "name": "retentionN",
           "kind": "scalar",
           "nullable": true
+        },
+        {
+          "name": "retiredAt",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "root",
@@ -27409,6 +28174,32 @@
       ]
     },
     {
+      "field": "setcontinuewatchinghidden",
+      "kind": "object",
+      "children": [
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "kind",
+          "kind": "scalar"
+        },
+        {
+          "name": "rating",
+          "kind": "scalar"
+        },
+        {
+          "name": "watched",
+          "kind": "scalar"
+        },
+        {
+          "name": "watchlisted",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "setdevicerole",
       "kind": "object",
       "children": [
@@ -32907,11 +33698,36 @@
       ]
     },
     {
-      "field": "setsubscriptionretention",
+      "field": "setsubscriptiondownloadpolicy",
       "kind": "object",
       "children": [
         {
           "name": "addedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "failingSince",
           "kind": "scalar",
           "optional": true
         },
@@ -32928,7 +33744,15 @@
           "kind": "scalar"
         },
         {
+          "name": "healthStatus",
+          "kind": "scalar"
+        },
+        {
           "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastErrorClass",
           "kind": "scalar"
         },
         {
@@ -32941,6 +33765,16 @@
           "kind": "scalar"
         },
         {
+          "name": "movedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "nextPollAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "retentionKind",
           "kind": "scalar"
         },
@@ -32948,6 +33782,112 @@
           "name": "retentionN",
           "kind": "scalar",
           "nullable": true
+        },
+        {
+          "name": "retiredAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "root",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "setsubscriptionretention",
+      "kind": "object",
+      "children": [
+        {
+          "name": "addedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "failingSince",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "feedURL",
+          "kind": "scalar"
+        },
+        {
+          "name": "followed",
+          "kind": "scalar"
+        },
+        {
+          "name": "hasAuth",
+          "kind": "scalar"
+        },
+        {
+          "name": "healthStatus",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastErrorClass",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastPolledAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar"
+        },
+        {
+          "name": "movedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "nextPollAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "retentionKind",
+          "kind": "scalar"
+        },
+        {
+          "name": "retentionN",
+          "kind": "scalar",
+          "nullable": true
+        },
+        {
+          "name": "retiredAt",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "root",
@@ -34213,11 +35153,71 @@
       ]
     },
     {
+      "field": "subscriptionentries",
+      "kind": "object",
+      "children": [
+        {
+          "name": "availability",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadState",
+          "kind": "scalar"
+        },
+        {
+          "name": "enclosureLength",
+          "kind": "scalar"
+        },
+        {
+          "name": "feedPosition",
+          "kind": "scalar"
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "publishedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "subscriptions",
       "kind": "object",
       "children": [
         {
           "name": "addedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "catalogBytes",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadLatestN",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadPolicy",
+          "kind": "scalar"
+        },
+        {
+          "name": "downloadedCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "entryCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "failingSince",
           "kind": "scalar",
           "optional": true
         },
@@ -34234,7 +35234,15 @@
           "kind": "scalar"
         },
         {
+          "name": "healthStatus",
+          "kind": "scalar"
+        },
+        {
           "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastErrorClass",
           "kind": "scalar"
         },
         {
@@ -34247,6 +35255,16 @@
           "kind": "scalar"
         },
         {
+          "name": "movedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "nextPollAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "retentionKind",
           "kind": "scalar"
         },
@@ -34254,6 +35272,11 @@
           "name": "retentionN",
           "kind": "scalar",
           "nullable": true
+        },
+        {
+          "name": "retiredAt",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "root",
@@ -39776,6 +40799,43 @@
       },
       {
         "method": "GET",
+        "pattern": "/api/subscriptions/export.opml",
+        "note": "Download every Subscription in visible, unsealed Libraries as OPML 2.0, without auth references, URL userinfo or feeds on this server. By default only clean http(s) feed URLs (no auth reference, userinfo, query or fragment) are exported; includePrivate=true adds the rest with their complete URL and no stored title.",
+        "authorization": "manager-session",
+        "success": {
+          "status": 200,
+          "contentType": "application/xml; charset=utf-8",
+          "fields": []
+        },
+        "errors": [
+          {
+            "status": 401,
+            "messages": [
+              "invalid session"
+            ]
+          },
+          {
+            "status": 403,
+            "messages": [
+              "manager session required"
+            ]
+          },
+          {
+            "status": 500,
+            "messages": [
+              "could not export subscriptions"
+            ]
+          },
+          {
+            "status": 503,
+            "messages": [
+              "subscription export unavailable"
+            ]
+          }
+        ]
+      },
+      {
+        "method": "GET",
         "pattern": "/api/events",
         "note": "SSE event fanout: real-time server events for Console/Manage UIs"
       }
@@ -41570,7 +42630,8 @@
       "adjustment requests a pitch shift (pitchShiftSemitones, whole semitones) and a tempo factor (tempo; 0 or omitted is 1) inside the ranges serverInfo.playbackAdjustments advertises; out-of-range values are rejected. It applies only to the main item of an audio Media when a transcode is admitted: the response echoes adjustment only when applied, and an absent response adjustment means the stream plays unadjusted. An adjusted stream runs on its own clock (stream seconds = song seconds / tempo) while timeline and reported progress stay in song seconds. Changing the adjustment mid-play is a new playback info call: report progress first, and the new stream starts at the segment holding timeline.positionSeconds.",
       "streams[].gapless declares the stream's encoder delay and end padding in samples at sampleRate, for gapless playback of consecutive items. A client trims encoderDelaySamples from the start and encoderPaddingSamples from the end of the decoded audio, exactly once. On a live transcode the stream's container trims nothing, so the client applies the trim. On direct play the source's own signalling (an MP4 edit list, an Opus pre-skip, a LAME header) declares the same samples, so a client whose decoder already honours it must not trim again. It is present only when the server knows the exact values: on direct play when the source file declares them, and on a live audio transcode started from the item's beginning. Absent means play the stream untrimmed.",
       "capabilityProfile.audioCodecs[].maxSampleRate (Hz) and maxBitDepth (bits per sample) are the hi-res ceilings the device renders without resampling or truncating; 0 or omitted means no ceiling. A source audio stream above either ceiling is not direct-played or passed through: the server transcodes it. Each ceiling is checked only when the server recorded the source's value, so a source with an unrecorded sample rate or bit depth is never refused on that axis.",
-      "audioQuality describes the selected audio track of the primary stream (streams[0]): codec, sampleRate and bitDepth are the source track as the server probed it (sampleRate and bitDepth are omitted when unrecorded), and lossless reports a lossless source codec. delivery is the closed vocabulary direct|transcode; reflection publishes it as a generic string, so the vocabulary is enumerated here and growing it is a deliberate wire-contract change. direct means streams[0] carries the source audio bit-for-bit (direct play, or a live transcode copying a passthrough track); transcode means the audio is re-encoded or comes from a rendition the server does not vouch for. Lossless direct play is lossless with delivery direct. audioQuality is omitted when the item is unavailable or has no audio, and next.audioQuality mirrors it for the declared next item."
+      "audioQuality describes the selected audio track of the primary stream (streams[0]): codec, sampleRate and bitDepth are the source track as the server probed it (sampleRate and bitDepth are omitted when unrecorded), and lossless reports a lossless source codec. delivery is the closed vocabulary direct|transcode; reflection publishes it as a generic string, so the vocabulary is enumerated here and growing it is a deliberate wire-contract change. direct means streams[0] carries the source audio bit-for-bit (direct play, or a live transcode copying a passthrough track); transcode means the audio is re-encoded or comes from a rendition the server does not vouch for. Lossless direct play is lossless with delivery direct. audioQuality is omitted when the item is unavailable or has no audio, and next.audioQuality mirrors it for the declared next item.",
+      "Access schedule ended: a request to /api/playback-info or /api/preview-info refused only because the session's managed Profile is outside its access schedule (and holds no approved extension) answers HTTP 403 with the header X-Beamfall-Denial-Reason: ACCESS_SCHEDULE_ENDED and the body {\"error\":\"access schedule ended\",\"reason\":\"ACCESS_SCHEDULE_ENDED\"}. The Stream Token media transports (/api/media/direct/, /api/media/hls/, /api/media/subtitle/, /api/media/sidecar/, /api/media/assets/) re-resolve the session on every request and answer the same HTTP 403 and header, with a plain-text body, so a player stops mid-playback and shows that access has ended instead of retrying. The reason carries no schedule detail and is sent only after the credential or Stream Token verified. Every other refusal keeps its status: 401 invalid session or invalid stream token, 410 stream ended. An absent header means the refusal has no finer reason; clients treat an unknown value as absent. GraphQL uses the same value as extensions.reason."
     ],
     "streamToken": {
       "type": "object",
@@ -41852,14 +42913,17 @@
       "REVEAL_PIN_NOT_SET",
       "REVEAL_PIN_REQUIRED",
       "REVEAL_PIN_INCORRECT",
-      "PROFILE_MISMATCH"
+      "PROFILE_MISMATCH",
+      "ACCESS_SCHEDULE_ENDED"
     ],
     "notes": [
       "Every entry in a GraphQL response's errors array carries extensions.code from the closed vocabulary in codes. Clients branch on the code, never on the message text; growing the vocabulary is a deliberate wire-contract change.",
       "Denial of existence (ARCHITECTURE §6): content outside the caller's Library or Reveal scope answers NOT_FOUND, exactly as content that does not exist. FORBIDDEN means a role, tier, session-kind or Reveal gate refused an authenticated caller; it never confirms that hidden content exists.",
       "UNAUTHENTICATED means no valid session or device credential; THROTTLED means attempt limiting refused the request and it may be retried later; INVALID means the request or an argument is malformed; CONFLICT means the target's current state does not allow the operation; INTERNAL means a server-side failure; its message is generic (the failed field name followed by \"unavailable\") and the cause stays in the server log.",
       "extensions.reason, when present, is one of the closed vocabulary in reasons and refines extensions.code where a client must act differently on refusals that share a code. REVEAL_PIN_NOT_SET (FORBIDDEN): the step-up needs a reveal PIN and the Profile has none, so entering one cannot help. REVEAL_PIN_REQUIRED (FORBIDDEN): the request carried no reveal PIN. REVEAL_PIN_INCORRECT (FORBIDDEN): the reveal PIN does not match. myEngagement and deleteMyData use these. Absent means the error has no finer reason; clients must not infer one from the message text, and must treat an unknown reason as absent.",
-      "PROFILE_MISMATCH (CONFLICT): a Play Queue write named, in its optional expectedProfileID argument, a Profile the session is not bound to when the write applies (queueAdd, queueRemove, queueMove, queueClear, stationStart). Nothing was written; the client drops the write instead of retrying it."
+      "PROFILE_MISMATCH (CONFLICT): a Play Queue write named, in its optional expectedProfileID argument, a Profile the session is not bound to when the write applies (queueAdd, queueRemove, queueMove, queueClear, stationStart). Nothing was written; the client drops the write instead of retrying it.",
+      "PROFILE_MISMATCH (CONFLICT) also answers setContinueWatchingHidden when its optional expectedProfileID names a Profile the session is not bound to. Nothing was written; the client drops the write instead of retrying it.",
+      "ACCESS_SCHEDULE_ENDED (FORBIDDEN, HTTP 403): the request was refused only because the session's managed Profile is outside its access schedule and holds no approved extension, whether at the request gate or when a later field of the same operation re-resolves the session. The session itself is still valid: the client keeps it and shows that access has ended for now, instead of signing out or re-pairing. The message is \"access schedule ended\" and carries no schedule detail. Every other credential failure is unchanged: HTTP 401, UNAUTHENTICATED, \"invalid session\". REST playback and media transports carry the same value in the X-Beamfall-Denial-Reason header (see playbackInfo notes)."
     ]
   },
   "graphqlResponse": {

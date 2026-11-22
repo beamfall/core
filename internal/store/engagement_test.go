@@ -820,11 +820,13 @@ func TestPlayQueueWritesStayBehindQueueAPI(t *testing.T) {
 	}
 	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	allowed := map[string]bool{
-		filepath.Join(root, "internal", "store", "queue.go"):                            true,
-		filepath.Join(root, "internal", "store", "engagement_prune.go"):                 true,
-		filepath.Join(root, "internal", "store", "engagement_prune_test.go"):            true,
-		filepath.Join(root, "internal", "store", "engagement_test.go"):                  true,
-		filepath.Join(root, "internal", "store", "migrate", "events", "0008_queue.sql"): true,
+		filepath.Join(root, "internal", "store", "queue.go"):                                       true,
+		filepath.Join(root, "internal", "store", "engagement_prune.go"):                            true,
+		filepath.Join(root, "internal", "store", "engagement_prune_test.go"):                       true,
+		filepath.Join(root, "internal", "store", "engagement_test.go"):                             true,
+		filepath.Join(root, "internal", "store", "migrate", "events", "0008_queue.sql"):            true,
+		filepath.Join(root, "internal", "store", "migrate", "events", "0026_play_queue_state.sql"): true,
+		filepath.Join(root, "internal", "store", "queue_state_test.go"):                            true,
 	}
 	err := filepath.WalkDir(filepath.Join(root, "internal"), func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -1826,5 +1828,42 @@ func TestNextUpHoldsAGroupWithAPausedUnorderedChild(t *testing.T) {
 	}
 	if items := nextUp(t, st, filter, "profile-default"); len(items) != 0 {
 		t.Fatalf("next-up with a paused unordered child = %#v, want empty", items)
+	}
+}
+
+// TestResumableAudioFinishesOnRemainingTime: a long resume-eligible book at
+// 80% keeps its place; only the last 30 s (or an explicit finish) marks it
+// played (CORE-3008).
+func TestResumableAudioFinishesOnRemainingTime(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	resume := true
+	policy := ResumePolicy{Class: MediaClassAudio, Override: &resume}
+	book := PlaybackProgress{ProfileID: "profile-default", MediaID: "media-alpha", PositionSeconds: 16 * 3600, DurationSeconds: 20 * 3600}
+	if err := st.UpsertPlaybackProgress(ctx, book, false, policy); err != nil {
+		t.Fatal(err)
+	}
+	stored, _, err := st.PlaybackProgressFor(ctx, "profile-default", "media-alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Watched || stored.PositionSeconds != 16*3600 {
+		t.Fatalf("book at 80%% = watched %v position %d, want unwatched at %d", stored.Watched, stored.PositionSeconds, 16*3600)
+	}
+	items, err := st.SourceItems(ctx, LibraryFilter{Revealed: true, AllLibraries: true}, SourceQuery{Kind: "continue-watching", ProfileID: "profile-default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("continue-watching items = %d, want 1", len(items))
+	}
+
+	book.PositionSeconds = book.DurationSeconds - 20
+	if err := st.UpsertPlaybackProgress(ctx, book, false, policy); err != nil {
+		t.Fatal(err)
+	}
+	stored, _, _ = st.PlaybackProgressFor(ctx, "profile-default", "media-alpha")
+	if !stored.Watched || stored.PlayCount != 1 || stored.PositionSeconds != 0 {
+		t.Fatalf("book with 20 s left = watched %v plays %d position %d, want played once at 0", stored.Watched, stored.PlayCount, stored.PositionSeconds)
 	}
 }

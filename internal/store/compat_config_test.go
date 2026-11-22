@@ -143,7 +143,7 @@ func TestProfileIntegrationSignInOptIn(t *testing.T) {
 	stale := profile
 	stale.IntegrationSignIn = true
 	stale.Name = "Renamed"
-	if err := st.updateProfileSettingsSQL(ctx, stale, nil); err != nil {
+	if err := st.updateProfileSettingsSQL(ctx, stale, ProfileSettings{Name: &stale.Name}); err != nil {
 		t.Fatal(err)
 	}
 	if after, err := st.Profile(ctx, "profile-default"); err != nil || after.IntegrationSignIn || after.Name != "Renamed" {

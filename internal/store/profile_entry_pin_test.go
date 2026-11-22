@@ -1,12 +1,16 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/argon2"
 )
 
 func waitForProfileEntryPINVerifier(t *testing.T, st *Store, id ProfileID) string {
@@ -66,9 +70,7 @@ func TestProfileEntryPINIsSaltedAndIndependentFromReveal(t *testing.T) {
 	if va == vb {
 		t.Fatalf("same entry PIN produced identical verifiers %q; want per-Profile salts", va)
 	}
-	if strings.Contains(va, "2222") {
-		t.Fatal("entry PIN appears in plaintext verifier")
-	}
+	assertProfileEntryPINVerifierHashes(t, va, "2222")
 	if err := st.VerifyProfileEntryPIN(ctx, a.ID, "2222"); err != nil {
 		t.Fatalf("VerifyProfileEntryPIN correct PIN: %v", err)
 	}
@@ -77,6 +79,32 @@ func TestProfileEntryPINIsSaltedAndIndependentFromReveal(t *testing.T) {
 	}
 	if err := st.VerifyRevealPIN(ctx, a.ID, "2222"); !errors.Is(err, ErrRevealPINMismatch) {
 		t.Fatalf("entry PIN verified as Reveal PIN: %v", err)
+	}
+}
+
+// assertProfileEntryPINVerifierHashes checks the verifier holds exactly a salt
+// and the Argon2id hash of pin, decoded field by field, so a chance run of PIN
+// digits inside the random hex cannot fail it (CORE-0986).
+func assertProfileEntryPINVerifierHashes(t *testing.T, verifier, pin string) {
+	t.Helper()
+	encoded, tagged := strings.CutPrefix(verifier, profileEntryPINArgon2Prefix)
+	saltHex, hashHex, paired := strings.Cut(encoded, "$")
+	if !tagged || !paired {
+		t.Fatalf("entry PIN verifier %q is not prefix+salt$hash", verifier)
+	}
+	salt, saltErr := hex.DecodeString(saltHex)
+	hash, hashErr := hex.DecodeString(hashHex)
+	if saltErr != nil || hashErr != nil || len(salt) != profileEntryPINSaltLen || len(hash) != profileEntryPINArgon2KeyLen {
+		t.Fatalf("entry PIN verifier %q does not carry a %d-byte salt and %d-byte hash", verifier, profileEntryPINSaltLen, profileEntryPINArgon2KeyLen)
+	}
+	want := argon2.IDKey([]byte(pin), salt,
+		profileEntryPINArgon2Time,
+		profileEntryPINArgon2Memory,
+		profileEntryPINArgon2Threads,
+		profileEntryPINArgon2KeyLen,
+	)
+	if !bytes.Equal(hash, want) {
+		t.Fatal("entry PIN verifier does not store the Argon2id hash of the PIN")
 	}
 }
 
