@@ -64,53 +64,82 @@ func (e *Engine) ListChildren(ctx context.Context, spec plugin.ScraperSpec, leve
 	listing := spec.Children[level-1]
 	var parent *ChildRow
 	if level > 1 {
-		var matches []ChildRow
-		if err := e.findChildParents(ctx, spec, 0, level-2, candidateID, *parentKey, nil, config, &matches); err != nil {
+		matches, err := e.findChildParents(ctx, spec, level-2, candidateID, *parentKey, config)
+		if err != nil {
 			return nil, err
 		}
 		if len(matches) == 0 {
 			return nil, ErrChildParentRow
 		}
-		// The wire key carries no ancestor, so the same key may appear under
-		// several earlier rows. That is safe only when every match opens the
-		// same listing.
-		first := childParentPairs(listing, &matches[0])
-		for i := range matches[1:] {
-			if !slices.Equal(childParentPairs(listing, &matches[i+1]), first) {
-				return nil, ErrChildParentAmbig
-			}
+		parents := openableParents(listing, matches)
+		if len(parents) == 0 {
+			return nil, ErrChildParentAmbig
 		}
-		parent = &matches[0]
+		parent = &parents[0]
 	}
 	return e.childRows(ctx, spec, spec.Children[level-1], candidateID, parent, config)
 }
 
 // findChildParents starts at the root even after a restart or cache eviction.
-// For deeper levels the wire key carries no ancestor, so it collects every row
-// at the target level whose key matches.
-func (e *Engine) findChildParents(ctx context.Context, spec plugin.ScraperSpec, current, target int, candidateID, parentKey string, parent *ChildRow, config map[string]string, matches *[]ChildRow) error {
-	rows, err := e.childRows(ctx, spec, spec.Children[current], candidateID, parent, config)
-	if errors.Is(err, ErrChildOrdinal) {
-		return nil // This row cannot open the next level.
-	}
+// The wire key carries no ancestor, so it walks level by level, descending only
+// through rows a read could accept as parentKey, and returns every row at the
+// target level whose key matches.
+func (e *Engine) findChildParents(ctx context.Context, spec plugin.ScraperSpec, target int, candidateID, parentKey string, config map[string]string) ([]ChildRow, error) {
+	rows, err := e.childRows(ctx, spec, spec.Children[0], candidateID, nil, config)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	for _, row := range rows {
-		if current == target {
-			if row.Key == parentKey {
-				*matches = append(*matches, row)
+	for current := 0; current < target; current++ {
+		next := spec.Children[current+1]
+		var deeper []ChildRow
+		for _, parent := range openableParents(next, rows) {
+			children, err := e.childRows(ctx, spec, next, candidateID, &parent, config)
+			if errors.Is(err, ErrChildOrdinal) {
+				continue // This row cannot open the next level.
 			}
-			continue
+			if err != nil {
+				return nil, err
+			}
+			deeper = append(deeper, children...)
 		}
+		rows = deeper
+	}
+	var matches []ChildRow
+	for _, row := range rows {
+		if row.Key == parentKey {
+			matches = append(matches, row)
+		}
+	}
+	return matches, nil
+}
+
+// openableParents returns, in first-seen order, one row for each key a read of
+// listing would accept as parentKey: a valid path segment whose rows all
+// substitute the same values into the listing's template. A key shared by
+// rows that would open different listings is ambiguous and opens nothing.
+func openableParents(listing sdk.ChildListing, rows []ChildRow) []ChildRow {
+	first := map[string]int{}
+	ambiguous := map[string]bool{}
+	var order []string
+	for i, row := range rows {
 		if !sdk.ValidChildKeySegment(row.Key) {
 			continue
 		}
-		if err := e.findChildParents(ctx, spec, current+1, target, candidateID, parentKey, &row, config, matches); err != nil {
-			return err
+		j, seen := first[row.Key]
+		if !seen {
+			first[row.Key] = i
+			order = append(order, row.Key)
+		} else if !slices.Equal(childParentPairs(listing, &rows[j]), childParentPairs(listing, &row)) {
+			ambiguous[row.Key] = true
 		}
 	}
-	return nil
+	var parents []ChildRow
+	for _, key := range order {
+		if !ambiguous[key] {
+			parents = append(parents, rows[first[key]])
+		}
+	}
+	return parents
 }
 
 // childParentPairs returns the parent placeholders the listing's template

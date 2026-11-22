@@ -171,6 +171,47 @@ func TestListChildrenRefusesAmbiguousThirdLevelParent(t *testing.T) {
 	}
 }
 
+// TestListChildrenRefusesKeyBeneathAmbiguousAncestor (CORE-3127): a key found
+// only under an ancestor key that is itself ambiguous is unreachable, since no
+// successful read of the previous level could have returned it.
+func TestListChildrenRefusesKeyBeneathAmbiguousAncestor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/first/42":
+			fmt.Fprint(w, `[{"id":"a","s":"1"},{"id":"a","s":"2"},{"id":"b","s":"3"}]`)
+		case "/second/1":
+			fmt.Fprint(w, `[{"id":"x"}]`)
+		case "/second/2":
+			fmt.Fprint(w, `[{"id":"y"}]`)
+		case "/second/3":
+			fmt.Fprint(w, `[{"id":"z"}]`)
+		case "/third/y", "/third/z":
+			fmt.Fprint(w, `[{"id":"leaf"}]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	spec := plugin.ScraperSpec{
+		ID: "recorded", Kind: "http-json", Endpoint: server.URL,
+		Children: []sdk.ChildListing{
+			{Level: "first", ListTemplate: "/first/{id}", ItemsPath: "$", Key: "id", Label: "id", Sequence: "s"},
+			{Level: "second", ListTemplate: "/second/{sequence}", ItemsPath: "$", Key: "id", Label: "id"},
+			{Level: "third", ListTemplate: "/third/{parent}", ItemsPath: "$", Key: "id", Label: "id"},
+		},
+	}
+	engine := New(WithInsecureLoopback())
+	if _, err := engine.ListChildren(t.Context(), spec, 2, "42", new("a"), Variables{}); !errors.Is(err, ErrChildParentAmbig) {
+		t.Fatalf("second level under the shared key = %v, want it refused as ambiguous", err)
+	}
+	if rows, err := engine.ListChildren(t.Context(), spec, 3, "42", new("y"), Variables{}); !errors.Is(err, ErrChildParentRow) {
+		t.Fatalf("third level beneath the ambiguous key = %v, %v; want the parent refused as unreturned", rows, err)
+	}
+	if rows, err := engine.ListChildren(t.Context(), spec, 3, "42", new("z"), Variables{}); err != nil || len(rows) != 1 {
+		t.Fatalf("third level beneath an unambiguous key = %v, %v", rows, err)
+	}
+}
+
 func TestListChildrenRefusesCrossOriginRedirect(t *testing.T) {
 	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("child listing reached an origin other than the scraper endpoint")
