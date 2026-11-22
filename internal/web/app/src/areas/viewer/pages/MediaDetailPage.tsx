@@ -197,7 +197,10 @@ export function MediaDetailPage() {
   const [trackPicks, setTrackPicks] = useState<StartTracks | null>(null);
   // Read alongside the item, once, for the pickers, the facts row's stream
   // badges (CORE-2469) and Details (CORE-2509).
-  const versions = useMediaTracks(mediaId, attempt);
+  // A subtitle downloaded from the More menu (CORE-1690) re-reads the tracks only;
+  // both counters only grow, so either bump changes the key.
+  const [tracksRefresh, setTracksRefresh] = useState(0);
+  const versions = useMediaTracks(mediaId, attempt + tracksRefresh);
   const { session, isManager } = useSession();
   const profileID = session?.profileID;
   // The same edit gate as the metadata editor: a manager device on an adult
@@ -553,7 +556,13 @@ export function MediaDetailPage() {
                       positionSeconds={progress?.positionSeconds}
                     />
                   )}
-                  {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} />}
+                  {mediaId && (
+                    <MediaDetailMoreMenu
+                      mediaID={mediaId}
+                      title={title}
+                      onSubtitleAdded={() => setTracksRefresh((n) => n + 1)}
+                    />
+                  )}
                 </div>
                 {media && (
                   <MediaTrackPickers

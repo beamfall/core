@@ -118,7 +118,12 @@ type Config struct {
 	// "http://localhost:8080". Empty disables ingest entirely (the poll job
 	// becomes a no-op). Operator-configured; points at the operator's own
 	// LAN/localhost service.
-	QBittorrentURL string
+	// SubtitleSearchProviders lists the online subtitle providers the operator
+	// enabled (CORE-1690). Empty, the default, makes no outbound subtitle request
+	// at all. The only provider today is "opensubtitles"; its API key lives in
+	// <data-dir>/secrets/opensubtitles-api-key (0600), never in config.
+	SubtitleSearchProviders []string
+	QBittorrentURL          string
 	// QBittorrentUsername authenticates the Web API session. The password is
 	// never config — it lives in <DataDir>/secrets/qbittorrent (0600,
 	// invariant 5), resolved at app start, never logged.
@@ -553,6 +558,9 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 	if value, ok := lookupEnv("BEAMFALL_JELLYFIN_COMPAT_TRUSTED_PROXIES"); ok {
 		cfg.JellyfinCompat.TrustedProxyCIDRs = parseList(value)
 	}
+	if value, ok := lookupEnv("BEAMFALL_SUBTITLE_SEARCH_PROVIDERS"); ok {
+		cfg.SubtitleSearchProviders = parseList(value)
+	}
 	if value, ok := lookupEnv("BEAMFALL_QBITTORRENT_URL"); ok {
 		cfg.QBittorrentURL = strings.TrimSpace(value)
 	}
@@ -629,6 +637,8 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 	var jellyfinCompatTrustedProxiesFlag string
 	fs.StringVar(&jellyfinCompatCIDRsFlag, "jellyfin-compat-cidrs", "", "comma-separated client CIDRs allowed to reach compatibility routes")
 	fs.StringVar(&jellyfinCompatTrustedProxiesFlag, "jellyfin-compat-trusted-proxies", "", "comma-separated reverse-proxy CIDRs whose single X-Forwarded-For hop is trusted")
+	var subtitleSearchProvidersFlag string
+	fs.StringVar(&subtitleSearchProvidersFlag, "subtitle-search-providers", "", "comma-separated online subtitle providers to enable (opensubtitles); empty disables online subtitle search")
 	fs.StringVar(&cfg.QBittorrentURL, "qbittorrent-url", cfg.QBittorrentURL, "qBittorrent Web API base URL (empty disables ingest)")
 	fs.StringVar(&cfg.QBittorrentUsername, "qbittorrent-username", cfg.QBittorrentUsername, "qBittorrent Web API username (password lives in the secure store)")
 	var routingFlag string
@@ -652,6 +662,9 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 			cfg.TranscodeCapExplicit = true
 		case "transcode-tmp":
 			cfg.TranscodeScratchDirExplicit = strings.TrimSpace(cfg.TranscodeScratchDir) != ""
+		case "subtitle-search-providers":
+			// An explicit empty flag turns off what the environment enabled.
+			cfg.SubtitleSearchProviders = parseList(subtitleSearchProvidersFlag)
 		}
 	})
 	if attached {
@@ -721,6 +734,9 @@ func (r RemoteAccessConfig) RelayConfigured() bool {
 	return r.Relay.Endpoint != ""
 }
 
+// SubtitleProviderOpenSubtitles names the OpenSubtitles REST provider.
+const SubtitleProviderOpenSubtitles = "opensubtitles"
+
 func validate(cfg Config) (Config, error) {
 	if cfg.Addr == "" {
 		return Config{}, errors.New("addr is required")
@@ -764,6 +780,11 @@ func validate(cfg Config) (Config, error) {
 	for _, cidr := range append(append([]string(nil), cfg.JellyfinCompat.AllowedCIDRs...), cfg.JellyfinCompat.TrustedProxyCIDRs...) {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {
 			return Config{}, fmt.Errorf("invalid jellyfin compatibility CIDR %q: %w", cidr, err)
+		}
+	}
+	for _, provider := range cfg.SubtitleSearchProviders {
+		if provider != SubtitleProviderOpenSubtitles {
+			return Config{}, fmt.Errorf("unknown subtitle search provider %q (supported: %s)", provider, SubtitleProviderOpenSubtitles)
 		}
 	}
 	if cfg.JellyfinCompat.Enabled && len(cfg.JellyfinCompat.AllowedCIDRs) == 0 {

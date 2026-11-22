@@ -40,6 +40,7 @@ const (
 	ActivityMediaTrash              = "media.trash"
 	ActivityMediaRestore            = "media.restore"
 	ActivityMarkerDelete            = "marker.delete"
+	ActivitySubtitleDownload        = "subtitle.download"
 	ActivityCollectionTrash         = "collection.trash"
 	ActivityChannelDelete           = "channel.delete"
 	ActivitySavedFilterDelete       = "saved_filter.delete"

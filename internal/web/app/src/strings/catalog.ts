@@ -79,6 +79,7 @@ import { sharedStateStrings } from "./shared-states";
 import { sidebarStrings } from "./sidebar";
 import { stagedRestoreStrings } from "./staged-restore";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
+import { subtitleSearchStrings } from "./subtitle-search";
 import { trackMenuStrings } from "./track-menu";
 import { viewerAccountStrings } from "./viewer-account";
 import { viewerAccountMyDataStrings } from "./viewer-account-mydata";
@@ -115,6 +116,7 @@ export const en = {
   ...subtitleAppearanceStrings.en,
   ...listeningStrings.en,
   ...trackMenuStrings.en,
+  ...subtitleSearchStrings.en,
   ...managedFileStrings.en,
   ...managedFileLibrariesStrings.en,
   ...libraryMetadataRefreshStrings.en,
@@ -208,6 +210,7 @@ export const fr = {
   ...subtitleAppearanceStrings.fr,
   ...listeningStrings.fr,
   ...trackMenuStrings.fr,
+  ...subtitleSearchStrings.fr,
   ...managedFileStrings.fr,
   ...managedFileLibrariesStrings.fr,
   ...libraryMetadataRefreshStrings.fr,
@@ -301,6 +304,7 @@ export const de = {
   ...subtitleAppearanceStrings.de,
   ...listeningStrings.de,
   ...trackMenuStrings.de,
+  ...subtitleSearchStrings.de,
   ...managedFileStrings.de,
   ...managedFileLibrariesStrings.de,
   ...libraryMetadataRefreshStrings.de,
@@ -394,6 +398,7 @@ export const es = {
   ...subtitleAppearanceStrings.es,
   ...listeningStrings.es,
   ...trackMenuStrings.es,
+  ...subtitleSearchStrings.es,
   ...managedFileStrings.es,
   ...managedFileLibrariesStrings.es,
   ...libraryMetadataRefreshStrings.es,
@@ -487,6 +492,7 @@ export const pt = {
   ...subtitleAppearanceStrings.pt,
   ...listeningStrings.pt,
   ...trackMenuStrings.pt,
+  ...subtitleSearchStrings.pt,
   ...managedFileStrings.pt,
   ...managedFileLibrariesStrings.pt,
   ...libraryMetadataRefreshStrings.pt,
