@@ -16,6 +16,7 @@ import type {
   EntityInfo,
   FieldFilters,
   GenericMediaInfo,
+  HomeLayoutInfo,
   ItemStateInfo,
   ItemTarget,
   LibraryInfo,
@@ -579,6 +580,40 @@ export async function setClientPref(key: string, value: string): Promise<{ key: 
     value,
   });
   return data.setClientPref;
+}
+
+// --- Home layout (per-Profile order and visibility, CORE-1972) ----------
+
+const HOME_LAYOUT_FIELDS = "customized sections { id kind title hidden }";
+
+const HOME_LAYOUT_QUERY = `query HomeLayout { homeLayout { ${HOME_LAYOUT_FIELDS} } }`;
+
+/** HomeLayout — every Home shelf this Profile receives, in its order, with visibility. */
+export async function fetchHomeLayout(signal?: AbortSignal): Promise<HomeLayoutInfo> {
+  const data = await graphql<{ homeLayout: HomeLayoutInfo }>(HOME_LAYOUT_QUERY, {}, signal);
+  return data.homeLayout;
+}
+
+const SET_HOME_LAYOUT_MUTATION = `mutation SetHomeLayout($sectionOrder: [String!], $hiddenSectionIDs: [String!]) { setHomeLayout(sectionOrder: $sectionOrder, hiddenSectionIDs: $hiddenSectionIDs) { ${HOME_LAYOUT_FIELDS} } }`;
+
+/** SetHomeLayout — save this Profile's Home order and hidden shelves. */
+export async function setHomeLayout(
+  sectionOrder: string[],
+  hiddenSectionIDs: string[],
+): Promise<HomeLayoutInfo> {
+  const data = await graphql<{ setHomeLayout: HomeLayoutInfo }>(SET_HOME_LAYOUT_MUTATION, {
+    sectionOrder,
+    hiddenSectionIDs,
+  });
+  return data.setHomeLayout;
+}
+
+const RESET_HOME_LAYOUT_MUTATION = `mutation ResetHomeLayout { resetHomeLayout { ${HOME_LAYOUT_FIELDS} } }`;
+
+/** ResetHomeLayout — return this Profile's Home to the server default. */
+export async function resetHomeLayout(): Promise<HomeLayoutInfo> {
+  const data = await graphql<{ resetHomeLayout: HomeLayoutInfo }>(RESET_HOME_LAYOUT_MUTATION, {});
+  return data.resetHomeLayout;
 }
 
 // --- Hide (per-Profile Mute) ----------------------------------------------

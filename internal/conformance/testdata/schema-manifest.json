@@ -505,6 +505,11 @@
     "tier": "session"
   },
   {
+    "field": "homelayout",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "hostmetrics",
     "effect": "read",
     "tier": "admin"
@@ -1080,6 +1085,11 @@
     "tier": "session"
   },
   {
+    "field": "resethomelayout",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "resetnavoverride",
     "effect": "write",
     "tier": "session"
@@ -1346,6 +1356,11 @@
   },
   {
     "field": "setfollow",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "sethomelayout",
     "effect": "write",
     "tier": "session"
   },

@@ -8502,6 +8502,68 @@
     ]
   },
   {
+    "field": "homelayout",
+    "kind": "object",
+    "children": [
+      {
+        "name": "customized",
+        "kind": "scalar"
+      },
+      {
+        "name": "sections",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "hidden",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "map",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "hidden",
+            "kind": "scalar"
+          },
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "map",
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
     "field": "hostmetrics",
     "kind": "object",
     "children": [
@@ -21216,6 +21278,68 @@
     ]
   },
   {
+    "field": "resethomelayout",
+    "kind": "object",
+    "children": [
+      {
+        "name": "customized",
+        "kind": "scalar"
+      },
+      {
+        "name": "sections",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "hidden",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "map",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "hidden",
+            "kind": "scalar"
+          },
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "map",
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
     "field": "resetnavoverride",
     "kind": "object",
     "children": [
@@ -26790,6 +26914,68 @@
       {
         "name": "title",
         "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "sethomelayout",
+    "kind": "object",
+    "children": [
+      {
+        "name": "customized",
+        "kind": "scalar"
+      },
+      {
+        "name": "sections",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "hidden",
+              "kind": "scalar"
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "map",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "hidden",
+            "kind": "scalar"
+          },
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "map",
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          }
+        ]
       }
     ]
   },

@@ -2155,3 +2155,17 @@ export interface WebhookSettingsInfo {
   formats: string[];
   eventKinds: string[];
 }
+
+/** One Home shelf in the calling Profile's layout (CORE-1972). */
+export interface HomeLayoutSection {
+  id: string;
+  kind: string;
+  title: LocaleString | string;
+  hidden: boolean;
+}
+
+/** The calling Profile's Home order and visibility (CORE-1972). */
+export interface HomeLayoutInfo {
+  customized: boolean;
+  sections: HomeLayoutSection[];
+}

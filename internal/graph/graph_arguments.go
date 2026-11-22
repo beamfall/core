@@ -168,6 +168,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "targetID", Kind: "string"},
 	},
 	"clientprefs": {},
+	"homelayout":  {},
 	"collections": {
 		{Name: "includeTrashed", Kind: "boolean", Optional: true},
 		{Name: "libraryID", Kind: "string"},
@@ -940,6 +941,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "includeDescendants", Kind: "boolean", Optional: true},
 		{Name: "kind", Kind: "string"},
 		{Name: "targetID", Kind: "string"},
+	},
+	"resethomelayout": {},
+	"sethomelayout": {
+		{Name: "hiddenSectionIDs", Kind: "list", Optional: true},
+		{Name: "sectionOrder", Kind: "list", Optional: true},
 	},
 	"setnavoverride": {
 		{Name: "hiddenNodeIDs", Kind: "list", Optional: true},

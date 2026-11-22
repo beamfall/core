@@ -397,6 +397,9 @@ var originalScopedFields = []string{
 	// ADR-0113 §2.3: per-title access grant (adult exception list + revoke).
 	"accessgrantsforprofile", // adult or managed Profile lists active grants
 	"revokeaccessgrant",      // adult revokes a grant (mutation)
+	"homelayout",             // CORE-1972: read the calling Profile's Home layout
+	"sethomelayout",          // CORE-1972: save the calling Profile's Home order and hidden shelves
+	"resethomelayout",        // CORE-1972: return the calling Profile's Home to the default
 }
 
 // TestActionRegistryMatchesDispatch is the self-check for the registry split:

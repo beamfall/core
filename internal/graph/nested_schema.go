@@ -134,6 +134,7 @@ var resultTypes = map[string]any{
 	"similarmedia":                  SourceItem{},
 	"sonicanalysisenabled":          SonicAnalysisInfo{},
 	"medialyrics":                   MediaLyricsInfo{},
+	"homelayout":                    HomeLayoutInfo{}, // CORE-1972
 	// ADR-0113 §2.2: per-title access request reads.
 	"accessrequest":         AccessRequestInfo{},
 	"pendingaccessrequests": AccessRequestInfo{},
@@ -228,6 +229,8 @@ var resultTypes = map[string]any{
 	"scrobbleeligibility":                ScrobbleEligibilityInfo{}, // MUSIC-7: list of per-Library eligibility
 	"scrobblestatus":                     ScrobbleStatusInfo{},      // MUSIC-7: admin diagnostic object
 	"setclientpref":                      ClientPrefInfo{},
+	"sethomelayout":                      HomeLayoutInfo{}, // CORE-1972
+	"resethomelayout":                    HomeLayoutInfo{}, // CORE-1972
 	"setfollow":                          FollowInfo{},
 	"refreshsubscription":                SubscriptionRefreshInfo{},
 	"refreshallsubscriptions":            SubscriptionRefreshAllInfo{},
